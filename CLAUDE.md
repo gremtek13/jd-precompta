@@ -326,21 +326,22 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   électronique, la vue de la banque — pour un accès qui en porte le DROIT, tenu en base, jamais par l'écran seul ; le
   client y écrit par les fonctions du cabinet, et une policy qui lui ouvre une lecture se présente au cabinet avant
   d'être appliquée.
-- **Les droits sont en base** : `memberships.droit_ventes`, `droit_banque` et `droit_caisse`, faux par défaut, changés par
-  `changer_droits_acces` seule, à quatre paramètres (un droit nul y est inchangé ; « Caisse » sur un dossier exonéré ou en
-  franchise seulement, `garder_droit_caisse`) — une insertion du cabinet les pose aussi, la policy ne
-  regardant que le dossier ; « Ventes » ne se porte que sur un dossier basculé (`garder_droit_ventes`, VF8f, en base
-  depuis le 27/10/2026 : 23514 pour tout auteur, l'insertion du super-administrateur exceptée — la restauration)
-  → « « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ » ; prédicats `client_du_dossier`, `gere_les_ventes`,
-  `gere_la_banque`, `droits_sur_le_dossier`. « Banque » ouvre la banque du client ; « Ventes » ses ventes et leurs
-  gestes (un mouvement désigné demande aussi « Banque », le débit qu'une contre-passation cite compris → « LA
-  CONTRE-PASSATION NE CITE UN MOUVEMENT QU'AVEC « BANQUE » »), articles, adresse de réception, clients, paramètres (un
-  RIB qu'il pose n'est que PROPOSÉ jusqu'à `confirmer_rib`, le cabinet seul) et le seau `ventes` (lire, déposer ; jamais
-  modifier ni supprimer) ; « Banque » seul n'apprend du RIB que `dernier_changement_de_rib`, jamais le RIB ; l'identité
-  légale, le client ne l'écrit jamais. L'onglet Accès dit ce que la base ouvre à la SESSION du client
-  (`ceQueDisentLesCases`, confronté à l'export) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ». **Un texte libre que
-  le cabinet saisit dans une table qu'un droit du client ouvre le dit dans son libellé** (`LIBELLE_*` de
-  `lib/droitsAcces.ts`).
+- **Les droits sont en base** : `memberships.droit_ventes`, `droit_banque` et `droit_caisse`, faux par défaut, changés
+  par `changer_droits_acces` seule, à quatre paramètres (un droit nul y est inchangé ; « Caisse » sur un dossier exonéré
+  ou en franchise seulement, `garder_droit_caisse` ; l'onglet TVA dit ce refus avant le clic, `avisDuStatutSousLaCase`,
+  C11-Q1, et l'onglet Accès ne coche pas « Caisse » en engagement, l'écran plus strict que la base, C11-Q2) — une
+  insertion du cabinet les pose aussi, la policy ne regardant que le dossier ; « Ventes » ne se porte que sur un dossier
+  basculé (`garder_droit_ventes`, VF8f, en base depuis le 27/10/2026 : 23514 pour tout auteur, l'insertion du
+  super-administrateur exceptée — la restauration) → « « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ » ; prédicats
+  `client_du_dossier`, `gere_les_ventes`, `gere_la_banque`, `droits_sur_le_dossier`. « Banque » ouvre la banque du
+  client ; « Ventes » ses ventes et leurs gestes (un mouvement désigné demande aussi « Banque », le débit qu'une
+  contre-passation cite compris → « LA CONTRE-PASSATION NE CITE UN MOUVEMENT QU'AVEC « BANQUE » »), articles, adresse de
+  réception, clients, paramètres (un RIB qu'il pose n'est que PROPOSÉ jusqu'à `confirmer_rib`, le cabinet seul) et le
+  seau `ventes` (lire, déposer ; jamais modifier ni supprimer) ; « Banque » seul n'apprend du RIB que
+  `dernier_changement_de_rib`, jamais le RIB ; l'identité légale, le client ne l'écrit jamais. L'onglet Accès dit ce que
+  la base ouvre à la SESSION du client (`ceQueDisentLesCases`, confronté à l'export) → « LES DROITS D'UN ACCÈS CLIENT,
+  TENUS EN BASE ». **Un texte libre que le cabinet saisit dans une table qu'un droit du client ouvre le dit dans son
+  libellé** (`LIBELLE_*` de `lib/droitsAcces.ts`).
 - **Un resserrement vient en dernier** : ce qui s'ajoute, puis la bascule de l'application, puis le resserrement — une
   lecture que la RLS refuse rend ZÉRO ligne sans erreur, et un écran d'avant croirait le relevé vide → « LA BANQUE DU
   CLIENT : LE RESSERREMENT APPLIQUÉ ».
@@ -374,7 +375,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     production depuis le 04/11/2026, `CORRECTION_DU_PAIEMENT_EXPORTEE` levé, son retour un `drop function` ; les mots
     qui disent comment reprendre un paiement vivent dans `motsDuRemedeSelon`, jamais en dur → « LA CAISSE : CORRIGER UN
     PAIEMENT EN ESPÈCES D'UN SEUL GESTE (C12B-Q1) (PRÉPARÉE, PAS APPLIQUÉE) », « LA CAISSE : LA CORRECTION D'UN PAIEMENT
-    EN PRODUCTION (C12B-Q1) ».
+    EN PRODUCTION (C12B-Q1) ». La saisie d'un mois (C12A-Q1) : tout ou rien par `enregistrer_operations_de_caisse`,
+    jugée par `jugerLaSaisieDUnMois` sur la caisse rejouée, une recette portant l'ensemble de son jour, sans catégorie,
+    taux ni écriture → « LA CAISSE : LA CASE « CAISSE » DITE DANS L'ONGLET TVA, REFUSÉE EN ENGAGEMENT, ET LE MOIS DU
+    PRATICIEN (C11-Q1, C11-Q2, C12A-Q1) ».
   - « Ma banque » sous `maBanqueOuverte` : l'état DÉDUIT, le solde LU au dernier relevé contrôlé, jamais calculé ; ni
     catégorie ni écriture → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » » ; avec « Ventes », le registre lu APRÈS la
     case dit le mouvement classé ou réservé par ses encaissements, lu en partie il tait les mouvements libres → « « MA
