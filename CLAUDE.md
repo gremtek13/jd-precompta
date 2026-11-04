@@ -1000,20 +1000,20 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   S'ÉCRIVENT », « L'ACQUISITION D'UN BIEN S'ÉCRIT », « LE FORFAIT KILOMÉTRIQUE S'ÉCRIT », « UNE NOTE DE FRAIS EN
   TRÉSORERIE » ; la 2035 se calcule depuis les sources et se compare aux écritures → « LA 2035 SE COMPARE AUX
   ÉCRITURES ».
-- **Une échéance de cotisation se modifie et se réunit** (`lib/gestesDesEcheances.ts`, COT-Q1 et Q3, sur la
-  recommandation) : la mise à jour retient la version lue ; rapprochée, le rapprochement reste et son écriture se
-  réécrit dans le geste ; « Réunir » porte la gardée à la somme PUIS retire l'autre, un échec entre les deux se dit
+- **Une échéance de cotisation se modifie et se réunit** (`lib/gestesDesEcheances.ts`, COT-Q1 et Q3, confirmées le
+  04/11/2026) : la mise à jour retient la version lue ; rapprochée, le rapprochement reste et son écriture se réécrit
+  dans le geste ; « Réunir » porte la gardée à la somme PUIS retire l'autre, un échec entre les deux se dit
   « inachevée ». Un mouvement classé par une catégorie au poste « Cotisations sociales personnelles », que plus rien ne
   propose, retient la validation (`cotisations-classees-par-categorie`, COT-Q2) → « LES COTISATIONS : RÉUNIR, MODIFIER,
   ET LE PRÉLÈVEMENT CLASSÉ PAR UNE CATÉGORIE (COT-Q1 À Q3) ».
 - **Un bien acquis avant l'ouverture s'inscrit sans pièce** (« Ajouter un bien repris », `bienReprisSansPiece`, IMMO-Q2,
-  sur la recommandation) : aucune acquisition écrite, ses dotations si, et `immobilisationSansJustificatif` prend
+  confirmée le 04/11/2026) : aucune acquisition écrite, ses dotations si, et `immobilisationSansJustificatif` prend
   l'ouverture ; les candidates ne sont que des achats, hors des postes qui ne rangent jamais un bien
   (`achatsAImmobiliser`) ; la reprise se confronte au registre, compte par compte, en attention (IMMO-Q1) ; sous le
   barème, la catégorie « Carburant / déplacements » se dit (`carburant-sous-bareme`, VEH-Q1) → « LES IMMOBILISATIONS ET
   LE VÉHICULE : LE BIEN REPRIS, LA REPRISE CONFRONTÉE AU REGISTRE, LE CARBURANT SOUS LE BARÈME (IMMO-Q1, IMMO-Q2,
   VEH-Q1) ».
-- **La validation confronte la banque au relevé** (MVPD7-Q2 à Q5, sur la recommandation) : sans balance reprise, un
+- **La validation confronte la banque au relevé** (MVPD7-Q2 à Q5, confirmées le 04/11/2026) : sans balance reprise, un
   premier relevé parti d'un solde la bloque (`ouverture-sans-reprise`) ; un 512 qui diffère du relevé du 31/12 avertit
   (`banque-au-releve`, `lib/releveAuTrenteEtUn.ts`, la règle de la preuve de la Révision) ; drapeau des quatre champs
   baissé, la carte et la confirmation disent l'exercice figé sans eux ; Clôture rappelle le relevé de janvier suivant ;
@@ -1092,7 +1092,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   APPLIQUÉE) », « LE SENS DES RÈGLES « TOUJOURS IGNORER » EN PRODUCTION (REGLES-Q1) », « « IGNORER » ET « TOUJOURS
   IGNORER » NE VISENT QU'UN MOUVEMENT ENCORE À TRAITER ». **Classification** : le bordereau d'abord, le sens par
   `orientationDe` → « Le sens d'une pièce est décidé par la classification ».
-- **Une même dépense entrée deux fois se dit** (`lib/doublonsProbables.ts`, PIECES-Q2, sur la recommandation) : deux
+- **Une même dépense entrée deux fois se dit** (`lib/doublonsProbables.ts`, PIECES-Q2, confirmée le 04/11/2026) : deux
   dépenses de même montant retenu, à sept jours au plus, d'une même `cleFournisseur` (un fournisseur non lu se rapproche
   de tout), l'une au moins non réglée — en attention dans Justificatifs, les fiches, la Vue d'ensemble, Clôture et
   avant la validation, jamais bloquant. Une date déduite plafonne la confiance à « moyenne » aux trois chemins du dépôt

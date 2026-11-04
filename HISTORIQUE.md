@@ -47309,3 +47309,48 @@ pièce, la règle ne la voit pas — la fiche d'un débit le dirait avant le cla
 réception par e-mail (`receive-email`), écrit la confiance d'`extract-piece` sans plafond : le lot des Edge Functions.
 La relecture groupée écrit une date déduite sans toucher à la confiance, par son contrat (« rien d'autre n'est écrit »).
 L'assistant (`points_a_traiter`) ne dit pas le doublon probable. D3 à D6 et D8 sont au lot suivant.
+
+### 04/11/2026 — VINGT-QUATRE RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 04/11/2026)
+
+Relue en entier le 04/11/2026 : 348 réponses, dont vingt-quatre neuves. À la recommandation, vingt et une.
+
+Douze confirment ce qui est en ligne depuis le matin, écrit sur la recommandation avant la réponse :
+- COT-Q1 (réunir deux échéances à l'écran pour le MVP, une fonction d'un seul tenant plus tard), COT-Q2 (le prélèvement
+  classé par une catégorie retient la validation), COT-Q3 (« Modifier ») → « LES COTISATIONS : RÉUNIR, MODIFIER, ET LE
+  PRÉLÈVEMENT CLASSÉ PAR UNE CATÉGORIE (COT-Q1 À Q3) » ;
+- IMMO-Q1, IMMO-Q2 et VEH-Q1 → « LES IMMOBILISATIONS ET LE VÉHICULE : LE BIEN REPRIS, LA REPRISE CONFRONTÉE AU
+  REGISTRE, LE CARBURANT SOUS LE BARÈME (IMMO-Q1, IMMO-Q2, VEH-Q1) » ;
+- MVPD7-Q2 à Q5 → « LA VALIDATION : LA BANQUE CONFRONTÉE AU RELEVÉ, LE FEC DIT AVANT LE CLIC, LE RELEVÉ SUIVANT, LE
+  MOIS EN DOUBLE EN AVERTISSEMENT (MVPD7-Q2 À Q5) » ;
+- PIECES-Q1 ((A) pour le MVP : la confiance plafonnée, sans trace gardée ; (B), la trace en base, si le besoin s'en
+  montre) et PIECES-Q2 (avertir) → « LES PIÈCES : LE DOUBLON PROBABLE, LA DATE DÉDUITE, LA VALIDATION EN LOT QUI DIT
+  TOUT (PIECES-Q1, PIECES-Q2, D7) ».
+
+Neuf autres :
+- MVPD7-Q1 : le dossier du premier praticien s'ouvre par la balance de son expert-comptable au 31/12/2024, en tableur
+  (compte, intitulé, débit, crédit), demandée au rendez-vous avec les fiches FEC22-E et 2035-E. Rien à écrire : la page
+  à imprimer « Répétition générale » la demande déjà.
+- PIECES-Q4 : trois lectures à la fois dans « Mes pièces » (le lot P2) ; les quotas de Textract et de Bedrock relevés
+  par le cabinet dans la console AWS (Service Quotas, région de la fonction de lecture), la session n'y appelant rien.
+- PIECES-Q5 : la relecture groupée écrit le fournisseur et les montants d'une pièce à valider dont les trois montants
+  sont vides, jamais d'une autre (le lot P2).
+- C11-Q1 : l'onglet TVA lit les accès du dossier et dit, avant le clic, que la case « Caisse » retient le statut (le
+  lot de la caisse).
+- C11-Q2 : la case « Caisse » se refuse à l'écran sur un dossier tenu en engagement, en le disant, sans migration
+  (l'écran plus strict que la base ; le lot de la caisse).
+- C12A-Q2 : saisie fermée, le praticien ne retire pas ses saisies ; rien ne change.
+- REJETQ1-Q1 : un rejet traité après la validation de l'exercice du paiement ne se rapproche pas de la pièce figée ;
+  rien ne change.
+- REJETQ1-Q2 : un point de la Checklist à lui entre le rejet et la reprise, après le MVP.
+- VEH-Q2 : le traitement du véhicule du premier praticien en 2025 se lira sur la 2035 déposée (cadre 7 et ligne 23), à
+  la répétition générale.
+
+Contre la recommandation, trois :
+- **PIECES-Q3** — « Resserrer ; il n'en émet pas » : le premier praticien n'émet aucune note d'honoraires hors de la
+  télétransmission. Le classement se resserre (le titre « FACTURE » l'emporte sur les mots qui envoyaient une facture
+  dans Documents, et une pièce rangée dans Documents le dit) sans comparer l'émetteur au SIREN du dossier (le lot P2).
+- **C12A-Q1** — « L'ajouter maintenant » : le praticien saisit aussi un mois entier dans « Ma caisse », comme le
+  cabinet, tout ou rien, ses refus dits avant le clic (le lot de la caisse).
+- **C12B-Q1** — « Un seul geste « Corriger » (une migration) » : un paiement en espèces se remplace en une fois ; la
+  migration se prépare et se rejoue sur une réplique, puis se présente au cabinet avant d'être appliquée (le lot de la
+  caisse).
