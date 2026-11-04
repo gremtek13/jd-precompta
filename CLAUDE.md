@@ -1304,6 +1304,14 @@ et `supabase/config.toml` ne porte que `verify_jwt`.
   conceptions et les relectures, maximal pour la base (migrations, fonctions SQL, RLS, gardes), la sécurité et un défaut
   subtil. Elle dit au cabinet, en une ligne, quel agent elle utilise, et garde l'orchestration : commits, demandes de
   fusion, fusion, déploiements, Notion ; un agent d'exécution mécanique ne rend que les chiffres.
+- **L'organisation du travail** (décision du cabinet du 04/11/2026, sur une mesure de la session : les agents font 92 %
+  des appels et relisent en moyenne 390 000 jetons à chacun ; le code, les tests et le SQL de l'application ne sont
+  qu'environ 30 % du texte écrit) : une mission d'agent est courte et ciblée — un objectif, les fichiers à lire nommés,
+  HISTORIQUE.md cherché par `grep`, jamais lu en entier, les sorties de tests réduites, une soixantaine d'étapes au
+  plus ; la vérification est proportionnée — toute la rigueur (réplique, essais rejoués, mutations, banc du leurre) pour
+  la base, la sécurité et les calculs fiscaux, les tests seuls pour un écran, sans programme de vérification jetable ;
+  un lot par thème plutôt qu'un par question, son récit dans HISTORIQUE.md en dix à quinze lignes, la ligne Notion en
+  une phrase → « L'ORGANISATION DU TRAVAIL : MOINS D'À-CÔTÉS, PLUS DE CODE ».
 - Avant toute modification de schéma ou de policy RLS, inspecter l'état réel en base (`list_tables`, `execute_sql`) —
   jamais se fier à ce document ou à une session précédente.
 - Toute nouvelle table métier d'un dossier suit la convention `admin_du_dossier(dossier_id)`, porte `to authenticated`,
@@ -1354,13 +1362,14 @@ et `supabase/config.toml` ne porte que `verify_jwt`.
   il a emporté le code de VF2 → « LA SOURCE DE LA VENTE, EN BASE ».
 - **`main` reste linéaire** (`git rev-list --count --merges origin/main` = 0) et **protégée** : rien n'y arrive sans une
   demande de fusion, fusionnée en « Rebase and merge » quand `verifier` est vert. **C'est la session qui fusionne**
-  (décision du cabinet du 25/09/2026) : elle pousse sur SA branche, ouvre la demande quand la barrière passe en local
-  (`tsc -b`, lint, `test:fuseaux`, build), la fusionne quand `verifier` est vert sur la tête, sans conflit ni fil de
-  revue ouvert, en passant `expectedHeadSha` ; jamais squash ni commit de fusion. Puis elle vérifie la mise en ligne,
-  tient la feuille de route Notion, dit au cabinet ce qui est parti, et réaligne sa branche sur `origin/main` (égalité
-  des arbres, `--force-with-lease`). Une fusion refusée se dit ; jamais de contournement. Une branche qui a fusionné
-  `main` en elle ne se pousse pas telle quelle : on rejoue ses commits à la suite de `main` et l'égalité des arbres se
-  contrôle avant de pousser.
+  (décision du cabinet du 25/09/2026) : elle pousse sur SA branche, ouvre la demande quand la barrière LOCALE passe
+  (`tsc -b`, lint, `npm test -- --changed origin/main --passWithNoTests` ; depuis le 04/11/2026, la suite sous quatre
+  fuseaux et le build ne tournent qu'en ligne), la fusionne quand `verifier`, la barrière complète, est vert sur la
+  tête, sans conflit ni fil de revue ouvert, en passant `expectedHeadSha` ; jamais squash ni commit de fusion. Puis elle
+  vérifie la mise en ligne, tient la feuille de route Notion, dit au cabinet ce qui est parti, et réaligne sa branche
+  sur `origin/main` (égalité des arbres, `--force-with-lease`). Une fusion refusée se dit ; jamais de contournement. Une
+  branche qui a fusionné `main` en elle ne se pousse pas telle quelle : on rejoue ses commits à la suite de `main` et
+  l'égalité des arbres se contrôle avant de pousser.
 - **La Routine quotidienne `trig_011WworgC5Yw9whbjhNq8WA5` est DÉSACTIVÉE** (25/09/2026, décision du cabinet) : elle
   poussait sur `main` pendant qu'une session travaillait sur sa branche. La réactiver est une décision du cabinet, qui
   dira qui écrit sur `main`.
