@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type { EcritureDevis } from './devis'
+import type { ReponseDevis } from './types'
 
 // LES DEUX GESTES D'UN BROUILLON DE DEVIS, PAR LA BASE SEULE (espace client, étape P6a1 ; modèle : lib/contactsEcriture.ts).
 // Aucune policy n'écrit `devis` (hors la restauration du super-administrateur) : `enregistrer_devis` crée, réécrit et émet un
@@ -36,4 +37,36 @@ export async function supprimerBrouillonDevis(dossierId: string, devisId: string
   const { data, error } = await supabase.rpc('supprimer_brouillon_devis', { p_dossier_id: dossierId, p_devis_id: devisId })
   if (error) throw new Error(error.message)
   if (data !== devisId) throw new Error('La base n’a pas rendu le brouillon supprimé : relis la liste avant de recommencer.')
+}
+
+// LES DEUX GESTES D'UN DEVIS ÉMIS (étape P6a2) : répondre (`decider_devis`), puis tirer la facture d'un devis accepté
+// (`facturer_devis`) — chacune avec son accès (`gere_les_ventes`) vérifié avant toute lecture, ses refus dans l'ordre que
+// lib/devis.ts redit avant le clic.
+
+/**
+ * Enregistre la réponse : `decider_devis` seule, qui rend le devis tel qu'elle l'a écrit. `horsValidite` : vrai pour une
+ * acceptation datée après la validité, que l'écran a fait confirmer (`acceptationHorsValidite`), faux sinon.
+ */
+export async function deciderDevis(
+  dossierId: string, devisId: string, reponse: ReponseDevis, date: string, horsValidite: boolean,
+): Promise<void> {
+  const { data, error } = await supabase.rpc('decider_devis', {
+    p_dossier_id: dossierId, p_devis_id: devisId, p_reponse: reponse, p_date: date, p_hors_validite: horsValidite,
+  })
+  if (error) throw new Error(error.message)
+  // `returns public.devis` : une ligne, rendue en objet (ou en liste d'une ligne).
+  const ligne = (Array.isArray(data) ? data[0] : data) as { id?: unknown; reponse?: unknown; date_reponse?: unknown } | null | undefined
+  if (ligne == null || ligne.id !== devisId || ligne.reponse !== reponse || ligne.date_reponse !== date) {
+    throw new Error('La base n’a pas rendu la réponse enregistrée : relis la liste avant de recommencer.')
+  }
+}
+
+/** Tire un brouillon de facture d'un devis accepté : `facturer_devis` seule, qui rend l'identifiant de la facture. */
+export async function facturerDevis(dossierId: string, devisId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('facturer_devis', { p_dossier_id: dossierId, p_devis_id: devisId })
+  if (error) throw new Error(error.message)
+  if (typeof data !== 'string' || data === '') {
+    throw new Error('La base n’a pas rendu la facture tirée du devis : relis la liste avant de recommencer.')
+  }
+  return data
 }

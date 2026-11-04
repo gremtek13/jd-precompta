@@ -694,3 +694,124 @@ export function confirmationDeLaSuppressionDevis(d: Pick<Devis, 'tiers_nom' | 'd
   return `Supprimer le brouillon de devis pour « ${nomDansUnRefus(d.tiers_nom)} » du ${formatDate(d.date_emission)} `
     + `(${formatMoney(d.montant_ttc)} TTC) ? Ses lignes et ses notes partent avec lui ; cette action est irréversible.`
 }
+
+// ── Ce que les écrans de l'étape P6a2 jugent et disent ───────────────────────────────────────────────────────────────
+// La réponse à un devis émis (`decider_devis`), la facture tirée d'un devis accepté (`facturer_devis`), et la liste qui dit
+// cette facture et se cherche. Aucune règle dans l'écran : la réponse se juge ici, sur la saisie TELLE QU'ELLE PART.
+
+/** La réponse telle que la fenêtre la saisit : un choix (vide tant qu'il n'est pas fait) et une date AAAA-MM-JJ. */
+export interface SaisieReponseDevis {
+  reponse: ReponseDevis | ''
+  dateReponse: string
+}
+
+/**
+ * Une acceptation datée APRÈS la fin de validité : la seule réponse dont la confirmation dit qu'elle renouvelle l'offre, et
+ * la seule où `p_hors_validite` part à vrai — jamais pour un refus, jamais dans la validité.
+ */
+export function acceptationHorsValidite(devis: Pick<Devis, 'date_validite'>, s: SaisieReponseDevis): boolean {
+  const date = dateDeLaBase(s.dateReponse)
+  return s.reponse === 'acceptee' && date != null && date > devis.date_validite
+}
+
+/** Ce qui part vers `decider_devis` : la réponse, sa date, et la confirmation hors validité (vraie là seulement). */
+export function decisionDeLaSaisie(devis: Pick<Devis, 'date_validite'>, s: SaisieReponseDevis): DecisionDevis {
+  return {
+    reponse: s.reponse === '' ? null : s.reponse,
+    dateReponse: s.dateReponse === '' ? null : s.dateReponse,
+    horsValidite: acceptationHorsValidite(devis, s),
+  }
+}
+
+/**
+ * Le refus de `decider_devis` sur la réponse TELLE QU'ELLE PART (`decisionDeLaSaisie`) : une acceptation hors validité part
+ * confirmée — la confirmation le dit —, et son refus n'est donc jamais celui-là.
+ */
+export function refusDeLaReponse(
+  dossierId: string,
+  devis: Pick<Devis, 'dossier_id' | 'statut' | 'numero' | 'date_emission' | 'date_validite' | 'reponse' | 'date_reponse'>,
+  s: SaisieReponseDevis,
+  aujourdHui: string,
+): string | null {
+  return refusDecisionDevis(dossierId, devis, decisionDeLaSaisie(devis, s), aujourdHui)?.message ?? null
+}
+
+/** Ce que la fenêtre dit avant le clic d'une acceptation hors validité ; null sinon. */
+export function avisHorsValidite(devis: Pick<Devis, 'date_validite'>, s: SaisieReponseDevis): string | null {
+  if (!acceptationHorsValidite(devis, s)) return null
+  return `Le devis n’était plus valable le ${formatDate(s.dateReponse)} : il l’était jusqu’au ${formatDate(devis.date_validite)}. `
+    + 'L’accepter à cette date, c’est renouveler l’offre : la confirmation le redira.'
+}
+
+const nomDuDevis = (d: Pick<Devis, 'numero' | 'tiers_nom' | 'montant_ttc'>) =>
+  `devis ${d.numero ?? ''} pour « ${nomDansUnRefus(d.tiers_nom)} » (${formatMoney(d.montant_ttc)} TTC)`
+
+/**
+ * La confirmation d'une réponse : elle nomme le devis, le client, la réponse et sa date — et, pour une acceptation datée
+ * après la validité, dit que l'accepter renouvelle l'offre.
+ */
+export function confirmationDeLaReponse(
+  devis: Pick<Devis, 'numero' | 'tiers_nom' | 'montant_ttc' | 'date_validite'>,
+  s: SaisieReponseDevis & { reponse: ReponseDevis },
+): string {
+  const quoi = s.reponse === 'acceptee'
+    ? `l’acceptation du ${nomDuDevis(devis)}, datée du ${formatDate(s.dateReponse)}`
+    : `le refus du ${nomDuDevis(devis)}, daté du ${formatDate(s.dateReponse)}`
+  const renouvelle = acceptationHorsValidite(devis, s)
+    ? `Le devis ${devis.numero ?? ''} n’était plus valable le ${formatDate(s.dateReponse)} : il l’était jusqu’au `
+      + `${formatDate(devis.date_validite)}. L’accepter à cette date, c’est RENOUVELER L’OFFRE : l’émetteur s’engage de nouveau `
+      + 'aux prix et aux conditions du devis. '
+    : ''
+  const suite = s.reponse === 'acceptee' ? ' ; le devis accepté pourra ensuite se transformer en facture.' : '.'
+  return `${renouvelle}Enregistrer ${quoi} ? La réponse ne changera plus${suite}`
+}
+
+/**
+ * La première facture tirée d'un devis — par date du lien, puis identifiant, comme `facturer_devis` la nomme —, ou null.
+ * `factures` : les factures lues du dossier ; une facture liée qu'on n'a pas lue se dit (`lue: false`), son numéro inconnu.
+ */
+export function factureDuDevis(
+  devisId: string,
+  liens: readonly Pick<DevisFacture, 'devis_id' | 'facture_id' | 'cree_le' | 'id'>[],
+  factures: readonly { id: string; numero: string | null }[],
+): { factureId: string; numero: string | null; lue: boolean } | null {
+  const premier = liens
+    .filter((l) => l.devis_id === devisId)
+    .sort((a, b) => a.cree_le.localeCompare(b.cree_le) || a.id.localeCompare(b.id))[0]
+  if (!premier) return null
+  const f = factures.find((x) => x.id === premier.facture_id)
+  return { factureId: premier.facture_id, numero: f?.numero ?? null, lue: f != null }
+}
+
+/** Ce que la liste dit de la facture tirée d'un devis : son numéro, ou « Brouillon de facture » tant qu'elle n'en a pas. */
+export function libelleDeLaFactureTiree(f: { numero: string | null }): string {
+  return f.numero ?? 'Brouillon de facture'
+}
+
+/**
+ * La confirmation de la transformation en facture : ce qui part — un brouillon daté du jour, reprenant le client et ses
+ * mentions, les lignes et les totaux, à l'émetteur du jour —, ce qui ne part pas, et le devis marqué facturé.
+ */
+export function confirmationDeLaFacturation(
+  devis: Pick<Devis, 'numero' | 'tiers_nom' | 'montant_ttc' | 'lignes'>,
+  aujourdHui: string,
+): string {
+  const n = devis.lignes.length
+  return `Transformer le ${nomDuDevis(devis)} en facture ? Un BROUILLON de facture sera créé, daté du ${formatDate(aujourdHui)}, `
+    + `reprenant le client et ses mentions, ${n === 1 ? 'la ligne' : `les ${n} lignes`} et les totaux du devis, à l’émetteur du `
+    + 'jour — l’identité du dossier aujourd’hui, non celle que le devis imprime ; ni l’exécution prévue, ni les mentions '
+    + 'légales, ni les notes du devis. Le devis sera marqué facturé ; le brouillon se relit, se complète et se valide comme '
+    + 'toute facture.'
+}
+
+/** Ce qu'une recherche lit d'un devis : ce que sa ligne montre (numéro, date, client, objet, total, état, facture tirée). */
+export function champsDeRechercheDuDevis(
+  d: Pick<Devis, 'numero' | 'date_emission' | 'tiers_nom' | 'objet' | 'montant_ttc'>,
+  etat: EtatDevis,
+  factureTiree: { numero: string | null } | null,
+): (string | number | null)[] {
+  return [
+    d.numero ?? 'Brouillon', d.date_emission, formatDate(d.date_emission), d.tiers_nom, d.objet, d.montant_ttc,
+    LIBELLES_ETAT_DEVIS[etat], factureTiree ? libelleDeLaFactureTiree(factureTiree) : null,
+  ]
+}

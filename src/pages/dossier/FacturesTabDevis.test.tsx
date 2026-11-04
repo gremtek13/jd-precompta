@@ -5,6 +5,7 @@ import { facture as factureCii, SIRET_VENDEUR } from '../../test/facturesCii'
 import { devis, lienDevisFacture } from '../../test/devis'
 import type { FactureEmise } from '../../lib/types'
 import { NON_BASCULE } from '../../test/factures'
+import { motsDuCabinet } from '../../lib/espaceVentes'
 
 // LA VUE « DEVIS » DANS L'ONGLET FACTURES (espace client, étape P6a1), avec la VRAIE vue et son faux client, qui APPLIQUE les
 // filtres et annonce un compte. Ce que ces cas gardent, dans les deux espaces : le drapeau d'export (`DEVIS_EXPORTES`) décide
@@ -41,6 +42,19 @@ vi.mock('../../lib/supabase', async () => {
           return { data: [{ devis_id: args.p_devis_id ?? 'dv-neuf', numero: args.p_emettre ? 'D2026-0002' : null }], error: null }
         }
         if (nom === 'supprimer_brouillon_devis') return { data: args.p_devis_id, error: null }
+        // La réponse (étape P6a2) : le devis réécrit, rendu tel quel.
+        if (nom === 'decider_devis') {
+          const d = faux.tables.devis.find((x) => x.id === args.p_devis_id) as Record<string, unknown>
+          Object.assign(d, { reponse: args.p_reponse, date_reponse: args.p_date })
+          return { data: { ...d }, error: null }
+        }
+        // La facture tirée d'un devis accepté : un brouillon, et son lien.
+        if (nom === 'facturer_devis') {
+          const d = faux.tables.devis.find((x) => x.id === args.p_devis_id) as Record<string, unknown>
+          faux.tables.factures_emises.push({ ...faux.tables.factures_emises[0], id: 'f-tiree', numero: null, statut: 'brouillon', tiers_nom: d.tiers_nom })
+          faux.tables.devis_factures.push({ ...lienDevisFacture({ id: 'df-tiree', devis_id: String(d.id), facture_id: 'f-tiree' }) })
+          return { data: 'f-tiree', error: null }
+        }
         return { data: {}, error: null }
       },
       functions: {
@@ -182,9 +196,14 @@ describe.each(['cabinet', 'client'] as const)('Devis dans l’onglet Factures �
     const emis = ligneDe(tableau, 'D2026-0001')
     expect(emis.textContent).toContain('Émis — en attente de réponse')
     expect(emis.textContent?.replace(/\s/g, ' ')).toContain('600,00 €')
-    expect(within(emis).queryByRole('button')).toBeNull()
+    // Émis sans réponse : la réponse seule (étape P6a2).
+    expect(within(emis).getAllByRole('button').map((b) => b.textContent)).toEqual(['Enregistrer la réponse'])
     expect(ligneDe(tableau, 'D2026-0002').textContent).toContain('Expiré')
-    expect(ligneDe(tableau, 'D2026-0003').textContent).toContain('Facturé')
+    // Facturé : sa facture dite, et aucun geste.
+    const facture = ligneDe(tableau, 'D2026-0003')
+    expect(facture.textContent).toContain('Facturé')
+    expect(within(facture).getByText('F2026-0001')).toBeTruthy()
+    expect(within(facture).queryByRole('button')).toBeNull()
     expect(screen.queryByText('Autre Dossier Fictif')).toBeNull()
     expect(faux.lectures).toEqual(expect.arrayContaining(['devis', 'devis_factures']))
   })
@@ -316,6 +335,178 @@ describe.each(['cabinet', 'client'] as const)('Devis dans l’onglet Factures �
     })
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(faux.appels.map((a) => a.nom)).toEqual(['enregistrer_devis'])
+  })
+})
+
+// L'ÉTAPE P6a2 : la réponse à un devis émis, la facture tirée d'un devis accepté, la facture dite dans la liste et la recherche.
+// Au client, aucune confirmation ne porte un mot du cabinet.
+const sansMotsDuCabinet = (espace: 'cabinet' | 'client', texte: string) => {
+  if (espace === 'client') expect(motsDuCabinet(texte)).toEqual([])
+}
+// Un devis accepté sans facture, ajouté au jeu de la vue.
+const ACCEPTE = devis({
+  id: 'dv5', numero: 'D2026-0004', statut: 'emis', reponse: 'acceptee', date_reponse: '2026-10-25', tiers_nom: 'Accepté Fictif',
+  date_emission: '2026-10-15', date_validite: '2026-11-15', cree_le: '2026-10-15T08:00:00Z',
+})
+
+describe.each(['cabinet', 'client'] as const)('Devis — répondre et facturer (P6a2) — %s', (espace) => {
+  async function repondreA(numero: string) {
+    await monter(espace)
+    vers('Devis')
+    const tableau = await screen.findByRole('table', { name: 'Devis' })
+    fireEvent.click(within(ligneDe(tableau, numero)).getByRole('button', { name: 'Enregistrer la réponse' }))
+    return screen.getByRole('dialog')
+  }
+  const choisir = (fenetre: HTMLElement, reponse: 'Accepté' | 'Refusé') => fireEvent.click(within(fenetre).getByLabelText(reponse))
+  const bouton = (fenetre: HTMLElement) => within(fenetre).getByRole('button', { name: 'Enregistrer la réponse' }) as HTMLButtonElement
+
+  it('dans la validité : la date proposée au jour, la confirmation nomme le devis, le client, la réponse et sa date ; hors validité à faux', async () => {
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const fenetre = await repondreA('D2026-0001')
+    expect((within(fenetre).getByLabelText('Date de la réponse') as HTMLInputElement).value).toBe('2026-11-04')
+    // Aucun choix : le refus de la base, avant le clic.
+    expect(within(fenetre).getByText('La réponse au devis est « acceptée » ou « refusée ».')).toBeTruthy()
+    expect(bouton(fenetre).disabled).toBe(true)
+    choisir(fenetre, 'Accepté')
+    expect(bouton(fenetre).disabled).toBe(false)
+    fireEvent.click(bouton(fenetre))
+    const texte = confirmer.mock.calls[0][0] as string
+    expect(texte).toContain('l’acceptation du devis D2026-0001 pour « Émis Fictif SAS »')
+    expect(texte).toContain('datée du 04/11/2026')
+    expect(texte).not.toContain('RENOUVELER')
+    sansMotsDuCabinet(espace, texte)
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(faux.appels).toEqual([{
+      nom: 'decider_devis',
+      args: { p_dossier_id: 'd1', p_devis_id: 'dv2', p_reponse: 'acceptee', p_date: '2026-11-04', p_hors_validite: false },
+    }])
+    expect(screen.getByRole('status').textContent).toBe('Réponse au devis D2026-0001 enregistrée : accepté le 04/11/2026.')
+    // Relue : le devis est accepté, et se transforme.
+    const ligne = ligneDe(screen.getByRole('table', { name: 'Devis' }), 'D2026-0001')
+    expect(ligne.textContent).toContain('Accepté')
+    expect(within(ligne).getByRole('button', { name: 'Transformer en facture' })).toBeTruthy()
+  })
+
+  it('hors validité : un refus part à faux ; une acceptation se dit avant le clic, la confirmation dit qu’elle renouvelle l’offre, et part à vrai', async () => {
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const fenetre = await repondreA('D2026-0002')
+    choisir(fenetre, 'Refusé')
+    expect(within(fenetre).queryByText(/n’était plus valable/)).toBeNull()
+    fireEvent.click(bouton(fenetre))
+    const refus = confirmer.mock.calls[0][0] as string
+    expect(refus).toContain('le refus du devis D2026-0002 pour « Expiré Fictif »')
+    expect(refus).not.toContain('RENOUVELER')
+    expect(faux.appels).toHaveLength(0)
+    choisir(fenetre, 'Accepté')
+    expect(within(fenetre).getByText(/Le devis n’était plus valable le 04\/11\/2026 : il l’était jusqu’au 01\/10\/2026/)).toBeTruthy()
+    // Hors validité, l'acceptation n'est pas refusée : elle se confirme.
+    expect(bouton(fenetre).disabled).toBe(false)
+    confirmer.mockReturnValue(true)
+    fireEvent.click(bouton(fenetre))
+    const texte = confirmer.mock.calls[1][0] as string
+    expect(texte).toContain('n’était plus valable le 04/11/2026 : il l’était jusqu’au 01/10/2026')
+    expect(texte).toContain('c’est RENOUVELER L’OFFRE')
+    expect(texte).toContain('l’acceptation du devis D2026-0002 pour « Expiré Fictif »')
+    sansMotsDuCabinet(espace, texte)
+    await vi.waitFor(() => expect(faux.appels).toHaveLength(1))
+    expect(faux.appels[0].args).toMatchObject({ p_devis_id: 'dv3', p_reponse: 'acceptee', p_hors_validite: true })
+  })
+
+  it('les refus se disent avant le clic, sur la date telle qu’elle part : ni avant le devis, ni dans l’avenir', async () => {
+    const fenetre = await repondreA('D2026-0001')
+    choisir(fenetre, 'Refusé')
+    const dater = (v: string) => fireEvent.change(within(fenetre).getByLabelText('Date de la réponse'), { target: { value: v } })
+    dater('2026-10-19')
+    expect(within(fenetre).getByText('Une réponse ne précède pas le devis, daté du 20/10/2026.')).toBeTruthy()
+    expect(bouton(fenetre).disabled).toBe(true)
+    dater('2026-11-05')
+    expect(within(fenetre).getByText(/Une réponse ne se date pas dans l'avenir : nous sommes le 04\/11\/2026\./)).toBeTruthy()
+    expect(bouton(fenetre).disabled).toBe(true)
+    dater('')
+    expect(within(fenetre).getByText('La date de la réponse est à renseigner.')).toBeTruthy()
+    expect(faux.appels).toHaveLength(0)
+  })
+
+  it('deux clics du même act sur « Enregistrer la réponse » n’écrivent qu’une fois', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const fenetre = await repondreA('D2026-0001')
+    choisir(fenetre, 'Refusé')
+    act(() => {
+      fireEvent.click(bouton(fenetre))
+      fireEvent.click(bouton(fenetre))
+    })
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(faux.appels.map((a) => a.nom)).toEqual(['decider_devis'])
+  })
+
+  it('la transformation se confirme en disant ce qui part ; puis la liste relue mène au brouillon tiré', async () => {
+    faux.tables.devis.push({ ...ACCEPTE })
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await monter(espace)
+    vers('Devis')
+    const tableau = await screen.findByRole('table', { name: 'Devis' })
+    const transformer = within(ligneDe(tableau, 'D2026-0004')).getByRole('button', { name: 'Transformer en facture' })
+    fireEvent.click(transformer)
+    const texte = confirmer.mock.calls[0][0] as string
+    expect(texte).toContain('Transformer le devis D2026-0004 pour « Accepté Fictif »')
+    expect(texte).toContain('BROUILLON de facture sera créé, daté du 04/11/2026')
+    expect(texte).toContain('le client et ses mentions, la ligne et les totaux du devis')
+    expect(texte).toContain('à l’émetteur du jour')
+    expect(texte).toContain('Le devis sera marqué facturé')
+    sansMotsDuCabinet(espace, texte)
+    expect(faux.appels).toHaveLength(0)
+    confirmer.mockReturnValue(true)
+    act(() => {
+      fireEvent.click(transformer)
+      fireEvent.click(transformer)
+    })
+    // Le brouillon tiré s'ouvre, dans la vue « Factures », relue.
+    expect(await screen.findByText('Modifier le brouillon')).toBeTruthy()
+    expect(faux.appels).toEqual([{ nom: 'facturer_devis', args: { p_dossier_id: 'd1', p_devis_id: 'dv5' } }])
+    expect(screen.getByRole('tab', { name: 'Factures' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('le refus de la transformation se dit, et rien n’est ouvert', async () => {
+    faux.tables.devis.push({ ...ACCEPTE })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    faux.refus = { message: 'Le devis D2026-0004 a déjà sa facture (F2026-0007) : un devis se transforme une fois.' }
+    await monter(espace)
+    vers('Devis')
+    const tableau = await screen.findByRole('table', { name: 'Devis' })
+    fireEvent.click(within(ligneDe(tableau, 'D2026-0004')).getByRole('button', { name: 'Transformer en facture' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Le devis D2026-0004 a déjà sa facture (F2026-0007) : un devis se transforme une fois.')
+    expect(screen.getByRole('tab', { name: 'Devis' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByText('Modifier le brouillon')).toBeNull()
+  })
+
+  it.each(['devis_factures', 'factures_emises'])('lue en partie (« %s ») : ni réponse ni transformation', async (table) => {
+    faux.tables.devis.push({ ...ACCEPTE })
+    faux.manquantes[table] = 1
+    await monter(espace)
+    vers('Devis')
+    await screen.findByRole('table', { name: 'Devis' })
+    expect(screen.getByText(/Aucun geste n’est donc offert/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Enregistrer la réponse' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Transformer en facture' })).toBeNull()
+  })
+
+  it('la recherche filtre l’affichage seul : le compte lit la liste entière, et le vide ne se dit pas du dossier', async () => {
+    await monter(espace)
+    vers('Devis')
+    await screen.findByRole('table', { name: 'Devis' })
+    const barre = screen.getByRole('searchbox')
+    fireEvent.change(barre, { target: { value: 'expire' } })
+    const tableau = screen.getByRole('table', { name: 'Devis' })
+    expect(within(tableau).getAllByRole('row')).toHaveLength(2)
+    expect(within(tableau).getByText('Expiré Fictif')).toBeTruthy()
+    expect(screen.getByText('1 sur 4')).toBeTruthy()
+    // La facture tirée se cherche aussi.
+    fireEvent.change(barre, { target: { value: 'F2026-0001' } })
+    expect(within(screen.getByRole('table', { name: 'Devis' })).getByText('Facturé Fictif')).toBeTruthy()
+    fireEvent.change(barre, { target: { value: 'introuvable' } })
+    expect(screen.getByText('Aucun devis ne correspond à la recherche.')).toBeTruthy()
+    expect(screen.queryByText(/aucun devis\.|Aucun devis pour ce dossier/)).toBeNull()
+    expect(screen.getByText('aucun résultat')).toBeTruthy()
   })
 })
 

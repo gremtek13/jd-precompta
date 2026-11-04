@@ -1,25 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import BarreRecherche from '../../components/BarreRecherche'
+import { correspondALaRecherche } from '../../lib/recherche'
 import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace, type EspaceVentes } from '../../lib/espaceVentes'
 import {
-  LIBELLES_ETAT_DEVIS, confirmationDeLEmission, confirmationDeLaSuppressionDevis, ecritureDuDevis, etatDuDevis, factureTireeDe,
-  lignesSaisiesDuDevis, refusDeLaSaisieDevis, refusSuppressionDevis, saisieDuDevis, type CibleDevis, type EmissionAJuger, type EtatDevis,
-  type SaisieDevis,
+  LIBELLES_ETAT_DEVIS, champsDeRechercheDuDevis, confirmationDeLaFacturation, confirmationDeLaReponse, confirmationDeLEmission,
+  confirmationDeLaSuppressionDevis, decisionDeLaSaisie, ecritureDuDevis, etatDuDevis, factureDuDevis, factureTireeDe,
+  libelleDeLaFactureTiree, lignesSaisiesDuDevis, refusDeLaReponse, refusDeLaSaisieDevis, refusFacturationDevis, refusSuppressionDevis,
+  saisieDuDevis, type CibleDevis, type EmissionAJuger, type EtatDevis, type SaisieDevis, type SaisieReponseDevis,
 } from '../../lib/devis'
 import { lireLesDevis, type LectureDesDevis } from '../../lib/devisLecture'
-import { enregistrerDevis, supprimerBrouillonDevis } from '../../lib/devisEcriture'
+import { deciderDevis, enregistrerDevis, facturerDevis, supprimerBrouillonDevis } from '../../lib/devisEcriture'
 import type { ArticleExoneration, Devis, StatutTva } from '../../lib/types'
+import DevisReponseModal from './DevisReponseModal'
 import DevisSaisieModal from './DevisSaisieModal'
 
 // « DEVIS » (espace client, étape P6a1 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU
 // CLIENT : LA CONCEPTION », §2.3 et §4.3) : la liste des devis du dossier et les gestes d'un brouillon — créer, modifier,
 // émettre, supprimer. La vue « Devis » de l'onglet Factures, au cabinet dans l'onglet, au client « Ventes » dans « Mes
-// ventes », offerte seulement quand les migrations des devis sont en base (`DEVIS_EXPORTES`, FacturesTab). Répondre à un
-// devis, le transformer en facture, l'aperçu et l'e-mail viennent ensuite (étape P6a2).
+// ventes », offerte seulement quand les migrations des devis sont en base (`DEVIS_EXPORTES`, FacturesTab). Puis (étape P6a2) :
+// répondre à un devis émis (`decider_devis`), transformer un devis accepté en facture (`facturer_devis`) — l'onglet ouvre alors
+// le brouillon tiré (`onOuvrirFacture`) —, la facture tirée dite dans la liste, et une recherche qui ne filtre que l'affichage.
+// L'aperçu et l'e-mail viennent ensuite.
 //
-// QUI ÉCRIT : le cabinet ET le client « Ventes », par les mêmes fonctions (`enregistrer_devis`, `supprimer_brouillon_devis`) ;
+// QUI ÉCRIT : le cabinet ET le client « Ventes », par les mêmes fonctions (`enregistrer_devis`, `supprimer_brouillon_devis`,
+// `decider_devis`, `facturer_devis`) ;
 // ce qu'elles refuseraient se dit avant le clic par lib/devis.ts, et la base juge encore — son refus se dit sous ses mots,
 // réécrits pour le client (`pourLEspace`).
 //
@@ -37,6 +44,8 @@ type Props = {
   dossierAdresse: string | null
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
+  // Mène au brouillon de facture tiré d'un devis, par le chemin que l'onglet Factures offre pour ouvrir une facture.
+  onOuvrirFacture: (factureId: string) => void
 }
 
 // La fenêtre ouverte : un devis neuf (`devis` nul) ou le brouillon tel que la liste l'a lu.
@@ -59,6 +68,9 @@ export default function DevisVue(props: Props) {
   const dire = (texte: string) => pourLEspace(espace, texte)
   const [lecture, setLecture] = useState<LectureDesDevis | null>(null)
   const [fenetre, setFenetre] = useState<Fenetre | null>(null)
+  // Le devis auquel on répond, tel que la liste l'a lu.
+  const [reponseA, setReponseA] = useState<Devis | null>(null)
+  const [recherche, setRecherche] = useState('')
   const [occupe, setOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const [erreurFenetre, setErreurFenetre] = useState<string | null>(null)
@@ -93,7 +105,7 @@ export default function DevisVue(props: Props) {
     )
   }
 
-  const { devis, liens, complete, motif } = courante
+  const { devis, liens, factures, complete, motif } = courante
   // Aucun geste ne part d'une liste lue en partie.
   const peutEcrire = complete
   // L'émetteur que la base lira, lu avec les devis (une lecture complète le porte), et qui émet : le cabinet du dossier
@@ -101,8 +113,15 @@ export default function DevisVue(props: Props) {
   const emission: EmissionAJuger | null = lecture?.etat === 'lue' && lecture.complete && lecture.emetteur
     ? { dossier: lecture.emetteur, cabinet: espace === 'cabinet' } : null
   // Le plus récent d'abord : la date du devis, puis sa création.
-  const affiches = [...devis].sort((a, b) =>
+  const tries = [...devis].sort((a, b) =>
     b.date_emission.localeCompare(a.date_emission) || b.cree_le.localeCompare(a.cree_le) || b.id.localeCompare(a.id))
+  // Chaque devis avec son état et la facture tirée de lui (la première, comme la base la nomme).
+  const lignes = tries.map((d) => ({
+    d, facture: factureDuDevis(d.id, liens, factures), etat: etatDuDevis(d, factureTireeDe(d.id, liens), aujourdHui),
+  }))
+  // La recherche ne filtre que l'AFFICHAGE : le compte de la barre et tout jugement lisent la liste entière.
+  const affiches = lignes.filter(({ d, etat, facture }) =>
+    correspondALaRecherche(champsDeRechercheDuDevis(d, etat, facture), recherche))
 
   // Le verrou des gestes. Posé avant le `try` : dans le `try`, le `return` du deuxième clic sortirait par le `finally` et
   // relâcherait le verrou du PREMIER, encore en cours.
@@ -163,11 +182,55 @@ export default function DevisVue(props: Props) {
     }, setErreur)
   }
 
+  async function repondre(d: Devis, saisie: SaisieReponseDevis) {
+    if (gesteEnCours.current) return
+    // Seconde ceinture : le bouton est déjà grisé sous ce refus.
+    const refus = refusDeLaReponse(dossierId, d, saisie, aujourdHui)
+    if (refus || saisie.reponse === '') {
+      if (refus) setErreurFenetre(dire(refus))
+      return
+    }
+    const reponse = saisie.reponse
+    if (!window.confirm(dire(confirmationDeLaReponse(d, { ...saisie, reponse })))) return
+    // `p_hors_validite` part à vrai pour une acceptation datée après la validité, que la confirmation a dite — là seulement.
+    const { horsValidite } = decisionDeLaSaisie(d, saisie)
+    const fait = await sousVerrou('La réponse au devis n’a pas pu être enregistrée.', async () => {
+      await deciderDevis(dossierId, d.id, reponse, saisie.dateReponse, horsValidite)
+      return `Réponse au devis ${d.numero ?? ''} enregistrée : ${reponse === 'acceptee' ? 'accepté' : 'refusé'} le `
+        + `${formatDate(saisie.dateReponse)}.`
+    }, setErreurFenetre)
+    if (fait) setReponseA(null)
+  }
+
+  async function transformer(d: Devis, facture: { numero: string | null } | null) {
+    if (gesteEnCours.current) return
+    const refus = refusFacturationDevis(dossierId, d, facture)
+    if (refus) {
+      setErreur(dire(refus.message))
+      return
+    }
+    if (!window.confirm(dire(confirmationDeLaFacturation(d, aujourdHui)))) return
+    const tiree: { factureId: string | null } = { factureId: null }
+    const fait = await sousVerrou('Le devis n’a pas pu être transformé en facture.', async () => {
+      tiree.factureId = await facturerDevis(dossierId, d.id)
+      return `Brouillon de facture tiré du devis ${d.numero ?? ''}.`
+    }, setErreur)
+    // Relue, la liste dit le devis facturé ; puis le brouillon s'ouvre, par le chemin de l'onglet — sous le même dossier.
+    if (fait && tiree.factureId != null && dossierAffiche.current === dossierId) props.onOuvrirFacture(tiree.factureId)
+  }
+
   function ouvrir(d: Devis | null) {
     setErreur(null)
     setErreurFenetre(null)
     setMessage(null)
     setFenetre({ devis: d })
+  }
+
+  function ouvrirLaReponse(d: Devis) {
+    setErreur(null)
+    setErreurFenetre(null)
+    setMessage(null)
+    setReponseA(d)
   }
 
   const defauts = { aujourdHui, statutTva, articleExoneration }
@@ -193,28 +256,41 @@ export default function DevisVue(props: Props) {
         </div>
       )}
 
+      {lignes.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <BarreRecherche
+            valeur={recherche}
+            onChange={setRecherche}
+            placeholder="Rechercher un numéro, un client, un montant…"
+            affiches={affiches.length}
+            total={lignes.length}
+          />
+        </div>
+      )}
+
       {erreur && <p className="error-text" role="alert">{erreur}</p>}
       {message && <p className="muted" role="status">{message}</p>}
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {affiches.length === 0 ? (
           <div className="empty-state">
-            {!complete ? 'La liste des devis n’a pas pu être lue en entier.'
-              : espace === 'client' ? 'Tu n’as encore aucun devis.' : 'Aucun devis pour ce dossier.'}
+            {lignes.length > 0 ? 'Aucun devis ne correspond à la recherche.'
+              : !complete ? 'La liste des devis n’a pas pu être lue en entier.'
+                : espace === 'client' ? 'Tu n’as encore aucun devis.' : 'Aucun devis pour ce dossier.'}
           </div>
         ) : (
           <div className="tableau-adaptable">
             <table className="table-empilable table-empilable-en-carte" aria-label="Devis">
               <thead>
                 <tr>
-                  <th>Numéro</th><th>Date</th><th>Client</th><th>Montant TTC</th><th>État</th>
+                  <th>Numéro</th><th>Date</th><th>Client</th><th>Montant TTC</th><th>État</th><th>Facture</th>
                   {peutEcrire && <th></th>}
                 </tr>
               </thead>
               <tbody>
-                {affiches.map((d) => {
-                  const etat = etatDuDevis(d, factureTireeDe(d.id, liens), aujourdHui)
+                {affiches.map(({ d, etat, facture }) => {
                   const brouillon = d.statut === 'brouillon'
+                  const sansReponse = etat === 'en_attente' || etat === 'expire'
                   return (
                     <tr key={d.id}>
                       <td data-libelle="Numéro">{d.numero ?? 'Brouillon'}</td>
@@ -224,6 +300,7 @@ export default function DevisVue(props: Props) {
                       <td data-libelle="État">
                         <span className={`badge badge-une-ligne ${CLASSE_ETAT[etat]}`}>{LIBELLES_ETAT_DEVIS[etat]}</span>
                       </td>
+                      <td data-libelle="Facture">{facture ? libelleDeLaFactureTiree(facture) : '—'}</td>
                       {peutEcrire && (
                         <td className="td-actions">
                           {brouillon && (
@@ -233,6 +310,16 @@ export default function DevisVue(props: Props) {
                                 Supprimer le brouillon
                               </button>
                             </>
+                          )}
+                          {sansReponse && (
+                            <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => ouvrirLaReponse(d)}>
+                              Enregistrer la réponse
+                            </button>
+                          )}
+                          {etat === 'accepte' && (
+                            <button type="button" className="btn btn-primary btn-sm" disabled={occupe} onClick={() => transformer(d, facture)}>
+                              Transformer en facture
+                            </button>
                           )}
                         </td>
                       )}
@@ -260,6 +347,20 @@ export default function DevisVue(props: Props) {
           erreur={erreurFenetre}
           onClose={() => setFenetre(null)}
           onEnregistrer={(saisie, emettre) => enregistrer(saisie, emettre, fenetre.devis)}
+        />
+      )}
+
+      {reponseA && peutEcrire && (
+        <DevisReponseModal
+          key={reponseA.id}
+          espace={espace}
+          dossierId={dossierId}
+          devis={reponseA}
+          aujourdHui={aujourdHui}
+          occupe={occupe}
+          erreur={erreurFenetre}
+          onClose={() => setReponseA(null)}
+          onRepondre={(saisie) => repondre(reponseA, saisie)}
         />
       )}
     </>
