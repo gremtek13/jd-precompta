@@ -335,7 +335,7 @@ describe('CotisationsTab — l’échéance payée depuis le compte personnel', 
     monter(TRESORERIE, [2025])
 
     const ligneDe = async (texte: string) => (await screen.findByText(texte)).closest('tr')!
-    expect((await ligneDe('Payée depuis le compte personnel le 05/01/2026')).querySelector('.td-boutons button')?.textContent).toBe('Retirer')
+    expect((await ligneDe('Payée depuis le compte personnel le 05/01/2026')).querySelector('.td-boutons button.btn-danger')?.textContent).toBe('Retirer')
     const figee = await ligneDe('Payée depuis le compte personnel le 30/12/2025')
     expect(figee.querySelector('.td-boutons button')).toBeNull()
     expect(figee.textContent).toContain('Figée')

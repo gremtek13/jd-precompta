@@ -236,6 +236,7 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   // Le social, et les appels attendus de chaque exercice (« Appels de cotisation AAAA »).
   'cotisations-sans-ecriture': 'social',
   'cotisations-rapprochement-refuse': 'social',
+  'cotisations-classees-par-categorie': 'social',
   'csg-non-saisie': 'social',
   'paiements-personnels-a-reprendre': 'social',
   'previsionnelles-sans-paiement': 'social',

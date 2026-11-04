@@ -125,6 +125,13 @@ const factureEmise = (o: Partial<FacturePourJumelle> = {}): FacturePourJumelle =
   emetteur_siret: '12345678900012', superpdp_invoice_id: 4242, ...o,
 })
 
+// Une catégorie que le cabinet aurait créée pour classer les prélèvements de l'Urssaf, au poste même des échéances de l'onglet
+// Cotisations (COT-Q2) : la 2035 les compte en BK pour leur montant entier, CSG-CRDS comprise.
+const URSSAF_EN_CATEGORIE: Categorie = {
+  id: 'c-urssaf', dossier_id: 'd1', code: 'urssaf', libelle: 'Urssaf', ordre: 3, compte_comptable: '646000',
+  poste_2035: 'Cotisations sociales personnelles',
+}
+
 const P1 = piece('p1')
 const L1 = ligne('l1', { piece_id: 'p1' })
 const E1 = ecriture('e1')
@@ -823,6 +830,11 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         tva_declaree: 200, tva_collectee: 200, cases: { l16: 200, l28: 200, l32: 200 },
       })],
     })],
+    // COT-Q2 : un prélèvement de l'Urssaf affecté à une catégorie au poste des échéances de l'onglet Cotisations.
+    ['cotisations-classees-par-categorie', (a) => ({
+      categories: [ACHATS, URSSAF_EN_CATEGORIE],
+      lignes: [L1, ligne('l2', { categorie_id: URSSAF_EN_CATEGORIE.id, date: D(a, '04-05'), montant: -800, libelle: 'PRLV URSSAF' })],
+    })],
     ['paiements-tva-perimes', (a) => ({
       lignes: [L1, ligne('l2', { date: D(a, '04-20'), montant: -200, declaration_tva_id: 'dt1' })],
     })],
@@ -1056,6 +1068,61 @@ describe('prealablesDeValidation — l’exemplaire d’une facture source (VF6a
 // bloque plus la validation — la 2035 la compte au jour du paiement, son écriture la porte ce jour-là, la concordance les
 // trouve d'accord, et la numérotation la range au journal des opérations diverses. Avant elle, une échéance payée de la
 // poche de l'exploitant restait en écart, sans geste pour le lever.
+// COT-Q2 (relecture du 03/11/2026, D2 ; écrite sur la recommandation le 04/11/2026) : un prélèvement de cotisations classé par
+// une catégorie au poste « Cotisations sociales personnelles » garde sa CSG-CRDS entière en BK, et la part non déductible
+// serait déduite sur la 2035 validée. La validation le refuse, et nomme chaque mouvement.
+describe('prealablesDeValidation — un prélèvement de cotisations classé par une catégorie', () => {
+  const MESSAGE = "mouvement(s) de cotisations classé(s) par une catégorie au poste « Cotisations sociales personnelles » — la 2035 les "
+    + "compte en BK CSG-CRDS comprise, sa part non déductible déduite : annuler ce classement dans Banque, puis les rapprocher "
+    + "d'une échéance de l'onglet Cotisations, où leur CSG-CRDS se saisit."
+  const prelevement = (id: string, o: Partial<LigneBancaire> = {}) =>
+    ligne(id, { categorie_id: URSSAF_EN_CATEGORIE.id, date: '2025-04-05', montant: -800, libelle: 'PRLV URSSAF', ...o })
+
+  it('retient la validation, et nomme les mouvements, affectés ou ventilés, date et montant', () => {
+    const d = donnees({
+      categories: [ACHATS, URSSAF_EN_CATEGORIE],
+      lignes: [
+        L1, prelevement('l2'),
+        // Un remboursement classé de même : sa CSG-CRDS resterait en BV.
+        prelevement('l3', { date: '2025-10-15', montant: 500 }),
+        // Ventilé, avec une part sur la catégorie : nommé une fois.
+        ligne('l4', { date: '2025-06-05', montant: -900, ventilee: true }),
+      ],
+      ventilations: [part('v1', 'l4', URSSAF_EN_CATEGORIE.id, -800), part('v2', 'l4', 'c-achats', -100)],
+    })
+    expect(prealable(d, 'cotisations-classees-par-categorie')).toEqual({
+      id: 'cotisations-classees-par-categorie', nb: 3, cible: 'banque', bloquant: true, message: MESSAGE,
+      detail: `Le prélèvement du 05/04/2025 (${formatMoney(800)}, catégorie « Urssaf ») ; le prélèvement du 05/06/2025 `
+        + `(${formatMoney(900)}, ventilé dans « Urssaf ») ; le remboursement du 15/10/2025 (${formatMoney(500)}, catégorie « Urssaf »).`,
+    })
+    expect(prealablesDeValidation(d).validable).toBe(false)
+  })
+
+  it('reconnaît le poste à la clé du rattachement, comme la 2035 le range', () => {
+    const casse = { ...URSSAF_EN_CATEGORIE, poste_2035: 'cotisations sociales PERSONNELLES' }
+    expect(prealable(donnees({ categories: [ACHATS, casse], lignes: [L1, prelevement('l2')] }), 'cotisations-classees-par-categorie')?.nb).toBe(1)
+  })
+
+  it('ne dit rien d’une échéance rapprochée, ni du poste générique, ni d’une autre catégorie — le garde symétrique', () => {
+    // Le chemin juste : le prélèvement rapproché d'une échéance de l'onglet.
+    expect(ids(donnees({ lignes: [L1, ligne('l2', { cotisation_id: 'k1', date: '2025-04-05', montant: -800 })], cotisations: [echeance('k1', '2025-04-05', 800)] })))
+      .not.toContain('cotisations-classees-par-categorie')
+    // « Charges sociales personnelles » : sa part sans nature dite est une autre question (2035S-Q2, (A)), dite par Clôture.
+    const generique = { ...URSSAF_EN_CATEGORIE, poste_2035: 'Charges sociales personnelles' }
+    expect(ids(donnees({ categories: [ACHATS, generique], lignes: [L1, prelevement('l2')] }))).not.toContain('cotisations-classees-par-categorie')
+    const madelin = { ...URSSAF_EN_CATEGORIE, poste_2035: 'Cotisations facultatives Madelin' }
+    expect(ids(donnees({ categories: [ACHATS, madelin], lignes: [L1, prelevement('l2')] }))).not.toContain('cotisations-classees-par-categorie')
+  })
+
+  it('se tait en engagement, qui ne produit pas de 2035, et sur un autre exercice', () => {
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+    expect(ids(donnees({ modele: engagement, categories: [ACHATS, URSSAF_EN_CATEGORIE], lignes: [L1, prelevement('l2')] })))
+      .not.toContain('cotisations-classees-par-categorie')
+    expect(ids(donnees({ categories: [ACHATS, URSSAF_EN_CATEGORIE], lignes: [L1, prelevement('l2', { date: '2026-01-05' })] })))
+      .not.toContain('cotisations-classees-par-categorie')
+  })
+})
+
 describe('prealablesDeValidation — une échéance payée depuis le compte personnel', () => {
   const payee: CotisationDeclaree = { ...echeance('c1', '2025-05-05', 500), montant_csg_crds: 48.5, paiement_personnel_le: '2025-05-10' }
   const ecrite = ecritureDuPaiementPersonnel(payee, { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT })

@@ -46939,3 +46939,92 @@ restent verts sans être affaiblis.
 
 **LA MUTATION.** Le compte du préalable rendu nul (`0 × …`) : le test de `prealablesValidation.test.ts` et celui de
 `ClotureTab.test.tsx` tombent tous deux, le reste de leurs fichiers reste vert ; remis, tout repasse.
+
+### 04/11/2026 — LES COTISATIONS : RÉUNIR, MODIFIER, ET LE PRÉLÈVEMENT CLASSÉ PAR UNE CATÉGORIE (COT-Q1 À Q3)
+
+**CE QUI CHANGE.** Les trois autres défauts de la relecture des cotisations sociales (MVP-D6), sur les recommandations
+de la page des arbitrages (le cabinet a dit de continuer et d'arbitrer plus tard : écrites « sur la recommandation »).
+Du code seul : aucune migration, aucune fonction SQL, aucune Edge Function. Les règles et les mots vivent dans deux
+modules purs, `lib/gestesDesEcheances.ts` (« Modifier » et « Réunir ») et `lib/cotisationsClasseesParCategorie.ts` ;
+l'onglet Cotisations les montre dans deux fenêtres (`ModifierEcheanceModal`, `ReunirEcheancesModal`).
+
+**COT-Q3, « MODIFIER » (D5).** L'onglet n'offrait que « Ajouter » et « Retirer » : corriger une CSG-CRDS connue après
+coup, poser 0 sur une caisse de retraite que « CSG-CRDS non saisie » citait à tort, poser un versé de 0 € sur une
+mensualité couverte par un crédit demandait de retirer l'échéance, ce qui remet son prélèvement à traiter et retire son
+écriture. La base permet la mise à jour directe (la policy `cotisations_declarees_all`) et la juge par deux
+déclencheurs, dont l'écran redit les refus avant le clic, sous leurs mots : `garder_cotisation_valide` (« % : cette
+échéance ne change plus. » ; une date d'un exercice figé : « % : une échéance ne s'y ajoute plus. », refusée aussi sur
+une échéance rapprochée, où la base l'accepterait, pour qu'un rapprochement annulé plus tard ne la fasse pas compter
+dans un exercice figé) et `garder_paiement_personnel` (les montants d'une échéance payée depuis le compte personnel —
+le geste est refusé en entier, sa date entrant dans le libellé de l'écriture du paiement). La mise à jour RETIENT la
+version lue (ses montants, sa date, son marqueur, `paiement_personnel_le` nul) et lit la ligne rendue
+(`.select('id').maybeSingle()`) : rien n'est écrit sur une échéance changée depuis, et une mise à jour que la policy
+écarterait sans lever se dit. Sur une échéance RAPPROCHÉE, la règle retenue est la plus sûre que la base permet : le
+rapprochement reste — le relevé fait foi, la 2035 compte le mouvement à sa date et pour son montant, et un
+rapprochement à la main accepte déjà un montant différent (807 € pour 800 €) ; un montant qui ne correspond plus au
+mouvement se DIT (« vérifie qu'il la paie bien, sinon annule ce rapprochement »), sans refus — refuser aurait interdit le
+correctif de D1 après coup (porter la mensualité rapprochée d'un prélèvement de 2 000 € à 2 000 €). Ce qui rendrait le
+rapprochement inécrivable (le sens, le zéro, une CSG-CRDS plus forte que le mouvement) se refuse avant le clic, sous les
+mots de `rapprocher_cotisation`. Une CSG-CRDS changée en trésorerie change l'écriture : elle se réécrit dans le même
+geste, APRÈS la mise à jour, par la fonction de « Écrire les N » ; un échec laisse l'échéance modifiée et son écriture
+« À réécrire », ce que l'onglet montre, et le message nomme « Écrire cette échéance ». Une écriture validée ne se
+remplace plus (les mots de la fonction) : refusé avant, seulement si l'écriture changerait. Écartées : retirer d'abord
+le rapprochement à chaque changement de montant (un geste de plus qui défait ce qui est juste) ; refuser tout montant
+différent du mouvement (voir plus haut). La phrase sous « dont CSG-CRDS » dit maintenant « zéro pour un organisme qui
+n'en prélève pas » (le mot, pas le chiffre : `ecransAvantLecture.test.tsx` lit un « 0 » rendu avant toute lecture comme
+une affirmation).
+
+**COT-Q1, « RÉUNIR » (D1).** Un prélèvement qui paie la mensualité et une régularisation ne se rapproche que d'une
+échéance ; rapproché de la mensualité, il la compte pour son montant, et la régularisation compte encore à son échéance.
+« Réunir… », sur une échéance qui a au moins une candidate, remplace les deux par une seule, à leur somme, CSG-CRDS
+comprise, avant le rapprochement ; la gardée est celle sur laquelle on clique, et sa date reste la sienne. Les
+conditions : deux échéances qu'aucun mouvement ne paie (la réunion ne touche alors à aucune écriture ; une échéance
+rapprochée se porte à la somme par « Modifier », puis l'autre se retire), ni payées depuis le compte personnel, ni
+figées, définitives (une prévisionnelle se remplace d'abord), du même sens, non nulles, leurs CSG-CRDS toutes deux
+saisies ou toutes deux non saisies (une seule saisie donnerait une somme qui se croirait complète ; le refus renvoie à
+« Modifier », 0 compris). Le même organisme ne se vérifie pas : la base ne porte pas l'organisme d'une échéance (la
+colonne `nature`, D3, après le MVP) ; la confirmation le demande au cabinet en le disant. Elle nomme la date retenue, les
+montants, la CSG-CRDS, l'échéance qui part, et l'avis qui redevient non rattaché.
+
+**L'ORDRE DES DEUX ÉCRITURES.** Ce n'est pas tout ou rien : la gardée est portée à la somme D'ABORD (la mise à jour qui
+retient sa version), l'autre est retirée ENSUITE (`supprimer_echeance_cotisation`, la fonction de « Retirer »). La
+première refusée, rien n'est écrit, et « Rien n'a été réuni » se dit. La seconde refusée, les deux échéances restent en
+base, la gardée à la somme : la somme compte deux fois, mais rien n'est perdu ; après la relecture, l'onglet dit
+« Réunion inachevée », les montants exacts et le seul geste qui finit le travail, offre « Retirer l'échéance du … », et
+marque la ligne « À retirer ». Si la page se ferme avant, l'échéance restée, que rien ne paie, compte à son échéance :
+Clôture la liste (« Cotisations comptées à leur échéance ») et la concordance retient la validation. L'ordre inverse
+perdrait, sur le même échec, les montants et la CSG-CRDS de l'échéance retirée, que rien ne redirait. Écartée : une
+fonction SQL tout ou rien, qui serait une migration. Reste un risque, celui de « Retirer » aujourd'hui : la fonction de
+retrait ne prend pas de version, et une échéance rapprochée entre la lecture et le clic par une autre session verrait
+son rapprochement défait avec elle.
+
+**COT-Q2, LE PRÉLÈVEMENT CLASSÉ PAR UNE CATÉGORIE (D2), EN ERREUR.** Le poste « Cotisations sociales personnelles » n'est
+plus PROPOSÉ à une catégorie (`POSTES_PROPOSABLES`, `lib/cases2035.ts`), comme la CSG déductible et les amortissements
+que le moteur calcule lui-même ; il reste dans le rattachement, en BK, et une catégorie qui le porte se lit et se compte
+comme hier. Un mouvement AFFECTÉ à une telle catégorie, ou VENTILÉ avec une part sur l'une d'elles, dans les deux sens
+(un remboursement classé ainsi laisse sa CSG-CRDS en BV, D4), le poste reconnu à la clé du rattachement
+(`estLePosteDesCotisations`), est nommé par un même calcul (`cotisationsClasseesParCategorie`) : le préalable bloquant
+`cotisations-classees-par-categorie` (l'exercice, en trésorerie ; cible Banque, rangé au cycle « social » de la révision)
+et le point de la Checklist du même nom, en erreur (le dossier hors exercices figés ; tu sur des ventilations lues en
+partie). Le détail nomme chaque mouvement par sa date, son montant et sa catégorie, six au plus. Le geste : annuler le
+classement dans Banque, puis rapprocher le mouvement d'une échéance de l'onglet Cotisations, où sa CSG-CRDS se saisit.
+Hors du calcul, et dit : le poste générique « Charges sociales personnelles » (sa part « sans nature dite » est tranchée
+par 2035S-Q2, (A), et Clôture la dit sans retenir la validation) ; une PIÈCE (l'avis d'un organisme) rangée sous le
+poste et payée par le relevé, qui a le même défaut — une suite à trancher.
+
+**LES TESTS.** `gestesDesEcheances.test.ts` (les refus sous les mots de la base, confrontés au texte exporté de
+`garder_cotisation_valide` et de `garder_paiement_personnel` ; la saisie au centime, jamais arrondie ; les effets dits
+avant le clic ; l'écriture réécrite d'une échéance rapprochée ; les conditions, les sommes en centimes, la confirmation
+et l'avis d'une réunion inachevée) ; `CotisationsTab.gestes.test.tsx`, sur un faux client qui applique la mise à jour sous
+ses filtres de version (`src/test/cotisationsGestes.ts`) : le 0 posé, les deux clics dans le même `act`, la version
+changée, la réécriture après la mise à jour puis son échec, aucun geste sur une échéance figée ni sur une lecture
+partielle, la réunion dans l'ordre, son double clic, son échec au retrait puis le geste qui la finit, son échec à la
+mise à jour ; `prealablesValidation.test.ts` (le préalable, son détail, le garde symétrique, l'engagement, l'exercice
+suivant, et son cas dans la liste des contrôles repris de la Checklist) ; `pointsDeLaChecklist.test.ts` ;
+`cases2035.test.ts`. Deux tests d'écran d'hier cherchaient « Retirer » comme premier bouton de la ligne : ils le
+cherchent désormais par sa classe.
+
+**CE QUI RESTE.** La liaison d'un mouvement à plusieurs échéances (une table de liaison, `rapprocher_cotisation` à liste,
+l'écriture à la somme des CSG-CRDS) : une migration, après le MVP. La colonne `nature` de l'échéance (D3), qui dirait
+l'organisme et permettrait à « Réunir » de le vérifier. La pièce rangée sous le poste des cotisations. D7, D8, COT-Q4 et
+les questions à l'expert-comptable (COT-E1 à E3), inchangés.

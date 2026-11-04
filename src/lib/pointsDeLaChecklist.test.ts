@@ -156,6 +156,45 @@ describe('pointsDeLaChecklist', () => {
   })
 })
 
+// COT-Q2 (relecture du 03/11/2026, D2 ; écrite sur la recommandation le 04/11/2026) : un prélèvement de cotisations classé par
+// une catégorie au poste des échéances de l'onglet Cotisations, en ERREUR, nommé — le même calcul que le préalable de la
+// validation (prealablesValidation.test.ts), sur le dossier hors exercices figés.
+describe('pointsDeLaChecklist : un prélèvement de cotisations classé par une catégorie (COT-Q2)', () => {
+  const URSSAF: Categorie = {
+    id: 'c-urssaf', dossier_id: 'd1', code: 'urssaf', libelle: 'Urssaf', ordre: 3, compte_comptable: '646000',
+    poste_2035: 'Cotisations sociales personnelles',
+  }
+  const prelevement = (o: Partial<LigneBancaire> = {}) =>
+    ligne({ id: 'u1', statut: 'rapprochee', categorie_id: URSSAF.id, date: '2026-03-05', montant: -800, ...o })
+  const point = (d: Partial<DonneesDeLaChecklist>, contexte: Partial<ContexteDeLaChecklist> = {}) =>
+    pointsDeLaChecklist(donnees({ categories: [URSSAF], ...d }), { ...CONTEXTE, ...contexte })
+      .tousLesPointsATraiter.find((p) => p.id === 'cotisations-classees-par-categorie')
+
+  it('dit en erreur chaque mouvement, date, montant et catégorie, et mène à Banque', () => {
+    expect(point({ lignes: [prelevement(), prelevement({ id: 'u2', date: '2026-04-05', montant: -1200 })] })).toEqual({
+      id: 'cotisations-classees-par-categorie',
+      label: 'mouvement(s) de cotisations classé(s) par une catégorie au poste « Cotisations sociales personnelles » — leur CSG-CRDS reste dans BK',
+      action: 'Les passer par l’onglet Cotisations', nb: 2, cible: 'banque', severite: 'erreur',
+      detail: `Le prélèvement du 05/03/2026 (${formatMoney(800)}, catégorie « Urssaf ») ; le prélèvement du 05/04/2026 (${formatMoney(1200)}, `
+        + 'catégorie « Urssaf »). Dans Banque, annule leur classement, puis rapproche chacun d’une échéance de l’onglet Cotisations, où sa CSG-CRDS se saisit.',
+    })
+  })
+
+  it('au-delà de six, en compte le reste', () => {
+    const lignes = Array.from({ length: 8 }, (_, i) => prelevement({ id: `u${i}`, date: `2026-0${i + 1}-05` }))
+    expect(point({ lignes })?.detail).toContain(' ; et 2 autres. Dans Banque')
+  })
+
+  it('se tait sur un exercice figé, en engagement, sur des ventilations lues en partie, et sans le poste — le garde symétrique', () => {
+    expect(point({ lignes: [prelevement()] }, { frontiere: '2026-12-31', anneesValidees: [2026] })?.nb).toBe(0)
+    expect(point({ lignes: [prelevement()] }, { modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT } })?.nb).toBe(0)
+    expect(point({ lignes: [prelevement()], ventilationsPartielles: true })?.nb).toBe(0)
+    expect(point({ lignes: [prelevement()], categories: [{ ...URSSAF, poste_2035: 'Charges sociales personnelles' }] })?.nb).toBe(0)
+    // Un mouvement à traiter n'est classé par rien.
+    expect(point({ lignes: [prelevement({ statut: 'non_rapprochee' })] })?.nb).toBe(0)
+  })
+})
+
 // L'EXEMPLAIRE D'UNE FACTURE SOURCE (ligne 28.65, étape VF6a ; lib/facturesSources.ts) : sa facture compte la vente, et les
 // points qui jugent une pièce comme une pièce qui compte l'écartent — le même exemplaire, désigné à une facture qui n'est
 // pas source, se compte comme hier. L'écriture déjà passée sur lui, elle, devient sans objet. Données FICTIVES.
