@@ -8,22 +8,41 @@ const etat = {
   extractions: new Map<string, Record<string, unknown> | Error>(),
   telechargementsEnEchec: new Set<string>(),
   erreurEcriture: null as Error | null,
+  aucuneLigneTouchee: false,
   // Mesure de concurrence : le faux `extractPiece` compte combien d'appels sont en vol en même temps.
   delaiMs: 0,
   enVol: 0,
   maxEnVol: 0,
 }
-const journal: { action: string; cible: string; charge?: Record<string, unknown> }[] = []
+const journal: { action: string; cible: string; charge?: Record<string, unknown>; conditions?: string[] }[] = []
 
 vi.mock('./supabase', () => ({
   supabase: {
     from: (table: string) => ({
-      update: (ligne: Record<string, unknown>) => ({
-        eq: (_col: string, id: string) => {
-          journal.push({ action: 'update', cible: id, charge: ligne })
-          return Promise.resolve({ error: etat.erreurEcriture })
-        },
-      }),
+      // Une mise à jour se chaîne (`.eq`, `.is`) : la date part sur son seul identifiant, attendue telle quelle ; les
+      // montants d'une pièce non lue (PIECES-Q5) portent leurs conditions et rendent la ligne touchée (`.select`), ou
+      // aucune quand `etat.aucuneLigneTouchee` simule une pièce complétée entre-temps.
+      update: (ligne: Record<string, unknown>) => {
+        let cible = ''
+        const conditions: string[] = []
+        const chaine = {
+          eq: (col: string, valeur: string) => {
+            if (col === 'id') cible = valeur
+            else conditions.push(`${col}=${valeur}`)
+            return chaine
+          },
+          is: (col: string, valeur: unknown) => { conditions.push(`${col} is ${String(valeur)}`); return chaine },
+          select: () => {
+            journal.push({ action: 'update', cible, charge: ligne, conditions })
+            return Promise.resolve({ data: etat.aucuneLigneTouchee ? [] : [{ id: cible }], error: etat.erreurEcriture })
+          },
+          then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
+            journal.push({ action: 'update', cible, charge: ligne })
+            return Promise.resolve({ error: etat.erreurEcriture }).then(suite, echec)
+          },
+        }
+        return chaine
+      },
       // Le texte OCR s'archive par upsert sur `piece_textes_ocr` (clé primaire piece_id) : une pièce
       // relue remplace son texte au lieu d'en accumuler un second.
       upsert: (ligne: Record<string, unknown>) => {
@@ -88,6 +107,7 @@ beforeEach(() => {
   etat.extractions = new Map()
   etat.telechargementsEnEchec = new Set()
   etat.erreurEcriture = null
+  etat.aucuneLigneTouchee = false
   etat.delaiMs = 0
   etat.enVol = 0
   etat.maxEnVol = 0
@@ -218,8 +238,78 @@ describe('relireDocuments', () => {
   it('ne fait aucun appel quand tout est déjà daté ET lu', async () => {
     const dejaFaite = piece({ id: 'p1', date_piece: '2023-01-31' })
     const r = await relireDocuments([dejaFaite], new Set(['p1']))
-    expect(r).toEqual({ datees: [], sansDate: [], textesArchives: [], echecs: [] })
+    expect(r).toEqual({ datees: [], sansDate: [], textesArchives: [], echecs: [], montantsEcrits: [], montantsNonEcrits: [] })
     expect(journal).toEqual([])
+  })
+})
+
+// LA PIÈCE QUE RIEN N'A LUE (relecture du 04/11/2026, D5 ; PIECES-Q5, sur la recommandation) : à valider, sans aucun montant,
+// la relecture lui écrit les montants lus et le tiers s'il manque — elle seule, et sous les conditions que la base rejuge.
+describe('relireDocuments — la pièce que rien n’a lue (PIECES-Q5)', () => {
+  const nonLue = (o: Partial<Piece> = {}) => piece({
+    id: 'nl', nom_fichier: 'photo.jpg', storage_path: 'd1/photo.jpg', statut: 'a_valider', date_piece: '2025-03-10',
+    tiers: null, montant_ht: null, montant_tva: null, montant_ttc: null, montant_devise: null, categorie_id: null, ...o,
+  })
+  const lue = { date_piece: '2025-03-10', tiers: 'PHARMACIE DU PORT', montant_ttc: 38.4, montant_ht: null, montant_tva: null, confiance: 'haute' }
+
+  it('est relue même datée et pourvue de son texte : la citation des montants a pu rater seule', () => {
+    expect(piecesARelire([nonLue()], new Set(['nl'])).map((p) => p.id)).toEqual(['nl'])
+    // Validée, ou un montant saisi : plus relue pour ses montants.
+    expect(piecesARelire([nonLue({ statut: 'validee' })], new Set(['nl']))).toEqual([])
+    expect(piecesARelire([nonLue({ montant_ttc: 12 })], new Set(['nl']))).toEqual([])
+  })
+
+  it('écrit les montants lus et le tiers vide, sous les conditions de la pièce non lue — et rien d’autre', async () => {
+    etat.extractions.set('photo.jpg', lue)
+    const r = await relireDocuments([nonLue()], new Set(['nl']))
+    expect(r.montantsEcrits).toEqual([{ nomFichier: 'photo.jpg', tiers: true }])
+    const ecriture = journal.find((j) => j.action === 'update')!
+    expect(ecriture.charge).toEqual({
+      montant_ht: null, montant_tva: null, montant_ttc: 38.4, devise: 'EUR', montant_devise: null, taux_change: null,
+      conversion_source: null, tiers: 'PHARMACIE DU PORT',
+    })
+    // Ni la confiance, ni la catégorie, ni le statut.
+    expect(Object.keys(ecriture.charge!)).not.toContain('confiance')
+    expect(Object.keys(ecriture.charge!)).not.toContain('statut')
+    expect(ecriture.conditions).toEqual([
+      'statut=a_valider', 'montant_ht is null', 'montant_tva is null', 'montant_ttc is null', 'montant_devise is null', 'tiers is null',
+    ])
+  })
+
+  it('garde le tiers déjà saisi : seuls les montants partent, sans condition sur le tiers', async () => {
+    etat.extractions.set('photo.jpg', lue)
+    const r = await relireDocuments([nonLue({ tiers: 'Saisi à la main' })], new Set(['nl']))
+    expect(r.montantsEcrits).toEqual([{ nomFichier: 'photo.jpg', tiers: false }])
+    const ecriture = journal.find((j) => j.action === 'update')!
+    expect(ecriture.charge).not.toHaveProperty('tiers')
+    expect(ecriture.conditions).not.toContain('tiers is null')
+  })
+
+  it('ne touche jamais une pièce validée, ni une pièce dont un montant a été saisi', async () => {
+    etat.extractions.set('a.pdf', lue)
+    etat.extractions.set('b.pdf', lue)
+    await relireDocuments([
+      nonLue({ id: 'a', nom_fichier: 'a.pdf', statut: 'validee', date_piece: null }),
+      nonLue({ id: 'b', nom_fichier: 'b.pdf', montant_ht: 30, date_piece: null }),
+    ], AUCUN_TEXTE)
+    // Seule la date part, comme hier.
+    expect(journal.filter((j) => j.action === 'update').map((j) => Object.keys(j.charge!))).toEqual([['date_piece'], ['date_piece']])
+  })
+
+  it('dit la pièce que la base n’a pas laissé écrire (complétée entre-temps), sans la compter écrite', async () => {
+    etat.extractions.set('photo.jpg', lue)
+    etat.aucuneLigneTouchee = true
+    const r = await relireDocuments([nonLue()], new Set(['nl']))
+    expect(r.montantsEcrits).toEqual([])
+    expect(r.montantsNonEcrits).toEqual(['photo.jpg'])
+  })
+
+  it('n’écrit rien quand la relecture ne lit pas davantage de montant', async () => {
+    etat.extractions.set('photo.jpg', { date_piece: '2025-03-10', tiers: 'PHARMACIE', montant_ttc: null, montant_ht: null, montant_tva: null })
+    const r = await relireDocuments([nonLue()], new Set(['nl']))
+    expect(r.montantsEcrits).toEqual([])
+    expect(r.montantsNonEcrits).toEqual([])
+    expect(journal.some((j) => j.action === 'update')).toBe(false)
   })
 })
 

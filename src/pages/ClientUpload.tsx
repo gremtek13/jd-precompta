@@ -3,6 +3,9 @@ import { supabase } from '../lib/supabase'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
+import { conseilPdfTropLourd, pdfTropLourdPourEtreLu } from '../lib/extraction'
+import { avisDeLectureClient, DEPOTS_LUS_A_LA_FOIS, pieceNonLue } from '../lib/lectureDesPieces'
+import { creerReservoir } from '../lib/reservoir'
 import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, aujourdHuiAParis, formatDate } from '../lib/format'
 import { lireAnneesCloturees } from '../lib/clotureExercice'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
@@ -88,7 +91,13 @@ export default function ClientUpload() {
   // Fichiers en cours d'envoi/analyse — état purement local (pas encore une ligne en base) : le temps
   // que Textract réponde (jusqu'à 50s sur un document multi-pages), aucune ligne n'existe encore, donc
   // rien à corriger après coup. Voir handleFiles.
-  const [enCours, setEnCours] = useState<{ id: string; nomFichier: string }[]>([])
+  // `enAttente` : le fichier attend sa place dans le réservoir des lectures (trois à la fois, voir handleFiles).
+  const [enCours, setEnCours] = useState<{ id: string; nomFichier: string; enAttente: boolean }[]>([])
+  // Le réservoir des dépôts de l'écran : trois lectures à la fois, partagé entre les lots (relecture du 04/11/2026, D6).
+  const lectures = useRef(creerReservoir(DEPOTS_LUS_A_LA_FOIS))
+  // Les fichiers du dernier lot déposés sans que la lecture ait rendu leur date ou leur montant (D5) : dit au praticien,
+  // au lieu d'un dépôt muet.
+  const [avisDeLecture, setAvisDeLecture] = useState<string | null>(null)
   // Les empreintes des fichiers EN VOL, de tous les lots de l'écran (lib/depot.ts) : un `useRef`, car deux lots lancés
   // coup sur coup — le même fichier glissé puis choisi, deux gestes avant la fin du premier — se croisent avant que
   // l'écran ait pu se redessiner. Un Set neuf par lot les laissait passer tous deux le contrôle anti-doublon en base avant
@@ -194,8 +203,13 @@ export default function ClientUpload() {
     return () => { annule = true }
   }, [dossierId])
 
+  // UNE LECTURE PLUS LENTE N'ÉCRIT PLUS EN DERNIER (relecture du 04/11/2026, D8) : deux lots finis coup sur coup, ou un
+  // lot fini pendant le changement de société, relancent chacun une lecture ; seule la DERNIÈRE lancée écrit. Le numéro
+  // se compare avant la première écriture.
+  const chargementNo = useRef(0)
   async function load() {
     if (!dossierId) return
+    const no = ++chargementNo.current
     const [lecturePieces, lectureDocuments, lectureLignes, lectureCotisations, commentairesData, clotures] = await Promise.all([
       // Lues par tranches : le plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts),
       // et c'est sur ces deux collections que repose « ce qu'il reste à envoyer ». Tronquées, elles
@@ -221,6 +235,7 @@ export default function ClientUpload() {
       chargerCommentaires(dossierId),
       lireAnneesCloturees(dossierId),
     ])
+    if (no !== chargementNo.current) return
     setPieces(lecturePieces.lignes)
     setDocuments(lectureDocuments.lignes)
     setLignes(lectureLignes.lignes)
@@ -244,35 +259,62 @@ export default function ClientUpload() {
 
   useEffect(() => { load() }, [dossierId])
 
-  // Chaque fichier suit son propre chemin, en parallèle — hash-check anti-doublon, upload storage,
-  // extraction automatique, classement Pièces/Documents — via deposerFichier (lib/depot.ts), partagé
-  // avec la prise de photo directe sur l'accueil (ClientHome). Ici on ajoute juste le suivi local
-  // "Analyse en cours…" et l'agrégation des erreurs pour l'affichage de cet écran.
+  // Chaque fichier suit son propre chemin — hash-check anti-doublon, upload storage, extraction automatique, classement
+  // Pièces/Documents — via deposerFichier (lib/depot.ts), partagé avec la prise de photo directe sur l'accueil
+  // (ClientHome). Ici on ajoute le suivi local (« En attente… », puis « Analyse en cours… »), l'agrégation des erreurs et
+  // ce que la lecture n'a pas rendu.
+  //
+  // TROIS À LA FOIS, JAMAIS LE LOT ENTIER (relecture du 04/11/2026, D6 ; PIECES-Q4, sur la recommandation) : un
+  // `Promise.all` lançait autant de lectures que de fichiers — quarante photos, quarante appels à Textract et au modèle au
+  // même instant, au-delà de leurs quotas, et des pièces arrivées sans montant. Le réservoir (`lectures`) est celui de
+  // l'écran, partagé entre les lots comme les empreintes en vol.
+  //
+  // UN SEUL RECHARGEMENT, À LA FIN DU LOT (D8) : chaque fichier relançait la lecture des quatre listes, N lectures
+  // parallèles que rien n'ordonnait.
   async function handleFiles(fileList: FileList | File[]) {
-    const files = Array.from(fileList)
+    let files = Array.from(fileList)
     if (files.length === 0 || !dossierId) return
+    // UN PDF DE PLUS DE 10 MO SE DIT AVANT L'ENVOI (D5) : la lecture le refuse, et il arrivait sans date ni montant comme
+    // un dépôt réussi. Le praticien choisit : le déposer quand même (le cabinet le complétera), ou le garder pour le scinder.
+    // Au-delà de la borne du seau (20 Mo), le dépôt le refuse de lui-même, et le dit : rien à demander.
+    const tropLourds = files.filter((f) => pdfTropLourdPourEtreLu(f) && f.size <= TAILLE_MAX_PIECE)
+    if (tropLourds.length > 0 && !window.confirm(
+      `${tropLourds.map(conseilPdfTropLourd).join('\n\n')}\n\nLe déposer quand même ? (Annuler le garde de côté, pour le scinder.)`,
+    )) {
+      files = files.filter((f) => !tropLourds.includes(f))
+      if (files.length === 0) return
+    }
     setError(null)
+    setAvisDeLecture(null)
     const erreurs: string[] = []
-    // Les branches d'un lot partent en parallèle, et les lots entre eux aussi : le MÊME ensemble d'empreintes en vol sert à
-    // tous (voir `empreintesEnVol`), sans quoi deux fichiers de contenu identique passeraient tous deux la vérification
-    // anti-doublon en base avant que l'un ait écrit sa ligne (voir deposerFichier).
+    const nonAboutis: string[] = []
+    // Les branches d'un lot partent ensemble — trois lues à la fois —, et les lots entre eux aussi : le MÊME ensemble
+    // d'empreintes en vol sert à tous (voir `empreintesEnVol`), sans quoi deux fichiers de contenu identique passeraient
+    // tous deux la vérification anti-doublon en base avant que l'un ait écrit sa ligne (voir deposerFichier).
     const hashsEnVol = empreintesEnVol.current
 
     await Promise.all(files.map(async (file) => {
       const localId = `${Date.now()}-${Math.random()}-${file.name}`
-      setEnCours((prev) => [...prev, { id: localId, nomFichier: file.name }])
-      const resultat = await deposerFichier(dossierId, file, hashsEnVol)
+      setEnCours((prev) => [...prev, { id: localId, nomFichier: file.name, enAttente: true }])
+      const resultat = await lectures.current.executer(() => {
+        setEnCours((prev) => prev.map((f) => (f.id === localId ? { ...f, enAttente: false } : f)))
+        return deposerFichier(dossierId, file, hashsEnVol)
+      })
       if (resultat.statut === 'doublon') erreurs.push(`${file.name} : déjà déposé, pas réenvoyé.`)
       else if (resultat.statut === 'erreur') erreurs.push(`${file.name} : ${resultat.message}.`)
-      // Un seul fichier déposé : on ouvre sa zone de précision, tant que le client se souvient de ce
-      // qu'il vient d'envoyer. Sur un lot, on ne devine pas lequel mériterait un mot — en ouvrir un
-      // au hasard ferait écrire la précision sous la mauvaise pièce.
-      else if (files.length === 1) setFilOuvert(cleCible(resultat.cible))
+      else {
+        if (resultat.lectureNonAboutie) nonAboutis.push(file.name)
+        // Un seul fichier déposé : on ouvre sa zone de précision, tant que le client se souvient de ce
+        // qu'il vient d'envoyer. Sur un lot, on ne devine pas lequel mériterait un mot — en ouvrir un
+        // au hasard ferait écrire la précision sous la mauvaise pièce.
+        if (files.length === 1) setFilOuvert(cleCible(resultat.cible))
+      }
       setEnCours((prev) => prev.filter((f) => f.id !== localId))
-      load()
     }))
 
+    await load()
     if (erreurs.length > 0) setError(erreurs.join(' '))
+    setAvisDeLecture(avisDeLectureClient(nonAboutis))
   }
 
   function handleDrop(e: DragEvent<HTMLDivElement>) {
@@ -290,7 +332,10 @@ export default function ClientUpload() {
       id: `piece-${p.id}`,
       nomFichier: p.nom_fichier,
       createdAt: p.created_at,
-      label: p.statut === 'validee' ? 'Facture — traitée' : 'Facture — en attente de traitement',
+      // Une pièce que la lecture n'a pas lue le dit, sans montant (D5) : le praticien sait que son cabinet la complétera.
+      label: p.statut === 'validee'
+        ? 'Facture — traitée'
+        : pieceNonLue(p) ? 'Facture — lecture non aboutie, ton cabinet la complétera' : 'Facture — en attente de traitement',
       traite: p.statut === 'validee',
       cible: { type: 'piece', id: p.id },
       piece: p,
@@ -305,7 +350,8 @@ export default function ClientUpload() {
       piece: null,
     })),
     ...enCours.map((f): Depot => ({
-      id: f.id, nomFichier: f.nomFichier, createdAt: new Date().toISOString(), label: 'Analyse en cours…', traite: false,
+      id: f.id, nomFichier: f.nomFichier, createdAt: new Date().toISOString(),
+      label: f.enAttente ? 'En attente…' : 'Analyse en cours…', traite: false,
       cible: null,
       piece: null,
     })),
@@ -485,6 +531,7 @@ export default function ClientUpload() {
       )}
 
       {error && <p className="error-text" style={{ marginBottom: 14 }}>{error}</p>}
+      {avisDeLecture && <p className="muted" role="status" style={{ marginBottom: 14 }}>{avisDeLecture}</p>}
 
       <h3>Mes dépôts</h3>
       {caisse.etat === 'muette' && <p className="error-text" style={{ marginBottom: 14 }}>{caisse.texte}</p>}

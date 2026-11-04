@@ -182,7 +182,9 @@ export interface Monde {
   hotes: Record<string, Traitant>
   textract: ((commande: string, entree: Record<string, unknown>) => unknown) | null
   s3: ((commande: string, entree: Record<string, unknown>) => unknown) | null
-  modele: ((demande: Record<string, unknown>) => unknown) | null
+  // `options` : ce que la fonction passe en second argument de `messages.create` — le signal qui borne l'appel
+  // (extract-piece, relecture du 04/11/2026, D6). Un modèle du harnais peut l'écouter pour se laisser abandonner.
+  modele: ((demande: Record<string, unknown>, options?: { signal?: AbortSignal }) => unknown) | null
   resend: {
     envoyer: ((message: Record<string, unknown>) => unknown) | null
     pieceJointe: ((demande: Record<string, unknown>) => unknown) | null
@@ -1160,15 +1162,15 @@ export class ErreurApiModele {
 function clientBedrock(monde: Monde) {
   return class {
     readonly options: { awsRegion?: unknown }
-    readonly messages: { create: (demande: Record<string, unknown>) => Promise<unknown> }
+    readonly messages: { create: (demande: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown> }
     constructor(options: { awsRegion?: unknown }) {
       this.options = options
       monde.journal.push({ genre: 'client-aws', service: 'bedrock', region: options?.awsRegion })
       this.messages = {
-        create: async (demande) => {
+        create: async (demande, optionsDeLAppel) => {
           monde.journal.push({ genre: 'modele', modele: demande?.model, region: options?.awsRegion })
           if (!monde.modele) throw new Error('Harnais : appel au modèle non attendu par le test')
-          return monde.modele(demande)
+          return monde.modele(demande, optionsDeLAppel)
         },
       }
     }

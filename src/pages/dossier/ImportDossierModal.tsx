@@ -4,8 +4,12 @@ import { chargerHashsExistants, importerFichierDossier } from '../../lib/importF
 import type { SousDossier } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { bilanDesRefus, poids, refusDUnePiece, TAILLE_MAX_PIECE, type RefusDuDepot } from '../../lib/bornesStockage'
+import { pdfTropLourdPourEtreLu } from '../../lib/extraction'
+import { PDF_TROP_LOURD_AVANT_ENVOI } from '../../lib/lectureDesPieces'
 
-type StatutFichier = 'attente' | 'upload' | 'extraction' | 'ok' | 'doublon' | 'erreur'
+// `a_completer` : importé, mais la lecture n'a pas rendu sa date ou son montant (relecture du 04/11/2026, D5) — compté et
+// marqué à part des imports réussis, jamais confondu avec eux.
+type StatutFichier = 'attente' | 'upload' | 'extraction' | 'ok' | 'a_completer' | 'doublon' | 'erreur'
 
 interface FichierImport {
   file: File
@@ -132,7 +136,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
             userId: userData.user!.id,
             onProgress: (phase) => setStatutFichier(i, phase),
           })
-          setStatutFichier(i, resultat.statut, resultat.message)
+          setStatutFichier(i, resultat.aCompleter ? 'a_completer' : resultat.statut, resultat.message)
         } catch (err) {
           setStatutFichier(i, 'erreur', messageErreur(err, "Échec de l'import"))
         }
@@ -148,6 +152,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
   }
 
   const nbOk = fichiers.filter((f) => f.statut === 'ok').length
+  const nbACompleter = fichiers.filter((f) => f.statut === 'a_completer').length
   const nbDoublons = fichiers.filter((f) => f.statut === 'doublon').length
   const nbErreur = fichiers.filter((f) => f.statut === 'erreur').length
 
@@ -195,7 +200,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
             <p className="muted" style={{ marginTop: -4 }}>
               {fichiers.length} fichier(s) à importer
               {ignores.length > 0 && ` — ${bilanDesRefus('pieces', ignores)}`}
-              {done && ` — ${nbOk} importé(s), ${nbDoublons} déjà importé(s), ${nbErreur} en erreur`}
+              {done && ` — ${nbOk} importé(s)${nbACompleter > 0 ? `, ${nbACompleter} importé(s) sans lecture complète, à compléter` : ''}, ${nbDoublons} déjà importé(s), ${nbErreur} en erreur`}
             </p>
 
             {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : sur téléphone, le statut de chaque fichier passait
@@ -211,10 +216,15 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
                       <td data-libelle="Fichier">{f.file.name}</td>
                       <td data-libelle="Sous-dossier">{f.cheminDossier || '—'}</td>
                       <td data-libelle="Statut">
-                        {f.statut === 'attente' && <span className="muted">En attente</span>}
+                        {f.statut === 'attente' && (
+                          <span className="muted">
+                            {pdfTropLourdPourEtreLu(f.file) ? `En attente — ${PDF_TROP_LOURD_AVANT_ENVOI}` : 'En attente'}
+                          </span>
+                        )}
                         {f.statut === 'upload' && <span className="badge badge-neutral">Envoi…</span>}
                         {f.statut === 'extraction' && <span className="badge badge-neutral">Extraction…</span>}
                         {f.statut === 'ok' && <span className="badge badge-ok">{f.message ?? 'Importé'}</span>}
+                        {f.statut === 'a_completer' && <span className="badge badge-warning">{f.message ?? 'Importé, à compléter'}</span>}
                         {f.statut === 'doublon' && <span className="badge badge-neutral">{f.message}</span>}
                         {f.statut === 'erreur' && <span className="badge badge-danger">{f.message ?? 'Erreur'}</span>}
                       </td>

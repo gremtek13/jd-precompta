@@ -302,7 +302,9 @@ const PDF = new TextEncoder().encode('%PDF-1.4 document fictif du harnais')
 const TIERS_LU = 'Quarzbuch Zelintor'
 
 /** Textract lit trois lignes, le modèle cite le tiers et le total : des valeurs de pièce, que nul journal ne doit porter. */
-function lecture(monde: Monde, options: { textract?: 'echec'; modele?: 'panne' | 'illisible' } = {}) {
+// `modele: 'muet'` : un modèle qui ne répond jamais, et ne s'arrête que si l'appel est abandonné — le signal que passe
+// extract-piece, que la minuterie immédiate du harnais fait tomber sur-le-champ (relecture du 04/11/2026, D6).
+function lecture(monde: Monde, options: { textract?: 'echec'; modele?: 'panne' | 'illisible' | 'muet' } = {}) {
   monde.sensibles.push(TIERS_LU)
   monde.minuteriesImmediates = true
   monde.s3 = () => ({})
@@ -318,7 +320,13 @@ function lecture(monde: Monde, options: { textract?: 'echec'; modele?: 'panne' |
       ],
     }
   }
-  monde.modele = () => {
+  monde.modele = (_demande, appel) => {
+    if (options.modele === 'muet') {
+      return new Promise((_resoudre, rejeter) => {
+        if (!appel?.signal) return
+        appel.signal.addEventListener('abort', () => rejeter(new Error('Request was aborted.')))
+      })
+    }
     if (options.modele === 'panne') throw new Error('Bedrock indisponible')
     if (options.modele === 'illisible') return reponseModele(`{"tiers": ${TIERS_LU}, "totalTtc": "987,65 €"}`)
     return reponseModele(JSON.stringify({ tiers: TIERS_LU, date: null, devise: '€', totalTtc: '987,65 €', totalHt: null, totalTva: null }))
@@ -437,6 +445,28 @@ const EXTRACT_PIECE: ContratFonction = {
         statut: 200,
         depenses: ['AWS textract DetectDocumentText', 'modèle'],
         verifier: (r) => (corpsDe(r).classification ? [] : ['aucune classification rendue']),
+      },
+    },
+    {
+      nom: 'le modèle ne répond pas : l’appel est abandonné à son délai, et la lecture rend son texte en le disant',
+      preparer: (m) => lecture(m, { modele: 'muet' }),
+      requete: (s) => requeteDe(s, { personne: 'chef', corpsBrut: PNG }),
+      attendu: {
+        statut: 200,
+        depenses: ['AWS textract DetectDocumentText', 'modèle'],
+        verifier: (r, m) => {
+          const corps = corpsDe(r)
+          const fautes: string[] = []
+          if (!/délai de la citation dépassé \(30 s\)/.test(String(corps._citation_erreur))) {
+            fautes.push(`délai non dit : ${String(corps._citation_erreur)}`)
+          }
+          if (corps.classification !== 'facture') fautes.push(`classification rendue : ${String(corps.classification)}`)
+          if (corps.montant_ttc !== null || corps.tiers !== null) fautes.push('un montant ou un tiers rendu sans citation')
+          if (!m.journaux.some((j) => /citation des champs — délai de la citation dépassé/.test(j.texte))) {
+            fautes.push('l’abandon n’est pas journalisé')
+          }
+          return fautes
+        },
       },
     },
     {

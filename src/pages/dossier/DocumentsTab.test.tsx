@@ -121,7 +121,7 @@ vi.mock('../../lib/supabase', async () => {
       return Promise.resolve({ data: [], error: null })
     }
     Object.assign(c, {
-      select: () => c, order: () => c, or: () => c, in: () => c,
+      select: () => c, order: () => c, or: () => c, in: () => c, not: () => c,
       eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return c },
       insert: (valeur: Record<string, unknown>) => { operation = 'insert'; faux.inserts.push(valeur); return c },
       delete: () => { operation = 'delete'; return c },
@@ -274,6 +274,40 @@ describe('DocumentsTab — « C\'est une facture »', () => {
 // SANS RIEN GARDER : ni le compte, ni la raison. La sélection était vidée, la liste relue, et le
 // document refusé reparaissait au milieu des autres, sans un mot — sur un geste que l'opérateur
 // venait de CONFIRMER, donc qu'il croit accompli. Ces cas sont rouges sur ce code-là.
+// LA FACTURE PROBABLE (relecture du 04/11/2026, D4) : un document que la lecture a rangé ici, dont le texte lu se donne pour
+// une facture, le dit à sa ligne, à côté du geste qui le reprend ; le relevé qui ne s'en donne pas l'air, non.
+describe('DocumentsTab — « Facture probable »', () => {
+  it('marque le document dont le texte lu se donne pour une facture, et offre « C’est une facture »', async () => {
+    reinitialiser()
+    faux.documents = [
+      documentDeTest({ id: 'rc-pro', nom_fichier: 'rc-pro.pdf', categorie: 'attestation' }),
+      documentDeTest({ id: 'releve', nom_fichier: 'releve.pdf', categorie: 'releve_bancaire' }),
+    ]
+    faux.presence = {
+      data: [
+        { document_id: 'rc-pro', texte: 'ASSURANCES FICTIVES SA\nFACTURE N° 2025-0412\nPrime annuelle TTC 412,50 €\nVotre attestation est jointe' },
+        { document_id: 'releve', texte: 'BANQUE FICTIVE\nRELEVE DE COMPTE\nFACTURE CARTE DU 12/03 12,30' },
+      ],
+      error: null,
+    }
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    const marque = await screen.findByText('Facture probable')
+    const ligne = marque.closest('tr') as HTMLElement
+    within(ligne).getByText('rc-pro.pdf')
+    within(ligne).getByRole('button', { name: "C'est une facture" })
+    expect(marque.getAttribute('title')).toMatch(/n’entre pas dans la 2035/)
+    expect(screen.getAllByText('Facture probable')).toHaveLength(1)
+  })
+
+  it('des textes illisibles ne marquent rien, et le disent sous la liste', async () => {
+    reinitialiser()
+    faux.presence = { data: [], error: { message: 'permission denied' } }
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    await screen.findByText(/aucune n’est marquée « Facture probable »/)
+    expect(screen.queryByText('Facture probable')).toBeNull()
+  })
+})
+
 describe('DocumentsTab — « Supprimer la sélection »', () => {
   function troisDocuments(): DocumentDivers[] {
     return [1, 2, 3].map((n) => documentDeTest({

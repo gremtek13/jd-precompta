@@ -458,3 +458,134 @@ describe('ClientUpload — les bornes du seau', () => {
     expect(zone.textContent).toContain('plusieurs fichiers à la fois, 20 Mo au plus chacun.')
   })
 })
+
+// LE DÉPÔT PAR PETITS LOTS, LA LECTURE RATÉE DITE, UN SEUL RECHARGEMENT (relecture du 04/11/2026, D5, D6, D8 ; PIECES-Q4 et
+// Q5). Le dépôt est simulé et TENU par le test : c'est ce qui laisse voir combien de fichiers sont lus à la fois.
+describe('ClientUpload — trois lectures à la fois, et ce que la lecture n’a pas rendu', () => {
+  /** Un dépôt que le test libère fichier par fichier ; il écrit sa pièce, comme la base, à sa libération. */
+  function depotsTenus() {
+    const tenus = new Map<string, () => void>()
+    let enVol = 0
+    let maxEnVol = 0
+    faux.deposer.mockImplementation((_dossier: string, fichier: File) => {
+      enVol += 1
+      maxEnVol = Math.max(maxEnVol, enVol)
+      return new Promise((resoudre) => {
+        tenus.set(fichier.name, () => {
+          enVol -= 1
+          faux.parTable.pieces = [...faux.parTable.pieces, piece({ id: fichier.name, nom_fichier: fichier.name, created_at: '2026-09-25T10:00:00Z' })]
+          resoudre({ statut: 'ok', cible: { type: 'piece', id: fichier.name } })
+        })
+      })
+    })
+    return {
+      liberer: (nom: string) => act(async () => { tenus.get(nom)?.() }),
+      get maxEnVol() { return maxEnVol },
+      get enVol() { return enVol },
+    }
+  }
+
+  it('un lot de cinq photos : trois lues à la fois, les autres « En attente… », et un seul rechargement à la fin', async () => {
+    poser()
+    const depots = depotsTenus()
+    const { container } = await monter()
+    const lecturesAvant = faux.demandees.filter((t) => t === 'pieces').length
+
+    await deposer(container, ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+    expect(faux.deposer).toHaveBeenCalledTimes(3)
+    expect(screen.getAllByText('En attente…')).toHaveLength(2)
+    expect(screen.getAllByText('Analyse en cours…')).toHaveLength(3)
+
+    await depots.liberer('2.jpg')
+    await waitFor(() => expect(faux.deposer).toHaveBeenCalledTimes(4))
+    expect(faux.deposer.mock.calls.map((a) => (a[1] as File).name)).toEqual(['1.jpg', '2.jpg', '3.jpg', '4.jpg'])
+    // Aucun rechargement par fichier fini (D8).
+    expect(faux.demandees.filter((t) => t === 'pieces').length).toBe(lecturesAvant)
+
+    for (const nom of ['1.jpg', '3.jpg', '4.jpg']) await depots.liberer(nom)
+    await waitFor(() => expect(faux.deposer).toHaveBeenCalledTimes(5))
+    await depots.liberer('5.jpg')
+    await screen.findByText('5.jpg')
+    expect(depots.maxEnVol).toBe(3)
+    expect(faux.demandees.filter((t) => t === 'pieces').length).toBe(lecturesAvant + 1)
+  })
+
+  it('deux lots lancés coup sur coup partagent les trois places', async () => {
+    poser()
+    const depots = depotsTenus()
+    const { container } = await monter()
+    const champ = container.querySelector('input[type="file"][multiple]') as HTMLInputElement
+    const fichiers = (noms: string[]) => noms.map((nom) => new File(['x'], nom, { type: 'image/jpeg' }))
+    await act(async () => {
+      fireEvent.change(champ, { target: { files: fichiers(['a1.jpg', 'a2.jpg']) } })
+      fireEvent.change(champ, { target: { files: fichiers(['b1.jpg', 'b2.jpg']) } })
+    })
+    expect(faux.deposer).toHaveBeenCalledTimes(3)
+    expect(depots.enVol).toBe(3)
+    for (const nom of ['a1.jpg', 'a2.jpg', 'b1.jpg']) await depots.liberer(nom)
+    await waitFor(() => expect(faux.deposer).toHaveBeenCalledTimes(4))
+    await depots.liberer('b2.jpg')
+    expect(depots.maxEnVol).toBe(3)
+  })
+
+  it('dit les fichiers déposés dont la lecture n’a pas abouti, et la ligne d’une pièce que rien n’a lue', async () => {
+    poser()
+    faux.deposer.mockImplementation(async (_dossier: string, fichier: File) => {
+      faux.parTable.pieces = [...faux.parTable.pieces, piece({
+        id: fichier.name, nom_fichier: fichier.name, montant_ttc: null, confiance: null, created_at: '2026-09-25T10:00:00Z',
+      })]
+      return { statut: 'ok', cible: { type: 'piece', id: fichier.name }, lectureNonAboutie: true }
+    })
+    const { container } = await monter()
+    await deposer(container, ['ticket.jpg'])
+    await screen.findByText('ticket.jpg : déposé, la lecture n’a pas abouti : ton cabinet le complétera.')
+    within(screen.getByText('ticket.jpg').closest('tr') as HTMLElement)
+      .getByText('Facture — lecture non aboutie, ton cabinet la complétera')
+  })
+
+  it('un PDF de plus de 10 Mo se dit avant l’envoi : gardé de côté sur « Annuler », déposé sur « OK »', async () => {
+    poser()
+    faux.deposer.mockResolvedValue({ statut: 'ok', cible: { type: 'piece', id: 'p' } })
+    const { container } = await monter()
+    const champ = container.querySelector('input[type="file"][multiple]') as HTMLInputElement
+    const lourd = new File(['%PDF-1.7'], 'scan.pdf', { type: 'application/pdf' })
+    Object.defineProperty(lourd, 'size', { value: 15 * 1024 * 1024 })
+    const photo = new File(['x'], 'photo.jpg', { type: 'image/jpeg' })
+
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { fireEvent.change(champ, { target: { files: [lourd, photo] } }) })
+    expect(confirmer).toHaveBeenCalledTimes(1)
+    expect(confirmer.mock.calls[0][0]).toMatch(/scan\.pdf \(15 Mo\) dépasse les 10 Mo que la lecture automatique accepte/)
+    expect(confirmer.mock.calls[0][0]).toMatch(/scinder/)
+    await waitFor(() => expect(faux.deposer).toHaveBeenCalledTimes(1))
+    expect((faux.deposer.mock.calls[0][1] as File).name).toBe('photo.jpg')
+
+    confirmer.mockReturnValue(true)
+    await act(async () => { fireEvent.change(champ, { target: { files: [lourd] } }) })
+    await waitFor(() => expect(faux.deposer).toHaveBeenCalledTimes(2))
+    expect((faux.deposer.mock.calls[1][1] as File).name).toBe('scan.pdf')
+    confirmer.mockRestore()
+  })
+
+  it('une relecture plus lente que la suivante n’écrit plus en dernier (D8)', async () => {
+    poser({ pieces: [piece({ id: 'a', nom_fichier: 'ancienne.pdf' })] })
+    faux.deposer.mockResolvedValue({ statut: 'ok', cible: { type: 'piece', id: 'x' } })
+    const { container } = await monter()
+
+    // Le premier lot finit : sa relecture part, et la base la retient.
+    const liberer = retenir('pieces')
+    await deposer(container, ['un.jpg'])
+    await waitFor(() => expect(faux.demandees.filter((t) => t === 'pieces')).toHaveLength(2))
+    // Le second lot finit : sa relecture rend la base d'aujourd'hui.
+    faux.retenues.delete('pieces')
+    faux.parTable.pieces = [piece({ id: 'b', nom_fichier: 'recente.pdf' })]
+    await deposer(container, ['deux.jpg'])
+    await screen.findByText('recente.pdf')
+    // La première rend enfin… une base d'avant : elle ne s'écrit plus par-dessus.
+    faux.parTable.pieces = [piece({ id: 'a', nom_fichier: 'ancienne.pdf' })]
+    await act(async () => { liberer() })
+    await laisserPasserUnTour()
+    screen.getByText('recente.pdf')
+    expect(screen.queryByText('ancienne.pdf')).toBeNull()
+  })
+})

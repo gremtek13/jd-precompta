@@ -205,8 +205,9 @@ describe('deposerFichier', () => {
   it('archive quand même le fichier en Pièces si l’extraction échoue', async () => {
     // Le client n'a pas le droit de corriger une pièce après coup : un document illisible par
     // Textract doit quand même arriver au cabinet, à compléter à la main, pas être refusé.
+    // Et le dépôt le DIT (relecture du 04/11/2026, D5) : réussi, mais la lecture n'a pas abouti.
     etat.extractionLeve = true
-    expect(await deposer('illisible.pdf')).toEqual({ statut: 'ok', cible: { type: 'piece', id: 'id-pieces' } })
+    expect(await deposer('illisible.pdf')).toEqual({ statut: 'ok', cible: { type: 'piece', id: 'id-pieces' }, lectureNonAboutie: true })
     expect(journal.map((j) => j.action)).toEqual(['upload', 'insert:pieces'])
   })
 

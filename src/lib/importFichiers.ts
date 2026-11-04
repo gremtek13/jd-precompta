@@ -1,7 +1,10 @@
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { slugify } from './format'
-import { ACHAT_PAR_DEFAUT, extractPiece, hashFichier, LABEL_CLASSIFICATION, orientationDe, textractPeutLire } from './extraction'
+import {
+  ACHAT_PAR_DEFAUT, extractPiece, hashFichier, LABEL_CLASSIFICATION, orientationDe, pdfTropLourdPourEtreLu, textractPeutLire,
+} from './extraction'
+import { ceQuiManque, LECTURE_RATEE_CABINET, lectureIncompleteCabinet, PDF_NON_LU_CABINET, SI_C_EST_UNE_FACTURE } from './lectureDesPieces'
 import { enregistrerTexteOcr } from './texteOcr'
 import { montantsPourPiece } from './tauxChange'
 import { retirerFichiers } from './stockage'
@@ -59,6 +62,9 @@ export type StatutImportFichier = 'ok' | 'doublon' | 'erreur'
 export interface ResultatImportFichier {
   statut: StatutImportFichier
   message?: string
+  // Importée, mais la lecture n'a pas rendu sa date ou son montant (relecture du 04/11/2026, D5) : la fenêtre la compte à
+  // part des imports réussis et la marque d'un badge d'attention, au lieu de « Classé « Facture » → Pièces ».
+  aCompleter?: true
 }
 
 // Traite un fichier : déduplication, upload, puis extraction + tri automatique. hashsConnus est muté
@@ -135,7 +141,9 @@ export async function importerFichierDossier(params: {
   // (même repli par défaut que côté extract-piece).
   // Un format que Textract ne lit pas n'est pas envoyé du tout : le `.catch` l'aurait ramené ici avec
   // la même valeur, après un aller-retour et un 400 (voir `textractPeutLire`).
-  const extraction = textractPeutLire(file.name) ? await extractPiece(file, file.name).catch(() => null) : null
+  // Ni un PDF de plus de 10 Mo (relecture du 04/11/2026, D5) : la lecture le refuse, et la fenêtre l'a dit avant l'envoi.
+  const tropLourd = pdfTropLourdPourEtreLu(file)
+  const extraction = textractPeutLire(file.name) && !tropLourd ? await extractPiece(file, file.name).catch(() => null) : null
 
   const orientation = extraction ? orientationDe(extraction.classification) : ACHAT_PAR_DEFAUT
 
@@ -154,7 +162,9 @@ export async function importerFichierDossier(params: {
     // Porté ici comme dans lib/depot.ts, son jumeau côté client — le texte est déjà extrait et déjà
     // facturé, le jeter pour un document n'économise rien et rend l'archive illisible.
     await enregistrerTexteOcr(dossierId, { type: 'document', id: documentId }, extraction?.texte_ocr)
-    return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION[orientation.categorie]} » → Documents` }
+    // Rangé PAR LA LECTURE, et le message le dit avec le geste qui le reprend (relecture du 04/11/2026, D4) : une facture
+    // qu'un mot croisé y aurait envoyée sort de la 2035, et rien ne pousse à regarder Documents.
+    return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION[orientation.categorie]} » → Documents par la lecture — ${SI_C_EST_UNE_FACTURE}` }
   }
 
   // Même conversion que côté client (lib/depot.ts) : la devise du document ne dépend pas de qui le
@@ -178,10 +188,14 @@ export async function importerFichierDossier(params: {
   // Porté ici comme dans lib/depot.ts, son jumeau côté client : une correction apportée à l'un doit
   // l'être à l'autre, et le texte lu n'a aucune raison d'exister d'un seul côté du pipeline.
   await enregistrerTexteOcr(dossierId, { type: 'piece', id: pieceId }, extraction?.texte_ocr)
-  const classe = !extraction
-    ? 'Importé — extraction à refaire à la main'
-    : orientation.type_piece === 'vente'
-      ? 'Classé « Justificatif de recette » → Pièces'
-      : 'Classé « Facture » → Pièces'
-  return { statut: 'ok', message: extraction && dateDeduite(extraction) ? `${classe} — ${DATE_DEDUITE_A_VERIFIER}` : classe }
+  // UNE LECTURE RATÉE OU INCOMPLÈTE NE SE DIT PLUS COMME UN SUCCÈS (relecture du 04/11/2026, D5) : le modèle tombé ou hors
+  // délai rendait une pièce sans montant sous « Classé « Facture » → Pièces ». Le message dit ce qui reste à saisir, et la
+  // fenêtre compte la pièce à part (`aCompleter`).
+  if (!extraction) return { statut: 'ok', message: tropLourd ? PDF_NON_LU_CABINET : LECTURE_RATEE_CABINET, aCompleter: true }
+  const classe = orientation.type_piece === 'vente'
+    ? 'Classé « Justificatif de recette » → Pièces'
+    : 'Classé « Facture » → Pièces'
+  const manque = ceQuiManque(extraction)
+  if (manque !== null) return { statut: 'ok', message: lectureIncompleteCabinet(classe, manque), aCompleter: true }
+  return { statut: 'ok', message: dateDeduite(extraction) ? `${classe} — ${DATE_DEDUITE_A_VERIFIER}` : classe }
 }

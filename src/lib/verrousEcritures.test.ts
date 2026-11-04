@@ -206,11 +206,11 @@ const EXCEPTIONS: Record<string, { categorie: CategorieNommee; raison: string }>
     raison: 'Bascule calculée dans la fermeture : deux suppressions ne trouvent rien la seconde fois, deux insertions '
       + 'butent sur `dossier_assignations (dossier_id, user_id)` ; l’écran relit dans les deux cas.',
   },
-  'src/pages/ClientUpload.tsx › ClientUpload › handleFiles › (argument de files.map)': {
+  'src/pages/ClientUpload.tsx › ClientUpload › handleFiles › (argument de files.map) › (argument de lectures.current.executer)': {
     categorie: 'dépôt parallèle voulu',
-    raison: 'Chaque fichier d’un dépôt suit son chemin en parallèle, et la zone reste ouverte pendant l’analyse ; '
-      + 'l’empreinte réservée dans le lot arrête un fichier en double DANS un lot, pas entre deux lots en vol '
-      + '(question au cabinet, HISTORIQUE.md du 09/10/2026).',
+    raison: 'Chaque fichier d’un dépôt suit son chemin, trois à la fois (le réservoir de l’écran, relecture du 04/11/2026, '
+      + 'D6), et la zone reste ouverte pendant l’analyse ; l’empreinte réservée dans l’ensemble partagé de l’écran arrête un '
+      + 'fichier en double, dans un lot comme entre deux lots en vol (ligne 28.8).',
   },
   'src/pages/dossier/ConnexionBancaireCard.tsx › appeler': {
     categorie: 'au montage',

@@ -88,6 +88,12 @@ const MARGE_REPONSE_MS = 10_000
 // document entier ; une citation absente ne coûte qu'une saisie. Le contrat décide, pas l'optimisme.
 const BUDGET_CITATION_MS = 30_000
 
+// Ce que la lecture accepte, 10 Mio : au-delà, le fichier est refusé avant AWS. Le seau des pièces en admet 20 : un PDF
+// entre les deux se dépose sans être lu, et l'application le dit AVANT l'envoi (`TAILLE_MAX_LECTURE` de
+// src/lib/extraction.ts, que extractPieceBudget.test.ts confronte à celle-ci). Une image passe toujours : le navigateur la
+// réencode en JPEG de 2 400 pixels au plus avant de l'envoyer.
+const TAILLE_MAX_LECTURE = 10 * 1024 * 1024
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -187,10 +193,21 @@ interface Citation {
 // une SECONDE copie à tenir synchronisée, pour un gain nul. On la demande quand même parce qu'un
 // modèle à qui l'on rappelle que les montants portent une monnaie cite mieux les montants — c'est
 // la mesure sur les quatre factures en dollars du dossier qui l'a montré.
-async function citerChamps(texte: string, region: string): Promise<Citation> {
+//
+// L'APPEL AU MODÈLE A SON DÉLAI (relecture du 04/11/2026, D6 ; PIECES-Q4). Le budget de la citation n'était vérifié
+// qu'AVANT l'appel : un modèle lent — un lot de quarante photos déposées ensemble, des quotas atteints, les tentatives du
+// SDK — pouvait mener la requête jusqu'au mur de la plateforme, qui la coupe sans réponse et fait perdre le texte OCR déjà
+// payé. `delaiMs` borne l'appel (le gestionnaire passe `BUDGET_CITATION_MS`, ce qu'il lui reste au moins quand il le
+// tente) ; au-delà, l'appel est abandonné, et l'extraction rend ce qu'elle a — le texte, la classification, la date de
+// repli — en le DISANT (`erreur`, rendue sous `_citation_erreur`), comme tout autre échec de l'étage 2. Une minuterie et
+// un `AbortController` plutôt que `AbortSignal.timeout` : la même chose, mais une minuterie que le harnais des Edge
+// Functions sait faire tomber sur-le-champ.
+async function citerChamps(texte: string, region: string, delaiMs: number): Promise<Citation> {
   const vide: Citation = { retenues: {}, rejetees: [], erreur: null, usage: null }
   if (!texte.trim()) return vide
 
+  const abandon = new AbortController()
+  const minuterie = setTimeout(() => abandon.abort(), delaiMs)
   try {
     const client = new AnthropicBedrock({
       awsRegion: region,
@@ -201,7 +218,7 @@ async function citerChamps(texte: string, region: string): Promise<Citation> {
       model: MODELE_CITATION,
       max_tokens: 500,
       messages: [{ role: "user", content: `${PROMPT_EXTRACTION}\n\n--- TEXTE ---\n${texte}` }],
-    })
+    }, { signal: abandon.signal })
     const usage = {
       entree: reponse.usage?.input_tokens ?? 0,
       sortie: reponse.usage?.output_tokens ?? 0,
@@ -222,8 +239,16 @@ async function citerChamps(texte: string, region: string): Promise<Citation> {
     if (!citations || typeof citations !== "object") return { ...vide, erreur: "réponse du modèle illisible", usage }
     return { ...verifierCitations(citations, texte), erreur: null, usage }
   } catch (err) {
+    // Abandonné par le délai : dit comme tel, sans l'erreur du SDK (« Request was aborted. »), qui ne dit pas pourquoi.
+    if (abandon.signal.aborted) {
+      const erreur = `délai de la citation dépassé (${Math.round(delaiMs / 1000)} s)`
+      console.error(`[extract-piece] citation des champs — ${erreur}`)
+      return { ...vide, erreur }
+    }
     console.error("[extract-piece] citation des champs", err)
     return { ...vide, erreur: err instanceof Error ? err.message : String(err) }
+  } finally {
+    clearTimeout(minuterie)
   }
 }
 
@@ -603,12 +628,28 @@ type ClassificationDocument = "releve_bancaire" | "cotisation" | "attestation" |
 // selon la banque). Les codes d'opération ("VIR SEPA", "PRLV") sont un signal plus fiable mais peuvent
 // apparaître une fois isolément sur une facture (conditions de paiement) — on exige plusieurs
 // occurrences plutôt qu'une seule pour éviter un faux positif.
+//
+// DEUX FAMILLES DEPUIS LE 04/11/2026 (relecture, D4). Le nom du compte (« relevé de compte », « synthèse de votre compte »,
+// « résumé d'activité ») ne s'imprime que sur un relevé, et passe avant tout. Un SOLDE (« solde précédent », « solde
+// créditeur ») s'imprime aussi sur une facture de téléphone ou d'énergie, qui rappelle le solde de l'abonné : il ne vaut
+// relevé que pour un document qui ne se donne pas pour une facture (`titreDeFacture`, plus bas).
 const MARQUEURS_RELEVE_BANCAIRE = [
   /RELEV[EÉ]\s+DE\s+COMPTE/,
-  /SOLDE\s+(CR[EÉ]DITEUR|D[EÉ]BITEUR|PR[EÉ]C[EÉ]DENT)/,
   /SYNTH[EÈ]SE\s+DE\s+VOTRE\s+COMPTE/,
   /R[EÉ]SUM[EÉ]\s+D.?ACTIVIT[EÉ]/,
 ]
+const MARQUEURS_SOLDE = [
+  /SOLDE\s+(CR[EÉ]DITEUR|D[EÉ]BITEUR|PR[EÉ]C[EÉ]DENT)/,
+]
+
+// Un APPEL DE COTISATION SOCIALE : l'organisme ET l'appel (ou l'échéancier), jamais l'un des deux seul (relecture du
+// 04/11/2026, D4). « URSSAF » se lit sur les honoraires de l'expert-comptable qui fait les déclarations sociales, et
+// « appel de cotisation » sur la cotisation à l'Ordre ou à un syndicat — une DÉPENSE, qu'aucune échéance de l'onglet
+// Cotisations ne porte. Les cotisations sociales et provisionnelles, nommées comme telles, restent un marqueur à elles
+// seules : elles ne s'impriment que sur un document de caisse.
+const ORGANISMES_SOCIAUX = /URSSAF|CARPIMKO/
+const APPEL_OU_ECHEANCIER = /APPEL|[EÉ]CH[EÉ]ANCIER/
+const COTISATIONS_SOCIALES = /COTISATIONS?\s+(SOCIALES?|PROVISIONNELLES?)/
 
 // Relevés d'ACTIVITÉ de l'Assurance Maladie (SNIR, relevé individuel d'activité et de prescriptions,
 // relevé d'honoraires). Ce sont des états de ce que le praticien a facturé — jamais une dépense.
@@ -651,6 +692,41 @@ const MARQUEURS_RECETTE = [
   /BORDEREAU\s+DE\s+T[EÉ]L[EÉ]TRANSMISSION/,
 ]
 
+// ── DÉBUT COPIE titreDeFacture ───────────────────────────────────────────────────────────────────────────────────────
+// LE NOM QUE SE DONNE UNE FACTURE L'EMPORTE SUR UN MOT CROISÉ DANS SON TEXTE (relecture du 04/11/2026, D4 ; PIECES-Q3, sur la
+// recommandation). `classifieDocument` (extract-piece) cherchait ses mots dans le texte entier : « Votre attestation
+// d'assurance est jointe » faisait d'une prime de responsabilité civile une attestation, « déclarations sociales (URSSAF,
+// CARPIMKO) » des honoraires de l'expert-comptable un appel de cotisation, « Solde précédent » une facture de téléphone un
+// relevé de banque — rangées dans Documents, hors de la 2035, sans justificatif pour le débit qui les paie. Un document dont
+// l'une des premières lignes COMMENCE par « FACTURE » ou « NOTE D'HONORAIRES », et qui imprime un montant, est une facture.
+//
+// L'original vit ici ; il est copié À L'IDENTIQUE dans extract-piece, auto-portée, et titreDeFactureCopie.test.ts compare la
+// copie au caractère près et l'exécute contre l'original. L'onglet Documents s'en sert aussi, sur le texte lu d'un document
+// déjà rangé, pour dire « Facture probable » là où la lecture d'hier s'est trompée.
+
+/**
+ * Combien de lignes, en ordre de lecture, portent le titre : l'en-tête du fournisseur (nom, adresse, SIRET) passe souvent
+ * avant le mot « FACTURE », imprimé à droite, que Textract lit après la colonne de gauche.
+ */
+export const LIGNES_DU_TITRE = 10
+
+/**
+ * Une ligne qui COMMENCE par le nom que se donne une facture — « FACTURE N° 25-118 », « Facture du 05/03/2025 », « Votre
+ * facture », « Note d'honoraires » —, jamais « FACTURE CARTE » ni « FACTURE CB », libellés d'opération d'un relevé de banque.
+ * Un mot du milieu d'une ligne (« LOT de 2 Factures », « paiement de la facture ») ne compte pas.
+ */
+const LIGNE_DE_TITRE_FACTURE = /^(VOTRE\s+)?(FACTURE|NOTE\s+D\W?\s*HONORAIRES)\b(?!\s+(CARTE|CB)\b)/
+
+/** Un montant imprimé, à deux décimales : une facture en porte au moins un, un courrier qui la cite pas forcément. */
+const MONTANT_IMPRIME = /\d[.,]\d{2}(?!\d)/
+
+/** Le document se donne-t-il pour une facture, dans son titre, et imprime-t-il un montant ? */
+export function titreDeFacture(lignes: readonly string[]): boolean {
+  const titre = lignes.slice(0, LIGNES_DU_TITRE).map((ligne) => ligne.trim().toUpperCase())
+  return titre.some((ligne) => LIGNE_DE_TITRE_FACTURE.test(ligne)) && lignes.some((ligne) => MONTANT_IMPRIME.test(ligne))
+}
+// ── FIN COPIE titreDeFacture ─────────────────────────────────────────────────────────────────────────────────────────
+
 function classifieDocument(lignes: string[]): ClassificationDocument {
   const texte = lignes.join(" ").toUpperCase()
   const occurrencesOperationsBancaires = (texte.match(/VIR SEPA|PRLV\b/g) ?? []).length
@@ -665,7 +741,16 @@ function classifieDocument(lignes: string[]): ClassificationDocument {
   if (MARQUEURS_RELEVE_BANCAIRE.some((m) => m.test(texte)) || occurrencesOperationsBancaires >= 3) {
     return "releve_bancaire"
   }
-  if (/URSSAF|CARPIMKO|APPEL\s+DE\s+COTISATIONS?|COTISATIONS?\s+(SOCIALES?|PROVISIONNELLES?)/.test(texte)) {
+  // LE NOM QUE SE DONNE UNE FACTURE L'EMPORTE sur tout mot croisé plus loin (relecture du 04/11/2026, D4 ; voir le bloc
+  // `titreDeFacture`) : une « attestation jointe », un « solde précédent », une « URSSAF » citée ne la sortent plus des
+  // pièces. Après le bordereau et le nom d'un compte bancaire seulement, qui sont eux aussi le titre de leur document.
+  if (titreDeFacture(lignes)) {
+    return "facture"
+  }
+  if (MARQUEURS_SOLDE.some((m) => m.test(texte))) {
+    return "releve_bancaire"
+  }
+  if ((ORGANISMES_SOCIAUX.test(texte) && APPEL_OU_ECHEANCIER.test(texte)) || COTISATIONS_SOCIALES.test(texte)) {
     return "cotisation"
   }
   // APRÈS les cotisations, volontairement : un courrier URSSAF parle lui aussi de « situation », et
@@ -1341,7 +1426,7 @@ Deno.serve(async (req: Request) => {
     if (fileBytes.byteLength === 0) {
       return json({ error: "Fichier vide." }, 400)
     }
-    if (fileBytes.byteLength > 10 * 1024 * 1024) {
+    if (fileBytes.byteLength > TAILLE_MAX_LECTURE) {
       return json({ error: "Fichier trop volumineux pour l'extraction automatique (max 10 Mo)." }, 400)
     }
 
@@ -1373,7 +1458,7 @@ Deno.serve(async (req: Request) => {
     // continue sur le seul texte OCR, qui porte l'essentiel.
     const resteApresOcr = debut + MUR_PLATEFORME_MS - MARGE_REPONSE_MS - Date.now()
     const citation: Citation = resteApresOcr >= BUDGET_CITATION_MS
-      ? await citerChamps(lignes.join("\n"), region)
+      ? await citerChamps(lignes.join("\n"), region, BUDGET_CITATION_MS)
       : {
         retenues: {},
         rejetees: [],

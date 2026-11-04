@@ -25,6 +25,8 @@ const faux = vi.hoisted(() => ({
   importer: vi.fn(),
   resoudreHashs: null as null | (() => void),
   rejeterHashs: null as null | ((e: unknown) => void),
+  // Ce que rend l'import d'un fichier : un import réussi, sauf mention contraire.
+  resultat: { statut: 'ok', message: 'Importé' } as Record<string, unknown>,
 }))
 
 // Ce que la fenêtre écarte au choix se juge par les VRAIES bornes du seau (lib/bornesStockage.ts, ligne 22.6).
@@ -39,7 +41,7 @@ vi.mock('../../lib/importFichiers', () => ({
   },
   importerFichierDossier: (...args: unknown[]) => {
     faux.importer(...args)
-    return Promise.resolve({ statut: 'ok', message: 'Importé' })
+    return Promise.resolve(faux.resultat)
   },
 }))
 
@@ -181,5 +183,38 @@ describe('AjouterDocumentsModal — les bornes du seau', () => {
     render(<AjouterDocumentsModal dossierId="dossier-de-test" sousDossiers={[]} onClose={() => {}} onImported={() => {}} />)
     expect(document.querySelector('.dropzone')?.textContent).toContain('(PDF, JPG, PNG, CSV — 20\u00a0Mo au plus par fichier)')
     expect(document.querySelector('input[type=file]')?.getAttribute('accept')).toBe('.pdf,.jpg,.jpeg,.png,.csv')
+  })
+})
+
+// LA LECTURE RATÉE DITE (relecture du 04/11/2026, D5) : un fichier importé dont la lecture n'a pas rendu sa date ou son
+// montant se marque et se compte à part des imports réussis ; un PDF de plus de 10 Mo le dit avant l'envoi.
+describe('AjouterDocumentsModal — ce que la lecture n’a pas rendu', () => {
+  function monter() {
+    faux.chargerHashs.mockClear()
+    faux.importer.mockClear()
+    render(<AjouterDocumentsModal dossierId="dossier-de-test" sousDossiers={[]} onClose={() => {}} onImported={() => {}} />)
+    return document.querySelector('input[type=file]') as HTMLInputElement
+  }
+
+  it('un import à compléter porte un badge d’attention, et se compte à part', async () => {
+    faux.resultat = { statut: 'ok', message: 'Classé « Facture » → Pièces — montant non lu, à saisir', aCompleter: true }
+    const champ = monter()
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['x'], 'ticket.pdf', { type: 'application/pdf' })] } }) })
+    await act(async () => { screen.getByRole('button', { name: /Importer 1 fichier/ }).click() })
+    await act(async () => { faux.resoudreHashs?.() })
+    const badge = await screen.findByText('Classé « Facture » → Pièces — montant non lu, à saisir')
+    expect(badge.className).toContain('badge-warning')
+    await screen.findByText(/0 importé\(s\), 1 importé\(s\) sans lecture complète, à compléter, 0 déjà présent\(s\), 0 en erreur/)
+    faux.resultat = { statut: 'ok', message: 'Importé' }
+  })
+
+  it('un PDF de plus de 10 Mo le dit dans sa ligne, avant l’envoi', async () => {
+    const champ = monter()
+    const lourd = new File(['%PDF-1.7'], 'scan.pdf', { type: 'application/pdf' })
+    Object.defineProperty(lourd, 'size', { value: 15 * 1024 * 1024 })
+    await act(async () => { fireEvent.change(champ, { target: { files: [lourd, new File(['x'], 'petit.pdf', { type: 'application/pdf' })] } }) })
+    await screen.findByText('En attente — plus de 10 Mo : sera déposé sans être lu — mieux vaut le scinder')
+    expect(screen.getAllByText('En attente')).toHaveLength(1)
+    expect(faux.importer).not.toHaveBeenCalled()
   })
 })

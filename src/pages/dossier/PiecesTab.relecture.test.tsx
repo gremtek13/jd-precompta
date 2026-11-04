@@ -212,3 +212,30 @@ describe('D1 — le même achat entré deux fois se dit dans Justificatifs, et d
     expect(espaces(note.textContent ?? '')).toContain('Doublon probable de « facture-2025-031.pdf » (MEDICAL PLUS, 30/12/2025, 86,40 €)')
   })
 })
+
+describe('D5 — sous « À valider », la pièce que rien n’a lue passe en tête, et le dit', () => {
+  // L'ordre que la relecture a vu à l'écran : basse, haute, haute, NULLE — la pièce sans montant, en dernier.
+  beforeEach(() => {
+    faux.parTable = {
+      pieces: [
+        piece({ id: 'basse', confiance: 'basse', montant_ttc: 4120, tiers: 'CHARLIE', date_piece: '2025-06-05' }),
+        piece({ id: 'haute-1', tiers: 'ALPHA', date_piece: '2025-06-04' }),
+        piece({ id: 'haute-2', tiers: 'BRAVO', date_piece: '2025-06-03' }),
+        piece({ id: 'non-lue', montant_ttc: null, confiance: null, tiers: 'DELTA', date_piece: '2025-06-02' }),
+      ] as unknown as Record<string, unknown>[],
+    }
+  })
+
+  // Une ligne se reconnaît à son tiers : la liste ne montre pas le nom du fichier.
+  const tiersDesLignes = () => [...document.querySelectorAll('tbody tr td[data-libelle="Tiers"]')].map((td) => td.textContent?.trim())
+
+  it('« Non lue » sur sa ligne, et en tête sous « À valider »', async () => {
+    rendre()
+    await screen.findByText('CHARLIE')
+    const marque = screen.getByText('Non lue')
+    expect(within(marque.closest('tr') as HTMLElement).getByText('DELTA')).toBeDefined()
+    expect(screen.getAllByText(/^(Non lue|Montant non lu)$/)).toHaveLength(1)
+    await act(async () => { screen.getByRole('button', { name: 'À valider' }).click() })
+    expect(tiersDesLignes()).toEqual(['DELTA', 'CHARLIE', 'ALPHA', 'BRAVO'])
+  })
+})
