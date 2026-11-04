@@ -47310,6 +47310,100 @@ réception par e-mail (`receive-email`), écrit la confiance d'`extract-piece` s
 La relecture groupée écrit une date déduite sans toucher à la confiance, par son contrat (« rien d'autre n'est écrit »).
 L'assistant (`points_a_traiter`) ne dit pas le doublon probable. D3 à D6 et D8 sont au lot suivant.
 
+### 04/11/2026 — LES PIÈCES : LE CLASSEMENT DES FACTURES, LA LECTURE RATÉE DITE, LE DÉPÔT PAR PETITS LOTS, LES RECHARGEMENTS (PIECES-Q3 À Q5, D8)
+
+**CE QUI EST FAIT** (sur les recommandations, le cabinet ayant dit de continuer et d'arbitrer plus tard ; aucune
+migration ; deux Edge Functions à redéployer, `extract-piece` et `receive-email`). Trois commits : D3 à D6, D8, puis la
+date déduite de `receive-email`.
+
+**D4, LE CLASSEMENT (PIECES-Q3).** `classifieDocument` cherchait ses mots dans le texte entier : une « attestation
+jointe », un « solde précédent », une « URSSAF » citée envoyaient de vraies factures dans Documents, hors de la 2035 et
+sans justificatif pour le débit qui les paie. Désormais le NOM que se donne le document l'emporte : une ligne, parmi les
+dix premières en ordre de lecture, qui COMMENCE par « FACTURE », « Votre facture » ou « NOTE D'HONORAIRES » (jamais «
+FACTURE CARTE » ni « FACTURE CB », libellés d'opération d'un relevé), avec un montant imprimé à deux décimales, fait une
+facture. La règle vit dans `lib/titreDeFacture.ts`, copiée à l'identique dans `extract-piece` entre les bornes `──
+DÉBUT/FIN COPIE titreDeFacture`, gardée par `titreDeFactureCopie.test.ts`. L'ordre : le bordereau (recette), puis le NOM
+d'un compte bancaire (« relevé de compte », « synthèse de votre compte », « résumé d'activité ») ou trois opérations,
+puis le titre de facture, puis le SOLDE (« solde précédent », « créditeur », « débiteur », sorti de la première famille
+pour cela), puis l'appel de cotisation, resserré : l'organisme (URSSAF, CARPIMKO) ET l'appel ou l'échéancier, ou les
+cotisations sociales ou provisionnelles nommées — « appel de cotisation » seul est la cotisation à l'Ordre, une dépense,
+et une attestation de vigilance de l'URSSAF redevient une attestation. Les cinq factures de la relecture deviennent des
+factures ; un bordereau, un relevé (même chargé de « FACTURE CARTE »), un appel de l'URSSAF ou de la CARPIMKO, une
+attestation dont le titre passe sous un long en-tête restent ce qu'ils sont (`extractPieceClassification.test.ts`).
+Écartés : ne chercher « ATTESTATION » que dans le titre (une vraie attestation sous un en-tête de dix lignes serait
+devenue une facture d'achat, et le titre de facture suffit aux cas de la relecture) ; exiger deux marqueurs pour un
+relevé (un relevé réel n'en porte parfois qu'un — le solde vaut toujours relevé, mais après le titre de facture) ;
+exiger « TTC » (une facture d'un fournisseur exonéré ne l'imprime pas : un montant suffit). Le seuil de dix lignes et «
+Votre facture » sont des hypothèses, à confronter aux documents réels de la répétition générale. À l'écran : l'import du
+cabinet dit « Classé « … » → Documents par la lecture — une facture se reprend par « C'est une facture » » ; l'onglet
+Documents marque « Facture probable » un document rangé dont le texte lu se donne pour une facture par la MÊME règle
+(`lib/facturesProbablesLecture.ts` : une lecture à part, best-effort, qui ne rapatrie que les textes des documents qui
+portent « factur » ou « honoraires », et ne marque rien, en le disant, sur une lecture partielle), à côté de « C'est une
+facture » — ce qui rattrape aussi les documents rangés avant la correction. D3 (la note d'honoraires ÉMISE par le
+praticien, lue comme un achat) n'est pas traité : la comparaison de l'émetteur au SIREN du dossier attend la réponse du
+cabinet à PIECES-Q3. Le titre de facture la range en facture d'achat, comme hier.
+
+**D5, LA LECTURE RATÉE DITE (PIECES-Q5).** Une règle, `lib/lectureDesPieces.ts`. Au dépôt du praticien, le résultat « ok
+» porte `lectureNonAboutie` quand la pièce arrive sans date ou sans montant (lecture ratée, incomplète, ou non tentée) :
+« Mes pièces » le dit après le lot, et la ligne d'une pièce que rien n'a lue dit « lecture non aboutie, ton cabinet la
+complétera » — sans montant, comme tout l'écran. Au cabinet, `importerFichierDossier` rend `aCompleter` et « Classé «
+Facture » → Pièces — montant non lu, à saisir » (ou « date non lue », « montant et date non lus ») ; les deux fenêtres
+d'import le marquent d'un badge d'attention et le comptent à part (« importé(s) sans lecture complète, à compléter »).
+Un PDF de plus de 10 Mio (`TAILLE_MAX_LECTURE`, confrontée à celle d'`extract-piece` par `extractPieceBudget.test.ts`)
+se dit AVANT l'envoi en conseillant de le scinder — une confirmation au praticien (Annuler le garde de côté), une
+mention dans la ligne du fichier au cabinet — et n'est plus envoyé à la lecture pour un 400. Aligner le seau sur 10 Mio
+pour les PDF a été écarté (rapport, D5) : un PDF lourd est un justificatif que le cabinet complète à la main. Sous « À
+valider », la pièce que rien n'a lue (à valider, sans aucun montant, ni en euros ni dans sa devise) passe en tête avec «
+Non lue » (aucune lecture) ou « Montant non lu » (lecture ratée), et une confiance nulle prend le rang de « basse »
+(`rangSousAValider`). La relecture groupée écrit, pour cette seule pièce, les montants lus (convertis comme au dépôt) et
+le fournisseur s'il est vide ; l'écriture porte ses conditions en base (encore à valider, encore sans montant, et sans
+tiers pour l'écrire) et rend la ligne touchée : une pièce complétée entre-temps n'est pas touchée, et c'est dit. Ni la
+confiance, ni la catégorie, ni le statut. Une pièce non lue, même datée et pourvue de son texte, redevient éligible à la
+relecture.
+
+**D6, LE DÉPÔT PAR PETITS LOTS (PIECES-Q4).** `lib/reservoir.ts` : au plus trois dépôts lus à la fois dans « Mes pièces
+» (`DEPOTS_LUS_A_LA_FOIS`), un réservoir par écran (un `useRef`) partagé entre les lots comme les empreintes en vol ;
+les fichiers qui attendent disent « En attente… ». Dans `extract-piece`, l'appel au modèle porte un signal qu'une
+minuterie abandonne à `BUDGET_CITATION_MS` (30 s) — une minuterie et un `AbortController` plutôt
+qu'`AbortSignal.timeout`, pour que le harnais HTTP le fasse tomber sur-le-champ — ; au-delà, l'extraction rend le texte,
+la classification et la date de repli, et `_citation_erreur` dit « délai de la citation dépassé (30 s) », que le cabinet
+lit « montant non lu ». Le harnais des Edge Functions passe désormais au faux modèle les options de l'appel (le signal).
+La lecture des quotas Textract et Bedrock dans la console AWS reste un geste du cabinet (PIECES-Q4).
+
+**D8, LES RECHARGEMENTS.** `PiecesTab.load` lance ses dix-neuf lectures ensemble et n'écrit rien avant leur retour ; un
+numéro de chargement fait que seul le dernier lancé écrit, comparé avant la première écriture ; « Chargement… » ne vaut
+que pour un dossier qui change. Une fiche enregistrée appelle `relireLesPieces` : les pièces, les règles apprises du
+dossier et du cabinet, la présence des textes lus et les doublons de contenu, en parallèle ; ce groupe a son propre
+numéro, partagé avec `load`, et le plus récent des deux l'écrit (un chargement entier plus lent ne remet plus une pièce
+validée « à valider »). Les trois lectures du groupe s'écrivent deux fois, à l'identique, dans les deux `Promise.all` :
+`lecturesSignalees.test.ts` ne lit un `lireTout` que dans l'entrée de son `Promise.all`, et une fonction qui le rendrait
+serait une forme non reconnue. « Valider la sélection », la suppression en lot et la relecture groupée gardent le
+chargement entier, désormais parallèle. Côté praticien, un seul rechargement par lot, et le même numéro.
+
+**LA DATE DÉDUITE DE `receive-email` (PIECES-Q1, (A)).** Oui, la réception par e-mail écrivait la confiance de la
+lecture telle quelle. Le bloc `dateDeduite` de `lib/dateDeduite.ts` (qui n'importe plus rien) est copié à l'identique
+dans la fonction, qui écrit `confianceDeLExtraction(extraction)` ; `dateDeduiteCopie.test.ts` le garde, et un scénario
+HTTP fait déduire la date par la vraie `extract-piece` (la pièce posée « moyenne », le témoin « haute »).
+
+**LES TESTS.** `extractPieceClassification.test.ts` (les cinq scénarios D4 en gardes, et ce qui reste ce qu'il est ; la
+fonction extraite est désormais transpilée, le bloc copié portant ses types), `titreDeFactureCopie.test.ts`,
+`extractPieceBudget.test.ts` (le délai de l'appel, la taille de la lecture), `lectureDesPieces.test.ts`,
+`reservoir.test.ts`, `facturesProbablesLecture.test.ts`, `depotDeLaRelecture.test.ts` (les scénarios D5 et D6 du dépôt :
+la lecture ratée dite des deux côtés, le PDF lourd jamais envoyé, quarante photos à trois en vol, deux lots qui
+partagent le réservoir et les empreintes), `relectureDocuments.test.ts` (PIECES-Q5), `dateDeduiteCopie.test.ts` ; à
+l'écran, `ClientUpload.test.tsx` (trois à la fois, « En attente… », un rechargement par lot, l'avis, la confirmation du
+PDF lourd, la relecture lente qui n'écrit plus), `PiecesTab.relecture.test.tsx` (« Non lue » en tête ; la fiche qui ne
+relit que son groupe, deux clics dans le même `act` ; le chargement lent qui n'écrit plus), `DocumentsTab.test.tsx`,
+`AjouterDocumentsModal.test.tsx` ; en HTTP, le modèle muet abandonné à son délai et la pièce jointe à date déduite.
+`verrousEcritures.test.ts` nomme la nouvelle place du dépôt parallèle voulu. Rejoués sur ce code, les scénarios de la
+relecture virent au rouge pour D2, D4, D5 et D7 (leur extraction de la fonction ne connaît pas le nouveau bloc) ; celui
+des quarante photos reste vert, car il appelle le dépôt sans l'écran.
+
+**CE QUI RESTE.** D3 et la comparaison de l'émetteur au SIREN du dossier (PIECES-Q3) ; la Vue d'ensemble qui compterait
+les factures probables de Documents (le rapport la proposait ; la marque est sur la ligne) ; les quotas AWS lus par le
+cabinet (PIECES-Q4) ; le déploiement d'`extract-piece` et de `receive-email` ; le seuil de dix lignes, « Votre facture »
+et le resserrement de la cotisation, à confronter aux documents réels de la répétition générale.
+
 ### 04/11/2026 — VINGT-QUATRE RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 04/11/2026)
 
 Relue en entier le 04/11/2026 : 348 réponses, dont vingt-quatre neuves. À la recommandation, vingt et une.
