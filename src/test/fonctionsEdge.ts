@@ -152,7 +152,7 @@ export type Panne = { erreur: ErreurFactice; fois?: number; sauter?: number } & 
   | { table: string; operation?: Operation }
   | { rpc: string }
   | { auth: 'getUser' | 'createUser' | 'listUsers' | 'updateUserById' | 'getUserById' }
-  | { stockage: 'upload' | 'remove' }
+  | { stockage: 'upload' | 'remove' | 'list' }
 )
 
 export type Traitant = (requete: Request) => Response | Promise<Response>
@@ -1102,6 +1102,26 @@ function clientSupabase(monde: Monde, env: Environnement, url: unknown, cleRecue
           if (monde.fichiers.has(nom) && !opts?.upsert) return { data: null, error: { message: 'The resource already exists', status: 409 } }
           monde.fichiers.set(nom, corps)
           return { data: { path: chemin }, error: null }
+        },
+        // `list` : les ENFANTS DIRECTS du chemin, comme le stockage les rend — un fichier sous son nom relatif, un
+        // sous-dossier sous le nom de son premier segment et un `id` nul —, triés par nom, par pages (`limit`, `offset`).
+        list: async (chemin: string, opts?: { limit?: number; offset?: number; sortBy?: { column: string; order: string } }) => {
+          monde.journal.push({ genre: 'stockage', seau, operation: 'list', chemins: [chemin] })
+          if (opts && Object.keys(opts).some((c) => !['limit', 'offset', 'sortBy'].includes(c))) throw new Error('Faux stockage : options de list non modélisées')
+          if (opts?.sortBy && (opts.sortBy.column !== 'name' || opts.sortBy.order !== 'asc')) throw new Error('Faux stockage : seul le tri par nom croissant est modélisé')
+          const panne = panneDe(monde, (p) => 'stockage' in p && p.stockage === 'list')
+          if (panne) return { data: null, error: panne }
+          const prefixe = chemin === '' ? `${seau}/` : `${seau}/${chemin.replace(/\/+$/, '')}/`
+          const entrees = new Map<string, { name: string; id: string | null }>()
+          for (const nom of monde.fichiers.keys()) {
+            if (!nom.startsWith(prefixe)) continue
+            const reste = nom.slice(prefixe.length)
+            const premier = reste.split('/')[0]
+            entrees.set(premier, reste.includes('/') ? { name: premier, id: null } : { name: reste, id: `objet-${reste}` })
+          }
+          const triees = [...entrees.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+          const debut = opts?.offset ?? 0
+          return { data: triees.slice(debut, debut + (opts?.limit ?? 100)), error: null }
         },
         remove: async (chemins: string[]) => {
           monde.journal.push({ genre: 'stockage', seau, operation: 'remove', chemins })
