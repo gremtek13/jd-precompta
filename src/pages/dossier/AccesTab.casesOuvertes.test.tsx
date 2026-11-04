@@ -6,6 +6,7 @@ import { ARTICLES_EXPORTES } from '../../lib/articles'
 import { CHANGEMENT_DE_RIB_EXPORTE } from '../../lib/changementDeRib'
 import { CONTACTS_EXPORTES } from '../../lib/contacts'
 import { IMPORT_CONTACTS_EXPORTE } from '../../lib/contactsImport'
+import { DEVIS_EXPORTES } from '../../lib/devis'
 import { ceQueDisentLesCases, ceQueDisentLesCasesDuDossier, type ReglageDuDossier } from '../../lib/droitsAcces'
 import { LOGO_DES_FACTURES_EXPORTE } from '../../lib/logoDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from '../../lib/parametresFacturation'
@@ -97,8 +98,8 @@ describe('AccesTab — la phrase des cases, les deux étapes en base', () => {
     // factures (étape A5c1) et des ventes facturées de la simulation (étape VF8e) sont pris tels qu'ils sont : la phrase
     // suit les dix (droitsAcces.test.ts, leurs états).
     expect(ceQueDisentLesCasesDuDossier(BASCULE))
-      .toBe(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE, BASCULE, SIMULATION_VENTES_FACTUREES_EXPORTEE))
-    const phrase = screen.getByText(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE, BASCULE, SIMULATION_VENTES_FACTUREES_EXPORTEE))
+      .toBe(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE, BASCULE, SIMULATION_VENTES_FACTUREES_EXPORTEE, DEVIS_EXPORTES))
+    const phrase = screen.getByText(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE, BASCULE, SIMULATION_VENTES_FACTUREES_EXPORTEE, DEVIS_EXPORTES))
     expect(phrase.textContent).toContain('« Ventes » ouvre au client « Mes ventes », où il lit ses ventes')
     expect(phrase.textContent).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
     expect(phrase.textContent).toContain('et, avec « Ventes », désigner celui qui prouve un encaissement.')

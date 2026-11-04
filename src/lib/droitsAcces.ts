@@ -38,6 +38,7 @@ import { ARTICLES_EXPORTES } from './articles'
 import { BASCULE_OFFERTE } from './basculeDesVentes'
 import { CHANGEMENT_DE_RIB_EXPORTE } from './changementDeRib'
 import { CONTACTS_EXPORTES } from './contacts'
+import { DEVIS_EXPORTES } from './devis'
 import { IMPORT_CONTACTS_EXPORTE } from './contactsImport'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
@@ -265,6 +266,13 @@ export const PHRASE_DES_VENTES_DE_LA_SIMULATION = ' La case lui ouvre aussi sa s
 // avoirs sources — des identifiants, rien de leur contenu ; « Ma simulation » les compte. La phrase le dit à la place de
 // « La case lui ouvre aussi sa simulation. », dans ce que « Banque » ouvre, donc avec la banque du client (P7) : sans elle,
 // ce drapeau ne change rien à la phrase. « Ventes » n'y gagne rien : elle lit déjà ses factures.
+// DEPUIS L'ÉTAPE P5, un douzième paramètre, OBLIGATOIRE : les migrations `devis_du_client` et `devis_du_client_suppression`
+// (`DEVIS_EXPORTES`, lib/devis.ts), préparées, présentées au cabinet avant d'être appliquées, ouvrent au client « Ventes »,
+// par la base, la lecture de ses devis et du lien de chacun à la facture qui en est tirée (`devis_lecture_ventes`,
+// `devis_factures_lecture_ventes`), et quatre gestes par des fonctions sous `gere_les_ventes` : `enregistrer_devis`,
+// `decider_devis`, `facturer_devis`, `supprimer_brouillon_devis`. Aucun écran ne les montre encore (étape P6) : la phrase
+// les dit ouverts « par la base », sans en nommer aucun. Elles exigent celles des ventes : sans elles, ce drapeau ne
+// change rien à la phrase ; baissé, la phrase reste celle d'avant, au caractère près.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -277,6 +285,7 @@ export function ceQueDisentLesCases(
   logoOuvert: boolean,
   reglage: ReglageDuDossier,
   simulationVentesOuverte: boolean,
+  devisOuverts: boolean,
 ): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
   if (!simulationSousBanque && !ventesOuvertes) {
@@ -292,6 +301,14 @@ export function ceQueDisentLesCases(
       + 'lui-même sa plateforme agréée et Super PDP et en voir l’état, y transmettre une facture et en suivre la '
       + 'transmission, relever les statuts de sa plateforme, et envoyer une facture par e-mail, trente par dossier et par '
       + 'jour au plus.'
+    : ''
+  // Les devis (étape P5) : la lecture des deux tables que leur migration ouvre à « Ventes », et les quatre gestes de leurs
+  // fonctions ; aucun écran encore (étape P6), d'où « par la base » seul. Juste après les ventes : les devis
+  // viennent avant les factures, comme dans ce que la case ouvrira.
+  const devis = ventesOuvertes && devisOuverts
+    ? ' Par la base, il lit aussi ses devis et le lien de chacun à la facture qui en est tirée, et peut créer, modifier ou '
+      + 'émettre un devis, l’accepter ou le refuser, en tirer un brouillon de facture une fois accepté, ou supprimer un '
+      + 'brouillon de devis.'
     : ''
   const avecLesArticles = ventesOuvertes && articlesOuverts
   const articles = avecLesArticles
@@ -378,7 +395,7 @@ export function ceQueDisentLesCases(
   // Le réglage du dossier (étape VF8d) se dit après la banque et avant ce qui vient ensuite : ce qu'il change tient à CE
   // dossier, quand ce qui précède tient à la case.
   const dossier = ventesOuvertes ? ' ' + phraseDuReglage(reglage) : ''
-  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + contacts
+  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + devis + articles + adresses + contacts
     + importContacts + parametres + logo + banque + ventesFermees + dossier + aVenir
 }
 
@@ -390,12 +407,12 @@ export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 // facturation, de la leur (étape A5a) ; celui du dernier changement du RIB, de la sienne (étape A5b3a) ; celui du logo des
 // factures, de la sienne (étape A5c1). Le réglage du dossier, l'onglet le lit (étape VF8d) : la phrase n'est plus une
 // constante, mais celle des drapeaux et de ce réglage ; celui des ventes facturées de la simulation, de la sienne (étape
-// VF8e), levé depuis son application, le 27/10/2026.
+// VF8e), levé depuis son application, le 27/10/2026 ; celui des devis, de leurs deux migrations (étape P5).
 export function ceQueDisentLesCasesDuDossier(reglage: ReglageDuDossier): string {
   return ceQueDisentLesCases(
     COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
     IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE, reglage,
-    SIMULATION_VENTES_FACTUREES_EXPORTEE,
+    SIMULATION_VENTES_FACTUREES_EXPORTEE, DEVIS_EXPORTES,
   )
 }
 
