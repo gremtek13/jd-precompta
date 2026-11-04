@@ -42,7 +42,8 @@
 -- paiement corrigé au 14/03/2025 ; la validation de 2025 se refuse au jour du NOUVEAU paiement, jamais de l'ancien ; la
 -- contrepartie de l'ancien, remplacé, ne s'écrit pas ; celle du nouveau écrite, la validation passe, et la caisse reportée
 -- ne compte le paiement corrigé qu'une fois. Ses étapes (14 à 20) ne se jouent qu'avec la migration : sans elle, une ligne
--- dit qu'elles attendent (EN ATTENTE), et les treize d'hier se rendent à l'identique.
+-- dit qu'elles attendent (EN ATTENTE), et les treize d'hier se rendent à l'identique. Joué sur la réplique de l'étape (la
+-- production du jour, 170 migrations) : sans la migration, 14 verdicts justes ; avec elle, 20 ; 0 en faute.
 do $essai$
 declare
   -- La numérotation de l'application, celle que la validation reçoit : par pièce au journal AC, les opérations de caisse en OD.
