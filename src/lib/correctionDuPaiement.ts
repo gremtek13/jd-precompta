@@ -21,12 +21,13 @@ import {
 // et les mots au texte de la migration, où qu'elle soit (préparée aujourd'hui, dans l'export le jour de son application), et
 // le banc de l'essai (src/test/essaiCaisse.ts) rejoue ses étapes 270 à 289 par ce module, au verdict de la base.
 //
-// LE DRAPEAU. `CORRECTION_DU_PAIEMENT_EXPORTEE` reste BAISSÉ tant que la migration n'est pas dans l'export : aucun écran ne
-// corrige un paiement, et les jugements `…Selon` le disent (`absent`) sans juger ; les écrans sont ceux d'hier, au caractère
-// près. Levé le jour de l'application — le fichier dans l'export, sous la version de sa ligne d'historique —, « Corriger »
-// s'offre dans « Mes pièces » (le praticien, ses propres paiements) et dans la fiche d'une pièce (le cabinet). Les moteurs ne
-// changent pas : ils ne comptent que les paiements non retirés (`paiementsParLaCaisseSelon`), et la base retire l'ancien.
-export const CORRECTION_DU_PAIEMENT_EXPORTEE = false
+// LE DRAPEAU. `CORRECTION_DU_PAIEMENT_EXPORTEE` est LEVÉ depuis le 04/11/2026 : la migration est en production, son fichier
+// dans l'export sous la version de sa ligne d'historique (`20261104133623_correction_du_paiement_par_la_caisse.sql`).
+// « Corriger » s'offre dans « Mes pièces » (le praticien, ses propres paiements) et dans la fiche d'une pièce (le cabinet).
+// Baissé — l'état d'avant, que les jugements `…Selon` gardent éprouvé —, aucun écran ne corrige un paiement, et les jugements
+// le disent (`absent`) sans juger. Les moteurs ne changent pas : ils ne comptent que les paiements non retirés
+// (`paiementsParLaCaisseSelon`), et la base retire l'ancien.
+export const CORRECTION_DU_PAIEMENT_EXPORTEE = true
 
 // ── Les mots de la base ───────────────────────────────────────────────────────────────────────────────────────────────
 

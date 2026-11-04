@@ -944,6 +944,20 @@ valeur de la réplique, les huit autres inchangées ; les trois contrôles : la 
 `e5863aa7271b53077d6ac388619e1209` des deux côtés ; l'inventaire inchangé (2 307, `93edc60a…`) ; le socle, qu'il ne touche
 pas, inchangé avec la signature (HISTORIQUE.md, « LA FACTURE : LA MIGRATION EN PRODUCTION (FACTURE-Q1) »).
 
+**Appliqué le 04/11/2026 : `correction_du_paiement_par_la_caisse`, version `20261104133623`** (C12B-Q1, sur l'accord du
+cabinet). Par l'outil : la ligne d'historique rend `fd9978cc8e1a9d44a7feb90d947f72c7` (17 939 caractères, une
+instruction), celle du fichier, qui entre ici sous cette version, texte inchangé ; le corps de la fonction, `ff72f955…`,
+est celui qu'attend le retour arrière. Les trois contrôles, égaux des deux côtés : la dérive, 171 fichiers et 171
+migrations, `6f9dac54cf7c049516b5db39d9523688` ; le socle, 81 instructions, `cea19cff…` ; l'inventaire, 2 310 objets,
+`c4002f200f425581d1847c63ac9eba2f`. `signature.sql` en production : « fonctions » 227 `1a3df823…` et « droits des
+fonctions » 227 `fb74b916…`, celles de la réplique migrée, les sept autres familles celles de `regles_prod170` (colonnes
+919 `2848a5f9…`, contraintes 712 `e06f758d…`, déclencheurs 87 `0d648fb1…`, droits des tables 82 `36d97923…`, index 244
+`b4ac00a7…`, policies 162 `c881b044…`, rls 82 `5fb5dc41…`). Joués en production par l'outil : le bloc CQ de `rls.sql`
+(CQ, CQ1 à CQ3 sans faute, M-CQ1 et M-CQ2 qui mordent) et `validationDesPaiementsParLaCaisse.sql` entier (20 étapes sur
+20, la base ayant reçu le texte construit, 16 523 caractères, `308ce88b…`) ; rien n'est resté. `caisse.sql` (346 Ko) et
+`rls.sql` entier ne passent pas par l'outil : leur verdict est celui de la réplique, dont la production porte la
+signature. L'historique de ce qui précède suit, inchangé.
+
 **Préparé le 04/11/2026, PAS ENCORE APPLIQUÉ : `correction_du_paiement_par_la_caisse`** (C12B-Q1, ligne 26.6 : corriger
 un paiement en espèces d'un seul geste). Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version
 PROVISOIRE, `20261104120000` (17 939 caractères, 18 293 octets, 230 lignes, `fd9978cc8e1a9d44a7feb90d947f72c7`, ni barre
