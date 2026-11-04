@@ -47805,3 +47805,26 @@ mutations sur 17 ; `devisSuppression.sql` 22 ; `rls.sql` 0 en faute, 72 sur 72 ;
 tuées ; le banc du leurre SÛR. Les écrans (P6a1, derrière `DEVIS_EXPORTES`) : la vue « Devis » de `FacturesTab`, dans les
 deux espaces — liste lue en entier, formulaire d'un brouillon, émission et suppression confirmées en nommant ce qui part,
 les refus dits avant le clic dans l'ordre de la base ; restent la réponse, la transformation, l'aperçu, l'e-mail (P6a2).
+
+### 04/11/2026 — LES DEVIS : RÉPONDRE, EN TIRER UNE FACTURE, L'APERÇU ET L'IMPRESSION (P6A2, P6B), DERRIÈRE `DEVIS_EXPORTES`
+
+Deux lots d'écrans de la vue « Devis » (`FacturesTab`, les deux espaces), sous le drapeau encore baissé. P6a2 : la
+réponse du client se saisit (`DevisReponseModal`) — acceptée ou refusée, à sa date ; une acceptation après la validité
+ne part que sur une confirmation explicite qui la dit (P5-horsValidite, `acceptationHorsValidite`, `avisHorsValidite`) ;
+« Transformer en facture » un devis accepté passe `facturer_devis` seule, sur une confirmation qui dit ce que le
+brouillon reprend, à l'émetteur du jour, et ce qu'il ne reprend pas (ni l'exécution prévue, ni les mentions légales, ni
+les notes), et le lien du devis à la facture tirée se lit dans la liste ; la recherche commune s'y branche (`champsDeRechercheDuDevis`). P6b : l'aperçu de chaque devis
+(`DevisApercu`, ce qui s'imprime décidé dans `ceQueLeDevisImprime`) — « DEVIS » et son numéro, ou « DEVIS — BROUILLON » et
+la phrase imprimée qui dit qu'il n'est pas une offre, l'émetteur figé du devis émis ou celui que la base posera, le bloc
+« Bon pour accord » ; ni les notes, ni la réponse, ni logo (le devis n'en fige aucun) ; le taux par la fonction de la
+facture, désormais partagée (`tauxImprime`). L'impression mesurée sur un vrai PDF (`outils/captures/impressionDevis.mjs` ;
+le banc lève le drapeau d'une migration qui attend par `BANC_DRAPEAUX`, la source jamais touchée) ; `debordements.mjs`
+rend 0 aux cinq largeurs, comme `main`. Restent l'envoi par e-mail (P6c), l'acompte (P5b), la conservation (P5c).
+
+### 04/11/2026 — LE DÉCODAGE WINDOWS-1252 NE DÉPEND PLUS DU NODE
+
+`TextDecoder('windows-1252')` de Node 22.22 lit les octets 0x80 à 0x9F comme du latin-1 : le « € » d'un relevé exporté
+sous Windows (octet 0x80) y devenait U+0080, et cinq fichiers de tests échouaient sur ce Node, verts sur celui de la CI
+et dans les navigateurs. `decoderWindows1252` (`lib/decodageTexte.ts`) rend chaque octet selon l'index windows-1252 de la
+norme Encoding du WHATWG ; le relevé, la balance reprise et l'import des clients le partagent ; un test l'éprouve sur les
+256 octets contre un oracle écrit à la main.
