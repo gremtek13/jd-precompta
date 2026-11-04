@@ -1006,6 +1006,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   « inachevée ». Un mouvement classé par une catégorie au poste « Cotisations sociales personnelles », que plus rien ne
   propose, retient la validation (`cotisations-classees-par-categorie`, COT-Q2) → « LES COTISATIONS : RÉUNIR, MODIFIER,
   ET LE PRÉLÈVEMENT CLASSÉ PAR UNE CATÉGORIE (COT-Q1 À Q3) ».
+- **Un bien acquis avant l'ouverture s'inscrit sans pièce** (« Ajouter un bien repris », `bienReprisSansPiece`, IMMO-Q2,
+  sur la recommandation) : aucune acquisition écrite, ses dotations si, et `immobilisationSansJustificatif` prend
+  l'ouverture ; les candidates ne sont que des achats, hors des postes qui ne rangent jamais un bien
+  (`achatsAImmobiliser`) ; la reprise se confronte au registre, compte par compte, en attention (IMMO-Q1) ; sous le
+  barème, la catégorie « Carburant / déplacements » se dit (`carburant-sous-bareme`, VEH-Q1) → « LES IMMOBILISATIONS ET
+  LE VÉHICULE : LE BIEN REPRIS, LA REPRISE CONFRONTÉE AU REGISTRE, LE CARBURANT SOUS LE BARÈME (IMMO-Q1, IMMO-Q2,
+  VEH-Q1) ».
 - **Le modèle comptable** se règle tant que le brouillon est vide → « LA COMPTABILITÉ D'ENGAGEMENT » ; le lettrage se
   DÉDUIT du rapprochement → « LE LETTRAGE SE DÉDUIT DU RAPPROCHEMENT ». **Ouverture** : une balance reprise contrôlée
   devient les à-nouveaux, une fois ; ensuite seulement après validation du précédent (`soldes_reportes`) → « LA
