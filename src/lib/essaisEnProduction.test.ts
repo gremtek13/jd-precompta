@@ -289,7 +289,9 @@ describe('les essais de la base, rejoués en production', () => {
     // semis, il se joue comme un essai de la production) ; la famille « apres » reste, vide. Seize encore le 04/11/2026 :
     // `devis` quitte l'attendu impossible pour la famille « apres », la réplique munie de ses deux migrations préparées
     // (étape P5, `devis_du_client` puis `devis_du_client_suppression`) ; plus aucun essai n'est attendu impossible.
-    expect(cas.length).toBe(16)
+    // Dix-sept le même jour : `envoiDesDevis` entré dans la famille « apres », après sa migration préparée (étape P6c1,
+    // `envoi_des_devis`, qui suppose les deux des devis).
+    expect(cas.length).toBe(17)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

@@ -96,12 +96,12 @@ describe('le plan prévu, paramètres de facturation compris', () => {
       .toBe(false)
   })
 
-  it('après les contacts, à la fin de ce qui ne dépend que du dossier — avant les devis et `exercices_valides`', () => {
+  it('après les contacts, à la fin de ce qui ne dépend que du dossier — avant `exercices_valides` (les devis, depuis l’étape P6c1, avant le journal des e-mails)', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(ORDRE_RESTAURATION_PREVU[rang('parametres_facturation') - 1]).toBe('contacts')
-    // Depuis l'étape VF6b, le journal des désignations les suit (sauvegardeDesignations.test.ts), puis les devis.
+    // Depuis l'étape VF6b, le journal des désignations les suit (sauvegardeDesignations.test.ts) ; les devis, jusqu'à P6c1.
     expect(ORDRE_RESTAURATION_PREVU[rang('parametres_facturation') + 1]).toBe('designations_des_pieces')
-    expect(rang('parametres_facturation')).toBeLessThan(rang('devis_numerotation'))
+    expect(rang('parametres_facturation')).toBeLessThan(rang('exercices_valides'))
     expect(rang('parametres_facturation')).toBeGreaterThan(rang('dossiers'))
     expect(rang('parametres_facturation')).toBeLessThan(rang('exercices_valides'))
   })

@@ -88,12 +88,12 @@ describe('le plan prévu, contacts compris', () => {
     expect(LIENS_GARDES.some((r) => TABLES_DES_CONTACTS.includes(r.enfant) || TABLES_DES_CONTACTS.includes(r.parent))).toBe(false)
   })
 
-  it('après les adresses de réception, à la fin de ce qui ne dépend que du dossier — avant les devis et `exercices_valides`', () => {
+  it('après les adresses de réception, à la fin de ce qui ne dépend que du dossier — avant `exercices_valides` (les devis, depuis l’étape P6c1, avant le journal des e-mails)', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(ORDRE_RESTAURATION_PREVU[rang('contacts') - 1]).toBe('adresses_reception')
-    // Depuis l'étape A5a, les paramètres de facturation les suivent (sauvegardeParametresFacturation.test.ts), puis les devis.
+    // Depuis l'étape A5a, les paramètres de facturation les suivent (sauvegardeParametresFacturation.test.ts) ; les devis, jusqu'à P6c1.
     expect(ORDRE_RESTAURATION_PREVU[rang('contacts') + 1]).toBe('parametres_facturation')
-    expect(rang('contacts')).toBeLessThan(rang('devis_numerotation'))
+    expect(rang('contacts')).toBeLessThan(rang('exercices_valides'))
     expect(rang('contacts')).toBeGreaterThan(rang('dossiers'))
     expect(rang('contacts')).toBeLessThan(rang('exercices_valides'))
   })

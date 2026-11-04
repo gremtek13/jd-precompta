@@ -47828,3 +47828,20 @@ sous Windows (octet 0x80) y devenait U+0080, et cinq fichiers de tests échouaie
 et dans les navigateurs. `decoderWindows1252` (`lib/decodageTexte.ts`) rend chaque octet selon l'index windows-1252 de la
 norme Encoding du WHATWG ; le relevé, la balance reprise et l'import des clients le partagent ; un test l'éprouve sur les
 256 octets contre un oracle écrit à la main.
+
+### 04/11/2026 — LES DEVIS : L'ENVOI PAR E-MAIL, EN BASE (P6C1) (PRÉPARÉE, PAS APPLIQUÉE)
+
+La migration `envoi_des_devis` (supabase/preparees/20261105100300, PRÉPARÉE, pas appliquée) prépare le journal de l'envoi
+d'un devis : `emails_envoyes` admet le type « devis » (la contrainte remplacée sous son nom, un `drop constraint` que le
+détecteur n'a pas retenu le 13/10/2026) ; `devis_id`, clé vers `devis` à NUL à la suppression (le journal survit au
+devis, comme à la facture) ; un devis cité seulement par une ligne « devis », dans ce sens seulement (la mise à nul d'une
+suppression laisse une ligne « devis » sans devis) ; l'index de la clé. Aucune policy touchée : la lecture du client
+« Ventes » lisait déjà `type in ('facture', 'devis')`. Son retour efface les lignes « devis » et doit précéder celui des
+devis (sinon `drop table devis` s'arrête sur la clé, vu). Sur la réplique (171 migrations et les deux des devis) :
+`envoiDesDevis.sql`, neuf, 31 verdicts, 0 en faute, 5 mutations sur 5, rien resté — sans la migration, joué jusqu'au bout,
+EN ATTENTE ; onze mutations de la migration, toutes tuées ; `devis.sql` 207, 0 en faute, 17 sur 17 ; `rls.sql` (3bis : la
+ligne « devis » lue avec « Ventes », jamais sans) 94 lignes, 0 en faute, 73 sur 73 ; `ventesClient.sql` 90, 0 en faute ;
+la signature, après la migration puis son retour, égale à celle d'avant ; le banc du leurre SÛR. Le plan de sauvegarde :
+la relation derrière `ENVOI_DES_DEVIS_PREVU` (devis.ts, baissé) ; les devis passent AVANT le journal des e-mails dans
+l'ordre prévu (l'ordre du jour inchangé) — `restauration.sql`, d'avant, s'arrêtait sur la clé (23503), ancré ainsi il
+restaure à l'identique.

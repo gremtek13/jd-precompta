@@ -14,7 +14,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
-import { DEVIS_EXPORTES } from './devis'
+import { DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 
@@ -169,6 +169,25 @@ export function auGrapheDeLaCaisse(relation: Pick<Relation, 'enfant' | 'colonne'
     || !RELATIONS_DE_LA_CAISSE.some((r) => r.enfant === relation.enfant && r.colonne === relation.colonne)
 }
 
+// L'ENVOI D'UN DEVIS PAR E-MAIL (espace client, étape P6c1 ; migration `envoi_des_devis`, préparée, PAS APPLIQUÉE) : ni
+// table, ni rang, ni chemin nouveaux — une COLONNE sur une table au plan, `emails_envoyes.devis_id`, et sa clé vers `devis`,
+// à nul à la suppression du devis (le journal d'un envoi survit à ce qu'il a envoyé, comme `facture_id`). Le patron de la
+// source d'une écriture de la caisse : la relation ne vit au graphe du jour que le drapeau levé (`ENVOI_DES_DEVIS_PREVU`,
+// src/lib/devis.ts) — avant, ni la colonne ni, tant que `DEVIS_EXPORTES` est baissé, la table qu'elle pointe ne sont en
+// base ; il ne se lève qu'avec ou après celui des devis. La sauvegarde recopie des lignes entières (`select('*')`) : une
+// ligne « devis » se réinsère avec son devis, que l'ordre de restauration écrit AVANT le journal des e-mails ; un devis
+// absent de la sauvegarde laisse un lien que la restauration peut effacer (`liensPerdus`), comme une facture absente.
+// sauvegardeEnvoiDesDevis.test.ts éprouve le graphe prévu et celui du jour, sous chaque état du drapeau.
+export const RELATIONS_DE_L_ENVOI_DES_DEVIS: readonly Pick<Relation, 'enfant' | 'colonne'>[] = [
+  { enfant: 'emails_envoyes', colonne: 'devis_id' },
+]
+
+/** Une relation au graphe, côté envoi des devis : toutes, sauf le devis envoyé tant que sa migration n'est pas exportée. */
+export function auGrapheDeLEnvoiDesDevis(relation: Pick<Relation, 'enfant' | 'colonne'>, envoiDesDevisPrevu: boolean): boolean {
+  return envoiDesDevisPrevu
+    || !RELATIONS_DE_L_ENVOI_DES_DEVIS.some((r) => r.enfant === relation.enfant && r.colonne === relation.colonne)
+}
+
 // Le graphe complet des dépendances entre tables du schéma `public`. Les relations vers `auth.users`
 // sont volontairement absentes : cette table n'appartient pas à l'application, elle n'est ni
 // sauvegardée ni restaurée par ce chemin, et l'y faire figurer donnerait l'illusion du contraire.
@@ -214,6 +233,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'ecritures_brouillon', parent: 'vehicules', colonne: 'vehicule_id', aLaSuppression: 'bloque' },
   { enfant: 'emails_envoyes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'emails_envoyes', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'met_a_null' },
+  // Le devis envoyé (étape P6c1, migration `envoi_des_devis`, préparée), à nul comme la facture envoyée.
+  { enfant: 'emails_envoyes', parent: 'devis', colonne: 'devis_id', aLaSuppression: 'met_a_null' },
   { enfant: 'emprunts', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'encaissements_factures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'encaissements_factures', parent: 'encaissements_factures', colonne: 'annule_id', aLaSuppression: 'bloque' },
@@ -348,10 +369,10 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
 // contacts, des paramètres de facturation ni du journal des désignations tant que leurs migrations ne sont pas exportées,
-// ni celle de l'exemplaire d'une facture tant que la sienne ne l'est pas.
+// ni celle de l'exemplaire d'une facture, ni celle du devis envoyé, tant que la leur ne l'est pas.
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
   .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
-    && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE))
+    && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
@@ -466,12 +487,16 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // super-administrateur. À cette place, elles ne déplacent que le rang des devis et de `exercices_valides` dans l'essai de
 // restauration. `sauvegarde.test.ts` garde cet ordre.
 //
-// Les devis (espace client, étape P5) viennent juste avant `exercices_valides`, APRÈS les registres de P7 : leurs
-// parents (le dossier, les factures) sont plus haut, aucune validation ne les fige, et à cette place ils ne déplacent
-// le rang d'aucune table d'hier dans l'essai de restauration. La série d'abord (aucune policy : la sauvegarde n'en lit
-// rien, elle se reprend du plus haut numéro restauré), les devis — un devis émis ne naît que par la porte de la
-// restauration, dans un dossier sans série —, puis leurs liens, dont la garde lit le devis et la facture.
-// `sauvegardeDevis.test.ts` garde cet ordre.
+// Les devis (espace client, étape P5) viennent juste avant le journal des e-mails, qui cite un devis envoyé
+// (`emails_envoyes.devis_id`, étape P6c1, migration `envoi_des_devis`, préparée) : leurs parents (le dossier, les factures)
+// sont plus haut, aucune validation ne les fige. La série d'abord (aucune policy : la sauvegarde n'en lit rien, elle se
+// reprend du plus haut numéro restauré), les devis — un devis émis ne naît que par la porte de la restauration, dans un
+// dossier sans série —, puis leurs liens, dont la garde lit le devis et la facture. Ils venaient juste avant
+// `exercices_valides` jusqu'au 04/11/2026 : les phrases ci-dessus qui disent qu'une table « ne déplace que le rang des
+// devis et d'`exercices_valides` » datent d'alors ; ces tables ne déplacent plus que le second. Leurs tables absentes du
+// plan du jour, ce déplacement ne change pas l'ordre d'aujourd'hui ; le jour où elles existent, l'essai de restauration les
+// met à cette place et recule de trois rangs les tables qui suivent. `sauvegardeDevis.test.ts` et
+// `sauvegardeEnvoiDesDevis.test.ts` gardent cet ordre.
 //
 // Les articles (espace client, étape A1) viennent juste après `agent_conversations`, à la place que le tri leur donne parmi
 // les tables qui ne dépendent que du dossier — et AVANT les factures, comme la conception le veut : à l'étape A7, une
@@ -559,6 +584,9 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'vehicules',
   'volet_social_pamc',
   'documents_divers',
+  'devis_numerotation',
+  'devis',
+  'devis_factures',
   'emails_envoyes',
   'facture_lignes',
   'facture_superpdp_events',
@@ -604,9 +632,6 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'contacts',
   'parametres_facturation',
   'designations_des_pieces',
-  'devis_numerotation',
-  'devis',
-  'devis_factures',
   'exercices_valides',
 ]
 

@@ -37,6 +37,13 @@ import type {
 // gestes, que droitsAcces.test.ts confronte alors à l'export.
 export const DEVIS_EXPORTES: boolean = false
 
+// L'envoi d'un devis par e-mail, journalisé (étape P6c1) : la migration `envoi_des_devis` (supabase/preparees/), préparée,
+// PAS APPLIQUÉE, pose `emails_envoyes.devis_id` — le devis envoyé, mis à nul si le devis est supprimé — et admet le type
+// « devis » au journal. Tant que l'export ne la porte pas, le plan de sauvegarde ne connaît pas la colonne
+// (src/lib/sauvegarde.ts, `auGrapheDeLEnvoiDesDevis`) ; le jour où il la porte, sauvegardeEnvoiDesDevis.test.ts vire au rouge
+// tant que ceci reste `false`. Il ne se lève qu'avec ou après `DEVIS_EXPORTES` : la migration exige la table des devis.
+export const ENVOI_DES_DEVIS_PREVU: boolean = false
+
 // ── Les constantes de la base, confrontées au texte des migrations par le test ─────────────────────────────────────
 export const PREFIXE_DEVIS = 'D'
 export const DATE_PLANCHER_DEVIS = '2000-01-01'

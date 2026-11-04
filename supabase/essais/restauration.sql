@@ -571,16 +571,20 @@ begin
 end $$;
 
 -- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
--- migrations sont en base : le script les y met dès que leurs tables existent, juste avant `exercices_valides`, qui ferme
--- la marche (ORDRE_RESTAURATION_PREVU), leurs rangs calculés pour qu'aucune table d'hier ne change de place. Absentes de
--- la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+-- migrations sont en base : le script les y met dès que leurs tables existent, juste après `documents_divers` — avant le
+-- journal des e-mails, qui cite un devis envoyé (`emails_envoyes.devis_id`, étape P6c1, migration `envoi_des_devis` ;
+-- ORDRE_RESTAURATION_PREVU) ; les tables qui suivent reculent de trois rangs — par les rangs négatifs, que la clé de
+-- `_ordre` admet. Jusqu'au 04/11/2026, il les mettait juste avant `exercices_valides`. Absentes de la base, rien n'entre :
+-- le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
 do $$
+declare v_rang int;
 begin
   if to_regclass('public.devis') is not null then
-    update essai_restauration._ordre set rang = rang + 3 where table_nom = 'exercices_valides';
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'documents_divers';
+    update essai_restauration._ordre set rang = -(rang + 3) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
     insert into essai_restauration._ordre (rang, table_nom)
-      select (select o.rang from essai_restauration._ordre o where o.table_nom = 'exercices_valides') - 4 + v.i, v.t
-        from (values (1,'devis_numerotation'),(2,'devis'),(3,'devis_factures')) as v(i, t);
+      select v_rang + v.i, v.t from (values (1,'devis_numerotation'),(2,'devis'),(3,'devis_factures')) as v(i, t);
     insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
      ('devis','direct',null,null),('devis_factures','direct',null,null),('devis_numerotation','direct',null,null);
   end if;
