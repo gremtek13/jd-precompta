@@ -24,10 +24,9 @@ import type { ArticleExoneration, Devis, LigneDevis, NatureOperation, ReponseDev
 // ouvrent une lecture au client qui porte le droit « Ventes ». Tant que l'export (supabase/schema) ne les porte pas, rien
 // ne lit ni n'écrit les devis : le plan de sauvegarde ne compte pas leurs tables (src/lib/sauvegarde.ts) et aucun écran
 // ne les offre (étape P6). Le jour où l'export porte les DEUX, devis.test.ts vire au rouge tant que ceci reste `false` :
-// le lever met les trois tables au plan, et confronte les refus ci-dessous au texte même des fonctions. Ce jour-là, le
-// lever ne suffit pas : simulé le 04/11/2026 (les deux migrations copiées dans l'export, ceci levé, la suite entière),
-// droitsAcces.test.ts vire au rouge — la phrase de la case « Ventes » (src/lib/droitsAcces.ts) ne nomme pas les deux
-// lectures que la migration ouvre à ce droit, `devis` et `devis_factures` ; elle les nommera dans le même changement.
+// le lever met les trois tables au plan, confronte les refus ci-dessous au texte même des fonctions, et fait dire à la
+// phrase de la case « Ventes » (src/lib/droitsAcces.ts, `ceQueDisentLesCases`) la lecture de ses devis et leurs quatre
+// gestes, que droitsAcces.test.ts confronte alors à l'export.
 export const DEVIS_EXPORTES: boolean = false
 
 // ── Les constantes de la base, confrontées au texte des migrations par le test ─────────────────────────────────────
