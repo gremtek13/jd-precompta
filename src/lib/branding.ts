@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import { useAuth } from '../context/AuthContext'
 import { assombrir, eclaircir, estCouleurHexValide } from './colors'
 import { manifesteDuCabinet } from './manifesteCabinet'
+import { cabinetDeLaCharte } from './cabinetDeLaCharte'
 import { chargerPoliceCabinet, estPoliceCabinet } from './polices'
 
 export interface CabinetBranding {
@@ -78,9 +79,15 @@ function appliquerFaviconCabinet(logoUrl: string | null, nom: string | null, cou
 // choisies par un cabinet remplacent le turquoise/Inter par défaut de JD Precompta pour tout le monde
 // connecté sous ce cabinet, comptables comme clients. Rien ne change pour un cabinet qui n'a encore
 // rien configuré (couleur_primaire nulle) — les valeurs par défaut du CSS restent actives.
+//
+// Le cabinet qui habille l'écran se choisit dans `cabinetDeLaCharte` : pour un client, celui de la société AFFICHÉE
+// (ligne 23.21). La charte lue se garde AVEC l'identifiant du cabinet lu : une réponse arrivée pour une société quittée
+// ne s'applique pas, et rien ne s'affiche d'un cabinet avant que SA lecture soit revenue. Une lecture en échec ou vide
+// tombe du côté sûr — la charte de l'application, jamais celle d'un autre cabinet.
 export function useCabinetBranding(): CabinetBranding | null {
-  const { monCabinetId } = useAuth()
-  const [branding, setBranding] = useState<CabinetBranding | null>(null)
+  const { role, monCabinetId, mesSocietes, dossierActifId } = useAuth()
+  const cabinetCible = cabinetDeLaCharte({ role, monCabinetId, mesSocietes, dossierActifId })
+  const [lue, setLue] = useState<{ cabinetId: string; charte: CabinetBranding | null } | null>(null)
   const [version, setVersion] = useState(0)
 
   useEffect(() => {
@@ -91,29 +98,34 @@ export function useCabinetBranding(): CabinetBranding | null {
 
   useEffect(() => {
     let annule = false
-    if (!monCabinetId) {
-      setBranding(null)
-      return
-    }
+    if (!cabinetCible) return
+    const cabinetLu = cabinetCible
     supabase
       .from('cabinets')
       .select('nom, couleur_primaire, police_google_font, logo_storage_path')
-      .eq('id', monCabinetId)
+      .eq('id', cabinetLu)
       .maybeSingle()
-      .then(({ data }) => {
-        if (annule || !data) return
+      .then(({ data, error }) => {
+        if (annule) return
+        if (error || !data) {
+          setLue({ cabinetId: cabinetLu, charte: null })
+          return
+        }
         const logoUrl = data.logo_storage_path
           ? supabase.storage.from('cabinet-logos').getPublicUrl(data.logo_storage_path).data.publicUrl
           : null
-        setBranding({
-          nom: data.nom,
-          couleurPrimaire: data.couleur_primaire,
-          policeGoogleFont: data.police_google_font,
-          logoUrl,
+        setLue({
+          cabinetId: cabinetLu,
+          charte: { nom: data.nom, couleurPrimaire: data.couleur_primaire, policeGoogleFont: data.police_google_font, logoUrl },
         })
+      }, () => {
+        if (!annule) setLue({ cabinetId: cabinetLu, charte: null })
       })
     return () => { annule = true }
-  }, [monCabinetId, version])
+  }, [cabinetCible, version])
+
+  // Déduite, jamais posée : la charte lue ne vaut que pour le cabinet qui habille l'écran MAINTENANT.
+  const branding = cabinetCible !== null && lue?.cabinetId === cabinetCible ? lue.charte : null
 
   // Couleur : posée en style inline sur la racine — priorité systématique sur les valeurs de
   // index.css (thème clair ou sombre), qui restent la référence pour tout cabinet n'ayant rien

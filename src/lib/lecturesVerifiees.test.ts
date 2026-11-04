@@ -65,25 +65,18 @@ import { describe, expect, it } from 'vitest'
  */
 const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
   'context/AuthContext.tsx': {
-    nombre: 4,
+    nombre: 3,
     raison:
-      'les quatre lectures de rôle échouent du côté FERMÉ : sans réponse, personne n’est super-admin ' +
+      'les trois lectures de rôle échouent du côté FERMÉ : sans réponse, personne n’est super-admin ' +
       'ni chef de cabinet, et aucun dossier n’est visible. Lire l’erreur ne changerait rien à ce qui ' +
-      'est affiché, et un contexte de session ne peut pas refuser de se monter',
+      'est affiché, et un contexte de session ne peut pas refuser de se monter. La quatrième, les ' +
+      'sociétés du client et leur cabinet, lit son erreur depuis le 04/11/2026 (ligne 23.21)',
   },
   'lib/texteOcr.ts': {
     nombre: 1,
     raison:
       'c’est le chemin d’AFFICHAGE du texte lu. Son jumeau destructeur `lireTexteOcrDuDocument` — ' +
       'celui dont dépend la suppression d’un document — rend bien son erreur, et c’est lui qui compte',
-  },
-  'lib/branding.ts': {
-    nombre: 1,
-    raison:
-      'la charte du cabinet. Sans réponse, l’application applique la charte PAR DÉFAUT, qui est ' +
-      'exactement ce qu’obtient un cabinet qui n’en a pas défini : aucune donnée métier n’est ' +
-      'affirmée, et l’écran qui ÉCRIT cette charte (CabinetBrandingPage) lit bien son erreur depuis ' +
-      'le 21/09/2026 — c’est lui qui pouvait l’effacer',
   },
   'pages/ClientHome.tsx': {
     nombre: 1,
