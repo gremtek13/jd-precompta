@@ -3119,10 +3119,29 @@ const CREATE_CABINET: ContratFonction = {
   ],
 }
 
+/** Le bilan des logos que rend delete-cabinet, comparé champ par champ. */
+function bilanDesLogos(r: Resultat, attendu: { liste: string; retires: number; echecs: number }): string[] {
+  const logos = (r.json as { logos?: Record<string, unknown> } | undefined)?.logos
+  return logos && logos.liste === attendu.liste && logos.retires === attendu.retires && logos.echecs === attendu.echecs
+    ? [] : [`bilan des logos ${JSON.stringify(logos)}, attendu ${JSON.stringify(attendu)}`]
+}
+/** Un logo d'un autre cabinet, un fichier à la racine du seau et un préfixe qui COMMENCE comme l'identifiant. */
+const LOGOS_VOISINS = [`cabinet-logos/${ID.cabinet}/logo-1.png`, 'cabinet-logos/racine.png', `cabinet-logos/${CABINET_VIDE}x/logo.png`]
+function poserLogosVoisins(m: Monde) { for (const f of LOGOS_VOISINS) m.fichiers.set(f, 'logo') }
+const logosVoisinsIntacts = (m: Monde) => LOGOS_VOISINS.filter((f) => !m.fichiers.has(f)).map((f) => `fichier hors du préfixe retiré : ${f}`)
+/** Chaque liste vise le préfixe du cabinet, chaque chemin retiré y commence. */
+function horsDuPrefixe(m: Monde, cabinetId: string): string[] {
+  return m.journal.flatMap((e) => {
+    if (e.genre !== 'stockage') return []
+    if (e.operation === 'list') return e.chemins.every((c) => c === cabinetId) ? [] : [`liste hors du préfixe : ${e.chemins.join(', ')}`]
+    return e.chemins.filter((c) => !c.startsWith(`${cabinetId}/`)).map((c) => `retrait hors du préfixe : ${c}`)
+  })
+}
+
 const DELETE_CABINET: ContratFonction = {
   slug: 'delete-cabinet',
   navigateur: true,
-  porte: 'une session, puis une ligne `super_admins` lue à la clé secrète, avant de lire le corps ; Postgres refuse un cabinet qui a encore des dossiers',
+  porte: 'une session, puis une ligne `super_admins` lue à la clé secrète, avant de lire le corps ; Postgres refuse un cabinet qui a encore des dossiers ; la ligne partie, les logos du seul préfixe du cabinet',
   scenarios: [
     preflight(),
     ...sansSession('delete-cabinet', { cabinetId: CABINET_VIDE }),
@@ -3131,26 +3150,101 @@ const DELETE_CABINET: ContratFonction = {
       preparer: (m) => { m.base.cabinets.push({ id: CABINET_VIDE, nom: 'Cabinet vide' }) },
     }),
     {
-      nom: 'super-admin : un cabinet vide disparaît',
+      nom: 'super-admin : un cabinet vide sans logo disparaît, et la liste de son préfixe revient vide',
       preparer: (m) => { m.base.cabinets.push({ id: CABINET_VIDE, nom: 'Cabinet vide' }) },
       requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { cabinetId: CABINET_VIDE } }),
       attendu: {
-        statut: 200, depenses: ['écriture delete cabinets'],
-        verifier: (_r, m) => (lignes(m, 'cabinets').some((c) => c.id === CABINET_VIDE) ? ['le cabinet est resté'] : []),
+        statut: 200, depenses: ['écriture delete cabinets', 'stockage list cabinet-logos'],
+        verifier: (r, m) => [
+          ...(lignes(m, 'cabinets').some((c) => c.id === CABINET_VIDE) ? ['le cabinet est resté'] : []),
+          ...bilanDesLogos(r, { liste: 'lue', retires: 0, echecs: 0 }),
+        ],
+      },
+    },
+    // Ligne 22.61 : le logo du seau PUBLIC suit le cabinet — la ligne d'abord, les fichiers ensuite, le préfixe seul.
+    {
+      nom: 'super-admin : la ligne partie, les 150 fichiers du préfixe se retirent (deux pages, deux lots), et rien d’autre',
+      preparer: (m) => {
+        m.base.cabinets.push({ id: CABINET_VIDE, nom: 'Cabinet vide' })
+        for (let i = 0; i < 150; i++) m.fichiers.set(`cabinet-logos/${CABINET_VIDE}/logo-${String(i).padStart(3, '0')}.png`, 'logo')
+        poserLogosVoisins(m)
+      },
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { cabinetId: CABINET_VIDE } }),
+      attendu: {
+        statut: 200,
+        depenses: ['écriture delete cabinets', 'stockage list cabinet-logos', 'stockage list cabinet-logos', 'stockage remove cabinet-logos', 'stockage remove cabinet-logos'],
+        verifier: (r, m) => [
+          ...bilanDesLogos(r, { liste: 'lue', retires: 150, echecs: 0 }),
+          ...([...m.fichiers.keys()].some((f) => f.startsWith(`cabinet-logos/${CABINET_VIDE}/`)) ? ['un logo du cabinet est resté'] : []),
+          ...logosVoisinsIntacts(m),
+          ...horsDuPrefixe(m, CABINET_VIDE),
+        ],
       },
     },
     {
-      nom: 'un cabinet qui a encore des dossiers : 409 en français (la clé étrangère du schéma), et il reste',
+      nom: 'super-admin : le retrait des fichiers échoue — 200, la ligne partie, le bilan dit l’échec',
+      preparer: (m) => {
+        m.base.cabinets.push({ id: CABINET_VIDE, nom: 'Cabinet vide' })
+        m.fichiers.set(`cabinet-logos/${CABINET_VIDE}/logo-1.png`, 'logo')
+        m.pannes.push({ stockage: 'remove', erreur: { message: 'délai dépassé' } })
+      },
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { cabinetId: CABINET_VIDE } }),
+      attendu: {
+        statut: 200, depenses: ['écriture delete cabinets', 'stockage list cabinet-logos', 'stockage remove cabinet-logos'],
+        verifier: (r, m) => [
+          ...(lignes(m, 'cabinets').some((c) => c.id === CABINET_VIDE) ? ['le cabinet est resté'] : []),
+          ...bilanDesLogos(r, { liste: 'lue', retires: 0, echecs: 1 }),
+        ],
+      },
+    },
+    {
+      nom: 'super-admin : la liste du préfixe échoue — 200, la ligne partie, le bilan dit la liste illisible, rien retiré',
+      preparer: (m) => {
+        m.base.cabinets.push({ id: CABINET_VIDE, nom: 'Cabinet vide' })
+        m.fichiers.set(`cabinet-logos/${CABINET_VIDE}/logo-1.png`, 'logo')
+        m.pannes.push({ stockage: 'list', erreur: { message: 'délai dépassé' } })
+      },
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { cabinetId: CABINET_VIDE } }),
+      attendu: {
+        statut: 200, depenses: ['écriture delete cabinets', 'stockage list cabinet-logos'],
+        verifier: (r) => bilanDesLogos(r, { liste: 'illisible', retires: 0, echecs: 0 }),
+      },
+    },
+    {
+      nom: 'un cabinet qui a encore des dossiers : 409 en français (la clé étrangère du schéma), il reste, et son logo aussi',
+      preparer: (m) => { m.fichiers.set(`cabinet-logos/${ID.cabinet}/logo-1.png`, 'logo') },
       requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { cabinetId: ID.cabinet } }),
       attendu: {
         statut: 409, refusEnFrancais: true, depenses: ['écriture delete cabinets'],
-        verifier: (_r, m) => (lignes(m, 'cabinets').some((c) => c.id === ID.cabinet) && lignes(m, 'dossiers').length === 3 ? [] : ['le cabinet ou ses dossiers ont disparu']),
+        verifier: (_r, m) => [
+          ...(lignes(m, 'cabinets').some((c) => c.id === ID.cabinet) && lignes(m, 'dossiers').length === 3 ? [] : ['le cabinet ou ses dossiers ont disparu']),
+          ...(m.fichiers.has(`cabinet-logos/${ID.cabinet}/logo-1.png`) ? [] : ['le logo d’un cabinet resté en place a disparu']),
+        ],
+      },
+    },
+    {
+      nom: 'la suppression de la ligne tombe en panne : 500 en français, aucun fichier touché',
+      preparer: (m) => {
+        m.base.cabinets.push({ id: CABINET_VIDE, nom: 'Cabinet vide' })
+        m.fichiers.set(`cabinet-logos/${CABINET_VIDE}/logo-1.png`, 'logo')
+        m.pannes.push({ table: 'cabinets', operation: 'delete', erreur: { message: 'délai dépassé' } })
+      },
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { cabinetId: CABINET_VIDE } }),
+      attendu: {
+        statut: 500, refusEnFrancais: true, depenses: ['écriture delete cabinets'],
+        verifier: (_r, m) => (m.fichiers.has(`cabinet-logos/${CABINET_VIDE}/logo-1.png`) ? [] : ['le logo a disparu malgré la panne']),
       },
     },
     {
       nom: 'sans cabinet : 400',
       requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: {} }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    },
+    {
+      nom: 'un identifiant qui n’est pas un UUID : 400, ni écriture ni lecture du stockage',
+      preparer: poserLogosVoisins,
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { cabinetId: '../' } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true, verifier: (_r, m) => logosVoisinsIntacts(m) },
     },
     ...corpsMalFormes('superAdmin', ['cabinetId']),
   ],

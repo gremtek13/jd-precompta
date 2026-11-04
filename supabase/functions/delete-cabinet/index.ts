@@ -8,6 +8,14 @@
 // dossier (voir suppressionDossier.ts, avec sa propre confirmation) et membre par membre (voir
 // EquipePage "Retirer"), jamais d'un coup par accident. Cette fonction se contente de traduire
 // l'erreur de contrainte (23503) en message compréhensible plutôt que de renvoyer le code SQL brut.
+//
+// LE LOGO DU CABINET (ligne 22.61, 04/11/2026). Le seau `cabinet-logos` est PUBLIC : un logo que rien ne retire reste
+// lisible par son adresse après la disparition du cabinet. Ses chemins ont la forme `<cabinetId>/logo-<instant>.<ext>`
+// (CabinetBrandingPage). L'ordre est imposé : LA LIGNE D'ABORD, LES FICHIERS ENSUITE — une suppression refusée (23503 ou
+// autre) ne touche à aucun fichier, sinon un cabinet resté en place perdrait son logo. Une fois la ligne partie, le
+// retrait est un meilleur effort : la réponse reste 200 et dit ce qui a été retiré et ce qui ne l'a pas été. L'identifiant
+// est un UUID vérifié avant toute lecture ; le `list()` vise le seul préfixe `<cabinetId>/`, jamais la racine, et se
+// pagine ; chaque chemin retiré est rejugé sur ce préfixe. Le journal ne dit que des comptes.
 
 import { createClient } from "npm:@supabase/supabase-js@2"
 
@@ -54,6 +62,70 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
   return cle
 }
 // ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
+
+const SEAU_DES_LOGOS = "cabinet-logos"
+/** Le format d'un UUID, tel que Postgres le rend : le seul identifiant qui puisse ouvrir un préfixe du seau. */
+const FORME_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** Une page de `list()`, et un lot de `remove()`. */
+const TAILLE_DE_PAGE = 100
+/** Un plafond de pages : un logo actif à la fois, cent pages ne se voient jamais — au-delà, la liste est dite incomplète. */
+const PAGES_AU_PLUS = 100
+
+interface BilanDesLogos {
+  /** `lue` : la liste du préfixe est revenue en entier ; `illisible` : une page a échoué ; `incomplete` : le plafond. */
+  liste: "lue" | "illisible" | "incomplete"
+  retires: number
+  echecs: number
+}
+
+/**
+ * Retire les fichiers du préfixe `<cabinetId>/` du seau public, en meilleur effort : rien ne lève, le bilan dit tout.
+ * La liste se lit EN ENTIER avant tout retrait (retirer pendant la pagination déplacerait les pages suivantes).
+ */
+async function retirerLesLogos(admin: ReturnType<typeof createClient>, cabinetId: string): Promise<BilanDesLogos> {
+  const prefixe = `${cabinetId}/`
+  const chemins: string[] = []
+  let echecs = 0
+  let liste: BilanDesLogos["liste"] = "incomplete"
+  for (let page = 0; page < PAGES_AU_PLUS; page++) {
+    const { data, error } = await admin.storage.from(SEAU_DES_LOGOS).list(cabinetId, {
+      limit: TAILLE_DE_PAGE,
+      offset: page * TAILLE_DE_PAGE,
+      sortBy: { column: "name", order: "asc" },
+    })
+    if (error || !Array.isArray(data)) {
+      liste = "illisible"
+      break
+    }
+    for (const entree of data as { name?: unknown; id?: unknown }[]) {
+      const nom = typeof entree?.name === "string" ? entree.name : ""
+      const chemin = `${prefixe}${nom}`
+      // Un sous-dossier (`id` nul) ou un nom qui sortirait du préfixe ne se retire pas : il se compte en échec.
+      if (entree?.id == null || nom === "" || nom.includes("/") || nom.includes("..") || !chemin.startsWith(prefixe)) {
+        echecs += 1
+        continue
+      }
+      chemins.push(chemin)
+    }
+    if (data.length < TAILLE_DE_PAGE) {
+      liste = "lue"
+      break
+    }
+  }
+
+  let retires = 0
+  for (let debut = 0; debut < chemins.length; debut += TAILLE_DE_PAGE) {
+    const lot = chemins.slice(debut, debut + TAILLE_DE_PAGE).filter((c) => c.startsWith(prefixe))
+    const { data, error } = await admin.storage.from(SEAU_DES_LOGOS).remove(lot)
+    const rendus = !error && Array.isArray(data) ? data.length : 0
+    retires += Math.min(rendus, lot.length)
+    echecs += lot.length - Math.min(rendus, lot.length)
+  }
+  if (echecs > 0 || liste !== "lue") {
+    console.warn(`delete-cabinet : logos retirés ${retires}, non retirés ${echecs}, liste ${liste}`)
+  }
+  return { liste, retires, echecs }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -114,6 +186,10 @@ Deno.serve(async (req: Request) => {
   if (!cabinetId) {
     return json({ error: "cabinetId est requis." }, 400)
   }
+  // Avant toute écriture et toute lecture du stockage : seul un UUID ouvre un préfixe du seau des logos.
+  if (!FORME_UUID.test(cabinetId)) {
+    return json({ error: "cabinetId doit être un identifiant de cabinet (UUID)." }, 400)
+  }
 
   const { error: deleteError } = await admin.from("cabinets").delete().eq("id", cabinetId)
   if (deleteError) {
@@ -122,8 +198,10 @@ Deno.serve(async (req: Request) => {
     if (deleteError.code === "23503") {
       return json({ error: "Ce cabinet a encore des dossiers et/ou des membres d'équipe — retire-les d'abord (voir la fiche du dossier pour le supprimer, ou Équipe pour retirer un membre)." }, 409)
     }
-    return json({ error: deleteError.message }, 500)
+    return json({ error: `La suppression du cabinet a échoué : ${deleteError.message}` }, 500)
   }
 
-  return json({ ok: true })
+  // La ligne est partie : le logo suit, en meilleur effort, et le bilan se dit sans jamais devenir une erreur HTTP.
+  const logos = await retirerLesLogos(admin, cabinetId)
+  return json({ ok: true, logos })
 })
