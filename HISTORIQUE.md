@@ -47205,3 +47205,107 @@ d'après l'exercice retenu — chacune tuée.
 neuf la réclame quand le premier relevé le dit. D5 (une pièce à valider de 2025 payée en 2026) inchangé, à dessein. Un
 dossier qui aurait plusieurs comptes bancaires n'est pas tenu : la confrontation les nommerait sans conclure. La
 procédure écrite de la répétition générale (Q-D) reste au cabinet. Le drapeau des quatre champs se lève avec FEC22-E2.
+
+### 04/11/2026 — RELECTURE : UNE ANNÉE DE PIÈCES, DU DÉPÔT À LA 2035 (MVP-D6)
+
+**POURQUOI.** La répétition générale rejoue l'année 2025 du premier praticien (un BNC en trésorerie, exonéré) : 300 à
+500 pièces, déposées en plusieurs fois par le cabinet et par le praticien. Une relecture (agent architecte, lecture
+seule, code lu à `8929a9d`) a suivi leur chemin, du dépôt à la 2035. Trente scénarios Vitest sur des données fictives
+(`outils/relecture-pieces/`, gardés hors du dépôt) ; l'extraction lue seulement, son classement et sa date de repli
+exécutés sur la copie de la source d'`extract-piece` ; un essai de base dans une transaction annulée, sur une copie de
+réplique, supprimée ensuite. Rien en production, aucun appel à Textract ni à Bedrock.
+
+**LES DÉFAUTS.** D1 (confirmé, fausse la 2035) : le même achat entré deux fois — le PDF du cabinet et la photo du
+praticien, ou deux photos du même ticket — passe tous les contrôles (empreinte du fichier, empreinte du texte lu, mois
+d'abonnement en double ; la base accepte deux pièces de même empreinte) ; l'une rapprochée, l'autre comptée à sa date de
+facture, le poste compte 172,80 € au lieu de 86,40 €. D2 (confirmé) : la date « déduite » (la première du document,
+faute de libellé) se perd au dépôt — les deux dépôts et le bouton de la fiche l'écrivent comme lue, en confiance
+« haute » ; sur un avis d'échéance d'assurance, la date du contrat (2023) sort la pièce de son exercice. D3 (confirmé
+pour le classement) : une note d'honoraires émise par le praticien se lit comme un achat. D4 (confirmé) : un mot du
+texte (« attestation », « URSSAF », « appel de cotisation », « solde précédent ») envoie une vraie facture dans
+Documents, hors de la 2035 et du FEC. D5 (confirmé) : une lecture ratée ne se dit pas, la pièce sans montant passe en
+dernier sous « À valider », et la relecture groupée ne relit ni le tiers ni les montants ; un PDF de 10 à 20 Mio est
+déposé sans lecture. D6 (confirmé pour le parallélisme) : un lot du client part sans borne, quarante lectures à la fois.
+D7 (confirmé) : « Valider la sélection » annonce 4, en envoie 3, tait la pièce sans montant, et valide sans un regard la
+pièce sans date et celle de confiance basse. D8 (confirmé pour le compte) : 22 lectures en série par chargement de
+Justificatifs, relu après chaque fiche enregistrée, sans numéro de chargement. Vérifié sans gravité : la tenue du calcul
+à 500 pièces et 1 500 mouvements (au plus 26 ms par rendu), le montant retenu d'un exonéré, la photo redécodée, le PDF
+de plusieurs pages.
+
+**LES QUESTIONS.** PIECES-Q1 (D2) : la date déduite par le code seul — la confiance plafonnée à « moyenne », le message
+du cabinet —, ou une colonne `date_deduite` (une migration) ; recommandé : le code seul pour le MVP, la colonne si la
+répétition montre plus de quelques dates déduites fausses. PIECES-Q2 (D1) : le doublon probable (même montant au
+centime, sept jours, même fournisseur) en attention et en avertissement de la validation, ou bloquant ; recommandé :
+jamais bloquant. PIECES-Q3 (D3, D4) : resserrer le classement d'`extract-piece` avant le 20 novembre ; recommandé : oui,
+la comparaison au SIREN du dossier seulement si le praticien émet de telles notes. PIECES-Q4 (D6) : borner le dépôt du
+client à trois fichiers à la fois, et lire les quotas Textract et Bedrock dans la console AWS (un geste du cabinet) ;
+recommandé : oui aux deux. PIECES-Q5 (D5) : la relecture groupée écrit le tiers et les montants d'une pièce à valider
+aux trois montants nuls ; recommandé : oui, sur ce seul cas. PIECES-E1, pour l'expert-comptable : où sont, dans la 2035
+de 2025, les dépenses payées par la carte personnelle et en espèces.
+
+**LA PROCÉDURE DE LA RÉPÉTITION** (sans code). Un seul canal par document : le cabinet dépose les PDF, le praticien
+photographie les tickets et les factures papier ; jamais les deux. Des lots de dix à quinze fichiers côté praticien, un
+PDF de moins de 10 Mo par facture. Après chaque lot, « À valider » en commençant par le bas, puis « Sans date ». Chaque
+semaine, ouvrir dans Documents ce qui est classé attestation, appel de cotisation ou relevé et n'en est pas un. Valider
+dans la fiche, une à une, en comparant la date au document et en vérifiant le sens. « Note de frais » pour la carte
+personnelle, la caisse pour les espèces. Avant de classer un débit par une catégorie, chercher la pièce du même montant.
+Avant la 2035, la carte « Pièces comptées à leur date de facture » vide ou expliquée ligne par ligne. À la comparaison
+avec la 2035 déposée, un poste trop fort renvoie d'abord à D1, puis à D3 ; un poste trop faible à D4 ou à D5.
+
+### 04/11/2026 — LES PIÈCES : LE DOUBLON PROBABLE, LA DATE DÉDUITE, LA VALIDATION EN LOT QUI DIT TOUT (PIECES-Q1, PIECES-Q2, D7)
+
+**CE QUI EST FAIT** (code seul, sur les recommandations, le cabinet ayant dit de continuer et d'arbitrer plus tard ;
+aucune migration, aucune Edge Function touchée).
+
+**D1, LE DOUBLON PROBABLE (PIECES-Q2).** Une seule règle, `lib/doublonsProbables.ts`, pure : deux pièces de DÉPENSE
+(achat ou note de frais), au même montant retenu au centime (`montantRetenu` : le TTC d'un exonéré, le HT d'un
+assujetti), à sept jours au plus, de même clé d'identité de fournisseur (`cleFournisseur`, mot à mot, jamais une
+sous-chaîne), dont l'une au moins n'a aucun paiement connu. Trois choix. Un fournisseur ILLISIBLE (clé nulle) se
+rapproche de tout : c'est le cas même du doublon — la photo dont la lecture a raté le nom face au PDF qui le porte — ;
+le taire tairait le défaut là où il naît, et la paire dit sur quoi tient le signal (« fournisseur non lu »). Deux pièces
+RÉGLÉES chacune (le relevé, un virement groupé ou mixte, la caisse ; un paiement défait par son rejet ne compte pas) se
+taisent : la banque prouve deux sorties d'argent, et c'est le geste qui fait taire un faux signal sans table
+d'acceptation (une migration) ; des paiements lus en partie ne taisent rien. Les VENTES sont hors de la règle : la même
+facture émise portée par deux pièces a déjà son contrôle (le pont), et la recette d'un BNC vient du relevé. Le doublon
+se dit en attention, jamais en refus, à cinq endroits : la ligne de Justificatifs (« Doublon probable », la phrase en
+infobulle) et un filtre « Doublons probables » qui montre les deux pièces de chaque paire par-dessus l'exercice et le
+statut ; la fiche de chacune, qui nomme l'autre ; la Vue d'ensemble (`doublons-probables`, attention, tue sur une paire
+qu'un exercice validé fige entière) ; la carte de Clôture « Pièces comptées à leur date de facture », qui marque la
+ligne et nomme l'autre pièce ; un préalable NON bloquant de la validation (`doublons-probables`, rangé aux dépenses par
+`revisionCycles.ts`). Le geste reste « Supprimer », après sa confirmation d'aujourd'hui. Mesuré : 1,7 ms par calcul à
+500 pièces (rangées par montant au centime puis par date ; seules les pièces d'un même rang à sept jours se comparent).
+
+**D2, LA DATE DÉDUITE (PIECES-Q1, option (A)).** `lib/dateDeduite.ts` : la confiance d'une pièce dont la date est
+déduite ne dépasse pas « moyenne », par la même fonction aux trois chemins qui écrivent une extraction — le dépôt du
+client (`lib/depot.ts`), celui du cabinet (`lib/importFichiers.ts`, dont le message ajoute « date déduite de la mise en
+page, à vérifier ») et le bouton « Extraire automatiquement » de la fiche, qui dit sous le champ « Date déduite, à
+vérifier » tant que la date déduite y est. AUCUNE TRACE NE SURVIT AU DÉPÔT au-delà de la confiance : rien de ce que la
+pièce garde de son extraction ne le peut sans migration — le texte lu est montré tel que lu et sert à l'empreinte des
+doublons de contenu, la note interne est un texte du cabinet que le client ne peut pas écrire, le fil des précisions est
+une parole datée que le client lit, et l'ancienne colonne `notes` n'est plus ni lue ni écrite. La fiche, rouverte plus
+tard, dit donc « Moyenne », pas « date déduite ». L'option (B), une colonne `date_deduite`, la garderait.
+
+**D7, « VALIDER LA SÉLECTION ».** `lib/validationDeLaSelection.ts` : le nombre du bouton est celui qui part ; la pièce
+sans montant est ÉCARTÉE et se nomme avant le clic avec sa raison, dans la liste que l'écran montrait déjà pour la garde
+G3, et reste sélectionnée ; ce qui part et mérite un regard — sans date, de confiance basse, en doublon probable — se
+nomme dans une confirmation, qu'Annuler laisse sans effet ; une sélection sans rien à regarder part comme hier, sans
+confirmation. Le verrou se pose avant la confirmation : deux clics du même rendu n'ouvrent qu'une fenêtre.
+
+**LES TESTS.** `doublonsProbables.test.ts` (le scénario du PDF et de la photo, la 2035 à 172,80 € et la paire dite, les
+bornes de sept jours et du centime, la clé mot à mot, le fournisseur illisible, le montant retenu, les ventes, trois
+exemplaires, le rejet qui défait un paiement, la mesure à 500 pièces) ; `depotDeLaRelecture.test.ts` (les scénarios du
+dépôt de la relecture changés en gardes : la confiance « moyenne » et le message, le témoin, la lecture des trois
+sources, deux photos du même ticket et le PDF puis la photo, rapprochés) ; `validationDeLaSelection.test.ts` ;
+`PiecesTab.relecture.test.tsx` (le scénario d'écran de D7 : « (3 sur 4) », la pièce écartée nommée, la confirmation qui
+nomme la date et la confiance, deux clics dans le même `act`, Annuler qui relâche le verrou ; la marque, le filtre et la
+fiche de D1) ; des cas ajoutés à `FichePiece.test.tsx`, `ClotureTab.test.tsx`, `pointsDeLaChecklist.test.ts`,
+`prealablesValidation.test.ts`, `revisionCycles.test.ts` et `paiementsDesPiecesAppelants.test.ts` (un second appelant
+sans caisse dans Justificatifs, justifié). Rejoués sur ce code, les scénarios de la relecture montrent D2 et D7 corrigés
+(trois cas virent au rouge, comme attendu) ; ceux de D1 décrivent toujours la 2035 qui compte deux fois tant que la
+pièce en trop n'est pas supprimée.
+
+**CE QUI RESTE.** La pièce validée dont le débit est classé par une catégorie (le troisième cas de D1) : une seule
+pièce, la règle ne la voit pas — la fiche d'un débit le dirait avant le classement. Le troisième canal de dépôt, la
+réception par e-mail (`receive-email`), écrit la confiance d'`extract-piece` sans plafond : le lot des Edge Functions.
+La relecture groupée écrit une date déduite sans toucher à la confiance, par son contrat (« rien d'autre n'est écrit »).
+L'assistant (`points_a_traiter`) ne dit pas le doublon probable. D3 à D6 et D8 sont au lot suivant.
