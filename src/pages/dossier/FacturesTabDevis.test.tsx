@@ -111,6 +111,8 @@ beforeEach(() => {
   faux.appels = []
   faux.refus = null
   faux.tables = {
+    // Le dossier, lu avec les devis : l'émetteur que la base posera (A7).
+    dossiers: [{ id: 'd1', nom: 'Atelier fictif', siret: '12345678200010', adresse: '1 rue Fictive', forme_juridique: '5710', denomination_imprimee: 'Atelier fictif SAS' }],
     factures_emises: [{ ...FACTURE }],
     facture_lignes: [{ ...LIGNE, id: 'l0', facture_id: 'f1' }],
     transmissions_factures: [],
@@ -236,7 +238,9 @@ describe.each(['cabinet', 'client'] as const)('Devis dans l’onglet Factures �
     expect(nom).toBe('enregistrer_devis')
     expect(args).toMatchObject({ p_dossier_id: 'd1', p_devis_id: null, p_emettre: false })
     expect(args.p_lignes).toEqual([{ designation: 'Étude', quantite: 1, prix_unitaire_ht: 250.5, taux_tva: 20 }])
-    expect(args.p_devis).toMatchObject({ tiers_nom: 'Nouveau Fictif SAS', montant_ht: 250.5, montant_tva: 50.1, montant_ttc: 300.6, emetteur_nom: 'Atelier fictif' })
+    expect(args.p_devis).toMatchObject({ tiers_nom: 'Nouveau Fictif SAS', montant_ht: 250.5, montant_tva: 50.1, montant_ttc: 300.6 })
+    // Aucun émetteur ne part : la base le pose à l'émission, depuis le dossier.
+    expect(Object.keys(args.p_devis as object).filter((k) => k.startsWith('emetteur'))).toEqual([])
     expect(screen.getByRole('status').textContent).toBe('Brouillon de devis enregistré.')
   })
 

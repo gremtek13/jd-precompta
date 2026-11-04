@@ -45,6 +45,8 @@ vi.mock('./supabase', async () => {
 
 beforeEach(() => {
   faux.tables = {
+    // Le dossier, lu avec les devis : l'émetteur que la base posera (A7).
+    dossiers: [{ id: 'd1', nom: 'Atelier fictif', siret: '12345678200010', adresse: '1 rue Fictive', forme_juridique: '5710', denomination_imprimee: 'Atelier fictif SAS' }],
     devis: [devis({ id: 'dv1' }), devis({ id: 'dv2', statut: 'emis', numero: 'D2026-0001' }), devis({ id: 'dv9', dossier_id: 'd2' })]
       .map((d) => ({ ...d })),
     devis_factures: [lienDevisFacture({ devis_id: 'dv2' }), lienDevisFacture({ id: 'df9', dossier_id: 'd2' })].map((l) => ({ ...l })),
@@ -66,7 +68,7 @@ describe('lireLesDevis', () => {
     expect(lu.motif).toBeNull()
     expect(lu.devis.map((d) => d.id)).toEqual(['dv1', 'dv2'])
     expect(lu.liens.map((l) => l.devis_id)).toEqual(['dv2'])
-    expect(faux.demandes).toEqual(['devis * exact', 'devis_factures * exact'])
+    expect(faux.demandes).toEqual(['devis * exact', 'devis_factures * exact', 'dossiers nom, siret, adresse, forme_juridique, denomination_imprimee '])
   })
 
   it.each(['devis', 'devis_factures'])('un compte annoncé plus grand que ce que rend « %s » : partielle', async (table) => {

@@ -4,7 +4,7 @@ import { LIBELLE_NOTES_DEVIS, LIBELLE_NOTES_DEVIS_CLIENT } from '../../lib/droit
 import { pourLEspace, type EspaceVentes } from '../../lib/espaceVentes'
 import { livraisonOuverte, sirenOuvert, versEntreprise, type SaisieMentions } from '../../lib/mentionsFacture'
 import {
-  ligneDevisVide, lignesDeLaSaisie, refusDeLaSaisieDevis, totauxDeLaSaisie, type CibleDevis, type LigneDevisSaisie,
+  ligneDevisVide, lignesDeLaSaisie, refusDeLaSaisieDevis, totauxDeLaSaisie, type CibleDevis, type EmissionAJuger, type LigneDevisSaisie,
   type SaisieDevis,
 } from '../../lib/devis'
 import type { StatutTva } from '../../lib/types'
@@ -31,6 +31,8 @@ type Props = {
   depart: Omit<SaisieDevis, 'lignes'>
   lignesDeDepart: LigneDevisSaisie[]
   aujourdHui: string
+  // L'émetteur que la base lira dans le dossier, et qui émet (lib/devis.ts, `EmissionAJuger`).
+  emission: EmissionAJuger
   occupe: boolean
   erreur: string | null
   onClose: () => void
@@ -59,8 +61,8 @@ export default function DevisSaisieModal(props: Props) {
 
   // La saisie TELLE QU'ELLE PART, et ses deux refus.
   const quiPart: SaisieDevis = { ...saisie, lignes: lignesDeLaSaisie(lignes) }
-  const refusBrouillon = refusDeLaSaisieDevis(dossierId, cible, quiPart, false, aujourdHui)
-  const refusEmission = refusBrouillon ?? refusDeLaSaisieDevis(dossierId, cible, quiPart, true, aujourdHui)
+  const refusBrouillon = refusDeLaSaisieDevis(dossierId, cible, quiPart, false, aujourdHui, props.emission)
+  const refusEmission = refusBrouillon ?? refusDeLaSaisieDevis(dossierId, cible, quiPart, true, aujourdHui, props.emission)
   const totaux = totauxDeLaSaisie(lignes)
 
   const m = saisie.mentions
