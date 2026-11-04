@@ -59,7 +59,7 @@ export const CLES_NOTES_ADMISES: Record<string, { nombre: number; table: string 
   'src/pages/dossier/InformationsTab.tsx': { nombre: 1, table: 'informations_dossier (la saisie du cabinet)' },
   'src/pages/dossier/FactureFormModal.tsx': { nombre: 1, table: 'factures_emises (par enregistrer_facture)' },
   'src/pages/dossier/SupplementsTab.tsx': { nombre: 1, table: 'supplements' },
-  'src/lib/devis.ts': { nombre: 1, table: 'devis (les notes PARTAGÉES d’un devis, par enregistrer_devis ; espace client P5)' },
+  'src/lib/devis.ts': { nombre: 3, table: 'devis (les notes PARTAGÉES d’un devis, par enregistrer_devis, et la saisie d’un devis neuf ou d’un brouillon lu ; espace client P5 et P6a1)' },
 }
 
 /** Les fichiers qui lisent un `.notes` — celui d'une autre table —, au nombre près (règle L). */
@@ -69,7 +69,8 @@ export const LECTURES_NOTES_ADMISES: Record<string, { nombre: number; table: str
   'src/pages/dossier/InformationsTab.tsx': { nombre: 1, table: 'informations_dossier' },
   'src/pages/dossier/FactureFormModal.tsx': { nombre: 1, table: 'factures_emises' },
   'src/pages/dossier/SupplementsTab.tsx': { nombre: 1, table: 'supplements' },
-  'src/lib/devis.ts': { nombre: 1, table: 'devis (la saisie du formulaire d’un devis ; espace client P5)' },
+  'src/lib/devis.ts': { nombre: 2, table: 'devis (la saisie du formulaire d’un devis, et celle d’un brouillon lu ; espace client P5 et P6a1)' },
+  'src/pages/dossier/DevisSaisieModal.tsx': { nombre: 1, table: 'devis (la saisie du formulaire d’un devis ; espace client P6a1)' },
 }
 
 export interface Source { chemin: string; texte: string }

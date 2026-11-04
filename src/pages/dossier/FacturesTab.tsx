@@ -18,9 +18,11 @@ import ReglementsSection from './ReglementsSection'
 import ArticlesVue from './ArticlesVue'
 import ContactsVue from './ContactsVue'
 import ParametresVue from './ParametresVue'
+import DevisVue from './DevisVue'
 import { ARTICLES_EXPORTES } from '../../lib/articles'
 import { CONTACTS_EXPORTES } from '../../lib/contacts'
 import { PARAMETRES_FACTURATION_EXPORTES } from '../../lib/parametresFacturation'
+import { DEVIS_EXPORTES } from '../../lib/devis'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import {
   ETATS_TRANSMISSION, annuleeSurSaPlateforme, libelleCourtCanal, transmissionCourante,
@@ -58,7 +60,7 @@ type QuiRegarde =
   | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void; compteCaisse: string }
   | { espace: 'client'; banque: boolean }
 
-type VueDeLOnglet = 'factures' | 'reglements' | 'articles' | 'clients' | 'parametres'
+type VueDeLOnglet = 'factures' | 'devis' | 'reglements' | 'articles' | 'clients' | 'parametres'
 
 type Props = QuiRegarde & {
   dossierId: string
@@ -283,6 +285,13 @@ export default function FacturesTab(props: Props) {
         <button type="button" role="tab" aria-selected={vue === 'factures'} className={vue === 'factures' ? 'active' : ''} onClick={() => changerDeVue('factures')}>
           Factures
         </button>
+        {/* « Devis » (étape P6a1) : les devis du dossier, que lit et tient aussi le client « Ventes » — offert seulement quand les
+            migrations des devis sont en base (`DEVIS_EXPORTES`) : sans elles, la lecture des tables échouerait. */}
+        {DEVIS_EXPORTES && (
+          <button type="button" role="tab" aria-selected={vue === 'devis'} className={vue === 'devis' ? 'active' : ''} onClick={() => changerDeVue('devis')}>
+            Devis
+          </button>
+        )}
         <button type="button" role="tab" aria-selected={vue === 'reglements'} className={vue === 'reglements' ? 'active' : ''} onClick={() => changerDeVue('reglements')}>
           Règlements
         </button>
@@ -309,7 +318,17 @@ export default function FacturesTab(props: Props) {
         )}
       </div>
 
-      {vue === 'reglements' ? (
+      {vue === 'devis' && DEVIS_EXPORTES ? (
+        <DevisVue
+          espace={espace}
+          dossierId={dossierId}
+          dossierNom={dossierNom}
+          dossierSiret={dossierSiret}
+          dossierAdresse={dossierAdresse}
+          statutTva={statutTva}
+          articleExoneration={articleExoneration}
+        />
+      ) : vue === 'reglements' ? (
         <ReglementsSection
           {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces, compteCaisse: props.compteCaisse } : { espace: 'client' as const, banque: props.banque })}
           dossierId={dossierId}

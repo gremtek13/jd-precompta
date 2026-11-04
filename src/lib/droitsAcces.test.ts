@@ -7,7 +7,7 @@ import {
   LIBELLE_PENALITES_PARAMETRES, LIBELLE_PENALITES_PARAMETRES_CLIENT, LIBELLE_PIED_DE_PAGE_PARAMETRES, LIBELLE_PIED_DE_PAGE_PARAMETRES_CLIENT,
   LIBELLE_TITULAIRE_PARAMETRES, LIBELLE_TITULAIRE_PARAMETRES_CLIENT,
   LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE,
-  LIBELLE_ADRESSE_CONTACT, LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOM_CONTACT, LIBELLE_NOTE_DECLARATION, LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDisentLesCasesDuDossier, ceQueDonneUnAcces, changementApplique, definitionDe,
+  LIBELLE_ADRESSE_CONTACT, LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOM_CONTACT, LIBELLE_NOTE_DECLARATION, LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_NOTES_DEVIS, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDisentLesCasesDuDossier, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus, type ReglageDuDossier,
   type EtatCaisseDuDossier, CE_QUE_LA_CASE_CAISSE_OUVRE, CE_QUE_LA_CASE_RETIENT, CE_QUE_MONTRE_MA_CAISSE, REFUS_CAISSE_DOSSIER_NON_EXCLU,
   REFUS_STATUT_SOUS_LA_CASE_CAISSE, TABLES_LUES_AVEC_CAISSE, ceQueDitLaCaseCaisse, confirmationDeLaCaseCaisse, enumeration,
@@ -1030,6 +1030,7 @@ describe('ce que disent les cases, confronté à l’export', () => {
 describe('ce que le client « Ventes » lit de la main du cabinet : chaque libellé le dit', () => {
   const LIBELLES: [string, string, string][] = [
     [LIBELLE_NOTES_FACTURE, 'elles ne figurent pas sur la facture', 'les lit'],
+    [LIBELLE_NOTES_DEVIS, 'elles ne figurent pas sur le devis', 'les lit'],
     [LIBELLE_MOTIF_AVOIR, 'il ne figure pas sur l’avoir', 'le lit'],
     [LIBELLE_MOTIF_CONTRE_PASSATION, 'que la plateforme portera', 'que lit le client'],
     [LIBELLE_NOTE_DECLARATION, 'qui l’a saisi, quand, sous quelle référence', 'la lit'],
@@ -1051,7 +1052,7 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
       expect(libelle).toContain(ou)
       expect(libelle).toContain(lit)
     }
-    expect(new Set(LIBELLES.map(([l]) => l)).size).toBe(9)
+    expect(new Set(LIBELLES.map(([l]) => l)).size).toBe(10)
   })
 
   it('la phrase des cases dit lus les textes que les libellés disent lus', () => {

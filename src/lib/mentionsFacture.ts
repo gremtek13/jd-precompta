@@ -41,7 +41,12 @@ export const PAYS_PAR_DEFAUT = 'FR'
 
 // La saisie d'un brouillon, depuis ce que la base en garde ; vide pour une facture neuve. Une facture d'avant ces
 // mentions les a nulles : rien n'est deviné.
-export function saisieDesMentions(f: FactureEmise | null): SaisieMentions {
+// Un devis porte les mêmes colonnes (lib/devis.ts, `saisieDuDevis`) : la saisie se lit de l'une ou de l'autre.
+export type MentionsLues = Pick<FactureEmise, 'type_client' | 'tiers_siren' | 'tiers_adresse_electronique' | 'code_service'
+  | 'numero_engagement' | 'nature_operation' | 'date_prestation' | 'periode_debut' | 'periode_fin' | 'livraison_adresse'
+  | 'livraison_code_postal' | 'livraison_ville' | 'livraison_pays'>
+
+export function saisieDesMentions(f: MentionsLues | null): SaisieMentions {
   const livraison = f?.livraison_adresse != null
   return {
     typeClient: f?.type_client ?? '',
