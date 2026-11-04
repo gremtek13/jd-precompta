@@ -304,7 +304,9 @@ const TIERS_LU = 'Quarzbuch Zelintor'
 /** Textract lit trois lignes, le modèle cite le tiers et le total : des valeurs de pièce, que nul journal ne doit porter. */
 // `modele: 'muet'` : un modèle qui ne répond jamais, et ne s'arrête que si l'appel est abandonné — le signal que passe
 // extract-piece, que la minuterie immédiate du harnais fait tomber sur-le-champ (relecture du 04/11/2026, D6).
-function lecture(monde: Monde, options: { textract?: 'echec'; modele?: 'panne' | 'illisible' | 'muet' } = {}) {
+// `dateDeduite` : le document porte deux dates sans libellé, que le modèle ne cite pas — extract-piece retient la première
+// et le marque (`_date_deduite`), receive-email doit alors plafonner la confiance (PIECES-Q1).
+function lecture(monde: Monde, options: { textract?: 'echec'; modele?: 'panne' | 'illisible' | 'muet'; dateDeduite?: true } = {}) {
   monde.sensibles.push(TIERS_LU)
   monde.minuteriesImmediates = true
   monde.s3 = () => ({})
@@ -316,6 +318,12 @@ function lecture(monde: Monde, options: { textract?: 'echec'; modele?: 'panne' |
       Blocks: [
         { BlockType: 'LINE', Text: 'FACTURE', Confidence: 99 },
         { BlockType: 'LINE', Text: TIERS_LU, Confidence: 99 },
+        ...(options.dateDeduite ? [
+          { BlockType: 'LINE', Text: '15/05/2023', Confidence: 99 },
+          { BlockType: 'LINE', Text: '01/01/2025', Confidence: 99 },
+        ] : []),
+        { BlockType: 'LINE', Text: 'Total HT 823,04 €', Confidence: 99 },
+        { BlockType: 'LINE', Text: 'TVA 20 % 164,61 €', Confidence: 99 },
         { BlockType: 'LINE', Text: 'Total TTC 987,65 €', Confidence: 99 },
       ],
     }
@@ -329,7 +337,10 @@ function lecture(monde: Monde, options: { textract?: 'echec'; modele?: 'panne' |
     }
     if (options.modele === 'panne') throw new Error('Bedrock indisponible')
     if (options.modele === 'illisible') return reponseModele(`{"tiers": ${TIERS_LU}, "totalTtc": "987,65 €"}`)
-    return reponseModele(JSON.stringify({ tiers: TIERS_LU, date: null, devise: '€', totalTtc: '987,65 €', totalHt: null, totalTva: null }))
+    // Les trois totaux, cohérents à 20 % : une lecture de confiance « haute », que seul un plafond fait redescendre.
+    return reponseModele(JSON.stringify({
+      tiers: TIERS_LU, date: null, devise: '€', totalTtc: '987,65 €', totalHt: '823,04 €', totalTva: '164,61 €',
+    }))
   }
 }
 
@@ -551,9 +562,11 @@ function requeteWebhook(corps: string, options: { secret?: string; corpsSigne?: 
  */
 function boiteAuxLettres(
   monde: Monde, voisine: (slug: string) => FonctionChargee,
-  options: { lecture?: 'refusee'; octets?: Uint8Array<ArrayBuffer>; octetsPar?: Record<string, Uint8Array<ArrayBuffer>> } = {},
+  options: {
+    lecture?: 'refusee' | 'date-deduite'; octets?: Uint8Array<ArrayBuffer>; octetsPar?: Record<string, Uint8Array<ArrayBuffer>>
+  } = {},
 ) {
-  lecture(monde)
+  lecture(monde, options.lecture === 'date-deduite' ? { dateDeduite: true } : {})
   monde.resend.pieceJointe = (demande) => ({ data: { download_url: `https://${HOTE_PIECES_JOINTES}/${String(demande.id)}` }, error: null })
   monde.hotes[HOTE_PIECES_JOINTES] = (requete) =>
     new Response(options.octetsPar?.[new URL(requete.url).pathname.slice(1)] ?? options.octets ?? PNG)
@@ -761,7 +774,24 @@ const RECEIVE_EMAIL: ContratFonction = {
           if (!piece || piece.statut !== 'a_valider' || piece.source !== 'email' || piece.dossier_id !== D || piece.tiers !== TIERS_LU) {
             fautes.push(`pièce posée : ${JSON.stringify(piece ? { statut: piece.statut, source: piece.source } : null)}`)
           }
+          // Le témoin du plafond qui suit : une lecture sans date déduite garde sa confiance « haute ».
+          if (piece && piece.confiance !== 'haute') fautes.push(`confiance écrite : ${String(piece.confiance)}`)
           return fautes
+        },
+      },
+    },
+    {
+      nom: 'une date déduite de la mise en page : la pièce jointe s’écrit de confiance « moyenne », comme aux trois autres dépôts',
+      preparer: (m, voisine) => boiteAuxLettres(m, voisine, { lecture: 'date-deduite' }),
+      requete: requeteWebhook(evenementRecu()),
+      attendu: {
+        statut: 200,
+        depenses: [...ETAPES_DEPOT, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces'],
+        verifier: (_r, m) => {
+          const piece = lignes(m, 'pieces')[0]
+          return piece && piece.date_piece === '2023-05-15' && piece.confiance === 'moyenne'
+            ? []
+            : [`pièce posée : ${JSON.stringify(piece ? { date: piece.date_piece, confiance: piece.confiance } : null)}`]
         },
       },
     },

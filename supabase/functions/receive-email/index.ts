@@ -50,6 +50,9 @@ interface ExtractionPiece {
   montant_tva: number | null
   montant_ttc: number | null
   confiance: "haute" | "moyenne" | "basse"
+  // La date vient de la règle de dernier recours (la première du document) : la confiance écrite ne dépasse alors pas
+  // « moyenne » (`confianceDeLExtraction`, bloc dateDeduite plus bas).
+  _date_deduite?: boolean
 }
 
 // Où va un document une fois classé, et sous quelle forme. Copie assumée de `orientationDe`
@@ -258,6 +261,31 @@ export function typeDUnePiece(nom: string, debut: Uint8Array): string | null {
 }
 // ── FIN COPIE bornesDesPieces ────────────────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT COPIE dateDeduite ──────────────────────────────────────────────────────────────────────────────────────────
+// LE PLAFOND D'UNE DATE DÉDUITE, AUX QUATRE CHEMINS QUI ÉCRIVENT UNE EXTRACTION (PIECES-Q1, option (A)). L'original vit dans
+// src/lib/dateDeduite.ts ; il est copié À L'IDENTIQUE dans receive-email, auto-portée — le quatrième chemin, la pièce jointe
+// reçue par e-mail, qui écrivait la confiance d'extract-piece sans plafond (relecture du 04/11/2026) —, et
+// dateDeduiteCopie.test.ts compare la copie au caractère près et l'exécute contre l'original.
+
+/** Ce qu'une extraction dit de sa date et de sa confiance : les seuls champs que la règle lit. */
+export interface LectureDeLaDate {
+  date_piece: string | null
+  _date_deduite?: boolean
+}
+
+/** La date de cette extraction vient-elle de la règle de dernier recours ? Seulement si elle en a rendu une. */
+export function dateDeduite(extraction: LectureDeLaDate): boolean {
+  return extraction._date_deduite === true && !!extraction.date_piece
+}
+
+/** La confiance qu'une pièce reçoit de son extraction : « haute » redescend à « moyenne » quand sa date est déduite. */
+export function confianceDeLExtraction(
+  extraction: LectureDeLaDate & { confiance: 'haute' | 'moyenne' | 'basse' },
+): 'haute' | 'moyenne' | 'basse' {
+  return dateDeduite(extraction) && extraction.confiance === 'haute' ? 'moyenne' : extraction.confiance
+}
+// ── FIN COPIE dateDeduite ────────────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 })
@@ -464,7 +492,8 @@ Deno.serve(async (req: Request) => {
             montant_ht: extraction?.montant_ht ?? null,
             montant_tva: extraction?.montant_tva ?? null,
             montant_ttc: extraction?.montant_ttc ?? null,
-            confiance: extraction?.confiance ?? null,
+            // Une date DÉDUITE plafonne la confiance à « moyenne », comme aux trois autres chemins du dépôt (PIECES-Q1).
+            confiance: extraction ? confianceDeLExtraction(extraction) : null,
           })).error
         : (await supabase.from("documents_divers").insert({
             dossier_id: dossier.id,
