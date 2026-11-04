@@ -3,6 +3,7 @@ import { poidsFaceALaBorne } from './bornesStockage'
 import { TYPES_CLIENT_CONTACT, saisieQuiPart, type ContactEnvoye, type ContactPourSiret, type SaisieContact } from './contacts'
 import { refusDesLignes, refusDuNombreDeLignes, type RefusImportContacts } from './contactsImport'
 import { LIBELLES_TYPE_CONTACT } from './contactsVue'
+import { decoderWindows1252 } from './decodageTexte'
 import type { EspaceVentes } from './espaceVentes'
 import type { ArticleExoneration, TypeClient } from './types'
 
@@ -105,7 +106,7 @@ export function decoderLeFichier(octets: Uint8Array, espace: EspaceVentes): Fich
       texte = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(octets)
       encodage = 'utf-8'
     } catch {
-      texte = new TextDecoder('windows-1252').decode(octets)
+      texte = decoderWindows1252(octets)
       encodage = 'windows-1252'
     }
   }
