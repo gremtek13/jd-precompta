@@ -1,6 +1,7 @@
 -- LES TABLES QUE LE REMPLISSEUR DU BANC NE SAIT PAS REMPLIR, POUR LE LEURRE (outils/leurre/banc.py ; SUR UNE RÉPLIQUE
 -- SEULEMENT) : une ligne marquée par dossier de leurre, écrite à la main selon les CHECK de la table, déclencheurs coupés
--- — dix tables de dossier, et deux sans `dossier_id` qui porteront des données réelles.
+-- — dix tables de dossier, et deux sans `dossier_id` qui porteront des données réelles ; sur la réplique qui porte une
+-- migration préparée, ses tables aussi (la caisse hier, les devis aujourd'hui), chacune sous `to_regclass`.
 \set ON_ERROR_STOP on
 begin;
 set local session_replication_role = replica;
@@ -58,5 +59,32 @@ begin
       select d, 'apport', '2025-06-19', montant, 'cabinet', chef from lc$i$;
   end if;
 end $caisse$;
+-- Les devis (migration `devis_du_client`, étape P5, sur la réplique qui la porte) : un devis émis et accepté par leurre,
+-- chaque texte libre marqué, selon les CHECK de la table (le numéro de sa série, l'adresse électronique d'un assujetti,
+-- une prestation de services sans livraison) ; et son lien à la première facture du leurre, que le remplisseur ne sait
+-- pas composer (le devis lui manque).
+do $devis$
+begin
+  if to_regclass('public.devis') is not null then
+    execute $i$insert into public.devis (id, dossier_id, numero, statut, date_emission, date_validite, objet, tiers_nom,
+        tiers_adresse, tiers_siret, tiers_email, type_client, tiers_siren, tiers_adresse_electronique, numero_engagement,
+        nature_operation, date_prestation, lignes, montant_ht, montant_tva, montant_ttc, conditions, mentions_legales, notes,
+        emetteur_nom, emetteur_siret, emetteur_adresse, cree_par, emis_par, emis_le, reponse, date_reponse, decide_par,
+        decide_le)
+      select (pfx || '-0000-4000-8000-0000000006' || h || '1')::uuid, d, 'D2025-0001', 'emis', '2025-06-17', '2025-07-17',
+             m || ' objet du devis', m || ' client du devis', m || ' adresse du client du devis', s || '00017',
+             'leurre-7q3-' || lower(x) || '@example.test', 'assujetti', s, s, m || ' engagement', 'services', '2025-06-17',
+             jsonb_build_array(jsonb_build_object('designation', m || ' ligne du devis', 'quantite', 1,
+                                                  'prix_unitaire_ht', montant, 'taux_tva', 20)),
+             montant, round(montant * 0.2, 2), montant + round(montant * 0.2, 2), m || ' conditions du devis',
+             m || ' mentions du devis', m || ' notes du devis', m || ' émetteur du devis', s || '00025',
+             m || ' adresse de l''émetteur du devis', chef, chef, '2025-06-17 10:00:00+02', 'acceptee', '2025-06-20', chef,
+             '2025-06-20 10:00:00+02'
+        from lc cross join lateral (select case x when 'A' then '999735731' when 'Z' then '999735749' else '999735756' end) as sn(s)$i$;
+    execute $i$insert into public.devis_factures (id, dossier_id, devis_id, facture_id, cree_par)
+      select (pfx || '-0000-4000-8000-0000000006' || h || '2')::uuid, lc.d, (pfx || '-0000-4000-8000-0000000006' || h || '1')::uuid,
+             (select f.id from factures_emises f where f.dossier_id = lc.d order by 1 limit 1), chef from lc$i$;
+  end if;
+end $devis$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;
