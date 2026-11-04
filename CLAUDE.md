@@ -1095,11 +1095,20 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Une même dépense entrée deux fois se dit** (`lib/doublonsProbables.ts`, PIECES-Q2, confirmée le 04/11/2026) : deux
   dépenses de même montant retenu, à sept jours au plus, d'une même `cleFournisseur` (un fournisseur non lu se rapproche
   de tout), l'une au moins non réglée — en attention dans Justificatifs, les fiches, la Vue d'ensemble, Clôture et
-  avant la validation, jamais bloquant. Une date déduite plafonne la confiance à « moyenne » aux trois chemins du dépôt
-  (`lib/dateDeduite.ts`, PIECES-Q1 (A), sans trace gardée) ; « Valider la sélection » compte ce qui part et nomme avant
+  avant la validation, jamais bloquant. Une date déduite plafonne la confiance à « moyenne » aux quatre chemins du dépôt
+  (`lib/dateDeduite.ts`, copié dans `receive-email`, PIECES-Q1 (A), sans trace gardée) ; « Valider la sélection » compte ce qui part et nomme avant
   le clic ce qu'elle écarte ou ce qui mérite un regard (`lib/validationDeLaSelection.ts`) → « RELECTURE : UNE ANNÉE DE
   PIÈCES, DU DÉPÔT À LA 2035 (MVP-D6) », « LES PIÈCES : LE DOUBLON PROBABLE, LA DATE DÉDUITE, LA VALIDATION EN LOT QUI
   DIT TOUT (PIECES-Q1, PIECES-Q2, D7) ».
+- **Une facture se reconnaît à son titre** (`lib/titreDeFacture.ts`, copié dans `extract-piece`, PIECES-Q3) : une des
+  dix premières lignes qui commence par « FACTURE » ou « NOTE D'HONORAIRES », avec un montant, l'emporte sur les mots
+  croisés plus loin, après le bordereau et le nom d'un compte bancaire ; Documents dit « Facture probable » par la même
+  règle. Une lecture ratée se dit au dépôt, la pièce non lue passe en tête de « À valider », et la relecture groupée
+  n'écrit de montants que sur elle, ses conditions jugées en base (`lib/lectureDesPieces.ts`, PIECES-Q5) ; un PDF de
+  plus de 10 Mo se dit avant l'envoi ; « Mes pièces » lit trois fichiers à la fois (`lib/reservoir.ts`, PIECES-Q4) et
+  l'appel au modèle s'abandonne à 30 s ; Justificatifs lit en parallèle, le dernier chargement seul écrit, une fiche ne
+  relit que son groupe (`relireLesPieces`) → « LES PIÈCES : LE CLASSEMENT DES FACTURES, LA LECTURE RATÉE DITE, LE DÉPÔT
+  PAR PETITS LOTS, LES RECHARGEMENTS (PIECES-Q3 À Q5, D8) ».
 - **Un fournisseur se reconnaît à une clé d'identité** (`cleFournisseur`), mot à mot, jamais par sous-chaîne.
   **« Textract sait le lire » n'est pas « l'application accepte ce fichier »** (`textractPeutLire`) ; une relecture OCR
   ne relit que ce qui manque.
