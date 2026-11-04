@@ -365,11 +365,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     la banque → « « MES VENTES › FACTURES » ». « Tes plateformes » : ni réception ni secret → « LES CONNEXIONS DU CLIENT
     ET LES TUILES DE SON ACCUEIL ». « Par le client » côté cabinet (`lib/auteursVentes.ts`) → « « PAR LE CLIENT » CÔTÉ
     CABINET ».
-  - « Ma caisse » sous `maCaisseOuverte` : la caisse rejouée sur ce que le client lit, confrontée au total et au solde de
-    la base, sinon aucun geste ; aucune catégorie, aucun compte, aucun nom → « LA CAISSE : « MA CAISSE », L'ÉCRAN DU
+  - « Ma caisse » sous `maCaisseOuverte` : la caisse rejouée sur ce que le client lit, confrontée au total et au solde
+    de la base, sinon aucun geste ; aucune catégorie, aucun compte, aucun nom → « LA CAISSE : « MA CAISSE », L'ÉCRAN DU
     PRATICIEN (C12A, LIGNE 26.6) ». Le paiement d'une pièce, dans « Mes pièces » : le sens tiré de la pièce, jamais son
     montant ; ce que le client ne lit pas jugé par la base seule → « LA CAISSE : LE PAIEMENT D'UNE PIÈCE DEPUIS « MES
     PIÈCES » (C12B, LIGNE 26.6) », « LA CAISSE : LA RELECTURE DE C11, C12A ET C12B, ET SES CORRECTIONS (LIGNE 26.6) ».
+    « Corriger » un paiement d'un seul geste, cabinet et client (`remplacer_paiement_par_la_caisse`, C12B-Q1) : préparée
+    le 04/11/2026, derrière `CORRECTION_DU_PAIEMENT_EXPORTEE` baissé, son retour un `drop function` ; les mots qui
+    disent comment reprendre un paiement vivent dans `motsDuRemedeSelon`, jamais en dur → « LA CAISSE : CORRIGER UN
+    PAIEMENT EN ESPÈCES D'UN SEUL GESTE (C12B-Q1) (PRÉPARÉE, PAS APPLIQUÉE) ».
   - « Ma banque » sous `maBanqueOuverte` : l'état DÉDUIT, le solde LU au dernier relevé contrôlé, jamais calculé ; ni
     catégorie ni écriture → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » » ; avec « Ventes », le registre lu APRÈS la
     case dit le mouvement classé ou réservé par ses encaissements, lu en partie il tait les mouvements libres → « « MA
