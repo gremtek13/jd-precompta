@@ -1,10 +1,14 @@
-import { jourDit, quiEcritLaCaisse, refus, sansLOperation, type DossierDeLaCaisse } from './caisse'
+import { jourDit, quiEcritLaCaisse, refus, refusDeLAncienne, sansLOperation, type DossierDeLaCaisse } from './caisse'
 import {
   anneeFigee, caisseRejouee, dossierDuClient, refusDuRetraitDuClient, type DossierDuClient, type JourDeLaCaisseDuClient,
   type OperationDuClient,
 } from './caisseClient'
 import type { LectureDeLaCaisseDuClient } from './caisseClientLecture'
 import { euros, lireLeMontantSaisi, soldeAuJour } from './caisseEcran'
+import {
+  CORRECTION_DU_PAIEMENT_EXPORTEE, correctionOfferteSelon, correctionSansChangement, jugerLaCorrectionDuClientSelon,
+  motsDuRemedeSelon, RIEN_A_CORRIGER,
+} from './correctionDuPaiement'
 import { pourLEspace } from './espaceVentes'
 import { formatDate } from './format'
 import {
@@ -264,11 +268,116 @@ export function confirmationDuRetraitDuPaiement(o: OperationDuClient, deposeeLe:
   const quoi = o.montant > 0 ? 'l’encaissement en espèces' : 'le paiement en espèces'
   return `Retirer ${quoi} du ${jourDit(o.date)}, ${euros(Math.abs(Math.round(o.montant * 100)))}, de ${pieceNommee(deposeeLe)} ? `
     + `Il reste dans l’historique de ta caisse, retiré, et ta caisse du ${jourDit(o.date)} passera à ${euros(apres)}. `
-    + 'Pour le corriger, retire-le puis enregistre le bon.'
+    + motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).finDuRetraitDuClient
 }
 
 /** Ce que l'écran dit une fois le paiement retiré. */
 export function paiementRetire(o: Pick<OperationDuClient, 'date' | 'montant'>): string {
   return `Retiré : ${o.montant > 0 ? 'l’encaissement en espèces' : 'le paiement en espèces'} du ${jourDit(o.date)}, `
     + `${euros(Math.abs(Math.round(o.montant * 100)))}.`
+}
+
+// ── La correction d'un paiement (C12B-Q1) ─────────────────────────────────────────────────────────────────────────────
+
+// CORRIGER SON PAIEMENT D'UN SEUL GESTE (C12B-Q1 ; la migration `correction_du_paiement_par_la_caisse`, PRÉPARÉE, pas
+// appliquée). Le praticien corrige le jour ou le montant d'un paiement qu'IL a saisi : la base écrit le nouveau, de la même
+// pièce, et retire l'ancien, dans la même transaction (`remplacer_paiement_par_la_caisse`), sous les mots de son retrait. Les
+// refus avant le clic sont ceux de `jugerLaCorrectionDuClientSelon` (lib/correctionDuPaiement.ts), sur la caisse rejouée ; ce
+// qu'il ne lit pas reste au jugement de la base. Comme pour le paiement, l'écran ne montre jamais le montant de la pièce :
+// celui de SES espèces, sans signe. Le drapeau `CORRECTION_DU_PAIEMENT_EXPORTEE` baissé, rien ne s'offre : « Mes pièces » est
+// celle d'hier, au caractère près.
+
+/**
+ * La correction s'offre-t-elle sur CE paiement ? Le drapeau levé ; les siens seulement, non retirés (la base refuse les
+ * autres), sur une année que la lecture ne dit pas figée — les termes du retrait ; nul quand elle ne s'offre pas, sinon le
+ * refus de l'ancien avant toute saisie : un paiement d'avant la première année lue, puis celui de la base sur l'ancien
+ * (`refusDeLAncienne`), aux mots du client.
+ */
+export function correctionDuPaiementSelon(enBase: boolean, o: OperationDuClient, dossier: DossierDeLaCaisse,
+  jours: readonly JourDeLaCaisseDuClient[], moi: string, premiere: number): { offert: false } | { offert: true; refus: string | null } {
+  if (!correctionOfferteSelon(enBase, o) || !paiementDuClientLuiMeme(o, moi)) return { offert: false }
+  if (o.date < `${premiere}-01-01`) return { offert: true, refus: avantLaCaisseLue(premiere) }
+  if (anneeFigee(jours, Number(o.date.slice(0, 4))) === true) return { offert: false }
+  const ancien = refusDeLAncienne(o.id, dossier).refus
+  return { offert: true, refus: ancien ? pourLEspace('client', ancien.message) : null }
+}
+
+/** La même, selon le drapeau. */
+export function correctionDuPaiement(o: OperationDuClient, dossier: DossierDeLaCaisse, jours: readonly JourDeLaCaisseDuClient[],
+  moi: string, premiere: number): { offert: false } | { offert: true; refus: string | null } {
+  return correctionDuPaiementSelon(CORRECTION_DU_PAIEMENT_EXPORTEE, o, dossier, jours, moi, premiere)
+}
+
+/** Le formulaire tel qu'il s'ouvre sur un paiement : son jour, et ses espèces sans signe (« 40,00 »). */
+export function formulaireDeLaCorrectionDuClient(o: Pick<OperationDuClient, 'date' | 'montant'>): FormulaireDuPaiement {
+  const centimes = Math.round(Math.abs(o.montant) * 100)
+  return { date: o.date, montant: `${Math.floor(centimes / 100)},${String(centimes % 100).padStart(2, '0')}` }
+}
+
+export type VerdictDeLaCorrectionDuClient =
+  | { etat: 'vide' }
+  | { etat: 'refuse'; message: string }
+  /** Ce qui part, et la caisse du jour du nouveau — et de celui de l'ancien, quand le jour change. */
+  | { etat: 'permis'; saisie: { operation_id: string; date: string; montant: number }; soldeApres: number; soldeDuJourAncien: number | null }
+
+/**
+ * Le verdict de la correction, avant le clic : les règles du formulaire — celles du paiement (un montant sans signe, une date
+ * dans les années lues, une année que la lecture ne dit pas figée), et une correction qui change quelque chose —, puis le
+ * refus de la base sur la saisie TELLE QU'ELLE PART (`jugerLaCorrectionDuClientSelon`), aux mots du client ; permis, avec la
+ * caisse de ses jours.
+ */
+export function verdictDeLaCorrectionDuClientSelon(enBase: boolean, f: FormulaireDuPaiement, ancien: OperationDuClient,
+  piece: PieceDuPaiementDuClient, dossier: DossierDeLaCaisse, jours: readonly JourDeLaCaisseDuClient[], premiere: number):
+  VerdictDeLaCorrectionDuClient {
+  const non = (message: string): VerdictDeLaCorrectionDuClient => ({ etat: 'refuse', message })
+  if (f.date === '' || f.montant.trim() === '') return { etat: 'vide' }
+  const lu = lireLeMontantSaisi(f.montant)
+  if (lu === 'illisible') return non(MONTANT_DU_PAIEMENT_ILLISIBLE)
+  if (lu !== null && (lu < 0 || Object.is(lu, -0))) return non(MONTANT_SANS_SIGNE)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(f.date) && f.date < `${premiere}-01-01`) return non(avantLaCaisseLue(premiere))
+  const annee = Number(f.date.slice(0, 4))
+  if (anneeFigee(jours, annee) === true) return non(anneeValidee(annee))
+  const saisie = saisieDuPaiement(f, piece)
+  if (correctionSansChangement(ancien, saisie)) return non(RIEN_A_CORRIGER)
+  const juge = jugerLaCorrectionDuClientSelon(enBase, ancien.id, { date: saisie.date, montant: saisie.montant }, dossier, [piece],
+    'maintenant', 'paiement-corrige')
+  if (juge.etat === 'absent') return non('La correction d’un paiement par ta caisse ne s’offre pas encore.')
+  if (juge.etat === 'refuse') return non(pourLEspace('client', juge.refus.message))
+  const { date, montant } = juge.operation
+  return {
+    etat: 'permis', saisie: { operation_id: ancien.id, date, montant }, soldeApres: soldeAuJour(juge.caisse, date),
+    soldeDuJourAncien: ancien.date === date ? null : soldeAuJour(juge.caisse, ancien.date),
+  }
+}
+
+/** Le même, selon le drapeau. */
+export function verdictDeLaCorrectionDuClient(f: FormulaireDuPaiement, ancien: OperationDuClient, piece: PieceDuPaiementDuClient,
+  dossier: DossierDeLaCaisse, jours: readonly JourDeLaCaisseDuClient[], premiere: number): VerdictDeLaCorrectionDuClient {
+  return verdictDeLaCorrectionDuClientSelon(CORRECTION_DU_PAIEMENT_EXPORTEE, f, ancien, piece, dossier, jours, premiere)
+}
+
+/** Des espèces nommées pour le client : « 40,00 € sortis le 03/03/2026 », « 80,00 € reçus le 06/03/2026 ». */
+function especesDites(montant: number, date: string): string {
+  return `${euros(Math.abs(Math.round(montant * 100)))} ${montant > 0 ? 'reçus' : 'sortis'} le ${jourDit(date)}`
+}
+
+/**
+ * La confirmation d'une correction : ce qu'elle remplace et par quoi — l'ancien, son jour et ses espèces ; le nouveau —, la
+ * pièce par son dépôt, et la caisse de leurs jours. Jamais le montant de la pièce.
+ */
+export function confirmationDeLaCorrectionDuClient(ancien: Pick<OperationDuClient, 'date' | 'montant'>,
+  v: Extract<VerdictDeLaCorrectionDuClient, { etat: 'permis' }>, deposeeLe: string): string {
+  const quoi = ancien.montant > 0 ? 'ton encaissement en espèces' : 'ton paiement en espèces'
+  const caisses = `Ta caisse du ${jourDit(v.saisie.date)} passera à ${euros(v.soldeApres)}`
+    + `${v.soldeDuJourAncien === null ? '' : `, celle du ${jourDit(ancien.date)} à ${euros(v.soldeDuJourAncien)}`}.`
+  return `Corriger ${quoi} du ${jourDit(ancien.date)}, ${euros(Math.abs(Math.round(ancien.montant * 100)))}, de `
+    + `${pieceNommee(deposeeLe)} : ${especesDites(v.saisie.montant, v.saisie.date)} à sa place ? L’ancien reste dans l’historique `
+    + `de ta caisse, retiré. ${caisses} Ton cabinet le voit aussitôt.`
+}
+
+/** Ce que l'écran dit une fois la correction écrite. */
+export function paiementCorrige(ancien: Pick<OperationDuClient, 'date' | 'montant'>,
+  v: Extract<VerdictDeLaCorrectionDuClient, { etat: 'permis' }>, deposeeLe: string): string {
+  return `Corrigé : ${pieceNommee(deposeeLe)}, ${especesDites(v.saisie.montant, v.saisie.date)}, à la place de `
+    + `${especesDites(ancien.montant, ancien.date)}.`
 }

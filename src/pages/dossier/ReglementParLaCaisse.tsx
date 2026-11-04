@@ -7,9 +7,10 @@ import { aujourdHuiAParis } from '../../lib/format'
 import type { LectureComplete } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import {
-  avertissementDuReglement, confirmationDuReglement, confirmationDuRetraitDuPaiement, etatDeLaCaisseDeLaFiche, montantPropose,
-  paiementNomme, paiementsDeLaPiece, pieceDuPaiement, refusDuRetraitDuPaiement, verdictDuReglement, type FactureDuPaiement,
-  type LectureDeLaCaisseDeLaPiece,
+  avertissementDeLaCorrection, avertissementDuReglement, confirmationDeLaCorrection, confirmationDuReglement,
+  confirmationDuRetraitDuPaiement, correctionDeLaFiche, correctionEnregistree, etatDeLaCaisseDeLaFiche, formulaireDeLaCorrection,
+  montantPropose, paiementNomme, paiementsDeLaPiece, pieceDuPaiement, refusDuRetraitDuPaiement, verdictDeLaCorrection,
+  verdictDuReglement, type FactureDuPaiement, type FormulaireDeLaCorrection, type LectureDeLaCaisseDeLaPiece,
 } from '../../lib/paiementParLaCaisseEcran'
 import type { PaiementsDesPieces } from '../../lib/rattachement'
 import { supabase } from '../../lib/supabase'
@@ -28,6 +29,11 @@ import type { OperationCaisse, Piece } from '../../lib/types'
 //
 // UNE CAISSE NE NOMME PERSONNE : la section dit le jour et les espèces d'un paiement, jamais un tiers ; la pièce elle-même est
 // celle que la fiche montre, comme ailleurs, et la caisse n'en stocke rien.
+//
+// CORRIGER UN PAIEMENT D'UN SEUL GESTE (C12B-Q1 ; la migration `correction_du_paiement_par_la_caisse`, PRÉPARÉE, pas
+// appliquée) : « Corriger » ouvre, sous le paiement, son jour et son montant ; la base écrit le nouveau et retire l'ancien
+// (`remplacer_paiement_par_la_caisse`), sous le même verrou que les deux autres gestes. Le drapeau
+// `CORRECTION_DU_PAIEMENT_EXPORTEE` baissé, le bouton ne se rend pas (`correctionDeLaFiche`) : la fiche est celle d'hier.
 
 /** Ce que l'onglet Justificatifs donne à la fiche pour la caisse : la lecture, le dossier, les paiements, et de quoi relire. */
 export interface CaisseDeLaPiece {
@@ -65,9 +71,12 @@ export default function ReglementParLaCaisse({ dossierId, piece, factures, caiss
   // Le montant TAPÉ, ou nul tant que le cabinet n'y a pas touché : le champ propose alors le reste à régler.
   const [montantTape, setMontantTape] = useState<string | null>(null)
   const [message, setMessage] = useState<{ genre: 'ok' | 'erreur'; texte: string } | null>(null)
-  // UN verrou pour les deux gestes (régler, retirer) : deux gestes qui se croisent jugeraient la caisse sur deux lectures.
+  // UN verrou pour les trois gestes (régler, retirer, corriger) : deux gestes qui se croisent jugeraient la caisse sur deux
+  // lectures.
   const ecritureEnCours = useRef(false)
   const [enCours, setEnCours] = useState(false)
+  // La correction ouverte : le paiement qu'elle reprend, et ce que le cabinet a tapé ; nulle quand aucune ne l'est.
+  const [correction, setCorrection] = useState<{ id: string; formulaire: FormulaireDeLaCorrection } | null>(null)
 
   const etat = etatDeLaCaisseDeLaFiche(caisse.lecture, dossierId)
   if (etat.etat === 'absente') return null
@@ -159,6 +168,32 @@ export default function ReglementParLaCaisse({ dossierId, piece, factures, caiss
     }, `Retiré : ${paiementNomme(o)}.`, 'Le paiement n’a pas été retiré')
   }
 
+  // La correction ouverte, son paiement relu dans la caisse lue (une relecture qui l'a retiré ou remplacé ferme le
+  // formulaire), et son verdict sur la saisie telle qu'elle part.
+  const enCorrection = correction === null ? null : paiements.find((o) => o.id === correction.id && o.retire_le == null) ?? null
+  const verdictCorrection = correction !== null && enCorrection !== null && 'piece' in laPiece
+    ? verdictDeLaCorrection(correction.formulaire, enCorrection, ctx, donnees, laPiece.piece)
+    : null
+  const avertissementCorrection = verdictCorrection?.etat === 'permis' && 'piece' in laPiece
+    ? avertissementDeLaCorrection(laPiece.piece, donnees, verdictCorrection.ancien.id, Math.round(verdictCorrection.operation.montant * 100))
+    : null
+
+  async function corriger() {
+    if (ecritureEnCours.current || verdictCorrection === null || verdictCorrection.etat !== 'permis') return
+    const v = verdictCorrection
+    if (!window.confirm(confirmationDeLaCorrection(piece.nom_fichier, v, caisse.modele.plan.caisse, avertissementCorrection))) return
+    await agir(async () => {
+      const { error } = await supabase.rpc('remplacer_paiement_par_la_caisse', {
+        p_dossier_id: dossierId, p_operation_id: v.saisie.operation_id, p_date: v.saisie.date, p_montant: v.saisie.montant,
+      })
+      return error ? messageErreur(error, 'raison inconnue') : null
+    }, correctionEnregistree(v), 'Le paiement n’a pas été corrigé', () => setCorrection(null))
+  }
+
+  function changerLaCorrection(champ: keyof FormulaireDeLaCorrection, valeur: string) {
+    setCorrection((c) => (c === null ? c : { ...c, formulaire: { ...c.formulaire, [champ]: valeur } }))
+  }
+
   return (
     <section className="fiche-hdf" aria-label={TITRE_DE_LA_CAISSE}>
       <h3>{TITRE_DE_LA_CAISSE}</h3>
@@ -169,6 +204,11 @@ export default function ReglementParLaCaisse({ dossierId, piece, factures, caiss
             {paiements.map((o) => {
               const refus = o.retire_le == null ? refusDuRetraitDuPaiement(o.id, ctx, donnees) : null
               const origine = origineDite(o)
+              const corrigible = o.retire_le == null ? correctionDeLaFiche(o, ctx, donnees) : { offerte: false as const }
+              // La pièce que la fiche ne sait pas juger (ses paiements du relevé, sa facture) ne se corrige pas d'ici non plus.
+              const refusCorrection = !corrigible.offerte ? null
+                : corrigible.refus ?? ('illisible' in laPiece ? `Ce paiement ne se corrige pas d’ici : ${laPiece.illisible}.` : null)
+              const ouverte = correction !== null && enCorrection !== null && enCorrection.id === o.id
               return (
                 <li key={o.id}>
                   <span>{paiementNomme(o).replace(/^./, (c) => c.toUpperCase())}</span>
@@ -185,8 +225,59 @@ export default function ReglementParLaCaisse({ dossierId, piece, factures, caiss
                           Retirer
                         </button>
                         {refus !== null && <span className="muted"> {refus}</span>}
+                        {corrigible.offerte && (
+                          <>
+                            {' '}
+                            <button
+                              type="button" className="btn btn-outline btn-sm" disabled={enCours || refusCorrection !== null}
+                              title={refusCorrection ?? undefined} aria-expanded={ouverte}
+                              onClick={() => {
+                                // Le clic peut précéder le rendu qui désactive le bouton : le verrou, lui, est déjà posé.
+                                if (ecritureEnCours.current) return
+                                setCorrection(ouverte ? null : { id: o.id, formulaire: formulaireDeLaCorrection(o) })
+                              }}
+                            >
+                              Corriger
+                            </button>
+                            {/* Le même refus que celui du retrait (l'exercice validé) ne se dit qu'une fois. */}
+                            {refusCorrection !== null && refusCorrection !== refus && <span className="muted"> {refusCorrection}</span>}
+                          </>
+                        )}
                       </>
                     )}
+                  {ouverte && correction !== null && (
+                    <div className="field-row aligne-bas" style={{ marginTop: 6 }}>
+                      <div className="field">
+                        <label htmlFor="caisse-correction-date">Jour corrigé</label>
+                        <input
+                          id="caisse-correction-date" type="date" value={correction.formulaire.date} disabled={enCours}
+                          onKeyDown={sansEnvoi} onChange={(e) => changerLaCorrection('date', e.target.value)}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="caisse-correction-montant">Montant corrigé (signé comme le relevé)</label>
+                        <input
+                          id="caisse-correction-montant" type="text" inputMode="decimal" autoComplete="off"
+                          value={correction.formulaire.montant} disabled={enCours} onKeyDown={sansEnvoi}
+                          onChange={(e) => changerLaCorrection('montant', e.target.value)}
+                        />
+                      </div>
+                      <button
+                        type="button" className="btn btn-outline btn-sm"
+                        disabled={enCours || verdictCorrection === null || verdictCorrection.etat !== 'permis'}
+                        onClick={() => { void corriger() }}
+                      >
+                        {enCours ? 'Écriture…' : 'Enregistrer la correction'}
+                      </button>
+                      <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => setCorrection(null)}>
+                        Annuler
+                      </button>
+                    </div>
+                  )}
+                  {ouverte && verdictCorrection?.etat === 'refuse' && (
+                    <p className="error-text" role="alert">{verdictCorrection.message}</p>
+                  )}
+                  {ouverte && avertissementCorrection !== null && <p className="muted" role="status">{avertissementCorrection}</p>}
                 </li>
               )
             })}

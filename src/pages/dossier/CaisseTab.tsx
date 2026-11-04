@@ -16,6 +16,7 @@ import { lireLaCaisseDuDossier, type LectureDeLaCaisseDuDossier } from '../../li
 import { retenirLesOperationsVues } from '../../lib/caisseDuClientAuCabinet'
 import type { ModeleComptable } from '../../lib/engagement'
 import { anneeDe, aujourdHuiAParis, formatDate } from '../../lib/format'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from '../../lib/correctionDuPaiement'
 import { messageErreur } from '../../lib/messageErreur'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from '../../lib/paiementParLaCaisse'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -562,7 +563,7 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
                             {origine && <> <span className="badge badge-neutral">{origine}</span></>}
                             {o !== null && o.remplace_id != null && <> <span className="badge badge-neutral">Remplace une version retirée</span></>}
                             {l.nature === 'encaissement' && <> <span className="badge badge-neutral">Comptée par la facture</span></>}
-                            {o !== null && o.genre === 'paiement' && <> <span className="badge badge-neutral">Se retire depuis la fiche de la pièce</span></>}
+                            {o !== null && o.genre === 'paiement' && <> <span className="badge badge-neutral">{motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).pastille}</span></>}
                           </div>
                         </td>
                         <td data-libelle="Entrée">{l.centimes > 0 ? euros(l.centimes) : ''}</td>

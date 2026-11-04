@@ -15,11 +15,19 @@ import { AvecExercicesValides } from '../../test/exercicesValides'
 // la fonction de la base seule, ses arguments ; un `{ error }` lu et dit ; la caisse relue avant que le verrou se relâche ; deux
 // clics dans le même `act` : un seul appel ; le retrait d'un paiement, confirmé. La base est un faux `rpc`. Des jeux FICTIFS, un
 // jour fixe : le 29/10/2026.
+//
+// Et « Corriger » (C12B-Q1), sous son propre drapeau, `CORRECTION_DU_PAIEMENT_EXPORTEE` : baissé (son état d'aujourd'hui, celui de
+// tous les cas d'hier), la fiche est celle d'hier au caractère près ; levé, le geste, ses refus avant le clic, sa confirmation qui
+// nomme l'ancien et le nouveau, sa fonction seule, le verrou commun, la relecture.
 
-const drapeau = vi.hoisted(() => ({ leve: true as boolean }))
+const drapeau = vi.hoisted(() => ({ leve: true as boolean, correction: false as boolean }))
 vi.mock('../../lib/paiementParLaCaisse', async (original) => {
   const module = await original<typeof import('../../lib/paiementParLaCaisse')>()
   return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeau.leve } }
+})
+vi.mock('../../lib/correctionDuPaiement', async (original) => {
+  const module = await original<typeof import('../../lib/correctionDuPaiement')>()
+  return { ...module, get CORRECTION_DU_PAIEMENT_EXPORTEE() { return drapeau.correction } }
 })
 
 const faux = vi.hoisted(() => ({
@@ -86,6 +94,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-29T10:00:00Z'))
   drapeau.leve = true
+  drapeau.correction = false
   faux.rpcs = []
   faux.refus = null
   faux.retenir = false
@@ -274,5 +283,153 @@ describe('les paiements de la pièce, et leur retrait', () => {
     expect(screen.getByText(/Retirer ce paiement de 80,00 € rendrait la caisse négative/)).toBeTruthy()
     await act(async () => { fireEvent.click(retirer) })
     expect(faux.rpcs).toEqual([])
+  })
+})
+
+describe('« Corriger » un paiement (C12B-Q1)', () => {
+  // La caisse : 200 € apportés le 01/03 ; la pièce de 120 € payée 50 € le 05/03 (et 70 € restent à régler).
+  const paye = operation({ id: 'pa', genre: 'paiement', date: '2026-03-05', montant: -50, piece_id: 'p1' })
+  const lue = () => ({ dossierId: D, etat: 'lue' as const, donnees: donnees({ operations: [operation({ id: 'ap' }), paye] }) })
+  const corriger = () => screen.getByRole('button', { name: 'Corriger' }) as HTMLButtonElement
+  const enregistrer = () => screen.getByRole('button', { name: 'Enregistrer la correction' }) as HTMLButtonElement
+
+  it('le drapeau baissé : aucun « Corriger », la ligne du paiement est celle d’hier au caractère près', () => {
+    lecture = lue()
+    monter()
+    expect(screen.queryByRole('button', { name: 'Corriger' })).toBeNull()
+    expect(screen.getAllByRole('listitem').map((li) => sansInsecable(li.textContent ?? ''))).toEqual([
+      'Le paiement en espèces du 05/03/2026 de 50,00 € Retirer',
+    ])
+    expect(screen.queryByLabelText(/Jour corrigé/)).toBeNull()
+  })
+
+  it('le drapeau levé : « Corriger » sur un paiement vivant seulement ; il s’ouvre sur son jour et son montant, et se referme', () => {
+    drapeau.correction = true
+    const retire = operation({ id: 'pr', genre: 'paiement', date: '2026-03-02', montant: -10, piece_id: 'p1', retire_le: '2026-03-03T08:00:00Z' })
+    lecture = { dossierId: D, etat: 'lue', donnees: donnees({ operations: [operation({ id: 'ap' }), retire, paye] }) }
+    monter()
+    expect(screen.getAllByRole('listitem').map((li) => sansInsecable(li.textContent ?? ''))).toEqual([
+      'Le paiement en espèces du 02/03/2026 de 10,00 € Retiré',
+      'Le paiement en espèces du 05/03/2026 de 50,00 € Retirer Corriger',
+    ])
+    fireEvent.click(corriger())
+    expect(corriger().getAttribute('aria-expanded')).toBe('true')
+    expect(champ(/Jour corrigé/).value).toBe('2026-03-05')
+    expect(champ(/Montant corrigé/).value).toBe('-50,00')
+    // Rien n'a changé : rien à corriger, et le bouton attend.
+    expect(screen.getByRole('alert').textContent).toBe('Rien à corriger : ce sont le jour et le montant de ce paiement.')
+    expect(enregistrer().disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler' }))
+    expect(screen.queryByLabelText(/Jour corrigé/)).toBeNull()
+  })
+
+  it('les refus avant le clic, sur la saisie telle qu’elle part, sous les mots de la base ; rien ne part', async () => {
+    drapeau.correction = true
+    lecture = lue()
+    monter()
+    fireEvent.click(corriger())
+    // Le sens : une entrée pour un achat.
+    fireEvent.change(champ(/Montant corrigé/), { target: { value: '50' } })
+    expect(screen.getByRole('alert').textContent).toMatch(/^Ce paiement ne va pas dans le sens de sa pièce/)
+    // Le plafond d'une pièce validée de 120 € : l'ancien ne compte plus, 120 € passent, 120,01 € non.
+    fireEvent.change(champ(/Montant corrigé/), { target: { value: '-120,01' } })
+    expect(screen.getByRole('alert').textContent).toBe('Les paiements de cette pièce par la caisse dépasseraient son montant : relis ses paiements.')
+    // La caisse négative par le nouveau : avant l'apport.
+    fireEvent.change(champ(/Montant corrigé/), { target: { value: '-50' } })
+    fireEvent.change(champ(/Jour corrigé/), { target: { value: '2026-02-28' } })
+    expect(screen.getByRole('alert').textContent).toMatch(/^Ce paiement de 50,00 € rendrait la caisse négative le 28\/02\/2026/)
+    expect(enregistrer().disabled).toBe(true)
+    await act(async () => { fireEvent.click(enregistrer()) })
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('la confirmation NOMME l’ancien et le nouveau, puis la fonction seule, ses arguments, la relecture ; le formulaire se ferme', async () => {
+    drapeau.correction = true
+    lecture = lue()
+    monter()
+    fireEvent.click(corriger())
+    fireEvent.change(champ(/Jour corrigé/), { target: { value: '2026-03-04' } })
+    fireEvent.change(champ(/Montant corrigé/), { target: { value: '-120' } })
+    expect(screen.queryByRole('alert')).toBeNull()
+    await act(async () => { fireEvent.click(enregistrer()) })
+    expect(sansInsecable(String(confirmation.mock.calls[0][0]))).toBe(
+      'Corriger un paiement de la pièce « fournitures.pdf » par la caisse : le paiement en espèces du 04/03/2026 de 120,00 € '
+      + 'remplacera le paiement en espèces du 05/03/2026 de 50,00 € ? L’ancien reste dans l’historique de la caisse, retiré, '
+      + 'et sa contrepartie part avec lui. La caisse du 04/03/2026 passera à 80,00 €, celle du 05/03/2026 à 80,00 €. La '
+      + `contrepartie du nouveau au compte de la caisse (${PLAN_PAR_DEFAUT.caisse}) s’écrit avec les écritures de la pièce : `
+      + 'déjà générées, elles seront à régénérer (Écritures).')
+    expect(confirmation.mock.calls[0][0]).not.toContain('PAPETERIE')
+    expect(faux.rpcs).toEqual([{
+      nom: 'remplacer_paiement_par_la_caisse', args: { p_dossier_id: D, p_operation_id: 'pa', p_date: '2026-03-04', p_montant: -120 },
+    }])
+    expect(relire).toHaveBeenCalledTimes(1)
+    expect(sansInsecable(screen.getByRole('status').textContent ?? '')).toBe(
+      'Corrigé : le paiement en espèces du 04/03/2026 de 120,00 € remplace le paiement en espèces du 05/03/2026 de 50,00 €.')
+    expect(screen.queryByLabelText(/Jour corrigé/)).toBeNull()
+  })
+
+  it('refusée à la confirmation : rien ne part ; le refus de la base se dit, et la caisse est relue quand même', async () => {
+    drapeau.correction = true
+    lecture = lue()
+    monter()
+    fireEvent.click(corriger())
+    fireEvent.change(champ(/Jour corrigé/), { target: { value: '2026-03-04' } })
+    confirmation.mockReturnValue(false)
+    await act(async () => { fireEvent.click(enregistrer()) })
+    expect(faux.rpcs).toEqual([])
+    expect(relire).not.toHaveBeenCalled()
+    confirmation.mockReturnValue(true)
+    faux.refus = 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'
+    await act(async () => { fireEvent.click(enregistrer()) })
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Le paiement n’a pas été corrigé : Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.')
+    expect(relire).toHaveBeenCalledTimes(1)
+  })
+
+  it('UN verrou pour les trois gestes : deux clics dans le même `act`, un seul appel ; « Retirer » retenu jusqu’après la relecture', async () => {
+    drapeau.correction = true
+    lecture = lue()
+    faux.retenir = true
+    let relache: () => void = () => {}
+    relire.mockImplementation(() => new Promise<void>((r) => { relache = r }))
+    monter()
+    fireEvent.click(corriger())
+    fireEvent.change(champ(/Jour corrigé/), { target: { value: '2026-03-04' } })
+    act(() => { fireEvent.click(enregistrer()); fireEvent.click(enregistrer()) })
+    expect(faux.rpcs).toHaveLength(1)
+    expect(confirmation).toHaveBeenCalledTimes(1)
+    // Pendant l'écriture : « Retirer » ne part pas, même cliqué.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Retirer' })) })
+    expect(faux.rpcs).toHaveLength(1)
+    await act(async () => { faux.relacher?.() })
+    await waitFor(() => expect(relire).toHaveBeenCalledTimes(1))
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Retirer' })) })
+    expect(faux.rpcs).toHaveLength(1)
+    await act(async () => { relache() })
+    expect(screen.queryByRole('button', { name: 'Écriture…' })).toBeNull()
+  })
+
+  it('un paiement d’un exercice validé : « Corriger » grisé sous les mots de la base', () => {
+    drapeau.correction = true
+    const ancien = operation({ id: 'pv', genre: 'paiement', date: '2025-12-20', montant: -50, piece_id: 'p1' })
+    lecture = { dossierId: D, etat: 'lue', donnees: donnees({ operations: [operation({ id: 'ap', date: '2025-12-01' }), ancien] }) }
+    render(
+      <AvecExercicesValides annees={[2025]}>
+        <ReglementParLaCaisse dossierId={D} piece={piece()} factures={{ lignes: [], complete: true, motif: null }} caisse={caisse()} />
+      </AvecExercicesValides>,
+    )
+    expect(corriger().disabled).toBe(true)
+    expect(corriger().title).toBe("L'exercice 2025 est validé : sa caisse ne change plus.")
+    // Le même refus que celui du retrait ne se dit qu'une fois.
+    expect(screen.getAllByText("L'exercice 2025 est validé : sa caisse ne change plus.", { exact: false })).toHaveLength(1)
+  })
+
+  it('les paiements de la pièce lus en partie : « Corriger » grisé, la raison dite', () => {
+    drapeau.correction = true
+    lecture = lue()
+    monter(piece(), { paiements: null })
+    expect(corriger().disabled).toBe(true)
+    expect(corriger().title).toMatch(/^Ce paiement ne se corrige pas d’ici : les paiements de la pièce par le relevé ne sont pas lus en entier/)
   })
 })

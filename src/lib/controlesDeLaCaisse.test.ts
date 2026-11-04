@@ -18,6 +18,7 @@ import type { ModeleComptable } from './engagement'
 import type { Categorie, EcritureBrouillon, EncaissementFacture, OperationCaisse, Piece, VentilationBancaire } from './types'
 import { paiementsDesPieces, type PaiementsDesPieces } from './rattachement'
 import { paiementsParLaCaisseSelon } from './paiementParLaCaisse'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from './correctionDuPaiement'
 import { defautsDeNumerotation } from './validationExercice'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { anomaliesDgfip, colonnes, desequilibresDgfip } from '../test/fecDgfip'
@@ -867,6 +868,6 @@ describe('la pièce à valider qu’un paiement cite, et le paiement que sa piè
       'le paiement en espèces du 02/03/2026 (40,00 €), une sortie d’espèces pour une pièce devenue une vente ou un avoir d’achat ; '
       + 'le paiement en espèces du 12/03/2026 (25,00 €), une entrée d’espèces pour une pièce devenue un achat ou un avoir de vente ; '
       + 'le paiement en espèces du 12/03/2026 (40,00 €), qui laisse sa pièce à 0,50 € au-delà de son montant. '
-      + 'Dans l’onglet Caisse, retirer le paiement, puis le saisir de nouveau depuis la fiche de la pièce, au montant exact — ou corriger la pièce.')
+      + motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).detail)
   })
 })

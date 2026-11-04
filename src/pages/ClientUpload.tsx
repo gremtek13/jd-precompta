@@ -148,7 +148,7 @@ export default function ClientUpload() {
     if (!dossierId) return
     setCaisseLue(await lireLaCaisseDuClient(dossierId, premiereAnneeLue(anneeEnCours), anneeEnCours))
   }
-  // UN verrou pour tout geste d'écriture sur la caisse (payer, retirer), de « Mes pièces » entière et non d'un formulaire :
+  // UN verrou pour tout geste d'écriture sur la caisse (payer, retirer, corriger), de « Mes pièces » entière et non d'un formulaire :
   // celui d'une pièce disparaît quand on en ouvre une autre, et deux paiements partiraient sur une caisse pas encore relue.
   // Posé avant le premier `await`, relâché après la relecture ; l'état n'est que l'affichage (il ne prend effet qu'au rendu
   // suivant), d'où le verrou aussi sur les boutons qui ouvrent ou ferment un formulaire.
@@ -181,6 +181,16 @@ export default function ClientUpload() {
     if (!dossierId) return
     await agirSurLaCaisse(async () => {
       const { error } = await supabase.rpc('retirer_operation_caisse', { p_dossier_id: dossierId, p_operation_id: operationId })
+      return error ? pourLEspace('client', messageErreur(error, 'raison inconnue')) : null
+    }, surIssue)
+  }
+  // La correction d'un paiement (C12B-Q1) : le nouveau jour et les espèces signées, la base retire l'ancien.
+  async function corrigerDansLaCaisse(saisie: { operation_id: string; date: string; montant: number }, surIssue: (refus: string | null) => void) {
+    if (!dossierId) return
+    await agirSurLaCaisse(async () => {
+      const { error } = await supabase.rpc('remplacer_paiement_par_la_caisse', {
+        p_dossier_id: dossierId, p_operation_id: saisie.operation_id, p_date: saisie.date, p_montant: saisie.montant,
+      })
       return error ? pourLEspace('client', messageErreur(error, 'raison inconnue')) : null
     }, surIssue)
   }
@@ -633,6 +643,7 @@ export default function ClientUpload() {
                               aujourdhui={aujourdhui}
                               payer={payerParLaCaisse}
                               retirer={retirerDeLaCaisse}
+                              corriger={corrigerDansLaCaisse}
                               verrou={paiementCaisseEnCours}
                               enVol={paiementCaisseEnVol}
                             />

@@ -30,6 +30,7 @@ import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from '
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces, type PartEncaissee } from './rattachement'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisse } from './paiementParLaCaisse'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from './correctionDuPaiement'
 import { defautsDeNumerotation, demandeDeValidation, estFigee, frontiereDeValidation } from './validationExercice'
 import { mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, type ReportDesSoldes } from './reportDesSoldes'
 import { jumellesDuDossier, ventesEnDouble, type FacturePourJumelle, type TransmissionPourJumelle } from './ventesJumelles'
@@ -1096,7 +1097,8 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       .filter((x) => dansLExercice(x.paiement.date))
     bloque({
       id: 'caisse-paiements-a-retirer', nb: aRetirer.length, cible: 'caisse',
-      message: "paiement(s) en espèces de l'exercice que leur pièce contredit depuis — un type ou un montant changé : son écriture ne s'équilibrerait pas. Retirer le paiement, puis le saisir de nouveau au montant exact — ou corriger la pièce — avant la validation.",
+      // Le remède, selon la migration de C12B-Q1 : retirer puis payer de nouveau, ou corriger d'un seul geste.
+      message: `paiement(s) en espèces de l'exercice que leur pièce contredit depuis — un type ou un montant changé : son écriture ne s'équilibrerait pas. ${motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).prealable}`,
       detail: aRetirer.length > 0 ? detailDesPaiementsARetirer(aRetirer) : undefined,
     })
   }
