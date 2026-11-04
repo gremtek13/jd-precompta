@@ -38,6 +38,7 @@ import { memeEcritureQueLeBrouillon } from './ecrituresVentesFacturees'
 import { LIBELLE_ETAT_SOURCE, type EtatsDesVentes, type SourceDeVenteEtat } from './ecrituresVentesFactureesEcran'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { anneeDe, formatDate, formatMoney } from './format'
+import { detailDesDoublonsProbables, doublonsProbables, piecesRegleesPourLesDoublons } from './doublonsProbables'
 import { premierReleveDeLaTenue, relevesAuTrenteEtUn, type SoldeDuReleve } from './releveAuTrenteEtUn'
 import { soldeEnMots } from './revisionPreuves'
 import type { VentesDeLaChecklist } from './ventesDeLaChecklist'
@@ -890,6 +891,22 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     prealables.push({
       id: 'mois-en-double', nb: moisEnDouble.length, cible: 'pieces', bloquant: false,
       message: "mois d'abonnement en double, avec un mois voisin vide — une pièce mal datée, ou en double : regarder ces pièces avant de valider. Une fois l'exercice validé, leur date et leur montant ne se corrigeront plus.",
+    })
+  }
+  // LE DOUBLON PROBABLE (relecture du 04/11/2026, D1 ; PIECES-Q2, sur la recommandation ; lib/doublonsProbables.ts) : un
+  // AVERTISSEMENT, jamais un refus — deux achats identiques existent, et seul le cabinet sait si la seconde pièce est la même.
+  // Mais une fois l'exercice validé, la pièce en trop ne se supprime plus et sa charge reste comptée deux fois dans la 2035 :
+  // c'est donc ici, avant le clic, qu'il se regarde. De l'exercice quand l'une des deux pièces l'est, comme les doublons de
+  // texte ; les paiements de la validation décident de ce qui est réglé.
+  const doublonsDeLExercice = doublonsProbables([...d.piecesValidees, ...d.piecesAValider], d.assujettiTva, piecesRegleesPourLesDoublons(paiements))
+    .paires.filter((p) => [p.a, p.b].some((x) => dansLExercice(x.date_piece) || pieceDeLExercice(x)))
+  if (doublonsDeLExercice.length > 0) {
+    prealables.push({
+      id: 'doublons-probables', nb: doublonsDeLExercice.length, cible: 'pieces', bloquant: false,
+      message: 'paire(s) de pièces de dépense au même montant, du même fournisseur, à sept jours au plus — le même achat entré '
+        + 'deux fois ? Si c’est le cas, supprimer la pièce en trop avant de valider : après, elle ne se supprimera plus et sa '
+        + 'charge restera comptée deux fois.',
+      detail: detailDesDoublonsProbables(doublonsDeLExercice),
     })
   }
   if (d.doublonsTexte === null) {

@@ -50,6 +50,8 @@ const faux = vi.hoisted(() => ({
   extractions: 0,
   porteExtraction: null as Promise<void> | null,
   erreurExtraction: null as Error | null,
+  // Ce que la lecture rend : rien par défaut (le verrou ne regarde pas ce qu'elle lit), une date déduite pour D2.
+  extractionRendue: {} as Record<string, unknown>,
   // LA NOTE INTERNE (`notes_internes`, espace client P0) : ce que rend sa lecture — `null` la laisse EN ATTENTE —, les
   // lectures demandées, les écritures envoyées et la réponse de chacune.
   noteLue: { data: null, error: null } as null | { data: unknown; error: unknown },
@@ -160,7 +162,7 @@ vi.mock('../../lib/extraction', () => ({
     faux.extractions += 1
     await faux.porteExtraction
     if (faux.erreurExtraction) throw faux.erreurExtraction
-    return {}
+    return faux.extractionRendue
   },
 }))
 
@@ -202,6 +204,7 @@ beforeEach(() => {
   faux.extractions = 0
   faux.porteExtraction = null
   faux.erreurExtraction = null
+  faux.extractionRendue = {}
   faux.noteLue = { data: null, error: null }
   faux.resoudreNote = null
   faux.lecturesEnAttente = []
@@ -1125,5 +1128,70 @@ describe('FichePiece — les bornes du seau', () => {
     expect(champ.parentElement?.querySelector('.error-text')).toBeNull()
     await act(async () => { screen.getByRole('button', { name: 'Valider' }).click() })
     expect(faux.typesDeposes).toEqual(['application/pdf'])
+  })
+})
+
+// LA DATE DÉDUITE ET LE DOUBLON PROBABLE (relecture du 04/11/2026, D2 et D1). L'extraction de la fiche qui rend une date
+// déduite (la première du document, faute de libellé) la dit sous le champ, et plafonne la confiance à « moyenne » — ce qui
+// s'enregistre ; une date saisie à la place la fait taire. La fiche d'une pièce en doublon probable nomme l'autre pièce. Données
+// FICTIVES.
+describe('FichePiece — la date déduite (D2) et le doublon probable (D1)', () => {
+  function monterAvecProps(o: { doublonProbable?: string | null } = {}) {
+    render(
+      <FichePiece
+        dossierId="d1"
+        horsDeFrance={HORS_DE_FRANCE}
+        categories={[]}
+        sousDossiers={[]}
+        tiersCategories={[]}
+        tiersCategoriesCabinet={[]}
+        tiersConnus={[]}
+        piece={pieceDeTest({ statut: 'a_valider', date_piece: null, confiance: null })}
+        commentaires={[]}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onCommentaireAjoute={() => {}}
+        onCommentaireSupprime={() => {}}
+        {...o}
+      />,
+    )
+  }
+  // Un fichier choisi : l'extraction le lit tel quel, sans passer par le stockage.
+  async function extraire() {
+    const fichier = new File(['%PDF-1.4 avis'], 'avis.pdf', { type: 'application/pdf' })
+    await act(async () => { fireEvent.change(document.querySelector('#file')!, { target: { files: [fichier] } }) })
+    const bouton = screen.getByRole('button', { name: '✨ Extraire automatiquement' })
+    await act(async () => { bouton.click(); bouton.click() })
+  }
+
+  it('dit la date déduite sous le champ, et plafonne la confiance à « moyenne »', async () => {
+    faux.extractionRendue = { classification: 'facture', date_piece: '2023-05-15', _date_deduite: true, confiance: 'haute', montant_ttc: 412.5 }
+    monterAvecProps()
+    await extraire()
+    expect(faux.extractions).toBe(1)
+    expect(screen.getByText('Date déduite, à vérifier')).toBeTruthy()
+    expect(screen.getByText(/Confiance moyenne — vérifie les champs/)).toBeTruthy()
+    // Une date saisie à la place : la marque se tait.
+    fireEvent.change(document.querySelector('#date')!, { target: { value: '2025-01-01' } })
+    expect(screen.queryByText('Date déduite, à vérifier')).toBeNull()
+    fireEvent.change(document.querySelector('#date')!, { target: { value: '2023-05-15' } })
+    expect(screen.getByText('Date déduite, à vérifier')).toBeTruthy()
+  })
+
+  it('témoin : une date lue sur un libellé ne se dit pas déduite, et garde sa confiance', async () => {
+    faux.extractionRendue = { classification: 'facture', date_piece: '2025-03-10', confiance: 'haute', montant_ttc: 38.4 }
+    monterAvecProps()
+    await extraire()
+    expect(screen.queryByText('Date déduite, à vérifier')).toBeNull()
+    expect(screen.getByText(/Confiance haute — vérifie les champs/)).toBeTruthy()
+  })
+
+  it('nomme l’autre pièce d’un doublon probable, et rien sans lui', () => {
+    monterAvecProps({ doublonProbable: 'Doublon probable de « IMG_3001.jpg » (MEDICAL PLUS, 15/03/2025, 86,40 €) — même montant.' })
+    expect(screen.getByText('Doublon probable')).toBeTruthy()
+    expect(screen.getByText(/de « IMG_3001\.jpg »/)).toBeTruthy()
+    cleanup()
+    monterAvecProps()
+    expect(screen.queryByText('Doublon probable')).toBeNull()
   })
 })

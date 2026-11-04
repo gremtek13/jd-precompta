@@ -1280,7 +1280,7 @@ describe('PiecesTab — la pièce jumelle d’une facture émise', () => {
       jeu()
       faux.muetApres = { pieces: 1 }
       monter('toutes')
-      expect(await screen.findByText(/contrôles posés dessus \(doublon de contenu, mois en double, vente comptée deux fois\) se taisent/))
+      expect(await screen.findByText(/contrôles posés dessus \(doublon de contenu, doublon probable, mois en double, vente comptée deux fois\) se taisent/))
         .toBeTruthy()
       expect(screen.getByText('CLIENT FICTIF', { selector: 'td' })).toBeTruthy()
       expect(screen.queryByText(/Comptée|Facture émise|À vérifier/)).toBeNull()

@@ -1019,6 +1019,8 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         'encaissements-en-cours',
         // Deux avertissements de MVPD7 : le mois en double (Q5) et le 512 confronté au relevé (Q2). Leurs cas sont plus bas.
         'mois-en-double', 'banque-au-releve',
+        // Un avertissement de la relecture du 04/11/2026 (D1, PIECES-Q2) : le doublon probable. Son cas est plus bas.
+        'doublons-probables',
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
@@ -2433,5 +2435,30 @@ describe('prealablesDeValidation — le mois d’abonnement en double (MVPD7-Q5)
     // Ce qui retient la validation, ce sont les pièces à valider elles-mêmes — leur mois en double, non.
     expect(etat.prealables.filter((p) => p.bloquant).map((p) => p.id)).toEqual(['pieces-a-valider'])
     expect(ids(donnees({ ...abonnement(2026), anneesValidees: [2024] }))).not.toContain('mois-en-double')
+  })
+})
+
+// LE DOUBLON PROBABLE (relecture du 04/11/2026, D1 ; PIECES-Q2, sur la recommandation ; lib/doublonsProbables.ts) : la photo
+// du même achat que P1, rapprochée de rien, avertit sans retenir la validation — deux achats identiques existent. Payées
+// chacune, les deux pièces se taisent ; une paire de l'exercice suivant aussi. Données FICTIVES.
+describe('prealablesDeValidation — le doublon probable (D1, PIECES-Q2)', () => {
+  const photo = piece('p2', { nom_fichier: 'IMG_3001.jpg', tiers: 'FOURNISSEUR SARL', date_piece: '2025-03-12' })
+
+  it('avertit, nomme les deux pièces, et ne retient pas la validation', () => {
+    const etat = prealablesDeValidation(donnees({ piecesValidees: [P1, photo] }))
+    const d = etat.prealables.find((p) => p.id === 'doublons-probables')
+    expect(d).toMatchObject({ nb: 1, bloquant: false, cible: 'pieces' })
+    expect(d?.message).toMatch(/^paire\(s\) de pièces de dépense au même montant, du même fournisseur, à sept jours au plus/)
+    expect(d?.detail).toContain('« p1.pdf »')
+    expect(d?.detail).toContain('« IMG_3001.jpg »')
+    expect(etat.prealables.filter((p) => p.bloquant).map((p) => p.id)).not.toContain('doublons-probables')
+  })
+
+  it('se tait quand chacune a son paiement, et sur une paire de l’exercice suivant', () => {
+    const payee = ligne('l2', { piece_id: 'p2', date: '2025-03-13' })
+    expect(ids(donnees({ piecesValidees: [P1, photo], lignes: [L1, payee] }))).not.toContain('doublons-probables')
+    const p3 = piece('p3', { date_piece: '2026-02-01', statut: 'a_valider' })
+    const p4 = piece('p4', { date_piece: '2026-02-03', statut: 'a_valider' })
+    expect(ids(donnees({ piecesAValider: [p3, p4] }))).not.toContain('doublons-probables')
   })
 })
