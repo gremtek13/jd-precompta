@@ -1000,6 +1000,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   S'ÉCRIVENT », « L'ACQUISITION D'UN BIEN S'ÉCRIT », « LE FORFAIT KILOMÉTRIQUE S'ÉCRIT », « UNE NOTE DE FRAIS EN
   TRÉSORERIE » ; la 2035 se calcule depuis les sources et se compare aux écritures → « LA 2035 SE COMPARE AUX
   ÉCRITURES ».
+- **Une échéance de cotisation se modifie et se réunit** (`lib/gestesDesEcheances.ts`, COT-Q1 et Q3, sur la
+  recommandation) : la mise à jour retient la version lue ; rapprochée, le rapprochement reste et son écriture se
+  réécrit dans le geste ; « Réunir » porte la gardée à la somme PUIS retire l'autre, un échec entre les deux se dit
+  « inachevée ». Un mouvement classé par une catégorie au poste « Cotisations sociales personnelles », que plus rien ne
+  propose, retient la validation (`cotisations-classees-par-categorie`, COT-Q2) → « LES COTISATIONS : RÉUNIR, MODIFIER,
+  ET LE PRÉLÈVEMENT CLASSÉ PAR UNE CATÉGORIE (COT-Q1 À Q3) ».
 - **Le modèle comptable** se règle tant que le brouillon est vide → « LA COMPTABILITÉ D'ENGAGEMENT » ; le lettrage se
   DÉDUIT du rapprochement → « LE LETTRAGE SE DÉDUIT DU RAPPROCHEMENT ». **Ouverture** : une balance reprise contrôlée
   devient les à-nouveaux, une fois ; ensuite seulement après validation du précédent (`soldes_reportes`) → « LA
