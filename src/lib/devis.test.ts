@@ -35,7 +35,7 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // LE MODULE DES DEVIS, CONFRONTÉ À LA BASE (espace client, étape P5). Les migrations attendent l'accord du cabinet : elles
 // ne sont pas dans l'export (supabase/schema), et ce que la base refuse ne peut pas s'y relire. La RÉFÉRENCE est donc
-// l'essai `supabase/essais/devis.sql`, joué sur une réplique de la production munie des migrations (167 verdicts justes,
+// l'essai `supabase/essais/devis.sql`, joué sur une réplique de la production munie des migrations (174 verdicts justes,
 // HISTORIQUE.md, « LES DEVIS, EN BASE ») : chacun de ses contrôles exige de la base un code ET des mots. Ce test exige que
 // chaque refus du module y soit exigé de la fonction qui le lève, et rejoue dans le module les écritures de l'essai : le
 // même premier refus, ou aucun. Le jour où l'export porte les migrations (`DEVIS_EXPORTES`), il confronte aussi le module
@@ -99,14 +99,14 @@ const controle = (num: string) => {
 }
 
 describe('l’essai, lu', () => {
-  it('ses étapes, toutes : deux de jeu, 166 jugées — le cent-soixante-septième verdict est le bilan « rien n’est resté »', () => {
+  it('ses étapes, toutes : deux de jeu, 173 jugées — le cent-soixante-quatorzième verdict est le bilan « rien n’est resté »', () => {
     // Le plancher qui distingue « aucun écart » d'« aveugle » : un motif qui ne reconnaîtrait plus les étapes rendrait
     // une liste vide, et toutes les confrontations ci-dessous passeraient sans rien confronter. Le compte des étapes que
     // le fichier OUVRE (une parenthèse, un numéro, un genre) est celui des étapes que le motif reconnaît en entier.
     const ouvertes = [...ESSAI.matchAll(/^\s*\('\w+', '(?:jeu|controle|fait|valeur|mutation)'/gm)].length
     expect(CONTROLES).toHaveLength(ouvertes)
     expect(CONTROLES.filter((c) => c.genre === 'jeu')).toHaveLength(2)
-    expect(CONTROLES.filter((c) => c.genre !== 'jeu')).toHaveLength(166)
+    expect(CONTROLES.filter((c) => c.genre !== 'jeu')).toHaveLength(173)
     expect(CONTROLES.filter((c) => c.genre === 'mutation')).toHaveLength(10)
     expect(new Set(CONTROLES.map((c) => c.num)).size).toBe(CONTROLES.length)
   })

@@ -244,12 +244,14 @@ const fleches = (texte: string) => [...sansCommentairesPleins(texte).matchAll(FL
 describe('les essais de la base, rejoués en production', () => {
   it('chaque fichier se classe par sa forme, la règle que le banc lit aussi', () => {
     expect(CLASSEMENT.inconnus).toEqual([])
-    // Cinq essais de réplique seulement : un de plus est un essai que le banc ne rejoue plus — à regarder avant. Le filet de la
+    // Six essais de réplique seulement : un de plus est un essai que le banc ne rejoue plus — à regarder avant. Le filet de la
     // validation devant la caisse (la relecture du 01/11/2026), rejoué SÛR par le banc le même jour et réécrit dans la forme
     // des essais joués en production, les a quittés (HISTORIQUE.md, « LE BANC DU LEURRE SUR LES ESSAIS DU 01/11/2026 (C8,
-    // FEC22B, LE FILET) »).
+    // FEC22B, LE FILET) »). Le sixième, devisSuppression, est entré le 04/11/2026 avec l'épreuve des migrations des devis
+    // (étape P5) : il supprime des devis, des liens et un dossier, et porte la garde ESSAI_HORS_REPLIQUE de caisseSuppression.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'caisseSuppression (son en-tête)', 'frontiereDesEncaissements (son en-tête)', 'logoDesFacturesSuppression (son en-tête)',
+      'caisseSuppression (son en-tête)', 'devisSuppression (son en-tête)', 'frontiereDesEncaissements (son en-tête)',
+      'logoDesFacturesSuppression (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
     ])
     // Les outils ne se rejouent pas ; un outil de plus se lit avant d'entrer (l'audit du 29/10/2026 a lu ces cinq-là ; le
