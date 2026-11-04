@@ -7,7 +7,8 @@
 // dépôts et le bouton d'extraction de la fiche l'ignoraient, et la pièce s'écrivait « haute ».
 //
 // UNE RÈGLE, POUR LES QUATRE CHEMINS (`lib/depot.ts`, le client ; `lib/importFichiers.ts`, le cabinet ; `FichePiece`, le
-// bouton « Extraire automatiquement » ; et, depuis le lot suivant du même jour, `receive-email`, par la copie ci-dessous) : la confiance d'une pièce à date déduite ne dépasse pas « moyenne ». C'est la seule
+// bouton « Extraire automatiquement » ; et, depuis le lot suivant du même jour, `receive-email`, par la copie
+// ci-dessous) : la confiance d'une pièce à date déduite ne dépasse pas « moyenne ». C'est la seule
 // trace qui SURVIT au dépôt : aucune colonne de `pieces` ne garde la marque, et rien de ce que la pièce garde de son
 // extraction ne le peut sans migration — le texte lu est montré tel que lu et sert à reconnaître un doublon par son
 // empreinte (`piece_textes_ocr`), la note interne est un texte du cabinet que le client ne peut pas écrire
