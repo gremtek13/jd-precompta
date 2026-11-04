@@ -2326,6 +2326,33 @@ const TABLES: Record<string, Ligne[]> = {
   // typées sur l'application, rendues au faux client en lignes nues.
   // Puis F2026-0008, acceptée par la plateforme de l'atelier, et la déclaration de ses encaissements (étape d4).
   // Puis F2026-0009, refusée par l'acheteur sur la plateforme du client, et les statuts lus de l'atelier (étape d7).
+  // LES DEVIS DU CABINET INFIRMIER (étape P6b), lus seulement quand le banc lève `DEVIS_EXPORTES` (BANC_DRAPEAUX, vite.config.ts) :
+  // D2026-0001, émis, de trente lignes — de quoi paginer le devis imprimé (impressionDevis.mjs) —, et un brouillon. Fictifs.
+  devis: [
+    { numero: 'D2026-0001', statut: 'emis', id: 'dv-banc-1', lignes: 30, emetteur: true },
+    { numero: null, statut: 'brouillon', id: 'dv-banc-2', lignes: 2, emetteur: false },
+  ].map(({ numero, statut, id, lignes, emetteur }) => {
+    const detail = Array.from({ length: lignes }, (_, n) => ({
+      designation: `Séance de soins fictive n° ${n + 1}, au cabinet ou à domicile selon la prescription`,
+      quantite: 1 + (n % 3), prix_unitaire_ht: 45.5, taux_tva: 0,
+    }))
+    const ht = Math.round(detail.reduce((s, l) => s + l.quantite * l.prix_unitaire_ht, 0) * 100) / 100
+    return {
+      id, dossier_id: 'd1', numero, statut, date_emission: '2026-10-20', date_validite: '2026-11-20', objet: 'Soins fictifs du quatrième trimestre',
+      tiers_nom: 'Résidence Fictive des Tilleuls', tiers_adresse: '4 allée Fictive\n75012 Paris', tiers_siret: '98765432100012', tiers_email: null,
+      type_client: 'entreprise', tiers_siren: '987654321', tiers_adresse_electronique: null, code_service: null, numero_engagement: 'BC-2026-118',
+      nature_operation: 'services', date_prestation: null, periode_debut: '2026-10-01', periode_fin: '2026-12-31',
+      livraison_adresse: null, livraison_code_postal: null, livraison_ville: null, livraison_pays: null,
+      lignes: detail, montant_ht: ht, montant_tva: 0, montant_ttc: ht,
+      conditions: 'Paiement à réception de la facture, par virement.', mentions_legales: 'TVA non applicable, art. 261, 4, 1° du CGI.',
+      notes: 'Note partagée fictive, jamais imprimée.',
+      emetteur_nom: emetteur ? 'Cabinet infirmier fictif' : null, emetteur_siret: emetteur ? '12345678200010' : null,
+      emetteur_adresse: emetteur ? '1 rue Fictive\n75001 Paris' : null,
+      cree_par: 'u1', cree_le: '2026-10-20T08:00:00Z', emis_par: emetteur ? 'u1' : null, emis_le: emetteur ? '2026-10-20T08:05:00Z' : null,
+      reponse: null, date_reponse: null, decide_par: null, decide_le: null,
+    }
+  }),
+  devis_factures: [],
   factures_emises: [FACTURE_FIGEE_D1, ...FACTURES_D1, ...FACTURES_D7, FACTURE_F8, FACTURE_F9, FACTURE_E1, ...FACTURES_D12].map((f) => ({ ...f })),
   facture_lignes: [
     ...LIGNES_FIGEES_D1, ...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8, ...LIGNES_DE_F9, ...lignesDeFacture(ER.V1, LIGNES_E1),

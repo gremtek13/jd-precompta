@@ -408,6 +408,11 @@ export function ceQueLaFactureImprime(f: FactureEmise): ImpressionFigee | null {
   }
 }
 
+// Un taux se lit « 5,5 % » sur une facture française — virgule décimale — et ne se coupe pas de son « % » : l'espace est
+// insécable, sans quoi « 0 % » passait sur deux lignes dans une colonne étroite. Même écriture que `refusTauxPositif`. La
+// facture et le devis imprimés l'écrivent par cette seule fonction.
+export const tauxImprime = (taux: number) => `${String(taux).replace('.', ',')}\u00a0%`
+
 /** L'unité d'une ligne, sous son libellé ; vide pour une ligne qui n'en porte pas. */
 export function uniteImprimee(l: Pick<FactureLigne, 'unite'>): string {
   return l.unite ? libelleUnite(l.unite) : ''

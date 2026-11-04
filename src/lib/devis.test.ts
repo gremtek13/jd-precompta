@@ -2,9 +2,14 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   acceptationHorsValidite,
+  avisDeLApercuDuDevis,
   avisHorsValidite,
   BON_POUR_ACCORD,
+  ceQueLeDevisImprime,
   champsDeRechercheDuDevis,
+  MENTION_BROUILLON_IMPRIMEE,
+  TEXTES_IMPRIMES_DU_DEVIS,
+  TITRE_DU_BROUILLON,
   confirmationDeLaFacturation,
   confirmationDeLaReponse,
   decisionDeLaSaisie,
@@ -694,5 +699,77 @@ describe('la facture tirée d’un devis (P6a2)', () => {
     ])
     expect(champsDeRechercheDuDevis({ ...d, numero: null }, 'brouillon', null)[0]).toBe('Brouillon')
     expect(champsDeRechercheDuDevis(d, 'accepte', null).at(-1)).toBeNull()
+  })
+})
+
+// L'APERÇU ET L'IMPRESSION (étape P6b) : ce que le papier porte, selon l'état du devis. Données FICTIVES.
+describe('ceQueLeDevisImprime', () => {
+  const REDEVABLE = { statut_tva: 'redevable' as const, article_exoneration: null, numero_tva_attribue: false }
+  const EMIS = devisFictif({
+    numero: 'D2026-0007', statut: 'emis', objet: 'Refonte fictive', tiers_adresse: '2 rue Fictive', tiers_siret: '98765432100012',
+    emetteur_nom: 'ÉMETTEUR FIGÉ SAS', emetteur_siret: '12345678200010', emetteur_adresse: '9 rue Figée', conditions: 'Acompte de 30 %.',
+    mentions_legales: 'TVA non applicable.', notes: 'NOTE INTERNE', tiers_email: 'achat@exemple.fr',
+    type_client: 'organisme_public', code_service: 'SERV-1', numero_engagement: 'ENG-1',
+  })
+
+  it('un devis émis imprime l’émetteur qu’il porte, jamais le dossier, et ni ses notes ni l’adresse électronique', () => {
+    const a = ceQueLeDevisImprime(EMIS, EMISSION.dossier, REDEVABLE)
+    if (a.etat !== 'pret') throw new Error(a.motif)
+    const i = a.impression
+    expect(i.titre).toBe('DEVIS D2026-0007')
+    expect(i.mentionBrouillon).toBeNull()
+    expect(i.emetteur).toEqual({ nom: 'ÉMETTEUR FIGÉ SAS', siret: '12345678200010', adresse: '9 rue Figée' })
+    expect(i.numeroTva).toBe(numeroTvaDuDevis({ emetteur_siret: '12345678200010' }, REDEVABLE))
+    expect(i.numeroTva).toMatch(/^FR\d{2}123456782$/)
+    expect(i.dates).toEqual(['Daté du 15/09/2026', 'Devis valable jusqu’au 16/09/2026'])
+    expect(i.client).toEqual({ nom: 'ESSAI', adresse: '2 rue Fictive', siret: '98765432100012' })
+    expect(i.objet).toBe('Refonte fictive')
+    // La validité est sous la date, pas parmi les mentions ; le code service et l'engagement, eux, y sont.
+    expect(i.mentions.map((m) => m.libelle)).toEqual(['Code service', 'Numéro d’engagement'])
+    expect(i.lignes).toEqual([{ designation: 'essai', quantite: 1, prixUnitaireHt: 100, tauxTva: 20, montantHt: 100, montantTtc: 120 }])
+    expect(i.totaux).toEqual({ ht: 100, tva: 20, ttc: 120 })
+    expect(i.conditions).toBe('Acompte de 30 %.')
+    expect(i.mentionsLegales).toBe('TVA non applicable.')
+    expect(i.bonPourAccord).toBe(BON_POUR_ACCORD)
+    expect(JSON.stringify(i)).not.toMatch(/NOTE INTERNE|achat@exemple/)
+  })
+
+  it('les textes que le devis imprime sont ceux que la migration juge (`TEXTES_IMPRIMES_DU_DEVIS`)', () => {
+    const juges = new Set<string>(TEXTES_IMPRIMES_DU_DEVIS.map((t) => t.cle))
+    for (const cle of ['tiers_nom', 'tiers_adresse', 'tiers_siret', 'objet', 'code_service', 'numero_engagement', 'conditions', 'mentions_legales']) {
+      expect(juges.has(cle), cle).toBe(true)
+    }
+    expect(juges.has('notes')).toBe(false)
+  })
+
+  it('un brouillon imprime le dossier tel que la base le posera, et le dit sur le papier', () => {
+    const a = ceQueLeDevisImprime(devisFictif({ emetteur_nom: null }), EMISSION.dossier, REDEVABLE)
+    if (a.etat !== 'pret') throw new Error(a.motif)
+    expect(a.impression.titre).toBe(TITRE_DU_BROUILLON)
+    expect(a.impression.mentionBrouillon).toBe(MENTION_BROUILLON_IMPRIMEE)
+    expect(a.impression.emetteur).toEqual({ nom: 'ESSAI DEVIS A SAS', siret: '12345678200010', adresse: "1 rue de l'Essai, 75001 Paris" })
+  })
+
+  it('un brouillon dont le dossier n’a pas été lu ne s’imprime pas ; un émis sans émetteur ni numéro non plus', () => {
+    expect(ceQueLeDevisImprime(devisFictif(), null, REDEVABLE).etat).toBe('illisible')
+    expect(ceQueLeDevisImprime({ ...EMIS, emetteur_nom: ' ' }, EMISSION.dossier, REDEVABLE).etat).toBe('illisible')
+    expect(ceQueLeDevisImprime({ ...EMIS, numero: null }, EMISSION.dossier, REDEVABLE).etat).toBe('illisible')
+  })
+
+  it('le numéro de TVA suit le statut, comme sur la facture : aucun en franchise sans la case', () => {
+    const a = ceQueLeDevisImprime(EMIS, null, { statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: false })
+    expect(a.etat === 'pret' && a.impression.numeroTva).toBeNull()
+  })
+})
+
+describe('avisDeLApercuDuDevis', () => {
+  const d = { date_validite: '2026-10-01', date_reponse: '2026-09-20' }
+  it('dit l’état à l’écran, et rien pour un devis émis en attente', () => {
+    expect(avisDeLApercuDuDevis(d, 'en_attente')).toBeNull()
+    expect(avisDeLApercuDuDevis(d, 'brouillon')).toMatch(/^Brouillon : ce devis n’est pas encore émis/)
+    expect(avisDeLApercuDuDevis(d, 'expire')).toBe('Ce devis n’est plus valable : il l’était jusqu’au 01/10/2026.')
+    expect(avisDeLApercuDuDevis(d, 'accepte')).toMatch(/^Ce devis a été accepté le 20\/09\/2026\. Le document reste l’offre/)
+    expect(avisDeLApercuDuDevis(d, 'refuse')).toMatch(/^Ce devis a été refusé le 20\/09\/2026\./)
+    expect(avisDeLApercuDuDevis(d, 'facture')).toMatch(/accepté le 20\/09\/2026, puis transformé en facture\./)
   })
 })

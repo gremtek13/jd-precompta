@@ -42,9 +42,25 @@ const reel = nodeModulesReel()
 const copiesDeTravail = path.join(racine, '.claude')
 const sousLesCopiesDeTravail = (chemin: string) => chemin === copiesDeTravail || chemin.startsWith(copiesDeTravail + path.sep)
 
+// LES DRAPEAUX D'UNE MIGRATION QUI ATTEND, LEVÉS DANS LE BANC SEUL (`BANC_DRAPEAUX=DEVIS_EXPORTES npx vite --config …`) : un
+// écran derrière son drapeau se mesure avant sa migration, en simulation. La source servie est réécrite à la volée — le
+// fichier n'est jamais touché — et seule une déclaration `export const NOM: boolean = false` se lève ; une autre forme laisse
+// le drapeau baissé, et l'écran absent du banc le dit.
+const drapeauxLeves = (process.env.BANC_DRAPEAUX ?? '').split(',').map((d) => d.trim()).filter((d) => /^[A-Z_]+$/.test(d))
+const leverLesDrapeaux = {
+  name: 'drapeaux-du-banc',
+  enforce: 'pre' as const,
+  transform(code: string, id: string) {
+    if (drapeauxLeves.length === 0 || !id.includes('/src/lib/')) return null
+    let suite = code
+    for (const d of drapeauxLeves) suite = suite.replace(`export const ${d}: boolean = false`, `export const ${d}: boolean = true`)
+    return suite === code ? null : suite
+  },
+}
+
 export default defineConfig({
   root: racine,
-  plugins: [react()],
+  plugins: [leverLesDrapeaux, react()],
   resolve: {
     alias: [{ find: /^(?:\.\.\/)+lib\/supabase$|^\.\/supabase$/, replacement: path.join(ici, 'fauxSupabase.ts') }],
   },

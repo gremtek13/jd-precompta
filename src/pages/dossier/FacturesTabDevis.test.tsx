@@ -6,6 +6,8 @@ import { devis, lienDevisFacture } from '../../test/devis'
 import type { FactureEmise } from '../../lib/types'
 import { NON_BASCULE } from '../../test/factures'
 import { motsDuCabinet } from '../../lib/espaceVentes'
+import { formatMoney } from '../../lib/format'
+import { BON_POUR_ACCORD, MENTION_BROUILLON_IMPRIMEE } from '../../lib/devis'
 
 // LA VUE « DEVIS » DANS L'ONGLET FACTURES (espace client, étape P6a1), avec la VRAIE vue et son faux client, qui APPLIQUE les
 // filtres et annonce un compte. Ce que ces cas gardent, dans les deux espaces : le drapeau d'export (`DEVIS_EXPORTES`) décide
@@ -107,13 +109,21 @@ const FACTURE: FactureEmise = factureCii([LIGNE], {
   id: 'f1', numero: 'F2026-0001', date_emission: '2026-10-01', date_echeance: '2026-10-31', option_debits: false, tiers_nom: 'ALPHA FICTIVE SAS',
 })
 
+// L'émetteur qu'un devis émis porte, posé à son émission : un autre que le dossier d'aujourd'hui, pour que l'aperçu dise lequel.
+const EMETTEUR_FIGE = { emetteur_nom: 'Émetteur Figé Fictif', emetteur_siret: SIRET_VENDEUR, emetteur_adresse: '9 rue Figée' }
+
 // Quatre devis : un brouillon, un émis encore valable, un émis expiré, un accepté dont une facture est tirée — et un devis
 // d'un autre dossier, que le filtre écarte.
 const DEVIS = [
   devis({ id: 'dv1', tiers_nom: 'Brouillon Fictif SARL', date_emission: '2026-11-02', date_validite: '2026-12-02', cree_le: '2026-11-02T08:00:00Z' }),
-  devis({ id: 'dv2', numero: 'D2026-0001', statut: 'emis', tiers_nom: 'Émis Fictif SAS', date_emission: '2026-10-20', date_validite: '2026-11-20', montant_ht: 500, montant_tva: 100, montant_ttc: 600 }),
-  devis({ id: 'dv3', numero: 'D2026-0002', statut: 'emis', tiers_nom: 'Expiré Fictif', date_emission: '2026-09-01', date_validite: '2026-10-01' }),
-  devis({ id: 'dv4', numero: 'D2026-0003', statut: 'emis', reponse: 'acceptee', date_reponse: '2026-09-10', tiers_nom: 'Facturé Fictif', date_emission: '2026-09-05', date_validite: '2026-10-05' }),
+  devis({
+    id: 'dv2', numero: 'D2026-0001', statut: 'emis', tiers_nom: 'Émis Fictif SAS', date_emission: '2026-10-20', date_validite: '2026-11-20',
+    lignes: [{ designation: 'Audit fictif', quantite: 2, prix_unitaire_ht: 250, taux_tva: 20 }], montant_ht: 500, montant_tva: 100, montant_ttc: 600,
+    objet: 'Mission fictive', conditions: 'Acompte fictif de 30 % à la commande.', mentions_legales: 'Mentions légales fictives.',
+    notes: 'Note partagée fictive', ...EMETTEUR_FIGE,
+  }),
+  devis({ id: 'dv3', numero: 'D2026-0002', statut: 'emis', tiers_nom: 'Expiré Fictif', date_emission: '2026-09-01', date_validite: '2026-10-01', ...EMETTEUR_FIGE }),
+  devis({ id: 'dv4', numero: 'D2026-0003', statut: 'emis', reponse: 'acceptee', date_reponse: '2026-09-10', tiers_nom: 'Facturé Fictif', date_emission: '2026-09-05', date_validite: '2026-10-05', ...EMETTEUR_FIGE }),
   devis({ id: 'dv9', dossier_id: 'd2', tiers_nom: 'Autre Dossier Fictif' }),
 ]
 
@@ -196,14 +206,14 @@ describe.each(['cabinet', 'client'] as const)('Devis dans l’onglet Factures �
     const emis = ligneDe(tableau, 'D2026-0001')
     expect(emis.textContent).toContain('Émis — en attente de réponse')
     expect(emis.textContent?.replace(/\s/g, ' ')).toContain('600,00 €')
-    // Émis sans réponse : la réponse seule (étape P6a2).
-    expect(within(emis).getAllByRole('button').map((b) => b.textContent)).toEqual(['Enregistrer la réponse'])
+    // Émis sans réponse : l'aperçu (étape P6b) et la réponse (étape P6a2).
+    expect(within(emis).getAllByRole('button').map((b) => b.textContent)).toEqual(['Aperçu', 'Enregistrer la réponse'])
     expect(ligneDe(tableau, 'D2026-0002').textContent).toContain('Expiré')
-    // Facturé : sa facture dite, et aucun geste.
+    // Facturé : sa facture dite, et l'aperçu seul.
     const facture = ligneDe(tableau, 'D2026-0003')
     expect(facture.textContent).toContain('Facturé')
     expect(within(facture).getByText('F2026-0001')).toBeTruthy()
-    expect(within(facture).queryByRole('button')).toBeNull()
+    expect(within(facture).getAllByRole('button').map((b) => b.textContent)).toEqual(['Aperçu'])
     expect(screen.queryByText('Autre Dossier Fictif')).toBeNull()
     expect(faux.lectures).toEqual(expect.arrayContaining(['devis', 'devis_factures']))
   })
@@ -507,6 +517,103 @@ describe.each(['cabinet', 'client'] as const)('Devis — répondre et facturer (
     expect(screen.getByText('Aucun devis ne correspond à la recherche.')).toBeTruthy()
     expect(screen.queryByText(/aucun devis\.|Aucun devis pour ce dossier/)).toBeNull()
     expect(screen.getByText('aucun résultat')).toBeTruthy()
+  })
+})
+
+// L'APERÇU ET L'IMPRESSION (étape P6b), dans les deux espaces : un brouillon, un émis, un accepté, chacun imprimant ce qu'il
+// doit ; les montants lus dans `textContent` tels que `formatMoney` les écrit (ils ne se coupent pas) ; aucun style en ligne
+// sur ce que l'impression défait ; l'avis de l'écran, jamais le papier, dans les mots de l'espace.
+describe.each(['cabinet', 'client'] as const)('L’aperçu d’un devis — %s', (espace) => {
+  async function ouvrirLApercu(texte: string) {
+    await monter(espace)
+    vers('Devis')
+    const tableau = await screen.findByRole('table', { name: 'Devis' })
+    fireEvent.click(within(ligneDe(tableau, texte)).getByRole('button', { name: 'Aperçu' }))
+    return screen.getByRole('dialog', { name: 'Aperçu du devis' })
+  }
+  const carteDe = (dialogue: HTMLElement) => dialogue.textContent ?? ''
+
+  it('un émis : son numéro, l’émetteur qu’il porte, le client, l’objet, les lignes, les totaux, les mentions, « Bon pour accord »', async () => {
+    const d = await ouvrirLApercu('D2026-0001')
+    const t = carteDe(d)
+    expect(within(d).getByRole('heading', { name: 'DEVIS D2026-0001' })).toBeTruthy()
+    expect(t).toContain('Daté du 20/10/2026')
+    expect(t).toContain('Devis valable jusqu’au 20/11/2026')
+    // L'émetteur figé à l'émission, jamais le dossier d'aujourd'hui.
+    expect(t).toContain('Émetteur Figé Fictif')
+    expect(t).toContain('9 rue Figée')
+    expect(t).not.toContain('Atelier fictif SAS')
+    expect(t).toContain('Émis Fictif SAS')
+    expect(t).toContain('Mission fictive')
+    expect(t).toContain('Audit fictif')
+    for (const montant of [250, 500, 600, 100]) expect(t).toContain(formatMoney(montant))
+    expect(t).toContain('Acompte fictif de 30 % à la commande.')
+    expect(t).toContain('Mentions légales fictives.')
+    expect(t).toContain(BON_POUR_ACCORD)
+    // Les notes ne s'impriment pas ; ni avis (en attente), ni brouillon.
+    expect(t).not.toContain('Note partagée fictive')
+    expect(t).not.toContain(MENTION_BROUILLON_IMPRIMEE)
+    expect(within(d).queryByRole('note')).toBeNull()
+  })
+
+  it('un brouillon : « DEVIS — BROUILLON », le dossier comme émetteur, la phrase imprimée, et l’avis de l’écran', async () => {
+    const d = await ouvrirLApercu('Brouillon Fictif SARL')
+    const t = carteDe(d)
+    expect(within(d).getByRole('heading', { name: 'DEVIS — BROUILLON' })).toBeTruthy()
+    expect(t).toContain(MENTION_BROUILLON_IMPRIMEE)
+    expect(t).toContain('Atelier fictif SAS')
+    expect(t).toContain('SIRET 12345678200010')
+    expect(t).toContain(formatMoney(1200))
+    expect(within(d).getByRole('note').textContent).toMatch(/^Brouillon : ce devis n’est pas encore émis/)
+    expect(t).toContain(BON_POUR_ACCORD)
+  })
+
+  it('un accepté : l’offre telle qu’émise, sa réponse dite à l’écran seulement', async () => {
+    faux.tables.devis_factures = []
+    const d = await ouvrirLApercu('D2026-0003')
+    expect(within(d).getByRole('heading', { name: 'DEVIS D2026-0003' })).toBeTruthy()
+    const avis = within(d).getByRole('note')
+    expect(avis.textContent).toMatch(/^Ce devis a été accepté le 10\/09\/2026\. Le document reste l’offre telle qu’émise/)
+    // L'avis vit dans le bloc que l'impression retire.
+    expect(avis.className).toBe('facture-imprimable-avis')
+    expect(carteDe(d)).toContain(BON_POUR_ACCORD)
+  })
+
+  it('« Imprimer » ouvre l’impression du navigateur ; « Fermer » ferme ; aucun style en ligne sur ce que l’impression défait', async () => {
+    const imprimer = vi.spyOn(window, 'print').mockImplementation(() => {})
+    const d = await ouvrirLApercu('D2026-0001')
+    const actions = d.querySelector('.facture-imprimable-actions') as HTMLElement
+    expect(actions.getAttribute('style')).toBeNull()
+    expect(d.getAttribute('style')).toBeNull()
+    expect(d.className).toBe('card facture-imprimable')
+    expect(d.parentElement!.getAttribute('style')).toBeNull()
+    expect(d.parentElement!.className).toBe('facture-apercu-voile')
+    expect((d.querySelector('.devis-bon-pour-accord') as HTMLElement).getAttribute('style')).toBeNull()
+    fireEvent.click(within(d).getByRole('button', { name: 'Imprimer / Enregistrer en PDF' }))
+    expect(imprimer).toHaveBeenCalledTimes(1)
+    fireEvent.click(within(d).getByRole('button', { name: 'Fermer' }))
+    expect(screen.queryByRole('dialog', { name: 'Aperçu du devis' })).toBeNull()
+  })
+
+  it('un émis qui ne porte pas son émetteur ne s’imprime pas, et le dit', async () => {
+    Object.assign(faux.tables.devis.find((x) => x.id === 'dv2') as Record<string, unknown>, { emetteur_nom: null })
+    const d = await ouvrirLApercu('D2026-0001')
+    expect(carteDe(d)).toContain('Ce devis ne peut pas s’imprimer : ce devis émis ne porte pas son émetteur.')
+    expect(within(d).queryByRole('button', { name: 'Imprimer / Enregistrer en PDF' })).toBeNull()
+  })
+
+  it('lue en partie : aucun aperçu', async () => {
+    faux.manquantes.devis = 1
+    await monter(espace)
+    vers('Devis')
+    await screen.findByRole('table', { name: 'Devis' })
+    expect(screen.queryByRole('button', { name: 'Aperçu' })).toBeNull()
+  })
+
+  it('l’aperçu ne porte aucune forme du cabinet chez le client', async () => {
+    const d = await ouvrirLApercu('Brouillon Fictif SARL')
+    if (espace === 'client') expect(motsDuCabinet(carteDe(d))).toEqual([])
+    else expect(carteDe(d)).toContain('Brouillon : ce devis')
   })
 })
 

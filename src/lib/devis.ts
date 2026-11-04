@@ -118,6 +118,9 @@ const NATURES: Readonly<Record<NatureOperation, string>> = {
   mixte: 'Livraisons de biens et prestations de services',
 }
 
+// Le libellé de la validité : la première mention, que l'aperçu remonte sous la date du devis (`ceQueLeDevisImprime`).
+export const LIBELLE_VALIDITE = 'Devis valable jusqu’au'
+
 const sirenLisible = (siren: string) => siren.replace(/^(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3')
 const uneLigne = (texte: string) => texte.replace(/\s+/g, ' ').trim()
 
@@ -126,7 +129,7 @@ export function mentionsDuDevis(
     | 'livraison_adresse' | 'livraison_code_postal' | 'livraison_ville' | 'livraison_pays' | 'type_client' | 'code_service'
     | 'numero_engagement'>,
 ): MentionDevis[] {
-  const mentions: MentionDevis[] = [{ libelle: 'Devis valable jusqu’au', texte: formatDate(d.date_validite) }]
+  const mentions: MentionDevis[] = [{ libelle: LIBELLE_VALIDITE, texte: formatDate(d.date_validite) }]
   if (d.tiers_siren) mentions.push({ libelle: 'SIREN du client', texte: sirenLisible(d.tiers_siren) })
   if (d.nature_operation) mentions.push({ libelle: 'Opérations', texte: NATURES[d.nature_operation] })
   if (d.date_prestation) mentions.push({ libelle: 'Exécution prévue le', texte: formatDate(d.date_prestation) })
@@ -814,4 +817,118 @@ export function champsDeRechercheDuDevis(
     d.numero ?? 'Brouillon', d.date_emission, formatDate(d.date_emission), d.tiers_nom, d.objet, d.montant_ttc,
     LIBELLES_ETAT_DEVIS[etat], factureTiree ? libelleDeLaFactureTiree(factureTiree) : null,
   ]
+}
+
+// ── L'aperçu et l'impression (étape P6b) ────────────────────────────────────────────────────────────────────────────
+// Le devis tel qu'il s'imprime, dans l'ordre que la migration fixe à ses textes (`TEXTES_IMPRIMES_DU_DEVIS`) : l'émetteur, le
+// titre et les dates, le client, l'objet, les mentions (la livraison, le code service, le numéro d'engagement…), les lignes et
+// les totaux, les conditions, les mentions légales, puis le bloc « Bon pour accord ». Ni les notes, ni l'adresse électronique
+// du client, ni la réponse enregistrée : le papier est l'offre telle qu'émise, qui se signe — l'écran seul dit l'état.
+//
+// L'ÉMETTEUR : celui que le devis émis porte (posé par `enregistrer_devis` à l'émission, jamais relu du dossier) ; pour un
+// brouillon, le dossier tel que la base le posera (`emetteurDuDevisEmis`), lu avec les devis — nul s'il n'a pas pu l'être, et
+// le brouillon ne s'imprime pas. Un brouillon imprimé le DIT sur le papier : ce n'est pas encore une offre. Le numéro de TVA
+// est celui que la facture imprimée porterait (`numeroTvaDuDevis`), au statut du dossier que l'onglet a lu. Le LOGO ne
+// s'imprime pas : une facture ne l'imprime qu'une fois validée, vérifié à l'empreinte qu'elle a figée, et le devis ne fige
+// aucun logo (sa migration ne le prévoit pas).
+export interface LigneImprimeeDuDevis {
+  designation: string
+  quantite: number
+  prixUnitaireHt: number
+  tauxTva: number
+  montantHt: number
+  montantTtc: number
+}
+
+export interface ImpressionDuDevis {
+  titre: string
+  // La phrase qu'un brouillon imprime sous son titre ; nulle pour un devis émis.
+  mentionBrouillon: string | null
+  // La date du devis et sa validité, sous le titre.
+  dates: string[]
+  emetteur: { nom: string; siret: string | null; adresse: string | null }
+  numeroTva: string | null
+  client: { nom: string; adresse: string | null; siret: string | null }
+  objet: string | null
+  // Les mentions du devis, sans la validité (dans `dates`).
+  mentions: MentionDevis[]
+  lignes: LigneImprimeeDuDevis[]
+  totaux: { ht: number; tva: number; ttc: number }
+  conditions: string | null
+  mentionsLegales: string | null
+  bonPourAccord: string
+}
+
+export type ApercuDuDevis = { etat: 'pret'; impression: ImpressionDuDevis } | { etat: 'illisible'; motif: string }
+
+export const TITRE_DU_BROUILLON = 'DEVIS — BROUILLON'
+export const MENTION_BROUILLON_IMPRIMEE = 'Brouillon, non émis : ce document n’est pas encore une offre. Le devis prendra son '
+  + 'numéro à son émission.'
+
+const texteImprime = (t: string | null) => (t == null || t.trim() === '' ? null : t)
+
+/** Ce que le devis imprime ; `emetteurDuDossier` : le dossier lu avec les devis, que seul un brouillon imprime (nul : non lu). */
+export function ceQueLeDevisImprime(d: Devis, emetteurDuDossier: EmetteurDuDossier | null, dossier: DossierCii): ApercuDuDevis {
+  const brouillon = d.statut === 'brouillon'
+  let emetteur: ImpressionDuDevis['emetteur']
+  if (brouillon) {
+    if (emetteurDuDossier === null) {
+      return { etat: 'illisible', motif: 'l’identité du dossier, que ce brouillon imprimerait comme émetteur, n’a pas pu être lue' }
+    }
+    emetteur = emetteurDuDevisEmis(emetteurDuDossier)
+  } else {
+    if (d.numero == null) return { etat: 'illisible', motif: 'ce devis émis ne porte pas son numéro' }
+    if (d.emetteur_nom == null || d.emetteur_nom.trim() === '') {
+      return { etat: 'illisible', motif: 'ce devis émis ne porte pas son émetteur' }
+    }
+    emetteur = { nom: d.emetteur_nom, siret: texteImprime(d.emetteur_siret), adresse: texteImprime(d.emetteur_adresse) }
+  }
+  return {
+    etat: 'pret',
+    impression: {
+      titre: brouillon ? TITRE_DU_BROUILLON : `DEVIS ${d.numero}`,
+      mentionBrouillon: brouillon ? MENTION_BROUILLON_IMPRIMEE : null,
+      dates: [`Daté du ${formatDate(d.date_emission)}`, `${LIBELLE_VALIDITE} ${formatDate(d.date_validite)}`],
+      emetteur,
+      numeroTva: numeroTvaDuDevis({ emetteur_siret: emetteur.siret }, dossier),
+      client: { nom: d.tiers_nom, adresse: texteImprime(d.tiers_adresse), siret: texteImprime(d.tiers_siret) },
+      objet: texteImprime(d.objet),
+      mentions: mentionsDuDevis(d).filter((m) => m.libelle !== LIBELLE_VALIDITE),
+      lignes: d.lignes.map((l) => {
+        const c = calculerLigne(l.quantite, l.prix_unitaire_ht, l.taux_tva)
+        return {
+          designation: l.designation, quantite: l.quantite, prixUnitaireHt: l.prix_unitaire_ht, tauxTva: l.taux_tva,
+          montantHt: c.montant_ht, montantTtc: c.montant_ttc,
+        }
+      }),
+      totaux: { ht: d.montant_ht, tva: d.montant_tva, ttc: d.montant_ttc },
+      conditions: texteImprime(d.conditions),
+      mentionsLegales: texteImprime(d.mentions_legales),
+      bonPourAccord: BON_POUR_ACCORD,
+    },
+  }
+}
+
+/**
+ * Ce que l'ÉCRAN dit au-dessus de l'aperçu et que le papier ne porte pas : l'état du devis, et ce qu'il change à ce qui
+ * s'imprime. Aucun avis pour un devis émis encore en attente : il s'imprime tel qu'il part.
+ */
+export function avisDeLApercuDuDevis(d: Pick<Devis, 'date_validite' | 'date_reponse'>, etat: EtatDevis): string | null {
+  const le = d.date_reponse ? ` le ${formatDate(d.date_reponse)}` : ''
+  const papier = ' Le document reste l’offre telle qu’émise : la réponse ne s’y imprime pas.'
+  switch (etat) {
+    case 'brouillon':
+      return 'Brouillon : ce devis n’est pas encore émis, et le document le dit. L’émetteur imprimé est l’identité du dossier '
+        + 'aujourd’hui : c’est elle que le devis portera à son émission, si elle ne change pas d’ici là.'
+    case 'en_attente':
+      return null
+    case 'expire':
+      return `Ce devis n’est plus valable : il l’était jusqu’au ${formatDate(d.date_validite)}.`
+    case 'accepte':
+      return `Ce devis a été accepté${le}.${papier}`
+    case 'refuse':
+      return `Ce devis a été refusé${le}.${papier}`
+    case 'facture':
+      return `Ce devis a été accepté${le}, puis transformé en facture.${papier}`
+  }
 }
