@@ -12,6 +12,7 @@ import type { ModeleComptable } from './engagement'
 import { formatDate, formatMoney } from './format'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { etatDeLOuverture, ouvertureDeLExercice } from './reportDesSoldes'
+import { premierReleveDeLaTenue, relevesAuTrenteEtUn } from './releveAuTrenteEtUn'
 import { TAILLE_MAX_PREUVE_APPLICATION } from './revisionSoldes'
 import type {
   ANouveau, ControleReleveBancaire, DeclarationTva, DocumentDivers, EcritureBrouillon, ExerciceValide, Immobilisation,
@@ -351,16 +352,10 @@ function conclure(
 // La preuve les montre alors un à un, avec leur somme, et ne conclut pas : le cabinet sait, lui, combien le dossier a de
 // comptes.
 function preuveDuReleve(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
+  // La sélection des relevés et le solde que chacun dit au 31 décembre : lib/releveAuTrenteEtUn.ts, que la validation lit
+  // aussi (MVPD7-Q2) — une règle, écrite une fois.
   const fin = `${d.annee}-12-31`
-  const lendemain = `${d.annee + 1}-01-01`
-  const parPeriode = (a: ControleReleveBancaire, b: ControleReleveBancaire) =>
-    (a.periode_debut ?? '').localeCompare(b.periode_debut ?? '') || a.id.localeCompare(b.id)
-  const finissent = d.controlesReleves.filter((c) => c.periode_fin === fin).sort(parPeriode)
-  const couvrent = d.controlesReleves
-    .filter((c) => c.periode_debut !== null && c.periode_fin !== null && c.periode_debut <= lendemain && c.periode_fin > fin)
-    .sort(parPeriode)
-  const bouclentEtFinissent = finissent.filter((c) => c.coherent)
-  const candidats = bouclentEtFinissent.length > 0 ? bouclentEtFinissent : couvrent.filter((c) => c.coherent)
+  const { finissent, couvrent, regardes, soldes: lus } = relevesAuTrenteEtUn(d.controlesReleves, d.lignes, d.annee)
   const faits: FaitDeLaPreuve[] = []
   const detail: LigneDeDetail[] = []
   const sources: SourceProposee[] = []
@@ -368,7 +363,6 @@ function preuveDuReleve(compte: string, soldeCentimes: number, d: DonneesDesPreu
 
   // Ceux qui ne bouclent pas parmi ceux que la preuve a regardés : ceux qui finissent le 31 décembre, et, faute de l'un
   // d'eux qui boucle, ceux qui couvrent la fin de ce jour.
-  const regardes = bouclentEtFinissent.length > 0 ? finissent : [...finissent, ...couvrent]
   for (const c of regardes.filter((x) => !x.coherent)) {
     faits.push(fait('releve-ne-boucle-pas',
       `Le relevé ${periodeDe(c)} ne boucle pas — un écart de ${enEuros(centimes(c.ecart))} entre ses soldes et ses mouvements : il ne prouve pas le solde.`,
@@ -376,32 +370,21 @@ function preuveDuReleve(compte: string, soldeCentimes: number, d: DonneesDesPreu
   }
 
   const soldes: number[] = []
-  for (const c of candidats) {
-    // Les mouvements du relevé, retrouvés par le nom du fichier importé : ils doivent faire encore la somme que le
-    // contrôle a mesurée à l'import, sinon le relevé ne boucle plus avec ce que la base en garde.
-    const duFichier = c.source_fichier === null ? null : d.lignes.filter((l) => l.source_fichier === c.source_fichier)
-    const intact = duFichier !== null && duFichier.reduce((s, l) => s + centimes(l.montant), 0) === centimes(c.somme_mouvements)
-    let au31: number
-    if (c.periode_fin === fin) {
-      au31 = centimes(c.solde_final)
-      if (duFichier !== null && !intact) {
-        faits.push(fait('mouvements-modifies',
-          `Les mouvements du relevé ${periodeDe(c)} ne font plus en base la somme contrôlée à son import : un mouvement a été retiré ou ajouté depuis.`, null, null))
-      }
-    } else if ((c.periode_debut as string) > fin) {
-      // Il commence le 1er janvier : son solde initial est celui de la fin du 31 décembre, sans aucun mouvement à lire.
-      au31 = centimes(c.solde_initial)
-    } else if (duFichier === null) {
-      faits.push(fait('releve-sans-fichier',
-        `Le relevé ${periodeDe(c)} couvre le 31/12/${d.annee}, mais son import n’a pas gardé de nom de fichier : ses mouvements ne se retrouvent pas, et son solde au 31 décembre ne se calcule pas.`, null, null))
+  for (const l of lus) {
+    const c = l.controle
+    if (l.lu === null) {
+      faits.push(l.raison === 'sans_fichier'
+        ? fait('releve-sans-fichier',
+          `Le relevé ${periodeDe(c)} couvre le 31/12/${d.annee}, mais son import n’a pas gardé de nom de fichier : ses mouvements ne se retrouvent pas, et son solde au 31 décembre ne se calcule pas.`, null, null)
+        : fait('mouvements-modifies',
+          `Les mouvements du relevé ${periodeDe(c)} ne font plus en base la somme contrôlée à son import : son solde au 31 décembre ne se calcule pas.`, null, null))
       continue
-    } else if (!intact) {
-      faits.push(fait('mouvements-modifies',
-        `Les mouvements du relevé ${periodeDe(c)} ne font plus en base la somme contrôlée à son import : son solde au 31 décembre ne se calcule pas.`, null, null))
-      continue
-    } else {
-      au31 = centimes(c.solde_initial) + duFichier.filter((l) => l.date <= fin).reduce((s, l) => s + centimes(l.montant), 0)
     }
+    if (l.lu === 'solde_final' && l.mouvementsModifies) {
+      faits.push(fait('mouvements-modifies',
+        `Les mouvements du relevé ${periodeDe(c)} ne font plus en base la somme contrôlée à son import : un mouvement a été retiré ou ajouté depuis.`, null, null))
+    }
+    const au31 = l.centimes
     soldes.push(au31)
     detail.push({ libelle: `Relevé ${periodeDe(c)} : solde au 31/12/${d.annee}`, montantCentimes: au31, reference: { type: 'releve', id: c.id } })
     // Le document d'un relevé : l'onglet Banque importe un relevé classé sous le nom de son document, et ce nom devient
@@ -443,9 +426,7 @@ function preuveDuReleve(compte: string, soldeCentimes: number, d: DonneesDesPreu
     // la reprise. Un relevé plus ancien est dans les comptes repris, et son solde initial ne dit rien de l'ouverture ; celui
     // qui finit le jour même aussi : son solde de clôture, daté de ce jour, est l'ouverture — comme le solde initial d'un
     // relevé qui commence le 1er janvier est celui de la fin du 31 décembre.
-    const premier = d.controlesReleves
-      .filter((c) => c.periode_debut !== null && (reprise === null || c.periode_fin === null || c.periode_fin > reprise))
-      .sort(parPeriode)[0]
+    const premier = premierReleveDeLaTenue(d.controlesReleves, reprise)
     if (premier && centimes(premier.solde_initial) !== 0) {
       const initial = centimes(premier.solde_initial)
       if (attendu !== null && soldeCentimes - attendu === -initial) {

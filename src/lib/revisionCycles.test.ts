@@ -272,6 +272,8 @@ describe('le rangement des contrôles existants', () => {
       'caisse-a-reprendre', 'caisse-negative', 'versements-especes-en-recette', 'caisse-mouvements-avant-ouverture',
       // La relecture du 01/11/2026 : le paiement par la caisse que sa pièce contredit depuis.
       'caisse-paiements-a-retirer',
+      // MVPD7-Q2 : le 512 confronté au relevé du 31 décembre, et la banque d'un dossier ouvert sans balance reprise.
+      'banque-au-releve', 'ouverture-sans-reprise',
     ],
     // Étape VF5f : l'encaissement d'une facture qui attend son mouvement du relevé, au registre des ventes.
     recettes: [

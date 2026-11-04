@@ -296,6 +296,20 @@ describe("ClotureTab — l'exercice du paiement", () => {
     within(report.parentElement!).getByText(/Déficit de 720 € : case 5QE/)
   })
 
+  // MVPD7-Q4 : la carte rappelle le geste qui la lève avant la validation — le relevé de janvier suivant, importé et rapproché —,
+  // et celui des échéances payées depuis le compte personnel, que la validation fige ensuite.
+  it('rappelle d’importer et de rapprocher le relevé de janvier suivant, et de déclarer les paiements personnels, avant de valider', async () => {
+    poserDecembre(false)
+    monter(2025)
+    const carte = (await screen.findByText(/Pièces comptées à leur date de facture \(1\)/)).closest('.card') as HTMLElement
+    const texte = carte.textContent!.replace(/\s+/g, ' ')
+    expect(texte).toContain("Une pièce payée après le 31 décembre compte à la date de son paiement, dans l'exercice suivant : importer et "
+      + 'rapprocher le relevé de janvier 2026 avant de valider 2025.')
+    expect(texte).toContain("Tant que son paiement n'est pas rapproché, elle compte ici à sa date de facture, et retient la validation.")
+    expect(texte).toContain("déclarer dans l'onglet Cotisations le paiement depuis le compte personnel d'une échéance de 2025 avant la "
+      + 'validation, qui fige ensuite l’échéance à sa date.')
+  })
+
   it('se tait sur une pièce dont le paiement est rapproché', async () => {
     // Garde SYMÉTRIQUE : sans lui, « l'écran dit la supposition » serait satisfait par un écran qui
     // la dit toujours — et une mise en garde permanente cesse d'être lue.
@@ -2632,6 +2646,66 @@ describe('ClotureTab — valider l’exercice', () => {
     const c = await carte()
     c.getByText(message)
     expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // MVPD7-Q2 : Clôture lit TOUS les contrôles des relevés — ceux qui bouclent aussi —, et la carte confronte le 512 au relevé du
+  // 31 décembre (un avertissement), ou retient la validation d'un dossier ouvert sans reprise dont le premier relevé part d'un
+  // solde (un préalable bloquant, qui mène aux Informations du dossier).
+  const controle = (o: Record<string, unknown>) => ({
+    id: 'r1', dossier_id: 'dossier-de-test', source_fichier: null, solde_initial: 0, solde_final: -120, somme_mouvements: -120, ecart: 0,
+    coherent: true, periode_debut: '2025-01-01', periode_fin: '2025-12-31', created_at: '2026-01-05T00:00:00Z', ...o,
+  })
+
+  it('confronte le 512 au relevé du 31 décembre qui boucle : se tait s’il concorde, avertit sans retenir sinon', async () => {
+    poserTenu()
+    faux.parTable.controles_releves_bancaires = [controle({})]
+    const vue = render(
+      <ContexteDossier annee={2025} relire={relirePage}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} onNavigate={vi.fn()} />
+      </ContexteDossier>,
+    )
+    let c = await carte()
+    c.getByText(/Rien n.empêche de valider cet exercice/)
+    expect(c.queryByText(/n’est confronté à aucun relevé|ne concorde pas avec le relevé/)).toBeNull()
+    vue.unmount()
+
+    poserTenu()
+    faux.parTable.controles_releves_bancaires = [controle({ solde_final: 100, somme_mouvements: 100 })]
+    monterAvec()
+    c = await carte()
+    c.getByText('À lire avant de valider')
+    const ligne = c.getByText(/ne concorde pas avec le relevé du 01\/01\/2025 au 31\/12\/2025/).closest('li') as HTMLElement
+    expect(ligne.textContent!.replace(/\s/g, ' ')).toContain('Le 512000 au 31/12/2025 — nul à l’ouverture, 120,00 € au crédit d’écritures dans '
+      + 'l’exercice, 120,00 € au crédit au total — ne concorde pas avec le relevé du 01/01/2025 au 31/12/2025, de solde final 100,00 € : un '
+      + 'écart de 220,00 €.')
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('retient la validation d’un dossier ouvert sans reprise dont le premier relevé part d’un solde, et mène aux Informations du dossier', async () => {
+    poserTenu()
+    faux.parTable.controles_releves_bancaires = [controle({ solde_initial: 5000, solde_final: 4880 })]
+    const onNavigate = monterAvec()
+    const c = await carte()
+    const ligne = c.getByText(/Le dossier s'ouvre sans balance reprise/).closest('li') as HTMLElement
+    expect(ligne.textContent!.replace(/\s/g, ' ')).toContain("part d'un solde de 5 000,00 € au 01/01/2025")
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { fireEvent.click(within(ligne).getByRole('button', { name: 'Informations du dossier' })) })
+    expect(onNavigate).toHaveBeenCalledWith('informations')
+  })
+
+  // MVPD7-Q3 : un BNC en trésorerie, le drapeau des quatre champs baissé — la carte et la confirmation disent le FEC à dix-huit
+  // colonnes.
+  it('dit, avant le clic et dans la confirmation, que l’exercice se fige sans les quatre champs d’un BNC', async () => {
+    poserTenu()
+    faux.parTable.controles_releves_bancaires = [controle({})]
+    const messages = confirmer(false)
+    monterAvec()
+    const c = await carte()
+    c.getByText(/se fige sans les quatre champs du FEC d'un BNC en trésorerie/)
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    expect(messages[0]).toContain("L'exercice 2025 se fige sans les quatre champs du FEC d'un BNC en trésorerie")
+    expect(messages[0]).toContain('son FEC restera à dix-huit colonnes.')
+    expect(faux.appels).not.toContain('valider_exercice')
   })
 
   // L'exercice de l'ouverture d'un dossier repris se valide avec ses à-nouveaux : la base fige leurs libellés.

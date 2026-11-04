@@ -153,6 +153,10 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   // La trésorerie : le relevé, ses mouvements et ce qu'ils écrivent.
   'releve-incoherent': 'tresorerie',
   'releves-inconnus': 'tresorerie',
+  // Le compte de banque confronté au relevé du 31 décembre, et la banque d'un dossier ouvert sans balance reprise alors que
+  // son premier relevé part d'un solde (MVPD7-Q2) : ce que le relevé affirme, face au 512.
+  'banque-au-releve': 'tresorerie',
+  'ouverture-sans-reprise': 'tresorerie',
   'mouvements-a-traiter': 'tresorerie',
   'lignes-non-rapprochees': 'tresorerie',
   // Un mouvement du relevé que des encaissements de factures réservent, à classer (étape VF5f) : ce que le relevé porte.

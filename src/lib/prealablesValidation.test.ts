@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  CARTES_DE_CLOTURE, motsDeLaBase, NOM_DU_MOYEN_SANS_MOUVEMENT, POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation,
-  prochainExerciceAValider, REFUS_VENTES_FACTUREES_DE_LA_VALIDATION, type DonneesDeValidation,
+  CARTES_DE_CLOTURE, motsDeLaBase, NOM_DU_MOYEN_SANS_MOUVEMENT, phraseDuFecSansChampsBnc, POINTS_DE_LA_CHECKLIST_ECARTES,
+  prealablesDeValidation, prochainExerciceAValider, REFUS_VENTES_FACTUREES_DE_LA_VALIDATION, type DonneesDeValidation,
 } from './prealablesValidation'
 import { calculerDeclaration2035 } from './declaration2035'
 import { incoherencesDesCases, valeursDesCases } from './cases2035'
@@ -139,17 +139,42 @@ const E2 = ecriture('e2', { compte: COMPTE_BANQUE, sens: 'credit', ligne_bancair
 
 type Surcharges = Partial<Omit<DonneesDeValidation, 'declaration' | 'concordance'>>
 
+// Un contrôle de relevé (`controles_releves_bancaires`), qui boucle par défaut.
+const controle = (o: Partial<ControleReleveBancaire>): ControleReleveBancaire => {
+  const c = {
+    id: 'r1', dossier_id: 'd1', source_fichier: null, solde_initial: 0, solde_final: 0, somme_mouvements: 0, ecart: 0,
+    coherent: true, periode_debut: '2025-12-01', periode_fin: '2025-12-31', created_at: '2026-01-05T00:00:00Z', ...o,
+  }
+  return o.somme_mouvements === undefined ? { ...c, somme_mouvements: c.solde_final - c.solde_initial } : c
+}
+
+// LE RELEVÉ DU 31 DÉCEMBRE QUI CONCORDE AVEC LE COMPTE DE BANQUE (MVPD7-Q2) : sans relevé, la validation dirait que rien ne
+// confronte le 512 ; avec un relevé qui ne lui est pas égal, elle dirait l'écart. Les cas qui ne portent pas sur la banque
+// reçoivent par défaut le relevé de l'année, de janvier au 31 décembre, qui finit au solde du 512 — l'ouverture de l'exercice
+// et ses écritures du 512 — et part du solde de l'ouverture : il ne dit rien. Les cas de la banque passent le leur.
+function releveQuiConcorde(b: Omit<DonneesDeValidation, 'declaration' | 'concordance'>): ControleReleveBancaire {
+  const enCentimes = (sens: 'debit' | 'credit', montant: number) => (sens === 'debit' ? 1 : -1) * Math.round(montant * 100)
+  const debut = `${b.annee}-01-01`
+  const fin = `${b.annee}-12-31`
+  const ouverture = [...b.aNouveaux.filter((a) => a.date >= debut && a.date <= fin), ...b.soldesReportes.filter((r) => r.date === debut)]
+    .filter((a) => a.compte === b.modele.plan.banque).reduce((s, a) => s + enCentimes(a.sens, a.montant), 0)
+  const ecritures = b.ecritures.filter((e) => e.compte === b.modele.plan.banque && e.date >= debut && e.date <= fin)
+    .reduce((s, e) => s + enCentimes(e.sens, e.montant), 0)
+  return controle({ id: 'r-annee', periode_debut: debut, periode_fin: fin, solde_initial: ouverture / 100, solde_final: (ouverture + ecritures) / 100 })
+}
+
 // Les données de validation de 2025, la 2035 et la concordance recalculées sur les données passées.
 function donnees(o: Surcharges = {}): DonneesDeValidation {
   const base: Omit<DonneesDeValidation, 'declaration' | 'concordance'> = {
     annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, assujettiTva: false,
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
-    vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
+    vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE,
     etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
     champsBnc: { etat: 'non_exportes' }, ...o,
   }
+  if (o.controlesReleves === undefined) base.controlesReleves = [releveQuiConcorde(base)]
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
   const paiements = paiementsDesPieces(base.lignes, base.reglements, base.encaissees, [])
   const declaration = calculerDeclaration2035(
@@ -592,7 +617,7 @@ describe('prealablesDeValidation — les anomalies, ramenées à l’exercice', 
   })
 
   it('bloque sur un contrôle qu’on n’a pas pu lire, au lieu de le croire muet', () => {
-    expect(ids(donnees({ relevesIncoherents: null, doublonsTexte: null }))).toEqual(expect.arrayContaining(['releves-inconnus', 'doublons-inconnus']))
+    expect(ids(donnees({ controlesReleves: null, doublonsTexte: null }))).toEqual(expect.arrayContaining(['releves-inconnus', 'doublons-inconnus']))
   })
 
   it('refuse un relevé qui ne boucle pas sur l’exercice, ou dont on ignore la période', () => {
@@ -600,10 +625,10 @@ describe('prealablesDeValidation — les anomalies, ramenées à l’exercice', 
       id: 'r1', dossier_id: 'd1', source_fichier: 'releve.pdf', solde_initial: 0, solde_final: 0, somme_mouvements: 50, ecart: 50,
       coherent: false, periode_debut: '2025-03-01', periode_fin: '2025-03-31', created_at: '2025-04-01T00:00:00Z', ...o,
     })
-    expect(prealable(donnees({ relevesIncoherents: [releve({})] }), 'releve-incoherent')?.nb).toBe(1)
-    expect(prealable(donnees({ relevesIncoherents: [releve({ periode_debut: null, periode_fin: null })] }), 'releve-incoherent')?.nb).toBe(1)
-    expect(ids(donnees({ relevesIncoherents: [releve({ periode_debut: '2026-03-01', periode_fin: '2026-03-31' })] }))).not.toContain('releve-incoherent')
-    expect(ids(donnees({ relevesIncoherents: [releve({ coherent: true })] }))).not.toContain('releve-incoherent')
+    expect(prealable(donnees({ controlesReleves: [releve({})] }), 'releve-incoherent')?.nb).toBe(1)
+    expect(prealable(donnees({ controlesReleves: [releve({ periode_debut: null, periode_fin: null })] }), 'releve-incoherent')?.nb).toBe(1)
+    expect(ids(donnees({ controlesReleves: [releve({ periode_debut: '2026-03-01', periode_fin: '2026-03-31' })] }))).not.toContain('releve-incoherent')
+    expect(ids(donnees({ controlesReleves: [releve({ coherent: true })] }))).not.toContain('releve-incoherent')
   })
 
   it('avertit sans refuser d’une échéance d’emprunt de l’exercice que rien ne paie', () => {
@@ -740,10 +765,6 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
     ['sans-categorie', (a) => ({ piecesValidees: [P1, piece('p2', { categorie_id: null, date_piece: D(a, '05-02'), montant_ttc: 40 })] })],
     ['devise-non-convertie', (a) => ({ piecesValidees: [P1, piece('p2', { devise: 'USD', montant_devise: 24, date_piece: D(a, '05-02') })] })],
     ['tva-impossible', (a) => ({ piecesValidees: [P1, piece('p2', { montant_ht: 100, montant_tva: 50, montant_ttc: 120, date_piece: D(a, '05-02') })] })],
-    ['mois-en-double', (a) => ({
-      piecesAValider: ['03-01', '04-01', '06-01', '06-01'].map((j, i) =>
-        piece(`m${i}`, { statut: 'a_valider', tiers: 'Transmedical', montant_ttc: 38.4, date_piece: D(a, j) })),
-    })],
     ['doublon-texte', (a) => ({
       piecesAValider: [piece('d1', { statut: 'a_valider', date_piece: D(a, '06-01') }), piece('d2', { statut: 'a_valider', date_piece: D(a, '06-01') })],
       doublonsTexte: [{ empreinte: 'e', pieceIds: ['d1', 'd2'], documentIds: [] }],
@@ -996,6 +1017,8 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         // Un avertissement d'un dossier basculé (étape VF7c) : un chèque, une carte ou un effet en cours au 511. Son cas est
         // avec les ventes facturées, plus bas.
         'encaissements-en-cours',
+        // Deux avertissements de MVPD7 : le mois en double (Q5) et le 512 confronté au relevé (Q2). Leurs cas sont plus bas.
+        'mois-en-double', 'banque-au-releve',
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
@@ -2242,5 +2265,173 @@ describe('les quatre champs du FEC d’un BNC en trésorerie (FEC22c2)', () => {
     const etat = prealablesDeValidation(avec(brouillonDeLAchat(VIDES), { champsBnc: null }))
     expect(etat.prealables.map((p) => p.id)).toEqual(['lecture-partielle'])
     expect(etat.prealables[0].message).toMatch(/les factures et les cotisations que le FEC d’un BNC en trésorerie lit ne sont pas lues en entier/)
+  })
+
+  // MVPD7-Q3 : la confirmation dit ce que l'exercice fige sans les quatre champs — seulement d'un BNC en trésorerie, le drapeau
+  // baissé. Levé, la demande les porte ; en engagement, ils ne s'appliquent pas ; sur une lecture partielle, rien ne se valide.
+  it('dit l’exercice figé sans les quatre champs : en trésorerie le drapeau baissé, jamais levé, en engagement ni sur une lecture partielle', () => {
+    expect(prealablesDeValidation(avec(brouillonDeLAchat(null))).fecSansChampsBnc).toBe(true)
+    expect(prealablesDeValidation(avec(brouillonDeLAchat(VIDES), { champsBnc: exportes })).fecSansChampsBnc).toBe(false)
+    expect(prealablesDeValidation(donnees({ modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT } })).fecSansChampsBnc)
+      .toBe(false)
+    expect(prealablesDeValidation(donnees({ lectureIncomplete: 'pièces : 10 lues sur 12' })).fecSansChampsBnc).toBe(false)
+  })
+
+  it('nomme les quatre champs, leur texte de loi, et les dix-huit colonnes', () => {
+    expect(phraseDuFecSansChampsBnc(2025)).toBe(
+      "L'exercice 2025 se fige sans les quatre champs du FEC d'un BNC en trésorerie — la date et le mode de règlement, la nature de "
+        + "l'opération, l'identification du client (LPF, art. A47 A-1, VIII, 7°) — : aucune validation ne pourra plus les lui donner, "
+        + 'et son FEC restera à dix-huit colonnes.',
+    )
+  })
+})
+
+// MVPD7-Q2 : LE COMPTE DE BANQUE CONFRONTÉ AU RELEVÉ DU 31 DÉCEMBRE, en avertissement, et la banque d'un dossier ouvert sans
+// balance reprise alors que son premier relevé part d'un solde, bloquante. Le dossier de la fabrique : un achat de 120 € payé
+// par le relevé, un 512 de 120 € au crédit, sans ouverture.
+describe('prealablesDeValidation — la banque confrontée au relevé (MVPD7-Q2)', () => {
+  const banque = (d: DonneesDeValidation) => prealable(d, 'banque-au-releve')
+  const LE_512 = `Le 512000 au 31/12/2025 — nul à l’ouverture, ${formatMoney(120)} au crédit d’écritures dans l’exercice, `
+    + `${formatMoney(120)} au crédit au total`
+
+  it('se tait quand le relevé qui finit le 31 décembre dit le solde du 512', () => {
+    expect(banque(donnees({ controlesReleves: [controle({ solde_final: -120 })] }))).toBeUndefined()
+  })
+
+  it('avertit d’un écart, sans retenir la validation : le relevé, son solde final, le 512 et l’écart nommés', () => {
+    const etat = prealablesDeValidation(donnees({ controlesReleves: [controle({ solde_final: 100 })] }))
+    expect(etat.validable).toBe(true)
+    expect(etat.prealables.find((p) => p.id === 'banque-au-releve')).toMatchObject({
+      nb: null, bloquant: false, cible: 'banque',
+      message: `${LE_512} — ne concorde pas avec le relevé du 01/12/2025 au 31/12/2025, de solde final ${formatMoney(100)} : un écart de ${formatMoney(220)}.`,
+    })
+    expect(banque(donnees({ controlesReleves: [controle({ solde_final: 100 })] }))?.detail).toMatch(/^Le relevé fait foi : une ouverture fausse/)
+  })
+
+  it('compare des centimes entiers : 0,10 € et 0,20 € font 0,30 €', () => {
+    // Deux achats de 0,10 € et 0,20 €, chacun payé par son mouvement du relevé et écrit comme la génération l'écrit.
+    const achat = (id: string, montant: number) => ({
+      piece: piece(id, { montant_ttc: montant }),
+      ligne: ligne(`l-${id}`, { piece_id: id, montant: -montant }),
+      ecritures: [
+        ecriture(`${id}-c`, { piece_id: id, montant }),
+        ecriture(`${id}-b`, { piece_id: id, compte: COMPTE_BANQUE, sens: 'credit', ligne_bancaire_id: `l-${id}`, montant }),
+      ],
+    })
+    const [a, b] = [achat('pa', 0.1), achat('pb', 0.2)]
+    const centimes = { piecesValidees: [a.piece, b.piece], lignes: [a.ligne, b.ligne], ecritures: [...a.ecritures, ...b.ecritures] }
+    expect(0.1 + 0.2).not.toBe(0.3)
+    expect(banque(donnees({ ...centimes, controlesReleves: [controle({ solde_final: -0.3 })] }))).toBeUndefined()
+    expect(banque(donnees({ ...centimes, controlesReleves: [controle({ solde_final: -0.31 })] }))?.message).toMatch(/un écart de 0,01\s€\.$/)
+  })
+
+  it('compte l’ouverture de l’exercice — la reprise — avant ses écritures', () => {
+    const repris = { aNouveaux: ouvertureReprise('2025-01-01') }
+    expect(banque(donnees({ ...repris, controlesReleves: [controle({ solde_final: 880 })] }))).toBeUndefined()
+    expect(banque(donnees({ ...repris, controlesReleves: [controle({ solde_final: -120 })] }))?.message).toContain(
+      `Le 512000 au 31/12/2025 — ${formatMoney(1000)} au débit à l’ouverture, ${formatMoney(120)} au crédit d’écritures dans l’exercice, `
+        + `${formatMoney(880)} au débit au total — ne concorde pas`,
+    )
+  })
+
+  it('à défaut, prend le solde initial d’un relevé qui commence le 1er janvier suivant', () => {
+    const janvier = controle({ periode_debut: '2026-01-01', periode_fin: '2026-01-31', solde_initial: -120, solde_final: -50 })
+    expect(banque(donnees({ controlesReleves: [janvier] }))).toBeUndefined()
+    expect(banque(donnees({ controlesReleves: [{ ...janvier, solde_initial: -100 }] }))?.message)
+      .toContain(`ne concorde pas avec le relevé du 01/01/2026 au 31/01/2026, de solde initial ${formatMoney(-100)}`)
+  })
+
+  it('à défaut, prend le relevé qui couvre le 31 décembre, corrigé de ses mouvements postérieurs', () => {
+    // Un relevé à cheval, du 15 décembre au 15 janvier : son solde initial et son mouvement de décembre font le 31 décembre ; son
+    // solde final, qui compte celui de janvier, ne le fait pas. Un exercice 2024 validé écarte la banque sans reprise.
+    const lignes = [L1, ligne('l-dec', { date: '2025-12-20', montant: 5, source_fichier: 'chevauche.csv' }),
+      ligne('l-jan', { date: '2026-01-10', montant: -35, statut: 'non_rapprochee', source_fichier: 'chevauche.csv' })]
+    const couvre = controle({ periode_debut: '2025-12-15', periode_fin: '2026-01-15', source_fichier: 'chevauche.csv', solde_initial: -125, solde_final: -155 })
+    const valide2024 = { anneesValidees: [2024] }
+    expect(banque(donnees({ ...valide2024, lignes, controlesReleves: [couvre] }))).toBeUndefined()
+    expect(banque(donnees({ ...valide2024, lignes, controlesReleves: [{ ...couvre, solde_initial: -126, solde_final: -156 }] }))?.message).toBe(
+      `${LE_512} — ne concorde pas avec le relevé du 15/12/2025 au 15/01/2026, ${formatMoney(-121)} au 31/12/2025 (son solde initial et `
+        + `ses mouvements jusqu’à ce jour) : un écart de ${formatMoney(1)}.`,
+    )
+    // Ses mouvements retirés depuis l'import : le solde du 31 ne se calcule pas, et rien n'est confronté.
+    expect(banque(donnees({ ...valide2024, lignes: [L1], controlesReleves: [couvre] }))?.message).toBe(
+      `${LE_512} — n’est confronté à aucun relevé : le relevé du 15/12/2025 au 15/01/2026 couvre le 31/12/2025, mais ses mouvements `
+        + 'ne font plus en base la somme contrôlée à son import.',
+    )
+  })
+
+  it('deux relevés d’un même solde n’en font qu’un ; deux soldes différents se nomment, sans rien confronter', () => {
+    const mensuel = controle({ id: 'r-dec', solde_final: -120 })
+    const annuel = controle({ id: 'r-an', periode_debut: '2025-01-01', solde_final: -120 })
+    expect(banque(donnees({ controlesReleves: [mensuel, annuel] }))).toBeUndefined()
+    expect(banque(donnees({ controlesReleves: [mensuel, { ...annuel, solde_final: 400, somme_mouvements: 400 }] }))?.message).toBe(
+      `${LE_512} — n’est confronté à aucun relevé : 2 relevés disent des soldes différents au 31/12/2025, le relevé du 01/01/2025 au `
+        + `31/12/2025, de solde final ${formatMoney(400)} ; le relevé du 01/12/2025 au 31/12/2025, de solde final ${formatMoney(-120)}. `
+        + 'L’application ne tient qu’un compte bancaire par dossier : l’un d’eux est d’un autre compte, ou ne dit pas le bon solde.',
+    )
+  })
+
+  it('sans relevé du 31 décembre, dit que rien n’est confronté, et ce qui le permettrait', () => {
+    const p = banque(donnees({ controlesReleves: [] }))
+    expect(p?.message).toBe(`${LE_512} — n’est confronté à aucun relevé : aucun relevé contrôlé ne finit le 31/12/2025 ni ne couvre la fin de ce jour.`)
+    expect(p?.detail).toMatch(/^Importer le relevé de décembre 2025 avec ses soldes, ou celui de janvier 2026 : /)
+    // Un relevé du 31 décembre qui ne boucle pas ne prouve rien : il se nomme (et `releve-incoherent` retient la validation).
+    expect(banque(donnees({ controlesReleves: [controle({ solde_final: -120, coherent: false, ecart: 5 })] }))?.message)
+      .toBe(`${LE_512} — n’est confronté à aucun relevé : le relevé du 01/12/2025 au 31/12/2025 ne boucle pas.`)
+  })
+
+  it('se tait sur un dossier sans banque dans l’exercice, et sur des contrôles illisibles', () => {
+    expect(banque(donnees({ piecesValidees: [], lignes: [], ecritures: [], controlesReleves: [] }))).toBeUndefined()
+    const illisibles = prealablesDeValidation(donnees({ controlesReleves: null }))
+    expect(illisibles.prealables.find((p) => p.id === 'releves-inconnus')?.bloquant).toBe(true)
+    expect(illisibles.prealables.some((p) => p.id === 'banque-au-releve' || p.id === 'ouverture-sans-reprise')).toBe(false)
+  })
+
+  it('retient la validation d’un dossier ouvert sans reprise dont le premier relevé part d’un solde, et dit le geste', () => {
+    const premier = controle({ id: 'r-jan', periode_debut: '2025-01-01', periode_fin: '2025-01-31', solde_initial: 5000, solde_final: 5000 })
+    const etat = prealablesDeValidation(donnees({ controlesReleves: [premier, controle({ solde_final: 4880 })] }))
+    expect(etat.validable).toBe(false)
+    expect(etat.prealables.find((p) => p.id === 'ouverture-sans-reprise')).toMatchObject({
+      nb: null, bloquant: true, cible: 'informations',
+      message: `Le dossier s'ouvre sans balance reprise, alors que son premier relevé, du 01/01/2025 au 31/01/2025, part d'un solde de `
+        + `${formatMoney(5000)} au 01/01/2025 : le 512000 part de zéro, et l'exercice 2026 s'ouvrirait sur une banque fausse. Reprendre `
+        + "la balance d'ouverture du dossier, la banque au solde de ce relevé, avant la validation.",
+    })
+    expect(etat.prealables.find((p) => p.id === 'ouverture-sans-reprise')?.detail).toMatch(/« Balance d’un autre logiciel »/)
+    // L'écart au 31 décembre en est la conséquence : il ne se dit pas en plus.
+    expect(etat.prealables.some((p) => p.id === 'banque-au-releve')).toBe(false)
+  })
+
+  it('ne retient rien d’un premier relevé parti de zéro, d’un dossier repris ou validé, ni d’un relevé d’après l’exercice', () => {
+    const premier = (solde: number, debut = '2025-01-01', fin = '2025-01-31') =>
+      controle({ id: 'r-premier', periode_debut: debut, periode_fin: fin, solde_initial: solde, solde_final: solde })
+    const sansBlocage = (o: Surcharges) => expect(ids(donnees(o))).not.toContain('ouverture-sans-reprise')
+    sansBlocage({ controlesReleves: [premier(0), controle({ solde_final: -120 })] })
+    sansBlocage({ aNouveaux: ouvertureReprise('2025-01-01'), controlesReleves: [premier(1000), controle({ solde_final: 880 })] })
+    sansBlocage({ anneesValidees: [2024], controlesReleves: [premier(1000)] })
+    // Le premier relevé est le plus ancien : un relevé plus tardif à solde non nul n'est pas le point de départ.
+    sansBlocage({ controlesReleves: [premier(0), controle({ id: 'r-juin', periode_debut: '2025-06-01', periode_fin: '2025-06-30', solde_initial: 300, solde_final: 300 })] })
+    // Un premier relevé qui commence après l'exercice ne dit rien de son début : la confrontation du 31 décembre dit l'écart.
+    const d = donnees({ controlesReleves: [premier(400, '2026-01-01', '2026-01-31')] })
+    expect(ids(d)).not.toContain('ouverture-sans-reprise')
+    expect(prealable(d, 'banque-au-releve')?.message).toMatch(/de solde initial 400,00\s€ : un écart de 520,00\s€\.$/)
+  })
+})
+
+// MVPD7-Q5 : LE MOIS D'ABONNEMENT EN DOUBLE AVERTIT, sans retenir la validation — dit sur l'exercice, tu sur le suivant.
+describe('prealablesDeValidation — le mois d’abonnement en double (MVPD7-Q5)', () => {
+  const abonnement = (a: number) => ({
+    piecesAValider: ['03-01', '04-01', '06-01', '06-01'].map((j, i) =>
+      piece(`m${i}`, { statut: 'a_valider', tiers: 'Transmedical', montant_ttc: 38.4, date_piece: `${a}-${j}`, created_at: `${a}-12-31T09:00:00Z` })),
+  })
+
+  it('avertit sur l’exercice, sans retenir la validation, et se tait sur le suivant', () => {
+    const etat = prealablesDeValidation(donnees({ ...abonnement(2025), anneesValidees: [2024] }))
+    expect(etat.prealables.find((p) => p.id === 'mois-en-double')).toMatchObject({ nb: 1, bloquant: false, cible: 'pieces' })
+    expect(etat.prealables.find((p) => p.id === 'mois-en-double')?.message)
+      .toMatch(/^mois d'abonnement en double, avec un mois voisin vide — une pièce mal datée, ou en double : regarder ces pièces avant de valider/)
+    // Ce qui retient la validation, ce sont les pièces à valider elles-mêmes — leur mois en double, non.
+    expect(etat.prealables.filter((p) => p.bloquant).map((p) => p.id)).toEqual(['pieces-a-valider'])
+    expect(ids(donnees({ ...abonnement(2026), anneesValidees: [2024] }))).not.toContain('mois-en-double')
   })
 })
