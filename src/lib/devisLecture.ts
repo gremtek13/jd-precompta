@@ -33,10 +33,10 @@ export async function lireLesDevis(dossierId: string): Promise<LectureDesDevis> 
         supabase.from('devis_factures').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
       ),
-      supabase.from('dossiers').select(COLONNES_DE_L_EMETTEUR).eq('id', dossierId),
+      // Une seule ligne, par sa clé : `maybeSingle` (une collection passerait par `lireTout`, lecturesPaginees.test.ts).
+      supabase.from('dossiers').select(COLONNES_DE_L_EMETTEUR).eq('id', dossierId).maybeSingle(),
     ])
-    const lignesDossier = dossier.error ? null : (dossier.data as unknown as EmetteurDuDossier[] | null)
-    const emetteur = lignesDossier?.length === 1 ? lignesDossier[0] : null
+    const emetteur = dossier.error ? null : ((dossier.data as unknown as EmetteurDuDossier | null) ?? null)
     const etrangere = [...devis.lignes, ...liens.lignes].some((l) => l.dossier_id !== dossierId)
     const complete = devis.complete && liens.complete && !etrangere && emetteur !== null
     const motif = complete ? null

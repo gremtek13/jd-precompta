@@ -78,6 +78,8 @@ vi.mock('../../lib/supabase', async () => {
           or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
           order: () => c,
           range: (d: number, f: number) => { debut = d; fin = f; return c },
+          // Une ligne par sa clé (l'identité du dossier) : la première, ou nulle.
+          maybeSingle: () => Promise.resolve().then(partir).then((r) => ({ data: r.data[0] ?? null, error: null })),
           then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => Promise.resolve().then(partir).then(suite, echec),
         })
         return c
