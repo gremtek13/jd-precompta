@@ -1013,6 +1013,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   barème, la catégorie « Carburant / déplacements » se dit (`carburant-sous-bareme`, VEH-Q1) → « LES IMMOBILISATIONS ET
   LE VÉHICULE : LE BIEN REPRIS, LA REPRISE CONFRONTÉE AU REGISTRE, LE CARBURANT SOUS LE BARÈME (IMMO-Q1, IMMO-Q2,
   VEH-Q1) ».
+- **La validation confronte la banque au relevé** (MVPD7-Q2 à Q5, sur la recommandation) : sans balance reprise, un
+  premier relevé parti d'un solde la bloque (`ouverture-sans-reprise`) ; un 512 qui diffère du relevé du 31/12 avertit
+  (`banque-au-releve`, `lib/releveAuTrenteEtUn.ts`, la règle de la preuve de la Révision) ; drapeau des quatre champs
+  baissé, la carte et la confirmation disent l'exercice figé sans eux ; Clôture rappelle le relevé de janvier suivant ;
+  le mois en double avertit → « LA VALIDATION : LA BANQUE CONFRONTÉE AU RELEVÉ, LE FEC DIT AVANT LE CLIC, LE RELEVÉ
+  SUIVANT, LE MOIS EN DOUBLE EN AVERTISSEMENT (MVPD7-Q2 À Q5) ».
 - **Le modèle comptable** se règle tant que le brouillon est vide → « LA COMPTABILITÉ D'ENGAGEMENT » ; le lettrage se
   DÉDUIT du rapprochement → « LE LETTRAGE SE DÉDUIT DU RAPPROCHEMENT ». **Ouverture** : une balance reprise contrôlée
   devient les à-nouveaux, une fois ; ensuite seulement après validation du précédent (`soldes_reportes`) → « LA
