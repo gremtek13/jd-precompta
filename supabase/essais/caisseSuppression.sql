@@ -48,6 +48,13 @@
 -- contrepartie encore au brouillon, ne se supprime pas, et le refus le dit sous les mots de la caisse (23503 : retirer
 -- d'abord son paiement), pour le cabinet comme pour le propriétaire ; une autre modification de la contrepartie garde les
 -- mots d'hier.
+--
+-- ÉTENDU LE 04/11/2026 (C12B-Q1 : la migration `correction_du_paiement_par_la_caisse`, PRÉPARÉE, pas appliquée — corriger
+-- un paiement en espèces d'un seul geste). Les contrôles 13 à 13e : la correction emporte la contrepartie de l'ancien
+-- paiement (sa pièce est à régénérer), et seule celle du nouveau s'écrit ensuite ; la pièce que le paiement corrigé cite
+-- ne se supprime plus — l'ancien, retiré, et le nouveau la citent —, sous la clé, puis, la contrepartie du nouveau écrite,
+-- sous les mots de la caisse ; le dossier entier part avec la chaîne des deux paiements et leurs contreparties. Une étape
+-- de genre « …6 » ne se joue qu'avec la migration : sans elle, une ligne dit qu'elles attendent (EN ATTENTE).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -70,6 +77,9 @@ declare
   -- La migration de l'étape C8 : sans elle, ses étapes (genre « …4 ») attendent.
   c8 boolean := to_regprocedure('public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)') is not null;
   genre text; en_attente4 integer := 0;
+  -- La migration de C12B-Q1 : sans elle, ses étapes (genre « …6 ») attendent.
+  c12 boolean := to_regprocedure('public.remplacer_paiement_par_la_caisse(uuid, uuid, date, numeric)') is not null;
+  en_attente6 integer := 0;
 begin
   -- La garde de tête (AUDIT-Q1) : sur une réplique seulement, avant toute écriture.
   if not exists (select 1 from pg_roles where rolname = 'proprietaire') then
@@ -231,6 +241,45 @@ begin
       delete from dossiers where id = '{K}';
       select 1 / (case when exists (select 1 from operations_caisse where dossier_id = '{K}') or exists (select 1 from ecritures_brouillon where dossier_id = '{K}')
         or exists (select 1 from pieces where dossier_id = '{K}') then 0 else 1 end)$q$,
+      'OK', ''],
+    -- ══ 13. Corriger un paiement par la caisse d'un seul geste (C12B-Q1, `correction_du_paiement_par_la_caisse`) ══════════
+    -- S : le paiement de 20 € de PS du 03/03 et sa contrepartie (11) ; corrigé au 04/03, au même montant.
+    array['controle6', '13. la correction d''un paiement emporte la contrepartie de l''ancien : la pièce est à régénérer', 'chef', $q$select remplacer_paiement_par_la_caisse('{S}', o.id, '2026-03-04', -20) from operations_caisse o
+        where o.dossier_id = '{S}' and o.genre = 'paiement' and o.retire_le is null;
+      select 1 / (case when exists (select 1 from ecritures_brouillon where piece_id = '{PS}' or operation_caisse_id in (select id from operations_caisse where dossier_id = '{S}' and genre = 'paiement')) then 0 else 1 end)
+        / (case when (select count(*) from operations_caisse where dossier_id = '{S}' and genre = 'paiement' and retire_le is null and date = '2026-03-04' and remplace_id is not null) = 1 then 1 else 0 end)$q$,
+      'OK', ''],
+    array['controle6', '13b. … la contrepartie de l''ancien, remplacé, ne s''écrit plus', 'chef', $q$select remplacer_paiement_par_la_caisse('{S}', o.id, '2026-03-04', -20) from operations_caisse o
+        where o.dossier_id = '{S}' and o.genre = 'paiement' and o.retire_le is null;
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      select '{S}', '2026-03-03', '530000', 'essai', 20, 'credit', o.id, '{PS}' from operations_caisse o where o.dossier_id = '{S}' and o.genre = 'paiement' and o.retire_le is not null$q$,
+      '23514', 'Cette écriture ne suit pas son opération de caisse : son dossier, sa date, ou sa pièce.'],
+    array['controle6', '13c. … celle du nouveau, si (le contrôle POSITIF : « Régénérer »)', 'chef', $q$select remplacer_paiement_par_la_caisse('{S}', o.id, '2026-03-04', -20) from operations_caisse o
+        where o.dossier_id = '{S}' and o.genre = 'paiement' and o.retire_le is null;
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      select '{S}', '2026-03-04', '530000', 'essai', 20, 'credit', o.id, '{PS}' from operations_caisse o where o.dossier_id = '{S}' and o.genre = 'paiement' and o.retire_le is null$q$,
+      'OK', ''],
+    array['controle6', '13d. la pièce que le paiement corrigé cite ne se supprime plus : l''ancien, retiré, et le nouveau la citent', 'chef', $q$select remplacer_paiement_par_la_caisse('{S}', o.id, '2026-03-04', -20) from operations_caisse o
+        where o.dossier_id = '{S}' and o.genre = 'paiement' and o.retire_le is null;
+      delete from pieces where id = '{PS}'$q$,
+      '23503', '%violates foreign key constraint "operations_caisse_piece_id_fkey" on table "operations_caisse"%'],
+    array['controle6', '13e. … la contrepartie du nouveau écrite : sous les mots de la caisse', 'chef', $q$select remplacer_paiement_par_la_caisse('{S}', o.id, '2026-03-04', -20) from operations_caisse o
+        where o.dossier_id = '{S}' and o.genre = 'paiement' and o.retire_le is null;
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      select '{S}', '2026-03-04', '530000', 'essai', 20, 'credit', o.id, '{PS}' from operations_caisse o where o.dossier_id = '{S}' and o.genre = 'paiement' and o.retire_le is null;
+      delete from pieces where id = '{PS}'$q$,
+      '23503', 'Cette pièce est payée par la caisse : retire d''abord son paiement. Elle ne se supprime pas pour autant — l''opération de caisse, même retirée, la cite pour la piste d''audit : si elle n''est pas une pièce de ce dossier, change ensuite son type en « autre ».'],
+    array['controle6', '13f. le dossier se supprime avec la chaîne d''un paiement corrigé et ses contreparties', 'chef', $q$select enregistrer_operation_caisse('{K}', 'apport', '2026-03-01', 50, null, null, null, '[{"compte":"530000","sens":"debit","montant":50},{"compte":"108000","sens":"credit","montant":50}]');
+      select regler_piece_par_la_caisse('{K}', '{PK}', '2026-03-03', -20);
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      select '{K}', '2026-03-03', '530000', 'essai', 20, 'credit', o.id, '{PK}' from operations_caisse o where o.dossier_id = '{K}' and o.genre = 'paiement';
+      select remplacer_paiement_par_la_caisse('{K}', o.id, '2026-03-04', -20) from operations_caisse o where o.dossier_id = '{K}' and o.genre = 'paiement';
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      select '{K}', '2026-03-04', '530000', 'essai', 20, 'credit', o.id, '{PK}' from operations_caisse o where o.dossier_id = '{K}' and o.genre = 'paiement' and o.retire_le is null;
+      select 1 / (case when (select count(*) from operations_caisse where dossier_id = '{K}' and genre = 'paiement') = 2 then 1 else 0 end);
+      delete from dossiers where id = '{K}';
+      select 1 / (case when exists (select 1 from operations_caisse where dossier_id = '{K}') or exists (select 1 from ecritures_brouillon where dossier_id = '{K}')
+        or exists (select 1 from pieces where dossier_id = '{K}') then 0 else 1 end)$q$,
       'OK', '']
   ];
 
@@ -238,6 +287,14 @@ begin
     foreach etape slice 1 in array etapes loop
       -- Une étape de l'étape C8 (« …4 ») ne se joue qu'avec sa migration.
       genre := etape[1];
+      -- Une étape de C12B-Q1 (« …6 ») ne se joue qu'avec sa migration.
+      if genre like '%6' then
+        if not c12 then
+          en_attente6 := en_attente6 + 1;
+          continue;
+        end if;
+        genre := left(genre, -1);
+      end if;
       if genre like '%4' then
         if not c8 then
           en_attente4 := en_attente4 + 1;
@@ -297,6 +354,10 @@ begin
     if en_attente4 > 0 then
       verdicts := verdicts || jsonb_build_object('controle', '11. EN ATTENTE de la migration paiement_par_la_caisse (étape C8) : '
         || en_attente4 || ' étapes — la contrepartie d''un paiement par la caisse et la pièce qu''il cite', 'observe', 'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
+    if en_attente6 > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '13. EN ATTENTE de la migration correction_du_paiement_par_la_caisse (C12B-Q1) : '
+        || en_attente6 || ' étapes — la correction d''un paiement par la caisse, sa contrepartie et la pièce qu''il cite', 'observe', 'absente : elles se jouent dès qu''elle y est', 'ok', true);
     end if;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
   exception when others then

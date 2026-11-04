@@ -3874,6 +3874,184 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $$;
 
+-- ══ CQ. Corriger un paiement par la caisse (C12B-Q1, ligne 26.6 ; migration
+--    `correction_du_paiement_par_la_caisse`) ═════════════════════════════════════════════════════════════════════════
+-- Une fonction aux droits du propriétaire, exécutable par les connectés, qui écrit une table que personne n'écrit en
+-- direct : elle contourne la RLS, avec son propre contrôle (`qui_ecrit_la_caisse`) avant toute lecture, puis celui du
+-- retrait : le client ne corrige que ses propres paiements. Elle ne crée ni ne change aucune policy.
+--   CQ1. Dans le dossier du client, une pièce, un apport et un paiement du chef posés : le client sans la case « Caisse »
+--        ne corrige pas ce paiement (42501, sa raison) ; portant la case — le dossier passé exonéré, le temps d'une
+--        sous-transaction annulée —, il ne corrige pas davantage le paiement du chef (42501, la raison du retrait), et
+--        corrige le sien (le contrôle POSITIF : l'ancien retiré, le nouveau le désigne, à lui, à son jour) ; le paiement
+--        du chef reste entier.
+--   CQ2. L'anonyme n'exécute pas la fonction (42501).
+--   CQ3. Le catalogue : la fonction, `security definer`, son chemin fixé, exécutable par les connectés, ni par l'anonyme
+--        ni par PUBLIC.
+-- Deux mutations, qui doivent mordre : M-CQ1 (CQ1 joué par le chef sur son paiement : la correction passe), M-CQ2 (le
+-- contrôle positif sans la case : refusé). Avant la migration, une ligne dit que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  apport jsonb := '[{"compte":"530000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]';
+  piece uuid; du_chef uuid; du_client uuid; sans_case text; celui_du_chef text; le_sien text; porteurs bigint;
+  nouveau public.operations_caisse; ancien_retire boolean; chef_entier boolean; chef_correction text; sans_la_case text;
+  anon_correction text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.remplacer_paiement_par_la_caisse(uuid, uuid, date, numeric)') is null then
+    insert into rls_verdict values ('CQ. corriger un paiement par la caisse : EN ATTENTE de la migration correction_du_paiement_par_la_caisse',
+      'remplacer_paiement_par_la_caisse', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : une pièce d'achat du dossier du client (par le propriétaire), un apport et un paiement par le chef ──
+    insert into pieces (dossier_id, storage_path, nom_fichier, type_piece, statut)
+    values (dossier_du_client, dossier_du_client::text || '/essai-rls-caisse-cq.pdf', 'essai-rls-caisse-cq.pdf', 'achat', 'a_valider')
+    returning id into piece;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform enregistrer_operation_caisse(dossier_du_client, 'apport', '2026-03-03', 10, null, null, null, apport);
+    select o.id into du_chef from regler_piece_par_la_caisse(dossier_du_client, piece, '2026-03-04', -5) o;
+    reset role;
+    construit := true;
+
+    -- CQ1 : le client, sans la case, corrige le paiement du chef.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform remplacer_paiement_par_la_caisse(dossier_du_client, du_chef, '2026-03-05', -5);
+      sans_case := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sans_case is null then sans_case := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+
+    -- CQ1 (suite) : portant la case, le temps d'une sous-transaction annulée — le paiement du chef, puis le sien.
+    begin
+      perform set_config('request.jwt.claims', '', true);
+      update dossiers set statut_tva = 'exonere' where id = dossier_du_client and statut_tva is distinct from 'exonere';
+      update memberships set droit_caisse = true where user_id = client and dossier_id = dossier_du_client;
+      select count(*) into porteurs from memberships where user_id = client and dossier_id = dossier_du_client and droit_caisse;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select o.id into du_client from regler_piece_par_la_caisse(dossier_du_client, piece, '2026-03-04', -2) o;
+      begin
+        perform remplacer_paiement_par_la_caisse(dossier_du_client, du_chef, '2026-03-05', -5);
+        celui_du_chef := 'ACCEPTÉ';
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then if celui_du_chef is null then celui_du_chef := sqlstate || ' ' || sqlerrm; end if;
+      end;
+      begin
+        select o.* into nouveau from remplacer_paiement_par_la_caisse(dossier_du_client, du_client, '2026-03-05', -2) o;
+        le_sien := 'ACCEPTÉ';
+      exception when others then le_sien := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      select o.retire_le is not null into ancien_retire from operations_caisse o where o.id = du_client;
+      select o.retire_le is null and o.date = '2026-03-04' and o.montant = -5 into chef_entier from operations_caisse o where o.id = du_chef;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then le_sien := coalesce(le_sien, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'CQ1. le client ne corrige pas le paiement du chef, avec ou sans la case « Caisse » ; portant la case, il corrige le sien',
+      'cible', 'remplacer_paiement_par_la_caisse',
+      'observe', 'sans la case : ' || coalesce(sans_case, '?') || ' | le paiement du chef : ' || coalesce(celui_du_chef, '?')
+        || ' | le sien : ' || coalesce(le_sien, '?') || ' | ancien retiré : ' || coalesce(ancien_retire::text, '?')
+        || ' | nouveau : ' || coalesce(nouveau.origine || ' ' || nouveau.date || ' ' || nouveau.montant
+          || ' remplace ' || case when nouveau.remplace_id = du_client then 'le sien' else coalesce(nouveau.remplace_id::text, 'rien') end, '?')
+        || ' | le paiement du chef entier : ' || coalesce(chef_entier::text, '?'),
+      'ok', porteurs = 1
+        and sans_case = '42501 Accès refusé à ce dossier.'
+        and celui_du_chef = '42501 Cette opération a été saisie par ton cabinet : demande-lui de la corriger.'
+        and le_sien = 'ACCEPTÉ' and ancien_retire
+        and nouveau.origine = 'client' and nouveau.cree_par = client and nouveau.remplace_id = du_client
+        and nouveau.piece_id = piece and nouveau.date = '2026-03-05' and nouveau.montant = -2
+        and chef_entier);
+
+    -- M-CQ1 : CQ1 joué par le chef, sur son paiement — la correction passe.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform remplacer_paiement_par_la_caisse(dossier_du_client, du_chef, '2026-03-05', -5);
+      chef_correction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if chef_correction is null then chef_correction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('jd.caisse', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CQ1 — CQ1 joué par le chef, sur son paiement',
+      'attendu', 'accepté', 'observe', chef_correction, 'mord', chef_correction = 'ACCEPTÉ');
+
+    -- M-CQ2 : le contrôle positif sans la case — le dossier exonéré, le paiement du client posé, puis la case retirée.
+    begin
+      perform set_config('request.jwt.claims', '', true);
+      update dossiers set statut_tva = 'exonere' where id = dossier_du_client and statut_tva is distinct from 'exonere';
+      update memberships set droit_caisse = true where user_id = client and dossier_id = dossier_du_client;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select o.id into du_client from regler_piece_par_la_caisse(dossier_du_client, piece, '2026-03-04', -2) o;
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      update memberships set droit_caisse = false where user_id = client and dossier_id = dossier_du_client;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform remplacer_paiement_par_la_caisse(dossier_du_client, du_client, '2026-03-05', -2);
+      sans_la_case := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sans_la_case is null then sans_la_case := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CQ2 — le contrôle positif de CQ1 sans la case « Caisse »',
+      'attendu', 'refusé (42501, sa raison)', 'observe', coalesce(sans_la_case, '?'),
+      'mord', coalesce(sans_la_case = '42501 Accès refusé à ce dossier.', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- CQ2 : l'anonyme.
+  begin
+    set local role anon;
+    perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+    perform remplacer_paiement_par_la_caisse(dossier_du_client, null, null, null);
+    anon_correction := 'ACCEPTÉ';
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if anon_correction is null then anon_correction := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  verdicts := verdicts || jsonb_build_object('controle', 'CQ2. l''anonyme n''exécute pas la correction d''un paiement par la caisse',
+    'cible', 'remplacer_paiement_par_la_caisse', 'observe', anon_correction,
+    'ok', anon_correction = '42501 permission denied for function remplacer_paiement_par_la_caisse');
+
+  -- CQ3 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.prosecdef and p.proconfig @> array['search_path=public']
+     and not has_function_privilege('anon', p.oid, 'execute')
+     and not exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0)
+     and has_function_privilege('authenticated', p.oid, 'execute')
+     and p.oid = to_regprocedure('public.remplacer_paiement_par_la_caisse(uuid, uuid, date, numeric)');
+  verdicts := verdicts || jsonb_build_object('controle', 'CQ3. security definer, son chemin fixé, exécutable par les connectés, ni par l''anonyme ni par PUBLIC (lecture du catalogue)',
+    'cible', 'remplacer_paiement_par_la_caisse', 'observe', n || ' sur 1', 'ok', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'CQ. le jeu d''essai de la correction s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
 -- invariants — le principal — ne s'afficherait jamais. Un harnais dont on ne voit pas la réponse est

@@ -846,7 +846,8 @@ export function jugerLaSaisieDUnMois(operations: unknown, dossier: DossierDeLaCa
 
 // Les cinq premiers refus du retrait, qui sont aussi ceux du remplacement sur l'ancienne opération : l'accès, l'opération
 // de ce dossier, pour le client ses propres opérations seulement, une opération déjà retirée ou remplacée, la frontière.
-function refusDeLAncienne(operationId: string | null, dossier: DossierDeLaCaisse):
+// Ceux aussi de la correction d'un paiement (C12B-Q1, lib/correctionDuPaiement.ts), qui les lit ici.
+export function refusDeLAncienne(operationId: string | null, dossier: DossierDeLaCaisse):
   { refus: RefusCaisse } | { refus: null; operation: OperationDeLaCaisse } {
   if (dossier.quiEcrit == null) return { refus: refus('acces') }
   const operation = operationId == null ? undefined : dossier.caisse.operations.find((o) => o.id === operationId)
@@ -860,8 +861,9 @@ function refusDeLAncienne(operationId: string | null, dossier: DossierDeLaCaisse
 }
 
 // Une opération qui APPORTAIT des espèces — une recette, un apport, le paiement d'une pièce de vente — ne se retire pas si
-// la caisse passait alors sous zéro : son retrait se juge sous les mots de son geste.
-function retraitJuge(operation: OperationDeLaCaisse, caisse: EtatDeLaCaisse): RefusCaisse | null {
+// la caisse passait alors sous zéro : son retrait se juge sous les mots de son geste (le retrait, le remplacement, et la
+// correction d'un paiement, qui retire l'ancien par `retirer_operation_caisse`).
+export function retraitJuge(operation: OperationDeLaCaisse, caisse: EtatDeLaCaisse): RefusCaisse | null {
   const centimes = enCentimes(operation.montant)
   if (operation.genre === 'prelevement' || centimes <= 0) return null
   return refusDeLaCaisse(caisse, `retrait_${operation.genre}` as GesteDeLaCaisse, centimes)

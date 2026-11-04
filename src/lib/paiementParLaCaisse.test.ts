@@ -48,7 +48,8 @@ const lus = (r: { gabarit: string; code: string }[]) => r.map((x) => `${x.code} 
 describe('les mots et l’ordre des refus neufs, relus dans le texte de la migration', () => {
   it('la migration est là, préparée ou dans l’export, une fois', () => {
     expect(MIGRATION).toBeDefined()
-    expect(MIGRATIONS.filter((f) => /_paiement_par_la_caisse\.sql$/.test(f.chemin))).toHaveLength(1)
+    // Le nom entier, chiffres compris : `correction_du_paiement_par_la_caisse` (C12B-Q1) finit de même.
+    expect(MIGRATIONS.filter((f) => /\/\d{14}_paiement_par_la_caisse\.sql$/.test(f.chemin))).toHaveLength(1)
   })
 
   it('le paiement d’une pièce : l’accès d’abord, puis chaque refus, son code et ses mots, dans l’ordre du texte', () => {

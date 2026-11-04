@@ -4,6 +4,7 @@ import {
   type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type RefusCaisse, type SaisieDeCaisse,
 } from '../lib/caisse'
 import { refusCompteDeBilanAuPlanSelon } from '../lib/compteDeBilan'
+import { jugerLaCorrectionSelon } from '../lib/correctionDuPaiement'
 import {
   jugerLeReglementSelon, refusDeLaContrepartie, refusDuChangementDeLaPiece, refusDuMouvementAvantLOuverture,
   type PieceDuPaiement,
@@ -35,8 +36,9 @@ export interface EtapeDeLEssai {
 // Les genres de l'essai, et leur suffixe : « 2 » pour une étape de la migration de l'étape C1b, « 3 » pour une de l'étape C6
 // (`especes_sans_mouvement`), « 3h » pour une que celle-ci remplace (ce que la base répondait sans elle) ; puis « 4 » pour
 // une de l'étape C8 (`paiement_par_la_caisse`), « 4h » pour une qu'elle remplace — après le suffixe d'une étape d'avant ;
-// puis « 5 » pour une de l'étape C10 (`caisse_du_client`), « 5h » pour une qu'elle remplace.
-const GENRES = /\n {4}array\['((?:jeu|controle|fait|valeur|capture)(?:2|3h?)?(?:4h?)?(?:5h?)?)', /g
+// puis « 5 » pour une de l'étape C10 (`caisse_du_client`), « 5h » pour une qu'elle remplace ; puis « 6 » pour une de C12B-Q1
+// (`correction_du_paiement_par_la_caisse`), « 6h » pour une qu'elle remplace.
+const GENRES = /\n {4}array\['((?:jeu|controle|fait|valeur|capture)(?:2|3h?)?(?:4h?)?(?:5h?)?(?:6h?)?)', /g
 
 /** Les littéraux SQL qui suivent, joints : `'a' || 'b'` rend `ab` ; l'apostrophe doublée rendue simple. */
 function litteraux(texte: string): string[] {
@@ -307,13 +309,18 @@ export function rejouerLEssai(essai: string, aujourdhui: string): Issue[] {
   for (const etape of etapesDeLEssai(essai)) {
     let sql = etape.sql
     for (const [cle, v] of ids) sql = sql.split(`{${cle}}`).join(v)
-    // Une étape qu'une migration remplace (« …3h » pour l'étape C6, « …4h » pour l'étape C8, « …5h » pour l'étape C10) dit
-    // ce que la base répondait sans elle : ce banc rejoue la base d'après, et l'étape qui la remplace.
-    if (/5h$/.test(etape.genre)) {
+    // Une étape qu'une migration remplace (« …3h » pour l'étape C6, « …4h » pour l'étape C8, « …5h » pour l'étape C10, « …6h »
+    // pour C12B-Q1) dit ce que la base répondait sans elle : ce banc rejoue la base d'après, et l'étape qui la remplace.
+    if (/6h$/.test(etape.genre)) {
+      issues.push({ genre: 'hors_module', etape, raison: 'remplacée par la migration de C12B-Q1 (correction_du_paiement_par_la_caisse)' })
+      continue
+    }
+    const sansC12 = etape.genre.replace(/6$/, '')
+    if (/5h$/.test(sansC12)) {
       issues.push({ genre: 'hors_module', etape, raison: 'remplacée par la migration de l’étape C10 (caisse_du_client)' })
       continue
     }
-    const sansC10 = etape.genre.replace(/5$/, '')
+    const sansC10 = sansC12.replace(/5$/, '')
     if (/4h$/.test(sansC10)) {
       issues.push({ genre: 'hors_module', etape, raison: 'remplacée par la migration de l’étape C8 (paiement_par_la_caisse)' })
       continue
@@ -561,6 +568,24 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
     if (jugee.etat === 'refuse') return jugee.refus
     if (jugee.etat !== 'accepte') throw new NonRejouable('le paiement d’une pièce, absent')
     ajouter(e, d, jugee.operation, evenements)
+    return null
+  }
+  // La correction d'un paiement (C12B-Q1) : jugée comme la base la juge — l'ancien par les refus du retrait, le nouveau par
+  // ceux du paiement, la pièce lue en entier (le client compris : la base lit son montant) —, puis écrite dans son ordre : le
+  // nouveau d'abord, l'ancien retiré ensuite par la fonction du retrait, ses lignes avec lui.
+  if (appel.startsWith('select remplacer_paiement_par_la_caisse(')) {
+    const args = arguments_(appel, 'remplacer_paiement_par_la_caisse')
+    const d = texte(args[0])
+    if (!e.dossiers.has(d) && quiEcrit(d) != null) throw new NonRejouable('un dossier hors jeu')
+    const qui = quiEcrit(d)
+    if (qui == null) return refusDAcces(d)
+    const id = nouvelId()
+    const jugee = jugerLaCorrectionSelon(true, args[1] as string | null, { date: args[2] as string | null, montant: args[3] as number | null },
+      dossierLu(e, d, qui, aujourdhui), piecesDuPaiement(e, d), 'maintenant', id)
+    if (jugee.etat === 'refuse') return jugee.refus
+    if (jugee.etat !== 'accepte') throw new NonRejouable('la correction d’un paiement, absente')
+    ajouter(e, d, jugee.operation, evenements)
+    retirer(e, jugee.ancien.id, evenements)
     return null
   }
   if (appel.startsWith('select retirer_mouvement_compte_bilan(')) {
