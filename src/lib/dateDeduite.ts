@@ -1,5 +1,3 @@
-import type { ExtractionResult } from './extraction'
-
 // LA DATE DÉDUITE NE SE PERD PLUS AU DÉPÔT (relecture du 04/11/2026, D2 ; PIECES-Q1, option (A), sans migration). Quand aucune
 // date ne vient d'un libellé reconnu ni de la citation du modèle, `extract-piece` retient la PREMIÈRE date du document, en
 // ordre de lecture, et le marque (`_date_deduite`). Juste dans la plupart des mises en page, fausse sur un avis d'échéance
@@ -8,8 +6,8 @@ import type { ExtractionResult } from './extraction'
 // hors du relevé elle compte dans une année que personne ne déclare. Seule la relecture groupée lisait la marque ; les deux
 // dépôts et le bouton d'extraction de la fiche l'ignoraient, et la pièce s'écrivait « haute ».
 //
-// UNE RÈGLE, POUR LES TROIS CHEMINS (`lib/depot.ts`, le client ; `lib/importFichiers.ts`, le cabinet ; `FichePiece`, le
-// bouton « Extraire automatiquement ») : la confiance d'une pièce à date déduite ne dépasse pas « moyenne ». C'est la seule
+// UNE RÈGLE, POUR LES QUATRE CHEMINS (`lib/depot.ts`, le client ; `lib/importFichiers.ts`, le cabinet ; `FichePiece`, le
+// bouton « Extraire automatiquement » ; et, depuis le lot suivant du même jour, `receive-email`, par la copie ci-dessous) : la confiance d'une pièce à date déduite ne dépasse pas « moyenne ». C'est la seule
 // trace qui SURVIT au dépôt : aucune colonne de `pieces` ne garde la marque, et rien de ce que la pièce garde de son
 // extraction ne le peut sans migration — le texte lu est montré tel que lu et sert à reconnaître un doublon par son
 // empreinte (`piece_textes_ocr`), la note interne est un texte du cabinet que le client ne peut pas écrire
@@ -22,14 +20,27 @@ import type { ExtractionResult } from './extraction'
 /** Ce que l'écran et le message du cabinet disent d'une date déduite. */
 export const DATE_DEDUITE_A_VERIFIER = 'date déduite de la mise en page, à vérifier'
 
+// ── DÉBUT COPIE dateDeduite ──────────────────────────────────────────────────────────────────────────────────────────
+// LE PLAFOND D'UNE DATE DÉDUITE, AUX QUATRE CHEMINS QUI ÉCRIVENT UNE EXTRACTION (PIECES-Q1, option (A)). L'original vit dans
+// src/lib/dateDeduite.ts ; il est copié À L'IDENTIQUE dans receive-email, auto-portée — le quatrième chemin, la pièce jointe
+// reçue par e-mail, qui écrivait la confiance d'extract-piece sans plafond (relecture du 04/11/2026) —, et
+// dateDeduiteCopie.test.ts compare la copie au caractère près et l'exécute contre l'original.
+
+/** Ce qu'une extraction dit de sa date et de sa confiance : les seuls champs que la règle lit. */
+export interface LectureDeLaDate {
+  date_piece: string | null
+  _date_deduite?: boolean
+}
+
 /** La date de cette extraction vient-elle de la règle de dernier recours ? Seulement si elle en a rendu une. */
-export function dateDeduite(extraction: Pick<ExtractionResult, 'date_piece' | '_date_deduite'>): boolean {
+export function dateDeduite(extraction: LectureDeLaDate): boolean {
   return extraction._date_deduite === true && !!extraction.date_piece
 }
 
 /** La confiance qu'une pièce reçoit de son extraction : « haute » redescend à « moyenne » quand sa date est déduite. */
 export function confianceDeLExtraction(
-  extraction: Pick<ExtractionResult, 'confiance' | 'date_piece' | '_date_deduite'>,
-): ExtractionResult['confiance'] {
+  extraction: LectureDeLaDate & { confiance: 'haute' | 'moyenne' | 'basse' },
+): 'haute' | 'moyenne' | 'basse' {
   return dateDeduite(extraction) && extraction.confiance === 'haute' ? 'moyenne' : extraction.confiance
 }
+// ── FIN COPIE dateDeduite ────────────────────────────────────────────────────────────────────────────────────────────
