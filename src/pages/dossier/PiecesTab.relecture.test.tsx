@@ -19,6 +19,10 @@ const D = 'dossier-de-test'
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, Record<string, unknown>[]>,
   majs: [] as { table: string; valeur: unknown; ids: unknown[] }[],
+  // D8 : les tables lues, dans l'ordre des demandes ; et, posée par un test, la porte qui retient les lectures de `pieces`
+  // — leur réponse est celle de la base AU MOMENT DE LA DEMANDE, rendue à la libération (une lecture lente et périmée).
+  lectures: [] as string[],
+  retenue: null as Promise<void> | null,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -51,7 +55,10 @@ vi.mock('../../lib/supabase', async () => {
         }
         if (operation !== 'select' || unique) return Promise.resolve({ data: null, error: null }).then(suite, echec)
         const toutes = filtrer(faux.parTable[table] ?? [], predicats)
-        return Promise.resolve({ data: toutes.slice(debut, fin + 1), error: null, count: toutes.length }).then(suite, echec)
+        const reponse = { data: toutes.slice(debut, fin + 1), error: null, count: toutes.length }
+        faux.lectures.push(table)
+        const retenue = table === 'pieces' ? faux.retenue : null
+        return (retenue ? retenue.then(() => reponse) : Promise.resolve(reponse)).then(suite, echec)
       },
     })
     return c
@@ -106,6 +113,8 @@ let confirmations: string[] = []
 let reponse = true
 beforeEach(() => {
   faux.majs = []
+  faux.lectures = []
+  faux.retenue = null
   confirmations = []
   reponse = true
   vi.spyOn(window, 'confirm').mockImplementation((m) => { confirmations.push(String(m)); return reponse })
@@ -237,5 +246,69 @@ describe('D5 — sous « À valider », la pièce que rien n’a lue passe en t�
     expect(screen.getAllByText(/^(Non lue|Montant non lu)$/)).toHaveLength(1)
     await act(async () => { screen.getByRole('button', { name: 'À valider' }).click() })
     expect(tiersDesLignes()).toEqual(['DELTA', 'CHARLIE', 'ALPHA', 'BRAVO'])
+  })
+})
+
+// D8 — LES RECHARGEMENTS : une fiche enregistrée relisait Justificatifs en entier (une vingtaine de lectures, l'une après
+// l'autre), et un chargement plus lent écrivait après le suivant. Le scénario de la relecture (`validationEnLot.scenarios`,
+// 22 lectures par chargement), changé en garde.
+describe('D8 — une fiche enregistrée ne relit que ce qu’elle a changé, et la lecture la plus lente n’écrit plus en dernier', () => {
+  beforeEach(() => {
+    faux.parTable = {
+      pieces: [
+        piece({ id: 'a', tiers: 'ALPHA', date_piece: '2025-06-04' }),
+        piece({ id: 'b', tiers: 'BRAVO', date_piece: '2025-06-03' }),
+      ] as unknown as Record<string, unknown>[],
+    }
+  })
+
+  // La ligne d'une pièce, par la cellule de son tiers : la fiche ouverte affiche aussi le tiers, dans son en-tête.
+  const ligneDe = (tiers: string) => [...document.querySelectorAll('tbody tr')]
+    .find((tr) => tr.querySelector('td[data-libelle="Tiers"]')?.textContent?.trim() === tiers) as HTMLElement
+  async function ouvrirLaFiche(tiers: string) {
+    await waitFor(() => expect(ligneDe(tiers)).toBeDefined())
+    const cellule = ligneDe(tiers).querySelector('td[data-libelle="Tiers"]') as HTMLElement
+    await act(async () => { cellule.click() })
+    return screen.findByRole('button', { name: 'Valider' })
+  }
+  const statutDe = (tiers: string) => within(ligneDe(tiers)).queryByText(/^(Validée|À valider)$/)?.textContent
+
+  it('la fiche validée relit les pièces et les règles, sans les mouvements ni le reste', async () => {
+    rendre()
+    const valider = await ouvrirLaFiche('ALPHA')
+    await waitFor(() => expect(faux.lectures).toContain('lignes_bancaires'))
+    const avant = [...faux.lectures]
+    // Deux clics du même rendu : une écriture, une relecture.
+    await act(async () => { valider.click(); valider.click() })
+    await waitFor(() => expect(statutDe('ALPHA')).toBe('Validée'))
+    const apres = faux.lectures.slice(avant.length)
+    expect(faux.majs.filter((m) => m.table === 'pieces')).toHaveLength(1)
+    expect(apres.filter((t) => t === 'pieces')).toHaveLength(1)
+    expect(apres).toContain('tiers_categories')
+    expect(apres).not.toContain('lignes_bancaires')
+    expect(apres).not.toContain('categories')
+    // Et la liste n'est pas retombée sur « Chargement… ».
+    expect(screen.queryByText('Chargement…')).toBeNull()
+  })
+
+  it('un chargement entier plus lent qu’une relecture de la fiche ne remet pas la pièce « à valider »', async () => {
+    rendre()
+    await screen.findByText('ALPHA')
+    // « Valider la sélection » (ALPHA) relance un chargement entier ; sa lecture des pièces part, puis la base la retient.
+    let liberer = () => {}
+    faux.retenue = new Promise<void>((r) => { liberer = r })
+    await act(async () => { (within(ligneDe('ALPHA')).getByRole('checkbox') as HTMLElement).click() })
+    await act(async () => { screen.getByRole('button', { name: 'Valider la sélection (1)' }).click() })
+    await waitFor(() => expect(faux.lectures.filter((t) => t === 'pieces').length).toBeGreaterThanOrEqual(2))
+    faux.retenue = null
+    // Pendant ce temps, la fiche de BRAVO se valide : sa relecture rend la base d'après.
+    const valider = await ouvrirLaFiche('BRAVO')
+    await act(async () => { valider.click() })
+    await waitFor(() => expect(statutDe('BRAVO')).toBe('Validée'))
+    // Le chargement lent revient avec la base d'avant (BRAVO à valider) : il n'écrit plus par-dessus.
+    await act(async () => { liberer() })
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(statutDe('BRAVO')).toBe('Validée')
+    expect(statutDe('ALPHA')).toBe('Validée')
   })
 })
