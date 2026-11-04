@@ -45,6 +45,7 @@ drop function if exists public.supprimer_brouillon_devis(uuid, uuid);
 drop function public.facturer_devis(uuid, uuid);
 drop function public.decider_devis(uuid, uuid, text, date, boolean);
 drop function public.enregistrer_devis(uuid, uuid, jsonb, jsonb, boolean);
+drop function public.emetteur_du_dossier(text, text, text, text);
 
 -- ══ 2. Les tables, leurs données, leurs policies, leurs index et leurs déclencheurs ══════════
 drop table public.devis_factures;
