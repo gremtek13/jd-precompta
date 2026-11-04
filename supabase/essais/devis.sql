@@ -54,6 +54,16 @@
 -- sans A ou sans P2, l'essai se dit impossible et nomme ce qui manque. Quarante-deux mutations des deux migrations y
 -- virent toutes au rouge (HISTORIQUE.md, « LES DEVIS, EN BASE »). Rejoué le même jour sur une réplique en UTF8 égale à
 -- la production à 113 migrations (`revision_des_cycles` comprise), nue et semée : 167 verdicts, 0 en faute, 10 sur 10.
+--
+-- 04/11/2026 — SUR UNE RÉPLIQUE DE LA PRODUCTION À 171 MIGRATIONS, les deux migrations réécrites appliquées sous
+-- `proprietaire`, chaque mutation sur une copie neuve : vingt-sept mutations des migrations jouées contre ce fichier ;
+-- six y survivaient, que sept étapes tuent désormais — 21d et 22b (les décimales se comptent sur l'écriture reçue :
+-- `scale`, jamais `min_scale`), 34b (les lignes et les montants d'un devis émis, réécrits ensemble), 36c (la porte de la
+-- restauration au seul super-administrateur, jamais au propriétaire sans session), 54b (la date d'une réponse
+-- enregistrée), 74d et 76b (un lien vers un avoir) : 174 verdicts, 0 en faute, 10 mutations sur 10 qui mordent, rien
+-- resté. Une reste vivante, ÉQUIVALENTE : le droit d'exécuter `decider_devis` ôté à `authenticated`, que les privilèges
+-- par défaut du schéma lui rendent. Les deux verrous se jugent à deux sessions, les suppressions dans
+-- `devisSuppression.sql` — sur une réplique, l'un et l'autre.
 do $essai$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -268,8 +278,17 @@ begin
       ('21c', 'controle', 'une quantité à cinq décimales', 'client', 'ventes',
         $q$select devis_id::text from enregistrer_devis('{DA}', null, '{"tiers_nom":"ESSAI DEVIS X","date_emission":"2026-09-15","date_validite":"2026-10-15","montant_ht":123.46,"montant_tva":24.69,"montant_ttc":148.15}'::jsonb, '[{"designation":"essai","quantite":1.23456,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, false)$q$,
         '22023', 'Ligne 1 : la quantité est positive, avec quatre décimales au plus.', null),
+      -- Les décimales se comptent sur l'écriture REÇUE (`scale`, jamais `min_scale`) : 1.00000 en porte cinq. Le navigateur
+      -- n'écrit jamais un zéro final (JSON.stringify le retire) — un appel écrit à la main, d'où les lignes passées par
+      -- `jsonb_build_array`, hors du motif que src/lib/devis.test.ts rejoue dans le module, qui ne verrait que 1.
+      ('21d', 'controle', 'une quantité écrite 1.00000 : cinq décimales écrites, refusée', 'client', 'ventes',
+        $q$select devis_id::text from enregistrer_devis('{DA}', null, '{"tiers_nom":"ESSAI DEVIS X","date_emission":"2026-09-15","date_validite":"2026-10-15","montant_ht":100,"montant_tva":20,"montant_ttc":120}'::jsonb, jsonb_build_array('{"designation":"essai","quantite":1.00000,"prix_unitaire_ht":100,"taux_tva":20}'::jsonb), false)$q$,
+        '22023', 'Ligne 1 : la quantité est positive, avec quatre décimales au plus.', null),
       ('22', 'controle', 'un prix à sept décimales', 'client', 'ventes',
         $q$select devis_id::text from enregistrer_devis('{DA}', null, '{"tiers_nom":"ESSAI DEVIS X","date_emission":"2026-09-15","date_validite":"2026-10-15","montant_ht":1.12,"montant_tva":0.22,"montant_ttc":1.34}'::jsonb, '[{"designation":"essai","quantite":1,"prix_unitaire_ht":1.1234567,"taux_tva":20}]'::jsonb, false)$q$,
+        '22023', 'Ligne 1 : le prix unitaire hors taxes s''écrit avec six décimales au plus.', null),
+      ('22b', 'controle', 'un prix écrit 100.0000000 : sept décimales écrites, refusé', 'client', 'ventes',
+        $q$select devis_id::text from enregistrer_devis('{DA}', null, '{"tiers_nom":"ESSAI DEVIS X","date_emission":"2026-09-15","date_validite":"2026-10-15","montant_ht":100,"montant_tva":20,"montant_ttc":120}'::jsonb, jsonb_build_array('{"designation":"essai","quantite":1,"prix_unitaire_ht":100.0000000,"taux_tva":20}'::jsonb), false)$q$,
         '22023', 'Ligne 1 : le prix unitaire hors taxes s''écrit avec six décimales au plus.', null),
       ('23', 'controle', 'une ligne de dix milliards d''euros', 'client', 'ventes',
         $q$select devis_id::text from enregistrer_devis('{DA}', null, '{"tiers_nom":"ESSAI DEVIS X","date_emission":"2026-09-15","date_validite":"2026-10-15","montant_ht":0,"montant_tva":0,"montant_ttc":0}'::jsonb, '[{"designation":"essai","quantite":100000,"prix_unitaire_ht":100000,"taux_tva":20}]'::jsonb, false)$q$,
@@ -399,6 +418,9 @@ begin
       ('34', 'controle', 'ni par le propriétaire de la base : la garde', 'proprietaire', null,
         $q$with u as (update devis set notes = 'changé' where id = '{DV2}' returning 1) select count(*)::text from u$q$,
         '23514', 'Le devis D2026-0001 est émis : il ne se modifie plus — il se duplique.', null),
+      ('34b', 'controle', 'ni ses lignes ni ses montants, réécrits ensemble : la garde compare le devis entier, hors sa réponse', 'proprietaire', null,
+        $q$with u as (update devis set lignes = '[{"designation":"essai","quantite":2,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, montant_ht = 200, montant_tva = 40, montant_ttc = 240 where id = '{DV2}' returning 1) select count(*)::text from u$q$,
+        '23514', 'Le devis D2026-0001 est émis : il ne se modifie plus — il se duplique.', null),
       ('35', 'controle', 'un brouillon ne s''émet pas autrement que par la fonction, même pour le propriétaire', 'proprietaire', null,
         $q$with u as (update devis set statut = 'emis', numero = 'D2026-0009', emis_par = '{CHEF}', emis_le = now() where id = '{DV3}' returning 1) select count(*)::text from u$q$,
         '42501', 'Un devis ne s''émet que par enregistrer_devis, qui lui donne son numéro.', null),
@@ -409,6 +431,10 @@ begin
       ('36b', 'controle', 'ni par le super-administrateur dans un dossier qui a déjà émis : la porte de la restauration est fermée', 'chef', null,
         $q$insert into devis (dossier_id, numero, statut, date_emission, date_validite, tiers_nom, lignes, montant_ht, montant_tva, montant_ttc, emis_par, emis_le)
            values ('{DA}', 'D2026-0009', 'emis', '2026-09-15', '2026-10-15', 'ESSAI DEVIS X', '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, 100, 20, 120, '{CHEF}', now())$q$,
+        '42501', 'Un devis ne naît pas émis : il s''émet par enregistrer_devis, qui lui donne son numéro.', null),
+      ('36c', 'controle', 'ni par le propriétaire, sans session, dans le dossier B qui n''a jamais émis : la porte est au super-administrateur', 'proprietaire', null,
+        $q$insert into devis (dossier_id, numero, statut, date_emission, date_validite, tiers_nom, lignes, montant_ht, montant_tva, montant_ttc, emis_par, emis_le)
+           values ('{DB}', 'D2026-0009', 'emis', '2026-09-15', '2026-10-15', 'ESSAI DEVIS X', '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, 100, 20, 120, '{CHEF}', now())$q$,
         '42501', 'Un devis ne naît pas émis : il s''émet par enregistrer_devis, qui lui donne son numéro.', null),
       ('M3', 'mutation', 'le contrôle 36b rejoué dans le dossier B, qui n''a jamais émis : la porte de la restauration s''ouvre', 'chef', null,
         $q$insert into devis (dossier_id, numero, statut, date_emission, date_validite, tiers_nom, lignes, montant_ht, montant_tva, montant_ttc, emis_par, emis_le)
@@ -494,6 +520,9 @@ begin
       ('54', 'controle', 'le propriétaire ne change pas une réponse enregistrée : la garde', 'proprietaire', null,
         $q$with u as (update devis set reponse = 'refusee' where id = '{DV2}' returning 1) select count(*)::text from u$q$,
         '23514', 'La réponse au devis D2026-0001 est enregistrée : elle ne change plus.', null),
+      ('54b', 'controle', 'ni la date de la réponse enregistrée : la garde compare le devis entier', 'proprietaire', null,
+        $q$with u as (update devis set date_reponse = date_reponse - 1 where id = '{DV2}' returning 1) select count(*)::text from u$q$,
+        '23514', 'La réponse au devis D2026-0001 est enregistrée : elle ne change plus.', null),
       ('55', 'controle', 'ni le reste du devis', 'proprietaire', null,
         $q$with u as (update devis set notes = 'changé' where id = '{DV2}' returning 1) select count(*)::text from u$q$,
         '23514', 'Le devis D2026-0001 est émis : il ne se modifie plus — il se duplique.', null),
@@ -548,11 +577,20 @@ begin
       ('74c', 'fait', 'et FB dans le dossier B', 'chef', null,
         $q$select facture_id::text from enregistrer_facture('{DB}', null, '{"tiers_nom":"ESSAI DEVIS FB","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"fb","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, false)$q$,
         'OK', null, 'FB'),
+      -- Un avoir se crée validé, du jour à Paris (la facture qu'il corrige l'est aussi) : il reprend d'elle ses parties.
+      ('74d', 'fait', 'le chef crée l''avoir AV de la facture tirée du devis, dans le dossier A', 'chef', null,
+        $q$select facture_id::text from enregistrer_facture('{DA}', null, jsonb_build_object('type', 'avoir', 'facture_origine_id', '{FV2}',
+             'date_emission', (now() at time zone 'Europe/Paris')::date, 'montant_ht', -100, 'montant_tva', -20, 'montant_ttc', -120),
+             '[{"designation":"avoir","quantite":-1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true)$q$,
+        'OK', null, 'AV'),
       ('75', 'controle', 'la garde du lien : une facture ne se tire pas d''un devis refusé, même posée par le propriétaire', 'proprietaire', null,
         $q$insert into devis_factures (dossier_id, devis_id, facture_id) values ('{DA}', '{DV1}', '{FA}')$q$,
         '23514', 'Une facture se tire d''un devis accepté de son dossier.', null),
       ('76', 'controle', 'ni vers la facture d''un autre dossier', 'proprietaire', null,
         $q$insert into devis_factures (dossier_id, devis_id, facture_id) values ('{DA}', '{DV2}', '{FB}')$q$,
+        '23514', 'Le lien d''un devis vise une facture de son dossier, jamais un avoir.', null),
+      ('76b', 'controle', 'ni vers un avoir de son dossier', 'proprietaire', null,
+        $q$insert into devis_factures (dossier_id, devis_id, facture_id) values ('{DA}', '{DV2}', '{AV}')$q$,
         '23514', 'Le lien d''un devis vise une facture de son dossier, jamais un avoir.', null),
       ('77', 'controle', 'un lien ne change pas', 'proprietaire', null,
         $q$with u as (update devis_factures set cree_par = null where facture_id = '{FV2}' returning 1) select count(*)::text from u$q$,
