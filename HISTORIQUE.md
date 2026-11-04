@@ -47730,3 +47730,24 @@ sur une saisie fermée).
 
 **CE QUI RESTE.** Le banc de `outils/captures/` n'a pas été rejoué : ni `index.css` ni la coque ne changent, et la carte
 du mois reprend les classes de celle du cabinet (`.tableau-adaptable`, `table-formulaire table-empilable`).
+
+
+### 04/11/2026 — L'ORGANISATION DU TRAVAIL : MOINS D'À-CÔTÉS, PLUS DE CODE
+
+(Décision du cabinet du 04/11/2026, « oui tout sauf le 5 », sur une mesure de la session. Aucun code de l'application.)
+
+**LA MESURE.** Les journaux de cette session et de ses agents, du 08/10 au 04/11/2026, chaque appel compté une fois :
+59 % de la dépense va à relire le contexte déjà en mémoire, 33 % à l'y mettre, 8 % au texte que le modèle écrit. Les
+agents font 92 % des appels et relisent en moyenne 390 000 jetons à chacun : ils lisent de gros fichiers et de longues
+sorties de tests. Du texte écrit, le code, les tests et le SQL de l'application ne font qu'environ 30 % ; les programmes
+jetables de vérification et d'outillage, environ 35 % ; les brouillons et les documents, 15 à 20 %. Une mission d'agent
+dure en moyenne 37 minutes, dont 40 à 50 % à relancer les tests et le typage ; la barrière locale, 27 minutes, dont 22
+pour les quatre fuseaux.
+
+**LA DÉCISION.** Quatre mesures : (1) des missions d'agents courtes et ciblées ; (2) un lot par thème, son récit en dix
+à quinze lignes, la ligne Notion en une phrase ; (3) une vérification proportionnée, toute la rigueur pour la base, la
+sécurité et les calculs fiscaux, les tests seuls pour un écran ; (4) la barrière locale réduite au typage, au lint et
+aux tests des fichiers changés (`npm test -- --changed origin/main --passWithNoTests`), la suite sous quatre fuseaux et
+le build ne tournant qu'en ligne, dans `verifier`, toujours exigé avant la fusion. La cinquième, une troisième réduction
+de CLAUDE.md, est refusée. Attendu : un lot en environ 1 h 05 au lieu de 1 h 50, et environ 40 % de jetons en moins ; le
+gain réel se mesure après trois jours.
