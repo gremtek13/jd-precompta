@@ -340,6 +340,7 @@ export default function FacturesTab(props: Props) {
           dossierAdresse={dossierAdresse}
           statutTva={statutTva}
           articleExoneration={articleExoneration}
+          numeroTvaAttribue={numeroTvaAttribue}
           onOuvrirFacture={ouvrirLaFactureTiree}
         />
       ) : vue === 'reglements' ? (

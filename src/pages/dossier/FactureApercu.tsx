@@ -6,13 +6,11 @@ import { mentionsImprimees, numeroTvaImprime, type DossierCii } from '../../lib/
 import { formatDate, formatMoney, formaterPrixUnitaire } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
-import { FACTURE_D_AVANT, LOGO_EN_LECTURE, ceQueLaFactureImprime, logoNonImprime, uniteImprimee } from '../../lib/mentionsFigeesVue'
+import {
+  FACTURE_D_AVANT, LOGO_EN_LECTURE, ceQueLaFactureImprime, logoNonImprime, tauxImprime as tauxLisible, uniteImprimee,
+} from '../../lib/mentionsFigeesVue'
 import { lireLeLogo } from '../../lib/logoDesFacturesLecture'
 import type { LogoLu } from '../../lib/logoDesFactures'
-
-// Un taux se lit « 5,5 % » sur une facture française — virgule décimale — et ne se coupe pas de son « % » : l'espace est
-// insécable, sans quoi « 0 % » passait sur deux lignes dans une colonne étroite. Même écriture que `refusTauxPositif`.
-const tauxLisible = (taux: number) => `${String(taux).replace('.', ',')}\u00a0%`
 
 // Aperçu imprimable d'une facture validée — pas de génération PDF côté serveur pour l'instant (voir
 // discussion sur la transmission via une plateforme agréée, pas encore branchée) : la boîte de

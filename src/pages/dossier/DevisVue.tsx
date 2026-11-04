@@ -6,7 +6,7 @@ import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace, type EspaceVentes } from '../../lib/espaceVentes'
 import {
-  LIBELLES_ETAT_DEVIS, champsDeRechercheDuDevis, confirmationDeLaFacturation, confirmationDeLaReponse, confirmationDeLEmission,
+  LIBELLES_ETAT_DEVIS, avisDeLApercuDuDevis, ceQueLeDevisImprime, champsDeRechercheDuDevis, confirmationDeLaFacturation, confirmationDeLaReponse, confirmationDeLEmission,
   confirmationDeLaSuppressionDevis, decisionDeLaSaisie, ecritureDuDevis, etatDuDevis, factureDuDevis, factureTireeDe,
   libelleDeLaFactureTiree, lignesSaisiesDuDevis, refusDeLaReponse, refusDeLaSaisieDevis, refusFacturationDevis, refusSuppressionDevis,
   saisieDuDevis, type CibleDevis, type EmissionAJuger, type EtatDevis, type SaisieDevis, type SaisieReponseDevis,
@@ -14,6 +14,7 @@ import {
 import { lireLesDevis, type LectureDesDevis } from '../../lib/devisLecture'
 import { deciderDevis, enregistrerDevis, facturerDevis, supprimerBrouillonDevis } from '../../lib/devisEcriture'
 import type { ArticleExoneration, Devis, StatutTva } from '../../lib/types'
+import DevisApercu from './DevisApercu'
 import DevisReponseModal from './DevisReponseModal'
 import DevisSaisieModal from './DevisSaisieModal'
 
@@ -23,7 +24,8 @@ import DevisSaisieModal from './DevisSaisieModal'
 // ventes », offerte seulement quand les migrations des devis sont en base (`DEVIS_EXPORTES`, FacturesTab). Puis (étape P6a2) :
 // répondre à un devis émis (`decider_devis`), transformer un devis accepté en facture (`facturer_devis`) — l'onglet ouvre alors
 // le brouillon tiré (`onOuvrirFacture`) —, la facture tirée dite dans la liste, et une recherche qui ne filtre que l'affichage.
-// L'aperçu et l'e-mail viennent ensuite.
+// Puis (étape P6b) : l'aperçu imprimable de chaque devis (DevisApercu, `ceQueLeDevisImprime`), offert sur une liste lue en
+// entier comme tout le reste — lue en partie, l'état qu'il dirait pourrait être faux. L'e-mail vient ensuite.
 //
 // QUI ÉCRIT : le cabinet ET le client « Ventes », par les mêmes fonctions (`enregistrer_devis`, `supprimer_brouillon_devis`,
 // `decider_devis`, `facturer_devis`) ;
@@ -44,6 +46,8 @@ type Props = {
   dossierAdresse: string | null
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
+  // Avec le statut de TVA, décide du numéro de TVA que l'aperçu imprime sous l'émetteur, comme sur une facture.
+  numeroTvaAttribue: boolean
   // Mène au brouillon de facture tiré d'un devis, par le chemin que l'onglet Factures offre pour ouvrir une facture.
   onOuvrirFacture: (factureId: string) => void
 }
@@ -70,6 +74,8 @@ export default function DevisVue(props: Props) {
   const [fenetre, setFenetre] = useState<Fenetre | null>(null)
   // Le devis auquel on répond, tel que la liste l'a lu.
   const [reponseA, setReponseA] = useState<Devis | null>(null)
+  // Le devis dont l'aperçu est ouvert, par son identifiant : l'aperçu montre la ligne telle que la dernière lecture l'a rendue.
+  const [apercuDe, setApercuDe] = useState<string | null>(null)
   const [recherche, setRecherche] = useState('')
   const [occupe, setOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
@@ -120,6 +126,8 @@ export default function DevisVue(props: Props) {
     d, facture: factureDuDevis(d.id, liens, factures), etat: etatDuDevis(d, factureTireeDe(d.id, liens), aujourdHui),
   }))
   // La recherche ne filtre que l'AFFICHAGE : le compte de la barre et tout jugement lisent la liste entière.
+  // L'aperçu ouvert, sur la liste ENTIÈRE (une recherche ne le ferme pas) ; un devis disparu de la relecture le ferme.
+  const apercu = apercuDe === null ? null : lignes.find(({ d }) => d.id === apercuDe) ?? null
   const affiches = lignes.filter(({ d, etat, facture }) =>
     correspondALaRecherche(champsDeRechercheDuDevis(d, etat, facture), recherche))
 
@@ -303,6 +311,7 @@ export default function DevisVue(props: Props) {
                       <td data-libelle="Facture">{facture ? libelleDeLaFactureTiree(facture) : '—'}</td>
                       {peutEcrire && (
                         <td className="td-actions">
+                          <button type="button" className="btn btn-outline btn-sm" onClick={() => setApercuDe(d.id)}>Aperçu</button>
                           {brouillon && (
                             <>
                               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => ouvrir(d)}>Modifier</button>
@@ -347,6 +356,18 @@ export default function DevisVue(props: Props) {
           erreur={erreurFenetre}
           onClose={() => setFenetre(null)}
           onEnregistrer={(saisie, emettre) => enregistrer(saisie, emettre, fenetre.devis)}
+        />
+      )}
+
+      {apercu && peutEcrire && (
+        <DevisApercu
+          key={apercu.d.id}
+          espace={espace}
+          apercu={ceQueLeDevisImprime(apercu.d, courante.emetteur, {
+            statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: props.numeroTvaAttribue,
+          })}
+          avis={avisDeLApercuDuDevis(apercu.d, apercu.etat)}
+          onClose={() => setApercuDe(null)}
         />
       )}
 
