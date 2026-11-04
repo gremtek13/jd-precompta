@@ -1,6 +1,6 @@
 -- LES DEVIS, EN BASE (espace client, étape P5 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE
 -- GESTION DU CLIENT : LA CONCEPTION », §2.3, §3 et §4.3, et « LES DEVIS, EN BASE — ESPACE CLIENT, ÉTAPE P5 »). Réécrite le
--- 05/11/2026 contre le schéma de la production à 171 migrations : celle du 10/10/2026, éprouvée et accordée par le cabinet
+-- 04/11/2026 contre le schéma de la production à 171 migrations : celle du 10/10/2026, éprouvée et accordée par le cabinet
 -- le 18/10/2026, n'a jamais été commitée. Présentée au cabinet avant d'être appliquée : elle OUVRE au client qui porte la
 -- case « Ventes » la lecture de deux tables et quatre fonctions (CLAUDE.md, « une policy qui lui ouvre une lecture se
 -- présente au cabinet »). Pour `apply_migration` : son texte ne porte aucune instruction qui retire quoi que ce soit — le
