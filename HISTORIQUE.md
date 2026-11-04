@@ -47122,3 +47122,86 @@ Déplacements » (VEH-Q1), une migration additive. La piste d'audit dit encore �
 dotation d'un bien repris : elle ne connaît que l'ouverture de l'exercice exporté (les soldes reportés après la
 reprise), et la lui apprendre change cinquante-huit appels — une suite. D1, D3, D4 et D8, et les questions IMMO-Q3,
 VEH-Q2, VEH-Q3, inchangés.
+
+### 04/11/2026 — LA VALIDATION : LA BANQUE CONFRONTÉE AU RELEVÉ, LE FEC DIT AVANT LE CLIC, LE RELEVÉ SUIVANT, LE MOIS EN DOUBLE EN AVERTISSEMENT (MVPD7-Q2 À Q5)
+
+**CE QUI CHANGE.** Les quatre décisions « validation » du lot « avant la répétition générale » (MVP), tirées de la
+relecture MVP-D7 du 03/11/2026 (la validation de 2025 d'un BNC en trésorerie, puis l'ouverture de 2026 ; ses défauts
+D2, D3, D4 et D6, ses questions Q-B à Q-E), sur les recommandations de la page des arbitrages : le cabinet a dit de
+continuer et d'arbitrer plus tard, elles sont écrites « sur la recommandation ». Du code seul : aucune migration, aucune
+fonction SQL, aucune Edge Function (aucun bloc touché n'est copié dans l'une d'elles). Un module pur neuf,
+`lib/releveAuTrenteEtUn.ts` ; le reste dans `lib/prealablesValidation.ts`, `lib/revisionPreuves.ts`,
+`lib/controlesReleves.ts`, `lib/pointsDeLaChecklist.ts`, `lib/revisionCycles.ts`, Clôture et la carte de la validation.
+
+**MVPD7-Q2, LA BANQUE DES COMPTES CONTRE LE RELEVÉ DU 31 DÉCEMBRE (D2).** Rejoué sans reprise, la validation passait et
+reportait le 512000 au crédit de 670 € (les seuls flux de 2025) au lieu du solde réel ; une reprise saisie avec une
+banque fausse passait de même, et rien ne le disait — `releve-incoherent` ne juge que le bouclage d'un relevé, et la
+confrontation de l'ouverture se tait sur un premier exercice. Deux préalables neufs, rangés au cycle « trésorerie » :
+- `ouverture-sans-reprise`, BLOQUANT : aucune balance reprise, aucun exercice validé, et le premier relevé de la tenue
+  (le plus ancien par sa période) part d'un solde non nul et commence au plus tard le 31 décembre de l'exercice. Il
+  nomme le relevé, son solde initial et sa date, et le geste : reprendre la balance d'ouverture, la banque au solde de
+  ce relevé (Informations du dossier, « Balance d'un autre logiciel »), tant qu'aucun exercice n'est validé — la base
+  refuse ensuite. Un premier relevé qui commence après l'exercice ne dit rien de son début : il ne retient rien, et la
+  confrontation du 31 décembre dit alors l'écart.
+- `banque-au-releve`, AVERTISSEMENT : le 512 tel que la validation le reportera (l'ouverture de l'exercice, puis ses
+  écritures numérotées, le compte de banque lu au plan du dossier), en centimes entiers, contre le solde que les relevés
+  contrôlés qui bouclent disent au 31 décembre. Le message dit le 512 (ouverture, écritures, total), le relevé retenu
+  (sa période, son solde final, ou son solde initial s'il commence le 1er janvier suivant, ou son solde corrigé de ses
+  mouvements postérieurs s'il est à cheval) et l'écart ; le détail, les causes possibles et la preuve du 512 de la
+  Révision qui les compte. Sans relevé qui le dise, il dit pourquoi (aucun relevé ne finit le 31 décembre ni ne couvre
+  ce jour ; le relevé ne boucle pas ; ses mouvements ne se retrouvent plus) et ce qui le permettrait (importer le relevé
+  de décembre avec ses soldes, ou celui de janvier) ; il se tait sur un dossier sans banque dans l'exercice. Il se tait
+  aussi quand `ouverture-sans-reprise` retient déjà la validation : l'écart en est la conséquence.
+Choix : la règle du relevé du 31 décembre n'est pas réécrite, elle est EXTRAITE de la preuve du relevé de la Révision
+(`preuveDuReleve`) dans `lib/releveAuTrenteEtUn.ts`, que la preuve et la validation lisent toutes deux : deux règles
+diraient deux soldes du même relevé. La preuve rend les mêmes faits, au caractère près (`revisionPreuves.test.ts`
+inchangé). L'application ne tient qu'un compte bancaire par dossier : plusieurs relevés qui disent le même solde (le
+mensuel et l'annuel) n'en font qu'un ; des soldes différents se nomment un à un, sans rien confronter. Clôture lit
+désormais TOUS les contrôles des relevés (`chargerControlesReleves`), et non plus les seuls incohérents :
+`DonneesDeValidation.relevesIncoherents` devient `controlesReleves`, nul sur une lecture refusée ou partielle (le
+préalable `releves-inconnus`, bloquant, comme hier) ; la Checklist lit toujours les seuls incohérents. Écarté : un
+avertissement de la confrontation en préalable bloquant — ses causes ne se départagent pas, et un relevé faux
+empêcherait de valider ; un pendant dans la Checklist — elle ne calcule pas la numérotation reportée, et
+son point dirait un autre 512 que la carte.
+
+**MVPD7-Q3, LE FEC DIT AVANT LE CLIC (D3).** Le drapeau `CHAMPS_BNC_EXPORTES` baissé, un exercice en trésorerie se
+fige sans la date et le mode de règlement, la nature de l'opération et l'identification du client (LPF, art. A47 A-1,
+VIII, 7°), et son FEC relu garde dix-huit colonnes — aucune validation ne pourra plus les lui donner (FEC22-Q6). Valider
+sans attendre FEC22-E2 (Q-C) : `EtatDeValidation.fecSansChampsBnc`, vrai en trésorerie le drapeau baissé, faux en
+engagement (ces champs ne s'y appliquent pas), le drapeau levé (la demande les porte) et sur une lecture partielle ;
+`phraseDuFecSansChampsBnc` le dit dans la carte, sous le résumé de ce qui se valide, et en dernier point de la
+confirmation. Un avertissement de la liste aurait paru sur tout dossier en trésorerie, et dit deux fois ; écarté. Le
+drapeau reste baissé : il se lève avant la validation de 2026, le FEC que l'expert-comptable importe (MVP-D5).
+
+**MVPD7-Q4, LE RELEVÉ SUIVANT (D4).** En trésorerie, une pièce de décembre payée en janvier compte à sa date de facture
+tant que son paiement n'est pas rapproché, et retient la validation (`ecritures-a-generer`, puis
+`ecritures-desequilibrees`) ; une échéance de cotisation qu'aucun paiement ne date se fige à son échéance à la
+validation (`garder_cotisation_valide`). La carte « Pièces comptées à leur date de facture » de Clôture le rappelle,
+exercice par exercice : importer et rapprocher le relevé de janvier suivant avant de valider, et déclarer dans l'onglet
+Cotisations le paiement depuis le compte personnel d'une échéance de l'exercice avant la validation. La carte «
+Cotisations comptées à leur échéance » le disait déjà. Aucun préalable neuf : rien n'est faussé, la validation est
+déjà retenue.
+
+**MVPD7-Q5, LE MOIS EN DOUBLE EN AVERTISSEMENT (D6).** `mois-en-double` était bloquant et sans dérogation : une facture
+d'abonnement datée du dernier jour du mois d'avant le déclenche, et la seule issue était de fausser une date. C'est
+désormais un avertissement de la validation, dit avant le clic avec son nombre, qui n'empêche plus de valider ; le
+point de la Checklist passe de « erreur » à « attention », et la Révision le range toujours aux dépenses. Écarté : une
+acceptation datée par le cabinet, qui demandait une table, donc une migration.
+
+**LES TESTS.** `releveAuTrenteEtUn.test.ts` (neuf : le solde final en centimes, la préférence pour le relevé qui finit
+le 31 décembre, le solde initial de janvier, le relevé à cheval corrigé, ses mouvements modifiés ou sans fichier, le
+relevé qui ne boucle pas, le premier relevé de la tenue) ; `prealablesValidation.test.ts` (la fabrique reçoit par
+défaut un relevé de l'année qui concorde avec le 512 ; onze cas de la banque — la concordance, l'écart nommé, 0,10 € +
+0,20 € en centimes, l'ouverture reprise comptée, les trois façons de lire le relevé, deux relevés de même solde ou de
+soldes différents, rien à confronter, les contrôles illisibles, la banque sans reprise et ses silences — ; le mois en
+double non bloquant ; `fecSansChampsBnc` dans ses quatre cas et la phrase) ; `revisionCycles.test.ts` ;
+`ValidationExerciceCard.test.tsx` (la phrase dans la carte et en point 4 de la confirmation, rien ailleurs ni tant
+qu'un préalable bloque) ; `ClotureTab.test.tsx` (le rappel du relevé de janvier dans la carte, la confrontation lue sur
+tous les contrôles, la banque sans reprise qui mène aux Informations du dossier, la phrase du FEC dans la confirmation).
+Les mutations éprouvées : l'ouverture retirée du 512, le mois en double tu, le FEC dit en engagement, le premier relevé
+d'après l'exercice retenu — chacune tuée.
+
+**CE QUI RESTE.** D1 (l'ouverture du dossier par une balance reprise, Q-A) est une procédure, pas du code : le préalable
+neuf la réclame quand le premier relevé le dit. D5 (une pièce à valider de 2025 payée en 2026) inchangé, à dessein. Un
+dossier qui aurait plusieurs comptes bancaires n'est pas tenu : la confrontation les nommerait sans conclure. La
+procédure écrite de la répétition générale (Q-D) reste au cabinet. Le drapeau des quatre champs se lève avec FEC22-E2.

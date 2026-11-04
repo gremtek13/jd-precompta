@@ -33,7 +33,7 @@ import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { DossierTab } from '../../lib/ongletsDossier'
-import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
+import { chargerControlesReleves } from '../../lib/controlesReleves'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import {
   prealablesDeValidation, prochainExerciceAValider, type ChampsBncDeLaValidation, type EtatsDesVentesDeLaValidation,
@@ -160,7 +160,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // quand on n'a pas pu les lire : ils ne se taisent pas, ils deviennent un préalable.
   const [piecesAValider, setPiecesAValider] = useState<Piece[]>([])
   const [exercicesValides, setExercicesValides] = useState<ExerciceValide[]>([])
-  const [relevesIncoherents, setRelevesIncoherents] = useState<ControleReleveBancaire[] | null>(null)
+  const [controlesReleves, setControlesReleves] = useState<ControleReleveBancaire[] | null>(null)
   const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[] | null>(null)
   // Les factures émises validées et leurs transmissions (ligne 28.6, lib/ventesJumelles.ts) : la validation refuse une
   // vente que plusieurs pièces portent. Lues en partie, elles suspendent la validation, pas la 2035, qui ne les lit pas.
@@ -347,10 +347,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       // Ne rejette jamais ; le drapeau `CHAMPS_BNC_EXPORTES` baissé, ne touche pas au réseau.
       lireLesChampsBnc(dossierId),
     ])
-    // Le relevé qui ne boucle pas et les doublons de contenu, comme la Checklist les lit — mais une lecture ratée
-    // n'y vaut jamais « rien à signaler » : elle devient un préalable de la validation.
+    // Les contrôles des relevés — tous : ceux qui ne bouclent pas, et ceux qui disent la banque au 31 décembre et d'où elle part
+    // (MVPD7-Q2) — et les doublons de contenu, comme la Checklist les lit ; mais une lecture ratée n'y vaut jamais « rien à
+    // signaler » : elle devient un préalable de la validation.
     const [releves, doublons] = await Promise.all([
-      chargerRelevesIncoherents(dossierId).catch((err) => { console.error(err); return null }),
+      chargerControlesReleves(dossierId).catch((err) => { console.error(err); return null }),
       chargerDoublonsDeTexte(dossierId).catch((err) => { console.error(err); return null }),
     ])
     if (demande !== derniereLecture.current) return
@@ -358,7 +359,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     setLectureSourcesVentes(lectureSourcesDesVentes)
     setLectureCaisse(lectureDeLaCaisse)
     setLectureChampsBnc(lectureDesChampsBnc)
-    setRelevesIncoherents(releves)
+    setControlesReleves(releves)
     setDoublonsTexte(doublons)
     setPiecesAValider(lectureAValider.lignes)
     setExercicesValides(lectureValides.lignes)
@@ -755,7 +756,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       annee, anneeCourante, aujourdHui: aujourdHuiAParis(), modele, assujettiTva, anneesValidees,
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
       lignes: toutesLesLignes, ventilations, reglements, encaissees, cotisations, vehicules, emprunts, aNouveaux, soldesReportes, declarationsTva,
-      periodiciteTva, relevesIncoherents, doublonsTexte, facturesEmises, transmissions,
+      periodiciteTva, controlesReleves, doublonsTexte, facturesEmises, transmissions,
       // Les factures sources lues en entier pour CE dossier, ou rien : la validation se suspend alors (étape VF6a).
       facturesSources: ventesLues?.sources ?? null,
       etatsDesVentes, ventesDeLaChecklist: ventesDeLaVueDEnsemble, operationsDeCaisse, champsBnc: champsDeLaValidation,
@@ -1263,6 +1264,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             paiement — si l'une a été réglée une autre année, la rapprocher de son mouvement dans
             l'onglet Banque la fera changer d'exercice.
           </p>
+          <p className="muted">{rappelDuReleveSuivant(sansPaiement.map((s) => s.annee))}</p>
           <details>
             <summary>Voir les pièces</summary>
             <div className="table-scroll tableau-adaptable">
@@ -2131,4 +2133,20 @@ function ReportDeclarationRevenus({ annee, valeurs, formulaire: fige }: {
       </p>
     </div>
   )
+}
+
+// LE RELEVÉ SUIVANT, AVANT LA VALIDATION (MVPD7-Q4, D4 de la relecture du 03/11/2026, sur la recommandation). En trésorerie,
+// une pièce payée après le 31 décembre compte à la date de son paiement : tant que ce paiement n'est pas rapproché, la 2035
+// de l'exercice la compte à sa date de facture, et la validation se retient (son écriture attend sa banque). Le relevé de
+// janvier suivant s'importe et se rapproche donc AVANT la validation. Et une échéance de cotisation qu'aucun paiement ne date se
+// fige, à la validation, à son échéance (`garder_cotisation_valide`) : son paiement depuis le compte personnel se déclare avant.
+// Les exercices de la carte, nommés un à un.
+function rappelDuReleveSuivant(annees: readonly number[]): string {
+  const exercices = [...new Set(annees)].sort((a, b) => a - b)
+  const releves = exercices.map((a, i) => `${i === 0 ? 'le relevé' : 'celui'} de janvier ${a + 1} avant de valider ${a}`)
+  const liste = releves.length > 1 ? `${releves.slice(0, -1).join(', ')} et ${releves[releves.length - 1]}` : releves[0]
+  return `Une pièce payée après le 31 décembre compte à la date de son paiement, dans l'exercice suivant : importer et rapprocher ${liste}. `
+    + "Tant que son paiement n'est pas rapproché, elle compte ici à sa date de facture, et retient la validation. De même, déclarer "
+    + `dans l'onglet Cotisations le paiement depuis le compte personnel d'une échéance de ${exercices.join(' ou ')} avant la `
+    + 'validation, qui fige ensuite l’échéance à sa date.'
 }

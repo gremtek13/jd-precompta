@@ -29,7 +29,7 @@ const DEMANDE: DemandeDeValidation = {
   p_a_nouveaux: [],
   p_declaration: null,
 }
-const VALIDABLE: EtatDeValidation = { prealables: [], numerotation: null, report: null, validable: true }
+const VALIDABLE: EtatDeValidation = { prealables: [], numerotation: null, report: null, validable: true, fecSansChampsBnc: false }
 
 describe('ValidationExerciceCard', () => {
   // Relâché avant la relecture, le verrou rendrait le bouton pendant que l'écran relit encore l'exercice : la carte
@@ -61,7 +61,7 @@ describe('ValidationExerciceCard', () => {
     const onChoisirExercice = vi.fn()
     const onNavigate = vi.fn()
     const etat: EtatDeValidation = {
-      validable: false, numerotation: null, report: null,
+      validable: false, numerotation: null, report: null, fecSansChampsBnc: false,
       prealables: [
         { id: 'ordre', nb: null, cible: 'cloture', bloquant: true, exercice: 2024, message: "L'exercice 2024 n'est pas validé." },
         { id: 'mouvements-a-traiter', nb: null, cible: 'banque', bloquant: true, message: 'Des mouvements restent à traiter.' },
@@ -103,7 +103,7 @@ describe('ValidationExerciceCard — l’ouverture de l’exercice suivant', () 
     }
   }
   function monter(r: ReportDesSoldes | null, validable = true) {
-    const etat: EtatDeValidation = { prealables: [], numerotation: null, report: r, validable }
+    const etat: EtatDeValidation = { prealables: [], numerotation: null, report: r, validable, fecSansChampsBnc: false }
     return render(
       <ValidationExerciceCard
         dossierId="d1" annee={2025} valide={null} etat={etat} demande={validable ? DEMANDE : null} reportesEcrits={null} estChef
@@ -186,6 +186,42 @@ describe('ValidationExerciceCard — l’ouverture de l’exercice suivant', () 
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Valider l’exercice 2025' })) })
     expect(confirmer.mock.calls[1][0]).toContain("3. Tous les comptes de bilan étant soldés, l'exercice 2026 s'ouvrira sans soldes reportés.")
     confirmer.mockRestore()
+  })
+
+  // MVPD7-Q3 : un BNC en trésorerie, le drapeau des quatre champs baissé — l'exercice se fige sans eux, et son FEC garde dix-huit
+  // colonnes. La carte le dit avant le clic, la confirmation le redit en dernier point ; un autre dossier n'en dit rien.
+  it('dit, avant le clic et dans la confirmation, l’exercice figé sans les quatre champs d’un BNC', async () => {
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const PHRASE = "L'exercice 2025 se fige sans les quatre champs du FEC d'un BNC en trésorerie — la date et le mode de règlement, la "
+      + "nature de l'opération, l'identification du client (LPF, art. A47 A-1, VIII, 7°) — : aucune validation ne pourra plus les lui "
+      + 'donner, et son FEC restera à dix-huit colonnes.'
+    const { unmount } = render(
+      <ValidationExerciceCard
+        dossierId="d1" annee={2025} valide={null} etat={{ ...VALIDABLE, report: report(), fecSansChampsBnc: true }} demande={DEMANDE}
+        reportesEcrits={null} estChef onValide={async () => {}}
+      />,
+    )
+    expect(screen.getByText(PHRASE)).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    expect(confirmer.mock.calls[0][0]).toContain(`\n\n4. ${PHRASE}\n\n`)
+    unmount()
+    // Un dossier en engagement, ou le drapeau levé : rien.
+    monter(report())
+    expect(screen.queryAllByText(/dix-huit colonnes/)).toHaveLength(0)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    expect(confirmer.mock.calls[1][0]).not.toContain('dix-huit colonnes')
+    confirmer.mockRestore()
+  })
+
+  // Tant qu'un préalable bloque, la carte ne le dit pas : rien ne se figera.
+  it('ne dit pas le FEC sans les quatre champs tant qu’un préalable empêche de valider', () => {
+    render(
+      <ValidationExerciceCard
+        dossierId="d1" annee={2025} valide={null} etat={{ ...VALIDABLE, validable: false, fecSansChampsBnc: true }} demande={null}
+        reportesEcrits={null} estChef onValide={async () => {}}
+      />,
+    )
+    expect(screen.queryAllByText(/dix-huit colonnes/)).toHaveLength(0)
   })
 
   it('dit, sur un exercice validé, l’ouverture que sa validation a écrite', () => {

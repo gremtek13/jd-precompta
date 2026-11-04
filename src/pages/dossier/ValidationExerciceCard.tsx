@@ -4,7 +4,7 @@ import { formatDate, formatMoney } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import { libelleDeLOnglet, type DossierTab } from '../../lib/ongletsDossier'
 import { LIBELLES_JOURNAUX } from '../../lib/fec'
-import type { EtatDeValidation } from '../../lib/prealablesValidation'
+import { phraseDuFecSansChampsBnc, type EtatDeValidation } from '../../lib/prealablesValidation'
 import type { DemandeDeValidation } from '../../lib/validationExercice'
 import type { ReportDesSoldes } from '../../lib/reportDesSoldes'
 import type { ExerciceValide, JournalCode } from '../../lib/types'
@@ -56,7 +56,7 @@ export default function ValidationExerciceCard({
     validationEnCours.current = true
     setErreur(null)
     try {
-      if (!window.confirm(confirmation(annee, demande, etat.report))) return
+      if (!window.confirm(confirmation(annee, demande, etat.report, etat.fecSansChampsBnc))) return
       setEnCours(true)
       const { error } = await supabase.rpc('valider_exercice', {
         p_dossier_id: dossierId,
@@ -169,6 +169,10 @@ export default function ValidationExerciceCard({
       )}
       {etat.validable && demande && (
         <p className="muted">{resume(demande)}</p>
+      )}
+      {/* MVPD7-Q3 : ce que l'exercice fige sans les quatre champs d'un BNC, dit avant le clic — et redit dans la confirmation. */}
+      {etat.validable && demande && etat.fecSansChampsBnc && (
+        <p className="muted">{phraseDuFecSansChampsBnc(annee)}</p>
       )}
       {etat.validable && demande && etat.report && <ApercuDuReport annee={annee} report={etat.report} />}
       {estChef ? (
@@ -301,7 +305,9 @@ function resume(demande: DemandeDeValidation): string {
 
 // LA CONFIRMATION NOMME CE QU'ON PERD, comme toutes celles du projet — « Êtes-vous sûr ? » se ferme d'un clic
 // aussi distrait que le premier, et celle-ci précède le geste le plus définitif de l'application.
-function confirmation(annee: number, demande: DemandeDeValidation, report: ReportDesSoldes | null): string {
+// Et, pour un BNC en trésorerie tant que le drapeau des quatre champs est baissé, ce que le FEC de l'exercice n'aura jamais
+// (MVPD7-Q3) : la confirmation est le dernier moment où le dire.
+function confirmation(annee: number, demande: DemandeDeValidation, report: ReportDesSoldes | null, fecSansChampsBnc: boolean): string {
   const ecritures = nombreDEcritures(demande)
   const points = [
     `Ses ${ecritures} écriture(s) (${demande.p_lignes.length} ligne(s)) deviennent intangibles : elles ne se modifient ni ne se suppriment plus, et aucune écriture ne pourra plus être passée jusqu'au 31/12/${annee}.`,
@@ -317,6 +323,7 @@ function confirmation(annee: number, demande: DemandeDeValidation, report: Repor
             ? ', le compte de l\'exploitant et le résultat passant au capital individuel (101000).'
             : report.resultat !== 0 ? `, le résultat en attente d'affectation en ${report.resultat > 0 ? '120000' : '129000'}.` : '.')]
       : []),
+    ...(fecSansChampsBnc ? [phraseDuFecSansChampsBnc(annee)] : []),
   ]
   return [
     `Valider l'exercice ${annee} ? La validation est DÉFINITIVE : elle ne se défait pas.`,

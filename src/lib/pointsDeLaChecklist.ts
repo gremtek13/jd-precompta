@@ -599,10 +599,13 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     // est seulement dans une autre année, donc `detailPiecesSansDate` n'aurait rien à en dire. Ce
     // point s'annonçait « le seul » dans ce cas ; il ne l'était que parmi les pièces DATÉES.
     { id: 'date-impossible', label: 'pièce(s) datée(s) après leur dépôt — rangées dans le mauvais exercice', action: 'Corriger ces dates', nb: dateImpossible.length, cible: 'pieces', severite: 'erreur', detail: "Choisir « toutes les années » dans l'en-tête du dossier pour les voir : elles portent le badge « Date impossible »." },
-    // « Erreur » comme la date impossible, et pour la même raison : la pièce part dans le mauvais
-    // mois, parfois le mauvais exercice. En prime elle bloque un rapprochement bancaire qui était
+    // « Attention », et non plus « erreur » (MVPD7-Q5, sur la recommandation) : la pièce part peut-être
+    // dans le mauvais mois, parfois le mauvais exercice, mais le contrôle est une heuristique — une
+    // facture datée du dernier jour du mois d'avant le déclenche à tort, et la seule issue d'une erreur
+    // était de fausser sa date. Le cabinet regarde les deux pièces ; la validation l'avertit de même, sans
+    // s'en empêcher (lib/prealablesValidation.ts). Il bloque encore un rapprochement bancaire qui était
     // certain (voir lib/controles.ts) — le rapprochement, lui, n'annonce qu'un doute.
-    { id: 'mois-en-double', label: "mois d'abonnement en double, avec un mois voisin vide — une pièce mal datée ou en double", action: 'Vérifier ces pièces', nb: moisEnDouble.length, cible: 'pieces', severite: 'erreur' },
+    { id: 'mois-en-double', label: "mois d'abonnement en double, avec un mois voisin vide — une pièce mal datée ou en double", action: 'Vérifier ces pièces', nb: moisEnDouble.length, cible: 'pieces', severite: 'attention' },
     // « Erreur » : si les deux sont validées et catégorisées, la même charge est comptée deux fois —
     // dans la 2035 comme dans la balance. Et l'empreinte du FICHIER ne peut pas le voir (voir
     // lib/doublonsTexte.ts), donc aucun autre écran ne le signale.

@@ -71,3 +71,15 @@ export async function chargerRelevesIncoherents(dossierId: string): Promise<Cont
   if (!lecture.complete) throw new Error(`Lecture des contrôles de relevé incomplète : ${lecture.motif}`)
   return lecture.lignes
 }
+
+// TOUS les contrôles des relevés d'un dossier, qu'ils bouclent ou non (MVPD7-Q2) : la validation en tire ceux qui ne bouclent
+// pas, le solde de la banque au 31 décembre et le premier relevé de la tenue. Lève sur une lecture refusée ou partielle,
+// comme la lecture des incohérents : un relevé qu'on ne voit pas fausserait la confrontation de la banque.
+export async function chargerControlesReleves(dossierId: string): Promise<ControleReleveBancaire[]> {
+  const lecture = await lireTout<ControleReleveBancaire>((debut, fin) =>
+    supabase.from('controles_releves_bancaires').select('*', { count: 'exact' })
+      .eq('dossier_id', dossierId).order('id').range(debut, fin),
+  )
+  if (!lecture.complete) throw new Error(`Lecture des contrôles de relevé incomplète : ${lecture.motif}`)
+  return lecture.lignes
+}
