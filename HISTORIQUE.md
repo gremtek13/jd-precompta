@@ -47611,3 +47611,37 @@ trois contrôles en production ; `caisse.sql`, `caisseSuppression.sql` — sur u
 drapeau. Le retour arrière (`…_retour_correction_du_paiement_par_la_caisse.sql`, 3 236 caractères, 3 350 octets,
 `48593f82392085dbafd68cbb57d80ad0`, sha-256 `ce9e9d2b…`) : sa garde exige la fonction à son empreinte, puis la retire —
 le drapeau baissé d'abord ; les corrections déjà faites restent valables (l'ancien retiré, le nouveau qui le désigne).
+
+### 04/11/2026 — LA CAISSE : LA CORRECTION D'UN PAIEMENT EN PRODUCTION (C12B-Q1)
+
+Le cabinet a accordé la migration le 04/11/2026 (« oui applique la », dans la conversation ; la fiche C12B-migration de
+la page des arbitrages). Appliquée par l'outil, sous la version `20261104133623`, sur une production égale à la réplique
+où elle avait été répétée (170 migrations, la dernière `sens_des_regles_ignorees` ; la fonction absente ; les six
+qu'elle appelle présentes ; sa garde de tête épinglant treize corps à leur empreinte n'a rien refusé).
+
+**LA PREUVE.** La ligne d'historique rend `fd9978cc8e1a9d44a7feb90d947f72c7`, l'empreinte du fichier (17 939 caractères,
+une instruction) ; le corps de `remplacer_paiement_par_la_caisse` rend `ff72f955…`, celui qu'attend le retour arrière ;
+`security definer`, `search_path=public`, exécutable par un compte connecté, ni par l'anonyme. Le fichier passe dans
+l'export sous sa version (`git mv`), texte inchangé. Les trois contrôles, égaux des deux côtés : dérive 171 = 171,
+`6f9dac54cf7c049516b5db39d9523688` ; socle 81, `cea19cff…` ; inventaire 2 310, `c4002f200f425581d1847c63ac9eba2f`.
+`signature.sql` : « fonctions » 227 `1a3df823…` et « droits des fonctions » 227 `fb74b916…`, celles de la réplique
+migrée ; les sept autres familles, celles de `regles_prod170`, relues sur la grappe locale le même jour. En production,
+par l'outil d'exécution : le bloc CQ de `rls.sql` (le client ne corrige pas le paiement du chef, avec ou sans la case
+« Caisse », et corrige le sien ; l'anonyme n'exécute pas ; le catalogue), 4 contrôles sans faute et 2 mutations sur 2
+qui mordent ; `validationDesPaiementsParLaCaisse.sql` entier, 20 étapes sur 20, dont les 7 de la correction (le paiement
+corrigé sans contrepartie retient la validation au jour du NOUVEAU paiement ; la contrepartie de l'ancien ne s'écrit
+plus ; la caisse reportée ne compte le paiement corrigé qu'une fois). Rien n'est resté : aucun dossier, aucune pièce,
+aucune opération ni écriture d'essai, aucun accès portant « Caisse ». `caisse.sql` (346 Ko) et `rls.sql` entier
+(306 Ko) ne passent pas par l'outil : leur verdict est celui de la réplique, dont la production porte la signature.
+
+**L'OUTIL D'EXÉCUTION AJOUTE TROIS LIGNES À CHAQUE REQUÊTE.** La ligne TEXTE du bloc CQ rendait 10 948 caractères pour
+un texte construit de 10 840 : l'outil termine désormais toute requête par trois lignes de commentaire (la source, le
+compte, la date), 108 caractères ici, que `current_query()` rend avec elle (vérifié sur `select current_query()`). Une
+ligne TEXTE s'écrit donc sur ce qui les précède : `split_part(current_query(), E'\n\n-- source: POST /mcp', 1)` — ce
+que la ligne de l'essai du filet a rendu, 16 523 caractères, `308ce88b…`, l'empreinte du texte construit. L'outil des
+migrations, lui, n'ajoute rien : la ligne d'historique est celle du fichier.
+
+**LE DRAPEAU LEVÉ.** `CORRECTION_DU_PAIEMENT_EXPORTEE` : « Corriger » s'offre dans la fiche d'une pièce (le cabinet) et
+dans « Mes pièces » (le praticien, ses propres paiements) ; l'état baissé reste éprouvé par les jugements `…Selon`. Les
+tests de la caisse, le drapeau levé : 406 sur 406. Le retour arrière (`supabase/preparees/retour/`, un `drop function`)
+reste à accorder et à coller s'il le fallait ; les corrections déjà faites resteraient valables.
