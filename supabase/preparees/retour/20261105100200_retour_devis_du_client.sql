@@ -3,7 +3,7 @@
 -- Supabase, dans une transaction, avec sa ligne d'historique (CLAUDE.md, « Quand `apply_migration` attend une
 -- confirmation »). Les migrations : supabase/preparees/20261105100000_devis_du_client.sql et
 -- 20261105100100_devis_du_client_suppression.sql ; le récit : HISTORIQUE.md, « LES DEVIS, EN BASE ». Retrouvé de la
--- version du 10/10/2026, ajusté le 05/11/2026 aux objets que les migrations réécrites posent.
+-- version du 10/10/2026, ajusté le 04/11/2026 aux objets que les migrations réécrites posent.
 --
 -- L'ORDRE : D'ABORD l'application, `DEVIS_EXPORTES` (src/lib/devis.ts) repassé à `false` et les deux fichiers des
 -- migrations sortis de supabase/schema/, remise en ligne — sinon une sauvegarde lirait des tables qui n'existent plus et

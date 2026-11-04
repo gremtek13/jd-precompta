@@ -1,6 +1,6 @@
 -- LA SUPPRESSION D'UN BROUILLON DE DEVIS (espace client, étape P5) — À COLLER dans l'éditeur SQL de Supabase, dans une
 -- transaction, avec sa ligne d'historique (CLAUDE.md, « Quand `apply_migration` attend une confirmation ») : le corps de
--- sa fonction supprime un brouillon, ce que le détecteur de l'outil retient. Réécrite le 05/11/2026 avec la première, contre
+-- sa fonction supprime un brouillon, ce que le détecteur de l'outil retient. Réécrite le 04/11/2026 avec la première, contre
 -- le schéma de la production à 171 migrations. Elle suppose la première (`devis_du_client`), que son premier bloc vérifie.
 --
 -- `supprimer_brouillon_devis` : trois refus, dans l'ordre que src/lib/devis.ts (`REFUS_SUPPRESSION_DEVIS`) redit — l'accès
