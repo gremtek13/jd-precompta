@@ -47312,9 +47312,9 @@ L'assistant (`points_a_traiter`) ne dit pas le doublon probable. D3 à D6 et D8 
 
 ### 04/11/2026 — LES PIÈCES : LE CLASSEMENT DES FACTURES, LA LECTURE RATÉE DITE, LE DÉPÔT PAR PETITS LOTS, LES RECHARGEMENTS (PIECES-Q3 À Q5, D8)
 
-**CE QUI EST FAIT** (sur les recommandations, le cabinet ayant dit de continuer et d'arbitrer plus tard ; aucune
-migration ; deux Edge Functions à redéployer, `extract-piece` et `receive-email`). Trois commits : D3 à D6, D8, puis la
-date déduite de `receive-email`.
+**CE QUI EST FAIT** (écrit sur les recommandations avant les réponses du cabinet, puis tranché le 04/11/2026 : PIECES-Q4
+et Q5 à la recommandation, PIECES-Q3 sur « Resserrer ; il n'en émet pas » ; aucune migration ; deux Edge Functions à
+redéployer, `extract-piece` et `receive-email`). Trois commits : D4 à D6, D8, puis la date déduite de `receive-email`.
 
 **D4, LE CLASSEMENT (PIECES-Q3).** `classifieDocument` cherchait ses mots dans le texte entier : une « attestation
 jointe », un « solde précédent », une « URSSAF » citée envoyaient de vraies factures dans Documents, hors de la 2035 et
@@ -47340,8 +47340,9 @@ Documents marque « Facture probable » un document rangé dont le texte lu se d
 (`lib/facturesProbablesLecture.ts` : une lecture à part, best-effort, qui ne rapatrie que les textes des documents qui
 portent « factur » ou « honoraires », et ne marque rien, en le disant, sur une lecture partielle), à côté de « C'est une
 facture » — ce qui rattrape aussi les documents rangés avant la correction. D3 (la note d'honoraires ÉMISE par le
-praticien, lue comme un achat) n'est pas traité : la comparaison de l'émetteur au SIREN du dossier attend la réponse du
-cabinet à PIECES-Q3. Le titre de facture la range en facture d'achat, comme hier.
+praticien, lue comme un achat) est sans objet pour le premier praticien, qui n'en émet aucune hors de la
+télétransmission (PIECES-Q3) : l'émetteur ne se compare pas au SIREN du dossier, et le titre de facture range une
+telle note en facture d'achat, comme hier.
 
 **D5, LA LECTURE RATÉE DITE (PIECES-Q5).** Une règle, `lib/lectureDesPieces.ts`. Au dépôt du praticien, le résultat « ok
 » porte `lectureNonAboutie` quand la pièce arrive sans date ou sans montant (lecture ratée, incomplète, ou non tentée) :
@@ -47399,7 +47400,8 @@ relit que son groupe, deux clics dans le même `act` ; le chargement lent qui n'
 relecture virent au rouge pour D2, D4, D5 et D7 (leur extraction de la fonction ne connaît pas le nouveau bloc) ; celui
 des quarante photos reste vert, car il appelle le dépôt sans l'écran.
 
-**CE QUI RESTE.** D3 et la comparaison de l'émetteur au SIREN du dossier (PIECES-Q3) ; la Vue d'ensemble qui compterait
+**CE QUI RESTE.** La comparaison de l'émetteur au SIREN du dossier, le jour où un praticien émettra des notes
+d'honoraires (PIECES-Q3) ; la Vue d'ensemble qui compterait
 les factures probables de Documents (le rapport la proposait ; la marque est sur la ligne) ; les quotas AWS lus par le
 cabinet (PIECES-Q4) ; le déploiement d'`extract-piece` et de `receive-email` ; le seuil de dix lignes, « Votre facture »
 et le resserrement de la cotisation, à confronter aux documents réels de la répétition générale.
