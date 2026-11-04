@@ -389,3 +389,130 @@ describe('les gestes', () => {
     expect(motsDuCabinet(document.body.textContent ?? '')).toEqual([])
   })
 })
+
+// LA SAISIE D'UN MOIS (C12A-Q1, le 04/11/2026, « L'ajouter maintenant ») : repliée d'abord ; ses refus avant le clic, nommés
+// par leur rang et leur jour ; une confirmation qui nomme le nombre d'opérations, ce qui entre et sort, et la caisse du
+// dernier jour ; UN appel à `enregistrer_operations_de_caisse`, le tableau tel qu'il part ; le verrou de tous les gestes,
+// relâché après la relecture ; rien sur une lecture partielle.
+describe('la saisie d’un mois (C12A-Q1)', () => {
+  const ouvrirLeMois = () => fireEvent.click(bouton('Saisir un mois…'))
+  function ligneDuMois(i: number, genre: string, date: string, montant: string) {
+    fireEvent.change(screen.getByLabelText(`Quoi, ligne ${i}`), { target: { value: genre } })
+    fireEvent.change(screen.getByLabelText(`Jour, ligne ${i}`), { target: { value: date } })
+    fireEvent.change(screen.getByLabelText(`Montant, ligne ${i}`), { target: { value: montant } })
+  }
+  const enregistrerLeMois = () => screen.getByRole('button', { name: /^Enregistrer le mois/ }) as HTMLButtonElement
+
+  it('repliée d’abord ; ouverte, trois lignes vides et rien à enregistrer', async () => {
+    await monter()
+    expect(screen.queryByLabelText('Quoi, ligne 1')).toBeNull()
+    ouvrirLeMois()
+    expect(screen.getByLabelText('Quoi, ligne 3')).toBeTruthy()
+    expect(enregistrerLeMois().textContent).toBe('Enregistrer le mois (0 opération)')
+    expect(enregistrerLeMois().disabled).toBe(true)
+    expect(motsDuCabinet(document.body.textContent ?? '')).toEqual([])
+  })
+
+  it('enregistre un mois : la confirmation nomme ce qui part, un seul appel pour deux clics, le tableau tel qu’il part, puis la relecture', async () => {
+    await monter()
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    ouvrirLeMois()
+    // Un prélèvement placé avant l'apport qui le couvre : la caisse se juge à la fin de la saisie.
+    ligneDuMois(1, 'prelevement', '2026-10-21', '60')
+    ligneDuMois(2, 'apport', '2026-10-20', '100')
+    ligneDuMois(3, 'recette', '2026-10-22', '42,50')
+    expect(enregistrerLeMois().textContent).toBe('Enregistrer le mois (3 opérations)')
+    expect(enregistrerLeMois().disabled).toBe(false)
+    const lecturesAvant = faux.lectures.filter((l) => l === 'caisse_du_client').length
+    faux.retenirRpc = true
+    await act(async () => { fireEvent.click(enregistrerLeMois()); fireEvent.click(enregistrerLeMois()) })
+    expect(confirmer).toHaveBeenCalledTimes(1)
+    expect(confirmer.mock.calls[0][0]).toMatch(new RegExp('^Enregistrer 3 opérations d’un coup \\? Elles font entrer 142,50\\s€ dans ta caisse '
+      + 'et en sortir 60,00\\s€ ; ta caisse du 22/10/2026 passera à 132,50\\s€\\. Tout part ensemble, ou rien\\. Ton cabinet les voit aussitôt\\.$'))
+    expect(faux.ecritures).toEqual([{
+      nom: 'enregistrer_operations_de_caisse',
+      args: {
+        p_dossier_id: 'd1',
+        p_operations: [
+          { genre: 'prelevement', date: '2026-10-21', montant: 60 },
+          { genre: 'apport', date: '2026-10-20', montant: 100 },
+          { genre: 'recette', date: '2026-10-22', montant: 42.5, encaissements_du_jour: [] },
+        ],
+      },
+    }])
+    // Pendant l'écriture, aucun geste n'est offert : ni le mois, ni la saisie d'un jour, ni un retrait.
+    expect(enregistrerLeMois().disabled).toBe(true)
+    expect((bouton('Retirer') as HTMLButtonElement).disabled).toBe(true)
+    expect((bouton('Enregistrer') as HTMLButtonElement).disabled).toBe(true)
+    // La base a écrit ; la relecture est retenue : le verrou tient.
+    faux.retenirLectures = true
+    await act(async () => { for (const r of faux.rpcEnAttente.splice(0)) r() })
+    expect((bouton('Retirer') as HTMLButtonElement).disabled).toBe(true)
+    faux.retenirLectures = false
+    await act(async () => { for (const r of faux.lecturesEnAttente.splice(0)) r() })
+    await screen.findByText('Enregistrées : 3 opérations.')
+    expect(faux.lectures.filter((l) => l === 'caisse_du_client').length).toBe(lecturesAvant + 1)
+    // Les lignes repartent vides.
+    expect((screen.getByLabelText('Montant, ligne 1') as HTMLInputElement).value).toBe('')
+    expect(screen.queryByLabelText('Quoi, ligne 4')).toBeNull()
+  })
+
+  it('les refus de la base, avant le clic, nommés par leur rang et leur jour ; la caisse jugée à la fin', async () => {
+    await monter()
+    ouvrirLeMois()
+    const refus = () => screen.getByRole('alert').textContent?.replace(/\s€/g, ' €')
+    ligneDuMois(1, 'recette', '2026-10-20', '10')
+    ligneDuMois(2, 'prelevement', '2026-10-21', '500')
+    expect(refus()).toBe('La caisse serait négative le 21/10/2026 (−440,00 €) : saisis d’abord les recettes en espèces qui précèdent ce jour.'.replace(/’/g, '\''))
+    expect(enregistrerLeMois().disabled).toBe(true)
+    ligneDuMois(2, 'apport', '2026-12-01', '5')
+    expect(refus()).toBe('Opération n° 2, du 01/12/2026 : Une opération de caisse ne se date pas dans l\'avenir : nous sommes le 02/11/2026.')
+    ligneDuMois(2, 'apport', '2025-10-01', '5')
+    expect(refus()).toBe('Opération n° 2, du 01/10/2025 : Choisis une date de 2026 : la caisse affichée est celle de 2026. Pour une autre année, change l’année en haut.')
+    ligneDuMois(2, 'apport', '2026-10-21', '10,005')
+    expect(refus()).toBe('Opération n° 2, du 21/10/2026 : Le montant d\'une opération de caisse est au centime.')
+    ligneDuMois(2, 'apport', '2026-10-21', 'dix')
+    expect(refus()).toMatch(/^Opération n° 2 : Le montant n’est pas un nombre/)
+    expect(enregistrerLeMois().disabled).toBe(true)
+    // Rien n'est parti.
+    expect(faux.ecritures).toEqual([])
+    expect(motsDuCabinet(document.body.textContent ?? '')).toEqual([])
+  })
+
+  it('ne part pas sans la confirmation', async () => {
+    await monter()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    ouvrirLeMois()
+    ligneDuMois(1, 'apport', '2026-10-20', '100')
+    await act(async () => { fireEvent.click(enregistrerLeMois()) })
+    expect(faux.ecritures).toEqual([])
+    expect((screen.getByLabelText('Montant, ligne 1') as HTMLInputElement).value).toBe('100')
+  })
+
+  it('dit le refus de la base après le clic, garde les lignes, et relit', async () => {
+    await monter()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    faux.refusRpc = 'Opération n° 1, du 20/10/2026 : Des espèces d\'une facture de ce jour ont été enregistrées depuis ta lecture : relis ta caisse.'
+    ouvrirLeMois()
+    ligneDuMois(1, 'recette', '2026-10-20', '100')
+    const lecturesAvant = faux.lectures.filter((l) => l === 'caisse_du_client').length
+    await act(async () => { fireEvent.click(enregistrerLeMois()) })
+    expect((await screen.findByRole('alert')).textContent).toBe('Ton mois n’a pas été enregistré (rien n’est écrit : tout part ensemble, '
+      + 'ou rien) : Opération n° 1, du 20/10/2026 : Des espèces d\'une facture de ce jour ont été enregistrées depuis ta lecture : relis ta caisse.')
+    expect((screen.getByLabelText('Montant, ligne 1') as HTMLInputElement).value).toBe('100')
+    expect(faux.lectures.filter((l) => l === 'caisse_du_client').length).toBe(lecturesAvant + 1)
+  })
+
+  it('une lecture partielle, une année figée ou une saisie fermée : la saisie d’un mois ne s’offre pas', async () => {
+    faux.muetApres = { operations_caisse: 1 }
+    const { unmount } = render(<MemoryRouter><ClientCaisse /></MemoryRouter>)
+    await screen.findByText(/Tes opérations de caisse n'ont pas pu être affichées en entier/)
+    sansBouton('Saisir un mois…')
+    unmount()
+    poser()
+    faux.dossier = { ...faux.dossier, mode_comptable: 'engagement' }
+    await monter()
+    sansBouton('Saisir un mois…')
+    expect(faux.ecritures).toEqual([])
+  })
+})

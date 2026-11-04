@@ -72,7 +72,8 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // (lib/droitsAcces.ts, `gesteDeLaCase`). Gardé AVEC le dossier lu : une réponse pour un autre dossier ne juge pas celui-ci.
   // Rien ne s'offre avant son retour : ni case, ni phrase des cases.
   // Depuis l'étape C11, la même ligne porte le statut de TVA, qui ouvre la case « Caisse » (exonéré ou en franchise en base),
-  // et la nature des recettes en espèces du client, que le cabinet fixe sous la liste.
+  // et la nature des recettes en espèces du client, que le cabinet fixe sous la liste ; depuis C11-Q2, le mode comptable : la
+  // case ne se coche pas sur un dossier tenu en engagement (l'écran plus strict que la base, lib/droitsAcces.ts).
   const [reglageLu, setReglageLu] = useState<LectureDuReglage | null>(null)
   // Les catégories que la nature peut prendre (celles du dossier et les communes), lues EN ENTIER dans la même vague, gardées
   // avec le dossier lu : lues en partie, la carte de la nature n'offre aucun geste, et le dit.
@@ -270,7 +271,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // Le refus d'une case, dit avant tout appel : la ligne du dossier pas encore lue, ou lue pour un autre, ne juge rien.
   function refusAvantLeClic(domaine: Domaine, valeur: boolean): string | null {
     return reglage === null || caisse === null
-      ? 'la ligne du dossier (sa source des ventes, son statut de TVA) n’est pas encore lue.'
+      ? 'la ligne du dossier (sa source des ventes, son statut de TVA, son mode comptable) n’est pas encore lue.'
       : refusDeLaCase(domaine, valeur, reglage, caisse)
   }
 

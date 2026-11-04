@@ -150,6 +150,16 @@
 -- avec elle, 678 justes, 0 en faute ; le texte d'avant sur la base munie : 162 seul en faute. Vingt-cinq mutations de la
 -- migration : vingt-deux mordent ici ou dans les trois autres essais, 273d et 275c ajoutés pour deux d'entre elles (seul
 -- l'ordre les distingue) ; les deux verrous et le droit d'exécution, que les privilèges par défaut donnent déjà, survivent.
+--
+-- ÉTENDU LE 04/11/2026 (C12A-Q1 : « Ma caisse » offre au praticien la saisie d'un mois, sans migration). Les contrôles 268 à
+-- 268l, deux dossiers jetables de plus (préfixe `ca155e00-0000-4000-800e`) : le mois du client sur son dossier exonéré, FAIT
+-- (un apport, trois recettes, un prélèvement placé avant l'apport dans la saisie — ni catégorie, ni taux, ni écriture),
+-- ce qui s'en écrit (l'origine, l'auteur, la nature fixée, l'écriture que la base compose) et sa caisse lue jour par jour ;
+-- refusé quand il viderait la caisse à sa fin, ou qu'une opération envoie une écriture ; au client sans la case, avant même
+-- d'en lire la forme ; à un compte rattaché à rien ; sur un dossier en engagement dont l'accès porte la case (la raison
+-- que l'onglet Accès dit, C11-Q2). Genre « …5 » : la migration `caisse_du_client` en base. Joué sur une copie de la
+-- réplique de l'étape (la production du jour, 170 migrations), par le propriétaire, en une transaction : 614 verdicts
+-- justes, 0 en faute, la ligne EN ATTENTE de C12B-Q1 (90 étapes) ; le texte d'avant, 605 justes.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -344,7 +354,13 @@ begin
       'QQC', 'ca155e00-0000-4000-800d-000000000023', 'QQV', 'ca155e00-0000-4000-800d-000000000024',
       'QQY', 'ca155e00-0000-4000-800d-000000000025', 'QQE', 'ca155e00-0000-4000-800d-000000000026',
       'QQ5', 'ca155e00-0000-4000-800d-000000000027', 'QQ5B', 'ca155e00-0000-4000-800d-000000000028',
-      'QQ6', 'ca155e00-0000-4000-800d-000000000029', 'QQO', 'ca155e00-0000-4000-800d-00000000002a');
+      'QQ6', 'ca155e00-0000-4000-800d-000000000029', 'QQO', 'ca155e00-0000-4000-800d-00000000002a')
+    -- C12A-Q1 : deux dossiers (M10, exonéré, où le client saisit un mois - EM10, en engagement, l'accès portant la case), leur
+    -- catégorie, les deux accès du client. (Aucun point-virgule ici non plus.)
+    || jsonb_build_object(
+      'M10', 'ca155e00-0000-4000-800e-000000000001', 'EM10', 'ca155e00-0000-4000-800e-000000000002',
+      'KM10', 'ca155e00-0000-4000-800e-000000000011', 'KEM10', 'ca155e00-0000-4000-800e-000000000012',
+      'AM10', 'ca155e00-0000-4000-800e-000000000021', 'AEM10', 'ca155e00-0000-4000-800e-000000000022');
 
   select string_agg(n::text, '/') into avant from (values
     ((select count(*) from dossiers)), ((select count(*) from operations_caisse)), ((select count(*) from ecritures_brouillon)),
@@ -2017,6 +2033,36 @@ begin
     array['controle5', '266d. … la retirer aussi', 'chef', $q$update dossiers set categorie_recettes_client = null where id = '{X10}'$q$, 'OK', ''],
     array['controle5', '266e. … une catégorie de charge fixée sans session, par le propriétaire, se refuse aussi', 'postgres', $q$update dossiers set categorie_recettes_client = '{KX10C}' where id = '{X10}'$q$,
       '23514', 'La nature des recettes en espèces du client est une catégorie de produit (classe 7) de ce dossier, ou commune : celle-ci ne l''est pas.'],
+
+    -- 268. Le mois du client (C12A-Q1, le 04/11/2026) : « Ma caisse » offre la saisie d'un mois, tout ou rien, par
+    -- `enregistrer_operations_de_caisse` — ce que la base en écrit, et à qui elle la refuse. Deux dossiers jetables de plus
+    -- (préfixe `ca155e00-0000-4000-800e`) : M10, exonéré, la nature fixée ; EM10, en engagement, la case portée quand même
+    -- (la base l'accepte : seul l'écran de l'onglet Accès la refuse, C11-Q2).
+    array['jeu5', '268. M10 (exonéré) et EM10 (en engagement), dossiers de C12A-Q1', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, statut_tva, ventes_par_les_factures) values
+      ('{M10}', 'ESSAI CAISSE M10', '{CAB}', 'tresorerie', '455000', 'exonere', false), ('{EM10}', 'ESSAI CAISSE EM10', '{CAB}', 'engagement', '455000', 'exonere', false)$q$, '', ''],
+    array['jeu5', '268a. leurs catégories', 'postgres', $q$insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
+      ('{KM10}', '{M10}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KEM10}', '{EM10}', 'essai_hon', 'Honoraires', '706000', 'AA')$q$, '', ''],
+    array['jeu5', '268b. la nature des recettes du client, fixée sur les deux', 'postgres', $q$update dossiers set categorie_recettes_client = '{KM10}' where id = '{M10}';
+      update dossiers set categorie_recettes_client = '{KEM10}' where id = '{EM10}'$q$, '', ''],
+    array['jeu5', '268c. les accès du client d''essai, la case « Caisse » sur les deux', 'postgres', $q$insert into memberships (id, user_id, dossier_id, role, email, droit_caisse) values
+      ('{AM10}', '{CLIENT}', '{M10}', 'client', 'essai-caisse@example.test', true), ('{AEM10}', '{CLIENT}', '{EM10}', 'client', 'essai-caisse@example.test', true)$q$, '', ''],
+    array['controle5', '268d. le mois du client sur M10, qui viderait sa caisse à la fin : refusé, nommé par son jour, rien d''écrit', 'client', $q$select enregistrer_operations_de_caisse('{M10}', '[{"genre":"recette","date":"2026-03-02","montant":30,"encaissements_du_jour":[]},{"genre":"prelevement","date":"2026-03-03","montant":50}]')$q$,
+      '23514', 'La caisse serait négative le 03/03/2026 (−20,00 €) : saisis d''abord les recettes en espèces qui précèdent ce jour.'],
+    array['controle5', '268e. … une opération du mois qui envoie une écriture : refusée, nommée par son rang et son jour', 'client', $q$select enregistrer_operations_de_caisse('{M10}', '[{"genre":"apport","date":"2026-03-02","montant":50},{"genre":"recette","date":"2026-03-03","montant":10,"encaissements_du_jour":[],"ecritures":[]}]')$q$,
+      '22023', 'Opération n° 2, du 03/03/2026 : Une saisie depuis ton espace n''envoie pas d''écriture : la base compose la sienne.'],
+    array['fait5', '268f. le client saisit un mois sur M10 : un apport, trois recettes et un prélèvement — ni catégorie, ni taux, ni écriture ; un prélèvement qui précède l''apport dans la saisie', 'client', $q$select enregistrer_operations_de_caisse('{M10}', '[{"genre":"prelevement","date":"2026-03-04","montant":100},{"genre":"apport","date":"2026-03-02","montant":50},{"genre":"recette","date":"2026-03-02","montant":85,"encaissements_du_jour":[]},{"genre":"recette","date":"2026-03-03","montant":40.5,"encaissements_du_jour":[]},{"genre":"recette","date":"2026-03-05","montant":60,"encaissements_du_jour":[]}]')$q$, 'OK', ''],
+    array['valeur5', '268g. … ses cinq opérations : leur origine, leur auteur, la nature que le cabinet a fixée, l''écriture que la base a composée', 'postgres', $q$select string_agg(o.date || ':' || o.genre || ':' || o.montant || ':' || o.origine || ':' || (o.cree_par = '{CLIENT}')::text || ':' || coalesce((o.categorie_id = '{KM10}')::text, '-') || ':' || coalesce(o.taux_tva::text, '-') || ' = ' || (select string_agg(b.compte || '/' || b.sens || '/' || b.montant, ',' order by b.compte) from ecritures_brouillon b where b.operation_caisse_id = o.id), ' | ' order by o.date, o.genre, o.montant) from operations_caisse o where o.dossier_id = '{M10}'$q$, '',
+      '2026-03-02:apport:50:client:true:-:- = 108000/credit/50.00,530000/debit/50.00 | 2026-03-02:recette:85:client:true:true:- = 530000/debit/85.00,706000/credit/85.00 | 2026-03-03:recette:40.5:client:true:true:- = 530000/debit/40.50,706000/credit/40.50 | 2026-03-04:prelevement:100:client:true:-:- = 108000/debit/100.00,530000/credit/100.00 | 2026-03-05:recette:60:client:true:true:- = 530000/debit/60.00,706000/credit/60.00'],
+    array['valeur5', '268h. … et sa caisse jour par jour, telle qu''il la lit (caisse_du_client)', 'client', $q$select string_agg(c.jour || ':' || c.operations || ':' || c.solde, ',' order by c.jour) from caisse_du_client('{M10}', 2026) c$q$, '',
+      '2026-03-02:135:135,2026-03-03:40.5:175.5,2026-03-04:-100:75.5,2026-03-05:60:135.5'],
+    array['controle5', '268i. le client sur Z10, son accès sans la case : la saisie d''un mois lui est refusée, avant même d''en lire la forme', 'client', $q$select enregistrer_operations_de_caisse('{Z10}', '"pas un tableau"')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle5', '268j. … et un mois bien formé, de même', 'client', $q$select enregistrer_operations_de_caisse('{Z10}', '[{"genre":"apport","date":"2026-03-04","montant":10}]')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle5', '268k. … un compte rattaché à rien, sur M10', 'inconnu', $q$select enregistrer_operations_de_caisse('{M10}', '[{"genre":"apport","date":"2026-03-04","montant":10}]')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle5', '268l. sur EM10, en engagement, la case portée : le mois du client se refuse à sa première opération (la raison de C11-Q2)', 'client', $q$select enregistrer_operations_de_caisse('{EM10}', '[{"genre":"apport","date":"2026-03-02","montant":10}]')$q$,
+      '22023', 'Opération n° 1, du 02/03/2026 : La caisse ne se tient que dans un dossier en comptabilité de trésorerie.'],
 
     -- 267. Ce que le catalogue dit.
     array['valeur5', '267. la RLS et les trois policies, au compte connecté : la lecture du client à la case « Caisse »', 'postgres', $q$select (select relrowsecurity::text from pg_class where oid = 'public.operations_caisse'::regclass) || ',' || string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, '+') || ':' || coalesce(qual, '-'), ',' order by policyname collate "C") from pg_policies where tablename = 'operations_caisse'$q$, '',

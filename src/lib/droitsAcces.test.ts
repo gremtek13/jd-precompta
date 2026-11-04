@@ -12,6 +12,7 @@ import {
   type EtatCaisseDuDossier, CE_QUE_LA_CASE_CAISSE_OUVRE, CE_QUE_LA_CASE_RETIENT, CE_QUE_MONTRE_MA_CAISSE, REFUS_CAISSE_DOSSIER_NON_EXCLU,
   REFUS_STATUT_SOUS_LA_CASE_CAISSE, TABLES_LUES_AVEC_CAISSE, ceQueDitLaCaseCaisse, confirmationDeLaCaseCaisse, enumeration,
   etatCaisseDuDossier, libellesDesCases, phraseDuStatutDeLaCaisse, raisonDuDossierNonExclu, raisonDuStatutIllisible,
+  RAISON_DU_DOSSIER_EN_ENGAGEMENT, raisonDuModeIllisible, avisDuStatutSousLaCase,
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE, ceQueMontreMaCaisseSelon,
 } from './droitsAcces'
@@ -33,7 +34,7 @@ import { versionParametres } from '../test/parametresFacturation'
 import { QUI_PEUT_QUOI_ATTENDU } from '../test/quiPeutQuoi'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
+import { MOTS_DE_LA_CAISSE, STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
 
 // LES DROITS D'UN ACCÈS CLIENT (espace client, étape P1). Ce qui se garde ici : qu'un droit ne s'accorde jamais par défaut,
 // qu'une case cliquée n'envoie que SON droit, et que le module, la migration et les écrans du client disent la même chose.
@@ -1426,15 +1427,19 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
   const A_PRECISER: EtatCaisseDuDossier = { etat: 'tenue_par_le_cabinet', statut: null }
   const FRANCHISE: EtatCaisseDuDossier = { etat: 'exclu', statut: 'franchise' }
   const STATUT_ILLISIBLE: EtatCaisseDuDossier = { etat: 'illisible', motif: 'lecture refusée' }
+  // C11-Q2 : le mode comptable, lu avec le statut.
+  const EN_ENGAGEMENT: EtatCaisseDuDossier = { etat: 'en_engagement', statut: 'exonere' }
+  const MODE_ILLISIBLE: EtatCaisseDuDossier = { etat: 'mode_illisible', motif: 'le mode comptable n’est pas lisible' }
   const NON_BASCULE_: ReglageDuDossier = { etat: 'non_bascule' }
   const REGLAGE_ILLISIBLE: ReglageDuDossier = { etat: 'illisible', motif: 'lecture refusée' }
   const LES_DEUX = { cocher: true, decocher: true, raison: null }
 
   it('seuls « exonere » et « franchise » ouvrent la case ; nul est « à préciser » ; une ligne ou une colonne absente est illisible', () => {
-    expect(etatCaisseDuDossier({ statut_tva: 'exonere' })).toEqual(EXONERE)
-    expect(etatCaisseDuDossier({ statut_tva: 'franchise' })).toEqual(FRANCHISE)
-    expect(etatCaisseDuDossier({ statut_tva: 'redevable' })).toEqual(REDEVABLE)
-    expect(etatCaisseDuDossier({ statut_tva: null })).toEqual(A_PRECISER)
+    const tresorerie = { mode_comptable: 'tresorerie' }
+    expect(etatCaisseDuDossier({ statut_tva: 'exonere', ...tresorerie })).toEqual(EXONERE)
+    expect(etatCaisseDuDossier({ statut_tva: 'franchise', ...tresorerie })).toEqual(FRANCHISE)
+    expect(etatCaisseDuDossier({ statut_tva: 'redevable', ...tresorerie })).toEqual(REDEVABLE)
+    expect(etatCaisseDuDossier({ statut_tva: null, ...tresorerie })).toEqual(A_PRECISER)
     expect(etatCaisseDuDossier({})).toEqual({ etat: 'illisible', motif: 'le statut de TVA n’a pas été lu' })
     expect(etatCaisseDuDossier(null)).toEqual({ etat: 'illisible', motif: 'le dossier n’a pas été trouvé' })
     for (const valeur of [undefined, 'EXONERE', 'exonéré', 1, true, {}]) {
@@ -1448,11 +1453,36 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
       .toContain("if old.statut_tva is distinct from 'exonere' and old.statut_tva is distinct from 'franchise' then")
   })
 
+  // C11-Q2 (le 04/11/2026, « La refuser à l'écran ») : un dossier exonéré ou en franchise tenu en engagement ne s'ouvre pas ;
+  // un mode qu'on n'a pas lu, ou d'une autre valeur, n'est jamais « trésorerie » ; le statut se juge d'abord.
+  it('le mode comptable, lu avec le statut : l’engagement ferme la case, un mode illisible n’est jamais « trésorerie »', () => {
+    expect(etatCaisseDuDossier({ statut_tva: 'exonere', mode_comptable: 'engagement' })).toEqual(EN_ENGAGEMENT)
+    expect(etatCaisseDuDossier({ statut_tva: 'franchise', mode_comptable: 'engagement' })).toEqual({ etat: 'en_engagement', statut: 'franchise' })
+    // Redevable ou à préciser : le refus de la base, quel que soit le mode.
+    expect(etatCaisseDuDossier({ statut_tva: 'redevable', mode_comptable: 'engagement' })).toEqual(REDEVABLE)
+    expect(etatCaisseDuDossier({ statut_tva: null, mode_comptable: 'engagement' })).toEqual(A_PRECISER)
+    for (const statut of ['exonere', 'franchise', 'redevable', null]) {
+      expect(etatCaisseDuDossier({ statut_tva: statut }), String(statut)).toEqual({ etat: 'mode_illisible', motif: 'le mode comptable n’a pas été lu' })
+      for (const mode of [null, undefined, 'TRESORERIE', 'trésorerie', 1, true, {}]) {
+        expect(etatCaisseDuDossier({ statut_tva: statut, mode_comptable: mode }), `${statut} ${String(mode)}`).toEqual(MODE_ILLISIBLE)
+      }
+    }
+    // Un statut illisible le reste, quel que soit le mode.
+    expect(etatCaisseDuDossier({ statut_tva: 'autre', mode_comptable: 'engagement' })).toEqual({ etat: 'illisible', motif: 'le statut de TVA n’est pas lisible' })
+    // Les deux modes sont ceux de la contrainte de la table, et la raison cite le refus de la base à la lettre.
+    expect(fichiersDuSchema().map((f) => f.texte).join('\n'))
+      .toContain("add constraint dossiers_mode_comptable_check check (mode_comptable in ('tresorerie', 'engagement'))")
+    expect(RAISON_DU_DOSSIER_EN_ENGAGEMENT).toContain(`« ${MOTS_DE_LA_CAISSE.tresorerie.gabarit} »`)
+    expect(messagesSql(derniereDefinitionSql('enregistrer_operation_caisse'))).toContain(MOTS_DE_LA_CAISSE.tresorerie.gabarit)
+    // En une phrase : un seul point final, hors de la citation.
+    expect(RAISON_DU_DOSSIER_EN_ENGAGEMENT.replace(MOTS_DE_LA_CAISSE.tresorerie.gabarit, '').match(/\./g)).toHaveLength(1)
+  })
+
   // LA TABLE DE VÉRITÉ : chaque case lit SON état, et lui seul. « Banque » a toujours ses deux gestes ; « Ventes » suit le
   // réglage quel que soit le statut ; « Caisse » suit le statut quel que soit le réglage.
-  it('la table de vérité des trois cases : trois réglages × quatre statuts', () => {
+  it('la table de vérité des trois cases : trois réglages × sept états du statut et du mode', () => {
     const reglages = [BASCULE, NON_BASCULE_, REGLAGE_ILLISIBLE]
-    const statuts = [EXONERE, FRANCHISE, REDEVABLE, A_PRECISER, STATUT_ILLISIBLE]
+    const statuts = [EXONERE, FRANCHISE, REDEVABLE, A_PRECISER, STATUT_ILLISIBLE, EN_ENGAGEMENT, MODE_ILLISIBLE]
     for (const reglage of reglages) {
       for (const caisse of statuts) {
         const cas = `${reglage.etat} × ${caisse.etat}${'statut' in caisse ? ` ${caisse.statut}` : ''}`
@@ -1467,6 +1497,12 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     expect(gesteDeLaCase('caisse', BASCULE, A_PRECISER)).toEqual({ cocher: false, decocher: true, raison: raisonDuDossierNonExclu(null) })
     expect(gesteDeLaCase('caisse', BASCULE, STATUT_ILLISIBLE))
       .toEqual({ cocher: false, decocher: false, raison: raisonDuStatutIllisible('lecture refusée') })
+    // C11-Q2 : en engagement, décocher seulement ; un mode illisible, aucun geste.
+    expect(gesteDeLaCase('caisse', BASCULE, EN_ENGAGEMENT)).toEqual({ cocher: false, decocher: true, raison: RAISON_DU_DOSSIER_EN_ENGAGEMENT })
+    expect(gesteDeLaCase('caisse', BASCULE, { etat: 'en_engagement', statut: 'franchise' }))
+      .toEqual({ cocher: false, decocher: true, raison: RAISON_DU_DOSSIER_EN_ENGAGEMENT })
+    expect(gesteDeLaCase('caisse', BASCULE, MODE_ILLISIBLE))
+      .toEqual({ cocher: false, decocher: false, raison: raisonDuModeIllisible('le mode comptable n’est pas lisible') })
     // La case « Caisse » d'un dossier exclu se coche même sur un réglage des ventes illisible : elle ne le lit pas.
     expect(gesteDeLaCase('caisse', REGLAGE_ILLISIBLE, EXONERE)).toEqual(LES_DEUX)
     expect(gesteDeLaCase('ventes', BASCULE, STATUT_ILLISIBLE)).toEqual(LES_DEUX)
@@ -1483,9 +1519,50 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     }
     expect(refusDeLaCase('caisse', true, BASCULE, STATUT_ILLISIBLE)).toBe(raisonDuStatutIllisible('lecture refusée'))
     expect(refusDeLaCase('caisse', false, BASCULE, STATUT_ILLISIBLE)).toBe(raisonDuStatutIllisible('lecture refusée'))
+    // C11-Q2 : cocher en engagement se refuse sous la phrase de l'écran (la base l'accepterait : ce n'est pas son refus) ;
+    // décocher passe ; un mode illisible, ni l'un ni l'autre.
+    expect(refusDeLaCase('caisse', true, BASCULE, EN_ENGAGEMENT)).toBe(RAISON_DU_DOSSIER_EN_ENGAGEMENT)
+    expect(refusDeLaCase('caisse', true, BASCULE, EN_ENGAGEMENT)).not.toBe(REFUS_CAISSE_DOSSIER_NON_EXCLU.message)
+    expect(refusDeLaCase('caisse', false, BASCULE, EN_ENGAGEMENT)).toBeNull()
+    expect(refusDeLaCase('caisse', true, BASCULE, MODE_ILLISIBLE)).toBe(raisonDuModeIllisible('le mode comptable n’est pas lisible'))
+    expect(refusDeLaCase('caisse', false, BASCULE, MODE_ILLISIBLE)).toBe(raisonDuModeIllisible('le mode comptable n’est pas lisible'))
+    expect(refusDeLaCase('banque', true, BASCULE, EN_ENGAGEMENT)).toBeNull()
     // Et la case « Ventes » garde ses mots à elle, même sur un statut qui ferme « Caisse ».
     expect(refusDeLaCase('ventes', true, NON_BASCULE_, REDEVABLE)).toBe(REFUS_VENTES_DOSSIER_NON_BASCULE.message)
     expect(refusDeLaCase('banque', true, REGLAGE_ILLISIBLE, STATUT_ILLISIBLE)).toBeNull()
+  })
+
+  // C11-Q1 (le 04/11/2026, « Oui, avec C12 ») : l'onglet TVA dit avant le clic ce que la case retient du statut — les mots de
+  // `garder_statut_tva_de_la_caisse` quand un accès lu en entier la porte ; rien promis quand les accès ne sont pas lus en entier.
+  it('l’avis de l’onglet TVA : seul ce qui QUITTE l’exonération et la franchise sous une case se refuse, aux mots de la base', () => {
+    const avec = { etat: 'lus', avecLaCase: 1 } as const
+    const sans = { etat: 'lus', avecLaCase: 0 } as const
+    const partiels = { etat: 'illisibles', motif: 'délai dépassé' } as const
+    const statuts = ['exonere', 'franchise', 'redevable', null] as const
+    for (const actuel of statuts) {
+      for (const choix of statuts) {
+        const quitte = (actuel === 'exonere' || actuel === 'franchise') && choix !== 'exonere' && choix !== 'franchise'
+        const cas = `${actuel} → ${choix}`
+        expect(avisDuStatutSousLaCase(actuel, choix, avec), cas)
+          .toEqual(quitte ? { etat: 'refuse', message: REFUS_STATUT_SOUS_LA_CASE_CAISSE.message } : null)
+        expect(avisDuStatutSousLaCase(actuel, choix, sans), cas).toBeNull()
+        expect(avisDuStatutSousLaCase(actuel, choix, partiels)?.etat ?? null, cas).toBe(quitte ? 'incertain' : null)
+        expect(avisDuStatutSousLaCase(actuel, choix, null)?.etat ?? null, cas).toBe(quitte ? 'incertain' : null)
+      }
+    }
+    // Plusieurs accès qui la portent : le même refus.
+    expect(avisDuStatutSousLaCase('franchise', 'redevable', { etat: 'lus', avecLaCase: 3 })?.message).toBe(REFUS_STATUT_SOUS_LA_CASE_CAISSE.message)
+    // Incertain : le motif dit, et aucune promesse que le changement passera.
+    const incertain = avisDuStatutSousLaCase('exonere', 'redevable', partiels)!.message
+    expect(incertain).toBe('Les accès du dossier n’ont pas pu être lus en entier (délai dépassé) : si l’un d’eux porte la case '
+      + '« Caisse », la base refusera ce changement de statut, et il faudra la décocher d’abord, dans l’onglet Accès.')
+    expect(avisDuStatutSousLaCase('exonere', 'redevable', null)!.message).toMatch(/^Les accès du dossier ne sont pas encore lus : si l’un d’eux/)
+    for (const m of [incertain, avisDuStatutSousLaCase('exonere', 'redevable', null)!.message]) expect(m).not.toMatch(/passera|aucun accès/)
+    // Ce que la garde juge, relu dans l'export : ce qui QUITTE l'ensemble, une case portée par un accès quelconque.
+    const garde = derniereDefinitionSql('garder_statut_tva_de_la_caisse')
+    expect(garde).toContain("if old.statut_tva is distinct from 'exonere' and old.statut_tva is distinct from 'franchise' then")
+    expect(garde).toContain("if new.statut_tva is not distinct from 'exonere' or new.statut_tva is not distinct from 'franchise' then")
+    expect(garde).toContain('if exists (select 1 from public.memberships m where m.dossier_id = old.id and m.droit_caisse) then')
   })
 
   it('les deux refus que le module redit sont ceux des gardes de l’export, à la lettre et au code', () => {
@@ -1502,8 +1579,9 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
   it('la phrase de la case dit ce que la base ouvre, puis ce qu’elle devient sur CE dossier — trois statuts, trois phrases', () => {
     const debut = '« Caisse » (recettes en espèces, apports, prélèvements, pièces payées en espèces) : une case cochée ouvre au client, '
       + 'par la base, la caisse de son dossier — '
-    const phrases = [EXONERE, FRANCHISE, REDEVABLE, A_PRECISER, STATUT_ILLISIBLE].map((c) => ceQueDitLaCaseCaisse(c))
-    expect(new Set(phrases).size).toBe(5)
+    const phrases = [EXONERE, FRANCHISE, REDEVABLE, A_PRECISER, STATUT_ILLISIBLE, EN_ENGAGEMENT, MODE_ILLISIBLE]
+      .map((c) => ceQueDitLaCaseCaisse(c))
+    expect(new Set(phrases).size).toBe(7)
     for (const [i, phrase] of phrases.entries()) {
       expect(phrase.startsWith(debut), String(i)).toBe(true)
       expect(phrase).toContain(CE_QUE_LA_CASE_CAISSE_OUVRE)
@@ -1518,6 +1596,8 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     expect(phrases[2]).toContain('CGI, art. 286, I, 3° bis')
     expect(phrases[3]).toContain('sur ce dossier dont le statut de TVA est à préciser')
     expect(phrases[4]).toContain('Le statut de TVA de ce dossier ne se lit pas (lecture refusée)')
+    expect(phrases[5].endsWith(RAISON_DU_DOSSIER_EN_ENGAGEMENT)).toBe(true)
+    expect(phrases[6]).toContain('Le mode comptable de ce dossier ne se lit pas (le mode comptable n’est pas lisible)')
     expect(phraseDuStatutDeLaCaisse(REDEVABLE)).toBe(raisonDuDossierNonExclu('redevable'))
     // Ce que la case retient, aux faits de la garde du statut : passer de l'un à l'autre reste possible.
     expect(CE_QUE_LA_CASE_RETIENT).toContain('passer de l’une à l’autre reste possible')
@@ -1596,6 +1676,11 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     expect(pieces).toContain("supabase.rpc('retirer_operation_caisse'")
     // … et, la migration de C12B-Q1 en base, celle qui le corrige : « Mes pièces » l'appelle sous le même verrou.
     expect(pieces).toContain("supabase.rpc('remplacer_paiement_par_la_caisse'")
+    // « il saisit ses recettes, ses apports et ses prélèvements » : un jour, ou un mois d'un coup (C12A-Q1), par les fonctions
+    // de la base qui les écrivent.
+    const maCaisse = readFileSync(resolve(process.cwd(), 'src/pages/ClientCaisse.tsx'), 'utf8')
+    expect(maCaisse).toContain("supabase.rpc('enregistrer_operation_caisse'")
+    expect(maCaisse).toContain("supabase.rpc('enregistrer_operations_de_caisse'")
     const paiement = readFileSync(resolve(process.cwd(), 'src/pages/PaiementParMaCaisse.tsx'), 'utf8')
     expect(paiement).not.toContain('supabase')
   })

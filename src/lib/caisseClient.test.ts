@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ensembleDuJour, fluxDeLaCaisse, jugerLaSaisie, jugerLeRemplacement, jugerLeRetrait, MOTS_DE_LA_CAISSE, refus, soldesDeLaCaisse,
+  ensembleDuJour, fluxDeLaCaisse, jugerLaSaisie, jugerLaSaisieDUnMois, jugerLeRemplacement, jugerLeRetrait, MOTS_DE_LA_CAISSE, refus,
+  soldesDeLaCaisse,
   type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type SaisieDeCaisse,
 } from './caisse'
-import { soldeAuJour } from './caisseEcran'
+import { MONTANT_ILLISIBLE, soldeAuJour } from './caisseEcran'
 import {
   anneeFigee, auteurPourLeClient, caisseRejouee, confirmationDeLaCorrection, confirmationDeLaSaisie, confirmationDuRetrait,
   corrigeableParLeClient, devenirDeLaRetiree, dossierDuClient, GENRES_DU_CLIENT, horsDeLAnnee, jourLu, joursDuMois,
   libelleDeLaLigne, maCaisseOuverte, nomPourLeClient, PLAN_QUE_LE_CLIENT_NE_LIT_PAS, RAPPEL_DU_BROUILLARD,
   refusDuRetraitDuClient, retireesDuMois, saisieDuClient, saisieDuFormulaire, soldeLuAu, verdictDuFormulaire,
+  confirmationDuMois, operationDuMois, verdictDuMoisDuClient,
   type DossierDuClient, type JourDeLaCaisseDuClient, type NatureDesRecettesLue, type OperationDuClient,
 } from './caisseClient'
 import { motsDuCabinet } from './espaceVentes'
@@ -416,5 +418,188 @@ describe('les mots et le mois', () => {
       ...Object.keys(MOTS_DE_LA_CAISSE).map((k) => refus(k as keyof typeof MOTS_DE_LA_CAISSE, 'x', 'y').message),
     ]
     for (const t of textes) expect(motsDuCabinet(t), t).toEqual([])
+  })
+})
+
+// ── LA SAISIE D'UN MOIS (C12A-Q1, le 04/11/2026, « L'ajouter maintenant ») ─────────────────────────────────────────────
+// Ce que ces cas gardent : le tableau part TEL QUE la base l'attend du client — ni catégorie, ni taux, ni écriture ; l'ensemble
+// du jour d'une recette seulement — ; il se juge par `jugerLaSaisieDUnMois`, tout ou rien, sur la caisse REJOUÉE, et rend le
+// même refus, sous les mêmes mots, et la même caisse que sur la caisse entière ; la confirmation nomme ce qui part.
+
+// Les identifiants que la base rend sont des uuid, et la saisie d'un mois les relit comme tels (`::uuid`) : les jeux d'ici
+// les portent.
+const uuidDe = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
+
+function caisseAuxUuid(etat: EtatDeLaCaisse): EtatDeLaCaisse {
+  const ids = new Map<string, string>()
+  const u = (id: string) => { if (!ids.has(id)) ids.set(id, uuidDe(ids.size + 1)); return ids.get(id)! }
+  return {
+    ...etat,
+    operations: etat.operations.map((o) => ({ ...o, id: u(o.id), remplace_id: o.remplace_id == null ? null : u(o.remplace_id) })),
+    encaissements: etat.encaissements.map((e) => ({ ...e, id: u(e.id), annule_id: e.annule_id == null ? null : u(e.annule_id) })),
+  }
+}
+
+// Le même tableau, tel que la BASE le recevrait de la caisse entière : l'ensemble du jour de chaque recette, le vrai.
+function tableauReel(lignes: readonly { genre: string; date: string; montant: string }[], etat: EtatDeLaCaisse): Record<string, unknown>[] {
+  return lignes.map((l) => {
+    const o = operationDuMois(l as Parameters<typeof operationDuMois>[0], [])
+    if (o.genre === 'recette') o.encaissements_du_jour = l.date === '' ? [] : ensembleDuJour(etat, l.date)
+    return o
+  })
+}
+
+describe('la saisie d’un mois (C12A-Q1)', () => {
+  const ligne = (genre: 'recette' | 'apport' | 'prelevement', date: string, montant: string) => ({ genre, date, montant })
+
+  it('le tableau part sans catégorie, sans taux, sans écriture ; une recette porte l’ensemble de son jour, et elle seule', () => {
+    const etat = caisseAuxUuid(caisseFictive())
+    const jours = caisseDuClientSimulee(etat, 2026)
+    expect(operationDuMois(ligne('apport', '2026-03-02', '50'), jours)).toEqual({ genre: 'apport', date: '2026-03-02', montant: 50 })
+    expect(operationDuMois(ligne('prelevement', '2026-03-04', '100,5'), jours)).toEqual({ genre: 'prelevement', date: '2026-03-04', montant: 100.5 })
+    expect(operationDuMois(ligne('recette', '2026-03-03', '85'), jours))
+      .toEqual({ genre: 'recette', date: '2026-03-03', montant: 85, encaissements_du_jour: [] })
+    expect(operationDuMois(ligne('recette', '2026-04-02', '85'), jours).encaissements_du_jour).toEqual(ensembleDuJour(etat, '2026-04-02'))
+    expect(ensembleDuJour(etat, '2026-04-02')).toHaveLength(2)
+    // Une ligne à moitié tapée part telle quelle : la base, et le module, en disent le manque.
+    expect(operationDuMois(ligne('apport', '', '10'), jours)).toEqual({ genre: 'apport', date: null, montant: 10 })
+    // Ce que la base attend du client — aucune écriture, aucune catégorie — : relu dans l'export.
+    expect(MOTS_DE_LA_CAISSE.ecriture_du_client.gabarit).toBe('Une saisie depuis ton espace n\'envoie pas d\'écriture : la base compose la sienne.')
+  })
+
+  it('permis : le module juge comme la base, et la confirmation nomme le nombre, ce qui entre et sort, et la caisse du dernier jour', () => {
+    const etat = caisseAuxUuid(caisseFictive())
+    const jours = caisseDuClientSimulee(etat, 2026)
+    const synth = rejoue(etat, 2026)
+    // Un prélèvement placé avant l'apport qui le couvre : la caisse se juge à la fin.
+    const lignes = [
+      ligne('prelevement', '2026-04-03', '300'), ligne('apport', '2026-04-02', '200'), ligne('recette', '2026-04-02', '85'),
+      ligne('recette', '2026-04-03', '40,50'), ligne('recette', '2026-04-05', '-5'), ligne('apport', '', ''),
+    ]
+    const v = verdictDuMoisDuClient(lignes, 2026, jours, synth)
+    if (v.etat !== 'permis') throw new Error(`permis attendu : ${JSON.stringify(v)}`)
+    // La ligne vide en fin ne part pas.
+    expect(v.operations).toHaveLength(5)
+    expect(v.operations.every((o) => !('categorie_id' in o) && !('taux_tva' in o) && !('ecritures' in o))).toBe(true)
+    const juge = jugerLaSaisieDUnMois(tableauReel(lignes.slice(0, 5), etat), dossierReel(etat))
+    expect(juge.refus).toBeNull()
+    if (juge.refus) return
+    expect(v.resume).toEqual({
+      nombre: 5, entree: 20000 + 8500 + 4050, sortie: 30000 + 500, dernierJour: '2026-04-05', soldeApres: soldeAuJour(juge.caisse, '2026-04-05'),
+    })
+    expect(confirmationDuMois(v.resume)).toMatch(new RegExp('^Enregistrer 5 opérations d’un coup \\? Elles font entrer 325,50\\s€ dans ta caisse '
+      + 'et en sortir 305,00\\s€ ; ta caisse du 05/04/2026 passera à [0-9 \\s]+,[0-9]{2}\\s€\\. Tout part ensemble, ou rien\\. Ton cabinet les voit aussitôt\\.$'))
+    expect(confirmationDuMois({ nombre: 1, entree: 1000, sortie: 0, dernierJour: '2026-04-02', soldeApres: 1000 }))
+      .toMatch(/^Enregistrer 1 opération d’un coup \? Elle fait entrer 10,00\s€ .* Ton cabinet la voit aussitôt\.$/)
+  })
+
+  it('refusé : le rang et le jour, sous les mots de la base ; la caisse jugée à la fin ; rien de tapé, rien jugé', () => {
+    const etat = caisseAuxUuid(caisseFictive())
+    const jours = caisseDuClientSimulee(etat, 2026)
+    const synth = rejoue(etat, 2026)
+    const cas: [ReturnType<typeof ligne>[], string][] = [
+      [[ligne('apport', '2026-03-02', '10'), ligne('recette', '2026-03-03', '10,005')],
+        `Opération n° 2, du 03/03/2026 : ${MOTS_DE_LA_CAISSE.montant_centime.gabarit}`],
+      [[ligne('apport', '2026-03-02', '10'), ligne('apport', '', '10')], `Opération n° 2 : ${MOTS_DE_LA_CAISSE.date_absente.gabarit}`],
+      [[ligne('apport', '2026-12-01', '10')], 'Opération n° 1, du 01/12/2026 : Une opération de caisse ne se date pas dans l\'avenir : nous sommes le 02/11/2026.'],
+      [[ligne('apport', '2026-03-02', '-5')], `Opération n° 1, du 02/03/2026 : ${MOTS_DE_LA_CAISSE.montant_negatif.gabarit}`],
+      [[ligne('recette', '2026-01-02', '10'), ligne('prelevement', '2026-01-03', '500')],
+        'La caisse serait négative le 03/01/2026 (−370,00 €) : saisis d\'abord les recettes en espèces qui précèdent ce jour.'],
+    ]
+    for (const [lignes, attendu] of cas) {
+      const v = verdictDuMoisDuClient(lignes, 2026, jours, synth)
+      const forme = (x: string) => x.replace(/'/g, '’').replace(/\s€/g, ' €')
+      expect(v.etat === 'refuse' ? forme(v.message) : v.etat, JSON.stringify(lignes)).toBe(forme(attendu))
+      // Le même refus que celui de la base sur la caisse entière.
+      expect(v.etat === 'refuse' ? v.message : null).toBe(jugerLaSaisieDUnMois(tableauReel(lignes, etat), dossierReel(etat)).refus?.message ?? null)
+    }
+    // Les règles du formulaire, qui ne sont pas celles de la base : l'année affichée, un montant illisible.
+    expect(verdictDuMoisDuClient([ligne('apport', '2026-03-02', '10'), ligne('apport', '2025-12-31', '10')], 2026, jours, synth))
+      .toMatchObject({ etat: 'refuse', message: `Opération n° 2, du 31/12/2025 : ${horsDeLAnnee(2026)}` })
+    expect(verdictDuMoisDuClient([ligne('apport', '2026-03-02', 'dix')], 2026, jours, synth))
+      .toEqual({ etat: 'illisible', message: `Opération n° 1 : ${MONTANT_ILLISIBLE}` })
+    expect(verdictDuMoisDuClient([ligne('recette', '', ''), ligne('apport', '', '  ')], 2026, jours, synth)).toEqual({ etat: 'vide' })
+    // Une ligne vide AU MILIEU est une ligne : son rang la nomme.
+    expect(verdictDuMoisDuClient([ligne('apport', '2026-03-02', '10'), ligne('apport', '', ''), ligne('apport', '2026-03-04', '10')], 2026, jours, synth))
+      .toMatchObject({ etat: 'refuse', message: `Opération n° 2 : ${MOTS_DE_LA_CAISSE.date_absente.gabarit}` })
+  })
+
+  it('un dossier où la saisie est fermée, ou dont le plan est piégé : le module ne l’ouvre pas', () => {
+    const etat = caisseAuxUuid(caisseFictive())
+    const jours = caisseDuClientSimulee(etat, 2026)
+    // Le plan piégé de `rejoue` : aucun jugement du mois ne le lit.
+    expect(() => verdictDuMoisDuClient([ligne('recette', '2026-03-03', '10'), ligne('prelevement', '2026-03-04', '5')], 2026, jours, rejoue(etat, 2026))).not.toThrow()
+    // Un dossier en engagement : la base refuse la première opération.
+    const engagement = { ...rejoue(etat, 2026), modele: { mode: 'engagement' as const, compteNotesDeFrais: '', plan: PLAN_QUE_LE_CLIENT_NE_LIT_PAS } }
+    expect(verdictDuMoisDuClient([ligne('apport', '2026-03-02', '10')], 2026, jours, engagement))
+      .toMatchObject({ etat: 'refuse', message: `Opération n° 1, du 02/03/2026 : ${MOTS_DE_LA_CAISSE.tresorerie.gabarit}` })
+  })
+
+  it('sur une batterie tirée : chaque mois, le même refus et la même caisse que sur la caisse entière', () => {
+    const t = tirage(20261104)
+    const entier = (n: number) => entierTire(t, n)
+    const jourTire = (annee: number) => new Date(Date.UTC(annee, 0, 1 + entier(annee === 2026 ? 306 : 365))).toISOString().slice(0, 10)
+    let compares = 0
+    let permis = 0
+    let negatifs = 0
+    for (let n = 0; n < 60; n++) {
+      const brut: EtatDeLaCaisse = {
+        compteCaisse: CAISSE,
+        ouvertures: entier(2) ? [{ date: '2025-01-01', compte: CAISSE, sens: 'debit', montant: entier(50000) / 100 }] : [],
+        operations: Array.from({ length: 1 + entier(10) }, (_, i) => {
+          const genre = (['recette', 'apport', 'prelevement', 'paiement'] as const)[entier(4)]
+          return operation({
+            id: `o${n}-${i}`, genre, date: jourTire(entier(3) === 0 ? 2025 : 2026), montant: (1 + entier(30000)) / 100,
+            categorie_id: genre === 'recette' ? NATURE : null, piece_id: genre === 'paiement' ? 'p-vente' : null,
+            origine: entier(3) === 0 ? 'cabinet' : 'client', cree_par: entier(3) === 0 ? 'u-cabinet' : MOI,
+          })
+        }),
+        mouvements: Array.from({ length: entier(3) }, (_, i) => ({
+          id: `m${n}-${i}`, date: jourTire(2026), montant: (entier(3) === 0 ? -1 : 1) * (1 + entier(20000)) / 100, compte_bilan: CAISSE,
+        })),
+        encaissements: Array.from({ length: entier(4) }, (_, i) => ({
+          id: `e${n}-${i}`, facture_id: 'f-source', date_encaissement: jourTire(2026), montant: (1 + entier(20000)) / 100,
+          moyen: 'especes' as const, ligne_bancaire_id: null, annule_id: null, retire_le: null,
+        })),
+        factures: [{ id: 'f-source', numero: 'F2026-0007', source_de_la_vente: true }],
+        piecesDeVente: ['p-vente'],
+      }
+      const plusBas = Math.min(0, ...soldesDeLaCaisse(brut).map((x) => x.centimes))
+      if (plusBas < 0) brut.operations = [...brut.operations, operation({ id: `o${n}-apport`, genre: 'apport', date: '2025-01-01', montant: -plusBas / 100, categorie_id: null })]
+      const etat = caisseAuxUuid(brut)
+      for (const annee of [2025, 2026]) {
+        const jours = [annee, 2026].filter((a, i, l) => l.indexOf(a) === i).flatMap((a) => caisseDuClientSimulee(etat, a))
+        const synth = rejoue(etat, annee)
+        const reel = dossierReel(etat)
+        for (let k = 0; k < 6; k++) {
+          // Un mois : de une à huit lignes, le plus souvent bien formées, parfois un montant au millième, nul, ou un jour vide.
+          const jourDuMois = (j: number) => `${annee}-${String(1 + (j % 10)).padStart(2, '0')}-${String(1 + entier(28)).padStart(2, '0')}`
+          const mois = entier(10)
+          const lignes = Array.from({ length: 1 + entier(8) }, () => {
+            const genre = GENRES_DU_CLIENT[entier(3)].genre
+            const montant = entier(12) === 0 ? ['0', '10,005', '-3'][entier(3)] : String((1 + entier(60000)) / 100).replace('.', ',')
+            return ligne(genre, entier(25) === 0 ? '' : jourDuMois(mois), montant)
+          })
+          const v = verdictDuMoisDuClient(lignes, annee, jours, synth)
+          const juge = jugerLaSaisieDUnMois(tableauReel(lignes, etat), reel)
+          expect(v.etat === 'refuse' ? v.message : null, `${n} ${annee} ${JSON.stringify(lignes)}`).toBe(juge.refus?.message ?? null)
+          if (v.etat === 'permis' && !juge.refus) {
+            expect(v.resume.soldeApres).toBe(soldeAuJour(juge.caisse, v.resume.dernierJour))
+            permis++
+          }
+          if (v.etat === 'refuse' && v.message.startsWith('La caisse serait négative')) negatifs++
+          compares++
+        }
+      }
+    }
+    expect(compares).toBe(720)
+    expect(permis).toBeGreaterThan(100)
+    expect(negatifs).toBeGreaterThan(20)
+  })
+
+  it('ses mots ne disent aucune forme du cabinet', () => {
+    for (const t of [confirmationDuMois({ nombre: 3, entree: 100, sortie: 50, dernierJour: '2026-03-04', soldeApres: 50 })]) {
+      expect(motsDuCabinet(t), t).toEqual([])
+    }
   })
 })

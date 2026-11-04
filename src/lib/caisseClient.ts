@@ -1,5 +1,6 @@
 import {
-  GENRES_SAISIS, jugerLaSaisie, jugerLeRemplacement, jugerLeRetrait, jourDit, quiEcritLaCaisse, refus, sansLOperation,
+  GENRES_SAISIS, jugerLaSaisie, jugerLaSaisieDUnMois, jugerLeRemplacement, jugerLeRetrait, jourDit, quiEcritLaCaisse, refus,
+  sansLOperation,
   type CategorieDeLaCaisse, type DossierDeLaCaisse, type EncaissementDeLaCaisse, type EtatDeLaCaisse, type RefusCaisse,
   type SaisieDeCaisse,
 } from './caisse'
@@ -27,6 +28,8 @@ import type { Dossier, OperationCaisse } from './types'
 //   - le client ne lit pas le plan du dossier : sa branche ne le lit jamais (la base compose son écriture). Le modèle qu'il
 //     passe porte un plan VIDE (`PLAN_QUE_LE_CLIENT_NE_LIT_PAS`), que `caisseClient.test.ts` rend piégé pour prouver qu'aucun
 //     de ses jugements ne l'ouvre.
+// La saisie d'un MOIS (C12A-Q1, le 04/11/2026, « L'ajouter maintenant ») suit la même voie : le tableau tel qu'il part à
+// `enregistrer_operations_de_caisse`, jugé par `jugerLaSaisieDUnMois` de lib/caisse.ts sur la caisse rejouée, tout ou rien.
 // Ce que le client ne peut pas savoir, la base le juge seule, et l'écran redit son refus après le clic : l'ouverture du
 // dossier (la date de sa reprise, hors du compte de la caisse) ; et la frontière de la validation d'une année où sa caisse
 // n'a aucun jour (`anneeFigee` rend nul). Une année que la lecture dit figée n'offre aucune saisie : l'écran le dit.
@@ -316,6 +319,83 @@ export function verdictDuFormulaire(
     : jugerLeRemplacement(remplace, saisie, dossier, 'maintenant', 'saisie')
   if (juge.refus) return { etat: 'refuse', message: pourLEspace('client', juge.refus.message), saisie }
   return { etat: 'permis', saisie, soldeApres: soldeAuJour(juge.caisse, f.date) }
+}
+
+// ── La saisie d'un mois (C12A-Q1) ─────────────────────────────────────────────────────────────────────────────────────
+// Comme l'onglet Caisse du cabinet (lib/caisseEcran.ts, `verdictDuMois`), en plusieurs lignes, tout ou rien : la base écrit
+// toutes les opérations ou aucune, et la caisse jamais négative se juge à la FIN de la saisie (un jour qui retire avant
+// qu'un autre ajoute passe). Les lignes du client sont celles du formulaire d'un jour : le genre, le jour, le montant.
+
+/** Une ligne du mois entièrement vide : rien de tapé, rien à envoyer. */
+export function ligneVideDuClient(l: FormulaireDuClient): boolean {
+  return l.date === '' && l.montant.trim() === ''
+}
+
+/**
+ * Une opération telle qu'elle PART dans le tableau d'`enregistrer_operations_de_caisse` : le genre, le jour, le montant —
+ * aucune catégorie, aucun taux, aucune écriture (la base les pose) ; pour une recette seulement, l'ensemble du jour que la
+ * lecture a rendu (vide sans jour lu), que la base EXIGE d'une recette (« une liste d'identifiants, vide s'il n'y en a
+ * aucun ») ; un apport ou un prélèvement n'en porte pas.
+ */
+export function operationDuMois(l: FormulaireDuClient, jours: readonly JourDeLaCaisseDuClient[]): Record<string, unknown> {
+  const s = saisieDuFormulaire(l, jours)
+  const operation: Record<string, unknown> = { genre: s.genre, date: s.date, montant: s.montant }
+  if (s.genre === 'recette') operation.encaissements_du_jour = s.encaissements_du_jour
+  return operation
+}
+
+/** Ce que la confirmation d'un mois nomme : combien, ce qui entre et sort, et la caisse du dernier jour saisi, après. */
+export interface ResumeDuMois { nombre: number; entree: number; sortie: number; dernierJour: string; soldeApres: number }
+
+export type VerdictDuMoisDuClient =
+  | { etat: 'vide' }
+  | { etat: 'illisible'; message: string }
+  | { etat: 'refuse'; message: string; operations: Record<string, unknown>[] }
+  | { etat: 'permis'; operations: Record<string, unknown>[]; resume: ResumeDuMois }
+
+/**
+ * Le verdict de la saisie d'un mois, avant le clic : le tableau TEL QU'IL PART (les lignes vides EN FIN écartées — une ligne
+ * vide au milieu est une ligne, que son rang nomme), jugé par `jugerLaSaisieDUnMois` sur le dossier du client et sa caisse
+ * rejouée, aux mots du client ; permis, avec ce que la confirmation nomme. La seule règle propre à l'écran est celle du
+ * formulaire d'un jour : un jour hors de l'année affichée (la lecture ne porte que celle-là), nommé par son rang et son jour.
+ */
+export function verdictDuMoisDuClient(
+  lignes: readonly FormulaireDuClient[], annee: number, jours: readonly JourDeLaCaisseDuClient[], dossier: DossierDeLaCaisse,
+): VerdictDuMoisDuClient {
+  let n = lignes.length
+  while (n > 0 && ligneVideDuClient(lignes[n - 1])) n--
+  if (n === 0) return { etat: 'vide' }
+  const operations: Record<string, unknown>[] = []
+  for (let i = 0; i < n; i++) {
+    if (lireLeMontantSaisi(lignes[i].montant) === 'illisible') return { etat: 'illisible', message: `Opération n° ${i + 1} : ${MONTANT_ILLISIBLE}` }
+    operations.push(operationDuMois(lignes[i], jours))
+  }
+  for (let i = 0; i < n; i++) {
+    const date = lignes[i].date
+    if (date !== '' && (date.slice(0, 4) !== String(annee) || !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+      return { etat: 'refuse', message: `Opération n° ${i + 1}, du ${jourDit(date)} : ${horsDeLAnnee(annee)}`, operations }
+    }
+  }
+  const juge = jugerLaSaisieDUnMois(operations, dossier)
+  if (juge.refus) return { etat: 'refuse', message: pourLEspace('client', juge.refus.message), operations }
+  const parSens = (sortie: boolean) => operations.reduce((total, o) => {
+    const c = centimes(o.montant as number)
+    const sort = o.genre === 'prelevement' || c < 0
+    return sort === sortie ? total + Math.abs(c) : total
+  }, 0)
+  const dernierJour = operations.map((o) => o.date as string).sort().at(-1)!
+  return {
+    etat: 'permis', operations,
+    resume: { nombre: operations.length, entree: parSens(false), sortie: parSens(true), dernierJour, soldeApres: soldeAuJour(juge.caisse, dernierJour) },
+  }
+}
+
+/** La confirmation d'un mois : combien d'opérations, ce qui entre et sort, la caisse du dernier jour après — tout ou rien. */
+export function confirmationDuMois(r: ResumeDuMois): string {
+  const operations = `${r.nombre} opération${r.nombre > 1 ? 's' : ''}`
+  return `Enregistrer ${operations} d’un coup ? Elle${r.nombre > 1 ? 's font' : ' fait'} entrer ${euros(r.entree)} dans ta caisse `
+    + `et en sortir ${euros(r.sortie)} ; ta caisse du ${jourDit(r.dernierJour)} passera à ${euros(r.soldeApres)}. Tout part `
+    + `ensemble, ou rien. Ton cabinet ${r.nombre > 1 ? 'les' : 'la'} voit aussitôt.`
 }
 
 /** Le refus de la base pour le retrait de cette opération, aux mots du client ; ou rien. */

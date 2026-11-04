@@ -2,8 +2,8 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
 import {
-  CE_QUE_LA_CASE_RETIENT, REFUS_CAISSE_DOSSIER_NON_EXCLU, ceQueDitLaCaseCaisse, messageDuRefus, raisonDuDossierNonExclu,
-  raisonDuStatutIllisible, type EtatCaisseDuDossier,
+  CE_QUE_LA_CASE_RETIENT, RAISON_DU_DOSSIER_EN_ENGAGEMENT, REFUS_CAISSE_DOSSIER_NON_EXCLU, ceQueDitLaCaseCaisse, messageDuRefus,
+  raisonDuDossierNonExclu, raisonDuModeIllisible, raisonDuStatutIllisible, type EtatCaisseDuDossier,
 } from '../../lib/droitsAcces'
 import { MOTS_DE_LA_CAISSE, type CategorieDeLaCaisse } from '../../lib/caisse'
 import { phraseDeLaNature } from '../../lib/natureDesRecettes'
@@ -237,6 +237,61 @@ describe('la case « Caisse » suit le statut de TVA lu', () => {
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
     const ligne = screen.getByText('secretariat@exemple.fr').closest('tr')!
     expect(within(ligne).getAllByText(/^(Oui|Non)$/).map((e) => e.textContent)).toEqual(['Non', 'Non', 'Oui'])
+  })
+})
+
+// C11-Q2 (le 04/11/2026, « La refuser à l'écran ») : sur un dossier tenu en engagement, la case ne se coche pas, dit avant
+// le clic en une phrase ; décocher reste offert ; un mode illisible n'offre aucun geste. L'écran est ici plus strict que la base.
+describe('la case « Caisse » suit le mode comptable lu (C11-Q2)', () => {
+  it('en engagement : décochée, la case est grisée sous sa raison ; la phrase la dit ; aucune fenêtre ne s’ouvre', async () => {
+    dossierFaux.caisse = { etat: 'en_engagement', statut: 'exonere' }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const grisee = caseDe('Caisse')
+    expect(grisee.disabled).toBe(true)
+    expect(grisee.title).toBe(RAISON_DU_DOSSIER_EN_ENGAGEMENT)
+    expect(grisee.title).toContain(`« ${MOTS_DE_LA_CAISSE.tresorerie.gabarit} »`)
+    expect(grisee.getAttribute('aria-describedby')).toBe('ce-que-dit-la-case-caisse')
+    expect(document.getElementById('ce-que-dit-la-case-caisse')?.textContent).toContain(RAISON_DU_DOSSIER_EN_ENGAGEMENT)
+    // Un clic qui arriverait quand même n'ouvre rien et n'écrit rien.
+    await act(async () => { fireEvent.click(grisee) })
+    expect(fenetre()).toBeNull()
+    expect(faux.appelsRpc).toEqual([])
+    // Les deux autres cases ne lisent pas le mode.
+    expect(caseDe('Banque').disabled).toBe(false)
+    expect(caseDe('Ventes').disabled).toBe(false)
+  })
+
+  it('en engagement : cochée, la case se décoche sans confirmation — deux clics du même `act` n’écrivent qu’une fois', async () => {
+    dossierFaux.caisse = { etat: 'en_engagement', statut: 'franchise' }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const cochee = caseDe('Caisse', 'secretariat@exemple.fr')
+    expect(cochee.checked).toBe(true)
+    expect(cochee.disabled).toBe(false)
+    const liberer = retenirLEcriture()
+    await act(async () => { fireEvent.click(cochee); fireEvent.click(cochee) })
+    expect(fenetre()).toBeNull()
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm2', p_ventes: null, p_banque: null, p_caisse: false }])
+    await liberer()
+    expect(faux.appelsRpc).toHaveLength(1)
+    expect(caseDe('Caisse', 'secretariat@exemple.fr').checked).toBe(false)
+    expect(caseDe('Caisse', 'secretariat@exemple.fr').disabled).toBe(true)
+  })
+
+  it('mode illisible : la case ne se coche ni ne se décoche, la phrase dit le motif ; les deux autres s’offrent', async () => {
+    dossierFaux.caisse = { etat: 'mode_illisible', motif: 'le mode comptable n’a pas été lu' }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    for (const personne of ['client@exemple.fr', 'secretariat@exemple.fr']) {
+      expect(caseDe('Caisse', personne).disabled, personne).toBe(true)
+      expect(caseDe('Caisse', personne).title, personne).toBe(raisonDuModeIllisible('le mode comptable n’a pas été lu'))
+      expect(caseDe('Banque', personne).disabled, personne).toBe(false)
+    }
+    await act(async () => { fireEvent.click(caseDe('Caisse', 'secretariat@exemple.fr')) })
+    expect(faux.appelsRpc).toEqual([])
+    expect(document.getElementById('ce-que-dit-la-case-caisse')?.textContent)
+      .toContain('Le mode comptable de ce dossier ne se lit pas (le mode comptable n’a pas été lu)')
   })
 })
 

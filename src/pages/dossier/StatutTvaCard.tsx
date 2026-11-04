@@ -1,6 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
+import { avisDuStatutSousLaCase } from '../../lib/droitsAcces'
+import { lireLesAccesCaisseDuDossier, type LectureDesAccesCaisse } from '../../lib/accesCaisseDuDossierLecture'
 import { numeroTvaFrancais, sirenDe, sirenValide } from '../../lib/factureCii'
 import {
   EXONERATIONS,
@@ -30,6 +32,12 @@ import type { ArticleExoneration, PeriodiciteTva, StatutTva } from '../../lib/ty
 // savoir seule — un redevable en a toujours un, un franchisé ou un exonéré seulement si son service des impôts le lui a
 // attribué. Le numéro se calcule de son SIREN, comme celui d'un redevable ; sans la case, ses factures restent
 // imprimables et envoyables par e-mail, mais ne partent pas par une plateforme.
+//
+// LA CASE « CAISSE » RETIENT LE STATUT (C11-Q1, le 04/11/2026) : tant qu'un accès du dossier la porte, la base refuse que le
+// statut quitte l'exonération et la franchise (`garder_statut_tva_de_la_caisse`). La carte lit les accès du dossier EN
+// ENTIER, à chaque ouverture du formulaire, et le dit AVANT le clic, aux mots de la base — « Enregistrer » se grise alors. Des
+// accès lus en partie, refusés ou pas encore revenus ne promettent rien : la carte le dit, « Enregistrer » reste offert, et
+// la base juge après le clic, comme avant (lib/droitsAcces.ts, `avisDuStatutSousLaCase`).
 
 export interface ModificationStatutTva {
   statut_tva: StatutTva | null
@@ -75,6 +83,22 @@ export default function StatutTvaCard({ dossierId, statut, article, numeroTvaAtt
   // Verrou d'exécution : un `useRef`, posé AVANT le `try` et relâché dans le `finally` (voir CLAUDE.md).
   const ecriture = useRef(false)
 
+  // Les accès du dossier, lus à chaque ouverture du formulaire d'un dossier exonéré ou en franchise — le seul que la garde
+  // retient ; un accès a pu être décoché dans l'onglet Accès entre-temps —, et gardés AVEC le dossier lu : une réponse pour
+  // un autre dossier, ou arrivée après coup, ne juge pas celui-ci.
+  // Chaque ouverture porte son numéro : une lecture faite pour une ouverture d'avant ne se montre pas.
+  const aGarder = edition && (statut === 'exonere' || statut === 'franchise')
+  const [ouverture, setOuverture] = useState(0)
+  const [accesLus, setAccesLus] = useState<{ ouverture: number; lecture: LectureDesAccesCaisse } | null>(null)
+  useEffect(() => {
+    if (!aGarder) return
+    let annule = false
+    lireLesAccesCaisseDuDossier(dossierId).then((lecture) => { if (!annule) setAccesLus({ ouverture, lecture }) })
+    return () => { annule = true }
+  }, [dossierId, aGarder, ouverture])
+  const acces = accesLus !== null && accesLus.ouverture === ouverture && accesLus.lecture.dossierId === dossierId
+    ? accesLus.lecture : null
+
   // Ce que « Enregistrer » écrirait. L'article ne vaut que pour un dossier exonéré ou redevable : la franchise n'en
   // a pas, et c'est `ecritureDuStatut` qui le retire — la même écriture partout, pour l'aperçu comme pour la base. De
   // même la case du numéro de TVA, qui ne vaut qu'en franchise ou exonéré.
@@ -84,6 +108,9 @@ export default function StatutTvaCard({ dossierId, statut, article, numeroTvaAtt
   // Ce que le changement fait aux montants du dossier, dit avant le clic.
   const devientRedevable = choix === 'redevable' && statut !== 'redevable'
   const cesseDEtreRedevable = choix != null && choix !== 'redevable' && statut === 'redevable'
+  // Ce que la case « Caisse » d'un accès retient, dit avant le clic : le refus de la base, ou ce qu'on ne sait pas promettre.
+  const avisCaisse = prevu == null ? null : avisDuStatutSousLaCase(statut, prevu.statut_tva, acces)
+  const refuseParLaCaisse = avisCaisse?.etat === 'refuse'
 
   function annuler() {
     setChoix(statut)
@@ -94,7 +121,7 @@ export default function StatutTvaCard({ dossierId, statut, article, numeroTvaAtt
   }
 
   async function enregistrer() {
-    if (prevu == null || !modifie) return
+    if (prevu == null || !modifie || refuseParLaCaisse) return
     if (ecriture.current) return
     ecriture.current = true
     setEnCours(true)
@@ -145,7 +172,8 @@ export default function StatutTvaCard({ dossierId, statut, article, numeroTvaAtt
               {numeroTvaAttribue ? <>Le dossier a un numéro de TVA intracommunautaire. {numeroAnnonce(siret)}</> : SANS_NUMERO}
             </p>
           )}
-          <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => setEdition(true)}>
+          <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 10 }}
+            onClick={() => { setOuverture((n) => n + 1); setEdition(true) }}>
             Changer le statut
           </button>
         </>
@@ -228,9 +256,15 @@ export default function StatutTvaCard({ dossierId, statut, article, numeroTvaAtt
               préparera plus de déclaration.
             </p>
           )}
+          {avisCaisse && (
+            <p className={avisCaisse.etat === 'refuse' ? 'error-text' : 'alerte-tva'} role={avisCaisse.etat === 'refuse' ? 'alert' : undefined}
+              style={{ margin: '10px 0 0' }}>
+              {avisCaisse.message}
+            </p>
+          )}
           {erreur && <p className="error-text">{erreur}</p>}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-            <button type="button" className="btn btn-primary btn-sm" disabled={!modifie || enCours} onClick={enregistrer}>
+            <button type="button" className="btn btn-primary btn-sm" disabled={!modifie || enCours || refuseParLaCaisse} onClick={enregistrer}>
               {enCours ? 'Enregistrement…' : 'Enregistrer'}
             </button>
             {statut != null && (

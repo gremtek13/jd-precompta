@@ -30,7 +30,9 @@
 // « CAISSE » À L'ÉCRAN DU CABINET (C11, LIGNE 26.6) ». Le module dit la case (`DOMAINES`), ses gestes selon le statut de TVA
 // du dossier (`gesteDeLaCase`, `etatCaisseDuDossier`), ses refus aux mots de la base, ce qu'elle ouvre à la SESSION du client
 // (`ceQueDitLaCaseCaisse`) et la confirmation qui la coche (`confirmationDeLaCaseCaisse`). Ce qu'elle ouvre ne porte aucun
-// texte libre du cabinet : aucun libellé neuf (en fin de module, la raison).
+// texte libre du cabinet : aucun libellé neuf (en fin de module, la raison). Depuis C11-Q2 (le 04/11/2026), les gestes lisent
+// aussi le mode comptable du dossier : la case ne se coche pas sur un dossier tenu en engagement — l'écran, ici, plus strict
+// que la base (`etatCaisseDuDossier`).
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { BASCULE_OFFERTE } from './basculeDesVentes'
@@ -42,8 +44,9 @@ import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { SIMULATION_VENTES_FACTUREES_EXPORTEE } from './simulationVentesFacturees'
-import { STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
+import { refus as refusDeLaCaisse, STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
+import type { StatutTva } from './types'
 
 export type Domaine = 'ventes' | 'banque' | 'caisse'
 
@@ -478,7 +481,8 @@ const LES_DEUX_GESTES: GesteDeLaCase = { cocher: true, decocher: true, raison: n
  * Les gestes d'une case : « Banque » les a toujours ; « Ventes » sur un dossier basculé aussi ; sur un dossier qui n'a pas
  * basculé, décocher seulement ; sur un réglage illisible, aucun. « Caisse » (étape C11) suit le statut de TVA du dossier
  * de la même façon : exonéré ou en franchise, les deux gestes ; redevable ou à préciser, décocher seulement ; un statut
- * illisible, aucun. Chaque case lit SON état, et lui seul : aucune n'a les deux gestes par défaut.
+ * illisible, aucun. Et son mode comptable (C11-Q2) : en engagement, décocher seulement ; un mode illisible, aucun geste.
+ * Chaque case lit SON état, et lui seul : aucune n'a les deux gestes par défaut.
  */
 export function gesteDeLaCase(domaine: Domaine, reglage: ReglageDuDossier, caisse: EtatCaisseDuDossier): GesteDeLaCase {
   switch (domaine) {
@@ -495,6 +499,8 @@ export function gesteDeLaCase(domaine: Domaine, reglage: ReglageDuDossier, caiss
       if (caisse.etat === 'tenue_par_le_cabinet') {
         return { cocher: false, decocher: true, raison: raisonDuDossierNonExclu(caisse.statut) }
       }
+      if (caisse.etat === 'en_engagement') return { cocher: false, decocher: true, raison: RAISON_DU_DOSSIER_EN_ENGAGEMENT }
+      if (caisse.etat === 'mode_illisible') return { cocher: false, decocher: false, raison: raisonDuModeIllisible(caisse.motif) }
       return { cocher: false, decocher: false, raison: raisonDuStatutIllisible(caisse.motif) }
   }
 }
@@ -537,30 +543,43 @@ export function refusDeLaCase(
 // changeait le statut se refuse après le clic, sous les mêmes mots.
 
 /**
- * Le statut de TVA du dossier, tel que l'onglet Accès l'a lu, jugé pour la case « Caisse » :
- *   - `exclu` : exonéré ou en franchise en base — hors du système de caisse ; la case se coche ;
- *   - `tenue_par_le_cabinet` : redevable, ou à préciser (nul) — la case ne se coche pas ;
- *   - `illisible` : une ligne absente, une colonne absente ou d'une autre valeur — ni l'un ni l'autre, jamais « redevable ».
+ * Le statut de TVA et le mode comptable du dossier, tels que l'onglet Accès les a lus, jugés pour la case « Caisse » :
+ *   - `exclu` : exonéré ou en franchise en base — hors du système de caisse —, tenu en trésorerie ; la case se coche ;
+ *   - `tenue_par_le_cabinet` : redevable, ou à préciser (nul) — la case ne se coche pas, quel que soit le mode : c'est le
+ *     refus de la base (`garder_droit_caisse`) ;
+ *   - `en_engagement` (C11-Q2) : exonéré ou en franchise, mais tenu en comptabilité d'engagement — la case ne se coche pas.
+ *     La base l'accepterait : la garde ne lit que le statut ; mais elle refuse ensuite toute opération de caisse hors de la
+ *     trésorerie (22023, `enregistrer_operation_caisse` : « l'engagement attend sa conception »), et le praticien
+ *     n'y pourrait rien saisir. L'écran est ici PLUS STRICT que la base, sans migration (décision du cabinet du 04/11/2026) ;
+ *   - `illisible` : une ligne absente, la colonne du statut absente ou d'une autre valeur — jamais « redevable » ;
+ *   - `mode_illisible` : le statut lu, mais la colonne du mode absente ou d'une autre valeur — jamais « trésorerie ».
  */
 export type EtatCaisseDuDossier =
   | { etat: 'exclu'; statut: 'exonere' | 'franchise' }
   | { etat: 'tenue_par_le_cabinet'; statut: 'redevable' | null }
+  | { etat: 'en_engagement'; statut: 'exonere' | 'franchise' }
   | { etat: 'illisible'; motif: string }
+  | { etat: 'mode_illisible'; motif: string }
 
 /**
- * Le statut d'une ligne du dossier (`null` : aucune ligne rendue). Nul est un statut — « à préciser », que la base admet —,
- * absent n'en est pas un : une colonne qu'on n'a pas lue n'est pas une colonne nulle. Les deux statuts exclus sont ceux que
- * les trois corps de la base nomment (lib/caisse.ts, `STATUTS_DE_LA_SAISIE_DU_CLIENT`).
+ * Le statut et le mode d'une ligne du dossier (`null` : aucune ligne rendue). Nul est un statut — « à préciser », que la base
+ * admet —, absent n'en est pas un : une colonne qu'on n'a pas lue n'est pas une colonne nulle. Les deux statuts exclus sont
+ * ceux que les trois corps de la base nomment (lib/caisse.ts, `STATUTS_DE_LA_SAISIE_DU_CLIENT`) ; les deux modes, ceux de la
+ * contrainte de `dossiers.mode_comptable`. Le statut se juge d'abord : sur un dossier redevable ou à préciser, la case se
+ * refuse aux mots de la base, quel que soit le mode — mais un mode illisible n'offre aucun geste, même là.
  */
-export function etatCaisseDuDossier(ligne: { readonly statut_tva?: unknown } | null): EtatCaisseDuDossier {
+export function etatCaisseDuDossier(ligne: { readonly statut_tva?: unknown; readonly mode_comptable?: unknown } | null): EtatCaisseDuDossier {
   if (ligne == null) return { etat: 'illisible', motif: 'le dossier n’a pas été trouvé' }
   if (!('statut_tva' in ligne)) return { etat: 'illisible', motif: 'le statut de TVA n’a pas été lu' }
   const statut = ligne.statut_tva
-  if ((statut === 'exonere' || statut === 'franchise') && STATUTS_DE_LA_SAISIE_DU_CLIENT.includes(statut)) {
-    return { etat: 'exclu', statut }
-  }
+  const exclu = (statut === 'exonere' || statut === 'franchise') && STATUTS_DE_LA_SAISIE_DU_CLIENT.includes(statut)
+  if (!exclu && statut !== 'redevable' && statut !== null) return { etat: 'illisible', motif: 'le statut de TVA n’est pas lisible' }
+  if (!('mode_comptable' in ligne)) return { etat: 'mode_illisible', motif: 'le mode comptable n’a pas été lu' }
+  const mode = ligne.mode_comptable
+  if (mode !== 'tresorerie' && mode !== 'engagement') return { etat: 'mode_illisible', motif: 'le mode comptable n’est pas lisible' }
   if (statut === 'redevable' || statut === null) return { etat: 'tenue_par_le_cabinet', statut }
-  return { etat: 'illisible', motif: 'le statut de TVA n’est pas lisible' }
+  const lequel = statut as 'exonere' | 'franchise'
+  return mode === 'engagement' ? { etat: 'en_engagement', statut: lequel } : { etat: 'exclu', statut: lequel }
 }
 
 /**
@@ -583,6 +602,40 @@ export const REFUS_STATUT_SOUS_LA_CASE_CAISSE = {
   message: "Un accès de ce dossier porte la case « Caisse », qui suppose un dossier exonéré de TVA ou en franchise en base : décoche-la d'abord.",
 } as const
 
+// ── Le statut de TVA sous la case « Caisse », dit dans l'onglet TVA (C11-Q1, le 04/11/2026, « Oui, avec C12 ») ─────────────
+// La carte du statut (pages/dossier/StatutTvaCard.tsx) lit les accès du dossier EN ENTIER
+// (lib/accesCaisseDuDossierLecture.ts) et dit AVANT le clic ce que `garder_statut_tva_de_la_caisse` refuserait : quitter
+// l'exonération et la franchise — vers « redevable », ou « à préciser » — tant qu'un accès porte la case, sous les mots de la
+// garde (`REFUS_STATUT_SOUS_LA_CASE_CAISSE`). Passer de l'un à l'autre passe, et un dossier qui n'était ni l'un ni l'autre
+// n'a rien à garder : la garde ne juge que ce qui QUITTE l'ensemble. Des accès lus en partie, refusés ou pas encore revenus
+// ne promettent rien : l'écran le dit, et la base reste juge après le clic.
+
+/** Les accès du dossier, tels que la carte du statut les a lus : combien portent la case, ou pourquoi on ne le sait pas. */
+export type AccesDuDossierLus = { etat: 'lus'; avecLaCase: number } | { etat: 'illisibles'; motif: string }
+
+/** Ce que la carte du statut dit d'un changement, avant le clic : le refus de la base, ou ce qu'elle ne sait pas promettre. */
+export type AvisDuStatutSousLaCase = { etat: 'refuse'; message: string } | { etat: 'incertain'; message: string }
+
+const exclu = (statut: StatutTva | null) => statut != null && STATUTS_DE_LA_SAISIE_DU_CLIENT.includes(statut)
+
+/**
+ * L'avis de la carte du statut sur un changement de `actuel` vers `choix`, les accès lus (`null` : pas encore revenus) ; nul
+ * quand la garde n'aurait rien à dire. Refusé — les mots de la base — quand un accès lu en entier porte la case ; incertain
+ * quand les accès ne sont pas lus en entier (aucune promesse : la base juge après le clic).
+ */
+export function avisDuStatutSousLaCase(
+  actuel: StatutTva | null, choix: StatutTva | null, acces: AccesDuDossierLus | null,
+): AvisDuStatutSousLaCase | null {
+  if (!exclu(actuel) || exclu(choix)) return null
+  const siUnAcces = 'si l’un d’eux porte la case « Caisse », la base refusera ce changement de statut, et il faudra la '
+    + 'décocher d’abord, dans l’onglet Accès.'
+  if (acces === null) return { etat: 'incertain', message: `Les accès du dossier ne sont pas encore lus : ${siUnAcces}` }
+  if (acces.etat === 'illisibles') {
+    return { etat: 'incertain', message: `Les accès du dossier n’ont pas pu être lus en entier (${acces.motif}) : ${siUnAcces}` }
+  }
+  return acces.avecLaCase > 0 ? { etat: 'refuse', message: REFUS_STATUT_SOUS_LA_CASE_CAISSE.message } : null
+}
+
 const NOM_DU_STATUT: Readonly<Record<'exonere' | 'franchise' | 'redevable', string>> = {
   exonere: 'exonéré de TVA',
   franchise: 'en franchise en base de TVA',
@@ -596,6 +649,21 @@ export function raisonDuDossierNonExclu(statut: 'redevable' | null): string {
     + `TVA) : sur ce dossier ${lequel}, la saisie des espèces par le praticien devrait passer par un logiciel de caisse `
     + 'certifié ou attesté (CGI, art. 286, I, 3° bis), et sa caisse reste tenue par toi. D’ici là, elle ne se coche pas, '
     + 'et un accès qui la porte se décoche.'
+}
+
+/**
+ * Pourquoi la case « Caisse » ne se coche pas sur un dossier tenu en engagement (C11-Q2), en une phrase : la raison est le
+ * refus que la base oppose à toute opération de caisse hors de la trésorerie, cité sous ses mots (lib/caisse.ts, jamais
+ * recopiés ici). La base, elle, accepterait la case : l'écran le dit comme une règle de l'écran, pas comme un refus de la base.
+ */
+export const RAISON_DU_DOSSIER_EN_ENGAGEMENT = 'Ce dossier est tenu en comptabilité d’engagement, où la base refuse toute '
+  + `opération de caisse (« ${refusDeLaCaisse('tresorerie').message} ») : la case « Caisse » ne s’y coche pas, puisque le `
+  + 'praticien n’y pourrait rien saisir, et un accès qui la porte se décoche.'
+
+/** Pourquoi la case « Caisse » ne se change pas sur un mode comptable illisible. */
+export function raisonDuModeIllisible(motif: string): string {
+  return `Le mode comptable de ce dossier ne se lit pas (${motif}) : la case « Caisse » ne se coche ni ne se décoche d’ici. `
+    + 'Recharge la page pour le relire.'
 }
 
 /** Pourquoi la case « Caisse » ne se change pas sur un statut de TVA illisible. */
@@ -653,6 +721,8 @@ export function phraseDuStatutDeLaCaisse(caisse: EtatCaisseDuDossier): string {
       + CE_QUE_LA_CASE_RETIENT
   }
   if (caisse.etat === 'tenue_par_le_cabinet') return raisonDuDossierNonExclu(caisse.statut)
+  if (caisse.etat === 'en_engagement') return RAISON_DU_DOSSIER_EN_ENGAGEMENT
+  if (caisse.etat === 'mode_illisible') return raisonDuModeIllisible(caisse.motif)
   return raisonDuStatutIllisible(caisse.motif)
 }
 
