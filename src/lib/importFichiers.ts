@@ -6,6 +6,7 @@ import { enregistrerTexteOcr } from './texteOcr'
 import { montantsPourPiece } from './tauxChange'
 import { retirerFichiers } from './stockage'
 import { preparerPiece } from './bornesStockage'
+import { confianceDeLExtraction, dateDeduite, DATE_DEDUITE_A_VERIFIER } from './dateDeduite'
 
 // Logique de dépôt de fichier(s) dans un dossier, partagée entre l'import en masse d'une arborescence
 // (ImportDossierModal) et l'ajout ponctuel d'un ou plusieurs fichiers (AjouterDocumentsModal) : même
@@ -171,17 +172,16 @@ export async function importerFichierDossier(params: {
     date_piece: extraction?.date_piece ?? null,
     tiers: extraction?.tiers ?? null,
     ...montants,
-    confiance: extraction?.confiance ?? null,
+    // Une date DÉDUITE plafonne la confiance à « moyenne », comme au dépôt du client (lib/dateDeduite.ts) ; le message le dit.
+    confiance: extraction ? confianceDeLExtraction(extraction) : null,
   })
   // Porté ici comme dans lib/depot.ts, son jumeau côté client : une correction apportée à l'un doit
   // l'être à l'autre, et le texte lu n'a aucune raison d'exister d'un seul côté du pipeline.
   await enregistrerTexteOcr(dossierId, { type: 'piece', id: pieceId }, extraction?.texte_ocr)
-  return {
-    statut: 'ok',
-    message: !extraction
-      ? 'Importé — extraction à refaire à la main'
-      : orientation.type_piece === 'vente'
-        ? 'Classé « Justificatif de recette » → Pièces'
-        : 'Classé « Facture » → Pièces',
-  }
+  const classe = !extraction
+    ? 'Importé — extraction à refaire à la main'
+    : orientation.type_piece === 'vente'
+      ? 'Classé « Justificatif de recette » → Pièces'
+      : 'Classé « Facture » → Pièces'
+  return { statut: 'ok', message: extraction && dateDeduite(extraction) ? `${classe} — ${DATE_DEDUITE_A_VERIFIER}` : classe }
 }

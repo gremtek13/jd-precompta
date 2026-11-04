@@ -296,6 +296,8 @@ describe('le rangement des contrôles existants', () => {
       'tickets', 'vacances', 'factures',
       // La relecture du 01/11/2026 : la pièce à valider qu'un paiement par la caisse cite.
       'pieces-a-valider-payees-par-la-caisse',
+      // La relecture du 04/11/2026 (D1) : le même achat entré deux fois, probablement.
+      'doublons-probables',
     ],
     immobilisations: [
       'immos-sans-justificatif', 'dotations-a-ecrire', 'vehicule-amorti-sous-bareme', 'amortissements-repris-en-ecart',

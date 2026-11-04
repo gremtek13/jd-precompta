@@ -310,6 +310,29 @@ describe("ClotureTab — l'exercice du paiement", () => {
       + 'validation, qui fige ensuite l’échéance à sa date.')
   })
 
+  // LE DOUBLON PROBABLE (relecture du 04/11/2026, D1) : le PDF compté à sa date de facture est souvent celui dont la photo, elle,
+  // a été rapprochée — la même charge comptée deux fois. La carte le dit, et la ligne nomme l'autre pièce. Données FICTIVES.
+  it('marque la pièce comptée à sa date de facture qu’une autre pièce double probablement, et nomme l’autre', async () => {
+    poserDecembre(false)
+    faux.parTable.pieces = [
+      FACTURE_DE_DECEMBRE,
+      { ...PIECE, id: 'p2', nom_fichier: 'IMG_3001.jpg', tiers: null, date_piece: '2025-12-22' },
+    ]
+    faux.parTable.lignes_bancaires = [{ ...REGLEE_EN_JANVIER, date: '2025-12-23', piece_id: 'p2' }]
+    monter(2025)
+    const carte = (await screen.findByText(/Pièces comptées à leur date de facture \(1\)/)).closest('.card') as HTMLElement
+    const texte = carte.textContent!.replace(/\s+/g, ' ')
+    expect(texte).toContain('Une de ces pièces a le montant, le fournisseur et presque la date d’une autre pièce')
+    expect(texte).toContain('Doublon probable de « IMG_3001.jpg » (fournisseur non lu, 22/12/2025, 120,00 €)')
+  })
+
+  it('ne marque rien sans autre pièce qui la double', async () => {
+    poserDecembre(false)
+    monter(2025)
+    const carte = (await screen.findByText(/Pièces comptées à leur date de facture \(1\)/)).closest('.card') as HTMLElement
+    expect(within(carte).queryAllByText('Doublon probable')).toHaveLength(0)
+  })
+
   it('se tait sur une pièce dont le paiement est rapproché', async () => {
     // Garde SYMÉTRIQUE : sans lui, « l'écran dit la supposition » serait satisfait par un écran qui
     // la dit toujours — et une mise en garde permanente cesse d'être lue.

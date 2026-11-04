@@ -904,3 +904,43 @@ describe('pointsDeLaChecklist : la reprise des immobilisations (IMMO-Q1, IMMO-Q2
     expect(point({ ...d, ouverture: null, ouvertureIncomplete: '1 lue sur 2' }, 'immos-sans-justificatif')?.nb).toBe(0)
   })
 })
+
+// LE DOUBLON PROBABLE (relecture du 04/11/2026, D1 ; PIECES-Q2, sur la recommandation ; lib/doublonsProbables.ts) : en
+// attention, sur les deux piles ; une paire que chaque paiement règle se tait, des paiements lus en partie n'en taisent
+// aucune ; une paire qu'un exercice validé fige entière ne se dit plus. Données FICTIVES.
+describe('pointsDeLaChecklist — le doublon probable (D1)', () => {
+  const pieceDe = (id: string, statut: 'validee' | 'a_valider', date: string, tiers: string | null): Piece => ({
+    id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`, storage_hash: null,
+    date_piece: date, tiers, montant_ht: null, montant_tva: null, montant_ttc: 86.4, devise: 'EUR', montant_devise: null,
+    taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut, notes: null,
+    confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
+    created_at: '2026-03-20T09:00:00Z', updated_at: '2026-03-20T09:00:00Z',
+  })
+  const pdf = pieceDe('pdf', 'validee', '2026-03-14', 'MEDICAL PLUS')
+  const photo = pieceDe('photo', 'a_valider', '2026-03-15', null)
+  const point = (d: Partial<DonneesDeLaChecklist>, c: Partial<ContexteDeLaChecklist> = {}) =>
+    pointsDeLaChecklist(donnees({ piecesValidees: [pdf], piecesAValider: [photo], ...d }), { ...CONTEXTE, ...c })
+      .tousLesPointsATraiter.find((p) => p.id === 'doublons-probables')
+
+  it('se dit en attention, sur les deux piles, et nomme les deux pièces', () => {
+    const p = point({})
+    expect(p).toMatchObject({ nb: 1, severite: 'attention', cible: 'pieces' })
+    expect(p?.detail).toContain('« pdf.pdf »')
+    expect(p?.detail).toContain('fournisseur non lu sur l’une')
+  })
+
+  it('se tait quand chaque pièce a son paiement ; des paiements lus en partie n’en taisent aucune', () => {
+    const lignes = [
+      ligne({ id: 'm1', statut: 'rapprochee', piece_id: 'pdf', montant: -86.4, date: '2026-03-15' }),
+      ligne({ id: 'm2', statut: 'rapprochee', piece_id: 'photo', montant: -86.4, date: '2026-03-16' }),
+    ]
+    expect(point({ lignes })?.nb).toBe(0)
+    expect(point({ lignes, paiementsPartiels: true })?.nb).toBe(1)
+  })
+
+  it('une paire qu’un exercice validé fige entière ne se dit plus', () => {
+    expect(point({}, { frontiere: '2026-12-31', anneesValidees: [2026] })?.nb).toBe(0)
+    expect(point({}, { frontiere: '2025-12-31', anneesValidees: [2025] })?.nb).toBe(1)
+  })
+})

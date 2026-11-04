@@ -29,6 +29,7 @@ import { passageJugeParG3, refusDeLaValidationDUneVente, type PieceMarquable } f
 import { pieceAJour, type LectureDeCeQueLaPieceEst, type MarquesDeLaPiece } from '../../lib/marquesDeLaPiece'
 import { lireCeQueLaPieceEst, relireLesMarquesDeLaPiece } from '../../lib/marquesDeLaPieceLecture'
 import { preparerPiece, refusDUnePiece } from '../../lib/bornesStockage'
+import { confianceDeLExtraction, dateDeduite as estDateDeduite } from '../../lib/dateDeduite'
 import ReglementParLaCaisse, { type CaisseDeLaPiece } from './ReglementParLaCaisse'
 import {
   etatDeLaCaisseDeLaFiche, refusDeLaDesignationParLaCaisse, refusDeSuppressionParLaCaisse, refusDuTypeDeLaPiece,
@@ -116,9 +117,13 @@ interface Props {
   // espèces » règle la pièce par la caisse et en retire un paiement, et la garde de la pièce (`garder_piece_payee_par_la_caisse`)
   // se dit avant l'enregistrement, la désignation et la suppression.
   caisse?: CaisseDeLaPiece | null
+  // LE DOUBLON PROBABLE (relecture du 04/11/2026, D1 ; lib/doublonsProbables.ts) : la phrase qui nomme les autres pièces de même
+  // montant, du même fournisseur, à sept jours au plus — chacune des deux fiches nomme l'autre —, ou rien. En attention, jamais
+  // un refus : deux achats identiques existent, et le geste reste « Supprimer », sur la pièce en trop.
+  doublonProbable?: string | null
 }
 
-export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance, exemplaire = null, caisse = null }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance, exemplaire = null, caisse = null, doublonProbable = null }: Props) {
   const fige = piece !== null && figeePar !== null
   // LA PIÈCE DONT LA FICHE EST DÉCLARÉE À L'E-REPORTING ne se supprime plus (hypothèse E5-Q6, `garder_piece_declaree`) : la
   // fiche le dit sous les mots de la base et n'offre pas « Supprimer ». Les fiches ou les déclarations lues en partie ne
@@ -180,6 +185,10 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   // Initialisé depuis la pièce (pas null) : sans ça, rouvrir une pièce déjà extraite sans relancer
   // l'extraction écraserait sa confiance enregistrée à la sauvegarde suivante.
   const [confiance, setConfiance] = useState<'haute' | 'moyenne' | 'basse' | null>(piece?.confiance ?? null)
+  // LA DATE QUE L'EXTRACTION DE CETTE FICHE VIENT DE DÉDUIRE (relecture du 04/11/2026, D2 ; lib/dateDeduite.ts) : la première
+  // date du document, faute de libellé. Dite sous le champ tant qu'elle y est — une date saisie à la place la fait taire. Rien
+  // ne la garde au-delà de la fiche : la confiance plafonnée à « moyenne » est la trace qui reste à l'enregistrement.
+  const [dateDeduiteParLExtraction, setDateDeduiteParLExtraction] = useState<string | null>(null)
   const [suggestionAutre, setSuggestionAutre] = useState<string | null>(null)
   const [lignesBrutes, setLignesBrutes] = useState<string[] | undefined>(undefined)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -415,6 +424,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     setExtracting(true)
     setExtractionError(null)
     setConfiance(null)
+    setDateDeduiteParLExtraction(null)
     setLignesBrutes(undefined)
     setSuggestionAutre(null)
     try {
@@ -436,6 +446,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       const result = await extractPiece(source, name)
 
       if (result.date_piece) setDatePiece(result.date_piece)
+      if (estDateDeduite(result)) setDateDeduiteParLExtraction(result.date_piece)
       if (result.tiers) {
         setTiers(result.tiers)
         suggestCategorieFromTiers(result.tiers)
@@ -461,7 +472,8 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       if (montants.montant_ht != null) setMontantHt(montants.montant_ht.toString())
       if (montants.montant_tva != null) setMontantTva(montants.montant_tva.toString())
       if (montants.montant_ttc != null) setMontantTtc(montants.montant_ttc.toString())
-      setConfiance(result.confiance)
+      // Une date déduite plafonne la confiance à « moyenne », comme aux deux dépôts (lib/dateDeduite.ts).
+      setConfiance(confianceDeLExtraction(result))
       if (result._lignes_brutes) setLignesBrutes(result._lignes_brutes)
       // Un bordereau de télétransmission est une pièce, mais dans l'autre sens : ce que le praticien a
       // facturé. Le sens connu est APPLIQUÉ plutôt que suggéré (voir CLAUDE.md, « une valeur par
@@ -868,6 +880,13 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           {citeePar && <p className="fiche-piece-figee">{citeePar}</p>}
           {declareePar && <p className="fiche-piece-figee">{declareePar}</p>}
           {retenueParLaCaisse && <p className="fiche-piece-figee">{retenueParLaCaisse}</p>}
+          {doublonProbable && (
+            <div className="fiche-piece-vente" role="note">
+              <span className="badge badge-warning">Doublon probable</span>
+              {/* Elle nomme des fichiers : un long nom passe à la ligne plutôt que d'élargir le volet (`.nom-fichier`). */}
+              <p className="nom-fichier">{doublonProbable}</p>
+            </div>
+          )}
           {venteEmise && (
             <div className="fiche-piece-vente">
               <span className={`badge ${PASTILLE_DE_LA_MARQUE[venteEmise.genre]}`}>{venteEmise.libelle}</span>
@@ -966,6 +985,15 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             <div className="field">
               <label htmlFor="date">Date de la pièce</label>
               <input id="date" type="date" value={datePiece} disabled={fige} onChange={(e) => setDatePiece(e.target.value)} />
+              {dateDeduiteParLExtraction !== null && dateDeduiteParLExtraction === datePiece && (
+                <span
+                  className="badge badge-warning"
+                  style={{ alignSelf: 'flex-start' }}
+                  title="La première date du document, retenue faute d’un libellé qui la désigne : sur un avis d’échéance ou un contrat, c’est souvent une autre date. Compare-la au document."
+                >
+                  Date déduite, à vérifier
+                </span>
+              )}
             </div>
             <div className="field">
               <label htmlFor="type">Type</label>

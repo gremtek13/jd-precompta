@@ -8,6 +8,7 @@ import { messageErreur } from './messageErreur'
 import { ouvrirApercu } from './apercu'
 import { retirerFichiers } from './stockage'
 import { preparerPiece } from './bornesStockage'
+import { confianceDeLExtraction } from './dateDeduite'
 
 // En cas de succès, la ligne créée est nommée : c'est ce qui permet à l'écran de proposer au client
 // d'y ajouter une précision tout de suite, au seul moment où il sait encore pourquoi la dépense a été
@@ -136,7 +137,9 @@ export async function deposerFichier(dossierId: string, file: File, hashsEnVol: 
         date_piece: extraction?.date_piece ?? null,
         tiers: extraction?.tiers ?? null,
         ...montants,
-        confiance: extraction?.confiance ?? null,
+        // Une date DÉDUITE (la première du document, faute de libellé) plafonne la confiance à « moyenne » : c'est la seule
+        // trace qui survive au dépôt (lib/dateDeduite.ts). Le même plafond au cabinet et dans la fiche.
+        confiance: extraction ? confianceDeLExtraction(extraction) : null,
       })
       // Après l'insertion, jamais avant : la policy exige que la pièce existe déjà. N'échoue jamais
       // le dépôt — ce texte est un confort de relecture, et perdre le document du client pour ça

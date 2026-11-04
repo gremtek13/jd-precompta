@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, aujourdHuiAParis, aujourdHuiSql, formatMoney, formatDate } from '../../lib/format'
+import { doublonsProbables, phraseDuDoublon, piecesRegleesPourLesDoublons } from '../../lib/doublonsProbables'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { montantRetenu } from '../../lib/montantRetenu'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
@@ -922,6 +923,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // l'écran qui remplit la 2035, parce que c'est la seule chose qui distingue « payée en décembre » de
   // « facturée en décembre et payée on ne sait quand ».
   const sansPaiement = declarationsOuvertes.flatMap((d) => d.sansPaiementConnu.map((s) => ({ annee: d.annee, ...s })))
+  // LE DOUBLON PROBABLE (relecture du 04/11/2026, D1 ; lib/doublonsProbables.ts) : la pièce comptée à sa date de facture est
+  // souvent le PDF dont la photo, elle, a été rapprochée — la même charge comptée deux fois. La ligne le dit, et nomme l'autre
+  // pièce ; la supprimer se fait dans Justificatifs. Sur les deux piles et les paiements que la 2035 lit.
+  const doublonsDeCloture = doublonsProbables([...piecesValidees, ...piecesAValider], assujettiTva, piecesRegleesPourLesDoublons(paiements))
+  const nbSansPaiementEnDoublon = sansPaiement.filter((s) => doublonsDeCloture.parPiece.has(s.piece.id)).length
   // Les échéances de cotisation qu'aucun paiement connu ne date — ni un prélèvement rapproché, ni un paiement depuis le
   // compte personnel (lib/cotisationPersonnelle.ts) : elles comptent à leur échéance, pour le versement saisi ou l'appel —
   // une SUPPOSITION, dite comme celle des pièces ci-dessus (lib/cotisationRapprochee.ts). Seulement celles des exercices
@@ -1265,6 +1271,14 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             l'onglet Banque la fera changer d'exercice.
           </p>
           <p className="muted">{rappelDuReleveSuivant(sansPaiement.map((s) => s.annee))}</p>
+          {nbSansPaiementEnDoublon > 0 && (
+            <p style={{ marginTop: 0 }}>
+              <span className="badge badge-warning">Doublon probable</span>{' '}
+              {nbSansPaiementEnDoublon === 1 ? 'Une de ces pièces a' : `${nbSansPaiementEnDoublon} de ces pièces ont`} le
+              montant, le fournisseur et presque la date d’une autre pièce : le même achat entré deux fois ? Si c’est le cas,
+              supprime la pièce en trop dans l’onglet Justificatifs — sa charge est comptée deux fois.
+            </p>
+          )}
           <details>
             <summary>Voir les pièces</summary>
             <div className="table-scroll tableau-adaptable">
@@ -1274,7 +1288,15 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                   {sansPaiement.map(({ annee, piece: p, montant }) => (
                     <tr key={`${annee}-${p.id}`}>
                       <td data-libelle="Exercice">{annee}</td>
-                      <td data-libelle="Pièce">{p.tiers ?? p.nom_fichier}</td>
+                      <td data-libelle="Pièce">
+                        {p.tiers ?? p.nom_fichier}
+                        {doublonsDeCloture.parPiece.has(p.id) && (
+                          <div className="nom-fichier" style={{ marginTop: 4, fontSize: '0.8rem' }}>
+                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Doublon probable</span>{' '}
+                            <span className="muted">{phraseDuDoublon(doublonsDeCloture.parPiece.get(p.id)!, assujettiTva)}</span>
+                          </div>
+                        )}
+                      </td>
                       <td data-libelle="Date de facture">{formatDate(p.date_piece)}</td>
                       <td data-libelle="Montant compté" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(montant)}</td>
                     </tr>

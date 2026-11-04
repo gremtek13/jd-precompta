@@ -47,7 +47,9 @@ import type { LectureComplete } from '../../lib/lectureComplete'
 import { fichesEmporteesParLaSuppression, type LectureFichesHorsDeFrance } from '../../lib/propositionsHorsDeFrance'
 import PiecesJointesEcartees from './PiecesJointesEcartees'
 import type { FacturesSources } from '../../lib/facturesSources'
-import { jugeDeLaValidation, resumeDeLaSelection, validationEnLot } from '../../lib/lotsDeLaJumelleInversee'
+import { jugeDeLaValidation, resumeDeLaSelection } from '../../lib/lotsDeLaJumelleInversee'
+import { confirmationDeLaSelection, selectionDeLaValidation } from '../../lib/validationDeLaSelection'
+import { doublonsProbables, phraseDuDoublon, piecesRegleesPourLesDoublons } from '../../lib/doublonsProbables'
 import type { ModeleComptable } from '../../lib/engagement'
 import { lireLaCaisseDuDossier, type LectureDeLaCaisseDuDossier } from '../../lib/caisseDuDossierLecture'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from '../../lib/paiementParLaCaisse'
@@ -90,6 +92,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // ou une banque reviennent d'un dossier à l'autre (voir CategoriserTiersModal).
   const { monCabinetId } = useAuth()
   const [sansDateOnly, setSansDateOnly] = useState(false)
+  // Le filtre « Doublons probables » (relecture du 04/11/2026, D1) : les pièces d'une paire, toutes les deux, quels que soient
+  // l'exercice, le statut et le sous-dossier — une paire peut chevaucher deux années, et sa moitié validée doit se voir à côté
+  // de sa moitié à valider. Exclusif de « Sans date », comme lui du sélecteur d'exercice.
+  const [doublonsSeulement, setDoublonsSeulement] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
   // La fiche d'une pièce vit dans le panneau de droite (voir FichePiece), la liste restant cliquable
   // à côté. `pieceOuverte` suit la pièce affichée SANS attendre un rendu : un enregistrement qui répond
@@ -373,7 +379,24 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // la vraie date du document (date_piece) plutôt que sa date d'ajout dans l'appli.
   const aPiecesSansDate = pieces.some((p) => !p.date_piece)
 
+  // LES DOUBLONS PROBABLES (relecture du 04/11/2026, D1 ; lib/doublonsProbables.ts) : sur le dossier entier, comme les autres
+  // badges — c'est ici que la pièce en trop se supprime. Les paiements comptent quand ils sont lus en entier (relevé, parts,
+  // ventes facturées, caisse) : deux pièces réglées chacune sont deux achats. Pas lus en entier, aucune pièce ne se dit
+  // payée, et le signal en dit plus, jamais moins.
+  // Un dossier qui ne tient pas de caisse n'a aucun paiement par elle : ses paiements sont ceux du relevé, lus en entier.
+  // Une caisse tenue et pas encore lue en entier : on ne sait pas, et aucune pièce ne se dit payée.
+  const paiementsPourLesDoublons = !entreesDesPaiements?.complete ? null
+    : !caisseTenue
+      ? paiementsDesPieces(entreesDesPaiements.lignes, entreesDesPaiements.reglements, entreesDesPaiements.encaissees, AUCUN_PAIEMENT_PAR_LA_CAISSE)
+      : paiementsPourLaFiche
+  const doublons = doublonsProbables(pieces, assujettiTva, piecesRegleesPourLesDoublons(paiementsPourLesDoublons))
+  const phraseDesDoublons = (id: string) => {
+    const autres = doublons.parPiece.get(id)
+    return autres === undefined ? null : phraseDuDoublon(autres, assujettiTva)
+  }
+
   const filteredBase = pieces.filter((p) => {
+    if (doublonsSeulement) return doublons.parPiece.has(p.id)
     if (statutFilter !== 'toutes' && p.statut !== statutFilter) return false
     if (sousDossierFilter === 'sans' && p.sous_dossier_id) return false
     if (sousDossierFilter !== 'tous' && sousDossierFilter !== 'sans' && p.sous_dossier_id !== sousDossierFilter) return false
@@ -434,12 +457,15 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // en une mise à jour. Jugé avant le clic, sur les factures émises validées et le pont lus en entier ; pas encore revenus ou
   // lus en partie, une pièce de vente ne part pas, et l'écran dit quelle lecture manque. Rien ne change ailleurs.
   const jugeDeValidation = jugeDeLaValidation(ventesParLesFactures, facturesProposees, ventesEmises, pieces)
-  // La sélection telle que la validation l'envoie : les pièces lues dont le montant est lu, dans l'ordre de la sélection.
-  const selectionAValider = [...selected].flatMap((id) => {
+  // La sélection telle que la validation l'envoie (relecture du 04/11/2026, D7 ; lib/validationDeLaSelection.ts) : les pièces
+  // lues, dans l'ordre de la sélection. Ce qui n'a pas de montant lu, et ce que G3 refuserait, est ÉCARTÉ et nommé avant le
+  // clic ; ce qui part mais mérite un regard — sans date, de confiance basse, en doublon probable — se nomme dans la
+  // confirmation. Le nombre du bouton est celui qui part.
+  const selectionLue = [...selected].flatMap((id) => {
     const p = pieces.find((x) => x.id === id)
-    return p !== undefined && p.montant_ttc != null ? [p] : []
+    return p !== undefined ? [p] : []
   })
-  const validationDeLaSelection = validationEnLot(selectionAValider, jugeDeValidation)
+  const validationDeLaSelection = selectionDeLaValidation(selectionLue, jugeDeValidation, doublons.parPiece)
   const ecartesDeLaSelection = validationDeLaSelection.ecartees
 
   const moisSuspectParPiece = new Map<string, string>()
@@ -599,8 +625,13 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     if (validationEnCours.current) return
     const ids = validationDeLaSelection.aValider.map((p) => p.id)
     if (ids.length === 0) return
+    // Posé AVANT le `try` et la confirmation : un second clic du même rendu ne rouvre pas une seconde fenêtre, et n'envoie rien.
     validationEnCours.current = true
     try {
+      // Ce qui part et mérite un regard — sans date, de confiance basse, en doublon probable — se nomme ici, avant l'envoi
+      // (lib/validationDeLaSelection.ts) ; Annuler n'envoie rien. Rien à nommer : l'envoi part comme hier.
+      const confirmation = confirmationDeLaSelection(ids.length, validationDeLaSelection.aSignaler)
+      if (confirmation !== null && !window.confirm(confirmation)) return
       const { error } = await supabase.from('pieces').update({ statut: 'validee' }).in('id', ids)
       // Refusée, la sélection est GARDÉE : vidée, il faudrait la refaire pièce par pièce pour réessayer.
       if (error) {
@@ -837,7 +868,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
         motif={lectureIncomplete}
         consequence={
           'La liste ci-dessous n’est donc pas complète, et les contrôles posés dessus (doublon de ' +
-          'contenu, mois en double, vente comptée deux fois) se taisent sur ce qu’ils n’ont pas vu.'
+          'contenu, doublon probable, mois en double, vente comptée deux fois) se taisent sur ce qu’ils n’ont pas vu.'
         }
       />
       <BandeauLecturePartielle
@@ -923,10 +954,19 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
           {aPiecesSansDate && (
             <button
               className={`btn btn-sm ${sansDateOnly ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setSansDateOnly((v) => !v)}
+              onClick={() => { setSansDateOnly((v) => !v); setDoublonsSeulement(false) }}
               title="Pièces sans date renseignée, en dehors de tout exercice"
             >
               Sans date
+            </button>
+          )}
+          {(doublons.parPiece.size > 0 || doublonsSeulement) && (
+            <button
+              className={`btn btn-sm ${doublonsSeulement ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => { setDoublonsSeulement((v) => !v); setSansDateOnly(false) }}
+              title="Pièces de dépense au même montant, du même fournisseur, à sept jours au plus — le même achat entré deux fois ? Les deux pièces de chaque paire, quels que soient l'exercice et le statut."
+            >
+              Doublons probables ({doublons.parPiece.size})
             </button>
           )}
           <select value={sousDossierFilter} onChange={(e) => setSousDossierFilter(e.target.value)} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', fontSize: '0.8rem' }}>
@@ -1177,6 +1217,14 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
                             </span>
                           </div>
                         )}
+                        {/* Le doublon probable (D1) : un doute, pas une certitude — en attention, la phrase nomme l'autre pièce. */}
+                        {doublons.parPiece.has(p.id) && (
+                          <div style={{ marginTop: 4 }}>
+                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }} title={phraseDesDoublons(p.id) ?? undefined}>
+                              Doublon probable
+                            </span>
+                          </div>
+                        )}
                         {doublonParPiece.has(p.id) && (
                           <div style={{ marginTop: 4 }}>
                             <span
@@ -1271,6 +1319,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
             navigation={navigationFiche}
             rapprochee={piecesRapprochees.has(editing.id)}
             caisse={caisseDeLaFiche}
+            doublonProbable={phraseDesDoublons(editing.id)}
             onClose={fermerFiche}
             onSaved={load}
             onValidee={apresValidation}

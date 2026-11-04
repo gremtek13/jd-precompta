@@ -17,6 +17,8 @@ import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesEnReta
 import type { Emprunt } from './emprunts'
 import type { DoublonDeTexte } from './doublonsTexte'
 import { anneeDe } from './format'
+import { detailDesDoublonsProbables, doublonsProbables, piecesRegleesPourLesDoublons } from './doublonsProbables'
+import { estFigee } from './validationExercice'
 import { confronterLOuverture, exerciceAConfronter, ouvertureEnEcart } from './ouvertureConfrontee'
 import { confronterLesAmortissementsRepris, detailDesAmortissementsSousUnAutreNumero, detailDesEcartsDeLaReprise } from './repriseDesAmortissements'
 import type { OuvertureBanque } from './planTresorerie'
@@ -380,6 +382,15 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // Une date fausse se corrige d'autant mieux qu'on la voit AVANT la validation ; après, plus
   // personne ne regarde la pièce.
   const moisEnDouble = moisEnDoubleSurAbonnement([...piecesValidees, ...piecesAValider])
+  // LE DOUBLON PROBABLE (relecture du 04/11/2026, D1 ; PIECES-Q2, sur la recommandation ; lib/doublonsProbables.ts) : deux
+  // pièces de dépense au même montant retenu, du même fournisseur, à sept jours au plus, dont l'une au moins n'est pas réglée.
+  // Sur les deux piles, comme les doublons de texte : un doublon se corrige mieux avant la validation. En « attention » et
+  // jamais en erreur : deux achats identiques existent. Les paiements lus en partie, aucune pièce ne se dit payée — le point
+  // en dit plus, jamais moins. Une paire qu'un exercice validé fige entière ne se dit plus : rien ne s'y corrige.
+  const doublonsDuDossier = doublonsProbables(
+    toutesPieces, assujettiTva,
+    paiementsPartiels || paiementsDeLaCaisseInconnus ? null : piecesRegleesPourLesDoublons(paiements),
+  ).paires.filter((p) => !estFigee(p.a.date_piece ?? '', frontiere) || !estFigee(p.b.date_piece ?? '', frontiere))
   // LA MÊME VENTE PORTÉE PAR PLUSIEURS PIÈCES (ligne 28.6, lib/ventesJumelles.ts), sur les deux piles comme les doublons
   // de texte : un doublon est un fait, et il se corrige mieux avant la validation. Muets sur une lecture partielle.
   // PAR RÉGIME (étape VF6e) : une facture source compte sa vente elle-même — ses exemplaires désignés ne la doublent pas,
@@ -606,6 +617,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     // s'en empêcher (lib/prealablesValidation.ts). Il bloque encore un rapprochement bancaire qui était
     // certain (voir lib/controles.ts) — le rapprochement, lui, n'annonce qu'un doute.
     { id: 'mois-en-double', label: "mois d'abonnement en double, avec un mois voisin vide — une pièce mal datée ou en double", action: 'Vérifier ces pièces', nb: moisEnDouble.length, cible: 'pieces', severite: 'attention' },
+    // Le même achat entré deux fois (D1 de la relecture du 04/11/2026) : sa charge compte deux fois dans la 2035.
+    { id: 'doublons-probables', label: 'paire(s) de pièces de dépense au même montant, du même fournisseur, à sept jours au plus — le même achat entré deux fois ?', action: 'Voir ces pièces', nb: doublonsDuDossier.length, cible: 'pieces', severite: 'attention', detail: detailDesDoublonsProbables(doublonsDuDossier) },
     // « Erreur » : si les deux sont validées et catégorisées, la même charge est comptée deux fois —
     // dans la 2035 comme dans la balance. Et l'empreinte du FICHIER ne peut pas le voir (voir
     // lib/doublonsTexte.ts), donc aucun autre écran ne le signale.
