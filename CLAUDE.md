@@ -757,12 +757,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     (`send-email` v9, `ENVOI_DES_DEVIS_OFFERT` levé, P6c) ; l'émetteur posé du dossier et aucun IBAN imprimé,
     comme la facture (A7) ; un mois de validité proposé, modifiable ; aucun modèle par métier pour l'instant ; l'acompte
     (P5b), une facture d'acompte puis une facture finale qui le reprend : conçu, son module pur (P5b1), un acompte qui ne
-    couvre jamais tout le devis ni ne laisse de TVA négative (P5B-Q5) — toutes ses questions confirmées par le cabinet le
-    05/11/2026 —, sa migration (`acomptes_des_devis`, P5b2) préparée et éprouvée sur une réplique, à coller tout de suite
-    (P5B2-migration ; elle remplace `enregistrer_facture`), derrière `ACOMPTES_PREVUS`, comme les moteurs (P5b3 : la CA3
-    date l'acompte de biens à son encaissement, sa part impayée à la livraison de la finale ; « Encaissée » le dit dû et
-    cite le 386 ; l'acompte d'un devis de biens ou mixte refusé, en base comme à l'écran, P5B3-Q1, et un versement à
-    venir, P5B2-Q1), le CII (P5b4a : 386, la finale en 380 sous le cadre 4 et un seul BG-3, celui
+    couvre jamais tout le devis ni ne laisse de TVA négative (P5B-Q5) — toutes ses questions confirmées par le cabinet
+    le 05/11/2026 —, sa migration (`acomptes_des_devis`, P5b2) préparée et éprouvée sur une réplique, à coller tout de
+    suite (P5B2-migration ; elle remplace `enregistrer_facture`), derrière `ACOMPTES_PREVUS`, comme les moteurs (P5b3 :
+    la CA3 date l'acompte de biens à son encaissement, sa part impayée à la livraison de la finale ; « Encaissée » le
+    dit dû et cite le 386 ; l'acompte d'un devis de biens ou mixte refusé, en base comme à l'écran, P5B3-Q1, et un
+    versement à venir, P5B2-Q1), le CII (P5b4a : 386, la finale en 380 sous le cadre 4 et un seul BG-3, celui
     que le schéma CII D16B admet, l'avoir d'un acompte en 503 ; les copies ne lisent ses colonnes que sous
     `ACOMPTES_EN_BASE`), l'aperçu et la fenêtre de transmission (P5b4b), l'e-mail (P5b4c), les écrans des deux espaces
     (P5b5 : facturer un acompte et le solde depuis le devis, le brouillon, la validation et l'avoir d'un acompte ou
