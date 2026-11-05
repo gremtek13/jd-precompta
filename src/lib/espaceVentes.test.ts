@@ -25,6 +25,8 @@ import { libelleCanal, libelleCourtCanal } from './transmissionsFactures'
 import { REFUS_DECLARATION_ADRESSE } from './adressesReception'
 import { REFUS_VALIDATION_SOURCE } from './sourceDeLaVente'
 import { REFUS_DE_LA_VALIDATION } from './validationDeLaFacture'
+import { REFUS_ACOMPTE, preparerAcompte } from './acompteDevis'
+import { REFUS_SOLDE_ACOMPTE_EN_BROUILLON } from './acomptesDuDevis'
 import type { ReleveStatuts } from './receptionPlateforme'
 import { donnees, ligne } from '../test/facturesCii'
 
@@ -85,6 +87,18 @@ const PRODUITES: Record<string, () => string> = {
   // FACTURE-Q1 ; FACTURE-Q2), dits avant le clic par le formulaire et rendus par la base : ils nomment « le dossier » et
   // « le cabinet ».
   'REFUS_DE_LA_VALIDATION, rangs 14 et 15': () => REFUS_DE_LA_VALIDATION.filter((r) => r.rang <= 15).map((r) => r.modele).join('\n'),
+  // Les refus de l'acompte d'un devis et de sa finale (étape P5b5a), tels que les modules les disent : trois vouvoient — dont
+  // celui de la TVA négative (P5B-Q5), produit sur trois lignes de 10,02 € à 20 % et un acompte de 99,9 %.
+  'REFUS_ACOMPTE, refusDeTvaNegative, REFUS_SOLDE_ACOMPTE_EN_BROUILLON': () => {
+    const tva = preparerAcompte({
+      numeroDevis: 'D2026-0001',
+      lignesDevis: [1, 2, 3].map(() => ({ designation: 'Prestation', quantite: 1, prix_unitaire_ht: 10.02, taux_tva: 20 })),
+      acomptesValides: [],
+      demande: { mode: 'pourcentage', pourcentage: 99.9 },
+      etat: { accepte: true, finaleActive: false, acompteEnBrouillon: false, mode: 'tresorerie' },
+    })
+    return [...Object.values(REFUS_ACOMPTE), tva.ok ? '' : tva.refus, REFUS_SOLDE_ACOMPTE_EN_BROUILLON].join('\n')
+  },
   // Les messages d'un module qui appelle le client Supabase : lus dans sa source, que ce test n'importe pas.
 
   'receptionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),

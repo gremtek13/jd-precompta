@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type { EcritureDevis } from './devis'
+import type { DemandeAcompte } from './acompteDevis'
 import type { ReponseDevis } from './types'
 
 // LES DEUX GESTES D'UN BROUILLON DE DEVIS, PAR LA BASE SEULE (espace client, étape P6a1 ; modèle : lib/contactsEcriture.ts).
@@ -67,6 +68,29 @@ export async function facturerDevis(dossierId: string, devisId: string): Promise
   if (error) throw new Error(error.message)
   if (typeof data !== 'string' || data === '') {
     throw new Error('La base n’a pas rendu la facture tirée du devis : relis la liste avant de recommencer.')
+  }
+  return data
+}
+
+// LE GESTE DE L'ACOMPTE (étape P5b5a), derrière `ACOMPTES_PREVUS` : `facturer_acompte_devis` seule (migration
+// `acomptes_des_devis`, préparée), avec son accès (`gere_les_ventes`) vérifié avant toute lecture et ses refus dans l'ordre
+// que lib/acomptesDuDevis.ts redit avant le clic. La facture finale reste `facturer_devis` (`facturerDevis`), remplacée par
+// la même migration pour reprendre les acomptes en vigueur.
+
+/**
+ * Tire un brouillon de facture d'acompte d'un devis accepté : `facturer_acompte_devis` seule, qui rend l'identifiant de la
+ * facture. `demande` : la `DemandeAcompte` du module, telle que l'écran l'a jugée ; `dateVersement` : nulle si elle n'est
+ * pas donnée (P5B2-Q1).
+ */
+export async function facturerAcompteDevis(
+  dossierId: string, devisId: string, demande: DemandeAcompte, dateVersement: string | null,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('facturer_acompte_devis', {
+    p_dossier_id: dossierId, p_devis_id: devisId, p_demande: demande, p_date_versement: dateVersement,
+  })
+  if (error) throw new Error(error.message)
+  if (typeof data !== 'string' || data === '') {
+    throw new Error('La base n’a pas rendu la facture d’acompte tirée du devis : relis la liste avant de recommencer.')
   }
   return data
 }

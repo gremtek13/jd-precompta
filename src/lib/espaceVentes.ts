@@ -77,6 +77,11 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
     de: 's’il en a un, sa case se coche dans l’onglet TVA du dossier, sous son statut de TVA.',
     vers: 'si ta société en a un, c’est ton cabinet qui l’indique, avec ton statut de TVA.',
   },
+  // lib/acompteDevis.ts (`REFUS_ACOMPTE`, `refusDeTvaNegative`) et lib/acomptesDuDevis.ts (`REFUS_SOLDE_ACOMPTE_EN_BROUILLON`),
+  // aux mots de `facturer_acompte_devis` et de `facturer_devis` (étape P5b5a) : la vue « Devis » les dit au client avant le
+  // clic, et la base les lui rend. Ils vouvoient.
+  { de: 'validez-le ou supprimez-le', vers: 'valide-le ou supprime-le' },
+  { de: 'Demandez un peu moins, ou tirez la facture finale.', vers: 'Demande un peu moins, ou tire la facture finale.' },
   // lib/encaissementsFactures.ts, `obligationEncaissee`.
   {
     de: 'le statut de TVA du dossier, dont l’obligation dépend, n’est pas encore choisi (onglet TVA du dossier).',
