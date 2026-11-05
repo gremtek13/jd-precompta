@@ -6,7 +6,7 @@ import {
 } from './declaration2035'
 import { arrondirPourFormulaire, caseDuPoste, valeursDesCases } from './cases2035'
 import { instantane2035, lireInstantane2035 } from './validationExercice'
-import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees, type VentesFacturees } from './ventesFacturees'
 import type { Categorie, CotisationDeclaree, DeclarationTva, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
 import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
@@ -1055,7 +1055,7 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
   const e1 = encaissementVendu({ id: 'e1', date_encaissement: '2025-12-15', montant: 600 })
   const e2 = encaissementVendu({ id: 'e2', date_encaissement: '2026-01-20', montant: 600 })
   const ventes = (o: Partial<Parameters<typeof ventesFacturees>[0]> = {}) => ventesFacturees({
-    dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e1.encaissement, e2.encaissement], parts: [e1.part, e2.part], ...o,
+    acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e1.encaissement, e2.encaissement], parts: [e1.part, e2.part], ...o,
   })
   const avec = (v: VentesFacturees, o: { pieces?: Piece[]; annee?: number; assujetti?: boolean } = {}) => calculerDeclaration2035(
     o.annee ?? 2025, o.pieces ?? [], categories, [], [], [], o.assujetti ?? true, paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, v,
@@ -1254,7 +1254,7 @@ describe('calculerDeclaration2035 — les frais d’un mouvement d’encaissemen
     }
   }
   const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
-    dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
+    acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
   })
   const declarer = (s: SourcesDesEcrituresDeVente, o: { categories?: Categorie[]; annee?: number; plan?: PlanComptable; bascule?: boolean } = {}) => {
     const plan = o.plan ?? PLAN_PAR_DEFAUT

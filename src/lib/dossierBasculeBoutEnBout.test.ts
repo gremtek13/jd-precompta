@@ -10,7 +10,7 @@ import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptabl
 import { paiementsDesPieces } from './rattachement'
 import { calculerSituationIntermediaire } from './situationIntermediaire'
 import type { EcritureBrouillon, ModeComptable } from './types'
-import { ventesFacturees } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees } from './ventesFacturees'
 import { brouillonDesVentes, composition, ligneBancaire, sourcesDuDossierBascule } from '../test/dossierBascule'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { CHAMPS_BNC_NON_EXPORTES, formaterFec, genererFec, numerotationValidee } from './fec'
@@ -32,7 +32,7 @@ function leDossier(mode: ModeComptable, plan: PlanComptable) {
   const sources: SourcesDesEcrituresDeVente = sourcesDuDossierBascule()
   const brouillon: EcritureBrouillon[] = brouillonDesVentes(composition(sources, mode, plan))
   const ventes = ventesFacturees({
-    dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
+    acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
   })
   const etats = etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true })
   const ca3 = calculerCa3({ pieces: [], paiements: paiementsDesPieces([], [], [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventes, caisse: CAISSE_ABSENTE }, Q4, false, 0, 0)
@@ -119,7 +119,7 @@ describe.each(PLANS)('les frais d’un mouvement d’encaissements, de bout en b
     const c = composition(sources, 'tresorerie', plan)
     const brouillon = brouillonDesVentes(c)
     const ventes = ventesFacturees({
-      dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
+      acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
     })
     const declaration = calculerDeclaration2035(
       2025, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], [], [], []), [], [], plan, ventes, { etat: 'composees', composition: c }, CAISSE_ABSENTE,
@@ -164,7 +164,7 @@ describe.each(PLANS)('la situation de l’année et la 2035 comptent les mêmes 
   }
   const lesDeux = (mode: ModeComptable, categories: Categorie[]) => {
     const s = sources()
-    const ventes = ventesFacturees({ dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
+    const ventes = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
     const ecritures: EcrituresDesVentesDeLa2035 = { etat: 'composees', composition: composition(s, mode, plan) }
     return {
       situation: calculerSituationIntermediaire([], categories, [], [], '2025-01-01', '2025-12-31', true, new Map(), mode, [], ventes, plan, ecritures, CAISSE_ABSENTE),
@@ -217,7 +217,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
     const brouillon = brouillonDesVentes(c)
     const lignes = sources.mouvements.map(ligneBancaire)
     const ventes = ventesFacturees({
-      dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
+      acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
     })
     const ouvert = (o: Partial<DonneesDeValidation>): DonneesDeValidation => ({
       annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode, compteNotesDeFrais: plan.associe, plan }, assujettiTva: true,

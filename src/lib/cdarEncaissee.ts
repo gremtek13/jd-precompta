@@ -56,6 +56,15 @@ export const CODE_MONTANT_ENCAISSE = 'MEN'
 // Le type du document référencé (MDT-91) : « Pour un CDV sur facture e-invoicing (Flux 2), le code correspond à celui
 // du type de la facture » (G7.15), et une facture de l'application est une facture commerciale (380, G1.01).
 export const TYPE_FACTURE_CDAR = '380'
+// Celui d'une facture d'acompte d'un devis (étape P5b3) : 386, « facture d'acompte » (annexe 7 v1.9, G1.01), que son CII
+// porte aussi (P5b4) — le statut cite la facture sous le type qu'elle a. Il se lit sur la facture (`acompte`, la marque
+// figée à sa validation), jamais d'un défaut.
+export const TYPE_FACTURE_ACOMPTE_CDAR = '386'
+
+/** Le type sous lequel le statut cite la facture (MDT-91, G7.15). */
+export function typeDeLaFactureCdar(facture: Pick<FacturePourCdar, 'acompte'>): string {
+  return facture.acompte ? TYPE_FACTURE_ACOMPTE_CDAR : TYPE_FACTURE_CDAR
+}
 
 // Le code type de référence (MDT-97) d'un cycle de vie « sur une facture (e-invoicing) » (G7.14). Il ne suit pas le
 // profil choisi : G7.14 le rattache à l'objet dont le message parle, et c'est la seule source publique qui en dise
@@ -134,6 +143,8 @@ export interface FacturePourCdar {
   date_emission: string
   // Le SIRET de l'émetteur, figé par la facture à sa validation : son SIREN est celui que la facture a transmis.
   emetteur_siret: string | null
+  // La marque d'une facture d'acompte (`factures_emises.acompte`), obligatoire : MDT-91 en dépend.
+  acompte: boolean
 }
 
 export interface LignePourCdar {
@@ -297,6 +308,7 @@ export function refusMessageEncaissee(d: DonneesCdar): string[] {
     refus.push(`Le numéro ${f.numero} ne peut pas désigner la facture : 35 caractères au plus — chiffres, lettres, espace, « - », « + », « _ » et « / ».`)
   }
   if (f.type !== 'facture') refus.push('Un avoir ne reçoit pas le statut « Encaissée » : seule une facture le reçoit.')
+  if (typeof f.acompte !== 'boolean') refus.push('La facture ne dit pas si elle est une facture d’acompte : son type (380 ou 386) en dépend.')
   if (!dateCivileCdar(f.date_emission)) refus.push(`La date d’émission de la facture (${f.date_emission}) n’est pas une date.`)
 
   // Le vendeur, qui a émis la facture (MDT-129, G7.17).
@@ -484,7 +496,7 @@ export function messageEncaissee(d: DonneesCdar): ResultatCdar {
         // MDT-87 : le numéro de la facture (G7.23, G1.05).
         elCdar('ram:IssuerAssignedID', numero),
         // MDT-91 : son type (G7.15, G1.01).
-        elCdar('ram:TypeCode', TYPE_FACTURE_CDAR),
+        elCdar('ram:TypeCode', typeDeLaFactureCdar(f)),
         // MDT-95 : sa réception par la plateforme, requise (G7.06).
         dateHeureCdar('ram:ReceiptDateTime', 'udt', horodatage204(d.receptionFacture, c.fuseau) as string, '204'),
         // MDT-97 : le code type de référence d'un cycle de vie sur une facture (G7.14).

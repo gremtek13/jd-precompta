@@ -3,8 +3,10 @@ import { partsEncaissees, type ExemplaireLu, type LigneDeFacture } from './encai
 import { lireTout, type LectureComplete } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import type { PartEncaissee } from './rattachement'
+import { ACOMPTES_PREVUS } from './devis'
 import {
-  ventesFacturees, type EncaissementVendu, type FactureVendue, type PartVendue, type VentesFacturees,
+  SANS_ACOMPTE, ventesFacturees, type AcomptesDesVentes, type EncaissementVendu, type FactureVendue, type PartVendue,
+  type RepriseDAcompte, type VentesFacturees,
 } from './ventesFacturees'
 
 // CE QUE LES MOTEURS LIRONT DES VENTES FACTURÉES D'UN DOSSIER (ligne 28.6, chantier EC-Q3, étape VF3a ; le module pur est
@@ -49,10 +51,21 @@ export const COLONNES_LIGNES =
 export const COLONNES_ENCAISSEMENTS =
   'id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le'
 export const COLONNES_PARTS = 'encaissement_id, dossier_id, taux, montant'
+// L'acompte d'un devis (étape P5b3) : la marque de la facture et la reprise d'une ligne, que la migration
+// `acomptes_des_devis` pose. Nommées le drapeau `ACOMPTES_PREVUS` levé SEULEMENT : la production ne les a pas, et une
+// lecture qui les nommerait échouerait — toutes les ventes facturées du dossier avec elle. Le drapeau se lit à l'appel,
+// jamais au chargement du module.
+export const COLONNES_FACTURES_ACOMPTES =
+  'id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, acompte'
+export const COLONNES_LIGNES_ACOMPTES =
+  'id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, reprise_facture_id, factures_emises!inner(dossier_id, source_de_la_vente)'
 export const COLONNES_EXEMPLAIRES = 'id, dossier_id, facture_id, statut, type_piece'
 
 /** Une ligne de facture : elle n'a pas de dossier ; c'est sa facture, lue à part, qui le porte. */
-type LigneLue = LigneDeFacture & { id: string }
+type LigneLue = LigneDeFacture & { id: string; reprise_facture_id?: string | null }
+
+/** Une facture lue ; sa marque d'acompte, le drapeau levé seulement. */
+type FactureLue = FactureVendue & { acompte?: boolean }
 
 export type LectureVentesFacturees =
   // `encaissees` : ce que les virements mixtes paient de leurs exemplaires (étape VF5h), que `paiementsDesPieces` reçoit.
@@ -70,19 +83,45 @@ function horsDuDossier<T>(nom: string, lecture: LectureComplete<T>, dossier: (l:
 }
 
 /**
+ * Les acomptes que les lignes lues portent : `SANS_ACOMPTE` le drapeau baissé (rien n'a été demandé) ; levé, la marque de
+ * chaque facture et la reprise de chaque ligne, chacune LUE — une valeur absente ou d'une autre forme est un motif, jamais
+ * un « non ».
+ */
+export function acomptesDesLignesLues(
+  acomptesLus: boolean,
+  factures: readonly (Pick<FactureVendue, 'id'> & { acompte?: unknown })[],
+  lignes: readonly (Pick<LigneDeFacture, 'facture_id'> & { reprise_facture_id?: unknown })[],
+): AcomptesDesVentes | string {
+  if (!acomptesLus) return SANS_ACOMPTE
+  if (factures.some((f) => typeof f.acompte !== 'boolean')) return `${NOMS_DES_LECTURES[0]} : la marque d’acompte d’une facture n’est pas lue`
+  const reprises: RepriseDAcompte[] = []
+  for (const l of lignes) {
+    if (l.reprise_facture_id === null) continue
+    if (typeof l.reprise_facture_id !== 'string') return `${NOMS_DES_LECTURES[1]} : la reprise d’une ligne n’est pas lue`
+    reprises.push({ facture_id: l.facture_id, reprise_facture_id: l.reprise_facture_id })
+  }
+  return { marques: new Set(factures.filter((f) => f.acompte === true).map((f) => f.id)), reprises }
+}
+
+/**
  * Les ventes facturées du dossier, calculées sur ses cinq collections lues en entier, et les parts des virements mixtes ;
  * ou « incomplète », avec le motif de la première lecture qui a manqué. Ne rejette jamais.
  */
 export async function lireLesVentesFacturees(dossierId: string): Promise<LectureVentesFacturees> {
   try {
+    const acomptesLus = ACOMPTES_PREVUS
     const [factures, lignes, encaissements, parts] = await Promise.all([
-      lireTout<FactureVendue>((debut, fin) =>
-        supabase.from('factures_emises').select(COLONNES_FACTURES, { count: 'exact' })
+      lireTout<FactureLue>((debut, fin) =>
+        (acomptesLus
+          ? supabase.from('factures_emises').select(COLONNES_FACTURES_ACOMPTES, { count: 'exact' })
+          : supabase.from('factures_emises').select(COLONNES_FACTURES, { count: 'exact' }))
           .eq('dossier_id', dossierId).eq('statut', 'validee').eq('source_de_la_vente', true)
           .order('id').range(debut, fin),
       ),
       lireTout<LigneLue>((debut, fin) =>
-        supabase.from('facture_lignes').select(COLONNES_LIGNES, { count: 'exact' })
+        (acomptesLus
+          ? supabase.from('facture_lignes').select(COLONNES_LIGNES_ACOMPTES, { count: 'exact' })
+          : supabase.from('facture_lignes').select(COLONNES_LIGNES, { count: 'exact' }))
           .eq('factures_emises.dossier_id', dossierId).eq('factures_emises.source_de_la_vente', true)
           .order('facture_id').order('ordre').order('id').range(debut, fin),
       ),
@@ -108,6 +147,9 @@ export async function lireLesVentesFacturees(dossierId: string): Promise<Lecture
       ?? horsDuDossier(NOMS_DES_LECTURES[2], encaissements, (e) => e.dossier_id, dossierId)
       ?? horsDuDossier(NOMS_DES_LECTURES[3], parts, (p) => p.dossier_id, dossierId)
     if (motif !== null) return { dossierId, etat: 'incomplete', motif }
+    // Le drapeau levé, chaque ligne rendue DIT sa marque : une colonne absente n'est pas « pas un acompte ».
+    const acomptes = acomptesDesLignesLues(acomptesLus, factures.lignes, lignes.lignes)
+    if (typeof acomptes === 'string') return { dossierId, etat: 'incomplete', motif: acomptes }
     // Les exemplaires, seulement si une part de virement mixte peut exister (l'en-tête) ; lus, en entier et du dossier.
     let exemplaires: readonly ExemplaireLu[] = []
     if (factures.lignes.length > 0 && encaissements.lignes.some((e) => e.ligne_bancaire_id != null && !sourcesLues.has(e.facture_id))) {
@@ -130,6 +172,7 @@ export async function lireLesVentesFacturees(dossierId: string): Promise<Lecture
           ({ facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva })),
         encaissements: encaissements.lignes,
         parts: parts.lignes,
+        acomptes,
       }),
       // Les factures lues sont les seules sources : celle d'un encaissement qu'elles ne portent pas n'est pas source.
       encaissees: partsEncaissees(dossierId, encaissements.lignes, { factures: factures.lignes }, exemplaires),

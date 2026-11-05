@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import type { LigneDeFacture } from './encaissementsFactures'
 import { montantsDuDocument } from './factureCii'
-import {
+import { SANS_ACOMPTE,
   LIBELLE_MOTIF_VENTE, dateDeLivraison, exemplaireDUneFactureSource, prorataArrondi, recettesFactureesDeLaPeriode,
   regimeDeLaFacture, ventesFacturees, type EncaissementVendu, type FactureVendue, type PartVendue,
   type SourcesVentesFacturees, type VentesFacturees,
@@ -50,7 +50,7 @@ const contrePassation = (de: EncaissementVendu, partsDe: readonly PartVendue[], 
 }
 
 const sources = (o: Partial<SourcesVentesFacturees>): SourcesVentesFacturees => ({
-  dossierId: D, factures: [facture()], lignes: [ligne('f1', 100, 20)], encaissements: [], parts: [], ...o,
+  acomptes: SANS_ACOMPTE, dossierId: D, factures: [facture()], lignes: [ligne('f1', 100, 20)], encaissements: [], parts: [], ...o,
 })
 
 // Les centimes d'une liste, par champ.

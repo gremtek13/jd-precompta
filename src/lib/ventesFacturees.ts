@@ -115,7 +115,51 @@ export interface SourcesVentesFacturees {
   lignes: readonly LigneDeFacture[]
   encaissements: readonly EncaissementVendu[]
   parts: readonly PartVendue[]
+  /** Les factures d'acompte d'un devis et les lignes qui les reprennent (étape P5b3) : OBLIGATOIRE, sans défaut. */
+  acomptes: AcomptesDesVentes
 }
+
+// ── L'ACOMPTE D'UN DEVIS (étape P5b3, derrière `ACOMPTES_PREVUS` ; conception : HISTORIQUE.md, « L'ACOMPTE D'UN DEVIS : LA
+// CONCEPTION (P5B) », § AILLEURS) ───────────────────────────────────────────────────────────────────────────────────────
+//
+// La migration `acomptes_des_devis` (préparée) marque la facture d'acompte (`factures_emises.acompte`, figée) et la ligne de
+// la facture FINALE qui en reprend une, au signe opposé (`facture_lignes.reprise_facture_id`). La lecture ne les nomme que
+// le drapeau levé ; baissé, elle passe `SANS_ACOMPTE` : la production n'a pas ces colonnes, et aucune facture n'y est un
+// acompte (la colonne naîtra fausse pour toutes). Ce que le module en fait, règle par règle :
+//   - LA 2035 EN TRÉSORERIE : rien de neuf. Chaque encaissement compte à sa date (CGI, art. 93, 1 : les recettes
+//     encaissées), celui d'un acompte comme celui de la finale ; la finale porte ses reprises en lignes, ses montants par
+//     taux sont NETS des acomptes, et le registre la plafonne nette (`encaissementsFactures.ts`) : rien deux fois.
+//   - LA CA3, DES SERVICES : rien de neuf. Exigible à l'encaissement (CGI, art. 269, 2-c : « lors de l'encaissement des
+//     acomptes, du prix ») ; sur l'option pour les débits, à la date de la facture d'acompte, un encaissement antérieur
+//     restant exigible à sa date (art. 269, 2-c ; BOI-TVA-BASE-20-10, § 65) — le régime « debits » d'hier, L étant la date
+//     de la facture.
+//   - LA CA3, DES BIENS : un acompte n'est pas une livraison. Depuis le 1er janvier 2023, l'encaissement d'un acompte avant
+//     le fait générateur rend la taxe exigible « lors de cet encaissement, à concurrence du montant encaissé » (CGI, art.
+//     269, 2-a, dans sa rédaction issue de la loi n° 2021-1900 du 30 décembre 2021, art. 30 ; BOI-TVA-BASE-20-10, § 65 ;
+//     directive 2006/112/CE, art. 65). La part encore impayée suit le régime du bien : exigible au fait générateur, la
+//     LIVRAISON — que porte la facture finale qui reprend l'acompte (`dateDeLivraison` de la finale ; la plus ancienne des
+//     finales validées qui le reprennent). Sans finale validée, seule la part encaissée est exigible. Écarté : la date de
+//     la facture d'acompte (le régime « livraison » d'hier, sans la marque), qui rendrait exigible avant la livraison une
+//     TVA que personne n'a payée.
+//   - LA FINALE ne compte jamais deux fois la TVA d'un acompte : ses lignes de reprise sont l'opposé exact des lignes de
+//     l'acompte (`calculerLigne`, le demi loin de zéro dans les deux sens), ses montants par taux nets ; elle suit son
+//     propre régime, comme toute facture.
+
+/** Une ligne d'une facture finale qui reprend une facture d'acompte. */
+export interface RepriseDAcompte {
+  facture_id: string
+  reprise_facture_id: string
+}
+
+export interface AcomptesDesVentes {
+  /** Les factures marquées « acompte » (`factures_emises.acompte`). */
+  marques: ReadonlySet<string>
+  /** Les lignes de reprise, une par ligne (une finale reprend un acompte par autant de lignes qu'il en a). */
+  reprises: readonly RepriseDAcompte[]
+}
+
+/** Ce que la lecture passe tant que la base ne porte pas les colonnes de l'acompte (`ACOMPTES_PREVUS` baissé). */
+export const SANS_ACOMPTE: AcomptesDesVentes = Object.freeze({ marques: new Set<string>(), reprises: Object.freeze([]) })
 
 // ── Ce que le module rend ─────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -274,6 +318,12 @@ export function ordreDesEncaissements(a: EncaissementVendu, b: EncaissementVendu
   return ordreC(a.date_encaissement, b.date_encaissement) || ordreC(a.cree_le, b.cree_le) || ordreC(a.id, b.id)
 }
 
+/**
+ * Ce qu'une facture est au regard de l'acompte : une facture ordinaire (ou une finale), ou une facture d'acompte, avec la
+ * date de livraison de la plus ancienne finale validée qui la reprend (nulle : aucune encore).
+ */
+type MarqueDAcompte = { acompte: false } | { acompte: true; livraison: string | null }
+
 type Resultat =
   | { ecart: { motif: MotifVenteEcartee; detail: string } }
   | {
@@ -287,7 +337,7 @@ function ecart(motif: MotifVenteEcartee, precision?: string): Resultat {
 
 function uneFacture(
   facture: FactureVendue, avoirs: readonly FactureVendue[], lignes: readonly LigneDeFacture[],
-  encaissements: readonly EncaissementVendu[], partsLues: readonly PartVendue[],
+  encaissements: readonly EncaissementVendu[], partsLues: readonly PartVendue[], acompte: MarqueDAcompte,
 ): Resultat {
   const regime = regimeDeLaFacture(facture)
   if (regime !== 'livraison' && regime !== 'debits' && regime !== 'encaissement') return ecart(regime)
@@ -405,7 +455,10 @@ function uneFacture(
     ...nommee, origine: d.avoirId ? 'avoir' : 'facture', encaissementId: null, avoirId: d.avoirId, date: d.date,
     taux: d.taux, baseCentimes: d.baseCentimes, tvaCentimes: d.tvaCentimes,
   })
-  if (regime === 'encaissement') {
+  // Le fait générateur d'un acompte de biens : la livraison que porte la finale qui le reprend, ou aucun encore.
+  const livraisonDeLAcompte = acompte.acompte && regime === 'livraison' ? acompte.livraison : undefined
+  if (regime === 'encaissement' || livraisonDeLAcompte === null) {
+    // Des services ; ou un acompte de biens qu'aucune finale validée ne reprend : seule la part encaissée est exigible.
     exigibilites.push(...parts.map(depuisPart))
   } else {
     // Un bien, ou des services sur l'option pour les débits : un fait générateur L — la livraison, ou la date de la
@@ -415,7 +468,8 @@ function uneFacture(
     // encaissements ont déjà rendu exigible ; un avoir d'après, à sa date. Un encaissement ou une contre-passation daté de
     // L ou après ne change rien à la CA3 : la taxe était due (l'impayé relève de la créance irrécouvrable, hors du
     // chantier).
-    const L = regime === 'livraison' ? dateDeLivraison(facture) : facture.date_emission
+    // Un acompte de biens : la livraison de sa finale, jamais sa propre date (voir « L'ACOMPTE D'UN DEVIS » en tête).
+    const L = livraisonDeLAcompte ?? (regime === 'livraison' ? dateDeLivraison(facture) : facture.date_emission)
     const avant = parts.filter((p) => p.date < L)
     exigibilites.push(...avant.map(depuisPart))
     const taux = new Set([...montantsFacture.keys(), ...avoirsLus.flatMap((a) => [...a.montants.keys()])])
@@ -438,6 +492,18 @@ function uneFacture(
 }
 
 /**
+ * La marque d'une facture : un acompte, s'il est marqué, avec la livraison de la plus ancienne finale VALIDÉE et SOURCE
+ * de ce dossier dont une ligne le reprend (`factures`, déjà filtrées). Une reprise portée par une facture d'ailleurs, ou
+ * par un brouillon, ne livre rien.
+ */
+function marqueDAcompte(facture: FactureVendue, factures: readonly FactureVendue[], acomptes: AcomptesDesVentes): MarqueDAcompte {
+  if (!acomptes.marques.has(facture.id)) return { acompte: false }
+  const finales = new Set(acomptes.reprises.filter((r) => r.reprise_facture_id === facture.id).map((r) => r.facture_id))
+  const livraisons = factures.filter((f) => finales.has(f.id)).map(dateDeLivraison).sort(ordreC)
+  return { acompte: true, livraison: livraisons[0] ?? null }
+}
+
+/**
  * Les ventes facturées du dossier : les factures VALIDÉES SOURCES de leur vente, leurs avoirs validés, et le registre de
  * leurs encaissements. Une facture qui n'est pas source n'y entre pas — sa vente est comptée par sa pièce, comme hier.
  */
@@ -454,7 +520,10 @@ export function ventesFacturees(sources: SourcesVentesFacturees): VentesFacturee
   const factures = validees.filter((f) => f.type === 'facture').sort((a, b) => ordreC(a.id, b.id))
   for (const facture of factures) {
     const avoirs = validees.filter((a) => a.type === 'avoir' && a.facture_origine_id === facture.id)
-    const r = uneFacture(facture, avoirs, sources.lignes, encaissements.filter((e) => e.facture_id === facture.id), partsLues)
+    const r = uneFacture(
+      facture, avoirs, sources.lignes, encaissements.filter((e) => e.facture_id === facture.id), partsLues,
+      marqueDAcompte(facture, factures, sources.acomptes),
+    )
     if ('ecart' in r) {
       resultat.ecartees.push({ factureId: facture.id, numero: facture.numero, tiers: facture.tiers_nom, ...r.ecart })
       continue

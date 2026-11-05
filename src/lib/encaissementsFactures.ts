@@ -154,6 +154,11 @@ export interface ObligationEncaissee {
 
 export type FacturePourObligation = Pick<FactureEmise,
   'id' | 'statut' | 'type' | 'date_emission' | 'type_client' | 'nature_operation' | 'option_debits'>
+  // La marque d'une facture d'acompte d'un devis (étape P5b3) : la colonne `acompte` n'existe pas encore en base
+  // (migration `acomptes_des_devis` préparée, `ACOMPTES_PREVUS` baissé), et aucune facture lue n'en est une. Le jour où
+  // types.ts la porte (NOT NULL), elle entre au Pick ci-dessus et cette clé facultative disparaît : aucun lecteur ne
+  // pourra plus la taire.
+  & { acompte?: boolean }
 
 const VALIDEE_NE_SE_COMPLETE_PLUS = 'et l’obligation en dépend ; validée, elle ne se complète plus.'
 
@@ -192,10 +197,15 @@ export function obligationEncaissee(
   if (facture.type_client === 'etranger') {
     return sansObjet('le client est établi hors de France ; ses paiements se déclareront par l’e-reporting.')
   }
-  if (facture.nature_operation === 'biens') {
+  // L'acompte d'une livraison de biens (étape P5b3) : sa TVA est exigible à son encaissement depuis le 1er janvier 2023
+  // (CGI, art. 269, 2-a ; BOI-TVA-BASE-20-10, § 65), et les données de paiement visent les « factures d'acompte »
+  // (spécifications externes v3.2, dossier général, § 2.3.2). L'option pour les débits ne vise que des services (art.
+  // 269, 2-c) : elle ne le change pas.
+  const acompteDeBiens = facture.nature_operation === 'biens' && facture.acompte === true
+  if (facture.nature_operation === 'biens' && !acompteDeBiens) {
     return sansObjet('la TVA d’une livraison de biens est due à la livraison, pas à l’encaissement.')
   }
-  if (facture.option_debits === true) {
+  if (facture.option_debits === true && !acompteDeBiens) {
     return sansObjet('le dossier avait opté pour la TVA sur les débits : elle est due à la facture, pas à l’encaissement.')
   }
   // Un redevable qui ne facture aucune TVA : des opérations exonérées, ou dont la TVA est due par le client — rien
@@ -210,7 +220,7 @@ export function obligationEncaissee(
   if (facture.nature_operation == null) {
     return aPreciser(`la facture ne dit pas si elle porte sur des biens ou des services, ${VALIDEE_NE_SE_COMPLETE_PLUS}`)
   }
-  if (facture.option_debits == null) {
+  if (facture.option_debits == null && !acompteDeBiens) {
     return aPreciser(`la facture ne dit pas si le dossier avait opté pour la TVA sur les débits, ${VALIDEE_NE_SE_COMPLETE_PLUS}`)
   }
   if (facture.nature_operation === 'mixte') {
@@ -228,7 +238,9 @@ export function obligationEncaissee(
   }
   return {
     etat: 'due',
-    raison: statutTva === 'franchise'
+    raison: acompteDeBiens
+      ? 'Due : l’acompte d’une livraison de biens, dont la TVA est due à son encaissement.'
+      : statutTva === 'franchise'
       ? 'Due : des prestations de services d’un dossier en franchise en base, déclarées sans TVA.'
       : 'Due : des prestations de services, dont la TVA est due à l’encaissement.',
   }

@@ -195,6 +195,23 @@ describe('obligationEncaissee — le statut « Encaissée » est-il dû pour cet
     }
   })
 
+  it('l’acompte d’une livraison de biens (étape P5b3) : dû, l’option pour les débits n’y changeant rien ; une livraison sans la marque, sans objet', () => {
+    const DUE = { etat: 'due', raison: 'Due : l’acompte d’une livraison de biens, dont la TVA est due à son encaissement.' }
+    for (const option_debits of [false, true, null]) {
+      expect(obligation({ nature_operation: 'biens', acompte: true, option_debits })).toEqual(DUE)
+      expect(obligation({ nature_operation: 'biens', acompte: false, option_debits }).etat).toBe('sans_objet')
+      // La marque absente (la colonne n'existe pas encore en base) : comme hier.
+      expect(obligation({ nature_operation: 'biens', option_debits }).etat).toBe('sans_objet')
+    }
+    // L'acompte de services suit la règle des services : dû à l'encaissement, sans objet sur l'option pour les débits.
+    expect(obligation({ acompte: true }).etat).toBe('due')
+    expect(obligation({ acompte: true, option_debits: true }).etat).toBe('sans_objet')
+    // Ce qui est certain l'emporte toujours : un particulier, un dossier exonéré, une facture d'avant septembre 2027.
+    expect(obligation({ nature_operation: 'biens', acompte: true, type_client: 'non_assujetti' }).etat).toBe('sans_objet')
+    expect(obligation({ nature_operation: 'biens', acompte: true }, 'exonere').etat).toBe('sans_objet')
+    expect(obligation({ nature_operation: 'biens', acompte: true, date_emission: '2027-08-31' }).etat).toBe('facultative')
+  })
+
   it('due pour un dossier en franchise, sans TVA', () => {
     const o = obligation({}, 'franchise', SANS_TVA)
     expect(o).toEqual({ etat: 'due', raison: 'Due : des prestations de services d’un dossier en franchise en base, déclarées sans TVA.' })

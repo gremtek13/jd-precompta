@@ -48026,3 +48026,18 @@ de l'acompte (P5b2), intégrée derrière `ACOMPTES_PREVUS` : relue sur le catal
 trois fonctions remplacées comparées à celles d'hier, ligne à ligne ; les droits : les fonctions d'appoint et les gardes
 fermées à tout rôle de l'API), son essai rejoué (158 verdicts, 0 en faute, 36 mutations sur 36) et le banc du leurre SÛR
 sur `acomptesDesDevis`, `devis`, `envoiDesDevis` et `factures` (son contrôle 105 retouché), le témoin vu de ses trois façons.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS DANS LES MOTEURS (P5B3), DERRIÈRE `ACOMPTES_PREVUS`
+
+Du code et des tests, rien en base. LA LECTURE (`ventesFactureesLecture.ts`) ne nomme `factures_emises.acompte` et
+`facture_lignes.reprise_facture_id` que le drapeau levé ; baissé, `SANS_ACOMPTE` (la production n'a pas ces colonnes) ;
+levé, une marque ou une reprise non rendue est un manque, jamais un « non ». LE MODULE (`ventesFacturees.ts`) reçoit les
+acomptes en paramètre OBLIGATOIRE (`SourcesVentesFacturees.acomptes`). LA 2035 : rien de neuf (chaque encaissement à sa date,
+CGI art. 93, 1 ; la finale nette de ses reprises) — trois cas le montrent (30 % puis la finale, deux taux, une finale créditée
+puis une autre). LA CA3 : un acompte de services suit les services (art. 269, 2-c ; sur l'option pour les débits, à sa date,
+BOI-TVA-BASE-20-10, § 65) ; un acompte de BIENS n'est pas une livraison : exigible à son encaissement (art. 269, 2-a, depuis
+le 01/01/2023, loi n° 2021-1900, art. 30), sa part impayée à la livraison de la plus ancienne finale validée et source qui le
+reprend, rien sans finale — hier, toute sa TVA à sa propre date. « ENCAISSÉE » : l'acompte de biens est dû
+(`obligationEncaissee`, § 2.3.2), l'option pour les débits n'y changeant rien ; MDT-91 cite 386 (G1.01) sur la marque
+(`FacturePourCdar.acompte`, obligatoire ; illisible, refusé). LES ÉCRITURES gardent `SANS_ACOMPTE` : la base les recompose
+sans la marque. Questions P5B3-Q1 à Q3 ; huit mutations, huit mordent.

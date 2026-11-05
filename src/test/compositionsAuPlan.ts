@@ -38,7 +38,7 @@ import { compteDuDirigeant, ecritureDuVirementPersonnel, virementsPersonnelsAEcr
 import { NON_VALIDEE } from './ecritures'
 import { encaissementVendu, factureVendue, ligneVendue, SANS_EXEMPLAIRE, SANS_FACTURE_SOURCE, ventesFactureesVides } from './ventesFacturees'
 import { ecrituresDesVentesFacturees, type MouvementDesEncaissements } from '../lib/ecrituresVentesFacturees'
-import { ventesFacturees } from '../lib/ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees } from '../lib/ventesFacturees'
 import { CAISSE_ABSENTE } from '../lib/recettesDeCaisse'
 
 // LES COMPOSITIONS SOUS UN PLAN (ligne 43, étape PC3 ; conception, § 5.1 et § 5.2) : chaque écriture que l'application
@@ -595,7 +595,7 @@ const CAS_DES_VENTES_FACTUREES: CasDuPlan[] = [
       })
       const fraisBancaires = categorie({ id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires fictifs', poste_2035: 'Frais financiers' })
       return calculerDeclaration2035(
-        2025, [], [fraisBancaires], [], [], [], true, new Map(), [], [], plan, ventesFacturees(sources), { etat: 'composees', composition }, CAISSE_ABSENTE,
+        2025, [], [fraisBancaires], [], [], [], true, new Map(), [], [], plan, ventesFacturees({ ...sources, acomptes: SANS_ACOMPTE }), { etat: 'composees', composition }, CAISSE_ABSENTE,
       ).contributions
     },
   },

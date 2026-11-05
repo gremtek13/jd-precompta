@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { CAS_DE_REFUS_CDAR, donneesCdar, EXEMPLES_CDAR } from '../test/cdarEncaissee'
+import { CAS_DE_REFUS_CDAR, donneesCdar, EXEMPLES_CDAR, factureCdar } from '../test/cdarEncaissee'
 import { diagnosticsSepares, executerModule } from '../test/compilationSeparee'
 import * as cdar from './cdarEncaissee'
 import type { FuseauCdar } from './cdarEncaissee'
@@ -74,7 +74,9 @@ function executer(blocs: string[]): Execute {
   return executerModule<Execute>(blocs.join('\n'))
 }
 
-const DONNEES = [...EXEMPLES_CDAR.map((e) => e.donnees), ...CAS_DE_REFUS_CDAR.map(([, o]) => donneesCdar(o))]
+const DONNEES = [...EXEMPLES_CDAR.map((e) => e.donnees), ...CAS_DE_REFUS_CDAR.map(([, o]) => donneesCdar(o)),
+  // Une facture d'acompte (386, étape P5b3), et une dont la marque n'a pas été lue.
+  donneesCdar({ facture: factureCdar({ acompte: true }) }), donneesCdar({ facture: Object.assign(factureCdar(), { acompte: null }) })]
 const INSTANTS = ['2027-01-15T12:00:00Z', '2027-03-28T00:59:59Z', '2027-03-28T01:00:00Z', '2027-10-31T00:59:59Z',
   '2027-10-31T01:00:00Z', '2027-12-31T23:30:00Z', 'invalide']
 const FUSEAUX: FuseauCdar[] = ['Europe/Paris', 'UTC', 'America/Cayenne' as FuseauCdar]
@@ -86,6 +88,8 @@ const EPREUVES: Record<string, (m: Execute) => unknown> = {
   LIBELLE_STATUT_ENCAISSEE: (m) => m.LIBELLE_STATUT_ENCAISSEE,
   CODE_MONTANT_ENCAISSE: (m) => m.CODE_MONTANT_ENCAISSE,
   TYPE_FACTURE_CDAR: (m) => m.TYPE_FACTURE_CDAR,
+  TYPE_FACTURE_ACOMPTE_CDAR: (m) => m.TYPE_FACTURE_ACOMPTE_CDAR,
+  typeDeLaFactureCdar: (m) => [true, false].map((acompte) => m.typeDeLaFactureCdar({ acompte })),
   REFERENCE_CDV_FACTURE: (m) => m.REFERENCE_CDV_FACTURE,
   LONGUEUR_MAX_MOTIF_CDAR: (m) => m.LONGUEUR_MAX_MOTIF_CDAR,
   PROFILS_CDAR: (m) => m.PROFILS_CDAR,

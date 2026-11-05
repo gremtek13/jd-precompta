@@ -5,7 +5,7 @@ import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Mode
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
-import { ventesFacturees, type FactureVendue } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees, type FactureVendue } from './ventesFacturees'
 import type { LigneDeFacture } from './encaissementsFactures'
 import { POSTE_VENTES_FACTUREES, type EcrituresDesVentesDeLa2035 } from './declaration2035'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
@@ -382,7 +382,7 @@ describe('calculerSituationIntermediaire — les ventes facturées', () => {
   const second = encaissementVendu({ id: 'e2', facture_id: 'fs', date_encaissement: '2026-07-15', montant: 600 })
   const ventes = (o: { factures?: FactureVendue[]; lignes?: LigneDeFacture[]; encaissements?: ReturnType<typeof encaissementVendu>[] } = {}) =>
     ventesFacturees({
-      dossierId: 'd1',
+      acomptes: SANS_ACOMPTE, dossierId: 'd1',
       factures: o.factures ?? [F],
       lignes: o.lignes ?? [ligneVendue('fs', 1000, 20)],
       encaissements: (o.encaissements ?? [premier, second]).map((e) => e.encaissement),
@@ -495,7 +495,7 @@ describe('calculerSituationIntermediaire — les frais d’un mouvement d’enca
     }
   }
   const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
-    dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
+    acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
   })
   const situation = (debut: string, fin: string, o: {
     s?: SourcesDesEcrituresDeVente; categories?: Categorie[]; mode?: ModeComptable; plan?: PlanComptable; planDeLaComposition?: PlanComptable

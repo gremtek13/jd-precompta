@@ -8,7 +8,7 @@ import { libelleDUneVenteFacturee, nomDuClientEcrit } from './libellesDesVentes'
 import type { PlanComptable } from './planComptable'
 import type { EcritureBrouillon, FactureEmise, JournalCode, LigneBancaire, ModeComptable, SensEcriture } from './types'
 import {
-  regimeDeLaFacture, ventesFacturees, type EncaissementVendu, type FactureVendue, type MotifVenteEcartee, type RegimeCa3,
+  regimeDeLaFacture, SANS_ACOMPTE, ventesFacturees, type EncaissementVendu, type FactureVendue, type MotifVenteEcartee, type RegimeCa3,
   type SourcesVentesFacturees, type VentesFacturees,
 } from './ventesFacturees'
 
@@ -108,7 +108,7 @@ export type FactureDesVentesEcrites = FactureVendue & Pick<FactureEmise, 'tiers_
 export interface EntreesEcrituresVentes {
   /** Les lignes que la lecture des ventes facturées a rendues, EN ENTIER (lib/ventesFactureesLecture.ts), et le SIRET figé
    *  du client de chaque facture. */
-  sources: Omit<SourcesVentesFacturees, 'factures'> & { factures: readonly FactureDesVentesEcrites[] }
+  sources: Omit<SourcesVentesFacturees, 'factures' | 'acomptes'> & { factures: readonly FactureDesVentesEcrites[] }
   /** Les mouvements que les encaissements citent — d'autres peuvent y être, seuls ceux-là comptent. */
   mouvements: readonly MouvementDesEncaissements[]
   /** Le compte de bilan choisi pour un encaissement par compensation (ou par un autre moyen sans mouvement), par
@@ -274,7 +274,12 @@ const nommer = (f: Pick<FactureVendue, 'numero' | 'id'>) => f.numero ?? f.id.sli
 export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): EcrituresDesVentesFacturees {
   const { sources, mode, plan } = entrees
   const dossierId = sources.dossierId
-  const ventes = ventesFacturees(sources)
+  // L'acompte d'un devis (étape P5b3) n'entre pas ici : les écritures se recomposent en base, en entiers
+  // (`ecrire_vente_facturee`, la recomposition de `valider_exercice`), et la base ne connaît pas encore la marque. En
+  // trésorerie, rien n'en dépend que la date où la TVA d'un acompte de BIENS devient exigible (la CA3 la lit, elle) : tant
+  // que la base ne l'apprend pas, `ACOMPTES_PREVUS` ne se lève pas sans réponse à P5B3-Q1 (HISTORIQUE.md, « L'ACOMPTE
+  // D'UN DEVIS DANS LES MOTEURS (P5B3) »).
+  const ventes = ventesFacturees({ ...sources, acomptes: SANS_ACOMPTE })
   const nonEcrites: SourceNonEcrite[] = []
   const nonEcrite = (source: SourceEcritureVente, motif: MotifNonEcrite, precision?: string, facture?: string) =>
     nonEcrites.push({
