@@ -47876,3 +47876,63 @@ message facultatif), `DevisVue` confirme et envoie par son verrou unique (`sousV
 s'offre que sur un émis, une liste lue en entier, les deux drapeaux levés ; rien ne se dit envoyé sans le `ok: true` de la fonction.
 Mots communs aux deux espaces (ni tutoiement ni vouvoiement, aucun onglet), les refus de la fonction réécrits par `pourLEspace`.
 Quatorze cas d’écran par espace et sept cas du module neufs.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS : LA CONCEPTION (P5B)
+
+EC-D3 (« oui ») : une facture d'acompte, puis une facture FINALE qui reprend les acomptes. Conçue sur la production (172
+migrations, `devis_du_client` comprise, `facturer_devis` égale au fichier préparé, à l'empreinte) ; rien d'écrit.
+SOURCES : CGI, art. 289, I-1-c (l'acompte versé avant l'opération se facture ; abrogé au 01/01/2027, ordonnance
+n° 2025-1247) ; BOI-TVA-DECLA-30-20-20-10, § 60 (numérotée comme toute facture ; « la facture définitive doit faire
+référence aux différentes factures d'acomptes ») et § 160 (la date du versement, si elle diffère) ; art. 283, 3 (la TVA
+facturée est due) ; art. 269, 2-a et 2-c (exigible à l'encaissement de l'acompte, biens compris) ; spécifications
+externes v3.2 de la DGFiP, l'archive lue : dossier général § 2.3.2 (les données de paiement visent les « factures
+d'acompte ») ; annexe 7 v1.9, G1.01 (386, la facture d'acompte ; 503, son avoir), G1.02 (B4, S4, M4, « facture définitive
+(après acompte) »), G1.60 (ni 386 ni 503 sous ces cadres), G1.18 ; annexe 1 v1.2, BT-9 (« date de versement en cas
+d'acompte »), BG-3 (« la facture finale faisant référence à des factures de pré-paiement »), EXT-FR-FE-BG-06 (la reprise
+en ligne d'un acompte, profil cible), et aucune ligne pour BT-113 ; annexe 6 v1.10 (TT-21 suit G1.01 ; B4 → TLB1) ; XSD
+F1 D22B (`InvoiceReferencedDocument` d'en-tête 0..n). Ni XP Z12-012 ni XP Z12-013.
+
+LA FACTURE D'ACOMPTE : de la série F, marquée `acompte` (figée), en CII 386 sous B1, S1 ou M1. Son montant, un
+pourcentage ou un TTC (P5B-Q1), devient un HT cible au centime, réparti sur les groupes (taux, nature) du devis au
+PRORATA DU RESTE (le HT que les acomptes validés ne couvrent pas), par les plus forts restes, à égalité dans l'ordre du
+devis ; une ligne par groupe (quantité 1, C62, la TVA par `centimes_ligne_facture`). La somme est exacte et aucune part
+ne dépasse son reste : la finale n'est négative à aucun taux ; le TTC exact se dit avant le clic. Écartés : le prorata
+du devis entier (deux acomptes dépasseraient un taux d'un centime) ; un TTC par taux (à 20 %, 0,02 € HT font 0,02 € TTC
+et 0,03 € en font 0,04 € : 0,03 € est inaccessible). Elle imprime « Facture d'acompte », le devis cité et la date du
+versement, connue et autre que la sienne (BT-9).
+
+LA FINALE : les lignes du devis, puis chaque ligne de chaque acompte validé au signe opposé (quantité −1, même prix, taux
+et nature, « Reprise de l'acompte F… du … », `reprise_facture_id`) : par taux, l'opposé exact (le demi loin de zéro dans
+les deux sens, relu) — aucune TVA facturée deux fois ; en CII 380 sous B4, S4 ou M4, un BG-3 par acompte. Écartés :
+BT-113 hors des lignes (la finale porterait toute la TVA, BR-CO-16 ne retranchant que du net à payer ; absent du flux 1 ;
+les plafonds laisseraient réencaisser l'acompte) ; une remise de document (BG-20), une structure de plus.
+
+LA BASE, une migration additive (`acomptes_des_devis`). Relu : `type` n'est que facture ou avoir, la série `^[FA]` ;
+`facture_origine_id` n'appartient qu'à un avoir ; `enregistrer_facture` ne refuse aucune ligne négative d'une facture
+et ne confronte pas ses totaux à ses lignes (l'encaissement seul le fait). Elle pose `factures_emises.acompte` et
+`date_versement_acompte`, `facture_lignes.reprise_facture_id` (au graphe de la sauvegarde), `devis_factures.role`
+(« acompte », « finale » — les liens d'hier) sous la garde des liens ; `facturer_acompte_devis` (`gere_les_ventes`, le
+devis verrouillé ; refus : non accepté, finale active, acompte en brouillon, cumul au-delà du devis, montant nul,
+engagement) ; `facturer_devis` et `enregistrer_facture` remplacées sous leur empreinte : la marque et les reprises posées
+par ces fonctions seules, un acompte en brouillon sans retouche de ses lignes, et à la validation, sous le verrou du
+devis, le cumul, les reprises exactes et complètes, aucun taux négatif ; l'avoir d'un acompte le crédite en entier (503)
+tant qu'aucune finale validée ne le reprend ; celui d'une finale peut défaire ses reprises. Aucune policy ne change.
+
+AILLEURS : le registre des encaissements ne change pas (les plafonds par taux de la finale sont nets ; un acompte payé
+avant sa facture s'y date à son versement). « Encaissée » : un acompte de biens est dû (§ 2.3.2) ; MDT-91 porte 386. La
+2035 en trésorerie : chaque encaissement à sa date (art. 93, 1), la finale nette — rien deux fois. La CA3
+(`ventesFacturees.ts`) : un acompte exigible à ses encaissements, à sa date sur l'option pour les débits, de biens sa
+part impayée au fait générateur de la finale. L'engagement : un acompte n'est pas un produit (4191), après le MVP. Le
+CII (`factureCii`, copié dans `superpdp-emit` et `plateforme-agreee`), l'aperçu et `send-email` suivent la marque figée ;
+« acompte facturé » se déduit des liens (`etatDuDevis`) ; le client « Ventes » a les droits de `facturer_devis`.
+
+LES ÉTAPES : P5b1, le module pur (`lib/acompteDevis.ts`, une batterie tirée) ; P5b2, la migration préparée, éprouvée sur
+une réplique (`devis.sql`, `factures.sql`, `encaissementsFactures.sql`, `rls.sql`, mutations, leurre), son retour à
+part, présentée au cabinet ; P5b3, les moteurs (CA3, « Encaissée », CDAR) derrière `ACOMPTES_PREVUS` ; P5b4, le CII,
+l'aperçu et `send-email`, jugés par `valider.mjs` ; P5b5, les écrans des deux espaces, après `DEVIS_EXPORTES`.
+
+LES QUESTIONS : P5B-Q1, un pourcentage, un TTC ou les deux (recommandé : les deux) ; P5B-Q2, plusieurs acomptes
+cumulés jusqu'au devis, un seul en brouillon (recommandé), ou un seul ; P5B-Q3, un dossier en engagement refusé jusqu'au
+lot du 4191 (recommandé), ou offert ; P5B-Q4, une finale créditée en entier laisse tirer une nouvelle finale
+(recommandé), ou le devis reste facturé. À VÉRIFIER : la reprise des art. 269 et 289 au CIBS ; l'acompte sur l'option
+pour les débits devant « Encaissée » (BOI-TVA-DECLA-20-30-60) ; BR-CO-17 sur une finale à deux taux ; Super PDP et 386.
