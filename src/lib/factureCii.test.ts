@@ -16,6 +16,7 @@ import {
   donnees,
   EXEMPLES,
   facture,
+  FINALE,
   ligne,
   ORIGINE,
   SIREN_CLIENT,
@@ -25,6 +26,7 @@ import {
   vendeur,
 } from '../test/facturesCii'
 import {
+  acompteLu,
   adresseStructuree,
   cadreDeFacturation,
   decimal,
@@ -37,6 +39,7 @@ import {
   numeroTvaFrancais,
   refusEmission,
   sirenDe,
+  SANS_ACOMPTE_CII,
   sirenValide,
   siretValide,
   TAUX_ADMIS,
@@ -68,9 +71,9 @@ describe('les exemples', () => {
     expect(f.syntaxe).toBe('CII')
     expect(f.numero).toBe(e.numero)
     expect(f.nature).toBe(e.nature)
-    expect(f.typeCode).toBe(e.nature === 'avoir' ? '381' : '380')
+    expect(f.typeCode).toBe(e.typeCode ?? (e.nature === 'avoir' ? '381' : '380'))
     expect(f.date).toBe(e.donnees.facture.date_emission)
-    expect(f.echeance).toBe(e.donnees.facture.date_echeance)
+    expect(f.echeance).toBe(e.echeance === undefined ? e.donnees.facture.date_echeance : e.echeance)
     expect(f.devise).toBe('EUR')
     expect(f.vendeur.siren).toBe('123456782')
     expect(f.vendeur.tva).toBe(TVA_VENDEUR)
@@ -123,6 +126,61 @@ describe('ce que le XML porte', () => {
     expect(xml('services-debits')).toContain(`<ram:URIID schemeID="0225">${SIREN_CLIENT}_FACTURES</ram:URIID>`)
     expect(xml('franchise')).toContain(`<ram:URIID schemeID="0225">${SIREN_CLIENT}</ram:URIID>`)
     expect(xml('franchise')).toContain('<ram:URIID schemeID="0225">123456782</ram:URIID>')
+  })
+
+  // L'acompte d'un devis (P5b4a) : annexe 7 v1.9, G1.01, G1.02 et G1.60 ; annexe 1 v1.2, BT-9 et BG-3.
+  const enTete = (x: string) => ({
+    cadre: /<ram:BusinessProcessSpecifiedDocumentContextParameter>\s*<ram:ID>(\w+)<\/ram:ID>/.exec(x)?.[1],
+    type: /<rsm:ExchangedDocument>[\s\S]*?<ram:TypeCode>(\d+)<\/ram:TypeCode>/.exec(x)?.[1],
+    references: [...x.matchAll(/<ram:InvoiceReferencedDocument>\s*<ram:IssuerAssignedID>([^<]+)</g)].map((m) => m[1]),
+  })
+
+  it('la facture d’acompte : 386 sous le cadre 1, la date de son versement en BT-9', () => {
+    const x = xml('acompte')
+    expect(enTete(x)).toEqual({ cadre: 'S1', type: '386', references: [] })
+    expect(x).toContain('<ram:DueDateDateTime>\n          <udt:DateTimeString format="102">20260828</udt:DateTimeString>')
+    // Versé le jour de la facture, ou sans date connue : l'échéance, comme hier.
+    for (const dateVersement of [null, '2026-09-01']) {
+      const e = EXEMPLES.find((z) => z.nom === 'acompte')!.donnees
+      const meme = xmlDe({ ...e, acompte: { ...e.acompte, dateVersement } })
+      expect(enTete(meme).type).toBe('386')
+      expect(meme).toContain('<udt:DateTimeString format="102">20260901</udt:DateTimeString>\n        </ram:DueDateDateTime>')
+    }
+  })
+
+  it('la finale : 380 sous le cadre 4, le plus ancien acompte en BG-3, tous dans les conditions, les reprises en déduction', () => {
+    const x = xml('finale-deux-acomptes')
+    expect(enTete(x)).toEqual({ cadre: 'S4', type: '380', references: ['F2026-0021'] })
+    expect(x).toContain('<ram:Description>Facture définitive après les acomptes F2026-0021 du 01/09/2026, F2026-0024 du 20/09/2026, repris en déduction.</ram:Description>')
+    expect(x.match(/<ram:BilledQuantity unitCode="C62">-1<\/ram:BilledQuantity>/g)).toHaveLength(4)
+    expect(x).toContain('<ram:LineTotalAmount>-381.67</ram:LineTotalAmount>')
+    // Les reprises gardent le prix de l'acompte, positif (BR-27), et son taux.
+    expect(x).not.toMatch(/<ram:ChargeAmount>-/)
+    // L'ordre des acomptes ne dépend pas de celui de la lecture ; un seul acompte se dit au singulier.
+    const e = EXEMPLES.find((z) => z.nom === 'finale-deux-acomptes')!.donnees
+    expect(xmlDe({ ...e, acompte: { ...e.acompte, acomptesRepris: [...e.acompte.acomptesRepris].reverse() } })).toBe(x)
+    const nature = (n: 'biens' | 'mixte') => enTete(xmlDe({ ...e, facture: { ...e.facture, nature_operation: n } })).cadre
+    expect([nature('biens'), nature('mixte')]).toEqual(['B4', 'M4'])
+    const un = donnees({
+      lignes: FINALE.lignes.slice(0, 4),
+      acompte: { reprises: FINALE.acompte.reprises.slice(0, 2), acomptesRepris: FINALE.acompte.acomptesRepris.slice(0, 1) },
+    })
+    expect(xmlDe(un)).toContain('<ram:Description>Facture définitive après l’acompte F2026-0021 du 01/09/2026, repris en déduction.</ram:Description>')
+  })
+
+  it('l’avoir d’une facture d’acompte : 503 sous le cadre 1, qui cite l’acompte', () => {
+    const x = xml('avoir-acompte')
+    expect(enTete(x)).toEqual({ cadre: 'S1', type: '503', references: ['F2026-0021'] })
+    expect(x).toContain('<ram:Description>Avoir sur la facture d’acompte F2026-0021 du 01/09/2026.</ram:Description>')
+    expect(x).not.toContain('DueDateDateTime')
+  })
+
+  it('sans acompte, le document est celui d’hier : la valeur explicite ou une lecture qui ne dit rien de plus', () => {
+    for (const e of EXEMPLES.filter((z) => !['acompte', 'finale-deux-acomptes', 'avoir-acompte'].includes(z.nom))) {
+      const lue = acompteLu({ acompte: false, date_versement_acompte: null }, e.donnees.lignes.map((l) => ({ ordre: l.ordre, reprise_facture_id: null })),
+        e.donnees.facture.type === 'avoir' ? { acompte: false } : null, [])
+      expect(xmlDe({ ...e.donnees, acompte: lue }), e.nom).toBe(xmlDe({ ...e.donnees, acompte: SANS_ACOMPTE_CII }))
+    }
   })
 
   it('un avoir cite sa facture, porte des montants positifs et n’a pas d’échéance', () => {
@@ -279,13 +337,13 @@ describe('donneesDeLaFacture : la facture de la base, assemblée pour le génér
   const redevable = { statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false } as const
 
   it('le vendeur est l’émetteur figé par la facture, son numéro de TVA tiré du SIREN figé', () => {
-    const d = donneesDeLaFacture(facture(lignes), lignes, redevable, null, AUJOURD_HUI)
+    const d = donneesDeLaFacture(facture(lignes), lignes, redevable, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
     expect(d).toEqual(donnees({ lignes }))
     expect(refusEmission(d)).toEqual([])
   })
 
   it('l’émetteur de la facture, jamais un autre : un SIRET figé différent donne son propre numéro', () => {
-    const d = donneesDeLaFacture(facture(lignes, { emetteur_siret: '98765432400019', emetteur_nom: 'Autre nom' }), lignes, redevable, null, AUJOURD_HUI)
+    const d = donneesDeLaFacture(facture(lignes, { emetteur_siret: '98765432400019', emetteur_nom: 'Autre nom' }), lignes, redevable, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
     expect(d.vendeur).toMatchObject({ nom: 'Autre nom', siret: '98765432400019', numeroTva: numeroTvaFrancais(SIREN_CLIENT) })
   })
 
@@ -297,7 +355,7 @@ describe('donneesDeLaFacture : la facture de la base, assemblée pour le génér
 
   it('un dossier en franchise ou exonéré sans la case n’a pas de numéro inventé, et le refus dit où la cocher (règle G1.47)', () => {
     for (const dossier of NON_REDEVABLES) {
-      const d = donneesDeLaFacture(factureAuPublic, zero, { ...dossier, numero_tva_attribue: false }, null, AUJOURD_HUI)
+      const d = donneesDeLaFacture(factureAuPublic, zero, { ...dossier, numero_tva_attribue: false }, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
       expect(d.vendeur).toMatchObject({ numeroTva: null, statutTva: dossier.statut_tva, articleExoneration: dossier.article_exoneration })
       expect(refusEmission(d)).toEqual([
         'Le numéro de TVA intracommunautaire du dossier est nécessaire à une facture sans TVA (règle G1.47 de la DGFiP) : '
@@ -310,7 +368,7 @@ describe('donneesDeLaFacture : la facture de la base, assemblée pour le génér
   // d'un redevable, et la facture sans TVA peut partir.
   it('un dossier en franchise ou exonéré qui a un numéro : il se calcule du SIREN figé, et la facture part', () => {
     for (const dossier of NON_REDEVABLES) {
-      const d = donneesDeLaFacture(factureAuPublic, zero, { ...dossier, numero_tva_attribue: true }, null, AUJOURD_HUI)
+      const d = donneesDeLaFacture(factureAuPublic, zero, { ...dossier, numero_tva_attribue: true }, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
       expect(d.vendeur).toMatchObject({ numeroTva: TVA_VENDEUR, statutTva: dossier.statut_tva })
       expect(refusEmission(d), dossier.statut_tva).toEqual([])
     }
@@ -318,13 +376,13 @@ describe('donneesDeLaFacture : la facture de la base, assemblée pour le génér
 
   it('la case ne fabrique rien sans SIREN valide : le refus reste celui du SIREN', () => {
     const d = donneesDeLaFacture(facture(zero, { type_client: 'organisme_public', tiers_siren: SIREN_PUBLIC, tiers_siret: '10000020700017', emetteur_siret: '12345678900010' }),
-      zero, { statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: true }, null, AUJOURD_HUI)
+      zero, { statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: true }, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
     expect(d.vendeur.numeroTva).toBeNull()
     expect(refusEmission(d)).toEqual([expect.stringContaining('ne donne pas un SIREN valide')])
   })
 
   it('un statut à préciser : le numéro se calcule, et seul le statut se réclame', () => {
-    const d = donneesDeLaFacture(facture(zero), zero, { statut_tva: null, article_exoneration: null, numero_tva_attribue: false }, null, AUJOURD_HUI)
+    const d = donneesDeLaFacture(facture(zero), zero, { statut_tva: null, article_exoneration: null, numero_tva_attribue: false }, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
     expect(d.vendeur.numeroTva).toBe(TVA_VENDEUR)
     expect(refusEmission(d)).toEqual([expect.stringContaining('Le statut de TVA du dossier est à préciser')])
   })
@@ -332,7 +390,7 @@ describe('donneesDeLaFacture : la facture de la base, assemblée pour le génér
   it('un SIREN figé faux ou absent : une faute, un refus — le numéro de TVA qui en découle ne se réclame pas', () => {
     for (const emetteur_siret of ['12345678900010', null]) {
       for (const statut_tva of ['redevable', null] as const) {
-        const d = donneesDeLaFacture(facture(lignes, { emetteur_siret }), lignes, { statut_tva, article_exoneration: null, numero_tva_attribue: false }, null, AUJOURD_HUI)
+        const d = donneesDeLaFacture(facture(lignes, { emetteur_siret }), lignes, { statut_tva, article_exoneration: null, numero_tva_attribue: false }, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
         expect(d.vendeur.numeroTva).toBeNull()
         const attendus = [expect.stringContaining('ne donne pas un SIREN valide')]
         if (statut_tva === null) attendus.push(expect.stringContaining('Le statut de TVA du dossier est à préciser'))
@@ -348,10 +406,34 @@ describe('donneesDeLaFacture : la facture de la base, assemblée pour le génér
 
   it('un avoir reçoit sa facture d’origine, et la date du jour passe telle quelle', () => {
     const credit = [ligne({ quantite: -1 })]
-    const d = donneesDeLaFacture(facture(credit, { type: 'avoir', numero: 'A2026-0001', date_echeance: null }), credit, redevable, ORIGINE, '2026-10-08')
+    const d = donneesDeLaFacture(facture(credit, { type: 'avoir', numero: 'A2026-0001', date_echeance: null }), credit, redevable, ORIGINE, SANS_ACOMPTE_CII, '2026-10-08')
     expect(d.origine).toEqual(ORIGINE)
     expect(d.aujourdHui).toBe('2026-10-08')
     expect(refusEmission(d)).toEqual([])
+  })
+})
+
+describe('acompteLu : la marque et les reprises telles que la base les rend', () => {
+  it('une facture d’acompte, une finale, un avoir d’acompte', () => {
+    expect(acompteLu({ acompte: true, date_versement_acompte: '2026-08-28' }, [{ ordre: 1, reprise_facture_id: null }], null, []))
+      .toEqual({ acompte: true, dateVersement: '2026-08-28', origineAcompte: false, reprises: [], acomptesRepris: [] })
+    const finale = acompteLu({ acompte: false, date_versement_acompte: null },
+      [{ ordre: 1, reprise_facture_id: null }, { ordre: 2, reprise_facture_id: 'a1' }], null,
+      [{ id: 'a1', numero: 'F1', date_emission: '2026-09-01', acompte: true }])
+    expect(finale.reprises).toEqual([{ ordre: 2, factureId: 'a1' }])
+    expect(finale.acomptesRepris).toEqual([{ id: 'a1', numero: 'F1', date_emission: '2026-09-01', acompte: true }])
+    expect(acompteLu({ acompte: false, date_versement_acompte: null }, [], { acompte: true }, []).origineAcompte).toBe(true)
+  })
+
+  it('une colonne absente ou d’une autre forme est illisible, jamais un « non »', () => {
+    expect(acompteLu({}, [], null, []).acompte).toBeNull()
+    expect(acompteLu({ acompte: false }, [], null, []).acompte).toBeNull()
+    expect(acompteLu({ acompte: 'false', date_versement_acompte: null }, [], null, []).acompte).toBeNull()
+    expect(acompteLu({ acompte: true, date_versement_acompte: 20260828 }, [], null, []).acompte).toBeNull()
+    expect(acompteLu({ acompte: false, date_versement_acompte: null }, [], {}, []).origineAcompte).toBeNull()
+    expect(acompteLu({ acompte: false, date_versement_acompte: null }, [{ ordre: 3 }], null, []).reprises).toEqual([{ ordre: 3, factureId: null }])
+    expect(acompteLu({ acompte: false, date_versement_acompte: null }, [], null, [{ id: 'a', numero: 'F1', date_emission: '2026-09-01' }])
+      .acomptesRepris[0].acompte).toBeNull()
   })
 })
 
@@ -541,7 +623,7 @@ describe('le numéro de TVA imprimé sous l’émetteur', () => {
     expect(numeroTvaImprime(figee, dossier('exonere', true))).toBe(TVA_VENDEUR)
     for (const d of [dossier('redevable'), dossier('franchise', true)]) {
       const lignes = [ligne({ taux_tva: d.statut_tva === 'redevable' ? 20 : 0 })]
-      expect(numeroTvaImprime(figee, d)).toBe(donneesDeLaFacture(facture(lignes), lignes, d, null, AUJOURD_HUI).vendeur.numeroTva)
+      expect(numeroTvaImprime(figee, d)).toBe(donneesDeLaFacture(facture(lignes), lignes, d, null, SANS_ACOMPTE_CII, AUJOURD_HUI).vendeur.numeroTva)
     }
   })
 

@@ -5,6 +5,7 @@ import { diagnosticsSepares, executerModule } from '../test/compilationSeparee'
 import { CAS_DE_REFUS, donnees, EXEMPLES } from '../test/facturesCii'
 import * as cii from './factureCii'
 import type { DossierCii, FactureCii, FactureEnBase, LigneCii } from './factureCii'
+import { ACOMPTES_PREVUS } from './devis'
 import * as montants from './montantsFacture'
 import * as statut from './statutTva'
 import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from './types'
@@ -155,6 +156,13 @@ const IDENTIFIANTS = [null, undefined, '', '123456782', '123456789', '1234567820
   '35600000012345', ' 123 456 782 ', '123456782 00010', 'abcdefghi']
 const ADRESSES = [null, '', '1 rue de la Paix\n75002 Paris', '1 rue X\nBât. B\nEscalier 3\n69001 Lyon', 'Une seule ligne 13001 Marseille',
   'Rue\n\n  \nVille', '12 avenue Foch\r\n75116   Paris\r\nFrance']
+// Des lectures de l'acompte d'un devis : lues, absentes, d'une autre forme (P5b4a).
+const LECTURES_D_ACOMPTE: Parameters<typeof cii.acompteLu>[] = [
+  [{ acompte: false, date_versement_acompte: null }, [], null, []],
+  [{ acompte: true, date_versement_acompte: '2026-08-28' }, [{ ordre: 1, reprise_facture_id: null }], null, []],
+  [{}, [{ ordre: 1 }, { ordre: 2, reprise_facture_id: 'a1' }, { ordre: 3, reprise_facture_id: 7 }], {}, [{ id: 'a1', numero: 'F1', date_emission: '2026-09-01' }]],
+  [{ acompte: 'oui', date_versement_acompte: 20260828 }, [], { acompte: true }, [{ id: 'a1', numero: null, date_emission: '2026-09-01', acompte: true }]],
+]
 const essai = (f: () => unknown) => {
   try {
     return f()
@@ -191,8 +199,10 @@ const EPREUVES: Record<string, (m: Execute) => unknown> = {
     [false, true].map((attribue) => m.donneesDeLaFacture(
       { ...e.donnees.facture, emetteur_nom: 'Démo', emetteur_siret: siret ?? null, emetteur_adresse: null }, e.donnees.lignes,
       { statut_tva: s, article_exoneration: s === 'exonere' ? 'cgi_261_4_1' : null, numero_tva_attribue: attribue },
-      e.donnees.origine, '2026-10-08'))))),
+      e.donnees.origine, cii.SANS_ACOMPTE_CII, '2026-10-08'))))),
   factureCii: (m) => [...EXEMPLES.map((e) => m.factureCii(e.donnees)), ...CAS_DE_REFUS.map(([, c]) => m.factureCii(donnees(c)))],
+  SANS_ACOMPTE_CII: (m) => m.SANS_ACOMPTE_CII,
+  acompteLu: (m) => LECTURES_D_ACOMPTE.map(([f, l, o, r]) => m.acompteLu(f, l, o, r)),
 }
 
 function exportsDe(bloc: string): string[] {
@@ -303,6 +313,34 @@ describe('les blocs de facturation recopiés dans les Edge Functions', () => {
     comparer(executer(blocs), fonction, blocs)
     if (porte(source, GENERATEUR)) cablage(source, blocs, fonction)
   })
+
+  // L'acompte d'un devis (P5b4a) : `main` reste déployable sur la production d'aujourd'hui, qui n'a pas les colonnes de la
+  // migration `acomptes_des_devis`. Une fonction ne les nomme que sous sa constante, levée avec `ACOMPTES_PREVUS`.
+  it.each(FONCTIONS.filter((f) => porte(sourceDe(f), GENERATEUR)))(
+    '%s : l’acompte d’un devis se lit sous ACOMPTES_EN_BASE, qui suit ACOMPTES_PREVUS ; baissée, rien de neuf n’est lu',
+    (fonction) => {
+      const source = sourceDe(fonction)
+      const code = horsDesBlocs(source, controler(source, fonction))
+      const constante = /^const ACOMPTES_EN_BASE = (true|false)$/m.exec(code)
+      expect(constante, `${fonction} : la constante ACOMPTES_EN_BASE introuvable`).not.toBeNull()
+      expect((constante as RegExpExecArray)[1] === 'true').toBe(ACOMPTES_PREVUS)
+      // La lecture : une seule fonction, qui rend SANS_ACOMPTE_CII avant toute lecture tant que la constante est baissée.
+      const debutLecture = code.indexOf('async function acompteDeLaFacture(')
+      const garde = code.indexOf('  if (!ACOMPTES_EN_BASE) return SANS_ACOMPTE_CII\n', debutLecture)
+      const finLecture = code.indexOf('\n}\n', garde)
+      expect(debutLecture, `${fonction} : la lecture de l’acompte introuvable`).toBeGreaterThan(-1)
+      expect(garde, `${fonction} : la lecture ne commence pas par sa garde`).toBeGreaterThan(debutLecture)
+      expect(code.slice(debutLecture, garde)).not.toMatch(/\.from\(/)
+      // Hors de cette lecture, aucune colonne de l'acompte n'est nommée.
+      const ailleurs = code.slice(0, debutLecture) + code.slice(finLecture)
+      for (const colonne of ['acompte, date_versement_acompte', 'reprise_facture_id', '"acompte"', 'date_emission, acompte']) {
+        expect(ailleurs, `${fonction} : ${colonne} nommé hors de la lecture gardée`).not.toContain(colonne)
+      }
+      // Le gestionnaire la lit et la passe au générateur.
+      expect(code).toMatch(/const acompte = await acompteDeLaFacture\(admin, dossierId, factureId, /)
+      expect(code).toContain(", origine, acompte, dateDeParis(Date.now()))")
+    },
+  )
 
   it('superpdp-emit ne garde rien de l’ancien chemin (JSON de Super PDP, conversion, copies d’avant)', () => {
     const source = sourceDe('superpdp-emit')

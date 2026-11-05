@@ -2,7 +2,8 @@
 // clé mais inventés, des noms et des adresses de démonstration. Elles servent à ses propres tests (factureCii.test.ts)
 // et au garde des copies de ce générateur dans les Edge Functions (copiesFacturation.test.ts), qui les fait passer par
 // la copie ET par l'original : un exemple ajouté ici est éprouvé des deux côtés sans qu'on ait à y penser.
-import type { DonneesCii, LigneCii, VendeurCii } from '../lib/factureCii'
+import { lignesDeLaFinale, preparerAcompte, type AcompteValide, type DemandeAcompte, type LigneTiree } from '../lib/acompteDevis'
+import { SANS_ACOMPTE_CII, type AcompteCii, type DonneesCii, type LigneCii, type VendeurCii } from '../lib/factureCii'
 import { calculerTotaux } from '../lib/montantsFacture'
 import type { FactureEmise } from '../lib/types'
 import { MENTIONS_VIDES } from './factures'
@@ -79,14 +80,59 @@ export interface Cas {
   facture?: Partial<FactureEmise>
   vendeur?: Partial<VendeurCii>
   origine?: DonneesCii['origine']
+  acompte?: Partial<AcompteCii>
 }
 
 export const ORIGINE: DonneesCii['origine'] = { numero: 'F2026-0001', date_emission: '2026-09-01' }
 
 export function donnees(c: Cas = {}): DonneesCii {
   const lignes = c.lignes ?? [ligne()]
-  return { facture: facture(lignes, c.facture), lignes, vendeur: vendeur(c.vendeur), origine: c.origine ?? null, aujourdHui: AUJOURD_HUI }
+  return {
+    facture: facture(lignes, c.facture),
+    lignes,
+    vendeur: vendeur(c.vendeur),
+    origine: c.origine ?? null,
+    acompte: { ...SANS_ACOMPTE_CII, ...c.acompte },
+    aujourdHui: AUJOURD_HUI,
+  }
 }
+
+// ── L'acompte d'un devis (P5b4a) : des lignes tirées par le module de l'acompte lui-même (acompteDevis.ts) ─────────
+// Un devis FICTIF de rénovation à deux taux, aux prix qui ne tombent pas juste (la TVA arrondie ligne par ligne, que la
+// règle BR-CO-17 confronte au taux appliqué à la base de chaque taux) ; deux acomptes, 30 % puis 500 € TTC, et la
+// finale qui les reprend.
+const DEVIS_FICTIF = 'D2026-0007'
+const LIGNES_DU_DEVIS = [
+  { designation: 'Pose et main-d’œuvre', quantite: 3, prix_unitaire_ht: 333.33, taux_tva: 20, nature: 'services' as const },
+  { designation: 'Fournitures de rénovation', quantite: 7, prix_unitaire_ht: 14.29, taux_tva: 10, nature: 'services' as const },
+]
+const ETAT = { accepte: true, finaleActive: false, acompteEnBrouillon: false, mode: 'tresorerie' as const }
+
+function lignesCii(lignes: readonly LigneTiree[]): LigneCii[] {
+  return lignes.map((l, i) => ({ ordre: i + 1, designation: l.designation, quantite: l.quantite, prix_unitaire_ht: l.prix_unitaire_ht, taux_tva: l.taux_tva }))
+}
+
+function acompteTire(demande: DemandeAcompte, valides: AcompteValide[]): LigneTiree[] {
+  const p = preparerAcompte({ numeroDevis: DEVIS_FICTIF, lignesDevis: LIGNES_DU_DEVIS, acomptesValides: valides, demande, etat: ETAT })
+  if (!p.ok) throw new Error(p.refus)
+  return p.lignes
+}
+
+const LIGNES_DU_PREMIER_ACOMPTE = acompteTire({ mode: 'pourcentage', pourcentage: 30 }, [])
+export const PREMIER_ACOMPTE: AcompteValide = { id: 'acompte-1', numero: 'F2026-0021', date: '2026-09-01', lignes: LIGNES_DU_PREMIER_ACOMPTE }
+export const SECOND_ACOMPTE: AcompteValide = {
+  id: 'acompte-2', numero: 'F2026-0024', date: '2026-09-20',
+  lignes: acompteTire({ mode: 'ttc', ttcCentimes: 50000 }, [PREMIER_ACOMPTE]),
+}
+const LIGNES_FINALE = lignesCii(lignesDeLaFinale(LIGNES_DU_DEVIS, [PREMIER_ACOMPTE, SECOND_ACOMPTE]))
+const REPRISES_FINALE = lignesDeLaFinale(LIGNES_DU_DEVIS, [PREMIER_ACOMPTE, SECOND_ACOMPTE])
+  .map((l, i) => ({ ordre: i + 1, factureId: l.reprise_facture_id }))
+  .filter((r): r is { ordre: number; factureId: string } => r.factureId !== null)
+const ACOMPTES_REPRIS = [PREMIER_ACOMPTE, SECOND_ACOMPTE]
+  .map((a) => ({ id: a.id, numero: a.numero, date_emission: a.date, acompte: true }))
+
+/** La finale fictive : ses lignes, ses reprises et les acomptes qu'elle cite, pour les cas de refus. */
+export const FINALE = { lignes: LIGNES_FINALE, acompte: { reprises: REPRISES_FINALE, acomptesRepris: ACOMPTES_REPRIS } }
 
 // ── Les exemples figés ─────────────────────────────────────────────────────────────────────────────────────────────
 // Chacun porte ce que sa relecture doit rendre, calculé à la main et non par le générateur : HT, TVA, TTC dans le sens
@@ -102,6 +148,10 @@ export interface Exemple {
   tva: number
   ttc: number
   ventilation: [string, number, number, number, string | null][]
+  // Le code du type (BT-3) et l'échéance relue (BT-9), quand ce ne sont pas 380 ou 381 et la date d'échéance de la
+  // facture : la facture d'acompte (386, la date de son versement) et l'avoir d'un acompte (503).
+  typeCode?: string
+  echeance?: string | null
 }
 
 export const EXEMPLES: Exemple[] = [
@@ -298,6 +348,65 @@ export const EXEMPLES: Exemple[] = [
     ttc: 216.23,
     ventilation: [['S', 20, 180.19, 36.04, null]],
   },
+  {
+    // La facture d'acompte de 30 % du devis fictif, versé quatre jours avant elle (BT-9). 30 % de 1 100,02 € HT font
+    // 330,01 €, au prorata des restes (999,99 et 100,03) par les plus forts restes : 300,00 € à 20 % et 30,01 € à 10 %.
+    nom: 'acompte',
+    donnees: donnees({
+      lignes: lignesCii(LIGNES_DU_PREMIER_ACOMPTE),
+      facture: { numero: PREMIER_ACOMPTE.numero, date_emission: PREMIER_ACOMPTE.date, date_echeance: '2026-09-01' },
+      acompte: { acompte: true, dateVersement: '2026-08-28' },
+    }),
+    numero: 'F2026-0021',
+    nature: 'facture',
+    typeCode: '386',
+    echeance: '2026-08-28',
+    acheteur: SIREN_CLIENT,
+    // 300,00 × 20 % = 60,00 ; 30,01 × 10 % = 3,001, soit 3,00.
+    ht: 330.01,
+    tva: 63,
+    ttc: 393.01,
+    ventilation: [['S', 20, 300, 60, null], ['S', 10, 30.01, 3, null]],
+  },
+  {
+    // La finale du devis fictif, qui reprend les deux acomptes à deux taux : la règle BR-CO-17 juge la TVA de chaque
+    // taux sur sa base, nette des reprises.
+    nom: 'finale-deux-acomptes',
+    donnees: donnees({
+      lignes: FINALE.lignes,
+      facture: { numero: 'F2026-0030', date_emission: '2026-10-05', date_echeance: '2026-11-04' },
+      acompte: FINALE.acompte,
+    }),
+    numero: 'F2026-0030',
+    nature: 'facture',
+    acheteur: SIREN_CLIENT,
+    // Le second acompte, 500,00 € TTC : 381,67 € à 20 % (TVA 76,334, soit 76,33) et 38,18 € à 10 % (3,818, soit 3,82).
+    // À 20 % : 999,99 − 300,00 − 381,67 = 318,32 € HT ; TVA 200,00 − 60,00 − 76,33 = 63,67 €, quand 318,32 × 20 % font
+    // 63,664 (63,66) : l'écart d'un centime que BR-CO-17 admet. À 10 % : 100,03 − 30,01 − 38,18 = 31,84 € ; TVA
+    // 10,00 − 3,00 − 3,82 = 3,18 €.
+    ht: 350.16,
+    tva: 66.85,
+    ttc: 417.01,
+    ventilation: [['S', 20, 318.32, 63.67, null], ['S', 10, 31.84, 3.18, null]],
+  },
+  {
+    // L'avoir qui crédite en entier la facture d'acompte de l'exemple « acompte » (le devis abandonné) : 503, sous S1.
+    nom: 'avoir-acompte',
+    donnees: donnees({
+      lignes: lignesCii(LIGNES_DU_PREMIER_ACOMPTE).map((l) => ({ ...l, quantite: -l.quantite })),
+      facture: { type: 'avoir', numero: 'A2026-0005', date_emission: '2026-09-15', date_echeance: null },
+      origine: { numero: PREMIER_ACOMPTE.numero, date_emission: PREMIER_ACOMPTE.date },
+      acompte: { origineAcompte: true },
+    }),
+    numero: 'A2026-0005',
+    nature: 'avoir',
+    typeCode: '503',
+    acheteur: SIREN_CLIENT,
+    ht: 330.01,
+    tva: 63,
+    ttc: 393.01,
+    ventilation: [['S', 20, 300, 60, null], ['S', 10, 30.01, 3, null]],
+  },
 ]
 
 // Chaque faute, seule, et le refus qu'elle doit rendre, et lui seul (voir factureCii.test.ts).
@@ -410,4 +519,75 @@ export const CAS_DE_REFUS: [string, Cas, string][] = [
   ['une période qui commence avant 2000', { facture: { periode_debut: '1999-09-01', periode_fin: '2026-09-30' } }, 'La période de la prestation porte une date qui n’est pas admise'],
   ['une date de prestation avant 2000', { facture: { date_prestation: '1999-01-01' } }, 'La date de la livraison ou de la prestation n’est pas une date admise'],
   ['une date de prestation après 2099', { facture: { date_prestation: '2100-01-01' } }, 'La date de la livraison ou de la prestation n’est pas une date admise'],
+  // L'acompte d'un devis (P5b4a) : une marque illisible n'est jamais un « non », et chaque reprise dit son acompte.
+  ['une marque d’acompte illisible', { acompte: { acompte: null } }, 'La marque d’acompte de la facture n’est pas lue'],
+  [
+    'un avoir dont la marque de la facture corrigée est illisible',
+    { lignes: [ligne({ quantite: -1 })], facture: { type: 'avoir', date_echeance: null }, origine: ORIGINE, acompte: { origineAcompte: null } },
+    'La marque d’acompte de la facture corrigée n’est pas lue',
+  ],
+  [
+    'un avoir marqué acompte',
+    { lignes: [ligne({ quantite: -1 })], facture: { type: 'avoir', date_echeance: null }, origine: ORIGINE, acompte: { acompte: true } },
+    'Un avoir n’est jamais une facture d’acompte',
+  ],
+  ['une date de versement sur une facture ordinaire', { acompte: { dateVersement: '2026-09-10' } }, 'Une date de versement n’appartient qu’à une facture d’acompte.'],
+  ['un versement daté de l’avenir', { acompte: { acompte: true, dateVersement: '2026-10-08' } }, 'Le versement de l’acompte est daté du 08/10/2026'],
+  ['un versement hors des bornes', { acompte: { acompte: true, dateVersement: '1999-12-31' } }, 'La date du versement de l’acompte n’est pas une date admise'],
+  [
+    'une facture d’acompte qui reprend un acompte',
+    { lignes: FINALE.lignes, acompte: { acompte: true, ...FINALE.acompte } },
+    'Une facture d’acompte ne reprend pas d’acompte.',
+  ],
+  [
+    'une reprise dont l’acompte n’est pas lu (son BG-3 manquerait)',
+    { lignes: FINALE.lignes, acompte: { ...FINALE.acompte, reprises: FINALE.acompte.reprises.map((r) => (r.ordre === 5 ? { ...r, factureId: 'acompte-3' } : r)) } },
+    'Ligne 5 : la facture d’acompte qu’elle reprend n’est pas lue',
+  ],
+  [
+    'une reprise qui ne dit pas quel acompte elle reprend',
+    { lignes: FINALE.lignes, acompte: { ...FINALE.acompte, reprises: FINALE.acompte.reprises.map((r) => (r.ordre === 5 ? { ...r, factureId: null } : r)) } },
+    'Ligne 5 : on ne sait pas quelle facture d’acompte elle reprend.',
+  ],
+  [
+    'un acompte cité qu’aucune ligne ne reprend',
+    { lignes: FINALE.lignes, acompte: { ...FINALE.acompte, reprises: FINALE.acompte.reprises.filter((r) => r.factureId !== 'acompte-2') } },
+    'L’acompte F2026-0024 est cité sans qu’aucune ligne de la facture ne le reprenne.',
+  ],
+  [
+    'une reprise d’une facture qui n’est pas un acompte',
+    {
+      lignes: FINALE.lignes,
+      acompte: {
+        reprises: FINALE.acompte.reprises.filter((r) => r.ordre !== 6),
+        acomptesRepris: FINALE.acompte.acomptesRepris.map((a) => (a.id === 'acompte-2' ? { ...a, acompte: false } : a)),
+      },
+    },
+    'Ligne 5 : la facture qu’elle reprend (F2026-0024) n’est pas une facture d’acompte.',
+  ],
+  [
+    'une reprise qui ne se déduit pas',
+    { lignes: FINALE.lignes.map((l) => (l.ordre === 3 ? { ...l, quantite: 1 } : l)), acompte: FINALE.acompte },
+    'Ligne 3 : la reprise d’un acompte se déduit',
+  ],
+  [
+    'une reprise sur une ligne que la facture n’a pas',
+    { lignes: FINALE.lignes, acompte: { ...FINALE.acompte, reprises: [...FINALE.acompte.reprises, { ordre: 99, factureId: 'acompte-1' }] } },
+    'Une reprise d’acompte désigne une ligne que la facture n’a pas.',
+  ],
+  [
+    'un acompte repris au numéro hors du jeu de caractères',
+    { lignes: FINALE.lignes, acompte: { ...FINALE.acompte, acomptesRepris: FINALE.acompte.acomptesRepris.map((a) => (a.id === 'acompte-1' ? { ...a, numero: 'F#21' } : a)) } },
+    'Le numéro de l’acompte repris (F#21) ne peut pas être transmis.',
+  ],
+  [
+    'l’avoir d’une finale qui défait ses reprises',
+    {
+      lignes: FINALE.lignes.map((l) => ({ ...l, quantite: -l.quantite })),
+      facture: { type: 'avoir', date_echeance: null },
+      origine: ORIGINE,
+      acompte: FINALE.acompte,
+    },
+    'L’avoir d’une facture finale qui défait ses reprises d’acomptes ne se transmet pas encore',
+  ],
 ]

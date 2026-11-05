@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, dateRelative, formatDate } from '../../lib/format'
-import { donneesDeLaFacture, refusEmission, type LigneCii, type OrigineCii } from '../../lib/factureCii'
+import { donneesDeLaFacture, refusEmission, SANS_ACOMPTE_CII, type LigneCii, type OrigineCii } from '../../lib/factureCii'
 import { appelerPlateforme, lireConnexionPlateforme, type ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
 import { lireTout } from '../../lib/lectureComplete'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
@@ -284,7 +284,9 @@ export default function TransmissionFactureModal(props: Props) {
   const chezSuperPdp = facture.superpdp_invoice_id != null || (siennes?.some((t) => t.canal === 'superpdp' && t.flux_id != null) ?? false)
   const refus = lignes != null && origine !== undefined
     ? refusEmission(donneesDeLaFacture(facture, lignes,
-      { statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: numeroTvaAttribue }, origine, aujourdHuiSql()))
+      { statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: numeroTvaAttribue }, origine,
+      // L'acompte d'un devis : l'écran ne lit pas encore sa marque ni ses reprises (P5b5, derrière `ACOMPTES_PREVUS`).
+      SANS_ACOMPTE_CII, aujourdHuiSql()))
     : null
   // Rejetée, elle ne repart pas : elle s'annule par un avoir interne (DGFiP, § 3.6.4). Refusée par l'acheteur chez Super
   // PDP, sa transmission reste acceptée — elle a été reçue —, et c'est l'historique qui le dit.

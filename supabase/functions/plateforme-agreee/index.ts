@@ -110,6 +110,50 @@ const COLONNES_FACTURE = "id, numero, statut, type, facture_origine_id, date_emi
   "periode_fin, livraison_adresse, livraison_code_postal, livraison_ville, livraison_pays, option_debits, emetteur_nom, " +
   "emetteur_siret, emetteur_adresse, superpdp_invoice_id"
 const COLONNES_TRANSMISSION = "id, facture_id, canal, hote, flux_id, sha256, etat, detail, cree_le, maj_le"
+
+// L'ACOMPTE D'UN DEVIS (P5b4a) : la marque d'acompte d'une facture et les reprises de ses lignes vivent dans des colonnes
+// que la migration `acomptes_des_devis` pose — PRÉPARÉE, pas appliquée. Tant qu'elle ne l'est pas, la fonction ne les
+// nomme dans aucune lecture (la production les refuserait toutes) et passe SANS_ACOMPTE_CII : sa lecture et son CII sont
+// ceux d'hier. Cette constante suit `ACOMPTES_PREVUS` (src/lib/devis.ts) : `copiesFacturation.test.ts` les lie.
+const ACOMPTES_EN_BASE = false
+
+// La marque d'acompte de la facture et la date de son versement, celle de la facture qu'un avoir corrige, les reprises de
+// ses lignes et les factures d'acompte qu'elles citent, relues une à une : un échec de lecture rend son message, et une
+// valeur qui manque est illisible, jamais un « non » (`acompteLu`, puis `refusEmission`).
+async function acompteDeLaFacture(
+  admin: ReturnType<typeof createClient>,
+  dossierId: string,
+  factureId: string,
+  origineId: string | null,
+): Promise<AcompteCii | { erreur: string }> {
+  if (!ACOMPTES_EN_BASE) return SANS_ACOMPTE_CII
+  const { data: marque, error: erreurMarque } = await admin.from("factures_emises")
+    .select("acompte, date_versement_acompte").eq("id", factureId).eq("dossier_id", dossierId).maybeSingle()
+  if (erreurMarque || !marque) {
+    return { erreur: `La marque d'acompte de la facture n'a pas pu être lue (${erreurMarque?.message ?? "facture introuvable"}).` }
+  }
+  const { data: lignes, error: erreurLignes, count } = await admin.from("facture_lignes")
+    .select("ordre, reprise_facture_id", { count: "exact" }).eq("facture_id", factureId).order("ordre")
+  if (erreurLignes || !lignes || count !== lignes.length) {
+    return { erreur: `Les reprises d'acompte de la facture n'ont pas pu être lues${erreurLignes ? ` (${erreurLignes.message})` : " en entier"}.` }
+  }
+  let origine: { acompte?: unknown } | null = null
+  if (origineId) {
+    const { data, error } = await admin.from("factures_emises")
+      .select("acompte").eq("id", origineId).eq("dossier_id", dossierId).maybeSingle()
+    if (error) return { erreur: `La marque d'acompte de la facture corrigée n'a pas pu être lue (${error.message}).` }
+    origine = data
+  }
+  const repris: { id: string; numero: string | null; date_emission: string; acompte?: unknown }[] = []
+  const ids = new Set(lignes.map((l) => l.reprise_facture_id).filter((id): id is string => typeof id === "string"))
+  for (const id of ids) {
+    const { data, error } = await admin.from("factures_emises")
+      .select("id, numero, date_emission, acompte").eq("id", id).eq("dossier_id", dossierId).maybeSingle()
+    if (error) return { erreur: `Une facture d'acompte reprise n'a pas pu être lue (${error.message}).` }
+    if (data) repris.push(data)
+  }
+  return acompteLu(marque, lignes, origine, repris)
+}
 // Les factures, dans les deux sens : celles que l'entreprise reçoit (SupplierInvoice, un achat) et celles qu'elle émet
 // (CustomerInvoice, une vente). Le TYPE dit qui est le fournisseur, quel que soit le sens du flux — banqup les définit
 // ainsi : CustomerInvoice est une facture émise, ou une autofacture reçue ; SupplierInvoice une facture reçue, ou une
@@ -1728,12 +1772,91 @@ export interface FactureCii {
   option_debits: boolean | null
 }
 
+// ── L'acompte d'un devis (étape P5b4a ; conception : HISTORIQUE.md, « L'ACOMPTE D'UN DEVIS : LA CONCEPTION (P5B) ») ──
+// La migration `acomptes_des_devis` marque la facture d'acompte (`factures_emises.acompte`, figée, jamais un avoir ; la
+// date de son versement, `date_versement_acompte`, nulle le jour de la facture) et chaque ligne de la facture FINALE qui
+// en reprend une, au signe opposé (`facture_lignes.reprise_facture_id`). Sources : annexe 7 v1.9 des spécifications
+// externes de la DGFiP, G1.01 (386, la facture d'acompte ; 503, son avoir), G1.02 (B4, S4, M4 : « facture définitive
+// après acompte »), G1.60 (ni 386 ni 503 sous ces cadres) ; annexe 1 v1.2, BT-9 (« date de versement en cas
+// d'acompte ») et BG-3 (la facture finale faisant référence aux factures de pré-paiement).
+//
+// UN SEUL BG-3 PASSE LE SCHÉMA : le schéma CII D16B de la norme (artefacts de validation 1.3.16, HeaderTradeSettlementType)
+// n'admet qu'un `InvoiceReferencedDocument` d'en-tête, quand le modèle sémantique en admet plusieurs et le format F1 D22B
+// de la DGFiP aussi. La finale cite donc en BG-3 le plus ancien des acomptes qu'elle reprend, et TOUS dans ses conditions
+// de paiement (BT-20) comme dans ses lignes (« Reprise de l'acompte F… du … ») : la référence aux différentes factures
+// d'acompte (BOI-TVA-DECLA-30-20-20-10, § 60) est dans le document.
+
+/** Une facture d'acompte qu'une ligne de la finale reprend, telle que la base la rend : `acompte` nul s'il n'est pas lu. */
+export interface FactureDAcompteCii {
+  id: string
+  numero: string | null
+  date_emission: string
+  acompte: boolean | null
+}
+
+/** Une ligne de la finale qui reprend un acompte : son rang en base, et la facture reprise (nulle : illisible). */
+export interface RepriseCii {
+  ordre: number
+  factureId: string | null
+}
+
+/**
+ * La marque d'acompte et les reprises d'une facture. Un paramètre OBLIGATOIRE du générateur : une fonction qui ne lit pas
+ * ces colonnes (la base de production ne les a pas encore) passe `SANS_ACOMPTE_CII`, et la facture s'écrit comme hier.
+ */
+export interface AcompteCii {
+  // La facture est-elle une facture d'acompte ? Nul : la marque n'est pas lue.
+  acompte: boolean | null
+  // La date du versement de l'acompte (BT-9), quand elle diffère de celle de la facture.
+  dateVersement: string | null
+  // L'avoir : la facture qu'il corrige est-elle une facture d'acompte ? Nul : pas lu ; faux hors d'un avoir.
+  origineAcompte: boolean | null
+  reprises: readonly RepriseCii[]
+  // Les factures d'acompte que les reprises citent, lues une par une.
+  acomptesRepris: readonly FactureDAcompteCii[]
+}
+
+/** Ni acompte ni reprise : ce que passe une fonction qui ne lit pas les colonnes de l'acompte. */
+export const SANS_ACOMPTE_CII: AcompteCii = Object.freeze({
+  acompte: false,
+  dateVersement: null,
+  origineAcompte: false,
+  reprises: Object.freeze([]),
+  acomptesRepris: Object.freeze([]),
+})
+
+/**
+ * L'acompte d'une facture, tel que les lignes lues le portent. Une valeur qui n'a pas la forme de sa colonne (absente
+ * de la lecture, ou d'un autre type) est ILLISIBLE, jamais un « non » : le générateur refuse alors de transmettre.
+ */
+export function acompteLu(
+  facture: { acompte?: unknown; date_versement_acompte?: unknown },
+  lignes: readonly { ordre: number; reprise_facture_id?: unknown }[],
+  origine: { acompte?: unknown } | null,
+  repris: readonly { id: string; numero: string | null; date_emission: string; acompte?: unknown }[],
+): AcompteCii {
+  const versement = facture.date_versement_acompte
+  const versementLu = versement === null || typeof versement === 'string'
+  return {
+    acompte: typeof facture.acompte === 'boolean' && versementLu ? facture.acompte : null,
+    dateVersement: typeof versement === 'string' ? versement : null,
+    origineAcompte: origine === null ? false : typeof origine.acompte === 'boolean' ? origine.acompte : null,
+    reprises: lignes
+      .filter((l) => l.reprise_facture_id !== null)
+      .map((l) => ({ ordre: l.ordre, factureId: typeof l.reprise_facture_id === 'string' ? l.reprise_facture_id : null })),
+    acomptesRepris: repris.map((r) => ({
+      id: r.id, numero: r.numero, date_emission: r.date_emission, acompte: typeof r.acompte === 'boolean' ? r.acompte : null,
+    })),
+  }
+}
+
 export interface DonneesCii {
   facture: FactureCii
   lignes: LigneCii[]
   vendeur: VendeurCii
   // La facture qu'un avoir corrige (règles BR-55 et G1.31 : son numéro, et sa date).
   origine: OrigineCii | null
+  acompte: AcompteCii
   // AAAA-MM-JJ : une facture ne se date pas dans l'avenir (règle G1.07).
   aujourdHui: string
 }
@@ -2079,6 +2202,61 @@ export function refusEmission(d: DonneesCii): string[] {
   }
   if (f.date_prestation && !anneeAdmise(f.date_prestation)) refus.push(`La date de la livraison ou de la prestation n’est pas une date admise ${BORNES}.`)
 
+  for (const r of refusDeLAcompte(d, triees)) refus.push(r)
+  return refus
+}
+
+// Ce que l'acompte d'un devis empêche de transmettre : une marque illisible, une reprise qui ne dit pas l'acompte qu'elle
+// reprend (son BG-3 manquerait), un acompte cité qu'aucune ligne ne reprend, une reprise qui ne se déduit pas.
+function refusDeLAcompte(d: DonneesCii, triees: LigneCii[]): string[] {
+  const { facture: f, acompte: a } = d
+  const refus: string[] = []
+  if (a.acompte === null) {
+    refus.push('La marque d’acompte de la facture n’est pas lue : on ne sait pas si c’est une facture d’acompte (code 386), et elle ne peut pas être transmise.')
+  } else if (a.acompte && f.type === 'avoir') {
+    refus.push('Un avoir n’est jamais une facture d’acompte : sa marque contredit son type.')
+  }
+  if (f.type === 'avoir' && a.origineAcompte === null) {
+    refus.push('La marque d’acompte de la facture corrigée n’est pas lue : on ne sait pas si l’avoir crédite un acompte (code 503) ou une facture (381).')
+  }
+  if (a.dateVersement !== null) {
+    if (a.acompte === false) refus.push('Une date de versement n’appartient qu’à une facture d’acompte.')
+    else if (a.acompte && !anneeAdmise(a.dateVersement)) refus.push(`La date du versement de l’acompte n’est pas une date admise ${BORNES}.`)
+    else if (a.acompte && a.dateVersement > d.aujourdHui) {
+      refus.push(`Le versement de l’acompte est daté du ${dateLisible(a.dateVersement)}, qui n’est pas encore arrivé.`)
+    }
+  }
+  if (a.reprises.length === 0 && a.acomptesRepris.length === 0) return refus
+  if (a.acompte === true) return [...refus, 'Une facture d’acompte ne reprend pas d’acompte.']
+  if (f.type === 'avoir') {
+    return [...refus, 'L’avoir d’une facture finale qui défait ses reprises d’acomptes ne se transmet pas encore : son cadre de facturation n’est pas tranché.']
+  }
+  if (a.acompte === null) return refus
+  const doc = montantsDuDocument(f, triees, null).lignes
+  const parId = new Map(a.acomptesRepris.map((r) => [r.id, r]))
+  const cites = new Set<string>()
+  for (const r of a.reprises) {
+    const i = triees.findIndex((l) => l.ordre === r.ordre)
+    if (i < 0) {
+      refus.push('Une reprise d’acompte désigne une ligne que la facture n’a pas.')
+      continue
+    }
+    const n = i + 1
+    if (r.factureId === null) {
+      refus.push(`Ligne ${n} : on ne sait pas quelle facture d’acompte elle reprend.`)
+      continue
+    }
+    cites.add(r.factureId)
+    const repris = parId.get(r.factureId)
+    if (!repris) refus.push(`Ligne ${n} : la facture d’acompte qu’elle reprend n’est pas lue — sa référence (BG-3) manquerait.`)
+    else if (repris.acompte !== true) refus.push(`Ligne ${n} : la facture qu’elle reprend (${repris.numero ?? 'sans numéro'}) n’est pas une facture d’acompte.`)
+    if (doc[i].quantite >= 0) refus.push(`Ligne ${n} : la reprise d’un acompte se déduit — sa quantité doit être négative.`)
+  }
+  for (const r of a.acomptesRepris) {
+    if (!cites.has(r.id)) refus.push(`L’acompte ${r.numero ?? '(sans numéro)'} est cité sans qu’aucune ligne de la facture ne le reprenne.`)
+    else if (!r.numero || !numeroAdmis(r.numero)) refus.push(`Le numéro de l’acompte repris (${r.numero ?? 'aucun'}) ne peut pas être transmis.`)
+    else if (!anneeAdmise(r.date_emission)) refus.push(`La date de l’acompte repris ${r.numero} n’est pas une date admise ${BORNES}.`)
+  }
   return refus
 }
 
@@ -2140,9 +2318,12 @@ function adresseCii(nom: string, adresse: AdresseStructuree, pays: string): Noeu
 }
 
 const CADRES: Record<NatureOperation, string> = { biens: 'B1', services: 'S1', mixte: 'M1' }
+// La facture définitive après acompte (G1.02) ; ni la facture d'acompte (386) ni son avoir (503) n'y vont (G1.60).
+const CADRES_APRES_ACOMPTE: Record<NatureOperation, string> = { biens: 'B4', services: 'S4', mixte: 'M4' }
 
-// Le cadre de facturation (BT-23, règle G1.02) : le dépôt d'une facture de biens, de services, ou des deux. Les cadres
-// « déjà payée », « définitive après acompte », de sous-traitance ou de cotraitance ne sont pas modélisés.
+// Le cadre de facturation (BT-23, règle G1.02) : le dépôt d'une facture de biens, de services, ou des deux. La facture
+// définitive après acompte prend B4, S4 ou M4 (`CADRES_APRES_ACOMPTE`) ; les cadres « déjà payée », de sous-traitance ou
+// de cotraitance ne sont pas modélisés.
 export function cadreDeFacturation(nature: NatureOperation): string {
   return CADRES[nature]
 }
@@ -2173,6 +2354,34 @@ export function factureCii(d: DonneesCii): ResultatCii {
   const livraison = f.livraison_adresse && f.livraison_code_postal && f.livraison_ville && f.livraison_pays
     ? { lignes: [uneLigne(f.livraison_adresse)], codePostal: f.livraison_code_postal, ville: f.livraison_ville, pays: f.livraison_pays }
     : null
+  // L'acompte d'un devis : la facture d'acompte (386), son avoir (503), la finale qui en reprend (380, cadre 4). Sans
+  // acompte (`SANS_ACOMPTE_CII`), rien de ce qui suit ne change le document d'hier.
+  const a = d.acompte
+  const estAcompte = f.type === 'facture' && a.acompte === true
+  const finale = f.type === 'facture' && a.reprises.length > 0
+  const codeType = f.type === 'avoir' ? (a.origineAcompte === true ? '503' : '381') : estAcompte ? '386' : '380'
+  const nature = f.nature_operation as NatureOperation
+  const cadre = finale ? CADRES_APRES_ACOMPTE[nature] : cadreDeFacturation(nature)
+  // BT-9 : la date du versement d'un acompte, quand elle diffère de celle de la facture ; sinon l'échéance.
+  const versement = estAcompte && a.dateVersement && a.dateVersement !== f.date_emission ? a.dateVersement : null
+  const echeance = f.type === 'facture' ? versement ?? f.date_echeance : null
+  // Les acomptes que la finale reprend, du plus ancien au plus récent : le premier en BG-3, tous dans BT-20.
+  const repris = finale
+    ? [...a.acomptesRepris].sort((x, y) => {
+      const cx = `${x.date_emission} ${x.numero as string}`
+      const cy = `${y.date_emission} ${y.numero as string}`
+      return cx < cy ? -1 : cx > cy ? 1 : 0
+    })
+    : []
+  const cites = repris.map((r) => `${r.numero as string} du ${dateLisible(r.date_emission)}`)
+  const conditions = f.type === 'avoir' && d.origine?.numero
+    ? `Avoir sur la facture ${a.origineAcompte === true ? 'd’acompte ' : ''}${d.origine.numero} du ${dateLisible(d.origine.date_emission)}.`
+    : finale
+      ? `Facture définitive après ${cites.length > 1 ? `les acomptes ${cites.join(', ')}` : `l’acompte ${cites[0]}`}, repris en déduction.`
+      : null
+  const reference = f.type === 'avoir' && d.origine?.numero
+    ? { numero: d.origine.numero, date: d.origine.date_emission }
+    : finale ? { numero: repris[0].numero as string, date: repris[0].date_emission } : null
 
   const lignes = m.lignes.map((l) => el('ram:IncludedSupplyChainTradeLineItem', [
     el('ram:AssociatedDocumentLineDocument', [el('ram:LineID', String(l.numero))]),
@@ -2193,12 +2402,12 @@ export function factureCii(d: DonneesCii): ResultatCii {
 
   const document = el('rsm:CrossIndustryInvoice', [
     el('rsm:ExchangedDocumentContext', [
-      el('ram:BusinessProcessSpecifiedDocumentContextParameter', [el('ram:ID', cadreDeFacturation(f.nature_operation as NatureOperation))]),
+      el('ram:BusinessProcessSpecifiedDocumentContextParameter', [el('ram:ID', cadre)]),
       el('ram:GuidelineSpecifiedDocumentContextParameter', [el('ram:ID', PROFIL_EN16931)]),
     ]),
     el('rsm:ExchangedDocument', [
       el('ram:ID', f.numero as string),
-      el('ram:TypeCode', f.type === 'avoir' ? '381' : '380'),
+      el('ram:TypeCode', codeType),
       dateCii('ram:IssueDateTime', f.date_emission),
       // Seules les mentions légales partent avec la facture (BT-22). Les notes n'y figurent pas, ni le motif d'un avoir
       // rangé avec elles : l'écran le dit en les saisissant, l'aperçu ne les imprime pas, l'acheteur n'en reçoit rien.
@@ -2253,10 +2462,8 @@ export function factureCii(d: DonneesCii): ResultatCii {
           ? el('ram:BillingSpecifiedPeriod', [dateCii('ram:StartDateTime', f.periode_debut), dateCii('ram:EndDateTime', f.periode_fin)])
           : null,
         el('ram:SpecifiedTradePaymentTerms', [
-          f.type === 'avoir' && d.origine?.numero
-            ? el('ram:Description', `Avoir sur la facture ${d.origine.numero} du ${dateLisible(d.origine.date_emission)}.`)
-            : null,
-          f.type === 'facture' && f.date_echeance ? dateCii('ram:DueDateDateTime', f.date_echeance) : null,
+          conditions ? el('ram:Description', conditions) : null,
+          echeance ? dateCii('ram:DueDateDateTime', echeance) : null,
         ]),
         el('ram:SpecifiedTradeSettlementHeaderMonetarySummation', [
           el('ram:LineTotalAmount', montant(m.htCentimes)),
@@ -2265,10 +2472,10 @@ export function factureCii(d: DonneesCii): ResultatCii {
           el('ram:GrandTotalAmount', montant(m.ttcCentimes)),
           el('ram:DuePayableAmount', montant(m.ttcCentimes)),
         ]),
-        f.type === 'avoir' && d.origine?.numero
+        reference
           ? el('ram:InvoiceReferencedDocument', [
-            el('ram:IssuerAssignedID', d.origine.numero),
-            dateCii('ram:FormattedIssueDateTime', d.origine.date_emission, 'qdt'),
+            el('ram:IssuerAssignedID', reference.numero),
+            dateCii('ram:FormattedIssueDateTime', reference.date, 'qdt'),
           ])
           : null,
       ]),
@@ -2300,6 +2507,7 @@ export function donneesDeLaFacture(
   lignes: LigneCii[],
   dossier: DossierCii,
   origine: OrigineCii | null,
+  acompte: AcompteCii,
   aujourdHui: string,
 ): DonneesCii {
   const siren = sirenDe(facture.emetteur_siret)
@@ -2317,6 +2525,7 @@ export function donneesDeLaFacture(
       articleExoneration: dossier.article_exoneration,
     },
     origine,
+    acompte,
     aujourdHui,
   }
 }
@@ -3173,7 +3382,9 @@ Deno.serve(async (req: Request) => {
       if (erreurOrigine) return json({ error: `La facture que l'avoir corrige n'a pas pu être lue (${erreurOrigine.message}).` }, 503)
       origine = origineLue ? { numero: origineLue.numero, date_emission: origineLue.date_emission } : null
     }
-    const donnees = donneesDeLaFacture(facture, (lignesLues ?? []) as LigneCii[], dossierLu, origine, dateDeParis(Date.now()))
+    const acompte = await acompteDeLaFacture(admin, dossierId, factureId, facture.type === "avoir" ? facture.facture_origine_id : null)
+    if ("erreur" in acompte) return json({ error: acompte.erreur }, 503)
+    const donnees = donneesDeLaFacture(facture, (lignesLues ?? []) as LigneCii[], dossierLu, origine, acompte, dateDeParis(Date.now()))
     const refus = refusEmission(donnees)
     if (refus.length > 0) return json({ error: `Cette facture ne peut pas être transmise telle quelle : ${refus.join(" ")}`, refus }, 422)
     const cii = factureCii(donnees)

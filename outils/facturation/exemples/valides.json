@@ -8,6 +8,14 @@
     "sha1": "4010d851340a3b79e004a6055ffec2efe2d75413"
   },
   "fichiers": {
+    "acompte.xml": {
+      "sha256": "28f710f76376733fbb99c8ff6e19f1dde4d75beb49c8c916ceaa69c460b61afa",
+      "avertissements": []
+    },
+    "avoir-acompte.xml": {
+      "sha256": "694670218675a3cf01b84a391d1a6bb8d54d11f9b474ea9b6695527e67080b5b",
+      "avertissements": []
+    },
     "avoir.xml": {
       "sha256": "7f2f6e167dd86700b7041ef75c069e0ead66f76570082a0141f94c33fc3f72bb",
       "avertissements": []
@@ -22,6 +30,10 @@
     },
     "exonere-organisme-public.xml": {
       "sha256": "ed8da20b1e09caaba99853f5e6bc090e1ce47f591bd7722ce849d317ad5ab9a3",
+      "avertissements": []
+    },
+    "finale-deux-acomptes.xml": {
+      "sha256": "f8107a913673c87bd901ddefd77a57d31ce330d96d543d1be1227ec0f48d1977",
       "avertissements": []
     },
     "franchise.xml": {

@@ -48041,3 +48041,20 @@ reprend, rien sans finale — hier, toute sa TVA à sa propre date. « ENCAISSÉ
 (`obligationEncaissee`, § 2.3.2), l'option pour les débits n'y changeant rien ; MDT-91 cite 386 (G1.01) sur la marque
 (`FacturePourCdar.acompte`, obligatoire ; illisible, refusé). LES ÉCRITURES gardent `SANS_ACOMPTE` : la base les recompose
 sans la marque. Questions P5B3-Q1 à Q3 ; huit mutations, huit mordent.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS : LE CII (P5B4A), DERRIÈRE `ACOMPTES_PREVUS`
+
+Du code et des tests, rien en base. LE GÉNÉRATEUR (`factureCii.ts`) reçoit l'acompte en paramètre OBLIGATOIRE
+(`DonneesCii.acompte`, `donneesDeLaFacture(…, origine, acompte, aujourdHui)`), `SANS_ACOMPTE_CII` la valeur explicite ; sans
+acompte, le CII est celui d'hier au caractère près (les huit empreintes de `valides.json` inchangées). La facture d'acompte : 386
+sous B1, S1 ou M1, BT-9 la date du versement quand elle diffère de la sienne ; la finale : 380 sous B4, S4 ou M4, ses reprises à
+quantité −1 ; l'avoir d'un acompte : 503 sous le cadre 1 (annexe 7 v1.9, G1.01, G1.02, G1.60 ; annexe 1 v1.2, BT-9, BG-3) —
+BR-CL-01 des artefacts 1.3.16 admet 386 et 503. ÉCART À LA CONCEPTION : le schéma CII D16B des artefacts 1.3.16 n'admet qu'UN
+`InvoiceReferencedDocument` d'en-tête (deux sont refusés par xmllint, vérifié) ; la finale cite en BG-3 le plus ancien acompte,
+et tous dans BT-20 et ses lignes (BOI-TVA-DECLA-30-20-20-10, § 60). `refusEmission` dit la marque illisible (`acompteLu` : une
+colonne absente n'est jamais un « non »), la reprise sans BG-3, l'acompte cité sans reprise, la reprise qui ne se déduit pas, le
+versement hors bornes ou à venir ; l'avoir d'une finale qui défait ses reprises se refuse, son cadre n'étant pas tranché. LES
+COPIES (`superpdp-emit`, `plateforme-agreee`) suivent le bloc ; elles ne nomment les colonnes que dans `acompteDeLaFacture`, sous
+`ACOMPTES_EN_BASE = false` que `copiesFacturation.test.ts` lie à `ACOMPTES_PREVUS`. Trois exemples neufs (`acompte`,
+`finale-deux-acomptes` à deux taux, où la TVA par ligne s'écarte d'un centime du taux appliqué à la base, que BR-CO-17 admet,
+`avoir-acompte`) : `valider.mjs`, onze exemples, 0 erreur, 0 avertissement. Sept mutations, sept mordent.
