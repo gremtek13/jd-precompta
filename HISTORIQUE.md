@@ -47964,3 +47964,16 @@ sa part : un acompte qui couvre tout un taux laisse à la finale quelques centim
 lignes de 10,02 € à 20 % : 4,00 € ; l'acompte à 100 % : 4,01 € ; la finale −0,01 €) — 23 taux dans la batterie. Le
 module ne le refuse pas (`refusDeLaFinale` ne juge que le HT) ; une base qui refuserait toute TVA négative rendrait ces
 finales impossibles.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS NE COUVRE JAMAIS TOUT LE DEVIS (P5B-Q5, SUR LA RECOMMANDATION)
+
+L'écart relevé par P5b1 (une finale à −0,01 € de TVA à un taux) se tranche sur la recommandation de P5B-Q5, posée le
+même jour sur la page des arbitrages : la dernière facture d'un devis est sa facture finale, positive à chaque taux, en
+HT comme en TVA. `preparerAcompte` juge l'acompte sur la finale qu'il laisserait (`lignesDeLaFinale`, puis ses propres
+reprises) : il se refuse s'il couvre tout ce qui reste (`couvreToutLeDevis` : 100 % compris, et le TTC entier), ou s'il
+laisse une TVA négative à un taux (trois lignes de 10,02 € à 20 % : à 99,9 %, l'acompte ferait 6,01 € de TVA contre
+6,00 €) ; `refusDeLaFinale` refuse aussi une TVA négative, pour des acomptes venus d'ailleurs. La raison décisive : le
+générateur CII refuse déjà une facture dont le total n'est pas positif (`refusEmission`), et une finale à 0 € ou à
+−0,01 € ne serait pas transmissible. À la graine de la batterie, 41 demandes se refusent parce qu'elles couvrent tout,
+20 pour la TVA, chacune jugée fondée ; six mutations font virer la suite au rouge. P5b2 reprendra les deux refus en
+base, sous les mêmes mots.

@@ -77,7 +77,19 @@ export const REFUS_ACOMPTE = {
   montantTropPrecis: 'Le montant de l’acompte s’écrit au centime près.',
   sansReste: 'Les acomptes validés couvrent déjà tout le devis : il ne reste qu’à en tirer la facture finale.',
   moinsDUnCentime: 'Ce pourcentage du devis fait moins d’un centime.',
+  couvreToutLeDevis:
+    'L’acompte couvrirait tout ce qui reste du devis : le solde se facture par la facture finale, jamais par un acompte.',
 } as const
+
+// P5B-Q5 (écrite sur la recommandation) : la TVA du devis est la somme des arrondis de ses lignes, celle d'un acompte
+// l'arrondi de sa part ; un acompte qui couvre presque tout un taux peut en prendre un centime de plus que le devis n'en
+// laisse. Il se refuse plutôt que de laisser à la facture finale une TVA négative.
+function refusDeTvaNegative(taux: number, tvaCentimes: number): string {
+  return (
+    `L’acompte laisserait une TVA négative à la facture finale (${enEuros(tvaCentimes)} à ${enTaux(taux)}) : la TVA du ` +
+    'devis s’arrondit ligne par ligne, celle de l’acompte sur sa part. Demandez un peu moins, ou tirez la facture finale.'
+  )
+}
 
 /** L'état du devis et du dossier, tel que l'écran l'a lu, que le calcul ne peut pas déduire des lignes. */
 export interface EtatPourAcompte {
@@ -315,6 +327,16 @@ export function preparerAcompte(e: EntreeAcompte): AcomptePrepare {
     nature: g.nature,
     reprise_facture_id: null,
   }))
+  // La dernière facture d'un devis est sa facture finale, positive à chaque taux en HT comme en TVA (P5B-Q5) : ce que
+  // l'acompte lui laisserait se juge sur la finale elle-même, celle qui se tirerait s'il était validé (ses lignes
+  // reprises comme `lignesDeLaFinale` les reprend). Le HT laissé n'est négatif à aucun taux : la cible tient dans les restes.
+  const laissee = totauxParTaux([
+    ...lignesDeLaFinale(e.lignesDevis, e.acomptesValides),
+    ...lignes.map((l) => ({ quantite: -1, prix_unitaire_ht: l.prix_unitaire_ht, taux_tva: l.taux_tva })),
+  ])
+  if (laissee.every((t) => t.ht === 0)) return { ok: false, refus: REFUS_ACOMPTE.couvreToutLeDevis }
+  const tvaNegative = laissee.find((t) => t.tva < 0)
+  if (tvaNegative) return { ok: false, refus: refusDeTvaNegative(tvaNegative.taux_tva, tvaNegative.tva) }
   const totaux = calculerTotaux(lignes)
   return { ok: true, cibleHt, ttc: Math.round(totaux.montant_ttc * 100), lignes, totaux }
 }
@@ -368,13 +390,18 @@ export function totauxParTaux(
 }
 
 /**
- * Ce que la facture finale refuserait : un taux dont le HT serait négatif (des reprises au-delà du devis). Sa TVA, elle,
- * peut être de quelques centimes sous zéro à un taux que les acomptes couvrent en entier : la TVA du devis est la somme
- * des arrondis de ses lignes, celle d'un acompte l'arrondi de sa part (deux lignes de 10,02 € à 20 % font 4,00 € de
- * TVA, l'acompte de 20,04 € en fait 4,01 €). La somme des deux factures reste celle du devis, au centime ; ce reste
- * négatif n'est pas refusé ici (question ouverte pour P5b2).
+ * Ce que la facture finale refuserait : un taux dont le HT serait négatif (des reprises au-delà du devis), puis un taux
+ * dont la TVA le serait (P5B-Q5). La TVA du devis est la somme des arrondis de ses lignes, celle d'un acompte l'arrondi
+ * de sa part (deux lignes de 10,02 € à 20 % font 4,00 € de TVA, l'acompte de 20,04 € en ferait 4,01 €) : c'est
+ * `preparerAcompte` qui refuse l'acompte qui laisserait la finale ainsi ; ce refus-ci ne voit que des acomptes venus
+ * d'ailleurs.
  */
 export function refusDeLaFinale(lignes: readonly { quantite: number; prix_unitaire_ht: number; taux_tva: number }[]): string | null {
-  const negatif = totauxParTaux(lignes).find((t) => t.ht < 0)
-  return negatif ? `La facture finale serait négative à ${enTaux(negatif.taux_tva)} : les acomptes repris dépassent le devis.` : null
+  const totaux = totauxParTaux(lignes)
+  const negatif = totaux.find((t) => t.ht < 0)
+  if (negatif) return `La facture finale serait négative à ${enTaux(negatif.taux_tva)} : les acomptes repris dépassent le devis.`
+  const tvaNegative = totaux.find((t) => t.tva < 0)
+  return tvaNegative
+    ? `La facture finale porterait une TVA négative à ${enTaux(tvaNegative.taux_tva)} : les acomptes repris en ont pris plus que le devis n’en porte.`
+    : null
 }
