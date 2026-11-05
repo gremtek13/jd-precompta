@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LigneDeFacture } from './encaissementsFactures'
-import { ventesFacturees, type EncaissementVendu, type FactureVendue, type PartVendue } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees, type EncaissementVendu, type FactureVendue, type PartVendue } from './ventesFacturees'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from './ventesFactureesLecture'
 
 // LA LECTURE DES VENTES FACTURÉES (lib/ventesFactureesLecture.ts, chantier EC-Q3, étape VF3a) : cinq collections — les
@@ -25,6 +25,13 @@ const faux = vi.hoisted(() => ({
   demandes: [] as string[],
   tranches: 0,
 }))
+
+// Le drapeau de l'acompte d'un devis (étape P5b3), baissé par défaut comme dans src/lib/devis.ts : ses deux états se jouent.
+const drapeau = vi.hoisted(() => ({ acomptes: false }))
+vi.mock('./devis', async (importOriginal) => {
+  const vrai = await importOriginal<typeof import('./devis')>()
+  return { ...vrai, get ACOMPTES_PREVUS() { return drapeau.acomptes } }
+})
 
 vi.mock('./supabase', async () => {
   const { filtrer, predicatEq, predicatNot } = await import('../test/filtresPostgrest')
@@ -103,6 +110,7 @@ const ENCAISSEMENTS = ['e1', 'e2', 'e3'].map((id, i) => encaissement({ id, date_
 const PARTS = ENCAISSEMENTS.map((e) => part({ encaissement_id: e.id }))
 
 beforeEach(() => {
+  drapeau.acomptes = false
   faux.plafond = Infinity
   faux.muetApres = {}
   faux.refus = {}
@@ -158,7 +166,7 @@ describe('lireLesVentesFacturees', () => {
     expect(l.etat === 'lue' && l.encaissees).toEqual([{ ligne_bancaire_id: 'm-mixte', piece_id: 'p-hier', montant: 40 }])
     const v = lue(l)
     expect(v).toEqual(ventesFacturees({
-      dossierId: 'd1', factures: [facture()],
+      acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [facture()],
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
       encaissements: ENCAISSEMENTS, parts: PARTS,
     }))
@@ -273,5 +281,57 @@ describe('lectureDuDossier — un dossier changé en cours de route', () => {
 
   it('rien de revenu : en cours', () => {
     expect(lectureDuDossier(null, 'd1')).toBeNull()
+  })
+})
+
+describe('l’acompte d’un devis (étape P5b3), dans les deux états de `ACOMPTES_PREVUS`', () => {
+  // Un acompte de biens payé à moitié, et la finale qui le reprend. La base de la réplique porte les colonnes ; la
+  // production non : le faux client ne rend que ce qu'on lui demande.
+  const jeuDesAcomptes = () => {
+    faux.tables.factures_emises = [
+      { ...facture({ id: 'fa', nature_operation: 'biens', date_emission: '2027-01-10' }), acompte: true },
+      { ...facture({ id: 'ff', nature_operation: 'biens', date_emission: '2027-03-01', date_prestation: '2027-03-05' }), acompte: false },
+    ]
+    faux.tables.facture_lignes = [
+      { ...ligne({ id: 'la', facture_id: 'fa', prix_unitaire_ht: 300 }), reprise_facture_id: null },
+      { ...ligne({ id: 'lf1', facture_id: 'ff', prix_unitaire_ht: 1000 }), reprise_facture_id: null },
+      { ...ligne({ id: 'lf2', facture_id: 'ff', ordre: 2, quantite: -1, prix_unitaire_ht: 300 }), reprise_facture_id: 'fa' },
+    ]
+    faux.tables.encaissements_factures = [encaissement({ id: 'ea', facture_id: 'fa', date_encaissement: '2027-01-15', montant: 180 })]
+    faux.tables.encaissements_factures_taux = [part({ encaissement_id: 'ea', montant: 180 })]
+  }
+  const exigibilitesDeLAcompte = (v: ReturnType<typeof lue>) =>
+    v.exigibilites.filter((x) => x.factureId === 'fa').map((x) => [x.origine, x.date, x.tvaCentimes])
+
+  it('baissé : aucune colonne neuve n’est nommée, et aucune facture n’est un acompte (l’état d’avant)', async () => {
+    jeuDesAcomptes()
+    const v = lue(await lireLesVentesFacturees('d1'))
+    expect(faux.demandes.some((d) => /acompte|reprise/.test(d))).toBe(false)
+    expect(exigibilitesDeLAcompte(v)).toEqual([['livraison', '2027-01-10', 6000]])
+  })
+
+  it('levé : la marque et la reprise sont lues, et l’acompte de biens n’est exigible qu’à son encaissement puis à la livraison', async () => {
+    drapeau.acomptes = true
+    jeuDesAcomptes()
+    const v = lue(await lireLesVentesFacturees('d1'))
+    expect(faux.demandes.slice(0, 2)).toEqual([
+      'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, acompte',
+      'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, reprise_facture_id, factures_emises!inner(dossier_id, source_de_la_vente)',
+    ])
+    expect(exigibilitesDeLAcompte(v)).toEqual([['encaissement', '2027-01-15', 3000], ['livraison', '2027-03-05', 3000]])
+  })
+
+  it('levé : une marque ou une reprise que la base n’a pas rendue est un manque, jamais un « non »', async () => {
+    drapeau.acomptes = true
+    jeuDesAcomptes()
+    faux.tables.factures_emises = faux.tables.factures_emises.map(({ acompte: _sans, ...f }) => f)
+    expect(await lireLesVentesFacturees('d1')).toEqual({
+      dossierId: 'd1', etat: 'incomplete', motif: 'les factures sources : la marque d’acompte d’une facture n’est pas lue',
+    })
+    jeuDesAcomptes()
+    faux.tables.facture_lignes = faux.tables.facture_lignes.map(({ reprise_facture_id: _sans, ...l }) => l)
+    expect(await lireLesVentesFacturees('d1')).toEqual({
+      dossierId: 'd1', etat: 'incomplete', motif: 'leurs lignes : la reprise d’une ligne n’est pas lue',
+    })
   })
 })

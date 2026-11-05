@@ -20,7 +20,8 @@ import { SIRET_VENDEUR } from '../test/facturesCii'
 import {
   CODE_MONTANT_ENCAISSE, CODE_STATUT_ENCAISSEE, FUSEAUX_CDAR, horodatage204, LIBELLE_STATUT_ENCAISSEE,
   LONGUEUR_MAX_MOTIF_CDAR, messageEncaissee, partieVendeur, PORTEURS_DATE_ENCAISSEMENT, PROFILS_CDAR,
-  REFERENCE_CDV_FACTURE, refusMessageEncaissee, ROLES_PARTIE_CDAR, SCHEMAS_PARTIE_CDAR, TYPE_FACTURE_CDAR,
+  REFERENCE_CDV_FACTURE, refusMessageEncaissee, ROLES_PARTIE_CDAR, SCHEMAS_PARTIE_CDAR, TYPE_FACTURE_ACOMPTE_CDAR, TYPE_FACTURE_CDAR,
+  typeDeLaFactureCdar,
   type ChoixCdar, type DonneesCdar, type EncaissementPourCdar, type FacturePourCdar, type FuseauCdar,
   type LignePourCdar, type PartieCdar, type PartPourCdar, type PorteurDateEncaissement, type ProfilCdar,
 } from './cdarEncaissee'
@@ -157,6 +158,20 @@ describe('chaque donnée du message, confrontée à la règle qui la fonde', () 
     expect(un(doc, `${RRD}/ram:IssuerAssignedID`)).toBe('F2027-0042')
     expect(un(doc, `${RRD}/ram:TypeCode`)).toBe('380')
     expect(TYPE_FACTURE_CDAR).toBe('380')
+  })
+
+  it('MDT-91 d’une facture d’acompte d’un devis : 386 (G1.01), lu sur la marque de la facture (étape P5b3)', () => {
+    const typeCite = (acompte: boolean) => {
+      const r = messageEncaissee(donneesCdar({ facture: factureCdar({ acompte }) }))
+      return /<ram:ReferenceReferencedDocument>[\s\S]*?<ram:TypeCode>(\d+)<\/ram:TypeCode>/.exec(r.xml ?? '')?.[1]
+    }
+    expect(typeCite(true)).toBe('386')
+    expect(typeCite(false)).toBe('380')
+    expect(TYPE_FACTURE_ACOMPTE_CDAR).toBe('386')
+    expect([true, false].map((acompte) => typeDeLaFactureCdar({ acompte }))).toEqual(['386', '380'])
+    // Une marque que la lecture n'a pas rendue n'est pas « pas un acompte » : le message ne s'écrit pas.
+    expect(refusMessageEncaissee(donneesCdar({ facture: Object.assign(factureCdar(), { acompte: null }) })))
+      .toEqual(['La facture ne dit pas si elle est une facture d’acompte : son type (380 ou 386) en dépend.'])
   })
 
   it('MDT-95 : la réception de la facture par la plateforme, requise, au format 204 (G7.06)', () => {
@@ -673,7 +688,9 @@ describe('ce que le module partage avec le reste du dépôt', () => {
   })
 
   it('une facture, ses lignes, un encaissement et ses parts de types.ts se lisent comme le module les lit (le compilateur, sans `as`)', () => {
-    const facture = (f: FactureEmise): FacturePourCdar => f
+    // La marque d'acompte (`acompte`) n'est pas encore dans types.ts : la migration `acomptes_des_devis` est préparée, pas
+    // appliquée (ACOMPTES_PREVUS). Le jour où l'export la porte, `FactureEmise` l'a, et ceci se réduit à `=> f`.
+    const facture = (f: FactureEmise, acompte: boolean): FacturePourCdar => ({ ...f, acompte })
     const ligne = (l: FactureLigne): LignePourCdar => l
     const encaissement = (e: EncaissementFacture): EncaissementPourCdar => e
     const part = (p: EncaissementFactureTaux): PartPourCdar => p

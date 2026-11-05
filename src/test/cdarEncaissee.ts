@@ -27,6 +27,7 @@ export function factureCdar(o: Partial<FacturePourCdar> = {}): FacturePourCdar {
     numero: 'F2027-0042',
     date_emission: '2027-10-01',
     emetteur_siret: SIRET_VENDEUR,
+    acompte: false,
     ...o,
   }
 }

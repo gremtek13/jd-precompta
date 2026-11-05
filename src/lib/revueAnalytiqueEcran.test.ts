@@ -15,7 +15,7 @@ import type { Categorie, Piece } from './types'
 import { ligne } from '../test/revision'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
-import { ventesFacturees } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees } from './ventesFacturees'
 import { composition, sourcesDuDossierBascule } from '../test/dossierBascule'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 
@@ -153,7 +153,7 @@ describe('donneesDeLaRevueAnalytique', () => {
   it('compte les ventes facturées comme le moteur, et n’a pas de 2035 sans elles', () => {
     const e = encaissementVendu({ id: 'e1', date_encaissement: '2025-06-10', montant: 1200 })
     const ventes = ventesFacturees({
-      dossierId: 'd1', factures: [factureVendue({ date_emission: '2025-06-01' })], lignes: [ligneVendue('f1', 1000, 20)],
+      acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [factureVendue({ date_emission: '2025-06-01' })], lignes: [ligneVendue('f1', 1000, 20)],
       encaissements: [e.encaissement], parts: [e.part],
     })
     const sources = {
@@ -172,7 +172,7 @@ describe('donneesDeLaRevueAnalytique', () => {
   it('compte les frais d’un mouvement d’encaissements comme le moteur, et n’a pas de 2035 sans les écritures des ventes', () => {
     const sourcesBasculees = sourcesDuDossierBascule()
     const s = { ...sourcesBasculees, mouvements: sourcesBasculees.mouvements.map((m) => (m.id === 'm1' ? { ...m, montant: 118 } : m)) }
-    const ventes = ventesFacturees({ dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
+    const ventes = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
     const ecrituresDesVentes = { etat: 'composees' as const, composition: composition(s, 'tresorerie', PLAN_PAR_DEFAUT) }
     const fraisBancaires = { id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 3, compte_comptable: '627000', poste_2035: 'Frais financiers' } satisfies Categorie
     const sources = {

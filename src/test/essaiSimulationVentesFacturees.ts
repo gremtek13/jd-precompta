@@ -5,6 +5,7 @@ import type { ModeComptable, MoyenEncaissement, NatureOperation } from '../lib/t
 import {
   recettesFactureesParMois, ventesFacturees, type EncaissementVendu, type FactureVendue, type PartVendue,
   type SourcesVentesFacturees, type VentesFacturees,
+  SANS_ACOMPTE,
 } from '../lib/ventesFacturees'
 
 // L'ESSAI DE LA SIMULATION DES VENTES FACTURÉES (supabase/essais/simulationDesVentesFacturees.sql, chantier EC-Q3, étape
@@ -167,6 +168,8 @@ export function sourcesDuDossier(numero: number): SourcesVentesFacturees {
   const dossierId = uuidSimulation(d.numero)
   return {
     dossierId,
+    // Le jeu de la simulation en base ne porte aucun acompte : `simulation_des_ventes_facturees` ne les connaît pas.
+    acomptes: SANS_ACOMPTE,
     factures: FACTURES.map((f): FactureVendue => ({
       id: u(f.i), dossier_id: dossierId, statut: 'validee', type: f.type, numero: f.numero, date_emission: f.emission,
       tiers_nom: 'ESSAI', facture_origine_id: f.origine == null ? null : u(f.origine), source_de_la_vente: f.source,

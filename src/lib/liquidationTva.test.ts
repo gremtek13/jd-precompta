@@ -26,7 +26,7 @@ import {
 } from './ecrituresVentesFactureesEcran'
 import { brouillonDesVentes, composition, facture as factureDesEcritures, mouvementDesVentes } from '../test/dossierBascule'
 import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
-import { ventesFacturees } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees } from './ventesFacturees'
 import { refusVentilation } from './ventilationBanque'
 import { refusVirementPersonnel } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
@@ -965,7 +965,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     }
   }
   const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
-    dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
+    acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
   })
   const ca3De = (s: SourcesDesEcrituresDeVente, periode = T1) => calculerCa3(
     { pieces, paiements: paiementsDesPieces(lignes, [], [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventesDe(s), caisse: CAISSE_ABSENTE },
@@ -1109,7 +1109,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     // Un dossier qui n'a pas basculé n'a rien à lire.
     expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: { etat: 'sans_bascule' } }))).toBeNull()
     // Une facture source ÉCARTÉE par le module (sans date qu'on puisse lui donner) ne retient pas une période.
-    const ecartee = ventesFacturees({ dossierId: 'd1', factures: [factureVendue({ id: 'f1' })], lignes: [], encaissements: [], parts: [] })
+    const ecartee = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [factureVendue({ id: 'f1' })], lignes: [], encaissements: [], parts: [] })
     const avecEcartee = calculerCa3(
       { pieces, paiements: paiementsDesPieces(lignes, [], [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ecartee, caisse: CAISSE_ABSENTE }, T1, false, 0, 0,
     )

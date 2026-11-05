@@ -10,7 +10,7 @@ import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptabl
 import { paiementsDesPieces, type PartEncaissee } from './rattachement'
 import { calculerSituationIntermediaire } from './situationIntermediaire'
 import type { Categorie, EcritureBrouillon, Piece } from './types'
-import { ventesFacturees } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees } from './ventesFacturees'
 import { D_BASCULE, brouillonDesVentes, composition, facture, ligneBancaire, mouvementDesVentes, pieceDeVente } from '../test/dossierBascule'
 import { NON_VALIDEE } from '../test/ecritures'
 import { encaissementVendu, ligneVendue } from '../test/ventesFacturees'
@@ -67,7 +67,7 @@ function sources(exemplaires: readonly ExemplaireLu[]): SourcesDesEcrituresDeVen
 function leDossier(plan: PlanComptable, exemplaires: readonly ExemplaireLu[] = [DESIGNEE]) {
   const s = sources(exemplaires)
   const c = composition(s, 'tresorerie', plan)
-  const ventes = ventesFacturees({ dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
+  const ventes = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
   const encaissees: PartEncaissee[] = partsEncaissees(D_BASCULE, s.encaissements, { factures: s.factures }, exemplaires)
   const paiements = paiementsDesPieces(s.mouvements.map(ligneBancaire), [], encaissees, [])
   const lignesDeLExemplaire = lignesPourPiece(D_BASCULE, EXEMPLAIRE, { compte: '706000', immobilisation: false }, true,

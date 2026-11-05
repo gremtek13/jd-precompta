@@ -33,7 +33,7 @@ import { brouillonDesVentes, composition, ligneBancaire, sourcesDuDossierBascule
 import { encaissementVendu } from '../test/ventesFacturees'
 import { etatsDesVentesFacturees, type SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
 import { ventesDeLaChecklist } from './ventesDeLaChecklist'
-import { ventesFacturees } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees } from './ventesFacturees'
 import { frontiereDeValidation } from './validationExercice'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
@@ -1725,7 +1725,7 @@ describe('prealablesDeValidation — les ventes facturées d’un dossier bascul
     const brouillon = o.brouillon ? o.brouillon(ecrit) : ecrit
     const anneesValidees = o.anneesValidees ?? []
     const ventes = ventesFacturees({
-      dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
+      acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
     })
     const categories = o.categories ?? []
     const base = donnees({

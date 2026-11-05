@@ -24,7 +24,7 @@ import {
   brouillonDesVentes, composition, facture as factureDesEcritures, mouvementDesVentes,
 } from '../test/dossierBascule'
 import type { EncaissementDesEcritures, SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
-import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees, type VentesFacturees } from './ventesFacturees'
 import { formatMoney } from './format'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 
@@ -671,7 +671,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
     dossierId: 'd1', factures: [f], lignes, encaissements: [e1.e], parts: e1.parts, mouvements: [], exemplaires: [], ...o,
   })
   const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
-    dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
+    acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
   })
   // Le dossier complet, plus les écritures de ses ventes facturées telles que la fonction de VF4b les écrit.
   const ecrit = (s: SourcesDesEcrituresDeVente, plan = PLAN_PAR_DEFAUT) => brouillonDesVentes(composition(s, 'tresorerie', plan))

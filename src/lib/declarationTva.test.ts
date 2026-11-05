@@ -20,7 +20,7 @@ import type { Categorie, DeclarationTva, LigneBancaire, Piece, VentilationBancai
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
 import { tirage } from '../test/encaissementsBatterie'
-import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
+import { SANS_ACOMPTE, ventesFacturees, type VentesFacturees } from './ventesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 
 // Jeu d'essai typé SANS `as` : le compilateur vérifie chaque champ contre la table, et un champ
@@ -809,7 +809,7 @@ describe('calculerCa3 — les ventes facturées', () => {
   const F1 = factureVendue({ id: 'f1', numero: 'F2027-0001', date_emission: '2027-02-10', tiers_nom: 'Client fictif' })
   const LIGNES_F1 = [ligneVendue('f1', 1000, 20)]
   const ventes = (o: Partial<Parameters<typeof ventesFacturees>[0]> = {}) => ventesFacturees({
-    dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [], parts: [], ...o,
+    acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [], parts: [], ...o,
   })
   // Les encaissements, et leurs parts au taux donné.
   const registre = (...e: ReturnType<typeof encaissementVendu>[]) => ({ encaissements: e.map((x) => x.encaissement), parts: e.map((x) => x.part) })
@@ -1091,7 +1091,7 @@ describe('comparerDeclarations — les ventes facturées', () => {
     // Une facture source encaissée au deuxième trimestre, et son exemplaire désigné, payé lui aussi au deuxième : rien du
     // premier trimestre déjà déposé ne bouge.
     const e = encaissementVendu({ id: 'e1', date_encaissement: '2027-04-20', montant: 1200 })
-    const v = ventesFacturees({ dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e.encaissement], parts: [e.part] })
+    const v = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e.encaissement], parts: [e.part] })
     const exemplaire = piece({ id: 'x', facture_id: 'f1', date_piece: '2027-04-02' })
     const sansVentes = donnees([piece(), exemplaire], [mouvement(), mouvement({ id: 'mx', piece_id: 'x', date: '2027-04-25' })])
     const avecVentes: DonneesTva = { ...sansVentes, ventesFacturees: v }
@@ -1124,7 +1124,7 @@ describe('comparerDeclarations — les ventes facturées', () => {
         if (alea() < 0.8) lignes.push(mouvement({ id: `m${i}`, piece_id: `p${i}`, date: `2027-${mois}-20`, montant: (vente ? 1 : -1) * Math.round(ht * 120) / 100 }))
       }
       const e = encaissementVendu({ id: 'e', date_encaissement: `2027-1${Math.floor(alea() * 3)}-15`, montant: 1200 })
-      const v = ventesFacturees({ dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e.encaissement], parts: [e.part] })
+      const v = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e.encaissement], parts: [e.part] })
       const declarations = trimestres.slice(0, 3).map((p, i) => deposee({ id: `t${i}`, periode_debut: p.debut, periode_fin: p.fin, tva_declaree: Math.round(alea() * 400) }))
       const surDebits = alea() < 0.5
       const sans = donnees(pieces, lignes)
@@ -1139,7 +1139,7 @@ describe('comparerDeclarations — les ventes facturées', () => {
   it('une période qu’une facture source touche après coup montre l’écart, à régulariser', () => {
     // Un acompte daté du premier trimestre, enregistré après le dépôt de sa déclaration.
     const e = encaissementVendu({ id: 'e1', date_encaissement: '2027-03-10', montant: 600 })
-    const v = ventesFacturees({ dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e.encaissement], parts: [e.part] })
+    const v = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e.encaissement], parts: [e.part] })
     const d: DonneesTva = { ...donnees([piece()], [mouvement()]), ventesFacturees: v }
     expect(comparerDeclarations([deposee()], d, false)[0]).toMatchObject({ recalcul: 300, ecart: -100, enEcart: true })
   })

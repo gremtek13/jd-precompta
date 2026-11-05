@@ -7,7 +7,7 @@ import type { Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { encaissementVendu, factureVendue, ligneVendue, recettesFactureesVides, ventesFactureesVides } from '../test/ventesFacturees'
-import { recettesFactureesDeLaPeriode, recettesFactureesParMois, ventesFacturees } from './ventesFacturees'
+import { SANS_ACOMPTE, recettesFactureesDeLaPeriode, recettesFactureesParMois, ventesFacturees } from './ventesFacturees'
 import type { EcrituresDesVentesDeLa2035 } from './declaration2035'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
 import { fraisDesMouvements } from './ecrituresVentesFacturees'
@@ -421,7 +421,7 @@ describe('l’estimation et les ventes facturées', () => {
     encaissementVendu({ id: 'e2', facture_id: 'fs', date_encaissement: '2026-05-12', montant: 600 }),
   ]
   const VENTES = ventesFacturees({
-    dossierId: 'd1', factures: [F], lignes: [ligneVendue('fs', 1000, 20)],
+    acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F], lignes: [ligneVendue('fs', 1000, 20)],
     encaissements: encaissements.map((e) => e.encaissement), parts: encaissements.map((e) => e.part),
   })
   // L'exemplaire de la facture : une pièce de vente désignée, que le cabinet a déposée.
@@ -439,13 +439,13 @@ describe('l’estimation et les ventes facturées', () => {
       encaissementVendu({ id: 'e2', facture_id: 'fs', date_encaissement: '2026-01-25', montant: 600 }),
     ]
     const v = ventesFacturees({
-      dossierId: 'd1', factures: [F], lignes: [ligneVendue('fs', 1000, 20)],
+      acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F], lignes: [ligneVendue('fs', 1000, 20)],
       encaissements: deux.map((e) => e.encaissement), parts: deux.map((e) => e.part),
     })
     expect([...recettesFactureesParMois(v, 'tresorerie')]).toEqual([['2026-01', 100000]])
     const annulee = [deux[0], encaissementVendu({ id: 'e3', facture_id: 'fs', date_encaissement: '2026-01-28', montant: -600, annule_id: 'e1' })]
     const w = ventesFacturees({
-      dossierId: 'd1', factures: [F], lignes: [ligneVendue('fs', 1000, 20)],
+      acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F], lignes: [ligneVendue('fs', 1000, 20)],
       encaissements: annulee.map((e) => e.encaissement), parts: annulee.map((e) => e.part),
     })
     expect([...recettesFactureesParMois(w, 'tresorerie')]).toEqual([['2026-01', 0]])
@@ -458,7 +458,7 @@ describe('l’estimation et les ventes facturées', () => {
     const annulation = encaissementVendu({ id: 'e3', facture_id: 'fs', date_encaissement: '2026-07-01', montant: -600, annule_id: 'e2' })
     const tous = [...encaissements, annulation]
     const v = ventesFacturees({
-      dossierId: 'd1', factures: [F, avoir], lignes: [ligneVendue('fs', 1000, 20), { ...ligneVendue('av', 100, 20), quantite: -1 }],
+      acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F, avoir], lignes: [ligneVendue('fs', 1000, 20), { ...ligneVendue('av', 100, 20), quantite: -1 }],
       encaissements: tous.map((e) => e.encaissement), parts: tous.map((e) => e.part),
     })
     for (const mode of ['tresorerie', 'engagement'] as const) {
