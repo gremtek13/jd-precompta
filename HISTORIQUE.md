@@ -48014,3 +48014,15 @@ faute, 36 mutations sur 36, rien resté ; sans la migration, EN ATTENTE ; aller,
 celle d'après. `devis.sql`, `devisSuppression.sql`, `factures.sql` (son contrôle 105 laisse les deux gardes neuves à leur essai),
 `encaissementsFactures.sql`, `envoiDesDevis.sql` et `rls.sql` : 0 en faute, leurs mutations mordent. La reprise entre au plan de
 sauvegarde derrière `ACOMPTES_PREVUS`. Trois questions au cabinet : P5B2-Q1 à Q3.
+
+### 05/11/2026 — L'ENVOI DES DEVIS EN LIGNE : `SEND-EMAIL` V9 ET LE BOUTON OFFERT (P6C)
+
+`send-email` redéployée le 05/11/2026 (v9) par la ligne qui importe le dépôt, au commit `e1f7555` de `main` (la mise en
+ligne des devis, demande n° 289), `verify_jwt` à faux comme `config.toml` le veut ; la copie d'avant (v8) n'était que
+l'import du commit `e3b9261` ; `allerretour.py` : identique au dépôt, 569 lignes, rien recopié. `ENVOI_DES_DEVIS_OFFERT`
+levé : « Envoyer par e-mail » s'offre sur un devis émis, dans les deux espaces ; le test qui épinglait le drapeau baissé
+devient un invariant (jamais sans la vue des devis ni la migration de l'envoi dans l'export). Le même jour, la migration
+de l'acompte (P5b2), intégrée derrière `ACOMPTES_PREVUS` : relue sur le catalogue d'une copie migrée de la réplique (les
+trois fonctions remplacées comparées à celles d'hier, ligne à ligne ; les droits : les fonctions d'appoint et les gardes
+fermées à tout rôle de l'API), son essai rejoué (158 verdicts, 0 en faute, 36 mutations sur 36) et le banc du leurre SÛR
+sur `acomptesDesDevis`, `devis`, `envoiDesDevis` et `factures` (son contrôle 105 retouché), le témoin vu de ses trois façons.
