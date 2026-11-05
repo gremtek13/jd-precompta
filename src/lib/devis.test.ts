@@ -27,6 +27,7 @@ import {
   DATE_PLANCHER_DEVIS,
   dateDeLaBase,
   DEVIS_EXPORTES,
+  ENVOI_DES_DEVIS_PREVU,
   DUREE_VALIDITE_PAR_DEFAUT_MOIS,
   ecritureDuDevis,
   etatDuDevis,
@@ -788,8 +789,10 @@ describe('l’envoi d’un devis par e-mail (P6c3)', () => {
   const FONCTION = readFileSync(new URL('../../supabase/functions/send-email/index.ts', import.meta.url), 'utf8')
   const EMIS = { dossier_id: 'd1', statut: 'emis' } as const
 
-  it('le drapeau est baissé : l’envoi attend la migration envoi_des_devis ET le déploiement de send-email', () => {
-    expect(ENVOI_DES_DEVIS_OFFERT).toBe(false)
+  it('le bouton ne s’offre qu’avec la vue des devis et la migration de l’envoi dans l’export (send-email déployée après elle)', () => {
+    // Levé le 05/11/2026, `send-email` v9 déployée : l'export porte `envoi_des_devis` (ENVOI_DES_DEVIS_PREVU, que
+    // sauvegardeEnvoiDesDevis.test.ts confronte à l'export) et la vue des devis est ouverte.
+    expect(!ENVOI_DES_DEVIS_OFFERT || (DEVIS_EXPORTES && ENVOI_DES_DEVIS_PREVU)).toBe(true)
   })
 
   it('la forme de l’adresse et les trois refus sont ceux du texte même de la fonction', () => {

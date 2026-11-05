@@ -53,11 +53,10 @@ export const ENVOI_DES_DEVIS_PREVU: boolean = true
 export const ACOMPTES_PREVUS: boolean = false
 
 // « Envoyer par e-mail » un devis émis, dans les deux espaces (étape P6c3) : `send-email` accepte le type « devis » depuis
-// P6c2, mais ne se déploie qu'APRÈS l'application de la migration `envoi_des_devis` (le journal des envois refuserait la ligne
-// d'un devis). Le bouton ne s'offre donc qu'ici, baissé : on le lève quand la migration est en base ET que `send-email` est
-// déployée, jamais avant `DEVIS_EXPORTES` (pas de devis à envoyer sans la vue des devis). Les tests le lèvent par `vi.mock`
-// (FacturesTabDevis.test.tsx), l'état d'avant restant éprouvé tant que le code existe.
-export const ENVOI_DES_DEVIS_OFFERT: boolean = false
+// P6c2, déployée le 05/11/2026 (v9, une ligne qui importe le dépôt), après sa migration `envoi_des_devis` : le bouton est
+// offert. Il ne s'offre jamais sans `DEVIS_EXPORTES` (pas de devis à envoyer sans la vue des devis). Les tests le baissent
+// par `vi.mock` (FacturesTabDevis.test.tsx), l'état d'avant restant éprouvé tant que le code existe.
+export const ENVOI_DES_DEVIS_OFFERT: boolean = true
 
 // ── Les constantes de la base, confrontées au texte des migrations par le test ─────────────────────────────────────
 export const PREFIXE_DEVIS = 'D'

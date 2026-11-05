@@ -753,17 +753,19 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   - P5, les devis : EN PRODUCTION depuis le 05/11/2026 — `devis_du_client` (20261104204904, par l'outil),
     `envoi_des_devis` (20261105070313) et `devis_du_client_suppression` (20261105073709, collée), dans l'export ;
     `DEVIS_EXPORTES` et `ENVOI_DES_DEVIS_PREVU` levés : la vue « Devis » des deux espaces, la réponse, la facture tirée,
-    l'aperçu et l'impression (P6a1 à P6b), la case « Ventes » qui les nomme, l'envoi par e-mail compris ; reste
-    `send-email` déployée, puis `ENVOI_DES_DEVIS_OFFERT` levé (P6c) ; l'émetteur posé du dossier et aucun IBAN imprimé,
+    l'aperçu et l'impression (P6a1 à P6b), la case « Ventes » qui les nomme ; l'envoi par e-mail en ligne le même jour
+    (`send-email` v9, `ENVOI_DES_DEVIS_OFFERT` levé, P6c) ; l'émetteur posé du dossier et aucun IBAN imprimé,
     comme la facture (A7) ; un mois de validité proposé, modifiable ; aucun modèle par métier pour l'instant ; l'acompte
     (P5b), une facture d'acompte puis une facture finale qui le reprend : conçu, son module pur (P5b1), un acompte qui ne
-    couvre jamais tout le devis ni ne laisse de TVA négative (P5B-Q5, sur la recommandation), sa migration (P5b2) en
-    préparation ; un devis refusé ou expiré gardé trois ans, puis proposé à l'effacement, jamais effacé seul ; les devis
+    couvre jamais tout le devis ni ne laisse de TVA négative (P5B-Q5, sur la recommandation), sa migration
+    (`acomptes_des_devis`, P5b2) préparée et éprouvée sur une réplique, à présenter au cabinet (à coller : elle remplace
+    `enregistrer_facture`), derrière `ACOMPTES_PREVUS` ; un devis refusé ou expiré gardé trois ans, puis proposé à l'effacement, jamais effacé seul ; les devis
     de soins hors de l'application ; une acceptation après la validité, sur une confirmation explicite → « LES DEVIS, EN
     BASE », « LES DEVIS : RÉPONDRE, EN TIRER UNE FACTURE, L'APERÇU ET L'IMPRESSION (P6A2, P6B), DERRIÈRE
     `DEVIS_EXPORTES` », « L'ACOMPTE D'UN DEVIS : LA CONCEPTION (P5B) », « L'ACOMPTE D'UN DEVIS NE COUVRE JAMAIS TOUT LE
     DEVIS (P5B-Q5, SUR LA RECOMMANDATION) », « LES DEVIS EN PRODUCTION : LA SECONDE MIGRATION COLLÉE ET LES DRAPEAUX
-    LEVÉS ».
+    LEVÉS », « L'ENVOI DES DEVIS EN LIGNE : `SEND-EMAIL` V9 ET LE BOUTON OFFERT (P6C) », « L'ACOMPTE D'UN DEVIS, EN BASE
+    (P5B2) (PRÉPARÉE, PAS APPLIQUÉE) ».
   - La suite, en trois parties (« au minimum faire comme le logiciel du client, et aller plus loin ») : le premier
     groupe, A1 à A11 ; la parité, B1 à B9 (achats, notes de frais, analyse, documents du cabinet, trois cases neuves
     « Achats », « Notes de frais », « Documents », le resserrement des pièces) ; « aller plus loin », C1 à C8
