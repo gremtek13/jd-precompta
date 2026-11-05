@@ -1595,8 +1595,8 @@ export interface LignePlanDuDossier {
   origine: OriginePlanComptable | 'application'
 }
 
-// LES DEVIS D'UN DOSSIER (espace client, étape P5 ; migrations devis_du_client et devis_du_client_suppression, présentées
-// au cabinet, PAS ENCORE APPLIQUÉES : tant que `DEVIS_EXPORTES` est faux, src/lib/devis.ts, aucun code ne lit ces tables).
+// LES DEVIS D'UN DOSSIER (espace client, étape P5 ; migrations devis_du_client et devis_du_client_suppression, en
+// production depuis le 05/11/2026 ; `DEVIS_EXPORTES`, src/lib/devis.ts, levé le même jour).
 // Un devis est un BROUILLON, puis ÉMIS — numéroté « D<année>-<numéro> » dans la série du dossier et figé —, et reçoit une
 // RÉPONSE une fois ; « expiré » et « facturé » se déduisent (`etatDuDevis`). Le cabinet et le client qui porte le droit
 // « Ventes » le lisent ; seules les fonctions l'écrivent. Ses colonnes « client et mentions » sont celles de FactureEmise,

@@ -28,21 +28,21 @@ import type {
 // professionnel de santé) ont leurs propres modèles : ils ne sont pas de ce module.
 
 // ── Est-ce en base ? ──────────────────────────────────────────────────────────────────────────────────────────────────
-// Les deux migrations (devis_du_client, puis devis_du_client_suppression, à coller) attendent l'accord du cabinet : elles
-// ouvrent une lecture au client qui porte le droit « Ventes ». Tant que l'export (supabase/schema) ne les porte pas, rien
-// ne lit ni n'écrit les devis : le plan de sauvegarde ne compte pas leurs tables (src/lib/sauvegarde.ts) et aucun écran
-// ne les offre (étape P6). Le jour où l'export porte les DEUX, devis.test.ts vire au rouge tant que ceci reste `false` :
-// le lever met les trois tables au plan, confronte les refus ci-dessous au texte même des fonctions, et fait dire à la
-// phrase de la case « Ventes » (src/lib/droitsAcces.ts, `ceQueDisentLesCases`) la lecture de ses devis et leurs quatre
-// gestes, que droitsAcces.test.ts confronte alors à l'export.
-export const DEVIS_EXPORTES: boolean = false
+// Les deux migrations des devis sont en production depuis le 05/11/2026 (`devis_du_client`, 20261104204904, par l'outil ;
+// `devis_du_client_suppression`, 20261105073709, collée par le cabinet) et l'export (supabase/schema) les porte : le
+// drapeau est levé. Il met les trois tables au plan de sauvegarde (src/lib/sauvegarde.ts), offre la vue « Devis » (étape
+// P6), confronte les refus ci-dessous au texte même des fonctions (devis.test.ts), et fait dire à la phrase de la case
+// « Ventes » (src/lib/droitsAcces.ts, `ceQueDisentLesCases`) la lecture de ses devis et leurs gestes, que
+// droitsAcces.test.ts confronte à l'export. Son état d'avant reste éprouvé tant que son code existe (les tests le baissent
+// par `vi.mock`).
+export const DEVIS_EXPORTES: boolean = true
 
-// L'envoi d'un devis par e-mail, journalisé (étape P6c1) : la migration `envoi_des_devis` (supabase/preparees/), préparée,
-// PAS APPLIQUÉE, pose `emails_envoyes.devis_id` — le devis envoyé, mis à nul si le devis est supprimé — et admet le type
-// « devis » au journal. Tant que l'export ne la porte pas, le plan de sauvegarde ne connaît pas la colonne
-// (src/lib/sauvegarde.ts, `auGrapheDeLEnvoiDesDevis`) ; le jour où il la porte, sauvegardeEnvoiDesDevis.test.ts vire au rouge
-// tant que ceci reste `false`. Il ne se lève qu'avec ou après `DEVIS_EXPORTES` : la migration exige la table des devis.
-export const ENVOI_DES_DEVIS_PREVU: boolean = false
+// L'envoi d'un devis par e-mail, journalisé (étape P6c1) : la migration `envoi_des_devis` (20261105070313, en production
+// depuis le 05/11/2026, dans l'export) pose `emails_envoyes.devis_id` — le devis envoyé, mis à nul si le devis est
+// supprimé — et admet le type « devis » au journal. Levé, le drapeau met la relation au graphe de la sauvegarde
+// (src/lib/sauvegarde.ts, `auGrapheDeLEnvoiDesDevis`) ; sauvegardeEnvoiDesDevis.test.ts le confronte à l'export. Il ne se
+// lève qu'avec ou après `DEVIS_EXPORTES` : la migration exige la table des devis.
+export const ENVOI_DES_DEVIS_PREVU: boolean = true
 
 // « Envoyer par e-mail » un devis émis, dans les deux espaces (étape P6c3) : `send-email` accepte le type « devis » depuis
 // P6c2, mais ne se déploie qu'APRÈS l'application de la migration `envoi_des_devis` (le journal des envois refuserait la ligne

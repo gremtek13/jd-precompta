@@ -13,7 +13,7 @@
 //   notes (partagées avec le client « Ventes », mais qui ne s'impriment pas), ni l'adresse électronique du client, ni la
 //   réponse enregistrée — ces colonnes ne sont même pas lues. Rien ne s'écrit sur le devis : émis, il est figé par la
 //   base (`garder_devis`), et l'adresse du destinataire ne s'y mémorise pas comme sur une facture. À DÉPLOYER APRÈS la
-//   migration `envoi_des_devis` (supabase/preparees/20261105100300), qui admet le type « devis » au journal et y pose
+//   migration `envoi_des_devis` (supabase/schema/20261105070313_envoi_des_devis.sql, en production depuis le 05/11/2026), qui admet le type « devis » au journal et y pose
 //   `devis_id` : avant elle, la ligne de journal d'un devis serait refusée par la base.
 // - "relance_pieces" : simple rappel invitant le client à se connecter à son espace pour déposer ses
 //   pièces — aucun lien magique/jeton, le client se connecte normalement, comme d'habitude.

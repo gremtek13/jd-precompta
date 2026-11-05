@@ -267,12 +267,14 @@ export const PHRASE_DES_VENTES_DE_LA_SIMULATION = ' La case lui ouvre aussi sa s
 // « La case lui ouvre aussi sa simulation. », dans ce que « Banque » ouvre, donc avec la banque du client (P7) : sans elle,
 // ce drapeau ne change rien à la phrase. « Ventes » n'y gagne rien : elle lit déjà ses factures.
 // DEPUIS L'ÉTAPE P5, un douzième paramètre, OBLIGATOIRE : les migrations `devis_du_client` et `devis_du_client_suppression`
-// (`DEVIS_EXPORTES`, lib/devis.ts), préparées, présentées au cabinet avant d'être appliquées, ouvrent au client « Ventes »,
-// par la base, la lecture de ses devis et du lien de chacun à la facture qui en est tirée (`devis_lecture_ventes`,
+// (`DEVIS_EXPORTES`, lib/devis.ts), en production depuis le 05/11/2026, ouvrent au client « Ventes », par la base, la
+// lecture de ses devis et du lien de chacun à la facture qui en est tirée (`devis_lecture_ventes`,
 // `devis_factures_lecture_ventes`), et quatre gestes par des fonctions sous `gere_les_ventes` : `enregistrer_devis`,
-// `decider_devis`, `facturer_devis`, `supprimer_brouillon_devis`. Aucun écran ne les montre encore (étape P6) : la phrase
-// les dit ouverts « par la base », sans en nommer aucun. Elles exigent celles des ventes : sans elles, ce drapeau ne
-// change rien à la phrase ; baissé, la phrase reste celle d'avant, au caractère près.
+// `decider_devis`, `facturer_devis`, `supprimer_brouillon_devis` ; avec elles, la migration `envoi_des_devis` et
+// `send-email` (étape P6c, `ENVOI_DES_DEVIS_PREVU`, levé le même jour) ouvrent l'envoi d'un devis émis par e-mail, dans
+// le plafond du dossier, que les factures partagent. La phrase les dit ouverts « par la base » et « par les fonctions du
+// serveur ». Elles exigent celles des ventes : sans elles, ce drapeau ne change rien à la phrase ; baissé, la phrase reste
+// celle d'avant, au caractère près.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -302,13 +304,14 @@ export function ceQueDisentLesCases(
       + 'transmission, relever les statuts de sa plateforme, et envoyer une facture par e-mail, trente par dossier et par '
       + 'jour au plus.'
     : ''
-  // Les devis (étape P5) : la lecture des deux tables que leur migration ouvre à « Ventes », et les quatre gestes de leurs
-  // fonctions ; aucun écran encore (étape P6), d'où « par la base » seul. Juste après les ventes : les devis
-  // viennent avant les factures, comme dans ce que la case ouvrira.
+  // Les devis (étape P5) : la lecture des deux tables que leur migration ouvre à « Ventes », les quatre gestes de leurs
+  // fonctions, puis leur envoi par e-mail (`send-email`, étape P6c), qui compte dans le même plafond que les factures.
+  // Juste après les ventes : les devis viennent avant les factures, comme dans ce que la case ouvrira.
   const devis = ventesOuvertes && devisOuverts
     ? ' Par la base, il lit aussi ses devis et le lien de chacun à la facture qui en est tirée, et peut créer, modifier ou '
       + 'émettre un devis, l’accepter ou le refuser, en tirer un brouillon de facture une fois accepté, ou supprimer un '
-      + 'brouillon de devis.'
+      + 'brouillon de devis ; par les fonctions du serveur, envoyer un devis émis par e-mail, dans le même plafond que ses '
+      + 'factures.'
     : ''
   const avecLesArticles = ventesOuvertes && articlesOuverts
   const articles = avecLesArticles

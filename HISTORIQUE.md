@@ -47977,3 +47977,21 @@ générateur CII refuse déjà une facture dont le total n'est pas positif (`ref
 −0,01 € ne serait pas transmissible. À la graine de la batterie, 41 demandes se refusent parce qu'elles couvrent tout,
 20 pour la TVA, chacune jugée fondée ; six mutations font virer la suite au rouge. P5b2 reprendra les deux refus en
 base, sous les mêmes mots.
+
+### 05/11/2026 — LES DEVIS EN PRODUCTION : LA SECONDE MIGRATION COLLÉE ET LES DRAPEAUX LEVÉS
+
+Le cabinet a collé `devis_du_client_suppression` (`supprimer_brouillon_devis`) le 05/11/2026 : version 20261105073709,
+174 migrations ; l'empreinte de sa ligne d'historique, fins de ligne ramenées à `\n`, est celle du texte donné
+(`8b7f0a9c…`), et le corps de la fonction, ses retours chariot retirés, celui de la réplique (`e191e5f9…`) ; SECURITY
+DEFINER, fermée à l'anonyme. `signature.sql` rend en production les neuf familles de la réplique `e6_apres` (971
+colonnes, 751 contraintes, 235 fonctions, 168 policies…). `devis.sql` (117 000 caractères) n'est pas recopié en
+production, comme `caisse.sql` et `mentionsFigees.sql` avant lui : rejoué sur une copie neuve de cette réplique, 207
+verdicts, aucun en faute, 17 mutations sur 17 qui mordent, aucun écart ; `envoiDesDevis.sql` l'avait été en production
+après sa migration. Les trois fichiers passent de `supabase/preparees/` à l'export sous leurs versions (20261104204904,
+20261105070313, 20261105073709), et les trois contrôles concordent : 174 fichiers et 174 migrations (`dc2d3f5c…`),
+l'inventaire (2 423 objets, `0c14fa6d…`), le socle (81 instructions, `cea19cff…`). `DEVIS_EXPORTES` et
+`ENVOI_DES_DEVIS_PREVU` levés : les trois tables au plan de sauvegarde, la relation de l'envoi au graphe, la vue « Devis »
+des deux espaces ; la phrase de la case « Ventes » nomme aussi l'envoi d'un devis émis par e-mail, dans le plafond que
+partagent les factures (le garde des actions de la vente l'exige depuis que la migration est en base). `devis` et
+`envoiDesDevis` quittent les cas particuliers du banc du leurre (quinze), joués comme des essais de la production.
+Restent `send-email` déployée par une ligne qui importe le dépôt, puis `ENVOI_DES_DEVIS_OFFERT` levé.

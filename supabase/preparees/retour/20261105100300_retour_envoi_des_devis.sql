@@ -1,7 +1,7 @@
 -- LE RETOUR ARRIÈRE DE LA MIGRATION `envoi_des_devis` (espace client, étape P6c1) — PRÉPARÉ, À NE COLLER QU'AVEC L'ACCORD
 -- EXPLICITE DU CABINET : il DÉTRUIT des données. À coller dans l'éditeur SQL de Supabase, dans une transaction, avec sa
 -- ligne d'historique (CLAUDE.md, « Quand `apply_migration` attend une confirmation »). La migration :
--- supabase/preparees/20261105100300_envoi_des_devis.sql ; le récit : HISTORIQUE.md, « LES DEVIS : L'ENVOI PAR E-MAIL, EN
+-- supabase/schema/20261105070313_envoi_des_devis.sql ; le récit : HISTORIQUE.md, « LES DEVIS : L'ENVOI PAR E-MAIL, EN
 -- BASE (P6C1) (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
 -- L'ORDRE : D'ABORD l'application — `send-email` ramenée à la version qui n'envoie pas de devis, `ENVOI_DES_DEVIS_PREVU`
