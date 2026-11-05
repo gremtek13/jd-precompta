@@ -27,6 +27,7 @@ import { REFUS_VALIDATION_SOURCE } from './sourceDeLaVente'
 import { REFUS_DE_LA_VALIDATION } from './validationDeLaFacture'
 import { REFUS_ACOMPTE, preparerAcompte } from './acompteDevis'
 import { REFUS_SOLDE_ACOMPTE_EN_BROUILLON } from './acomptesDuDevis'
+import { LIGNES_D_ACOMPTE_FIGEES } from './acomptesDesFactures'
 import type { ReleveStatuts } from './receptionPlateforme'
 import { donnees, ligne } from '../test/facturesCii'
 
@@ -99,6 +100,8 @@ const PRODUITES: Record<string, () => string> = {
     })
     return [...Object.values(REFUS_ACOMPTE), tva.ok ? '' : tva.refus, REFUS_SOLDE_ACOMPTE_EN_BROUILLON].join('\n')
   },
+  // L'onglet des factures (étape P5b5b) : la note des lignes d'un brouillon d'acompte, aux mots de la base.
+  'LIGNES_D_ACOMPTE_FIGEES': () => LIGNES_D_ACOMPTE_FIGEES,
   // Les messages d'un module qui appelle le client Supabase : lus dans sa source, que ce test n'importe pas.
 
   'receptionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),

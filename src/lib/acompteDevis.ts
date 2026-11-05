@@ -84,7 +84,7 @@ export const REFUS_ACOMPTE = {
 // P5B-Q5 (écrite sur la recommandation) : la TVA du devis est la somme des arrondis de ses lignes, celle d'un acompte
 // l'arrondi de sa part ; un acompte qui couvre presque tout un taux peut en prendre un centime de plus que le devis n'en
 // laisse. Il se refuse plutôt que de laisser à la facture finale une TVA négative.
-function refusDeTvaNegative(taux: number, tvaCentimes: number): string {
+export function refusDeTvaNegative(taux: number, tvaCentimes: number): string {
   return (
     `L’acompte laisserait une TVA négative à la facture finale (${enEuros(tvaCentimes)} à ${enTaux(taux)}) : la TVA du ` +
     'devis s’arrondit ligne par ligne, celle de l’acompte sur sa part. Demandez un peu moins, ou tirez la facture finale.'
@@ -111,7 +111,7 @@ function cle(taux: number, nature: NatureArticle | null | undefined): string {
   return `${taux}|${nature ?? ''}`
 }
 
-function enTaux(taux: number): string {
+export function enTaux(taux: number): string {
   return `${String(taux).replace('.', ',')} %`
 }
 

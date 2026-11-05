@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { calculerLigne, calculerTotaux, enregistrerFacture, lignesSaisies, mentionsLegalesParDefaut } from '../../lib/factures'
-import { aujourdHuiSql, formatMoney, formaterPrixUnitaire } from '../../lib/format'
+import { aujourdHuiSql, formatDate, formatMoney, formaterPrixUnitaire } from '../../lib/format'
 import type { Article, ArticleExoneration, Contact, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT } from '../../lib/droitsAcces'
@@ -34,6 +34,11 @@ import {
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { ACOMPTES_PREVUS } from '../../lib/devis'
+import {
+  LIGNES_D_ACOMPTE_FIGEES, SANS_ACOMPTE, confirmationDeLaValidation, refusDeLaValidationDeLAcompte, refusDeLaValidationDeLaFinale,
+  type AcompteDeLaFacture,
+} from '../../lib/acomptesDesFactures'
 import ArticleChoixModal from './ArticleChoixModal'
 import ArticleSaisieModal from './ArticleSaisieModal'
 import ConfirmationArticle from './ConfirmationArticle'
@@ -55,7 +60,13 @@ interface LigneEdit extends ProvenanceDeLigne {
   quantite: string
   prix_unitaire_ht: string
   taux_tva: string
+  // La facture d'acompte que la ligne d'une finale reprend (étape P5b5b) : la ligne ne se retouche ni ne se retire.
+  reprise_facture_id?: string
 }
+
+// Une ligne d'un brouillon d'acompte TELLE QUE LA BASE L'A ÉCRITE (étape P5b5b) : elle repart telle quelle, la base refusant
+// toute retouche des lignes d'un acompte.
+type LigneDAcompteLue = Pick<FactureLigne, 'designation' | 'quantite' | 'prix_unitaire_ht' | 'taux_tva' | 'unite' | 'reference' | 'article_id' | 'nature'>
 
 // La lecture des articles, gardée avec le dossier pour lequel elle a été faite : lue, ou ratée avec son motif.
 type LectureArticles = { cle: string; lu: LectureDesArticles } | { cle: string; echec: string }
@@ -114,6 +125,9 @@ type Props = QuiRedige & {
   // qui oublierait de la lire ne compile pas, et une facture source se validerait sans que ses refus se disent avant.
   reglageDesVentes: ReglageDesVentes
   facture: FactureEmise | null // null = nouvelle facture ; jamais une facture déjà validée (voir FacturesTab)
+  // Ce qu'est le brouillon (étape P5b5b ; lib/acomptesDesFactures.ts) : une facture d'acompte, une finale, ou ni l'une ni
+  // l'autre — le défaut, celui d'une facture neuve et de l'onglet drapeau baissé.
+  acompte?: AcompteDeLaFacture
   onClose: () => void
   onSaved: () => void
 }
@@ -125,6 +139,9 @@ type Props = QuiRedige & {
 export default function FactureFormModal(props: Props) {
   const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, reglageDesVentes, facture, onClose, onSaved } = props
   const { espace } = props
+  const acompte = props.acompte ?? SANS_ACOMPTE
+  // Les lignes du brouillon d'un acompte, lues telles quelles : elles repartent sans retouche (étape P5b5b).
+  const [lignesDAcompte, setLignesDAcompte] = useState<LigneDAcompteLue[] | null>(null)
   // Le geste du cabinet seul : retenir l'adresse de l'émetteur comme celle du dossier. Nul pour le client.
   const onAdresseUpdated = props.espace === 'cabinet' ? props.onAdresseUpdated : null
   const [tiersNom, setTiersNom] = useState(facture?.tiers_nom ?? '')
@@ -206,8 +223,16 @@ export default function FactureFormModal(props: Props) {
         ? l.map((x) => ({
           id: x.id, cle: x.id, designation: x.designation, quantite: String(x.quantite), prix_unitaire_ht: String(x.prix_unitaire_ht),
           taux_tva: String(x.taux_tva), ...(MENTIONS_FIGEES_EXPORTEES ? provenanceDeLaLigneLue(x) : PROVENANCE_VIDE),
+          ...(ACOMPTES_PREVUS && typeof (x as { reprise_facture_id?: unknown }).reprise_facture_id === 'string'
+            ? { reprise_facture_id: (x as { reprise_facture_id?: unknown }).reprise_facture_id as string } : {}),
         }))
         : [ligneVide(statutTva, nouvelleCle())])
+      if (ACOMPTES_PREVUS) {
+        setLignesDAcompte(l.map((x) => ({
+          designation: x.designation, quantite: x.quantite, prix_unitaire_ht: x.prix_unitaire_ht, taux_tva: x.taux_tva,
+          unite: x.unite ?? null, reference: x.reference ?? null, article_id: x.article_id ?? null, nature: x.nature ?? null,
+        })))
+      }
       // L'article d'où vient chaque ligne, tel que le brouillon le garde (étape A7b).
       if (MENTIONS_FIGEES_EXPORTEES) {
         setProvenance(Object.fromEntries(l.filter((x) => x.article_id != null).map((x) => [x.id, x.article_id as string])))
@@ -267,20 +292,32 @@ export default function FactureFormModal(props: Props) {
     quantite: parseFloat(l.quantite) || 0,
     prix_unitaire_ht: parseFloat(l.prix_unitaire_ht) || 0,
     taux_tva: parseFloat(l.taux_tva) || 0,
+    ...(acompte.etat === 'finale' && l.reprise_facture_id ? { reprise_facture_id: l.reprise_facture_id } : {}),
   }))
   // Une ligne sans désignation ou sans quantité positive ne part pas (lib/factures.ts:lignesSaisies). Les TOTAUX sont
   // donc ceux des lignes qui partent, et d'aucun autre jeu : la base stocke l'en-tête tel qu'il est envoyé, et un total
   // qui comptait une ligne écartée — une remise saisie en quantité négative, une ligne dont on a oublié la désignation —
   // faisait une facture dont l'en-tête contredit les lignes, à l'aperçu comme à la plateforme qui la reçoit.
-  const { valides: lignesValides, ecartees: lignesEcartees } = lignesSaisies(lignesNumeriques)
+  // Une ligne de reprise d'une finale (étape P5b5b) part toujours, à sa quantité −1 : elle est posée par la base.
+  const estReprise = (l: { reprise_facture_id?: string }) => l.reprise_facture_id != null
+  const saisies = lignesSaisies(lignesNumeriques.filter((l) => !estReprise(l)))
+  const lignesValides = lignesNumeriques.filter((l) => estReprise(l) || saisies.valides.includes(l))
+  const lignesEcartees = saisies.ecartees
   const totaux = calculerTotaux(lignesValides)
   // Les lignes TELLES QU'ELLES PARTENT : les quatre champs d'hier et, depuis l'étape A7b, leur unité, leur référence (sans les
   // blancs de ses bords), leur nature et l'article d'où elles viennent — un champ vide part nul.
-  const lignesQuiPartent = lignesValides.map((l) => {
+  // Celles d'un brouillon d'acompte, TELLES QUE LUES (étape P5b5b) ; une reprise d'une finale porte l'acompte qu'elle reprend.
+  const lignesQuiPartent = acompte.etat === 'acompte' && lignesDAcompte ? lignesDAcompte : lignesValides.map((l) => {
     const ligne = { designation: l.designation, quantite: l.quantite, prix_unitaire_ht: l.prix_unitaire_ht, taux_tva: l.taux_tva }
-    if (!MENTIONS_FIGEES_EXPORTEES) return ligne
-    return { ...ligne, ...provenanceQuiPart(lignes.find((x) => x.cle === l.cle) ?? PROVENANCE_VIDE, provenance[l.cle] ?? null) }
+    const reprise = l.reprise_facture_id ? { reprise_facture_id: l.reprise_facture_id } : {}
+    if (!MENTIONS_FIGEES_EXPORTEES) return { ...ligne, ...reprise }
+    return { ...ligne, ...provenanceQuiPart(lignes.find((x) => x.cle === l.cle) ?? PROVENANCE_VIDE, provenance[l.cle] ?? null), ...reprise }
   })
+  // CE QUE LA VALIDATION D'UN ACOMPTE OU D'UNE FINALE REFUSERAIT (étape P5b5b ; P5B2-Q3) : les refus d'`enregistrer_facture`
+  // remplacée, sur les lignes telles qu'elles partent, après ceux d'hier ; et la phrase qui nomme ce qui part.
+  const refusDeLAcompte = acompte.etat === 'acompte' ? refusDeLaValidationDeLAcompte(acompte, lignesQuiPartent)
+    : acompte.etat === 'finale' ? refusDeLaValidationDeLaFinale(acompte, lignesQuiPartent) : null
+  const lignesFigees = acompte.etat === 'acompte'
 
   // CE QUE LE STATUT DE TVA DU DOSSIER DIT DE CETTE FACTURE, avant le clic (lib/statutTva.ts).
   // Une ligne taxée sur un dossier qui ne facture pas de TVA la rend due du seul fait de l'avoir facturée (CGI,
@@ -344,9 +381,10 @@ export default function FactureFormModal(props: Props) {
     emetteur_nom: dossierNom || null,
     emetteur_siret: dossierSiret || null,
     emetteur_adresse: adresseDuDossierSeule ? dossierAdresse?.trim() || null : emetteurAdresse.trim() || null,
-    montant_ht: totaux.montant_ht,
-    montant_tva: totaux.montant_tva,
-    montant_ttc: totaux.montant_ttc,
+    // Ceux d'un brouillon d'acompte, tels que la base les a posés (étape P5b5b) : ils ne se retouchent pas.
+    montant_ht: acompte.etat === 'acompte' && facture ? facture.montant_ht : totaux.montant_ht,
+    montant_tva: acompte.etat === 'acompte' && facture ? facture.montant_tva : totaux.montant_tva,
+    montant_ttc: acompte.etat === 'acompte' && facture ? facture.montant_ttc : totaux.montant_ttc,
     ...mentionsAEnregistrer(mentions),
     // Le contact d'où vient le client (étape A7b) : la clé part toujours, nulle sans contact — un brouillon rouvert garde le sien.
     ...(MENTIONS_FIGEES_EXPORTEES ? { contact_id: contactChoisi } : {}),
@@ -784,6 +822,11 @@ export default function FactureFormModal(props: Props) {
       setError(jugementSource.refus)
       return
     }
+    // Seconde ceinture : le bouton de validation est déjà grisé sur un refus de l'acompte ou de la finale (étape P5b5b).
+    if (statutCible === 'validee' && refusDeLAcompte) {
+      setError(refusDeLAcompte)
+      return
+    }
     if (enregistrementEnCours.current || gesteArticleEnCours.current || gesteContactEnCours.current) return
     // Une facture adressée à une entreprise ou à un organisme public, que rien ne pourrait plus transmettre une fois
     // validée : la validation se confirme, et la confirmation dit ce qu'on perd. Une facture source aussi : la phrase du module
@@ -792,9 +835,12 @@ export default function FactureFormModal(props: Props) {
     // Depuis l'étape A7b, chaque validation se confirme, et la confirmation NOMME ce que la facture figera et imprimera — le nom
     // légal, l'identité, le numéro de TVA, les conditions de paiement, le RIB confirmé ou qu'il n'y en a pas, le logo —, au
     // paragraphe qui précède la question.
+    // La facture d'acompte ou la finale (étape P5b5b) : le premier paragraphe nomme ce qui part. Rien sur une autre facture.
+    const deLAcompte = statutCible === 'validee' ? confirmationDeLaValidation(acompte, lignesQuiPartent) : null
     const figer = statutCible === 'validee' && jugementMentions?.mentions
       ? `\n\n${pourLEspace(espace, confirmationDesMentions(jugementMentions.mentions, entete.emetteur_nom, false))}`
       : ''
+    const tete = deLAcompte ? `${pourLEspace(espace, deLAcompte)}\n\n` : ''
     if (statutCible === 'validee' && nonTransmissible) {
       const premier = pourLEspace(espace, nonTransmissible.refus[0] ?? 'régler la TVA, comme le formulaire le signale.')
       const n = nonTransmissible.refus.length + nonTransmissible.ailleurs
@@ -805,11 +851,13 @@ export default function FactureFormModal(props: Props) {
         : figer
           ? `Une facture validée ne se corrige plus que par un avoir.${figer}\n\nLa valider quand même ?`
           : 'Une facture validée ne se corrige plus que par un avoir. La valider quand même ?'
-      if (!window.confirm(`Validée ainsi, cette facture ne pourra pas partir par une plateforme agréée — ${points} ${premier}\n\n${suite}`)) return
+      if (!window.confirm(`${tete}Validée ainsi, cette facture ne pourra pas partir par une plateforme agréée — ${points} ${premier}\n\n${suite}`)) return
     } else if (statutCible === 'validee' && jugementSource.confirmation) {
-      if (!window.confirm(`${jugementSource.confirmation}${figer}\n\nLa valider ?`)) return
+      if (!window.confirm(`${tete}${jugementSource.confirmation}${figer}\n\nLa valider ?`)) return
     } else if (figer) {
-      if (!window.confirm(`${figer.slice(2)}\n\nLa valider ?`)) return
+      if (!window.confirm(`${tete}${figer.slice(2)}\n\nLa valider ?`)) return
+    } else if (tete) {
+      if (!window.confirm(`${tete}La valider ?`)) return
     }
     enregistrementEnCours.current = true
     setSaving(statutCible === 'validee' ? 'validation' : 'brouillon')
@@ -860,6 +908,15 @@ export default function FactureFormModal(props: Props) {
               la facture, donc ouvrir ce brouillon sans les avoir lues reviendrait à les effacer.
               Réessaie — la facture, elle, n'est pas touchée.
             </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
+            </div>
+          </>
+        ) : acompte.etat === 'retenu' ? (
+          // L'acompte du brouillon n'est pas lu (étape P5b5b) : on ne sait pas si ses lignes se retouchent, ni ce que sa
+          // validation refuserait — rien n'est offert.
+          <>
+            <p className="error-text">{pourLEspace(espace, acompte.avis)}</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
             </div>
@@ -1101,6 +1158,8 @@ export default function FactureFormModal(props: Props) {
                   <tbody>
                     {lignes.map((l, i) => {
                       const c = calculerLigne(parseFloat(l.quantite) || 0, parseFloat(l.prix_unitaire_ht) || 0, parseFloat(l.taux_tva) || 0)
+                      // Une ligne d'acompte, ou la reprise d'un acompte par une finale (étape P5b5b) : montrée, pas retouchée.
+                      const figee = lignesFigees || (acompte.etat === 'finale' && l.reprise_facture_id != null)
                       return (
                         <tr key={l.cle}>
                           {/* UN SEUL enfant : en fiche (téléphone), les enfants d'une cellule se rangent côte à côte de son libellé. Il prend la
@@ -1108,42 +1167,59 @@ export default function FactureFormModal(props: Props) {
                               aussi — à 62 % de SON parent —, remplit son enveloppe. */}
                           <td data-libelle="Désignation">
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 auto', minWidth: 0, maxWidth: '62%' }}>
-                              <input value={l.designation} onChange={(e) => majLigne(i, { designation: e.target.value })} style={{ minWidth: 160, maxWidth: 'none', width: '100%' }} />
-                              {articleDeLaLigne(l, i)}
+                              <input value={l.designation} disabled={figee} onChange={(e) => majLigne(i, { designation: e.target.value })} style={{ minWidth: 160, maxWidth: 'none', width: '100%' }} />
+                              {figee ? null : articleDeLaLigne(l, i)}
                             </div>
                           </td>
-                          <td data-libelle="Qté"><input type="number" step="0.01" value={l.quantite} onChange={(e) => majLigne(i, { quantite: e.target.value })} style={{ width: 65 }} /></td>
-                          <td data-libelle="PU HT"><input type="number" step="any" value={l.prix_unitaire_ht} onChange={(e) => majLigne(i, { prix_unitaire_ht: e.target.value })} style={{ width: 85 }} /></td>
-                          <td data-libelle="TVA %"><input type="number" step="0.1" value={l.taux_tva} onChange={(e) => majLigne(i, { taux_tva: e.target.value })} style={{ width: 65 }} /></td>
+                          <td data-libelle="Qté"><input type="number" step="0.01" value={l.quantite} disabled={figee} onChange={(e) => majLigne(i, { quantite: e.target.value })} style={{ width: 65 }} /></td>
+                          <td data-libelle="PU HT"><input type="number" step="any" value={l.prix_unitaire_ht} disabled={figee} onChange={(e) => majLigne(i, { prix_unitaire_ht: e.target.value })} style={{ width: 85 }} /></td>
+                          <td data-libelle="TVA %"><input type="number" step="0.1" value={l.taux_tva} disabled={figee} onChange={(e) => majLigne(i, { taux_tva: e.target.value })} style={{ width: 65 }} /></td>
                           <td data-libelle="Montant TTC">{formatMoney(c.montant_ttc)}</td>
                           {/* L'unité, la référence et la nature de la ligne (étape A7b), APRÈS les champs d'hier : ce qu'un article apporte,
                               modifiable ; une ligne saisie à la main les choisit. Un seul enfant, comme la désignation. */}
                           {MENTIONS_FIGEES_EXPORTEES && (
                             <td data-libelle="Unité, référence, nature">
                               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
-                                <select aria-label={`Unité, ligne ${i + 1}`} value={l.unite} onChange={(e) => majLigne(i, { unite: e.target.value as LigneEdit['unite'] })}>
+                                <select aria-label={`Unité, ligne ${i + 1}`} value={l.unite} disabled={figee} onChange={(e) => majLigne(i, { unite: e.target.value as LigneEdit['unite'] })}>
                                   <option value="">— unité —</option>
                                   {UNITES_ARTICLE.map((u) => <option key={u.code} value={u.code}>{u.libelle}</option>)}
                                 </select>
                                 <input
-                                  aria-label={`Référence, ligne ${i + 1}`} placeholder="Référence" value={l.reference}
+                                  aria-label={`Référence, ligne ${i + 1}`} placeholder="Référence" value={l.reference} disabled={figee}
                                   onChange={(e) => majLigne(i, { reference: e.target.value })} style={{ width: 120 }}
                                 />
-                                <select aria-label={`Nature, ligne ${i + 1}`} value={l.nature} onChange={(e) => majLigne(i, { nature: e.target.value as LigneEdit['nature'] })}>
+                                <select aria-label={`Nature, ligne ${i + 1}`} value={l.nature} disabled={figee} onChange={(e) => majLigne(i, { nature: e.target.value as LigneEdit['nature'] })}>
                                   <option value="">— nature —</option>
                                   {NATURES_ARTICLE.map((n) => <option key={n} value={n}>{n}</option>)}
                                 </select>
                               </div>
                             </td>
                           )}
-                          <td className="td-boutons"><button type="button" className="btn btn-outline btn-sm" onClick={() => retirerLigne(i)} disabled={lignes.length === 1}>✕</button></td>
+                          <td className="td-boutons">{figee ? null : <button type="button" className="btn btn-outline btn-sm" onClick={() => retirerLigne(i)} disabled={lignes.length === 1}>✕</button>}</td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
               </div>
-              <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={ajouterLigne}>+ Ligne</button>
+              {lignesFigees ? null : <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={ajouterLigne}>+ Ligne</button>}
+              {/* La facture d'acompte et la finale (étape P5b5b) : ce qui ne se retouche pas, dit, et la date du versement lue. */}
+              {acompte.etat === 'acompte' && (
+                <>
+                  <p className="note-info" role="note" style={{ marginTop: 8 }}>{pourLEspace(espace, LIGNES_D_ACOMPTE_FIGEES)}</p>
+                  <p className="muted" style={{ marginTop: 4 }}>
+                    {acompte.dateVersement
+                      ? `Facture d’acompte sur le devis ${acompte.devis.numero ?? ''} — acompte versé le ${formatDate(acompte.dateVersement)}.`
+                      : `Facture d’acompte sur le devis ${acompte.devis.numero ?? ''} — versé le jour de la facture (aucune date de versement à part).`}
+                  </p>
+                </>
+              )}
+              {acompte.etat === 'finale' && lignes.some((l) => l.reprise_facture_id != null) && (
+                <p className="note-info" role="note" style={{ marginTop: 8 }}>
+                  Facture finale du devis {acompte.devis.numero ?? ''} : les lignes « Reprise de l’acompte … » se posent par la base, au
+                  signe opposé de l’acompte ; elles ne se retouchent ni ne se retirent.
+                </p>
+              )}
               {lignesEcartees > 0 && (
                 <p className="muted" style={{ marginTop: 8 }}>
                   {lignesEcartees === 1
@@ -1260,6 +1336,7 @@ export default function FactureFormModal(props: Props) {
             )}
             {jugementMentions?.refusDeLaValidation && <p className="error-text" role="alert">{jugementMentions.refusDeLaValidation}</p>}
             {refusConformite && <p className="error-text" role="alert">{pourLEspace(espace, refusConformite)}</p>}
+            {refusDeLAcompte && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLAcompte)}</p>}
             {refusDuStatut && <p className="error-text" role="alert">{pourLEspace(espace, refusDuStatut.message)}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
             {avisDuStatut && <p className="note-info" role="note">{avisDuStatut}</p>}
@@ -1271,7 +1348,7 @@ export default function FactureFormModal(props: Props) {
               <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0 || refusFigeBrouillon != null}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null || refusDeLAcompte != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>

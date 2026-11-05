@@ -14,6 +14,8 @@ import {
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import { lireLesContacts } from '../../lib/contactsLecture'
+import { ACOMPTES_PREVUS } from '../../lib/devis'
+import { SANS_ACOMPTE, avisDeLAvoir, refusDeLAvoir as refusDeLAvoirAvecAcompte, type AcompteDeLaFacture } from '../../lib/acomptesDesFactures'
 
 // L'unité, la référence et la nature de la ligne créditée (étape A7b) : l'avoir les reprend de la ligne qu'il crédite, et les
 // imprime comme elle ; elles ne partent que derrière `MENTIONS_FIGEES_EXPORTEES`.
@@ -24,6 +26,8 @@ interface LigneAvoirEdit extends ProvenanceDeLigne {
   quantite: string
   prix_unitaire_ht: string
   taux_tva: string
+  // La reprise d'un acompte que porte la ligne de la facture finale (étape P5b5b) : l'avoir la défait, sans la retoucher.
+  reprise_facture_id?: string
 }
 
 interface Props {
@@ -38,6 +42,9 @@ interface Props {
   // La source des ventes du dossier et ses exercices validés (étape VF8c ; lib/sourceDeLaVente.ts) : un avoir prend la source
   // de la facture qu'il corrige, et un avoir source ne se valide pas au-delà de la frontière d'un exercice validé.
   reglageDesVentes: ReglageDesVentes
+  // Ce qu'est la facture corrigée (étape P5b5b ; lib/acomptesDesFactures.ts) : une facture d'acompte, une finale, ou ni l'une
+  // ni l'autre — le défaut, celui de l'onglet drapeau baissé.
+  acompte?: AcompteDeLaFacture
   onClose: () => void
   onCreated: () => void
 }
@@ -59,7 +66,7 @@ interface Props {
 // montants restent positifs à l'écran ("je crédite 120 €") mais sont stockés négatifs en base (voir
 // creerAvoir) : sommer tous les montant_ttc d'un dossier/année annule alors automatiquement l'effet de
 // l'avoir sur le total, sans cas particulier à coder ailleurs (FactureApercu, un futur export...).
-export default function FactureAvoirModal({ dossierId, espace, factureOrigine, credite, reglageDesVentes, onClose, onCreated }: Props) {
+export default function FactureAvoirModal({ dossierId, espace, factureOrigine, credite, reglageDesVentes, acompte = SANS_ACOMPTE, onClose, onCreated }: Props) {
   const [dateEmission, setDateEmission] = useState(aujourdHuiSql())
   const [motif, setMotif] = useState('')
   const [mentionsLegales, setMentionsLegales] = useState(factureOrigine.mentions_legales ?? '')
@@ -97,6 +104,8 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
         prix_unitaire_ht: String(x.prix_unitaire_ht),
         taux_tva: String(x.taux_tva),
         ...(MENTIONS_FIGEES_EXPORTEES ? provenanceDeLaLigneLue(x) : PROVENANCE_VIDE),
+        ...(ACOMPTES_PREVUS && typeof (x as { reprise_facture_id?: unknown }).reprise_facture_id === 'string'
+          ? { reprise_facture_id: (x as { reprise_facture_id?: unknown }).reprise_facture_id as string } : {}),
       })))
       setChargement(false)
     })
@@ -137,11 +146,16 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
     quantite: parseFloat(l.quantite) || 0,
     prix_unitaire_ht: parseFloat(l.prix_unitaire_ht) || 0,
     taux_tva: parseFloat(l.taux_tva) || 0,
+    ...(acompte.etat === 'finale' && l.reprise_facture_id ? { reprise_facture_id: l.reprise_facture_id } : {}),
   }))
   // Une ligne sans désignation ou sans quantité ne part pas — mettre sa quantité à zéro est la façon d'écarter une
   // ligne d'un avoir partiel. Les TOTAUX sont donc ceux des lignes qui partent, et d'aucun autre jeu : la base stocke
   // l'en-tête tel qu'il est envoyé, et un total qui compterait une ligne écartée contredirait les lignes de l'avoir.
-  const { valides: lignesValides, ecartees: lignesEcartees } = lignesSaisies(lignesNumeriques)
+  // Une ligne qui défait une reprise de la finale (étape P5b5b) part toujours, à sa quantité créditée −1.
+  const estReprise = (l: { reprise_facture_id?: string }) => l.reprise_facture_id != null
+  const saisies = lignesSaisies(lignesNumeriques.filter((l) => !estReprise(l)))
+  const lignesValides = lignesNumeriques.filter((l) => estReprise(l) || saisies.valides.includes(l))
+  const lignesEcartees = saisies.ecartees
   const totaux = calculerTotaux(lignesValides)
   // L'AVOIR D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF8c ; lib/sourceDeLaVente.ts) : un avoir est source quand la facture
   // qu'il corrige l'est ; il porte sa nature, et seule la frontière d'un exercice validé peut alors le refuser (au cabinet ; le
@@ -160,6 +174,10 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
       const { unite, reference, nature } = provenanceQuiPart(l, null)
       return { ...n, unite, reference, nature }
     })
+  // L'avoir d'un acompte ou d'une finale (étape P5b5b) : ses refus, ceux d'`enregistrer_facture` remplacée, et ce qu'il défait.
+  const avisAcompte = avisDeLAvoir(acompte, lignesQuiPartent)
+  // Celui d'un acompte le crédite en entier : ses lignes ne se retouchent ni ne se retirent.
+  const lignesFigees = acompte.etat === 'acompte'
   const avoirEnvoye = { dateEmission, motif, mentionsLegales, lignes: lignesQuiPartent }
   // Ce que la validation figée dit de l'avoir (lib/mentionsFigeesVue.ts) : les textes de ses lignes et sa mention légale, puis
   // ce que sa validation figerait — de sa facture quand elle les a figés, du jour sinon. Rien drapeau baissé.
@@ -177,7 +195,9 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
   // Ce que la base refuserait, dit avant le clic, dans son ordre : l'avoir (lib/factures.ts:refusAvoir), puis un IBAN dans un
   // texte et la validation figée (étape A7b), puis la source — la base juge l'avoir, puis fixe sa source. Ce qui RETIENT la
   // validation (une lecture qui n'est pas revenue entière) se dit à part, sans être un refus.
-  const refusDeLAvoir = refusAvoir(factureOrigine, dateEmission, lignesValides, credite)
+  const refusDeLAvoir = acompte.etat === 'acompte' || acompte.etat === 'finale'
+    ? refusDeLAvoirAvecAcompte(factureOrigine, acompte, dateEmission, lignesQuiPartent, credite)
+    : refusAvoir(factureOrigine, dateEmission, lignesValides, credite)
   const retenue = refusDeLAvoir == null && jugementMentions?.refusDeLEnregistrement == null ? jugementMentions?.retenue ?? null : null
   const refus = refusDeLAvoir ?? jugementMentions?.refusDeLEnregistrement
     ?? (retenue != null ? null : jugementMentions?.refusDeLaValidation ?? jugementSource.refus)
@@ -259,6 +279,14 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
               <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
             </div>
           </>
+        ) : acompte.etat === 'retenu' ? (
+          // L'acompte de la facture n'est pas lu (étape P5b5b) : on ne sait pas ce que la base refuserait de l'avoir.
+          <>
+            <p className="error-text">{pourLEspace(espace, acompte.avis)}</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
+            </div>
+          </>
         ) : (
           <>
             <div className="field">
@@ -279,14 +307,16 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
                   <tbody>
                     {lignes.map((l, i) => {
                       const c = calculerLigne(parseFloat(l.quantite) || 0, parseFloat(l.prix_unitaire_ht) || 0, parseFloat(l.taux_tva) || 0)
+                      // Une ligne d'acompte, ou la reprise d'un acompte que l'avoir d'une finale défait (étape P5b5b) : pas retouchée.
+                      const figee = lignesFigees || (acompte.etat === 'finale' && l.reprise_facture_id != null)
                       return (
                         <tr key={i}>
-                          <td data-libelle="Désignation"><input value={l.designation} onChange={(e) => majLigne(i, { designation: e.target.value })} style={{ minWidth: 160 }} /></td>
-                          <td data-libelle="Qté"><input type="number" step="0.01" min="0" value={l.quantite} onChange={(e) => majLigne(i, { quantite: e.target.value })} style={{ width: 65 }} /></td>
-                          <td data-libelle="PU HT"><input type="number" step="0.01" value={l.prix_unitaire_ht} onChange={(e) => majLigne(i, { prix_unitaire_ht: e.target.value })} style={{ width: 85 }} /></td>
-                          <td data-libelle="TVA %"><input type="number" step="0.1" value={l.taux_tva} onChange={(e) => majLigne(i, { taux_tva: e.target.value })} style={{ width: 65 }} /></td>
+                          <td data-libelle="Désignation"><input value={l.designation} disabled={figee} onChange={(e) => majLigne(i, { designation: e.target.value })} style={{ minWidth: 160 }} /></td>
+                          <td data-libelle="Qté"><input type="number" step="0.01" min="0" value={l.quantite} disabled={figee} onChange={(e) => majLigne(i, { quantite: e.target.value })} style={{ width: 65 }} /></td>
+                          <td data-libelle="PU HT"><input type="number" step="0.01" value={l.prix_unitaire_ht} disabled={figee} onChange={(e) => majLigne(i, { prix_unitaire_ht: e.target.value })} style={{ width: 85 }} /></td>
+                          <td data-libelle="TVA %"><input type="number" step="0.1" value={l.taux_tva} disabled={figee} onChange={(e) => majLigne(i, { taux_tva: e.target.value })} style={{ width: 65 }} /></td>
                           <td data-libelle="Montant TTC">{formatMoney(c.montant_ttc)}</td>
-                          <td className="td-boutons"><button type="button" className="btn btn-outline btn-sm" onClick={() => retirerLigne(i)}>✕</button></td>
+                          <td className="td-boutons">{lignesFigees ? null : <button type="button" className="btn btn-outline btn-sm" onClick={() => retirerLigne(i)}>✕</button>}</td>
                         </tr>
                       )
                     })}
@@ -322,6 +352,7 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
               <textarea id="avoir-mentions" rows={2} value={mentionsLegales} onChange={(e) => setMentionsLegales(e.target.value)} />
             </div>
 
+            {avisAcompte && <p className="note-info" role="note">{pourLEspace(espace, avisAcompte)}</p>}
             {jugementSource.avis && <p className="note-info" role="note">{jugementSource.avis}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
             {retenue && !error && <p className="muted" role="status">{retenue}</p>}

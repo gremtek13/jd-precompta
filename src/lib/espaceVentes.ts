@@ -82,6 +82,8 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
   // clic, et la base les lui rend. Ils vouvoient.
   { de: 'validez-le ou supprimez-le', vers: 'valide-le ou supprime-le' },
   { de: 'Demandez un peu moins, ou tirez la facture finale.', vers: 'Demande un peu moins, ou tire la facture finale.' },
+  // L'acompte d'un devis dans l'onglet des factures (étape P5b5b) : le refus de la base sur ses lignes, dit avant le clic.
+  { de: 'Supprimez le brouillon pour en tirer un autre.', vers: 'Supprime le brouillon pour en tirer un autre.' },
   // lib/encaissementsFactures.ts, `obligationEncaissee`.
   {
     de: 'le statut de TVA du dossier, dont l’obligation dépend, n’est pas encore choisi (onglet TVA du dossier).',
