@@ -17,5 +17,5 @@ export const QUI_PEUT_QUOI_ATTENDU = {
   },
   'superpdp-credentials': { status: 'ventes', save: 'ventes', remove: 'ventes' },
   'superpdp-emit': { envoyer: 'ventes', actualiser: 'ventes' },
-  'send-email': { facture: 'ventes', relance_pieces: 'cabinet' },
+  'send-email': { facture: 'ventes', devis: 'ventes', relance_pieces: 'cabinet' },
 } as const satisfies Record<string, Record<string, DroitExigeAttendu>>

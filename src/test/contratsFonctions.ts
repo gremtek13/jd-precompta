@@ -4684,11 +4684,76 @@ function dejaEnvoyes(nombre: number, envoyes: string, maintenant: string, dossie
 const factureAEnvoyer = (m: Monde) => { resendQuiEnvoie(m); factureValidee(m) }
 const ENVOI_JOURNALISE = ['Resend envoyer', 'écriture insert emails_envoyes', 'écriture update factures_emises']
 
+// L'ENVOI D'UN DEVIS (étape P6c2). `send-email` ne se déploie qu'APRÈS la migration préparée `envoi_des_devis` : chaque
+// monde des devis lève `schemaPrepare`, la base du jour de son application (la table `devis`, `emails_envoyes.devis_id`
+// et sa clé, tirés du texte préparé). Le devis porte ce que l'e-mail ne doit jamais montrer — ses notes, l'adresse du
+// client, la réponse enregistrée —, sous des valeurs qu'on cherche ensuite dans le corps envoyé.
+const DEVIS = 'de000000-0000-4000-8000-00000000000d'
+const NOTES_DU_DEVIS = 'Note-partagee-du-devis-qui-ne-s-imprime-pas'
+const ADRESSE_DU_CLIENT_DU_DEVIS = 'adresse-du-client-du-devis@exemple.invalid'
+const REPONSE_DU_DEVIS = 'Reponse-enregistree-du-devis'
+const ENVOI_DEVIS = { ...RELANCE, type: 'devis', devisId: DEVIS }
+const ENVOI_DEVIS_JOURNALISE = ['Resend envoyer', 'écriture insert emails_envoyes']
+
+function devisEnBase(m: Monde, valeurs: Record<string, unknown> = {}) {
+  m.schemaPrepare = true
+  m.base.devis = [{
+    id: DEVIS, dossier_id: D, numero: 'D-2026-1', statut: 'emis', date_emission: '2026-11-02', date_validite: '2026-12-02',
+    objet: 'Pose <fictive> & réglage', tiers_nom: 'Client fictif', tiers_email: ADRESSE_DU_CLIENT_DU_DEVIS,
+    lignes: [{ designation: 'Prestation fictive', quantite: 0.5, prix_unitaire_ht: 32.05, taux_tva: 20 }],
+    montant_ht: 16.03, montant_tva: 3.21, montant_ttc: 19.24, conditions: 'Acompte de 30 % à la commande.',
+    mentions_legales: 'Mentions légales fictives.', notes: NOTES_DU_DEVIS, emetteur_nom: 'Cabinet fictif',
+    reponse: REPONSE_DU_DEVIS, ...valeurs,
+  }]
+}
+
+/** Resend qui envoie, et garde ce qu'on lui a donné à envoyer (`notes.envois`). */
+const resendQuiGarde = (m: Monde) => {
+  m.resend.envoyer = (message) => {
+    ;(m.notes.envois ??= []).push(message)
+    return { data: { id: 'courriel-envoye' }, error: null }
+  }
+}
+const devisAEnvoyer = (m: Monde) => { resendQuiGarde(m); devisEnBase(m) }
+
+/** Le journal d'un envoi de devis : une ligne « devis » qui nomme son devis, jamais une facture ; le devis intact. */
+function devisJournalise(_r: Resultat, m: Monde): string[] {
+  const fautes: string[] = []
+  const journal = lignes(m, 'emails_envoyes').filter((e) => e.type === 'devis')
+  if (journal.length !== 1) return [`${journal.length} ligne(s) « devis » au journal`]
+  if (journal[0].devis_id !== DEVIS) fautes.push(`le journal nomme le devis ${String(journal[0].devis_id)}`)
+  if (journal[0].facture_id != null) fautes.push('le journal d’un devis nomme une facture')
+  if (journal[0].objet !== 'Devis D-2026-1 — Cabinet fictif') fautes.push(`objet journalisé : ${String(journal[0].objet)}`)
+  if (m.journal.some((e) => e.genre === 'ecriture' && e.table === 'devis')) fautes.push('le devis a été écrit')
+  return fautes
+}
+
+/** Le corps envoyé : ce que le devis imprime, échappé, et rien de ce qu'il ne montre pas. */
+function corpsDuDevisEnvoye(_r: Resultat, m: Monde): string[] {
+  const envois = (m.notes.envois ?? []) as { subject?: unknown; html?: unknown; to?: unknown }[]
+  if (envois.length !== 1) return [`${envois.length} envoi(s)`]
+  const { subject, html, to } = envois[0]
+  const corps = String(html)
+  const fautes: string[] = []
+  if (subject !== 'Devis D-2026-1 — Cabinet fictif') fautes.push(`objet : ${String(subject)}`)
+  if (to !== RELANCE.destinataire) fautes.push(`destinataire : ${String(to)}`)
+  // Le HT de la ligne par le bloc des montants : 0,5 × 32,05 = 16,025 €, le demi éloigné de zéro.
+  for (const attendu of ['D-2026-1', 'émis le 02/11/2026', 'valable jusqu\'au 02/12/2026', 'Pose &lt;fictive&gt; &amp; réglage',
+    'Prestation fictive', '16,03 €', '19,24 €', 'Acompte de 30 % à la commande.', 'Mentions légales fictives.', 'Cabinet fictif']) {
+    if (!corps.includes(attendu)) fautes.push(`le corps ne dit pas « ${attendu} »`)
+  }
+  for (const interdit of [NOTES_DU_DEVIS, ADRESSE_DU_CLIENT_DU_DEVIS, REPONSE_DU_DEVIS, '<fictive>']) {
+    if (corps.includes(interdit)) fautes.push(`le corps porte « ${interdit} »`)
+  }
+  return fautes
+}
+
 const SEND_EMAIL: ContratFonction = {
   slug: 'send-email',
   navigateur: true,
   porte: 'une session, puis `droits_sur_le_dossier` avec le jeton de l’appelant et la table « qui peut quoi » (la facture : ' +
-    'le cabinet et le client « Ventes », plafonné à trente par dossier et par jour de Paris ; la relance : le cabinet), ' +
+    'le cabinet et le client « Ventes », plafonné à trente par dossier et par jour de Paris ; le devis émis, de même ; ' +
+    'la relance : le cabinet), ' +
     'avant tout envoi par Resend',
   scenarios: [
     preflight(),
@@ -4725,8 +4790,88 @@ const SEND_EMAIL: ContratFonction = {
     },
     ...matriceDesDroits(QUI_PEUT_QUOI_ATTENDU['send-email'], {
       facture: { corps: ENVOI_FACTURE, preparer: factureAEnvoyer, admis: { statut: 200, depenses: ENVOI_JOURNALISE } },
+      devis: { corps: ENVOI_DEVIS, preparer: devisAEnvoyer, admis: { statut: 200, depenses: ENVOI_DEVIS_JOURNALISE, verifier: devisJournalise } },
       relance_pieces: { corps: RELANCE, preparer: resendQuiEnvoie, admis: { statut: 200, depenses: ['Resend envoyer', 'écriture insert emails_envoyes'] } },
     }),
+    // L'ENVOI D'UN DEVIS (étape P6c2) : un devis émis du dossier de la requête, et lui seul ; ce que son corps montre.
+    {
+      nom: 'devis — le cabinet envoie un devis émis : ni ses notes, ni l’adresse du client, ni la réponse dans le corps',
+      preparer: devisAEnvoyer,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_DEVIS }),
+      attendu: { statut: 200, depenses: ENVOI_DEVIS_JOURNALISE, verifier: (r, m) => [...devisJournalise(r, m), ...corpsDuDevisEnvoye(r, m)] },
+    },
+    {
+      nom: 'devis — client « Ventes » : le 30e e-mail du jour part, journalisé à son nom avec son devis',
+      preparer: (m) => { devisAEnvoyer(m); accesDuClient({ ventes: true })(m); dejaEnvoyes(29, '2026-10-10T07:00:00.000Z', '2026-10-10T10:00:00.000Z')(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_DEVIS }),
+      attendu: {
+        statut: 200, depenses: ENVOI_DEVIS_JOURNALISE,
+        verifier: (r, m) => [
+          ...devisJournalise(r, m), ...corpsDuDevisEnvoye(r, m),
+          ...(lignes(m, 'emails_envoyes').filter((e) => e.envoye_par === PERSONNES.client.id && e.type === 'devis').length === 1 ? [] : ['envoi non journalisé au nom du client']),
+          ...(m.journal.some((e) => e.genre === 'lecture' && e.table === 'emails_envoyes') ? [] : ['le plafond du client n’a pas été compté']),
+        ],
+      },
+    },
+    {
+      nom: 'devis — client « Ventes » : trente envois de devis déjà partis, le 31e est refusé (429), rien d’envoyé',
+      preparer: (m) => {
+        devisAEnvoyer(m); accesDuClient({ ventes: true })(m); dejaEnvoyes(30, '2026-10-10T07:00:00.000Z', '2026-10-10T10:00:00.000Z')(m)
+        for (const e of lignes(m, 'emails_envoyes')) Object.assign(e, { type: 'devis', devis_id: DEVIS })
+      },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_DEVIS }),
+      attendu: { statut: 429, refusEnFrancais: true, aucuneDepense: true },
+    },
+    {
+      nom: 'devis — un brouillon ne part pas : 400, rien d’envoyé ni d’écrit',
+      preparer: (m) => { resendQuiGarde(m); devisEnBase(m, { statut: 'brouillon', numero: null, emetteur_nom: null }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_DEVIS }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    },
+    {
+      nom: 'devis — celui d’un autre dossier n’existe pas pour cet appel : 404, le mot d’un devis inconnu, rien d’envoyé',
+      preparer: (m) => { resendQuiGarde(m); devisEnBase(m, { dossier_id: ID.dossierVoisin }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_DEVIS }),
+      attendu: {
+        statut: 404, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (r) => (corpsDe(r).error === 'Devis introuvable.' ? [] : [r.texte]),
+      },
+    },
+    {
+      nom: 'devis — un devis inconnu : 404, rien d’envoyé',
+      preparer: (m) => { resendQuiGarde(m); m.schemaPrepare = true; m.base.devis = [] },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_DEVIS }),
+      attendu: {
+        statut: 404, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (r) => (corpsDe(r).error === 'Devis introuvable.' ? [] : [r.texte]),
+      },
+    },
+    {
+      nom: 'devis — sa lecture en panne : 503 qui le dit, rien d’envoyé',
+      preparer: (m) => { devisAEnvoyer(m); m.pannes.push({ table: 'devis', operation: 'select', erreur: { message: 'délai dépassé' } }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_DEVIS }),
+      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true },
+    },
+    {
+      nom: 'devis — des lignes qui n’ont pas leur forme : refus, rien d’envoyé',
+      preparer: (m) => { resendQuiGarde(m); devisEnBase(m, { lignes: [{ designation: 'Prestation fictive', quantite: '1', prix_unitaire_ht: 10, taux_tva: 20 }] }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_DEVIS }),
+      attendu: { statut: 500, refusEnFrancais: true, aucuneDepense: true },
+    },
+    ...([
+      ['absent', { ...RELANCE, type: 'devis' }],
+      ['vide', { ...ENVOI_DEVIS, devisId: '  ' }],
+      ['qui n’est pas un UUID', { ...ENVOI_DEVIS, devisId: 'pas-un-uuid' }],
+      ['reçu en nombre', { ...ENVOI_DEVIS, devisId: 42 }],
+    ] as const).map(([forme, corps]): Scenario => ({
+      nom: `devis — devisId ${forme} : 400, rien de lu ni d’envoyé`,
+      preparer: devisAEnvoyer,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+      attendu: {
+        statut: 400, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (_r, m) => [...jamais(m, 'lecture', 'une lecture'), ...jamais(m, 'rpc', 'un appel à la base')],
+      },
+    })),
     droitsEnPanne(RELANCE, resendQuiEnvoie),
     // LE PLAFOND D'UN ACCÈS CLIENT : le 30e e-mail du jour part, le 31e est refusé AVANT Resend ; le cabinet n'est pas
     // plafonné ; le jour est celui de PARIS, pas d'UTC ; les e-mails d'un autre dossier ne comptent pas.
@@ -4792,7 +4937,7 @@ const SEND_EMAIL: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...RELANCE, message: 42 } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
-    ...corpsMalFormes('chef', ['dossierId', 'type', 'destinataire']),
+    ...corpsMalFormes('chef', ['dossierId', 'type', 'destinataire', 'devisId']),
   ],
 }
 

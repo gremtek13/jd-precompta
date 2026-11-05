@@ -24,7 +24,7 @@ import { CHANGEMENT_DE_RIB_EXPORTE, DUREE_DE_L_AVIS_EN_JOURS } from './changemen
 import { CONTACTS_EXPORTES } from './contacts'
 import { IMPORT_CONTACTS_EXPORTE, LIGNES_PAR_IMPORT_MAX } from './contactsImport'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
-import { DEVIS_EXPORTES } from './devis'
+import { DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { motsDuCabinet } from './espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
@@ -395,6 +395,12 @@ const GESTES_DES_FONCTIONS: Record<string, readonly (readonly [FonctionDeLaVente
   'relever les statuts de sa plateforme': [['plateforme-agreee', 'relever']],
   'envoyer une facture par e-mail, trente par dossier et par jour au plus': [['send-email', 'facture']],
 }
+// LES ACTIONS QUE LA TABLE OUVRE À « VENTES » ET QUE LA PHRASE NE NOMME PAS ENCORE, chacune avec sa raison — une liste au
+// nombre près. L'envoi d'un devis par e-mail (`send-email › devis`, étape P6c2) : la fonction le sait, mais elle ne se
+// déploie qu'après la migration préparée `envoi_des_devis` (le journal refuse jusque-là une ligne « devis ») ; la phrase
+// ne dit pas ce que le client ne peut pas encore faire. Le jour où l'export porte la migration (`ENVOI_DES_DEVIS_PREVU`
+// levé), la liste se vide, et la confrontation ci-dessous exige que la phrase nomme l'envoi d'un devis.
+const PAS_ENCORE_NOMMEES: readonly (readonly [FonctionDeLaVente, string])[] = ENVOI_DES_DEVIS_PREVU ? [] : [['send-email', 'devis']]
 
 describe('ce que disent les cases, dans les quatre états des deux étapes', () => {
   const PREFIXE = '« Ventes » (devis, factures, facture électronique) et « Banque » (comptes, mouvements, connexion bancaire) : '
@@ -908,9 +914,17 @@ describe('ce que « Ventes » ouvre dans les fonctions de la vente (P3), confron
   })
 
   it('chaque action que la table ouvre à « Ventes », la phrase la nomme, et aucune du cabinet seul', () => {
+    const enAttente = (f: string, a: string) => PAS_ENCORE_NOMMEES.some(([fe, ae]) => fe === f && ae === a)
+    expect(PAS_ENCORE_NOMMEES.length, 'les actions de la vente que la phrase ne nomme pas encore').toBe(ENVOI_DES_DEVIS_PREVU ? 0 : 1)
     for (const [fonction, table] of Object.entries(QUI_PEUT_QUOI_ATTENDU)) {
       for (const [action, droit] of Object.entries(table)) {
         const nommee = nommees.some(([f, a]) => f === fonction && a === action)
+        if (enAttente(fonction, action)) {
+          // Ouverte à « Ventes » par la table, et pas encore dite : jamais les deux à la fois en défaut.
+          expect(droit, `${fonction} › ${action}`).toBe('ventes')
+          expect(nommee, `${fonction} › ${action} : nommée alors qu'elle attend sa migration`).toBe(false)
+          continue
+        }
         expect(nommee, `${fonction} › ${action}`).toBe(droit === 'ventes')
       }
     }

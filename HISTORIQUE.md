@@ -47845,3 +47845,21 @@ la signature, après la migration puis son retour, égale à celle d'avant ; le 
 la relation derrière `ENVOI_DES_DEVIS_PREVU` (devis.ts, baissé) ; les devis passent AVANT le journal des e-mails dans
 l'ordre prévu (l'ordre du jour inchangé) — `restauration.sql`, d'avant, s'arrêtait sur la clé (23503), ancré ainsi il
 restaure à l'identique.
+
+### 05/11/2026 — LES DEVIS : `SEND-EMAIL` ENVOIE UN DEVIS ÉMIS (P6C2), À DÉPLOYER APRÈS SA MIGRATION
+
+`send-email` apprend un troisième modèle, « devis » (code et tests ; RIEN déployé) : `devisId` exigé, de la forme d'un UUID,
+jugé avec le reste du corps (400 avant les droits) ; `QUI_PEUT_QUOI` : devis → « ventes », comme la facture. Le devis se lit
+APRÈS les droits, sous la clé de service, par son `id` ET le dossier de la requête — celui d'un autre dossier rend le 404
+d'un devis inconnu ; une lecture en erreur, 503 (pas « introuvable ») ; un brouillon, 400 (comme une facture non validée) ;
+un émis sans numéro, sans émetteur ou aux lignes d'une autre forme, 500 et rien ne part. La lecture ne nomme que ce que
+l'e-mail montre : ni `notes`, ni `tiers_email`, ni `reponse`. Le corps suit le patron de la facture (HT par
+`calculerLigne`), dit la validité, échappe tout texte ; l'objet « Devis <numéro> — <émetteur> », l'émetteur figé. Le
+plafond du client compte tout le journal du jour, devis compris. La ligne de journal porte `devis_id` (jamais
+`facture_id`) — et elle seule : facture et relance ne nomment pas la colonne, et s'écriraient même avant la migration.
+Rien n'est écrit sur le devis (figé par `garder_devis`). Le faux PostgREST reçoit `Monde.schemaPrepare` : la base du jour
+où les migrations préparées sont appliquées (l'export suivi de `supabase/preparees/`), levé par les seuls mondes des
+devis. Vingt scénarios HTTP neufs (la matrice des droits comprise : un client sans « Ventes » refusé avant toute
+lecture), sept mutations de la fonction, toutes tuées. `droitsAcces.test.ts` : l'envoi d'un devis, ouvert à « Ventes »
+par la table, n'est pas encore dit par la phrase (`PAS_ENCORE_NOMMEES`, une entrée, vidée quand `ENVOI_DES_DEVIS_PREVU`
+se lève). Le déploiement attend la migration `envoi_des_devis`, sur l'accord du cabinet.

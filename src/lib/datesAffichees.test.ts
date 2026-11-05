@@ -39,8 +39,8 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
   'supabase/functions/send-email/index.ts': {
     nombre: 1,
     raison:
-      'Repli de `formaterDate` pour une valeur qui ne serait PAS de la forme AAAA-MM-JJ. Les deux '
-      + 'colonnes qu\'elle reçoit (`date_emission`, `date_echeance`) sont des `date` et passent donc '
+      'Repli de `formaterDate` pour une valeur qui ne serait PAS de la forme AAAA-MM-JJ. Les '
+      + 'colonnes qu\'elle reçoit (`date_emission`, `date_echeance`, `date_validite` d\'un devis) sont des `date` et passent donc '
       + "par la lecture de libellé ; le repli existe pour ne pas rendre du vide sur l'inattendu.",
   },
 }

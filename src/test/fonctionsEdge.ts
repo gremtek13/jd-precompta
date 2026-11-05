@@ -5,7 +5,7 @@ import { AuthApiError, AuthWeakPasswordError } from '@supabase/supabase-js'
 import ts from 'typescript'
 import { predicatEq, predicatIn, predicatIs, predicatNot, predicatOr, type Ligne, type Predicat } from './filtresPostgrest'
 import { REGLE_D_UN_PROJET_NEUF, jugementDuService, type RegleDuService } from './regleDuService'
-import { clesPrimairesDuSchema, fichiersDuSchema, relationsDuSchema, type RelationDuSchema } from './schema'
+import { clesPrimairesDuSchema, fichiersDuSchema, fichiersPrepares, relationsDuSchema, type RelationDuSchema } from './schema'
 
 // LES EDGE FUNCTIONS APPELÉES EN HTTP, DANS LA SUITE — DEPUIS LEUR VRAIE SOURCE, SANS RÉSEAU, SANS SECRET, SANS APPEL
 // FACTURÉ (ligne 23 de la feuille de route).
@@ -214,6 +214,13 @@ export interface Monde {
    * pose, et le faux tient la porte de la fonction, sa période et son ordre.
    */
   sourcesEnDefaut: Ligne[]
+  /**
+   * La base du jour où les migrations PRÉPARÉES (`supabase/preparees/`) seront appliquées : l'export, puis elles, dans
+   * l'ordre de leurs noms. Faux par défaut — le schéma est l'export, rien d'autre. Un scénario qui éprouve une fonction
+   * qui ne se déploiera qu'APRÈS une migration préparée le lève (send-email et l'envoi d'un devis, étape P6c2) ; ses
+   * tables et ses clés étrangères sont alors celles du texte préparé, pas une supposition.
+   */
+  schemaPrepare: boolean
 }
 
 export function nouveauMonde(): Monde {
@@ -241,6 +248,7 @@ export function nouveauMonde(): Monde {
     sensibles: [],
     notes: {},
     sourcesEnDefaut: [],
+    schemaPrepare: false,
   }
 }
 
@@ -277,12 +285,13 @@ interface Schema {
   relations: RelationDuSchema[]
 }
 let schemaLu: Schema | null = null
-function schema(): Schema {
-  if (!schemaLu) {
-    const fichiers = fichiersDuSchema()
-    schemaLu = { cles: clesPrimairesDuSchema(fichiers), relations: relationsDuSchema(fichiers) }
-  }
-  return schemaLu
+let schemaPrepareLu: Schema | null = null
+/** Le schéma que voit la base du monde : l'export, ou l'export suivi des migrations préparées (`Monde.schemaPrepare`). */
+function schema(monde: Pick<Monde, 'schemaPrepare'>): Schema {
+  const lire = (fichiers: { chemin: string; texte: string }[]): Schema =>
+    ({ cles: clesPrimairesDuSchema(fichiers), relations: relationsDuSchema(fichiers) })
+  if (monde.schemaPrepare) return (schemaPrepareLu ??= lire([...fichiersDuSchema(), ...fichiersPrepares()]))
+  return (schemaLu ??= lire(fichiersDuSchema()))
 }
 
 // ── LA BASE : UN PostgREST QUI APPLIQUE CE QU'ON LUI DEMANDE ─────────────────────────────────────────────────────────
@@ -448,7 +457,7 @@ function entreesDeSelection(texte: string): string[] {
   return out
 }
 
-function analyserSelection(table: string, texte: string, profondeur = 0): Selection {
+function analyserSelection(s: Schema, table: string, texte: string, profondeur = 0): Selection {
   const colonnes: string[] = []
   const jointures: Jointure[] = []
   let tout = false
@@ -460,8 +469,8 @@ function analyserSelection(table: string, texte: string, profondeur = 0): Select
       // Une ressource embarquée se rattache par LA clé étrangère entre les deux tables — lue dans le schéma, jamais
       // supposée —, dans un sens ou dans l'autre ; deux clés rendraient l'embarquement ambigu, ce que PostgREST refuse
       // (PGRST201) : pas modélisé.
-      const versLeParent = schema().relations.filter((r) => r.enfant === table && r.parent === jointure[1])
-      const versLesEnfants = schema().relations.filter((r) => r.enfant === jointure[1] && r.parent === table)
+      const versLeParent = s.relations.filter((r) => r.enfant === table && r.parent === jointure[1])
+      const versLesEnfants = s.relations.filter((r) => r.enfant === jointure[1] && r.parent === table)
       if (versLeParent.length + versLesEnfants.length === 0) {
         throw new Error(`Faux PostgREST : aucune clé entre « ${table} » et « ${jointure[1]} » dans le schéma exporté`)
       }
@@ -471,7 +480,7 @@ function analyserSelection(table: string, texte: string, profondeur = 0): Select
       if (jointure[2] === '!inner' && profondeur > 0) throw new Error(`Faux PostgREST : « ${entree} », une jointure interne imbriquée, n'est pas modélisée`)
       const [cle, sens] = versLeParent.length === 1 ? [versLeParent[0], 'parent' as const] : [versLesEnfants[0], 'enfants' as const]
       jointures.push({
-        relation: jointure[1], selection: analyserSelection(jointure[1], jointure[3], profondeur + 1), sens, colonne: cle.colonne,
+        relation: jointure[1], selection: analyserSelection(s, jointure[1], jointure[3], profondeur + 1), sens, colonne: cle.colonne,
         interne: jointure[2] === '!inner',
       })
       continue
@@ -669,7 +678,7 @@ class RequeteFactice {
 
   private lignes(): Ligne[] {
     const { monde } = this.contexte
-    if (!schema().cles.has(this.table)) {
+    if (!schema(monde).cles.has(this.table)) {
       throw new ErreurPostgrest({ code: 'PGRST205', message: `Could not find the table 'public.${this.table}' in the schema cache`, status: 404 })
     }
     return (monde.base[this.table] ??= [])
@@ -699,7 +708,7 @@ class RequeteFactice {
 
   private lire(role: Role, utilisateur: string | null): ReponseBase {
     const { monde } = this.contexte
-    const selection = analyserSelection(this.table, this.colonnes)
+    const selection = analyserSelection(schema(monde), this.table, this.colonnes)
     let lignes = this.lignes().map((l) => this.embarquer({ ...l }, selection))
     if (role !== 'service') {
       const politique = POLITIQUES_LECTURE[this.table]
@@ -743,7 +752,7 @@ class RequeteFactice {
   }
 
   private cle(): string[] {
-    return schema().cles.get(this.table) ?? []
+    return schema(this.contexte.monde).cles.get(this.table) ?? []
   }
 
   private memeCle(a: Ligne, b: Ligne, colonnes: string[]): boolean {
@@ -768,12 +777,12 @@ class RequeteFactice {
   /** Les clés étrangères de la ligne : chaque valeur non nulle doit désigner une ligne qui existe. */
   private referencesManquantes(ligne: Ligne): ErreurFactice | null {
     const { monde } = this.contexte
-    for (const r of schema().relations.filter((rel) => rel.enfant === this.table)) {
+    for (const r of schema(monde).relations.filter((rel) => rel.enfant === this.table)) {
       const valeur = ligne[r.colonne]
       if (valeur == null) continue
       const existe = r.parent === 'auth.users'
         ? monde.comptes.some((c) => c.id === valeur)
-        : r.parent.includes('.') || (monde.base[r.parent] ?? []).some((p) => p[(schema().cles.get(r.parent) ?? ['id'])[0]] === valeur)
+        : r.parent.includes('.') || (monde.base[r.parent] ?? []).some((p) => p[(schema(monde).cles.get(r.parent) ?? ['id'])[0]] === valeur)
       if (!existe) {
         return {
           code: '23503',
@@ -826,7 +835,7 @@ class RequeteFactice {
       touchees = cibles
     }
     if (this.retour === null) return { data: null, error: null, count: null, status: this.operation === 'insert' ? 201 : 204, statusText: 'OK' }
-    const selection = analyserSelection(this.table, this.retour)
+    const selection = analyserSelection(schema(this.contexte.monde), this.table, this.retour)
     return this.rendre(touchees.map((l) => projeter(l, selection)), null, 200)
   }
 }
@@ -950,8 +959,8 @@ function supprimer(monde: Monde, table: string, cibles: Ligne[]): ErreurFactice 
     aSupprimer.set(t, deja)
     const nouvelles = lignes.filter((l) => !deja.has(l))
     for (const l of nouvelles) deja.add(l)
-    const pk = (schema().cles.get(t) ?? ['id'])[0]
-    for (const r of schema().relations.filter((rel) => rel.parent === t)) {
+    const pk = (schema(monde).cles.get(t) ?? ['id'])[0]
+    for (const r of schema(monde).relations.filter((rel) => rel.parent === t)) {
       const enfants = (monde.base[r.enfant] ?? []).filter((e) => nouvelles.some((l) => e[r.colonne] != null && e[r.colonne] === l[pk]))
       if (enfants.length === 0) continue
       if (r.aLaSuppression === 'bloque') {
