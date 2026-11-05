@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   acceptationHorsValidite,
   avisDeLApercuDuDevis,
+  avisDeLEnvoiDuDevis,
+  confirmationDeLEnvoiDuDevis,
+  EMAIL_REGEX_DE_L_ENVOI,
+  ENVOI_DES_DEVIS_OFFERT,
+  REFUS_ENVOI_ADRESSE,
+  REFUS_ENVOI_BROUILLON,
+  REFUS_ENVOI_INTROUVABLE,
+  refusDeLEnvoiDuDevis,
   avisHorsValidite,
   BON_POUR_ACCORD,
   ceQueLeDevisImprime,
@@ -771,5 +779,68 @@ describe('avisDeLApercuDuDevis', () => {
     expect(avisDeLApercuDuDevis(d, 'accepte')).toMatch(/^Ce devis a été accepté le 20\/09\/2026\. Le document reste l’offre/)
     expect(avisDeLApercuDuDevis(d, 'refuse')).toMatch(/^Ce devis a été refusé le 20\/09\/2026\./)
     expect(avisDeLApercuDuDevis(d, 'facture')).toMatch(/accepté le 20\/09\/2026, puis transformé en facture\./)
+  })
+})
+
+// L'ENVOI D'UN DEVIS ÉMIS PAR E-MAIL (étape P6c3) : le module ne refuse que ce que `send-email` refuserait, sous ses mots, et
+// dit sans refuser un devis expiré, répondu ou facturé.
+describe('l’envoi d’un devis par e-mail (P6c3)', () => {
+  const FONCTION = readFileSync(new URL('../../supabase/functions/send-email/index.ts', import.meta.url), 'utf8')
+  const EMIS = { dossier_id: 'd1', statut: 'emis' } as const
+
+  it('le drapeau est baissé : l’envoi attend la migration envoi_des_devis ET le déploiement de send-email', () => {
+    expect(ENVOI_DES_DEVIS_OFFERT).toBe(false)
+  })
+
+  it('la forme de l’adresse et les trois refus sont ceux du texte même de la fonction', () => {
+    const ligne = /const EMAIL_REGEX = \/(.+)\/\s*$/m.exec(FONCTION)
+    expect(ligne, 'EMAIL_REGEX dans send-email').not.toBeNull()
+    expect(EMAIL_REGEX_DE_L_ENVOI.source).toBe(new RegExp((ligne as RegExpExecArray)[1]).source)
+    expect(EMAIL_REGEX_DE_L_ENVOI.flags).toBe('')
+    for (const refus of [REFUS_ENVOI_ADRESSE, REFUS_ENVOI_BROUILLON, REFUS_ENVOI_INTROUVABLE]) {
+      expect(FONCTION, refus).toContain(`error: "${refus}"`)
+    }
+  })
+
+  it('un émis du dossier avec une adresse bien formée : rien à refuser, les blancs de bord ne comptent pas', () => {
+    expect(refusDeLEnvoiDuDevis('d1', EMIS, 'client@exemple.fr')).toBeNull()
+    expect(refusDeLEnvoiDuDevis('d1', EMIS, '  client@exemple.fr \n')).toBeNull()
+  })
+
+  it('une adresse absente ou mal formée se refuse, avant le reste', () => {
+    expect(refusDeLEnvoiDuDevis('d1', { ...EMIS, statut: 'brouillon' }, '')).toBe('L’adresse du destinataire est à renseigner.')
+    expect(refusDeLEnvoiDuDevis('d1', EMIS, '   ')).toBe('L’adresse du destinataire est à renseigner.')
+    for (const mauvaise of ['client', 'client@', '@exemple.fr', 'client@exemple', 'cli ent@exemple.fr', 'a@b@c.fr']) {
+      expect(refusDeLEnvoiDuDevis('d1', EMIS, mauvaise), mauvaise).toBe(REFUS_ENVOI_ADRESSE)
+    }
+  })
+
+  it('un brouillon ne part pas ; un devis d’un autre dossier ou inconnu est introuvable', () => {
+    expect(refusDeLEnvoiDuDevis('d1', { ...EMIS, statut: 'brouillon' }, 'client@exemple.fr')).toBe(REFUS_ENVOI_BROUILLON)
+    expect(refusDeLEnvoiDuDevis('d1', { ...EMIS, dossier_id: 'd2' }, 'client@exemple.fr')).toBe(REFUS_ENVOI_INTROUVABLE)
+    expect(refusDeLEnvoiDuDevis('d1', null, 'client@exemple.fr')).toBe(REFUS_ENVOI_INTROUVABLE)
+  })
+
+  it('l’avis : rien pour un émis en attente, sa validité finie, ou sa réponse — jamais un refus', () => {
+    const d = { date_validite: '2026-10-01', date_reponse: '2026-09-20' }
+    expect(avisDeLEnvoiDuDevis(d, 'en_attente')).toBeNull()
+    expect(avisDeLEnvoiDuDevis(d, 'brouillon')).toBeNull()
+    expect(avisDeLEnvoiDuDevis(d, 'expire')).toBe('Sa validité a pris fin le 01/10/2026 ; il part tel quel.')
+    expect(avisDeLEnvoiDuDevis(d, 'accepte')).toMatch(/^Ce devis a déjà reçu sa réponse : il a été accepté le 20\/09\/2026\. Il part tel quel/)
+    expect(avisDeLEnvoiDuDevis(d, 'refuse')).toMatch(/il a été refusé le 20\/09\/2026\. Il part tel quel/)
+    expect(avisDeLEnvoiDuDevis(d, 'facture')).toMatch(/accepté le 20\/09\/2026, puis transformé en facture\. Il part tel quel/)
+    // Une réponse sans date lue ne dit pas de date inventée.
+    expect(avisDeLEnvoiDuDevis({ ...d, date_reponse: null }, 'refuse')).toMatch(/il a été refusé\. Il part tel quel/)
+  })
+
+  it('la confirmation nomme le devis, son client, son total TTC et l’adresse — et l’avis d’abord', () => {
+    const d = { numero: 'D2026-0001', tiers_nom: 'ALPHA FICTIVE SAS', montant_ttc: 1200, date_validite: '2026-10-01', date_reponse: null }
+    const texte = confirmationDeLEnvoiDuDevis(d, 'en_attente', ' client@exemple.fr ').replace(/\s/g, ' ')
+    expect(texte).toContain('Envoyer le devis D2026-0001 pour « ALPHA FICTIVE SAS » (1 200,00 € TTC) à client@exemple.fr ?')
+    expect(texte).toContain('sans pièce jointe')
+    expect(texte).toContain('les notes et la réponse enregistrée n’y figurent pas')
+    expect(texte.startsWith('Envoyer le devis')).toBe(true)
+    const expire = confirmationDeLEnvoiDuDevis(d, 'expire', 'client@exemple.fr')
+    expect(expire.startsWith('Sa validité a pris fin le 01/10/2026 ; il part tel quel. Envoyer le devis D2026-0001')).toBe(true)
   })
 })

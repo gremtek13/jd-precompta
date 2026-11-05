@@ -24,11 +24,16 @@ const faux = vi.hoisted(() => ({
   appels: [] as { nom: string; args: Record<string, unknown> }[],
   refus: null as { message: string } | null,
   drapeau: true,
+  // `ENVOI_DES_DEVIS_OFFERT` (étape P6c3) : baissé par défaut, levé par les cas de l'envoi.
+  envoi: false,
+  // Ce que `send-email` rendrait à un refus : le message de son corps JSON, sous un statut non-2xx.
+  refusEnvoi: null as string | null,
 }))
 
 vi.mock('../../lib/devis', async (original) => ({
   ...(await original<typeof import('../../lib/devis')>()),
   get DEVIS_EXPORTES() { return faux.drapeau },
+  get ENVOI_DES_DEVIS_OFFERT() { return faux.envoi },
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -63,6 +68,13 @@ vi.mock('../../lib/supabase', async () => {
         invoke: async (nom: string, options: { body: Record<string, unknown> }) => {
           if (nom === 'plateforme-agreee' && options.body.action === 'statut') return { data: { connexion: null }, error: null }
           if (nom === 'superpdp-credentials' && options.body.action === 'status') return { data: { configured: false }, error: null }
+          if (nom === 'send-email') {
+            faux.appels.push({ nom, args: options.body })
+            await Promise.resolve()
+            return faux.refusEnvoi
+              ? { data: null, error: { context: new Response(JSON.stringify({ error: faux.refusEnvoi }), { status: 429 }) } }
+              : { data: { ok: true }, error: null }
+          }
           throw new Error(`Appel non attendu : ${nom}`)
         },
       },
@@ -132,6 +144,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-11-04T11:00:00Z'))
   faux.drapeau = true
+  faux.envoi = false
+  faux.refusEnvoi = null
   faux.lectures = []
   faux.manquantes = {}
   faux.appels = []
@@ -614,6 +628,175 @@ describe.each(['cabinet', 'client'] as const)('L’aperçu d’un devis — %s',
     const d = await ouvrirLApercu('Brouillon Fictif SARL')
     if (espace === 'client') expect(motsDuCabinet(carteDe(d))).toEqual([])
     else expect(carteDe(d)).toContain('Brouillon : ce devis')
+  })
+})
+
+// L'ÉTAPE P6c3 : « Envoyer par e-mail » un devis ÉMIS, derrière `ENVOI_DES_DEVIS_OFFERT` (baissé : l'état d'avant, éprouvé), dans
+// les deux espaces. La confirmation nomme le devis, son client, son total et l'adresse ; un devis expiré, répondu ou facturé part
+// tel quel, et le dit ; l'appel est celui de `send-email` sous un verrou ; une erreur de la fonction se dit, rien n'est dit envoyé.
+describe.each(['cabinet', 'client'] as const)('Devis — envoyer par e-mail (P6c3) — %s', (espace) => {
+  const ADRESSE = 'client@exemple.fr'
+  // Un devis refusé, ajouté au jeu : l'avis d'une réponse négative.
+  const REFUSE = devis({
+    id: 'dv6', numero: 'D2026-0009', statut: 'emis', reponse: 'refusee', date_reponse: '2026-10-12', tiers_nom: 'Refusé Fictif',
+    date_emission: '2026-10-10', date_validite: '2026-11-30', cree_le: '2026-10-10T08:00:00Z', ...EMETTEUR_FIGE,
+  })
+
+  beforeEach(() => {
+    faux.envoi = true
+    faux.tables.devis.push({ ...REFUSE })
+    // Les devis émis portent l'adresse de leur client : celle que la fenêtre propose.
+    for (const d of faux.tables.devis) if (d.statut === 'emis') d.tiers_email = ADRESSE
+  })
+
+  async function ouvrirLEnvoi(numero: string) {
+    await monter(espace)
+    vers('Devis')
+    const tableau = await screen.findByRole('table', { name: 'Devis' })
+    fireEvent.click(within(ligneDe(tableau, numero)).getByRole('button', { name: 'Envoyer par e-mail' }))
+    return screen.getByRole('dialog')
+  }
+  const envoyerBouton = (fenetre: HTMLElement) => within(fenetre).getByRole('button', { name: 'Envoyer' }) as HTMLButtonElement
+  const adresseDe = (fenetre: HTMLElement) => within(fenetre).getByLabelText('Adresse du destinataire') as HTMLInputElement
+  const envois = () => faux.appels.filter((a) => a.nom === 'send-email')
+
+  it('le drapeau baissé : aucun bouton, l’état d’avant', async () => {
+    faux.envoi = false
+    await monter(espace)
+    vers('Devis')
+    const tableau = await screen.findByRole('table', { name: 'Devis' })
+    expect(screen.queryByRole('button', { name: 'Envoyer par e-mail' })).toBeNull()
+    expect(within(ligneDe(tableau, 'D2026-0001')).getAllByRole('button').map((b) => b.textContent)).toEqual(['Aperçu', 'Enregistrer la réponse'])
+  })
+
+  it('sans « Devis » (DEVIS_EXPORTES baissé), l’envoi levé n’ouvre rien', async () => {
+    faux.drapeau = false
+    await monter(espace)
+    // (Le bouton de l'onglet Factures, lui, envoie une facture : seule la vue des devis compte ici.)
+    expect(screen.queryByRole('tab', { name: 'Devis' })).toBeNull()
+    expect(faux.lectures).not.toContain('devis')
+  })
+
+  it('levé : un bouton sur chaque devis émis — en attente, expiré, répondu, facturé —, jamais sur un brouillon', async () => {
+    await monter(espace)
+    vers('Devis')
+    const tableau = await screen.findByRole('table', { name: 'Devis' })
+    expect(within(tableau).getAllByRole('button', { name: 'Envoyer par e-mail' })).toHaveLength(4)
+    for (const numero of ['D2026-0001', 'D2026-0002', 'D2026-0003', 'D2026-0009']) {
+      expect(within(ligneDe(tableau, numero)).getByRole('button', { name: 'Envoyer par e-mail' })).toBeTruthy()
+    }
+    expect(within(ligneDe(tableau, 'Brouillon Fictif SARL')).queryByRole('button', { name: 'Envoyer par e-mail' })).toBeNull()
+  })
+
+  it('lue en partie : aucun bouton', async () => {
+    faux.manquantes.devis_factures = 1
+    await monter(espace)
+    vers('Devis')
+    await screen.findByRole('table', { name: 'Devis' })
+    expect(screen.queryByRole('button', { name: 'Envoyer par e-mail' })).toBeNull()
+  })
+
+  it('la fenêtre propose l’adresse du devis, modifiable ; la confirmation nomme le devis, le client, le total et l’adresse ; le corps part tel quel', async () => {
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const fenetre = await ouvrirLEnvoi('D2026-0001')
+    expect(adresseDe(fenetre).value).toBe(ADRESSE)
+    fireEvent.change(adresseDe(fenetre), { target: { value: ' autre@exemple.fr ' } })
+    fireEvent.change(within(fenetre).getByLabelText('Message personnalisé (facultatif)'), { target: { value: ' Bonjour fictif ' } })
+    fireEvent.click(envoyerBouton(fenetre))
+    expect(confirmer).toHaveBeenCalledTimes(1)
+    const texte = (confirmer.mock.calls[0][0] as string).replace(/\s/g, ' ')
+    expect(texte).toContain('Envoyer le devis D2026-0001 pour « Émis Fictif SAS » (600,00 € TTC) à autre@exemple.fr ?')
+    expect(texte).toContain('sans pièce jointe')
+    sansMotsDuCabinet(espace, texte)
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(envois()).toEqual([{ nom: 'send-email', args: {
+      dossierId: 'd1', type: 'devis', devisId: 'dv2', destinataire: 'autre@exemple.fr', message: 'Bonjour fictif',
+    } }])
+    expect(screen.getByRole('status').textContent).toBe('Devis D2026-0001 envoyé à autre@exemple.fr.')
+  })
+
+  it('sans message : le champ n’est pas envoyé', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const fenetre = await ouvrirLEnvoi('D2026-0001')
+    fireEvent.click(envoyerBouton(fenetre))
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(envois()[0].args).toEqual({ dossierId: 'd1', type: 'devis', devisId: 'dv2', destinataire: ADRESSE })
+    expect('message' in JSON.parse(JSON.stringify(envois()[0].args))).toBe(false)
+  })
+
+  it('confirmation refusée : rien ne part, la fenêtre reste', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const fenetre = await ouvrirLEnvoi('D2026-0001')
+    fireEvent.click(envoyerBouton(fenetre))
+    expect(envois()).toHaveLength(0)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it.each([
+    ['D2026-0002', 'Sa validité a pris fin le 01/10/2026 ; il part tel quel.'],
+    ['D2026-0003', 'Ce devis a déjà reçu sa réponse : il a été accepté le 10/09/2026, puis transformé en facture.'],
+    ['D2026-0009', 'Ce devis a déjà reçu sa réponse : il a été refusé le 12/10/2026.'],
+  ])('l’avis du devis %s se dit dans la fenêtre et dans la confirmation, sans rien refuser', async (numero, avis) => {
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const fenetre = await ouvrirLEnvoi(numero)
+    expect(fenetre.textContent).toContain(avis)
+    sansMotsDuCabinet(espace, fenetre.textContent ?? '')
+    expect(envoyerBouton(fenetre).disabled).toBe(false)
+    fireEvent.click(envoyerBouton(fenetre))
+    const texte = confirmer.mock.calls[0][0] as string
+    expect(texte.startsWith(avis)).toBe(true)
+    sansMotsDuCabinet(espace, texte)
+    await vi.waitFor(() => expect(envois()).toHaveLength(1))
+  })
+
+  it('un émis encore en attente : aucun avis', async () => {
+    const fenetre = await ouvrirLEnvoi('D2026-0001')
+    expect(fenetre.textContent).not.toContain('part tel quel')
+  })
+
+  it('les refus se disent avant le clic : adresse absente, adresse mal formée', async () => {
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const fenetre = await ouvrirLEnvoi('D2026-0001')
+    fireEvent.change(adresseDe(fenetre), { target: { value: '' } })
+    expect(within(fenetre).getByText('L’adresse du destinataire est à renseigner.')).toBeTruthy()
+    expect(envoyerBouton(fenetre).disabled).toBe(true)
+    fireEvent.change(adresseDe(fenetre), { target: { value: 'client@exemple' } })
+    expect(within(fenetre).getByText('Adresse e-mail du destinataire invalide.')).toBeTruthy()
+    expect(envoyerBouton(fenetre).disabled).toBe(true)
+    fireEvent.click(envoyerBouton(fenetre))
+    expect(confirmer).not.toHaveBeenCalled()
+    expect(envois()).toHaveLength(0)
+  })
+
+  it('deux clics du même act sur « Envoyer » n’envoient qu’une fois', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const fenetre = await ouvrirLEnvoi('D2026-0001')
+    const bouton = envoyerBouton(fenetre)
+    act(() => {
+      fireEvent.click(bouton)
+      fireEvent.click(bouton)
+    })
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(envois()).toHaveLength(1)
+  })
+
+  it('une erreur de la fonction se dit sous ses mots, la fenêtre reste, et rien ne se dit envoyé', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    faux.refusEnvoi = 'Ce dossier a déjà envoyé 30 e-mails aujourd’hui : celui-ci n’est pas parti.'
+    const fenetre = await ouvrirLEnvoi('D2026-0001')
+    fireEvent.click(envoyerBouton(fenetre))
+    expect((await within(fenetre).findByRole('alert')).textContent).toBe(faux.refusEnvoi)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(document.body.textContent).not.toContain('envoyé à')
+    expect(envoyerBouton(fenetre).disabled).toBe(false)
+    // Le verrou est relâché : on peut recommencer, et la fonction cette fois accepte.
+    faux.refusEnvoi = null
+    fireEvent.click(envoyerBouton(fenetre))
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(envois()).toHaveLength(2)
+    expect(screen.getByRole('status').textContent).toBe(`Devis D2026-0001 envoyé à ${ADRESSE}.`)
   })
 })
 

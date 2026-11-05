@@ -47863,3 +47863,16 @@ devis. Vingt scénarios HTTP neufs (la matrice des droits comprise : un client s
 lecture), sept mutations de la fonction, toutes tuées. `droitsAcces.test.ts` : l'envoi d'un devis, ouvert à « Ventes »
 par la table, n'est pas encore dit par la phrase (`PAS_ENCORE_NOMMEES`, une entrée, vidée quand `ENVOI_DES_DEVIS_PREVU`
 se lève). Le déploiement attend la migration `envoi_des_devis`, sur l'accord du cabinet.
+
+### 05/11/2026 — LES DEVIS : « ENVOYER PAR E-MAIL », À L'ÉCRAN (P6C3), DERRIÈRE `ENVOI_DES_DEVIS_OFFERT`
+
+Écran et tests seulement (rien sous `supabase/`, rien déployé). Un drapeau neuf, `ENVOI_DES_DEVIS_OFFERT`, baissé : il se lève
+après l'application de `envoi_des_devis` ET le déploiement de `send-email`, jamais avant `DEVIS_EXPORTES`. `lib/devis.ts` dit les
+règles : `refusDeLEnvoiDuDevis` (adresse absente, adresse mal formée, devis hors du dossier, brouillon — dans l'ordre de la
+fonction, sous ses mots ; `EMAIL_REGEX_DE_L_ENVOI` recopiée, confrontée au texte de `send-email`), `avisDeLEnvoiDuDevis` (expiré,
+répondu, facturé : « il part tel quel », sans rien refuser) et `confirmationDeLEnvoiDuDevis` (le devis, son client, son total TTC,
+l'adresse, ce qui part et ne part pas). `lib/devisEnvoi.ts` porte l'appel ; `DevisEmailModal` saisit (adresse du devis proposée,
+message facultatif), `DevisVue` confirme et envoie par son verrou unique (`sousVerrou`, `useRef` avant le `try`). Le bouton ne
+s'offre que sur un émis, une liste lue en entier, les deux drapeaux levés ; rien ne se dit envoyé sans le `ok: true` de la fonction.
+Mots communs aux deux espaces (ni tutoiement ni vouvoiement, aucun onglet), les refus de la fonction réécrits par `pourLEspace`.
+Quatorze cas d’écran par espace et sept cas du module neufs.
