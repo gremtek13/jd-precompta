@@ -47946,3 +47946,21 @@ Le fichier reste dans `supabase/preparees/` jusqu'au jour de l'application des d
 l'export, `types.ts`, `DEVIS_EXPORTES` et `ENVOI_DES_DEVIS_PREVU` basculent ensemble, la signature se compare alors à la
 réplique `e6_apres` (les deux migrations des devis et celle-ci) ; puis `send-email` se déploie, et
 `ENVOI_DES_DEVIS_OFFERT` se lève.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS : LE MODULE PUR (P5B1)
+
+`src/lib/acompteDevis.ts`, pur, en centimes, que rien ne lit encore ; il suit les recommandations de P5B-Q1 à Q3 (un
+pourcentage ou un TTC, plusieurs acomptes, un seul en brouillon ; l'engagement refusé, au mode comptable lu). Les lignes
+d'un devis ne portant pas de nature (`devis.lignes` : désignation, quantité, prix, taux), le groupe est (taux, nature),
+la nature facultative et nulle aujourd'hui : le groupe se réduit au taux. Les arrondis réutilisent `calculerLigne` : le
+pourcentage, HT × pct / 100 sur son décimal exact, le demi éloigné de zéro (64,6 % de 2,50 € font 1,62 € ; en virgule
+flottante 1,61 €) ; le TTC, le HT dont le TTC réparti est le plus proche, à égalité le plus petit, cherché dans une
+fenêtre (le TTC n'est pas croissant en HT : un plus fort reste peut céder un centime), confronté à TOUS les HT
+possibles sur les petits devis. Une batterie de 3 000 devis (graine 20261105, plus de 1 500 acomptes de chaque mode)
+juge somme, plafond, plus forts restes et ordre des égalités, reprises opposées, finale + acomptes = devis par taux ;
+huit mutations la font virer au rouge. ÉCART À LA CONCEPTION, à trancher pour P5b2 : « la finale n'est négative à aucun
+taux » ne vaut que pour le HT. La TVA du devis est la somme des arrondis de ses lignes, celle d'un acompte l'arrondi de
+sa part : un acompte qui couvre tout un taux laisse à la finale quelques centimes de TVA, positifs ou NÉGATIFS (deux
+lignes de 10,02 € à 20 % : 4,00 € ; l'acompte à 100 % : 4,01 € ; la finale −0,01 €) — 23 taux dans la batterie. Le
+module ne le refuse pas (`refusDeLaFinale` ne juge que le HT) ; une base qui refuserait toute TVA négative rendrait ces
+finales impossibles.
