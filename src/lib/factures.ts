@@ -142,7 +142,11 @@ export function refusAvoir(
 
 // Une ligne d'avoir : les quatre champs d'hier, et — étape A7b, quand l'écran les donne — l'unité, la référence et la nature
 // de la ligne qu'elle crédite, que l'avoir imprime comme elle.
-export type LigneDAvoir = LigneAEnregistrer & { unite?: UniteArticle | null; reference?: string | null; nature?: NatureArticle | null }
+export type LigneDAvoir = LigneAEnregistrer & {
+  unite?: UniteArticle | null; reference?: string | null; nature?: NatureArticle | null
+  // La reprise d'un acompte que la ligne défait, sur l'avoir d'une facture finale (étape P5b5b) ; absente ailleurs.
+  reprise_facture_id?: string | null
+}
 
 /** L'avoir TEL QU'IL PART à `enregistrer_facture` : l'en-tête (le total des lignes, négatif) et les lignes, quantités négatives. */
 export function avoirQuiPart(
@@ -167,6 +171,7 @@ export function avoirQuiPart(
       ...(l.unite !== undefined ? { unite: l.unite } : {}),
       ...(l.reference !== undefined ? { reference: l.reference } : {}),
       ...(l.nature !== undefined ? { nature: l.nature } : {}),
+      ...(l.reprise_facture_id != null ? { reprise_facture_id: l.reprise_facture_id } : {}),
     })),
   }
 }

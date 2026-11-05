@@ -22,7 +22,11 @@ import DevisVue from './DevisVue'
 import { ARTICLES_EXPORTES } from '../../lib/articles'
 import { CONTACTS_EXPORTES } from '../../lib/contacts'
 import { PARAMETRES_FACTURATION_EXPORTES } from '../../lib/parametresFacturation'
-import { DEVIS_EXPORTES } from '../../lib/devis'
+import { ACOMPTES_PREVUS, DEVIS_EXPORTES } from '../../lib/devis'
+import {
+  SANS_ACOMPTE, acompteDeLaFacture, marqueDeLaFacture, motsDeLaMarque, type AcompteDeLaFacture, type LectureDesAcomptesDesFactures,
+} from '../../lib/acomptesDesFactures'
+import { lireLesAcomptesDesFactures } from '../../lib/acomptesDesFacturesLecture'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import {
   ETATS_TRANSMISSION, annuleeSurSaPlateforme, libelleCourtCanal, transmissionCourante,
@@ -140,13 +144,24 @@ export default function FacturesTab(props: Props) {
   // La vue : les factures, les règlements de tout le dossier (étape A3), le catalogue d'articles (étape A2a) ou le fichier des
   // clients (étape A4b1).
   const [vue, setVue] = useState<VueDeLOnglet>('factures')
+  // LA FACTURE D'ACOMPTE ET LA FINALE D'UN DEVIS (étape P5b5b ; lib/acomptesDesFactures.ts), derrière `ACOMPTES_PREVUS` : les
+  // acomptes du dossier, relus avec les factures et gardés AVEC le dossier lu. Drapeau baissé, rien n'est lu, et chaque facture
+  // est « sans acompte » : l'onglet d'hier, au caractère près.
+  const [acomptesLus, setAcomptesLus] = useState<LectureDesAcomptesDesFactures | null>(null)
+  const acomptesCourants = acomptesLus?.dossierId === dossierId ? acomptesLus : null
+  const acompteDe = (factureId: string): AcompteDeLaFacture =>
+    ACOMPTES_PREVUS ? acompteDeLaFacture(acomptesCourants, factureId) : SANS_ACOMPTE
 
   // Rend les factures lues : la facture tirée d'un devis s'ouvre sur la liste relue (`ouvrirLaFactureTiree`).
   async function load(): Promise<FactureEmise[]> {
     setLoading(true)
     // Les lectures de l'onglet, que l'accueil du client compte aussi (lib/ventesLecture.ts) : la suite LÉGALE des
     // factures, leurs transmissions, leurs encaissements, leurs déclarations, l'historique de Super PDP et les statuts lus.
-    const lu = await lireLesVentesDuDossier(dossierId)
+    const [lu, acomptes] = await Promise.all([
+      lireLesVentesDuDossier(dossierId),
+      ACOMPTES_PREVUS ? lireLesAcomptesDesFactures(dossierId) : null,
+    ])
+    if (acomptes) setAcomptesLus(acomptes)
     setFactures(lu.factures)
     setLectureIncomplete(lu.facturesIncompletes)
     setTransmissions(lu.transmissions)
@@ -227,7 +242,10 @@ export default function FacturesTab(props: Props) {
     .filter((f) => anneeFilter === 'toutes' || anneeDe(f.date_emission) === anneeFilter)
     .filter((f) => !filtreActif || emiseParLeClient(acces, f))
   const filtered = avantRecherche.filter((f) =>
-    correspondALaRecherche([f.numero, f.tiers_nom, f.statut, f.date_emission, formatDate(f.date_emission), f.montant_ttc], recherche),
+    correspondALaRecherche([
+      f.numero, f.tiers_nom, f.statut, f.date_emission, formatDate(f.date_emission), f.montant_ttc,
+      ...(ACOMPTES_PREVUS ? [motsDeLaMarque(marqueDeLaFacture(acompteDe(f.id)))] : []),
+    ], recherche),
   )
 
   // Le résultat de la suppression est LU : le `load()` qui suit fait bien réapparaître un brouillon
@@ -375,6 +393,17 @@ export default function FacturesTab(props: Props) {
               'a pas. Recharge la page avant d’en conclure quoi que ce soit.'
             }
           />
+          {ACOMPTES_PREVUS && (
+            <BandeauLecturePartielle
+              quoi="Les acomptes des devis"
+              accord="lus"
+              motif={acomptesCourants?.etat === 'illisible' ? acomptesCourants.motif : null}
+              consequence={
+                'Aucune facture ne dit donc si elle est une facture d’acompte ou une facture finale, et ni un brouillon ni un avoir '
+                + 'ne s’offre : la base refuserait ce que l’écran ne saurait pas dire avant. Recharge la page.'
+              }
+            />
+          )}
           <BandeauLecturePartielle
             quoi="Les transmissions des factures"
             motif={transmissionsIncompletes}
@@ -524,6 +553,8 @@ export default function FacturesTab(props: Props) {
                   <tbody>
                     {filtered.map((f) => {
                       const origine = f.facture_origine_id ? factures.find((o) => o.id === f.facture_origine_id) : null
+                      const acompte = acompteDe(f.id)
+                      const marque = marqueDeLaFacture(acompte)
                       return (
                         <tr key={f.id} className="clickable" onClick={() => ouvrir(f)}>
                           {/* Une `div` par cellule qui porte plusieurs éléments : repliée, la cellule est une rangée flex, et
@@ -532,6 +563,7 @@ export default function FacturesTab(props: Props) {
                           <td data-libelle="Numéro">
                             <div>
                               {f.numero ?? '—'}
+                              {marque && <>{' '}<span className="badge badge-neutral">{marque}</span></>}
                               {f.type === 'avoir' && (
                                 <>
                                   {' '}<span className="badge badge-neutral">Avoir</span>
@@ -626,9 +658,14 @@ export default function FacturesTab(props: Props) {
                                 <button
                                   className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}
                                   title={`Refusée ou rejetée sur sa plateforme : ${CONSEQUENCE_ANNULATION}.`}
+                                  {...(acompte.etat === 'retenu' ? { disabled: true } : {})}
                                 >
                                   Avoir interne
                                 </button>
+                              ) : acompte.etat === 'retenu' ? (
+                                // L'acompte de la facture n'est pas lu : l'avoir d'un acompte ou d'une finale a ses refus, qu'on ne
+                                // saurait pas dire avant le clic (P5B2-Q3).
+                                <button className="btn btn-outline btn-sm" disabled title={acompte.avis}>Avoir</button>
                               ) : (
                                 <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}>Avoir</button>
                               )
@@ -669,6 +706,7 @@ export default function FacturesTab(props: Props) {
           tvaSurDebits={tvaSurDebits}
           reglageDesVentes={reglageDesVentes}
           facture={editing === 'new' ? null : editing}
+          {...(ACOMPTES_PREVUS && editing !== 'new' ? { acompte: acompteDe(editing.id) } : {})}
           onClose={() => setEditing(null)}
           onSaved={load}
         />
@@ -690,6 +728,7 @@ export default function FacturesTab(props: Props) {
           // Sur la liste ENTIÈRE du dossier, toutes années confondues : un avoir de l'an prochain crédite la
           // facture de cette année. Lue en partie, on ne sait pas ce qui a été crédité, et c'est la base qui juge.
           credite={lectureIncomplete ? null : dejaCredite(avoirDe.id, factures)}
+          {...(ACOMPTES_PREVUS ? { acompte: acompteDe(avoirDe.id) } : {})}
           reglageDesVentes={reglageDesVentes}
           onClose={() => setAvoirDe(null)}
           onCreated={load}

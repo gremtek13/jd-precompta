@@ -48108,3 +48108,19 @@ biens ou mixte), absent de la migration (un test). L'ÉCRAN : la vue « Devis »
 baissé, l'empreinte du rendu est celle du code d'avant (6c353ca), dans les deux espaces. Deux réécritures du client
 (« validez-le ou supprimez-le », « Demandez un peu moins »). Trois mutations (le refus des biens, le verrou, la lecture levée
 neutralisée), trois mordent. Le brouillon d'acompte dans l'onglet des factures (son formulaire, sa validation) : P5b5b.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS : LA FACTURE D'ACOMPTE ET LA FINALE DANS L'ONGLET DES FACTURES (P5B5B), DERRIÈRE `ACOMPTES_PREVUS`
+
+Du code d'écran et de module, et des tests ; rien en base, aucune Edge Function. LA LECTURE (`acomptesDesFacturesLecture.ts`) :
+celle de la vue « Devis », puis les devis liés, la date du versement des acomptes et les lignes des finales et de leurs avoirs,
+par `lireTout` ; drapeau baissé, rien. LE MODULE (`acomptesDesFactures.ts`, pur) : ce qu'est une facture (acompte, finale, ou
+retenue tant que la lecture n'est pas revenue entière), sa marque (« Finale » seulement si le devis a des acomptes), et les refus
+d'`enregistrer_facture` remplacée, confrontés au texte de la migration préparée, à la lettre et dans l'ordre (P5B2-Q3). L'ÉCRAN,
+deux espaces : la marque « Acompte » ou « Finale » sur la ligne, que la recherche trouve ; le brouillon d'un acompte sans retouche
+de ses lignes, qui repartent telles que lues avec ses montants posés, la date du versement dite ; la finale, ses reprises figées
+et envoyées avec leur acompte (`lignesSaisies` les écartait : quantité −1) ; la validation refusée avant le clic, la confirmation
+qui nomme l'acompte, ou la finale, ses reprises et le net ; l'avoir d'un acompte en entier, refusé tant qu'une finale validée et
+active le reprend (P5B2-Q2), permis la finale créditée en entier (P5B-Q4) ; celui d'une finale dit ce qu'il défait. Lecture
+illisible : un bandeau, ni avoir ni formulaire. Drapeau baissé, les empreintes de la liste, du formulaire et de l'avoir sont
+celles du code d'avant (76a3631), dans les deux espaces. Trois mutations (le refus du cumul, la marque, la lecture illisible
+lue « sans acompte ») mordent.
