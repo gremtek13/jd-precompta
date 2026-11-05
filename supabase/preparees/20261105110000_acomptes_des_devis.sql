@@ -1,7 +1,17 @@
 -- L'ACOMPTE D'UN DEVIS, EN BASE (espace client, étape P5b2 ; EC-D3) — PRÉPARÉE, PAS APPLIQUÉE. La conception : HISTORIQUE.md,
 -- « L'ACOMPTE D'UN DEVIS : LA CONCEPTION (P5B) » (LA FACTURE D'ACOMPTE, LA FINALE, LA BASE), « L'ACOMPTE D'UN DEVIS : LE
 -- MODULE PUR (P5B1) » et « L'ACOMPTE D'UN DEVIS NE COUVRE JAMAIS TOUT LE DEVIS (P5B-Q5, SUR LA RECOMMANDATION) » ; le récit :
--- « L'ACOMPTE D'UN DEVIS, EN BASE (P5B2) (PRÉPARÉE, PAS APPLIQUÉE) ».
+-- « L'ACOMPTE D'UN DEVIS, EN BASE (P5B2) (PRÉPARÉE, PAS APPLIQUÉE) », puis « L'ACOMPTE D'UN DEVIS : P5B3-Q1 ET P5B2-Q1
+-- ÉCRITS DANS LA MIGRATION ».
+--
+-- SUR QUELLES RÉPONSES. Toutes celles de l'acompte, confirmées par le cabinet le 05/11/2026 à la recommandation : P5B-Q1
+-- (un pourcentage ou un TTC), P5B-Q2 (plusieurs acomptes, un seul en brouillon), P5B-Q3 (l'engagement refusé), P5B-Q4 (une
+-- finale créditée en entier en laisse tirer une autre), P5B-Q5 (un acompte ne couvre jamais tout le devis), P5B2-Q1 (la
+-- date du versement facultative, jamais après le jour de Paris), P5B2-Q2 (l'avoir d'un acompte refusé tant qu'une finale
+-- validée et non créditée le reprend), P5B2-Q3 (les refus de la base dits avant le clic, aux mêmes mots), P5B3-Q1 (B)
+-- (pas d'acompte sur un devis de biens ou mixte). P5B3-Q1 et P5B2-Q1, que l'écran seul tenait, la base les tient aussi,
+-- aux mots et à la place du module (src/lib/acomptesDuDevis.ts) ; les bornes 2000 à 2099 d'une date restent au générateur
+-- CII, qui refuse avant tout envoi.
 --
 -- POURQUOI. Un devis accepté peut appeler un acompte (CGI, art. 289, I-1-c : l'acompte versé avant l'opération se facture ;
 -- BOI-TVA-DECLA-30-20-20-10, § 60 : numérotée comme toute facture, « la facture définitive doit faire référence aux
@@ -27,12 +37,14 @@
 --      de facture d'acompte, série F, ses lignes calculées comme le module — la cible d'un pourcentage sur son décimal
 --      exact, le demi loin de zéro ; celle d'un TTC, le HT dont le TTC réparti est le plus proche, à égalité le plus petit,
 --      cherché dans la fenêtre du module ; la répartition au prorata du RESTE par les plus forts restes, à égalité dans
---      l'ordre du devis ; une ligne par groupe (taux, nature), quantité 1 ;
+--      l'ordre du devis ; une ligne par groupe (taux, nature), quantité 1 ; ses refus dans l'ordre du module : l'état du
+--      devis et du dossier, puis le devis de biens ou mixte (P5B3-Q1), puis la demande, puis une date du versement
+--      postérieure au jour de Paris (P5B2-Q1) ;
 --   4. `facturer_devis` remplacée : la FINALE — les lignes du devis, puis chaque ligne de chaque acompte en vigueur
 --      (validé, non crédité) au signe opposé, « Reprise de l’acompte F… du JJ/MM/AAAA » ; une finale créditée en entier par
 --      un avoir laisse tirer une nouvelle finale (P5B-Q4) ; un acompte en brouillon la retient ;
 --   5. `enregistrer_facture` remplacée : un acompte en brouillon garde ses lignes et ses montants, sa date du versement se
---      retouche ; une reprise se pose sur la finale de son devis ou se défait sur l'avoir de celle-ci, chacune une fois ; à
+--      retouche, jamais après le jour de Paris (P5B2-Q1) ; une reprise se pose sur la finale de son devis ou se défait sur l'avoir de celle-ci, chacune une fois ; à
 --      la validation, sous le verrou du devis, le cumul des acomptes ne dépasse aucun groupe, un acompte satisfait P5B-Q5,
 --      une finale reprend chaque acompte en vigueur exactement et une seule fois et n'est négative à aucun taux (HT, puis
 --      TVA) ; l'avoir d'un acompte le crédite en entier tant qu'aucune finale validée et non créditée ne le reprend ; celui
@@ -417,6 +429,7 @@ declare
   v_total_tva bigint := 0;
   v_refus text;
   v_facture uuid;
+  v_aujourd_hui date := (now() at time zone 'Europe/Paris')::date;
   r record;
 begin
   if not public.gere_les_ventes(p_dossier_id) then
@@ -445,6 +458,12 @@ begin
   select d.* into v_dossier from public.dossiers d where d.id = p_dossier_id;
   if v_dossier.mode_comptable = 'engagement' then
     raise exception 'Le dossier tient sa comptabilité en engagement : l’acompte d’un devis ne s’y facture pas encore (son compte, le 4191, viendra avec l’engagement).'
+      using errcode = '22023';
+  end if;
+  -- P5B3-Q1 (B) : pas d'acompte sur un devis qui porte des livraisons de biens (`devisDeBiens` : « biens » ou « mixte »),
+  -- après l'état du devis et du dossier, avant la demande, comme le module (`REFUS_ACOMPTE_DE_BIENS`).
+  if v_devis.nature_operation in ('biens', 'mixte') then
+    raise exception 'Le devis porte des livraisons de biens : l’acompte d’un tel devis ne se facture pas encore ici, la TVA d’un acompte de biens étant due à son encaissement et sa part impayée à la livraison, ce que les écritures ne savent pas encore tenir. Le devis se facture en entier par sa facture finale.'
       using errcode = '22023';
   end if;
 
@@ -606,7 +625,13 @@ begin
     raise exception '%', v_refus using errcode = '22023';
   end if;
 
-  -- 7. Le brouillon, la marque, le lien.
+  -- 7. P5B2-Q1 : la date du versement, jamais après le jour de Paris (`refusDuVersementFutur`) ; en dernier, comme le module.
+  if p_date_versement > v_aujourd_hui then
+    raise exception 'Le versement ne se date pas dans l’avenir : nous sommes le %.', to_char(v_aujourd_hui, 'DD/MM/YYYY')
+      using errcode = '22023';
+  end if;
+
+  -- 8. Le brouillon, la marque, le lien.
   select e.* into v_emetteur
     from public.emetteur_du_dossier(v_dossier.nom, v_dossier.denomination_imprimee, v_dossier.siret, v_dossier.adresse) e;
   select e.facture_id into v_facture
@@ -823,6 +848,7 @@ declare
   v_texte text;
   v_taux_absent numeric;
   v_taux_depasse numeric;
+  v_aujourd_hui date := (now() at time zone 'Europe/Paris')::date;
   v_blancs constant text := chr(9) || chr(10) || chr(11) || chr(12) || chr(13) || chr(32) || chr(160) || chr(5760)
     || chr(8192) || chr(8193) || chr(8194) || chr(8195) || chr(8196) || chr(8197) || chr(8198) || chr(8199) || chr(8200)
     || chr(8201) || chr(8202) || chr(8232) || chr(8233) || chr(8239) || chr(8287) || chr(12288) || chr(65279);
@@ -981,6 +1007,13 @@ begin
   -- d'acompte seulement.
   if coalesce(jsonb_typeof(p_facture->'date_versement_acompte'), 'null') <> 'null' and not v_acompte then
     raise exception 'La date du versement ne se porte que sur une facture d’acompte.' using errcode = '22023';
+  end if;
+  -- P5b2 (P5B2-Q1) : posée ou changée sur un acompte, jamais après le jour de Paris, comme facturer_acompte_devis.
+  if v_acompte then
+    if nullif(p_facture->>'date_versement_acompte', '')::date > v_aujourd_hui then
+      raise exception 'Le versement ne se date pas dans l’avenir : nous sommes le %.', to_char(v_aujourd_hui, 'DD/MM/YYYY')
+        using errcode = '22023';
+    end if;
   end if;
   -- Une ligne qui reprend un acompte cite un acompte validé de ce dossier : sur la facture finale de son devis, ou sur
   -- l'avoir de cette facture, qui en défait la reprise.

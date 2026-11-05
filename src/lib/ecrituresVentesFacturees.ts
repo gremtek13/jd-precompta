@@ -276,9 +276,10 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
   const dossierId = sources.dossierId
   // L'acompte d'un devis (étape P5b3) n'entre pas ici : les écritures se recomposent en base, en entiers
   // (`ecrire_vente_facturee`, la recomposition de `valider_exercice`), et la base ne connaît pas encore la marque. En
-  // trésorerie, rien n'en dépend que la date où la TVA d'un acompte de BIENS devient exigible (la CA3 la lit, elle) : tant
-  // que la base ne l'apprend pas, `ACOMPTES_PREVUS` ne se lève pas sans réponse à P5B3-Q1 (HISTORIQUE.md, « L'ACOMPTE
-  // D'UN DEVIS DANS LES MOTEURS (P5B3) »).
+  // trésorerie, rien n'en dépend que la date où la TVA d'un acompte de BIENS devient exigible (la CA3 la lit, elle) : P5B3-Q1
+  // y répond, la base refusant l'acompte d'un devis de biens ou mixte (`facturer_acompte_devis`) tant que ses écritures ne
+  // l'apprennent pas (HISTORIQUE.md, « L'ACOMPTE D'UN DEVIS DANS LES MOTEURS (P5B3) », « L'ACOMPTE D'UN DEVIS : P5B3-Q1 ET
+  // P5B2-Q1 ÉCRITS DANS LA MIGRATION »).
   const ventes = ventesFacturees({ ...sources, acomptes: SANS_ACOMPTE })
   const nonEcrites: SourceNonEcrite[] = []
   const nonEcrite = (source: SourceEcritureVente, motif: MotifNonEcrite, precision?: string, facture?: string) =>

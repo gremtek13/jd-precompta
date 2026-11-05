@@ -17,11 +17,11 @@ import type { Devis, ModeComptable, NatureArticle, StatutFacture, TypeFacture } 
 // remplacée, que acomptesDuDevis.test.ts confronte au texte de la migration préparée — et les mots de leurs
 // confirmations. Les calculs sont ceux de lib/acompteDevis.ts (`preparerAcompte`, `lignesDeLaFinale`), jamais recopiés.
 //
-// LES RÉPONSES SUIVIES, sur la recommandation, en attendant le cabinet : P5B-Q1 (un pourcentage ou un TTC, au choix, le TTC
-// exact dit avant le clic), P5B-Q2 (plusieurs acomptes, un seul en brouillon), P5B-Q3 (l'engagement refusé), P5B-Q4 (une
+// LES RÉPONSES, confirmées par le cabinet le 05/11/2026 à la recommandation : P5B-Q1 (un pourcentage ou un TTC, au choix, le
+// TTC exact dit avant le clic), P5B-Q2 (plusieurs acomptes, un seul en brouillon), P5B-Q3 (l'engagement refusé), P5B-Q4 (une
 // finale créditée en entier laisse tirer une nouvelle finale), P5B2-Q1 (la date du versement facultative, jamais après le
 // jour de Paris), P5B2-Q3 (les refus de la base dits avant le clic, aux mêmes mots), P5B3-Q1 (B) (pas d'acompte sur un
-// devis de biens, ci-dessous).
+// devis de biens, ci-dessous). P5B2-Q1 et P5B3-Q1, la base les tient aussi, à leur place et à leurs mots.
 
 // ── Ce que la lecture rend (lib/acomptesDuDevisLecture.ts) ─────────────────────────────────────────────────────────────
 /** Un lien d'un devis à une facture, avec son rôle (`devis_factures.role`, posé par la migration). */
@@ -159,22 +159,28 @@ export const REFUS_SOLDE_ACOMPTE_EN_BROUILLON =
 // P5B3-Q1 (B), SUR LA RECOMMANDATION : un acompte de BIENS n'est pas une livraison — sa TVA est exigible à son
 // encaissement, sa part impayée à la livraison de la finale qui le reprend (CGI, art. 269, 2-a ; lib/ventesFacturees.ts) —,
 // et les écritures que la base recompose (`ecrire_vente_facturee`, `valider_exercice`) ne connaissent pas encore la marque
-// d'acompte. Tant que la base ne l'apprend pas (une migration à part), l'acompte se refuse ICI, avant le clic, sur un devis
-// qui porte des livraisons de biens (`nature_operation` « biens » ou « mixte » : les lignes d'un devis ne disent pas leur
-// nature). La base, elle, ne le refuse pas encore : ce refus est un refus de l'ÉCRAN, plus strict que la base, et
-// acomptesDuDevis.test.ts vérifie que la migration préparée ne le porte pas.
+// d'acompte. Tant qu'elles ne l'apprennent pas (une migration à part), l'acompte se refuse sur un devis qui porte des
+// livraisons de biens (`nature_operation` « biens » ou « mixte » : les lignes d'un devis ne disent pas leur nature) — ICI,
+// avant le clic, et en base : `facturer_acompte_devis` le refuse aux mêmes mots, après l'état du devis et du dossier et
+// avant la demande, ce que acomptesDuDevis.test.ts confronte au texte de la migration préparée.
 export const REFUS_ACOMPTE_DE_BIENS =
   'Le devis porte des livraisons de biens : l’acompte d’un tel devis ne se facture pas encore ici, la TVA d’un acompte de '
   + 'biens étant due à son encaissement et sa part impayée à la livraison, ce que les écritures ne savent pas encore tenir. '
   + 'Le devis se facture en entier par sa facture finale.'
 
-/** Les bornes que le générateur CII admet pour une date (`factureCii.ts`, BT-9) : une date hors d'elles ne se transmettrait pas. */
+/**
+ * Les bornes que le générateur CII admet pour une date (`factureCii.ts`, BT-9) : une date hors d'elles ne se transmettrait
+ * pas. Un refus de l'ÉCRAN seul : la base reçoit une date typée, et laisse ses bornes au générateur, qui refuse avant tout envoi.
+ */
 const ANNEE_MIN = 2000
 const ANNEE_MAX = 2099
 
 export const REFUS_VERSEMENT_ILLISIBLE = 'La date du versement n’est pas une date (années 2000 à 2099).'
 
-/** P5B2-Q1 : la date du versement n'est jamais postérieure au jour de Paris. */
+/**
+ * P5B2-Q1 : la date du versement n'est jamais postérieure au jour de Paris. La base le refuse aussi, à ces mots :
+ * `facturer_acompte_devis` en dernier, `enregistrer_facture` quand elle la pose ou la change.
+ */
 export function refusDuVersementFutur(aujourdHui: string): string {
   return `Le versement ne se date pas dans l’avenir : nous sommes le ${formatDate(aujourdHui)}.`
 }
@@ -234,9 +240,10 @@ export type AcompteJuge =
   | { ok: false; refus: string }
 
 /**
- * L'acompte, ou le premier refus : celui de la base (introuvable, puis l'état du devis et du dossier, dans l'ordre de
- * `facturer_acompte_devis`), puis celui du devis de biens (P5B3-Q1, l'écran seul), puis la saisie et ce qu'elle demande au
- * reste du devis (`preparerAcompte`, aux mots de la base), puis la date du versement (P5B2-Q1, l'écran seul).
+ * L'acompte, ou le premier refus, dans l'ordre de `facturer_acompte_devis` et à ses mots : introuvable, puis l'état du devis
+ * et du dossier, puis le devis de biens (P5B3-Q1), puis la saisie et ce qu'elle demande au reste du devis
+ * (`preparerAcompte`), puis la date du versement — à venir, la base la refuse aussi (P5B2-Q1) ; hors des bornes du CII,
+ * l'écran seul.
  */
 export function jugerLAcompte(e: EntreeDeLAcompte): AcompteJuge {
   const d = e.devis

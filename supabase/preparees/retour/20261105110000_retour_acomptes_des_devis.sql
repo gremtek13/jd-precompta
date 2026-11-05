@@ -31,7 +31,7 @@ begin
   for v_fonction in
     select x.signature, x.empreinte from (values
       ('public.facturer_devis(uuid, uuid)', 'e01746a70e23cd4751db4f817525d40d'),
-      ('public.enregistrer_facture(uuid, uuid, jsonb, jsonb, boolean)', 'f775c5662e609d5ede5f48b4454a0984'),
+      ('public.enregistrer_facture(uuid, uuid, jsonb, jsonb, boolean)', '6dc9348ceef8ae5fd72568748e60fa6b'),
       ('public.garder_devis_facture()', '5a56b324e6ec9f88b431bbf9ba465f13')
     ) as x(signature, empreinte)
   loop

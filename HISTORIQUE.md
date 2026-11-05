@@ -48125,6 +48125,23 @@ illisible : un bandeau, ni avoir ni formulaire. Drapeau baissé, les empreintes 
 celles du code d'avant (76a3631), dans les deux espaces. Trois mutations (le refus du cumul, la marque, la lecture illisible
 lue « sans acompte ») mordent.
 
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS : P5B3-Q1 ET P5B2-Q1 ÉCRITS DANS LA MIGRATION
+
+Le cabinet a confirmé le 05/11/2026 toutes les questions de l'acompte à la recommandation et colle la migration le jour même :
+deux réponses que l'écran seul tenait (`jugerLAcompte`) entrent dans `acomptes_des_devis` (préparée), aux mots du module, en
+22023. P5B3-Q1 : `facturer_acompte_devis` refuse un devis dont `nature_operation` vaut « biens » ou « mixte »
+(`REFUS_ACOMPTE_DE_BIENS`), après l'état du devis et du dossier, avant la demande. P5B2-Q1 : une date du versement postérieure
+au jour de Paris (`refusDuVersementFutur`, le jour en JJ/MM/AAAA comme `formatDate`), en dernier dans `facturer_acompte_devis`
+(après la finale laissée, P5B-Q5), et dans `enregistrer_facture`, sur un acompte, après « ne se porte que sur une facture
+d'acompte », avant toute écriture ; les bornes 2000 à 2099 restent au générateur CII. L'écran n'envoie jamais cette date à
+`enregistrer_facture` (`acomptesDesFactures.ts` ne la juge pas) : rien à y accorder. Les empreintes de la production, relues le
+jour même, n'ont pas bougé ; celle d'`enregistrer_facture` posée devient `6dc9348c…`, et la garde du retour la suit.
+`acomptesDuDevis.test.ts` confronte les deux refus au texte, à la lettre et dans l'ordre (rouge sur la migration d'avant). Sur
+la réplique (copies d'`e6_apres`) : `acomptesDesDevis.sql` 168 verdicts (dix neufs), 0 en faute, 39 mutations sur 39, banc du
+leurre SÛR ; `factures.sql` 144, `devis.sql` 187, `devisSuppression.sql` 16, `encaissementsFactures.sql` 113, `envoiDesDevis.sql`
+28 : 0 en faute ; `rls.sql` 0 en faute (le bloc TD en attente), 73 mutations sur 73 ; aller, retour, aller : `86dd0752…`, puis
+`367df798…`, deux fois ; neuf mutations de la migration (chaque refus retiré, élargi ou déplacé) virent l'essai au rouge.
+
 ### 05/11/2026 — LA TRACE DES DROITS D'UN ACCÈS, EN BASE (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE)
 
 La migration `trace_des_droits` (supabase/preparees/20261105120000, 15 078 caractères, `37516c5b…` ; PRÉPARÉE, pas appliquée ; elle
