@@ -394,6 +394,10 @@ const GESTES_DES_FONCTIONS: Record<string, readonly (readonly [FonctionDeLaVente
   ],
   'relever les statuts de sa plateforme': [['plateforme-agreee', 'relever']],
   'envoyer une facture par e-mail, trente par dossier et par jour au plus': [['send-email', 'facture']],
+  // L'envoi d'un devis émis (étape P6c) : la phrase des devis le nomme, sa migration en base.
+  ...(DEVIS_EXPORTES && ENVOI_DES_DEVIS_PREVU
+    ? { 'envoyer un devis émis par e-mail, dans le même plafond que ses factures': [['send-email', 'devis']] as const }
+    : {}),
 }
 // LES ACTIONS QUE LA TABLE OUVRE À « VENTES » ET QUE LA PHRASE NE NOMME PAS ENCORE, chacune avec sa raison — une liste au
 // nombre près. L'envoi d'un devis par e-mail (`send-email › devis`, étape P6c2) : la fonction le sait, mais elle ne se
@@ -877,7 +881,7 @@ describe('ce que disent les cases, les articles ouverts (étape A1)', () => {
 // ses deux états : levé, la phrase des ventes les nomme, sans écran ; baissé, la phrase est celle d'avant, au caractère près.
 describe('ce que disent les cases, les devis ouverts (étape P5)', () => {
   const DEBUT = ' Par la base, il lit aussi ses devis'
-  const FIN = 'supprimer un brouillon de devis.'
+  const FIN = 'dans le même plafond que ses factures.'
 
   it.each([false, true])('banque ouverte : %s — la phrase des ventes, puis ses devis, leur lien et leurs quatre gestes, et rien d’autre', (banque) => {
     const avant = ceQueDisentLesCases(banque, true, true, true, true, true, true, true, true, BASCULE, true, false)

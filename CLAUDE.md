@@ -750,22 +750,20 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   - P4 : la mention du mandataire à l'impression (EC-Q2 : le nom du cabinet figé avec la facture, une migration
     d'`enregistrer_facture`) ;
   - P8 : la connexion bancaire du client ;
-  - P5, les devis : deux migrations et un retour arrière, perdus avec le disque puis réécrits le 04/11/2026 contre la
-    base d'aujourd'hui, éprouvés sur une réplique et accordés par le cabinet le même jour : la première en production
-    (20261104204904), la seconde (`supprimer_brouillon_devis`) à coller ; l'émetteur posé du dossier et aucun IBAN
-    imprimé, comme la facture (A7) ; le jour de l'application, la phrase de la case « Ventes » nomme les devis et
-    l'ordre de restauration les met avant `emails_envoyes` ; le code suit derrière `DEVIS_EXPORTES` (la vue « Devis »,
-    la réponse, la facture tirée, l'aperçu et l'impression : P6a1 à P6b) ; l'envoi par e-mail (P6c) : sa migration en
-    production depuis le 05/11/2026 (`envoi_des_devis`, 20261105070313 ; `ENVOI_DES_DEVIS_PREVU` se lève avec
-    `DEVIS_EXPORTES`), puis `send-email` déployée et `ENVOI_DES_DEVIS_OFFERT` levé ; un mois de validité proposé,
-    modifiable ; aucun modèle par métier pour l'instant ; l'acompte, une facture d'acompte puis une facture de solde (à
-    ajouter : `facturer_devis` ne tire qu'une facture) ; un devis refusé ou expiré gardé trois ans, puis proposé à
-    l'effacement, jamais effacé seul ; les devis de soins hors de l'application ; une acceptation après la validité, sur
-    une confirmation explicite → « LES DEVIS, EN BASE », « LES DEVIS, EN BASE : LES DEUX MIGRATIONS RÉÉCRITES CONTRE LA
-    BASE D'AUJOURD'HUI ET ÉPROUVÉES (P5) », « LES DEVIS : L'ÉMETTEUR DU DOSSIER ET AUCUN IBAN IMPRIMÉ, COMME LA FACTURE
-    (P5) ; LE PREMIER LOT DES ÉCRANS (P6A1) », « LES DEVIS : RÉPONDRE, EN TIRER UNE FACTURE, L'APERÇU ET L'IMPRESSION
-    (P6A2, P6B), DERRIÈRE `DEVIS_EXPORTES` », « LES DEVIS : L'ENVOI PAR E-MAIL, EN BASE (P6C1) (PRÉPARÉE, PAS
-    APPLIQUÉE) ».
+  - P5, les devis : EN PRODUCTION depuis le 05/11/2026 — `devis_du_client` (20261104204904, par l'outil),
+    `envoi_des_devis` (20261105070313) et `devis_du_client_suppression` (20261105073709, collée), dans l'export ;
+    `DEVIS_EXPORTES` et `ENVOI_DES_DEVIS_PREVU` levés : la vue « Devis » des deux espaces, la réponse, la facture tirée,
+    l'aperçu et l'impression (P6a1 à P6b), la case « Ventes » qui les nomme, l'envoi par e-mail compris ; reste
+    `send-email` déployée, puis `ENVOI_DES_DEVIS_OFFERT` levé (P6c) ; l'émetteur posé du dossier et aucun IBAN imprimé,
+    comme la facture (A7) ; un mois de validité proposé, modifiable ; aucun modèle par métier pour l'instant ; l'acompte
+    (P5b), une facture d'acompte puis une facture finale qui le reprend : conçu, son module pur (P5b1), un acompte qui ne
+    couvre jamais tout le devis ni ne laisse de TVA négative (P5B-Q5, sur la recommandation), sa migration (P5b2) en
+    préparation ; un devis refusé ou expiré gardé trois ans, puis proposé à l'effacement, jamais effacé seul ; les devis
+    de soins hors de l'application ; une acceptation après la validité, sur une confirmation explicite → « LES DEVIS, EN
+    BASE », « LES DEVIS : RÉPONDRE, EN TIRER UNE FACTURE, L'APERÇU ET L'IMPRESSION (P6A2, P6B), DERRIÈRE
+    `DEVIS_EXPORTES` », « L'ACOMPTE D'UN DEVIS : LA CONCEPTION (P5B) », « L'ACOMPTE D'UN DEVIS NE COUVRE JAMAIS TOUT LE
+    DEVIS (P5B-Q5, SUR LA RECOMMANDATION) », « LES DEVIS EN PRODUCTION : LA SECONDE MIGRATION COLLÉE ET LES DRAPEAUX
+    LEVÉS ».
   - La suite, en trois parties (« au minimum faire comme le logiciel du client, et aller plus loin ») : le premier
     groupe, A1 à A11 ; la parité, B1 à B9 (achats, notes de frais, analyse, documents du cabinet, trois cases neuves
     « Achats », « Notes de frais », « Documents », le resserrement des pièces) ; « aller plus loin », C1 à C8
@@ -1232,8 +1230,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   d'avant → « LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES ». **Connexion bancaire** : 90
   jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
-  **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
-  contacts, paramètres** : une ligne, un client de facture gardent leur COPIE ; rien ne se supprime (un contact
+  **Les devis** : leurs refus, que `devis.ts` redit, se confrontent au texte exporté (`devis.test.ts`) et se rejouent
+  par `devis.sql`. **Articles, contacts, paramètres** : une ligne, un client de facture gardent leur COPIE ; rien ne se supprime (un contact
   s'efface) → « LES ARTICLES, EN BASE », « LES CONTACTS, EN BASE », « LES PARAMÈTRES DE FACTURATION, EN BASE ». Un prix
   unitaire ne s'arrondit pas en silence (six décimales) → « UN ARTICLE DANS LA FACTURE ». Un contact : ni téléphone ni
   date de naissance ; la règle des soins ne range ni un non-assujetti sans SIREN ni un client établi hors de France ;

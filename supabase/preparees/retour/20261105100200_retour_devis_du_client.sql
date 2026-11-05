@@ -1,8 +1,8 @@
 -- LE RETOUR ARRIÈRE DES DEUX MIGRATIONS DES DEVIS (`devis_du_client` et `devis_du_client_suppression` ; espace client, étape
 -- P5) — PRÉPARÉ, À NE COLLER QU'AVEC L'ACCORD EXPLICITE DU CABINET : il DÉTRUIT des données. À coller dans l'éditeur SQL de
 -- Supabase, dans une transaction, avec sa ligne d'historique (CLAUDE.md, « Quand `apply_migration` attend une
--- confirmation »). Les migrations : supabase/preparees/20261105100000_devis_du_client.sql et
--- 20261105100100_devis_du_client_suppression.sql ; le récit : HISTORIQUE.md, « LES DEVIS, EN BASE ». Retrouvé de la
+-- confirmation »). Les migrations : supabase/schema/20261104204904_devis_du_client.sql et
+-- 20261105073709_devis_du_client_suppression.sql ; le récit : HISTORIQUE.md, « LES DEVIS, EN BASE ». Retrouvé de la
 -- version du 10/10/2026, ajusté le 04/11/2026 aux objets que les migrations réécrites posent.
 --
 -- L'ORDRE : D'ABORD l'application, `DEVIS_EXPORTES` (src/lib/devis.ts) repassé à `false` et les deux fichiers des
