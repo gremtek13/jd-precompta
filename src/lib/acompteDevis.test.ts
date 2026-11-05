@@ -117,28 +117,46 @@ describe('un acompte, cas écrits à la main', () => {
     expect(refusDeLaFinale(finale)).toBeNull()
   })
 
-  it('100 % d’un coup : la finale à 0 €, puis plus d’acompte', () => {
+  it('100 % d’un coup se refuse : le solde se facture par la finale (P5B-Q5) ; des acomptes venus d’ailleurs qui couvrent tout ne laissent rien', () => {
     const devis = [ligne(10, 100, 20)]
-    const a = tirerEtValider(entree(devis, pct(100)), 'F2026-0012')
-    expect(totauxParTaux(lignesDeLaFinale(devis, [a]))).toEqual([{ taux_tva: 20, ht: 0, tva: 0 }])
-    expect(preparerAcompte(entree(devis, pct(1), [a]))).toEqual({ ok: false, refus: REFUS_ACOMPTE.sansReste })
+    expect(preparerAcompte(entree(devis, pct(100)))).toEqual({ ok: false, refus: REFUS_ACOMPTE.couvreToutLeDevis })
+    expect(preparerAcompte(entree(devis, ttc(120000)))).toEqual({ ok: false, refus: REFUS_ACOMPTE.couvreToutLeDevis })
+    // 99,99 % laisse 0,10 € HT et 0,02 € de TVA : accepté.
+    const a = tirerEtValider(entree(devis, pct(99.99)), 'F2026-0012')
+    expect(totauxParTaux(lignesDeLaFinale(devis, [a]))).toEqual([{ taux_tva: 20, ht: 10, tva: 2 }])
+    const tout: AcompteValide = { id: 'x', numero: 'F2026-0019', date: '2026-01-01', lignes: [{ quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20 }] }
+    expect(preparerAcompte(entree(devis, pct(1), [tout]))).toEqual({ ok: false, refus: REFUS_ACOMPTE.sansReste })
   })
 
-  it('100 % d’un coup sur deux lignes de 10,02 € à 20 % : la finale à 0 € HT et −0,01 € de TVA (arrondi par ligne)', () => {
-    // La TVA du devis est la somme des arrondis de ses lignes (2,00 + 2,00), celle de l'acompte l'arrondi de sa part
-    // (4,008 → 4,01) : la somme des deux factures reste celle du devis, mais la finale porte −0,01 € à ce taux.
-    const devis = [ligne(1, 10.02, 20), ligne(1, 10.02, 20)]
-    const a = tirerEtValider(entree(devis, pct(100)), 'F2026-0013')
+  it('un acompte qui laisserait une TVA négative à la finale se refuse (P5B-Q5) : l’arrondi par ligne du devis', () => {
+    // Trois lignes de 10,02 € à 20 % : 6,00 € de TVA, la somme des arrondis de ses lignes (2,004 → 2,00). À 99,9 %,
+    // l'acompte ferait 30,03 € HT et 6,01 € de TVA (6,006) : la finale porterait 0,03 € HT et −0,01 € de TVA.
+    const devis = [ligne(1, 10.02, 20), ligne(1, 10.02, 20), ligne(1, 10.02, 20)]
+    expect(preparerAcompte(entree(devis, pct(99.9)))).toEqual({
+      ok: false,
+      refus:
+        'L’acompte laisserait une TVA négative à la facture finale (-0,01 € à 20 %) : la TVA du devis s’arrondit ligne par ' +
+        'ligne, celle de l’acompte sur sa part. Demandez un peu moins, ou tirez la facture finale.',
+    })
+    // À 99,8 %, 30,00 € HT et 6,00 € de TVA : la finale garde 0,06 € HT et 0,00 € de TVA.
+    const a = tirerEtValider(entree(devis, pct(99.8)), 'F2026-0013')
     const finale = lignesDeLaFinale(devis, [a])
-    expect(totauxParTaux(finale)).toEqual([{ taux_tva: 20, ht: 0, tva: -1 }])
+    expect(totauxParTaux(finale)).toEqual([{ taux_tva: 20, ht: 6, tva: 0 }])
     expect(refusDeLaFinale(finale)).toBeNull()
+    // Deux lignes de 10,02 € : l'acompte entier (4,01 € de TVA contre 4,00 €) se refuse d'abord parce qu'il couvre tout.
+    expect(preparerAcompte(entree([ligne(1, 10.02, 20), ligne(1, 10.02, 20)], pct(100)))).toEqual({
+      ok: false,
+      refus: REFUS_ACOMPTE.couvreToutLeDevis,
+    })
   })
 
   it('un TTC inaccessible : 0,03 € à 20 % donne 0,02 € HT et 0,02 € TTC, dit exact', () => {
     const devis = [ligne(1, 1, 20)]
     expect(preparerAcompte(entree(devis, ttc(3)))).toMatchObject({ ok: true, cibleHt: 2, ttc: 2 })
     expect(preparerAcompte(entree(devis, ttc(4)))).toMatchObject({ ok: true, cibleHt: 3, ttc: 4 })
-    expect(preparerAcompte(entree(devis, ttc(120)))).toMatchObject({ ok: true, cibleHt: 100, ttc: 120 })
+    // Le TTC entier du devis le couvrirait tout (P5B-Q5) ; un centime de moins laisse 0,01 € HT à la finale.
+    expect(preparerAcompte(entree(devis, ttc(120)))).toEqual({ ok: false, refus: REFUS_ACOMPTE.couvreToutLeDevis })
+    expect(preparerAcompte(entree(devis, ttc(119)))).toMatchObject({ ok: true, cibleHt: 99, ttc: 119 })
     expect(preparerAcompte(entree(devis, ttc(121)))).toEqual({
       ok: false,
       refus: 'L’acompte (1,21 € TTC) dépasse ce qui reste à facturer du devis (1,20 € TTC).',
@@ -179,7 +197,8 @@ describe('les refus avant le clic', () => {
   it('la saisie : un pourcentage hors de ]0, 100] ou plus fin que le centième, un montant nul, négatif ou fractionnaire', () => {
     for (const p of [0, -5, 100.01, Number.NaN, Number.POSITIVE_INFINITY]) expect(refus(entree(devis, pct(p)))).toBe(REFUS_ACOMPTE.pourcentageHorsBornes)
     expect(refus(entree(devis, pct(33.333)))).toBe(REFUS_ACOMPTE.pourcentageTropPrecis)
-    expect(refus(entree(devis, pct(100)))).toBeNull()
+    // 100 % est dans les bornes de la saisie ; il se refuse ensuite parce qu'il couvrirait tout le devis.
+    expect(refus(entree(devis, pct(100)))).toBe(REFUS_ACOMPTE.couvreToutLeDevis)
     expect(refus(entree(devis, pct(14.07)))).toBeNull()
     for (const t of [0, -1, Number.NaN]) expect(refus(entree(devis, ttc(t)))).toBe(REFUS_ACOMPTE.montantNonPositif)
     expect(refus(entree(devis, ttc(10.5)))).toBe(REFUS_ACOMPTE.montantTropPrecis)
@@ -193,10 +212,15 @@ describe('les refus avant le clic', () => {
     expect(refus(entree(devis, pct(10), [trop]))).toBe('Les acomptes validés dépassent le devis à 20 %.')
   })
 
-  it('une finale dont un taux serait négatif', () => {
+  it('une finale dont un taux serait négatif, en HT puis en TVA', () => {
     const trop: AcompteValide = { id: 'x', numero: 'F2026-0021', date: '2026-01-01', lignes: [{ quantite: 1, prix_unitaire_ht: 100.01, taux_tva: 20 }] }
     expect(refusDeLaFinale(lignesDeLaFinale(devis, [trop]))).toBe(
       'La facture finale serait négative à 20 % : les acomptes repris dépassent le devis.',
+    )
+    // Un acompte venu d'ailleurs, de tout le HT de deux lignes de 10,02 € à 20 % : 4,01 € de TVA contre 4,00 €.
+    const entier: AcompteValide = { ...trop, lignes: [{ quantite: 1, prix_unitaire_ht: 20.04, taux_tva: 20 }] }
+    expect(refusDeLaFinale(lignesDeLaFinale([ligne(1, 10.02, 20), ligne(1, 10.02, 20)], [entier]))).toBe(
+      'La facture finale porterait une TVA négative à 20 % : les acomptes repris en ont pris plus que le devis n’en porte.',
     )
   })
 })
@@ -265,6 +289,20 @@ function ttcDuHt(groupes: ResteDuGroupe[], ht: number): number {
 
 const parTaux = (lignes: readonly LigneTiree[]) => new Map(totauxParTaux(lignes).map((x) => [x.taux_tva, x]))
 
+// La finale que laisserait un acompte de `cible` centimes HT réparti sur les restes, recomposée ici à partir des
+// lignes du devis et des parts : de quoi juger qu'un refus de TVA négative est fondé.
+function tvaLaissee(devis: LigneDuDevisPourAcompte[], avant: AcompteValide[], groupes: ResteDuGroupe[], cible: number) {
+  const parts = repartirSurLesRestes(groupes, cible)
+  return totauxParTaux([
+    ...lignesDeLaFinale(devis, avant),
+    ...groupes.map((g, i) => ({ quantite: -1, prix_unitaire_ht: parts[i] / 100, taux_tva: g.taux_tva })),
+  ])
+}
+
+// Les refus de P5B-Q5 à cette graine, comptés pour qu'aucun ne disparaisse sans qu'on le voie.
+const COUVRE_TOUT = 41
+const TVA_NEGATIVE = 20
+
 describe(`la batterie : ${NOMBRE_DE_DEVIS} devis tirés de la graine ${GRAINE}`, () => {
   let cas: CasDeLaBatterie[] = []
   beforeAll(() => {
@@ -328,7 +366,9 @@ describe(`la batterie : ${NOMBRE_DE_DEVIS} devis tirés de la graine ${GRAINE}`,
         if (resteHt === 0n) expect(a.resultat).toEqual({ ok: false, refus: REFUS_ACOMPTE.sansReste })
         else if (attendu === 0n) expect(a.resultat).toEqual({ ok: false, refus: REFUS_ACOMPTE.moinsDUnCentime })
         else if (attendu > resteHt) expect(a.resultat.ok).toBe(false)
-        else expect(a.resultat.ok && BigInt(a.resultat.cibleHt)).toBe(attendu)
+        else if (attendu === resteHt) expect(a.resultat).toEqual({ ok: false, refus: REFUS_ACOMPTE.couvreToutLeDevis })
+        else if (!a.resultat.ok) expect(tvaLaissee(c.devis, a.avant, restes.groupes, Number(attendu)).some((x) => x.tva < 0)).toBe(true)
+        else expect(BigInt(a.resultat.cibleHt)).toBe(attendu)
       }
     }
   })
@@ -357,8 +397,7 @@ describe(`la batterie : ${NOMBRE_DE_DEVIS} devis tirés de la graine ${GRAINE}`,
     expect(confrontes).toBeGreaterThan(400)
   })
 
-  it('la finale : HT positif ou nul par taux, la TVA reprise l’opposé exact, finale + acomptes = devis au centime', () => {
-    let tvaNegatives = 0
+  it('la finale : HT et TVA positifs ou nuls par taux, du HT laissé, les reprises l’opposé exact, finale + acomptes = devis', () => {
     for (const c of cas) {
       const finale = lignesDeLaFinale(c.devis, c.valides)
       expect(refusDeLaFinale(finale)).toBeNull()
@@ -375,17 +414,26 @@ describe(`la batterie : ${NOMBRE_DE_DEVIS} devis tirés de la graine ${GRAINE}`,
         expect(r.ht + a.ht).toBe(0)
         expect(f.ht + a.ht).toBe(d.ht)
         expect(f.tva + a.tva).toBe(d.tva)
-        // La TVA de la finale ne descend sous zéro que par les arrondis : d'un centime au plus par ligne en jeu.
-        if (f.tva < 0) {
-          tvaNegatives++
-          expect(f.ht).toBeLessThan(finale.length * 3)
-          expect(-f.tva).toBeLessThanOrEqual(finale.length)
-        }
+        // P5B-Q5 : aucun acompte accepté ne laisse à la finale une TVA négative.
+        expect(f.tva).toBeGreaterThanOrEqual(0)
       }
+      // Ni un acompte qui couvre tout : la finale garde du HT.
+      expect([...fin.values()].reduce((s, x) => s + x.ht, 0)).toBeGreaterThan(0)
       expect(new Set(finale.map((l) => l.taux_tva))).toEqual(new Set(devis.keys()))
     }
-    // Ce cas existe dans la batterie (23 taux à cette graine) : il est compté, pas ignoré (refusDeLaFinale, question
-    // ouverte pour P5b2).
-    expect(tvaNegatives).toBe(23)
+  })
+
+  it('les deux refus de P5B-Q5 se rencontrent dans la batterie, et chacun y est fondé', () => {
+    let couvreTout = 0
+    let tvaNegative = 0
+    for (const c of cas) {
+      for (const a of c.acomptes) {
+        if (a.resultat.ok) continue
+        if (a.resultat.refus === REFUS_ACOMPTE.couvreToutLeDevis) couvreTout++
+        else if (a.resultat.refus.startsWith('L’acompte laisserait une TVA négative')) tvaNegative++
+      }
+    }
+    expect(couvreTout).toBe(COUVRE_TOUT)
+    expect(tvaNegative).toBe(TVA_NEGATIVE)
   })
 })
