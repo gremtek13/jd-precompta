@@ -85,6 +85,9 @@ declare
   -- franchise, DR redevable, DN à préciser — et l'accès d'essai du client à chacun, sans droit, créés dans la
   -- sous-transaction de chaque contrôle qui s'en sert, annulés avec elle.
   c10 boolean := to_regprocedure('public.caisse_du_client(uuid, integer)') is not null;
+  -- La trace des droits (étape P1-trace ; migration `trace_des_droits`, PRÉPARÉE) : son déclencheur s'ajoute à ceux que le
+  -- contrôle 83 lit, APRÈS les deux gardes (l'ordre des noms) ; ce qu'il trace se joue dans `traceDesDroits.sql`.
+  trace boolean := to_regclass('public.trace_des_droits') is not null;
   dx uuid := 'c10d0000-0000-4000-8000-0000000000d1';
   df uuid := 'c10d0000-0000-4000-8000-0000000000d2';
   dr uuid := 'c10d0000-0000-4000-8000-0000000000d3';
@@ -818,7 +821,8 @@ begin
     'observe', coalesce(obs, 'garde absente'),
     'ok', coalesce(obs = 'true v search_path=public plpgsql anon false authenticated false public false | '
       || case when c10 then 'CREATE TRIGGER memberships_droit_caisse AFTER INSERT OR UPDATE OF droit_caisse, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_caisse() O ; ' else '' end
-      || 'CREATE TRIGGER memberships_droit_ventes AFTER INSERT OR UPDATE OF droit_ventes, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_ventes() O', false));
+      || 'CREATE TRIGGER memberships_droit_ventes AFTER INSERT OR UPDATE OF droit_ventes, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_ventes() O'
+      || case when trace then ' ; CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF droit_ventes, droit_banque, droit_caisse, dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O' else '' end, false));
 
   -- ══ 90 à 95. Les mutations de la garde : chacune doit MORDRE ════════════════════════════════════════════════
   for t in select * from (values

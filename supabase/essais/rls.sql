@@ -662,6 +662,12 @@
 -- migration, 94 lignes de verdict (la ligne « EN ATTENTE » de plus), 0 en faute, 72 mutations sur 72 qui mordent ; avec
 -- elle, 94 lignes, 0 en faute, 73 sur 73 ; la lecture du client resserrée aux factures y met deux lignes en faute
 -- (HISTORIQUE.md, « LES DEVIS : L'ENVOI PAR E-MAIL, EN BASE (P6C1) (PRÉPARÉE, PAS APPLIQUÉE) »).
+--
+-- 05/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (P1-trace : migration `trace_des_droits`, PRÉPARÉE, pas appliquée), qui
+-- crée `trace_des_droits` — la lecture du cabinet du dossier, l'insertion de restauration du super-administrateur, aucune
+-- autre policy, aucune branche client — et son déclencheur sur `memberships`. Le bloc TD (TD1 à TD3, M-TD1, M-TD2) ; EN
+-- ATTENTE sans la migration ; la boucle des invariants y voit la table de plus. Ce qu'il rend : HISTORIQUE.md, « LA TRACE
+-- DES DROITS D'UN ACCÈS, EN BASE (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE) ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -4106,6 +4112,148 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', 'CQ3. security definer, son chemin fixé, exécutable par les connectés, ni par l''anonyme ni par PUBLIC (lecture du catalogue)',
     'cible', 'remplacer_paiement_par_la_caisse', 'observe', n || ' sur 1', 'ok', n = 1);
   verdicts := verdicts || jsonb_build_object('controle', 'CQ. le jeu d''essai de la correction s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ TD. La trace des droits d'un accès (espace client, étape P1-trace ; migration `trace_des_droits`) ═══════════════════
+-- Une table du cabinet que le client ne lit pas, pas même pour son dossier, et que personne n'écrit en direct : la lecture
+-- du cabinet du dossier (`admin_du_dossier`, à authenticated) et l'insertion de la restauration (le super-administrateur) ;
+-- aucune autre policy ; une garde, avant la RLS, qui refuse toute écriture hors du déclencheur et de la restauration.
+--   TD1. « Banque » de l'accès du client à son dossier changée par le chef (une ligne de trace de plus) : le chef la lit (le
+--        contrôle POSITIF, l'écart seul) ; le client n'en lit rien ; l'anonyme non plus.
+--   TD2. Le client ne l'écrit pas (42501, la garde) ; ne la réécrit pas (aucune policy : aucune ligne touchée, la ligne
+--        relue). Un retrait ne se joue pas ici (l'outil d'exécution de la production le retient) :
+--        `traceDesDroitsSuppression.sql`, sur une réplique.
+--   TD3. Le catalogue : la RLS active, deux policies à authenticated seul — la lecture `admin_du_dossier(dossier_id)`,
+--        l'insertion `is_super_admin()`.
+-- Deux mutations, qui doivent mordre : M-TD1 (la lecture élargie au client « membre », le temps d'une sous-transaction : il
+-- lit la ligne de son dossier), M-TD2 (la lecture fermée : le chef ne lit plus la ligne). Avant la migration, une ligne dit
+-- que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  acces uuid; chef_avant bigint; chef_apres bigint; du_client bigint; de_l_anon text; ecrite text; reecrites bigint;
+  relue boolean; elargie bigint; fermee bigint; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.trace_des_droits') is null then
+    insert into rls_verdict values ('TD. la trace des droits d''un accès : EN ATTENTE de la migration trace_des_droits',
+      'trace_des_droits', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef inverse « Banque » sur l'accès du client à son dossier — une ligne de trace de plus ──
+    perform set_config('request.jwt.claims', '', true);
+    select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into chef_avant from trace_des_droits where dossier_id = dossier_du_client;
+    perform changer_droits_acces(acces, null, not (select m.droit_banque from memberships m where m.id = acces), null);
+    select count(*) into chef_apres from trace_des_droits where dossier_id = dossier_du_client;
+    reset role;
+    construit := true;
+
+    -- TD1 : le client, puis l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from trace_des_droits where dossier_id = dossier_du_client;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from trace_des_droits;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'TD1. le chef lit la trace du dossier du client (le contrôle positif) ; le client n''en lit rien, ni l''anonyme',
+      'cible', 'trace_des_droits',
+      'observe', 'le chef : ' || (chef_apres - chef_avant) || ' de plus | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_apres - chef_avant = 1 and du_client = 0 and de_l_anon = '0');
+
+    -- TD2 : le client n'écrit ni ne réécrit la trace.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into trace_des_droits (dossier_id, acces_id, client_id, droit, coche, geste)
+        values (dossier_du_client, acces, client, 'ventes', true, 'changement');
+      ecrite := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if ecrite is null then ecrite := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update trace_des_droits set coche = not coche where dossier_id = dossier_du_client returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select exists (select 1 from trace_des_droits t where t.acces_id = acces and t.droit = 'banque' and t.geste = 'changement'
+                    and t.fait_le = now() and t.coche = (select m.droit_banque from memberships m where m.id = acces)) into relue;
+    verdicts := verdicts || jsonb_build_object('controle', 'TD2. le client n''écrit pas la trace (la garde) et ne la réécrit pas (aucune policy, la ligne relue)',
+      'cible', 'trace_des_droits',
+      'observe', 'écrite : ' || coalesce(ecrite, '?') || ' | réécrites : ' || reecrites || ' | relue : ' || coalesce(relue::text, '?'),
+      'ok', ecrite = '42501 La trace des droits ne s''écrit que par l''écriture des droits d''un accès.' and reecrites = 0 and relue);
+
+    -- M-TD1 : la lecture élargie au client « membre ».
+    begin
+      alter policy trace_des_droits_lecture on public.trace_des_droits
+        using (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from trace_des_droits where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-TD1 — la lecture de la trace élargie au client « membre »',
+      'attendu', 'le client lit la ligne de son dossier', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-TD2 : la lecture fermée.
+    begin
+      alter policy trace_des_droits_lecture on public.trace_des_droits using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from trace_des_droits where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-TD2 — la lecture de la trace fermée',
+      'attendu', 'le chef ne lit plus la ligne', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- TD3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'trace_des_droits' and p.roles = array['authenticated']::name[]
+     and ((p.policyname = 'trace_des_droits_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'trace_des_droits_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'TD3. la RLS active ; deux policies à authenticated seul, la lecture du cabinet et l''insertion du super-administrateur (lecture du catalogue)',
+    'cible', 'trace_des_droits',
+    'observe', n || ' sur 2, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'trace_des_droits') || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.trace_des_droits'::regclass),
+    'ok', n = 2 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'trace_des_droits') = 2
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.trace_des_droits'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'TD. le jeu d''essai de la trace s''est construit', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

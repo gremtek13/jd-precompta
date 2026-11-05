@@ -34,6 +34,7 @@
     "rls": {"famille": "journal", "role": "super", "raison": "lit le journal des désignations que la production porte (semis/journal.sql) ; joué par le super-utilisateur, comme son en-tête le veut"},
     "validationExercice": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
     "reportDesSoldes": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
-    "acomptesDesDevis": {"famille": "apres", "raison": "la migration de l'acompte d'un devis (étape P5b2 : `acomptes_des_devis`, supabase/preparees/) est préparée, pas appliquée, et suppose les trois des devis : la réplique qui les porte, dans cet ordre, appliquées par le propriétaire avec leur ligne d'historique — sans elle, l'essai se joue et dit sa ligne 0 « EN ATTENTE », ses contrôles en faute ; sans les devis, ESSAI_IMPOSSIBLE"}
+    "acomptesDesDevis": {"famille": "apres", "raison": "la migration de l'acompte d'un devis (étape P5b2 : `acomptes_des_devis`, supabase/preparees/) est préparée, pas appliquée, et suppose les trois des devis : la réplique qui les porte, dans cet ordre, appliquées par le propriétaire avec leur ligne d'historique — sans elle, l'essai se joue et dit sa ligne 0 « EN ATTENTE », ses contrôles en faute ; sans les devis, ESSAI_IMPOSSIBLE"},
+    "traceDesDroits": {"famille": "apres", "raison": "la migration de la trace des droits d'un accès (étape P1-trace : `trace_des_droits`, supabase/preparees/) est préparée, pas appliquée : la réplique qui la porte, appliquée par le propriétaire — sans elle, l'essai se joue et dit sa seule ligne 0 « EN ATTENTE »"}
   }
 }

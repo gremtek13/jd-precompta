@@ -48124,3 +48124,20 @@ active le reprend (P5B2-Q2), permis la finale créditée en entier (P5B-Q4) ; ce
 illisible : un bandeau, ni avoir ni formulaire. Drapeau baissé, les empreintes de la liste, du formulaire et de l'avoir sont
 celles du code d'avant (76a3631), dans les deux espaces. Trois mutations (le refus du cumul, la marque, la lecture illisible
 lue « sans acompte ») mordent.
+
+### 05/11/2026 — LA TRACE DES DROITS D'UN ACCÈS, EN BASE (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE)
+
+La migration `trace_des_droits` (supabase/preparees/20261105120000, 15 078 caractères, `37516c5b…` ; PRÉPARÉE, pas appliquée ; elle
+passe par l'OUTIL : le mot n'y est que dans la clé, les événements et `tg_op`) pose `trace_des_droits` — une ligne par case qui
+change : dossier (cascade), accès et compte SANS clé (la trace survit au retrait de l'accès), droit, case après le geste, geste
+(« changement », « creation », « retrait » ; un accès emporté part de l'un et arrive dans l'autre), auteur `auth.uid()` (nul sans
+session), instant — écrite par `tracer_les_droits`, APRÈS les deux gardes de `memberships`, pour TOUT chemin (la fonction, l'insertion
+du cabinet, le retrait, le propriétaire, la clé secrète), sauf l'insertion du super-administrateur (la restauration réinsère l'accès,
+puis sa trace : rien de fabriqué) et le retrait par la suppression du dossier. `garder_trace_des_droits` (avant la RLS) : écrite par le
+déclencheur sous `jd.trace_des_droits` ou par la restauration, jamais réécrite, partie avec son dossier seul ; lue par
+`admin_du_dossier`, insérée par le super-administrateur, aucune autre policy. Sur la réplique : `traceDesDroits.sql` 41 verdicts, 0 en
+faute ; `traceDesDroitsSuppression.sql` (réplique seulement) 13 ; `droitsAcces.sql` 115 (son contrôle 83 voit le déclencheur) ; `rls.sql`
+98 lignes, 0 en faute, 75 mutations sur 75 (bloc TD) ; sans elle, EN ATTENTE. Treize mutations, toutes mordent (celle qui ouvre
+l'insertion au cabinet, par le catalogue seul : la garde refuse avant la policy). Banc du leurre SÛR, deux passes ; aller, retour,
+aller ; le retour se refuse sous une ligne. Au plan derrière `TRACE_DES_DROITS_PREVUE`, après les accès (restauration.sql, un bloc).
+Questions P1T-Q1 (la bascule des ventes dans ce journal) à Q3 ; aucun écran encore.
