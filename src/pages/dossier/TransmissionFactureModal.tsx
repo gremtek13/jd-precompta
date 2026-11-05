@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, dateRelative, formatDate } from '../../lib/format'
-import { donneesDeLaFacture, refusEmission, SANS_ACOMPTE_CII, type LigneCii, type OrigineCii } from '../../lib/factureCii'
+import { donneesDeLaFacture, refusEmission, type LigneCii, type OrigineCii } from '../../lib/factureCii'
+import { acompteSansLecture, lireLAcompteDeLaFacture } from '../../lib/acompteDeLaFactureLecture'
+import {
+  ACOMPTE_A_LIRE_AVANT_LA_TRANSMISSION, acompteIllisibleAvantLaTransmission, type LectureAcompte,
+} from '../../lib/acompteDeLaFactureVue'
 import { appelerPlateforme, lireConnexionPlateforme, type ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
 import { lireTout } from '../../lib/lectureComplete'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
@@ -79,6 +83,9 @@ export default function TransmissionFactureModal(props: Props) {
   // ne part pas — la base refuserait sa réservation. `null` tant qu'ils ne sont pas lus en entier.
   const [statuts, setStatuts] = useState<StatutAnnulant[] | null>(null)
   const [statutsErreur, setStatutsErreur] = useState<string | null>(null)
+  // L'acompte d'un devis (étape P5b4b, derrière `ACOMPTES_PREVUS`) : la marque, les reprises et ce qu'elles citent, lus pour
+  // CETTE facture (lib/acompteDeLaFactureLecture.ts) ; le drapeau baissé, sans lecture, `SANS_ACOMPTE_CII` comme hier.
+  const [acompteLu, setAcompteLu] = useState<LectureAcompte | null>(null)
   const [enCours, setEnCours] = useState<string | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -168,6 +175,14 @@ export default function TransmissionFactureModal(props: Props) {
     // transmission a gardé si son écriture a échoué après l'envoi. Il ne s'affiche que pour une facture partie par lui.
     lireEvenements()
   }, [facture.id])
+
+  useEffect(() => {
+    let annule = false
+    lireLAcompteDeLaFacture({ id: facture.id, dossier_id: facture.dossier_id, type: facture.type, facture_origine_id: facture.facture_origine_id })
+      .then((lu) => { if (!annule) setAcompteLu(lu) })
+    return () => { annule = true }
+  }, [facture.id, facture.dossier_id, facture.type, facture.facture_origine_id])
+  const acompte = (acompteLu?.factureId === facture.id ? acompteLu : null) ?? acompteSansLecture(facture.id)
 
   // UN SEUL VERROU pour toutes les actions de la fenêtre, posé avant le `try` et relâché dans le `finally`, APRÈS la
   // relecture : un clic pendant qu'elle court repartirait d'un état qu'on n'a pas encore vu. Le doublon, ici, sort de
@@ -282,11 +297,11 @@ export default function TransmissionFactureModal(props: Props) {
   // Partie par Super PDP : par le numéro qu'elle porte, ou par celui que sa transmission a gardé si son écriture a
   // échoué après l'envoi — superpdp-emit le retrouve, et la suit de même.
   const chezSuperPdp = facture.superpdp_invoice_id != null || (siennes?.some((t) => t.canal === 'superpdp' && t.flux_id != null) ?? false)
-  const refus = lignes != null && origine !== undefined
+  // L'acompte se juge comme le reste, aux mots du générateur : pas lu ou illisible, aucun jugement, donc aucun geste.
+  const refus = lignes != null && origine !== undefined && acompte?.etat === 'lue'
     ? refusEmission(donneesDeLaFacture(facture, lignes,
       { statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: numeroTvaAttribue }, origine,
-      // L'acompte d'un devis : l'écran ne lit pas encore sa marque ni ses reprises (P5b5, derrière `ACOMPTES_PREVUS`).
-      SANS_ACOMPTE_CII, aujourdHuiSql()))
+      acompte.acompte, aujourdHuiSql()))
     : null
   // Rejetée, elle ne repart pas : elle s'annule par un avoir interne (DGFiP, § 3.6.4). Refusée par l'acheteur chez Super
   // PDP, sa transmission reste acceptée — elle a été reçue —, et c'est l'historique qui le dit.
@@ -442,6 +457,9 @@ export default function TransmissionFactureModal(props: Props) {
                 )}
               </div>
             )}
+
+            {acompte === null && <p className="muted">{ACOMPTE_A_LIRE_AVANT_LA_TRANSMISSION}</p>}
+            {acompte?.etat === 'illisible' && <p className="error-text">{dire(acompteIllisibleAvantLaTransmission(acompte.motif))}</p>}
 
             {active == null && rejet == null && !annuleeLa && avoirInterne === false && !avantLesTransmissions && refus != null && refus.length > 0 && (
               <div className="alerte-tva" style={{ marginTop: 8 }}>

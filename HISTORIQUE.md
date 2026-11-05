@@ -48058,3 +48058,19 @@ COPIES (`superpdp-emit`, `plateforme-agreee`) suivent le bloc ; elles ne nomment
 `ACOMPTES_EN_BASE = false` que `copiesFacturation.test.ts` lie à `ACOMPTES_PREVUS`. Trois exemples neufs (`acompte`,
 `finale-deux-acomptes` à deux taux, où la TVA par ligne s'écarte d'un centime du taux appliqué à la base, que BR-CO-17 admet,
 `avoir-acompte`) : `valider.mjs`, onze exemples, 0 erreur, 0 avertissement. Sept mutations, sept mordent.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS : L'APERÇU ET LA TRANSMISSION À L'ÉCRAN (P5B4B), DERRIÈRE `ACOMPTES_PREVUS`
+
+Du code d'écran et des tests, rien en base, aucune Edge Function. LA LECTURE (`acompteDeLaFactureLecture.ts`) reproduit
+`acompteDeLaFacture` de superpdp-emit côté navigateur, plus le devis lié (`devis_factures`, puis `devis`) et le numéro et la
+date de la facture qu'un avoir corrige ; drapeau baissé (lu à l'appel), `SANS_ACOMPTE_CII` sans aucune lecture
+(`acompteSansLecture`, que les écrans prennent avant le retour) ; levé, les reprises et les acomptes cités par `lireTout`, tout
+par `acompteLu` — une facture corrigée non rendue est illisible, jamais « pas un acompte » ; elle ne rejette jamais et rend
+l'identifiant de la facture lue. L'APERÇU (`FactureApercu`) pose ce que décide `ceQueLAcompteImprime`
+(`acompteDeLaFactureVue.ts`, pur) : « FACTURE D'ACOMPTE », « Acompte sur le devis … du … », « Acompte versé le … » (connu et
+autre que la date de la facture) ; la finale « FACTURE » et « Facture définitive après l'acompte … / les acomptes … et …,
+repris en déduction », ses reprises à quantité et montants négatifs ; l'avoir d'un acompte « AVOIR » et « Avoir sur la
+facture d'acompte … du … » à la place de « En référence à la facture … ». Pas encore lu, illisible, ou un acompte cité qui
+manque : l'avis à l'écran (`.facture-imprimable-avis`) et « Imprimer » grisé — un titre faux ne s'imprime pas. Drapeau
+baissé ou sans acompte, le même `innerHTML` (un test). LA TRANSMISSION passe l'acompte lu à `refusEmission` ; pas revenu ou
+illisible, aucun geste, et la fenêtre le dit. Trois mutations (le titre, le devis cité, la lecture levée), trois mordent.

@@ -11,6 +11,8 @@ import {
 } from '../../lib/mentionsFigeesVue'
 import { lireLeLogo } from '../../lib/logoDesFacturesLecture'
 import type { LogoLu } from '../../lib/logoDesFactures'
+import { acompteSansLecture, lireLAcompteDeLaFacture } from '../../lib/acompteDeLaFactureLecture'
+import { ceQueLAcompteImprime, type LectureAcompte } from '../../lib/acompteDeLaFactureVue'
 
 // Aperçu imprimable d'une facture validée — pas de génération PDF côté serveur pour l'instant (voir
 // discussion sur la transmission via une plateforme agréée, pas encore branchée) : la boîte de
@@ -31,6 +33,11 @@ import type { LogoLu } from '../../lib/logoDesFactures'
 // d'engagement pour tout acheteur, l'unité et la référence de chaque ligne. Rien n'y est relu du dossier : `dossier` ne sert
 // plus qu'à une facture d'avant, qui s'imprime comme hier, et dont l'écran — jamais le papier — dit qu'elle n'a pas figé ses
 // mentions (`.facture-imprimable-avis`, que l'impression retire). Le mandataire ne s'imprime pas (P4).
+//
+// L'ACOMPTE D'UN DEVIS (étape P5b4b, derrière `ACOMPTES_PREVUS`) : la facture d'acompte, la finale et l'avoir d'un acompte
+// impriment leur titre et leurs références tels que `ceQueLAcompteImprime` (lib/acompteDeLaFactureVue.ts) les décide, sur
+// la lecture de lib/acompteDeLaFactureLecture.ts gardée avec la facture lue. Drapeau baissé, ou sans acompte, rien ne
+// change ; pas encore lue ou illisible, l'écran le dit et l'impression ne s'offre pas.
 export default function FactureApercu({ facture, dossier, onClose }: { facture: FactureEmise; dossier: DossierCii; onClose: () => void }) {
   const [lignes, setLignes] = useState<FactureLigne[] | null>(null)
   // Numéro de la facture corrigée, affiché uniquement pour un avoir (voir facture_origine_id) — une
@@ -69,6 +76,18 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
   const logoCourant = logoLu?.cle === `${logoChemin}|${logoEmpreinte}` ? logoLu : null
   const avisLogo = logoChemin === null ? null : logoCourant === null ? LOGO_EN_LECTURE : logoNonImprime(logoCourant.lu)
   // L'unité ne prend une colonne que sur une facture figée dont une ligne en porte une.
+  // L'acompte, lu pour CETTE facture : une réponse arrivée pour une autre ne s'applique pas ; le drapeau baissé, sans lecture.
+  const [acompteLu, setAcompteLu] = useState<LectureAcompte | null>(null)
+  useEffect(() => {
+    let annule = false
+    lireLAcompteDeLaFacture({ id: facture.id, dossier_id: facture.dossier_id, type: facture.type, facture_origine_id: facture.facture_origine_id })
+      .then((lu) => { if (!annule) setAcompteLu(lu) })
+    return () => { annule = true }
+  }, [facture.id, facture.dossier_id, facture.type, facture.facture_origine_id])
+  const acompteCourant = (acompteLu?.factureId === facture.id ? acompteLu : null) ?? acompteSansLecture(facture.id)
+  const acompteImprime = ceQueLAcompteImprime(facture, acompteCourant)
+  const avisAcompte = acompteImprime.etat === 'retenu' ? acompteImprime.avis : null
+
   const avecUnite = figee !== null && (lignes ?? []).some((l) => l.unite != null)
   const colonnes = avecUnite ? 7 : 6
 
@@ -101,12 +120,13 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
       <div className="card facture-imprimable">
         <div className="facture-imprimable-actions">
           <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>Fermer</button>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => window.print()}>Imprimer / Enregistrer en PDF</button>
+          <button type="button" className="btn btn-primary btn-sm" disabled={avisAcompte !== null} onClick={() => window.print()}>Imprimer / Enregistrer en PDF</button>
         </div>
-        {(dAvant || avisLogo) && (
+        {(dAvant || avisLogo || avisAcompte) && (
           <div className="facture-imprimable-avis" role="note">
             {dAvant && <p>{FACTURE_D_AVANT}</p>}
             {avisLogo && <p>{avisLogo}</p>}
+            {avisAcompte && <p>{avisAcompte}</p>}
           </div>
         )}
 
@@ -122,10 +142,11 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
             {numeroTva && <div className="muted">N° TVA intracommunautaire {numeroTva}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <h2 style={{ margin: 0 }}>{facture.type === 'avoir' ? 'AVOIR' : 'FACTURE'} {facture.numero}</h2>
-            {facture.type === 'avoir' && (
+            <h2 style={{ margin: 0 }}>{acompteImprime.etat === 'imprime' ? acompteImprime.titre : facture.type === 'avoir' ? 'AVOIR' : 'FACTURE'} {facture.numero}</h2>
+            {facture.type === 'avoir' && (acompteImprime.etat !== 'imprime' || acompteImprime.referenceDOrigine) && (
               <div className="muted">En référence à la facture {numeroOrigine ?? '…'}</div>
             )}
+            {acompteImprime.etat === 'imprime' && acompteImprime.references.map((r) => <div key={r} className="muted">{r}</div>)}
             <div className="muted">Émise le {formatDate(facture.date_emission)}</div>
             {facture.date_echeance && <div className="muted">Échéance le {formatDate(facture.date_echeance)}</div>}
           </div>
