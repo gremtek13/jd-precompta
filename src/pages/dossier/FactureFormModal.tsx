@@ -36,7 +36,7 @@ import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { ACOMPTES_PREVUS } from '../../lib/devis'
 import {
-  LIGNES_D_ACOMPTE_FIGEES, SANS_ACOMPTE, confirmationDeLaValidation, refusDeLaValidationDeLAcompte, refusDeLaValidationDeLaFinale,
+  LIGNES_D_ACOMPTE_FIGEES, confirmationDeLaValidation, refusDeLaValidationDeLAcompte, refusDeLaValidationDeLaFinale,
   type AcompteDeLaFacture,
 } from '../../lib/acomptesDesFactures'
 import ArticleChoixModal from './ArticleChoixModal'
@@ -126,8 +126,8 @@ type Props = QuiRedige & {
   reglageDesVentes: ReglageDesVentes
   facture: FactureEmise | null // null = nouvelle facture ; jamais une facture déjà validée (voir FacturesTab)
   // Ce qu'est le brouillon (étape P5b5b ; lib/acomptesDesFactures.ts) : une facture d'acompte, une finale, ou ni l'une ni
-  // l'autre — le défaut, celui d'une facture neuve et de l'onglet drapeau baissé.
-  acompte?: AcompteDeLaFacture
+  // l'autre (`SANS_ACOMPTE`, passé explicitement : une facture neuve, et toute facture drapeau baissé). Obligatoire.
+  acompte: AcompteDeLaFacture
   onClose: () => void
   onSaved: () => void
 }
@@ -139,7 +139,7 @@ type Props = QuiRedige & {
 export default function FactureFormModal(props: Props) {
   const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, reglageDesVentes, facture, onClose, onSaved } = props
   const { espace } = props
-  const acompte = props.acompte ?? SANS_ACOMPTE
+  const { acompte } = props
   // Les lignes du brouillon d'un acompte, lues telles quelles : elles repartent sans retouche (étape P5b5b).
   const [lignesDAcompte, setLignesDAcompte] = useState<LigneDAcompteLue[] | null>(null)
   // Le geste du cabinet seul : retenir l'adresse de l'émetteur comme celle du dossier. Nul pour le client.

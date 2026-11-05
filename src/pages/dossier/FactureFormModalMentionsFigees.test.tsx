@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FactureFormModal from './FactureFormModal'
 import { NON_BASCULE } from '../../test/factures'
@@ -131,8 +132,8 @@ function monter(espace: EspaceVentes, o: {
     reglageDesVentes: NON_BASCULE, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   }
   render(espace === 'cabinet'
-    ? <FactureFormModal espace="cabinet" onAdresseUpdated={() => {}} {...commun} />
-    : <FactureFormModal espace="client" {...commun} />)
+    ? <FactureFormModal acompte={SANS_ACOMPTE} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />
+    : <FactureFormModal acompte={SANS_ACOMPTE} espace="client" {...commun} />)
 }
 
 const ligneDuFormulaire = (i = 0) => document.querySelectorAll('tbody tr')[i] as HTMLElement

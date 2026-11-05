@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { SANS_ACOMPTE } from '../lib/acomptesDesFactures'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import type { ReactNode } from 'react'
@@ -351,11 +352,11 @@ const ECRANS: Ecran[] = [
     <Dossier1><FactureApercu facture={facture()} dossier={{ statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false }} onClose={rien} /></Dossier1>
   ) },
   { nom: 'FactureAvoirModal', fichier: 'pages/dossier/FactureAvoirModal.tsx', rendre: () => (
-    <Dossier1><FactureAvoirModal reglageDesVentes={NON_BASCULE} espace="cabinet" dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
+    <Dossier1><FactureAvoirModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="cabinet" dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
   ) },
   { nom: 'FactureFormModal', fichier: 'pages/dossier/FactureFormModal.tsx', rendre: () => (
     <Dossier1>
-      <FactureFormModal reglageDesVentes={NON_BASCULE} espace="cabinet"
+      <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="cabinet"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} facture={facture({ statut: 'brouillon', numero: null })}
         onAdresseUpdated={rien} onClose={rien} onSaved={rien}
@@ -365,7 +366,7 @@ const ECRANS: Ecran[] = [
   // Le même formulaire dans l'espace du client « Ventes » (étape A2b : un article dans la facture, lu EN ENTIER à l'ouverture).
   { nom: 'FactureFormModal (client)', fichier: 'pages/dossier/FactureFormModal.tsx', rendre: () => (
     <Dossier1>
-      <FactureFormModal reglageDesVentes={NON_BASCULE} espace="client"
+      <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="client"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} facture={facture({ statut: 'brouillon', numero: null })}
         onClose={rien} onSaved={rien}

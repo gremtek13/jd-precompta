@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FactureFormModal from './FactureFormModal'
 import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
@@ -77,7 +78,7 @@ function monter(
   faux.appels = []
   faux.resoudre = null
   render(
-    <FactureFormModal reglageDesVentes={NON_BASCULE} espace="cabinet"
+    <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="cabinet"
       dossierId="d1"
       dossierNom="Cabinet de test"
       dossierSiret={autres.dossierSiret ?? null}
@@ -293,8 +294,8 @@ describe('FactureFormModal — le statut de TVA à préciser et l’article manq
       onClose: () => {}, onSaved: () => {},
     }
     render(espace === 'client'
-      ? <FactureFormModal espace="client" {...commun} />
-      : <FactureFormModal espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
+      ? <FactureFormModal acompte={SANS_ACOMPTE} espace="client" {...commun} />
+      : <FactureFormModal acompte={SANS_ACOMPTE} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
     fireEvent.change(document.querySelector('#tiers-nom')!, { target: { value: 'Client SARL' } })
     fireEvent.change(document.querySelectorAll('tbody input')[0]!, { target: { value: 'Prestation' } })
   }

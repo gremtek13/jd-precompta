@@ -706,7 +706,7 @@ export default function FacturesTab(props: Props) {
           tvaSurDebits={tvaSurDebits}
           reglageDesVentes={reglageDesVentes}
           facture={editing === 'new' ? null : editing}
-          {...(ACOMPTES_PREVUS && editing !== 'new' ? { acompte: acompteDe(editing.id) } : {})}
+          acompte={editing === 'new' ? SANS_ACOMPTE : acompteDe(editing.id)}
           onClose={() => setEditing(null)}
           onSaved={load}
         />
@@ -728,7 +728,7 @@ export default function FacturesTab(props: Props) {
           // Sur la liste ENTIÈRE du dossier, toutes années confondues : un avoir de l'an prochain crédite la
           // facture de cette année. Lue en partie, on ne sait pas ce qui a été crédité, et c'est la base qui juge.
           credite={lectureIncomplete ? null : dejaCredite(avoirDe.id, factures)}
-          {...(ACOMPTES_PREVUS ? { acompte: acompteDe(avoirDe.id) } : {})}
+          acompte={acompteDe(avoirDe.id)}
           reglageDesVentes={reglageDesVentes}
           onClose={() => setAvoirDe(null)}
           onCreated={load}

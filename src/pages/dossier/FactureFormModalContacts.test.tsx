@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
 import { resolve } from 'node:path'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -162,7 +163,7 @@ async function monter(espace: 'cabinet' | 'client', o: Options = {}) {
     dossierId: 'd1', dossierNom: 'Dossier fictif', dossierSiret: null, dossierAdresse: null, statutTva: o.statut === undefined ? 'redevable' : o.statut,
     articleExoneration: o.exo ?? null, numeroTvaAttribue: false, tvaSurDebits: false, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   } as const
-  render(espace === 'client' ? <FactureFormModal reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
+  render(espace === 'client' ? <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
   if (o.facture) await screen.findByText('Adresse de l\'émetteur', { exact: false })
   // La date d'émission du jour changerait les échéances d'un test à l'autre : elle est posée, comme le ferait une saisie.
   if (o.emission !== null && !o.facture) fireEvent.change(champ('#date-emission'), { target: { value: o.emission ?? '2027-11-01' } })

@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FactureAvoirModal from './FactureAvoirModal'
 import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
@@ -112,7 +113,7 @@ async function monter(
   faux.lectureLignesRefusee = false
   faux.lignes = lignes
   render(
-    <FactureAvoirModal
+    <FactureAvoirModal acompte={SANS_ACOMPTE}
       espace={espace} dossierId="d1" factureOrigine={origine} credite={credite} reglageDesVentes={reglage} onClose={() => {}} onCreated={() => {}}
     />,
   )
@@ -278,7 +279,7 @@ describe('FactureAvoirModal — une lecture refusée ne passe pas pour « rien �
     faux.appelsRpc = []
     faux.lectureLignesRefusee = true
     render(
-      <FactureAvoirModal espace="cabinet" dossierId="d1" factureOrigine={factureOrigine} credite={0} reglageDesVentes={NON_BASCULE} onClose={() => {}} onCreated={() => {}} />,
+      <FactureAvoirModal acompte={SANS_ACOMPTE} espace="cabinet" dossierId="d1" factureOrigine={factureOrigine} credite={0} reglageDesVentes={NON_BASCULE} onClose={() => {}} onCreated={() => {}} />,
     )
     expect(await screen.findByText(/JWT expired/)).toBeTruthy()
     expect(screen.getByText(/on ne l'a pas lue/)).toBeTruthy()
