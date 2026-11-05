@@ -48091,3 +48091,20 @@ au versement) et la finale (380, S4, BG-3 et BT-20, reprise à −1), refusent e
 rendent 503 sur les reprises en erreur ; sans acompte, le CII déposé et l'e-mail sont ceux de la source servie, comparés.
 Mutations : la constante de send-email levée seule, la réécriture qui ne remplace rien, la marque illisible prise pour
 « non » — trois mordent.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS : FACTURER UN ACOMPTE ET LE SOLDE DEPUIS LE DEVIS (P5B5A), DERRIÈRE `ACOMPTES_PREVUS`
+
+Du code d'écran et de module, et des tests ; rien en base, aucune Edge Function. LA LECTURE (`acomptesDuDevisLecture.ts`) :
+drapeau baissé, rien (`etat: 'sans'`) ; levé, les liens et leur rôle, les factures et leur marque, les lignes des acomptes
+validés, le modèle comptable, par `lireTout` — un rôle, une marque ou un modèle d'une autre forme rend la lecture illisible.
+LE MODULE (`acomptesDuDevis.ts`, pur) : l'état d'acompte d'un devis comme `acomptes_en_vigueur` et `finale_active_du_devis`
+(P5B-Q4 : une finale créditée en entier n'est plus active), `jugerLAcompte` (les refus de `facturer_acompte_devis` dans son
+ordre, puis le devis de biens, puis `preparerAcompte`, puis la date du versement, jamais après le jour de Paris, P5B2-Q1),
+`refusDuSolde` (ceux de `facturer_devis` remplacée, puis `refusDeLaFinale`), les deux confirmations ; ses refus confrontés à
+la migration préparée, à la lettre et dans l'ordre. P5B3-Q1 (B) : `REFUS_ACOMPTE_DE_BIENS`, de l'écran seul (`nature_operation`
+biens ou mixte), absent de la migration (un test). L'ÉCRAN : la vue « Devis » des deux espaces offre, sur un devis accepté,
+« Facturer un acompte » (DevisAcompteModal : un pourcentage ou un TTC, le TTC exact et les lignes avant le clic) et
+« Facturer le solde » à la place de « Transformer en facture » ; acomptes lus en partie ou refusés, aucun geste. Drapeau
+baissé, l'empreinte du rendu est celle du code d'avant (6c353ca), dans les deux espaces. Deux réécritures du client
+(« validez-le ou supprimez-le », « Demandez un peu moins »). Trois mutations (le refus des biens, le verrou, la lecture levée
+neutralisée), trois mordent. Le brouillon d'acompte dans l'onglet des factures (son formulaire, sa validation) : P5b5b.

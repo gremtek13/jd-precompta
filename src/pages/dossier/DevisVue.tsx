@@ -6,16 +6,22 @@ import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace, type EspaceVentes } from '../../lib/espaceVentes'
 import {
-  DEVIS_EXPORTES, ENVOI_DES_DEVIS_OFFERT, confirmationDeLEnvoiDuDevis, refusDeLEnvoiDuDevis,
+  ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_OFFERT, confirmationDeLEnvoiDuDevis, refusDeLEnvoiDuDevis,
   LIBELLES_ETAT_DEVIS, avisDeLApercuDuDevis, ceQueLeDevisImprime, champsDeRechercheDuDevis, confirmationDeLaFacturation, confirmationDeLaReponse, confirmationDeLEmission,
   confirmationDeLaSuppressionDevis, decisionDeLaSaisie, ecritureDuDevis, etatDuDevis, factureDuDevis, factureTireeDe,
   libelleDeLaFactureTiree, lignesSaisiesDuDevis, refusDeLaReponse, refusDeLaSaisieDevis, refusFacturationDevis, refusSuppressionDevis,
   saisieDuDevis, type CibleDevis, type EmissionAJuger, type EtatDevis, type SaisieDevis, type SaisieReponseDevis,
 } from '../../lib/devis'
 import { lireLesDevis, type LectureDesDevis } from '../../lib/devisLecture'
-import { deciderDevis, enregistrerDevis, facturerDevis, supprimerBrouillonDevis } from '../../lib/devisEcriture'
+import { deciderDevis, enregistrerDevis, facturerAcompteDevis, facturerDevis, supprimerBrouillonDevis } from '../../lib/devisEcriture'
+import {
+  confirmationDeLAcompte, confirmationDuSolde, etatDesAcomptes, jugerLAcompte, libelleDesFacturesDuDevis, refusDuSolde,
+  type EtatAcomptesDuDevis, type SaisieAcompte,
+} from '../../lib/acomptesDuDevis'
+import { lireLesAcomptesDesDevis, type LectureDesAcomptes } from '../../lib/acomptesDuDevisLecture'
 import { envoyerDevisParEmail } from '../../lib/devisEnvoi'
 import type { ArticleExoneration, Devis, StatutTva } from '../../lib/types'
+import DevisAcompteModal from './DevisAcompteModal'
 import DevisApercu from './DevisApercu'
 import DevisEmailModal from './DevisEmailModal'
 import DevisReponseModal from './DevisReponseModal'
@@ -31,7 +37,12 @@ import DevisSaisieModal from './DevisSaisieModal'
 // entier comme tout le reste — lue en partie, l'état qu'il dirait pourrait être faux. Puis (étape P6c3) : « Envoyer par e-mail »
 // un devis ÉMIS (`send-email`, lib/devisEnvoi.ts), jamais un brouillon, derrière `ENVOI_DES_DEVIS_OFFERT` (la migration
 // `envoi_des_devis` et le déploiement de la fonction d'abord) : la confirmation nomme le devis, son client, son total et l'adresse,
-// et dit un devis expiré, répondu ou facturé, qui part tel quel.
+// et dit un devis expiré, répondu ou facturé, qui part tel quel. Puis (étape P5b5a), derrière `ACOMPTES_PREVUS` (la migration
+// `acomptes_des_devis` préparée) : sur un devis accepté, « Facturer un acompte » (`facturer_acompte_devis`, DevisAcompteModal)
+// et « Facturer le solde » (`facturer_devis` remplacée, la finale qui reprend les acomptes) à la place de « Transformer en
+// facture », sur les acomptes lus en entier avec les devis (lib/acomptesDuDevisLecture.ts) ; leurs refus et leurs mots dans
+// lib/acomptesDuDevis.ts. Drapeau baissé, rien de neuf n'est lu et la vue est celle d'hier au caractère près
+// (DevisVueAcomptes.test.tsx).
 //
 // QUI ÉCRIT : le cabinet ET le client « Ventes », par les mêmes fonctions (`enregistrer_devis`, `supprimer_brouillon_devis`,
 // `decider_devis`, `facturer_devis`) ;
@@ -77,6 +88,10 @@ export default function DevisVue(props: Props) {
   const { espace, dossierId, statutTva, articleExoneration } = props
   const dire = (texte: string) => pourLEspace(espace, texte)
   const [lecture, setLecture] = useState<LectureDesDevis | null>(null)
+  // Les acomptes des devis (étape P5b5a) : « sans » drapeau baissé, sans rien lire.
+  const [acomptes, setAcomptes] = useState<LectureDesAcomptes | null>(null)
+  // Le devis dont la fenêtre de l'acompte est ouverte, par son identifiant.
+  const [acompteDe, setAcompteDe] = useState<string | null>(null)
   const [fenetre, setFenetre] = useState<Fenetre | null>(null)
   // Le devis auquel on répond, tel que la liste l'a lu.
   const [reponseA, setReponseA] = useState<Devis | null>(null)
@@ -98,18 +113,24 @@ export default function DevisVue(props: Props) {
     let annule = false
     dossierAffiche.current = dossierId
     lireLesDevis(dossierId).then((lu) => { if (!annule) setLecture(lu) })
+    lireLesAcomptesDesDevis(dossierId).then((lu) => { if (!annule) setAcomptes(lu) })
     return () => { annule = true }
   }, [dossierId])
 
   async function relire() {
-    const lu = await lireLesDevis(dossierId)
-    if (dossierAffiche.current === dossierId) setLecture(lu)
+    const [lu, luAcomptes] = await Promise.all([lireLesDevis(dossierId), lireLesAcomptesDesDevis(dossierId)])
+    if (dossierAffiche.current === dossierId) {
+      setLecture(lu)
+      setAcomptes(luAcomptes)
+    }
   }
 
   // Le jour à Paris, lu au rendu : l'état « expiré » et le refus d'une émission datée de l'avenir le jugent comme la base.
   const aujourdHui = aujourdHuiAParis()
   const courante = lecture?.dossierId === dossierId ? lecture : null
-  if (courante == null) return <p className="muted">Chargement…</p>
+  // Drapeau levé, les acomptes se lisent avec les devis : rien ne s'affiche avant eux.
+  const acomptesCourants = acomptes?.dossierId === dossierId ? acomptes : null
+  if (courante == null || (ACOMPTES_PREVUS && acomptesCourants == null)) return <p className="muted">Chargement…</p>
   if (courante.etat === 'echec') {
     return (
       <p className="error-text">
@@ -120,8 +141,19 @@ export default function DevisVue(props: Props) {
   }
 
   const { devis, liens, factures, complete, motif } = courante
-  // Aucun geste ne part d'une liste lue en partie.
-  const peutEcrire = complete
+  // L'état d'acompte de chaque devis, sur les acomptes lus en entier (drapeau levé) ; un manque rend la vue partielle.
+  const acomptesLus = ACOMPTES_PREVUS && acomptesCourants?.etat === 'lue' ? acomptesCourants : null
+  const etatsAcomptes = new Map<string, EtatAcomptesDuDevis>()
+  let motifAcomptes: string | null = ACOMPTES_PREVUS && acomptesCourants?.etat === 'illisible' ? acomptesCourants.motif : null
+  if (acomptesLus) {
+    for (const d of devis) {
+      const e = etatDesAcomptes(d.id, acomptesLus)
+      if (e.ok) etatsAcomptes.set(d.id, e.etat)
+      else motifAcomptes ??= e.motif
+    }
+  }
+  // Aucun geste ne part d'une liste lue en partie : ni des devis, ni, drapeau levé, de leurs acomptes.
+  const peutEcrire = complete && (!ACOMPTES_PREVUS || (acomptesLus != null && motifAcomptes == null))
   // L'émetteur que la base lira, lu avec les devis (une lecture complète le porte), et qui émet : le cabinet du dossier
   // (`admin_du_dossier`), ou un accès « Ventes ».
   const emission: EmissionAJuger | null = lecture?.etat === 'lue' && lecture.complete && lecture.emetteur
@@ -130,15 +162,24 @@ export default function DevisVue(props: Props) {
   const tries = [...devis].sort((a, b) =>
     b.date_emission.localeCompare(a.date_emission) || b.cree_le.localeCompare(a.cree_le) || b.id.localeCompare(a.id))
   // Chaque devis avec son état et la facture tirée de lui (la première, comme la base la nomme).
-  const lignes = tries.map((d) => ({
-    d, facture: factureDuDevis(d.id, liens, factures), etat: etatDuDevis(d, factureTireeDe(d.id, liens), aujourdHui),
-  }))
+  // Drapeau levé, un devis n'est « facturé » que par sa facture finale ACTIVE (P5B-Q4) : ses acomptes le laissent accepté.
+  const lignes = tries.map((d) => {
+    const etatA = etatsAcomptes.get(d.id) ?? null
+    return {
+      d, facture: factureDuDevis(d.id, liens, factures),
+      etat: etatDuDevis(d, etatA ? etatA.finaleActive != null : factureTireeDe(d.id, liens), aujourdHui),
+      etatA,
+      libelleAcomptes: etatA && acomptesLus ? libelleDesFacturesDuDevis(d.id, acomptesLus, etatA) : null,
+    }
+  })
   // La recherche ne filtre que l'AFFICHAGE : le compte de la barre et tout jugement lisent la liste entière.
   // L'aperçu ouvert, sur la liste ENTIÈRE (une recherche ne le ferme pas) ; un devis disparu de la relecture le ferme.
   const apercu = apercuDe === null ? null : lignes.find(({ d }) => d.id === apercuDe) ?? null
   // L'envoi par e-mail, lu au rendu : il ne s'offre que les deux drapeaux levés, sur une liste lue en entier.
   const envoiOffert = DEVIS_EXPORTES && ENVOI_DES_DEVIS_OFFERT && peutEcrire
   const envoi = envoiDe === null ? null : lignes.find(({ d }) => d.id === envoiDe) ?? null
+  // La fenêtre de l'acompte, sur le devis relu ; elle se ferme s'il disparaît ou perd son état d'acompte.
+  const acompte = acompteDe === null ? null : lignes.find(({ d }) => d.id === acompteDe) ?? null
   const affiches = lignes.filter(({ d, etat, facture }) =>
     correspondALaRecherche(champsDeRechercheDuDevis(d, etat, facture), recherche))
 
@@ -238,6 +279,48 @@ export default function DevisVue(props: Props) {
     if (fait && tiree.factureId != null && dossierAffiche.current === dossierId) props.onOuvrirFacture(tiree.factureId)
   }
 
+  // L'acompte d'un devis accepté (étape P5b5a) : la saisie rejugée sur la liste relue (seconde ceinture : le bouton de la
+  // fenêtre est déjà grisé sous ce refus), la confirmation qui nomme ce qui part, puis `facturer_acompte_devis` seule.
+  async function facturerUnAcompte(d: Devis, etatA: EtatAcomptesDuDevis, saisie: SaisieAcompte) {
+    if (gesteEnCours.current) return
+    if (!acomptesLus) return
+    const jugement = jugerLAcompte({ dossierId, devis: d, etat: etatA, mode: acomptesLus.mode, saisie, aujourdHui })
+    if (!jugement.ok) {
+      setErreurFenetre(dire(jugement.refus))
+      return
+    }
+    if (!window.confirm(dire(confirmationDeLAcompte(d, jugement, aujourdHui)))) return
+    const fait = await sousVerrou('L’acompte n’a pas pu être facturé.', async () => {
+      await facturerAcompteDevis(dossierId, d.id, jugement.demande, jugement.dateVersement)
+      return `Brouillon de facture d’acompte tiré du devis ${d.numero ?? ''} : ${formatMoney(jugement.prepare.totaux.montant_ttc)} TTC.`
+    }, setErreurFenetre)
+    if (fait) setAcompteDe(null)
+  }
+
+  // Le solde : la facture finale, qui reprend les acomptes en vigueur (`facturer_devis` remplacée), puis le brouillon ouvert.
+  async function facturerLeSolde(d: Devis, etatA: EtatAcomptesDuDevis) {
+    if (gesteEnCours.current) return
+    const refus = refusDuSolde(dossierId, d, etatA)
+    if (refus) {
+      setErreur(dire(refus))
+      return
+    }
+    if (!window.confirm(dire(confirmationDuSolde(d, etatA, aujourdHui)))) return
+    const tiree: { factureId: string | null } = { factureId: null }
+    const fait = await sousVerrou('Le solde du devis n’a pas pu être facturé.', async () => {
+      tiree.factureId = await facturerDevis(dossierId, d.id)
+      return `Brouillon de facture finale tiré du devis ${d.numero ?? ''}.`
+    }, setErreur)
+    if (fait && tiree.factureId != null && dossierAffiche.current === dossierId) props.onOuvrirFacture(tiree.factureId)
+  }
+
+  function ouvrirLAcompte(d: Devis) {
+    setErreur(null)
+    setErreurFenetre(null)
+    setMessage(null)
+    setAcompteDe(d.id)
+  }
+
   async function envoyer(d: Devis, etat: EtatDevis, destinataire: string, messagePerso: string) {
     if (gesteEnCours.current) return
     const adresse = destinataire.trim()
@@ -289,7 +372,7 @@ export default function DevisVue(props: Props) {
       </p>
 
       <BandeauLecturePartielle
-        quoi={espace === 'client' ? 'Tes devis' : 'Les devis du dossier'} accord="lus" motif={complete ? null : (motif ?? 'lecture incomplète')}
+        quoi={espace === 'client' ? 'Tes devis' : 'Les devis du dossier'} accord="lus" motif={complete ? motifAcomptes : (motif ?? 'lecture incomplète')}
         consequence={CONSEQUENCE_PARTIELLE} technique={espace === 'cabinet'}
       />
 
@@ -331,7 +414,7 @@ export default function DevisVue(props: Props) {
                 </tr>
               </thead>
               <tbody>
-                {affiches.map(({ d, etat, facture }) => {
+                {affiches.map(({ d, etat, facture, etatA, libelleAcomptes }) => {
                   const brouillon = d.statut === 'brouillon'
                   const sansReponse = etat === 'en_attente' || etat === 'expire'
                   return (
@@ -343,7 +426,7 @@ export default function DevisVue(props: Props) {
                       <td data-libelle="État">
                         <span className={`badge badge-une-ligne ${CLASSE_ETAT[etat]}`}>{LIBELLES_ETAT_DEVIS[etat]}</span>
                       </td>
-                      <td data-libelle="Facture">{facture ? libelleDeLaFactureTiree(facture) : '—'}</td>
+                      <td data-libelle="Facture">{etatA ? (libelleAcomptes ?? '—') : facture ? libelleDeLaFactureTiree(facture) : '—'}</td>
                       {peutEcrire && (
                         <td className="td-actions">
                           <button type="button" className="btn btn-outline btn-sm" onClick={() => setApercuDe(d.id)}>Aperçu</button>
@@ -365,10 +448,20 @@ export default function DevisVue(props: Props) {
                               Enregistrer la réponse
                             </button>
                           )}
-                          {etat === 'accepte' && (
+                          {etat === 'accepte' && !ACOMPTES_PREVUS && (
                             <button type="button" className="btn btn-primary btn-sm" disabled={occupe} onClick={() => transformer(d, facture)}>
                               Transformer en facture
                             </button>
+                          )}
+                          {etat === 'accepte' && ACOMPTES_PREVUS && etatA && (
+                            <>
+                              <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => ouvrirLAcompte(d)}>
+                                Facturer un acompte
+                              </button>
+                              <button type="button" className="btn btn-primary btn-sm" disabled={occupe} onClick={() => facturerLeSolde(d, etatA)}>
+                                Facturer le solde
+                              </button>
+                            </>
                           )}
                         </td>
                       )}
@@ -422,6 +515,22 @@ export default function DevisVue(props: Props) {
           erreur={erreurFenetre}
           onClose={() => setEnvoiDe(null)}
           onEnvoyer={(destinataire, messagePerso) => envoyer(envoi.d, envoi.etat, destinataire, messagePerso)}
+        />
+      )}
+
+      {acompte && acompte.etatA && acomptesLus && peutEcrire && ACOMPTES_PREVUS && (
+        <DevisAcompteModal
+          key={acompte.d.id}
+          espace={espace}
+          dossierId={dossierId}
+          devis={acompte.d}
+          etat={acompte.etatA}
+          mode={acomptesLus.mode}
+          aujourdHui={aujourdHui}
+          occupe={occupe}
+          erreur={erreurFenetre}
+          onClose={() => setAcompteDe(null)}
+          onFacturer={(saisie) => { if (acompte.etatA) void facturerUnAcompte(acompte.d, acompte.etatA, saisie) }}
         />
       )}
 
