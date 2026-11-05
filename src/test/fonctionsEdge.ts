@@ -76,6 +76,19 @@ export function muter(source: string, remplacements: readonly (readonly [string,
   return mutee
 }
 
+/** La constante des fonctions qui lisent l'acompte d'un devis (P5b4a, P5b4c), telle qu'elle est servie : baissée. */
+export const ACOMPTES_BAISSES = 'const ACOMPTES_EN_BASE = false'
+
+/**
+ * La source d'une fonction telle qu'elle se déploiera le jour où la migration `acomptes_des_devis` sera appliquée :
+ * `ACOMPTES_EN_BASE` levée, en mémoire, rien d'autre de changé. La réécriture remplace EXACTEMENT une occurrence de la
+ * constante baissée — absente, ou posée deux fois, elle lève (`muter`) : un scénario « constante levée » joué sur la source
+ * d'hier ne prouverait rien. Le fichier servi ne change pas ; le monde qui la joue lève `schemaPrepare`.
+ */
+export function acomptesEnBase(source: string): string {
+  return muter(source, [[ACOMPTES_BAISSES, 'const ACOMPTES_EN_BASE = true']])
+}
+
 /**
  * Le `verify_jwt` d'une fonction, tel que `supabase/config.toml` le fixe — la valeur que tout déploiement repasse. Une
  * fonction sans section lève : la passerelle la traiterait à `true`, et le harnais ne devine pas.

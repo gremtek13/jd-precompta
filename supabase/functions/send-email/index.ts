@@ -98,6 +98,52 @@ interface FactureRow {
   mentions_legales: string | null; emetteur_nom: string | null; type: "facture" | "avoir"
 }
 interface LigneRow { designation: string; quantite: number; prix_unitaire_ht: number; taux_tva: number }
+
+// L'ACOMPTE D'UN DEVIS (P5b4c) : l'e-mail d'une facture d'acompte dit « Facture d'acompte F… », et celui de l'avoir d'un
+// acompte, qu'il crédite une facture d'acompte. La marque vit dans une colonne que la migration `acomptes_des_devis` pose —
+// PRÉPARÉE, pas appliquée : tant qu'elle ne l'est pas, la fonction ne la nomme dans aucune lecture (la production les
+// refuserait toutes), passe SANS_ACOMPTE_EMAIL, et l'e-mail est celui d'hier au caractère près. Cette constante suit
+// `ACOMPTES_PREVUS` (src/lib/devis.ts) : `copiesFacturation.test.ts` les lie, comme dans superpdp-emit et plateforme-agreee.
+const ACOMPTES_EN_BASE = false
+
+interface AcompteDeLEmail {
+  // La facture est une facture d'acompte.
+  acompte: boolean
+  // L'avoir crédite cette facture d'acompte ; nul hors de ce cas.
+  origine: { numero: string } | null
+}
+
+/** Ni acompte ni avoir d'un acompte : ce que passe la fonction tant qu'elle ne lit pas la marque. */
+const SANS_ACOMPTE_EMAIL: AcompteDeLEmail = Object.freeze({ acompte: false, origine: null })
+
+// La marque d'acompte de la facture et, pour un avoir, celle de la facture qu'il corrige, relues par l'identifiant ET le
+// dossier. Une lecture en erreur, une ligne non rendue ou une marque qui n'est pas un booléen sont ILLISIBLES, jamais un
+// « non » : l'e-mail ne part pas (503) plutôt que de dire « Facture » d'une facture d'acompte — un e-mail parti ne se
+// rattrape pas.
+async function acompteDeLEmail(
+  admin: ReturnType<typeof createClient>,
+  dossierId: string,
+  factureId: string,
+): Promise<AcompteDeLEmail | { erreur: string }> {
+  if (!ACOMPTES_EN_BASE) return SANS_ACOMPTE_EMAIL
+  const { data: marque, error: erreurMarque } = await admin.from("factures_emises")
+    .select("type, acompte, facture_origine_id").eq("id", factureId).eq("dossier_id", dossierId).maybeSingle()
+  if (erreurMarque || !marque || typeof marque.acompte !== "boolean") {
+    return { erreur: `La marque d'acompte de la facture n'a pas pu être lue${erreurMarque ? ` (${erreurMarque.message})` : ""}. L'e-mail n'a pas été envoyé. Réessaie dans un instant.` }
+  }
+  if (marque.type !== "avoir") return { acompte: marque.acompte, origine: null }
+  if (marque.acompte) {
+    return { erreur: "Un avoir n'est jamais une facture d'acompte : sa marque contredit son type. L'e-mail n'a pas été envoyé." }
+  }
+  if (typeof marque.facture_origine_id !== "string") return SANS_ACOMPTE_EMAIL
+  const { data: origine, error: erreurOrigine } = await admin.from("factures_emises")
+    .select("numero, acompte").eq("id", marque.facture_origine_id).eq("dossier_id", dossierId).maybeSingle()
+  if (erreurOrigine || !origine || typeof origine.acompte !== "boolean" || (origine.acompte && typeof origine.numero !== "string")) {
+    return { erreur: `La marque d'acompte de la facture que l'avoir corrige n'a pas pu être lue${erreurOrigine ? ` (${erreurOrigine.message})` : ""}. L'e-mail n'a pas été envoyé. Réessaie dans un instant.` }
+  }
+  return { acompte: false, origine: origine.acompte ? { numero: origine.numero as string } : null }
+}
+
 // Les colonnes d'un devis que l'e-mail montre, et elles seules (la lecture ne nomme qu'elles) : ni `notes`, ni
 // `tiers_email`, ni `reponse`. `lignes` est un `jsonb`, de la forme d'une ligne de facture : sa forme se vérifie avant
 // l'envoi (`lignesDuDevis`).
@@ -183,9 +229,18 @@ function echapper(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
-function construireEmailFacture(facture: FactureRow, lignes: LigneRow[], messagePerso: string | null): { objet: string; html: string } {
+function construireEmailFacture(
+  facture: FactureRow, lignes: LigneRow[], messagePerso: string | null, acompte: AcompteDeLEmail,
+): { objet: string; html: string } {
   const emetteur = facture.emetteur_nom ?? "Le cabinet"
   const typeLabel = facture.type === "avoir" ? "Avoir" : "Facture"
+  // L'acompte d'un devis : « Facture d'acompte », et l'avoir qui crédite une facture d'acompte la nomme. Sans acompte
+  // (`SANS_ACOMPTE_EMAIL`), les trois textes sont vides et l'e-mail est celui d'hier.
+  const dAcompte = typeLabel === "Facture" && acompte.acompte ? " d'acompte" : ""
+  const surLAcompte = typeLabel === "Avoir" && acompte.origine ? ` sur la facture d'acompte ${acompte.origine.numero}` : ""
+  const credite = typeLabel === "Avoir" && acompte.origine
+    ? `, qui crédite la facture d'acompte <strong>${echapper(acompte.origine.numero)}</strong>`
+    : ""
   const lignesHtml = lignes.map((l) => {
     // Le HT de la ligne tel que la facture le porte (le bloc `montantsFacture`, le calcul de l'application et de la base) :
     // calculé ici à part, en virgule flottante et le demi vers +∞, l'e-mail disait d'une ligne de 16,025 € qu'elle en
@@ -198,7 +253,7 @@ function construireEmailFacture(facture: FactureRow, lignes: LigneRow[], message
     <div style="font-family:sans-serif;color:#222;max-width:560px;">
       <p>Bonjour,</p>
       ${messagePerso ? `<p>${echapper(messagePerso)}</p>` : ""}
-      <p>Veuillez trouver ci-dessous le détail de ${typeLabel === "Avoir" ? "l'avoir" : "la facture"} <strong>${echapper(facture.numero ?? "")}</strong>, émis${typeLabel === "Avoir" ? "" : "e"} le ${formaterDate(facture.date_emission)}${facture.date_echeance ? ` (échéance le ${formaterDate(facture.date_echeance)})` : ""}.</p>
+      <p>Veuillez trouver ci-dessous le détail de ${typeLabel === "Avoir" ? "l'avoir" : `la facture${dAcompte}`} <strong>${echapper(facture.numero ?? "")}</strong>, émis${typeLabel === "Avoir" ? "" : "e"} le ${formaterDate(facture.date_emission)}${facture.date_echeance ? ` (échéance le ${formaterDate(facture.date_echeance)})` : ""}${credite}.</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0;">
         <thead><tr><th style="text-align:left;padding:4px 8px;border-bottom:2px solid #ccc;">Désignation</th><th style="text-align:right;padding:4px 8px;border-bottom:2px solid #ccc;">Qté</th><th style="text-align:right;padding:4px 8px;border-bottom:2px solid #ccc;">Montant HT</th></tr></thead>
         <tbody>${lignesHtml}</tbody>
@@ -209,7 +264,7 @@ function construireEmailFacture(facture: FactureRow, lignes: LigneRow[], message
       ${facture.mentions_legales ? `<p style="font-size:0.8em;color:#666;white-space:pre-line;">${echapper(facture.mentions_legales)}</p>` : ""}
       <p style="margin-top:24px;">Cordialement,<br>${echapper(emetteur)}</p>
     </div>`
-  return { objet: `${typeLabel} ${facture.numero ?? ""} — ${emetteur}`, html }
+  return { objet: `${typeLabel}${dAcompte} ${facture.numero ?? ""}${surLAcompte} — ${emetteur}`, html }
 }
 
 /**
@@ -463,7 +518,12 @@ Deno.serve(async (req: Request) => {
     if (lignesError) {
       return json({ error: `Les lignes de la facture n'ont pas pu être lues (${lignesError.message}). L'e-mail n'a pas été envoyé : il serait parti sans son détail. Réessaie dans un instant.` }, 503)
     }
-    const construit = construireEmailFacture(factureData as FactureRow, (lignesData ?? []) as LigneRow[], messagePerso)
+    // La marque d'acompte, lue seulement sous sa constante (rien de lu tant qu'elle est baissée) : illisible, rien ne part.
+    const acompte = await acompteDeLEmail(admin, dossierId, factureId)
+    if ("erreur" in acompte) {
+      return json({ error: acompte.erreur }, 503)
+    }
+    const construit = construireEmailFacture(factureData as FactureRow, (lignesData ?? []) as LigneRow[], messagePerso, acompte)
     objet = construit.objet
     html = construit.html
     nomExpediteur = factureData.emetteur_nom ?? dossierRow.nom
