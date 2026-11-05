@@ -1,4 +1,4 @@
-import { donneesDeLaFacture, refusEmission, type LigneCii } from './factureCii'
+import { donneesDeLaFacture, refusEmission, SANS_ACOMPTE_CII, type LigneCii } from './factureCii'
 import { motifExoneration, refusTauxPositif } from './statutTva'
 import type { ArticleExoneration, FactureEmise, MentionsFacture, NatureOperation, StatutTva, TypeClient } from './types'
 
@@ -207,6 +207,9 @@ export function apercuDeTransmission(b: BrouillonATransmettre): ApercuTransmissi
     b.lignes.map((l, i) => ({ ...l, ordre: i })),
     { statut_tva: b.statutTva, article_exoneration: b.articleExoneration, numero_tva_attribue: b.numeroTvaAttribue },
     null,
+    // Le brouillon d'une facture ordinaire : l'acompte d'un devis se transmet par les fonctions (P5b4a), l'écran le dira
+    // avec P5b5, derrière `ACOMPTES_PREVUS`.
+    SANS_ACOMPTE_CII,
     b.aujourdHui,
   )
   const dejaDits = new Set<string>()
