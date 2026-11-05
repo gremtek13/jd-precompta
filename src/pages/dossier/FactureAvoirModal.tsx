@@ -15,7 +15,7 @@ import {
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import { lireLesContacts } from '../../lib/contactsLecture'
 import { ACOMPTES_PREVUS } from '../../lib/devis'
-import { SANS_ACOMPTE, avisDeLAvoir, refusDeLAvoir as refusDeLAvoirAvecAcompte, type AcompteDeLaFacture } from '../../lib/acomptesDesFactures'
+import { avisDeLAvoir, refusDeLAvoir as refusDeLAvoirAvecAcompte, type AcompteDeLaFacture } from '../../lib/acomptesDesFactures'
 
 // L'unité, la référence et la nature de la ligne créditée (étape A7b) : l'avoir les reprend de la ligne qu'il crédite, et les
 // imprime comme elle ; elles ne partent que derrière `MENTIONS_FIGEES_EXPORTEES`.
@@ -43,8 +43,8 @@ interface Props {
   // de la facture qu'il corrige, et un avoir source ne se valide pas au-delà de la frontière d'un exercice validé.
   reglageDesVentes: ReglageDesVentes
   // Ce qu'est la facture corrigée (étape P5b5b ; lib/acomptesDesFactures.ts) : une facture d'acompte, une finale, ou ni l'une
-  // ni l'autre — le défaut, celui de l'onglet drapeau baissé.
-  acompte?: AcompteDeLaFacture
+  // ni l'autre (`SANS_ACOMPTE`, passé explicitement : drapeau baissé, l'onglet le passe pour toute facture). Obligatoire.
+  acompte: AcompteDeLaFacture
   onClose: () => void
   onCreated: () => void
 }
@@ -66,7 +66,7 @@ interface Props {
 // montants restent positifs à l'écran ("je crédite 120 €") mais sont stockés négatifs en base (voir
 // creerAvoir) : sommer tous les montant_ttc d'un dossier/année annule alors automatiquement l'effet de
 // l'avoir sur le total, sans cas particulier à coder ailleurs (FactureApercu, un futur export...).
-export default function FactureAvoirModal({ dossierId, espace, factureOrigine, credite, reglageDesVentes, acompte = SANS_ACOMPTE, onClose, onCreated }: Props) {
+export default function FactureAvoirModal({ dossierId, espace, factureOrigine, credite, reglageDesVentes, acompte, onClose, onCreated }: Props) {
   const [dateEmission, setDateEmission] = useState(aujourdHuiSql())
   const [motif, setMotif] = useState('')
   const [mentionsLegales, setMentionsLegales] = useState(factureOrigine.mentions_legales ?? '')
