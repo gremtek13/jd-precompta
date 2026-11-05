@@ -10,8 +10,10 @@
 --     neuves, les droits des fonctions (la facture d'acompte aux connectés, ni à l'anonyme ni à PUBLIC ; les fonctions
 --     d'appoint et les gardes à aucun rôle de l'API), les policies des trois tables inchangées ;
 --   - LES REFUS de `facturer_acompte_devis`, dans l'ordre et sous les mots du module (`REFUS_ACOMPTE`, le dépassement du
---     reste, `refusDeTvaNegative`), chacun à son SQLSTATE ; ceux de `facturer_devis` (un acompte en brouillon, une finale
---     active) et d'`enregistrer_facture` (l'acompte en brouillon retouché, la date du versement hors d'un acompte, une
+--     reste, `refusDeTvaNegative`), chacun à son SQLSTATE — le devis de biens ou mixte après l'état du devis et avant la
+--     demande (P5B3-Q1), le versement à venir en dernier (P5B2-Q1) ; ceux de `facturer_devis` (un acompte en brouillon, une
+--     finale active) et d'`enregistrer_facture` (l'acompte en brouillon retouché, la date du versement hors d'un acompte ou
+--     postérieure au jour de Paris, une
 --     reprise introuvable ou hors de sa finale, l'avoir qui défait trop, l'avoir d'un acompte repris ou partiel, et à la
 --     validation : le cumul, P5B-Q5, la finale qui ne reprend pas exactement, qui reprend un acompte crédité, qu'un
 --     acompte en brouillon retient, négative à un taux en HT puis en TVA — `refusDeLaFinale`) ; les gardes (la marque, la
@@ -1241,6 +1243,7 @@ begin
     'DA', 'acc00000-0000-4000-8000-0000000000a1', 'DB', 'acc00000-0000-4000-8000-0000000000b1',
     'ACCES', 'acc00000-0000-4000-8000-0000000000c1',
     'JOUR', to_char(jour, 'YYYY-MM-DD'), 'HIER', to_char(jour - 1, 'YYYY-MM-DD'), 'AVANTHIER', to_char(jour - 2, 'YYYY-MM-DD'),
+    'DEMAIN', to_char(jour + 1, 'YYYY-MM-DD'),
     'JOURFR', to_char(jour, 'DD/MM/YYYY'), 'AN', to_char(jour, 'YYYY'));
 
   select string_agg(n::text, '/') into avant from (values
@@ -1285,6 +1288,9 @@ begin
       -- membre du cabinet.
       ('j17', 'jeu', 'X1, une facture validée qui ouvre la série du dossier A', 'chef', null,
         $q$select e.numero from enregistrer_facture('{DA}', null, '{"tiers_nom":"ESSAI X1","date_emission":"{JOUR}","nature_operation":"services","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) e$q$, 'OK', null, 'NX1'),
+      ('j18', 'jeu', 'DVBI : 100 € à 20 %, des livraisons de biens, accepté', 'chef', null, $q$DEVIS {DA} [{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}] 100 20 120 acceptee biens$q$, 'OK', null, 'DVBI'),
+      ('j19', 'jeu', 'DVMI : 100 € à 20 %, mixte, accepté', 'chef', null, $q$DEVIS {DA} [{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}] 100 20 120 acceptee mixte$q$, 'OK', null, 'DVMI'),
+      ('j20', 'jeu', 'DVBE : 100 € à 20 %, des livraisons de biens, émis sans réponse', 'chef', null, $q$DEVIS {DA} [{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}] 100 20 120 emis biens$q$, 'OK', null, 'DVBE'),
 
       -- ══ 1 à 6. Le catalogue ══════════
       ('1', 'valeur', 'les quatre colonnes : la marque (faux, non nul), la date du versement, la reprise, le rôle (« finale » par défaut)', 'proprietaire', null,
@@ -1354,6 +1360,24 @@ begin
       ('M21', 'mutation', 'P5B-Q5 : 99 % de DV2 se tire', 'chef', null,
         $q$select facturer_acompte_devis('{DA}', '{DV2}', '{"mode":"pourcentage","pourcentage":99}'::jsonb, null)::text$q$, 'OK', null, null),
 
+      -- ══ 22 à 27. Le devis de biens (P5B3-Q1) et la date du versement (P5B2-Q1), à la place du module ══════════
+      ('22', 'controle', 'P5B3-Q1 : un devis de biens accepté, refusé par sa raison', 'chef', null,
+        $q$select facturer_acompte_devis('{DA}', '{DVBI}', '{"mode":"pourcentage","pourcentage":10}'::jsonb, null)::text$q$, '22023', 'Le devis porte des livraisons de biens : l’acompte d’un tel devis ne se facture pas encore ici, la TVA d’un acompte de biens étant due à son encaissement et sa part impayée à la livraison, ce que les écritures ne savent pas encore tenir. Le devis se facture en entier par sa facture finale.', null),
+      ('23', 'controle', 'P5B3-Q1 : un devis mixte accepté, refusé par la même raison', 'chef', null,
+        $q$select facturer_acompte_devis('{DA}', '{DVMI}', '{"mode":"pourcentage","pourcentage":10}'::jsonb, null)::text$q$, '22023', 'Le devis porte des livraisons de biens : l’acompte d’un tel devis ne se facture pas encore ici, la TVA d’un acompte de biens étant due à son encaissement et sa part impayée à la livraison, ce que les écritures ne savent pas encore tenir. Le devis se facture en entier par sa facture finale.', null),
+      ('M23', 'mutation', 'les contrôles 22 et 23 rejoués sur un devis de services aux mêmes lignes (DV5) : le brouillon se tire', 'chef', null,
+        $q$select facturer_acompte_devis('{DA}', '{DV5}', '{"mode":"pourcentage","pourcentage":10}'::jsonb, null)::text$q$, 'OK', null, null),
+      ('24', 'controle', 'un devis de biens émis sans réponse : l''état du devis d''abord, les biens ensuite', 'chef', null,
+        $q$select facturer_acompte_devis('{DA}', '{DVBE}', '{"mode":"pourcentage","pourcentage":10}'::jsonb, null)::text$q$, '22023', 'Le devis n’est pas accepté : un acompte ne se facture que sur un devis accepté.', null),
+      ('25', 'controle', 'un devis de biens, une demande d''une autre forme, un versement de demain : les biens avant la demande et la date', 'chef', null,
+        $q$select facturer_acompte_devis('{DA}', '{DVBI}', '{"mode":"autre","pourcentage":10}'::jsonb, '{DEMAIN}')::text$q$, '22023', 'Le devis porte des livraisons de biens : l’acompte d’un tel devis ne se facture pas encore ici%', null),
+      ('26', 'controle', 'P5B2-Q1 : un versement daté de demain, refusé au jour de Paris', 'chef', null,
+        $q$select facturer_acompte_devis('{DA}', '{DV2}', '{"mode":"pourcentage","pourcentage":10}'::jsonb, '{DEMAIN}')::text$q$, '22023', 'Le versement ne se date pas dans l’avenir : nous sommes le {JOURFR}.', null),
+      ('M26', 'mutation', 'le contrôle 26 rejoué au jour même : le brouillon se tire', 'chef', null,
+        $q$select facturer_acompte_devis('{DA}', '{DV2}', '{"mode":"pourcentage","pourcentage":10}'::jsonb, '{JOUR}')::text$q$, 'OK', null, null),
+      ('27', 'controle', 'un versement de demain sur une demande qui couvrirait tout le devis : la demande d''abord, la date en dernier', 'chef', null,
+        $q$select facturer_acompte_devis('{DA}', '{DV5}', '{"mode":"pourcentage","pourcentage":100}'::jsonb, '{DEMAIN}')::text$q$, '22023', 'L’acompte couvrirait tout ce qui reste du devis%', null),
+
       -- ══ 30 à 59. Le parcours de DV1 ══════════
       ('30', 'fait', 'le chef tire A1, 30 % de DV1, versé la veille', 'chef', null,
         $q$select facturer_acompte_devis('{DA}', '{DV1}', '{"mode":"pourcentage","pourcentage":30}'::jsonb, '{HIER}')::text$q$, 'OK', null, 'A1'),
@@ -1412,6 +1436,11 @@ begin
       ('43b', 'valeur', 'sa date du versement : nulle', 'proprietaire', null, $q$select coalesce(date_versement_acompte::text, '-') from factures_emises where id = '{A1}'$q$, 'OK', '-', null),
       ('44', 'fait', 'puis versé l''avant-veille', 'chef', null,
         $q$select e.facture_id::text from enregistrer_facture('{DA}', '{A1}', (select to_jsonb(f) || jsonb_build_object('date_versement_acompte', '{AVANTHIER}') from factures_emises f where f.id = '{A1}'), (select jsonb_agg(jsonb_build_object('designation', l.designation, 'quantite', l.quantite, 'prix_unitaire_ht', l.prix_unitaire_ht, 'taux_tva', l.taux_tva) order by l.ordre) from facture_lignes l where l.facture_id = '{A1}'), false) e$q$, 'OK', null, null),
+      ('44b', 'controle', 'P5B2-Q1 : A1 réenregistré, versé demain : refusé au jour de Paris', 'chef', null,
+        $q$select e.facture_id::text from enregistrer_facture('{DA}', '{A1}', (select to_jsonb(f) || jsonb_build_object('date_versement_acompte', '{DEMAIN}') from factures_emises f where f.id = '{A1}'), (select jsonb_agg(jsonb_build_object('designation', l.designation, 'quantite', l.quantite, 'prix_unitaire_ht', l.prix_unitaire_ht, 'taux_tva', l.taux_tva) order by l.ordre) from facture_lignes l where l.facture_id = '{A1}'), false) e$q$,
+        '22023', 'Le versement ne se date pas dans l’avenir : nous sommes le {JOURFR}.', null),
+      ('M44b', 'mutation', 'le contrôle 44b rejoué au jour même : le brouillon se réenregistre', 'chef', null,
+        $q$select e.facture_id::text from enregistrer_facture('{DA}', '{A1}', (select to_jsonb(f) || jsonb_build_object('date_versement_acompte', '{JOUR}') from factures_emises f where f.id = '{A1}'), (select jsonb_agg(jsonb_build_object('designation', l.designation, 'quantite', l.quantite, 'prix_unitaire_ht', l.prix_unitaire_ht, 'taux_tva', l.taux_tva) order by l.ordre) from facture_lignes l where l.facture_id = '{A1}'), false) e$q$, 'OK', null, null),
       ('45', 'fait', 'A1 validé', 'chef', null, $q$VALIDER {DA} {A1}$q$, 'OK', null, 'NA1'),
       ('45b', 'valeur', 'A1 validé, sa date du versement figée', 'proprietaire', null, $q$select statut || '/' || date_versement_acompte::text from factures_emises where id = '{A1}'$q$, 'OK', 'validee/{AVANTHIER}', null),
       ('46', 'fait', 'A2 : 350 € TTC, versé le jour de sa date', 'chef', null,
@@ -1561,9 +1590,10 @@ begin
             || ' ''reprise_facture_id'', l.reprise_facture_id) order by l.ordre) from facture_lignes l where l.facture_id = %L), true) e',
             t[2], ids ->> 'JOUR', t[3], t[3]) into rendu;
         elsif t[1] = 'DEVIS' then
-          -- DEVIS <dossier> <lignes> <ht> <tva> <ttc> <emis|acceptee> : émis par sa fonction, accepté au besoin.
+          -- DEVIS <dossier> <lignes> <ht> <tva> <ttc> <emis|acceptee> [<nature>] : émis par sa fonction, accepté au besoin ;
+          -- des services sans nature dite.
           select e.devis_id into dv from enregistrer_devis(t[2]::uuid, null, jsonb_build_object('tiers_nom', 'ESSAI ACOMPTE',
-            'date_emission', jour, 'date_validite', jour, 'nature_operation', 'services', 'montant_ht', t[4]::numeric,
+            'date_emission', jour, 'date_validite', jour, 'nature_operation', coalesce(t[8], 'services'), 'montant_ht', t[4]::numeric,
             'montant_tva', t[5]::numeric, 'montant_ttc', t[6]::numeric), t[3]::jsonb, true) e;
           if t[7] = 'acceptee' then
             perform decider_devis(t[2]::uuid, dv, 'acceptee', jour, false);

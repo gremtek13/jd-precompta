@@ -5,18 +5,22 @@ import { REFUS_ACOMPTE } from './acompteDevis'
 import {
   REFUS_ACOMPTE_DE_BIENS, REFUS_DEVIS_INTROUVABLE, REFUS_SOLDE_ACOMPTE_EN_BROUILLON, REFUS_VERSEMENT_ILLISIBLE,
   confirmationDeLAcompte, confirmationDuSolde, demandeDeLaSaisie, etatDesAcomptes, jugerLAcompte, libelleDesFacturesDuDevis,
-  refusDuSolde, type AcomptesLus, type EntreeDeLAcompte, type EtatAcomptesDuDevis, type FactureDuDevis,
+  refusDuSolde, refusDuVersementFutur, type AcomptesLus, type EntreeDeLAcompte, type EtatAcomptesDuDevis, type FactureDuDevis,
 } from './acomptesDuDevis'
 import { REFUS_FACTURATION_DEVIS } from './devis'
 import { devis as devisFictif } from '../test/devis'
 
 // FACTURER UN ACOMPTE ET LE SOLDE DEPUIS UN DEVIS (lib/acomptesDuDevis.ts, étape P5b5a). Ce que ces cas gardent : les refus
-// que le module dit avant le clic sont ceux de la migration préparée (`acomptes_des_devis`), à la lettre et dans son ordre ;
-// celui du devis de biens (P5B3-Q1) n'y est PAS — un refus de l'écran ; l'état d'acompte d'un devis suit les fonctions
-// d'appoint de la base (`acomptes_en_vigueur`, `finale_active_du_devis`) ; une lecture qui manque ne se dit jamais « pas
-// d'acompte » ; les confirmations nomment ce qui part. Données FICTIVES.
+// que le module dit avant le clic sont ceux de la migration préparée (`acomptes_des_devis`), à la lettre et dans son ordre —
+// celui du devis de biens (P5B3-Q1) et celui du versement à venir (P5B2-Q1) compris ; seules les bornes de la date du
+// versement (celles du générateur CII) restent à l'écran ; l'état d'acompte d'un devis suit les fonctions d'appoint de la
+// base (`acomptes_en_vigueur`, `finale_active_du_devis`) ; une lecture qui manque ne se dit jamais « pas d'acompte » ; les
+// confirmations nomment ce qui part. Données FICTIVES.
 
 const SQL = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261105110000_acomptes_des_devis.sql'), 'utf8')
+const ENREGISTRER = SQL.slice(SQL.indexOf('FUNCTION public.enregistrer_facture('), SQL.indexOf('-- ══ 7. Les droits'))
+// Le refus du versement à venir tel qu'un `raise exception` l'écrit : le jour de Paris y devient `%`.
+const VERSEMENT_FUTUR = refusDuVersementFutur('2026-11-04').replace('04/11/2026', '%')
 
 /** Le corps d'une fonction de la migration, de sa création à la suivante. */
 function corps(nom: string): string {
@@ -42,11 +46,12 @@ describe('les refus confrontés au texte de la migration préparée', () => {
     }
   })
 
-  it('facturer_acompte_devis : introuvable, puis l’état du devis et du dossier, puis la saisie, dans l’ordre du module', () => {
+  it('facturer_acompte_devis : introuvable, l’état du devis et du dossier, le devis de biens, la saisie, puis la date du versement, dans l’ordre du module', () => {
     const ordre = [
       REFUS_DEVIS_INTROUVABLE, REFUS_ACOMPTE.nonAccepte, REFUS_ACOMPTE.finaleActive, REFUS_ACOMPTE.acompteEnBrouillon,
-      REFUS_ACOMPTE.engagement, REFUS_ACOMPTE.pourcentageHorsBornes, REFUS_ACOMPTE.pourcentageTropPrecis,
+      REFUS_ACOMPTE.engagement, REFUS_ACOMPTE_DE_BIENS, REFUS_ACOMPTE.pourcentageHorsBornes, REFUS_ACOMPTE.pourcentageTropPrecis,
       REFUS_ACOMPTE.montantNonPositif, REFUS_ACOMPTE.montantTropPrecis, REFUS_ACOMPTE.sansReste, REFUS_ACOMPTE.moinsDUnCentime,
+      VERSEMENT_FUTUR,
     ].map((m) => position(acompte, m))
     expect(ordre.every((p) => p >= 0)).toBe(true)
     expect([...ordre].sort((a, b) => a - b)).toEqual(ordre)
@@ -59,9 +64,26 @@ describe('les refus confrontés au texte de la migration préparée', () => {
     expect(position(finale, REFUS_SOLDE_ACOMPTE_EN_BROUILLON)).toBeGreaterThan(Math.max(...hier))
   })
 
-  it('le refus du devis de biens (P5B3-Q1) est de l’écran seul : la migration ne le porte pas', () => {
-    expect(SQL).not.toContain(REFUS_ACOMPTE_DE_BIENS.slice(0, 40))
-    expect(acompte).not.toMatch(/nature_operation\s*(=|in)/)
+  it('P5B3-Q1 : la base refuse le devis de biens sous la condition du module, « biens » ou « mixte », à sa seule place', () => {
+    expect(acompte).toMatch(/if v_devis\.nature_operation in \('biens', 'mixte'\) then\s+raise exception '/)
+    expect(SQL.split(`'${REFUS_ACOMPTE_DE_BIENS}'`)).toHaveLength(2)
+  })
+
+  it('P5B2-Q1 : le versement à venir, en dernier dans facturer_acompte_devis, et partout où enregistrer_facture pose la date', () => {
+    // Après la finale qu'il laisserait (P5B-Q5), avant le brouillon.
+    const date = position(acompte, VERSEMENT_FUTUR)
+    expect(date).toBeGreaterThan(acompte.indexOf('acompte_refus_de_la_finale_laissee(p_devis_id'))
+    expect(date).toBeLessThan(acompte.indexOf('public.enregistrer_facture('))
+    // Dans enregistrer_facture, à la lettre, sur un acompte, juste après la date portée hors d'un acompte, avant toute écriture.
+    const ici = position(ENREGISTRER, VERSEMENT_FUTUR)
+    expect(ici).toBeGreaterThan(position(ENREGISTRER, 'La date du versement ne se porte que sur une facture d’acompte.'))
+    expect(ici).toBeLessThan(ENREGISTRER.indexOf('update factures_emises set'))
+    // Le jour de Paris, écrit comme `formatDate` (JJ/MM/AAAA), dans les deux fonctions.
+    expect(refusDuVersementFutur('2026-11-04')).toBe('Le versement ne se date pas dans l’avenir : nous sommes le 04/11/2026.')
+    expect(SQL.match(/v_aujourd_hui date := \(now\(\) at time zone 'Europe\/Paris'\)::date;/g)).toHaveLength(2)
+    expect(SQL.match(/'Le versement ne se date pas dans l’avenir : nous sommes le %\.', to_char\(v_aujourd_hui, 'DD\/MM\/YYYY'\)/g)).toHaveLength(2)
+    // Les bornes du générateur CII restent à l'écran : la base reçoit une date typée et ne les porte pas.
+    expect(SQL).not.toContain(REFUS_VERSEMENT_ILLISIBLE)
   })
 })
 
