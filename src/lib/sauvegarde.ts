@@ -14,7 +14,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
-import { DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
+import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 
@@ -188,6 +188,22 @@ export function auGrapheDeLEnvoiDesDevis(relation: Pick<Relation, 'enfant' | 'co
     || !RELATIONS_DE_L_ENVOI_DES_DEVIS.some((r) => r.enfant === relation.enfant && r.colonne === relation.colonne)
 }
 
+// L'ACOMPTE D'UN DEVIS (étape P5b2 ; migration `acomptes_des_devis`, préparée, PAS APPLIQUÉE) : ni table, ni rang, ni chemin
+// nouveaux — trois colonnes sans relation (`factures_emises.acompte`, `date_versement_acompte`, `devis_factures.role`), que
+// la sauvegarde recopie avec leurs lignes (`select('*')`), et une COLONNE qui pointe une table au plan :
+// `facture_lignes.reprise_facture_id`, la facture d'acompte validée qu'une ligne de la facture finale reprend, SANS ACTION à
+// la suppression (une facture validée ne part qu'avec son dossier, qui emporte la ligne qui la reprend). Les factures se
+// restaurent avant leurs lignes : aucune seconde passe. Le patron du devis envoyé : la relation ne vit au graphe du jour que
+// le drapeau levé (`ACOMPTES_PREVUS`, src/lib/devis.ts). sauvegardeAcomptesDesDevis.test.ts éprouve les deux états.
+export const RELATIONS_DES_ACOMPTES: readonly Pick<Relation, 'enfant' | 'colonne'>[] = [
+  { enfant: 'facture_lignes', colonne: 'reprise_facture_id' },
+]
+
+/** Une relation au graphe, côté acomptes : toutes, sauf la reprise d'un acompte tant que sa migration n'est pas exportée. */
+export function auGrapheDesAcomptes(relation: Pick<Relation, 'enfant' | 'colonne'>, acomptesPrevus: boolean): boolean {
+  return acomptesPrevus || !RELATIONS_DES_ACOMPTES.some((r) => r.enfant === relation.enfant && r.colonne === relation.colonne)
+}
+
 // Le graphe complet des dépendances entre tables du schéma `public`. Les relations vers `auth.users`
 // sont volontairement absentes : cette table n'appartient pas à l'application, elle n'est ni
 // sauvegardée ni restaurée par ce chemin, et l'y faire figurer donnerait l'illusion du contraire.
@@ -245,6 +261,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'exercices_clotures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'exercices_valides', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'facture_lignes', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
+  // La facture d'acompte qu'une ligne reprend (migration acomptes_des_devis, préparée) : sans action — elle est validée.
+  { enfant: 'facture_lignes', parent: 'factures_emises', colonne: 'reprise_facture_id', aLaSuppression: 'bloque' },
   { enfant: 'facture_numerotation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'facture_superpdp_events', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'facture_superpdp_events', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
@@ -372,7 +390,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
 // ni celle de l'exemplaire d'une facture, ni celle du devis envoyé, tant que la leur ne l'est pas.
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
   .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
-    && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU))
+    && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
+    && auGrapheDesAcomptes(r, ACOMPTES_PREVUS))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à

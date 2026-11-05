@@ -47995,3 +47995,22 @@ des deux espaces ; la phrase de la case « Ventes » nomme aussi l'envoi d'un de
 partagent les factures (le garde des actions de la vente l'exige depuis que la migration est en base). `devis` et
 `envoiDesDevis` quittent les cas particuliers du banc du leurre (quinze), joués comme des essais de la production.
 Restent `send-email` déployée par une ligne qui importe le dépôt, puis `ENVOI_DES_DEVIS_OFFERT` levé.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS, EN BASE (P5B2) (PRÉPARÉE, PAS APPLIQUÉE)
+
+La migration `acomptes_des_devis` (supabase/preparees/20261105110000, PRÉPARÉE, pas appliquée ; à COLLER : le corps recopié
+d'`enregistrer_facture` retire les lignes d'un brouillon) pose `factures_emises.acompte` et `date_versement_acompte` (BT-9, nulle
+le jour de la facture), `facture_lignes.reprise_facture_id` (sans action à la suppression : la facture reprise est validée et ne
+part qu'avec son dossier), `devis_factures.role` (« finale » pour les liens d'hier), deux gardes (la marque sous
+`jd.acompte_facture` ; les lignes d'un acompte en brouillon figées ; une reprise sous `jd.reprises_facture` ; la restauration
+exceptée), `facturer_acompte_devis` (la `DemandeAcompte` du module en jsonb, la date du versement en paramètre), et remplace, sous
+les empreintes de la production relues le 05/11/2026, `facturer_devis` (la finale reprend les acomptes en vigueur ; une finale
+créditée en entier en laisse tirer une autre, P5B-Q4), `enregistrer_facture` (l'acompte en brouillon garde lignes et montants ; la
+validation juge le cumul, P5B-Q5, la finale exacte, puis `refusDeLaFinale` ; l'avoir d'un acompte, en entier, tant qu'aucune
+finale validée et non créditée ne le reprend ; celui d'une finale défait chaque reprise une fois) et `garder_devis_facture` (le
+rôle). Les refus redisent le module au mot près, ses arrondis refaits en entiers (la fenêtre du TTC en virgule flottante, comme
+lui). Sur la réplique : `acomptesDesDevis.sql`, neuf, 158 verdicts dont 36 cas relevés par le module (P5B-Q5 compris), 0 en
+faute, 36 mutations sur 36, rien resté ; sans la migration, EN ATTENTE ; aller, retour, aller : la signature d'avant revient, puis
+celle d'après. `devis.sql`, `devisSuppression.sql`, `factures.sql` (son contrôle 105 laisse les deux gardes neuves à leur essai),
+`encaissementsFactures.sql`, `envoiDesDevis.sql` et `rls.sql` : 0 en faute, leurs mutations mordent. La reprise entre au plan de
+sauvegarde derrière `ACOMPTES_PREVUS`. Trois questions au cabinet : P5B2-Q1 à Q3.

@@ -292,8 +292,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Dix-sept le même jour : `envoiDesDevis` entré dans la famille « apres », après sa migration préparée (étape P6c1,
     // `envoi_des_devis`, qui suppose les deux des devis). Quinze le 05/11/2026 : `devis` et `envoiDesDevis` sortis (les
     // trois migrations en production le même jour ; ni l'un ni l'autre ne cherche un semis, ils se jouent comme des essais
-    // de la production) ; la famille « apres » reste, vide.
-    expect(cas.length).toBe(15)
+    // de la production). Seize le même jour : `acomptesDesDevis` entré dans la famille « apres », après sa migration
+    // préparée (étape P5b2, `acomptes_des_devis`, qui suppose les trois des devis).
+    expect(cas.length).toBe(16)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

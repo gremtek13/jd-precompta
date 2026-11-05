@@ -3,12 +3,13 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
-import { DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
+import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import {
   auGrapheDeLaCaisse,
   auGrapheDeLEnvoiDesDevis,
+  auGrapheDesAcomptes,
   auGrapheDesExemplaires,
   auPlan,
   auPlanAujourdHui,
@@ -69,7 +70,8 @@ describe('le filtre du plan', () => {
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
-        && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)))
+        && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
+        && auGrapheDesAcomptes(r, ACOMPTES_PREVUS)))
     expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlanAujourdHui(t)))
