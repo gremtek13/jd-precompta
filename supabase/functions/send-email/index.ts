@@ -1,20 +1,28 @@
-// Edge Function : envoi d'e-mails au client depuis l'app — facture par e-mail, relance pour obtenir
-// des pièces. Utilise le même compte Resend et le même domaine que receive-email (réception),
+// Edge Function : envoi d'e-mails au client depuis l'app — facture ou devis par e-mail, relance pour
+// obtenir des pièces. Utilise le même compte Resend et le même domaine que receive-email (réception),
 // precompta.jdarnis.fr, déjà vérifié en envoi ET en réception (voir Dashboard Resend).
 //
-// Deux modèles pour l'instant (voir payload.type) :
+// Trois modèles (voir payload.type) :
 // - "facture" : envoie le détail d'une facture déjà validée (lignes, montants, mentions légales) en
 //   corps d'e-mail HTML. PAS de pièce jointe PDF pour l'instant — générer un vrai PDF côté serveur
 //   est un chantier à part (voir FactureApercu, qui s'appuie sur l'impression navigateur) : à ajouter
 //   si les cabinets réclament la pièce jointe une fois ce premier envoi en usage.
+// - "devis" (espace client, étape P6c2) : le détail d'un devis ÉMIS, sur le patron de la facture — un brouillon n'est
+//   pas une offre et ne part pas. L'e-mail n'en montre que ce que le devis imprime et qui se lit dans un e-mail (numéro,
+//   dates d'émission et de validité, objet, lignes, totaux, conditions, mentions légales, émetteur figé) : jamais les
+//   notes (partagées avec le client « Ventes », mais qui ne s'impriment pas), ni l'adresse électronique du client, ni la
+//   réponse enregistrée — ces colonnes ne sont même pas lues. Rien ne s'écrit sur le devis : émis, il est figé par la
+//   base (`garder_devis`), et l'adresse du destinataire ne s'y mémorise pas comme sur une facture. À DÉPLOYER APRÈS la
+//   migration `envoi_des_devis` (supabase/preparees/20261105100300), qui admet le type « devis » au journal et y pose
+//   `devis_id` : avant elle, la ligne de journal d'un devis serait refusée par la base.
 // - "relance_pieces" : simple rappel invitant le client à se connecter à son espace pour déposer ses
 //   pièces — aucun lien magique/jeton, le client se connecte normalement, comme d'habitude.
 //
 // Chaque envoi est journalisé (table emails_envoyes) : un cabinet doit toujours pouvoir retrouver qui
 // a reçu quoi et quand, jamais un envoi "silencieux" qu'on ne peut plus vérifier après coup.
 //
-// Qui peut quoi (`QUI_PEUT_QUOI`, espace client, étape P3) : la facture, le cabinet du dossier et le client dont
-// l'accès porte la case « Ventes » ; la relance de pièces, le cabinet seul. Les droits se lisent avec le jeton de
+// Qui peut quoi (`QUI_PEUT_QUOI`, espace client, étapes P3 et P6c2) : la facture et le devis, le cabinet du dossier et
+// le client dont l'accès porte la case « Ventes » ; la relance de pièces, le cabinet seul. Les droits se lisent avec le jeton de
 // l'appelant (bloc droitsDeLAppelant) avant toute autre lecture ; un client ne dépasse pas trente e-mails par dossier
 // et par jour de Paris (`PLAFOND_CLIENT_PAR_JOUR`), comptés dans le journal avant l'envoi — le domaine d'envoi est
 // celui du cabinet.
@@ -45,12 +53,16 @@ function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
 
 // QUI PEUT QUOI (conception de l'espace client, §3.5) : le droit que chaque modèle exige — « ventes », le cabinet du
 // dossier ou un accès client qui porte la case « Ventes » ; « cabinet », le cabinet seul : la relance de pièces est
-// celle que le cabinet adresse à son client. Un changement de décision est une ligne ; le modèle « devis » viendra avec
-// l'étape P6.
+// celle que le cabinet adresse à son client. Le devis suit la facture (étape P6c2) : « Ventes » ouvre au client la création
+// et l'émission de ses devis par la base, et leur envoi est le même geste que celui d'une facture. Un changement de
+// décision est une ligne.
 const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
   facture: "ventes",
+  devis: "ventes",
   relance_pieces: "cabinet",
 }
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // LE PLAFOND D'UN ACCÈS CLIENT (conception de l'espace client, §3.5 et §10) : un compte client qui enverrait en masse
 // le ferait sous le domaine du cabinet. Trente e-mails par dossier et par jour de Paris, comptés dans le journal AVANT
@@ -86,6 +98,14 @@ interface FactureRow {
   mentions_legales: string | null; emetteur_nom: string | null; type: "facture" | "avoir"
 }
 interface LigneRow { designation: string; quantite: number; prix_unitaire_ht: number; taux_tva: number }
+// Les colonnes d'un devis que l'e-mail montre, et elles seules (la lecture ne nomme qu'elles) : ni `notes`, ni
+// `tiers_email`, ni `reponse`. `lignes` est un `jsonb`, de la forme d'une ligne de facture : sa forme se vérifie avant
+// l'envoi (`lignesDuDevis`).
+interface DevisRow {
+  id: string; numero: string | null; statut: string; date_emission: string; date_validite: string
+  objet: string | null; lignes: unknown; montant_ht: number; montant_tva: number; montant_ttc: number
+  conditions: string | null; mentions_legales: string | null; emetteur_nom: string | null
+}
 
 function formaterMontant(n: number): string {
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"
@@ -190,6 +210,58 @@ function construireEmailFacture(facture: FactureRow, lignes: LigneRow[], message
       <p style="margin-top:24px;">Cordialement,<br>${echapper(emetteur)}</p>
     </div>`
   return { objet: `${typeLabel} ${facture.numero ?? ""} — ${emetteur}`, html }
+}
+
+/**
+ * Les lignes d'un devis, lues dans son `jsonb` : un tableau non vide de lignes dont chaque champ a son type, sinon `null`.
+ * La base les vérifie à l'enregistrement (`enregistrer_devis` : une ligne au moins) ; une forme inattendue ici refuse
+ * l'envoi plutôt que de faire partir un devis au détail faux ou vide — un e-mail parti ne se rattrape pas.
+ */
+function lignesDuDevis(brut: unknown): LigneRow[] | null {
+  if (!Array.isArray(brut) || brut.length === 0) return null
+  const lignes: LigneRow[] = []
+  for (const l of brut) {
+    if (l === null || typeof l !== "object" || Array.isArray(l)) return null
+    const { designation, quantite, prix_unitaire_ht, taux_tva } = l as Record<string, unknown>
+    if (typeof designation !== "string" || typeof quantite !== "number" || typeof prix_unitaire_ht !== "number"
+      || typeof taux_tva !== "number" || ![quantite, prix_unitaire_ht, taux_tva].every(Number.isFinite)) {
+      return null
+    }
+    lignes.push({ designation, quantite, prix_unitaire_ht, taux_tva })
+  }
+  return lignes
+}
+
+// Le devis, sur le patron de la facture : les mêmes lignes (le HT de chacune par le bloc `montantsFacture`, celui de
+// l'aperçu du devis, src/lib/devis.ts), les mêmes totaux, et la validité dite avec la date, comme l'aperçu l'imprime
+// (`LIBELLE_VALIDITE`). L'émetteur est celui que le devis a figé à son émission, jamais relu du dossier.
+function construireEmailDevis(
+  devis: DevisRow & { numero: string; emetteur_nom: string }, lignes: LigneRow[], messagePerso: string | null,
+): { objet: string; html: string } {
+  const lignesHtml = lignes.map((l) => {
+    const ht = calculerLigne(l.quantite, l.prix_unitaire_ht, l.taux_tva).montant_ht
+    return `<tr><td style="padding:4px 8px;border-bottom:1px solid #eee;">${echapper(l.designation)}</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;">${l.quantite}</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;">${formaterMontant(ht)}</td></tr>`
+  }).join("")
+  const objetDuDevis = devis.objet != null && devis.objet.trim() !== "" ? devis.objet : null
+  const conditions = devis.conditions != null && devis.conditions.trim() !== "" ? devis.conditions : null
+  const html = `
+    <div style="font-family:sans-serif;color:#222;max-width:560px;">
+      <p>Bonjour,</p>
+      ${messagePerso ? `<p>${echapper(messagePerso)}</p>` : ""}
+      <p>Veuillez trouver ci-dessous le détail du devis <strong>${echapper(devis.numero)}</strong>, émis le ${formaterDate(devis.date_emission)} et valable jusqu'au ${formaterDate(devis.date_validite)}.</p>
+      ${objetDuDevis ? `<p>Objet : ${echapper(objetDuDevis)}</p>` : ""}
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+        <thead><tr><th style="text-align:left;padding:4px 8px;border-bottom:2px solid #ccc;">Désignation</th><th style="text-align:right;padding:4px 8px;border-bottom:2px solid #ccc;">Qté</th><th style="text-align:right;padding:4px 8px;border-bottom:2px solid #ccc;">Montant HT</th></tr></thead>
+        <tbody>${lignesHtml}</tbody>
+      </table>
+      <p style="text-align:right;margin:4px 0;">Total HT : ${formaterMontant(devis.montant_ht)}</p>
+      <p style="text-align:right;margin:4px 0;">Total TVA : ${formaterMontant(devis.montant_tva)}</p>
+      <p style="text-align:right;margin:4px 0;font-weight:bold;">Total TTC : ${formaterMontant(devis.montant_ttc)}</p>
+      ${conditions ? `<p style="white-space:pre-line;">${echapper(conditions)}</p>` : ""}
+      ${devis.mentions_legales ? `<p style="font-size:0.8em;color:#666;white-space:pre-line;">${echapper(devis.mentions_legales)}</p>` : ""}
+      <p style="margin-top:24px;">Cordialement,<br>${echapper(devis.emetteur_nom)}</p>
+    </div>`
+  return { objet: `Devis ${devis.numero} — ${devis.emetteur_nom}`, html }
 }
 
 function construireEmailRelance(dossierNom: string, messagePerso: string | null): { objet: string; html: string } {
@@ -318,7 +390,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
   }
   const payload = corps as Record<string, unknown>
-  for (const champ of ["dossierId", "type", "destinataire", "message", "factureId"]) {
+  for (const champ of ["dossierId", "type", "destinataire", "message", "factureId", "devisId"]) {
     if (!texteOuAbsent(payload[champ])) {
       return json({ error: `Corps de requête invalide : « ${champ} » doit être un texte.` }, 400)
     }
@@ -328,11 +400,18 @@ Deno.serve(async (req: Request) => {
   const type = payload.type
   const destinataire = texte("destinataire")
   const messagePerso = texte("message") || null
-  if (!dossierId || (type !== "facture" && type !== "relance_pieces") || !destinataire) {
-    return json({ error: "dossierId, type ('facture' ou 'relance_pieces') et destinataire sont requis." }, 400)
+  if (!dossierId || (type !== "facture" && type !== "devis" && type !== "relance_pieces") || !destinataire) {
+    return json({ error: "dossierId, type ('facture', 'devis' ou 'relance_pieces') et destinataire sont requis." }, 400)
   }
   if (!EMAIL_REGEX.test(destinataire)) {
     return json({ error: "Adresse e-mail du destinataire invalide." }, 400)
+  }
+  // Le devis se désigne par son identifiant, de la forme d'un UUID, jugée ici avec le reste du corps : une demande mal
+  // formée est refusée de même pour tous, avant les droits, et un texte quelconque ne part jamais dans une requête à la
+  // base (où le cast lèverait, et se lirait comme une panne).
+  const devisId = type === "devis" ? texte("devisId") ?? null : null
+  if (type === "devis" && (!devisId || !UUID_REGEX.test(devisId))) {
+    return json({ error: "devisId, l'identifiant du devis, est requis pour le modèle 'devis'." }, 400)
   }
 
   // Les droits de l'appelant, avec SON jeton, avant toute autre lecture. Sans le droit que le modèle exige, la réponse
@@ -388,6 +467,38 @@ Deno.serve(async (req: Request) => {
     objet = construit.objet
     html = construit.html
     nomExpediteur = factureData.emetteur_nom ?? dossierRow.nom
+  } else if (type === "devis" && devisId) {
+    // Le devis, par son identifiant ET le dossier de la requête : un devis d'un autre dossier n'existe pas pour cet appel,
+    // sous le même mot qu'un devis inconnu — les droits ne valent que pour CE dossier. Seules les colonnes que l'e-mail
+    // montre sont lues. Une lecture en erreur n'est pas un devis absent : elle se dit (503), et rien ne part.
+    const { data: devisData, error: devisError } = await admin
+      .from("devis")
+      .select("id, numero, statut, date_emission, date_validite, objet, lignes, montant_ht, montant_tva, montant_ttc, conditions, mentions_legales, emetteur_nom")
+      .eq("id", devisId).eq("dossier_id", dossierId).maybeSingle()
+    if (devisError) {
+      return json({ error: `Le devis n'a pas pu être lu (${devisError.message}). L'e-mail n'a pas été envoyé. Réessaie dans un instant.` }, 503)
+    }
+    if (!devisData) {
+      return json({ error: "Devis introuvable." }, 404)
+    }
+    const devis = devisData as DevisRow
+    // Un brouillon n'est pas une offre : il n'a ni numéro ni émetteur figé, et peut encore changer. Même statut que la
+    // facture non validée.
+    if (devis.statut !== "emis") {
+      return json({ error: "Seul un devis émis s'envoie par e-mail : un brouillon n'est pas encore une offre." }, 400)
+    }
+    // Émis, la base lui a posé son numéro et son émetteur ; un devis qui ne les porte pas, ou dont les lignes n'ont pas
+    // leur forme, ne part pas — l'aperçu le dit de même illisible (`ceQueLeDevisImprime`).
+    const lignesDevis = lignesDuDevis(devis.lignes)
+    const numero = devis.numero?.trim() ? devis.numero : null
+    const emetteur = devis.emetteur_nom?.trim() ? devis.emetteur_nom : null
+    if (numero === null || emetteur === null || lignesDevis === null) {
+      return json({ error: "Ce devis émis ne porte pas son numéro, son émetteur ou des lignes lisibles : l'e-mail n'a pas été envoyé." }, 500)
+    }
+    const construit = construireEmailDevis({ ...devis, numero, emetteur_nom: emetteur }, lignesDevis, messagePerso)
+    objet = construit.objet
+    html = construit.html
+    nomExpediteur = emetteur
   } else {
     const construit = construireEmailRelance(dossierRow.nom, messagePerso)
     objet = construit.objet
@@ -395,7 +506,8 @@ Deno.serve(async (req: Request) => {
   }
 
   // Le plafond d'un accès client, compté juste avant l'envoi : le dernier contrôle, une fois tout le reste jugé. Un
-  // compte illisible refuse — l'e-mail parti ne se rattrape pas.
+  // compte illisible refuse — l'e-mail parti ne se rattrape pas. Il compte tout le journal du dossier ce jour-là, quel
+  // qu'en soit le type : les devis comme les factures et les relances.
   if (!lus.droits.cabinet) {
     const jour = jourDeParis(Date.now())
     const { count: envoyes, error: erreurCompte } = await admin.from("emails_envoyes")
@@ -434,14 +546,18 @@ Deno.serve(async (req: Request) => {
   // d'envoi muet est indiscernable d'un envoi qui n'a pas eu lieu, et c'est précisément ce que cette
   // table existe pour empêcher (voir l'en-tête : « un cabinet doit toujours pouvoir retrouver qui »).
   // L'appelant, lui, reçoit `ok: true` et n'apprendrait rien.
+  // La ligne d'un devis nomme son devis (`devis_id`), jamais une facture ; celle d'une facture ou d'une relance ne nomme
+  // pas la colonne du tout — elle s'écrit ainsi même si la fonction partait avant la migration `envoi_des_devis`.
   const { error: erreurJournal } = await admin.from("emails_envoyes").insert({
     dossier_id: dossierId, type, destinataire, objet,
     facture_id: factureId, resend_id: sent?.id ?? null, envoye_par: callerData.user.id,
+    ...(type === "devis" ? { devis_id: devisId } : {}),
   })
   if (erreurJournal) {
     console.error(`[send-email] e-mail ENVOYÉ (resend_id=${sent?.id ?? "?"}) mais non journalisé : ${erreurJournal.message}`)
   }
 
+  // La facture mémorise l'adresse à laquelle elle est partie ; le devis, figé dès son émission, n'en reçoit rien.
   if (type === "facture" && factureId) {
     const { error: erreurEmail } = await admin.from("factures_emises").update({ tiers_email: destinataire }).eq("id", factureId)
     if (erreurEmail) {
