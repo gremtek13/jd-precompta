@@ -6,6 +6,7 @@ import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace, type EspaceVentes } from '../../lib/espaceVentes'
 import {
+  DEVIS_EXPORTES, ENVOI_DES_DEVIS_OFFERT, confirmationDeLEnvoiDuDevis, refusDeLEnvoiDuDevis,
   LIBELLES_ETAT_DEVIS, avisDeLApercuDuDevis, ceQueLeDevisImprime, champsDeRechercheDuDevis, confirmationDeLaFacturation, confirmationDeLaReponse, confirmationDeLEmission,
   confirmationDeLaSuppressionDevis, decisionDeLaSaisie, ecritureDuDevis, etatDuDevis, factureDuDevis, factureTireeDe,
   libelleDeLaFactureTiree, lignesSaisiesDuDevis, refusDeLaReponse, refusDeLaSaisieDevis, refusFacturationDevis, refusSuppressionDevis,
@@ -13,8 +14,10 @@ import {
 } from '../../lib/devis'
 import { lireLesDevis, type LectureDesDevis } from '../../lib/devisLecture'
 import { deciderDevis, enregistrerDevis, facturerDevis, supprimerBrouillonDevis } from '../../lib/devisEcriture'
+import { envoyerDevisParEmail } from '../../lib/devisEnvoi'
 import type { ArticleExoneration, Devis, StatutTva } from '../../lib/types'
 import DevisApercu from './DevisApercu'
+import DevisEmailModal from './DevisEmailModal'
 import DevisReponseModal from './DevisReponseModal'
 import DevisSaisieModal from './DevisSaisieModal'
 
@@ -25,7 +28,10 @@ import DevisSaisieModal from './DevisSaisieModal'
 // répondre à un devis émis (`decider_devis`), transformer un devis accepté en facture (`facturer_devis`) — l'onglet ouvre alors
 // le brouillon tiré (`onOuvrirFacture`) —, la facture tirée dite dans la liste, et une recherche qui ne filtre que l'affichage.
 // Puis (étape P6b) : l'aperçu imprimable de chaque devis (DevisApercu, `ceQueLeDevisImprime`), offert sur une liste lue en
-// entier comme tout le reste — lue en partie, l'état qu'il dirait pourrait être faux. L'e-mail vient ensuite.
+// entier comme tout le reste — lue en partie, l'état qu'il dirait pourrait être faux. Puis (étape P6c3) : « Envoyer par e-mail »
+// un devis ÉMIS (`send-email`, lib/devisEnvoi.ts), jamais un brouillon, derrière `ENVOI_DES_DEVIS_OFFERT` (la migration
+// `envoi_des_devis` et le déploiement de la fonction d'abord) : la confirmation nomme le devis, son client, son total et l'adresse,
+// et dit un devis expiré, répondu ou facturé, qui part tel quel.
 //
 // QUI ÉCRIT : le cabinet ET le client « Ventes », par les mêmes fonctions (`enregistrer_devis`, `supprimer_brouillon_devis`,
 // `decider_devis`, `facturer_devis`) ;
@@ -76,6 +82,8 @@ export default function DevisVue(props: Props) {
   const [reponseA, setReponseA] = useState<Devis | null>(null)
   // Le devis dont l'aperçu est ouvert, par son identifiant : l'aperçu montre la ligne telle que la dernière lecture l'a rendue.
   const [apercuDe, setApercuDe] = useState<string | null>(null)
+  // Le devis dont la fenêtre d'envoi par e-mail est ouverte, par son identifiant, sur le même principe.
+  const [envoiDe, setEnvoiDe] = useState<string | null>(null)
   const [recherche, setRecherche] = useState('')
   const [occupe, setOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
@@ -128,6 +136,9 @@ export default function DevisVue(props: Props) {
   // La recherche ne filtre que l'AFFICHAGE : le compte de la barre et tout jugement lisent la liste entière.
   // L'aperçu ouvert, sur la liste ENTIÈRE (une recherche ne le ferme pas) ; un devis disparu de la relecture le ferme.
   const apercu = apercuDe === null ? null : lignes.find(({ d }) => d.id === apercuDe) ?? null
+  // L'envoi par e-mail, lu au rendu : il ne s'offre que les deux drapeaux levés, sur une liste lue en entier.
+  const envoiOffert = DEVIS_EXPORTES && ENVOI_DES_DEVIS_OFFERT && peutEcrire
+  const envoi = envoiDe === null ? null : lignes.find(({ d }) => d.id === envoiDe) ?? null
   const affiches = lignes.filter(({ d, etat, facture }) =>
     correspondALaRecherche(champsDeRechercheDuDevis(d, etat, facture), recherche))
 
@@ -227,6 +238,30 @@ export default function DevisVue(props: Props) {
     if (fait && tiree.factureId != null && dossierAffiche.current === dossierId) props.onOuvrirFacture(tiree.factureId)
   }
 
+  async function envoyer(d: Devis, etat: EtatDevis, destinataire: string, messagePerso: string) {
+    if (gesteEnCours.current) return
+    const adresse = destinataire.trim()
+    // Seconde ceinture : le bouton est déjà grisé sous ce refus.
+    const refus = refusDeLEnvoiDuDevis(dossierId, d, adresse)
+    if (refus) {
+      setErreurFenetre(dire(refus))
+      return
+    }
+    if (!window.confirm(dire(confirmationDeLEnvoiDuDevis(d, etat, adresse)))) return
+    const fait = await sousVerrou('Le devis n’a pas pu être envoyé.', async () => {
+      await envoyerDevisParEmail(dossierId, d.id, adresse, messagePerso)
+      return `Devis ${d.numero ?? ''} envoyé à ${adresse}.`
+    }, setErreurFenetre)
+    if (fait) setEnvoiDe(null)
+  }
+
+  function ouvrirLEnvoi(d: Devis) {
+    setErreur(null)
+    setErreurFenetre(null)
+    setMessage(null)
+    setEnvoiDe(d.id)
+  }
+
   function ouvrir(d: Devis | null) {
     setErreur(null)
     setErreurFenetre(null)
@@ -320,6 +355,11 @@ export default function DevisVue(props: Props) {
                               </button>
                             </>
                           )}
+                          {envoiOffert && !brouillon && (
+                            <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => ouvrirLEnvoi(d)}>
+                              Envoyer par e-mail
+                            </button>
+                          )}
                           {sansReponse && (
                             <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => ouvrirLaReponse(d)}>
                               Enregistrer la réponse
@@ -368,6 +408,20 @@ export default function DevisVue(props: Props) {
           })}
           avis={avisDeLApercuDuDevis(apercu.d, apercu.etat)}
           onClose={() => setApercuDe(null)}
+        />
+      )}
+
+      {envoi && envoiOffert && envoi.d.statut === 'emis' && (
+        <DevisEmailModal
+          key={envoi.d.id}
+          espace={espace}
+          dossierId={dossierId}
+          devis={envoi.d}
+          etat={envoi.etat}
+          occupe={occupe}
+          erreur={erreurFenetre}
+          onClose={() => setEnvoiDe(null)}
+          onEnvoyer={(destinataire, messagePerso) => envoyer(envoi.d, envoi.etat, destinataire, messagePerso)}
         />
       )}
 

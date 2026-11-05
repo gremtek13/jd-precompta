@@ -44,6 +44,13 @@ export const DEVIS_EXPORTES: boolean = false
 // tant que ceci reste `false`. Il ne se lève qu'avec ou après `DEVIS_EXPORTES` : la migration exige la table des devis.
 export const ENVOI_DES_DEVIS_PREVU: boolean = false
 
+// « Envoyer par e-mail » un devis émis, dans les deux espaces (étape P6c3) : `send-email` accepte le type « devis » depuis
+// P6c2, mais ne se déploie qu'APRÈS l'application de la migration `envoi_des_devis` (le journal des envois refuserait la ligne
+// d'un devis). Le bouton ne s'offre donc qu'ici, baissé : on le lève quand la migration est en base ET que `send-email` est
+// déployée, jamais avant `DEVIS_EXPORTES` (pas de devis à envoyer sans la vue des devis). Les tests le lèvent par `vi.mock`
+// (FacturesTabDevis.test.tsx), l'état d'avant restant éprouvé tant que le code existe.
+export const ENVOI_DES_DEVIS_OFFERT: boolean = false
+
 // ── Les constantes de la base, confrontées au texte des migrations par le test ─────────────────────────────────────
 export const PREFIXE_DEVIS = 'D'
 export const DATE_PLANCHER_DEVIS = '2000-01-01'
@@ -938,4 +945,77 @@ export function avisDeLApercuDuDevis(d: Pick<Devis, 'date_validite' | 'date_repo
     case 'facture':
       return `Ce devis a été accepté${le}, puis transformé en facture.${papier}`
   }
+}
+
+// ── L'envoi d'un devis émis par e-mail (étape P6c3) ──────────────────────────────────────────────────────────────────
+// `send-email` (type « devis ») ne refuse que trois choses que l'écran sait avant le clic : une adresse absente ou mal formée, un
+// devis introuvable dans le dossier, un brouillon. Les autres refus (plafond d'un accès client, droits, lecture) viennent de la
+// fonction et se disent sous ses mots. Un devis EXPIRÉ, ayant reçu sa réponse ou déjà facturé n'est pas refusé : il part tel
+// quel, et la confirmation le dit. Les mots valent pour les deux espaces (ni « tu » ni « vous », aucun onglet).
+
+/**
+ * La forme d'une adresse que `send-email` accepte (`EMAIL_REGEX`) : recopiée ici, et devis.test.ts la confronte au texte même
+ * de la fonction — une règle changée là-bas ferait refuser ici une adresse que la fonction accepte, ou l'inverse.
+ */
+export const EMAIL_REGEX_DE_L_ENVOI = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** Le refus d'un brouillon, aux mots de `send-email`. */
+export const REFUS_ENVOI_BROUILLON = "Seul un devis émis s'envoie par e-mail : un brouillon n'est pas encore une offre."
+/** Le refus d'une adresse mal formée, aux mots de `send-email`. */
+export const REFUS_ENVOI_ADRESSE = 'Adresse e-mail du destinataire invalide.'
+/** Le refus d'un devis hors du dossier, aux mots de `send-email`. */
+export const REFUS_ENVOI_INTROUVABLE = 'Devis introuvable.'
+
+/**
+ * Ce que `send-email` refuserait pour ce devis et cette adresse, dans l'ordre de la fonction ; null quand elle enverrait.
+ * L'adresse se juge TELLE QU'ELLE PART (sans ses blancs de bord). Une adresse absente se dit ici à l'écran : la fonction la
+ * range avec les champs « requis ».
+ */
+export function refusDeLEnvoiDuDevis(
+  dossierId: string,
+  devis: Pick<Devis, 'dossier_id' | 'statut'> | null,
+  destinataire: string,
+): string | null {
+  const adresse = destinataire.trim()
+  if (adresse === '') return 'L’adresse du destinataire est à renseigner.'
+  if (!EMAIL_REGEX_DE_L_ENVOI.test(adresse)) return REFUS_ENVOI_ADRESSE
+  if (!devis || devis.dossier_id !== dossierId) return REFUS_ENVOI_INTROUVABLE
+  if (devis.statut !== 'emis') return REFUS_ENVOI_BROUILLON
+  return null
+}
+
+/**
+ * Ce que la fenêtre et la confirmation disent d'un devis qui part malgré son état — sans rien refuser : sa validité a pris fin,
+ * ou il a déjà sa réponse, ou sa facture. Aucun avis pour un devis émis encore en attente, ni pour un brouillon (qui ne part pas).
+ */
+export function avisDeLEnvoiDuDevis(d: Pick<Devis, 'date_validite' | 'date_reponse'>, etat: EtatDevis): string | null {
+  const le = d.date_reponse ? ` le ${formatDate(d.date_reponse)}` : ''
+  switch (etat) {
+    case 'brouillon':
+    case 'en_attente':
+      return null
+    case 'expire':
+      return `Sa validité a pris fin le ${formatDate(d.date_validite)} ; il part tel quel.`
+    case 'accepte':
+      return `Ce devis a déjà reçu sa réponse : il a été accepté${le}. Il part tel quel, sans la réponse.`
+    case 'refuse':
+      return `Ce devis a déjà reçu sa réponse : il a été refusé${le}. Il part tel quel, sans la réponse.`
+    case 'facture':
+      return `Ce devis a déjà reçu sa réponse : il a été accepté${le}, puis transformé en facture. Il part tel quel, sans la réponse.`
+  }
+}
+
+/**
+ * La confirmation de l'envoi : elle nomme le devis (son numéro, son client, son total TTC), l'adresse du destinataire, ce qui
+ * part et ce qui ne part pas — et, d'abord, l'avis d'un devis expiré, répondu ou facturé. Un e-mail parti ne se rattrape pas.
+ */
+export function confirmationDeLEnvoiDuDevis(
+  d: Pick<Devis, 'numero' | 'tiers_nom' | 'montant_ttc' | 'date_validite' | 'date_reponse'>,
+  etat: EtatDevis,
+  destinataire: string,
+): string {
+  const avis = avisDeLEnvoiDuDevis(d, etat)
+  return `${avis ? `${avis} ` : ''}Envoyer le ${nomDuDevis(d)} à ${destinataire.trim()} ? Le détail du devis (lignes, totaux, `
+    + 'conditions, mentions légales) part dans le corps de l’e-mail, sans pièce jointe ; les notes et la réponse enregistrée '
+    + 'n’y figurent pas. L’envoi est journalisé et ne se rappelle pas.'
 }
