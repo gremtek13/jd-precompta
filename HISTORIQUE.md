@@ -48127,9 +48127,12 @@ lue « sans acompte ») mordent.
 
 ### 05/11/2026 — L'ACOMPTE D'UN DEVIS : P5B3-Q1 ET P5B2-Q1 ÉCRITS DANS LA MIGRATION
 
-Le cabinet a confirmé le 05/11/2026 toutes les questions de l'acompte à la recommandation et colle la migration le jour même :
-deux réponses que l'écran seul tenait (`jugerLAcompte`) entrent dans `acomptes_des_devis` (préparée), aux mots du module, en
-22023. P5B3-Q1 : `facturer_acompte_devis` refuse un devis dont `nature_operation` vaut « biens » ou « mixte »
+Le cabinet a confirmé le 05/11/2026 toutes les questions de l'acompte à la recommandation (P5B-Q1 à Q5, P5B2-Q1 à Q3, P5B3-Q1
+à Q3, P5B4A-Q1 à Q3) et choisi d'appliquer la migration tout de suite (P5B2-migration, contre la recommandation, qui la voulait
+après la répétition générale). P5B3-Q3, la relecture mot à mot des textes, viendra avec le lot qui ouvrira l'acompte de biens,
+que P5B3-Q1 refuse d'ici là ; P5B4A-Q2 laisse la transmission de l'avoir d'une finale qui défait ses reprises refusée jusqu'à
+l'essai du bac à sable. Deux réponses que l'écran seul tenait (`jugerLAcompte`) entrent dans `acomptes_des_devis` (préparée),
+aux mots du module, en 22023. P5B3-Q1 : `facturer_acompte_devis` refuse un devis dont `nature_operation` vaut « biens » ou « mixte »
 (`REFUS_ACOMPTE_DE_BIENS`), après l'état du devis et du dossier, avant la demande. P5B2-Q1 : une date du versement postérieure
 au jour de Paris (`refusDuVersementFutur`, le jour en JJ/MM/AAAA comme `formatDate`), en dernier dans `facturer_acompte_devis`
 (après la finale laissée, P5B-Q5), et dans `enregistrer_facture`, sur un acompte, après « ne se porte que sur une facture
@@ -48141,6 +48144,14 @@ la réplique (copies d'`e6_apres`) : `acomptesDesDevis.sql` 168 verdicts (dix ne
 leurre SÛR ; `factures.sql` 144, `devis.sql` 187, `devisSuppression.sql` 16, `encaissementsFactures.sql` 113, `envoiDesDevis.sql`
 28 : 0 en faute ; `rls.sql` 0 en faute (le bloc TD en attente), 73 mutations sur 73 ; aller, retour, aller : `86dd0752…`, puis
 `367df798…`, deux fois ; neuf mutations de la migration (chaque refus retiré, élargi ou déplacé) virent l'essai au rouge.
+LE TEXTE À COLLER (le patron de C1b : un bloc `do` qui vérifie l'empreinte du texte, `5b4d1476…`, fins de ligne Windows
+ramenées, refuse une seconde application et une base sans les trois migrations des devis, l'exécute et pose la ligne
+d'historique à l'heure du collage), joué sur une copie d'`e6_apres` qui appartient au rôle propriétaire, sous ce rôle comme
+l'éditeur de Supabase sous `postgres` : la signature d'après (`367df798…`), `acomptesDesDevis.sql` 168 verdicts justes ; en
+fins de ligne Windows, le même résultat ; altéré d'un caractère, refusé, la base intacte ; collé deux fois, refusé la
+seconde. Joué en superutilisateur sur une copie qui ne lui appartient pas, il s'applique aussi, mais ses fonctions changent de
+propriétaire et 66 verdicts tombent (`permission denied for function finale_active_du_devis`) : une réplique se rejoue sous
+son propriétaire, jamais en superutilisateur.
 
 ### 05/11/2026 — LA TRACE DES DROITS D'UN ACCÈS, EN BASE (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE)
 
