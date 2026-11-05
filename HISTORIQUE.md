@@ -48074,3 +48074,20 @@ facture d'acompte … du … » à la place de « En référence à la facture �
 manque : l'avis à l'écran (`.facture-imprimable-avis`) et « Imprimer » grisé — un titre faux ne s'imprime pas. Drapeau
 baissé ou sans acompte, le même `innerHTML` (un test). LA TRANSMISSION passe l'acompte lu à `refusEmission` ; pas revenu ou
 illisible, aucun geste, et la fenêtre le dit. Trois mutations (le titre, le devis cité, la lecture levée), trois mordent.
+
+### 05/11/2026 — L'ACOMPTE D'UN DEVIS : L'E-MAIL ET LES APPELS HTTP, CONSTANTE LEVÉE (P5B4C)
+
+Du code et des tests, rien en base, aucun déploiement. SEND-EMAIL : l'objet et le corps d'une facture d'acompte disent
+« Facture d'acompte F… » ; ceux de l'avoir d'un acompte, « Avoir A… sur la facture d'acompte F… » et « qui crédite la
+facture d'acompte F… ». La marque se lit dans `acompteDeLEmail`, sous `ACOMPTES_EN_BASE = false` : baissée, elle rend
+`SANS_ACOMPTE_EMAIL` avant toute lecture, aucune colonne neuve n'est nommée et l'e-mail est celui d'hier au caractère près
+(les contrats HTTP d'aujourd'hui, inchangés, le disent) ; levée, une marque en erreur, non rendue ou qui n'est pas un booléen,
+la facture corrigée non rendue, un avoir marqué acompte : 503, rien de parti. `copiesFacturation.test.ts` lie les TROIS
+constantes à `ACOMPTES_PREVUS`, parti de toutes les fonctions (la constante vit dans ces trois-là et nulle part ailleurs).
+LE HARNAIS : `acomptesEnBase` (fonctionsEdge.ts) lève la constante en mémoire en remplaçant exactement une occurrence de
+la constante baissée (`muter` : absente ou double, elle lève). `acomptesEnBaseHttp.test.ts` joue `SCENARIOS_ACOMPTES_EN_BASE`
+(contratsFonctions.ts) sur la source levée, `schemaPrepare` : superpdp-emit et plateforme-agreee déposent l'acompte (386, BT-9
+au versement) et la finale (380, S4, BG-3 et BT-20, reprise à −1), refusent en 422 une reprise dont l'acompte n'est pas lu,
+rendent 503 sur les reprises en erreur ; sans acompte, le CII déposé et l'e-mail sont ceux de la source servie, comparés.
+Mutations : la constante de send-email levée seule, la réécriture qui ne remplace rien, la marque illisible prise pour
+« non » — trois mordent.

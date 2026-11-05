@@ -314,31 +314,60 @@ describe('les blocs de facturation recopiés dans les Edge Functions', () => {
     if (porte(source, GENERATEUR)) cablage(source, blocs, fonction)
   })
 
-  // L'acompte d'un devis (P5b4a) : `main` reste déployable sur la production d'aujourd'hui, qui n'a pas les colonnes de la
-  // migration `acomptes_des_devis`. Une fonction ne les nomme que sous sa constante, levée avec `ACOMPTES_PREVUS`.
-  it.each(FONCTIONS.filter((f) => porte(sourceDe(f), GENERATEUR)))(
+  // L'acompte d'un devis (P5b4a, P5b4c) : `main` reste déployable sur la production d'aujourd'hui, qui n'a pas les colonnes
+  // de la migration `acomptes_des_devis`. Une fonction ne les nomme que sous sa constante, levée avec `ACOMPTES_PREVUS` :
+  // les deux qui transmettent une facture (le CII) et send-email (l'e-mail d'une facture d'acompte). Le garde part de
+  // TOUTES les fonctions : une constante qui apparaîtrait ailleurs, ou disparaîtrait d'ici, le fait tomber.
+  const LECTURES_DE_L_ACOMPTE: Record<string, { lecture: string; sans: string; cablage: readonly (string | RegExp)[] }> = {
+    'superpdp-emit': {
+      lecture: 'acompteDeLaFacture', sans: 'SANS_ACOMPTE_CII',
+      cablage: [/const acompte = await acompteDeLaFacture\(admin, dossierId, factureId, /, ', origine, acompte, dateDeParis(Date.now()))'],
+    },
+    'plateforme-agreee': {
+      lecture: 'acompteDeLaFacture', sans: 'SANS_ACOMPTE_CII',
+      cablage: [/const acompte = await acompteDeLaFacture\(admin, dossierId, factureId, /, ', origine, acompte, dateDeParis(Date.now()))'],
+    },
+    'send-email': {
+      lecture: 'acompteDeLEmail', sans: 'SANS_ACOMPTE_EMAIL',
+      cablage: ['const acompte = await acompteDeLEmail(admin, dossierId, factureId)', 'return json({ error: acompte.erreur }, 503)', ', messagePerso, acompte)'],
+    },
+  }
+
+  it('plancher : la constante ACOMPTES_EN_BASE vit dans ces trois fonctions, et nulle part ailleurs', () => {
+    expect(FONCTIONS.filter((f) => sourceDe(f).includes('ACOMPTES_EN_BASE')).sort()).toEqual(Object.keys(LECTURES_DE_L_ACOMPTE).sort())
+    expect(FONCTIONS.filter((f) => porte(sourceDe(f), GENERATEUR)).every((f) => f in LECTURES_DE_L_ACOMPTE)).toBe(true)
+  })
+
+  it.each(Object.keys(LECTURES_DE_L_ACOMPTE))(
     '%s : l’acompte d’un devis se lit sous ACOMPTES_EN_BASE, qui suit ACOMPTES_PREVUS ; baissée, rien de neuf n’est lu',
     (fonction) => {
+      const { lecture, sans, cablage } = LECTURES_DE_L_ACOMPTE[fonction]
       const source = sourceDe(fonction)
       const code = horsDesBlocs(source, controler(source, fonction))
       const constante = /^const ACOMPTES_EN_BASE = (true|false)$/m.exec(code)
       expect(constante, `${fonction} : la constante ACOMPTES_EN_BASE introuvable`).not.toBeNull()
       expect((constante as RegExpExecArray)[1] === 'true').toBe(ACOMPTES_PREVUS)
-      // La lecture : une seule fonction, qui rend SANS_ACOMPTE_CII avant toute lecture tant que la constante est baissée.
-      const debutLecture = code.indexOf('async function acompteDeLaFacture(')
-      const garde = code.indexOf('  if (!ACOMPTES_EN_BASE) return SANS_ACOMPTE_CII\n', debutLecture)
+      expect(code.match(/const ACOMPTES_EN_BASE = /g), `${fonction} : la constante posée plus d’une fois`).toHaveLength(1)
+      // La lecture : une seule fonction, qui rend sa valeur « sans acompte » avant toute lecture tant que la constante est
+      // baissée.
+      const debutLecture = code.indexOf(`async function ${lecture}(`)
+      const garde = code.indexOf(`  if (!ACOMPTES_EN_BASE) return ${sans}\n`, debutLecture)
       const finLecture = code.indexOf('\n}\n', garde)
       expect(debutLecture, `${fonction} : la lecture de l’acompte introuvable`).toBeGreaterThan(-1)
       expect(garde, `${fonction} : la lecture ne commence pas par sa garde`).toBeGreaterThan(debutLecture)
       expect(code.slice(debutLecture, garde)).not.toMatch(/\.from\(/)
+      expect(code.match(/ACOMPTES_EN_BASE/g), `${fonction} : la constante lue hors de sa garde`).toHaveLength(2)
       // Hors de cette lecture, aucune colonne de l'acompte n'est nommée.
       const ailleurs = code.slice(0, debutLecture) + code.slice(finLecture)
       for (const colonne of ['acompte, date_versement_acompte', 'reprise_facture_id', '"acompte"', 'date_emission, acompte']) {
         expect(ailleurs, `${fonction} : ${colonne} nommé hors de la lecture gardée`).not.toContain(colonne)
       }
-      // Le gestionnaire la lit et la passe au générateur.
-      expect(code).toMatch(/const acompte = await acompteDeLaFacture\(admin, dossierId, factureId, /)
-      expect(code).toContain(", origine, acompte, dateDeParis(Date.now()))")
+      expect(ailleurs, `${fonction} : une lecture hors de la garde nomme l’acompte`).not.toMatch(/\.select\("[^"]*\bacompte\b/)
+      // Le gestionnaire la lit et la passe à ce qui l'écrit (le générateur, ou l'e-mail).
+      for (const attendu of cablage) {
+        if (typeof attendu === 'string') expect(code, `${fonction} : ${attendu}`).toContain(attendu)
+        else expect(code).toMatch(attendu)
+      }
     },
   )
 

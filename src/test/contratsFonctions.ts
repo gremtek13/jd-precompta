@@ -5364,6 +5364,241 @@ const TAUX_CHANGE_BCE: ContratFonction = {
   ],
 }
 
+// ── L'ACOMPTE D'UN DEVIS, CONSTANTE LEVÉE (P5b4c) ────────────────────────────────────────────────────────────────────
+// Ces scénarios ne se jouent que sur la source dont `ACOMPTES_EN_BASE` est levée (`acomptesEnBase`, fonctionsEdge.ts),
+// devant la base du jour où la migration `acomptes_des_devis` sera appliquée (`schemaPrepare`) : la vraie source ne lit
+// pas la marque, et ses contrats restent ceux d'hier. Ce qui part — le CII déposé, l'e-mail envoyé — se garde dans
+// `notes`, pour être jugé ici et comparé, constante baissée puis levée (acomptesEnBaseHttp.test.ts). Données FICTIVES.
+
+const ACOMPTE_REPRIS = 'fa000000-0000-4000-8000-0000000000a1'
+
+/** La facture du dossier, ses colonnes de l'acompte posées : ni acompte ni reprise — une facture d'hier, lue demain. */
+function factureMarquee(m: Monde, valeurs: Record<string, unknown> = {}) {
+  m.schemaPrepare = true
+  factureValidee(m, { acompte: false, date_versement_acompte: null, ...valeurs })
+  for (const l of lignes(m, 'facture_lignes')) l.reprise_facture_id = null
+}
+
+/** La facture d'acompte F2026-0001 du 15/09/2026, l'acompte versé le 10/09/2026 (BT-9). */
+const factureDAcompte = (m: Monde) => factureMarquee(m, { acompte: true, date_versement_acompte: '2026-09-10' })
+
+/**
+ * La finale F2026-0002 : une mission de 1 000 € HT et la reprise, à quantité −1, de l'acompte F2026-0001 du 01/09/2026
+ * (300 € HT), qui est en base — `repris` le retouche (un autre dossier : il n'est plus lu).
+ */
+function finaleEnBase(m: Monde, repris: Record<string, unknown> = {}) {
+  factureMarquee(m)
+  const mission = ligneDeFacture({ ordre: 1, designation: 'Mission fictive', prix_unitaire_ht: 1000 })
+  const reprise = ligneDeFacture({ ordre: 2, designation: 'Reprise de l’acompte F2026-0001 du 01/09/2026', quantite: -1, prix_unitaire_ht: 300 })
+  m.base.factures_emises = [
+    { ...factureEnBase([mission, reprise], { id: FACTURE, dossier_id: D, numero: 'F2026-0002' }), acompte: false, date_versement_acompte: null },
+    {
+      ...factureEnBase([ligneDeFacture({ prix_unitaire_ht: 300 })], { id: ACOMPTE_REPRIS, dossier_id: D, numero: 'F2026-0001', date_emission: '2026-09-01' }),
+      acompte: true, date_versement_acompte: null, ...repris,
+    },
+  ]
+  m.base.facture_lignes = [
+    { id: identifiantGenere(), facture_id: FACTURE, ...mission, reprise_facture_id: null },
+    { id: identifiantGenere(), facture_id: FACTURE, ...reprise, reprise_facture_id: ACOMPTE_REPRIS },
+  ]
+}
+
+/** L'avoir A2026-0001 qui crédite en entier la facture d'acompte F2026-0001 (300 € HT), en base. */
+function avoirDUnAcompte(m: Monde) {
+  factureMarquee(m)
+  const credit = ligneDeFacture({ designation: 'Acompte de 30 % sur le devis fictif', quantite: -1, prix_unitaire_ht: 300 })
+  m.base.factures_emises = [
+    {
+      ...factureEnBase([credit], {
+        id: FACTURE, dossier_id: D, numero: 'A2026-0001', type: 'avoir', facture_origine_id: ACOMPTE_REPRIS, date_echeance: null,
+      }),
+      acompte: false, date_versement_acompte: null,
+    },
+    {
+      ...factureEnBase([ligneDeFacture({ prix_unitaire_ht: 300 })], { id: ACOMPTE_REPRIS, dossier_id: D, numero: 'F2026-0001', date_emission: '2026-09-01' }),
+      acompte: true, date_versement_acompte: null,
+    },
+  ]
+  m.base.facture_lignes = [{ id: identifiantGenere(), facture_id: FACTURE, ...credit, reprise_facture_id: null }]
+}
+
+/** Super PDP qui reçoit la facture, et le CII déposé gardé (`notes.cii`). */
+function superPdpQuiGarde(m: Monde) {
+  superPdpQuiRecoit(m)
+  transmissionsReservables(m)
+  const suite = m.hotes['api.superpdp.tech']
+  m.hotes['api.superpdp.tech'] = async (requete) => {
+    if (requete.method === 'POST' && new URL(requete.url).pathname === '/v1.beta/invoices') {
+      ;(m.notes.cii ??= []).push(await requete.clone().text())
+    }
+    return suite(requete)
+  }
+}
+
+/** La plateforme du client qui reçoit le dépôt, et le CII de sa partie fichier gardé (`notes.cii`). */
+function plateformeQuiGarde(m: Monde) {
+  connexionPlateforme(m)
+  transmissionsReservables(m)
+  const suite = m.hotes[HOTE_PLATEFORME]
+  m.hotes[HOTE_PLATEFORME] = async (requete) => {
+    if (requete.method === 'POST' && new URL(requete.url).pathname === '/afnor/v1/flows') {
+      const corps = await requete.clone().text()
+      ;(m.notes.cii ??= []).push(/<\?xml[\s\S]*<\/rsm:CrossIndustryInvoice>/.exec(corps)?.[0] ?? corps)
+    }
+    return suite(requete)
+  }
+}
+
+/** Le CII déposé, une fois : il porte chacun des `attendus`, et aucun des `interdits`. */
+const ciiDepose = (attendus: readonly (string | RegExp)[], interdits: readonly string[] = []) => (_r: Resultat, m: Monde) => {
+  const cii = (m.notes.cii ?? []) as string[]
+  if (cii.length !== 1) return [`${cii.length} CII déposé(s)`]
+  const fautes: string[] = []
+  for (const a of attendus) {
+    if (typeof a === 'string' ? !cii[0].includes(a) : !a.test(cii[0])) fautes.push(`le CII ne porte pas ${String(a)}`)
+  }
+  for (const i of interdits) if (cii[0].includes(i)) fautes.push(`le CII porte ${i}`)
+  return fautes
+}
+
+/** L'e-mail envoyé, une fois : son objet, et ce que son corps dit. */
+const emailEnvoye = (objet: string, attendus: readonly string[]) => (_r: Resultat, m: Monde) => {
+  const envois = (m.notes.envois ?? []) as { subject?: unknown; html?: unknown }[]
+  if (envois.length !== 1) return [`${envois.length} envoi(s)`]
+  const fautes: string[] = []
+  if (envois[0].subject !== objet) fautes.push(`objet : ${String(envois[0].subject)}`)
+  for (const a of attendus) if (!String(envois[0].html).includes(a)) fautes.push(`le corps ne dit pas « ${a} »`)
+  const journal = lignes(m, 'emails_envoyes')
+  if (journal.length !== 1 || journal[0].objet !== objet) fautes.push(`objet journalisé : ${JSON.stringify(journal.map((e) => e.objet))}`)
+  return fautes
+}
+
+/** Le refus qui dit ce qui manque, et rien de parti. */
+const refusQuiDit = (motif: RegExp) => (r: Resultat) => (motif.test(String(corpsDe(r).error)) ? [] : [r.texte])
+
+/** Ce qui est parti d'un monde joué : le CII déposé, ou l'e-mail envoyé (objet et corps). */
+export function ceQuiPart(monde: Monde): unknown[] {
+  return [...(monde.notes.cii ?? []), ...(monde.notes.envois ?? [])]
+}
+
+/** Deux reprises ne se lisent qu'à la seconde lecture des lignes : la première est celle du gestionnaire. */
+const reprisesEnPanne = (m: Monde) => { m.pannes.push({ table: 'facture_lignes', operation: 'select', sauter: 1, erreur: { message: 'délai dépassé' } }) }
+
+const DEPOT = { action: 'deposer', dossierId: D, version: VERSION_PLATEFORME, factureId: FACTURE }
+
+function scenariosDeLaTransmission(preparerLeCanal: (m: Monde) => void, corps: unknown): Scenario[] {
+  return [
+    {
+      nom: 'une facture sans acompte : 380, cadre S1, sans référence — le CII d’hier',
+      preparer: (m) => { preparerLeCanal(m); factureMarquee(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+      attendu: {
+        statut: 200,
+        verifier: ciiDepose(['<ram:TypeCode>380</ram:TypeCode>', '<ram:ID>S1</ram:ID>'], ['<ram:InvoiceReferencedDocument>', 'acompte']),
+      },
+    },
+    {
+      nom: 'une facture d’acompte : 386, cadre S1, la date du versement en BT-9',
+      preparer: (m) => { preparerLeCanal(m); factureDAcompte(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+      attendu: {
+        statut: 200,
+        verifier: ciiDepose(['<ram:TypeCode>386</ram:TypeCode>', '<ram:ID>S1</ram:ID>', '20260910'], ['<ram:TypeCode>380</ram:TypeCode>']),
+      },
+    },
+    {
+      nom: 'une finale : 380, cadre S4, l’acompte repris cité en BG-3 et en BT-20, la reprise à quantité −1',
+      preparer: (m) => { preparerLeCanal(m); finaleEnBase(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+      attendu: {
+        statut: 200,
+        verifier: ciiDepose([
+          '<ram:TypeCode>380</ram:TypeCode>', '<ram:ID>S4</ram:ID>',
+          /<ram:InvoiceReferencedDocument>\s*<ram:IssuerAssignedID>F2026-0001<\/ram:IssuerAssignedID>/,
+          'Facture définitive après l’acompte F2026-0001 du 01/09/2026, repris en déduction.',
+          /<ram:BilledQuantity unitCode="C62">-1(\.0+)?<\/ram:BilledQuantity>/,
+        ], ['<ram:ID>S1</ram:ID>']),
+      },
+    },
+    {
+      nom: 'une reprise dont l’acompte n’est pas lu (une facture d’un autre dossier) : 422, rien d’appelé',
+      preparer: (m) => { preparerLeCanal(m); finaleEnBase(m, { dossier_id: ID.dossierAutreCabinet }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+      attendu: {
+        statut: 422, refusEnFrancais: true, aucuneDepense: true,
+        verifier: refusQuiDit(/la facture d’acompte qu’elle reprend n’est pas lue/),
+      },
+    },
+    {
+      nom: 'les reprises illisibles (une lecture en erreur) : 503, rien d’appelé',
+      preparer: (m) => { preparerLeCanal(m); finaleEnBase(m); reprisesEnPanne(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+      attendu: {
+        statut: 503, refusEnFrancais: true, aucuneDepense: true,
+        verifier: refusQuiDit(/Les reprises d'acompte de la facture n'ont pas pu être lues \(délai dépassé\)/),
+      },
+    },
+  ]
+}
+
+/** Les scénarios de l'acompte d'un devis, fonction par fonction — à jouer sur `acomptesEnBase(sourceDe(slug))`. */
+export const SCENARIOS_ACOMPTES_EN_BASE: Readonly<Record<'superpdp-emit' | 'plateforme-agreee' | 'send-email', readonly Scenario[]>> = {
+  'superpdp-emit': scenariosDeLaTransmission(superPdpQuiGarde, EMISSION('envoyer')),
+  'plateforme-agreee': scenariosDeLaTransmission(plateformeQuiGarde, DEPOT),
+  'send-email': [
+    {
+      nom: 'une facture sans acompte : l’e-mail d’hier',
+      preparer: (m) => { resendQuiGarde(m); factureMarquee(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+      attendu: {
+        statut: 200, depenses: ENVOI_JOURNALISE,
+        verifier: emailEnvoye('Facture F2026-0001 — Atelier Démo Conseil', ['la facture <strong>F2026-0001</strong>, émise le 15/09/2026']),
+      },
+    },
+    {
+      nom: 'une facture d’acompte : « Facture d’acompte F… », dans l’objet et le corps',
+      preparer: (m) => { resendQuiGarde(m); factureDAcompte(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+      attendu: {
+        statut: 200, depenses: ENVOI_JOURNALISE,
+        verifier: emailEnvoye("Facture d'acompte F2026-0001 — Atelier Démo Conseil", ["la facture d'acompte <strong>F2026-0001</strong>, émise le 15/09/2026"]),
+      },
+    },
+    {
+      nom: 'l’avoir d’un acompte : il dit qu’il crédite la facture d’acompte',
+      preparer: (m) => { resendQuiGarde(m); avoirDUnAcompte(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+      attendu: {
+        statut: 200, depenses: ENVOI_JOURNALISE,
+        verifier: emailEnvoye("Avoir A2026-0001 sur la facture d'acompte F2026-0001 — Atelier Démo Conseil", [
+          "l'avoir <strong>A2026-0001</strong>, émis le 15/09/2026, qui crédite la facture d'acompte <strong>F2026-0001</strong>.",
+        ]),
+      },
+    },
+    {
+      nom: 'la marque d’acompte illisible (la colonne non rendue) : 503, rien d’envoyé',
+      preparer: (m) => { resendQuiGarde(m); m.schemaPrepare = true; factureValidee(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: refusQuiDit(/La marque d'acompte de la facture n'a pas pu être lue\./) },
+    },
+    {
+      nom: 'la marque d’acompte en erreur : 503, rien d’envoyé',
+      preparer: (m) => {
+        resendQuiGarde(m); factureDAcompte(m)
+        m.pannes.push({ table: 'factures_emises', operation: 'select', sauter: 1, erreur: { message: 'délai dépassé' } })
+      },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: refusQuiDit(/\(délai dépassé\)/) },
+    },
+    {
+      nom: 'la facture qu’un avoir corrige non rendue : 503, jamais « Avoir » d’un acompte qu’on n’a pas lu',
+      preparer: (m) => { resendQuiGarde(m); avoirDUnAcompte(m); lignes(m, 'factures_emises')[1].dossier_id = ID.dossierAutreCabinet },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: refusQuiDit(/la facture que l'avoir corrige n'a pas pu être lue/) },
+    },
+  ],
+}
+
 // ── LE TOUT ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export const CONTRATS: readonly ContratFonction[] = [
