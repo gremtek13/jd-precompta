@@ -111,7 +111,9 @@ const lienDe = (id: string, devis: string, factureId: string, role: string, cree
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date('2026-11-04T11:00:00Z'))
+  // 10 h UTC : le 4 novembre dans les quatre fuseaux de `test:fuseaux` (23 h à Auckland, 5 h à New York). À 11 h UTC, il
+  // était déjà minuit le 5 à Auckland, et la fenêtre d'avoir, qui affiche la date du jour, changeait d'empreinte.
+  vi.setSystemTime(new Date('2026-11-04T10:00:00Z'))
   faux.acomptes = false
   faux.lectures = []
   faux.appels = []
