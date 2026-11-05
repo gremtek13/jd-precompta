@@ -570,6 +570,25 @@ begin
   end if;
 end $$;
 
+-- ══ La trace des droits (espace client, étape P1-trace) ══ Au plan du code quand `TRACE_DES_DROITS_PREVUE` est levé —
+-- c'est-à-dire quand sa migration est en base : le script l'y met dès que sa table existe, juste après `memberships`
+-- (ORDRE_RESTAURATION_PREVU : la restauration réinsère l'accès, ce que le déclencheur ne trace pas, puis sa trace) ; les
+-- tables qui suivent reculent d'un rang — le geste des articles ; son chemin. Aucune vague : une ligne de la trace n'en
+-- pointe aucune autre. Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce
+-- bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.trace_des_droits') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'memberships';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'trace_des_droits');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('trace_des_droits','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
 -- migrations sont en base : le script les y met dès que leurs tables existent, juste après `documents_divers` — avant le
 -- journal des e-mails, qui cite un devis envoyé (`emails_envoyes.devis_id`, étape P6c1, migration `envoi_des_devis` ;

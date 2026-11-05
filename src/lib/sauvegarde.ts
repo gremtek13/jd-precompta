@@ -17,6 +17,7 @@ import { CONTACTS_EXPORTES } from './contacts'
 import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
+import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -127,14 +128,32 @@ export function auPlanDeLaCaisse(table: string, caisseExportee: boolean): boolea
   return caisseExportee || !TABLES_DE_LA_CAISSE.includes(table)
 }
 
+// LA TRACE DES DROITS D'UN ACCÈS (espace client, étape P1-trace ; migration `trace_des_droits`, PRÉPARÉE, pas appliquée) :
+// qui a coché ou décoché quelle case d'un accès, et quand. Le patron du journal des désignations, sous le drapeau de la
+// migration (`TRACE_DES_DROITS_PREVUE`, src/lib/traceDesDroits.ts), baissé : la production n'a pas la table, et la lire ferait
+// échouer toute sauvegarde. Sa table est déclarée ci-dessous à sa place — sa relation (le dossier en cascade ; ni l'accès ni
+// les comptes n'ont de clé : la trace survit au retrait de l'accès), son rang (juste après les accès), son chemin ; aucune
+// vague, une ligne n'en pointe aucune autre ; sa clé est la commune, `id`. La restauration la réinsère par la porte que sa
+// garde et sa policy ouvrent au super-administrateur, APRÈS les accès, dont la réinsertion par le super-administrateur ne
+// trace rien : la trace restaurée est celle de la sauvegarde, jamais une case « cochée » à l'instant de la restauration.
+// sauvegardeTraceDesDroits.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DE_LA_TRACE_DES_DROITS: readonly string[] = ['trace_des_droits']
+
+/** Une table au plan, côté trace des droits : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
+export function auPlanDeLaTraceDesDroits(table: string, tracePrevue: boolean): boolean {
+  return tracePrevue || !TABLES_DE_LA_TRACE_DES_DROITS.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
- *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse. */
+ *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
+ *  droits. */
 export function auPlanAujourdHui(table: string): boolean {
   return auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
     && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
     && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
     && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE)
     && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
+    && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -284,6 +303,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'lignes_bancaires', parent: 'emprunts', colonne: 'emprunt_id', aLaSuppression: 'bloque' },
   { enfant: 'lignes_bancaires', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'memberships', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'trace_des_droits', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'mouvements_cca', parent: 'comptes_courants_associes', colonne: 'compte_id', aLaSuppression: 'cascade' },
   { enfant: 'natures_immobilisation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'notes_internes', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'cascade' },
@@ -591,6 +611,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'factures_emises',
   'informations_dossier',
   'memberships',
+  'trace_des_droits',
   'natures_immobilisation',
   'packs',
   'previsionnels_bancaires',
@@ -1105,6 +1126,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   lettrages_manuels: { acces: 'direct' },
   lignes_bancaires: { acces: 'direct' },
   memberships: { acces: 'direct' },
+  trace_des_droits: { acces: 'direct' },
   notes_internes: { acces: 'direct' },
   packs: { acces: 'direct' },
   piece_commentaires: { acces: 'direct' },
