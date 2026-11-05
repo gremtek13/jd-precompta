@@ -44,6 +44,14 @@ export const DEVIS_EXPORTES: boolean = true
 // lève qu'avec ou après `DEVIS_EXPORTES` : la migration exige la table des devis.
 export const ENVOI_DES_DEVIS_PREVU: boolean = true
 
+// L'acompte d'un devis (étape P5b2 ; migration `acomptes_des_devis`, supabase/preparees/, préparée, PAS APPLIQUÉE) : la
+// marque d'une facture d'acompte, sa date du versement, la reprise d'une ligne de la facture finale et le rôle du lien d'un
+// devis. Tant que l'export ne porte pas la migration, le plan de sauvegarde ne connaît pas la reprise
+// (src/lib/sauvegarde.ts, `auGrapheDesAcomptes`) ; le jour où il la porte, sauvegardeAcomptesDesDevis.test.ts vire au rouge
+// tant que ceci reste `false`. Il ne se lève qu'avec ou après `ENVOI_DES_DEVIS_PREVU` : la migration suppose celle de
+// l'envoi. Les moteurs (P5b3) le liront aussi.
+export const ACOMPTES_PREVUS: boolean = false
+
 // « Envoyer par e-mail » un devis émis, dans les deux espaces (étape P6c3) : `send-email` accepte le type « devis » depuis
 // P6c2, mais ne se déploie qu'APRÈS l'application de la migration `envoi_des_devis` (le journal des envois refuserait la ligne
 // d'un devis). Le bouton ne s'offre donc qu'ici, baissé : on le lève quand la migration est en base ET que `send-email` est
