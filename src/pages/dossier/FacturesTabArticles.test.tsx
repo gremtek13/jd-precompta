@@ -5,6 +5,7 @@ import { facture as factureCii, SIRET_VENDEUR } from '../../test/facturesCii'
 import { article } from '../../test/articles'
 import type { FactureEmise } from '../../lib/types'
 import { NON_BASCULE } from '../../test/factures'
+import { DEVIS_EXPORTES } from '../../lib/devis'
 
 // LA VUE « ARTICLES » DANS L'ONGLET FACTURES (espace client, étape A2a), avec la VRAIE vue et son faux client. Ce que ces cas
 // gardent : le sélecteur nomme « Articles » à côté de « Factures » et « Règlements », au cabinet et au client « Ventes » ; la
@@ -119,10 +120,10 @@ async function monter(espace: 'cabinet' | 'client') {
 const vers = (nom: string) => fireEvent.click(screen.getByRole('tab', { name: nom }))
 
 describe.each(['cabinet', 'client'] as const)('Articles dans l’onglet Factures — %s', (espace) => {
-  it('le sélecteur nomme les cinq vues, « Factures » reste la vue par défaut, et la table des articles n’est pas lue', async () => {
+  it('le sélecteur nomme ses vues (« Devis » depuis le 05/11/2026), « Factures » reste la vue par défaut, et la table des articles n’est pas lue', async () => {
     await monter(espace)
     const onglets = screen.getAllByRole('tab').map((t) => t.textContent)
-    expect(onglets).toEqual(['Factures', 'Règlements', 'Articles', 'Clients', 'Paramètres'])
+    expect(onglets).toEqual(['Factures', ...(DEVIS_EXPORTES ? ['Devis'] : []), 'Règlements', 'Articles', 'Clients', 'Paramètres'])
     expect(screen.getByRole('tab', { name: 'Factures' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('tab', { name: 'Articles' }).getAttribute('aria-selected')).toBe('false')
     // Rien ne part vers la table des articles avant le clic : ni lecture, ni liste.
@@ -148,7 +149,7 @@ describe.each(['cabinet', 'client'] as const)('Articles dans l’onglet Factures
   it('le drapeau d’export rebaissé : aucun onglet « Articles », aucune lecture de la table', async () => {
     faux.drapeau = false
     await monter(espace)
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Factures', 'Règlements', 'Clients', 'Paramètres'])
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Factures', ...(DEVIS_EXPORTES ? ['Devis'] : []), 'Règlements', 'Clients', 'Paramètres'])
     expect(screen.queryByRole('tab', { name: 'Articles' })).toBeNull()
     expect(faux.lectures).not.toContain('articles')
   })
