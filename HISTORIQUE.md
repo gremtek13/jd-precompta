@@ -47936,3 +47936,13 @@ cumulés jusqu'au devis, un seul en brouillon (recommandé), ou un seul ; P5B-Q3
 lot du 4191 (recommandé), ou offert ; P5B-Q4, une finale créditée en entier laisse tirer une nouvelle finale
 (recommandé), ou le devis reste facturé. À VÉRIFIER : la reprise des art. 269 et 289 au CIBS ; l'acompte sur l'option
 pour les débits devant « Encaissée » (BOI-TVA-DECLA-20-30-60) ; BR-CO-17 sur une finale à deux taux ; Super PDP et 386.
+
+### 05/11/2026 — L'ENVOI DES DEVIS : LA MIGRATION `ENVOI_DES_DEVIS` EN PRODUCTION (P6C1)
+
+Accordée par le cabinet le 05/11/2026 (« oui pour l'envoi des devis »), appliquée par l'outil le même jour, sans
+confirmation retenue, sous la version 20261105070313 (173 migrations) ; l'empreinte de l'historique égale celle du fichier
+(a9d28238…). `envoiDesDevis.sql` rejoué en production : 31 verdicts, 0 en faute, 5 mutations sur 5, rien resté en base.
+Le fichier reste dans `supabase/preparees/` jusqu'au jour de l'application des devis (la seconde migration, à coller) :
+l'export, `types.ts`, `DEVIS_EXPORTES` et `ENVOI_DES_DEVIS_PREVU` basculent ensemble, la signature se compare alors à la
+réplique `e6_apres` (les deux migrations des devis et celle-ci) ; puis `send-email` se déploie, et
+`ENVOI_DES_DEVIS_OFFERT` se lève.

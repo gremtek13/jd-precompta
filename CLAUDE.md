@@ -755,8 +755,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     (20261104204904), la seconde (`supprimer_brouillon_devis`) à coller ; l'émetteur posé du dossier et aucun IBAN
     imprimé, comme la facture (A7) ; le jour de l'application, la phrase de la case « Ventes » nomme les devis et
     l'ordre de restauration les met avant `emails_envoyes` ; le code suit derrière `DEVIS_EXPORTES` (la vue « Devis »,
-    la réponse, la facture tirée, l'aperçu et l'impression : P6a1 à P6b) ; l'envoi par e-mail : sa migration préparée
-    (`envoi_des_devis`, `ENVOI_DES_DEVIS_PREVU`), `send-email` et l'écran à suivre (P6c) ; un mois de validité proposé,
+    la réponse, la facture tirée, l'aperçu et l'impression : P6a1 à P6b) ; l'envoi par e-mail (P6c) : sa migration en
+    production depuis le 05/11/2026 (`envoi_des_devis`, 20261105070313 ; `ENVOI_DES_DEVIS_PREVU` se lève avec
+    `DEVIS_EXPORTES`), puis `send-email` déployée et `ENVOI_DES_DEVIS_OFFERT` levé ; un mois de validité proposé,
     modifiable ; aucun modèle par métier pour l'instant ; l'acompte, une facture d'acompte puis une facture de solde (à
     ajouter : `facturer_devis` ne tire qu'une facture) ; un devis refusé ou expiré gardé trois ans, puis proposé à
     l'effacement, jamais effacé seul ; les devis de soins hors de l'application ; une acceptation après la validité, sur
