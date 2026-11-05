@@ -763,7 +763,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     encaissement, sa part impayée à la livraison de la finale ; « Encaissée » le dit dû et cite le 386 ; la base ne sait
     pas encore la règle des biens, P5B3-Q1), le CII (P5b4a : 386, la finale en 380 sous le cadre 4 et un seul BG-3, celui
     que le schéma CII D16B admet, l'avoir d'un acompte en 503 ; les copies ne lisent ses colonnes que sous
-    `ACOMPTES_EN_BASE`), l'aperçu et la fenêtre de transmission (P5b4b) ; un devis refusé ou expiré gardé trois ans,
+    `ACOMPTES_EN_BASE`), l'aperçu et la fenêtre de transmission (P5b4b), l'e-mail (P5b4c), les écrans des deux espaces
+    (P5b5 : facturer un acompte et le solde depuis le devis, le brouillon, la validation et l'avoir d'un acompte ou
+    d'une finale, leur marque dans la liste, la prop `acompte` obligatoire) ; un devis refusé ou expiré gardé trois ans,
     puis proposé à l'effacement, jamais effacé seul ; les devis de soins hors de l'application ; une acceptation après
     la validité, sur une confirmation explicite → « LES DEVIS, EN
     BASE », « LES DEVIS : RÉPONDRE, EN TIRER UNE FACTURE, L'APERÇU ET L'IMPRESSION (P6A2, P6B), DERRIÈRE
@@ -772,7 +774,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     LEVÉS », « L'ENVOI DES DEVIS EN LIGNE : `SEND-EMAIL` V9 ET LE BOUTON OFFERT (P6C) », « L'ACOMPTE D'UN DEVIS, EN BASE
     (P5B2) (PRÉPARÉE, PAS APPLIQUÉE) », « L'ACOMPTE D'UN DEVIS DANS LES MOTEURS (P5B3), DERRIÈRE `ACOMPTES_PREVUS` »,
     « L'ACOMPTE D'UN DEVIS : LE CII (P5B4A), DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : L'APERÇU ET LA
-    TRANSMISSION À L'ÉCRAN (P5B4B), DERRIÈRE `ACOMPTES_PREVUS` ».
+    TRANSMISSION À L'ÉCRAN (P5B4B), DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : L'E-MAIL ET LES APPELS HTTP,
+    CONSTANTE LEVÉE (P5B4C) », « L'ACOMPTE D'UN DEVIS : FACTURER UN ACOMPTE ET LE SOLDE DEPUIS LE DEVIS (P5B5A),
+    DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : LA FACTURE D'ACOMPTE ET LA FINALE DANS L'ONGLET DES FACTURES
+    (P5B5B), DERRIÈRE `ACOMPTES_PREVUS` ».
   - La suite, en trois parties (« au minimum faire comme le logiciel du client, et aller plus loin ») : le premier
     groupe, A1 à A11 ; la parité, B1 à B9 (achats, notes de frais, analyse, documents du cabinet, trois cases neuves
     « Achats », « Notes de frais », « Documents », le resserrement des pièces) ; « aller plus loin », C1 à C8
