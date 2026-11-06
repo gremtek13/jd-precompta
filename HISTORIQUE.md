@@ -48510,3 +48510,21 @@ RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
     DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : LA FACTURE D'ACOMPTE ET LA FINALE DANS L'ONGLET DES FACTURES
     (P5B5B), DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : P5B3-Q1 ET P5B2-Q1 ÉCRITS DANS LA MIGRATION »,
     « L'ACOMPTE D'UN DEVIS EN PRODUCTION : LA MIGRATION COLLÉE ET LES DRAPEAUX LEVÉS ».
+
+### 06/11/2026 — LA FACTURE ÉLECTRONIQUE LIT CE QUE LA FACTURE A FIGÉ (A7C, LIGNE 28.55)
+
+(Du code et des tests, rien en base, rien déployé.) Le bloc `factureCii` recomposait encore le vendeur du dossier au jour
+de la transmission. Pour une facture qui a figé ses mentions (`mentions_figees`), `donneesDeLaFacture` prend désormais le
+statut, l'article, la case et le numéro de TVA figés (le motif BT-120/BT-121 en découle), jamais le dossier ; le CII gagne
+l'unité (BT-130) et la référence (BT-155) de chaque ligne, le bon de commande (BT-13) pour tout acheteur, les instructions
+de paiement (BG-16 : BT-81 du moyen préféré, « non défini » (1) sans moyen, BT-84 à BT-86) quand un IBAN est figé, les
+conditions de paiement en texte (BT-20 : le moyen, les pénalités, l'indemnité) et l'escompte en note `AAB`. L'annexe 7 v1.9
+de la DGFiP (G1.52) ne nomme que AAB, TXD et BLU ; aucun code n'est donc choisi pour les pénalités ni l'indemnité, qui
+restent dans BT-20. Le texte vient de `conditionsFigees` (dans le bloc), que l'aperçu (`ceQueLaFactureImprime`) emploie
+aussi ; `INDEMNITE_DE_RECOUVREMENT` y a déménagé, et un test confronte les libellés des moyens à `MOYENS_ENCAISSEMENT`. Une
+facture d'avant s'écrit à l'octet près comme hier (les onze empreintes de `valides.json` inchangées, et un test qui pose
+toutes les colonnes figées sur `mentions_figees` faux ou absent). Les deux copies (superpdp-emit, plateforme-agreee),
+recopiées par script, lisent les onze colonnes figées et `unite, reference` ; l'écran de transmission aussi. Deux exemples
+neufs (`figee-entreprise`, `figee-franchise`, IBAN fictif au code banque 99999) : 0 erreur, 0 avertissement au validateur
+officiel (artefacts 1.3.16, Saxon 9.9.1-8). Sept mutations mordent. FACTURE-Q4 (la ligne à 0 % d'un redevable) est
+proposée au cabinet, rien d'écrit. Restent le redéploiement des deux fonctions, par la session principale.

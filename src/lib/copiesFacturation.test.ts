@@ -195,13 +195,19 @@ const EPREUVES: Record<string, (m: Execute) => unknown> = {
   numeroAdmis: (m) => ['F2026-0001', ' F1', 'F1 ', 'F 1', 'F  1', 'x'.repeat(35), 'x'.repeat(36), 'A2026-0001', ''].map((n) => m.numeroAdmis(n)),
   refusEmission: (m) => [...EXEMPLES.map((e) => m.refusEmission(e.donnees)), ...CAS_DE_REFUS.map(([, c]) => m.refusEmission(donnees(c)))],
   cadreDeFacturation: (m) => (['biens', 'services', 'mixte'] as const).map((n) => m.cadreDeFacturation(n)),
-  donneesDeLaFacture: (m) => EXEMPLES.slice(0, 2).flatMap((e) => STATUTS.flatMap((s) => IDENTIFIANTS.flatMap((siret) =>
+  // Les deux premiers exemples sont d'avant A7 ; les exemples « figee-… » ont figé leurs mentions, que le dossier ne change pas.
+  donneesDeLaFacture: (m) => [...EXEMPLES.slice(0, 2), ...EXEMPLES.filter((x) => x.nom.startsWith('figee-'))].flatMap((e) => STATUTS.flatMap((s) => IDENTIFIANTS.flatMap((siret) =>
     [false, true].map((attribue) => m.donneesDeLaFacture(
       { ...e.donnees.facture, emetteur_nom: 'Démo', emetteur_siret: siret ?? null, emetteur_adresse: null }, e.donnees.lignes,
       { statut_tva: s, article_exoneration: s === 'exonere' ? 'cgi_261_4_1' : null, numero_tva_attribue: attribue },
       e.donnees.origine, cii.SANS_ACOMPTE_CII, '2026-10-08'))))),
   factureCii: (m) => [...EXEMPLES.map((e) => m.factureCii(e.donnees)), ...CAS_DE_REFUS.map(([, c]) => m.factureCii(donnees(c)))],
   SANS_ACOMPTE_CII: (m) => m.SANS_ACOMPTE_CII,
+  INDEMNITE_DE_RECOUVREMENT: (m) => m.INDEMNITE_DE_RECOUVREMENT,
+  MOYENS_DE_PAIEMENT_CII: (m) => m.MOYENS_DE_PAIEMENT_CII,
+  conditionsFigees: (m) => ([null, 'assujetti', 'organisme_public', 'non_assujetti', 'etranger'] as const).flatMap((t) =>
+    [null, '', 'virement', 'effet', 'inconnu'].flatMap((moyen) => [null, '', 'Escompte : 1 % à 8 jours.'].map((texte) =>
+      m.conditionsFigees({ type_client: t, moyen_prefere: moyen, escompte: texte, penalites: texte })))),
   acompteLu: (m) => LECTURES_D_ACOMPTE.map(([f, l, o, r]) => m.acompteLu(f, l, o, r)),
 }
 
@@ -247,6 +253,10 @@ const LUES_PAR_LE_GENERATEUR: Record<keyof FactureEnBase, true> = {
   date_prestation: true, periode_debut: true, periode_fin: true, livraison_adresse: true, livraison_code_postal: true,
   livraison_ville: true, livraison_pays: true, option_debits: true, emetteur_nom: true, emetteur_siret: true,
   emetteur_adresse: true,
+  // Ce que la facture a figé (A7a), que le CII lit depuis A7c : sans elles, la fonction transmettrait le statut et le numéro
+  // de TVA du dossier d'aujourd'hui, et ni le RIB ni les conditions de paiement que le papier imprime.
+  mentions_figees: true, statut_tva: true, article_exoneration: true, numero_tva_attribue: true, numero_tva_imprime: true,
+  moyen_prefere: true, escompte: true, penalites: true, iban_imprime: true, bic_imprime: true, titulaire_imprime: true,
 }
 
 // De même les colonnes du DOSSIER que le générateur lit : sans `numero_tva_attribue`, un dossier en franchise qui a un

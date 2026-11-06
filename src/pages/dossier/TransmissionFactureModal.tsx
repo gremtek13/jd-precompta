@@ -153,7 +153,7 @@ export default function TransmissionFactureModal(props: Props) {
   }
 
   useEffect(() => {
-    supabase.from('facture_lignes').select('ordre, designation, quantite, prix_unitaire_ht, taux_tva')
+    supabase.from('facture_lignes').select('ordre, designation, quantite, prix_unitaire_ht, taux_tva, unite, reference')
       .eq('facture_id', facture.id).order('ordre')
       .then(({ data, error }) => {
         if (error) setLectureRatee(messageErreur(error, 'Les lignes de la facture n’ont pas pu être lues.'))
