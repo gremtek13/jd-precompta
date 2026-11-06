@@ -679,11 +679,14 @@
 -- (SP1 à SP3, M-SP1, M-SP2) ; EN ATTENTE sans la migration ; la boucle des invariants y voit la table de plus. Ce qu'il
 -- rend : HISTORIQUE.md, « LES SITUATIONS PUBLIÉES, EN BASE (C4A) (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
--- 06/11/2026 — ÉCRIT, PAS ENCORE JOUÉ (relecture de sécurité : migration `droits_hors_rls`, PRÉPARÉE, pas appliquée), qui
--- retire à anon et à authenticated les quatre droits d'une table que la RLS ne garde pas, sur toutes les relations de
--- public et dans le défaut du propriétaire. Le bloc HR (HR1 à HR5, M-HR1 à M-HR6) ne lit que le catalogue et ne pose que
--- des GRANT annulés ; EN ATTENTE tant que l'historique ne porte pas la migration et que l'état est celui d'avant ; la
--- preuve par le geste, sur une réplique seulement : `droitsHorsRls.sql`.
+-- 06/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (relecture de sécurité : migration `droits_hors_rls`, PRÉPARÉE, pas
+-- appliquée), qui retire à anon et à authenticated les quatre droits d'une table que la RLS ne garde pas, sur toutes les
+-- relations de public et dans le défaut du propriétaire. Le bloc HR (HR1 à HR5, M-HR1 à M-HR6) ne lit que le catalogue et
+-- ne pose que des GRANT annulés ; EN ATTENTE tant que l'historique ne porte pas la migration et que l'état est celui
+-- d'avant. Joué ENTIER, en une transaction, sur la réplique PostgreSQL 17 égale à la production : sans la migration, 97
+-- lignes d'invariants, 0 en faute, 73 mutations sur 73, HR EN ATTENTE ; avec elle, 104 lignes, 0 en faute, 79 sur 79 ;
+-- après son retour, de nouveau EN ATTENTE. La preuve par le geste, sur une réplique seulement : `droitsHorsRls.sql`. Ce
+-- qu'il rend : HISTORIQUE.md, « LES DROITS QUE LA RLS NE GARDE PAS ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -4427,8 +4430,9 @@ end $$;
 -- ══ HR. Les droits hors de la RLS (relecture de sécurité du 06/11/2026 ; migration `droits_hors_rls`) ════════════════════
 -- Quatre droits d'une table ne passent ni par la RLS ni par les déclencheurs de ligne : la vider d'un coup (la lettre D de
 -- l'ACL), y poser une clé étrangère (REFERENCES), un déclencheur (TRIGGER), et MAINTAIN (PostgreSQL 17 : VACUUM, ANALYZE,
--- CLUSTER, REINDEX, REFRESH MATERIALIZED VIEW, LOCK TABLE), qu'information_schema tait. Le relevé du 06/11/2026 les
--- trouvait à anon et à authenticated sur les 85 tables et dans le défaut du propriétaire ; la migration les retire. Le bloc
+-- CLUSTER, REINDEX, REFRESH MATERIALIZED VIEW ; LOCK TABLE aussi, que UPDATE et DELETE permettent de toute façon),
+-- qu'information_schema tait. Le relevé du 06/11/2026 les trouvait à anon et à authenticated sur les 85 tables et dans
+-- le défaut du propriétaire ; la migration les retire. Le bloc
 -- ne lit que le catalogue, et ses mutations ne sont que des GRANT, chacun annulé avec sa sous-transaction : il se joue en
 -- production (sous postgres, propriétaire et non super-utilisateur) comme sur une réplique (sous le super-utilisateur).
 --   HR1. Sur chaque relation de public, anon, authenticated et PUBLIC ne portent que SELECT, INSERT, UPDATE et DELETE :
@@ -4450,10 +4454,10 @@ end $$;
 -- à PUBLIC sur cabinet_admins : HR1, la branche de PUBLIC et le chemin d'anon par elle), M-HR3 (REFERENCES sur la colonne
 -- user_id de cabinet_admins, donné à anon : HR2, que HR1 ne voit pas), M-HR4 (TRIGGER rendu à anon dans le défaut du
 -- propriétaire, nommé au catalogue : HR3), M-HR5 (SELECT retiré à authenticated sur cabinet_admins : HR5), M-HR6 (HR4 jugé
--- pour pg_read_all_stats, membre de pg_monitor dans toute grappe depuis PostgreSQL 10 : la lecture des appartenances n'est
--- pas aveugle). Aucune appartenance n'est réellement posée : depuis PostgreSQL 16, donner un rôle demande l'option ADMIN sur
--- lui, et le relevé n'établit pas que postgres la tienne en production ; une mutation qui ne s'y jouerait pas ne prouverait
--- rien là où le bloc compte.
+-- pour pg_monitor, membre de pg_read_all_stats dans toute grappe depuis PostgreSQL 10 — et non l'inverse, que le premier
+-- jeu sur la réplique a montré muet : la lecture des appartenances n'est pas aveugle). Aucune appartenance n'est
+-- réellement posée : depuis PostgreSQL 16, donner un rôle demande l'option ADMIN sur lui, et le relevé n'établit pas que
+-- postgres la tienne en production ; une mutation qui ne s'y jouerait pas ne prouverait rien là où le bloc compte.
 -- EN ATTENTE tant que l'historique ne porte pas la migration (aucune ligne `droits_hors_rls`, ou une ligne
 -- `retour_droits_hors_rls` plus récente) ET que l'état est celui d'avant (anon et authenticated tiennent, sur chaque
 -- relation, chaque privilège hors du DML). L'historique seul laisserait « en attente » une réplique migrée sans sa ligne ;
@@ -4666,11 +4670,11 @@ begin
     'attendu', 'HR5 en faute', 'observe', coalesce(nullif(obs, ''), 'rien vu'),
     'mord', coalesce(obs like '%authenticated sans SELECT%', false));
 
-  -- M-HR6 : HR4 jugé pour pg_read_all_stats, membre de pg_monitor dans toute grappe.
-  execute q_membres into obs using array['pg_read_all_stats'];
-  mutations := mutations || jsonb_build_object('mutation', 'M-HR6 — HR4 jugé pour pg_read_all_stats, membre de pg_monitor',
+  -- M-HR6 : HR4 jugé pour pg_monitor, membre de pg_read_all_stats dans toute grappe (le membre est pg_monitor).
+  execute q_membres into obs using array['pg_monitor'];
+  mutations := mutations || jsonb_build_object('mutation', 'M-HR6 — HR4 jugé pour pg_monitor, membre de pg_read_all_stats',
     'attendu', 'HR4 en faute', 'observe', coalesce(nullif(obs, ''), 'rien vu'),
-    'mord', coalesce(obs like '%pg_read_all_stats membre de pg_monitor%', false));
+    'mord', coalesce(obs like '%pg_monitor membre de pg_read_all_stats%', false));
 
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);

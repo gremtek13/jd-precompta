@@ -49032,3 +49032,34 @@ source lus en partie. `…Lecture.ts` : une lecture `lireTout` par colonne, born
 gardée avec le dossier et le jour. `CarteEspaceClient` en `span-12` de la Vue d'ensemble, après l'encart « Facture
 électronique » : squelette, pastilles neutres, la limite dite (un brouillon supprimé, une modification écrasée, un accès
 retiré). Les notes de frais n'ont pas de table : leurs trois évènements n'existent pas encore.
+
+### 06/11/2026 — LES DROITS QUE LA RLS NE GARDE PAS, RETIRÉS À ANON ET AUTHENTICATED (PRÉPARÉE, PAS APPLIQUÉE), ET LA RÉPLIQUE MÈRE EN POSTGRESQL 17
+
+La relecture de sécurité du jour : `anon` et `authenticated` portent TRUNCATE, TRIGGER et REFERENCES sur les tables de
+public, et les droits par défaut les donnent aux tables neuves ; TRUNCATE ne passe ni par la RLS ni par les déclencheurs
+de ligne ; aucune voie de l'API ne l'atteint (risque latent). **Le relevé** (production, `execute_sql`, lecture seule) :
+PostgreSQL 17.6 ; 85 tables, toutes à `postgres`, qui applique les migrations sans être super-utilisateur ; `anon` et
+`authenticated` y tiennent `arwdDxtm` (`cabinet_admins` : `ardDxtm` et UPDATE sur `role`), donc aussi **MAINTAIN**, que
+`information_schema.role_table_grants` TAIT (il ne rend que les sept privilèges du standard) — `aclexplode` le montre ; le
+défaut de `postgres` dans public donne les huit aux quatre rôles, celui de `supabase_admin` aussi, hors de portée ; aucune
+fonction, aucun déclencheur n'émet de TRUNCATE ; ni CREATE sur public ni appartenance pour les deux rôles ; le schéma `net`
+(pg_net, à `supabase_admin`) donne tout à PUBLIC, hors de portée. **La migration préparée** `droits_hors_rls`
+(20261106180000, empreinte `3c6f2807…` ; retour 180100) : les quatre retirés sur `all tables in schema public` et dans le
+défaut du rôle COURANT (sans `for role`, aucun nom en dur), entre une garde de tête (le propriétaire applique ; ni PUBLIC
+ni appartenance ; l'état relevé, uniforme ; aucun REFERENCES par colonne ; le défaut ; l'empreinte du reste, passée par
+`set_config` local) et une garde de fin (liste blanche à l'ACL, `has_table_privilege` par tout chemin, colonnes, défaut,
+reste inchangé). Retirer MAINTAIN ne ferme pas LOCK TABLE, qu'UPDATE et DELETE permettent (documentation de LOCK, vu sur
+la réplique). Le mot `truncate` fera attendre `apply_migration` : un collage, bloc prêt, éprouvé. MAINTAIN dépasse le
+constat : DHR-Q1 au cabinet. **Les essais** : `rls.sql`, bloc HR (catalogue seul, EN ATTENTE tant que l'historique ne
+porte pas la migration ET l'état d'avant, six mutations) ; `droitsHorsRls.sql`, de réplique seulement, tente chaque geste.
+**La réplique mère, remontée en PostgreSQL 17.11** (PG 16 ignore MAINTAIN), sans transcription (l'outil sauve un long
+résultat en fichier, lu par script), la base en ICU `en-US` comme la production (en libc, l'ordre des index différait) :
+égale sur les neuf familles de `signature.sql`, le relevé complet des droits (MAINTAIN, colonnes, défauts) et
+l'historique (176, `5a6c2f0a…`). **Les rejeux** : migrée, seuls `droits_tables` et le relevé changent ; avec son retour,
+la base revient à l'octet (`relacl`, `attacl`, `defaclacl`) ; `rls.sql` entier : 97 lignes, 0 faute, 73 mutations sur 73
+et HR EN ATTENTE avant, 104, 0, 79 sur 79 après, EN ATTENTE après le retour ; `restauration.sql` IDENTIQUE des deux
+côtés ; `droitsHorsRls.sql` en faute sur les 85 tables avant, tout refusé (42501) après ; le banc du leurre, 74 essais SÛR
+de chaque côté, sorties égales hors HR, signature et l'ordre d'un détecteur ; treize mutations de la migration et six du
+retour refusées par la garde attendue ; M-HR6, qui lisait l'appartenance à l'envers, corrigée. Fragile : le retour ne voit
+pas un changement fait entre la migration et lui ; les déclencheurs d'événement de Supabase manquent à la réplique ; la
+mère n'a pas le dossier fictif de `second_acces.sql` (ajouté sur les copies du banc).

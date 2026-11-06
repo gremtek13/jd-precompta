@@ -277,6 +277,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `evaluer-extraction` avec `limite: 0`). **Les droits chez AWS** : `edgeFunctionsIam.test.ts` (la policy vit chez AWS).
   **Qui voit quoi** : `rls.sql` (tables et stockage, pas la suppression d'un fichier) ; `edgeFunctionsHttp.test.ts` (les
   Edge Functions en HTTP).
+- **Les droits d'une table que la RLS ne garde pas** (TRUNCATE, TRIGGER, REFERENCES, et MAINTAIN de PostgreSQL 17,
+  qu'`information_schema` tait : lire `aclexplode`) : `anon` et `authenticated` les portent sur les 85 tables, et le
+  défaut de `postgres` les donne à toute table neuve ; aucune voie de l'API ne les atteint. La migration `droits_hors_rls`
+  les retire (préparée, pas appliquée : DHR-Q1 ; le mot `truncate` la fait coller) ; le bloc HR de `rls.sql` et
+  `droitsHorsRls.sql` (réplique) l'éprouvent ; LOCK reste ouvert par UPDATE et DELETE ; le défaut de `supabase_admin` et
+  le schéma `net` sont hors de portée → « LES DROITS QUE LA RLS NE GARDE PAS ».
 - RLS activée sur toutes les tables. **Les accès clients sont restreints** (dépôt de pièces, pas de montants,
   catégories, packs ni autres onglets) — ne jamais les élargir sans décision explicite. **Trois domaines font
   exception** (décision du cabinet du 09/10/2026, « remplacer MEG ») : les devis, les factures et leur facture
@@ -681,7 +687,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `cabinet_id` et `code_email` s'ils sont nuls).
 - **Un drapeau qui attend une migration se bascule d'abord en SIMULATION** (le fichier posé dans l'export, le drapeau
   levé, la suite ENTIÈRE). Une réplique se monte en UTF8 ; un ordre de texte qu'une fonction ou un essai doit tenir
-  s'écrit `collate "C"` → « LA BANQUE DU CLIENT EN BASE ».
+  s'écrit `collate "C"` → « LA BANQUE DU CLIENT EN BASE ». Depuis le 06/11/2026, en PostgreSQL 17 et en ICU `en-US`,
+  comme la production (PG 16 ignore MAINTAIN ; en libc, l'ordre des index diffère) → « LA RÉPLIQUE MÈRE EN POSTGRESQL 17 ».
 
 ### Lectures et écritures Supabase
 

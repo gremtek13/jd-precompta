@@ -12,9 +12,10 @@
 --   - REFERENCES (x) pose une clé étrangère qui la vise (depuis un schéma où l'on peut créer une table) : elle bloque ou
 --     propage les suppressions du cabinet, et l'existence d'une valeur s'y devine sans la lire ;
 --   - TRIGGER (t) y pose un déclencheur, qui verrait chaque ligne écrite par tout le monde ;
---   - MAINTAIN (m), PostgreSQL 17 : VACUUM, ANALYZE, CLUSTER, REINDEX, REFRESH MATERIALIZED VIEW, LOCK TABLE — un verrou
---     posé à volonté, un index reconstruit. `information_schema.role_table_grants` le TAIT : la relecture ne l'avait pas
---     vu, `aclexplode` le montre.
+--   - MAINTAIN (m), PostgreSQL 17 : VACUUM, ANALYZE, CLUSTER, REINDEX, REFRESH MATERIALIZED VIEW — une table réécrite, un
+--     index reconstruit, sous un verrou fort. Il permet aussi LOCK TABLE, que UPDATE et DELETE, qu'ils gardent, permettent
+--     de toute façon : ce texte ne ferme pas LOCK (documentation de LOCK, PostgreSQL 17 ; vu sur la réplique).
+--     `information_schema.role_table_grants` le TAIT : la relecture ne l'avait pas vu, `aclexplode` le montre.
 -- Les droits par défaut de `postgres` dans public donnent les mêmes huit à `anon`, `authenticated`, `service_role` et à
 -- lui-même : toute table créée demain les recevrait. Aucune voie de l'API ne les atteint aujourd'hui — PostgREST n'émet que
 -- SELECT, INSERT, UPDATE et DELETE, aucune fonction de public n'en use, `anon` et `authenticated` n'ont que USAGE sur public

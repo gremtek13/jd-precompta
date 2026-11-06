@@ -220,7 +220,7 @@ describe('l’essai des policies (rls.sql, bloc HR)', () => {
       'grant references (user_id) on table public.cabinet_admins to anon;',
       "execute format('alter default privileges for role %I in schema public grant trigger on tables to anon', pg_get_userbyid(proprietaire));",
       'revoke select on table public.cabinet_admins from authenticated;',
-      "execute q_membres into obs using array['pg_read_all_stats'];",
+      "execute q_membres into obs using array['pg_monitor'];",
     ]) expect(BLOC_HR).toContain(geste)
     expect(BLOC_HR.match(/raise exception 'ANNULATION_ESSAI';/g)).toHaveLength(5)
   })
