@@ -247,7 +247,6 @@ create table public.documents_divers (
   nom_fichier text not null,
   categorie text not null,
   attached_to_cotisation_id uuid,
-  notes text,
   created_at timestamp with time zone default now() not null,
   storage_hash text,
   constraint documents_divers_pkey PRIMARY KEY (id),

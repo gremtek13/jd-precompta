@@ -305,8 +305,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Aujourd'hui la restriction est une règle d'ÉCRAN** : la base laisse déjà le client lire les montants de ses pièces
   et les catégories ; un texte du cabinet seul ne se range jamais dans une table que le client lit → « L'ESPACE CLIENT
   DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ». **Les notes internes** vivent dans `notes_internes`
-  (aucune branche client) ; les anciennes colonnes `notes` ne se lisent ni ne s'écrivent plus → « LES NOTES INTERNES DU
-  CABINET, HORS DE PORTÉE DU CLIENT ».
+  (aucune branche client) ; les anciennes colonnes `notes` n'existent plus (P0, collée le 06/11/2026) → « LES NOTES
+  INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT », « LES ANCIENNES COLONNES DES NOTES SUPPRIMÉES EN PRODUCTION ».
 - **Les fonctions de la vente acceptent le client** (quatre) : `droits_sur_le_dossier` lu au jeton de l'appelant
   (`droitsDeLAppelant`) avant toute autre lecture, puis l'action jugée par `QUI_PEUT_QUOI` ; sans le droit 404, droits
   illisibles 503 ; le plafond d'e-mails se LIT, il ne se réserve pas → « LES FONCTIONS DE LA VENTE ACCEPTENT LE
@@ -550,10 +550,6 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque ; onze étapes P0 à P10) → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT :
   LA CONCEPTION ». Restent :
-  - P0 : la suppression des anciennes colonnes `notes`, acceptée par le cabinet (EC-Q7), préparée au dépôt le
-    06/11/2026 (`anciennes_notes_supprimees`, avec trois essais, `types.ts`, `inventaire.py`), à coller ; le jour du
-    collage, le fichier entre dans l'export et le socle perd sa ligne → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE
-    DU CLIENT », « LES ANCIENNES COLONNES DES NOTES SUPPRIMÉES » ;
   - P1-trace : garder qui a changé les droits d'un accès, et quand — préparée, l'accord du cabinet attendu (P1T) ;
   - P4, la mention du mandataire : imprimée sous l'identité de l'émetteur et nommée à la confirmation depuis le
     06/11/2026, le nom du cabinet lu comme la base le lit → « LE MANDAT DE FACTURATION IMPRIMÉ ET NOMMÉ À LA

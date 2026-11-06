@@ -48957,3 +48957,16 @@ SA migration préparée (deux entrées de `regles.json`, dix-neuf cas particulie
 verdicts, 0 faute, 0 écart, 0 motif, 0 écriture du leurre), `apercuFactureElectronique` SÛR (17 verdicts, mêmes zéros),
 code 0 chacun ; la copie supprimée. La mère ne se supprime JAMAIS : c'est la seule copie d'où les
 répliques se tirent, et sa perte (le 06/11/2026, un disque libéré trop largement) a coûté une remontée entière.
+
+### 06/11/2026 — LES ANCIENNES COLONNES DES NOTES SUPPRIMÉES EN PRODUCTION (P0)
+
+La migration `anciennes_notes_supprimees` (P0, EC-Q7), préparée le même jour (« LES ANCIENNES COLONNES DES NOTES
+SUPPRIMÉES »), a été collée par le cabinet dans l'éditeur SQL avec sa ligne d'historique, `apply_migration` attendant
+une confirmation devant ses trois `drop column`. Relu ensuite par `execute_sql` : la ligne d'historique (version
+`20261106120000`, une instruction) porte l'empreinte du fichier, `dc5ec456…`, fins de ligne ramenées à `\n` ; aucune
+colonne `notes` ne reste sur `pieces`, `documents_divers` ni `dossiers`. Le fichier est passé de `supabase/preparees/`
+à l'export (son retour reste dans `preparees/retour/`) et le socle a perdu la colonne de `documents_divers`. Les trois
+contrôles, égaux des deux côtés : la dérive, 176 migrations, `5a6c2f0a…` ; le socle, 81 instructions, `3a79a158…` ;
+l'inventaire, 2 440 objets, `062299d0…`. Les 138 tests qui lisent l'arbre ou l'export, plus ceux de la sauvegarde, des
+notes et de la fiche d'une pièce, passent (139 fichiers). Ses essais se rejouent en production après le banc du leurre,
+lancé le même soir sur la réplique mère.
