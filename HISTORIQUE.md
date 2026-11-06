@@ -48984,3 +48984,19 @@ Client : « Mes comptes » (`ClientComptes.tsx`, `mesComptesOuverts`), la case r
 plus récente, N face à N−1, un contenu relu à sa forme (`contenuLu`, sinon « illisible »), aucun geste. Question
 C4B-Q1 : un dossier assujetti ne publie pas d'ici (la CA3 de la période n'est pas lue par l'onglet Financement). Les
 visites du banc attendent le drapeau levé : la route n'existe pas avant.
+
+### 06/11/2026 — « MON ANALYSE » : LES INDICATEURS ET LES ÉTATS DU CLIENT (B9A)
+
+Sans migration ni policy. Une page « Mon analyse » (`/mon-analyse`, `ClientAnalyse.tsx`), montée avec « Mes ventes » OU
+« Ma banque » (`monAnalyseOuverte`) : l'analyse n'a pas de case à elle. La règle et les mots dans
+`lib/analyseClient.ts`, la lecture dans `lib/analyseClientLecture.ts` : les cases relues à la base d'abord
+(`droits_sur_le_dossier`), puis seulement ce que la base ET l'écran ouvrent. Sous « Ventes » : le chiffre d'affaires
+facturé HT du mois et cumulé depuis janvier, comparé aux mêmes mois de N−1 (factures validées, avoirs déduits, à leur
+date d'émission ; « ce n'est pas la recette que ton cabinet déclare ») ; ce que les clients doivent, en retard, à venir,
+sans échéance (`resteAEncaisser` moins les avoirs, `retardDeLaFacture`) ; les états par client, par article (la
+provenance A7a, lue à part : la lecture partagée des ventes ne la demande pas) et par mois, chacun en CSV (BOM,
+`champCsv`). Sous « Banque » : le solde LU par `soldeAuReleve`. Chaque chiffre est muet sur une lecture partielle,
+jamais « 0 ». `dejaCredite` passe de `factures.ts` (qui importe le client Supabase) à `montantsFacture.ts`, pur,
+réexporté. Tables lues : `factures_emises`, `facture_lignes`, `encaissements_factures`, `encaissements_factures_taux`
+(policies `*_lecture_ventes`), `controles_releves_bancaires` (`…_lecture_banque`). Restent B9b (le journal des
+évènements, la carte P10) et les achats (B4, B5).

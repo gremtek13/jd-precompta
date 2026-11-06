@@ -1,3 +1,4 @@
+import type { FactureEmise } from './types'
 // Les montants d'une ligne de facture et ceux de l'en-tête : un calcul pur, sans le client Supabase, que factures.ts
 // réexporte et que le générateur de la facture électronique (factureCii.ts) reprend.
 
@@ -69,4 +70,18 @@ export function calculerTotaux(lignes: { quantite: number; prix_unitaire_ht: num
     ttc += Math.round(c.montant_ttc * 100)
   }
   return { montant_ht: ht / 100, montant_tva: tva / 100, montant_ttc: ttc / 100 }
+}
+
+// Ce que les avoirs d'une facture ont déjà crédité, en euros positifs — la somme que fait la base : les avoirs dont
+// elle est l'origine, leurs montants étant stockés négatifs. En centimes entiers, pour qu'une somme de flottants ne
+// laisse pas un centime à créditer là où il ne reste rien.
+export function dejaCredite(
+  origineId: string,
+  factures: readonly Pick<FactureEmise, 'type' | 'facture_origine_id' | 'montant_ttc'>[],
+): number {
+  let total = 0
+  for (const f of factures) {
+    if (f.type === 'avoir' && f.facture_origine_id === origineId) total += Math.round(-f.montant_ttc * 100)
+  }
+  return total / 100
 }

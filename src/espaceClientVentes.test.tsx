@@ -101,7 +101,7 @@ describe('« Mes ventes » selon la case « Ventes » de la société affichée'
     faux.acces = [{ dossier_id: 'd1', droit_ventes: true, droit_banque: false }]
     await charger('/#/mes-ventes')
     expect(await screen.findByText('Écran des ventes')).toBeTruthy()
-    expect(entrees()).toEqual(['Accueil', 'Mes pièces', 'Mes ventes', 'Mon échéancier', 'Mes informations', 'Ma simulation'])
+    expect(entrees()).toEqual(['Accueil', 'Mes pièces', 'Mes ventes', 'Mon analyse', 'Mon échéancier', 'Mes informations', 'Ma simulation'])
     const lien = within(navigation()).getByRole('link', { name: /Mes ventes/ })
     expect(lien.getAttribute('href')).toBe('#/mes-ventes')
     expect(lien.getAttribute('aria-current')).toBe('page')

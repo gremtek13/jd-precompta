@@ -102,7 +102,7 @@ describe('« Ma caisse » selon la case « Caisse » de la société affichée',
     faux.acces = [{ dossier_id: 'd1', droit_ventes: false, droit_banque: true, droit_caisse: true }]
     await charger('/#/ma-caisse')
     expect(await screen.findByText('Écran de la caisse')).toBeTruthy()
-    expect(entrees()).toEqual(['Accueil', 'Mes pièces', 'Ma banque', 'Ma caisse', 'Mon échéancier', 'Mes informations', 'Ma simulation'])
+    expect(entrees()).toEqual(['Accueil', 'Mes pièces', 'Ma banque', 'Ma caisse', 'Mon analyse', 'Mon échéancier', 'Mes informations', 'Ma simulation'])
     const lien = within(navigation()).getByRole('link', { name: /Ma caisse/ })
     expect(lien.getAttribute('href')).toBe('#/ma-caisse')
     expect(lien.getAttribute('aria-current')).toBe('page')

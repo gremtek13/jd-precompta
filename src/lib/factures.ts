@@ -1,6 +1,8 @@
 import { supabase } from './supabase'
 import { formatDate, formatMoney } from './format'
-import { calculerTotaux } from './montantsFacture'
+import { calculerTotaux, dejaCredite } from './montantsFacture'
+
+export { dejaCredite }
 import { mentionTva } from './statutTva'
 import type { ArticleExoneration, FactureEmise, FactureLigne, NatureArticle, StatutTva, UniteArticle } from './types'
 
@@ -95,19 +97,7 @@ const centimes = (euros: number) => Math.round(euros * 100)
 // Le négatif d'un montant, sans « −0 » : un zéro reste un zéro, à l'écran comme dans une comparaison.
 const oppose = (euros: number) => (euros === 0 ? 0 : -euros)
 
-// Ce que les avoirs d'une facture ont déjà crédité, en euros positifs — la somme que fait la base : les avoirs dont
-// elle est l'origine, leurs montants étant stockés négatifs. En centimes entiers, pour qu'une somme de flottants ne
-// laisse pas un centime à créditer là où il ne reste rien.
-export function dejaCredite(
-  origineId: string,
-  factures: Pick<FactureEmise, 'type' | 'facture_origine_id' | 'montant_ttc'>[],
-): number {
-  let total = 0
-  for (const f of factures) {
-    if (f.type === 'avoir' && f.facture_origine_id === origineId) total += centimes(-f.montant_ttc)
-  }
-  return total / 100
-}
+// `dejaCredite` vit dans montantsFacture.ts, pur, que « Mon analyse » (lib/analyseClient.ts) lit sans le client Supabase.
 
 // Ce que la base refuserait, dit avant le clic et dans son ordre (`enregistrer_facture`). `lignes` sont celles qu'on
 // CRÉDITE, quantités positives : l'écran les saisit ainsi, `creerAvoir` les rend négatives. `credite` vaut null quand on

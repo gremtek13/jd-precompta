@@ -102,7 +102,7 @@ describe('« Ma banque » selon la case « Banque » de la société affichée',
     faux.acces = [{ dossier_id: 'd1', droit_ventes: true, droit_banque: true }]
     await charger('/#/ma-banque')
     expect(await screen.findByText('Écran de la banque')).toBeTruthy()
-    expect(entrees()).toEqual(['Accueil', 'Mes pièces', 'Mes ventes', 'Ma banque', 'Mon échéancier', 'Mes informations', 'Ma simulation'])
+    expect(entrees()).toEqual(['Accueil', 'Mes pièces', 'Mes ventes', 'Ma banque', 'Mon analyse', 'Mon échéancier', 'Mes informations', 'Ma simulation'])
     const lien = within(navigation()).getByRole('link', { name: /Ma banque/ })
     expect(lien.getAttribute('href')).toBe('#/ma-banque')
     expect(lien.getAttribute('aria-current')).toBe('page')
@@ -112,7 +112,7 @@ describe('« Ma banque » selon la case « Banque » de la société affichée',
     faux.acces = [{ dossier_id: 'd1', droit_ventes: false, droit_banque: true }]
     await charger('/#/ma-banque')
     expect(await screen.findByText('Écran de la banque')).toBeTruthy()
-    expect(entrees()).toEqual(['Accueil', 'Mes pièces', 'Ma banque', 'Mon échéancier', 'Mes informations', 'Ma simulation'])
+    expect(entrees()).toEqual(['Accueil', 'Mes pièces', 'Ma banque', 'Mon analyse', 'Mon échéancier', 'Mes informations', 'Ma simulation'])
   })
 
   it('sans la case — « Ventes » seule n’y suffit pas — : ni entrée, et l’adresse mène à l’accueil', async () => {

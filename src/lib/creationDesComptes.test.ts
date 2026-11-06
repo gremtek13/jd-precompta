@@ -252,7 +252,7 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     expect(CE_QUE_PERD_LE_CLIENT).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
       + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
       + "réponses à tes précisions), « Mes informations », « Ma simulation », « Mon échéancier » et, selon les cases de ses "
-      + 'accès, « Mes ventes », « Ma banque » et « Ma caisse » —, pour chacune de ses sociétés.')
+      + 'accès, « Mes ventes », « Ma banque », « Mon analyse » et « Ma caisse » —, pour chacune de ses sociétés.')
     expect(CE_QUI_RESTE_AU_CLIENT).toBe("Ses accès restent dans l'onglet Accès de ses dossiers : la retirer de l'équipe "
       + "(« Retirer ») lui rend son espace client, dès qu'elle rouvre l'application.")
     expect(c.paragraphes.join(' ')).not.toContain('communique-lui')
@@ -269,7 +269,7 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     const cheminsDuCabinet = new Set([...espaceCabinet.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]))
     expect(cheminsDuCabinet.has('/securite')).toBe(true)
     const chemins = [...espaceClient.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]).filter((c) => !cheminsDuCabinet.has(c)).sort()
-    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-comptes', '/mes-informations', '/mes-pieces', '/mes-ventes', '/mon-echeancier'])
+    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-comptes', '/mes-informations', '/mes-pieces', '/mes-ventes', '/mon-analyse', '/mon-echeancier'])
     // « Mes comptes » (étape C4b) n'est montée qu'avec sa migration : la phrase la nomme dans cet état-là, et la tait avant.
     for (const chemin of chemins) {
       const nom = layout.match(new RegExp(`<NavLink to="${chemin}" title="([^"]+)"`))?.[1]

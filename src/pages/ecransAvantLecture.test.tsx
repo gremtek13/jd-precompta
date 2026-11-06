@@ -26,6 +26,7 @@ import ClientCaisse from './ClientCaisse'
 import ClientComptes from './ClientComptes'
 import SituationsPubliees from './dossier/SituationsPubliees'
 import ClientEcheancier from './ClientEcheancier'
+import ClientAnalyse from './ClientAnalyse'
 import EcheancierAccueil from './EcheancierAccueil'
 import AccueilVentesClient from './AccueilVentesClient'
 import DossierDetail from './DossierDetail'
@@ -271,6 +272,8 @@ const ECRANS: Ecran[] = [
   // « Mon échéancier » (ligne 51.5, étape C1) : le dossier et ses échéances de cotisation, lus en entier ; et sa carte de
   // l'accueil, montée seule (l'accueil ne la monte qu'une fois ses propres lectures revenues).
   { nom: 'ClientEcheancier', fichier: 'pages/ClientEcheancier.tsx', rendre: () => <MemoryRouter><ClientEcheancier /></MemoryRouter> },
+  // « Mon analyse » (étape B9a) : les cases relues à la base, puis les ventes, la provenance des lignes et les relevés contrôlés.
+  { nom: 'ClientAnalyse', fichier: 'pages/ClientAnalyse.tsx', rendre: () => <MemoryRouter><ClientAnalyse /></MemoryRouter> },
   { nom: 'EcheancierAccueil', fichier: 'pages/EcheancierAccueil.tsx', rendre: () => (
     <MemoryRouter><div className="bento"><EcheancierAccueil dossierId="d1" /></div></MemoryRouter>
   ) },
