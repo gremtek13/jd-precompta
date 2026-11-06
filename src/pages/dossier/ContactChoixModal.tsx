@@ -19,14 +19,18 @@ interface Props {
   contacts: readonly Contact[]
   // La date d'émission du formulaire : chaque client dit l'échéance que son délai donnerait.
   dateEmission: string
+  // L'échéance est une notion de FACTURE : la facture la passe à vrai, le devis à faux (le délai, lui, se dit toujours).
+  echeanceAffichee: boolean
   onChoisir: (contact: Contact) => void
   onClose: () => void
 }
 
-export default function ContactChoixModal({ espace, articleExoneration, contacts, dateEmission, onChoisir, onClose }: Props) {
+export default function ContactChoixModal({ espace, articleExoneration, contacts, dateEmission, echeanceAffichee, onChoisir, onClose }: Props) {
   const [recherche, setRecherche] = useState('')
   const { offerts: proposes, ecartesParLesSoins } = contactsAChoisir(contacts, articleExoneration, '')
   const { offerts: affiches } = contactsAChoisir(contacts, articleExoneration, recherche)
+  // Sans date, `detailDUnContact` ne calcule aucune échéance : c'est ainsi que le devis ne l'affiche pas.
+  const dateDeLEcheance = echeanceAffichee ? dateEmission : ''
   const aucunEnCours = contactsEnCours(contacts).length === 0
 
   return (
@@ -56,8 +60,8 @@ export default function ContactChoixModal({ espace, articleExoneration, contacts
               <li key={c.id}>
                 <button type="button" className="btn btn-outline" style={choixStyle} onClick={() => onChoisir(c)}>
                   <span style={{ display: 'block' }}><strong>{nomDansUnRefus(c.nom)}</strong></span>
-                  {detailDUnContact(c, dateEmission) !== '' && (
-                    <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>{detailDUnContact(c, dateEmission)}</span>
+                  {detailDUnContact(c, dateDeLEcheance) !== '' && (
+                    <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>{detailDUnContact(c, dateDeLEcheance)}</span>
                   )}
                 </button>
               </li>

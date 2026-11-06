@@ -362,6 +362,7 @@ export default function DevisSaisieModal(props: Props) {
       {choixOuvert && contactsEntiers != null && (
         <ContactChoixModal
           espace={espace} articleExoneration={props.articleExoneration} contacts={contactsEntiers} dateEmission={saisie.dateEmission}
+          echeanceAffichee={false}
           onChoisir={choisir} onClose={() => setChoixOuvert(false)}
         />
       )}

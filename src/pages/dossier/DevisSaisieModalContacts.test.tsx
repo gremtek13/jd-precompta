@@ -64,6 +64,17 @@ describe('drapeau levé', () => {
     expect(contacts).toEqual([KA])
   })
 
+  it('la fenêtre ne dit aucune échéance (notion de facture), mais garde le délai', async () => {
+    etat.lecture = { lignes: [contact({ id: 'kb', nom: 'Société Délai', delai_paiement_jours: 30 })], complete: true, motif: null }
+    monter()
+    const bouton = screen.getByRole('button', { name: 'Choisir un client' })
+    await waitFor(() => expect((bouton as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(bouton)
+    const ligne = within(screen.getByRole('list')).getByRole('button', { name: /Société Délai/ }).textContent ?? ''
+    expect(ligne).toContain('délai 30 jours')
+    expect(ligne).not.toContain('échéance')
+  })
+
   it('un client déjà saisi qui diffère ne se remplace qu’après confirmation', async () => {
     monter()
     fireEvent.change(screen.getByLabelText('Client (nom ou raison sociale)'), { target: { value: 'Autre client' } })
