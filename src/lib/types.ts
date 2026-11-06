@@ -2012,6 +2012,9 @@ export interface EtatFactureElectroniqueLu {
     depuis: string | null
   }
   adresse: Omit<AdresseReception, 'dossier_id' | 'remplace_id'> | null
+  /** La quatrième clé de la fonction (étape C3, migration `apercu_facture_electronique`), lue par
+   * lib/apercuEreporting.ts ; ABSENTE quand la fonction est celle d'hier. */
+  ereporting?: import('./apercuEreporting').EreportingLu
 }
 
 // LES CONTACTS D'UN DOSSIER, LES CLIENTS DE SON CLIENT (espace client, étape A4a ; migration `contacts`, présentée au cabinet

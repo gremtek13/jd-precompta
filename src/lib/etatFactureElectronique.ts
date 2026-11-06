@@ -1,6 +1,7 @@
 import {
   BLANCS, DERNIER_JOUR, MAILLES_ADRESSE, PLATEFORME_MAX, PREMIER_JOUR, VERIFICATIONS, aLaFormeDeSaMaille, estUnJourCivil,
 } from './adressesReception'
+import { lireEreporting } from './apercuEreporting'
 import { formatDate } from './format'
 import type { EtatFactureElectroniqueLu, FormeAdresseReception, VerificationAdresseReception } from './types'
 
@@ -55,7 +56,11 @@ const exactement = (o: Record<string, unknown>, cles: readonly string[]) =>
  * (illisible).
  */
 export function lireEtatFactureElectronique(rendu: unknown): EtatFactureElectroniqueLu | null {
-  if (!estObjet(rendu) || !exactement(rendu, CLES_DE_L_ETAT.racine)) return null
+  // Les trois clés d'hier, ou les trois et `ereporting` (étape C3) : une clé absente veut dire la fonction d'hier.
+  const avecEreporting = estObjet(rendu) && exactement(rendu, [...CLES_DE_L_ETAT.racine, 'ereporting'])
+  if (!estObjet(rendu) || (!avecEreporting && !exactement(rendu, CLES_DE_L_ETAT.racine))) return null
+  const ereporting = avecEreporting ? lireEreporting(rendu.ereporting) : null
+  if (avecEreporting && ereporting === null) return null
   const { plateforme, superpdp, adresse } = rendu
   if (!estObjet(plateforme) || !exactement(plateforme, CLES_DE_L_ETAT.plateforme)) return null
   if (!estObjet(superpdp) || !exactement(superpdp, CLES_DE_L_ETAT.superpdp)) return null
@@ -93,6 +98,7 @@ export function lireEtatFactureElectronique(rendu: unknown): EtatFactureElectron
       statuts_lus_le: statuts as string | null },
     superpdp: { relie, depuis: depuis as string | null },
     adresse: adresseLue,
+    ...(ereporting === null ? {} : { ereporting }),
   }
 }
 
