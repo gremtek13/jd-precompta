@@ -903,8 +903,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   aussi ». **Une lecture que deux écrans comptent s'écrit une fois** ; un compte ne se dit que de listes TOUTES lues en
   entier. **Une liste plafonnée dit qu'elle l'est** (`tronque`).
 - **Stockage** : tout retrait par `retirerFichiers` (journalise, ne lève jamais) ; `list()` se pagine ; la suppression
-  d'un dossier rend un bilan ; celle d'un cabinet laisse encore son logo PUBLIC orphelin (ligne 22.61) → « LA QUESTION
-  QUI DÉCIDE N'A JAMAIS ÉTÉ POSÉE DU STOCKAGE ».
+  d'un dossier rend un bilan ; celle d'un cabinet retire son logo PUBLIC depuis le 04/11/2026, la ligne d'abord, les
+  fichiers de son seul préfixe ensuite (ligne 22.61) → « LA QUESTION QUI DÉCIDE N'A JAMAIS ÉTÉ POSÉE DU STOCKAGE »,
+  « DELETE-CABINET RETIRE LE LOGO DU CABINET ».
 - **Les bornes des seaux** (`lib/bornesStockage.ts`) : tout dépôt passe par un `preparer…` : le type décidé par
   l'application (jamais `file.type`) et la taille jugés AVANT l'envoi, un Blob RÉÉTIQUETÉ ; pièces PDF, JPEG, PNG, CSV,
   20 Mio ; packs ZIP, XLSX, 50 Mio ; logos PNG, JPEG, WebP, 500 Kio, jamais de SVG ; `ventes` PNG ou JPEG, 500 Kio ; les
