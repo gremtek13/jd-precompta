@@ -251,8 +251,9 @@ describe('les essais de la base, rejoués en production', () => {
     // (étape P5) : il supprime des devis, des liens et un dossier, et porte la garde ESSAI_HORS_REPLIQUE de caisseSuppression.
     // Le septième, traceDesDroitsSuppression, le 05/11/2026 (étape P1-trace) : il retire des accès et un dossier, sous la même
     // garde.
-    // Le huitième, situationsPublieesMutations, le 06/11/2026 (étape C4a) : il plante six défauts dans la migration, chacun le
-    // temps d'une transaction annulée, et rejoue l'essai par `\ir` — sous la même garde.
+    // Le huitième, situationsPublieesMutations, le 06/11/2026 (étape C4a) : il plante huit défauts dans la migration (deux de
+    // plus après la relecture de sécurité du même jour), chacun le temps d'une transaction annulée, et rejoue l'essai par
+    // `\ir` — sous la même garde.
     // Le neuvième, droitsHorsRls, le 06/11/2026 (relecture de sécurité, migration `droits_hors_rls`) : il tente, sous chaque
     // profil, de vider chaque table, d'y poser un déclencheur, une clé étrangère et un REINDEX — des verrous forts —, sous
     // la même garde.

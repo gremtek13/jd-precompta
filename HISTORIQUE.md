@@ -49063,3 +49063,18 @@ de chaque côté, sorties égales hors HR, signature et l'ordre d'un détecteur 
 retour refusées par la garde attendue ; M-HR6, qui lisait l'appartenance à l'envers, corrigée. Fragile : le retour ne voit
 pas un changement fait entre la migration et lui ; les déclencheurs d'événement de Supabase manquent à la réplique ; la
 mère n'a pas le dossier fictif de `second_acces.sql` (ajouté sur les copies du banc).
+
+### 06/11/2026 — LA RELECTURE DE SÉCURITÉ DE C4A ET C5 : L'ORDRE AVEC P1-TRACE GARDÉ DANS LES DEUX SENS, UN BIT REFERMÉ
+
+Agent architecte, sur une copie de la réplique mère, rien en production. L'ORDRE : la garde de C4a refusait de passer
+après P1-trace, mais P1-trace passait après C4a, et « Comptes » cochée n'écrivait aucune trace ; sa garde de tête refuse
+désormais une colonne `droit_…` de `memberships` qu'elle ne connaît pas, et rien ne reste — seule sur la base
+d'aujourd'hui, elle s'applique ; C4a après elle, refus inchangé. LE BIT : `situation_publiee_en_cours` disait à tout
+compte connecté si une situation d'un autre dossier était en cours ; elle rend faux hors du cabinet du dossier et d'un
+accès « Comptes » (faux, pas un refus : la policy l'appelle, et l'ordre de ses termes n'est pas garanti) ; la policy
+rend les mêmes lignes aux cinq profils. Essais : `situationsPubliees.sql`, rangs 33 à 37 (mutations M7 et M8) ;
+`traceDesDroits.sql`, rang 40, en faute sur la base du défaut ; M-SP1 de `rls.sql` retire aussi la fonction, qui fermait
+seule la lecture. La relecture a établi sans défaut le reste de C4a : le client « Comptes » ne lit que la situation en
+cours de son dossier, ne publie, ne retire ni ne coche sa case, l'anonyme n'exécute rien et la garde arrête le rôle des
+Edge Functions. Et de C5 : le client « Ventes » ne lit que les relances de facture de son dossier, n'en écrit ni n'en
+efface aucune, et ni un membre non assigné ni l'anonyme ne lisent les e-mails.

@@ -34,7 +34,8 @@
 --      droits du propriétaire, RÉSERVÉES AU CABINET du dossier (`admin_du_dossier`) ; chacune rend la ligne écrite.
 --   6. Les policies, toutes à `authenticated` : le cabinet du dossier lit toutes les lignes, retraits et situations
 --      remplacées compris ; un accès « Comptes » lit les seules situations EN COURS de son dossier (une publication
---      qu'aucune ligne ne cite : `situation_publiee_en_cours`), chaque colonne ; le super-administrateur insère (la
+--      qu'aucune ligne ne cite : `situation_publiee_en_cours`, qui ne répond vrai qu'au cabinet du dossier et à un accès
+--      « Comptes »), chaque colonne ; le super-administrateur insère (la
 --      restauration). Aucune policy de mise à jour ni de suppression, pour personne. Cette lecture du client se présente au
 --      cabinet avant d'être appliquée (CLAUDE.md, « Trois domaines font exception »).
 --
@@ -63,7 +64,8 @@
 -- LA TRACE DES DROITS (P1-trace, migration `trace_des_droits`, PRÉPARÉE avant celle-ci, pas appliquée) ne connaît que trois
 -- cases. La garde de tête refuse cette migration si la trace est en base : la case « Comptes » y changerait sans trace. Si
 -- celle-ci passe la première, la trace s'amende avant d'être appliquée (une quatrième case : sa contrainte, ses tableaux,
--- la liste des colonnes de son déclencheur ; sa garde de tête ne le verrait pas).
+-- la liste des colonnes de son déclencheur) ; sa garde de tête la refuse jusque-là (une colonne `droit_…` de `memberships`
+-- qu'elle ne connaît pas : l'ordre gardé dans les deux sens, depuis la relecture de sécurité du 06/11/2026).
 --
 -- VERSION PROVISOIRE, HORS DE L'EXPORT : le fichier entre dans `supabase/schema/` le jour de son application, sous la
 -- version que porte sa ligne d'historique, texte inchangé ; `SITUATIONS_PUBLIEES_EXPORTEES` (src/lib/situationsPubliees.ts)
@@ -339,19 +341,23 @@ create trigger situations_publiees_garde
 
 -- ══ 6. Qui lit, qui écrit ══════════
 -- Une situation EN COURS : une publication qu'aucune ligne ne cite. Aux droits du propriétaire (la policy du client la
--- lit sur la table qu'elle garde, sans s'y rappeler) ; elle ne rend qu'un booléen sur un identifiant donné.
+-- lit sur la table qu'elle garde, sans s'y rappeler) ; elle ne rend qu'un booléen sur un identifiant donné, et ne le rend
+-- vrai qu'au cabinet du dossier ou à un accès « Comptes » de ce dossier : à tout autre compte connecté, faux — sans quoi
+-- il apprendrait, pour un identifiant connu, si la situation est encore en cours (la relecture de sécurité du 06/11/2026).
+-- Faux plutôt qu'un refus : la policy du client l'appelle, et l'ordre de ses termes n'est pas garanti.
 create function public.situation_publiee_en_cours(p_situation_id uuid) returns boolean
   language sql
   stable
   security definer
   set search_path = public
 as $$
-  select exists (select 1 from public.situations_publiees s where s.id = p_situation_id and s.geste = 'publication')
+  select exists (select 1 from public.situations_publiees s where s.id = p_situation_id and s.geste = 'publication'
+                   and (public.admin_du_dossier(s.dossier_id) or public.client_du_dossier(s.dossier_id, 'comptes')))
      and not exists (select 1 from public.situations_publiees s where s.remplace_id = p_situation_id)
 $$;
 
 comment on function public.situation_publiee_en_cours(uuid) is
-  'Vrai si cette ligne de situations_publiees est une publication qu''aucune ligne ne remplace ni ne retire : la situation en cours (étape C4a).';
+  'Vrai si cette ligne de situations_publiees est une publication qu''aucune ligne ne remplace ni ne retire : la situation en cours (étape C4a). Faux pour qui n''est ni du cabinet du dossier ni un accès « Comptes » de ce dossier.';
 
 alter table public.situations_publiees enable row level security;
 

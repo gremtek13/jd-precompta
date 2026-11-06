@@ -119,6 +119,30 @@ select count(*) filter (where not v.ok) as en_faute, coalesce(string_agg(v.rang:
 rollback;
 insert into mutations_situations values (6, 'M6. la forme à trois décoche « Comptes »', 'le rang 27', :m_en_faute, :'m_rangs');
 
+-- ── M7. La situation en cours se dit à tout compte connecté (le défaut que la relecture de sécurité du 06/11/2026 a relevé) ──
+begin;
+select pg_temp.planter('public.situation_publiee_en_cours(uuid)',
+  $x$and (public.admin_du_dossier(s.dossier_id) or public.client_du_dossier(s.dossier_id, 'comptes'))$x$, $x$and true$x$);
+\o /dev/null
+\ir situationsPubliees.sql
+\o
+select count(*) filter (where not v.ok) as en_faute, coalesce(string_agg(v.rang::text, ',' order by v.rang) filter (where not v.ok), '-') as rangs
+  from jsonb_to_recordset(current_setting('essai.situations_publiees')::jsonb) as v(rang int, ok boolean) \gset m_
+rollback;
+insert into mutations_situations values (7, 'M7. la situation en cours se dit à tout compte connecté', 'les rangs 35 et 36 (un accès sans la case, un compte sans accès)', :m_en_faute, :'m_rangs');
+
+-- ── M8. La situation en cours se dit à tout accès au dossier, la case « Comptes » oubliée ──
+begin;
+select pg_temp.planter('public.situation_publiee_en_cours(uuid)',
+  $x$public.client_du_dossier(s.dossier_id, 'comptes')$x$, $x$public.client_du_dossier(s.dossier_id, 'membre')$x$);
+\o /dev/null
+\ir situationsPubliees.sql
+\o
+select count(*) filter (where not v.ok) as en_faute, coalesce(string_agg(v.rang::text, ',' order by v.rang) filter (where not v.ok), '-') as rangs
+  from jsonb_to_recordset(current_setting('essai.situations_publiees')::jsonb) as v(rang int, ok boolean) \gset m_
+rollback;
+insert into mutations_situations values (8, 'M8. la situation en cours se dit à tout accès au dossier', 'le rang 35 (un accès sans la case)', :m_en_faute, :'m_rangs');
+
 select passe, attendu, en_faute || ' en faute (' || rangs || ')' as observe,
        case when rang = 0 then case when en_faute = 0 then 'la base est saine' else '*** L''ESSAI EST ROUGE SANS DÉFAUT ***' end
             when en_faute > 0 then 'la mutation mord' else '*** NE MORD PAS ***' end as verdict

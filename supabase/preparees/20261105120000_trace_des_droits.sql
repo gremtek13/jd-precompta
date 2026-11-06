@@ -43,13 +43,16 @@
 -- alors, et la table entre au plan de sauvegarde. L'écran qui la montre viendra dans un lot à part.
 
 -- ══ 0. La garde de tête ══════════
--- Elle refuse une seconde application ; une fonction appelée qui ne serait plus celle que cette migration suppose — à
+-- Elle refuse une seconde application ; une base où `memberships` porte une case de plus que les trois qu'elle trace (la
+-- case « Comptes » de la migration `situations_publiees`, C4a : appliquée avant celle-ci, la case changerait sans trace —
+-- la relecture de sécurité du 06/11/2026) ; une fonction appelée qui ne serait plus celle que cette migration suppose — à
 -- l'empreinte de son corps, les retours chariot d'un collage écartés ; et une base où manquerait une colonne qu'elle lit.
 do $garde$
 declare
   v_attendue record;
   v_nombre integer;
   v_empreinte text;
+  v_cases text;
 begin
   if to_regclass('public.trace_des_droits') is not null
      or exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace
@@ -57,6 +60,12 @@ begin
      or exists (select 1 from pg_trigger t where not t.tgisinternal
                  and t.tgname in ('memberships_trace_des_droits', 'trace_des_droits_garde')) then
     raise exception 'La migration trace_des_droits est déjà en base : elle ne s''applique pas deux fois.';
+  end if;
+  select string_agg(a.attname, ', ' order by a.attname) into v_cases from pg_attribute a
+   where a.attrelid = 'public.memberships'::regclass and a.attnum > 0 and not a.attisdropped
+     and left(a.attname, 6) = 'droit_' and a.attname not in ('droit_ventes', 'droit_banque', 'droit_caisse');
+  if v_cases is not null then
+    raise exception 'memberships porte une case que la trace des droits ne connaît pas (%) : cette migration ne trace que « Ventes », « Banque » et « Caisse », et la case de plus y changerait sans trace. La reprendre pour tracer la case de plus (sa contrainte, ses tableaux, les colonnes de son déclencheur) avant de l''appliquer.', v_cases;
   end if;
   for v_attendue in select * from (values
       ('is_super_admin', 'public.is_super_admin()', 'a9159138778422a43ba8d8c21240c9bb'),
