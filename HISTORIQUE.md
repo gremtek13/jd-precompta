@@ -48584,3 +48584,17 @@ dans « Ma caisse ») ; les factures ; un accusé de réception signé. Une 
 professionnels » : corrigée le même jour, la conception prévoyant la facture à un patient (la règle des soins refuse
 seulement de le ranger dans « Clients », A4B2-Q2 ; son nom est tenu hors du FEC, FEC22-Q7, et de l'assistant, VF9C-Q1) —
 la consigne demande que la facture le nomme et ne dise rien de plus sur lui, ni motif ni pathologie.
+
+### 06/11/2026 — LE BON DE COMMANDE D'UNE ENTREPRISE, OFFERT DANS LA FACTURE (A7B-Q3, LIGNE 51.5)
+
+A7B-Q3, « oui, après le MVP » : depuis A7a la base accepte le numéro du bon de commande de tout acheteur, l'aperçu
+l'imprime et la facture électronique le transmet (BT-13), mais le formulaire ne l'offrait qu'à un organisme public. Fait
+sans attendre la fin du MVP, aucun de ses lots n'étant ouvert. `mentionsAEnregistrer` et `refusDesMentions` prennent le
+document — facture ou devis —, sans valeur par défaut (`DocumentDeVente`) : `bonDeCommandeOuvert` ouvre le numéro à
+l'organisme public partout, à l'entreprise (assujettie) sur la facture seule — un devis précède la commande. Le
+formulaire de la facture, aux deux espaces, offre « Numéro du bon de commande (s'il en a établi un) » à une entreprise ;
+passer à un particulier le cache et le remet à nul dans la même écriture ; son refus de longueur le nomme
+(`libelleDuBonDeCommande`). L'aperçu d'une facture figée l'imprime sous « Bon de commande » hors d'un organisme public
+(compté en production : aucune facture n'en porte encore). Ni migration ni Edge Function : `mentionsImprimees`, copié
+dans les fonctions qui transmettent, ne le dit que d'un organisme public, inchangé. Trois mutations mordent (le devis
+ouvert, le champ fermé, l'ancien libellé).

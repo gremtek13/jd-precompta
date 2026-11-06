@@ -45,8 +45,8 @@ import ConfirmationArticle from './ConfirmationArticle'
 import ContactChoixModal from './ContactChoixModal'
 import ContactSaisieModal from './ContactSaisieModal'
 import {
-  apercuDeTransmission, livraisonOuverte, mentionsAEnregistrer, refusDesMentions, saisieDesMentions, sirenDuSiret, sirenOuvert,
-  siretAEnregistrer, versEntreprise, type ApercuTransmission, type SaisieMentions,
+  apercuDeTransmission, bonDeCommandeOuvert, livraisonOuverte, mentionsAEnregistrer, refusDesMentions, saisieDesMentions,
+  sirenDuSiret, sirenOuvert, siretAEnregistrer, versEntreprise, type ApercuTransmission, type SaisieMentions,
 } from '../../lib/mentionsFacture'
 
 // L'unité, la référence et la nature de la ligne (étape A7b) : ce qu'un article lui apporte, modifiable ; une ligne saisie à
@@ -402,12 +402,12 @@ export default function FactureFormModal(props: Props) {
     montant_ht: acompte.etat === 'acompte' && facture ? facture.montant_ht : totaux.montant_ht,
     montant_tva: acompte.etat === 'acompte' && facture ? facture.montant_tva : totaux.montant_tva,
     montant_ttc: acompte.etat === 'acompte' && facture ? facture.montant_ttc : totaux.montant_ttc,
-    ...mentionsAEnregistrer(mentions),
+    ...mentionsAEnregistrer(mentions, 'facture'),
     // Le contact d'où vient le client (étape A7b) : la clé part toujours, nulle sans contact — un brouillon rouvert garde le sien.
     ...(MENTIONS_FIGEES_EXPORTEES ? { contact_id: contactChoisi } : {}),
   }
   // Ce que la base refuserait des mentions : ni le brouillon ni la validation ne partent, et l'écran dit pourquoi.
-  const refusMentions = refusDesMentions(mentions, tiersSiret)
+  const refusMentions = refusDesMentions(mentions, tiersSiret, 'facture')
   // L'option pour les débits ne vise que des prestations de services (CGI, ann. II, art. 242 nonies A, I, 11° bis).
   const optionDebits = statutTva === 'redevable' && tvaSurDebits
   const debitsImprimes = optionDebits && (mentions.nature === 'services' || mentions.nature === 'mixte')
@@ -1065,6 +1065,16 @@ export default function FactureFormModal(props: Props) {
                 </div>
                 <div className="field">
                   <label htmlFor="numero-engagement">Numéro d’engagement (s’il le demande)</label>
+                  <input id="numero-engagement" value={mentions.numeroEngagement} onChange={(e) => majMentions({ numeroEngagement: e.target.value })} />
+                </div>
+              </div>
+            )}
+            {/* Le bon de commande d'une entreprise (A7B-Q3 ; C. com., art. L441-9, I) : la base l'accepte de tout acheteur
+                depuis A7a, l'aperçu l'imprime et la facture électronique le transmet (BT-13). */}
+            {mentions.typeClient !== 'organisme_public' && bonDeCommandeOuvert(mentions.typeClient, 'facture') && (
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="numero-engagement">Numéro du bon de commande (s’il en a établi un)</label>
                   <input id="numero-engagement" value={mentions.numeroEngagement} onChange={(e) => majMentions({ numeroEngagement: e.target.value })} />
                 </div>
               </div>

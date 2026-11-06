@@ -4,10 +4,12 @@ import { SIREN_CLIENT, SIRET_CLIENT, SIRET_VENDEUR } from '../test/facturesCii'
 import { MENTIONS_VIDES } from '../test/factures'
 import {
   apercuDeTransmission,
+  bonDeCommandeOuvert,
   FORME_ADRESSE_ELECTRONIQUE,
   FORME_PAYS,
   FORME_SIREN,
   FORME_SIRET,
+  libelleDuBonDeCommande,
   LONGUEUR_CODE_SERVICE,
   LONGUEUR_NUMERO_ENGAGEMENT,
   mentionsAEnregistrer,
@@ -95,7 +97,7 @@ describe('mentionsAEnregistrer : ce qu’un choix ferme repart à nul, dans la m
   })
 
   it('un organisme public garde tout, normalisé ; la date d’une période choisie ne part pas', () => {
-    expect(mentionsAEnregistrer(complete)).toEqual({
+    expect(mentionsAEnregistrer(complete, 'facture')).toEqual({
       type_client: 'organisme_public', tiers_siren: SIREN_CLIENT, tiers_adresse_electronique: `${SIREN_CLIENT}_FACTURES`,
       code_service: 'SERVICE-ACHATS', numero_engagement: 'EJ-1', nature_operation: 'mixte', date_prestation: null,
       periode_debut: '2026-09-01', periode_fin: '2026-09-30', livraison_adresse: '3 quai des Essais',
@@ -103,33 +105,46 @@ describe('mentionsAEnregistrer : ce qu’un choix ferme repart à nul, dans la m
     })
   })
 
-  it('une entreprise perd le code service et le numéro d’engagement', () => {
-    expect(mentionsAEnregistrer({ ...complete, typeClient: 'assujetti' })).toMatchObject({ code_service: null, numero_engagement: null })
+  it('une entreprise perd le code service, et garde le numéro du bon de commande sur une facture, jamais sur un devis (A7B-Q3)', () => {
+    expect(mentionsAEnregistrer({ ...complete, typeClient: 'assujetti' }, 'facture')).toMatchObject({ code_service: null, numero_engagement: 'EJ-1' })
+    expect(mentionsAEnregistrer({ ...complete, typeClient: 'assujetti' }, 'devis')).toMatchObject({ code_service: null, numero_engagement: null })
+  })
+
+  it('un organisme public garde son numéro d’engagement sur un devis comme sur une facture', () => {
+    expect(mentionsAEnregistrer(complete, 'devis')).toMatchObject({ code_service: 'SERVICE-ACHATS', numero_engagement: 'EJ-1' })
+  })
+
+  it('le bon de commande s’ouvre à l’organisme public partout, à l’entreprise sur la facture seule', () => {
+    const types = ['assujetti', 'organisme_public', 'non_assujetti', 'etranger', ''] as const
+    expect(types.filter((t) => bonDeCommandeOuvert(t, 'facture'))).toEqual(['assujetti', 'organisme_public'])
+    expect(types.filter((t) => bonDeCommandeOuvert(t, 'devis'))).toEqual(['organisme_public'])
+    expect([libelleDuBonDeCommande('organisme_public'), libelleDuBonDeCommande('assujetti')])
+      .toEqual(['Le numéro d’engagement', 'Le numéro du bon de commande'])
   })
 
   it('un particulier perd aussi l’adresse électronique, et garde un SIREN s’il en a un', () => {
-    expect(mentionsAEnregistrer({ ...complete, typeClient: 'non_assujetti' }))
+    expect(mentionsAEnregistrer({ ...complete, typeClient: 'non_assujetti' }, 'facture'))
       .toMatchObject({ tiers_adresse_electronique: null, code_service: null, numero_engagement: null, tiers_siren: SIREN_CLIENT })
   })
 
   it('un client établi hors de France n’a pas de SIREN', () => {
-    expect(mentionsAEnregistrer({ ...complete, typeClient: 'etranger' })).toMatchObject({ tiers_siren: null, tiers_adresse_electronique: null })
+    expect(mentionsAEnregistrer({ ...complete, typeClient: 'etranger' }, 'facture')).toMatchObject({ tiers_siren: null, tiers_adresse_electronique: null })
   })
 
   it('des services ne se livrent pas ; une livraison décochée ne part pas', () => {
     const sansLivraison = { livraison_adresse: null, livraison_code_postal: null, livraison_ville: null, livraison_pays: null }
-    expect(mentionsAEnregistrer({ ...complete, nature: 'services' })).toMatchObject(sansLivraison)
-    expect(mentionsAEnregistrer({ ...complete, livraisonAilleurs: false })).toMatchObject(sansLivraison)
+    expect(mentionsAEnregistrer({ ...complete, nature: 'services' }, 'facture')).toMatchObject(sansLivraison)
+    expect(mentionsAEnregistrer({ ...complete, livraisonAilleurs: false }, 'facture')).toMatchObject(sansLivraison)
   })
 
   it('la date de la facture n’envoie ni date ni période ; un autre jour n’envoie que la date', () => {
-    expect(mentionsAEnregistrer({ ...complete, prestation: 'facture' })).toMatchObject({ date_prestation: null, periode_debut: null, periode_fin: null })
-    expect(mentionsAEnregistrer({ ...complete, prestation: 'date' })).toMatchObject({ date_prestation: '2026-09-12', periode_debut: null, periode_fin: null })
+    expect(mentionsAEnregistrer({ ...complete, prestation: 'facture' }, 'facture')).toMatchObject({ date_prestation: null, periode_debut: null, periode_fin: null })
+    expect(mentionsAEnregistrer({ ...complete, prestation: 'date' }, 'facture')).toMatchObject({ date_prestation: '2026-09-12', periode_debut: null, periode_fin: null })
   })
 
   it('un brouillon vide enregistre des mentions nulles', () => {
     const { option_debits: _, ...vides } = MENTIONS_VIDES
-    expect(mentionsAEnregistrer(SAISIE_VIDE)).toEqual(vides)
+    expect(mentionsAEnregistrer(SAISIE_VIDE, 'facture')).toEqual(vides)
   })
 })
 
@@ -144,9 +159,9 @@ describe('le SIRET', () => {
 
 describe('refusDesMentions : ce que la base refuserait, chaque faute seule', () => {
   it('une saisie vide, ou complète et juste, passe', () => {
-    expect(refusDesMentions(SAISIE_VIDE, '')).toEqual([])
+    expect(refusDesMentions(SAISIE_VIDE, '', 'facture')).toEqual([])
     expect(refusDesMentions(saisie({ typeClient: 'assujetti', siren: SIREN_CLIENT, nature: 'biens', livraisonAilleurs: true,
-      livraisonAdresse: '3 quai des Essais', livraisonCodePostal: '13002', livraisonVille: 'Marseille' }), '987 654 324 00019')).toEqual([])
+      livraisonAdresse: '3 quai des Essais', livraisonCodePostal: '13002', livraisonVille: 'Marseille' }), '987 654 324 00019', 'facture')).toEqual([])
   })
 
   it.each([
@@ -156,23 +171,24 @@ describe('refusDesMentions : ce que la base refuserait, chaque faute seule', () 
     ['une adresse électronique sans SIREN', saisie({ typeClient: 'assujetti', adresseElectronique: 'FACTURES' }), '', 'L’adresse de facturation électronique s’écrit'],
     ['un code service trop long', saisie({ typeClient: 'organisme_public', codeService: 'x'.repeat(101) }), '', 'Le code service tient en 100 caractères'],
     ['un numéro d’engagement trop long', saisie({ typeClient: 'organisme_public', numeroEngagement: 'x'.repeat(51) }), '', 'Le numéro d’engagement tient en 50 caractères'],
+    ['un numéro de bon de commande trop long', saisie({ typeClient: 'assujetti', numeroEngagement: 'x'.repeat(51) }), '', 'Le numéro du bon de commande tient en 50 caractères'],
     ['un autre jour sans sa date', saisie({ prestation: 'date' }), '', 'Indique la date de la livraison ou de la prestation.'],
     ['une période sans sa fin', saisie({ prestation: 'periode', periodeDebut: '2026-09-01' }), '', 'Indique le début et la fin de la période.'],
     ['une période à l’envers', saisie({ prestation: 'periode', periodeDebut: '2026-09-30', periodeFin: '2026-09-01' }), '', 'La période finit avant de commencer.'],
     ['une livraison sans sa ville', saisie({ nature: 'biens', livraisonAilleurs: true, livraisonAdresse: '3 quai', livraisonCodePostal: '13002' }), '', 'L’adresse de livraison demande'],
     ['un pays en trois lettres', saisie({ nature: 'mixte', livraisonAilleurs: true, livraisonAdresse: '3 quai', livraisonCodePostal: '1000', livraisonVille: 'Bruxelles', livraisonPays: 'BEL' }), '', 'Le pays de livraison s’écrit en deux lettres'],
   ])('%s', (_, s, siret, attendu) => {
-    expect(refusDesMentions(s, siret)).toEqual([expect.stringContaining(attendu)])
+    expect(refusDesMentions(s, siret, 'facture')).toEqual([expect.stringContaining(attendu)])
   })
 
   it('ce qu’un choix ferme ne se juge pas : un SIREN faux d’un client étranger, une livraison de services', () => {
-    expect(refusDesMentions(saisie({ typeClient: 'etranger', siren: '123' }), '')).toEqual([])
-    expect(refusDesMentions(saisie({ nature: 'services', livraisonAilleurs: true }), '')).toEqual([])
-    expect(refusDesMentions(saisie({ typeClient: 'non_assujetti', adresseElectronique: 'FACTURES' }), '')).toEqual([])
+    expect(refusDesMentions(saisie({ typeClient: 'etranger', siren: '123' }), '', 'facture')).toEqual([])
+    expect(refusDesMentions(saisie({ nature: 'services', livraisonAilleurs: true }), '', 'facture')).toEqual([])
+    expect(refusDesMentions(saisie({ typeClient: 'non_assujetti', adresseElectronique: 'FACTURES' }), '', 'facture')).toEqual([])
   })
 
   it('un SIRET seul, sans SIREN, ne se juge pas : la base l’accepte tel quel', () => {
-    expect(refusDesMentions(SAISIE_VIDE, 'abc')).toEqual([])
+    expect(refusDesMentions(SAISIE_VIDE, 'abc', 'facture')).toEqual([])
   })
 })
 
@@ -183,7 +199,7 @@ describe('apercuDeTransmission : ce qui empêcherait la facture validée de part
       tiers_adresse: '5 avenue du Port\n13002 Marseille', tiers_siret: null, montant_ht: 100, montant_tva: 20, montant_ttc: 120,
       mentions_legales: null, emetteur_nom: 'Atelier Démo Conseil', emetteur_siret: SIRET_VENDEUR,
       emetteur_adresse: '12 rue des Exemples\n13001 Marseille',
-      ...mentionsAEnregistrer(saisie({ typeClient: 'assujetti', siren: SIREN_CLIENT, nature: 'services' })),
+      ...mentionsAEnregistrer(saisie({ typeClient: 'assujetti', siren: SIREN_CLIENT, nature: 'services' }), 'facture'),
       ...o,
     },
     lignes: [{ designation: 'Prestation de conseil', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],

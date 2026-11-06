@@ -148,10 +148,11 @@ describe('l’aperçu d’une facture figée n’imprime que ses colonnes figée
     expect(screen.getByText('Réf. SEA-01')).toBeTruthy()
   })
 
-  it('le numéro d’engagement s’imprime pour tout acheteur', async () => {
+  it('le numéro d’engagement s’imprime pour tout acheteur, sous « Bon de commande » hors d’un organisme public (A7B-Q3)', async () => {
     render(<FactureApercu facture={factureFigee({ type_client: 'assujetti', numero_engagement: 'BC-42' })} dossier={DOSSIER_CHANGE} onClose={() => {}} />)
     await screen.findByText('Séance d’essai')
-    expect(papier()).toContain('Numéro d’engagement : BC-42')
+    expect(papier()).toContain('Bon de commande : BC-42')
+    expect(papier()).not.toContain('Numéro d’engagement')
   })
 
   it('aucun avis à l’écran pour une facture figée sans logo', async () => {
