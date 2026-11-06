@@ -48524,7 +48524,9 @@ restent dans BT-20. Le texte vient de `conditionsFigees` (dans le bloc), que l'a
 aussi ; `INDEMNITE_DE_RECOUVREMENT` y a déménagé, et un test confronte les libellés des moyens à `MOYENS_ENCAISSEMENT`. Une
 facture d'avant s'écrit à l'octet près comme hier (les onze empreintes de `valides.json` inchangées, et un test qui pose
 toutes les colonnes figées sur `mentions_figees` faux ou absent). Les deux copies (superpdp-emit, plateforme-agreee),
-recopiées par script, lisent les onze colonnes figées et `unite, reference` ; l'écran de transmission aussi. Deux exemples
-neufs (`figee-entreprise`, `figee-franchise`, IBAN fictif au code banque 99999) : 0 erreur, 0 avertissement au validateur
-officiel (artefacts 1.3.16, Saxon 9.9.1-8). Sept mutations mordent. FACTURE-Q4 (la ligne à 0 % d'un redevable) est
+recopiées par script, lisent les onze colonnes figées et `unite, reference` ; l'écran de transmission aussi. Trois exemples
+neufs (`figee-entreprise`, `figee-franchise`, `figee-prelevement`, IBAN fictif au code banque 99999) : 0 erreur, 0
+avertissement au validateur officiel (artefacts 1.3.16, Saxon 9.9.1-8). À la relecture : le code 1 de BT-81 est admis (la
+liste UNTDID 4461 de l'annexe 7, BR-CL-16 ; le flux 1 ne porte pas BG-16) ; l'IBAN part sous tout moyen comme compte du
+bénéficiaire, aucune règle (BR-50, BR-61) ne le réservant au virement, et l'exemple au prélèvement (59) passe. Sept mutations mordent. FACTURE-Q4 (la ligne à 0 % d'un redevable) est
 proposée au cabinet, rien d'écrit. Restent le redéploiement des deux fonctions, par la session principale.
