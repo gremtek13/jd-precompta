@@ -45,11 +45,16 @@ export interface LigneDuJournal {
   auteur: string | null
   le: string | null
   reference?: string | null
+  // Qui a parlé, tel que la BASE l'a déduit à l'écriture (`origine`, sur une pièce commentée, un justificatif proposé, une
+  // précision d'un mouvement) ; absent ailleurs. Le journal du client s'en sert pour dire « par ton cabinet » sans nom.
+  origine?: 'client' | 'cabinet' | null
 }
 
 export type LectureDUneSource =
   | { etat: 'lue'; lignes: readonly LigneDuJournal[] }
   | { etat: 'partielle'; motif: string }
+  // Côté client seulement : une source qu'aucune case de l'accès n'ouvre, donc jamais demandée à la base.
+  | { etat: 'fermee' }
 
 /** Toutes les sources, une par genre : le `Record` fermé sur le genre oblige l'appelant à les donner TOUTES. */
 export type SourcesDuJournal = Readonly<Record<GenreDuJournal, LectureDUneSource>>
@@ -132,7 +137,9 @@ export function journalDeLEspaceClient(entree: {
   }
   const partielles = GENRES_DU_JOURNAL.flatMap((g) => {
     const s = sources[g]
-    return s.etat === 'partielle' ? [`${libelleDeLEvenement(g, null)} : ${s.motif}`] : []
+    // Le cabinet lit toutes les sources : une source « fermée » ici serait une source qui n'a pas été lue.
+    return s.etat === 'partielle' ? [`${libelleDeLEvenement(g, null)} : ${s.motif}`]
+      : s.etat === 'fermee' ? [`${libelleDeLEvenement(g, null)} : non lue`] : []
   })
   if (partielles.length > 0) {
     return { etat: 'muet', motif: `Une lecture n’a pas abouti en entier (${partielles.join(' ; ')}).` }
@@ -173,3 +180,141 @@ export function phraseDuCompte(journal: Extract<JournalDeLEspaceClient, { etat: 
   if (evenements.length < total) return `Les ${evenements.length} plus récents sur ${total} évènements.`
   return total === 1 ? '1 évènement.' : `${total} évènements.`
 }
+
+// ── LE JOURNAL CÔTÉ CLIENT : « Ce qui a bougé », dans « Mon analyse » (étape B9c) ──────────────────────────────────────
+// Le même journal, montré au CLIENT de la société, sur la même fenêtre et au même plafond, avec trois différences.
+//  1. Chaque évènement ne paraît que si une case de l'accès ouvre son DOMAINE (`DOMAINE_DU_GENRE`), sur les cases relues à
+//     la base : les ventes sous « Ventes », la banque sous « Banque », la caisse sous « Caisse », les pièces à tout accès.
+//     Le module filtre lui-même, même une source que l'appelant aurait lue : la lecture n'est pas la seule barrière.
+//  2. Il montre TOUS les évènements du domaine, pas seulement ceux du client — mais il ne dit jamais QUI : « par toi » quand
+//     l'auteur est le compte connecté, « par ton cabinet » ou « par un autre accès de ta société » quand la base a gardé
+//     l'origine de l'écriture (`origine`), et rien sinon. Le client ne lit ni les accès des autres ni l'équipe du cabinet
+//     (`memberships_select`, `cabinet_admins_select`) : sans origine gardée, on ne devine pas.
+//  3. Ses mots tutoient et ne nomment aucun onglet (lib/espaceVentes.ts, `MOTS_DU_CABINET`).
+
+export type DomaineDuJournal = 'ventes' | 'banque' | 'caisse' | 'tout_acces'
+
+/** Le domaine de chaque genre : la case qui doit l'ouvrir au client, ou aucune (`tout_acces`). */
+export const DOMAINE_DU_GENRE: Readonly<Record<GenreDuJournal, DomaineDuJournal>> = {
+  facture_creee: 'ventes', facture_validee: 'ventes', facture_transmise: 'ventes',
+  encaissement_enregistre: 'ventes', encaissement_retire: 'ventes', encaissement_declare: 'ventes',
+  statut_releve: 'ventes',
+  devis_emis: 'ventes', devis_repondu: 'ventes',
+  article_cree: 'ventes', article_modifie: 'ventes', article_retire: 'ventes',
+  contact_cree: 'ventes', contact_modifie: 'ventes', contact_retire: 'ventes', contact_efface: 'ventes',
+  parametres_changes: 'ventes', adresse_declaree: 'ventes',
+  justificatif_propose: 'banque', justificatif_retire: 'banque', precision_mouvement: 'banque',
+  precision_piece: 'tout_acces', piece_deposee: 'tout_acces',
+  email_envoye: 'ventes',
+  caisse_saisie: 'caisse', caisse_retiree: 'caisse',
+}
+
+/** Les cases de l'accès, telles que la base les voit (et que l'écran ouvre). */
+export interface CasesDuJournal { ventes: boolean; banque: boolean; caisse: boolean }
+
+/** Un genre est-il ouvert au client par ces cases ? Seul `true` ouvre. */
+export function genreOuvert(genre: GenreDuJournal, cases: CasesDuJournal): boolean {
+  const domaine = DOMAINE_DU_GENRE[genre]
+  return domaine === 'tout_acces' || cases[domaine] === true
+}
+
+/** Les e-mails que le client lit (`emails_envoyes_lecture_ventes`) : ceux d'une facture ou d'un devis, jamais une relance. */
+export const TYPES_D_EMAIL_DU_CLIENT: readonly string[] = ['facture', 'devis']
+
+export const PAR_TOI = 'par toi'
+export const PAR_TON_CABINET = 'par ton cabinet'
+export const PAR_UN_AUTRE_ACCES = 'par un autre accès de ta société'
+
+/** Qui, dit au client sans nom : le compte connecté, ou l'origine que la base a gardée ; sinon rien. */
+export function parQui(ligne: LigneDuJournal, soi: string | null): string | null {
+  if (typeof soi === 'string' && soi !== '' && ligne.auteur === soi) return PAR_TOI
+  if (ligne.origine === 'cabinet') return PAR_TON_CABINET
+  if (ligne.origine === 'client') return PAR_UN_AUTRE_ACCES
+  return null
+}
+
+/** Un évènement dit au client : jamais l'identifiant de l'auteur, seulement `par`. */
+export interface EvenementDuClient extends EvenementDuJournal {
+  par: string | null
+}
+
+export type JournalDuClient =
+  | { etat: 'en_cours' }
+  | { etat: 'muet'; motif: string }
+  | { etat: 'lu'; depuis: string; evenements: readonly EvenementDuClient[]; total: number }
+
+/**
+ * Le journal du client : les évènements des domaines que ses cases ouvrent, dans la fenêtre, du plus récent au plus ancien,
+ * plafonnés, chacun sans nom d'auteur. En cours tant que les sources ne sont pas revenues ; muet sur la moindre lecture
+ * partielle d'une source ouverte, ou sur une source ouverte que l'appelant n'a pas lue.
+ */
+export function journalDuClient(entree: {
+  soi: string | null
+  cases: CasesDuJournal
+  sources: SourcesDuJournal | null
+  aujourdhui: string
+  plafond?: number
+}): JournalDuClient {
+  const { soi, cases, sources, aujourdhui } = entree
+  const plafond = entree.plafond ?? PLAFOND_DU_JOURNAL
+  if (sources === null) return { etat: 'en_cours' }
+  const ouverts = GENRES_DU_JOURNAL.filter((g) => genreOuvert(g, cases))
+  const partielles = ouverts.flatMap((g) => {
+    const s = sources[g]
+    return s.etat === 'partielle' ? [`${libelleDeLEvenement(g, null)} : ${s.motif}`]
+      : s.etat === 'fermee' ? [`${libelleDeLEvenement(g, null)} : non lue`] : []
+  })
+  if (partielles.length > 0) {
+    return { etat: 'muet', motif: `Une lecture n’a pas abouti en entier (${partielles.join(' ; ')}).` }
+  }
+  const depuis = debutDeLaFenetre(aujourdhui)
+  const evenements: EvenementDuClient[] = []
+  for (const genre of ouverts) {
+    const s = sources[genre]
+    if (s.etat !== 'lue') continue
+    for (const l of s.lignes) {
+      if (!instantValide(l.le)) continue
+      const jour = dateAParis(l.le)
+      if (jour < depuis || jour > aujourdhui) continue
+      evenements.push({ genre, id: l.id, le: l.le, libelle: libelleDeLEvenement(genre, l.reference), par: parQui(l, soi) })
+    }
+  }
+  const rang = (g: GenreDuJournal) => GENRES_DU_JOURNAL.indexOf(g)
+  evenements.sort((a, b) => {
+    const ecart = new Date(b.le).getTime() - new Date(a.le).getTime()
+    if (ecart !== 0) return ecart
+    if (a.genre !== b.genre) return rang(a.genre) - rang(b.genre)
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  })
+  return { etat: 'lu', depuis, evenements: evenements.slice(0, plafond), total: evenements.length }
+}
+
+/** La phrase du compte, dite au client. */
+export function phraseDuCompteDuClient(journal: Extract<JournalDuClient, { etat: 'lu' }>): string {
+  const { total, evenements } = journal
+  if (total === 0) return 'Rien n’a bougé sur la période.'
+  if (evenements.length < total) return `Les ${evenements.length} plus récents sur ${total} évènements.`
+  return total === 1 ? '1 évènement.' : `${total} évènements.`
+}
+
+/** Ce que le journal ne montre pas faute de case, dit au client ; `null` quand ses cases ouvrent tout. */
+export function ceQueTesCasesNeMontrentPas(cases: CasesDuJournal): string | null {
+  const fermes = [
+    ...(cases.ventes ? [] : ['tes ventes']),
+    ...(cases.banque ? [] : ['ta banque']),
+    ...(cases.caisse ? [] : ['ta caisse']),
+  ]
+  if (fermes.length === 0) return null
+  const ouvre = fermes.length === 1 ? `n’ouvre pas ${fermes[0]}` : `n’ouvre ni ${fermes.join(' ni ')}`
+  return `Ton accès ${ouvre} : ce qui s’y fait n’y paraît pas.`
+}
+
+/** Ce que dit la section quand une lecture n'est pas revenue en entier : rien d'autre, le motif en infobulle. */
+export const JOURNAL_MUET_DU_CLIENT = 'Ce qui a bougé ne s’affiche pas : une partie n’a pas pu être lue. Recharge la page.'
+
+/** La limite du journal, dite au client sous la section. */
+export const LIMITE_DU_JOURNAL_DU_CLIENT =
+  'Reconstitué des traces que la base garde de chaque geste : ce qui se supprime sans trace (un brouillon de facture ou de '
+  + 'devis, par exemple) n’y paraît pas, une modification d’article ou de client n’y paraît que pour la dernière, et seuls '
+  + 'les e-mails de tes factures et de tes devis y figurent. Personne n’y est nommé : un geste est dit « par toi », « par ton '
+  + 'cabinet » ou « par un autre accès de ta société » quand la base le sait, et sans auteur sinon.'

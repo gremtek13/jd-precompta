@@ -330,7 +330,11 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     const analyse = readFileSync(resolve(process.cwd(), 'src/pages/ClientAnalyse.tsx'), 'utf8')
     expect(analyse).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, cases.ventes)')
     expect(analyse).toContain('maBanqueOuverte(COUVERTURE_EXPORTEE, cases.banque)')
-    expect(analyse).not.toMatch(/droit_ventes|droit_banque|droit_caisse|\.caisse\b|supabase/)
+    // « Ce qui a bougé » (étape B9c) : la case « Caisse » n'ouvre pas la page, elle n'ouvre que les évènements de la caisse,
+    // derrière son drapeau, et la lecture la relit à la base comme les deux autres.
+    expect(analyse).toContain('maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, cases.caisse)')
+    expect(analyse.match(/\.caisse\b/g)).toHaveLength(1)
+    expect(analyse).not.toMatch(/droit_ventes|droit_banque|droit_caisse|supabase/)
     const lectureDeLAnalyse = readFileSync(resolve(process.cwd(), 'src/lib/analyseClientLecture.ts'), 'utf8')
     expect(lectureDeLAnalyse).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
   })
