@@ -48784,3 +48784,37 @@ garde sur 7 ; le collage, sa ligne à l'empreinte du fichier ; les essais justes
 `validationExercice.sql`, en faute avant aussi, sans rapport) ; `rls.sql` 0 en faute, 73 mutations sur 73 ; l'export
 simulé : dérive 176, socle 81, inventaire 2 440, égaux ; le retour rend la signature d'avant ; la suite entière verte,
 et en simulation (le fichier dans l'export) aussi, un délai dépassé sous charge excepté.
+### 06/11/2026 — RELECTURE DU JOUR J : LA FACTURATION DU PRATICIEN, DE LA BASCULE À LA 2035 (LIGNE 29.7)
+
+(Un agent architecte en lecture seule, sur le dossier du jour J : BNC en trésorerie, exonéré (CGI, art. 261, 4, 1°),
+basculé, accès « Ventes » et « Caisse ». Production : des SELECT du catalogue et des comptes — aucun dossier basculé, six
+factures validées, dernière migration `acomptes_des_devis`. Preuve : `src/lib/relectureJourJ.test.ts`, rouge aujourd'hui.)
+
+**CONFIRMÉ — JJ1 (moyen) : le nom d'un patient atteint le FEC par le libellé du relevé.** L'écriture d'un mouvement que
+ses encaissements classent (`ecrituresVentesFacturees.ts`, ligne 445, `libelle: m.libelle`) reprend le libellé de la
+banque (« VIR SEPA RECU DE MME … »), que le FEC rend en EcritureLib et que la piste d'audit recopie. Elle se compose dès
+qu'un encaissement n'est pas du jour du mouvement (virement noté la veille, chèque remis plus tard, débit qui rend une
+somme) ou qu'un frais sépare les montants ; encaissé le jour même, le même virement s'écrit « Encaissement, facture F… ».
+FEC22-Q7 n'avait relevé que les noms lus (`tiers_nom`, `tiers`, `nom_fichier`) ; VF9CQ1 tait déjà ce libellé à
+l'assistant pour la même raison. Le test pose trois cas (la veille, en trésorerie et en engagement ; le jour même avec
+0,50 € de frais). Correction proposée, sans migration (`ecrire_vente_facturee` ne juge du libellé que son type) : un
+libellé composé — « Relevé du JJ/MM/AAAA — F2026-0001, F2026-0003 », les numéros des factures citées, le nom d'une
+entreprise seulement par `libelleDUneVenteFacturee` quand toutes le sont ; le garde de `libellesDesVentes.test.ts`
+étendu au `libelle` d'une ligne bancaire. Ce qui est déjà au brouillon garde le sien (comme FEC22Q7-Q1) : JJ-Q3.
+
+**PLAUSIBLES.** La piste d'audit d'une vente facturée porte `pieceTiers: tiers_nom` et le libellé du mouvement
+(`pisteAudit.ts`, lignes 441, 456 et 423) : le nom du patient, hors du FEC mais dans ce qui part à l'administration ;
+le justificatif le porte aussi, d'où une question de conception, non un défaut. Le plafond de trente e-mails par dossier
+et par jour de Paris (`send-email`, `PLAFOND_CLIENT_PAR_JOUR`) arrêterait un soignant qui envoie chaque facture le jour
+même (JJ-Q2). La numérotation `F2026-…` repart à 1 sans série reprise (A9 non écrit) : si le praticien a déjà facturé en
+2026 sous ce préfixe, deux factures porteraient le même numéro (CGI, ann. II, art. 242 nonies A, I, 7° ; JJ-Q1). Une
+facture à une entreprise se valide sans l'adresse du client (seul l'aperçu de transmission la dit, `factureCii.ts`,
+ligne 527) alors que le devis l'exige (art. 242 nonies A, I, 2°). Le tirage de 1 500 dossiers
+d'`ecrituresVentesFacturees.test.ts` a viré au rouge une fois sous la charge de dix fichiers en parallèle, vert seul
+(graine fixe : un délai, à payer dans un `beforeAll`).
+
+**VÉRIFIÉ SANS DÉFAUT.** Le libellé, le tiers et l'auxiliaire des écritures de la facture, de l'avoir, de l'encaissement
+et de la contre-passation (`libellesDesVentes.ts`) ; le FEC et ses vingt-deux champs ; les refus de date et de statut
+de TVA de la validation ; la caisse (les espèces des factures reconnues par la saisie d'un jour, aucun double compte) ;
+l'assistant (factures lues par identifiant, type et numéro seuls ; la ligne d'un crédit recomposée) ; les journaux de
+`send-email` (ni adresse ni nom). Dix fichiers de tests relus : 596 sur 597 verts, le dernier vert seul.
