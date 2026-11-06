@@ -1795,6 +1795,10 @@ const ADRESSES_RECEPTION_DU_BANC: Ligne[] = [
 const articleDuBanc = (o: Ligne): Ligne => ({
   dossier_id: 'd7', description: null, retire_le: null, retire_par: null, modifie_par: null, modifie_le: null, ...o,
 })
+// Des gestes RÉCENTS du titulaire de l'atelier (la carte « Espace client : ce qui a bougé » de la Vue d'ensemble du cabinet, étape
+// B9b) : quelques jours avant « maintenant », que la carte juge à Paris sur sa fenêtre de trente jours.
+const ilYAJours = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString()
+
 const ARTICLES_D7: Ligne[] = [
   articleDuBanc({
     id: 'art1', reference: 'CONS-H', designation: 'Séance de conseil en gestion', unite: 'HUR', prix_unitaire_ht: 90, taux_tva: 20, nature: 'services',
@@ -1804,11 +1808,11 @@ const ARTICLES_D7: Ligne[] = [
   articleDuBanc({
     id: 'art2', reference: 'AUDIT-FORFAIT', unite: 'LS', prix_unitaire_ht: 1250, taux_tva: 20, nature: 'services',
     designation: 'Audit de l’organisation commerciale — forfait, déplacement, entretiens avec l’équipe et rapport de synthèse remis en main propre',
-    cree_par: 'u-bernard', cree_le: '2026-09-03T09:00:00Z',
+    cree_par: 'u-bernard', cree_le: ilYAJours(2),
   }),
   articleDuBanc({
     id: 'art3', reference: 'JOINT-NT', designation: 'Joint torique de remplacement', unite: 'H87', prix_unitaire_ht: 0.123456, taux_tva: 20, nature: 'biens',
-    cree_par: 'u-bernard', cree_le: '2026-09-04T09:00:00Z',
+    cree_par: 'u-bernard', cree_le: ilYAJours(3),
   }),
   articleDuBanc({
     id: 'art4', reference: null, designation: 'Abonnement mensuel de suivi', unite: 'MON', prix_unitaire_ht: 149.9, taux_tva: 20, nature: 'services',
@@ -1849,11 +1853,11 @@ const CONTACTS_DU_BANC: Ligne[] = [
     adresse: 'Hôtel de ville, place de la Mairie, 13999 Démoville', siren: '100000207', siret: '10000020700017',
     adresse_electronique: '100000207', code_service: 'SERVICE-ACHATS', delai_paiement_jours: 45,
     observations: 'Numéro d’engagement juridique obligatoire sur chaque facture ; dépôt sur Chorus Pro uniquement, jamais par e-mail.',
-    cree_par: 'u-bernard', cree_le: '2026-09-03T09:00:00Z',
+    cree_par: 'u-bernard', cree_le: ilYAJours(5),
   }),
   contactDuBanc({
     id: 'ct3', type_client: 'non_assujetti', nom: 'Association fictive des amis de l’atelier', adresse: 'Rue des Essais, 13999 Démoville',
-    siren: '987654324', delai_paiement_jours: null, cree_par: 'u-bernard', cree_le: '2026-09-04T09:00:00Z', modifie_par: 'u1', modifie_le: '2026-09-21T09:00:00Z',
+    siren: '987654324', delai_paiement_jours: null, cree_par: 'u-bernard', cree_le: ilYAJours(6), modifie_par: 'u-bernard', modifie_le: ilYAJours(1),
   }),
   contactDuBanc({
     id: 'ct4', type_client: 'non_assujetti', nom: 'Client particulier fictif au nom volontairement très long pour éprouver le passage à la ligne',

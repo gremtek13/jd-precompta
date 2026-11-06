@@ -146,6 +146,13 @@ const VISITES = [
   },
   { dossier: 'd7', onglet: 'ecritures', nom: 'assujetti/ecritures' },
   { dossier: 'd7', onglet: 'checklist', nom: 'assujetti/checklist' },
+  // La carte « Espace client : ce qui a bougé » (étape B9b) : les gestes récents du titulaire de l'atelier (articles et clients créés
+  // ou modifiés ces derniers jours, voir `ilYAJours` dans fauxSupabase.ts), listés sous leur phrase du compte. La visite attend la
+  // fin de la lecture : sans elle, la carte ne montrerait que ses squelettes.
+  {
+    dossier: 'd7', onglet: 'checklist', nom: 'espace-client/journal',
+    apres: (page) => page.locator('[role="list"][aria-label="Gestes du client"]').waitFor({ timeout: 10000 }),
+  },
   // Sa TVA LIQUIDÉE (lib/liquidationTva.ts) : la fiche du prélèvement rapproché de la déclaration du deuxième trimestre,
   // et celle du complément, à traiter, qui propose la même déclaration dont il paie exactement le reste. Une fiche ne
   // s'ouvre que sur un clic.
@@ -1545,6 +1552,13 @@ const VISITES_CLIENT = [
   // « Mon échéancier » (ligne 51.5, étape C1), ouvert à tout accès : les dates, et les montants des cotisations sous « Banque »
   // (la passe `client-banque`). La barre du bas y gagne son entrée.
   { chemin: '#/mon-echeancier', nom: 'client/mon-echeancier', nav: true, apres: (page) => page.locator('.echeance').first().waitFor({ timeout: 10000 }) },
+  // « Mon analyse » (étape B9a), ouverte aux accès « Ventes » ou « Banque » : ses indicateurs (chiffre d'affaires facturé, créances,
+  // solde du dernier relevé contrôlé, avec « Banque ») puis ses états de synthèse, lus dans les factures et les encaissements de
+  // l'atelier. La visite attend la fin des lectures.
+  {
+    chemin: '#/mon-analyse', nom: 'client/mon-analyse', nav: true,
+    apres: (page) => page.getByRole('heading', { name: 'Tes indicateurs' }).waitFor({ timeout: 10000 }),
+  },
   // « Sécurité du compte » (ligne 51.5, étape C7) : la même page qu'au cabinet, tutoyée, l'ajout ouvert.
   {
     chemin: '#/securite', nom: 'client/securite', nav: true,
