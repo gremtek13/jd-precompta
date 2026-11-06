@@ -153,7 +153,7 @@ async function monter(espace: 'cabinet' | 'client', o: Options = {}) {
     dossierId: 'd1', dossierNom: 'Dossier fictif', dossierSiret: null, dossierAdresse: null, statutTva: o.statut === undefined ? 'redevable' : o.statut,
     articleExoneration: o.exo ?? null, numeroTvaAttribue: false, tvaSurDebits: false, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   } as const
-  render(espace === 'client' ? <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
+  render(espace === 'client' ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
   if (o.facture) await screen.findByText('Adresse de l\'émetteur', { exact: false })
 }
 

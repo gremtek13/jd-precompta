@@ -78,7 +78,7 @@ function monter(
   faux.appels = []
   faux.resoudre = null
   render(
-    <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="cabinet"
+    <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet"
       dossierId="d1"
       dossierNom="Cabinet de test"
       dossierSiret={autres.dossierSiret ?? null}
@@ -294,8 +294,8 @@ describe('FactureFormModal — le statut de TVA à préciser et l’article manq
       onClose: () => {}, onSaved: () => {},
     }
     render(espace === 'client'
-      ? <FactureFormModal acompte={SANS_ACOMPTE} espace="client" {...commun} />
-      : <FactureFormModal acompte={SANS_ACOMPTE} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
+      ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="client" {...commun} />
+      : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
     fireEvent.change(document.querySelector('#tiers-nom')!, { target: { value: 'Client SARL' } })
     fireEvent.change(document.querySelectorAll('tbody input')[0]!, { target: { value: 'Prestation' } })
   }

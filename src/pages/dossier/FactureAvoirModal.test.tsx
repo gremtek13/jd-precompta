@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FactureAvoirModal from './FactureAvoirModal'
 import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
 import { ANNEES_ILLISIBLES, FRONTIERE_JUGEE_PAR_LA_BASE } from '../../lib/encaissementsFactures'
@@ -115,7 +115,7 @@ async function monter(
   faux.lectureLignesRefusee = false
   faux.lignes = lignes
   render(
-    <FactureAvoirModal acompte={SANS_ACOMPTE}
+    <FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]}
       espace={espace} dossierId="d1" factureOrigine={origine} credite={credite} reglageDesVentes={reglage} onClose={() => {}} onCreated={() => {}}
     />,
   )
@@ -281,7 +281,7 @@ describe('FactureAvoirModal — une lecture refusée ne passe pas pour « rien �
     faux.appelsRpc = []
     faux.lectureLignesRefusee = true
     render(
-      <FactureAvoirModal acompte={SANS_ACOMPTE} espace="cabinet" dossierId="d1" factureOrigine={factureOrigine} credite={0} reglageDesVentes={NON_BASCULE} onClose={() => {}} onCreated={() => {}} />,
+      <FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="cabinet" dossierId="d1" factureOrigine={factureOrigine} credite={0} reglageDesVentes={NON_BASCULE} onClose={() => {}} onCreated={() => {}} />,
     )
     expect(await screen.findByText(/JWT expired/)).toBeTruthy()
     expect(screen.getByText(/on ne l'a pas lue/)).toBeTruthy()
@@ -324,7 +324,13 @@ describe('FactureAvoirModal — l’avoir d’un dossier basculé', () => {
   const BASCULE = reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'tresorerie' }, [2026])
   const BASCULE_CLIENT = reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'tresorerie' }, ANNEES_ILLISIBLES)
   const SOURCE: FactureEmise = { ...factureOrigine, source_de_la_vente: true, nature_operation: 'services' }
-  afterEach(() => { vi.restoreAllMocks() })
+  // « Aujourd'hui » : cet avoir est daté de fin 2026 et de janvier 2027, et la validation refuse une date à venir (rang 17 de la
+  // garde, dit avant le clic) : le jour de Paris est posé APRÈS ces dates. Seule `Date` est figée.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2027-02-01T10:00:00Z'))
+  })
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 
   for (const espace of ['cabinet', 'client'] as const) {
     it(`${espace} : l’avoir d’une facture d’avant la bascule se valide comme hier, sans confirmation, et l’écran le dit`, async () => {

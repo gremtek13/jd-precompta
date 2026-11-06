@@ -23,6 +23,9 @@ import type { ArticleExoneration, FactureEmise, StatutTva } from './types'
 //   17. une date d'émission à venir, après le jour de Paris ;
 //   18. une date d'émission antérieure à la plus récente des factures validées de sa série (même dossier, même lettre,
 //       même année : CGI, ann. II, art. 242 nonies A, I, 7°, « une séquence chronologique et continue »).
+// LES RANGS 17 ET 18 se disent désormais avant le clic par les deux formulaires (FactureFormModal, FactureAvoirModal), pour
+// tout auteur, sur la date telle qu'elle part (`refusDeLaDateDEmission`) ; le 18 se tait sur une liste des factures lue en
+// partie ou pas encore revenue, que la base juge alors au clic, le 17 ne dépendant d'aucune liste.
 // validationDeLaFacture.test.ts confronte chaque refus au texte de la garde dans sa migration, où qu'elle soit (préparée
 // ou dans l'export), et le texte de chaque mention au module des statuts.
 //

@@ -103,6 +103,10 @@ let confirmations: string[] = []
 let reponseConfirmation = true
 
 beforeEach(() => {
+  // « Aujourd'hui » : les dates de ces jeux d'essai sont de novembre 2027, et la validation d'une facture refuse une date à venir
+  // (rang 17 de la garde, dit avant le clic) : le jour de Paris est posé APRÈS elles. Seule `Date` est figée.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2027-11-20T10:00:00Z'))
   faux.identite = { id: 'd1', ...identiteDuDossier() }
   faux.versions = nues([RIB_CONFIRME])
   faux.versionsMuettesApres = Infinity
@@ -119,7 +123,7 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { confirmations.push(m ?? ''); return reponseConfirmation })
 })
 
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 function monter(espace: EspaceVentes, o: {
   facture?: FactureEmise | null; dossierAdresse?: string | null; dossierSiret?: string | null
@@ -132,8 +136,8 @@ function monter(espace: EspaceVentes, o: {
     reglageDesVentes: NON_BASCULE, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   }
   render(espace === 'cabinet'
-    ? <FactureFormModal acompte={SANS_ACOMPTE} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />
-    : <FactureFormModal acompte={SANS_ACOMPTE} espace="client" {...commun} />)
+    ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />
+    : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="client" {...commun} />)
 }
 
 const ligneDuFormulaire = (i = 0) => document.querySelectorAll('tbody tr')[i] as HTMLElement

@@ -234,6 +234,10 @@ export default function FacturesTab(props: Props) {
 
   // Le jour à Paris, lu au rendu : une déclaration en retard l'est au jour de la base, pas à celui du chargement.
   const aujourdHui = aujourdHuiAParis()
+  // La liste ENTIÈRE du dossier que les deux formulaires jugent la date d'émission contre (rang 18 de la garde, lib/validationDeLaFacture.ts :
+  // la plus récente facture validée de la série) ; pas encore revenue, ou lue en partie, aucune — une facture plus récente peut manquer,
+  // et la base juge alors au clic.
+  const facturesDeLaSerie = loading || lectureIncomplete ? null : factures
   const anneesDisponibles = [...new Set(factures.map((f) => anneeDe(f.date_emission)))].sort((a, b) => b - a)
   // Le filtre « Émises par le client » ne touche que l'AFFICHAGE : les pastilles d'encaissement et de déclaration, la liste
   // des avoirs déjà crédités et les fenêtres lisent `factures` en entier. Il n'agit que si les accès sont lus en entier.
@@ -707,6 +711,7 @@ export default function FacturesTab(props: Props) {
           reglageDesVentes={reglageDesVentes}
           facture={editing === 'new' ? null : editing}
           acompte={editing === 'new' ? SANS_ACOMPTE : acompteDe(editing.id)}
+          facturesDeLaSerie={facturesDeLaSerie}
           onClose={() => setEditing(null)}
           onSaved={load}
         />
@@ -728,6 +733,7 @@ export default function FacturesTab(props: Props) {
           // Sur la liste ENTIÈRE du dossier, toutes années confondues : un avoir de l'an prochain crédite la
           // facture de cette année. Lue en partie, on ne sait pas ce qui a été crédité, et c'est la base qui juge.
           credite={lectureIncomplete ? null : dejaCredite(avoirDe.id, factures)}
+          facturesDeLaSerie={facturesDeLaSerie}
           acompte={acompteDe(avoirDe.id)}
           reglageDesVentes={reglageDesVentes}
           onClose={() => setAvoirDe(null)}
