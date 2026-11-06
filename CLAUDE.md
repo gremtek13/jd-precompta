@@ -585,8 +585,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Le même soir, préparées derrière leurs drapeaux : C5, les relances
     d'une facture en retard (pénalités calculées et montrées, jamais facturées ; `send-email` sous `RELANCES_EN_BASE` ;
     C5-Q1 à Q3) ; C4a, les situations publiées et la case « Comptes » (`changer_droits_acces` à cinq paramètres ; C4A-Q1
-    et Q2 ; de P1-trace et d'elle, celle qui s'applique en second se reprend) → « RELANCER SES CLIENTS (C5) », « LES
-    SITUATIONS PUBLIÉES, EN BASE (C4A) ».
+    et Q2 ; de P1-trace et d'elle, celle qui s'applique en second se reprend) ; C3, la facture électronique et
+    l'e-reporting en un coup d'œil (la fonction de l'état rend l'e-reporting en phases, rien du cabinet au-delà ;
+    `APERCU_EREPORTING_EXPORTE` baissé ; C3-Q1 à Q4) → « RELANCER SES CLIENTS (C5) », « LES SITUATIONS PUBLIÉES, EN BASE
+    (C4A) », « C3, LA FACTURE ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP D'ŒIL ».
   - Du premier groupe, faits : A1 à A6 (sauf ce qui suit). Restent, dans l'ordre recommandé : A4B3-Q6 (la ligne
     d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7, la facture fige ses mentions
     : A7a, la base, EN PRODUCTION le 29/10/2026 sur A7-Q1 à Q3 et A7Q-Q1, tranchées à la recommandation (l'émetteur
