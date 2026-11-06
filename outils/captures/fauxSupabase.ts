@@ -895,7 +895,7 @@ const FACTURES_D1: FactureEmise[] = [
     tiers_nom: 'Mme Josiane Faure', tiers_adresse: '3 impasse du Lavoir\n13100 Aix-en-Provence', tiers_siret: null,
     ...calculerTotaux(LIGNES_BROUILLON),
     mentions_legales: MENTIONS_LEGALES_D1, notes: 'Séance non remboursée par l’Assurance maladie : règlement à réception.',
-    source_de_la_vente: false,
+    source_de_la_vente: false, acompte: false, date_versement_acompte: null,
     ...EMETTEUR_D1,
     superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
     created_by: 'u-claire', valide_par: null, created_at: '2026-09-24T16:10:00Z', validated_at: null,
@@ -911,7 +911,7 @@ const FACTURES_D1: FactureEmise[] = [
     tiers_nom: 'Résidence Les Cèdres SAS', tiers_adresse: '7 chemin des Cèdres\n13090 Aix-en-Provence', tiers_siret: '77712345600017',
     ...calculerTotaux(LIGNES_F13),
     mentions_legales: MENTIONS_LEGALES_D1, notes: null,
-    source_de_la_vente: false,
+    source_de_la_vente: false, acompte: false, date_versement_acompte: null,
     ...EMETTEUR_D1,
     superpdp_invoice_id: 4242, superpdp_dernier_statut: 'fr:205', tiers_email: 'comptabilite@residence-cedres.example',
     created_by: 'u1', valide_par: 'u1', created_at: '2026-09-18T08:30:00Z', validated_at: '2026-09-18T08:55:00Z',
@@ -929,7 +929,7 @@ const FACTURES_D1: FactureEmise[] = [
     tiers_adresse: '18 avenue des Deux Vallées\nBP 40120\n73000 Chambéry', tiers_siret: '25010002100014',
     ...calculerTotaux(LIGNES_F12),
     mentions_legales: MENTIONS_LEGALES_D1, notes: null,
-    source_de_la_vente: false,
+    source_de_la_vente: false, acompte: false, date_versement_acompte: null,
     ...EMETTEUR_D1,
     superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: 'achats@ch-deux-vallees.example',
     created_by: 'u1', valide_par: 'u1', created_at: '2026-09-05T08:40:00Z', validated_at: '2026-09-05T08:52:00Z',
@@ -942,7 +942,7 @@ const FACTURES_D1: FactureEmise[] = [
 ]
 
 const lignesDeFacture = (factureId: string, lignes: LigneSaisie[]): FactureLigne[] =>
-  lignes.map((l, i) => ({ id: `${factureId}-l${i + 1}`, facture_id: factureId, ordre: i + 1, ...l }))
+  lignes.map((l, i) => ({ id: `${factureId}-l${i + 1}`, facture_id: factureId, ordre: i + 1, reprise_facture_id: null, ...l }))
 
 const LIGNES_DES_FACTURES_D1: FactureLigne[] = [
   ...lignesDeFacture('f14', LIGNES_BROUILLON),
@@ -1007,7 +1007,7 @@ const FACTURES_D7: FactureEmise[] = [{
   id: 'f7', dossier_id: 'd7', numero: 'F2026-0007', statut: 'validee', type: 'facture', facture_origine_id: null,
   date_emission: '2026-09-22', date_echeance: '2026-10-22',
   tiers_nom: 'Menuiserie Roche & Fils SARL', tiers_adresse: '27 zone artisanale des Bruyères\n69130 Écully', tiers_siret: '55512345400012',
-  source_de_la_vente: false,
+  source_de_la_vente: false, acompte: false, date_versement_acompte: null,
   ...calculerTotaux(LIGNES_F7),
   mentions_legales: PENALITES_DE_RETARD, notes: null,
   emetteur_nom: 'Atelier Bernard Conseil', emetteur_siret: '98765432400019', emetteur_adresse: '4 rue des Tanneurs\n69002 Lyon',
@@ -1949,7 +1949,7 @@ const FACTURE_FIGEE_D1: FactureEmise = {
   date_emission: '2026-09-28', date_echeance: '2026-10-28',
   tiers_nom: 'EHPAD Les Tilleuls SAS', tiers_adresse: '4 allée des Tilleuls\n13090 Aix-en-Provence', tiers_siret: '77712345600017',
   montant_ht: 467, montant_tva: 0, montant_ttc: 467,
-  mentions_legales: mentionTva('exonere', 'cgi_261_4_1'), notes: null, source_de_la_vente: false,
+  mentions_legales: mentionTva('exonere', 'cgi_261_4_1'), notes: null, source_de_la_vente: false, acompte: false, date_versement_acompte: null,
   ...EMETTEUR_D1,
   superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
   created_by: 'u1', valide_par: 'u1', created_at: '2026-09-28T08:30:00Z', validated_at: '2026-09-28T08:55:00Z',
@@ -1968,8 +1968,8 @@ const FACTURE_FIGEE_D1: FactureEmise = {
   mandataire_nom: 'JD Consult', contact_id: null,
 }
 const LIGNES_FIGEES_D1: FactureLigne[] = [
-  { id: 'f15-l1', facture_id: 'f15', ordre: 1, designation: 'Soins infirmiers auprès des résidents — forfait de septembre 2026', quantite: 1, prix_unitaire_ht: 392, taux_tva: 0, unite: 'LS', reference: 'FORF-RES', nature: 'services', article_id: null },
-  { id: 'f15-l2', facture_id: 'f15', ordre: 2, designation: 'Séances de pansements complexes', quantite: 3, prix_unitaire_ht: 25, taux_tva: 0, unite: 'C62', reference: 'PANS-02', nature: 'services', article_id: null },
+  { id: 'f15-l1', facture_id: 'f15', ordre: 1, designation: 'Soins infirmiers auprès des résidents — forfait de septembre 2026', quantite: 1, prix_unitaire_ht: 392, taux_tva: 0, unite: 'LS', reference: 'FORF-RES', nature: 'services', article_id: null, reprise_facture_id: null },
+  { id: 'f15-l2', facture_id: 'f15', ordre: 2, designation: 'Séances de pansements complexes', quantite: 3, prix_unitaire_ht: 25, taux_tva: 0, unite: 'C62', reference: 'PANS-02', nature: 'services', article_id: null, reprise_facture_id: null },
 ]
 
 // `enregistrer_parametres_facturation` et `confirmer_rib` (étape A5b1), comme leurs fonctions en base pour ce que le banc montre :

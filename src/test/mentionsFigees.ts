@@ -30,7 +30,7 @@ export function factureFigee(o: Partial<FactureEmise> = {}): FactureEmise {
     emetteur_nom: 'Nom interne du dossier', emetteur_siret: SIRET_VENDEUR, emetteur_adresse: '1 rue des Essais\n69000 Lyon',
     superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null, created_by: null, valide_par: 'u-moi',
     created_at: '2027-11-02T08:00:00Z', validated_at: '2027-11-02T08:05:00Z', ...MENTIONS_VIDES, type_client: 'assujetti',
-    option_debits: false, source_de_la_vente: false,
+    option_debits: false, source_de_la_vente: false, acompte: false, date_versement_acompte: null,
     mentions_figees: true, statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false,
     numero_tva_imprime: TVA_VENDEUR, denomination_imprimee: 'Camille Essai EI', forme_juridique: '1000', capital: null,
     rcs_ville: null, mentions_identite: null, parametres_id: 'v1', moyen_prefere: 'virement',

@@ -44,13 +44,14 @@ export const DEVIS_EXPORTES: boolean = true
 // lève qu'avec ou après `DEVIS_EXPORTES` : la migration exige la table des devis.
 export const ENVOI_DES_DEVIS_PREVU: boolean = true
 
-// L'acompte d'un devis (étape P5b2 ; migration `acomptes_des_devis`, supabase/preparees/, préparée, PAS APPLIQUÉE) : la
-// marque d'une facture d'acompte, sa date du versement, la reprise d'une ligne de la facture finale et le rôle du lien d'un
-// devis. Tant que l'export ne porte pas la migration, le plan de sauvegarde ne connaît pas la reprise
-// (src/lib/sauvegarde.ts, `auGrapheDesAcomptes`) ; le jour où il la porte, sauvegardeAcomptesDesDevis.test.ts vire au rouge
-// tant que ceci reste `false`. Il ne se lève qu'avec ou après `ENVOI_DES_DEVIS_PREVU` : la migration suppose celle de
-// l'envoi. Les moteurs (P5b3) le liront aussi.
-export const ACOMPTES_PREVUS: boolean = false
+// L'acompte d'un devis (étape P5b2 ; migration `acomptes_des_devis`, en production, dans l'export) : la marque d'une
+// facture d'acompte, sa date du versement, la reprise d'une ligne de la facture finale et le rôle du lien d'un devis. Levé,
+// le drapeau met la reprise au plan de sauvegarde (src/lib/sauvegarde.ts, `auGrapheDesAcomptes`), que
+// sauvegardeAcomptesDesDevis.test.ts confronte à l'export ; les moteurs (P5b3), l'aperçu et la transmission (P5b4b) et les
+// écrans des deux espaces (P5b5) lisent l'acompte ; les trois fonctions qui le lisent (`ACOMPTES_EN_BASE`) le suivent
+// (copiesFacturation.test.ts). Il ne se lève qu'avec ou après `ENVOI_DES_DEVIS_PREVU` : la migration suppose celle de
+// l'envoi. Son état d'avant reste éprouvé tant que son code existe (les tests le baissent par `vi.mock` ou un accesseur).
+export const ACOMPTES_PREVUS: boolean = true
 
 // « Envoyer par e-mail » un devis émis, dans les deux espaces (étape P6c3) : `send-email` accepte le type « devis » depuis
 // P6c2, déployée le 05/11/2026 (v9, une ligne qui importe le dépôt), après sa migration `envoi_des_devis` : le bouton est

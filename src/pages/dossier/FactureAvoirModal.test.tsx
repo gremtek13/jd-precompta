@@ -99,6 +99,8 @@ const factureOrigine: FactureEmise = {
   created_at: '2026-09-01T00:00:00Z',
   validated_at: '2026-09-01T00:00:00Z',
   source_de_la_vente: false,
+  acompte: false,
+  date_versement_acompte: null,
   ...MENTIONS_VIDES,
 }
 

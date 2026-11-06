@@ -1,3 +1,4 @@
+import type { DemandeAcompte } from './acompteDevis'
 import type { CodeStatutRecu, MontantRecu } from './cdarRecu'
 
 export type Statut = 'a_valider' | 'validee'
@@ -1161,6 +1162,13 @@ export interface FactureEmise {
   // Le nom du cabinet quand c'est lui qui a validé (EC-Q2, MEG1-Q15 ; l'imprimer est l'étape P4) ; nul pour un accès « Ventes ».
   mandataire_nom?: string | null
   contact_id?: string | null
+  // L'ACOMPTE D'UN DEVIS (étape P5b2 ; migration `acomptes_des_devis`, en production ; `ACOMPTES_PREVUS`, lib/devis.ts) :
+  // la marque d'une facture d'acompte d'un devis accepté (CII 386), posée par `facturer_acompte_devis` seule, figée avec la
+  // facture — fausse pour toute autre, un avoir compris (la contrainte `factures_emises_acompte_d_une_facture`) ; NOT NULL,
+  // défaut faux. La date du versement de l'acompte (BT-9), connue et autre que la date de la facture ; sinon nulle.
+  // OBLIGATOIRES : le message du statut « Encaissée » cite la facture sous le type qu'elle a (`FacturePourCdar.acompte`).
+  acompte: boolean
+  date_versement_acompte: string | null
 }
 
 // Les mentions de la facture électronique, à part du reste : le module qui les juge et l'écran qui les saisit
@@ -1231,6 +1239,12 @@ export interface FactureLigne {
   reference?: string | null
   article_id?: string | null
   nature?: NatureArticle | null
+  // La facture d'acompte validée que cette ligne reprend (la facture finale d'un devis, quantité −1), ou dont elle défait la
+  // reprise (l'avoir de la finale, quantité 1) ; nulle sur toute autre ligne (étape P5b2 ; migration `acomptes_des_devis`,
+  // en production). La clé vers `factures_emises` (`facture_lignes_reprise_facture_id_fkey`) est sans action à la
+  // suppression : la facture reprise est validée, et ne part qu'avec son dossier. Écrite par `facturer_devis` et
+  // `enregistrer_facture` seules, figée avec la facture (la garde `garder_lignes_d_acompte`).
+  reprise_facture_id: string | null
 }
 
 // Un encaissement d'une facture émise validée (`encaissements_factures`, ligne 28.5, étape d1), ou l'ANNULATION d'un
@@ -1667,8 +1681,12 @@ export interface Devis {
   decide_le: string | null
 }
 
-// La facture tirée d'un devis accepté (`facturer_devis`) : une facture vient d'un devis au plus. Le lien part avec le
-// brouillon de la facture, le devis ou le dossier.
+// La facture tirée d'un devis accepté (`facturer_devis`, `facturer_acompte_devis`) : une facture vient d'un devis au plus.
+// Le lien part avec le brouillon de la facture, le devis ou le dossier. Son rôle (migration `acomptes_des_devis`, en
+// production) : `acompte`, une facture d'acompte du devis ; `finale`, la facture qui le solde en reprenant ses acomptes —
+// et tout lien d'avant les acomptes (le défaut de la colonne, NOT NULL). Un texte, comme le générateur de Supabase le rend :
+// la contrainte `devis_factures_role_check` n'admet que ces deux valeurs, que la lecture vérifie
+// (lib/acomptesDuDevisLecture.ts, `LienDuDevis.role`).
 export interface DevisFacture {
   id: string
   dossier_id: string
@@ -1676,7 +1694,31 @@ export interface DevisFacture {
   facture_id: string
   cree_par: string | null
   cree_le: string
+  role: string
 }
+
+// Les arguments de `facturer_acompte_devis` (étape P5b2), la seule fonction de la migration `acomptes_des_devis` que le
+// navigateur appelle (exécutable par `authenticated`) ; elle rend l'identifiant du brouillon de la facture d'acompte.
+// `p_demande` : la `DemandeAcompte` du module (lib/acompteDevis.ts), plus étroite que le `Json` du générateur ;
+// `p_date_versement` : AAAA-MM-JJ, ou nulle si elle n'est pas donnée (P5B2-Q1) — le générateur écrit `string`, comme pour
+// tout argument, la fonction acceptant la valeur nulle.
+export interface ArgumentsFacturerAcompteDevis {
+  p_dossier_id: string
+  p_devis_id: string
+  p_demande: DemandeAcompte
+  p_date_versement: string | null
+}
+// Les six fonctions d'appoint de la migration, telles que le générateur les rend (il liste toute fonction du schéma) :
+// aucun rôle de l'API ne les exécute — seules les fonctions de la base les appellent. Les deux gardes (`garder_marque_d_acompte`,
+// `garder_lignes_d_acompte`) sont des déclencheurs : le générateur ne les rend pas.
+export interface ArgumentsAcompteEnEuros { p_centimes: number }
+export interface ArgumentsAcompteEnTaux { p_taux: number }
+export interface ArgumentsAcomptesEnVigueur { p_devis_id: string }
+export interface LigneAcomptesEnVigueur { facture_id: string; numero: string; date_emission: string; rang: number }
+export interface ArgumentsFinaleActiveDuDevis { p_devis_id: string }
+export interface LigneFinaleActiveDuDevis { facture_id: string; numero: string; cree_le: string; lien_id: string }
+export interface ArgumentsAcompteRepartirSurLesRestes { p_cible: number; p_restes: number[] }
+export interface ArgumentsAcompteRefusDeLaFinaleLaissee { p_devis_id: string; p_lignes: unknown }
 
 // La série des devis d'un dossier, par année (clé primaire : le dossier et l'année, CLES_PRIMAIRES). Aucune policy :
 // personne ne la lit hors des fonctions.

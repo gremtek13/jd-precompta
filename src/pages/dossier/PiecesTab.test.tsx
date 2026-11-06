@@ -823,7 +823,7 @@ describe('PiecesTab — l’exemplaire qu’un virement mixte paie', () => {
   const FACTURE = {
     id: 'f1', dossier_id: 'dossier-de-test', statut: 'validee', type: 'facture', numero: 'F2026-0001', date_emission: '2026-03-01',
     tiers_nom: 'CLIENT', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services', option_debits: false,
-    date_prestation: null,
+    date_prestation: null, acompte: false,
   }
   const encaissement = (id: string, factureId: string, montant: number) => ({
     id, dossier_id: 'dossier-de-test', facture_id: factureId, date_encaissement: '2026-03-15', montant, moyen: 'virement',
@@ -835,7 +835,10 @@ describe('PiecesTab — l’exemplaire qu’un virement mixte paie', () => {
       piece({ id: 'p-libre', statut: 'validee', type_piece: 'vente', tiers: 'DELTA', montant_ttc: 60 }),
     ])
     faux.parTable.factures_emises = [FACTURE, { ...FACTURE, id: 'f-avant', numero: 'F2025-0042', source_de_la_vente: false }]
-    faux.parTable.facture_lignes = [{ id: 'l1', facture_id: 'f1', ordre: 1, designation: 'Prestation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }]
+    faux.parTable.facture_lignes = [{
+      id: 'l1', facture_id: 'f1', ordre: 1, designation: 'Prestation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20,
+      reprise_facture_id: null,
+    }]
     faux.parTable.encaissements_factures = [encaissement('e1', 'f1', 120), encaissement('ea', 'f-avant', 60)]
     faux.parTable.encaissements_factures_taux = [
       { encaissement_id: 'e1', dossier_id: 'dossier-de-test', taux: 20, montant: 120 },

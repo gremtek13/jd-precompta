@@ -43,6 +43,13 @@ vi.mock('./EncaissementsFactureModal', () => ({
   ),
 }))
 
+// `ACOMPTES_PREVUS` forcé BAISSÉ : ces cas éprouvent l'écran d'avant l'acompte d'un devis, qui reste éprouvé tant que son
+// code existe ; leur faux client ne sert pas les lectures de l'acompte. Le drapeau levé : FacturesTabAcomptes.test.tsx.
+vi.mock('../../lib/devis', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/devis')>()),
+  ACOMPTES_PREVUS: false,
+}))
+
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
   type Predicat = (ligne: Record<string, unknown>) => boolean
@@ -103,7 +110,7 @@ const CABINET = 'u-cabinet'
 const ANCIEN = 'u-ancien'
 
 const ligneDeFacture = (id: string): FactureLigne => ({
-  id: `l-${id}`, facture_id: id, ordre: 1, designation: 'Conseil', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20,
+  id: `l-${id}`, facture_id: id, ordre: 1, designation: 'Conseil', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20, reprise_facture_id: null,
 })
 
 const facture = (o: Partial<FactureEmise>): FactureEmise => factureCii([{ ordre: 1, designation: 'Conseil', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20 }], {

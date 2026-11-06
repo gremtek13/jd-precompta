@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REFUS_ACOMPTE, enTaux } from './acompteDevis'
 import {
@@ -9,6 +7,7 @@ import {
   refusRepriseHorsVigueur, refusRepriseInexacte, type AcompteDeLaFacture, type AcomptesDesFacturesLus, type LectureDesAcomptesDesFactures,
 } from './acomptesDesFactures'
 import type { FactureDuDevis } from './acomptesDuDevis'
+import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // LA FACTURE D'ACOMPTE ET LA FINALE DANS L'ONGLET DES FACTURES (lib/acomptesDesFactures.ts, étape P5b5b). Ce que ces cas
 // gardent : les refus que le module dit avant le clic sont ceux d'`enregistrer_facture` REMPLACÉE par la migration préparée,
@@ -16,7 +15,8 @@ import type { FactureDuDevis } from './acomptesDuDevis'
 // reprend, et se permet une fois la finale créditée en entier (P5B2-Q2, P5B-Q4) ; une lecture qui manque ne se dit jamais
 // « pas d'acompte » ; la marque de la liste et la confirmation nomment ce qu'est la facture. Données FICTIVES.
 
-const SQL = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261105110000_acomptes_des_devis.sql'), 'utf8')
+// La migration, préparée (supabase/preparees/) ou dans l'export sous la version de son application : le même texte.
+const SQL = [...fichiersDuSchema(), ...fichiersPrepares()].find((f) => /\d{14}_acomptes_des_devis\.sql$/.test(f.chemin))?.texte ?? ''
 const ENREGISTRER = SQL.slice(SQL.indexOf('FUNCTION public.enregistrer_facture('), SQL.indexOf('-- ══ 7. Les droits'))
 
 /** Le message tel qu'un `raise exception` l'écrit : chaque valeur passée devient `%`. */

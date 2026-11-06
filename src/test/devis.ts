@@ -22,5 +22,5 @@ export function devis(p: Partial<Devis> = {}): Devis {
 }
 
 export function lienDevisFacture(p: Partial<DevisFacture> = {}): DevisFacture {
-  return { id: 'df1', dossier_id: 'd1', devis_id: 'dv1', facture_id: 'f1', cree_par: 'u-cabinet', cree_le: '2026-10-20T08:00:00Z', ...p }
+  return { id: 'df1', dossier_id: 'd1', devis_id: 'dv1', facture_id: 'f1', cree_par: 'u-cabinet', cree_le: '2026-10-20T08:00:00Z', role: 'finale', ...p }
 }

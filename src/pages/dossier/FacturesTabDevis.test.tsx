@@ -24,6 +24,9 @@ const faux = vi.hoisted(() => ({
   appels: [] as { nom: string; args: Record<string, unknown> }[],
   refus: null as { message: string } | null,
   drapeau: true,
+  // `ACOMPTES_PREVUS` (étape P5b5a) : levé par défaut, comme en production ; baissé par les cas qui éprouvent la vue d'avant
+  // l'acompte (« Transformer en facture »), qui reste éprouvée tant que son code existe. Levé, DevisVueAcomptes.test.tsx.
+  acomptes: true,
   // `ENVOI_DES_DEVIS_OFFERT` (étape P6c3) : baissé par défaut, levé par les cas de l'envoi.
   envoi: false,
   // Ce que `send-email` rendrait à un refus : le message de son corps JSON, sous un statut non-2xx.
@@ -33,6 +36,7 @@ const faux = vi.hoisted(() => ({
 vi.mock('../../lib/devis', async (original) => ({
   ...(await original<typeof import('../../lib/devis')>()),
   get DEVIS_EXPORTES() { return faux.drapeau },
+  get ACOMPTES_PREVUS() { return faux.acomptes },
   get ENVOI_DES_DEVIS_OFFERT() { return faux.envoi },
 }))
 
@@ -144,6 +148,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-11-04T11:00:00Z'))
   faux.drapeau = true
+  faux.acomptes = true
   faux.envoi = false
   faux.refusEnvoi = null
   faux.lectures = []
@@ -151,8 +156,12 @@ beforeEach(() => {
   faux.appels = []
   faux.refus = null
   faux.tables = {
-    // Le dossier, lu avec les devis : l'émetteur que la base posera (A7).
-    dossiers: [{ id: 'd1', nom: 'Atelier fictif', siret: '12345678200010', adresse: '1 rue Fictive', forme_juridique: '5710', denomination_imprimee: 'Atelier fictif SAS' }],
+    // Le dossier, lu avec les devis : l'émetteur que la base posera (A7), et son modèle comptable, que l'état d'acompte
+    // d'un devis lit (lib/acomptesDuDevisLecture.ts, `ACOMPTES_PREVUS` levé).
+    dossiers: [{
+      id: 'd1', nom: 'Atelier fictif', siret: '12345678200010', adresse: '1 rue Fictive', forme_juridique: '5710',
+      denomination_imprimee: 'Atelier fictif SAS', mode_comptable: 'tresorerie',
+    }],
     factures_emises: [{ ...FACTURE }],
     facture_lignes: [{ ...LIGNE, id: 'l0', facture_id: 'f1' }],
     transmissions_factures: [],
@@ -193,7 +202,9 @@ const saisir = (libelle: string | RegExp, valeur: string) => fireEvent.change(sc
 
 describe.each(['cabinet', 'client'] as const)('Devis dans l’onglet Factures — %s', (espace) => {
   it('le drapeau baissé : aucun onglet « Devis », aucune lecture des devis', async () => {
+    // Sans devis, pas d'acompte d'un devis : `ACOMPTES_PREVUS` ne se lève qu'avec ou après `DEVIS_EXPORTES`.
     faux.drapeau = false
+    faux.acomptes = false
     await monter(espace)
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Factures', 'Règlements', 'Articles', 'Clients', 'Paramètres'])
     expect(faux.lectures).not.toContain('devis')
@@ -201,6 +212,9 @@ describe.each(['cabinet', 'client'] as const)('Devis dans l’onglet Factures �
   })
 
   it('le drapeau levé : « Devis » suit « Factures », qui reste la vue par défaut, et rien n’est lu avant le clic', async () => {
+    // L'acompte baissé : la vue « Factures » ne lit alors rien des devis (levé, elle lit leurs acomptes avec les factures,
+    // lib/acomptesDesFacturesLecture.ts — FacturesTabAcomptes.test.tsx), et la liste des devis attend le clic.
+    faux.acomptes = false
     await monter(espace)
     expect(screen.getAllByRole('tab').map((t) => t.textContent))
       .toEqual(['Factures', 'Devis', 'Règlements', 'Articles', 'Clients', 'Paramètres'])
@@ -374,6 +388,9 @@ const ACCEPTE = devis({
 })
 
 describe.each(['cabinet', 'client'] as const)('Devis — répondre et facturer (P6a2) — %s', (espace) => {
+  // « Transformer en facture », la vue d'avant l'acompte : `ACOMPTES_PREVUS` baissé. Levé, le devis accepté se facture par
+  // ses acomptes et son solde (DevisVueAcomptes.test.tsx).
+  beforeEach(() => { faux.acomptes = false })
   async function repondreA(numero: string) {
     await monter(espace)
     vers('Devis')
@@ -670,7 +687,9 @@ describe.each(['cabinet', 'client'] as const)('Devis — envoyer par e-mail (P6c
   })
 
   it('sans « Devis » (DEVIS_EXPORTES baissé), l’envoi levé n’ouvre rien', async () => {
+    // Sans devis, pas d'acompte d'un devis : `ACOMPTES_PREVUS` ne se lève qu'avec ou après `DEVIS_EXPORTES`.
     faux.drapeau = false
+    faux.acomptes = false
     await monter(espace)
     // (Le bouton de l'onglet Factures, lui, envoie une facture : seule la vue des devis compte ici.)
     expect(screen.queryByRole('tab', { name: 'Devis' })).toBeNull()

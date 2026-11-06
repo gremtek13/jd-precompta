@@ -50,6 +50,13 @@ const faux = vi.hoisted(() => ({
   email: null as null | (() => unknown),
 }))
 
+// `ACOMPTES_PREVUS` forcé BAISSÉ : ces cas éprouvent l'écran d'avant l'acompte d'un devis, qui reste éprouvé tant que son
+// code existe ; leur faux client ne sert pas les lectures de l'acompte. Le drapeau levé : FacturesTabAcomptes.test.tsx.
+vi.mock('../../lib/devis', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/devis')>()),
+  ACOMPTES_PREVUS: false,
+}))
+
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatIn, predicatOr } = await import('../../test/filtresPostgrest')
   type Predicat = (ligne: Record<string, unknown>) => boolean

@@ -71,6 +71,8 @@ export function facture(lignes: LigneCii[], o: Partial<FactureEmise> = {}): Fact
     tiers_siren: SIREN_CLIENT,
     nature_operation: 'services',
     source_de_la_vente: false,
+    acompte: false,
+    date_versement_acompte: null,
     ...o,
   }
 }

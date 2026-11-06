@@ -83,6 +83,13 @@ vi.mock('./EncaissementsFactureModal', () => ({
   ),
 }))
 
+// `ACOMPTES_PREVUS` forcé BAISSÉ : ces cas éprouvent l'écran d'avant l'acompte d'un devis, qui reste éprouvé tant que son
+// code existe ; leur faux client ne sert pas les lectures de l'acompte. Le drapeau levé : FacturesTabAcomptes.test.tsx.
+vi.mock('../../lib/devis', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/devis')>()),
+  ACOMPTES_PREVUS: false,
+}))
+
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatIn } = await import('../../test/filtresPostgrest')
   type Predicat = (ligne: Record<string, unknown>) => boolean
@@ -202,7 +209,7 @@ function facture(o: Partial<FactureEmise> = {}): FactureEmise {
     montant_ht: 1000, montant_tva: 200, montant_ttc: 1200, mentions_legales: null, notes: null,
     emetteur_nom: 'Cabinet de test', emetteur_siret: '12345678901234', emetteur_adresse: null,
     superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
-    created_by: null, valide_par: null, created_at: '2026-03-10T09:00:00Z', validated_at: '2026-03-10T09:05:00Z', ...MENTIONS_VIDES, source_de_la_vente: false, ...o,
+    created_by: null, valide_par: null, created_at: '2026-03-10T09:00:00Z', validated_at: '2026-03-10T09:05:00Z', ...MENTIONS_VIDES, source_de_la_vente: false, acompte: false, date_versement_acompte: null, ...o,
   }
 }
 
@@ -555,7 +562,7 @@ describe('FacturesTab — la transmission de chaque facture', () => {
 // `resteAEncaisser` ; rien quand le statut « Encaissée » est sans objet, et rien du tout sur une lecture incomplète.
 describe('FacturesTab — l’encaissement de chaque facture', () => {
   const ligneDe = (factureId: string, prix = 1000): FactureLigne => ({
-    id: `l-${factureId}`, facture_id: factureId, ordre: 1, designation: 'Séance', quantite: 1, prix_unitaire_ht: prix, taux_tva: 20,
+    id: `l-${factureId}`, facture_id: factureId, ordre: 1, designation: 'Séance', quantite: 1, prix_unitaire_ht: prix, taux_tva: 20, reprise_facture_id: null,
   })
   const encaisse = (factureId: string, montant: number, o: Partial<EncaissementFacture> = {}): EncaissementFacture => ({
     id: `e-${factureId}`, dossier_id: 'dossier-de-test', facture_id: factureId, date_encaissement: '2026-03-20', montant,
@@ -633,7 +640,7 @@ describe('FacturesTab — la déclaration des encaissements de chaque facture', 
     date_emission: '2027-10-01', type_client: 'assujetti', nature_operation: 'services', option_debits: false, ...o,
   })
   const ligneDe = (factureId: string): FactureLigne => ({
-    id: `l-${factureId}`, facture_id: factureId, ordre: 1, designation: 'Conseil', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20,
+    id: `l-${factureId}`, facture_id: factureId, ordre: 1, designation: 'Conseil', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20, reprise_facture_id: null,
   })
   const encaisse = (factureId: string, date: string, o: Partial<EncaissementFacture> = {}): EncaissementFacture => ({
     id: `e-${factureId}`, dossier_id: 'dossier-de-test', facture_id: factureId, date_encaissement: date, montant: 600,
