@@ -1,14 +1,10 @@
 import { amortissementCumuleCentimes, compteAmortissement, dotationsDuRegistre, miseEnService, montantDeFactureDifferent, rang360 } from './amortissements'
-import {
-  COMPTE_BANQUE, COMPTE_CAPITAL_INDIVIDUEL, COMPTE_CREDIT_TVA_A_REPORTER, COMPTE_EMPRUNT, COMPTE_EXPLOITANT,
-  COMPTE_REMBOURSEMENT_TVA_DEMANDE, COMPTE_TVA_A_DECAISSER, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
-  COMPTE_TVA_IMMOBILISATIONS, COMPTE_VIREMENTS_INTERNES,
-} from './comptes'
 import { immobilisationsSansJustificatif, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec } from './controles'
 import { creditReporte, libellePeriode } from './declarationTva'
 import { echeancesNonRapprochees } from './echeanceEmprunt'
 import { capitalRestantDu, type Emprunt } from './emprunts'
 import type { ModeleComptable } from './engagement'
+import type { PlanComptable } from './planComptable'
 import { formatDate, formatMoney } from './format'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { etatDeLOuverture, ouvertureDeLExercice } from './reportDesSoldes'
@@ -159,63 +155,68 @@ export interface PreuveProposee {
   sourcesProposees: SourceProposee[]
 }
 
-// CE QUE CHAQUE PREUVE ÉTABLIT ET N'ÉTABLIT PAS (§ 3.6), écrit une fois : l'écran le montre, l'instantané le garde.
-export const TEXTES_DES_PREUVES: Readonly<Record<TypeDePreuve, { etablit: string; netablitPas: string }>> = {
-  releve: {
-    etablit: 'Le solde de la banque au 31 décembre, tiré d’un relevé qui boucle — celui dont la période finit le 31 '
-      + 'décembre, sinon celui qui couvre la fin de ce jour, par son solde initial et ses mouvements jusqu’au 31 '
-      + 'décembre —, comparé au 512000 ; un écart se dit avec ses causes possibles.',
-    netablitPas: 'Qu’aucun compte bancaire ne manque — un relevé ne dit pas de quel compte il est : plusieurs relevés au '
-      + '31 décembre se montrent un à un, sans s’additionner — ; le relevé lui-même, dont le document se cite ; une '
-      + 'remise de chèques de fin d’exercice.',
-  },
-  'virements-internes': {
-    etablit: 'Que le compte est soldé au 31 décembre, ou la liste des virements de l’exercice sans contrepartie de même '
-      + 'montant.',
-    netablitPas: 'Le solde d’un compte que l’application ne tient pas — un compte d’épargne, un second compte bancaire : '
-      + 'son relevé se cite.',
-  },
-  'registre-valeurs': {
-    etablit: 'Que le solde du compte est la valeur des biens que le registre range à ce compte, acquis au plus tard le 31 '
-      + 'décembre, ouverture comprise ; la facture de chacun se propose à la citation.',
-    netablitPas: 'L’existence du bien ; une cession ou une mise au rebut, que l’application ne connaît pas ; un bien hors '
-      + 'du registre.',
-  },
-  'registre-amortissements': {
-    etablit: 'Que le solde du compte est le cumul des amortissements du registre au 31 décembre, ouverture comprise, '
-      + 'calculé comme les dotations : linéaire, au prorata depuis la mise en service.',
-    netablitPas: 'La durée et le mode d’amortissement retenus ; une dépréciation.',
-  },
-  echeancier: {
-    etablit: 'Que le solde du compte est le capital restant dû au 31 décembre selon l’échéancier de chaque emprunt, '
-      + 'calculé à mensualité constante.',
-    netablitPas: 'Le tableau d’amortissement de la banque — un différé, un taux variable, une renégociation : il se cite.',
-  },
-  'declarations-tva': {
-    etablit: 'Que le solde est ce que disent les déclarations de TVA enregistrées et leurs paiements rapprochés : au '
-      + '445510 la TVA déclarée et non payée au 31 décembre, au 445670 le crédit reporté, au 445830 le remboursement '
-      + 'demandé et non reçu ; les TVA collectée et déductible soldées quand toutes les périodes sont déclarées.',
-    netablitPas: 'Une déclaration déposée ailleurs et non enregistrée ; une TVA dont l’exigibilité ne tombe pas dans la '
-      + 'période de son écriture — une facture réglée après le 31 décembre, toute facture non réglée d’un dossier en '
-      + 'engagement —, qui laisse un solde aux TVA collectée et déductible ; la cohérence de la TVA collectée avec les '
-      + 'recettes.',
-  },
-  ouverture: {
-    etablit: 'Que l’ouverture du compte est celle que la validation de l’exercice précédent a écrite — ou celle de la '
-      + 'balance reprise —, qu’aucune écriture de l’exercice ne la modifie, et que l’exercice précédent se relit tel '
-      + 'qu’il a été validé.',
-    netablitPas: 'La justesse d’une balance reprise d’un autre logiciel.',
-  },
-  'decomposition-exploitant': {
-    etablit: 'De quoi le solde est fait : les prélèvements et les apports du relevé, la CSG-CRDS des cotisations, les '
-      + 'cotisations payées depuis le compte personnel, les forfaits kilométriques, les notes de frais, les parts '
-      + 'personnelles des ventilations.',
-    netablitPas: 'La vraisemblance des prélèvements au regard du résultat.',
-  },
-  aucune: {
-    etablit: 'Rien : l’application ne tient aucune preuve de ce solde.',
-    netablitPas: 'Le solde lui-même : un contrat, un acte, un relevé de compte courant se cite.',
-  },
+// CE QUE CHAQUE PREUVE ÉTABLIT ET N'ÉTABLIT PAS (§ 3.6), écrit une fois : l'écran le montre, l'instantané le garde. Les
+// comptes qu'il nomme sont ceux du plan du dossier (ligne 43, étape PC3 ; conception, § 2.5) : sous le plan vide, le
+// texte d'hier au caractère près — un instantané déjà gardé se relit donc tel qu'il a été écrit.
+export function textesDesPreuves(plan: PlanComptable): Readonly<Record<TypeDePreuve, { etablit: string; netablitPas: string }>> {
+  return {
+    releve: {
+      etablit: 'Le solde de la banque au 31 décembre, tiré d’un relevé qui boucle — celui dont la période finit le 31 '
+        + 'décembre, sinon celui qui couvre la fin de ce jour, par son solde initial et ses mouvements jusqu’au 31 '
+        + `décembre —, comparé au ${plan.banque} ; un écart se dit avec ses causes possibles.`,
+      netablitPas: 'Qu’aucun compte bancaire ne manque — un relevé ne dit pas de quel compte il est : plusieurs relevés au '
+        + '31 décembre se montrent un à un, sans s’additionner — ; le relevé lui-même, dont le document se cite ; une '
+        + 'remise de chèques de fin d’exercice.',
+    },
+    'virements-internes': {
+      etablit: 'Que le compte est soldé au 31 décembre, ou la liste des virements de l’exercice sans contrepartie de même '
+        + 'montant.',
+      netablitPas: 'Le solde d’un compte que l’application ne tient pas — un compte d’épargne, un second compte bancaire : '
+        + 'son relevé se cite.',
+    },
+    'registre-valeurs': {
+      etablit: 'Que le solde du compte est la valeur des biens que le registre range à ce compte, acquis au plus tard le 31 '
+        + 'décembre, ouverture comprise ; la facture de chacun se propose à la citation.',
+      netablitPas: 'L’existence du bien ; une cession ou une mise au rebut, que l’application ne connaît pas ; un bien hors '
+        + 'du registre.',
+    },
+    'registre-amortissements': {
+      etablit: 'Que le solde du compte est le cumul des amortissements du registre au 31 décembre, ouverture comprise, '
+        + 'calculé comme les dotations : linéaire, au prorata depuis la mise en service.',
+      netablitPas: 'La durée et le mode d’amortissement retenus ; une dépréciation.',
+    },
+    echeancier: {
+      etablit: 'Que le solde du compte est le capital restant dû au 31 décembre selon l’échéancier de chaque emprunt, '
+        + 'calculé à mensualité constante.',
+      netablitPas: 'Le tableau d’amortissement de la banque — un différé, un taux variable, une renégociation : il se cite.',
+    },
+    'declarations-tva': {
+      etablit: 'Que le solde est ce que disent les déclarations de TVA enregistrées et leurs paiements rapprochés : au '
+        + `${plan.tva_a_decaisser} la TVA déclarée et non payée au 31 décembre, au ${plan.credit_tva_a_reporter} le crédit `
+        + `reporté, au ${plan.remboursement_tva_demande} le remboursement `
+        + 'demandé et non reçu ; les TVA collectée et déductible soldées quand toutes les périodes sont déclarées.',
+      netablitPas: 'Une déclaration déposée ailleurs et non enregistrée ; une TVA dont l’exigibilité ne tombe pas dans la '
+        + 'période de son écriture — une facture réglée après le 31 décembre, toute facture non réglée d’un dossier en '
+        + 'engagement —, qui laisse un solde aux TVA collectée et déductible ; la cohérence de la TVA collectée avec les '
+        + 'recettes.',
+    },
+    ouverture: {
+      etablit: 'Que l’ouverture du compte est celle que la validation de l’exercice précédent a écrite — ou celle de la '
+        + 'balance reprise —, qu’aucune écriture de l’exercice ne la modifie, et que l’exercice précédent se relit tel '
+        + 'qu’il a été validé.',
+      netablitPas: 'La justesse d’une balance reprise d’un autre logiciel.',
+    },
+    'decomposition-exploitant': {
+      etablit: 'De quoi le solde est fait : les prélèvements et les apports du relevé, la CSG-CRDS des cotisations, les '
+        + 'cotisations payées depuis le compte personnel, les forfaits kilométriques, les notes de frais, les parts '
+        + 'personnelles des ventilations.',
+      netablitPas: 'La vraisemblance des prélèvements au regard du résultat.',
+    },
+    aucune: {
+      etablit: 'Rien : l’application ne tient aucune preuve de ce solde.',
+      netablitPas: 'Le solde lui-même : un contrat, un acte, un relevé de compte courant se cite.',
+    },
+  }
 }
 
 function titreDe(type: TypeDePreuve, annee: number): string {
@@ -232,25 +233,33 @@ function titreDe(type: TypeDePreuve, annee: number): string {
   }
 }
 
-// Les six comptes de TVA que les déclarations et leurs paiements écrivent (lib/liquidationTva.ts). Un autre compte 44
-// n'a pas de preuve : rien dans l'application ne dit ce qu'il doit porter.
-export const COMPTES_DE_TVA_DECLARES: readonly string[] = [
-  COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS, COMPTE_TVA_A_DECAISSER,
-  COMPTE_CREDIT_TVA_A_REPORTER, COMPTE_REMBOURSEMENT_TVA_DEMANDE,
-]
+// Les six comptes de TVA que les déclarations et leurs paiements écrivent (lib/liquidationTva.ts), ceux du plan du
+// dossier. Un autre compte 44 n'a pas de preuve : rien dans l'application ne dit ce qu'il doit porter.
+export function comptesDeTvaDeclares(plan: PlanComptable): readonly string[] {
+  return [
+    plan.tva_collectee, plan.tva_deductible, plan.tva_immobilisations, plan.tva_a_decaisser,
+    plan.credit_tva_a_reporter, plan.remboursement_tva_demande,
+  ]
+}
 // Ceux que la liquidation SOLDE (collectée, déductible) : leur solde au 31 décembre dépend de l'exigibilité.
-const COMPTES_DE_TVA_SOLDES: readonly string[] = [COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS]
+function comptesDeTvaSoldes(plan: PlanComptable): readonly string[] {
+  return [plan.tva_collectee, plan.tva_deductible, plan.tva_immobilisations]
+}
 
-/** La preuve que l'application propose pour un compte de bilan (§ 3.6) ; `aucune` pour tout compte qu'elle ne prouve pas. */
-export function typeDePreuveDuCompte(compte: string): TypeDePreuve {
-  if (compte === COMPTE_BANQUE) return 'releve'
-  if (compte === COMPTE_VIREMENTS_INTERNES) return 'virements-internes'
+/**
+ * La preuve que l'application propose pour un compte de bilan (§ 3.6) ; `aucune` pour tout compte qu'elle ne prouve pas.
+ * Les comptes de rôle sont ceux du plan du dossier, sans valeur par défaut : sous un plan réglé, le compte par défaut
+ * n'aurait plus de preuve, et celui du dossier en recevrait une.
+ */
+export function typeDePreuveDuCompte(compte: string, plan: PlanComptable): TypeDePreuve {
+  if (compte === plan.banque) return 'releve'
+  if (compte === plan.virements_internes) return 'virements-internes'
   if (/^28/.test(compte)) return 'registre-amortissements'
   if (/^2[01]/.test(compte)) return 'registre-valeurs'
-  if (compte === COMPTE_EMPRUNT) return 'echeancier'
-  if (COMPTES_DE_TVA_DECLARES.includes(compte)) return 'declarations-tva'
-  if (compte === COMPTE_CAPITAL_INDIVIDUEL) return 'ouverture'
-  if (compte === COMPTE_EXPLOITANT) return 'decomposition-exploitant'
+  if (compte === plan.emprunt) return 'echeancier'
+  if (comptesDeTvaDeclares(plan).includes(compte)) return 'declarations-tva'
+  if (compte === plan.capital_individuel) return 'ouverture'
+  if (compte === plan.exploitant) return 'decomposition-exploitant'
   return 'aucune'
 }
 
@@ -320,7 +329,7 @@ function resumeDe(
 function conclure(
   type: TypeDePreuve,
   compte: string,
-  annee: number,
+  d: Pick<DonneesDesPreuves, 'annee' | 'modele'>,
   soldeCentimes: number,
   attenduCentimes: number | null,
   verdictForce: VerdictDePreuve | null,
@@ -329,11 +338,12 @@ function conclure(
   detail: LigneDeDetail[],
   sourcesProposees: SourceProposee[],
 ): PreuveProposee {
+  const annee = d.annee
   const titre = titreDe(type, annee)
   const ecartCentimes = attenduCentimes === null ? null : soldeCentimes - attenduCentimes
   const verdict: VerdictDePreuve = verdictForce ?? (ecartCentimes === 0 ? 'concorde' : 'ecart')
   return {
-    type, compte, annee, titre, ...TEXTES_DES_PREUVES[type], soldeCentimes, attenduCentimes, ecartCentimes, verdict,
+    type, compte, annee, titre, ...textesDesPreuves(d.modele.plan)[type], soldeCentimes, attenduCentimes, ecartCentimes, verdict,
     resume: resumeDe(titre, verdict, soldeCentimes, attenduCentimes, ecartCentimes, raison), faits, detail, sourcesProposees,
   }
 }
@@ -465,13 +475,13 @@ function preuveDuReleve(compte: string, soldeCentimes: number, d: DonneesDesPreu
         net, sansMouvement.length))
     }
   }
-  return conclure('releve', compte, d.annee, soldeCentimes, attendu, verdictForce, raison, faits, detail, sources)
+  return conclure('releve', compte, d, soldeCentimes, attendu, verdictForce, raison, faits, detail, sources)
 }
 
 // ── Les virements internes (580000) ───────────────────────────────────────────────────────────────────────────────
 
 function preuveDesVirementsInternes(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
-  if (soldeCentimes === 0) return conclure('virements-internes', compte, d.annee, soldeCentimes, 0, null, null, [], [], [])
+  if (soldeCentimes === 0) return conclure('virements-internes', compte, d, soldeCentimes, 0, null, null, [], [], [])
   // Un virement sort d'un compte et entre dans l'autre : au 580000, un débit et un crédit du même montant. On apparie
   // chaque montant dans l'ordre des dates ; ce qui reste n'a pas de contrepartie dans l'exercice.
   type Ligne = { date: string; centimes: number; reference: LigneDeDetail['reference'] }
@@ -503,7 +513,7 @@ function preuveDesVirementsInternes(compte: string, soldeCentimes: number, d: Do
   const faits = [fait('virements-sans-contrepartie',
     `${pluriel(restants.length, 'ligne', 'lignes')} du compte sans contrepartie de même montant dans l’exercice : le compte n’est pas soldé.`,
     restants.reduce((s, l) => s + l.centimes, 0), restants.length)]
-  return conclure('virements-internes', compte, d.annee, soldeCentimes, 0, null, null, faits, detail, [])
+  return conclure('virements-internes', compte, d, soldeCentimes, 0, null, null, faits, detail, [])
 }
 
 // ── Le registre des immobilisations (20…, 21…, 28…) ──────────────────────────────────────────────────────────────
@@ -571,7 +581,7 @@ function preuveDuRegistreValeurs(compte: string, soldeCentimes: number, d: Donne
         sansNature.reduce((s, b) => s + centimes(b.valeur), 0), sansNature.length))
     }
   }
-  return conclure('registre-valeurs', compte, d.annee, soldeCentimes, attendu, null, null, faits, detail, sources)
+  return conclure('registre-valeurs', compte, d, soldeCentimes, attendu, null, null, faits, detail, sources)
 }
 
 function preuveDuRegistreAmortissements(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
@@ -618,7 +628,7 @@ function preuveDuRegistreAmortissements(compte: string, soldeCentimes: number, d
         null, sansNature.length))
     }
   }
-  return conclure('registre-amortissements', compte, d.annee, soldeCentimes, attendu, null, null, faits, detail, [])
+  return conclure('registre-amortissements', compte, d, soldeCentimes, attendu, null, null, faits, detail, [])
 }
 
 // ── L'échéancier des emprunts (164000) ────────────────────────────────────────────────────────────────────────────
@@ -672,7 +682,7 @@ function preuveDeLEcheancier(compte: string, soldeCentimes: number, d: DonneesDe
         sommeEcritures(horsEmprunt), horsEmprunt.length))
     }
   }
-  return conclure('echeancier', compte, d.annee, soldeCentimes, attendu, null, null, faits, detail, [])
+  return conclure('echeancier', compte, d, soldeCentimes, attendu, null, null, faits, detail, [])
 }
 
 // ── Les déclarations de TVA (445…) ────────────────────────────────────────────────────────────────────────────────
@@ -697,7 +707,7 @@ function preuveDesDeclarations(compte: string, soldeCentimes: number, d: Donnees
   const nom = (x: DeclarationTva) => `Déclaration ${libellePeriode(x.periode_debut, x.periode_fin)}`
   const detail: LigneDeDetail[] = []
   let attendu = 0
-  if (compte === COMPTE_TVA_A_DECAISSER) {
+  if (compte === d.modele.plan.tva_a_decaisser) {
     // Au crédit : ce qui reste à payer au 31 décembre de chaque déclaration — la dernière période, payée en janvier.
     for (const x of declarees) {
       const paye = mouvementsDe(x).filter((l) => l.montant < 0).reduce((s, l) => s - centimes(l.montant), 0)
@@ -705,7 +715,7 @@ function preuveDesDeclarations(compte: string, soldeCentimes: number, d: Donnees
       attendu -= reste
       if (reste !== 0) detail.push({ libelle: `${nom(x)} : reste à payer au 31/12/${d.annee}`, montantCentimes: -reste, reference: { type: 'declaration', id: x.id } })
     }
-  } else if (compte === COMPTE_CREDIT_TVA_A_REPORTER) {
+  } else if (compte === d.modele.plan.credit_tva_a_reporter) {
     // Au débit : le crédit que reporte la dernière déclaration — chaque liquidation porte le crédit nouveau moins celui
     // qu'elle a reçu, et leur somme est le dernier reporté.
     const derniere = declarees[declarees.length - 1]
@@ -713,7 +723,7 @@ function preuveDesDeclarations(compte: string, soldeCentimes: number, d: Donnees
       attendu = centimes(creditReporte(derniere))
       if (attendu !== 0) detail.push({ libelle: `${nom(derniere)} : crédit reporté`, montantCentimes: attendu, reference: { type: 'declaration', id: derniere.id } })
     }
-  } else if (compte === COMPTE_REMBOURSEMENT_TVA_DEMANDE) {
+  } else if (compte === d.modele.plan.remboursement_tva_demande) {
     // Au débit : le remboursement demandé et non encore reçu au 31 décembre.
     for (const x of declarees) {
       const recu = mouvementsDe(x).filter((l) => l.montant > 0).reduce((s, l) => s + centimes(l.montant), 0)
@@ -755,13 +765,13 @@ function preuveDesDeclarations(compte: string, soldeCentimes: number, d: Donnees
       causes++
     }
     // Rien de ce qui précède ne l'explique : la cause qui reste possible sur une TVA que la liquidation solde.
-    if (causes === 0 && COMPTES_DE_TVA_SOLDES.includes(compte)) {
+    if (causes === 0 && comptesDeTvaSoldes(d.modele.plan).includes(compte)) {
       faits.push(fait('exigibilite-decalee',
         `Toutes les périodes de l’exercice sont déclarées et liquidées : le solde peut venir d’une TVA qui n’est pas exigible dans la période de son écriture — une facture réglée après le 31 décembre${d.modele.mode === 'engagement' ? ', ou toute facture non réglée d’un dossier en engagement' : ''} —, que la preuve ne calcule pas.`,
         null, null))
     }
   }
-  return conclure('declarations-tva', compte, d.annee, soldeCentimes, attendu, null, null, faits, detail, [])
+  return conclure('declarations-tva', compte, d, soldeCentimes, attendu, null, null, faits, detail, [])
 }
 
 // ── L'ouverture de l'exercice (101000) ────────────────────────────────────────────────────────────────────────────
@@ -782,7 +792,7 @@ function preuveDeLOuverture(compte: string, soldeCentimes: number, d: DonneesDes
   switch (etat.type) {
     case 'en-attente':
       faits.unshift(fait('ouverture-en-attente', `L’ouverture de l’exercice attend la validation de l’exercice ${etat.exercice}.`, null, null))
-      return conclure('ouverture', compte, d.annee, soldeCentimes, null, 'incomplete',
+      return conclure('ouverture', compte, d, soldeCentimes, null, 'incomplete',
         `l’ouverture attend la validation de l’exercice ${etat.exercice}.`, faits, detail, [])
     case 'reprise':
       // La balance reprise se désigne par son EMPREINTE, jamais par le nom de son fichier.
@@ -792,10 +802,10 @@ function preuveDeLOuverture(compte: string, soldeCentimes: number, d: DonneesDes
           montantCentimes: signe(a) * centimes(a.montant), reference: { type: 'a-nouveau', id: a.id },
         })
       }
-      return conclure('ouverture', compte, d.annee, soldeCentimes, attendu, null, null, faits, detail, [])
+      return conclure('ouverture', compte, d, soldeCentimes, attendu, null, null, faits, detail, [])
     case 'sans-objet':
       // Rien ne précède l'exercice : le compte n'a pas d'ouverture, et ne doit rien porter d'autre.
-      return conclure('ouverture', compte, d.annee, soldeCentimes, 0, null, null, faits, detail, [])
+      return conclure('ouverture', compte, d, soldeCentimes, 0, null, null, faits, detail, [])
     case 'report': {
       const valide = d.exercicesValides.find((e) => e.annee === d.annee - 1)
       // LE MAILLON : chaque solde reporté porte l'empreinte de l'exercice validé dont il vient (`valider_exercice`).
@@ -823,7 +833,7 @@ function preuveDeLOuverture(compte: string, soldeCentimes: number, d: DonneesDes
       const raison = !chaine ? 'le maillon avec l’exercice précédent est rompu.'
         : d.verificationPrecedent === false ? `l’empreinte de l’exercice ${d.annee - 1} est altérée.`
           : d.verificationPrecedent === null ? `l’empreinte de l’exercice ${d.annee - 1} reste à vérifier.` : null
-      return conclure('ouverture', compte, d.annee, soldeCentimes, attendu, verdict, raison, faits, detail, [])
+      return conclure('ouverture', compte, d, soldeCentimes, attendu, verdict, raison, faits, detail, [])
     }
   }
 }
@@ -881,7 +891,7 @@ function compositionDeLExploitant(compte: string, soldeCentimes: number, d: Donn
     const part = parts.get(p)
     return part === undefined ? [] : [{ libelle: `${LIBELLES_DES_PARTS[p]} (${part.nombre})`, montantCentimes: part.centimes, reference: null }]
   })
-  return conclure('decomposition-exploitant', compte, d.annee, soldeCentimes, null, 'decrit',
+  return conclure('decomposition-exploitant', compte, d, soldeCentimes, null, 'decrit',
     detail.length === 0 ? 'aucune écriture.' : `${pluriel(detail.length, 'source', 'sources')}, ${soldeEnMots(soldeCentimes)} en tout.`,
     [], detail, [])
 }
@@ -890,7 +900,7 @@ function compositionDeLExploitant(compte: string, soldeCentimes: number, d: Donn
 
 /** La preuve que l'application propose pour un compte de bilan, à son solde de fin d'exercice (en centimes). */
 export function preuveDuCompte(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
-  switch (typeDePreuveDuCompte(compte)) {
+  switch (typeDePreuveDuCompte(compte, d.modele.plan)) {
     case 'releve': return preuveDuReleve(compte, soldeCentimes, d)
     case 'virements-internes': return preuveDesVirementsInternes(compte, soldeCentimes, d)
     case 'registre-valeurs': return preuveDuRegistreValeurs(compte, soldeCentimes, d)
@@ -899,7 +909,7 @@ export function preuveDuCompte(compte: string, soldeCentimes: number, d: Donnees
     case 'declarations-tva': return preuveDesDeclarations(compte, soldeCentimes, d)
     case 'ouverture': return preuveDeLOuverture(compte, soldeCentimes, d)
     case 'decomposition-exploitant': return compositionDeLExploitant(compte, soldeCentimes, d)
-    case 'aucune': return conclure('aucune', compte, d.annee, soldeCentimes, null, 'sans-preuve', null, [], [], [])
+    case 'aucune': return conclure('aucune', compte, d, soldeCentimes, null, 'sans-preuve', null, [], [], [])
   }
 }
 

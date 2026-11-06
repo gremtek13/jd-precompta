@@ -7,7 +7,7 @@ import { useAnnee } from '../../context/AnneeContext'
 import { ContexteDossier } from '../../test/exercicesValides'
 import { DOSSIER, decision, citation, ecritureEquilibree, soldeReporte } from '../../test/revision'
 import { conclusion, noteDuJournal, revue } from '../../test/revisionRevue'
-import { TEXTES_DES_PREUVES } from '../../lib/revisionPreuves'
+import { textesDesPreuves } from '../../lib/revisionPreuves'
 import { PROGRAMME_DES_CYCLES } from '../../lib/revisionRevue'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { DossierTab } from '../../lib/ongletsDossier'
@@ -439,8 +439,8 @@ describe('RevisionTab — décider d’un solde', () => {
     dossier2025()
     rendre()
     await ouvrir('512000')
-    expect(within(volet()).getByText(TEXTES_DES_PREUVES.releve.etablit)).toBeDefined()
-    expect(within(volet()).getByText(TEXTES_DES_PREUVES.releve.netablitPas)).toBeDefined()
+    expect(within(volet()).getByText(textesDesPreuves(PLAN_PAR_DEFAUT).releve.etablit)).toBeDefined()
+    expect(within(volet()).getByText(textesDesPreuves(PLAN_PAR_DEFAUT).releve.netablitPas)).toBeDefined()
     expect(bouton('Justifier').disabled).toBe(true)
     expect(bouton('Accepter sur motif').disabled).toBe(true)
     expect(bouton('Signaler une anomalie').disabled).toBe(true)

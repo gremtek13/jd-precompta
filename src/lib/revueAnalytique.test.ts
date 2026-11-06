@@ -9,6 +9,7 @@ import {
   type ArgumentsExpliquerVariation, type ArgumentsFixerSeuil, type CleDeLigne, type ContexteDeLExplication, type ContexteDuSeuil,
   type DonneesDeLaRevueAnalytique, type ExercicePourLaRevue, type LigneDeLaRevue, type ReperesAnnuels,
 } from './revueAnalytique'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import type { RevisionExplication, RevisionSeuil } from './types'
 import { argumentsSql, codesSql, messagesSql, nombreDeValeurs, numerosSql } from '../test/raiseSql'
 import { DOSSIER, ecriture } from '../test/revision'
@@ -629,6 +630,7 @@ const donnees = (o: Partial<DonneesDeLaRevueAnalytique> = {}): DonneesDeLaRevueA
     explication({ id: 'x2', objet_type: 'poste_2035', objet: 'Achats', nature: 'depense', montant: 999.99, montant_precedent: 1200.5, source_precedent: 'validee' }),
     explication({ id: 'x3', objet_type: 'total_2035', objet: 'recettes', montant: 12500.1, montant_precedent: 10000, source_precedent: 'reference' }),
   ],
+  plan: PLAN_PAR_DEFAUT,
   ...o,
 })
 const resume = (l: LigneDeLaRevue) => [l.libelle, l.montantCentimes, l.precedentCentimes, l.source, l.variationCentimes, l.variationDixiemesDePourcent, l.auDelaDuSeuil, l.etat, l.causes.join('+')]
@@ -674,6 +676,16 @@ describe('le tableau de l’exercice face au précédent, calculé à la main', 
     expect(r.recettesParMois.mois[2]).toEqual({ mois: '2025-03', centimes: 1250010, ecritures: 2, precedentCentimes: 1000000, variationCentimes: 250010 })
     expect(r.recettesParMois.mois[6]).toEqual({ mois: '2025-07', centimes: 0, ecritures: 0, precedentCentimes: 0, variationCentimes: 0 })
     expect(r.recettesParMois.mois.filter((m) => m.ecritures === 0)).toHaveLength(11)
+  })
+
+  // Le compte des arrondis est celui du plan du dossier (ligne 43, étape PC3) : sous un plan réglé, le 758000 d'hier n'est
+  // plus l'arrondi de la CA3 et compte parmi les recettes, et l'arrondi au compte du plan n'y compte pas.
+  it('les recettes mois par mois écartent l’arrondi au compte du plan, et plus le compte par défaut', () => {
+    const sousLePlan = (ecritures: DonneesDeLaRevueAnalytique['ecritures']) =>
+      revueAnalytiqueDeLExercice(donnees({ plan: PLAN_DECALE, ecritures }), null).recettesParMois.mois[6]
+    expect(sousLePlan(ECRITURES_DU_CAS)).toEqual({ mois: '2025-07', centimes: 300, ecritures: 1, precedentCentimes: 0, variationCentimes: 300 })
+    const auCompteDuPlan = ECRITURES_DU_CAS.map((e) => (e.compte === '758000' ? { ...e, compte: PLAN_DECALE.arrondi_produit } : e))
+    expect(sousLePlan(auCompteDuPlan)).toEqual({ mois: '2025-07', centimes: 0, ecritures: 0, precedentCentimes: 0, variationCentimes: 0 })
   })
 
   it('les dépenses affectées sans pièce : affectées ou ventilées, de l’exercice, au-delà du seuil strictement', () => {

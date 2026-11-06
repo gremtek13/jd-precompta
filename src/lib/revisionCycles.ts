@@ -1,4 +1,5 @@
 import type { ModeComptable } from './types'
+import type { PlanComptable } from './planComptable'
 
 // LES CYCLES DE LA RÉVISION (ligne 41, étape R2 ; conception du 09/10/2026, HISTORIQUE.md, « LA RÉVISION DES COMPTES :
 // LA CONCEPTION », § 2.1, 2.2 et 4.2). Un module PUR : il range ; il ne lit rien et ne décide rien.
@@ -60,8 +61,11 @@ export const DESCRIPTION_DES_CYCLES: Readonly<Record<CycleRevision, DescriptionD
 
 // LE RANGEMENT D'UN COMPTE, par le plus long préfixe connu (§ 2.1). Les exceptions d'abord, plus longues que la règle
 // de leur classe :
-//   - 661100 et 616800, les intérêts et l'assurance d'un emprunt, vont avec l'emprunt (le 164) ;
-//   - 658000 et 758000, les arrondis de la CA3 (lib/liquidationTva.ts), vont à la TVA. Un compte ne dit pas QUI l'a
+//   - les comptes des intérêts et de l'assurance d'un emprunt (661100 et 616800 sous le plan par défaut), vont avec
+//     l'emprunt (le 164) ;
+//   - ceux des arrondis de la CA3 (658000 et 758000 sous le plan par défaut ; lib/liquidationTva.ts), vont à la TVA. Ces
+//     quatre-là sont les comptes de leur RÔLE dans le plan du dossier (ligne 43, étape PC3 ; conception, § 2.4) : sous un
+//     plan réglé, le compte par défaut retomberait dans sa classe. Un compte ne dit pas QUI l'a
 //     écrit : la catégorie commune qui écrit au 758000 (relevé en base le 09/10/2026) y va aussi. Seule la revue
 //     analytique (étape R5) lit les comptes de résultat ; elle séparera l'arrondi par sa SOURCE — l'écriture de
 //     liquidation porte sa déclaration —, pas par son compte ;
@@ -75,8 +79,7 @@ export const DESCRIPTION_DES_CYCLES: Readonly<Record<CycleRevision, DescriptionD
 // aucun compte sans cycle.
 // Une `Map`, pas un objet : on y cherche une tranche de n'importe quel compte, et un objet répondrait aussi de ce qu'il
 // hérite.
-const CYCLE_PAR_PREFIXE: ReadonlyMap<string, CycleRevision> = new Map(Object.entries<CycleRevision>({
-  '661100': 'emprunts', '616800': 'emprunts', '658000': 'tva', '758000': 'tva',
+const CYCLE_PAR_PREFIXE_HORS_PLAN: ReadonlyMap<string, CycleRevision> = new Map(Object.entries<CycleRevision>({
   '404': 'immobilisations', '467': 'capitaux', '681': 'immobilisations', '675': 'immobilisations',
   '775': 'immobilisations', '603': 'stocks', '713': 'stocks',
   '16': 'emprunts', '17': 'emprunts',
@@ -85,14 +88,32 @@ const CYCLE_PAR_PREFIXE: ReadonlyMap<string, CycleRevision> = new Map(Object.ent
   '1': 'capitaux', '2': 'immobilisations', '3': 'stocks', '4': 'tiers', '5': 'tresorerie', '6': 'depenses',
   '7': 'recettes',
 }))
-const LONGUEURS_DES_PREFIXES = [...new Set([...CYCLE_PAR_PREFIXE.keys()].map((p) => p.length))].sort((a, b) => b - a)
 
-/** Le cycle d'un compte, nul hors des classes 1 à 7. */
-export function cycleDuCompte(compte: string): CycleRevision | null {
+// Les quatre exceptions que le plan du dossier nomme, avant celles qui ne tiennent qu'au PCG : un compte de rôle a six
+// chiffres (`FORME_COMPTE_DE_ROLE`), le plus long des préfixes, et il est cherché le premier, comme hier.
+// Calculés une fois par plan : la révision range chaque compte de bilan, la revue chaque écriture de l'exercice.
+const PREFIXES_PAR_PLAN = new WeakMap<PlanComptable, { prefixes: ReadonlyMap<string, CycleRevision>; longueurs: number[] }>()
+function cycleParPrefixe(plan: PlanComptable): { prefixes: ReadonlyMap<string, CycleRevision>; longueurs: number[] } {
+  const connu = PREFIXES_PAR_PLAN.get(plan)
+  if (connu) return connu
+  const prefixes = new Map<string, CycleRevision>([
+    [plan.interets_emprunt, 'emprunts'], [plan.assurance_emprunt, 'emprunts'],
+    [plan.arrondi_charge, 'tva'], [plan.arrondi_produit, 'tva'],
+    ...CYCLE_PAR_PREFIXE_HORS_PLAN,
+  ])
+  const longueurs = [...new Set([...prefixes.keys()].map((p) => p.length))].sort((a, b) => b - a)
+  const calcule = { prefixes, longueurs }
+  PREFIXES_PAR_PLAN.set(plan, calcule)
+  return calcule
+}
+
+/** Le cycle d'un compte, nul hors des classes 1 à 7, sous le plan du dossier (sans valeur par défaut). */
+export function cycleDuCompte(compte: string, plan: PlanComptable): CycleRevision | null {
+  const { prefixes, longueurs } = cycleParPrefixe(plan)
   // Le plus long préfixe d'abord. Un compte plus court qu'un préfixe s'y tranche tout entier, et n'y trouve que lui-même,
   // comme à sa propre longueur ; hors des classes 1 à 7, aucun préfixe ne se trouve.
-  for (const longueur of LONGUEURS_DES_PREFIXES) {
-    const cycle = CYCLE_PAR_PREFIXE.get(compte.slice(0, longueur))
+  for (const longueur of longueurs) {
+    const cycle = prefixes.get(compte.slice(0, longueur))
     if (cycle !== undefined) return cycle
   }
   return null
@@ -114,10 +135,12 @@ export interface DossierPourLesCycles {
   comptesDeBilan: readonly string[]
   // Les cycles des contrôles qui ont quelque chose à dire (`controlesParCycle`).
   cyclesDesControles: readonly CycleRevision[]
+  // Le plan du dossier, qui range ses comptes de rôle (`cycleDuCompte`).
+  plan: PlanComptable
 }
 
 export function cyclesDuDossier(d: DossierPourLesCycles): CycleRevision[] {
-  const portes = new Set([...d.comptesDeBilan.map(cycleDuCompte), ...d.cyclesDesControles])
+  const portes = new Set([...d.comptesDeBilan.map((compte) => cycleDuCompte(compte, d.plan)), ...d.cyclesDesControles])
   return CYCLES_DE_REVISION.filter((cycle) => {
     if (portes.has(cycle)) return true
     switch (cycle) {

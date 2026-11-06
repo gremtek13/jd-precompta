@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CLES_DE_FAITS, instantaneDeLaPreuve, lireInstantaneDePreuve, octetsJsonb, preuveDuCompte, preuveSuffisanteSeule,
-  soldeEnMots, texteJsonb, TEXTES_DES_PREUVES, TYPES_DE_PREUVE, typeDePreuveDuCompte, type DonneesDesPreuves,
+  soldeEnMots, texteJsonb, textesDesPreuves, TYPES_DE_PREUVE, typeDePreuveDuCompte, type DonneesDesPreuves,
   type InstantaneDePreuve, type PreuveProposee,
 } from './revisionPreuves'
 import { TAILLE_MAX_PREUVE_APPLICATION } from './revisionSoldes'
@@ -9,7 +9,7 @@ import {
   aNouveau, bien, controleReleve, declaration, documentDivers, donnees, ecriture, ecritureEquilibree, emprunt, ligne,
   MARQUE_SAISIE, nature, piece, soldeReporte,
 } from '../test/revision'
-import { PLAN_PAR_DEFAUT } from './planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 
 const preuve = (compte: string, solde: number, d: Partial<DonneesDesPreuves>): PreuveProposee => preuveDuCompte(compte, solde, donnees(d))
 const cles = (p: PreuveProposee) => p.faits.map((f) => f.cle)
@@ -26,17 +26,45 @@ describe('la preuve de chaque compte (conception, § 3.6)', () => {
       ['275000', 'aucune'], ['455000', 'aucune'], ['467000', 'aucune'], ['165000', 'aucune'], ['401000', 'aucune'],
       ['444000', 'aucune'], ['512100', 'aucune'], ['221000', 'aucune'], ['231000', 'aucune'], ['120000', 'aucune'], ['290000', 'aucune'],
     ]
-    for (const [compte, type] of attendus) expect(typeDePreuveDuCompte(compte), compte).toBe(type)
+    for (const [compte, type] of attendus) expect(typeDePreuveDuCompte(compte, PLAN_PAR_DEFAUT), compte).toBe(type)
+  })
+
+  // LES COMPTES DE RÔLE DU PLAN DU DOSSIER (ligne 43, étape PC3) : sous un plan réglé, la preuve suit le compte du plan,
+  // et le compte par défaut n'en a plus ; le texte de la preuve nomme les comptes du plan.
+  it('range les comptes de rôle du plan du dossier, et plus ceux du plan par défaut', () => {
+    const roles = [
+      ['banque', 'releve'], ['virements_internes', 'virements-internes'], ['emprunt', 'echeancier'],
+      ['tva_collectee', 'declarations-tva'], ['tva_deductible', 'declarations-tva'], ['tva_immobilisations', 'declarations-tva'],
+      ['tva_a_decaisser', 'declarations-tva'], ['credit_tva_a_reporter', 'declarations-tva'],
+      ['remboursement_tva_demande', 'declarations-tva'], ['capital_individuel', 'ouverture'],
+      ['exploitant', 'decomposition-exploitant'],
+    ] as const
+    for (const [role, type] of roles) {
+      expect(typeDePreuveDuCompte(PLAN_DECALE[role], PLAN_DECALE), role).toBe(type)
+      expect(typeDePreuveDuCompte(PLAN_PAR_DEFAUT[role], PLAN_DECALE), role).toBe('aucune')
+    }
+    const textes = textesDesPreuves(PLAN_DECALE)
+    expect(textes.releve.etablit).toContain('comparé au 512100 ;')
+    expect(textes['declarations-tva'].etablit).toContain('au 445511 la TVA déclarée et non payée au 31 décembre, au 445671 le crédit reporté, au 445831 le remboursement demandé')
+    expect(JSON.stringify(textes)).not.toMatch(/512000|445510|445670|445830/)
+  })
+
+  it('sous le plan du dossier, la preuve des déclarations attend le reste à payer au compte du plan', () => {
+    const modele = { mode: 'tresorerie' as const, compteNotesDeFrais: PLAN_DECALE.exploitant, plan: PLAN_DECALE }
+    const main = declaration({ id: 'm', periode_debut: '2024-10-01', periode_fin: '2024-12-31', tva_declaree: 300, credit_anterieur: 50 })
+    const d = { declarationsTva: [main], modele }
+    expect(preuve(PLAN_DECALE.tva_a_decaisser, -25000, d)).toMatchObject({ type: 'declarations-tva', attenduCentimes: -25000, verdict: 'concorde' })
+    expect(preuve(PLAN_PAR_DEFAUT.tva_a_decaisser, -25000, d)).toMatchObject({ type: 'aucune', verdict: 'sans-preuve' })
   })
 
   it('dit ce que chaque preuve établit et n’établit pas', () => {
     for (const type of TYPES_DE_PREUVE) {
-      expect(TEXTES_DES_PREUVES[type].etablit.length, type).toBeGreaterThan(20)
-      expect(TEXTES_DES_PREUVES[type].netablitPas.length, type).toBeGreaterThan(20)
+      expect(textesDesPreuves(PLAN_PAR_DEFAUT)[type].etablit.length, type).toBeGreaterThan(20)
+      expect(textesDesPreuves(PLAN_PAR_DEFAUT)[type].netablitPas.length, type).toBeGreaterThan(20)
     }
     // Ce que la conception range dans « n'établit pas » se dit (§ 3.6) — et ce que la relecture y a ajouté.
-    expect(TEXTES_DES_PREUVES.releve.netablitPas).toContain('aucun compte bancaire ne manque')
-    expect(TEXTES_DES_PREUVES['declarations-tva'].netablitPas).toContain('exigibilité')
+    expect(textesDesPreuves(PLAN_PAR_DEFAUT).releve.netablitPas).toContain('aucun compte bancaire ne manque')
+    expect(textesDesPreuves(PLAN_PAR_DEFAUT)['declarations-tva'].netablitPas).toContain('exigibilité')
   })
 
   it('un compte sans preuve : rien d’attendu, et le dire', () => {
@@ -1040,7 +1068,7 @@ describe('l’instantané d’une preuve, gardé avec la décision', () => {
       expect(instantane).toMatchObject({ type: p.type, compte: p.compte, annee: p.annee, verdict: p.verdict, soldeCentimes: p.soldeCentimes, resume: p.resume })
       const relu = lireInstantaneDePreuve(JSON.parse(JSON.stringify(instantane)))
       expect(relu, p.type).toEqual(instantane)
-      expect(relu?.etablit).toBe(TEXTES_DES_PREUVES[p.type].etablit)
+      expect(relu?.etablit).toBe(textesDesPreuves(PLAN_PAR_DEFAUT)[p.type].etablit)
     }
   })
 
