@@ -305,13 +305,14 @@ describe('les essais qui cochent « Ventes »', () => {
     // envoiDesDevis.sql depuis l'étape P6c1 : le client porte « Ventes » sur A, qu'il insère basculé. acomptesDesDevis.sql depuis
     // l'étape P5b2 : de même, sur son dossier A. traceDesDroits.sql depuis l'étape P1-trace : le chef coche « Ventes » sur un
     // accès de DT, un dossier jetable qu'il insère basculé. relancesDesFactures.sql depuis l'étape C5 : le client porte « Ventes »
-    // sur A, inséré basculé.
+    // sur A, inséré basculé. situationsPubliees.sql depuis l'étape C4a : sa forme à cinq passe des nuls, que le motif prend
+    // pour une case ; ses deux dossiers jetables sont insérés basculés.
     expect(ecrivent).toEqual([
       'acomptesDesDevis.sql', 'articles.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'caisse.sql', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
       'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'envoiDesDevis.sql', 'etatFactureElectronique.sql',
       'exemplairesDesFactures.sql', 'factures.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
-      'mentionsFigees.sql', 'parametresFacturation.sql', 'piecesJointesEcartees.sql', 'relancesDesFactures.sql', 'rls.sql', 'simulationDesVentesFacturees.sql',
-      'traceDesDroits.sql', 'ventesClient.sql', 'ventesFacturees.sql',
+      'mentionsFigees.sql', 'parametresFacturation.sql', 'piecesJointesEcartees.sql', 'relancesDesFactures.sql', 'rls.sql',
+      'simulationDesVentesFacturees.sql', 'situationsPubliees.sql', 'traceDesDroits.sql', 'ventesClient.sql', 'ventesFacturees.sql',
     ])
     for (const n of ecrivent) expect(BASCULE.some((m) => m.test(lire(`supabase/essais/${n}`))), n).toBe(true)
   })

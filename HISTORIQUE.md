@@ -48849,3 +48849,19 @@ relances (policy élargie). Réplique (production à 175 migrations) : sans ell
 sur 4, rien resté ; le retour rend le texte d'hier ; rls.sql identique avant et après (les fautes du bloc 3bis,
 `porte_un_iban` non accordée sur la réplique, préexistent) ; envoiDesDevis.sql admet le motif élargi. Ordre : migration,
 déploiement, drapeau.
+
+### 06/11/2026 — LES SITUATIONS PUBLIÉES, EN BASE (C4A) (PRÉPARÉE, PAS APPLIQUÉE)
+
+La migration `situations_publiees` (supabase/preparees/20261106150000 ; retour en 20261106150100, à coller : il retire)
+pose la case `memberships.droit_comptes` (fausse ; `client_du_dossier` connaît « comptes », `droits_sur_le_dossier` rend
+`comptes`), `changer_droits_acces` à CINQ paramètres, seule à écrire (les formes à trois et à quatre l'appellent : B1
+ajoutera la forme à huit de même, par des `create or replace`), et `situations_publiees`, une ligne par geste —
+publication ou retrait —, figée : la garde refuse toute écriture hors de `publier_situation`, `retirer_situation` et la
+restauration, toute mise à jour, toute suppression hors du dossier. Le statut se lit d'`exercices_valides` ; la base
+vérifie la forme du contenu (centimes entiers, chaque total la somme de ses postes, N−1 sur la même période). Le client
+« Comptes » ne lit que la situation en cours. Sa garde de tête la refuse si la trace des droits (P1-trace) est en base :
+la seconde des deux appliquée porte la quatrième case de la trace. Sur la réplique (175 migrations) : aller, retour,
+aller identiques ; `situationsPubliees.sql` 33 verdicts, 0 en faute ; `droitsAcces.sql` 115, 0 en faute avant et après
+(adapté : sept définitions, le refus nommant « Comptes ») ; `rls.sql` 99 lignes, 0 en faute, 75 mutations sur 75 (bloc
+SP). Le module `lib/situationsPubliees.ts` compose le contenu ; `SITUATIONS_PUBLIEES_EXPORTEES` baissé, la table au plan
+derrière lui (restauration.sql, un neuvième bloc). Question C4A-Q1 (la comparaison d'un exercice validé). Écrans : C4b.

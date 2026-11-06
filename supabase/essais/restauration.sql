@@ -589,6 +589,26 @@ begin
   end if;
 end $$;
 
+-- ══ Les situations publiées (espace client, étape C4a) ══ Au plan du code quand `SITUATIONS_PUBLIEES_EXPORTEES` est levé —
+-- c'est-à-dire quand sa migration est en base : le script l'y met dès que sa table existe, juste après `memberships` —
+-- joué après le bloc de la trace des droits, il la précède donc (ORDRE_RESTAURATION_PREVU) ; les tables qui suivent
+-- reculent d'un rang ; son chemin ; sa vague (`remplace_id` : une publication en remplace une, un retrait en
+-- retire une). Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc
+-- au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.situations_publiees') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'memberships';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'situations_publiees');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('situations_publiees','direct',null,null);
+    insert into essai_restauration._vagues (table_nom, colonne) values ('situations_publiees','remplace_id');
+  end if;
+end $$;
+
 -- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
 -- migrations sont en base : le script les y met dès que leurs tables existent, juste après `documents_divers` — avant le
 -- journal des e-mails, qui cite un devis envoyé (`emails_envoyes.devis_id`, étape P6c1, migration `envoi_des_devis` ;

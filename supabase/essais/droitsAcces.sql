@@ -85,6 +85,9 @@ declare
   -- franchise, DR redevable, DN à préciser — et l'accès d'essai du client à chacun, sans droit, créés dans la
   -- sous-transaction de chaque contrôle qui s'en sert, annulés avec elle.
   c10 boolean := to_regprocedure('public.caisse_du_client(uuid, integer)') is not null;
+  -- Avec la migration de l'étape C4a (`situations_publiees`), la forme à cinq écrit les droits, et son refus « aucun droit »
+  -- nomme « Comptes » — pour les trois formes, qui l'appellent.
+  c4a boolean := to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean)') is not null;
   -- La trace des droits (étape P1-trace ; migration `trace_des_droits`, PRÉPARÉE) : son déclencheur s'ajoute à ceux que le
   -- contrôle 83 lit, APRÈS les deux gardes (l'ordre des noms) ; ce qu'il trace se joue dans `traceDesDroits.sql`.
   trace boolean := to_regclass('public.trace_des_droits') is not null;
@@ -98,7 +101,9 @@ declare
   acces_dn uuid := 'c10d0000-0000-4000-8000-0000000000a4';
   refus_caisse text := 'Le droit « Caisse » suppose un dossier exonéré de TVA ou en franchise en base, ce que le statut de ce dossier ne dit pas : sa caisse reste tenue par le cabinet.';
   refus_statut text := 'Un accès de ce dossier porte la case « Caisse », qui suppose un dossier exonéré de TVA ou en franchise en base : décoche-la d''abord.';
-  aucun_droit_c10 text := 'Aucun droit à changer : précise « Ventes », « Banque » ou « Caisse ».';
+  aucun_droit_c10 text := case when to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean)') is not null
+    then 'Aucun droit à changer : précise « Ventes », « Banque », « Caisse » ou « Comptes ».'
+    else 'Aucun droit à changer : précise « Ventes », « Banque » ou « Caisse ».' end;
   statuts_avant text;
   t record; n int; m int; sig text; code_recu text; message text; obs text; avant jsonb; apres jsonb; rendu jsonb;
   verdicts jsonb := '[]'::jsonb;
@@ -163,9 +168,9 @@ begin
     into n, m
     from pg_proc p where p.pronamespace = 'public'::regnamespace
      and p.proname in ('client_du_dossier', 'gere_les_ventes', 'gere_la_banque', 'droits_sur_le_dossier', 'changer_droits_acces');
-  -- Avec la migration de l'étape C10, `changer_droits_acces` a deux formes : six définitions.
+  -- Avec la migration de l'étape C10, `changer_droits_acces` a deux formes : six définitions ; avec celle de C4a, trois : sept.
   verdicts := verdicts || jsonb_build_object('controle', '3. les cinq fonctions : SECURITY DEFINER, search_path fixé ; les quatre lectures stables',
-    'observe', n || ' conforme(s) sur ' || m, 'ok', n = case when c10 then 6 else 5 end and m = n);
+    'observe', n || ' conforme(s) sur ' || m, 'ok', n = case when c4a then 7 when c10 then 6 else 5 end and m = n);
 
   select string_agg(p.proname, ', ' order by p.proname) filter (where has_function_privilege('anon', p.oid, 'execute')
            or exists (select 1 from aclexplode(p.proacl) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
@@ -176,7 +181,7 @@ begin
     from pg_proc p where p.pronamespace = 'public'::regnamespace
      and p.proname in ('client_du_dossier', 'gere_les_ventes', 'gere_la_banque', 'droits_sur_le_dossier', 'changer_droits_acces');
   verdicts := verdicts || jsonb_build_object('controle', '4. aucune des cinq ne s''exécute par anon ni PUBLIC ; authenticated et service_role les exécutent',
-    'observe', n || ' fonction(s), en faute : ' || coalesce(obs, 'aucune'), 'ok', n = case when c10 then 6 else 5 end and obs is null);
+    'observe', n || ' fonction(s), en faute : ' || coalesce(obs, 'aucune'), 'ok', n = case when c4a then 7 when c10 then 6 else 5 end and obs is null);
 
   -- ══ 6. Le client lit ses seules lignes ═════════════════════════════════════════════════════════════════════
   -- L'accès d'une autre personne à SON dossier (le compte du chef, le temps du bloc) ne lui est pas rendu ; ses deux
