@@ -1,17 +1,20 @@
-import { useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import { useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import { extraireErreurFonction } from '../lib/invokeErreur'
 import { messageErreur } from '../lib/messageErreur'
 
 interface Props {
   dossierId: string
-  type: 'facture' | 'relance_pieces'
+  // « relance_facture » : la relance d'une facture en retard (étape C5), sous `RELANCES_EXPORTEES`.
+  type: 'facture' | 'relance_pieces' | 'relance_facture'
   // Adresse déjà connue (memberships.email pour une relance, factures_emises.tiers_email pour un
   // renvoi) — pré-remplie mais toujours modifiable, un cabinet peut vouloir viser une autre adresse.
   destinataireInitial?: string | null
   factureId?: string
   titre: string
   description: string
+  // Ce que l'écran montre avant le formulaire (la relance : le retard et les pénalités calculées).
+  avant?: ReactNode
   onClose: () => void
   onSent?: () => void
 }
@@ -19,7 +22,7 @@ interface Props {
 // Modale générique d'envoi d'e-mail (voir supabase/functions/send-email) — réutilisée pour les deux
 // modèles existants (facture, relance de pièces) plutôt que dupliquée : seuls le titre/la description
 // et les paramètres passés à la fonction changent d'un usage à l'autre.
-export default function EnvoyerEmailModal({ dossierId, type, destinataireInitial, factureId, titre, description, onClose, onSent }: Props) {
+export default function EnvoyerEmailModal({ dossierId, type, destinataireInitial, factureId, titre, description, avant, onClose, onSent }: Props) {
   const [destinataire, setDestinataire] = useState(destinataireInitial ?? '')
   const [message, setMessage] = useState('')
   const [envoi, setEnvoi] = useState(false)
@@ -81,6 +84,7 @@ export default function EnvoyerEmailModal({ dossierId, type, destinataireInitial
         ) : (
           <form onSubmit={envoyer}>
             <p className="muted" style={{ marginTop: -8 }}>{description}</p>
+            {avant}
             <div className="field">
               <label htmlFor="email-destinataire">Adresse du destinataire</label>
               <input id="email-destinataire" type="email" required value={destinataire} onChange={(e) => setDestinataire(e.target.value)} />

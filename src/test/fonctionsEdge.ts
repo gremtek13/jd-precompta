@@ -91,6 +91,19 @@ export function acomptesBaisses(source: string): string {
   return muter(source, [[ACOMPTES_LEVES, ACOMPTES_BAISSES]])
 }
 
+/** La constante de send-email qui admet la relance d'une facture (étape C5), telle qu'elle est servie : baissée. */
+export const RELANCES_BAISSEES = 'const RELANCES_EN_BASE = false'
+/** La même, levée : la source du jour où la migration `relances_des_factures` est en base. */
+export const RELANCES_LEVEES = 'const RELANCES_EN_BASE = true'
+
+/**
+ * La source de send-email telle qu'elle se servira APRÈS la migration `relances_des_factures` : `RELANCES_EN_BASE` levée,
+ * en mémoire, rien d'autre de changé. Une occurrence exactement de la constante baissée, sinon `muter` lève.
+ */
+export function relancesLevees(source: string): string {
+  return muter(source, [[RELANCES_BAISSEES, RELANCES_LEVEES]])
+}
+
 /**
  * Le `verify_jwt` d'une fonction, tel que `supabase/config.toml` le fixe — la valeur que tout déploiement repasse. Une
  * fonction sans section lève : la passerelle la traiterait à `true`, et le harnais ne devine pas.

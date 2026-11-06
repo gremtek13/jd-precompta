@@ -4748,6 +4748,122 @@ function corpsDuDevisEnvoye(_r: Resultat, m: Monde): string[] {
   return fautes
 }
 
+// LA RELANCE D'UNE FACTURE EN RETARD (étape C5). La source servie porte `RELANCES_EN_BASE` baissée : la relance y est
+// refusée comme un type inconnu, rien de lu ni d'envoyé (le scénario du contrat ci-dessous). Ses contrats, constante levée
+// en mémoire (`relancesLevees`), sont `SCENARIOS_RELANCES`, que joue relancesHttp.test.ts. L'horloge de la fonction au
+// 06/11/2026 à 11 h de Paris ; l'échéance de la facture du harnais, le 15/10/2026 : en retard de vingt-deux jours.
+const RELANCE_FACTURE = { ...RELANCE, type: 'relance_facture', factureId: FACTURE }
+const REFUS_D_UN_TYPE_INCONNU = "dossierId, type ('facture', 'devis' ou 'relance_pieces') et destinataire sont requis."
+const ENVOI_RELANCE_JOURNALISE = ['Resend envoyer', 'écriture insert emails_envoyes']
+const horlogeAu = (instant: string) => (m: Monde) => { m.decalageHorloge = Date.parse(instant) - Date.now() }
+const factureEnRetard = (m: Monde, valeurs: Record<string, unknown> = {}) => {
+  resendQuiGarde(m); factureValidee(m, { date_echeance: '2026-10-15', ...valeurs }); horlogeAu('2026-11-06T10:00:00.000Z')(m)
+}
+
+/** Le journal d'une relance : une ligne « relance_facture » qui cite SA facture, et la facture intacte. */
+function relanceJournalisee(_r: Resultat, m: Monde): string[] {
+  const journal = lignes(m, 'emails_envoyes').filter((e) => e.type === 'relance_facture')
+  if (journal.length !== 1) return [`${journal.length} ligne(s) « relance_facture » au journal`]
+  const fautes: string[] = []
+  if (journal[0].facture_id !== FACTURE) fautes.push(`le journal cite la facture ${String(journal[0].facture_id)}`)
+  if (journal[0].objet !== 'Relance — facture F2026-0001 — Atelier Démo Conseil') fautes.push(`objet journalisé : ${String(journal[0].objet)}`)
+  if (m.journal.some((e) => e.genre === 'ecriture' && e.table === 'factures_emises')) fautes.push('la facture a été écrite')
+  return fautes
+}
+
+/** Le corps envoyé : le numéro, le TTC et l'échéance ; ni les lignes, ni l'adresse du client, ni une pénalité. */
+function corpsDeLaRelance(_r: Resultat, m: Monde): string[] {
+  const envois = (m.notes.envois ?? []) as { subject?: unknown; html?: unknown; to?: unknown }[]
+  if (envois.length !== 1) return [`${envois.length} envoi(s)`]
+  const corps = String(envois[0].html)
+  const ttc = lignes(m, 'factures_emises')[0]?.montant_ttc as number
+  const fautes: string[] = []
+  const montant = ttc.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
+  for (const attendu of ['F2026-0001', montant, 'arrivée à échéance le 15/10/2026', 'Atelier Démo Conseil']) {
+    if (!corps.includes(attendu)) fautes.push(`le corps ne dit pas « ${attendu} »`)
+  }
+  for (const interdit of ['Désignation', 'énalit', 'ndemnit']) if (corps.includes(interdit)) fautes.push(`le corps porte « ${interdit} »`)
+  if (envois[0].to !== RELANCE.destinataire) fautes.push(`destinataire : ${String(envois[0].to)}`)
+  return fautes
+}
+
+const relanceRefusee = (nom: string, statut: number, preparer: (m: Monde) => void, corps: unknown = RELANCE_FACTURE): Scenario => ({
+  nom, preparer, requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+  attendu: { statut, refusEnFrancais: true, aucuneDepense: true },
+})
+
+export const SCENARIOS_RELANCES: readonly Scenario[] = [
+  ...matriceDesDroits({ relance_facture: QUI_PEUT_QUOI_ATTENDU['send-email'].relance_facture }, {
+    relance_facture: {
+      corps: RELANCE_FACTURE, preparer: (m) => factureEnRetard(m),
+      admis: { statut: 200, depenses: ENVOI_RELANCE_JOURNALISE, verifier: (r, m) => [...relanceJournalisee(r, m), ...corpsDeLaRelance(r, m)] },
+    },
+  }),
+  droitsEnPanne(RELANCE_FACTURE, (m) => factureEnRetard(m)),
+  {
+    nom: 'relance — client « Ventes » : le 30e e-mail du jour part, journalisé à son nom avec sa facture',
+    preparer: (m) => { factureEnRetard(m); accesDuClient({ ventes: true })(m); dejaEnvoyes(29, '2026-11-06T07:00:00.000Z', '2026-11-06T10:00:00.000Z')(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: RELANCE_FACTURE }),
+    attendu: {
+      statut: 200, depenses: ENVOI_RELANCE_JOURNALISE,
+      verifier: (r, m) => [
+        ...relanceJournalisee(r, m),
+        ...(lignes(m, 'emails_envoyes').some((e) => e.type === 'relance_facture' && e.envoye_par === PERSONNES.client.id) ? [] : ['relance non journalisée au nom du client']),
+      ],
+    },
+  },
+  {
+    ...relanceRefusee('relance — client « Ventes » : le 31e e-mail du jour est refusé (429), rien d’envoyé', 429, (m) => {
+      factureEnRetard(m); accesDuClient({ ventes: true })(m); dejaEnvoyes(30, '2026-11-06T07:00:00.000Z', '2026-11-06T10:00:00.000Z')(m)
+    }),
+    requete: (s) => requeteDe(s, { personne: 'client', corps: RELANCE_FACTURE }),
+  },
+  {
+    nom: 'relance — le cabinet n’est pas plafonné : trente e-mails déjà partis, sa relance part',
+    preparer: (m) => { factureEnRetard(m); dejaEnvoyes(30, '2026-11-06T07:00:00.000Z', '2026-11-06T10:00:00.000Z')(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_FACTURE }),
+    attendu: { statut: 200, depenses: ENVOI_RELANCE_JOURNALISE, verifier: relanceJournalisee },
+  },
+  relanceRefusee('relance — le jour de l’échéance, la facture n’est pas en retard : 400, rien d’envoyé', 400,
+    (m) => factureEnRetard(m, { date_echeance: '2026-11-06' })),
+  {
+    nom: 'relance — 00 h 30 à Paris le 06/11, encore le 05/11 en UTC : une échéance au 05/11 est en retard',
+    preparer: (m) => { factureEnRetard(m, { date_echeance: '2026-11-05' }); horlogeAu('2026-11-05T23:30:00.000Z')(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_FACTURE }),
+    attendu: { statut: 200, depenses: ENVOI_RELANCE_JOURNALISE },
+  },
+  relanceRefusee('relance — 23 h 30 à Paris le 05/11 : une échéance au 05/11 n’est pas encore en retard', 400, (m) => {
+    factureEnRetard(m, { date_echeance: '2026-11-05' }); horlogeAu('2026-11-05T22:30:00.000Z')(m)
+  }),
+  relanceRefusee('relance — une facture sans échéance : 400', 400, (m) => factureEnRetard(m, { date_echeance: null })),
+  relanceRefusee('relance — un brouillon : 400', 400, (m) => factureEnRetard(m, { statut: 'brouillon', numero: null })),
+  relanceRefusee('relance — un avoir : 400', 400, (m) => factureEnRetard(m, { type: 'avoir' })),
+  {
+    ...relanceRefusee('relance — la facture d’un autre dossier n’existe pas pour cet appel : 404', 404,
+      (m) => factureEnRetard(m, { dossier_id: ID.dossierVoisin })),
+    attendu: {
+      statut: 404, refusEnFrancais: true, aucuneDepense: true,
+      verifier: (r) => (corpsDe(r).error === 'Facture introuvable.' ? [] : [r.texte]),
+    },
+  },
+  relanceRefusee('relance — la lecture de la facture en panne : 503 qui le dit, rien d’envoyé', 503, (m) => {
+    factureEnRetard(m); m.pannes.push({ table: 'factures_emises', operation: 'select', erreur: { message: 'délai dépassé' } })
+  }),
+  ...([
+    ['absent', { ...RELANCE, type: 'relance_facture' }],
+    ['qui n’est pas un UUID', { ...RELANCE_FACTURE, factureId: 'pas-un-uuid' }],
+    ['reçu en nombre', { ...RELANCE_FACTURE, factureId: 42 }],
+  ] as const).map(([forme, corps]): Scenario => ({
+    nom: `relance — factureId ${forme} : 400, rien de lu ni d’envoyé`,
+    preparer: (m) => factureEnRetard(m),
+    requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+    attendu: {
+      statut: 400, refusEnFrancais: true, aucuneDepense: true,
+      verifier: (_r, m) => [...jamais(m, 'lecture', 'une lecture'), ...jamais(m, 'rpc', 'un appel à la base')],
+    },
+  })),
+]
+
 const SEND_EMAIL: ContratFonction = {
   slug: 'send-email',
   navigateur: true,
@@ -4788,11 +4904,25 @@ const SEND_EMAIL: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...RELANCE, destinataire: 'pas une adresse' } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
-    ...matriceDesDroits(QUI_PEUT_QUOI_ATTENDU['send-email'], {
+    // La relance d'une facture (étape C5) a ses contrats à part, constante levée (`SCENARIOS_RELANCES`) ; servie, la
+    // constante est baissée, et la relance se refuse comme un type inconnu (le scénario qui suit la matrice).
+    ...matriceDesDroits(Object.fromEntries(Object.entries(QUI_PEUT_QUOI_ATTENDU['send-email']).filter(([action]) => action !== 'relance_facture')), {
       facture: { corps: ENVOI_FACTURE, preparer: factureAEnvoyer, admis: { statut: 200, depenses: ENVOI_JOURNALISE } },
       devis: { corps: ENVOI_DEVIS, preparer: devisAEnvoyer, admis: { statut: 200, depenses: ENVOI_DEVIS_JOURNALISE, verifier: devisJournalise } },
       relance_pieces: { corps: RELANCE, preparer: resendQuiEnvoie, admis: { statut: 200, depenses: ['Resend envoyer', 'écriture insert emails_envoyes'] } },
     }),
+    {
+      nom: 'la relance d’une facture, constante baissée (avant sa migration) : le refus d’un type inconnu, mot pour mot, rien de lu ni d’envoyé',
+      preparer: (m) => factureEnRetard(m),
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_FACTURE }),
+      attendu: {
+        statut: 400, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (r, m) => [
+          ...jamais(m, 'lecture', 'une lecture'), ...jamais(m, 'rpc', 'un appel à la base'),
+          ...(corpsDe(r).error === REFUS_D_UN_TYPE_INCONNU ? [] : [r.texte]),
+        ],
+      },
+    },
     // L'ENVOI D'UN DEVIS (étape P6c2) : un devis émis du dossier de la requête, et lui seul ; ce que son corps montre.
     {
       nom: 'devis — le cabinet envoie un devis émis : ni ses notes, ni l’adresse du client, ni la réponse dans le corps',

@@ -48833,3 +48833,19 @@ ventes facturées, que `ecritureDuMouvement` écrit du libellé de la banque, re
 tenu : ni l'onglet Écritures ni le rattachement du FEC ne lisent le libellé. Le tirage de 1 500 dossiers se paie dans un
 `beforeAll`. Quatre mutations mordent (le libellé de la banque, une entreprise suffit, le nom sans la règle, l'état sur
 un libellé).
+
+### 06/11/2026 — RELANCER SES CLIENTS (C5, LIGNE 51.5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+MEG3-Q3 « oui ». `lib/relances.ts` (pur) : une facture validée est en retard le lendemain de son échéance, au jour de
+Paris, s'il en reste dû (ni encaissé ni crédité) ; « Relancée le … » se DÉDUIT du journal des e-mails. Les pénalités se
+calculent sur le TTC dû, 365 jours, arrondies une fois : entre entreprises (C. com. L441-10, II), le taux figé s'il se
+lit sans deviner (un seul pourcentage), sinon la BCE de chaque semestre + 10 points ; un organisme public, la BCE du
+semestre où le retard commence + 8 points (C. commande publique R2192-31, lu sur Légifrance) ; 40 € (D441-5, D2192-35) ;
+rien pour un particulier, l'écran dit pourquoi. Les semestres 2023-S1 à 2026-S2 relus sur la page de la BCE ; 2027-S1
+manque, et le calcul le demande (`taux_manquant`). `send-email` sait « relance_facture » (numéro, TTC, échéance ;
+« Ventes » ; le plafond de trente) sous `RELANCES_EN_BASE` baissée : avant la migration, sa ligne de journal serait
+refusée APRÈS l'envoi, hors du plafond. La migration admet le type et étend la lecture du client « Ventes » à ses
+relances (policy élargie). Réplique (production à 175 migrations) : sans elle EN ATTENTE ; avec, 0 en faute, 4 mutations
+sur 4, rien resté ; le retour rend le texte d'hier ; rls.sql identique avant et après (les fautes du bloc 3bis,
+`porte_un_iban` non accordée sur la réplique, préexistent) ; envoiDesDevis.sql admet le motif élargi. Ordre : migration,
+déploiement, drapeau.
