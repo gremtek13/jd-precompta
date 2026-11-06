@@ -1,13 +1,21 @@
-import { useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { formatMoney } from '../../lib/format'
 import { LIBELLE_NOTES_DEVIS, LIBELLE_NOTES_DEVIS_CLIENT } from '../../lib/droitsAcces'
 import { pourLEspace, type EspaceVentes } from '../../lib/espaceVentes'
 import { livraisonOuverte, sirenOuvert, versEntreprise, type SaisieMentions } from '../../lib/mentionsFacture'
 import {
-  ligneDevisVide, lignesDeLaSaisie, refusDeLaSaisieDevis, totauxDeLaSaisie, type CibleDevis, type EmissionAJuger, type LigneDevisSaisie,
-  type SaisieDevis,
+  DEVIS_CITENT_UN_CONTACT, ligneDevisVide, lignesDeLaSaisie, refusDeLaSaisieDevis, totauxDeLaSaisie, type CibleDevis, type EmissionAJuger,
+  type LigneDevisSaisie, type SaisieDevis,
 } from '../../lib/devis'
-import type { StatutTva } from '../../lib/types'
+import { lireLesContacts, type LectureDesContacts } from '../../lib/contactsLecture'
+import {
+  ceQueLeChoixDeContactRemplace, choixDeContact, clientEnSaisie, confirmationDuChoixDeContact, contactDeLaProvenance,
+  mentionsAvecLeClient,
+} from '../../lib/contactsFacture'
+import { messageErreur } from '../../lib/messageErreur'
+import type { ArticleExoneration, Contact, StatutTva } from '../../lib/types'
+import ContactChoixModal from './ContactChoixModal'
+import ConfirmationArticle from './ConfirmationArticle'
 
 // LE FORMULAIRE D'UN BROUILLON DE DEVIS (espace client, étape P6a1) : le client et ses mentions, la date, la validité proposée
 // à un mois (modifiable), l'exécution prévue, les lignes, les conditions, les mentions légales et les notes. Il ne fait que
@@ -20,11 +28,19 @@ import type { StatutTva } from '../../lib/types'
 // LES REFUS SE DISENT AVANT LE CLIC, sur la saisie TELLE QU'ELLE PART (`refusDeLaSaisieDevis`, dans l'ordre de la base et sous
 // ses mots, puis les mentions) : « Enregistrer le brouillon » grisé sous le refus du brouillon, « Émettre » sous celui de
 // l'émission — qui en ajoute trois (pas daté de l'avenir, un total positif, l'émetteur nommé).
+//
+// « CHOISIR UN CLIENT » (sous `DEVIS_CITENT_UN_CONTACT`, comme le formulaire d'une facture, lib/contactsFacture.ts) : les
+// contacts lus EN ENTIER à l'ouverture ; le choix remplit le client ENTIER — un champ que le contact n'a pas est vidé —, et son
+// e-mail, que le devis porte ; un client déjà saisi qui diffère ne se remplace qu'après une confirmation qui nomme ce qui part.
+// Le devis garde sa COPIE du client, et le contact en provenance (`contact_id`) ; la base refuse un contact d'un autre dossier
+// (16 bis), dit ici avant le clic sur la liste lue — et, sans elle, une saisie qui nomme un contact ne part pas.
 
 type Props = {
   espace: EspaceVentes
   dossierId: string
   statutTva: StatutTva | null
+  // Pour « Choisir un client » : la règle des soins écarte des contacts (ContactChoixModal).
+  articleExoneration: ArticleExoneration | null
   // Le devis visé : un neuf, ou le brouillon tel que la liste l'a lu.
   cible: CibleDevis
   // La saisie de départ, hors ses lignes, et ses lignes (lib/devis.ts, `saisieDuDevis`, `lignesSaisiesDuDevis`).
@@ -36,8 +52,12 @@ type Props = {
   occupe: boolean
   erreur: string | null
   onClose: () => void
-  onEnregistrer: (saisie: SaisieDevis, emettre: boolean) => void
+  // Les contacts lus en entier partent avec la saisie : la vue rejuge la provenance sur eux (null : pas lus).
+  onEnregistrer: (saisie: SaisieDevis, emettre: boolean, contactsDuDossier: readonly Contact[] | null) => void
 }
+
+type LectureContacts = { lu: LectureDesContacts } | { echec: string }
+type Remplacement = { contact: Contact; remplace: string[] }
 
 export default function DevisSaisieModal(props: Props) {
   const { espace, dossierId, statutTva, cible, aujourdHui, occupe, erreur } = props
@@ -46,6 +66,45 @@ export default function DevisSaisieModal(props: Props) {
   const [lignes, setLignes] = useState(props.lignesDeDepart)
   // Les clés des lignes ajoutées : jamais celles des lignes lues (« l0 », « l1 »…).
   const prochaineCle = useRef(0)
+  // « Choisir un client » : la lecture des contacts, la fenêtre du choix, la confirmation d'un remplacement.
+  const [lectureContacts, setLectureContacts] = useState<LectureContacts | null>(null)
+  const [choixOuvert, setChoixOuvert] = useState(false)
+  const [remplacement, setRemplacement] = useState<Remplacement | null>(null)
+
+  useEffect(() => {
+    if (!DEVIS_CITENT_UN_CONTACT) return
+    let annule = false
+    lireLesContacts(dossierId).then(
+      (lu) => { if (!annule) setLectureContacts({ lu }) },
+      (e: unknown) => { if (!annule) setLectureContacts({ echec: messageErreur(e, 'les clients n’ont pas pu être lus') }) },
+    )
+    return () => { annule = true }
+  }, [dossierId])
+
+  // La liste ENTIÈRE, ou rien : une liste partielle ne juge pas une provenance et n'offre aucun choix.
+  const contactsEntiers = lectureContacts != null && 'lu' in lectureContacts && lectureContacts.lu.complete ? lectureContacts.lu.lignes : null
+  const provenance = contactDeLaProvenance(saisie.contactId ?? null, contactsEntiers)
+
+  function appliquerChoix(contact: Contact) {
+    const { client } = choixDeContact(contact, saisie.dateEmission)
+    setSaisie((s) => ({
+      ...s, tiersNom: client.tiersNom, tiersAdresse: client.tiersAdresse, tiersSiret: client.tiersSiret,
+      tiersEmail: contact.email ?? '', mentions: mentionsAvecLeClient(s.mentions, client), contactId: contact.id,
+    }))
+  }
+
+  // Un client déjà saisi ne se remplace qu'après une confirmation qui nomme ce qui part ; une saisie vide se remplit sans.
+  function choisir(contact: Contact) {
+    setChoixOuvert(false)
+    const choix = choixDeContact(contact, saisie.dateEmission)
+    const remplace = ceQueLeChoixDeContactRemplace(
+      clientEnSaisie(saisie, saisie.mentions), '', { client: choix.client, echeance: null },
+    )
+    const email = saisie.tiersEmail.trim()
+    if (email !== '' && email !== (contact.email ?? '')) remplace.push(`l’e-mail ${email}`)
+    if (remplace.length > 0) { setRemplacement({ contact, remplace }); return }
+    appliquerChoix(contact)
+  }
 
   const changer = <K extends keyof Omit<SaisieDevis, 'lignes'>>(cle: K, valeur: SaisieDevis[K]) =>
     setSaisie((s) => ({ ...s, [cle]: valeur }))
@@ -61,8 +120,8 @@ export default function DevisSaisieModal(props: Props) {
 
   // La saisie TELLE QU'ELLE PART, et ses deux refus.
   const quiPart: SaisieDevis = { ...saisie, lignes: lignesDeLaSaisie(lignes) }
-  const refusBrouillon = refusDeLaSaisieDevis(dossierId, cible, quiPart, false, aujourdHui, props.emission)
-  const refusEmission = refusBrouillon ?? refusDeLaSaisieDevis(dossierId, cible, quiPart, true, aujourdHui, props.emission)
+  const refusBrouillon = refusDeLaSaisieDevis(dossierId, cible, quiPart, false, aujourdHui, props.emission, contactsEntiers)
+  const refusEmission = refusBrouillon ?? refusDeLaSaisieDevis(dossierId, cible, quiPart, true, aujourdHui, props.emission, contactsEntiers)
   const totaux = totauxDeLaSaisie(lignes)
 
   const m = saisie.mentions
@@ -81,6 +140,19 @@ export default function DevisSaisieModal(props: Props) {
           <label htmlFor="devis-client">Client (nom ou raison sociale)</label>
           <input id="devis-client" value={saisie.tiersNom} onChange={(e) => changer('tiersNom', e.target.value)} />
         </div>
+        {DEVIS_CITENT_UN_CONTACT && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '-4px 0 10px' }}>
+            <button type="button" className="btn btn-outline btn-sm" disabled={occupe || contactsEntiers == null} onClick={() => setChoixOuvert(true)}>
+              Choisir un client
+            </button>
+            {lectureContacts == null && <span className="muted">Clients : Chargement…</span>}
+            {lectureContacts != null && 'echec' in lectureContacts && <span className="error-text">{lectureContacts.echec}</span>}
+            {lectureContacts != null && 'lu' in lectureContacts && !lectureContacts.lu.complete && (
+              <span className="error-text">{dire('Les clients du dossier n’ont été lus qu’en partie : aucun choix n’est offert.')}</span>
+            )}
+            {provenance && <span className="muted">Client tiré du fichier : {provenance.nom}</span>}
+          </div>
+        )}
         <div className="field">
           <label htmlFor="devis-adresse">Adresse du client</label>
           <textarea id="devis-adresse" rows={2} value={saisie.tiersAdresse} onChange={(e) => changer('tiersAdresse', e.target.value)} />
@@ -275,18 +347,37 @@ export default function DevisSaisieModal(props: Props) {
           <button type="button" className="btn btn-outline" onClick={props.onClose} disabled={occupe}>Annuler</button>
           <button
             type="button" className="btn btn-outline" disabled={occupe || refusBrouillon != null}
-            onClick={() => props.onEnregistrer(quiPart, false)}
+            onClick={() => props.onEnregistrer(quiPart, false, contactsEntiers)}
           >
             {occupe ? 'Enregistrement…' : 'Enregistrer le brouillon'}
           </button>
           <button
             type="button" className="btn btn-primary" disabled={occupe || refusEmission != null}
-            onClick={() => props.onEnregistrer(quiPart, true)}
+            onClick={() => props.onEnregistrer(quiPart, true, contactsEntiers)}
           >
             Émettre
           </button>
         </div>
       </div>
+      {choixOuvert && contactsEntiers != null && (
+        <ContactChoixModal
+          espace={espace} articleExoneration={props.articleExoneration} contacts={contactsEntiers} dateEmission={saisie.dateEmission}
+          onChoisir={choisir} onClose={() => setChoixOuvert(false)}
+        />
+      )}
+      {remplacement && (() => {
+        const confirmation = confirmationDuChoixDeContact(espace, remplacement.contact, remplacement.remplace)
+        return (
+          <ConfirmationArticle
+            titre={confirmation.titre} boutonLabel="Remplacer" occupe={false} refus={null} erreur={null}
+            onConfirmer={() => { appliquerChoix(remplacement.contact); setRemplacement(null) }}
+            onAnnuler={() => setRemplacement(null)}
+          >
+            <p>{confirmation.phrase}</p>
+            <p className="muted">{confirmation.reste}</p>
+          </ConfirmationArticle>
+        )
+      })()}
     </div>
   )
 }

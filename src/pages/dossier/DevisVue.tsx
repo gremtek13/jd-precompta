@@ -206,12 +206,12 @@ export default function DevisVue(props: Props) {
     return reussi
   }
 
-  async function enregistrer(saisie: SaisieDevis, emettre: boolean, vise: Devis | null) {
+  async function enregistrer(saisie: SaisieDevis, emettre: boolean, vise: Devis | null, contactsDuDossier: readonly { id: string }[] | null) {
     if (gesteEnCours.current) return
     const cible: CibleDevis = vise ? { nouveau: false, devis: vise } : { nouveau: true }
     // Seconde ceinture : le bouton est déjà grisé sous ce refus.
     if (!emission) return
-    const refus = refusDeLaSaisieDevis(dossierId, cible, saisie, emettre, aujourdHui, emission)
+    const refus = refusDeLaSaisieDevis(dossierId, cible, saisie, emettre, aujourdHui, emission, contactsDuDossier)
     if (refus) {
       setErreurFenetre(dire(refus))
       return
@@ -480,6 +480,7 @@ export default function DevisVue(props: Props) {
           espace={espace}
           dossierId={dossierId}
           statutTva={statutTva}
+          articleExoneration={articleExoneration}
           cible={fenetre.devis ? { nouveau: false, devis: fenetre.devis } : { nouveau: true }}
           depart={saisieDuDevis(fenetre.devis, defauts)}
           lignesDeDepart={lignesSaisiesDuDevis(fenetre.devis, statutTva)}
@@ -488,7 +489,7 @@ export default function DevisVue(props: Props) {
           occupe={occupe}
           erreur={erreurFenetre}
           onClose={() => setFenetre(null)}
-          onEnregistrer={(saisie, emettre) => enregistrer(saisie, emettre, fenetre.devis)}
+          onEnregistrer={(saisie, emettre, contacts) => enregistrer(saisie, emettre, fenetre.devis, contacts)}
         />
       )}
 

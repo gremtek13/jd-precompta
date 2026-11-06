@@ -20,6 +20,9 @@ import {
   gestesDuContact, identifiantAffiche, infoDesSoins, mentionContactParLeClient, refusDeLaSaisieContact, signalementDesSoins,
 } from '../../lib/contactsVue'
 import type { ArticleExoneration, Contact } from '../../lib/types'
+import { DEVIS_CITENT_UN_CONTACT } from '../../lib/devis'
+import { contactsSansActivite, phraseDuContactSansActivite } from '../../lib/contactsInactifs'
+import { lireLesActivitesDesContacts, type LectureDesActivites } from '../../lib/contactsInactifsLecture'
 import ContactSaisieModal from './ContactSaisieModal'
 import ContactsImportModal from './ContactsImportModal'
 
@@ -54,6 +57,12 @@ type Props = QuiRegarde & {
 // La lecture, gardée AVEC le dossier pour lequel elle a été faite : un autre dossier repart en chargement, et la réponse
 // tardive d'un dossier quitté ne s'affiche pas.
 type Lecture = { cle: string; lu: LectureDesContacts } | { cle: string; echec: string }
+type LectureActivites = { cle: string; lu: LectureDesActivites } | { cle: string; echec: string }
+
+// La liste des clients sans activité depuis trois ans ne se dit que de lectures ENTIÈRES (les clients, leurs factures et leurs
+// devis) : une facture ou un devis qu'on n'a pas lu rendrait « sans activité » un client qui en a.
+const CONSEQUENCE_ACTIVITES_PARTIELLE = 'La liste des clients sans activité depuis trois ans ne se dit donc pas, et aucun geste '
+  + 'n’y est offert.'
 
 const CONSEQUENCE_PARTIELLE = 'Aucun geste n’est donc offert : une liste tronquée dirait « libre » un SIRET déjà pris, '
   + 'et « aucun client » d’un fichier qui en a.'
@@ -75,6 +84,8 @@ export default function ContactsVue(props: Props) {
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const gesteEnCours = useRef(false)
+  // Les factures et les devis qui citent un contact (sous `DEVIS_CITENT_UN_CONTACT` : sans les devis, la liste serait fausse).
+  const [activites, setActivites] = useState<LectureActivites | null>(null)
   // Le dossier que la vue affiche, pour qu'une relecture lancée sous un dossier quitté depuis ne s'inscrive pas.
   const dossierAffiche = useRef(dossierId)
 
@@ -86,6 +97,17 @@ export default function ContactsVue(props: Props) {
     lireLesContacts(dossierId).then(
       (lu) => { if (!annule) setLecture({ cle: dossierId, lu }) },
       (e: unknown) => { if (!annule) setLecture({ cle: dossierId, echec: messageErreur(e, 'les clients n’ont pas pu être lus') }) },
+    )
+    return () => { annule = true }
+  }, [dossierId])
+
+  // L'activité des contacts, lue à part, sous la même garde : rien avant le drapeau (la colonne des devis n'est pas en base).
+  useEffect(() => {
+    if (!DEVIS_CITENT_UN_CONTACT) return
+    let annule = false
+    lireLesActivitesDesContacts(dossierId).then(
+      (lu) => { if (!annule) setActivites({ cle: dossierId, lu }) },
+      (e: unknown) => { if (!annule) setActivites({ cle: dossierId, echec: messageErreur(e, 'les factures et les devis n’ont pas pu être lus') }) },
     )
     return () => { annule = true }
   }, [dossierId])
@@ -231,6 +253,13 @@ export default function ContactsVue(props: Props) {
   }
 
   const confirmation = aEffacer ? confirmationDeLEffacement(espace, aEffacer) : null
+
+  // Les clients sans activité depuis trois ans : de lectures toutes revenues entières, au jour de Paris d'aujourd'hui.
+  const activitesCourantes = activites != null && activites.cle === dossierId ? activites : null
+  const etatSansActivite: 'attente' | 'echec' | 'partielle' | 'lue' = activitesCourantes == null ? 'attente'
+    : 'echec' in activitesCourantes ? 'echec' : complete && activitesCourantes.lu.complete ? 'lue' : 'partielle'
+  const sansActivite = etatSansActivite === 'lue' && activitesCourantes != null && 'lu' in activitesCourantes
+    ? contactsSansActivite(contacts, activitesCourantes.lu.activites, new Date()) : []
 
   return (
     <>
@@ -380,6 +409,52 @@ export default function ContactsVue(props: Props) {
           </div>
         )}
       </div>
+
+      {DEVIS_CITENT_UN_CONTACT && (
+        <section aria-labelledby="clients-sans-activite-titre" style={{ marginTop: 18 }}>
+          <h3 id="clients-sans-activite-titre">Clients sans activité depuis trois ans</h3>
+          <p className="muted" style={{ marginTop: 0 }}>
+            {espace === 'client'
+              ? 'Les clients à qui tu n’as adressé ni facture ni devis depuis trois ans (ou, sans aucun, depuis leur création) : '
+                + 'tu peux les effacer, un à un. Rien ne s’efface seul ; tes factures gardent leur copie.'
+              : 'Les clients sans facture ni devis depuis trois ans (ou, sans aucun, depuis leur création) : la durée du fichier '
+                + 'des clients. Ils sont proposés à l’effacement, un à un ; rien ne s’efface seul, et les factures gardent leur copie.'}
+          </p>
+          {etatSansActivite === 'attente' && <p className="muted">Chargement…</p>}
+          {etatSansActivite === 'echec' && activitesCourantes != null && 'echec' in activitesCourantes && (
+            <p className="error-text" role="alert">{activitesCourantes.echec} : la liste ne se dit pas.</p>
+          )}
+          {etatSansActivite === 'partielle' && (
+            <BandeauLecturePartielle
+              quoi={espace === 'client' ? 'Tes clients, tes factures et tes devis' : 'Les clients, les factures et les devis du dossier'}
+              accord="lus"
+              motif={!complete ? (motif ?? 'lecture incomplète')
+                : activitesCourantes != null && 'lu' in activitesCourantes ? (activitesCourantes.lu.motif ?? 'lecture incomplète') : 'lecture incomplète'}
+              consequence={CONSEQUENCE_ACTIVITES_PARTIELLE} technique={espace === 'cabinet'}
+            />
+          )}
+          {etatSansActivite === 'lue' && (sansActivite.length === 0
+            ? <p className="muted">Aucun client sans facture ni devis depuis trois ans.</p>
+            : (
+              <ul aria-label="Clients sans activité depuis trois ans" style={{ paddingLeft: 18 }}>
+                {sansActivite.map((s) => {
+                  const refus = gestesDuContact(dossierId, articleExoneration, s.contact, contacts).effacer
+                  return (
+                    <li key={s.contact.id} style={{ marginBottom: 6 }}>
+                      <strong>{s.contact.nom}</strong> — {phraseDuContactSansActivite(s, formatDate)}{' '}
+                      <button
+                        type="button" className="btn btn-outline btn-sm" disabled={occupe || refus != null}
+                        title={refus ? dire(refus.message) : undefined} onClick={() => proposerLEffacement(s.contact)}
+                      >
+                        Effacer
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            ))}
+        </section>
+      )}
 
       {fenetre && peutEcrire && (
         <ContactSaisieModal
