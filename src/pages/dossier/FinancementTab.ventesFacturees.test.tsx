@@ -96,9 +96,12 @@ function piece(o: Partial<Piece> = {}): Piece {
 const FACTURE_SOURCE = {
   id: 'fs', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2026-0042', date_emission: '2026-02-10',
   tiers_nom: 'CLIENT FICTIF', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services', option_debits: false,
-  date_prestation: null,
+  date_prestation: null, acompte: false,
 }
-const LIGNE = { id: 'l1', facture_id: 'fs', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20 }
+const LIGNE = {
+  id: 'l1', facture_id: 'fs', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20,
+  reprise_facture_id: null,
+}
 const ENCAISSEMENT = {
   id: 'e1', dossier_id: D, facture_id: 'fs', date_encaissement: '2026-03-20', montant: 600, moyen: 'virement',
   ligne_bancaire_id: null, annule_id: null, cree_le: '2026-03-20T10:00:00Z', retire_le: null,

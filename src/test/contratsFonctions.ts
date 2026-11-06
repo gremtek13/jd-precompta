@@ -5365,10 +5365,11 @@ const TAUX_CHANGE_BCE: ContratFonction = {
 }
 
 // ── L'ACOMPTE D'UN DEVIS, CONSTANTE LEVÉE (P5b4c) ────────────────────────────────────────────────────────────────────
-// Ces scénarios ne se jouent que sur la source dont `ACOMPTES_EN_BASE` est levée (`acomptesEnBase`, fonctionsEdge.ts),
-// devant la base du jour où la migration `acomptes_des_devis` sera appliquée (`schemaPrepare`) : la vraie source ne lit
-// pas la marque, et ses contrats restent ceux d'hier. Ce qui part — le CII déposé, l'e-mail envoyé — se garde dans
-// `notes`, pour être jugé ici et comparé, constante baissée puis levée (acomptesEnBaseHttp.test.ts). Données FICTIVES.
+// Ces scénarios se jouent sur la source servie, dont `ACOMPTES_EN_BASE` est levée depuis que la migration
+// `acomptes_des_devis` est appliquée, devant une base qui la porte (`schemaPrepare`, sans effet depuis que l'export la
+// porte) ; la source d'avant, la constante baissée en mémoire (`acomptesBaisses`, fonctionsEdge.ts), ne lit pas la marque.
+// Ce qui part — le CII déposé, l'e-mail envoyé — se garde dans `notes`, pour être jugé ici et comparé, constante baissée
+// puis levée (acomptesEnBaseHttp.test.ts). Données FICTIVES.
 
 const ACOMPTE_REPRIS = 'fa000000-0000-4000-8000-0000000000a1'
 
@@ -5541,7 +5542,7 @@ function scenariosDeLaTransmission(preparerLeCanal: (m: Monde) => void, corps: u
   ]
 }
 
-/** Les scénarios de l'acompte d'un devis, fonction par fonction — à jouer sur `acomptesEnBase(sourceDe(slug))`. */
+/** Les scénarios de l'acompte d'un devis, fonction par fonction — à jouer sur `sourceDe(slug)`, la constante levée. */
 export const SCENARIOS_ACOMPTES_EN_BASE: Readonly<Record<'superpdp-emit' | 'plateforme-agreee' | 'send-email', readonly Scenario[]>> = {
   'superpdp-emit': scenariosDeLaTransmission(superPdpQuiGarde, EMISSION('envoyer')),
   'plateforme-agreee': scenariosDeLaTransmission(plateformeQuiGarde, DEPOT),
@@ -5577,7 +5578,11 @@ export const SCENARIOS_ACOMPTES_EN_BASE: Readonly<Record<'superpdp-emit' | 'plat
     },
     {
       nom: 'la marque d’acompte illisible (la colonne non rendue) : 503, rien d’envoyé',
-      preparer: (m) => { resendQuiGarde(m); m.schemaPrepare = true; factureValidee(m) },
+      // La fabrique pose la marque comme la base la rend (NOT NULL, défaut faux) : la retirer, c'est la colonne non rendue.
+      preparer: (m) => {
+        resendQuiGarde(m); m.schemaPrepare = true; factureValidee(m)
+        for (const f of lignes(m, 'factures_emises')) { delete f.acompte; delete f.date_versement_acompte }
+      },
       requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
       attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: refusQuiDit(/La marque d'acompte de la facture n'a pas pu être lue\./) },
     },

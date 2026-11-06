@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { REFUS_SOLDE_ACOMPTE_EN_BROUILLON } from './acomptesDuDevis'
 import {
   acceptationHorsValidite,
   avisDeLApercuDuDevis,
@@ -26,6 +27,7 @@ import {
   refusDeLaReponse,
   DATE_PLANCHER_DEVIS,
   dateDeLaBase,
+  ACOMPTES_PREVUS,
   DEVIS_EXPORTES,
   ENVOI_DES_DEVIS_PREVU,
   DUREE_VALIDITE_PAR_DEFAUT_MOIS,
@@ -374,7 +376,12 @@ describe('DEVIS_EXPORTES dit ce que porte l’export', () => {
     if (!DEVIS_EXPORTES) return
     expect(messagesSql(derniereDefinitionSql('enregistrer_devis'))).toEqual(REFUS_ENREGISTREMENT_DEVIS.map((r) => r.modele))
     expect(messagesSql(derniereDefinitionSql('decider_devis'))).toEqual(REFUS_DECISION_DEVIS.map((r) => r.modele))
-    expect(messagesSql(derniereDefinitionSql('facturer_devis'))).toEqual(REFUS_FACTURATION_DEVIS.map((r) => r.modele))
+    // `facturer_devis` remplacée par la migration `acomptes_des_devis` : un acompte en brouillon retient la finale, après
+    // les refus d'hier (lib/acomptesDuDevis.ts, que acomptesDuDevis.test.ts confronte à la migration).
+    expect(messagesSql(derniereDefinitionSql('facturer_devis'))).toEqual([
+      ...REFUS_FACTURATION_DEVIS.map((r) => r.modele),
+      ...(ACOMPTES_PREVUS ? [REFUS_SOLDE_ACOMPTE_EN_BROUILLON] : []),
+    ])
     expect(messagesSql(derniereDefinitionSql('supprimer_brouillon_devis'))).toEqual(REFUS_SUPPRESSION_DEVIS.map((r) => r.modele))
   })
 

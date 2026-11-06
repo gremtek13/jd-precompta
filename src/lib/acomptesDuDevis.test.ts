@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REFUS_ACOMPTE } from './acompteDevis'
 import {
@@ -9,6 +7,7 @@ import {
 } from './acomptesDuDevis'
 import { REFUS_FACTURATION_DEVIS } from './devis'
 import { devis as devisFictif } from '../test/devis'
+import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // FACTURER UN ACOMPTE ET LE SOLDE DEPUIS UN DEVIS (lib/acomptesDuDevis.ts, étape P5b5a). Ce que ces cas gardent : les refus
 // que le module dit avant le clic sont ceux de la migration préparée (`acomptes_des_devis`), à la lettre et dans son ordre —
@@ -17,7 +16,8 @@ import { devis as devisFictif } from '../test/devis'
 // base (`acomptes_en_vigueur`, `finale_active_du_devis`) ; une lecture qui manque ne se dit jamais « pas d'acompte » ; les
 // confirmations nomment ce qui part. Données FICTIVES.
 
-const SQL = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261105110000_acomptes_des_devis.sql'), 'utf8')
+// La migration, préparée (supabase/preparees/) ou dans l'export sous la version de son application : le même texte.
+const SQL = [...fichiersDuSchema(), ...fichiersPrepares()].find((f) => /\d{14}_acomptes_des_devis\.sql$/.test(f.chemin))?.texte ?? ''
 const ENREGISTRER = SQL.slice(SQL.indexOf('FUNCTION public.enregistrer_facture('), SQL.indexOf('-- ══ 7. Les droits'))
 // Le refus du versement à venir tel qu'un `raise exception` l'écrit : le jour de Paris y devient `%`.
 const VERSEMENT_FUTUR = refusDuVersementFutur('2026-11-04').replace('04/11/2026', '%')

@@ -994,10 +994,11 @@ describe('TvaTab — sous le plan du dossier', () => {
 // incomplète, pas encore revenue ou d'un autre dossier ne laisse ni chiffre ni geste. Données FICTIVES.
 describe('TvaTab — les ventes facturées', () => {
   // Une facture SOURCE de services : 500 € HT à 20 %, encaissée entière le 10 mars 2027 — 100 € de TVA au premier trimestre.
-  const FACTURE_SOURCE = factureVendue({
-    id: 'fs', dossier_id: 'd', numero: 'F2027-0042', date_emission: '2027-03-01', tiers_nom: 'CLIENT FICTIF',
-  })
-  const LIGNE_FS = { ...ligneVendue('fs', 500, 20), id: 'lfs' }
+  const FACTURE_SOURCE = {
+    ...factureVendue({ id: 'fs', dossier_id: 'd', numero: 'F2027-0042', date_emission: '2027-03-01', tiers_nom: 'CLIENT FICTIF' }),
+    acompte: false,
+  }
+  const LIGNE_FS = { ...ligneVendue('fs', 500, 20), id: 'lfs', reprise_facture_id: null }
   const ENCAISSEMENT = encaissementVendu({ id: 'enc', dossier_id: 'd', facture_id: 'fs', date_encaissement: '2027-03-10', montant: 600 })
   // La pièce désignée comme son exemplaire, payée en mars : elle ne compte plus.
   const EXEMPLAIRE = piece({ id: 'px', tiers: 'Exemplaire CLIENT FICTIF', date_piece: '2027-03-01', montant_ht: 500, montant_tva: 100, montant_ttc: 600, facture_id: 'fs' })
@@ -1164,10 +1165,10 @@ describe('TvaTab — les ventes facturées', () => {
     // Une facture source sans ligne, écartée par le module ; une autre à 2,1 %, que la CA3 ne place pas d'office.
     faux.tables.factures_emises = [
       FACTURE_SOURCE,
-      factureVendue({ id: 'fv', dossier_id: 'd', numero: 'F2027-0043', tiers_nom: 'CLIENT SANS LIGNE' }),
-      factureVendue({ id: 'fp', dossier_id: 'd', numero: 'F2027-0044', tiers_nom: 'CLIENT PRESSE' }),
+      { ...factureVendue({ id: 'fv', dossier_id: 'd', numero: 'F2027-0043', tiers_nom: 'CLIENT SANS LIGNE' }), acompte: false },
+      { ...factureVendue({ id: 'fp', dossier_id: 'd', numero: 'F2027-0044', tiers_nom: 'CLIENT PRESSE' }), acompte: false },
     ]
-    faux.tables.facture_lignes = [LIGNE_FS, { ...ligneVendue('fp', 1000, 2.1), id: 'lfp' }]
+    faux.tables.facture_lignes = [LIGNE_FS, { ...ligneVendue('fp', 1000, 2.1), id: 'lfp', reprise_facture_id: null }]
     const presse = encaissementVendu({ id: 'enc-p', dossier_id: 'd', facture_id: 'fp', date_encaissement: '2027-02-15', montant: 1021 }, 2.1)
     faux.tables.encaissements_factures = [ENCAISSEMENT.encaissement, presse.encaissement]
     faux.tables.encaissements_factures_taux = [ENCAISSEMENT.part, presse.part]

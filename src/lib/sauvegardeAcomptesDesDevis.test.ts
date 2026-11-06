@@ -14,7 +14,7 @@ import {
 } from './sauvegarde'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
-// L'ACOMPTE D'UN DEVIS AU PLAN DE SAUVEGARDE (étape P5b2 ; migration `acomptes_des_devis`, préparée, PAS APPLIQUÉE). Ni
+// L'ACOMPTE D'UN DEVIS AU PLAN DE SAUVEGARDE (étape P5b2 ; migration `acomptes_des_devis`, en production, dans l'export). Ni
 // table, ni chemin nouveaux : trois colonnes sans relation, recopiées avec leurs lignes, et la reprise d'une ligne de la
 // facture finale, `facture_lignes.reprise_facture_id`, vers la facture d'acompte validée, SANS ACTION à la suppression. La
 // relation est déclarée au graphe PRÉVU ; le graphe du jour ne la porte que le drapeau `ACOMPTES_PREVUS` levé. Ici : la
@@ -122,7 +122,7 @@ describe('le plan rechargé sous chaque état du drapeau', () => {
     )
   })
 
-  it('baissé — l’état du jour — : la colonne n’est pas au graphe, un acompte absent ne dit rien d’elle', async () => {
+  it('baissé — l’état d’avant la migration — : la colonne n’est pas au graphe, un acompte absent ne dit rien d’elle', async () => {
     const s = await sauvegardeSous(false)
     expect(s.RELATIONS.some(REPRISE)).toBe(false)
     expect(s.liensPerdus({ ...contenu(), factures_emises: [contenu().factures_emises[1]] })

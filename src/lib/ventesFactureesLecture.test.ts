@@ -91,13 +91,16 @@ vi.mock('./supabase', async () => {
   }
 })
 
-const facture = (o: Partial<FactureVendue> = {}): FactureVendue => ({
+// Une facture et une ligne telles que la base les rend depuis la migration `acomptes_des_devis` : la marque et la reprise
+// posées (fausse, nulle). Le drapeau baissé ne les nomme pas, et le faux ne rend que les colonnes demandées.
+const facture = (o: Partial<FactureVendue & { acompte: boolean }> = {}): FactureVendue & { acompte: boolean } => ({
   id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2027-0001', date_emission: '2027-01-10',
   tiers_nom: 'Client fictif', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
-  option_debits: false, date_prestation: null, ...o,
+  option_debits: false, date_prestation: null, acompte: false, ...o,
 })
-const ligne = (o: Partial<LigneDeFacture & { id: string }> = {}) => ({
-  id: 'l1', facture_id: 'f1', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20, ...o,
+const ligne = (o: Partial<LigneDeFacture & { id: string; reprise_facture_id: string | null }> = {}) => ({
+  id: 'l1', facture_id: 'f1', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20,
+  reprise_facture_id: null, ...o,
 })
 const encaissement = (o: Partial<EncaissementVendu> = {}): EncaissementVendu => ({
   id: 'e1', dossier_id: 'd1', facture_id: 'f1', date_encaissement: '2027-02-01', montant: 40, moyen: 'virement',
@@ -110,7 +113,8 @@ const ENCAISSEMENTS = ['e1', 'e2', 'e3'].map((id, i) => encaissement({ id, date_
 const PARTS = ENCAISSEMENTS.map((e) => part({ encaissement_id: e.id }))
 
 beforeEach(() => {
-  drapeau.acomptes = false
+  // Levé, comme en production depuis la migration ; l'état d'avant se joue par ses cas, le drapeau baissé.
+  drapeau.acomptes = true
   faux.plafond = Infinity
   faux.muetApres = {}
   faux.refus = {}
@@ -172,9 +176,10 @@ describe('lireLesVentesFacturees', () => {
     }))
     expect([...v.sources]).toEqual(['f1'])
     expect(v.parts.map((p) => [p.encaissementId, p.tvaCentimes])).toEqual([['e1', 667], ['e2', 666], ['e3', 667]])
+    // Le drapeau levé : la marque d'acompte et la reprise d'une ligne avec le reste (baissé, le cas « baissé » plus bas).
     expect(faux.demandes).toEqual([
-      'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation',
-      'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id, source_de_la_vente)',
+      'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, acompte',
+      'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, reprise_facture_id, factures_emises!inner(dossier_id, source_de_la_vente)',
       'encaissements_factures: id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le',
       'encaissements_factures_taux: encaissement_id, dossier_id, taux, montant',
       'pieces: id, dossier_id, facture_id, statut, type_piece',
@@ -304,6 +309,7 @@ describe('l’acompte d’un devis (étape P5b3), dans les deux états de `ACOMP
     v.exigibilites.filter((x) => x.factureId === 'fa').map((x) => [x.origine, x.date, x.tvaCentimes])
 
   it('baissé : aucune colonne neuve n’est nommée, et aucune facture n’est un acompte (l’état d’avant)', async () => {
+    drapeau.acomptes = false
     jeuDesAcomptes()
     const v = lue(await lireLesVentesFacturees('d1'))
     expect(faux.demandes.some((d) => /acompte|reprise/.test(d))).toBe(false)

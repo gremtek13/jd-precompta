@@ -1251,9 +1251,12 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
     faux.tables.factures_emises = [{
       id: 'fs', dossier_id: DOSSIER, statut: 'validee', type: 'facture', numero: 'F2025-0042', date_emission: '2025-05-02',
       tiers_nom: 'CLIENT FICTIF', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services', option_debits: false,
-      date_prestation: null,
+      date_prestation: null, acompte: false,
     }]
-    faux.tables.facture_lignes = [{ id: 'lfs', facture_id: 'fs', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20 }]
+    faux.tables.facture_lignes = [{
+      id: 'lfs', facture_id: 'fs', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20,
+      reprise_facture_id: null,
+    }]
     faux.tables.encaissements_factures = [{
       id: 'enc', dossier_id: DOSSIER, facture_id: 'fs', date_encaissement: '2025-05-10', montant: 1200, moyen: 'virement',
       ligne_bancaire_id: null, annule_id: null, cree_le: '2025-05-10T10:00:00Z', retire_le: null,

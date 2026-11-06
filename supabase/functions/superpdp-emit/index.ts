@@ -76,10 +76,11 @@ type FactureLue = FactureEnBase & { id: string; facture_origine_id: string | nul
 interface InvoiceEvent { id: number; status_code: string; status_text: string; created_at: string }
 
 // L'ACOMPTE D'UN DEVIS (P5b4a) : la marque d'acompte d'une facture et les reprises de ses lignes vivent dans des colonnes
-// que la migration `acomptes_des_devis` pose — PRÉPARÉE, pas appliquée. Tant qu'elle ne l'est pas, la fonction ne les
-// nomme dans aucune lecture (la production les refuserait toutes) et passe SANS_ACOMPTE_CII : sa lecture et son CII sont
-// ceux d'hier. Cette constante suit `ACOMPTES_PREVUS` (src/lib/devis.ts) : `copiesFacturation.test.ts` les lie.
-const ACOMPTES_EN_BASE = false
+// que la migration `acomptes_des_devis` pose, en production : la constante est levée, et la fonction les lit. Baissée, elle
+// ne les nommerait dans aucune lecture et passerait SANS_ACOMPTE_CII — sa lecture et son CII d'avant la migration, que le
+// harnais rejoue encore (`acomptesBaisses`, src/test/fonctionsEdge.ts). Cette constante suit `ACOMPTES_PREVUS`
+// (src/lib/devis.ts) : `copiesFacturation.test.ts` les lie.
+const ACOMPTES_EN_BASE = true
 
 // La marque d'acompte de la facture et la date de son versement, celle de la facture qu'un avoir corrige, les reprises de
 // ses lignes et les factures d'acompte qu'elles citent, relues une à une : un échec de lecture rend son message, et une

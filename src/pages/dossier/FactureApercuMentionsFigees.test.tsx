@@ -31,6 +31,13 @@ vi.mock('../../lib/mentionsFigees', async (importOriginal) => ({
   get MENTIONS_FIGEES_EXPORTEES() { return faux.figees },
 }))
 
+// `ACOMPTES_PREVUS` forcé BAISSÉ : ces cas éprouvent l'écran d'avant l'acompte d'un devis, qui reste éprouvé tant que son
+// code existe ; leur faux client ne sert pas les lectures de l'acompte. Le drapeau levé : FactureApercuAcompte.test.tsx.
+vi.mock('../../lib/devis', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/devis')>()),
+  ACOMPTES_PREVUS: false,
+}))
+
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {

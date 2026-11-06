@@ -1,7 +1,7 @@
 -- L'ACOMPTE D'UN DEVIS, ÉPROUVÉ EN BASE (espace client, étape P5b2) — à rejouer par `execute_sql` après toute migration qui
 -- touche `factures_emises`, `facture_lignes`, `devis_factures`, `enregistrer_facture`, `facturer_devis`,
 -- `facturer_acompte_devis`, `centimes_ligne_facture`, les gardes des factures ou des devis. La migration :
--- supabase/preparees/20261105110000_acomptes_des_devis.sql (puis supabase/schema/, le jour de son application) ; le
+-- supabase/schema/20261105231034_acomptes_des_devis.sql (collée par le cabinet, en production depuis le 06/11/2026) ; le
 -- module que la base redit : src/lib/acompteDevis.ts ; le récit : HISTORIQUE.md, « L'ACOMPTE D'UN DEVIS, EN BASE (P5B2)
 -- (PRÉPARÉE, PAS APPLIQUÉE) ».
 --

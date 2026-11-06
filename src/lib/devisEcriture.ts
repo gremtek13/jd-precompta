@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import type { EcritureDevis } from './devis'
 import type { DemandeAcompte } from './acompteDevis'
-import type { ReponseDevis } from './types'
+import type { ArgumentsFacturerAcompteDevis, ReponseDevis } from './types'
 
 // LES DEUX GESTES D'UN BROUILLON DE DEVIS, PAR LA BASE SEULE (espace client, étape P6a1 ; modèle : lib/contactsEcriture.ts).
 // Aucune policy n'écrit `devis` (hors la restauration du super-administrateur) : `enregistrer_devis` crée, réécrit et émet un
@@ -87,7 +87,7 @@ export async function facturerAcompteDevis(
 ): Promise<string> {
   const { data, error } = await supabase.rpc('facturer_acompte_devis', {
     p_dossier_id: dossierId, p_devis_id: devisId, p_demande: demande, p_date_versement: dateVersement,
-  })
+  } satisfies ArgumentsFacturerAcompteDevis)
   if (error) throw new Error(error.message)
   if (typeof data !== 'string' || data === '') {
     throw new Error('La base n’a pas rendu la facture d’acompte tirée du devis : relis la liste avant de recommencer.')

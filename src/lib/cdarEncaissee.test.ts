@@ -688,9 +688,9 @@ describe('ce que le module partage avec le reste du dépôt', () => {
   })
 
   it('une facture, ses lignes, un encaissement et ses parts de types.ts se lisent comme le module les lit (le compilateur, sans `as`)', () => {
-    // La marque d'acompte (`acompte`) n'est pas encore dans types.ts : la migration `acomptes_des_devis` est préparée, pas
-    // appliquée (ACOMPTES_PREVUS). Le jour où l'export la porte, `FactureEmise` l'a, et ceci se réduit à `=> f`.
-    const facture = (f: FactureEmise, acompte: boolean): FacturePourCdar => ({ ...f, acompte })
+    // La marque d'acompte (`acompte`) est dans types.ts depuis que l'export porte la migration `acomptes_des_devis` :
+    // `FactureEmise` se lit telle quelle, la marque obligatoire des deux côtés.
+    const facture = (f: FactureEmise): FacturePourCdar => f
     const ligne = (l: FactureLigne): LignePourCdar => l
     const encaissement = (e: EncaissementFacture): EncaissementPourCdar => e
     const part = (p: EncaissementFactureTaux): PartPourCdar => p

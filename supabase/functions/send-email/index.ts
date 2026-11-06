@@ -100,11 +100,12 @@ interface FactureRow {
 interface LigneRow { designation: string; quantite: number; prix_unitaire_ht: number; taux_tva: number }
 
 // L'ACOMPTE D'UN DEVIS (P5b4c) : l'e-mail d'une facture d'acompte dit « Facture d'acompte F… », et celui de l'avoir d'un
-// acompte, qu'il crédite une facture d'acompte. La marque vit dans une colonne que la migration `acomptes_des_devis` pose —
-// PRÉPARÉE, pas appliquée : tant qu'elle ne l'est pas, la fonction ne la nomme dans aucune lecture (la production les
-// refuserait toutes), passe SANS_ACOMPTE_EMAIL, et l'e-mail est celui d'hier au caractère près. Cette constante suit
-// `ACOMPTES_PREVUS` (src/lib/devis.ts) : `copiesFacturation.test.ts` les lie, comme dans superpdp-emit et plateforme-agreee.
-const ACOMPTES_EN_BASE = false
+// acompte, qu'il crédite une facture d'acompte. La marque vit dans une colonne que la migration `acomptes_des_devis` pose,
+// en production : la constante est levée, et la fonction la lit. Baissée, elle ne la nommerait dans aucune lecture,
+// passerait SANS_ACOMPTE_EMAIL, et l'e-mail serait celui d'avant la migration au caractère près, que le harnais rejoue
+// encore (`acomptesBaisses`, src/test/fonctionsEdge.ts). Cette constante suit `ACOMPTES_PREVUS` (src/lib/devis.ts) :
+// `copiesFacturation.test.ts` les lie, comme dans superpdp-emit et plateforme-agreee.
+const ACOMPTES_EN_BASE = true
 
 interface AcompteDeLEmail {
   // La facture est une facture d'acompte.

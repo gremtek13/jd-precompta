@@ -297,8 +297,10 @@ describe('les essais de la base, rejoués en production', () => {
     // trois migrations en production le même jour ; ni l'un ni l'autre ne cherche un semis, ils se jouent comme des essais
     // de la production). Seize le même jour : `acomptesDesDevis` entré dans la famille « apres », après sa migration
     // préparée (étape P5b2, `acomptes_des_devis`, qui suppose les trois des devis). Dix-sept le même jour : `traceDesDroits`
-    // entré dans la famille « apres », après sa migration préparée (étape P1-trace, `trace_des_droits`).
-    expect(cas.length).toBe(17)
+    // entré dans la famille « apres », après sa migration préparée (étape P1-trace, `trace_des_droits`). Seize le 06/11/2026 :
+    // `acomptesDesDevis` sorti (sa migration collée en production, 20261105231034 ; l'essai ne cherche aucun semis, il se
+    // joue comme un essai de la production).
+    expect(cas.length).toBe(16)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
