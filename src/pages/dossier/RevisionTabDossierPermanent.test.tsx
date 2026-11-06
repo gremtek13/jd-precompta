@@ -92,7 +92,7 @@ function piece(o: Partial<Piece>): Piece {
     id: 'p', dossier_id: DOSSIER, uploaded_by: null, source: 'upload', storage_path: `${DOSSIER}/bail.pdf`,
     nom_fichier: 'bail-fictif.pdf', storage_hash: HASH_DE_LA_CITATION, date_piece: '2025-03-10', tiers: 'BAILLEUR FICTIF', montant_ht: null,
     montant_tva: null, montant_ttc: 120, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
-    categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut: 'validee', notes: null, confiance: 'haute',
+    categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut: 'validee', confiance: 'haute',
     superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
     identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false, created_at: '2025-03-12T09:00:00Z',
     updated_at: '2025-03-12T09:00:00Z', ...o,

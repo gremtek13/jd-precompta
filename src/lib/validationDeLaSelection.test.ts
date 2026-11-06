@@ -9,7 +9,7 @@ import type { Piece } from './types'
 const piece = (o: Partial<Piece> & Pick<Piece, 'id'>): Piece => ({
   dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${o.id}.pdf`, nom_fichier: `${o.id}.pdf`, storage_hash: null,
   date_piece: '2025-06-02', tiers: 'ALPHA', montant_ht: null, montant_tva: null, montant_ttc: 42, devise: 'EUR', montant_devise: null,
-  taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut: 'a_valider', notes: null,
+  taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut: 'a_valider', 
   confiance: 'haute', superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
   identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
   created_at: '2026-11-20T09:00:00Z', updated_at: '2026-11-20T09:00:00Z', ...o,

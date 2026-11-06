@@ -128,7 +128,7 @@ function recette(o: Partial<Piece> = {}): Piece {
     date_piece: '2026-05-10', tiers: 'CPAM', montant_ht: 10000, montant_tva: null,
     montant_ttc: 10000, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: 'cat-recettes', sous_dossier_id: null,
-    type_piece: 'vente', statut: 'validee', notes: null, confiance: null,
+    type_piece: 'vente', statut: 'validee', confiance: null,
     superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, created_at: '2026-05-10T09:00:00Z', updated_at: '2026-05-10T09:00:00Z',
     identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     ...o,

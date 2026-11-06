@@ -155,7 +155,7 @@ Object.defineProperty(window, 'matchMedia', {
 function dossier(o: Partial<Dossier> = {}): Dossier {
   return {
     id: 'd1', nom: 'Dossier fictif', cabinet_id: 'cab1', siret: '12345678901234', contact_nom: null, contact_email: null,
-    notes: null, archive: false, created_at: '2026-01-05T09:00:00Z', code_email: 'abc123', assujetti_tva: true,
+    archive: false, created_at: '2026-01-05T09:00:00Z', code_email: 'abc123', assujetti_tva: true,
     statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false, tva_periodicite: 'trimestrielle',
     tva_sur_debits: false, mode_comptable: 'tresorerie', compte_notes_de_frais: '108000', code_naf: null, libelle_naf: null,
     adresse: null, ventes_par_les_factures: false, ventes_par_les_factures_depuis: null, categorie_recettes_client: null, ...o,
@@ -181,7 +181,7 @@ function piece(o: Partial<Piece> = {}): Piece {
     date_piece: '2026-09-01', tiers: 'FOURNISSEUR FICTIF', montant_ht: null, montant_tva: null,
     montant_ttc: 120, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
-    statut: 'a_valider', notes: null, confiance: 'haute', superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
+    statut: 'a_valider', confiance: 'haute', superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
     identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     created_at: '2026-09-10T09:00:00Z', updated_at: '2026-09-10T09:00:00Z', ...o,
   }

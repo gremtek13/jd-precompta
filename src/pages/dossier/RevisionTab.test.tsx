@@ -96,7 +96,7 @@ function piece(o: Partial<Piece>): Piece {
     id: 'p', dossier_id: DOSSIER, uploaded_by: null, source: 'upload', storage_path: `${DOSSIER}/tableau.pdf`,
     nom_fichier: 'tableau-emprunt.pdf', storage_hash: HASH, date_piece: '2024-01-10', tiers: 'BANQUE FICTIVE', montant_ht: null,
     montant_tva: null, montant_ttc: 100, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
-    categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut: 'validee', notes: null, confiance: 'haute',
+    categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut: 'validee', confiance: 'haute',
     superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
     identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false, created_at: '2024-01-12T09:00:00Z',
     updated_at: '2024-01-12T09:00:00Z', ...o,

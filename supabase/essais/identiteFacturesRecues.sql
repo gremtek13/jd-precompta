@@ -154,13 +154,13 @@ begin
       'F2026-0001', '123456789', '2026-03-14', 'facture');
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    update pieces set statut = 'validee', notes = 'essai', date_piece = '2026-03-15', tiers = 'Client d''essai',
+    update pieces set statut = 'validee', date_piece = '2026-03-15', tiers = 'Client d''essai',
       montant_ht = 100, montant_tva = 20, montant_ttc = 120, type_piece = 'autre' where id = p1;
     get diagnostics n_maj = row_count;
     update pieces set identite_numero = identite_numero, identite_siren_vendeur = identite_siren_vendeur,
-      identite_date = identite_date, identite_nature = identite_nature, notes = 'essai bis' where id = p1;
+      identite_date = identite_date, identite_nature = identite_nature, tiers = 'essai bis' where id = p1;
     get diagnostics vus = row_count;
-    select p.statut || ' ' || p.notes || ' ' || p.date_piece || ' ' || p.identite_numero || ' ' || p.identite_date
+    select p.statut || ' ' || p.tiers || ' ' || p.date_piece || ' ' || p.identite_numero || ' ' || p.identite_date
       into lu from pieces p where p.id = p1;
     raise exception 'ANNULATION_ESSAI';
   exception when others then

@@ -899,7 +899,7 @@ describe('carburantSousLeBareme — le carburant sous le barème kilométrique',
     id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`,
     storage_hash: null, date_piece: '2025-03-10', tiers: 'STATION FICTIVE', montant_ht: null, montant_tva: null, montant_ttc: 110,
     devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: 'c-carb',
-    sous_dossier_id: null, type_piece: 'achat', statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null,
+    sous_dossier_id: null, type_piece: 'achat', statut: 'validee', confiance: null, superpdp_invoice_id: null, flux_hote: null,
     flux_id: null, lisible_path: null, identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
     facture_id: null, vente_hors_des_factures: false, created_at: '2025-03-10T09:00:00Z', updated_at: '2025-03-10T09:00:00Z', ...o,
   })

@@ -14,6 +14,7 @@ import {
   planReinsertion,
   referencesExternes,
   sansAnciennesNotes,
+  phrasesDesAnciennesNotes,
   sansColonnesGenerees,
   tablesSansChemin,
   violationsOrdre,
@@ -1153,6 +1154,39 @@ describe('les anciennes colonnes des notes internes', () => {
     expect(refus).toEqual([])
     // Pure : la sauvegarde reçue n'a pas bougé (`liensPerdus` et la vérification la relisent telle quelle).
     expect(JSON.stringify(sauvegarde)).toBe(avant)
+  })
+
+  it('après la suppression des anciennes colonnes (P0, EC-Q7), dit ce que devient chaque note d’une sauvegarde d’avant', () => {
+    const { contenu, bilan, refus } = sansAnciennesNotes({
+      pieces: [
+        { id: 'p1', dossier_id: 'd1', notes: 'Gardée.' },
+        { id: 'p2', dossier_id: 'd1', notes: 'Sans ligne.' },
+        { id: 'p3', dossier_id: 'd1', notes: 'Avant la reprise.' },
+        { id: 'p4', dossier_id: 'd1', notes: 'Écrite après la recopie.' },
+        { id: 'p5', dossier_id: 'd1', notes: ' \r\n' },
+      ],
+      documents_divers: [{ id: 'doc1', dossier_id: 'd1', notes: 'Reclassé.' }],
+      notes_internes: [
+        { id: 'n1', dossier_id: 'd1', piece_id: 'p1', document_id: null, texte: 'Gardée.', created_at: 't0', updated_at: 't0' },
+        { id: 'n3', dossier_id: 'd1', piece_id: 'p3', document_id: null, texte: 'Reprise.', created_at: 't0', updated_at: 't1' },
+        { id: 'n4', dossier_id: 'd1', piece_id: 'p4', document_id: null, texte: 'Recopiée.', created_at: 't0', updated_at: 't0' },
+        { id: 'n5', dossier_id: 'd1', piece_id: null, document_id: 'doc1', texte: 'Reclassé.', created_at: 't0', updated_at: 't2' },
+      ],
+    })
+    expect(bilan).toEqual({ annotees: 5, dejaGardees: 2, recopiees: 1, remplacees: 1, perdues: 1 })
+    expect(refus).toEqual([])
+    for (const table of ['pieces', 'documents_divers']) for (const ligne of contenu[table]) expect(ligne).not.toHaveProperty('notes')
+    expect(phrasesDesAnciennesNotes(bilan)).toEqual([
+      '5 note(s) des anciennes colonnes des pièces et des documents : la restauration ne les écrit plus, seules les notes internes se restaurent.',
+      '2 déjà dans les notes internes de la sauvegarde, au caractère près : rien ne se perd.',
+      '1 recopiée(s) dans les notes internes : leur cible n\'en avait pas.',
+      '1 remplacée(s) par la note interne reprise depuis, qui fait foi.',
+      '1 perdue(s) : leur cible porte une note interne au texte différent, jamais reprise — le texte de l\'ancienne colonne ne sera pas restauré.',
+    ])
+    // Une sauvegarde faite après la suppression ne porte plus la clé : rien à dire.
+    const apres = sansAnciennesNotes({ pieces: [{ id: 'p1', dossier_id: 'd1' }], documents_divers: [{ id: 'doc1', dossier_id: 'd1' }] })
+    expect(apres.bilan).toEqual({ annotees: 0, dejaGardees: 0, recopiees: 0, remplacees: 0, perdues: 0 })
+    expect(phrasesDesAnciennesNotes(apres.bilan)).toEqual([])
   })
 
   it('une note de dossier n’a nulle part où aller : la restauration la refuse plutôt que de la perdre', () => {
