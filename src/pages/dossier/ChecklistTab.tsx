@@ -67,11 +67,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
 
   async function load() {
     setLoading(true)
-    setLecture(await lireLaChecklist(dossierId, ventesParLesFactures))
+    setLecture(await lireLaChecklist(dossierId, ventesParLesFactures, modele.plan))
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [dossierId, ventesParLesFactures])
+  useEffect(() => { load() }, [dossierId, ventesParLesFactures, modele.plan])
 
   async function toggleJustificatif(champ: 'justificatif_tickets_restaurant_recu' | 'justificatif_cheques_vacances_recu') {
     const info = lecture?.info
@@ -134,11 +134,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // Tendances de trésorerie (compte 512 du brouillon d'écritures, voir lib/tableauPilotage) —
   // indépendantes de l'exercice sélectionné dans l'en-tête : une pente récente reste utile même en
   // consultant une année passée.
-  const soldes = soldesFinDeMois(ecritures, NB_MOIS_TRESORERIE, ouverture)
+  const soldes = soldesFinDeMois(ecritures, NB_MOIS_TRESORERIE, ouverture, modele.plan)
   const soldeActuel = soldes.length > 0 ? soldes[soldes.length - 1].solde : null
   const soldePrecedent = soldes.length > 1 ? soldes[soldes.length - 2].solde : null
   const variationSolde = soldeActuel !== null && soldePrecedent !== null ? soldeActuel - soldePrecedent : null
-  const evolutionMensuelle = calculerEvolutionMensuelle(ecritures, NB_MOIS_COLONNES)
+  const evolutionMensuelle = calculerEvolutionMensuelle(ecritures, NB_MOIS_COLONNES, modele.plan)
   const nbErreurs = pointsTravail.filter((p) => p.severite === 'erreur').length
 
   // Les saisies du client dans sa caisse que ce navigateur n'a pas vues (étape C11) : sur la caisse en base, lue en entier,

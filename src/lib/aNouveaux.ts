@@ -1,6 +1,5 @@
 import { classeDuCompte, type LigneBalance } from './balanceImport'
 import { CAISSE_EXPORTEE, texteCaisseNegative } from './caisse'
-import { COMPTE_BANQUE } from './comptes'
 import { formatMoney } from './format'
 import type { CleRoleComptable, PlanComptable } from './planComptable'
 import type { OuvertureBanque } from './planTresorerie'
@@ -268,10 +267,13 @@ export function preparerANouveauxSelon(balance: readonly LigneBalance[], exercic
 //
 // Une seule date par dossier, la base le garantit (trigger `a_nouveaux_une_seule_ouverture`) : la
 // première ligne la porte pour toutes.
-export function ouvertureBanque(aNouveaux: readonly ANouveau[]): OuvertureBanque | null {
+//
+// La banque est celle du PLAN du dossier (ligne 43, conception § 2.4), paramètre obligatoire : sous un plan qui la tient
+// au 512100, une recherche au compte par défaut ne trouverait aucune ligne et dirait « banque soldée », en silence.
+export function ouvertureBanque(aNouveaux: readonly ANouveau[], plan: PlanComptable): OuvertureBanque | null {
   if (aNouveaux.length === 0) return null
   const centimes = aNouveaux
-    .filter((a) => a.compte === COMPTE_BANQUE)
+    .filter((a) => a.compte === plan.banque)
     .reduce((s, a) => s + (a.sens === 'debit' ? 1 : -1) * enCentimes(a.montant), 0)
   return { date: aNouveaux[0].date, solde: centimes / 100 }
 }

@@ -476,7 +476,7 @@ export default function DossierDetail() {
                 onModeleUpdated={(modification) => modifierDossier(id, modification)}
               />
             )}
-            {tab === 'statistiques' && modele && <StatistiquesTab dossierId={id} onNavigate={allerA} modeComptable={modele.mode} />}
+            {tab === 'statistiques' && modele && <StatistiquesTab dossierId={id} onNavigate={allerA} modeComptable={modele.mode} plan={modele.plan} />}
             {tab === 'bilan' && modele && <BilanTab dossierId={id} modele={modele} onNavigate={allerA} />}
             {tab === 'revision' && dossier && modele && (
               <RevisionTab

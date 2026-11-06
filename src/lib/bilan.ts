@@ -1,4 +1,4 @@
-import { COMPTE_CLIENTS, COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS } from './comptes'
+import type { PlanComptable } from './planComptable'
 import { calculerBalance } from './ecritures'
 import { auxiliaireDuTiers, type ModeleComptable } from './engagement'
 import { anneeDe, formatDate, formatMoney } from './format'
@@ -433,8 +433,10 @@ const parNumero = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const sensLu = (centimes: number) => (centimes > 0 ? 'au débit' : 'au crédit')
 
 // Les comptes collectifs que l'application détaille par tiers : le compte auxiliaire de chaque pièce les partage
-// (lib/engagement.ts). Un autre compte de tiers — 455, 467, un sous-compte d'une balance reprise — se juge en entier.
-const COMPTES_DETAILLES_PAR_TIERS: readonly string[] = [COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_CLIENTS]
+// (lib/engagement.ts). Un autre compte de tiers — 455, 467, un sous-compte d'une balance reprise — se juge en entier. Ceux
+// du PLAN du dossier (ligne 43, conception § 2.4) : le collectif d'un plan qui tient ses clients au 411100 se détaille aussi.
+const comptesDetaillesParTiers = (plan: PlanComptable): readonly string[] =>
+  [plan.fournisseurs, plan.fournisseurs_immobilisations, plan.clients]
 
 // Les comptes que l'inventaire revoit à chaque clôture et que l'application n'écrit pas encore : stocks, factures à
 // recevoir et à établir, charges à payer et produits à recevoir, charges et produits constatés d'avance, provisions et
@@ -492,6 +494,7 @@ export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
   const dateCloture = `${exercice}-12-31`
   const dateReprise = d.reprise.length > 0 ? d.reprise.map((a) => a.date).sort(parNumero)[0] : null
   const entreesDeLOuverture = { reprise: d.reprise, reportes: d.reportes, anneesValidees: d.anneesValidees, ecritures: d.ecritures }
+  const detaillesParTiers = comptesDetaillesParTiers(d.modele.plan)
 
   // Un exercice qui FINIT avant la reprise est dans les comptes repris : la règle est lue là où la révision et la base
   // la tiennent (`refusDeLOuverture`, comme `justifier_solde` et `valider_exercice` : « 31 décembre < reprise »), pour
@@ -601,7 +604,7 @@ export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
       continue
     }
     const regle = regleDuCompte(compte, individuel)
-    if (COMPTES_DETAILLES_PAR_TIERS.includes(compte)) {
+    if (detaillesParTiers.includes(compte)) {
       // Une part nulle n'est d'aucun côté : le signe la range, sans filtre.
       const parts = partsDesTiers(compte, d.ecritures, d.reprise, dateReprise, dateCloture, pieceParId)
       const total = parts.reduce((s, p) => s + p.centimes, 0)

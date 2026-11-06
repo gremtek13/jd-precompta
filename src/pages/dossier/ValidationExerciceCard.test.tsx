@@ -1,3 +1,4 @@
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import ValidationExerciceCard from './ValidationExerciceCard'
@@ -40,7 +41,7 @@ describe('ValidationExerciceCard', () => {
     let relacher!: () => void
     const relecture = new Promise<void>((r) => { relacher = r })
     render(
-      <ValidationExerciceCard
+      <ValidationExerciceCard plan={PLAN_PAR_DEFAUT}
         dossierId="d1" annee={2025} valide={null} etat={VALIDABLE} demande={DEMANDE} reportesEcrits={null} estChef
         onValide={() => relecture}
       />,
@@ -69,7 +70,7 @@ describe('ValidationExerciceCard', () => {
       ],
     }
     render(
-      <ValidationExerciceCard
+      <ValidationExerciceCard plan={PLAN_PAR_DEFAUT}
         dossierId="d1" annee={2025} valide={null} etat={etat} demande={null} reportesEcrits={null} estChef onValide={async () => {}}
         onNavigate={onNavigate} onChoisirExercice={onChoisirExercice}
       />,
@@ -105,7 +106,7 @@ describe('ValidationExerciceCard — l’ouverture de l’exercice suivant', () 
   function monter(r: ReportDesSoldes | null, validable = true) {
     const etat: EtatDeValidation = { prealables: [], numerotation: null, report: r, validable, fecSansChampsBnc: false }
     return render(
-      <ValidationExerciceCard
+      <ValidationExerciceCard plan={PLAN_PAR_DEFAUT}
         dossierId="d1" annee={2025} valide={null} etat={etat} demande={validable ? DEMANDE : null} reportesEcrits={null} estChef
         onValide={async () => {}}
       />,
@@ -196,7 +197,7 @@ describe('ValidationExerciceCard — l’ouverture de l’exercice suivant', () 
       + "nature de l'opération, l'identification du client (LPF, art. A47 A-1, VIII, 7°) — : aucune validation ne pourra plus les lui "
       + 'donner, et son FEC restera à dix-huit colonnes.'
     const { unmount } = render(
-      <ValidationExerciceCard
+      <ValidationExerciceCard plan={PLAN_PAR_DEFAUT}
         dossierId="d1" annee={2025} valide={null} etat={{ ...VALIDABLE, report: report(), fecSansChampsBnc: true }} demande={DEMANDE}
         reportesEcrits={null} estChef onValide={async () => {}}
       />,
@@ -216,7 +217,7 @@ describe('ValidationExerciceCard — l’ouverture de l’exercice suivant', () 
   // Tant qu'un préalable bloque, la carte ne le dit pas : rien ne se figera.
   it('ne dit pas le FEC sans les quatre champs tant qu’un préalable empêche de valider', () => {
     render(
-      <ValidationExerciceCard
+      <ValidationExerciceCard plan={PLAN_PAR_DEFAUT}
         dossierId="d1" annee={2025} valide={null} etat={{ ...VALIDABLE, validable: false, fecSansChampsBnc: true }} demande={null}
         reportesEcrits={null} estChef onValide={async () => {}}
       />,
@@ -226,7 +227,7 @@ describe('ValidationExerciceCard — l’ouverture de l’exercice suivant', () 
 
   it('dit, sur un exercice validé, l’ouverture que sa validation a écrite', () => {
     const { unmount } = render(
-      <ValidationExerciceCard
+      <ValidationExerciceCard plan={PLAN_PAR_DEFAUT}
         dossierId="d1" annee={2025} valide={exerciceValide(2025)} etat={null} demande={null} reportesEcrits={4} estChef
         onValide={async () => {}}
       />,
@@ -234,7 +235,7 @@ describe('ValidationExerciceCard — l’ouverture de l’exercice suivant', () 
     expect(screen.getByText('Sa validation a écrit l’ouverture de l’exercice 2026 : 4 soldes reportés au 01/01/2026, qui ouvrent son FEC (journal AN) et sa balance.')).toBeTruthy()
     unmount()
     const { unmount: demonter } = render(
-      <ValidationExerciceCard
+      <ValidationExerciceCard plan={PLAN_PAR_DEFAUT}
         dossierId="d1" annee={2025} valide={exerciceValide(2025)} etat={null} demande={null} reportesEcrits={0} estChef
         onValide={async () => {}}
       />,
@@ -243,7 +244,7 @@ describe('ValidationExerciceCard — l’ouverture de l’exercice suivant', () 
     demonter()
     // Lus en partie, les soldes reportés ne se comptent pas : la carte se tait plutôt que de dire un compte faux.
     render(
-      <ValidationExerciceCard
+      <ValidationExerciceCard plan={PLAN_PAR_DEFAUT}
         dossierId="d1" annee={2025} valide={exerciceValide(2025)} etat={null} demande={null} reportesEcrits={null} estChef
         onValide={async () => {}}
       />,

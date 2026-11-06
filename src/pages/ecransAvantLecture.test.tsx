@@ -468,10 +468,10 @@ const ECRANS: Ecran[] = [
     </Dossier1>
   ) },
   { nom: 'StatistiquesTab (trésorerie)', fichier: 'pages/dossier/StatistiquesTab.tsx', rendre: () => (
-    <Dossier1><StatistiquesTab dossierId="d1" onNavigate={rien} modeComptable="tresorerie" /></Dossier1>
+    <Dossier1><StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="d1" onNavigate={rien} modeComptable="tresorerie" /></Dossier1>
   ) },
   { nom: 'StatistiquesTab (engagement)', fichier: 'pages/dossier/StatistiquesTab.tsx', rendre: () => (
-    <Dossier1><StatistiquesTab dossierId="d1" onNavigate={rien} modeComptable="engagement" /></Dossier1>
+    <Dossier1><StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="d1" onNavigate={rien} modeComptable="engagement" /></Dossier1>
   ) },
   { nom: 'SourceDesVentesCard', fichier: 'pages/dossier/SourceDesVentesCard.tsx', rendre: () => <Dossier1><SourceDesVentesCard dossierId="d1" onReglageRendu={rien} /></Dossier1> },
   { nom: 'SuperPdpModal', fichier: 'pages/dossier/SuperPdpModal.tsx', rendre: () => <Dossier1><SuperPdpModal espace="cabinet" dossierId="d1" onClose={rien} onImported={rien} /></Dossier1> },

@@ -1,3 +1,4 @@
+import type { PlanComptable } from '../../lib/planComptable'
 import { formatDate, formatMoney } from '../../lib/format'
 import {
   LIBELLES_MOTIFS, ouAgir, phraseDeLEcart, type ComptePartage, type Concordance2035, type MotifEcart,
@@ -11,7 +12,7 @@ import {
 //
 // Les montants sont l'EFFET SUR LE RÉSULTAT : une recette positive, une dépense négative. C'est ce qui permet
 // de comparer une pièce, un mouvement et une dotation dans une même colonne sans convention par ligne.
-export default function ConcordanceCard({ concordance: c, comptesPartages, lectureIncomplete, ouverture, figePar }: {
+export default function ConcordanceCard({ concordance: c, comptesPartages, lectureIncomplete, ouverture, figePar, plan }: {
   concordance: Concordance2035
   comptesPartages: readonly ComptePartage[]
   // Non nul quand les écritures ou les entrées de la 2035 n'ont pas été lues en entier : la carte ne conclut
@@ -24,6 +25,9 @@ export default function ConcordanceCard({ concordance: c, comptesPartages, lectu
   // d'une catégorie qui a changé de compte ou de poste depuis la validation, ou du calcul, et rien ne s'y corrige plus. La
   // carte le dit, sans la liste des écarts ni leur « Où agir », qui appelleraient un geste que la base refuse.
   figePar: string | null
+  // Le plan du dossier (ligne 43, conception § 2.5) : l'explication nomme le compte de l'exploitant DU PLAN, celui où la
+  // CSG-CRDS s'écrit. Obligatoire : le compte par défaut, sous un autre plan, nommerait un compte où rien ne s'écrit.
+  plan: PlanComptable
 }) {
   const couleur = lectureIncomplete || !c.concorde ? 'var(--color-warning)' : 'var(--color-primary)'
   return (
@@ -81,7 +85,7 @@ export default function ConcordanceCard({ concordance: c, comptesPartages, lectu
           {c.csgDeductible !== 0 && (
             <p className="muted" style={{ marginBottom: 0 }}>
               La CSG déductible ({formatMoney(c.csgDeductible)}, case BV) n’a pas d’écriture, et ce n’est pas un
-              écart : la CSG-CRDS passe entière au compte de l’exploitant (108000), hors résultat, et seule sa part
+              écart : la CSG-CRDS passe entière au compte de l’exploitant ({plan.exploitant}), hors résultat, et seule sa part
               déductible entre dans la 2035. Elle sépare les deux résultats par construction.
             </p>
           )}

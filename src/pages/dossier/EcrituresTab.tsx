@@ -614,7 +614,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Les écritures d'une VENTE FACTURÉE (étape VF4c1) n'ont pas de pièce par construction : leur justification est leur
   // facture, leur encaissement, ou le mouvement que ses encaissements classent. Elles ne sont pas une rupture — la section
   // des ventes facturées dit leur état, et qu'elles ne vont pas encore au FEC ni à la piste d'audit (VF4c2).
-  const ruptures = rupturesPisteAudit(ecritures.filter((e) => !ligneDUneVenteFacturee(e, mouvementsDesVentes)), idsJustifies)
+  const ruptures = rupturesPisteAudit(ecritures.filter((e) => !ligneDUneVenteFacturee(e, mouvementsDesVentes)), idsJustifies, modele.plan)
   // L'EXERCICE AFFICHÉ EST-IL VALIDÉ ? Son FEC se relit alors depuis ce que la validation a figé (lib/fec.ts,
   // `numerotationValidee`) : journal, numéro, pièce et libellés de chaque écriture, tels que la base les a gardés.
   // Rien n'est relu des pièces ni des catégories d'aujourd'hui — une catégorie renommée ne change plus le fichier,
@@ -757,6 +757,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
           ventes: { ...ventesDesExports, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions },
           caisse: operationsDuFec ?? OPERATIONS_DE_CAISSE_ABSENTES,
+          plan: modele.plan,
         },
       ))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)

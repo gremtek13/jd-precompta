@@ -4,6 +4,7 @@ import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import { anneeDe, anneeEtMoisEcoules, aujourdHuiAParis, formatDate, premierJourDuMoisCourant } from '../../lib/format'
 import type { ModeleComptable } from '../../lib/engagement'
+import type { PlanComptable } from '../../lib/planComptable'
 import { lireLaChecklist } from '../../lib/checklistLecture'
 import { pointsDeLaChecklist, type DonneesDeLaChecklist } from '../../lib/pointsDeLaChecklist'
 import { controlesPourLaRevision, type ControleExistant } from '../../lib/controlesDeLaRevision'
@@ -160,7 +161,8 @@ async function lireLePermanent(dossierId: string): Promise<LectureDuDossierPerma
 // la révision et leurs preuves. Le dossier ENTIER, tous exercices : l'ouverture lit ceux d'avant, la reprise le précédent,
 // une citation sa source quel que soit son exercice.
 // `bascule` : le réglage du dossier — un dossier qui n'a pas basculé ne lit pas les sources de ses écritures de vente.
-async function lireLaRevision(dossierId: string, bascule: boolean): Promise<LectureDeLaRevision> {
+// `plan` : le plan du dossier (ligne 43), que la Vue d'ensemble lit avec lui.
+async function lireLaRevision(dossierId: string, bascule: boolean, plan: PlanComptable): Promise<LectureDeLaRevision> {
   const [
     checklist, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
     lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes, permanent,
@@ -168,7 +170,7 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
   ] = await Promise.all([
     // Un dossier qui a basculé y lit aussi les sources de ses écritures de vente : elles servent à la revue, plus bas. Elle lit
     // aussi les soldes reportés (O33-Q3), que la révision reprend tels quels : une lecture que deux écrans comptent s'écrit une fois.
-    lireLaChecklist(dossierId, bascule),
+    lireLaChecklist(dossierId, bascule, plan),
     lireTout<ControleReleveBancaire>((debut, fin) =>
       supabase.from('controles_releves_bancaires').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -396,10 +398,10 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
 
   useEffect(() => {
     let annule = false
-    void lireLaRevision(dossierId, ventesParLesFactures).then((lue) => { if (!annule) setLecture(lue) })
+    void lireLaRevision(dossierId, ventesParLesFactures, modele.plan).then((lue) => { if (!annule) setLecture(lue) })
     return () => { annule = true }
     // Un dossier qui bascule relit les sources de ses ventes facturées.
-  }, [dossierId, ventesParLesFactures])
+  }, [dossierId, ventesParLesFactures, modele.plan])
 
   async function decider(decision: DecisionComposee) {
     if (decisionEnCours.current || cycleEnCours.current || revueEnCours.current || permanentEnCours.current || typeof annee !== 'number') return
@@ -416,7 +418,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       }
       // Relue dans les deux cas, AVANT de relâcher le verrou : écrite, la décision paraît dans l'historique et l'état du
       // solde change ; refusée, la base a peut-être vu ce que l'écran n'avait pas lu (une autre décision, une écriture).
-      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures, modele.plan))
     } finally {
       decisionEnCours.current = false
       setEnCours(false)
@@ -439,7 +441,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       }
       // Relue dans les deux cas, AVANT de relâcher le verrou : écrite, elle devient la courante et l'état du cycle change ;
       // refusée, la base a peut-être vu ce que l'écran n'avait pas lu (une autre conclusion prise depuis).
-      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures, modele.plan))
     } finally {
       cycleEnCours.current = false
       setCycleOccupe(false)
@@ -460,7 +462,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       } else {
         ecrite = true
       }
-      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures, modele.plan))
     } finally {
       cycleEnCours.current = false
       setCycleOccupe(false)
@@ -481,7 +483,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       } else {
         ecrite = true
       }
-      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures, modele.plan))
     } finally {
       cycleEnCours.current = false
       setCycleOccupe(false)
@@ -505,7 +507,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       }
       // Relue dans les deux cas, AVANT de relâcher le verrou : écrit, le seuil devient le courant et l'état des lignes change ;
       // refusé, la base a peut-être vu ce que l'écran n'avait pas lu (un autre seuil fixé depuis).
-      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures, modele.plan))
     } finally {
       revueEnCours.current = false
       setRevueOccupee(false)
@@ -531,7 +533,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       }
       // Relue dans les deux cas : écrite, elle devient la courante ; refusée, la base a vu des montants ou une explication
       // que l'écran n'avait pas lus.
-      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures, modele.plan))
     } finally {
       revueEnCours.current = false
       setRevueOccupee(false)

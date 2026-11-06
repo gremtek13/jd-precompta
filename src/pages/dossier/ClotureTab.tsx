@@ -1043,7 +1043,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                 <BoutonCloture cloture={cloturesConnues.has(annee)} onCloturer={() => handleCloturer(annee)} />
               </div>
               <ValidationExerciceCard
-                dossierId={dossierId} annee={annee} {...validationDe(annee)} estChef={estChef} onValide={apresValidation} onNavigate={onNavigate}
+                dossierId={dossierId} annee={annee} {...validationDe(annee)} plan={modele.plan} estChef={estChef} onValide={apresValidation} onNavigate={onNavigate}
                 onChoisirExercice={setAnnee}
               />
             </Fragment>
@@ -1897,9 +1897,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                 lectureIncomplete={lectureIncomplete ?? ecrituresIncompletes}
                 ouverture={ouverture}
                 figePar={exerciceQuiFige(annee, anneesValidees)}
+                plan={modele.plan}
               />
               <ValidationExerciceCard
-                dossierId={dossierId} annee={annee} {...validation} estChef={estChef} onValide={apresValidation} onNavigate={onNavigate}
+                dossierId={dossierId} annee={annee} {...validation} plan={modele.plan} estChef={estChef} onValide={apresValidation} onNavigate={onNavigate}
                 onChoisirExercice={setAnnee}
               />
             </Fragment>

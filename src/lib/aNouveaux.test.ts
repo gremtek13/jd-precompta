@@ -233,7 +233,7 @@ describe('ouvertureBanque', () => {
   })
 
   it('rend null quand rien n’ouvre le dossier', () => {
-    expect(ouvertureBanque([])).toBeNull()
+    expect(ouvertureBanque([], PLAN_PAR_DEFAUT)).toBeNull()
   })
 
   it('somme les lignes du compte banque, dans leur sens', () => {
@@ -241,14 +241,20 @@ describe('ouvertureBanque', () => {
       aNouveau({ id: 'a', montant: 6000 }),
       aNouveau({ id: 'b', montant: 499.9, sens: 'credit' }),
       aNouveau({ id: 'c', compte: '108', compte_origine: '108', montant: 5500.1, sens: 'credit' }),
-    ])).toEqual({ date: '2026-01-01', solde: 5500.1 })
+    ], PLAN_PAR_DEFAUT)).toEqual({ date: '2026-01-01', solde: 5500.1 })
   })
 
   it('rend un solde NUL, pas null, quand la reprise ne porte aucune banque', () => {
     // La banque était soldée à la reprise : un zéro connu, que la trésorerie doit afficher sans
     // mise en garde.
-    expect(ouvertureBanque([aNouveau({ compte: '2183', compte_origine: '2183', montant: 3000 })]))
+    expect(ouvertureBanque([aNouveau({ compte: '2183', compte_origine: '2183', montant: 3000 })], PLAN_PAR_DEFAUT))
       .toEqual({ date: '2026-01-01', solde: 0 })
+  })
+
+  it('cherche la banque du PLAN du dossier (ligne 43, § 2.4), jamais le compte par défaut', () => {
+    const reprise = [aNouveau({ id: 'a', compte: PLAN_DECALE.banque, montant: 6000 }), aNouveau({ id: 'b', montant: 100 })]
+    expect(ouvertureBanque(reprise, PLAN_DECALE)).toEqual({ date: '2026-01-01', solde: 6000 })
+    expect(ouvertureBanque(reprise, PLAN_PAR_DEFAUT)).toEqual({ date: '2026-01-01', solde: 100 })
   })
 })
 

@@ -4,6 +4,7 @@ import { anneeDe, aujourdHuiAParis, formatDate, formatMoney } from '../../lib/fo
 import { correspondALaRecherche } from '../../lib/recherche'
 import { calculerBalance } from '../../lib/ecritures'
 import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
+import type { PlanComptable } from '../../lib/planComptable'
 import { messageErreur } from '../../lib/messageErreur'
 import type { ANouveau, Categorie, EcritureBrouillon, LettrageManuel, ModeComptable, Piece, SoldeReporte } from '../../lib/types'
 import { etatDeLOuverture, ouvertureDeLExercice, type EtatDeLOuverture } from '../../lib/reportDesSoldes'
@@ -59,12 +60,14 @@ function phraseDeLOuverture(etat: EtatDeLOuverture, annee: number): string | nul
 // calculée depuis le même brouillon que EcrituresTab, jamais une comptabilité tenue à part (voir
 // BrouillonBanner ailleurs dans l'onglet Écritures — même statut ici, juste pas répété pour ne pas
 // surcharger un onglet de lecture).
-export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }: {
+export default function StatistiquesTab({ dossierId, onNavigate, modeComptable, plan }: {
   dossierId: string
   onNavigate: (tab: DossierTab) => void
   // En engagement, l'écran porte en plus les comptes de tiers à une date (lib/lettrage.ts). Sans valeur par défaut :
   // oublié, un dossier en engagement perdrait sa balance âgée sans que rien le dise.
   modeComptable: ModeComptable
+  // Le plan du dossier (ligne 43, conception § 2.4) : la tendance de trésorerie se lit au compte de SA banque.
+  plan: PlanComptable
 }) {
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
@@ -202,7 +205,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
   // trésorerie de Financement) et un avancement grossier du dossier en cours. Le détail complet de
   // l'avancement (points à traiter, documents attendus) reste dans Vue d'ensemble — pas dupliqué ici,
   // juste un chiffre de synthèse avec un renvoi.
-  const evolutionMensuelle = useMemo(() => calculerEvolutionMensuelle(ecritures, NB_MOIS_EVOLUTION), [ecritures])
+  const evolutionMensuelle = useMemo(() => calculerEvolutionMensuelle(ecritures, NB_MOIS_EVOLUTION, plan), [ecritures, plan])
   const anneeCourante = new Date().getFullYear()
   const piecesAnnee = pieces.filter((p) => p.date_piece && anneeDe(p.date_piece) === anneeCourante)
   const piecesValideesAnnee = piecesAnnee.filter((p) => p.statut === 'validee')

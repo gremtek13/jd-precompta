@@ -1,3 +1,4 @@
+import type { PlanComptable } from '../../lib/planComptable'
 import { useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
@@ -25,10 +26,13 @@ import type { ExerciceValide, JournalCode } from '../../lib/types'
 // confirmation les nomme, et un exercice validé dit l'ouverture qu'il a écrite.
 
 export default function ValidationExerciceCard({
-  dossierId, annee, valide, etat, demande, reportesEcrits, estChef, onValide, onNavigate, onChoisirExercice,
+  dossierId, annee, valide, etat, demande, reportesEcrits, plan, estChef, onValide, onNavigate, onChoisirExercice,
 }: {
   dossierId: string
   annee: number
+  // Le plan du dossier (ligne 43, conception § 2.5) : l'aperçu et la confirmation nomment les comptes où le report verse le
+  // résultat — ceux du PLAN, que `soldes_a_reporter` lit au même plan. Obligatoire, sans valeur par défaut.
+  plan: PlanComptable
   // L'exercice tel que la base le garde, quand il est validé.
   valide: ExerciceValide | null
   // Les préalables, quand il ne l'est pas — nuls pendant le chargement.
@@ -56,7 +60,7 @@ export default function ValidationExerciceCard({
     validationEnCours.current = true
     setErreur(null)
     try {
-      if (!window.confirm(confirmation(annee, demande, etat.report, etat.fecSansChampsBnc))) return
+      if (!window.confirm(confirmation(annee, demande, etat.report, etat.fecSansChampsBnc, plan))) return
       setEnCours(true)
       const { error } = await supabase.rpc('valider_exercice', {
         p_dossier_id: dossierId,
@@ -174,7 +178,7 @@ export default function ValidationExerciceCard({
       {etat.validable && demande && etat.fecSansChampsBnc && (
         <p className="muted">{phraseDuFecSansChampsBnc(annee)}</p>
       )}
-      {etat.validable && demande && etat.report && <ApercuDuReport annee={annee} report={etat.report} />}
+      {etat.validable && demande && etat.report && <ApercuDuReport annee={annee} report={etat.report} plan={plan} />}
       {estChef ? (
         <button
           className="btn btn-primary"
@@ -195,7 +199,7 @@ export default function ValidationExerciceCard({
 // CE QUE LA VALIDATION ÉCRIRA AUSSI : l'ouverture de l'exercice suivant, telle que la base la calculera — le module en est
 // le jumeau, confronté à la fonction de la base (lib/reportDesSoldes.ts). Le détail se déplie : une ligne par compte de
 // bilan qui porte un solde.
-function ApercuDuReport({ annee, report }: { annee: number; report: ReportDesSoldes }) {
+function ApercuDuReport({ annee, report, plan }: { annee: number; report: ReportDesSoldes; plan: PlanComptable }) {
   const n = report.soldes.length
   return (
     <div className="apercu-report" style={{ marginBottom: 12 }}>
@@ -204,7 +208,7 @@ function ApercuDuReport({ annee, report }: { annee: number; report: ReportDesSol
         {n === 0
           ? `Tous les comptes de bilan sont soldés au 31/12/${annee} : l’exercice ${annee + 1} s’ouvrira sans soldes reportés.`
           : `La validation l’écrit dans le même geste : ${n} solde${n > 1 ? 's' : ''} reporté${n > 1 ? 's' : ''} au 01/01/${annee + 1}, `
-            + `${formatMoney(report.totalDebit)} au débit comme au crédit. ${phraseDuResultat(annee, report)}`}
+            + `${formatMoney(report.totalDebit)} au débit comme au crédit. ${phraseDuResultat(annee, report, plan)}`}
       </p>
       {n > 0 && (
         <details>
@@ -243,16 +247,16 @@ const nombre = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } as con
 // verse son compte de l'exploitant et son résultat au capital individuel (PCG, art. 1211-10, version du 1er janvier
 // 2026 — l'ancien art. 941-10, renuméroté), une société garde son résultat en attente d'affectation, que le cabinet
 // décide.
-function phraseDuResultat(annee: number, report: ReportDesSoldes): string {
+function phraseDuResultat(annee: number, report: ReportDesSoldes, plan: PlanComptable): string {
   const r = report.resultat
   const leResultat = r > 0 ? `le bénéfice de l’exercice (${formatMoney(r)})` : `la perte de l’exercice (${formatMoney(-r)})`
   if (report.individuel) {
     return `Entreprise individuelle : le compte de l’exploitant (108)${r !== 0 ? ` et ${leResultat} passent` : ' passe'} au capital `
-      + `individuel (101000), comme le prévoit le plan comptable (art. 1211-10) : l’exercice ${annee + 1} repart d’un compte de `
+      + `individuel (${plan.capital_individuel}), comme le prévoit le plan comptable (art. 1211-10) : l’exercice ${annee + 1} repart d’un compte de `
       + 'l’exploitant vide.'
   }
   if (r === 0) return ''
-  return `${r > 0 ? 'Le bénéfice' : 'La perte'} de l’exercice (${formatMoney(Math.abs(r))}) est ${r > 0 ? 'reporté en 120000' : 'reportée en 129000'}, `
+  return `${r > 0 ? 'Le bénéfice' : 'La perte'} de l’exercice (${formatMoney(Math.abs(r))}) est ${r > 0 ? `reporté en ${plan.resultat_benefice}` : `reportée en ${plan.resultat_perte}`}, `
     + 'en attente d’affectation : l’affecter reste un geste du cabinet.'
 }
 
@@ -307,7 +311,9 @@ function resume(demande: DemandeDeValidation): string {
 // aussi distrait que le premier, et celle-ci précède le geste le plus définitif de l'application.
 // Et, pour un BNC en trésorerie tant que le drapeau des quatre champs est baissé, ce que le FEC de l'exercice n'aura jamais
 // (MVPD7-Q3) : la confirmation est le dernier moment où le dire.
-function confirmation(annee: number, demande: DemandeDeValidation, report: ReportDesSoldes | null, fecSansChampsBnc: boolean): string {
+function confirmation(
+  annee: number, demande: DemandeDeValidation, report: ReportDesSoldes | null, fecSansChampsBnc: boolean, plan: PlanComptable,
+): string {
   const ecritures = nombreDEcritures(demande)
   const points = [
     `Ses ${ecritures} écriture(s) (${demande.p_lignes.length} ligne(s)) deviennent intangibles : elles ne se modifient ni ne se suppriment plus, et aucune écriture ne pourra plus être passée jusqu'au 31/12/${annee}.`,
@@ -320,8 +326,8 @@ function confirmation(annee: number, demande: DemandeDeValidation, report: Repor
         ? `Tous les comptes de bilan étant soldés, l'exercice ${annee + 1} s'ouvrira sans soldes reportés.`
         : `L'ouverture de l'exercice ${annee + 1} s'écrit dans le même geste, et ne se modifiera pas : ${report.soldes.length} solde(s) reporté(s) au 01/01/${annee + 1}`
           + (report.individuel
-            ? ', le compte de l\'exploitant et le résultat passant au capital individuel (101000).'
-            : report.resultat !== 0 ? `, le résultat en attente d'affectation en ${report.resultat > 0 ? '120000' : '129000'}.` : '.')]
+            ? `, le compte de l'exploitant et le résultat passant au capital individuel (${plan.capital_individuel}).`
+            : report.resultat !== 0 ? `, le résultat en attente d'affectation en ${report.resultat > 0 ? plan.resultat_benefice : plan.resultat_perte}.` : '.')]
       : []),
     ...(fecSansChampsBnc ? [phraseDuFecSansChampsBnc(annee)] : []),
   ]
