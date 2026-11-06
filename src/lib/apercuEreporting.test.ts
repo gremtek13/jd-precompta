@@ -144,8 +144,10 @@ describe('phraseDesStatutsAnciens', () => {
     return l
   }
   it('au-delà de sept jours sans relevé, la phrase ; à sept jours, ou jamais relevés, rien de plus ici', () => {
-    expect(phraseDesStatutsAnciens(relie('2027-11-03T23:00:00+00:00'), '2027-11-12', 'client')).toBe(
-      'Les statuts de tes factures n’ont pas été relevés sur ta plateforme depuis le 04/11/2027 : une réponse de l’acheteur ne se verrait pas ici.')
+    // Le jour d'un horodatage suit le fuseau de qui le regarde (`formatDate`) : 10 h UTC tombe le 3 novembre dans les quatre
+    // fuseaux de la suite (Paris, UTC, New York, Auckland), où 23 h UTC tombait le 3 ou le 4 selon le fuseau.
+    expect(phraseDesStatutsAnciens(relie('2027-11-03T10:00:00+00:00'), '2027-11-12', 'client')).toBe(
+      'Les statuts de tes factures n’ont pas été relevés sur ta plateforme depuis le 03/11/2027 : une réponse de l’acheteur ne se verrait pas ici.')
     expect(phraseDesStatutsAnciens(relie('2027-11-05T00:00:00+00:00'), '2027-11-12', 'cabinet')).toBeNull()
     expect(phraseDesStatutsAnciens(relie(null), '2027-11-12', 'client')).toBeNull()
     expect(phraseDesStatutsAnciens(lireEtatFactureElectronique(HIER)!, '2027-11-12', 'client')).toBeNull()
