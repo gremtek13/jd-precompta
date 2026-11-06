@@ -6,7 +6,8 @@ Documentation durable du projet : son état et les règles qui le gouvernent, à
 ligne s'y paie autant de fois.** Il a été réduit deux fois à la demande du cabinet : le 08/10/2026 (863 000 caractères,
 dont 81 % de récits de débogage, environ 475 000 tokens par reprise), puis le 18/10/2026 (228 000 caractères, 107 000
 tokens par reprise). Les textes d'avant sont dans **HISTORIQUE.md**, que rien ne charge automatiquement — le second sous
-l'entrée « CLAUDE.MD RÉDUIT UNE SECONDE FOIS : LE TEXTE D'AVANT ».
+l'entrée « CLAUDE.MD RÉDUIT UNE SECONDE FOIS : LE TEXTE D'AVANT », et les trois entrées condensées le 06/11/2026 sous
+l'entrée « CLAUDE.MD CONDENSÉ : TROIS ENTRÉES D'AVANT ».
 
 - Ici : l'état du projet et la règle, en quelques lignes. Le récit — comment un défaut a été trouvé et mesuré, ce que
   les mutations ont montré, les résultats négatifs à ne pas réenquêter — va dans HISTORIQUE.md (sous « Entrées
@@ -37,57 +38,13 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
 données vers la mi-décembre 2026 (sinon la mi-janvier 2027), la 2035 déposée en mai 2027 par l'expert-comptable, qui
 importe le FEC (MVP-D5). La répétition générale rejoue son année 2025 réelle, dans le même dossier (MVP-D7), comparée à
 la 2035 déposée (MVP-D6) : ses données entrent vers le 20 novembre, leurs préalables avant. Le praticien valide ses
-factures (MVP-D1), la caisse entre (MVP-D2 ; conçue puis reprise le 28/10/2026 : le praticien la saisit aussi, sur un
-dossier exonéré ou en franchise, et une pièce s'y règle — environ vingt jours, cinq migrations → « LA CAISSE D'UN
-DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE » ; ses deux
-migrations EN PRODUCTION depuis le 30/10/2026 — `caisse` (C1) par l'outil, `caisse_retrait_et_versement` (C1b) collée —,
-son essai de suppression (`caisseSuppression.sql`) sur une réplique seulement → « LA CAISSE, EN BASE : LA MIGRATION
-`CAISSE` (C1, LIGNE 26.6) », « LA CAISSE, EN BASE : LE RETRAIT, LE REMPLACEMENT ET LE VERSEMENT D'ESPÈCES (C1B, LIGNE
-26.6) », « LA CAISSE EN PRODUCTION : LES DEUX MIGRATIONS ET LE DRAPEAU LEVÉ » ; son drapeau, `CAISSE_EXPORTEE`, levé le
-même jour : le module, la lecture et la sauvegarde (C2), les moteurs (C3a), le FEC et les contrôles (C3b), les écrans du
-cabinet (C4) suivent la base ; l'assistant (C5) en ligne le même jour (`agent-comptable` v50) — une ligne de caisse au
-modèle sous son genre, sa date et son montant, jamais un libellé —, `points_a_traiter` renvoie ses contrôles à l'onglet
-Caisse ; le resserrement (C6) le même jour : l'écran n'offre plus d'espèces sur un crédit, et la garde des encaissements
-le refuse en base (la migration 3, `especes_sans_mouvement`, appliquée par l'outil) ; un dossier basculé tient une
-caisse dès que les espèces d'une facture source y entrent (C6-Q1, le 31/10/2026), tout dossier dès que sa reprise ou son
-relevé la portent, et la fenêtre des encaissements juge la caisse avant le clic ; le paiement d'une pièce par la caisse
-et la caisse bornée par son ouverture (C8), en production depuis le 02/11/2026, la fiche d'un mouvement
-refusant déjà de classer sur la caisse un mouvement d'avant l'ouverture ; ce paiement dans les moteurs (C9a, le
-01/11/2026 ; `PAIEMENT_PAR_LA_CAISSE_EXPORTE` levé le 02/11/2026) : `PaiementDePiece` une union, le relevé ou la caisse,
-quatrième paramètre obligatoire de `paiementsDesPieces`, la contrepartie au compte de la caisse du plan ; l'écran du cabinet
-(C9b, le 01/11/2026, sous le même drapeau) : la fiche d'une pièce la règle par la caisse et en retire un paiement,
-« Payée en espèces » à part de « Rapprochée », `caisse-a-reprendre` compte la contrepartie d'un paiement, une caisse lue en
-partie retient « Associer » ; relus et corrigés le 01/11/2026 : la pièce à valider qu'un paiement cite retient la validation
-(et un filet en base, `validation_des_paiements_par_la_caisse`, en production depuis le 02/11/2026), un paiement qui laisserait la
-pièce à quelques centimes se refuse (C9-Q1, sur la recommandation), une pièce payée ne part plus d'une sélection ;
-l'assistant (C13, en ligne le 01/11/2026, `agent-comptable` v52) lit ces paiements sans drapeau — une pièce payée en espèces n'y est plus
-« en attente de rapprochement », ni sa contrepartie « à régénérer », et un dossier sans paiement rend ce qu'il rendait, au
-caractère près ; le client : C10, le droit « Caisse »
-d'un accès et la saisie du praticien en base (`caisse_du_client`, C10-Q1 telle quelle), en production depuis le
-02/11/2026, une lecture ouverte au client « Caisse » ; C11, l'onglet Accès, le 02/11/2026 : la case « Caisse » suit le
-statut de TVA lu, se coche sur une confirmation qui nomme la personne, ce qui s'ouvre et la condition, part à la forme à
-quatre ; la nature des recettes sous la liste ; `AuthContext` lit la case ; la Vue d'ensemble dit les saisies du client que
-ce navigateur n'a pas montrées → « LA CAISSE : LE DROIT « CAISSE » À L'ÉCRAN DU CABINET (C11, LIGNE 26.6) » ; C12a,
-« Ma caisse », le 02/11/2026 : l'écran du praticien (`maCaisseOuverte`, la case relue à la base) lit sa caisse jour par jour
-(`caisse_du_client`, l'année et les suivantes) et ses opérations, les CONFRONTE avant de rien offrir, et juge ses saisies,
-corrections et retraits par les règles de `lib/caisse.ts` sur la caisse ainsi rejouée (`lib/caisseClient.ts`) — ce qu'il ne
-lit pas (l'ouverture du dossier, une année sans jour lu) reste au jugement de la base → « LA CAISSE : « MA CAISSE », L'ÉCRAN
-DU PRATICIEN (C12A, LIGNE 26.6) » ; C12b, le 02/11/2026 : depuis « Mes pièces », le praticien paie une pièce par sa caisse, à
-son jour et à son montant, sans en voir le montant, et retire son paiement → « LA CAISSE : LE PAIEMENT D'UNE PIÈCE DEPUIS
-« MES PIÈCES » (C12B, LIGNE 26.6) », « LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 », « LA CAISSE : LE MODULE, LA LECTURE
-ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
-CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
-26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) », « LA
-CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE 26.6) », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET
-FEC22-E », « LA CAISSE REPRISE EST « TENUE », ET LA FENÊTRE DES ENCAISSEMENTS JUGE LA CAISSE AVANT LE CLIC
-(RELECTURE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, EN BASE (C8, LIGNE 26.6) (PRÉPARÉE, PAS
-APPLIQUÉE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LES MOTEURS (C9A, LIGNE 26.6) », « LA CAISSE : LE
-PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À L'ÉCRAN DU CABINET (C9B, LIGNE 26.6) », « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES
-CORRECTIONS », « LA CAISSE : L'ASSISTANT DEVANT LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (C13, LIGNE 26.6) », « L'ASSISTANT REDÉPLOYÉ (V52) : C13 EN LIGNE », « LA CAISSE : LE DROIT « CAISSE », EN BASE (C10, LIGNE 26.6) (PRÉPARÉE, PAS
-APPLIQUÉE) »), le plan Pro de Supabase sauvegarde la base
-(MVP-D3). La case « MVP » de la feuille de route marque les
-lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC
-RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
+factures (MVP-D1) ; la caisse entre (MVP-D2), terminée le 04/11/2026 de C1 à C13 — la base, les moteurs, le FEC, les
+écrans du cabinet et du praticien, l'assistant —, ses règles sous « La caisse d'un BNC » (Comptabilité, plus bas) → « LA
+CAISSE D'UN DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE », « LA
+CAISSE EN PRODUCTION : LES DEUX MIGRATIONS ET LE DRAPEAU LEVÉ », « LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES
+QUATRE MIGRATIONS DU 02/11/2026 » ; le plan Pro de Supabase sauvegardera la base (MVP-D3 ; un geste du cabinet, encore à
+faire le 06/11/2026). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie,
+et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
@@ -543,198 +500,39 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ». `receive-email`
   ne journalise plus que des comptes, ni objet, ni expéditeur, ni adresse, ni code de collecte (le contrat exige zéro
   recopie) → « RECEIVE-EMAIL NE JOURNALISE PLUS QUE DES COMPTES ».
-- **Une vente entrée deux fois ; la facture validée, source de sa vente** (ligne 28.6 ; EC-Q3 a la sienne, la 28.65,
-  depuis le 21/10/2026) : CONÇUE le 18/10/2026 — les moteurs lisent la facture et le registre des encaissements (la
-  recette à sa date d'encaissement en trésorerie, la créance à sa date en engagement, un taux soldé portant exactement
-  la TVA facturée), la jumelle et le PDF désignés « exemplaires » ne comptent plus, le double compte fermé en base (G1 à
-  G5) ; la bascule par dossier, par le cabinet, sans effet rétroactif, irréversible ; neuf étapes, VF1 à VF9 ; ses
-  questions (EC3-Q1 à Q12, EC3-Q6b, VF2-Q2) tranchées le 19/10/2026 à la recommandation, VF3-Q1 (la règle du cumul),
-  VF6-Q1 (défaire l'exemplaire d'une facture source), VF4A-Q1 (le nom du 706000 et du 627000) et VF4A-Q2 (le compte
-  d'une compensation) le 20/10/2026, VF4C1-Q1 (changer le compte d'une compensation) et VF4C2-Q1 (le nom des quatre
-  autres comptes) le 21/10/2026, VF4C3-Q1 (le poste des frais d'un mouvement d'encaissements) et VF5-Q1 à VF5-Q3
-  (l'impayé d'un encaissement jamais déclaré, la vente d'avant datée par son encaissement, rien de plus pour « Banque »
-  seul) le 22/10/2026, de même ; fini avant que les clients facturent réellement ici → « LA FACTURE VALIDÉE, SOURCE DE
-  SA VENTE : LA CONCEPTION ». VF1 en ligne le 18/10/2026 (28.6-Q1) : l'exemplaire d'une facture, en base (VF1a) puis
-  désigné et défait depuis la fiche d'une pièce de vente (VF1b) → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE »,
-  « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». VF2 en base le 19/10/2026, neutre (le réglage du dossier, la source fixée à
-  la validation, les encaissements d'une facture source, le mouvement réservé puis classé par ses encaissements) → « LA
-  SOURCE DE LA VENTE, EN BASE ». VF3a le 19/10/2026, neutre : une SECONDE forme, `VentesFacturees`
-  (`lib/ventesFacturees.ts`, pur, et sa lecture) → « LES VENTES FACTURÉES, EN MODULE ». VF3b le 19/10/2026, en trois
-  lots : la 2035 (Clôture, la Révision), la CA3 (l'onglet TVA), la situation et l'estimation (Financement, Estimation)
-  les lisent, « Ma simulation » dit ne pas les compter jusqu'à VF8, et les confirmations de VF1b disent ce qui se
-  compte ; jusqu'à VF4, une part sans compte et une déclaration qui ne s'enregistre pas → « LA 2035 LIT LES VENTES
-  FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION ET LA SIMULATION LISENT LES VENTES
-  FACTURÉES ». VF4a le 20/10/2026, neutre : les six rôles de la vente facturée entrent dans le plan de l'application, et
-  ses écritures se composent en module pur (`lib/ecrituresVentesFacturees.ts`), que rien ne lit encore → « LES ÉCRITURES
-  D'UNE VENTE FACTURÉE, EN MODULE ». VF4b le 20/10/2026, neutre : les fonctions qui vérifient et remplacent ces
-  écritures (`ecrire_vente_facturee`, `retirer_ecriture_vente_facturee`), la garde G5 et le compte d'une compensation,
-  en base — une migration collée par le cabinet —, et `lib/ecritureVenteFacturee.ts`, qui redit leurs refus → « LES
-  ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE ». VF4c1 le 20/10/2026, neutre : l'onglet Écritures écrit, réécrit et retire
-  ces écritures, source par source, et le cabinet y choisit le compte d'une compensation → « L'ONGLET ÉCRITURES ÉCRIT
-  LES VENTES FACTURÉES ». VF4c2 le 21/10/2026 : le FEC, la piste d'audit et le lettrage lisent ces écritures, et le
-  706000 et le 627000 prennent le nom du plan comptable général (VF4A-Q1) ; neutre hors de ce nom, qu'aucune ligne de la
-  production ne porte → « LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES ». VF4c3 le 21/10/2026,
-  neutre : la concordance de la 2035 et la CA3 lisent ces écritures — une période se déclare quand celles de ses ventes
-  facturées sont à jour —, « Changer le compte » d'une compensation (VF4C1-Q1) et le nom du plan comptable général pour
-  les quatre autres comptes (VF4C2-Q1), toutes deux sur la recommandation → « LA 2035 ET LA CA3 LISENT LES ÉCRITURES
-  D'UNE VENTE FACTURÉE ». Le lot du mouvement libéré (R1 de VF4b) le 21/10/2026, neutre : les dix-huit fonctions du
-  relevé et le navigateur ne suppriment, ne jugent et ne vérifient que les lignes propres au mouvement — une migration
-  collée par le cabinet → « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT ». Les frais d'un
-  mouvement d'encaissements le 22/10/2026, neutre : la 2035 les compte tels que la composition les écrit (VF4C3-Q1, sur
-  la recommandation) → « LA 2035 COMPTE LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS ». VF5 conçu le 22/10/2026 (neuf lots,
-  VF5a1 à VF5h) → « VF5, LA BANQUE : LA CONCEPTION ». VF5a1 le 22/10/2026, neutre : le relevé reconnaît les mouvements
-  que les encaissements de factures sources classent ou réservent (G2), un mouvement classé n'est plus « rapproché sans
-  justificatif », leur fiche n'offre aucun geste d'hier, et des ventes lues en partie retiennent la fiche et les lots →
-  « LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES ». VF5a2 le 22/10/2026, neutre : aucun lot du relevé ne
-  prend ces mouvements, sa carte dit combien il en écarte, et un mouvement réservé se compte à part des non rapprochés →
-  « LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES FACTURÉES ». VF5b le 22/10/2026, neutre : la fenêtre des
-  encaissements juge une facture source par les jugements de la vente — le reste net de ses avoirs, des mouvements
-  libres, la contre-passation qui cite son débit, le geste qui rendrait un mouvement inclassable dit sans être refusé ;
-  chez le client, qui ne lit pas les exercices validés, la frontière jugée par la base → « LA FENÊTRE DES ENCAISSEMENTS
-  JUGE UNE FACTURE SOURCE ». VF5c le 22/10/2026, neutre : côté cabinet, la fiche d'un crédit classe un mouvement réservé
-  par ses encaissements, retire ce classement, lui rattache un encaissement enregistré sans mouvement ou ouvre sur lui
-  la fenêtre d'une facture (le mouvement imposé) ; une remise de chèques se rattache encaissement par encaissement →
-  « LA FICHE D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES ENCAISSEMENTS D'UNE FACTURE ». VF5d le 22/10/2026, neutre : côté
-  cabinet, la fiche d'un débit classe un débit réservé par ses contre-passations, retire ce classement, lui rattache une
-  contre-passation enregistrée sans mouvement ou ouvre sur lui la contre-passation d'un encaissement déclaré (la fenêtre
-  des encaissements, ce débit imposé) → « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE ». VF5d2 le 23/10/2026
-  (VF5-Q1), neutre : l'encaissement jamais déclaré d'une facture source se contre-passe en citant le débit qui l'a
-  défait, et la paire ne se déclare pas — une migration accordée par le cabinet ; VF5D2-Q1 à Q3 tranchées le 23/10/2026
-  à la recommandation → « L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ ». VF5e le 23/10/2026, neutre : les candidats du
-  relevé — une facture source ouverte ou un encaissement sans mouvement pour un crédit libre, une contre-passation sans
-  mouvement pour un débit, acceptés par les jugements de la base — mettent le crédit « à rapprocher » dans le lot des
-  règles, l'écartent des trois autres lots et se proposent en tête de sa fiche → « LES CANDIDATS DU RELEVÉ ». VF5f le
-  23/10/2026, neutre : la Checklist et la Révision disent, en « attention », les mouvements réservés à des encaissements
-  de factures, à classer (Banque), et les encaissements par un moyen du relevé sans mouvement (Factures, vue
-  « Règlements », que Banque ne liste pas) ; lues en partie, les ventes taisent les deux points et un bandeau le dit ;
-  un réservé ne se compte plus parmi les non rapprochées → « LA CHECKLIST ET LA RÉVISION DISENT LES MOUVEMENTS RÉSERVÉS
-  ET LES ENCAISSEMENTS SANS MOUVEMENT ». VF5g le 23/10/2026, neutre : « Ma banque » d'un client « Banque » et « Ventes »
-  dit le mouvement que les encaissements de ses factures classent ou réservent, et n'offre aucune pièce sur un réservé ;
-  « Banque » seul, rien de plus (VF5-Q3) → « « MA BANQUE » DIT LES ENCAISSEMENTS DE SES FACTURES ». VF6 conçue le
-  23/10/2026 (six lots, VF6a à VF6f, dont une migration ; VF6-Q2 à Q5 tranchées le jour même à la recommandation, VF6f
-  sans objet) : le brouillon et cinq préalables ignorent d'abord l'exemplaire d'une facture source, puis la déclaration,
-  G3, G4, le refus de défaire et le journal des désignations en base → « VF6, LA JUMELLE INVERSÉE : LA CONCEPTION ».
-  VF6a le 23/10/2026, neutre : le brouillon, la Checklist et les préalables ignorent l'exemplaire d'une facture source
-  (`lib/facturesSources.ts`, en paramètre obligatoire), son écriture passée est sans objet et se retire → « LE BROUILLON
-  ET LES PRÉALABLES IGNORENT L'EXEMPLAIRE D'UNE FACTURE SOURCE ». VF5h le 23/10/2026, repris sur VF6a, sa migration
-  (`virement_mixte`, `20261024052038`) appliquée le 24/10/2026 sur l'accord du cabinet : un crédit qui paie une facture
-  source et une facture d'avant la bascule se classe par ses encaissements avec l'exemplaire unique et validé de
-  celle-ci (sinon le rang 7, neuf), s'écrit sans la part de cette facture et date l'exemplaire (`partsEncaissees`) ; G5
-  laisse la banque d'une pièce sur un tel mouvement ; des ventes facturées lues en partie retiennent la génération et la
-  validation par la garde unique de VF6a → « LE VIREMENT MIXTE — CHANTIER EC-Q3 ». VF6b le 23/10/2026, sa migration
-  (`jumelle_inversee`, `20261024052424`) appliquée le 24/10/2026 après celle de VF5h, sur l'accord du cabinet : la
-  déclaration d'une vente hors des factures, `factures_du_pont` (le jumeau du pont), G3 et G4, la désignation qui
-  remplace (VF6-Q1) et se refuse sous un virement mixte classé (VF5H-Q1), le journal des désignations au cabinet seul ;
-  `JUMELLE_INVERSEE_EXPORTEE` levé → « LA JUMELLE INVERSÉE, EN BASE », « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN
-  PRODUCTION ». VF5H-Q1 à Q3 et VF6B-Q1 tranchées le 24/10/2026 à la recommandation. VF6c le 24/10/2026, neutre : la
-  section « Ce que cette pièce est » de la fiche d'une pièce de vente, au cabinet seul — désigner, remplacer d'un seul
-  geste, défaire là où la base le permet, déclarer, retirer la déclaration, le journal (qui, quel geste, quand ; un
-  journal resté dans un autre dossier, VF6B-Q1) —, la fiche lisant elle-même la bascule, le pont, les liens de G4 et le
-  virement mixte (`lib/marquesDeLaPieceLecture.ts`) ; « Valider » retenu par G3 ; la pièce neuve de vente d'un dossier
-  basculé à valider → « LA FICHE D'UNE PIÈCE DIT CE QU'ELLE EST ». VF6d le 24/10/2026, neutre : « Valider la sélection »
-  et « Valider et rapprocher » écartent avant le clic ce que G3 refuserait, et ni les lots du relevé, ni la fiche d'un
-  mouvement, ni le règlement groupé ne prennent l'exemplaire d'une facture source (G4) ; une proposition du client qui
-  le cite se dit sous les mots de la garde → « LES LOTS ET LE RELEVÉ ÉCARTENT L'EXEMPLAIRE D'UNE FACTURE SOURCE ». VF6e
-  le 24/10/2026, neutre : le pont juge par régime (une facture source compte sa vente elle-même : ses exemplaires ne la
-  doublent pas, une pièce validée qui n'en est pas l'exemplaire, si), les marques « Exemplaire de la facture … », « À
-  désigner : c’est la facture … » et « Vente hors des factures de l’application », le bilan d'un import, deux points
-  d'attention (`exemplaires-a-designer`, le symptôme de VF6-Q4) ; `comptes-manquants`, `postes-manquants` et
-  `pieces-payees-en-trop` écartent l'exemplaire → « LE PONT, SES MARQUES ET LA CHECKLIST DEVANT LA JUMELLE INVERSÉE ».
-  VF5h2 (VF5H-Q2), sa migration (`registre_virement_mixte`) appliquée le 26/10/2026 : l'encaissement d'une facture
-  d'avant ne cite plus un virement mixte classé, ni ne se retire ou ne se contre-passe sans débit quand celui-ci le
-  compte → « LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT D'UN VIREMENT MIXTE ». VF7 conçue le 25/10/2026 (cinq lots,
-  VF7a à VF7e, dont trois migrations ; question VF7-Q1) → « VF7, LA VALIDATION FIGE LA SOURCE : LA CONCEPTION ». VF7a,
-  sa migration (`frontiere_des_encaissements`) appliquée le 26/10/2026 : une garde neuve tient la frontière pour
-  l'encaissement d'une facture source, par tout chemin, et le rattachement la juge sur le MOUVEMENT (le chèque du 31
-  décembre se rattache au crédit de janvier) → « LA FRONTIÈRE DES ENCAISSEMENTS, EN BASE ». VF7b, sa migration
-  (`validation_des_ventes_facturees`) appliquée le 26/10/2026 : `valider_exercice` refuse un mouvement réservé, un
-  virement ou un prélèvement sans mouvement, une vente facturée pas écrite à jour, recomposée d'un bloc (VF7B-Q1,
-  confrontée par `recompositionDesVentes.sql`) → « LA VALIDATION REFUSE LES MANQUES DES VENTES FACTURÉES ». VF7c le
-  25/10/2026, à l'écran, neutre : la numérotation de la validation reçoit la composition, et trois préalables disent
-  avant le clic, aux mots de la base, le mouvement réservé, le virement sans mouvement et la vente pas écrite à jour →
-  « LES PRÉALABLES DE LA VALIDATION DISENT LES VENTES FACTURÉES ». VF7d le 25/10/2026, à l'écran, neutre : une ligne de
-  la 2035 compte ses encaissements (`nbEncaissements`), l'instantané validé passe à la version 2, la 1 se relit telle
-  quelle (« — », jamais 0), et Clôture le dit poste par poste → « L'INSTANTANÉ VALIDÉ COMPTE SES ENCAISSEMENTS ». VF7e,
-  sa migration (`gel_des_designations`) appliquée le 26/10/2026 (VF7-Q1, (B)) : la validation de l'exercice d'une
-  facture source fige la désignation de son exemplaire, et une telle facture ne reçoit plus qu'une première désignation,
-  d'une pièce que rien ne marque (`v_deja_marquee`) → « LE GEL DES DÉSIGNATIONS ». VF8 conçue le 25/10/2026 (huit lots,
-  VF8a à VF8h, dont trois migrations, le resserrement en dernier ; questions VF8-Q1 à Q3) → « VF8, LA BASCULE : LA
-  CONCEPTION ». VF8a, sa migration (`reglage_des_ventes`) appliquée le 26/10/2026 (VF8-Q1) : depuis une session, le chef
-  du cabinet seul pose ou baisse le réglage (la condition : `est_chef_du_cabinet(old.cabinet_id)`), un accès « Ventes »
-  en retient la baisse, la garde date la bascule (`ventes_par_les_factures_depuis`) → « LE RÉGLAGE DES VENTES, GARDÉ ».
-  VF8c le 25/10/2026, à l'écran, neutre : facture et avoir, deux espaces, disent avant le clic les refus d'une facture
-  source et confirment sa validation (`jugementDeLaValidation`) → « LA FACTURE D'UN DOSSIER BASCULÉ, À L'ÉCRAN ». VF8g
-  le 25/10/2026, neutre : le sélecteur d'exercice lit les factures sources et leurs encaissements, l'Estimation compte
-  les frais d'un mouvement d'encaissements → « LE SÉLECTEUR D'EXERCICE ET LES FRAIS DE L'ESTIMATION ». Ces cinq
-  migrations, accordées par le cabinet le 26/10/2026 avec VF5H2-Q1, VF7-Q1, VF7B-Q1, VF7B-Q2, VF7E-Q1 et VF8-Q1 à Q3
-  (toutes à la recommandation), appliquées le même jour dans cet ordre, la production égale à la réplique éprouvée (neuf
-  familles, 153 migrations) → « LES CINQ MIGRATIONS DE VF5H2, VF7 ET VF8A EN PRODUCTION ». VF8h le 26/10/2026, à
-  l'écran, neutre : « Ma banque » d'un client « Banque » et « Ventes » nomme, sur un virement mixte classé ou réservé,
-  la facture d'avant avec les factures sources (VF5H-Q3 ; VF8H-Q1, écrite sur la recommandation) → « « MA BANQUE » NOMME
-  LA FACTURE D'AVANT D'UN VIREMENT MIXTE ». VF8d le 26/10/2026, à l'écran, neutre en base, mis en ligne avant VF8b
-  (VF8D-Q1, écrite sur la recommandation) : l'onglet Accès lit le réglage avec ses accès ; « Ventes » ne se coche que
-  sur un dossier basculé, se décoche sur tout réglage lu, ne se change pas sur un réglage illisible, et la phrase le dit
-  (`gesteDeLaCase`, `ceQueDisentLesCases` au réglage obligatoire) ; « Mes ventes » d'un client basculé dit que ses
-  factures validées sont la source de ses ventes → « LA CASE « VENTES » SUIT LA SOURCE DES VENTES, À L'ÉCRAN ». VF8b le
-  26/10/2026, à l'écran, neutre : la carte « Source des ventes » de l'onglet Informations dit l'état daté et — drapeau
-  `BASCULE_OFFERTE` levé, au chef seul — ce que la bascule change, sa confirmation nommant les chiffres lus (VF8-Q3), ou
-  le refus de la garde ; le drapeau est levé depuis le 27/10/2026, la migration de VF5H2-Q1 et VF8e en ligne, et la
-  phrase de l'onglet Accès le suit → « LA BASCULE DES VENTES, À L'ÉCRAN ». La migration de VF5H2-Q1
-  (`insertion_des_encaissements`, `20261026150044`), appliquée le 26/10/2026 sur l'accord du cabinet : sans les
-  fonctions, ni une insertion, la restauration exceptée, ni un rattachement (VF5H2Q1-Q1) ne citent plus un mouvement
-  classé par ses encaissements, et la contre-passation sans mouvement d'un encaissement qui en cite un ne s'insère
-  plus ; une petite migration à part refusera l'exception du super-administrateur sur un mouvement figé, avant la
-  première validation d'un exercice d'un dossier basculé (VF5H2Q1-Q2) — deux questions écrites sur la recommandation, le
-  26/10/2026 → « L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS », « LA MIGRATION
-  DE VF5H2-Q1 EN PRODUCTION ». VF8e (`simulation_des_ventes_facturees`), appliquée le 27/10/2026 sur l'accord du
-  cabinet, après l'index des avoirs d'une facture (`index_des_avoirs`, VF8E-Q1), une migration à part : « Ma
-  simulation » d'un client « Banque » reçoit le total mensuel et les sources d'un dossier basculé, et l'onglet Accès le
-  dit → « « MA SIMULATION » REÇOIT SES VENTES FACTURÉES ». La petite migration de VF5H2Q1-Q2
-  (`contre_passation_sur_mouvement_fige`), appliquée le 27/10/2026 sur l'accord du cabinet : sur un mouvement classé et
-  figé, le super-administrateur non plus ne contre-passe sans mouvement un encaissement qu'il compte, ni n'y cite
-  l'encaissement d'une facture d'avant (VF5H2Q1Q2-Q1, écrite sur la recommandation, le 26/10/2026), la restauration
-  passant → « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ ». Les trois en production le 27/10/2026, égale
-  aux répliques (157 migrations), et les drapeaux de « Ma simulation » et de la bascule levés le même jour → « LES TROIS
-  MIGRATIONS DE VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION ». VF8f, le resserrement (`ventes_sur_dossier_bascule`,
-  VF8F-Q1), appliqué le 27/10/2026 sur l'accord du cabinet : « Ventes » qui arrive sur un accès d'un dossier non basculé
-  se refuse en base, le réglage lu `for share` (la course de VF8a fermée, à deux sessions), et `droitsAcces.ts` redit le
-  refus à la lettre → « « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ » ; la production égale aux répliques (159
-  migrations, avec `equipe_par_son_role`), `droitsAcces.sql` et les blocs EQ et VS de `rls.sql` joués en production
-  → « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION ». VF9 conçue le 27/10/2026 : quatre lots, VF9a à VF9d,
-  sans migration ; une garde provisoire d'abord ; les écritures lues dans la base, pas recopiées ; PC3b après, à part ;
-  VF9-Q1 tranchée le 28/10/2026 à la recommandation (A) : les quatre points du pont, pour tout dossier → « VF9,
-  L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA CONCEPTION ». VF9a le 27/10/2026, en ligne le même jour
-  (`agent-comptable` v48) : devant un dossier basculé, l'assistant dit qu'il ne lit pas encore ses ventes facturées —
-  `points_a_traiter` refuse, trois outils et la consigne le disent ; un autre dossier, rien de changé au caractère
-  près ; un réglage illisible ferme → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ ». VF9b le
-  27/10/2026 : derrière ce refus, `points_a_traiter` lit les factures et le registre des encaissements d'un dossier
-  basculé, écarte l'exemplaire d'une facture source et date ce qu'un virement mixte paie ; un autre dossier ne lit rien
-  de plus, rien de changé au caractère près → « VF9B, LA SOURCE, LES EXEMPLAIRES ET LES PAIEMENTS DE L'ASSISTANT ». VF9c
-  le 27/10/2026 : le refus levé pour une source des ventes LUE vraie — `points_a_traiter` dit, comme la Checklist, les
-  mouvements réservés et les encaissements sans mouvement, et ce que la validation refuserait, lu dans la base
-  (`ventes_facturees_de_l_exercice`, sa panne ne taisant que sa clé) ; les quatre autres outils et la consigne disent la
-  vente facturée, une facture nommée par son numéro, jamais par son client ; un réglage illisible garde le côté fermé ;
-  un autre dossier, rien de changé au caractère près, hors la description de l'outil ; VF9C-Q1 tranchée le 28/10/2026 à
-  la recommandation (A) : ni le tiers, ni le fichier, ni le libellé d'une pièce de vente au modèle, pour tout dossier →
-  « VF9C, LES POINTS ET LES OUTILS DE L'ASSISTANT ». VF9C-Q1 le 28/10/2026 : pour tout dossier, une pièce de vente part
-  au modèle sans son tiers, son fichier ni le libellé de ses écritures, nommée par sa date et son montant, par un seul
-  passage, le bloc PIÈCES DE VENTE, que garde un scanner parti de toutes les lectures de la fonction ; le fournisseur
-  d'un achat reste dit ; deux questions au cabinet, VF9CQ1-Q1 (le libellé du relevé d'un crédit) et VF9CQ1-Q2
-  (l'écriture restée d'une pièce supprimée), tranchées le 28/10/2026 à la recommandation : le libellé de tout crédit
-  recomposé, celui d'une ligne rattachée à rien tu → « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE VENTE AU MODÈLE ». VF9CQ1 le
-  28/10/2026 : pour tout dossier, la ligne d'un crédit du relevé part au modèle sous la date et le montant du mouvement,
-  celle d'un débit sous son libellé, une ligne rattachée à rien sans libellé, par le même passage, qui écrit ce qui sort
-  de chaque ligne et lit ses huit rattachements ; une question au cabinet, VF9CQ1B-Q1 (le libellé d'un débit qui rend
-  l'argent d'un client), tranchée le 28/10/2026 à la recommandation : un tel débit sous sa date et son montant, pour
-  tout dossier → « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ». VF9CQ1B le
-  28/10/2026 : pour tout dossier, un débit qui rend ou défait l'argent d'un client — une ligne propre sur un compte de
-  produit ou de client, ou classé par les contre-passations d'un encaissement — part au modèle sous sa date et son
-  montant, par le même passage, le mouvement lu avec son classement et les comptes de ses lignes ; un autre débit garde
-  son libellé → « VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE ET SON MONTANT ». Les cinq en
-  ligne ensemble le 28/10/2026 (`agent-comptable` v49, une ligne qui importe le fichier du dépôt) → « L'ASSISTANT SE
-  DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT » ; reste VF9d après le MVP (EC3-Q9, la facture reprise, va à A8) → « TROIS
-  RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 », « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8,
-  CAISSE-Q1 À Q4, 28.5E-Q1 », « HUIT RÉPONSES DU CABINET : A7-Q1 À Q3, VF9CQ1B-Q1, CAISSE2-Q1 À Q4 ».
+- **Une vente entrée deux fois ; la facture validée, source de sa vente** (ligne 28.6 ; EC-Q3 a la sienne, la 28.65) :
+  CONÇUE le 18/10/2026, LIVRÉE de VF1 à VF9c entre le 18 et le 28/10/2026, toutes ses questions tranchées à la
+  recommandation ; aucun dossier n'a encore basculé ; reste VF9d (le pont dans l'assistant) après le MVP, et EC3-Q9 (la
+  facture reprise) va à A8. Les règles qui ne sont pas ailleurs dans ce fichier :
+  - la bascule se fait par dossier, par le chef du cabinet seul, sans effet rétroactif, irréversible dès la première
+    facture source ; un accès « Ventes » en retient la baisse ; la garde date la bascule
+    (`ventes_par_les_factures_depuis`) ; la carte « Source des ventes » de l'onglet Informations la dit et l'offre
+    (`BASCULE_OFFERTE`, levé) → « LE RÉGLAGE DES VENTES, GARDÉ », « LA BASCULE DES VENTES, À L'ÉCRAN » ;
+  - la frontière des encaissements d'une facture source se tient en base pour tout chemin, et le rattachement la juge
+    sur le MOUVEMENT (le chèque du 31 décembre se rattache au crédit de janvier) → « LA FRONTIÈRE DES ENCAISSEMENTS, EN
+    BASE » ;
+  - `valider_exercice` refuse un mouvement réservé, un virement ou un prélèvement sans mouvement, une vente facturée pas
+    écrite à jour (recomposée d'un bloc), et les préalables le disent avant le clic aux mots de la base ; l'instantané
+    validé (version 2) compte les encaissements d'une ligne de la 2035, la version 1 se relit « — », jamais 0 → « LA
+    VALIDATION REFUSE LES MANQUES DES VENTES FACTURÉES », « L'INSTANTANÉ VALIDÉ COMPTE SES ENCAISSEMENTS » ;
+  - la validation de l'exercice d'une facture source fige la désignation de son exemplaire, et une telle facture ne
+    reçoit plus qu'une première désignation, d'une pièce que rien ne marque → « LE GEL DES DÉSIGNATIONS » ;
+  - ni une insertion directe (la restauration exceptée) ni un rattachement ne citent un mouvement classé par ses
+    encaissements ; sur un mouvement classé et figé, le super-administrateur non plus → « L'INSERTION DIRECTE D'UN
+    ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS », « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT
+    FIGÉ » ;
+  - le virement mixte — un crédit qui paie une facture source et une facture d'avant la bascule — se classe par ses
+    encaissements avec l'exemplaire unique et validé de celle-ci, s'écrit sans sa part et date l'exemplaire
+    (`partsEncaissees`) ; la désignation se refuse sous lui (VF5H-Q1), et le registre ne cite plus la facture d'avant
+    d'un virement mixte classé → « LE VIREMENT MIXTE — CHANTIER EC-Q3 », « LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT
+    D'UN VIREMENT MIXTE » ;
+  - la déclaration d'une vente hors des factures, `factures_du_pont`, G3, G4 et le journal des désignations (au cabinet
+    seul) sont en base ; « Ma simulation » d'un client « Banque » reçoit les ventes facturées d'un dossier basculé
+    → « LA JUMELLE INVERSÉE, EN BASE », « « MA SIMULATION » REÇOIT SES VENTES FACTURÉES ».
+  Le récit, étape par étape : « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION », puis les entrées de VF1 à VF9
+  dans HISTORIQUE.md (chercher « VF5 », « VF6 »…), et les mises en production → « LES CINQ MIGRATIONS DE VF5H2, VF7 ET
+  VF8A EN PRODUCTION », « LES TROIS MIGRATIONS DE VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION », « LES DEUX MIGRATIONS DE
+  23Q2Q2-Q3 ET VF8F EN PRODUCTION ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -750,36 +548,20 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   - P4 : la mention du mandataire à l'impression (EC-Q2 : le nom du cabinet figé avec la facture, une migration
     d'`enregistrer_facture`) ;
   - P8 : la connexion bancaire du client ;
-  - P5, les devis : EN PRODUCTION depuis le 05/11/2026 — `devis_du_client` (20261104204904, par l'outil),
-    `envoi_des_devis` (20261105070313) et `devis_du_client_suppression` (20261105073709, collée), dans l'export ;
-    `DEVIS_EXPORTES` et `ENVOI_DES_DEVIS_PREVU` levés : la vue « Devis » des deux espaces, la réponse, la facture tirée,
-    l'aperçu et l'impression (P6a1 à P6b), la case « Ventes » qui les nomme ; l'envoi par e-mail en ligne le même jour
-    (`send-email` v9, `ENVOI_DES_DEVIS_OFFERT` levé, P6c) ; l'émetteur posé du dossier et aucun IBAN imprimé,
-    comme la facture (A7) ; un mois de validité proposé, modifiable ; aucun modèle par métier pour l'instant ; l'acompte
-    (P5b), une facture d'acompte puis une facture finale qui le reprend : conçu, son module pur (P5b1), un acompte qui ne
-    couvre jamais tout le devis ni ne laisse de TVA négative (P5B-Q5) — toutes ses questions confirmées par le cabinet
-    le 05/11/2026 —, EN PRODUCTION depuis le 06/11/2026 : sa migration (`acomptes_des_devis`, 20261105231034, collée ;
-    elle remplace `enregistrer_facture`), `ACOMPTES_PREVUS` et `ACOMPTES_EN_BASE` levés — les moteurs (P5b3 :
-    la CA3 date l'acompte de biens à son encaissement, sa part impayée à la livraison de la finale ; « Encaissée » le
-    dit dû et cite le 386 ; l'acompte d'un devis de biens ou mixte refusé, en base comme à l'écran, P5B3-Q1, et un
-    versement à venir, P5B2-Q1), le CII (P5b4a : 386, la finale en 380 sous le cadre 4 et un seul BG-3, celui
-    que le schéma CII D16B admet, l'avoir d'un acompte en 503 ; les copies ne lisent ses colonnes que sous
-    `ACOMPTES_EN_BASE`), l'aperçu et la fenêtre de transmission (P5b4b), l'e-mail (P5b4c), les écrans des deux espaces
-    (P5b5 : facturer un acompte et le solde depuis le devis, le brouillon, la validation et l'avoir d'un acompte ou
-    d'une finale, leur marque dans la liste, la prop `acompte` obligatoire) ; un devis refusé ou expiré gardé trois ans,
-    puis proposé à l'effacement, jamais effacé seul ; les devis de soins hors de l'application ; une acceptation après
-    la validité, sur une confirmation explicite → « LES DEVIS, EN
-    BASE », « LES DEVIS : RÉPONDRE, EN TIRER UNE FACTURE, L'APERÇU ET L'IMPRESSION (P6A2, P6B), DERRIÈRE
-    `DEVIS_EXPORTES` », « L'ACOMPTE D'UN DEVIS : LA CONCEPTION (P5B) », « L'ACOMPTE D'UN DEVIS NE COUVRE JAMAIS TOUT LE
-    DEVIS (P5B-Q5, SUR LA RECOMMANDATION) », « LES DEVIS EN PRODUCTION : LA SECONDE MIGRATION COLLÉE ET LES DRAPEAUX
-    LEVÉS », « L'ENVOI DES DEVIS EN LIGNE : `SEND-EMAIL` V9 ET LE BOUTON OFFERT (P6C) », « L'ACOMPTE D'UN DEVIS, EN BASE
-    (P5B2) (PRÉPARÉE, PAS APPLIQUÉE) », « L'ACOMPTE D'UN DEVIS DANS LES MOTEURS (P5B3), DERRIÈRE `ACOMPTES_PREVUS` »,
-    « L'ACOMPTE D'UN DEVIS : LE CII (P5B4A), DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : L'APERÇU ET LA
-    TRANSMISSION À L'ÉCRAN (P5B4B), DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : L'E-MAIL ET LES APPELS HTTP,
-    CONSTANTE LEVÉE (P5B4C) », « L'ACOMPTE D'UN DEVIS : FACTURER UN ACOMPTE ET LE SOLDE DEPUIS LE DEVIS (P5B5A),
-    DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : LA FACTURE D'ACOMPTE ET LA FINALE DANS L'ONGLET DES FACTURES
-    (P5B5B), DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : P5B3-Q1 ET P5B2-Q1 ÉCRITS DANS LA MIGRATION »,
-    « L'ACOMPTE D'UN DEVIS EN PRODUCTION : LA MIGRATION COLLÉE ET LES DRAPEAUX LEVÉS ».
+  - P5, les devis : EN PRODUCTION depuis le 05/11/2026 (trois migrations, dans l'export) et l'acompte depuis le
+    06/11/2026 (`acomptes_des_devis`, collée ; elle remplace `enregistrer_facture`), tous leurs drapeaux levés : la vue
+    « Devis » des deux espaces, la réponse, la facture tirée, l'aperçu, l'impression et l'envoi par e-mail
+    (`send-email`), la case « Ventes » qui les nomme ; l'émetteur posé du dossier et aucun IBAN imprimé, comme la
+    facture (A7) ; un mois de validité proposé, modifiable ; aucun modèle par métier ; une acceptation après la
+    validité, sur une confirmation explicite ; un devis refusé ou expiré gardé trois ans, puis proposé à l'effacement,
+    jamais effacé seul ; les devis de soins hors de l'application. L'acompte (P5b) — une facture d'acompte, puis une
+    finale qui le reprend, la prop `acompte` obligatoire — ne couvre jamais tout le devis ni ne laisse de TVA négative
+    (P5B-Q5) ; celui d'un devis de biens ou mixte se refuse, en base comme à l'écran (P5B3-Q1), un versement à venir
+    aussi (P5B2-Q1) ; la CA3 date l'acompte de biens à son encaissement, sa part impayée à la livraison de la finale ;
+    le CII porte l'acompte en 386, la finale en 380 sous le cadre 4 et un seul BG-3, l'avoir d'un acompte en 503 → « LES
+    DEVIS, EN BASE », « LES DEVIS EN PRODUCTION : LA SECONDE MIGRATION COLLÉE ET LES DRAPEAUX LEVÉS », « L'ACOMPTE D'UN
+    DEVIS : LA CONCEPTION (P5B) », « L'ACOMPTE D'UN DEVIS EN PRODUCTION : LA MIGRATION COLLÉE ET LES DRAPEAUX LEVÉS »,
+    et les entrées « L'ACOMPTE D'UN DEVIS » de P5b2 à P5b5.
   - La suite, en trois parties (« au minimum faire comme le logiciel du client, et aller plus loin ») : le premier
     groupe, A1 à A11 ; la parité, B1 à B9 (achats, notes de frais, analyse, documents du cabinet, trois cases neuves
     « Achats », « Notes de frais », « Documents », le resserrement des pièces) ; « aller plus loin », C1 à C8
@@ -1034,6 +816,21 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   S'ÉCRIVENT », « L'ACQUISITION D'UN BIEN S'ÉCRIT », « LE FORFAIT KILOMÉTRIQUE S'ÉCRIT », « UNE NOTE DE FRAIS EN
   TRÉSORERIE » ; la 2035 se calcule depuis les sources et se compare aux écritures → « LA 2035 SE COMPARE AUX
   ÉCRITURES ».
+- **La caisse d'un BNC** (ligne 26.6, MVP-D2) : `lib/caisse.ts` juge les saisies, une caisse bornée par son ouverture ;
+  un dossier tient une caisse dès que sa reprise ou son relevé la portent, un dossier basculé aussi dès que les espèces
+  d'une facture source y entrent (C6-Q1), et la fenêtre des encaissements juge la caisse avant le clic ; l'écran n'offre
+  pas d'espèces sur un crédit, et la garde des encaissements le refuse (`especes_sans_mouvement`) ; une pièce se règle
+  par la caisse (C8) — `PaiementDePiece` est une union, le relevé ou la caisse, quatrième paramètre obligatoire de
+  `paiementsDesPieces`, la contrepartie au compte de la caisse du plan ; la fiche d'une pièce dit « Payée en espèces » à
+  part de « Rapprochée », `caisse-a-reprendre` compte la contrepartie d'un paiement, une caisse lue en partie retient
+  « Associer » ; la pièce à valider qu'un paiement cite retient la validation (le filet
+  `validation_des_paiements_par_la_caisse`), un paiement qui laisserait la pièce à quelques centimes se refuse (C9-Q1),
+  une pièce payée ne part d'aucune sélection, et la fiche d'un mouvement ne classe pas sur la caisse un mouvement
+  d'avant l'ouverture ; l'assistant lit ces paiements sans drapeau (C13) et met une ligne de caisse au modèle sous son
+  genre, sa date et son montant, jamais un libellé (C5) ; le droit « Caisse » d'un accès (C10, C11) et « Ma caisse »
+  (C12a, C12b) suivent les règles de l'espace client → « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LES
+  MOTEURS (C9A, LIGNE 26.6) », « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS », « LA CAISSE : LE
+  RESSERREMENT (C6, LIGNE 26.6) », « LA CAISSE : LE DROIT « CAISSE » À L'ÉCRAN DU CABINET (C11, LIGNE 26.6) ».
 - **Une échéance de cotisation se modifie et se réunit** (`lib/gestesDesEcheances.ts`, COT-Q1 et Q3, confirmées le
   04/11/2026) : la mise à jour retient la version lue ; rapprochée, le rapprochement reste et son écriture se réécrit
   dans le geste ; « Réunir » porte la gardée à la somme PUIS retire l'autre, un échec entre les deux se dit
