@@ -48721,3 +48721,45 @@ payées par le compte personnel, la prévisionnelle dite comme telle et son mont
 « illisible », gardée avec la société et le droit. `CE_QUE_PERD_LE_CLIENT` nomme le nouvel écran. Restent, pour un lot
 suivant : le montant d'une CA3 préparée (les déclarations de TVA ne se lisent qu'au cabinet : la fonction
 `echeancier_du_dossier` de la conception, une migration), et l'e-reporting à partir du 01/09/2027.
+
+### 06/11/2026 — LA DOUBLE AUTHENTIFICATION, PREMIER TEMPS : L'INSCRIPTION ET LE CODE À LA CONNEXION (C7, LIGNE 51.5)
+
+Fait, sans rien exiger encore (MEG3-Q4 « oui » pour les accès « Banque », « Achats », « Documents » ; SEC-Q1 ouverte).
+Sources : documentation de Supabase, « Multi-Factor Authentication » et la référence de `mfa.enroll`/`mfa.unenroll`
+(relues le 06/11/2026) ; auth-js 2.112.4 (`GoTrueClient`). Un facteur VÉRIFIÉ ne se retire que d'une session `aal2` ;
+le retrait ne fait redescendre la session qu'au renouvellement du jeton (`refreshSession()` le rend immédiat) ; la
+première vérification d'un facteur ferme les AUTRES sessions du compte ; aucun code de secours. Le changement de mot de
+passe d'un compte à facteur depuis une session `aal1` n'est pas dit par la documentation relue : la porte demande le
+code avant le nouveau mot de passe, et `insufficient_aal` a sa phrase dans `messageErreurDuMotDePasse`.
+- `lib/doubleAuthentification.ts` (pur) : l'état d'un compte (`sans-facteur`, `code-a-donner`, `verifie`,
+  `jeton-a-rafraichir`) tiré des niveaux et des facteurs ; `niveauxDeLaSession` refait sur la session que l'application
+  tient le calcul de `getAuthenticatorAssuranceLevel()` (qui n'appelle pas le service), confronté au vrai client auth-js
+  sur six sessions : la porte se décide dans le rendu, sans écran de passage, et s'ouvre sur « MFA_CHALLENGE_VERIFIED ».
+  Un jeton illisible devant un facteur vérifié demande le code (le côté fermé) ; un jeton qui n'en est pas un, sans
+  facteur, laisse la porte ouverte (les bancs et les tests d'avant). Les mots en deux registres, le client passé à
+  `MOTS_DU_CABINET` ; les refus du service lus à leur code.
+- `lib/doubleAuthentificationAppels.ts` : chaque appel rend une issue, ne lève jamais, ne journalise rien (la clé
+  comprise) ; un retrait renouvelle la session. `pages/CodeDeConnexion.tsx` (après les rôles pour le vous ou le tu ;
+  avant le nouveau mot de passe d'un lien, tutoyé) et `pages/SecuriteDuCompte.tsx` (`/securite`, menu du compte, les
+  deux espaces) ; chaque geste sous un verrou relâché après la relecture. Les gardes : `verrousEcritures.test.ts`
+  connaît les méthodes de `auth.mfa` (un défaut planté) ; `ecransAvantLecture.test.tsx` monte la page, `clientRetenu`
+  rend ses deux lectures. Neuf mutations mordent.
+
+**Le second temps, conçu (rien n'en est écrit).** L'exiger d'un seul endroit : `admin_du_dossier`, `admin_du_cabinet`,
+`est_chef_du_cabinet` et `is_super_admin` rendent faux sans `(select auth.jwt()->>'aal') = 'aal2'` (la clause que la
+documentation donne pour une policy) ; pour un client, `client_du_dossier` et les prédicats des cases qui le demandent
+(`gere_la_banque`, puis ceux d'« Achats » et de « Documents ») font de même — `gere_les_ventes` et `droit_caisse` selon
+la réponse à SEC-Q2. Toute policy qui les appelle suit sans être réécrite ; les policies qui ne les appellent pas (la
+ligne de `memberships` ou de `cabinet_admins` du compte, lue par `user_id = auth.uid()`) restent ouvertes à `aal1`, et
+l'essai `rls.sql` gagne un cinquième profil, la même session en `aal1`, qui doit tout se voir refuser. Les risques : (1)
+un compte enfermé dehors — l'ordre est l'inscription (ce lot), puis les comptes inscrits (l'onglet Accès et la page
+Équipe disent qui l'est, par une lecture `security definer` de `auth.mfa_factors`), puis l'exigence, compte par compte
+ou par date d'inscription, jamais d'un bloc ; (2) AuthContext ne relit les rôles qu'au changement d'identifiant : lus en
+`aal1`, `is_super_admin()` rendrait faux pour toute la session — il les relira aussi au changement de niveau, ou la
+porte passera AVANT les rôles ; (3) un facteur perdu : aucun code de secours ; aujourd'hui seul le propriétaire du
+projet le retire (tableau de bord de Supabase, fiche de l'utilisateur) ; demain une Edge Function
+`retirer-second-facteur` (API d'administration, `auth.admin.mfa.deleteFactor`), appelée par le super-administrateur, et
+pour un client par le chef de son cabinet, sur une confirmation qui nomme le compte, tracée ; (4) la première
+vérification ferme les autres sessions — dit avant le clic ; (5) les Edge Functions appelées avec le jeton de
+l'utilisateur héritent de l'exigence par les prédicats, celles qui lisent avec la clé secrète non : chacune se relit
+(`droitsDeLAppelant`).

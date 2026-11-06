@@ -86,6 +86,11 @@ function reponse(c: Chaine): unknown {
   if (c.cible.startsWith('fonction:')) return { data: null, error: null }
   if (c.cible === 'auth:getSession') return { data: { session: null }, error: null }
   if (c.cible === 'auth:getUser') return { data: { user: null }, error: null }
+  // Le second facteur (« Sécurité du compte », ligne 51.5, étape C7) : un compte sans appareil, une session `aal1`.
+  if (c.cible === 'auth:mfa.listFactors') return { data: { all: [], totp: [], phone: [], webauthn: [] }, error: null }
+  if (c.cible === 'auth:mfa.getAuthenticatorAssuranceLevel') {
+    return { data: { currentLevel: 'aal1', nextLevel: 'aal1', currentAuthenticationMethods: [] }, error: null }
+  }
   if (c.chemin.includes('.createSignedUrl')) return { data: null, error: { message: 'aucun fichier dans le faux client' } }
   if (c.uneLigne) return { data: etat.lignesUniques[c.cible] ?? null, error: null, count: null, status: 200 }
   if (c.cible in etat.rendusRpc) return { data: etat.rendusRpc[c.cible], error: null, count: null, status: 200 }
@@ -119,7 +124,9 @@ function chaine(c: Chaine): unknown {
         else if (c.chemin.endsWith('.rpc')) cible = `rpc:${nom}`
         else if (c.chemin.endsWith('.functions.invoke')) cible = `fonction:${nom}`
       }
-      if (!cible && /\.auth\.(getSession|getUser)$/.test(c.chemin)) cible = `auth:${c.chemin.split('.').pop()}`
+      if (!cible && /\.auth\.(getSession|getUser|mfa\.listFactors|mfa\.getAuthenticatorAssuranceLevel)$/.test(c.chemin)) {
+        cible = `auth:${c.chemin.slice(c.chemin.indexOf('.auth.') + '.auth.'.length)}`
+      }
       const corps = c.chemin.endsWith('.functions.invoke') ? (args[1] as { body?: { action?: unknown } } | undefined)?.body : undefined
       const action = typeof corps?.action === 'string' ? corps.action : c.action
       return chaine({ ...c, cible, action, chemin: `${c.chemin}()` })

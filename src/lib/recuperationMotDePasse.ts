@@ -283,6 +283,12 @@ export function messageErreurDuMotDePasse(erreur: unknown): string {
   // La même phrase que les trois fonctions qui créent des comptes, ce qui manque compris.
   const refus = refusDuMotDePasse(erreur)
   if (refus !== null) return `${refus} Choisis-en un autre.`
+  // Un compte qui a un second facteur ne change son mot de passe que d'une session qui a donné son code (ligne 51.5, étape
+  // C7) : la porte de l'application (App.tsx) le demande avant cet écran ; s'il manque quand même, le refus le dit, avant le
+  // 401 qui dirait à tort la session expirée.
+  if (t.code === 'insufficient_aal') {
+    return "Ce compte a un second facteur : son code doit être donné avant de changer le mot de passe. Déconnecte-toi, puis redemande un lien depuis l'écran de connexion."
+  }
   // `session_not_found` devient une `AuthSessionMissingError` dans auth-js (lib/fetch.js, handleError).
   if (t.nom === 'AuthSessionMissingError' || t.code === 'session_expired' || t.statut === 401 || t.statut === 403) {
     return "La session ouverte par le lien a expiré : déconnecte-toi, puis redemande un lien depuis l'écran de connexion."

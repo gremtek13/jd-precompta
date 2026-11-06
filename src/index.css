@@ -2356,3 +2356,9 @@ a.btn { text-decoration: none; }
    des lignes de ce jour. Un fond plat, la teinte du tableau ; empilée sur une carte étroite, la cellule fusionnée garde sa ligne. */
 .caisse-jour td { background: var(--color-surface-2); }
 .caisse-jour td strong { font-variant-numeric: tabular-nums; }
+
+/* Le code QR d'un second facteur (« Sécurité du compte », ligne 51.5, étape C7) : ses modules sont sombres, et sur le fond
+   du thème sombre une application d'authentification ne les lirait pas — un fond blanc fixe, quel que soit le thème. La clé
+   à recopier passe à la ligne entre ses groupes de quatre. */
+.qr-second-facteur { display: block; width: 196px; height: 196px; max-width: 100%; padding: 8px; margin: 8px 0 12px; background: #fff; border-radius: var(--radius-sm); }
+.cle-second-facteur { letter-spacing: 0.04em; overflow-wrap: anywhere; }

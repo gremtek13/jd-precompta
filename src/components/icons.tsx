@@ -242,6 +242,13 @@ export const IconLogout = (p: IconProps) => base(<>
   <path d="M18 12H9" />
 </>, p)
 
+// « Sécurité du compte » (ligne 51.5, étape C7) : un cadenas, le second facteur d'une connexion.
+export const IconCadenas = (p: IconProps) => base(<>
+  <rect x="5" y="10.5" width="14" height="9.5" rx="1.5" />
+  <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+  <path d="M12 14.5v2" />
+</>, p)
+
 // Menu "plus d'options" (réglages secondaires — thème, déconnexion) : trois points verticaux, la
 // convention la plus reconnue pour ce type de menu (Gmail, Android/iOS) — un logo sur lequel taper
 // pour ouvrir un menu ne se devine pas de la même façon.
