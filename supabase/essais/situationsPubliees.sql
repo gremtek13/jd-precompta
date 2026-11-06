@@ -7,6 +7,8 @@
 --
 -- Ce qui se prouve ici, et ne se relit pas : le cabinet publie, remplace et retire ; chaque refus sous ses mots ; le statut
 -- lu de l'exercice ; le client « Comptes » ne lit que la situation EN COURS de son dossier, le client sans la case rien ;
+-- `situation_publiee_en_cours` ne dit une situation en cours qu'au cabinet du dossier et à un accès « Comptes » de ce
+-- dossier, faux à un accès sans la case et à un compte connecté sans accès (la relecture de sécurité du 06/11/2026) ;
 -- personne n'écrit ni ne réécrit la table en direct (ni le client, ni un chef qui n'est pas super-administrateur) ; la case
 -- par la forme à cinq de `changer_droits_acces`, et les formes à trois et à quatre sous ses mots ; le catalogue.
 --
@@ -26,6 +28,8 @@ declare
   ds constant text := 'c4a00000-0000-4000-8000-0000000000d2';
   acces_c constant text := 'c4a00000-0000-4000-8000-0000000000a1';
   acces_s constant text := 'c4a00000-0000-4000-8000-0000000000a2';
+  -- Un compte connecté qu'aucun accès ni aucun cabinet ne nomme (le profil `inconnu`).
+  inconnu constant text := 'c4a00000-0000-4000-8000-0000000000f1';
   cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
   -- Une situation au 30 juin 2025, bien formée, et sa comparaison au 30 juin 2024 ; des centimes.
   contenu constant text := '{"version": 1, "statut": "provisoire", "periode": {"debut": "2025-01-01", "fin": "2025-06-30"},
@@ -54,7 +58,8 @@ begin
       (acces_s::uuid, client::uuid, ds::uuid, 'client', 'essai-situations-s@example.test', false);
 
     -- Une étape : {rang, étape, ce que le CHEF pose d'abord (super-administrateur, sous sa session), le profil — `chef`,
-    -- `chef_simple` (le compte client rattaché au cabinet, le temps de l'étape), `client`, `service` (le rôle des Edge Functions) ou `anon` —, sa requête, le code
+    -- `chef_simple` (le compte client rattaché au cabinet, le temps de l'étape), `client`, `inconnu` (un compte connecté sans
+    -- aucun accès), `service` (le rôle des Edge Functions) ou `anon` —, sa requête, le code
     -- attendu (`OK` : acceptée) et ce qu'elle rend, ou les mots du refus}.
     for e in select * from (values
       (1, '1. le chef publie au 30 juin 2025 : une publication, provisoire (l''exercice n''est pas validé), à lui', null, 'chef',
@@ -120,7 +125,24 @@ begin
       (29, '29. ce que la base dit au client de ses deux accès : « Comptes » sur DC, pas sur DS', null, 'client',
         $q$select (droits_sur_le_dossier('{DC}') ->> 'comptes') || ' ' || (droits_sur_le_dossier('{DS}') ->> 'comptes')$q$, 'OK', 'true false'),
       (30, '30. l''anonyme ne lit rien et n''exécute pas la publication', 'select 1 from {P}', 'anon',
-        $q$select count(*)::text || ' ' || has_function_privilege('anon', 'public.publier_situation(uuid, date, jsonb, uuid)', 'execute')::text from situations_publiees$q$, 'OK', '0 false')
+        $q$select count(*)::text || ' ' || has_function_privilege('anon', 'public.publier_situation(uuid, date, jsonb, uuid)', 'execute')::text from situations_publiees$q$, 'OK', '0 false'),
+      -- La situation en cours, dite par sa fonction (le réglage `essai.situation_en_cours` porte l'identifiant que le chef
+      -- vient de publier) : vraie au cabinet et au client « Comptes », fausse à tout autre compte — un bit par identifiant.
+      (33, '33. situation_publiee_en_cours : vraie au client « Comptes », pour la situation en cours de son dossier',
+        $q$select set_config('essai.situation_en_cours', (select s.id::text from {P} s), true)$q$, 'client',
+        $q$select situation_publiee_en_cours(current_setting('essai.situation_en_cours')::uuid)::text$q$, 'OK', 'true'),
+      (34, '34. … fausse au même client, la situation retirée',
+        $q$select set_config('essai.situation_en_cours', (select s.id::text from {P} s), true); select 1 from retirer_situation(current_setting('essai.situation_en_cours')::uuid)$q$, 'client',
+        $q$select situation_publiee_en_cours(current_setting('essai.situation_en_cours')::uuid)::text$q$, 'OK', 'false'),
+      (35, '35. … fausse au client qui a un accès au dossier sans la case « Comptes » (DS) : il n''apprend pas qu''elle est en cours',
+        $q$select set_config('essai.situation_en_cours', (select s.id::text from publier_situation('{DS}', '2025-06-30', '{C}'::jsonb, null) s), true)$q$, 'client',
+        $q$select situation_publiee_en_cours(current_setting('essai.situation_en_cours')::uuid)::text$q$, 'OK', 'false'),
+      (36, '36. … fausse à un compte connecté qui n''a aucun accès au dossier',
+        $q$select set_config('essai.situation_en_cours', (select s.id::text from {P} s), true)$q$, 'inconnu',
+        $q$select situation_publiee_en_cours(current_setting('essai.situation_en_cours')::uuid)::text$q$, 'OK', 'false'),
+      (37, '37. … vraie au cabinet : un chef qui n''est pas super-administrateur, pour la situation de DS',
+        $q$select set_config('essai.situation_en_cours', (select s.id::text from publier_situation('{DS}', '2025-06-30', '{C}'::jsonb, null) s), true)$q$, 'chef_simple',
+        $q$select situation_publiee_en_cours(current_setting('essai.situation_en_cours')::uuid)::text$q$, 'OK', 'true')
     ) as t(rang, etape, pose, profil, requete, code, attendu) loop
       v_code := 'OK'; v_msg := null; v_obs := null;
       begin
@@ -147,7 +169,7 @@ begin
           else
             execute 'set local role authenticated';
             perform set_config('request.jwt.claims',
-              json_build_object('sub', case e.profil when 'chef' then chef else client end, 'role', 'authenticated')::text, true);
+              json_build_object('sub', case e.profil when 'chef' then chef when 'inconnu' then inconnu else client end, 'role', 'authenticated')::text, true);
           end if;
           execute v_req into v_obs;
           reset role;

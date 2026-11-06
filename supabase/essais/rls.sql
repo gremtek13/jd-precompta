@@ -4289,9 +4289,9 @@ end $$;
 --        contrôle POSITIF) ; la case décochée, il n'en lit rien ; l'anonyme non plus.
 --   SP2. Le client ne l'écrit pas en direct (42501, la garde, sous ses mots).
 --   SP3. Le catalogue : la RLS active, trois policies à authenticated seul.
--- Deux mutations, qui doivent mordre : M-SP1 (la lecture du client passée à « membre » : la case décochée, il lit
--- encore), M-SP2 (la lecture du client fermée : la case cochée, il ne lit plus). Avant la migration, une ligne dit que le
--- bloc attend.
+-- Deux mutations, qui doivent mordre : M-SP1 (la lecture du client passée à « membre », sans `situation_publiee_en_cours`,
+-- qui garde aussi la case depuis la relecture de sécurité du 06/11/2026 : la case décochée, il lit encore), M-SP2 (la
+-- lecture du client fermée : la case cochée, il ne lit plus). Avant la migration, une ligne dit que le bloc attend.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -4364,10 +4364,11 @@ begin
       'cible', 'situations_publiees', 'observe', coalesce(ecrite, '?'),
       'ok', ecrite = '42501 Une situation ne s''écrit que par sa publication ou son retrait.');
 
-    -- M-SP1 : la lecture du client passée à « membre » — la case décochée, il lit encore.
+    -- M-SP1 : la lecture du client passée à « membre » — la case décochée, il lit encore. La fonction de la situation en
+    -- cours part avec la case : elle ne répond vrai qu'au cabinet et à un accès « Comptes », et suffirait à fermer la lecture.
     begin
       alter policy situations_publiees_lecture_comptes on public.situations_publiees
-        using (client_du_dossier(dossier_id, 'membre') and geste = 'publication' and situation_publiee_en_cours(id));
+        using (client_du_dossier(dossier_id, 'membre') and geste = 'publication');
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
       select count(*) into elargie from situations_publiees where dossier_id = dossier_du_client;

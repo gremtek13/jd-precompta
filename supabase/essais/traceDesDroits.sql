@@ -16,7 +16,10 @@
 --     le rôle des Edge Functions, ni le propriétaire, ni l'anonyme : la garde, AVANT la RLS (qui ne juge la ligne qu'après
 --     les déclencheurs d'avant), refuse sous ses mots — ; personne ne la réécrit (aucune policy ; la garde) ; le cabinet du dossier la lit, ni un membre d'ailleurs, ni le client, ni l'anonyme ;
 --   - le catalogue : la table, ses contraintes, ses deux policies, ses deux fonctions et leurs déclencheurs, la trace
---     après les deux gardes de `memberships`.
+--     après les deux gardes de `memberships` ; toute case `droit_…` de `memberships` tracée — nommée par le déclencheur,
+--     admise par la contrainte, lue par la fonction : une case de plus (la case « Comptes » de C4a), appliquée avant ou
+--     après cette migration, y paraît en faute (la relecture de sécurité du 06/11/2026 ; la garde de tête refuse l'une, la
+--     garde de C4a l'autre, ce contrôle voit l'état qu'elles protègent).
 --
 -- Deux dossiers jetables du cabinet du dossier `test` (préfixe `b1d70000-0000-4000-8024`), exonérés et basculés, chacun
 -- avec un accès sans droit du client d'essai (inséré comme `create-client-access` l'insère) ; un accès d'essai donné au
@@ -203,7 +206,14 @@ begin
         $q$select string_agg(pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text, ' ; ' order by t.tgname) || ' | '
   || (select string_agg(m.tgname, ', ' order by m.tgname) from pg_trigger m where m.tgrelid = 'public.memberships'::regclass and not m.tgisinternal)
   from pg_trigger t where t.tgname in ('memberships_trace_des_droits', 'trace_des_droits_garde') and not t.tgisinternal$q$, null, 'OK',
-        'CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF droit_ventes, droit_banque, droit_caisse, dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O ; CREATE TRIGGER trace_des_droits_garde BEFORE INSERT OR DELETE OR UPDATE ON public.trace_des_droits FOR EACH ROW EXECUTE FUNCTION garder_trace_des_droits() O | memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits | -')
+        'CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF droit_ventes, droit_banque, droit_caisse, dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O ; CREATE TRIGGER trace_des_droits_garde BEFORE INSERT OR DELETE OR UPDATE ON public.trace_des_droits FOR EACH ROW EXECUTE FUNCTION garder_trace_des_droits() O | memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits | -'),
+      (40, 'proprietaire', '40. … toute case droit_… de memberships est tracée : nommée par le déclencheur, admise par la contrainte, lue par la fonction (sinon, en faute)', null,
+        $q$select string_agg(a.attname, ', ' order by a.attname) || ' | non tracée : ' || coalesce(string_agg(a.attname, ', ' order by a.attname) filter (where not (
+    a.attnum = any ((select t.tgattr from pg_trigger t where t.tgname = 'memberships_trace_des_droits' and not t.tgisinternal)::int2[])
+    and strpos((select pg_get_constraintdef(c.oid) from pg_constraint c where c.conrelid = 'public.trace_des_droits'::regclass and c.conname = 'trace_des_droits_droit'), '''' || substr(a.attname, 7) || '''') > 0
+    and strpos((select p.prosrc from pg_proc p where p.oid = to_regprocedure('public.tracer_les_droits()')), 'new.' || a.attname) > 0)), 'aucune')
+  from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attnum > 0 and not a.attisdropped and left(a.attname, 6) = 'droit_'$q$, null, 'OK',
+        'droit_banque, droit_caisse, droit_ventes | non tracée : aucune | -')
     ) as t(rang, profil, etape, avant, requete, apres, code, attendu) order by rang loop
       v_obs := null;
       v_code := 'OK';
