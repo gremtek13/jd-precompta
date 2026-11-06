@@ -127,7 +127,13 @@ describe('relationsDuSchema — le lecteur lui-même', () => {
     expect(() => lire('alter table t add constraint t_ab_fkey foreign key (a, b) references p(x, y);')).toThrow(FormeInconnue)
     expect(() => lire('create table t (a uuid references p(id) on delete set default);')).toThrow(FormeInconnue)
     expect(() => lire('create table t (a uuid references p(id));', 'alter table t rename column a to b;')).toThrow(FormeInconnue)
-    expect(() => lire('create table t (a uuid references p(id));', 'alter table t drop column a;')).toThrow(FormeInconnue)
+    expect(() => lire('create table t (a uuid references p(id));', 'alter table t drop column a cascade;')).toThrow(FormeInconnue)
     expect(() => lire('create table t (a uuid references p(id));', 'alter table t rename to u;')).toThrow(FormeInconnue)
+  })
+
+  it('une colonne retirée sans cascade emporte sa clé, et elle seule (P0, anciennes_notes_supprimees)', () => {
+    const relations = lire('create table t (a uuid references p(id), b uuid references q(id), notes text);',
+      'alter table t drop column a;', 'alter table public.t drop column if exists notes restrict;')
+    expect(relations.map((r) => `${r.enfant}.${r.colonne}>${r.parent}`)).toEqual(['t.b>q'])
   })
 })
