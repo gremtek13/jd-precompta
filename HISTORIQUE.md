@@ -48669,3 +48669,37 @@ refuse une facture sans `option_debits` (`premierRefusDuPaiement`) : l'import la
 **QUESTIONS AU CABINET** (page des arbitrages) : A8-Q1 (la source posée à l'import), A8-Q2 (une date de reprise par
 dossier), A8-Q3 (l'engagement différé), A8-Q4 (l'import n'ouvre qu'avec A9), A8-Q5 (la pièce déjà au dossier d'une
 facture reprise), A8-Q6 (l'encaissé avant la reprise, par taux).
+
+### 06/11/2026 — L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT (C2) (PRÉPARÉE, PAS APPLIQUÉE)
+
+Ligne 51.5, partie C, étape C2 (MEG3-Q6, « oui »). **La fonction** `phase_des_exercices(dossier)`
+(supabase/preparees/20261106120000_phase_des_exercices.sql, additive : une fonction, ni table ni policy) rend un
+`jsonb` : par exercice, du plus récent au plus ancien, une phase et, validé, le jour de Paris et la 2035 gardée — jamais
+un montant, un compte, un nombre, un libellé, un nom, ni qui ni à quelle heure. **Les phases, ce que la base prouve** :
+« validee » (`exercices_valides`, « 2035 enregistrée » quand `declaration` n'est pas nulle — jamais « déposée », la base
+ignore le dépôt) ; « pieces_attendues » (N et N−1 tant que `exercices_clotures` ne les marque pas : la règle de
+`lib/resteAEnvoyer.ts`, choix du 22/09/2026 — elle ne dit pas QUOI, et l'emporte sur la révision commencée, pour que la
+carte ne contredise pas « Ce qu'il reste à envoyer ») ; « en_revision » (une ligne de l'une des six tables `revision_*`
+de l'exercice) ; « en_cours » pour le reste. Exercices rendus : N, N−1 et ceux que validation, clôture ou révision
+nomment. **L'accès d'abord** : `admin_du_dossier` ou `client_du_dossier(…, 'membre')`, le dossier existant, sinon
+42501 ; `security definer`, `search_path` fixé, `stable` ; ni `public` ni `anon`. Le retour :
+`preparees/retour/20261106120100_retour_phase_des_exercices.sql` (la fonction seule, aucune donnée).
+
+**Sur la réplique** (copie de `fec22b_replique`, base `c2_prod` : `p5b2_revue` plus les deux corps
+d'`acomptes_des_devis` qui différaient, `enregistrer_facture` et `facturer_acompte_devis` ; `signature.sql` égale à la
+production sur les neuf familles) : `phaseDesExercices.sql` rend EN ATTENTE sans la migration ; avec elle, 9 verdicts, 0
+rouge (sept exercices N à N−6, chef et client du dossier la même valeur, client d'un autre dossier, session sans
+identifiant, anonyme, dossier inconnu, dossier vide, catalogue, rien de resté) ; **9 mutations sur 9 mordent** (accès
+retiré, case « Banque » exigée, révision avant la collecte, jour en UTC, 2035 de tout validé, anonyme autorisé, fenêtre
+retirée, existence non vérifiée, clé `valide_par` de plus), le témoin sans rouge. **Un piège trouvé par la mutation de
+l'accès** : appelée par une affectation PL/pgSQL, la fonction ne juge le droit d'exécuter qu'à la première évaluation de
+l'expression dans la transaction — l'anonyme passait derrière une session acceptée ; l'essai l'appelle par `EXECUTE`,
+sous chaque rôle. `rls.sql` rejoué ENTIER avant et après : 95 lignes, 0 en faute, 73 mutations sur 73, sorties
+identiques. Les trois contrôles de l'export, production et dépôt égaux : dérive 175 (`9e5d747d…`), socle 81
+(`cea19cff…`), inventaire 2443 (`59c27e47…`).
+
+**L'écran** : `lib/etatDuDossier.ts` (la lecture stricte — une clé de plus, une phase inconnue, une date hors d'un
+validé se SIGNALENT —, la lecture qui ne rejette jamais, les phrases au tutoiement), `lib/etatDuDossierLecture.ts`
+(gardée avec le dossier), `components/CarteEtatDuDossier.tsx`, une ligne et son import dans `ClientHome.tsx` ;
+`ETAT_DU_DOSSIER_EXPORTE` baissé, confronté à l'export. Restent au cabinet : appliquer (C2-Q1), la précédence de la
+collecte (C2-Q2), « enregistrée » plutôt que « déposée » (C2-Q3), un exercice clôturé dit « en cours » (C2-Q4).

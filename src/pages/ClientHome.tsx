@@ -11,6 +11,7 @@ import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
 import ProgressRing from '../components/widgets/ProgressRing'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
+import CarteEtatDuDossier from '../components/CarteEtatDuDossier'
 import type { CotisationDeclaree, DocumentDivers, Dossier, LigneBancaire, Piece } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/couvertureReleve'
@@ -467,6 +468,7 @@ export default function ClientHome() {
               </div>
             )}
           </Widget>
+          <CarteEtatDuDossier key={dossierId} dossierId={dossierId} />
         </div>
       )}
 
