@@ -165,6 +165,9 @@ vi.mock('../../lib/controlesReleves', () => ({
   },
 }))
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
+// La carte P10, « Espace client : ce qui a bougé » (étape B9b), a sa lecture à elle et son propre test
+// (CarteEspaceClient.test.tsx) : doublée ici, ses lectures des tables de la vente ne se comptent pas dans celles de l'onglet.
+vi.mock('./CarteEspaceClient', () => ({ default: () => <section aria-label="Espace client (doublée)" /> }))
 
 // Le jeu d'essai est TYPÉ, et sans `as` : c'est le compilateur qui vérifie alors chaque champ
 // contre `Piece`, donc contre la table — exhaustivement, à chaque build. Un `as Piece` ou un objet

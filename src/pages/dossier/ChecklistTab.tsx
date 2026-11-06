@@ -17,6 +17,7 @@ import { lireLaChecklist, type LectureDeLaChecklist } from '../../lib/checklistL
 import { pointsDeLaChecklist, type DocumentAttendu, type PointATraiter } from '../../lib/pointsDeLaChecklist'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import EncartFactureElectronique from './EncartFactureElectronique'
+import CarteEspaceClient from './CarteEspaceClient'
 import AvisChangementDeRib from '../../components/AvisChangementDeRib'
 import { useDernierChangementDeRib } from '../../lib/changementDeRibLecture'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from '../../lib/paiementParLaCaisse'
@@ -363,6 +364,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
             lecture est la sienne : une lecture ratée ne tait que cette carte, jamais la Vue d'ensemble. Ses liens mènent à
             Justificatifs, où les connexions et l'adresse se règlent. */}
         <EncartFactureElectronique espace="cabinet" dossierId={dossierId} onNavigate={onNavigate} />
+
+        {/* Ce qui a bougé dans l'espace client (étape B9b, la carte P10) : les gestes du client des trente derniers jours,
+            reconstitués des colonnes d'auteur. Sa lecture est la sienne, comme celle de l'encart d'au-dessus : muette sur une
+            lecture partielle, elle ne tait jamais la Vue d'ensemble. Aucun geste, aucune fenêtre. */}
+        <CarteEspaceClient dossierId={dossierId} />
 
         {/* Des dates, pas des anomalies : aucun bouton, et la pastille ne dit que l'imminence — trente jours ou moins. */}
         <Widget

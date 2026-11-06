@@ -678,9 +678,11 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     }
     // Les déclarations sont lues par la fenêtre ET par l'onglet — depuis l'étape P4b, par la lecture que l'onglet partage
     // avec l'accueil du client (lib/ventesLecture.ts) : le scanner voit les deux. Et, depuis l'étape VF5d, par l'onglet Banque
-    // d'un dossier basculé (lib/ventesDuReleveLecture.ts) : seul un encaissement déclaré se contre-passe sur un débit.
+    // d'un dossier basculé (lib/ventesDuReleveLecture.ts) : seul un encaissement déclaré se contre-passe sur un débit. Et,
+    // depuis l'étape B9b, par le journal de l'espace client (la carte P10), qui n'en lit que l'auteur et l'instant.
     expect(new Set(nommes.filter((s) => s.tables?.includes('transmissions_encaissements')).map((s) => s.chemin)))
-      .toEqual(new Set(['src/pages/dossier/EncaissementsFactureModal.tsx', 'src/lib/ventesLecture.ts', 'src/lib/ventesDuReleveLecture.ts']))
+      .toEqual(new Set(['src/pages/dossier/EncaissementsFactureModal.tsx', 'src/lib/ventesLecture.ts', 'src/lib/ventesDuReleveLecture.ts',
+        'src/lib/journalDeLEspaceClientLecture.ts']))
     // Les Edge Functions sont parcourues.
     expect(sites.some((s) => s.chemin.startsWith('supabase/functions/'))).toBe(true)
     // Une table passée par un paramètre typé se lit : le dépôt d'une pièce ou d'un document.

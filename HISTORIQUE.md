@@ -49016,3 +49016,19 @@ absente, un préfixe de tiers hors forme ou partagé, un préfixe sur un rôle q
 illisible. `comptesEnDur` : 44 → 19. L'AUXILIAIRE DU FEC (`engagement.ts`, 3) N'EST PAS FAIT : `auxiliaireDuTiers` a
 neuf appelants hors des tests, dont cinq dans `lettrage.ts` (hors périmètre, sans plan) et `numeroterFec`, qui ne reçoit
 pas le plan (environ 130 appels dans les tests) ; une décision attendue (PC3-AUX, rapport de l'agent).
+
+### 06/11/2026 — « ESPACE CLIENT : CE QUI A BOUGÉ » : LE JOURNAL RECONSTITUÉ ET LA CARTE DU CABINET (B9B, P10)
+
+Côté cabinet seul, sans migration ni policy (MEG2-Q11 : reconstitué des colonnes d'auteur, une table plus tard si un
+manque gêne). `lib/journalDeLEspaceClient.ts`, pur : vingt-six genres, un par colonne d'auteur vérifiée dans l'export
+(`factures_emises.created_by`/`valide_par`, `transmissions_factures.cree_par`, `encaissements_factures.cree_par`/
+`retire_par`, `transmissions_encaissements.cree_par`, `statuts_factures_recus.lu_par`, `devis.emis_par`/`decide_par`,
+`articles` et `contacts` (création, dernière modification, retrait, effacement), `parametres_facturation.auteur`,
+`adresses_reception.auteur`, `justificatifs_proposes.auteur_id`/`retire_par`, `precisions_mouvements.auteur_id`,
+`piece_commentaires.auteur_id`, `pieces.uploaded_by`, `emails_envoyes.envoye_par`, `operations_caisse.cree_par`/
+`retire_par`) ; seul un compte reconnu par `estLeClient` sur les accès lus en entier ; la fenêtre, trente jours au jour
+de Paris donné par l'appelant ; vingt évènements au plus, le compte dit ; muet, son motif seul, sur des accès ou une
+source lus en partie. `…Lecture.ts` : une lecture `lireTout` par colonne, bornée d'un jour plus large que la fenêtre,
+gardée avec le dossier et le jour. `CarteEspaceClient` en `span-12` de la Vue d'ensemble, après l'encart « Facture
+électronique » : squelette, pastilles neutres, la limite dite (un brouillon supprimé, une modification écrasée, un accès
+retiré). Les notes de frais n'ont pas de table : leurs trois évènements n'existent pas encore.

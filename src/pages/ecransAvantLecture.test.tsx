@@ -59,6 +59,7 @@ import AdresseReceptionModal from './dossier/AdresseReceptionModal'
 import ParametresVue from './dossier/ParametresVue'
 import LogoDesFactures from './dossier/LogoDesFactures'
 import EncartFactureElectronique from './dossier/EncartFactureElectronique'
+import CarteEspaceClient from './dossier/CarteEspaceClient'
 import EreportingCard from './dossier/EreportingCard'
 import EreportingModal from './dossier/EreportingModal'
 import EstimationTab from './dossier/EstimationTab'
@@ -289,6 +290,11 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'EncartFactureElectronique (cabinet)', fichier: 'pages/dossier/EncartFactureElectronique.tsx', rendre: () => (
     <MemoryRouter><div className="bento"><EncartFactureElectronique espace="cabinet" dossierId="d1" onNavigate={rien} /></div></MemoryRouter>
+  ) },
+  // La carte P10 seule (étape B9b) : le journal de l'espace client, reconstitué. Retenue, un squelette ; revenue vide, le compte
+  // n'est dit que d'une lecture entière ; refusée, elle dit sa lecture incomplète au lieu de rester en « Chargement… ».
+  { nom: 'CarteEspaceClient', fichier: 'pages/dossier/CarteEspaceClient.tsx', rendre: () => (
+    <div className="bento"><CarteEspaceClient dossierId="d1" /></div>
   ) },
   { nom: 'DossiersList', fichier: 'pages/DossiersList.tsx', rendre: () => <Dossier1><DossiersList /></Dossier1> },
   { nom: 'DossierDetail', fichier: 'pages/DossierDetail.tsx', rendre: () => (
