@@ -48207,6 +48207,7 @@ jour, jamais le matin où l'agent les a joués. Elle devient le jour de Paris, e
 formulaire et la fenêtre de transmission, qui jugeaient « pas encore arrivé » contre le jour local : d'un navigateur en
 retard sur Paris, la facture du jour se serait dite non transmissible quand `superpdp-emit` l'accepte. 26 tests neufs ;
 trois fichiers qui datent leurs factures de 2027 figent `Date` après elles. Les écrans de la facture et de sa
-transmission (1 161 tests) passent sous Paris, UTC, New York, Auckland, Etc/GMT-14, et Etc/GMT+12 joué à l'heure où son
-jour retarde sur Paris, hors un test de la fenêtre de transmission qui montre l'instant d'une transmission à l'heure
-locale : il tombe aussi sur `main` sous UTC−12, hors des quatre fuseaux de `verifier`.
+transmission (1 161 tests) passent sous Paris, UTC, New York, Auckland, Etc/GMT-14 rejoué après 10 h UTC, quand son jour
+devance Paris (la version de l'agent y perd 79 tests), et Etc/GMT+12 joué quand son jour retarde, hors un test de la
+fenêtre de transmission qui montre l'instant d'une transmission à l'heure locale : il tombe aussi sur `main` sous
+UTC−12, hors des quatre fuseaux de `verifier`.
