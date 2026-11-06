@@ -392,7 +392,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     setDeclarationsTvaIncompletes(lectureDeclarations.complete ? null : lectureDeclarations.motif)
 
     const lectureFigees = await lirePiecesFigees(dossierId)
-    const lectureLettrages = await lireLettragesManuels(dossierId)
+    const lectureLettrages = await lireLettragesManuels(dossierId, modele.plan)
 
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
@@ -540,8 +540,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // — revérifié sur les écritures, sur les mêmes pièces que la Checklist (validées et à valider) : un lettrage qui ne se
   // solde plus laisse sa facture attendre son paiement. Rien en trésorerie, où rien ne se lettre.
   const lettreesALaMain = useMemo(
-    () => piecesLettreesALaMain(etatsDesLettragesManuels(lettragesManuels.ecritures, pieces, lettragesManuels.lettrages, modele.mode)),
-    [lettragesManuels, pieces, modele.mode],
+    () => piecesLettreesALaMain(etatsDesLettragesManuels(lettragesManuels.ecritures, pieces, lettragesManuels.lettrages, modele)),
+    [lettragesManuels, pieces, modele],
   )
   // L'exemplaire d'une facture source n'attend aucun mouvement : sa vente se règle par les encaissements de sa facture.
   const piecesSansMouvement = piecesValidees.filter((p) =>

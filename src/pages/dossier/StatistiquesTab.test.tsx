@@ -1,4 +1,3 @@
-import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
@@ -6,6 +5,7 @@ import StatistiquesTab from './StatistiquesTab'
 import type { ANouveau, EcritureBrouillon, ModeComptable, Piece } from '../../lib/types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
 import { formatMoney } from '../../lib/format'
+import { modeleDeTest } from '../../test/modeles'
 
 // « Une recherche filtre l'affichage, jamais un total » — la règle que cet écran a violée : ses
 // totaux débit/crédit portaient sur les lignes TROUVÉES, si bien que taper « 606 » affichait le
@@ -137,7 +137,7 @@ describe('StatistiquesTab — Balance des comptes', () => {
 
     render(
       <ContexteDossier valides={faux.valides} annee="toutes">
-        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('tresorerie')} />
       </ContexteDossier>,
     )
 
@@ -157,7 +157,7 @@ describe('StatistiquesTab — Balance des comptes', () => {
     faux.parTable.pieces = []
     render(
       <ContexteDossier valides={faux.valides} annee="toutes">
-        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('tresorerie')} />
       </ContexteDossier>,
     )
     const tableau = (await screen.findByText('606100')).closest('table')!
@@ -181,7 +181,7 @@ describe('StatistiquesTab — Balance des comptes', () => {
 
     render(
       <ContexteDossier valides={faux.valides} annee="toutes">
-        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('tresorerie')} />
       </ContexteDossier>,
     )
 
@@ -225,7 +225,7 @@ describe('StatistiquesTab — les catégories du cabinet', () => {
 
     render(
       <ContexteDossier valides={faux.valides} annee="toutes">
-        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('tresorerie')} />
       </ContexteDossier>,
     )
 
@@ -262,7 +262,7 @@ describe('StatistiquesTab — les à-nouveaux', () => {
     faux.parTable.a_nouveaux = OUVERTURE
     render(
       <ContexteDossier valides={faux.valides} annee={annee}>
-        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('tresorerie')} />
       </ContexteDossier>,
     )
   }
@@ -384,7 +384,7 @@ describe('StatistiquesTab — les soldes reportés', () => {
     faux.valides = valides
     render(
       <ContexteDossier valides={faux.valides} annee={annee}>
-        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('tresorerie')} />
       </ContexteDossier>,
     )
   }
@@ -518,7 +518,7 @@ describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
   function monter(annee: number | 'toutes', mode: ModeComptable = 'engagement') {
     render(
       <ContexteDossier valides={faux.valides} annee={annee}>
-        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable={mode} />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest(mode)} />
       </ContexteDossier>,
     )
   }
@@ -734,7 +734,7 @@ describe('StatistiquesTab — les comptes de tiers d’un dossier qui a basculé
 
   const monter = () => render(
     <ContexteDossier valides={faux.valides} annee="toutes">
-      <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="engagement" />
+      <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('engagement')} />
     </ContexteDossier>,
   )
 
@@ -802,7 +802,7 @@ describe('StatistiquesTab — le lettrage fait à la main', () => {
   function monter(annee: number | 'toutes' = 'toutes') {
     render(
       <ContexteDossier valides={faux.valides} annee={annee}>
-        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="engagement" />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('engagement')} />
       </ContexteDossier>,
     )
   }

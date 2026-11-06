@@ -30,6 +30,7 @@ import { colonnes, desequilibresDgfip } from '../test/fecDgfip'
 import { NON_VALIDEE } from '../test/ecritures'
 import { tirage } from '../test/encaissementsBatterie'
 import { SANS_ECRITURE_DE_VENTE, SANS_EXEMPLAIRE, SANS_FACTURE_SOURCE, SANS_VENTE_FACTUREE, ventesFactureesVides } from '../test/ventesFacturees'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 
 // LE DRAPEAU, ÉCRIT : un accesseur sous `vi.mock`, BAISSÉ par défaut — l'état d'aujourd'hui, quelle que soit la valeur du module,
 // que la migration lèvera — et `paiementsParLaCaisse`, la dérivation selon le drapeau, qui le suit (son corps lit la constante
@@ -55,8 +56,8 @@ afterEach(() => { drapeau.leve = false })
 // caractère près. Toutes les données sont fictives.
 
 const D = 'd-caisse'
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const categorie = (o: Partial<Categorie>): Categorie => ({
   id: 'c-achats', dossier_id: D, code: 'achats', libelle: 'Achats fictifs', ordre: 1, compte_comptable: '606100', poste_2035: 'Achats', ...o,
@@ -208,7 +209,7 @@ describe('la neutralité, au caractère près', () => {
         ventesFactureesVides(D), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, CAISSE_ABSENTE),
       brouillon: brouillon.map(({ id: _id, ...l }) => l),
       analyse: analyserEcritures(brouillon, aComptabiliser, true, p, TRESORERIE, null, SANS_EXEMPLAIRE),
-      fec: genererFec(brouillon, pieces, CATEGORIES, [], 'tresorerie', lignes, new Map(), SANS_ECRITURE_DE_VENTE,
+      fec: genererFec(brouillon, pieces, CATEGORIES, [], modeleDeTest('tresorerie'), lignes, new Map(), SANS_ECRITURE_DE_VENTE,
         OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES),
       enTrop: piecesPayeesEnTrop(pieces, p),
     })
@@ -412,7 +413,7 @@ describe('la contrepartie de caisse, au compte de la caisse du plan', () => {
 
   it('le lettrage : en trésorerie, rien ne se lettre, la caisse non plus', () => {
     const brouillon = enBase(lignesPourPiece(D, achat, cible, true, paiements([], [op]).get('p-achat')!, TRESORERIE))
-    expect(lettrages(brouillon, [achat], [], 'tresorerie', SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(lettrages(brouillon, [achat], [], modeleDeTest('tresorerie'), SANS_VENTE_FACTUREE).size).toBe(0)
   })
 })
 
@@ -440,7 +441,7 @@ describe('le FEC et la piste d’audit : le paiement par la caisse au journal de
     plan: PLAN_PAR_DEFAUT,
   })
   const fec = (brouillon: EcritureBrouillon[], lignes: LigneBancaire[], ops: OperationCaisse[], champs: Parameters<typeof genererFec>[9]) =>
-    genererFec(brouillon, [achat], CATEGORIES, [], 'tresorerie', lignes, new Map(), SANS_ECRITURE_DE_VENTE, caisseLue(ops), champs)
+    genererFec(brouillon, [achat], CATEGORIES, [], modeleDeTest('tresorerie'), lignes, new Map(), SANS_ECRITURE_DE_VENTE, caisseLue(ops), champs)
 
   it('payée par la caisse seule : une écriture au journal des achats, la caisse au crédit, DateRglt le jour des espèces, « Espèces »', () => {
     const ops = [operation({ id: 'oc-1', date: '2026-01-05', montant: -120 })]

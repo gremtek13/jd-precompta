@@ -11,6 +11,7 @@ import { dateLocaleDe } from './format'
 import type { CibleComptable, LigneAGenerer } from './ecritures'
 import type { LigneBancaire, Piece } from './types'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PLAN_LU_DECALE, PLAN_LU_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest, planLuDe } from '../test/modeles'
 
 // Les comptes de tiers et les trois comptes du dirigeant sous le plan par défaut : ceux d'avant l'étape PC3.
 const COMPTES_DE_TIERS = comptesDeTiers(PLAN_PAR_DEFAUT)
@@ -230,39 +231,39 @@ describe('lignesEngagementPourPiece', () => {
 
 describe('auxiliaireDuTiers — le compte auxiliaire du FEC', () => {
   it('numérote un fournisseur à sa clé d’identité, et le nomme comme il est lu', () => {
-    expect(auxiliaireDuTiers(piece({ tiers: 'Transmedical' }), COMPTE_FOURNISSEURS)).toEqual({ num: 'FTRANSMEDICAL', lib: 'Transmedical' })
-    expect(auxiliaireDuTiers(piece({ tiers: 'CPAM des\nBouches-du-Rhône' }), COMPTE_CLIENTS)).toEqual({ num: 'CCPAM', lib: 'CPAM des Bouches-du-Rhône' })
+    expect(auxiliaireDuTiers(piece({ tiers: 'Transmedical' }), COMPTE_FOURNISSEURS, modeleDeTest('engagement'))).toEqual({ num: 'FTRANSMEDICAL', lib: 'Transmedical' })
+    expect(auxiliaireDuTiers(piece({ tiers: 'CPAM des\nBouches-du-Rhône' }), COMPTE_CLIENTS, modeleDeTest('engagement'))).toEqual({ num: 'CCPAM', lib: 'CPAM des Bouches-du-Rhône' })
   })
 
   it('donne le même numéro aux deux lectures d’un même fournisseur', () => {
-    expect(auxiliaireDuTiers(piece({ tiers: 'Transmedical / et redevient' }), COMPTE_FOURNISSEURS)?.num).toBe('FTRANSMEDICAL')
+    expect(auxiliaireDuTiers(piece({ tiers: 'Transmedical / et redevient' }), COMPTE_FOURNISSEURS, modeleDeTest('engagement'))?.num).toBe('FTRANSMEDICAL')
   })
 
   it('range un tiers sans clé au compte « divers » plutôt que de lui en inventer une', () => {
-    expect(auxiliaireDuTiers(piece({ tiers: null }), COMPTE_FOURNISSEURS)).toEqual({ num: 'FDIVERS', lib: 'Fournisseurs divers' })
-    expect(auxiliaireDuTiers(piece({ tiers: 'CARTE BANCAIRE' }), COMPTE_CLIENTS)).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
+    expect(auxiliaireDuTiers(piece({ tiers: null }), COMPTE_FOURNISSEURS, modeleDeTest('engagement'))).toEqual({ num: 'FDIVERS', lib: 'Fournisseurs divers' })
+    expect(auxiliaireDuTiers(piece({ tiers: 'CARTE BANCAIRE' }), COMPTE_CLIENTS, modeleDeTest('engagement'))).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
   })
 
   it('donne aux fournisseurs d’immobilisations leurs propres auxiliaires, préfixés FI', () => {
     // Un même fournisseur peut l'être des deux sortes : son auxiliaire du 404 ne doit pas porter le
     // numéro de celui du 401, un CompAuxNum désignant un seul compte auxiliaire dans tout le fichier.
-    expect(auxiliaireDuTiers(piece({ tiers: 'Transmedical' }), COMPTE_FOURNISSEURS_IMMOBILISATIONS))
+    expect(auxiliaireDuTiers(piece({ tiers: 'Transmedical' }), COMPTE_FOURNISSEURS_IMMOBILISATIONS, modeleDeTest('engagement')))
       .toEqual({ num: 'FITRANSMEDICAL', lib: 'Transmedical' })
-    expect(auxiliaireDuTiers(piece({ tiers: null }), COMPTE_FOURNISSEURS_IMMOBILISATIONS))
+    expect(auxiliaireDuTiers(piece({ tiers: null }), COMPTE_FOURNISSEURS_IMMOBILISATIONS, modeleDeTest('engagement')))
       .toEqual({ num: 'FIDIVERS', lib: 'Fournisseurs d’immobilisations divers' })
   })
 
   it('ne donne d’auxiliaire qu’au 401, au 404 et au 411', () => {
     for (const compte of [ACHATS, COMPTE_BANQUE, COMPTE_TVA_DEDUCTIBLE, '455000', '108000', '467000']) {
-      expect(auxiliaireDuTiers(piece(), compte)).toBeNull()
+      expect(auxiliaireDuTiers(piece(), compte, modeleDeTest('engagement'))).toBeNull()
     }
   })
 })
 
 describe('le modèle du dossier', () => {
   it('se lit sur les deux colonnes du dossier, et porte le plan du dossier', () => {
-    expect(modeleDuDossier({ mode_comptable: 'engagement', compte_notes_de_frais: '108000' }, PLAN_PAR_DEFAUT))
-      .toEqual({ modele: { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, refus: null })
+    expect(modeleDuDossier({ mode_comptable: 'engagement', compte_notes_de_frais: '108000' }, PLAN_LU_PAR_DEFAUT))
+      .toEqual({ modele: { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, refus: null })
   })
 
   // LE COMPTE DU DIRIGEANT EST VALIDÉ PAR LE PLAN (étape PC3 ; conception, § 3.6) : celui de l'un des trois rôles du
@@ -272,16 +273,16 @@ describe('le modèle du dossier', () => {
     for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
       for (const compte of [plan.associe, plan.exploitant, plan.autres_debiteurs_crediteurs]) {
         for (const mode of ['tresorerie', 'engagement'] as const) {
-          expect(modeleDuDossier({ mode_comptable: mode, compte_notes_de_frais: compte }, plan).modele?.compteNotesDeFrais).toBe(compte)
+          expect(modeleDuDossier({ mode_comptable: mode, compte_notes_de_frais: compte }, planLuDe(plan)).modele?.compteNotesDeFrais).toBe(compte)
         }
       }
     }
-    expect(modeleDuDossier({ mode_comptable: 'engagement', compte_notes_de_frais: '455000' }, PLAN_DECALE)).toEqual({
+    expect(modeleDuDossier({ mode_comptable: 'engagement', compte_notes_de_frais: '455000' }, PLAN_LU_DECALE)).toEqual({
       modele: null,
       refus: 'Le compte du dirigeant de ce dossier (455000) n’est le compte d’aucun des trois rôles que son plan comptable '
         + 'lui ouvre (455100, 108100, 467100).',
     })
-    expect(modeleDuDossier({ mode_comptable: 'tresorerie', compte_notes_de_frais: '401000' }, PLAN_PAR_DEFAUT).refus)
+    expect(modeleDuDossier({ mode_comptable: 'tresorerie', compte_notes_de_frais: '401000' }, PLAN_LU_PAR_DEFAUT).refus)
       .toBe('Le compte du dirigeant de ce dossier (401000) n’est le compte d’aucun des trois rôles que son plan comptable '
         + 'lui ouvre (455000, 108000, 467000).')
   })

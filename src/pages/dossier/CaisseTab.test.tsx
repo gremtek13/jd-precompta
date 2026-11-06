@@ -10,6 +10,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type { Categorie, OperationCaisse } from '../../lib/types'
 import { ContexteDossier } from '../../test/exercicesValides'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // L'ONGLET CAISSE, CÔTÉ CABINET (ligne 26.6, étape C4). Ce que ces cas gardent : rien avant le retour de la lecture ; la caisse
 // jour par jour et son solde, les espèces des factures (lues, sans geste), l'origine d'une opération ; la lecture partielle qui
@@ -99,8 +100,8 @@ vi.mock('../../lib/supabase', () => {
   }
 })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const HONORAIRES: Categorie = { id: HONORAIRES_ID, dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 1, compte_comptable: '706000', poste_2035: 'Recettes' }
 const LOYER: Categorie = { id: LOYER_ID, dossier_id: D, code: 'loyer', libelle: 'Loyer', ordre: 2, compte_comptable: '613200', poste_2035: 'Loyers' }

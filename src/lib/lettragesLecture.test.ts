@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EcritureBrouillon, LettrageManuel, Piece } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
-import { COMPTES_LETTRABLES, etatsDesLettragesManuels, piecesLettreesALaMain } from './lettrage'
+import { comptesLettrables, etatsDesLettragesManuels, piecesLettreesALaMain } from './lettrage'
+import { modeleDeTest } from '../test/modeles'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // La lecture des lettrages faits à la main pour l'onglet Banque (lib/lettragesLecture.ts). Le faux client APPLIQUE les
 // filtres de la requête (src/test/filtresPostgrest.ts) : un faux qui rendrait le brouillon entier ne verrait ni une liste
@@ -123,27 +125,27 @@ beforeEach(() => {
 describe('lireLettragesManuels', () => {
   it('sans lettrage, ne relit pas le brouillon', async () => {
     faux.lettrages = []
-    expect(await lireLettragesManuels('d1')).toEqual(AUCUN_LETTRAGE_MANUEL)
+    expect(await lireLettragesManuels('d1', PLAN_PAR_DEFAUT)).toEqual(AUCUN_LETTRAGE_MANUEL)
     expect(faux.lectures.map((l) => l.table)).toEqual(['lettrages_manuels'])
   })
 
   it('avec un lettrage, relit les seules lignes des comptes de tiers du dossier', async () => {
-    const lecture = await lireLettragesManuels('d1')
+    const lecture = await lireLettragesManuels('d1', PLAN_PAR_DEFAUT)
     expect(lecture.motif).toBeNull()
     expect(lecture.lettrages.map((l) => l.id)).toEqual(['lm1', 'lm2', 'lm3', 'lm4', 'lm5', 'lm6'])
     expect(lecture.ecritures.map((e) => e.id)).toEqual(['e03', 'e06', 'e08', 'e10', 'e12', 'e14'])
     // Tous les comptes qui se lettrent, et eux seuls.
     const brouillon = faux.lectures.find((l) => l.table === 'ecritures_brouillon')
-    expect(brouillon?.filtres).toEqual(['dossier_id=d1', `compte in ${[...COMPTES_LETTRABLES].sort().join(',')}`])
+    expect(brouillon?.filtres).toEqual(['dossier_id=d1', `compte in ${[...comptesLettrables(PLAN_PAR_DEFAUT)].sort().join(',')}`])
   })
 
   // C'est ce qui permet de ne lire que les comptes de tiers : `etatsDesLettragesManuels` ne regarde qu'eux. Comparé sur
   // un lettrage qui tient, un qui ne tient plus et un du 467 — l'égalité porte sur les états entiers, motifs compris.
   it('rend les mêmes états que le brouillon entier du dossier', async () => {
-    const lecture = await lireLettragesManuels('d1')
-    const surLaLecture = etatsDesLettragesManuels(lecture.ecritures, PIECES, lecture.lettrages, 'engagement')
+    const lecture = await lireLettragesManuels('d1', PLAN_PAR_DEFAUT)
+    const surLaLecture = etatsDesLettragesManuels(lecture.ecritures, PIECES, lecture.lettrages, modeleDeTest('engagement'))
     const surToutLeBrouillon = etatsDesLettragesManuels(
-      BROUILLON.filter((e) => e.dossier_id === 'd1'), PIECES, LETTRAGES.filter((l) => l.dossier_id === 'd1'), 'engagement',
+      BROUILLON.filter((e) => e.dossier_id === 'd1'), PIECES, LETTRAGES.filter((l) => l.dossier_id === 'd1'), modeleDeTest('engagement'),
     )
     expect(surLaLecture).toEqual(surToutLeBrouillon)
     expect(surLaLecture.map((e) => [e.groupe, e.motif])).toEqual(
@@ -154,7 +156,7 @@ describe('lireLettragesManuels', () => {
 
   it('des lettrages lus en partie le disent, et le brouillon est relu pour ceux qui l’ont été', async () => {
     faux.muet = { lettrages_manuels: 1 }
-    const lecture = await lireLettragesManuels('d1')
+    const lecture = await lireLettragesManuels('d1', PLAN_PAR_DEFAUT)
     expect(lecture.motif).toMatch(/1/)
     expect(lecture.lettrages).toHaveLength(1)
     expect(faux.lectures.some((l) => l.table === 'ecritures_brouillon')).toBe(true)
@@ -162,36 +164,36 @@ describe('lireLettragesManuels', () => {
 
   it('des lettrages lus en partie au point de n’en rien rendre le disent aussi', async () => {
     faux.muet = { lettrages_manuels: 0 }
-    const lecture = await lireLettragesManuels('d1')
+    const lecture = await lireLettragesManuels('d1', PLAN_PAR_DEFAUT)
     expect(lecture.motif).not.toBeNull()
     expect(lecture.lettrages).toEqual([])
   })
 
   it('les lignes des comptes de tiers lues en partie le disent', async () => {
     faux.muet = { ecritures_brouillon: 2 }
-    const lecture = await lireLettragesManuels('d1')
+    const lecture = await lireLettragesManuels('d1', PLAN_PAR_DEFAUT)
     expect(lecture.motif).not.toBeNull()
     expect(lecture.ecritures).toHaveLength(2)
   })
 
   it('une lecture refusée le dit, avec sa raison', async () => {
     faux.erreur = { ecritures_brouillon: 'permission denied for table ecritures_brouillon' }
-    const lecture = await lireLettragesManuels('d1')
+    const lecture = await lireLettragesManuels('d1', PLAN_PAR_DEFAUT)
     expect(lecture.motif).toMatch(/permission denied/)
   })
 
   // Étape VF4c2 : le 411 d'une vente facturée se lettre par facture, jamais à la main. Ses lignes, sans pièce, sont lues avec
   // les comptes de tiers, et ne changent rien à ce que l'onglet Banque tire des lettrages faits à la main.
   it('les lignes d’une vente facturée, lues avec les comptes de tiers, ne changent aucun état', async () => {
-    const avant = etatsDesLettragesManuels((await lireLettragesManuels('d1')).ecritures, PIECES, LETTRAGES.slice(0, 6), 'engagement')
+    const avant = etatsDesLettragesManuels((await lireLettragesManuels('d1', PLAN_PAR_DEFAUT)).ecritures, PIECES, LETTRAGES.slice(0, 6), modeleDeTest('engagement'))
     faux.brouillon = [
       ...BROUILLON,
       { ...ligne('v1', 'd1', 'x', '411000', 'debit', 120), piece_id: null, facture_id: 'f-source' },
       { ...ligne('v2', 'd1', 'x', '411000', 'credit', 120), piece_id: null, encaissement_id: 'e-source' },
     ]
-    const lecture = await lireLettragesManuels('d1')
+    const lecture = await lireLettragesManuels('d1', PLAN_PAR_DEFAUT)
     expect(lecture.ecritures.map((e) => e.id)).toContain('v1')
-    expect(etatsDesLettragesManuels(lecture.ecritures, PIECES, lecture.lettrages, 'engagement')).toEqual(avant)
+    expect(etatsDesLettragesManuels(lecture.ecritures, PIECES, lecture.lettrages, modeleDeTest('engagement'))).toEqual(avant)
   })
 })
 

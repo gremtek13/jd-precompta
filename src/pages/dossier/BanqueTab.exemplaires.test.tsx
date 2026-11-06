@@ -8,6 +8,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { REFUS_EXEMPLAIRE_D_UNE_SOURCE, REFUS_VALIDATION_D_UNE_VENTE } from '../../lib/exemplairesDesFactures'
 import { raisonNonLue } from '../../lib/lotsDeLaJumelleInversee'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LES LOTS ET LE RELEVÉ DEVANT LA JUMELLE INVERSÉE (ligne 28.65, chantier EC-Q3, étape VF6d ; lib/lotsDeLaJumelleInversee.ts).
 // Les plans sont éprouvés à part (lib/lotsDeLaJumelleInversee.test.ts) ; ici, le CÂBLAGE de l'onglet Banque, côté cabinet,
@@ -190,7 +191,7 @@ function poser() {
 beforeEach(poser)
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function rendre(ventesParLesFactures = true) {
   return render(

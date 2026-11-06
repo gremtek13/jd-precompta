@@ -1,8 +1,10 @@
-import { COMPTE_CLIENTS, COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS } from './comptes'
 import { cleFournisseur, dateLocaleDe } from './format'
 import { libelleDUnePiece, type PieceLibellee } from './libellesDesVentes'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
-import { ROLES_DU_DIRIGEANT, roleDuDirigeant, type PlanComptable, type RoleDuDirigeant } from './planComptable'
+import {
+  ROLES_DU_DIRIGEANT, roleDuDirigeant, type LibellesDuPlan, type PlanComptable, type PrefixesDuPlan, type RoleDeTiers,
+  type RoleDuDirigeant,
+} from './planComptable'
 import type { CibleComptable, LigneAGenerer } from './ecritures'
 import type { CompteNotesDeFrais, Dossier, LigneBancaire, ModeComptable, Piece } from './types'
 
@@ -43,6 +45,19 @@ export interface ModeleComptable {
   // plan ne se construit pas, et une écriture composée sans lui partirait aux comptes par défaut, que la base refuserait
   // d'un dossier qui en règle d'autres.
   plan: PlanComptable
+  // LE LIBELLÉ ET LE PRÉFIXE D'AUXILIAIRE de chaque rôle (conception, § 3.9), lus avec le plan (`planDeLaReponse`) : le
+  // réglage du dossier, sinon le catalogue. Le préfixe nomme le compte auxiliaire d'un tiers au FEC (`auxiliaireDuTiers`) ;
+  // le libellé nomme un compte de tiers que rien d'autre ne nomme (le lettrage, la balance des tiers). Obligatoires, comme
+  // le plan : un auxiliaire composé sans eux reprendrait le préfixe par défaut dans un dossier qui en règle un autre.
+  libelles: LibellesDuPlan
+  prefixes: PrefixesDuPlan
+}
+
+/** Ce que la lecture du plan rend quand elle aboutit : ses comptes, ses libellés et ses préfixes. */
+export interface PlanLu {
+  plan: PlanComptable
+  libelles: LibellesDuPlan
+  prefixes: PrefixesDuPlan
 }
 
 /** Le modèle comptable d'un dossier, ou le refus qui l'empêche, dit en clair. */
@@ -54,7 +69,7 @@ export type ModeleDuDossier = { modele: ModeleComptable; refus: null } | { model
 // d'aucun dirigeant : la note de frais s'y écrirait sur un compte que le plan ne tient pas. La base le borne encore aux
 // trois défauts (`dossiers_compte_notes_de_frais_check`) ; l'étape PC4, qui rendra le plan réglable, la remplacera (Q4).
 export function modeleDuDossier(
-  dossier: Pick<Dossier, 'mode_comptable' | 'compte_notes_de_frais'>, plan: PlanComptable,
+  dossier: Pick<Dossier, 'mode_comptable' | 'compte_notes_de_frais'>, { plan, libelles, prefixes }: PlanLu,
 ): ModeleDuDossier {
   if (roleDuDirigeant(plan, dossier.compte_notes_de_frais) === null) {
     return {
@@ -63,7 +78,10 @@ export function modeleDuDossier(
         + `que son plan comptable lui ouvre (${ROLES_DU_DIRIGEANT.map((role) => plan[role]).join(', ')}).`,
     }
   }
-  return { modele: { mode: dossier.mode_comptable, compteNotesDeFrais: dossier.compte_notes_de_frais, plan }, refus: null }
+  return {
+    modele: { mode: dossier.mode_comptable, compteNotesDeFrais: dossier.compte_notes_de_frais, plan, libelles, prefixes },
+    refus: null,
+  }
 }
 
 export const LIBELLES_MODE: Readonly<Record<ModeComptable, string>> = {
@@ -237,16 +255,32 @@ export interface CompteAuxiliaire {
 // recevoir un inventé. Le libellé proposé est le nom lu ; `genererFec` n'en garde qu'un par numéro.
 // Le vendeur d'une immobilisation a son auxiliaire à lui (FI…), rattaché au 404 : le même numéro sous le
 // 401 et sous le 404 ferait d'un seul compte auxiliaire deux dettes de natures différentes.
-const AUXILIAIRES: Readonly<Record<string, { prefixe: string; divers: string }>> = {
-  [COMPTE_FOURNISSEURS]: { prefixe: 'F', divers: 'Fournisseurs divers' },
-  [COMPTE_FOURNISSEURS_IMMOBILISATIONS]: { prefixe: 'FI', divers: 'Fournisseurs d’immobilisations divers' },
-  [COMPTE_CLIENTS]: { prefixe: 'C', divers: 'Clients divers' },
+//
+// LE PRÉFIXE EST CELUI DU PLAN DU DOSSIER (ligne 43, étape PC3 ; conception, § 2.4 et § 3.9) : le compte de chacun des trois
+// rôles de tiers et le préfixe que son plan lui donne (`modele.prefixes`, F, FI et C au catalogue). Un compte qui n'est
+// celui d'aucun d'eux — le compte du dirigeant, ou le 401000 dans un dossier qui tient ses fournisseurs au 401100 — n'a
+// pas d'auxiliaire. Le libellé du compte « divers » reste celui d'aujourd'hui : il nomme la nature du tiers, pas le compte.
+const DIVERS: Readonly<Record<RoleDeTiers, string>> = {
+  fournisseurs: 'Fournisseurs divers',
+  fournisseurs_immobilisations: 'Fournisseurs d’immobilisations divers',
+  clients: 'Clients divers',
+}
+const ROLES_DE_TIERS = Object.keys(DIVERS) as readonly RoleDeTiers[]
+
+/** Le rôle de tiers dont `compte` est le compte dans le plan, ou nul. */
+export function roleDeTiersDuCompte(compte: string, plan: PlanComptable): RoleDeTiers | null {
+  return ROLES_DE_TIERS.find((role) => plan[role] === compte) ?? null
 }
 
-export function auxiliaireDuTiers(piece: Pick<Piece, 'tiers'>, compte: string): CompteAuxiliaire | null {
-  const auxiliaire = AUXILIAIRES[compte]
-  if (!auxiliaire) return null
+export function auxiliaireDuTiers(
+  piece: Pick<Piece, 'tiers'>, compte: string,
+  // Sans valeur par défaut : le plan dit quel compte est celui d'un tiers, et le préfixe de son auxiliaire.
+  modele: Pick<ModeleComptable, 'plan' | 'prefixes'>,
+): CompteAuxiliaire | null {
+  const role = roleDeTiersDuCompte(compte, modele.plan)
+  if (role === null) return null
+  const prefixe = modele.prefixes[role]
   const cle = cleFournisseur(piece.tiers)
-  if (!cle) return { num: `${auxiliaire.prefixe}DIVERS`, lib: auxiliaire.divers }
-  return { num: `${auxiliaire.prefixe}${cle.toUpperCase()}`, lib: piece.tiers!.replace(/\s+/g, ' ').trim() }
+  if (!cle) return { num: `${prefixe}DIVERS`, lib: DIVERS[role] }
+  return { num: `${prefixe}${cle.toUpperCase()}`, lib: piece.tiers!.replace(/\s+/g, ' ').trim() }
 }

@@ -17,6 +17,7 @@ import { LIBELLE_MOTIF_CONTRE_PASSATION } from '../../lib/droitsAcces'
 import {
   DECLARATION_DU_CANDIDAT, TITRE_CLASSER_DEBIT, TITRE_CONTRE_PASSER, TITRE_RATTACHER_CONTRE_PASSATION, TITRE_RETIRER,
 } from '../../lib/mouvementsDesVentes'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE (ligne 28.65, chantier EC-Q3, étape VF5d). La règle est éprouvée à
 // part (lib/gestesDuDebit.test.ts) ; ici, le CÂBLAGE de l'onglet Banque, côté cabinet, sur un dossier basculé : classer
@@ -216,7 +217,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function rendre(o: { ventesParLesFactures?: boolean; valides?: readonly number[] } = {}) {
   return render(

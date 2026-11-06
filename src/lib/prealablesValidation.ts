@@ -673,7 +673,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     : { etat: 'exportes', entrees: { ...d.champsBnc.entrees, paiements } }
   const numerotation = numeroterFec(
     ecrituresDeLExercice, d.piecesValidees, [...d.categories], ouvertureDeLExercice(d.aNouveaux, d.soldesReportes, d.annee),
-    d.modele.mode, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [], d.operationsDeCaisse, champsBnc,
+    d.modele, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [], d.operationsDeCaisse, champsBnc,
   )
   // Les lignes que `ventes-facturees-a-ecrire` nomme — à réécrire ou à retirer —, et elles seules : une ligne d'une vente
   // facturée qu'aucune source en défaut ne porterait (défensif) reste une écriture que rien ne rattache.

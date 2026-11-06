@@ -22,6 +22,7 @@ import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } f
 import { tirage } from '../test/encaissementsBatterie'
 import { SANS_ACOMPTE, ventesFacturees, type VentesFacturees } from './ventesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // Jeu d'essai typé SANS `as` : le compilateur vérifie chaque champ contre la table, et un champ
 // oublié ou mal typé échoue au build plutôt que de laisser un test prouver autre chose.
@@ -667,7 +668,7 @@ describe('calculerCa3 — le remboursement d\'un crédit (ligne 26)', () => {
 // période, que rien ne solde. Le contrôle passe par le VRAI générateur des écritures, jamais par une seconde
 // formule : deux formules qui s'accordent ne prouvent rien sur celle qui écrit.
 describe('calculerCa3 — la TVA des comptes, au centime de l\'écriture', () => {
-  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
   const paye = (id: string, pieceId: string, montant: number, date: string) =>
     mouvement({ id, piece_id: pieceId, montant, date })
 

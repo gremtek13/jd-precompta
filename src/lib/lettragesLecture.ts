@@ -1,7 +1,8 @@
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
-import { COMPTES_LETTRABLES } from './lettrage'
+import { comptesLettrables } from './lettrage'
 import { messageErreur } from './messageErreur'
+import type { PlanComptable } from './planComptable'
 import type { EcritureBrouillon, LettrageManuel } from './types'
 import type { EncaissementDesExports, FactureDesExports, FacturesDesLignes } from './ventesFactureesDesExports'
 
@@ -13,7 +14,8 @@ import type { EncaissementDesExports, FactureDesExports, FacturesDesLignes } fro
 //
 // Il ne lit que les lignes des COMPTES DE TIERS, les seules que `etatsDesLettragesManuels` regarde — le résultat est le
 // même que sur le brouillon entier —, et seulement s'il existe un lettrage : sans lettrage, il n'y a rien à revérifier, et
-// le brouillon n'est pas relu à chaque ouverture de l'onglet pour rien.
+// le brouillon n'est pas relu à chaque ouverture de l'onglet pour rien. Ces comptes sont ceux du PLAN du dossier
+// (`comptesLettrables`, ligne 43, étape PC3) : sous un plan décalé, ce sont ses comptes de tiers qui portent les lignes.
 //
 // `motif` : non nul quand l'une des deux lectures est partielle. Une pièce qu'un lettrage solde peut alors paraître sans
 // mouvement bancaire, et l'écran le dit plutôt que de laisser croire l'alerte juste.
@@ -25,7 +27,7 @@ export interface LectureLettragesManuels {
 
 export const AUCUN_LETTRAGE_MANUEL: LectureLettragesManuels = { lettrages: [], ecritures: [], motif: null }
 
-export async function lireLettragesManuels(dossierId: string): Promise<LectureLettragesManuels> {
+export async function lireLettragesManuels(dossierId: string, plan: PlanComptable): Promise<LectureLettragesManuels> {
   const lectureLettrages = await lireTout<LettrageManuel>((debut, fin) =>
     supabase.from('lettrages_manuels').select('*', { count: 'exact' })
       .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -33,7 +35,7 @@ export async function lireLettragesManuels(dossierId: string): Promise<LectureLe
   if (lectureLettrages.lignes.length === 0) return { lettrages: [], ecritures: [], motif: lectureLettrages.motif }
   const lectureEcritures = await lireTout<EcritureBrouillon>((debut, fin) =>
     supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
-      .eq('dossier_id', dossierId).in('compte', [...COMPTES_LETTRABLES]).order('id').range(debut, fin),
+      .eq('dossier_id', dossierId).in('compte', [...comptesLettrables(plan)]).order('id').range(debut, fin),
   )
   return {
     lettrages: lectureLettrages.lignes,

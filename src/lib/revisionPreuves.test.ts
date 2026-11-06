@@ -9,7 +9,8 @@ import {
   aNouveau, bien, controleReleve, declaration, documentDivers, donnees, ecriture, ecritureEquilibree, emprunt, ligne,
   MARQUE_SAISIE, nature, piece, soldeReporte,
 } from '../test/revision'
-import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 const preuve = (compte: string, solde: number, d: Partial<DonneesDesPreuves>): PreuveProposee => preuveDuCompte(compte, solde, donnees(d))
 const cles = (p: PreuveProposee) => p.faits.map((f) => f.cle)
@@ -50,7 +51,7 @@ describe('la preuve de chaque compte (conception, § 3.6)', () => {
   })
 
   it('sous le plan du dossier, la preuve des déclarations attend le reste à payer au compte du plan', () => {
-    const modele = { mode: 'tresorerie' as const, compteNotesDeFrais: PLAN_DECALE.exploitant, plan: PLAN_DECALE }
+    const modele = { mode: 'tresorerie' as const, compteNotesDeFrais: PLAN_DECALE.exploitant, plan: PLAN_DECALE, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_DECALES }
     const main = declaration({ id: 'm', periode_debut: '2024-10-01', periode_fin: '2024-12-31', tva_declaree: 300, credit_anterieur: 50 })
     const d = { declarationsTva: [main], modele }
     expect(preuve(PLAN_DECALE.tva_a_decaisser, -25000, d)).toMatchObject({ type: 'declarations-tva', attenduCentimes: -25000, verdict: 'concorde' })
@@ -760,7 +761,7 @@ describe('les déclarations de TVA (445…)', () => {
     const p = preuve('445710', -1234, { assujettiTva: true, declarationsTva: toutes })
     expect(cles(p)).toEqual(['exigibilite-decalee'])
     expect(faitDe(p, 'exigibilite-decalee')?.texte).toBe('Toutes les périodes de l’exercice sont déclarées et liquidées : le solde peut venir d’une TVA qui n’est pas exigible dans la période de son écriture — une facture réglée après le 31 décembre —, que la preuve ne calcule pas.')
-    const engagement = preuve('445710', -1234, { assujettiTva: true, declarationsTva: toutes, modele: { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT } })
+    const engagement = preuve('445710', -1234, { assujettiTva: true, declarationsTva: toutes, modele: { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT } })
     expect(faitDe(engagement, 'exigibilite-decalee')?.texte).toContain('une facture réglée après le 31 décembre, ou toute facture non réglée d’un dossier en engagement —')
     // Ni sur un compte que la liquidation ne solde pas, ni sur un dossier qui n'est pas redevable.
     expect(cles(preuve('445510', -1234, { assujettiTva: true, declarationsTva: toutes }))).toEqual([])

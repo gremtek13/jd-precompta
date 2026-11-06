@@ -7,6 +7,7 @@ import type { LigneBancaire } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { COLONNES_ENCAISSEMENTS_ECRITURES } from '../../lib/ecrituresVentesFactureesLecture'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LA CAISSE SUR LA FICHE D'UN MOUVEMENT (ligne 26.6, étape C4 ; lib/caisseEcran.ts, `caisseDeLaFiche`). La caisse en base
 // (`CAISSE_EXPORTEE` levé, joué par un accesseur), « Versement d'espèces » se propose avec le solde de la caisse ce jour-là —
@@ -158,9 +159,9 @@ function poser(o: { releve?: LigneBancaire[]; operations?: unknown[]; reprise?: 
 beforeEach(() => { drapeau.leve = true; poser() })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); drapeau.leve = false; drapeauDuPaiement.leve = false; faux.caisse = null })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function rendre(ventesParLesFactures = false, modele: ModeleComptable = TRESORERIE) {
   return render(

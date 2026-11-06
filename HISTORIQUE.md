@@ -49094,3 +49094,19 @@ relit aussi « Caisse » (`lireLeDroitCaisse`, compté 2). La section dit ses ca
 source ouverte lue en partie. « Mon analyse » ne s'ouvre qu'avec « Ventes » ou « Banque » : un accès « Caisse » seul n'y
 voit rien. Tests : le module (cases, anonymat, fenêtre au jour de Paris, mots du client) et l'écran (rien avant les
 lectures, muet sur une lecture partielle, rien de la banque sans « Banque », aucun compte rendu).
+
+### 06/11/2026 — L'APPLICATION LIT LE PLAN : LE LETTRAGE ET L'AUXILIAIRE DU FEC (LIGNE 43, PC3, 4E TRANCHE)
+
+Agent architecte, sans migration ni déploiement ; la recommandation de PC3-AU suivie. `ModeleComptable` porte les
+`libelles` et les `prefixes` que `planDeLaReponse` lit (`modeleDuDossier(dossier, planLu)`, `DossierDetail` passe la
+lecture entière). `auxiliaireDuTiers(piece, compte, modele)` cherche le rôle de tiers du compte au plan et prend son
+préfixe ; `numeroterFec`, `genererFec`, `auxiliaireDeLaLigne` et les parts des tiers du bilan reçoivent le modèle, qui
+REMPLACE le mode qu'ils prenaient. Le lettrage lit les comptes de tiers du plan (`comptesLettrables(plan)`, au lieu de
+`COMPTES_LETTRABLES`), son sens (`sensNormal(compte, plan)`), son ordre et le libellé du plan (`libelleDuCompteDeTiers`,
+sinon `libelleCompteTenu`) ; ses six fonctions prennent le modèle, non le mode ; `lireLettragesManuels` filtre sur les
+comptes du plan ; Statistiques reçoit `modele`. La garde `lettrages_manuels_compte` borne encore les lettrages faits
+à la main aux comptes par défaut : un plan décalé attend PC4. Preuve : `fecAuPlan.test.ts` compare quatre FEC entiers
+(trésorerie, engagement à 401/404/411, divers et lettrages, dossier basculé dans les deux modèles) à l'empreinte SHA-256
+relevée sur c00866e avant toute modification ; sous `PLAN_DECALE`, FO, IM et CL lus, 401100 lettré, rien sous le défaut.
+Tests : un codemod (85 fichiers, `src/test/modeles.ts`). `comptesEnDur` : 19 → 0 pour le reste de PC3a ;
+restent le catalogue, deux suggestions de catégorie, l'assistant (PC3b) et `compteDeBilan.ts` (PC4).

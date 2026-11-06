@@ -15,6 +15,7 @@ import { D_BASCULE, brouillonDesVentes, composition, facture, ligneBancaire, mou
 import { NON_VALIDEE } from '../test/ecritures'
 import { encaissementVendu, ligneVendue } from '../test/ventesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
+import { planLuDe } from '../test/modeles'
 
 // LE VIREMENT MIXTE, DE BOUT EN BOUT (chantier EC-Q3, ligne 28.65, étape VF5h ; VF2-Q2, selon VF5-Q2 : la manière A, « le
 // registre DATE la pièce »). Un dossier basculé, en trésorerie, assujetti, des services à 20 % :
@@ -71,7 +72,7 @@ function leDossier(plan: PlanComptable, exemplaires: readonly ExemplaireLu[] = [
   const encaissees: PartEncaissee[] = partsEncaissees(D_BASCULE, s.encaissements, { factures: s.factures }, exemplaires)
   const paiements = paiementsDesPieces(s.mouvements.map(ligneBancaire), [], encaissees, [])
   const lignesDeLExemplaire = lignesPourPiece(D_BASCULE, EXEMPLAIRE, { compte: '706000', immobilisation: false }, true,
-    paiements.get(EXEMPLAIRE.id) ?? [], { mode: 'tresorerie', compteNotesDeFrais: '455000', plan })
+    paiements.get(EXEMPLAIRE.id) ?? [], { mode: 'tresorerie', compteNotesDeFrais: '455000', ...planLuDe(plan) })
   const brouillon: EcritureBrouillon[] = [
     ...brouillonDesVentes(c),
     ...lignesDeLExemplaire.map((l, i): EcritureBrouillon => ({

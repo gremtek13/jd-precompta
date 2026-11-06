@@ -9,6 +9,7 @@ import { soldeDuCompteCentimes } from './revisionSoldes'
 import type { ANouveau, EcritureBrouillon, RevisionJustification, SoldeReporte } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // L'ESSAI DE L'ÉTAPE R1, REJOUÉ SUR LE MODULE. supabase/essais/revisionSoldes.sql a joué `justifier_solde` en production
 // le 09/10/2026 — 165 verdicts sur 165, le texte transmis identique au fichier — : chacun de ses appels attend un refus,
@@ -244,7 +245,7 @@ function valider(monde: Monde, requete: string): void {
     ...ouvertureDeLExercice(monde.reprise.filter((a) => a.dossier_id === dossier), monde.reportes.filter((s) => s.dossier_id === dossier), annee)
       .map((a) => ({ compte: a.compte, compteLib: a.compte, sens: a.sens, montant: a.montant })),
   ]
-  const report = soldesAReporter(lignes, { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, annee)
+  const report = soldesAReporter(lignes, { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, annee)
   for (const s of report.soldes) {
     monde.reportes.push({
       id: nouvelId(), dossier_id: dossier, date: report.date, compte: s.compte, libelle: s.libelle, sens: s.sens, montant: s.montant,

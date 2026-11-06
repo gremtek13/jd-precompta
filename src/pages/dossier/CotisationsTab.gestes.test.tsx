@@ -6,6 +6,7 @@ import { avis, cotisation, ecriture, faux, ligne, reinitialiser } from '../../te
 import { AvecExercicesValides } from '../../test/exercicesValides'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { formatMoney } from '../../lib/format'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // « MODIFIER » ET « RÉUNIR » DANS L'ONGLET COTISATIONS (COT-Q3 et COT-Q1, 04/11/2026). Ce qu'aucun test du module
 // (lib/gestesDesEcheances.test.ts) ne voit : que les gestes sont offerts sur les seules lignes qui peuvent les recevoir, et
@@ -15,7 +16,7 @@ import { formatMoney } from '../../lib/format'
 vi.mock('../../lib/supabase', async () => ({ supabase: (await import('../../test/cotisationsGestes')).supabaseFaux() }))
 vi.mock('../../lib/extraction', async () => (await import('../../test/cotisationsGestes')).extractionFausse())
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const monter = (valides: readonly number[] = []) => render(
   <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modele={TRESORERIE} /></AvecExercicesValides>,

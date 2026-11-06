@@ -141,11 +141,6 @@ function laSource(): Source[] {
   return sources
 }
 
-// Le reste de l'étape PC3a, que la session a découpée : ce que l'application LIT par le numéro (conception, § 2.4) et les
-// explications qui n'accompagnent aucune écriture composée (§ 2.5). Sous le plan vide, chacun reste juste ; sous un plan
-// réglé (PC4), chacun se tairait ou mentirait — d'où leur nombre ici, à rendre au plan avant PC4.
-const RESTE_DE_PC3A = '— reste de PC3a, à rendre au plan avant que l’étape PC4 permette d’en régler un.'
-
 const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> = {
   'src/lib/comptes.ts': {
     nombre: 73,
@@ -179,16 +174,6 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
     raison: 'Deux refus recopiés MOT POUR MOT de `refus_compte_de_bilan` (« s’écrit au 580000, virements internes »), que '
       + 'compteDeBilan.test.ts confronte à la fonction exportée : ils changeront avec la base, à l’étape PC4.',
   },
-  'src/lib/engagement.ts': {
-    nombre: 3,
-    raison: `§ 2.4 et § 3.9 : le compte auxiliaire du FEC, indexé par le numéro (\`AUXILIAIRES\`) — le préfixe du plan viendra avec lui ${RESTE_DE_PC3A}`,
-  },
-  'src/lib/lettrage.ts': {
-    nombre: 11,
-    raison: '§ 2.4 : les comptes lettrables (`COMPTES_LETTRABLES`, que lettragesLecture.ts et StatistiquesTab lisent aussi), '
-      + `le sens d’un compte de tiers et leur ordre ; la contrainte \`lettrages_manuels_compte\` de la base les borne encore ${RESTE_DE_PC3A}`,
-  },
-  'src/pages/dossier/ComptesDeTiersCard.tsx': { nombre: 5, raison: `§ 2.4 : le sens de chaque compte de tiers ${RESTE_DE_PC3A}` },
 }
 
 describe('aucun compte de rôle écrit en dur hors du catalogue', () => {

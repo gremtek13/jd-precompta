@@ -13,6 +13,7 @@ import { formatMoney } from './format'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { CAISSE_PAS_EN_BASE } from './controlesDeLaCaisse'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // Les points de la Vue d'ensemble, sortis de ChecklistTab (ligne 41, étape R3) : `ChecklistTab.test.tsx` garde ce que
 // l'écran en affiche, mot pour mot. Ici, ce que le module seul décide : il ne lit pas l'horloge — le premier jour du mois
@@ -41,7 +42,7 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
 }
 
 const CONTEXTE: ContexteDeLaChecklist = {
-  assujettiTva: true, periodiciteTva: 'trimestrielle', statutTva: 'redevable', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT },
+  assujettiTva: true, periodiciteTva: 'trimestrielle', statutTva: 'redevable', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
   frontiere: null, anneesValidees: [], aujourdHui: '2026-10-24', anneeCourante: 2026, moisEcoules: 9, premierJourDuMois: '2026-10-01',
 }
 
@@ -191,7 +192,7 @@ describe('pointsDeLaChecklist : un prélèvement de cotisations classé par une 
 
   it('se tait sur un exercice figé, en engagement, sur des ventilations lues en partie, et sans le poste — le garde symétrique', () => {
     expect(point({ lignes: [prelevement()] }, { frontiere: '2026-12-31', anneesValidees: [2026] })?.nb).toBe(0)
-    expect(point({ lignes: [prelevement()] }, { modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT } })?.nb).toBe(0)
+    expect(point({ lignes: [prelevement()] }, { modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT } })?.nb).toBe(0)
     expect(point({ lignes: [prelevement()], ventilationsPartielles: true })?.nb).toBe(0)
     expect(point({ lignes: [prelevement()], categories: [{ ...URSSAF, poste_2035: 'Charges sociales personnelles' }] })?.nb).toBe(0)
     // Un mouvement à traiter n'est classé par rien.
@@ -463,7 +464,7 @@ describe('pointsDeLaChecklist : l’ouverture confrontée à la clôture du pré
     // Une société en engagement. 401 : Alpha payé 150 pour 100 (50 D, une créance), Beta 300 non payé (300 C), l'une des pièces
     // validée et l'autre à valider : les deux piles sont données à la confrontation, comme au préalable de la validation (le tiers
     // d'une pièce ne change ni un compte ni une rubrique en écart, mais l'entrée est celle de l'onglet Bilan).
-    const societe = { mode: 'engagement' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+    const societe = { mode: 'engagement' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
     const pieceDe = (id: string, tiers: string, statut: 'validee' | 'a_valider'): Piece => ({
       id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`, storage_hash: null,
       date_piece: '2025-02-01', tiers, montant_ht: null, montant_tva: null, montant_ttc: 100, devise: 'EUR', montant_devise: null,
@@ -506,7 +507,7 @@ describe('pointsDeLaChecklist : l’ouverture confrontée à la clôture du pré
 
   it('juge sur le modèle du dossier : en engagement, la perte d’une société reste au 129000', () => {
     // La clôture de 2024 d'une société en engagement : un achat de 120 € à crédit, donc une perte de 120 € et une dette de 120 €.
-    const engagement = { mode: 'engagement' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+    const engagement = { mode: 'engagement' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
     const achat = [
       { ...ecriture('x1', '2024-06-01', '606100', 'debit'), montant: 120 }, { ...ecriture('x2', '2024-06-01', '401000', 'credit'), montant: 120 },
     ]

@@ -7,6 +7,7 @@ import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { formatMoney } from '../../lib/format'
 import EcrituresTab from './EcrituresTab'
 import { CHAMPS_BNC_EXPORTES } from '../../lib/champsBncDuFec'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LES VENTES FACTURÉES DANS L'ONGLET ÉCRITURES (ligne 28.6, chantier EC-Q3, étape VF4c1). L'état de chaque source est
 // éprouvé à part (lib/ecrituresVentesFactureesEcran.test.ts) ; ce qui se joue ici est le CÂBLAGE : la section ne paraît
@@ -119,8 +120,8 @@ vi.mock('../../lib/supabase', async () => {
 })
 
 const D = 'd1'
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const facture = (o: Record<string, unknown> = {}) => ({
   id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2025-0001', date_emission: '2025-11-10',

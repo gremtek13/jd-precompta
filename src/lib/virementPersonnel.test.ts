@@ -7,9 +7,10 @@ import {
 } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
@@ -32,13 +33,13 @@ function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
 describe('compteDuDirigeant — lu dans le modèle du dossier', () => {
   it('en trésorerie, le compte de l’exploitant, quel que soit le compte des notes de frais', () => {
     for (const compteNotesDeFrais of ['455000', '108000', '467000'] as const) {
-      expect(compteDuDirigeant({ mode: 'tresorerie', compteNotesDeFrais, plan: PLAN_PAR_DEFAUT })).toBe('108000')
+      expect(compteDuDirigeant({ mode: 'tresorerie', compteNotesDeFrais, plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT })).toBe('108000')
     }
   })
 
   it('en engagement, le compte que le cabinet a choisi pour le dirigeant', () => {
     for (const compteNotesDeFrais of ['455000', '108000', '467000'] as const) {
-      expect(compteDuDirigeant({ mode: 'engagement', compteNotesDeFrais, plan: PLAN_PAR_DEFAUT })).toBe(compteNotesDeFrais)
+      expect(compteDuDirigeant({ mode: 'engagement', compteNotesDeFrais, plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT })).toBe(compteNotesDeFrais)
     }
   })
 })

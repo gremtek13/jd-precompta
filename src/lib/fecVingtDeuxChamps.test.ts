@@ -27,6 +27,7 @@ import type {
   ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable, OperationCaisse, Piece, VentilationBancaire,
 } from './types'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 
 // LE FEC D'UN BNC EN TRÉSORERIE À VINGT-DEUX CHAMPS (lot FEC22c1 ; lib/fec.ts). Ce que ces cas gardent : le drapeau baissé,
 // le fichier d'hier ; en engagement, le fichier d'hier, OCTET POUR OCTET, quoi qu'on passe ; levé en trésorerie, l'en-tête du
@@ -46,7 +47,7 @@ vi.mock('./champsBncExportes', async (original) => {
 
 const D = 'd1'
 const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const VIDES: ChoixChampsBnc = { sansReglement: 'vides' }
 const DATE_ECRITURE: ChoixChampsBnc = { sansReglement: 'date_de_l_ecriture' }
 
@@ -125,7 +126,7 @@ interface Jeu {
 
 const exportes = (entrees: EntreesDesChampsBnc): ChampsBncDuFec => ({ etat: 'exportes', entrees })
 const fec = (j: Jeu, mode: ModeComptable, champs: ChampsBncDuFec) => genererFec(
-  j.brouillon, j.pieces, CATEGORIES, j.aNouveaux, mode, j.mouvements, SANS_LETTRAGE, j.ventes, j.caisse, champs,
+  j.brouillon, j.pieces, CATEGORIES, j.aNouveaux, modeleDeTest(mode), j.mouvements, SANS_LETTRAGE, j.ventes, j.caisse, champs,
 )
 const entreesVides = (o: Partial<EntreesDesChampsBnc>): EntreesDesChampsBnc => ({
   choix: VIDES, paiements: new Map(), registre: [], factures: [], cotisations: [], ventilations: [], acquisitions: new Map(),
@@ -216,7 +217,7 @@ describe('le drapeau baissé : le fichier d’hier', () => {
 
   it('sans les champs, la numérotation n’en porte aucun, et le fichier d’un dossier en trésorerie reste à dix-huit colonnes', () => {
     const j = dossierComplet(VIDES)
-    const n = numeroterFec(j.brouillon, j.pieces, CATEGORIES, j.aNouveaux, 'tresorerie', j.mouvements, j.ventes, j.caisse, CHAMPS_BNC_NON_EXPORTES)
+    const n = numeroterFec(j.brouillon, j.pieces, CATEGORIES, j.aNouveaux, modeleDeTest('tresorerie'), j.mouvements, j.ventes, j.caisse, CHAMPS_BNC_NON_EXPORTES)
     expect(n.champsBnc).toBe('non_calcules')
     expect(n.lignes.every((l) => l.champsBnc === null) && n.aNouveaux.every((a) => a.champsBnc === null)).toBe(true)
     const rows = colonnes(formaterFec(n, SANS_LETTRAGE, 'tresorerie'))
@@ -231,7 +232,7 @@ describe('en engagement : le fichier d’hier, octet pour octet, quoi qu’on pa
     const sans = fec(j, 'engagement', CHAMPS_BNC_NON_EXPORTES)
     expect(fec(j, 'engagement', exportes(j.entrees))).toBe(sans)
     expect(colonnes(sans).every((r) => r.length === 18)).toBe(true)
-    expect(numeroterFec(j.brouillon, j.pieces, CATEGORIES, j.aNouveaux, 'engagement', j.mouvements, j.ventes, j.caisse, exportes(j.entrees)).champsBnc)
+    expect(numeroterFec(j.brouillon, j.pieces, CATEGORIES, j.aNouveaux, modeleDeTest('engagement'), j.mouvements, j.ventes, j.caisse, exportes(j.entrees)).champsBnc)
       .toBe('non_calcules')
   })
 
@@ -240,15 +241,15 @@ describe('en engagement : le fichier d’hier, octet pour octet, quoi qu’on pa
     const c = composition(sources, 'engagement', PLAN_PAR_DEFAUT)
     const brouillon = brouillonDesVentes(c)
     const mouvements = sources.mouvements.map(ligneBancaire)
-    const avec = genererFec(brouillon, [], [], [], 'engagement', mouvements, SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES,
+    const avec = genererFec(brouillon, [], [], [], modeleDeTest('engagement'), mouvements, SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES,
       exportes(entreesVides({ registre: sources.encaissements, factures: sources.factures.map((f) => facture({ ...f, tiers_siret: SIRET_VALIDE })) })))
-    expect(avec).toBe(genererFec(brouillon, [], [], [], 'engagement', mouvements, SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES,
+    expect(avec).toBe(genererFec(brouillon, [], [], [], modeleDeTest('engagement'), mouvements, SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES,
       CHAMPS_BNC_NON_EXPORTES))
   })
 
   it('une numérotation qui porte les champs ne s’écrit pas en engagement : elle se voit', () => {
     const j = dossierComplet(VIDES)
-    const n = numeroterFec(j.brouillon, j.pieces, CATEGORIES, j.aNouveaux, 'tresorerie', j.mouvements, j.ventes, j.caisse, exportes(j.entrees))
+    const n = numeroterFec(j.brouillon, j.pieces, CATEGORIES, j.aNouveaux, modeleDeTest('tresorerie'), j.mouvements, j.ventes, j.caisse, exportes(j.entrees))
     expect(() => formaterFec(n, SANS_LETTRAGE, 'engagement')).toThrow(/engagement/)
   })
 
@@ -331,7 +332,7 @@ describe('en trésorerie, le drapeau levé : vingt-deux champs, chaque sorte ave
     const sources = { ...base, factures: base.factures.map((f) => (f.id === 'f1' ? { ...f, option_debits: true } : f)) }
     const c = composition(sources, 'tresorerie', PLAN_PAR_DEFAUT)
     const factures = sources.factures.map((f) => facture({ ...f, tiers_siret: f.id === 'f2' ? SIRET_VALIDE : SIRET_INVALIDE, tiers_nom: NOMS[0] }))
-    const f = genererFec(brouillonDesVentes(c), [], CATEGORIES, [], 'tresorerie', sources.mouvements.map(ligneBancaire), SANS_LETTRAGE,
+    const f = genererFec(brouillonDesVentes(c), [], CATEGORIES, [], modeleDeTest('tresorerie'), sources.mouvements.map(ligneBancaire), SANS_LETTRAGE,
       c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, exportes(entreesVides({ registre: sources.encaissements, factures })))
     expect(structureBncDgfip(f)).toEqual([])
     expect(anomaliesDgfip(f)).toEqual([])

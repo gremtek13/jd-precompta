@@ -5,6 +5,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import { cotisation, ecriture, ecritureJuste, faux, ligne, reinitialiser } from '../../test/cotisationsPaiementPersonnel'
 import { AvecExercicesValides } from '../../test/exercicesValides'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LE RETRAIT D'UN PAIEMENT DEPUIS LE COMPTE PERSONNEL (ligne 26.6). Sa fonction (`retirer_paiement_personnel_cotisation`)
 // est en base depuis que le cabinet a collé sa migration, le 10/10/2026, et l'export la porte : `RETRAIT_EXPORTE` est
@@ -15,7 +16,7 @@ import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 vi.mock('../../lib/supabase', async () => ({ supabase: (await import('../../test/cotisationsPaiementPersonnel')).supabaseFaux() }))
 vi.mock('../../lib/extraction', async () => (await import('../../test/cotisationsPaiementPersonnel')).extractionFausse())
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const GESTE = 'Payée depuis le compte personnel…'
 const RETIRER = 'Retirer ce paiement'
 

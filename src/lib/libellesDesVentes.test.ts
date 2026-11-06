@@ -7,6 +7,7 @@ import {
   LONGUEUR_DU_LIBELLE_D_UN_MOUVEMENT, libelleDUnMouvementDesVentes, libelleDUnePiece, libelleDUneVenteFacturee, nomDuClientEcrit,
   sirenDuClient, tiersAuFec, type PieceLibellee,
 } from './libellesDesVentes'
+import { modeleDeTest } from '../test/modeles'
 
 // FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE (lib/libellesDesVentes.ts). Deux parties : la règle, cas par
 // cas, confrontée au prédicat d'IdClient ; puis le relevé de TOUTE la source, qui refuse un nom lu hors de la règle dans
@@ -93,9 +94,9 @@ describe('la règle', () => {
   })
 
   it('le compte auxiliaire du FEC : « Clients divers » pour une pièce de vente, le fournisseur pour un achat', () => {
-    expect(auxiliaireDuTiers(tiersAuFec(piece()), '411000')).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
-    expect(auxiliaireDuTiers(tiersAuFec(undefined), '411000')).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
-    expect(auxiliaireDuTiers(tiersAuFec(piece({ type_piece: 'achat', tiers: 'Transmedical' })), '401000'))
+    expect(auxiliaireDuTiers(tiersAuFec(piece()), '411000', modeleDeTest('engagement'))).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
+    expect(auxiliaireDuTiers(tiersAuFec(undefined), '411000', modeleDeTest('engagement'))).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
+    expect(auxiliaireDuTiers(tiersAuFec(piece({ type_piece: 'achat', tiers: 'Transmedical' })), '401000', modeleDeTest('engagement')))
       .toEqual({ num: 'FTRANSMEDICAL', lib: 'Transmedical' })
   })
 })
@@ -350,6 +351,6 @@ describe('aucun nom lu hors de la règle, dans une écriture composée ni dans l
       'libelle: m.libelle').map((t) => t.genre)).toEqual(['releve'])
     expect(muter('src/lib/ecrituresVentesFacturees.ts', 'libelle: libelleDUnMouvementDesVentes(m.date, justifies.map(citee))',
       'libelle: `Relevé — ${m.libelle}`').map((t) => t.genre)).toEqual(['releve'])
-    expect(muter('src/lib/fec.ts', 'auxiliaireDuTiers(tiersAuFec(piece), e.compte)', 'auxiliaireDuTiers(piece ?? { tiers: null }, e.compte)').length).toBe(1)
+    expect(muter('src/lib/fec.ts', 'auxiliaireDuTiers(tiersAuFec(piece), e.compte, modele)', 'auxiliaireDuTiers(piece ?? { tiers: null }, e.compte, modele)').length).toBe(1)
   })
 })

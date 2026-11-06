@@ -282,7 +282,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // de tiers qui les montre : la liste qu'on y défait et ces points disent la même chose. En trésorerie, rien ne se
   // lettre et la liste est vide. Une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de règlement :
   // la compter « sans règlement rapproché » enverrait chercher dans Banque un paiement qui n'existera jamais.
-  const etatsLettrages = etatsDesLettragesManuels(ecritures, toutesPieces, lettragesManuels, modele.mode)
+  const etatsLettrages = etatsDesLettragesManuels(ecritures, toutesPieces, lettragesManuels, modele)
   const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)
   const nbSansContrepartie = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
   const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesJugees, categories, acquisitions, frontiere, modele.plan, facturesSources)

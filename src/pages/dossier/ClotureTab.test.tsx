@@ -11,6 +11,7 @@ import {
   ecrituresDesVentesFacturees, lignesAuBrouillon, type FactureDesVentesEcrites, type MouvementDesEncaissements,
 } from '../../lib/ecrituresVentesFacturees'
 import type { EncaissementVendu } from '../../lib/ventesFacturees'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // L'ONGLET QUI PRODUIT LE SEUL DOCUMENT QUE LE CABINET SIGNE — la 2035. Son garde-fou refuse de
 // remplir le formulaire sur une lecture partielle, et c'est la bonne règle : une déclaration bâtie
@@ -167,9 +168,9 @@ vi.mock('../../lib/supabase', async () => {
 // dessin, que `gabarit2035.test.ts` éprouve sur le vrai PDF.
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ estChef: faux.estChef, isSuperAdmin: faux.superAdmin }) }))
 
-const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT } as const
+const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT } as const
 const HUIT_CLES = ['id', 'journal', 'numero', 'piece_ref', 'piece_date', 'compte_lib', 'comp_aux_num', 'comp_aux_lib']
-const ENGAGEMENT = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT } as const
+const ENGAGEMENT = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT } as const
 
 vi.mock('../../lib/remplir2035', () => ({
   remplir2035: (

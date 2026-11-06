@@ -7,6 +7,7 @@ import { ecritureDuForfait, forfaitsDuCadre7, forfaitsEnDefaut, nomDuVehicule } 
 import type { EcritureBrouillon, VehiculeDossier } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES FORFAITS KILOMÉTRIQUES (04/10/2026, ligne 26.6, étape b).
 //
@@ -64,9 +65,9 @@ const vehicule = (o: Partial<VehiculeDossier> = {}): VehiculeDossier => ({
   amortissements_a_reintegrer: null, created_at: '2025-01-05T09:00:00Z', updated_at: '2025-01-05T09:00:00Z', ...o,
 })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT_455: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT_467: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT_455: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT_467: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const MODELES = [TRESORERIE, ENGAGEMENT_455, ENGAGEMENT_467]
 
 // Un forfait écrit tel que la base l'écrit, au 31 décembre, en trésorerie.

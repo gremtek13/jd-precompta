@@ -10,6 +10,7 @@ import {
 } from './ventilationBanque'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS VENTILÉS (30/09/2026, ligne 26.6).
 //
@@ -65,9 +66,9 @@ function extraire(source: string): Copie {
 
 const deployee = extraire(sourceDeployee())
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT_455: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT_467: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT_455: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT_467: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const MODELES = [TRESORERIE, ENGAGEMENT_455, ENGAGEMENT_467]
 
 const categorie = (o: Partial<Categorie>): Categorie => ({

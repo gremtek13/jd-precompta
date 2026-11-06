@@ -15,6 +15,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import type { ValeurAnnee } from '../../components/AnneeTabs'
 import type { Categorie, ExerciceValide, Piece } from '../../lib/types'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LA REVUE ANALYTIQUE DANS L'ONGLET RÉVISION (ligne 41, étape R5, phase C). Le module (lib/revueAnalytique.ts) est éprouvé à part :
 // calculs, états, refus confrontés au texte des deux fonctions et rejoués sur l'essai de la base. CE QUI SE JOUE ICI, c'est ce
@@ -98,8 +99,8 @@ vi.mock('../../lib/controlesReleves', () => ({ chargerRelevesIncoherents: async 
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: AUTEUR } }, estChef: faux.estChef }) }))
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const HASH = 'e'.repeat(64)
 
 const CATEGORIES: Categorie[] = [

@@ -40,6 +40,7 @@ import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 import { ecritureDeLOperation } from './caisse'
 import { recetteDeCaisse } from './recettesDeCaisse'
 import type { OperationsDeCaisse } from './controlesDeLaCaisse'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -166,7 +167,7 @@ function releveQuiConcorde(b: Omit<DonneesDeValidation, 'declaration' | 'concord
 // Les données de validation de 2025, la 2035 et la concordance recalculées sur les données passées.
 function donnees(o: Surcharges = {}): DonneesDeValidation {
   const base: Omit<DonneesDeValidation, 'declaration' | 'concordance'> = {
-    annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, assujettiTva: false,
+    annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, assujettiTva: false,
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [],
@@ -460,7 +461,7 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
   // juge que sur sa part ouverte (lib/ecritures.ts) : la facture validée, sur l'ancien compte de sa catégorie, ne se
   // réécrira plus, et la dire « à régénérer » refuserait la validation pour toujours.
   it('ne juge une pièce coupée par l’exercice validé que sur sa part ouverte', () => {
-    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
     const facture = piece('p1', { date_piece: '2025-12-20', created_at: '2025-12-21T09:00:00Z' })
     const janvier = ligne('l-jan', { date: '2026-01-05', piece_id: 'p1' })
     // Telles que la génération les écrit ; la facture a été validée avec 2025, son règlement est de 2026.
@@ -599,7 +600,7 @@ describe('prealablesDeValidation — la numérotation et la 2035', () => {
     const janvier = ligne('l2', { piece_id: 'p2', date: '2026-01-05', montant: -60 })
     expect(ids(donnees({ piecesValidees: [P1, decembre], lignes: [L1, janvier] }))).not.toContain('ecritures-a-generer')
     expect(ids(donnees({
-      modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }, piecesValidees: [decembre], lignes: [janvier], ecritures: [],
+      modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, piecesValidees: [decembre], lignes: [janvier], ecritures: [],
     }))).toContain('ecritures-a-generer')
   })
 })
@@ -739,7 +740,7 @@ describe('prealablesDeValidation — la TVA liquidée', () => {
 // tout le dossier refuserait un exercice juste.
 // LA CAISSE (ligne 26.6, étape C3b) : les fabriques de ses cas, ici et plus bas. L'écriture d'une opération est celle que la
 // base compose (`ecritureDeLOperation`), telle qu'elle arrive au brouillon. Des jeux FICTIFS.
-const MODELE_CAISSE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+const MODELE_CAISSE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const operationDeCaisse = (o: Partial<OperationCaisse>): OperationCaisse => ({
   id: 'o', dossier_id: 'd1', genre: 'apport', date: '2025-03-02', montant: 50, categorie_id: null, taux_tva: null,
   encaissements_du_jour: null, piece_id: null, origine: 'cabinet', remplace_id: null, cree_le: '2025-03-02T18:00:00Z',
@@ -910,7 +911,7 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
   it('« ventes-en-double » : deux pièces validées pour une facture bloquent, en engagement comme en trésorerie ; une seule, rien', () => {
     const jumelle = (id: string, o: Partial<Piece> = {}) =>
       piece(id, { type_piece: 'vente', source: 'superpdp', date_piece: '2025-06-01', superpdp_invoice_id: 4242, ...o })
-    for (const modele of [{ mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }] as const) {
+    for (const modele of [{ mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }] as const) {
       const deux = prealable(donnees({ modele, piecesValidees: [P1, jumelle('v1'), jumelle('v2')], facturesEmises: [factureEmise()] }), 'ventes-en-double')
       expect(deux, modele.mode).toMatchObject({ nb: 1, bloquant: true, cible: 'pieces' })
       expect(ids(donnees({ modele, piecesValidees: [P1, jumelle('v1')], facturesEmises: [factureEmise()] })), modele.mode).not.toContain('ventes-en-double')
@@ -940,7 +941,7 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       piece('v1', { type_piece: 'vente', source: 'superpdp', date_piece: '2025-06-01', superpdp_invoice_id: 4242, ...o })
     const pdf = piece('v2', { type_piece: 'vente', date_piece: '2025-06-01', facture_id: 'f1' })
     const source = (o: Surcharges) => donnees({ facturesEmises: [factureEmise()], facturesSources: new Set(['f1']), ...o })
-    for (const modele of [{ mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }] as const) {
+    for (const modele of [{ mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }] as const) {
       // Deux exemplaires désignés d'une facture source : ni l'un ni l'autre ne compte.
       expect(ids(source({ modele, piecesValidees: [P1, jumelle({ facture_id: 'f1' }), pdf] })), modele.mode).not.toContain('ventes-en-double')
       // La jumelle validée sans être désignée, à côté du PDF désigné : la vente compte par la facture ET par elle.
@@ -976,7 +977,7 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
   // En engagement, le reste d'une facture payée en partie est une dette qui court au 401 : rien à refuser.
   it('« pieces-payees-en-partie » se tait en engagement', () => {
     const d = donnees({
-      modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT },
+      modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
       piecesValidees: [P1, piece('p2', { date_piece: '2025-05-02', montant_ttc: 500 })],
       lignes: [L1, ligne('l2', { piece_id: 'p2', date: '2025-05-04', montant: -50 })],
     })
@@ -1151,7 +1152,7 @@ describe('prealablesDeValidation — un prélèvement de cotisations classé par
   })
 
   it('se tait en engagement, qui ne produit pas de 2035, et sur un autre exercice', () => {
-    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
     expect(ids(donnees({ modele: engagement, categories: [ACHATS, URSSAF_EN_CATEGORIE], lignes: [L1, prelevement('l2')] })))
       .not.toContain('cotisations-classees-par-categorie')
     expect(ids(donnees({ categories: [ACHATS, URSSAF_EN_CATEGORIE], lignes: [L1, prelevement('l2', { date: '2026-01-05' })] })))
@@ -1161,7 +1162,7 @@ describe('prealablesDeValidation — un prélèvement de cotisations classé par
 
 describe('prealablesDeValidation — une échéance payée depuis le compte personnel', () => {
   const payee: CotisationDeclaree = { ...echeance('c1', '2025-05-05', 500), montant_csg_crds: 48.5, paiement_personnel_le: '2025-05-10' }
-  const ecrite = ecritureDuPaiementPersonnel(payee, { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT })
+  const ecrite = ecritureDuPaiementPersonnel(payee, { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT })
     .map((l, i) => ecriture(`pp${i}`, { piece_id: null, cotisation_id: 'c1', date: '2025-05-10', ...l }))
 
   // La 2035 et la concordance recalculées AVEC les échéances, comme les écrans les calculent (`cotisationsComptees`).
@@ -1280,7 +1281,7 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
     })
 
     it('se tait en engagement, qui ne produit pas de 2035', () => {
-      const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+      const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
       expect(ids({ ...avecMadelin(true), modele: engagement, declaration: null, concordance: null })).not.toContain('cases-dont-incoherentes')
     })
   })
@@ -1293,7 +1294,7 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
     expect(ids(donnees({ cotisations: [{ ...echeance('ck', '2025-03-05', 900), montant_csg_crds: 90 }] }))).not.toContain('csg-non-saisie')
     expect(ids(donnees({ cotisations: [echeance('ck', '2026-03-05', 900)] }))).not.toContain('csg-non-saisie')
     // Un dossier tenu en engagement n'a pas de 2035, ni de ligne 25 où la CSG-CRDS serait déduite à tort.
-    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
     expect(ids(donnees({ modele: engagement, cotisations: [echeance('ck', '2025-03-05', 900)] }))).not.toContain('csg-non-saisie')
   })
 
@@ -1306,7 +1307,7 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
     // Sans barème cette année-là, la dotation se déduit : rien à dire.
     expect(ids(donnees(registre))).not.toContain('vehicule-amorti-sous-bareme')
     // Ni en engagement, où il n'y a pas de 2035 à figer.
-    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
     expect(ids(donnees({ ...registre, modele: engagement, vehicules: [vehicule('v1', 2025, 5000)] }))).not.toContain('vehicule-amorti-sous-bareme')
   })
 
@@ -1338,7 +1339,7 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
 
   it('ne juge rien de la 2035 en engagement, qui n’en produit pas', () => {
     const presents = ids(donnees({
-      modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT },
+      modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
       categories: [{ ...ACHATS, poste_2035: 'Frais de véhicules' }], vehicules: [vehicule('v1', 2025, 5000)],
       cotisations: [echeance('ck', '2025-03-05', 900)],
     }))
@@ -1492,7 +1493,7 @@ describe('prealablesDeValidation et prochainExerciceAValider — la pièce qu’
   // Le crédit de janvier, classé par ses encaissements : celui de la facture source, et les 60 € de la facture d'avant.
   const VIREMENT_MIXTE = ligne('mx', { date: '2026-01-08', libelle: 'VIR CLIENT', montant: 179.5, encaissements_de_factures: true })
   const PARTS: PartEncaissee[] = [{ ligne_bancaire_id: 'mx', piece_id: 'pv', montant: 60 }]
-  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
   // Ses écritures telles que la génération les écrit : à la date du virement, sa banque sur lui.
   const ECRITES = lignesPourPiece('d1', RECETTE_D_AVANT, { compte: '706000', immobilisation: false }, false,
     paiementsDesPieces([VIREMENT_MIXTE], [], PARTS, []).get('pv') ?? [], TRESORERIE)
@@ -1700,8 +1701,8 @@ describe('les refus de la validation pour les ventes facturées (étape VF7b) �
 // présent sous les mots de la base, absent quand la base ne refuserait pas — hors de l'exercice, ou dans un dossier qui n'a
 // pas basculé, où rien ne change. Données FICTIVES.
 describe('prealablesDeValidation — les ventes facturées d’un dossier basculé (VF7c)', () => {
-  const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+  const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
   const FRAIS_BANCAIRES: Categorie = {
     id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 3, compte_comptable: '627000',
     poste_2035: 'Frais financiers',
@@ -2206,7 +2207,7 @@ describe('les quatre champs du FEC d’un BNC en trésorerie (FEC22c2)', () => {
   const LA = ligne('l-a', { piece_id: 'p-a', date: '2025-06-01', montant: -70 })
   const OUVERTURE_DE_CAISSE = operationDeCaisse({ id: 'oc-ap', date: '2025-01-02', montant: 200 })
   const ESPECES = operationDeCaisse({ id: 'oc-pa', genre: 'paiement', piece_id: 'p-a', date: '2025-06-01', montant: -50 })
-  const TRESO: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+  const TRESO: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
   const VIDES = { sansReglement: 'vides' } as const
   const brouillonDeLAchat = (choix: typeof VIDES | null) => {
     drapeauDeLaGeneration.choix = choix
@@ -2274,7 +2275,7 @@ describe('les quatre champs du FEC d’un BNC en trésorerie (FEC22c2)', () => {
   it('dit l’exercice figé sans les quatre champs : en trésorerie le drapeau baissé, jamais levé, en engagement ni sur une lecture partielle', () => {
     expect(prealablesDeValidation(avec(brouillonDeLAchat(null))).fecSansChampsBnc).toBe(true)
     expect(prealablesDeValidation(avec(brouillonDeLAchat(VIDES), { champsBnc: exportes })).fecSansChampsBnc).toBe(false)
-    expect(prealablesDeValidation(donnees({ modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT } })).fecSansChampsBnc)
+    expect(prealablesDeValidation(donnees({ modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT } })).fecSansChampsBnc)
       .toBe(false)
     expect(prealablesDeValidation(donnees({ lectureIncomplete: 'pièces : 10 lues sur 12' })).fecSansChampsBnc).toBe(false)
   })

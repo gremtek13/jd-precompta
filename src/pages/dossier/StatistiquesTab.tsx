@@ -4,12 +4,12 @@ import { anneeDe, aujourdHuiAParis, formatDate, formatMoney } from '../../lib/fo
 import { correspondALaRecherche } from '../../lib/recherche'
 import { calculerBalance } from '../../lib/ecritures'
 import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
-import type { PlanComptable } from '../../lib/planComptable'
+import type { ModeleComptable } from '../../lib/engagement'
 import { messageErreur } from '../../lib/messageErreur'
-import type { ANouveau, Categorie, EcritureBrouillon, LettrageManuel, ModeComptable, Piece, SoldeReporte } from '../../lib/types'
+import type { ANouveau, Categorie, EcritureBrouillon, LettrageManuel, Piece, SoldeReporte } from '../../lib/types'
 import { etatDeLOuverture, ouvertureDeLExercice, type EtatDeLOuverture } from '../../lib/reportDesSoldes'
 import {
-  comptesDeTiers, COMPTES_LETTRABLES, etatsDesLettragesManuels, lettragesProposes, refusLettrageManuel,
+  comptesDeTiers, comptesLettrables, etatsDesLettragesManuels, lettragesProposes, refusLettrageManuel,
   type EtatLettrageManuel,
 } from '../../lib/lettrage'
 import { useAnnee } from '../../context/AnneeContext'
@@ -60,15 +60,15 @@ function phraseDeLOuverture(etat: EtatDeLOuverture, annee: number): string | nul
 // calculée depuis le même brouillon que EcrituresTab, jamais une comptabilité tenue à part (voir
 // BrouillonBanner ailleurs dans l'onglet Écritures — même statut ici, juste pas répété pour ne pas
 // surcharger un onglet de lecture).
-export default function StatistiquesTab({ dossierId, onNavigate, modeComptable, plan }: {
+export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
   dossierId: string
   onNavigate: (tab: DossierTab) => void
-  // En engagement, l'écran porte en plus les comptes de tiers à une date (lib/lettrage.ts). Sans valeur par défaut :
-  // oublié, un dossier en engagement perdrait sa balance âgée sans que rien le dise.
-  modeComptable: ModeComptable
-  // Le plan du dossier (ligne 43, conception § 2.4) : la tendance de trésorerie se lit au compte de SA banque.
-  plan: PlanComptable
+  // Le modèle du dossier. En engagement, l'écran porte en plus les comptes de tiers à une date (lib/lettrage.ts). Sans
+  // valeur par défaut : oublié, un dossier en engagement perdrait sa balance âgée sans que rien le dise. Son plan (ligne
+  // 43, conception § 2.4) : la tendance de trésorerie se lit au compte de SA banque, et les comptes de tiers sont les siens.
+  modele: ModeleComptable
 }) {
+  const { mode: modeComptable, plan } = modele
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -224,19 +224,19 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable, 
   const finExercice = typeof anneeFilter === 'number' ? `${anneeFilter}-12-31` : null
   const dateArrete = finExercice !== null && finExercice < aujourdHui ? finExercice : aujourdHui
   const soldesDeTiers = useMemo(
-    () => comptesDeTiers(ecritures, pieces, aNouveaux, lettragesManuels, modeComptable, dateArrete, facturesDesLignes),
-    [ecritures, pieces, aNouveaux, lettragesManuels, modeComptable, dateArrete, facturesDesLignes],
+    () => comptesDeTiers(ecritures, pieces, aNouveaux, lettragesManuels, modele, dateArrete, facturesDesLignes),
+    [ecritures, pieces, aNouveaux, lettragesManuels, modele, dateArrete, facturesDesLignes],
   )
   // LE LETTRAGE FAIT À LA MAIN (lib/lettrage.ts) : sur l'état d'aujourd'hui, TOUT le brouillon — c'est ce que la base
   // vérifie au clic. Il ne s'offre que sur la vue arrêtée à aujourd'hui, et seulement quand tout ce dont il dépend a été
   // lu : une pièce non lue n'a pas de tiers connu, et le cabinet lettrerait sur une vue fausse.
   const etatsLettrages = useMemo(
-    () => etatsDesLettragesManuels(ecritures, pieces, lettragesManuels, modeComptable),
-    [ecritures, pieces, lettragesManuels, modeComptable],
+    () => etatsDesLettragesManuels(ecritures, pieces, lettragesManuels, modele),
+    [ecritures, pieces, lettragesManuels, modele],
   )
   const propositions = useMemo(
-    () => lettragesProposes(ecritures, pieces, lettragesManuels, modeComptable),
-    [ecritures, pieces, lettragesManuels, modeComptable],
+    () => lettragesProposes(ecritures, pieces, lettragesManuels, modele),
+    [ecritures, pieces, lettragesManuels, modele],
   )
   const nomDesPieces = useMemo(() => new Map(pieces.map((p) => [p.id, p.nom_fichier])), [pieces])
   const lettrageSuspendu = dateArrete !== aujourdHui
@@ -252,7 +252,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable, 
     setErreurLettrage(null)
     try {
       // Refait au clic : la carte a pu changer depuis que le bouton s'est offert.
-      const refus = lettrageSuspendu ?? refusLettrageManuel(compte, pieceIds, ecritures, pieces, lettragesManuels, modeComptable)
+      const refus = lettrageSuspendu ?? refusLettrageManuel(compte, pieceIds, ecritures, pieces, lettragesManuels, modele)
       if (refus) {
         setErreurLettrage(refus)
         return false
@@ -297,10 +297,11 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable, 
   }
   // Ce qu'il faut pour que la carte distingue « tout est soldé » de « rien n'est écrit », et dise les lignes d'un compte
   // de tiers antérieures à l'ouverture d'un dossier repris — que la vue compte une seconde fois quand l'arrêté la suit.
-  const lignesDeTiers = ecritures.filter((e) => COMPTES_LETTRABLES.has(e.compte) && e.date <= dateArrete).length
-    + aNouveaux.filter((a) => COMPTES_LETTRABLES.has(a.compte) && a.date <= dateArrete).length
+  const lettrables = new Set(comptesLettrables(plan))
+  const lignesDeTiers = ecritures.filter((e) => lettrables.has(e.compte) && e.date <= dateArrete).length
+    + aNouveaux.filter((a) => lettrables.has(a.compte) && a.date <= dateArrete).length
   const tiersAvantOuverture = ouverture && ouverture <= dateArrete
-    ? ecritures.filter((e) => COMPTES_LETTRABLES.has(e.compte) && e.date < ouverture).length
+    ? ecritures.filter((e) => lettrables.has(e.compte) && e.date < ouverture).length
     : 0
 
   const lignesAffichees = balance.filter((l) =>
@@ -489,6 +490,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable, 
 
       {modeComptable === 'engagement' && (
         <ComptesDeTiersCard
+          modele={modele}
           soldes={soldesDeTiers}
           dateArrete={dateArrete}
           finExercice={dateArrete === finExercice}
@@ -502,7 +504,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable, 
             etats: etatsLettrages,
             propositions,
             nomDesPieces,
-            refus: (compte, pieceIds) => refusLettrageManuel(compte, pieceIds, ecritures, pieces, lettragesManuels, modeComptable),
+            refus: (compte, pieceIds) => refusLettrageManuel(compte, pieceIds, ecritures, pieces, lettragesManuels, modele),
             occupe: lettrageOccupe,
             erreur: erreurLettrage,
             onLettrer: lettrer,

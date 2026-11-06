@@ -4,7 +4,7 @@ import type {
 import { idsMouvementsJustifiesParLeReleve, referenceDuReleve, type MouvementBancaire } from './affectationBanque'
 import { libelleEcritureANouveau } from './aNouveaux'
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
-import { auxiliaireDuTiers } from './engagement'
+import { auxiliaireDuTiers, type ModeleComptable } from './engagement'
 import { auxiliaireDeLaLigne, type EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { tiersAuFec } from './libellesDesVentes'
 import { dateAParis } from './format'
@@ -608,9 +608,10 @@ const champsDeLaLigne = (c: ChampsBnc, id: string): ChampsBncDeLaLigne => ({
 // caractère près : ni scission, ni champ de plus.
 export function numeroterFec(
   ecritures: readonly EcritureBrouillon[], pieces: readonly Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
-  // Sans valeur par défaut : numéroté en trésorerie, le brouillon d'un dossier en engagement mettrait
-  // ses règlements au journal des achats, sous le numéro de la facture.
-  mode: ModeComptable,
+  // Le modèle comptable du dossier. Sans valeur par défaut : numéroté en trésorerie, le brouillon d'un dossier en
+  // engagement mettrait ses règlements au journal des achats, sous le numéro de la facture ; et son plan donne le préfixe
+  // du compte auxiliaire de chaque tiers (`auxiliaireDuTiers`, ligne 43, étape PC3) — sans lui, celui du catalogue.
+  modele: ModeleComptable,
   // Les lignes du relevé qui portent les mouvements affectés et les virements personnels — n'importe
   // quelles lignes, seules celles-là comptent. Sans valeur par défaut : les oublier sortirait du fichier
   // tous les encaissements sans bordereau, c'est-à-dire, pour un infirmier, presque toutes ses recettes.
@@ -626,7 +627,7 @@ export function numeroterFec(
   // oubliées, le FEC d'un praticien sortirait à dix-huit colonnes sans que rien ne le dise.
   champsBnc: ChampsBncDuFec,
 ): NumerotationFec {
-  const calcul = mode === 'tresorerie' && champsBnc.etat === 'exportes' ? champsBnc.entrees : null
+  const calcul = modele.mode === 'tresorerie' && champsBnc.etat === 'exportes' ? champsBnc.entrees : null
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
   const operationById = new Map(operationsDe(caisse).map((o) => [o.id, o]))
   const ventes = rattachementDesVentes(ecritures, ventesFacturees)
@@ -659,7 +660,7 @@ export function numeroterFec(
       horsFec.push(e)
       continue
     } else if (e.piece_id) {
-      const source = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
+      const source = modele.mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
       cle = `${source}|${e.date}`
     } else if (e.operation_caisse_id) {
       // Une opération de caisse que la lecture rend, d'un genre qui a son journal ; sinon dehors, jamais devinée.
@@ -736,7 +737,7 @@ export function numeroterFec(
       }
       const piece = pieceById.get(pieceId)
       // Un règlement d'engagement : ses lignes désignent leur mouvement, celles de la facture aucun — la clé les sépare.
-      const reglement = mode === 'engagement' && Boolean(rows[0].ligne_bancaire_id)
+      const reglement = modele.mode === 'engagement' && Boolean(rows[0].ligne_bancaire_id)
       // Date de la pièce (PieceDate) : celle du justificatif lui-même, avec pour repli la plus ancienne de
       // ses lignes. Sa référence : le nom du fichier, sinon le début de son identifiant — jamais vide, la
       // validation refuse une ligne sans pièce.
@@ -789,8 +790,8 @@ export function numeroterFec(
       // vente facturée est celui que la composition donne à son client (`auxiliaireDeLaLigne`).
       // Une pièce de vente n'en nomme aucun : son 411 va au compte « Clients divers », jamais au nom lu (FEC22-Q7,
       // `tiersAuFec`) ; un achat garde le compte de son fournisseur.
-      const auxiliaire = vente ? auxiliaireDeLaLigne(vente, e)
-        : pieceId ? auxiliaireDuTiers(tiersAuFec(piece), e.compte) : null
+      const auxiliaire = vente ? auxiliaireDeLaLigne(vente, e, modele)
+        : pieceId ? auxiliaireDuTiers(tiersAuFec(piece), e.compte, modele) : null
       lignes.push({
         ecriture: e, journal, numero, pieceRef: champFec(pieceRef), pieceDate,
         compteLib: libelleDu(e.compte),
@@ -1026,11 +1027,12 @@ export function formaterFec(
 
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
-  mode: ModeComptable, mouvements: readonly MouvementBancaire[], lettrage: ReadonlyMap<string, LettrageDeLigne>,
+  modele: ModeleComptable, mouvements: readonly MouvementBancaire[], lettrage: ReadonlyMap<string, LettrageDeLigne>,
   ventesFacturees: readonly EcritureVenteFacturee[], caisse: OperationsDeCaisse, champsBnc: ChampsBncDuFec,
 ): string {
   return formaterFec(
-    numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements, ventesFacturees, caisse, champsBnc), lettrage, mode,
+    numeroterFec(ecritures, pieces, categories, aNouveaux, modele, mouvements, ventesFacturees, caisse, champsBnc), lettrage,
+    modele.mode,
   )
 }
 

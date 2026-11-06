@@ -8,6 +8,7 @@ import {
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, VehiculeDossier } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // TYPÉS sans `as` : le compilateur confronte chaque champ à la table.
 const vehicule = (o: Partial<VehiculeDossier> = {}): VehiculeDossier => ({
@@ -28,8 +29,8 @@ const forfaitEcrit = (montant: number, o: Partial<EcritureBrouillon> = {}, compt
   ecriture({ id: 'e-c', montant, sens: 'credit', compte, ...o }),
 ]
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 describe('dateDuForfait et nomDuVehicule', () => {
   it('tombe au 31 décembre de l’exercice', () => {

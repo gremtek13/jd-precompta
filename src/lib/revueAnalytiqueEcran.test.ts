@@ -18,13 +18,14 @@ import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } f
 import { SANS_ACOMPTE, ventesFacturees } from './ventesFacturees'
 import { composition, sourcesDuDossierBascule } from '../test/dossierBascule'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // CE QUE L'ÉCRAN DE LA REVUE ANALYTIQUE DONNE AU MODULE ET CE QU'IL EN MONTRE (ligne 41, étape R5, phase C). Le calcul, les états
 // et les refus sont éprouvés à part (revueAnalytique.test.ts, confrontés au texte des fonctions et rejoués sur l'essai) : ici,
 // l'assemblage des données — la 2035 telle que Clôture la calcule — et les mots.
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const categories = [
   { id: 'c-loyer', dossier_id: null, code: 'LOYER', libelle: 'Loyer', ordre: 1, compte_comptable: '613200', poste_2035: 'Loyers' },

@@ -5,6 +5,7 @@ import type { Predicat } from '../../test/filtresPostgrest'
 import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import EcrituresTab from './EcrituresTab'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // L'EXEMPLAIRE D'UNE FACTURE SOURCE DANS L'ONGLET ÉCRITURES (ligne 28.65, chantier EC-Q3, étape VF6a). Le calcul est éprouvé
 // à part (lib/ecritures.test.ts, lib/facturesSources.test.ts) ; ce qui se joue ici est le CÂBLAGE : l'onglet tire les
@@ -80,8 +81,8 @@ vi.mock('../../lib/supabase', async () => {
 })
 
 const D = 'd1'
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const HONORAIRES = {
   id: 'c-vente', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 1, compte_comptable: '706200', poste_2035: 'Recettes',

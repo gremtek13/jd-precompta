@@ -19,6 +19,7 @@ import type { Categorie, EcritureBrouillon, OperationCaisse } from './types'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { ventesFactureesVides } from '../test/ventesFacturees'
 import { categorie, ecriture } from '../test/revision'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // LES RECETTES DE CAISSE DANS LES MOTEURS (ligne 26.6, étape C3a). Ce que ces cas gardent : la forme — absente (le drapeau
 // baissé), lue, et ce que l'écran tient d'une lecture pas revenue ou partielle ; ce qu'est une recette (une opération
@@ -27,7 +28,7 @@ import { categorie, ecriture } from '../test/revision'
 // taux ; la situation, l'estimation, le plan de trésorerie, la revue ; l'instantané validé en version 3. Des jeux FICTIFS.
 
 const DOSSIER = 'd-caisse'
-const MODELE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000' as const, plan: PLAN_PAR_DEFAUT }
+const MODELE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000' as const, plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const HONORAIRES = categorie({
   id: 'k-hono', dossier_id: DOSSIER, code: 'honoraires', libelle: 'Honoraires', compte_comptable: '706000',

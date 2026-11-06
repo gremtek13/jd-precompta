@@ -12,6 +12,7 @@ import {
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import { commeLike, etapesDeLEssai, rejouerLEssai } from '../test/essaiCaisse'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // LE MODULE DE LA CAISSE CONFRONTÉ À LA BASE (ligne 26.6, étape C2). Deux juges, dans cet ordre :
 //   1. L'ESSAI (supabase/essais/caisse.sql), ce que la base a RÉPONDU sur la réplique munie des deux migrations : chacune
@@ -188,7 +189,7 @@ describe('l’essai de la caisse, rejoué par le module : les mêmes cas, les m�
 
 // ── Le module, cas par cas ───────────────────────────────────────────────────────────────────────────────────────────
 
-const MODELE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const MODELE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function caisse(o: Partial<EtatDeLaCaisse> = {}): EtatDeLaCaisse {
   return { compteCaisse: MODELE.plan.caisse, ouvertures: [], operations: [], mouvements: [], encaissements: [], factures: [], ...o }

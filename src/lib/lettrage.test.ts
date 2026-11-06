@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  codeLettrage, comptesDeTiers, COMPTES_LETTRABLES, estDivers, etatsDesLettragesManuels, lettrages, lettragesProposes,
+  codeLettrage, comptesDeTiers, comptesLettrables, estDivers, etatsDesLettragesManuels, lettrages, lettragesProposes,
   MOTIFS_LETTRAGE_MANUEL, piecesLettreesALaMain, refusLettrageManuel, sensNormal, type SoldeDeTiers,
 } from './lettrage'
 import { calculerBalance, type CibleComptable, type LigneAGenerer } from './ecritures'
@@ -15,6 +15,7 @@ import { PLAN_PAR_DEFAUT, type CleRoleComptable } from './planComptable'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
+import { modeleDeTest } from '../test/modeles'
 
 // Une écriture du brouillon et une pièce, TYPÉES SANS `as` : le compilateur vérifie chaque colonne contre la table, et une colonne
 // ajoutée demain fait échouer ce fichier tant qu'elle n'y est pas.
@@ -63,7 +64,7 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
 
   it('lettre la facture et son règlement sur le compte de tiers, et rien d’autre', () => {
     const brouillon = engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -120 }])
-    const l = lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     const lettrees = brouillon.filter((e) => l.has(e.id))
     expect(lettrees.map((e) => [e.compte, e.sens])).toEqual([[COMPTE_FOURNISSEURS, 'credit'], [COMPTE_FOURNISSEURS, 'debit']])
     expect(new Set(lettrees.map((e) => l.get(e.id)!.code))).toEqual(new Set(['A']))
@@ -72,19 +73,19 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
 
   it('ne lettre rien en trésorerie, où il n’y a pas de compte de tiers', () => {
     const brouillon = engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -120 }])
-    expect(lettrages(brouillon, [], [], 'tresorerie', SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(lettrages(brouillon, [], [], modeleDeTest('tresorerie'), SANS_VENTE_FACTUREE).size).toBe(0)
   })
 
   it('ne lettre pas une facture payée en partie, ni une facture payée en trop', () => {
-    expect(lettrages(engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -100 }]), [], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(0)
-    expect(lettrages(engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -130 }]), [], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(lettrages(engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -100 }]), [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(lettrages(engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -130 }]), [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(0)
   })
 
   it('lettre une facture que deux paiements soldent, les trois lignes ensemble', () => {
     const brouillon = engagement(achat, ACHATS, [
       { id: 'm1', date: '2026-04-05', montant: -20 }, { id: 'm2', date: '2026-05-06', montant: -100 },
     ])
-    const l = lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     expect(brouillon.filter((e) => l.has(e.id)).map((e) => e.montant)).toEqual([120, 20, 100])
     expect(new Set([...l.values()].map((x) => x.code))).toEqual(new Set(['A']))
     expect([...l.values()][0].date).toBe('2026-05-06')
@@ -95,13 +96,13 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
   it('compte en centimes, pas en virgule flottante', () => {
     const p = piece({ id: 'centimes', montant_ttc: 0.3 })
     const brouillon = engagement(p, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -0.1 }, { id: 'm2', date: '2026-04-06', montant: -0.2 }])
-    expect(lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(3)
+    expect(lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(3)
   })
 
   it('lettre un avoir que le fournisseur rembourse', () => {
     const avoir = piece({ id: 'avoir', montant_ttc: -50 })
     const brouillon = engagement(avoir, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: 50 }])
-    const l = lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     expect(brouillon.filter((e) => l.has(e.id)).map((e) => [e.compte, e.sens])).toEqual([
       [COMPTE_FOURNISSEURS, 'debit'], [COMPTE_FOURNISSEURS, 'credit'],
     ])
@@ -110,17 +111,17 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
   it('lettre la vente et son encaissement au 411', () => {
     const vente = piece({ id: 'vente', type_piece: 'vente', montant_ttc: 80, tiers: 'Clinique' })
     const brouillon = engagement(vente, VENTES, [{ id: 'm1', date: '2026-04-05', montant: 80 }])
-    const l = lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     expect(brouillon.filter((e) => l.has(e.id)).map((e) => e.compte)).toEqual([COMPTE_CLIENTS, COMPTE_CLIENTS])
   })
 
   it('lettre la facture d’un bien au 404, et la note de frais au compte du dirigeant quand c’est un compte de tiers', () => {
     const bien = engagement(piece({ id: 'bien' }), { compte: '218300', immobilisation: true }, [{ id: 'm1', date: '2026-04-05', montant: -120 }])
-    const l = lettrages(bien, [], [], 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(bien, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     expect(bien.filter((e) => l.has(e.id)).map((e) => e.compte)).toEqual([COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_FOURNISSEURS_IMMOBILISATIONS])
     for (const compte of [COMPTE_COURANT_ASSOCIE, COMPTE_AUTRES_DEBITEURS_CREDITEURS] as const) {
       const note = engagement(piece({ id: 'note', type_piece: 'note_frais' }), ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -120 }], compte)
-      const ln = lettrages(note, [], [], 'engagement', SANS_VENTE_FACTUREE)
+      const ln = lettrages(note, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
       expect(note.filter((e) => ln.has(e.id)).map((e) => e.compte)).toEqual([compte, compte])
     }
   })
@@ -129,8 +130,8 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
   it('ne lettre jamais le 108 de l’exploitant', () => {
     const note = engagement(piece({ id: 'note', type_piece: 'note_frais' }), ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -120 }], '108000')
     expect(note.some((e) => e.compte === COMPTE_EXPLOITANT)).toBe(true)
-    expect(lettrages(note, [], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(0)
-    expect(COMPTES_LETTRABLES.has(COMPTE_EXPLOITANT)).toBe(false)
+    expect(lettrages(note, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(comptesLettrables(PLAN_PAR_DEFAUT)).not.toContain(COMPTE_EXPLOITANT)
   })
 
   // Les comptes de TVA commencent par 4, comme les comptes de tiers : un filtre sur la classe les lettrerait.
@@ -139,7 +140,7 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
       ecriture({ id: 't1', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
       ecriture({ id: 't2', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'credit', montant: 20 }),
     ]
-    expect(lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(0)
   })
 
   it('ne lettre pas les lignes sans pièce, un virement du dirigeant au 455', () => {
@@ -147,7 +148,7 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
       ecriture({ id: 'v1', piece_id: null, ligne_bancaire_id: 'm1', compte: COMPTE_COURANT_ASSOCIE, sens: 'debit', montant: 50 }),
       ecriture({ id: 'v2', piece_id: null, ligne_bancaire_id: 'm2', compte: COMPTE_COURANT_ASSOCIE, sens: 'credit', montant: 50 }),
     ]
-    expect(lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(0)
   })
 
   it('lettre chaque pièce d’un virement groupé avec sa part, sous des codes distincts', () => {
@@ -159,7 +160,7 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
       ...engagement(f2, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -60 }]),
       ...engagement(avoir, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: 10 }]),
     ]
-    const l = lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     const codeDe = (pieceId: string) => new Set(brouillon.filter((e) => e.piece_id === pieceId && l.has(e.id)).map((e) => l.get(e.id)!.code))
     expect([codeDe('f1'), codeDe('f2'), codeDe('f3')]).toEqual([new Set(['A']), new Set(['B']), new Set(['C'])])
   })
@@ -170,7 +171,7 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
       ...engagement(piece({ id: 'a2', date_piece: '2026-01-11' }), ACHATS, [{ id: 'm2', date: '2026-02-02', montant: -120 }]),
       ...engagement(piece({ id: 'v1', type_piece: 'vente', montant_ttc: 80 }), VENTES, [{ id: 'm3', date: '2026-03-20', montant: 80 }]),
     ]
-    const l = lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     const codes = (compte: string) => new Set(brouillon.filter((e) => e.compte === compte && l.has(e.id)).map((e) => l.get(e.id)!.code))
     expect(codes(COMPTE_FOURNISSEURS)).toEqual(new Set(['A', 'B']))
     expect(codes(COMPTE_CLIENTS)).toEqual(new Set(['A']))
@@ -182,7 +183,7 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
     const ancienne = engagement(piece({ id: 'z-ancienne', date_piece: '2026-01-05' }), ACHATS, [{ id: 'm1', date: '2026-06-30', montant: -120 }])
     const recente = engagement(piece({ id: 'a-recente', date_piece: '2026-05-05' }), ACHATS, [{ id: 'm2', date: '2026-05-20', montant: -120 }])
     for (const brouillon of [[...ancienne, ...recente], [...recente, ...ancienne].reverse()]) {
-      const l = lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE)
+      const l = lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
       expect(l.get('a-recente-1')!.code).toBe('A')
       expect(l.get('z-ancienne-1')!.code).toBe('B')
     }
@@ -192,17 +193,17 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
   // solde la facture : un relevé importé le 20 avril pour un paiement du 5 lettre le 20.
   it('date le lettrage du jour où l’application a écrit le règlement qui solde', () => {
     const brouillon = engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -120, creeLe: '2026-04-20T08:00:00Z' }])
-    expect([...lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE).values()][0].date).toBe('2026-04-20')
+    expect([...lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).values()][0].date).toBe('2026-04-20')
   })
 
   it('lit ce jour à Paris, pas en UTC', () => {
     const brouillon = engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -120, creeLe: '2026-04-20T22:30:00Z' }])
-    expect([...lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE).values()][0].date).toBe('2026-04-21')
+    expect([...lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).values()][0].date).toBe('2026-04-21')
   })
 
   it('ne date jamais un lettrage d’avant ce qu’il apparie', () => {
     const brouillon = engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -120, creeLe: '2026-03-01T08:00:00Z' }])
-    expect([...lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE).values()][0].date).toBe('2026-04-05')
+    expect([...lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).values()][0].date).toBe('2026-04-05')
   })
 
   // La base pose une date de création sur chaque ligne ; une date illisible ne doit pas faire lever un calcul qui tourne
@@ -210,7 +211,7 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
   it('ne lève pas sur une date de création illisible, et retombe sur la date comptable', () => {
     for (const created_at of ['', 'pas une date']) {
       const brouillon = engagement(achat, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -120 }]).map((e) => ({ ...e, created_at }))
-      expect([...lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE).values()][0].date).toBe('2026-04-05')
+      expect([...lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).values()][0].date).toBe('2026-04-05')
     }
   })
 
@@ -222,8 +223,8 @@ describe('lettrages — la facture et les règlements qui la soldent', () => {
       ecriture({ id: 'x3', compte: COMPTE_AUTRES_DEBITEURS_CREDITEURS, sens: 'debit', montant: 5 }),
       ecriture({ id: 'x4', compte: COMPTE_AUTRES_DEBITEURS_CREDITEURS, sens: 'credit', montant: 5, ligne_bancaire_id: 'm2' }),
     ]
-    expect(lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(0)
-    expect(lettrages(brouillon.slice(0, 2), [], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(2)
+    expect(lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(lettrages(brouillon.slice(0, 2), [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(2)
   })
 })
 
@@ -256,11 +257,11 @@ describe('comptesDeTiers — ce qui reste ouvert, tiers par tiers, à une date',
     sens: 'credit', montant: 75, source_nom: 'balance.csv', source_empreinte: 'x', created_at: '2026-01-02T09:00:00Z',
     ...A_NOUVEAU_NON_VALIDE,
   }]
-  const au = (date: string, a: readonly ANouveau[] = ouverture) => comptesDeTiers(brouillon, pieces, a, [], 'engagement', date, SANS_VENTE_FACTUREE)
+  const au = (date: string, a: readonly ANouveau[] = ouverture) => comptesDeTiers(brouillon, pieces, a, [], modeleDeTest('engagement'), date, SANS_VENTE_FACTUREE)
   const ligneDe = (soldes: SoldeDeTiers[], libelle: string) => soldes.find((s) => s.libelle === libelle)
 
   it('ne rend rien en trésorerie', () => {
-    expect(comptesDeTiers(brouillon, pieces, ouverture, [], 'tresorerie', '2026-03-31', SANS_VENTE_FACTUREE)).toEqual([])
+    expect(comptesDeTiers(brouillon, pieces, ouverture, [], modeleDeTest('tresorerie'), '2026-03-31', SANS_VENTE_FACTUREE)).toEqual([])
   })
 
   it('range les pièces d’un même fournisseur sous son compte auxiliaire, sous le premier nom lu', () => {
@@ -293,7 +294,7 @@ describe('comptesDeTiers — ce qui reste ouvert, tiers par tiers, à une date',
   it('dit un règlement dont la facture est datée après l’arrêté', () => {
     const acompte = piece({ id: 'acompte', tiers: 'Menuiserie', date_piece: '2026-04-10', montant_ttc: 300 })
     const soldes = comptesDeTiers(
-      engagement(acompte, ACHATS, [{ id: 'm9', date: '2026-03-15', montant: -100 }]), [acompte], [], [], 'engagement', '2026-03-31', SANS_VENTE_FACTUREE,
+      engagement(acompte, ACHATS, [{ id: 'm9', date: '2026-03-15', montant: -100 }]), [acompte], [], [], modeleDeTest('engagement'), '2026-03-31', SANS_VENTE_FACTUREE,
     )
     expect(soldes[0].pieces[0]).toMatchObject({ etat: 'reglement_sans_facture', dateFacture: null, facture: 0, reste: -100, age: 16 })
   })
@@ -319,9 +320,9 @@ describe('comptesDeTiers — ce qui reste ouvert, tiers par tiers, à une date',
     for (const date of ['2026-01-31', '2026-03-20', '2026-03-31', '2026-04-30']) {
       const soldes = au(date)
       const balance = calculerBalance(brouillon.filter((e) => e.date <= date), [], ouverture.filter((a) => a.date <= date))
-      for (const compte of COMPTES_LETTRABLES) {
+      for (const compte of comptesLettrables(PLAN_PAR_DEFAUT)) {
         const general = balance.find((b) => b.compte === compte)?.solde ?? 0
-        const attendu = sensNormal(compte) === 'debit' ? general : -general
+        const attendu = sensNormal(compte, PLAN_PAR_DEFAUT) === 'debit' ? general : -general
         const vue = soldes.filter((s) => s.compte === compte).reduce((t, s) => t + s.solde, 0)
         // `+ 0` : un solde nul calculé en négatif rend -0, que `toBe` distingue de 0.
         expect(Math.round(vue * 100) + 0, `${compte} au ${date}`).toBe(Math.round(attendu * 100) + 0)
@@ -335,7 +336,7 @@ describe('comptesDeTiers — ce qui reste ouvert, tiers par tiers, à une date',
     const soldes = comptesDeTiers([
       ...engagement(p1, ACHATS, [{ id: 'm1', date: '2026-03-10', montant: -130 }]),
       ...engagement(p2, ACHATS, []),
-    ], [p1, p2], [], [], 'engagement', '2026-03-31', SANS_VENTE_FACTUREE)
+    ], [p1, p2], [], [], modeleDeTest('engagement'), '2026-03-31', SANS_VENTE_FACTUREE)
     expect(soldes).toHaveLength(1)
     expect(soldes[0].solde).toBe(0)
     expect(soldes[0].pieces.map((p) => p.etat)).toEqual(['payee_en_trop', 'ouverte'])
@@ -344,7 +345,7 @@ describe('comptesDeTiers — ce qui reste ouvert, tiers par tiers, à une date',
   it('tait un tiers dont tout est soldé', () => {
     expect(ligneDe(au('2026-04-30'), 'Transmedical')!.pieces).toHaveLength(1)
     const solde = piece({ id: 'solde', tiers: 'Imprimerie', montant_ttc: 10 })
-    expect(comptesDeTiers(engagement(solde, ACHATS, [{ id: 'm1', date: '2026-03-05', montant: -10 }]), [solde], [], [], 'engagement', '2026-03-31', SANS_VENTE_FACTUREE)).toEqual([])
+    expect(comptesDeTiers(engagement(solde, ACHATS, [{ id: 'm1', date: '2026-03-05', montant: -10 }]), [solde], [], [], modeleDeTest('engagement'), '2026-03-31', SANS_VENTE_FACTUREE)).toEqual([])
   })
 
   it('range les restes par ancienneté — 30 jours au plus, 31 à 60, 61 à 90, plus de 90 — et leur somme fait le solde', () => {
@@ -352,7 +353,7 @@ describe('comptesDeTiers — ce qui reste ouvert, tiers par tiers, à une date',
     const ps = ages.map((_, i) => piece({ id: `a${i}`, tiers: 'Atelier', montant_ttc: 10 ** i }))
     const arrete = '2026-06-30'
     const datees = ps.map((p, i) => ({ ...p, date_piece: ajouterJours(arrete, -ages[i]) }))
-    const soldes = comptesDeTiers(datees.flatMap((p) => engagement(p, ACHATS, [])), datees, [], [], 'engagement', arrete, SANS_VENTE_FACTUREE)
+    const soldes = comptesDeTiers(datees.flatMap((p) => engagement(p, ACHATS, [])), datees, [], [], modeleDeTest('engagement'), arrete, SANS_VENTE_FACTUREE)
     expect(soldes[0].pieces.map((p) => p.age)).toEqual([91, 90, 61, 60, 31, 30])
     expect(soldes[0].tranches).toEqual([1, 10 + 100, 1000 + 10000, 100000])
     expect(soldes[0].tranches.reduce((t, x) => t + x, 0)).toBe(soldes[0].solde)
@@ -361,7 +362,7 @@ describe('comptesDeTiers — ce qui reste ouvert, tiers par tiers, à une date',
   it('range les comptes : fournisseurs, d’immobilisations, clients, puis le dirigeant', () => {
     const bien = piece({ id: 'bien', tiers: 'Apple', montant_ttc: 900 })
     const soldes = comptesDeTiers(
-      [...brouillon, ...engagement(bien, { compte: '218300', immobilisation: true }, [])], [...pieces, bien], ouverture, [], 'engagement', '2026-03-31', SANS_VENTE_FACTUREE,
+      [...brouillon, ...engagement(bien, { compte: '218300', immobilisation: true }, [])], [...pieces, bien], ouverture, [], modeleDeTest('engagement'), '2026-03-31', SANS_VENTE_FACTUREE,
     )
     expect(soldes.map((s) => [s.compte, s.origine])).toEqual([
       [COMPTE_FOURNISSEURS, 'tiers'], [COMPTE_FOURNISSEURS, 'tiers'], [COMPTE_FOURNISSEURS, 'ouverture'],
@@ -390,45 +391,45 @@ describe('lettrages — une facture et l’avoir qui la solde, lettrés à la ma
     brouillon.filter((e) => l.has(e.id)).map((e) => [e.piece_id, e.compte, l.get(e.id)!.code, l.get(e.id)!.date])
 
   it('porte le même code sur les deux lignes de tiers, et nulle part ailleurs', () => {
-    expect(tiersDe(lettrages(brouillon, [facture, avoir], groupe, 'engagement', SANS_VENTE_FACTUREE))).toEqual([
+    expect(tiersDe(lettrages(brouillon, [facture, avoir], groupe, modeleDeTest('engagement'), SANS_VENTE_FACTUREE))).toEqual([
       ['f', COMPTE_FOURNISSEURS, 'A', '2026-05-02'],
       ['a', COMPTE_FOURNISSEURS, 'A', '2026-05-02'],
     ])
   })
 
   it('sans lui, rien n’est lettré : c’est le geste du cabinet qui apparie', () => {
-    expect(lettrages(brouillon, [facture, avoir], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(lettrages(brouillon, [facture, avoir], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(0)
   })
 
   it('ne lettre rien en trésorerie', () => {
-    expect(lettrages(brouillon, [facture, avoir], groupe, 'tresorerie', SANS_VENTE_FACTUREE).size).toBe(0)
-    expect(etatsDesLettragesManuels(brouillon, [facture, avoir], groupe, 'tresorerie')).toEqual([])
+    expect(lettrages(brouillon, [facture, avoir], groupe, modeleDeTest('tresorerie'), SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(etatsDesLettragesManuels(brouillon, [facture, avoir], groupe, modeleDeTest('tresorerie'))).toEqual([])
   })
 
   // § 240 : la date à laquelle l'opération de lettrage a été validée — le jour du clic, à Paris.
   it('date le lettrage du jour où le cabinet a lettré, à Paris', () => {
     const tard = groupe.map((l) => ({ ...l, created_at: '2026-05-02T22:30:00Z' }))
-    expect(tiersDe(lettrages(brouillon, [facture, avoir], tard, 'engagement', SANS_VENTE_FACTUREE))[0][3]).toBe('2026-05-03')
+    expect(tiersDe(lettrages(brouillon, [facture, avoir], tard, modeleDeTest('engagement'), SANS_VENTE_FACTUREE))[0][3]).toBe('2026-05-03')
   })
 
   it('ne le date jamais d’avant ce qu’il apparie, ni d’avant l’écriture de ses lignes', () => {
     const avant = groupe.map((l) => ({ ...l, created_at: '2026-01-02T08:00:00Z' }))
-    expect(tiersDe(lettrages(brouillon, [facture, avoir], avant, 'engagement', SANS_VENTE_FACTUREE))[0][3]).toBe('2026-03-20')
+    expect(tiersDe(lettrages(brouillon, [facture, avoir], avant, modeleDeTest('engagement'), SANS_VENTE_FACTUREE))[0][3]).toBe('2026-03-20')
     const reecrit = brouillon.map((e) => (e.piece_id === 'a' ? { ...e, created_at: '2026-06-10T08:00:00Z' } : e))
-    const l = lettrages(reecrit, [facture, avoir], avant, 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(reecrit, [facture, avoir], avant, modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     expect(reecrit.filter((e) => l.has(e.id)).map((e) => l.get(e.id)!.date)).toEqual(['2026-06-10', '2026-06-10'])
   })
 
   it('retombe sur ses lignes quand le jour du clic est illisible', () => {
     const illisible = groupe.map((l) => ({ ...l, created_at: 'pas une date' }))
-    expect(tiersDe(lettrages(brouillon, [facture, avoir], illisible, 'engagement', SANS_VENTE_FACTUREE))[0][3]).toBe('2026-03-20')
+    expect(tiersDe(lettrages(brouillon, [facture, avoir], illisible, modeleDeTest('engagement'), SANS_VENTE_FACTUREE))[0][3]).toBe('2026-03-20')
   })
 
   it('prend sa place dans la suite des codes du compte, à sa date', () => {
     const autre = piece({ id: 'b', tiers: 'Bureau Vallée', montant_ttc: 80, date_piece: '2026-03-01' })
     const tout = [...brouillon, ...engagement(autre, ACHATS, [{ id: 'm1', date: '2026-04-05', montant: -80, creeLe: '2026-04-20T08:00:00Z' }])]
     const codes = (lm: LettrageManuel[]) => {
-      const l = lettrages(tout, [facture, avoir, autre], lm, 'engagement', SANS_VENTE_FACTUREE)
+      const l = lettrages(tout, [facture, avoir, autre], lm, modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
       return Object.fromEntries(tout.filter((e) => l.has(e.id)).map((e) => [e.piece_id, l.get(e.id)!.code]))
     }
     // Le règlement de Bureau Vallée est né le 20 avril, le lettrage à la main le 2 mai.
@@ -442,12 +443,12 @@ describe('lettrages — une facture et l’avoir qui la solde, lettrés à la ma
     const rendue = piece({ id: 'n2', type_piece: 'note_frais', tiers: 'Péage', montant_ttc: -40 })
     const notes = [...engagement(note, ACHATS, []), ...engagement(rendue, ACHATS, [])]
     const lm = [manuel('g2', 'n1', { compte: COMPTE_COURANT_ASSOCIE }), manuel('g2', 'n2', { compte: COMPTE_COURANT_ASSOCIE })]
-    const l = lettrages(notes, [note, rendue], lm, 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(notes, [note, rendue], lm, modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     expect(notes.filter((e) => l.has(e.id)).map((e) => e.compte)).toEqual([COMPTE_COURANT_ASSOCIE, COMPTE_COURANT_ASSOCIE])
   })
 
   it('n’écrit qu’un code par écriture : chaque pièce n’a qu’une ligne lettrée', () => {
-    const l = lettrages(brouillon, [facture, avoir], groupe, 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(brouillon, [facture, avoir], groupe, modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     for (const p of ['f', 'a']) expect(brouillon.filter((e) => e.piece_id === p && l.has(e.id))).toHaveLength(1)
   })
 })
@@ -459,10 +460,10 @@ describe('etatsDesLettragesManuels — revérifié à chaque lecture, appliqué 
   const groupe = [manuel('g1', 'f'), manuel('g1', 'a')]
   const etat = (
     b: readonly EcritureBrouillon[] = brouillon, p: readonly Piece[] = [facture, avoir], lm: readonly LettrageManuel[] = groupe,
-  ) => etatsDesLettragesManuels(b, p, lm, 'engagement')
+  ) => etatsDesLettragesManuels(b, p, lm, modeleDeTest('engagement'))
   // Un lettrage qui ne tient plus n'est ni appliqué au FEC, ni compté comme fermant ses pièces.
   const sansEffet = (b: readonly EcritureBrouillon[], p: readonly Piece[], lm: readonly LettrageManuel[]) => {
-    const l = lettrages(b, p, lm, 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(b, p, lm, modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     return b.filter((e) => l.has(e.id) && ['f', 'a'].includes(e.piece_id!)).length === 0
   }
 
@@ -516,7 +517,7 @@ describe('etatsDesLettragesManuels — revérifié à chaque lecture, appliqué 
   it('une pièce désormais soldée par ses règlements, qui se lettre alors seule', () => {
     const b = [...engagement(facture, ACHATS, [{ id: 'm1', date: '2026-06-05', montant: -500 }]), ...engagement(avoir, ACHATS, [])]
     expect(etat(b)[0].motif).toBe('piece_soldee_seule')
-    const l = lettrages(b, [facture, avoir], groupe, 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(b, [facture, avoir], groupe, modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     expect(b.filter((e) => l.has(e.id)).map((e) => e.piece_id)).toEqual(['f', 'f'])
   })
 
@@ -528,7 +529,7 @@ describe('etatsDesLettragesManuels — revérifié à chaque lecture, appliqué 
     ]
     expect(etat(b)[0].motif).toBe('piece_lettree_ailleurs')
     // La facture garde le lettrage déduit de l'autre compte, et lui seul : le 401 ne porte rien.
-    const l = lettrages(b, [facture, avoir], groupe, 'engagement', SANS_VENTE_FACTUREE)
+    const l = lettrages(b, [facture, avoir], groupe, modeleDeTest('engagement'), SANS_VENTE_FACTUREE)
     expect(b.filter((e) => l.has(e.id)).map((e) => e.compte)).toEqual([COMPTE_AUTRES_DEBITEURS_CREDITEURS, COMPTE_AUTRES_DEBITEURS_CREDITEURS])
   })
 
@@ -569,7 +570,7 @@ describe('comptesDeTiers — un lettrage fait à la main ferme ses pièces', () 
   const pieces = [facture, avoir, autre]
   const brouillon = [...engagement(facture, ACHATS, []), ...engagement(avoir, ACHATS, []), ...engagement(autre, ACHATS, [])]
   const groupe = [manuel('g1', 'f'), manuel('g1', 'a')]
-  const au = (date: string, lm: readonly LettrageManuel[] = groupe) => comptesDeTiers(brouillon, pieces, [], lm, 'engagement', date, SANS_VENTE_FACTUREE)
+  const au = (date: string, lm: readonly LettrageManuel[] = groupe) => comptesDeTiers(brouillon, pieces, [], lm, modeleDeTest('engagement'), date, SANS_VENTE_FACTUREE)
 
   it('ne montre plus la facture ni l’avoir quand ils se soldent ensemble à la date', () => {
     const [transmedical] = au('2026-04-30')
@@ -584,7 +585,7 @@ describe('comptesDeTiers — un lettrage fait à la main ferme ses pièces', () 
   })
 
   it('ne ferme rien d’un lettrage qui ne tient plus, et chaque pièce dit le lettrage où elle figure', () => {
-    const soldes = comptesDeTiers(brouillon, [facture, piece({ ...avoir, tiers: 'Bureau Vallée' }), autre], [], groupe, 'engagement', '2026-04-30', SANS_VENTE_FACTUREE)
+    const soldes = comptesDeTiers(brouillon, [facture, piece({ ...avoir, tiers: 'Bureau Vallée' }), autre], [], groupe, modeleDeTest('engagement'), '2026-04-30', SANS_VENTE_FACTUREE)
     expect(soldes.map((s) => [s.libelle, s.pieces.map((p) => [p.pieceId, p.lettrageManuel])])).toEqual([
       ['Bureau Vallée', [['a', 'g1']]],
       ['Transmedical', [['f', 'g1'], ['o', null]]],
@@ -598,10 +599,10 @@ describe('comptesDeTiers — un lettrage fait à la main ferme ses pièces', () 
     const avoirDuReste = piece({ id: 'r', tiers: 'Garage', montant_ttc: -200, date_piece: '2026-03-05' })
     const b = [...engagement(payee, ACHATS, [{ id: 'm9', date: '2026-04-15', montant: -800 }]), ...engagement(avoirDuReste, ACHATS, [])]
     const lm = [manuel('g9', 'p'), manuel('g9', 'r')]
-    expect(etatsDesLettragesManuels(b, [payee, avoirDuReste], lm, 'engagement')[0].motif).toBeNull()
-    const avant = comptesDeTiers(b, [payee, avoirDuReste], [], lm, 'engagement', '2026-03-31', SANS_VENTE_FACTUREE)
+    expect(etatsDesLettragesManuels(b, [payee, avoirDuReste], lm, modeleDeTest('engagement'))[0].motif).toBeNull()
+    const avant = comptesDeTiers(b, [payee, avoirDuReste], [], lm, modeleDeTest('engagement'), '2026-03-31', SANS_VENTE_FACTUREE)
     expect(avant.flatMap((s) => s.pieces.map((x) => x.pieceId))).toEqual(['p', 'r'])
-    expect(comptesDeTiers(b, [payee, avoirDuReste], [], lm, 'engagement', '2026-04-30', SANS_VENTE_FACTUREE)).toEqual([])
+    expect(comptesDeTiers(b, [payee, avoirDuReste], [], lm, modeleDeTest('engagement'), '2026-04-30', SANS_VENTE_FACTUREE)).toEqual([])
   })
 
   it('recoupe toujours, compte par compte, le solde de la balance générale', () => {
@@ -621,7 +622,7 @@ describe('refusLettrageManuel — ce que la base refuserait, dit avant le clic',
   const brouillon = [...engagement(facture, ACHATS, []), ...engagement(avoir, ACHATS, []), ...engagement(reste, ACHATS, [])]
   const refus = (
     ids: string[], o: { compte?: string; b?: readonly EcritureBrouillon[]; p?: readonly Piece[]; lm?: readonly LettrageManuel[]; mode?: 'engagement' | 'tresorerie' } = {},
-  ) => refusLettrageManuel(o.compte ?? COMPTE_FOURNISSEURS, ids, o.b ?? brouillon, o.p ?? pieces, o.lm ?? [], o.mode ?? 'engagement')
+  ) => refusLettrageManuel(o.compte ?? COMPTE_FOURNISSEURS, ids, o.b ?? brouillon, o.p ?? pieces, o.lm ?? [], modeleDeTest(o.mode ?? 'engagement'))
 
   it('ne refuse rien d’une facture et de l’avoir qui la solde', () => {
     expect(refus(['f', 'a'])).toBeNull()
@@ -644,9 +645,9 @@ describe('refusLettrageManuel — ce que la base refuserait, dit avant le clic',
   // « Divers » se reconnaît au NUMÉRO exact du compte divers : un fournisseur dont le nom finit par « divers » a son
   // propre compte auxiliaire, et ses pièces se lettrent.
   it('ne prend pas pour le compte divers un fournisseur dont le nom finit par « divers »', () => {
-    const auxiliaire = auxiliaireDuTiers({ tiers: 'Pradivers' }, COMPTE_FOURNISSEURS)!.num
+    const auxiliaire = auxiliaireDuTiers({ tiers: 'Pradivers' }, COMPTE_FOURNISSEURS, modeleDeTest('engagement'))!.num
     expect(auxiliaire).toMatch(/DIVERS$/)
-    expect(estDivers(COMPTE_FOURNISSEURS, auxiliaire)).toBe(false)
+    expect(estDivers(COMPTE_FOURNISSEURS, auxiliaire, modeleDeTest('engagement'))).toBe(false)
     expect(refus(['f', 'a'], { p: [piece({ ...facture, tiers: 'Pradivers' }), piece({ ...avoir, tiers: 'Pradivers' }), reste] })).toBeNull()
   })
 
@@ -691,10 +692,10 @@ describe('refusLettrageManuel — ce que la base refuserait, dit avant le clic',
     const texte = fichiersDuSchema().map((f) => f.texte).find((t) => t.includes('create table public.lettrages_manuels'))!
     const listes = [...texte.matchAll(/compte in \(([^)]*)\)/g)].map((m) => new Set(m[1].split(',').map((x) => x.trim().replace(/'/g, ''))))
     expect(listes.length).toBe(1)
-    expect(listes[0]).toEqual(new Set(COMPTES_LETTRABLES))
+    expect(listes[0]).toEqual(new Set(comptesLettrables(PLAN_PAR_DEFAUT)))
     const roles = [...derniereDefinitionSql('lettrer_pieces').matchAll(/public\.compte_du_role\(p_dossier_id, '(\w+)'\)/g)].map((m) => m[1])
     expect(roles).toHaveLength(5)
-    expect(new Set(roles.map((role) => PLAN_PAR_DEFAUT[role as CleRoleComptable]))).toEqual(new Set(COMPTES_LETTRABLES))
+    expect(new Set(roles.map((role) => PLAN_PAR_DEFAUT[role as CleRoleComptable]))).toEqual(new Set(comptesLettrables(PLAN_PAR_DEFAUT)))
   })
 })
 
@@ -705,7 +706,7 @@ describe('lettragesProposes — les lettrages évidents, proposés au cabinet', 
   const base = [facture, avoir, autre]
   const brouillonDe = (ps: readonly Piece[]) => ps.flatMap((p) => engagement(p, p.type_piece === 'vente' ? VENTES : ACHATS, []))
   const proposes = (ps: readonly Piece[], lm: readonly LettrageManuel[] = [], mode: 'engagement' | 'tresorerie' = 'engagement') =>
-    lettragesProposes(brouillonDe(ps), ps, lm, mode)
+    lettragesProposes(brouillonDe(ps), ps, lm, modeleDeTest(mode))
 
   it('propose une facture et l’avoir du même montant, parmi les autres pièces ouvertes du tiers', () => {
     expect(proposes(base)).toEqual([{ compte: COMPTE_FOURNISSEURS, auxiliaire: 'FTRANSMEDICAL', libelle: 'Transmedical', pieceIds: ['a', 'f'], montant: 500 }])
@@ -715,7 +716,7 @@ describe('lettragesProposes — les lettrages évidents, proposés au cabinet', 
     const p1 = piece({ id: 'p1', tiers: 'Garage', montant_ttc: 100 })
     const p2 = piece({ id: 'p2', tiers: 'Garage', montant_ttc: 30 })
     const b = [...engagement(p1, ACHATS, [{ id: 'm1', date: '2026-03-10', montant: -130 }]), ...engagement(p2, ACHATS, [])]
-    expect(lettragesProposes(b, [p1, p2], [], 'engagement')).toEqual([
+    expect(lettragesProposes(b, [p1, p2], [], modeleDeTest('engagement'))).toEqual([
       { compte: COMPTE_FOURNISSEURS, auxiliaire: 'FGARAGE', libelle: 'Garage', pieceIds: ['p1', 'p2'], montant: 30 },
     ])
   })
@@ -751,8 +752,8 @@ describe('lettragesProposes — les lettrages évidents, proposés au cabinet', 
     const p2 = piece({ id: 'p2', tiers: 'Garage', montant_ttc: 30 })
     const tout = [...base, p1, p2]
     const b = [...brouillonDe(base), ...engagement(p1, ACHATS, [{ id: 'm1', date: '2026-03-10', montant: -130 }]), ...engagement(p2, ACHATS, [])]
-    const propositions = lettragesProposes(b, tout, [], 'engagement')
+    const propositions = lettragesProposes(b, tout, [], modeleDeTest('engagement'))
     expect(propositions).toHaveLength(2)
-    for (const p of propositions) expect(refusLettrageManuel(p.compte, p.pieceIds, b, tout, [], 'engagement')).toBeNull()
+    for (const p of propositions) expect(refusLettrageManuel(p.compte, p.pieceIds, b, tout, [], modeleDeTest('engagement'))).toBeNull()
   })
 })

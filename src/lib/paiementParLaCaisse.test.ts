@@ -9,6 +9,7 @@ import {
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import { commeLike, etapesDeLEssai } from '../test/essaiCaisse'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, CONFRONTÉ À LA BASE (ligne 26.6, étape C8). Deux juges, comme pour lib/caisse.ts :
 //   1. LE TEXTE DE LA MIGRATION `paiement_par_la_caisse`, où qu'elle soit (préparée aujourd'hui, dans l'export le jour de
@@ -113,7 +114,7 @@ describe('le drapeau', () => {
 
 // ── Le module, cas par cas ───────────────────────────────────────────────────────────────────────────────────────────
 
-const MODELE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const MODELE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function caisse(o: Partial<EtatDeLaCaisse> = {}): EtatDeLaCaisse {
   return { compteCaisse: MODELE.plan.caisse, ouvertures: [], operations: [], mouvements: [], encaissements: [], factures: [], ...o }

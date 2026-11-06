@@ -11,6 +11,7 @@ import {
 } from '../../lib/ecrituresVentesFactureesLecture'
 import { COLONNES_LIGNES, COLONNES_PARTS } from '../../lib/ventesFactureesLecture'
 import { REFUS_GARDE_MOUVEMENTS } from '../../lib/encaissementsFactures'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES (ligne 28.65, chantier EC-Q3, étape VF5a1). La règle est éprouvée à
 // part (mouvementsDesVentes.test.ts) ; ici, le CÂBLAGE de l'onglet Banque : un dossier basculé lit ses ventes facturées dans
@@ -193,7 +194,7 @@ function poser() {
 beforeEach(poser)
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function rendre(ventesParLesFactures = true) {
   return render(

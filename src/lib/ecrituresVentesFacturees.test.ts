@@ -19,6 +19,7 @@ import {
   type FactureDesVentesEcrites, type LigneVenteFacturee, type MouvementDesEncaissements,
 } from './ecrituresVentesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
+import { modeleDeTest } from '../test/modeles'
 
 // LES ÉCRITURES D'UNE VENTE FACTURÉE (chantier EC-Q3, étape VF4a ; lib/ecrituresVentesFacturees.ts) : chaque cas du § 5
 // de la conception, dans les deux modèles comptables et sous les deux plans (le plan par défaut et le plan décalé : aucun
@@ -819,10 +820,10 @@ describe('chaque écriture porte sa source, et se recompose à l’identique dep
     const f = ecriture(r, cleFecFacture('f1', '2025-11-10'))
     const quatreCentOnze = f.lignes.find((l) => l.compte === PLAN_PAR_DEFAUT.clients)!
     expect(f.tiers).toBeNull()
-    expect(auxiliaireDeLaLigne(f, quatreCentOnze)).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
-    expect(auxiliaireDeLaLigne(f, f.lignes.find((l) => l.compte === PLAN_PAR_DEFAUT.prestations_de_services)!)).toBeNull()
+    expect(auxiliaireDeLaLigne(f, quatreCentOnze, modeleDeTest('engagement'))).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
+    expect(auxiliaireDeLaLigne(f, f.lignes.find((l) => l.compte === PLAN_PAR_DEFAUT.prestations_de_services)!, modeleDeTest('engagement'))).toBeNull()
     const m = ecriture(r, cleFecMouvementEncaissements('m1'))
-    expect(m.lignes.map((l) => auxiliaireDeLaLigne(m, l))).toEqual(m.lignes.map(() => null))
+    expect(m.lignes.map((l) => auxiliaireDeLaLigne(m, l, modeleDeTest('engagement')))).toEqual(m.lignes.map(() => null))
   })
 
   it('la composition ne dépend que des lignes : lues dans un autre ordre, ou avec celles d’un autre dossier, elle rend la même chose', () => {
@@ -1023,8 +1024,8 @@ describe('FEC22-Q7 : le nom d’une entreprise, sinon le numéro de la facture',
     for (const e of r.ecritures.filter((x) => x.source.genre !== 'mouvement')) {
       expect(e.tiers).toBe('Clinique Fictive SAS')
       for (const l of e.lignes.filter((x) => x.compte === PLAN_PAR_DEFAUT.clients)) {
-        expect(auxiliaireDeLaLigne(e, l)).toEqual(auxiliaireDuTiers({ tiers: 'Clinique Fictive SAS' }, PLAN_PAR_DEFAUT.clients))
-        expect(auxiliaireDeLaLigne(e, l)?.num).not.toBe('CDIVERS')
+        expect(auxiliaireDeLaLigne(e, l, modeleDeTest('engagement'))).toEqual(auxiliaireDuTiers({ tiers: 'Clinique Fictive SAS' }, PLAN_PAR_DEFAUT.clients, modeleDeTest('engagement')))
+        expect(auxiliaireDeLaLigne(e, l, modeleDeTest('engagement'))?.num).not.toBe('CDIVERS')
       }
     }
   })
@@ -1043,7 +1044,7 @@ describe('FEC22-Q7 : le nom d’une entreprise, sinon le numéro de la facture',
         expect(e.libelle).not.toContain('—')
         expect(e.tiers).toBeNull()
         for (const l of e.lignes.filter((x) => x.compte === PLAN_PAR_DEFAUT.clients)) {
-          expect(auxiliaireDeLaLigne(e, l)).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
+          expect(auxiliaireDeLaLigne(e, l, modeleDeTest('engagement'))).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
         }
       }
     }

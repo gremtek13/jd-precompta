@@ -24,6 +24,7 @@ import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { anomaliesDgfip, colonnes, desequilibresDgfip } from '../test/fecDgfip'
 import { categorie, ecriture, ligne } from '../test/revision'
 import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 
 // LES CONTRÔLES DE LA CAISSE (ligne 26.6, étape C3b) : la forme que le FEC et les contrôles reçoivent ; le FEC (une écriture
 // par opération, au journal de son genre — CAISSE-Q3, (A) —, la pièce « Caisse du … », `anomaliesDgfip` sans faute) ; la
@@ -42,7 +43,7 @@ afterEach(() => { drapeau.leve = null })
 
 const DOSSIER = 'd-caisse'
 const SANS_LETTRAGE = new Map()
-const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const HONORAIRES = categorie({
   id: 'k-hono', dossier_id: DOSSIER, code: 'honoraires', libelle: 'Honoraires', compte_comptable: '706000',
@@ -255,7 +256,7 @@ describe('le FEC : une écriture par opération, au journal de son genre', () =>
   const BROUILLON = OPS.flatMap((o) => brouillonDe(o))
 
   it('VE pour une recette et des espèces rendues, OD pour un apport et un prélèvement ; la pièce « Caisse du … », sa date', () => {
-    const n = numeroterFec(BROUILLON, [], CATEGORIES, [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE, lue(OPS), CHAMPS_BNC_NON_EXPORTES)
+    const n = numeroterFec(BROUILLON, [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, lue(OPS), CHAMPS_BNC_NON_EXPORTES)
     expect(n.horsFec).toEqual([])
     const parOperation = new Map<string, { journals: Set<string>; numeros: Set<string>; pieces: Set<string>; dates: Set<string> }>()
     for (const l of n.lignes) {
@@ -278,7 +279,7 @@ describe('le FEC : une écriture par opération, au journal de son genre', () =>
   })
 
   it('imprimé : dix-huit colonnes, la pièce et le libellé de la base, sans faute ni déséquilibre selon l’outil de la DGFiP', () => {
-    const fec = genererFec(BROUILLON, [], CATEGORIES, [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, lue(OPS), CHAMPS_BNC_NON_EXPORTES)
+    const fec = genererFec(BROUILLON, [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, lue(OPS), CHAMPS_BNC_NON_EXPORTES)
     const rows = colonnes(fec)
     expect(rows.every((r) => r.length === 18)).toBe(true)
     expect(anomaliesDgfip(fec)).toEqual([])
@@ -299,7 +300,7 @@ describe('le FEC : une écriture par opération, au journal de son genre', () =>
 
   it('assujetti : la TVA de la recette dans la même écriture, au journal des ventes', () => {
     const r = recette('r1', { montant: 120, taux_tva: 20 })
-    const fec = genererFec(brouillonDe(r, MODELE, true), [], CATEGORIES, [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, lue([r]), CHAMPS_BNC_NON_EXPORTES)
+    const fec = genererFec(brouillonDe(r, MODELE, true), [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, lue([r]), CHAMPS_BNC_NON_EXPORTES)
     const rows = colonnes(fec).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[4], r[11], r[12]])).toEqual([
       ['VE', 'VE00001', PLAN_PAR_DEFAUT.caisse, '120,00', '0,00'],
@@ -311,19 +312,19 @@ describe('le FEC : une écriture par opération, au journal de son genre', () =>
 
   it('un plan qui tient d’autres comptes : la caisse de son plan, son libellé du plan', () => {
     const decale: ModeleComptable = { ...MODELE, plan: { ...PLAN_PAR_DEFAUT, caisse: '531000' } }
-    const fec = genererFec(brouillonDe(A, decale), [], CATEGORIES, [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, lue([A]), CHAMPS_BNC_NON_EXPORTES)
+    const fec = genererFec(brouillonDe(A, decale), [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, lue([A]), CHAMPS_BNC_NON_EXPORTES)
     expect(colonnes(fec)[1].slice(0, 6)).toEqual(['OD', 'Opérations diverses', 'OD00001', '20260302', '531000', expect.any(String)])
     expect(anomaliesDgfip(fec)).toEqual([])
   })
 
   it('jamais deviné : la caisse absente, une opération que la lecture ne rend pas, un paiement de pièce — hors du fichier', () => {
-    expect(numeroterFec(BROUILLON, [], CATEGORIES, [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES).horsFec)
+    expect(numeroterFec(BROUILLON, [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES).horsFec)
       .toHaveLength(BROUILLON.length)
-    expect(numeroterFec(BROUILLON, [], CATEGORIES, [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE, lue([R]), CHAMPS_BNC_NON_EXPORTES).horsFec.map((e) => e.operation_caisse_id))
+    expect(numeroterFec(BROUILLON, [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, lue([R]), CHAMPS_BNC_NON_EXPORTES).horsFec.map((e) => e.operation_caisse_id))
       .toEqual(BROUILLON.filter((e) => e.operation_caisse_id !== 'r1').map((e) => e.operation_caisse_id))
     const paiement = operation({ id: 'pay', genre: 'paiement', categorie_id: null, encaissements_du_jour: null, piece_id: 'pc1', montant: -15 })
     const ligneSansPiece = ecriture({ id: 'pay-0', date: paiement.date, compte: '530000', sens: 'credit', montant: 15, operation_caisse_id: 'pay' })
-    expect(numeroterFec([ligneSansPiece], [], CATEGORIES, [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE, lue([paiement]), CHAMPS_BNC_NON_EXPORTES).horsFec).toEqual([ligneSansPiece])
+    expect(numeroterFec([ligneSansPiece], [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, lue([paiement]), CHAMPS_BNC_NON_EXPORTES).horsFec).toEqual([ligneSansPiece])
   })
 
   it('NEUTRE : sans ligne de caisse, la caisse absente et la caisse lue rendent le même fichier', () => {
@@ -331,8 +332,8 @@ describe('le FEC : une écriture par opération, au journal de son genre', () =>
       ecriture({ id: 'x1', piece_id: 'pc', date: '2026-03-05', compte: '606400', sens: 'debit', montant: 10 }),
       ecriture({ id: 'x2', piece_id: 'pc', date: '2026-03-05', compte: '512000', sens: 'credit', montant: 10, ligne_bancaire_id: 'l1' }),
     ]
-    const sans = numeroterFec(autre, [], CATEGORIES, [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
-    const avec = numeroterFec(autre, [], CATEGORIES, [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE, lue(OPS), CHAMPS_BNC_NON_EXPORTES)
+    const sans = numeroterFec(autre, [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+    const avec = numeroterFec(autre, [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, lue(OPS), CHAMPS_BNC_NON_EXPORTES)
     expect(formaterFec(avec, SANS_LETTRAGE, 'tresorerie')).toBe(formaterFec(sans, SANS_LETTRAGE, 'tresorerie'))
   })
 })
@@ -634,7 +635,7 @@ describe('les bords', () => {
     const A = apport('a1', { date: '2026-03-02' })
     const lignes = brouillonDe(A)
     const deplacee = [lignes[0], { ...lignes[1], date: '2026-03-03' }]
-    const n = numeroterFec(deplacee, [], CATEGORIES, [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE, lue([A]), CHAMPS_BNC_NON_EXPORTES)
+    const n = numeroterFec(deplacee, [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, lue([A]), CHAMPS_BNC_NON_EXPORTES)
     expect(n.lignes.map((l) => [l.ecriture.date, `${l.journal}${l.numero}`])).toEqual([['2026-03-02', 'OD1'], ['2026-03-03', 'OD2']])
     expect(anomaliesDgfip(formaterFec(n, SANS_LETTRAGE, 'tresorerie'))).toEqual([])
     expect(defautsDeNumerotation(n).filter((x) => x.type !== 'desequilibre')).toEqual([])
@@ -676,7 +677,7 @@ describe('au hasard', () => {
         }))
       }
       const brouillon = ops.flatMap((o) => brouillonDe(o, modele, assujetti))
-      const numerotation = numeroterFec(brouillon, [], CATEGORIES, [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE, lue(ops), CHAMPS_BNC_NON_EXPORTES)
+      const numerotation = numeroterFec(brouillon, [], CATEGORIES, [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, lue(ops), CHAMPS_BNC_NON_EXPORTES)
       if (numerotation.horsFec.length > 0) throw new Error(`cas ${cas} : ${numerotation.horsFec.length} ligne(s) hors du FEC`)
       const ecritures = new Map<string, Set<string>>()
       for (const l of numerotation.lignes) {

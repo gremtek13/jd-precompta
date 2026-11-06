@@ -19,6 +19,7 @@ import {
   factureDeLaLigne, indexDesFactures, nomDuDocument, porteUneSourceDeVente, rattachementDesVentes,
 } from './ventesFactureesDesExports'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest, planLuDe } from '../test/modeles'
 
 // LES EXPORTS LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE (chantier EC-Q3, étape VF4c2 ; lib/ventesFactureesDesExports.ts,
 // lib/fec.ts). Un dossier qui a basculé, de bout en bout : la composition de VF4a sur les lignes de la base, le brouillon que
@@ -37,7 +38,7 @@ function jeu(mode: ModeComptable, plan: PlanComptable = PLAN_PAR_DEFAUT) {
 }
 
 const fec = (brouillon: EcritureBrouillon[], mode: ModeComptable, ecritures = jeu(mode).c.ecritures, pieces: Piece[] = []) =>
-  genererFec(brouillon, pieces, [], [], mode, [], SANS_LETTRAGE, ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+  genererFec(brouillon, pieces, [], [], modeleDeTest(mode), [], SANS_LETTRAGE, ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
 
 describe('rattachementDesVentes — une ligne retrouve son écriture composée par sa source et sa date', () => {
   for (const mode of MODES) {
@@ -214,16 +215,16 @@ describe('le FEC d’un dossier qui a basculé', () => {
         const achat = pieceDeVente({ id: 'p-achat', type_piece: 'achat', tiers: 'Fournisseur fictif', date_piece: '2025-11-15', montant_ttc: 24 })
         const pieces = (mode === 'engagement' ? [vente, achat] : []).flatMap((p) => lignesPourPiece(
           D_BASCULE, p, { compte: p.type_piece === 'vente' ? '706000' : '606400', immobilisation: false }, false, [],
-          { mode, plan, compteNotesDeFrais: plan.associe },
+          { mode, ...planLuDe(plan), compteNotesDeFrais: plan.associe },
         ).map((l, i): EcritureBrouillon => ({
           ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null, created_at: `${l.date}T09:00:00Z`,
           immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, encaissement_id: null,
           facture_id: null, ...NON_VALIDEE,
         })))
         const tout = [...pieces, ...brouillon]
-        const n = numeroterFec(tout, [vente, achat], [], [], mode, [], c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+        const n = numeroterFec(tout, [vente, achat], [], [], { mode, ...planLuDe(plan), compteNotesDeFrais: plan.associe }, [], c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
         expect(n.horsFec).toEqual([])
-        const f = genererFec(tout, [vente, achat], [], [], mode, [], SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+        const f = genererFec(tout, [vente, achat], [], [], { mode, ...planLuDe(plan), compteNotesDeFrais: plan.associe }, [], SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
         expect(anomaliesDgfip(f)).toEqual([])
         expect(desequilibresDgfip(f)).toEqual([])
         // Les numéros d'un journal se suivent dans l'ordre des dates.
@@ -243,12 +244,12 @@ describe('le FEC d’un dossier qui a basculé', () => {
     const { c, brouillon } = jeu('engagement')
     const vente = pieceDeVente({ id: 'p-vente', tiers: 'CLIENT FICTIF', date_piece: '2025-11-05' })
     const lignes = lignesPourPiece(D_BASCULE, vente, { compte: '706000', immobilisation: false }, false, [], {
-      mode: 'engagement', plan: PLAN_PAR_DEFAUT, compteNotesDeFrais: PLAN_PAR_DEFAUT.associe,
+      mode: 'engagement', plan: PLAN_PAR_DEFAUT, compteNotesDeFrais: PLAN_PAR_DEFAUT.associe, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT,
     }).map((l, i): EcritureBrouillon => ({
       ...l, id: `pv-${i}`, ligne_bancaire_id: null, created_at: '2025-11-05T09:00:00Z', immobilisation_id: null, vehicule_id: null,
       declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
     }))
-    const rows = colonnes(genererFec([...lignes, ...brouillon], [vente], [], [], 'engagement', [], SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
+    const rows = colonnes(genererFec([...lignes, ...brouillon], [vente], [], [], modeleDeTest('engagement'), [], SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     const divers = rows.filter((r) => r[6] === 'CDIVERS')
     expect(divers.length).toBeGreaterThan(4)
     expect(new Set(divers.map((r) => r[7]))).toEqual(new Set(['Clients divers']))
@@ -268,7 +269,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
   it('laisse hors du fichier ce qui ne se rattache plus, et le fichier reste juste', () => {
     const { brouillon } = jeu('engagement')
     const perime = brouillon.map((b) => (b.encaissement_id === 'e2' && b.compte === '511000' ? { ...b, montant: 100.01 } : b))
-    const n = numeroterFec(perime, [], [], [], 'engagement', [], jeu('engagement').c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+    const n = numeroterFec(perime, [], [], [], modeleDeTest('engagement'), [], jeu('engagement').c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(n.horsFec.map((e) => e.encaissement_id)).toEqual(['e2', 'e2', 'e2', 'e2'])
     const f = fec(perime, 'engagement')
     expect(anomaliesDgfip(f)).toEqual([])
@@ -280,7 +281,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
   // validation envoie la reçoit, depuis l'étape VF7c (lib/prealablesValidation.ts ; dossierBasculeBoutEnBout.test.ts).
   it('sans la composition, chaque ligne d’une vente facturée est hors du fichier — la validation la reçoit depuis VF7c', () => {
     const { brouillon } = jeu('engagement')
-    const n = numeroterFec(brouillon, [], [], [], 'engagement', [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+    const n = numeroterFec(brouillon, [], [], [], modeleDeTest('engagement'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(n.lignes).toEqual([])
     expect(n.horsFec).toHaveLength(brouillon.length)
   })
@@ -290,7 +291,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
   // seules. Pour les ventes facturées comme pour le reste, il est celui d'avant, ValidDate près.
   it.each(MODES)('%s : le FEC d’un exercice validé est celui d’avant la validation, ValidDate près', (mode) => {
     const { c, brouillon } = jeu(mode)
-    const avant = numeroterFec(brouillon, [], [], [], mode, [], c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+    const avant = numeroterFec(brouillon, [], [], [], modeleDeTest(mode), [], c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(avant.horsFec).toEqual([])
     const VALIDE_LE = '2026-01-20T10:00:00Z'
     const figees = avant.lignes.map((l): EcritureBrouillon => ({
@@ -321,7 +322,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
     // Le relevé passé au FEC ne change rien : seule la composition rattache ses lignes.
     const { c, brouillon } = jeu('engagement')
     const m2 = mouvementDesVentes({ id: 'm2', date: '2025-11-22', montant: 100 })
-    const n = numeroterFec(brouillon, [], [], [], 'engagement', [{
+    const n = numeroterFec(brouillon, [], [], [], modeleDeTest('engagement'), [{
       ...m2, libelle_brut: null, taux_tva: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
     }], c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(n.lignes.filter((l) => l.ecriture.ligne_bancaire_id === 'm2' && l.ecriture.encaissement_id == null).map((l) => l.pieceRef))
@@ -433,7 +434,7 @@ describe('la piste d’audit d’un dossier qui a basculé', () => {
 
 describe('le lettrage du 411 d’une vente facturée, par facture', () => {
   const lettrer = (brouillon: EcritureBrouillon[], exports: ReturnType<typeof jeu>['exports'], mode: ModeComptable = 'engagement') =>
-    lettrages(brouillon, [], [], mode, exports)
+    lettrages(brouillon, [], [], modeleDeTest(mode), exports)
   const codes = (brouillon: EcritureBrouillon[], l: ReadonlyMap<string, { code: string }>, p: (b: EcritureBrouillon) => boolean) =>
     [...new Set(brouillon.filter((b) => b.compte === '411000' && p(b)).map((b) => l.get(b.id)?.code ?? '—'))]
 
@@ -454,7 +455,7 @@ describe('le lettrage du 411 d’une vente facturée, par facture', () => {
     const t = jeu('tresorerie')
     expect(lettrer(t.brouillon, t.exports, 'tresorerie').size).toBe(0)
     const { brouillon } = jeu('engagement')
-    expect(lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE).size).toBe(0)
+    expect(lettrages(brouillon, [], [], modeleDeTest('engagement'), SANS_VENTE_FACTUREE).size).toBe(0)
   })
 
   it('une écriture à réécrire ne se lettre pas, ni ce qu’elle aurait soldé : le FEC la laisse dehors', () => {
@@ -471,7 +472,7 @@ describe('le lettrage du 411 d’une vente facturée, par facture', () => {
     const { brouillon, exports } = jeu('engagement')
     const perime = brouillon.map((b) => (b.encaissement_id === 'e1' && b.compte === '445710' ? { ...b, montant: 20.01 } : b))
     const l = lettrer(perime, exports)
-    const etats = lettragesDesFactures(perime, exports, 'engagement', l)
+    const etats = lettragesDesFactures(perime, exports, modeleDeTest('engagement'), l)
     expect(Object.fromEntries([...etats].map(([id, x]) => [id, [x.code, x.motif, x.reste]]))).toEqual({
       f1: [null, 'ecriture_a_reprendre', 0],
       f2: [null, 'reste', 140],
@@ -482,12 +483,12 @@ describe('le lettrage du 411 d’une vente facturée, par facture', () => {
     expect(phraseDuLettrage(etats.get('f1')!)).toMatch(/^Non lettrée au 411000 : ses lignes se soldent, mais une de ses écritures est à réécrire/)
     expect(phraseDuLettrage({ ...etats.get('f2')!, reste: -5 })).toBe(`Non lettrée au 411000 : ${formatMoney(5)} de plus que la facture au brouillon.`)
     expect(phraseDuLettrage({ ...etats.get('f2')!, motif: 'deux_comptes' })).toMatch(/deux comptes de tiers/)
-    expect(lettragesDesFactures(perime, exports, 'tresorerie', l).size).toBe(0)
+    expect(lettragesDesFactures(perime, exports, modeleDeTest('tresorerie'), l).size).toBe(0)
   })
 
   it('le FEC porte ces codes, une écriture ne porte qu’un lettrage, et l’outil de la DGFiP ne relève rien', () => {
     const { c, brouillon, exports } = jeu('engagement')
-    const f = genererFec(brouillon, [], [], [], 'engagement', [], lettrer(brouillon, exports), c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+    const f = genererFec(brouillon, [], [], [], modeleDeTest('engagement'), [], lettrer(brouillon, exports), c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     const lettrees = colonnes(f).slice(1).filter((r) => r[13] !== '')
     expect(lettrees.map((r) => [r[2], r[4], r[13], r[14]])).toEqual([
       ['VE00001', '411000', 'B', '20251120'],
@@ -502,7 +503,7 @@ describe('le lettrage du 411 d’une vente facturée, par facture', () => {
 describe('les comptes de tiers d’un dossier qui a basculé', () => {
   it('rangent chaque facture chez son client, ouverte ou réglée en partie, et jamais parmi les écritures sans pièce', () => {
     const { brouillon, exports } = jeu('engagement')
-    const au = (date: string) => comptesDeTiers(brouillon, [], [], [], 'engagement', date, exports)
+    const au = (date: string) => comptesDeTiers(brouillon, [], [], [], modeleDeTest('engagement'), date, exports)
     // Avant tout encaissement et avant l'avoir du 18/11 : les trois factures ouvertes, chacune pour son TTC.
     expect(au('2025-11-15').map((s) => [s.libelle, s.auxiliaire, s.solde, s.pieces.map((p) => [p.libelle, p.etat, p.reste, p.factureId])])).toEqual([
       ['Client fictif', 'CFICTIF', 180, [['Facture F2025-0001', 'ouverte', 120, 'f1'], ['Facture F2025-0003', 'ouverte', 60, 'f3']]],
@@ -519,19 +520,19 @@ describe('les comptes de tiers d’un dossier qui a basculé', () => {
 
   it('sans les factures, les lignes tomberaient parmi les écritures sans pièce : le paramètre est obligatoire', () => {
     const { brouillon } = jeu('engagement')
-    expect(comptesDeTiers(brouillon, [], [], [], 'engagement', '2025-12-31', SANS_VENTE_FACTUREE).map((s) => s.origine)).toEqual(['sans_piece'])
+    expect(comptesDeTiers(brouillon, [], [], [], modeleDeTest('engagement'), '2025-12-31', SANS_VENTE_FACTUREE).map((s) => s.origine)).toEqual(['sans_piece'])
   })
 
   it('un client d’avant et d’après la bascule : une seule ligne, sous son compte auxiliaire', () => {
     const { brouillon, exports } = jeu('engagement')
     const vente = pieceDeVente({ id: 'p-vente', tiers: 'Client fictif', date_piece: '2025-11-05' })
     const lignes = lignesPourPiece(D_BASCULE, vente, { compte: '706000', immobilisation: false }, false, [], {
-      mode: 'engagement', plan: PLAN_PAR_DEFAUT, compteNotesDeFrais: PLAN_PAR_DEFAUT.associe,
+      mode: 'engagement', plan: PLAN_PAR_DEFAUT, compteNotesDeFrais: PLAN_PAR_DEFAUT.associe, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT,
     }).map((l, i): EcritureBrouillon => ({
       ...l, id: `pv-${i}`, ligne_bancaire_id: null, created_at: '2025-11-05T09:00:00Z', immobilisation_id: null, vehicule_id: null,
       declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
     }))
-    const soldes = comptesDeTiers([...lignes, ...brouillon], [vente], [], [], 'engagement', '2025-12-31', exports)
+    const soldes = comptesDeTiers([...lignes, ...brouillon], [vente], [], [], modeleDeTest('engagement'), '2025-12-31', exports)
     const fictif = soldes.filter((s) => s.auxiliaire === 'CFICTIF')
     expect(fictif).toHaveLength(1)
     expect(fictif[0].pieces.map((p) => [p.pieceId, p.factureId])).toEqual([['p-vente', undefined]])

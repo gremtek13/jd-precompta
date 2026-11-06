@@ -536,7 +536,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplairesDesSources(piecesValidees, sourcesDesControles))
   // En engagement, une facture qu'un lettrage fait à la main solde avec son avoir n'attend plus de règlement : la compter
   // « sans règlement rapproché » enverrait chercher un paiement qui n'existera jamais (lib/lettrage.ts).
-  const lettreesALaMain = piecesLettreesALaMain(etatsDesLettragesManuels(ecritures, piecesValidees, lettragesManuels, modele.mode))
+  const lettreesALaMain = piecesLettreesALaMain(etatsDesLettragesManuels(ecritures, piecesValidees, lettragesManuels, modele))
   const nbSansContrepartie = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
@@ -627,8 +627,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // prennent leur place quand ils tiennent encore, revérifiés sur les pièces que le FEC lit : celles qui sont validées.
   // Le 411 d'une vente facturée s'y lettre par facture (étape VF4c2) ; et ce qui ne se lettre pas se dit dans la section des
   // ventes facturées, facture par facture.
-  const lettrage = lettrages(ecritures, piecesValidees, lettragesManuels, modele.mode, ventesDesExports ?? SANS_VENTE_FACTUREE)
-  const lettrageDesFactures = new Map([...lettragesDesFactures(ecritures, ventesDesExports ?? SANS_VENTE_FACTUREE, modele.mode, lettrage)]
+  const lettrage = lettrages(ecritures, piecesValidees, lettragesManuels, modele, ventesDesExports ?? SANS_VENTE_FACTUREE)
+  const lettrageDesFactures = new Map([...lettragesDesFactures(ecritures, ventesDesExports ?? SANS_VENTE_FACTUREE, modele, lettrage)]
     .map(([id, l]) => [id, phraseDuLettrage(l)]))
   // En engagement seulement : en trésorerie, rien ne se lettre, et une lecture ratée de ces lignes ne change rien.
   const lettragesManquants = modele.mode === 'engagement' ? lettragesIncomplets : null
@@ -1928,7 +1928,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               ? formaterFec(fecValide, lettrage, modele.mode)
               : champsDuFec === null ? null
               : genererFec(
-                ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires, lettrage,
+                ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele, lignesBancaires, lettrage,
                 ventesDesExports.ecritures, operationsDuFec, champsDuFec,
               )
             if (contenu === null) return
