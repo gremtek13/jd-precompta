@@ -545,8 +545,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     (EC-Q7), à appliquer — avec elle trois essais, `types.ts`, `inventaire.py` et le socle → « LES NOTES INTERNES DU
     CABINET, HORS DE PORTÉE DU CLIENT » ;
   - P1-trace : garder qui a changé les droits d'un accès, et quand — une migration à écrire ;
-  - P4 : la mention du mandataire à l'impression (EC-Q2 : le nom du cabinet figé avec la facture, une migration
-    d'`enregistrer_facture`) ;
+  - P4, la mention du mandataire : imprimée sous l'identité de l'émetteur et nommée à la confirmation depuis le
+    06/11/2026, le nom du cabinet lu comme la base le lit → « LE MANDAT DE FACTURATION IMPRIMÉ ET NOMMÉ À LA
+    CONFIRMATION (P4, LIGNE 51.5) » ;
   - P8 : la connexion bancaire du client ;
   - P5, les devis : EN PRODUCTION depuis le 05/11/2026 (trois migrations, dans l'export) et l'acompte depuis le
     06/11/2026 (`acomptes_des_devis`, collée ; elle remplace `enregistrer_facture`), tous leurs drapeaux levés : la vue
@@ -914,15 +915,18 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Montants et dates bancaires** : `csv.ts` seul ; le contrôle de solde est CONSERVÉ → « Un relevé ne contient pas que
   des opérations ». **L'import d'un relevé par fichier** (`lib/importReleve.ts`) : l'aperçu et l'import passent par la
   même interprétation, montrée signée avant le clic ; un montant illisible s'écarte et se compte, jamais zéro ; le
-  dédoublonnage compte par multiplicité ; un solde se reconnaît à sa forme ; un recouvrement se confirme → « L'IMPORT
-  D'UN RELEVÉ PAR FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN ». **Une règle « Toujours ignorer »** retient le sens
-  du mouvement qui l'a créée (nulle : les deux sens, toute règle d'avant), et `rapprocher_cotisation` refuse un mouvement
-  ignoré (REGLES-Q1, en production depuis le 03/11/2026, `SENS_DES_REGLES_IGNOREES_EXPORTE` levé) ; « Ignorer » et
-  « Toujours ignorer » n'écrivent que sur un mouvement encore à traiter EN BASE, et disent ce qu'ils n'ont pas écrit
-  → « LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS
-  APPLIQUÉE) », « LE SENS DES RÈGLES « TOUJOURS IGNORER » EN PRODUCTION (REGLES-Q1) », « « IGNORER » ET « TOUJOURS
-  IGNORER » NE VISENT QU'UN MOUVEMENT ENCORE À TRAITER ». **Classification** : le bordereau d'abord, le sens par
-  `orientationDe` → « Le sens d'une pièce est décidé par la classification ».
+  dédoublonnage compte par multiplicité ; un solde se reconnaît à sa forme ; un recouvrement se confirme ; l'OFX et le
+  QIF se lisent au contenu, sans réglage de colonnes, par le même aval (`lib/releveOfxQif.ts`), et ce qui n'est pas sûr
+  se refuse (plusieurs comptes, une carte, une autre devise, un ordre jour/mois non prouvé) → « L'IMPORT D'UN RELEVÉ PAR
+  FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN », « LE RELEVÉ IMPORTÉ EN OFX OU EN QIF (LIGNE 26.6, MVP) ». **Une
+  règle « Toujours ignorer »** retient le sens du mouvement qui l'a créée (nulle : les deux sens, toute règle d'avant),
+  et `rapprocher_cotisation` refuse un mouvement ignoré (REGLES-Q1, en production depuis le 03/11/2026,
+  `SENS_DES_REGLES_IGNOREES_EXPORTE` levé) ; « Ignorer » et « Toujours ignorer » n'écrivent que sur un mouvement encore
+  à traiter EN BASE, et disent ce qu'ils n'ont pas écrit → « LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION
+  D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS APPLIQUÉE) », « LE SENS DES RÈGLES « TOUJOURS IGNORER » EN
+  PRODUCTION (REGLES-Q1) », « « IGNORER » ET « TOUJOURS IGNORER » NE VISENT QU'UN MOUVEMENT ENCORE À TRAITER ».
+  **Classification** : le bordereau d'abord, le sens par `orientationDe` → « Le sens d'une pièce est décidé par la
+  classification ».
 - **Une même dépense entrée deux fois se dit** (`lib/doublonsProbables.ts`, PIECES-Q2, confirmée le 04/11/2026) : deux
   dépenses de même montant retenu, à sept jours au plus, d'une même `cleFournisseur` (un fournisseur non lu se rapproche
   de tout), l'une au moins non réglée — en attention dans Justificatifs, les fiches, la Vue d'ensemble, Clôture et
@@ -968,8 +972,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   « LA FACTURE : LES DEUX REFUS DE DATE DITS AVANT LE CLIC (LIGNE 51.5) ». À sa
   validation, elle fige son statut et son numéro de TVA, l'identité légale, les paramètres, le RIB confirmé, le logo et
   le mandataire, et ses lignes leur provenance (A7a, en base depuis le 29/10/2026) ; l'aperçu d'une facture figée
-  n'imprime que ses colonnes, le logo vérifié à son empreinte figée, une facture d'avant comme hier (A7b) → « LA FACTURE
-  FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) ».
+  n'imprime que ses colonnes, le logo vérifié à son empreinte figée, une facture d'avant comme hier (A7b), et celle que
+  le cabinet valide, la mention de son mandat, que la confirmation nomme (P4) → « LA FACTURE FIGE SES MENTIONS, EN
+  BASE », « LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) », « LE MANDAT DE FACTURATION
+  IMPRIMÉ ET NOMMÉ À LA CONFIRMATION (P4, LIGNE 51.5) ».
 - **Le dépôt** : une seule transmission ACTIVE par facture, RÉSERVÉE avant l'envoi ; une issue inconnue n'est jamais
   réessayée, elle s'abandonne après un quart d'heure (`DELAI_AVANT_ABANDON_MS`) → « LA FACTURE ÉLECTRONIQUE SE DÉPOSE ».
   Une facture rejetée ou refusée ne repart pas : un avoir interne, non transmis ; chez Super PDP, 213 et 501 rejettent,
