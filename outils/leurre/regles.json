@@ -34,6 +34,7 @@
     "rls": {"famille": "journal", "role": "super", "raison": "lit le journal des désignations que la production porte (semis/journal.sql) ; joué par le super-utilisateur, comme son en-tête le veut"},
     "validationExercice": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
     "reportDesSoldes": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
-    "traceDesDroits": {"famille": "apres", "raison": "la migration de la trace des droits d'un accès (étape P1-trace : `trace_des_droits`, supabase/preparees/) est préparée, pas appliquée : la réplique qui la porte, appliquée par le propriétaire — sans elle, l'essai se joue et dit sa seule ligne 0 « EN ATTENTE »"}
+    "traceDesDroits": {"famille": "apres", "raison": "la migration de la trace des droits d'un accès (étape P1-trace : `trace_des_droits`, supabase/preparees/) est préparée, pas appliquée : la réplique qui la porte, appliquée par le propriétaire — sans elle, l'essai se joue et dit sa seule ligne 0 « EN ATTENTE »"},
+    "situationsPubliees": {"famille": "apres", "raison": "la migration des situations publiées (étape C4a : `situations_publiees`, supabase/preparees/) est préparée, pas appliquée : la réplique qui la porte, appliquée par le propriétaire — sans elle, l'essai se joue et dit sa seule ligne 0 « EN ATTENTE » ; sa garde de tête la refuse sur une base qui porte la trace des droits : leurs deux modèles « apres » restent distincts tant que l'une n'est pas reprise"}
   }
 }

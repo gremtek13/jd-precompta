@@ -59,6 +59,7 @@
 -- `gere_les_ventes`, `gere_la_banque`, `gere_la_caisse` ; les quatre Edge Functions de la vente. Aucune ligne écrite
 -- d'avance : aucun accès ne reçoit la case, aucune situation n'est publiée.
 --
+-- L'ORDRE AVEC P1-TRACE : celle des deux migrations qui s'applique en second se reprend (la case « Comptes » dans la trace).
 -- LA TRACE DES DROITS (P1-trace, migration `trace_des_droits`, PRÉPARÉE avant celle-ci, pas appliquée) ne connaît que trois
 -- cases. La garde de tête refuse cette migration si la trace est en base : la case « Comptes » y changerait sans trace. Si
 -- celle-ci passe la première, la trace s'amende avant d'être appliquée (une quatrième case : sa contrainte, ses tableaux,

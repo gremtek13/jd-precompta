@@ -251,11 +251,13 @@ describe('les essais de la base, rejoués en production', () => {
     // (étape P5) : il supprime des devis, des liens et un dossier, et porte la garde ESSAI_HORS_REPLIQUE de caisseSuppression.
     // Le septième, traceDesDroitsSuppression, le 05/11/2026 (étape P1-trace) : il retire des accès et un dossier, sous la même
     // garde.
+    // Le huitième, situationsPublieesMutations, le 06/11/2026 (étape C4a) : il plante six défauts dans la migration, chacun le
+    // temps d'une transaction annulée, et rejoue l'essai par `\ir` — sous la même garde.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'caisseSuppression (son en-tête)', 'devisSuppression (son en-tête)', 'frontiereDesEncaissements (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
-      'traceDesDroitsSuppression (son en-tête)',
+      'situationsPublieesMutations (une méta-commande de psql)', 'traceDesDroitsSuppression (son en-tête)',
     ])
     // Les outils ne se rejouent pas ; un outil de plus se lit avant d'entrer (l'audit du 29/10/2026 a lu ces cinq-là ; le
     // sixième, batterieDesLignes.mjs, est entré le 31/10/2026 avec la correction de la facture : il ne lit qu'une fonction
@@ -299,8 +301,9 @@ describe('les essais de la base, rejoués en production', () => {
     // préparée (étape P5b2, `acomptes_des_devis`, qui suppose les trois des devis). Dix-sept le même jour : `traceDesDroits`
     // entré dans la famille « apres », après sa migration préparée (étape P1-trace, `trace_des_droits`). Seize le 06/11/2026 :
     // `acomptesDesDevis` sorti (sa migration collée en production, 20261105231034 ; l'essai ne cherche aucun semis, il se
-    // joue comme un essai de la production).
-    expect(cas.length).toBe(16)
+    // joue comme un essai de la production). Dix-sept le même jour : `situationsPubliees` entré dans la famille « apres »,
+    // après sa migration préparée (étape C4a, `situations_publiees`, que sa garde refuse sur une base qui porte la trace).
+    expect(cas.length).toBe(17)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
