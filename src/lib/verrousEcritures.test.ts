@@ -90,6 +90,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
       + 'étape A6a), lu par l’encart de l’accueil du client et la carte de la Vue d’ensemble du cabinet '
       + '(`lib/etatFactureElectroniqueLecture.ts`, étape A6b2).',
   },
+  'rpc:phase_des_exercices': {
+    nature: 'lecture',
+    raison: 'La phase de chaque exercice d’un dossier — pièces attendues, en révision, validé le, 2035 enregistrée —, jamais un '
+      + 'chiffre (fonction `stable`, `security definer`, sans écriture ; migration `phase_des_exercices`, ligne 51.5, étape C2, '
+      + 'préparée), lue par la carte de l’accueil du client (`lib/etatDuDossierLecture.ts`) — derrière `ETAT_DU_DOSSIER_EXPORTE`.',
+  },
   'rpc:plan_du_dossier': {
     nature: 'lecture',
     raison: 'Le plan comptable effectif d’un dossier (fonction `stable`, sans `security definer`, sans écriture ; migration '

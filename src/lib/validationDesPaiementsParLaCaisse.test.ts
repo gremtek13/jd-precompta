@@ -51,9 +51,15 @@ function uneFois(texte: string, de: string, vers: string): string {
   return texte.replace(de, () => vers)
 }
 
-const FILET = () => laMigration('validation_des_paiements_par_la_caisse')
-const FEC22B = () => laMigration('champs_bnc_du_fec')
-const C8 = () => laMigration('paiement_par_la_caisse')
+// Chaque migration se lit UNE fois par fichier : `laMigration` relit tout l'export, et la quinzaine d'appels du fichier
+// dépassait le délai d'un test sous la charge de la suite entière (06/11/2026). Un calcul lourd se paie une fois.
+const luUneFois = <T>(lire: () => T): (() => T) => {
+  let lu: T | undefined
+  return () => (lu ??= lire())
+}
+const FILET = luUneFois(() => laMigration('validation_des_paiements_par_la_caisse'))
+const FEC22B = luUneFois(() => laMigration('champs_bnc_du_fec'))
+const C8 = luUneFois(() => laMigration('paiement_par_la_caisse'))
 
 function leRetour(): string {
   const dossier = new URL('../../supabase/preparees/retour/', import.meta.url).pathname

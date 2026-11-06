@@ -185,15 +185,17 @@ async function ouvrirLeBrouillon(montant: string) {
 
 // Les empreintes du rendu, drapeau baissé, relevées sur le code d'AVANT l'étape P5b5b (commit 76a3631) : la liste, le
 // formulaire ouvert sur le brouillon d'acompte, et la fenêtre d'avoir de l'acompte validé : ceux d'hier, au caractère près.
+// Le formulaire relevé de nouveau le 06/11/2026 (A7B-Q3) : la facture à une entreprise offre le numéro du bon de commande,
+// et les deux rendus d'avant et d'après ne diffèrent que de ce champ (son libellé et sa saisie), comparés balise par balise.
 const RENDU_D_HIER: Record<'cabinet' | 'client', { liste: string; formulaire: string; avoir: string }> = {
   cabinet: {
     liste: '51f14f58c02a81e62f620a95a36048fe84e82a5c1008e367a48d8b6cdb2afd51',
-    formulaire: '5f938153030ce6facc034a3eb28e9b96f870afbcd1f46c972be45cfe643e2b53',
+    formulaire: 'b49ee2be29cee64ce2061ca14fcc6d9ad74df28090b0f2fa79372ef66242eaf8',
     avoir: 'b6d23dda933cc830547c53eef991f437fa764aad65c10fe622a181e17bb46a34',
   },
   client: {
     liste: '3cdf8d0d5eca1201974e36d28f8bc88c99420d729ac2468eb1a6167adcf51c9f',
-    formulaire: 'cd81cee349dfcd309ce61f0539874c018e88ce4f296ee3832119e17e6dac4797',
+    formulaire: 'c44ab1757634b9c4ab1d3483c172ab26935bdc116e62f71f6eba9ee2c90460f2',
     avoir: '5d35e361293cf020e22efbd286e91c027424be78aec578d13e9453fc712f9135',
   },
 }

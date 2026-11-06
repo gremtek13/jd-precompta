@@ -263,7 +263,11 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8')
     const layout = readFileSync(new URL('../components/Layout.tsx', import.meta.url), 'utf8')
     const espaceClient = app.slice(app.indexOf("{role === 'client' && ("), app.indexOf('</Route>', app.indexOf("{role === 'client' && (")))
-    const chemins = [...espaceClient.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]).sort()
+    // Un écran monté dans les DEUX espaces (« Sécurité du compte », C7) ne se perd pas : l'espace du cabinet le monte encore.
+    const espaceCabinet = app.slice(app.indexOf("{role === 'cabinet' && ("), app.indexOf("{role === 'client' && ("))
+    const cheminsDuCabinet = new Set([...espaceCabinet.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]))
+    expect(cheminsDuCabinet.has('/securite')).toBe(true)
+    const chemins = [...espaceClient.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]).filter((c) => !cheminsDuCabinet.has(c)).sort()
     expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-informations', '/mes-pieces', '/mes-ventes', '/mon-echeancier'])
     for (const chemin of chemins) {
       const nom = layout.match(new RegExp(`<NavLink to="${chemin}" title="([^"]+)"`))?.[1]
