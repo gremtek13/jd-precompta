@@ -253,8 +253,12 @@ describe('les essais de la base, rejoués en production', () => {
     // garde.
     // Le huitième, situationsPublieesMutations, le 06/11/2026 (étape C4a) : il plante six défauts dans la migration, chacun le
     // temps d'une transaction annulée, et rejoue l'essai par `\ir` — sous la même garde.
+    // Le neuvième, droitsHorsRls, le 06/11/2026 (relecture de sécurité, migration `droits_hors_rls`) : il tente, sous chaque
+    // profil, de vider chaque table, d'y poser un déclencheur, une clé étrangère et un REINDEX — des verrous forts —, sous
+    // la même garde.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'caisseSuppression (son en-tête)', 'devisSuppression (son en-tête)', 'frontiereDesEncaissements (son en-tête)',
+      'caisseSuppression (son en-tête)', 'devisSuppression (son en-tête)', 'droitsHorsRls (son en-tête)',
+      'frontiereDesEncaissements (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
       'situationsPublieesMutations (une méta-commande de psql)', 'traceDesDroitsSuppression (son en-tête)',

@@ -54,6 +54,10 @@
 --      seul avec lui (contrôle positif), aucun dépôt ailleurs que sous `<son dossier>/logos/`, aucune mise à jour, la suppression
 --      au chef du cabinet du dossier (lue au catalogue) — et quatre mutations à lui ; avant sa migration, une ligne « EN
 --      ATTENTE ».
+--   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
+--      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
+--      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
+--      d'anon et d'authenticated intact, service_role et le propriétaire gardent tout.
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -674,6 +678,12 @@
 -- dossier seule), l'insertion de restauration du super-administrateur — et la case `memberships.droit_comptes`. Le bloc SP
 -- (SP1 à SP3, M-SP1, M-SP2) ; EN ATTENTE sans la migration ; la boucle des invariants y voit la table de plus. Ce qu'il
 -- rend : HISTORIQUE.md, « LES SITUATIONS PUBLIÉES, EN BASE (C4A) (PRÉPARÉE, PAS APPLIQUÉE) ».
+--
+-- 06/11/2026 — ÉCRIT, PAS ENCORE JOUÉ (relecture de sécurité : migration `droits_hors_rls`, PRÉPARÉE, pas appliquée), qui
+-- retire à anon et à authenticated les quatre droits d'une table que la RLS ne garde pas, sur toutes les relations de
+-- public et dans le défaut du propriétaire. Le bloc HR (HR1 à HR5, M-HR1 à M-HR6) ne lit que le catalogue et ne pose que
+-- des GRANT annulés ; EN ATTENTE tant que l'historique ne porte pas la migration et que l'état est celui d'avant ; la
+-- preuve par le geste, sur une réplique seulement : `droitsHorsRls.sql`.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -4410,6 +4420,258 @@ begin
 
   insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
     from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ HR. Les droits hors de la RLS (relecture de sécurité du 06/11/2026 ; migration `droits_hors_rls`) ════════════════════
+-- Quatre droits d'une table ne passent ni par la RLS ni par les déclencheurs de ligne : la vider d'un coup (la lettre D de
+-- l'ACL), y poser une clé étrangère (REFERENCES), un déclencheur (TRIGGER), et MAINTAIN (PostgreSQL 17 : VACUUM, ANALYZE,
+-- CLUSTER, REINDEX, REFRESH MATERIALIZED VIEW, LOCK TABLE), qu'information_schema tait. Le relevé du 06/11/2026 les
+-- trouvait à anon et à authenticated sur les 85 tables et dans le défaut du propriétaire ; la migration les retire. Le bloc
+-- ne lit que le catalogue, et ses mutations ne sont que des GRANT, chacun annulé avec sa sous-transaction : il se joue en
+-- production (sous postgres, propriétaire et non super-utilisateur) comme sur une réplique (sous le super-utilisateur).
+--   HR1. Sur chaque relation de public, anon, authenticated et PUBLIC ne portent que SELECT, INSERT, UPDATE et DELETE :
+--        liste BLANCHE lue à l'ACL par aclexplode, tout donneur — un privilège qu'on ne connaît pas s'y dirait —, et
+--        has_table_privilege faux pour chaque privilège d'une relation hors du DML que le serveur connaît (sa liste, lue à
+--        acldefault), quel que soit le chemin (un autre donneur, PUBLIC, une appartenance).
+--   HR2. Sur leurs colonnes, rien d'autre que SELECT, INSERT ou UPDATE, et has_any_column_privilege faux pour REFERENCES :
+--        un REFERENCES sur une seule colonne suffit à poser une clé étrangère, et HR1 ne le voit pas.
+--   HR3. Les droits par défaut (de public et globaux, pour les tables) de chaque propriétaire d'une relation de public ne
+--        leur donnent que le DML. L'entrée de supabase_admin ne se juge pas ici : hors de portée de postgres (il faudrait
+--        être membre de supabase_admin pour la changer), elle donnerait tout à une table qu'il créerait — que HR1
+--        attraperait aussitôt.
+--   HR4. anon et authenticated ne sont membres d'aucun rôle (pg_maintain, à lui seul, donnerait MAINTAIN partout).
+--   HR5. Le contrôle POSITIF : sur chaque relation, anon et authenticated gardent SELECT, INSERT, DELETE et une mise à jour
+--        (de la table, ou d'une colonne : cabinet_admins.role), service_role et le propriétaire chaque privilège d'une
+--        relation ; le défaut du propriétaire leur donne toujours le DML, et tout à service_role. Sans lui, un retrait trop
+--        large passerait HR1 à HR3. Et un plancher : au moins les 85 relations du relevé, toutes examinées.
+-- Six mutations, qui doivent mordre : M-HR1 (MAINTAIN rendu à authenticated sur cabinet_admins : HR1), M-HR2 (TRIGGER donné
+-- à PUBLIC sur cabinet_admins : HR1, la branche de PUBLIC et le chemin d'anon par elle), M-HR3 (REFERENCES sur la colonne
+-- user_id de cabinet_admins, donné à anon : HR2, que HR1 ne voit pas), M-HR4 (TRIGGER rendu à anon dans le défaut du
+-- propriétaire, nommé au catalogue : HR3), M-HR5 (SELECT retiré à authenticated sur cabinet_admins : HR5), M-HR6 (HR4 jugé
+-- pour pg_read_all_stats, membre de pg_monitor dans toute grappe depuis PostgreSQL 10 : la lecture des appartenances n'est
+-- pas aveugle). Aucune appartenance n'est réellement posée : depuis PostgreSQL 16, donner un rôle demande l'option ADMIN sur
+-- lui, et le relevé n'établit pas que postgres la tienne en production ; une mutation qui ne s'y jouerait pas ne prouverait
+-- rien là où le bloc compte.
+-- EN ATTENTE tant que l'historique ne porte pas la migration (aucune ligne `droits_hors_rls`, ou une ligne
+-- `retour_droits_hors_rls` plus récente) ET que l'état est celui d'avant (anon et authenticated tiennent, sur chaque
+-- relation, chaque privilège hors du DML). L'historique seul laisserait « en attente » une réplique migrée sans sa ligne ;
+-- l'état seul dirait « en attente » une régression complète après l'application (tout rendu d'un coup) : une fois la
+-- ligne posée, toute régression est EN FAUTE.
+do $$
+declare
+  -- Les lectures du bloc, rejouées telles quelles sous les mutations ; chacune rend '' quand elle ne trouve rien. $1 : la
+  -- relation (HR1, HR2, HR5), le propriétaire (HR3 et le défaut de HR5), la liste des rôles (HR4).
+  q_table constant text := $q$
+    select coalesce(string_agg(l.x, ', ' order by l.x collate "C"), '')
+      from (select case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end || ' ' || a.privilege_type as x
+              from pg_class c
+             cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+             where c.oid = $1 and (a.grantee = 0 or a.grantee in (to_regrole('anon'), to_regrole('authenticated')))
+               and a.privilege_type not in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+            union
+            select r.n || ' ' || p.privilege_type || ' (tout chemin)'
+              from (values ('anon'), ('authenticated')) r(n)
+             cross join (select distinct d.privilege_type from aclexplode(acldefault('r', to_regrole('anon'))) d
+                          where d.privilege_type not in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')) p
+             where has_table_privilege(r.n, $1, p.privilege_type)) l$q$;
+  q_colonnes constant text := $q$
+    select coalesce(string_agg(l.x, ', ' order by l.x collate "C"), '')
+      from (select att.attname || ' ' || case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+                   || ' ' || a.privilege_type as x
+              from pg_attribute att
+             cross join lateral aclexplode(att.attacl) a
+             where att.attrelid = $1 and att.attnum > 0 and not att.attisdropped
+               and (a.grantee = 0 or a.grantee in (to_regrole('anon'), to_regrole('authenticated')))
+               and a.privilege_type not in ('SELECT', 'INSERT', 'UPDATE')
+            union
+            select r.n || ' REFERENCES sur une colonne (tout chemin)'
+              from (values ('anon'), ('authenticated')) r(n)
+             where has_any_column_privilege(r.n, $1, 'REFERENCES')) l$q$;
+  q_defaut constant text := $q$
+    select coalesce(string_agg(l.x, ', ' order by l.x collate "C"), '')
+      from (select case when d.defaclnamespace = 0 then 'global ' else 'public ' end
+                   || case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end || ' ' || a.privilege_type as x
+              from pg_default_acl d
+             cross join lateral aclexplode(d.defaclacl) a
+             where d.defaclrole = $1 and d.defaclnamespace in (0, 'public'::regnamespace) and d.defaclobjtype = 'r'
+               and (a.grantee = 0 or a.grantee in (to_regrole('anon'), to_regrole('authenticated')))
+               and a.privilege_type not in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')) l$q$;
+  q_membres constant text := $q$
+    select coalesce(string_agg(pg_get_userbyid(m.member) || ' membre de ' || pg_get_userbyid(m.roleid), ', '
+                               order by pg_get_userbyid(m.member)::text collate "C", pg_get_userbyid(m.roleid)::text collate "C"), '')
+      from pg_auth_members m
+     where pg_get_userbyid(m.member)::text = any ($1)$q$;
+  q_positif constant text := $q$
+    select coalesce(string_agg(l.x, ', ' order by l.x collate "C"), '')
+      from (select r.n || ' sans ' || p.p as x
+              from (values ('anon'), ('authenticated')) r(n)
+             cross join (values ('SELECT'), ('INSERT'), ('DELETE')) p(p)
+             where not has_table_privilege(r.n, $1, p.p)
+            union
+            select r.n || ' sans mise à jour'
+              from (values ('anon'), ('authenticated')) r(n)
+             where not has_any_column_privilege(r.n, $1, 'UPDATE')
+            union
+            select r.lib || ' sans ' || p.privilege_type
+              from (select 'service_role' as lib, to_regrole('service_role')::oid as qui
+                    union all
+                    select 'le propriétaire', c.relowner from pg_class c where c.oid = $1) r
+             cross join (select distinct d.privilege_type from aclexplode(acldefault('r', to_regrole('anon'))) d) p
+             where not has_table_privilege(r.qui, $1, p.privilege_type)) l$q$;
+  q_defaut_positif constant text := $q$
+    select coalesce(string_agg(l.x, ', ' order by l.x collate "C"), '')
+      from (select r.lib || ' sans ' || p.privilege_type || ' par défaut' as x
+              from (values ('anon', true), ('authenticated', true), ('service_role', false)) r(lib, dml_seul)
+             cross join (select distinct d.privilege_type from aclexplode(acldefault('r', to_regrole('anon'))) d) p
+             where (not r.dml_seul or p.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'))
+               and not exists (select 1
+                                 from pg_default_acl d
+                                cross join lateral aclexplode(d.defaclacl) a
+                                where d.defaclrole = $1 and d.defaclnamespace = 'public'::regnamespace and d.defaclobjtype = 'r'
+                                  and a.grantee = to_regrole(r.lib) and a.privilege_type = p.privilege_type)) l$q$;
+  rel record; proprio oid; proprietaire oid; role_api text; applique text; retour text; obs text; obs_table text;
+  examinees bigint := 0; hors_dml bigint;
+  mutations jsonb := '[]'::jsonb;
+begin
+  -- EN ATTENTE : ni la ligne d'historique de la migration (ou un retour plus récent qu'elle), et l'état d'avant, entier.
+  select max(version) filter (where name = 'droits_hors_rls'), max(version) filter (where name = 'retour_droits_hors_rls')
+    into applique, retour from supabase_migrations.schema_migrations;
+  if (applique is null or (retour is not null and retour > applique))
+     and exists (select 1 from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p', 'v', 'm', 'f'))
+     and not exists (select 1
+                       from pg_class c
+                      cross join (values ('anon'), ('authenticated')) r(n)
+                      cross join (select distinct d.privilege_type from aclexplode(acldefault('r', to_regrole('anon'))) d
+                                   where d.privilege_type not in ('SELECT', 'INSERT', 'UPDATE', 'DELETE')) p
+                      where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p', 'v', 'm', 'f')
+                        and not has_table_privilege(r.n, c.oid, p.privilege_type)) then
+    insert into rls_verdict values ('HR. les droits hors de la RLS : EN ATTENTE de la migration droits_hors_rls',
+      'les relations de public', 'l''historique ne la porte pas, et anon et authenticated tiennent encore partout chaque droit hors du DML : ils se jugent dès que la migration y est', true);
+    return;
+  end if;
+
+  -- La liste que HR1 et HR5 parcourent : le serveur connaît au moins quatre droits d'une relation hors du DML.
+  select count(distinct d.privilege_type) into hors_dml
+    from aclexplode(acldefault('r', to_regrole('anon'))) d
+   where d.privilege_type not in ('SELECT', 'INSERT', 'UPDATE', 'DELETE');
+  insert into rls_verdict values ('HR. le serveur connaît au moins quatre droits d''une relation hors du DML (la liste que HR1 et HR5 parcourent)',
+    'acldefault', case when hors_dml >= 4 then 'au moins quatre' else 'moins de quatre' end, hors_dml >= 4);
+
+  -- HR1, HR2 et HR5, relation par relation : la boucle part du catalogue, une table créée demain y entre d'elle-même.
+  for rel in select c.oid, c.relname::text as nom
+               from pg_class c
+              where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p', 'v', 'm', 'f')
+              order by c.relname collate "C" loop
+    examinees := examinees + 1;
+    execute q_table into obs using rel.oid;
+    insert into rls_verdict values ('HR1. anon, authenticated et PUBLIC ne portent sur aucune relation de public un droit hors du DML (liste blanche, tout donneur, tout chemin)',
+      rel.nom, case when obs = '' then 'le DML seul' else obs end, obs = '');
+    execute q_colonnes into obs using rel.oid;
+    insert into rls_verdict values ('HR2. ni sur une de ses colonnes : rien hors de SELECT, INSERT, UPDATE, aucun REFERENCES par colonne',
+      rel.nom, case when obs = '' then 'rien' else obs end, obs = '');
+    execute q_positif into obs using rel.oid;
+    insert into rls_verdict values ('HR5. contrôle positif : anon et authenticated gardent le DML, service_role et le propriétaire chaque droit',
+      rel.nom, case when obs = '' then 'intacts' else obs end, obs = '');
+  end loop;
+  insert into rls_verdict values ('HR5. plancher : toutes les relations de public examinées, au moins les 85 du relevé du 06/11/2026',
+    'les relations de public', case when examinees >= 85 then 'plancher atteint' else 'sous le plancher' end, examinees >= 85);
+
+  -- HR3 et le défaut de HR5, propriétaire par propriétaire.
+  select c.relowner into proprietaire from pg_class c where c.oid = 'public.dossiers'::regclass;
+  for proprio in select distinct c.relowner
+                   from pg_class c
+                  where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p', 'v', 'm', 'f') loop
+    execute q_defaut into obs using proprio;
+    insert into rls_verdict values ('HR3. les droits par défaut de chaque propriétaire d''une relation de public (de public et globaux) ne leur donnent que le DML',
+      case when proprio = proprietaire then 'le propriétaire de dossiers' else pg_get_userbyid(proprio) end,
+      case when obs = '' then 'le DML seul' else obs end, obs = '');
+    execute q_defaut_positif into obs using proprio;
+    insert into rls_verdict values ('HR5. contrôle positif : le défaut du propriétaire donne toujours le DML à anon et authenticated, chaque droit à service_role',
+      case when proprio = proprietaire then 'le propriétaire de dossiers' else pg_get_userbyid(proprio) end,
+      case when obs = '' then 'intact' else obs end, obs = '');
+  end loop;
+
+  -- HR4.
+  foreach role_api in array array['anon', 'authenticated'] loop
+    execute q_membres into obs using array[role_api];
+    insert into rls_verdict values ('HR4. anon et authenticated ne sont membres d''aucun rôle', role_api,
+      case when obs = '' then 'membre de rien' else obs end, obs = '');
+  end loop;
+
+  -- M-HR1 : MAINTAIN rendu à authenticated sur cabinet_admins — HR1 doit l'y voir.
+  obs := null;
+  begin
+    grant maintain on table public.cabinet_admins to authenticated;
+    execute q_table into obs using 'public.cabinet_admins'::regclass::oid;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then
+    if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+  end;
+  mutations := mutations || jsonb_build_object('mutation', 'M-HR1 — HR1 rejoué, MAINTAIN rendu à authenticated sur cabinet_admins',
+    'attendu', 'HR1 en faute', 'observe', coalesce(nullif(obs, ''), 'rien vu'),
+    'mord', coalesce(obs like '%authenticated MAINTAIN%', false));
+
+  -- M-HR2 : TRIGGER donné à PUBLIC sur cabinet_admins — HR1 doit voir PUBLIC, et anon qui le tient par lui.
+  obs := null;
+  begin
+    grant trigger on table public.cabinet_admins to public;
+    execute q_table into obs using 'public.cabinet_admins'::regclass::oid;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then
+    if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+  end;
+  mutations := mutations || jsonb_build_object('mutation', 'M-HR2 — HR1 rejoué, TRIGGER donné à PUBLIC sur cabinet_admins',
+    'attendu', 'HR1 en faute, PUBLIC et anon par lui', 'observe', coalesce(nullif(obs, ''), 'rien vu'),
+    'mord', coalesce(obs like '%PUBLIC TRIGGER%' and obs like '%anon TRIGGER (tout chemin)%', false));
+
+  -- M-HR3 : REFERENCES sur une seule colonne de cabinet_admins, donné à anon — HR2 le voit, HR1 non.
+  obs := null; obs_table := null;
+  begin
+    grant references (user_id) on table public.cabinet_admins to anon;
+    execute q_colonnes into obs using 'public.cabinet_admins'::regclass::oid;
+    execute q_table into obs_table using 'public.cabinet_admins'::regclass::oid;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then
+    if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+  end;
+  mutations := mutations || jsonb_build_object('mutation', 'M-HR3 — HR2 rejoué, REFERENCES sur la colonne user_id de cabinet_admins donné à anon',
+    'attendu', 'HR2 en faute, HR1 muet', 'observe', coalesce(nullif(obs, ''), 'rien vu') || ' ; HR1 : ' || coalesce(nullif(obs_table, ''), 'rien'),
+    'mord', coalesce(obs like '%user_id anon REFERENCES%' and obs_table = '', false));
+
+  -- M-HR4 : TRIGGER rendu à anon dans le défaut du propriétaire, nommé au catalogue — HR3 doit le voir.
+  obs := null;
+  begin
+    execute format('alter default privileges for role %I in schema public grant trigger on tables to anon', pg_get_userbyid(proprietaire));
+    execute q_defaut into obs using proprietaire;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then
+    if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+  end;
+  mutations := mutations || jsonb_build_object('mutation', 'M-HR4 — HR3 rejoué, TRIGGER rendu à anon dans le défaut du propriétaire',
+    'attendu', 'HR3 en faute', 'observe', coalesce(nullif(obs, ''), 'rien vu'),
+    'mord', coalesce(obs like '%public anon TRIGGER%', false));
+
+  -- M-HR5 : SELECT retiré à authenticated sur cabinet_admins — le contrôle positif doit le voir.
+  obs := null;
+  begin
+    revoke select on table public.cabinet_admins from authenticated;
+    execute q_positif into obs using 'public.cabinet_admins'::regclass::oid;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then
+    if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+  end;
+  mutations := mutations || jsonb_build_object('mutation', 'M-HR5 — HR5 rejoué, SELECT retiré à authenticated sur cabinet_admins',
+    'attendu', 'HR5 en faute', 'observe', coalesce(nullif(obs, ''), 'rien vu'),
+    'mord', coalesce(obs like '%authenticated sans SELECT%', false));
+
+  -- M-HR6 : HR4 jugé pour pg_read_all_stats, membre de pg_monitor dans toute grappe.
+  execute q_membres into obs using array['pg_read_all_stats'];
+  mutations := mutations || jsonb_build_object('mutation', 'M-HR6 — HR4 jugé pour pg_read_all_stats, membre de pg_monitor',
+    'attendu', 'HR4 en faute', 'observe', coalesce(nullif(obs, ''), 'rien vu'),
+    'mord', coalesce(obs like '%pg_read_all_stats membre de pg_monitor%', false));
+
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $$;
