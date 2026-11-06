@@ -48167,8 +48167,12 @@ alignées sur `generate_typescript_types` (sauf `p_date_versement`, qui admet nu
 module) ; les tests qui éprouvaient l'état baissé sans le forcer le forcent (neuf écrans par `vi.mock`, la vue des devis par
 son accesseur), et la suite entière passe levée (17 409 tests, quatre fuseaux). `acomptesDesDevis` quitte les cas
 particuliers du banc du leurre ; trop long pour être recopié en production (93 000 caractères), il a été joué sur une copie
-de la réplique égale à la production : 168 verdicts justes. Restent les trois fonctions qui transmettent les factures
-(`superpdp-emit`, `plateforme-agreee`, `send-email`), redéployées par la ligne qui importe le dépôt au commit de la fusion.
+de la réplique égale à la production : 168 verdicts justes. La demande n° 297 fusionnée (`a78e617`), les trois fonctions
+qui transmettent les factures sont redéployées le 06/11/2026 par la ligne qui importe le dépôt à ce commit, chacune au
+`verify_jwt` de `config.toml` : `superpdp-emit` v16 et `plateforme-agreee` v10 (vrai), `send-email` v10 (faux) ; les
+copies d'avant n'étaient que l'import des commits `e3b9261` et `e1f7555`, et `allerretour.py` dit les nouvelles
+identiques au dépôt (1 626, 3 749 et 630 lignes), rien recopié. Aucune n'a été appelée : la première facture d'acompte
+réelle les éprouvera.
 
 ### 05/11/2026 — LA TRACE DES DROITS D'UN ACCÈS, EN BASE (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE)
 
