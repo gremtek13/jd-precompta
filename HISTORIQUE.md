@@ -48866,11 +48866,11 @@ aller identiques ; `situationsPubliees.sql` 33 verdicts, 0 en faute ; `droitsAcc
 SP). Le module `lib/situationsPubliees.ts` compose le contenu ; `SITUATIONS_PUBLIEES_EXPORTEES` baissé, la table au plan
 derrière lui (restauration.sql, un neuvième bloc). Question C4A-Q1 (la comparaison d'un exercice validé). Écrans : C4b.
 
-Les trois vérifications d'après, sur la même réplique : `restauration.sql` rejoué par psql — sans la migration, 79 tables
-IDENTIQUES (18 lignes) ; avec elle, le dossier `test` semé par les fonctions (une situation remplacée, une retirée), 80
-(22 lignes), `situations_publiees` en deux vagues ; les quinze contrôles qui attendent un semis absent, les mêmes avant et
-après. Le banc du leurre (famille « apres », `regles.json`) : SÛR, 0 écart, 0 motif, 0 écriture du leurre, 77 tables
-couvertes. `situationsPublieesMutations.sql` (réplique seulement) : sans défaut 0 en faute, puis six mutations qui mordent
-toutes — la garde qui laisse une mise à jour (rang 12), le statut cru du contenu (15), la lecture « Comptes » au-delà de
-la situation en cours (4, 5, 31), un accès « Comptes » qui publie (7), les totaux non confrontés (17), la forme à trois
-qui décoche « Comptes » (27).
+Les trois vérifications d'après, sur la même réplique : `restauration.sql` rejoué par psql — sans la migration, 79
+tables IDENTIQUES (18 lignes) ; avec elle, le dossier `test` semé par les fonctions (une situation remplacée, une
+retirée), 80 (22 lignes), `situations_publiees` en deux vagues ; les quinze contrôles qui attendent un semis absent, les
+mêmes avant et après. Le banc du leurre (famille « apres », `regles.json`) : SÛR, 0 écart, 0 motif, 0 écriture du
+leurre, 77 tables couvertes. `situationsPublieesMutations.sql` (réplique seulement) : sans défaut 0 en faute, puis six
+mutations qui mordent toutes — la garde qui laisse une mise à jour (rang 12), le statut cru du contenu (15), la lecture
+« Comptes » au-delà de la situation en cours (4, 5, 31), un accès « Comptes » qui publie (7), les totaux non confrontés
+(17), la forme à trois qui décoche « Comptes » (27).
