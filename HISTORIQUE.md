@@ -48776,9 +48776,11 @@ appliquée » ; chaque note non blanche à sa ligne, même cible et dossier, au 
 aucun dossier annoté) refuse en comptes ; trois `drop column` sans `cascade`. Le retour : trois colonnes vides, jamais
 les notes. **Les essais** : `notesInternes.sql` EN ATTENTE puis les colonnes constatées parties, son contrôle 6 corrigé
 (`enregistrer_devis`, 04/11) ; les trois autres sur une colonne qui survit ; le leurre et le semis n'écrivent les
-colonnes que si elles existent ; `inventaire.py` lit un `drop column` ; le socle perd `notes text,` de
-`documents_divers` au collage. **La restauration** dit avant le clic chaque note d'une sauvegarde d'avant : gardée,
-recopiée, remplacée ou perdue. **Les preuves**, sur une réplique égale à la production (neuf familles) : 9 scénarios sur
-9, 7 mutations de la garde sur 7 ; le collage, sa ligne à l'empreinte du fichier ; les essais justes avant et après (le
-contrôle 141 de `validationExercice.sql`, en faute avant aussi, sans rapport) ; `rls.sql` 0 en faute, 73 mutations sur
-73 ; l'export simulé : dérive 176, socle 81, inventaire 2 440, égaux ; le retour rend la signature d'avant.
+colonnes que si elles existent ; `inventaire.py` et le lecteur des clés du schéma (`relationsDuSchema`, qui le refusait
+et rougissait vingt tests) lisent un `drop column` sans `cascade` ; le socle perd `notes text,` de `documents_divers` au
+collage. **La restauration** dit avant le clic chaque note d'une sauvegarde d'avant : gardée, recopiée, remplacée ou
+perdue. **Les preuves**, sur une réplique égale à la production (neuf familles) : 9 scénarios sur 9, 7 mutations de la
+garde sur 7 ; le collage, sa ligne à l'empreinte du fichier ; les essais justes avant et après (le contrôle 141 de
+`validationExercice.sql`, en faute avant aussi, sans rapport) ; `rls.sql` 0 en faute, 73 mutations sur 73 ; l'export
+simulé : dérive 176, socle 81, inventaire 2 440, égaux ; le retour rend la signature d'avant ; la suite entière verte,
+et en simulation (le fichier dans l'export) aussi, un délai dépassé sous charge excepté.
