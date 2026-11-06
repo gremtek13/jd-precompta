@@ -306,15 +306,23 @@ describe('les essais qui cochent « Ventes »', () => {
     // l'étape P5b2 : de même, sur son dossier A. traceDesDroits.sql depuis l'étape P1-trace : le chef coche « Ventes » sur un
     // accès de DT, un dossier jetable qu'il insère basculé. relancesDesFactures.sql depuis l'étape C5 : le client porte « Ventes »
     // sur A, inséré basculé. situationsPubliees.sql depuis l'étape C4a : sa forme à cinq passe des nuls, que le motif prend
-    // pour une case ; ses deux dossiers jetables sont insérés basculés.
+    // pour une case ; ses deux dossiers jetables sont insérés basculés ; situationsPublieesMutations.sql (réplique
+    // seulement) les rejoue sous ses six mutations.
     expect(ecrivent).toEqual([
       'acomptesDesDevis.sql', 'articles.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'caisse.sql', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
       'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'envoiDesDevis.sql', 'etatFactureElectronique.sql',
       'exemplairesDesFactures.sql', 'factures.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
       'mentionsFigees.sql', 'parametresFacturation.sql', 'piecesJointesEcartees.sql', 'relancesDesFactures.sql', 'rls.sql',
-      'simulationDesVentesFacturees.sql', 'situationsPubliees.sql', 'traceDesDroits.sql', 'ventesClient.sql', 'ventesFacturees.sql',
+      'simulationDesVentesFacturees.sql', 'situationsPubliees.sql', 'situationsPublieesMutations.sql', 'traceDesDroits.sql',
+      'ventesClient.sql', 'ventesFacturees.sql',
     ])
-    for (const n of ecrivent) expect(BASCULE.some((m) => m.test(lire(`supabase/essais/${n}`))), n).toBe(true)
+    // Un essai qui en rejoue un autre par psql (`\ir`, les mutations de situationsPubliees.sql) bascule par celui qu'il lit.
+    const avecSesInclus = (n: string): string => {
+      const texte = lire(`supabase/essais/${n}`)
+      const inclus = [...texte.matchAll(/^\\ir\s+(\S+\.sql)\s*$/gm)].map((m) => m[1])
+      return [texte, ...new Set(inclus)].map((x, i) => (i === 0 ? x : lire(`supabase/essais/${x}`))).join('\n')
+    }
+    for (const n of ecrivent) expect(BASCULE.some((m) => m.test(avecSesInclus(n))), n).toBe(true)
   })
 
   it('droitsAcces.sql joue la garde : les contrôles 70 à 83 et les mutations 90 à 95, « rien n’est resté » compte les bascules', () => {
