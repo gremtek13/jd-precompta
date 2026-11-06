@@ -332,7 +332,7 @@ function pieceDeTest(o: Partial<Piece> = {}): Piece {
     date_piece: '2026-03-10', tiers: 'Fournisseur', montant_ht: null, montant_tva: null,
     montant_ttc: 120, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
-    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
+    statut: 'validee', confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
     identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     created_at: '2026-03-10T09:00:00Z', updated_at: '2026-03-10T09:00:00Z', ...o,
   }
@@ -790,7 +790,10 @@ describe('FichePiece — la note interne, hors de portée du client', () => {
   })
 
   it('n’affiche plus l’ancienne colonne de la pièce, même remplie', async () => {
-    monterNote({ piece: { notes: 'ANCIENNE NOTE RESTÉE SUR LA PIÈCE' } })
+    // L'ancienne colonne n'est plus dans le type (P0, EC-Q7) : la ligne vient d'une base qui la porte encore, avant la
+    // migration anciennes_notes_supprimees — une variable, que le type ne juge pas clé par clé comme un littéral.
+    const ligneDAvant = { tiers: 'Fournisseur fictif', notes: 'ANCIENNE NOTE RESTÉE SUR LA PIÈCE' }
+    monterNote({ piece: ligneDAvant })
     await act(async () => {})
     expect(champNote()!.value).toBe('')
     expect(screen.queryByDisplayValue('ANCIENNE NOTE RESTÉE SUR LA PIÈCE')).toBeNull()

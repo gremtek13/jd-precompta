@@ -48763,3 +48763,22 @@ pour un client par le chef de son cabinet, sur une confirmation qui nomme le com
 vérification ferme les autres sessions — dit avant le clic ; (5) les Edge Functions appelées avec le jeton de
 l'utilisateur héritent de l'exigence par les prédicats, celles qui lisent avec la clé secrète non : chacune se relit
 (`droitsDeLAppelant`).
+
+### 06/11/2026 — LES ANCIENNES COLONNES DES NOTES SUPPRIMÉES (P0, EC-Q7) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(`supabase/preparees/20261106120000_anciennes_notes_supprimees.sql`, `dc5ec456…`, et son retour ; quatre essais,
+`inventaire.py`, le leurre et son semis ; `types.ts` et 62 fichiers de fabriques ; `sauvegarde.ts`,
+`RestaurationCard.tsx`.) La migration du 09/10, perdue, réécrite. **En production** (des comptes) : 11 pièces et 7
+documents annotés, tous égaux à leur ligne de `notes_internes`, aucune reprise, aucun dossier ; rien ne dépend des
+colonnes (`pg_depend`) ; `enregistrer_devis` et `enregistrer_facture` nomment d'autres `notes`, `garder_piece_validee`
+une clé ôtée, laissée. **La migration** : quatre tables verrouillées ; la garde (les colonnes en `text`, sinon « déjà
+appliquée » ; chaque note non blanche à sa ligne, même cible et dossier, au même texte tant qu'elle n'est pas reprise ;
+aucun dossier annoté) refuse en comptes ; trois `drop column` sans `cascade`. Le retour : trois colonnes vides, jamais
+les notes. **Les essais** : `notesInternes.sql` EN ATTENTE puis les colonnes constatées parties, son contrôle 6 corrigé
+(`enregistrer_devis`, 04/11) ; les trois autres sur une colonne qui survit ; le leurre et le semis n'écrivent les
+colonnes que si elles existent ; `inventaire.py` lit un `drop column` ; le socle perd `notes text,` de
+`documents_divers` au collage. **La restauration** dit avant le clic chaque note d'une sauvegarde d'avant : gardée,
+recopiée, remplacée ou perdue. **Les preuves**, sur une réplique égale à la production (neuf familles) : 9 scénarios sur
+9, 7 mutations de la garde sur 7 ; le collage, sa ligne à l'empreinte du fichier ; les essais justes avant et après (le
+contrôle 141 de `validationExercice.sql`, en faute avant aussi, sans rapport) ; `rls.sql` 0 en faute, 73 mutations sur
+73 ; l'export simulé : dérive 176, socle 81, inventaire 2 440, égaux ; le retour rend la signature d'avant.

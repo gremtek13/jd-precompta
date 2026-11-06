@@ -148,7 +148,7 @@ function pieceDeTest(o: Partial<Piece> = {}): Piece {
     id: 'piece-p', dossier_id: 'dossier-de-test', uploaded_by: 'client-1', source: 'upload', storage_path: 'dossier/proposee.pdf',
     nom_fichier: 'proposee.pdf', storage_hash: null, date_piece: '2026-06-01', tiers: 'Atelier fictif', montant_ht: null, montant_tva: null,
     montant_ttc: 100, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null,
-    sous_dossier_id: null, type_piece: 'achat', statut: 'a_valider', notes: null, confiance: null, superpdp_invoice_id: null,
+    sous_dossier_id: null, type_piece: 'achat', statut: 'a_valider', confiance: null, superpdp_invoice_id: null,
     flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null, identite_siren_vendeur: null, identite_date: null,
     identite_nature: null, facture_id: null, vente_hors_des_factures: false, created_at: '2026-06-01T09:00:00Z', updated_at: '2026-06-01T09:00:00Z', ...o,
   }

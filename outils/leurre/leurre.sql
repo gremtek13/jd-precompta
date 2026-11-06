@@ -64,13 +64,13 @@ insert into leurre values
    '7e570000-0000-4000-8000-00000000c003', '7e570000-0000-4000-8000-0000000c0a03');
 
 insert into pieces (id, dossier_id, uploaded_by, source, storage_path, nom_fichier, date_piece, tiers, montant_ht, montant_tva,
-                    montant_ttc, type_piece, statut, notes, storage_hash, confiance)
+                    montant_ttc, type_piece, statut, storage_hash, confiance)
   select (pfx || '-0000-4000-8000-0000000001' || h || '1')::uuid, d, client, 'upload', d || '/' || m || '-achat.pdf',
-         m || '-achat.pdf', '2025-06-17'::date, m || ' Fournisseur', montant, 0, montant, 'achat', 'validee', m || ' notes de la pièce',
+         m || '-achat.pdf', '2025-06-17'::date, m || ' Fournisseur', montant, 0, montant, 'achat', 'validee',
          md5(m || 'achat'), 'haute' from leurre
   union all
   select (pfx || '-0000-4000-8000-0000000001' || h || '2')::uuid, d, client, 'email', d || '/' || m || '-vente.pdf',
-         m || '-vente.pdf', '2025-06-18'::date, m || ' Patient', montant, 0, montant, 'vente', 'a_valider', m || ' notes de la vente',
+         m || '-vente.pdf', '2025-06-18'::date, m || ' Patient', montant, 0, montant, 'vente', 'a_valider',
          md5(m || 'vente'), 'moyenne' from leurre;
 
 insert into piece_textes_ocr (piece_id, dossier_id, texte)
@@ -114,8 +114,20 @@ insert into connexions_plateformes (dossier_id, nom, url_flux, url_jeton, client
          m || '-client-id', m || '-CLIENT-SECRET', m || '-organisation', 'factures', chef from leurre;
 insert into superpdp_credentials (dossier_id, client_id, client_secret)
   select d, m || '-pdp-client', m || '-PDP-SECRET' from leurre;
-insert into documents_divers (dossier_id, storage_path, nom_fichier, categorie, notes)
-  select d, d || '/' || m || '-document.pdf', m || '-document.pdf', 'autre', m || ' notes du document' from leurre;
+insert into documents_divers (dossier_id, storage_path, nom_fichier, categorie)
+  select d, d || '/' || m || '-document.pdf', m || '-document.pdf', 'autre' from leurre;
+-- Les anciennes colonnes des notes (P0) : le leurre y écrit tant qu'elles sont en base — la migration
+-- anciennes_notes_supprimees les retire, et une instruction qui les nomme ne se jouerait plus.
+do $anciennes$
+begin
+  if exists (select 1 from pg_attribute where attrelid = 'public.pieces'::regclass and attname = 'notes'
+                and attnum > 0 and not attisdropped) then
+    execute $u$update pieces p set notes = l.m || case when p.type_piece = 'achat' then ' notes de la pièce' else ' notes de la vente' end
+               from leurre l where p.dossier_id = l.d and p.nom_fichier in (l.m || '-achat.pdf', l.m || '-vente.pdf')$u$;
+    execute $u$update documents_divers x set notes = l.m || ' notes du document' from leurre l where x.dossier_id = l.d$u$;
+  end if;
+end;
+$anciennes$;
 insert into emails_envoyes (dossier_id, type, destinataire, objet, envoye_par)
   select d, 'relance_pieces', 'client.' || lower(m) || '@example.test', m || ' relance des pièces', chef from leurre;
 

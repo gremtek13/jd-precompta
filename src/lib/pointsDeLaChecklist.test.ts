@@ -207,7 +207,7 @@ describe('pointsDeLaChecklist : l’exemplaire d’une facture source (VF6a)', (
     id: 'x', dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: 'd1/x.pdf', nom_fichier: 'x.pdf', storage_hash: null,
     date_piece: '2026-03-10', tiers: 'Client fictif', montant_ht: 100, montant_tva: 20, montant_ttc: 120, devise: 'EUR', montant_devise: null,
     taux_change: null, conversion_source: null, categorie_id: 'c-vente', sous_dossier_id: null, type_piece: 'vente', statut: 'validee',
-    notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
     identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: 'f1', vente_hors_des_factures: false, created_at: '2026-03-10T09:00:00Z',
     updated_at: '2026-03-10T09:00:00Z', ...o,
   })
@@ -306,7 +306,7 @@ describe('pointsDeLaChecklist : le pont par régime (VF6e)', () => {
     id: 'x', dossier_id: 'd1', uploaded_by: null, source: 'superpdp', storage_path: 'd1/x.pdf', nom_fichier: 'x.pdf', storage_hash: null,
     date_piece: '2026-04-02', tiers: 'Client fictif', montant_ht: 300, montant_tva: 60, montant_ttc: 360, devise: 'EUR', montant_devise: null,
     taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'vente', statut: 'a_valider',
-    notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
     identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     created_at: '2026-04-03T09:00:00Z', updated_at: '2026-04-03T09:00:00Z', ...o,
   })
@@ -467,7 +467,7 @@ describe('pointsDeLaChecklist : l’ouverture confrontée à la clôture du pré
     const pieceDe = (id: string, tiers: string, statut: 'validee' | 'a_valider'): Piece => ({
       id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`, storage_hash: null,
       date_piece: '2025-02-01', tiers, montant_ht: null, montant_tva: null, montant_ttc: 100, devise: 'EUR', montant_devise: null,
-      taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut, notes: null,
+      taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut, 
       confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
       identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false, created_at: '2025-02-01T09:00:00Z',
       updated_at: '2025-02-01T09:00:00Z',
@@ -719,7 +719,7 @@ describe('pointsDeLaChecklist : le paiement d’une pièce par la caisse (C9b)',
     id: 'x', dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: 'd1/x.pdf', nom_fichier: 'x.pdf', storage_hash: null,
     date_piece: '2026-03-10', tiers: 'Papeterie fictive', montant_ht: null, montant_tva: null, montant_ttc: 50, devise: 'EUR', montant_devise: null,
     taux_change: null, conversion_source: null, categorie_id: 'c-fourn', sous_dossier_id: null, type_piece: 'achat', statut: 'validee',
-    notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
     identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     created_at: '2026-03-10T09:00:00Z', updated_at: '2026-03-10T09:00:00Z', ...o,
   })
@@ -912,7 +912,7 @@ describe('pointsDeLaChecklist — le doublon probable (D1)', () => {
   const pieceDe = (id: string, statut: 'validee' | 'a_valider', date: string, tiers: string | null): Piece => ({
     id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`, storage_hash: null,
     date_piece: date, tiers, montant_ht: null, montant_tva: null, montant_ttc: 86.4, devise: 'EUR', montant_devise: null,
-    taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut, notes: null,
+    taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut, 
     confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
     identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     created_at: '2026-03-20T09:00:00Z', updated_at: '2026-03-20T09:00:00Z',

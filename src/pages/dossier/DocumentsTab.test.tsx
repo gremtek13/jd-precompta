@@ -151,7 +151,7 @@ function documentDeTest(champs: Partial<DocumentDivers> = {}): DocumentDivers {
   return {
     id: 'document-a-convertir', dossier_id: 'dossier-de-test', storage_path: 'dossier/facture.pdf',
     storage_hash: null, nom_fichier: 'facture.pdf', categorie: 'autre', sous_dossier_id: null,
-    attached_to_cotisation_id: null, notes: null, created_at: '2025-03-10T09:00:00Z',
+    attached_to_cotisation_id: null, created_at: '2025-03-10T09:00:00Z',
     ...champs,
   }
 }

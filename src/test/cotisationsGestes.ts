@@ -149,5 +149,5 @@ export const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon 
 
 export const avis = (o: Partial<DocumentDivers> = {}): DocumentDivers => ({
   id: 'doc-1', dossier_id: 'dossier-de-test', storage_path: 'dossier-de-test/regul.pdf', storage_hash: null, nom_fichier: 'regul.pdf',
-  categorie: 'cotisation', sous_dossier_id: null, attached_to_cotisation_id: null, notes: null, created_at: '2026-01-05T09:00:00Z', ...o,
+  categorie: 'cotisation', sous_dossier_id: null, attached_to_cotisation_id: null, created_at: '2026-01-05T09:00:00Z', ...o,
 })

@@ -241,8 +241,20 @@ def inventaire(fichiers: list[Path]) -> set[str]:
                     elif (cm := re.match(r'add column (?:if not exists )?"?(\w+)"? (.*)$', a, re.S)):
                         colonnes.setdefault(t, []).append(cm.group(1))
                         contraintes_de_colonne(t, cm.group(1), cm.group(2))
-                    elif re.match(r'(drop|rename) column', a):
-                        raise inconnue(f, 'une colonne retirée ou renommée', a)
+                    elif (dc := re.match(r'drop column (?:if exists )?"?(\w+)"?( cascade| restrict)?;?$', a)):
+                        # Une colonne retirée (la migration anciennes_notes_supprimees, P0, 06/11/2026) : Postgres
+                        # emporte avec elle ce qui ne vit que d'elle ; ses contraintes de colonne au nom DÉDUIT partent
+                        # ici. Un objet NOMMÉ qui la citait resterait dans l'inventaire et le ferait diverger de la base :
+                        # vu, jamais tu. Une table du socle (rejoué après les migrations) n'a pas encore la colonne : le
+                        # socle re-rendu ne la porte plus. `cascade`, qui emporterait des objets d'autres tables, non.
+                        if dc.group(2) == ' cascade':
+                            raise inconnue(f, 'une colonne retirée en cascade', a)
+                        c = dc.group(1)
+                        if c in colonnes.get(t, []):
+                            colonnes[t].remove(c)
+                        inv.difference_update({f'contrainte|{t}.{t}_{c}_{s}' for s in ('check', 'key', 'fkey')})
+                    elif re.match(r'rename column', a):
+                        raise inconnue(f, 'une colonne renommée', a)
                 continue
 
             m = re.match(r'drop table (?:if exists )?(?:public\.)?"?(\w+)"?', low)

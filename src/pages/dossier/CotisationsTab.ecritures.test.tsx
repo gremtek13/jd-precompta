@@ -74,7 +74,7 @@ function cotisation(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
 function avis(o: Partial<DocumentDivers> = {}): DocumentDivers {
   return {
     id: 'doc-avis', dossier_id: 'dossier-de-test', storage_path: 'dossier-de-test/avis.pdf', storage_hash: null,
-    nom_fichier: 'avis.pdf', categorie: 'cotisation', sous_dossier_id: null, attached_to_cotisation_id: null, notes: null,
+    nom_fichier: 'avis.pdf', categorie: 'cotisation', sous_dossier_id: null, attached_to_cotisation_id: null, 
     created_at: '2026-01-05T09:00:00Z', ...o,
   }
 }

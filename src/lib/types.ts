@@ -22,10 +22,6 @@ export interface Dossier {
   siret: string | null
   contact_nom: string | null
   contact_email: string | null
-  // ANCIENNE COLONNE, que le client du dossier lit : aucune ligne ne l'a jamais remplie, aucun code ne la lit ni ne
-  // l'écrit (`notesInternesEcritures.test.ts`). Gardée ici parce qu'un type décrit la table ; sa suppression attend
-  // la réponse du cabinet à EC-Q7 (espace client, étape P0).
-  notes: string | null
   archive: boolean
   created_at: string
   code_email: string
@@ -387,10 +383,6 @@ export interface Piece {
   sous_dossier_id: string | null
   type_piece: TypePiece
   statut: Statut
-  // ANCIENNE COLONNE des notes internes, que le client du dossier LIT : recopiée le 09/10/2026 dans `notes_internes`
-  // (voir `NoteInterne`), elle n'est plus ni lue ni écrite (`notesInternesEcritures.test.ts`) — périmée dès qu'une
-  // note est reprise. Gardée ici parce qu'un type décrit la table ; sa suppression attend la réponse du cabinet à EC-Q7.
-  notes: string | null
   // Score de confiance de l'extraction automatique (haute/moyenne/basse), null pour une pièce jamais
   // passée par extractPiece() (saisie 100% manuelle, ou créée avant l'ajout de ce champ).
   confiance: 'haute' | 'moyenne' | 'basse' | null
@@ -807,9 +799,6 @@ export interface DocumentDivers {
   // Rattaché à une échéance de cotisations_declarees une fois pointé depuis l'onglet Cotisations —
   // reste dans cette table (pas déplacé) pour que le rattachement soit réversible.
   attached_to_cotisation_id: string | null
-  // ANCIENNE COLONNE, que le client du dossier lit : ses notes sont recopiées dans `notes_internes` (voir
-  // `NoteInterne`) ; plus aucun code ne la lit ni ne l'écrit. Sa suppression attend la réponse du cabinet à EC-Q7.
-  notes: string | null
   created_at: string
 }
 

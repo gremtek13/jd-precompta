@@ -67,6 +67,31 @@ async function choisir() {
 const restaurer = () => act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Restaurer « Atelier fictif »/ })) })
 
 describe('la carte de la restauration et les logos des factures', () => {
+  it('avant le clic : ce que deviennent les notes des anciennes colonnes d’une sauvegarde d’avant leur suppression', async () => {
+    const s = sauvegarde()
+    s.contenu.pieces = [{ id: 'p1', dossier_id: D, notes: 'Gardée.' }, { id: 'p2', dossier_id: D, notes: 'Écrite après.' }]
+    s.contenu.notes_internes = [
+      { id: 'n1', dossier_id: D, piece_id: 'p1', document_id: null, texte: 'Gardée.', created_at: 't0', updated_at: 't0' },
+      { id: 'n2', dossier_id: D, piece_id: 'p2', document_id: null, texte: 'Autre.', created_at: 't0', updated_at: 't0' },
+    ]
+    faux.sauvegarde = s
+    render(<RestaurationCard />)
+    await choisir()
+    const liste = await screen.findByRole('list', { name: 'Anciennes notes de la sauvegarde' })
+    expect([...liste.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      '2 note(s) des anciennes colonnes des pièces et des documents : la restauration ne les écrit plus, seules les notes internes se restaurent.',
+      '1 déjà dans les notes internes de la sauvegarde, au caractère près : rien ne se perd.',
+      '1 perdue(s) : leur cible porte une note interne au texte différent, jamais reprise — le texte de l\'ancienne colonne ne sera pas restauré.',
+    ])
+  })
+
+  it('une sauvegarde sans ancienne note n’en dit rien', async () => {
+    render(<RestaurationCard />)
+    await choisir()
+    await screen.findByText(/^Logos des factures :/)
+    expect(screen.queryByRole('list', { name: 'Anciennes notes de la sauvegarde' })).toBeNull()
+  })
+
   it('avant le clic : ce que la sauvegarde porte des logos, et ce qu’elle ne porte pas', async () => {
     render(<RestaurationCard />)
     await choisir()

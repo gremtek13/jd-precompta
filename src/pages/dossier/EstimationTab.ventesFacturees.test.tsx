@@ -75,7 +75,7 @@ function piece(o: Partial<Piece> = {}): Piece {
     id: 'v1', dossier_id: D, uploaded_by: null, source: 'upload', storage_path: `${D}/f.pdf`, nom_fichier: 'f.pdf', storage_hash: null,
     date_piece: '2026-02-10', tiers: 'CLIENT FICTIF', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200, devise: 'EUR',
     montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null,
-    type_piece: 'vente', statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null,
+    type_piece: 'vente', statut: 'validee', confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null,
     lisible_path: null, created_at: '2026-02-10T09:00:00Z', updated_at: '2026-02-10T09:00:00Z',
     identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false, ...o,
   }

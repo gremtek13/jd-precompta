@@ -35,7 +35,7 @@ declare
   dossier_client uuid; dossier_notes uuid; cabinet uuid; piece_client uuid; piece_notes uuid; piece_notes_2 uuid;
   document_notes uuid; note_notes uuid;
   notes_avant int; admins_avant int; assignations_avant int; total_notes int; total_dossier_notes int;
-  annotees int; sans_ligne int; differentes int; reprises int; doublons int; n int; m int; rendue uuid; maj timestamptz;
+  anciennes int; annotees int; sans_ligne int; differentes int; reprises int; doublons int; n int; m int; rendue uuid; maj timestamptz;
   texte_relu text; code_recu text; message text; obs text; verdicts jsonb := '[]'::jsonb;
   -- Les dossiers d'essai (`test` et ceux du client d'essai) : l'essai ne compte, ne recopie et ne choisit que dans eux ;
   -- les notes, les pièces et les documents de toute la base diraient ceux d'un dossier réel (audit du 29/10/2026).
@@ -67,7 +67,20 @@ begin
   select count(*) into assignations_avant from dossier_assignations;
   select count(*) into total_dossier_notes from notes_internes where dossier_id = dossier_notes;
 
-  -- ══ 1 à 4. Les anciennes colonnes : rien n'est perdu de vue ═══════════════════════════════════════════════
+  -- ══ 1 à 4. Les anciennes colonnes : rien n'est perdu de vue, puis elles s'en vont ════════════════════════════
+  -- Tant que la migration `anciennes_notes_supprimees` (P0, EC-Q7, préparée le 06/11/2026) n'est pas en base, une ligne
+  -- le dit (EN ATTENTE, sans être une faute) et les contrôles 1 à 4 d'hier se jouent : la condition de sa garde. Avec
+  -- elle, le contrôle 1 constate les trois colonnes parties — et les contrôles 2 à 4 n'ont plus d'objet. Une ou deux
+  -- colonnes seulement : une faute. Les instructions qui lisent les anciennes colonnes ne s'analysent qu'à leur exécution.
+  select count(*) into anciennes from pg_attribute a
+   where a.attrelid in ('public.pieces'::regclass, 'public.documents_divers'::regclass, 'public.dossiers'::regclass)
+     and a.attname = 'notes' and a.attnum > 0 and not a.attisdropped;
+  if anciennes <> 3 then
+  verdicts := verdicts || jsonb_build_object('controle', '1. les trois anciennes colonnes (pieces, documents_divers, dossiers) sont supprimées',
+    'observe', anciennes || ' ancienne(s) colonne(s) en base', 'ok', anciennes = 0);
+  else
+  verdicts := verdicts || jsonb_build_object('controle', '0. EN ATTENTE : la migration anciennes_notes_supprimees n''est pas en base',
+    'observe', anciennes || ' ancienne(s) colonne(s) en base', 'ok', true);
   -- « Reprise » : modifiée depuis sa création (la base pose `updated_at`). Une note jamais reprise doit être celle de
   -- l'ancienne colonne ; une différence dirait une écriture dans l'ancienne colonne APRÈS la recopie.
   select count(*) filter (where p.notes is not null and btrim(p.notes, E' \t\n\r') <> ''),
@@ -120,6 +133,7 @@ begin
   select count(*) into n from dossiers where notes is not null and id = any (fictifs);
   verdicts := verdicts || jsonb_build_object('controle', '4. la fiche d''un dossier ne porte aucune note : rien n''est à recopier',
     'observe', n || ' dossier(s) annoté(s)', 'ok', n = 0);
+  end if;
 
   -- ══ 5 et 6. Le catalogue ═══════════════════════════════════════════════════════════════════════════════════
   select count(*) into n from pg_policy po
@@ -137,8 +151,8 @@ begin
 
   select string_agg(p.proname, ', ' order by p.proname) into obs from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.prosrc ~ '\mnotes\M';
-  verdicts := verdicts || jsonb_build_object('controle', '6. aucune fonction SQL n''écrit les anciennes colonnes : seules les nomment enregistrer_facture (la note d''une facture) et garder_piece_validee (qui la laisse libre)',
-    'observe', coalesce(obs, 'aucune'), 'ok', coalesce(obs = 'enregistrer_facture, garder_piece_validee', false));
+  verdicts := verdicts || jsonb_build_object('controle', '6. aucune fonction SQL n''écrit les anciennes colonnes : seules nomment « notes » enregistrer_devis et enregistrer_facture (la note d''un devis, d''une facture) et garder_piece_validee (une clé ôtée de la ligne, sans effet sans la colonne)',
+    'observe', coalesce(obs, 'aucune'), 'ok', coalesce(obs = 'enregistrer_devis, enregistrer_facture, garder_piece_validee', false));
 
   -- ══ 7 et 8. L'anonyme et le compte rattaché à rien ════════════════════════════════════════════════════════
   select count(*) into total_notes from notes_internes where dossier_id = any (fictifs);

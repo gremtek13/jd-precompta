@@ -3,6 +3,7 @@ import { restaurerSauvegarde, verifierRestauration, type SauvegardeDossier } fro
 import { lireSauvegarde } from '../lib/sauvegardeFichier'
 import { phrasesDuBilanDesLogos, resumeDesLogos } from '../lib/sauvegardeLogos'
 import { messageErreur } from '../lib/messageErreur'
+import { phrasesDesAnciennesNotes, sansAnciennesNotes } from '../lib/sauvegarde'
 
 // La restauration d'une sauvegarde, réservée au super-admin.
 //
@@ -78,6 +79,9 @@ export default function RestaurationCard() {
   const m = sauvegarde?.manifeste
   const total = m ? Object.values(m.lignesParTable).reduce((s, n) => s + n, 0) : 0
   const logos = sauvegarde ? resumeDesLogos(sauvegarde) : null
+  // Ce que deviennent les notes des anciennes colonnes d'une sauvegarde d'avant leur suppression (P0, EC-Q7), dit avant
+  // le clic : gardées, recopiées, remplacées ou perdues.
+  const anciennesNotes = sauvegarde ? phrasesDesAnciennesNotes(sansAnciennesNotes(sauvegarde.contenu).bilan) : []
 
   return (
     <div className="card" style={{ marginTop: 20 }}>
@@ -121,6 +125,12 @@ export default function RestaurationCard() {
           )}
 
           {logos && <p className="muted nom-fichier">{logos}</p>}
+
+          {anciennesNotes.length > 0 && (
+            <ul aria-label="Anciennes notes de la sauvegarde" className="muted" style={{ marginTop: 0 }}>
+              {anciennesNotes.map((ligne) => <li key={ligne}>{ligne}</li>)}
+            </ul>
+          )}
 
           <details>
             <summary className="muted">Le détail, table par table</summary>

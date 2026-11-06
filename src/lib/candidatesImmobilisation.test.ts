@@ -20,7 +20,7 @@ const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`,
   storage_hash: null, date_piece: '2025-04-02', tiers: 'Fournisseur fictif', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200,
   devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null,
-  type_piece: 'achat', statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null,
+  type_piece: 'achat', statut: 'validee', confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null,
   lisible_path: null, identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null,
   vente_hors_des_factures: false, created_at: '2025-04-02T09:00:00Z', updated_at: '2025-04-02T09:00:00Z', ...o,
 })

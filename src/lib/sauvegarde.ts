@@ -1471,6 +1471,35 @@ export interface ContenuSansAnciennesNotes {
   notesRecopiees: number
   /** Ce que la restauration perdrait : elle se refuse. */
   refus: string[]
+  /** Ce que deviennent les notes non blanches des pièces et des documents : dit au cabinet avant le clic. */
+  bilan: BilanDesAnciennesNotes
+}
+
+// Depuis la migration `anciennes_notes_supprimees` (P0, EC-Q7), la base n'a plus les anciennes colonnes : une sauvegarde
+// d'avant (formats 1 et 2) se restaure encore — la clé retirée de chaque ligne —, et ce qu'il advient de chaque note
+// non blanche se DIT, jamais en silence : déjà gardée au caractère près, recopiée, remplacée par une note reprise depuis
+// (qui fait foi, comme à l'écran), ou perdue — sa cible porte une note interne au texte différent, jamais reprise : c'est
+// l'ancienne colonne écrite après la recopie, le cas que la garde de la migration refuse en base.
+export interface BilanDesAnciennesNotes {
+  annotees: number
+  dejaGardees: number
+  recopiees: number
+  remplacees: number
+  perdues: number
+}
+
+export function phrasesDesAnciennesNotes(bilan: BilanDesAnciennesNotes): string[] {
+  if (bilan.annotees === 0) return []
+  const phrases = [`${bilan.annotees} note(s) des anciennes colonnes des pièces et des documents : la restauration ne les `
+    + 'écrit plus, seules les notes internes se restaurent.']
+  if (bilan.dejaGardees > 0) phrases.push(`${bilan.dejaGardees} déjà dans les notes internes de la sauvegarde, au caractère près : rien ne se perd.`)
+  if (bilan.recopiees > 0) phrases.push(`${bilan.recopiees} recopiée(s) dans les notes internes : leur cible n'en avait pas.`)
+  if (bilan.remplacees > 0) phrases.push(`${bilan.remplacees} remplacée(s) par la note interne reprise depuis, qui fait foi.`)
+  if (bilan.perdues > 0) {
+    phrases.push(`${bilan.perdues} perdue(s) : leur cible porte une note interne au texte différent, jamais reprise — le `
+      + "texte de l'ancienne colonne ne sera pas restauré.")
+  }
+  return phrases
 }
 
 // Pure, comme le reste de ce fichier : la sauvegarde reçue n'est jamais modifiée — `liensPerdus` et la vérification
@@ -1478,9 +1507,13 @@ export interface ContenuSansAnciennesNotes {
 export function sansAnciennesNotes(contenu: Contenu): ContenuSansAnciennesNotes {
   const sortie: Contenu = { ...contenu }
   const refus: string[] = []
-  const deja = new Set((contenu.notes_internes ?? []).flatMap((n) =>
-    [n.piece_id != null ? `piece:${String(n.piece_id)}` : null, n.document_id != null ? `document:${String(n.document_id)}` : null]
-      .filter((c): c is string => c !== null)))
+  const bilan: BilanDesAnciennesNotes = { annotees: 0, dejaGardees: 0, recopiees: 0, remplacees: 0, perdues: 0 }
+  // La note interne de chaque cible dans la sauvegarde ; une cible qui en a une la garde.
+  const deja = new Map<string, Record<string, unknown>>()
+  for (const n of contenu.notes_internes ?? []) {
+    if (n.piece_id != null) deja.set(`piece:${String(n.piece_id)}`, n)
+    if (n.document_id != null) deja.set(`document:${String(n.document_id)}`, n)
+  }
   const recopiees: Record<string, unknown>[] = []
   for (const table of ANCIENNES_COLONNES_DES_NOTES) {
     const lignes = contenu[table]
@@ -1495,14 +1528,23 @@ export function sansAnciennesNotes(contenu: Contenu): ContenuSansAnciennesNotes 
         return reste
       }
       const cible = table === 'pieces' ? 'piece' : 'document'
-      if (!deja.has(`${cible}:${String(ligne.id)}`)) {
+      const gardee = deja.get(`${cible}:${String(ligne.id)}`)
+      bilan.annotees += 1
+      if (!gardee) {
         recopiees.push({ dossier_id: ligne.dossier_id, [cible === 'piece' ? 'piece_id' : 'document_id']: ligne.id, texte: notes })
+        bilan.recopiees += 1
+      } else if (gardee.texte === notes) {
+        bilan.dejaGardees += 1
+      } else if (gardee.updated_at !== gardee.created_at) {
+        bilan.remplacees += 1
+      } else {
+        bilan.perdues += 1
       }
       return reste
     })
   }
   if (recopiees.length > 0) sortie.notes_internes = [...(contenu.notes_internes ?? []), ...recopiees]
-  return { contenu: sortie, notesRecopiees: recopiees.length, refus }
+  return { contenu: sortie, notesRecopiees: recopiees.length, refus, bilan }
 }
 
 /**
