@@ -577,8 +577,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     par le cabinet, puis `iban_hors_des_parametres` par l'outil —, A7b l'écran (le formulaire et l'avoir disent ses
     refus avant le clic et nomment ce qui se fige, l'aperçu n'imprime que ce qui est figé ; `lib/mentionsFigeesVue.ts`),
     en ligne le 30/10/2026 ; A7B-Q1 et Q2 le même jour (rien sous le nom d'un entrepreneur individuel ; la mention
-    légale proposée ne garde que la TVA quand le dossier a ses paramètres) ; A7B-Q3 (le bon de commande d'une
-    entreprise) après le MVP → « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES
+    légale proposée ne garde que la TVA quand le dossier a ses paramètres) ; A7B-Q3, le bon de commande d'une
+    entreprise, offert sur la facture seule le 06/11/2026 (`DocumentDeVente`, sans défaut) → « LE BON DE COMMANDE D'UNE
+    ENTREPRISE, OFFERT DANS LA FACTURE », « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES
     MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) », « LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET
     L'IBAN HORS DES TEXTES LIBRES », « DEUX RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 », « A7Q-Q1 : UNE SOCIÉTÉ SANS
     DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION », « LES DEUX MIGRATIONS D'A7 EN
