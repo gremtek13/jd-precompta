@@ -379,9 +379,10 @@ describe('Barre latérale — la navigation du client', () => {
   beforeEach(() => { compte.role = 'client' })
 
   const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../index.css'), 'utf8')
-  // Les mêmes quatre entrées que sur ses autres écrans : cette correction n'ouvre rien de plus au client.
+  // Les mêmes cinq entrées que sur ses autres écrans (« Mon échéancier », ouvert à tout accès, depuis l'étape C1) : cette
+  // correction n'ouvre rien de plus au client.
   const ENTREES = [
-    ['Accueil', '/accueil'], ['Mes pièces', '/mes-pieces'], ['Mes informations', '/mes-informations'], ['Ma simulation', '/ma-simulation'],
+    ['Accueil', '/accueil'], ['Mes pièces', '/mes-pieces'], ['Mon échéancier', '/mon-echeancier'], ['Mes informations', '/mes-informations'], ['Ma simulation', '/ma-simulation'],
   ]
   const barre = () => document.querySelector('.sidebar') as HTMLElement
   const entreesDe = () => within(within(barre()).getByRole('navigation')).getAllByRole('link')
@@ -411,7 +412,7 @@ describe('Barre latérale — la navigation du client', () => {
     return { corps, reste: reste + css.slice(curseur) }
   }
 
-  it('garde à l’accueil ses quatre entrées dans la barre latérale, comme sur ses autres écrans', async () => {
+  it('garde à l’accueil ses cinq entrées dans la barre latérale, comme sur ses autres écrans', async () => {
     await afficher('/accueil')
     expect(entreesDe()).toEqual(ENTREES)
     cleanup()

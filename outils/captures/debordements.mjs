@@ -1527,6 +1527,9 @@ const VISITES = [
 // entrées (`nav`). La page ne se recharge pas d'une visite à l'autre : chacune ferme d'abord ce qui est ouvert.
 const VISITES_CLIENT = [
   { chemin: '#/mes-ventes', nom: 'client/mes-ventes', nav: true },
+  // « Mon échéancier » (ligne 51.5, étape C1), ouvert à tout accès : les dates, et les montants des cotisations sous « Banque »
+  // (la passe `client-banque`). La barre du bas y gagne son entrée.
+  { chemin: '#/mon-echeancier', nom: 'client/mon-echeancier', nav: true, apres: (page) => page.locator('.echeance').first().waitFor({ timeout: 10000 }) },
   // L'étape P4b : l'accueil et ses tuiles « À encaisser » et « À déclarer », puis les fenêtres que « Tes plateformes »
   // ouvre en mode client — la plateforme agréée de l'atelier (reliée), sa modification, et Super PDP (configuré).
   // L'accueil sans `nav` : sur téléphone, il cache la barre du bas (ses tuiles en tiennent lieu, `app-nav-accueil-client`
@@ -1934,6 +1937,10 @@ const choisirSeptembre = async (page) => {
 }
 const VISITES_CAISSE_CLIENT = [
   { chemin: '#/accueil', nom: 'client/caisse-accueil', apres: async (page) => { await page.getByRole('link', { name: /Ma caisse/ }).first().waitFor({ timeout: 10000 }) } },
+  // « Mon échéancier » (étape C1) sur le cabinet infirmier, avec « Banque » : ses cotisations et leurs montants, et la carte de
+  // l'accueil, sous les sept entrées de la barre du bas (huit avec la sienne).
+  { chemin: '#/accueil', nom: 'client/echeancier-accueil', apres: (page) => page.locator('.echeance').first().waitFor({ timeout: 10000 }) },
+  { chemin: '#/mon-echeancier', nom: 'client/mon-echeancier-caisse', nav: true, apres: (page) => page.locator('.echeance').first().waitFor({ timeout: 10000 }) },
   { chemin: '#/ma-caisse', nom: 'client/ma-caisse', nav: true, apres: async (page) => { await page.getByText(/^Ta caisse n’a bougé aucun jour de|^Au \d/).first().waitFor({ timeout: 10000 }) } },
   { chemin: '#/ma-caisse', nom: 'client/ma-caisse-septembre', nav: true, apres: choisirSeptembre },
   {

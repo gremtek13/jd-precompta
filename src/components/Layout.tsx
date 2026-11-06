@@ -12,7 +12,7 @@ import { maBanqueOuverte } from '../lib/banqueClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
 import {
-  IconAccueil, IconApparence, IconBanque, IconCaisse, IconComptesMaster, IconDossiers, IconEquipe, IconEstimation, IconFactures,
+  IconAccueil, IconApparence, IconBanque, IconCaisse, IconComptesMaster, IconDossiers, IconEcheancier, IconEquipe, IconEstimation, IconFactures,
   IconInformations, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun,
 } from './icons'
@@ -333,6 +333,12 @@ function Coque() {
                   <span className="nav-label-court">Caisse</span>
                 </NavLink>
               )}
+              {/* « Mon échéancier » (ligne 51.5, étape C1) : ouvert à tout accès client. */}
+              <NavLink to="/mon-echeancier" title="Mon échéancier" className={({ isActive }) => (isActive ? 'active' : '')}>
+                <IconEcheancier width={18} height={18} />
+                <span className="nav-label-full">Mon échéancier</span>
+                <span className="nav-label-court">Échéances</span>
+              </NavLink>
               <NavLink to="/mes-informations" title="Mes informations" className={({ isActive }) => (isActive ? 'active' : '')}>
                 <IconInformations width={18} height={18} />
                 <span className="nav-label-full">Mes informations</span>

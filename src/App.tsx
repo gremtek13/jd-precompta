@@ -14,6 +14,7 @@ import ClientSimulation from './pages/ClientSimulation'
 import ClientVentes from './pages/ClientVentes'
 import ClientBanque from './pages/ClientBanque'
 import ClientCaisse from './pages/ClientCaisse'
+import ClientEcheancier from './pages/ClientEcheancier'
 import { droitsSur } from './lib/droitsAcces'
 import { mesVentesOuvertes } from './lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from './lib/encaissementsFactures'
@@ -105,6 +106,8 @@ function Gate() {
             <Route path="/mes-pieces" element={<ClientUpload />} />
             <Route path="/mes-informations" element={<ClientInformations />} />
             <Route path="/ma-simulation" element={<ClientSimulation />} />
+            {/* « Mon échéancier » (ligne 51.5, étape C1) : à tout accès client ; les montants, sous « Banque » seulement. */}
+            <Route path="/mon-echeancier" element={<ClientEcheancier />} />
             {/* « Mes ventes » (espace client, étape P4a) : seulement si la société AFFICHÉE porte la case « Ventes » — un client
                 à plusieurs sociétés peut l'avoir sur l'une et pas sur l'autre. Sans elle, l'adresse renvoie à l'accueil, et
                 changer de société pour une qui ne la porte pas y ramène aussi ; la base refuse de toute façon (P2). */}

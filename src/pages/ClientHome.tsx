@@ -6,7 +6,8 @@ import { deposerFichier } from '../lib/depot'
 import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois, dateRelative } from '../lib/format'
 import { lireAnneesCloturees } from '../lib/clotureExercice'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
-import { IconBanque, IconCaisse, IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
+import { IconBanque, IconCaisse, IconCamera, IconDocuments, IconEcheancier, IconEstimation, IconInformations, IconPieces } from '../components/icons'
+import EcheancierAccueil from './EcheancierAccueil'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
 import ProgressRing from '../components/widgets/ProgressRing'
@@ -337,6 +338,11 @@ export default function ClientHome() {
             <span className="tuile-desc">Tes recettes en espèces, jour par jour, et ce qu'il reste dans ta caisse.</span>
           </Link>
         )}
+        <Link to="/mon-echeancier" className="tuile">
+          <span className="tuile-icone"><IconEcheancier width={24} height={24} /></span>
+          <span className="tuile-libelle">Mon échéancier</span>
+          <span className="tuile-desc">Ce que tu vas devoir déclarer ou payer dans l'année qui vient, et quand.</span>
+        </Link>
         <Link to="/mes-informations" className="tuile">
           <span className="tuile-icone"><IconInformations width={24} height={24} /></span>
           <span className="tuile-libelle">Mes informations</span>
@@ -469,6 +475,10 @@ export default function ClientHome() {
             )}
           </Widget>
           <CarteEtatDuDossier key={dossierId} dossierId={dossierId} />
+
+          {/* « Mes prochaines échéances » (ligne 51.5, étape C1) : sa propre lecture, à part de `load`, clée par société ; la
+              carte lit elle-même la case « Banque » de la société affichée, pour ses montants seulement. */}
+          <EcheancierAccueil key={dossierId} dossierId={dossierId} />
         </div>
       )}
 

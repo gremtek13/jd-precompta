@@ -66,6 +66,13 @@ export const IconCotisations = (p: IconProps) => base(<>
   <circle cx="15" cy="15" r="6.5" />
 </>, p)
 
+// L'échéancier du client (ligne 51.5, étape C1) : un calendrier.
+export const IconEcheancier = (p: IconProps) => base(<>
+  <rect x="4" y="5" width="16" height="15" rx="1.5" />
+  <path d="M4 10h16M8.5 3v4M15.5 3v4" />
+  <path d="M8 14h2M14 14h2M8 17h2" />
+</>, p)
+
 export const IconCloture = (p: IconProps) => base(<>
   <path d="M6 21V4" />
   <path d="M6 4h11l-3 4 3 4H6" />

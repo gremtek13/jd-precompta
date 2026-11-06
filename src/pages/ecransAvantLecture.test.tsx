@@ -23,6 +23,8 @@ import ClientUpload from './ClientUpload'
 import ClientVentes from './ClientVentes'
 import ClientBanque from './ClientBanque'
 import ClientCaisse from './ClientCaisse'
+import ClientEcheancier from './ClientEcheancier'
+import EcheancierAccueil from './EcheancierAccueil'
 import AccueilVentesClient from './AccueilVentesClient'
 import DossierDetail from './DossierDetail'
 import DossiersList from './DossiersList'
@@ -241,6 +243,12 @@ const ECRANS: Ecran[] = [
   { nom: 'ClientBanque', fichier: 'pages/ClientBanque.tsx', rendre: () => <MemoryRouter><ClientBanque /></MemoryRouter> },
   // « Ma caisse » (ligne 26.6, étape C12a) : la case « Caisse » relue à la base, le dossier, ses opérations, sa caisse jour par jour.
   { nom: 'ClientCaisse', fichier: 'pages/ClientCaisse.tsx', rendre: () => <MemoryRouter><ClientCaisse /></MemoryRouter> },
+  // « Mon échéancier » (ligne 51.5, étape C1) : le dossier et ses échéances de cotisation, lus en entier ; et sa carte de
+  // l'accueil, montée seule (l'accueil ne la monte qu'une fois ses propres lectures revenues).
+  { nom: 'ClientEcheancier', fichier: 'pages/ClientEcheancier.tsx', rendre: () => <MemoryRouter><ClientEcheancier /></MemoryRouter> },
+  { nom: 'EcheancierAccueil', fichier: 'pages/EcheancierAccueil.tsx', rendre: () => (
+    <MemoryRouter><div className="bento"><EcheancierAccueil dossierId="d1" /></div></MemoryRouter>
+  ) },
   // Les tuiles « À encaisser » et « À déclarer » de l'accueil (étape P4b) et l'encart « Facture électronique » (étape A6b2), d'après
   // UNE lecture des ventes : montés seuls, l'accueil ne les monte qu'une fois ses propres lectures revenues.
   { nom: 'AccueilVentesClient', fichier: 'pages/AccueilVentesClient.tsx', rendre: () => (
