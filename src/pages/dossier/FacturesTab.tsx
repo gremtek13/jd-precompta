@@ -51,6 +51,8 @@ import {
 } from '../../lib/auteursVentes'
 import { lireLesAccesDuDossier } from '../../lib/auteursVentesLecture'
 import type { ReglageDesVentes } from '../../lib/sourceDeLaVente'
+import { lireLeMandataire } from '../../lib/mandataireLecture'
+import type { LectureDuMandataire } from '../../lib/mentionsFigeesVue'
 
 // QUI REGARDE (espace client, étape P4a) : le cabinet, depuis l'onglet Factures d'un dossier, qui peut aussi enregistrer
 // l'adresse du dossier depuis une facture ; ou le client qui porte la case « Ventes », depuis « Mes ventes › Factures »,
@@ -138,6 +140,18 @@ export default function FacturesTab(props: Props) {
   const acces: AccesDuDossier = espace === 'client'
     ? ACCES_SANS_OBJET
     : accesLus?.dossierId === dossierId ? accesLus.acces : ACCES_EN_COURS
+  // LE NOM DU CABINET QUE LA FACTURE IMPRIMERA COMME MANDATAIRE (étape P4 ; lib/mandataireLecture.ts), au cabinet seul : lu UNE fois
+  // ici, comme la base le lira en validant, et passé aux deux fenêtres qui disent la mention avant le clic. Gardé AVEC le dossier
+  // pour lequel il a été lu : changer de dossier repart en lecture (`null`), et une réponse arrivée après ne s'applique pas. Dans
+  // l'espace du client, rien n'est lu : la base ne fige aucun mandataire pour lui.
+  const [mandataireLu, setMandataireLu] = useState<{ dossierId: string; lu: LectureDuMandataire } | null>(null)
+  const mandataire: LectureDuMandataire | null = mandataireLu?.dossierId === dossierId ? mandataireLu.lu : null
+  useEffect(() => {
+    if (espace !== 'cabinet') return
+    let annule = false
+    lireLeMandataire(dossierId).then((lu) => { if (!annule) setMandataireLu({ dossierId, lu }) })
+    return () => { annule = true }
+  }, [dossierId, espace])
   // La case « Émises par le client » : une préférence d'AFFICHAGE, qui ne vaut que sur des accès lus en entier.
   const [filtreClient, setFiltreClient] = useState(false)
   const filtre = etatDuFiltre(acces)
@@ -698,7 +712,7 @@ export default function FacturesTab(props: Props) {
       {editing && (
         <FactureFormModal
           {...(props.espace === 'cabinet'
-            ? { espace: 'cabinet' as const, onAdresseUpdated: props.onAdresseUpdated }
+            ? { espace: 'cabinet' as const, onAdresseUpdated: props.onAdresseUpdated, mandataire }
             : { espace: 'client' as const })}
           dossierId={dossierId}
           dossierNom={dossierNom}
@@ -727,8 +741,8 @@ export default function FacturesTab(props: Props) {
 
       {avoirDe && (
         <FactureAvoirModal
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, mandataire } : { espace: 'client' as const })}
           dossierId={dossierId}
-          espace={espace}
           factureOrigine={avoirDe}
           // Sur la liste ENTIÈRE du dossier, toutes années confondues : un avoir de l'an prochain crédite la
           // facture de cette année. Lue en partie, on ne sait pas ce qui a été crédité, et c'est la base qui juge.

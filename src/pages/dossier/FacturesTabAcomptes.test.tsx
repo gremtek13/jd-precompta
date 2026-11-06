@@ -120,10 +120,12 @@ beforeEach(() => {
   faux.refusee = null
   faux.tables = {
     dossiers: [{
-      id: 'd1', siret: SIRET_VENDEUR, adresse: '1 rue Fictive', statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false,
+      id: 'd1', cabinet_id: 'c1', siret: SIRET_VENDEUR, adresse: '1 rue Fictive', statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false,
       denomination_imprimee: 'Atelier fictif SAS', forme_juridique: '5710', capital: null, rcs_ville: null, mentions_identite: null,
       mode_comptable: 'tresorerie',
     }],
+    // Le nom du cabinet, que la validation du cabinet fige comme mandataire (P4) : lu avec le dossier.
+    cabinets: [{ id: 'c1', nom: 'Cabinet Fictif' }],
     factures_emises: [ORDINAIRE(), ACOMPTE(), FINALE(), BROUILLON_D_ACOMPTE()],
     facture_lignes: [
       ligne('lo', 'f1', 0, 'Conseil fictif', 1, 500),
@@ -343,5 +345,49 @@ describe.each(['cabinet', 'client'] as const)('Acompte et finale, drapeau levé 
     expect(screen.queryByRole('button', { name: 'Valider la facture' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).toBeNull()
     expect(faux.appels).toEqual([])
+  })
+})
+
+// LE MANDAT DE FACTURATION DANS L'ONGLET (étape P4) : le cabinet lit UNE fois le nom du cabinet du dossier (`cabinets.nom` du
+// `cabinet_id` du dossier, comme la base le lit en validant) et le passe aux fenêtres, dont la confirmation NOMME la mention que la
+// facture imprimera ; refusée, la lecture retient la validation. Le client « Ventes » n'en lit rien. Même monde que ci-dessus.
+describe('le mandat de facturation dans l’onglet (P4)', () => {
+  beforeEach(() => { faux.acomptes = true })
+  const ouvrirLaFinale = async () => {
+    await vi.waitFor(() => expect(lignesBrouillon().some((r) => within(r).queryByText('Finale'))).toBe(true))
+    await ouvrirLeBrouillon('840,00')
+  }
+
+  it('le cabinet : le nom du cabinet DU dossier est lu, et la confirmation de validation nomme la mention', async () => {
+    faux.tables.cabinets.push({ id: 'c2', nom: 'Autre Cabinet' })
+    await monter('cabinet')
+    await ouvrirLaFinale()
+    expect(faux.lectures.filter((l) => l.table === 'cabinets')).toEqual([{ table: 'cabinets', colonnes: 'nom' }])
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Valider la facture' })) })
+    expect(confirmer.mock.calls[0][0]).toContain('– la mention « Facture établie par Cabinet Fictif au nom et pour le compte de Atelier fictif SAS »')
+    expect(confirmer.mock.calls[0][0]).not.toContain('Autre Cabinet')
+    expect(faux.appels).toEqual([])
+  })
+
+  it('la lecture du cabinet refusée : la validation n’est pas offerte, l’écran le dit, le brouillon s’enregistre', async () => {
+    faux.refusee = 'cabinets'
+    await monter('cabinet')
+    await vi.waitFor(() => expect(lignesBrouillon().some((r) => within(r).queryByText('Finale'))).toBe(true))
+    fireEvent.click(lignesBrouillon().find((r) => texte(r).includes('840,00')) as HTMLElement)
+    await screen.findByRole('button', { name: /Valider la facture/ })
+    expect(await screen.findByText(/Le nom du cabinet, que la facture imprimera comme celui qui l’établit, n’a pas pu être lu/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Valider la facture' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Enregistrer le brouillon' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('le client « Ventes » : ni le cabinet ni le dossier ne sont lus pour le mandat, et la confirmation n’en dit rien', async () => {
+    await monter('client')
+    await ouvrirLaFinale()
+    expect(faux.lectures.map((l) => l.table)).not.toContain('cabinets')
+    expect(faux.lectures.filter((l) => l.colonnes === 'cabinet_id')).toEqual([])
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Valider la facture' })) })
+    expect(confirmer.mock.calls[0][0]).not.toContain('Facture établie par')
   })
 })

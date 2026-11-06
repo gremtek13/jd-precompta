@@ -1,3 +1,4 @@
+import { CABINET_DU_DOSSIER } from '../../test/mentionsFigees'
 import { readFileSync } from 'node:fs'
 import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
 import { resolve } from 'node:path'
@@ -163,7 +164,7 @@ async function monter(espace: 'cabinet' | 'client', o: Options = {}) {
     dossierId: 'd1', dossierNom: 'Dossier fictif', dossierSiret: null, dossierAdresse: null, statutTva: o.statut === undefined ? 'redevable' : o.statut,
     articleExoneration: o.exo ?? null, numeroTvaAttribue: false, tvaSurDebits: false, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   } as const
-  render(espace === 'client' ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
+  render(espace === 'client' ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} mandataire={CABINET_DU_DOSSIER} {...props} />)
   if (o.facture) await screen.findByText('Adresse de l\'émetteur', { exact: false })
   // La date d'émission du jour changerait les échéances d'un test à l'autre : elle est posée, comme le ferait une saisie.
   if (o.emission !== null && !o.facture) fireEvent.change(champ('#date-emission'), { target: { value: o.emission ?? '2027-11-01' } })

@@ -32,7 +32,11 @@ import { ceQueLAcompteImprime, type LectureAcompte } from '../../lib/acompteDeLa
 // le RIB confirmé, les mentions complémentaires et le pied de page, le logo vérifié à son empreinte figée, le numéro
 // d'engagement pour tout acheteur, l'unité et la référence de chaque ligne. Rien n'y est relu du dossier : `dossier` ne sert
 // plus qu'à une facture d'avant, qui s'imprime comme hier, et dont l'écran — jamais le papier — dit qu'elle n'a pas figé ses
-// mentions (`.facture-imprimable-avis`, que l'impression retire). Le mandataire ne s'imprime pas (P4).
+// mentions (`.facture-imprimable-avis`, que l'impression retire).
+//
+// LE MANDAT (étape P4) : une facture figée dont `mandataire_nom` n'est pas nul — le cabinet l'a validée — imprime « Facture établie par
+// <cabinet> au nom et pour le compte de <nom légal> » (« Avoir établi par … »), juste sous l'identité de l'émetteur, dans les deux
+// espaces ; nul, ou facture d'avant, rien. Aucune mise en page en ligne.
 //
 // L'ACOMPTE D'UN DEVIS (étape P5b4b, derrière `ACOMPTES_PREVUS`) : la facture d'acompte, la finale et l'avoir d'un acompte
 // impriment leur titre et leurs références tels que `ceQueLAcompteImprime` (lib/acompteDeLaFactureVue.ts) les décide, sur
@@ -140,6 +144,7 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
             {facture.emetteur_siret && <div className="muted">SIRET {facture.emetteur_siret}</div>}
             {figee?.identite.map((t) => <div key={t} className="muted" style={{ whiteSpace: 'pre-line' }}>{t}</div>)}
             {numeroTva && <div className="muted">N° TVA intracommunautaire {numeroTva}</div>}
+            {figee?.mandat && <div className="muted">{figee.mandat}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
             <h2 style={{ margin: 0 }}>{acompteImprime.etat === 'imprime' ? acompteImprime.titre : facture.type === 'avoir' ? 'AVOIR' : 'FACTURE'} {facture.numero}</h2>

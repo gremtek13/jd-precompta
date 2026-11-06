@@ -30,7 +30,7 @@ import { avisDuStatutDeTva, refusDeLaDateDEmission, refusDuStatutDeTva, type Fac
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue,
   provenanceQuiPart, refusSansPenalites, sansPhraseDeRetard,
-  type LectureDeLaValidation, type ProvenanceDeLigne,
+  type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -104,8 +104,10 @@ function ligneVide(statut: StatutTva | null, cle: string): LigneEdit {
 // QUI RÉDIGE LA FACTURE (espace client, étape P4a) : le cabinet, qui peut aussi enregistrer l'adresse de l'émetteur comme
 // celle du dossier, ou le client « Ventes », qui ne le peut pas — l'adresse du dossier, c'est le cabinet qui la renseigne.
 // Le reste est le même formulaire, par la même fonction (`enregistrer_facture`, ouverte au client par P2).
+// Le cabinet passe aussi le nom du cabinet du dossier (étape P4 ; lib/mandataireLecture.ts), que sa validation fige comme mandataire et
+// que la facture imprime : `null` tant que la lecture n'est pas revenue, et la validation attend. Le client n'en a pas.
 type QuiRedige =
-  | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void }
+  | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void; mandataire: LectureDuMandataire | null }
   | { espace: 'client' }
 
 type Props = QuiRedige & {
@@ -666,6 +668,7 @@ export default function FactureFormModal(props: Props) {
     ? jugementDesMentions({
       espace, dossierId, facture: { type: 'facture', ...entete }, lignes: lignesQuiPartent, brouillon: facture, origine: null,
       listes: { contacts: contactsEntiers, articles: articlesEntiers }, lecture: lectureCourante,
+      mandataire: props.espace === 'cabinet' ? props.mandataire : null,
     })
     : null
   const refusFigeBrouillon = jugementMentions?.refusDeLEnregistrement ?? null

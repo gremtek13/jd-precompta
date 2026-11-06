@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   AUCUN_RIB_CONFIRME, AVIS_SANS_FORME, FACTURE_D_AVANT, INDEMNITE_DE_RECOUVREMENT, PROVENANCE_VIDE, RETENUE_CHAINE_ROMPUE,
-  RETENUE_EN_LECTURE, avisSansDenomination, ceQueLaFactureImprime, ceQueLaValidationFigera, confirmationDesMentions, formeEtCapital,
+  RETENUE_EN_LECTURE, RETENUE_MANDATAIRE_EN_LECTURE, RETENUE_MANDATAIRE_VIDE, avisSansDenomination, mentionDuMandat, retenueMandataireIllisible, ceQueLaFactureImprime, ceQueLaValidationFigera, confirmationDesMentions, formeEtCapital,
   jugementDesMentions, logoNonImprime, parametresEnVigueur, provenanceDeLArticle, provenanceDeLaLigneLue, provenanceQuiPart, retenueIllisible,
-  REFUS_SANS_PENALITES, refusSansPenalites, sansPhraseDeRetard, uniteImprimee, type LectureDeLaValidation, type SaisieAJuger,
+  REFUS_SANS_PENALITES, refusSansPenalites, sansPhraseDeRetard, uniteImprimee, type LectureDeLaValidation, type LectureDuMandataire, type SaisieAJuger,
 } from './mentionsFigeesVue'
 import { REFUS_DE_LA_PROVENANCE, REFUS_DE_LA_VALIDATION_FIGEE, mentionsAFiger } from './mentionsFigees'
 import { MODELE_IBAN_DANS_UN_TEXTE } from './parametresFacturation'
@@ -27,9 +27,12 @@ const LU: LectureDeLaValidation = {
   versions: [versionParametres({ iban: IBAN_ESSAI, bic: BIC_ESSAI, titulaire_compte: 'CAMILLE ESSAI', rib_etat: 'confirme' })],
 }
 
+// Le nom du cabinet tel que la base le lit pour une validation du cabinet (P4) ; le client n'en a pas.
+const CABINET_LU: LectureDuMandataire = { etat: 'lu', nom: 'Cabinet Fictif & Associés' }
+
 function saisie(o: Partial<SaisieAJuger> = {}): SaisieAJuger {
   return {
-    espace: 'client', dossierId: 'd1',
+    espace: 'client', dossierId: 'd1', mandataire: o.espace === 'cabinet' ? CABINET_LU : null,
     facture: { type: 'facture', emetteur_nom: 'Nom interne', emetteur_siret: SIRET_VENDEUR, emetteur_adresse: '1 rue des Essais\n69000 Lyon', contact_id: null },
     lignes: [{ designation: 'Séance', quantite: 1, prix_unitaire_ht: 60, taux_tva: 20, unite: 'HUR', reference: null, nature: 'services', article_id: null }],
     brouillon: null, origine: null, listes: { contacts: [], articles: [] }, lecture: LU,
@@ -157,6 +160,62 @@ describe('le jugement de la saisie, dans l’ordre de la base', () => {
   })
 })
 
+describe('le mandat de facturation (P4) : le nom du cabinet, lu comme la base le lit', () => {
+  const sansLecture = (mandataire: LectureDuMandataire | null) => jugementDesMentions(saisie({ espace: 'cabinet', mandataire }))
+
+  it('le cabinet valide : son nom se fige comme mandataire, et la mention est celle de la doctrine', () => {
+    const j = sansLecture(CABINET_LU)
+    expect(j).toMatchObject({ retenue: null, refusDeLaValidation: null })
+    expect(j.mentions?.mandataire_nom).toBe('Cabinet Fictif & Associés')
+    expect(mentionDuMandat('Cabinet Fictif & Associés', 'Camille Essai EI', false))
+      .toBe('Facture établie par Cabinet Fictif & Associés au nom et pour le compte de Camille Essai EI')
+    expect(mentionDuMandat('Cabinet', 'Camille Essai EI', true)).toBe('Avoir établi par Cabinet au nom et pour le compte de Camille Essai EI')
+  })
+
+  it('le nom pas encore lu, illisible ou vide : la validation est retenue et le dit — jamais un nom deviné', () => {
+    expect(sansLecture(null)).toMatchObject({ retenue: RETENUE_MANDATAIRE_EN_LECTURE, mentions: null, refusDeLaValidation: null })
+    expect(sansLecture({ etat: 'illisible', motif: 'accès refusé' })).toMatchObject({ retenue: retenueMandataireIllisible('accès refusé'), mentions: null })
+    expect(sansLecture({ etat: 'lu', nom: ' \n' })).toMatchObject({ retenue: RETENUE_MANDATAIRE_VIDE, mentions: null })
+  })
+
+  it('le brouillon, lui, reste enregistrable : la lecture du nom ne retient que la validation', () => {
+    expect(sansLecture(null).refusDeLEnregistrement).toBeNull()
+    const refuse = jugementDesMentions(saisie({
+      espace: 'cabinet', mandataire: null,
+      facture: { ...saisie().facture, mentions_legales: `IBAN ${IBAN_ESSAI}` },
+    }))
+    // Un refus de l'enregistrement passe avant ce que la validation lit.
+    expect(refuse.refusDeLEnregistrement).not.toBeNull()
+    expect(refuse.retenue).toBeNull()
+  })
+
+  it('le client « Ventes » : aucun mandataire, même si une lecture du nom était passée — la base le laisse nul', () => {
+    const j = jugementDesMentions(saisie({ espace: 'client', mandataire: CABINET_LU }))
+    expect(j.mentions?.mandataire_nom).toBeNull()
+    expect(jugementDesMentions(saisie({ espace: 'client', mandataire: null })).retenue).toBeNull()
+  })
+
+  it('un avoir du cabinet : le nom du cabinet se fige aussi, quelle que soit la facture corrigée', () => {
+    const origine = factureFigee({ mandataire_nom: null })
+    const j = jugementDesMentions(saisie({ espace: 'cabinet', origine, facture: { type: 'avoir', mentions_legales: null } }))
+    expect(j.mentions?.mandataire_nom).toBe('Cabinet Fictif & Associés')
+  })
+
+  it('la confirmation NOMME la mention : « Facture établie par … » pour une facture, « Avoir établi par … » pour un avoir', () => {
+    const m = jugementDesMentions(saisie({ espace: 'cabinet' })).mentions!
+    const nom = 'Camille Essai EI'
+    expect(confirmationDesMentions(m, nom, false)).toContain(`– la mention « Facture établie par Cabinet Fictif & Associés au nom et pour le compte de ${nom} »`)
+    expect(confirmationDesMentions(m, nom, true)).toContain(`– la mention « Avoir établi par Cabinet Fictif & Associés au nom et pour le compte de ${nom} »`)
+    // Sans mandataire (le client valide), la confirmation n'en dit rien.
+    expect(confirmationDesMentions(jugementDesMentions(saisie()).mentions!, nom, false)).not.toMatch(/mention « /)
+  })
+
+  it('le CII ne porte pas le mandat : aucune colonne `mandataire_nom` n’y entre', async () => {
+    const { readFileSync } = await import('node:fs')
+    expect(readFileSync(new URL('./factureCii.ts', import.meta.url), 'utf8')).not.toMatch(/mandataire/i)
+  })
+})
+
 describe('le dossier a-t-il des paramètres de facturation en vigueur ? (A7B-Q2 : la mention proposée n’en garde alors que la TVA)', () => {
   it('oui d’une lecture revenue entière qui porte une version du dossier ; non tant qu’on ne le sait pas', () => {
     expect(parametresEnVigueur(LU, 'd1')).toBe(true)
@@ -240,6 +299,7 @@ describe('la confirmation nomme ce que la facture figera et imprimera', () => {
     const phrases = ceQueLaValidationFigera(m(jugementDesMentions(saisie({ espace: 'cabinet', lecture }))), 'Nom interne')
     expect(phrases).toEqual([
       'aucune dénomination : le nom « Nom interne » que la facture porte', `le numéro de TVA ${TVA_VENDEUR}`,
+      'la mention « Facture établie par Cabinet Fictif & Associés au nom et pour le compte de Nom interne »',
       'aucun paramètre de facturation : ni conditions de paiement, ni RIB, ni logo',
     ])
   })
@@ -282,6 +342,20 @@ describe('ce que l’aperçu d’une facture figée imprime, de ses seules colon
   it('le numéro de TVA est celui que la facture porte, jamais recalculé ; sans dénomination, le nom qu’elle porte', () => {
     expect(ceQueLaFactureImprime(factureFigee({ numero_tva_imprime: null }))!.numeroTva).toBeNull()
     expect(ceQueLaFactureImprime(factureFigee({ denomination_imprimee: null }))!.nom).toBe('Nom interne du dossier')
+  })
+
+  it('le mandat (P4) : sous le nom légal, « Facture établie par … » ; « Avoir établi par … » pour un avoir ; rien sans mandataire', () => {
+    const f = factureFigee({ mandataire_nom: 'Cabinet Fictif' })
+    expect(ceQueLaFactureImprime(f)!.mandat).toBe('Facture établie par Cabinet Fictif au nom et pour le compte de Camille Essai EI')
+    expect(ceQueLaFactureImprime({ ...f, type: 'avoir' })!.mandat).toBe('Avoir établi par Cabinet Fictif au nom et pour le compte de Camille Essai EI')
+    // Sans dénomination figée, le nom que la facture porte.
+    expect(ceQueLaFactureImprime({ ...f, denomination_imprimee: null })!.mandat)
+      .toBe('Facture établie par Cabinet Fictif au nom et pour le compte de Nom interne du dossier')
+    expect(ceQueLaFactureImprime(factureFigee({ mandataire_nom: null }))!.mandat).toBeNull()
+    expect(ceQueLaFactureImprime(factureFigee({ mandataire_nom: undefined }))!.mandat).toBeNull()
+    expect(ceQueLaFactureImprime(factureFigee({ mandataire_nom: '  ' }))!.mandat).toBeNull()
+    // Une facture d'avant A7 s'imprime comme hier, même si une colonne porte un nom.
+    expect(ceQueLaFactureImprime({ ...f, mentions_figees: false })).toBeNull()
   })
 
   it('à un particulier, ni escompte, ni pénalités, ni indemnité ; le moyen préféré, si', () => {

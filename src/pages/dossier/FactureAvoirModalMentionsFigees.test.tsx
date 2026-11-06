@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FactureAvoirModal from './FactureAvoirModal'
 import { NON_BASCULE } from '../../test/factures'
 import { versionParametres } from '../../test/parametresFacturation'
-import { BIC_ESSAI, IBAN_ESSAI, factureFigee, identiteDuDossier } from '../../test/mentionsFigees'
+import { BIC_ESSAI, CABINET_DU_DOSSIER, IBAN_ESSAI, factureFigee, identiteDuDossier, quiCree } from '../../test/mentionsFigees'
 import { REFUS_DE_LA_VALIDATION_FIGEE } from '../../lib/mentionsFigees'
-import { RETENUE_EN_LECTURE } from '../../lib/mentionsFigeesVue'
+import {
+  RETENUE_EN_LECTURE, RETENUE_MANDATAIRE_EN_LECTURE, RETENUE_MANDATAIRE_VIDE, retenueMandataireIllisible, type LectureDuMandataire,
+} from '../../lib/mentionsFigeesVue'
 import { MODELE_IBAN_DANS_UN_TEXTE } from '../../lib/parametresFacturation'
 import { motsDuCabinet, type EspaceVentes } from '../../lib/espaceVentes'
 import type { FactureEmise } from '../../lib/types'
@@ -92,9 +94,15 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 // Une facture émise bien avant aujourd'hui : un avoir ne précède pas la facture qu'il corrige.
 const figee = (o: Partial<FactureEmise> = {}) => factureFigee({ date_emission: '2026-01-15', date_echeance: null, ...o })
 
-async function monter(espace: EspaceVentes, origine: FactureEmise = figee()) {
-  render(<FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace={espace} dossierId="d1" factureOrigine={origine} credite={0} onClose={() => {}} onCreated={() => {}} />)
+// `mandataire` : le nom du cabinet tel que l'onglet l'a lu (P4) — lu par défaut, `null` tant que la lecture n'est pas revenue.
+function avoir(espace: EspaceVentes, origine: FactureEmise, mandataire: LectureDuMandataire | null) {
+  const qui = espace === 'cabinet' ? { espace, mandataire } as const : quiCree(espace)
+  return <FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} {...qui} dossierId="d1" factureOrigine={origine} credite={0} onClose={() => {}} onCreated={() => {}} />
+}
+async function monter(espace: EspaceVentes, origine: FactureEmise = figee(), mandataire: LectureDuMandataire | null = CABINET_DU_DOSSIER) {
+  const rendu = render(avoir(espace, origine, mandataire))
   await screen.findByDisplayValue('Séance')
+  return rendu
 }
 const valider = () => screen.getByRole('button', { name: "Valider l'avoir" }) as HTMLButtonElement
 
@@ -164,4 +172,49 @@ it('une facture sans contact : les contacts ne sont pas lus', async () => {
   await monter('cabinet')
   await waitFor(() => expect(valider().disabled).toBe(false))
   expect(faux.tables).not.toContain('contacts')
+})
+
+// LE MANDAT DE FACTURATION (étape P4) : l'avoir que le cabinet valide imprimera « Avoir établi par <cabinet> au nom et pour le compte
+// de <nom légal> », et sa confirmation le NOMME ; le nom du cabinet pas encore revenu, illisible ou vide, la validation n'est pas
+// offerte. Chez le client « Ventes », aucun mandataire.
+describe('le mandat de facturation (P4) — l’avoir', () => {
+  it('le cabinet valide : la confirmation NOMME « Avoir établi par … », avec le nom légal de la facture corrigée', async () => {
+    await monter('cabinet', figee({ denomination_imprimee: 'Ancienne Dénomination EI' }))
+    await waitFor(() => expect(valider().disabled).toBe(false))
+    reponse = false
+    await act(async () => { valider().click() })
+    expect(confirmations[0]).toContain('– la mention « Avoir établi par Cabinet Fictif & Associés au nom et pour le compte de Ancienne Dénomination EI »')
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('le client « Ventes » : aucune mention du mandat dans la confirmation, rien qui retienne', async () => {
+    await monter('client')
+    await waitFor(() => expect(valider().disabled).toBe(false))
+    reponse = false
+    await act(async () => { valider().click() })
+    expect(confirmations[0]).not.toContain('Avoir établi par')
+    expect(screen.queryByText(RETENUE_MANDATAIRE_EN_LECTURE)).toBeNull()
+  })
+
+  it('le nom du cabinet pas encore revenu : l’avoir ne se valide pas, l’écran le dit, un clic forcé ne part pas ; il revient, il se valide', async () => {
+    const { rerender } = await monter('cabinet', figee(), null)
+    expect(await screen.findByText(RETENUE_MANDATAIRE_EN_LECTURE)).toBeTruthy()
+    expect(valider().disabled).toBe(true)
+    await act(async () => { fireEvent.click(valider()) })
+    expect(faux.rpcs).toEqual([])
+    expect(confirmations).toEqual([])
+    rerender(avoir('cabinet', figee(), CABINET_DU_DOSSIER))
+    await waitFor(() => expect(valider().disabled).toBe(false))
+    expect(screen.queryByText(RETENUE_MANDATAIRE_EN_LECTURE)).toBeNull()
+  })
+
+  it('un nom illisible ou vide : l’avoir ne se valide pas, sous ses mots, jamais un nom deviné', async () => {
+    await monter('cabinet', figee(), { etat: 'illisible', motif: 'accès refusé' })
+    expect(await screen.findByText(retenueMandataireIllisible('accès refusé'))).toBeTruthy()
+    expect(valider().disabled).toBe(true)
+    cleanup()
+    await monter('cabinet', figee(), { etat: 'lu', nom: ' ' })
+    expect(await screen.findByText(RETENUE_MANDATAIRE_VIDE)).toBeTruthy()
+    expect(valider().disabled).toBe(true)
+  })
 })

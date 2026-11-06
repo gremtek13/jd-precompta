@@ -161,6 +161,56 @@ describe('l’aperçu d’une facture figée n’imprime que ses colonnes figée
   })
 })
 
+// LE MANDAT (étape P4) : une facture que le cabinet a validée (`mandataire_nom` figé) imprime sous l'identité de l'émetteur « Facture
+// établie par <cabinet> au nom et pour le compte de <nom légal> » — « Avoir établi par … » pour un avoir —, le même aux deux
+// espaces ; sans mandataire, une facture d'avant, ou le drapeau baissé, rien.
+describe('le mandat de facturation s’imprime sous l’identité de l’émetteur', () => {
+  const MENTION = 'Facture établie par Cabinet Fictif au nom et pour le compte de Camille Essai EI'
+  const dossier = DOSSIER_CHANGE
+
+  it('une facture validée par le cabinet : la mention, juste sous l’identité de l’émetteur et avant le client', async () => {
+    render(<FactureApercu facture={factureFigee({ mandataire_nom: 'Cabinet Fictif' })} dossier={dossier} onClose={() => {}} />)
+    await screen.findByText('Séance d’essai')
+    const p = papier()
+    expect(p).toContain(MENTION)
+    expect(p.indexOf(`N° TVA intracommunautaire ${TVA_VENDEUR}`)).toBeLessThan(p.indexOf(MENTION))
+    expect(p.indexOf(MENTION)).toBeLessThan(p.indexOf('Facturé à'))
+    // Aucune mise en page en ligne : ce qui s'imprime ne la porte pas (CLAUDE.md).
+    const noeud = Array.from(document.querySelectorAll('.facture-imprimable div')).find((n) => n.textContent === MENTION)!
+    expect(noeud.getAttribute('style')).toBeNull()
+  })
+
+  it('le nom légal est celui que l’aperçu imprime pour l’émetteur : la dénomination figée, sinon le nom de la facture', async () => {
+    render(<FactureApercu facture={factureFigee({ mandataire_nom: 'Cabinet Fictif', denomination_imprimee: null })} dossier={dossier} onClose={() => {}} />)
+    await screen.findByText('Séance d’essai')
+    expect(papier()).toContain('Facture établie par Cabinet Fictif au nom et pour le compte de Nom interne du dossier')
+  })
+
+  it('un avoir : « Avoir établi par … »', async () => {
+    render(<FactureApercu facture={factureFigee({ type: 'avoir', numero: 'A2027-0001', mandataire_nom: 'Cabinet Fictif' })} dossier={dossier} onClose={() => {}} />)
+    await screen.findByText('Séance d’essai')
+    expect(papier()).toContain('Avoir établi par Cabinet Fictif au nom et pour le compte de Camille Essai EI')
+    expect(papier()).not.toContain('Facture établie par')
+  })
+
+  it('sans mandataire figé (le client « Ventes » a validé) : rien', async () => {
+    render(<FactureApercu facture={factureFigee({ mandataire_nom: null })} dossier={dossier} onClose={() => {}} />)
+    await screen.findByText('Séance d’essai')
+    expect(papier()).not.toMatch(/établie? par|au nom et pour le compte/)
+  })
+
+  it('une facture d’avant A7 s’imprime comme hier, même si sa colonne porte un nom ; le drapeau baissé aussi', async () => {
+    render(<FactureApercu facture={factureFigee({ mentions_figees: false, mandataire_nom: 'Cabinet Fictif' })} dossier={dossier} onClose={() => {}} />)
+    await screen.findByText('Séance d’essai')
+    expect(papier()).not.toMatch(/établie? par|au nom et pour le compte/)
+    cleanup()
+    faux.figees = false
+    render(<FactureApercu facture={factureFigee({ mandataire_nom: 'Cabinet Fictif' })} dossier={dossier} onClose={() => {}} />)
+    await screen.findByText('Séance d’essai')
+    expect(papier()).not.toMatch(/établie? par|au nom et pour le compte/)
+  })
+})
+
 describe('le logo figé, vérifié à son empreinte figée avant toute image', () => {
   it('le fichier qui rend l’empreinte figée s’affiche ; l’adresse d’objet est révoquée au démontage', async () => {
     const octets = logoDe(1)
