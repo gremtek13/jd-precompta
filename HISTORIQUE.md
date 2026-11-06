@@ -48970,3 +48970,17 @@ contrôles, égaux des deux côtés : la dérive, 176 migrations, `5a6c2f0a…` 
 l'inventaire, 2 440 objets, `062299d0…`. Les 138 tests qui lisent l'arbre ou l'export, plus ceux de la sauvegarde, des
 notes et de la fiche d'une pièce, passent (139 fichiers). Ses essais se rejouent en production après le banc du leurre,
 lancé le même soir sur la réplique mère.
+
+### 06/11/2026 — LES SITUATIONS PUBLIÉES, À L'ÉCRAN (C4B, LIGNE 51.5) (DERRIÈRE SON DRAPEAU)
+
+Tout derrière `SITUATIONS_PUBLIEES_EXPORTEES`, baissé : drapeau baissé, aucun écran ne change (colonnes lues, cases,
+phrases, route, entrée, `CE_QUE_PERD_LE_CLIENT`). Cabinet : « Publier au client » sous la situation intermédiaire de
+l'onglet Financement (`pages/dossier/SituationsPubliees.tsx`), qui la calcule déjà — même date, mêmes moteurs, N−1 au
+choix ; situations et exercices validés lus en entier (`lib/situationsPublieesLecture.ts`), sinon aucun geste ; refus
+avant le clic, confirmation qui nomme date, statut et totaux ; « Remplacer » à une date déjà publiée, « Retirer » par
+`retirer_situation` ; un verrou, la relecture après. Accès : la case « Comptes » (`domainesSelon`), la forme à cinq
+(`demandeDeChangementSelon`), sa phrase (`ceQueDitLaCaseComptes`), `droit_comptes` lue par l'onglet et AuthContext.
+Client : « Mes comptes » (`ClientComptes.tsx`, `mesComptesOuverts`), la case relue à la base, la situation en cours la
+plus récente, N face à N−1, un contenu relu à sa forme (`contenuLu`, sinon « illisible »), aucun geste. Question
+C4B-Q1 : un dossier assujetti ne publie pas d'ici (la CA3 de la période n'est pas lue par l'onglet Financement). Les
+visites du banc attendent le drapeau levé : la route n'existe pas avant.

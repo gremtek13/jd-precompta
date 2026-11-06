@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
 import { aujourdHuiAParis, formatDate } from '../../lib/format'
-import type { SituationIntermediaire } from '../../lib/situationIntermediaire'
 import {
   composerLaSituation, confirmationDeLaPublication, contenuLu, confirmationDuRetrait, memeDateAnneePrecedente, montantDit,
   REFUS_DE_L_ECRAN, REFUS_SITUATION, situationEnCoursA, situationsEnCoursTriees, STATUT_DIT,
-  type CompositionDeLaSituation, type ContenuDeLaSituation, type SituationPubliee,
+  type CompositionDeLaSituation, type ContenuDeLaSituation, type SituationDuMoteur, type SituationPubliee,
 } from '../../lib/situationsPubliees'
 import { lireLesSituationsDuCabinet, type LectureDuCabinet } from '../../lib/situationsPublieesLecture'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -36,7 +35,7 @@ export default function SituationsPubliees({ dossierId, arreteeAu, assujettiTva,
   arreteeAu: string
   assujettiTva: boolean
   /** La situation intermédiaire d'une période : le même calcul que celui affiché au-dessus. */
-  calculer: (debut: string, fin: string) => SituationIntermediaire
+  calculer: (debut: string, fin: string) => SituationDuMoteur
 }) {
   const [lecture, setLecture] = useState<LectureDuCabinet | null>(null)
   const [avecNMoins1, setAvecNMoins1] = useState(true)
