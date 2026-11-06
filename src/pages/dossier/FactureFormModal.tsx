@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { calculerLigne, calculerTotaux, enregistrerFacture, lignesSaisies, mentionsLegalesParDefaut } from '../../lib/factures'
-import { aujourdHuiAParis, aujourdHuiSql, formatDate, formatMoney, formaterPrixUnitaire } from '../../lib/format'
+import { aujourdHuiAParis, formatDate, formatMoney, formaterPrixUnitaire } from '../../lib/format'
 import type { Article, ArticleExoneration, Contact, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT } from '../../lib/droitsAcces'
@@ -419,7 +419,9 @@ export default function FactureFormModal(props: Props) {
     articleExoneration,
     numeroTvaAttribue,
     optionDebits,
-    aujourdHui: aujourdHuiSql(),
+    // Le jour de PARIS, celui que les fonctions qui transmettent jugent (superpdp-emit, plateforme-agreee) et que la date
+    // proposée suit : le jour local d'un navigateur en retard sur Paris dirait « pas encore arrivé » la facture du jour.
+    aujourdHui: aujourdHuiAParis(),
   })
   const nonTransmissible = apercu?.cas === 'a_completer' && versEntreprise(mentions.typeClient) ? apercu : null
   // LA FACTURE D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF8c ; lib/sourceDeLaVente.ts) : ce que la validation d'une facture
