@@ -94,10 +94,11 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'FERME l’écran, avec son motif',
   },
   lireLeDroitCaisse: {
-    nombre: 1,
+    // 2 depuis l'étape B9c : « Mon analyse » relit « Caisse », qui ouvre au client les évènements de sa caisse.
+    nombre: 2,
     raison:
       'ce n’est pas une écriture : `droits_sur_le_dossier` LIT les cases de l’appelant (étape P1), pour « Ma caisse » ' +
-      '(ligne 26.6, étape C12a), qui relit la case « Caisse » à la base. `lib/caisseClientLecture.ts` attend la requête et ' +
+      '(ligne 26.6, étape C12a) et « Ce qui a bougé » de « Mon analyse » (B9c), qui relisent la case « Caisse » à la base. `lib/caisseClientLecture.ts` attend la requête et ' +
       'lit son erreur : un refus, une réponse illisible ou une requête qui lève ne rendent AUCUN droit, et l’écran ne montre ' +
       'ni n’offre rien, avec son motif',
   },

@@ -49078,3 +49078,19 @@ seule la lecture. La relecture a établi sans défaut le reste de C4a : le clien
 cours de son dossier, ne publie, ne retire ni ne coche sa case, l'anonyme n'exécute rien et la garde arrête le rôle des
 Edge Functions. Et de C5 : le client « Ventes » ne lit que les relances de facture de son dossier, n'en écrit ni n'en
 efface aucune, et ni un membre non assigné ni l'anonyme ne lisent les e-mails.
+
+### 06/11/2026 — « MON ANALYSE » : CE QUI A BOUGÉ, CÔTÉ CLIENT (B9C)
+
+Sans migration ni policy. `journalDuClient` (même module que B9b) : la même fenêtre, le même plafond, le total dit ;
+chaque genre sous la case de son domaine (`DOMAINE_DU_GENRE` : ventes, banque — justificatifs proposés et précisions des
+mouvements —, caisse, pièces et leurs précisions à tout accès), jugée par le module même d'une source lue. Tous les
+évènements de la société, jamais un auteur : « par toi » (le compte connecté), « par ton cabinet » ou « par un autre
+accès de ta société » quand la base a gardé `origine` (`piece_commentaires`, `justificatifs_proposes`,
+`precisions_mouvements`), rien sinon — le client ne lit ni `memberships` d'un autre ni `cabinet_admins`.
+`lireLesSourcesDuJournal(…, cases)` ne demande que les sources ouvertes (policies vérifiées dans l'export :
+`*_lecture_ventes`, `gere_la_banque`, `operations_caisse_lecture_caisse`, l'appartenance pour `pieces` et
+`piece_commentaires`) ; les e-mails sous `.in('type', ['facture', 'devis'])`, ce que la RLS laisse lire. `lireLAnalyse`
+relit aussi « Caisse » (`lireLeDroitCaisse`, compté 2). La section dit ses cases fermées, muette sur une
+source ouverte lue en partie. « Mon analyse » ne s'ouvre qu'avec « Ventes » ou « Banque » : un accès « Caisse » seul n'y
+voit rien. Tests : le module (cases, anonymat, fenêtre au jour de Paris, mots du client) et l'écran (rien avant les
+lectures, muet sur une lecture partielle, rien de la banque sans « Banque », aucun compte rendu).

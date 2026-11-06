@@ -6,12 +6,13 @@ import { ajouterJours } from './format'
 import { ACCES_EN_COURS, type AccesDuDossier } from './auteursVentes'
 import { lireLesAccesDuDossier } from './auteursVentesLecture'
 import {
-  debutDeLaFenetre, type GenreDuJournal, type LectureDUneSource, type LigneDuJournal, type SourcesDuJournal,
+  TYPES_D_EMAIL_DU_CLIENT, debutDeLaFenetre, genreOuvert, type CasesDuJournal, type GenreDuJournal, type LectureDUneSource, type LigneDuJournal, type SourcesDuJournal,
 } from './journalDeLEspaceClient'
 
 // LES SOURCES DU JOURNAL DE L'ESPACE CLIENT, LUES POUR LA CARTE P10 DE LA VUE D'ENSEMBLE (étape B9b ; la règle est dans
-// lib/journalDeLEspaceClient.ts, pur). Le cabinet seul : chaque table lue ici lui est ouverte par `admin_du_dossier`, comme
-// à ses onglets — aucune policy neuve, aucune écriture.
+// lib/journalDeLEspaceClient.ts, pur). Le cabinet : chaque table lue ici lui est ouverte par `admin_du_dossier`, comme à ses
+// onglets. Le client (« Mon analyse », étape B9c) : les seules sources que ses cases ouvrent, chacune par la policy qui la
+// lui ouvre déjà (`lireLesSourcesDuJournal`) — aucune policy neuve, aucune écriture.
 //
 // Une lecture par colonne d'auteur, bornée à la fenêtre par son instant (`gte`), d'un jour plus large que la fenêtre : le
 // module tranche au jour de Paris, la base ne lit qu'un sur-ensemble. Chaque collection passe par `lireTout` (tri TOTAL
@@ -25,7 +26,7 @@ const texteOuNul = (v: unknown): string | null => (typeof v === 'string' ? v : n
 /** Une source : la lecture entière, puis chaque ligne réduite à ce que le journal dit. */
 async function lireUneSource(
   tranche: (debut: number, fin: number) => PromiseLike<TrancheLue<Lue>>,
-  auteur: string, le: string, reference?: string,
+  auteur: string, le: string, reference?: string, avecOrigine = false,
 ): Promise<LectureDUneSource> {
   try {
     const lecture = await lireTout<Lue>(tranche)
@@ -35,6 +36,8 @@ async function lireUneSource(
       auteur: texteOuNul(l[auteur]),
       le: texteOuNul(l[le]),
       reference: reference === undefined ? null : texteOuNul(l[reference]),
+      // L'origine que la base a déduite à l'écriture ; toute autre valeur n'est personne.
+      ...(avecOrigine ? { origine: l.origine === 'client' || l.origine === 'cabinet' ? l.origine : null } : {}),
     }))
     return { etat: 'lue', lignes }
   } catch (e) {
@@ -42,91 +45,107 @@ async function lireUneSource(
   }
 }
 
-/** Les vingt-six sources du journal, pour le dossier, depuis `borne` (AAAA-MM-JJ, un jour avant la fenêtre). */
-export async function lireLesSourcesDuJournal(dossierId: string, borne: string): Promise<SourcesDuJournal> {
+/**
+ * Les vingt-six sources du journal, pour le dossier, depuis `borne` (AAAA-MM-JJ, un jour avant la fenêtre). `cases` nul :
+ * le cabinet, qui les lit toutes. Sinon le CLIENT (étape B9c), qui ne lit que les sources que ses cases, relues à la base,
+ * ouvrent (`genreOuvert`) ; chacune par la policy qui la lui ouvre déjà — `client_du_dossier(…, 'ventes')` pour les ventes,
+ * `gere_la_banque` pour les justificatifs proposés et les précisions des mouvements, `client_du_dossier(…, 'caisse')` pour
+ * la caisse, l'appartenance au dossier (`memberships`) pour les pièces et leurs commentaires.
+ */
+export async function lireLesSourcesDuJournal(
+  dossierId: string, borne: string, cases: CasesDuJournal | null = null,
+): Promise<SourcesDuJournal> {
   const d = dossierId
-  const lectures: Record<GenreDuJournal, Promise<LectureDUneSource>> = {
-    facture_creee: lireUneSource((debut, fin) => supabase.from('factures_emises')
+  const lectures: Record<GenreDuJournal, () => Promise<LectureDUneSource>> = {
+    facture_creee: () => lireUneSource((debut, fin) => supabase.from('factures_emises')
       .select('id, created_by, created_at', { count: 'exact' }).eq('dossier_id', d).gte('created_at', borne)
       .order('created_at').order('id').range(debut, fin), 'created_by', 'created_at'),
-    facture_validee: lireUneSource((debut, fin) => supabase.from('factures_emises')
+    facture_validee: () => lireUneSource((debut, fin) => supabase.from('factures_emises')
       .select('id, numero, valide_par, validated_at', { count: 'exact' }).eq('dossier_id', d).gte('validated_at', borne)
       .order('validated_at').order('id').range(debut, fin), 'valide_par', 'validated_at', 'numero'),
-    facture_transmise: lireUneSource((debut, fin) => supabase.from('transmissions_factures')
+    facture_transmise: () => lireUneSource((debut, fin) => supabase.from('transmissions_factures')
       .select('id, cree_par, cree_le', { count: 'exact' }).eq('dossier_id', d).gte('cree_le', borne)
       .order('cree_le').order('id').range(debut, fin), 'cree_par', 'cree_le'),
-    encaissement_enregistre: lireUneSource((debut, fin) => supabase.from('encaissements_factures')
+    encaissement_enregistre: () => lireUneSource((debut, fin) => supabase.from('encaissements_factures')
       .select('id, cree_par, cree_le', { count: 'exact' }).eq('dossier_id', d).gte('cree_le', borne)
       .order('cree_le').order('id').range(debut, fin), 'cree_par', 'cree_le'),
-    encaissement_retire: lireUneSource((debut, fin) => supabase.from('encaissements_factures')
+    encaissement_retire: () => lireUneSource((debut, fin) => supabase.from('encaissements_factures')
       .select('id, retire_par, retire_le', { count: 'exact' }).eq('dossier_id', d).gte('retire_le', borne)
       .order('retire_le').order('id').range(debut, fin), 'retire_par', 'retire_le'),
-    encaissement_declare: lireUneSource((debut, fin) => supabase.from('transmissions_encaissements')
+    encaissement_declare: () => lireUneSource((debut, fin) => supabase.from('transmissions_encaissements')
       .select('id, cree_par, cree_le', { count: 'exact' }).eq('dossier_id', d).gte('cree_le', borne)
       .order('cree_le').order('id').range(debut, fin), 'cree_par', 'cree_le'),
-    statut_releve: lireUneSource((debut, fin) => supabase.from('statuts_factures_recus')
+    statut_releve: () => lireUneSource((debut, fin) => supabase.from('statuts_factures_recus')
       .select('id, lu_par, lu_le', { count: 'exact' }).eq('dossier_id', d).gte('lu_le', borne)
       .order('lu_le').order('id').range(debut, fin), 'lu_par', 'lu_le'),
-    devis_emis: lireUneSource((debut, fin) => supabase.from('devis')
+    devis_emis: () => lireUneSource((debut, fin) => supabase.from('devis')
       .select('id, numero, emis_par, emis_le', { count: 'exact' }).eq('dossier_id', d).gte('emis_le', borne)
       .order('emis_le').order('id').range(debut, fin), 'emis_par', 'emis_le', 'numero'),
-    devis_repondu: lireUneSource((debut, fin) => supabase.from('devis')
+    devis_repondu: () => lireUneSource((debut, fin) => supabase.from('devis')
       .select('id, reponse, decide_par, decide_le', { count: 'exact' }).eq('dossier_id', d).gte('decide_le', borne)
       .order('decide_le').order('id').range(debut, fin), 'decide_par', 'decide_le', 'reponse'),
-    article_cree: lireUneSource((debut, fin) => supabase.from('articles')
+    article_cree: () => lireUneSource((debut, fin) => supabase.from('articles')
       .select('id, cree_par, cree_le', { count: 'exact' }).eq('dossier_id', d).gte('cree_le', borne)
       .order('cree_le').order('id').range(debut, fin), 'cree_par', 'cree_le'),
-    article_modifie: lireUneSource((debut, fin) => supabase.from('articles')
+    article_modifie: () => lireUneSource((debut, fin) => supabase.from('articles')
       .select('id, modifie_par, modifie_le', { count: 'exact' }).eq('dossier_id', d).gte('modifie_le', borne)
       .order('modifie_le').order('id').range(debut, fin), 'modifie_par', 'modifie_le'),
-    article_retire: lireUneSource((debut, fin) => supabase.from('articles')
+    article_retire: () => lireUneSource((debut, fin) => supabase.from('articles')
       .select('id, retire_par, retire_le', { count: 'exact' }).eq('dossier_id', d).gte('retire_le', borne)
       .order('retire_le').order('id').range(debut, fin), 'retire_par', 'retire_le'),
-    contact_cree: lireUneSource((debut, fin) => supabase.from('contacts')
+    contact_cree: () => lireUneSource((debut, fin) => supabase.from('contacts')
       .select('id, cree_par, cree_le', { count: 'exact' }).eq('dossier_id', d).gte('cree_le', borne)
       .order('cree_le').order('id').range(debut, fin), 'cree_par', 'cree_le'),
-    contact_modifie: lireUneSource((debut, fin) => supabase.from('contacts')
+    contact_modifie: () => lireUneSource((debut, fin) => supabase.from('contacts')
       .select('id, modifie_par, modifie_le', { count: 'exact' }).eq('dossier_id', d).gte('modifie_le', borne)
       .order('modifie_le').order('id').range(debut, fin), 'modifie_par', 'modifie_le'),
-    contact_retire: lireUneSource((debut, fin) => supabase.from('contacts')
+    contact_retire: () => lireUneSource((debut, fin) => supabase.from('contacts')
       .select('id, retire_par, retire_le', { count: 'exact' }).eq('dossier_id', d).gte('retire_le', borne)
       .order('retire_le').order('id').range(debut, fin), 'retire_par', 'retire_le'),
-    contact_efface: lireUneSource((debut, fin) => supabase.from('contacts')
+    contact_efface: () => lireUneSource((debut, fin) => supabase.from('contacts')
       .select('id, efface_par, efface_le', { count: 'exact' }).eq('dossier_id', d).gte('efface_le', borne)
       .order('efface_le').order('id').range(debut, fin), 'efface_par', 'efface_le'),
-    parametres_changes: lireUneSource((debut, fin) => supabase.from('parametres_facturation')
+    parametres_changes: () => lireUneSource((debut, fin) => supabase.from('parametres_facturation')
       .select('id, auteur, cree_le', { count: 'exact' }).eq('dossier_id', d).gte('cree_le', borne)
       .order('cree_le').order('id').range(debut, fin), 'auteur', 'cree_le'),
-    adresse_declaree: lireUneSource((debut, fin) => supabase.from('adresses_reception')
+    adresse_declaree: () => lireUneSource((debut, fin) => supabase.from('adresses_reception')
       .select('id, auteur, cree_le', { count: 'exact' }).eq('dossier_id', d).gte('cree_le', borne)
       .order('cree_le').order('id').range(debut, fin), 'auteur', 'cree_le'),
-    justificatif_propose: lireUneSource((debut, fin) => supabase.from('justificatifs_proposes')
-      .select('id, auteur_id, created_at', { count: 'exact' }).eq('dossier_id', d).gte('created_at', borne)
-      .order('created_at').order('id').range(debut, fin), 'auteur_id', 'created_at'),
-    justificatif_retire: lireUneSource((debut, fin) => supabase.from('justificatifs_proposes')
+    justificatif_propose: () => lireUneSource((debut, fin) => supabase.from('justificatifs_proposes')
+      .select('id, auteur_id, created_at, origine', { count: 'exact' }).eq('dossier_id', d).gte('created_at', borne)
+      .order('created_at').order('id').range(debut, fin), 'auteur_id', 'created_at', undefined, true),
+    justificatif_retire: () => lireUneSource((debut, fin) => supabase.from('justificatifs_proposes')
       .select('id, retire_par, retire_le', { count: 'exact' }).eq('dossier_id', d).gte('retire_le', borne)
       .order('retire_le').order('id').range(debut, fin), 'retire_par', 'retire_le'),
-    precision_mouvement: lireUneSource((debut, fin) => supabase.from('precisions_mouvements')
-      .select('id, auteur_id, created_at', { count: 'exact' }).eq('dossier_id', d).gte('created_at', borne)
-      .order('created_at').order('id').range(debut, fin), 'auteur_id', 'created_at'),
-    precision_piece: lireUneSource((debut, fin) => supabase.from('piece_commentaires')
-      .select('id, auteur_id, created_at', { count: 'exact' }).eq('dossier_id', d).gte('created_at', borne)
-      .order('created_at').order('id').range(debut, fin), 'auteur_id', 'created_at'),
-    piece_deposee: lireUneSource((debut, fin) => supabase.from('pieces')
+    precision_mouvement: () => lireUneSource((debut, fin) => supabase.from('precisions_mouvements')
+      .select('id, auteur_id, created_at, origine', { count: 'exact' }).eq('dossier_id', d).gte('created_at', borne)
+      .order('created_at').order('id').range(debut, fin), 'auteur_id', 'created_at', undefined, true),
+    precision_piece: () => lireUneSource((debut, fin) => supabase.from('piece_commentaires')
+      .select('id, auteur_id, created_at, origine', { count: 'exact' }).eq('dossier_id', d).gte('created_at', borne)
+      .order('created_at').order('id').range(debut, fin), 'auteur_id', 'created_at', undefined, true),
+    piece_deposee: () => lireUneSource((debut, fin) => supabase.from('pieces')
       .select('id, uploaded_by, created_at', { count: 'exact' }).eq('dossier_id', d).gte('created_at', borne)
       .order('created_at').order('id').range(debut, fin), 'uploaded_by', 'created_at'),
-    email_envoye: lireUneSource((debut, fin) => supabase.from('emails_envoyes')
-      .select('id, envoye_par, created_at', { count: 'exact' }).eq('dossier_id', d).gte('created_at', borne)
-      .order('created_at').order('id').range(debut, fin), 'envoye_par', 'created_at'),
-    caisse_saisie: lireUneSource((debut, fin) => supabase.from('operations_caisse')
+    // Le client ne lit que les e-mails d'une facture ou d'un devis (`emails_envoyes_lecture_ventes`) : il les demande seuls,
+    // pour que ce qu'il lit soit ce qu'il demande, jamais un sous-ensemble que la RLS taillerait sans le dire.
+    email_envoye: () => lireUneSource((debut, fin) => {
+      const requete = supabase.from('emails_envoyes')
+        .select('id, envoye_par, created_at', { count: 'exact' }).eq('dossier_id', d)
+      return (cases === null ? requete : requete.in('type', TYPES_D_EMAIL_DU_CLIENT)).gte('created_at', borne)
+        .order('created_at').order('id').range(debut, fin)
+    }, 'envoye_par', 'created_at'),
+    caisse_saisie: () => lireUneSource((debut, fin) => supabase.from('operations_caisse')
       .select('id, cree_par, cree_le', { count: 'exact' }).eq('dossier_id', d).gte('cree_le', borne)
       .order('cree_le').order('id').range(debut, fin), 'cree_par', 'cree_le'),
-    caisse_retiree: lireUneSource((debut, fin) => supabase.from('operations_caisse')
+    caisse_retiree: () => lireUneSource((debut, fin) => supabase.from('operations_caisse')
       .select('id, retire_par, retire_le', { count: 'exact' }).eq('dossier_id', d).gte('retire_le', borne)
       .order('retire_le').order('id').range(debut, fin), 'retire_par', 'retire_le'),
   }
   const genres = Object.keys(lectures) as GenreDuJournal[]
-  const lues = await Promise.all(genres.map((g) => lectures[g]))
+  // Une source qu'aucune case n'ouvre au client n'est JAMAIS demandée : la RLS la rendrait vide sans le dire.
+  const lues = await Promise.all(genres.map((g) => (cases === null || genreOuvert(g, cases)
+    ? lectures[g]()
+    : Promise.resolve<LectureDUneSource>({ etat: 'fermee' }))))
   return Object.fromEntries(genres.map((g, i) => [g, lues[i]])) as Record<GenreDuJournal, LectureDUneSource>
 }
 

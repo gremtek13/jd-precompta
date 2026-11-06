@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientAnalyse from './ClientAnalyse'
-import { MUET_ETAT, MUET_VENTES, SOURCE_CHIFFRE_D_AFFAIRES } from '../lib/analyseClient'
+import { MUET_ETAT, MUET_VENTES, RIEN_D_OUVERT, SOURCE_CHIFFRE_D_AFFAIRES } from '../lib/analyseClient'
+import { JOURNAL_MUET_DU_CLIENT, LIMITE_DU_JOURNAL_DU_CLIENT } from '../lib/journalDeLEspaceClient'
 import { formatMoney } from '../lib/format'
 
 // « MON ANALYSE » (étape B9a) : rien avant le retour des lectures ; les cases relues à la base d'abord, et une section ne se
@@ -22,7 +23,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/supabase', async () => {
-  const { filtrer, predicatEq } = await import('../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn } = await import('../test/filtresPostgrest')
   const repondre = async <T,>(rendre: () => T) => { await faux.porte; return rendre() }
   return {
     supabase: {
@@ -39,6 +40,9 @@ vi.mock('../lib/supabase', async () => {
         const chaine: Record<string, unknown> = {
           select: () => chaine,
           eq: (c: string, v: unknown) => { predicats.push(predicatEq(c, v)); return chaine },
+          in: (c: string, v: readonly unknown[]) => { predicats.push(predicatIn(c, v)); return chaine },
+          // `.gte(colonne, jour)` : une date ISO se compare en texte à un instant ISO ; une colonne nulle n'est pas retenue.
+          gte: (c: string, v: string) => { predicats.push((l) => typeof l[c] === 'string' && (l[c] as string) >= v); return chaine },
           order: () => chaine,
           range: (d: number, f: number) => { debut = d; fin = f; return chaine },
           then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => repondre(() => {
@@ -58,8 +62,13 @@ vi.mock('../lib/fec', async (original) => ({
 }))
 
 vi.mock('../context/AuthContext', () => ({
-  useAuth: () => ({ dossierActifId: 'd1', droitsParDossier: faux.droitsContexte }),
+  useAuth: () => ({ dossierActifId: 'd1', droitsParDossier: faux.droitsContexte, session: { user: { id: MOI } } }),
 }))
+
+// Les comptes du journal (étape B9c) : jamais rendus à l'écran, quel que soit l'auteur.
+const MOI = 'u-client-connecte'
+const MEMBRE = 'u-membre-du-cabinet'
+const AUTRE = 'u-autre-acces'
 
 const FACTURE = {
   dossier_id: 'd1', statut: 'validee', type: 'facture', facture_origine_id: null, numero: 'F1', source_de_la_vente: false,
@@ -86,6 +95,21 @@ function poser() {
     controles_releves_bancaires: [
       { id: 'c1', dossier_id: 'd1', solde_final: 4321.5, coherent: true, periode_fin: '2026-10-31', created_at: '2026-11-01T08:00:00Z' },
       { id: 'cx', dossier_id: 'd2', solde_final: 1, coherent: true, periode_fin: '2026-11-30', created_at: '2026-11-01T08:00:00Z' },
+    ],
+    // Le journal (étape B9c) : des gestes du client connecté, d'un autre accès, du cabinet, et d'une autre société.
+    pieces: [
+      { id: 'p1', dossier_id: 'd1', uploaded_by: MOI, created_at: '2026-11-05T09:00:00Z' },
+      { id: 'p2', dossier_id: 'd1', uploaded_by: AUTRE, created_at: '2026-11-04T09:00:00Z' },
+      { id: 'p-vieille', dossier_id: 'd1', uploaded_by: MOI, created_at: '2026-09-01T09:00:00Z' },
+      { id: 'px', dossier_id: 'd2', uploaded_by: MOI, created_at: '2026-11-05T09:30:00Z' },
+    ],
+    piece_commentaires: [{ id: 'c1', dossier_id: 'd1', auteur_id: MEMBRE, origine: 'cabinet', created_at: '2026-11-03T09:00:00Z' }],
+    justificatifs_proposes: [
+      { id: 'j1', dossier_id: 'd1', auteur_id: MOI, origine: 'client', created_at: '2026-11-02T09:00:00Z', retire_par: null, retire_le: null },
+    ],
+    emails_envoyes: [
+      { id: 'm1', dossier_id: 'd1', type: 'facture', envoye_par: MEMBRE, created_at: '2026-11-01T09:00:00Z' },
+      { id: 'm2', dossier_id: 'd1', type: 'relance', envoye_par: MEMBRE, created_at: '2026-11-01T09:30:00Z' },
     ],
   }
   faux.comptesGonfles = {}
@@ -183,6 +207,62 @@ describe('« Mon analyse »', () => {
     await screen.findByText('Tes indicateurs')
     expect(screen.queryByRole('region', { name: 'Ta trésorerie' })).toBeNull()
     expect(faux.demandes).not.toContain('controles_releves_bancaires')
+  })
+
+  it('« Ce qui a bougé » : rien avant les lectures, puis les évènements de la société, sans aucun nom', async () => {
+    let ouvrir = () => {}
+    faux.porte = new Promise<void>((r) => { ouvrir = r })
+    page()
+    expect(screen.queryByRole('region', { name: 'Ce qui a bougé' })).toBeNull()
+    expect(screen.queryByText(/Rien n’a bougé|évènement/)).toBeNull()
+    await act(async () => { ouvrir() })
+    const section = await screen.findByRole('region', { name: 'Ce qui a bougé' })
+    expect(within(section).getByText('Ce qui a bougé depuis le 08/10/2026')).toBeTruthy()
+    const lignes = within(section).getAllByRole('listitem').map((l) => l.textContent)
+    expect(lignes).toEqual([
+      'Pièce déposée par toi, le 05/11/2026',
+      'Pièce déposée, le 04/11/2026',
+      'Précision sur une pièce par ton cabinet, le 03/11/2026',
+      'Justificatif proposé pour un mouvement par toi, le 02/11/2026',
+      'E-mail envoyé, le 01/11/2026',
+    ])
+    expect(within(section).getByText('5 évènements.')).toBeTruthy()
+    expect(within(section).getByText(LIMITE_DU_JOURNAL_DU_CLIENT)).toBeTruthy()
+    // Aucun compte rendu, quel que soit l'auteur ; la relance du cabinet n'est pas demandée.
+    for (const compte of [MOI, MEMBRE, AUTRE]) expect(document.body.textContent).not.toContain(compte)
+    expect(faux.demandes).not.toContain('memberships')
+  })
+
+  it('« Ce qui a bougé » muet sur une lecture partielle, sans rien lister ; les indicateurs restent dits', async () => {
+    faux.comptesGonfles = { pieces: 1 }
+    page()
+    const section = await screen.findByRole('region', { name: 'Ce qui a bougé' })
+    expect(within(section).getByText(JOURNAL_MUET_DU_CLIENT)).toBeTruthy()
+    expect(within(section).queryByRole('list')).toBeNull()
+    expect(section.textContent).not.toContain('Pièce déposée')
+    expect(region('Chiffre d’affaires facturé').textContent).toContain(formatMoney(1000))
+  })
+
+  it('sans « Banque » en base, aucun évènement de la banque n’est lu ni dit, et l’écran dit ce qu’il ne montre pas', async () => {
+    faux.droitsBase = { ventes: true, banque: false, caisse: false }
+    page()
+    const section = await screen.findByRole('region', { name: 'Ce qui a bougé' })
+    await within(section).findByText('4 évènements.')
+    expect(section.textContent).not.toContain('Justificatif')
+    expect(faux.demandes).not.toContain('justificatifs_proposes')
+    expect(faux.demandes).not.toContain('precisions_mouvements')
+    expect(faux.demandes).not.toContain('operations_caisse')
+    expect(within(section).getByText('Ton accès n’ouvre ni ta banque ni ta caisse : ce qui s’y fait n’y paraît pas.')).toBeTruthy()
+  })
+
+  it('sans aucune case, « Ce qui a bougé » montre encore les pièces de la société', async () => {
+    faux.droitsBase = { ventes: false, banque: false, caisse: false }
+    page()
+    await screen.findByText(RIEN_D_OUVERT)
+    const section = await screen.findByRole('region', { name: 'Ce qui a bougé' })
+    expect(within(section).getAllByRole('listitem').map((l) => l.textContent))
+      .toEqual(['Pièce déposée par toi, le 05/11/2026', 'Pièce déposée, le 04/11/2026', 'Précision sur une pièce par ton cabinet, le 03/11/2026'])
+    expect(faux.demandes).not.toContain('emails_envoyes')
   })
 
   it('exporte un état en CSV : BOM UTF-8, l’année dans le nom, les lignes de l’état', async () => {

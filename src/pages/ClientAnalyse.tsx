@@ -5,8 +5,14 @@ import {
   SOURCE_ETATS, SOURCE_PAR_ARTICLE, anneesDesVentes, chiffreDAffairesFacture, creancesClients, csvDeLEtat, csvParMois,
   motsDuSolde, nomFichierDeLEtat, parArticle, parClient, parMois, variation, type Comparaison, type Creance, type EtatDeSynthese,
 } from '../lib/analyseClient'
-import { useAnalyseDuClient, type BanqueDeLAnalyse, type VentesDeLAnalyse } from '../lib/analyseClientLecture'
+import {
+  useAnalyseDuClient, type BanqueDeLAnalyse, type JournalDeLAnalyse, type VentesDeLAnalyse,
+} from '../lib/analyseClientLecture'
 import { maBanqueOuverte, soldeAuReleve } from '../lib/banqueClient'
+import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
+import {
+  JOURNAL_MUET_DU_CLIENT, LIMITE_DU_JOURNAL_DU_CLIENT, ceQueTesCasesNeMontrentPas, debutDeLaFenetre, journalDuClient, phraseDuCompteDuClient,
+} from '../lib/journalDeLEspaceClient'
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
 import { droitsSur } from '../lib/droitsAcces'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
@@ -22,14 +28,16 @@ import { aujourdHuiAParis, formatDate, formatMoney } from '../lib/format'
 // n'est pas lue en entier est MUET, avec son motif en infobulle, jamais « 0 ». « Aujourd'hui » est le jour de Paris, lu au
 // rendu.
 export default function ClientAnalyse() {
-  const { dossierActifId, droitsParDossier } = useAuth()
+  const { dossierActifId, droitsParDossier, session } = useAuth()
   // `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
   const cases = droitsSur(droitsParDossier ?? {}, dossierActifId)
-  const lecture = useAnalyseDuClient(
-    dossierActifId,
-    mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, cases.ventes),
-    maBanqueOuverte(COUVERTURE_EXPORTEE, cases.banque),
-  )
+  // Le jour de Paris, lu au rendu : la fenêtre du journal se juge à ce jour.
+  const aujourdhui = aujourdHuiAParis()
+  const lecture = useAnalyseDuClient(dossierActifId, {
+    ventes: mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, cases.ventes),
+    banque: maBanqueOuverte(COUVERTURE_EXPORTEE, cases.banque),
+    caisse: maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, cases.caisse),
+  }, aujourdhui)
 
   if (!dossierActifId) {
     return <p className="muted">Aucun dossier ne t'est encore rattaché — contacte ton cabinet comptable.</p>
@@ -44,15 +52,54 @@ export default function ClientAnalyse() {
         <div className="card"><p className="muted" aria-busy="true">Chargement…</p></div>
       ) : lecture.etat === 'droits_illisibles' ? (
         <div className="card"><p className="error-text" title={lecture.motif}>{DROITS_ILLISIBLES}</p></div>
-      ) : lecture.ventes.etat === 'fermee' && lecture.banque.etat === 'fermee' ? (
-        <div className="card"><p className="muted">{RIEN_D_OUVERT}</p></div>
       ) : (
         <>
-          <Indicateurs ventes={lecture.ventes} banque={lecture.banque} />
-          {lecture.ventes.etat !== 'fermee' && <Etats ventes={lecture.ventes} />}
+          {lecture.ventes.etat === 'fermee' && lecture.banque.etat === 'fermee' ? (
+            <div className="card"><p className="muted">{RIEN_D_OUVERT}</p></div>
+          ) : (
+            <>
+              <Indicateurs ventes={lecture.ventes} banque={lecture.banque} />
+              {lecture.ventes.etat !== 'fermee' && <Etats ventes={lecture.ventes} />}
+            </>
+          )}
+          <CeQuiABouge journal={lecture.journal} soi={session?.user.id ?? null} aujourdhui={aujourdhui} />
         </>
       )}
     </>
+  )
+}
+
+// ── Ce qui a bougé (étape B9c) ───────────────────────────────────────────────────────────────────────────────────────
+// Le journal de la société, sur les cases ouvertes (lib/journalDeLEspaceClient.ts, `journalDuClient`) : aucun nom, jamais
+// l'identifiant d'un auteur ; muet, sans rien lister, sur une lecture partielle ; ce que les cases ne montrent pas, dit.
+function CeQuiABouge({ journal, soi, aujourdhui }: { journal: JournalDeLAnalyse; soi: string | null; aujourdhui: string }) {
+  const j = journalDuClient({ soi, cases: journal.cases, sources: journal.sources, aujourdhui })
+  const horsCases = ceQueTesCasesNeMontrentPas(journal.cases)
+  return (
+    <section className="card" aria-label="Ce qui a bougé">
+      <h2 style={{ marginTop: 0 }}>Ce qui a bougé depuis le {formatDate(debutDeLaFenetre(aujourdhui))}</h2>
+      {j.etat === 'en_cours' ? (
+        <p className="muted" aria-busy="true">Chargement…</p>
+      ) : j.etat === 'muet' ? (
+        <p className="error-text" title={j.motif}>{JOURNAL_MUET_DU_CLIENT}</p>
+      ) : (
+        <>
+          <p className="muted">{phraseDuCompteDuClient(j)}</p>
+          {j.evenements.length > 0 && (
+            <ul aria-label="Évènements récents" style={{ listStyle: 'none', margin: '0 0 8px', padding: 0, lineHeight: 1.7 }}>
+              {j.evenements.map((e) => (
+                <li key={`${e.genre}-${e.id}`}>
+                  {e.libelle}{e.par && <span className="muted"> {e.par}</span>}
+                  <span className="muted">, le {formatDate(e.le)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+      {horsCases && <p className="muted" style={{ fontSize: '0.85rem' }}>{horsCases}</p>}
+      <p className="muted" style={{ fontSize: '0.85rem' }}>{LIMITE_DU_JOURNAL_DU_CLIENT}</p>
+    </section>
   )
 }
 
