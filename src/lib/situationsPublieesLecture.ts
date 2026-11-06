@@ -10,12 +10,6 @@ import type { SituationPubliee } from './situationsPubliees'
 
 const COLONNES = 'id, dossier_id, annee, geste, arretee_au, statut, contenu, remplace_id, auteur, publiee_le'
 
-// Tri TOTAL, terminé par la clé primaire (`lireTout`).
-function trancheDesSituations(dossierId: string) {
-  return (debut: number, fin: number) => supabase.from('situations_publiees').select(COLONNES, { count: 'exact' })
-    .eq('dossier_id', dossierId).order('publiee_le').order('id').range(debut, fin)
-}
-
 /** Une lecture dont une ligne n'est pas du dossier demandé ne se croit pas. */
 function duDossier<T extends { dossier_id: string }>(lecture: LectureComplete<T>, dossierId: string): LectureComplete<T> {
   if (lecture.lignes.every((l) => l.dossier_id === dossierId)) return lecture
@@ -34,7 +28,9 @@ export interface LectureDuCabinet {
 export async function lireLesSituationsDuCabinet(dossierId: string): Promise<LectureDuCabinet> {
   try {
     const [situations, exercices] = await Promise.all([
-      lireTout<SituationPubliee>(trancheDesSituations(dossierId)),
+      lireTout<SituationPubliee>((debut, fin) =>
+        supabase.from('situations_publiees').select(COLONNES, { count: 'exact' })
+          .eq('dossier_id', dossierId).order('publiee_le').order('id').range(debut, fin)),
       lireTout<{ annee: number; dossier_id: string }>((debut, fin) =>
         supabase.from('exercices_valides').select('annee, dossier_id', { count: 'exact' })
           .eq('dossier_id', dossierId).order('annee').order('dossier_id').range(debut, fin),
@@ -71,7 +67,9 @@ export async function lireLesSituationsDuClient(dossierId: string): Promise<Lect
   try {
     const [droits, situations] = await Promise.all([
       supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId }),
-      lireTout<SituationPubliee>(trancheDesSituations(dossierId)),
+      lireTout<SituationPubliee>((debut, fin) =>
+        supabase.from('situations_publiees').select(COLONNES, { count: 'exact' })
+          .eq('dossier_id', dossierId).order('publiee_le').order('id').range(debut, fin)),
     ])
     if (droits.error) return { dossierId, etat: 'echec', motif: `ton accès à tes comptes n’a pas pu être vérifié (${messageErreur(droits.error, 'droits illisibles')})` }
     const data: unknown = droits.data
