@@ -121,7 +121,14 @@ export function sitesDeLecturePaginee(virtuelles: Record<string, string> = {}): 
 // d'un tri unique écrit à la main. Et elle porte un NOMBRE, la leçon de `datesUtc.test.ts` : un
 // fichier dispensé l'est ENTIÈREMENT, or les fichiers dispensés ici portent aussi des lectures
 // correctes. Une de plus est une rechute, une de moins est une raison morte.
-const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {}
+const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
+  'src/lib/journalDeLEspaceClientLecture.ts [?]': {
+    nombre: 1,
+    raison: 'la fermeture est le paramètre `tranche` de `lireUneSource` (étape B9b, la carte « Espace client : ce qui a '
+      + 'bougé ») : ses vingt-six appelants, dans ce même fichier, écrivent chacun `.order(<instant>).order(\'id\')` sur une '
+      + 'table dont la clé primaire est `id` — le test « les sources du journal… » ci-dessous le vérifie, table par table',
+  },
+}
 
 // LA CLÉ DU RÉSULTAT D'UNE FONCTION QUI REND UNE TABLE, lue par une lecture paginée : ce qui y tient lieu de clé primaire.
 // Une fonction n'en a pas dans le schéma ; sa clé se DÉCLARE ici, avec la raison qui la fait unique, et chaque colonne
@@ -205,6 +212,18 @@ export function triNonTotal(
 
 describe('tri total des lectures paginées', () => {
   const sites = sitesDeLecturePaginee()
+
+  it('les sources du journal de l’espace client trient chacune par la clé primaire (l’exception ci-dessus)', () => {
+    const texte = readFileSync(join(process.cwd(), 'src/lib/journalDeLEspaceClientLecture.ts'), 'utf8')
+    const appels = [...texte.matchAll(/lireUneSource\(\(debut, fin\) =>/g)].length
+    const tris = [...texte.matchAll(/\.order\('id'\)\.range\(debut, fin\)/g)].length
+    expect(appels).toBeGreaterThanOrEqual(20)
+    expect(tris).toBe(appels)
+    const cles = clesPrimairesDuSchema([...fichiersDuSchema(), ...fichiersPrepares()])
+    const tables = [...new Set([...texte.matchAll(/supabase\.from\('(\w+)'\)/g)].map((m) => m[1]))]
+    expect(tables.length).toBeGreaterThanOrEqual(10)
+    for (const table of tables) expect(cles.get(table), table).toEqual(['id'])
+  })
 
   it('toute lecture paginée départage ses lignes par la clé primaire', () => {
     expect(triNonTotal()).toEqual([])
