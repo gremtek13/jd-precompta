@@ -48570,3 +48570,17 @@ un montant OFX à plus de deux décimales non nulles est illisible (`parseMontan
 l'en-tête OFX dit l'encodage (`decoderReleve`). Les identifiants bancaires ne sont jamais lus. Quatre mutations mordent
 (signe inversé, douteuse retournée, date en UTC, deux comptes). Le client « Banque » n’importe aucun relevé, et un OFX
 ne se dépose pas dans Documents (les bornes du seau `pieces`).
+
+### 06/11/2026 — LA CONSIGNE AU PRATICIEN, RÉDIGÉE POUR LE CABINET (LIGNE 21, MVP)
+
+La condition de l'absence d'hébergement HDS tient à la consigne donnée aux clients, pas au code (RGPD.md §8.7) ; elle
+attendait le cabinet. Rédigée pour lui, deux pages A4 à sa charte, hors du dépôt (aucun nom) : ce que le praticien
+transmet et par quel chemin (le relevé chaque mois, en CSV, OFX ou QIF ; les pièces par « Mes pièces » ou l'adresse du
+dossier, un seul chemin par document ; le relevé SNIR ; les cotisations ; les kilomètres) ; ce qui n'entre jamais
+(bordereaux, feuilles de soins, ordonnances, décomptes par patient, copie d'un chèque ou d'un bordereau de remise, devis
+de soins, un nom de patient dans une précision, la caisse ou un e-mail) ; la caisse (le brouillard au jour le jour, sous
+une référence et jamais un nom, reste chez lui — CGI, art. 99, et BOI-BNC-DECLA-10-20, § 270 à 290 — ; le total du jour
+dans « Ma caisse ») ; les factures ; un accusé de réception signé. Une première version disait « ne facturez que des
+professionnels » : corrigée le même jour, la conception prévoyant la facture à un patient (la règle des soins refuse
+seulement de le ranger dans « Clients », A4B2-Q2 ; son nom est tenu hors du FEC, FEC22-Q7, et de l'assistant, VF9C-Q1) —
+la consigne demande que la facture le nomme et ne dise rien de plus sur lui, ni motif ni pathologie.
