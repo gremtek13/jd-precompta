@@ -303,7 +303,11 @@ describe('les essais de la base, rejoués en production', () => {
     // `acomptesDesDevis` sorti (sa migration collée en production, 20261105231034 ; l'essai ne cherche aucun semis, il se
     // joue comme un essai de la production). Dix-sept le même jour : `situationsPubliees` entré dans la famille « apres »,
     // après sa migration préparée (étape C4a, `situations_publiees`, que sa garde refuse sur une base qui porte la trace).
-    expect(cas.length).toBe(17)
+    // Dix-huit le même jour : `devisCitentUnContact` entré dans la famille « apres », après sa migration préparée (la
+    // liste des clients sans activité depuis trois ans, `devis_citent_un_contact`). Dix-neuf le même jour :
+    // `apercuFactureElectronique` entré dans la famille « apres », après sa migration préparée (étape C3,
+    // `apercu_facture_electronique`) ; tous deux SÛRS au banc, sur une copie de la réplique mère remontée du catalogue.
+    expect(cas.length).toBe(19)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

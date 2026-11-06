@@ -48941,3 +48941,19 @@ banque par défaut plus). `comptesEnDur.test.ts` : reste de PC3a de 63 à 44 emp
 en vagues suivantes : `revisionCycles` et `revisionPreuves` (25, le plan à porter dans `revision.ts` et
 `revueAnalytique.ts`), le lettrage et `ComptesDeTiersCard` (16, bornés par `lettrages_manuels_compte`), l'auxiliaire
 du FEC (`engagement.ts`, 3) avec les libellés et préfixes du plan (§ 3.9), puis PC3b, l'assistant.
+
+### 06/11/2026 — LA RÉPLIQUE MÈRE REMONTÉE DEPUIS LE CATALOGUE, ET LE BANC DU LEURRE SUR DEUX ESSAIS
+
+Les copies à froid d'où les répliques se tiraient avaient été supprimées : la mère est remontée sans copie de départ,
+par le procédé (« LA RÉPLIQUE : LE PROCÉDÉ »), dans une grappe PostgreSQL 16 du scratchpad (`replique_mere/`, hors du
+dépôt). Six relevés du catalogue par `execute_sql` (tables, contraintes, index-déclencheurs-RLS, policies, droits,
+fonctions de `auth` et du stockage), chacun vérifié à son empreinte, la barre oblique inverse sous U+E000 ; les
+fonctions et l'historique tirés de l'export ; une doublure de `pg_net` ; le semis fictif et les référentiels des
+migrations. Deux écueils : les déclencheurs de contrainte se créent par leur CREATE CONSTRAINT TRIGGER, et 32 CHECK
+écrits avec BETWEEN reprennent le texte de leur migration. Niveau : 175 migrations, la dernière
+`20261105231034_acomptes_des_devis`. `signature.sql` : neuf familles égales sur neuf, réplique et production. La mère
+reste ARRÊTÉE, on la copie (`cp -a`). Le banc du leurre, sur une copie, chaque essai dans la famille « apres » munie de
+SA migration préparée (deux entrées de `regles.json`, dix-neuf cas particuliers) : `devisCitentUnContact` SÛR (28
+verdicts, 0 faute, 0 écart, 0 motif, 0 écriture du leurre), `apercuFactureElectronique` SÛR (17 verdicts, mêmes zéros),
+code 0 chacun ; la copie supprimée. La mère ne se supprime JAMAIS : c'est la seule copie d'où les
+répliques se tirent, et sa perte (le 06/11/2026, un disque libéré trop largement) a coûté une remontée entière.
