@@ -126,6 +126,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'crochet (`lib/piecesJointesEcarteesClientLecture.ts`, ligne 22.94). `lib/piecesJointesEcarteesClient.ts` attend la ' +
       'requête et lit son erreur : un refus, ou une réponse illisible, rendent une lecture INCOMPLÈTE, que l’écran dit, jamais une liste vide',
   },
+  lireLEtatDuDossier: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `phase_des_exercices` LIT, par exercice, la phase du dossier chez le cabinet et le jour ' +
+      'd’un exercice validé (ligne 51.5, étape C2), pour la carte de l’accueil du client, par UN crochet ' +
+      '(`lib/etatDuDossierLecture.ts`). `lib/etatDuDossier.ts` attend la requête et lit son erreur : un refus, une valeur ' +
+      'illisible ou une requête qui lève rendent une lecture INCOMPLÈTE, que la carte dit, jamais une liste vide',
+  },
   lireLEtatDeLaFactureElectronique: {
     nombre: 1,
     raison:

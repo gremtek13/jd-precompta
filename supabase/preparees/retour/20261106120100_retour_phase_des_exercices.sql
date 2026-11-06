@@ -1,0 +1,12 @@
+-- RETOUR ARRIÈRE DE `phase_des_exercices` (ligne 51.5, étape C2) — À ACCORDER PAR LE CABINET (le texte retire une fonction),
+-- À COLLER dans l'éditeur SQL de Supabase, dans une transaction, avec sa ligne d'historique. La migration :
+-- supabase/preparees/20261106120000_phase_des_exercices.sql ; le récit : HISTORIQUE.md, « 06/11/2026 — L'ÉTAT DU DOSSIER
+-- CHEZ LE CABINET, MONTRÉ AU CLIENT (C2) (PRÉPARÉE, PAS APPLIQUÉE) ».
+--
+-- L'ORDRE : D'ABORD l'application, son drapeau baissé (`ETAT_DU_DOSSIER_EXPORTE`, src/lib/etatDuDossier.ts) et remise en
+-- ligne — levé, la carte de l'accueil appellerait une fonction absente et dirait sa lecture manquée —, PUIS ce texte.
+--
+-- CE QU'IL RETIRE : la fonction seule. Elle n'écrit rien et ne garde rien : aucune donnée n'est perdue, aucune table n'est
+-- touchée. Après lui : la signature d'avant la migration (`signature.sql`), l'essai `phaseDesExercices.sql` EN ATTENTE, et
+-- les trois contrôles de l'export, le fichier de la migration sorti de l'export.
+drop function if exists public.phase_des_exercices(uuid);
