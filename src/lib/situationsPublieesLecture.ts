@@ -11,11 +11,9 @@ import type { SituationPubliee } from './situationsPubliees'
 const COLONNES = 'id, dossier_id, annee, geste, arretee_au, statut, contenu, remplace_id, auteur, publiee_le'
 
 // Tri TOTAL, terminé par la clé primaire (`lireTout`).
-function lireLesSituations(dossierId: string): Promise<LectureComplete<SituationPubliee>> {
-  return lireTout<SituationPubliee>((debut, fin) =>
-    supabase.from('situations_publiees').select(COLONNES, { count: 'exact' })
-      .eq('dossier_id', dossierId).order('publiee_le').order('id').range(debut, fin),
-  )
+function trancheDesSituations(dossierId: string) {
+  return (debut: number, fin: number) => supabase.from('situations_publiees').select(COLONNES, { count: 'exact' })
+    .eq('dossier_id', dossierId).order('publiee_le').order('id').range(debut, fin)
 }
 
 /** Une lecture dont une ligne n'est pas du dossier demandé ne se croit pas. */
@@ -36,16 +34,17 @@ export interface LectureDuCabinet {
 export async function lireLesSituationsDuCabinet(dossierId: string): Promise<LectureDuCabinet> {
   try {
     const [situations, exercices] = await Promise.all([
-      lireLesSituations(dossierId),
+      lireTout<SituationPubliee>(trancheDesSituations(dossierId)),
       lireTout<{ annee: number; dossier_id: string }>((debut, fin) =>
         supabase.from('exercices_valides').select('annee, dossier_id', { count: 'exact' })
           .eq('dossier_id', dossierId).order('annee').order('dossier_id').range(debut, fin),
       ),
     ])
-    const exercicesGardes = duDossier(exercices, dossierId)
+    // Une lecture incomplète se rend telle quelle, son motif avec elle : l'écran n'offre alors aucun geste.
+    const exercicesGardes = exercices.complete ? duDossier(exercices, dossierId) : exercices
     return {
       dossierId,
-      situations: duDossier(situations, dossierId),
+      situations: situations.complete ? duDossier(situations, dossierId) : situations,
       anneesValidees: { ...exercicesGardes, lignes: exercicesGardes.lignes.map((e) => e.annee) },
     }
   } catch (erreur) {
@@ -72,7 +71,7 @@ export async function lireLesSituationsDuClient(dossierId: string): Promise<Lect
   try {
     const [droits, situations] = await Promise.all([
       supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId }),
-      lireLesSituations(dossierId),
+      lireTout<SituationPubliee>(trancheDesSituations(dossierId)),
     ])
     if (droits.error) return { dossierId, etat: 'echec', motif: `ton accès à tes comptes n’a pas pu être vérifié (${messageErreur(droits.error, 'droits illisibles')})` }
     const data: unknown = droits.data
@@ -80,7 +79,7 @@ export async function lireLesSituationsDuClient(dossierId: string): Promise<Lect
       return { dossierId, etat: 'echec', motif: 'ton accès à tes comptes n’a pas pu être vérifié (droits illisibles)' }
     }
     if ((data as Record<string, unknown>).comptes !== true) return { dossierId, etat: 'sans_comptes' }
-    return { dossierId, etat: 'lue', situations: duDossier(situations, dossierId) }
+    return { dossierId, etat: 'lue', situations: situations.complete ? duDossier(situations, dossierId) : situations }
   } catch (erreur) {
     return { dossierId, etat: 'echec', motif: messageErreur(erreur, 'tes comptes n’ont pas pu être lus') }
   }

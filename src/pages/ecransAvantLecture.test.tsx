@@ -23,6 +23,8 @@ import ClientUpload from './ClientUpload'
 import ClientVentes from './ClientVentes'
 import ClientBanque from './ClientBanque'
 import ClientCaisse from './ClientCaisse'
+import ClientComptes from './ClientComptes'
+import SituationsPubliees from './dossier/SituationsPubliees'
 import ClientEcheancier from './ClientEcheancier'
 import EcheancierAccueil from './EcheancierAccueil'
 import AccueilVentesClient from './AccueilVentesClient'
@@ -256,6 +258,16 @@ const ECRANS: Ecran[] = [
   { nom: 'ClientBanque', fichier: 'pages/ClientBanque.tsx', rendre: () => <MemoryRouter><ClientBanque /></MemoryRouter> },
   // « Ma caisse » (ligne 26.6, étape C12a) : la case « Caisse » relue à la base, le dossier, ses opérations, sa caisse jour par jour.
   { nom: 'ClientCaisse', fichier: 'pages/ClientCaisse.tsx', rendre: () => <MemoryRouter><ClientCaisse /></MemoryRouter> },
+  // « Mes comptes » (ligne 51.5, étape C4b) : la case « Comptes » relue à la base, les situations en cours lues en entier.
+  { nom: 'ClientComptes', fichier: 'pages/ClientComptes.tsx', rendre: () => <MemoryRouter><ClientComptes /></MemoryRouter> },
+  // Publier une situation (étape C4b), sous la situation intermédiaire : les situations du dossier et ses exercices validés.
+  { nom: 'SituationsPubliees', fichier: 'pages/dossier/SituationsPubliees.tsx', rendre: () => (
+    <SituationsPubliees
+      dossierId="d1" arreteeAu="2025-06-30" assujettiTva={false}
+      calculer={(debut, fin) => ({ periodeDebut: debut, periodeFin: fin, totauxParPoste: [], ventesFactureesEcartees: [],
+        fraisSansPoste: [], recettesDeCaisseSansPoste: [] })}
+    />
+  ) },
   // « Mon échéancier » (ligne 51.5, étape C1) : le dossier et ses échéances de cotisation, lus en entier ; et sa carte de
   // l'accueil, montée seule (l'accueil ne la monte qu'une fois ses propres lectures revenues).
   { nom: 'ClientEcheancier', fichier: 'pages/ClientEcheancier.tsx', rendre: () => <MemoryRouter><ClientEcheancier /></MemoryRouter> },
