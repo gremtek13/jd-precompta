@@ -1,6 +1,6 @@
 -- RETOUR ARRIÈRE DE `phase_des_exercices` (ligne 51.5, étape C2) — À ACCORDER PAR LE CABINET (le texte retire une fonction),
 -- À COLLER dans l'éditeur SQL de Supabase, dans une transaction, avec sa ligne d'historique. La migration :
--- supabase/preparees/20261106120000_phase_des_exercices.sql ; le récit : HISTORIQUE.md, « 06/11/2026 — L'ÉTAT DU DOSSIER
+-- supabase/preparees/20261106110000_phase_des_exercices.sql ; le récit : HISTORIQUE.md, « 06/11/2026 — L'ÉTAT DU DOSSIER
 -- CHEZ LE CABINET, MONTRÉ AU CLIENT (C2) (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
 -- L'ORDRE : D'ABORD l'application, son drapeau baissé (`ETAT_DU_DOSSIER_EXPORTE`, src/lib/etatDuDossier.ts) et remise en

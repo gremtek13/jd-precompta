@@ -48673,7 +48673,7 @@ facture reprise), A8-Q6 (l'encaissé avant la reprise, par taux).
 ### 06/11/2026 — L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT (C2) (PRÉPARÉE, PAS APPLIQUÉE)
 
 Ligne 51.5, partie C, étape C2 (MEG3-Q6, « oui »). **La fonction** `phase_des_exercices(dossier)`
-(supabase/preparees/20261106120000_phase_des_exercices.sql, additive : une fonction, ni table ni policy) rend un
+(supabase/preparees/20261106110000_phase_des_exercices.sql, additive : une fonction, ni table ni policy) rend un
 `jsonb` : par exercice, du plus récent au plus ancien, une phase et, validé, le jour de Paris et la 2035 gardée — jamais
 un montant, un compte, un nombre, un libellé, un nom, ni qui ni à quelle heure. **Les phases, ce que la base prouve** :
 « validee » (`exercices_valides`, « 2035 enregistrée » quand `declaration` n'est pas nulle — jamais « déposée », la base
@@ -48683,7 +48683,7 @@ carte ne contredise pas « Ce qu'il reste à envoyer ») ; « en_revision �
 de l'exercice) ; « en_cours » pour le reste. Exercices rendus : N, N−1 et ceux que validation, clôture ou révision
 nomment. **L'accès d'abord** : `admin_du_dossier` ou `client_du_dossier(…, 'membre')`, le dossier existant, sinon
 42501 ; `security definer`, `search_path` fixé, `stable` ; ni `public` ni `anon`. Le retour :
-`preparees/retour/20261106120100_retour_phase_des_exercices.sql` (la fonction seule, aucune donnée).
+`preparees/retour/20261106110100_retour_phase_des_exercices.sql` (la fonction seule, aucune donnée).
 
 **Sur la réplique** (copie de `fec22b_replique`, base `c2_prod` : `p5b2_revue` plus les deux corps
 d'`acomptes_des_devis` qui différaient, `enregistrer_facture` et `facturer_acompte_devis` ; `signature.sql` égale à la
