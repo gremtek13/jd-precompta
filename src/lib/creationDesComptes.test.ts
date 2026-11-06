@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs'
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
 import {
-  CE_QUE_PERD_LE_CLIENT, CE_QUI_RESTE_AU_CLIENT, CHAMP_DE_LA_CONFIRMATION, CHAMP_DE_L_ENTREE, LIBELLE_DU_ROLE,
+  CE_QUE_PERD_LE_CLIENT, ceQuePerdLeClientSelon, CE_QUI_RESTE_AU_CLIENT, CHAMP_DE_LA_CONFIRMATION, CHAMP_DE_L_ENTREE, LIBELLE_DU_ROLE,
   MARQUEUR_DE_L_ENTREE, MARQUEUR_DU_RATTACHEMENT, avisDeLAccesCree, avisDuMembreAjoute, compteDeLaReponse,
   confirmationDeLEntree, confirmationDuRattachement, copieDuRefus, corpsDeLaCreation, corpsDuMembre, entreeAConfirmer,
   rattachementAConfirmer, refusAConfirmerLEntree, refusARattacher,
 } from './creationDesComptes'
 import { CE_QUE_DONNE_UN_ACCES, DOMAINES } from './droitsAcces'
+import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { extraireErreurFonction } from './invokeErreur'
 
 // CE QUE L'ÉCRAN DIT APRÈS UNE CRÉATION, selon ce que la fonction a fait du compte (décision du cabinet du 10/10/2026 :
@@ -268,12 +269,16 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     const cheminsDuCabinet = new Set([...espaceCabinet.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]))
     expect(cheminsDuCabinet.has('/securite')).toBe(true)
     const chemins = [...espaceClient.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]).filter((c) => !cheminsDuCabinet.has(c)).sort()
-    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-informations', '/mes-pieces', '/mes-ventes', '/mon-echeancier'])
+    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-comptes', '/mes-informations', '/mes-pieces', '/mes-ventes', '/mon-echeancier'])
+    // « Mes comptes » (étape C4b) n'est montée qu'avec sa migration : la phrase la nomme dans cet état-là, et la tait avant.
     for (const chemin of chemins) {
       const nom = layout.match(new RegExp(`<NavLink to="${chemin}" title="([^"]+)"`))?.[1]
       expect(nom, chemin).toBeDefined()
-      expect(CE_QUE_PERD_LE_CLIENT, chemin).toContain(nom === 'Accueil' ? "l'accueil" : `« ${nom} »`)
+      expect(ceQuePerdLeClientSelon(true), chemin).toContain(nom === 'Accueil' ? "l'accueil" : `« ${nom} »`)
+      if (chemin !== '/mes-comptes') expect(ceQuePerdLeClientSelon(false), chemin).toContain(nom === 'Accueil' ? "l'accueil" : `« ${nom} »`)
     }
+    expect(ceQuePerdLeClientSelon(false)).not.toContain('Mes comptes')
+    expect(CE_QUE_PERD_LE_CLIENT).toBe(ceQuePerdLeClientSelon(SITUATIONS_PUBLIEES_EXPORTEES))
   })
 
   it('le champ et le marqueur sont ceux que la fonction lit et écrit', () => {

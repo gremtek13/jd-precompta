@@ -4,6 +4,14 @@ import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
 import { AUCUN_RETOUR, AVIS_LIEN_SANS_SESSION, avisDuRefus, type RetourDuLien } from '../lib/recuperationMotDePasse'
 import { droitsParDossier, type DroitsAcces } from '../lib/droitsAcces'
+import { SITUATIONS_PUBLIEES_EXPORTEES } from '../lib/situationsPubliees'
+
+// Les colonnes des droits d'un accès. « Comptes » (étape C4b) n'est demandée qu'avec sa migration : avant, la colonne n'existe
+// pas, et la lecture échouerait — l'échec tombant du côté fermé, le client perdrait tous ses droits. Typée comme la forme
+// la plus longue : drapeau baissé, `droit_comptes` manque à la ligne, et `droitsDeLaLigne` n'en accorde aucun.
+const COLONNES_DES_DROITS = (SITUATIONS_PUBLIEES_EXPORTEES
+  ? 'dossier_id, droit_ventes, droit_banque, droit_caisse, droit_comptes'
+  : 'dossier_id, droit_ventes, droit_banque, droit_caisse') as 'dossier_id, droit_ventes, droit_banque, droit_caisse, droit_comptes'
 
 export type Role = 'cabinet' | 'client' | null
 
@@ -226,7 +234,7 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
       // la base que la première. Lue en échec, la liste est vide, et avec elle les droits — l'échec tombe du côté fermé.
       const { data: memberships } = await supabase
         .from('memberships')
-        .select('dossier_id, droit_ventes, droit_banque, droit_caisse')
+        .select(COLONNES_DES_DROITS)
         .eq('user_id', userId)
 
       if (cancelled) return

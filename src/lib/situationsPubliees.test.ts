@@ -2,7 +2,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  composerLaSituation, memeDateAnneePrecedente, REFUS_SITUATION, SITUATIONS_PUBLIEES_EXPORTEES, situationsEnCours,
+  composerLaSituation, confirmationDeLaPublication, confirmationDuRetrait, contenuLu, memeDateAnneePrecedente, mesComptesOuverts,
+  montantDit, postesFaceAFace, REFUS_SITUATION, SITUATIONS_PUBLIEES_EXPORTEES, situationEnCoursA, situationsEnCours,
+  situationsEnCoursTriees,
   type EntreeDeLaSituation, type SituationDuMoteur, type SituationPubliee,
 } from './situationsPubliees'
 
@@ -85,6 +87,66 @@ describe('situationsEnCours', () => {
   it('une publication qu’aucune ligne ne cite ; ni la remplacée, ni la retirée, ni le retrait', () => {
     const lignes = [ligne('a', 'publication', null), ligne('b', 'publication', 'a'), ligne('c', 'publication', null), ligne('r', 'retrait', 'c')]
     expect(situationsEnCours(lignes).map((l) => l.id)).toEqual(['b'])
+  })
+})
+
+describe('les écrans (étape C4b)', () => {
+  const contenu = () => {
+    const r = composerLaSituation(entree())
+    if (!r.ok) throw new Error(r.refus)
+    return r.contenu
+  }
+  const ligne = (id: string, arretee: string, publiee: string, remplace: string | null = null): SituationPubliee => ({
+    id, dossier_id: 'd', annee: Number(arretee.slice(0, 4)), geste: 'publication', arretee_au: arretee, statut: 'provisoire',
+    contenu: contenu(), remplace_id: remplace, auteur: 'a', publiee_le: publiee })
+
+  it('« Mes comptes » s’ouvre avec la migration ET la case, jamais l’une sans l’autre', () => {
+    expect(mesComptesOuverts(true, true)).toBe(true)
+    expect(mesComptesOuverts(false, true)).toBe(false)
+    expect(mesComptesOuverts(true, false)).toBe(false)
+  })
+
+  it('les situations en cours, la plus récente date d’abord ; celle d’une date, pour la remplacer', () => {
+    const lignes = [ligne('a', '2025-03-31', '2025-04-01T08:00:00Z'), ligne('b', '2025-06-30', '2025-07-01T08:00:00Z'),
+      ligne('c', '2025-03-31', '2025-04-02T08:00:00Z', 'a')]
+    expect(situationsEnCoursTriees(lignes).map((l) => l.id)).toEqual(['b', 'c'])
+    expect(situationEnCoursA(lignes, '2025-03-31')?.id).toBe('c')
+    expect(situationEnCoursA(lignes, '2025-09-30')).toBeNull()
+  })
+
+  it('la confirmation nomme la date, le statut, les totaux et la comparaison — ou son absence', () => {
+    const c = confirmationDeLaPublication(contenu(), false)
+    const texte = c.paragraphes.join(' ')
+    expect(texte).toContain('arrêtée au 30/06/2025, « provisoire »')
+    expect(texte).toContain(`recettes ${montantDit(1250000)}, dépenses ${montantDit(230050)}, résultat ${montantDit(1019950)}`)
+    expect(texte).toContain('du 01/01/2024 au 30/06/2024')
+    expect(c.bouton).toBe('Publier')
+    const sans = confirmationDeLaPublication({ ...contenu(), n_moins_1: null, statut: 'validee' }, true)
+    expect(sans.paragraphes.join(' ')).toContain('« validée »')
+    expect(sans.paragraphes.join(' ')).toContain('Sans la comparaison')
+    expect(sans.bouton).toBe('Remplacer')
+    expect(confirmationDuRetrait({ arretee_au: '2025-06-30', statut: 'provisoire' }).paragraphes[0]).toContain('30/06/2025')
+  })
+
+  it('un contenu se relit à sa forme : tout écart le rend illisible, jamais arrondi', () => {
+    const bon = contenu()
+    expect(contenuLu(JSON.parse(JSON.stringify(bon)))).toEqual(bon)
+    expect(contenuLu(null)).toBeNull()
+    expect(contenuLu({ ...bon, version: 2 })).toBeNull()
+    expect(contenuLu({ ...bon, statut: 'valide' })).toBeNull()
+    expect(contenuLu({ ...bon, recettes: bon.recettes + 1 })).toBeNull()
+    expect(contenuLu({ ...bon, postes: [{ poste: 'Recettes', montant: 12.5 }] })).toBeNull()
+    expect(contenuLu({ ...bon, n_moins_1: { ...bon.n_moins_1, resultat: 0 } })).toBeNull()
+    expect(contenuLu({ ...bon, tva: { assujetti: true } })).toBeNull()
+  })
+
+  it('les postes face à face : ceux de N, puis ceux de N−1 seuls', () => {
+    const c = contenu()
+    expect(postesFaceAFace(c, c.n_moins_1)).toEqual([
+      { poste: 'Recettes', n: 1250000, nMoins1: 1100000 },
+      { poste: 'Achats', n: -230050, nMoins1: null },
+    ])
+    expect(postesFaceAFace({ ...c, postes: [] }, c.n_moins_1)).toEqual([{ poste: 'Recettes', n: null, nMoins1: 1100000 }])
   })
 })
 

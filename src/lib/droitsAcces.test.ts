@@ -15,7 +15,9 @@ import {
   RAISON_DU_DOSSIER_EN_ENGAGEMENT, raisonDuModeIllisible, avisDuStatutSousLaCase,
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE, ceQueMontreMaCaisseSelon,
+  CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, demandeDeChangementSelon, domainesSelon,
 } from './droitsAcces'
+import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
 import { BASCULE_OFFERTE } from './basculeDesVentes'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
@@ -74,18 +76,18 @@ const CAISSE_DU_CLIENT = fichiersDuSchema().find((f) => /\/\d{14}_caisse_du_clie
 
 describe('les droits d’une ligne : seul « vrai » accorde', () => {
   it('lit les trois colonnes', () => {
-    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: false, droit_caisse: false })).toEqual({ ventes: true, banque: false, caisse: false })
-    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: true, droit_caisse: false })).toEqual({ ventes: false, banque: true, caisse: false })
-    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: false, droit_caisse: true })).toEqual({ ventes: false, banque: false, caisse: true })
+    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: false, droit_caisse: false })).toEqual({ ventes: true, banque: false, caisse: false, comptes: false })
+    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: true, droit_caisse: false })).toEqual({ ventes: false, banque: true, caisse: false, comptes: false })
+    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: false, droit_caisse: true })).toEqual({ ventes: false, banque: false, caisse: true, comptes: false })
   })
 
   it('une colonne absente, nulle ou d’un autre type ne donne rien — une ligne d’avant la migration non plus', () => {
-    const rien = { ventes: false, banque: false, caisse: false }
+    const rien = { ventes: false, banque: false, caisse: false, comptes: false }
     for (const valeur of [undefined, null, 'true', 1, 'oui', {}]) {
       expect(droitsDeLaLigne({ droit_ventes: valeur, droit_banque: valeur, droit_caisse: valeur }), String(valeur)).toEqual(rien)
     }
     // Une ligne d'avant la migration `caisse_du_client` : ses deux droits, et pas de « Caisse ».
-    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: true })).toEqual({ ventes: true, banque: true, caisse: false })
+    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: true })).toEqual({ ventes: true, banque: true, caisse: false, comptes: false })
     expect(droitsDeLaLigne({})).toEqual(rien)
     expect(droitsDeLaLigne(null)).toEqual(rien)
     expect(droitsDeLaLigne(undefined)).toEqual(rien)
@@ -100,11 +102,11 @@ describe('les droits par dossier', () => {
       { dossier_id: 'd3' },
     ])
     expect(droits).toEqual({
-      d1: { ventes: true, banque: false, caisse: false },
-      d2: { ventes: false, banque: true, caisse: true },
-      d3: { ventes: false, banque: false, caisse: false },
+      d1: { ventes: true, banque: false, caisse: false, comptes: false },
+      d2: { ventes: false, banque: true, caisse: true, comptes: false },
+      d3: { ventes: false, banque: false, caisse: false, comptes: false },
     })
-    expect(droitsSur(droits, 'd1')).toEqual({ ventes: true, banque: false, caisse: false })
+    expect(droitsSur(droits, 'd1')).toEqual({ ventes: true, banque: false, caisse: false, comptes: false })
     expect(droitsSur(droits, 'd2').caisse).toBe(true)
     expect(droitsSur(droits, 'd9')).toEqual(AUCUN_DROIT)
     expect(droitsSur(droits, null)).toEqual(AUCUN_DROIT)
@@ -116,15 +118,15 @@ describe('les droits par dossier', () => {
     expect(droitsParDossier([
       { dossier_id: 'd1', droit_ventes: true, droit_banque: true, droit_caisse: true },
       { dossier_id: 'd1', droit_ventes: false, droit_banque: true, droit_caisse: false },
-    ])).toEqual({ d1: { ventes: false, banque: true, caisse: false } })
+    ])).toEqual({ d1: { ventes: false, banque: true, caisse: false, comptes: false } })
     expect(droitsParDossier([
       { dossier_id: 'd1', droit_ventes: false, droit_banque: false, droit_caisse: false },
       { dossier_id: 'd1', droit_ventes: true, droit_banque: true, droit_caisse: true },
-    ])).toEqual({ d1: { ventes: false, banque: false, caisse: false } })
+    ])).toEqual({ d1: { ventes: false, banque: false, caisse: false, comptes: false } })
     expect(droitsParDossier([
       { dossier_id: 'd1', droit_caisse: true },
       { dossier_id: 'd1', droit_caisse: true },
-    ])).toEqual({ d1: { ventes: false, banque: false, caisse: true } })
+    ])).toEqual({ d1: { ventes: false, banque: false, caisse: true, comptes: false } })
   })
 
   it('aucun accès, aucun droit', () => {
@@ -135,8 +137,8 @@ describe('les droits par dossier', () => {
     const rendus = droitsSur({}, 'd1')
     rendus.ventes = true
     rendus.caisse = true
-    expect(AUCUN_DROIT).toEqual({ ventes: false, banque: false, caisse: false })
-    expect(droitsSur({}, 'd1')).toEqual({ ventes: false, banque: false, caisse: false })
+    expect(AUCUN_DROIT).toEqual({ ventes: false, banque: false, caisse: false, comptes: false })
+    expect(droitsSur({}, 'd1')).toEqual({ ventes: false, banque: false, caisse: false, comptes: false })
   })
 })
 
@@ -236,10 +238,14 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(routesClient).toEqual([
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
       '/mon-echeancier ClientEcheancier', '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
+      '/mes-comptes ClientComptes',
     ])
+    // DEPUIS L'ÉTAPE C4b, « Mes comptes » lit la case « Comptes », derrière `SITUATIONS_PUBLIEES_EXPORTEES`
+    // (lib/situationsPubliees.ts, `mesComptesOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
+    expect(app).toContain('mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)')
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual([
-      'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx',
+      'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx',
       'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
     ])
     // DEPUIS L'ÉTAPE C1, « Mon échéancier » et sa carte de l'accueil lisent la case « Banque » de la société affichée pour les
@@ -1837,5 +1843,47 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     const saisie = derniereDefinitionSql('enregistrer_operation_caisse')
     expect(saisie).toContain('Ton cabinet n\'\'a pas fixé la nature de tes recettes en espèces')
     expect(saisie).toContain('n\'\'est plus une catégorie de produit de ton dossier')
+  })
+})
+
+// ── La case « Comptes » (étape C4b) ─────────────────────────────────────────────────────────────────────────────────────
+describe('la case « Comptes » (étape C4b), derrière sa migration', () => {
+  const MIGRATION_SP = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261106150000_situations_publiees.sql'), 'utf8')
+
+  it('drapeau baissé, l’onglet garde ses trois cases et la forme à quatre ; levé, la quatrième et la forme à cinq', () => {
+    expect(SITUATIONS_PUBLIEES_EXPORTEES).toBe(false)
+    expect(DOMAINES.map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse'])
+    expect(domainesSelon(true).map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse', 'comptes'])
+    expect(Object.keys(demandeDeChangement('m', 'ventes', true))).toEqual(['p_membership_id', 'p_ventes', 'p_banque', 'p_caisse'])
+    expect(demandeDeChangementSelon(true, 'm', 'comptes', true))
+      .toEqual({ p_membership_id: 'm', p_ventes: null, p_banque: null, p_caisse: null, p_comptes: true })
+    expect(demandeDeChangementSelon(true, 'm', 'ventes', false))
+      .toEqual({ p_membership_id: 'm', p_ventes: false, p_banque: null, p_caisse: null, p_comptes: null })
+    // Les noms des paramètres de la forme à cinq, ceux de la migration.
+    const debut = MIGRATION_SP.indexOf('create function public.changer_droits_acces(')
+    const entete = MIGRATION_SP.slice(debut, MIGRATION_SP.indexOf('returns public.memberships', debut))
+    const parametres = [...entete.matchAll(/(p_\w+) (?:uuid|boolean)/g)].map((m) => m[1])
+    expect(parametres).toEqual(Object.keys(demandeDeChangementSelon(true, 'm', 'comptes', true)))
+  })
+
+  it('la case se lit de sa colonne, seul « vrai » accorde ; ses deux gestes sont toujours offerts', () => {
+    expect(droitsDeLaLigne({ droit_comptes: true }).comptes).toBe(true)
+    for (const valeur of [false, null, undefined, 'true', 1]) expect(droitsDeLaLigne({ droit_comptes: valeur }).comptes).toBe(false)
+    expect(changementApplique({ droit_comptes: true }, 'comptes', true)).toBe(true)
+    expect(changementApplique({ droit_comptes: false }, 'comptes', true)).toBe(false)
+    expect(gesteDeLaCase('comptes', { etat: 'illisible', motif: 'x' }, { etat: 'illisible', motif: 'x' }))
+      .toEqual({ cocher: true, decocher: true, raison: null })
+  })
+
+  it('sa phrase dit ce que la base ouvre, aux mots du commentaire de la colonne, et nomme « Mes comptes »', () => {
+    const { ouvrira, colonne } = definitionDe('comptes')
+    expect(colonne).toBe('droit_comptes')
+    for (const terme of ouvrira.replace('situations publiées : ', '').split(', ')) expect(MIGRATION_SP).toContain(terme)
+    const phrase = ceQueDitLaCaseComptes()
+    expect(phrase).toContain('« Mes comptes »')
+    expect(phrase).toContain(CE_QUE_LA_CASE_COMPTES_OUVRE)
+    // La policy du client « Comptes » : les publications en cours seulement.
+    expect(MIGRATION_SP).toContain("using (client_du_dossier(dossier_id, 'comptes') and geste = 'publication' and situation_publiee_en_cours(id))")
+    for (const t of TABLES_LUES_AVEC_COMPTES) expect(MIGRATION_SP).toContain(`create policy situations_publiees_lecture_comptes on public.${t}`)
   })
 })

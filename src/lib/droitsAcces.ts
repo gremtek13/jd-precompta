@@ -48,28 +48,32 @@ import { RELANCES_EXPORTEES } from './relances'
 import { SIMULATION_VENTES_FACTUREES_EXPORTEE } from './simulationVentesFacturees'
 import { refus as refusDeLaCaisse, STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
+import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import type { StatutTva } from './types'
 
-export type Domaine = 'ventes' | 'banque' | 'caisse'
+export type Domaine = 'ventes' | 'banque' | 'caisse' | 'comptes'
 
 export interface DroitsAcces {
   ventes: boolean
   banque: boolean
   caisse: boolean
+  /** « Comptes » (étape C4b) : faux tant que la colonne n'est pas en base — aucune lecture ne la demande avant. */
+  comptes: boolean
 }
 
-export const AUCUN_DROIT: Readonly<DroitsAcces> = Object.freeze({ ventes: false, banque: false, caisse: false })
+export const AUCUN_DROIT: Readonly<DroitsAcces> = Object.freeze({ ventes: false, banque: false, caisse: false, comptes: false })
 
 export interface DefinitionDomaine {
   domaine: Domaine
-  colonne: 'droit_ventes' | 'droit_banque' | 'droit_caisse'
+  colonne: 'droit_ventes' | 'droit_banque' | 'droit_caisse' | 'droit_comptes'
   libelle: string
   ouvrira: string
 }
 
 // L'ordre est celui des colonnes de l'onglet Accès. Ce que chaque droit ouvrira se dit avec les mots du commentaire de sa
-// colonne en base (la migration) : l'écran et le catalogue décrivent le même droit.
-export const DOMAINES: readonly DefinitionDomaine[] = [
+// colonne en base (la migration) : l'écran et le catalogue décrivent le même droit. « Comptes » (étape C4b) n'y entre
+// qu'avec sa migration (`SITUATIONS_PUBLIEES_EXPORTEES`) : avant, sa colonne n'existe pas, et l'onglet reste celui d'hier.
+const TOUS_LES_DOMAINES: readonly DefinitionDomaine[] = [
   { domaine: 'ventes', colonne: 'droit_ventes', libelle: 'Ventes', ouvrira: 'devis, factures, facture électronique' },
   { domaine: 'banque', colonne: 'droit_banque', libelle: 'Banque', ouvrira: 'comptes, mouvements, connexion bancaire' },
   // Étape C11 : les mots du commentaire de la colonne que la migration `caisse_du_client` pose.
@@ -77,7 +81,19 @@ export const DOMAINES: readonly DefinitionDomaine[] = [
     domaine: 'caisse', colonne: 'droit_caisse', libelle: 'Caisse',
     ouvrira: 'recettes en espèces, apports, prélèvements, pièces payées en espèces',
   },
+  // Étape C4b : les mots du commentaire de la colonne que la migration `situations_publiees` pose.
+  {
+    domaine: 'comptes', colonne: 'droit_comptes', libelle: 'Comptes',
+    ouvrira: 'situations publiées : recettes, dépenses par poste de la 2035, résultat, TVA due, comparaison à N−1',
+  },
 ]
+
+/** Les cases de l'onglet, selon que la migration des situations publiées est en base. */
+export function domainesSelon(comptesEnBase: boolean): readonly DefinitionDomaine[] {
+  return comptesEnBase ? TOUS_LES_DOMAINES : TOUS_LES_DOMAINES.filter((d) => d.domaine !== 'comptes')
+}
+
+export const DOMAINES: readonly DefinitionDomaine[] = domainesSelon(SITUATIONS_PUBLIEES_EXPORTEES)
 
 /** Une énumération française : « a », « a et b », « a, b et c ». */
 export function enumeration(termes: readonly string[]): string {
@@ -91,7 +107,7 @@ export function libellesDesCases(domaines: readonly DefinitionDomaine[] = DOMAIN
 }
 
 export function definitionDe(domaine: Domaine): DefinitionDomaine {
-  const definition = DOMAINES.find((d) => d.domaine === domaine)
+  const definition = TOUS_LES_DOMAINES.find((d) => d.domaine === domaine)
   if (!definition) throw new Error(`Domaine inconnu : ${domaine}`)
   return definition
 }
@@ -102,6 +118,7 @@ export interface LigneDroits {
   droit_ventes?: unknown
   droit_banque?: unknown
   droit_caisse?: unknown
+  droit_comptes?: unknown
 }
 
 /**
@@ -109,7 +126,10 @@ export interface LigneDroits {
  * RIEN — l'échec tombe du côté fermé, comme en base, où la colonne est non nulle et fausse par défaut.
  */
 export function droitsDeLaLigne(ligne: LigneDroits | null | undefined): DroitsAcces {
-  return { ventes: ligne?.droit_ventes === true, banque: ligne?.droit_banque === true, caisse: ligne?.droit_caisse === true }
+  return {
+    ventes: ligne?.droit_ventes === true, banque: ligne?.droit_banque === true, caisse: ligne?.droit_caisse === true,
+    comptes: ligne?.droit_comptes === true,
+  }
 }
 
 /**
@@ -125,7 +145,10 @@ export function droitsParDossier(
     const droits = droitsDeLaLigne(ligne)
     const deja = resultat[ligne.dossier_id]
     resultat[ligne.dossier_id] = deja
-      ? { ventes: deja.ventes && droits.ventes, banque: deja.banque && droits.banque, caisse: deja.caisse && droits.caisse }
+      ? {
+        ventes: deja.ventes && droits.ventes, banque: deja.banque && droits.banque, caisse: deja.caisse && droits.caisse,
+        comptes: deja.comptes && droits.comptes,
+      }
       : droits
   }
   return resultat
@@ -142,6 +165,8 @@ export interface DemandeDeChangement {
   p_ventes: boolean | null
   p_banque: boolean | null
   p_caisse: boolean | null
+  /** La forme à cinq (étape C4b) : seulement quand la migration des situations publiées est en base. */
+  p_comptes?: boolean | null
 }
 
 /**
@@ -154,12 +179,25 @@ export interface DemandeDeChangement {
  * « Caisse ». Le droit cliqué part seul non nul : jamais trois nuls, que la base refuse (22023, « Aucun droit à changer »).
  */
 export function demandeDeChangement(membershipId: string, domaine: Domaine, valeur: boolean): DemandeDeChangement {
-  return {
+  return demandeDeChangementSelon(SITUATIONS_PUBLIEES_EXPORTEES, membershipId, domaine, valeur)
+}
+
+/**
+ * LA FORME À CINQ (étape C4b) : la migration `situations_publiees` en base, `p_comptes` part TOUJOURS, nul ou non — la forme
+ * à quatre, qu'elle garde comme un appel de celle à cinq, n'écrirait pas « Comptes ». Avant elle, la forme à quatre seule, au
+ * paramètre près : la fonction à cinq n'existe pas, et PostgREST refuserait un paramètre qu'aucune forme ne nomme.
+ */
+export function demandeDeChangementSelon(
+  cinqParametres: boolean, membershipId: string, domaine: Domaine, valeur: boolean,
+): DemandeDeChangement {
+  const demande: DemandeDeChangement = {
     p_membership_id: membershipId,
     p_ventes: domaine === 'ventes' ? valeur : null,
     p_banque: domaine === 'banque' ? valeur : null,
     p_caisse: domaine === 'caisse' ? valeur : null,
   }
+  if (cinqParametres) demande.p_comptes = domaine === 'comptes' ? valeur : null
+  return demande
 }
 
 /** L'accès que la base a rendu porte-t-il le droit demandé ? Une réponse d'une autre forme n'en porte aucun. */
@@ -511,6 +549,10 @@ export function gesteDeLaCase(domaine: Domaine, reglage: ReglageDuDossier, caiss
   switch (domaine) {
     case 'banque':
       return LES_DEUX_GESTES
+    // « Comptes » (étape C4b) : la base ne la garde par aucun état du dossier — elle ouvre la lecture des seules situations
+    // que le cabinet publie, et n'importe quel dossier en a.
+    case 'comptes':
+      return LES_DEUX_GESTES
     case 'ventes':
       if (reglage.etat === 'bascule') return LES_DEUX_GESTES
       if (reglage.etat === 'non_bascule') {
@@ -760,6 +802,31 @@ export function ceQueDitLaCaseCaisse(caisse: EtatCaisseDuDossier): string {
     + `${CE_QUE_LA_CASE_CAISSE_OUVRE} ${ceQueMontreMaCaisseSelon(CORRECTION_DU_PAIEMENT_EXPORTEE)} `
     + phraseDuStatutDeLaCaisse(caisse)
 }
+
+// ── La case « Comptes » (espace client, ligne 51.5, étape C4b) ─────────────────────────────────────────────────────────
+// CE QU'ELLE OUVRE À LA SESSION DU CLIENT, PAR LA BASE, DÈS QU'ELLE EST COCHÉE (migration `situations_publiees`) : la policy
+// `situations_publiees_lecture_comptes`, et elle seule — les publications EN COURS de son dossier, chacune avec sa date
+// d'arrêté, son statut et son contenu ; ni un retrait, ni une version remplacée (`situation_publiee_en_cours`). Aucun geste :
+// `publier_situation` et `retirer_situation` sont au cabinet seul. Le contenu ne porte que des centimes et les noms des postes
+// de la 2035, que tout accès du dossier lit déjà dans ses catégories (`categories_select`) : aucun texte libre neuf, aucun
+// libellé à écrire. droitsAcces.test.ts confronte ces termes à la migration.
+export const CE_QUE_LA_CASE_COMPTES_OUVRE = 'il y lit les situations que tu lui publies, celles en cours seulement — chacune '
+  + 'arrêtée à sa date, « provisoire » ou « validée », avec ses recettes, ses dépenses par poste de la 2035, son résultat, sa '
+  + 'TVA due et, si tu la publies avec, la même période de l’exercice précédent —, jamais une situation retirée ni celle '
+  + 'qu’une autre a remplacée.'
+
+/** Ce que l'espace du client en montre (« Mes comptes », étape C4b), et d'où le cabinet publie. */
+export const CE_QUE_MONTRE_MES_COMPTES = 'Son espace la lui montre dans « Mes comptes », où il ne fait aucun geste ; tu publies, '
+  + 'remplaces ou retires une situation depuis la situation intermédiaire de l’onglet Financement.'
+
+/** Ce que dit la case « Comptes », sous celle de « Caisse » : ce que la base ouvre au client qui la porte. */
+export function ceQueDitLaCaseComptes(): string {
+  const { libelle, ouvrira } = definitionDe('comptes')
+  return `« ${libelle} » (${ouvrira}) : une case cochée ouvre au client, par la base, les chiffres de son dossier que tu `
+    + `publies — ${CE_QUE_LA_CASE_COMPTES_OUVRE} ${CE_QUE_MONTRE_MES_COMPTES}`
+}
+
+export const TABLES_LUES_AVEC_COMPTES = ['situations_publiees'] as const
 
 /** La nature des recettes du client, telle que l'onglet l'a lue et résolue parmi les catégories (lib/natureDesRecettes.ts). */
 export type NatureDesRecettesDite =

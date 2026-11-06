@@ -10,9 +10,10 @@ import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import { maBanqueOuverte } from '../lib/banqueClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
+import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from '../lib/situationsPubliees'
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
 import {
-  IconAccueil, IconApparence, IconBanque, IconCaisse, IconComptesMaster, IconDossiers, IconEcheancier, IconEquipe, IconEstimation, IconFactures,
+  IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconComptesMaster, IconDossiers, IconEcheancier, IconEquipe, IconEstimation, IconFactures,
   IconInformations, IconCadenas, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun,
 } from './icons'
@@ -98,6 +99,9 @@ function Coque() {
   // « Ma caisse » (ligne 26.6, étape C12a) : de même, avec la case « Caisse » sur la société affichée, comme sa route.
   const maCaisse = role === 'client'
     && maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).caisse)
+  // « Mes comptes » (ligne 51.5, étape C4b) : de même, avec la case « Comptes » sur la société affichée, comme sa route.
+  const mesComptes = role === 'client'
+    && mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
@@ -336,6 +340,13 @@ function Coque() {
                   <IconCaisse width={18} height={18} />
                   <span className="nav-label-full">Ma caisse</span>
                   <span className="nav-label-court">Caisse</span>
+                </NavLink>
+              )}
+              {mesComptes && (
+                <NavLink to="/mes-comptes" title="Mes comptes" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconBilan width={18} height={18} />
+                  <span className="nav-label-full">Mes comptes</span>
+                  <span className="nav-label-court">Comptes</span>
                 </NavLink>
               )}
               {/* « Mon échéancier » (ligne 51.5, étape C1) : ouvert à tout accès client. */}
