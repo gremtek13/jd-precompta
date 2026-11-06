@@ -1438,7 +1438,7 @@ describe('BanqueTab — import d’un relevé', () => {
 
   async function deposer() {
     const fichier = new File([CSV], 'releve-juin.csv', { type: 'text/csv' })
-    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
     await act(async () => { fireEvent.change(champ, { target: { files: [fichier] } }) })
     return screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
   }
@@ -1524,6 +1524,94 @@ describe('BanqueTab — import d’un relevé', () => {
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
 
     expect(faux.insertions.filter((i) => i.table === 'lignes_bancaires')).toHaveLength(1)
+  })
+})
+
+// LE RELEVÉ IMPORTÉ EN OFX OU EN QIF (`lib/releveOfxQif.ts`) : reconnu au contenu, il saute la détection des colonnes, dit
+// le format lu et le solde que la banque donne, et passe par le même aperçu signé et la même écriture qu'un CSV. Fichiers
+// FICTIFS (code banque 99999).
+describe('BanqueTab — un relevé OFX ou QIF', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  const ofx = (stmtrs: readonly string[]) => 'OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nENCODING:USASCII\r\nCHARSET:1252\r\n\r\n'
+    + `<OFX><BANKMSGSRSV1>${stmtrs.map((s) => `<STMTTRNRS><TRNUID>0${s}</STMTTRNRS>`).join('')}</BANKMSGSRSV1></OFX>`
+  const stmtrs = (operations: string) => '<STMTRS><CURDEF>EUR<BANKACCTFROM><BANKID>99999<BRANCHID>00001<ACCTID>00012345678'
+    + `<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST>${operations}</BANKTRANLIST>`
+    + '<LEDGERBAL><BALAMT>1500.00<DTASOF>20261130</LEDGERBAL></STMTRS>'
+  const operation = (type: string, date: string, montant: string, nom: string) =>
+    `<STMTTRN><TRNTYPE>${type}<DTPOSTED>${date}<TRNAMT>${montant}<FITID>F${date}<NAME>${nom}</STMTTRN>`
+  const OFX = ofx([stmtrs(operation('DEBIT', '20261103230000[-5:EST]', '-45.20', 'CB PHARMACIE FICTIVE')
+    + operation('CREDIT', '20261105', '250.00', 'VIR PATIENT FICTIF'))])
+  const lot = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+  async function deposer(contenu: string, nom = 'releve.ofx') {
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File([contenu], nom)] } }) })
+  }
+
+  it('dit le format lu, n’offre aucun réglage de colonnes, montre l’aperçu signé et importe les montants signés', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    expect(await screen.findByText(/en OFX \(« Money »\) ou en QIF \(« Quicken »\)/)).toBeTruthy()
+    await deposer(OFX)
+    const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+    expect(screen.getByText(/Fichier lu : OFX 1\.x \(SGML, « Money »\)/)).toBeTruthy()
+    expect(document.getElementById('colDate')).toBeNull()
+    expect(document.getElementById('colMontant')).toBeNull()
+    const resume = screen.getByText(/2 opération\(s\) :/).textContent ?? ''
+    expect(resume.replace(/\s/g, ' ')).toMatch(/1 débit\(s\) pour -45,20 €, 1 crédit\(s\) pour 250,00 € ; 1 ligne\(s\) de solde/)
+    expect(screen.getByText(/Solde comptable donné par la banque au 30\/11\/2026/)).toBeTruthy()
+    expect(screen.getByText('Débit')).toBeTruthy()
+    expect(screen.getByText('Solde, non importée')).toBeTruthy()
+
+    await act(async () => { bouton.click() })
+    expect(lot()).toHaveLength(1)
+    // La date de la banque, jamais convertie de fuseau : le 3 novembre à 23 h à New York reste le 3 novembre.
+    expect(lot()[0].valeur).toEqual([
+      expect.objectContaining({ date: '2026-11-03', libelle: 'CB PHARMACIE FICTIVE', montant: -45.2, source_fichier: 'releve.ofx' }),
+      expect.objectContaining({ date: '2026-11-05', libelle: 'VIR PATIENT FICTIF', montant: 250, source_fichier: 'releve.ofx' }),
+    ])
+    // Ni le numéro du compte, ni le code banque, ni le guichet dans ce qui s'écrit.
+    expect(JSON.stringify(lot()[0].valeur)).not.toMatch(/99999|00001|00012345678/)
+  })
+
+  it('dit douteuse avant le clic l’opération dont le signe contredit le type, la fait confirmer, et ne la retourne pas', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    await deposer(ofx([stmtrs(operation('DEBIT', '20261103', '45.20', 'CB PHARMACIE FICTIVE')
+      + operation('DEBIT', '20261104', '-12.00', 'CB BOULANGERIE FICTIVE'))]))
+    const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+    expect(screen.getByText(/Une opération a un montant dont le signe contredit le type/)).toBeTruthy()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { bouton.click() })
+    expect(confirmation).toHaveBeenCalledWith(expect.stringMatching(/signe contredit le type[\s\S]*Importer quand même \?/))
+    expect(lot()).toHaveLength(0)
+    confirmation.mockReturnValue(true)
+    await act(async () => { bouton.click() })
+    expect(lot()[0].valeur).toEqual([expect.objectContaining({ montant: 45.2 }), expect.objectContaining({ montant: -12 })])
+  })
+
+  it('refuse un fichier qui porte deux comptes, sans aperçu ni bouton d’import', async () => {
+    reinitialiser()
+    rendre()
+    await deposer(ofx([stmtrs(operation('DEBIT', '20261103', '-1.00', 'A')), stmtrs(operation('DEBIT', '20261104', '-2.00', 'B'))]))
+    expect(await screen.findByText(/Fichier OFX 1\.x \(SGML, « Money »\) refusé : .*exporte un compte à la fois/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Importer \d+ ligne\(s\)/ })).toBeNull()
+  })
+
+  it('lit un QIF, reconnu au contenu sous un nom de CSV', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    await deposer('!Type:Bank\r\nD03/11/2026\r\nT-45,20\r\nPCB PHARMACIE FICTIVE\r\n^\r\nD15/11/2026\r\nT250,00\r\nPVIR PATIENT FICTIF\r\n^\r\n', 'export.csv')
+    const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+    expect(screen.getByText(/Fichier lu : QIF \(« Quicken »\)/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(lot()[0].valeur).toEqual([expect.objectContaining({ montant: -45.2 }), expect.objectContaining({ montant: 250 })])
   })
 })
 
@@ -4945,7 +5033,7 @@ describe('BanqueTab — un exercice validé', () => {
   }
   async function deposerCsv(csv: string, lignes = 2) {
     const fichier = new File([csv], 'releve.csv', { type: 'text/csv' })
-    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
     await act(async () => { fireEvent.change(champ, { target: { files: [fichier] } }) })
     return screen.findByRole('button', { name: new RegExp(`Importer ${lignes} ligne\\(s\\)`) })
   }
@@ -5596,7 +5684,7 @@ describe('BanqueTab — l’import attend la fin de la lecture du relevé', () =
       ['Date;Libellé;Montant\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n10/06/2025;PRLV SEPA ASSURANCE FICTIVE;-50,00\n'],
       'releve.csv', { type: 'text/csv' },
     )
-    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
     await act(async () => { fireEvent.change(champ, { target: { files: [fichier] } }) })
     const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ }) as HTMLButtonElement
     expect(screen.getByText(attente)).toBeTruthy()
@@ -5617,7 +5705,7 @@ describe('BanqueTab — l’import attend la fin de la lecture du relevé', () =
     rendre()
     const csv = 'Date;Libellé;Montant\n10/06/2025;PRLV SEPA ASSURANCE FICTIVE;-50,00\n'
     const deposer = async () => {
-      const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+      const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
       await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], 'releve.csv', { type: 'text/csv' })] } }) })
       return await screen.findByRole('button', { name: /Importer 1 ligne\(s\)/ }) as HTMLButtonElement
     }
@@ -5865,7 +5953,7 @@ describe('Relecture — import d’un relevé CSV', () => {
   const insere = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires').flatMap((i) => i.valeur as unknown as Record<string, unknown>[])
   const controles = () => faux.upserts.filter((u) => u.table === 'controles_releves_bancaires').map((u) => u.valeur)
   async function deposer(csv: string | Uint8Array<ArrayBuffer>, lignes: number, nom = 'releve-mars.csv') {
-    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
     await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], nom, { type: 'text/csv' })] } }) })
     return screen.findByRole('button', { name: new RegExp(`Importer ${lignes} ligne\\(s\\)`) })
   }
@@ -6534,7 +6622,7 @@ describe('BanqueTab — l’import compte les mouvements ignorés par règle', (
   })
   const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, sens: null, created_at: '2025-06-01T09:00:00Z' })
   async function importer(csv: string, lignes: number) {
-    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
     await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], 'releve-juin.csv', { type: 'text/csv' })] } }) })
     const bouton = await screen.findByRole('button', { name: new RegExp(`Importer ${lignes} ligne\\(s\\)`) })
     await act(async () => { bouton.click() })
