@@ -48550,3 +48550,22 @@ n'est lu. Le CII et ses copies ne changent pas : EN 16931 n'a aucun champ « fac
 transmet pas (gardé par un test). Deux mutations mordent : la mention imprimée sans mandataire ; la validation offerte
 avant le retour du nom. Non fait : un changement de nom du cabinet ne réécrit aucune facture validée (le nom figé est
 celui du jour de la validation) ; le banc de captures n'a pas de facture portant un mandataire.
+
+### 06/11/2026 — LE RELEVÉ IMPORTÉ EN OFX OU EN QIF (LIGNE 26.6, MVP)
+
+Le format d'export de la banque du premier dossier réel n'est pas connu, et l'onglet Banque n'importait que le CSV (et
+le PDF, moins fiable) : l'OFX 1.x (SGML), l'OFX 2.x (XML) et le QIF, que proposent presque toutes les banques
+françaises, sont désormais un recours. `lib/releveOfxQif.ts`, pur, reconnaît le format au CONTENU (`OFXHEADER:100`,
+`<?OFX`, `!Type:`), jamais à l'extension, et rend des lignes (date, libellé, montant signé) sous un réglage FIXE
+(`REGLAGE_OFX_QIF`) : tout l'aval reste celui du CSV (`interpreterReleve`, l'aperçu signé, la multiplicité, le
+recouvrement, `controlerSolde`). Refusés : plusieurs comptes (« exporte un compte à la fois »), un relevé de carte, de
+placement ou un autre type QIF (dit), une devise autre que l'euro ou non dite (`CURDEF`, et `CURRENCY` d'une opération),
+une opération au libellé d'une ligne de solde (la règle des CSV l'aurait perdue), en QIF une année sur deux chiffres,
+l'apostrophe américaine, l'ordre mois/jour, et un ordre qu'aucune date du fichier ne prouve. Dits : le solde comptable
+(`LEDGERBAL`) et l'« Opening Balance » du QIF, ajoutés aux lignes sous un libellé de solde — retenus par le mécanisme
+des soldes d'un CSV, un seul ne contrôle rien, et l'écran le dit —, et l'opération OFX dont le signe contredit le type,
+jamais retournée, dite avant le clic puis confirmée. Une date OFX se lit sur ses huit premiers chiffres, sans fuseau ;
+un montant OFX à plus de deux décimales non nulles est illisible (`parseMontantBancaire` l'aurait lu en milliers) ;
+l'en-tête OFX dit l'encodage (`decoderReleve`). Les identifiants bancaires ne sont jamais lus. Quatre mutations mordent
+(signe inversé, douteuse retournée, date en UTC, deux comptes). Le client « Banque » n’importe aucun relevé, et un OFX
+ne se dépose pas dans Documents (les bornes du seau `pieces`).

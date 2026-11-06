@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, lignesDeDonnees, parseCsv, type FormatDesMontants } from '../../lib/csv'
-import { decoderUtf8OuWindows1252, type EncodageLu } from '../../lib/decodageTexte'
+import { type EncodageLu } from '../../lib/decodageTexte'
 import {
   AUCUNE_DECISION, douteDuSens, interpreterReleve, operationsDuPdf, partagerParMultiplicite, phraseDesEcartees,
   phraseDesRecouvrements, recouvrements, refusDesLignesATrancher, refusDuReglage, type DecisionDeSolde, type Recouvrement,
@@ -26,6 +26,10 @@ import { dateFigee, estFigee } from '../../lib/validationExercice'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { controlerSolde, phraseDesSoldes } from '../../lib/soldeReleve'
+import {
+  decoderReleve, lireReleveOfxQif, NOM_DU_FORMAT, phraseDesSensDouteux, phraseDuSoldeAnnonce, REGLAGE_OFX_QIF,
+  type ReleveOfxQifLu,
+} from '../../lib/releveOfxQif'
 import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
 import {
   analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE,
@@ -2678,6 +2682,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   // Ce que la détection n'a pas pu établir, et l'encodage lu : dits au-dessus de l'aperçu.
   const [doute, setDoute] = useState<string | null>(null)
   const [encodage, setEncodage] = useState<EncodageLu | null>(null)
+  // Un relevé OFX ou QIF (`lib/releveOfxQif.ts`) : un format normalisé, lu sous un réglage FIXE — l'écran n'offre aucun
+  // réglage de colonnes, et dit le format lu, le solde que la banque donne et les opérations au sens douteux. `null` : un CSV.
+  const [ofxQif, setOfxQif] = useState<ReleveOfxQifLu | null>(null)
   const [hasHeader, setHasHeader] = useState(true)
   // La ligne qui nomme les colonnes, si la détection en a trouvé une : les données commencent après elle, son préambule
   // compris (`lignesDeDonnees`).
@@ -2726,8 +2733,43 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
     setSourceFileName(nom)
     // Les OCTETS, décodés en UTF-8 strict, sinon en windows-1252 (`lib/decodageTexte.ts`) : `blob.text()` lisait en UTF-8
     // indulgent, et le « € » d'un export windows-1252 (octet 0x80) devenait U+FFFD — montant illisible, ligne écartée,
-    // libellés accentués abîmés.
-    const { texte, encodage: lu } = decoderUtf8OuWindows1252(new Uint8Array(await blob.arrayBuffer()))
+    // libellés accentués abîmés. Un OFX 1.x dit son encodage dans son en-tête, qui fait foi (`decoderReleve`).
+    const { texte, encodage: lu } = decoderReleve(new Uint8Array(await blob.arrayBuffer()))
+    // Un OFX ou un QIF se reconnaît au CONTENU, jamais à l'extension : il saute la détection des colonnes, son réglage est
+    // fixe, et tout l'aval (l'interprétation, l'aperçu signé, le dédoublonnage, le recouvrement, le contrôle de solde) reste
+    // celui du CSV. Un fichier refusé (deux comptes, une carte, une autre devise, une date dont l'ordre se devinerait) ne
+    // laisse aucun aperçu.
+    const releveNormalise = lireReleveOfxQif(texte)
+    if (releveNormalise) {
+      if (releveNormalise.refus !== null) {
+        setRows(null)
+        setOfxQif(null)
+        setError(`Fichier ${NOM_DU_FORMAT[releveNormalise.format]} refusé : ${releveNormalise.refus}`)
+        return
+      }
+      if (releveNormalise.lignes.length === 0) {
+        setRows(null)
+        setOfxQif(null)
+        setError(`Fichier ${NOM_DU_FORMAT[releveNormalise.format]} sans aucune opération.`)
+        return
+      }
+      setRows(releveNormalise.lignes)
+      setEncodage(lu)
+      setOfxQif(releveNormalise)
+      setColDate(REGLAGE_OFX_QIF.colDate)
+      setColLibelle(REGLAGE_OFX_QIF.colLibelle)
+      setColMontant(REGLAGE_OFX_QIF.colMontant)
+      setColDebit(REGLAGE_OFX_QIF.colDebit)
+      setColCredit(REGLAGE_OFX_QIF.colCredit)
+      setMode(REGLAGE_OFX_QIF.format)
+      setHasHeader(REGLAGE_OFX_QIF.hasHeader)
+      setColSolde(REGLAGE_OFX_QIF.colSolde)
+      setDoute(null)
+      setLigneEnTete(null)
+      setDecisions(AUCUNE_DECISION)
+      return
+    }
+    setOfxQif(null)
     const parsed = parseCsv(texte)
     if (parsed.length === 0) {
       setError('Fichier vide ou illisible.')
@@ -2939,6 +2981,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       // Un réglage qui ferait entrer de faux montants (le solde courant pris pour un montant) se refuse, et le dit.
       const refus = refusDuReglage(reglage) ?? refusDesLignesATrancher(interpretation.aTrancher)
       if (refus) throw new Error(refus)
+      // Les opérations d'un OFX dont le signe contredit le type, dites dans l'aperçu, se confirment encore au clic : elles
+      // entrent avec le signe du montant, jamais retourné, et aucun écran ne retire un mouvement importé.
+      const sensDouteux = ofxQif ? phraseDesSensDouteux(ofxQif.sensDouteux) : null
+      if (sensDouteux && !window.confirm(`${sensDouteux}\n\nImporter quand même ?`)) return
 
       // Un relevé ne contient pas que des opérations : il porte aussi le solde d'ouverture et le
       // solde de clôture. Importées comme des mouvements, ces lignes faussent tous les totaux et ne
@@ -2969,6 +3015,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       if (error) throw error
 
       setRows(null)
+      setOfxQif(null)
       setSourceFileName(null)
       onImported()
       const messages = [`${aInserer.length} ligne(s) importée(s)`]
@@ -3024,7 +3071,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        <button type="button" className={`btn btn-sm ${source === 'csv' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSource('csv')}>CSV</button>
+        <button type="button" className={`btn btn-sm ${source === 'csv' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSource('csv')}>CSV, OFX, QIF</button>
         <button type="button" className={`btn btn-sm ${source === 'pdf' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSource('pdf')}>PDF</button>
       </div>
 
@@ -3054,12 +3101,29 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
             </div>
           )}
           <div className="field">
-            <input type="file" accept=".csv,text/csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f, f.name) }} />
+            <input type="file" accept=".csv,text/csv,.ofx,.qif" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f, f.name) }} />
+            <p className="muted" style={{ marginTop: 6 }}>
+              Un relevé exporté par la banque en CSV, en OFX (« Money ») ou en QIF (« Quicken ») : le format se reconnaît au
+              contenu du fichier. L’OFX et le QIF se lisent sans réglage de colonnes — un recours quand le CSV se lit mal.
+            </p>
           </div>
         </>
       )}
 
-      {source === 'csv' && rows && (
+      {source === 'csv' && rows && ofxQif && (
+        <>
+          <p className="muted" style={{ marginTop: -4 }}>
+            {`Fichier lu : ${NOM_DU_FORMAT[ofxQif.format]}. Un format normalisé : la date, le libellé et le montant signé de chaque `
+              + 'opération se lisent sans réglage de colonnes.'}
+            {encodage === 'windows-1252' && ' Fichier lu en windows-1252.'}
+          </p>
+          {phraseDuSoldeAnnonce(ofxQif.soldeAnnonce) && <p className="muted">{phraseDuSoldeAnnonce(ofxQif.soldeAnnonce)}</p>}
+          {ofxQif.doutes.map((d) => <p key={d} style={AVERTISSEMENT}>{d}</p>)}
+          {phraseDesSensDouteux(ofxQif.sensDouteux) && <p style={AVERTISSEMENT}>{phraseDesSensDouteux(ofxQif.sensDouteux)}</p>}
+        </>
+      )}
+
+      {source === 'csv' && rows && !ofxQif && (
         <>
           <p className="muted" style={{ marginTop: -4 }}>
             Mapping détecté automatiquement à partir du fichier — vérifie l'aperçu ci-dessous et corrige si besoin.
@@ -3137,7 +3201,11 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
               {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
             </select>
           </div>
+        </>
+      )}
 
+      {source === 'csv' && rows && (
+        <>
           {interpretation && (
             <ApercuInterprete
               interpretation={interpretation}
