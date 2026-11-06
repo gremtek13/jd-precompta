@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { encaissementVendu, factureVendue, ligneVendue } from '../test/ventesFacturees'
 import type { ExemplaireLu, LigneDeFacture } from './encaissementsFactures'
@@ -75,30 +75,38 @@ function composer(jeu: Jeu, mode: ModeComptable, plan: PlanComptable): Ecritures
 
 // Ce que chaque composition doit tenir, quelle qu'elle soit : des centimes entiers et positifs, une écriture équilibrée,
 // des lignes triées et sans doublon, une clé qui dit sa source et sa date, le journal de son genre.
-function verifier(r: EcrituresDesVentesFacturees) {
+// Ce qui ne va pas dans une composition, dit en phrases plutôt qu'en `expect` : le tirage de 1 500 dossiers le relève une
+// fois, dans son `beforeAll`, et chaque cas l'exige vide (verifier) — trois mille compositions jugées par des `expect` un à
+// un dépassaient le délai d'un test quand la suite tournait chargée (relecture du jour J, 06/11/2026).
+function fautesDeLaComposition(r: EcrituresDesVentesFacturees): string[] {
+  const fautes: string[] = []
+  const exiger = (vrai: boolean, quoi: string) => { if (!vrai) fautes.push(quoi) }
   for (const e of r.ecritures) {
-    expect(e.lignes.length, e.cle).toBeGreaterThan(0)
-    for (const l of e.lignes) {
-      expect(Number.isInteger(l.centimes) && l.centimes > 0, `${e.cle} ${l.compte}`).toBe(true)
-    }
+    exiger(e.lignes.length > 0, `${e.cle} : aucune ligne`)
+    for (const l of e.lignes) exiger(Number.isInteger(l.centimes) && l.centimes > 0, `${e.cle} ${l.compte} : ${l.centimes} centimes`)
     const debit = e.lignes.filter((l) => l.sens === 'debit').reduce((s, l) => s + l.centimes, 0)
     const credit = e.lignes.filter((l) => l.sens === 'credit').reduce((s, l) => s + l.centimes, 0)
-    expect(debit, `${e.cle} : équilibrée`).toBe(credit)
-    expect([...e.lignes].sort(ordreDesLignes), e.cle).toEqual(e.lignes)
-    expect(new Set(e.lignes.map((l) => `${l.compte}|${l.ligneBancaireId}`)).size, e.cle).toBe(e.lignes.length)
+    exiger(debit === credit, `${e.cle} : déséquilibrée (${debit} au débit, ${credit} au crédit)`)
+    exiger(JSON.stringify([...e.lignes].sort(ordreDesLignes)) === JSON.stringify(e.lignes), `${e.cle} : lignes hors de leur ordre`)
+    exiger(new Set(e.lignes.map((l) => `${l.compte}|${l.ligneBancaireId}`)).size === e.lignes.length, `${e.cle} : un compte en double`)
     const s = e.source
     if (s.genre === 'mouvement') {
-      expect(e.cle).toBe(cleFecMouvementEncaissements(s.ligneBancaireId))
-      expect(e.journal).toBe('BQ')
-      for (const l of e.lignes) expect(l.ligneBancaireId).toBe(s.ligneBancaireId)
+      exiger(e.cle === cleFecMouvementEncaissements(s.ligneBancaireId), `${e.cle} : clé d'un mouvement`)
+      exiger(e.journal === 'BQ', `${e.cle} : journal ${e.journal}`)
+      for (const l of e.lignes) exiger(l.ligneBancaireId === s.ligneBancaireId, `${e.cle} : ligne d'un autre mouvement`)
     } else if (s.genre === 'encaissement') {
-      expect(e.cle).toBe(cleFecEncaissement(s.encaissementId, e.date))
+      exiger(e.cle === cleFecEncaissement(s.encaissementId, e.date), `${e.cle} : clé d'un encaissement`)
     } else {
-      expect(e.cle).toBe(cleFecFacture(s.factureId, e.date))
-      expect(e.journal).toBe('VE')
+      exiger(e.cle === cleFecFacture(s.factureId, e.date), `${e.cle} : clé d'une facture`)
+      exiger(e.journal === 'VE', `${e.cle} : journal ${e.journal}`)
     }
   }
-  expect(new Set(r.ecritures.map((e) => e.cle)).size).toBe(r.ecritures.length)
+  exiger(new Set(r.ecritures.map((e) => e.cle)).size === r.ecritures.length, 'deux écritures sous la même clé')
+  return fautes
+}
+
+function verifier(r: EcrituresDesVentesFacturees) {
+  expect(fautesDeLaComposition(r)).toEqual([])
 }
 
 type Attendue = readonly [sens: 'D' | 'C', role: CleRoleComptable | string, centimes: number, mouvement?: string]
@@ -360,7 +368,8 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
       expect(m.lignes).toEqual(lignes(plan, [
         ['D', 'banque', 5850, 'm1'], ['C', 'valeurs_a_l_encaissement', 6000, 'm1'], ['D', 'services_bancaires', 150, 'm1'],
       ]))
-      expect([m.journal, m.pieceRef, m.pieceDate, m.date, m.libelle, m.tiers]).toEqual(['BQ', 'releve-fictif.csv', '2025-11-20', '2025-11-20', 'VIREMENT FICTIF', null])
+      expect([m.journal, m.pieceRef, m.pieceDate, m.date, m.libelle, m.tiers]).toEqual(['BQ', 'releve-fictif.csv', '2025-11-20', '2025-11-20',
+        'Relevé du 20/11/2025 — F2025-0001, F2025-0002', null])
       expect(m.source).toEqual({ genre: 'mouvement', ligneBancaireId: 'm1' })
       // Le 512 du mouvement fait exactement son montant.
       expect(banqueDuMouvement(r, 'm1')).toBe(17850)
@@ -1053,14 +1062,25 @@ describe('FEC22-Q7 : le nom d’une entreprise, sinon le numéro de la facture',
 })
 
 describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que le module des ventes facturées compte', () => {
-  const suivant = tirage(20261020)
-  const dossiers = Array.from({ length: 1500 }, (_, i) => tirerUnDossier(suivant, i))
-  const calcules = dossiers.map((t) => ({
-    t,
-    parMode: Object.fromEntries(MODES.map((mode) => [mode, ecrituresDesVentesFacturees({
-      sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode, plan: PLAN_PAR_DEFAUT,
-    })])) as Record<ModeComptable, EcrituresDesVentesFacturees>,
-  }))
+  // Le tirage, ses compositions et le relevé de leurs fautes se paient une fois, dans le `beforeAll` (CLAUDE.md, « Un
+  // calcul lourd se paie dans un beforeAll ») : chaque cas ne fait plus que lire.
+  type Calcule = { t: Tire; parMode: Record<ModeComptable, EcrituresDesVentesFacturees> }
+  let calcules: Calcule[] = []
+  let fautesDuTirage: string[] = []
+  beforeAll(() => {
+    const suivant = tirage(20261020)
+    calcules = Array.from({ length: 1500 }, (_, i) => tirerUnDossier(suivant, i)).map((t) => ({
+      t,
+      parMode: Object.fromEntries(MODES.map((mode) => [mode, ecrituresDesVentesFacturees({
+        sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode, plan: PLAN_PAR_DEFAUT,
+      })])) as Record<ModeComptable, EcrituresDesVentesFacturees>,
+    }))
+    fautesDuTirage = calcules.flatMap(({ parMode }, i) => MODES.flatMap((mode) => [
+      ...(parMode[mode].ventes.ecartees.length > 0 ? [`dossier ${i} ${mode} : ${parMode[mode].ventes.ecartees.length} vente(s) écartée(s)`] : []),
+      ...parMode[mode].nonEcrites.map((n) => `dossier ${i} ${mode} : non écrite, ${n.detail}`),
+      ...fautesDeLaComposition(parMode[mode]).map((f) => `dossier ${i} ${mode} : ${f}`),
+    ]))
+  }, 60_000)
   const P = PLAN_PAR_DEFAUT
   const TRESORERIE = (t: Tire) => [P.banque, P.valeurs_a_l_encaissement, P.caisse, ...new Set(t.comptes.values())]
 
@@ -1090,13 +1110,8 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
   })
 
   it('rien n’est écarté ni laissé de côté : chaque source tirée s’écrit, chaque écriture est équilibrée, en centimes entiers', () => {
-    for (const { parMode } of calcules) {
-      for (const mode of MODES) {
-        expect(parMode[mode].ventes.ecartees).toEqual([])
-        expect(parMode[mode].nonEcrites).toEqual([])
-        verifier(parMode[mode])
-      }
-    }
+    expect(calcules.length).toBe(1500)
+    expect(fautesDuTirage.slice(0, 20)).toEqual([])
   })
 
   it('la recette écrite au 706 et au 707 est celle que le module compte, mois par mois, dans les deux modèles', () => {

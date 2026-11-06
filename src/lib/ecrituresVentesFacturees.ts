@@ -4,7 +4,7 @@ import {
   centimesExacts, ecartDeFrais, factureSansExemplaire, justifieSonMouvement, type ExemplaireLu,
 } from './encaissementsFactures'
 import { formatDate } from './format'
-import { libelleDUneVenteFacturee, nomDuClientEcrit } from './libellesDesVentes'
+import { libelleDUneVenteFacturee, libelleDUnMouvementDesVentes, nomDuClientEcrit } from './libellesDesVentes'
 import type { PlanComptable } from './planComptable'
 import type { EcritureBrouillon, FactureEmise, JournalCode, LigneBancaire, ModeComptable, SensEcriture } from './types'
 import {
@@ -296,6 +296,13 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
   const encaissementParId = new Map(encaissements.map((e) => [e.id, e]))
   const mouvements = new Map(entrees.mouvements.filter((m) => m.dossier_id === dossierId).map((m) => [m.id, m]))
   const produitDe = (f: FactureVendue) => compteDuProduit(regimeDeLaFacture(f), plan)
+  // La facture qu'un encaissement cite, telle que le libellé d'un mouvement la lit — source ou non (le virement mixte cite
+  // aussi l'exemplaire d'une facture d'avant la bascule) ; introuvable, son identifiant et aucun client.
+  const toutesLesFactures = new Map(sources.factures.filter((f) => f.dossier_id === dossierId).map((f) => [f.id, f]))
+  const citee = (e: Pick<EncaissementVendu, 'facture_id'>) => {
+    const f = toutesLesFactures.get(e.facture_id)
+    return f === undefined ? { numero: e.facture_id.slice(0, 8), tiers_siret: null, tiers_nom: '' } : { ...f, numero: nommer(f) }
+  }
 
   // Les écritures en cours, par clé : une source et une date.
   const enCours = new Map<string, { ecriture: Omit<EcritureVenteFacturee, 'lignes'>; solde: Solde }>()
@@ -442,7 +449,8 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
     enCours.set(cleFecMouvementEncaissements(m.id), {
       ecriture: {
         source, cle: cleFecMouvementEncaissements(m.id), date: m.date, journal: 'BQ', pieceRef: referenceDuReleve(m),
-        pieceDate: m.date, libelle: m.libelle, tiers: null,
+        // Jamais le libellé de la banque, qui nomme qui a payé (JJ1) : la date du relevé et les factures citées.
+        pieceDate: m.date, libelle: libelleDUnMouvementDesVentes(m.date, justifies.map(citee)), tiers: null,
       },
       solde,
     })

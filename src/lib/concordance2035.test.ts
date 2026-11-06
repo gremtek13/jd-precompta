@@ -810,7 +810,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
       ['mouvement:m-vir', { type: 'mouvement', id: 'm-vir' }, -3, 0, ['627000'], 'vente_facturee_non_ecrite'],
     ])
     const [ecart] = c.ecarts
-    expect(ecart.libelle).toBe('Frais retenus sur le mouvement « VIR CLIENT FICTIF »')
+    expect(ecart.libelle).toBe('Frais retenus sur le mouvement « Relevé du 15/09/2025 — F2025-0007 »')
     expect(ecart.date).toBe('2025-09-15')
     expect(phraseDeLEcart(ecart)).toBe(
       `La 2035 compte les frais que la banque a retenus sur ce mouvement d’encaissements (${formatMoney(3)}), aucune écriture de l’exercice ne les porte : à écrire depuis la section « Ventes facturées », qui dit aussi ce qui l’en empêcherait.`,

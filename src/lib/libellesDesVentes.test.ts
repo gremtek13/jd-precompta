@@ -4,7 +4,8 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { identificationDuClient, type FactureDuClient } from './champsBncDuFec'
 import { auxiliaireDuTiers } from './engagement'
 import {
-  libelleDUnePiece, libelleDUneVenteFacturee, nomDuClientEcrit, sirenDuClient, tiersAuFec, type PieceLibellee,
+  LONGUEUR_DU_LIBELLE_D_UN_MOUVEMENT, libelleDUnMouvementDesVentes, libelleDUnePiece, libelleDUneVenteFacturee, nomDuClientEcrit,
+  sirenDuClient, tiersAuFec, type PieceLibellee,
 } from './libellesDesVentes'
 
 // FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE (lib/libellesDesVentes.ts). Deux parties : la règle, cas par
@@ -51,6 +52,30 @@ describe('la règle', () => {
     }
   })
 
+  it('un mouvement du relevé que ses encaissements classent (JJ1) : sa date et les numéros cités, jamais un particulier', () => {
+    const patient = (numero: string) => ({ numero, tiers_siret: null, tiers_nom: 'Patiente Fictive' })
+    const clinique = (numero: string) => ({ numero, tiers_siret: SIRET_VALIDE, tiers_nom: 'Clinique  Fictive' })
+    // Les numéros sans doublon, dans l'ordre des octets, quel que soit l'ordre des encaissements.
+    expect(libelleDUnMouvementDesVentes('2026-12-16', [patient('F2026-0003'), patient('F2026-0001'), patient('F2026-0003')]))
+      .toBe('Relevé du 16/12/2026 — F2026-0001, F2026-0003')
+    // Toutes d'entreprises : chacune avec son nom, par la règle.
+    expect(libelleDUnMouvementDesVentes('2026-12-16', [clinique('F2026-0002'), clinique('F2026-0001')]))
+      .toBe('Relevé du 16/12/2026 — F2026-0001 — Clinique Fictive, F2026-0002 — Clinique Fictive')
+    // Une seule d'un particulier, et personne n'est nommé.
+    const mele = libelleDUnMouvementDesVentes('2026-12-16', [clinique('F2026-0002'), patient('F2026-0001')])
+    expect(mele).toBe('Relevé du 16/12/2026 — F2026-0001, F2026-0002')
+    expect(libelleDUnMouvementDesVentes('2026-12-16', [])).toBe('Relevé du 16/12/2026')
+    // Trop long : les seuls numéros, puis le premier et le compte des autres — jamais plus que la longueur.
+    const beaucoup = Array.from({ length: 40 }, (_, i) => patient(`F2026-${String(i + 1).padStart(4, '0')}`))
+    expect(libelleDUnMouvementDesVentes('2026-12-16', beaucoup)).toBe('Relevé du 16/12/2026 — F2026-0001 et 39 autres factures')
+    const longues = Array.from({ length: 12 }, (_, i) => clinique(`F2026-${String(i + 1).padStart(4, '0')}`))
+    expect(libelleDUnMouvementDesVentes('2026-12-16', longues)).toBe(`Relevé du 16/12/2026 — ${longues.map((f) => f.numero).join(', ')}`)
+    for (const l of [mele, libelleDUnMouvementDesVentes('2026-12-16', beaucoup)]) {
+      expect(l.length).toBeLessThanOrEqual(LONGUEUR_DU_LIBELLE_D_UN_MOUVEMENT)
+      expect(l).not.toMatch(/patiente|clinique/i)
+    }
+  })
+
   it('une pièce de vente déposée : « Recette » et sa date, jamais le tiers lu ni le nom du fichier', () => {
     expect(libelleDUnePiece(piece())).toBe('Recette du 05/03/2026')
     expect(libelleDUnePiece(piece({ tiers: null }))).toBe('Recette du 05/03/2026')
@@ -78,20 +103,27 @@ describe('la règle', () => {
 // ── Le relevé de toute la source ───────────────────────────────────────────────────────────────────────────────────────
 //
 // Il part de TOUTE la source de l'application (src/, hors tests et fabriques de test) et des Edge Functions (supabase/),
-// par l'analyseur de TypeScript (les commentaires n'y comptent pas), et relève deux formes :
+// par l'analyseur de TypeScript (les commentaires n'y comptent pas), et relève trois formes :
 //   - UNE ÉCRITURE COMPOSÉE qui lit un nom : un objet littéral qui porte un `libelle` et un `sens`, un `pieceRef` (une
 //     écriture d'une vente facturée) ou un `statut: 'proposee'` (une ligne du brouillon) — et dont une valeur lit
 //     `tiers_nom`, `tiers` ou `nom_fichier`, directement ou par une variable locale qui les lit (`const libelle = …`), hors
 //     d'un appel à la règle ;
+//   - LE LIBELLÉ DE LA BANQUE dans une écriture d'une vente facturée (un objet qui porte un `pieceRef`) : son `libelle`
+//     qui lit la propriété `libelle` d'un objet (« VIR SEPA RECU DE MME … », qui nomme qui a payé : JJ1, relecture du jour
+//     J), directement ou par une variable locale, hors d'un appel à la règle (`libelleDUnMouvementDesVentes`) ;
 //   - UN COMPTE AUXILIAIRE qui lit un nom : un appel à `auxiliaireDuTiers` dont le tiers n'est ni `tiersAuFec(…)` ni
 //     `{ tiers: null }`. Les écrans du cabinet (le lettrage à la main, les comptes de tiers, le bilan) regroupent par le nom
 //     lu, et l'assistant recopie le lettrage à la main : des exceptions, chacune avec sa raison ET son nombre exact.
 
 interface Source { chemin: string; texte: string }
-interface Trouvaille { chemin: string; ligne: number; genre: 'ecriture' | 'auxiliaire'; texte: string }
+interface Trouvaille { chemin: string; ligne: number; genre: 'ecriture' | 'auxiliaire' | 'releve'; texte: string }
 
 const NOMS_LUS: ReadonlySet<string> = new Set(['tiers_nom', 'tiers', 'nom_fichier'])
-const REGLE: ReadonlySet<string> = new Set(['libelleDUnePiece', 'libelleDUneVenteFacturee', 'nomDuClientEcrit', 'tiersAuFec'])
+const REGLE: ReadonlySet<string> = new Set([
+  'libelleDUnePiece', 'libelleDUneVenteFacturee', 'libelleDUnMouvementDesVentes', 'nomDuClientEcrit', 'tiersAuFec',
+])
+// Le libellé d'un mouvement du relevé (« VIR SEPA RECU DE MME … ») : il nomme qui a payé (JJ1, relecture du jour J).
+const LIBELLE_DU_RELEVE: ReadonlySet<string> = new Set(['libelle'])
 
 function deroule(e: ts.Expression): ts.Expression {
   let x = e
@@ -119,27 +151,29 @@ function initialiseurDe(nom: string, depuis: ts.Node): ts.Expression | null {
 }
 
 // L'expression lit-elle un nom ? Un appel à la règle n'en lit aucun — sauf par le début du libellé qu'on lui passe
-// (`libelleDUneVenteFacturee`, que l'appelant compose) ; une variable locale se suit, jusqu'à trois fois.
-function litUnNom(e: ts.Node, profondeur = 0): boolean {
+// (`libelleDUneVenteFacturee`, que l'appelant compose) ; une variable locale se suit, jusqu'à trois fois. `noms` : les
+// propriétés lues — les noms lus (`NOMS_LUS`, qu'une variable du même nom lit aussi), ou le libellé de la banque
+// (`LIBELLE_DU_RELEVE`, lu seulement comme propriété : une variable locale `libelle` se suit jusqu'à ce qu'elle lit).
+function litUnNom(e: ts.Node, profondeur = 0, noms: ReadonlySet<string> = NOMS_LUS): boolean {
   if (appelleLaRegle(e)) {
     const appel = e as ts.CallExpression
     return (appel.expression as ts.Identifier).text === 'libelleDUneVenteFacturee' && appel.arguments.length > 0
-      && litUnNom(appel.arguments[0], profondeur)
+      && litUnNom(appel.arguments[0], profondeur, noms)
   }
-  if (ts.isPropertyAccessExpression(e) && NOMS_LUS.has(e.name.text)) return true
-  if (ts.isElementAccessExpression(e) && ts.isStringLiteral(e.argumentExpression) && NOMS_LUS.has(e.argumentExpression.text)) return true
+  if (ts.isPropertyAccessExpression(e) && noms.has(e.name.text)) return true
+  if (ts.isElementAccessExpression(e) && ts.isStringLiteral(e.argumentExpression) && noms.has(e.argumentExpression.text)) return true
   if (ts.isIdentifier(e)) {
     const parent = e.parent
     const nomDePropriete = (ts.isPropertyAccessExpression(parent) && parent.name === e) || (ts.isPropertyAssignment(parent) && parent.name === e)
     if (nomDePropriete) return false
-    if (NOMS_LUS.has(e.text)) return true
+    if (noms === NOMS_LUS && NOMS_LUS.has(e.text)) return true
     if (profondeur >= 3) return false
     const init = initialiseurDe(e.text, e)
-    return init !== null && litUnNom(init, profondeur + 1)
+    return init !== null && litUnNom(init, profondeur + 1, noms)
   }
   let trouve = false
   ts.forEachChild(e, (c) => {
-    if (!trouve && litUnNom(c, profondeur)) trouve = true
+    if (!trouve && litUnNom(c, profondeur, noms)) trouve = true
   })
   return trouve
 }
@@ -170,6 +204,10 @@ function analyser(sources: readonly Source[]): { trouvees: Trouvaille[]; ecritur
         for (const p of n.properties) {
           if (ts.isPropertyAssignment(p) && litUnNom(p.initializer)) noter('ecriture', p)
           else if (ts.isShorthandPropertyAssignment(p) && litUnNom(p.name)) noter('ecriture', p)
+          // Le libellé de la banque, dans une écriture d'une vente facturée (celle qui porte un `pieceRef`) : jamais (JJ1).
+          if (nomDuPropriete(p) !== 'libelle' || !n.properties.some((q) => nomDuPropriete(q) === 'pieceRef')) continue
+          if (ts.isPropertyAssignment(p) && litUnNom(p.initializer, 0, LIBELLE_DU_RELEVE)) noter('releve', p)
+          else if (ts.isShorthandPropertyAssignment(p) && litUnNom(p.name, 0, LIBELLE_DU_RELEVE)) noter('releve', p)
         }
       }
       if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'auxiliaireDuTiers' && n.arguments.length > 0) {
@@ -238,7 +276,7 @@ describe('aucun nom lu hors de la règle, dans une écriture composée ni dans l
     const fautes: string[] = []
     for (const [chemin, liste] of parFichier) {
       const exception = EXCEPTIONS[chemin]
-      const ecrituresFautives = liste.filter((t) => t.genre === 'ecriture')
+      const ecrituresFautives = liste.filter((t) => t.genre === 'ecriture' || t.genre === 'releve')
       fautes.push(...ecrituresFautives.map((t) => `${t.chemin}:${t.ligne} ${t.genre} ${t.texte}`))
       const auxiliaires = liste.filter((t) => t.genre === 'auxiliaire')
       if (!exception) fautes.push(...auxiliaires.map((t) => `${t.chemin}:${t.ligne} ${t.genre} ${t.texte}`))
@@ -282,10 +320,16 @@ describe('aucun nom lu hors de la règle, dans une écriture composée ni dans l
       'export const i = (piece: P) => auxiliaireDuTiers(tiersAuFec(piece), c)',
       'export const j = () => auxiliaireDuTiers({ tiers: null }, c)',
       "export const k = (f: F) => auxiliaireDuTiers({ tiers: f.tiers_nom }, '411000')",
+      // Le libellé de la banque dans l'écriture d'une vente facturée (JJ1), directement ou par une variable locale…
+      "export const m = (m: M) => ({ libelle: m.libelle, pieceRef: 'r', tiers: null })",
+      "export function n(m: M) { const libelle = `Relevé ${m['libelle']}`; return { libelle, pieceRef: 'r' } }",
+      // … mais pas par la règle, ni dans une écriture du relevé qui n'est pas d'une vente facturée (hors de FEC22-Q7).
+      "export const o = (m: M) => ({ libelle: libelleDUnMouvementDesVentes(m.date, []), pieceRef: 'r' })",
+      "export const q = (m: M) => ({ libelle: m.libelle, sens: 'debit', compte: '512000' })",
     ].join('\n')
     const { trouvees } = analyser([{ chemin: 'src/lib/plante.ts', texte: plante }])
     expect(trouvees.map((t) => `${t.ligne} ${t.genre}`)).toEqual([
-      '2 ecriture', '6 ecriture', '8 ecriture', '9 ecriture', '13 auxiliaire', '16 auxiliaire',
+      '2 ecriture', '6 ecriture', '8 ecriture', '9 ecriture', '13 auxiliaire', '16 auxiliaire', '17 releve', '18 releve',
     ])
   })
 
@@ -293,7 +337,7 @@ describe('aucun nom lu hors de la règle, dans une écriture composée ni dans l
     const muter = (chemin: string, avant: string, apres: string) => {
       const s = sources.find((x) => x.chemin === chemin)!
       expect(s.texte.includes(avant), `${chemin} : « ${avant} »`).toBe(true)
-      return analyser([{ chemin, texte: s.texte.replace(avant, apres) }]).trouvees.filter((t) => t.genre === 'ecriture' || !EXCEPTIONS[chemin])
+      return analyser([{ chemin, texte: s.texte.replace(avant, apres) }]).trouvees.filter((t) => t.genre !== 'auxiliaire' || !EXCEPTIONS[chemin])
     }
     expect(muter('src/lib/ecritures.ts', 'const libelle = libelleDUnePiece(piece)', 'const libelle = piece.tiers ?? piece.nom_fichier').length).toBeGreaterThan(0)
     expect(muter('src/lib/ecritures.ts', "libelle: libelleDUnePiece(piece), statut: 'proposee', compte: plan.banque",
@@ -301,6 +345,11 @@ describe('aucun nom lu hors de la règle, dans une écriture composée ni dans l
     expect(muter('src/lib/engagement.ts', 'libelle: libelleDUnePiece(piece),', 'libelle: piece.tiers ?? piece.nom_fichier,').length).toBe(1)
     expect(muter('src/lib/ecrituresVentesFacturees.ts', 'tiers: nomDuClientEcrit(f),', 'tiers: f.tiers_nom,').length).toBe(1)
     expect(muter('src/lib/ecrituresVentesFacturees.ts', "${nommer(doc)}`, f)", "${nommer(doc)} — ${f.tiers_nom}`, f)").length).toBe(1)
+    // JJ1 : le libellé de la banque revenu dans l'écriture d'un mouvement que ses encaissements classent.
+    expect(muter('src/lib/ecrituresVentesFacturees.ts', 'libelle: libelleDUnMouvementDesVentes(m.date, justifies.map(citee))',
+      'libelle: m.libelle').map((t) => t.genre)).toEqual(['releve'])
+    expect(muter('src/lib/ecrituresVentesFacturees.ts', 'libelle: libelleDUnMouvementDesVentes(m.date, justifies.map(citee))',
+      'libelle: `Relevé — ${m.libelle}`').map((t) => t.genre)).toEqual(['releve'])
     expect(muter('src/lib/fec.ts', 'auxiliaireDuTiers(tiersAuFec(piece), e.compte)', 'auxiliaireDuTiers(piece ?? { tiers: null }, e.compte)').length).toBe(1)
   })
 })
