@@ -1274,7 +1274,7 @@ describe('calculerDeclaration2035 — les frais d’un mouvement d’encaissemen
   it('une dépense, à la date du mouvement, sous le poste de la catégorie commune, au compte que la composition écrit', () => {
     const d = declarer(sources())
     expect(desFrais(d)).toEqual([{
-      source: { type: 'frais_d_encaissements', id: 'm1', frais: { ligneBancaireId: 'm1', date: '2025-11-20', libelle: 'VIR CLIENT FICTIF', compte: '627000', centimes: 200 } },
+      source: { type: 'frais_d_encaissements', id: 'm1', frais: { ligneBancaireId: 'm1', date: '2025-11-20', libelle: 'Relevé du 20/11/2025 — F2025-0001', compte: '627000', centimes: 200 } },
       poste: 'Frais financiers', nature: 'depense', compte: '627000', centimes: 200,
     }])
     // Le mouvement compte parmi ceux du poste : sa preuve est le relevé.

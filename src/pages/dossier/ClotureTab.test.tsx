@@ -3243,7 +3243,7 @@ describe('ClotureTab — les ventes facturées', () => {
     const carteFrais = screen.getByText(/Frais d’encaissements absents du récapitulatif \(1\)/).closest('.card') as HTMLElement
     within(carteFrais).getByText(/qui n’a pas de poste 2035/)
     within(carteFrais).getByText(/seul l’administrateur de l’application en règle le poste/)
-    within(carteFrais).getByText('VIR CLIENT FICTIF')
+    within(carteFrais).getByText('Relevé du 10/05/2025 — F2025-0042')
     // La catégorie rejoint « Postes manquants », où son poste se règle — ici, une catégorie commune : la carte le dit.
     const postes = screen.getByText('Postes manquants').closest('.card') as HTMLElement
     within(postes).getByText('Frais bancaires')
