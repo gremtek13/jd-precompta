@@ -48513,20 +48513,40 @@ RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ### 06/11/2026 — LA FACTURE ÉLECTRONIQUE LIT CE QUE LA FACTURE A FIGÉ (A7C, LIGNE 28.55)
 
-(Du code et des tests, rien en base, rien déployé.) Le bloc `factureCii` recomposait encore le vendeur du dossier au jour
-de la transmission. Pour une facture qui a figé ses mentions (`mentions_figees`), `donneesDeLaFacture` prend désormais le
-statut, l'article, la case et le numéro de TVA figés (le motif BT-120/BT-121 en découle), jamais le dossier ; le CII gagne
-l'unité (BT-130) et la référence (BT-155) de chaque ligne, le bon de commande (BT-13) pour tout acheteur, les instructions
-de paiement (BG-16 : BT-81 du moyen préféré, « non défini » (1) sans moyen, BT-84 à BT-86) quand un IBAN est figé, les
-conditions de paiement en texte (BT-20 : le moyen, les pénalités, l'indemnité) et l'escompte en note `AAB`. L'annexe 7 v1.9
-de la DGFiP (G1.52) ne nomme que AAB, TXD et BLU ; aucun code n'est donc choisi pour les pénalités ni l'indemnité, qui
-restent dans BT-20. Le texte vient de `conditionsFigees` (dans le bloc), que l'aperçu (`ceQueLaFactureImprime`) emploie
-aussi ; `INDEMNITE_DE_RECOUVREMENT` y a déménagé, et un test confronte les libellés des moyens à `MOYENS_ENCAISSEMENT`. Une
-facture d'avant s'écrit à l'octet près comme hier (les onze empreintes de `valides.json` inchangées, et un test qui pose
-toutes les colonnes figées sur `mentions_figees` faux ou absent). Les deux copies (superpdp-emit, plateforme-agreee),
-recopiées par script, lisent les onze colonnes figées et `unite, reference` ; l'écran de transmission aussi. Trois exemples
-neufs (`figee-entreprise`, `figee-franchise`, `figee-prelevement`, IBAN fictif au code banque 99999) : 0 erreur, 0
-avertissement au validateur officiel (artefacts 1.3.16, Saxon 9.9.1-8). À la relecture : le code 1 de BT-81 est admis (la
-liste UNTDID 4461 de l'annexe 7, BR-CL-16 ; le flux 1 ne porte pas BG-16) ; l'IBAN part sous tout moyen comme compte du
-bénéficiaire, aucune règle (BR-50, BR-61) ne le réservant au virement, et l'exemple au prélèvement (59) passe. Sept mutations mordent. FACTURE-Q4 (la ligne à 0 % d'un redevable) est
-proposée au cabinet, rien d'écrit. Restent le redéploiement des deux fonctions, par la session principale.
+(Du code et des tests, rien en base, rien déployé.) Le bloc `factureCii` recomposait encore le vendeur du dossier au
+jour de la transmission. Pour une facture qui a figé ses mentions (`mentions_figees`), `donneesDeLaFacture` prend
+désormais le statut, l'article, la case et le numéro de TVA figés (le motif BT-120/BT-121 en découle), jamais le
+dossier ; le CII gagne l'unité (BT-130) et la référence (BT-155) de chaque ligne, le bon de commande (BT-13) pour tout
+acheteur, les instructions de paiement (BG-16 : BT-81 du moyen préféré, « non défini » (1) sans moyen, BT-84 à BT-86)
+quand un IBAN est figé, les conditions de paiement en texte (BT-20 : le moyen, les pénalités, l'indemnité) et l'escompte
+en note `AAB`. L'annexe 7 v1.9 de la DGFiP (G1.52) ne nomme que AAB, TXD et BLU ; aucun code n'est donc choisi pour les
+pénalités ni l'indemnité, qui restent dans BT-20. Le texte vient de `conditionsFigees` (dans le bloc), que l'aperçu
+(`ceQueLaFactureImprime`) emploie aussi ; `INDEMNITE_DE_RECOUVREMENT` y a déménagé, et un test confronte les libellés
+des moyens à `MOYENS_ENCAISSEMENT`. Une facture d'avant s'écrit à l'octet près comme hier (les onze empreintes de
+`valides.json` inchangées, et un test qui pose toutes les colonnes figées sur `mentions_figees` faux ou absent). Les
+deux copies (superpdp-emit, plateforme-agreee), recopiées par script, lisent les onze colonnes figées et `unite,
+reference` ; l'écran de transmission aussi. Trois exemples neufs (`figee-entreprise`, `figee-franchise`,
+`figee-prelevement`, IBAN fictif au code banque 99999) : 0 erreur, 0 avertissement au validateur officiel (artefacts
+1.3.16, Saxon 9.9.1-8). À la relecture : le code 1 de BT-81 est admis (la liste UNTDID 4461 de l'annexe 7, BR-CL-16 ; le
+flux 1 ne porte pas BG-16) ; l'IBAN part sous tout moyen comme compte du bénéficiaire, aucune règle (BR-50, BR-61) ne le
+réservant au virement, et l'exemple au prélèvement (59) passe. Sept mutations mordent. FACTURE-Q4 (la ligne à 0 % d'un
+redevable) est proposée au cabinet, rien d'écrit. Restent le redéploiement des deux fonctions, par la session
+principale.
+
+### 06/11/2026 — LE MANDAT DE FACTURATION IMPRIMÉ ET NOMMÉ À LA CONFIRMATION (P4, LIGNE 51.5)
+
+(Agent dev de P4 ; ni migration, ni Edge Function, ni appel à la production.) Quand le CABINET valide, il émet au nom et
+pour le compte de son client : `enregistrer_facture` fige déjà le nom du cabinet du dossier dans `mandataire_nom` (nul
+pour un accès « Ventes »), et rien ne l'imprimait. `ceQueLaFactureImprime` (`lib/mentionsFigeesVue.ts`) en tire `mandat`
+— « Facture établie par <cabinet> au nom et pour le compte de <nom légal> », « Avoir établi par … » pour un avoir, le
+nom légal étant celui que l'aperçu imprime déjà — que `FactureApercu` imprime sous le numéro de TVA de l'émetteur, dans
+les deux espaces, sans mise en page en ligne ; nul, fait de blancs, facture d'avant A7 ou drapeau baissé : rien. La
+confirmation de validation NOMME la même mention (entre le numéro de TVA et les conditions de paiement). Le nom du
+cabinet se lit comme la base le lit (`lib/mandataireLecture.ts` : `dossiers.cabinet_id`, puis `cabinets.nom`), UNE fois
+dans `FacturesTab`, au cabinet seul, gardé avec le dossier lu, et passe aux deux fenêtres par une propriété OBLIGATOIRE
+de leur variante cabinet (`mandataire`, `null` tant que la lecture n'est pas revenue) ; pas revenu, illisible ou vide,
+la validation est RETENUE et l'écran le dit (le brouillon s'enregistre), jamais un nom deviné. Chez le client, rien
+n'est lu. Le CII et ses copies ne changent pas : EN 16931 n'a aucun champ « facturant », le mandat s'imprime et ne se
+transmet pas (gardé par un test). Deux mutations mordent : la mention imprimée sans mandataire ; la validation offerte
+avant le retour du nom. Non fait : un changement de nom du cabinet ne réécrit aucune facture validée (le nom figé est
+celui du jour de la validation) ; le banc de captures n'a pas de facture portant un mandataire.

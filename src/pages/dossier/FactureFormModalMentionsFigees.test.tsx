@@ -6,10 +6,13 @@ import { NON_BASCULE } from '../../test/factures'
 import { article } from '../../test/articles'
 import { contact } from '../../test/contacts'
 import { versionParametres } from '../../test/parametresFacturation'
-import { AUTRE_IBAN_ESSAI, BIC_ESSAI, IBAN_ESSAI, factureFigee, identiteDuDossier } from '../../test/mentionsFigees'
+import { AUTRE_IBAN_ESSAI, BIC_ESSAI, CABINET_DU_DOSSIER, IBAN_ESSAI, factureFigee, identiteDuDossier } from '../../test/mentionsFigees'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import { REFUS_DE_LA_PROVENANCE, REFUS_DE_LA_VALIDATION_FIGEE } from '../../lib/mentionsFigees'
-import { AVIS_SANS_FORME, REFUS_SANS_PENALITES, RETENUE_EN_LECTURE } from '../../lib/mentionsFigeesVue'
+import {
+  AVIS_SANS_FORME, REFUS_SANS_PENALITES, RETENUE_EN_LECTURE, RETENUE_MANDATAIRE_EN_LECTURE, RETENUE_MANDATAIRE_VIDE, retenueMandataireIllisible,
+  type LectureDuMandataire,
+} from '../../lib/mentionsFigeesVue'
 import { MODELE_IBAN_DANS_UN_TEXTE } from '../../lib/parametresFacturation'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 import type { EspaceVentes } from '../../lib/espaceVentes'
@@ -125,19 +128,28 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 
-function monter(espace: EspaceVentes, o: {
+type Options = {
   facture?: FactureEmise | null; dossierAdresse?: string | null; dossierSiret?: string | null
   statutTva?: StatutTva; articleExoneration?: ArticleExoneration | null
-} = {}) {
+  // Le nom du cabinet, tel que l'onglet l'a lu (P4) : lu par défaut ; `null` tant que la lecture n'est pas revenue.
+  mandataire?: LectureDuMandataire | null
+}
+
+function formulaire(espace: EspaceVentes, o: Options = {}) {
+  const mandataire = o.mandataire === undefined ? CABINET_DU_DOSSIER : o.mandataire
   const commun = {
     dossierId: 'd1', dossierNom: 'Nom interne du dossier', dossierSiret: o.dossierSiret === undefined ? SIRET_VENDEUR : o.dossierSiret,
     dossierAdresse: o.dossierAdresse === undefined ? '1 rue des Essais\n69000 Lyon' : o.dossierAdresse,
     statutTva: o.statutTva ?? 'redevable', articleExoneration: o.articleExoneration ?? null, numeroTvaAttribue: false, tvaSurDebits: false,
     reglageDesVentes: NON_BASCULE, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   }
-  render(espace === 'cabinet'
-    ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />
-    : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="client" {...commun} />)
+  return espace === 'cabinet'
+    ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} mandataire={mandataire} {...commun} />
+    : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="client" {...commun} />
+}
+
+function monter(espace: EspaceVentes, o: Options = {}) {
+  return render(formulaire(espace, o))
 }
 
 const ligneDuFormulaire = (i = 0) => document.querySelectorAll('tbody tr')[i] as HTMLElement
@@ -514,3 +526,66 @@ for (const espace of ['cabinet', 'client'] as const) {
     })
   })
 }
+
+// LE MANDAT DE FACTURATION (étape P4) : quand le cabinet valide, la facture imprimera « Facture établie par <cabinet> au nom et pour
+// le compte de <nom légal> », et la confirmation le NOMME. Le nom du cabinet est lu par l'onglet comme la base le lit ; tant qu'il
+// n'est pas revenu, ou s'il est illisible ou vide, la validation du cabinet n'est pas offerte, et l'écran le dit. Le client « Ventes »
+// n'a aucun mandataire : rien ne change pour lui.
+describe('le mandat de facturation (P4) — le formulaire', () => {
+  const MENTION = 'la mention « Facture établie par Cabinet Fictif & Associés au nom et pour le compte de Camille Essai EI »'
+
+  it('le cabinet valide : la confirmation NOMME la mention, avec le nom légal que la facture imprime', async () => {
+    monter('cabinet')
+    await remplir()
+    reponseConfirmation = false
+    await act(async () => { valider().click() })
+    expect(confirmations[0]).toContain(`– ${MENTION}`)
+    // Dans l'ordre du papier : sous le numéro de TVA, avant les conditions de paiement.
+    expect(confirmations[0].indexOf('le numéro de TVA')).toBeLessThan(confirmations[0].indexOf(MENTION))
+    expect(confirmations[0].indexOf(MENTION)).toBeLessThan(confirmations[0].indexOf('les conditions de paiement'))
+  })
+
+  it('le client « Ventes » valide : aucune mention du mandat, ni dans la confirmation ni dans ce qui retient', async () => {
+    monter('client')
+    await remplir()
+    reponseConfirmation = false
+    await act(async () => { valider().click() })
+    expect(confirmations[0]).not.toContain('Facture établie par')
+    expect(confirmations[0]).not.toContain('la mention')
+    expect(screen.queryByText(RETENUE_MANDATAIRE_EN_LECTURE)).toBeNull()
+  })
+
+  it('le nom du cabinet pas encore revenu : la validation n’est pas offerte, l’écran le dit ; le brouillon s’enregistre ; il revient, elle l’est', async () => {
+    const { rerender } = monter('cabinet', { mandataire: null })
+    await screen.findAllByRole('button', { name: /^Choisir un article, ligne/ })
+    fireEvent.change(document.querySelector('#tiers-nom')!, { target: { value: 'Patient fictif' } })
+    fireEvent.change(designation(), { target: { value: 'Séance' } })
+    fireEvent.change(ligneDuFormulaire().querySelectorAll('input')[2], { target: { value: '60' } })
+    // Ce que la validation lit (le dossier, les paramètres) est revenu : seul le nom du cabinet manque.
+    expect(await screen.findByText(RETENUE_MANDATAIRE_EN_LECTURE)).toBeTruthy()
+    expect(valider().disabled).toBe(true)
+    await act(async () => { fireEvent.click(valider()) })
+    expect(faux.rpcs).toEqual([])
+    expect(confirmations).toEqual([])
+    expect(brouillon().disabled).toBe(false)
+    rerender(formulaire('cabinet', { mandataire: CABINET_DU_DOSSIER }))
+    await waitFor(() => expect(valider().disabled).toBe(false))
+    expect(screen.queryByText(RETENUE_MANDATAIRE_EN_LECTURE)).toBeNull()
+  })
+
+  it('un nom illisible ou vide : la validation n’est pas offerte, sous ses mots, jamais un nom deviné', async () => {
+    for (const [mandataire, mots] of [
+      [{ etat: 'illisible', motif: 'accès refusé' }, retenueMandataireIllisible('accès refusé')],
+      [{ etat: 'lu', nom: '  ' }, RETENUE_MANDATAIRE_VIDE],
+    ] as const satisfies readonly (readonly [LectureDuMandataire, string])[]) {
+      monter('cabinet', { mandataire })
+      await screen.findAllByRole('button', { name: /^Choisir un article, ligne/ })
+      fireEvent.change(document.querySelector('#tiers-nom')!, { target: { value: 'Patient fictif' } })
+      fireEvent.change(designation(), { target: { value: 'Séance' } })
+      expect(await screen.findByText(mots)).toBeTruthy()
+      expect(valider().disabled).toBe(true)
+      expect(brouillon().disabled).toBe(false)
+      cleanup()
+    }
+  })
+})

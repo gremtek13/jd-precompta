@@ -1,3 +1,4 @@
+import { quiCree } from '../../test/mentionsFigees'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
@@ -67,7 +68,7 @@ const SERIE: FactureDeLaSerie[] = [
 async function monter(espace: EspaceVentes, facturesDeLaSerie: readonly FactureDeLaSerie[] | null, dateEmission: string) {
   render(
     <FactureAvoirModal
-      acompte={SANS_ACOMPTE} espace={espace} dossierId="d1" factureOrigine={origine} credite={0} reglageDesVentes={NON_BASCULE}
+      acompte={SANS_ACOMPTE} {...quiCree(espace)} dossierId="d1" factureOrigine={origine} credite={0} reglageDesVentes={NON_BASCULE}
       facturesDeLaSerie={facturesDeLaSerie} onClose={() => {}} onCreated={() => {}}
     />,
   )

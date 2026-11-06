@@ -26,8 +26,30 @@ import type {
 //   - ce que la validation figera et imprimera, en mots, pour la confirmation qui le NOMME (`mentionsAFiger`) ;
 //   - ce que l'aperçu d'une facture qui a figé ses mentions imprime, tiré de SES colonnes seules, jamais d'une valeur relue
 //     du dossier ni recalculée le jour de l'impression (`ceQueLaFactureImprime`).
-// Le mandataire ne s'imprime pas (P4). Le CII lit les mêmes colonnes depuis A7c, et ses conditions de paiement viennent de la
-// même fonction que celles du papier (`conditionsFigees`, lib/factureCii.ts).
+// LE MANDAT DE FACTURATION (étape P4) : quand le CABINET valide, il émet la facture au nom et pour le compte de son client, et
+// la base fige son nom (`mandataire_nom`). La facture l'imprime sous l'identité de l'émetteur — « Facture établie par <cabinet>
+// au nom et pour le compte de <nom légal> », « Avoir établi par … » (BOI-TVA-DECLA-30-20-10-30, §200 et §210) —, et la
+// confirmation de validation NOMME cette mention (`mentionDuMandat`). Le CII et ses copies ne la portent pas : la norme EN 16931
+// n'a aucun champ « facturant », le mandat ne se transmet donc pas — il s'imprime seulement.
+// Le CII lit les mêmes colonnes depuis A7c, et ses conditions de paiement viennent de la même fonction que celles du
+// papier (`conditionsFigees`, lib/factureCii.ts).
+
+// ── Le mandataire, tel que l'écran l'a lu ─────────────────────────────────────────────────────────────────────────────────
+/** Le nom du cabinet du dossier, tel que la base le fige (lib/mandataireLecture.ts) : lu, ou illisible avec son motif. */
+export type LectureDuMandataire =
+  | { etat: 'lu'; nom: string }
+  | { etat: 'illisible'; motif: string }
+
+/**
+ * La mention du mandat, ou null sans mandataire (nul, ou fait de blancs : la base le fige tel quel, et « établie par  au nom… »
+ * ne dit rien). `nomLegal` : le nom que la facture imprime pour l'émetteur. Un avoir dit « Avoir établi », une facture « Facture établie ».
+ */
+export function mentionDuMandat(mandataire: string | null | undefined, nomLegal: string | null, avoir: boolean): string | null {
+  const par = sansBlancsAuxBords(mandataire ?? '')
+  const pour = sansBlancsAuxBords(nomLegal ?? '')
+  if (par === '' || pour === '') return null
+  return `${avoir ? 'Avoir établi' : 'Facture établie'} par ${par} au nom et pour le compte de ${pour}`
+}
 
 // ── La provenance d'une ligne ────────────────────────────────────────────────────────────────────────────────────────
 /** Ce que la ligne tient de sa provenance, en texte de champ : « » pour une valeur non choisie. */
@@ -106,6 +128,10 @@ export interface SaisieAJuger {
   listes: ListesDuDossier
   // Null tant que la lecture n'est pas revenue.
   lecture: LectureDeLaValidation | null
+  // Le nom du cabinet du dossier, tel que la base le fige pour une validation du CABINET (P4) ; null tant que la lecture n'est
+  // pas revenue. Obligatoire, sans valeur par défaut : un écran qui l'oublierait ne compile pas. Dans l'espace du client, la
+  // base ne fige aucun mandataire : la valeur passée n'y est pas lue (on passe null).
+  mandataire: LectureDuMandataire | null
 }
 
 export interface JugementDesMentions {
@@ -184,6 +210,17 @@ export function retenueIllisible(motif: string): string {
     + 'Rouvre la facture pour relire.'
 }
 
+export const RETENUE_MANDATAIRE_EN_LECTURE = 'Le nom du cabinet, que la facture imprimera comme celui qui l’établit au nom et pour le compte '
+  + 'du client, est en cours de lecture : la validation attend la réponse.'
+
+export function retenueMandataireIllisible(motif: string): string {
+  return `Le nom du cabinet, que la facture imprimera comme celui qui l’établit, n’a pas pu être lu (${motif}) : la validation n’est pas `
+    + 'offerte, le brouillon s’enregistre. Rouvre la facture pour relire.'
+}
+
+export const RETENUE_MANDATAIRE_VIDE = 'Le nom du cabinet est vide : la facture ne pourrait pas dire qui l’établit au nom et pour le '
+  + 'compte du client, et la validation n’est pas offerte.'
+
 export const RETENUE_CHAINE_ROMPUE = 'Les versions des paramètres de facturation lues ne forment pas une suite : on ne sait pas laquelle '
   + 'la facture figerait, et la validation n’est pas offerte.'
 
@@ -226,6 +263,15 @@ export function jugementDesMentions(s: SaisieAJuger): JugementDesMentions {
   if (s.lecture === null) { jugement.retenue = dire(RETENUE_EN_LECTURE); return jugement }
   if (s.lecture.etat === 'illisible') { jugement.retenue = dire(retenueIllisible(s.lecture.motif)); return jugement }
   const { identite, versions } = s.lecture
+  // Le mandataire : le nom du cabinet, que la base lit en validant ; jamais deviné ni remplacé par un mot générique. Le client
+  // « Ventes » n'en a pas (la base le laisse nul).
+  let mandataire: string | null = null
+  if (s.espace === 'cabinet') {
+    if (s.mandataire === null) { jugement.retenue = dire(RETENUE_MANDATAIRE_EN_LECTURE); return jugement }
+    if (s.mandataire.etat === 'illisible') { jugement.retenue = dire(retenueMandataireIllisible(s.mandataire.motif)); return jugement }
+    if (sansBlancsAuxBords(s.mandataire.nom) === '') { jugement.retenue = dire(RETENUE_MANDATAIRE_VIDE); return jugement }
+    mandataire = s.mandataire.nom
+  }
   const courante = versionCourante(versions, s.dossierId)
   const origine: MentionsDeLOrigine | null = s.origine
   const mentions = mentionsAFiger({
@@ -235,8 +281,7 @@ export function jugementDesMentions(s: SaisieAJuger): JugementDesMentions {
     origine,
     dossier: identite,
     versions,
-    // Le mandataire ne s'imprime pas avant P4 : l'écran n'en dit rien, la base le pose.
-    mandataire: null,
+    mandataire,
   })
   if (courante === 'rompue' || mentions === 'rompue') { jugement.retenue = dire(RETENUE_CHAINE_ROMPUE); return jugement }
 
@@ -293,14 +338,18 @@ export function avisSansDenomination(nom: string | null): string {
 }
 
 // ── La confirmation : ce que la facture figera et imprimera ─────────────────────────────────────────────────────────
+// Le nom légal : la dénomination figée, sinon le nom que la facture porte.
+const nomLegal = (denomination: string | null | undefined, nom: string | null): string | null =>
+  denomination != null && !denominationAbsente(denomination) ? denomination : nom
+
 export const AUCUN_RIB_CONFIRME = 'aucun RIB confirmé : la facture n’en imprimera pas'
 
 /**
  * Ce que la validation figera et imprimera, une phrase par mention, dans l'ordre du papier : le nom légal (avec « EI »),
- * l'identité, le numéro de TVA, les conditions de paiement, le RIB CONFIRMÉ (ou qu'il n'y en a pas), le logo. `nom` : celui
- * que la facture imprime faute de dénomination.
+ * l'identité, le numéro de TVA, la mention du mandat quand le cabinet valide (P4), les conditions de paiement, le RIB CONFIRMÉ
+ * (ou qu'il n'y en a pas), le logo. `nom` : celui que la facture imprime faute de dénomination.
  */
-export function ceQueLaValidationFigera(m: MentionsFigees, nom: string | null): string[] {
+export function ceQueLaValidationFigera(m: MentionsFigees, nom: string | null, avoir = false): string[] {
   const phrases: string[] = []
   phrases.push(m.denomination_imprimee != null && !denominationAbsente(m.denomination_imprimee)
     ? `le nom « ${m.denomination_imprimee} »`
@@ -309,6 +358,8 @@ export function ceQueLaValidationFigera(m: MentionsFigees, nom: string | null): 
     .filter((x): x is string => x != null && x !== '')
   if (identite.length > 0) phrases.push(`l’identité : ${identite.join(' ; ').replace(/\s*\n\s*/g, ' ')}`)
   phrases.push(m.numero_tva_imprime ? `le numéro de TVA ${m.numero_tva_imprime}` : 'aucun numéro de TVA')
+  const mandat = mentionDuMandat(m.mandataire_nom, nomLegal(m.denomination_imprimee, nom), avoir)
+  if (mandat !== null) phrases.push(`la mention « ${mandat} »`)
   if (m.parametres_id === null) {
     phrases.push('aucun paramètre de facturation : ni conditions de paiement, ni RIB, ni logo')
     return phrases
@@ -331,7 +382,7 @@ export function ceQueLaValidationFigera(m: MentionsFigees, nom: string | null): 
 /** La confirmation entière : l'en-tête, puis une mention par ligne. */
 export function confirmationDesMentions(m: MentionsFigees, nom: string | null, avoir: boolean): string {
   const quoi = avoir ? 'Validé, l’avoir figera et imprimera' : 'Validée, la facture figera et imprimera'
-  return `${quoi} :\n${ceQueLaValidationFigera(m, nom).map((p) => `– ${p}`).join('\n')}`
+  return `${quoi} :\n${ceQueLaValidationFigera(m, nom, avoir).map((p) => `– ${p}`).join('\n')}`
 }
 
 // ── Ce que l'aperçu imprime d'une facture qui a figé ses mentions ────────────────────────────────────────────────────
@@ -355,6 +406,8 @@ export { INDEMNITE_DE_RECOUVREMENT }
 export interface ImpressionFigee {
   // Le nom légal : la dénomination figée, sinon le nom que la facture porte.
   nom: string | null
+  // La mention du mandat (P4), sous l'identité de l'émetteur ; null quand le cabinet n'a pas validé (aucun mandataire figé).
+  mandat: string | null
   // L'identité, une ligne chacune : la forme et le capital, le RCS et sa ville, les autres mentions.
   identite: string[]
   numeroTva: string | null
@@ -391,8 +444,10 @@ export function ceQueLaFactureImprime(f: FactureEmise): ImpressionFigee | null {
   if (f.type_client !== 'organisme_public' && f.numero_engagement) {
     mentions.push({ libelle: 'Numéro d’engagement', texte: f.numero_engagement })
   }
+  const nom = nomLegal(f.denomination_imprimee, f.emetteur_nom)
   return {
-    nom: f.denomination_imprimee != null && !denominationAbsente(f.denomination_imprimee) ? f.denomination_imprimee : f.emetteur_nom,
+    nom,
+    mandat: mentionDuMandat(f.mandataire_nom, nom, f.type === 'avoir'),
     identite,
     numeroTva: f.numero_tva_imprime ?? null,
     conditions,

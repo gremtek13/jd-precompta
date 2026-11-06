@@ -5,12 +5,12 @@ import { aujourdHuiAParis, formatMoney } from '../../lib/format'
 import type { Contact, FactureEmise, FactureLigne } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_AVOIR_CLIENT } from '../../lib/droitsAcces'
-import { pourLEspace, pourLEspaceSiTexte, type EspaceVentes } from '../../lib/espaceVentes'
+import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLaLigneLue, provenanceQuiPart,
-  type LectureDeLaValidation, type ProvenanceDeLigne,
+  type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import { lireLesContacts } from '../../lib/contactsLecture'
@@ -31,11 +31,16 @@ interface LigneAvoirEdit extends ProvenanceDeLigne {
   reprise_facture_id?: string
 }
 
-interface Props {
+// Qui crée l'avoir : le cabinet, ou le client « Ventes » (espace client, étape P4a) — le même geste, par la même
+// fonction ; seuls les mots changent (lib/espaceVentes.ts). Le cabinet passe aussi le nom du cabinet du dossier (étape P4 ;
+// lib/mandataireLecture.ts), que sa validation fige comme mandataire et que l'avoir imprime : `null` tant que la lecture n'est
+// pas revenue, et la validation attend. Le client n'en a pas.
+type QuiCree =
+  | { espace: 'cabinet'; mandataire: LectureDuMandataire | null }
+  | { espace: 'client' }
+
+type Props = QuiCree & {
   dossierId: string
-  // Qui crée l'avoir : le cabinet, ou le client « Ventes » (espace client, étape P4a) — le même geste, par la même
-  // fonction ; seuls les mots changent (lib/espaceVentes.ts).
-  espace: EspaceVentes
   factureOrigine: FactureEmise
   // Ce que les autres avoirs de cette facture ont déjà crédité (lib/factures.ts:dejaCredite) ; null quand la liste
   // des factures n'a pas été lue en entier — on ne sait pas, et c'est alors la base qui juge du plafond.
@@ -71,7 +76,8 @@ interface Props {
 // montants restent positifs à l'écran ("je crédite 120 €") mais sont stockés négatifs en base (voir
 // creerAvoir) : sommer tous les montant_ttc d'un dossier/année annule alors automatiquement l'effet de
 // l'avoir sur le total, sans cas particulier à coder ailleurs (FactureApercu, un futur export...).
-export default function FactureAvoirModal({ dossierId, espace, factureOrigine, credite, facturesDeLaSerie, reglageDesVentes, acompte, onClose, onCreated }: Props) {
+export default function FactureAvoirModal(props: Props) {
+  const { dossierId, espace, factureOrigine, credite, facturesDeLaSerie, reglageDesVentes, acompte, onClose, onCreated } = props
   // Le jour de PARIS, celui que la base juge (rang 17) : le jour local d'un navigateur en avance sur Paris serait « à venir ».
   const [dateEmission, setDateEmission] = useState(aujourdHuiAParis())
   const [motif, setMotif] = useState('')
@@ -195,6 +201,7 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
       return jugementDesMentions({
         espace, dossierId, facture: entete, lignes: envoyees, brouillon: null, origine: factureOrigine,
         listes: { contacts: contactsCourants, articles: [] }, lecture: lectureCourante,
+        mandataire: props.espace === 'cabinet' ? props.mandataire : null,
       })
     })()
     : null

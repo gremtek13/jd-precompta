@@ -1,3 +1,4 @@
+import { CABINET_DU_DOSSIER } from '../../test/mentionsFigees'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -88,7 +89,7 @@ function monter(
       numeroTvaAttribue={autres.numeroTvaAttribue ?? false}
       tvaSurDebits={autres.tvaSurDebits ?? false}
       facture={autres.facture ?? null}
-      onAdresseUpdated={() => {}}
+      onAdresseUpdated={() => {}} mandataire={CABINET_DU_DOSSIER}
       onClose={() => {}}
       onSaved={() => {}}
     />,
@@ -295,7 +296,7 @@ describe('FactureFormModal — le statut de TVA à préciser et l’article manq
     }
     render(espace === 'client'
       ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="client" {...commun} />
-      : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
+      : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} mandataire={CABINET_DU_DOSSIER} {...commun} />)
     fireEvent.change(document.querySelector('#tiers-nom')!, { target: { value: 'Client SARL' } })
     fireEvent.change(document.querySelectorAll('tbody input')[0]!, { target: { value: 'Prestation' } })
   }

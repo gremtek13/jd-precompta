@@ -1,3 +1,4 @@
+import { CABINET_DU_DOSSIER } from '../../test/mentionsFigees'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
@@ -60,7 +61,7 @@ function monter(espace: Espace, facturesDeLaSerie: readonly FactureDeLaSerie[] |
   }
   render(espace === 'client'
     ? <FactureFormModal espace="client" {...commun} />
-    : <FactureFormModal espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
+    : <FactureFormModal espace="cabinet" onAdresseUpdated={() => {}} mandataire={CABINET_DU_DOSSIER} {...commun} />)
   fireEvent.change(document.querySelector('#tiers-nom')!, { target: { value: 'Client SARL' } })
   fireEvent.change(document.querySelectorAll('tbody input')[0]!, { target: { value: 'Prestation' } })
   fireEvent.change(document.querySelector('#date-emission')!, { target: { value: dateEmission } })

@@ -351,15 +351,16 @@ const ECRANS: Ecran[] = [
   { nom: 'FactureApercu', fichier: 'pages/dossier/FactureApercu.tsx', rendre: () => (
     <Dossier1><FactureApercu facture={facture()} dossier={{ statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false }} onClose={rien} /></Dossier1>
   ) },
+  // Le nom du cabinet que la validation du cabinet fige (P4) n'est pas revenu non plus : `mandataire={null}`, comme toute lecture ici.
   { nom: 'FactureAvoirModal', fichier: 'pages/dossier/FactureAvoirModal.tsx', rendre: () => (
-    <Dossier1><FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet" dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
+    <Dossier1><FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet" mandataire={null} dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
   ) },
   { nom: 'FactureFormModal', fichier: 'pages/dossier/FactureFormModal.tsx', rendre: () => (
     <Dossier1>
       <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} facture={facture({ statut: 'brouillon', numero: null })}
-        onAdresseUpdated={rien} onClose={rien} onSaved={rien}
+        onAdresseUpdated={rien} mandataire={null} onClose={rien} onSaved={rien}
       />
     </Dossier1>
   ) },

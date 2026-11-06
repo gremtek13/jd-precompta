@@ -1,4 +1,4 @@
-import type { IdentiteDuDossier } from '../lib/mentionsFigeesVue'
+import type { IdentiteDuDossier, LectureDuMandataire } from '../lib/mentionsFigeesVue'
 import type { FactureEmise } from '../lib/types'
 import { MENTIONS_VIDES } from './factures'
 import { SIRET_VENDEUR, TVA_VENDEUR } from './facturesCii'
@@ -6,6 +6,12 @@ import { SIRET_VENDEUR, TVA_VENDEUR } from './facturesCii'
 // LA FACTURE QUI FIGE SES MENTIONS (étape A7b) : des jeux d'essai FICTIFS, typés sans `as` (CLAUDE.md, « Tests »). L'IBAN est
 // celui des essais du dépôt (le code banque 99999, à clé juste) ; le SIRET celui des factures électroniques d'essai. Aucune
 // donnée réelle.
+// Le nom du cabinet du dossier, tel que la lecture de lib/mandataireLecture.ts le rend (P4) : celui que la facture validée par le
+// cabinet imprime comme mandataire. `quiCree` : ce que l'onglet passe à la fenêtre d'un avoir (le client n'y passe aucun nom).
+export const CABINET_DU_DOSSIER: LectureDuMandataire = { etat: 'lu', nom: 'Cabinet Fictif & Associés' }
+export const quiCree = (espace: 'cabinet' | 'client') =>
+  espace === 'cabinet' ? { espace, mandataire: CABINET_DU_DOSSIER } as const : { espace } as const
+
 export const IBAN_ESSAI = 'FR7699999000010000000000600'
 export const BIC_ESSAI = 'ESSAFR10'
 // Un second IBAN fictif à clé juste, celui d'un RIB changé après la validation.
