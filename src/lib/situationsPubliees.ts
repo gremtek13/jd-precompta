@@ -1,4 +1,5 @@
 import type { DeclarationCa3 } from './declarationTva'
+import { formatDate, formatMoney } from './format'
 import type { SituationIntermediaire } from './situationIntermediaire'
 
 // LES SITUATIONS PUBLIÉES (espace client, ligne 51.5, partie C, étape C4a ; MEG3-Q2, « la publication »). Le cabinet PUBLIE
@@ -189,4 +190,151 @@ export function composerLaSituation(e: EntreeDeLaSituation): CompositionDeLaSitu
 export function situationsEnCours(lignes: readonly SituationPubliee[]): SituationPubliee[] {
   const citees = new Set(lignes.map((l) => l.remplace_id).filter((id): id is string => id !== null))
   return lignes.filter((l) => l.geste === 'publication' && !citees.has(l.id))
+}
+
+// ── LES ÉCRANS (étape C4b) ────────────────────────────────────────────────────────────────────────────────────────────
+// Côté cabinet, la situation intermédiaire de l'onglet Financement publie, remplace et retire (pages/dossier/
+// SituationsPubliees.tsx) ; côté client, « Mes comptes » lit la situation en cours (pages/ClientComptes.tsx). Les mots et
+// les règles sont ici ; la lecture, dans lib/situationsPublieesLecture.ts.
+
+/** « Mes comptes » existe si la migration est en base et si la société AFFICHÉE porte la case « Comptes ». */
+export function mesComptesOuverts(situationsPublieesExportees: boolean, droitComptes: boolean): boolean {
+  return situationsPublieesExportees && droitComptes
+}
+
+export const STATUT_DIT: Readonly<Record<StatutDeLaSituation, string>> = { provisoire: 'provisoire', validee: 'validée' }
+
+/** Un montant publié, en centimes, tel que `formatMoney` l'écrit. */
+export function montantDit(centimes: number): string {
+  return formatMoney(centimes / 100)
+}
+
+// Les refus de l'écran du cabinet, dits avant le clic.
+export const REFUS_DE_L_ECRAN = {
+  // C4B-Q1 : la TVA d'un assujetti se calcule par la CA3 de la période, que l'onglet Financement ne lit pas (ses pièces à
+  // valider, ses biens immobilisés, l'option sur les débits) ; plutôt que de deviner, l'écran ne publie pas.
+  tvaAssujetti: 'Ce dossier est assujetti à la TVA : sa situation porterait la TVA due de la période, que cet écran ne '
+    + 'calcule pas encore. Elle ne se publie pas d’ici.',
+  lecture: 'Les situations déjà publiées et les exercices validés n’ont pas été lus en entier : rien ne se publie ni ne se '
+    + 'retire avant leur relecture.',
+} as const
+
+/** La situation EN COURS publiée à cette date, s'il y en a une : « Publier » devient « Remplacer ». */
+export function situationEnCoursA(lignes: readonly SituationPubliee[], arreteeAu: string): SituationPubliee | null {
+  return situationsEnCours(lignes).find((l) => l.arretee_au === arreteeAu) ?? null
+}
+
+/** Les situations en cours, la plus récente date d'arrêté d'abord (à égalité, la dernière publiée). */
+export function situationsEnCoursTriees(lignes: readonly SituationPubliee[]): SituationPubliee[] {
+  return situationsEnCours(lignes).sort((a, b) => {
+    if (a.arretee_au !== b.arretee_au) return a.arretee_au < b.arretee_au ? 1 : -1
+    if (a.publiee_le !== b.publiee_le) return a.publiee_le < b.publiee_le ? 1 : -1
+    return a.id < b.id ? 1 : -1
+  })
+}
+
+export interface Confirmation {
+  titre: string
+  paragraphes: readonly string[]
+  bouton: string
+}
+
+function totauxDits(c: ChiffresDeLaSituation): string {
+  return `recettes ${montantDit(c.recettes)}, dépenses ${montantDit(c.depenses)}, résultat ${montantDit(c.resultat)}`
+    + (c.tva.assujetti ? `, TVA due ${montantDit(c.tva.nette)}` : '')
+}
+
+/** La confirmation d'une publication : elle NOMME ce qui part au client — la date, le statut, les totaux, la comparaison. */
+export function confirmationDeLaPublication(contenu: ContenuDeLaSituation, remplace: boolean): Confirmation {
+  const avant = contenu.n_moins_1
+  return {
+    titre: remplace ? 'Remplacer la situation publiée ?' : 'Publier cette situation au client ?',
+    paragraphes: [
+      `La situation arrêtée au ${formatDate(contenu.periode.fin)}, « ${STATUT_DIT[contenu.statut]} », part au client qui `
+        + `porte la case « Comptes » : ${totauxDits(contenu)}.`,
+      avant
+        ? `Avec la même période de l’exercice précédent (du ${formatDate(avant.periode.debut)} au `
+          + `${formatDate(avant.periode.fin)}) : ${totauxDits(avant)}.`
+        : 'Sans la comparaison à l’exercice précédent.',
+      remplace
+        ? 'Elle remplace celle publiée à cette date, que le client ne lira plus ; l’historique reste.'
+        : 'Elle se fige : pour la changer, tu la remplaces ou la retires ; l’historique reste.',
+    ],
+    bouton: remplace ? 'Remplacer' : 'Publier',
+  }
+}
+
+/** La confirmation d'un retrait : elle nomme la situation qui part. */
+export function confirmationDuRetrait(situation: Pick<SituationPubliee, 'arretee_au' | 'statut'>): Confirmation {
+  return {
+    titre: 'Retirer cette situation ?',
+    paragraphes: [
+      `La situation arrêtée au ${formatDate(situation.arretee_au)}`
+        + (situation.statut ? `, « ${STATUT_DIT[situation.statut]} »,` : '')
+        + ' ne se lira plus dans l’espace du client ; l’historique reste, et une nouvelle situation se publie à cette date.',
+    ],
+    bouton: 'Retirer',
+  }
+}
+
+// ── Le contenu tel que le client le lit ───────────────────────────────────────────────────────────────────────────────
+// La base l'a vérifié en le figeant ; l'écran le relit quand même, à sa forme : un contenu qui ne se lit pas se dit
+// « illisible », jamais un chiffre arrondi ou deviné (le patron des articles).
+
+const entier = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v)
+
+function chiffresLus(v: unknown): ChiffresDeLaSituation | null {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return null
+  const o = v as Record<string, unknown>
+  const periode = o.periode as Record<string, unknown> | null
+  if (periode === null || typeof periode !== 'object' || typeof periode.debut !== 'string' || typeof periode.fin !== 'string'
+      || !dateValide(periode.debut) || !dateValide(periode.fin)) return null
+  if (!Array.isArray(o.postes)) return null
+  const postes: PosteDeLaSituation[] = []
+  for (const p of o.postes as unknown[]) {
+    if (p === null || typeof p !== 'object') return null
+    const { poste, montant } = p as Record<string, unknown>
+    if (typeof poste !== 'string' || poste.trim() === '' || !entier(montant) || postes.some((x) => x.poste === poste)) return null
+    postes.push({ poste, montant })
+  }
+  if (!entier(o.recettes) || !entier(o.depenses) || !entier(o.resultat)) return null
+  const recettes = postes.filter((p) => p.montant > 0).reduce((s, p) => s + p.montant, 0)
+  const depenses = postes.filter((p) => p.montant < 0).reduce((s, p) => s - p.montant, 0)
+  if (o.recettes !== recettes || o.depenses !== depenses || o.resultat !== recettes - depenses) return null
+  const tva = o.tva as Record<string, unknown> | null
+  if (tva === null || typeof tva !== 'object') return null
+  let tvaLue: TvaDeLaSituation
+  if (tva.assujetti === false) tvaLue = { assujetti: false }
+  else if (tva.assujetti === true && entier(tva.nette)) tvaLue = { assujetti: true, nette: tva.nette }
+  else return null
+  return { periode: { debut: periode.debut, fin: periode.fin }, postes, recettes, depenses, resultat: o.resultat, tva: tvaLue }
+}
+
+/** Le contenu d'une situation lue, ou null s'il ne se lit pas (version, statut, chiffres, comparaison). */
+export function contenuLu(v: unknown): ContenuDeLaSituation | null {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return null
+  const o = v as Record<string, unknown>
+  if (o.version !== VERSION_DU_CONTENU || (o.statut !== 'provisoire' && o.statut !== 'validee')) return null
+  const n = chiffresLus(o)
+  if (n === null) return null
+  let nMoins1: ChiffresDeLaSituation | null = null
+  if (o.n_moins_1 !== null) {
+    nMoins1 = chiffresLus(o.n_moins_1)
+    if (nMoins1 === null) return null
+  }
+  return { version: VERSION_DU_CONTENU, statut: o.statut, ...n, n_moins_1: nMoins1 }
+}
+
+/** Les postes de N et de N−1 côte à côte, ceux de N d'abord ; un poste absent d'un côté y vaut null. */
+export function postesFaceAFace(
+  n: ChiffresDeLaSituation, avant: ChiffresDeLaSituation | null,
+): { poste: string; n: number | null; nMoins1: number | null }[] {
+  const lignes: { poste: string; n: number | null; nMoins1: number | null }[] =
+    n.postes.map((p) => ({ poste: p.poste, n: p.montant, nMoins1: null }))
+  for (const p of avant?.postes ?? []) {
+    const ligne = lignes.find((l) => l.poste === p.poste)
+    if (ligne) ligne.nMoins1 = p.montant
+    else lignes.push({ poste: p.poste, n: null, nMoins1: p.montant })
+  }
+  return lignes
 }

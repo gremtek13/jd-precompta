@@ -9,6 +9,7 @@
 // que le cabinet lui envoie depuis l'onglet Accès. Aucun appel ici : les écrans appellent, ce module décide de ce qui se
 // dit (comme `recuperationMotDePasse.ts`), et de ce qui part.
 import { CE_QUE_DONNE_UN_ACCES, libellesDesCases } from './droitsAcces'
+import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import type { RoleCabinetAdmin } from './types'
 
 /** Ce que la réponse dit du compte : créé (le mot de passe saisi est le sien), existant (il n'a pas servi), ou rien de sûr. */
@@ -203,10 +204,18 @@ const CE_QUE_DONNE_LE_ROLE: Readonly<Record<RoleCabinetAdmin, string>> = {
  * ne relit les rôles qu'au changement d'identifiant — une ouverture de l'application, une connexion —, jamais sous une
  * session ouverte : d'où « dès qu'elle rouvrira l'application », et non « tout de suite ».
  */
-export const CE_QUE_PERD_LE_CLIENT = "Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
-  + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
-  + "réponses à tes précisions), « Mes informations », « Ma simulation », « Mon échéancier » et, selon les cases de ses "
-  + 'accès, « Mes ventes », « Ma banque » et « Ma caisse » —, pour chacune de ses sociétés.'
+// « Mes comptes » (étape C4b) n'y entre qu'avec sa migration (`SITUATIONS_PUBLIEES_EXPORTEES`) : avant, l'application ne
+// monte pas l'écran, et la phrase reste celle d'hier.
+export function ceQuePerdLeClientSelon(comptesEnBase: boolean): string {
+  return "Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
+    + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
+    + "réponses à tes précisions), « Mes informations », « Ma simulation », « Mon échéancier » et, selon les cases de ses "
+    + (comptesEnBase
+      ? 'accès, « Mes ventes », « Ma banque », « Ma caisse » et « Mes comptes » —, pour chacune de ses sociétés.'
+      : 'accès, « Mes ventes », « Ma banque » et « Ma caisse » —, pour chacune de ses sociétés.')
+}
+
+export const CE_QUE_PERD_LE_CLIENT = ceQuePerdLeClientSelon(SITUATIONS_PUBLIEES_EXPORTEES)
 
 /** Ce qui reste : ses accès, en base, que l'application lui rouvre dès qu'il n'a plus de ligne d'équipe. */
 export const CE_QUI_RESTE_AU_CLIENT = "Ses accès restent dans l'onglet Accès de ses dossiers : la retirer de l'équipe "

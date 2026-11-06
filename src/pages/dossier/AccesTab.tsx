@@ -11,7 +11,7 @@ import {
   questionDuLienEnvoye, refusDeLaRegle,
 } from '../../lib/recuperationMotDePasse'
 import {
-  CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCasesDuDossier, ceQueDitLaCaseCaisse, changementApplique,
+  CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCasesDuDossier, ceQueDitLaCaseCaisse, ceQueDitLaCaseComptes, changementApplique,
   confirmationDeLaCaseCaisse, demandeDeChangement, droitsDeLaLigne, enumeration, gesteDeLaCase, libelleDeLaCase, messageDuRefus,
   refusDeLaCase, type Domaine,
 } from '../../lib/droitsAcces'
@@ -29,10 +29,18 @@ import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
 import { adresseDeCollecte } from '../../lib/adresseCollecte'
 import { useCopieDuTexte } from '../../lib/copieDuTexte'
 import type { Membership } from '../../lib/types'
+import { SITUATIONS_PUBLIEES_EXPORTEES } from '../../lib/situationsPubliees'
+
+// Les colonnes d'un accès. « Comptes » (étape C4b) n'est demandée qu'avec sa migration : avant, la colonne n'existe pas.
+// Typée comme la forme la plus longue : drapeau baissé, `droit_comptes` manque à la ligne, et `droitsDeLaLigne` n'en
+// accorde aucun.
+const COLONNES_DES_ACCES = (SITUATIONS_PUBLIEES_EXPORTEES
+  ? 'id, user_id, email, droit_ventes, droit_banque, droit_caisse, droit_comptes'
+  : 'id, user_id, email, droit_ventes, droit_banque, droit_caisse') as 'id, user_id, email, droit_ventes, droit_banque, droit_caisse, droit_comptes'
 
 // Un accès tel que l'onglet le lit : la personne, et ses trois droits (espace client, étape P1 ; « Caisse » depuis l'étape
 // C11 de la ligne 26.6 — voir lib/droitsAcces.ts).
-type AccesLu = Pick<Membership, 'id' | 'user_id' | 'email' | 'droit_ventes' | 'droit_banque' | 'droit_caisse'>
+type AccesLu = Pick<Membership, 'id' | 'user_id' | 'email' | 'droit_ventes' | 'droit_banque' | 'droit_caisse' | 'droit_comptes'>
 
 export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossierId: string; dossierNom: string; codeEmail: string | null }) {
   const [rows, setRows] = useState<AccesLu[]>([])
@@ -131,7 +139,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     const [lecture, reglageRelu, categoriesRelues] = await Promise.all([
       lireTout<AccesLu>((debut, fin) => supabase
         .from('memberships')
-        .select('id, user_id, email, droit_ventes, droit_banque, droit_caisse', { count: 'exact' })
+        .select(COLONNES_DES_ACCES, { count: 'exact' })
         .eq('dossier_id', dossierId)
         .order('created_at')
         .order('id')
@@ -479,6 +487,10 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       {/* La troisième case (étape C11) : ce que la base ouvre au client qui la porte, et ce qu'elle devient sur CE dossier. */}
       {caisse !== null && (
         <p className="muted" id="ce-que-dit-la-case-caisse">{ceQueDitLaCaseCaisse(caisse)}</p>
+      )}
+      {/* La quatrième case (étape C4b), avec sa migration seulement : ce que la base ouvre au client qui la porte. */}
+      {SITUATIONS_PUBLIEES_EXPORTEES && (
+        <p className="muted" id="ce-que-dit-la-case-comptes">{ceQueDitLaCaseComptes()}</p>
       )}
       {rows.length > 0 && (
         <BandeauLecturePartielle

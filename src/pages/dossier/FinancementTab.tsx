@@ -5,6 +5,8 @@ import { messageErreur } from '../../lib/messageErreur'
 import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire, moisEcoulesDeLAnnee } from '../../lib/situationIntermediaire'
+import { SITUATIONS_PUBLIEES_EXPORTEES } from '../../lib/situationsPubliees'
+import SituationsPubliees from './SituationsPubliees'
 import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
 import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, soldeBanqueADate, type EcheanceConnue, type OuvertureBanque } from '../../lib/planTresorerie'
 import { ouvertureBanque } from '../../lib/aNouveaux'
@@ -548,6 +550,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
 
       {situationOuverte && ventesFacturees && ecrituresDesVentes && recettesDeCaisse && (
         <SituationIntermediaireModal
+          dossierId={dossierId}
           ventesFacturees={ventesFacturees}
           recettesDeCaisse={recettesDeCaisse}
           plan={plan}
@@ -851,8 +854,8 @@ function PlanTresorerieModal({ lignesBanque, lignesDuRythme, recettesEnEspeces, 
   )
 }
 
-function SituationIntermediaireModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, lignesBanque, ouverture, ventesFacturees, recettesDeCaisse, plan, ecrituresDesVentes, onClose }: {
-  assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: PaiementsDesPieces; partsReleve: PartDuReleve[]
+function SituationIntermediaireModal({ dossierId, assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, lignesBanque, ouverture, ventesFacturees, recettesDeCaisse, plan, ecrituresDesVentes, onClose }: {
+  dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: PaiementsDesPieces; partsReleve: PartDuReleve[]
   ventesFacturees: VentesFacturees; recettesDeCaisse: RecettesDeCaisse; plan: PlanComptable; ecrituresDesVentes: EcrituresDesVentesDeLa2035
   categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: readonly CotisationComptee[]
   lignesBanque: LigneBanque[]; ouverture: OuvertureBanque | null; onClose: () => void
@@ -920,6 +923,14 @@ function SituationIntermediaireModal({ assujettiTva, modeComptable, piecesValide
           )}
         </div>
         <VentesFactureesDeLaSituation situation={situation} />
+        {/* Publier la situation au client « Comptes » (ligne 51.5, étape C4b), avec sa migration seulement : le même calcul,
+            à la même date, et sur la même période de l'exercice précédent. */}
+        {SITUATIONS_PUBLIEES_EXPORTEES && (
+          <SituationsPubliees
+            dossierId={dossierId} arreteeAu={dateFin} assujettiTva={assujettiTva}
+            calculer={(debut, fin) => calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debut, fin, assujettiTva, paiements, modeComptable, partsReleve, ventesFacturees, plan, ecrituresDesVentes, recettesDeCaisse)}
+          />
+        )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
         </div>
