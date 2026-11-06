@@ -48825,8 +48825,8 @@ L'écriture d'un mouvement que ses encaissements classent porte un libellé comp
 « Relevé du JJ/MM/AAAA — F2026-0001, F2026-0003 » (`libelleDUnMouvementDesVentes`, lib/libellesDesVentes.ts), les
 numéros des factures citées sans doublon, dans l'ordre des octets ; le nom n'y entre que par `libelleDUneVenteFacturee`,
 quand TOUTES sont d'entreprises ; au-delà de 200 caractères, les seuls numéros, puis « F… et N autres factures ». Les
-frais (`fraisDesMouvements`) suivent ce libellé : la concordance et Clôture le citent. Le relevé de toute la source
-refuse le `libelle` d'un objet dans une écriture qui porte un `pieceRef` (le relevé hors des ventes facturées, que
-`ecritureDuMouvement` écrit du libellé de la banque, reste hors de FEC22-Q7 : JJ1-Q1). FEC22Q7-Q1 tenu : ni l'onglet
+frais (`fraisDesMouvements`) suivent ce libellé, que la 2035, la concordance, Clôture, Estimation et Financement citent.
+Le relevé de toute la source refuse le `libelle` d'un objet dans une écriture qui porte un `pieceRef` (le relevé
+hors des ventes facturées, que `ecritureDuMouvement` écrit du libellé de la banque, reste hors de FEC22-Q7 : JJ1-Q1). FEC22Q7-Q1 tenu : ni l'onglet
 Écritures ni le rattachement du FEC ne lisent le libellé. Le tirage de 1 500 dossiers se paie dans un `beforeAll`.
 Quatre mutations mordent (le libellé de la banque, une entreprise suffit, le nom sans la règle, l'état sur un libellé).

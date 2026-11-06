@@ -266,7 +266,7 @@ describe('EstimationTab — le détail par poste compte les frais d’un mouveme
   })
   const M1: LigneBancaire = ligneBancaire(mouvementDesVentes({ id: 'm1', dossier_id: D, date: '2026-03-20', montant: 598 }))
   const SOURCES_DU_RELEVE = `lignes_bancaires|${COLONNES_MOUVEMENTS_ECRITURES}`
-  const sansPoste = /Frais d’encaissements que le détail par poste ne compte pas \(1\) : 20\/03\/2026 « VIR CLIENT FICTIF », 2,00\s€/
+  const sansPoste = /Frais d’encaissements que le détail par poste ne compte pas \(1\) : 20\/03\/2026 « Relevé du 20\/03\/2026 — F2026-0042 », 2,00\s€/
   function poserLeMouvement(categorieFrais: Categorie | null = frais()) {
     poser()
     faux.parTable.encaissements_factures = [{ ...ENCAISSEMENT, ligne_bancaire_id: 'm1' }]

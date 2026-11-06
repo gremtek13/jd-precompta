@@ -331,7 +331,7 @@ describe('FinancementTab — les frais d’un mouvement d’encaissements', () =
     faux.parTable.categories = categorieFrais ? [CATEGORIE, categorieFrais] : [CATEGORIE]
   }
   const SOURCES_DU_RELEVE = `lignes_bancaires|${COLONNES_MOUVEMENTS_ECRITURES}`
-  const sansPoste = /Frais d’encaissements que la situation ne compte pas \(1\) : 20\/03\/2026 « VIR CLIENT FICTIF », 2,00\s€/
+  const sansPoste = /Frais d’encaissements que la situation ne compte pas \(1\) : 20\/03\/2026 « Relevé du 20\/03\/2026 — F2026-0042 », 2,00\s€/
 
   it('comptent en charge, à la date du mouvement, sous le poste de la catégorie « Frais bancaires »', async () => {
     poserLeMouvement()
