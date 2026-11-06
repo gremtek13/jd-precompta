@@ -307,7 +307,10 @@ describe('les essais de la base, rejoués en production', () => {
     // liste des clients sans activité depuis trois ans, `devis_citent_un_contact`). Dix-neuf le même jour :
     // `apercuFactureElectronique` entré dans la famille « apres », après sa migration préparée (étape C3,
     // `apercu_facture_electronique`) ; tous deux SÛRS au banc, sur une copie de la réplique mère remontée du catalogue.
-    expect(cas.length).toBe(19)
+    // Vingt-deux le même jour : `phaseDesExercices` (C2, `phase_des_exercices`), `identifiantDuFichierEreporting` (e6b,
+    // `identifiant_du_fichier_ereporting`, joué par le super-utilisateur) et `relancesDesFactures` (C5,
+    // `relances_des_factures`) entrés dans la famille « apres », après leurs migrations préparées ; tous SÛRS au banc.
+    expect(cas.length).toBe(22)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
