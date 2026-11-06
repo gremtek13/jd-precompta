@@ -190,8 +190,21 @@ export interface ReponseDuPlan {
   error: unknown
 }
 
-/** Le plan d'un dossier tel que l'application le lit : entier, ou rien, avec le motif. */
-export type LectureDuPlan = { plan: PlanComptable; motif: null } | { plan: null; motif: string }
+/** Le libellé de chaque rôle dans le plan du dossier, sinon celui du catalogue ; nul quand ni l'un ni l'autre n'en
+ *  donne (le capital et les deux comptes du résultat, que le report des soldes nomme lui-même). */
+export type LibellesDuPlan = Readonly<Record<CleRoleComptable, string | null>>
+
+/** Le préfixe des comptes auxiliaires de chaque rôle de tiers dans le plan du dossier, sinon celui du catalogue. */
+export type PrefixesDuPlan = Readonly<Record<RoleDeTiers, string>>
+
+/** Le plan d'un dossier tel que l'application le lit : entier — ses comptes, ses libellés et ses préfixes (conception,
+ *  § 3.9) —, ou rien, avec le motif. */
+export type LectureDuPlan =
+  | { plan: PlanComptable; libelles: LibellesDuPlan; prefixes: PrefixesDuPlan; motif: null }
+  | { plan: null; motif: string }
+
+/** Les trois rôles de tiers du catalogue, dans son ordre. */
+const ROLES_DE_TIERS: readonly RoleDeTiers[] = ROLES_COMPTABLES.flatMap((r) => (r.prefixeAuxiliaireDefaut === null ? [] : [r.role]))
 
 /**
  * Le plan effectif d'un dossier, depuis la réponse de `plan_du_dossier` (migration plan_comptable_des_dossiers) : la
@@ -207,6 +220,12 @@ export type LectureDuPlan = { plan: PlanComptable; motif: null } | { plan: null;
  *
  * Deux rôles ne peuvent pas y partager un compte : chacun se tient sous ses racines, et aucune racine du catalogue n'en
  * commence une autre (`planComptable.test.ts`).
+ *
+ * LE LIBELLÉ ET LE PRÉFIXE DES AUXILIAIRES (conception, § 3.9) : la fonction les rend avec le compte, au même `coalesce`
+ * (le réglage du dossier, sinon le catalogue). Une ligne qui ne les porte pas — la colonne absente, ou d'un autre type
+ * qu'un texte ou nul — rend le plan illisible : rien n'est inventé à leur place. Un rôle de tiers sans préfixe de la forme
+ * que la garde exige, deux rôles de tiers au même préfixe (deux natures de tiers partageraient un auxiliaire) ou un
+ * préfixe sur un rôle qui n'est pas de tiers (la garde le refuse) le rendent illisible aussi.
  */
 export function planDeLaReponse(reponse: ReponseDuPlan): LectureDuPlan {
   if (reponse.error) {
@@ -214,12 +233,22 @@ export function planDeLaReponse(reponse: ReponseDuPlan): LectureDuPlan {
   }
   if (!Array.isArray(reponse.data)) return { plan: null, motif: 'plan comptable illisible' }
   const lus = new Map<string, string>()
+  const libellesLus = new Map<string, string | null>()
+  const prefixesLus = new Map<string, string | null>()
+  const texteOuNul = (v: unknown): v is string | null => v === null || typeof v === 'string'
   for (const ligne of reponse.data as unknown[]) {
     if (ligne === null || typeof ligne !== 'object') return { plan: null, motif: 'plan comptable illisible' }
-    const { role, compte } = ligne as Record<string, unknown>
+    const champs = ligne as Record<string, unknown>
+    const { role, compte } = champs
     if (typeof role !== 'string' || typeof compte !== 'string') return { plan: null, motif: 'plan comptable illisible' }
     if (lus.has(role)) return { plan: null, motif: `plan comptable illisible : le rôle « ${role} » y paraît deux fois` }
+    const { libelle, prefixe_auxiliaire: prefixe } = champs
+    if (!('libelle' in champs) || !('prefixe_auxiliaire' in champs) || !texteOuNul(libelle) || !texteOuNul(prefixe)) {
+      return { plan: null, motif: `plan comptable illisible : le libellé ou le préfixe du rôle « ${role} » n’est pas lu` }
+    }
     lus.set(role, compte)
+    libellesLus.set(role, libelle)
+    prefixesLus.set(role, prefixe)
   }
   const absents = ROLES_COMPTABLES.filter((r) => !lus.has(r.role)).map((r) => r.role)
   if (absents.length > 0) {
@@ -234,8 +263,23 @@ export function planDeLaReponse(reponse: ReponseDuPlan): LectureDuPlan {
       return { plan: null, motif: `plan comptable illisible : « ${compte} » n’est pas un compte du rôle « ${role} »` }
     }
   }
+  for (const { role } of ROLES_COMPTABLES) {
+    const prefixe = prefixesLus.get(role) ?? null
+    const deTiers = (ROLES_DE_TIERS as readonly string[]).includes(role)
+    if (deTiers && prefixe === null) {
+      return { plan: null, motif: `plan comptable illisible : le rôle « ${role} » n’a pas de préfixe d’auxiliaire` }
+    }
+    if (deTiers ? !FORME_PREFIXE_AUXILIAIRE.test(prefixe!) : prefixe !== null) {
+      return { plan: null, motif: `plan comptable illisible : « ${prefixe} » n’est pas un préfixe d’auxiliaire du rôle « ${role} »` }
+    }
+  }
+  const prefixes = Object.fromEntries(ROLES_DE_TIERS.map((role) => [role, prefixesLus.get(role)!])) as Record<RoleDeTiers, string>
+  if (new Set(Object.values(prefixes)).size !== ROLES_DE_TIERS.length) {
+    return { plan: null, motif: 'plan comptable illisible : deux rôles de tiers y partagent un préfixe d’auxiliaire' }
+  }
   const plan = Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, lus.get(r.role)!])) as PlanComptable
-  return { plan: Object.freeze(plan), motif: null }
+  const libelles = Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, libellesLus.get(r.role)!])) as LibellesDuPlan
+  return { plan: Object.freeze(plan), libelles: Object.freeze(libelles), prefixes: Object.freeze(prefixes), motif: null }
 }
 
 /**
