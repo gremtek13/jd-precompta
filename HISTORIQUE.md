@@ -43739,6 +43739,7 @@ après l'en-tête reconnu ; le PDF écarte une opération à 0,00 €.
 Ce qui reste : la copie de `parseMontantBancaire` dans `extract-piece` ne connaissait pas U+2212 (elle lisait « −45,20 »
 en +45,20 sur une pièce) — corrigée le même jour par la session, la fonction à redéployer ; une colonne « Sens » (D / C)
 à côté d'un montant non signé n'est pas reconnue — `douteDuSens` le dit quand aucun débit n'est lu.
+
 ### 31/10/2026 — LA 2035 D'UN BNC EXONÉRÉ : TROIS DÉFAUTS DE LA RELECTURE CORRIGÉS
 
 Avant la répétition générale du MVP (MVP-D6, MVP-D7 : la 2035 de 2025 d'un soignant rejouée vers le 20 novembre et
