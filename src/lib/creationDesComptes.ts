@@ -211,8 +211,8 @@ export function ceQuePerdLeClientSelon(comptesEnBase: boolean): string {
     + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
     + "réponses à tes précisions), « Mes informations », « Ma simulation », « Mon échéancier » et, selon les cases de ses "
     + (comptesEnBase
-      ? 'accès, « Mes ventes », « Ma banque », « Ma caisse » et « Mes comptes » —, pour chacune de ses sociétés.'
-      : 'accès, « Mes ventes », « Ma banque » et « Ma caisse » —, pour chacune de ses sociétés.')
+      ? 'accès, « Mes ventes », « Ma banque », « Mon analyse », « Ma caisse » et « Mes comptes » —, pour chacune de ses sociétés.'
+      : 'accès, « Mes ventes », « Ma banque », « Mon analyse » et « Ma caisse » —, pour chacune de ses sociétés.')
 }
 
 export const CE_QUE_PERD_LE_CLIENT = ceQuePerdLeClientSelon(SITUATIONS_PUBLIEES_EXPORTEES)

@@ -238,14 +238,15 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(routesClient).toEqual([
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
       '/mon-echeancier ClientEcheancier', '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
-      '/mes-comptes ClientComptes',
+      '/mes-comptes ClientComptes', '/mon-analyse ClientAnalyse',
     ])
     // DEPUIS L'ÉTAPE C4b, « Mes comptes » lit la case « Comptes », derrière `SITUATIONS_PUBLIEES_EXPORTEES`
     // (lib/situationsPubliees.ts, `mesComptesOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     expect(app).toContain('mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)')
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual([
-      'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx',
+      'ClientAnalyse.tsx', 'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientEcheancier.tsx', 'ClientHome.tsx',
+      'ClientInformations.tsx',
       'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
     ])
     // DEPUIS L'ÉTAPE C1, « Mon échéancier » et sa carte de l'accueil lisent la case « Banque » de la société affichée pour les
@@ -322,6 +323,16 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(caisse).not.toMatch(/droit_ventes|droit_banque|droit_caisse|droitsParDossier|droitsSur\b/)
     const lectureDeLaCaisse = readFileSync(resolve(process.cwd(), 'src/lib/caisseClientLecture.ts'), 'utf8')
     expect(lectureDeLaCaisse).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
+    // « Mon analyse » (étape B9a) : aucune case à elle — la route et l'entrée sous la garde de « Mes ventes » OU de « Ma
+    // banque », et rien d'autre ; l'écran demande ce que ces deux gardes ouvrent, et sa lecture relit les cases à la base.
+    expect(app).toContain(`{monAnalyseOuverte(${gardeVentes}, ${gardeBanque}) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}`)
+    expect(layout).toContain('{monAnalyseOuverte(mesVentes, maBanque) && (')
+    const analyse = readFileSync(resolve(process.cwd(), 'src/pages/ClientAnalyse.tsx'), 'utf8')
+    expect(analyse).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, cases.ventes)')
+    expect(analyse).toContain('maBanqueOuverte(COUVERTURE_EXPORTEE, cases.banque)')
+    expect(analyse).not.toMatch(/droit_ventes|droit_banque|droit_caisse|\.caisse\b|supabase/)
+    const lectureDeLAnalyse = readFileSync(resolve(process.cwd(), 'src/lib/analyseClientLecture.ts'), 'utf8')
+    expect(lectureDeLAnalyse).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
   })
 
   it('la phrase de l’onglet dit ce qu’un accès donne — dans les deux états du drapeau de la banque', () => {

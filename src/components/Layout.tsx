@@ -9,11 +9,13 @@ import { droitsSur } from '../lib/droitsAcces'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import { maBanqueOuverte } from '../lib/banqueClient'
+import { monAnalyseOuverte } from '../lib/analyseClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from '../lib/situationsPubliees'
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
 import {
-  IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconComptesMaster, IconDossiers, IconEcheancier, IconEquipe, IconEstimation, IconFactures,
+  IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconComptesMaster, IconDossiers, IconEcheancier,
+  IconEquipe, IconEstimation, IconFactures, IconStatistiques,
   IconInformations, IconCadenas, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun,
 } from './icons'
@@ -347,6 +349,14 @@ function Coque() {
                   <IconBilan width={18} height={18} />
                   <span className="nav-label-full">Mes comptes</span>
                   <span className="nav-label-court">Comptes</span>
+                </NavLink>
+              )}
+              {/* « Mon analyse » (étape B9a) : avec « Mes ventes » ou « Ma banque », comme sa route (lib/analyseClient.ts). */}
+              {monAnalyseOuverte(mesVentes, maBanque) && (
+                <NavLink to="/mon-analyse" title="Mon analyse" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconStatistiques width={18} height={18} />
+                  <span className="nav-label-full">Mon analyse</span>
+                  <span className="nav-label-court">Analyse</span>
                 </NavLink>
               )}
               {/* « Mon échéancier » (ligne 51.5, étape C1) : ouvert à tout accès client. */}

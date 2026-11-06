@@ -19,6 +19,7 @@ import ClientBanque from './pages/ClientBanque'
 import ClientCaisse from './pages/ClientCaisse'
 import ClientComptes from './pages/ClientComptes'
 import ClientEcheancier from './pages/ClientEcheancier'
+import ClientAnalyse from './pages/ClientAnalyse'
 import { droitsSur } from './lib/droitsAcces'
 import { mesVentesOuvertes } from './lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from './lib/encaissementsFactures'
@@ -26,6 +27,7 @@ import { maBanqueOuverte } from './lib/banqueClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from './lib/caisseClient'
 import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from './lib/situationsPubliees'
 import { COUVERTURE_EXPORTEE } from './lib/couvertureReleve'
+import { monAnalyseOuverte } from './lib/analyseClient'
 import SuperAdminPage from './pages/SuperAdminPage'
 import EquipePage from './pages/EquipePage'
 import CabinetBrandingPage from './pages/CabinetBrandingPage'
@@ -148,6 +150,7 @@ function Gate() {
             {maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).caisse) && <Route path="/ma-caisse" element={<ClientCaisse />} />}
             {/* « Mes comptes » (ligne 51.5, étape C4b) : de même, seulement si la société AFFICHÉE porte la case « Comptes ». */}
             {mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes) && <Route path="/mes-comptes" element={<ClientComptes />} />}
+            {monAnalyseOuverte(mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes), maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}
             <Route path="/securite" element={<SecuriteDuCompte espace="client" />} />
             <Route path="*" element={<Navigate to="/accueil" replace />} />
           </>
