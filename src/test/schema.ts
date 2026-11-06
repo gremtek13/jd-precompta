@@ -177,7 +177,7 @@ function sansCorpsDeFonction(sql: string): string {
  * qui permet à un `drop constraint` de la retrouver.
  *
  * Une forme que l'export n'a jamais portée — clé composite, `SET DEFAULT`, colonne renommée ou
- * retirée, table renommée — LÈVE `FormeInconnue` au lieu d'être devinée : la règle s'écrira et se
+ * retirée en cascade, table renommée — LÈVE `FormeInconnue` au lieu d'être devinée : la règle s'écrira et se
  * vérifiera le jour où elle apparaîtra, contre `pg_constraint`.
  */
 export function relationsDuSchema(fichiers: { chemin: string; texte: string }[]): RelationDuSchema[] {
@@ -231,6 +231,16 @@ export function relationsDuSchema(fichiers: { chemin: string; texte: string }[])
       const corps = sql.slice(e.pos, finInstruction < 0 ? undefined : finInstruction)
       for (const action of entrees(corps)) {
         const a = action.trim()
+        // Une colonne retirée sans `cascade` (la migration anciennes_notes_supprimees, P0, 06/11/2026) emporte les clés
+        // étrangères qu'ELLE porte ; Postgres refuse de retirer une colonne que la clé d'une autre table cite. Vérifié contre
+        // `pg_constraint` sur la réplique de P0 : la famille « contraintes » de signature.sql y est la même avant et après
+        // (`notes` n'en portait aucune). `cascade`, qui emporterait les clés des autres tables, et un renommage ne se
+        // devinent pas.
+        const retiree = /^drop\s+column\s+(?:if\s+exists\s+)?"?(\w+)"?(?:\s+restrict)?\s*$/i.exec(a)
+        if (retiree) {
+          for (const [n, r] of parNom) if (r.enfant === e.table && r.colonne === retiree[1]) parNom.delete(n)
+          continue
+        }
         if (/^(rename|drop\s+column)\b/i.test(a)) {
           throw new FormeInconnue(`${e.table} : « ${a.slice(0, 60)} » jamais rencontré — les clés qui en dépendent ne se déduisent pas encore`)
         }
