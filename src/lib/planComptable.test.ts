@@ -23,6 +23,11 @@ import {
 } from './planComptable'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
+// Les libellés et les préfixes que `plan_du_dossier` rend pour un dossier qui n'en règle aucun : ceux du catalogue.
+const LIBELLES_DU_CATALOGUE = Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, r.libelleDefaut]))
+const PREFIXES_DU_CATALOGUE = { fournisseurs: 'F', fournisseurs_immobilisations: 'FI', clients: 'C' }
+const LU_PAR_DEFAUT = { libelles: LIBELLES_DU_CATALOGUE, prefixes: PREFIXES_DU_CATALOGUE }
+
 // LE CATALOGUE DES RÔLES (ligne 43, étape PC1) EST CONFRONTÉ À TROIS SOURCES QUI NE SE RECOPIENT PAS L'UNE L'AUTRE : le
 // texte de la migration appliquée (ce que la base a reçu), les constantes de lib/comptes.ts et les préfixes de
 // lib/engagement.ts (ce que l'application écrit aujourd'hui), et des défauts ÉPINGLÉS ici, à la main. Une seule source
@@ -588,14 +593,14 @@ describe('le plan lu avec le dossier (`plan_du_dossier`, étape PC3)', () => {
 
   it('rend le plan d’un dossier qui n’en règle aucun — le défaut — et celui d’un dossier qui en règle un, figés', () => {
     const parDefaut = planDeLaReponse({ data: lignes(PLAN_PAR_DEFAUT), error: null })
-    expect(parDefaut).toEqual({ plan: PLAN_PAR_DEFAUT, motif: null })
+    expect(parDefaut).toEqual({ plan: PLAN_PAR_DEFAUT, ...LU_PAR_DEFAUT, motif: null })
     expect(Object.isFrozen(parDefaut.plan)).toBe(true)
-    expect(planDeLaReponse({ data: lignes(PLAN_DECALE), error: null })).toEqual({ plan: PLAN_DECALE, motif: null })
+    expect(planDeLaReponse({ data: lignes(PLAN_DECALE), error: null })).toEqual({ plan: PLAN_DECALE, ...LU_PAR_DEFAUT, motif: null })
   })
 
   it('ignore un rôle que la base connaît et que l’application ignore : elle n’y écrit pas', () => {
     const plus = [...lignes(PLAN_PAR_DEFAUT), { role: 'role_a_venir', compte: '999999', libelle: null, prefixe_auxiliaire: null, origine: 'application' }]
-    expect(planDeLaReponse({ data: plus, error: null })).toEqual({ plan: PLAN_PAR_DEFAUT, motif: null })
+    expect(planDeLaReponse({ data: plus, error: null })).toEqual({ plan: PLAN_PAR_DEFAUT, ...LU_PAR_DEFAUT, motif: null })
   })
 
   it('refusée, ne rend aucun plan et dit le refus — l’erreur de PostgREST est un objet nu', () => {
@@ -610,6 +615,45 @@ describe('le plan lu avec le dossier (`plan_du_dossier`, étape PC3)', () => {
     for (const data of illisibles) {
       expect(planDeLaReponse({ data, error: null }), JSON.stringify(data)).toEqual({ plan: null, motif: 'plan comptable illisible' })
     }
+  })
+
+  // LE LIBELLÉ ET LE PRÉFIXE (conception, § 3.9) : lus avec le compte, réglés par le dossier ou ceux du catalogue — et
+  // jamais inventés : un champ que la fonction ne rend pas rend le plan illisible.
+  it('lit le libellé et le préfixe que le dossier règle, et ceux du catalogue pour les autres rôles', () => {
+    const regle = lignes(PLAN_DECALE).map((l) => {
+      if (l.role === 'associe') return { ...l, libelle: 'Compte courant — associé fictif' }
+      return l.role in PREFIXES_DECALES ? { ...l, prefixe_auxiliaire: PREFIXES_DECALES[l.role as keyof typeof PREFIXES_DECALES] } : l
+    })
+    const lu = planDeLaReponse({ data: regle, error: null })
+    expect(lu).toEqual({
+      plan: PLAN_DECALE, libelles: { ...LIBELLES_DU_CATALOGUE, associe: 'Compte courant — associé fictif' }, prefixes: PREFIXES_DECALES,
+      motif: null,
+    })
+    expect(lu.plan === null ? null : [Object.isFrozen(lu.libelles), Object.isFrozen(lu.prefixes)]).toEqual([true, true])
+  })
+
+  it('un libellé ou un préfixe absent, ou d’un autre type, rend le plan illisible : rien n’est inventé à sa place', () => {
+    const sans = (role: string, champ: 'libelle' | 'prefixe_auxiliaire', valeur?: unknown) => lignes(PLAN_PAR_DEFAUT).map((l) => {
+      if (l.role !== role) return l
+      const copie: Record<string, unknown> = { ...l }
+      if (valeur === undefined) delete copie[champ]
+      else copie[champ] = valeur
+      return copie
+    })
+    for (const [role, champ, valeur] of [
+      ['banque', 'libelle', undefined], ['clients', 'prefixe_auxiliaire', undefined], ['banque', 'libelle', 42], ['clients', 'prefixe_auxiliaire', 1],
+    ] as const) {
+      expect(planDeLaReponse({ data: sans(role, champ, valeur), error: null }), `${role} ${champ}`)
+        .toEqual({ plan: null, motif: `plan comptable illisible : le libellé ou le préfixe du rôle « ${role} » n’est pas lu` })
+    }
+    expect(planDeLaReponse({ data: sans('clients', 'prefixe_auxiliaire', null), error: null }))
+      .toEqual({ plan: null, motif: 'plan comptable illisible : le rôle « clients » n’a pas de préfixe d’auxiliaire' })
+    expect(planDeLaReponse({ data: sans('clients', 'prefixe_auxiliaire', 'c-1'), error: null }))
+      .toEqual({ plan: null, motif: 'plan comptable illisible : « c-1 » n’est pas un préfixe d’auxiliaire du rôle « clients »' })
+    expect(planDeLaReponse({ data: sans('banque', 'prefixe_auxiliaire', 'B'), error: null }))
+      .toEqual({ plan: null, motif: 'plan comptable illisible : « B » n’est pas un préfixe d’auxiliaire du rôle « banque »' })
+    expect(planDeLaReponse({ data: sans('clients', 'prefixe_auxiliaire', 'F'), error: null }))
+      .toEqual({ plan: null, motif: 'plan comptable illisible : deux rôles de tiers y partagent un préfixe d’auxiliaire' })
   })
 
   it('un rôle deux fois le rend illisible, même au même compte', () => {
@@ -635,7 +679,7 @@ describe('le plan lu avec le dossier (`plan_du_dossier`, étape PC3)', () => {
   it('attend la requête (un objet qui n’a qu’un `then`) ; une requête qui lève tombe du côté du refus', async () => {
     const reponse: ReponseDuPlan = { data: lignes(PLAN_DECALE), error: null }
     const requete: PromiseLike<ReponseDuPlan> = { then: (ok, ko) => Promise.resolve(reponse).then(ok, ko) }
-    expect(await lireLePlanDuDossier(requete)).toEqual({ plan: PLAN_DECALE, motif: null })
+    expect(await lireLePlanDuDossier(requete)).toEqual({ plan: PLAN_DECALE, ...LU_PAR_DEFAUT, motif: null })
     expect(await lireLePlanDuDossier(Promise.reject(new Error('réseau coupé'))))
       .toEqual({ plan: null, motif: 'plan comptable refusé : réseau coupé' })
   })
@@ -685,7 +729,7 @@ describe('les six rôles de la vente facturée (étape VF2), au catalogue de la 
       role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
     }))
     expect(lignes).toHaveLength(32)
-    expect(planDeLaReponse({ data: lignes, error: null })).toEqual({ plan: PLAN_PAR_DEFAUT, motif: null })
+    expect(planDeLaReponse({ data: lignes, error: null })).toEqual({ plan: PLAN_PAR_DEFAUT, ...LU_PAR_DEFAUT, motif: null })
     // Une base d'avant VF2, qui ne rendrait que les vingt-six, ne donnerait AUCUN plan : la production les porte depuis le
     // 18/10/2026 (catalogue relu le 19/10/2026 : 32 rôles, l'empreinte que planComptable.sql exige).
     expect(planDeLaReponse({ data: lignes.slice(0, 26), error: null })).toEqual({

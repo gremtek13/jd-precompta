@@ -49000,3 +49000,19 @@ jamais « 0 ». `dejaCredite` passe de `factures.ts` (qui importe le client Supa
 réexporté. Tables lues : `factures_emises`, `facture_lignes`, `encaissements_factures`, `encaissements_factures_taux`
 (policies `*_lecture_ventes`), `controles_releves_bancaires` (`…_lecture_banque`). Restent B9b (le journal des
 évènements, la carte P10) et les achats (B4, B5).
+
+### 06/11/2026 — L'APPLICATION LIT LE PLAN : LA RÉVISION, LES LIBELLÉS ET LES PRÉFIXES (LIGNE 43, PC3, 3E TRANCHE)
+
+Agent architecte, sans migration ni déploiement. LA RÉVISION lit le plan (§ 2.4, § 2.5) : `cycleDuCompte(compte, plan)`
+range les intérêts et l'assurance de l'emprunt et les arrondis de la CA3 aux comptes du plan (une table par plan, gardée
+dans une `WeakMap`), `typeDePreuveDuCompte(compte, plan)`, `comptesDeTvaDeclares(plan)` et la preuve des déclarations
+lisent `d.modele.plan`, et `TEXTES_DES_PREUVES` devient `textesDesPreuves(plan)`, qui nomme les comptes du plan (sous le
+plan vide, le texte d'hier au caractère près, que l'instantané garde). Le plan passait déjà par `revision.ts`
+(`DonneesDesPreuves.modele`) ; la revue analytique le reçoit (`DonneesDeLaRevueAnalytique.plan`, de `modele.plan`). Des
+cas sous `PLAN_DECALE` : les comptes du plan rangés et prouvés, ceux du défaut retombés dans leur classe ou sans preuve,
+le 758000 compté aux recettes du mois. `planDeLaReponse` lit aussi le libellé et le préfixe que `plan_du_dossier` rend
+(export : `returns table (role, compte, libelle, prefixe_auxiliaire, origine)`), `LectureDuPlan` les porte ; une colonne
+absente, un préfixe de tiers hors forme ou partagé, un préfixe sur un rôle qui n'est pas de tiers rendent le plan
+illisible. `comptesEnDur` : 44 → 19. L'AUXILIAIRE DU FEC (`engagement.ts`, 3) N'EST PAS FAIT : `auxiliaireDuTiers` a
+neuf appelants hors des tests, dont cinq dans `lettrage.ts` (hors périmètre, sans plan) et `numeroterFec`, qui ne reçoit
+pas le plan (environ 130 appels dans les tests) ; une décision attendue (PC3-AUX, rapport de l'agent).
