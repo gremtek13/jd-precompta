@@ -368,6 +368,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   lit l'adresse AVANT le premier rendu ; le message de la demande est NEUTRE ; un code d'erreur ne s'affiche que s'il en
   a la forme. Le même lien part de l'onglet Accès, sur un clic confirmé, jamais sur une liste d'accès partielle → « MOT
   DE PASSE OUBLIÉ ».
+- **La double authentification** (C7, premier temps, 06/11/2026) : une application d'authentification s'inscrit dans
+  « Sécurité du compte » (`/securite`, monté dans les deux espaces), et un compte qui en a une vérifiée donne son code à
+  la connexion (`CodeDeConnexion`) ; rien n'est encore exigé en base, le second temps attend SEC-Q1 à Q4 → « LA DOUBLE
+  AUTHENTIFICATION, PREMIER TEMPS ».
 - **Créer un accès ne touche jamais au mot de passe d'un compte existant** (décision du cabinet du 10/10/2026) :
   `compte: "cree"` ou `"existant"` ; d'un compte d'ailleurs, le 409 dit qu'il existe, rien de plus, et l'onglet Accès le
   rattache après une confirmation qui nomme l'adresse (le marqueur, puis le booléen `true` seul), jamais un membre d'un
@@ -462,7 +466,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   02/11/2026 », « VINGT ET UNE RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 02/11/2026) ».
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
-  APRÈS COUP ».
+  APRÈS COUP ». L'écriture d'un mouvement que ses encaissements classent porte un libellé composé (« Relevé du
+  JJ/MM/AAAA — F… », `libelleDUnMouvementDesVentes`), jamais celui de la banque, qui nomme qui a payé ; un mouvement
+  classé hors des ventes facturées garde encore le sien (JJ1-Q1, au cabinet) → « JJ1 : LE NOM D'UN PATIENT NE PASSE
+  PLUS AU FEC PAR LE LIBELLÉ DU RELEVÉ ».
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT, conçu (seul le
   titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération automatique ou au clic (RGPD.md
   §8.8).
@@ -541,10 +548,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque ; onze étapes P0 à P10) → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT :
   LA CONCEPTION ». Restent :
-  - P0 : la suppression des anciennes colonnes `notes`, écrite et éprouvée sur une réplique, acceptée par le cabinet
-    (EC-Q7), à appliquer — avec elle trois essais, `types.ts`, `inventaire.py` et le socle → « LES NOTES INTERNES DU
-    CABINET, HORS DE PORTÉE DU CLIENT » ;
-  - P1-trace : garder qui a changé les droits d'un accès, et quand — une migration à écrire ;
+  - P0 : la suppression des anciennes colonnes `notes`, acceptée par le cabinet (EC-Q7), préparée au dépôt le
+    06/11/2026 (`anciennes_notes_supprimees`, avec trois essais, `types.ts`, `inventaire.py`), à coller ; le jour du
+    collage, le fichier entre dans l'export et le socle perd sa ligne → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE
+    DU CLIENT », « LES ANCIENNES COLONNES DES NOTES SUPPRIMÉES » ;
+  - P1-trace : garder qui a changé les droits d'un accès, et quand — préparée, l'accord du cabinet attendu (P1T) ;
   - P4, la mention du mandataire : imprimée sous l'identité de l'émetteur et nommée à la confirmation depuis le
     06/11/2026, le nom du cabinet lu comme la base le lit → « LE MANDAT DE FACTURATION IMPRIMÉ ET NOMMÉ À LA
     CONFIRMATION (P4, LIGNE 51.5) » ;
@@ -569,6 +577,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     (l'échéancier, l'état du dossier, les situations publiées). Toutes les questions sont tranchées sauf MEG2-Q10
     (combien de temps garder les documents du cabinet et ses demandes), ouverte → « L'ESPACE CLIENT, LOGICIEL DE GESTION
     DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
+  - « Aller plus loin », le 06/11/2026 : C1, « Mon échéancier » (à tout accès client, les montants sous « Banque »),
+    sans migration ; C2 préparée (`phase_des_exercices`, `ETAT_DU_DOSSIER_EXPORTE` baissé, C2-Q1 au cabinet) ; C7, son
+    premier temps (Contraintes de sécurité) → « « MON ÉCHÉANCIER » : L'ÉCHÉANCIER FISCAL ET SOCIAL DU CLIENT », « L'ÉTAT
+    DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ».
   - Du premier groupe, faits : A1 à A6 (sauf ce qui suit). Restent, dans l'ordre recommandé : A4B3-Q6 (la ligne
     d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7, la facture fige ses
     mentions : A7a, la base, EN PRODUCTION le 29/10/2026 sur A7-Q1 à Q3 et A7Q-Q1, tranchées à la recommandation
@@ -584,9 +596,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     L'IBAN HORS DES TEXTES LIBRES », « DEUX RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 », « A7Q-Q1 : UNE SOCIÉTÉ SANS
     DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION », « LES DEUX MIGRATIONS D'A7 EN
     PRODUCTION », « QUATRE RÉPONSES DU CABINET : LA MIGRATION DE C6 ET A7B-Q1 À Q3 » ; la liste des clients sans
-    activité depuis trois ans, qui lit les factures d'un contact (A7 les relie) ; la suite du premier groupe, dont A9,
-    la numérotation (MEG1-Q5 : deux séries par dossier, celle du client et celle du mandataire, choisie selon qui
-    valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit) ; les devis (P5) ; P1-trace.
+    activité depuis trois ans, qui attend que le devis cite son contact (une migration additive : seule la facture le
+    cite, depuis A7) ; la suite du premier groupe, dont A8, les factures reprises, et A9, la numérotation (MEG1-Q5 :
+    deux séries par dossier, celle du client et celle du mandataire, choisie selon qui valide, et la série de l'ancien
+    logiciel qui continue ; rien n'en est écrit), reconçues le 06/11/2026, A8-Q1 à Q6 au cabinet → « A8 ET A9, LES
+    FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE » ; P1-trace.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
   sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU
