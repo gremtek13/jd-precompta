@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
-import { aujourdHuiSql, dateRelative, formatDate } from '../../lib/format'
+import { aujourdHuiAParis, dateRelative, formatDate } from '../../lib/format'
 import { donneesDeLaFacture, refusEmission, type LigneCii, type OrigineCii } from '../../lib/factureCii'
 import { acompteSansLecture, lireLAcompteDeLaFacture } from '../../lib/acompteDeLaFactureLecture'
 import {
@@ -298,10 +298,12 @@ export default function TransmissionFactureModal(props: Props) {
   // échoué après l'envoi — superpdp-emit le retrouve, et la suit de même.
   const chezSuperPdp = facture.superpdp_invoice_id != null || (siennes?.some((t) => t.canal === 'superpdp' && t.flux_id != null) ?? false)
   // L'acompte se juge comme le reste, aux mots du générateur : pas lu ou illisible, aucun jugement, donc aucun geste.
+  // Le jour est celui de PARIS, comme dans les fonctions qui transmettent : le jour local d'un navigateur en retard sur
+  // Paris dirait « pas encore arrivé » une facture validée du jour.
   const refus = lignes != null && origine !== undefined && acompte?.etat === 'lue'
     ? refusEmission(donneesDeLaFacture(facture, lignes,
       { statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: numeroTvaAttribue }, origine,
-      acompte.acompte, aujourdHuiSql()))
+      acompte.acompte, aujourdHuiAParis()))
     : null
   // Rejetée, elle ne repart pas : elle s'annule par un avoir interne (DGFiP, § 3.6.4). Refusée par l'acheteur chez Super
   // PDP, sa transmission reste acceptée — elle a été reçue —, et c'est l'historique qui le dit.
