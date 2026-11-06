@@ -192,7 +192,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
     // Le particulier par le numéro, l'entreprise par son nom (FEC22-Q7).
     expect(rows.find((r) => r[2] === 'VE00004')![10]).toBe('Avoir A2025-0001')
     expect(rows.find((r) => r[2] === 'VE00002')![10]).toBe('Facture F2025-0002 — Clinique du Parc')
-    expect(rows.find((r) => r[2] === 'BQ00003')![10]).toBe('REMISE CHEQUE FICTIVE')
+    expect(rows.find((r) => r[2] === 'BQ00003')![10]).toBe('Relevé du 22/11/2025 — F2025-0002 — Clinique du Parc')
   })
 
   it('en trésorerie : l’encaissement au journal des ventes, le mouvement au journal de banque', () => {

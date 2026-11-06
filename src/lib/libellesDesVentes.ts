@@ -52,6 +52,42 @@ export function libelleDUneVenteFacturee(debut: string, facture: Pick<FactureEmi
   return nom === null ? debut : `${debut} — ${nom}`
 }
 
+/** Une facture qu'un mouvement du relevé encaisse, telle que le libellé de son écriture la lit : son numéro, que
+ *  l'appelant nomme (« F2026-0001 », ou le début de l'identifiant d'une facture sans numéro), et son client figé. */
+export type FactureDuMouvement = { numero: string } & Pick<FactureEmise, 'tiers_siret' | 'tiers_nom'>
+
+/** La longueur au-delà de laquelle le libellé d'un mouvement ne cite plus chaque facture. Ni la base (`text`) ni le FEC
+ *  (article A47 A-1 du LPF, qui ne fixe aucune longueur à EcritureLib) n'en imposent une : celle des libellés du plan
+ *  comptable d'un dossier (`plan_comptable_dossier_libelle`), pour qu'une ligne reste lisible chez l'expert-comptable. */
+export const LONGUEUR_DU_LIBELLE_D_UN_MOUVEMENT = 200
+
+/**
+ * Le libellé de l'écriture d'un mouvement du relevé que ses encaissements classent (JJ1, relecture du jour J,
+ * 06/11/2026) : « Relevé du JJ/MM/AAAA — » et les numéros des factures que ses encaissements citent, sans doublon, dans
+ * l'ordre des octets — JAMAIS le libellé de la banque, qui nomme qui a payé (« VIR SEPA RECU DE MME … ») et que le FEC
+ * rendrait en EcritureLib. Le nom d'un client n'y entre que par `libelleDUneVenteFacturee`, et seulement quand TOUTES les
+ * factures citées sont d'entreprises : une seule facture d'un particulier, et le libellé ne nomme personne. Trop long, il
+ * retombe sur les seuls numéros, puis sur le premier et le compte des autres.
+ */
+export function libelleDUnMouvementDesVentes(date: string, factures: readonly FactureDuMouvement[]): string {
+  const debut = `Relevé du ${formatDate(date)}`
+  const parNumero = new Map<string, FactureDuMouvement>()
+  for (const f of factures) if (!parNumero.has(f.numero)) parNumero.set(f.numero, f)
+  const numeros = [...parNumero.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  if (numeros.length === 0) return debut
+  const toutesDEntreprises = numeros.every((n) => nomDuClientEcrit(parNumero.get(n)!) !== null)
+  const essais = [
+    ...(toutesDEntreprises ? [numeros.map((n) => libelleDUneVenteFacturee(n, parNumero.get(n)!)).join(', ')] : []),
+    numeros.join(', '),
+  ]
+  for (const liste of essais) {
+    const libelle = `${debut} — ${liste}`
+    if (libelle.length <= LONGUEUR_DU_LIBELLE_D_UN_MOUVEMENT) return libelle
+  }
+  const autres = numeros.length - 1
+  return `${debut} — ${numeros[0]} et ${autres} autre${autres > 1 ? 's' : ''} facture${autres > 1 ? 's' : ''}`.slice(0, LONGUEUR_DU_LIBELLE_D_UN_MOUVEMENT)
+}
+
 /** Une pièce telle que son libellé la lit. */
 export type PieceLibellee = Pick<Piece, 'type_piece' | 'tiers' | 'nom_fichier' | 'date_piece'>
 

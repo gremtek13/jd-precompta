@@ -116,6 +116,25 @@ describe('les états, dans les deux modèles et sous les deux plans', () => {
           expect(etats(VIREMENT, { ...base, brouillon: relibelle }).sources.every((s) => s.etat === 'a_jour')).toBe(true)
         })
 
+        it('le mouvement écrit sous le libellé de la banque, avant JJ1 : « à jour », rien à réécrire (FEC22Q7-Q1)', () => {
+          // L'encaissement noté la veille du crédit : le mouvement a son écriture (le 512 contre le 511).
+          const LA_VEILLE: Jeu = { ...VIREMENT, encaissements: [encaissement({ id: 'e1', date_encaissement: '2025-11-19', montant: 120, ligne_bancaire_id: 'm1' })] }
+          const premier = etats(LA_VEILLE, base)
+          const duMouvement = parCle(premier, 'mouvement|m1')!
+          expect(duMouvement.aEcrire.map((e) => e.libelle)).toEqual(['Relevé du 20/11/2025 — F2025-0001'])
+          // Ce qu'hier écrivait : le libellé de la banque. Ce qui est au brouillon garde le sien, et rien ne le signale.
+          // (La ligne lue par ce module ne porte même pas de libellé : il ne peut pas en juger.)
+          const duReleve = (l: LigneDuBrouillonLue) => l.ligne_bancaire_id === 'm1' && l.encaissement_id === null
+          const ecrites = premier.sources.flatMap((s) => auBrouillon(s.aEcrire))
+          expect(ecrites.filter(duReleve).length).toBeGreaterThan(0)
+          const brouillon = ecrites.map((l) => (duReleve(l) ? { ...l, libelle: 'VIR SEPA RECU DE MME PATIENTE FICTIVE' } : l))
+          const r = etats(LA_VEILLE, { ...base, brouillon })
+          for (const s of r.sources) {
+            expect(s.etat, s.cle).toBe('a_jour')
+            expect(s.geste, s.cle).toBeNull()
+          }
+        })
+
         it('une ligne proposée qui n’est plus la composition (R3) : « à réécrire », et le geste envoie la composition', () => {
           const premier = etats(VIREMENT, base)
           const brouillon = auBrouillon(parCle(premier, enc1)!.aEcrire)
