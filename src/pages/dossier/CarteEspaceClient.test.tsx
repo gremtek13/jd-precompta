@@ -70,7 +70,8 @@ beforeEach(() => {
       { id: 'f3', dossier_id: 'd2', numero: 'F2026-0001', valide_par: CLIENT, validated_at: '2026-11-04T09:00:00Z', created_by: CLIENT, created_at: '2026-11-04T08:00:00Z' },
     ],
     pieces: [
-      { id: 'p1', dossier_id: 'd1', uploaded_by: CLIENT, created_at: '2026-11-05T15:00:00Z' },
+      // 9 h UTC tombe le 5 novembre dans les quatre fuseaux de la suite (Auckland compris, où 15 h UTC tombait le 6).
+      { id: 'p1', dossier_id: 'd1', uploaded_by: CLIENT, created_at: '2026-11-05T09:00:00Z' },
       { id: 'p2', dossier_id: 'd1', uploaded_by: CLIENT, created_at: '2026-09-01T15:00:00Z' },
       { id: 'p3', dossier_id: 'd1', uploaded_by: MEMBRE, created_at: '2026-11-05T16:00:00Z' },
     ],
