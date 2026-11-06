@@ -131,10 +131,10 @@ describe('ClientHome — drapeau levé : la ligne des pièces jointes écartées
     const tuiles = document.querySelector('.tuiles')
     expect(tuiles).not.toBeNull()
     expect(ligne.compareDocumentPosition(tuiles as Element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    for (const libelle of ['Prendre une photo', 'Mes pièces', 'Mes informations', 'Ma simulation']) {
+    for (const libelle of ['Prendre une photo', 'Mes pièces', 'Mon échéancier', 'Mes informations', 'Ma simulation']) {
       expect(screen.getByText(libelle)).toBeTruthy()
     }
-    expect(document.querySelectorAll('.tuile')).toHaveLength(4)
+    expect(document.querySelectorAll('.tuile')).toHaveLength(5)
   })
 
   it('lue en entier et vide : rien — ni ligne, ni « aucune »', async () => {

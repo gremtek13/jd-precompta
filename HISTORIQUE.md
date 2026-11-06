@@ -48703,3 +48703,21 @@ validé se SIGNALENT —, la lecture qui ne rejette jamais, les phrases au tutoi
 (gardée avec le dossier), `components/CarteEtatDuDossier.tsx`, une ligne et son import dans `ClientHome.tsx` ;
 `ETAT_DU_DOSSIER_EXPORTE` baissé, confronté à l'export. Restent au cabinet : appliquer (C2-Q1), la précédence de la
 collecte (C2-Q2), « enregistrée » plutôt que « déposée » (C2-Q3), un exercice clôturé dit « en cours » (C2-Q4).
+
+### 06/11/2026 — « MON ÉCHÉANCIER » : L'ÉCHÉANCIER FISCAL ET SOCIAL DU CLIENT (C1, LIGNE 51.5)
+
+MEG3-Q1 (« oui, en premier »), premier lot, sans migration. Une page « Mon échéancier » (`/mon-echeancier`, ouverte à
+tout accès client, une entrée de la barre et une tuile de l'accueil) et la carte « Mes prochaines échéances » de
+l'accueil, sur les douze mois à venir au jour de Paris (la fenêtre de `prochainesEcheances`, 365 jours). Le module pur
+`lib/echeancierClient.ts` compose et trie : les DATES de `echeancesFiscales` telles quelles, leurs libellés redits aux
+mots du client (tutoiement, « Seulement si … » jamais tranché, la 2035 « déposée par ton cabinet » ; une nature inconnue
+garde les mots du cabinet plutôt que de disparaître, le test exige qu'il n'y en ait aucune de 2026 à 2030) ; la CA3 d'un
+REDEVABLE seul, au mois de son dépôt, sans jour (« entre le 15 et le 24 du mois, dépend de ton entreprise », CGI ann. IV
+art. 39), un mois de dépôt gardé tant que son 24 n'est pas passé et que son 15 est dans la fenêtre — sinon treize CA3
+sur douze mois ; un statut de TVA à préciser le dit ; les échéances à venir de `cotisations_declarees`, ni passées ni
+payées par le compte personnel, la prévisionnelle dite comme telle et son montant « ≈ … estimation ». Les montants sous
+« Banque » seulement, lue par `droitsSur` comme les routes : sans elle, `lib/echeancierClientLecture.ts` ne DEMANDE pas
+`montant_appele`. La lecture (le dossier, les cotisations par `lireTout`) ne rejette jamais, rend « lu », « partiel » ou
+« illisible », gardée avec la société et le droit. `CE_QUE_PERD_LE_CLIENT` nomme le nouvel écran. Restent, pour un lot
+suivant : le montant d'une CA3 préparée (les déclarations de TVA ne se lisent qu'au cabinet : la fonction
+`echeancier_du_dossier` de la conception, une migration), et l'e-reporting à partir du 01/09/2027.

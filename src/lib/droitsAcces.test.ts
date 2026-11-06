@@ -234,13 +234,22 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     const routesClient = [...app.matchAll(/<Route path="(\/[^"]+)" element=\{<(Client\w+) \/>\} \/>/g)].map((m) => `${m[1]} ${m[2]}`)
     expect(routesClient).toEqual([
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
-      '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
+      '/mon-echeancier ClientEcheancier', '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
     ])
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual([
-      'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientHome.tsx', 'ClientInformations.tsx', 'ClientSimulation.tsx', 'ClientUpload.tsx',
-      'ClientVentes.tsx',
+      'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx',
+      'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
     ])
+    // DEPUIS L'ÉTAPE C1, « Mon échéancier » et sa carte de l'accueil lisent la case « Banque » de la société affichée pour les
+    // MONTANTS seulement (une règle d'écran, comme « Ma simulation ») : la route est ouverte à tout accès, et rien d'autre.
+    expect(app).toContain('<Route path="/mon-echeancier" element={<ClientEcheancier />} />')
+    for (const fichier of ['ClientEcheancier.tsx', 'EcheancierAccueil.tsx']) {
+      const texte = readFileSync(resolve(process.cwd(), `src/pages/${fichier}`), 'utf8')
+      expect(texte, fichier).toMatch(/const avecMontants = droitsSur\(droitsParDossier \?\? \{\}, (dossierActifId|dossierId)\)\.banque === true/)
+      expect(texte, fichier).not.toMatch(/droit_ventes|droit_banque|droit_caisse|\.ventes\b|\.caisse\b/)
+      expect(texte.match(/droitsSur\(/g), fichier).toHaveLength(1)
+    }
     // DEPUIS L'ÉTAPE P4b, l'accueil lit la case « Ventes » pour ses tuiles « À encaisser » et « À déclarer » : la même garde
     // que la route, sur la société affichée, et rien d'autre ; les tuiles relisent leurs cases à la base.
     const accueil = readFileSync(resolve(process.cwd(), 'src/pages/ClientHome.tsx'), 'utf8')

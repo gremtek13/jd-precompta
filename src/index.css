@@ -1515,6 +1515,22 @@ a.btn { text-decoration: none; }
 .feed-date { font-size: 0.74rem; color: var(--color-text-light); white-space: nowrap; flex-shrink: 0; padding-top: 2px; }
 
 /* Ligne de check (Documents attendus, points à traiter) — même rythme que .checklist-item mais dans un widget. */
+/* L'échéancier du client (ligne 51.5, étape C1) : une liste simple, qui passe à la ligne sur téléphone — la date au-dessus du
+   libellé, le montant en dessous — sans jamais couper un mot ni un montant. */
+.echeancier-mois { margin: 0 0 6px; font-size: 0.95rem; }
+.echeancier-mois-suite .echeancier-mois { margin-top: 22px; }
+.echeancier-liste { list-style: none; margin: 0; padding: 0; }
+.echeance { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 14px; padding: 12px 0; border-top: 1px solid var(--color-border); }
+.echeance:first-child { border-top: none; padding-top: 4px; }
+.echeance-date { flex: 0 0 9rem; font-weight: 600; font-size: 0.88rem; color: var(--color-text); }
+.echeance-corps { flex: 1 1 15rem; min-width: 0; }
+.echeance-libelle { font-weight: 600; font-size: 0.9rem; }
+.echeance-precision { font-size: 0.8rem; color: var(--color-text-light); margin-top: 2px; }
+.echeance-pastilles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.echeance-montant { flex: 0 0 auto; margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.echeance-montant small { display: block; font-weight: 400; color: var(--color-text-light); }
+.echeancier-note { font-size: 0.82rem; color: var(--color-text-light); margin: 12px 0 0; }
+
 .check-ligne { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--color-border); }
 .check-ligne:first-child { border-top: none; padding-top: 4px; }
 .check-ligne-corps { flex: 1; min-width: 0; }

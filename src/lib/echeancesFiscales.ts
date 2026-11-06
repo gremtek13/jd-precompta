@@ -99,12 +99,12 @@ export const DELAI_TELEDECLARATION_JOURS = 15
 
 // Les seuils des conditions. Ceux de l'annexe et de la CVAE viennent du moteur de la 2035-E, pour ne vivre qu'à un
 // endroit ; ceux des acomptes, du BOFiP [B1, B2].
-const SEUIL_ACOMPTE_CFE = 3_000
-const SEUIL_ACOMPTES_CVAE = 1_500
+export const SEUIL_ACOMPTE_CFE = 3_000
+export const SEUIL_ACOMPTES_CVAE = 1_500
 
 // Un montant ne se coupe pas en fin de ligne — la Checklist se lit aussi sur téléphone : espace fine insécable entre les
 // milliers, insécable avant l'euro, comme `formatMoney`.
-function euros(montant: number): string {
+export function euros(montant: number): string {
   return `${String(montant).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f')}\u00a0€`
 }
 

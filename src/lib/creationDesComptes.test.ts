@@ -250,8 +250,8 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     ])
     expect(CE_QUE_PERD_LE_CLIENT).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
       + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
-      + "réponses à tes précisions), « Mes informations », « Ma simulation » et, selon les cases de ses accès, « Mes ventes », "
-      + '« Ma banque » et « Ma caisse » —, pour chacune de ses sociétés.')
+      + "réponses à tes précisions), « Mes informations », « Ma simulation », « Mon échéancier » et, selon les cases de ses "
+      + 'accès, « Mes ventes », « Ma banque » et « Ma caisse » —, pour chacune de ses sociétés.')
     expect(CE_QUI_RESTE_AU_CLIENT).toBe("Ses accès restent dans l'onglet Accès de ses dossiers : la retirer de l'équipe "
       + "(« Retirer ») lui rend son espace client, dès qu'elle rouvre l'application.")
     expect(c.paragraphes.join(' ')).not.toContain('communique-lui')
@@ -264,7 +264,7 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     const layout = readFileSync(new URL('../components/Layout.tsx', import.meta.url), 'utf8')
     const espaceClient = app.slice(app.indexOf("{role === 'client' && ("), app.indexOf('</Route>', app.indexOf("{role === 'client' && (")))
     const chemins = [...espaceClient.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]).sort()
-    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-informations', '/mes-pieces', '/mes-ventes'])
+    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-informations', '/mes-pieces', '/mes-ventes', '/mon-echeancier'])
     for (const chemin of chemins) {
       const nom = layout.match(new RegExp(`<NavLink to="${chemin}" title="([^"]+)"`))?.[1]
       expect(nom, chemin).toBeDefined()
