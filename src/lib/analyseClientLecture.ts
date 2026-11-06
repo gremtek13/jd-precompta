@@ -47,7 +47,8 @@ async function lireLesVentes(dossierId: string): Promise<VentesDeLAnalyse> {
         supabase.from('facture_lignes').select(COLONNES_DE_LA_PROVENANCE, { count: 'exact' })
           .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('ordre').order('id').range(debut, fin)),
     ])
-    return { etat: 'lue', listes, provenance }
+    // Une provenance lue en partie ne porte aucune ligne : l'état par article se tait sur son motif (lib/analyseClient.ts).
+    return { etat: 'lue', listes, provenance: provenance.complete ? provenance : { ...provenance, lignes: [] } }
   } catch (e) {
     return { etat: 'illisible', motif: messageErreur(e, 'tes ventes n’ont pas pu être lues') }
   }
@@ -58,7 +59,8 @@ async function lireLaBanque(dossierId: string): Promise<BanqueDeLAnalyse> {
     const controles = await lireTout<ControleDuSolde>((debut, fin) =>
       supabase.from('controles_releves_bancaires').select(COLONNES_DU_CONTROLE, { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin))
-    return { etat: 'lue', controles }
+    // Des relevés lus en partie ne portent aucune ligne : le solde se tait sur leur motif, jamais un solde d'avant.
+    return { etat: 'lue', controles: controles.complete ? controles : { ...controles, lignes: [] } }
   } catch (e) {
     return { etat: 'lue', controles: { lignes: [], complete: false, motif: messageErreur(e, 'tes relevés n’ont pas pu être lus') } }
   }
