@@ -48190,3 +48190,23 @@ faute ; `traceDesDroitsSuppression.sql` (réplique seulement) 13 ; `droitsAcces.
 l'insertion au cabinet, par le catalogue seul : la garde refuse avant la policy). Banc du leurre SÛR, deux passes ; aller, retour,
 aller ; le retour se refuse sous une ligne. Au plan derrière `TRACE_DES_DROITS_PREVUE`, après les accès (restauration.sql, un bloc).
 Questions P1T-Q1 (la bascule des ventes dans ce journal) à Q3 ; aucun écran encore.
+
+### 06/11/2026 — LA FACTURE : LES DEUX REFUS DE DATE DITS AVANT LE CLIC (LIGNE 51.5)
+
+(Du code et des tests, rien en base.) Les rangs 17 (une date d'émission à venir, après le jour de Paris) et 18 (une date
+antérieure à la plus récente facture validée de sa série : même dossier, même lettre, même année) de la garde des
+factures, en production depuis le 02/11/2026, ne se disaient qu'au clic : « il y faudrait la série lue en entier ». Les
+deux formulaires, la facture (`FactureFormModal`) et l'avoir (`FactureAvoirModal`), dans les deux espaces, les disent
+désormais avant le clic par `refusDeLaDateDEmission` (`lib/validationDeLaFacture.ts`, inchangé), sur la date telle
+qu'elle part et le jour de Paris lu au rendu ; la validation est retenue, le brouillon d'une facture reste
+enregistrable. L'onglet leur passe sa liste en prop obligatoire (`facturesDeLaSerie`), nulle tant qu'elle n'est pas
+revenue ou qu'elle est lue en partie : le rang 18 se tait alors, le 17 se dit toujours. Relu à l'intégration : la date
+proposée était le jour LOCAL (`aujourdHuiSql`) ; d'un navigateur en avance sur Paris, elle aurait été « à venir » dès
+l'ouverture, et sous Auckland, que `verifier` rejoue, les tests qui valident avec elle seraient tombés douze heures par
+jour, jamais le matin où l'agent les a joués. Elle devient le jour de Paris, et avec elle l'aperçu de transmission du
+formulaire et la fenêtre de transmission, qui jugeaient « pas encore arrivé » contre le jour local : d'un navigateur en
+retard sur Paris, la facture du jour se serait dite non transmissible quand `superpdp-emit` l'accepte. 26 tests neufs ;
+trois fichiers qui datent leurs factures de 2027 figent `Date` après elles. Les écrans de la facture et de sa
+transmission (1 161 tests) passent sous Paris, UTC, New York, Auckland, Etc/GMT-14, et Etc/GMT+12 joué à l'heure où son
+jour retarde sur Paris, hors un test de la fenêtre de transmission qui montre l'instant d'une transmission à l'heure
+locale : il tombe aussi sur `main` sous UTC−12, hors des quatre fuseaux de `verifier`.

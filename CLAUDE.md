@@ -1158,10 +1158,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   une case (`numero_tva_attribue`) ; sans elle, ses factures sans TVA ne partent pas (G1.47).
 - **Le générateur CII** refuse avant le clic → « LA FACTURE ÉLECTRONIQUE S'ÉCRIT EN CII ». **Une facture validée est
   figée en base** ; la numérotation par `enregistrer_facture` seule → « UNE FACTURE VALIDÉE SE FIGE EN BASE ». Depuis
-  le 02/11/2026, la garde refuse une date à venir ou d'avant la plus récente de sa série, des mentions sans la mention de
-  TVA au caractère près, et, au seul accès « Ventes », un statut de TVA à préciser ou un exonéré sans article ; le HT
-  d'une ligne se compte sur ses décimaux exacts des deux côtés (`calculerLigne`, `centimes_ligne_facture`), confrontés
-  par une batterie → « LA FACTURE : LA MIGRATION EN PRODUCTION (FACTURE-Q1) ». À sa
+  le 02/11/2026, la garde refuse une date à venir ou d'avant la plus récente de sa série (dites avant le clic depuis le
+  06/11/2026, au jour de Paris, celui de la date proposée et de l'aperçu de transmission), des mentions sans la
+  mention de TVA au caractère près, et, au seul accès « Ventes », un statut de TVA à préciser ou un exonéré sans
+  article ; le HT d'une ligne se compte sur ses décimaux exacts des deux côtés (`calculerLigne`,
+  `centimes_ligne_facture`), confrontés par une batterie → « LA FACTURE : LA MIGRATION EN PRODUCTION (FACTURE-Q1) »,
+  « LA FACTURE : LES DEUX REFUS DE DATE DITS AVANT LE CLIC (LIGNE 51.5) ». À sa
   validation, elle fige son statut et son numéro de TVA, l'identité légale, les paramètres, le RIB confirmé, le logo et
   le mandataire, et ses lignes leur provenance (A7a, en base depuis le 29/10/2026) ; l'aperçu d'une facture figée
   n'imprime que ses colonnes, le logo vérifié à son empreinte figée, une facture d'avant comme hier (A7b) → « LA FACTURE
