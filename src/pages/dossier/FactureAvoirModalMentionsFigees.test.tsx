@@ -93,7 +93,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 const figee = (o: Partial<FactureEmise> = {}) => factureFigee({ date_emission: '2026-01-15', date_echeance: null, ...o })
 
 async function monter(espace: EspaceVentes, origine: FactureEmise = figee()) {
-  render(<FactureAvoirModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace={espace} dossierId="d1" factureOrigine={origine} credite={0} onClose={() => {}} onCreated={() => {}} />)
+  render(<FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace={espace} dossierId="d1" factureOrigine={origine} credite={0} onClose={() => {}} onCreated={() => {}} />)
   await screen.findByDisplayValue('Séance')
 }
 const valider = () => screen.getByRole('button', { name: "Valider l'avoir" }) as HTMLButtonElement

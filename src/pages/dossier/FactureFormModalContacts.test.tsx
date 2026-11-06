@@ -163,7 +163,7 @@ async function monter(espace: 'cabinet' | 'client', o: Options = {}) {
     dossierId: 'd1', dossierNom: 'Dossier fictif', dossierSiret: null, dossierAdresse: null, statutTva: o.statut === undefined ? 'redevable' : o.statut,
     articleExoneration: o.exo ?? null, numeroTvaAttribue: false, tvaSurDebits: false, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   } as const
-  render(espace === 'client' ? <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal acompte={SANS_ACOMPTE} reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
+  render(espace === 'client' ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
   if (o.facture) await screen.findByText('Adresse de l\'émetteur', { exact: false })
   // La date d'émission du jour changerait les échéances d'un test à l'autre : elle est posée, comme le ferait une saisie.
   if (o.emission !== null && !o.facture) fireEvent.change(champ('#date-emission'), { target: { value: o.emission ?? '2027-11-01' } })
@@ -198,6 +198,10 @@ const facturesEnregistrees = () => faux.rpcs.filter((r) => r.nom === 'enregistre
 const soumettre = () => act(async () => { fireEvent.submit(document.querySelector('form')!) })
 
 beforeEach(() => {
+  // « Aujourd'hui » : les dates de ces jeux d'essai sont de novembre 2027, et la validation d'une facture refuse une date à venir
+  // (rang 17 de la garde, dit avant le clic) : le jour de Paris est posé APRÈS elles. Seule `Date` est figée.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2027-11-20T10:00:00Z'))
   faux.contacts = nues(TOUS)
   faux.lignes = []
   faux.muetApres = Infinity
@@ -217,6 +221,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 describe.each(['cabinet', 'client'] as const)('Un client dans la facture — la lecture (%s)', (espace) => {

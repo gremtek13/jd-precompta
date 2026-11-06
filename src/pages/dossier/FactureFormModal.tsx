@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { calculerLigne, calculerTotaux, enregistrerFacture, lignesSaisies, mentionsLegalesParDefaut } from '../../lib/factures'
-import { aujourdHuiSql, formatDate, formatMoney, formaterPrixUnitaire } from '../../lib/format'
+import { aujourdHuiAParis, aujourdHuiSql, formatDate, formatMoney, formaterPrixUnitaire } from '../../lib/format'
 import type { Article, ArticleExoneration, Contact, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT } from '../../lib/droitsAcces'
@@ -26,7 +26,7 @@ import {
 } from '../../lib/contactsFacture'
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
-import { avisDuStatutDeTva, refusDuStatutDeTva } from '../../lib/validationDeLaFacture'
+import { avisDuStatutDeTva, refusDeLaDateDEmission, refusDuStatutDeTva, type FactureDeLaSerie } from '../../lib/validationDeLaFacture'
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue,
   provenanceQuiPart, refusSansPenalites, sansPhraseDeRetard,
@@ -124,6 +124,10 @@ type Props = QuiRedige & {
   // formulaire avec le dossier et ses exercices validés — ceux-ci illisibles chez le client. Sans valeur par défaut : un écran
   // qui oublierait de la lire ne compile pas, et une facture source se validerait sans que ses refus se disent avant.
   reglageDesVentes: ReglageDesVentes
+  // Les factures et les avoirs du dossier tels que l'onglet les a lus, que la date d'émission est jugée contre (rangs 17 et 18 de
+  // la garde, lib/validationDeLaFacture.ts) ; null quand la liste n'est pas lue en entier. Sans valeur par défaut : un écran
+  // qui l'oublierait ne compile pas, et la base ne dirait ses refus de date qu'au clic.
+  facturesDeLaSerie: readonly FactureDeLaSerie[] | null
   facture: FactureEmise | null // null = nouvelle facture ; jamais une facture déjà validée (voir FacturesTab)
   // Ce qu'est le brouillon (étape P5b5b ; lib/acomptesDesFactures.ts) : une facture d'acompte, une finale, ou ni l'une ni
   // l'autre (`SANS_ACOMPTE`, passé explicitement : une facture neuve, et toute facture drapeau baissé). Obligatoire.
@@ -137,7 +141,7 @@ type Props = QuiRedige & {
 // tout modifier librement. "Valider" attribue le numéro définitif (voir lib/factures.ts) et ferme la
 // possibilité de reéditer — geste volontairement séparé d'un simple enregistrement de brouillon.
 export default function FactureFormModal(props: Props) {
-  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, reglageDesVentes, facture, onClose, onSaved } = props
+  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, reglageDesVentes, facture, facturesDeLaSerie, onClose, onSaved } = props
   const { espace } = props
   const { acompte } = props
   // Les lignes du brouillon d'un acompte, lues telles quelles : elles repartent sans retouche (étape P5b5b).
@@ -349,6 +353,14 @@ export default function FactureFormModal(props: Props) {
   const statutAJuger = { type: 'facture' as const, statutTva, articleExoneration, cabinet: espace === 'cabinet' }
   const refusDuStatut = refusDuStatutDeTva(statutAJuger)
   const avisDuStatut = avisDuStatutDeTva(statutAJuger)
+  // LA DATE D'ÉMISSION (rangs 17 et 18 de la même garde) : à venir après le jour de Paris, ou antérieure à la plus récente des
+  // factures VALIDÉES de la série F de son année. Jugée sur la date TELLE QU'ELLE PART, pour tout auteur, et dite avant le clic ;
+  // le brouillon reste enregistrable (la date ne se juge qu'à la validation). Sur une liste lue en partie, le rang 18 se tait —
+  // une facture plus récente peut manquer, et la base le dira au clic — mais le rang 17 ne dépend d'aucune liste : on le dit encore.
+  // Le jour de Paris se lit ici, à chaque rendu, jamais au chargement du module.
+  const refusDeLaDate = refusDeLaDateDEmission({
+    type: 'facture', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [],
+  })
 
   function ajouterMention(mention: string) {
     // Sur ce que le champ montre : la saisie, ou la mention proposée.
@@ -815,6 +827,11 @@ export default function FactureFormModal(props: Props) {
     }
     if (statutCible === 'validee' && refusFigeValidation) {
       setError(refusFigeValidation)
+      return
+    }
+    // Seconde ceinture : le bouton de validation est déjà grisé sur un refus de la date, dit avant le clic.
+    if (statutCible === 'validee' && refusDeLaDate) {
+      setError(refusDeLaDate.message)
       return
     }
     // Seconde ceinture : le bouton de validation est déjà grisé sur un refus de la source, dit avant le clic.
@@ -1338,6 +1355,7 @@ export default function FactureFormModal(props: Props) {
             {refusConformite && <p className="error-text" role="alert">{pourLEspace(espace, refusConformite)}</p>}
             {refusDeLAcompte && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLAcompte)}</p>}
             {refusDuStatut && <p className="error-text" role="alert">{pourLEspace(espace, refusDuStatut.message)}</p>}
+            {refusDeLaDate && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLaDate.message)}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
             {avisDuStatut && <p className="note-info" role="note">{avisDuStatut}</p>}
 
@@ -1348,7 +1366,7 @@ export default function FactureFormModal(props: Props) {
               <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0 || refusFigeBrouillon != null}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null || refusDeLAcompte != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusDeLaDate != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null || refusDeLAcompte != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>
