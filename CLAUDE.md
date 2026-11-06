@@ -496,12 +496,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   réelle d'un client ; (d) « Encaissée » : d1 à d4 en ligne ; d5, le message CDAR, en module (ses quatre choix et MDT-95
   tranchés par le premier essai réel ; le matricule d'une plateforme, une colonne de la connexion) ; d6 reste (les Edge
   Functions qui écriront `transmissions_encaissements`, l'effet du 601) ; d7 en ligne, le premier relevé réel reste à
-  faire ; l'essai réel sur le bac à sable de Super PDP. (e) l'e-reporting, onze étapes (le point 15 en hypothèse ;
-  E6-Q8 : l'identifiant tiré au téléchargement, donné ensuite à la base, une migration) ; restent e5b2 (Q6, la fiche
-  déclarée qui retient sa pièce), e6b (le bouton qui télécharge le fichier) et la suite (e7 : une facture à un client
-  étranger, dont le formulaire recevra le pays, le numéro de TVA et le régime, 28.5e-Q8 ; e8 : les recettes sans
-  facture vendues à des particuliers — e7 et e8 se construiront après le MVP, 28.5e-Q1 ; e9 : `fluxEreporting` recopié
-  dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING », « UNE
+  faire ; l'essai réel sur le bac à sable de Super PDP. (e) l'e-reporting, onze étapes (le point 15 en hypothèse ; E6-Q8
+  : l'identifiant tiré au téléchargement, donné ensuite à la base, une migration) ; e6b (le bouton qui télécharge le
+  fichier, tiré du contenu figé) et e5b2 (un encaissement retiré après la déclaration rend la période « à rectifier »)
+  faits le 06/11/2026 derrière `IDENTIFIANT_DU_FICHIER_EXPORTE`, la migration de l'identifiant préparée, à coller
+  (E6Q8-Q1) → « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING, À L'ÉCRAN » ; restent la suite (e7 : une facture à un client
+  étranger, dont le formulaire recevra le pays, le numéro de TVA et le régime, 28.5e-Q8 ; e8 : les recettes sans facture
+  vendues à des particuliers — e7 et e8 se construiront après le MVP, 28.5e-Q1 ; e9 : `fluxEreporting` recopié dans
+  `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING », « UNE
   RÉPONSE DU CABINET : 28.5E-Q8 ».
 - **Défauts connus des Edge Functions** (2, `DEFAUTS_CONNUS`) : `taux-change-bce` sans contrôle d'appelant : la
   désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ». `receive-email`
@@ -580,27 +582,31 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   - « Aller plus loin », le 06/11/2026 : C1, « Mon échéancier » (à tout accès client, les montants sous « Banque »),
     sans migration ; C2 préparée (`phase_des_exercices`, `ETAT_DU_DOSSIER_EXPORTE` baissé, C2-Q1 au cabinet) ; C7, son
     premier temps (Contraintes de sécurité) → « « MON ÉCHÉANCIER » : L'ÉCHÉANCIER FISCAL ET SOCIAL DU CLIENT », « L'ÉTAT
-    DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ».
+    DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Le même soir, préparées derrière leurs drapeaux : C5, les relances
+    d'une facture en retard (pénalités calculées et montrées, jamais facturées ; `send-email` sous `RELANCES_EN_BASE` ;
+    C5-Q1 à Q3) ; C4a, les situations publiées et la case « Comptes » (`changer_droits_acces` à cinq paramètres ; C4A-Q1
+    et Q2 ; de P1-trace et d'elle, celle qui s'applique en second se reprend) → « RELANCER SES CLIENTS (C5) », « LES
+    SITUATIONS PUBLIÉES, EN BASE (C4A) ».
   - Du premier groupe, faits : A1 à A6 (sauf ce qui suit). Restent, dans l'ordre recommandé : A4B3-Q6 (la ligne
-    d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7, la facture fige ses
-    mentions : A7a, la base, EN PRODUCTION le 29/10/2026 sur A7-Q1 à Q3 et A7Q-Q1, tranchées à la recommandation
-    (l'émetteur d'une facture validée par un accès « Ventes » est celui du dossier ; aucun texte libre que la facture
-    imprime ne porte un IBAN valide ; sans dénomination, un accès « Ventes » ne valide pas) — `mentions_figees` collée
-    par le cabinet, puis `iban_hors_des_parametres` par l'outil —, A7b l'écran (le formulaire et l'avoir disent ses
-    refus avant le clic et nomment ce qui se fige, l'aperçu n'imprime que ce qui est figé ; `lib/mentionsFigeesVue.ts`),
-    en ligne le 30/10/2026 ; A7B-Q1 et Q2 le même jour (rien sous le nom d'un entrepreneur individuel ; la mention
-    légale proposée ne garde que la TVA quand le dossier a ses paramètres) ; A7B-Q3, le bon de commande d'une
-    entreprise, offert sur la facture seule le 06/11/2026 (`DocumentDeVente`, sans défaut) → « LE BON DE COMMANDE D'UNE
-    ENTREPRISE, OFFERT DANS LA FACTURE », « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES
-    MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) », « LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET
-    L'IBAN HORS DES TEXTES LIBRES », « DEUX RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 », « A7Q-Q1 : UNE SOCIÉTÉ SANS
-    DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION », « LES DEUX MIGRATIONS D'A7 EN
-    PRODUCTION », « QUATRE RÉPONSES DU CABINET : LA MIGRATION DE C6 ET A7B-Q1 À Q3 » ; la liste des clients sans
-    activité depuis trois ans, qui attend que le devis cite son contact (une migration additive : seule la facture le
-    cite, depuis A7) ; la suite du premier groupe, dont A8, les factures reprises, et A9, la numérotation (MEG1-Q5 :
-    deux séries par dossier, celle du client et celle du mandataire, choisie selon qui valide, et la série de l'ancien
-    logiciel qui continue ; rien n'en est écrit), reconçues le 06/11/2026, A8-Q1 à Q6 au cabinet → « A8 ET A9, LES
-    FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE » ; P1-trace.
+    d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7, la facture fige ses mentions
+    : A7a, la base, EN PRODUCTION le 29/10/2026 sur A7-Q1 à Q3 et A7Q-Q1, tranchées à la recommandation (l'émetteur
+    d'une facture validée par un accès « Ventes » est celui du dossier ; aucun texte libre que la facture imprime ne
+    porte un IBAN valide ; sans dénomination, un accès « Ventes » ne valide pas) — `mentions_figees` collée par le
+    cabinet, puis `iban_hors_des_parametres` par l'outil —, A7b l'écran (le formulaire et l'avoir disent ses refus avant
+    le clic et nomment ce qui se fige, l'aperçu n'imprime que ce qui est figé ; `lib/mentionsFigeesVue.ts`), en ligne le
+    30/10/2026 ; A7B-Q1 et Q2 le même jour (rien sous le nom d'un entrepreneur individuel ; la mention légale proposée
+    ne garde que la TVA quand le dossier a ses paramètres) ; A7B-Q3, le bon de commande d'une entreprise, offert sur la
+    facture seule le 06/11/2026 (`DocumentDeVente`, sans défaut) → « LE BON DE COMMANDE D'UNE ENTREPRISE, OFFERT DANS LA
+    FACTURE », « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B
+    (LIGNE 51.5) », « LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES », « DEUX
+    RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 », « A7Q-Q1 : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS
+    L'ESPACE CLIENT, DANS LA MIGRATION », « LES DEUX MIGRATIONS D'A7 EN PRODUCTION », « QUATRE RÉPONSES DU CABINET : LA
+    MIGRATION DE C6 ET A7B-Q1 À Q3 » ; la liste des clients sans activité depuis trois ans et le devis qui cite son
+    contact, préparés le 06/11/2026 derrière `DEVIS_CITENT_UN_CONTACT` (DEVC-Q1 ; le banc du leurre à rejouer sur leur
+    essai avant l'application ; seule la facture le cite, depuis A7) ; la suite du premier groupe, dont A8, les factures
+    reprises, et A9, la numérotation (MEG1-Q5 : deux séries par dossier, celle du client et celle du mandataire, choisie
+    selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit), reconçues le 06/11/2026,
+    A8-Q1 à Q6 au cabinet → « A8 ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE » ; P1-trace.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
   sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU
