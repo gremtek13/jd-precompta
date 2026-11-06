@@ -151,7 +151,10 @@ export default function FactureFormModal(props: Props) {
   const [tiersNom, setTiersNom] = useState(facture?.tiers_nom ?? '')
   const [tiersAdresse, setTiersAdresse] = useState(facture?.tiers_adresse ?? '')
   const [tiersSiret, setTiersSiret] = useState(facture?.tiers_siret ?? '')
-  const [dateEmission, setDateEmission] = useState(facture?.date_emission ?? aujourdHuiSql())
+  // La date proposée est le jour de PARIS, celui que la base juge (rang 17, lib/validationDeLaFacture.ts) : le jour local
+  // d'un navigateur en avance sur Paris (Auckland, ou un territoire d'outre-mer, une partie de la journée) serait « à venir »
+  // et retiendrait la validation dès l'ouverture du formulaire.
+  const [dateEmission, setDateEmission] = useState(facture?.date_emission ?? aujourdHuiAParis())
   const [dateEcheance, setDateEcheance] = useState(facture?.date_echeance ?? '')
   const [notes, setNotes] = useState(facture?.notes ?? '')
   // La mention légale SAISIE ; nulle tant qu'on n'y a pas touché (et d'un brouillon qui n'en a pas) : elle se déduit, plus bas.
