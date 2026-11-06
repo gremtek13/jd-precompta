@@ -498,6 +498,7 @@ export default function DossierDetail() {
                 articleExoneration={dossier.article_exoneration}
                 numeroTvaAttribue={dossier.numero_tva_attribue}
                 siret={dossier.siret}
+                denomination={dossier.denomination_imprimee ?? null}
                 onStatutUpdated={(modification) => modifierDossier(id, modification)}
                 periodicite={dossier.tva_periodicite}
                 surDebits={dossier.tva_sur_debits}

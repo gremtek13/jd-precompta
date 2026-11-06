@@ -7,12 +7,13 @@ import {
   dateCivileStricte, declarationActive, declarationQuiRetientLaPiece, empreinteDuContenu, etatDeLaDeclaration,
   formeCanonique, refusDeclaration, tailleDuContenu, uuidCommeLaBase, type ContenuDuCalcul, type ContexteDeLaDeclaration,
   type ContexteDesCauses, type SaisieDeclaration,
+  IDENTIFIANT_DU_FICHIER_EXPORTE, argumentsDeLaDeclarationSelon, refusDeLaDeclarationSelon, refusDeclarationSelon,
 } from './declarationsEreporting'
 import {
   declarationDesAchats, declarationDesPaiements, declarationDesVentes, type AchatDeclare, type ContenuAchats,
   type ContenuVentes, type DeclarationEreporting, type DossierEreporting, type EcartLu, type EncaissementLu,
   type FactureLue, type Lecture, type LigneLue, type PartLue, type PieceLue, type RefusEreporting, type TexteDePiece,
-  type TransactionsDuJour,
+  type TransactionsDuJour, type ContenuPaiements, type PaiementsDuJour,
 } from './ereporting'
 import { ajouterJours, ajouterMois, dernierJourDuMois } from './format'
 import { DEBUT_EREPORTING_PME, periodeDe, type FrequenceEreporting } from './periodesEreporting'
@@ -174,7 +175,7 @@ describe('declarer_ereporting_hors_application — le module dit ses refus, dans
 
   it('les paramètres, dans l’ordre de sa signature', () => {
     const parametres = (/function public\.\w+\(([^)]*)\)/.exec(SQL)?.[1] ?? '').split(',').map((p) => p.trim().split(/\s+/)[0])
-    expect(parametres).toHaveLength(9)
+    expect(parametres).toHaveLength(IDENTIFIANT_DU_FICHIER_EXPORTE ? 10 : 9)
     expect(Object.keys(argumentsDeLaDeclaration(D, saisie()))).toEqual(parametres)
   })
 
@@ -582,6 +583,7 @@ describe('argumentsDeLaDeclaration et contenuADeclarer', () => {
     expect(argumentsDeLaDeclaration(D, saisie({ debut: '2027-09-31', fin: '2027-09-30', contenu: undefined }))).toEqual({
       p_dossier_id: D, p_objet: 'achats', p_debut: null, p_fin: '2027-09-30', p_regime_id: R, p_remplace_id: null,
       p_plateforme: 'Plateforme A', p_contenu: null, p_note: null,
+      ...(IDENTIFIANT_DU_FICHIER_EXPORTE ? { p_identifiant_fichier: null } : {}),
     })
   })
 
@@ -614,7 +616,7 @@ describe('le contenu qu’e4 calcule passe les refus de la fonction, et traverse
   const ficheE4: PieceHorsDeFrance = {
     id: F1, dossier_id: D, piece_id: P1, remplace_id: null, numero: 'INV-1', date_facture: '2027-10-05', type_document: '380',
     facture_origine_numero: null, facture_origine_date: null, devise: 'EUR', pays: 'IE', schema_identifiant: '0223',
-    identifiant: 'IE7777777T', nature: 'services', autoliquidation: true, date_operation: null, periode_debut: null,
+    identifiant: 'IE0000000T', nature: 'services', autoliquidation: true, date_operation: null, periode_debut: null,
     periode_fin: null, cree_par: 'u1', cree_le: '2027-10-06T10:00:00Z', retire_le: null, retire_par: null,
   }
   const tauxE4: PieceHorsDeFranceTaux = { fiche_id: F1, dossier_id: D, code_tva: 'AE', taux: 0, base: 120, tva: 0, motif_code: null, motif_texte: null }
@@ -888,7 +890,8 @@ describe('l’essai joué sur la réplique, rejoué appel par appel', () => {
 
   it('chaque refus de la fonction a été rendu au moins une fois par la base', () => {
     const vus = new Set(rejeux.map((r) => r.cle))
-    expect(REFUS_DECLARATION.map((x) => x.cle).filter((c) => !vus.has(c))).toEqual([])
+    // Le refus d'E6-Q8 (drapeau levé) se rend dans son propre essai (supabase/essais/identifiantDuFichierEreporting.sql).
+    expect(REFUS_DECLARATION.map((x) => x.cle).filter((c) => !vus.has(c) && c !== 'fichier_deja_declare')).toEqual([])
   })
 
   // Chaque défaut planté rejoue l'essai entier, ses contenus d'un mégaoctet compris : les trois rejeux se paient une fois,
@@ -967,7 +970,7 @@ const APRES = '2027-11-06T10:00:00Z'
 function achatDeclare(o: Partial<AchatDeclare> = {}): AchatDeclare {
   return {
     ficheId: F1, pieceId: P1, date: '2027-10-05', numero: 'INV-1', dateFacture: '2027-10-05', typeDocument: '380', origine: null,
-    devise: 'EUR', pays: 'IE', schema: '0223', identifiant: 'IE7777777T', nature: 'services', cadre: 'S1', autoliquidation: true,
+    devise: 'EUR', pays: 'IE', schema: '0223', identifiant: 'IE0000000T', nature: 'services', cadre: 'S1', autoliquidation: true,
     dateOperation: null, periodeDebut: null, periodeFin: null,
     lignes: [{ code: 'AE', taux: 0, baseCentimes: 12000, tvaCentimes: 0, motifCode: null, motifTexte: null }],
     htCentimes: 12000, tvaEurosCentimes: 0, ...o,
@@ -1017,6 +1020,7 @@ function causesDe(o: Partial<ContexteDesCauses> = {}): ContexteDesCauses {
     fiches: lu([
       { id: F1, piece_id: P1, cree_le: AVANT, retire_le: null }, { id: F2, piece_id: P2, cree_le: AVANT, retire_le: null },
     ]),
+    encaissements: lu([{ id: E1, retire_le: null }, { id: EX, retire_le: null }]),
     ...o,
   }
 }
@@ -1105,5 +1109,114 @@ describe('etatDeLaDeclaration — à jour, à rectifier, ou indéterminé [DG] [
     // Une facture d'une autre catégorie le même jour est un autre agrégat.
     const deux = etatDeLaDeclaration(ventes, calculVentes([transaction({ factures: [FV, FB] }), transaction({ categorie: 'TLB1', factures: [u(43)] })]), causesDe())
     expect(deux.differences.map((d) => [d.sorte, d.cle])).toEqual([['ajoutee', '2027-10-08|TLB1|false']])
+  })
+})
+
+// ── E6-Q8 : l'identifiant du fichier, derrière son drapeau (migration `identifiant_du_fichier_ereporting`, PRÉPARÉE) ────
+
+const PREPAREE = readFileSync(new URL('../../supabase/preparees/20261106130000_identifiant_du_fichier_ereporting.sql', import.meta.url), 'utf8')
+const RETOUR_PREPARE = readFileSync(new URL('../../supabase/preparees/retour/20261106130100_retour_identifiant_du_fichier_ereporting.sql', import.meta.url), 'utf8')
+const FONCTION_PREPAREE = PREPAREE.slice(PREPAREE.indexOf('create function public.declarer_ereporting_hors_application('),
+  PREPAREE.indexOf('$$;', PREPAREE.indexOf('create function public.declarer_ereporting_hors_application(')))
+const X = u(0xa1)
+
+describe('E6-Q8 — l’identifiant du fichier, état du drapeau par état', () => {
+  it('le drapeau suit le fichier de la migration dans l’export', () => {
+    expect(IDENTIFIANT_DU_FICHIER_EXPORTE).toBe(fichiersDuSchema().some((f) => /\d{14}_identifiant_du_fichier_ereporting\.sql$/.test(f.chemin)))
+  })
+
+  it('la fonction préparée : les mêmes messages et codes que le module levé, le refus neuf au rang 20, le reste au caractère près', () => {
+    expect(messagesSql(FONCTION_PREPAREE)).toEqual(refusDeLaDeclarationSelon(true).map((r) => r.modele))
+    expect(codesSql(FONCTION_PREPAREE)).toEqual(refusDeLaDeclarationSelon(true).map((r) => r.code))
+    expect(refusDeLaDeclarationSelon(true).map((r) => r.cle).indexOf('fichier_deja_declare'))
+      .toBe(refusDeLaDeclarationSelon(true).map((r) => r.cle).indexOf('note_trop_longue') + 1)
+    expect(refusDeLaDeclarationSelon(false).map((r) => r.cle)).not.toContain('fichier_deja_declare')
+    expect(refusDeLaDeclarationSelon(true).filter((r) => r.cle !== 'fichier_deja_declare')).toEqual(refusDeLaDeclarationSelon(false))
+    // Le corps d'hier, au caractère près, hors du paramètre, du refus neuf, de la renumérotation et de l'insertion.
+    const hier = derniereDefinitionSql('declarer_ereporting_hors_application')
+    const ici = FONCTION_PREPAREE.indexOf('  -- 21 à 23. Le contenu')
+    const apres = FONCTION_PREPAREE.slice(ici)
+      .replace(/^( {2}-- )(\d+)( (?:à|et) )(\d+)\./gm, (_m, a: string, b: string, c: string, d: string) => `${a}${Number(b) - 1}${c}${Number(d) - 1}.`)
+      .replace(/^( {2}-- )(\d+)\./gm, (_m, a: string, b: string) => `${a}${Number(b) - 1}.`)
+    const sansLeNeuf = (FONCTION_PREPAREE.slice(0, ici).replace(/ {2}-- 20\. Le fichier déposé[\s\S]*?end if;\n/, '') + apres)
+      .replace(',\n  p_identifiant_fichier uuid default null\n)', '\n)')
+      .replace(', cree_par, identifiant_fichier\n', ', cree_par\n').replace('auth.uid(), p_identifiant_fichier\n', 'auth.uid()\n')
+    if (IDENTIFIANT_DU_FICHIER_EXPORTE) expect(hier).toBe(FONCTION_PREPAREE)
+    else expect(sansLeNeuf).toBe(hier)
+  })
+
+  it('le dixième paramètre, nul par défaut, après les neuf d’hier ; baissé, les neuf seuls', () => {
+    const parametres = (/function public\.\w+\(([^)]*)\)/.exec(FONCTION_PREPAREE)?.[1] ?? '').split(',').map((p) => p.trim().split(/\s+/)[0])
+    expect(Object.keys(argumentsDeLaDeclarationSelon(true, D, saisie()))).toEqual(parametres)
+    expect(argumentsDeLaDeclarationSelon(true, D, saisie({ identifiantFichier: X }))).toMatchObject({ p_identifiant_fichier: X })
+    expect(argumentsDeLaDeclarationSelon(true, D, saisie())).toMatchObject({ p_identifiant_fichier: null })
+    expect(Object.keys(argumentsDeLaDeclarationSelon(false, D, saisie({ identifiantFichier: X })))).toEqual(parametres.slice(0, 9))
+    expect(PREPAREE).toContain('p_identifiant_fichier uuid default null\n)')
+  })
+
+  it('levé, un identifiant déjà porté dans le dossier se refuse au rang 20 ; d’un autre dossier, non ; baissé, rien', () => {
+    const portee = { id: u(0xd1), dossier_id: D, objet: 'ventes', periode_debut: '2027-10-01', periode_fin: '2027-10-10', etat: 'remplacee', plateforme: 'P', identifiant_fichier: X.toUpperCase() } as const
+    const s = saisie({ identifiantFichier: X, note: null, contenu: undefined })
+    expect(refusDeclarationSelon(true, s, contexte({ declarations: [portee] }))?.cle).toBe('fichier_deja_declare')
+    expect(refusDeclarationSelon(true, s, contexte({ declarations: [{ ...portee, dossier_id: D2 }] }))?.cle).toBe('contenu_absent')
+    expect(refusDeclarationSelon(false, s, contexte({ declarations: [portee] }))?.cle).toBe('contenu_absent')
+    // La note trop longue vient avant ; le contenu après.
+    expect(refusDeclarationSelon(true, { ...s, note: 'x'.repeat(2001) }, contexte({ declarations: [portee] }))?.cle).toBe('note_trop_longue')
+    expect(refusDeclarationSelon(true, saisie({ identifiantFichier: X }), contexte({ declarations: [portee] }))?.cle).toBe('fichier_deja_declare')
+  })
+
+  it('l’essai de la migration rend le refus neuf sous ses mots', () => {
+    const essai = readFileSync(new URL('../../supabase/essais/identifiantDuFichierEreporting.sql', import.meta.url), 'utf8')
+    const modele = refusDeLaDeclarationSelon(true).find((r) => r.cle === 'fichier_deja_declare')?.modele ?? '—'
+    expect(essai).toContain(`'${modele.slice(0, modele.indexOf(' :')).replace(/'/g, "''")}%'`)
+  })
+
+  it('le retour arrière rend la fonction d’hier au caractère près, et se refuse tant qu’un identifiant est porté', () => {
+    const e5b1 = fichiersDuSchema().find((f) => /\d{14}_declarations_ereporting\.sql$/.test(f.chemin))?.texte ?? ''
+    const debut = e5b1.indexOf('create function public.declarer_ereporting_hors_application(')
+    expect(debut).toBeGreaterThan(0)
+    expect(RETOUR_PREPARE).toContain(e5b1.slice(debut, e5b1.indexOf('$$;', debut) + 3))
+    expect(RETOUR_PREPARE).toContain('where identifiant_fichier is not null')
+    expect(RETOUR_PREPARE).toContain('drop column identifiant_fichier')
+  })
+})
+
+// ── e5b2 (28.5e-Q6b) : un encaissement retiré après la déclaration de sa période ─────────────────────────────────────
+
+function calculPaiements(jours: Omit<PaiementsDuJour, 'parTaux'>[], o: Partial<DeclarationEreporting<ContenuPaiements>> = {}) {
+  const paiements: PaiementsDuJour[] = jours.map((x) => ({ ...x, parTaux: [{ taux: 20, montantCentimes: x.montantCentimes }] }))
+  return calcul<ContenuPaiements>('paiements', {
+    role: 'SE', siren: '123456782', paiements, nombreOperations: paiements.reduce((n, x) => n + x.encaissements.length, 0),
+    montantCentimes: paiements.reduce((n, x) => n + x.montantCentimes, 0),
+  }, o)
+}
+
+describe('etatDeLaDeclaration — un encaissement déclaré, retiré depuis, rend la période « à rectifier » (28.5e-Q6b)', () => {
+  const declaree = figee(calculPaiements([{ date: '2027-10-12', montantCentimes: 12000, encaissements: [E1] }]))
+  const aujourdhui = calculPaiements([])
+
+  it('retiré APRÈS la déclaration : une cause, nommée, même quand aujourd’hui ne se calcule pas en entier', () => {
+    const encaissements = lu([{ id: E1, retire_le: APRES }])
+    const e = etatDeLaDeclaration(declaree, aujourdhui, causesDe({ encaissements }))
+    expect(e.etat).toBe('a_rectifier')
+    expect(e.causes).toEqual([{ cause: 'encaissement_retire_apres', encaissementId: E1, le: APRES }])
+    const incomplet = calculPaiements([], { contenu: null, refus: [{ cle: 'lecture_incomplete', message: 'x', sources: [] }] })
+    expect(etatDeLaDeclaration(declaree, incomplet, causesDe({ encaissements })).etat).toBe('a_rectifier')
+  })
+
+  it('retiré AVANT la déclaration, pas retiré, ou qu’elle ne porte pas : aucune cause', () => {
+    const incomplet = calculPaiements([], { contenu: null, refus: [{ cle: 'lecture_incomplete', message: 'x', sources: [] }] })
+    expect(etatDeLaDeclaration(declaree, incomplet, causesDe({ encaissements: lu([{ id: E1, retire_le: AVANT }]) })).causes).toEqual([])
+    expect(etatDeLaDeclaration(declaree, incomplet, causesDe()).etat).toBe('indetermine')
+    expect(etatDeLaDeclaration(declaree, incomplet, causesDe({ encaissements: lu([{ id: E1, retire_le: null }, { id: EX, retire_le: APRES }]) })).causes).toEqual([])
+    // Des achats : le registre des encaissements ne dit rien d'eux.
+    const achats = figee(calculAchats([achatDeclare()]))
+    expect(etatDeLaDeclaration(achats, calculAchats([achatDeclare()]), causesDe({ encaissements: lu([{ id: E1, retire_le: APRES }]) })).etat).toBe('a_jour')
+  })
+
+  it('un registre lu en partie ne laisse rien affirmer', () => {
+    const e = etatDeLaDeclaration(declaree, aujourdhui, causesDe({ encaissements: { lignes: [], complete: false, motif: '1 ligne(s) lue(s) sur 2' } }))
+    expect(e.etat).toBe('indetermine')
+    expect(e.motifs).toEqual(["La lecture du registre des encaissements n'est pas revenue entière (1 ligne(s) lue(s) sur 2)."])
   })
 })

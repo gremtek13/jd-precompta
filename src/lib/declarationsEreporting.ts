@@ -35,6 +35,16 @@ import type {
 /** La version du contenu que ce module écrit : un contenu figé d'une autre version se lit sous la sienne. */
 export const VERSION_DU_CONTENU = 1
 
+// LE DRAPEAU DE L'IDENTIFIANT DU FICHIER (E6-Q8, étape e6b). La migration `identifiant_du_fichier_ereporting`
+// (supabase/preparees/, PRÉPARÉE, pas appliquée) donne à `declarer_ereporting_hors_application` un dixième paramètre,
+// l'identifiant du fichier FRR tiré au téléchargement, et un refus neuf au rang 20 (un identifiant déjà porté dans le
+// dossier). BAISSÉ, tout est comme hier au caractère près : neuf paramètres, les refus d'hier, et la fenêtre n'offre pas le
+// fichier — un fichier déposé dont la base ne saurait pas l'identifiant ne se raconterait plus. LEVÉ le jour de
+// l'application (le fichier dans l'export, sous la version de sa ligne d'historique) : le bouton « Télécharger le fichier
+// (XML) », le dixième paramètre et son refus. Levé AVANT la migration, la déclaration se refuserait (un paramètre que la
+// fonction ne connaît pas) : le drapeau suit le fichier (`declarationsEreporting.test.ts`).
+export const IDENTIFIANT_DU_FICHIER_EXPORTE = false
+
 /** Ce qu'un contenu pèse au plus, en octets de sa forme canonique (`declarations_ereporting_contenu`). */
 export const TAILLE_MAXIMALE_CONTENU = 1_048_576
 
@@ -54,7 +64,7 @@ const ROLE_DU_DECLARANT = { achats: 'BY', ventes: 'SE', paiements: 'SE' } as con
 
 // Les refus de `declarer_ereporting_hors_application`, dans l'ordre de la fonction et sous ses mots, avec leur code :
 // chaque « % » reçoit la valeur que la base y met (`remplirModele`).
-export const REFUS_DECLARATION = [
+const TOUS_LES_REFUS = [
   { cle: 'acces', code: '42501', modele: 'Accès refusé à ce dossier.' },
   { cle: 'objet', code: '22023', modele: "Une déclaration d'e-reporting porte sur les ventes, les achats ou les paiements du dossier." },
   { cle: 'bornes_absentes', code: '22023', modele: 'Les deux bornes de la période sont à renseigner.' },
@@ -99,6 +109,10 @@ export const REFUS_DECLARATION = [
   { cle: 'plateforme_absente', code: '22023', modele: 'La plateforme sur laquelle la période a été déclarée est à nommer.' },
   { cle: 'plateforme_trop_longue', code: '22023', modele: 'Le nom de la plateforme dépasse 200 caractères.' },
   { cle: 'note_trop_longue', code: '22023', modele: 'La note de la déclaration dépasse 2 000 caractères.' },
+  {
+    cle: 'fichier_deja_declare', code: '22023',
+    modele: "Ce fichier est déjà celui d'une autre déclaration du dossier : chaque dépôt a son fichier, et une rectificative se dépose avec un fichier neuf.",
+  },
   { cle: 'contenu_absent', code: '22023', modele: "Le contenu déclaré est à joindre : celui que l'application a calculé pour la période." },
   { cle: 'contenu_trop_grand', code: '22023', modele: 'Le contenu déclaré dépasse un mégaoctet (1 048 576 octets).' },
   { cle: 'contenu_autre', code: '22023', modele: 'Le contenu ne porte pas sur cet objet et cette période : relisez.' },
@@ -118,7 +132,15 @@ export const REFUS_DECLARATION = [
   { cle: 'periode_en_cours', code: '22023', modele: "La période n'est pas finie : elle se déclare à partir du %." },
 ] as const
 
-export type CleRefusDeclaration = (typeof REFUS_DECLARATION)[number]['cle']
+export type CleRefusDeclaration = (typeof TOUS_LES_REFUS)[number]['cle']
+
+/** Les refus de la fonction telle que le drapeau la dit : sans la migration d'E6-Q8, ceux d'hier ; avec elle, le refus
+ * du fichier au rang 20. Une fonction plutôt qu'une constante, pour que chaque état se joue (le test le fait). */
+export function refusDeLaDeclarationSelon(exporte: boolean): readonly (typeof TOUS_LES_REFUS)[number][] {
+  return exporte ? TOUS_LES_REFUS : TOUS_LES_REFUS.filter((r) => r.cle !== 'fichier_deja_declare')
+}
+
+export const REFUS_DECLARATION = refusDeLaDeclarationSelon(IDENTIFIANT_DU_FICHIER_EXPORTE)
 
 export interface RefusDeclaration {
   cle: CleRefusDeclaration
@@ -138,7 +160,7 @@ export const REFUS_SUPPRESSION_PIECE = "Cette pièce est déclarée à l'e-repor
   + 'sauf avec son dossier — une erreur se corrige par une déclaration rectificative de la période.'
 
 function dire(cle: CleRefusDeclaration, ...valeurs: string[]): RefusDeclaration {
-  const r = REFUS_DECLARATION.find((x) => x.cle === cle) as (typeof REFUS_DECLARATION)[number]
+  const r = TOUS_LES_REFUS.find((x) => x.cle === cle) as (typeof TOUS_LES_REFUS)[number]
   return { cle, code: r.code, message: remplirModele(r.modele, valeurs) }
 }
 
@@ -314,15 +336,23 @@ export interface SaisieDeclaration {
   /** Nul pour une initiale ; l'active de la période pour une rectificative. */
   remplaceId: string | null
   plateforme: string | null
-  /** Le contenu à déclarer (`contenuADeclarer`). */
+  /** Le contenu à déclarer (`contenuADeclarer`) ; celui du fichier téléchargé, quand la déclaration en a un. */
   contenu: unknown
   note: string | null
+  /** L'identifiant du fichier FRR déposé, tiré au téléchargement (E6-Q8) ; absent ou nul sans fichier tiré d'ici. Ne part
+   * qu'avec le drapeau levé. */
+  identifiantFichier?: string | null
 }
 
 /** Les paramètres de `declarer_ereporting_hors_application`, dans l'ordre de sa signature : le dossier annoncé d'abord, et
  * des dates civiles seules — une autre forme ne parviendrait pas à la fonction. */
 export function argumentsDeLaDeclaration(dossierId: string, s: SaisieDeclaration) {
-  return {
+  return argumentsDeLaDeclarationSelon(IDENTIFIANT_DU_FICHIER_EXPORTE, dossierId, s)
+}
+
+/** Les mêmes, état du drapeau par état : levé, le dixième paramètre (nul sans fichier) ; baissé, les neuf d'hier. */
+export function argumentsDeLaDeclarationSelon(exporte: boolean, dossierId: string, s: SaisieDeclaration) {
+  const hier = {
     p_dossier_id: dossierId,
     p_objet: s.objet,
     p_debut: dateCivileStricte(s.debut),
@@ -333,6 +363,7 @@ export function argumentsDeLaDeclaration(dossierId: string, s: SaisieDeclaration
     p_contenu: s.contenu ?? null,
     p_note: s.note,
   }
+  return exporte ? { ...hier, p_identifiant_fichier: s.identifiantFichier ?? null } : hier
 }
 
 /** Ce que l'écran sait quand il propose de déclarer : les lectures du dossier, EN ENTIER, et le jour à Paris. */
@@ -341,7 +372,8 @@ export interface ContexteDeLaDeclaration {
   /** Les régimes du dossier, retirés compris (`regimes_ereporting`). */
   regimes: readonly LigneDeRegime[]
   /** Les déclarations du dossier, remplacées comprises. */
-  declarations: readonly Pick<DeclarationEreportingHorsApplication, 'id' | 'dossier_id' | 'objet' | 'periode_debut' | 'periode_fin' | 'etat' | 'plateforme'>[]
+  declarations: readonly (Pick<DeclarationEreportingHorsApplication, 'id' | 'dossier_id' | 'objet' | 'periode_debut' | 'periode_fin' | 'etat' | 'plateforme'>
+    & Partial<Pick<DeclarationEreportingHorsApplication, 'identifiant_fichier'>>)[]
   /** Les sources de ces déclarations. */
   sources: readonly Pick<SourceDeclarationEreporting, 'declaration_id' | 'genre' | 'source_id'>[]
   /** Les fiches « hors de France » du dossier, toutes versions, et ses pièces. */
@@ -372,6 +404,11 @@ const parDebutPuisId = (a: { periode_debut: string; id: string }, b: { periode_d
  * canonique, celle que les lectures rendent.
  */
 export function refusDeclaration(s: SaisieDeclaration, c: ContexteDeLaDeclaration): RefusDeclaration | null {
+  return refusDeclarationSelon(IDENTIFIANT_DU_FICHIER_EXPORTE, s, c)
+}
+
+/** Les mêmes refus, état du drapeau par état : levé, celui du fichier vient au rang 20. */
+export function refusDeclarationSelon(exporte: boolean, s: SaisieDeclaration, c: ContexteDeLaDeclaration): RefusDeclaration | null {
   // 2. L'objet ; 3. les bornes, des dates civiles.
   const objet = OBJETS_DECLARES.find((o) => o === s.objet)
   if (objet == null) return dire('objet')
@@ -420,6 +457,11 @@ export function refusDeclaration(s: SaisieDeclaration, c: ContexteDeLaDeclaratio
   if (s.plateforme == null || blanc(s.plateforme)) return dire('plateforme_absente')
   if (caracteres(s.plateforme) > LONGUEUR_MAXIMALE_PLATEFORME) return dire('plateforme_trop_longue')
   if (s.note != null && !blanc(s.note) && caracteres(s.note) > LONGUEUR_MAXIMALE_NOTE) return dire('note_trop_longue')
+  // 20 (la migration d'E6-Q8). Un identifiant de fichier qui est déjà celui d'une déclaration du dossier, remplacées comprises.
+  const fichier = exporte ? uuidCommeLaBase(s.identifiantFichier) : null
+  if (fichier != null && c.declarations.some((d) => d.dossier_id === c.dossierId && uuidCommeLaBase(d.identifiant_fichier) === fichier)) {
+    return dire('fichier_deja_declare')
+  }
   // 20 à 22. Le contenu : un objet d'un mégaoctet au plus, sur l'objet, les bornes et le rôle annoncés.
   const contenu = s.contenu
   if (!estObjet(contenu)) return dire('contenu_absent')
@@ -566,6 +608,8 @@ export type CauseARectifier =
   | { cause: 'fiche_posee_apres'; pieceId: string; ficheId: string; le: string }
   /** La fiche d'un achat déclaré a été remplacée ou retirée après la déclaration. */
   | { cause: 'fiche_changee_apres'; pieceId: string; ficheId: string; le: string }
+  /** Un encaissement que la déclaration des paiements porte a été retiré du registre après elle (28.5e-Q6b, étape e5b2). */
+  | { cause: 'encaissement_retire_apres'; encaissementId: string; le: string }
 
 export interface EtatDeLaDeclaration {
   /** À jour : ce qui a été déclaré est ce que l'application calcule aujourd'hui ; à rectifier : ils diffèrent, ou une
@@ -585,6 +629,8 @@ export interface ContexteDesCauses {
   regimes: Lecture<Pick<RegimeEreporting, 'id' | 'retire_le'>>
   ecarts: Lecture<Pick<PieceEcarteeEreporting, 'piece_id' | 'cree_le' | 'retire_le'>>
   fiches: Lecture<Pick<PieceHorsDeFrance, 'id' | 'piece_id' | 'cree_le' | 'retire_le'>>
+  /** Le registre des encaissements, retirés compris (e5b2). */
+  encaissements: Lecture<Pick<EncaissementFacture, 'id' | 'retire_le'>>
 }
 
 type DeclarationFigee = Pick<DeclarationEreportingHorsApplication, 'objet' | 'periode_debut' | 'periode_fin' | 'regime_id' | 'contenu' | 'cree_le'>
@@ -690,6 +736,16 @@ export function etatDeLaDeclaration(
     }
   }
 
+  if (objet === 'paiements') {
+    // 28.5e-Q6b (e5b2) : un encaissement que la déclaration porte, retiré du registre APRÈS elle — la période se rectifie,
+    // même quand aujourd'hui ne se calcule pas en entier. Un retrait d'avant la déclaration n'y était déjà plus.
+    const declares = new Set([...figees.values()].flatMap((o) => o.sources))
+    const retires = contexte.encaissements.lignes
+      .filter((e) => declares.has(uuidCommeLaBase(e.id) ?? e.id) && e.retire_le != null && instant(e.retire_le) > declareeLe)
+      .sort((a, b) => instant(a.retire_le as string) - instant(b.retire_le as string) || (a.id < b.id ? -1 : 1))
+    for (const e of retires) causes.push({ cause: 'encaissement_retire_apres', encaissementId: e.id, le: e.retire_le as string })
+  }
+
   // Sans calcul entier d'aujourd'hui — un arrêt d'e4 (aucun contenu), ou une opération qu'il refuse (l'état
   // « incomplète », qu'e4 réserve aux refus qui en changent l'état) —, une cause dit « à rectifier » ; rien d'autre ne
   // s'affirme.
@@ -735,4 +791,5 @@ const NOMS_DES_LECTURES: Readonly<Record<string, string>> = {
   regimes: 'des régimes confirmés',
   ecarts: 'des pièces écartées',
   fiches: 'des fiches « fournisseur établi hors de France »',
+  encaissements: 'du registre des encaissements',
 }

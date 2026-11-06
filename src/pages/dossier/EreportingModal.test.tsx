@@ -36,6 +36,21 @@ const faux = vi.hoisted(() => ({
 
 // Seul le téléchargement est remplacé (jsdom n'a pas d'URL.createObjectURL) : c'est le CONTENU qui est en cause.
 const telecharge = vi.hoisted(() => ({ fichiers: [] as { nom: string; contenu: string }[] }))
+
+// LE DRAPEAU D'E6-Q8 (`IDENTIFIANT_DU_FICHIER_EXPORTE`), joué dans ses deux états : la fenêtre le lit par un accesseur, et
+// les deux fonctions du module qui en dépendent suivent le même état (`…Selon`). Par défaut, l'état du dépôt.
+const drapeau = vi.hoisted(() => ({ leve: false, vrai: false }))
+vi.mock('../../lib/declarationsEreporting', async (vrai) => {
+  const m = await vrai<typeof import('../../lib/declarationsEreporting')>()
+  drapeau.vrai = m.IDENTIFIANT_DU_FICHIER_EXPORTE
+  drapeau.leve = m.IDENTIFIANT_DU_FICHIER_EXPORTE
+  return {
+    ...m,
+    get IDENTIFIANT_DU_FICHIER_EXPORTE() { return drapeau.leve },
+    argumentsDeLaDeclaration: (d: string, s: Parameters<typeof m.argumentsDeLaDeclaration>[1]) => m.argumentsDeLaDeclarationSelon(drapeau.leve, d, s),
+    refusDeclaration: (s: Parameters<typeof m.refusDeclaration>[0], c: Parameters<typeof m.refusDeclaration>[1]) => m.refusDeclarationSelon(drapeau.leve, s, c),
+  }
+})
 vi.mock('../../lib/fec', async (vrai) => ({
   ...(await vrai<typeof import('../../lib/fec')>()),
   telechargerTexte: (nom: string, contenu: string) => { telecharge.fichiers.push({ nom, contenu }) },
@@ -153,8 +168,13 @@ function monde(o: { declarations?: DeclarationEreportingHorsApplication[]; sourc
 const surfaces = { ferme: vi.fn(), misAJour: vi.fn() }
 let confirmations: string[] = []
 
-async function monter(o: { dossier?: DossierEreporting; confirmerDEmblee?: boolean } = {}) {
-  render(<EreportingModal dossierId="d1" dossier={o.dossier ?? dossier()} confirmerDEmblee={o.confirmerDEmblee} onClose={surfaces.ferme} onUpdated={surfaces.misAJour} />)
+async function monter(o: { dossier?: DossierEreporting; confirmerDEmblee?: boolean; denomination?: string | null } = {}) {
+  render(
+    <EreportingModal
+      dossierId="d1" dossier={o.dossier ?? dossier()} denomination={o.denomination === undefined ? 'Atelier Démo Conseil' : o.denomination}
+      confirmerDEmblee={o.confirmerDEmblee} onClose={surfaces.ferme} onUpdated={surfaces.misAJour}
+    />,
+  )
   await laisser()
 }
 
@@ -164,6 +184,8 @@ async function laisser(tours = 12) {
 }
 
 beforeEach(() => {
+  drapeau.leve = drapeau.vrai
+  telecharge.fichiers = []
   faux.muetApres = {}
   faux.refus = {}
   faux.rpcs = []
@@ -684,6 +706,54 @@ describe('les périodes', () => {
       expect(declarer().disabled).toBe(true)
     })
 
+    it('drapeau baissé : aucun fichier ne s’offre (E6-Q8 attend sa migration)', async () => {
+      drapeau.leve = false
+      await ouvrirOctobre()
+      expect(screen.queryByRole('button', { name: /Télécharger le fichier \(XML\)/ })).toBeNull()
+      expect(screen.queryByLabelText(/Matricule de la plateforme/)).toBeNull()
+    })
+
+    it('drapeau levé : le fichier se télécharge AVANT la déclaration, qui en donne à la base l’identifiant et le contenu (E6-Q8)', async () => {
+      drapeau.leve = true
+      await ouvrirOctobre()
+      const telecharger = () => screen.getByRole('button', { name: 'Télécharger le fichier (XML)' }) as HTMLButtonElement
+      // Avant le clic : sans matricule, le refus du module et où le corriger ; le bouton grisé ; la déclaration dit qu'elle
+      // partirait sans fichier.
+      expect(telecharger().disabled).toBe(true)
+      expect(screen.getByText(/quatre chiffres, ceux de l’annuaire/)).toBeTruthy()
+      expect(screen.getByText(/^Aucun fichier n’a été téléchargé dans cette fenêtre/)).toBeTruthy()
+      await taper('Plateforme fictive')
+      await act(async () => { fireEvent.change(screen.getByLabelText(/Matricule de la plateforme/), { target: { value: '9991' } }) })
+      expect(telecharger().disabled).toBe(false)
+      expect(faux.rpcs).toHaveLength(0)
+      await act(async () => { fireEvent.click(telecharger()) })
+      // Un Blob local : aucune écriture, aucun appel ; le nom porte l'objet et la période, jamais le dossier.
+      expect(faux.rpcs).toHaveLength(0)
+      expect(telecharge.fichiers.map((f) => f.nom)).toEqual(['e-reporting-achats-2027-10-01-2027-10-31.xml'])
+      expect(telecharge.fichiers[0].contenu.startsWith('<?xml')).toBe(true)
+      expect(telecharge.fichiers[0].contenu).toContain('Atelier Démo Conseil')
+      expect(screen.getByText(/a été téléchargé dans cette fenêtre : la déclaration gardera son identifiant/)).toBeTruthy()
+      await act(async () => { fireEvent.click(declarer()) })
+      await laisser()
+      expect(confirmations[0]).toContain('a été téléchargé dans cette fenêtre')
+      expect(faux.rpcs).toHaveLength(1)
+      const args = faux.rpcs[0].args as Record<string, unknown>
+      const identifiant = args.p_identifiant_fichier as string
+      expect(identifiant).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+      expect(telecharge.fichiers[0].contenu).toContain(`>${identifiant}<`)
+      expect(args.p_contenu).toEqual(contenuADeclarer(declarationCalculee('achats', OCTOBRE, sources(), dossier(), AUJOURDHUI)))
+    })
+
+    it('drapeau levé : sans dénomination du dossier, le fichier se refuse avant le clic et dit où la saisir', async () => {
+      drapeau.leve = true
+      await monter({ denomination: null })
+      await ouvrirLaPeriode(TABLE_ACHATS, 'octobre 2027')
+      await taper('Plateforme fictive')
+      await act(async () => { fireEvent.change(screen.getByLabelText(/Matricule de la plateforme/), { target: { value: '9991' } }) })
+      expect((screen.getByRole('button', { name: 'Télécharger le fichier (XML)' }) as HTMLButtonElement).disabled).toBe(true)
+      expect(screen.getByText(/onglet Informations/)).toBeTruthy()
+    })
+
     it('déclare : la confirmation nomme la plateforme, l’objet, la période et le contenu ; la base reçoit le contenu calculé', async () => {
       await ouvrirOctobre()
       await taper('  Plateforme fictive ')
@@ -700,6 +770,7 @@ describe('les périodes', () => {
         args: {
           p_dossier_id: 'd1', p_objet: 'achats', p_debut: '2027-10-01', p_fin: '2027-10-31', p_regime_id: R1, p_remplace_id: null,
           p_plateforme: 'Plateforme fictive', p_contenu: attendu, p_note: 'Déposée par le cabinet.',
+          ...(drapeau.leve ? { p_identifiant_fichier: null } : {}),
         },
       })
       // La relecture montre la déclaration : l’état de la ligne, le bloc du détail, plus de geste.

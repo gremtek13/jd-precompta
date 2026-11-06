@@ -48874,3 +48874,21 @@ leurre, 77 tables couvertes. `situationsPublieesMutations.sql` (réplique seulem
 mutations qui mordent toutes — la garde qui laisse une mise à jour (rang 12), le statut cru du contenu (15), la lecture
 « Comptes » au-delà de la situation en cours (4, 5, 31), un accès « Comptes » qui publie (7), les totaux non confrontés
 (17), la forme à trois qui décoche « Comptes » (27).
+
+### 06/11/2026 — LE FICHIER D'UNE DÉCLARATION D'E-REPORTING, À L'ÉCRAN (E6B, E6-Q8, E5B2) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(`lib/fichierEreporting.ts`, neuf ; la migration `identifiant_du_fichier_ereporting`, 20261106130000, et son retour,
+dans `supabase/preparees/` ; l'essai `identifiantDuFichierEreporting.sql`.) e6b, derrière
+`IDENTIFIANT_DU_FICHIER_EXPORTE` (baissé) : « Télécharger le fichier (XML) » dans le détail d'une période, un Blob
+local nommé par l'objet et la période, ses refus (`refusFichierFrr`) dits avant le clic. L'ORDRE D'E6-Q8 : le fichier
+se dépose AVANT que la déclaration ne s'inscrive ; son identifiant (TT-1) est tiré au clic, puis donné à la
+déclaration avec le contenu même du fichier — la base fige ce que la plateforme a reçu. Une déclaration inscrite
+retire son fichier de son contenu figé (pas une remplacée, E6-Q6). Émetteur : la plateforme (0238, WK), son matricule
+saisi (E6-Q1) ; Paris, code 5, signe gardé ; la dénomination telle quelle (E6-Q5). La migration :
+`identifiant_fichier` (UUID unique par dossier, immuable), un dixième paramètre nul par défaut, un refus neuf au rang
+20 ; elle retire la fonction à neuf paramètres (`drop function`, aucune donnée) : À COLLER. Réplique : 18 contrôles, 0
+faute, rien en base (l'écriture jouée sur la fonction du catalogue, sa seule condition de date neutralisée) ; six
+mutations mordent ; le retour rend la fonction d'hier à l'identique. e5b2 (28.5e-Q6b) : un encaissement déclaré,
+retiré APRÈS la déclaration de ses paiements, la dit « à rectifier » (`encaissement_retire_apres`), même sur un calcul
+incomplet ; sans migration. En passant : IE0000000T et IE0000000W remplacent le numéro de TVA irlandais des jeux
+d'essai.
