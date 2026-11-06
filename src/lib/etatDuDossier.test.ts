@@ -12,7 +12,7 @@ import { fichiersDuSchema } from '../test/schema'
 // que la base ; la migration préparée est celle que le module lit, et le drapeau dit ce que porte l'export.
 
 const ligne = (p: Partial<Record<string, unknown>> = {}) => ({ annee: 2026, phase: 'pieces_attendues', valide_le: null, declaration_2035: false, ...p })
-const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261106120000_phase_des_exercices.sql', import.meta.url), 'utf8')
+const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261106110000_phase_des_exercices.sql', import.meta.url), 'utf8')
 
 describe('ce que la base rend', () => {
   it('lit les quatre phases, du plus récent au plus ancien', () => {

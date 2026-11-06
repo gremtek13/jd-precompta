@@ -2,7 +2,7 @@
 -- 06/11/2026, PAS APPLIQUÉE : une lecture neuve ouverte au client se présente au cabinet avant d'être appliquée. Le
 -- récit : HISTORIQUE.md, « 06/11/2026 — L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT (C2) (PRÉPARÉE, PAS
 -- APPLIQUÉE) » ; l'essai : supabase/essais/phaseDesExercices.sql ; le retour arrière :
--- supabase/preparees/retour/20261106120100_retour_phase_des_exercices.sql.
+-- supabase/preparees/retour/20261106110100_retour_phase_des_exercices.sql.
 --
 -- UNE FONCTION DE LECTURE, RIEN D'AUTRE : ni table, ni colonne, ni policy, ni déclencheur ; aucune table n'est ouverte au
 -- client. `phase_des_exercices(dossier)` rend, par exercice, une PHASE, et pour un exercice validé le JOUR de sa validation

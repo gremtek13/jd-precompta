@@ -2,7 +2,7 @@
 // les mots, sans lecture (la lecture : lib/etatDuDossierLecture.ts ; la carte : components/CarteEtatDuDossier.tsx).
 //
 // La base rend, par exercice, une PHASE et, pour un exercice validé, le jour de sa validation et si sa 2035 y est gardée
-// (`phase_des_exercices`, supabase/preparees/20261106120000_phase_des_exercices.sql) — jamais un montant, un compte, un
+// (`phase_des_exercices`, supabase/preparees/20261106110000_phase_des_exercices.sql) — jamais un montant, un compte, un
 // nombre, un libellé ni un nom. Ce module n'en déduit rien de plus : une réponse qu'il ne sait pas lire n'est ni « rien à
 // dire » ni une liste, elle se SIGNALE ; et chaque phase se dit avec ce que la base prouve, pas davantage — « enregistrée »,
 // jamais « déposée » (la base ne sait rien du dépôt), « en cours » pour ce qui ne se prouve pas.
