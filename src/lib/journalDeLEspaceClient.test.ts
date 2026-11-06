@@ -1,0 +1,157 @@
+import { describe, expect, it } from 'vitest'
+import {
+  GENRES_DU_JOURNAL, LIMITE_DU_JOURNAL, debutDeLaFenetre, journalDeLEspaceClient, libelleDeLEvenement, phraseDuCompte,
+  type GenreDuJournal, type LectureDUneSource, type LigneDuJournal, type SourcesDuJournal,
+} from './journalDeLEspaceClient'
+import type { AccesDuDossier } from './auteursVentes'
+
+// LE JOURNAL DE L'ESPACE CLIENT (étape B9b, la carte P10). Ce que ces cas gardent : seuls les gestes d'un compte reconnu
+// parmi les accès lus EN ENTIER ; muet sur des accès ou une source lus en partie ; la fenêtre jugée au jour de Paris ; du plus
+// récent au plus ancien, plafonné, le compte dit.
+
+const AUJOURDHUI = '2026-11-06'
+const CLIENT = 'u-client'
+const MEMBRE = 'u-membre-du-cabinet'
+const ACCES: AccesDuDossier = { etat: 'lus', comptes: [CLIENT] }
+
+const ligne = (id: string, le: string, auteur: string | null = CLIENT, reference: string | null = null): LigneDuJournal =>
+  ({ id, le, auteur, reference })
+
+/** Toutes les sources lues vides, sauf celles qu'un cas donne. */
+function sources(donnees: Partial<Record<GenreDuJournal, LectureDUneSource>> = {}): SourcesDuJournal {
+  const v: LectureDUneSource = { etat: 'lue', lignes: [] }
+  // Écrites une à une, sans `as` : le compilateur exige les vingt-six.
+  const vides: SourcesDuJournal = {
+    facture_creee: v, facture_validee: v, facture_transmise: v, encaissement_enregistre: v, encaissement_retire: v,
+    encaissement_declare: v, statut_releve: v, devis_emis: v, devis_repondu: v, article_cree: v, article_modifie: v,
+    article_retire: v, contact_cree: v, contact_modifie: v, contact_retire: v, contact_efface: v, parametres_changes: v,
+    adresse_declaree: v, justificatif_propose: v, justificatif_retire: v, precision_mouvement: v, precision_piece: v,
+    piece_deposee: v, email_envoye: v, caisse_saisie: v, caisse_retiree: v,
+  }
+  return { ...vides, ...donnees }
+}
+
+const lue = (...lignes: LigneDuJournal[]): LectureDUneSource => ({ etat: 'lue', lignes })
+
+describe('la fenêtre', () => {
+  it('compte trente jours, le jour donné compris', () => {
+    expect(debutDeLaFenetre(AUJOURDHUI)).toBe('2026-10-08')
+    expect(debutDeLaFenetre('2026-03-01')).toBe('2026-01-31')
+  })
+
+  it('juge l’instant au jour de Paris : 22 h 30 UTC la veille de la fenêtre est déjà dedans', () => {
+    const j = journalDeLEspaceClient({
+      acces: ACCES, aujourdhui: AUJOURDHUI,
+      sources: sources({ piece_deposee: lue(
+        ligne('dedans', '2026-10-07T22:30:00Z'),
+        ligne('dehors', '2026-10-07T21:30:00Z'),
+        ligne('demain', '2026-11-06T23:30:00Z'),
+      ) }),
+    })
+    expect(j.etat === 'lu' && j.evenements.map((e) => e.id)).toEqual(['dedans'])
+  })
+})
+
+describe('qui a fait quoi', () => {
+  it('ne garde que les gestes du client : ni un membre du cabinet, ni un auteur nul', () => {
+    const j = journalDeLEspaceClient({
+      acces: ACCES, aujourdhui: AUJOURDHUI,
+      sources: sources({
+        facture_validee: lue(ligne('f1', '2026-11-01T10:00:00Z', CLIENT, 'F2026-0003'), ligne('f2', '2026-11-02T10:00:00Z', MEMBRE, 'F2026-0004')),
+        piece_deposee: lue(ligne('p1', '2026-11-03T10:00:00Z', null)),
+      }),
+    })
+    expect(j).toEqual({
+      etat: 'lu', depuis: '2026-10-08', total: 1,
+      evenements: [{ genre: 'facture_validee', id: 'f1', le: '2026-11-01T10:00:00Z', libelle: 'Facture F2026-0003 validée' }],
+    })
+  })
+
+  it('un instant illisible ne date rien', () => {
+    const j = journalDeLEspaceClient({
+      acces: ACCES, aujourdhui: AUJOURDHUI, sources: sources({ email_envoye: lue(ligne('e1', 'pas une date')) }),
+    })
+    expect(j.etat === 'lu' && j.total).toBe(0)
+  })
+
+  it('du plus récent au plus ancien ; à instant égal, l’ordre des genres puis l’identifiant', () => {
+    const meme = '2026-11-04T09:00:00Z'
+    const j = journalDeLEspaceClient({
+      acces: ACCES, aujourdhui: AUJOURDHUI,
+      sources: sources({
+        facture_creee: lue(ligne('f9', '2026-10-20T08:00:00Z')),
+        facture_transmise: lue(ligne('t2', meme), ligne('t1', meme)),
+        facture_validee: lue(ligne('f1', meme, CLIENT, 'F1')),
+        devis_repondu: lue(ligne('d1', '2026-11-05T08:00:00Z', CLIENT, 'refusee')),
+      }),
+    })
+    expect(j.etat === 'lu' && j.evenements.map((e) => `${e.genre}:${e.id}`)).toEqual([
+      'devis_repondu:d1', 'facture_validee:f1', 'facture_transmise:t1', 'facture_transmise:t2', 'facture_creee:f9',
+    ])
+  })
+})
+
+describe('le plafond et le compte', () => {
+  const vingtCinq = Array.from({ length: 25 }, (_, i) => ligne(`p${String(i).padStart(2, '0')}`, `2026-11-0${1 + (i % 5)}T0${i % 10}:00:00Z`))
+
+  it('montre les plus récents, et dit combien sur combien', () => {
+    const j = journalDeLEspaceClient({ acces: ACCES, aujourdhui: AUJOURDHUI, sources: sources({ piece_deposee: lue(...vingtCinq) }) })
+    if (j.etat !== 'lu') throw new Error('attendu lu')
+    expect(j.evenements).toHaveLength(20)
+    expect(j.total).toBe(25)
+    expect(phraseDuCompte(j)).toBe('Les 20 plus récents sur 25 évènements.')
+    expect(j.evenements[0].le >= j.evenements[19].le).toBe(true)
+  })
+
+  it('un plafond donné l’emporte ; sous le plafond, le compte seul ; vide, l’absence dite', () => {
+    const j = journalDeLEspaceClient({ acces: ACCES, aujourdhui: AUJOURDHUI, plafond: 3, sources: sources({ piece_deposee: lue(...vingtCinq) }) })
+    expect(j.etat === 'lu' && j.evenements.length).toBe(3)
+    const un = journalDeLEspaceClient({ acces: ACCES, aujourdhui: AUJOURDHUI, sources: sources({ email_envoye: lue(ligne('e1', '2026-11-01T10:00:00Z')) }) })
+    expect(un.etat === 'lu' && phraseDuCompte(un)).toBe('1 évènement.')
+    const vide = journalDeLEspaceClient({ acces: ACCES, aujourdhui: AUJOURDHUI, sources: sources() })
+    expect(vide.etat === 'lu' && phraseDuCompte(vide)).toBe('Aucun geste du client depuis son espace sur la période.')
+  })
+})
+
+describe('rien avant les lectures, rien sur une lecture partielle', () => {
+  it('en cours tant que les accès ou les sources ne sont pas revenus', () => {
+    expect(journalDeLEspaceClient({ acces: { etat: 'en_cours' }, aujourdhui: AUJOURDHUI, sources: sources() })).toEqual({ etat: 'en_cours' })
+    expect(journalDeLEspaceClient({ acces: ACCES, aujourdhui: AUJOURDHUI, sources: null })).toEqual({ etat: 'en_cours' })
+  })
+
+  it('muet sur des accès lus en partie, même si les sources portent des gestes', () => {
+    const j = journalDeLEspaceClient({
+      acces: { etat: 'incomplets', motif: '1 ligne(s) lue(s) sur 2 annoncée(s)' }, aujourdhui: AUJOURDHUI,
+      sources: sources({ piece_deposee: lue(ligne('p1', '2026-11-01T10:00:00Z')) }),
+    })
+    expect(j).toEqual({ etat: 'muet', motif: 'La liste des accès du dossier n’a pas été lue en entier (1 ligne(s) lue(s) sur 2 annoncée(s)).' })
+  })
+
+  it('muet sur une seule source lue en partie, qu’il nomme', () => {
+    const j = journalDeLEspaceClient({
+      acces: ACCES, aujourdhui: AUJOURDHUI,
+      sources: sources({ piece_deposee: lue(ligne('p1', '2026-11-01T10:00:00Z')), contact_efface: { etat: 'partielle', motif: 'accès refusé' } }),
+    })
+    expect(j).toEqual({ etat: 'muet', motif: 'Une lecture n’a pas abouti en entier (Client effacé : accès refusé).' })
+  })
+
+  it('l’espace du client n’a pas ce journal', () => {
+    expect(journalDeLEspaceClient({ acces: { etat: 'sans_objet' }, aujourdhui: AUJOURDHUI, sources: sources() }).etat).toBe('muet')
+  })
+})
+
+describe('les libellés', () => {
+  it('chaque genre a le sien, sans référence comme avec', () => {
+    for (const g of GENRES_DU_JOURNAL) expect(libelleDeLEvenement(g, null)).not.toBe('')
+    expect(new Set(GENRES_DU_JOURNAL.map((g) => libelleDeLEvenement(g, null))).size).toBe(GENRES_DU_JOURNAL.length)
+    expect(libelleDeLEvenement('devis_emis', 'D2026-0001')).toBe('Devis D2026-0001 émis')
+    expect(libelleDeLEvenement('devis_repondu', 'acceptee')).toBe('Devis noté accepté')
+    expect(libelleDeLEvenement('devis_repondu', null)).toBe('Réponse à un devis notée')
+    expect(libelleDeLEvenement('facture_validee', '')).toBe('Facture validée')
+  })
+
+  it('la limite dit ce qui n’y paraît pas', () => {
+    expect(LIMITE_DU_JOURNAL).toContain('brouillon')
+    expect(LIMITE_DU_JOURNAL).toContain('accès retiré')
+  })
+})
