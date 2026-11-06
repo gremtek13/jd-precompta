@@ -30,6 +30,7 @@ import DossierDetail from './DossierDetail'
 import DossiersList from './DossiersList'
 import EquipePage from './EquipePage'
 import RetourBanque from './RetourBanque'
+import SecuriteDuCompte from './SecuriteDuCompte'
 import SuperAdminPage from './SuperAdminPage'
 import AccesTab from './dossier/AccesTab'
 import AssistantTab from './dossier/AssistantTab'
@@ -234,6 +235,8 @@ const ECRANS: Ecran[] = [
     </MemoryRouter>
   ) },
   { nom: 'ClientHome', fichier: 'pages/ClientHome.tsx', rendre: () => <MemoryRouter><ClientHome /></MemoryRouter> },
+  // « Sécurité du compte » (ligne 51.5, étape C7) : les appareils lus au service d'authentification avant toute phrase sur eux.
+  { nom: 'SecuriteDuCompte', fichier: 'pages/SecuriteDuCompte.tsx', rendre: () => <MemoryRouter><SecuriteDuCompte espace="cabinet" /></MemoryRouter> },
   { nom: 'ClientUpload', fichier: 'pages/ClientUpload.tsx', rendre: () => <MemoryRouter><ClientUpload /></MemoryRouter> },
   { nom: 'ClientInformations', fichier: 'pages/ClientInformations.tsx', rendre: () => <MemoryRouter><ClientInformations /></MemoryRouter> },
   { nom: 'ClientSimulation', fichier: 'pages/ClientSimulation.tsx', rendre: () => <MemoryRouter><ClientSimulation /></MemoryRouter> },
@@ -570,6 +573,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/ValidationExerciceCard.tsx': 'reçoit les préalables de la Clôture (montée ici) ; ne valide que sur un clic',
   'pages/Login.tsx': 'se connecte, ou demande un lien « Mot de passe oublié », à la soumission du formulaire ; ne lit rien avant',
   'pages/NouveauMotDePasse.tsx': 'ne lit rien ; change le mot de passe à la soumission du formulaire',
+  'pages/CodeDeConnexion.tsx': 'reçoit les appareils que porte la session ; ne vérifie le code qu’à la soumission du formulaire',
   'pages/RestaurationCard.tsx': 'lit le fichier choisi et écrit sur un clic',
   'pages/dossier/SauvegardeCard.tsx': 'lit le dossier entier sur le clic « Télécharger la sauvegarde »',
   'pages/dossier/AjouterDocumentsModal.tsx': 'lit et dépose sur un dépôt de fichiers',

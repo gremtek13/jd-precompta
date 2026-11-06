@@ -2734,8 +2734,31 @@ function caisseDuClientDuBanc(args?: Ligne) {
   return chaine
 }
 
+// Le second facteur (« Sécurité du compte », ligne 51.5, étape C7) : un téléphone confirmé et une tablette dont l'inscription
+// est restée inachevée ; « Ajouter l'appareil » rend une clé et un code QR fictifs, et tout code se refuse. La session du banc
+// n'en porte aucun : la porte de l'application reste ouverte.
+const FACTEURS_DU_BANC = [
+  { id: 'f-banc-1', friendly_name: 'Téléphone de Jérémy', factor_type: 'totp', status: 'verified', created_at: '2026-11-02T08:15:00Z', updated_at: '2026-11-02T08:16:00Z' },
+  { id: 'f-banc-2', friendly_name: 'Tablette du cabinet', factor_type: 'totp', status: 'unverified', created_at: '2026-11-05T17:40:00Z', updated_at: '2026-11-05T17:40:00Z' },
+]
+const QR_DU_BANC = "data:image/svg+xml;utf-8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'><path d='M0 0h7v7H0zM14 0h7v7h-7zM0 14h7v7H0zM9 9h3v3H9zM15 15h2v2h-2zM9 1h2v5H9zM1 9h5v2H1z'/></svg>"
+
 export const supabase = {
   auth: {
+    refreshSession: () => Promise.resolve({ data: { session, user: session.user }, error: null }),
+    mfa: {
+      listFactors: () => Promise.resolve({
+        data: { all: FACTEURS_DU_BANC, totp: FACTEURS_DU_BANC.filter((f) => f.status === 'verified'), phone: [], webauthn: [] }, error: null,
+      }),
+      getAuthenticatorAssuranceLevel: () => Promise.resolve({ data: { currentLevel: 'aal2', nextLevel: 'aal2', currentAuthenticationMethods: [] }, error: null }),
+      enroll: (p: { friendlyName?: string }) => Promise.resolve({
+        data: { id: 'f-banc-neuf', type: 'totp', friendly_name: p.friendlyName, totp: { qr_code: QR_DU_BANC, secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', uri: '' } },
+        error: null,
+      }),
+      challenge: () => Promise.resolve({ data: { id: 'defi-banc', type: 'totp', expires_at: 0 }, error: null }),
+      verify: () => Promise.resolve({ data: null, error: { name: 'AuthApiError', code: 'mfa_verification_failed', status: 422, message: 'Invalid TOTP code entered' } }),
+      unenroll: () => Promise.resolve({ data: { id: 'f-banc-2' }, error: null }),
+    },
     getSession: () => Promise.resolve({ data: { session }, error: null }),
     getUser: () => Promise.resolve({ data: { user: session.user }, error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),

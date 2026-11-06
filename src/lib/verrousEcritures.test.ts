@@ -235,7 +235,13 @@ const METHODES_DE_LECTURE = new Set([
 ])
 const ECRITURES_TABLE = new Set(['insert', 'upsert', 'update', 'delete'])
 const ECRITURES_STOCKAGE = new Set(['upload', 'update', 'move', 'copy', 'remove'])
-const SESSIONS = new Set(['signInWithPassword', 'signOut', 'signUp', 'updateUser', 'resetPasswordForEmail', 'setSession'])
+const SESSIONS = new Set(['signInWithPassword', 'signOut', 'signUp', 'updateUser', 'resetPasswordForEmail', 'setSession', 'refreshSession'])
+// Le second facteur (`auth.mfa`, ligne 51.5, étape C7) : `listFactors` relit l'utilisateur et `getAuthenticatorAssuranceLevel`
+// la session gardée — deux lectures ; inscrire, défier, vérifier et retirer un facteur écrivent chez le service
+// d'authentification (un facteur créé, une session élevée, les autres sessions fermées). Toute autre méthode de `mfa` reste
+// une forme inconnue, donc une faute.
+const LECTURES_MFA = new Set(['listFactors', 'getAuthenticatorAssuranceLevel'])
+const ECRITURES_MFA = new Set(['enroll', 'challenge', 'verify', 'challengeAndVerify', 'unenroll'])
 
 // ── L'analyse ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -457,6 +463,10 @@ function porteDe(appel: ts.CallExpression, clients: Set<ts.Identifier>, sf: ts.S
   }
   if (SESSIONS.has(m) && ts.isPropertyAccessExpression(recepteur) && recepteur.name.text === 'auth') {
     return { cle: `auth:${m}`, famille: 'auth', operation: m, pos }
+  }
+  if (ts.isPropertyAccessExpression(recepteur) && recepteur.name.text === 'mfa') {
+    if (ECRITURES_MFA.has(m)) return { cle: `auth:mfa.${m}`, famille: 'auth', operation: m, pos }
+    if (LECTURES_MFA.has(m)) return null
   }
   if (METHODES_DE_LECTURE.has(m) || m === 'storage' || m === 'functions' || m === 'auth') return null
   return `méthode « ${m} » du client sans nature connue (lecture ou écriture ?)`
@@ -906,6 +916,29 @@ describe('le garde des verrous d’écriture — défauts plantés', () => {
       }`)], 'creer')
     expect(u).toMatchObject({ etat: 'nue', natures: ['création'], entrees: ['geste onSubmit (Ecran)'] })
     expect(categorieDe(u)).toBeNull()
+  })
+
+  it('juge le second facteur : vérifier sans verrou est une faute, lire ne l’est pas, une méthode inconnue est une forme inconnue', () => {
+    const verifier = unite([ecran(`
+      export default function Ecran() {
+        async function verifier() { await supabase.auth.mfa.verify({ factorId: 'f', challengeId: 'c', code: '123456' }) }
+        return <button onClick={verifier}>Vérifier</button>
+      }`)], 'verifier')
+    expect(verifier).toMatchObject({ etat: 'nue', entrees: ['geste onClick (Ecran)'] })
+    expect(verifier.portes).toEqual(['auth:mfa.verify'])
+    const lire = analyser([CLIENT, ecran(`
+      export default function Ecran() {
+        async function lire() { await supabase.auth.mfa.listFactors(); await supabase.auth.mfa.getAuthenticatorAssuranceLevel() }
+        return <button onClick={lire}>Lire</button>
+      }`)])
+    expect(lire.unites.filter((u) => u.cle.endsWith('lire'))).toEqual([])
+    expect(lire.formes).toEqual([])
+    const inconnue = analyser([CLIENT, ecran(`
+      export default function Ecran() {
+        async function f() { await supabase.auth.mfa.webauthn.register({}) }
+        return <button onClick={f} />
+      }`)])
+    expect(inconnue.formes.join('\n')).toContain('méthode « register » du client sans nature connue')
   })
 
   it('reconnaît le verrou posé avant le premier await', () => {

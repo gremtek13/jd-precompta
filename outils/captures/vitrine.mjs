@@ -402,6 +402,11 @@ const VUES = [
   { nom: 'pc-client-ventes-sombre', chemin: '#/mes-ventes', l: 1280, h: 800, theme: 'dark', reduite: false, client: true, ventes: 'sans-banque' },
   { nom: 'mobile-client-ventes', chemin: '#/mes-ventes', l: 390, h: 844, theme: 'light', reduite: false, client: true, ventes: 'sans-banque' },
   { nom: 'pc-client-ventes-encaissements', chemin: '#/mes-ventes', l: 1440, h: 900, theme: 'light', reduite: false, client: true, ventes: 'sans-banque', clicLigne: ['F2026-0007', 'Encaissements'] },
+  // « Sécurité du compte » (ligne 51.5, étape C7) : l'ajout d'un appareil ouvert — le code QR sur son fond blanc, la clé par
+  // groupes de quatre —, en clair, en sombre et sur téléphone.
+  { nom: 'pc-securite-clair', chemin: '#/securite', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Ajouter l’appareil' },
+  { nom: 'pc-securite-sombre', chemin: '#/securite', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Ajouter l’appareil' },
+  { nom: 'mobile-securite-clair', chemin: '#/securite', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Ajouter l’appareil' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

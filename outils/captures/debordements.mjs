@@ -1460,6 +1460,21 @@ const VISITES = [
       await reserve.first().scrollIntoViewIfNeeded()
     },
   },
+  // « SÉCURITÉ DU COMPTE » (ligne 51.5, étape C7), depuis le menu du compte : les appareils (un confirmé, un inachevé), la
+  // confirmation d'un retrait qui nomme l'appareil, puis l'ajout ouvert — le code QR, la clé par groupes, le code refusé.
+  { chemin: '#/securite', nom: 'securite/appareils', sansAssistant: true, apres: (page) => page.getByText('Téléphone de Jérémy').waitFor() },
+  {
+    chemin: '#/securite', nom: 'securite/retrait', sansAssistant: true,
+    apres: async (page) => { await page.getByRole('button', { name: 'Retirer', exact: true }).first().click(); await page.getByText(/^Retirer « Téléphone de Jérémy » \?/).waitFor() },
+  },
+  {
+    chemin: '#/securite', nom: 'securite/ajout', sansAssistant: true,
+    apres: async (page) => {
+      await page.getByRole('button', { name: /Ajouter l’appareil/ }).click()
+      await page.locator('img.qr-second-facteur').waitFor()
+      await page.getByLabel('Code à six chiffres').fill('12 34')
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -1530,6 +1545,14 @@ const VISITES_CLIENT = [
   // « Mon échéancier » (ligne 51.5, étape C1), ouvert à tout accès : les dates, et les montants des cotisations sous « Banque »
   // (la passe `client-banque`). La barre du bas y gagne son entrée.
   { chemin: '#/mon-echeancier', nom: 'client/mon-echeancier', nav: true, apres: (page) => page.locator('.echeance').first().waitFor({ timeout: 10000 }) },
+  // « Sécurité du compte » (ligne 51.5, étape C7) : la même page qu'au cabinet, tutoyée, l'ajout ouvert.
+  {
+    chemin: '#/securite', nom: 'client/securite', nav: true,
+    apres: async (page) => {
+      await page.getByRole('button', { name: /Ajouter l’appareil/ }).click()
+      await page.locator('img.qr-second-facteur').waitFor()
+    },
+  },
   // L'étape P4b : l'accueil et ses tuiles « À encaisser » et « À déclarer », puis les fenêtres que « Tes plateformes »
   // ouvre en mode client — la plateforme agréée de l'atelier (reliée), sa modification, et Super PDP (configuré).
   // L'accueil sans `nav` : sur téléphone, il cache la barre du bas (ses tuiles en tiennent lieu, `app-nav-accueil-client`

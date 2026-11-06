@@ -515,3 +515,14 @@ describe('chaque demande de lien de la source revient à l’adresse de retour d
     ])
   })
 })
+
+// LE SECOND FACTEUR (ligne 51.5, étape C7) : le service refuse le changement de mot de passe d'une session qui n'a pas donné
+// le code d'un compte qui en a un. La porte le demande avant l'écran ; s'il manque quand même, le refus le dit — et non le
+// 401 « session expirée » qui le suivrait.
+describe('le changement de mot de passe d’un compte à second facteur', () => {
+  it('se dit par son code, avant le 401 qui dirait la session expirée', () => {
+    expect(messageErreurDuMotDePasse(new AuthApiError('AAL2 session is required', 401, 'insufficient_aal'))).toBe(
+      "Ce compte a un second facteur : son code doit être donné avant de changer le mot de passe. Déconnecte-toi, puis redemande un lien depuis l'écran de connexion.")
+    expect(messageErreurDuMotDePasse(new AuthApiError('expiré', 401, undefined))).toMatch(/^La session ouverte par le lien a expiré/)
+  })
+})

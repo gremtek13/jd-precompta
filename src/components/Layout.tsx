@@ -13,7 +13,7 @@ import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
 import {
   IconAccueil, IconApparence, IconBanque, IconCaisse, IconComptesMaster, IconDossiers, IconEcheancier, IconEquipe, IconEstimation, IconFactures,
-  IconInformations, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
+  IconInformations, IconCadenas, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun,
 } from './icons'
 import Avatar from './widgets/Avatar'
@@ -115,6 +115,11 @@ function Coque() {
             Apparence
           </NavLink>
         )}
+        {/* Le second facteur du compte (ligne 51.5, étape C7) : au cabinet comme au client, la même page. */}
+        <NavLink to="/securite" className={({ isActive }) => `nav-menu-item${isActive ? ' active' : ''}`} onClick={fermer}>
+          <IconCadenas width={16} height={16} />
+          Sécurité du compte
+        </NavLink>
         <BoutonInstallation nomApplication={branding?.logoUrl ? branding.nom : 'JD Precompta'} fermerMenu={fermer} />
         <button type="button" className="nav-menu-item" onClick={() => { toggleTheme(); fermer() }}>
           {theme === 'dark' ? <IconSun width={16} height={16} /> : <IconMoon width={16} height={16} />}
