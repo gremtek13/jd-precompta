@@ -87,7 +87,8 @@ describe('le plan prévu, trace comprise', () => {
 
   it('juste après les accès : la restauration réinsère l’accès (rien de tracé), puis sa trace', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
-    expect(ORDRE_RESTAURATION_PREVU[rang(TABLE) - 1]).toBe('memberships')
+    // Depuis l'étape C4a, les situations publiées s'intercalent : la trace reste après les accès, à un rang près.
+    expect(ORDRE_RESTAURATION_PREVU.slice(rang(TABLE) - 2, rang(TABLE))).toEqual(['memberships', 'situations_publiees'])
     expect(rang(TABLE)).toBeGreaterThan(rang('dossiers'))
   })
 

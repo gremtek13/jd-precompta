@@ -995,6 +995,11 @@ export interface Membership {
   // depuis le premier écran qui le lit (l'onglet Accès, C11 ; lib/droitsAcces.ts) ; une ligne d'avant la migration ne le
   // porte pas, et `droitsDeLaLigne` n'en accorde alors aucun.
   droit_caisse: boolean
+  // LE DROIT « COMPTES » (espace client, étape C4a ; migration `situations_publiees`, PRÉPARÉE, pas appliquée — voir
+  // lib/situationsPubliees.ts) : lire les situations que le cabinet publie ; posé par `changer_droits_acces` à cinq
+  // paramètres seule, faux par défaut. FACULTATIF tant que la colonne n'est pas en base : une ligne lue aujourd'hui ne le
+  // porte pas ; il deviendra obligatoire avec le premier écran qui le lit (C4b).
+  droit_comptes?: boolean
 }
 
 export type RoleCabinetAdmin = 'comptable_en_chef' | 'comptable'

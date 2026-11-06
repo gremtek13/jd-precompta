@@ -668,6 +668,12 @@
 -- autre policy, aucune branche client — et son déclencheur sur `memberships`. Le bloc TD (TD1 à TD3, M-TD1, M-TD2) ; EN
 -- ATTENTE sans la migration ; la boucle des invariants y voit la table de plus. Ce qu'il rend : HISTORIQUE.md, « LA TRACE
 -- DES DROITS D'UN ACCÈS, EN BASE (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE) ».
+--
+-- 06/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (C4a : migration `situations_publiees`, PRÉPARÉE, pas appliquée), qui
+-- crée `situations_publiees` — la lecture du cabinet du dossier, celle d'un accès « Comptes » (la situation EN COURS de son
+-- dossier seule), l'insertion de restauration du super-administrateur — et la case `memberships.droit_comptes`. Le bloc SP
+-- (SP1 à SP3, M-SP1, M-SP2) ; EN ATTENTE sans la migration ; la boucle des invariants y voit la table de plus. Ce qu'il
+-- rend : HISTORIQUE.md, « LES SITUATIONS PUBLIÉES, EN BASE (C4A) (PRÉPARÉE, PAS APPLIQUÉE) ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -4254,6 +4260,151 @@ begin
     'ok', n = 2 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'trace_des_droits') = 2
       and (select c.relrowsecurity from pg_class c where c.oid = 'public.trace_des_droits'::regclass));
   verdicts := verdicts || jsonb_build_object('controle', 'TD. le jeu d''essai de la trace s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ SP. Les situations publiées (espace client, étape C4a ; migration `situations_publiees`) ══════════════════════════
+-- Une table que le client LIT sous sa case « Comptes » — la situation en cours de son dossier, rien d'autre —, que le
+-- cabinet du dossier lit entière, et que personne n'écrit en direct : ses deux fonctions, ou la restauration.
+--   SP1. Le chef coche « Comptes » sur l'accès du client et publie une situation de son dossier : le client la lit (le
+--        contrôle POSITIF) ; la case décochée, il n'en lit rien ; l'anonyme non plus.
+--   SP2. Le client ne l'écrit pas en direct (42501, la garde, sous ses mots).
+--   SP3. Le catalogue : la RLS active, trois policies à authenticated seul.
+-- Deux mutations, qui doivent mordre : M-SP1 (la lecture du client passée à « membre » : la case décochée, il lit
+-- encore), M-SP2 (la lecture du client fermée : la case cochée, il ne lit plus). Avant la migration, une ligne dit que le
+-- bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  acces uuid; contenu jsonb; avec_case bigint; sans_case bigint; de_l_anon text; ecrite text; elargie bigint; fermee bigint;
+  n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.situations_publiees') is null then
+    insert into rls_verdict values ('SP. les situations publiées : EN ATTENTE de la migration situations_publiees',
+      'situations_publiees', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef coche « Comptes » et publie une situation au 30 juin 2025, au statut de l'exercice ──
+    perform set_config('request.jwt.claims', '', true);
+    select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
+    contenu := jsonb_build_object('version', 1,
+      'statut', case when exists (select 1 from exercices_valides e where e.dossier_id = dossier_du_client and e.annee = 2025)
+                     then 'validee' else 'provisoire' end,
+      'periode', jsonb_build_object('debut', '2025-01-01', 'fin', '2025-06-30'),
+      'postes', jsonb_build_array(jsonb_build_object('poste', 'Recettes', 'montant', 100)),
+      'recettes', 100, 'depenses', 0, 'resultat', 100, 'tva', jsonb_build_object('assujetti', false), 'n_moins_1', null);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform changer_droits_acces(acces, null, null, null, true);
+    perform publier_situation(dossier_du_client, '2025-06-30', contenu,
+      (select s.id from situations_publiees s where s.dossier_id = dossier_du_client and s.arretee_au = '2025-06-30'
+          and situation_publiee_en_cours(s.id)));
+    reset role;
+    construit := true;
+
+    -- SP1 : le client avec la case, sans elle ; l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into avec_case from situations_publiees where dossier_id = dossier_du_client;
+    reset role;
+    update memberships set droit_comptes = false where id = acces;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into sans_case from situations_publiees where dossier_id = dossier_du_client;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from situations_publiees;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'SP1. le client « Comptes » lit la situation en cours de son dossier (le contrôle positif) ; sans la case, rien ; l''anonyme rien',
+      'cible', 'situations_publiees',
+      'observe', 'avec la case : ' || avec_case || ' | sans : ' || sans_case || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', avec_case = 1 and sans_case = 0 and de_l_anon = '0');
+
+    -- SP2 : le client n'écrit pas en direct.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into situations_publiees (dossier_id, annee, geste, arretee_au, statut, contenu, auteur)
+        values (dossier_du_client, 2025, 'publication', '2025-06-29', 'provisoire', contenu, client);
+      ecrite := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if ecrite is null then ecrite := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'SP2. le client n''écrit pas de situation en direct (42501, la garde)',
+      'cible', 'situations_publiees', 'observe', coalesce(ecrite, '?'),
+      'ok', ecrite = '42501 Une situation ne s''écrit que par sa publication ou son retrait.');
+
+    -- M-SP1 : la lecture du client passée à « membre » — la case décochée, il lit encore.
+    begin
+      alter policy situations_publiees_lecture_comptes on public.situations_publiees
+        using (client_du_dossier(dossier_id, 'membre') and geste = 'publication' and situation_publiee_en_cours(id));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from situations_publiees where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-SP1 — la lecture des situations passée à « membre »',
+      'attendu', 'le client sans la case lit la situation', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-SP2 : la lecture du client fermée — la case cochée, il ne lit plus.
+    begin
+      update memberships set droit_comptes = true where id = acces;
+      alter policy situations_publiees_lecture_comptes on public.situations_publiees using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from situations_publiees where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-SP2 — la lecture des situations du client fermée',
+      'attendu', 'le client « Comptes » ne lit plus la situation', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- SP3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'situations_publiees' and p.roles = array['authenticated']::name[]
+     and ((p.policyname = 'situations_publiees_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'situations_publiees_lecture_comptes' and p.cmd = 'SELECT' and p.with_check is null
+           and p.qual = '(client_du_dossier(dossier_id, ''comptes''::text) AND (geste = ''publication''::text) AND situation_publiee_en_cours(id))')
+       or (p.policyname = 'situations_publiees_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'SP3. la RLS active ; trois policies à authenticated seul : la lecture du cabinet, celle d''un accès « Comptes », l''insertion du super-administrateur (lecture du catalogue)',
+    'cible', 'situations_publiees',
+    'observe', n || ' sur 3, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'situations_publiees') || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.situations_publiees'::regclass),
+    'ok', n = 3 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'situations_publiees') = 3
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.situations_publiees'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'SP. le jeu d''essai des situations s''est construit', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

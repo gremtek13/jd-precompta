@@ -8,6 +8,7 @@ import { DEVIS_EXPORTES } from './devis'
 import { JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
+import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
@@ -20,6 +21,7 @@ import {
   TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES,
   TABLES_DE_LA_CAISSE,
   TABLES_DE_LA_TRACE_DES_DROITS,
+  TABLES_DES_SITUATIONS_PUBLIEES,
   TABLES_DES_ADRESSES_RECEPTION,
   TABLES_DES_ARTICLES,
   TABLES_DES_CONTACTS,
@@ -354,13 +356,39 @@ function blocDeLaTrace(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table de la trace existe : la sienne après sa table d'ancrage. */
 const avecLaTrace = avecLesArticles
 
+// LES SITUATIONS PUBLIÉES (espace client, étape C4a) : un neuvième bloc à part les met au plan quand leur table existe,
+// juste après la table qu'il nomme (`memberships` : joué après la trace, il la précède), avec leur chemin et leur vague
+// (`remplace_id`) — le geste de la caisse. Joué en dernier : sa vague vient après celle de la caisse, comme dans la liste du code.
+const MARQUE_DES_SITUATIONS = '-- ══ Les situations publiées (espace client, étape C4a) ══'
+
+function blocDesSituations(texte: string): BlocDeLaCaisse {
+  const debut = texte.indexOf(MARQUE_DES_SITUATIONS)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const vagues = /insert into essai_restauration\._vagues \(table_nom, colonne\) values\s*([^;]*);/.exec(corps)?.[1] ?? ''
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    vagues: [...vagues.matchAll(/\('(\w+)','(\w+)'\)/g)].map((m) => ({ table: m[1], colonne: m[2] })),
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.situations_publiees') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des situations existe : la sienne après sa table d'ancrage, et sa vague. */
+const avecLesSituations = avecLaCaisse
+
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
 const avecLesBlocs = (texte: string): PlanDeLEssai =>
-  avecLesDevis(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
+  avecLesSituations(avecLesDevis(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
-  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte))
+  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -432,7 +460,9 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLeJournalDuJour = JUMELLE_INVERSEE_EXPORTEE ? avecLeJournal(avecLesParametresDuJour, journal) : avecLesParametresDuJour
   const avecLaCaisseDuJour = CAISSE_EXPORTEE ? avecLaCaisse(avecLeJournalDuJour, caisse) : avecLeJournalDuJour
   const avecLaTraceDuJour = TRACE_DES_DROITS_PREVUE ? avecLaTrace(avecLaCaisseDuJour, trace) : avecLaCaisseDuJour
-  const courant = DEVIS_EXPORTES ? avecLesDevis(avecLaTraceDuJour, devis) : avecLaTraceDuJour
+  const situations = blocDesSituations(texteDeLEssai)
+  const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLaTraceDuJour, devis) : avecLaTraceDuJour
+  const courant = SITUATIONS_PUBLIEES_EXPORTEES ? avecLesSituations(avecLesDevisDuJour, situations) : avecLesDevisDuJour
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
@@ -526,7 +556,9 @@ describe('l’essai de restauration rejoue le plan du code', () => {
 
   it('le bloc de la trace des droits a été lu : sa table, son ancre, son chemin, les rangs qui suivent reculés', () => {
     expect(trace.tables).toEqual([...TABLES_DE_LA_TRACE_DES_DROITS])
-    expect(trace.ancre).toBe(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(TABLES_DE_LA_TRACE_DES_DROITS[0]) - 1])
+    // Les situations publiées (étape C4a), jouées après elle sur la même ancre, s'intercalent : l'ancre se lit sans elles.
+    const sansLesSituations = ORDRE_RESTAURATION_PREVU.filter((t) => !TABLES_DES_SITUATIONS_PUBLIEES.includes(t))
+    expect(trace.ancre).toBe(sansLesSituations[sansLesSituations.indexOf(TABLES_DE_LA_TRACE_DES_DROITS[0]) - 1])
     expect(trace.chemins).toEqual({ trace_des_droits: { acces: 'direct', parent: null, colonne: null } })
     expect(trace.recule).toBe(true)
     expect(trace.conditionne).toBe(true)
@@ -559,7 +591,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     const horsDesBlocs = (t: string) => !TABLES_DES_DEVIS.includes(t) && !TABLES_DES_ARTICLES.includes(t)
       && !TABLES_DES_ADRESSES_RECEPTION.includes(t) && !TABLES_DES_CONTACTS.includes(t)
       && !TABLES_DES_PARAMETRES_FACTURATION.includes(t) && !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(t)
-      && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t)
+      && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t) && !TABLES_DES_SITUATIONS_PUBLIEES.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

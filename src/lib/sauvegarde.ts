@@ -18,6 +18,7 @@ import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
+import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -144,6 +145,20 @@ export function auPlanDeLaTraceDesDroits(table: string, tracePrevue: boolean): b
   return tracePrevue || !TABLES_DE_LA_TRACE_DES_DROITS.includes(table)
 }
 
+// LES SITUATIONS PUBLIÉES (espace client, étape C4a ; migration `situations_publiees`, PRÉPARÉE, pas appliquée) : ce que le
+// cabinet a publié au client « Comptes », publications et retraits. Sous le drapeau de la migration
+// (`SITUATIONS_PUBLIEES_EXPORTEES`, src/lib/situationsPubliees.ts), baissé : la production n'a pas la table, et la lire ferait
+// échouer toute sauvegarde. Sa relation au dossier (cascade) et à elle-même (`remplace_id`, une chaîne : par vagues), son
+// rang (après les accès), son chemin ; sa clé est la commune, `id`. La restauration la réinsère par la porte que sa garde et
+// sa policy ouvrent au super-administrateur, l'historique tel qu'il a été publié. sauvegardeSituationsPubliees.test.ts
+// éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DES_SITUATIONS_PUBLIEES: readonly string[] = ['situations_publiees']
+
+/** Une table au plan, côté situations publiées : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
+export function auPlanDesSituationsPubliees(table: string, exportees: boolean): boolean {
+  return exportees || !TABLES_DES_SITUATIONS_PUBLIEES.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -154,6 +169,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE)
     && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
     && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
+    && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -304,6 +320,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'lignes_bancaires', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'memberships', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'trace_des_droits', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'situations_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'situations_publiees', parent: 'situations_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'mouvements_cca', parent: 'comptes_courants_associes', colonne: 'compte_id', aLaSuppression: 'cascade' },
   { enfant: 'natures_immobilisation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'notes_internes', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'cascade' },
@@ -611,6 +629,9 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'factures_emises',
   'informations_dossier',
   'memberships',
+  // Les situations publiées (espace client, étape C4a) : le dossier et elles-mêmes (par vagues), juste après les accès ;
+  // la trace des droits les suit, toujours après les accès.
+  'situations_publiees',
   'trace_des_droits',
   'natures_immobilisation',
   'packs',
@@ -749,6 +770,9 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES: readonly { table: strin
   // La caisse d'un dossier (ligne 26.6, étape C2) : une opération en remplace une autre de son dossier (`remplace_id`,
   // `remplacer_operation_caisse`) ; jamais modifiée, elle ne part pas à NULL, et sa garde lit l'opération remplacée.
   { table: 'operations_caisse', colonne: 'remplace_id' },
+  // Les situations publiées (espace client, étape C4a) : une publication en remplace une autre, un retrait en retire une
+  // (`remplace_id`) ; jamais modifiées, elles ne partent pas à NULL, et leur garde lit la ligne citée.
+  { table: 'situations_publiees', colonne: 'remplace_id' },
 ]
 
 // Les vagues telles qu'elles s'appliquent AUJOURD'HUI : sans celle des adresses de réception, ni celle des paramètres de
@@ -1127,6 +1151,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   lignes_bancaires: { acces: 'direct' },
   memberships: { acces: 'direct' },
   trace_des_droits: { acces: 'direct' },
+  situations_publiees: { acces: 'direct' },
   notes_internes: { acces: 'direct' },
   packs: { acces: 'direct' },
   piece_commentaires: { acces: 'direct' },
