@@ -490,6 +490,35 @@ export const EXEMPLES: Exemple[] = [
     ttc: 120,
     ventilation: [['E', 0, 120, 0, 'VATEX-FR-FRANCHISE']],
   },
+  {
+    // Une facture figée sous le prélèvement (59) avec un RIB figé : l'IBAN part comme compte du BÉNÉFICIAIRE (BT-84,
+    // PayeePartyCreditorFinancialAccount), jamais comme compte débité (BT-91, que l'application ne connaît pas). Aucune
+    // règle des artefacts 1.3.16 ne lie BT-84 au seul virement (BR-50, BR-61) : le validateur officiel en juge.
+    nom: 'figee-prelevement',
+    donnees: donneesFigees({
+      lignes: [ligne({ designation: 'Abonnement de tenue — octobre 2026', quantite: 1, prix_unitaire_ht: 150, unite: 'MON', reference: 'ABO-M' })],
+      facture: {
+        numero: 'F2026-0033',
+        statut_tva: 'redevable',
+        article_exoneration: null,
+        numero_tva_attribue: false,
+        numero_tva_imprime: TVA_VENDEUR,
+        moyen_prefere: 'prelevement',
+        escompte: null,
+        penalites: null,
+        iban_imprime: IBAN_FICTIF,
+        bic_imprime: BIC_FICTIF,
+        titulaire_imprime: null,
+      },
+    }),
+    numero: 'F2026-0033',
+    nature: 'facture',
+    acheteur: SIREN_CLIENT,
+    ht: 150,
+    tva: 30,
+    ttc: 180,
+    ventilation: [['S', 20, 150, 30, null]],
+  },
 ]
 
 // Chaque faute, seule, et le refus qu'elle doit rendre, et lui seul (voir factureCii.test.ts).
