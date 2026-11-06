@@ -12,6 +12,7 @@ import type { ModeleComptable } from './engagement'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import type { PaiementDePiece } from './rattachement'
 import type { OperationCaisse, Piece } from './types'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À L'ÉCRAN DU CABINET (ligne 26.6, étape C9b ; lib/paiementParLaCaisseEcran.ts). Ce module
 // ne recopie aucune règle : ces cas gardent qu'il ASSEMBLE bien — la caisse de la fiche selon le drapeau et la lecture, les paiements
@@ -27,7 +28,7 @@ vi.mock('./paiementParLaCaisse', async (original) => {
 afterEach(() => { drapeau.leve = null })
 
 const D = 'd1'
-const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const CAISSE = PLAN_PAR_DEFAUT.caisse
 const CTX: ContexteDeLaCaisse = { modele: MODELE, assujettiTva: false, aujourdhui: '2026-10-29', anneesValidees: [] }
 

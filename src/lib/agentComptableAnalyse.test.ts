@@ -19,6 +19,7 @@ import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, P
 import { dateAParis } from './format'
 import { estFigee, frontiereDeValidation } from './validationExercice'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // LE DRAPEAU DE LA GÉNÉRATION RÉPARTIE PAR RÈGLEMENT (lot FEC22c3), joué par un accesseur sur lib/champsBncExportes.ts : sans
 // demande (`undefined`), l'état réel — chaque cas d'avant compare l'application telle qu'elle est à la copie telle qu'elle
@@ -187,8 +188,8 @@ const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon =>
     libelle: 'FOURNISSEUR', sens: 'debit', montant: 100, statut: 'proposee', ligne_bancaire_id: null, ...o,
   }) as EcritureBrouillon
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 // Les frontières de validation sous lesquelles `memeResultat` compare les deux copies : aucune ; la veille de la date
 // de pièce de la batterie, et ce jour même ; celles qui coupent ses paiements (20 mars, 2 et 15 avril, 2 mai) ; la fin
@@ -764,7 +765,7 @@ describe('agent-comptable / analyserEcritures en engagement (copie déployée)',
     const ndf = piece({ id: 'p1', type_piece: 'note_frais' })
     const au455 = brouillonEngagement(ndf, [])
     expect(memeResultat(au455, [ndf], [], deployee, true, [], ENGAGEMENT).piecesDesynchronisees).toEqual([])
-    const autreCompte: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+    const autreCompte: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
     expect(memeResultat(au455, [ndf], [], deployee, true, [], autreCompte).piecesDesynchronisees).toEqual(['p1'])
   })
 
@@ -1069,7 +1070,7 @@ function batterieDuGenerateur(copie: typeof deployee): string[][] {
   ]
   const cibles = [cible(COMPTE_ACHATS), bien('218300'), cible('108000'), cible('706000')]
   const modeles: ModeleComptable[] = [
-    TRESORERIE, ENGAGEMENT, { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT },
+    TRESORERIE, ENGAGEMENT, { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
   ]
   const sorties: string[][] = []
   for (const p of pieces) {

@@ -12,7 +12,8 @@ import type { Emprunt } from '../../lib/emprunts'
 import { REFUS_PAIEMENT_TVA_CLASSE } from '../../lib/liquidationTva'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { NON_VALIDEE } from '../../test/ecritures'
-import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from '../../lib/planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
 // `validerEtRapprocherLot` juste au-dessus dans le fichier : il ne se désactivait que via
@@ -553,8 +554,8 @@ function reinitialiser() {
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
 // `usePanneauDroit` lève (voir lib/panneauDroit.ts) — un bouton qui n'ouvrirait rien ne doit pas
 // passer pour un bouton qui marche.
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 // `valides` : les exercices validés que la page du dossier fournit à ses onglets (DossierDetail).
 function rendre(modele: ModeleComptable = TRESORERIE, assujettiTva = false, valides: readonly number[] = []) {
@@ -5894,7 +5895,7 @@ describe('BanqueTab — le retrait d’une règle « toujours ignorer »', () =>
 // LE PLAN DU DOSSIER (ligne 43, étape PC3) : la fiche d'un mouvement compose ses écritures aux comptes DU PLAN — ceux que
 // les fonctions de la base relisent au même plan depuis l'étape PC2 — et nomme ces comptes-là.
 describe('BanqueTab — sous le plan du dossier', () => {
-  const DECALE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE }
+  const DECALE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_DECALES }
   const EMPRUNT: Emprunt = {
     id: 'emp-1', dossier_id: 'dossier-de-test', nom: 'Prêt matériel', organisme_preteur: 'Banque du Midi',
     capital_initial: 12000, taux_annuel: 3.6, date_debut: '2025-01-05', duree_mois: 24, created_at: '2025-01-05T10:00:00Z',

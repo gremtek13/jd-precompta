@@ -284,10 +284,11 @@ vi.mock('./dossier/InformationsTab', async () => {
 // doublés pour lire le statut qu'ils RECOIVENT, c'est-à-dire le câblage de la page.
 // Trois d'entre eux reçoivent aussi le modèle comptable (lib/engagement.ts) : le double le montre.
 const doubleTva = vi.hoisted(() => (onglet: string) => ({
-  default: ({ assujettiTva, modeComptable }: { assujettiTva: boolean; modeComptable?: string }) => (
+  // L'onglet reçoit le mode seul, ou le modèle entier (Statistiques, depuis la quatrième tranche de PC3).
+  default: ({ assujettiTva, modeComptable, modele }: { assujettiTva: boolean; modeComptable?: string; modele?: { mode: string } }) => (
     <>
       <p>{onglet} — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
-      {modeComptable && <p>{onglet} — modèle {modeComptable}</p>}
+      {(modeComptable ?? modele?.mode) && <p>{onglet} — modèle {modeComptable ?? modele?.mode}</p>}
     </>
   ),
 }))

@@ -4,9 +4,12 @@ import { brouillonDesVentes, composition, exportsDesVentes, sourcesDuDossierBasc
 import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 import { CHAMPS_BNC_NON_EXPORTES, genererFec } from './fec'
-import { lettrages } from './lettrage'
-import { PLAN_PAR_DEFAUT } from './planComptable'
+import { comptesDeTiers, lettrages } from './lettrage'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
+import type { ModeleComptable } from './engagement'
 import type { Categorie, EcritureBrouillon, LettrageManuel, ModeComptable, Piece } from './types'
+import { modeleDecale, modeleDeTest } from '../test/modeles'
+import { colonnes } from '../test/fecDgfip'
 
 // LE FEC SOUS LE PLAN PAR DÉFAUT EST CELUI D'HIER, À L'OCTET PRÈS (ligne 43, étape PC3, quatrième tranche). L'auxiliaire
 // du FEC et le lettrage lisent désormais le plan du dossier — son préfixe d'auxiliaire et ses comptes de tiers — au lieu
@@ -103,16 +106,16 @@ const ENGAGEMENT = {
 function fecDuDossier(
   mode: ModeComptable, pieces: Piece[], brouillon: EcritureBrouillon[], manuels: LettrageManuel[], categories: Categorie[],
 ): string {
-  const lettrage = lettrages(brouillon, pieces, manuels, mode, SANS_VENTE_FACTUREE)
-  return genererFec(brouillon, pieces, categories, [], mode, [], lettrage, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+  const lettrage = lettrages(brouillon, pieces, manuels, modeleDeTest(mode), SANS_VENTE_FACTUREE)
+  return genererFec(brouillon, pieces, categories, [], modeleDeTest(mode), [], lettrage, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
 }
 
 function fecDuDossierBascule(mode: ModeComptable): string {
   const sources = sourcesDuDossierBascule()
   const c = composition(sources, mode, PLAN_PAR_DEFAUT)
   const brouillon = brouillonDesVentes(c)
-  const lettrage = lettrages(brouillon, [], [], mode, exportsDesVentes(sources, c))
-  return genererFec(brouillon, [], [], [], mode, [], lettrage, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+  const lettrage = lettrages(brouillon, [], [], modeleDeTest(mode), exportsDesVentes(sources, c))
+  return genererFec(brouillon, [], [], [], modeleDeTest(mode), [], lettrage, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
 }
 
 describe('le FEC sous le plan par défaut, à l’octet près', () => {
@@ -135,5 +138,47 @@ describe('le FEC sous le plan par défaut, à l’octet près', () => {
     expect(empreinte(fecDuDossierBascule('engagement'))).toEqual({
       sha256: '7f2339a80dca9544a4e3878bac44ac6c213fe0f48cd1a9ecd12455d002555889', octets: 3522, lignes: 23,
     })
+  })
+})
+
+// SOUS LE PLAN DÉCALÉ, le préfixe et les comptes de tiers du plan sont lus, ceux du catalogue ne le sont plus : la même
+// société, ses comptes de tiers et sa banque au plan décalé (401100, 404100, 411100, 512100), ses préfixes FO, IM et CL.
+describe('le FEC et le lettrage sous le plan décalé', () => {
+  const VERS_DECALE: Readonly<Record<string, string>> = {
+    '401000': PLAN_DECALE.fournisseurs, '404000': PLAN_DECALE.fournisseurs_immobilisations, '411000': PLAN_DECALE.clients,
+    '512000': PLAN_DECALE.banque,
+  }
+  const brouillon = ENGAGEMENT.brouillon.map((e) => ({ ...e, compte: VERS_DECALE[e.compte] ?? e.compte }))
+  const manuels = ENGAGEMENT.manuels.map((l) => ({ ...l, compte: PLAN_DECALE.fournisseurs }))
+  const fec = (modele: ModeleComptable) => colonnes(genererFec(
+    brouillon, ENGAGEMENT.pieces, CATEGORIES, [], modele, [], lettrages(brouillon, ENGAGEMENT.pieces, manuels, modele, SANS_VENTE_FACTUREE),
+    SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES,
+  )).slice(1).filter((r) => r[6] !== '' || r[13] !== '').map((r) => [r[2], r[4], r[6], r[13]])
+
+  it('donne à chaque tiers l’auxiliaire au préfixe du plan, et lettre ses comptes de tiers', () => {
+    expect(fec(modeleDecale('engagement'))).toEqual([
+      ['AC00001', '401100', 'FOTRANSMEDICAL', 'A'],
+      ['AC00002', '404100', 'IMTRANSMEDICAL', 'A'],
+      ['AC00003', '401100', 'FOBUREAU', ''],
+      ['VE00001', '411100', 'CLDIVERS', 'A'],
+      ['AC00004', '401100', 'FODIVERS', ''],
+      ['BQ00001', '411100', 'CLDIVERS', 'A'],
+      ['BQ00002', '401100', 'FOBUREAU', ''],
+      ['BQ00003', '401100', 'FOTRANSMEDICAL', 'A'],
+      ['BQ00004', '404100', 'IMTRANSMEDICAL', 'A'],
+      ['AC00005', '401100', 'FOGARAGE', 'B'],
+      ['AC00006', '401100', 'FOGARAGE', 'B'],
+    ])
+  })
+
+  it('ne les reconnaît pas sous le plan par défaut : ni auxiliaire ni lettrage sur des comptes qui ne sont pas les siens', () => {
+    expect(fec(modeleDeTest('engagement'))).toEqual([])
+  })
+
+  it('range la balance des tiers sous les comptes du plan, et les nomme', () => {
+    const soldes = comptesDeTiers(brouillon, ENGAGEMENT.pieces, [], manuels, modeleDecale('engagement'), '2026-12-31', SANS_VENTE_FACTUREE)
+    expect(soldes.map((s) => [s.compte, s.auxiliaire, s.solde])).toEqual([['401100', 'FOBUREAU', 50], ['401100', 'FODIVERS', 30]])
+    expect(comptesDeTiers(brouillon, ENGAGEMENT.pieces, [], manuels, modeleDeTest('engagement'), '2026-12-31', SANS_VENTE_FACTUREE))
+      .toEqual([])
   })
 })

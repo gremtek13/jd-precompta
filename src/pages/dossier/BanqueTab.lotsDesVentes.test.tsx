@@ -9,6 +9,7 @@ import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { COLONNES_ENCAISSEMENTS_ECRITURES } from '../../lib/ecrituresVentesFactureesLecture'
 import { REFUS_GARDE_MOUVEMENTS } from '../../lib/encaissementsFactures'
 import { SENS_DES_REGLES_IGNOREES_EXPORTE } from '../../lib/sensDesReglesIgnorees'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES FACTURÉES (ligne 28.65, chantier EC-Q3, étape VF5a2). Les plans
 // sont éprouvés à part (lib/lotsDuReleve.test.ts) ; ici, le CÂBLAGE : sur un dossier basculé, chaque lot — le rapprochement
@@ -193,7 +194,7 @@ function poser() {
 beforeEach(poser)
 afterEach(() => { cleanup(); vi.restoreAllMocks(); caisseDuTest.lecture = null })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function rendre(ventesParLesFactures = true) {
   return render(

@@ -19,6 +19,7 @@ import { PLAN_PAR_DEFAUT } from './planComptable'
 import { paiementsDesPieces } from './rattachement'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // CORRIGER UN PAIEMENT EN ESPÈCES D'UN SEUL GESTE, CONFRONTÉ À LA BASE (C12B-Q1 ; ligne 26.6). La migration
 // `correction_du_paiement_par_la_caisse` — préparée dans supabase/preparees/, dans l'export sous la version de sa ligne
@@ -267,7 +268,7 @@ describe('le retour arrière', () => {
 // ── Le module, cas par cas ───────────────────────────────────────────────────────────────────────────────────────────
 
 const AUJOURDHUI = '2026-11-04'
-const MODELE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const MODELE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function caisse(o: Partial<EtatDeLaCaisse> = {}): EtatDeLaCaisse {
   return { compteCaisse: MODELE.plan.caisse, ouvertures: [], operations: [], mouvements: [], encaissements: [], factures: [], ...o }

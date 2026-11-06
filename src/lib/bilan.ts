@@ -462,6 +462,8 @@ function partsDesTiers(
   dateReprise: string | null,
   dateCloture: string,
   pieceParId: ReadonlyMap<string, Pick<Piece, 'id' | 'tiers'>>,
+  // Le modèle du dossier : son plan dit le préfixe de l'auxiliaire de chaque tiers (ligne 43, étape PC3).
+  modele: Pick<ModeleComptable, 'plan' | 'prefixes'>,
 ): PartBrute[] {
   const parts = new Map<string, PartBrute>()
   const part = (auxiliaire: string | null, libelle: string) => {
@@ -483,7 +485,7 @@ function partsDesTiers(
     .sort((a, b) => parNumero(a.date, b.date) || parNumero(a.id, b.id))
   for (const e of lignes) {
     const piece = e.piece_id ? pieceParId.get(e.piece_id) : undefined
-    const auxiliaire = piece ? auxiliaireDuTiers(piece, compte) : null
+    const auxiliaire = piece ? auxiliaireDuTiers(piece, compte, modele) : null
     part(auxiliaire?.num ?? null, auxiliaire?.lib ?? LIBELLE_SANS_DETAIL).centimes += centimesDe(e)
   }
   return [...parts.values()]
@@ -606,7 +608,7 @@ export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
     const regle = regleDuCompte(compte, individuel)
     if (detaillesParTiers.includes(compte)) {
       // Une part nulle n'est d'aucun côté : le signe la range, sans filtre.
-      const parts = partsDesTiers(compte, d.ecritures, d.reprise, dateReprise, dateCloture, pieceParId)
+      const parts = partsDesTiers(compte, d.ecritures, d.reprise, dateReprise, dateCloture, pieceParId, d.modele)
       const total = parts.reduce((s, p) => s + p.centimes, 0)
       if (total !== solde) {
         // Défensif : le détail depuis la reprise doit retrouver le solde de l'exercice quand chaque exercice

@@ -19,6 +19,7 @@ import { demandeDeValidation, frontiereDeValidation } from './validationExercice
 import { ventesDeLaChecklist } from './ventesDeLaChecklist'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
+import { planLuDe } from '../test/modeles'
 
 // UN DOSSIER QUI A BASCULÉ, DE BOUT EN BOUT (chantier EC-Q3, étape VF4c3) : les lignes de la base (src/test/dossierBascule.ts
 // — trois factures de services, un avoir, un virement du même jour, un chèque remis la veille de son crédit), la composition
@@ -220,7 +221,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
     })
     const ouvert = (o: Partial<DonneesDeValidation>): DonneesDeValidation => ({
-      annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode, compteNotesDeFrais: plan.associe, plan }, assujettiTva: true,
+      annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode, compteNotesDeFrais: plan.associe, ...planLuDe(plan) }, assujettiTva: true,
       anneesValidees: [], lectureIncomplete: null, piecesValidees: [], piecesAValider: [], categories: [], immobilisations: [], natures: [],
       ecritures: brouillon, lignes, ventilations: [], reglements: [], encaissees: [], cotisations: [], vehicules: [], emprunts: [],
       aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [], doublonsTexte: [],
@@ -285,9 +286,14 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       if (l.comp_aux_num !== null) libelles.set(`aux|${l.comp_aux_num}`, (libelles.get(`aux|${l.comp_aux_num}`) ?? new Set()).add(l.comp_aux_lib ?? ''))
     }
     expect([...libelles.values()].every((x) => x.size === 1)).toBe(true)
-    // L'auxiliaire du client au 411, en engagement — sous le plan par défaut : `auxiliaireDuTiers` ne connaît encore que le
-    // 411000 (lib/engagement.ts, le plan comptable personnalisable, § 2.4), et un 411100 n'en reçoit pas, avant comme après.
-    if (mode === 'engagement') expect(demande.p_lignes.some((l) => l.comp_aux_num !== null)).toBe(plan === PLAN_PAR_DEFAUT)
+    // L'auxiliaire du client au 411, en engagement, sous les deux plans : `auxiliaireDuTiers` lit le compte des clients et
+    // son préfixe dans le plan du dossier (ligne 43, PC3, quatrième tranche) — C au 411000, CL au 411100 du plan décalé.
+    if (mode === 'engagement') {
+      const auxiliaires = demande.p_lignes.flatMap((l) => (l.comp_aux_num === null ? [] : [l.comp_aux_num]))
+      expect(auxiliaires.length).toBeGreaterThan(0)
+      expect(auxiliaires.every((a) => a.startsWith(plan === PLAN_PAR_DEFAUT ? 'C' : 'CL'))).toBe(true)
+      if (plan === PLAN_DECALE) expect(auxiliaires).toContain('CLDIVERS')
+    }
   })
 
   it.each(['tresorerie', 'engagement'] as const)('en %s : le FEC de la demande est celui de l’onglet Écritures, et celui de l’exercice validé, ValidDate près', (mode) => {
@@ -296,7 +302,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
     const SANS_LETTRAGE = new Map()
     const sansValidDate = (f: string) => f.split('\n').map((r) => r.split('\t').filter((_, i) => i !== 15).join('\t'))
     const avant = formaterFec(n, SANS_LETTRAGE, mode)
-    expect(avant).toBe(genererFec(brouillon, [], [], [], mode, lignes, SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES))
+    expect(avant).toBe(genererFec(brouillon, [], [], [], { mode, compteNotesDeFrais: plan.associe, ...planLuDe(plan) }, lignes, SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES))
     const VALIDE_LE = '2026-03-15T10:00:00Z'
     const figees = n.lignes.map((l): EcritureBrouillon => ({
       ...l.ecriture, statut: 'validee', valide_le: VALIDE_LE, journal_code: l.journal, numero_ecriture: l.numero, piece_ref: l.pieceRef,

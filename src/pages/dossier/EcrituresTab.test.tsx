@@ -6,7 +6,8 @@ import type { ValeurAnnee } from '../../components/AnneeTabs'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Predicat } from '../../test/filtresPostgrest'
 import EcrituresTab from './EcrituresTab'
-import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from '../../lib/planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // L'ONGLET QUI PRODUIT LES DEUX FICHIERS OFFICIELS du projet — le FEC et la piste d'audit. Un défaut
 // ici ne reste pas à l'écran : il part chez un vérificateur. Ce test vise donc les trois choses
@@ -307,8 +308,8 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   } as Record<string, unknown[]>
 }
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 // Le modèle vit dans la page du dossier, qui le remet à l'onglet après l'enregistrement : ce porteur
 // joue ce rôle, sans quoi un changement de modèle ne se verrait jamais à l'écran.
@@ -324,6 +325,7 @@ function Onglet({ assujettiTva, modeleInitial, annee, valides }: {
         ventesParLesFactures={false}
         onModeleUpdated={(m) => setModele((avant) => ({
           mode: m.mode_comptable ?? avant.mode, compteNotesDeFrais: m.compte_notes_de_frais ?? avant.compteNotesDeFrais, plan: avant.plan,
+          libelles: avant.libelles, prefixes: avant.prefixes,
         }))}
       />
     </ContexteDossier>
@@ -3124,7 +3126,7 @@ describe('EcrituresTab — sous le plan du dossier', () => {
   const NATURE = { id: 'n1', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300' }
   const BIEN = { id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1', nature_id: 'n1' }
   const facture = () => piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
-  const DECALE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE }
+  const DECALE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_DECALES }
 
   it('génère l’acquisition d’un bien avec la TVA du plan', async () => {
     poser({ pieces: [facture()], immobilisations: [BIEN], natures_immobilisation: [NATURE] })

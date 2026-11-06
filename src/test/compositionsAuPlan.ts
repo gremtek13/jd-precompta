@@ -40,6 +40,7 @@ import { encaissementVendu, factureVendue, ligneVendue, SANS_EXEMPLAIRE, SANS_FA
 import { ecrituresDesVentesFacturees, type MouvementDesEncaissements } from '../lib/ecrituresVentesFacturees'
 import { SANS_ACOMPTE, ventesFacturees } from '../lib/ventesFacturees'
 import { CAISSE_ABSENTE } from '../lib/recettesDeCaisse'
+import { planLuDe } from './modeles'
 
 // LES COMPOSITIONS SOUS UN PLAN (ligne 43, étape PC3 ; conception, § 5.1 et § 5.2) : chaque écriture que l'application
 // compose — et chaque contrôle qui la recompose pour juger le brouillon — joué sur des jeux d'essai FICTIFS tirés du
@@ -115,7 +116,7 @@ function brouillon(
 }
 
 const modele = (plan: PlanComptable, mode: ModeComptable, dirigeant: RoleDuDirigeant): ModeleComptable =>
-  ({ mode, compteNotesDeFrais: plan[dirigeant], plan })
+  ({ mode, compteNotesDeFrais: plan[dirigeant], ...planLuDe(plan) })
 
 // ── Les pièces ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -210,7 +211,7 @@ const CAS_DES_PIECES: CasDuPlan[] = [
     nom: 'le modèle d’un dossier : le compte du dirigeant validé par le plan, ou le refus qui le cite',
     roles: ['associe', 'exploitant', 'autres_debiteurs_crediteurs'],
     composer: (plan) => [plan.associe, plan.exploitant, plan.autres_debiteurs_crediteurs, '468000'].map((compte) => {
-      const lu = modeleDuDossier({ mode_comptable: 'engagement', compte_notes_de_frais: compte }, plan)
+      const lu = modeleDuDossier({ mode_comptable: 'engagement', compte_notes_de_frais: compte }, planLuDe(plan))
       return { compte: lu.modele?.compteNotesDeFrais ?? null, refus: lu.refus }
     }),
   },
@@ -667,7 +668,7 @@ const CAS_DE_LA_CAISSE: CasDuPlan[] = [
     nom: 'la caisse : l’écriture d’une opération, la saisie jugée, la caisse rejouée, le versement d’espèces, la reprise',
     roles: ['caisse', 'exploitant', 'tva_collectee', 'virements_internes', 'depots_cautionnements_verses'],
     composer: (plan) => {
-      const modele = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000', plan }
+      const modele = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000', ...planLuDe(plan) }
       const honoraires = { libelle: 'Honoraires', compte_comptable: '706200' }
       const recette = { genre: 'recette' as const, date: '2026-03-02', montant: 120, taux_tva: 20, categorie: honoraires }
       const apport = { genre: 'apport' as const, date: '2026-03-01', montant: 100, taux_tva: null, categorie: null }

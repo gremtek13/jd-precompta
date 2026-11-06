@@ -1,5 +1,5 @@
 import { referenceDuReleve } from './affectationBanque'
-import { auxiliaireDuTiers, type CompteAuxiliaire } from './engagement'
+import { auxiliaireDuTiers, type CompteAuxiliaire, type ModeleComptable } from './engagement'
 import {
   centimesExacts, ecartDeFrais, factureSansExemplaire, justifieSonMouvement, type ExemplaireLu,
 } from './encaissementsFactures'
@@ -553,6 +553,8 @@ export function memeEcritureQueLeBrouillon(
  */
 export function auxiliaireDeLaLigne(
   e: Pick<EcritureVenteFacturee, 'tiers' | 'source'>, ligne: Pick<LigneVenteFacturee, 'compte'>,
+  // Le plan du dossier : le compte des clients et le préfixe de son auxiliaire (ligne 43, étape PC3). Sans valeur par défaut.
+  modele: Pick<ModeleComptable, 'plan' | 'prefixes'>,
 ): CompteAuxiliaire | null {
-  return e.source.genre === 'mouvement' ? null : auxiliaireDuTiers({ tiers: e.tiers }, ligne.compte)
+  return e.source.genre === 'mouvement' ? null : auxiliaireDuTiers({ tiers: e.tiers }, ligne.compte, modele)
 }

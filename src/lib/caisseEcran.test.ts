@@ -18,13 +18,14 @@ import type { ModeleComptable } from './engagement'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import type { Categorie, OperationCaisse } from './types'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // CE QUE L'ÉCRAN DE LA CAISSE DIT ET ENVOIE (ligne 26.6, étape C4 ; lib/caisseEcran.ts). Ce module ne recopie aucune règle : ces
 // cas gardent qu'il ASSEMBLE bien — la caisse rejouée sur ce que l'écran a lu, le journal qui retrouve chaque flux du solde, la
 // saisie telle qu'elle PART (l'écriture que compose `ecritureDeLOperation`, l'ensemble du jour que `ensembleDuJour` reconnaît),
 // les refus du module redits sans un mot de plus ni de moins, et la caisse que la fiche d'un mouvement juge. Des jeux FICTIFS.
 
-const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const CAISSE = PLAN_PAR_DEFAUT.caisse
 // La reprise et le relevé lus en entier, sans rien au compte de la caisse : « tenue » ne s'y lit pas (le cas neutre).
 const SANS_REPRISE: RepriseEtReleveDeLaCaisse = { compteCaisse: CAISSE, ouvertures: [], mouvements: [] }

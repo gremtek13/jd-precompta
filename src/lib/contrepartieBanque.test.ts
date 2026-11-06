@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { COMPTE_BANQUE, COMPTE_FOURNISSEURS } from './comptes'
 import type { ModeleComptable } from './engagement'
 import type { LigneBancaire, Piece } from './types'
-import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 // Le client Supabase est simulé plutôt que le module découpé : ces deux fonctions *sont* des appels à
 // la base, il n'y a pas de calcul pur à extraire. Le faux client reproduit le chaînage réellement
@@ -518,7 +519,7 @@ describe('rendreAuxDatesDeFacture', () => {
 // les lignes qu'elle RETROUVE se cherchent sur les comptes du plan. Filtrée sur le 108000, la suppression de la
 // contrepartie de l'exploitant ne supprimerait rien, en silence, dans un dossier dont l'exploitant est au 108100.
 describe('la contrepartie banque sous le plan du dossier', () => {
-  const DECALE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE }
+  const DECALE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_DECALES }
 
   it('retire la contrepartie de l’exploitant du plan, redate hors de sa banque, et écrit sur elle', async () => {
     reponses.select = { data: [{ id: 'e1', compte: '625100' }, { id: 'e2', compte: '108100' }], error: null }

@@ -10,6 +10,7 @@ import { CATEGORIES_JURIDIQUES } from '../../lib/categoriesJuridiques'
 import { REFUS_IDENTITE_LEGALE } from '../../lib/parametresFacturation'
 import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LA SUPPRESSION D'UN DOSSIER EST LE GESTE LE PLUS IRRÉVERSIBLE DE L'APPLICATION, et c'est celui
 // auquel se ramène une demande d'effacement — les données de patients sont dans les FICHIERS, pas
@@ -182,7 +183,7 @@ async function supprimer(nom: string) {
 }
 
 function monter(
-  modele: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT },
+  modele: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
   identite: Partial<ComponentProps<typeof InformationsTab>> = {},
 ) {
   return render(
@@ -406,7 +407,7 @@ describe('la carte « Source des ventes » (étape VF8b)', () => {
 
 describe('la carte Véhicules reçoit le modèle comptable du dossier', () => {
   it('lui passe celui de l’onglet, dont dépend le compte que son forfait crédite', async () => {
-    monter({ mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT })
+    monter({ mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT })
     expect(await screen.findByText('Véhicules — engagement — 467000')).toBeTruthy()
   })
 })

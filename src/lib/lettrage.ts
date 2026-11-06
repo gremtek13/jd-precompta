@@ -1,10 +1,8 @@
-import {
-  COMPTE_AUTRES_DEBITEURS_CREDITEURS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_FOURNISSEURS,
-  COMPTE_FOURNISSEURS_IMMOBILISATIONS, libelleCompteTenu,
-} from './comptes'
-import { auxiliaireDuTiers } from './engagement'
+import { libelleCompteTenu } from './comptes'
+import { auxiliaireDuTiers, type ModeleComptable } from './engagement'
 import { dateAParis, formatDate, formatMoney } from './format'
-import type { ANouveau, EcritureBrouillon, LettrageManuel, ModeComptable, Piece } from './types'
+import type { PlanComptable } from './planComptable'
+import type { ANouveau, EcritureBrouillon, LettrageManuel, Piece } from './types'
 import {
   factureDeLaLigne, indexDesFactures, nomDuDocument, rattachementDesVentes, type FacturesDesLignes,
   type VentesFactureesDesExports,
@@ -53,10 +51,24 @@ import {
 // Les comptes que le lettrage apparie : ceux qu'une pièce d'engagement porte comme compte de tiers — 401, 404 et
 // 411, et le compte du dirigeant d'une note de frais quand c'est un compte de tiers (455, 467). Jamais le 108,
 // compte de capitaux de l'exploitant, ni les comptes de TVA, qui commencent pourtant aussi par 4.
-export const COMPTES_LETTRABLES: ReadonlySet<string> = new Set([
-  COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE,
-  COMPTE_AUTRES_DEBITEURS_CREDITEURS,
-])
+//
+// CE SONT LES COMPTES DU PLAN DU DOSSIER (ligne 43, étape PC3 ; conception, § 2.4), dans cet ordre, qui est aussi celui
+// de l'écran : les fournisseurs, ceux des immobilisations, les clients, l'associé et le dirigeant non associé. La base
+// borne encore les lettrages faits à la main aux comptes par défaut (contrainte `lettrages_manuels_compte`) : sous le plan
+// par défaut, rien ne change ; un plan décalé lettre ici ses propres comptes de tiers, mais un lettrage fait à la main sur
+// l'un d'eux sera refusé par la base jusqu'à l'étape PC4, qui remplacera la contrainte par le plan du dossier.
+export function comptesLettrables(plan: PlanComptable): readonly string[] {
+  return [plan.fournisseurs, plan.fournisseurs_immobilisations, plan.clients, plan.associe, plan.autres_debiteurs_crediteurs]
+}
+
+// Le libellé d'un compte de tiers : celui que le plan du dossier donne à son rôle (conception, § 3.9), sinon celui que
+// l'application lui donne aujourd'hui (`libelleCompteTenu`), sinon son numéro. Sous le plan par défaut, les deux premiers
+// sont le même texte (planComptable.test.ts confronte le catalogue à `LIBELLES_COMPTES`).
+export function libelleDuCompteDeTiers(compte: string, modele: Pick<ModeleComptable, 'plan' | 'libelles'>): string {
+  const role = (['fournisseurs', 'fournisseurs_immobilisations', 'clients', 'associe', 'autres_debiteurs_crediteurs'] as const)
+    .find((r) => modele.plan[r] === compte)
+  return (role ? modele.libelles[role] : null) ?? libelleCompteTenu(compte) ?? compte
+}
 
 export interface LettrageDeLigne {
   // Le repère commun aux lignes appariées (EcritureLet).
@@ -94,10 +106,11 @@ const somme = (lignes: readonly Pick<EcritureBrouillon, 'sens' | 'montant'>[]) =
   lignes.reduce((total, e) => total + centimes(e), 0)
 
 // Les lignes de chaque pièce sur chaque compte lettrable, en engagement : la facture et ses règlements.
-function lignesParPieceEtCompte(ecritures: readonly EcritureBrouillon[]): Map<string, EcritureBrouillon[]> {
+function lignesParPieceEtCompte(ecritures: readonly EcritureBrouillon[], plan: PlanComptable): Map<string, EcritureBrouillon[]> {
+  const lettrables = new Set(comptesLettrables(plan))
   const groupes = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
-    if (!e.piece_id || !COMPTES_LETTRABLES.has(e.compte)) continue
+    if (!e.piece_id || !lettrables.has(e.compte)) continue
     const cle = `${e.piece_id}|${e.compte}`
     groupes.set(cle, [...(groupes.get(cle) ?? []), e])
   }
@@ -127,17 +140,18 @@ export function lettrages(
   pieces: readonly Pick<Piece, 'id' | 'tiers'>[],
   // Sans valeur par défaut : oubliés, les lettrages faits à la main disparaîtraient du FEC sans que rien le dise.
   lettragesManuels: readonly LettrageManuel[],
-  // Sans valeur par défaut : en trésorerie rien ne se lettre, et l'oublier en engagement ne lettrerait rien.
-  mode: ModeComptable,
+  // Sans valeur par défaut : en trésorerie rien ne se lettre, et l'oublier en engagement ne lettrerait rien. Son plan dit
+  // les comptes de tiers qui se lettrent.
+  modele: ModeleComptable,
   // Les ventes facturées du dossier : la composition, les factures et le registre, lus en entier. Sans valeur par défaut :
   // oubliées, le 411 d'une vente facturée ne serait jamais lettré, et le FEC ne le dirait pas.
   ventes: VentesFactureesDesExports,
 ): ReadonlyMap<string, LettrageDeLigne> {
   const resultat = new Map<string, LettrageDeLigne>()
-  if (mode !== 'engagement') return resultat
+  if (modele.mode !== 'engagement') return resultat
 
-  const parPieceEtCompte = lignesParPieceEtCompte(ecritures)
-  const appliques = etatsDesLettragesManuels(ecritures, pieces, lettragesManuels, mode).filter((g) => g.motif === null)
+  const parPieceEtCompte = lignesParPieceEtCompte(ecritures, modele.plan)
+  const appliques = etatsDesLettragesManuels(ecritures, pieces, lettragesManuels, modele).filter((g) => g.motif === null)
   const dansUnLettrageManuel = new Set(appliques.flatMap((g) => g.pieceIds))
 
   const naissances: Naissance[] = []
@@ -153,7 +167,7 @@ export function lettrages(
   }
   // Les ventes facturées, facture par facture : la même règle qu'une pièce — une facture dont deux comptes se solderaient
   // n'est lettrée sur aucun —, et chaque ligne rattachée à son écriture composée.
-  for (const v of facturesSoldees(ecritures, ventes)) naissances.push(naissance(`vente|${v.factureId}`, v.lignes, null))
+  for (const v of facturesSoldees(ecritures, ventes, modele.plan)) naissances.push(naissance(`vente|${v.factureId}`, v.lignes, null))
 
   const parCompte = new Map<string, Naissance[]>()
   for (const n of naissances) parCompte.set(n.compte, [...(parCompte.get(n.compte) ?? []), n])
@@ -207,12 +221,13 @@ function soldesParPiece(parPieceEtCompte: ReadonlyMap<string, EcritureBrouillon[
 // Les lignes d'une vente facturée sur chaque compte lettrable, par facture et par compte : la facture, ses avoirs, ses
 // encaissements et leurs contre-passations. Une ligne sans pièce dont la lecture ne connaît pas la source n'y est pas.
 function lignesParFactureEtCompte(
-  ecritures: readonly EcritureBrouillon[], ventes: FacturesDesLignes,
+  ecritures: readonly EcritureBrouillon[], ventes: FacturesDesLignes, plan: PlanComptable,
 ): Map<string, { factureId: string; compte: string; lignes: EcritureBrouillon[] }> {
+  const lettrables = new Set(comptesLettrables(plan))
   const index = indexDesFactures(ventes)
   const groupes = new Map<string, { factureId: string; compte: string; lignes: EcritureBrouillon[] }>()
   for (const e of ecritures) {
-    if (e.piece_id || !COMPTES_LETTRABLES.has(e.compte)) continue
+    if (e.piece_id || !lettrables.has(e.compte)) continue
     const factureId = factureDeLaLigne(e, index)
     if (factureId === null) continue
     const cle = `${factureId}|${e.compte}`
@@ -226,10 +241,10 @@ function lignesParFactureEtCompte(
 // Les factures dont les lignes se soldent sur un compte de tiers et sont toutes celles que la composition rend : celles
 // qui se lettrent. Une facture qui se solderait sur deux comptes n'en a aucune (« Différents lettrages »).
 function facturesSoldees(
-  ecritures: readonly EcritureBrouillon[], ventes: VentesFactureesDesExports,
+  ecritures: readonly EcritureBrouillon[], ventes: VentesFactureesDesExports, plan: PlanComptable,
 ): { factureId: string; lignes: EcritureBrouillon[] }[] {
   const rattachees = rattachementDesVentes(ecritures, ventes.ecritures)
-  const soldees = [...lignesParFactureEtCompte(ecritures, ventes).values()]
+  const soldees = [...lignesParFactureEtCompte(ecritures, ventes, plan).values()]
     .filter((g) => somme(g.lignes) === 0 && g.lignes.every((l) => rattachees.has(l.id)))
   const parFacture = new Map<string, number>()
   for (const g of soldees) parFacture.set(g.factureId, (parFacture.get(g.factureId) ?? 0) + 1)
@@ -264,20 +279,20 @@ export interface LettrageDUneFacture {
  * même brouillon et les mêmes ventes. Rien en trésorerie.
  */
 export function lettragesDesFactures(
-  ecritures: readonly EcritureBrouillon[], ventes: VentesFactureesDesExports, mode: ModeComptable,
+  ecritures: readonly EcritureBrouillon[], ventes: VentesFactureesDesExports, modele: ModeleComptable,
   lettrage: ReadonlyMap<string, LettrageDeLigne>,
 ): Map<string, LettrageDUneFacture> {
   const resultat = new Map<string, LettrageDUneFacture>()
-  if (mode !== 'engagement') return resultat
+  if (modele.mode !== 'engagement') return resultat
   const rattachees = rattachementDesVentes(ecritures, ventes.ecritures)
-  for (const g of lignesParFactureEtCompte(ecritures, ventes).values()) {
+  for (const g of lignesParFactureEtCompte(ecritures, ventes, modele.plan).values()) {
     const code = lettrage.get(g.lignes[0].id) ?? null
     const reste = somme(g.lignes)
     const motif: MotifFactureNonLettree | null = code !== null ? null
       : reste !== 0 ? 'reste'
         : g.lignes.some((l) => !rattachees.has(l.id)) ? 'ecriture_a_reprendre' : 'deux_comptes'
     // `+ 0` : un reste nul retourné rend -0.
-    const enSensNormal = euros(sensNormal(g.compte) === 'debit' ? reste : -reste) + 0
+    const enSensNormal = euros(sensNormal(g.compte, modele.plan) === 'debit' ? reste : -reste) + 0
     const deja = resultat.get(g.factureId)
     // Une facture sur deux comptes : le premier lettré l'emporte, sinon le premier lu — l'écran n'en dit qu'un.
     if (!deja || (deja.code === null && code !== null)) {
@@ -362,19 +377,20 @@ export interface EtatLettrageManuel {
 // Le compte « divers » d'un compte de tiers : là où va une pièce dont le tiers n'a pas de clé (lib/engagement.ts). Il
 // mêle des tiers différents, donc rien n'y prouve que deux pièces soient du même tiers. Comparé au numéro exact : un
 // fournisseur dont le nom finit par « divers » a son propre compte auxiliaire.
-export function estDivers(compte: string, auxiliaire: string): boolean {
-  return auxiliaire === auxiliaireDuTiers({ tiers: null }, compte)?.num
+export function estDivers(compte: string, auxiliaire: string, modele: Pick<ModeleComptable, 'plan' | 'prefixes'>): boolean {
+  return auxiliaire === auxiliaireDuTiers({ tiers: null }, compte, modele)?.num
 }
 
 export function etatsDesLettragesManuels(
   ecritures: readonly EcritureBrouillon[],
   pieces: readonly Pick<Piece, 'id' | 'tiers'>[],
   lettragesManuels: readonly LettrageManuel[],
-  mode: ModeComptable,
+  modele: ModeleComptable,
 ): EtatLettrageManuel[] {
-  if (mode !== 'engagement') return []
+  if (modele.mode !== 'engagement') return []
+  const lettrables = new Set(comptesLettrables(modele.plan))
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
-  const parPieceEtCompte = lignesParPieceEtCompte(ecritures)
+  const parPieceEtCompte = lignesParPieceEtCompte(ecritures, modele.plan)
   const soldees = soldesParPiece(parPieceEtCompte)
   const sommeDe = (pieceId: string, compte: string) => somme(parPieceEtCompte.get(`${pieceId}|${compte}`) ?? [])
 
@@ -387,15 +403,15 @@ export function etatsDesLettragesManuels(
     const pieceIds = lignes.flatMap((l) => (l.piece_id ? [l.piece_id] : [])).sort()
     const jours = lignes.map(jourDeCreation).filter((j): j is string => j !== null)
     const reste = lignes.reduce((t, l) => t + (l.piece_id ? sommeDe(l.piece_id, l.compte) : 0), 0)
-    const auxiliaires = pieceIds.map((id) => (pieceById.has(id) ? auxiliaireDuTiers(pieceById.get(id)!, compte) : null))
+    const auxiliaires = pieceIds.map((id) => (pieceById.has(id) ? auxiliaireDuTiers(pieceById.get(id)!, compte, modele) : null))
     const premier = auxiliaires.find((a) => a !== null) ?? null
 
     let motif: MotifLettrageManuel | null = null
     if (lignes.some((l) => !l.piece_id)) motif = 'piece_supprimee'
     else if (lignes.length < 2) motif = 'une_seule_piece'
-    else if (lignes.some((l) => l.compte !== compte) || !COMPTES_LETTRABLES.has(compte)) motif = 'comptes_differents'
+    else if (lignes.some((l) => l.compte !== compte) || !lettrables.has(compte)) motif = 'comptes_differents'
     else if (pieceIds.some((id) => !pieceById.has(id))) motif = 'piece_non_lue'
-    else if (auxiliaires.some((a) => a !== null && estDivers(compte, a.num))) motif = 'tiers_non_identifie'
+    else if (auxiliaires.some((a) => a !== null && estDivers(compte, a.num, modele))) motif = 'tiers_non_identifie'
     else if (new Set(auxiliaires.map((a) => a?.num ?? '')).size > 1) motif = 'tiers_differents'
     else if (pieceIds.some((id) => !parPieceEtCompte.has(`${id}|${compte}`))) motif = 'sans_ecriture'
     else if (pieceIds.some((id) => sommeDe(id, compte) === 0)) motif = 'piece_soldee_seule'
@@ -406,16 +422,17 @@ export function etatsDesLettragesManuels(
       groupe,
       compte,
       auxiliaire: premier?.num ?? null,
-      libelle: premier?.lib ?? libelleCompteTenu(compte) ?? compte,
+      libelle: premier?.lib ?? libelleDuCompteDeTiers(compte, modele),
       pieceIds,
       le: jours.length > 0 ? jours.reduce((max, j) => (j > max ? j : max)) : null,
       // `+ 0` : un reste nul retourné rend -0.
-      reste: euros(sensNormal(compte) === 'debit' ? reste : -reste) + 0,
+      reste: euros(sensNormal(compte, modele.plan) === 'debit' ? reste : -reste) + 0,
       motif,
     }
   })
+  const ordre = comptesLettrables(modele.plan)
   return etats.sort((a, b) =>
-    ORDRE_DES_COMPTES.indexOf(a.compte) - ORDRE_DES_COMPTES.indexOf(b.compte)
+    ordre.indexOf(a.compte) - ordre.indexOf(b.compte)
     || a.libelle.localeCompare(b.libelle, 'fr')
     || (a.le ?? '').localeCompare(b.le ?? '')
     || a.groupe.localeCompare(b.groupe))
@@ -435,15 +452,15 @@ export function refusLettrageManuel(
   ecritures: readonly EcritureBrouillon[],
   pieces: readonly Pick<Piece, 'id' | 'tiers'>[],
   lettragesManuels: readonly LettrageManuel[],
-  mode: ModeComptable,
+  modele: ModeleComptable,
 ): string | null {
-  if (mode !== 'engagement') return 'Le lettrage ne se fait que dans un dossier tenu en engagement.'
-  if (!COMPTES_LETTRABLES.has(compte)) return 'Ce compte n’est pas un compte de tiers qui se lettre.'
+  if (modele.mode !== 'engagement') return 'Le lettrage ne se fait que dans un dossier tenu en engagement.'
+  if (!comptesLettrables(modele.plan).includes(compte)) return 'Ce compte n’est pas un compte de tiers qui se lettre.'
   if (pieceIds.length < 2) return 'Un lettrage fait à la main apparie au moins deux pièces.'
   if (new Set(pieceIds).size !== pieceIds.length) return 'Une pièce est choisie deux fois.'
 
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
-  const parPieceEtCompte = lignesParPieceEtCompte(ecritures)
+  const parPieceEtCompte = lignesParPieceEtCompte(ecritures, modele.plan)
   const soldees = soldesParPiece(parPieceEtCompte)
   const lettreesALaMain = new Set(lettragesManuels.flatMap((l) => (l.piece_id ? [l.piece_id] : [])))
   for (const id of pieceIds) {
@@ -456,8 +473,8 @@ export function refusLettrageManuel(
     if ((soldees.get(id) ?? []).length > 0) return 'Une des pièces se solde sur un autre compte de tiers, où elle est lettrée.'
   }
 
-  const auxiliaires = pieceIds.map((id) => auxiliaireDuTiers(pieceById.get(id)!, compte))
-  if (auxiliaires.some((a) => a !== null && estDivers(compte, a.num))) {
+  const auxiliaires = pieceIds.map((id) => auxiliaireDuTiers(pieceById.get(id)!, compte, modele))
+  if (auxiliaires.some((a) => a !== null && estDivers(compte, a.num, modele))) {
     return 'Une des pièces n’a pas de tiers identifié : au compte « divers », rien ne dit qu’elles sont du même tiers.'
   }
   if (new Set(auxiliaires.map((a) => a?.num ?? '')).size > 1) return 'Ces pièces ne sont pas du même tiers.'
@@ -487,11 +504,11 @@ export function lettragesProposes(
   ecritures: readonly EcritureBrouillon[],
   pieces: readonly Pick<Piece, 'id' | 'tiers'>[],
   lettragesManuels: readonly LettrageManuel[],
-  mode: ModeComptable,
+  modele: ModeleComptable,
 ): LettrageProposé[] {
-  if (mode !== 'engagement') return []
+  if (modele.mode !== 'engagement') return []
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
-  const parPieceEtCompte = lignesParPieceEtCompte(ecritures)
+  const parPieceEtCompte = lignesParPieceEtCompte(ecritures, modele.plan)
   const soldees = soldesParPiece(parPieceEtCompte)
   const lettreesALaMain = new Set(lettragesManuels.flatMap((l) => (l.piece_id ? [l.piece_id] : [])))
 
@@ -502,11 +519,11 @@ export function lettragesProposes(
     const piece = pieceById.get(pieceId)
     const reste = somme(lignes)
     if (!piece || reste === 0 || lettreesALaMain.has(pieceId) || (soldees.get(pieceId) ?? []).length > 0) continue
-    const auxiliaire = auxiliaireDuTiers(piece, compte)
-    if (auxiliaire && estDivers(compte, auxiliaire.num)) continue
+    const auxiliaire = auxiliaireDuTiers(piece, compte, modele)
+    if (auxiliaire && estDivers(compte, auxiliaire.num, modele)) continue
     const cle = `${compte}|${auxiliaire?.num ?? ''}`
     if (!parTiers.has(cle)) {
-      parTiers.set(cle, { compte, auxiliaire: auxiliaire?.num ?? null, libelle: auxiliaire?.lib ?? libelleCompteTenu(compte) ?? compte, restes: new Map() })
+      parTiers.set(cle, { compte, auxiliaire: auxiliaire?.num ?? null, libelle: auxiliaire?.lib ?? libelleDuCompteDeTiers(compte, modele), restes: new Map() })
     }
     parTiers.get(cle)!.restes.set(pieceId, reste)
   }
@@ -517,7 +534,7 @@ export function lettragesProposes(
     const propose = (ids: string[]) => {
       const normal = ids.reduce((t, id) => {
         const r = tiers.restes.get(id)!
-        const enSensNormal = sensNormal(tiers.compte) === 'debit' ? r : -r
+        const enSensNormal = sensNormal(tiers.compte, modele.plan) === 'debit' ? r : -r
         return enSensNormal > 0 ? t + enSensNormal : t
       }, 0)
       propositions.push({ compte: tiers.compte, auxiliaire: tiers.auxiliaire, libelle: tiers.libelle, pieceIds: ids, montant: euros(normal) })
@@ -536,8 +553,9 @@ export function lettragesProposes(
       propose([id, autre].sort())
     }
   }
+  const ordre = comptesLettrables(modele.plan)
   return propositions.sort((a, b) =>
-    ORDRE_DES_COMPTES.indexOf(a.compte) - ORDRE_DES_COMPTES.indexOf(b.compte)
+    ordre.indexOf(a.compte) - ordre.indexOf(b.compte)
     || a.libelle.localeCompare(b.libelle, 'fr')
     || a.pieceIds[0].localeCompare(b.pieceIds[0]))
 }
@@ -555,8 +573,8 @@ export function lettragesProposes(
 // Le sens dans lequel un compte de tiers est normalement soldé : créditeur pour ce qu'on doit (un fournisseur, le
 // dirigeant), débiteur pour ce qu'on attend (un client). Les montants de la vue se lisent dans ce sens, positifs
 // quand le compte est dans son sens normal.
-export function sensNormal(compte: string): 'debit' | 'credit' {
-  return compte === COMPTE_CLIENTS ? 'debit' : 'credit'
+export function sensNormal(compte: string, plan: PlanComptable): 'debit' | 'credit' {
+  return compte === plan.clients ? 'debit' : 'credit'
 }
 
 export type EtatPieceDuTiers =
@@ -623,10 +641,6 @@ function tranche(age: number): 0 | 1 | 2 | 3 {
 
 const euros = (c: number) => c / 100
 
-// Fournisseurs, fournisseurs d'immobilisations, clients, puis le dirigeant : l'ordre de la vue et de ses listes.
-const ORDRE_DES_COMPTES: readonly string[] = [
-  COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_AUTRES_DEBITEURS_CREDITEURS,
-]
 
 // UN LETTRAGE FAIT À LA MAIN FERME SES PIÈCES À UNE DATE quand il tient et que leurs lignes datées jusqu'à elle se
 // soldent ensemble, chacune y ayant déjà au moins une ligne : un avoir daté après l'arrêté laisse la facture ouverte à
@@ -637,7 +651,7 @@ export function comptesDeTiers(
   aNouveaux: readonly ANouveau[],
   // Sans valeur par défaut : oubliés, une facture et l'avoir qui la solde resteraient ouverts tous les deux.
   lettragesManuels: readonly LettrageManuel[],
-  mode: ModeComptable,
+  modele: ModeleComptable,
   // AAAA-MM-JJ : la vue se lit au soir de ce jour.
   dateArrete: string,
   // Les factures et le registre des encaissements, lus en entier (étape VF4c2) : les lignes d'une vente facturée se lisent
@@ -645,11 +659,12 @@ export function comptesDeTiers(
   // « écritures sans pièce », sans client ni ancienneté.
   ventes: FacturesDesLignes,
 ): SoldeDeTiers[] {
-  if (mode !== 'engagement') return []
+  if (modele.mode !== 'engagement') return []
+  const lettrables = new Set(comptesLettrables(modele.plan))
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
   const index = indexDesFactures(ventes)
   const lettrageDeLaPiece = new Map(lettragesManuels.flatMap((l) => (l.piece_id ? [[l.piece_id, l.groupe] as const] : [])))
-  const enSensNormal = (compte: string, c: number) => (sensNormal(compte) === 'debit' ? c : -c)
+  const enSensNormal = (compte: string, c: number) => (sensNormal(compte, modele.plan) === 'debit' ? c : -c)
   const soldes = new Map<string, SoldeDeTiers & { centimes: number; trancheCentimes: [number, number, number, number] }>()
   const entree = (compte: string, auxiliaire: string | null, libelle: string, origine: OrigineDuSolde) => {
     const cle = `${compte}|${origine}|${auxiliaire ?? ''}`
@@ -662,14 +677,14 @@ export function comptesDeTiers(
   }
 
   for (const a of aNouveaux) {
-    if (!COMPTES_LETTRABLES.has(a.compte) || a.date > dateArrete) continue
+    if (!lettrables.has(a.compte) || a.date > dateArrete) continue
     entree(a.compte, null, 'Repris à l’ouverture, sans détail par tiers', 'ouverture').centimes += enSensNormal(a.compte, centimes(a))
   }
 
   const parPiece = new Map<string, EcritureBrouillon[]>()
   const parFacture = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
-    if (!COMPTES_LETTRABLES.has(e.compte) || e.date > dateArrete) continue
+    if (!lettrables.has(e.compte) || e.date > dateArrete) continue
     if (!e.piece_id) {
       // Une ligne d'une vente facturée se range sous sa facture ; les autres lignes sans pièce restent à part.
       const factureId = factureDeLaLigne(e, index)
@@ -686,7 +701,7 @@ export function comptesDeTiers(
   }
 
   const fermees = new Set<string>()
-  for (const g of etatsDesLettragesManuels(ecritures, pieces, lettragesManuels, mode)) {
+  for (const g of etatsDesLettragesManuels(ecritures, pieces, lettragesManuels, modele)) {
     if (g.motif !== null) continue
     const cles = g.pieceIds.map((id) => `${id}|${g.compte}`)
     if (cles.some((c) => !parPiece.has(c)) || cles.reduce((t, c) => t + somme(parPiece.get(c)!), 0) !== 0) continue
@@ -697,10 +712,10 @@ export function comptesDeTiers(
     const compte = lignes[0].compte
     const pieceId = lignes[0].piece_id!
     const piece = pieceById.get(pieceId)
-    const auxiliaire = auxiliaireDuTiers(piece ?? { tiers: null }, compte)
+    const auxiliaire = auxiliaireDuTiers(piece ?? { tiers: null }, compte, modele)
     const s = auxiliaire
       ? entree(compte, auxiliaire.num, auxiliaire.lib, 'tiers')
-      : entree(compte, null, libelleCompteTenu(compte) ?? compte, 'tiers')
+      : entree(compte, null, libelleDuCompteDeTiers(compte, modele), 'tiers')
     const facture = lignes.filter((e) => !e.ligne_bancaire_id)
     const reglements = lignes.filter((e) => e.ligne_bancaire_id)
     const factureCentimes = facture.reduce((t, e) => t + enSensNormal(compte, centimes(e)), 0)
@@ -736,10 +751,10 @@ export function comptesDeTiers(
     const compte = lignes[0].compte
     const factureId = factureDeLaLigne(lignes[0], index)!
     const document = index.factures.get(factureId)
-    const auxiliaire = auxiliaireDuTiers({ tiers: document?.tiers_nom ?? null }, compte)
+    const auxiliaire = auxiliaireDuTiers({ tiers: document?.tiers_nom ?? null }, compte, modele)
     const s = auxiliaire
       ? entree(compte, auxiliaire.num, auxiliaire.lib, 'tiers')
-      : entree(compte, null, libelleCompteTenu(compte) ?? compte, 'tiers')
+      : entree(compte, null, libelleDuCompteDeTiers(compte, modele), 'tiers')
     const facture = lignes.filter((e) => e.facture_id != null)
     const reglements = lignes.filter((e) => e.encaissement_id != null)
     const factureCentimes = facture.reduce((t, e) => t + enSensNormal(compte, centimes(e)), 0)
@@ -781,7 +796,7 @@ export function comptesDeTiers(
       pieces: [...s.pieces].sort((a, b) => b.age - a.age || a.pieceId.localeCompare(b.pieceId)),
     }))
     .sort((a, b) =>
-      ORDRE_DES_COMPTES.indexOf(a.compte) - ORDRE_DES_COMPTES.indexOf(b.compte)
+      comptesLettrables(modele.plan).indexOf(a.compte) - comptesLettrables(modele.plan).indexOf(b.compte)
       || ordreOrigine[a.origine] - ordreOrigine[b.origine]
       || a.libelle.localeCompare(b.libelle, 'fr')
       || (a.auxiliaire ?? '').localeCompare(b.auxiliaire ?? ''))

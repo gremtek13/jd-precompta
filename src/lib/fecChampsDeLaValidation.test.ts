@@ -22,6 +22,7 @@ import { PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
 import { centimesParDate, paiementsDesPieces, type PaiementDePiece, type PartPayeeParLaCaisse } from './rattachement'
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { defautsDeNumerotation, demandeDeValidation, type LigneDemandee } from './validationExercice'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 
 // LA DEMANDE DE VALIDATION PORTE LES CLÉS DES QUATRE CHAMPS (lot FEC22c2 ; HISTORIQUE.md, « LE FEC D'UN BNC : LA DEMANDE DE
 // VALIDATION PORTE SES CLÉS (FEC22C2, DERRIÈRE SON DRAPEAU) »). Ce que ces cas gardent, le drapeau `CHAMPS_BNC_EXPORTES` joué
@@ -44,7 +45,7 @@ vi.mock('./champsBncExportes', async (original) => {
 
 const D = 'd1'
 const VIDES: ChoixChampsBnc = { sansReglement: 'vides' }
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const ACHATS: Categorie = { id: 'c-achats', dossier_id: D, code: 'c-achats', libelle: 'Achats fictifs', ordre: 1, compte_comptable: '606100', poste_2035: 'Achats' }
 const DIVERS: Categorie = { id: 'c-divers', dossier_id: D, code: 'c-divers', libelle: 'Divers fictifs', ordre: 2, compte_comptable: '625100', poste_2035: 'Divers' }
 const CATEGORIES = [ACHATS, DIVERS]
@@ -93,7 +94,7 @@ const entrees = (o: Partial<EntreesDesChampsBnc> = {}): EntreesDesChampsBnc => (
 })
 const exportes = (o: Partial<EntreesDesChampsBnc> = {}): ChampsBncDuFec => ({ etat: 'exportes', entrees: entrees(o) })
 const numeroter = (brouillon: readonly EcritureBrouillon[], pieces: readonly Piece[], champs: ChampsBncDuFec, mouvements = [PRELEVEMENT, REMBOURSEMENT]) =>
-  numeroterFec(brouillon, pieces, CATEGORIES, [], 'tresorerie', mouvements, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, champs)
+  numeroterFec(brouillon, pieces, CATEGORIES, [], modeleDeTest('tresorerie'), mouvements, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, champs)
 const SANS_LETTRAGE = new Map()
 
 // LA GÉNÉRATION D'HIER, recopiée telle qu'elle était avant FEC22c2 : ce que la génération du drapeau baissé doit rendre,
@@ -339,7 +340,7 @@ describe('le FEC d’un exercice validé avec les quatre champs se relit de ce q
     })
   }
   const brouillon = [...brouillonDe(VIDES, ACHAT, true), ...brouillonDe(VIDES, NOTE, false)]
-  const avant = numeroterFec(brouillon, [ACHAT, NOTE], CATEGORIES, ouverture, 'tresorerie', [PRELEVEMENT, REMBOURSEMENT], SANS_ECRITURE_DE_VENTE,
+  const avant = numeroterFec(brouillon, [ACHAT, NOTE], CATEGORIES, ouverture, modeleDeTest('tresorerie'), [PRELEVEMENT, REMBOURSEMENT], SANS_ECRITURE_DE_VENTE,
     OPERATIONS_DE_CAISSE_ABSENTES, exportes())
   const sansValidDate = (f: string) => colonnes(f).map((r) => r.filter((_, i) => i !== 15))
 
@@ -357,7 +358,7 @@ describe('le FEC d’un exercice validé avec les quatre champs se relit de ce q
   })
 
   it('un exercice validé sans eux se relit comme hier, quel que soit le drapeau', () => {
-    const sans = numeroterFec(brouillon, [ACHAT, NOTE], CATEGORIES, ouverture, 'tresorerie', [PRELEVEMENT, REMBOURSEMENT], SANS_ECRITURE_DE_VENTE,
+    const sans = numeroterFec(brouillon, [ACHAT, NOTE], CATEGORIES, ouverture, modeleDeTest('tresorerie'), [PRELEVEMENT, REMBOURSEMENT], SANS_ECRITURE_DE_VENTE,
       OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     const valides = valider(sans, brouillon)
     expect(formaterFec(numerotationValidee(valides, ouverture, VALIDE_LE, VIDES), SANS_LETTRAGE, 'tresorerie'))

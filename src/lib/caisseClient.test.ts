@@ -16,6 +16,7 @@ import {
 import { motsDuCabinet } from './espaceVentes'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // « MA CAISSE » : CE QUE L'ÉCRAN DU PRATICIEN DIT ET ENVOIE (ligne 26.6, étape C12a). Ce que ces cas gardent :
 //  1. la route ne s'offre qu'avec la case et la migration ; une ligne de `caisse_du_client` se juge à sa forme ;
@@ -83,7 +84,7 @@ function caisseDuClientSimulee(etat: EtatDeLaCaisse, annee: number, frontiere: s
 // Le dossier tel que la BASE le juge pour le client, sur sa caisse entière.
 function dossierReel(etat: EtatDeLaCaisse, o: Partial<DossierDeLaCaisse> = {}): DossierDeLaCaisse {
   return {
-    quiEcrit: 'client', utilisateur: MOI, modele: { mode: 'tresorerie', compteNotesDeFrais: '', plan: PLAN_PAR_DEFAUT },
+    quiEcrit: 'client', utilisateur: MOI, modele: { mode: 'tresorerie', compteNotesDeFrais: '', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
     assujetti: false, aujourdhui: AUJOURDHUI, ouverture: null, anneesValidees: [],
     categories: [{ id: NATURE, dossier_id: null, libelle: 'Honoraires', compte_comptable: '706000' }], caisse: etat,
     natureDesRecettesDuClient: NATURE, ...o,
@@ -530,7 +531,7 @@ describe('la saisie d’un mois (C12A-Q1)', () => {
     // Le plan piégé de `rejoue` : aucun jugement du mois ne le lit.
     expect(() => verdictDuMoisDuClient([ligne('recette', '2026-03-03', '10'), ligne('prelevement', '2026-03-04', '5')], 2026, jours, rejoue(etat, 2026))).not.toThrow()
     // Un dossier en engagement : la base refuse la première opération.
-    const engagement = { ...rejoue(etat, 2026), modele: { mode: 'engagement' as const, compteNotesDeFrais: '', plan: PLAN_QUE_LE_CLIENT_NE_LIT_PAS } }
+    const engagement = { ...rejoue(etat, 2026), modele: { mode: 'engagement' as const, compteNotesDeFrais: '', plan: PLAN_QUE_LE_CLIENT_NE_LIT_PAS, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT } }
     expect(verdictDuMoisDuClient([ligne('apport', '2026-03-02', '10')], 2026, jours, engagement))
       .toMatchObject({ etat: 'refuse', message: `Opération n° 1, du 02/03/2026 : ${MOTS_DE_LA_CAISSE.tresorerie.gabarit}` })
   })

@@ -1,11 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CotisationsTab from './CotisationsTab'
-import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from '../../lib/planComptable'
 import { SECONDES_CASES } from '../../lib/cases2035'
 import type { CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable } from '../../lib/types'
 import { NON_VALIDEE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // RETIRER UNE ÉCHÉANCE, ET ÉCRIRE CELLES QUE LE RELEVÉ PAIE (ligne 26.6, étape b).
 //
@@ -188,7 +189,7 @@ const ecritureJuste = (id = 'l-1', montant = 420, date = '2026-03-06') => [
 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 const monter = (mode: ModeComptable = 'tresorerie', valides: readonly number[] = []) => render(
-  <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modele={{ mode, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }} /></AvecExercicesValides>,
+  <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modele={{ mode, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }} /></AvecExercicesValides>,
 )
 
 beforeEach(() => {
@@ -1008,7 +1009,7 @@ describe('CotisationsTab — sous le plan du dossier', () => {
     faux.lignes = [ligne({ id: 'l-1' })]
     render(
       <AvecExercicesValides annees={[]}>
-        <CotisationsTab dossierId="dossier-de-test" modele={{ mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE }} />
+        <CotisationsTab dossierId="dossier-de-test" modele={{ mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_DECALES }} />
       </AvecExercicesValides>,
     )
 

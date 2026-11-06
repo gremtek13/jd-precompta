@@ -18,6 +18,7 @@ import { cotisationsComptees, ecritureDeLaCotisation } from '../../src/lib/cotis
 import { calculerDeclaration2035 } from '../../src/lib/declaration2035'
 import { calculerCa3, type DonneesTva } from '../../src/lib/declarationTva'
 import { lignesPourPiece, piecesAComptabiliser } from '../../src/lib/ecritures'
+import type { ModeleComptable } from '../../src/lib/engagement'
 import { CHAMPS_BNC_NON_EXPORTES, numeroterFec } from '../../src/lib/fec'
 import { ecritureDuForfait } from '../../src/lib/forfaitKilometrique'
 import { aPayerDe, declarationDeLaCa3, ecritureDeLaLiquidation, ecritureDuPaiementTva } from '../../src/lib/liquidationTva'
@@ -25,7 +26,7 @@ import { calculerTotaux } from '../../src/lib/montantsFacture'
 import { repartitionProposee, ttcParTaux } from '../../src/lib/encaissementsFactures'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from '../../src/lib/rattachement'
-import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES } from '../../src/lib/planComptable'
+import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES, type LibellesDuPlan } from '../../src/lib/planComptable'
 import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
 import { mentionTva } from '../../src/lib/statutTva'
 import { instantane2035 } from '../../src/lib/validationExercice'
@@ -653,7 +654,12 @@ const natures: Ligne[] = [
 // captures montreraient viendrait du banc, pas de l'application. Si la base refusait une de ces écritures, la
 // Clôture le dirait aussi — c'est la même règle des deux côtés.
 
-const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT } as const
+// Le plan lu d'un dossier qui ne règle rien : les comptes, les libellés et les préfixes du catalogue (ligne 43, PC3).
+const TRESORERIE: ModeleComptable = {
+  mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT,
+  libelles: Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, r.libelleDefaut])) as LibellesDuPlan,
+  prefixes: { fournisseurs: 'F', fournisseurs_immobilisations: 'FI', clients: 'C' },
+}
 
 function pieceDe(dossier: string, id: string, date: string, tiers: string, ttc: number, categorie: string): Ligne {
   return { ...piece(id, date, tiers, ttc, 0, categorie, 'validee'), dossier_id: dossier, storage_path: `${dossier}/${id}.pdf` }
@@ -733,7 +739,7 @@ function valider(
     // Le dossier que le banc valide n'a pas basculé : aucune écriture d'une vente facturée (étape VF4c2). Il ne tient pas de
     // caisse non plus : aucune opération à numéroter (étape C3b). Et la validation ne fige pas encore les quatre champs d'un
     // BNC en trésorerie (lot FEC22c1 : la numérotation figée est celle du drapeau baissé).
-    TRESORERIE.mode, s.lignes as unknown as MouvementBancaire[], [], OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES,
+    TRESORERIE, s.lignes as unknown as MouvementBancaire[], [], OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES,
   )
   if (numerotation.horsFec.length > 0) console.error('[banc] écritures hors du FEC dans le dossier validé', numerotation.horsFec)
   for (const l of numerotation.lignes) {

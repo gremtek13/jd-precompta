@@ -89,6 +89,7 @@ import PiecesJointesEcartees from './dossier/PiecesJointesEcartees'
 import { ACCES_EN_COURS } from '../lib/auteursVentes'
 import { ECARTS_ET_DECLARATIONS_VIDES } from '../test/ereportingDeLaPiece'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES } from '../lib/planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 
 // LE VIDE EST UNE AFFIRMATION, ET AUCUN ÉCRAN NE LA FAIT AVANT D'AVOIR LU (CLAUDE.md, « Lectures et écritures »).
 //
@@ -201,7 +202,7 @@ function piece(o: Partial<Piece> = {}): Piece {
   }
 }
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 // Le dossier que la carte et la fenêtre de l'e-reporting reçoivent de l'onglet TVA (étape e5c) : un redevable fictif.
 const DOSSIER_EREPORTING = {
   id: 'd1', siret: '12345678901234', statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false,
@@ -332,7 +333,7 @@ const ECRANS: Ecran[] = [
     <Dossier1><BilanTab dossierId="d1" modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'BilanTab (engagement)', fichier: 'pages/dossier/BilanTab.tsx', rendre: () => (
-    <Dossier1><BilanTab dossierId="d1" modele={{ mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }} onNavigate={rien} /></Dossier1>
+    <Dossier1><BilanTab dossierId="d1" modele={{ mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ChecklistTab', fichier: 'pages/dossier/ChecklistTab.tsx', rendre: () => (
     <Dossier1><ChecklistTab ventesParLesFactures={false} dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
@@ -351,7 +352,7 @@ const ECRANS: Ecran[] = [
   { nom: 'ConnexionBancaireCard', fichier: 'pages/dossier/ConnexionBancaireCard.tsx', rendre: () => (
     <Dossier1><ConnexionBancaireCard dossierId="d1" lignes={[]} regles={[]} suspension={null} lectureEnCours={false} frontiere={null} onImported={rien} /></Dossier1>
   ) },
-  { nom: 'CotisationsTab', fichier: 'pages/dossier/CotisationsTab.tsx', rendre: () => <Dossier1><CotisationsTab dossierId="d1" modele={{ mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }} /></Dossier1> },
+  { nom: 'CotisationsTab', fichier: 'pages/dossier/CotisationsTab.tsx', rendre: () => <Dossier1><CotisationsTab dossierId="d1" modele={{ mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }} /></Dossier1> },
   { nom: 'DocumentsTab', fichier: 'pages/dossier/DocumentsTab.tsx', rendre: () => <Dossier1><DocumentsTab dossierId="d1" /></Dossier1> },
   { nom: 'EcrituresTab', fichier: 'pages/dossier/EcrituresTab.tsx', rendre: () => (
     <Dossier1><EcrituresTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} assujettiTva={false} modele={TRESORERIE} ventesParLesFactures={false} onModeleUpdated={rien} /></Dossier1>
@@ -489,10 +490,10 @@ const ECRANS: Ecran[] = [
     </Dossier1>
   ) },
   { nom: 'StatistiquesTab (trésorerie)', fichier: 'pages/dossier/StatistiquesTab.tsx', rendre: () => (
-    <Dossier1><StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="d1" onNavigate={rien} modeComptable="tresorerie" /></Dossier1>
+    <Dossier1><StatistiquesTab dossierId="d1" onNavigate={rien} modele={modeleDeTest('tresorerie')} /></Dossier1>
   ) },
   { nom: 'StatistiquesTab (engagement)', fichier: 'pages/dossier/StatistiquesTab.tsx', rendre: () => (
-    <Dossier1><StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="d1" onNavigate={rien} modeComptable="engagement" /></Dossier1>
+    <Dossier1><StatistiquesTab dossierId="d1" onNavigate={rien} modele={modeleDeTest('engagement')} /></Dossier1>
   ) },
   { nom: 'SourceDesVentesCard', fichier: 'pages/dossier/SourceDesVentesCard.tsx', rendre: () => <Dossier1><SourceDesVentesCard dossierId="d1" onReglageRendu={rien} /></Dossier1> },
   { nom: 'SuperPdpModal', fichier: 'pages/dossier/SuperPdpModal.tsx', rendre: () => <Dossier1><SuperPdpModal espace="cabinet" dossierId="d1" onClose={rien} onImported={rien} /></Dossier1> },

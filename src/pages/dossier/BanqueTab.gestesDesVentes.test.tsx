@@ -13,6 +13,7 @@ import {
 import { COLONNES_LIGNES, COLONNES_PARTS } from '../../lib/ventesFactureesLecture'
 import { REFUS_CLASSEMENT, REFUS_RATTACHEMENT, REFUS_RETRAIT_CLASSEMENT, remplirModele } from '../../lib/encaissementsFactures'
 import { TITRE_CLASSER, TITRE_ENREGISTRER, TITRE_RATTACHER, TITRE_RETIRER } from '../../lib/mouvementsDesVentes'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LA FICHE D'UN CRÉDIT : « ENCAISSEMENT D'UNE FACTURE » (ligne 28.65, chantier EC-Q3, étape VF5c). La règle est éprouvée à
 // part (lib/gestesDuCredit.test.ts) ; ici, le CÂBLAGE de l'onglet Banque, côté cabinet, sur un dossier basculé : les trois
@@ -184,7 +185,7 @@ function poser() {
 beforeEach(poser)
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function rendre(o: { ventesParLesFactures?: boolean; valides?: readonly number[] } = {}) {
   return render(

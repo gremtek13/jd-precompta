@@ -10,6 +10,7 @@ import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type { OperationCaisse, Piece } from '../../lib/types'
 import { ECARTS_ET_DECLARATIONS_VIDES } from '../../test/ereportingDeLaPiece'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LA FICHE D'UNE PIÈCE DEVANT LA CAISSE (ligne 26.6, étape C9b). Ce que ces cas gardent, et qu'aucun test de `src/lib` ne voit :
 // le câblage — la section « Payée en espèces » ne se monte qu'avec la caisse, le drapeau levé ; la garde de la pièce payée
@@ -61,7 +62,7 @@ vi.mock('../../lib/supabase', () => ({
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ monCabinetId: null, session: null }) }))
 
 const D = 'd1'
-const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const HORS_DE_FRANCE: DonneesHorsDeFrance = {
   lecture: { fiches: [], taux: [], motif: null }, relire: async () => {}, anneeFigeante: null, gelIncomplet: null, pieces: [],
   ...ECARTS_ET_DECLARATIONS_VIDES,

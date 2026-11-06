@@ -27,6 +27,7 @@ import type { EncaissementDesEcritures, SourcesDesEcrituresDeVente } from './ecr
 import { SANS_ACOMPTE, ventesFacturees, type VentesFacturees } from './ventesFacturees'
 import { formatMoney } from './format'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // LA CONCORDANCE DE LA 2035 AVEC LES ÉCRITURES (ligne 26.6, étape c). Les écritures de ces tests viennent des
 // VRAIS générateurs de l'application — celui d'une pièce, d'un mouvement affecté, d'une échéance d'emprunt,
@@ -34,7 +35,7 @@ import { CAISSE_ABSENTE } from './recettesDeCaisse'
 // qu'une comptabilité écrite par l'application concorde avec sa 2035, au centime. Chaque test suivant y
 // défait une seule chose, et l'écart doit nommer cette chose-là.
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const categories = [
   { id: 'c-achats', libelle: 'Achats', compte_comptable: '606100', poste_2035: 'Achats' },

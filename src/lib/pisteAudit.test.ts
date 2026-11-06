@@ -17,6 +17,7 @@ import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 import { SANS_ECRITURE_DE_VENTE, SANS_EXEMPLAIRE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 
 // Le lettrage d'un fichier (lib/lettrage.ts) : vide, sauf dans les tests qui le calculent comme l'écran.
 const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
@@ -24,7 +25,7 @@ const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
 // Sans registre : la plupart de ces cas n'ont pas de dotation, donc rien à y chercher.
 const SANS_REGISTRE: RegistreAudit = { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT }
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', nom_fichier: `${id}.pdf`, chemin_stockage: '', statut: 'validee',
@@ -119,7 +120,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est absente du FEC', () => {
     const categories: Categorie[] = []
-    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES).split('\r\n').filter(Boolean)
+    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES).split('\r\n').filter(Boolean)
     // En-tête + la seule écriture justifiée : l'orpheline n'y est pas.
     expect(lignes).toHaveLength(2)
     expect(lignes.join('\n')).not.toContain('199,99')
@@ -567,7 +568,7 @@ describe('pisteAudit — l’échéance payée depuis le compte personnel', () =
     expect(rupturesPisteAudit(lignes, new Set(), PLAN_PAR_DEFAUT)).toEqual([])
     expect(absenceFec(lignes, new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
     // L'en-tête et les deux lignes de l'écriture.
-    expect(genererFec(lignes, [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES).split('\r\n').filter((l) => l !== '')).toHaveLength(3)
+    expect(genererFec(lignes, [], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES).split('\r\n').filter((l) => l !== '')).toHaveLength(3)
     // Le garde symétrique : la même écriture sans son échéance est bien une rupture, et hors du FEC.
     expect(rupturesPisteAudit([paiement({ cotisation_id: null })], new Set(), PLAN_PAR_DEFAUT).map((r) => r.motif)).toEqual(['sans_justificatif'])
     expect(absenceFec([paiement({ cotisation_id: null })], new Set()).nb).toBe(1)

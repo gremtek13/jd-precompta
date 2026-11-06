@@ -10,6 +10,7 @@ import { cleFournisseur } from './format'
 import { etatsDesLettragesManuels, piecesLettreesALaMain, type MotifLettrageManuel } from './lettrage'
 import type { EcritureBrouillon, LettrageManuel, ModeComptable, Piece } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
+import { modeleDeTest } from '../test/modeles'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES LETTRAGES FAITS À LA MAIN (06/10/2026, ligne 32, seconde brique).
 //
@@ -144,7 +145,7 @@ const CAS: Cas[] = [
 const forme = (etats: readonly { groupe: string; pieceIds: string[]; motif: string | null }[]) =>
   etats.map((e) => `${e.groupe}:${e.pieceIds.join(',')}:${e.motif ?? 'tient'}`).sort()
 
-const ici = ([, b, p, lm, mode]: Cas) => etatsDesLettragesManuels(b, p, lm, mode)
+const ici = ([, b, p, lm, mode]: Cas) => etatsDesLettragesManuels(b, p, lm, modeleDeTest(mode))
 const la = (copie: Copie, [, b, p, lm, mode]: Cas) => copie.etatsDesLettragesManuels(b, p, lm, mode)
 
 const TIERS = [
@@ -176,7 +177,7 @@ describe('agent-comptable / bloc LETTRAGE MANUEL (copie déployée)', () => {
     for (const tiers of TIERS) {
       expect(deployee.cleFournisseur(tiers), `${tiers}`).toBe(cleFournisseur(tiers))
       for (const compte of COMPTES) {
-        expect(deployee.auxiliaireDuTiers({ tiers }, compte), `${tiers} au ${compte}`).toBe(auxiliaireDuTiers({ tiers }, compte)?.num ?? null)
+        expect(deployee.auxiliaireDuTiers({ tiers }, compte), `${tiers} au ${compte}`).toBe(auxiliaireDuTiers({ tiers }, compte, modeleDeTest('engagement'))?.num ?? null)
       }
     }
   })

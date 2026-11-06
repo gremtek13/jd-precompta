@@ -14,6 +14,7 @@ import { PLAN_PAR_DEFAUT } from './planComptable'
 import { paiementsDesPieces } from './rattachement'
 import type { EcritureBrouillon, LigneBancaire } from './types'
 import { mouvementsVentilesDesynchronises } from './ventilationBanque'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // LES CONTRÔLES ET LES GESTES D'HIER DE L'ONGLET ÉCRITURES, DEVANT LES LIGNES D'UNE VENTE FACTURÉE (chantier EC-Q3, étape
 // VF4c1). Une écriture de vente facturée n'a ni pièce, ni catégorie : sa justification est sa facture, son encaissement, ou
@@ -175,8 +176,8 @@ const LIGNES_DES_VENTES: EcritureBrouillon[] = [
 ]
 const MOUVEMENTS = [mouvement({ id: 'm1' }), mouvement({ id: 'm2', date: '2025-11-22', montant: 50 })]
 const DANS_LES_DEUX_MODELES = [
-  { mode: 'tresorerie' as const, compteNotesDeFrais: '455000' as const, plan: PLAN_PAR_DEFAUT },
-  { mode: 'engagement' as const, compteNotesDeFrais: '455000' as const, plan: PLAN_PAR_DEFAUT },
+  { mode: 'tresorerie' as const, compteNotesDeFrais: '455000' as const, plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
+  { mode: 'engagement' as const, compteNotesDeFrais: '455000' as const, plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
 ]
 
 describe('la preuve : aucun contrôle d’hier ne signale les lignes d’une vente facturée', () => {

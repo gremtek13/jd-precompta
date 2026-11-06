@@ -11,6 +11,7 @@ import { pieceDeVente } from '../test/dossierBascule'
 import { NON_VALIDEE } from '../test/ecritures'
 import { detailDesEncaissementsSansMouvement, MOYENS_DU_RELEVE, ventesDeLaChecklist } from './ventesDeLaChecklist'
 import { CAISSE_PAS_EN_BASE } from './controlesDeLaCaisse'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // CE QUE LA VUE D'ENSEMBLE DIT DES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5f) :
 // les mouvements réservés à des encaissements de factures, à classer, et les encaissements par un moyen du relevé qui
@@ -198,7 +199,7 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
   }
 }
 const CONTEXTE: ContexteDeLaChecklist = {
-  assujettiTva: true, periodiciteTva: 'trimestrielle', statutTva: 'redevable', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT },
+  assujettiTva: true, periodiciteTva: 'trimestrielle', statutTva: 'redevable', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
   frontiere: null, anneesValidees: [], aujourdHui: '2026-10-24', anneeCourante: 2026, moisEcoules: 9, premierJourDuMois: '2026-10-01',
 }
 const point = (d: DonneesDeLaChecklist, id: string, frontiere: string | null = null) =>

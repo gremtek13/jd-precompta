@@ -10,6 +10,7 @@ import { AUCUNE_PIECE_SUPPRIMEE } from '../../lib/bilanSuppression'
 import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // L'ÉCRAN OÙ LA PIÈCE SE CORRIGE. Cinq contrôles de la famille « donnée démontrée fausse » y
 // envoient l'opérateur depuis la Checklist (`cible: 'pieces'`), et trois seulement marquaient la
@@ -2091,7 +2092,7 @@ describe('PiecesTab — l’exemplaire d’une facture émise', () => {
 // LA CAISSE (ligne 26.6, étape C9b) : « Payée en espèces » se dit à part de « Rapprochée », qui dit un mouvement bancaire ; la
 // caisse ne se lit que la migration en base et le dossier en trésorerie ; la fiche reçoit de quoi régler la pièce par la caisse.
 describe('PiecesTab — une pièce payée en espèces', () => {
-  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
   const montrer = (modele: ModeleComptable | null) => render(
     <AvecExercicesValides>
       <FournisseurPanneauDroit>
@@ -2215,7 +2216,7 @@ describe('PiecesTab — une pièce payée en espèces', () => {
 // ne part pas ; et la garde de la base dit, sous 23503, « payée par la caisse : retire d'abord son paiement » (caisseSuppression.sql,
 // 11h à 11j).
 describe('relecture C9b — supprimer une sélection qui porte une pièce payée par la caisse', () => {
-  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
   const paiement = {
     id: 'o1', dossier_id: 'dossier-de-test', genre: 'paiement', date: '2026-03-12', montant: -120, categorie_id: null, taux_tva: null,
     encaissements_du_jour: null, piece_id: 'p-esp', origine: 'cabinet', remplace_id: null, cree_le: '2026-03-12T08:00:00Z', cree_par: 'u',

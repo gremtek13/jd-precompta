@@ -7,6 +7,7 @@ import type {
   NatureImmobilisation, RevisionJustification, RevisionPreuve, SoldeReporte,
 } from '../lib/types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from './ecritures'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from './modeles'
 
 // LES FABRIQUES DES TESTS DE LA RÉVISION (ligne 41, étape R2) : une ligne de chaque table que le module lit, entière —
 // colonnes NOT NULL comprises —, que chaque cas complète de ce qui le distingue. Des jeux FICTIFS : aucun libellé, aucun
@@ -116,7 +117,7 @@ export function citation(o: Partial<RevisionPreuve>): RevisionPreuve {
 /** Ce qu'un écran aurait lu d'un dossier vide, exercice 2025 terminé, en trésorerie, non redevable. */
 export function donnees(o: Partial<DonneesDeLaRevision>): DonneesDeLaRevision {
   return {
-    annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, assujettiTva: false,
+    annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, assujettiTva: false,
     periodiciteTva: 'trimestrielle', ecritures: [], reprise: [], reportes: [], exercicesValides: [], verificationPrecedent: null,
     lignes: [], controlesReleves: [], pieces: [], documents: [], immobilisations: [], natures: [], emprunts: [],
     declarationsTva: [], lectureIncomplete: null, categories: [], decisions: [], preuves: [], ...o,

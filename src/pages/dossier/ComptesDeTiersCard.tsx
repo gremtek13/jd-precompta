@@ -1,11 +1,8 @@
 import { useState } from 'react'
 import { formatDate, formatMoney } from '../../lib/format'
+import type { ModeleComptable } from '../../lib/engagement'
 import {
-  COMPTE_AUTRES_DEBITEURS_CREDITEURS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_FOURNISSEURS,
-  COMPTE_FOURNISSEURS_IMMOBILISATIONS, libelleCompteTenu,
-} from '../../lib/comptes'
-import {
-  estDivers, MOTIFS_LETTRAGE_MANUEL, type EtatLettrageManuel, type EtatPieceDuTiers, type LettrageProposé, type PieceDuTiers,
+  estDivers, libelleDuCompteDeTiers, MOTIFS_LETTRAGE_MANUEL, type EtatLettrageManuel, type EtatPieceDuTiers, type LettrageProposé, type PieceDuTiers,
   type SoldeDeTiers,
 } from '../../lib/lettrage'
 
@@ -24,13 +21,19 @@ import {
 // tiers à suivre. C'est l'onglet qui décide de la montrer.
 
 // Ce que dit un montant positif, compte par compte : les montants se lisent dans le sens normal du compte
-// (`sensNormal`), créditeur pour ce qu'on doit, débiteur pour ce qu'on attend.
-const SENS_POSITIF: Readonly<Record<string, string>> = {
-  [COMPTE_FOURNISSEURS]: 'reste à payer',
-  [COMPTE_FOURNISSEURS_IMMOBILISATIONS]: 'reste à payer',
-  [COMPTE_CLIENTS]: 'reste à encaisser',
-  [COMPTE_COURANT_ASSOCIE]: 'dû au dirigeant',
-  [COMPTE_AUTRES_DEBITEURS_CREDITEURS]: 'dû au dirigeant',
+// (`sensNormal`), créditeur pour ce qu'on doit, débiteur pour ce qu'on attend. Rôle par rôle, au compte que le PLAN du
+// dossier lui donne (ligne 43, étape PC3 ; conception, § 2.4).
+const SENS_POSITIF = {
+  fournisseurs: 'reste à payer',
+  fournisseurs_immobilisations: 'reste à payer',
+  clients: 'reste à encaisser',
+  associe: 'dû au dirigeant',
+  autres_debiteurs_crediteurs: 'dû au dirigeant',
+} as const
+
+function sensPositif(compte: string, modele: ModeleComptable): string {
+  const role = (Object.keys(SENS_POSITIF) as (keyof typeof SENS_POSITIF)[]).find((r) => modele.plan[r] === compte)
+  return role ? SENS_POSITIF[role] : 'solde'
 }
 
 const LIBELLES_ETATS: Readonly<Record<EtatPieceDuTiers, string>> = {
@@ -72,7 +75,7 @@ interface Selection {
 }
 
 export default function ComptesDeTiersCard({
-  soldes, dateArrete, finExercice, lectureIncomplete, lignesDeTiers, anterieuresALOuverture, ouverture, loading, lettrage,
+  soldes, dateArrete, finExercice, lectureIncomplete, lignesDeTiers, anterieuresALOuverture, ouverture, loading, lettrage, modele,
 }: {
   soldes: readonly SoldeDeTiers[]
   // AAAA-MM-JJ : le jour au soir duquel la vue se lit.
@@ -92,6 +95,8 @@ export default function ComptesDeTiersCard({
   ouverture: string | null
   loading: boolean
   lettrage: LettrageALaMain
+  // Le modèle du dossier : son plan nomme chaque compte de tiers, son sens, et son compte « divers » (ligne 43, PC3).
+  modele: ModeleComptable
 }) {
   const parCompte = new Map<string, SoldeDeTiers[]>()
   for (const s of soldes) parCompte.set(s.compte, [...(parCompte.get(s.compte) ?? []), s])
@@ -184,7 +189,7 @@ export default function ComptesDeTiersCard({
           ) : (
             [...parCompte.entries()].map(([compte, lignes]) => (
               <SectionDuCompte
-                key={compte} compte={compte} lignes={lignes} lettrage={lettrage}
+                key={compte} compte={compte} lignes={lignes} lettrage={lettrage} modele={modele}
                 cochees={selection.compte === compte ? selection.pieceIds : []}
                 onBasculer={(pieceId) => basculer(compte, pieceId)}
                 onLettrer={(pieceIds) => lettrer(compte, pieceIds)}
@@ -203,10 +208,11 @@ export default function ComptesDeTiersCard({
   )
 }
 
-function SectionDuCompte({ compte, lignes, lettrage, cochees, onBasculer, onLettrer }: {
+function SectionDuCompte({ compte, lignes, lettrage, modele, cochees, onBasculer, onLettrer }: {
   compte: string
   lignes: readonly SoldeDeTiers[]
   lettrage: LettrageALaMain
+  modele: ModeleComptable
   cochees: readonly string[]
   onBasculer: (pieceId: string) => void
   onLettrer: (pieceIds: string[]) => void
@@ -219,8 +225,8 @@ function SectionDuCompte({ compte, lignes, lettrage, cochees, onBasculer, onLett
   return (
     <section style={{ marginTop: 16 }}>
       <h4 style={{ margin: '0 0 8px' }}>
-        {compte} — {libelleCompteTenu(compte) ?? compte}
-        <span className="muted" style={{ fontWeight: 400 }}> · {SENS_POSITIF[compte] ?? 'solde'} {formatMoney(total)}</span>
+        {compte} — {libelleDuCompteDeTiers(compte, modele)}
+        <span className="muted" style={{ fontWeight: 400 }}> · {sensPositif(compte, modele)} {formatMoney(total)}</span>
       </h4>
       {/* Largeurs fixes : les tableaux des comptes se suivent, et leurs colonnes s'alignent d'une section à l'autre au lieu
           de suivre chacune la longueur de ses noms. */}
@@ -278,7 +284,10 @@ function SectionDuCompte({ compte, lignes, lettrage, cochees, onBasculer, onLett
         </table>
       </div>
       {pieces.length > 0 && (
-        <PiecesOuvertes pieces={pieces} cochables={lettrage.suspendu === null} occupe={lettrage.occupe} cochees={cochees} onBasculer={onBasculer} />
+        <PiecesOuvertes
+          pieces={pieces} cochables={lettrage.suspendu === null} occupe={lettrage.occupe} cochees={cochees} onBasculer={onBasculer}
+          modele={modele}
+        />
       )}
       {cochees.length > 0 && (
         <BarreDeLettrage compte={compte} pieces={pieces} cochees={cochees} lettrage={lettrage} onLettrer={onLettrer} />
@@ -358,13 +367,14 @@ function LettragesFaitsALaMain({ etats, nomDe, occupe, onDefaire }: {
   )
 }
 
-function PiecesOuvertes({ pieces, cochables, occupe, cochees, onBasculer }: {
+function PiecesOuvertes({ pieces, cochables, occupe, cochees, onBasculer, modele }: {
   pieces: readonly { tiers: SoldeDeTiers; piece: PieceDuTiers }[]
   // Vrai quand le lettrage à la main s'offre : une colonne de cases à cocher en tête du tableau.
   cochables: boolean
   occupe: boolean
   cochees: readonly string[]
   onBasculer: (pieceId: string) => void
+  modele: ModeleComptable
 }) {
   return (
     <details open={pieces.length <= 10} style={{ marginTop: 8 }}>
@@ -407,7 +417,7 @@ function PiecesOuvertes({ pieces, cochables, occupe, cochees, onBasculer }: {
                     <input
                       type="checkbox" aria-label={`Cocher ${p.libelle}`} checked={cochees.includes(p.pieceId)}
                       disabled={occupe || p.lettrageManuel !== null || p.factureId !== undefined
-                        || (tiers.auxiliaire !== null && estDivers(tiers.compte, tiers.auxiliaire))}
+                        || (tiers.auxiliaire !== null && estDivers(tiers.compte, tiers.auxiliaire, modele))}
                       onChange={() => onBasculer(p.pieceId)}
                     />
                   </td>

@@ -8,6 +8,7 @@ import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type { PaiementsDesPieces } from '../../lib/rattachement'
 import type { OperationCaisse, Piece } from '../../lib/types'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // « RÉGLER PAR LA CAISSE », DANS LA FICHE D'UNE PIÈCE (ligne 26.6, étape C9b). Ce que ces cas gardent : le drapeau baissé, rien ;
 // rien avant le retour de la lecture ; une lecture partielle qui le dit et n'offre AUCUN geste ; le reste à régler proposé, signé
@@ -48,7 +49,7 @@ vi.mock('../../lib/supabase', () => ({
 }))
 
 const D = 'dossier-1'
-const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const sansInsecable = (t: string) => t.split(String.fromCharCode(0xa0)).join(' ').split(String.fromCharCode(0x202f)).join(' ')
 
 function operation(o: Partial<OperationCaisse> & Pick<OperationCaisse, 'id'>): OperationCaisse {

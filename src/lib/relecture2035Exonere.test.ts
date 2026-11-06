@@ -16,11 +16,12 @@ import { ventesFactureesVides } from '../test/ventesFacturees'
 import { NON_VALIDEE } from '../test/ecritures'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import type { Categorie, CotisationDeclaree, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // RELECTURE DU 31/10/2026 — la 2035 d'un soignant EXONÉRÉ en trésorerie. Trois défauts, prouvés d'abord par des
 // `it.fails`, puis corrigés : les tests ci-dessous disent ce que la déclaration doit dire, et ce qu'elle refuse.
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 const mouvement = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2025-06-01', libelle: 'VIR', montant: 0, statut: 'rapprochee',

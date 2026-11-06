@@ -11,6 +11,7 @@ import {
 } from '../lib/paiementParLaCaisse'
 import { PLAN_PAR_DEFAUT, type CleRoleComptable, type PlanComptable } from '../lib/planComptable'
 import type { OrigineOperationCaisse, StatutTva } from '../lib/types'
+import { planLuDe } from './modeles'
 
 // L'ESSAI DE LA CAISSE REJOUÉ PAR LE MODULE (ligne 26.6, étape C2). `supabase/essais/caisse.sql` joue, étape après étape,
 // les fonctions de la caisse sur des dossiers jetables ; ce banc rejoue les MÊMES étapes, dans le même ordre, sur un état
@@ -212,7 +213,7 @@ function dossierLu(e: Etat, dossierId: string, quiEcrit: OrigineOperationCaisse 
   const ouvertures = e.ouvertures.filter((a) => a.dossier_id === dossierId).map((a) => a.date).sort()
   return {
     quiEcrit, utilisateur: quiEcrit === 'client' ? 'client' : 'chef', aujourdhui, natureDesRecettesDuClient: d.nature,
-    modele: { mode: d.mode, compteNotesDeFrais: d.notesDeFrais, plan: planDe(e, dossierId) },
+    modele: { mode: d.mode, compteNotesDeFrais: d.notesDeFrais, ...planLuDe(planDe(e, dossierId)) },
     assujetti: d.assujetti, ouverture: ouvertures[0] ?? null,
     anneesValidees: e.validees.filter((v) => v.dossier_id === dossierId).map((v) => v.annee),
     categories: e.categories.filter((c) => c.dossier_id == null || c.dossier_id === dossierId),

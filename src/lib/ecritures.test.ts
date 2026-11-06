@@ -13,10 +13,11 @@ import type { ModeleComptable } from './engagement'
 import { estParLeReleve, paiementsDesPieces } from './rattachement'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 const ACHATS = '606100'
 // Le modèle de tous les dossiers d'avant l'engagement : les contrôles de trésorerie s'y lisent tels quels.
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const VENTES = '706000'
 // La cible d'une pièce ordinaire : le compte de sa catégorie. Celle de la facture d'un bien immobilisé
 // porte le compte de sa nature et `immobilisation` (lib/ecritures.ts, `CibleComptable`).
@@ -772,7 +773,7 @@ describe('ecrituresSansObjet', () => {
 })
 
 // ═══ Engagement (lib/engagement.ts) ═══════════════════════════════════════════════════════════════
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 // Les lignes que la génération écrit, telles que la base les rend : c'est contre elles que le contrôle
 // doit se taire — un contrôle vérifié sur des lignes écrites à la main pourrait l'être sur des lignes

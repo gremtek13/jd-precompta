@@ -19,6 +19,7 @@ import {
 } from '../../lib/changementDeRib'
 import { CONSEIL_VERIFICATION_RIB } from '../../lib/parametresFacturationVue'
 import { changementFictif, toutesLesCombinaisons, valeurRendue } from '../../test/changementDeRib'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -265,8 +266,8 @@ function poser(pieces: {
   faux.lues = []
 }
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 // `valides` : les exercices validés que la page du dossier fournit à ses onglets (DossierDetail).
 // `statutTva` : par défaut celui qu'implique `assujettiTva` — un dossier non assujetti des jeux d'essai est exonéré,

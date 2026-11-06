@@ -96,7 +96,7 @@ export default function DossierDetail() {
   // lui, ils n'en composeraient aucune juste — un plan lu en partie ferait écrire un rôle à son défaut, peut-être un autre
   // compte que celui du dossier, que la base refuserait. Lu, refusé, illisible ou incomplet, il est entier ou il n'est pas.
   const [planLu, setPlanLu] = useState<{ id: string; lecture: LectureDuPlan } | null>(null)
-  const plan = planLu && planLu.id === id ? planLu.lecture.plan : null
+  const plan = planLu && planLu.id === id && planLu.lecture.plan !== null ? planLu.lecture : null
   const erreurPlan = planLu && planLu.id === id ? planLu.lecture.motif : null
   // L'OUVERTURE DU DOSSIER AU COMPTE CONNECTÉ (23Q2Q2Q1-Q1, voir lib/dossiersOuverts.ts), lue comme son identité : avec
   // l'identifiant pour lequel elle l'a été. La base rend aussi à un membre de l'équipe les dossiers où il n'a qu'un accès
@@ -476,7 +476,7 @@ export default function DossierDetail() {
                 onModeleUpdated={(modification) => modifierDossier(id, modification)}
               />
             )}
-            {tab === 'statistiques' && modele && <StatistiquesTab dossierId={id} onNavigate={allerA} modeComptable={modele.mode} plan={modele.plan} />}
+            {tab === 'statistiques' && modele && <StatistiquesTab dossierId={id} onNavigate={allerA} modele={modele} />}
             {tab === 'bilan' && modele && <BilanTab dossierId={id} modele={modele} onNavigate={allerA} />}
             {tab === 'revision' && dossier && modele && (
               <RevisionTab

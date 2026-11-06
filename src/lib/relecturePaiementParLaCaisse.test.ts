@@ -20,6 +20,7 @@ import type { Categorie, EcritureBrouillon, LigneBancaire, OperationCaisse, Piec
 import { defautsDeNumerotation } from './validationExercice'
 import { NON_VALIDEE } from '../test/ecritures'
 import { SANS_FACTURE_SOURCE, SANS_EXEMPLAIRE, SANS_ECRITURE_DE_VENTE, ventesFactureesVides } from '../test/ventesFacturees'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 
 // RELECTURE INDÉPENDANTE DU PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6, lots C8, C9a et C9b ; CAISSE-Q4, (B)), AVANT QUE
 // LE DRAPEAU NE SE LÈVE. Chaque défaut confirmé y était prouvé par un `it.fails`, le drapeau `PAIEMENT_PAR_LA_CAISSE_EXPORTE`
@@ -41,7 +42,7 @@ vi.mock('./paiementParLaCaisse', async (original) => {
 })
 afterEach(() => { drapeau.leve = true })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const ACHATS: Categorie = {
   id: 'c-achats', dossier_id: null, code: 'achats', libelle: 'Achats', ordre: 1, compte_comptable: '606100', poste_2035: 'Achats',
 }
@@ -228,7 +229,7 @@ describe('défaut 2 — un paiement par la caisse d’un centime de moins que la
     expect(analyserEcritures(brouillon, [{ piece: PIECE, compte: '606100', immobilisation: false }], false, p, TRESORERIE, null, SANS_EXEMPLAIRE)
       .groupesDesequilibres).toEqual([])
     expect(piecesPayeesEnPartie([PIECE], p, 'tresorerie')).toEqual([])
-    const defauts = defautsDeNumerotation(numeroterFec(brouillon, [PIECE], [ACHATS], [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE,
+    const defauts = defautsDeNumerotation(numeroterFec(brouillon, [PIECE], [ACHATS], [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE,
       caisseLue([APPORT]), CHAMPS_BNC_NON_EXPORTES))
     expect(defauts.map((d) => d.type)).toEqual(['desequilibre'])
   })

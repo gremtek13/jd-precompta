@@ -7,7 +7,7 @@ import {
 import { euros, lireLeMontantSaisi, MONTANT_ILLISIBLE, nomDeLOperation, soldeAuJour } from './caisseEcran'
 import type { ModeleComptable } from './engagement'
 import { pourLEspace } from './espaceVentes'
-import { ROLES_COMPTABLES, type PlanComptable } from './planComptable'
+import { ROLES_COMPTABLES, type LibellesDuPlan, type PlanComptable, type PrefixesDuPlan } from './planComptable'
 import type { Dossier, OperationCaisse } from './types'
 
 // « MA CAISSE », CE QUE L'ÉCRAN DU PRATICIEN DIT ET ENVOIE (ligne 26.6, étape C12a ; MVP-D2, CAISSE-Q1, CAISSE2-Q1 à Q4). La
@@ -152,6 +152,12 @@ export const PLAN_QUE_LE_CLIENT_NE_LIT_PAS: PlanComptable = Object.freeze(
   Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, ''])) as Record<keyof PlanComptable, string>,
 )
 
+/** Ni libellé ni préfixe : le client ne lit pas le plan, et sa branche ne nomme aucun compte ni aucun auxiliaire. */
+const LIBELLES_QUE_LE_CLIENT_NE_LIT_PAS: LibellesDuPlan = Object.freeze(
+  Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, null])) as LibellesDuPlan,
+)
+const PREFIXES_QUE_LE_CLIENT_NE_LIT_PAS: PrefixesDuPlan = Object.freeze({ fournisseurs: '', fournisseurs_immobilisations: '', clients: '' })
+
 const centimes = (montant: number) => Math.round(montant * 100)
 
 /**
@@ -243,7 +249,10 @@ export interface ContexteDuClient {
  * la caisse rejouée.
  */
 export function dossierDuClient(ctx: ContexteDuClient, nature: NatureDesRecettesLue, caisse: EtatDeLaCaisse): DossierDeLaCaisse {
-  const modele: ModeleComptable = { mode: ctx.dossier.mode_comptable, compteNotesDeFrais: '', plan: PLAN_QUE_LE_CLIENT_NE_LIT_PAS }
+  const modele: ModeleComptable = {
+    mode: ctx.dossier.mode_comptable, compteNotesDeFrais: '', plan: PLAN_QUE_LE_CLIENT_NE_LIT_PAS,
+    libelles: LIBELLES_QUE_LE_CLIENT_NE_LIT_PAS, prefixes: PREFIXES_QUE_LE_CLIENT_NE_LIT_PAS,
+  }
   const categorie = nature.etat === 'lue' ? nature.categorie : null
   return {
     quiEcrit: 'client',

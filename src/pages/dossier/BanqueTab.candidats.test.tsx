@@ -11,6 +11,7 @@ import {
   JUSTIFICATIF_CONTRE_PASSATION, JUSTIFICATIF_ENCAISSEMENT, JUSTIFICATIF_FACTURE, SIGNAL_MONTANT_CREDIT, signalDuClient,
   TITRE_PROPOSES, TITRE_RATTACHER, TITRE_RATTACHER_CONTRE_PASSATION,
 } from '../../lib/mouvementsDesVentes'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LES CANDIDATS DU RELEVÉ (ligne 28.65, chantier EC-Q3, étape VF5e). La règle est éprouvée à part
 // (lib/candidatsDuReleve.test.ts) ; ici, le CÂBLAGE de l'onglet Banque, côté cabinet, sur un dossier basculé : la fiche d'un
@@ -186,7 +187,7 @@ function poser() {
 beforeEach(poser)
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 function rendre(ventesParLesFactures = true) {
   return render(

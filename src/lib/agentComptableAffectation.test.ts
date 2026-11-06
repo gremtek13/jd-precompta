@@ -10,6 +10,7 @@ import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types
 import { compteDuDirigeant, virementsPersonnelsAEcrire } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS AFFECTÉS (29/09/2026, ligne 26.6).
 //
@@ -302,8 +303,8 @@ describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
 
 // LES VIREMENTS PERSONNELS (src/lib/virementPersonnel.ts) : la Checklist compte ceux dont l'écriture
 // manque — ceux classés avant que ce classement s'écrive —, et l'assistant doit dire la même chose.
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const perso = (o: Partial<LigneBancaire>): LigneBancaire =>
   ligne({ statut: 'ignoree', categorie_id: null, prelevement_personnel: true, montant: -500, ...o })
 const VIREMENTS: LigneBancaire[] = [

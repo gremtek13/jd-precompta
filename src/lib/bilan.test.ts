@@ -7,15 +7,16 @@ import type { ModeleComptable } from './engagement'
 import type { ANouveau, Categorie, EcritureBrouillon, Piece, SoldeReporte } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // LE BILAN SE CONFRONTE À DES BILANS CALCULÉS À LA MAIN, jamais au module lui-même : chaque cas pose des écritures, fait
 // le calcul en commentaire, compte par compte, et attend des montants écrits en toutes lettres, en centimes. Le passage
 // des comptes aux rubriques est confronté à une table recopiée des libellés du 2033-A-SD 2026 et du PCG, pas à la table
 // du module.
 
-const SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const EXPLOITANT_BNC: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-const EXPLOITANT_BIC: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+const SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const EXPLOITANT_BNC: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const EXPLOITANT_BIC: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
 let numero = 0
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {

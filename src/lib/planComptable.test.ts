@@ -22,6 +22,7 @@ import {
   type ReponseDuPlan,
 } from './planComptable'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { modeleDeTest } from '../test/modeles'
 
 // Les libellés et les préfixes que `plan_du_dossier` rend pour un dossier qui n'en règle aucun : ceux du catalogue.
 const LIBELLES_DU_CATALOGUE = Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, r.libelleDefaut]))
@@ -270,7 +271,7 @@ describe('le plan par défaut', () => {
 
   it('porte les préfixes des comptes auxiliaires que lib/engagement.ts écrit, sur les trois rôles de tiers seulement', () => {
     for (const r of ROLES_COMPTABLES) {
-      const auxiliaire = auxiliaireDuTiers({ tiers: null }, r.compteDefaut)
+      const auxiliaire = auxiliaireDuTiers({ tiers: null }, r.compteDefaut, modeleDeTest('engagement'))
       expect(auxiliaire ? auxiliaire.num.replace(/DIVERS$/, '') : null, r.role).toBe(r.prefixeAuxiliaireDefaut)
     }
     expect(ROLES_COMPTABLES.filter((r) => r.prefixeAuxiliaireDefaut !== null).map((r) => r.role))
