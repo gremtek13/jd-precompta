@@ -577,7 +577,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     refus avant le clic et nomment ce qui se fige, l'aperçu n'imprime que ce qui est figé ; `lib/mentionsFigeesVue.ts`),
     en ligne le 30/10/2026 ; A7B-Q1 et Q2 le même jour (rien sous le nom d'un entrepreneur individuel ; la mention
     légale proposée ne garde que la TVA quand le dossier a ses paramètres) ; A7B-Q3 (le bon de commande d'une
-    entreprise) et A7c, le CII, après le MVP → « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES
+    entreprise) après le MVP → « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES
     MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) », « LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET
     L'IBAN HORS DES TEXTES LIBRES », « DEUX RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 », « A7Q-Q1 : UNE SOCIÉTÉ SANS
     DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION », « LES DEUX MIGRATIONS D'A7 EN
@@ -954,7 +954,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   avertissements, SIRET = l'entreprise authentifiée → « Pièges EN16931/Super PDP ». **Le statut de TVA du dossier**
   décide de la mention et du motif → « LE STATUT DE TVA DU DOSSIER ». En franchise ou exonéré, le numéro de TVA tient à
   une case (`numero_tva_attribue`) ; sans elle, ses factures sans TVA ne partent pas (G1.47).
-- **Le générateur CII** refuse avant le clic → « LA FACTURE ÉLECTRONIQUE S'ÉCRIT EN CII ». **Une facture validée est
+- **Le générateur CII** refuse avant le clic → « LA FACTURE ÉLECTRONIQUE S'ÉCRIT EN CII ». Depuis A7c (06/11/2026),
+  une facture figée lui donne ses seules valeurs figées — TVA, unité et référence des lignes, bon de commande, RIB
+  (BG-16 sous le moyen préféré, le code 1 sans moyen), conditions de paiement de `conditionsFigees`, celles du papier —
+  et une facture d'avant s'écrit à l'octet près comme hier → « LA FACTURE ÉLECTRONIQUE LIT CE QUE LA FACTURE A FIGÉ
+  (A7C, LIGNE 28.55) ». **Une facture validée est
   figée en base** ; la numérotation par `enregistrer_facture` seule → « UNE FACTURE VALIDÉE SE FIGE EN BASE ». Depuis
   le 02/11/2026, la garde refuse une date à venir ou d'avant la plus récente de sa série (dites avant le clic depuis le
   06/11/2026, au jour de Paris, celui de la date proposée et de l'aperçu de transmission), des mentions sans la
