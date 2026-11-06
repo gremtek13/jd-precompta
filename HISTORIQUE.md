@@ -48153,6 +48153,23 @@ seconde. Joué en superutilisateur sur une copie qui ne lui appartient pas, il s
 propriétaire et 66 verdicts tombent (`permission denied for function finale_active_du_devis`) : une réplique se rejoue sous
 son propriétaire, jamais en superutilisateur.
 
+### 06/11/2026 — L'ACOMPTE D'UN DEVIS EN PRODUCTION : LA MIGRATION COLLÉE ET LES DRAPEAUX LEVÉS
+
+Le cabinet a collé `acomptes_des_devis` dans la nuit du 05 au 06/11/2026 : version 20261105231034, 175 migrations. L'empreinte
+de sa ligne d'historique est celle du texte donné (`5b4d1476…`, aucun retour chariot) ; les corps de `facturer_acompte_devis`,
+`facturer_devis`, `enregistrer_facture` et `garder_devis_facture` sont ceux de la réplique ; `signature.sql` rend en production
+les neuf familles de la réplique après collage, sous son propriétaire (975 colonnes, 755 contraintes, 244 fonctions, 168
+policies…). Le fichier passe de `supabase/preparees/` à l'export sous sa version, et les trois contrôles concordent : 175
+fichiers et 175 migrations (`9e5d747d…`), l'inventaire (2 443 objets, `59c27e47…`), le socle (81 instructions, `cea19cff…`).
+`ACOMPTES_PREVUS` et `ACOMPTES_EN_BASE` levés ensemble : la reprise au plan de sauvegarde, les marques et les reprises lues
+par les moteurs, le CII, l'aperçu, la transmission, l'e-mail et les écrans des deux espaces. `types.ts` porte les colonnes,
+alignées sur `generate_typescript_types` (sauf `p_date_versement`, qui admet nul, et `p_demande`, la `DemandeAcompte` du
+module) ; les tests qui éprouvaient l'état baissé sans le forcer le forcent (neuf écrans par `vi.mock`, la vue des devis par
+son accesseur), et la suite entière passe levée (17 409 tests, quatre fuseaux). `acomptesDesDevis` quitte les cas
+particuliers du banc du leurre ; trop long pour être recopié en production (93 000 caractères), il a été joué sur une copie
+de la réplique égale à la production : 168 verdicts justes. Restent les trois fonctions qui transmettent les factures
+(`superpdp-emit`, `plateforme-agreee`, `send-email`), redéployées par la ligne qui importe le dépôt au commit de la fusion.
+
 ### 05/11/2026 — LA TRACE DES DROITS D'UN ACCÈS, EN BASE (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE)
 
 La migration `trace_des_droits` (supabase/preparees/20261105120000, 15 078 caractères, `37516c5b…` ; PRÉPARÉE, pas appliquée ; elle

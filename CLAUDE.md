@@ -758,8 +758,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     comme la facture (A7) ; un mois de validité proposé, modifiable ; aucun modèle par métier pour l'instant ; l'acompte
     (P5b), une facture d'acompte puis une facture finale qui le reprend : conçu, son module pur (P5b1), un acompte qui ne
     couvre jamais tout le devis ni ne laisse de TVA négative (P5B-Q5) — toutes ses questions confirmées par le cabinet
-    le 05/11/2026 —, sa migration (`acomptes_des_devis`, P5b2) préparée et éprouvée sur une réplique, à coller tout de
-    suite (P5B2-migration ; elle remplace `enregistrer_facture`), derrière `ACOMPTES_PREVUS`, comme les moteurs (P5b3 :
+    le 05/11/2026 —, EN PRODUCTION depuis le 06/11/2026 : sa migration (`acomptes_des_devis`, 20261105231034, collée ;
+    elle remplace `enregistrer_facture`), `ACOMPTES_PREVUS` et `ACOMPTES_EN_BASE` levés — les moteurs (P5b3 :
     la CA3 date l'acompte de biens à son encaissement, sa part impayée à la livraison de la finale ; « Encaissée » le
     dit dû et cite le 386 ; l'acompte d'un devis de biens ou mixte refusé, en base comme à l'écran, P5B3-Q1, et un
     versement à venir, P5B2-Q1), le CII (P5b4a : 386, la finale en 380 sous le cadre 4 et un seul BG-3, celui
@@ -778,7 +778,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     TRANSMISSION À L'ÉCRAN (P5B4B), DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : L'E-MAIL ET LES APPELS HTTP,
     CONSTANTE LEVÉE (P5B4C) », « L'ACOMPTE D'UN DEVIS : FACTURER UN ACOMPTE ET LE SOLDE DEPUIS LE DEVIS (P5B5A),
     DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : LA FACTURE D'ACOMPTE ET LA FINALE DANS L'ONGLET DES FACTURES
-    (P5B5B), DERRIÈRE `ACOMPTES_PREVUS` ».
+    (P5B5B), DERRIÈRE `ACOMPTES_PREVUS` », « L'ACOMPTE D'UN DEVIS : P5B3-Q1 ET P5B2-Q1 ÉCRITS DANS LA MIGRATION »,
+    « L'ACOMPTE D'UN DEVIS EN PRODUCTION : LA MIGRATION COLLÉE ET LES DRAPEAUX LEVÉS ».
   - La suite, en trois parties (« au minimum faire comme le logiciel du client, et aller plus loin ») : le premier
     groupe, A1 à A11 ; la parité, B1 à B9 (achats, notes de frais, analyse, documents du cabinet, trois cases neuves
     « Achats », « Notes de frais », « Documents », le resserrement des pièces) ; « aller plus loin », C1 à C8
