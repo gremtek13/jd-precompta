@@ -28,7 +28,7 @@ import {
   DATE_PLANCHER_DEVIS,
   dateDeLaBase,
   ACOMPTES_PREVUS,
-  DEVIS_EXPORTES,
+  DEVIS_CITENT_UN_CONTACT, DEVIS_EXPORTES, modelesDEnregistrementDevis,
   ENVOI_DES_DEVIS_PREVU,
   DUREE_VALIDITE_PAR_DEFAUT_MOIS,
   ecritureDuDevis,
@@ -374,7 +374,8 @@ describe('DEVIS_EXPORTES dit ce que porte l’export', () => {
 
   it('exportées, les fonctions disent les refus du module, dans le même ordre', () => {
     if (!DEVIS_EXPORTES) return
-    expect(messagesSql(derniereDefinitionSql('enregistrer_devis'))).toEqual(REFUS_ENREGISTREMENT_DEVIS.map((r) => r.modele))
+    // Le refus du contact (16 bis) n'y est que le jour où l'export porte `devis_citent_un_contact` (devisContact.test.ts).
+    expect(messagesSql(derniereDefinitionSql('enregistrer_devis'))).toEqual(modelesDEnregistrementDevis(DEVIS_CITENT_UN_CONTACT))
     expect(messagesSql(derniereDefinitionSql('decider_devis'))).toEqual(REFUS_DECISION_DEVIS.map((r) => r.modele))
     // `facturer_devis` remplacée par la migration `acomptes_des_devis` : un acompte en brouillon retient la finale, après
     // les refus d'hier (lib/acomptesDuDevis.ts, que acomptesDuDevis.test.ts confronte à la migration).

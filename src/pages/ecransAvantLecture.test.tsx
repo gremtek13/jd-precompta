@@ -50,6 +50,8 @@ import ReglementsSection from './dossier/ReglementsSection'
 import ArticlesVue from './dossier/ArticlesVue'
 import ContactsVue from './dossier/ContactsVue'
 import DevisVue from './dossier/DevisVue'
+import DevisSaisieModal from './dossier/DevisSaisieModal'
+import { ligneDevisVide, saisieDuDevis } from '../lib/devis'
 import AdresseReceptionModal from './dossier/AdresseReceptionModal'
 import ParametresVue from './dossier/ParametresVue'
 import LogoDesFactures from './dossier/LogoDesFactures'
@@ -117,6 +119,14 @@ const caisseDuGarde = vi.hoisted(() => ({ levee: false }))
 vi.mock('../lib/caisse', async (original) => {
   const vrai = await original<typeof import('../lib/caisse')>()
   return { ...vrai, get CAISSE_EXPORTEE() { return caisseDuGarde.levee } }
+})
+// LE DRAPEAU DES DEVIS QUI CITENT UN CONTACT (`DEVIS_CITENT_UN_CONTACT`, lib/devis.ts), baissé : le formulaire d'un devis ne lit
+// les contacts, et la vue « Clients » l'activité des contacts, que levé. Même patron que la caisse : levé le temps du montage
+// des deux entrées qui le supposent, baissé par `afterEach`.
+const devisContactGarde = vi.hoisted(() => ({ leve: false }))
+vi.mock('../lib/devis', async (original) => {
+  const vrai = await original<typeof import('../lib/devis')>()
+  return { ...vrai, get DEVIS_CITENT_UN_CONTACT() { return devisContactGarde.leve } }
 })
 // pdf.js touche au navigateur dès l'import (`DOMMatrix`) : les deux modules qui le chargent sont doublés, comme dans les
 // tests de la Banque et de la Clôture. Aucun n'est atteint au montage ; la lecture d'un relevé PDF l'est par le second
@@ -520,6 +530,19 @@ const ECRANS: Ecran[] = [
   { nom: 'ContactsVue (client)', fichier: 'pages/dossier/ContactsVue.tsx', rendre: () => (
     <Dossier1><ContactsVue espace="client" dossierId="d1" articleExoneration={null} /></Dossier1>
   ) },
+  // Le formulaire d'un devis lit les contacts pour « Choisir un client » (sous DEVIS_CITENT_UN_CONTACT) : ni « aucun client »
+  // ni un choix avant le retour.
+  { nom: 'ContactsVue (clients sans activité)', fichier: 'pages/dossier/ContactsVue.tsx', rendre: () => {
+    devisContactGarde.leve = true
+    return <Dossier1><ContactsVue espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" articleExoneration={null} /></Dossier1>
+  } },
+  { nom: 'DevisSaisieModal', fichier: 'pages/dossier/DevisSaisieModal.tsx', rendre: () => { devisContactGarde.leve = true; return (
+    <DevisSaisieModal espace="cabinet" dossierId="d1" statutTva="redevable" articleExoneration={null} cible={{ nouveau: true }}
+      depart={saisieDuDevis(null, { aujourdHui: '2026-11-06', statutTva: 'redevable', articleExoneration: null })}
+      lignesDeDepart={[ligneDevisVide('redevable', 'l0')]} aujourdHui="2026-11-06"
+      emission={{ dossier: { nom: 'D', siret: null, adresse: null, forme_juridique: null, denomination_imprimee: null }, cabinet: true }}
+      occupe={false} erreur={null} onClose={() => {}} onEnregistrer={() => {}} />
+  ) } },
   // « Devis » (étape P6a1) : la vue des devis, montée seule — au cabinet, et au client « Ventes ». Ni « aucun devis », ni un
   // geste, avant la lecture des devis et de leurs liens.
   { nom: 'DevisVue', fichier: 'pages/dossier/DevisVue.tsx', rendre: () => (
@@ -597,6 +620,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
 // avec son écran, sa raison et son nombre d'occurrences — un nombre qui change dit que l'écran a changé.
 const PHRASES_FIXES: { ecran: string; texte: string; fois: number; raison: string }[] = [
   { ecran: 'ClientHome', texte: 'Trois étapes, rien à trier de ton côté.', fois: 1, raison: 'le mode d’emploi de l’accueil' },
+  {
+    ecran: 'DevisSaisieModal', texte: '0,00 €', fois: 3,
+    raison: 'les totaux des lignes que le formulaire porte (HT, TVA, TTC), calculés de la saisie, pas de ce qui a été lu',
+  },
   {
     ecran: 'ClientCaisse', fois: 1, raison: 'le rappel fixe de la conception (§ 7) : ce que le praticien garde chez lui, pas ce qui a été lu',
     texte: 'Garde ton brouillard : le détail, recette par recette, reste chez toi. Aucun nom ici.',
@@ -712,7 +739,7 @@ beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-09T10:00:00Z'))
 })
-afterEach(() => { cleanup(); caisseDuGarde.levee = false })
+afterEach(() => { cleanup(); caisseDuGarde.levee = false; devisContactGarde.leve = false })
 afterAll(() => { vi.useRealTimers() })
 
 // LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : la page d'un dossier le lit avec lui (`plan_du_dossier`) et ne monte

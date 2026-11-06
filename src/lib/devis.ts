@@ -59,6 +59,15 @@ export const ACOMPTES_PREVUS: boolean = true
 // par `vi.mock` (FacturesTabDevis.test.tsx), l'état d'avant restant éprouvé tant que le code existe.
 export const ENVOI_DES_DEVIS_OFFERT: boolean = true
 
+// LES DEVIS CITENT LE CONTACT D'OÙ VIENT LEUR CLIENT (migration `devis_citent_un_contact`, 20261106160000, PRÉPARÉE, PAS
+// APPLIQUÉE : supabase/preparees/ ; son essai : supabase/essais/devisCitentUnContact.sql) : `devis.contact_id`, une
+// provenance sans clé comme celle d'une facture, écrite par `enregistrer_devis` dès le brouillon (16 bis : un contact de CE
+// dossier) et reprise par la facture tirée du devis. Baissé, rien ne change : l'écriture ne nomme aucun contact (la fonction
+// d'aujourd'hui ne lit pas la clé), le formulaire n'offre pas « Choisir un client », et la vue « Clients » ne montre pas les
+// clients sans activité depuis trois ans — sans les devis, cette liste serait FAUSSE (un client à qui l'on vient d'adresser un
+// devis y serait proposé à l'effacement). Il se lève avec la migration, son fichier passé dans l'export.
+export const DEVIS_CITENT_UN_CONTACT: boolean = false
+
 // ── Les constantes de la base, confrontées au texte des migrations par le test ─────────────────────────────────────
 export const PREFIXE_DEVIS = 'D'
 export const DATE_PLANCHER_DEVIS = '2000-01-01'
@@ -207,6 +216,9 @@ export interface SaisieDevis {
   conditions: string
   mentionsLegales: string
   notes: string
+  // Le contact d'où vient le client (« Choisir un client ») : une PROVENANCE, que le devis garde à côté de sa copie du
+  // client. Absente ou nulle : aucun. Elle ne part que sous `DEVIS_CITENT_UN_CONTACT`.
+  contactId?: string | null
   // Aucun émetteur : `enregistrer_devis` le pose à l'émission depuis le dossier (A7), et ignore celui qu'on lui enverrait.
 }
 
@@ -238,6 +250,7 @@ export function ecritureDuDevis(s: SaisieDevis, emettre: boolean): EcritureDevis
       conditions: texte(s.conditions),
       mentions_legales: texte(s.mentionsLegales),
       notes: texte(s.notes),
+      ...(DEVIS_CITENT_UN_CONTACT ? { contact_id: s.contactId ?? null } : {}),
     },
     lignes: s.lignes.map((l) => ({
       designation: l.designation, quantite: l.quantite, prix_unitaire_ht: l.prix_unitaire_ht, taux_tva: l.taux_tva,
@@ -440,6 +453,29 @@ function centimesDesLignes(lignes: readonly LigneDevis[]): { ht: number; tva: nu
 }
 
 /** Le devis que l'écriture vise : un devis neuf, ou celui de l'identifiant envoyé — nul quand l'écran ne l'a pas lu. */
+// 16 bis (migration `devis_citent_un_contact`) : le refus qu'`enregistrer_devis` lève, entre les montants et l'IBAN — la
+// provenance, puis un IBAN, l'ordre de la facture. À part de la liste : l'export ne le porte pas encore, et devis.test.ts
+// l'insère à sa place le jour où il le portera ; devisContact.test.ts le confronte à la migration préparée et à son essai.
+export const REFUS_CONTACT_DU_DEVIS = {
+  cle: 'contact_introuvable',
+  modele: "Le contact d'où vient le client du devis est introuvable dans ce dossier.",
+} as const
+
+// Ce que l'écran dit quand la saisie nomme un contact et que la liste des clients n'est pas lue EN ENTIER : la provenance ne
+// se juge que sur elle, et rien ne part (la base, elle, jugerait).
+export const RETENUE_CONTACT_DU_DEVIS = 'La provenance du devis (le client d’où il vient) ne se juge que sur la liste entière des '
+  + 'clients, qui n’est pas lue : rien ne s’enregistre d’ici. Rouvre le devis pour la relire.'
+
+export type CleRefusDuContact = typeof REFUS_CONTACT_DU_DEVIS.cle | 'contact_non_lu'
+
+/** Les messages d'`enregistrer_devis`, dans l'ordre de la base : le refus du contact (16 bis) après les montants, s'il y est. */
+export function modelesDEnregistrementDevis(avecContact: boolean): string[] {
+  const modeles: string[] = REFUS_ENREGISTREMENT_DEVIS.map((r) => r.modele)
+  if (!avecContact) return modeles
+  const apres = REFUS_ENREGISTREMENT_DEVIS.findIndex((r) => r.cle === 'montants_incoherents') + 1
+  return [...modeles.slice(0, apres), REFUS_CONTACT_DU_DEVIS.modele, ...modeles.slice(apres)]
+}
+
 export type CibleDevis =
   | { nouveau: true }
   | { nouveau: false; devis: Pick<Devis, 'dossier_id' | 'statut' | 'numero'> | null }
@@ -448,7 +484,9 @@ export type CibleDevis =
  * Ce qu'`enregistrer_devis` refuserait de cette écriture : le PREMIER refus, dans l'ordre de la base et sous son message,
  * ou null quand elle l'accepterait — hors les contraintes des mentions du client (en 23514, après ces refus), que
  * `refusDesMentions` (mentionsFacture.ts) dit avant le clic sur la saisie. `aujourdHui` : la date du jour À PARIS
- * (`aujourdHuiAParis`), celle que la base lit.
+ * (`aujourdHuiAParis`), celle que la base lit. `contactsDuDossier` : les contacts du dossier lus EN ENTIER, ou null quand on
+ * ne les a pas — une écriture qui nomme un contact est alors RETENUE (`contact_non_lu`), jamais jugée bonne ; une écriture
+ * qui n'en nomme aucun (le drapeau baissé, ou un devis sans provenance) n'en demande aucune.
  */
 export function refusEnregistrementDevis(
   dossierId: string,
@@ -456,7 +494,8 @@ export function refusEnregistrementDevis(
   e: EcritureDevis,
   aujourdHui: string,
   emission: EmissionAJuger,
-): RefusDevis<CleRefusEnregistrementDevis> | null {
+  contactsDuDossier: readonly { id: string }[] | null = null,
+): RefusDevis<CleRefusEnregistrementDevis | CleRefusDuContact> | null {
   const refus = (cle: CleRefusEnregistrementDevis, ...valeurs: string[]) => refusDe(REFUS_ENREGISTREMENT_DEVIS, cle, valeurs)
   // 2 et 3. Le devis, dans ce dossier ; un brouillon seul se réécrit.
   if (!cible.nouveau) {
@@ -496,6 +535,15 @@ export function refusEnregistrementDevis(
   }
   if (!juste('montant_ht', ht) || !juste('montant_tva', tva) || !juste('montant_ttc', ht + tva)) {
     return refus('montants_incoherents', euroCommeLaBase(ht), euroCommeLaBase(tva), euroCommeLaBase(ht + tva))
+  }
+  // 16 bis. Le contact d'où vient le client : une chaîne qui nomme un contact de CE dossier (retiré ou effacé compris,
+  // comme la base le juge), sur la liste lue en entier.
+  const contact = champ(e.devis, 'contact_id')
+  if (contact != null) {
+    if (contactsDuDossier === null) return { cle: 'contact_non_lu', message: RETENUE_CONTACT_DU_DEVIS }
+    if (typeof contact !== 'string' || !contactsDuDossier.some((c) => c.id === contact)) {
+      return { cle: REFUS_CONTACT_DU_DEVIS.cle, message: REFUS_CONTACT_DU_DEVIS.modele }
+    }
   }
   // 17. Un IBAN dans un texte que le devis imprime, à chaque enregistrement, le premier dans l'ordre de l'impression.
   const texteDe = (v: unknown): string | null => (v == null ? null : typeof v === 'string' ? v : JSON.stringify(v))
@@ -685,6 +733,8 @@ export function saisieDuDevis(d: Devis | null, defauts: DefautsDuDevis): Omit<Sa
     conditions: d.conditions ?? '',
     mentionsLegales: d.mentions_legales ?? '',
     notes: d.notes ?? '',
+    // La colonne de la migration préparée : absente du type tant qu'elle n'est pas en base, lue sous le drapeau seulement.
+    ...(DEVIS_CITENT_UN_CONTACT ? { contactId: (d as Devis & { contact_id?: string | null }).contact_id ?? null } : {}),
   }
 }
 
@@ -699,8 +749,9 @@ export function refusDeLaSaisieDevis(
   emettre: boolean,
   aujourdHui: string,
   emission: EmissionAJuger,
+  contactsDuDossier: readonly { id: string }[] | null = null,
 ): string | null {
-  const refus = refusEnregistrementDevis(dossierId, cible, ecritureDuDevis(saisie, emettre), aujourdHui, emission)
+  const refus = refusEnregistrementDevis(dossierId, cible, ecritureDuDevis(saisie, emettre), aujourdHui, emission, contactsDuDossier)
   if (refus) return refus.message
   return refusDesMentions(saisie.mentions, saisie.tiersSiret, 'devis')[0] ?? null
 }

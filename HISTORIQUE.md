@@ -48892,3 +48892,20 @@ mutations mordent ; le retour rend la fonction d'hier à l'identique. e5b2 (28.5
 retiré APRÈS la déclaration de ses paiements, la dit « à rectifier » (`encaissement_retire_apres`), même sur un calcul
 incomplet ; sans migration. En passant : IE0000000T et IE0000000W remplacent le numéro de TVA irlandais des jeux
 d'essai.
+
+### 06/11/2026 — LES DEVIS CITENT LEUR CONTACT, ET LES CLIENTS SANS ACTIVITÉ DEPUIS TROIS ANS (PRÉPARÉE, PAS APPLIQUÉE)
+
+La liste des clients sans activité (RGPD.md §2 : trois ans sans facture ni devis) se jugeait sans les devis : un
+devis ne citait aucun contact. La migration préparée `devis_citent_un_contact` (20261106160000 ; son retour, 160100,
+DESTRUCTIF) pose `devis.contact_id`, une provenance SANS clé comme celle d'une facture (une clé à nul réécrirait un
+devis émis) ; `enregistrer_devis` la contrôle (16 bis, P0002, entre les montants et l'IBAN) et l'écrit dès le
+brouillon ; `facturer_devis` et `facturer_acompte_devis` la reprennent sur la facture tirée, si le contact est encore au
+dossier. Les trois fonctions sont copiées de l'export, leur empreinte vérifiée contre la production ; aucun mot de
+retrait : l'outil. Réplique (copie à froid de `relances5`, base `b_rel_prod`, fonctions égales à la production) :
+`devisCitentUnContact.sql` rend 28 verdicts, 0 en faute, « en attente » sans elle ; dix mutations sur onze mordent (la
+onzième, la forme du contact, équivalente) ; `devis.sql`, `acomptesDesDevis.sql` et `envoiDesDevis.sql` identiques avec
+et sans ; le retour rend les trois empreintes d'hier. Trouvé : la réplique n'a ni les droits de table des devis ni un
+propriétaire unique (posés dans la transaction annulée) ; `devis.sql` 97 et 97b y fautent des deux côtés, pour ça.
+L'écran, sous `DEVIS_CITENT_UN_CONTACT` baissé : « Choisir un client » dans le devis (le client entier et son e-mail) ;
+`lib/contactsInactifs.ts` (jour de Paris, trois ans calendaires, la création sans activité, le 29 février au 1er
+mars), sa lecture entière des factures et des devis, et la section de la vue « Clients » qui ouvre la confirmation.
