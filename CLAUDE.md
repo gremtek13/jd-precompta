@@ -587,10 +587,20 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Le même soir, préparées derrière leurs drapeaux : C5, les relances
     d'une facture en retard (pénalités calculées et montrées, jamais facturées ; `send-email` sous `RELANCES_EN_BASE` ;
     C5-Q1 à Q3) ; C4a, les situations publiées et la case « Comptes » (`changer_droits_acces` à cinq paramètres ; C4A-Q1
-    et Q2 ; de P1-trace et d'elle, celle qui s'applique en second se reprend) ; C3, la facture électronique et
-    l'e-reporting en un coup d'œil (la fonction de l'état rend l'e-reporting en phases, rien du cabinet au-delà ;
-    `APERCU_EREPORTING_EXPORTE` baissé ; C3-Q1 à Q4) → « RELANCER SES CLIENTS (C5) », « LES SITUATIONS PUBLIÉES, EN BASE
-    (C4A) », « C3, LA FACTURE ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP D'ŒIL ».
+    et Q2 ; de P1-trace et d'elle, celle qui s'applique en second se refuse tant qu'elle n'est pas reprise pour
+    connaître l'autre ; `situation_publiee_en_cours` ne répond qu'au cabinet et à l'accès « Comptes » du dossier), et
+    ses écrans, C4b (« Publier au client » sous la situation intermédiaire, « Mes comptes » côté client, sous
+    `SITUATIONS_PUBLIEES_EXPORTEES` ; C4B-Q1) ; C3, la facture électronique et l'e-reporting en un coup d'œil (la
+    fonction de l'état rend l'e-reporting en phases, rien du cabinet au-delà ; `APERCU_EREPORTING_EXPORTE` baissé ;
+    C3-Q1 à Q4) → « RELANCER SES CLIENTS (C5) », « LES SITUATIONS PUBLIÉES, EN BASE (C4A) », « LA RELECTURE DE SÉCURITÉ
+    DE C4A ET C5 », « LES SITUATIONS PUBLIÉES, À L'ÉCRAN », « C3, LA FACTURE ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP
+    D'ŒIL ». Sans migration : B9a, « Mon analyse » (`/mon-analyse`, avec « Ventes » ou « Banque », l'analyse n'ayant pas
+    de case à elle ; un chiffre muet sur une lecture partielle, jamais 0 ; B9A-Q1) ; B9b, le journal de l'espace client
+    reconstitué des colonnes d'auteur, jamais un nom (`lib/journalDeLEspaceClient.ts`), et la carte « ce qui a bougé »
+    du cabinet (B9B-Q1 et Q2) ; B9c, sa section dans « Mon analyse », chaque évènement sous la case de son domaine relue
+    à la base, « par ton cabinet » là seulement où la base garde l'origine (B9C-Q1 et Q2) → « « MON ANALYSE » : LES
+    INDICATEURS ET LES ÉTATS DU CLIENT (B9A) », « « ESPACE CLIENT : CE QUI A BOUGÉ » », « « MON ANALYSE » : CE QUI A
+    BOUGÉ, CÔTÉ CLIENT (B9C) ».
   - Du premier groupe, faits : A1 à A6 (sauf ce qui suit). Restent, dans l'ordre recommandé : A4B3-Q6 (la ligne
     d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7, la facture fige ses mentions
     : A7a, la base, EN PRODUCTION le 29/10/2026 sur A7-Q1 à Q3 et A7Q-Q1, tranchées à la recommandation (l'émetteur
@@ -616,10 +626,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU
   2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE », « UN ÉCART D'OUVERTURE RETIENT LA VALIDATION ».
 - **Plan comptable personnalisable** (ligne 43, étapes PC1 à PC9) : PC1, PC2 et PC3a en ligne, NEUTRES (le plan de
-  chaque dossier est vide) ; restent la § 2.4 et la § 2.5 (les emplois comptés par `comptesEnDur.test.ts`) et les
-  libellés du plan (§ 3.9), puis PC3b, l'assistant ; PC4, la fonction qui réglera le plan, déplace le compte des notes
-  de frais du dirigeant dans la même transaction (PC3-Q1) ; PC6 range les comptes ouverts par une balance reprise ; puis
-  la suite jusqu'à PC9 → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE PLAN ».
+  chaque dossier est vide) ; le reste de PC3 le 06/11/2026 — la banque, le report et les tiers du bilan, la révision, le
+  libellé et le préfixe de chaque rôle (§ 3.9), le lettrage, l'auxiliaire du FEC et le sens des comptes de tiers, le FEC
+  du plan par défaut identique à l'octet (`fecAuPlan.test.ts`) ; restent PC3b, l'assistant (le seul emploi que compte
+  encore `comptesEnDur.test.ts` hors du catalogue, avec deux refus recopiés de la base), puis PC4, la fonction qui
+  réglera le plan, qui remplace la contrainte `lettrages_manuels_compte` par le plan du dossier et déplace le compte des
+  notes de frais du dirigeant dans la même transaction (PC3-Q1) ; PC6 range les comptes ouverts par une balance
+  reprise ; puis la suite jusqu'à PC9 → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
+  PLAN ».
 
 ## Feuille de route — page Notion à tenir à jour
 
@@ -688,7 +702,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un drapeau qui attend une migration se bascule d'abord en SIMULATION** (le fichier posé dans l'export, le drapeau
   levé, la suite ENTIÈRE). Une réplique se monte en UTF8 ; un ordre de texte qu'une fonction ou un essai doit tenir
   s'écrit `collate "C"` → « LA BANQUE DU CLIENT EN BASE ». Depuis le 06/11/2026, en PostgreSQL 17 et en ICU `en-US`,
-  comme la production (PG 16 ignore MAINTAIN ; en libc, l'ordre des index diffère) → « LA RÉPLIQUE MÈRE EN POSTGRESQL 17 ».
+  comme la production (PG 16 ignore MAINTAIN ; en libc, l'ordre des index diffère) → « LA RÉPLIQUE MÈRE EN POSTGRESQL
+  17 ». La réplique mère, hors du dépôt, reste ARRÊTÉE et ne se supprime JAMAIS, même pour libérer le disque : on la
+  copie (`cp -a`) → « LA RÉPLIQUE MÈRE REMONTÉE DEPUIS LE CATALOGUE ».
 
 ### Lectures et écritures Supabase
 
