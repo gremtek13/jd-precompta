@@ -3,7 +3,9 @@
 // et au garde des copies de ce générateur dans les Edge Functions (copiesFacturation.test.ts), qui les fait passer par
 // la copie ET par l'original : un exemple ajouté ici est éprouvé des deux côtés sans qu'on ait à y penser.
 import { lignesDeLaFinale, preparerAcompte, type AcompteValide, type DemandeAcompte, type LigneTiree } from '../lib/acompteDevis'
-import { SANS_ACOMPTE_CII, type AcompteCii, type DonneesCii, type LigneCii, type VendeurCii } from '../lib/factureCii'
+import {
+  donneesDeLaFacture, SANS_ACOMPTE_CII, type AcompteCii, type DonneesCii, type DossierCii, type LigneCii, type VendeurCii,
+} from '../lib/factureCii'
 import { calculerTotaux } from '../lib/montantsFacture'
 import type { FactureEmise } from '../lib/types'
 import { MENTIONS_VIDES } from './factures'
@@ -97,6 +99,23 @@ export function donnees(c: Cas = {}): DonneesCii {
     acompte: { ...SANS_ACOMPTE_CII, ...c.acompte },
     aujourdHui: AUJOURD_HUI,
   }
+}
+
+// ── La facture qui a figé ses mentions (A7c) ─────────────────────────────────────────────────────────────────────
+// Un RIB FICTIF : le code banque 99999 n'est attribué à aucun établissement ; la clé RIB et la clé de l'IBAN sont justes.
+export const IBAN_FICTIF = 'FR7699999000011234567890152'
+export const BIC_FICTIF = 'DEMOFRPPXXX'
+// Le dossier tel qu'il est AUJOURD'HUI, après la validation : passé en franchise sans numéro de TVA. Une facture figée n'en
+// lit rien — ni le statut, ni l'article, ni la case du numéro.
+export const DOSSIER_CHANGE: DossierCii = { statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: false }
+
+/** Une facture qui a figé ses mentions, assemblée par `donneesDeLaFacture` devant un dossier qui a changé depuis. */
+export function donneesFigees(c: Cas, dossier: DossierCii = DOSSIER_CHANGE): DonneesCii {
+  const lignes = c.lignes ?? [ligne()]
+  return donneesDeLaFacture(
+    facture(lignes, { mentions_figees: true, ...c.facture }), lignes, dossier, c.origine ?? null,
+    { ...SANS_ACOMPTE_CII, ...c.acompte }, AUJOURD_HUI,
+  )
 }
 
 // ── L'acompte d'un devis (P5b4a) : des lignes tirées par le module de l'acompte lui-même (acompteDevis.ts) ─────────
@@ -408,6 +427,68 @@ export const EXEMPLES: Exemple[] = [
     tva: 63,
     ttc: 393.01,
     ventilation: [['S', 20, 300, 60, null], ['S', 10, 30.01, 3, null]],
+  },
+  {
+    // Une facture figée à une entreprise : l'unité et la référence de ses lignes, le bon de commande de l'acheteur (BT-13),
+    // le RIB confirmé sous le virement (BG-16), l'escompte en note AAB, les pénalités et l'indemnité dans BT-20.
+    nom: 'figee-entreprise',
+    donnees: donneesFigees({
+      lignes: [
+        ligne({ ordre: 1, designation: 'Accompagnement à la gestion', quantite: 7.5, prix_unitaire_ht: 80, unite: 'HUR', reference: 'CONS-H' }),
+        ligne({ ordre: 2, designation: 'Classeur de suivi', quantite: 2, prix_unitaire_ht: 12.4, unite: 'C62', reference: null }),
+      ],
+      facture: {
+        numero: 'F2026-0031',
+        tiers_siret: SIRET_CLIENT,
+        numero_engagement: 'BC-2026-118',
+        statut_tva: 'redevable',
+        article_exoneration: null,
+        numero_tva_attribue: false,
+        numero_tva_imprime: TVA_VENDEUR,
+        moyen_prefere: 'virement',
+        escompte: 'Pas d’escompte pour paiement anticipé.',
+        penalites: 'Pénalités de retard : trois fois le taux d’intérêt légal.',
+        iban_imprime: IBAN_FICTIF,
+        bic_imprime: BIC_FICTIF,
+        titulaire_imprime: 'Atelier Démo Conseil',
+      },
+    }),
+    numero: 'F2026-0031',
+    nature: 'facture',
+    acheteur: SIREN_CLIENT,
+    ht: 624.8,
+    tva: 124.96,
+    ttc: 749.76,
+    ventilation: [['S', 20, 624.8, 124.96, null]],
+  },
+  {
+    // Une facture figée en franchise, avec son numéro de TVA : le dossier est passé depuis en franchise SANS numéro, et la
+    // facture transmet ce qu'elle a figé. Un RIB sans moyen préféré ni BIC : l'instrument « non défini » (1).
+    nom: 'figee-franchise',
+    donnees: donneesFigees({
+      lignes: [ligne({ designation: 'Séance de coaching', quantite: 2, prix_unitaire_ht: 60, taux_tva: 0, unite: 'HUR', reference: 'SEANCE' })],
+      facture: {
+        numero: 'F2026-0032',
+        mentions_legales: 'TVA non applicable, art. 293 B du CGI.',
+        statut_tva: 'franchise',
+        article_exoneration: null,
+        numero_tva_attribue: true,
+        numero_tva_imprime: TVA_VENDEUR,
+        moyen_prefere: null,
+        escompte: null,
+        penalites: 'Pénalités de retard : trois fois le taux d’intérêt légal.',
+        iban_imprime: IBAN_FICTIF,
+        bic_imprime: null,
+        titulaire_imprime: null,
+      },
+    }, { statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false }),
+    numero: 'F2026-0032',
+    nature: 'facture',
+    acheteur: SIREN_CLIENT,
+    ht: 120,
+    tva: 0,
+    ttc: 120,
+    ventilation: [['E', 0, 120, 0, 'VATEX-FR-FRANCHISE']],
   },
 ]
 

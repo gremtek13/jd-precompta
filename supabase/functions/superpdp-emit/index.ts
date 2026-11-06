@@ -71,7 +71,8 @@ const COLONNES_FACTURE = "id, numero, statut, type, facture_origine_id, date_emi
   "tiers_siret, montant_ht, montant_tva, montant_ttc, mentions_legales, type_client, tiers_siren, " +
   "tiers_adresse_electronique, code_service, numero_engagement, nature_operation, date_prestation, periode_debut, " +
   "periode_fin, livraison_adresse, livraison_code_postal, livraison_ville, livraison_pays, option_debits, emetteur_nom, " +
-  "emetteur_siret, emetteur_adresse, superpdp_invoice_id"
+  "emetteur_siret, emetteur_adresse, superpdp_invoice_id, mentions_figees, statut_tva, article_exoneration, " +
+  "numero_tva_attribue, numero_tva_imprime, moyen_prefere, escompte, penalites, iban_imprime, bic_imprime, titulaire_imprime"
 type FactureLue = FactureEnBase & { id: string; facture_origine_id: string | null; superpdp_invoice_id: number | null }
 interface InvoiceEvent { id: number; status_code: string; status_text: string; created_at: string }
 
@@ -441,6 +442,11 @@ export interface LigneCii {
   quantite: number
   prix_unitaire_ht: number
   taux_tva: number
+  // Sa provenance, figée avec la facture (étape A7a) : l'unité (BT-130, un code de la recommandation 20 de la CEE-ONU, la
+  // liste fermée des articles) et la référence de l'article (BT-155). Le générateur ne les lit que d'une facture qui a
+  // figé ses mentions (`mentions_figees`) ; nulles, ou absentes d'une lecture d'avant, elles ne changent rien.
+  unite?: string | null
+  reference?: string | null
 }
 
 // La facture (`factures_emises`), telle que le générateur la lit : les colonnes dont il se sert, sous leurs types en
@@ -473,6 +479,77 @@ export interface FactureCii {
   livraison_ville: string | null
   livraison_pays: string | null
   option_debits: boolean | null
+  // CE QUE LA FACTURE A FIGÉ À SA VALIDATION (étape A7a, en base depuis le 29/10/2026 ; le CII les lit depuis A7c) : vrai
+  // seulement sur une facture validée depuis, qui porte alors son statut et son numéro de TVA, ses conditions de paiement
+  // et le RIB confirmé du jour. Une facture d'avant a `mentions_figees` faux et le reste nul, et s'écrit comme hier, à
+  // l'octet près. FACULTATIVES, comme dans FactureEmise : une lecture qui ne les porte pas n'a rien figé.
+  mentions_figees?: boolean
+  statut_tva?: StatutTva | null
+  article_exoneration?: ArticleExoneration | null
+  numero_tva_attribue?: boolean | null
+  numero_tva_imprime?: string | null
+  // Un des moyens de `parametres_facturation_moyen_prefere_check` (MOYENS_DE_PAIEMENT_CII).
+  moyen_prefere?: string | null
+  escompte?: string | null
+  penalites?: string | null
+  iban_imprime?: string | null
+  bic_imprime?: string | null
+  titulaire_imprime?: string | null
+}
+
+// ── Ce que la facture a figé : ses conditions de paiement (étape A7c) ───────────────────────────────────────────────
+// L'aperçu imprimé (lib/mentionsFigeesVue.ts, `ceQueLaFactureImprime`) et le CII les composent par cette seule fonction :
+// le texte que l'acheteur lit sur le papier est celui qu'il reçoit dans le fichier.
+
+// L'indemnité forfaitaire pour frais de recouvrement : un montant que la loi fixe (C. com., art. D441-5), qu'aucun paramètre
+// ne porte ; elle se dit, comme l'escompte et les pénalités, d'une facture à un professionnel (C. com., art. L441-9, I).
+export const INDEMNITE_DE_RECOUVREMENT = 'Indemnité forfaitaire pour frais de recouvrement en cas de retard de paiement : 40 € '
+  + '(C. com., art. D441-5).'
+
+// Les moyens de paiement d'un dossier (`parametres_facturation_moyen_prefere_check`), sous le libellé de l'écran
+// (MOYENS_ENCAISSEMENT d'encaissementsFactures.ts, que factureCii.test.ts confronte à celui-ci) et le code UNTDID 4461 que
+// le CII en transmet (BT-81 ; règle BR-CL-16 des artefacts EN 16931 v1.3.16, qui en tient la liste). Le virement est
+// SEPA (58 : un IBAN figé est celui d'un compte de la zone) ; l'effet de commerce, la lettre de change que le créancier
+// tire sur son débiteur (70) ; la compensation, celle entre partenaires (97) ; « autre » n'en désigne aucun (1).
+export const MOYENS_DE_PAIEMENT_CII: Readonly<Record<string, { libelle: string; code: string }>> = Object.freeze({
+  virement: { libelle: 'Virement', code: '58' },
+  cheque: { libelle: 'Chèque', code: '20' },
+  carte: { libelle: 'Carte bancaire', code: '48' },
+  prelevement: { libelle: 'Prélèvement', code: '59' },
+  especes: { libelle: 'Espèces', code: '10' },
+  effet: { libelle: 'Effet de commerce', code: '70' },
+  compensation: { libelle: 'Compensation', code: '97' },
+  autre: { libelle: 'Autre', code: '1' },
+})
+
+// Le code « instrument non défini » (UNTDID 4461) : un RIB figé sans moyen préféré ne dit pas comment payer.
+const MOYEN_NON_DEFINI = '1'
+
+export interface ConditionsFigees {
+  // Chacune est le texte imprimé, ou nulle quand la facture ne le porte pas.
+  moyen: string | null
+  escompte: string | null
+  penalites: string | null
+  indemnite: string | null
+}
+
+/**
+ * Les conditions de paiement qu'une facture qui a figé ses mentions imprime, de ses seules colonnes : le moyen préféré,
+ * puis, à un professionnel (une entreprise assujettie ou un organisme public), l'escompte, les pénalités et l'indemnité
+ * forfaitaire. Un texte vide n'est pas imprimé.
+ */
+export function conditionsFigees(
+  f: Pick<FactureCii, 'type_client' | 'moyen_prefere' | 'escompte' | 'penalites'>,
+): ConditionsFigees {
+  const professionnel = f.type_client === 'assujetti' || f.type_client === 'organisme_public'
+  const texte = (t: string | null | undefined) => (t == null || t === '' ? null : t)
+  const moyen = f.moyen_prefere ? MOYENS_DE_PAIEMENT_CII[f.moyen_prefere]?.libelle ?? f.moyen_prefere : null
+  return {
+    moyen: moyen ? `Moyen de paiement préféré : ${moyen.toLowerCase()}.` : null,
+    escompte: professionnel ? texte(f.escompte) : null,
+    penalites: professionnel ? texte(f.penalites) : null,
+    indemnite: professionnel ? INDEMNITE_DE_RECOUVREMENT : null,
+  }
 }
 
 // ── L'acompte d'un devis (étape P5b4a ; conception : HISTORIQUE.md, « L'ACOMPTE D'UN DEVIS : LA CONCEPTION (P5B) ») ──
@@ -1086,13 +1163,41 @@ export function factureCii(d: DonneesCii): ResultatCii {
     ? { numero: d.origine.numero, date: d.origine.date_emission }
     : finale ? { numero: repris[0].numero as string, date: repris[0].date_emission } : null
 
-  const lignes = m.lignes.map((l) => el('ram:IncludedSupplyChainTradeLineItem', [
+  // CE QUE LA FACTURE A FIGÉ (étape A7c). Sur une facture d'avant (`mentions_figees` faux ou absent), rien de ce qui suit
+  // n'ajoute un octet au document d'hier : chaque élément neuf se lit sous `figee`. Les sources : le modèle sémantique et
+  // la syntaxe CII des artefacts EN 16931 v1.3.16 (BT-13, BT-20, BT-21, BT-22, BG-16, BT-81, BT-84 à BT-86, BT-130,
+  // BT-155 ; règles BR-49, BR-50, BR-61, BR-CL-08, BR-CL-16, BR-CL-23) ; l'annexe 7 v1.9 des spécifications externes de
+  // la DGFiP (v3.2 du 30/04/2026), règle G1.52 : le code du sujet d'une note (BT-21) est de la liste UNTDID 4451, « en
+  // particulier AAB » pour la mention de l'escompte, TXD et BLU pour l'assujetti unique et l'écotaxe. Elle ne nomme aucun
+  // code pour les pénalités de retard ni pour l'indemnité forfaitaire, et l'annexe 1 v1.2 (BT-21, BT-22) ni le dossier
+  // général non plus : ces deux mentions restent dans les conditions de paiement (BT-20), où les range l'art. L441-9 du
+  // code de commerce, sans qu'un code soit choisi à la place de la DGFiP.
+  const figee = f.mentions_figees === true
+  const conditionsDuPapier = figee ? conditionsFigees(f) : null
+  const textesDesConditions = conditionsDuPapier
+    ? [conditionsDuPapier.moyen, conditionsDuPapier.penalites, conditionsDuPapier.indemnite].filter((x): x is string => x !== null)
+    : []
+  const termes = [conditions, ...textesDesConditions].filter((x): x is string => x !== null)
+  const descriptionDesTermes = termes.length > 0 ? termes.join(' ') : null
+  // Les instructions de paiement (BG-16) : le RIB CONFIRMÉ que la facture a figé, sous le moyen préféré (BT-81) — sans
+  // moyen figé, l'instrument « non défini », jamais un virement supposé. L'IBAN (BT-84), le titulaire (BT-85) et le BIC
+  // (BT-86) sont ceux que le papier imprime.
+  const iban = figee && f.iban_imprime ? f.iban_imprime : null
+  const codeDuMoyen = f.moyen_prefere ? MOYENS_DE_PAIEMENT_CII[f.moyen_prefere]?.code ?? MOYEN_NON_DEFINI : MOYEN_NON_DEFINI
+  const triees = [...d.lignes].sort((x, y) => x.ordre - y.ordre)
+
+  const lignes = m.lignes.map((l, i) => el('ram:IncludedSupplyChainTradeLineItem', [
     el('ram:AssociatedDocumentLineDocument', [el('ram:LineID', String(l.numero))]),
-    el('ram:SpecifiedTradeProduct', [el('ram:Name', uneLigne(l.libelle))]),
+    el('ram:SpecifiedTradeProduct', [
+      figee && triees[i].reference?.trim() ? el('ram:SellerAssignedID', uneLigne(triees[i].reference as string)) : null,
+      el('ram:Name', uneLigne(l.libelle)),
+    ]),
     el('ram:SpecifiedLineTradeAgreement', [
       el('ram:NetPriceProductTradePrice', [el('ram:ChargeAmount', decimal(l.prix, 6) as string)]),
     ]),
-    el('ram:SpecifiedLineTradeDelivery', [el('ram:BilledQuantity', decimal(l.quantite, 4) as string, { unitCode: UNITE_GENERIQUE })]),
+    el('ram:SpecifiedLineTradeDelivery', [el('ram:BilledQuantity', decimal(l.quantite, 4) as string, {
+      unitCode: figee && triees[i].unite ? triees[i].unite as string : UNITE_GENERIQUE,
+    })]),
     el('ram:SpecifiedLineTradeSettlement', [
       el('ram:ApplicableTradeTax', [
         el('ram:TypeCode', 'VAT'),
@@ -1116,6 +1221,10 @@ export function factureCii(d: DonneesCii): ResultatCii {
       // rangé avec elles : l'écran le dit en les saisissant, l'aperçu ne les imprime pas, l'acheteur n'en reçoit rien.
       // Elles ne sont pas internes pour autant : le client qui porte la case « Ventes » les lit (`ventes_du_client`).
       f.mentions_legales?.trim() ? el('ram:IncludedNote', [el('ram:Content', f.mentions_legales.trim())]) : null,
+      // L'escompte figé, en note de sujet AAB (G1.52) : la mention que le papier imprime parmi les conditions de paiement.
+      conditionsDuPapier?.escompte
+        ? el('ram:IncludedNote', [el('ram:Content', conditionsDuPapier.escompte), el('ram:SubjectCode', 'AAB')])
+        : null,
     ]),
     el('rsm:SupplyChainTradeTransaction', [
       ...lignes,
@@ -1137,7 +1246,9 @@ export function factureCii(d: DonneesCii): ResultatCii {
             el('ram:URIID', f.tiers_adresse_electronique ?? (f.tiers_siren as string), { schemeID: SCHEMA_ADRESSE_ELECTRONIQUE }),
           ]),
         ]),
-        f.type_client === 'organisme_public' && f.numero_engagement
+        // Le numéro d'engagement d'un organisme public ; depuis A7a, le bon de commande de tout acheteur (BT-13), qu'une
+        // facture figée transmet comme elle l'imprime.
+        (figee || f.type_client === 'organisme_public') && f.numero_engagement
           ? el('ram:BuyerOrderReferencedDocument', [el('ram:IssuerAssignedID', uneLigne(f.numero_engagement))])
           : null,
       ]),
@@ -1151,6 +1262,16 @@ export function factureCii(d: DonneesCii): ResultatCii {
       ]),
       el('ram:ApplicableHeaderTradeSettlement', [
         el('ram:InvoiceCurrencyCode', 'EUR'),
+        iban
+          ? el('ram:SpecifiedTradeSettlementPaymentMeans', [
+            el('ram:TypeCode', codeDuMoyen),
+            el('ram:PayeePartyCreditorFinancialAccount', [
+              el('ram:IBANID', iban),
+              f.titulaire_imprime?.trim() ? el('ram:AccountName', uneLigne(f.titulaire_imprime)) : null,
+            ]),
+            f.bic_imprime?.trim() ? el('ram:PayeeSpecifiedCreditorFinancialInstitution', [el('ram:BICID', f.bic_imprime.trim())]) : null,
+          ])
+          : null,
         ...m.groupes.map((g) => el('ram:ApplicableTradeTax', [
           el('ram:CalculatedAmount', montant(g.tvaCentimes)),
           el('ram:TypeCode', 'VAT'),
@@ -1165,7 +1286,7 @@ export function factureCii(d: DonneesCii): ResultatCii {
           ? el('ram:BillingSpecifiedPeriod', [dateCii('ram:StartDateTime', f.periode_debut), dateCii('ram:EndDateTime', f.periode_fin)])
           : null,
         el('ram:SpecifiedTradePaymentTerms', [
-          conditions ? el('ram:Description', conditions) : null,
+          descriptionDesTermes ? el('ram:Description', descriptionDesTermes) : null,
           echeance ? dateCii('ram:DueDateDateTime', echeance) : null,
         ]),
         el('ram:SpecifiedTradeSettlementHeaderMonetarySummation', [
@@ -1195,10 +1316,12 @@ export interface FactureEnBase extends FactureCii {
 }
 
 // Ce que le générateur reçoit, assemblé depuis la base — le même assemblage pour l'écran qui dit les refus avant le clic
-// et pour les fonctions qui transmettent. Le vendeur est l'émetteur que la facture a figé ; le statut de TVA est celui du
-// dossier aujourd'hui, que la facture ne fige pas ; le numéro de TVA se calcule sur le SIREN figé. Un dossier en
-// franchise ou exonéré n'a de numéro que si le cabinet l'a dit (`numero_tva_attribue`, décision du 08/10/2026) : sans
-// cela, aucun n'est inventé, et `refusEmission` le réclame.
+// et pour les fonctions qui transmettent. Le vendeur est l'émetteur que la facture a figé. Une facture qui a figé ses
+// mentions (A7a) transmet le statut de TVA, l'article d'exonération, la case du numéro et le numéro de TVA qu'elle a
+// figés (`numero_tva_imprime`, que la base a calculé à la validation comme `numeroTvaImprime`) — jamais une valeur du
+// dossier, qui a pu changer depuis. Une facture d'avant prend le statut du dossier aujourd'hui, et son numéro de TVA se
+// calcule sur le SIREN figé ; un dossier en franchise ou exonéré n'a de numéro que si le cabinet l'a dit
+// (`numero_tva_attribue`, décision du 08/10/2026) : sans cela, aucun n'est inventé, et `refusEmission` le réclame.
 export interface DossierCii {
   statut_tva: StatutTva | null
   article_exoneration: ArticleExoneration | null
@@ -1215,6 +1338,19 @@ export function donneesDeLaFacture(
 ): DonneesCii {
   const siren = sirenDe(facture.emetteur_siret)
   const sansNumero = (dossier.statut_tva === 'franchise' || dossier.statut_tva === 'exonere') && !dossier.numero_tva_attribue
+  const tva = facture.mentions_figees === true
+    ? {
+      numeroTva: facture.numero_tva_imprime ?? null,
+      numeroTvaAttribue: facture.numero_tva_attribue === true,
+      statutTva: facture.statut_tva ?? null,
+      articleExoneration: facture.article_exoneration ?? null,
+    }
+    : {
+      numeroTva: !sansNumero && sirenValide(siren) ? numeroTvaFrancais(siren) : null,
+      numeroTvaAttribue: dossier.numero_tva_attribue,
+      statutTva: dossier.statut_tva,
+      articleExoneration: dossier.article_exoneration,
+    }
   return {
     facture,
     lignes,
@@ -1222,10 +1358,7 @@ export function donneesDeLaFacture(
       nom: facture.emetteur_nom,
       siret: facture.emetteur_siret,
       adresse: facture.emetteur_adresse,
-      numeroTva: !sansNumero && sirenValide(siren) ? numeroTvaFrancais(siren) : null,
-      numeroTvaAttribue: dossier.numero_tva_attribue,
-      statutTva: dossier.statut_tva,
-      articleExoneration: dossier.article_exoneration,
+      ...tva,
     },
     origine,
     acompte,
@@ -1450,7 +1583,7 @@ Deno.serve(async (req: Request) => {
     }
     const { data: lignesData, error: lignesError } = await admin
       .from("facture_lignes")
-      .select("ordre, designation, quantite, prix_unitaire_ht, taux_tva")
+      .select("ordre, designation, quantite, prix_unitaire_ht, taux_tva, unite, reference")
       .eq("facture_id", factureId)
       .order("ordre")
     if (lignesError) {

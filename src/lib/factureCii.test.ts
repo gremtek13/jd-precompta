@@ -12,8 +12,12 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   AUJOURD_HUI,
+  BIC_FICTIF,
   CAS_DE_REFUS,
   donnees,
+  donneesFigees,
+  DOSSIER_CHANGE,
+  IBAN_FICTIF,
   EXEMPLES,
   facture,
   FINALE,
@@ -28,6 +32,8 @@ import {
 import {
   acompteLu,
   adresseStructuree,
+  conditionsFigees,
+  MOYENS_DE_PAIEMENT_CII,
   cadreDeFacturation,
   decimal,
   donneesDeLaFacture,
@@ -45,7 +51,9 @@ import {
   TAUX_ADMIS,
   type DonneesCii,
 } from './factureCii'
+import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { lireFactureXml } from './factureElectronique'
+import { ceQueLaFactureImprime } from './mentionsFigeesVue'
 import type { FactureEmise, StatutTva } from './types'
 
 // Depuis la racine du dépôt, d'où la suite se lance : sous jsdom, import.meta.url n'est pas une adresse de fichier.
@@ -633,6 +641,93 @@ describe('le numéro de TVA imprimé sous l’émetteur', () => {
     expect(numeroTvaImprime(figee, dossier(null))).toBeNull()
     expect(numeroTvaImprime({ emetteur_siret: '12345678900010' }, dossier('redevable'))).toBeNull()
     expect(numeroTvaImprime({ emetteur_siret: null }, dossier('redevable'))).toBeNull()
+  })
+})
+
+// ── Ce que la facture a figé (A7c) ─────────────────────────────────────────────────────────────────────────────────
+
+describe('une facture qui a figé ses mentions transmet ce qu’elle a figé, une facture d’avant ce qu’elle transmettait', () => {
+  const AVANT = EXEMPLES.filter((e) => !e.nom.startsWith('figee-'))
+  // Tout ce qu'une facture figée porterait, posé sur une facture qui ne l'a pas figé : rien ne doit en sortir.
+  const COLONNES_FIGEES: Partial<FactureEmise> = {
+    statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: false, numero_tva_imprime: 'FR00000000000',
+    moyen_prefere: 'cheque', escompte: 'Escompte : 2 % à 10 jours.', penalites: 'Pénalités : 10 %.', iban_imprime: IBAN_FICTIF,
+    bic_imprime: BIC_FICTIF, titulaire_imprime: 'Quelqu’un', numero_engagement: 'BC-1',
+  }
+
+  it.each(AVANT)('$nom : `mentions_figees` faux ou absent, le XML est celui d’hier à l’octet près, quoi que portent les colonnes figées', (e) => {
+    const hier = xmlDe(e.donnees)
+    const organismePublic = e.donnees.facture.type_client === 'organisme_public'
+    for (const marque of [false, undefined]) {
+      const f = { ...e.donnees.facture, ...COLONNES_FIGEES, mentions_figees: marque }
+      // Le numéro d'engagement d'un organisme public part déjà : on garde le sien.
+      if (organismePublic) f.numero_engagement = e.donnees.facture.numero_engagement
+      const lignes = e.donnees.lignes.map((l) => ({ ...l, unite: 'HUR', reference: 'REF-1' }))
+      expect(xmlDe({ ...e.donnees, facture: f, lignes })).toBe(hier)
+    }
+  })
+
+  it('donneesDeLaFacture : le statut, l’article, la case et le numéro de TVA sont ceux de la facture figée, jamais ceux du dossier', () => {
+    const e = EXEMPLES.find((x) => x.nom === 'figee-entreprise')!
+    for (const dossier of [DOSSIER_CHANGE, { statut_tva: null, article_exoneration: null, numero_tva_attribue: false },
+      { statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1', numero_tva_attribue: true }] as const) {
+      const d = donneesDeLaFacture(e.donnees.facture as FactureEmise, e.donnees.lignes, dossier, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
+      expect(d.vendeur).toMatchObject({ numeroTva: TVA_VENDEUR, statutTva: 'redevable', articleExoneration: null, numeroTvaAttribue: false })
+      expect(xmlDe(d)).toBe(xmlDe(e.donnees))
+    }
+    // Un numéro figé faux ne se corrige pas en silence : il se refuse, comme un numéro qui ne correspond pas au SIREN.
+    const faux = { ...e.donnees.facture, numero_tva_imprime: 'FR00123456782' } as FactureEmise
+    expect(refusEmission(donneesDeLaFacture(faux, e.donnees.lignes, DOSSIER_CHANGE, null, SANS_ACOMPTE_CII, AUJOURD_HUI)))
+      .toContain('Le numéro de TVA intracommunautaire du dossier ne correspond pas à son SIREN.')
+  })
+
+  it('le motif d’exonération (BT-120, BT-121) découle du statut figé, pas de celui du dossier', () => {
+    const x = xmlDe(EXEMPLES.find((e) => e.nom === 'figee-franchise')!.donnees)
+    expect(x).toContain('<ram:ExemptionReasonCode>VATEX-FR-FRANCHISE</ram:ExemptionReasonCode>')
+    expect(x).toContain('<ram:ID schemeID="VA">FR11123456782</ram:ID>')
+  })
+
+  it('BG-16 ne part que d’une facture figée qui porte un IBAN figé ; le moyen préféré donne BT-81, sinon « non défini »', () => {
+    const e = EXEMPLES.find((x) => x.nom === 'figee-entreprise')!.donnees
+    const avec = (o: Partial<FactureEmise>) => xmlDe(donneesFigees({ lignes: e.lignes, facture: { ...(e.facture as FactureEmise), ...o } }))
+    expect(avec({ iban_imprime: null })).not.toContain('SpecifiedTradeSettlementPaymentMeans')
+    expect(avec({ iban_imprime: null, bic_imprime: null })).not.toContain('IBANID')
+    expect(avec({})).toContain('<ram:TypeCode>58</ram:TypeCode>')
+    expect(avec({ moyen_prefere: 'cheque' })).toContain('<ram:TypeCode>20</ram:TypeCode>')
+    expect(avec({ moyen_prefere: null })).toMatch(/PaymentMeans>\s*<ram:TypeCode>1<\/ram:TypeCode>/)
+    expect(avec({ bic_imprime: null, titulaire_imprime: null })).not.toMatch(/BICID|AccountName/)
+  })
+
+  it('BT-20 et la note AAB disent le texte que l’aperçu imprime, par la même fonction', () => {
+    for (const e of EXEMPLES.filter((x) => x.nom.startsWith('figee-'))) {
+      const f = e.donnees.facture as FactureEmise
+      const papier = ceQueLaFactureImprime(f)!.conditions
+      const c = conditionsFigees(f)
+      expect(papier).toEqual([c.moyen, c.escompte, c.penalites, c.indemnite].filter((t) => t !== null))
+      const x = xmlDe(e.donnees)
+      const sansEscompte = papier.filter((t) => t !== f.escompte).join(' ')
+      expect(x).toContain(`<ram:Description>${sansEscompte}</ram:Description>`)
+      if (c.escompte) expect(x).toContain(`<ram:Content>${c.escompte}</ram:Content>\n      <ram:SubjectCode>AAB</ram:SubjectCode>`)
+      else expect(x).not.toContain('AAB')
+    }
+  })
+
+  it('à un particulier, la facture figée n’imprime ni escompte, ni pénalités, ni indemnité', () => {
+    expect(conditionsFigees({ type_client: 'non_assujetti', moyen_prefere: 'especes', escompte: 'E', penalites: 'P' }))
+      .toEqual({ moyen: 'Moyen de paiement préféré : espèces.', escompte: null, penalites: null, indemnite: null })
+  })
+
+  it('les moyens du bloc sont ceux de l’écran, sous les mêmes libellés', () => {
+    expect(Object.entries(MOYENS_DE_PAIEMENT_CII).map(([moyen, m]) => [moyen, m.libelle]))
+      .toEqual(MOYENS_ENCAISSEMENT.map((m) => [m.moyen, m.libelle]))
+  })
+
+  it('BT-13 part pour tout acheteur d’une facture figée ; BT-130 et BT-155 de chaque ligne figée', () => {
+    const x = xmlDe(EXEMPLES.find((e) => e.nom === 'figee-entreprise')!.donnees)
+    expect(x).toContain('<ram:BuyerOrderReferencedDocument>\n        <ram:IssuerAssignedID>BC-2026-118</ram:IssuerAssignedID>')
+    expect(x).toContain('<ram:SellerAssignedID>CONS-H</ram:SellerAssignedID>')
+    expect(x).toContain('unitCode="HUR">7.5<')
+    expect(x).toContain('unitCode="C62">2<')
   })
 })
 

@@ -1,7 +1,7 @@
 import { libelleUnite, sansBlancsAuxBords } from './articles'
 import { CATEGORIE_ENTREPRENEUR_INDIVIDUEL, categorieJuridique } from './categoriesJuridiques'
 import { pourLEspace, type EspaceVentes } from './espaceVentes'
-import { mentionsImprimees, sirenDe, sirenValide, type MentionImprimee } from './factureCii'
+import { conditionsFigees, INDEMNITE_DE_RECOUVREMENT, mentionsImprimees, sirenDe, sirenValide, type MentionImprimee } from './factureCii'
 import { formatMoney } from './format'
 import type { LogoLu } from './logoDesFactures'
 import {
@@ -26,7 +26,8 @@ import type {
 //   - ce que la validation figera et imprimera, en mots, pour la confirmation qui le NOMME (`mentionsAFiger`) ;
 //   - ce que l'aperçu d'une facture qui a figé ses mentions imprime, tiré de SES colonnes seules, jamais d'une valeur relue
 //     du dossier ni recalculée le jour de l'impression (`ceQueLaFactureImprime`).
-// Le mandataire ne s'imprime pas (P4) ; le CII et ses copies ne changent pas (A7c).
+// Le mandataire ne s'imprime pas (P4). Le CII lit les mêmes colonnes depuis A7c, et ses conditions de paiement viennent de la
+// même fonction que celles du papier (`conditionsFigees`, lib/factureCii.ts).
 
 // ── La provenance d'une ligne ────────────────────────────────────────────────────────────────────────────────────────
 /** Ce que la ligne tient de sa provenance, en texte de champ : « » pour une valeur non choisie. */
@@ -347,11 +348,9 @@ export function formeEtCapital(forme: string | null, capital: number | null): st
   return libelle ?? (auCapital ? `Société ${auCapital}` : null)
 }
 
-// L'indemnité forfaitaire pour frais de recouvrement : un montant que la loi fixe (C. com., art. D441-5), qu'aucun paramètre ne
-// porte ; elle se compose du type de client figé, comme l'escompte et les pénalités (C. com., art. L441-9, I : entre
-// professionnels). Une facture à un particulier ne les porte pas.
-export const INDEMNITE_DE_RECOUVREMENT = 'Indemnité forfaitaire pour frais de recouvrement en cas de retard de paiement : 40 € '
-  + '(C. com., art. D441-5).'
+// L'indemnité forfaitaire pour frais de recouvrement (C. com., art. D441-5) : elle vit dans le bloc du CII depuis A7c, qui
+// compose les conditions de paiement pour le papier et pour le fichier (`conditionsFigees`).
+export { INDEMNITE_DE_RECOUVREMENT }
 
 export interface ImpressionFigee {
   // Le nom légal : la dénomination figée, sinon le nom que la facture porte.
@@ -382,13 +381,10 @@ export function ceQueLaFactureImprime(f: FactureEmise): ImpressionFigee | null {
   const rcs = f.rcs_ville ? `RCS ${f.rcs_ville}${sirenValide(siren) ? ` ${SIREN_LISIBLE(siren)}` : ''}` : null
   const identite = [formeEtCapital(f.forme_juridique ?? null, f.capital ?? null), rcs, f.mentions_identite ?? null]
     .filter((x): x is string => x != null && x !== '')
-  const professionnel = versEntreprise(f.type_client ?? '')
-  const conditions = [
-    f.moyen_prefere ? `Moyen de paiement préféré : ${libelleDuMoyen(f.moyen_prefere).toLowerCase()}.` : null,
-    professionnel ? f.escompte ?? null : null,
-    professionnel ? f.penalites ?? null : null,
-    professionnel ? INDEMNITE_DE_RECOUVREMENT : null,
-  ].filter((x): x is string => x != null && x !== '')
+  // Les conditions de paiement, composées par la fonction que le CII emploie (A7c) : le papier et le fichier disent le même
+  // texte, dans l'ordre du papier.
+  const c = conditionsFigees(f)
+  const conditions = [c.moyen, c.escompte, c.penalites, c.indemnite].filter((x): x is string => x !== null)
   const mentions = mentionsImprimees(f)
   // Le numéro d'engagement (BT-13 ; C. com., art. L441-9, I : le bon de commande de l'acheteur) s'imprime pour tout acheteur
   // depuis A7a ; `mentionsImprimees` ne le dit que d'un organisme public, avec le code service, qui lui reste réservé.
