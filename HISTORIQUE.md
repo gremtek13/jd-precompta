@@ -48530,8 +48530,9 @@ reference` ; l'écran de transmission aussi. Trois exemples neufs (`figee-entrep
 1.3.16, Saxon 9.9.1-8). À la relecture : le code 1 de BT-81 est admis (la liste UNTDID 4461 de l'annexe 7, BR-CL-16 ; le
 flux 1 ne porte pas BG-16) ; l'IBAN part sous tout moyen comme compte du bénéficiaire, aucune règle (BR-50, BR-61) ne le
 réservant au virement, et l'exemple au prélèvement (59) passe. Sept mutations mordent. FACTURE-Q4 (la ligne à 0 % d'un
-redevable) est proposée au cabinet, rien d'écrit. Restent le redéploiement des deux fonctions, par la session
-principale.
+redevable) est proposée au cabinet, rien d'écrit. Après la fusion (n° 300, `815d5dc`), les deux fonctions redéployées le
+jour même par la ligne qui importe ce commit, `verify_jwt` vrai : superpdp-emit v17, plateforme-agreee v11 ;
+`allerretour.py` identique au dépôt (1 759 et 3 882 lignes).
 
 ### 06/11/2026 — LE MANDAT DE FACTURATION IMPRIMÉ ET NOMMÉ À LA CONFIRMATION (P4, LIGNE 51.5)
 
