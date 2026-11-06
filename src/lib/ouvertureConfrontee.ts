@@ -220,8 +220,9 @@ export function confronterLOuverture(d: EntreesDuBilan, lecture: 'complete' | 'p
 
   const regle = individuel
     ? `Le report réunit le compte de l’exploitant (108), le capital (101), les résultats antérieurs (12) et le résultat de `
-      + `l’exercice ${p} au capital individuel, 101000 (PCG, art. 1211-10).`
-    : `Le report garde le résultat de l’exercice ${p} avant répartition, au 120000 pour un bénéfice, au 129000 pour une `
+      + `l’exercice ${p} au capital individuel, ${d.modele.plan.capital_individuel} (PCG, art. 1211-10).`
+    : `Le report garde le résultat de l’exercice ${p} avant répartition, au ${d.modele.plan.resultat_benefice} pour un bénéfice, `
+      + `au ${d.modele.plan.resultat_perte} pour une `
       + 'perte (PCG, art. 112-2) : son affectation ne s’écrit pas encore dans l’application.'
   if (ecartsDeCompte.length === 0 && ecartsDeRubrique.length === 0) {
     return {

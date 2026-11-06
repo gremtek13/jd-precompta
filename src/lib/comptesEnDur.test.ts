@@ -179,8 +179,6 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
     raison: 'Deux refus recopiés MOT POUR MOT de `refus_compte_de_bilan` (« s’écrit au 580000, virements internes »), que '
       + 'compteDeBilan.test.ts confronte à la fonction exportée : ils changeront avec la base, à l’étape PC4.',
   },
-  'src/lib/aNouveaux.ts': { nombre: 1, raison: `§ 2.4 : \`ouvertureBanque\` cherche la banque des à-nouveaux à son numéro ${RESTE_DE_PC3A}` },
-  'src/lib/bilan.ts': { nombre: 3, raison: `§ 2.4 : les comptes détaillés tiers par tiers ${RESTE_DE_PC3A}` },
   'src/lib/engagement.ts': {
     nombre: 3,
     raison: `§ 2.4 et § 3.9 : le compte auxiliaire du FEC, indexé par le numéro (\`AUXILIAIRES\`) — le préfixe du plan viendra avec lui ${RESTE_DE_PC3A}`,
@@ -190,18 +188,12 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
     raison: '§ 2.4 : les comptes lettrables (`COMPTES_LETTRABLES`, que lettragesLecture.ts et StatistiquesTab lisent aussi), '
       + `le sens d’un compte de tiers et leur ordre ; la contrainte \`lettrages_manuels_compte\` de la base les borne encore ${RESTE_DE_PC3A}`,
   },
-  'src/lib/ouvertureConfrontee.ts': { nombre: 3, raison: `§ 2.5 : les comptes du report nommés dans une explication ${RESTE_DE_PC3A}` },
-  'src/lib/pisteAudit.ts': { nombre: 2, raison: `§ 2.4 : une ligne de banque sans mouvement, reconnue à son numéro ${RESTE_DE_PC3A}` },
   'src/lib/revisionCycles.ts': { nombre: 4, raison: `§ 2.4 : le cycle d’un compte de rôle, rangé par son numéro ${RESTE_DE_PC3A}` },
   'src/lib/revisionPreuves.ts': {
     nombre: 21,
     raison: `§ 2.4 et § 2.5 : les preuves proposées des comptes de TVA, de la banque, de l’emprunt et de l’exploitant ${RESTE_DE_PC3A}`,
   },
-  'src/lib/tableauPilotage.ts': { nombre: 2, raison: `§ 2.4 : les soldes de fin de mois et les lignes de la banque ${RESTE_DE_PC3A}` },
   'src/pages/dossier/ComptesDeTiersCard.tsx': { nombre: 5, raison: `§ 2.4 : le sens de chaque compte de tiers ${RESTE_DE_PC3A}` },
-  'src/pages/dossier/ConcordanceCard.tsx': { nombre: 1, raison: `§ 2.5 : une explication qui nomme le compte de l’exploitant ${RESTE_DE_PC3A}` },
-  'src/pages/dossier/FinancementTab.tsx': { nombre: 1, raison: `§ 2.4 : la requête de la trésorerie, filtrée sur la banque ${RESTE_DE_PC3A}` },
-  'src/pages/dossier/ValidationExerciceCard.tsx': { nombre: 6, raison: `§ 2.5 : les comptes du report nommés avant la validation ${RESTE_DE_PC3A}` },
 }
 
 describe('aucun compte de rôle écrit en dur hors du catalogue', () => {

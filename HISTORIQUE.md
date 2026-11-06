@@ -48925,3 +48925,18 @@ carte d'hier. Éprouvé sur une réplique égale à la production (`signature.sq
 `apercuFactureElectronique.sql` sans la migration « EN ATTENTE » ; avec, 13 contrôles justes et 4 mutations qui mordent,
 rien resté ; les trois clés d'hier identiques sur les cinq dossiers ; le retour rend l'empreinte d'hier. Non compté
 (A6B2-Q1 tient) : les factures à transmettre ; au cabinet, les encaissements et les refus (C3-Q2).
+
+### 06/11/2026 — L'APPLICATION LIT LE PLAN : LA BANQUE, LE REPORT ET LES TIERS DU BILAN (LIGNE 43, PC3, SUITE NEUTRE)
+
+Agent architecte, sans migration ni déploiement. Suite de PC3a (« L'APPLICATION LIT LE PLAN », « CE QUI RESTE ») : une
+première tranche de la § 2.4 et de la § 2.5. La banque se lit au compte DU PLAN, paramètre obligatoire sans défaut, dans
+`ouvertureBanque`, `soldesFinDeMois`, `calculerEvolutionMensuelle`, `rupturesPisteAudit` et la piste d'audit
+(`RegistreAudit.plan`), la requête de trésorerie de `FinancementTab`, `lireLaChecklist` et la lecture de la révision ;
+`StatistiquesTab` reçoit `plan`. Le bilan détaille par tiers les collectifs du plan (`d.modele.plan`). Les messages du
+report nomment les comptes du plan : `ValidationExerciceCard` (aperçu et confirmation, prop `plan`), `ConcordanceCard`
+(prop `plan`), la règle d'`ouvertureConfrontee`. NEUTRE : sous le plan vide, mêmes sorties au caractère près ; les tests
+n'ont reçu que `PLAN_PAR_DEFAUT` en argument, et trois cas neufs sous `PLAN_DECALE` (banque du plan seule comptée, la
+banque par défaut plus). `comptesEnDur.test.ts` : reste de PC3a de 63 à 44 emplois, huit exceptions retirées. Restent,
+en vagues suivantes : `revisionCycles` et `revisionPreuves` (25, le plan à porter dans `revision.ts` et
+`revueAnalytique.ts`), le lettrage et `ComptesDeTiersCard` (16, bornés par `lettrages_manuels_compte`), l'auxiliaire
+du FEC (`engagement.ts`, 3) avec les libellés et préfixes du plan (§ 3.9), puis PC3b, l'assistant.

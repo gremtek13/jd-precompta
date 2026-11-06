@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_BANQUE } from '../../lib/comptes'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire, moisEcoulesDeLAnnee } from '../../lib/situationIntermediaire'
 import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
@@ -151,10 +150,11 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
       ),
       // Solde de trésorerie recalculé depuis le détail (pas juste l'agrégat "aujourd'hui") pour
       // pouvoir aussi répondre "à telle date" dans la situation intermédiaire ci-dessous — sur tout
-      // l'historique du brouillon d'écritures, comme un relevé, pas borné à l'année en cours.
+      // l'historique du brouillon d'écritures, comme un relevé, pas borné à l'année en cours. Au compte de la banque DU PLAN
+      // (ligne 43, conception § 2.4) : au compte par défaut, sous un plan qui la tient ailleurs, la requête ne rendrait rien.
       lireTout<{ date: string; sens: string; montant: number; ligne_bancaire_id: string | null }>((debut, fin) =>
         supabase.from('ecritures_brouillon').select('date, sens, montant, ligne_bancaire_id, piece_id', { count: 'exact' })
-          .eq('dossier_id', dossierId).eq('compte', COMPTE_BANQUE).order('id').range(debut, fin),
+          .eq('dossier_id', dossierId).eq('compte', plan.banque).order('id').range(debut, fin),
       ),
       lireTout<ANouveau>((debut, fin) =>
         supabase.from('a_nouveaux').select('*', { count: 'exact' })
@@ -211,7 +211,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
     setMouvementsRapproches(lecturePaiements.lignes)
     setVentilations(lectureVentilations.lignes)
     setReglements(lectureReglements.lignes)
-    setOuverture(ouvertureBanque(lectureANouveaux.lignes))
+    setOuverture(ouvertureBanque(lectureANouveaux.lignes, plan))
     setPrevisionnelIllisible(previsionnelError ? messageErreur(previsionnelError, "Le prévisionnel enregistré n'a pas pu être lu.") : null)
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
     // Neuf lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
@@ -226,7 +226,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
     setLoading(false)
   }
   // Un dossier qui bascule relit ses ventes facturées, et les sources de leurs écritures.
-  useEffect(() => { load() }, [dossierId, ventesParLesFactures])
+  useEffect(() => { load() }, [dossierId, ventesParLesFactures, plan])
 
   // La lecture des ventes facturées de CE dossier, ou rien ; lue entière, ses ventes, sinon nulles et le motif.
   const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)

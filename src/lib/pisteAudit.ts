@@ -1,12 +1,12 @@
 import { libelleEcritureANouveau } from './aNouveaux'
 import { mouvementJustifieParLeReleve } from './affectationBanque'
-import { COMPTE_BANQUE } from './comptes'
 import { nomDuVehicule } from './forfaitKilometrique'
 import { referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
 import { justificatifDeLaCaisse, operationsDe, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { formatDate } from './format'
+import type { PlanComptable } from './planComptable'
 import type {
   ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, OperationCaisse, Piece, TransmissionFacture, VehiculeDossier,
 } from './types'
@@ -78,14 +78,21 @@ export interface RuptureAudit {
 // clé est en cascade — la base n'écrit, ne change et ne retire ses lignes qu'avec elle (`garder_ecriture_de_caisse`) :
 // `operation_caisse_id` ne tombe jamais à nul sous elle. Une ligne qui cite une opération peut porter aussi la pièce
 // qu'un paiement par la caisse règle (étape C9a) : elle est alors jugée par sa pièce, comme la contrepartie de banque.
-export function rupturesPisteAudit(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): RuptureAudit[] {
+//
+// Une ligne de banque se reconnaît au compte de la banque du PLAN du dossier (ligne 43, conception § 2.4), paramètre
+// obligatoire : au compte par défaut, sous un plan qui la tient au 512100, une ligne sans mouvement se tairait.
+export function rupturesPisteAudit(
+  ecritures: EcritureBrouillon[],
+  idsJustifies: ReadonlySet<string>,
+  plan: PlanComptable,
+): RuptureAudit[] {
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
     if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id && !ecriture.vehicule_id
       && !ecriture.declaration_tva_id && !ecriture.cotisation_id && !ecriture.operation_caisse_id) {
       ruptures.push({ ecriture, motif: 'sans_justificatif' })
     }
-    if (ecriture.compte === COMPTE_BANQUE && !ecriture.ligne_bancaire_id) {
+    if (ecriture.compte === plan.banque && !ecriture.ligne_bancaire_id) {
       ruptures.push({ ecriture, motif: 'sans_mouvement' })
     }
   }
@@ -247,6 +254,9 @@ export interface RegistreAudit {
   // d'une pièce par la caisse (étape C9a) se cite à sa ligne de caisse. Obligatoires, sans valeur par défaut : les oublier
   // ferait dire « opération de caisse hors du jeu chargé » à chaque paiement en espèces.
   caisse: OperationsDeCaisse
+  // Le plan du dossier (ligne 43, conception § 2.4) : une ligne de banque sans mouvement se reconnaît au compte de SA
+  // banque. Obligatoire, sans valeur par défaut : au compte par défaut, sous un autre plan, elle ne manquerait de rien.
+  plan: PlanComptable
 }
 
 // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (étape C9a ; CAISSE-Q4, (B)) : sa ligne de caisse est jugée par sa PIÈCE, comme la
@@ -294,7 +304,7 @@ export function pisteAudit(
     // seconde n'est pas une rupture, c'est un filtre de l'appelant. Le dire autrement ferait passer
     // un artefact de chargement pour un défaut comptable.
     else if (!piece) manque.push('justificatif hors du jeu chargé')
-    if (e.compte === COMPTE_BANQUE && !e.ligne_bancaire_id) manque.push('mouvement bancaire')
+    if (e.compte === registre.plan.banque && !e.ligne_bancaire_id) manque.push('mouvement bancaire')
     // Même distinction côté banque. Avec `ON DELETE SET NULL` sur les deux clés, un mouvement
     // supprimé met le lien à NULL et tombe dans la branche précédente : ce cas-ci ne peut donc venir
     // que d'un jeu de lignes restreint par l'appelant. Le dire plutôt que de laisser trois colonnes

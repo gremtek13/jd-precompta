@@ -113,7 +113,7 @@ describe('le relevé : chaque emploi du brouillon dans l’onglet Écritures, et
   })
 
   it('la rupture de la piste d’audit reçoit le brouillon SANS les lignes d’une vente facturée', () => {
-    expect(TEXTE_ONGLET).toMatch(/rupturesPisteAudit\(ecritures\.filter\(\(e\) => !ligneDUneVenteFacturee\(e, mouvementsDesVentes\)\), idsJustifies\)/)
+    expect(TEXTE_ONGLET).toMatch(/rupturesPisteAudit\(ecritures\.filter\(\(e\) => !ligneDUneVenteFacturee\(e, mouvementsDesVentes\)\), idsJustifies, modele\.plan\)/)
   })
 
   it('le scanner voit ce qu’on y plante : un emploi nouveau, une forme non reconnue', () => {
@@ -202,10 +202,10 @@ describe('la preuve : aucun contrôle d’hier ne signale les lignes d’une ven
   it('la piste d’audit les dirait rompues : l’onglet les écarte, et une vraie rupture reste vue', () => {
     const justifies = idsMouvementsJustifiesParLeReleve(MOUVEMENTS)
     // Sans le filtre, chacune serait « sans justificatif » — d'où le filtre de l'onglet.
-    expect(rupturesPisteAudit(LIGNES_DES_VENTES, justifies).map((r) => r.ecriture.id)).toEqual(LIGNES_DES_VENTES.map((l) => l.id))
+    expect(rupturesPisteAudit(LIGNES_DES_VENTES, justifies, PLAN_PAR_DEFAUT).map((r) => r.ecriture.id)).toEqual(LIGNES_DES_VENTES.map((l) => l.id))
     const ventes = mouvementsClassesParEncaissements(MOUVEMENTS)
     const orpheline = ligne({ id: 'orpheline', compte: '606100' })
-    expect(rupturesPisteAudit([...LIGNES_DES_VENTES, orpheline].filter((e) => !ligneDUneVenteFacturee(e, ventes)), justifies)
+    expect(rupturesPisteAudit([...LIGNES_DES_VENTES, orpheline].filter((e) => !ligneDUneVenteFacturee(e, ventes)), justifies, PLAN_PAR_DEFAUT)
       .map((r) => r.ecriture.id)).toEqual(['orpheline'])
     // Et le FEC ne les porte pas encore (VF4c2) : le badge de l'onglet les compte, ce qui est vrai.
     expect(absenceFec(LIGNES_DES_VENTES, justifies).nb).toBe(LIGNES_DES_VENTES.length)

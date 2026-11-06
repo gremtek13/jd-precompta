@@ -5,6 +5,7 @@ import { chargerDoublonsDeTexte, type DoublonDeTexte } from './doublonsTexte'
 import { lireAnneesCloturees } from './clotureExercice'
 import { chargerInformationsDossier } from './informationsDossier'
 import { ouvertureBanque } from './aNouveaux'
+import type { PlanComptable } from './planComptable'
 import type { Emprunt } from './emprunts'
 import type { DonneesDeLaChecklist } from './pointsDeLaChecklist'
 import type { FacturePourJumelle, TransmissionPourJumelle } from './ventesJumelles'
@@ -53,8 +54,13 @@ export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'releve
 }
 
 // `ventesParLesFactures` : le réglage du dossier, sans valeur par défaut — un dossier qui a basculé lit aussi ses ventes
-// facturées (étape VF5f) ; un autre, rien de plus.
-export async function lireLaChecklist(dossierId: string, ventesParLesFactures: boolean): Promise<LectureDeLaChecklist> {
+// facturées (étape VF5f) ; un autre, rien de plus. `plan` : le plan du dossier (ligne 43, conception § 2.4), obligatoire —
+// l'ouverture de la banque se cherche au compte de SA banque.
+export async function lireLaChecklist(
+  dossierId: string,
+  ventesParLesFactures: boolean,
+  plan: PlanComptable,
+): Promise<LectureDeLaChecklist> {
   const [
     lectureValidees,
     lectureAValider,
@@ -224,7 +230,7 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
     anneesCloturees: clotures.annees,
     clotureInconnue: clotures.erreur,
     // Une ouverture lue à moitié donnerait un solde de départ faux : on n'en tire rien.
-    ouverture: lectureANouveaux.complete ? ouvertureBanque(lectureANouveaux.lignes) : null,
+    ouverture: lectureANouveaux.complete ? ouvertureBanque(lectureANouveaux.lignes, plan) : null,
     ouvertureIncomplete: lectureANouveaux.motif,
     aNouveaux: lectureANouveaux.lignes,
     soldesReportes: lectureReportes.lignes,

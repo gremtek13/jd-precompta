@@ -15,14 +15,14 @@ import type { ModeleComptable } from './engagement'
 import type { ANouveau, Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 import { SANS_ECRITURE_DE_VENTE, SANS_EXEMPLAIRE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
-import { PLAN_PAR_DEFAUT } from './planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 
 // Le lettrage d'un fichier (lib/lettrage.ts) : vide, sauf dans les tests qui le calculent comme l'écran.
 const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
 
 // Sans registre : la plupart de ces cas n'ont pas de dotation, donc rien à y chercher.
-const SANS_REGISTRE: RegistreAudit = { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES }
+const SANS_REGISTRE: RegistreAudit = { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT }
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
@@ -42,7 +42,7 @@ const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
 describe('rupturesPisteAudit', () => {
   it('signale une écriture qui ne désigne aucun justificatif', () => {
     const orpheline = ecriture({ piece_id: null, montant: 199.99 })
-    const ruptures = rupturesPisteAudit([ecriture(), orpheline], new Set())
+    const ruptures = rupturesPisteAudit([ecriture(), orpheline], new Set(), PLAN_PAR_DEFAUT)
     expect(ruptures).toHaveLength(1)
     expect(ruptures[0].motif).toBe('sans_justificatif')
     expect(ruptures[0].ecriture.montant).toBe(199.99)
@@ -50,27 +50,36 @@ describe('rupturesPisteAudit', () => {
 
   it("signale une contrepartie banque qui n'indique aucun mouvement", () => {
     // Ne peut venir que d'une ligne bancaire supprimée : l'insertion pose toujours le lien.
-    const ruptures = rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: null })], new Set())
+    const ruptures = rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: null })], new Set(), PLAN_PAR_DEFAUT)
     expect(ruptures.map((r) => r.motif)).toEqual(['sans_mouvement'])
   })
 
+  it('reconnaît la banque du PLAN du dossier (ligne 43, § 2.4), dans les ruptures comme dans la piste', () => {
+    const sansMouvement = ecriture({ compte: PLAN_DECALE.banque, ligne_bancaire_id: null })
+    expect(rupturesPisteAudit([sansMouvement], new Set(), PLAN_DECALE).map((r) => r.motif)).toEqual(['sans_mouvement'])
+    expect(rupturesPisteAudit([sansMouvement], new Set(), PLAN_PAR_DEFAUT)).toEqual([])
+    const [ligne] = pisteAudit([sansMouvement], [], [], [], { ...SANS_REGISTRE, plan: PLAN_DECALE })
+    expect(ligne.manque).toContain('mouvement bancaire')
+    expect(pisteAudit([sansMouvement], [], [], [], SANS_REGISTRE)[0].manque).not.toContain('mouvement bancaire')
+  })
+
   it('ne signale pas une contrepartie banque correctement reliée', () => {
-    expect(rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })], new Set())).toEqual([])
+    expect(rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })], new Set(), PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it("ne signale pas une écriture de charge sans ligne bancaire — ce n'est pas une contrepartie", () => {
     // Le cas NORMAL et de loin le plus fréquent : la ligne de charge n'a jamais de lien bancaire,
     // seule la contrepartie en porte un. Confondre les deux ferait crier au loup sur tout le brouillon.
-    expect(rupturesPisteAudit([ecriture({ compte: '606100', ligne_bancaire_id: null })], new Set())).toEqual([])
+    expect(rupturesPisteAudit([ecriture({ compte: '606100', ligne_bancaire_id: null })], new Set(), PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('rend les DEUX ruptures quand une contrepartie a tout perdu', () => {
-    const ruptures = rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, piece_id: null, ligne_bancaire_id: null })], new Set())
+    const ruptures = rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, piece_id: null, ligne_bancaire_id: null })], new Set(), PLAN_PAR_DEFAUT)
     expect(ruptures.map((r) => r.motif).sort()).toEqual(['sans_justificatif', 'sans_mouvement'])
   })
 
   it('rend une liste vide sur un brouillon sain', () => {
-    expect(rupturesPisteAudit([ecriture(), ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })], new Set())).toEqual([])
+    expect(rupturesPisteAudit([ecriture(), ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })], new Set(), PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   // Ligne 26.6 : l'écriture d'un mouvement affecté à une catégorie n'a pas de pièce, par
@@ -81,16 +90,16 @@ describe('rupturesPisteAudit', () => {
   ]
 
   it('ne signale pas l’écriture d’un mouvement affecté : son justificatif est le relevé', () => {
-    expect(rupturesPisteAudit(encaissement, new Set(['l-cpam']))).toEqual([])
+    expect(rupturesPisteAudit(encaissement, new Set(['l-cpam']), PLAN_PAR_DEFAUT)).toEqual([])
     // Le garde symétrique : sans l'affectation, ce sont deux écritures sans justificatif.
-    expect(rupturesPisteAudit(encaissement, new Set()).map((r) => r.motif)).toEqual(['sans_justificatif', 'sans_justificatif'])
+    expect(rupturesPisteAudit(encaissement, new Set(), PLAN_PAR_DEFAUT).map((r) => r.motif)).toEqual(['sans_justificatif', 'sans_justificatif'])
   })
 
   it('redevient une rupture quand le mouvement a disparu', () => {
     // `ecritures_brouillon.ligne_bancaire_id` est en `ON DELETE SET NULL` : un relevé retiré laisse
     // l'écriture sans rien derrière.
     const perdue = encaissement.map((e) => ({ ...e, ligne_bancaire_id: null }))
-    expect(rupturesPisteAudit(perdue, new Set(['l-cpam'])).map((r) => r.motif).sort())
+    expect(rupturesPisteAudit(perdue, new Set(['l-cpam']), PLAN_PAR_DEFAUT).map((r) => r.motif).sort())
       .toEqual(['sans_justificatif', 'sans_justificatif', 'sans_mouvement'])
   })
 })
@@ -435,16 +444,16 @@ describe('pisteAudit — les dotations aux amortissements', () => {
   const facture = piece('p-ordi', { nom_fichier: 'facture-ordinateur.pdf', tiers: 'Boulanger', storage_hash: 'f'.repeat(64) })
 
   it('ne sont pas des ruptures, et sont dans le FEC', () => {
-    expect(rupturesPisteAudit([dotation(), dotation({ id: 'dot-c', compte: '281830', sens: 'credit' })], new Set())).toEqual([])
+    expect(rupturesPisteAudit([dotation(), dotation({ id: 'dot-c', compte: '281830', sens: 'credit' })], new Set(), PLAN_PAR_DEFAUT)).toEqual([])
     expect(absenceFec([dotation()], new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
     // Le garde symétrique : la même écriture sans son bien est bien une rupture.
-    expect(rupturesPisteAudit([dotation({ immobilisation_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
+    expect(rupturesPisteAudit([dotation({ immobilisation_id: null })], new Set(), PLAN_PAR_DEFAUT).map((r) => r.motif)).toEqual(['sans_justificatif'])
   })
 
   it('donnent le tableau d’amortissement pour justificatif, et la facture d’acquisition pour preuve', () => {
     // La facture elle-même reste une ligne à part — un justificatif qu'aucune écriture ne cite tant que
     // l'acquisition ne s'écrit pas (ligne 26.6, étape b3).
-    const lignes = pisteAudit([dotation()], [facture], [], [], { immobilisations: [ordinateur], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES })
+    const lignes = pisteAudit([dotation()], [facture], [], [], { immobilisations: [ordinateur], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT })
     expect(lignes.map((l) => [l.ecritureId, l.manque])).toEqual([[null, ['écriture']], ['dot-d', []]])
     const ligne = lignes.find((l) => l.ecritureId === 'dot-d')!
     expect([ligne.pieceFichier, ligne.pieceEmpreinte, ligne.pieceTiers, ligne.pieceDate, ligne.mouvementDate, ligne.manque]).toEqual([
@@ -453,12 +462,12 @@ describe('pisteAudit — les dotations aux amortissements', () => {
   })
 
   it('disent la facture d’acquisition manquante quand le bien l’a perdue', () => {
-    const [ligne] = pisteAudit([dotation()], [], [], [], { immobilisations: [{ ...ordinateur, piece_id: null }], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES })
+    const [ligne] = pisteAudit([dotation()], [], [], [], { immobilisations: [{ ...ordinateur, piece_id: null }], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT })
     expect([ligne.pieceFichier, ligne.pieceEmpreinte, ligne.manque]).toEqual(["Tableau d'amortissement : Ordinateur", null, ['facture d’acquisition']])
   })
 
   it('distinguent un lien rompu d’une ligne absente du jeu chargé', () => {
-    expect(pisteAudit([dotation()], [], [], [], { immobilisations: [ordinateur], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES })[0].manque)
+    expect(pisteAudit([dotation()], [], [], [], { immobilisations: [ordinateur], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT })[0].manque)
       .toEqual(['facture d’acquisition hors du jeu chargé'])
     expect(pisteAudit([dotation()], [], [], [], SANS_REGISTRE)[0].manque).toEqual(['bien hors du jeu chargé'])
   })
@@ -466,7 +475,7 @@ describe('pisteAudit — les dotations aux amortissements', () => {
   it('trouvent la facture d’un bien acheté un autre exercice, sans la compter parmi les justificatifs de celui-ci', () => {
     // Le défaut que le registre corrige : cherchée parmi les pièces de l'EXERCICE, la facture d'un bien de 2025
     // manquait à chacune de ses dotations suivantes. Elle n'est pas pour autant un justificatif de 2026.
-    const lignes = pisteAudit([dotation()], [], [], [], { immobilisations: [ordinateur], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES })
+    const lignes = pisteAudit([dotation()], [], [], [], { immobilisations: [ordinateur], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT })
     expect(lignes.map((l) => [l.ecritureId, l.pieceFichier, l.manque])).toEqual([
       ['dot-d', "Tableau d'amortissement : Ordinateur — facture facture-ordinateur.pdf", []],
     ])
@@ -488,15 +497,15 @@ describe('pisteAudit — les forfaits kilométriques', () => {
 
   it('ne sont pas des ruptures, et sont dans le FEC', () => {
     const lignes = [forfait(), forfait({ id: 'ik-c', compte: '108000', sens: 'credit' })]
-    expect(rupturesPisteAudit(lignes, new Set())).toEqual([])
+    expect(rupturesPisteAudit(lignes, new Set(), PLAN_PAR_DEFAUT)).toEqual([])
     expect(absenceFec(lignes, new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
     // Le garde symétrique : la même écriture sans son véhicule est bien une rupture, et hors du FEC.
-    expect(rupturesPisteAudit([forfait({ vehicule_id: null, declaration_tva_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
+    expect(rupturesPisteAudit([forfait({ vehicule_id: null, declaration_tva_id: null })], new Set(), PLAN_PAR_DEFAUT).map((r) => r.motif)).toEqual(['sans_justificatif'])
     expect(absenceFec([forfait({ vehicule_id: null, declaration_tva_id: null })], new Set()).nb).toBe(1)
   })
 
   it('donnent le barème, le véhicule et le kilométrage pour justificatif, sans empreinte', () => {
-    const [ligne] = pisteAudit([forfait()], [], [], [], { immobilisations: [], factures: [], vehicules: [zoe], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES })
+    const [ligne] = pisteAudit([forfait()], [], [], [], { immobilisations: [], factures: [], vehicules: [zoe], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT })
     expect([ligne.pieceFichier, ligne.pieceEmpreinte, ligne.pieceDate, ligne.pieceId, ligne.mouvementDate, ligne.manque]).toEqual([
       'Barème kilométrique 2026 : Zoé, 20\u202f000 km professionnels', null, '2026-12-31', null, null, [],
     ])
@@ -516,10 +525,10 @@ describe('pisteAudit — la liquidation de la TVA', () => {
 
   it('n’est pas une rupture, et est dans le FEC', () => {
     const lignes = [liquidation(), liquidation({ id: 'tva-d', compte: '445510', sens: 'credit', montant: 100.40 })]
-    expect(rupturesPisteAudit(lignes, new Set())).toEqual([])
+    expect(rupturesPisteAudit(lignes, new Set(), PLAN_PAR_DEFAUT)).toEqual([])
     expect(absenceFec(lignes, new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
     // Le garde symétrique : la même écriture sans sa déclaration est bien une rupture, et hors du FEC.
-    expect(rupturesPisteAudit([liquidation({ declaration_tva_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
+    expect(rupturesPisteAudit([liquidation({ declaration_tva_id: null })], new Set(), PLAN_PAR_DEFAUT).map((r) => r.motif)).toEqual(['sans_justificatif'])
     expect(absenceFec([liquidation({ declaration_tva_id: null })], new Set()).nb).toBe(1)
   })
 
@@ -539,7 +548,7 @@ describe('pisteAudit — la liquidation de la TVA', () => {
       source_fichier: 'releve-avril-2026.pdf', libelle_brut: null, created_at: '2026-04-21T00:00:00Z', encaissements_de_factures: false,
     } satisfies LigneBancaire
     const paiement = ecriture({ id: 'p1', piece_id: null, ligne_bancaire_id: 'l-tva', date: '2026-04-20', compte: '445510', montant: 79 })
-    expect(rupturesPisteAudit([paiement], new Set(['l-tva']))).toEqual([])
+    expect(rupturesPisteAudit([paiement], new Set(['l-tva']), PLAN_PAR_DEFAUT)).toEqual([])
     const [ligne] = pisteAudit([paiement], [], [prelevement], [], SANS_REGISTRE)
     expect([ligne.pieceFichier, ligne.mouvementDate, ligne.manque]).toEqual(['Relevé bancaire : releve-avril-2026.pdf', '2026-04-20', []])
   })
@@ -555,12 +564,12 @@ describe('pisteAudit — l’échéance payée depuis le compte personnel', () =
 
   it('n’est pas une rupture, et est dans le FEC', () => {
     const lignes = [paiement(), paiement({ id: 'perso-c', compte: '108000', sens: 'credit' })]
-    expect(rupturesPisteAudit(lignes, new Set())).toEqual([])
+    expect(rupturesPisteAudit(lignes, new Set(), PLAN_PAR_DEFAUT)).toEqual([])
     expect(absenceFec(lignes, new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
     // L'en-tête et les deux lignes de l'écriture.
     expect(genererFec(lignes, [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES).split('\r\n').filter((l) => l !== '')).toHaveLength(3)
     // Le garde symétrique : la même écriture sans son échéance est bien une rupture, et hors du FEC.
-    expect(rupturesPisteAudit([paiement({ cotisation_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
+    expect(rupturesPisteAudit([paiement({ cotisation_id: null })], new Set(), PLAN_PAR_DEFAUT).map((r) => r.motif)).toEqual(['sans_justificatif'])
     expect(absenceFec([paiement({ cotisation_id: null })], new Set()).nb).toBe(1)
   })
 

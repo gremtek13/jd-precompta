@@ -1,5 +1,5 @@
 import type { EcritureBrouillon } from './types'
-import { COMPTE_BANQUE } from './comptes'
+import type { PlanComptable } from './planComptable'
 import type { OuvertureBanque } from './planTresorerie'
 
 export interface MoisPilotage {
@@ -26,16 +26,20 @@ export interface MoisPilotage {
 //
 // L'ouverture est un paramètre OBLIGATOIRE, nul quand le dossier n'en a pas : un appelant qui
 // l'oublierait retomberait sur l'ancien calcul sans que rien ne le dise.
+//
+// La banque est celle du PLAN du dossier (ligne 43, conception § 2.4), paramètre obligatoire, comme dans
+// `calculerEvolutionMensuelle` : sous un plan qui la tient ailleurs qu'au compte par défaut, la série serait vide.
 export function soldesFinDeMois(
   ecritures: EcritureBrouillon[],
   nbMois: number,
   ouverture: OuvertureBanque | null,
+  plan: PlanComptable,
 ): { mois: string; solde: number }[] {
   // En centimes : un cumul de flottants dérive sur une longue série.
   const parMois = new Map<string, number>()
   const ajouter = (mois: string, centimes: number) => parMois.set(mois, (parMois.get(mois) ?? 0) + centimes)
   for (const e of ecritures) {
-    if (e.compte !== COMPTE_BANQUE) continue
+    if (e.compte !== plan.banque) continue
     if (ouverture && e.date < ouverture.date) continue
     ajouter(e.date.slice(0, 7), (e.sens === 'debit' ? 1 : -1) * Math.round(e.montant * 100))
   }
@@ -49,8 +53,8 @@ export function soldesFinDeMois(
   return cumules.slice(-nbMois)
 }
 
-export function calculerEvolutionMensuelle(ecritures: EcritureBrouillon[], nbMois: number): MoisPilotage[] {
-  const lignesBanque = ecritures.filter((e) => e.compte === COMPTE_BANQUE)
+export function calculerEvolutionMensuelle(ecritures: EcritureBrouillon[], nbMois: number, plan: PlanComptable): MoisPilotage[] {
+  const lignesBanque = ecritures.filter((e) => e.compte === plan.banque)
   const parMois = new Map<string, { encaissements: number; decaissements: number }>()
   for (const l of lignesBanque) {
     const mois = l.date.slice(0, 7)

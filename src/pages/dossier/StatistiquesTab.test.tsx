@@ -1,3 +1,4 @@
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
@@ -136,7 +137,7 @@ describe('StatistiquesTab — Balance des comptes', () => {
 
     render(
       <ContexteDossier valides={faux.valides} annee="toutes">
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </ContexteDossier>,
     )
 
@@ -156,7 +157,7 @@ describe('StatistiquesTab — Balance des comptes', () => {
     faux.parTable.pieces = []
     render(
       <ContexteDossier valides={faux.valides} annee="toutes">
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </ContexteDossier>,
     )
     const tableau = (await screen.findByText('606100')).closest('table')!
@@ -180,7 +181,7 @@ describe('StatistiquesTab — Balance des comptes', () => {
 
     render(
       <ContexteDossier valides={faux.valides} annee="toutes">
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </ContexteDossier>,
     )
 
@@ -224,7 +225,7 @@ describe('StatistiquesTab — les catégories du cabinet', () => {
 
     render(
       <ContexteDossier valides={faux.valides} annee="toutes">
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </ContexteDossier>,
     )
 
@@ -261,7 +262,7 @@ describe('StatistiquesTab — les à-nouveaux', () => {
     faux.parTable.a_nouveaux = OUVERTURE
     render(
       <ContexteDossier valides={faux.valides} annee={annee}>
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </ContexteDossier>,
     )
   }
@@ -383,7 +384,7 @@ describe('StatistiquesTab — les soldes reportés', () => {
     faux.valides = valides
     render(
       <ContexteDossier valides={faux.valides} annee={annee}>
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </ContexteDossier>,
     )
   }
@@ -517,7 +518,7 @@ describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
   function monter(annee: number | 'toutes', mode: ModeComptable = 'engagement') {
     render(
       <ContexteDossier valides={faux.valides} annee={annee}>
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable={mode} />
+        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable={mode} />
       </ContexteDossier>,
     )
   }
@@ -733,7 +734,7 @@ describe('StatistiquesTab — les comptes de tiers d’un dossier qui a basculé
 
   const monter = () => render(
     <ContexteDossier valides={faux.valides} annee="toutes">
-      <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="engagement" />
+      <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="engagement" />
     </ContexteDossier>,
   )
 
@@ -801,7 +802,7 @@ describe('StatistiquesTab — le lettrage fait à la main', () => {
   function monter(annee: number | 'toutes' = 'toutes') {
     render(
       <ContexteDossier valides={faux.valides} annee={annee}>
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="engagement" />
+        <StatistiquesTab plan={PLAN_PAR_DEFAUT} dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="engagement" />
       </ContexteDossier>,
     )
   }

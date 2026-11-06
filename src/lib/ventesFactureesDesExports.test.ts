@@ -340,7 +340,7 @@ describe('la piste d’audit d’un dossier qui a basculé', () => {
       { id: 't1', facture_id: 'f2', etat: 'depose', sha256: 'b'.repeat(64), hote: 'api.superpdp.tech' },
     ],
   })
-  const registre = (j: JustificatifsDesVentes): RegistreAudit => ({ immobilisations: [], factures: [], vehicules: [], ventes: j, caisse: OPERATIONS_DE_CAISSE_ABSENTES })
+  const registre = (j: JustificatifsDesVentes): RegistreAudit => ({ immobilisations: [], factures: [], vehicules: [], ventes: j, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT })
   const releve = sourcesDuDossierBascule().mouvements.map(ligneBancaire)
 
   it('donne à chaque ligne son justificatif — la facture, le registre, le relevé —, et rien ne lui manque', () => {
