@@ -44,6 +44,7 @@ import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
+import { RELANCES_EXPORTEES } from './relances'
 import { SIMULATION_VENTES_FACTUREES_EXPORTEE } from './simulationVentesFacturees'
 import { refus as refusDeLaCaisse, STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
@@ -303,6 +304,8 @@ export function ceQueDisentLesCases(
       + 'lui-même sa plateforme agréée et Super PDP et en voir l’état, y transmettre une facture et en suivre la '
       + 'transmission, relever les statuts de sa plateforme, et envoyer une facture par e-mail, trente par dossier et par '
       + 'jour au plus.'
+      // La relance d'une facture en retard (étape C5), sous son drapeau : la migration de son journal d'abord.
+      + (RELANCES_EXPORTEES ? ' Il peut aussi relancer par e-mail une facture en retard, dans le même plafond.' : '')
     : ''
   // Les devis (étape P5) : la lecture des deux tables que leur migration ouvre à « Ventes », les quatre gestes de leurs
   // fonctions, puis leur envoi par e-mail (`send-email`, étape P6c), qui compte dans le même plafond que les factures.

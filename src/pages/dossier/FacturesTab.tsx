@@ -5,6 +5,12 @@ import type { ArticleExoneration, FactureEmise, StatutTva, TransmissionFacture }
 import type {
   DeclarationLue, EncaissementPourContrePassation, EvenementSuperpdpLu, LigneDeFacture, PartLue,
 } from '../../lib/encaissementsFactures'
+import { resteAEncaisser } from '../../lib/encaissementsFactures'
+import {
+  RELANCES_EXPORTEES, TAUX_REFINANCEMENT_BCE, derniereRelance, penalitesDeRetard, retardDeLaFacture, type RetardDeLaFacture,
+} from '../../lib/relances'
+import { lireLesRelances, type LectureDesRelances } from '../../lib/relancesLecture'
+import PenalitesDeRetard from './PenalitesDeRetard'
 import { pastilleDeclaration, pastilleEncaissement } from '../../lib/encaissementsAffichage'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -108,6 +114,10 @@ export default function FacturesTab(props: Props) {
   const [transmissions, setTransmissions] = useState<TransmissionFacture[]>([])
   const [transmissionsIncompletes, setTransmissionsIncompletes] = useState<string | null>(null)
   const [emailDe, setEmailDe] = useState<FactureEmise | null>(null)
+  // LA RELANCE D'UNE FACTURE EN RETARD (étape C5), sous `RELANCES_EXPORTEES` : le journal des relances du dossier, gardé
+  // AVEC le dossier lu (la page ne se remonte pas d'un dossier à l'autre), et la facture qu'on relance.
+  const [relancesLues, setRelancesLues] = useState<{ dossierId: string; lecture: LectureDesRelances } | null>(null)
+  const [relanceDe, setRelanceDe] = useState<FactureEmise | null>(null)
   // Les encaissements des factures (ligne 28.5, étape d3) : de quoi dire, sur chaque facture validée, ce qui en est
   // encaissé. L'IDENTIFIANT de la facture ouverte, comme pour la transmission : la fenêtre relit tout elle-même.
   const [encaissementsDe, setEncaissementsDe] = useState<string | null>(null)
@@ -171,11 +181,13 @@ export default function FacturesTab(props: Props) {
     setLoading(true)
     // Les lectures de l'onglet, que l'accueil du client compte aussi (lib/ventesLecture.ts) : la suite LÉGALE des
     // factures, leurs transmissions, leurs encaissements, leurs déclarations, l'historique de Super PDP et les statuts lus.
-    const [lu, acomptes] = await Promise.all([
+    const [lu, acomptes, relances] = await Promise.all([
       lireLesVentesDuDossier(dossierId),
       ACOMPTES_PREVUS ? lireLesAcomptesDesFactures(dossierId) : null,
+      RELANCES_EXPORTEES ? lireLesRelances(dossierId) : null,
     ])
     if (acomptes) setAcomptesLus(acomptes)
+    if (relances) setRelancesLues({ dossierId, lecture: relances })
     setFactures(lu.factures)
     setLectureIncomplete(lu.facturesIncompletes)
     setTransmissions(lu.transmissions)
@@ -252,6 +264,20 @@ export default function FacturesTab(props: Props) {
   // la plus récente facture validée de la série) ; pas encore revenue, ou lue en partie, aucune — une facture plus récente peut manquer,
   // et la base juge alors au clic.
   const facturesDeLaSerie = loading || lectureIncomplete ? null : factures
+  // Le retard d'une facture (étape C5) : sur les factures et les encaissements lus EN ENTIER seulement — le TTC qui
+  // reste dû, ni encaissé ni crédité par un avoir. Une liste incomplète ne dit ni « en retard » ni « à jour ».
+  const relancesCourantes = relancesLues?.dossierId === dossierId ? relancesLues.lecture : null
+  const listesLues = !loading && lectureIncomplete == null && encaissementsIncomplets == null
+  const retardDe = (f: FactureEmise): RetardDeLaFacture | null => {
+    if (!RELANCES_EXPORTEES) return null
+    const reste = listesLues
+      ? resteAEncaisser({ facture: f, lignes: lignesFactures, encaissements, parts: partsEncaissements }).resteCentimes
+        - Math.round(dejaCredite(f.id, factures) * 100)
+      : null
+    return retardDeLaFacture(f, reste, aujourdHui)
+  }
+  const relanceeLe = (factureId: string): string | null =>
+    relancesCourantes?.complete ? derniereRelance(relancesCourantes.relances, factureId) : null
   const anneesDisponibles = [...new Set(factures.map((f) => anneeDe(f.date_emission)))].sort((a, b) => b - a)
   // Le filtre « Émises par le client » ne touche que l'AFFICHAGE : les pastilles d'encaissement et de déclaration, la liste
   // des avoirs déjà crédités et les fenêtres lisent `factures` en entier. Il n'agit que si les accès sont lus en entier.
@@ -542,6 +568,11 @@ export default function FacturesTab(props: Props) {
           {resultatReleve && <BilanReleveStatuts resultat={resultatReleve} espace={espace} />}
 
           {erreur && <p className="error-text">{pourLEspaceSiTexte(espace, erreur)}</p>}
+          {/* Le journal des relances lu en partie ou refusé : ni « Relancée le … » ni « Relancer » — on relancerait sans
+              savoir qu'on l'a déjà fait. */}
+          {RELANCES_EXPORTEES && relancesCourantes && !relancesCourantes.complete && (
+            <p className="error-text">Les relances déjà envoyées n’ont pas pu être lues ({relancesCourantes.raison}) : « Relancer » n’est pas offert.</p>
+          )}
 
           <div className="card table-scroll" style={{ padding: 0 }}>
             {loading ? (
@@ -660,6 +691,18 @@ export default function FacturesTab(props: Props) {
                                 )
                                 return pastille ? <span className={`badge badge-une-ligne ${pastille.classe}`}>{pastille.libelle}</span> : null
                               })()}
+                              {/* En retard, et relancée le … : déduite du journal des e-mails, rien d'autre ne la garde. */}
+                              {(() => {
+                                const retard = retardDe(f)
+                                if (retard?.etat !== 'en_retard') return null
+                                const le = relanceeLe(f.id)
+                                return (
+                                  <>
+                                    <span className="badge badge-danger badge-une-ligne">En retard — {retard.jours} j</span>
+                                    {le && <span className="badge badge-neutral badge-une-ligne">Relancée le {formatDate(le)}</span>}
+                                  </>
+                                )
+                              })()}
                             </div>
                           </td>
                           <td className="td-actions" onClick={(e) => e.stopPropagation()}>
@@ -696,6 +739,9 @@ export default function FacturesTab(props: Props) {
                             )}
                             {f.statut === 'validee' && (
                               <button className="btn btn-outline btn-sm" onClick={() => setEmailDe(f)}>Envoyer par e-mail</button>
+                            )}
+                            {retardDe(f)?.etat === 'en_retard' && relancesCourantes?.complete && (
+                              <button className="btn btn-outline btn-sm" onClick={() => setRelanceDe(f)}>Relancer</button>
                             )}
                           </td>
                         </tr>
@@ -782,6 +828,29 @@ export default function FacturesTab(props: Props) {
           onUpdated={load}
         />
       )}
+
+      {relanceDe && (() => {
+        const retard = retardDe(relanceDe)
+        if (retard?.etat !== 'en_retard' || !relanceDe.date_echeance) return null
+        const penalites = penalitesDeRetard({
+          typeClient: relanceDe.type_client, mentionsFigees: relanceDe.mentions_figees === true,
+          penalitesFigees: relanceDe.penalites ?? null, dateEcheance: relanceDe.date_echeance, aujourdHui,
+          resteCentimes: retard.resteCentimes, tauxBce: TAUX_REFINANCEMENT_BCE,
+        })
+        return (
+          <EnvoyerEmailModal
+            dossierId={dossierId}
+            type="relance_facture"
+            factureId={relanceDe.id}
+            destinataireInitial={relanceDe.tiers_email}
+            titre={`Relancer la facture ${relanceDe.numero ?? ''}`}
+            description="L’e-mail rappelle la facture — son numéro, son montant TTC et son échéance — et part sur ce clic ; il compte dans le journal des e-mails du dossier."
+            avant={<PenalitesDeRetard jours={retard.jours} relanceeLe={relanceeLe(relanceDe.id)} penalites={penalites} texteFige={relanceDe.penalites ?? null} />}
+            onClose={() => setRelanceDe(null)}
+            onSent={load}
+          />
+        )
+      })()}
 
       {emailDe && (
         <EnvoyerEmailModal

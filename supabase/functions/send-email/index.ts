@@ -17,12 +17,17 @@
 //   `devis_id` : avant elle, la ligne de journal d'un devis serait refusée par la base.
 // - "relance_pieces" : simple rappel invitant le client à se connecter à son espace pour déposer ses
 //   pièces — aucun lien magique/jeton, le client se connecte normalement, comme d'habitude.
+// - "relance_facture" (espace client, étape C5 de la ligne 51.5) : le rappel d'une facture validée EN RETARD — son numéro,
+//   son montant TTC et son échéance —, jamais ses pénalités, que l'écran calcule et montre (src/lib/relances.ts). Admis
+//   seulement sous `RELANCES_EN_BASE` (plus bas) : la ligne de journal d'une relance attend la migration préparée
+//   `relances_des_factures`.
 //
 // Chaque envoi est journalisé (table emails_envoyes) : un cabinet doit toujours pouvoir retrouver qui
 // a reçu quoi et quand, jamais un envoi "silencieux" qu'on ne peut plus vérifier après coup.
 //
 // Qui peut quoi (`QUI_PEUT_QUOI`, espace client, étapes P3 et P6c2) : la facture et le devis, le cabinet du dossier et
-// le client dont l'accès porte la case « Ventes » ; la relance de pièces, le cabinet seul. Les droits se lisent avec le jeton de
+// le client dont l'accès porte la case « Ventes », de même la relance d'une facture en retard ; la relance de pièces, le
+// cabinet seul. Les droits se lisent avec le jeton de
 // l'appelant (bloc droitsDeLAppelant) avant toute autre lecture ; un client ne dépasse pas trente e-mails par dossier
 // et par jour de Paris (`PLAFOND_CLIENT_PAR_JOUR`), comptés dans le journal avant l'envoi — le domaine d'envoi est
 // celui du cabinet.
@@ -60,7 +65,21 @@ const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
   facture: "ventes",
   devis: "ventes",
   relance_pieces: "cabinet",
+  relance_facture: "ventes",
 }
+
+// LA RELANCE D'UNE FACTURE EN RETARD (étape C5 ; MEG3-Q3, « oui » du cabinet) : la base n'admet sa ligne de journal,
+// `relance_facture`, qu'avec la migration préparée `relances_des_factures`
+// (supabase/preparees/20261106140000_relances_des_factures.sql). Baissée, la constante refuse ce type comme un type
+// inconnu (400, mot pour mot le refus d'hier), avant toute lecture et tout envoi : un e-mail parti dont la ligne serait
+// refusée APRÈS l'envoi ne compterait pas dans le plafond d'un accès client. L'ordre : la migration, puis la constante
+// levée et la fonction redéployée, puis `RELANCES_EXPORTEES` (src/lib/relances.ts) ; `relancesHttp.test.ts` joue les
+// deux états, et refuse le drapeau levé sur une constante baissée.
+const RELANCES_EN_BASE = false
+const TYPES_ADMIS: readonly string[] = RELANCES_EN_BASE
+  ? ["facture", "devis", "relance_pieces", "relance_facture"]
+  : ["facture", "devis", "relance_pieces"]
+const TYPES_EN_MOTS = TYPES_ADMIS.slice(0, -1).map((t) => `'${t}'`).join(", ") + ` ou '${TYPES_ADMIS[TYPES_ADMIS.length - 1]}'`
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -91,6 +110,16 @@ function jourDeParis(ms: number): { debut: string; fin: string } {
   return { debut: new Date(minuit(ici.day)).toISOString(), fin: new Date(minuit(ici.day + 1)).toISOString() }
 }
 // ── FIN JOUR DE PARIS ────────────────────────────────────────────────────────────────────────────────────────────────
+
+// Le jour CIVIL de Paris de l'instant `ms`, « AAAA-MM-JJ » : une facture est en retard le lendemain de son échéance, au
+// calendrier de Paris, pas à celui d'UTC où tourne la fonction (entre minuit et 1 h ou 2 h, ils diffèrent d'un jour).
+function jourCivilDeParis(ms: number): string {
+  const parties = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(ms))
+  const partie = (type: string) => parties.find((p) => p.type === type)?.value ?? ""
+  return `${partie("year")}-${partie("month")}-${partie("day")}`
+}
 
 interface FactureRow {
   id: string; numero: string | null; date_emission: string; date_echeance: string | null
@@ -228,6 +257,47 @@ function formaterDate(d: string): string {
 // tiers non authentifié, mais un e-mail HTML reste un contexte où un "<" mal placé casse le rendu.
 function echapper(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+// Les colonnes d'une facture que la relance lit, et elles seules : ni ses lignes, ni l'adresse de son client, ni ses
+// mentions ; le montant est son TTC, tel que la facture le porte.
+interface FactureRelancee {
+  id: string; numero: string | null; statut: string; type: string; date_echeance: string | null
+  montant_ttc: number | null; emetteur_nom: string | null
+}
+
+// Ce qui retient la relance, dit avant tout envoi : une facture validée — ni un brouillon ni un avoir —, qui porte son
+// numéro et son montant, et dont l'échéance est PASSÉE au jour de Paris (le lendemain de l'échéance est le premier jour
+// de retard, C. com., art. L441-10, II). Qu'il en reste dû, l'écran le juge sur le registre des encaissements.
+function refusDeLaRelance(f: FactureRelancee, aujourdHui: string): { statut: number; message: string } | null {
+  if (f.statut !== "validee" || f.type !== "facture") {
+    return { statut: 400, message: "Seule une facture validée se relance — jamais un brouillon ni un avoir." }
+  }
+  if (typeof f.numero !== "string" || f.numero.trim() === "" || typeof f.montant_ttc !== "number" || !Number.isFinite(f.montant_ttc)) {
+    return { statut: 500, message: "Cette facture validée ne porte pas son numéro ou son montant : la relance n'est pas partie." }
+  }
+  if (f.date_echeance == null) {
+    return { statut: 400, message: "Cette facture ne porte pas d'échéance : elle n'est jamais en retard, et ne se relance pas." }
+  }
+  if (f.date_echeance >= aujourdHui) {
+    return { statut: 400, message: `Cette facture n'est pas encore en retard (échéance le ${formaterDate(f.date_echeance)}) : elle ne se relance pas.` }
+  }
+  return null
+}
+
+function construireEmailRelanceFacture(
+  f: FactureRelancee & { numero: string; montant_ttc: number; date_echeance: string }, messagePerso: string | null,
+): { objet: string; html: string } {
+  const emetteur = f.emetteur_nom ?? "Le cabinet"
+  const html = `
+    <div style="font-family:sans-serif;color:#222;max-width:560px;">
+      <p>Bonjour,</p>
+      ${messagePerso ? `<p>${echapper(messagePerso)}</p>` : ""}
+      <p>Sauf erreur de notre part, la facture <strong>${echapper(f.numero)}</strong>, d'un montant de <strong>${formaterMontant(f.montant_ttc)}</strong> TTC, arrivée à échéance le ${formaterDate(f.date_echeance)}, n'a pas encore été réglée.</p>
+      <p>Si le règlement est déjà parti, merci de ne pas tenir compte de ce message.</p>
+      <p style="margin-top:24px;">Cordialement,<br>${echapper(emetteur)}</p>
+    </div>`
+  return { objet: `Relance — facture ${f.numero} — ${emetteur}`, html }
 }
 
 function construireEmailFacture(
@@ -456,8 +526,8 @@ Deno.serve(async (req: Request) => {
   const type = payload.type
   const destinataire = texte("destinataire")
   const messagePerso = texte("message") || null
-  if (!dossierId || (type !== "facture" && type !== "devis" && type !== "relance_pieces") || !destinataire) {
-    return json({ error: "dossierId, type ('facture', 'devis' ou 'relance_pieces') et destinataire sont requis." }, 400)
+  if (!dossierId || typeof type !== "string" || !TYPES_ADMIS.includes(type) || !destinataire) {
+    return json({ error: `dossierId, type (${TYPES_EN_MOTS}) et destinataire sont requis.` }, 400)
   }
   if (!EMAIL_REGEX.test(destinataire)) {
     return json({ error: "Adresse e-mail du destinataire invalide." }, 400)
@@ -468,6 +538,11 @@ Deno.serve(async (req: Request) => {
   const devisId = type === "devis" ? texte("devisId") ?? null : null
   if (type === "devis" && (!devisId || !UUID_REGEX.test(devisId))) {
     return json({ error: "devisId, l'identifiant du devis, est requis pour le modèle 'devis'." }, 400)
+  }
+  // La facture relancée, de même : un UUID, jugé avec le corps.
+  const factureRelanceeId = type === "relance_facture" ? texte("factureId") ?? null : null
+  if (type === "relance_facture" && (!factureRelanceeId || !UUID_REGEX.test(factureRelanceeId))) {
+    return json({ error: "factureId, l'identifiant de la facture, est requis pour le modèle 'relance_facture'." }, 400)
   }
 
   // Les droits de l'appelant, avec SON jeton, avant toute autre lecture. Sans le droit que le modèle exige, la réponse
@@ -560,6 +635,31 @@ Deno.serve(async (req: Request) => {
     objet = construit.objet
     html = construit.html
     nomExpediteur = emetteur
+  } else if (type === "relance_facture" && factureRelanceeId) {
+    // La facture, par son identifiant ET le dossier de la requête ; une lecture en erreur n'est pas une facture absente.
+    const { data: relancee, error: erreurRelancee } = await admin
+      .from("factures_emises")
+      .select("id, numero, statut, type, date_echeance, montant_ttc, emetteur_nom")
+      .eq("id", factureRelanceeId).eq("dossier_id", dossierId).maybeSingle()
+    if (erreurRelancee) {
+      return json({ error: `La facture n'a pas pu être lue (${erreurRelancee.message}). La relance n'est pas partie. Réessaie dans un instant.` }, 503)
+    }
+    if (!relancee) {
+      return json({ error: "Facture introuvable." }, 404)
+    }
+    const facture = relancee as FactureRelancee
+    const refus = refusDeLaRelance(facture, jourCivilDeParis(Date.now()))
+    if (refus) {
+      return json({ error: refus.message }, refus.statut)
+    }
+    const construit = construireEmailRelanceFacture(
+      facture as FactureRelancee & { numero: string; montant_ttc: number; date_echeance: string }, messagePerso,
+    )
+    objet = construit.objet
+    html = construit.html
+    // Le journal cite la facture relancée : « Relancée le … » s'en déduit, rien d'autre ne se stocke.
+    factureId = factureRelanceeId
+    nomExpediteur = facture.emetteur_nom ?? dossierRow.nom
   } else {
     const construit = construireEmailRelance(dossierRow.nom, messagePerso)
     objet = construit.objet

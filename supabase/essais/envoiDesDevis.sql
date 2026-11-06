@@ -108,7 +108,7 @@ begin
       ('1', 'valeur', 'la contrainte du type admet aussi « devis », sous son nom d''hier', 'proprietaire', null,
         $q$select coalesce(string_agg(conname || ' ' || pg_get_constraintdef(oid), ' | ' order by conname), 'aucune') from pg_constraint
             where conrelid = 'public.emails_envoyes'::regclass and contype = 'c' and conname = 'emails_envoyes_type_check'$q$,
-        'OK', 'emails_envoyes_type_check CHECK ((type = ANY (ARRAY[''facture''::text, ''relance_pieces''::text, ''devis''::text])))', null),
+        'OK', 'emails_envoyes_type_check CHECK ((type = ANY (ARRAY[''facture''::text, ''relance_pieces''::text, ''devis''::text%])))', null),
       ('2', 'valeur', 'la clé du devis envoyé : à nul à la suppression du devis, jamais en cascade', 'proprietaire', null,
         $q$select coalesce(string_agg(conname || ' ' || pg_get_constraintdef(oid), ' | ' order by conname), 'aucune') from pg_constraint
             where conrelid = 'public.emails_envoyes'::regclass and contype = 'f' and confrelid = 'public.devis'::regclass$q$,
@@ -121,11 +121,11 @@ begin
         $q$select coalesce(string_agg(indexdef, ' | ' order by indexname), 'aucun') from pg_indexes
             where schemaname = 'public' and tablename = 'emails_envoyes' and indexdef like '%(devis_id)%'$q$,
         'OK', 'CREATE INDEX emails_envoyes_devis_id_idx ON public.emails_envoyes USING btree (devis_id)', null),
-      ('5', 'valeur', 'les deux policies de la table, inchangées : celle du cabinet, la lecture du client « Ventes » des envois de factures et de devis', 'proprietaire', null,
+      ('5', 'valeur', 'les deux policies de la table, inchangées : celle du cabinet, la lecture du client « Ventes » des envois de factures et de devis (et, depuis la migration relances_des_factures, des relances de factures : le motif les admet)', 'proprietaire', null,
         $q$select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/' || array_to_string(p.polroles::regrole[]::text[], ',')
                || '/' || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '/' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), ' | ' order by p.polname)
              from pg_policy p where p.polrelid = 'public.emails_envoyes'::regclass$q$,
-        'OK', 'emails_envoyes_all/*/true/-/admin_du_dossier(dossier_id)/admin_du_dossier(dossier_id) | emails_envoyes_lecture_ventes/r/true/authenticated/(client_du_dossier(dossier_id, ''ventes''::text) AND (type = ANY (ARRAY[''facture''::text, ''devis''::text])))/', null),
+        'OK', 'emails_envoyes_all/*/true/-/admin_du_dossier(dossier_id)/admin_du_dossier(dossier_id) | emails_envoyes_lecture_ventes/r/true/authenticated/(client_du_dossier(dossier_id, ''ventes''::text) AND (type = ANY (ARRAY[''facture''::text, ''devis''::text%])))/', null),
 
       -- ══ 6 à 16. Ce qui s'écrit ══════════
       ('6', 'fait', '`send-email` (la clé de service) journalise l''envoi de DV1 : une ligne « devis » qui cite son devis', 'proprietaire', null,
