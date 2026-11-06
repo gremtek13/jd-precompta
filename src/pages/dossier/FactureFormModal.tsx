@@ -1394,6 +1394,7 @@ export default function FactureFormModal(props: Props) {
       {fenetreContact?.genre === 'choix' && contactsEntiers != null && (
         <ContactChoixModal
           espace={espace} articleExoneration={articleExoneration} contacts={contactsEntiers} dateEmission={dateEmission}
+          echeanceAffichee
           onChoisir={choisirContact} onClose={() => setFenetreContact(null)}
         />
       )}
