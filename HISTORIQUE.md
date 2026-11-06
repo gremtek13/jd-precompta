@@ -48598,3 +48598,74 @@ passer à un particulier le cache et le remet à nul dans la même écriture ; 
 (compté en production : aucune facture n'en porte encore). Ni migration ni Edge Function : `mentionsImprimees`, copié
 dans les fonctions qui transmettent, ne le dit que d'un organisme public, inchangé. Trois mutations mordent (le devis
 ouvert, le champ fermé, l'ancien libellé).
+
+### 06/11/2026 — A8 ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE : LA CONCEPTION REMISE À JOUR
+
+La conception du 11/10/2026 (« LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », §A.3.1 à §A.3.6, lignes A8 et A9 du §A.9)
+relue contre la source et le catalogue du jour, après VF1 à VF9c, A7, P5, la caisse, FACTURE-Q1 et l'e-reporting.
+Lecture seule : aucun code, aucune migration. Production, des comptes : 6 factures, toutes validées, 0 source, 0 dossier
+basculé, 0 encaissement, 1 ligne dans `facture_numerotation` ; aucune facture reprise, tout ce qui suit est latent.
+
+**CE QUI TIENT.** Les textes (§A.3.1) ; l'option (1), un troisième état `importee` dans `factures_emises` (MEG1-Q4) ;
+la porte unique d'import, tout ou rien, le lot et sa facture (`imports_factures`, `factures_importees`) ; ni aperçu, ni
+transmission, ni « Encaissée » d'ici, ni e-reporting des ventes (MEG1-Q8). Les LECTEURS restent fermés par défaut :
+`pg_proc.prosrc`, 51 fonctions qui nomment `factures_emises`, 0 inégalité à `'brouillon'`, 10 à `'validee'` (refus) ;
+côté TypeScript, une seule inégalité à `'brouillon'` (`acomptesDuDevisLecture.ts`, qui dit illisible tout autre état).
+`prochain_numero_facture` lit tout numéro `^F<année>-[0-9]+$` quel que soit l'état : une suite de même forme continue.
+L'index unique `(dossier_id, numero)` ne connaît pas l'année. L'e-reporting des paiements ne filtre pas l'état, mais
+refuse une facture sans `option_debits` (`premierRefusDuPaiement`) : l'import la pose.
+
+**CE QUI CHANGE.**
+1. La GARDE, elle, est OUVERTE par défaut : `garder_factures_validees` ne fige, ne refuse la suppression et la naissance
+   que `statut = 'validee'` ; une importée naîtrait par insertion directe (`factures_emises_all` ouvre la table à qui
+   administre le dossier — policy encore `to public`, que le prédicat ferme sans session ; A8a la passe `to
+   authenticated`), se modifierait et se supprimerait. A8a étend chaque branche à `importee` (`jd.import_facture`, la
+   restauration, `retirer_import` seule pour supprimer) ; le garde de source « l'état par égalité » tient les gardes.
+2. EC3-Q9 : une facture reprise compte par son REGISTRE, après la date de reprise. Ce qu'elle demande tient déjà
+   à `source_de_la_vente` (29 fonctions : G2 dans `enregistrer_encaissement` — mouvement libre, réservé —, G1, la
+   frontière d'un exercice validé, le plafond net des avoirs, la caisse C6-Q1, les écritures d'encaissement, la garde du
+   réglage qui rend la bascule irréversible). Recommandé (A8-Q1) : l'import POSE `source_de_la_vente` sur l'importée —
+   `factures_emises_source_d_une_facture_validee` élargie, `fixer_source_de_la_vente` qui l'admet sans la frontière (une
+   facture d'un exercice validé se reprend) — et ce que le DOCUMENT produirait se ferme sur `statut = 'importee'` :
+   - 2035 (trésorerie) : ses parts, à leur date, comme une source ; rien avant la date de reprise ;
+   - CA3 : seul l'encaissement de SERVICES sans option sur les débits devient exigible ; la livraison d'un bien et la
+     facture sur les débits, d'avant la reprise, ont été déclarées par l'ancien outil : aucune exigibilité. La règle du
+     cumul part de `encaisse_avant_reprise` par taux (A8-Q6). `ventesFacturees.ts` et `calcul_vente_facturee` ensemble ;
+   - engagement : aucun « document » (la créance est au 411 de la reprise) ; or la reprise ne range que la banque, le
+     44566 et le 44571 (`compteQueLApplicationEcrit`) : ni le 411 par facture ni le 445800. A8-Q3 : l'import refusé en
+     engagement jusqu'à A8e, avec PC6 et l'expert-comptable (EC3-Q9, point 3 de VF5 § 8).
+   Les lecteurs TypeScript qui filtrent `statut === 'validee' && source_de_la_vente` (`facturesSources.ts`,
+   `ventesFacturees.ts`, `ventesFactureesLecture.ts`, `mouvementsDesVentes.ts`, `ecritureVenteFacturee.ts`) s'ouvrent
+   nommément (`estUneVente(f)`), un par un, sous leurs tests.
+3. Deux dates : `dossiers.ventes_par_les_factures_depuis` est l'INSTANT du réglage (`now()`), pas un jour civil choisi.
+   La conception mettait `bascule_le` sur le LOT ; il en faut UNE par dossier (A8-Q2) : `reprise_des_factures_le`, un
+   jour civil (le premier d'un mois, MEG1-Q7), posé par le chef du cabinet, au plus tard le jour de Paris de la bascule,
+   figé au premier import. Une importée se date d'avant ; son encaissement, de ce jour ou d'après.
+4. Le numéro repris face à la garde : le 5e refus de FACTURE-Q1 compare `split_part(numero, '-', 1)` aux seules
+   validées et lit `split_part(numero, '-', 2)::integer`. Élargi aux importées, un numéro d'une autre forme ferait lever
+   le cast : la série se juge par le motif du modèle (A9), et jusque-là par `^[FA][0-9]{4}-[0-9]+$`. La contrainte
+   `factures_emises_numero_de_sa_serie` se relâche en G1.05 pour une importée (un `drop constraint`, présenté).
+5. `enregistrer_facture` (47 479 caractères, un `delete` dans le corps : COLLÉE) : l'avoir d'une importée (son refus
+   « origine validée » élargi) ; et la série du mandataire (MEG1-Q5) n'existe pas — une seule série,
+   `attribuer_numero_facture(dossier, année, type)`, quel que soit qui valide, alors que P4 imprime déjà le mandat.
+6. Le seau `ventes` ne prend que PNG et JPEG de 500 Kio : y ranger PDF, XML et CSV sous `<dossier>/imports/` est une
+   policy élargie, présentée au cabinet. Une facture d'acompte reprise ne se reprend pas dans une finale (pas de devis).
+7. Hors MVP : en trésorerie, le paiement d'une facture d'avant se classe aujourd'hui en recette du relevé ; A8 change
+   l'outil qui le compte, pas le total. Rien ici ne passe avant les lignes MVP.
+
+**LE DÉCOUPAGE.**
+- A8a (COLLÉE ; contraintes remplacées, policy resserrée, présentées) : l'état, les deux tables, la date de reprise, la
+  garde étendue, `fixer_source_de_la_vente`, `importer_factures`, `retirer_import` ; essai `facturesImportees.sql` sur
+  une réplique, `rls.sql`, `factures.sql`, restauration.
+- A8b (COLLÉE) : `enregistrer_encaissement` (refus 4, date ≥ reprise, plafond moins `encaisse_avant_reprise` par taux),
+  `calcul_vente_facturee` et `ecritures_attendues_de_la_periode` (ni document ni exigibilité de livraison ou de débits
+  pour une importée), `enregistrer_facture` (l'avoir) ; la batterie des encaissements et les six essais des ventes.
+- A8c (code) : les modules ouverts nommément, le garde de source, la sauvegarde derrière `IMPORTS_EXPORTES`.
+- A8d (code ; la policy du seau, présentée) : l'écran d'import (Factur-X, CII, UBL, CSV), l'aperçu, « Voir l'original ».
+- A9a (COLLÉE) : `modeles_numerotation`, le formatage et la reprise par modèle, la chronologie sur validées ET
+  importées de la série, la continuité jugée, la série du mandataire selon qui valide ; `numerotationContinue.sql`.
+- A9b (code) : la carte du cabinet (modèle, trous nommés, levée motivée). A8e (après l'expert-comptable) : l'engagement.
+
+**QUESTIONS AU CABINET** (page des arbitrages) : A8-Q1 (la source posée à l'import), A8-Q2 (une date de reprise par
+dossier), A8-Q3 (l'engagement différé), A8-Q4 (l'import n'ouvre qu'avec A9), A8-Q5 (la pièce déjà au dossier d'une
+facture reprise), A8-Q6 (l'encaissé avant la reprise, par taux).
