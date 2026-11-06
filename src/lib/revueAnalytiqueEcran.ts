@@ -125,6 +125,7 @@ export function donneesDeLaRevueAnalytique(
     partsDuReleve: partsDuReleve(rapprochees, s.dossier.categories, s.dossier.ventilations, assujettiTva),
     seuils: s.seuils,
     explications: s.explications,
+    plan: modele.plan,
   }
 }
 

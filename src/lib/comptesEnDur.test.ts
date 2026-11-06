@@ -188,11 +188,6 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
     raison: '§ 2.4 : les comptes lettrables (`COMPTES_LETTRABLES`, que lettragesLecture.ts et StatistiquesTab lisent aussi), '
       + `le sens d’un compte de tiers et leur ordre ; la contrainte \`lettrages_manuels_compte\` de la base les borne encore ${RESTE_DE_PC3A}`,
   },
-  'src/lib/revisionCycles.ts': { nombre: 4, raison: `§ 2.4 : le cycle d’un compte de rôle, rangé par son numéro ${RESTE_DE_PC3A}` },
-  'src/lib/revisionPreuves.ts': {
-    nombre: 21,
-    raison: `§ 2.4 et § 2.5 : les preuves proposées des comptes de TVA, de la banque, de l’emprunt et de l’exploitant ${RESTE_DE_PC3A}`,
-  },
   'src/pages/dossier/ComptesDeTiersCard.tsx': { nombre: 5, raison: `§ 2.4 : le sens de chaque compte de tiers ${RESTE_DE_PC3A}` },
 }
 

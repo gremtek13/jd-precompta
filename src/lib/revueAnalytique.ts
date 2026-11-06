@@ -2,6 +2,7 @@ import type { Declaration2035 } from './declaration2035'
 import { remplirModele } from './encaissementsFactures'
 import type { PartDuReleve } from './partsDuReleve'
 import { centimesDuSoldeAnnonce, soldeCommeLaBase, soldesDeLExercice } from './revision'
+import type { PlanComptable } from './planComptable'
 import { cycleDuCompte } from './revisionCycles'
 import { BLANCS_D_UN_TEXTE, soldeDuCompteCentimes } from './revisionSoldes'
 import type {
@@ -706,6 +707,9 @@ export interface DonneesDeLaRevueAnalytique extends EcrituresDuDossier {
   partsDuReleve: readonly PartDuReleve[]
   seuils: readonly RevisionSeuil[]
   explications: readonly RevisionExplication[]
+  // Le plan du dossier, qui range ses comptes de rôle dans leur cycle (`cycleDuCompte`) : l'arrondi de la CA3 au compte
+  // que le dossier tient n'est pas une recette. Sans valeur par défaut (ligne 43, étape PC3).
+  plan: PlanComptable
 }
 
 export interface RevueAnalytique {
@@ -832,7 +836,7 @@ export function revueAnalytiqueDeLExercice(d: DonneesDeLaRevueAnalytique, lectur
   const recettesDuMois = (an: number) => {
     const parMois = Array.from({ length: 12 }, () => ({ centimes: 0, ecritures: 0 }))
     for (const e of d.ecritures) {
-      if (!e.date.startsWith(`${an}-`) || cycleDuCompte(e.compte) !== 'recettes') continue
+      if (!e.date.startsWith(`${an}-`) || cycleDuCompte(e.compte, d.plan) !== 'recettes') continue
       const m = parMois[Number(e.date.slice(5, 7)) - 1]
       if (m === undefined) continue
       m.centimes += (e.sens === 'credit' ? 1 : -1) * Math.round(e.montant * 100)

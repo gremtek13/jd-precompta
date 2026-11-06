@@ -749,7 +749,7 @@ export function revisionDeLExercice<C extends { id: string }>(d: DonneesDeLaRevi
       compte,
       libelle: libelles.get(compte) ?? libelleCompteTenu(compte) ?? libelleDuPlanComptable(compte) ?? '—',
       // Un compte de bilan est des classes 1 à 5 : il a toujours un cycle (`revisionCycles.test.ts`).
-      cycle: cycleDuCompte(compte) as CycleRevision,
+      cycle: cycleDuCompte(compte, d.modele.plan) as CycleRevision,
       soldeCentimes,
       etat,
       causes,
@@ -768,7 +768,7 @@ export function revisionDeLExercice<C extends { id: string }>(d: DonneesDeLaRevi
   const ranges = controlesParCycle(controles, d.modele.mode)
   const cycles = cyclesDuDossier({
     mode: d.modele.mode, assujettiTva: d.assujettiTva, nbBiens: d.immobilisations.length, nbEmprunts: d.emprunts.length,
-    comptesDeBilan: [...comptesDeBilan], cyclesDesControles: [...ranges.parCycle.keys()],
+    comptesDeBilan: [...comptesDeBilan], cyclesDesControles: [...ranges.parCycle.keys()], plan: d.modele.plan,
   }).map((cycle) => {
     const sesComptes = comptes.filter((c) => c.cycle === cycle)
     const sonAvancement = avancementVide()

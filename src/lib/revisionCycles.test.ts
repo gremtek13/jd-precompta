@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { compteAmortissement } from './amortissements'
 import * as comptes from './comptes'
 import { libelleDuPlanComptable } from './comptes'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import {
   CONTROLES_HORS_CYCLE, CYCLE_DES_CONTROLES, CYCLES_DE_REVISION, controlesParCycle, cycleDuCompte, cycleDuControle,
   cyclesDuDossier, DESCRIPTION_DES_CYCLES, type CycleRevision, type DossierPourLesCycles,
@@ -31,12 +32,12 @@ describe('le cycle d’un compte (conception, § 2.1)', () => {
     ['310000', 'stocks'], ['603000', 'stocks'], ['713000', 'stocks'],
   ]
   for (const [compte, cycle] of ATTENDUS) {
-    it(`${compte} → ${cycle}`, () => expect(cycleDuCompte(compte)).toBe(cycle))
+    it(`${compte} → ${cycle}`, () => expect(cycleDuCompte(compte, PLAN_PAR_DEFAUT)).toBe(cycle))
   }
 
   it('n’en donne aucun hors des classes 1 à 7 : la validation refuse déjà un tel compte', () => {
     for (const compte of ['', '0', '012000', '801000', '899999', '901000', 'abc', ' 512000', 'x512']) {
-      expect(cycleDuCompte(compte), compte).toBeNull()
+      expect(cycleDuCompte(compte, PLAN_PAR_DEFAUT), compte).toBeNull()
     }
   })
 
@@ -45,31 +46,45 @@ describe('le cycle d’un compte (conception, § 2.1)', () => {
   it('est total sur les classes 1 à 7 : chaque compte de un à six chiffres a un cycle', () => {
     let vus = 0
     for (let classe = 1; classe <= 7; classe++) {
-      expect(cycleDuCompte(String(classe))).not.toBeNull()
+      expect(cycleDuCompte(String(classe), PLAN_PAR_DEFAUT)).not.toBeNull()
       vus++
-      for (let n = classe * 10; n < classe * 10 + 10; n++) { expect(cycleDuCompte(String(n))).not.toBeNull(); vus++ }
-      for (let n = classe * 100; n < classe * 100 + 100; n++) { expect(cycleDuCompte(String(n))).not.toBeNull(); vus++ }
+      for (let n = classe * 10; n < classe * 10 + 10; n++) { expect(cycleDuCompte(String(n), PLAN_PAR_DEFAUT)).not.toBeNull(); vus++ }
+      for (let n = classe * 100; n < classe * 100 + 100; n++) { expect(cycleDuCompte(String(n), PLAN_PAR_DEFAUT)).not.toBeNull(); vus++ }
     }
     let sansCycle = 0
-    for (let n = 100_000; n < 800_000; n++) if (cycleDuCompte(String(n)) === null) sansCycle++
+    for (let n = 100_000; n < 800_000; n++) if (cycleDuCompte(String(n), PLAN_PAR_DEFAUT) === null) sansCycle++
     expect(sansCycle).toBe(0)
     expect(vus).toBe(7 * 111)
   })
 
+  // LE PLAN DU DOSSIER RANGE SES COMPTES DE RÔLE (ligne 43, étape PC3) : sous un plan réglé, les intérêts et l'assurance
+  // de l'emprunt et les arrondis de la CA3 se lisent aux comptes du plan, et les comptes par défaut retombent dans leur
+  // classe — le défaut n'est plus lu.
+  it('range les comptes de rôle du plan du dossier, et plus ceux du plan par défaut', () => {
+    expect(cycleDuCompte(PLAN_DECALE.interets_emprunt, PLAN_DECALE)).toBe('emprunts')
+    expect(cycleDuCompte(PLAN_DECALE.assurance_emprunt, PLAN_DECALE)).toBe('emprunts')
+    expect(cycleDuCompte(PLAN_DECALE.arrondi_charge, PLAN_DECALE)).toBe('tva')
+    expect(cycleDuCompte(PLAN_DECALE.arrondi_produit, PLAN_DECALE)).toBe('tva')
+    for (const role of ['interets_emprunt', 'assurance_emprunt', 'arrondi_charge'] as const) {
+      expect(cycleDuCompte(PLAN_PAR_DEFAUT[role], PLAN_DECALE), role).toBe('depenses')
+    }
+    expect(cycleDuCompte(PLAN_PAR_DEFAUT.arrondi_produit, PLAN_DECALE)).toBe('recettes')
+  })
+
   it('range un sous-compte comme son compte (ligne 43) : le plus long préfixe connu l’emporte', () => {
-    expect(cycleDuCompte('51210001')).toBe('tresorerie')
-    expect(cycleDuCompte('4040001')).toBe('immobilisations')
-    expect(cycleDuCompte('6168001')).toBe('emprunts')
-    expect(cycleDuCompte('7580001')).toBe('tva')
-    expect(cycleDuCompte('4670001')).toBe('capitaux')
-    expect(cycleDuCompte('6410001')).toBe('social')
+    expect(cycleDuCompte('51210001', PLAN_PAR_DEFAUT)).toBe('tresorerie')
+    expect(cycleDuCompte('4040001', PLAN_PAR_DEFAUT)).toBe('immobilisations')
+    expect(cycleDuCompte('6168001', PLAN_PAR_DEFAUT)).toBe('emprunts')
+    expect(cycleDuCompte('7580001', PLAN_PAR_DEFAUT)).toBe('tva')
+    expect(cycleDuCompte('4670001', PLAN_PAR_DEFAUT)).toBe('capitaux')
+    expect(cycleDuCompte('6410001', PLAN_PAR_DEFAUT)).toBe('social')
   })
 
   it('range chaque compte que lib/comptes.ts nomme', () => {
     const nommes = (Object.values(comptes) as unknown[]).filter((v): v is string => typeof v === 'string' && /^\d{6}$/.test(v))
     expect(nommes.length).toBeGreaterThanOrEqual(25)
-    for (const compte of nommes) expect(cycleDuCompte(compte), compte).not.toBeNull()
-    for (const compte of Object.keys(comptes.LIBELLES_COMPTES)) expect(cycleDuCompte(compte), compte).not.toBeNull()
+    for (const compte of nommes) expect(cycleDuCompte(compte, PLAN_PAR_DEFAUT), compte).not.toBeNull()
+    for (const compte of Object.keys(comptes.LIBELLES_COMPTES)) expect(cycleDuCompte(compte, PLAN_PAR_DEFAUT), compte).not.toBeNull()
   })
 
   it('range chaque compte du plan que l’application nomme : celui que le libellé du plan reconnaît', () => {
@@ -78,7 +93,7 @@ describe('le cycle d’un compte (conception, § 2.1)', () => {
       const compte = String(n)
       if (libelleDuPlanComptable(compte) === null) continue
       nommes++
-      expect(cycleDuCompte(compte), compte).not.toBeNull()
+      expect(cycleDuCompte(compte, PLAN_PAR_DEFAUT), compte).not.toBeNull()
     }
     // Le plancher qui distingue « tous rangés » d'« aucun lu ».
     expect(nommes).toBeGreaterThanOrEqual(50)
@@ -95,13 +110,13 @@ describe('le cycle d’un compte (conception, § 2.1)', () => {
   const NATURES_EN_BASE = ['205000', '215400', '218000', '218100', '218200', '218300', '218300', '218400']
 
   it('range chaque compte de catégorie relevé en base', () => {
-    for (const [compte, cycle] of CATEGORIES_EN_BASE) expect(cycleDuCompte(compte), compte).toBe(cycle)
+    for (const [compte, cycle] of CATEGORIES_EN_BASE) expect(cycleDuCompte(compte, PLAN_PAR_DEFAUT), compte).toBe(cycle)
   })
 
   it('range chaque compte de nature relevé en base, et son compte d’amortissement, au registre', () => {
     for (const compte of NATURES_EN_BASE) {
-      expect(cycleDuCompte(compte), compte).toBe('immobilisations')
-      expect(cycleDuCompte(compteAmortissement(compte)), compteAmortissement(compte)).toBe('immobilisations')
+      expect(cycleDuCompte(compte, PLAN_PAR_DEFAUT), compte).toBe('immobilisations')
+      expect(cycleDuCompte(compteAmortissement(compte), PLAN_PAR_DEFAUT), compteAmortissement(compte)).toBe('immobilisations')
     }
   })
 })
@@ -109,7 +124,7 @@ describe('le cycle d’un compte (conception, § 2.1)', () => {
 // ── Les cycles d'un dossier ───────────────────────────────────────────────────────────────────────────────────────
 
 describe('les cycles d’un dossier (conception, § 2.1, colonne « Dossiers »)', () => {
-  const vide: DossierPourLesCycles = { mode: 'tresorerie', assujettiTva: false, nbBiens: 0, nbEmprunts: 0, comptesDeBilan: [], cyclesDesControles: [] }
+  const vide: DossierPourLesCycles = { mode: 'tresorerie', assujettiTva: false, nbBiens: 0, nbEmprunts: 0, comptesDeBilan: [], cyclesDesControles: [], plan: PLAN_PAR_DEFAUT }
 
   it('les codes sont ceux de la conception, que la contrainte de l’étape R4 reprendra', () => {
     expect([...CYCLES_DE_REVISION]).toEqual([
@@ -142,7 +157,7 @@ describe('les cycles d’un dossier (conception, § 2.1, colonne « Dossiers »)
     expect(cyclesDuDossier({ ...vide, comptesDeBilan: ['310000'] })).toContain('stocks')
     for (let n = 100_000; n < 600_000; n += 997) {
       const compte = String(n)
-      expect(cyclesDuDossier({ ...vide, comptesDeBilan: [compte] }), compte).toContain(cycleDuCompte(compte))
+      expect(cyclesDuDossier({ ...vide, comptesDeBilan: [compte] }), compte).toContain(cycleDuCompte(compte, PLAN_PAR_DEFAUT))
     }
   })
 
@@ -153,7 +168,7 @@ describe('les cycles d’un dossier (conception, § 2.1, colonne « Dossiers »)
   })
 
   it('les rend dans l’ordre de l’écran', () => {
-    const tous = cyclesDuDossier({ mode: 'engagement', assujettiTva: true, nbBiens: 1, nbEmprunts: 1, comptesDeBilan: ['310000'], cyclesDesControles: [] })
+    const tous = cyclesDuDossier({ mode: 'engagement', assujettiTva: true, nbBiens: 1, nbEmprunts: 1, comptesDeBilan: ['310000'], cyclesDesControles: [], plan: PLAN_PAR_DEFAUT })
     expect(tous).toEqual([...CYCLES_DE_REVISION])
   })
 
