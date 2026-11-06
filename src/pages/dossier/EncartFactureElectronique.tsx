@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import type { DossierTab } from '../../components/DossierParcours'
 import Widget from '../../components/widgets/Widget'
 import {
+  APERCU_EREPORTING_EXPORTE, phraseDesStatutsAnciens, phrasesDeLEreporting, prochainesPeriodes,
+} from '../../lib/apercuEreporting'
+import {
   ligneDEtat, phraseDeLAdresse, phraseDeLaLectureRatee, phraseSansAdresse, phrasesDeCeQuiManque, phrasesDeLAttente,
   phrasesDesPlateformes, type AttenteDeLEncart,
 } from '../../lib/encartFactureElectronique'
@@ -67,6 +70,14 @@ export default function EncartFactureElectronique(props: Props) {
             })(),
         )}
         {ligne('plateformes', 'Plateformes', texte(phrasesDesPlateformes(lu)))}
+        {/* Étape C3, derrière son drapeau : la prochaine période d'e-reporting et les statuts non relus. Drapeau baissé, ou la
+            fonction d'hier (sans la clé `ereporting`), la carte est celle d'hier au caractère près. */}
+        {APERCU_EREPORTING_EXPORTE && lu.ereporting !== undefined
+          && ligne('ereporting', 'E-reporting', texte(phrasesDeLEreporting(prochainesPeriodes(lu.ereporting, dossierId, aujourdhui), espace)))}
+        {APERCU_EREPORTING_EXPORTE && (() => {
+          const statuts = phraseDesStatutsAnciens(lu, aujourdhui, espace)
+          return statuts === null ? null : ligne('statuts', 'Statuts des factures', texte([statuts]))
+        })()}
         {props.espace === 'client' && ligne('attente', 'Ce qui t’attend', texte(phrasesDeLAttente(props.attente, lecture)))}
       </div>
     )

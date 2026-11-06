@@ -48909,3 +48909,19 @@ propriétaire unique (posés dans la transaction annulée) ; `devis.sql` 97 et 9
 L'écran, sous `DEVIS_CITENT_UN_CONTACT` baissé : « Choisir un client » dans le devis (le client entier et son e-mail) ;
 `lib/contactsInactifs.ts` (jour de Paris, trois ans calendaires, la création sans activité, le 29 février au 1er
 mars), sa lecture entière des factures et des devis, et la section de la vue « Clients » qui ouvre la confirmation.
+
+### 06/11/2026 — C3, LA FACTURE ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP D'ŒIL (LIGNE 51.5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, sur `bf2c79f`.) `20261106170000_apercu_facture_electronique` (préparée, retour en `…170100`) donne à
+`etat_facture_electronique` une quatrième clé, `ereporting` : le statut de TVA du dossier, ses régimes ACTIFS (jour et
+fréquences) et ses déclarations ACTIVES finies depuis 92 jours au plus (objet, période, jour) — ni identifiant, ni
+auteur, ni note, ni plateforme, ni contenu, ni empreinte. Garde de tête : l'empreinte d'hier (`465307bc…`, relue en
+production). `create or replace`, rien de retiré : elle passe par l'outil. Le client « Ventes » lit ainsi, par la
+fonction, deux tables du cabinet : la lecture élargie se présente au cabinet (C3-Q1). Module pur
+`lib/apercuEreporting.ts` : la clé lue sans rien deviner (absente : la fonction et l'écran d'hier), la prochaine période
+de chaque objet par `periodesEreporting` et `regimeDeLaPeriode` — « prête », « en attente de ton cabinet », « déclarée
+le … » ; l'encart dit aussi les statuts non relus depuis sept jours. Drapeau `APERCU_EREPORTING_EXPORTE` baissé : la
+carte d'hier. Éprouvé sur une réplique égale à la production (`signature.sql`, neuf familles, 175 migrations) : essai
+`apercuFactureElectronique.sql` sans la migration « EN ATTENTE » ; avec, 13 contrôles justes et 4 mutations qui mordent,
+rien resté ; les trois clés d'hier identiques sur les cinq dossiers ; le retour rend l'empreinte d'hier. Non compté
+(A6B2-Q1 tient) : les factures à transmettre ; au cabinet, les encaissements et les refus (C3-Q2).
