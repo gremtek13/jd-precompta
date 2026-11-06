@@ -268,7 +268,9 @@ export function ligneDePeriode(
     .filter((d) => d.dossier_id === dossier.id && d.objet === objet && d.periode_debut === periode.debut && d.periode_fin === periode.fin)
     .sort(parRecenteDabord)
   const active = chaine.find((d) => d.etat === 'declaree') ?? null
-  const etat = active == null ? null : etatDeLaDeclaration(active, calcul, { regimes: s.regimes, ecarts: s.ecarts, fiches: s.fiches })
+  const etat = active == null ? null : etatDeLaDeclaration(active, calcul, {
+    regimes: s.regimes, ecarts: s.ecarts, fiches: s.fiches, encaissements: s.encaissements,
+  })
   return { objet, periode, calcul, chaine, active, etat, resume: resumeDeLaLigne(periode, calcul, active, etat, aujourdHui) }
 }
 
@@ -570,7 +572,7 @@ export function motsDeLaDifference(d: DifferenceDOperation, objet: ObjetEreporti
 }
 
 /** Une cause qui fait rectifier, en une phrase. */
-export function motsDeLaCause(c: CauseARectifier, s: Pick<SourcesEreporting, 'pieces'>): string {
+export function motsDeLaCause(c: CauseARectifier, s: Pick<SourcesEreporting, 'pieces' | 'fiches' | 'factures' | 'encaissements'>): string {
   switch (c.cause) {
     case 'regime_retire':
       return `Le régime sous lequel la période a été déclarée a été retiré le ${formatDate(c.le)} : ce qui a été déclaré a été jugé sous un régime qui ne vaut plus.`
@@ -580,6 +582,13 @@ export function motsDeLaCause(c: CauseARectifier, s: Pick<SourcesEreporting, 'pi
       return `Une fiche « fournisseur établi hors de France » a été posée le ${formatDate(c.le)} sur la pièce « ${nomDeLaPiece(s.pieces.lignes, c.pieceId)} » : elle décrit un achat de la période que la déclaration ne portait pas.`
     case 'fiche_changee_apres':
       return `La fiche de la pièce « ${nomDeLaPiece(s.pieces.lignes, c.pieceId)} » a été remplacée ou retirée le ${formatDate(c.le)} : ce qui a été déclaré d’elle peut ne plus être juste.`
+    case 'encaissement_retire_apres': {
+      // 28.5e-Q6b (e5b2) : le registre a perdu un paiement que la déclaration porte ; la rectificative remplace la période.
+      const e = s.encaissements.lignes.find((x) => x.id === c.encaissementId)
+      const facture = e ? s.factures.lignes.find((f) => f.id === e.facture_id) : undefined
+      const nom = e ? `L’encaissement du ${formatDate(e.date_encaissement)}${facture?.numero ? ` (facture ${facture.numero})` : ''}` : 'Un encaissement déclaré'
+      return `${nom} a été retiré du registre le ${formatDate(c.le)}, après la déclaration : le paiement déclaré n’existe plus.`
+    }
   }
 }
 

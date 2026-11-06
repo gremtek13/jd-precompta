@@ -30,11 +30,13 @@ interface Props {
   dossierId: string
   /** Le dossier tel qu'il est aujourd'hui : son statut de TVA (onglet TVA), son SIRET, son numéro de TVA attribué. */
   dossier: DossierEreporting
+  /** La dénomination du dossier, telle quelle : la raison sociale du fichier d'e-reporting (E6-Q5). */
+  denomination?: string | null
   /** Le statut de TVA vient d'être changé dans cet onglet : le régime se confirme à partir du jour du changement. */
   statutChange?: boolean
 }
 
-export default function EreportingCard({ dossierId, dossier, statutChange = false }: Props) {
+export default function EreportingCard({ dossierId, dossier, denomination = null, statutChange = false }: Props) {
   // Les régimes, AVEC le dossier pour lequel ils ont été lus : nuls tant que la première lecture n'est pas revenue, et pour un
   // autre dossier que celui d'aujourd'hui (la page ne se remonte pas toujours d'un dossier à l'autre).
   const [lecture, setLecture] = useState<{ dossierId: string; regimes: LectureComplete<RegimeEreporting> } | null>(null)
@@ -123,7 +125,7 @@ export default function EreportingCard({ dossierId, dossier, statutChange = fals
     {/* Hors de la carte : une fenêtre superposée ne vit pas dans une carte (CLAUDE.md, pièges de positionnement). */}
     {fenetre !== 'fermee' && (
       <EreportingModal
-        dossierId={dossierId} dossier={dossierLu} confirmerDEmblee={fenetre === 'confirmer'}
+        dossierId={dossierId} dossier={dossierLu} denomination={denomination} confirmerDEmblee={fenetre === 'confirmer'}
         onClose={() => setFenetre('fermee')} onUpdated={() => { void relire() }}
       />
     )}

@@ -96,6 +96,8 @@ interface Props {
   // La case du numéro de TVA d'un dossier en franchise ou exonéré, et le SIRET dont il se calcule.
   numeroTvaAttribue: boolean
   siret: string | null
+  /** La dénomination du dossier (« Identité du dossier »), telle quelle : la raison sociale du fichier d'e-reporting (E6-Q5). */
+  denomination?: string | null
   onStatutUpdated: (modification: ModificationStatutTva) => void
   periodicite: PeriodiciteTva
   surDebits: boolean
@@ -251,7 +253,7 @@ function etatDuRemboursement(s: SuiviDeDeclaration<DeclarationTva, LigneBancaire
 }
 
 export default function TvaTab({
-  dossierId, plan, assujettiTva, statutTva, articleExoneration, numeroTvaAttribue, siret, onStatutUpdated, periodicite, surDebits,
+  dossierId, plan, assujettiTva, statutTva, articleExoneration, numeroTvaAttribue, siret, denomination = null, onStatutUpdated, periodicite, surDebits,
   onRegimeUpdated, modeComptable, ventesParLesFactures,
 }: Props) {
   // Les exercices validés : une déclaration dont la période y tombe est figée avec eux, et ne s'y enregistre plus.
@@ -356,7 +358,7 @@ export default function TvaTab({
   // l'étranger comme un redevable (étape e1).
   const ereporting = (
     <EreportingCard
-      dossierId={dossierId} statutChange={statutChange}
+      dossierId={dossierId} statutChange={statutChange} denomination={denomination}
       dossier={{
         id: dossierId, siret, statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: numeroTvaAttribue,
         tva_periodicite: periodicite, tva_sur_debits: surDebits,

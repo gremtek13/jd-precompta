@@ -1845,6 +1845,11 @@ export interface DeclarationEreportingHorsApplication {
   // Repère d'audit, sans clé étrangère : qui a déclaré.
   cree_par: string | null
   cree_le: string
+  // L'identifiant du fichier FRR déposé (TT-1), tiré au téléchargement puis donné à la déclaration (E6-Q8) ; nul quand la
+  // période a été déclarée sans fichier tiré d'ici. FACULTATIF dans ce type : la migration `identifiant_du_fichier_ereporting`
+  // est PRÉPARÉE, pas appliquée (`IDENTIFIANT_DU_FICHIER_EXPORTE`) — une colonne absente d'une lecture n'est pas une colonne
+  // nulle.
+  identifiant_fichier?: string | null
 }
 
 export interface SourceDeclarationEreporting {

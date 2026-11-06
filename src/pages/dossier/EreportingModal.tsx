@@ -5,7 +5,15 @@ import { telechargerTexte } from '../../lib/fec'
 import { messageErreur } from '../../lib/messageErreur'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import type { DossierEreporting } from '../../lib/ereporting'
-import { argumentsDeLaDeclaration, refusDeclaration } from '../../lib/declarationsEreporting'
+import {
+  IDENTIFIANT_DU_FICHIER_EXPORTE, argumentsDeLaDeclaration, contenuADeclarer, formeCanonique, refusDeclaration,
+  type ContenuDeclare, type SaisieDeclaration,
+} from '../../lib/declarationsEreporting'
+import {
+  SANS_FICHIER_TIRE, declarationDuFichierInscrit, donneesDuFichier, fichierADeposer, fichierDeLaDeclaration, nomDuFichierFrr,
+  phraseDuFichierTire, refusDuFichier,
+} from '../../lib/fichierEreporting'
+import type { DeclarationPourFrr } from '../../lib/fluxEreporting'
 import {
   CONSEQUENCE_D_UNE_LECTURE_PARTIELLE, NOMS_DES_OBJETS, OBJETS_DE_LA_FENETRE, confirmationDeLaDeclaration,
   confirmationDuRegime, confirmationDuRetraitDuRegime, contexteDeLaDeclaration, csvDuDetail, ecarteesEnMots, etatDuRegime,
@@ -49,6 +57,9 @@ interface Props {
   dossierId: string
   /** Le dossier tel qu'il est aujourd'hui : son statut de TVA (onglet TVA), son SIRET, son numéro de TVA attribué. */
   dossier: DossierEreporting
+  /** La dénomination du dossier (« Identité du dossier »), TELLE QUELLE : la raison sociale du déclarant du fichier (TT-14,
+   * E6-Q5). Nulle ou absente, le fichier se refuse avant le clic et dit où la saisir. */
+  denomination?: string | null
   /** Ouvre d'emblée la confirmation d'un régime (depuis la carte, quand le régime est à reconfirmer). */
   confirmerDEmblee?: boolean
   onClose: () => void
@@ -73,6 +84,27 @@ interface LigneOuverte {
 
 const CLASSE_TON: Record<TonDeLigne, string> = {
   ok: 'badge-ok', attention: 'badge-warning', danger: 'badge-danger', neutre: 'badge-neutral',
+}
+
+/** Le fichier téléchargé dans la fenêtre (E6-Q8) : son identifiant tiré, le contenu qu'il porte, pour la ligne qui l'a tiré —
+ * l'objet, la période et la déclaration qu'il remplacerait. La déclaration qui suit lui prend les deux. */
+interface FichierTire {
+  cle: string
+  identifiant: string
+  contenu: ContenuDeclare
+  nom: string
+}
+
+const cleDuFichier = (l: LigneDePeriode) => `${l.objet}|${l.periode.debut}|${l.periode.fin}|${l.active?.id ?? ''}`
+
+// Un identifiant pour JUGER le fichier avant le clic : le vrai se tire au clic, et un UUID passe toujours G1.104.
+const IDENTIFIANT_POUR_JUGER = '00000000-0000-4000-8000-000000000000'
+
+/** La saisie de la déclaration telle qu'elle part : avec le fichier tiré pour cette ligne, son contenu et son identifiant. */
+function saisieAvecLeFichier(l: LigneDePeriode, declaration: { plateforme: string; note: string }, tire: FichierTire | null): SaisieDeclaration | null {
+  const saisie = saisieDeLaDeclaration(l, declaration)
+  if (saisie == null || !IDENTIFIANT_DU_FICHIER_EXPORTE || tire == null || tire.cle !== cleDuFichier(l)) return saisie
+  return { ...saisie, contenu: tire.contenu, identifiantFichier: tire.identifiant }
 }
 
 const LIBELLES_DES_PERIODICITES: Record<PeriodiciteTva, string> = { mensuelle: 'Mensuelle', trimestrielle: 'Trimestrielle' }
@@ -116,7 +148,7 @@ const raisonDeLecture = (err: unknown) => `L’e-reporting du dossier n’a pas 
 const parDepuisDecroissant = (a: RegimeEreporting, b: RegimeEreporting) =>
   a.depuis < b.depuis ? 1 : a.depuis > b.depuis ? -1 : a.cree_le < b.cree_le ? 1 : a.cree_le > b.cree_le ? -1 : a.id < b.id ? 1 : -1
 
-export default function EreportingModal({ dossierId, dossier, confirmerDEmblee = false, onClose, onUpdated }: Props) {
+export default function EreportingModal({ dossierId, dossier, denomination = null, confirmerDEmblee = false, onClose, onUpdated }: Props) {
   // Nul tant que la première lecture n'est pas revenue : la fenêtre ne montre alors que « Chargement… ».
   const [lu, setLu] = useState<LectureDeLEreporting | null>(null)
   const [erreurDeLecture, setErreurDeLecture] = useState<string | null>(null)
@@ -130,6 +162,10 @@ export default function EreportingModal({ dossierId, dossier, confirmerDEmblee =
   const [message, setMessage] = useState<string | null>(null)
   // UN SEUL verrou pour les trois gestes : relâché après la relecture (voir l'en-tête).
   const verrou = useRef(false)
+  // Le fichier (étape e6b, derrière son drapeau) : le matricule de la plateforme, que l'application ne sait pas (E6-Q1), et
+  // le dernier fichier tiré.
+  const [matricule, setMatricule] = useState('')
+  const [fichierTire, setFichierTire] = useState<FichierTire | null>(null)
 
   // La lecture ne lève pas : une relecture ratée APRÈS une écriture ne doit pas faire dire que l'écriture a échoué.
   async function lire() {
@@ -232,13 +268,14 @@ export default function EreportingModal({ dossierId, dossier, confirmerDEmblee =
     const l = ligneOuverte
     const offre = offreDeDeclaration(l)
     if (offre.genre === 'aucune') return
-    const saisie = saisieDeLaDeclaration(l, declaration)
+    const saisie = saisieAvecLeFichier(l, declaration, fichierTire)
     if (saisie == null || refusDeclaration(saisie, contexteDeLaDeclaration(lu, dossierId, aujourdHui))) return
     const remplace = l.active
+    const tire = saisie.identifiantFichier != null && fichierTire != null ? fichierTire : null
     if (!window.confirm(confirmationDeLaDeclaration({
       objet: l.objet, periode: l.periode, plateforme: saisie.plateforme as string, contenu: l.calcul.contenu as NonNullable<typeof l.calcul.contenu>,
       remplace: offre.genre === 'rectificative' ? remplace : null,
-    }))) return
+    }) + (tire ? `\n\n${phraseDuFichierTire(tire.nom, tire.identifiant, formeCanonique(tire.contenu) !== formeCanonique(contenuADeclarer(l.calcul)))}` : ''))) return
     verrou.current = true
     setEnCours('declarer')
     setErreur(null)
@@ -249,6 +286,7 @@ export default function EreportingModal({ dossierId, dossier, confirmerDEmblee =
       else {
         setMessage(`${offre.genre === 'rectificative' ? 'Rectificative' : 'Déclaration'} enregistrée : ${NOMS_DES_OBJETS[l.objet]}, ${l.periode.libelle}.`)
         setDeclaration({ plateforme: '', note: '' })
+        setFichierTire(null)
       }
       await lire()
     } catch (err) {
@@ -256,6 +294,32 @@ export default function EreportingModal({ dossierId, dossier, confirmerDEmblee =
     } finally {
       setEnCours(null)
       verrou.current = false
+    }
+  }
+
+  // LE FICHIER (étape e6b) : un Blob local, aucun appel réseau. Celui d'une période à déclarer porte le contenu qu'elle
+  // figera, sous un identifiant TIRÉ ici, que la déclaration donnera ensuite à la base (E6-Q8) ; celui d'une déclaration
+  // inscrite se retire de son contenu figé, sous l'identifiant qu'elle garde. Aucune écriture : pas de verrou à prendre.
+  function telechargerLeFichier(l: LigneDePeriode, inscrite: boolean) {
+    if (!IDENTIFIANT_DU_FICHIER_EXPORTE || !toutLu) return
+    const identifiant = crypto.randomUUID()
+    const aDeposer = inscrite ? null : fichierADeposer(l, identifiant)
+    const pourLeFichier: DeclarationPourFrr | null = inscrite ? (l.active ? declarationDuFichierInscrit(l.active) : null) : aDeposer?.declaration ?? null
+    if (pourLeFichier == null) return
+    const plateforme = inscrite && l.active ? l.active.plateforme : declaration.plateforme
+    const resultat = fichierDeLaDeclaration(donneesDuFichier(pourLeFichier, { denomination_imprimee: denomination }, { matricule, plateforme }, new Date()))
+    if (resultat.xml == null) {
+      setErreur(resultat.refus[0]?.message ?? 'Le fichier ne s’écrit pas.')
+      return
+    }
+    const nom = nomDuFichierFrr(l.objet, l.periode, pourLeFichier.type_transmission)
+    telechargerTexte(nom, resultat.xml)
+    setErreur(null)
+    if (aDeposer) {
+      setFichierTire({ cle: cleDuFichier(l), identifiant, contenu: aDeposer.declaration.contenu, nom })
+      setMessage(`Fichier « ${nom} » téléchargé : déposez-le sur la plateforme, puis inscrivez la déclaration ici, dans cette même fenêtre.`)
+    } else {
+      setMessage(`Fichier « ${nom} » téléchargé de nouveau, depuis le contenu figé de la déclaration.`)
     }
   }
 
@@ -356,7 +420,8 @@ export default function EreportingModal({ dossierId, dossier, confirmerDEmblee =
               <DetailDeLaLigne
                 ligne={ligneOuverte} lu={lu} declaration={declaration} setDeclaration={setDeclaration}
                 plateformesConnues={plateformesConnues} aujourdHui={aujourdHui} dossierId={dossierId} enCours={enCours}
-                onDeclarer={declarer}
+                onDeclarer={declarer} fichierTire={fichierTire} matricule={matricule} setMatricule={setMatricule}
+                denomination={denomination} onTelecharger={telechargerLeFichier}
               />
             )}
           </>
@@ -554,7 +619,10 @@ function SectionRegime({ lu, dossier, aujourdHui, enCours, formulaire, setFormul
 
 // ── Le détail d'une période ─────────────────────────────────────────────────────────────────────────────────────────
 
-function DetailDeLaLigne({ ligne, lu, declaration, setDeclaration, plateformesConnues, aujourdHui, dossierId, enCours, onDeclarer }: {
+function DetailDeLaLigne({
+  ligne, lu, declaration, setDeclaration, plateformesConnues, aujourdHui, dossierId, enCours, onDeclarer, fichierTire, matricule,
+  setMatricule, denomination, onTelecharger,
+}: {
   ligne: LigneDePeriode
   lu: LectureDeLEreporting
   declaration: { plateforme: string; note: string }
@@ -564,10 +632,24 @@ function DetailDeLaLigne({ ligne, lu, declaration, setDeclaration, plateformesCo
   dossierId: string
   enCours: string | null
   onDeclarer: () => void
+  fichierTire: FichierTire | null
+  matricule: string
+  setMatricule: (m: string) => void
+  denomination: string | null
+  onTelecharger: (l: LigneDePeriode, inscrite: boolean) => void
 }) {
   const { objet, periode, calcul, active, etat, chaine } = ligne
   const offre = offreDeDeclaration(ligne)
-  const saisie = offre.genre === 'aucune' ? null : saisieDeLaDeclaration(ligne, declaration)
+  const saisie = offre.genre === 'aucune' ? null : saisieAvecLeFichier(ligne, declaration, fichierTire)
+  const tire = saisie?.identifiantFichier != null ? fichierTire : null
+  // Le fichier, jugé avant le clic par le module (`refusFichierFrr`) : celui de la période à déclarer, ou celui de la
+  // déclaration inscrite qui garde l'identifiant de son fichier.
+  const pourJuger = !IDENTIFIANT_DU_FICHIER_EXPORTE ? null
+    : offre.genre !== 'aucune' ? fichierADeposer(ligne, IDENTIFIANT_POUR_JUGER)?.declaration ?? null
+      : active ? declarationDuFichierInscrit(active) : null
+  const refusDuFichierAvantLeClic = pourJuger == null ? []
+    : refusDuFichier(donneesDuFichier(pourJuger, { denomination_imprimee: denomination },
+      { matricule, plateforme: offre.genre !== 'aucune' ? declaration.plateforme : active?.plateforme ?? '' }, new Date()))
   const refus = saisie ? refusDeclaration(saisie, contexteDeLaDeclaration(lu, dossierId, aujourdHui)) : null
   const tableau = calcul.contenu ? tableauDuContenu(objet, calcul.contenu, lu) : null
   const refusAffiches = calcul.refus.filter((r) => r.cle !== 'rien_a_declarer')
@@ -602,7 +684,9 @@ function DetailDeLaLigne({ ligne, lu, declaration, setDeclaration, plateformesCo
                 Une correction n’est jamais une opération de plus : la rectificative remplace la période ENTIÈRE.
               </p>
               <ul>
-                {etat.causes.map((c) => <li key={`${c.cause}-${'pieceId' in c ? c.pieceId : c.regimeId}`}>{motsDeLaCause(c, lu)}</li>)}
+                {etat.causes.map((c) => (
+                  <li key={`${c.cause}-${'pieceId' in c ? c.pieceId : 'regimeId' in c ? c.regimeId : c.encaissementId}`}>{motsDeLaCause(c, lu)}</li>
+                ))}
                 {etat.differences.map((d) => <li key={`${d.sorte}-${d.cle}`}>{motsDeLaDifference(d, objet, lu)}</li>)}
               </ul>
             </>
@@ -673,6 +757,31 @@ function DetailDeLaLigne({ ligne, lu, declaration, setDeclaration, plateformesCo
         </>
       )}
 
+      {pourJuger != null && (
+        <div className="fiche-hdf-saisie">
+          <h4 style={{ margin: '0 0 6px' }}>{offre.genre !== 'aucune' ? 'Le fichier à déposer' : 'Le fichier de la déclaration'}</h4>
+          <p className="muted">
+            {offre.genre !== 'aucune'
+              ? 'Téléchargez le fichier, déposez-le sur la plateforme agréée du dossier, puis inscrivez la déclaration ci-dessous, dans cette même fenêtre : elle gardera l’identifiant du fichier et le contenu qu’il porte.'
+              : 'Le fichier déposé pour cette déclaration se retire de son contenu figé, sous le même identifiant.'}
+          </p>
+          <div className="field">
+            <label htmlFor="ereporting-matricule">Matricule de la plateforme (quatre chiffres, celui de l’annuaire)</label>
+            <input id="ereporting-matricule" inputMode="numeric" value={matricule} disabled={enCours != null} onChange={(e) => setMatricule(e.target.value)} />
+          </div>
+          {refusDuFichierAvantLeClic.length > 0 && <p className="muted">{refusDuFichierAvantLeClic[0]}</p>}
+          <div className="rangee-boutons" style={{ justifyContent: 'flex-start' }}>
+            <button
+              type="button" className="btn btn-outline btn-sm"
+              disabled={enCours != null || refusDuFichierAvantLeClic.length > 0}
+              onClick={() => onTelecharger(ligne, offre.genre === 'aucune')}
+            >
+              {offre.genre !== 'aucune' ? 'Télécharger le fichier (XML)' : 'Télécharger de nouveau le fichier (XML)'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {offre.genre !== 'aucune' && saisie !== null && (
         <div className="fiche-hdf-saisie">
           <h4 style={{ margin: '0 0 6px' }}>{offre.genre === 'rectificative' ? 'Déclarer la rectificative' : 'Déclarée sur la plateforme'}</h4>
@@ -699,6 +808,13 @@ function DetailDeLaLigne({ ligne, lu, declaration, setDeclaration, plateformesCo
           {refus
             ? <p className={refus.cle === 'plateforme_absente' ? 'muted' : 'error-text'}>{refus.message}</p>
             : <p>{phraseDeCeQueLaDeclarationGarde(offre.genre, objet, periode.libelleDe, calcul.contenu as NonNullable<typeof calcul.contenu>)}</p>}
+          {IDENTIFIANT_DU_FICHIER_EXPORTE && (
+            <p className="muted">
+              {tire
+                ? phraseDuFichierTire(tire.nom, tire.identifiant, formeCanonique(tire.contenu) !== formeCanonique(contenuADeclarer(calcul)))
+                : SANS_FICHIER_TIRE}
+            </p>
+          )}
           <div className="rangee-boutons">
             <button type="button" className="btn btn-primary" disabled={refus != null || enCours != null} onClick={onDeclarer}>
               {enCours === 'declarer' ? 'Enregistrement…' : offre.genre === 'rectificative' ? 'Déclarer la rectificative' : 'Déclarée sur la plateforme'}
