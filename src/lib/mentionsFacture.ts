@@ -74,6 +74,19 @@ export const versEntreprise = (t: SaisieMentions['typeClient']) => t === 'assuje
 export const sirenOuvert = (t: SaisieMentions['typeClient']) => t !== 'etranger'
 export const livraisonOuverte = (n: SaisieMentions['nature']) => n === 'biens' || n === 'mixte'
 
+// Le document de vente que la saisie décrit : les mentions d'une facture et d'un devis s'enregistrent par les mêmes
+// fonctions, et ne diffèrent que par le bon de commande.
+export type DocumentDeVente = 'facture' | 'devis'
+// Le numéro d'engagement d'un organisme public, sur une facture comme sur un devis ; et, sur une FACTURE, le numéro du bon
+// de commande qu'une entreprise a établi (C. com., art. L441-9, I ; BT-13) — A7B-Q3, « oui, après le MVP » : la base
+// l'accepte de tout acheteur depuis A7a, et l'aperçu l'imprime. Un devis précède la commande : il n'en porte pas.
+export const bonDeCommandeOuvert = (t: SaisieMentions['typeClient'], document: DocumentDeVente) =>
+  t === 'organisme_public' || (document === 'facture' && t === 'assujetti')
+// Le nom du champ, au formulaire comme dans ses refus : le vocabulaire de Chorus Pro pour un organisme public, celui du
+// code de commerce pour une entreprise.
+export const libelleDuBonDeCommande = (t: SaisieMentions['typeClient']) =>
+  t === 'organisme_public' ? 'Le numéro d’engagement' : 'Le numéro du bon de commande'
+
 const sansBlancs = (s: string) => s.replace(/\s/g, '')
 
 // Le SIRET tel qu'il s'enregistre : sans ses espaces, que la base refuse dès qu'un SIREN l'accompagne
@@ -97,8 +110,9 @@ export const FORME_PAYS = /^[A-Z]{2}$/
 export const LONGUEUR_CODE_SERVICE = 100
 export const LONGUEUR_NUMERO_ENGAGEMENT = 50
 
-// Ce qu'on enregistre : chaque mention, normalisée, ou nulle quand son choix ne l'ouvre pas.
-export function mentionsAEnregistrer(s: SaisieMentions): Omit<MentionsFacture, 'option_debits'> {
+// Ce qu'on enregistre : chaque mention, normalisée, ou nulle quand son choix ne l'ouvre pas — le document (facture ou
+// devis) décide du bon de commande, sans valeur par défaut.
+export function mentionsAEnregistrer(s: SaisieMentions, document: DocumentDeVente): Omit<MentionsFacture, 'option_debits'> {
   const entreprise = versEntreprise(s.typeClient)
   const publique = s.typeClient === 'organisme_public'
   const livraison = s.livraisonAilleurs && livraisonOuverte(s.nature)
@@ -108,7 +122,7 @@ export function mentionsAEnregistrer(s: SaisieMentions): Omit<MentionsFacture, '
     tiers_siren: sirenOuvert(s.typeClient) ? sansBlancs(s.siren) || null : null,
     tiers_adresse_electronique: entreprise ? sansBlancs(s.adresseElectronique) || null : null,
     code_service: publique ? texte(s.codeService) : null,
-    numero_engagement: publique ? texte(s.numeroEngagement) : null,
+    numero_engagement: bonDeCommandeOuvert(s.typeClient, document) ? texte(s.numeroEngagement) : null,
     nature_operation: s.nature || null,
     date_prestation: s.prestation === 'date' ? s.datePrestation || null : null,
     periode_debut: s.prestation === 'periode' ? s.periodeDebut || null : null,
@@ -123,8 +137,8 @@ export function mentionsAEnregistrer(s: SaisieMentions): Omit<MentionsFacture, '
 // Ce que la base refuserait de la saisie, dans l'ordre du formulaire — vide quand elle l'accepte. Seulement ce qui est
 // FAUX : une mention qui manque ne se refuse pas ici, puisque la base l'accepte nulle ; c'est `apercuDeTransmission` qui
 // dit ce qu'il manque pour qu'elle parte par une plateforme.
-export function refusDesMentions(s: SaisieMentions, siret: string): string[] {
-  const m = mentionsAEnregistrer(s)
+export function refusDesMentions(s: SaisieMentions, siret: string, document: DocumentDeVente): string[] {
+  const m = mentionsAEnregistrer(s, document)
   const refus: string[] = []
   if (m.tiers_siren != null && !FORME_SIREN.test(m.tiers_siren)) refus.push('Le SIREN du client s’écrit en neuf chiffres.')
   const siretEnregistre = siretAEnregistrer(siret)
@@ -140,7 +154,7 @@ export function refusDesMentions(s: SaisieMentions, siret: string): string[] {
     refus.push(`Le code service tient en ${LONGUEUR_CODE_SERVICE} caractères au plus.`)
   }
   if (m.numero_engagement != null && m.numero_engagement.length > LONGUEUR_NUMERO_ENGAGEMENT) {
-    refus.push(`Le numéro d’engagement tient en ${LONGUEUR_NUMERO_ENGAGEMENT} caractères au plus.`)
+    refus.push(`${libelleDuBonDeCommande(s.typeClient)} tient en ${LONGUEUR_NUMERO_ENGAGEMENT} caractères au plus.`)
   }
   if (s.prestation === 'date' && m.date_prestation == null) refus.push('Indique la date de la livraison ou de la prestation.')
   if (s.prestation === 'periode') {

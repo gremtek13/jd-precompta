@@ -363,9 +363,10 @@ describe('ce que l’aperçu d’une facture figée imprime, de ses seules colon
     expect(ceQueLaFactureImprime(factureFigee({ type_client: null, moyen_prefere: null }))!.conditions).toEqual([])
   })
 
-  it('le numéro d’engagement pour tout acheteur ; le code service, à l’organisme public seul', () => {
+  it('le numéro d’engagement pour tout acheteur, « Bon de commande » hors d’un organisme public (A7B-Q3) ; le code service, à l’organisme public seul', () => {
     const mentions = ceQueLaFactureImprime(factureFigee({ type_client: 'assujetti', numero_engagement: 'BC-42' }))!.mentions
-    expect(mentions).toContainEqual({ libelle: 'Numéro d’engagement', texte: 'BC-42' })
+    expect(mentions).toContainEqual({ libelle: 'Bon de commande', texte: 'BC-42' })
+    expect(mentions.filter((x) => x.libelle === 'Numéro d’engagement')).toHaveLength(0)
     const publique = ceQueLaFactureImprime(factureFigee({ type_client: 'organisme_public', numero_engagement: 'EJ-1', code_service: 'S' }))!.mentions
     expect(publique.filter((x) => x.libelle === 'Numéro d’engagement')).toHaveLength(1)
   })

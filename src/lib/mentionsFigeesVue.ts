@@ -440,9 +440,11 @@ export function ceQueLaFactureImprime(f: FactureEmise): ImpressionFigee | null {
   const conditions = [c.moyen, c.escompte, c.penalites, c.indemnite].filter((x): x is string => x !== null)
   const mentions = mentionsImprimees(f)
   // Le numéro d'engagement (BT-13 ; C. com., art. L441-9, I : le bon de commande de l'acheteur) s'imprime pour tout acheteur
-  // depuis A7a ; `mentionsImprimees` ne le dit que d'un organisme public, avec le code service, qui lui reste réservé.
+  // depuis A7a ; `mentionsImprimees` ne le dit que d'un organisme public, avec le code service, qui lui reste réservé. Pour
+  // un autre acheteur, c'est le numéro du bon de commande qu'il a établi (A7B-Q3 : le formulaire l'offre à l'entreprise),
+  // et il s'imprime sous ce nom ; aucune facture figée d'avant A7B-Q3 n'en porte, le formulaire ne l'offrant pas.
   if (f.type_client !== 'organisme_public' && f.numero_engagement) {
-    mentions.push({ libelle: 'Numéro d’engagement', texte: f.numero_engagement })
+    mentions.push({ libelle: 'Bon de commande', texte: f.numero_engagement })
   }
   const nom = nomLegal(f.denomination_imprimee, f.emetteur_nom)
   return {

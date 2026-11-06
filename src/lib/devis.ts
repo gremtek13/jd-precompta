@@ -221,7 +221,7 @@ export interface EcritureDevis {
 export function ecritureDuDevis(s: SaisieDevis, emettre: boolean): EcritureDevis {
   const texte = (v: string | null) => v?.trim() || null
   const t = totauxDuDevis(s.lignes)
-  const m = mentionsAEnregistrer(s.mentions)
+  const m = mentionsAEnregistrer(s.mentions, 'devis')
   return {
     devis: {
       date_emission: s.dateEmission,
@@ -702,7 +702,7 @@ export function refusDeLaSaisieDevis(
 ): string | null {
   const refus = refusEnregistrementDevis(dossierId, cible, ecritureDuDevis(saisie, emettre), aujourdHui, emission)
   if (refus) return refus.message
-  return refusDesMentions(saisie.mentions, saisie.tiersSiret)[0] ?? null
+  return refusDesMentions(saisie.mentions, saisie.tiersSiret, 'devis')[0] ?? null
 }
 
 /** La confirmation de l'émission : elle nomme le client, le total, la validité, la série — et ce qui ne se défera plus. */

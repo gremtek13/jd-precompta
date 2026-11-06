@@ -402,15 +402,27 @@ describe('FactureFormModal — les mentions de la facture électronique', () => 
     expect(facture()).not.toHaveProperty('option_debits')
   })
 
-  it('passer d’un organisme public à une entreprise efface le code service, dans la même écriture', async () => {
+  it('passer d’un organisme public à une entreprise efface le code service, dans la même écriture ; le numéro reste, sous le nom du bon de commande (A7B-Q3)', async () => {
     monter('redevable')
     saisir('type-client', 'organisme_public')
     saisir('code-service', 'SERVICE-ACHATS')
     saisir('numero-engagement', 'EJ-42')
     saisir('type-client', 'assujetti')
     expect(champ('code-service')).toBeNull()
+    expect(champ('numero-engagement')!.value).toBe('EJ-42')
+    expect(document.querySelector('label[for="numero-engagement"]')!.textContent).toBe('Numéro du bon de commande (s’il en a établi un)')
     await act(async () => { enregistrerBrouillon().click() })
-    expect(facture()).toMatchObject({ type_client: 'assujetti', code_service: null, numero_engagement: null })
+    expect(facture()).toMatchObject({ type_client: 'assujetti', code_service: null, numero_engagement: 'EJ-42' })
+  })
+
+  it('un particulier n’a pas de bon de commande : le champ disparaît et le numéro repart à nul, dans la même écriture', async () => {
+    monter('redevable')
+    saisir('type-client', 'assujetti')
+    saisir('numero-engagement', 'BC-7')
+    saisir('type-client', 'non_assujetti')
+    expect(champ('numero-engagement')).toBeNull()
+    await act(async () => { enregistrerBrouillon().click() })
+    expect(facture()).toMatchObject({ type_client: 'non_assujetti', numero_engagement: null })
   })
 
   it('un SIRET saisi donne son SIREN et s’enregistre sans ses espaces ; un SIREN saisi à la main reste', async () => {
