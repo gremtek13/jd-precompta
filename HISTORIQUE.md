@@ -49127,3 +49127,8 @@ de la réplique migrée (table 2 039 `17fff655…`, défaut 88 `f14f6932…`, co
 sous sa version, texte inchangé (le retour reste dans `preparees/retour/`). Le bloc HR de `rls.sql`, seul, en production
 (la migration ne touche que des droits ; le fichier entier a été rejoué sur la réplique migrée) : le texte reçu
 `f5c5bed8…`, huit lignes, 0 en faute, six mutations sur six, sous `postgres`. Rien à redéployer.
+En route, `verifier` a rougi une fois sur deux, sur le même commit : `App.doubleAuthentification.test.tsx` (C7) lisait
+`faux.ecrans` aussitôt « Liste des dossiers » affiché, alors que le double l'y consigne dans un effet — la règle « UN
+TEST LISAIT SES RENDUS AVANT LEUR EFFET ». Reproduit à l'identique en retardant l'effet ; la lecture passe sous
+`waitFor`, et rien d'autre (le second test du fichier, qui ne vérifie qu'un vide, ne tombait sous la même mutation que
+par le minuteur du premier).
