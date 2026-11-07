@@ -546,10 +546,10 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const saisies2035 = blocDesSaisies2035(texteDeLEssai)
   const avecLesSaisies2035DuJour = SAISIES_2035_EXPORTEES ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
   const parametresDesCotisations = blocDesParametresDesCotisations(texteDeLEssai)
-  const avecLesParametresDuJour = PARAMETRES_DES_COTISATIONS_EXPORTES
+  const avecLesCotisationsDuJour = PARAMETRES_DES_COTISATIONS_EXPORTES
     ? avecLesParametresDesCotisations(avecLesSaisies2035DuJour, parametresDesCotisations) : avecLesSaisies2035DuJour
   const reprises = blocDesFacturesReprises(texteDeLEssai)
-  const courant = FACTURES_IMPORTEES_PREVUES ? avecLesFacturesReprises(avecLesParametresDuJour, reprises) : avecLesParametresDuJour
+  const courant = FACTURES_IMPORTEES_PREVUES ? avecLesFacturesReprises(avecLesCotisationsDuJour, reprises) : avecLesCotisationsDuJour
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
