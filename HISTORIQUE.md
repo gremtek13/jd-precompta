@@ -49399,3 +49399,19 @@ TNS-Q3 (les revenus de remplacement saisis en brut le jour où un dossier réel 
 chantier à part après le MVP). Sans geste, ce qui est en ligne restant ainsi : JJ-Q1 (relever d'abord), JJ-Q2 (demander
 le volume au praticien), C4B-Q1, B9A-Q1, B9B-Q1 (trente jours), B9B-Q2 (vingt), B9C-Q1, B9C-Q2, E6Q8-Q2,
 C1-Q1 (juger sur l'iPhone).
+
+### 07/11/2026 — A8A : LES FACTURES REPRISES, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+La base des factures reprises de l'ancien logiciel (ligne 51.5), sur A8-Q1 à Q6 tranchées à la recommandation :
+`supabase/preparees/20261107210000_factures_importees.sql`, À COLLER (cinq `drop constraint`, un `delete` dans
+`retirer_import`), son retour (éprouvé : la signature d'avant, la policy resserrée gardée), son essai `facturesImportees.sql`
+(48 sur 48, sept mutations qui mordent). Elle pose l'état `importee` (cinq contraintes remplacées, une ajoutée), la policy
+`factures_emises_all` à `authenticated`, `dossiers.reprise_des_factures_le` (le chef seul, figée au premier import), les
+tables `imports_factures` et `factures_importees` (l'encaissé avant la reprise par taux, le prorata en repli et dit),
+`importer_factures`, `retirer_import`, et le cinquième refus de la validation étendu aux reprises de la série. Trois écarts à
+la conception : la garde en deux déclencheurs NEUFS, `garder_factures_validees` intacte (e7a la remplace depuis la même
+empreinte : les deux s'appliquent dans tout ordre) ; le cabinet du dossier SEUL (`rls.sql` refuse une table ouverte à
+« Ventes » sans présentation : l'ouverture viendra avec l'écran, A8d) ; l'avoir repris cite sa facture par `origine_id`,
+jamais `facture_origine_id`, que la seconde passe de la restauration récrirait ; le lien de la pièce (A8-Q5) suit en A8b. Sur
+une copie de la réplique mère : `rls.sql` 104 lignes, 0 en faute, 79 mutations sur 79 ; `factures.sql` 144 sur 144 avant
+comme après ; `restauration.sql` IDENTIQUE, son bloc conditionné ; le plan derrière `FACTURES_IMPORTEES_PREVUES`.
