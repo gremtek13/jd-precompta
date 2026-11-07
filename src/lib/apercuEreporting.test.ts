@@ -5,11 +5,12 @@ import {
   phrasesDeLEreporting, prochainesPeriodes, type EreportingLu,
 } from './apercuEreporting'
 import { lireEtatFactureElectronique } from './etatFactureElectronique'
+import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // L'étape C3 : la clé `ereporting` d'`etat_facture_electronique`, lue sans rien deviner, et la prochaine période de chaque
-// objet. Les clés sont confrontées au texte de la migration préparée et à l'essai qui l'éprouve.
+// objet. Les clés sont confrontées au texte de la migration (dans l'export depuis son application, le 07/11/2026) et à l'essai qui l'éprouve.
 
-const MIGRATION = readFileSync('supabase/preparees/20261106170000_apercu_facture_electronique.sql', 'utf8')
+const MIGRATION = readFileSync('supabase/schema/20261107145209_apercu_facture_electronique.sql', 'utf8')
 const ESSAI = readFileSync('supabase/essais/apercuFactureElectronique.sql', 'utf8')
 const DOSSIER = 'c3c30000-0000-4000-8000-0000000000a1'
 
@@ -45,8 +46,11 @@ describe('la clé `ereporting`, confrontée à la migration et à son essai', ()
     expect(MIGRATION).toContain("'465307bcdf36e179469859535fe1af2c'")
   })
 
-  it('le drapeau reste baissé tant que la migration n’est pas en production', () => {
-    expect(APERCU_EREPORTING_EXPORTE).toBe(false)
+  it('le drapeau est levé si et seulement si l’export porte la migration, une fois, et plus les préparées', () => {
+    const exportee = fichiersDuSchema().filter((f) => /_apercu_facture_electronique\.sql$/.test(f.chemin)).map((f) => f.chemin)
+    expect(exportee).toEqual(['supabase/schema/20261107145209_apercu_facture_electronique.sql'])
+    expect(fichiersPrepares().filter((f) => /_apercu_facture_electronique\.sql$/.test(f.chemin))).toEqual([])
+    expect(APERCU_EREPORTING_EXPORTE).toBe(exportee.length === 1)
   })
 })
 

@@ -586,7 +586,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     (combien de temps garder les documents du cabinet et ses demandes), ouverte → « L'ESPACE CLIENT, LOGICIEL DE GESTION
     DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
   - « Aller plus loin », le 06/11/2026 : C1, « Mon échéancier » (à tout accès client, les montants sous « Banque »),
-    sans migration ; C2 préparée (`phase_des_exercices`, `ETAT_DU_DOSSIER_EXPORTE` baissé, C2-Q1 au cabinet) ; C7, son
+    sans migration ; C2 en production depuis le 07/11/2026 (`phase_des_exercices`, `ETAT_DU_DOSSIER_EXPORTE` levé, C2-Q1 à Q4) ; C7, son
     premier temps (Contraintes de sécurité) → « « MON ÉCHÉANCIER » : L'ÉCHÉANCIER FISCAL ET SOCIAL DU CLIENT », « L'ÉTAT
     DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Le même soir, préparées derrière leurs drapeaux : C5, les relances
     d'une facture en retard (pénalités calculées et montrées, jamais facturées ; `send-email` sous `RELANCES_EN_BASE` ;
@@ -595,11 +595,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     connaître l'autre ; `situation_publiee_en_cours` ne répond qu'au cabinet et à l'accès « Comptes » du dossier), et
     ses écrans, C4b (« Publier au client » sous la situation intermédiaire, « Mes comptes » côté client, sous
     `SITUATIONS_PUBLIEES_EXPORTEES` ; C4B-Q1) ; C3, la facture électronique et l'e-reporting en un coup d'œil (la
-    fonction de l'état rend l'e-reporting en phases, rien du cabinet au-delà ; `APERCU_EREPORTING_EXPORTE` baissé ;
-    C3-Q1 à Q4) → « RELANCER SES CLIENTS (C5) », « LES SITUATIONS PUBLIÉES, EN BASE (C4A) », « LA RELECTURE DE SÉCURITÉ
-    DE C4A ET C5 », « LES SITUATIONS PUBLIÉES, À L'ÉCRAN », « C3, LA FACTURE ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP
-    D'ŒIL ». Sans migration : B9a, « Mon analyse » (`/mon-analyse`, avec « Ventes » ou « Banque », l'analyse n'ayant pas
-    de case à elle ; un chiffre muet sur une lecture partielle, jamais 0 ; B9A-Q1) ; B9b, le journal de l'espace client
+    fonction de l'état rend l'e-reporting en phases, rien du cabinet au-delà ; en production depuis le 07/11/2026,
+    `APERCU_EREPORTING_EXPORTE` levé ; C3-Q1 à Q4) → « RELANCER SES CLIENTS (C5) », « LES SITUATIONS PUBLIÉES, EN BASE
+    (C4A) », « LA RELECTURE DE SÉCURITÉ DE C4A ET C5 », « LES SITUATIONS PUBLIÉES, À L'ÉCRAN », « C3, LA FACTURE
+    ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP D'ŒIL », « C2 ET C3 EN PRODUCTION ». Sans migration : B9a, « Mon analyse »
+    (`/mon-analyse`, avec « Ventes » ou « Banque », l'analyse n'ayant pas de case à elle ; un chiffre muet sur une
+    lecture partielle, jamais 0 ; B9A-Q1) ; B9b, le journal de l'espace client
     reconstitué des colonnes d'auteur, jamais un nom (`lib/journalDeLEspaceClient.ts`), et la carte « ce qui a bougé »
     du cabinet (B9B-Q1 et Q2) ; B9c, sa section dans « Mon analyse », chaque évènement sous la case de son domaine relue
     à la base, « par ton cabinet » là seulement où la base garde l'origine (B9C-Q1 et Q2) → « « MON ANALYSE » : LES

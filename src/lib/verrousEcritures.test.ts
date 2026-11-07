@@ -94,7 +94,7 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     nature: 'lecture',
     raison: 'La phase de chaque exercice d’un dossier — pièces attendues, en révision, validé le, 2035 enregistrée —, jamais un '
       + 'chiffre (fonction `stable`, `security definer`, sans écriture ; migration `phase_des_exercices`, ligne 51.5, étape C2, '
-      + 'préparée), lue par la carte de l’accueil du client (`lib/etatDuDossierLecture.ts`) — derrière `ETAT_DU_DOSSIER_EXPORTE`.',
+      + 'en production depuis le 07/11/2026), lue par la carte de l’accueil du client (`lib/etatDuDossierLecture.ts`) — derrière `ETAT_DU_DOSSIER_EXPORTE`.',
   },
   'rpc:plan_du_dossier': {
     nature: 'lecture',

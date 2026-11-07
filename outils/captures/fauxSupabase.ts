@@ -2695,6 +2695,19 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
       error: null,
     }
   }
+  // `phase_des_exercices` (étape C2, en production depuis le 07/11/2026) : l'exercice en cours et le précédent attendent
+  // leurs pièces, le troisième est validé, sa 2035 enregistrée — la forme exacte que lib/etatDuDossier.ts lit.
+  if (nom === 'phase_des_exercices') {
+    const annee = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric' }).format(new Date()))
+    return {
+      data: [
+        { annee, phase: 'pieces_attendues', valide_le: null, declaration_2035: false },
+        { annee: annee - 1, phase: 'pieces_attendues', valide_le: null, declaration_2035: false },
+        { annee: annee - 2, phase: 'validee', valide_le: `${annee - 1}-04-30`, declaration_2035: true },
+      ],
+      error: null,
+    }
+  }
   // `admin_du_dossier` (23Q2Q2Q1-Q1), comme la fonction en base (migration `hierarchie_comptables`) : le dossier est ouvert au compte
   // s'il est dans l'équipe du cabinet du dossier, chef, ou assigné à ce dossier — jamais par un accès client.
   if (nom === 'admin_du_dossier') {

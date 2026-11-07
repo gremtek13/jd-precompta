@@ -1,5 +1,5 @@
 -- L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT (ligne 51.5, partie C, étape C2 ; la migration `phase_des_exercices`,
--- PRÉPARÉE le 06/11/2026, supabase/preparees/). Le récit : HISTORIQUE.md, « 06/11/2026 — L'ÉTAT DU DOSSIER CHEZ LE
+-- en production depuis le 07/11/2026, supabase/schema/20261107145111_phase_des_exercices.sql). Le récit : HISTORIQUE.md, « 06/11/2026 — L'ÉTAT DU DOSSIER CHEZ LE
 -- CABINET, MONTRÉ AU CLIENT (C2) (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après toute migration qui touche
 -- `phase_des_exercices`, `exercices_valides`, `exercices_clotures`, les tables de la révision, `admin_du_dossier` ou
 -- `client_du_dossier`.
