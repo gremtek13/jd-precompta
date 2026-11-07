@@ -1,6 +1,6 @@
 import { RAISON_VERSEMENT_D_ESPECES } from './controlesDeLaCaisse'
 import { libelleExploitable, motsDuLibelle, motsIdentifiants, motsSeConfirment, tiersConfirmeParBanque } from './appariementBanque'
-import { estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
+import { ACCES_SANS_OBJET, estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
   ANNEES_ILLISIBLES, ecartDeFrais, encaissementsDAvantDuMouvement, encaissementsDeclares, encaissementsDuMouvement, exemplaireUnique,
   justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT, moyenSurUnCredit, ordreDesEncaissements, refusClassement, refusContrePassationVente,
@@ -110,6 +110,8 @@ export interface EncaissementPorte {
   horsDesVentesFacturees: 'exemplaire' | 'sans_exemplaire' | null
   /** Enregistré par un compte qui porte un accès client du dossier, sur des accès lus en entier. */
   parLeClient: boolean
+  /** L'instant où il a été enregistré (`cree_le`) : ce qui date la proposition du client (étape C6). */
+  creeLe: string
 }
 
 export interface MouvementDeVente {
@@ -168,6 +170,7 @@ export function mouvementDeVente(
       horsDesVentesFacturees: !horsDesVentes.has(e.id) ? null
         : exemplaireUnique(m.dossier_id, e.facture_id, sources.exemplaires) !== null ? 'exemplaire' : 'sans_exemplaire',
       parLeClient: estLeClient(acces, e.cree_par),
+      creeLe: e.cree_le,
     }))
   return {
     id: m.id,
@@ -447,6 +450,23 @@ export const HORS_DES_VENTES_FACTUREES = {
   sans_exemplaire: 'pas source de sa vente, et sans son exemplaire unique et validé',
 } as const
 
+/**
+ * La mention d'un encaissement du client sur la carte (étape C6) : sur un mouvement RÉSERVÉ, ce que le client a saisi est
+ * une proposition que le classement du cabinet attend — « proposé par le client le … », le jour où il l'a enregistré ;
+ * sur un mouvement classé, la proposition est retenue, et la mention redevient « par le client ». Jamais un nom.
+ */
+export function mentionDuClient(etat: MouvementDeVente['etat'], creeLe: string): string {
+  return etat === 'reserve' ? `${PROPOSE_PAR_LE_CLIENT} le ${formatDate(creeLe)}` : PAR_LE_CLIENT
+}
+
+/** Ce que la carte dit quand les accès du dossier ne sont pas lus en entier : personne n'est reconnu. */
+function noteDesAuteursDe(acces: AccesDuDossier): string | null {
+  return acces.etat === 'incomplets'
+    ? `Les accès du dossier n’ont pas été lus en entier (${acces.motif}) : on ne peut pas dire quels encaissements le `
+      + 'client a enregistrés.'
+    : null
+}
+
 /** La carte qui, dans la fiche d'un mouvement classé ou réservé, dit ce qui le porte et pourquoi rien d'autre ne s'offre. */
 export function carteDeVente(m: MouvementDeVente, acces: AccesDuDossier): CarteDeVente {
   const lignes = m.encaissements.map((e): LigneDeLaCarte => ({
@@ -455,7 +475,10 @@ export function carteDeVente(m: MouvementDeVente, acces: AccesDuDossier): CarteD
       + (e.horsDesVentesFacturees ? ` — ${HORS_DES_VENTES_FACTUREES[e.horsDesVentesFacturees]}` : ''),
     montant: e.montant,
     parLeClient: e.parLeClient
-      ? { libelle: PAR_LE_CLIENT, titre: e.contrePassation ? TITRES_PAR_LE_CLIENT.contrePassation : TITRES_PAR_LE_CLIENT.encaissement }
+      ? {
+        libelle: mentionDuClient(m.etat, e.creeLe),
+        titre: e.contrePassation ? TITRES_PAR_LE_CLIENT.contrePassation : TITRES_PAR_LE_CLIENT.encaissement,
+      }
       : null,
   }))
   const total = m.encaissements.reduce((somme, e) => somme + Math.round(e.montant * 100), 0)
@@ -469,10 +492,7 @@ export function carteDeVente(m: MouvementDeVente, acces: AccesDuDossier): CarteD
       ? 'Ses écritures se passent dans l’onglet Écritures, section « Ventes facturées ».'
       : 'Tant qu’il n’est pas classé par ses encaissements, leurs écritures attendent dans l’onglet Écritures, section '
         + '« Ventes facturées ».',
-    noteDesAuteurs: acces.etat === 'incomplets'
-      ? `Les accès du dossier n’ont pas été lus en entier (${acces.motif}) : on ne peut pas dire quels encaissements le `
-        + 'client a enregistrés.'
-      : null,
+    noteDesAuteurs: noteDesAuteursDe(acces),
   }
 }
 
@@ -1149,8 +1169,11 @@ export function gestesDuDebit(
 export const JUSTIFICATIF_FACTURE = 'Une facture de l’application attend son encaissement : ce crédit la règle peut-être.'
 export const JUSTIFICATIF_ENCAISSEMENT = 'Un encaissement enregistré attend son mouvement.'
 export const JUSTIFICATIF_CONTRE_PASSATION = 'Une contre-passation enregistrée attend son mouvement.'
+// Étape C6 : l'encaissement d'une facture d'avant la bascule cite ce crédit, et son rapprochement est proposé dans sa fiche.
+export const JUSTIFICATIF_ENCAISSEMENT_CITE =
+  'L’encaissement enregistré d’une facture cite ce mouvement : son rapprochement est proposé dans sa fiche.'
 const JUSTIFICATIFS_DE_LA_VENTE: ReadonlySet<string> = new Set([
-  JUSTIFICATIF_FACTURE, JUSTIFICATIF_ENCAISSEMENT, JUSTIFICATIF_CONTRE_PASSATION,
+  JUSTIFICATIF_FACTURE, JUSTIFICATIF_ENCAISSEMENT, JUSTIFICATIF_CONTRE_PASSATION, JUSTIFICATIF_ENCAISSEMENT_CITE,
 ])
 
 /** Une facture source ouverte : son reste net de ses avoirs validés, positif, en centimes. */
@@ -1372,6 +1395,10 @@ export function candidatsDuMouvement(c: CandidatsDeLaVente, ligne: LigneDesGeste
  * aux frais près, sur un débit — le client seul ne désigne pas un impayé. Null : rien.
  */
 export function justificatifDeLaVente(c: CandidatsDeLaVente, ligne: LigneDesGestes): string | null {
+  // Un crédit libre que l'encaissement d'une facture d'avant la bascule cite (étape C6) : sa pièce est connue, aucun lot ne
+  // le prend — rapproché d'une autre pièce, classé par une règle ou ignoré, il contredirait ce qui a été saisi.
+  const cite = rapprochementProposeParLEncaissement(c, ligne, ACCES_SANS_OBJET)
+  if (cite !== null && cite.libre) return JUSTIFICATIF_ENCAISSEMENT_CITE
   const candidats = candidatsDuMouvement(c, ligne)
   if (candidats.some((x) => x.genre === 'encaissement')) return JUSTIFICATIF_ENCAISSEMENT
   if (candidats.some((x) => x.genre === 'facture')) return JUSTIFICATIF_FACTURE
@@ -1399,4 +1426,96 @@ export function horsDesLotsAvecLesCandidats(
     if (raison !== null) avec.set(l.id, raison)
   }
   return avec
+}
+
+// ── Le rapprochement proposé par l'encaissement (étape C6 de la ligne 51.5) ───────────────────────────────────────────────
+//
+// LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (espace client, « aller plus loin », C6 ; MEG3-Q7 : après EC-Q3). Quand un
+// encaissement est enregistré AVEC son mouvement — par le client qui porte « Ventes » et « Banque », ou par le cabinet —,
+// la fiche de ce mouvement propose son rapprochement, en tête, et seul le clic du cabinet écrit :
+//   - l'encaissement d'une facture SOURCE réserve le mouvement (G2) : la carte (VF5a1) et « Classer par ses
+//     encaissements » (VF5c) le proposent déjà, et la carte date la proposition du client (`mentionDuClient`) ;
+//   - celui d'une facture d'AVANT la bascule — que son exemplaire compte —, sur un crédit qu'aucune facture source ne
+//     réserve : ici. La pièce proposée est l'exemplaire unique et validé de la facture (`exemplaireUnique`, la même règle
+//     que le virement mixte), que la fiche associe par le rapprochement d'hier ; plusieurs factures, ou pas d'exemplaire,
+//     une note, et le choix reste à la main. Tant qu'il est à traiter, aucun lot ne prend ce mouvement
+//     (`justificatifDeLaVente`).
+// La proposition se justifie par ce qui a été saisi, et le dit : « Proposé par le client le … » (le jour de `cree_le`), ou
+// « Enregistré avec ce mouvement le … » — jamais un nom, jamais « par le cabinet ». Rien sans des ventes lues en entier
+// (les candidats de la vente sont alors `AUCUN_CANDIDAT`), ni sur un débit, un mouvement réservé ou classé par ses
+// encaissements, ou figé par un exercice validé. Un dossier qui n'a pas basculé ne lit pas ses ventes ici — et le client
+// n'y porte jamais « Ventes » (VF8f).
+
+export const TITRE_RAPPROCHEMENT_PROPOSE = 'Rapprochement proposé par l’encaissement'
+
+export interface EncaissementQuiCite {
+  id: string
+  /** « Proposé par le client le … », ou « Enregistré avec ce mouvement le … ». */
+  origine: string
+  /** La facture, le moyen, la date de l'encaissement et son montant. */
+  libelle: string
+}
+
+export interface RapprochementPropose {
+  encaissements: readonly EncaissementQuiCite[]
+  /** L'exemplaire unique et validé de la facture : la pièce que « Associer » rapprocherait. Nul : `note` dit pourquoi. */
+  pieceId: string | null
+  /** Ce qui retient la proposition d'une pièce : plusieurs factures, ou une facture sans son exemplaire. */
+  note: string | null
+  /** Le mouvement est encore libre — à traiter, que rien ne classe : la proposition s'offre, et aucun lot ne le prend. */
+  libre: boolean
+  /** Les accès du dossier lus en partie : personne n'est reconnu, et la fiche le dit. */
+  noteDesAuteurs: string | null
+}
+
+/** L'origine d'un encaissement qui cite le mouvement : ce qui a été saisi, et quand — jamais par qui, sauf le client. */
+export function origineDeLaProposition(acces: AccesDuDossier, e: Pick<EncaissementDuMouvementLu, 'cree_par' | 'cree_le'>): string {
+  return estLeClient(acces, e.cree_par)
+    ? `Proposé ${PAR_LE_CLIENT} le ${formatDate(e.cree_le)}`
+    : `Enregistré avec ce mouvement le ${formatDate(e.cree_le)}`
+}
+
+/**
+ * Le rapprochement que proposent les encaissements de factures d'avant la bascule qui citent ce crédit — ou null : aucun,
+ * des ventes facturées qui ne sont pas lues en entier, un débit, un mouvement que des encaissements de factures sources
+ * réservent ou que ses encaissements classent (la carte de VF5a1 le dit), ou qu'un exercice validé fige. `acces` : les
+ * accès du dossier, qui reconnaissent le client.
+ */
+export function rapprochementProposeParLEncaissement(
+  c: CandidatsDeLaVente,
+  ligne: Pick<LigneDesGestes, 'id' | 'dossier_id'>,
+  acces: AccesDuDossier,
+): RapprochementPropose | null {
+  const j = c.juge
+  if (j === null || ligne.dossier_id !== j.dossierId) return null
+  const m = j.mouvementsParId.get(ligne.id)
+  if (!m || m.montant <= 0 || m.encaissements_de_factures) return null
+  if (encaissementsDuMouvement(m.id, j.sources.encaissements, j.vente).length > 0) return null
+  if (dateFigee(m.date, j.anneesValidees) !== null) return null
+  const citent = encaissementsDAvantDuMouvement(m.id, j.sources.encaissements, j.vente)
+    .filter((e) => e.annule_id == null)
+    .sort(ordreDesEncaissements)
+  if (citent.length === 0) return null
+  const numeroDe = (factureId: string) => j.facturesParId.get(factureId)?.numero ?? SANS_NUMERO
+  const factures = [...new Set(citent.map((e) => e.facture_id))]
+  const pieceId = factures.length === 1 ? exemplaireUnique(j.dossierId, factures[0], j.sources.exemplaires) : null
+  const note = factures.length > 1
+    ? `Les encaissements des factures ${factures.map(numeroDe).join(', ')} citent ce mouvement : leurs exemplaires se `
+      + 'règlent ensemble, par « Plusieurs pièces » plus bas.'
+    : pieceId === null
+      ? `La facture ${numeroDe(factures[0])} n’a pas d’exemplaire unique et validé : la pièce qui la compte se choisit à la `
+        + 'main, plus bas.'
+      : null
+  return {
+    encaissements: citent.map((e) => ({
+      id: e.id,
+      origine: origineDeLaProposition(acces, e),
+      libelle: `Facture ${numeroDe(e.facture_id)} — ${libelleDuMoyen(e.moyen).toLowerCase()} du ${formatDate(e.date_encaissement)}, `
+        + formatMoney(e.montant),
+    })),
+    pieceId,
+    note,
+    libre: mouvementLibre(m),
+    noteDesAuteurs: noteDesAuteursDe(acces),
+  }
 }

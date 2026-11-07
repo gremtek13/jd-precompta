@@ -12,7 +12,8 @@ import {
 } from '../../lib/ecrituresVentesFactureesLecture'
 import { COLONNES_LIGNES, COLONNES_PARTS } from '../../lib/ventesFactureesLecture'
 import { REFUS_CLASSEMENT, REFUS_RATTACHEMENT, REFUS_RETRAIT_CLASSEMENT, remplirModele } from '../../lib/encaissementsFactures'
-import { TITRE_CLASSER, TITRE_ENREGISTRER, TITRE_RATTACHER, TITRE_RETIRER } from '../../lib/mouvementsDesVentes'
+import { TITRE_CLASSER, TITRE_ENREGISTRER, TITRE_RAPPROCHEMENT_PROPOSE, TITRE_RATTACHER, TITRE_RETIRER } from '../../lib/mouvementsDesVentes'
+import { piece } from '../../test/compositionsAuPlan'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // LA FICHE D'UN CRÉDIT : « ENCAISSEMENT D'UNE FACTURE » (ligne 28.65, chantier EC-Q3, étape VF5c). La règle est éprouvée à
@@ -38,6 +39,10 @@ const faux = vi.hoisted(() => ({
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   // Le refus que la base oppose au prochain appel, s'il en est un.
   erreurRpc: null as string | null,
+  // Étape C6 : les mises à jour de `lignes_bancaires` (le rapprochement d'une pièce), appliquées et rendues seulement quand
+  // le test les accepte — sinon, comme avant, aucune ligne rendue.
+  accepterMisesAJour: false,
+  misesAJour: [] as { table: string; valeurs: Record<string, unknown> }[],
 }))
 
 vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => [] }))
@@ -47,6 +52,7 @@ vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatIn } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     let operation = 'select'
+    let valeurs: Record<string, unknown> = {}
     let unique = false
     let colonnes = '*'
     const predicats: ((l: Record<string, unknown>) => boolean)[] = []
@@ -69,11 +75,17 @@ vi.mock('../../lib/supabase', async () => {
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => { unique = true; return c },
       single: () => { unique = true; return c },
-      update: () => { operation = 'update'; return c },
+      update: (v: Record<string, unknown>) => { operation = 'update'; valeurs = v; return c },
       insert: () => { operation = 'insert'; return c },
       upsert: () => { operation = 'upsert'; return c },
       delete: () => { operation = 'delete'; return c },
       then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
+        if (operation === 'update' && table === 'lignes_bancaires' && faux.accepterMisesAJour) {
+          faux.misesAJour.push({ table, valeurs })
+          const visees = filtrer(faux.parTable[table] ?? [], predicats)
+          faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (visees.includes(l) ? { ...l, ...valeurs } : l))
+          return Promise.resolve({ data: visees.length > 0 ? { id: visees[0].id } : null, error: null }).then(suite, echec)
+        }
         if (operation !== 'select' || unique) return Promise.resolve({ data: null, error: null }).then(suite, echec)
         const cle = `${table}|${colonnes}`
         faux.demandes.push(cle)
@@ -158,6 +170,8 @@ function poser() {
   faux.demandes = []
   faux.rpcs = []
   faux.erreurRpc = null
+  faux.accepterMisesAJour = false
+  faux.misesAJour = []
   const factures = [
     facture('f1', 'F2026-0014', 'SARL Horizon', 500), facture('f2', 'F2026-0015', 'Cabinet Durand', 500),
     facture('f3', 'F2026-0016', 'Atelier Martin', 500), facture('f4', 'F2026-0017', 'Studio Bleu', 100),
@@ -519,5 +533,79 @@ describe('un dossier qui n’a pas basculé', () => {
       await ouvrir(libelle)
       expect(gestesNeufs(), libelle).toEqual([])
     }
+  })
+})
+
+// LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (étape C6 de la ligne 51.5 ; lib/rapprochementPropose.test.ts pour la règle).
+// Le client a enregistré, avec son crédit, l'encaissement d'une facture d'avant la bascule : la fiche propose en tête
+// l'exemplaire de la facture, sous « Proposé par le client le … » ; « Associer cette pièce » est le rapprochement d'hier,
+// une seule fois sous le verrou ; sur des ventes facturées lues en partie, rien ne s'offre.
+describe('un crédit que l’encaissement d’une facture d’avant la bascule cite (C6)', () => {
+  const AVANT = mouvement({ id: 'm-avant', date: '2026-06-07', montant: 240, libelle: 'VIR ANCIEN CLIENT F2025-0099' })
+  beforeEach(() => {
+    const f0 = factureCii([{ ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 200, taux_tva: 20 }], {
+      id: 'f0', dossier_id: D, numero: 'F2025-0099', tiers_nom: 'Ancien Client', date_emission: '2025-12-15', source_de_la_vente: false,
+    })
+    const e0 = encaissement({
+      id: 'e0', facture_id: 'f0', montant: 240, ligne_bancaire_id: 'm-avant', date_encaissement: '2026-06-07',
+      cree_le: '2026-06-07T09:00:00Z', cree_par: 'client-1',
+    })
+    faux.parTable.lignes_bancaires.push(AVANT as unknown as Record<string, unknown>)
+    faux.parTable.factures_emises.push(f0 as unknown as Record<string, unknown>)
+    faux.parTable.facture_lignes.push({
+      id: 'fl0', facture_id: 'f0', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 200, taux_tva: 20,
+    })
+    faux.parTable.encaissements_factures.push(e0)
+    faux.parTable.encaissements_factures_taux.push({ encaissement_id: 'e0', dossier_id: D, taux: 20, montant: 240 })
+    faux.parTable.pieces = [piece({
+      id: 'p0', dossier_id: D, storage_path: `${D}/exemplaire.pdf`, type_piece: 'vente', facture_id: 'f0', statut: 'validee', montant_ht: 200, montant_tva: 40, montant_ttc: 240,
+      date_piece: '2025-12-15', nom_fichier: 'exemplaire-F2025-0099.pdf', categorie_id: null,
+    })] as unknown as Record<string, unknown>[]
+    faux.parTable.memberships = [{ id: 'ms1', dossier_id: D, user_id: 'client-1', droit_banque: true, created_at: '2026-01-02T09:00:00Z' }]
+  })
+
+  it('en tête, l’exemplaire sous « Proposé par le client le … » ; « Associer » rapproche une seule fois, puis relit', async () => {
+    faux.accepterMisesAJour = true
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await tous()
+    await ouvrir('VIR ANCIEN CLIENT F2025-0099')
+    const propose = await waitFor(() => {
+      const r = section(TITRE_RAPPROCHEMENT_PROPOSE)
+      expect(r).not.toBeNull()
+      return r as HTMLElement
+    })
+    expect(texteDe(propose)).toContain('Proposé par le client le 07/06/2026 : Facture F2025-0099 — virement du 07/06/2026, 240,00 €.')
+    // La première section de la fiche après son en-tête : avant les pièces que le rapprochement propose de lui-même.
+    const sections = [...volet().querySelectorAll('section.fiche-mouvement-section')]
+    expect(sections[0]).toBe(propose)
+    // L'exemplaire ne se redit pas parmi les candidates.
+    expect(within(volet()).queryByRole('heading', { name: 'Pièce proposée' })).toBeNull()
+    const associer = within(propose).getByRole('button', { name: 'Associer cette pièce' })
+    const avant = relevesLus()
+    await cliquer(associer, 2)
+    expect(faux.misesAJour).toEqual([{ table: 'lignes_bancaires', valeurs: { statut: 'rapprochee', piece_id: 'p0' } }])
+    await waitFor(() => expect(relevesLus()).toBeGreaterThan(avant))
+    await waitFor(() => expect(texteDe(section(TITRE_RAPPROCHEMENT_PROPOSE))).toContain('Retenue : ce mouvement est rapproché de cette pièce.'))
+    expect(within(section(TITRE_RAPPROCHEMENT_PROPOSE) as HTMLElement).queryByRole('button', { name: 'Associer cette pièce' })).toBeNull()
+  })
+
+  it('un compte que les accès ne reconnaissent pas : « Enregistré avec ce mouvement le … », jamais « par le cabinet »', async () => {
+    faux.parTable.memberships = []
+    rendre()
+    await tous()
+    await ouvrir('VIR ANCIEN CLIENT F2025-0099')
+    await waitFor(() => expect(texteDe(section(TITRE_RAPPROCHEMENT_PROPOSE))).toContain('Enregistré avec ce mouvement le 07/06/2026'))
+    expect(texteDe(volet())).not.toContain('par le cabinet')
+  })
+
+  it('des ventes facturées lues en partie : aucune proposition, aucun « Associer »', async () => {
+    faux.muet = { [`encaissements_factures|${COLONNES_ENCAISSEMENTS_ECRITURES}`]: 1 }
+    rendre()
+    await tous()
+    await ouvrir('VIR ANCIEN CLIENT F2025-0099')
+    await waitFor(() => expect(texteDe(volet())).toContain('n’ont pas pu être lues en entier'))
+    expect(section(TITRE_RAPPROCHEMENT_PROPOSE)).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: 'Associer cette pièce' })).toBeNull()
   })
 })

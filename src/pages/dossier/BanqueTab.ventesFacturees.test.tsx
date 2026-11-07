@@ -306,7 +306,7 @@ describe('un dossier basculé, ses ventes facturées lues en entier', () => {
     await ouvrir('VIR SARL HORIZON F2026-0014')
     const v = volet()
     const carte = within(v).getByRole('region', { name: 'Réservé à des encaissements de factures' })
-    expect(texteDe(carte)).toContain('Facture F2026-0014 — virement du 03/06/2026 par le client600,00 €')
+    expect(texteDe(carte)).toContain('Facture F2026-0014 — virement du 03/06/2026 proposé par le client le 03/06/2026600,00 €')
     expect(within(carte).getByText(REFUS_GARDE_MOUVEMENTS[3].modele.replace('%', 'F2026-0014'))).toBeTruthy()
     expect(within(v).queryByText('Non rapproché')).toBeNull()
     expect(within(v).queryByRole('heading', { name: 'Sans justificatif' })).toBeNull()

@@ -43,12 +43,12 @@ import {
 } from '../../lib/liquidationTva'
 import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
-import { FilDuMouvement, PropositionsDuClient } from './EnvoisDuClient'
+import { FilDuMouvement, PropositionsDuClient, RapprochementProposeVue } from './EnvoisDuClient'
 import type { AccesDuReleve, ContexteDeLaProposition, EnvoisDuClient } from '../../lib/banqueCabinet'
 import { exemplaireDUneSource } from '../../lib/facturesSources'
 import type { ExemplairesDesSources } from '../../lib/lotsDeLaJumelleInversee'
 import {
-  carteDeVente, PASTILLE_CLASSE, pastilleDeVente, TITRE_CLASSER, TITRE_CLASSER_DEBIT, TITRE_CONTRE_PASSER, TITRE_ENREGISTRER,
+  carteDeVente, PASTILLE_CLASSE, pastilleDeVente, rapprochementProposeParLEncaissement, TITRE_CLASSER, TITRE_CLASSER_DEBIT, TITRE_CONTRE_PASSER, TITRE_ENREGISTRER,
   TITRE_PROPOSES, TITRE_RATTACHER, TITRE_RATTACHER_CONTRE_PASSATION, TITRE_RETIRER,
   type CandidatsDeLaVente, type ComplementDuCredit, type ComplementDuDebit, type GestesDuCredit, type GestesDuDebit, type MouvementsHorsDesLots,
   type VenteDuMouvement,
@@ -649,6 +649,8 @@ export default function FicheMouvement({
   const libre = venteDuMouvement.etat === 'libre'
   const venteDuMouvementPorte = venteDuMouvement.etat === 'porte' ? venteDuMouvement.mouvement : null
   const pastilleVente = venteDuMouvementPorte ? pastilleDeVente(venteDuMouvementPorte) : null
+  // Le rapprochement que propose l'encaissement d'une facture d'avant la bascule qui cite ce crédit (étape C6).
+  const rapprochementPropose = rapprochementProposeParLEncaissement(candidatsDeLaVente, ligne, accesDuReleve.acces)
   // Le choix à la main ne s'applique qu'au clic sur « Associer », jamais au changement de la liste :
   // sur une liste déroulante qui a le focus, les flèches du clavier changent la valeur — et
   // rapprochaient donc, dans la fenêtre d'avant, la première pièce venue sans qu'on l'ait choisie.
@@ -865,7 +867,11 @@ export default function FicheMouvement({
 
   // Même précédence que le rapprochement automatique : une pièce avant une échéance, une échéance
   // avant une récurrence. Ce n'est pas un arbitrage entre égaux mais une règle de l'écran.
-  const piecesCandidates = aTraiter ? candidatsPieces(ligne, piecesValidees, horsRapprochement, exemplairesDesSources.sources) : []
+  // L'exemplaire que l'encaissement propose (étape C6) est déjà en tête : il ne se redit pas parmi les candidates.
+  const piecesCandidates = aTraiter
+    ? candidatsPieces(ligne, piecesValidees, horsRapprochement, exemplairesDesSources.sources)
+      .filter((p) => p.id !== rapprochementPropose?.pieceId)
+    : []
   // La pièce figée qu'on aurait proposée : elle ne se rapproche plus, et la fiche le dit au lieu de la taire — un mouvement
   // du même montant qu'une note de frais d'un exercice validé en est souvent le remboursement.
   const figeeDeMemeMontant = aTraiter && piecesFigees.size > 0
@@ -968,6 +974,7 @@ export default function FicheMouvement({
   const proposeeParLeClient = envoisDuClient.etat === 'lus'
     && envoisDuClient.propositions.some((p) => p.ligne_bancaire_id === ligne.id && p.retire_le === null)
   const unePropositionExiste = piecesCandidates.length > 0 || echeancesCandidates.length > 0 || proposeeParLeClient || rejetEnTete !== null
+    || rapprochementPropose?.pieceId != null
 
   // LA PIÈCE PROPOSÉE PAR LE CLIENT passe par le MÊME chemin que le choix à la main : les pièces hors du choix (payées,
   // figées), le reste d'une pièce payée en partie et son refus (`refusSecondPaiement`). Les parts d'un virement groupé ne
@@ -1436,6 +1443,20 @@ export default function FicheMouvement({
         {venteDuMouvementPorte && <CarteDeLaVente vente={venteDuMouvementPorte} acces={accesDuReleve} />}
         {venteDuMouvement.etat === 'retenu' && (
           <p className="fiche-mouvement-note" role="status">{venteDuMouvement.note}</p>
+        )}
+
+        {/* EN TÊTE (étape C6) : l'encaissement d'une facture d'avant la bascule qui cite ce crédit propose l'exemplaire de
+            sa facture, sous ce qui a été saisi et quand ; « Associer » est le rapprochement d'hier, sous le verrou de
+            l'onglet. Rien sur des ventes facturées qui ne sont pas lues en entier (le module rend null). */}
+        {rapprochementPropose && (
+          <RapprochementProposeVue
+            ligne={ligne}
+            propose={rapprochementPropose}
+            contexte={contexteDeLaProposition}
+            aTraiter={aTraiter && !fige && libre && !piecesRetenues}
+            occupe={occupe}
+            onAssocier={onRapprocher}
+          />
         )}
 
         {/* EN TÊTE : ce que le client a proposé pour ce mouvement, avant ce que le rapprochement propose de lui-même. Sur un
