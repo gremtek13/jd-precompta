@@ -434,9 +434,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   d'abord la 2035 déposée, à la répétition générale → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
   ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION », « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF
   D'UN MILLÉSIME (2035S1, S2 ET S6) », « 2035S-Q5 : LE PDF D'UN MILLÉSIME ABSENT S'IMPRIME AVEC UN AVERTISSEMENT ».
-- **Déclarations TNS** (ligne 27) : restent hors de l'estimation — médecins et chirurgiens-dentistes, retraite, revenus
-  de remplacement, ACRE, exonérations, outre-mer, régularisation ; DSCS proposée depuis la ligne 4 de la 2035-A, à
-  confirmer sur une première déclaration réelle.
+- **Déclarations TNS** (ligne 27) : les médecins de secteur 1 et 2 estimés depuis le 07/11/2026, contre l'oracle ;
+  restent hors de l'estimation — chirurgiens-dentistes (« taux dentiste »), retraite, revenus de remplacement, ACRE,
+  exonérations, outre-mer, activité créée dans l'année (une entrée en base chacun, que le moteur couvre sauf les DROM),
+  régularisation (aucune règle du moteur, et des échéances sans organisme ni année payée) ; DSCS proposée depuis la
+  ligne 4 de la 2035-A, à confirmer sur une première déclaration réelle → « LES COTISATIONS : CE QUE LE MOTEUR DE
+  L'URSSAF PERMET D'ESTIMER EN PLUS (LIGNE 27) ».
 - **CFE et CVAE** (ligne 48) : restent la saisie par exercice de la part déductible des loyers, du cadre des
   mono-établissements et de l'effectif (une table à créer), celle de BW, les dates d'activité d'un dossier qui cesse en
   cours d'année, le millésime 2027, le plafonnement de la CET (plus tard, 48-Q9) → « L'ANNEXE 2035-E SE TIRE DE LA 2035
