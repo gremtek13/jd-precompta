@@ -434,7 +434,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   prévisionnelle qu'aucun paiement ne
   date, et une autre se dit en attention (`lib/previsionnelles.ts`) ; un modèle par millésime, le dernier livré sans le sien
   (`lib/modeles2035.ts`) — 2035S-Q5, contre la recommandation : imprimé sur le dernier millésime, l'avertissement dit à l'écran et sur le PDF ; les quatre postes neufs sont entrés le 01/11/2026 dans les listes fermées du FEC (ci-dessous).
-  Restent CC, CL, DE et le reste de DB (2035S3 à S5, dont une migration additive, `saisies_2035`) : 2035S-Q1, regarder
+  CC, CL et ses « dont », DE et le reste de DB (2035S3 à S5) préparés le 07/11/2026 derrière `SAISIES_2035_EXPORTEES` baissé, la
+  migration additive `saisies_2035` à appliquer → « LA 2035 : LES SAISIES DU CABINET (2035S3 À S5) (PRÉPARÉE, PAS APPLIQUÉE) » ; 2035S-Q1, regarder
   d'abord la 2035 déposée, à la répétition générale → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
   ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION », « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF
   D'UN MILLÉSIME (2035S1, S2 ET S6) », « 2035S-Q5 : LE PDF D'UN MILLÉSIME ABSENT S'IMPRIME AVEC UN AVERTISSEMENT ».
