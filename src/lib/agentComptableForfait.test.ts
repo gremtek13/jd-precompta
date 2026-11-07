@@ -261,7 +261,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc FORFAIT sait encore échou
   })
 
   it('attrape un compte du dirigeant figé au 108000 en engagement', () => {
-    const derivee = planter(['    { compte: compteDuDirigeant(modele), sens: "credit" as const, montant, libelle },\n  ]\n}\n\n// Exactement l\'écriture attendue', '    { compte: "108000", sens: "credit" as const, montant, libelle },\n  ]\n}\n\n// Exactement l\'écriture attendue'])
+    const derivee = planter(['    { compte: compteDuDirigeant(modele), sens: "credit" as const, montant, libelle },\n  ]\n}\n\n// Exactement l\'écriture attendue', '    { compte: modele.plan.exploitant, sens: "credit" as const, montant, libelle },\n  ]\n}\n\n// Exactement l\'écriture attendue'])
     echoue(() => memeCadre7(derivee, ENGAGEMENT_455))
   })
 
