@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  NATURES, ORGANISMES, descriptionDite, estimerLaRegularisation, lireLaDescription, saisieDeLaDescription,
+  NATURES, ORGANISMES, anneesPayables, descriptionDite, estimerLaRegularisation, lireLaDescription, saisieDeLaDescription,
   type EntreeRegularisation,
 } from './regularisationDesCotisations'
+import { derniereDefinitionSql } from '../test/schema'
 import { estimerCotisationsUrssaf, type EstimationCotisations, type ResultatEstimation } from './voletSocialPamc'
 import { formatMoney } from './format'
 import type { CotisationDeclaree } from './types'
@@ -11,6 +13,15 @@ import type { CotisationDeclaree } from './types'
 // Des montants construits à la main : les définitives sont un total posé, jamais recalculé ici (le calcul est celui de
 // lib/voletSocialPamc.ts, éprouvé contre le moteur de l'Urssaf) ; les échéances, des appels ronds dont la somme se lit.
 const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261107170000_regularisation_des_cotisations.sql', import.meta.url), 'utf8')
+const RETOUR = readFileSync(new URL('../../supabase/preparees/retour/20261107170100_retour_regularisation_des_cotisations.sql', import.meta.url), 'utf8')
+const ESSAI = readFileSync(new URL('../../supabase/essais/regularisationDesCotisations.sql', import.meta.url), 'utf8')
+const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex')
+// Le texte d'une définition de la fonction du gel, de son `create or replace` à son `$$;` ; et son corps, ce que `prosrc` garde.
+const definitionDuGel = (texte: string) => {
+  const debut = texte.indexOf('create or replace function public.garder_cotisation_valide()')
+  return texte.slice(debut, texte.indexOf('$$;', debut) + 3)
+}
+const corps = (definition: string) => definition.slice(definition.indexOf('$$') + 2, definition.lastIndexOf('$$'))
 
 const definitivesDe = (total: number): ResultatEstimation => ({
   disponible: true,
@@ -55,6 +66,33 @@ describe('les listes fermées, confrontées à la migration', () => {
     expect(liste('cotisations_declarees_nature_liste')).toEqual([...NATURES])
     expect(MIGRATION).toContain('annee_payee >= extract(year from echeance)::integer - 5 and annee_payee <= extract(year from echeance)::integer + 1')
     expect(MIGRATION).toContain("nature is distinct from 'regularisation' or annee_payee is null or annee_payee <= extract(year from echeance)::integer")
+    // Les bornes que le module applique, celles de ces deux contraintes.
+    expect(anneesPayables('2026-03-05')).toEqual({ de: 2021, a: 2027 })
+    expect(anneesPayables('2026-03-05', 'regularisation')).toEqual({ de: 2021, a: 2026 })
+  })
+})
+
+describe('le gel : la description hors de sa comparaison, rien d’autre', () => {
+  // La fonction d'aujourd'hui, telle que l'export la porte (paiement_personnel_des_cotisations), et le corps que la
+  // production rendait le 07/11/2026.
+  const hier = `${derniereDefinitionSql('garder_cotisation_valide')}$$;`
+  it('la migration la remplace par le même texte, sa comparaison seule changée', () => {
+    expect(md5(corps(hier))).toBe('dfa6faabda81af162016e620ea6375fe')
+    const ligne = '      if to_jsonb(new) is distinct from to_jsonb(old) then\n'
+    expect(hier.split(ligne)).toHaveLength(2)
+    expect(definitionDuGel(MIGRATION)).toBe(hier.replace(ligne,
+      "      if (to_jsonb(new) - 'organisme' - 'annee_payee' - 'nature')\n"
+      + "         is distinct from (to_jsonb(old) - 'organisme' - 'annee_payee' - 'nature') then\n"))
+  })
+  it('la garde de tête exige le corps d’hier ; l’essai et la garde du retour, celui de la migration ; le retour remet celui d’hier', () => {
+    const neuf = md5(corps(definitionDuGel(MIGRATION)))
+    expect(MIGRATION).toContain(`is distinct from '${md5(corps(hier))}' then`)
+    expect(ESSAI).toContain(`'OK', '${neuf}')`)
+    expect(RETOUR).toContain(`is distinct from '${neuf}' then`)
+    expect(definitionDuGel(RETOUR)).toBe(hier)
+  })
+  it('ni barre oblique inverse ni retour chariot, dans la migration, son retour ni son essai', () => {
+    for (const texte of [MIGRATION, RETOUR, ESSAI]) expect(/[\\\r]/.test(texte)).toBe(false)
   })
 })
 
@@ -100,7 +138,7 @@ describe('la régularisation estimée de 2026', () => {
         echeance({ echeance: '2026-10-05', montant_appele: 300, organisme: 'urssaf', annee_payee: 2025, nature: 'regularisation' }),
         echeance({ echeance: '2026-04-05', montant_appele: 900, organisme: 'carpimko' }),
         echeance({ echeance: '2026-12-20', montant_appele: 410, organisme: 'urssaf', annee_payee: 2027, nature: 'provisionnelle' }),
-        echeance({ echeance: '2025-12-05', montant_appele: 380 }),
+        echeance({ echeance: '2025-12-05', montant_appele: 380, organisme: 'urssaf', annee_payee: 2025, nature: 'provisionnelle' }),
       ],
     })
     expect([r.appelees, r.regularisation]).toEqual([4800, 1200])
@@ -158,8 +196,22 @@ describe('ce qu’elle ne sait pas, elle le dit, sans chiffre', () => {
     expect(avec({ echeance: '2027-01-05', annee_payee: 2026, nature: 'provisionnelle' })).toEqual([`L’échéance du 05/01/2027 (${formatMoney(812)}) ne dit pas qui l’appelle : décris-la dans l’onglet Cotisations.`])
     expect(avec({ echeance: '2026-10-05', organisme: 'urssaf' })).toEqual([`L’échéance du 05/10/2026 (${formatMoney(812)}) ne dit pas l’année qu’elle paie : décris-la dans l’onglet Cotisations.`])
     expect(avec({ echeance: '2026-10-05', organisme: 'urssaf', annee_payee: 2026 })).toEqual([`L’échéance du 05/10/2026 (${formatMoney(812)}) ne dit pas sa nature : décris-la dans l’onglet Cotisations.`])
-    // Une échéance d'une autre année que rien ne rattache à 2026 ne se lit pas : l'estimation reste.
-    expect(estimerLaRegularisation(entree({ echeances: [...douzeProvisionnelles(), echeance({ echeance: '2027-01-05' })] })).etat).toBe('estimee')
+  })
+  it('sans année dite, une échéance que la base laisserait payer 2026 se nomme, de 2025 à 2031 ; au-delà, elle ne se lit pas', () => {
+    const avec = (e: Partial<CotisationDeclaree>) => estimerLaRegularisation(entree({ echeances: [...douzeProvisionnelles(), echeance({ montant_appele: 812, ...e })] }))
+    // Un appel de janvier 2027 (la régularisation de 2026, ou une provisionnelle en retard), un appel de décembre 2025 qui
+    // ouvre 2026, et tout ce que les bornes de la base admettent : de cinq ans avant l'année payée à un an après.
+    for (const date of ['2027-01-05', '2025-12-05', '2025-03-05', '2031-06-05']) {
+      const r = avec({ echeance: date })
+      expect(r.etat === 'inconnue' && r.manques).toEqual([expect.stringContaining('ne dit pas qui l’appelle : décris-la dans l’onglet Cotisations.')])
+    }
+    expect(avec({ echeance: '2027-10-05', organisme: 'urssaf', nature: 'regularisation' })).toMatchObject({
+      etat: 'inconnue', manques: [`L’échéance du 05/10/2027 (${formatMoney(812)}) ne dit pas l’année qu’elle paie : décris-la dans l’onglet Cotisations.`],
+    })
+    // Ce que les bornes écartent de 2026 ne se lit pas : deux ans avant, six ans après, une régularisation de l'année d'avant.
+    for (const e of [{ echeance: '2024-12-05' }, { echeance: '2032-01-05' }, { echeance: '2025-10-05', organisme: 'urssaf' as const, nature: 'regularisation' as const }]) {
+      expect(avec(e).etat).toBe('estimee')
+    }
   })
   it('un appel manque : aucune provisionnelle, ou une encore prévisionnelle', () => {
     expect(manques({ echeances: [] })).toEqual(['Aucune provisionnelle de l’Urssaf n’est saisie pour 2026 : l’appelé manque.'])

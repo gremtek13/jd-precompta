@@ -1,5 +1,7 @@
 import { useState, type CSSProperties } from 'react'
-import { jugerLaModification, saisieDe, type ContexteDesGestes, type SaisieDeLEcheance } from '../../lib/gestesDesEcheances'
+import {
+  ceQuiFigeLEcheance, jugerLaModification, saisieDe, type ContexteDesGestes, type SaisieDeLEcheance,
+} from '../../lib/gestesDesEcheances'
 import { formatDate } from '../../lib/format'
 import type { CotisationDeclaree } from '../../lib/types'
 import ChampsDeLaDescription from './ChampsDeLaDescription'
@@ -25,28 +27,34 @@ export default function ModifierEcheanceModal({
 }) {
   const [saisie, setSaisie] = useState<SaisieDeLEcheance>(() => saisieDe(cotisation))
   const jugement = jugerLaModification(cotisation, saisie, contexte)
+  // Figée par la validation ou payée depuis le compte personnel, l'échéance ne se DÉCRIT plus que (TNS-Q2) : ses montants,
+  // sa date et son marqueur restent tels qu'ils sont, et la fenêtre ne les offre pas. Sans la description, rien ne change.
+  const descriptionSeule = saisie.description !== undefined && ceQuiFigeLEcheance(cotisation, contexte) !== null
+  const figes = enCours || descriptionSeule
   const changer = (champ: keyof SaisieDeLEcheance) => (valeur: string | boolean) => setSaisie((s) => ({ ...s, [champ]: valeur }))
 
   return (
     <div style={overlayStyle}>
       <div className="card" role="dialog" aria-modal="true" aria-labelledby="titre-modifier-echeance" style={{ width: 'min(560px, 92vw)', maxHeight: '92vh', overflowY: 'auto' }}>
-        <h2 id="titre-modifier-echeance" style={{ marginTop: 0 }}>Modifier l’échéance du {formatDate(cotisation.echeance)}</h2>
+        <h2 id="titre-modifier-echeance" style={{ marginTop: 0 }}>
+          {descriptionSeule ? 'Décrire' : 'Modifier'} l’échéance du {formatDate(cotisation.echeance)}
+        </h2>
         <div className="field-row">
           <div className="field">
             <label htmlFor="modifier-echeance">Échéance</label>
-            <input id="modifier-echeance" type="date" value={saisie.echeance} disabled={enCours} onChange={(e) => changer('echeance')(e.target.value)} />
+            <input id="modifier-echeance" type="date" value={saisie.echeance} disabled={figes} onChange={(e) => changer('echeance')(e.target.value)} />
           </div>
           <div className="field">
             <label htmlFor="modifier-appele">Montant appelé</label>
-            <input id="modifier-appele" type="number" step="0.01" value={saisie.appele} disabled={enCours} onChange={(e) => changer('appele')(e.target.value)} />
+            <input id="modifier-appele" type="number" step="0.01" value={saisie.appele} disabled={figes} onChange={(e) => changer('appele')(e.target.value)} />
           </div>
           <div className="field">
             <label htmlFor="modifier-verse">Montant versé</label>
-            <input id="modifier-verse" type="number" step="0.01" value={saisie.verse} disabled={enCours} onChange={(e) => changer('verse')(e.target.value)} />
+            <input id="modifier-verse" type="number" step="0.01" value={saisie.verse} disabled={figes} onChange={(e) => changer('verse')(e.target.value)} />
           </div>
           <div className="field">
             <label htmlFor="modifier-csg">dont CSG-CRDS</label>
-            <input id="modifier-csg" type="number" step="0.01" value={saisie.csg} disabled={enCours} onChange={(e) => changer('csg')(e.target.value)} />
+            <input id="modifier-csg" type="number" step="0.01" value={saisie.csg} disabled={figes} onChange={(e) => changer('csg')(e.target.value)} />
           </div>
         </div>
         <p className="muted" style={{ marginTop: -8 }}>
@@ -55,7 +63,7 @@ export default function ModifierEcheanceModal({
         </p>
         <div className="field">
           <label>
-            <input type="checkbox" checked={saisie.previsionnel} disabled={enCours} onChange={(e) => changer('previsionnel')(e.target.checked)} style={{ marginRight: 6 }} />
+            <input type="checkbox" checked={saisie.previsionnel} disabled={figes} onChange={(e) => changer('previsionnel')(e.target.checked)} style={{ marginRight: 6 }} />
             Prévisionnel (estimation, pas encore un appel définitif)
           </label>
         </div>

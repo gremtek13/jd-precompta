@@ -22,6 +22,14 @@ import {
 // `garder_paiement_personnel` (les montants d'une échéance payée depuis le compte personnel ne changent pas tant que ce
 // paiement tient). Ces refus se disent ici avant le clic, sous les mots de la base.
 //
+// SA DESCRIPTION SEULE RESTE OUVERTE (TNS-Q2) : une échéance figée par la validation, ou payée depuis le compte personnel,
+// ne change plus ni de montants ni de date, mais son organisme, son année payée et sa nature se disent encore — la
+// migration `regularisation_des_cotisations` les sort de la comparaison du gel, et `garder_paiement_personnel` ne garde
+// que les montants et le dossier. Ni la 2035, ni l'instantané validé, ni une écriture ne les lisent, et l'estimation de
+// la régularisation d'une année validée, celle qui sert, les exige. « Modifier » l'admet alors pour la description seule,
+// la saisie portant les montants et la date tels qu'ils sont ; tout autre changement garde le refus d'hier. Sans la
+// description dans la saisie (le drapeau baissé, une ligne lue sans ses colonnes), rien ne change.
+//
 // SUR UNE ÉCHÉANCE RAPPROCHÉE, LA RÈGLE LA PLUS SÛRE QUE LA BASE PERMET : le rapprochement reste — le relevé fait foi, et la
 // 2035 compte le mouvement, à sa date et pour son montant (`cotisationsComptees`) ; un rapprochement à la main accepte déjà
 // un montant différent (807 € prélevés pour 800 € appelés). Mais rien ne passe qui le rendrait INÉCRIVABLE : des montants
@@ -195,13 +203,8 @@ export type JugementDeLaModification =
 export function jugerLaModification(
   c: CotisationDeclaree, saisie: SaisieDeLEcheance, ctx: ContexteDesGestes,
 ): JugementDeLaModification {
-  const figee = ctx.figee(c)
-  if (figee) return { refus: { message: `${figee} : cette échéance ne change plus.` } }
-  // Les montants seuls sont gardés par la base ; la date non, mais l'écriture du paiement porte la date de l'échéance dans
-  // son libellé : changée, elle serait « à reprendre ». Le paiement se retire d'abord, dans les deux cas.
-  if (c.paiement_personnel_le) {
-    return { refus: { message: `${refusDuPaiementPersonnel(c.paiement_personnel_le)} Retire d’abord ce paiement.` } }
-  }
+  const verrou = ceQuiFigeLEcheance(c, ctx)
+  if (verrou) return jugerLaDescriptionSeule(c, saisie, verrou)
   const lue = lireLaSaisie(saisie)
   if ('refus' in lue) return lue
   const v = lue.valeurs
@@ -273,6 +276,48 @@ export function jugerLaModification(
     }
   }
   return { valeurs: v, effets, reecriture }
+}
+
+/**
+ * Ce qui fige les montants et la date d'une échéance, dit sous les mots de la base : l'exercice validé, ou son paiement
+ * depuis le compte personnel ; nul quand rien ne les fige.
+ */
+export function ceQuiFigeLEcheance(c: CotisationDeclaree, ctx: ContexteDesGestes): { refus: string; effet: string } | null {
+  const figee = ctx.figee(c)
+  if (figee) {
+    return {
+      refus: `${figee} : cette échéance ne change plus.`,
+      effet: `${figee} : ses montants et sa date restent figés ; sa description seule change, que ni la 2035 ni l’exercice validé ne lisent.`,
+    }
+  }
+  // Les montants seuls sont gardés par la base ; la date non, mais l'écriture du paiement porte la date de l'échéance dans
+  // son libellé : changée, elle serait « à reprendre ». Le paiement se retire d'abord, dans les deux cas.
+  if (c.paiement_personnel_le) {
+    return {
+      refus: `${refusDuPaiementPersonnel(c.paiement_personnel_le)} Retire d’abord ce paiement.`,
+      effet: `Elle est payée depuis le compte personnel, le ${formatDate(c.paiement_personnel_le)} : ses montants et sa date restent ceux de ce paiement ; sa description seule change, que son écriture ne lit pas.`,
+    }
+  }
+  return null
+}
+
+// Une échéance figée ou payée depuis le compte personnel : sa description seule change, la saisie portant ses montants,
+// sa date et son marqueur tels qu'ils sont. Tout le reste garde le refus d'hier, sous les mots de la base.
+function jugerLaDescriptionSeule(
+  c: CotisationDeclaree, saisie: SaisieDeLEcheance, verrou: { refus: string; effet: string },
+): JugementDeLaModification {
+  if (!saisie.description) return { refus: { message: verrou.refus } }
+  const reste = lireLaSaisie({ ...saisie, description: undefined })
+  if ('refus' in reste || !memesValeurs(c, reste.valeurs)) return { refus: { message: verrou.refus } }
+  const description = lireLaDescription(saisie.description, c.echeance)
+  if ('refus' in description) return { refus: { message: description.refus } }
+  const v: ValeursDeLEcheance = { ...reste.valeurs, ...description.valeurs }
+  if (!descriptionChangee(c, v)) return { refus: { message: 'Rien n’a changé.', discret: true } }
+  return {
+    valeurs: v,
+    effets: [verrou.effet, `Elle se dit désormais : ${descriptionDite({ ...c, ...v })} — l’estimation de la régularisation la lit ainsi.`],
+    reecriture: null,
+  }
 }
 
 function majuscule(s: string): string {
@@ -368,10 +413,19 @@ export function confirmationDeLaReunion(
   gardee: CotisationDeclaree, retiree: CotisationDeclaree, avisDeLaRetiree: string | null,
 ): string {
   const v = valeursReunies(gardee, retiree)
-  return `L’échéance du ${formatDate(gardee.echeance)} est gardée, à sa date, et portée à ${montantsDits(v)}. `
+  const decrite = { ...gardee, ...descriptionReunie(gardee, retiree) }
+  // Ce que la gardée perd de sa description (TNS-Q2) : ce que les deux ne disent pas à l'identique, nommé avant le clic.
+  const perdue = lueAvecSaDescription(gardee) && descriptionChangee(gardee, decrite)
+    ? ` Sa description « ${descriptionDite(gardee)} » devient « ${descriptionDite(decrite)} » : seul reste ce que les deux disent à l’identique.`
+    : ''
+  // L'organisme dit des deux côtés, et le même (deux organismes dits et différents se refusent) : l'application le connaît.
+  const organisme = gardee.organisme != null && gardee.organisme === retiree.organisme
+    ? ` Toutes deux disent ${descriptionDite({ organisme: gardee.organisme })} : ne les réunis que si un même prélèvement les paie.`
+    : ' Ne réunis que deux échéances d’un même organisme qu’un même prélèvement paie : l’application ne connaît pas l’organisme d’une échéance.'
+  return `L’échéance du ${formatDate(gardee.echeance)} est gardée, à sa date, et portée à ${montantsDits(v)}.${perdue} `
     + `Celle du ${formatDate(retiree.echeance)} (${montantsDits(retiree)}) est retirée : aucun mouvement ne la paie.`
     + (avisDeLaRetiree ? ` Son avis « ${avisDeLaRetiree} » redevient non rattaché.` : '')
-    + ' Ne réunis que deux échéances d’un même organisme qu’un même prélèvement paie : l’application ne connaît pas l’organisme d’une échéance.'
+    + organisme
 }
 
 /** Une réunion arrêtée entre ses deux écritures : la gardée porte la somme, l'autre est restée. */
