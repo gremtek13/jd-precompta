@@ -341,12 +341,15 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   }
 
   // UNE MISE À JOUR QUI RETIENT LA VERSION LUE : l'échéance n'est écrite que si elle est encore telle que l'onglet l'a lue
-  // — ses montants, sa date, son marqueur, sans paiement personnel. Une ligne rendue dit qu'elle l'a été ; aucune, qu'elle a
+  // — ses montants, sa date, son marqueur, son paiement personnel (aucun, ou le même : la description seule d'une échéance
+  // payée depuis le compte personnel se dit encore, TNS-Q2). Une ligne rendue dit qu'elle l'a été ; aucune, qu'elle a
   // changé depuis, ou que la base ne l'a pas laissée écrire (une mise à jour que la policy écarte ne lève rien).
   async function mettreAJourLEcheance(c: CotisationDeclaree, valeurs: ValeursDeLEcheance): Promise<string | null> {
     let requete = supabase.from('cotisations_declarees').update(valeurs)
       .eq('id', c.id).eq('echeance', c.echeance).eq('montant_appele', c.montant_appele).eq('previsionnel', c.previsionnel)
-      .is('paiement_personnel_le', null)
+    requete = c.paiement_personnel_le == null
+      ? requete.is('paiement_personnel_le', null)
+      : requete.eq('paiement_personnel_le', c.paiement_personnel_le)
     requete = c.montant_verse == null ? requete.is('montant_verse', null) : requete.eq('montant_verse', c.montant_verse)
     requete = c.montant_csg_crds == null ? requete.is('montant_csg_crds', null) : requete.eq('montant_csg_crds', c.montant_csg_crds)
     // La description lue se retient aussi (TNS-Q2), quand les colonnes sont dans la lecture : une échéance décrite autrement
@@ -1197,7 +1200,21 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
                       </td>
                       <td className="td-boutons" onClick={(e) => e.stopPropagation()}>
                         {figee
-                          ? <span className="muted" title={`${figee} : cette échéance ne se supprime plus.`}>Figée</span>
+                          ? (
+                            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                              <span className="muted" title={`${figee} : cette échéance ne se supprime plus.`}>Figée</span>
+                              {/* Sa description seule se dit encore (TNS-Q2) : sous le drapeau, sur une échéance lue avec ses
+                                  colonnes ; « Modifier » n'y admet rien d'autre. */}
+                              {!gestesSuspendus && REGULARISATION_DES_COTISATIONS_EXPORTEE && lueAvecSaDescription(c) && (
+                                <button
+                                  type="button" className="btn btn-outline btn-sm" disabled={enCours || loading}
+                                  onClick={() => { setErreurModification(null); setModificationDe(c.id) }}
+                                >
+                                  Décrire
+                                </button>
+                              )}
+                            </span>
+                          )
                           : (
                             <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                               {/* Offerts sur ce que l'onglet a lu en entier seulement, comme le paiement personnel. */}

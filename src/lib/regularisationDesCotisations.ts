@@ -21,9 +21,12 @@
 //   - le revenu de N n'est pas arrêté tant que l'année n'est pas finie (ni ses appels : l'Urssaf ajuste les provisionnelles
 //     de N après la déclaration du revenu de N − 1) ;
 //   - les cotisations définitives ne s'estiment pas (le motif du moteur : profession, plafond, relevé SNIR…) ;
-//   - une échéance qui POURRAIT payer N à l'Urssaf ne dit pas tout ce qu'il faut pour en juger : datée de N ou dite de
-//     l'année N, sans organisme, ou de l'Urssaf sans son année ou sa nature. Une échéance d'une caisse de retraite, elle,
-//     se juge à son seul organisme ; une échéance d'une autre année que rien ne rattache à N ne se lit pas ;
+//   - une échéance qui POURRAIT payer N à l'Urssaf ne dit pas tout ce qu'il faut pour en juger : dite de l'année N, ou,
+//     sans année dite, d'une date que la base laisserait payer N — de N − 1 (un appel de décembre ouvre l'année suivante)
+//     à N + 5 (la régularisation de N, appelée en N + 1, ou reportée par un échéancier), sous les bornes de
+//     `cotisations_declarees_annee_payee_bornes`, une régularisation jamais avant son année —, sans organisme, ou de
+//     l'Urssaf sans son année ou sa nature. Une échéance d'une caisse de retraite, elle, se juge à son seul organisme ;
+//     une échéance que ces bornes écartent de N ne se lit pas ;
 //   - un appel manque : aucune provisionnelle ni aucun acompte de l'Urssaf pour N, ou l'un d'eux encore « prévisionnel »
 //     (l'estimation du cabinet d'un appel à venir — rien à voir avec une provisionnelle, que l'Urssaf appelle).
 // Et ce qu'elle sait mais qui peut bouger se dit À CÔTÉ du chiffre : une 2035 de N pas encore validée (l'estimation suit
@@ -86,6 +89,16 @@ export function saisieDeLaDescription(c: Partial<DescriptionDeLEcheance>): Saisi
   return { organisme: c.organisme ?? '', annee: c.annee_payee == null ? '' : String(c.annee_payee), nature: c.nature ?? '' }
 }
 
+/**
+ * Les années qu'une échéance de cette date peut payer, sous les bornes de la base (`cotisations_declarees_annee_payee_bornes`) :
+ * de cinq ans avant l'année de son échéance à un an après. Une régularisation ne va pas au-delà de l'année de son échéance
+ * (`cotisations_declarees_regularisation_apres_son_annee`).
+ */
+export function anneesPayables(echeance: string, nature: NatureCotisation | null = null): { de: number; a: number } {
+  const an = anneeDe(echeance)
+  return { de: an - 5, a: nature === 'regularisation' ? an : an + 1 }
+}
+
 const estOrganisme = (v: string): v is OrganismeCotisation => (ORGANISMES as readonly string[]).includes(v)
 const estNature = (v: string): v is NatureCotisation => (NATURES as readonly string[]).includes(v)
 
@@ -106,10 +119,11 @@ export function lireLaDescription(s: SaisieDeLaDescription, echeance: string): {
     anneePayee = Number(annee)
     // Sans date d'échéance lisible, les bornes attendent : la date se refuse d'elle-même, plus haut dans la saisie.
     const an = /^\d{4}-\d{2}-\d{2}$/.test(echeance) ? anneeDe(echeance) : null
-    if (an !== null && (anneePayee < an - 5 || anneePayee > an + 1)) {
-      return { refus: `L’année payée d’une échéance de ${an} va de ${an - 5} à ${an + 1}.` }
+    const bornes = an === null ? null : anneesPayables(echeance)
+    if (an !== null && bornes !== null && (anneePayee < bornes.de || anneePayee > bornes.a)) {
+      return { refus: `L’année payée d’une échéance de ${an} va de ${bornes.de} à ${bornes.a}.` }
     }
-    if (an !== null && nature === 'regularisation' && anneePayee > an) {
+    if (an !== null && nature === 'regularisation' && anneePayee > anneesPayables(echeance, 'regularisation').a) {
       return { refus: `Une régularisation de ${anneePayee} ne s’appelle pas en ${an} : elle suit son année.` }
     }
   }
@@ -170,11 +184,16 @@ const decrite = (c: CotisationDeclaree) => c.organisme != null && c.annee_payee 
 const parOrdre = (a: CotisationDeclaree, b: CotisationDeclaree) =>
   a.echeance < b.echeance ? -1 : a.echeance > b.echeance ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 
-/** Une échéance qui pourrait payer N à l'Urssaf : datée de N ou dite de N, et d'aucun autre organisme connu. */
+/**
+ * Une échéance qui pourrait payer N à l'Urssaf, d'aucun autre organisme connu : dite de N, ou, sans année dite, d'une date
+ * dont la base admettrait qu'elle paie N (`anneesPayables`) — jamais seulement datée de N : la régularisation de N se paie
+ * en N + 1, et un appel de décembre N − 1 peut ouvrir N.
+ */
 function pourraitPayerNALUrssaf(c: CotisationDeclaree, annee: number): boolean {
   if (c.organisme != null && c.organisme !== 'urssaf') return false
   if (c.annee_payee != null) return c.annee_payee === annee
-  return anneeDe(c.echeance) === annee
+  const { de, a } = anneesPayables(c.echeance, c.nature)
+  return annee >= de && annee <= a
 }
 
 export function estimerLaRegularisation(e: EntreeRegularisation): RegularisationEstimee {
