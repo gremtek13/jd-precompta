@@ -20,6 +20,7 @@ import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SAISIES_2035_EXPORTEES } from './saisies2035'
+import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
@@ -193,6 +194,22 @@ export function auPlanDesFacturesImportees(table: string, prevues: boolean): boo
   return prevues || !TABLES_DES_FACTURES_IMPORTEES.includes(table)
 }
 
+// LES PARAMÈTRES DES COTISATIONS (ligne 27, TNS-Q1 et TNS-Q4 ; migration `parametres_des_cotisations`, PRÉPARÉE, pas
+// appliquée) : le début d'activité d'un dossier (`debuts_d_activite`, une ligne au plus) et l'ACRE et le taux dentiste
+// d'un exercice (`parametres_des_cotisations`). Sous le drapeau de la migration (`PARAMETRES_DES_COTISATIONS_EXPORTES`,
+// src/lib/parametresDesCotisations.ts), baissé : la production n'a pas les tables, et les lire ferait échouer toute
+// sauvegarde. Le même drapeau que l'écran : une saisie que Clôture écrirait sans que la sauvegarde la lise se perdrait à la
+// restauration. Leurs relations au dossier (cascade), leurs rangs (avant les exercices validés, que le gel des paramètres
+// d'un exercice exige, et avant les saisies de la 2035, qui les suivent), leurs chemins ; aucune vague ; leur clé
+// est la commune, `id`. sauvegardeParametresDesCotisations.test.ts éprouve le plan prévu et le plan du jour, sous chaque
+// état du drapeau.
+export const TABLES_DES_PARAMETRES_DES_COTISATIONS: readonly string[] = ['debuts_d_activite', 'parametres_des_cotisations']
+
+/** Une table au plan, côté paramètres des cotisations : toutes, sauf les siennes tant que leur migration n'est pas exportée. */
+export function auPlanDesParametresDesCotisations(table: string, exportees: boolean): boolean {
+  return exportees || !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -206,6 +223,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
     && auPlanDesSaisies2035(table, SAISIES_2035_EXPORTEES)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
+    && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -364,6 +382,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
   { enfant: 'factures_importees', parent: 'imports_factures', colonne: 'import_id', aLaSuppression: 'bloque' },
   { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'origine_id', aLaSuppression: 'bloque' },
+  { enfant: 'debuts_d_activite', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'parametres_des_cotisations', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'mouvements_cca', parent: 'comptes_courants_associes', colonne: 'compte_id', aLaSuppression: 'cascade' },
   { enfant: 'natures_immobilisation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'notes_internes', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'cascade' },
@@ -737,6 +757,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'contacts',
   'parametres_facturation',
   'designations_des_pieces',
+  'debuts_d_activite',
+  'parametres_des_cotisations',
   'saisies_2035',
   'exercices_valides',
 ]
@@ -1201,6 +1223,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   saisies_2035: { acces: 'direct' },
   imports_factures: { acces: 'direct' },
   factures_importees: { acces: 'direct' },
+  debuts_d_activite: { acces: 'direct' },
+  parametres_des_cotisations: { acces: 'direct' },
   notes_internes: { acces: 'direct' },
   packs: { acces: 'direct' },
   piece_commentaires: { acces: 'direct' },

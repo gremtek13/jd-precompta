@@ -21,6 +21,7 @@ const infirmiere: EntreeEstimation = {
   recettesBrutes: 80_000,
   honorairesConventionnes: 80_000,
   depassements: 0,
+  parametres: { tenus: false },
 }
 
 describe('les cotisations Urssaf, contre le moteur de l’Urssaf', () => {
@@ -50,6 +51,34 @@ describe('les cotisations Urssaf, contre le moteur de l’Urssaf', () => {
     expect(CAS_REFERENCE.some((c) => c.entree.profession === 'medecin_secteur_2' && c.attendu.priseEnChargeMaladie > 0)).toBe(false)
   })
 
+  // Les paramètres des cotisations (TNS-Q1, TNS-Q4) : l'année de la création, l'ACRE sous ses deux plafonds
+  // (le tout avant 2026, le quart depuis) et sur l'année qui suit, le chirurgien-dentiste.
+  it('porte l’année de la création, l’ACRE et le chirurgien-dentiste', () => {
+    const creations = CAS_REFERENCE.filter((c) => c.attendu.plafondProratise < c.attendu.plafond)
+    expect(creations.length).toBeGreaterThanOrEqual(30)
+    expect(creations.some((c) => c.attendu.curps > 0)).toBe(false)
+    const acres = CAS_REFERENCE.filter((c) => c.attendu.acreAppliquee)
+    expect(acres.length).toBeGreaterThanOrEqual(30)
+    expect(acres.some((c) => c.entree.parametres.debutActivite < '2026-01-01')).toBe(true)
+    expect(acres.some((c) => c.entree.parametres.debutActivite >= '2026-01-01')).toBe(true)
+    expect(acres.some((c) => c.entree.parametres.debutActivite.slice(0, 4) !== String(c.entree.annee))).toBe(true)
+    expect(CAS_REFERENCE.some((c) => c.entree.parametres.acre === true && !c.attendu.acreAppliquee)).toBe(true)
+    const dentistes = CAS_REFERENCE.filter((c) => c.entree.profession === 'chirurgien_dentiste')
+    expect(dentistes.length).toBeGreaterThanOrEqual(24)
+    expect(new Set(dentistes.map((c) => c.entree.parametres.tauxDentiste))).toEqual(new Set([0, 0.25, 0.35, 0.47, 0.6, 1]))
+  })
+
+  // Le drapeau baissé : l'estimation d'hier, celle d'une activité ouverte avant l'exercice et sans ACRE.
+  it('sans paramètres tenus, rend l’estimation d’une activité ouverte avant l’exercice', () => {
+    const davant = CAS_REFERENCE.filter(
+      (c) => c.entree.profession !== 'chirurgien_dentiste' && c.entree.parametres.debutActivite === '2015-01-01',
+    )
+    expect(davant.length).toBeGreaterThanOrEqual(170)
+    for (const { entree, attendu } of davant) {
+      expect(estimerCotisationsUrssaf({ ...entree, parametres: { tenus: false } })).toEqual({ disponible: true, estimation: attendu })
+    }
+  })
+
   it.each(CAS_REFERENCE.map((c) => [c.cas, c] as const))('%s', (_nom, { entree, attendu }) => {
     const resultat = estimerCotisationsUrssaf(entree)
     expect(resultat).toEqual({ disponible: true, estimation: attendu })
@@ -61,6 +90,8 @@ describe('les cotisations Urssaf, contre le moteur de l’Urssaf', () => {
       disponible: true,
       estimation: {
         plafond: 47_100,
+        plafondProratise: 47_100,
+        acreAppliquee: false,
         abattement: 15_600,
         assiette: 44_400,
         csgCrdsDeductible: 3_019,
@@ -97,8 +128,45 @@ describe('ce que l’estimation refuse, et dit', () => {
     expect(motif({ profession: null })).toMatch(/Choisissez la profession/)
   })
 
-  it('pour un chirurgien-dentiste, dont la prise en charge demande le « taux dentiste »', () => {
-    expect(motif({ profession: 'chirurgien_dentiste' })).toMatch(/taux dentiste/)
+  it('pour un chirurgien-dentiste, tant que l’application ne tient pas le « taux dentiste »', () => {
+    expect(motif({ profession: 'chirurgien_dentiste' })).toMatch(/taux dentiste.*ne tient pas encore/)
+  })
+
+  describe('les paramètres tenus, chacun dit ou réclamé', () => {
+    const tenus = (p: Partial<{ debutActivite: string | null; acre: boolean | null; tauxDentiste: number | null }>) => ({
+      parametres: { tenus: true as const, debutActivite: '2015-01-01', acre: null, tauxDentiste: null, ...p },
+    })
+
+    it('le taux dentiste d’un chirurgien-dentiste, à saisir tant qu’il manque', () => {
+      expect(motif({ profession: 'chirurgien_dentiste', ...tenus({}) })).toMatch(/Saisissez le « taux dentiste » du relevé SNIR 2025/)
+      expect(motif({ profession: 'chirurgien_dentiste', ...tenus({ tauxDentiste: 0.35 }) })).toBeNull()
+      expect(motif({ profession: 'chirurgien_dentiste', ...tenus({ tauxDentiste: 0 }) })).toBeNull()
+    })
+
+    it('un taux dentiste hors de 0 à 1, ou plus fin que le centième', () => {
+      for (const tauxDentiste of [-0.01, 1.01, 0.355]) {
+        expect(motif({ profession: 'chirurgien_dentiste', ...tenus({ tauxDentiste }) })).toMatch(/entre 0 et 1, au centième/)
+      }
+    })
+
+    it('le taux dentiste n’est demandé qu’au chirurgien-dentiste', () => {
+      expect(motif(tenus({}))).toBeNull()
+    })
+
+    it('la date de début d’activité, toujours', () => {
+      expect(motif(tenus({ debutActivite: null }))).toMatch(/date de début d’activité/)
+      expect(motif(tenus({ debutActivite: '2025-02-30' }))).toMatch(/illisible/)
+      expect(motif(tenus({ debutActivite: '2026-01-01' }))).toMatch(/commence après l’exercice 2025/)
+    })
+
+    it('l’ACRE, dite seulement quand elle peut jouer : moins d’un an d’activité au 1er janvier', () => {
+      expect(motif(tenus({ debutActivite: '2025-07-01' }))).toMatch(/bénéficie de l’ACRE en 2025/)
+      // « Un an » vaut 365 jours, comme dans le moteur : 2024 étant bissextile, le 2 janvier 2024 est déjà à un an.
+      expect(motif(tenus({ debutActivite: '2024-01-03' }))).toMatch(/bénéficie de l’ACRE en 2025/)
+      expect(motif(tenus({ debutActivite: '2024-01-02' }))).toBeNull()
+      expect(motif(tenus({ debutActivite: '2024-01-01' }))).toBeNull()
+      expect(motif(tenus({ debutActivite: '2025-07-01', acre: false }))).toBeNull()
+    })
   })
 
   it('estime les médecins de secteur 1 et de secteur 2', () => {

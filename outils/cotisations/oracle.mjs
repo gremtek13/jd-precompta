@@ -15,10 +15,12 @@
 //
 // Ce que les cas NE couvrent PAS, parce que l'application ne l'estime pas (relevé règle par règle le
 // 07/11/2026, HISTORIQUE.md « LES COTISATIONS : CE QUE LE MOTEUR DE L'URSSAF PERMET D'ESTIMER EN PLUS ») :
-// les chirurgiens-dentistes (leur prise en charge demande le « taux dentiste » du relevé SNIR, que
-// l'application ne tient pas), les revenus de remplacement, l'ACRE, les exonérations (invalidité),
-// l'outre-mer, une activité créée dans l'année, et la retraite (appelée par la caisse, pas par
-// l'Urssaf). Les médecins de secteur 1 et de secteur 2 y sont depuis le 07/11/2026.
+// les revenus de remplacement, les exonérations (invalidité), l'outre-mer, et la retraite (appelée par
+// la caisse, pas par l'Urssaf). Les médecins de secteur 1 et de secteur 2 y sont depuis le 07/11/2026 ;
+// le même jour (TNS-Q1, TNS-Q4), l'activité créée dans l'année (« entreprise . date de création » : le
+// plafond proratisé, pas de CURPS), l'ACRE de l'année de création et de la suivante (« exonérations .
+// Acre », sa proratisation) et le chirurgien-dentiste (« assiette participation CPAM . taux dentiste »),
+// HISTORIQUE.md « LES PARAMÈTRES DES COTISATIONS : LE DÉBUT D'ACTIVITÉ, L'ACRE ET LE TAUX DENTISTE ».
 import Engine from 'publicodes'
 import regles from 'modele-ti'
 import { readFileSync } from 'node:fs'
@@ -44,19 +46,32 @@ const METIERS = {
   sage_femme: { metier: 'sage-femme' },
   medecin_secteur_1: { metier: 'médecin', secteur: 'S1' },
   medecin_secteur_2: { metier: 'médecin', secteur: 'S2' },
+  chirurgien_dentiste: { metier: 'chirurgien-dentiste' },
 }
+// Une activité ouverte avant l'année, comme les cas d'avant le 07/11/2026 : ni plafond proratisé, ni ACRE
+// possible, la CURPS due.
+const OUVERTE_AVANT = '2015-01-01'
+// La date du moteur (JJ/MM/AAAA) d'une date civile de l'application (AAAA-MM-JJ).
+const dateDuMoteur = (iso) => iso.split('-').reverse().join('/')
 // Les charges ne comptent que pour faire du chiffre d'affaires un revenu brut : le moteur prend
 // « chiffre d'affaires − charges », l'application le revenu brut social de la 2035.
 const CHARGES = 20_000
 
-function evaluer({ annee, profession, remplacant, revenuBrutSocial, partConventionnee, partDepassements }) {
+function evaluer({
+  annee, profession, remplacant, revenuBrutSocial, partConventionnee, partDepassements,
+  debutActivite = OUVERTE_AVANT, acre = null, tauxDentiste = null,
+}) {
   const recettesBrutes = revenuBrutSocial + CHARGES
   const honorairesConventionnes = Math.round(recettesBrutes * partConventionnee)
   const depassements = Math.round(honorairesConventionnes * partDepassements)
   moteur.setSituation({
     date: `01/01/${annee}`,
-    // Une activité ouverte avant l'année : la CURPS n'est pas due l'année de la création.
-    'entreprise . date de création': '01/01/2015',
+    // Le début d'activité du dossier : l'année de la création, le plafond se proratise et la CURPS n'est pas due.
+    'entreprise . date de création': dateDuMoteur(debutActivite),
+    // L'ACRE de l'exercice : posée seulement quand le cas la dit (le moteur la croit absente sans elle).
+    ...(acre === null ? {} : { 'indépendant . cotisations et contributions . cotisations . exonérations . Acre': acre ? 'oui' : 'non' }),
+    // Le « taux dentiste » du relevé SNIR, d'un chirurgien-dentiste seul.
+    ...(tauxDentiste === null ? {} : { [P + 'assiette participation CPAM . taux dentiste']: String(tauxDentiste) }),
     'entreprise . activité': "'libérale'",
     'entreprise . activité . libérale . réglementée': 'oui',
     'indépendant . profession libérale . réglementée . métier': `'santé . ${METIERS[profession].metier}'`,
@@ -80,6 +95,10 @@ function evaluer({ annee, profession, remplacant, revenuBrutSocial, partConventi
   }
   const attendu = {
     plafond: valeur('plafond sécurité sociale . annuel'),
+    // Le plafond aux jours d'activité de l'année : lui seul, l'année de la création, sous le plafond annuel.
+    plafondProratise: valeur('indépendant . PASS proratisé'),
+    // L'ACRE joue-t-elle sur l'année ? Dite, elle ne joue qu'à moins d'un an d'activité au 1er janvier.
+    acreAppliquee: moteur.evaluate(C + 'cotisations . exonérations . Acre').nodeValue === true,
     abattement: valeur(C + 'assiette CSG-CRDS . abattement'),
     assiette: valeur(C + 'assiette sociale'),
     csgCrdsDeductible: valeur(C + 'CSG-CRDS . déductible'),
@@ -109,6 +128,7 @@ function evaluer({ annee, profession, remplacant, revenuBrutSocial, partConventi
       recettesBrutes,
       honorairesConventionnes,
       depassements,
+      parametres: { tenus: true, debutActivite, acre, tauxDentiste },
     },
     attendu,
   }
@@ -144,6 +164,42 @@ for (const annee of [2025, 2026]) {
   }
   cas.push({ nom: `${annee}, 60000 €, médecin secteur 1 remplaçant`, annee, profession: 'medecin_secteur_1', remplacant: true, revenuBrutSocial: 60_000, partConventionnee: 1, partDepassements: 0 })
   cas.push({ nom: `${annee}, 130000 €, médecin secteur 2 tout conventionné`, annee, profession: 'medecin_secteur_2', remplacant: false, revenuBrutSocial: 130_000, partConventionnee: 1, partDepassements: 0 })
+
+  // L'ANNÉE DE LA CRÉATION (TNS-Q1) : le plafond proratisé aux jours d'activité (le taux de maladie, ses trois
+  // plafonds, les allocations familiales), la CURPS absente — sauf une création au 1er janvier, qui fait l'année entière.
+  const base = { annee, remplacant: false, partConventionnee: 1, partDepassements: 0 }
+  for (const debut of [`${annee}-01-01`, `${annee}-03-15`, `${annee}-07-01`, `${annee}-12-31`]) {
+    for (const revenuBrutSocial of [8_000, 30_000, 60_000, 150_000]) {
+      cas.push({ ...base, nom: `${annee}, ${revenuBrutSocial} €, auxiliaire médical créé le ${debut}`, profession: 'auxiliaire_medical', revenuBrutSocial, debutActivite: debut, acre: false })
+    }
+  }
+  for (const revenuBrutSocial of [60_000, 150_000]) {
+    cas.push({ ...base, nom: `${annee}, ${revenuBrutSocial} €, médecin secteur 1 créé le ${annee}-03-15`, profession: 'medecin_secteur_1', revenuBrutSocial, debutActivite: `${annee}-03-15`, acre: false })
+  }
+  // L'ACRE (TNS-Q4) : l'année de la création, puis la suivante au prorata des jours qui restent ; le quart des
+  // cotisations au plus depuis les créations de 2026, toutes avant ; sous 75 % du plafond proratisé, entre 75 et
+  // 100 % (dégressive), au-dessus (nulle).
+  const ACRE_REVENUS = [8_000, 15_000, 20_000, 25_000, 30_000, 35_000, 45_000, 60_000]
+  for (const revenuBrutSocial of ACRE_REVENUS) {
+    cas.push({ ...base, nom: `${annee}, ${revenuBrutSocial} €, ACRE, créé le ${annee}-07-01`, profession: 'auxiliaire_medical', revenuBrutSocial, debutActivite: `${annee}-07-01`, acre: true })
+    cas.push({ ...base, nom: `${annee}, ${revenuBrutSocial} €, ACRE, créé le ${annee - 1}-07-01`, profession: 'auxiliaire_medical', revenuBrutSocial, debutActivite: `${annee - 1}-07-01`, acre: true })
+  }
+  // Un an pile avant l'exercice : l'ACRE ne joue plus, même dite.
+  cas.push({ ...base, nom: `${annee}, 30000 €, ACRE dite, créé un an avant`, profession: 'auxiliaire_medical', revenuBrutSocial: 30_000, debutActivite: `${annee - 1}-01-01`, acre: true })
+  cas.push({ ...base, nom: `${annee}, 30000 €, ACRE dite, créé un an et un jour avant`, profession: 'auxiliaire_medical', revenuBrutSocial: 30_000, debutActivite: `${annee - 1}-01-02`, acre: true })
+  for (const revenuBrutSocial of [30_000, 60_000]) {
+    cas.push({ ...base, nom: `${annee}, ${revenuBrutSocial} €, médecin secteur 1, ACRE, créé le ${annee}-03-15`, profession: 'medecin_secteur_1', revenuBrutSocial, debutActivite: `${annee}-03-15`, acre: true })
+  }
+  // LE CHIRURGIEN-DENTISTE (TNS-Q1) : la prise en charge sur la part conventionnée divisée par 1 + le taux dentiste,
+  // ses dépassements ignorés ; la CURPS à 0,3 %.
+  for (const tauxDentiste of [0, 0.35, 1]) {
+    for (const revenuBrutSocial of [0, 30_000, 80_000, 200_000]) {
+      cas.push({ ...base, nom: `${annee}, ${revenuBrutSocial} €, chirurgien-dentiste au taux ${tauxDentiste}`, profession: 'chirurgien_dentiste', revenuBrutSocial, tauxDentiste })
+    }
+  }
+  cas.push({ ...base, nom: `${annee}, 80000 €, chirurgien-dentiste, 80 % conventionné dont 20 % de dépassements`, profession: 'chirurgien_dentiste', revenuBrutSocial: 80_000, partConventionnee: 0.8, partDepassements: 0.2, tauxDentiste: 0.47 })
+  cas.push({ ...base, nom: `${annee}, 80000 €, chirurgien-dentiste remplaçant`, profession: 'chirurgien_dentiste', remplacant: true, revenuBrutSocial: 80_000, tauxDentiste: 0.6 })
+  cas.push({ ...base, nom: `${annee}, 80000 €, chirurgien-dentiste créé le ${annee}-07-01, ACRE`, profession: 'chirurgien_dentiste', revenuBrutSocial: 80_000, debutActivite: `${annee}-07-01`, acre: true, tauxDentiste: 0.25 })
 }
 
 const lignes = cas.map(({ nom, ...c }) => `  ${JSON.stringify({ cas: nom, ...evaluer(c) })},`)
@@ -156,16 +212,19 @@ export interface CasReference {
   cas: string
   entree: {
     annee: number
-    profession: 'auxiliaire_medical' | 'sage_femme' | 'medecin_secteur_1' | 'medecin_secteur_2'
+    profession: 'auxiliaire_medical' | 'sage_femme' | 'medecin_secteur_1' | 'medecin_secteur_2' | 'chirurgien_dentiste'
     remplacant: boolean
     revenuBrutSocial: number
     revenuProfessionnelPositif: boolean
     recettesBrutes: number
     honorairesConventionnes: number
     depassements: number
+    parametres: { tenus: true; debutActivite: string; acre: boolean | null; tauxDentiste: number | null }
   }
   attendu: {
     plafond: number
+    plafondProratise: number
+    acreAppliquee: boolean
     abattement: number
     assiette: number
     csgCrdsDeductible: number
