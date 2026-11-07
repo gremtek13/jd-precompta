@@ -49223,3 +49223,20 @@ une échéance qui pourrait payer N sans ses trois champs, sans appel ou sur une
 volet social ; « Réunir » refuse deux organismes et ne garde que la description commune. Réplique 16 (176 migrations) :
 27 verdicts sur 27, onze mutations tuées ; rls.sql, restauration et cinq essais inchangés ; banc du leurre SÛR ;
 treize mutations du module tuées. Reste au cabinet : TNS-Q2 et le prélèvement mêlé (TNS-Q2-B).
+
+### 07/11/2026 — LA RÉPLIQUE MÈRE EN POSTGRESQL 17 DANS CE CONTENEUR, ET LA RÉPÉTITION DES HUIT MIGRATIONS PRÉPARÉES
+
+Agent architecte ; en production, des SELECT seulement. Elle porte 177 migrations, non 176 : le cabinet a collé
+`droits_hors_rls` à 12:29 UTC (`20261107122909`, le fichier en CRLF, `3c6f2807…` ramené à LF). **La mère 17**
+(`replique_mere17/`, hors du dépôt, ARRÊTÉE, on la copie) : la mère 16 copiée, P0 appliquée par son texte brut, puis
+vidage et restauration dans une grappe 17.11 initialisée comme la base de production (ICU en-US, en_US.UTF-8) —
+pg_upgrade passe aussi le schéma par pg_dump et garderait la base en C.UTF-8. Écueils : la restauration aplatit le AND
+d'un BETWEEN suivi d'un autre terme (cinq CHECK repris au texte de leur migration) ; MAINTAIN ne passe pas de 16 à 17
+(posé à anon, authenticated et service_role, avec les défauts du propriétaire et de `supabase_admin`) ; l'historique de
+l'export diffère du texte enregistré (46 lignes sans fin de ligne, 11 collées en CRLF). Puis `droits_hors_rls`, que sa
+garde de tête accepte sur l'état 176 ainsi rendu. Égales : neuf familles sur neuf, le relevé des droits (MAINTAIN 170,
+défauts 24), l'historique à l'octet, les données. **La répétition** : P1-trace et C4a se refusent l'une l'autre dans les
+deux ordres, par leur garde : l'une est à reprendre. Deux chaînes (P1-trace ou C4a, puis C2, C3, C5, DEVC, E6-Q8) : tout
+s'applique, chaque essai sans faute, les huit mutations de C4a mordent, aucune table neuve n'a les quatre droits ;
+`rls.sql` 107, 0 faute, 81 mutations sur 81 (SP ou TD EN ATTENTE) ; `restauration.sql` IDENTIQUE ; le banc, sept SÛR ;
+les retours rendent la production, puis l'état 176 (97, 0, 73 sur 73).
