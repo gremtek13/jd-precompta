@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { lireRetourDuLien, type RetourDuLien } from './lib/recuperationMotDePasse'
@@ -122,7 +122,9 @@ describe('la porte du second facteur', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Vérifier' }))
     expect(await screen.findByText('Liste des dossiers')).toBeTruthy()
     expect(faux.verifications).toEqual(['f1 654321'])
-    expect(faux.ecrans).toEqual(['liste des dossiers'])
+    // L'écran consigne sa venue dans un effet, qui peut passer après le texte : se lit sous waitFor (CLAUDE.md, « UN TEST
+    // LISAIT SES RENDUS AVANT LEUR EFFET ») ; lu tout de suite, il échouait sous la charge de la suite (verifier, 07/11/2026).
+    await waitFor(() => expect(faux.ecrans).toEqual(['liste des dossiers']))
   })
 
   it('deux clics du même geste ne vérifient qu’une fois ; le client est tutoyé', async () => {
