@@ -49191,6 +49191,9 @@ avec ce mouvement le … », jamais un nom ; s'il y a plusieurs factures ou pas 
 Associer » est le rapprochement d'hier (`agirSurMouvement`). Le crédit libre sort des lots
 (`JUSTIFICATIF_ENCAISSEMENT_CITE`). Tests : `rapprochementPropose.test.ts` (9), trois tests d'écran dans
 `BanqueTab.gestesDesVentes.test.tsx`, deux assertions reprises. Un dossier non basculé reste inchangé.
+Relecture adverse : retirer l'exemplaire de `piecesCandidates` promouvait une pièce à égalité avec lui en « Pièce proposée »
+sous le bouton principal, ou, seul candidat, rendait « Ignorer, comme les N précédents ». Il reste candidat ; l'affichage seul
+l'écarte, aucun principal, aucune échéance ni récurrence (`proposeeParLEncaissement`) ; trois tests d'écran, rouges sur l'avant.
 
 ### 07/11/2026 — LA FACTURE À UN CLIENT ÉTABLI HORS DE FRANCE, EN BASE (E7A, LIGNE 28.5) (PRÉPARÉE, PAS APPLIQUÉE)
 

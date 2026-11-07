@@ -867,22 +867,30 @@ export default function FicheMouvement({
 
   // Même précédence que le rapprochement automatique : une pièce avant une échéance, une échéance
   // avant une récurrence. Ce n'est pas un arbitrage entre égaux mais une règle de l'écran.
-  // L'exemplaire que l'encaissement propose (étape C6) est déjà en tête : il ne se redit pas parmi les candidates.
+  // L'EXEMPLAIRE QUE L'ENCAISSEMENT PROPOSE (étape C6) reste parmi les candidates : `candidatsPieces` n'écarte que celui
+  // d'une facture SOURCE, et celui d'une facture d'avant la bascule, du montant et de la date, fait encore une égalité
+  // avec une autre pièce. Le retirer ici promouvait l'autre en « Pièce proposée » sous le bouton principal, ou, seul
+  // candidat, laissait la place à « Ignorer, comme les N précédents » — le geste que C6 écarte. Il ne se retire qu'à
+  // l'affichage des cartes, puisque la section C6 le montre déjà, et rien d'autre n'est alors proposé (`proposeeParLEncaissement`).
   const piecesCandidates = aTraiter
     ? candidatsPieces(ligne, piecesValidees, horsRapprochement, exemplairesDesSources.sources)
-      .filter((p) => p.id !== rapprochementPropose?.pieceId)
     : []
+  const proposeeParLEncaissement = aTraiter && rapprochementPropose?.pieceId != null
+  const piecesCandidatesAffichees = proposeeParLEncaissement
+    ? piecesCandidates.filter((p) => p.id !== rapprochementPropose?.pieceId)
+    : piecesCandidates
   // La pièce figée qu'on aurait proposée : elle ne se rapproche plus, et la fiche le dit au lieu de la taire — un mouvement
   // du même montant qu'une note de frais d'un exercice validé en est souvent le remboursement.
   const figeeDeMemeMontant = aTraiter && piecesFigees.size > 0
     ? candidatsPieces(ligne, piecesValidees.filter((p) => piecesFigees.has(p.id)), piecesRapprochees, exemplairesDesSources.sources)[0] ?? null
     : null
-  const echeancesCandidates = aTraiter && piecesCandidates.length === 0
+  const echeancesCandidates = aTraiter && piecesCandidates.length === 0 && !proposeeParLEncaissement
     ? candidatsCotisations(ligne, cotisations, cotisationsRapprochees)
     : []
   // Un prélèvement qui règle exactement une déclaration de TVA n'est pas « comme les précédents ignorés » : la TVA
   // payée s'écrit, et l'ignorer la laisserait au 445510.
   const recurrent = aTraiter && piecesCandidates.length === 0 && echeancesCandidates.length === 0 && declarationsExactes.length === 0
+    && !proposeeParLEncaissement
     ? recurrence
     : null
 
@@ -1246,6 +1254,8 @@ export default function FicheMouvement({
   let principal: ReactNode = null
   if (fige) {
     // Rien à proposer : annuler, reclasser ou rapprocher, la base refuse tout (voir `figeePar`).
+  } else if (proposeeParLEncaissement) {
+    // L'exemplaire que l'encaissement propose (étape C6) s'associe dans sa section, en tête : aucun autre geste principal.
   } else if (piecesCandidates.length === 1) {
     principal = (
       <button
@@ -1492,13 +1502,36 @@ export default function FicheMouvement({
         />
 
         {libre && (<>
-        {piecesCandidates.length === 1 && (
+        {/* À côté de l'exemplaire que l'encaissement propose (étape C6) : les autres pièces qui conviennent au relevé, aucune
+            promue — une seule à égalité avec lui ne devient pas « la » pièce proposée. */}
+        {proposeeParLEncaissement && piecesCandidatesAffichees.length > 0 && (
+          <section className="fiche-mouvement-section">
+            <h3>{piecesCandidatesAffichees.length === 1 ? 'Une autre pièce convient au relevé' : `${piecesCandidatesAffichees.length} autres pièces conviennent au relevé`}</h3>
+            <p className="fiche-mouvement-note">
+              Même montant, dates proches que ce mouvement, comme l’exemplaire proposé plus haut : ouvre les justificatifs
+              avant de choisir.
+            </p>
+            {piecesCandidatesAffichees.map((p) => (
+              <CartePiece
+                key={p.id}
+                piece={p}
+                signaux={signauxPiece(p, ligne)}
+                action={(
+                  <button type="button" className="btn btn-outline btn-sm" disabled={occupe || piecesRetenues} onClick={() => onRapprocher(p.id)}>
+                    Associer celle-ci
+                  </button>
+                )}
+              />
+            ))}
+          </section>
+        )}
+        {!proposeeParLEncaissement && piecesCandidates.length === 1 && (
           <section className="fiche-mouvement-section">
             <h3>Pièce proposée</h3>
             <CartePiece piece={piecesCandidates[0]} signaux={signauxPiece(piecesCandidates[0], ligne)} />
           </section>
         )}
-        {piecesCandidates.length > 1 && (
+        {!proposeeParLEncaissement && piecesCandidates.length > 1 && (
           <section className="fiche-mouvement-section">
             <h3>{piecesCandidates.length} pièces conviennent aussi bien</h3>
             <p className="fiche-mouvement-note">

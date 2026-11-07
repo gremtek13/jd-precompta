@@ -599,6 +599,56 @@ describe('un crédit que l’encaissement d’une facture d’avant la bascule c
     expect(texteDe(volet())).not.toContain('par le cabinet')
   })
 
+  // L'EXEMPLAIRE CANDIDAT DU RELEVÉ : `candidatsPieces` n'écarte que celui d'une facture SOURCE ; daté à deux jours du crédit,
+  // celui d'une facture d'avant la bascule convient au rapprochement. Le retirer des candidates promouvait une autre pièce à
+  // égalité en « Pièce proposée » sous le bouton principal (cas 1), ou laissait « Ignorer, comme les N précédents » (cas 2).
+  const exemplaireCandidat = () => {
+    const p0 = faux.parTable.pieces[0] as Record<string, unknown>
+    p0.date_piece = '2026-06-05'
+  }
+  const piedDeLaFiche = () => volet().querySelector('.fiche-mouvement-pied')
+
+  it('l’exemplaire à égalité avec une autre pièce : aucune promue, aucun bouton principal hors de la section C6', async () => {
+    exemplaireCandidat()
+    faux.parTable.pieces.push(piece({
+      id: 'p2', dossier_id: D, storage_path: `${D}/autre.pdf`, type_piece: 'vente', statut: 'validee', montant_ht: 200, montant_tva: 40,
+      montant_ttc: 240, date_piece: '2026-06-06', nom_fichier: 'autre-recette.pdf', categorie_id: null,
+    }) as unknown as Record<string, unknown>)
+    rendre()
+    await tous()
+    await ouvrir('VIR ANCIEN CLIENT F2025-0099')
+    await waitFor(() => expect(section(TITRE_RAPPROCHEMENT_PROPOSE)).not.toBeNull())
+    await waitFor(() => expect(within(volet()).queryAllByRole('button', { name: /^Associer/ }).length).toBeGreaterThan(1))
+    expect(within(volet()).queryByRole('heading', { name: 'Pièce proposée' })).toBeNull()
+    expect(within(volet()).queryByRole('heading', { name: 'Une autre pièce convient au relevé' })).not.toBeNull()
+    expect(piedDeLaFiche()).toBeNull()
+    // Un seul « Associer cette pièce » : celui de l'exemplaire, dans sa section.
+    const associer = within(volet()).getAllByRole('button', { name: 'Associer cette pièce' })
+    expect(associer).toHaveLength(1)
+    expect(section(TITRE_RAPPROCHEMENT_PROPOSE)?.contains(associer[0])).toBe(true)
+    expect(within(volet()).getAllByRole('button', { name: 'Associer celle-ci' })).toHaveLength(1)
+  })
+
+  it.each([
+    ['seul candidat du relevé', true],
+    ['hors de la fenêtre du relevé', false],
+  ])('l’exemplaire %s, des crédits pareils ignorés : jamais « Ignorer, comme les N précédents »', async (_cas, candidat) => {
+    if (candidat) exemplaireCandidat()
+    faux.parTable.lignes_bancaires.push(
+      mouvement({ id: 'm-ign1', date: '2026-04-07', montant: 240, libelle: 'VIR PAREIL AVRIL', statut: 'ignoree' }) as unknown as Record<string, unknown>,
+      mouvement({ id: 'm-ign2', date: '2026-05-07', montant: 240, libelle: 'VIR PAREIL MAI', statut: 'ignoree' }) as unknown as Record<string, unknown>,
+    )
+    rendre()
+    await tous()
+    await ouvrir('VIR ANCIEN CLIENT F2025-0099')
+    await waitFor(() => expect(section(TITRE_RAPPROCHEMENT_PROPOSE)).not.toBeNull())
+    await waitFor(() => expect(within(section(TITRE_RAPPROCHEMENT_PROPOSE) as HTMLElement).queryByRole('button', { name: 'Associer cette pièce' })).not.toBeNull())
+    expect(within(volet()).queryByRole('button', { name: /comme les 2 précédents/ })).toBeNull()
+    expect(texteDe(volet())).not.toContain('mouvements déjà ignorés')
+    expect(piedDeLaFiche()).toBeNull()
+    expect(within(volet()).queryByRole('heading', { name: 'Pièce proposée' })).toBeNull()
+  })
+
   it('des ventes facturées lues en partie : aucune proposition, aucun « Associer »', async () => {
     faux.muet = { [`encaissements_factures|${COLONNES_ENCAISSEMENTS_ECRITURES}`]: 1 }
     rendre()
