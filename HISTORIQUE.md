@@ -49132,3 +49132,18 @@ En route, `verifier` a rougi une fois sur deux, sur le même commit : `App.doubl
 TEST LISAIT SES RENDUS AVANT LEUR EFFET ». Reproduit à l'identique en retardant l'effet ; la lecture passe sous
 `waitFor`, et rien d'autre (le second test du fichier, qui ne vérifie qu'un vide, ne tombait sous la même mutation que
 par le minuteur du premier).
+
+### 07/11/2026 — LES COTISATIONS : CE QUE LE MOTEUR DE L'URSSAF PERMET D'ESTIMER EN PLUS (LIGNE 27)
+
+Relevé règle par règle dans `modele-ti` 0.1.0 (publicodes 1.10.3). Couvert mais sans entrée en base, donc dehors :
+l'ACRE (« cotisations . exonérations . Acre », depuis 2026 sur demande, 25 % au plus ; il faut la date de création et le
+bénéfice), l'activité créée dans l'année (« entreprise . date de création », plafond proratisé, pas de CURPS), les
+revenus de remplacement (« revenus de remplacement . bruts », 74 % ajoutés à l'assiette sociale, hors de la CSG : DB ne
+dit ni le brut ni ceux qu'aucune 2035 ne porte), l'invalidité (« exonérations . invalidité ») et Mayotte. Pas couverts :
+les DROM (« exonérations . DROM » le dit), les provisionnelles et la régularisation (aucune règle ; et
+`cotisations_declarees` ne dit ni l'organisme ni l'année payée, la soustraction mentirait). Le chirurgien-dentiste
+demande « taux dentiste ». Faits : les médecins de secteur 1 et 2 (« PAMC . CURPS » à 0,5 % ; « participation CPAM .
+maladie » hors S2 ; « participation CPAM . allocations familiales », S1 seul, une GRILLE : 100 % sous 140 % du plafond,
+75 % sous 250 %, 60 % au-delà, la borne atteinte passant au-dessus). L'oracle prend désormais les allocations
+familiales AVANT la prise en charge, comme la maladie (68 cas d'avant inchangés) : 170 cas, 102 nouveaux dont huit
+aux bornes, zéro écart ; dix mutations, toutes tuées ; la carte du volet social (onglet Clôture) dit la prise en charge.
