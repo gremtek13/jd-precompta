@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientHome from './ClientHome'
@@ -97,7 +97,10 @@ describe('ClientHome — drapeau levé : la couverture du relevé, jamais les mo
     expect(await screen.findByText('Relevés bancaires 2026')).toBeTruthy()
     // La couverture se lit UNE fois, sur le dossier affiché ; la lecture des pièces jointes écartées, à part, n'y change rien.
     expect(faux.rpcs.filter((r) => r.nom === 'couverture_du_releve')).toEqual([{ nom: 'couverture_du_releve', args: { p_dossier_id: 'dossier-de-test' } }])
-    expect(faux.rpcs.filter((r) => r.nom !== 'couverture_du_releve').map((r) => r.nom).sort()).toEqual(['phase_des_exercices', 'pieces_jointes_ecartees_du_client'])
+    // La carte de l'état du dossier (C2) lit `phase_des_exercices` dans un effet : sous `waitFor`, comme tout ce qu'un effet
+    // consigne (un test instable sous la charge de verifier, le 07/11/2026).
+    await waitFor(() => expect(faux.rpcs.filter((r) => r.nom !== 'couverture_du_releve').map((r) => r.nom).sort())
+      .toEqual(['phase_des_exercices', 'pieces_jointes_ecartees_du_client']))
     expect(faux.demandees).not.toContain('lignes_bancaires')
   })
 
