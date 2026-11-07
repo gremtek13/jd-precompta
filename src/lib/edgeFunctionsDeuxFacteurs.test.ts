@@ -37,13 +37,14 @@ function blocDe(source: string): string {
   return debut >= 0 && fin > debut ? source.slice(debut, source.indexOf('\n', fin)) : ''
 }
 
-const MESSAGE_403 = 'La double authentification est exigée pour ce compte'
+const MESSAGE_403 = 'Cette session ne satisfait pas la double authentification de ce compte'
 
-async function jouer(slug: string, options: { leve: boolean; exige: boolean; aal2: boolean; panne?: boolean }) {
+async function jouer(slug: string, options: { leve: boolean; exige: boolean; aal2: boolean; panne?: boolean; avantRetrait?: boolean }) {
   const monde: Monde = mondeDeReference()
   const qui = APPELANT[slug] ?? 'chef'
   if (options.exige) monde.deuxFacteurs.exiges.push(PERSONNES[qui].id)
   if (options.aal2) monde.deuxFacteurs.jetonsAal2.push(PERSONNES[qui].jeton)
+  if (options.avantRetrait) monde.deuxFacteurs.jetonsAvantRetrait.push(PERSONNES[qui].jeton)
   if (options.panne) monde.pannes.push({ rpc: 'deux_facteurs_satisfaits', erreur: { message: 'délai dépassé' } })
   const source = options.leve ? muter(sourceDe(slug), [[DRAPEAU_BAISSE, DRAPEAU_LEVE]]) : sourceDe(slug)
   const fonction = chargerFonction(slug, monde, { source })
@@ -106,6 +107,16 @@ describe.each(AVEC_LE_BLOC.map((s) => [s] as const))('%s — la double authentif
       const { resultat, lectures } = await jouer(slug, { leve: true, ...cas })
       expect(lectures).toHaveLength(1)
       expect(JSON.stringify(resultat.json ?? resultat.texte)).not.toContain('double authentification')
+    }
+  })
+
+  it('drapeau levé, un jeton émis avant le retrait du second facteur (l’appareil perdu) : 403, même à aal2, même sans exigence', async () => {
+    for (const cas of [{ exige: true, aal2: true }, { exige: false, aal2: false }]) {
+      const { resultat, lectures, depenses } = await jouer(slug, { leve: true, ...cas, avantRetrait: true })
+      expect(resultat.statut).toBe(403)
+      expect(JSON.stringify(resultat.json)).toContain(MESSAGE_403)
+      expect(lectures).toHaveLength(1)
+      expect(depenses).toEqual([])
     }
   })
 

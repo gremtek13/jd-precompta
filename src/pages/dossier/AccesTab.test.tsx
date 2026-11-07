@@ -171,6 +171,17 @@ vi.mock('../../lib/natureDesRecettesLecture', () => ({
 // La modale de relance fait ses propres appels et n'a rien à voir avec ce qu'on garde ici.
 vi.mock('../../components/EnvoyerEmailModal', () => ({ default: () => null }))
 
+// La double authentification des accès (C7, second temps) : l'onglet passe au composant les cases de chaque accès lu en
+// entier, pour la recommandation de SEC-Q2. Le composant (qui ne rend rien drapeau baissé) a ses propres tests ; ici, ce
+// que l'onglet lui donne.
+const deuxFacteurs = vi.hoisted(() => ({ props: [] as { perimetre: unknown; cases: unknown }[] }))
+vi.mock('../../components/DeuxFacteursDesComptes', () => ({
+  default: (p: { perimetre: unknown; cases?: unknown }) => {
+    deuxFacteurs.props.push({ perimetre: p.perimetre, cases: p.cases })
+    return null
+  },
+}))
+
 function monter() {
   return render(<AccesTab dossierId="d1" dossierNom="Cabinet Martin" codeEmail="abc123" />)
 }
@@ -1467,5 +1478,32 @@ describe('AccesTab — la base refuse « Ventes » sur un dossier qui n’a pas 
     expect(faux.appelsRpc.map((a) => a.args).at(-1)).toEqual({ p_membership_id: 'm1', p_ventes: false, p_banque: null, p_caisse: null })
     expect(caseDe('Ventes', 'client@example.test').checked).toBe(false)
     expect(screen.queryAllByRole('alert')).toHaveLength(0)
+  })
+})
+
+describe('la double authentification des accès (C7, second temps ; SEC-Q2)', () => {
+  it('passe au composant les cases de chaque accès, une fois la liste lue en entier ; aucune avant son retour', async () => {
+    deuxFacteurs.props.length = 0
+    faux.lignes = [
+      acces({ id: 'm1', user_id: 'u1', email: 'client@exemple.fr', droit_banque: true }),
+      acces({ id: 'm2', user_id: 'u2', email: 'autre@exemple.fr', droit_caisse: true }),
+    ]
+    const ouvrir = retenir()
+    monter()
+    expect(deuxFacteurs.props.length).toBeGreaterThan(0)
+    expect(deuxFacteurs.props.every((p) => p.cases === undefined)).toBe(true)
+    await ouvrir()
+    await screen.findByText('client@exemple.fr')
+    const dernier = deuxFacteurs.props[deuxFacteurs.props.length - 1]
+    expect(dernier.perimetre).toEqual({ genre: 'acces', dossierId: 'd1' })
+    expect(dernier.cases).toMatchObject({ u1: { banque: true, ventes: false, caisse: false }, u2: { banque: false, caisse: true } })
+  })
+
+  it('une liste lue en partie ne passe aucune case', async () => {
+    deuxFacteurs.props.length = 0
+    faux.compteAnnonce = 5
+    monter()
+    await screen.findByText('client@exemple.fr')
+    expect(deuxFacteurs.props[deuxFacteurs.props.length - 1].cases).toBeUndefined()
   })
 })

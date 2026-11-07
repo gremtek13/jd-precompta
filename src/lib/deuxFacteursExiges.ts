@@ -70,6 +70,25 @@ export function exigenceRecommandee(c: Pick<CompteDeuxFacteurs, 'genre'>, cases:
   return cases !== null && CASES_QUI_RECOMMANDENT.some((k) => cases[k] === true)
 }
 
+/** Les cases d'un accès client, telles que l'onglet Accès les lit (`droit_<case>`). */
+const CASES_DES_ACCES = ['ventes', 'banque', 'caisse', 'comptes', 'achats', 'frais', 'documents'] as const
+type CaseDUnAcces = (typeof CASES_DES_ACCES)[number]
+export type AccesAuxCases = { user_id: string } & { [K in CaseDUnAcces as `droit_${K}`]?: boolean | null }
+
+/**
+ * Les cases de chaque accès lu, par compte, pour la recommandation de SEC-Q2 (`exigenceRecommandee`) : une colonne absente
+ * de la ligne (sa migration pas encore en base) se lit fausse ; deux accès d'un même compte réunissent leurs cases.
+ * L'onglet Accès ne les passe que d'une liste lue EN ENTIER.
+ */
+export function casesDesAcces(acces: readonly AccesAuxCases[]): Record<string, Readonly<Record<string, boolean>>> {
+  const cases: Record<string, Readonly<Record<string, boolean>>> = {}
+  for (const a of acces) {
+    const deja = cases[a.user_id]
+    cases[a.user_id] = Object.fromEntries(CASES_DES_ACCES.map((k) => [k, deja?.[k] === true || a[`droit_${k}`] === true]))
+  }
+  return cases
+}
+
 /** L'état d'un compte en une phrase, au vous du cabinet. */
 export function etatDuCompteEnMots(c: CompteDeuxFacteurs, date: (iso: string) => string): string {
   const facteur = c.aUnFacteur ? 'application d’authentification inscrite' : 'aucune application d’authentification'
@@ -89,11 +108,15 @@ export function confirmationDuGeste(geste: GesteDesDeuxFacteurs, c: CompteDeuxFa
     return `Ne plus exiger la double authentification de ${qui} ? Le compte pourra de nouveau tout ouvrir avec son seul mot `
       + 'de passe.'
   }
+  // Vrai depuis la relecture adverse du 07/11/2026 : la base refuse aussitôt tout jeton émis avant le retrait, `aal2`
+  // compris, exigence ou non (`deux_facteurs_satisfaits` le compare à la trace) ; avant, l'appareil perdu gardait l'accès
+  // jusqu'à l'expiration de son jeton.
   return `Retirer le second facteur de ${qui} (appareil perdu) ? Toutes ses applications d’authentification sont retirées et `
-    + 'toutes ses sessions fermées, sur chaque appareil. '
+    + 'toutes ses sessions fermées, sur chaque appareil : dès maintenant, la base refuse ce qu’elles demandent, même avec le '
+    + 'code déjà donné. '
     + (c.exigeeDepuis !== null
       ? 'L’exigence reste : à sa prochaine connexion, il inscrira un nouvel appareil avant tout écran. '
-      : 'Il se connectera ensuite avec son seul mot de passe. ')
+      : 'Il se reconnectera ensuite avec son seul mot de passe. ')
     + 'Le retrait est tracé.'
 }
 

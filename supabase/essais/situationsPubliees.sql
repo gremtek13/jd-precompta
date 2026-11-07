@@ -204,7 +204,8 @@ begin
     -- fonctions aux droits du propriétaire, search_path fixé ; ni anon ni PUBLIC ne les exécutent.
     verdicts := verdicts || jsonb_build_object('rang', 31, 'etape', '31. le catalogue : RLS, trois policies à authenticated, la garde, les fonctions',
       'ok', (select c.relrowsecurity from pg_class c where c.oid = 'public.situations_publiees'::regclass)
-        and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'situations_publiees') = 3
+        and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'situations_publiees'
+               and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 3
         and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'situations_publiees'
                and p.roles = array['authenticated']::name[]
                and ((p.policyname = 'situations_publiees_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)')

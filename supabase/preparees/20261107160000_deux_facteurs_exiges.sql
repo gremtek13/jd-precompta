@@ -1,5 +1,8 @@
 -- LA DOUBLE AUTHENTIFICATION EXIGÉE EN BASE (espace client, partie C, étape C7, second temps ; ligne 51.5). PRÉPARÉE,
--- PAS APPLIQUÉE : elle attend SEC-Q1 à Q4 et SEC2-Q1 à Q4 (page « Arbitrages du cabinet »). Le récit : HISTORIQUE.md,
+-- PAS APPLIQUÉE. SEC-Q1 à Q4 tranchées le 07/11/2026 comme recommandé : le cabinet et le super-administrateur, après le
+-- MVP (Q1) ; les accès « Banque », « Achats », « Documents », et « Ventes » (Q2) ; compte par compte, une fois le compte
+-- inscrit (Q3) ; le chef pour les siens, le super-administrateur pour les chefs (Q4). Elle s'applique après le MVP, en
+-- dernier, sur la réponse à SEC2-Q1 (SEC2-Q2 et Q3 attendues, page « Arbitrages du cabinet »). Le récit : HISTORIQUE.md,
 -- « 07/11/2026 — LA DOUBLE AUTHENTIFICATION, SECOND TEMPS : EXIGÉE EN BASE (PRÉPARÉE, PAS APPLIQUÉE) » ; l'essai :
 -- supabase/essais/deuxFacteurs.sql (réplique seulement) et le bloc DF de supabase/essais/rls.sql ; le module :
 -- src/lib/deuxFacteursExiges.ts ; le drapeau : `DEUX_FACTEURS_EXIGES_EXPORTE` (src/lib/deuxFacteursExiges.ts) et, dans
@@ -22,12 +25,13 @@
 --   2. LA TABLE : une policy RESTRICTIVE `deux_facteurs`, `for all to authenticated`, sur CHAQUE table de public présente à
 --      l'application (la boucle part de pg_class : B1, e7a et toute migration appliquée avant elle y entrent d'eux-mêmes)
 --      et sur `storage.objects`, qui ne laisse passer qu'un appelant que `deux_facteurs_satisfaits()` dit en règle : pas
---      exigé, ou un jeton `aal2`. Elle couvre l'API de données, Storage et Realtime. Une table créée APRÈS doit porter la
---      sienne : le bloc DF de rls.sql la met en faute.
+--      exigé ou porteur d'un jeton `aal2` et, dans les deux cas, un jeton émis APRÈS le dernier retrait du second facteur
+--      du compte (l'appareil perdu, exigé ou non, ne garde rien jusqu'à l'expiration de son jeton). Elle couvre l'API de
+--      données, Storage et Realtime. Une table créée APRÈS doit porter la sienne : le bloc DF de rls.sql la met en faute.
 --   3. LA FONCTION : une policy ne voit pas une fonction `security definer` — elle lit en propriétaire, qui contourne la RLS
 --      (`postgres` est BYPASSRLS : forcer la RLS ne l'arrêterait pas). La pré-requête de PostgREST,
---      `deux_facteurs_avant_requete()`, refuse en 403 toute requête de l'API de données d'un compte exigé dont le jeton
---      n'est pas `aal2` — table, vue ou fonction —, sauf les deux lectures de la porte (`deux_facteurs_satisfaits` et
+--      `deux_facteurs_avant_requete()`, refuse en 403 toute requête de l'API de données que `deux_facteurs_satisfaits()`
+--      ne dit pas en règle — table, vue ou fonction —, sauf les deux lectures de la porte (`deux_facteurs_satisfaits` et
 --      `ma_double_authentification`). Les prédicats d'accès (`admin_du_dossier`, `client_du_dossier`…) ne sont PAS récrits :
 --      B1 et C4a les redéfinissent, et une récriture ici les écraserait ; la pré-requête les couvre sans les toucher.
 --   Les Edge Functions qui lisent avec la clé secrète (BYPASSRLS, sans pré-requête qui les arrête : leur jeton de service
@@ -35,8 +39,9 @@
 --
 -- LES FONCTIONS DU CABINET (SEC-Q4) : `exiger_deux_facteurs` (sur un compte qui a un facteur VÉRIFIÉ), `lever_deux_facteurs`,
 -- `retirer_second_facteur` (l'appareil perdu : tous les facteurs du compte, et ses sessions, que GoTrue ne renouvelle plus —
--- un téléphone perdu avec une session ouverte ne réinscrit pas un facteur à lui —, la trace gardée ; l'exigence RESTE, et le
--- compte est mené à une nouvelle inscription avant tout écran, SEC-Q3). L'autorité : le super-administrateur sur tout
+-- un téléphone perdu avec une session ouverte ne réinscrit pas un facteur à lui —, la trace gardée — sa date refuse aussitôt
+-- tout jeton émis avant elle, `aal2` compris ; l'exigence RESTE, et le compte est mené à une nouvelle inscription avant
+-- tout écran, SEC-Q3). L'autorité : le super-administrateur sur tout
 -- compte ; le chef d'un cabinet sur les membres de son cabinet et les clients de ses dossiers, jamais sur un chef ni sur un
 -- super-administrateur. Lever ou retirer (ce qui affaiblit) demande l'autorité sur le compte ENTIER : un compte rattaché
 -- aussi à un autre cabinet ne s'affaiblit que par le super-administrateur (SEC2-Q1). L'e-mail qui prévient le compte n'est
@@ -44,9 +49,10 @@
 -- nom, son type ni sa clé), depuis quand l'exigence court, le dernier retrait, et les gestes que l'appelant y a.
 --
 -- CE QU'ELLE NE CHANGE PAS : aucune policy existante, aucun prédicat, aucune donnée ; rien n'est exigé de personne tant que
--- le cabinet ne pose pas l'exigence : `deux_facteurs_satisfaits()` est vrai pour tout compte sans exigence, et la
--- pré-requête ne fait rien. Le texte contient des suppressions (le corps de `retirer_second_facteur`) : `apply_migration`
--- attendra une confirmation ; elle se colle alors dans l'éditeur SQL, dans une transaction, avec sa ligne d'historique.
+-- le cabinet ne pose pas l'exigence ni ne retire un facteur : `deux_facteurs_satisfaits()` est vrai pour tout compte sans
+-- exigence ni retrait, et la pré-requête ne fait rien. Le texte contient des suppressions (le corps de
+-- `retirer_second_facteur`) : `apply_migration` attendra une confirmation ; elle se colle alors dans l'éditeur SQL, dans
+-- une transaction, avec sa ligne d'historique.
 -- ORDRE : après les migrations de supabase/preparees/ (sauf `droits_hors_rls`, indépendante), B1 (les trois cases) et
 -- e7a (la facture internationale). Retour : supabase/preparees/retour/20261107160100_retour_deux_facteurs_exiges.sql
 -- (destructif : il efface les exigences et la trace — l'accord du cabinet).
@@ -140,6 +146,12 @@ comment on table public.retraits_deux_facteurs is
 
 -- ── 2. CE QUE DIT LA BASE DE L'APPELANT ─────────────────────────────────────────────────────────────────────────────
 
+-- L'exigence : pas exigé, ou un jeton aal2. ET, exigé ou non, aucun retrait du second facteur du compte à la date du jeton
+-- ou après : `retirer_second_facteur` ferme les sessions, que GoTrue ne renouvelle plus, mais un jeton déjà émis vivait
+-- jusqu'à son expiration (l'appareil perdu gardait l'accès). La date du jeton est son `iat`, en secondes entières : un
+-- jeton de la seconde du retrait est refusé, et, pour un compte qui a un retrait, un jeton sans `iat` numérique aussi (le
+-- côté fermé : GoTrue en pose toujours un) ; le CASE ne convertit qu'un nombre, et ne lève donc jamais. L'index
+-- `retraits_deux_facteurs_du_compte` sert la recherche.
 create function public.deux_facteurs_satisfaits()
 returns boolean
 language sql
@@ -147,14 +159,20 @@ stable
 security definer
 set search_path = ''
 as $$
-  select coalesce(auth.jwt() ->> 'aal', '') = 'aal2'
-      or not exists (select 1
-                       from public.exigences_deux_facteurs e
-                      where e.user_id = auth.uid()
-                        and e.levee_le is null)
+  select (coalesce(auth.jwt() ->> 'aal', '') = 'aal2'
+          or not exists (select 1
+                           from public.exigences_deux_facteurs e
+                          where e.user_id = auth.uid()
+                            and e.levee_le is null))
+     and not exists (select 1
+                       from public.retraits_deux_facteurs r
+                      where r.user_id = auth.uid()
+                        and r.retire_le >= case when jsonb_typeof(auth.jwt() -> 'iat') = 'number'
+                                                then to_timestamp((auth.jwt() ->> 'iat')::double precision)
+                                                else '-infinity'::timestamptz end)
 $$;
 comment on function public.deux_facteurs_satisfaits() is
-  'Vrai si l''appelant satisfait l''exigence du second facteur : il n''est pas exigé (sans compte : l''anonyme, le rôle du service, une migration), ou son jeton porte aal2. La lisent les policies restrictives deux_facteurs, la pré-requête de PostgREST et le bloc DEUX FACTEURS des Edge Functions.';
+  'Vrai si l''appelant satisfait l''exigence du second facteur : il n''est pas exigé (sans compte : l''anonyme, le rôle du service, une migration), ou son jeton porte aal2 ; et, exigé ou non, son jeton (iat) est postérieur au dernier retrait de son second facteur (retraits_deux_facteurs). La lisent les policies restrictives deux_facteurs, la pré-requête de PostgREST, ma_double_authentification et le bloc DEUX FACTEURS des Edge Functions.';
 
 create function public.ma_double_authentification()
 returns jsonb
@@ -348,13 +366,13 @@ begin
   raise sqlstate 'PGRST' using
     message = json_build_object(
       'code', 'DF403',
-      'message', 'La double authentification est exigée pour ce compte : le code de l''application d''authentification se donne avant tout accès.',
+      'message', 'Cette session ne satisfait pas la double authentification de ce compte : le code de l''application d''authentification se donne, ou la session se rouvre si le second facteur a été retiré, avant tout accès.',
       'details', null, 'hint', null)::text,
     detail = json_build_object('status', 403)::text;
 end;
 $$;
 comment on function public.deux_facteurs_avant_requete() is
-  'La pré-requête de PostgREST (pgrst.db_pre_request) : refuse en 403 toute requête de l''API de données d''un compte exigé dont le jeton n''est pas aal2, fonctions security definer comprises, que la RLS ne voit pas. Ne vaut ni pour Storage ni pour Realtime (les policies restrictives les gardent).';
+  'La pré-requête de PostgREST (pgrst.db_pre_request) : refuse en 403 toute requête de l''API de données que deux_facteurs_satisfaits ne dit pas en règle (un compte exigé sans jeton aal2, un jeton émis avant le retrait du second facteur), fonctions security definer comprises, que la RLS ne voit pas. Ne vaut ni pour Storage ni pour Realtime (les policies restrictives les gardent).';
 
 -- Les droits d'exécution, nommés un par un (le défaut de public les donne à anon, authenticated et service_role).
 revoke all on function public.deux_facteurs_satisfaits() from public, anon;
@@ -404,9 +422,14 @@ notify pgrst, 'reload config';
 do $fin$
 declare
   fautes text;
+  v_chemin constant text := current_setting('search_path');
+  v_expression constant text := '( SELECT public.deux_facteurs_satisfaits() AS deux_facteurs_satisfaits)';
 begin
   -- Chaque table de public, et storage.objects : une policy deux_facteurs restrictive, de toutes les commandes, à
-  -- authenticated seul, dont l'expression et la vérification dépendent de deux_facteurs_satisfaits().
+  -- authenticated seul, dont l'expression et la vérification sont EXACTEMENT `(select public.deux_facteurs_satisfaits())`
+  -- et en dépendent (pg_depend). Le texte se rend sous un chemin vide, qui nomme le schéma de chaque fonction : un ajout
+  -- (`or true`) ou une homonyme d'un autre schéma ne passent pas. Le chemin d'avant revient à la fin du bloc.
+  perform set_config('search_path', '', true);
   select string_agg(r.oid::regclass::text, ', ' order by r.oid::regclass::text collate "C") into fautes
     from pg_class r
    where ((r.relnamespace = 'public'::regnamespace and r.relkind in ('r', 'p')) or r.oid = 'storage.objects'::regclass)
@@ -415,8 +438,8 @@ begin
             where p.polrelid = r.oid and p.polname = 'deux_facteurs' and not p.polpermissive and p.polcmd = '*'
               and p.polroles = array[to_regrole('authenticated')]::oid[]
               and p.polqual is not null and p.polwithcheck is not null
-              and pg_get_expr(p.polqual, p.polrelid) like '%deux_facteurs_satisfaits()%'
-              and pg_get_expr(p.polwithcheck, p.polrelid) like '%deux_facteurs_satisfaits()%'
+              and pg_get_expr(p.polqual, p.polrelid) = v_expression
+              and pg_get_expr(p.polwithcheck, p.polrelid) = v_expression
               and exists (select 1 from pg_depend d
                            where d.classid = 'pg_policy'::regclass and d.objid = p.oid
                              and d.refclassid = 'pg_proc'::regclass
@@ -441,5 +464,6 @@ begin
      or not has_function_privilege('authenticated', 'public.deux_facteurs_satisfaits()', 'EXECUTE') then
     raise exception 'Garde de fin : les droits d''exécution ne sont pas ceux que la migration pose.';
   end if;
+  perform set_config('search_path', v_chemin, true);
 end
 $fin$;

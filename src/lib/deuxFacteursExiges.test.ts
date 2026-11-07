@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEUX_FACTEURS_EXIGES_EXPORTE, compteLu, confirmationDuGeste, exigenceRecommandee, gestesDuCompte, monExigenceLue,
-  porteDeLExigence, type CompteDeuxFacteurs,
+  DEUX_FACTEURS_EXIGES_EXPORTE, casesDesAcces, compteLu, confirmationDuGeste, exigenceRecommandee, gestesDuCompte,
+  monExigenceLue, porteDeLExigence, type CompteDeuxFacteurs,
 } from './deuxFacteursExiges'
 
 const LIGNE = {
@@ -46,6 +46,20 @@ describe('la double authentification exigée — la règle (C7, second temps)', 
     expect(confirmationDuGeste('retirer', compte({ exigeeDepuis: '2026-11-07T10:00:00Z' }))).toContain('inscrira un nouvel appareil')
     expect(confirmationDuGeste('retirer', compte())).toContain('seul mot de passe')
     expect(confirmationDuGeste('retirer', compte())).toContain('sessions fermées')
+    // Ce que la base fait depuis la relecture adverse du 07/11/2026 : le jeton d'avant le retrait est refusé, aal2 compris.
+    expect(confirmationDuGeste('retirer', compte())).toContain('la base refuse ce qu’elles demandent, même avec le code déjà donné')
+  })
+
+  it('les cases de chaque accès lu, par compte (SEC-Q2) : une colonne absente vaut faux, deux accès d’un compte se réunissent', () => {
+    const cases = casesDesAcces([
+      { user_id: 'u1', droit_banque: true, droit_ventes: false },
+      { user_id: 'u2', droit_caisse: true },
+      { user_id: 'u1', droit_documents: true, droit_banque: null },
+    ])
+    expect(cases.u1).toEqual({ ventes: false, banque: true, caisse: false, comptes: false, achats: false, frais: false, documents: true })
+    expect(exigenceRecommandee({ genre: 'client' }, cases.u1)).toBe(true)
+    expect(exigenceRecommandee({ genre: 'client' }, cases.u2)).toBe(false)
+    expect(casesDesAcces([])).toEqual({})
   })
 
   it('la porte : drapeau baissé ou aal2, ouverte sans lecture ; exigé sans facteur, l’inscription ; illisible, fermée', () => {

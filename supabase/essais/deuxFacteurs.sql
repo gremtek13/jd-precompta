@@ -7,7 +7,8 @@
 -- Les profils sont ceux du semis de la réplique : S, le chef du cabinet ET super-administrateur ; M, un comptable de
 -- l'équipe assigné à `test` ; C, le client d'essai du dossier du client ; et, posé ici, K, un second chef du même cabinet,
 -- qui n'est pas super-administrateur. Chaque profil se joue avec un jeton `aal1` et un jeton `aal2` : `request.jwt.claims`
--- porte le compte, le rôle et le niveau, comme PostgREST les pose depuis le jeton de GoTrue.
+-- porte le compte, le rôle, le niveau et la date d'émission (`iat`, en secondes ; par défaut, la seconde où la transaction
+-- a commencé), comme PostgREST les pose depuis le jeton de GoTrue.
 --   DF1. Un compte exigé, à aal1, ne lit AUCUNE ligne d'aucune table de public (boucle sur pg_class) ; à aal2, il lit ce
 --        que ses policies lui ouvrent (contrôle positif : ses accès, ses pièces). Un compte non exigé, à aal1, lit comme hier.
 --   DF2. Il n'écrit rien à aal1 (une mise à jour ne touche aucune ligne, une insertion se refuse en 42501) ; à aal2, si —
@@ -23,7 +24,11 @@
 --        chef sur un chef ; un compte rattaché à un autre cabinet ne s'affaiblit que par le super-administrateur.
 --   DF7. `deux_facteurs_des_comptes` : l'équipe au chef, les accès d'un dossier à qui l'administre, rien au client.
 --   DF8. `ma_double_authentification` : l'exigence, la satisfaction, l'espace.
--- Sept mutations, qui doivent mordre (M-DF1 à M-DF7), chacune annulée avec sa sous-transaction.
+--   DF9. L'appareil perdu : après `retirer_second_facteur`, un jeton émis avant le retrait (son `iat`) ne lit plus rien,
+--        `aal2` compris, exigé ou non, ni dans la seconde du retrait, ni sans `iat` numérique (sans lever) ; un jeton émis
+--        après (la reconnexion) lit ses accès, et un compte sans retrait lit comme hier.
+-- Onze mutations, qui doivent mordre (M-DF1 à M-DF11), chacune annulée avec sa sous-transaction : M-DF8 à M-DF11 ôtent la
+-- clause du retrait, la réservent au compte exigé, la laissent passer sans `iat`, ou la font refuser pour toujours.
 \set ON_ERROR_STOP 1
 set client_min_messages = warning;
 create temp table df_verdict (controle text, cible text, observe text, ok boolean);
@@ -31,10 +36,12 @@ create temp table df_mutation (mutation text, attendu text, observe text, mord b
 grant all on df_verdict, df_mutation to public;
 
 -- Le profil d'une requête : le rôle de PostgREST et le jeton qu'il pose (le compte nul : l'anonyme).
-create function pg_temp.comme(p_compte uuid, p_aal text, p_chemin text default 'dossiers') returns void language plpgsql as $$
+create function pg_temp.comme(p_compte uuid, p_aal text, p_chemin text default 'dossiers', p_iat bigint default null)
+returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claims', case when p_compte is null then '{"role":"anon"}'
-    else json_build_object('sub', p_compte, 'role', 'authenticated', 'aal', p_aal)::text end, true);
+    else json_build_object('sub', p_compte, 'role', 'authenticated', 'aal', p_aal,
+                           'iat', coalesce(p_iat, floor(extract(epoch from now()))::bigint))::text end, true);
   perform set_config('request.path', '/' || p_chemin, true);
   perform set_config('role', case when p_compte is null then 'anon' else 'authenticated' end, true);
 end $$;
@@ -62,7 +69,7 @@ begin
 exception when others then
   return sqlstate || ' ' || sqlerrm;
 end $$;
-grant execute on function pg_temp.comme(uuid, text, text), pg_temp.lu_partout(), pg_temp.raison(text) to public;
+grant execute on function pg_temp.comme(uuid, text, text, bigint), pg_temp.lu_partout(), pg_temp.raison(text) to public;
 
 do $essai$
 declare
@@ -75,7 +82,7 @@ declare
   d_test constant uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
   d_client constant uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
   d_quatre constant uuid := 'd0551e20-0000-4000-8000-000000000004';
-  obs text; obs2 text; n bigint; j jsonb; mutation text;
+  obs text; obs2 text; n bigint; j jsonb; mutation text; t0 bigint; b boolean; b2 boolean; b3 boolean;
   v jsonb := '[]'::jsonb;
 begin
   -- Le décor, défait à la fin : K et son rattachement, un facteur vérifié pour S, M et C, deux sessions pour C.
@@ -231,6 +238,36 @@ begin
   v := v || jsonb_build_array(jsonb_build_array('DF7. rien au client, rien de l''équipe au membre', 'C ; M', obs || ' ; ' || obs2,
     obs like '42501%' and obs2 like '42501%'));
 
+  -- ── DF9 : l'appareil perdu, le jeton émis avant le retrait ────────────────────────────────────────────────────────
+  -- C a perdu son facteur en DF6 (la trace datée de now()) et reste exigé ; M, que plus rien n'exige, reçoit ici une trace
+  -- au même instant. Le jeton se date par son iat, en secondes : une minute avant, la seconde du retrait, une minute après.
+  insert into public.retraits_deux_facteurs (user_id, facteurs, sessions, retire_par) values (m, 1, 0, s);
+  t0 := floor(extract(epoch from now()))::bigint;
+  perform pg_temp.comme(c, 'aal2', 'dossiers', t0 - 60);
+  obs := pg_temp.lu_partout(); obs2 := pg_temp.raison('select public.deux_facteurs_avant_requete()'); reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF9. un jeton aal2 émis avant le retrait ne lit rien, et la pré-requête le refuse', 'C, une minute avant',
+    coalesce(nullif(obs, ''), 'rien') || ' | ' || obs2, obs = '' and obs2 like 'PGRST %"DF403"%'));
+  perform pg_temp.comme(m, 'aal1', 'dossiers', t0 - 60); obs := pg_temp.lu_partout(); reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF9. sans exigence aussi : un jeton émis avant le retrait ne lit rien', 'M, une minute avant',
+    left(coalesce(nullif(obs, ''), 'rien'), 120), obs = ''));
+  perform pg_temp.comme(c, 'aal2', 'dossiers', t0); b := public.deux_facteurs_satisfaits(); reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF9. un jeton de la seconde du retrait est refusé (iat tronqué : le côté fermé)', 'C', b::text, not b));
+  perform pg_temp.comme(c, 'aal2', 'dossiers', t0 + 60); obs := pg_temp.lu_partout(); reset role;
+  perform pg_temp.comme(m, 'aal1', 'dossiers', t0 + 60); obs2 := pg_temp.lu_partout(); reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF9. contrôle positif : un jeton émis après le retrait (la reconnexion) lit ses accès', 'C aal2 ; M aal1, une minute après',
+    left(obs, 60) || ' | ' || left(obs2, 60), obs like '%memberships=%' and obs2 like '%dossiers=%'));
+  -- Sans iat numérique : refusé au compte qui a un retrait, sans lever ; comme hier au compte qui n'en a pas.
+  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated', 'aal', 'aal2')::text, true);
+  perform set_config('role', 'authenticated', true);
+  b := public.deux_facteurs_satisfaits();
+  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated', 'aal', 'aal2', 'iat', 'hier')::text, true);
+  b2 := public.deux_facteurs_satisfaits();
+  perform set_config('request.jwt.claims', json_build_object('sub', s, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+  b3 := public.deux_facteurs_satisfaits();
+  reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF9. un jeton sans iat numérique : refusé au compte qui a un retrait, comme hier sans retrait',
+    'C sans iat ; C iat « hier » ; S sans iat', b::text || ' ; ' || b2::text || ' ; ' || b3::text, not b and not b2 and b3));
+
   raise exception 'ANNULATION_ESSAI';
 exception when others then
   reset role;
@@ -250,8 +287,9 @@ declare
   m constant uuid := '3e3b0000-0000-4000-8000-000000000001';
   c constant uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
   obs text; n bigint; mut text; att text; mord boolean;
+  t0 constant bigint := floor(extract(epoch from now()))::bigint;
 begin
-  for mut in select unnest(array['M-DF1', 'M-DF2', 'M-DF3', 'M-DF4', 'M-DF5', 'M-DF6', 'M-DF7']) loop
+  for mut in select unnest(array['M-DF1', 'M-DF2', 'M-DF3', 'M-DF4', 'M-DF5', 'M-DF6', 'M-DF7', 'M-DF8', 'M-DF9', 'M-DF10', 'M-DF11']) loop
     obs := null; mord := false;
     begin
       insert into auth.mfa_factors (user_id, friendly_name, status) values (s, 'S', 'verified'), (m, 'M', 'verified');
@@ -308,6 +346,45 @@ begin
         perform pg_temp.comme(c, 'aal1'); select count(*) into n from storage.objects; reset role;
         obs := n::text || ' fichiers';
         mord := n > 0;
+      elsif mut = 'M-DF8' then
+        att := 'DF9 en faute (un jeton aal2 d''avant le retrait lit encore : la clause du retrait ôtée)';
+        create or replace function public.deux_facteurs_satisfaits() returns boolean language sql stable security definer
+          set search_path = '' as $f$ select coalesce(auth.jwt() ->> 'aal', '') = 'aal2'
+            or not exists (select 1 from public.exigences_deux_facteurs e where e.user_id = auth.uid() and e.levee_le is null) $f$;
+        insert into public.retraits_deux_facteurs (user_id, facteurs, sessions, retire_par) values (c, 1, 1, s);
+        perform pg_temp.comme(c, 'aal2', 'dossiers', t0 - 60); obs := pg_temp.lu_partout(); reset role;
+        mord := obs like '%memberships=1%';
+      elsif mut = 'M-DF9' then
+        att := 'DF9 en faute (sans exigence, un jeton d''avant le retrait lit encore : la clause réservée au compte exigé)';
+        create or replace function public.deux_facteurs_satisfaits() returns boolean language sql stable security definer
+          set search_path = '' as $f$ select (coalesce(auth.jwt() ->> 'aal', '') = 'aal2'
+              and not exists (select 1 from public.retraits_deux_facteurs r where r.user_id = auth.uid()
+                               and r.retire_le >= to_timestamp((auth.jwt() ->> 'iat')::double precision)))
+            or not exists (select 1 from public.exigences_deux_facteurs e where e.user_id = auth.uid() and e.levee_le is null) $f$;
+        insert into public.retraits_deux_facteurs (user_id, facteurs, sessions, retire_par) values (m, 1, 0, s);
+        perform pg_temp.comme(m, 'aal1', 'dossiers', t0 - 60); obs := pg_temp.lu_partout(); reset role;
+        mord := obs like '%dossiers=1%';
+      elsif mut = 'M-DF10' then
+        att := 'DF9 en faute (un jeton sans iat passe : la comparaison nulle laisse passer)';
+        create or replace function public.deux_facteurs_satisfaits() returns boolean language sql stable security definer
+          set search_path = '' as $f$ select (coalesce(auth.jwt() ->> 'aal', '') = 'aal2'
+              or not exists (select 1 from public.exigences_deux_facteurs e where e.user_id = auth.uid() and e.levee_le is null))
+            and not exists (select 1 from public.retraits_deux_facteurs r where r.user_id = auth.uid()
+                             and r.retire_le >= to_timestamp((auth.jwt() ->> 'iat')::double precision)) $f$;
+        insert into public.retraits_deux_facteurs (user_id, facteurs, sessions, retire_par) values (c, 1, 1, s);
+        perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated', 'aal', 'aal2')::text, true);
+        perform set_config('role', 'authenticated', true);
+        obs := public.deux_facteurs_satisfaits()::text; reset role;
+        mord := obs = 'true';
+      elsif mut = 'M-DF11' then
+        att := 'DF9 en faute (la reconnexion refusée : tout jeton d''un compte qui a un retrait, pour toujours)';
+        create or replace function public.deux_facteurs_satisfaits() returns boolean language sql stable security definer
+          set search_path = '' as $f$ select (coalesce(auth.jwt() ->> 'aal', '') = 'aal2'
+              or not exists (select 1 from public.exigences_deux_facteurs e where e.user_id = auth.uid() and e.levee_le is null))
+            and not exists (select 1 from public.retraits_deux_facteurs r where r.user_id = auth.uid()) $f$;
+        insert into public.retraits_deux_facteurs (user_id, facteurs, sessions, retire_par) values (c, 1, 1, s);
+        perform pg_temp.comme(c, 'aal2', 'dossiers', t0 + 60); obs := coalesce(nullif(pg_temp.lu_partout(), ''), 'rien lu'); reset role;
+        mord := obs = 'rien lu';
       end if;
       raise exception 'ANNULATION_ESSAI';
     exception when others then
