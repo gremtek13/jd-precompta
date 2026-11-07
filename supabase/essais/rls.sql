@@ -4822,6 +4822,174 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $$;
 
+-- ══ SA. Les saisies de la 2035 (étapes 2035S3 à S5 ; migration `saisies_2035`, PRÉPARÉE) ══════════════════════════════
+-- Une table du cabinet que le client ne lit pas, pas même pour son dossier : une seule policy, `for all to authenticated`
+-- sur `admin_du_dossier(dossier_id)`, aucune branche client ; l'écriture par `enregistrer_saisies_2035`, aux droits de
+-- l'appelant. Le gel d'un exercice validé se rejoue dans `saisies2035.sql`.
+--   SA1. Le chef écrit CC de 2099 dans le dossier du client et la lit (le contrôle POSITIF) ; le client, qui a un accès à
+--        ce dossier, n'en lit rien ; l'anonyme non plus.
+--   SA2. Le client n'écrit pas par la fonction (42501, sous ses mots), ni en direct (42501, la RLS), et ne réécrit rien.
+--   SA3. Le catalogue : la RLS active, une seule policy permissive, à authenticated, `admin_du_dossier` des deux côtés.
+-- Trois mutations, qui doivent mordre : M-SA1 (la lecture élargie au client « membre » : il lit la ligne de son dossier),
+-- M-SA2 (la policy fermée : le chef ne lit plus la ligne), M-SA3 (l'écriture élargie au client « membre » : son insertion
+-- directe passe). Avant la migration, une ligne dit que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  lue jsonb; chef_apres bigint; du_client bigint; de_l_anon text; par_la_fonction text; en_direct text;
+  reecrites bigint; elargie bigint; fermee bigint; ecrite_elargie text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.saisies_2035') is null then
+    insert into rls_verdict values ('SA. les saisies de la 2035 : EN ATTENTE de la migration saisies_2035',
+      'saisies_2035', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef saisit CC de 2099 (un exercice qu'aucune validation ne fige) dans le dossier du client, contre la
+    --    valeur qu'il en lit ──
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select jsonb_build_object('CC', jsonb_build_object('centimes', coalesce(max(s.centimes), 0), 'note_annexe', max(s.note_annexe)))
+      into lue from saisies_2035 s where s.dossier_id = dossier_du_client and s.annee = 2099 and s.code = 'CC';
+    perform enregistrer_saisies_2035(dossier_du_client, 2099, lue, '{"CC": {"centimes": 123456, "note_annexe": "Essai rls.sql"}}'::jsonb);
+    select count(*) into chef_apres from saisies_2035
+     where dossier_id = dossier_du_client and annee = 2099 and code = 'CC' and centimes = 123456;
+    reset role;
+    construit := true;
+
+    -- SA1 : le client, puis l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from saisies_2035 where dossier_id = dossier_du_client;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from saisies_2035;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'SA1. le chef lit la saisie de la 2035 qu''il a écrite dans le dossier du client (le contrôle positif) ; le client n''en lit rien, ni l''anonyme',
+      'cible', 'saisies_2035',
+      'observe', 'le chef : ' || chef_apres || ' | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_apres = 1 and du_client = 0 and de_l_anon = '0');
+
+    -- SA2 : le client n'écrit ni ne réécrit les saisies.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_saisies_2035(dossier_du_client, 2098, '{"DE": {"centimes": 0, "note_annexe": null}}'::jsonb,
+        '{"DE": {"centimes": 100, "note_annexe": null}}'::jsonb);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into saisies_2035 (dossier_id, annee, code, centimes) values (dossier_du_client, 2098, 'DE', 100);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update saisies_2035 set centimes = 1 where dossier_id = dossier_du_client returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'SA2. le client n''écrit pas les saisies de la 2035 (la fonction, puis la RLS) et ne les réécrit pas',
+      'cible', 'saisies_2035',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites,
+      'ok', par_la_fonction = '42501 Les saisies de la 2035 ne s''écrivent que par le cabinet du dossier.'
+        and en_direct like '42501 new row violates row-level security policy%' and reecrites = 0);
+
+    -- M-SA1 : la lecture élargie au client « membre ».
+    begin
+      alter policy saisies_2035_cabinet on public.saisies_2035
+        using (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from saisies_2035 where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-SA1 — la lecture des saisies de la 2035 élargie au client « membre »',
+      'attendu', 'le client lit la ligne de son dossier', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-SA2 : la policy fermée.
+    begin
+      alter policy saisies_2035_cabinet on public.saisies_2035 using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from saisies_2035 where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-SA2 — la policy des saisies de la 2035 fermée',
+      'attendu', 'le chef ne lit plus la ligne', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-SA3 : l'écriture élargie au client « membre ».
+    begin
+      alter policy saisies_2035_cabinet on public.saisies_2035
+        with check (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into saisies_2035 (dossier_id, annee, code, centimes) values (dossier_du_client, 2098, 'DE', 100);
+        ecrite_elargie := 'ACCEPTÉ';
+      exception when others then ecrite_elargie := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-SA3 — l''écriture des saisies de la 2035 élargie au client « membre »',
+      'attendu', 'son insertion directe passe', 'observe', coalesce(ecrite_elargie, '?'), 'mord', coalesce(ecrite_elargie = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- SA3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'saisies_2035' and p.roles = array['authenticated']::name[]
+     and p.policyname = 'saisies_2035_cabinet' and p.permissive = 'PERMISSIVE' and p.cmd = 'ALL'
+     and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check = 'admin_du_dossier(dossier_id)';
+  verdicts := verdicts || jsonb_build_object('controle', 'SA3. la RLS active ; une seule policy, à authenticated, le cabinet du dossier des deux côtés (lecture du catalogue)',
+    'cible', 'saisies_2035',
+    'observe', n || ' sur 1, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'saisies_2035' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.saisies_2035'::regclass),
+    'ok', n = 1 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'saisies_2035' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 1
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.saisies_2035'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'SA. le jeu d''essai des saisies de la 2035 s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
 -- ══ DF. La double authentification exigée (C7, second temps ; migration `deux_facteurs_exiges`, PRÉPARÉE) ═══════════════
 -- Une policy RESTRICTIVE ne garde que la table qui la porte : la migration la pose sur chaque table de public présente à
 -- son application et sur storage.objects ; une table créée APRÈS doit poser la sienne, sinon un compte exigé y lirait à

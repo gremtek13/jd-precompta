@@ -328,7 +328,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Vingt-trois le même jour : `phaseDesExercices` et `apercuFactureElectronique` sortis (C2 et C3 en production,
     // 20261107145111 et 20261107145209 ; ni l'un ni l'autre ne cherche un semis, ils se jouent comme des essais de la
     // production).
-    expect(cas.length).toBe(23)
+    // Vingt-quatre le même jour : `saisies2035` (étapes 2035S3 à S5, `saisies_2035`), après la sienne ; SÛR au banc, sur une
+    // copie de la réplique mère.
+    expect(cas.length).toBe(24)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
