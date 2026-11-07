@@ -1,5 +1,5 @@
 import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
-import { libelleExploitable } from './appariementBanque'
+import { libellerLEcritureDuReleve } from './libellesDuReleve'
 import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
 import { dePeriode, libellePeriode, periodesDeLAnnee, type DeclarationCa3, type PeriodeTva } from './declarationTva'
 import { dernierJourDuMois, formatDate, formatMoney } from './format'
@@ -104,20 +104,19 @@ export function aPayerDe(d: Pick<DeclarationTva, 'cases' | 'tva_declaree' | 'cre
 // banque, un remboursement reçu crédite le remboursement demandé (445830) — au montant, à la date et dans le sens du
 // mouvement, sans TVA. Les comptes sont ceux du PLAN du dossier, que `rapprocher_declaration_tva` relit au même plan.
 export function ecritureDuPaiementTva(
-  ligne: Pick<LigneBancaire, 'montant' | 'libelle' | 'libelle_brut'>, plan: PlanComptable,
+  ligne: Pick<LigneBancaire, 'date' | 'montant' | 'libelle' | 'libelle_brut'>, plan: PlanComptable,
 ): LigneEcritureMouvement[] {
   const entree = ligne.montant > 0
   const montant = Math.abs(ligne.montant)
-  const libelle = libelleExploitable(ligne) || ligne.libelle
-  return [
-    { compte: plan.banque, sens: entree ? 'debit' : 'credit', montant, libelle },
+  // Le libellé, de la règle seule (lib/libellesDuReleve.ts, JJ1-Q1) : un remboursement reçu ne recopie pas la banque.
+  return libellerLEcritureDuReleve(ligne, [
+    { compte: plan.banque, sens: entree ? 'debit' : 'credit', montant },
     {
       compte: entree ? plan.remboursement_tva_demande : plan.tva_a_decaisser,
       sens: entree ? 'credit' : 'debit',
       montant,
-      libelle,
     },
-  ]
+  ])
 }
 
 // La phrase de la base pour un mouvement déjà classé autrement.

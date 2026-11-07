@@ -80,8 +80,8 @@ describe('ecritureDuVirementPersonnel — le compte du dirigeant face à la banq
 
   it('un apport de sa poche crédite son compte et débite la banque', () => {
     expect(ecritureDuVirementPersonnel(mouvement({ montant: 1000, libelle: 'VIR APPORT' }), TRESORERIE)).toEqual([
-      { compte: '108000', sens: 'credit', montant: 1000, libelle: 'VIR APPORT' },
-      { compte: '512000', sens: 'debit', montant: 1000, libelle: 'VIR APPORT' },
+      { compte: '108000', sens: 'credit', montant: 1000, libelle: 'Crédit du relevé du 12/03/2025' },
+      { compte: '512000', sens: 'debit', montant: 1000, libelle: 'Crédit du relevé du 12/03/2025' },
     ])
   })
 

@@ -6,6 +6,7 @@ import { justificatifDeLaCaisse, operationsDe, type OperationsDeCaisse } from '.
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { formatDate } from './format'
+import { libelleDUnePiece, tiersAuFec } from './libellesDesVentes'
 import type { PlanComptable } from './planComptable'
 import type {
   ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, OperationCaisse, Piece, TransmissionFacture, VehiculeDossier,
@@ -323,7 +324,9 @@ export function pisteAudit(
       debit: e.sens === 'debit' ? e.montant : 0,
       credit: e.sens === 'credit' ? e.montant : 0,
       pieceId: piece?.id ?? null,
-      pieceTiers: piece?.tiers ?? null,
+      // Le tiers d'une pièce de vente se tait (JJ1-Q1, comme VF9C-Q1 pour l'assistant et FEC22-Q7 pour le FEC) : chez un
+      // praticien, l'OCR y lit un patient. Celui d'un achat reste, le fournisseur.
+      pieceTiers: tiersAuFec(piece ?? undefined).tiers,
       pieceDate: piece?.date_piece ?? releve?.date ?? null,
       pieceMontantTtc: piece?.montant_ttc ?? null,
       // Le relevé n'a pas d'empreinte connue ici : le mouvement n'est relié qu'au NOM du fichier
@@ -352,11 +355,13 @@ export function pisteAudit(
       compte: '',
       libelle: exemplaireDUneSource(p)
         ? `Exemplaire de : ${nomDuDocument(exemplaireDUneSource(p)!)} — la vente est comptée par la facture`
-        : p.tiers ?? p.nom_fichier,
+        // Une pièce de vente, « Recette du JJ/MM/AAAA », jamais le tiers lu (JJ1-Q1, la règle de FEC22-Q7) ; un achat, son
+        // fournisseur, sinon son fichier, comme hier.
+        : libelleDUnePiece(p),
       debit: 0,
       credit: 0,
       pieceId: p.id,
-      pieceTiers: p.tiers,
+      pieceTiers: tiersAuFec(p).tiers,
       pieceDate: p.date_piece,
       pieceMontantTtc: p.montant_ttc,
       pieceFichier: p.nom_fichier,

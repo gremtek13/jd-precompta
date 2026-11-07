@@ -181,6 +181,20 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
     })
   })
 
+  // JJ1-Q1 : le tiers qu'une pièce de vente porte (un patient, lu par l'OCR) ne sort pas dans la piste d'audit ; celui d'un
+  // achat, le fournisseur, reste.
+  it('tait le tiers d’une pièce de vente, comptabilisée ou non, et garde celui d’un achat', () => {
+    const vente = piece('pv', { type_piece: 'vente', tiers: 'Patiente Fictive' })
+    const nonComptee = piece('pv2', { type_piece: 'vente', tiers: 'Patient Fictif' })
+    const achat = piece('pa', { tiers: 'Fournisseur Fictif' })
+    const lignes = pisteAudit(
+      [ecriture({ compte: '706000', piece_id: 'pv', sens: 'credit' }), ecriture({ piece_id: 'pa' })],
+      [vente, nonComptee, achat], [], [], SANS_REGISTRE,
+    )
+    expect(new Map(lignes.map((l) => [l.pieceId, l.pieceTiers]))).toEqual(new Map([['pv', null], ['pa', 'Fournisseur Fictif'], ['pv2', null]]))
+    expect(genererPisteAuditCsv(lignes).split('\n').filter((l) => /patient/i.test(l))).toEqual([])
+  })
+
   it("nomme ce qui manque plutôt que de laisser des colonnes vides s'expliquer toutes seules", () => {
     const lignes = pisteAudit([ecriture({ piece_id: null, montant: 199.99 })], [], [], [], SANS_REGISTRE)
     expect(lignes[0].manque).toEqual(['justificatif'])

@@ -1,5 +1,5 @@
 import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
-import { libelleExploitable } from './appariementBanque'
+import { libellerLEcritureDuReleve } from './libellesDuReleve'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import { euroCommeLaBase, remplirModele } from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
@@ -157,17 +157,17 @@ export function ecritureDeLaCotisation(
   mode: ModeComptable,
   plan: PlanComptable,
 ): LigneEcritureMouvement[] {
-  const libelle = libelleExploitable(ligne) || ligne.libelle
   const total = centimes(Math.abs(ligne.montant))
   const csg = centimes(csgDeLEcriture(cotisation, mode))
   const sortie = ligne.montant < 0
   const sensCompte = sortie ? 'debit' : 'credit'
-  const lignes: LigneEcritureMouvement[] = [
-    { compte: plan.banque, sens: sortie ? 'credit' : 'debit', montant: total / 100, libelle },
-    { compte: plan.cotisations_exploitant, sens: sensCompte, montant: (total - csg) / 100, libelle },
-    { compte: plan.exploitant, sens: sensCompte, montant: csg / 100, libelle },
+  const lignes: Omit<LigneEcritureMouvement, 'libelle'>[] = [
+    { compte: plan.banque, sens: sortie ? 'credit' : 'debit', montant: total / 100 },
+    { compte: plan.cotisations_exploitant, sens: sensCompte, montant: (total - csg) / 100 },
+    { compte: plan.exploitant, sens: sensCompte, montant: csg / 100 },
   ]
-  return lignes.filter((l) => l.montant > 0)
+  // Le libellé, de la règle seule (lib/libellesDuReleve.ts, JJ1-Q1) : un remboursement reçu ne recopie pas la banque.
+  return libellerLEcritureDuReleve(ligne, lignes.filter((l) => l.montant > 0))
 }
 
 export interface CotisationComptee {

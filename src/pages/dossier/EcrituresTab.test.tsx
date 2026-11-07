@@ -2232,8 +2232,8 @@ describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
         p_ligne_bancaire_id: 'l-cpam',
         p_categorie_id: 'cat-recettes',
         p_ecritures: [
-          { compte: '706000', sens: 'credit', montant: 120, libelle: 'VIR CPAM' },
-          { compte: '512000', sens: 'debit', montant: 120, libelle: 'VIR CPAM' },
+          { compte: '706000', sens: 'credit', montant: 120, libelle: 'Crédit du relevé du 31/03/2025' },
+          { compte: '512000', sens: 'debit', montant: 120, libelle: 'Crédit du relevé du 31/03/2025' },
         ],
         p_taux_tva: null,
       },
@@ -2254,9 +2254,9 @@ describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
       p_ligne_bancaire_id: 'l-cpam',
       p_categorie_id: 'cat-recettes',
       p_ecritures: [
-        { compte: '706100', sens: 'credit', montant: 100, libelle: 'VIR CPAM' },
-        { compte: '445710', sens: 'credit', montant: 20, libelle: 'VIR CPAM' },
-        { compte: '512000', sens: 'debit', montant: 120, libelle: 'VIR CPAM' },
+        { compte: '706100', sens: 'credit', montant: 100, libelle: 'Crédit du relevé du 31/03/2025' },
+        { compte: '445710', sens: 'credit', montant: 20, libelle: 'Crédit du relevé du 31/03/2025' },
+        { compte: '512000', sens: 'debit', montant: 120, libelle: 'Crédit du relevé du 31/03/2025' },
       ],
       p_taux_tva: 20,
     })
@@ -2566,9 +2566,9 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
         { categorie_id: 'cat-frais', part_personnelle: false, montant: -5, taux_tva: null },
       ],
       p_ecritures: [
-        { compte: '706000', sens: 'credit', montant: 100, libelle: 'REMISE CB' },
-        { compte: '627000', sens: 'debit', montant: 5, libelle: 'REMISE CB' },
-        { compte: '512000', sens: 'debit', montant: 95, libelle: 'REMISE CB' },
+        { compte: '706000', sens: 'credit', montant: 100, libelle: 'Crédit du relevé du 31/03/2025' },
+        { compte: '627000', sens: 'debit', montant: 5, libelle: 'Crédit du relevé du 31/03/2025' },
+        { compte: '512000', sens: 'debit', montant: 95, libelle: 'Crédit du relevé du 31/03/2025' },
       ],
     })
   })
@@ -2584,10 +2584,10 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
     await act(async () => { bouton.click() })
     expect((faux.rpcs[0].args.p_parts as { taux_tva: number | null }[]).map((p) => p.taux_tva)).toEqual([20, null])
     expect(faux.rpcs[0].args.p_ecritures).toEqual([
-      { compte: '706100', sens: 'credit', montant: 83.33, libelle: 'REMISE CB' },
-      { compte: '445710', sens: 'credit', montant: 16.67, libelle: 'REMISE CB' },
-      { compte: '627000', sens: 'debit', montant: 5, libelle: 'REMISE CB' },
-      { compte: '512000', sens: 'debit', montant: 95, libelle: 'REMISE CB' },
+      { compte: '706100', sens: 'credit', montant: 83.33, libelle: 'Crédit du relevé du 31/03/2025' },
+      { compte: '445710', sens: 'credit', montant: 16.67, libelle: 'Crédit du relevé du 31/03/2025' },
+      { compte: '627000', sens: 'debit', montant: 5, libelle: 'Crédit du relevé du 31/03/2025' },
+      { compte: '512000', sens: 'debit', montant: 95, libelle: 'Crédit du relevé du 31/03/2025' },
     ])
   })
 
