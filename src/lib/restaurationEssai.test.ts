@@ -11,6 +11,7 @@ import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { SAISIES_2035_EXPORTEES } from './saisies2035'
+import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
@@ -26,6 +27,7 @@ import {
   TABLES_DES_FACTURES_IMPORTEES,
   TABLES_DES_SITUATIONS_PUBLIEES,
   TABLES_DES_SAISIES_2035,
+  TABLES_DES_PARAMETRES_DES_COTISATIONS,
   TABLES_DES_ADRESSES_RECEPTION,
   TABLES_DES_ARTICLES,
   TABLES_DES_CONTACTS,
@@ -409,6 +411,29 @@ function blocDesSaisies2035(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table des saisies existe : la sienne après sa table d'ancrage. */
 const avecLesSaisies2035 = avecLesArticles
 
+// Le bloc des paramètres des cotisations (ligne 27, TNS-Q1 et TNS-Q4) : ses deux tables après la même ancre que les saisies,
+// donc devant elles ; deux rangs de recul.
+const MARQUE_DES_PARAMETRES_DES_COTISATIONS = '-- ══ Les paramètres des cotisations (ligne 27, TNS-Q1 et TNS-Q4) ══'
+
+function blocDesParametresDesCotisations(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_PARAMETRES_DES_COTISATIONS)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    recule: corps.includes('set rang = -(rang + 2) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.parametres_des_cotisations') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand les tables des paramètres existent : les siennes après leur table d'ancrage. */
+const avecLesParametresDesCotisations = avecLesArticles
+
 // LES FACTURES REPRISES (ligne 51.5, étape A8a) : un dixième bloc à part les met au plan quand leurs tables existent, juste
 // après la table qu'il nomme (`factures_emises`), le lot puis ses factures reprises, les rangs qui suivent reculant d'autant
 // — le geste des articles —, avec leurs chemins ; aucune vague. Joué en dernier, après les devis.
@@ -439,11 +464,11 @@ const avecLesFacturesReprises = avecLesArticles
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesFacturesReprises(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
-  blocDesFacturesReprises(texte))
+  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -519,9 +544,12 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLaTraceDuJour, devis) : avecLaTraceDuJour
   const avecLesSituationsDuJour = SITUATIONS_PUBLIEES_EXPORTEES ? avecLesSituations(avecLesDevisDuJour, situations) : avecLesDevisDuJour
   const saisies2035 = blocDesSaisies2035(texteDeLEssai)
-  const avecLesSaisiesDuJour = SAISIES_2035_EXPORTEES ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
+  const avecLesSaisies2035DuJour = SAISIES_2035_EXPORTEES ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
+  const parametresDesCotisations = blocDesParametresDesCotisations(texteDeLEssai)
+  const avecLesParametresDuJour = PARAMETRES_DES_COTISATIONS_EXPORTES
+    ? avecLesParametresDesCotisations(avecLesSaisies2035DuJour, parametresDesCotisations) : avecLesSaisies2035DuJour
   const reprises = blocDesFacturesReprises(texteDeLEssai)
-  const courant = FACTURES_IMPORTEES_PREVUES ? avecLesFacturesReprises(avecLesSaisiesDuJour, reprises) : avecLesSaisiesDuJour
+  const courant = FACTURES_IMPORTEES_PREVUES ? avecLesFacturesReprises(avecLesParametresDuJour, reprises) : avecLesParametresDuJour
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
@@ -625,6 +653,14 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(texteDeLEssai.indexOf(MARQUE_DE_LA_TRACE)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_DEVIS))
   })
 
+  it('le bloc des paramètres des cotisations : ses deux tables après les désignations, conditionnées, après le bloc des saisies', () => {
+    expect(parametresDesCotisations.ancre).toBe('designations_des_pieces')
+    expect(parametresDesCotisations.tables).toEqual(['debuts_d_activite', 'parametres_des_cotisations'])
+    expect(parametresDesCotisations.recule).toBe(true)
+    expect(parametresDesCotisations.conditionne).toBe(true)
+    expect(texteDeLEssai.indexOf(MARQUE_DES_PARAMETRES_DES_COTISATIONS)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_SAISIES_2035))
+  })
+
   it('le bloc des factures reprises a été lu : ses tables, son ancre, leurs chemins, les rangs qui suivent reculés', () => {
     expect(reprises.tables).toEqual([...TABLES_DES_FACTURES_IMPORTEES])
     expect(reprises.ancre).toBe(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(TABLES_DES_FACTURES_IMPORTEES[0]) - 1])
@@ -666,7 +702,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DES_ADRESSES_RECEPTION.includes(t) && !TABLES_DES_CONTACTS.includes(t)
       && !TABLES_DES_PARAMETRES_FACTURATION.includes(t) && !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(t)
       && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t) && !TABLES_DES_SITUATIONS_PUBLIEES.includes(t)
-      && !TABLES_DES_SAISIES_2035.includes(t)
+      && !TABLES_DES_SAISIES_2035.includes(t) && !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(t)
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)

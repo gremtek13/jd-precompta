@@ -621,6 +621,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/SaisiesDuCabinet2035Card.tsx': 'reçoit la lecture des saisies de la Clôture (drapeau `SAISIES_2035_EXPORTEES` '
     + 'baissé : non montée) ; son test (SaisiesDuCabinet2035Card.test.tsx) éprouve « chargement… » et aucun geste sur une lecture '
     + 'incomplète ; n’écrit que sur « Enregistrer les saisies »',
+  'pages/dossier/ParametresDesCotisationsCard.tsx': 'reçoit la lecture des paramètres des cotisations du volet social '
+    + '(VoletSocialCard, montée ici ; drapeau `PARAMETRES_DES_COTISATIONS_EXPORTES` baissé : non montée) ; son test '
+    + '(ParametresDesCotisationsCard.test.tsx) éprouve « chargement… » et aucun formulaire sur une lecture incomplète ; '
+    + 'n’écrit que sur « Enregistrer les paramètres »',
   'pages/Login.tsx': 'se connecte, ou demande un lien « Mot de passe oublié », à la soumission du formulaire ; ne lit rien avant',
   'pages/NouveauMotDePasse.tsx': 'ne lit rien ; change le mot de passe à la soumission du formulaire',
   'pages/CodeDeConnexion.tsx': 'reçoit les appareils que porte la session ; ne vérifie le code qu’à la soumission du formulaire',
