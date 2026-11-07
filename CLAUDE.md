@@ -377,8 +377,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   DE PASSE OUBLIÉ ».
 - **La double authentification** (C7, premier temps, 06/11/2026) : une application d'authentification s'inscrit dans
   « Sécurité du compte » (`/securite`, monté dans les deux espaces), et un compte qui en a une vérifiée donne son code à
-  la connexion (`CodeDeConnexion`) ; rien n'est encore exigé en base, le second temps attend SEC-Q1 à Q4 → « LA DOUBLE
-  AUTHENTIFICATION, PREMIER TEMPS ».
+  la connexion (`CodeDeConnexion`) ; le second temps, préparé le 07/11/2026 derrière ses drapeaux, s'applique en DERNIER
+  (`deux_facteurs_exiges` : l'exigence compte par compte, une policy RESTRICTIVE `deux_facteurs` sur chaque table et sur
+  le stockage, la pré-requête de PostgREST pour les fonctions `security definer`, le bloc DEUX FACTEURS de treize Edge
+  Functions ; SEC2-Q1 à Q3) ; une fois appliquée, toute table neuve porte la policy `deux_facteurs` (le bloc DF de
+  `rls.sql`) → « LA DOUBLE AUTHENTIFICATION, PREMIER TEMPS », « LA DOUBLE AUTHENTIFICATION, SECOND TEMPS : EXIGÉE EN
+  BASE ».
 - **Créer un accès ne touche jamais au mot de passe d'un compte existant** (décision du cabinet du 10/10/2026) :
   `compte: "cree"` ou `"existant"` ; d'un compte d'ailleurs, le 409 dit qu'il existe, rien de plus, et l'onglet Accès le
   rattache après une confirmation qui nomme l'adresse (le marqueur, puis le booléen `true` seul), jamais un membre d'un
@@ -437,9 +441,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Déclarations TNS** (ligne 27) : les médecins de secteur 1 et 2 estimés depuis le 07/11/2026, contre l'oracle ;
   restent hors de l'estimation — chirurgiens-dentistes (« taux dentiste »), retraite, revenus de remplacement, ACRE,
   exonérations, outre-mer, activité créée dans l'année (une entrée en base chacun, que le moteur couvre sauf les DROM),
-  régularisation (aucune règle du moteur, et des échéances sans organisme ni année payée) ; DSCS proposée depuis la
-  ligne 4 de la 2035-A, à confirmer sur une première déclaration réelle → « LES COTISATIONS : CE QUE LE MOTEUR DE
-  L'URSSAF PERMET D'ESTIMER EN PLUS (LIGNE 27) ».
+  la régularisation, préparée le 07/11/2026 (`regularisation_des_cotisations` : l'organisme, l'année payée et la nature
+  d'une échéance ; `lib/regularisationDesCotisations.ts`, muet sur ce qu'il ne sait pas ;
+  `REGULARISATION_DES_COTISATIONS_EXPORTEE` baissé ; TNS-Q2) ; DSCS proposée depuis la ligne 4 de la 2035-A, à confirmer
+  sur une première déclaration réelle ; un banc de charge d'une année fictive (`outils/charge/`) mesure les calculs
+  avant les données réelles → « LES COTISATIONS : CE QUE LE MOTEUR DE L'URSSAF PERMET D'ESTIMER EN PLUS (LIGNE 27) »,
+  « LA RÉGULARISATION DES COTISATIONS (LIGNE 27, TNS-Q2) », « LE BANC DE CHARGE D'UNE ANNÉE ».
 - **CFE et CVAE** (ligne 48) : restent la saisie par exercice de la part déductible des loyers, du cadre des
   mono-établissements et de l'effectif (une table à créer), celle de BW, les dates d'activité d'un dossier qui cesse en
   cours d'année, le millésime 2027, le plafonnement de la CET (plus tard, 48-Q9) → « L'ANNEXE 2035-E SE TIRE DE LA 2035
@@ -506,14 +513,17 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   réelle d'un client ; (d) « Encaissée » : d1 à d4 en ligne ; d5, le message CDAR, en module (ses quatre choix et MDT-95
   tranchés par le premier essai réel ; le matricule d'une plateforme, une colonne de la connexion) ; d6 reste (les Edge
   Functions qui écriront `transmissions_encaissements`, l'effet du 601) ; d7 en ligne, le premier relevé réel reste à
-  faire ; l'essai réel sur le bac à sable de Super PDP. (e) l'e-reporting, onze étapes (le point 15 en hypothèse ; E6-Q8
-  : l'identifiant tiré au téléchargement, donné ensuite à la base, une migration) ; e6b (le bouton qui télécharge le
-  fichier, tiré du contenu figé) et e5b2 (un encaissement retiré après la déclaration rend la période « à rectifier »)
-  faits le 06/11/2026 derrière `IDENTIFIANT_DU_FICHIER_EXPORTE`, la migration de l'identifiant préparée, à coller
-  (E6Q8-Q1) → « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING, À L'ÉCRAN » ; restent la suite (e7 : une facture à un client
-  étranger, dont le formulaire recevra le pays, le numéro de TVA et le régime, 28.5e-Q8 ; e8 : les recettes sans facture
-  vendues à des particuliers — e7 et e8 se construiront après le MVP, 28.5e-Q1 ; e9 : `fluxEreporting` recopié dans
-  `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING », « UNE
+  faire ; l'essai réel sur le bac à sable de Super PDP. (e) l'e-reporting, onze étapes (le point 15 en hypothèse ;
+  E6-Q8 : l'identifiant tiré au téléchargement, donné ensuite à la base, une migration) ; e6b (le bouton qui télécharge
+  le fichier, tiré du contenu figé) et e5b2 (un encaissement retiré après la déclaration rend la période « à
+  rectifier ») faits le 06/11/2026 derrière `IDENTIFIANT_DU_FICHIER_EXPORTE`, la migration de l'identifiant préparée, à
+  coller (E6Q8-Q1) → « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING, À L'ÉCRAN » ; e7a, la facture à un client établi hors
+  de France, préparée le 07/11/2026 en base et en module (`facture_internationale` : le pays, le numéro de TVA et le
+  régime de l'opération figés, quinze refus à la validation aux mots de `lib/factureInternationale.ts`, une facture sans
+  eux validée comme hier ; à coller ; `FACTURE_INTERNATIONALE_EXPORTEE` baissé ; E7A-Q1 à Q4) → « LA FACTURE À UN CLIENT
+  ÉTABLI HORS DE FRANCE, EN BASE » ; restent e7b (l'écran), e7c (le CII et l'e-reporting) ; e8 : les recettes sans
+  facture vendues à des particuliers — e7 et e8 se construiront après le MVP, 28.5e-Q1 ; e9 : `fluxEreporting` recopié
+  dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING », « UNE
   RÉPONSE DU CABINET : 28.5E-Q8 ».
 - **Défauts connus des Edge Functions** (2, `DEFAUTS_CONNUS`) : `taux-change-bce` sans contrôle d'appelant : la
   désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ». `receive-email`
@@ -586,26 +596,32 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     (combien de temps garder les documents du cabinet et ses demandes), ouverte → « L'ESPACE CLIENT, LOGICIEL DE GESTION
     DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
   - « Aller plus loin », le 06/11/2026 : C1, « Mon échéancier » (à tout accès client, les montants sous « Banque »),
-    sans migration ; C2 en production depuis le 07/11/2026 (`phase_des_exercices`, `ETAT_DU_DOSSIER_EXPORTE` levé, C2-Q1 à Q4) ; C7, son
-    premier temps (Contraintes de sécurité) → « « MON ÉCHÉANCIER » : L'ÉCHÉANCIER FISCAL ET SOCIAL DU CLIENT », « L'ÉTAT
-    DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Le même soir, préparées derrière leurs drapeaux : C5, les relances
-    d'une facture en retard (pénalités calculées et montrées, jamais facturées ; `send-email` sous `RELANCES_EN_BASE` ;
-    C5-Q1 à Q3) ; C4a, les situations publiées et la case « Comptes » (`changer_droits_acces` à cinq paramètres ; C4A-Q1
-    et Q2 ; de P1-trace et d'elle, celle qui s'applique en second se refuse tant qu'elle n'est pas reprise pour
-    connaître l'autre ; `situation_publiee_en_cours` ne répond qu'au cabinet et à l'accès « Comptes » du dossier), et
-    ses écrans, C4b (« Publier au client » sous la situation intermédiaire, « Mes comptes » côté client, sous
+    sans migration ; C2 en production depuis le 07/11/2026 (`phase_des_exercices`, `ETAT_DU_DOSSIER_EXPORTE` levé, C2-Q1
+    à Q4) ; C7, son premier temps (Contraintes de sécurité) → « « MON ÉCHÉANCIER » : L'ÉCHÉANCIER FISCAL ET SOCIAL DU
+    CLIENT », « L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Le même soir, préparées derrière leurs drapeaux :
+    C5, les relances d'une facture en retard (pénalités calculées et montrées, jamais facturées ; `send-email` sous
+    `RELANCES_EN_BASE` ; C5-Q1 à Q3) ; C4a, les situations publiées et la case « Comptes » (`changer_droits_acces` à
+    cinq paramètres ; C4A-Q1 et Q2 ; reprise le 07/11/2026 par B1, elle exige P1-trace, dont la contrainte connaît
+    d'avance les sept cases ; `situation_publiee_en_cours` ne répond qu'au cabinet et à l'accès « Comptes » du dossier),
+    et ses écrans, C4b (« Publier au client » sous la situation intermédiaire, « Mes comptes » côté client, sous
     `SITUATIONS_PUBLIEES_EXPORTEES` ; C4B-Q1) ; C3, la facture électronique et l'e-reporting en un coup d'œil (la
     fonction de l'état rend l'e-reporting en phases, rien du cabinet au-delà ; en production depuis le 07/11/2026,
     `APERCU_EREPORTING_EXPORTE` levé ; C3-Q1 à Q4) → « RELANCER SES CLIENTS (C5) », « LES SITUATIONS PUBLIÉES, EN BASE
     (C4A) », « LA RELECTURE DE SÉCURITÉ DE C4A ET C5 », « LES SITUATIONS PUBLIÉES, À L'ÉCRAN », « C3, LA FACTURE
     ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP D'ŒIL », « C2 ET C3 EN PRODUCTION ». Sans migration : B9a, « Mon analyse »
     (`/mon-analyse`, avec « Ventes » ou « Banque », l'analyse n'ayant pas de case à elle ; un chiffre muet sur une
-    lecture partielle, jamais 0 ; B9A-Q1) ; B9b, le journal de l'espace client
-    reconstitué des colonnes d'auteur, jamais un nom (`lib/journalDeLEspaceClient.ts`), et la carte « ce qui a bougé »
-    du cabinet (B9B-Q1 et Q2) ; B9c, sa section dans « Mon analyse », chaque évènement sous la case de son domaine relue
-    à la base, « par ton cabinet » là seulement où la base garde l'origine (B9C-Q1 et Q2) → « « MON ANALYSE » : LES
-    INDICATEURS ET LES ÉTATS DU CLIENT (B9A) », « « ESPACE CLIENT : CE QUI A BOUGÉ » », « « MON ANALYSE » : CE QUI A
-    BOUGÉ, CÔTÉ CLIENT (B9C) ».
+    lecture partielle, jamais 0 ; B9A-Q1) ; B9b, le journal de l'espace client reconstitué des colonnes d'auteur, jamais
+    un nom (`lib/journalDeLEspaceClient.ts`), et la carte « ce qui a bougé » du cabinet (B9B-Q1 et Q2) ; B9c, sa section
+    dans « Mon analyse », chaque évènement sous la case de son domaine relue à la base, « par ton cabinet » là seulement
+    où la base garde l'origine (B9C-Q1 et Q2) → « « MON ANALYSE » : LES INDICATEURS ET LES ÉTATS DU CLIENT (B9A) »,
+    « « ESPACE CLIENT : CE QUI A BOUGÉ » », « « MON ANALYSE » : CE QUI A BOUGÉ, CÔTÉ CLIENT (B9C) ». Le 07/11/2026 : C6,
+    le rapprochement proposé par l'encaissement, sans migration (la carte d'un mouvement réservé dit « proposé par le
+    client le … » ; l'encaissement d'une facture d'avant la bascule enregistré avec son crédit propose en tête
+    l'exemplaire de la facture, `rapprochementProposeParLEncaissement`, associé au clic du cabinet, et ce crédit sort
+    des lots ; C6R-Q1 et Q2) ; B1 préparée (`trois_cases_de_l_acces`, après P1-trace et C4a : `droit_achats`,
+    `droit_frais`, `droit_documents`, qui n'ouvrent encore rien, `changer_droits_acces` à huit paramètres ;
+    `TROIS_CASES_EXPORTEES` baissé ; B1-Q1 et Q2) → « LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (C6, LIGNE 51.5) »,
+    « TROIS CASES DE PLUS : « ACHATS », « NOTES DE FRAIS », « DOCUMENTS » (B1, LIGNE 51.5) ».
   - Du premier groupe, faits : A1 à A6 (sauf ce qui suit). Restent, dans l'ordre recommandé : A4B3-Q6 (la ligne
     d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7, la facture fige ses mentions
     : A7a, la base, EN PRODUCTION le 29/10/2026 sur A7-Q1 à Q3 et A7Q-Q1, tranchées à la recommandation (l'émetteur
@@ -633,8 +649,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Plan comptable personnalisable** (ligne 43, étapes PC1 à PC9) : PC1, PC2 et PC3a en ligne, NEUTRES (le plan de
   chaque dossier est vide) ; le reste de PC3 le 06/11/2026 — la banque, le report et les tiers du bilan, la révision, le
   libellé et le préfixe de chaque rôle (§ 3.9), le lettrage, l'auxiliaire du FEC et le sens des comptes de tiers, le FEC
-  du plan par défaut identique à l'octet (`fecAuPlan.test.ts`) ; restent PC3b, l'assistant (le seul emploi que compte
-  encore `comptesEnDur.test.ts` hors du catalogue, avec deux refus recopiés de la base), puis PC4, la fonction qui
+  du plan par défaut identique à l'octet (`fecAuPlan.test.ts`) ; PC3b le 07/11/2026, l'assistant lit le plan du dossier
+  (`plan_du_dossier` au jeton de l'appelant ; `comptesEnDur.test.ts` : plus aucun emploi hors du catalogue ; les gardes
+  de copie sous deux plans) → « L'ASSISTANT LIT LE PLAN DU DOSSIER (LIGNE 43, PC3B) » ; restent PC4, la fonction qui
   réglera le plan, qui remplace la contrainte `lettrages_manuels_compte` par le plan du dossier et déplace le compte des
   notes de frais du dirigeant dans la même transaction (PC3-Q1) ; PC6 range les comptes ouverts par une balance
   reprise ; puis la suite jusqu'à PC9 → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
