@@ -484,7 +484,7 @@ describe('le FEC et la piste d’audit : le paiement par la caisse au journal de
     const registre = { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE }
     const [ligneCaisse] = pisteAudit(brouillon, [achat], [], [], { ...registre, caisse: caisseLue(ops), plan: PLAN_PAR_DEFAUT }).filter((l) => l.compte === '530000')
     expect(ligneCaisse).toMatchObject({
-      pieceId: 'p-achat', pieceFichier: 'fictif.pdf', mouvementDate: '2026-01-05', mouvementMontant: -120, manque: [],
+      pieceId: 'p-achat', pieceFichier: 'Pièce sans nom, déposée le 21/12/2025', mouvementDate: '2026-01-05', mouvementMontant: -120, manque: [],
       mouvementLibelle: 'Paiement en espèces par la caisse, saisi par le cabinet — Brouillard de caisse du 05/01/2026, tenu hors de l’application',
     })
     const parLeClient = pisteAudit(brouillon, [achat], [], [], { ...registre, caisse: caisseLue([{ ...ops[0], origine: 'client' }]), plan: PLAN_PAR_DEFAUT })

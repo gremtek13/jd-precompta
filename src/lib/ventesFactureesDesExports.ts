@@ -22,9 +22,11 @@ import type { EcritureBrouillon, EncaissementFacture, FactureEmise } from './typ
 // pas rattachée : le FEC la laisse hors du fichier, la piste d'audit le dit, le lettrage ne la lettre pas. La rattacher
 // quand même mettrait dans le fichier une écriture qui n'est plus celle que sa source commande, sous la pièce d'une autre.
 
-/** Une facture ou un avoir du dossier, tel que les exports le nomment. */
+/** Une facture ou un avoir du dossier, tel que les exports le nomment. Son SIRET figé dit si son client est une entreprise
+ *  (`nomDuClientEcrit`, lib/libellesDesVentes.ts) : la piste d'audit ne nomme que celui-là (JJ1Q1-Q1). */
 export type FactureDesExports = Pick<FactureEmise,
-  'id' | 'dossier_id' | 'type' | 'numero' | 'tiers_nom' | 'date_emission' | 'montant_ttc' | 'facture_origine_id' | 'source_de_la_vente'>
+  'id' | 'dossier_id' | 'type' | 'numero' | 'tiers_nom' | 'tiers_siret' | 'date_emission' | 'montant_ttc' | 'facture_origine_id'
+  | 'source_de_la_vente'>
 
 /** Un encaissement du registre (contre-passations comprises), tel que les exports le nomment. */
 export type EncaissementDesExports = Pick<EncaissementFacture,

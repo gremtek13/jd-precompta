@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   absenceFec,
+  designationDUnePiece,
   genererPisteAuditCsv,
   nomFichierPisteAudit,
   pisteAudit,
@@ -263,10 +264,10 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
     expect(lignes[0].manque).toEqual([])
   })
 
-  it('retombe sur le nom du fichier quand la pièce non comptabilisée n\'a pas de tiers', () => {
-    // Une ligne de piste sans libellé ne désigne rien ; le nom du fichier est le dernier repère.
-    const lignes = pisteAudit([], [piece('p9', { tiers: null })], [], [], SANS_REGISTRE)
-    expect(lignes[0].libelle).toBe('p9.pdf')
+  it('retombe sur la désignation de la pièce quand la pièce non comptabilisée n\'a pas de tiers, jamais sur son fichier', () => {
+    // Une ligne de piste sans libellé ne désigne rien ; la désignation de la pièce est le dernier repère (JJ1Q1-Q1).
+    const lignes = pisteAudit([], [piece('p9', { tiers: null, storage_hash: 'c'.repeat(64) })], [], [], SANS_REGISTRE)
+    expect(lignes[0].libelle).toBe('Pièce déposée le 10/03/2026, empreinte cccccccc')
   })
 
   it('montre une empreinte absente comme absente, sans fabriquer une preuve', () => {
@@ -274,7 +275,50 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
     // du fichier à la place laisserait croire à une preuve d'intégrité qui n'existe pas.
     const lignes = pisteAudit([ecriture({ piece_id: 'p1' })], [piece('p1', { storage_hash: null })], [], [], SANS_REGISTRE)
     expect(lignes[0].pieceEmpreinte).toBeNull()
-    expect(lignes[0].pieceFichier).toBe('p1.pdf')
+    expect(lignes[0].pieceFichier).toBe('Pièce sans nom, déposée le 10/03/2026')
+  })
+})
+
+// JJ1Q1-Q1 : la piste d'audit part avec le FEC ; chez un praticien, trois de ses colonnes pouvaient nommer un patient. Les
+// noms ci-dessous sont fictifs.
+describe('pisteAudit — ne nomme pas un patient (JJ1Q1-Q1)', () => {
+  it('« Libellé bancaire » : un crédit et un débit qui rend l’argent d’un client sous leur date, tout autre débit tel quel', () => {
+    const credit = ligneBancaire({ id: 'l-cr', piece_id: 'pv', montant: 60, libelle: 'VIR SEPA RECU DE MME PATIENTE FICTIVE', date: '2026-03-14' })
+    const rembourse = ligneBancaire({ id: 'l-rb', piece_id: 'pr', montant: -30, libelle: 'VIR SEPA EMIS A M PATIENT FICTIF', date: '2026-03-15' })
+    const achat = ligneBancaire({ id: 'l-ac', piece_id: 'pa', montant: -100, libelle: 'PRLV SEPA FOURNISSEUR FICTIF', date: '2026-03-16' })
+    const lignes = pisteAudit(
+      [
+        ecriture({ id: 'v1', compte: '706000', piece_id: 'pv', sens: 'credit', montant: 60 }),
+        ecriture({ id: 'v2', compte: COMPTE_BANQUE, piece_id: 'pv', ligne_bancaire_id: 'l-cr', montant: 60 }),
+        // Un remboursement à un patient : la pièce de vente qu'il défait porte le produit, la ligne de banque non.
+        ecriture({ id: 'r1', compte: '706000', piece_id: 'pr', montant: 30 }),
+        ecriture({ id: 'r2', compte: COMPTE_BANQUE, piece_id: 'pr', ligne_bancaire_id: 'l-rb', sens: 'credit', montant: 30 }),
+        ecriture({ id: 'a1', compte: '606100', piece_id: 'pa' }),
+        ecriture({ id: 'a2', compte: COMPTE_BANQUE, piece_id: 'pa', ligne_bancaire_id: 'l-ac', sens: 'credit' }),
+      ],
+      [piece('pv', { type_piece: 'vente' }), piece('pr', { type_piece: 'vente' }), piece('pa', { tiers: 'Fournisseur Fictif' })],
+      [credit, rembourse, achat], [], SANS_REGISTRE,
+    )
+    const libelle = (id: string) => lignes.find((l) => l.ecritureId === id)!.mouvementLibelle
+    expect([libelle('v2'), libelle('r2'), libelle('a2')]).toEqual([
+      'Crédit du relevé du 14/03/2026', 'Débit du relevé du 15/03/2026', 'PRLV SEPA FOURNISSEUR FICTIF',
+    ])
+    expect(genererPisteAuditCsv(lignes).split('\n').filter((l) => /patient/i.test(l))).toEqual([])
+  })
+
+  it('« Fichier justificatif » : la date de dépôt à Paris et l’empreinte courte, jamais le nom du fichier', () => {
+    // Déposée le 9 mars à 23 h 30 UTC : le 10 mars à Paris, quel que soit le fuseau du poste.
+    const nommee = piece('p1', { nom_fichier: 'patiente-fictive.pdf', created_at: '2026-03-09T23:30:00Z', storage_hash: '0123456789abcdef'.repeat(4) })
+    const sansEmpreinte = piece('p2', { nom_fichier: 'patient-fictif.pdf', created_at: '2026-03-11T08:00:00Z', storage_hash: null })
+    expect(designationDUnePiece(nommee)).toBe('Pièce déposée le 10/03/2026, empreinte 01234567')
+    expect(designationDUnePiece(sansEmpreinte)).toBe('Pièce sans nom, déposée le 11/03/2026')
+    const lignes = pisteAudit([ecriture({ piece_id: 'p1' })], [nommee, sansEmpreinte], [], [], SANS_REGISTRE)
+    expect(new Map(lignes.map((l) => [l.pieceId, l.pieceFichier]))).toEqual(new Map([
+      ['p1', 'Pièce déposée le 10/03/2026, empreinte 01234567'], ['p2', 'Pièce sans nom, déposée le 11/03/2026'],
+    ]))
+    // L'empreinte entière garde sa colonne, inchangée.
+    expect(lignes.find((l) => l.pieceId === 'p1')!.pieceEmpreinte).toBe('0123456789abcdef'.repeat(4))
+    expect(genererPisteAuditCsv(lignes).split('\n').filter((l) => /patient/i.test(l))).toEqual([])
   })
 })
 
@@ -290,9 +334,10 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
 
   it('donne le relevé pour justificatif, sans rien déclarer manquant', () => {
     const lignes = pisteAudit(ecritures, [], [affecte], [], SANS_REGISTRE)
+    // Un crédit : sous sa date, jamais le texte de la banque (JJ1Q1-Q1).
     expect(lignes.map((l) => [l.ecritureId, l.pieceFichier, l.pieceDate, l.mouvementLibelle, l.manque])).toEqual([
-      ['e2', 'Relevé bancaire : releve-mars-2026.pdf', '2026-03-12', 'VIR CPAM', []],
-      ['e1', 'Relevé bancaire : releve-mars-2026.pdf', '2026-03-12', 'VIR CPAM', []],
+      ['e2', 'Relevé bancaire : releve-mars-2026.pdf', '2026-03-12', 'Crédit du relevé du 12/03/2026', []],
+      ['e1', 'Relevé bancaire : releve-mars-2026.pdf', '2026-03-12', 'Crédit du relevé du 12/03/2026', []],
     ])
     // Pas d'empreinte : le mouvement n'est relié qu'au NOM du fichier importé.
     expect(lignes.every((l) => l.pieceEmpreinte === null)).toBe(true)
@@ -472,7 +517,7 @@ describe('pisteAudit — les dotations aux amortissements', () => {
     expect(lignes.map((l) => [l.ecritureId, l.manque])).toEqual([[null, ['écriture']], ['dot-d', []]])
     const ligne = lignes.find((l) => l.ecritureId === 'dot-d')!
     expect([ligne.pieceFichier, ligne.pieceEmpreinte, ligne.pieceTiers, ligne.pieceDate, ligne.mouvementDate, ligne.manque]).toEqual([
-      "Tableau d'amortissement : Ordinateur — facture facture-ordinateur.pdf", 'f'.repeat(64), 'Boulanger', '2026-12-31', null, [],
+      "Tableau d'amortissement : Ordinateur — facture : Pièce déposée le 10/03/2026, empreinte ffffffff", 'f'.repeat(64), 'Boulanger', '2026-12-31', null, [],
     ])
   })
 
@@ -492,7 +537,7 @@ describe('pisteAudit — les dotations aux amortissements', () => {
     // manquait à chacune de ses dotations suivantes. Elle n'est pas pour autant un justificatif de 2026.
     const lignes = pisteAudit([dotation()], [], [], [], { immobilisations: [ordinateur], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT })
     expect(lignes.map((l) => [l.ecritureId, l.pieceFichier, l.manque])).toEqual([
-      ['dot-d', "Tableau d'amortissement : Ordinateur — facture facture-ordinateur.pdf", []],
+      ['dot-d', "Tableau d'amortissement : Ordinateur — facture : Pièce déposée le 10/03/2026, empreinte ffffffff", []],
     ])
   })
 })

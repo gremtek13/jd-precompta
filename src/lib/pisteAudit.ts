@@ -5,8 +5,9 @@ import { referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
 import { justificatifDeLaCaisse, operationsDe, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
-import { formatDate } from './format'
-import { libelleDUnePiece, tiersAuFec } from './libellesDesVentes'
+import { dateAParis, formatDate } from './format'
+import { libelleDUnePiece, nomDuClientEcrit, tiersAuFec } from './libellesDesVentes'
+import { libelleDeLEcritureDuReleve } from './libellesDuReleve'
 import type { PlanComptable } from './planComptable'
 import type {
   ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, OperationCaisse, Piece, TransmissionFacture, VehiculeDossier,
@@ -234,8 +235,9 @@ export interface LignePisteAudit {
 // Obligatoire, sans valeur par défaut : l'oublier ferait dire « justificatif manquant » à chaque vente d'un dossier qui a
 // basculé.
 export interface JustificatifsDesVentes extends VentesFactureesDesExports {
-  /** Les pièces désignées exemplaires d'une facture ou d'un avoir, quel que soit leur statut : leur nom et leur empreinte. */
-  exemplaires: readonly Pick<Piece, 'id' | 'facture_id' | 'nom_fichier' | 'storage_hash'>[]
+  /** Les pièces désignées exemplaires d'une facture ou d'un avoir, quel que soit leur statut : leur dépôt et leur empreinte,
+   *  jamais leur nom (`designationDUnePiece`, JJ1Q1-Q1). */
+  exemplaires: readonly Pick<Piece, 'id' | 'facture_id' | 'created_at' | 'storage_hash'>[]
   /** Les transmissions des factures du dossier : l'empreinte du CII déposé, et la plateforme qui l'a reçu. */
   transmissions: readonly Pick<TransmissionFacture, 'id' | 'facture_id' | 'etat' | 'sha256' | 'hote'>[]
 }
@@ -258,6 +260,49 @@ export interface RegistreAudit {
   // Le plan du dossier (ligne 43, conception § 2.4) : une ligne de banque sans mouvement se reconnaît au compte de SA
   // banque. Obligatoire, sans valeur par défaut : au compte par défaut, sous un autre plan, elle ne manquerait de rien.
   plan: PlanComptable
+}
+
+// LA PISTE D'AUDIT NE NOMME PAS UN PATIENT (JJ1Q1-Q1, tranchée par le cabinet le 07/11/2026 sur la recommandation ;
+// HISTORIQUE.md, « JJ1Q1-Q1 : LA PISTE D'AUDIT NE NOMME PLUS UN PATIENT »). La piste part avec le FEC chez l'expert-comptable
+// et, sur demande, chez l'administration ; chez un praticien, trois de ses colonnes pouvaient nommer un patient (CGI, art. 99 ;
+// code pénal, art. 226-13 ; BOI-BNC-DECLA-10-20, § 280). Aucune règle n'est écrite ici, chacune est celle d'ailleurs :
+//   - « Libellé bancaire » : le libellé du mouvement tel que l'écriture d'un mouvement du relevé l'écrit
+//     (`libelleDeLEcritureDuReleve`, lib/libellesDuReleve.ts, JJ1-Q1) — un crédit, ou un débit dont une écriture porte un
+//     produit ou un client, sous sa date ; tout autre débit, le texte de la banque. Les comptes sont ceux des écritures qui
+//     citent le mouvement, de celles de leurs pièces, et de celles des encaissements qui le citent (`comptesDesMouvements`) ;
+//   - « Tiers » d'une facture ou d'un encaissement : le client seulement quand c'est une entreprise (`nomDuClientEcrit`,
+//     lib/libellesDesVentes.ts, le prédicat d'IdClient, FEC22-Q7) ; sinon la colonne se tait ;
+//   - « Fichier justificatif » (et le libellé d'une pièce sans écriture qui retombait sur lui) : jamais le nom du fichier
+//     déposé, mais sa date de dépôt à Paris et les huit premiers caractères de l'empreinte que la pièce porte déjà
+//     (`designationDUnePiece`) ; sans empreinte, la pièce se dit sans nom.
+// Rien ne change en base, ni dans le FEC, ni à l'écran : le relevé importé garde son texte.
+
+/** La longueur de l'empreinte courte qui désigne une pièce dans la piste d'audit (son SHA-256 entier a sa colonne). */
+export const LONGUEUR_DE_L_EMPREINTE_COURTE = 8
+
+/** Ce que la piste dit d'une pièce à la place du nom de son fichier : son dépôt, au jour de Paris, et son empreinte courte. */
+export function designationDUnePiece(piece: Pick<Piece, 'created_at' | 'storage_hash'>): string {
+  const depot = formatDate(dateAParis(piece.created_at))
+  const empreinte = piece.storage_hash?.trim() ?? ''
+  return empreinte === '' ? `Pièce sans nom, déposée le ${depot}`
+    : `Pièce déposée le ${depot}, empreinte ${empreinte.slice(0, LONGUEUR_DE_L_EMPREINTE_COURTE)}`
+}
+
+/** Les comptes de l'écriture de chaque mouvement cité, tels que `libelleDeLEcritureDuReleve` les lit. */
+function comptesDesMouvements(ecritures: readonly EcritureBrouillon[], index: IndexDesFactures): Map<string, string[]> {
+  const comptesParPiece = new Map<string, string[]>()
+  for (const e of ecritures) {
+    if (e.piece_id) comptesParPiece.set(e.piece_id, [...(comptesParPiece.get(e.piece_id) ?? []), e.compte])
+  }
+  const comptes = new Map<string, string[]>()
+  const ajouter = (mouvementId: string, ajout: readonly string[]) =>
+    comptes.set(mouvementId, [...(comptes.get(mouvementId) ?? []), ...ajout])
+  for (const e of ecritures) {
+    if (e.ligne_bancaire_id) ajouter(e.ligne_bancaire_id, [e.compte, ...(e.piece_id ? comptesParPiece.get(e.piece_id) ?? [] : [])])
+    const enc = e.encaissement_id == null ? undefined : index.encaissements.get(e.encaissement_id)
+    if (enc?.ligne_bancaire_id) ajouter(enc.ligne_bancaire_id, [e.compte])
+  }
+  return comptes
 }
 
 // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (étape C9a ; CAISSE-Q4, (B)) : sa ligne de caisse est jugée par sa PIÈCE, comme la
@@ -286,10 +331,12 @@ export function pisteAudit(
   const piecesCitees = new Set(ecritures.map((e) => e.piece_id).filter((id): id is string => !!id))
   const ventes = rattachementDesVentes(ecritures, registre.ventes.ecritures)
   const index = indexDesFactures(registre.ventes)
+  const comptesParMouvement = comptesDesMouvements(ecritures, index)
+  const libelleDuMouvement = (m: LigneBancaire) => libelleDeLEcritureDuReleve(m, comptesParMouvement.get(m.id) ?? [])
 
   const depuisEcritures = ecritures.map((e): LignePisteAudit => {
     if (porteUneSourceDeVente(e) || ventes.has(e.id)) {
-      return ligneDUneVenteFacturee(e, ventes.get(e.id) ?? null, index, registre.ventes, ligneParId)
+      return ligneDUneVenteFacturee(e, ventes.get(e.id) ?? null, index, registre.ventes, ligneParId, libelleDuMouvement)
     }
     if (!e.piece_id && !e.ligne_bancaire_id && e.immobilisation_id) return ligneDeDotation(e, bienParId, factureParId)
     if (!e.piece_id && !e.ligne_bancaire_id && e.vehicule_id) return ligneDuForfait(e, vehiculeParId)
@@ -330,11 +377,12 @@ export function pisteAudit(
       pieceDate: piece?.date_piece ?? releve?.date ?? null,
       pieceMontantTtc: piece?.montant_ttc ?? null,
       // Le relevé n'a pas d'empreinte connue ici : le mouvement n'est relié qu'au NOM du fichier
-      // importé. La colonne reste vide plutôt que de laisser croire à une preuve d'intégrité.
-      pieceFichier: piece?.nom_fichier ?? (releve ? justificatifDuReleve(releve) : null),
+      // importé. La colonne reste vide plutôt que de laisser croire à une preuve d'intégrité. Une pièce se désigne par son
+      // dépôt et son empreinte courte, jamais par le nom de son fichier (JJ1Q1-Q1).
+      pieceFichier: piece ? designationDUnePiece(piece) : releve ? justificatifDuReleve(releve) : null,
       pieceEmpreinte: piece?.storage_hash ?? null,
       mouvementDate: mouvement?.date ?? parLaCaisse?.date ?? null,
-      mouvementLibelle: mouvement?.libelle ?? (parLaCaisse ? libelleDuPaiementParLaCaisse(parLaCaisse) : null),
+      mouvementLibelle: mouvement ? libelleDuMouvement(mouvement) : parLaCaisse ? libelleDuPaiementParLaCaisse(parLaCaisse) : null,
       mouvementMontant: mouvement?.montant ?? parLaCaisse?.montant ?? null,
       manque,
     }
@@ -356,15 +404,15 @@ export function pisteAudit(
       libelle: exemplaireDUneSource(p)
         ? `Exemplaire de : ${nomDuDocument(exemplaireDUneSource(p)!)} — la vente est comptée par la facture`
         // Une pièce de vente, « Recette du JJ/MM/AAAA », jamais le tiers lu (JJ1-Q1, la règle de FEC22-Q7) ; un achat, son
-        // fournisseur, sinon son fichier, comme hier.
-        : libelleDUnePiece(p),
+        // fournisseur, sinon sa désignation, jamais le nom de son fichier (JJ1Q1-Q1).
+        : libelleDUnePiece({ ...p, nom_fichier: designationDUnePiece(p) }),
       debit: 0,
       credit: 0,
       pieceId: p.id,
       pieceTiers: tiersAuFec(p).tiers,
       pieceDate: p.date_piece,
       pieceMontantTtc: p.montant_ttc,
-      pieceFichier: p.nom_fichier,
+      pieceFichier: designationDUnePiece(p),
       pieceEmpreinte: p.storage_hash,
       mouvementDate: null,
       mouvementLibelle: null,
@@ -421,6 +469,7 @@ function ligneDUneVenteFacturee(
   index: IndexDesFactures,
   justificatifs: JustificatifsDesVentes,
   ligneParId: ReadonlyMap<string, LigneBancaire>,
+  libelleDuMouvement: (m: LigneBancaire) => string,
 ): LignePisteAudit {
   // Une ligne de banque d'une vente facturée porte son mouvement par construction (la composition le pose sur elle) : rien
   // à vérifier là qu'une ligne rattachée ne garantisse déjà.
@@ -435,7 +484,7 @@ function ligneDUneVenteFacturee(
     const m = mouvementId == null ? null : ligneParId.get(mouvementId) ?? null
     // Même distinction qu'ailleurs : un mouvement cité mais absent du jeu chargé est un filtre de l'appelant.
     if (mouvementId != null && m === null) manque.push('mouvement hors du jeu chargé')
-    return { mouvementDate: m?.date ?? null, mouvementLibelle: m?.libelle ?? null, mouvementMontant: m?.montant ?? null }
+    return { mouvementDate: m?.date ?? null, mouvementLibelle: m ? libelleDuMouvement(m) : null, mouvementMontant: m?.montant ?? null }
   }
 
   if (e.facture_id != null) {
@@ -450,10 +499,11 @@ function ligneDUneVenteFacturee(
     // le CII à la plateforme.
     const transmis = justificatifs.transmissions.find((t) => t.facture_id === doc.id && (t.etat === 'depose' || t.etat === 'accepte'))
     const empreintes = exemplaires.map((p) => p.storage_hash).filter((h): h is string => h != null)
-    const preuve = exemplaires.length > 0 ? ` — exemplaire : ${exemplaires.map((p) => p.nom_fichier).join(', ')}`
+    const preuve = exemplaires.length > 0 ? ` — exemplaire : ${exemplaires.map(designationDUnePiece).join(', ')}`
       : transmis ? ` — CII transmis à ${transmis.hote}` : ''
     return {
-      ...base, pieceTiers: doc.tiers_nom, pieceDate: doc.date_emission, pieceMontantTtc: doc.montant_ttc,
+      // Le client, seulement quand c'est une entreprise (JJ1Q1-Q1, le prédicat d'IdClient).
+      ...base, pieceTiers: nomDuClientEcrit(doc), pieceDate: doc.date_emission, pieceMontantTtc: doc.montant_ttc,
       pieceFichier: `${nomDuDocument(doc)}${preuve}`,
       pieceEmpreinte: exemplaires.length > 0 ? (empreintes.length > 0 ? empreintes.join(' ; ') : null) : transmis?.sha256 ?? null,
       ...operation(null), manque,
@@ -468,7 +518,7 @@ function ligneDUneVenteFacturee(
     const facture = index.factures.get(enc.facture_id)
     const quoi = enc.annule_id == null ? 'encaissement' : 'contre-passation'
     return {
-      ...base, pieceTiers: facture?.tiers_nom ?? null, pieceDate: enc.date_encaissement, pieceMontantTtc: enc.montant,
+      ...base, pieceTiers: facture ? nomDuClientEcrit(facture) : null, pieceDate: enc.date_encaissement, pieceMontantTtc: enc.montant,
       pieceFichier: `Registre des encaissements : ${quoi} du ${formatDate(enc.date_encaissement)} (${libelleDuMoyen(enc.moyen)}) — `
         + (facture ? nomDuDocument(facture) : 'facture non lue'),
       pieceEmpreinte: null, ...operation(enc.ligne_bancaire_id), manque,
@@ -510,7 +560,7 @@ function ligneDeDotation(
     pieceTiers: facture?.tiers ?? null,
     pieceDate: e.date,
     pieceMontantTtc: null,
-    pieceFichier: facture ? `${tableau} — facture ${facture.nom_fichier}` : tableau,
+    pieceFichier: facture ? `${tableau} — facture : ${designationDUnePiece(facture)}` : tableau,
     pieceEmpreinte: facture?.storage_hash ?? null,
     mouvementDate: null,
     mouvementLibelle: null,

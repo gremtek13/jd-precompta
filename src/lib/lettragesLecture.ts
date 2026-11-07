@@ -51,7 +51,7 @@ export async function lireLettragesManuels(dossierId: string, plan: PlanComptabl
 // partie, rien n'est rendu et le motif le dit — une ligne sans sa facture retomberait parmi les « écritures sans pièce ».
 // GARDÉE AVEC LE DOSSIER. Ce module ne rejette jamais.
 export const COLONNES_FACTURES_DES_LIGNES =
-  'id, dossier_id, type, numero, tiers_nom, date_emission, montant_ttc, facture_origine_id, source_de_la_vente'
+  'id, dossier_id, type, numero, tiers_nom, tiers_siret, date_emission, montant_ttc, facture_origine_id, source_de_la_vente'
 export const COLONNES_ENCAISSEMENTS_DES_LIGNES =
   'id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id'
 
