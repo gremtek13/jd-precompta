@@ -49,9 +49,10 @@ interface Copie {
 }
 
 // Prend la SOURCE en paramètre : c'est ce qui permet de lui donner une source où une dérive a été
-// plantée. Le bloc lit `COMPTE_BANQUE` et `COMPTE_TVA_COLLECTEE`, déclarés plus haut dans la fonction :
-// leur valeur est reprise de la MÊME source, pour qu'une dérive d'un numéro de compte morde ici aussi. Et
-// `estFigee`, du bloc VALIDATION (la frontière des exercices validés), extrait de la même source.
+// plantée. Le bloc ne nomme aucun compte : il lit ceux du plan du dossier (`plan`, que `plan_du_dossier`
+// rend à la fonction), et `avecLePlan` lie chaque fonction qui le déclare au plan de la batterie
+// (`PLANS_DES_GARDES`). Et `estFigee`, du bloc VALIDATION (la frontière des exercices validés), extrait de
+// la même source.
 function extraire(source: string, plan: PlanComptable): Copie {
   const debut = source.indexOf('// ── DÉBUT AFFECTATION')
   const fin = source.indexOf('// ── FIN AFFECTATION')
