@@ -578,7 +578,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque ; onze étapes P0 à P10) → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT :
   LA CONCEPTION ». Restent :
-  - P1-trace : garder qui a changé les droits d'un accès, et quand — préparée, l'accord du cabinet attendu (P1T) ;
+  - P1-trace : garder qui a changé les droits d'un accès, et quand — en production depuis le 07/11/2026
+    (`TRACE_DES_DROITS_PREVUE` levé, la table au plan de sauvegarde) ; reste son écran, un lot à part ;
   - P4, la mention du mandataire : imprimée sous l'identité de l'émetteur et nommée à la confirmation depuis le
     06/11/2026, le nom du cabinet lu comme la base le lit → « LE MANDAT DE FACTURATION IMPRIMÉ ET NOMMÉ À LA
     CONFIRMATION (P4, LIGNE 51.5) » ;
@@ -606,17 +607,18 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   - « Aller plus loin », le 06/11/2026 : C1, « Mon échéancier » (à tout accès client, les montants sous « Banque »),
     sans migration ; C2 en production depuis le 07/11/2026 (`phase_des_exercices`, `ETAT_DU_DOSSIER_EXPORTE` levé, C2-Q1
     à Q4) ; C7, son premier temps (Contraintes de sécurité) → « « MON ÉCHÉANCIER » : L'ÉCHÉANCIER FISCAL ET SOCIAL DU
-    CLIENT », « L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Le même soir, préparées derrière leurs drapeaux :
-    C5, les relances d'une facture en retard (pénalités calculées et montrées, jamais facturées ; `send-email` sous
-    `RELANCES_EN_BASE` ; C5-Q1 à Q3) ; C4a, les situations publiées et la case « Comptes » (`changer_droits_acces` à
-    cinq paramètres ; C4A-Q1 et Q2 ; reprise le 07/11/2026 par B1, elle exige P1-trace, dont la contrainte connaît
-    d'avance les sept cases ; `situation_publiee_en_cours` ne répond qu'au cabinet et à l'accès « Comptes » du dossier),
+    CLIENT », « L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Le même soir, préparées, en production depuis le
+    07/11/2026 : C5, les relances d'une facture en retard (pénalités calculées et montrées, jamais facturées ; `send-email`
+    sous `RELANCES_EN_BASE` levé, à redéployer avant `RELANCES_EXPORTEES` ; C5-Q1 à Q3) ; C4a, les situations publiées
+    et la case « Comptes » (`changer_droits_acces` à cinq paramètres ; C4A-Q1 et Q2 ; reprise le 07/11/2026 par B1, elle
+    exige P1-trace, dont la contrainte connaît d'avance les sept cases ; `situation_publiee_en_cours` ne répond qu'au cabinet et à l'accès « Comptes » du dossier),
     et ses écrans, C4b (« Publier au client » sous la situation intermédiaire, « Mes comptes » côté client, sous
-    `SITUATIONS_PUBLIEES_EXPORTEES` ; C4B-Q1) ; C3, la facture électronique et l'e-reporting en un coup d'œil (la
+    `SITUATIONS_PUBLIEES_EXPORTEES`, levé ; C4B-Q1) ; C3, la facture électronique et l'e-reporting en un coup d'œil (la
     fonction de l'état rend l'e-reporting en phases, rien du cabinet au-delà ; en production depuis le 07/11/2026,
     `APERCU_EREPORTING_EXPORTE` levé ; C3-Q1 à Q4) → « RELANCER SES CLIENTS (C5) », « LES SITUATIONS PUBLIÉES, EN BASE
     (C4A) », « LA RELECTURE DE SÉCURITÉ DE C4A ET C5 », « LES SITUATIONS PUBLIÉES, À L'ÉCRAN », « C3, LA FACTURE
-    ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP D'ŒIL », « C2 ET C3 EN PRODUCTION ». Sans migration : B9a, « Mon analyse »
+    ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP D'ŒIL », « C2 ET C3 EN PRODUCTION », « P1-TRACE, C4A, C5 ET DEVC EN
+    PRODUCTION (LIGNE 51.5) ». Sans migration : B9a, « Mon analyse »
     (`/mon-analyse`, avec « Ventes » ou « Banque », l'analyse n'ayant pas de case à elle ; un chiffre muet sur une
     lecture partielle, jamais 0 ; B9A-Q1) ; B9b, le journal de l'espace client reconstitué des colonnes d'auteur, jamais
     un nom (`lib/journalDeLEspaceClient.ts`), et la carte « ce qui a bougé » du cabinet (B9B-Q1 et Q2) ; B9c, sa section
@@ -645,12 +647,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 », « A7Q-Q1 : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS
     L'ESPACE CLIENT, DANS LA MIGRATION », « LES DEUX MIGRATIONS D'A7 EN PRODUCTION », « QUATRE RÉPONSES DU CABINET : LA
     MIGRATION DE C6 ET A7B-Q1 À Q3 » ; la liste des clients sans activité depuis trois ans et le devis qui cite son
-    contact, préparés le 06/11/2026 derrière `DEVIS_CITENT_UN_CONTACT` (DEVC-Q1 ; le banc du leurre à rejouer sur leur
-    essai avant l'application ; seule la facture le cite, depuis A7) ; la suite du premier groupe, dont A8, les factures
+    contact, en production depuis le 07/11/2026 (`DEVIS_CITENT_UN_CONTACT` levé ; DEVC-Q1) ; la suite du premier groupe, dont A8, les factures
     reprises, et A9, la numérotation (MEG1-Q5 : deux séries par dossier, celle du client et celle du mandataire, choisie
     selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit), reconçues le 06/11/2026,
     A8-Q1 à Q6 tranchées, A8a (la base) préparée le 07/11/2026, à coller → « A8 ET A9, LES FACTURES REPRISES ET LA
-    NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) » ; P1-trace.
+    NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
   sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU

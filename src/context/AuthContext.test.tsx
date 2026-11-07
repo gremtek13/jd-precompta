@@ -34,6 +34,13 @@ const faux = vi.hoisted(() => ({
   lecturesAcces: [] as { colonnes: string; filtre: string }[],
 }))
 
+// L'ÉTAT D'AVANT LA CASE « COMPTES » (étape C4a, en production depuis le 07/11/2026) : ce fichier joue la lecture des accès
+// du drapeau baissé, éprouvée tant que son code existe ; levé, la même lecture nomme en plus `droit_comptes` (la constante
+// des colonnes d'AuthContext.tsx), et la case se lit par `droitsDeLaLigne` (droitsAcces.test.ts).
+vi.mock('../lib/situationsPubliees', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/situationsPubliees')>(),
+  SITUATIONS_PUBLIEES_EXPORTEES: false,
+}))
 vi.mock('../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatIn } = await import('../test/filtresPostgrest')
   const projeter = (lignes: Record<string, unknown>[], colonnes: string) => {

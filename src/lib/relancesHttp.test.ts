@@ -1,16 +1,18 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { CONTRATS, SCENARIOS_RELANCES, jugerScenario, type ContratFonction, type Contexte } from '../test/contratsFonctions'
-import { RELANCES_BAISSEES, RELANCES_LEVEES, muter, prechauffer, relancesLevees, sourceDe } from '../test/fonctionsEdge'
+import {
+  CONTRATS, SCENARIOS_RELANCES, SCENARIO_RELANCE_AVANT_SA_MIGRATION, jugerScenario, type ContratFonction, type Contexte,
+} from '../test/contratsFonctions'
+import { RELANCES_BAISSEES, RELANCES_LEVEES, muter, prechauffer, relancesBaissees, sourceDe } from '../test/fonctionsEdge'
 import { RELANCES_EXPORTEES } from './relances'
 
-// LA RELANCE D'UNE FACTURE EN RETARD, LES APPELS HTTP CONSTANTE LEVÉE (étape C5, ligne 51.5). `send-email` n'admet le
-// modèle « relance_facture » que sous `RELANCES_EN_BASE`, baissée tant que la migration préparée `relances_des_factures`
-// n'est pas en base : la ligne de journal d'une relance y serait refusée APRÈS l'envoi, et l'e-mail ne compterait pas
-// dans le plafond d'un accès client. Le contrat de la source servie (edgeFunctionsHttp.test.ts) éprouve le refus d'avant ;
-// ceux-ci jouent la source du jour d'après, la constante levée en mémoire : le client « Ventes » relance ses factures, un
-// client sans « Ventes » reçoit 404, des droits illisibles 503, le plafond de trente par jour de Paris, et les refus
-// d'une facture qui n'est pas en retard au jour de Paris. Les contrôles qui valent partout (ni secret ni valeur de pièce
-// au journal, aucun hôte non déclaré) s'appliquent à chaque scénario.
+// LA RELANCE D'UNE FACTURE EN RETARD, LES APPELS HTTP (étape C5, ligne 51.5). `send-email` n'admet le modèle
+// « relance_facture » que sous `RELANCES_EN_BASE`, levée depuis que la migration `relances_des_factures` est en production
+// (07/11/2026) : avant elle, la ligne de journal d'une relance aurait été refusée APRÈS l'envoi, et l'e-mail n'aurait pas
+// compté dans le plafond d'un accès client. Ces scénarios jouent la source servie : le client « Ventes » relance ses
+// factures, un client sans « Ventes » reçoit 404, des droits illisibles 503, le plafond de trente par jour de Paris, et les
+// refus d'une facture qui n'est pas en retard au jour de Paris ; l'état d'avant, la constante baissée en mémoire
+// (`relancesBaissees`), refuse la relance comme un type inconnu — éprouvé tant que son code existe. Les contrôles qui
+// valent partout (ni secret ni valeur de pièce au journal, aucun hôte non déclaré) s'appliquent à chaque scénario.
 
 const contexte: Contexte = { entetesDuNavigateur: [] }
 const contrat: ContratFonction = (() => {
@@ -18,16 +20,18 @@ const contrat: ContratFonction = (() => {
   if (!c) throw new Error('aucun contrat pour send-email')
   return c
 })()
-const levee = () => relancesLevees(sourceDe('send-email'))
+const levee = () => sourceDe('send-email')
+const baissee = () => relancesBaissees(sourceDe('send-email'))
 
-beforeAll(() => { prechauffer(levee()) })
+beforeAll(() => { prechauffer(levee()); prechauffer(baissee()) })
 
 describe('la constante de la relance et le drapeau de l’écran', () => {
-  it('servie, la constante est baissée, une fois exactement ; levée en mémoire, rien d’autre ne change', () => {
+  it('servie, la constante est levée, une fois exactement ; baissée en mémoire, rien d’autre ne change', () => {
     const source = sourceDe('send-email')
-    expect(source.split(RELANCES_BAISSEES)).toHaveLength(2)
-    expect(source.includes(RELANCES_LEVEES)).toBe(false)
-    expect(levee().replace(RELANCES_LEVEES, RELANCES_BAISSEES)).toBe(source)
+    expect(source.split(RELANCES_LEVEES)).toHaveLength(2)
+    expect(source.includes(RELANCES_BAISSEES)).toBe(false)
+    expect(baissee()).not.toBe(source)
+    expect(baissee().replace(RELANCES_BAISSEES, RELANCES_LEVEES)).toBe(source)
   })
 
   it('l’ordre de mise en production : le bouton ne s’offre jamais sur une fonction qui refuserait la relance', () => {
@@ -36,9 +40,19 @@ describe('la constante de la relance et le drapeau de l’écran', () => {
   })
 })
 
-describe('send-email, constante levée : la relance d’une facture', () => {
+describe('send-email, constante levée (la source servie) : la relance d’une facture', () => {
   it.each(SCENARIOS_RELANCES.map((s) => [s.nom, s] as const))('%s', async (_nom, scenario) => {
     expect(await jugerScenario(contrat, scenario, contexte, levee())).toEqual([])
+  })
+})
+
+describe('send-email, constante baissée en mémoire : l’état d’avant la migration', () => {
+  it('la relance se refuse comme un type inconnu, rien de lu ni d’envoyé', async () => {
+    expect(await jugerScenario(contrat, SCENARIO_RELANCE_AVANT_SA_MIGRATION, contexte, baissee())).toEqual([])
+  })
+
+  it('servie, la même relance part : le scénario d’avant tombe sur la source du jour', async () => {
+    expect(await jugerScenario(contrat, SCENARIO_RELANCE_AVANT_SA_MIGRATION, contexte, levee())).not.toEqual([])
   })
 })
 

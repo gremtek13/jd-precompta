@@ -289,7 +289,11 @@ describe('la base applique ce qu’on lui demande', () => {
     }
     // La clé `caisse` le jour où la migration `caisse_du_client` (étape C10) entre dans l'export : le cabinet du dossier, ou
     // un accès qui porte la case — qu'aucun accès du monde de référence ne porte.
-    const avecCaisse = (o: Record<string, boolean>, caisse: boolean) => (CAISSE_DU_CLIENT_EXPORTEE ? { ...o, caisse } : o)
+    // De même la clé `comptes` depuis que `situations_publiees` (étape C4a) est dans l'export : le cabinet du dossier, ou un
+    // accès qui porte la case — qu'aucun accès du monde de référence ne porte ; elle suit donc la clé `caisse`.
+    const avecComptes = (o: Record<string, boolean>, comptes: boolean) => (SITUATIONS_PUBLIEES_EXPORTEE ? { ...o, comptes } : o)
+    const avecCaisse = (o: Record<string, boolean>, caisse: boolean) =>
+      avecComptes(CAISSE_DU_CLIENT_EXPORTEE ? { ...o, caisse } : o, caisse)
     const tout = avecCaisse({ cabinet: true, membre: false, ventes: true, banque: true }, true)
     const rien = avecCaisse({ cabinet: false, membre: false, ventes: false, banque: false }, false)
     const lus: Record<string, unknown> = {}
@@ -310,7 +314,8 @@ describe('la base applique ce qu’on lui demande', () => {
         Object.assign(monde.base.memberships[0], { droit_caisse: true, dossier_id: dossier })
         return monde
       }
-      expect(await sonde(lire, caisse()).rendre('client')).toEqual({ cabinet: false, membre: true, ventes: false, banque: false, caisse: true })
+      expect(await sonde(lire, caisse()).rendre('client'))
+        .toEqual(avecComptes({ cabinet: false, membre: true, ventes: false, banque: false, caisse: true }, false))
       expect(await sonde(lire, caisse(ID.dossierVoisin)).rendre('client')).toEqual(rien)
     }
     // Sous la clé de service, `auth.uid()` est nul : rien, pour personne.
@@ -570,7 +575,7 @@ describe('droits_sur_le_dossier : le faux est tiré du texte de la migration (é
     expect(CAISSE_DU_CLIENT_EXPORTEE).toBe(exportee)
     expect(casesDesDroitsSelon(false, false, false)).toEqual({ membre: true, ventes: 'droit_ventes', banque: 'droit_banque' })
     expect(Object.keys(droitsDuDossierSelon(false, false, false))).toEqual(['cabinet', 'membre', 'ventes', 'banque'])
-    // Le mot « comptes » (la migration `situations_publiees`, étape C4a, préparée) : ses deux états, le second confronté au
+    // Le mot « comptes » (la migration `situations_publiees`, étape C4a, en production) : ses deux états, le second confronté au
     // texte préparé avec celui de la caisse — la dernière définition est la sienne.
     expect(Object.keys(droitsDuDossierSelon(true, false, false))).toEqual(['cabinet', 'membre', 'ventes', 'banque', 'caisse'])
     expect(casesDesDroitsSelon(true, true, false)).toMatchObject({ caisse: 'droit_caisse', comptes: 'droit_comptes' })
@@ -578,8 +583,9 @@ describe('droits_sur_le_dossier : le faux est tiré du texte de la migration (é
     const situationsPreparee = fichiersPrepares().some((f) => /\/\d{14}_situations_publiees\.sql$/.test(f.chemin))
     expect(situationsExportee !== situationsPreparee, 'la migration situations_publiees, préparée OU dans l’export').toBe(true)
     expect(SITUATIONS_PUBLIEES_EXPORTEE).toBe(situationsExportee)
-    const nom = (chemin: string) => chemin.split('/').pop() as string
-    const fichiers = [...fichiersDuSchema(), ...fichiersPrepares()].sort((a, b) => (nom(a.chemin) < nom(b.chemin) ? -1 : 1))
+    // Dans l'ordre où elles s'appliquent : l'export, puis les préparées — jamais par le nom : `situations_publiees`, entrée
+    // dans l'export sous 20261107164102, précède B1, préparée sous un nom plus ancien (20261107140000).
+    const fichiers = [...fichiersDuSchema(), ...fichiersPrepares()]
     const derniere = (fonction: string) => {
       const motif = new RegExp(`create (or replace )?function public\\.${fonction}\\(`, 'g')
       const texte = fichiers.filter((f) => new RegExp(motif.source).test(f.texte)).pop()!.texte

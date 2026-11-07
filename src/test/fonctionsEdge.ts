@@ -92,17 +92,18 @@ export function acomptesBaisses(source: string): string {
   return muter(source, [[ACOMPTES_LEVES, ACOMPTES_BAISSES]])
 }
 
-/** La constante de send-email qui admet la relance d'une facture (étape C5), telle qu'elle est servie : baissée. */
+/** La constante de send-email qui admet la relance d'une facture (étape C5), baissée : la source d'avant sa migration. */
 export const RELANCES_BAISSEES = 'const RELANCES_EN_BASE = false'
-/** La même, levée : la source du jour où la migration `relances_des_factures` est en base. */
+/** La même, levée, telle qu'elle est servie depuis la migration `relances_des_factures` (en production le 07/11/2026). */
 export const RELANCES_LEVEES = 'const RELANCES_EN_BASE = true'
 
 /**
- * La source de send-email telle qu'elle se servira APRÈS la migration `relances_des_factures` : `RELANCES_EN_BASE` levée,
- * en mémoire, rien d'autre de changé. Une occurrence exactement de la constante baissée, sinon `muter` lève.
+ * La source de send-email telle qu'elle se servait AVANT la migration `relances_des_factures` : `RELANCES_EN_BASE` baissée,
+ * en mémoire, rien d'autre de changé — son état d'avant reste éprouvé tant que son code existe. Une occurrence exactement
+ * de la constante levée, sinon `muter` lève.
  */
-export function relancesLevees(source: string): string {
-  return muter(source, [[RELANCES_BAISSEES, RELANCES_LEVEES]])
+export function relancesBaissees(source: string): string {
+  return muter(source, [[RELANCES_LEVEES, RELANCES_BAISSEES]])
 }
 
 /**
@@ -360,7 +361,7 @@ function membreDuDossier(monde: Monde, utilisateur: string | null, dossierId: un
 // états, et confronte le second au texte préparé.
 export const CAISSE_DU_CLIENT_EXPORTEE = fichiersDuSchema().some((f) => /\/\d{14}_caisse_du_client\.sql$/.test(f.chemin))
 
-// LE MOT « COMPTES » (ligne 51.5, étape C4a ; la migration `situations_publiees`, préparée) : de même, le jour où elle entre
+// LE MOT « COMPTES » (ligne 51.5, étape C4a ; la migration `situations_publiees`, en production le 07/11/2026) : depuis qu'elle est
 // dans l'export, `client_du_dossier` lit la case `droit_comptes` et `droits_sur_le_dossier` rend la clé `comptes` (le cabinet
 // du dossier, ou un accès qui porte la case) ; `fonctionsEdge.test.ts` confronte cet état au texte préparé. Les Edge
 // Functions ne lisent que leurs quatre clés (bloc droitsDeLAppelant) : une clé de plus ne les change pas.

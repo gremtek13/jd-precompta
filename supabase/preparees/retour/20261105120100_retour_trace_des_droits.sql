@@ -1,6 +1,6 @@
 -- RETOUR ARRIÈRE DE `trace_des_droits` (P1-trace) — DESTRUCTIF, À ACCORDER PAR LE CABINET, À COLLER dans l'éditeur SQL de
 -- Supabase, dans une transaction, avec sa ligne d'historique (le texte retire une table, un déclencheur et deux fonctions).
--- La migration : supabase/preparees/20261105120000_trace_des_droits.sql ; le récit : HISTORIQUE.md, « 05/11/2026 — LA TRACE
+-- La migration : supabase/schema/20261107163158_trace_des_droits.sql (en production depuis le 07/11/2026) ; le récit : HISTORIQUE.md, « 05/11/2026 — LA TRACE
 -- DES DROITS D'UN ACCÈS, EN BASE (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
 -- L'ORDRE : D'ABORD l'application, son drapeau baissé (`TRACE_DES_DROITS_PREVUE`, le fichier de la migration sorti de

@@ -25,11 +25,11 @@ import type { TypeClient } from './types'
 // centime, le demi vers le haut.
 
 /**
- * Le bouton « Relancer », les pastilles « En retard » et « Relancée le … » : baissé tant que la migration préparée
- * `relances_des_factures` (supabase/preparees/20261106140000_relances_des_factures.sql) n'est pas en base — la contrainte
- * du journal y refuserait la ligne d'une relance — et que `send-email` n'a pas été redéployée, sa constante
- * `RELANCES_EN_BASE` levée. L'ordre : la migration, puis le déploiement, puis ce drapeau (`relancesHttp.test.ts` refuse
- * le drapeau levé sur une fonction qui refuserait la relance).
+ * Le bouton « Relancer », les pastilles « En retard » et « Relancée le … » : baissé tant que `send-email` n'a pas été
+ * redéployée, sa constante `RELANCES_EN_BASE` levée — la migration `relances_des_factures` est en production depuis le
+ * 07/11/2026 (supabase/schema/20261107163303_relances_des_factures.sql), la constante levée dans le dépôt le même jour.
+ * L'ordre : la migration, puis le déploiement, puis ce drapeau (`relancesHttp.test.ts` refuse le drapeau levé sur une
+ * fonction qui refuserait la relance).
  */
 export const RELANCES_EXPORTEES = false
 

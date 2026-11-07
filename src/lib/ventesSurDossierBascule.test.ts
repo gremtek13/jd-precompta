@@ -275,8 +275,14 @@ describe('les chemins qui posent ou changent droit_ventes', () => {
     // La migration `caisse_du_client` (ligne 26.6, étape C10), le jour où elle entre dans l'export : sa forme à quatre de
     // changer_droits_acces, la seule qui écrive alors, celle à trois l'appelant.
     const caisse = fichiersDuSchema().filter((f) => /\/\d{14}_caisse_du_client\.sql$/.test(f.chemin)).map((f) => f.chemin)
-    expect(ecrivent).toEqual(['supabase/schema/20261009224031_droits_des_acces_clients.sql', ...caisse])
-    expect(derniereDefinitionSql('changer_droits_acces')).toContain('update public.memberships m')
+    // De même `situations_publiees` (étape C4a, en production depuis le 07/11/2026) : sa forme à cinq, celle à quatre
+    // l'appelant.
+    const comptes = fichiersDuSchema().filter((f) => /\/\d{14}_situations_publiees\.sql$/.test(f.chemin)).map((f) => f.chemin)
+    expect(ecrivent).toEqual(['supabase/schema/20261009224031_droits_des_acces_clients.sql', ...caisse, ...comptes])
+    // La dernière migration qui écrit l'accès est celle de la forme la plus longue ; les formes plus courtes, redéfinies
+    // après elle dans le même fichier (C4a), l'appellent.
+    const derniere = fichiersDuSchema().find((f) => f.chemin === ecrivent[ecrivent.length - 1])!
+    expect(sansCommentaires(derniere.texte)).toContain('update public.memberships m')
   })
 })
 

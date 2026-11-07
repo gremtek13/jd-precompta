@@ -1,7 +1,7 @@
 -- LE RETOUR ARRIÈRE DE LA MIGRATION `relances_des_factures` (espace client, étape C5 de la ligne 51.5) — PRÉPARÉ, À NE
 -- COLLER QU'AVEC L'ACCORD EXPLICITE DU CABINET : il DÉTRUIT des données. À coller dans l'éditeur SQL de Supabase, dans une
 -- transaction, avec sa ligne d'historique (CLAUDE.md, « Quand `apply_migration` attend une confirmation »). La migration :
--- supabase/preparees/20261106140000_relances_des_factures.sql (puis supabase/schema/, le jour de son application).
+-- supabase/schema/20261107163303_relances_des_factures.sql (en production depuis le 07/11/2026).
 --
 -- L'ORDRE : D'ABORD l'application — `RELANCES_EXPORTEES` rebaissé (src/lib/relances.ts) et mis en ligne, `send-email`
 -- redéployée sa constante `RELANCES_EN_BASE` baissée —, sinon `send-email` enverrait des relances dont la base refuserait

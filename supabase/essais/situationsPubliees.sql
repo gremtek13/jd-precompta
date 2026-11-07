@@ -1,5 +1,5 @@
--- LES SITUATIONS PUBLIÉES (espace client, étape C4a ; la migration `situations_publiees`, PRÉPARÉE le 06/11/2026,
--- supabase/preparees/). Le récit : HISTORIQUE.md, « 06/11/2026 — LES SITUATIONS PUBLIÉES, EN BASE (C4A) (PRÉPARÉE, PAS
+-- LES SITUATIONS PUBLIÉES (espace client, étape C4a ; la migration `situations_publiees`, en production depuis le
+-- 07/11/2026, supabase/schema/20261107164102_situations_publiees.sql). Le récit : HISTORIQUE.md, « 06/11/2026 — LES SITUATIONS PUBLIÉES, EN BASE (C4A) (PRÉPARÉE, PAS
 -- APPLIQUÉE) ». À rejouer par `execute_sql` après toute migration qui touche `memberships`, `changer_droits_acces`,
 -- `client_du_dossier`, `droits_sur_le_dossier`, `situations_publiees` ou ses fonctions. Le retrait d'une ligne hors de la
 -- suppression de son dossier ne se joue pas ici (l'outil d'exécution de la production retient une suppression) : la garde

@@ -1,5 +1,5 @@
--- LES MUTATIONS DE `situationsPubliees.sql` (espace client, étape C4a ; la migration `situations_publiees`, PRÉPARÉE le
--- 06/11/2026, supabase/preparees/). Le récit : HISTORIQUE.md, « 06/11/2026 — LES SITUATIONS PUBLIÉES, EN BASE (C4A)
+-- LES MUTATIONS DE `situationsPubliees.sql` (espace client, étape C4a ; la migration `situations_publiees`, en production
+-- depuis le 07/11/2026, supabase/schema/20261107164102_situations_publiees.sql). Le récit : HISTORIQUE.md, « 06/11/2026 — LES SITUATIONS PUBLIÉES, EN BASE (C4A)
 -- (PRÉPARÉE, PAS APPLIQUÉE) ». Un essai qui ne vire au rouge sur aucun défaut planté ne prouve rien : chaque mutation
 -- plante un défaut dans la migration, rejoue l'essai ENTIER dans la même transaction, relit ses verdicts, puis s'annule.
 -- Une mutation qui ne mord pas — aucun verdict en faute — accuse d'abord la mutation, puis l'essai.

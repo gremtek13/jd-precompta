@@ -1,4 +1,5 @@
--- LE RETOUR DE `devis_citent_un_contact` (20261106160000) — DESTRUCTIF : il retire la colonne `devis.contact_id`, et avec
+-- LE RETOUR DE `devis_citent_un_contact` (supabase/schema/20261107163632_devis_citent_un_contact.sql, en production
+-- depuis le 07/11/2026) — DESTRUCTIF : il retire la colonne `devis.contact_id`, et avec
 -- elle le contact que chaque devis cite. Les devis gardent leur copie du client ; la liste des clients sans activité depuis
 -- trois ans redevient FAUSSE (un devis ne compte plus) : le drapeau `DEVIS_CITENT_UN_CONTACT` (src/lib/devis.ts) se baisse
 -- AVANT ce retour. À coller seulement sur l'accord explicite du cabinet, dans une transaction.

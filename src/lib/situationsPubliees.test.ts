@@ -9,7 +9,7 @@ import {
 } from './situationsPubliees'
 
 const RACINE = resolve(__dirname, '../..')
-const MIGRATION = readFileSync(resolve(RACINE, 'supabase/preparees/20261106150000_situations_publiees.sql'), 'utf8')
+const MIGRATION = readFileSync(resolve(RACINE, 'supabase/schema/20261107164102_situations_publiees.sql'), 'utf8')
 
 function moteur(debut: string, fin: string, totaux: [string, number][]): SituationDuMoteur {
   return { periodeDebut: debut, periodeFin: fin, totauxParPoste: totaux, ventesFactureesEcartees: [], fraisSansPoste: [],
@@ -157,7 +157,7 @@ describe('le module et la migration', () => {
     }
   })
 
-  it('le drapeau suit l’export : baissé tant que la migration n’y est pas', () => {
+  it('le drapeau suit l’export : levé, la migration y est', () => {
     const exportee = readdirSync(resolve(RACINE, 'supabase/schema')).some((f) => f.endsWith('_situations_publiees.sql'))
     expect(SITUATIONS_PUBLIEES_EXPORTEES).toBe(exportee)
   })

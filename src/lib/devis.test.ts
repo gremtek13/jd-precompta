@@ -269,6 +269,7 @@ function identiteApres(identite: EmetteurDuDossier, ordre: string): EmetteurDuDo
 function devisFictif(o: Partial<Devis> = {}): Devis {
   return {
     id: 'dv', dossier_id: DA, numero: null, statut: 'brouillon', date_emission: '2026-09-15', date_validite: '2026-09-16',
+    contact_id: null,
     objet: null, tiers_nom: 'ESSAI', tiers_adresse: null, tiers_siret: null, tiers_email: null, type_client: null,
     tiers_siren: null, tiers_adresse_electronique: null, code_service: null, numero_engagement: null, nature_operation: null,
     date_prestation: null, periode_debut: null, periode_fin: null, livraison_adresse: null, livraison_code_postal: null,

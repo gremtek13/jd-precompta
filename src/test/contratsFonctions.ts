@@ -4748,9 +4748,11 @@ function corpsDuDevisEnvoye(_r: Resultat, m: Monde): string[] {
   return fautes
 }
 
-// LA RELANCE D'UNE FACTURE EN RETARD (étape C5). La source servie porte `RELANCES_EN_BASE` baissée : la relance y est
-// refusée comme un type inconnu, rien de lu ni d'envoyé (le scénario du contrat ci-dessous). Ses contrats, constante levée
-// en mémoire (`relancesLevees`), sont `SCENARIOS_RELANCES`, que joue relancesHttp.test.ts. L'horloge de la fonction au
+// LA RELANCE D'UNE FACTURE EN RETARD (étape C5). La source servie porte `RELANCES_EN_BASE` levée depuis la migration
+// `relances_des_factures` (en production le 07/11/2026) : ses contrats sont `SCENARIOS_RELANCES`, que joue
+// relancesHttp.test.ts sur la source servie ; l'état d'avant, la constante baissée en mémoire (`relancesBaissees`), où la
+// relance se refuse comme un type inconnu, rien de lu ni d'envoyé, est `SCENARIO_RELANCE_AVANT_SA_MIGRATION`, joué au même
+// endroit. L'horloge de la fonction au
 // 06/11/2026 à 11 h de Paris ; l'échéance de la facture du harnais, le 15/10/2026 : en retard de vingt-deux jours.
 const RELANCE_FACTURE = { ...RELANCE, type: 'relance_facture', factureId: FACTURE }
 const REFUS_D_UN_TYPE_INCONNU = "dossierId, type ('facture', 'devis' ou 'relance_pieces') et destinataire sont requis."
@@ -4864,6 +4866,20 @@ export const SCENARIOS_RELANCES: readonly Scenario[] = [
   })),
 ]
 
+/** L'état d'avant la migration `relances_des_factures` : la constante baissée, la relance refusée comme un type inconnu. */
+export const SCENARIO_RELANCE_AVANT_SA_MIGRATION: Scenario = {
+  nom: 'la relance d’une facture, constante baissée (avant sa migration) : le refus d’un type inconnu, mot pour mot, rien de lu ni d’envoyé',
+  preparer: (m) => factureEnRetard(m),
+  requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_FACTURE }),
+  attendu: {
+    statut: 400, refusEnFrancais: true, aucuneDepense: true,
+    verifier: (r, m) => [
+      ...jamais(m, 'lecture', 'une lecture'), ...jamais(m, 'rpc', 'un appel à la base'),
+      ...(corpsDe(r).error === REFUS_D_UN_TYPE_INCONNU ? [] : [r.texte]),
+    ],
+  },
+}
+
 const SEND_EMAIL: ContratFonction = {
   slug: 'send-email',
   navigateur: true,
@@ -4904,25 +4920,13 @@ const SEND_EMAIL: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...RELANCE, destinataire: 'pas une adresse' } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
-    // La relance d'une facture (étape C5) a ses contrats à part, constante levée (`SCENARIOS_RELANCES`) ; servie, la
-    // constante est baissée, et la relance se refuse comme un type inconnu (le scénario qui suit la matrice).
+    // La relance d'une facture (étape C5) a ses contrats à part (`SCENARIOS_RELANCES`, et l'état d'avant sa migration,
+    // `SCENARIO_RELANCE_AVANT_SA_MIGRATION`), joués par relancesHttp.test.ts.
     ...matriceDesDroits(Object.fromEntries(Object.entries(QUI_PEUT_QUOI_ATTENDU['send-email']).filter(([action]) => action !== 'relance_facture')), {
       facture: { corps: ENVOI_FACTURE, preparer: factureAEnvoyer, admis: { statut: 200, depenses: ENVOI_JOURNALISE } },
       devis: { corps: ENVOI_DEVIS, preparer: devisAEnvoyer, admis: { statut: 200, depenses: ENVOI_DEVIS_JOURNALISE, verifier: devisJournalise } },
       relance_pieces: { corps: RELANCE, preparer: resendQuiEnvoie, admis: { statut: 200, depenses: ['Resend envoyer', 'écriture insert emails_envoyes'] } },
     }),
-    {
-      nom: 'la relance d’une facture, constante baissée (avant sa migration) : le refus d’un type inconnu, mot pour mot, rien de lu ni d’envoyé',
-      preparer: (m) => factureEnRetard(m),
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_FACTURE }),
-      attendu: {
-        statut: 400, refusEnFrancais: true, aucuneDepense: true,
-        verifier: (r, m) => [
-          ...jamais(m, 'lecture', 'une lecture'), ...jamais(m, 'rpc', 'un appel à la base'),
-          ...(corpsDe(r).error === REFUS_D_UN_TYPE_INCONNU ? [] : [r.texte]),
-        ],
-      },
-    },
     // L'ENVOI D'UN DEVIS (étape P6c2) : un devis émis du dossier de la requête, et lui seul ; ce que son corps montre.
     {
       nom: 'devis — le cabinet envoie un devis émis : ni ses notes, ni l’adresse du client, ni la réponse dans le corps',

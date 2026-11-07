@@ -19,8 +19,8 @@
 //   pièces — aucun lien magique/jeton, le client se connecte normalement, comme d'habitude.
 // - "relance_facture" (espace client, étape C5 de la ligne 51.5) : le rappel d'une facture validée EN RETARD — son numéro,
 //   son montant TTC et son échéance —, jamais ses pénalités, que l'écran calcule et montre (src/lib/relances.ts). Admis
-//   seulement sous `RELANCES_EN_BASE` (plus bas) : la ligne de journal d'une relance attend la migration préparée
-//   `relances_des_factures`.
+//   seulement sous `RELANCES_EN_BASE` (plus bas) : la ligne de journal d'une relance demande la migration
+//   `relances_des_factures`, en production depuis le 07/11/2026.
 //
 // Chaque envoi est journalisé (table emails_envoyes) : un cabinet doit toujours pouvoir retrouver qui
 // a reçu quoi et quand, jamais un envoi "silencieux" qu'on ne peut plus vérifier après coup.
@@ -69,13 +69,13 @@ const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
 }
 
 // LA RELANCE D'UNE FACTURE EN RETARD (étape C5 ; MEG3-Q3, « oui » du cabinet) : la base n'admet sa ligne de journal,
-// `relance_facture`, qu'avec la migration préparée `relances_des_factures`
-// (supabase/preparees/20261106140000_relances_des_factures.sql). Baissée, la constante refuse ce type comme un type
-// inconnu (400, mot pour mot le refus d'hier), avant toute lecture et tout envoi : un e-mail parti dont la ligne serait
-// refusée APRÈS l'envoi ne compterait pas dans le plafond d'un accès client. L'ordre : la migration, puis la constante
-// levée et la fonction redéployée, puis `RELANCES_EXPORTEES` (src/lib/relances.ts) ; `relancesHttp.test.ts` joue les
-// deux états, et refuse le drapeau levé sur une constante baissée.
-const RELANCES_EN_BASE = false
+// `relance_facture`, qu'avec la migration `relances_des_factures`, en production depuis le 07/11/2026
+// (supabase/schema/20261107163303_relances_des_factures.sql) : la constante est levée. Baissée — l'état d'avant, que
+// `relancesHttp.test.ts` joue encore en mémoire —, elle refuse ce type comme un type inconnu (400, mot pour mot le refus
+// d'hier), avant toute lecture et tout envoi : un e-mail parti dont la ligne serait refusée APRÈS l'envoi ne compterait
+// pas dans le plafond d'un accès client. L'ordre : la migration, puis la constante levée et la fonction redéployée, puis
+// `RELANCES_EXPORTEES` (src/lib/relances.ts) ; `relancesHttp.test.ts` refuse le drapeau levé sur une constante baissée.
+const RELANCES_EN_BASE = true
 const TYPES_ADMIS: readonly string[] = RELANCES_EN_BASE
   ? ["facture", "devis", "relance_pieces", "relance_facture"]
   : ["facture", "devis", "relance_pieces"]

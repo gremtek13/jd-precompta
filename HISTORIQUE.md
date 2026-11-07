@@ -49465,3 +49465,16 @@ facture d'avant, dont l'avoir se refuse alors. Cinq essais validaient ce que les
 une adresse fictive (`factures`, `devis`, `mentionsFigees`, `rls`), un article aux dossiers des acomptes ; sorties
 d'hier et d'aujourd'hui identiques, avec et sans la migration ; le banc SÛR. À l'essai d'e7a : sa facture « d'avant »
 (53, f5), à 0 % sans régime, se refuse ; au taux de 20 %, il est identique avec ou sans elle.
+
+### 07/11/2026 — P1-TRACE, C4A, C5 ET DEVC EN PRODUCTION (LIGNE 51.5)
+
+Sur l'accord du cabinet : `trace_des_droits` (`20261107163158`, `704242c7…`) et `relances_des_factures` (`20261107163303`,
+`acdf6d93…`) collées, `devis_citent_un_contact` (`20261107163632`, `9bec96d9…`) et `situations_publiees`
+(`20261107164102`, `468cd31d…`) par l'outil ; chaque historique, CR retirés, égal au fichier, passé à l'export inchangé ;
+les retours nomment le nouveau chemin. Levés : `TRACE_DES_DROITS_PREVUE` (la table au plan ; son écran viendra à part),
+`DEVIS_CITENT_UN_CONTACT`, `SITUATIONS_PUBLIEES_EXPORTEES` (C4A-Q1, C4B-Q1) et `RELANCES_EN_BASE` de `send-email` ;
+`RELANCES_EXPORTEES` reste baissé jusqu'au redéploiement (relancesHttp.test.ts garde l'ordre et joue la constante baissée).
+`types.ts` : `devis.contact_id`, `droit_comptes` obligatoire, `TraceDesDroits`. Le leurre sort quatre essais (20 cas).
+La garde de B1 attend `tracer_les_droits` à `808b209e…`, celle de la production. Contrôles égaux : dérive 183
+`facc8ecd…`, socle 81 `3a79a158…`, inventaire 2 499 `2d815320…` ; `anon` et `authenticated` n'ont sur les deux tables
+neuves que SELECT, INSERT, UPDATE, DELETE.

@@ -337,7 +337,11 @@ describe('les essais de la base, rejoués en production', () => {
     // de la réplique mère.
     // Vingt-sept le même jour : `adresseDuClientExigee` (JJ-Q4 et A7C-Q1, `adresse_du_client_exigee`) entré dans la famille « apres »,
     // après sa migration préparée ; au banc, sur une copie de la réplique mère au niveau de la production.
-    expect(cas.length).toBe(27)
+    // Vingt-trois le même jour : `traceDesDroits`, `relancesDesFactures`, `devisCitentUnContact` et `situationsPubliees`
+    // sortis (P1-trace, C5, DEVC et C4a en production, 20261107163158, 20261107163303, 20261107163632 et 20261107164102 ;
+    // aucun ne cherche un semis, ils se jouent comme des essais de la production) ; `troisCasesDeLAcces` reste, son modèle
+    // « apres » ne portant plus que B1.
+    expect(cas.length).toBe(23)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
