@@ -49240,3 +49240,21 @@ deux ordres, par leur garde : l'une est à reprendre. Deux chaînes (P1-trace ou
 s'applique, chaque essai sans faute, les huit mutations de C4a mordent, aucune table neuve n'a les quatre droits ;
 `rls.sql` 107, 0 faute, 81 mutations sur 81 (SP ou TD EN ATTENTE) ; `restauration.sql` IDENTIQUE ; le banc, sept SÛR ;
 les retours rendent la production, puis l'état 176 (97, 0, 73 sur 73).
+
+### 07/11/2026 — LA DOUBLE AUTHENTIFICATION, SECOND TEMPS : EXIGÉE EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, sur les recommandations de SEC-Q1 à Q4, rien en production (des SELECT du catalogue : PostgreSQL 17.6,
+85 tables, 0 policy restrictive, 80 fonctions `security definer` exécutables par authenticated, `postgres` BYPASSRLS,
+`pgrst.*` permis par supautils). **La migration** `deux_facteurs_exiges` (20261107160000, `8ccf6b4d…` ; retour 160100,
+`9d0bce36…`, destructif) : l'exigence compte par compte et la trace des retraits, sans policy ;
+`deux_facteurs_satisfaits` (pas exigé, ou `aal2`) ; une policy RESTRICTIVE `deux_facteurs` sur chaque table présente et
+sur storage.objects. Une policy ne voit pas une fonction `security definer` : la pré-requête de PostgREST
+(`deux_facteurs_avant_requete`) refuse en 403 toute requête d'un compte exigé à aal1, sauf les deux lectures de la porte
+; les prédicats, que B1 et C4a redéfinissent, ne sont pas récrits. Exiger (facteur vérifié), lever, retirer (facteurs et
+sessions, trace ; l'exigence reste). **Les Edge Functions** : le bloc « DEUX FACTEURS » dans les treize qui agissent
+pour un compte, drapeau baissé. **Les écrans**, drapeau baissé : `DeuxFacteursDesComptes` (Équipe, Accès),
+`InscriptionExigee` avant tout écran, les rôles relus au changement de niveau. **Les preuves**, copie de la mère 16
+(préparées sauf `droits_hors_rls` ; C4a refusée après P1-trace, comme prévu) : `deuxFacteurs.sql` 29 contrôles, 7
+mutations sur 7 ; `rls.sql` 101 lignes/0/75 avant, 105/0/81 après (bloc DF ; trois comptes de policies corrigés), le
+retour à l'identique ; `restauration.sql` identique ; le banc du leurre SÛR des deux côtés. Restent : le plan de
+sauvegarde des deux tables, les essais qui comptent les policies, l'e-mail (SEC2-Q3).

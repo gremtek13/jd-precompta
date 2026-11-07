@@ -7,7 +7,10 @@ import Login from './pages/Login'
 import NouveauMotDePasse from './pages/NouveauMotDePasse'
 import CodeDeConnexion from './pages/CodeDeConnexion'
 import SecuriteDuCompte from './pages/SecuriteDuCompte'
-import { etatDeLaSession, facteursDeLaSession, porteDeLApplication } from './lib/doubleAuthentification'
+import { etatDeLaSession, facteursDeLaSession, niveauDuJeton, porteDeLApplication, registreDe } from './lib/doubleAuthentification'
+import { DEUX_FACTEURS_EXIGES_EXPORTE, porteDeLExigence } from './lib/deuxFacteursExiges'
+import { useExigenceDeuxFacteurs } from './lib/useExigenceDeuxFacteurs'
+import InscriptionExigee from './pages/InscriptionExigee'
 import DossiersList from './pages/DossiersList'
 import DossierDetail from './pages/DossierDetail'
 import ClientHome from './pages/ClientHome'
@@ -81,6 +84,15 @@ function Gate() {
   // lib/doubleAuthentification.ts), dans le rendu : le code donné, auth-js annonce la session élevée et la porte s'ouvre.
   // Rien n'est encore exigé en base (premier temps).
   const porte = session ? porteDeLApplication(etatDeLaSession(session)) : 'ouverte'
+  // LE SECOND TEMPS (C7, SEC-Q3), derrière son drapeau : un compte que le cabinet a exigé et qui n'a plus de facteur est
+  // mené à l'inscription avant tout écran ; la base ne lui ouvre rien d'autre. Le drapeau baissé, la porte d'hier seule.
+  const exigence = useExigenceDeuxFacteurs(session?.user.id ?? null, session?.access_token ?? null)
+  const porteExigee = session
+    ? porteDeLExigence(DEUX_FACTEURS_EXIGES_EXPORTE, niveauDuJeton(session.access_token), exigence, etatDeLaSession(session))
+    : 'ouverte'
+  // À aal1, un compte exigé ne lit pas ses rôles : la base dit son espace, pour le vous ou le tu.
+  const espaceDeLaPorte = exigence.etat === 'lue' && exigence.valeur.espace !== null
+    ? exigence.valeur.espace : role === 'cabinet' ? 'cabinet' : 'client'
 
   // Avant tout autre écran, et avant même les rôles : rien de l'application ne s'ouvre tant que le mot de passe n'est
   // pas choisi — et, pour un compte qui a un second facteur, tant que son code n'est pas donné (le service refuse alors le
@@ -101,11 +113,23 @@ function Gate() {
   if (avisDuLien) {
     return <LienSansEffet avis={avisDuLien} email={session.user.email ?? null} onContinuer={oublierAvisDuLien} onDeconnexion={signOut} />
   }
+  if (porteExigee === 'lecture') return <div className="login-shell"><p className="muted">Chargement…</p></div>
+  if (porteExigee === 'illisible') {
+    return (
+      <div className="login-shell">
+        <p role="alert">La double authentification de ce compte n’a pas pu être vérifiée : rien ne s’ouvre avant elle.</p>
+        <button type="button" className="btn btn-sm" onClick={signOut}>Se déconnecter</button>
+      </div>
+    )
+  }
+  if (porteExigee === 'inscription') {
+    return <InscriptionExigee espace={espaceDeLaPorte} email={session.user.email ?? null} onDeconnexion={signOut} />
+  }
   // Après les rôles, pour parler à chacun comme il faut : le cabinet se vouvoie, le client se tutoie.
   if (porte === 'code') {
     return (
       <CodeDeConnexion
-        registre={role === 'cabinet' ? 'vous' : 'tu'} motif="connexion" email={session.user.email ?? null}
+        registre={registreDe(espaceDeLaPorte)} motif="connexion" email={session.user.email ?? null}
         facteurs={facteursDeLaSession(session)} onDeconnexion={signOut}
       />
     )

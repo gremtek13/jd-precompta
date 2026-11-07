@@ -254,11 +254,15 @@ describe('les essais de la base, rejoués en production', () => {
     // Le huitième, situationsPublieesMutations, le 06/11/2026 (étape C4a) : il plante huit défauts dans la migration (deux de
     // plus après la relecture de sécurité du même jour), chacun le temps d'une transaction annulée, et rejoue l'essai par
     // `\ir` — sous la même garde.
+    // Le dixième, deuxFacteurs, le 07/11/2026 (C7, second temps, migration `deux_facteurs_exiges`) : il pose des facteurs
+    // et des sessions dans auth, et `retirer_second_facteur` en supprime — tout se défait par sous-transaction, mais une
+    // suppression jouée en production y serait retenue. Son catalogue se rejoue partout : le bloc DF de rls.sql.
     // Le neuvième, droitsHorsRls, le 06/11/2026 (relecture de sécurité, migration `droits_hors_rls`) : il tente, sous chaque
     // profil, de vider chaque table, d'y poser un déclencheur, une clé étrangère et un REINDEX — des verrous forts —, sous
     // la même garde.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'caisseSuppression (son en-tête)', 'devisSuppression (son en-tête)', 'droitsHorsRls (son en-tête)',
+      'caisseSuppression (son en-tête)', 'deuxFacteurs (son en-tête)', 'devisSuppression (son en-tête)',
+      'droitsHorsRls (son en-tête)',
       'frontiereDesEncaissements (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',

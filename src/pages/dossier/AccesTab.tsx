@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import DeuxFacteursDesComptes from '../../components/DeuxFacteursDesComptes'
 import { supabase } from '../../lib/supabase'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -480,6 +481,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
         </form>
       </div>
 
+      <DeuxFacteursDesComptes perimetre={{ genre: 'acces', dossierId }} />
       <h3>Accès actuels</h3>
       {reglage !== null && (
         <p className="muted" id="ce-que-disent-les-cases" style={{ marginTop: -8 }}>{ceQueDisentLesCasesDuDossier(reglage)}</p>
