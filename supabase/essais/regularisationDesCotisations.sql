@@ -1,21 +1,28 @@
--- LA RÉGULARISATION DES COTISATIONS : L'ORGANISME, L'ANNÉE PAYÉE ET LA NATURE D'UNE ÉCHÉANCE (ligne 27, TNS-Q2 ; la migration
+-- LA RÉGULARISATION DES COTISATIONS : L'ORGANISME, L'ANNÉE PAYÉE, LA NATURE D'UNE ÉCHÉANCE ET SA PART QUI RÉGULARISE L'ANNÉE
+-- D'AVANT (ligne 27, TNS-Q2 et TNS-Q2-B ; la migration
 -- `regularisation_des_cotisations`, PRÉPARÉE le 07/11/2026, supabase/preparees/). Le récit : HISTORIQUE.md, « 07/11/2026 —
 -- LA RÉGULARISATION DES COTISATIONS (LIGNE 27, TNS-Q2) (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après toute
 -- migration qui touche `cotisations_declarees`, ses contraintes ou `garder_cotisation_valide`.
 --
 -- Ce qui se prouve ici, et ne se relit pas :
---   - le catalogue : trois colonnes (texte, entier, texte), nulles, sans valeur par défaut ; leurs quatre contraintes, au
---     texte près ; une échéance écrite sans elles les lit nulles ;
+--   - le catalogue : quatre colonnes (texte, entier, texte, numeric), nulles, sans valeur par défaut ; leurs six contraintes,
+--     au texte près ; une échéance écrite sans elles les lit nulles ;
 --   - chacune des douze valeurs de l'organisme et des trois natures s'écrit ; une valeur hors de la liste, une casse
 --     changée, le vide se refusent (23514), sous le nom de leur contrainte ;
 --   - l'année payée : de cinq ans avant l'année de l'échéance à un an après, les deux bornes admises, les deux au-delà
 --     refusées, et une date changée qui la met hors de ses bornes aussi ; une régularisation de l'année de l'échéance ou d'une
 --     année passée s'écrit, celle d'une année à venir se refuse, et une provisionnelle de l'année suivante s'écrit ;
---   - un champ seul s'écrit (aucune contrainte n'exige les trois ensemble) ;
+--   - un champ seul s'écrit (aucune contrainte n'exige les trois premiers ensemble) ;
+--   - la part (TNS-Q2-B) : un prélèvement mixte de janvier (550 appelés dont 150 de régularisation), un trop-versé imputé
+--     (250 appelés, −150), un acompte, une part égale à l'appel s'écrivent ; une part qui dépasse l'appel d'un centime, un
+--     crédit plus fort que l'appel, zéro, et un montant changé qui la met hors de sa borne se refusent sous
+--     `…_part_regularisation_bornee` ; sur une régularisation, sans nature, sans année payée, ou sous une nature changée,
+--     sous `…_part_regularisation_nature` ;
 --   - le gel : son corps, au texte près ; l'exercice 2025 validé, son échéance se décrit encore — l'organisme, l'année, la
 --     nature, et les trois avec sa date et ses montants réécrits à l'identique (un nombre d'une autre écriture), comme les
 --     écrit « Modifier » —, mais son montant, sa date, sa CSG-CRDS (même avec sa description) et son marqueur ne changent
---     plus, sous les mots de la base, et une échéance décrite ne s'y ajoute plus ; celle de 2026 change encore ;
+--     plus, sous les mots de la base, et une échéance décrite ne s'y ajoute plus ; celle de 2026 change encore ; sa part se
+--     pose, change et se retire, son montant reste refusé même avec elle, et sa contrainte mord sur l'échéance figée ;
 --   - une échéance payée depuis le compte personnel (le réglage de la fonction posé comme elle le pose) : sa description
 --     change, ses montants non, sous les mots de `garder_paiement_personnel` ;
 --   - le client d'essai, qui n'a pas ce dossier, n'écrit rien (zéro ligne).
@@ -40,10 +47,10 @@ declare
 begin
   if (select count(*) from pg_attribute a
        where a.attrelid = 'public.cotisations_declarees'::regclass and not a.attisdropped
-         and a.attname in ('organisme', 'annee_payee', 'nature')) = 0 then
+         and a.attname in ('organisme', 'annee_payee', 'nature', 'part_regularisation')) = 0 then
     perform set_config('essai.regularisation', jsonb_build_array(jsonb_build_object('rang', 1,
       'etape', '0. EN ATTENTE de la migration regularisation_des_cotisations', 'ok', true,
-      'observe', 'les trois colonnes absentes : rien ne s''écrit'))::text, true);
+      'observe', 'les quatre colonnes absentes : rien ne s''écrit'))::text, true);
     return;
   end if;
 
@@ -58,17 +65,17 @@ begin
       ('5e115000-0000-4000-8107-000000000023', '5e115000-0000-4000-8107-000000000001', '2026-04-10', 500);
 
     for e in select * from (values
-      (1, 'proprietaire', '1. le catalogue : trois colonnes, texte, entier, texte, nulles, sans valeur par défaut', $q$select string_agg(a.attname || ':'
+      (1, 'proprietaire', '1. le catalogue : quatre colonnes, texte, entier, texte, numeric, nulles, sans valeur par défaut', $q$select string_agg(a.attname || ':'
   || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull || ':' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-'), ',' order by a.attnum)
   from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
-  where a.attrelid = 'public.cotisations_declarees'::regclass and a.attname in ('organisme', 'annee_payee', 'nature') and not a.attisdropped$q$,
-        'OK', 'organisme:text:false:-,annee_payee:integer:false:-,nature:text:false:-'),
-      (2, 'proprietaire', '1b. … leurs quatre contraintes, au texte près', $q$select md5(string_agg(c.conname || ' ' || pg_get_constraintdef(c.oid), ' ; ' order by c.conname))
-  from pg_constraint c where c.conrelid = 'public.cotisations_declarees'::regclass and c.contype = 'c'$q$, 'OK', '0ad56c814bc67d2e71d8c429ef54b83c'),
-      (3, 'proprietaire', '1c. … et le gel, les trois champs hors de sa comparaison : son corps, au texte près', $q$select md5(replace(p.prosrc, chr(13), ''))
-  from pg_proc p where p.oid = 'public.garder_cotisation_valide()'::regprocedure$q$, 'OK', '074e957d05d8aab18728ff9d6005a95f'),
+  where a.attrelid = 'public.cotisations_declarees'::regclass and a.attname in ('organisme', 'annee_payee', 'nature', 'part_regularisation') and not a.attisdropped$q$,
+        'OK', 'organisme:text:false:-,annee_payee:integer:false:-,nature:text:false:-,part_regularisation:numeric:false:-'),
+      (2, 'proprietaire', '1b. … leurs six contraintes, au texte près', $q$select md5(string_agg(c.conname || ' ' || pg_get_constraintdef(c.oid), ' ; ' order by c.conname))
+  from pg_constraint c where c.conrelid = 'public.cotisations_declarees'::regclass and c.contype = 'c'$q$, 'OK', '572695a4a0d1b23a06046e04776d9751'),
+      (3, 'proprietaire', '1c. … et le gel, les quatre champs hors de sa comparaison : son corps, au texte près', $q$select md5(replace(p.prosrc, chr(13), ''))
+  from pg_proc p where p.oid = 'public.garder_cotisation_valide()'::regprocedure$q$, 'OK', '1b004781ac05f71798e2ebc43b5e71c3'),
       (4, 'chef', '2. une échéance écrite sans eux, comme hier, les lit nuls', $q$select coalesce(organisme, '-') || '|' || coalesce(annee_payee::text, '-') || '|' || coalesce(nature, '-')
-  from cotisations_declarees where id = '5e115000-0000-4000-8107-000000000021'$q$, 'OK', '-|-|-'),
+  || '|' || coalesce(part_regularisation::text, '-') from cotisations_declarees where id = '5e115000-0000-4000-8107-000000000021'$q$, 'OK', '-|-|-|-'),
       (5, 'chef', '3. l''Urssaf, 2026, provisionnelle : s''écrit', $q$update cotisations_declarees set organisme = 'urssaf', annee_payee = 2026, nature = 'provisionnelle'
   where id = '5e115000-0000-4000-8107-000000000022' returning organisme || '|' || annee_payee || '|' || nature$q$, 'OK', 'urssaf|2026|provisionnelle'),
       (6, 'chef', '4. chacun des douze organismes s''écrit', $q$with i as (insert into cotisations_declarees (dossier_id, echeance, montant_appele, organisme)
@@ -129,17 +136,53 @@ begin
   where id = '5e115000-0000-4000-8107-000000000022' returning nature$q$, 'OK', 'acompte'),
       (32, 'proprietaire', '9l. celle de 2025 a gardé sa description, ses montants et sa date', $q$select organisme || '|' || annee_payee || '|' || nature || '|' || montant_appele || '|' || echeance
   from cotisations_declarees where id = '5e115000-0000-4000-8107-000000000021'$q$, 'OK', 'urssaf|2025|acompte|800.00|2025-03-05'),
-      (33, 'proprietaire', '10. E3 payée depuis le compte personnel : le réglage de la fonction, posé comme elle le pose', $q$select set_config('jd.paiement_personnel', '5e115000-0000-4000-8107-000000000023', true)$q$, 'OK', '5e115000-0000-4000-8107-000000000023'),
-      (34, 'proprietaire', '10b. … et la date de ce paiement', $q$update cotisations_declarees set paiement_personnel_le = '2026-04-10'
+      (33, 'chef', '9m. sa part se pose encore : 200 de son acompte de 2025 régularisent 2024', $q$update cotisations_declarees set part_regularisation = 200
+  where id = '5e115000-0000-4000-8107-000000000021' returning part_regularisation::text$q$, 'OK', '200'),
+      (34, 'chef', '9n. … se change en un trop-versé imputé', $q$update cotisations_declarees set part_regularisation = -120.5
+  where id = '5e115000-0000-4000-8107-000000000021' returning part_regularisation::text$q$, 'OK', '-120.5'),
+      (35, 'chef', '9o. … son montant reste refusé, même avec sa part', $q$update cotisations_declarees set montant_appele = 900, part_regularisation = 100
+  where id = '5e115000-0000-4000-8107-000000000021'$q$, '23514', 'L''exercice 2025 est validé : cette échéance ne change plus.'),
+      (36, 'chef', '9p. … et sa contrainte mord sur l''échéance figée : une part plus forte que l''appel', $q$update cotisations_declarees set part_regularisation = 800.01
+  where id = '5e115000-0000-4000-8107-000000000021'$q$, '23514', '%cotisations_declarees_part_regularisation_bornee%'),
+      (37, 'chef', '9q. … et se retire', $q$update cotisations_declarees set part_regularisation = null
+  where id = '5e115000-0000-4000-8107-000000000021' returning coalesce(part_regularisation::text, '-') || '|' || montant_appele$q$, 'OK', '-|800.00'),
+      (40, 'chef', '12. un prélèvement mixte de janvier : 550 appelés, provisionnelle 2026, dont 150 de régularisation de 2025', $q$insert into cotisations_declarees (id, dossier_id, echeance, montant_appele, organisme, annee_payee, nature, part_regularisation)
+  values ('5e115000-0000-4000-8107-000000000024', '5e115000-0000-4000-8107-000000000001', '2026-01-05', 550, 'urssaf', 2026, 'provisionnelle', 150)
+  returning part_regularisation::text$q$, 'OK', '150'),
+      (41, 'chef', '12b. un trop-versé de 2025 imputé : 250 appelés, provisionnelle 2026, part négative', $q$insert into cotisations_declarees (dossier_id, echeance, montant_appele, organisme, annee_payee, nature, part_regularisation)
+  values ('5e115000-0000-4000-8107-000000000001', '2026-10-05', 250, 'urssaf', 2026, 'provisionnelle', -150) returning part_regularisation::text$q$, 'OK', '-150'),
+      (42, 'chef', '12c. un acompte, et une part égale à l''appel (au plus), s''écrivent', $q$with i as (insert into cotisations_declarees (dossier_id, echeance, montant_appele, organisme, annee_payee, nature, part_regularisation)
+  values ('5e115000-0000-4000-8107-000000000001', '2026-06-15', 500, 'urssaf', 2026, 'acompte', 50),
+  ('5e115000-0000-4000-8107-000000000001', '2026-11-05', 300, 'urssaf', 2026, 'provisionnelle', 300) returning 1) select count(*) from i$q$, 'OK', '2'),
+      (43, 'chef', '12d. une part qui dépasse l''appel d''un centime se refuse', $q$insert into cotisations_declarees (dossier_id, echeance, montant_appele, organisme, annee_payee, nature, part_regularisation)
+  values ('5e115000-0000-4000-8107-000000000001', '2026-01-05', 550, 'urssaf', 2026, 'provisionnelle', 550.01)$q$, '23514', '%cotisations_declarees_part_regularisation_bornee%'),
+      (44, 'chef', '12e. … un crédit plus fort que l''appel aussi (il se dit par le versé)', $q$insert into cotisations_declarees (dossier_id, echeance, montant_appele, organisme, annee_payee, nature, part_regularisation)
+  values ('5e115000-0000-4000-8107-000000000001', '2026-10-05', 250, 'urssaf', 2026, 'provisionnelle', -300)$q$, '23514', '%cotisations_declarees_part_regularisation_bornee%'),
+      (45, 'chef', '12f. … et zéro, qui ne se dit pas', $q$insert into cotisations_declarees (dossier_id, echeance, montant_appele, organisme, annee_payee, nature, part_regularisation)
+  values ('5e115000-0000-4000-8107-000000000001', '2026-10-05', 250, 'urssaf', 2026, 'provisionnelle', 0)$q$, '23514', '%cotisations_declarees_part_regularisation_bornee%'),
+      (46, 'chef', '12g. … un montant changé qui la met hors de sa borne se refuse', $q$update cotisations_declarees set montant_appele = 100
+  where id = '5e115000-0000-4000-8107-000000000024'$q$, '23514', '%cotisations_declarees_part_regularisation_bornee%'),
+      (47, 'chef', '12h. sur une régularisation, la part se refuse', $q$insert into cotisations_declarees (dossier_id, echeance, montant_appele, organisme, annee_payee, nature, part_regularisation)
+  values ('5e115000-0000-4000-8107-000000000001', '2026-10-05', 250, 'urssaf', 2025, 'regularisation', 10)$q$, '23514', '%cotisations_declarees_part_regularisation_nature%'),
+      (48, 'chef', '12i. … sans nature aussi', $q$insert into cotisations_declarees (dossier_id, echeance, montant_appele, organisme, annee_payee, part_regularisation)
+  values ('5e115000-0000-4000-8107-000000000001', '2026-10-05', 250, 'urssaf', 2026, 10)$q$, '23514', '%cotisations_declarees_part_regularisation_nature%'),
+      (49, 'chef', '12j. … et sans année payée', $q$insert into cotisations_declarees (dossier_id, echeance, montant_appele, organisme, nature, part_regularisation)
+  values ('5e115000-0000-4000-8107-000000000001', '2026-10-05', 250, 'urssaf', 'provisionnelle', 10)$q$, '23514', '%cotisations_declarees_part_regularisation_nature%'),
+      (50, 'chef', '12k. … et une nature changée en régularisation sous une part posée', $q$update cotisations_declarees set nature = 'regularisation', annee_payee = 2025
+  where id = '5e115000-0000-4000-8107-000000000024'$q$, '23514', '%cotisations_declarees_part_regularisation_nature%'),
+      (51, 'proprietaire', '12l. le prélèvement mixte est resté tel qu''écrit', $q$select montant_appele || '|' || nature || '|' || annee_payee || '|' || part_regularisation
+  from cotisations_declarees where id = '5e115000-0000-4000-8107-000000000024'$q$, 'OK', '550|provisionnelle|2026|150'),
+      (63, 'proprietaire', '10. E3 payée depuis le compte personnel : le réglage de la fonction, posé comme elle le pose', $q$select set_config('jd.paiement_personnel', '5e115000-0000-4000-8107-000000000023', true)$q$, 'OK', '5e115000-0000-4000-8107-000000000023'),
+      (64, 'proprietaire', '10b. … et la date de ce paiement', $q$update cotisations_declarees set paiement_personnel_le = '2026-04-10'
   where id = '5e115000-0000-4000-8107-000000000023' returning paiement_personnel_le::text$q$, 'OK', '2026-04-10'),
-      (35, 'proprietaire', '10c. … le réglage retiré', $q$select set_config('jd.paiement_personnel', '', true)$q$, 'OK', ''),
-      (36, 'chef', '10d. sa description change', $q$update cotisations_declarees set organisme = 'urssaf', annee_payee = 2026, nature = 'provisionnelle'
+      (65, 'proprietaire', '10c. … le réglage retiré', $q$select set_config('jd.paiement_personnel', '', true)$q$, 'OK', ''),
+      (66, 'chef', '10d. sa description change', $q$update cotisations_declarees set organisme = 'urssaf', annee_payee = 2026, nature = 'provisionnelle'
   where id = '5e115000-0000-4000-8107-000000000023' returning organisme || '|' || annee_payee || '|' || nature$q$, 'OK', 'urssaf|2026|provisionnelle'),
-      (37, 'chef', '10e. … ses montants non', $q$update cotisations_declarees set montant_appele = 501, nature = 'acompte'
+      (67, 'chef', '10e. … ses montants non', $q$update cotisations_declarees set montant_appele = 501, nature = 'acompte'
   where id = '5e115000-0000-4000-8107-000000000023'$q$, '23514', 'Cette échéance est payée depuis le compte personnel, le 10/04/2026 : ni ses montants ni son dossier ne changent tant que ce paiement n''est pas retiré.'),
-      (38, 'client', '11. le client d''essai, qui n''a pas ce dossier, n''écrit rien', $q$with u as (update cotisations_declarees set organisme = 'cipav'
+      (68, 'client', '11. le client d''essai, qui n''a pas ce dossier, n''écrit rien', $q$with u as (update cotisations_declarees set organisme = 'cipav'
   where id = '5e115000-0000-4000-8107-000000000022' returning 1) select count(*) from u$q$, 'OK', '0'),
-      (39, 'chef', '11b. … et l''échéance est restée telle que le chef l''a laissée', $q$select organisme || '|' || annee_payee || '|' || nature
+      (69, 'chef', '11b. … et l''échéance est restée telle que le chef l''a laissée', $q$select organisme || '|' || annee_payee || '|' || nature
   from cotisations_declarees where id = '5e115000-0000-4000-8107-000000000022'$q$, 'OK', 'urssaf|2026|acompte')
     ) as t(rang, profil, etape, requete, code, attendu) order by rang loop
       v_obs := null;

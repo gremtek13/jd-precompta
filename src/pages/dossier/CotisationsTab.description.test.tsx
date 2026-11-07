@@ -24,7 +24,7 @@ const monter = (valides: readonly number[] = []) => render(
   <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modele={TRESORERIE} /></AvecExercicesValides>,
 )
 const decrite = (o: Parameters<typeof cotisation>[0] = {}) =>
-  cotisation({ organisme: 'urssaf', annee_payee: 2026, nature: 'provisionnelle', ...o })
+  cotisation({ organisme: 'urssaf', annee_payee: 2026, nature: 'provisionnelle', part_regularisation: null, ...o })
 const ligneDe = async (date: string) => (await screen.findByText(date)).closest('tr')!
 const fenetre = () => screen.getByRole('dialog')
 
@@ -51,14 +51,32 @@ describe('CotisationsTab — décrire une échéance figée', () => {
     expect(faux.misesAJour).toEqual([{
       valeur: {
         echeance: '2026-03-20', montant_appele: 800, montant_verse: null, montant_csg_crds: 300, previsionnel: false,
-        organisme: 'urssaf', annee_payee: 2025, nature: 'regularisation',
+        organisme: 'urssaf', annee_payee: 2025, nature: 'regularisation', part_regularisation: null,
       },
       filtres: [
         'id=eq.cot-1', 'echeance=eq.2026-03-20', 'montant_appele=eq.800', 'previsionnel=eq.false', 'paiement_personnel_le=is.null',
         'montant_verse=is.null', 'montant_csg_crds=eq.300', 'organisme=eq.urssaf', 'annee_payee=eq.2026', 'nature=eq.provisionnelle',
+        'part_regularisation=is.null',
       ],
     }])
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('sa part de régularisation (TNS-Q2-B) : refusée avant le clic au-delà de l’appelé, écrite sous la version lue', async () => {
+    faux.cotisations = [decrite({ part_regularisation: 100 })]
+    monter([2026])
+    const ligne = await ligneDe('20/03/2026')
+    await act(async () => { within(ligne).getByRole('button', { name: 'Décrire' }).click() })
+    const part = within(fenetre()).getByLabelText('Part de régularisation de l’année d’avant') as HTMLInputElement
+    expect(part.value).toBe('100')
+    fireEvent.change(part, { target: { value: '800,01' } })
+    expect(within(fenetre()).getByText(/^La part de régularisation \(.+\) dépasse le montant appelé \(.+\) : elle n’en est qu’une part\.$/)).toBeTruthy()
+    expect((within(fenetre()).getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(part, { target: { value: '-150' } })
+    await act(async () => { within(fenetre()).getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.misesAJour).toHaveLength(1)
+    expect(faux.misesAJour[0].valeur).toMatchObject({ montant_appele: 800, nature: 'provisionnelle', annee_payee: 2026, part_regularisation: -150 })
+    expect(faux.misesAJour[0].filtres).toContain('part_regularisation=eq.100')
   })
 
   it('le drapeau baissé : la ligne figée d’hier, sans geste', async () => {

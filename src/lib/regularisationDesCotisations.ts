@@ -1,8 +1,9 @@
-// LA RÉGULARISATION DES COTISATIONS D'UN PRATICIEN BNC (ligne 27, TNS-Q2), PRÉPARÉE le 07/11/2026 sur la recommandation
-// d'une relecture que le cabinet n'a pas encore tranchée. La migration `regularisation_des_cotisations`
-// (supabase/preparees/20261107170000_regularisation_des_cotisations.sql) pose trois colonnes de `cotisations_declarees` :
-// l'organisme qui appelle, l'année payée, la nature. Elle n'est PAS appliquée : `REGULARISATION_DES_COTISATIONS_EXPORTEE`
-// reste baissé, l'onglet Cotisations ne les montre ni ne les écrit, et la carte du volet social n'estime rien.
+// LA RÉGULARISATION DES COTISATIONS D'UN PRATICIEN BNC (ligne 27, TNS-Q2), PRÉPARÉE le 07/11/2026, tranchée par le cabinet
+// le même jour (TNS-Q2 : « appliquez-la » ; TNS-Q2-B : (B), une colonne pour la part). La migration
+// `regularisation_des_cotisations` (supabase/preparees/20261107170000_regularisation_des_cotisations.sql) pose quatre
+// colonnes de `cotisations_declarees` : l'organisme qui appelle, l'année payée, la nature, et la part de l'appel qui
+// régularise l'année d'avant. Elle n'est PAS appliquée : `REGULARISATION_DES_COTISATIONS_EXPORTEE` reste baissé, l'onglet
+// Cotisations ne les montre ni ne les écrit, et la carte du volet social n'estime rien.
 //
 // LA RÈGLE (code de la sécurité sociale, art. L. 131-6-2) : les cotisations d'un indépendant sont dues annuellement,
 // calculées « à titre provisionnel » sur le revenu d'une année antérieure, puis régularisées quand le revenu de l'année au
@@ -12,7 +13,9 @@
 //   retraite étant appelée par la caisse ;
 //   moins ce que l'Urssaf a appelé AU TITRE DE N : les échéances décrites « Urssaf, N, provisionnelle » et
 //   « Urssaf, N, acompte » (un acompte à valoir sur N paie N comme une provisionnelle ; l'omettre gonflerait la
-//   régularisation), leur montant APPELÉ ;
+//   régularisation), leur montant APPELÉ moins la part qui régularise N − 1 (`part_regularisation`, signée : un complément
+//   de N − 1 compris dans l'appel s'en retire, un trop-versé de N − 1 imputé sur lui s'y rajoute — reste la provisionnelle
+//   de N que l'échéance paie) ;
 //   due (positive) ou remboursée (négative) en N + 1, l'année où l'Urssaf la calcule, après la déclaration du revenu de N.
 // Une échéance de N qui paie la régularisation de N − 1 n'y entre pas : c'est ce qu'une soustraction des échéances de
 // l'année aurait compté à tort.
@@ -32,10 +35,14 @@
 // Et ce qu'elle sait mais qui peut bouger se dit À CÔTÉ du chiffre : une 2035 de N pas encore validée (l'estimation suit
 // ses chiffres du jour), la régularisation de N déjà saisie comme appelée (le montant de l'Urssaf l'emporte).
 //
-// UN PRÉLÈVEMENT QUI PAIE À LA FOIS UNE PROVISIONNELLE ET LA RÉGULARISATION DE L'ANNÉE D'AVANT ne se décrit pas d'une
-// seule nature : il se saisit en deux échéances, que le relevé ne rapproche aujourd'hui que d'une (TNS-Q2-B, au cabinet).
-// « Réunir » (lib/gestesDesEcheances.ts) n'en garde que la description commune : l'échéance réunie, mêlée, se dit alors
-// non décrite ici.
+// UN PRÉLÈVEMENT QUI PAIE À LA FOIS UNE PROVISIONNELLE ET LA RÉGULARISATION DE L'ANNÉE D'AVANT (TNS-Q2-B, le choix (B) du
+// cabinet) : UNE échéance, décrite « provisionnelle » (ou « acompte ») de son année, qui porte la part de son appel qui
+// régularise N − 1 — le relevé la rapproche d'un seul tenant. Cette part compte dans la régularisation de N − 1 (« déjà
+// appelée », à côté du chiffre de N − 1 : l'avis de l'Urssaf l'emporte) et se retire de la provisionnelle de N. Elle se
+// borne comme en base : dite d'une provisionnelle ou d'un acompte et de son année, jamais zéro, jamais plus que l'appelé
+// en valeur absolue — un crédit plus fort que l'appel se dit comme hier, l'appelé de la provisionnelle et le versé payé.
+// « Réunir » (lib/gestesDesEcheances.ts) garde la somme des parts quand les deux disent la même nature et la même année ;
+// sinon la réunie, mêlée, perd sa part avec sa description, et la confirmation le nomme.
 
 import { anneeDe, formatDate, formatMoney } from './format'
 import type { ResultatEstimation } from './voletSocialPamc'
@@ -75,19 +82,27 @@ export const LIBELLES_NATURE: Readonly<Record<NatureCotisation, string>> = {
 
 // ── La saisie des trois champs ─────────────────────────────────────────────────────────────────
 
-/** Les trois champs tels que tapés ; le vide : « non dit ». */
+/** Les quatre champs tels que tapés ; le vide : « non dit ». */
 export interface SaisieDeLaDescription {
   organisme: string
   annee: string
   nature: string
+  // La part de l'appel qui régularise l'année d'avant (TNS-Q2-B), signée, au centime ; vide : aucune.
+  part: string
 }
 
-export type DescriptionDeLEcheance = Pick<CotisationDeclaree, 'organisme' | 'annee_payee' | 'nature'>
+export type DescriptionDeLEcheance = Pick<CotisationDeclaree, 'organisme' | 'annee_payee' | 'nature' | 'part_regularisation'>
 
 /** La saisie pré-remplie d'une échéance : une colonne absente de la lecture (la migration pas appliquée) se dit vide. */
 export function saisieDeLaDescription(c: Partial<DescriptionDeLEcheance>): SaisieDeLaDescription {
-  return { organisme: c.organisme ?? '', annee: c.annee_payee == null ? '' : String(c.annee_payee), nature: c.nature ?? '' }
+  return {
+    organisme: c.organisme ?? '', annee: c.annee_payee == null ? '' : String(c.annee_payee), nature: c.nature ?? '',
+    part: c.part_regularisation == null ? '' : String(c.part_regularisation),
+  }
 }
+
+/** Les natures qui portent une part (`cotisations_declarees_part_regularisation_nature`). */
+export const NATURES_A_PART: readonly NatureCotisation[] = ['provisionnelle', 'acompte']
 
 /**
  * Les années qu'une échéance de cette date peut payer, sous les bornes de la base (`cotisations_declarees_annee_payee_bornes`) :
@@ -103,11 +118,16 @@ const estOrganisme = (v: string): v is OrganismeCotisation => (ORGANISMES as rea
 const estNature = (v: string): v is NatureCotisation => (NATURES as readonly string[]).includes(v)
 
 /**
- * Les trois champs lus, ou ce que la base refuserait, sous la règle de ses quatre contraintes : un organisme et une nature
+ * Les quatre champs lus, ou ce que la base refuserait, sous la règle de ses six contraintes : un organisme et une nature
  * de leur liste, une année payée de cinq ans avant l'année de l'échéance à un an après, une régularisation jamais d'une
- * année postérieure à son échéance. Chacun peut rester vide : rien n'exige les trois ensemble.
+ * année postérieure à son échéance ; la part (TNS-Q2-B), dite d'une provisionnelle ou d'un acompte et de son année, jamais
+ * zéro, jamais plus que le montant appelé en valeur absolue. Les trois premiers peuvent rester vides : rien ne les exige
+ * ensemble. Le montant appelé est celui que la saisie porte (nul : illisible, et la borne attend la saisie, qui se refuse
+ * d'elle-même plus haut).
  */
-export function lireLaDescription(s: SaisieDeLaDescription, echeance: string): { valeurs: Required<DescriptionDeLEcheance> } | { refus: string } {
+export function lireLaDescription(
+  s: SaisieDeLaDescription, echeance: string, montantAppele: number | null,
+): { valeurs: Required<DescriptionDeLEcheance> } | { refus: string } {
   const organisme = s.organisme.trim()
   const nature = s.nature.trim()
   const annee = s.annee.trim()
@@ -127,13 +147,43 @@ export function lireLaDescription(s: SaisieDeLaDescription, echeance: string): {
       return { refus: `Une régularisation de ${anneePayee} ne s’appelle pas en ${an} : elle suit son année.` }
     }
   }
+  const part = lireLaPart(s.part, nature === '' ? null : (nature as NatureCotisation), anneePayee, montantAppele)
+  if ('refus' in part) return part
   return {
     valeurs: {
       organisme: organisme === '' ? null : (organisme as OrganismeCotisation),
       annee_payee: anneePayee,
       nature: nature === '' ? null : (nature as NatureCotisation),
+      part_regularisation: part.valeur,
     },
   }
+}
+
+// La part tapée, sous les deux contraintes de la base (`cotisations_declarees_part_regularisation_nature` et
+// `…_bornee`) : vide, aucune ; sinon un montant signé au centime, la virgule admise, jamais arrondi en silence.
+function lireLaPart(
+  texte: string, nature: NatureCotisation | null, anneePayee: number | null, montantAppele: number | null,
+): { valeur: number | null } | { refus: string } {
+  const t = texte.trim().replace(',', '.')
+  if (t === '') return { valeur: null }
+  if (!MONTANT_SIGNE.test(t) || !Number.isFinite(Number(t))) return { refus: 'La part de régularisation n’est pas un montant.' }
+  const part = Number(t)
+  if (Math.abs(part * 100 - Math.round(part * 100)) >= 1e-6) return { refus: 'La part de régularisation n’est pas au centime.' }
+  if (centimes(part) === 0) return { refus: 'Une part de régularisation de zéro ne se dit pas : laisse le champ vide.' }
+  if (nature === null || !NATURES_A_PART.includes(nature)) {
+    return { refus: 'La part de régularisation ne se dit que d’une provisionnelle ou d’un acompte : choisis sa nature.' }
+  }
+  if (anneePayee === null) {
+    return { refus: 'La part de régularisation régularise l’année d’avant l’année payée : dis l’année payée.' }
+  }
+  if (montantAppele !== null && Math.abs(centimes(part)) > Math.abs(centimes(montantAppele))) {
+    return {
+      refus: part > 0
+        ? `La part de régularisation (${formatMoney(part)}) dépasse le montant appelé (${formatMoney(Math.abs(montantAppele))}) : elle n’en est qu’une part.`
+        : `Le trop-versé imputé (${formatMoney(-part)}) dépasse le montant appelé (${formatMoney(Math.abs(montantAppele))}) : un crédit plus fort que l’appel se dit par le versé — l’appelé de la provisionnelle, et le versé de ce que le prélèvement a payé.`,
+    }
+  }
+  return { valeur: part }
 }
 
 /** La description d'une échéance en mots, ou « non décrite ». */
@@ -142,8 +192,17 @@ export function descriptionDite(c: Partial<DescriptionDeLEcheance>): string {
     c.organisme ? LIBELLES_ORGANISME[c.organisme].split(' (')[0] : null,
     c.nature ? { provisionnelle: 'provisionnelle', regularisation: 'régularisation', acompte: 'acompte' }[c.nature] : null,
     c.annee_payee != null ? String(c.annee_payee) : null,
+    c.part_regularisation != null ? partDite(c.part_regularisation, c.annee_payee ?? null) : null,
   ].filter((m): m is string => m !== null)
   return morceaux.length === 0 ? 'non décrite' : morceaux.join(', ')
+}
+
+/** La part dite en mots : un complément compris dans l'appel, ou un trop-versé imputé sur lui. */
+export function partDite(part: number, anneePayee: number | null): string {
+  const annee = anneePayee === null ? 'l’année d’avant' : String(anneePayee - 1)
+  return part > 0
+    ? `dont ${formatMoney(part)} de régularisation de ${annee}`
+    : `après ${formatMoney(-part)} de trop-versé de ${annee} imputé`
 }
 
 // ── L'estimation ───────────────────────────────────────────────────────────────────────────────
@@ -165,22 +224,30 @@ export type RegularisationEstimee =
     etat: 'estimee'
     annee: number
     definitives: number
-    /** Ce que l'Urssaf a appelé au titre de N : provisionnelles et acomptes. */
+    /** Ce que l'Urssaf a appelé au titre de N : provisionnelles et acomptes, leurs parts de régularisation de N − 1 retirées. */
     appelees: number
+    /** La somme signée de ces parts, retirées de l'appelé (positive : des compléments de N − 1 ; négative : des trop-versés imputés). */
+    partsDeLAnneeDAvant: number
     /** Les échéances comptées, dans l'ordre de leurs dates. */
     comptees: CotisationDeclaree[]
     /** Définitives − appelées : positive, due ; négative, remboursée. */
     regularisation: number
     sens: 'due' | 'remboursee' | 'nulle'
     payableEn: number
-    /** La régularisation de N déjà saisie comme appelée par l'Urssaf, ou nul. */
+    /**
+     * La régularisation de N déjà saisie comme appelée par l'Urssaf — ses échéances « régularisation » de N, et la part de
+     * N que portent ses prélèvements de N + 1 —, signée ; nul : rien de saisi.
+     */
     dejaAppelee: number | null
     reserves: string[]
   }
   | { etat: 'inconnue'; annee: number; manques: string[] }
 
 const centimes = (n: number) => Math.round(n * 100)
+const MONTANT_SIGNE = /^-?[0-9]+([.][0-9]+)?$/
 const decrite = (c: CotisationDeclaree) => c.organisme != null && c.annee_payee != null && c.nature != null
+// La provisionnelle de son année qu'une échéance paie : son appelé, moins la part qui régularise l'année d'avant.
+const provisionnelleEnCentimes = (c: CotisationDeclaree) => centimes(c.montant_appele) - centimes(c.part_regularisation ?? 0)
 const parOrdre = (a: CotisationDeclaree, b: CotisationDeclaree) =>
   a.echeance < b.echeance ? -1 : a.echeance > b.echeance ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 
@@ -222,24 +289,32 @@ export function estimerLaRegularisation(e: EntreeRegularisation): Regularisation
   if (manques.length > 0 || !e.definitives.disponible) return { etat: 'inconnue', annee, manques }
 
   const definitives = e.definitives.estimation.total
-  const appeleesCentimes = comptees.reduce((s, c) => s + centimes(c.montant_appele), 0)
+  const appeleesCentimes = comptees.reduce((s, c) => s + provisionnelleEnCentimes(c), 0)
+  const partsCentimes = comptees.reduce((s, c) => s + centimes(c.part_regularisation ?? 0), 0)
   const regularisationCentimes = centimes(definitives) - appeleesCentimes
   const regularisations = candidates.filter((c) => c.nature === 'regularisation' && c.annee_payee === annee)
+  // La part de N que portent les prélèvements de l'Urssaf de N + 1 (TNS-Q2-B) : déjà appelée, ou déjà imputée.
+  const parts = e.echeances.filter((c) => c.organisme === 'urssaf' && c.annee_payee === annee + 1 && c.part_regularisation != null
+    && c.nature != null && NATURES_A_PART.includes(c.nature))
   const reserves: string[] = []
   if (!e.exerciceValide) {
     reserves.push(`La 2035 de ${annee} n’est pas validée : l’estimation suit ses chiffres d’aujourd’hui.`)
   }
-  const dejaAppelee = regularisations.length === 0
+  const dejaAppelee = regularisations.length === 0 && parts.length === 0
     ? null
-    : regularisations.reduce((s, c) => s + centimes(c.montant_appele), 0) / 100
+    : (regularisations.reduce((s, c) => s + centimes(c.montant_appele), 0)
+      + parts.reduce((s, c) => s + centimes(c.part_regularisation ?? 0), 0)) / 100
   if (dejaAppelee !== null) {
-    reserves.push(`L’Urssaf a déjà appelé ${formatMoney(dejaAppelee)} de régularisation de ${annee} : son avis l’emporte sur l’estimation.`)
+    reserves.push(dejaAppelee >= 0
+      ? `L’Urssaf a déjà appelé ${formatMoney(dejaAppelee)} de régularisation de ${annee} : son avis l’emporte sur l’estimation.`
+      : `L’Urssaf a déjà remboursé ou imputé ${formatMoney(-dejaAppelee)} de trop-versé de ${annee} : son avis l’emporte sur l’estimation.`)
   }
   return {
     etat: 'estimee',
     annee,
     definitives,
     appelees: appeleesCentimes / 100,
+    partsDeLAnneeDAvant: partsCentimes / 100,
     comptees,
     regularisation: regularisationCentimes / 100,
     sens: regularisationCentimes > 0 ? 'due' : regularisationCentimes < 0 ? 'remboursee' : 'nulle',

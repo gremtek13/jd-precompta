@@ -467,7 +467,11 @@ function Regularisation({ resultat }: { resultat: RegularisationEstimee }) {
               <tbody>
                 <tr><td>Cotisations définitives estimées ci-dessus</td><td style={droite}>{euros(resultat.definitives)}</td></tr>
                 <tr>
-                  <td>Appelées par l’Urssaf au titre de {resultat.annee} ({resultat.comptees.length} échéance{resultat.comptees.length > 1 ? 's' : ''}, provisionnelles ou acomptes)</td>
+                  <td>
+                    Appelées par l’Urssaf au titre de {resultat.annee} ({resultat.comptees.length} échéance{resultat.comptees.length > 1 ? 's' : ''}, provisionnelles ou acomptes
+                    {resultat.partsDeLAnneeDAvant > 0 && `, hors ${euros(resultat.partsDeLAnneeDAvant)} de régularisation de ${resultat.annee - 1} qu’elles portaient`}
+                    {resultat.partsDeLAnneeDAvant < 0 && `, trop-versé de ${resultat.annee - 1} imputé (${euros(-resultat.partsDeLAnneeDAvant)}) compris`})
+                  </td>
                   <td style={droite}>{euros(resultat.appelees)}</td>
                 </tr>
                 <tr style={{ fontWeight: 600 }}>
@@ -482,7 +486,8 @@ function Regularisation({ resultat }: { resultat: RegularisationEstimee }) {
           </div>
           <p className="muted" style={{ margin: '6px 0 0' }}>
             Source : les échéances de l’onglet Cotisations décrites « Urssaf, {resultat.annee}, provisionnelle » ou
-            « acompte », leur montant appelé ; une régularisation d’une autre année n’y entre pas.
+            « acompte », leur montant appelé moins la part qui régularise l’année d’avant ; une régularisation d’une autre
+            année n’y entre pas.
             {resultat.reserves.map((r) => ` ${r}`).join('')}
           </p>
         </>

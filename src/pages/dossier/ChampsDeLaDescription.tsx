@@ -32,11 +32,18 @@ export default function ChampsDeLaDescription({ valeur, onChange, disabled, pref
             {NATURES.map((n) => <option key={n} value={n}>{LIBELLES_NATURE[n]}</option>)}
           </select>
         </div>
+        <div className="field">
+          <label htmlFor={`${prefixe}-part`}>Part de régularisation de l’année d’avant</label>
+          <input id={`${prefixe}-part`} inputMode="decimal" value={valeur.part} disabled={disabled}
+            onChange={(e) => changer('part')(e.target.value)} />
+        </div>
       </div>
       <p className="muted" style={{ marginTop: -8 }}>
         L’année payée est celle au titre de laquelle l’échéance est due : une provisionnelle de 2026 paie 2026, la
-        régularisation de 2025 appelée en 2026 paie 2025. Un prélèvement qui paie les deux se saisit en deux échéances.
-        « Provisionnelle » n’est pas « prévisionnel » : l’Urssaf l’appelle, sur un revenu antérieur.
+        régularisation de 2025 appelée en 2026 paie 2025. Un prélèvement qui paie les deux est UNE échéance, provisionnelle
+        de son année : sa part de régularisation dit ce que l’appel porte de l’année d’avant — positive, un complément ;
+        négative, un trop-versé que l’Urssaf a imputé sur lui. « Provisionnelle » n’est pas « prévisionnel » : l’Urssaf
+        l’appelle, sur un revenu antérieur.
       </p>
     </>
   )

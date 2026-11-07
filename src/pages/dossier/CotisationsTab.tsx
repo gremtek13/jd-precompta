@@ -358,6 +358,9 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
       requete = c.organisme == null ? requete.is('organisme', null) : requete.eq('organisme', c.organisme)
       requete = c.annee_payee == null ? requete.is('annee_payee', null) : requete.eq('annee_payee', c.annee_payee)
       requete = c.nature == null ? requete.is('nature', null) : requete.eq('nature', c.nature)
+      requete = c.part_regularisation == null
+        ? requete.is('part_regularisation', null)
+        : requete.eq('part_regularisation', c.part_regularisation)
     }
     const { data, error: erreurMaj } = await requete.select('id').maybeSingle()
     if (erreurMaj) return messageErreur(erreurMaj, 'raison inconnue')
@@ -659,7 +662,12 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   const refuses = new Map(rapprochementsCotisationRefuses(paiements, cotisations, modeComptable, null).map((r) => [r.cotisation.id, r.raison]))
   // Une échéance saisie dans un exercice figé ne s'ajoute plus ; une proposée par un document non plus.
   // La description telle qu'elle part, jugée avant le clic sous les règles des contraintes de la base.
-  const descriptionLue = REGULARISATION_DES_COTISATIONS_EXPORTEE ? lireLaDescription(description, echeance) : null
+  // La part (TNS-Q2-B) se borne sous le montant appelé tel qu'il partirait (`parseFloat`, comme l'insertion) ; illisible, la
+  // borne attend : l'insertion se refuserait d'elle-même.
+  const appeleQuiPartirait = parseFloat(montantAppele)
+  const descriptionLue = REGULARISATION_DES_COTISATIONS_EXPORTEE
+    ? lireLaDescription(description, echeance, Number.isFinite(appeleQuiPartirait) ? appeleQuiPartirait : null)
+    : null
   const refusDescription = descriptionLue && 'refus' in descriptionLue ? descriptionLue.refus : null
   const refusAjout = echeance && dateFigee(echeance, anneesValidees)
     ? `${dateFigee(echeance, anneesValidees)} : une échéance ne s’y ajoute plus.`
