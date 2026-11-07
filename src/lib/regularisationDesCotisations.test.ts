@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  NATURES, ORGANISMES, anneesPayables, descriptionDite, estimerLaRegularisation, lireLaDescription, saisieDeLaDescription,
-  type EntreeRegularisation,
+  NATURES, NATURES_A_PART, ORGANISMES, anneesPayables, descriptionDite, estimerLaRegularisation, lireLaDescription,
+  saisieDeLaDescription, type EntreeRegularisation,
 } from './regularisationDesCotisations'
 import { derniereDefinitionSql } from '../test/schema'
 import { estimerCotisationsUrssaf, type EstimationCotisations, type ResultatEstimation } from './voletSocialPamc'
@@ -36,7 +36,7 @@ let n = 0
 const echeance = (e: Partial<CotisationDeclaree>): CotisationDeclaree => ({
   id: `c${String(++n).padStart(3, '0')}`, dossier_id: 'd', echeance: '2026-01-05', montant_appele: 0, montant_verse: null,
   montant_csg_crds: null, created_at: '2026-01-01T00:00:00Z', previsionnel: false, paiement_personnel_le: null,
-  organisme: null, annee_payee: null, nature: null, ...e,
+  organisme: null, annee_payee: null, nature: null, part_regularisation: null, ...e,
 })
 // Douze provisionnelles de 400 € de l'Urssaf pour 2026 (4 800 €), le 5 de chaque mois.
 const douzeProvisionnelles = () => Array.from({ length: 12 }, (_, i) => echeance({
@@ -70,6 +70,15 @@ describe('les listes fermées, confrontées à la migration', () => {
     expect(anneesPayables('2026-03-05')).toEqual({ de: 2021, a: 2027 })
     expect(anneesPayables('2026-03-05', 'regularisation')).toEqual({ de: 2021, a: 2026 })
   })
+  it('la part (TNS-Q2-B) : numeric, ses deux contraintes, les natures qui la portent', () => {
+    expect(MIGRATION).toContain('add column part_regularisation numeric,')
+    expect(MIGRATION).toContain("part_regularisation is null or (nature is not null and nature in ('provisionnelle', 'acompte') and annee_payee is not null)")
+    expect(MIGRATION).toContain('part_regularisation is null or (part_regularisation <> 0 and abs(part_regularisation) <= abs(montant_appele))')
+    expect([...NATURES_A_PART]).toEqual(['provisionnelle', 'acompte'])
+    // Le retour la retire avec les trois autres, et sa garde les compte toutes les quatre.
+    expect(RETOUR).toContain('drop column part_regularisation,')
+    expect(RETOUR).toContain("and a.attname in ('organisme', 'annee_payee', 'nature', 'part_regularisation')) <> 4 then")
+  })
 })
 
 describe('le gel : la description hors de sa comparaison, rien d’autre', () => {
@@ -81,8 +90,8 @@ describe('le gel : la description hors de sa comparaison, rien d’autre', () =>
     const ligne = '      if to_jsonb(new) is distinct from to_jsonb(old) then\n'
     expect(hier.split(ligne)).toHaveLength(2)
     expect(definitionDuGel(MIGRATION)).toBe(hier.replace(ligne,
-      "      if (to_jsonb(new) - 'organisme' - 'annee_payee' - 'nature')\n"
-      + "         is distinct from (to_jsonb(old) - 'organisme' - 'annee_payee' - 'nature') then\n"))
+      "      if (to_jsonb(new) - 'organisme' - 'annee_payee' - 'nature' - 'part_regularisation')\n"
+      + "         is distinct from (to_jsonb(old) - 'organisme' - 'annee_payee' - 'nature' - 'part_regularisation') then\n"))
   })
   it('la garde de tête exige le corps d’hier ; l’essai et la garde du retour, celui de la migration ; le retour remet celui d’hier', () => {
     const neuf = md5(corps(definitionDuGel(MIGRATION)))
@@ -96,24 +105,26 @@ describe('le gel : la description hors de sa comparaison, rien d’autre', () =>
   })
 })
 
-describe('la saisie des trois champs', () => {
-  const lire = (organisme: string, annee: string, nature: string, date = '2026-03-05') => lireLaDescription({ organisme, annee, nature }, date)
+describe('la saisie des quatre champs', () => {
+  const lire = (organisme: string, annee: string, nature: string, date = '2026-03-05', part = '', appele: number | null = 800) =>
+    lireLaDescription({ organisme, annee, nature, part }, date, appele)
   it('rien de dit : trois nuls, une échéance d’hier', () => {
-    expect(lire('', '', '')).toEqual({ valeurs: { organisme: null, annee_payee: null, nature: null } })
-    expect(saisieDeLaDescription({})).toEqual({ organisme: '', annee: '', nature: '' })
+    expect(lire('', '', '')).toEqual({ valeurs: { organisme: null, annee_payee: null, nature: null, part_regularisation: null } })
+    expect(saisieDeLaDescription({})).toEqual({ organisme: '', annee: '', nature: '', part: '' })
+    expect(saisieDeLaDescription({ part_regularisation: -150.5 }).part).toBe('-150.5')
   })
   it('les bornes de l’année payée : cinq ans avant, un an après', () => {
-    expect(lire('urssaf', '2021', 'regularisation')).toEqual({ valeurs: { organisme: 'urssaf', annee_payee: 2021, nature: 'regularisation' } })
-    expect(lire('carmf', '2027', 'provisionnelle')).toEqual({ valeurs: { organisme: 'carmf', annee_payee: 2027, nature: 'provisionnelle' } })
+    expect(lire('urssaf', '2021', 'regularisation')).toEqual({ valeurs: { organisme: 'urssaf', annee_payee: 2021, nature: 'regularisation', part_regularisation: null } })
+    expect(lire('carmf', '2027', 'provisionnelle')).toEqual({ valeurs: { organisme: 'carmf', annee_payee: 2027, nature: 'provisionnelle', part_regularisation: null } })
     expect(lire('urssaf', '2020', '')).toEqual({ refus: 'L’année payée d’une échéance de 2026 va de 2021 à 2027.' })
     expect(lire('urssaf', '2028', '')).toEqual({ refus: 'L’année payée d’une échéance de 2026 va de 2021 à 2027.' })
     expect(lire('urssaf', '26', '')).toEqual({ refus: 'L’année payée s’écrit en quatre chiffres.' })
     // Sans date lisible, les bornes attendent la date (la saisie la refuse d'elle-même).
-    expect(lire('urssaf', '2020', '', '')).toEqual({ valeurs: { organisme: 'urssaf', annee_payee: 2020, nature: null } })
+    expect(lire('urssaf', '2020', '', '')).toEqual({ valeurs: { organisme: 'urssaf', annee_payee: 2020, nature: null, part_regularisation: null } })
   })
   it('une régularisation suit son année ; la même année se dit (une cessation)', () => {
     expect(lire('urssaf', '2027', 'regularisation')).toEqual({ refus: 'Une régularisation de 2027 ne s’appelle pas en 2026 : elle suit son année.' })
-    expect(lire('urssaf', '2026', 'regularisation')).toEqual({ valeurs: { organisme: 'urssaf', annee_payee: 2026, nature: 'regularisation' } })
+    expect(lire('urssaf', '2026', 'regularisation')).toEqual({ valeurs: { organisme: 'urssaf', annee_payee: 2026, nature: 'regularisation', part_regularisation: null } })
   })
   it('hors des listes, refusé ; la casse compte, comme en base', () => {
     expect(lire('URSSAF', '', '')).toEqual({ refus: 'L’organisme n’est pas de la liste.' })
@@ -122,6 +133,47 @@ describe('la saisie des trois champs', () => {
   it('la description dite en mots', () => {
     expect(descriptionDite({ organisme: 'carpimko', annee_payee: 2026, nature: 'provisionnelle' })).toBe('CARPIMKO, provisionnelle, 2026')
     expect(descriptionDite({ organisme: null, annee_payee: null, nature: null })).toBe('non décrite')
+    expect(descriptionDite({ organisme: 'urssaf', annee_payee: 2026, nature: 'provisionnelle', part_regularisation: 150 }))
+      .toBe(`Urssaf, provisionnelle, 2026, dont ${formatMoney(150)} de régularisation de 2025`)
+    expect(descriptionDite({ organisme: 'urssaf', annee_payee: 2026, nature: 'provisionnelle', part_regularisation: -150 }))
+      .toBe(`Urssaf, provisionnelle, 2026, après ${formatMoney(150)} de trop-versé de 2025 imputé`)
+  })
+})
+
+describe('la part qui régularise l’année d’avant (TNS-Q2-B), sous les deux contraintes de la base', () => {
+  const lire = (part: string, appele: number | null, nature = 'provisionnelle', annee = '2026') =>
+    lireLaDescription({ organisme: 'urssaf', annee, nature, part }, '2026-01-05', appele)
+  it('un prélèvement mixte de janvier : 550 appelés dont 150 de régularisation de 2025 ; la virgule admise', () => {
+    expect(lire('150', 550)).toEqual({ valeurs: { organisme: 'urssaf', annee_payee: 2026, nature: 'provisionnelle', part_regularisation: 150 } })
+    expect(lire('150,25', 550)).toMatchObject({ valeurs: { part_regularisation: 150.25 } })
+    expect(lire('50', 500, 'acompte')).toMatchObject({ valeurs: { nature: 'acompte', part_regularisation: 50 } })
+  })
+  it('un trop-versé de 2025 imputé : une part négative, admise', () => {
+    expect(lire('-150', 250)).toMatchObject({ valeurs: { part_regularisation: -150 } })
+  })
+  it('au plus le montant appelé, en valeur absolue (`…_part_regularisation_bornee`) : égal admis, un centime de plus refusé', () => {
+    expect(lire('550', 550)).toMatchObject({ valeurs: { part_regularisation: 550 } })
+    expect(lire('550.01', 550)).toEqual({
+      refus: `La part de régularisation (${formatMoney(550.01)}) dépasse le montant appelé (${formatMoney(550)}) : elle n’en est qu’une part.`,
+    })
+    expect(lire('-300', 250)).toEqual({
+      refus: `Le trop-versé imputé (${formatMoney(300)}) dépasse le montant appelé (${formatMoney(250)}) : un crédit plus fort que l’appel se dit par le versé — l’appelé de la provisionnelle, et le versé de ce que le prélèvement a payé.`,
+    })
+    expect(lire('0', 550)).toEqual({ refus: 'Une part de régularisation de zéro ne se dit pas : laisse le champ vide.' })
+    expect(lire('-0.00', 550)).toEqual({ refus: 'Une part de régularisation de zéro ne se dit pas : laisse le champ vide.' })
+    // Sans montant appelé lisible, la borne attend : la saisie se refuse d'elle-même.
+    expect(lire('900', null)).toMatchObject({ valeurs: { part_regularisation: 900 } })
+  })
+  it('dite d’une provisionnelle ou d’un acompte et de son année seulement (`…_part_regularisation_nature`)', () => {
+    const nature = 'La part de régularisation ne se dit que d’une provisionnelle ou d’un acompte : choisis sa nature.'
+    expect(lire('10', 250, 'regularisation', '2025')).toEqual({ refus: nature })
+    expect(lire('10', 250, '')).toEqual({ refus: nature })
+    expect(lire('10', 250, 'provisionnelle', '')).toEqual({ refus: 'La part de régularisation régularise l’année d’avant l’année payée : dis l’année payée.' })
+  })
+  it('un montant, au centime', () => {
+    expect(lire('150.555', 550)).toEqual({ refus: 'La part de régularisation n’est pas au centime.' })
+    expect(lire('cent', 550)).toEqual({ refus: 'La part de régularisation n’est pas un montant.' })
+    expect(lire('1e2', 550)).toEqual({ refus: 'La part de régularisation n’est pas un montant.' })
   })
 })
 
@@ -181,6 +233,56 @@ describe('la régularisation estimée de 2026', () => {
   })
 })
 
+describe('le prélèvement qui paie la provisionnelle de N et la régularisation de N − 1 (TNS-Q2-B)', () => {
+  // Le prélèvement de janvier 2026 : 550 €, la provisionnelle de 2026 (400 €) et 150 € de régularisation de 2025.
+  const mixteDeJanvier = () => douzeProvisionnelles().map((c, i) => (i === 0 ? { ...c, montant_appele: 550, part_regularisation: 150 } : c))
+  it('la part se retire de la provisionnelle de 2026 : l’appelé reste 4 800 €', () => {
+    const r = estimee({ echeances: mixteDeJanvier() })
+    expect([r.appelees, r.partsDeLAnneeDAvant, r.regularisation, r.comptees.length]).toEqual([4800, 150, 1200, 12])
+    expect(r.reserves).toEqual([])
+  })
+  it('… et compte dans la régularisation de 2025, déjà appelée, à côté du chiffre de 2025', () => {
+    const provisionnelles2025 = Array.from({ length: 12 }, (_, i) => echeance({
+      echeance: `2025-${String(i + 1).padStart(2, '0')}-05`, montant_appele: 350, organisme: 'urssaf', annee_payee: 2025, nature: 'provisionnelle',
+    }))
+    const r = estimee({ annee: 2025, echeances: [...provisionnelles2025, ...mixteDeJanvier()] })
+    expect([r.appelees, r.dejaAppelee, r.regularisation]).toEqual([4200, 150, 1800])
+    expect(r.reserves).toEqual([`L’Urssaf a déjà appelé ${formatMoney(150)} de régularisation de 2025 : son avis l’emporte sur l’estimation.`])
+    // Avec une échéance « régularisation de 2025 » de plus : les deux s'additionnent.
+    const avecAvis = estimee({ annee: 2025, echeances: [...provisionnelles2025, ...mixteDeJanvier(),
+      echeance({ echeance: '2026-10-05', montant_appele: 60, organisme: 'urssaf', annee_payee: 2025, nature: 'regularisation' })] })
+    expect(avecAvis.dejaAppelee).toBe(210)
+  })
+  it('un trop-versé de 2025 imputé sur l’appel d’octobre : la provisionnelle de 2026 reste entière, 2025 se dit remboursée', () => {
+    const imputee = douzeProvisionnelles().map((c, i) => (i === 9 ? { ...c, montant_appele: 250, part_regularisation: -150 } : c))
+    const r = estimee({ echeances: imputee })
+    expect([r.appelees, r.partsDeLAnneeDAvant, r.regularisation]).toEqual([4800, -150, 1200])
+    const provisionnelles2025 = Array.from({ length: 12 }, (_, i) => echeance({
+      echeance: `2025-${String(i + 1).padStart(2, '0')}-05`, montant_appele: 350, organisme: 'urssaf', annee_payee: 2025, nature: 'provisionnelle',
+    }))
+    expect(estimee({ annee: 2025, echeances: [...provisionnelles2025, ...imputee] }).reserves)
+      .toEqual([`L’Urssaf a déjà remboursé ou imputé ${formatMoney(150)} de trop-versé de 2025 : son avis l’emporte sur l’estimation.`])
+  })
+  it('une part d’une caisse de retraite, ou d’une échéance sans organisme, ne compte pas pour l’Urssaf', () => {
+    const r = estimee({ annee: 2025, echeances: [
+      ...Array.from({ length: 2 }, (_, i) => echeance({ echeance: `2025-0${i + 1}-05`, montant_appele: 2100, organisme: 'urssaf', annee_payee: 2025, nature: 'provisionnelle' })),
+      echeance({ echeance: '2026-01-05', montant_appele: 900, organisme: 'carpimko', annee_payee: 2026, nature: 'provisionnelle', part_regularisation: 300 }),
+      echeance({ echeance: '2026-02-05', montant_appele: 400, annee_payee: 2026, nature: 'provisionnelle', part_regularisation: 100 }),
+    ] })
+    expect(r.dejaAppelee).toBeNull()
+  })
+  it('une échéance non décrite fait toujours taire l’estimation, en disant pourquoi', () => {
+    const avecUneNonDecrite = [...mixteDeJanvier(), echeance({ echeance: '2026-02-20', montant_appele: 812 })]
+    expect(manques({ echeances: avecUneNonDecrite })).toEqual([
+      `L’échéance du 20/02/2026 (${formatMoney(812)}) ne dit pas qui l’appelle : décris-la dans l’onglet Cotisations.`,
+    ])
+    // Pour 2025 aussi : une échéance de 2026 sans année dite pourrait payer 2025.
+    expect(estimerLaRegularisation(entree({ annee: 2025, echeances: avecUneNonDecrite }))).toMatchObject({
+      etat: 'inconnue', manques: expect.arrayContaining([expect.stringContaining('L’échéance du 20/02/2026')]),
+    })
+  })
+})
+
 describe('ce qu’elle ne sait pas, elle le dit, sans chiffre', () => {
   it('l’année pas finie : le revenu n’est pas arrêté', () => {
     expect(manques({ aujourdhui: '2026-12-31' })).toEqual(['L’année 2026 n’est pas finie : ni son revenu ni les appels de l’Urssaf pour 2026 ne sont arrêtés.'])
@@ -219,7 +321,7 @@ describe('ce qu’elle ne sait pas, elle le dit, sans chiffre', () => {
     expect(manques({ echeances: prevue })).toEqual(['L’échéance du 05/12/2026 est encore prévisionnelle : l’appel de l’Urssaf n’est pas là.'])
   })
   it('une échéance lue sans les colonnes (la migration pas appliquée) se dit non décrite, jamais comptée', () => {
-    const sansColonnes = douzeProvisionnelles().map(({ organisme: _o, annee_payee: _a, nature: _n, ...reste }) => reste as CotisationDeclaree)
+    const sansColonnes = douzeProvisionnelles().map(({ organisme: _o, annee_payee: _a, nature: _n, part_regularisation: _p, ...reste }) => reste as CotisationDeclaree)
     expect(manques({ echeances: sansColonnes })).toHaveLength(12)
   })
 })

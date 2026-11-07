@@ -702,6 +702,9 @@ export interface CotisationDeclaree {
   organisme?: OrganismeCotisation | null
   annee_payee?: number | null
   nature?: NatureCotisation | null
+  // Sur une provisionnelle ou un acompte, la part de son montant APPELÉ qui régularise l'année d'avant l'année payée
+  // (TNS-Q2-B), signée : positive, un complément compris dans l'appel ; négative, un trop-versé imputé sur lui. Nul : aucune.
+  part_regularisation?: number | null
   created_at: string
   // Le jour où l'exploitant l'a payée DEPUIS SON COMPTE PERSONNEL (ligne 26.6 — voir lib/cotisationPersonnelle.ts) :
   // un apport, écrit face au compte du dirigeant, et la date à laquelle la 2035 la compte. Nul sinon, et toujours nul

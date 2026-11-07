@@ -6,22 +6,22 @@
 -- L'ORDRE : D'ABORD l'application — `REGULARISATION_DES_COTISATIONS_EXPORTEE` rebaissé (src/lib/regularisationDesCotisations.ts),
 -- `types.ts` remis, et mis en ligne : sinon l'onglet Cotisations écrirait des colonnes absentes et chaque saisie se refuserait —,
 -- PUIS ce texte. Le drapeau rebaissé seul n'est PAS un retour sans perte : l'onglet ne montre ni n'écrit plus la
--- description et la carte du volet social n'estime plus rien, mais les trois colonnes restent, lues par toute lecture
+-- description et la carte du volet social n'estime plus rien, mais les quatre colonnes restent, lues par toute lecture
 -- entière de la table (celle du client « membre », la sauvegarde), et « Réunir », qui suit les colonnes LUES et non le
 -- drapeau (lib/gestesDesEcheances.ts), y écrit encore : l'échéance gardée n'y garde que ce que les deux disent à
--- l'identique, et perd le reste. Le gel, lui, resterait celui de la migration (les trois champs hors de sa comparaison).
+-- l'identique, et perd le reste. Le gel, lui, resterait celui de la migration (les quatre champs hors de sa comparaison).
 --
--- CE QU'IL DÉTRUIT, sans retour : pour CHAQUE échéance de cotisation de tous les dossiers, son organisme, l'année qu'elle paie
--- et sa nature — y compris sur les échéances d'un exercice validé, que le gel ne protège pas : la migration les laisse se
+-- CE QU'IL DÉTRUIT, sans retour : pour CHAQUE échéance de cotisation de tous les dossiers, son organisme, l'année qu'elle paie,
+-- sa nature et la part de son appel qui régularise l'année d'avant (TNS-Q2-B) — y compris sur les échéances d'un exercice validé, que le gel ne protège pas : la migration les laisse se
 -- décrire après la validation. La régularisation estimée ne se calculera plus. Une sauvegarde faite avant lui porte ces
 -- colonnes : elle ne se restaure plus sur une base qui ne les a pas sans les en retirer d'abord.
--- CE QU'IL REMET : la table telle qu'avant la migration (les quatre contraintes partent avec leurs colonnes), et le gel
+-- CE QU'IL REMET : la table telle qu'avant la migration (les six contraintes partent avec leurs colonnes), et le gel
 -- au corps de `paiement_personnel_des_cotisations`, mot pour mot (md5 dfa6faabda81af162016e620ea6375fe) : il compare de
 -- nouveau la ligne entière. `create or replace` garde l'OID, le propriétaire et les droits de la fonction.
 -- CE QU'IL NE TOUCHE PAS : les montants, les dates, les marqueurs, les paiements, leurs écritures ; aucune autre table,
 -- fonction, policy ni droit.
--- CE QU'IL SUPPOSE, que son premier bloc vérifie : les trois colonnes en base, et le gel au corps de la migration (md5
--- 074e957d05d8aab18728ff9d6005a95f, les retours chariot d'un collage ôtés) — un autre corps l'arrête plutôt que d'être
+-- CE QU'IL SUPPOSE, que son premier bloc vérifie : les quatre colonnes en base, et le gel au corps de la migration (md5
+-- 1b004781ac05f71798e2ebc43b5e71c3, les retours chariot d'un collage ôtés) — un autre corps l'arrête plutôt que d'être
 -- écrasé.
 --
 -- Après lui : regularisationDesCotisations.sql (qui se dit alors en attente), cotisationPersonnelle.sql,
@@ -35,12 +35,12 @@ do $garde$
 begin
   if (select count(*) from pg_attribute a
        where a.attrelid = 'public.cotisations_declarees'::regclass and not a.attisdropped
-         and a.attname in ('organisme', 'annee_payee', 'nature')) <> 3 then
+         and a.attname in ('organisme', 'annee_payee', 'nature', 'part_regularisation')) <> 4 then
     raise exception 'La migration regularisation_des_cotisations n''est pas en base : rien à défaire ici.';
   end if;
   if (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p
        where p.oid = 'public.garder_cotisation_valide()'::regprocedure)
-     is distinct from '074e957d05d8aab18728ff9d6005a95f' then
+     is distinct from '1b004781ac05f71798e2ebc43b5e71c3' then
     raise exception 'Le gel des échéances n''est plus celui de regularisation_des_cotisations : son corps serait écrasé.';
   end if;
 end
@@ -91,8 +91,9 @@ begin
 end;
 $$;
 
--- ══ 2. Les trois colonnes, et avec elles leurs contraintes ══════════
+-- ══ 2. Les quatre colonnes, et avec elles leurs contraintes ══════════
 alter table public.cotisations_declarees
+  drop column part_regularisation,
   drop column organisme,
   drop column annee_payee,
   drop column nature;
