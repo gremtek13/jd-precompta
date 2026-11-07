@@ -87,6 +87,9 @@ export function traduire<T>(valeur: T, plan: PlanComptable): T {
  * argument n'y change pas (ses comptes ne sont ceux du catalogue que sous le plan par défaut, où la traduction est nulle).
  */
 export function entreesSous<T extends object>(fonctions: T, plan: PlanComptable): T {
+  // Sous le plan par défaut, la traduction est l'identité : les fonctions passent telles quelles, sans copier leurs
+  // entrées à chaque appel (les batteries du générateur en font des dizaines de milliers).
+  if (plan === PLAN_PAR_DEFAUT) return fonctions
   const portee = (f: (...args: unknown[]) => unknown) => (...args: unknown[]) => f(...args.map((a) => traduire(a, plan)))
   if (typeof fonctions === 'function') return portee(fonctions as (...args: unknown[]) => unknown) as T
   return Object.fromEntries(Object.entries(fonctions).map(([nom, v]) => [
