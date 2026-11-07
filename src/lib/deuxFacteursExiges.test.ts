@@ -6,11 +6,23 @@ import {
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // La migration, préparée (supabase/preparees/) ou dans l'export sous la version de son application : le même texte.
-const SQL = [...fichiersDuSchema(), ...fichiersPrepares()].find((f) => /\d{14}_deux_facteurs_exiges\.sql$/.test(f.chemin))?.texte ?? ''
-/** Le corps d'une fonction de la migration, de sa création à la suivante. */
+const FICHIERS = [...fichiersDuSchema(), ...fichiersPrepares()]
+const SQL = FICHIERS.find((f) => /\d{14}_deux_facteurs_exiges\.sql$/.test(f.chemin))?.texte ?? ''
+/**
+ * La DERNIÈRE définition d'une fonction, exportée puis préparée, dans l'ordre où elles s'appliquent — celle que la base
+ * exécutera : une migration qui la redéfinirait sans le refus de SEC2-Q2 se verrait. De `create` à la fin du corps.
+ */
 const corps = (nom: string) => {
-  const debut = SQL.indexOf(`create function public.${nom}(`)
-  return debut < 0 ? '' : SQL.slice(debut, SQL.indexOf('create function', debut + 1))
+  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
+  let dernier = ''
+  for (const f of FICHIERS) {
+    const debuts = [...f.texte.matchAll(motif)].map((m) => m.index)
+    if (debuts.length > 0) {
+      const debut = debuts[debuts.length - 1]
+      dernier = f.texte.slice(debut, f.texte.indexOf('$$;', debut))
+    }
+  }
+  return dernier
 }
 // Une apostrophe se double en SQL, se courbe à l'écran : comparées, elles sont la même.
 const sansApostrophes = (s: string) => s.replace(/''/g, "'").replace(/’/g, "'")
