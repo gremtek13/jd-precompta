@@ -5,6 +5,7 @@ import { AuthApiError, AuthWeakPasswordError } from '@supabase/supabase-js'
 import ts from 'typescript'
 import { predicatEq, predicatIn, predicatIs, predicatNot, predicatOr, type Ligne, type Predicat } from './filtresPostgrest'
 import { REGLE_D_UN_PROJET_NEUF, jugementDuService, type RegleDuService } from './regleDuService'
+import { ROLES_COMPTABLES } from '../lib/planComptable'
 import { clesPrimairesDuSchema, fichiersDuSchema, fichiersPrepares, relationsDuSchema, type RelationDuSchema } from './schema'
 
 // LES EDGE FUNCTIONS APPELÉES EN HTTP, DANS LA SUITE — DEPUIS LEUR VRAIE SOURCE, SANS RÉSEAU, SANS SECRET, SANS APPEL
@@ -425,6 +426,27 @@ const RANG_DU_GENRE: Readonly<Record<string, number>> = { facture: 0, avoir: 1, 
 // `ErreurPostgrest` pour un refus de la base (un droit d'exécution qui manque), rendu en `{ error }` comme le vrai.
 const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Record<string, unknown>) => unknown> = {
   admin_du_dossier: (monde, { utilisateur }, args) => adminDuDossier(monde, utilisateur, args.p_dossier_id),
+  // `plan_du_dossier(p_dossier_id)` (migration `plan_comptable_des_dossiers`, ligne 43) : AUX DROITS DE L'APPELANT
+  // (ni `security definer`, ni réservée au service), son corps refuse en 42501 qui n'est pas admis au dossier — le rôle du
+  // service compris, sans session : `admin_du_dossier` lit `auth.uid()`. Puis une ligne par rôle du catalogue, dans son
+  // ordre : la ligne que le dossier règle (`monde.base.plan_comptable_dossier`), sinon le défaut — le `coalesce` du corps.
+  plan_du_dossier: (monde, { utilisateur }, args) => {
+    const dossierId = args.p_dossier_id
+    if (typeof dossierId !== 'string' || Object.keys(args).length !== 1) {
+      throw new Error(`Faux PostgREST : plan_du_dossier(${JSON.stringify(args)}) n'est pas modélisé`)
+    }
+    if (!adminDuDossier(monde, utilisateur, dossierId)) {
+      throw new ErreurPostgrest({ code: '42501', message: 'Accès refusé à ce dossier.', status: 403 })
+    }
+    const regles = (monde.base.plan_comptable_dossier ?? []).filter((p) => p.dossier_id === dossierId)
+    return [...ROLES_COMPTABLES].sort((a, b) => a.ordre - b.ordre).map((r) => {
+      const p = regles.find((x) => x.role === r.role)
+      return {
+        role: r.role, compte: p?.compte ?? r.compteDefaut, libelle: p?.libelle ?? r.libelleDefaut,
+        prefixe_auxiliaire: p?.prefixe_auxiliaire ?? r.prefixeAuxiliaireDefaut, origine: p?.origine ?? 'application',
+      }
+    })
+  },
   droits_sur_le_dossier: (monde, { utilisateur }, args) => droitsSurLeDossier(monde, utilisateur, args.p_dossier_id),
   // `ventes_facturees_de_l_exercice(p_dossier_id, p_annee)` (migration `validation_des_ventes_facturees`) : exécutable
   // par le rôle du service SEUL — la migration la retire à `public`, `anon` et `authenticated`, et le relevé du catalogue

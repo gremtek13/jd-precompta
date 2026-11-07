@@ -146,18 +146,186 @@ interface PieceRow {
 }
 interface CategorieRow { id: string; libelle: string; compte_comptable: string | null; poste_2035: string | null }
 
+// ── DÉBUT PLAN DU DOSSIER ────────────────────────────────────────────────────────────────────────
+// LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3b), recopié de src/lib/planComptable.ts (`planDeLaReponse`,
+// `roleDuDirigeant`) et de src/lib/engagement.ts (`modeleDuDossier`) : l'assistant compose et juge avec le plan que la
+// base lit (`plan_du_dossier`, le réglage du dossier sinon le défaut du catalogue), jamais avec une copie de ses comptes.
+// LE PLAN EST ENTIER OU IL N'EST PAS : un refus, une réponse illisible ou incomplète, un compte hors des racines de son
+// rôle ne rendent aucun plan, et l'assistant se ferme pour ce dossier, comme ses écrans. Le catalogue ne porte ici que ce
+// qui juge une réponse — la clé, les racines, et si le rôle est de tiers —, jamais un compte par défaut : le défaut, c'est
+// la base qui le rend. agentComptablePlan.test.ts confronte ce bloc à src/lib, rôle par rôle et réponse par réponse.
+const ROLES_DU_PLAN = [
+  { role: "banque", racines: ["512"], deTiers: false },
+  { role: "tva_deductible", racines: ["44566"], deTiers: false },
+  { role: "tva_immobilisations", racines: ["44562"], deTiers: false },
+  { role: "tva_collectee", racines: ["44571"], deTiers: false },
+  { role: "tva_a_decaisser", racines: ["44551"], deTiers: false },
+  { role: "credit_tva_a_reporter", racines: ["44567"], deTiers: false },
+  { role: "remboursement_tva_demande", racines: ["44583"], deTiers: false },
+  { role: "arrondi_charge", racines: ["658"], deTiers: false },
+  { role: "arrondi_produit", racines: ["758"], deTiers: false },
+  { role: "fournisseurs", racines: ["401"], deTiers: true },
+  { role: "fournisseurs_immobilisations", racines: ["404"], deTiers: true },
+  { role: "clients", racines: ["411"], deTiers: true },
+  { role: "exploitant", racines: ["108"], deTiers: false },
+  { role: "associe", racines: ["455"], deTiers: false },
+  { role: "autres_debiteurs_crediteurs", racines: ["467"], deTiers: false },
+  { role: "emprunt", racines: ["164"], deTiers: false },
+  { role: "interets_emprunt", racines: ["6611"], deTiers: false },
+  { role: "assurance_emprunt", racines: ["616"], deTiers: false },
+  { role: "cotisations_exploitant", racines: ["646"], deTiers: false },
+  { role: "dotations_amortissements", racines: ["6811"], deTiers: false },
+  { role: "indemnites_kilometriques", racines: ["6251"], deTiers: false },
+  { role: "virements_internes", racines: ["58"], deTiers: false },
+  { role: "depots_cautionnements_verses", racines: ["275"], deTiers: false },
+  { role: "capital_individuel", racines: ["101"], deTiers: false },
+  { role: "resultat_benefice", racines: ["120"], deTiers: false },
+  { role: "resultat_perte", racines: ["129"], deTiers: false },
+  { role: "prestations_de_services", racines: ["706"], deTiers: false },
+  { role: "ventes_de_biens", racines: ["701", "707"], deTiers: false },
+  { role: "tva_collectee_en_attente", racines: ["44580", "44574"], deTiers: false },
+  { role: "valeurs_a_l_encaissement", racines: ["511"], deTiers: false },
+  { role: "caisse", racines: ["53"], deTiers: false },
+  { role: "services_bancaires", racines: ["627"], deTiers: false },
+] as const
+
+type CleRoleComptable = (typeof ROLES_DU_PLAN)[number]["role"]
+type PlanComptable = Readonly<Record<CleRoleComptable, string>>
+type RoleDeTiers = "fournisseurs" | "fournisseurs_immobilisations" | "clients"
+type LibellesDuPlan = Readonly<Record<CleRoleComptable, string | null>>
+type PrefixesDuPlan = Readonly<Record<RoleDeTiers, string>>
+interface PlanLu { plan: PlanComptable; libelles: LibellesDuPlan; prefixes: PrefixesDuPlan }
+type LectureDuPlan =
+  | { plan: PlanComptable; libelles: LibellesDuPlan; prefixes: PrefixesDuPlan; motif: null }
+  | { plan: null; motif: string }
+
+const ROLES_DE_TIERS: readonly RoleDeTiers[] = ["fournisseurs", "fournisseurs_immobilisations", "clients"]
+const FORME_COMPTE_DE_ROLE = /^[0-9]{6}$/
+const FORME_PREFIXE_AUXILIAIRE = /^[A-Z0-9]{1,5}$/
+
+function sousUneRacineDuRole(role: CleRoleComptable, compte: string): boolean {
+  const definition = ROLES_DU_PLAN.find((r) => r.role === role)
+  return definition !== undefined && definition.racines.some((racine) => compte.startsWith(racine))
+}
+
+// Le message d'une erreur de la base, un objet nu (src/lib/messageErreur.ts, sans le refus du stockage : la lecture du
+// plan n'en rend pas).
+function messageDeLaBase(erreur: unknown, repli: string): string {
+  if (typeof erreur === "string") return erreur.trim() ? erreur : repli
+  if (erreur && typeof erreur === "object") {
+    const message = (erreur as { message?: unknown }).message
+    if (typeof message === "string" && message.trim()) return message
+  }
+  return repli
+}
+
+function planDeLaReponse(reponse: { data: unknown; error: unknown }): LectureDuPlan {
+  if (reponse.error) {
+    return { plan: null, motif: `plan comptable refusé : ${messageDeLaBase(reponse.error, "raison inconnue")}` }
+  }
+  if (!Array.isArray(reponse.data)) return { plan: null, motif: "plan comptable illisible" }
+  const lus = new Map<string, string>()
+  const libellesLus = new Map<string, string | null>()
+  const prefixesLus = new Map<string, string | null>()
+  const texteOuNul = (v: unknown): v is string | null => v === null || typeof v === "string"
+  for (const ligne of reponse.data as unknown[]) {
+    if (ligne === null || typeof ligne !== "object") return { plan: null, motif: "plan comptable illisible" }
+    const champs = ligne as Record<string, unknown>
+    const { role, compte } = champs
+    if (typeof role !== "string" || typeof compte !== "string") return { plan: null, motif: "plan comptable illisible" }
+    if (lus.has(role)) return { plan: null, motif: `plan comptable illisible : le rôle « ${role} » y paraît deux fois` }
+    const { libelle, prefixe_auxiliaire: prefixe } = champs
+    if (!("libelle" in champs) || !("prefixe_auxiliaire" in champs) || !texteOuNul(libelle) || !texteOuNul(prefixe)) {
+      return { plan: null, motif: `plan comptable illisible : le libellé ou le préfixe du rôle « ${role} » n’est pas lu` }
+    }
+    lus.set(role, compte)
+    libellesLus.set(role, libelle)
+    prefixesLus.set(role, prefixe)
+  }
+  const absents = ROLES_DU_PLAN.filter((r) => !lus.has(r.role)).map((r) => r.role)
+  if (absents.length > 0) {
+    return {
+      plan: null,
+      motif: `plan comptable incomplet : ${absents.length} rôle(s) sur ${ROLES_DU_PLAN.length} absent(s) (${absents.join(", ")})`,
+    }
+  }
+  for (const { role } of ROLES_DU_PLAN) {
+    const compte = lus.get(role)!
+    if (!FORME_COMPTE_DE_ROLE.test(compte) || !sousUneRacineDuRole(role, compte)) {
+      return { plan: null, motif: `plan comptable illisible : « ${compte} » n’est pas un compte du rôle « ${role} »` }
+    }
+  }
+  for (const { role } of ROLES_DU_PLAN) {
+    const prefixe = prefixesLus.get(role) ?? null
+    const deTiers = (ROLES_DE_TIERS as readonly string[]).includes(role)
+    if (deTiers && prefixe === null) {
+      return { plan: null, motif: `plan comptable illisible : le rôle « ${role} » n’a pas de préfixe d’auxiliaire` }
+    }
+    if (deTiers ? !FORME_PREFIXE_AUXILIAIRE.test(prefixe!) : prefixe !== null) {
+      return { plan: null, motif: `plan comptable illisible : « ${prefixe} » n’est pas un préfixe d’auxiliaire du rôle « ${role} »` }
+    }
+  }
+  const prefixes = Object.fromEntries(ROLES_DE_TIERS.map((role) => [role, prefixesLus.get(role)!])) as Record<RoleDeTiers, string>
+  if (new Set(Object.values(prefixes)).size !== ROLES_DE_TIERS.length) {
+    return { plan: null, motif: "plan comptable illisible : deux rôles de tiers y partagent un préfixe d’auxiliaire" }
+  }
+  const plan = Object.fromEntries(ROLES_DU_PLAN.map((r) => [r.role, lus.get(r.role)!])) as PlanComptable
+  const libelles = Object.fromEntries(ROLES_DU_PLAN.map((r) => [r.role, libellesLus.get(r.role)!])) as LibellesDuPlan
+  return { plan: Object.freeze(plan), libelles: Object.freeze(libelles), prefixes: Object.freeze(prefixes), motif: null }
+}
+
+// La lecture du plan, ATTENDUE ici et son erreur lue : une requête qui lève tombe du côté signalé, comme un refus — jamais
+// un plan par défaut supposé.
+async function lireLePlanDuDossier(requete: PromiseLike<{ data: unknown; error: unknown }>): Promise<LectureDuPlan> {
+  try {
+    return planDeLaReponse(await requete)
+  } catch (erreur) {
+    return planDeLaReponse({ data: null, error: erreur })
+  }
+}
+
+const ROLES_DU_DIRIGEANT = ["associe", "exploitant", "autres_debiteurs_crediteurs"] as const
+
+function roleDuDirigeant(plan: PlanComptable, compte: string): (typeof ROLES_DU_DIRIGEANT)[number] | null {
+  return ROLES_DU_DIRIGEANT.find((role) => plan[role] === compte) ?? null
+}
+
+type ModeComptable = "tresorerie" | "engagement"
+interface ModeleComptable {
+  mode: ModeComptable
+  // Le compte d'une note de frais payée par le dirigeant, en engagement : l'un des trois rôles du dirigeant du plan. En
+  // trésorerie il n'y a rien à choisir : ce qu'il a payé de sa poche passe au compte de l'exploitant du plan.
+  compteNotesDeFrais: string
+  // Le plan du dossier : ses comptes, leurs libellés et les préfixes des auxiliaires de ses tiers.
+  plan: PlanComptable
+  libelles: LibellesDuPlan
+  prefixes: PrefixesDuPlan
+}
+type ModeleDuDossier = { modele: ModeleComptable; refus: null } | { modele: null; refus: string }
+
+function modeleDuDossier(
+  dossier: { mode_comptable: ModeComptable; compte_notes_de_frais: string }, { plan, libelles, prefixes }: PlanLu,
+): ModeleDuDossier {
+  if (roleDuDirigeant(plan, dossier.compte_notes_de_frais) === null) {
+    return {
+      modele: null,
+      refus: `Le compte du dirigeant de ce dossier (${dossier.compte_notes_de_frais}) n’est le compte d’aucun des trois rôles `
+        + `que son plan comptable lui ouvre (${ROLES_DU_DIRIGEANT.map((role) => plan[role]).join(", ")}).`,
+    }
+  }
+  return {
+    modele: { mode: dossier.mode_comptable, compteNotesDeFrais: dossier.compte_notes_de_frais, plan, libelles, prefixes },
+    refus: null,
+  }
+}
+// ── FIN PLAN DU DOSSIER ──────────────────────────────────────────────────────────────────────────
+
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
-const COMPTE_TVA_DEDUCTIBLE = "445660"
-const COMPTE_TVA_COLLECTEE = "445710"
 // La TVA déductible de la facture d'un BIEN immobilisé (ligne 19 de la CA3) — src/lib/comptes.ts.
-const COMPTE_TVA_IMMOBILISATIONS = "445620"
-const COMPTE_BANQUE = "512000"
 // La caisse du dossier (src/lib/comptes.ts, le rôle `caisse`) : la contrepartie d'un paiement de la pièce par la caisse
 // (étape C13, `ligneContrepartieCaisse`), et le compte que la consigne nomme pour une opération de caisse (étape C5).
-const COMPTE_CAISSE = "530000"
 // Le compte de l'exploitant : en trésorerie, celui du dirigeant — ses virements personnels (bloc AFFECTATION)
 // et la part d'une note de frais qu'il a payée de sa poche (`ligneContrepartieDirigeant`).
-const COMPTE_EXPLOITANT = "108000"
 const EPSILON_EQUILIBRE = 0.02
 
 // ── DÉBUT VALIDATION ─────────────────────────────────────────────────────────────────────────────
@@ -526,9 +694,9 @@ function piecesAComptabiliser(
 
 // Le compte de TVA d'une pièce : collectée pour une vente, déductible sur immobilisation pour la facture d'un
 // bien, déductible sur biens et services sinon — src/lib/montantRetenu.ts.
-function compteTvaDe(piece: Pick<PieceRow, "type_piece">, immobilisation: boolean): string {
-  if (piece.type_piece === "vente") return COMPTE_TVA_COLLECTEE
-  return immobilisation ? COMPTE_TVA_IMMOBILISATIONS : COMPTE_TVA_DEDUCTIBLE
+function compteTvaDe(piece: Pick<PieceRow, "type_piece">, immobilisation: boolean, plan: PlanComptable): string {
+  if (piece.type_piece === "vente") return plan.tva_collectee
+  return immobilisation ? plan.tva_immobilisations : plan.tva_deductible
 }
 
 // ---- Dupliqué depuis src/lib/rattachement.ts et src/lib/alignementBanque.ts ----------------------
@@ -711,21 +879,6 @@ function rattachementsTresorerie(
 // date, le paiement la solde à la sienne — deux écritures, chacune équilibrée seule. Sans ce bloc,
 // l'assistant jugerait le brouillon d'un dossier en engagement avec les règles de la trésorerie, et
 // annoncerait « à régénérer » chacune de ses écritures justes.
-const COMPTE_FOURNISSEURS = "401000"
-const COMPTE_FOURNISSEURS_IMMOBILISATIONS = "404000"
-const COMPTE_CLIENTS = "411000"
-
-type ModeComptable = "tresorerie" | "engagement"
-interface ModeleComptable {
-  mode: ModeComptable
-  // Le compte d'une note de frais payée par le dirigeant (455000, 108000 ou 467000), en engagement. En
-  // trésorerie il n'y a rien à choisir : ce qu'il a payé de sa poche passe au 108000 de l'exploitant.
-  compteNotesDeFrais: string
-}
-
-function modeleDuDossier(dossier: { mode_comptable: ModeComptable; compte_notes_de_frais: string }): ModeleComptable {
-  return { mode: dossier.mode_comptable, compteNotesDeFrais: dossier.compte_notes_de_frais }
-}
 
 // La TVA que la génération ventile : rien pour un dossier exonéré, qui ne la récupère pas et porte sa
 // charge TTC sur une seule ligne.
@@ -735,10 +888,10 @@ function tvaVentilee(piece: Pick<PieceRow, "montant_tva">, assujettiTva: boolean
 
 // 411 pour une vente, le compte du dossier pour une note de frais, 404 pour la facture d'un bien
 // immobilisé, 401 pour tout le reste.
-function compteDeTiers(piece: Pick<PieceRow, "type_piece">, compteNotesDeFrais: string, immobilisation: boolean): string {
-  if (piece.type_piece === "vente") return COMPTE_CLIENTS
+function compteDeTiers(piece: Pick<PieceRow, "type_piece">, compteNotesDeFrais: string, immobilisation: boolean, plan: PlanComptable): string {
+  if (piece.type_piece === "vente") return plan.clients
   if (piece.type_piece === "note_frais") return compteNotesDeFrais
-  return immobilisation ? COMPTE_FOURNISSEURS_IMMOBILISATIONS : COMPTE_FOURNISSEURS
+  return immobilisation ? plan.fournisseurs_immobilisations : plan.fournisseurs
 }
 
 // ---- Dupliqué depuis src/lib/ecritures.ts, src/lib/engagement.ts et src/lib/rattachement.ts : le GÉNÉRATEUR -----
@@ -916,7 +1069,7 @@ function repartirLesLignesPartagees(centimes: readonly number[], poids: readonly
 // (`ECRITURE_PAR_REGLEMENT`), une par règlement d'une date que plusieurs se partagent. Un montant négatif (un avoir)
 // inverse le sens : `montant` reste positif.
 function lignesChargeProduitPourPiece(
-  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[],
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[], plan: PlanComptable,
 ): LigneAttendue[] {
   const sensPiece: Sens = piece.type_piece === "vente" ? "credit" : "debit"
   const ligne = (date: string, compte: string, montant: number): LigneAttendue =>
@@ -929,7 +1082,7 @@ function lignesChargeProduitPourPiece(
   const tvas = tva
     ? centimesParDate(piece, charge + tva, paiements).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
     : []
-  const compteTva = compteTvaDe(piece, cible.immobilisation)
+  const compteTva = compteTvaDe(piece, cible.immobilisation, plan)
   const parReglement = ecritureParReglement()
   return charges.flatMap((f, i) => {
     const centimesTva = tva ? tvas[i].centimes : 0
@@ -952,10 +1105,10 @@ function lignesChargeProduitPourPiece(
 
 // La contrepartie BANQUE d'un paiement, en trésorerie : au montant et à la date de CE paiement, dans le sens de son
 // signe. Un paiement de zéro euro n'en écrit aucune.
-function ligneContrepartieBanque(paiement: Pick<PaiementParLeReleve, "id" | "date" | "montant">): LigneAttendue | null {
+function ligneContrepartieBanque(paiement: Pick<PaiementParLeReleve, "id" | "date" | "montant">, plan: PlanComptable): LigneAttendue | null {
   if (!paiement.montant) return null
   return {
-    date: paiement.date, compte: COMPTE_BANQUE, sens: paiement.montant > 0 ? "debit" : "credit",
+    date: paiement.date, compte: plan.banque, sens: paiement.montant > 0 ? "debit" : "credit",
     montant: Math.abs(paiement.montant), ligne_bancaire_id: paiement.id,
   }
 }
@@ -964,18 +1117,18 @@ function ligneContrepartieBanque(paiement: Pick<PaiementParLeReleve, "id" | "dat
 // de la caisse, à la date de l'opération, de son montant, au débit quand les espèces entrent, au crédit quand elles sortent,
 // l'opération citée — la seule ligne que la garde du brouillon admet pour un paiement (`garder_ecriture_de_caisse`). Le compte
 // est celui du plan par défaut : l'assistant ne lit pas encore le plan du dossier (PC3b), dont aucun ne change ce rôle.
-function ligneContrepartieCaisse(paiement: Pick<PaiementParLaCaisse, "operation_caisse_id" | "date" | "montant">): LigneAttendue | null {
+function ligneContrepartieCaisse(paiement: Pick<PaiementParLaCaisse, "operation_caisse_id" | "date" | "montant">, plan: PlanComptable): LigneAttendue | null {
   if (!paiement.montant) return null
   return {
-    date: paiement.date, compte: COMPTE_CAISSE, sens: paiement.montant > 0 ? "debit" : "credit",
+    date: paiement.date, compte: plan.caisse, sens: paiement.montant > 0 ? "debit" : "credit",
     montant: Math.abs(paiement.montant), operation_caisse_id: paiement.operation_caisse_id,
   }
 }
 
 // La contrepartie d'un paiement, de l'un ou l'autre moyen : la banque d'un paiement par le relevé, la caisse d'un paiement par
 // la caisse.
-function ligneContrepartieDuPaiement(paiement: PaiementDePiece): LigneAttendue | null {
-  return estParLeReleve(paiement) ? ligneContrepartieBanque(paiement) : ligneContrepartieCaisse(paiement)
+function ligneContrepartieDuPaiement(paiement: PaiementDePiece, plan: PlanComptable): LigneAttendue | null {
+  return estParLeReleve(paiement) ? ligneContrepartieBanque(paiement, plan) : ligneContrepartieCaisse(paiement, plan)
 }
 
 // La ligne est-elle la contrepartie d'un paiement par la caisse ? Celle d'une PIÈCE qui cite une opération de caisse : la
@@ -989,33 +1142,33 @@ function estContrepartieCaisse(e: Pick<EcritureRow, "piece_id" | "operation_cais
 // TVA et la banque de chaque paiement — au centime, et se date comme la part qu'elle paie : la date de la pièce, sinon
 // celle du dépôt. Remboursée par la banque, la note n'a plus de part à elle, et cette ligne n'existe pas.
 function ligneContrepartieDirigeant(
-  piece: PieceRow, autres: readonly Pick<LigneAttendue, "sens" | "montant">[], paiements: readonly Pick<PaiementDePiece, "date" | "montant">[],
+  piece: PieceRow, autres: readonly Pick<LigneAttendue, "sens" | "montant">[], paiements: readonly Pick<PaiementDePiece, "date" | "montant">[], plan: PlanComptable,
 ): LigneAttendue | null {
   const part = rattachementsTresorerie(piece, paiements).find((r) => r.source === "note_de_frais")
   if (!part) return null
   const solde = autres.reduce((s, l) => s + (l.sens === "debit" ? 1 : -1) * Math.round(l.montant * 100), 0)
   if (solde === 0) return null
-  return { date: part.date ?? dateDuDepot(piece.created_at), compte: COMPTE_EXPLOITANT, sens: solde > 0 ? "credit" : "debit", montant: Math.abs(solde) / 100 }
+  return { date: part.date ?? dateDuDepot(piece.created_at), compte: plan.exploitant, sens: solde > 0 ? "credit" : "debit", montant: Math.abs(solde) / 100 }
 }
 
 // En TRÉSORERIE : la charge ou le produit datés comme la 2035 compte la pièce, une contrepartie par paiement — la banque,
 // ou la caisse d'un paiement par la caisse (étape C13) —, et la part d'une note de frais que le dirigeant a payée face au
 // compte de l'exploitant.
 function lignesTresoreriePourPiece(
-  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[],
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[], plan: PlanComptable,
 ): LigneAttendue[] {
   const autres = [
-    ...lignesChargeProduitPourPiece(piece, cible, assujettiTva, paiements),
-    ...paiements.flatMap((p) => ligneContrepartieDuPaiement(p) ?? []),
+    ...lignesChargeProduitPourPiece(piece, cible, assujettiTva, paiements, plan),
+    ...paiements.flatMap((p) => ligneContrepartieDuPaiement(p, plan) ?? []),
   ]
-  const dirigeant = ligneContrepartieDirigeant(piece, autres, paiements)
-  return dirigeant && estContrepartieDirigeant(piece, cible, dirigeant) ? [...autres, dirigeant] : autres
+  const dirigeant = ligneContrepartieDirigeant(piece, autres, paiements, plan)
+  return dirigeant && estContrepartieDirigeant(piece, cible, dirigeant, plan) ? [...autres, dirigeant] : autres
 }
 
 // En ENGAGEMENT, l'écriture de la FACTURE, à sa date (le dépôt à défaut) : la charge ou le produit, sa TVA, et le
 // compte de tiers qui porte le TTC.
 function lignesFactureEngagement(
-  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: string,
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: string, plan: PlanComptable,
 ): LigneAttendue[] {
   const sensPiece: Sens = piece.type_piece === "vente" ? "credit" : "debit"
   const date = piece.date_piece ?? dateDuDepot(piece.created_at)
@@ -1024,8 +1177,8 @@ function lignesFactureEngagement(
   const ttc = piece.montant_ttc!
   const tva = tvaVentilee(piece, assujettiTva)
   const lignes = [ligne(sensPiece, cible.compte, tva ? montantRetenu(piece, assujettiTva)! : ttc)]
-  if (tva) lignes.push(ligne(sensPiece, compteTvaDe(piece, cible.immobilisation), tva))
-  lignes.push(ligne(inverse(sensPiece), compteDeTiers(piece, compteNotesDeFrais, cible.immobilisation), ttc))
+  if (tva) lignes.push(ligne(sensPiece, compteTvaDe(piece, cible.immobilisation, plan), tva))
+  lignes.push(ligne(inverse(sensPiece), compteDeTiers(piece, compteNotesDeFrais, cible.immobilisation, plan), ttc))
   // Une ligne nulle ne s'écrit pas : la base la refuse.
   return lignes.filter((l) => l.montant !== 0)
 }
@@ -1034,26 +1187,26 @@ function lignesFactureEngagement(
 // montant du paiement, la banque dans le sens de son signe.
 function lignesReglementEngagement(
   piece: Pick<PieceRow, "type_piece">, mouvement: Pick<PaiementParLeReleve, "id" | "date" | "montant">,
-  compteNotesDeFrais: string, immobilisation: boolean,
+  compteNotesDeFrais: string, immobilisation: boolean, plan: PlanComptable,
 ): LigneAttendue[] {
   if (!mouvement.montant) return []
   const sensBanque: Sens = mouvement.montant > 0 ? "debit" : "credit"
   const montant = Math.abs(mouvement.montant)
   return [
-    { date: mouvement.date, compte: compteDeTiers(piece, compteNotesDeFrais, immobilisation), sens: inverse(sensBanque), montant, ligne_bancaire_id: mouvement.id },
-    { date: mouvement.date, compte: COMPTE_BANQUE, sens: sensBanque, montant, ligne_bancaire_id: mouvement.id },
+    { date: mouvement.date, compte: compteDeTiers(piece, compteNotesDeFrais, immobilisation, plan), sens: inverse(sensBanque), montant, ligne_bancaire_id: mouvement.id },
+    { date: mouvement.date, compte: plan.banque, sens: sensBanque, montant, ligne_bancaire_id: mouvement.id },
   ]
 }
 
 function lignesEngagementPourPiece(
   piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: string,
-  mouvements: readonly Pick<PaiementParLeReleve, "id" | "date" | "montant">[],
+  mouvements: readonly Pick<PaiementParLeReleve, "id" | "date" | "montant">[], plan: PlanComptable,
 ): LigneAttendue[] {
   return [
-    ...lignesFactureEngagement(piece, cible, assujettiTva, compteNotesDeFrais),
+    ...lignesFactureEngagement(piece, cible, assujettiTva, compteNotesDeFrais, plan),
     ...[...mouvements]
       .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
-      .flatMap((m) => lignesReglementEngagement(piece, m, compteNotesDeFrais, cible.immobilisation)),
+      .flatMap((m) => lignesReglementEngagement(piece, m, compteNotesDeFrais, cible.immobilisation, plan)),
   ]
 }
 
@@ -1065,8 +1218,8 @@ function lignesPourPiece(
   // d'une pièce d'un dossier en engagement, et sa garde n'admettrait pas la ligne de tiers d'un règlement — un paiement par
   // la caisse n'y fait aucun règlement.
   return modele.mode === "engagement"
-    ? lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve))
-    : lignesTresoreriePourPiece(piece, cible, assujettiTva, paiements)
+    ? lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve), modele.plan)
+    : lignesTresoreriePourPiece(piece, cible, assujettiTva, paiements, modele.plan)
 }
 
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
@@ -1123,9 +1276,9 @@ function contrepartiesSuiventLesPaiements(
 // le compte de l'exploitant, sur une note de frais dont la catégorie n'est pas ce compte-là — une note rangée dans
 // une catégorie au 108000 y porte déjà sa charge, et suit la règle de toute pièce.
 function estContrepartieDirigeant(
-  p: Pick<PieceRow, "type_piece">, cible: Pick<CibleComptable, "compte">, e: Pick<EcritureRow, "compte">,
+  p: Pick<PieceRow, "type_piece">, cible: Pick<CibleComptable, "compte">, e: Pick<EcritureRow, "compte">, plan: PlanComptable,
 ): boolean {
-  return p.type_piece === "note_frais" && e.compte === COMPTE_EXPLOITANT && cible.compte !== COMPTE_EXPLOITANT
+  return p.type_piece === "note_frais" && e.compte === plan.exploitant && cible.compte !== plan.exploitant
 }
 
 // QUATRE COMPARAISONS, PAS UNE. Cette copie n'en portait qu'une — le TOTAL — pendant que
@@ -1134,11 +1287,11 @@ function estContrepartieDirigeant(
 // est de répondre « quelles sont les anomalies ? ». Deux livrables, deux réponses.
 function tresorerieDesynchronisee(
   p: PieceRow, cible: CibleComptable, groupe: readonly EcritureRow[], assujettiTva: boolean,
-  paiementsPiece: readonly PaiementDePiece[],
+  paiementsPiece: readonly PaiementDePiece[], plan: PlanComptable,
 ): boolean {
   // La contrepartie d'une note de frais au compte de l'exploitant est une contrepartie, comme la banque : elle se
   // compare à part, à la fin. Celle d'un paiement par la caisse aussi (étape C13).
-  const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e))
+  const lignes = groupe.filter((e) => e.compte !== plan.banque && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e, plan))
   // Pas encore générée — pas une désynchronisation. Des contreparties SANS leur charge en sont une.
   if (lignes.length === 0) return groupe.length > 0
   const sensPiece: "debit" | "credit" = p.type_piece === "vente" ? "credit" : "debit"
@@ -1146,7 +1299,7 @@ function tresorerieDesynchronisee(
   // pas d'un centime. Le compte de TVA est exclu, sinon toute facture au taux normal serait
   // signalée dès la première — celui que la génération écrit (`compteTvaDe`) : la facture d'un bien
   // passe en 445620, celle d'une charge en 445660.
-  const compteTva = compteTvaDe(p, cible.immobilisation)
+  const compteTva = compteTvaDe(p, cible.immobilisation, plan)
   const surUnAutreCompte = lignes.some((e) => e.compte !== cible.compte && e.compte !== compteTva)
   if (surUnAutreCompte) return true
   // LA VENTILATION DE LA TVA, que le total ne peut pas voir : corriger `montant_tva` en gardant le
@@ -1177,7 +1330,7 @@ function tresorerieDesynchronisee(
     return [...soldes].filter(([, centimes]) => centimes !== 0).map(([cle, centimes]) => `${cle}|${centimes}`).sort()
   }
   const presentes = soldesParDate(lignes)
-  const chargesGenerees = lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece)
+  const chargesGenerees = lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece, plan)
   const generees = soldesParDate(chargesGenerees)
   if (presentes.length !== generees.length || presentes.some((c, i) => c !== generees[i])) return true
   // ET LE DÉCOUPAGE D'UNE DATE ENTRE SES RÈGLEMENTS (lot FEC22c2, copie FEC22c3), que les soldes ne voient pas : là où la
@@ -1190,19 +1343,19 @@ function tresorerieDesynchronisee(
   // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT : une pièce payée en deux fois, ou réglée en partie par un
   // virement groupé, n'en recevait qu'une au rapprochement — une écriture déséquilibrée que « Régénérer »
   // réécrit désormais depuis les paiements.
-  if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)) return true
+  if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === plan.banque), paiementsPiece)) return true
   // ET UNE CONTREPARTIE CAISSE PAR PAIEMENT PAR LA CAISSE (étape C13), sur le compte de la caisse : une ligne qui ne suit plus
   // son opération — un paiement retiré, une ligne de moins, un autre compte — se régénère.
   const lignesCaisse = groupe.filter(estContrepartieCaisse)
-  if (lignesCaisse.some((e) => e.compte !== COMPTE_CAISSE) || !caisseSuitLesPaiements(lignesCaisse, paiementsPiece)) return true
+  if (lignesCaisse.some((e) => e.compte !== plan.caisse) || !caisseSuitLesPaiements(lignesCaisse, paiementsPiece)) return true
   // ET LA CONTREPARTIE D'UNE NOTE DE FRAIS AU COMPTE DE L'EXPLOITANT, celle que la génération écrit — ni une de plus
   // ni une de moins. La date ne se compare que sur une pièce datée : sans date, c'est celle du dépôt, un instant lu
   // dans le fuseau de qui génère.
   const cle = (l: { date: string; sens: string; montant: number }) =>
     [p.date_piece ? l.date : "", l.sens, Math.round(l.montant * 100)].join("|")
-  const dirigeantPresent = groupe.filter((e) => estContrepartieDirigeant(p, cible, e)).map(cle).sort()
-  const dirigeantAttendu = lignesTresoreriePourPiece(p, cible, assujettiTva, paiementsPiece)
-    .filter((l) => estContrepartieDirigeant(p, cible, l)).map(cle).sort()
+  const dirigeantPresent = groupe.filter((e) => estContrepartieDirigeant(p, cible, e, plan)).map(cle).sort()
+  const dirigeantAttendu = lignesTresoreriePourPiece(p, cible, assujettiTva, paiementsPiece, plan)
+    .filter((l) => estContrepartieDirigeant(p, cible, l, plan)).map(cle).sort()
   return dirigeantPresent.length !== dirigeantAttendu.length || dirigeantPresent.some((c, i) => c !== dirigeantAttendu[i])
 }
 
@@ -1237,17 +1390,17 @@ function decoupageDiffere(
 // une dette déjà payée, et un règlement que plus rien ne rapproche en solderait une qui court encore.
 function engagementDesynchronise(
   p: PieceRow, cible: CibleComptable, groupe: readonly EcritureRow[], assujettiTva: boolean,
-  paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: string,
+  paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: string, plan: PlanComptable,
 ): boolean {
-  const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== COMPTE_BANQUE)
+  const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== plan.banque)
   const reglements = groupe.filter((e) => e.ligne_bancaire_id)
   // Pas encore générée — pas une désynchronisation. Des règlements SANS leur facture en sont une.
   if (facture.length === 0) return reglements.length > 0
-  const tiers = compteDeTiers(p, compteNotesDeFrais, cible.immobilisation)
+  const tiers = compteDeTiers(p, compteNotesDeFrais, cible.immobilisation, plan)
   const sensPiece: "debit" | "credit" = p.type_piece === "vente" ? "credit" : "debit"
   const sensTiers: "debit" | "credit" = sensPiece === "debit" ? "credit" : "debit"
   const signe = (e: EcritureRow, sens: "debit" | "credit") => (e.sens === sens ? e.montant : -e.montant)
-  const compteTva = compteTvaDe(p, cible.immobilisation)
+  const compteTva = compteTvaDe(p, cible.immobilisation, plan)
   const estTva = (e: EcritureRow) => e.compte === compteTva
 
   if (facture.some((e) => e.compte !== cible.compte && e.compte !== tiers && !estTva(e))) return true
@@ -1265,8 +1418,8 @@ function engagementDesynchronise(
   const attendus = new Set(paiementsPiece.filter(estParLeReleve).filter((m) => m.montant !== 0).map((m) => m.id))
   const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
   if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true
-  if (reglements.some((e) => e.compte !== COMPTE_BANQUE && e.compte !== tiers)) return true
-  return !banqueSuitLesPaiements(reglements.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)
+  if (reglements.some((e) => e.compte !== plan.banque && e.compte !== tiers)) return true
+  return !banqueSuitLesPaiements(reglements.filter((e) => e.compte === plan.banque), paiementsPiece)
 }
 
 // En engagement, CHAQUE écriture s'équilibre seule — la facture comme chaque règlement — et chacune
@@ -1328,12 +1481,12 @@ function analyserEcritures(
   // seule fait foi.
   const tresorerie = modele.mode === "tresorerie"
   const notesDeFrais = new Set(aComptabiliser
-    .filter(({ piece, ...cible }) => tresorerie && estContrepartieDirigeant(piece, cible, { compte: COMPTE_EXPLOITANT }))
+    .filter(({ piece, ...cible }) => tresorerie && estContrepartieDirigeant(piece, cible, { compte: modele.plan.exploitant }, modele.plan))
     .map(({ piece }) => piece.id))
   // La contrepartie d'un paiement par la CAISSE en est une aussi (étape C13) : une pièce payée en espèces a la sienne, au
   // compte de la caisse, et rien ne la retient.
   const contrepartie = (pieceId: string, r: EcritureRow) =>
-    r.compte === COMPTE_BANQUE || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === COMPTE_EXPLOITANT)
+    r.compte === modele.plan.banque || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === modele.plan.exploitant)
   // Par identifiant : en engagement, une facture qu'un lettrage fait à la main solde avec son avoir n'attend plus de
   // règlement, et `points_a_traiter` la retire comme la Checklist (bloc LETTRAGE MANUEL).
   const piecesSansContrepartie = [...piecesParGroupe.entries()]
@@ -1358,8 +1511,8 @@ function analyserEcritures(
       }
     }
     return modele.mode === "engagement"
-      ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais)
-      : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece)
+      ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais, modele.plan)
+      : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece, modele.plan)
   }).map(({ piece }) => piece)
 
   return { nbSansContrepartie, piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
@@ -1505,14 +1658,14 @@ function mouvementsAffectes(
 // L'écriture qu'une affectation produit, sans son libellé : le contrôle ne le compare pas. Le sens
 // vient du signe du mouvement, jamais de la nature de la catégorie. Avec un taux, la catégorie prend le
 // hors taxe et le 445710 la TVA, du même côté qu'elle ; la banque garde le montant du mouvement.
-function ecritureDuMouvement(ligne: Pick<MouvementAffecteRow, "montant">, compteCategorie: string, taux: number | null) {
+function ecritureDuMouvement(ligne: Pick<MouvementAffecteRow, "montant">, compteCategorie: string, taux: number | null, plan: PlanComptable) {
   const { ht, tva } = horsTaxeEtTva(ligne.montant, taux)
   const entree = ligne.montant >= 0
   const sensCompte = entree ? "credit" : "debit"
   return [
     { compte: compteCategorie, sens: sensCompte, montant: ht },
-    ...(tva > 0 ? [{ compte: COMPTE_TVA_COLLECTEE, sens: sensCompte, montant: tva }] : []),
-    { compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant: Math.abs(ligne.montant) },
+    ...(tva > 0 ? [{ compte: plan.tva_collectee, sens: sensCompte, montant: tva }] : []),
+    { compte: plan.banque, sens: entree ? "debit" : "credit", montant: Math.abs(ligne.montant) },
   ]
 }
 
@@ -1551,13 +1704,13 @@ function ecritureConforme(
 // « Réaffecter » (onglet Écritures) la réécrit. Pas un mouvement d'un exercice VALIDÉ (bloc VALIDATION) : son
 // écriture est validée, la base refuse de la réécrire.
 function mouvementsAffectesDesynchronises(
-  ecritures: readonly EcritureRow[], affectes: readonly MouvementAffecte[], frontiere: string | null,
+  ecritures: readonly EcritureRow[], affectes: readonly MouvementAffecte[], frontiere: string | null, plan: PlanComptable,
 ): MouvementAffecte[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return affectes.filter((m) => {
     if (estFigee(m.ligne.date, frontiere)) return false
     if (!m.nature || !m.categorie.compte_comptable) return true
-    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux), m.ligne.date)
+    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux, plan), m.ligne.date)
   })
 }
 
@@ -1571,7 +1724,7 @@ interface VirementPersonnelRow {
 // Le compte du dirigeant, lu dans le modèle du dossier : celui de l'exploitant en trésorerie ; en
 // engagement, celui que le cabinet a choisi pour ses notes de frais — la même personne.
 function compteDuDirigeant(modele: ModeleComptable): string {
-  return modele.mode === "engagement" ? modele.compteNotesDeFrais : COMPTE_EXPLOITANT
+  return modele.mode === "engagement" ? modele.compteNotesDeFrais : modele.plan.exploitant
 }
 
 // Les virements personnels dont l'écriture manque ou n'est plus celle attendue — ceux qu'on PEUT écrire, les refus de
@@ -1589,7 +1742,7 @@ function virementsPersonnelsAEcrire(
     && !l.piece_id && !l.cotisation_id && !l.categorie_id && !l.emprunt_id && !l.ventilee
     && l.montant !== 0
     && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuMouvement(l, compteDuDirigeant(modele), null), l.date))
+    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuMouvement(l, compteDuDirigeant(modele), null, modele.plan), l.date))
 }
 
 // Les recettes affectées SANS TAUX d'un dossier assujetti — affectées avant qu'il le devienne : écrites au
@@ -1639,22 +1792,22 @@ interface MouvementCompteBilanRow {
 
 // L'écriture d'un mouvement sur un compte de bilan, sans son libellé : ce compte face à la banque, dans le sens du
 // mouvement, sans TVA — la règle d'une affectation.
-function ecritureDuCompteDeBilan(ligne: Pick<MouvementCompteBilanRow, "montant">, compte: string) {
-  return ecritureDuMouvement(ligne, compte, null)
+function ecritureDuCompteDeBilan(ligne: Pick<MouvementCompteBilanRow, "montant">, compte: string, plan: PlanComptable) {
+  return ecritureDuMouvement(ligne, compte, null, plan)
 }
 
 // Le mouvement écrit sur un compte de bilan dont l'écriture n'est plus celle que son compte produirait : absente, sur un
 // autre compte, d'un autre montant, dans un autre sens ou à une autre date. « Réécrire » (onglet Écritures) rejoue la
 // fonction avec le même compte. Pas un mouvement d'un exercice validé : la base refuse de réécrire son écriture.
 function mouvementsSurUnCompteDeBilanDesynchronises(
-  ecritures: readonly EcritureRow[], lignes: readonly MouvementCompteBilanRow[], frontiere: string | null,
+  ecritures: readonly EcritureRow[], lignes: readonly MouvementCompteBilanRow[], frontiere: string | null, plan: PlanComptable,
 ): MouvementCompteBilanRow[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((l) =>
     !!l.compte_bilan
     && l.statut === "rapprochee"
     && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(l, l.compte_bilan), l.date))
+    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(l, l.compte_bilan, plan), l.date))
 }
 
 // Les mouvements IGNORÉS, absents du FEC. Ni un virement personnel, classé « ignoré » lui aussi mais écrit sur le
@@ -1698,9 +1851,6 @@ interface MouvementEmpruntRow {
 }
 interface LigneEcheancier { numero: number; date: string; mensualite: number; interets: number; capitalRembourse: number; capitalRestant: number }
 
-const COMPTE_EMPRUNT = "164000"
-const COMPTE_INTERETS_EMPRUNT = "661100"
-const COMPTE_ASSURANCE_EMPRUNT = "616800"
 const MARGE_PRELEVEMENT_JOURS = 10
 
 // Le calendrier civil, en UTC : ni le fuseau ni l'heure d'été ne décalent une échéance d'un jour.
@@ -1785,29 +1935,29 @@ const centimesEmprunt = (n: number) => Math.round(n * 100)
 
 // L'écriture d'une échéance ou d'un déblocage, sans son libellé : le contrôle ne le compare pas. Une
 // ligne par compte NON NUL ; le sens vient du signe du mouvement.
-function ecritureDeLEcheance(ligne: Pick<MouvementEmpruntRow, "montant">, interets: number, assurance: number) {
+function ecritureDeLEcheance(ligne: Pick<MouvementEmpruntRow, "montant">, interets: number, assurance: number, plan: PlanComptable) {
   const total = centimesEmprunt(Math.abs(ligne.montant))
   if (ligne.montant > 0) {
     return [
-      { compte: COMPTE_EMPRUNT, sens: "credit", montant: total / 100 },
-      { compte: COMPTE_BANQUE, sens: "debit", montant: total / 100 },
+      { compte: plan.emprunt, sens: "credit", montant: total / 100 },
+      { compte: plan.banque, sens: "debit", montant: total / 100 },
     ]
   }
   const capital = total - centimesEmprunt(interets) - centimesEmprunt(assurance)
   return [
-    { compte: COMPTE_EMPRUNT, sens: "debit", montant: capital / 100 },
-    { compte: COMPTE_INTERETS_EMPRUNT, sens: "debit", montant: centimesEmprunt(interets) / 100 },
-    { compte: COMPTE_ASSURANCE_EMPRUNT, sens: "debit", montant: centimesEmprunt(assurance) / 100 },
-    { compte: COMPTE_BANQUE, sens: "credit", montant: total / 100 },
+    { compte: plan.emprunt, sens: "debit", montant: capital / 100 },
+    { compte: plan.interets_emprunt, sens: "debit", montant: centimesEmprunt(interets) / 100 },
+    { compte: plan.assurance_emprunt, sens: "debit", montant: centimesEmprunt(assurance) / 100 },
+    { compte: plan.banque, sens: "credit", montant: total / 100 },
   ].filter((l) => l.montant > 0)
 }
 
 // Un mouvement rapproché d'un emprunt dont l'écriture n'est pas celle de son découpage.
-function echeancesDesynchronisees(ecritures: readonly EcritureRow[], lignes: readonly MouvementEmpruntRow[]): MouvementEmpruntRow[] {
+function echeancesDesynchronisees(ecritures: readonly EcritureRow[], lignes: readonly MouvementEmpruntRow[], plan: PlanComptable): MouvementEmpruntRow[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((ligne) => {
     if (!ligne.emprunt_id) return false
-    const attendue = ecritureDeLEcheance(ligne, ligne.emprunt_interets ?? 0, ligne.emprunt_assurance ?? 0)
+    const attendue = ecritureDeLEcheance(ligne, ligne.emprunt_interets ?? 0, ligne.emprunt_assurance ?? 0, plan)
     return !ecritureConforme(parLigne.get(ligne.id) ?? [], attendue, ligne.date)
   })
 }
@@ -1862,9 +2012,9 @@ function ecritureDeLaVentilation(
     const sens = p.montant > 0 ? "credit" : "debit"
     const { ht, tva } = horsTaxeEtTva(p.montant, taux)
     lignes.push({ compte, sens, montant: ht })
-    if (tva > 0) lignes.push({ compte: COMPTE_TVA_COLLECTEE, sens, montant: tva })
+    if (tva > 0) lignes.push({ compte: modele.plan.tva_collectee, sens, montant: tva })
   }
-  lignes.push({ compte: COMPTE_BANQUE, sens: ligne.montant > 0 ? "debit" : "credit", montant: Math.abs(centimesVentilation(ligne.montant)) / 100 })
+  lignes.push({ compte: modele.plan.banque, sens: ligne.montant > 0 ? "debit" : "credit", montant: Math.abs(centimesVentilation(ligne.montant)) / 100 })
   return lignes
 }
 
@@ -1984,7 +2134,6 @@ interface MouvementCotisationRow {
   declaration_tva_id: string | null
 }
 
-const COMPTE_COTISATIONS_EXPLOITANT = "646000"
 
 const centimesCotisation = (n: number) => Math.round(n * 100)
 const auCentimeCotisation = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6
@@ -2023,15 +2172,15 @@ function refusRapprochementCotisation(ligne: MouvementCotisationRow, cotisation:
 
 // L'écriture d'une échéance rapprochée, sans son libellé (le contrôle ne le compare pas) : une ligne par
 // compte non nul, dans le sens du mouvement, calculée en centimes.
-function ecritureDeLaCotisation(ligne: Pick<MouvementCotisationRow, "montant">, cotisation: Pick<CotisationRow, "montant_csg_crds">, mode: ModeComptable) {
+function ecritureDeLaCotisation(ligne: Pick<MouvementCotisationRow, "montant">, cotisation: Pick<CotisationRow, "montant_csg_crds">, mode: ModeComptable, plan: PlanComptable) {
   const total = centimesCotisation(Math.abs(ligne.montant))
   const csg = centimesCotisation(csgDeLEcriture(cotisation, mode))
   const sortie = ligne.montant < 0
   const sensCompte = sortie ? "debit" : "credit"
   return [
-    { compte: COMPTE_BANQUE, sens: sortie ? "credit" : "debit", montant: total / 100 },
-    { compte: COMPTE_COTISATIONS_EXPLOITANT, sens: sensCompte, montant: (total - csg) / 100 },
-    { compte: COMPTE_EXPLOITANT, sens: sensCompte, montant: csg / 100 },
+    { compte: plan.banque, sens: sortie ? "credit" : "debit", montant: total / 100 },
+    { compte: plan.cotisations_exploitant, sens: sensCompte, montant: (total - csg) / 100 },
+    { compte: plan.exploitant, sens: sensCompte, montant: csg / 100 },
   ].filter((l) => l.montant > 0)
 }
 
@@ -2055,13 +2204,13 @@ function rapprochementsDeCotisation(
 // échéance compte à la date du mouvement qui la paie, et c'est elle qui dit l'exercice.
 function cotisationsAEcrire(
   ecritures: readonly EcritureRow[], lignes: readonly MouvementCotisationRow[], cotisations: readonly CotisationRow[], mode: ModeComptable,
-  frontiere: string | null,
+  frontiere: string | null, plan: PlanComptable,
 ): { ligne: MouvementCotisationRow; cotisation: CotisationRow }[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return rapprochementsDeCotisation(lignes, cotisations).filter(({ ligne, cotisation }) =>
     !estFigee(ligne.date, frontiere)
     && !refusRapprochementCotisation(ligne, cotisation, mode)
-    && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode), ligne.date))
+    && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode, plan), ligne.date))
 }
 
 // Les rapprochements qui ne peuvent pas s'écrire, avec leur raison. Rien d'un exercice validé : ni le mouvement ni
@@ -2094,7 +2243,6 @@ interface EcritureDotationRow {
   date: string; compte: string; sens: "debit" | "credit"; montant: number; statut: string; immobilisation_id: string | null
 }
 
-const COMPTE_DOTATIONS_AMORTISSEMENTS = "681100"
 
 function miseEnServiceDuBien(bien: Pick<ImmobilisationRow, "date_acquisition" | "date_mise_en_service">): string {
   return bien.date_mise_en_service ?? bien.date_acquisition
@@ -2134,13 +2282,13 @@ function dotationAEcrire(bien: Omit<ImmobilisationRow, "id" | "nature_id" | "lib
 }
 
 function ecritureDeLaDotation(
-  bien: Omit<ImmobilisationRow, "id" | "nature_id">, compteImmobilisation: string, annee: number, ouverture: string | null,
+  bien: Omit<ImmobilisationRow, "id" | "nature_id">, compteImmobilisation: string, annee: number, ouverture: string | null, plan: PlanComptable,
 ) {
   const montant = dotationAEcrire(bien, annee, ouverture)
   if (montant <= 0) return []
   const libelle = `Dotation ${annee} — ${bien.libelle}`
   return [
-    { compte: COMPTE_DOTATIONS_AMORTISSEMENTS, sens: "debit" as const, montant, libelle },
+    { compte: plan.dotations_amortissements, sens: "debit" as const, montant, libelle },
     { compte: compteAmortissement(compteImmobilisation), sens: "credit" as const, montant, libelle },
   ]
 }
@@ -2174,6 +2322,7 @@ function dotationsDuRegistre(
   ouverture: string | null,
   anneeCourante: number,
   frontiere: string | null,
+  plan: PlanComptable,
 ): { immobilisation: ImmobilisationRow; annee: number; montant: number; etat: EtatDotation; figee: boolean }[] {
   const natureParId = new Map(natures.map((n) => [n.id, n]))
   const ecrituresParBien = new Map<string, EcritureDotationRow[]>()
@@ -2192,7 +2341,7 @@ function dotationsDuRegistre(
       const presentes = sesEcritures.filter((e) => Number(e.date.slice(0, 4)) === annee)
       const montant = dotationAEcrire(bien, annee, ouverture)
       if (montant <= 0 && presentes.length === 0) continue
-      const attendues = montant <= 0 ? [] : nature ? ecritureDeLaDotation(bien, nature.compte_immobilisation, annee, ouverture) : null
+      const attendues = montant <= 0 ? [] : nature ? ecritureDeLaDotation(bien, nature.compte_immobilisation, annee, ouverture, plan) : null
       let etat: EtatDotation
       if (presentes.length === 0) etat = "a_ecrire"
       else if (attendues && dotationConforme(presentes, attendues, annee)) etat = "ecrite"
@@ -2261,7 +2410,6 @@ interface EcritureForfaitRow {
   date: string; compte: string; sens: "debit" | "credit"; montant: number; statut: string; vehicule_id: string | null
 }
 
-const COMPTE_INDEMNITES_KILOMETRIQUES = "625110"
 
 // Une ligne du barème : un type de véhicule, une plage de puissance fiscale, 100 % électrique ou non, et trois
 // tranches de distance. La tranche se choisit sur le kilométrage TOTAL, et sa formule — « d × coefficient »,
@@ -2369,7 +2517,7 @@ function ecritureDuForfait(v: VehiculeRow, modele: ModeleComptable, ouverture: s
   const montant = Number(centimes) / 100
   const libelle = `Indemnités kilométriques ${v.annee} — ${nomDuVehicule(v)}`
   return [
-    { compte: COMPTE_INDEMNITES_KILOMETRIQUES, sens: "debit" as const, montant, libelle },
+    { compte: modele.plan.indemnites_kilometriques, sens: "debit" as const, montant, libelle },
     { compte: compteDuDirigeant(modele), sens: "credit" as const, montant, libelle },
   ]
 }
@@ -2441,8 +2589,6 @@ function forfaitsEnDefaut<F extends { vehicule: { annee: number }; etat: EtatFor
 // point à traiter. Réduit à ce qu'il faut pour cela : le motif de chaque lettrage, pas son libellé ni son reste.
 // Garde : src/lib/agentComptableLettrage.test.ts.
 
-const COMPTE_COURANT_ASSOCIE = "455000"
-const COMPTE_AUTRES_DEBITEURS_CREDITEURS = "467000"
 
 // Les mots qui ne désignent jamais une partie — une forme juridique, un lieu, un produit, une liaison : retenu comme
 // clé, l'un d'eux confondrait deux tiers sans rapport.
@@ -2480,29 +2626,29 @@ function cleFournisseur(tiers: string | null): string | null {
 
 // Le compte auxiliaire d'une pièce (CompAuxNum) sur un 401, un 404 ou un 411 ; nul sur un compte qui n'en a pas (455,
 // 467). Une pièce dont le tiers n'a pas de clé va au compte « divers ».
-const PREFIXES_AUXILIAIRES: Readonly<Record<string, string>> = {
-  [COMPTE_FOURNISSEURS]: "F", [COMPTE_FOURNISSEURS_IMMOBILISATIONS]: "FI", [COMPTE_CLIENTS]: "C",
+function roleDeTiersDuCompte(compte: string, plan: PlanComptable): RoleDeTiers | null {
+  return ROLES_DE_TIERS.find((role) => plan[role] === compte) ?? null
 }
 
-function auxiliaireDuTiers(piece: { tiers: string | null }, compte: string): string | null {
-  const prefixe = PREFIXES_AUXILIAIRES[compte]
-  if (!prefixe) return null
+function auxiliaireDuTiers(piece: { tiers: string | null }, compte: string, modele: Pick<ModeleComptable, "plan" | "prefixes">): string | null {
+  const role = roleDeTiersDuCompte(compte, modele.plan)
+  if (role === null) return null
+  const prefixe = modele.prefixes[role]
   const cle = cleFournisseur(piece.tiers)
   return cle ? `${prefixe}${cle.toUpperCase()}` : `${prefixe}DIVERS`
 }
 
 // Le compte « divers » mêle des tiers différents : rien n'y prouve que deux pièces soient du même tiers. Comparé au
 // numéro exact — un fournisseur dont le nom finit par « divers » a son propre compte auxiliaire.
-function estDivers(compte: string, auxiliaire: string): boolean {
-  return auxiliaire === auxiliaireDuTiers({ tiers: null }, compte)
+function estDivers(compte: string, auxiliaire: string, modele: Pick<ModeleComptable, "plan" | "prefixes">): boolean {
+  return auxiliaire === auxiliaireDuTiers({ tiers: null }, compte, modele)
 }
 
 // Les comptes que le lettrage apparie : 401, 404, 411, et le compte du dirigeant quand c'est un compte de tiers (455,
 // 467). Jamais le 108, ni les comptes de TVA.
-const COMPTES_LETTRABLES: ReadonlySet<string> = new Set([
-  COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE,
-  COMPTE_AUTRES_DEBITEURS_CREDITEURS,
-])
+function comptesLettrables(plan: PlanComptable): readonly string[] {
+  return [plan.fournisseurs, plan.fournisseurs_immobilisations, plan.clients, plan.associe, plan.autres_debiteurs_crediteurs]
+}
 
 interface LettrageManuelRow { id: string; groupe: string; piece_id: string | null; compte: string }
 
@@ -2522,14 +2668,15 @@ const sommeLettrage = (lignes: readonly { sens: string; montant: number }[]) =>
 // pour leur tiers. En trésorerie rien ne se lettre.
 function etatsDesLettragesManuels(
   ecritures: readonly EcritureRow[], pieces: readonly { id: string; tiers: string | null }[],
-  lettragesManuels: readonly LettrageManuelRow[], mode: ModeComptable,
+  lettragesManuels: readonly LettrageManuelRow[], modele: ModeleComptable,
 ): EtatLettrageManuel[] {
-  if (mode !== "engagement") return []
+  if (modele.mode !== "engagement") return []
+  const lettrables = new Set(comptesLettrables(modele.plan))
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
   // Les lignes de chaque pièce sur chaque compte lettrable : la facture et ses règlements.
   const parPieceEtCompte = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
-    if (!e.piece_id || !COMPTES_LETTRABLES.has(e.compte)) continue
+    if (!e.piece_id || !lettrables.has(e.compte)) continue
     const cle = `${e.piece_id}|${e.compte}`
     parPieceEtCompte.set(cle, [...(parPieceEtCompte.get(cle) ?? []), e])
   }
@@ -2548,14 +2695,14 @@ function etatsDesLettragesManuels(
     const compte = lignes[0].compte
     const pieceIds = lignes.flatMap((l) => (l.piece_id ? [l.piece_id] : [])).sort()
     const reste = lignes.reduce((total, l) => total + (l.piece_id ? sommeDe(l.piece_id, l.compte) : 0), 0)
-    const auxiliaires = pieceIds.map((id) => (pieceById.has(id) ? auxiliaireDuTiers(pieceById.get(id)!, compte) : null))
+    const auxiliaires = pieceIds.map((id) => (pieceById.has(id) ? auxiliaireDuTiers(pieceById.get(id)!, compte, modele) : null))
 
     let motif: MotifLettrageManuel | null = null
     if (lignes.some((l) => !l.piece_id)) motif = "piece_supprimee"
     else if (lignes.length < 2) motif = "une_seule_piece"
-    else if (lignes.some((l) => l.compte !== compte) || !COMPTES_LETTRABLES.has(compte)) motif = "comptes_differents"
+    else if (lignes.some((l) => l.compte !== compte) || !lettrables.has(compte)) motif = "comptes_differents"
     else if (pieceIds.some((id) => !pieceById.has(id))) motif = "piece_non_lue"
-    else if (auxiliaires.some((a) => a !== null && estDivers(compte, a))) motif = "tiers_non_identifie"
+    else if (auxiliaires.some((a) => a !== null && estDivers(compte, a, modele))) motif = "tiers_non_identifie"
     else if (new Set(auxiliaires.map((a) => a ?? "")).size > 1) motif = "tiers_differents"
     else if (pieceIds.some((id) => !parPieceEtCompte.has(`${id}|${compte}`))) motif = "sans_ecriture"
     else if (pieceIds.some((id) => sommeDe(id, compte) === 0)) motif = "piece_soldee_seule"
@@ -2597,36 +2744,31 @@ interface EcritureLiquidationRow { declaration_tva_id: string | null }
 type PeriodiciteTva = "mensuelle" | "trimestrielle"
 interface PeriodeTva { debut: string; fin: string; libelle: string }
 
-const COMPTE_TVA_A_DECAISSER = "445510"
-const COMPTE_CREDIT_TVA_A_REPORTER = "445670"
-const COMPTE_REMBOURSEMENT_TVA_DEMANDE = "445830"
-const COMPTE_ARRONDIS_CHARGE = "658000"
-const COMPTE_ARRONDIS_PRODUIT = "758000"
 
 const centimesTva = (euros: number) => Math.round(euros * 100)
 
 // Le solde que la liquidation porte à chaque compte, en centimes, positif au débit — la composition de
 // `liquidation_attendue`, l'arrondi faisant le reste. Null pour une déclaration saisie à la main.
-function soldesDeLaLiquidation(d: Omit<DeclarationTvaRow, "id">): [string, number][] | null {
+function soldesDeLaLiquidation(d: Omit<DeclarationTvaRow, "id">, plan: PlanComptable): [string, number][] | null {
   if (!d.cases || d.tva_collectee == null || d.tva_deductible == null || d.tva_deductible_immobilisations == null) return null
   const ligne = (cle: string) => centimesTva(Number(d.cases?.[cle] ?? 0))
   const soldes: [string, number][] = [
-    [COMPTE_TVA_COLLECTEE, centimesTva(d.tva_collectee)],
-    [COMPTE_TVA_DEDUCTIBLE, -centimesTva(d.tva_deductible)],
-    [COMPTE_TVA_IMMOBILISATIONS, -centimesTva(d.tva_deductible_immobilisations)],
-    [COMPTE_CREDIT_TVA_A_REPORTER, ligne("l27") - ligne("l22")],
-    [COMPTE_TVA_A_DECAISSER, -ligne("l28")],
-    [COMPTE_REMBOURSEMENT_TVA_DEMANDE, ligne("l26")],
+    [plan.tva_collectee, centimesTva(d.tva_collectee)],
+    [plan.tva_deductible, -centimesTva(d.tva_deductible)],
+    [plan.tva_immobilisations, -centimesTva(d.tva_deductible_immobilisations)],
+    [plan.credit_tva_a_reporter, ligne("l27") - ligne("l22")],
+    [plan.tva_a_decaisser, -ligne("l28")],
+    [plan.remboursement_tva_demande, ligne("l26")],
   ]
   // `0 - …` et non `-…` : un arrondi nul reste un zéro positif.
   const arrondi = 0 - soldes.reduce((s, [, solde]) => s + solde, 0)
-  return [...soldes, [arrondi > 0 ? COMPTE_ARRONDIS_CHARGE : COMPTE_ARRONDIS_PRODUIT, arrondi]]
+  return [...soldes, [arrondi > 0 ? plan.arrondi_charge : plan.arrondi_produit, arrondi]]
 }
 
 // L'écriture de liquidation, sans son libellé (le contrôle ne le compare pas) : chaque compte reçoit son solde, rien
 // pour un solde nul ni pour une déclaration saisie à la main.
-function ecritureDeLaLiquidation(d: Omit<DeclarationTvaRow, "id">): { compte: string; sens: string; montant: number }[] {
-  const soldes = soldesDeLaLiquidation(d)
+function ecritureDeLaLiquidation(d: Omit<DeclarationTvaRow, "id">, plan: PlanComptable): { compte: string; sens: string; montant: number }[] {
+  const soldes = soldesDeLaLiquidation(d, plan)
   if (!soldes) return []
   return soldes
     .filter(([, solde]) => solde !== 0)
@@ -2635,12 +2777,12 @@ function ecritureDeLaLiquidation(d: Omit<DeclarationTvaRow, "id">): { compte: st
 
 // L'écriture d'un mouvement rapproché d'une déclaration, sans son libellé : un prélèvement débite la TVA à décaisser
 // face à la banque, un remboursement reçu crédite le remboursement demandé — au montant et dans le sens du mouvement.
-function ecritureDuPaiementTva(ligne: Pick<MouvementTvaRow, "montant">): { compte: string; sens: string; montant: number }[] {
+function ecritureDuPaiementTva(ligne: Pick<MouvementTvaRow, "montant">, plan: PlanComptable): { compte: string; sens: string; montant: number }[] {
   const entree = ligne.montant > 0
   const montant = Math.abs(ligne.montant)
   return [
-    { compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant },
-    { compte: entree ? COMPTE_REMBOURSEMENT_TVA_DEMANDE : COMPTE_TVA_A_DECAISSER, sens: entree ? "credit" : "debit", montant },
+    { compte: plan.banque, sens: entree ? "debit" : "credit", montant },
+    { compte: entree ? plan.remboursement_tva_demande : plan.tva_a_decaisser, sens: entree ? "credit" : "debit", montant },
   ]
 }
 
@@ -2648,7 +2790,7 @@ function ecritureDuPaiementTva(ligne: Pick<MouvementTvaRow, "montant">): { compt
 // déclaration saisie à la main — existe alors qu'elle ne le devrait pas. Pas une déclaration d'un exercice validé : la
 // base refuse de réécrire sa liquidation.
 function liquidationsDesynchronisees(
-  ecritures: readonly (EcritureRow & EcritureLiquidationRow)[], declarations: readonly DeclarationTvaRow[], frontiere: string | null,
+  ecritures: readonly (EcritureRow & EcritureLiquidationRow)[], declarations: readonly DeclarationTvaRow[], frontiere: string | null, plan: PlanComptable,
 ): DeclarationTvaRow[] {
   const parDeclaration = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
@@ -2657,20 +2799,20 @@ function liquidationsDesynchronisees(
   }
   return declarations.filter((d) =>
     !estFigee(d.periode_fin, frontiere)
-    && !ecritureConforme(parDeclaration.get(d.id) ?? [], ecritureDeLaLiquidation(d), d.periode_fin))
+    && !ecritureConforme(parDeclaration.get(d.id) ?? [], ecritureDeLaLiquidation(d, plan), d.periode_fin))
 }
 
 // Les mouvements rapprochés d'une déclaration dont l'écriture n'est plus celle que leur montant commande. Pas un
 // mouvement d'un exercice validé.
 function paiementsTvaDesynchronises(
-  ecritures: readonly EcritureRow[], lignes: readonly MouvementTvaRow[], frontiere: string | null,
+  ecritures: readonly EcritureRow[], lignes: readonly MouvementTvaRow[], frontiere: string | null, plan: PlanComptable,
 ): MouvementTvaRow[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((l) =>
     !!l.declaration_tva_id
     && l.statut === "rapprochee"
     && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l), l.date))
+    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l, plan), l.date))
 }
 
 const MOIS_TVA = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
@@ -3053,6 +3195,8 @@ interface OutilContexte {
   }
   // La garde provisoire des ventes facturées (VF9a, voir `gardeDesVentes`) : nulle pour un dossier qui n'a pas basculé.
   ventes: GardeDesVentes | null
+  // Le modèle comptable du dossier, et son plan (ligne 43, étape PC3b) : lus une fois, avant le premier outil.
+  modele: ModeleComptable
 }
 
 const TOOLS: Anthropic.Tool[] = [
@@ -3239,13 +3383,8 @@ const CAISSE_PAYANTE_NON_VERIFIEE = `${CAISSE_NON_VERIFIEE} ; la caisse de ce do
 // Les comptes que la consigne nomme pour la vente facturée — dupliqués de src/lib/comptes.ts (étape VF4a) : le produit
 // d'une facture source, des services puis des biens, la TVA collectée en attente, les valeurs à l'encaissement et la caisse
 // qui reçoivent un encaissement, les services bancaires qui reçoivent les frais d'un mouvement classé par ses encaissements.
-const COMPTE_PRESTATIONS_DE_SERVICES = "706000"
-const COMPTE_VENTES_DE_BIENS = "707000"
-const COMPTE_TVA_COLLECTEE_EN_ATTENTE = "445800"
-const COMPTE_VALEURS_A_L_ENCAISSEMENT = "511000"
-// (La caisse, `COMPTE_CAISSE`, se déclare avec les comptes du générateur, plus haut : depuis l'étape C13, la contrepartie d'un
+// (La caisse, `plan.caisse`, se déclare avec les comptes du générateur, plus haut : depuis l'étape C13, la contrepartie d'un
 // paiement par la caisse l'écrit.)
-const COMPTE_SERVICES_BANCAIRES = "627000"
 
 // Une source de vente facturée en défaut, telle que `ventes_facturees_de_l_exercice` la rend : à écrire, à réécrire, à
 // retirer, ou qui ne s'écrit pas — ce que la validation de l'exercice refuserait (VF7b). Son nom ne porte que des numéros
@@ -3576,6 +3715,8 @@ function ecritureVueParLeModele(ligne: Record<string, unknown>, ventes: VentesNo
 
 async function executerOutil(ctx: OutilContexte, nom: string, input: Record<string, unknown>): Promise<unknown> {
   const { admin, dossierId, dossier, ventes } = ctx
+  // Le plan du dossier, lu avant le premier outil (ligne 43, étape PC3b) : chaque contrôle compose et juge sur ses comptes.
+  const plan = ctx.modele.plan
 
   if (nom === "resume_dossier") {
     const [r1, r2, r3, r4, r5, r6] = await Promise.all([
@@ -3968,7 +4109,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       .map((p) => ({ id: p.id, dossier_id: dossierId, facture_id: p.facture_id, statut: "validee", type_piece: p.type_piece }))
     const encaissees = partsEncaissees(dossierId, rEncaissements.lignes, { factures: rFactures.lignes }, designees)
     const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)
-    const modele = modeleDuDossier(dossier)
+    const modele = ctx.modele
     // LES PAIEMENTS PAR LA CAISSE (étape C13), comme la Checklist (src/lib/pointsDeLaChecklist.ts) : tirés des opérations lues
     // — aucun tant que la migration `paiement_par_la_caisse` n'est pas en base, et chaque contrôle rend alors ce qu'il rendait.
     // LUES EN PARTIE, elles ne rendent aucun paiement (`null`) : une pièce payée en espèces paraîtrait sans paiement. Ce que les
@@ -3981,7 +4122,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // Les lettrages faits à la main (bloc LETTRAGE MANUEL), revérifiés sur TOUTES les pièces du dossier, comme dans la
     // Checklist : une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de règlement. En trésorerie
     // rien ne se lettre, et la liste est vide.
-    const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele.mode)
+    const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele)
     const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)
     const sansReglement = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
     // Les opérations de caisse lues en partie (étape C13) : les clés qui jugent une pièce par ses paiements — à régénérer, en
@@ -3997,12 +4138,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const catSansPoste = categoriesSansPoste(categoriesTyped, piecesQuiComptent, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
     const sansTva = piecesSansTva(piecesQuiComptent, dossier.assujetti_tva)
     const affectes = mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)
-    const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere)
+    const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere, plan)
     const recettesAffecteesSansTva = recettesAffecteesSansTaux(affectes, dossier.assujetti_tva, frontiere)
     const virementsAEcrire = virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele, frontiere)
     const couverture = couvertureDuReleve(rReleve.lignes, frontiere)
     const echeancesManquantes = couverture ? echeancesNonRapprochees(rEmprunts.lignes, rReleve.lignes, couverture.debut, couverture.fin) : []
-    const echeancesPerimees = echeancesDesynchronisees(ecrituresTyped, rReleve.lignes)
+    const echeancesPerimees = echeancesDesynchronisees(ecrituresTyped, rReleve.lignes, plan)
     const recettesVentileesSansTva = recettesVentileesSansTaux(
       partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped, dossier.assujetti_tva), dossier.assujetti_tva, frontiere)
     const ventilationsFausses = ventilationsIncoherentes(rReleve.lignes, rParts.lignes)
@@ -4012,26 +4153,26 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))
     // Ni l'exemplaire d'une facture source (VF9b) : il ne se règle pas, sa facture s'encaisse.
     const payeesEnTrop = piecesPayeesEnTrop(piecesQuiComptent, paiements)
-    const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)
+    const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere, plan)
     const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)
     // L'exercice en cours, dans le fuseau du cabinet : sa dotation ne manque pas encore.
     const anneeCourante = Number(aujourdHuiCabinet().slice(0, 4))
     const dotationsManquantes = dotationsEnDefaut(
-      dotationsDuRegistre(rImmobilisations.lignes, rNatures.lignes, ecrituresTyped, ouverture, anneeCourante, frontiere),
+      dotationsDuRegistre(rImmobilisations.lignes, rNatures.lignes, ecrituresTyped, ouverture, anneeCourante, frontiere, plan),
       anneeCourante,
     )
     // Et le forfait kilométrique d'un exercice fini : son kilométrage de l'exercice en cours n'est pas complet.
     const forfaitsManquants = forfaitsEnDefaut(forfaitsDuCadre7(rVehicules.lignes, ecrituresTyped, modele, ouverture, frontiere), anneeCourante)
     // Les mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, et les mouvements ignorés,
     // absents du FEC (bloc COMPTE DE BILAN) — sauf avant l'ouverture d'un dossier repris, comme dans la Checklist.
-    const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecrituresTyped, rReleve.lignes, frontiere)
+    const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan)
     const ignoresHorsFec = mouvementsIgnoresHorsFec(rReleve.lignes, ouverture, frontiere)
     // La TVA liquidée et payée (bloc LIQUIDATION TVA), comme la Checklist : une liquidation qui ne suit plus sa
     // déclaration, un paiement dont l'écriture ne suit plus son mouvement, et — sur un dossier assujetti — les périodes
     // dont la déclaration manque une fois son échéance passée, sur les exercices où le dossier a une activité : un
     // mouvement du relevé, une pièce validée datée. Le premier jour du mois, dans le fuseau du cabinet.
-    const liquidationsPerimees = liquidationsDesynchronisees(ecrituresTyped, rDeclarations.lignes, frontiere)
-    const paiementsTvaPerimes = paiementsTvaDesynchronises(ecrituresTyped, rReleve.lignes, frontiere)
+    const liquidationsPerimees = liquidationsDesynchronisees(ecrituresTyped, rDeclarations.lignes, frontiere, plan)
+    const paiementsTvaPerimes = paiementsTvaDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan)
     const anneesActives = [
       ...rReleve.lignes.map((l) => Number(l.date.slice(0, 4))),
       ...piecesTyped.flatMap((p) => (p.date_piece ? [Number(p.date_piece.slice(0, 4))] : [])),
@@ -4299,6 +4440,25 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Dossier introuvable." }, 404)
   }
 
+  // LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3b), lu comme la page du dossier le lit : `plan_du_dossier`, avec le
+  // jeton de l'APPELANT — la fonction n'est pas `security definer` et refuse (42501) qui n'est pas admis au dossier, le rôle
+  // du service compris, faute de session. Illisible ou incomplet, ou le compte du dirigeant hors de ses trois rôles :
+  // l'assistant se ferme pour ce dossier, avant toute dépense — il jugerait le brouillon sur des comptes devinés.
+  const lecturePlan = await lireLePlanDuDossier(supabaseAsCaller.rpc("plan_du_dossier", { p_dossier_id: dossierId }))
+  if (lecturePlan.plan === null) {
+    return json({
+      error: `Le plan comptable de ce dossier n’a pas pu être lu (${lecturePlan.motif}). L’assistant ne répond pas sur ce dossier : il jugerait ses écritures sur des comptes devinés, qui pourraient ne pas être ceux du dossier.`,
+    }, 503)
+  }
+  const lectureModele = modeleDuDossier(dossierRow as { mode_comptable: ModeComptable; compte_notes_de_frais: string }, lecturePlan as PlanLu)
+  if (lectureModele.modele === null) {
+    return json({
+      error: `${lectureModele.refus} L’assistant ne répond pas sur ce dossier : une note de frais du dirigeant s’y jugerait sur un compte que son plan ne tient pas.`,
+    }, 503)
+  }
+  const modele = lectureModele.modele
+  const plan = modele.plan
+
   // Plafond IA du cabinet (voir verifierPlafondCabinet) : vérifié avant tout appel Bedrock — un
   // cabinet bloqué ne doit générer aucun coût supplémentaire, pas même un premier tour d'outils.
   const plafond = await verifierPlafondCabinet(admin, dossierRow.cabinet_id as string)
@@ -4323,13 +4483,13 @@ Deno.serve(async (req: Request) => {
   // anomalie, ou chercherait la contrepartie banque d'une facture d'engagement qui n'a pas encore été
   // réglée.
   const repereModele = dossierRow.mode_comptable === "engagement"
-    ? `engagement (BIC, IS) — une facture crée une dette en 401000 Fournisseurs (404000 Fournisseurs d'immobilisations pour celle d'un bien) ou une créance en 411000 Clients à sa date, et son paiement la solde à sa propre date ; une note de frais payée par le dirigeant passe par le compte ${dossierRow.compte_notes_de_frais}. La 2035 n'est pas produite pour ce dossier.`
-    : "trésorerie (BNC, 2035) — une pièce compte à la date de son paiement, sa date de facture à défaut ; une note de frais que l'exploitant a payée de sa poche s'écrit face au 108000 Compte de l'exploitant, sans mouvement bancaire, sauf la part qu'un virement du compte professionnel lui rembourse."
+    ? `engagement (BIC, IS) — une facture crée une dette en ${plan.fournisseurs} Fournisseurs (${plan.fournisseurs_immobilisations} Fournisseurs d'immobilisations pour celle d'un bien) ou une créance en ${plan.clients} Clients à sa date, et son paiement la solde à sa propre date ; une note de frais payée par le dirigeant passe par le compte ${dossierRow.compte_notes_de_frais}. La 2035 n'est pas produite pour ce dossier.`
+    : `trésorerie (BNC, 2035) — une pièce compte à la date de son paiement, sa date de facture à défaut ; une note de frais que l'exploitant a payée de sa poche s'écrit face au ${plan.exploitant} Compte de l'exploitant, sans mouvement bancaire, sauf la part qu'un virement du compte professionnel lui rembourse.`
   // Les ventes facturées dans la consigne : un paragraphe pour un dossier qui compte ses ventes par ses factures (VF9c), la
   // ligne de la garde provisoire (VF9a) pour une source des ventes qui ne se lit pas, rien pour un dossier qui n'a pas basculé.
   const ventes = gardeDesVentes(dossierRow.ventes_par_les_factures, dossierRow.ventes_par_les_factures_depuis)
   const repereVentes = ventes?.reglage === true
-    ? `\n- Les VENTES FACTURÉES : ${ventes.constat}. Chaque facture validée depuis est la SOURCE de sa vente ; ses écritures n'ont pas de pièce, ce n'est pas une anomalie. En trésorerie, la recette s'écrit à chaque encaissement — le hors taxe au ${COMPTE_PRESTATIONS_DE_SERVICES} Prestations de services (${COMPTE_VENTES_DE_BIENS} Ventes de marchandises pour des biens), la TVA au ${COMPTE_TVA_COLLECTEE} quand elle est due ; en engagement, la créance au ${COMPTE_CLIENTS} à la date de la facture, sa TVA au ${COMPTE_TVA_COLLECTEE_EN_ATTENTE} jusqu'à ce qu'elle soit due, et l'encaissement la solde. Un encaissement va au ${COMPTE_BANQUE} sur le mouvement de son jour, sinon au ${COMPTE_VALEURS_A_L_ENCAISSEMENT} Valeurs à l'encaissement (${COMPTE_CAISSE} Caisse pour des espèces) ; le mouvement CLASSÉ PAR SES ENCAISSEMENTS les reporte au ${COMPTE_BANQUE}, et leurs frais au ${COMPTE_SERVICES_BANCAIRES}. Un mouvement RÉSERVÉ à des encaissements attend que le cabinet le classe par eux, dans Banque. L'EXEMPLAIRE d'une facture source la prouve et ne compte pas : ne l'additionne jamais à la vente. Un VIREMENT MIXTE, crédit qui paie aussi une facture d'avant la bascule, date la pièce de cette facture-là, qui compte comme avant. Une facture se nomme par son numéro, jamais par son client (lister_pieces : exemplaire_de ; lister_ecritures : source — piece, facture, avoir, encaissement, mouvement_d_encaissements, ou null pour une autre écriture sans pièce que décrit cette consigne). Tant que points_a_traiter ou lister_comptes disent des ventes facturées à écrire, à réécrire ou à retirer, ne cite ni le chiffre d'affaires ni la TVA collectée sans le dire.`
+    ? `\n- Les VENTES FACTURÉES : ${ventes.constat}. Chaque facture validée depuis est la SOURCE de sa vente ; ses écritures n'ont pas de pièce, ce n'est pas une anomalie. En trésorerie, la recette s'écrit à chaque encaissement — le hors taxe au ${plan.prestations_de_services} Prestations de services (${plan.ventes_de_biens} Ventes de marchandises pour des biens), la TVA au ${plan.tva_collectee} quand elle est due ; en engagement, la créance au ${plan.clients} à la date de la facture, sa TVA au ${plan.tva_collectee_en_attente} jusqu'à ce qu'elle soit due, et l'encaissement la solde. Un encaissement va au ${plan.banque} sur le mouvement de son jour, sinon au ${plan.valeurs_a_l_encaissement} Valeurs à l'encaissement (${plan.caisse} Caisse pour des espèces) ; le mouvement CLASSÉ PAR SES ENCAISSEMENTS les reporte au ${plan.banque}, et leurs frais au ${plan.services_bancaires}. Un mouvement RÉSERVÉ à des encaissements attend que le cabinet le classe par eux, dans Banque. L'EXEMPLAIRE d'une facture source la prouve et ne compte pas : ne l'additionne jamais à la vente. Un VIREMENT MIXTE, crédit qui paie aussi une facture d'avant la bascule, date la pièce de cette facture-là, qui compte comme avant. Une facture se nomme par son numéro, jamais par son client (lister_pieces : exemplaire_de ; lister_ecritures : source — piece, facture, avoir, encaissement, mouvement_d_encaissements, ou null pour une autre écriture sans pièce que décrit cette consigne). Tant que points_a_traiter ou lister_comptes disent des ventes facturées à écrire, à réécrire ou à retirer, ne cite ni le chiffre d'affaires ni la TVA collectée sans le dire.`
     : ventes
       ? `\n- ${ventes.constat}. L'assistant ne lit pas encore les VENTES FACTURÉES : ne conclus RIEN sur les ventes de ce dossier — chiffre d'affaires, recettes, encaissements, pièces de vente, TVA collectée —, et une écriture sans pièce d'une facture ou d'un encaissement n'y est pas une anomalie ; resume_dossier, lister_comptes et lister_pieces le rappellent, points_a_traiter n'est pas disponible : renvoie à la Vue d'ensemble et à l'onglet Écritures.`
       : ""
@@ -4343,25 +4503,25 @@ Règles impératives :
 - Une PIÈCE DE VENTE (type_piece « vente ») se nomme par sa date et son montant : son client n'est pas transmis (lister_pieces la rend sans son tiers ni le nom de son fichier, lister_ecritures recompose le libellé de ses écritures) ; ne le demande pas, ne le devine pas. Le fournisseur d'une pièce d'achat, lui, est transmis.
 - Un CRÉDIT du relevé (un mouvement qui entre en banque) se nomme par sa date et son montant : qui a payé n'est pas transmis (lister_ecritures recompose le libellé des écritures de ce mouvement) ; ne le demande pas, ne le devine pas. De même, un DÉBIT qui rend ou défait l'argent d'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — se nomme par sa date et son montant : à qui l'argent est rendu n'est pas transmis. Le libellé d'un autre débit, lui, est transmis.
 - Si les données sont insuffisantes pour répondre avec certitude, dis-le plutôt que de deviner.
-- Repères PCG utiles : comptes 6xxx = charges (sens normal débit), 7xxx = produits (sens normal crédit), 445660 = TVA déductible, 445710 = TVA collectée, 512000 = banque.
-- Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif (frais bancaires, virements de l'Assurance maladie) : son écriture, face au 512000, n'a pas de pièce, ce n'est pas une anomalie, et il compte dans la 2035 à la date du mouvement.
+- Repères PCG utiles : comptes 6xxx = charges (sens normal débit), 7xxx = produits (sens normal crédit), ${plan.tva_deductible} = TVA déductible, ${plan.tva_collectee} = TVA collectée, ${plan.banque} = banque.
+- Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif (frais bancaires, virements de l'Assurance maladie) : son écriture, face au ${plan.banque}, n'a pas de pièce, ce n'est pas une anomalie, et il compte dans la 2035 à la date du mouvement.
 - Le STATUT DE TVA du dossier (resume_dossier : statut_tva) : « redevable » facture la TVA et la récupère — ses pièces sont retenues hors taxes ; « franchise » (art. 293 B du CGI) et « exonere » (art. 261 à 261 E du CGI, les soins au premier rang ; article_exoneration dit lequel) ne la facturent ni ne la récupèrent — leurs pièces sont retenues TVA comprise. Un statut null est À PRÉCISER : ne le devine pas, il se règle dans l'onglet TVA.
 - La FACTURATION ÉLECTRONIQUE : tout dossier, même exonéré ou en franchise, reçoit ses factures sous forme électronique depuis le 1er septembre 2026. Au 1er septembre 2027 pour une PME, l'émission des factures électroniques et l'e-reporting des ventes (à des particuliers, à des clients établis hors de France) visent les opérations taxables : une franchise y est tenue, un dossier exonéré seulement pour ses opérations taxables s'il en a — ses opérations exonérées en sortent. Et tout assujetti, même exonéré ou en franchise, déclare par l'e-reporting ses achats à un fournisseur établi hors de France (un logiciel en ligne, une formation, de la publicité). Le statut « Encaissée » et l'e-reporting des paiements ne visent que les prestations de services dont la TVA est due à l'encaissement, pas celles d'un dossier qui a opté pour les débits.
 - L'AUTOLIQUIDATION : la TVA d'un service acheté à un prestataire établi hors de France est due par le dossier qui l'achète, même en franchise ou exonéré (art. 283, 2 du CGI) : il la déclare alors, avec un numéro de TVA intracommunautaire. L'application ne prépare pas encore cette déclaration, ni l'autoliquidation dans la CA3 d'un redevable : ne dis jamais d'un dossier en franchise ou exonéré qu'il n'a aucune TVA à déclarer.
-- Sur un dossier assujetti à la TVA, une recette du relevé — affectée, ou part d'un mouvement ventilé — porte le taux de TVA que le cabinet a choisi : sa catégorie reçoit le hors taxe, le 445710 la TVA collectée, et la 2035 ne compte que le hors taxe. Une recette sans taux sur un dossier assujetti est un point à traiter : sa TVA n'est dans aucune déclaration.
-- Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
-- Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
-- Un mouvement du relevé peut être ÉCRIT SUR UN COMPTE DE BILAN : un virement vers un autre compte du professionnel (épargne, second compte bancaire) ou depuis lui au 580000 Virements internes, un dépôt de garantie versé ou rendu au 275000 Dépôts et cautionnements versés, ou un autre compte de bilan choisi par le cabinet. Son écriture, face au 512000, n'a pas de pièce — le relevé en est le justificatif — : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette. Un mouvement IGNORÉ, lui, n'est écrit nulle part : absent du FEC, il convient à un doublon ou à un mouvement antérieur à la reprise du dossier ; un mouvement réel ignoré est un point à traiter.
-- La CAISSE du dossier (onglet Caisse, un dossier en trésorerie) : une RECETTE EN ESPÈCES sans facture — le total des espèces reçues un jour, pour une nature —, des espèces rendues, un APPORT en caisse ou un PRÉLÈVEMENT en espèces de l'exploitant s'écrit au jour de l'opération, sans pièce ni mouvement, face au compte de la caisse (${COMPTE_CAISSE} Caisse dans le plan par défaut) : la recette à son compte de produit — sa TVA au ${COMPTE_TVA_COLLECTEE} pour un dossier redevable —, et elle compte dans la 2035 à sa date ; l'apport et le prélèvement au compte de l'exploitant, ni charge ni recette. Son justificatif est le brouillard de caisse que l'exploitant tient hors de l'application : ce n'est pas une anomalie. La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas, ne le devine pas (lister_ecritures nomme une opération de caisse par sa nature, sa date et son montant). Un VERSEMENT d'espèces en banque est un crédit du relevé écrit sur le compte de la caisse, et un retrait d'espèces pour la caisse un débit : ni recette ni charge — la recette est déjà comptée à la caisse. Une PIÈCE PAYÉE EN ESPÈCES par la caisse a sa contrepartie au compte de la caisse, au jour du paiement, à la place de la banque (lister_ecritures nomme cette ligne comme sa pièce) : elle n'attend aucun rapprochement, ce n'est pas une anomalie, et elle compte dans la 2035 à cette date. Les contrôles de la caisse — opérations à reprendre, caisse négative, recettes à revoir, versements d'espèces rangés en recette — ne sont pas vérifiés par l'assistant (points_a_traiter : caisse) : renvoie à l'onglet Caisse et à la Vue d'ensemble, qui les disent.
+- Sur un dossier assujetti à la TVA, une recette du relevé — affectée, ou part d'un mouvement ventilé — porte le taux de TVA que le cabinet a choisi : sa catégorie reçoit le hors taxe, le ${plan.tva_collectee} la TVA collectée, et la 2035 ne compte que le hors taxe. Une recette sans taux sur un dossier assujetti est un point à traiter : sa TVA n'est dans aucune déclaration.
+- Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : `${plan.exploitant} Compte de l'exploitant`} — face au ${plan.banque}, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
+- Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au ${plan.banque}, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
+- Un mouvement du relevé peut être ÉCRIT SUR UN COMPTE DE BILAN : un virement vers un autre compte du professionnel (épargne, second compte bancaire) ou depuis lui au ${plan.virements_internes} Virements internes, un dépôt de garantie versé ou rendu au ${plan.depots_cautionnements_verses} Dépôts et cautionnements versés, ou un autre compte de bilan choisi par le cabinet. Son écriture, face au ${plan.banque}, n'a pas de pièce — le relevé en est le justificatif — : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette. Un mouvement IGNORÉ, lui, n'est écrit nulle part : absent du FEC, il convient à un doublon ou à un mouvement antérieur à la reprise du dossier ; un mouvement réel ignoré est un point à traiter.
+- La CAISSE du dossier (onglet Caisse, un dossier en trésorerie) : une RECETTE EN ESPÈCES sans facture — le total des espèces reçues un jour, pour une nature —, des espèces rendues, un APPORT en caisse ou un PRÉLÈVEMENT en espèces de l'exploitant s'écrit au jour de l'opération, sans pièce ni mouvement, face au compte de la caisse (${plan.caisse} Caisse dans le plan par défaut) : la recette à son compte de produit — sa TVA au ${plan.tva_collectee} pour un dossier redevable —, et elle compte dans la 2035 à sa date ; l'apport et le prélèvement au compte de l'exploitant, ni charge ni recette. Son justificatif est le brouillard de caisse que l'exploitant tient hors de l'application : ce n'est pas une anomalie. La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas, ne le devine pas (lister_ecritures nomme une opération de caisse par sa nature, sa date et son montant). Un VERSEMENT d'espèces en banque est un crédit du relevé écrit sur le compte de la caisse, et un retrait d'espèces pour la caisse un débit : ni recette ni charge — la recette est déjà comptée à la caisse. Une PIÈCE PAYÉE EN ESPÈCES par la caisse a sa contrepartie au compte de la caisse, au jour du paiement, à la place de la banque (lister_ecritures nomme cette ligne comme sa pièce) : elle n'attend aucun rapprochement, ce n'est pas une anomalie, et elle compte dans la 2035 à cette date. Les contrôles de la caisse — opérations à reprendre, caisse négative, recettes à revoir, versements d'espèces rangés en recette — ne sont pas vérifiés par l'assistant (points_a_traiter : caisse) : renvoie à l'onglet Caisse et à la Vue d'ensemble, qui les disent.
 - Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
-- Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
-- La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au 445620 : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.
-- Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le 681100 au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
-- Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du 625110, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
-- Une DÉCLARATION DE TVA enregistrée s'écrit au dernier jour de sa période, sans pièce ni mouvement, au journal des opérations diverses : sa LIQUIDATION retire la TVA collectée (445710) et déductible (445660, 445620) de la période, porte la TVA à payer au 445510 TVA à décaisser — un crédit reporté au 445670, un remboursement demandé au 445830 — et l'arrondi à l'euro de la CA3 au 658000 ou au 758000. Son PRÉLÈVEMENT, rapproché de la déclaration, débite le 445510 face au 512000 ; le REMBOURSEMENT d'un crédit par le Trésor crédite le 445830 : ni charge ni recette, et rien de cela n'est une anomalie. Une période terminée dont la déclaration n'est pas enregistrée garde sa TVA aux comptes 4457 et 4456 : c'est un point à traiter.
-- Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.
-- Une ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant (un apport) s'écrit au jour de ce paiement, sans pièce ni mouvement, au journal des opérations diverses : la cotisation au 646000 face au compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais + ", toute l'échéance" : "108000 Compte de l'exploitant, pour l'échéance hors CSG-CRDS : sa CSG-CRDS, qui irait au 108000, s'y compense avec l'apport"}${dossierRow.mode_comptable === "engagement" ? "" : " ; elle compte dans la 2035 à la date du paiement"}. Une échéance ne se paie que d'une façon : par un mouvement rapproché ou par le compte personnel. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
-- La VALIDATION d'un exercice écrit l'OUVERTURE de l'exercice suivant — ses SOLDES REPORTÉS, au 1er janvier, journal AN, pièce « Exercice AAAA validé » : chaque compte de bilan y reprend son solde ; ${dossierRow.mode_comptable === "engagement" && dossierRow.compte_notes_de_frais !== "108000" ? "le résultat y attend son affectation, au 120000 pour un bénéfice et au 129000 pour une perte" : "le compte de l'exploitant et le résultat passent au 101000 Capital individuel, et l'exercice repart d'un compte de l'exploitant vide"}. Ce ne sont pas des écritures du brouillon (lister_ecritures ne les montre pas) ; lister_comptes les compte dans l'exercice qu'ils ouvrent. Tant qu'un exercice n'est pas validé, le suivant n'a pas d'ouverture : ses comptes de bilan partent de zéro, et lister_comptes le dit.
+- Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au ${plan.banque}, sans pièce, sur trois comptes : le capital remboursé au ${plan.emprunt} (une dette qui diminue — ni charge ni recette), les intérêts au ${plan.interets_emprunt} et l'assurance au ${plan.assurance_emprunt}, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le ${plan.emprunt} face au ${plan.banque} : ce n'est pas une recette. Rien de cela n'est une anomalie.
+- La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au ${plan.tva_immobilisations} : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.
+- Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le ${plan.dotations_amortissements} au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
+- Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du ${plan.indemnites_kilometriques}, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : `${plan.exploitant} Compte de l'exploitant`} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
+- Une DÉCLARATION DE TVA enregistrée s'écrit au dernier jour de sa période, sans pièce ni mouvement, au journal des opérations diverses : sa LIQUIDATION retire la TVA collectée (${plan.tva_collectee}) et déductible (${plan.tva_deductible}, ${plan.tva_immobilisations}) de la période, porte la TVA à payer au ${plan.tva_a_decaisser} TVA à décaisser — un crédit reporté au ${plan.credit_tva_a_reporter}, un remboursement demandé au ${plan.remboursement_tva_demande} — et l'arrondi à l'euro de la CA3 au ${plan.arrondi_charge} ou au ${plan.arrondi_produit}. Son PRÉLÈVEMENT, rapproché de la déclaration, débite le ${plan.tva_a_decaisser} face au ${plan.banque} ; le REMBOURSEMENT d'un crédit par le Trésor crédite le ${plan.remboursement_tva_demande} : ni charge ni recette, et rien de cela n'est une anomalie. Une période terminée dont la déclaration n'est pas enregistrée garde sa TVA aux comptes 4457 et 4456 : c'est un point à traiter.
+- Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au ${plan.banque}, sans pièce : la cotisation au ${plan.cotisations_exploitant} (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : ` et sa CSG-CRDS, quand elle est saisie, au ${plan.exploitant} Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance`}. Ce n'est pas une anomalie.
+- Une ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant (un apport) s'écrit au jour de ce paiement, sans pièce ni mouvement, au journal des opérations diverses : la cotisation au ${plan.cotisations_exploitant} face au compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais + ", toute l'échéance" : `${plan.exploitant} Compte de l'exploitant, pour l'échéance hors CSG-CRDS : sa CSG-CRDS, qui irait au ${plan.exploitant}, s'y compense avec l'apport`}${dossierRow.mode_comptable === "engagement" ? "" : " ; elle compte dans la 2035 à la date du paiement"}. Une échéance ne se paie que d'une façon : par un mouvement rapproché ou par le compte personnel. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
+- La VALIDATION d'un exercice écrit l'OUVERTURE de l'exercice suivant — ses SOLDES REPORTÉS, au 1er janvier, journal AN, pièce « Exercice AAAA validé » : chaque compte de bilan y reprend son solde ; ${dossierRow.mode_comptable === "engagement" && dossierRow.compte_notes_de_frais !== "${plan.exploitant}" ? `le résultat y attend son affectation, au ${plan.resultat_benefice} pour un bénéfice et au ${plan.resultat_perte} pour une perte` : `le compte de l'exploitant et le résultat passent au ${plan.capital_individuel} Capital individuel, et l'exercice repart d'un compte de l'exploitant vide`}. Ce ne sont pas des écritures du brouillon (lister_ecritures ne les montre pas) ; lister_comptes les compte dans l'exercice qu'ils ouvrent. Tant qu'un exercice n'est pas validé, le suivant n'a pas d'ouverture : ses comptes de bilan partent de zéro, et lister_comptes le dit.
 - Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ : ses écritures ne se modifient ni ne se retirent plus, ni les pièces, mouvements, biens, véhicules et échéances qui les ont produites — la base le refuse. Rien de ce qui précède le 31 décembre du dernier exercice validé n'est réclamé par points_a_traiter : une erreur trouvée après la validation se corrige sur l'exercice suivant. Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu'un exercice validé a figé.${repereVentes}
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).
@@ -4385,6 +4545,7 @@ Règles impératives :
       article_exoneration: dossierRow.article_exoneration,
     },
     ventes,
+    modele,
   }
   const outilsUtilises: string[] = []
   // Cumul sur tous les tours de la boucle d'outils (voir plus bas) : une question qui déclenche
