@@ -34,6 +34,22 @@ describe('les cotisations Urssaf, contre le moteur de l’Urssaf', () => {
     }
   })
 
+  // Les médecins (07/11/2026) : sans ce plancher, une régénération qui les perdrait laisserait leur
+  // calcul sans référence. Les trois tranches de la prise en charge des allocations familiales du
+  // secteur 1 (100 %, 75 %, 60 % de la cotisation) doivent chacune porter au moins un cas.
+  it('porte les médecins des deux secteurs, et chaque tranche de leur prise en charge', () => {
+    for (const profession of ['medecin_secteur_1', 'medecin_secteur_2'] as const) {
+      expect(CAS_REFERENCE.filter((c) => c.entree.profession === profession).length).toBeGreaterThanOrEqual(30)
+    }
+    const parts = new Set(
+      CAS_REFERENCE.filter((c) => c.attendu.priseEnChargeAllocationsFamiliales > 0).map((c) =>
+        Math.round((c.attendu.priseEnChargeAllocationsFamiliales / c.attendu.allocationsFamiliales) * 100),
+      ),
+    )
+    expect(parts).toEqual(new Set([100, 75, 60]))
+    expect(CAS_REFERENCE.some((c) => c.entree.profession === 'medecin_secteur_2' && c.attendu.priseEnChargeMaladie > 0)).toBe(false)
+  })
+
   it.each(CAS_REFERENCE.map((c) => [c.cas, c] as const))('%s', (_nom, { entree, attendu }) => {
     const resultat = estimerCotisationsUrssaf(entree)
     expect(resultat).toEqual({ disponible: true, estimation: attendu })
@@ -51,6 +67,7 @@ describe('les cotisations Urssaf, contre le moteur de l’Urssaf', () => {
         csgCrdsNonDeductible: 1_288,
         maladie: 2_535,
         priseEnChargeMaladie: 2_491,
+        priseEnChargeAllocationsFamiliales: 0,
         contributionAdditionnelle: 0,
         indemnitesJournalieres: 133,
         allocationsFamiliales: 0,
@@ -80,9 +97,13 @@ describe('ce que l’estimation refuse, et dit', () => {
     expect(motif({ profession: null })).toMatch(/Choisissez la profession/)
   })
 
-  it('pour les médecins et les chirurgiens-dentistes, dont les règles diffèrent', () => {
-    for (const profession of ['medecin_secteur_1', 'medecin_secteur_2', 'chirurgien_dentiste'] as const) {
-      expect(motif({ profession })).toMatch(/auxiliaires médicaux et les sages-femmes seulement/)
+  it('pour un chirurgien-dentiste, dont la prise en charge demande le « taux dentiste »', () => {
+    expect(motif({ profession: 'chirurgien_dentiste' })).toMatch(/taux dentiste/)
+  })
+
+  it('estime les médecins de secteur 1 et de secteur 2', () => {
+    for (const profession of ['medecin_secteur_1', 'medecin_secteur_2'] as const) {
+      expect(motif({ profession })).toBeNull()
     }
   })
 

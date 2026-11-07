@@ -20,8 +20,14 @@
 // prise en charge par l'Assurance maladie, la CURPS et la formation professionnelle ne sont
 // sourcées que par ce moteur.
 //
-// CE QUE L'ESTIMATION NE COUVRE PAS, et que l'écran dit : les médecins et les chirurgiens-dentistes
-// (leur prise en charge et leur CURPS suivent d'autres règles), les revenus de remplacement
+// LES MÉDECINS (07/11/2026) : secteur 1 et secteur 2, tels que le moteur les calcule — la CURPS à
+// 0,5 % ; la prise en charge de la maladie pour le secteur 1 seul ; et pour lui seul encore, celle
+// des allocations familiales, une part de la cotisation fixée par la tranche où tombe l'assiette de
+// la prise en charge (100 % jusqu'à 140 % du plafond, 75 % jusqu'à 250 %, 60 % au-delà).
+//
+// CE QUE L'ESTIMATION NE COUVRE PAS, et que l'écran dit : les chirurgiens-dentistes (leur prise en
+// charge se calcule sur le « taux dentiste » du relevé SNIR, que l'application ne tient pas), les
+// médecins non conventionnés (aucun choix ne les porte), les revenus de remplacement
 // (indemnités journalières perçues, qui s'ajoutent à l'assiette des cotisations), l'ACRE, les
 // exonérations d'invalidité, l'outre-mer, et une activité créée dans l'année (pas de CURPS la
 // première année). Et elle porte sur les cotisations DÉFINITIVES de l'exercice : la différence avec
@@ -44,8 +50,8 @@ export const PLAFONDS_SECURITE_SOCIALE: Readonly<Record<number, number>> = {
   2026: 48_060,
 }
 
-/** Les professions dont l'application estime les cotisations : leurs règles Urssaf sont identiques. */
-const PROFESSIONS_ESTIMEES: readonly ProfessionPamc[] = ['auxiliaire_medical', 'sage_femme']
+/** Les professions dont l'application estime les cotisations, toutes éprouvées contre le moteur de l'Urssaf. */
+const PROFESSIONS_ESTIMEES: readonly ProfessionPamc[] = ['auxiliaire_medical', 'sage_femme', 'medecin_secteur_1', 'medecin_secteur_2']
 
 export const LIBELLES_PROFESSION: Readonly<Record<ProfessionPamc, string>> = {
   auxiliaire_medical: 'Auxiliaire médical',
@@ -160,6 +166,30 @@ const MALADIE_RESTE_AU_PRATICIEN = 0.1
 const CONTRIBUTION_ADDITIONNELLE = 3.25
 // Article D. 613-1 : 0 % jusqu'à 110 % du plafond, 3,10 % à partir de 140 %, en ligne droite entre.
 const ALLOCATIONS_FAMILIALES: readonly Point[] = [[110, 0], [140, 3.1]]
+// La prise en charge des allocations familiales d'un médecin de secteur 1 (modele-ti, « PAMC .
+// participation CPAM . allocations familiales ») : la part de la cotisation que prend l'Assurance
+// maladie, selon la tranche — non progressive — où tombe l'assiette de la prise en charge. Une borne
+// atteinte passe à la tranche suivante, comme dans le moteur (« grille » : plancher ≤ assiette < plafond).
+const PRISE_EN_CHARGE_ALLOCATIONS_SECTEUR_1: readonly (readonly [pourcentDuPlafond: number, partEnPourcent: number])[] = [
+  [140, 100],
+  [250, 75],
+  [Infinity, 60],
+]
+function partPriseEnChargeAllocations(assiette: number, plafond: number): number {
+  for (const [borne, part] of PRISE_EN_CHARGE_ALLOCATIONS_SECTEUR_1) {
+    if (borne === Infinity || assiette < partDuPlafond(borne, plafond)) return part
+  }
+  return 0
+}
+// La CURPS (modele-ti, « PAMC . CURPS ») : 0,5 % pour un médecin, 0,1 % pour un auxiliaire médical ou
+// une sage-femme, dans la limite de 0,5 % du plafond.
+const TAUX_CURPS: Readonly<Partial<Record<ProfessionPamc, number>>> = {
+  auxiliaire_medical: 0.1,
+  sage_femme: 0.1,
+  medecin_secteur_1: 0.5,
+  medecin_secteur_2: 0.5,
+}
+
 // Article D. 621-3 : 0,30 % pour les professions libérales, sur au moins 40 % du plafond et au plus
 // trois plafonds.
 const INDEMNITES_JOURNALIERES = 0.3
@@ -196,12 +226,15 @@ export interface EstimationCotisations {
   /** La cotisation maladie-maternité, avant la prise en charge. */
   maladie: number
   priseEnChargeMaladie: number
+  /** La part des allocations familiales que prend l'Assurance maladie : un médecin de secteur 1 seul. */
+  priseEnChargeAllocationsFamiliales: number
   contributionAdditionnelle: number
   indemnitesJournalieres: number
+  /** La cotisation d'allocations familiales, avant la prise en charge. */
   allocationsFamiliales: number
   curps: number
   formationProfessionnelle: number
-  /** Ce qui reste à la charge du praticien, prise en charge déduite. */
+  /** Ce qui reste à la charge du praticien, prises en charge déduites. */
   total: number
 }
 
@@ -222,8 +255,9 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
     return {
       disponible: false,
       motif:
-        'Estimation proposée pour les auxiliaires médicaux et les sages-femmes seulement : la prise en ' +
-        'charge et la CURPS des médecins et des chirurgiens-dentistes suivent d’autres règles.',
+        'Estimation proposée pour les auxiliaires médicaux, les sages-femmes et les médecins de secteur 1 ' +
+        'ou 2 : la prise en charge d’un chirurgien-dentiste se calcule sur le « taux dentiste » de son ' +
+        'relevé SNIR, que l’application ne tient pas.',
     }
   }
   const ratio = ratioConventionne(e.honorairesConventionnes, e.recettesBrutes)
@@ -259,7 +293,12 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
   // contribution de 3,25 %.
   const assietteParticipation = honoraires > 0 ? assiette * (honoraires / e.recettesBrutes) * ((honoraires - depassements) / honoraires) : 0
   const tauxEffectif = assiette > 0 ? seizeDecimales(maladie / assiette / 0.01) : 0
-  const priseEnChargeMaladie = arrondiUrssaf(appliquer(assietteParticipation, Math.max(0, tauxEffectif - MALADIE_RESTE_AU_PRATICIEN)))
+  // Un médecin de secteur 2 n'a pas de prise en charge (« non applicable si secteur = S2 ») ; ses
+  // honoraires conventionnés, dépassements retirés, n'en restent pas moins hors de la contribution.
+  const priseEnChargeMaladie =
+    e.profession === 'medecin_secteur_2'
+      ? 0
+      : arrondiUrssaf(appliquer(assietteParticipation, Math.max(0, tauxEffectif - MALADIE_RESTE_AU_PRATICIEN)))
   const contributionAdditionnelle = arrondiUrssaf(appliquer(assiette - assietteParticipation, CONTRIBUTION_ADDITIONNELLE))
 
   const assietteIndemnites = Math.min(Math.max(assiette, arrondiUrssaf(appliquer(plafond, 40))), plafond * 3)
@@ -267,16 +306,20 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
 
   const tauxAllocations = arrondiUrssaf(tauxProgressif(assiette, plafond, ALLOCATIONS_FAMILIALES), 2)
   const allocationsFamiliales = arrondiUrssaf(appliquer(assiette, tauxAllocations))
+  const priseEnChargeAllocationsFamiliales =
+    e.profession === 'medecin_secteur_1'
+      ? arrondiUrssaf(appliquer(allocationsFamiliales, partPriseEnChargeAllocations(assietteParticipation, plafond)))
+      : 0
 
-  // CURPS : 0,1 % pour ces professions, dans la limite de 0,5 % du plafond ; pas pour un remplaçant,
-  // ni sans revenu professionnel.
-  const curps = !e.remplacant && e.revenuProfessionnelPositif ? arrondiUrssaf(Math.min(appliquer(assiette, 0.1), appliquer(plafond, 0.5))) : 0
+  // CURPS : pas pour un remplaçant, ni sans revenu professionnel.
+  const tauxCurps = TAUX_CURPS[e.profession] ?? 0
+  const curps = !e.remplacant && e.revenuProfessionnelPositif ? arrondiUrssaf(Math.min(appliquer(assiette, tauxCurps), appliquer(plafond, 0.5))) : 0
 
   const formationProfessionnelle = arrondiUrssaf(appliquer(plafond, 0.25))
 
   const total =
     csgCrdsDeductible + csgCrdsNonDeductible + (maladie - priseEnChargeMaladie) + contributionAdditionnelle +
-    indemnitesJournalieres + allocationsFamiliales + curps + formationProfessionnelle
+    indemnitesJournalieres + (allocationsFamiliales - priseEnChargeAllocationsFamiliales) + curps + formationProfessionnelle
 
   return {
     disponible: true,
@@ -288,6 +331,7 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
       csgCrdsNonDeductible,
       maladie,
       priseEnChargeMaladie,
+      priseEnChargeAllocationsFamiliales,
       contributionAdditionnelle,
       indemnitesJournalieres,
       allocationsFamiliales,

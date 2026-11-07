@@ -386,8 +386,19 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{euros(resultat.estimation.indemnitesJournalieres)}</td>
                 </tr>
                 <tr>
-                  <td>Allocations familiales</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{euros(resultat.estimation.allocationsFamiliales)}</td>
+                  {/* La prise en charge des allocations familiales n'existe que pour un médecin de secteur 1 : la
+                      nommer à zéro sur toutes les autres professions laisserait croire qu'elle y a été cherchée. */}
+                  {resultat.estimation.priseEnChargeAllocationsFamiliales > 0 ? (
+                    <td>
+                      Allocations familiales {euros(resultat.estimation.allocationsFamiliales)}, moins la prise en charge
+                      par l'Assurance maladie ({euros(resultat.estimation.priseEnChargeAllocationsFamiliales)})
+                    </td>
+                  ) : (
+                    <td>Allocations familiales</td>
+                  )}
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {euros(resultat.estimation.allocationsFamiliales - resultat.estimation.priseEnChargeAllocationsFamiliales)}
+                  </td>
                 </tr>
                 <tr>
                   <td>CURPS (unions régionales des professionnels de santé)</td>
@@ -409,7 +420,8 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
             ci-dessus. Hors retraite (appelée par la caisse, pas par l'Urssaf), hors indemnités
             journalières perçues, ACRE, exonérations et outre-mer ; activité supposée commencée avant
             {' '}{annee}. La régularisation est l'écart avec les cotisations provisionnelles appelées pour
-            {' '}{annee} : seul l'avis de l'Urssaf la chiffre.
+            {' '}{annee} : seul l'avis de l'Urssaf la chiffre, les échéances de l'onglet Cotisations ne disant ni
+            l'organisme qui les appelle ni l'année qu'elles paient.
             {avecStructures && (
               ' La prise en charge ouverte par les recettes en structures de soins n’est pas estimée : ' +
               'le simulateur de l’Urssaf ne la calcule pas non plus, et l’estimation peut donc être plus haute ' +
