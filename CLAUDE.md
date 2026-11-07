@@ -443,8 +443,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   restent hors de l'estimation — chirurgiens-dentistes (« taux dentiste »), retraite, revenus de remplacement, ACRE,
   exonérations, outre-mer, activité créée dans l'année (une entrée en base chacun, que le moteur couvre sauf les DROM),
   la régularisation, préparée le 07/11/2026 (`regularisation_des_cotisations` : l'organisme, l'année payée et la nature
-  d'une échéance ; `lib/regularisationDesCotisations.ts`, muet sur ce qu'il ne sait pas ;
-  `REGULARISATION_DES_COTISATIONS_EXPORTEE` baissé ; TNS-Q2) ; DSCS proposée depuis la ligne 4 de la 2035-A, à confirmer
+  d'une échéance, et la part d'un prélèvement mixte qui régularise l'année d'avant, signée (TNS-Q2-B (B)) ;
+  `lib/regularisationDesCotisations.ts`, muet sur ce qu'il ne sait pas ; `REGULARISATION_DES_COTISATIONS_EXPORTEE` baissé ;
+  TNS-Q2, à appliquer) ; DSCS proposée depuis la ligne 4 de la 2035-A, à confirmer
   sur une première déclaration réelle ; un banc de charge d'une année fictive (`outils/charge/`) mesure les calculs
   avant les données réelles → « LES COTISATIONS : CE QUE LE MOTEUR DE L'URSSAF PERMET D'ESTIMER EN PLUS (LIGNE 27) »,
   « LA RÉGULARISATION DES COTISATIONS (LIGNE 27, TNS-Q2) », « LE BANC DE CHARGE D'UNE ANNÉE ».
