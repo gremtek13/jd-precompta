@@ -26,6 +26,10 @@
 --      administrateur (la restauration). Aucune autre policy : le client n'en lit rien, pas même de son dossier ; personne
 --      ne l'écrit en direct, ne la modifie ni ne la retire.
 --
+-- L'ORDRE, FIXÉ LE 07/11/2026 : cette migration, puis `situations_publiees` (C4a, la case « Comptes »), puis
+-- `trois_cases_de_l_acces` (B1, « Achats », « Notes de frais », « Documents ») ; chacune étend la trace aux cases qu'elle
+-- pose, et sa garde de tête refuse la base où manque celle d'avant. La contrainte du droit admet dès ici leurs quatre mots.
+--
 -- CE QU'ELLE NE CHANGE PAS : `memberships`, ses policies, ses deux gardes (`garder_droit_ventes`, `garder_droit_caisse`) et
 -- `changer_droits_acces` — aucune fonction n'est remplacée. Le déclencheur vient APRÈS les deux gardes (l'ordre des noms) :
 -- une case refusée n'écrit rien, l'écriture entière se refusant. Aucune ligne écrite d'avance : les cases d'avant la
@@ -94,8 +98,13 @@ create table public.trace_des_droits (
   dossier_id uuid not null references public.dossiers (id) on delete cascade,
   acces_id uuid not null,
   client_id uuid not null,
+  -- Les trois cases que le déclencheur trace, et les quatre que les deux migrations préparées après celle-ci lui ajoutent
+  -- (« comptes », `situations_publiees`, C4a ; « achats », « frais », « documents », `trois_cases_de_l_acces`, B1) : elles
+  -- n'étendent que la fonction et la liste des colonnes du déclencheur, par des `create or replace`, sans retirer cette
+  -- contrainte (l'outil, pas un collage). Elle n'admet que des mots ; seul le déclencheur écrit, sous sa garde.
   droit text not null
-    constraint trace_des_droits_droit check (droit in ('ventes', 'banque', 'caisse')),
+    constraint trace_des_droits_droit
+      check (droit in ('ventes', 'banque', 'caisse', 'comptes', 'achats', 'frais', 'documents')),
   coche boolean not null,
   geste text not null
     constraint trace_des_droits_geste check (geste in ('changement', 'creation', 'retrait')),

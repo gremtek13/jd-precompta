@@ -12,6 +12,7 @@ import {
   questionDuLienEnvoye, refusDeLaRegle,
 } from '../../lib/recuperationMotDePasse'
 import {
+  CASES_SANS_EFFET, ceQueDitLaCaseSansEffet,
   CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCasesDuDossier, ceQueDitLaCaseCaisse, ceQueDitLaCaseComptes, changementApplique,
   confirmationDeLaCaseCaisse, demandeDeChangement, droitsDeLaLigne, enumeration, gesteDeLaCase, libelleDeLaCase, messageDuRefus,
   refusDeLaCase, type Domaine,
@@ -31,17 +32,22 @@ import { adresseDeCollecte } from '../../lib/adresseCollecte'
 import { useCopieDuTexte } from '../../lib/copieDuTexte'
 import type { Membership } from '../../lib/types'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from '../../lib/situationsPubliees'
+import { TROIS_CASES_EXPORTEES } from '../../lib/troisCasesDeLAcces'
 
 // Les colonnes d'un accès. « Comptes » (étape C4b) n'est demandée qu'avec sa migration : avant, la colonne n'existe pas.
 // Typée comme la forme la plus longue : drapeau baissé, `droit_comptes` manque à la ligne, et `droitsDeLaLigne` n'en
 // accorde aucun.
-const COLONNES_DES_ACCES = (SITUATIONS_PUBLIEES_EXPORTEES
-  ? 'id, user_id, email, droit_ventes, droit_banque, droit_caisse, droit_comptes'
-  : 'id, user_id, email, droit_ventes, droit_banque, droit_caisse') as 'id, user_id, email, droit_ventes, droit_banque, droit_caisse, droit_comptes'
+const COLONNES_DES_ACCES = (TROIS_CASES_EXPORTEES
+  ? 'id, user_id, email, droit_ventes, droit_banque, droit_caisse, droit_comptes, droit_achats, droit_frais, droit_documents'
+  : SITUATIONS_PUBLIEES_EXPORTEES
+    ? 'id, user_id, email, droit_ventes, droit_banque, droit_caisse, droit_comptes'
+    : 'id, user_id, email, droit_ventes, droit_banque, droit_caisse'
+) as 'id, user_id, email, droit_ventes, droit_banque, droit_caisse, droit_comptes, droit_achats, droit_frais, droit_documents'
 
 // Un accès tel que l'onglet le lit : la personne, et ses trois droits (espace client, étape P1 ; « Caisse » depuis l'étape
 // C11 de la ligne 26.6 — voir lib/droitsAcces.ts).
-type AccesLu = Pick<Membership, 'id' | 'user_id' | 'email' | 'droit_ventes' | 'droit_banque' | 'droit_caisse' | 'droit_comptes'>
+type AccesLu = Pick<Membership, 'id' | 'user_id' | 'email' | 'droit_ventes' | 'droit_banque' | 'droit_caisse' | 'droit_comptes'
+  | 'droit_achats' | 'droit_frais' | 'droit_documents'>
 
 export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossierId: string; dossierNom: string; codeEmail: string | null }) {
   const [rows, setRows] = useState<AccesLu[]>([])
@@ -494,6 +500,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       {SITUATIONS_PUBLIEES_EXPORTEES && (
         <p className="muted" id="ce-que-dit-la-case-comptes">{ceQueDitLaCaseComptes()}</p>
       )}
+      {TROIS_CASES_EXPORTEES && CASES_SANS_EFFET.map((d) => (
+        <p className="muted" id={`ce-que-dit-la-case-${d}`} key={d}>{ceQueDitLaCaseSansEffet(d)}</p>
+      ))}
       {rows.length > 0 && (
         <BandeauLecturePartielle
           quoi="La liste des accès" accord="lue" motif={lecturePartielle}

@@ -568,12 +568,12 @@ describe('droits_sur_le_dossier : le faux est tiré du texte de la migration (é
     const preparee = fichiersPrepares().some((f) => /\/\d{14}_caisse_du_client\.sql$/.test(f.chemin))
     expect(exportee !== preparee, 'la migration caisse_du_client, préparée OU dans l’export').toBe(true)
     expect(CAISSE_DU_CLIENT_EXPORTEE).toBe(exportee)
-    expect(casesDesDroitsSelon(false, false)).toEqual({ membre: true, ventes: 'droit_ventes', banque: 'droit_banque' })
-    expect(Object.keys(droitsDuDossierSelon(false, false))).toEqual(['cabinet', 'membre', 'ventes', 'banque'])
+    expect(casesDesDroitsSelon(false, false, false)).toEqual({ membre: true, ventes: 'droit_ventes', banque: 'droit_banque' })
+    expect(Object.keys(droitsDuDossierSelon(false, false, false))).toEqual(['cabinet', 'membre', 'ventes', 'banque'])
     // Le mot « comptes » (la migration `situations_publiees`, étape C4a, préparée) : ses deux états, le second confronté au
     // texte préparé avec celui de la caisse — la dernière définition est la sienne.
-    expect(Object.keys(droitsDuDossierSelon(true, false))).toEqual(['cabinet', 'membre', 'ventes', 'banque', 'caisse'])
-    expect(casesDesDroitsSelon(true, true)).toMatchObject({ caisse: 'droit_caisse', comptes: 'droit_comptes' })
+    expect(Object.keys(droitsDuDossierSelon(true, false, false))).toEqual(['cabinet', 'membre', 'ventes', 'banque', 'caisse'])
+    expect(casesDesDroitsSelon(true, true, false)).toMatchObject({ caisse: 'droit_caisse', comptes: 'droit_comptes' })
     const situationsExportee = fichiersDuSchema().some((f) => /\/\d{14}_situations_publiees\.sql$/.test(f.chemin))
     const situationsPreparee = fichiersPrepares().some((f) => /\/\d{14}_situations_publiees\.sql$/.test(f.chemin))
     expect(situationsExportee !== situationsPreparee, 'la migration situations_publiees, préparée OU dans l’export').toBe(true)
@@ -586,10 +586,10 @@ describe('droits_sur_le_dossier : le faux est tiré du texte de la migration (é
       const debut = [...texte.matchAll(motif)].pop()!.index
       return texte.slice(debut, texte.indexOf('$$;', debut))
     }
-    expect(droitsDeLaDefinition(derniere)).toEqual(droitsDuDossierSelon(true, true))
-    expect(casesDeLaDefinition(derniere('client_du_dossier'))).toEqual(casesDesDroitsSelon(true, true))
+    expect(droitsDeLaDefinition(derniere)).toEqual(droitsDuDossierSelon(true, true, true))
+    expect(casesDeLaDefinition(derniere('client_du_dossier'))).toEqual(casesDesDroitsSelon(true, true, true))
     // Et la confrontation mord sur ce texte-là aussi : la case de « Caisse » lue dans celle de « Ventes ».
     expect(casesDeLaDefinition(derniere('client_du_dossier').replace('then m.droit_caisse', 'then m.droit_ventes')))
-      .not.toEqual(casesDesDroitsSelon(true, true))
+      .not.toEqual(casesDesDroitsSelon(true, true, true))
   })
 })

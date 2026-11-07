@@ -40,6 +40,12 @@ declare
   publier constant text := $q$publier_situation('{DC}', '2025-06-30', '{C}'::jsonb, null)$q$;
   e record; v_code text; v_msg text; v_req text; v_pose text; v_obs text;
   verdicts jsonb := '[]'::jsonb;
+  -- Le refus « aucun droit » de la forme à cinq, et de celle à quatre qui l'appelle : les quatre cases de C4a, ou les sept de
+  -- B1 (`trois_cases_de_l_acces`), dont la forme à huit écrit seule et que les autres appellent.
+  aucun_droit constant text := case
+    when to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean, boolean, boolean, boolean)') is not null
+      then 'Aucun droit à changer : précise « Ventes », « Banque », « Caisse », « Comptes », « Achats », « Notes de frais » ou « Documents ».'
+    else 'Aucun droit à changer : précise « Ventes », « Banque », « Caisse » ou « Comptes ».' end;
 begin
   if to_regclass('public.situations_publiees') is null then
     perform set_config('essai.situations_publiees', jsonb_build_array(jsonb_build_object('rang', 0,
@@ -114,10 +120,10 @@ begin
         $q$select 1 from retirer_situation((select s.id from situations_publiees s where s.dossier_id = '{DC}' and s.geste = 'publication'))$q$, '22023', 'Cette situation n''est plus publiée : elle a été remplacée ou retirée.'),
       (24, '24. « Comptes » cochée par la forme à cinq de changer_droits_acces', null, 'chef',
         $q$select (changer_droits_acces('{AS}', null, null, null, true)).droit_comptes::text || ' ' || (droits_sur_le_dossier('{DS}') ->> 'comptes')$q$, 'OK', 'true true'),
-      (25, '25. aucune case donnée, par la forme à cinq (22023, les quatre cases nommées)', null, 'chef',
-        $q$select 1 from changer_droits_acces('{AS}', null, null, null, null)$q$, '22023', 'Aucun droit à changer : précise « Ventes », « Banque », « Caisse » ou « Comptes ».'),
+      (25, '25. aucune case donnée, par la forme à cinq (22023, les cases nommées : quatre, sept avec B1)', null, 'chef',
+        $q$select 1 from changer_droits_acces('{AS}', null, null, null, null)$q$, '22023', 'AUCUN_DROIT'),
       (26, '26. aucune case donnée, par la forme à quatre : les mêmes mots', null, 'chef',
-        $q$select 1 from changer_droits_acces('{AS}', null, null, null)$q$, '22023', 'Aucun droit à changer : précise « Ventes », « Banque », « Caisse » ou « Comptes ».'),
+        $q$select 1 from changer_droits_acces('{AS}', null, null, null)$q$, '22023', 'AUCUN_DROIT'),
       (27, '27. la forme à trois laisse « Caisse » et « Comptes » telles quelles', null, 'chef',
         $q$select r.droit_banque::text || ' ' || r.droit_caisse::text || ' ' || r.droit_comptes::text from changer_droits_acces('{AC}', null, true) r$q$, 'OK', 'true false true'),
       (28, '28. le client ne coche pas sa case (42501)', null, 'client',
@@ -191,7 +197,7 @@ begin
       reset role;
       perform set_config('request.jwt.claims', '', true);
       verdicts := verdicts || jsonb_build_object('rang', e.rang, 'etape', e.etape,
-        'ok', v_code = e.code and v_msg = e.attendu, 'observe', v_code || ' ' || coalesce(v_msg, '-'));
+        'ok', v_code = e.code and v_msg = case e.attendu when 'AUCUN_DROIT' then aucun_droit else e.attendu end, 'observe', v_code || ' ' || coalesce(v_msg, '-'));
     end loop;
 
     -- Le catalogue : la RLS active ; trois policies, toutes à authenticated ; la garde avant chaque écriture ; les

@@ -60,12 +60,12 @@
 -- `gere_les_ventes`, `gere_la_banque`, `gere_la_caisse` ; les quatre Edge Functions de la vente. Aucune ligne écrite
 -- d'avance : aucun accès ne reçoit la case, aucune situation n'est publiée.
 --
--- L'ORDRE AVEC P1-TRACE : celle des deux migrations qui s'applique en second se reprend (la case « Comptes » dans la trace).
--- LA TRACE DES DROITS (P1-trace, migration `trace_des_droits`, PRÉPARÉE avant celle-ci, pas appliquée) ne connaît que trois
--- cases. La garde de tête refuse cette migration si la trace est en base : la case « Comptes » y changerait sans trace. Si
--- celle-ci passe la première, la trace s'amende avant d'être appliquée (une quatrième case : sa contrainte, ses tableaux,
--- la liste des colonnes de son déclencheur) ; sa garde de tête la refuse jusque-là (une colonne `droit_…` de `memberships`
--- qu'elle ne connaît pas : l'ordre gardé dans les deux sens, depuis la relecture de sécurité du 06/11/2026).
+-- L'ORDRE AVEC P1-TRACE, FIXÉ LE 07/11/2026 (étape B1) : la trace des droits (`trace_des_droits`, PRÉPARÉE avant celle-ci)
+-- s'applique la PREMIÈRE, et celle-ci, la seconde, l'étend à la case « Comptes » (section 1 bis) : la fonction de son
+-- déclencheur, au corps de P1-trace plus la case, et la liste de ses colonnes, par des `create or replace` — la contrainte
+-- du droit admet déjà le mot. La garde de tête refuse une base sans la trace, ou dont la trace n'est plus celle de P1-trace ;
+-- la trace, elle, refuse une base où `memberships` porte une case qu'elle ne connaît pas (l'ordre gardé dans les deux sens,
+-- depuis la relecture de sécurité du 06/11/2026). Après celle-ci, `trois_cases_de_l_acces` (B1) étend la trace de même.
 --
 -- VERSION PROVISOIRE, HORS DE L'EXPORT : le fichier entre dans `supabase/schema/` le jour de son application, sous la
 -- version que porte sa ligne d'historique, texte inchangé ; `SITUATIONS_PUBLIEES_EXPORTEES` (src/lib/situationsPubliees.ts)
@@ -90,8 +90,15 @@ begin
                                    'situation_publiee_en_cours', 'refus_des_chiffres_de_la_situation')) then
     raise exception 'La migration situations_publiees est déjà en base : elle ne s''applique pas deux fois.';
   end if;
-  if to_regclass('public.trace_des_droits') is not null then
-    raise exception 'La trace des droits (trace_des_droits) est en base et ne connaît que trois cases : la case « Comptes » y changerait sans trace. Amender cette migration avant de l''appliquer.';
+  if to_regclass('public.trace_des_droits') is null then
+    raise exception 'La trace des droits (trace_des_droits, P1-trace) manque : appliquer d''abord la migration trace_des_droits, que celle-ci étend à la case « Comptes ».';
+  end if;
+  if (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.tracer_les_droits()'))
+       is distinct from '0ef7ead57a5829ec8fed54fd7e561371'
+     or strpos(coalesce((select pg_get_constraintdef(c.oid) from pg_constraint c
+                          where c.conrelid = 'public.trace_des_droits'::regclass and c.conname = 'trace_des_droits_droit'), ''),
+               '''comptes''') = 0 then
+    raise exception 'La trace des droits n''est plus celle que cette migration suppose (tracer_les_droits, empreinte attendue 0ef7ead5… ; la contrainte du droit qui admet « comptes ») : la relire avant d''appliquer cette migration.';
   end if;
   for v_attendue in select * from (values
       ('is_super_admin', 'public.is_super_admin()', 1, 'a9159138778422a43ba8d8c21240c9bb'),
@@ -132,6 +139,80 @@ alter table public.memberships
 
 comment on column public.memberships.droit_comptes is
   'Le droit « Comptes » de cet accès : lire les situations que le cabinet publie (recettes, dépenses par poste de la 2035, résultat, TVA due, comparaison à N−1), posé par le cabinet par changer_droits_acces, faux par défaut (espace client, étape C4a ; MEG3-Q2).';
+
+-- ══ 1 bis. La trace des droits connaît « Comptes » ══════════
+-- La fonction du déclencheur de P1-trace au caractère près, plus la case ; son déclencheur nomme la colonne. Les droits
+-- d'exécution de la fonction restent ceux que P1-trace a posés (aucun rôle de l'API) : `create or replace` les garde.
+create or replace function public.tracer_les_droits() returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_auteur uuid := auth.uid();
+  v_droits constant text[] := array['ventes', 'banque', 'caisse', 'comptes'];
+  v_avant boolean[];
+  v_apres boolean[];
+  i integer;
+begin
+  -- La restauration : le super-administrateur réinsère un accès tel qu'il a été, puis sa trace. Sa mise à jour et son
+  -- retrait d'un accès, si.
+  if tg_op = 'INSERT' and public.is_super_admin() then
+    return null;
+  end if;
+  -- Le retrait d'un accès par la suppression de son dossier : le dossier n'est déjà plus là, sa trace part avec lui.
+  if tg_op = 'DELETE' and not exists (select 1 from public.dossiers d where d.id = old.dossier_id) then
+    return null;
+  end if;
+  if tg_op <> 'INSERT' then
+    v_avant := array[old.droit_ventes, old.droit_banque, old.droit_caisse, old.droit_comptes];
+  end if;
+  if tg_op <> 'DELETE' then
+    v_apres := array[new.droit_ventes, new.droit_banque, new.droit_caisse, new.droit_comptes];
+  end if;
+  if tg_op = 'UPDATE' and new.id = old.id and new.dossier_id = old.dossier_id and new.user_id = old.user_id then
+    -- Le même accès : une ligne par case qui change.
+    perform set_config('jd.trace_des_droits', new.id::text, true);
+    for i in 1 .. 4 loop
+      if v_avant[i] is distinct from v_apres[i] then
+        insert into public.trace_des_droits (dossier_id, acces_id, client_id, droit, coche, geste, auteur_id)
+        values (new.dossier_id, new.id, new.user_id, v_droits[i], v_apres[i], 'changement', v_auteur);
+      end if;
+    end loop;
+  else
+    -- Un accès qui part (retiré, ou emporté vers un autre dossier ou un autre compte) : ses cases cochées, en « retrait ».
+    if tg_op <> 'INSERT' then
+      perform set_config('jd.trace_des_droits', old.id::text, true);
+      for i in 1 .. 4 loop
+        if v_avant[i] then
+          insert into public.trace_des_droits (dossier_id, acces_id, client_id, droit, coche, geste, auteur_id)
+          values (old.dossier_id, old.id, old.user_id, v_droits[i], false, 'retrait', v_auteur);
+        end if;
+      end loop;
+    end if;
+    -- Un accès qui arrive (inséré, ou emporté depuis un autre dossier ou un autre compte) : ses cases cochées, en « creation ».
+    if tg_op <> 'DELETE' then
+      perform set_config('jd.trace_des_droits', new.id::text, true);
+      for i in 1 .. 4 loop
+        if v_apres[i] then
+          insert into public.trace_des_droits (dossier_id, acces_id, client_id, droit, coche, geste, auteur_id)
+          values (new.dossier_id, new.id, new.user_id, v_droits[i], true, 'creation', v_auteur);
+        end if;
+      end loop;
+    end if;
+  end if;
+  perform set_config('jd.trace_des_droits', '', true);
+  return null;
+end
+$$;
+
+create or replace trigger memberships_trace_des_droits
+  after insert or update of droit_ventes, droit_banque, droit_caisse, droit_comptes,
+    dossier_id, user_id, id or delete on public.memberships
+  for each row execute function public.tracer_les_droits();
+
+comment on table public.trace_des_droits is
+  'La trace des droits « Ventes », « Banque », « Caisse » et « Comptes » des accès client d''un dossier : qui a coché ou décoché quelle case, et quand (étape P1-trace). Écrite par le déclencheur tracer_les_droits seul, réinsérée par la restauration du super-administrateur ; ne se modifie ni ne se supprime hors de la cascade de son dossier. Lue par le cabinet du dossier ; le client n''en voit rien.';
 
 -- ══ 2. Lire les droits de l'appelant : le mot « comptes » ══════════
 -- Le corps de la migration `caisse_du_client`, au caractère près, plus le mot « comptes ». Tout autre mot, ou aucun, rend
