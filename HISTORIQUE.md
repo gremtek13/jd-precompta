@@ -49422,3 +49422,21 @@ jamais `facture_origine_id`, que la seconde passe de la restauration récrirait 
 une copie de la réplique mère : `rls.sql` 104 lignes, 0 en faute, 79 mutations sur 79 ; `factures.sql` 144 sur 144 avant
 comme après ; `restauration.sql` IDENTIQUE, son bloc conditionné ; le plan derrière `FACTURES_IMPORTEES_PREVUES` ; les deux
 essais SÛRS au banc du leurre (son complément porte une facture reprise par dossier). Restent A8b, A8c, A8d, A9.
+
+### 07/11/2026 — LES PARAMÈTRES DES COTISATIONS : LE DÉBUT D'ACTIVITÉ, L'ACRE ET LE TAUX DENTISTE (TNS-Q1, TNS-Q4) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; en production, des SELECT du catalogue.) La migration `parametres_des_cotisations` (20261107190000,
+md5 `f64d9884c941bca91a0a8e9e4e4240c4`, additive, ni `delete from`, ni `drop`, ni `truncate` : elle passe par l'outil ;
+son retour refuse tant qu'une valeur vit) pose `debuts_d_activite`, à part de `dossiers` que le client lit ligne
+entière, une donnée du dossier que la validation ne fige pas, et `parametres_des_cotisations` (l'ACRE et le taux
+dentiste d'un exercice, depuis 2025, le taux en `numeric` de 0 à 1 au centième, la borne du moteur), figée avec
+l'exercice validé comme `saisies_2035` ; une policy du cabinet chacune ; `enregistrer_parametres_des_cotisations`, aux
+droits de l'appelant, tout ou rien contre les valeurs lues. L'estimation reçoit `ParametresEstimation`, obligatoire (`{
+tenus: false }` drapeau baissé : celle d'hier), et suit `modele-ti` : le plafond proratisé aux jours (365) pour le taux
+de maladie, ses trois plafonds et les allocations familiales ; pas de CURPS l'année d'une création après le 1er janvier
+; l'ACRE (D. 131-6-1 : tout avant 2026, le quart depuis, dégressive de 75 à 100 % du plafond proratisé, au prorata
+l'année qui suit) ; le dentiste, sa part conventionnée divisée par 1 + le taux, sa CURPS à 0,3 %. Oracle : 276 cas, 106
+nouveaux, zéro écart. Sur une copie de la mère 17 : l'essai 36/36, dix mutations tuées ; `rls.sql` 108/0/79 avant,
+111/0/82 après (bloc PC) ; le banc SÛR ; `restauration.sql` IDENTIQUE ; le retour refuse puis défait tout. L'écran sous
+le volet social, `PARAMETRES_DES_COTISATIONS_EXPORTES` baissé. Restent au cabinet TNS-Q1-A (un taux au-dessus de 1) et
+TNS-Q1-B (le début d'activité hors du gel).

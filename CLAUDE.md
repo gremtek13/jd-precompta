@@ -439,16 +439,19 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   d'abord la 2035 déposée, à la répétition générale → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
   ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION », « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF
   D'UN MILLÉSIME (2035S1, S2 ET S6) », « 2035S-Q5 : LE PDF D'UN MILLÉSIME ABSENT S'IMPRIME AVEC UN AVERTISSEMENT ».
-- **Déclarations TNS** (ligne 27) : les médecins de secteur 1 et 2 estimés depuis le 07/11/2026, contre l'oracle ;
-  restent hors de l'estimation — chirurgiens-dentistes (« taux dentiste »), retraite, revenus de remplacement, ACRE,
-  exonérations, outre-mer, activité créée dans l'année (une entrée en base chacun, que le moteur couvre sauf les DROM),
-  la régularisation, préparée le 07/11/2026 (`regularisation_des_cotisations` : l'organisme, l'année payée et la nature
-  d'une échéance, et la part d'un prélèvement mixte qui régularise l'année d'avant, signée (TNS-Q2-B (B)) ;
-  `lib/regularisationDesCotisations.ts`, muet sur ce qu'il ne sait pas ; `REGULARISATION_DES_COTISATIONS_EXPORTEE` baissé ;
-  TNS-Q2, à appliquer) ; DSCS proposée depuis la ligne 4 de la 2035-A, à confirmer
-  sur une première déclaration réelle ; un banc de charge d'une année fictive (`outils/charge/`) mesure les calculs
-  avant les données réelles → « LES COTISATIONS : CE QUE LE MOTEUR DE L'URSSAF PERMET D'ESTIMER EN PLUS (LIGNE 27) »,
-  « LA RÉGULARISATION DES COTISATIONS (LIGNE 27, TNS-Q2) », « LE BANC DE CHARGE D'UNE ANNÉE ».
+- **Déclarations TNS** (ligne 27) : les médecins de secteur 1 et 2 estimés depuis le 07/11/2026, contre l'oracle ; le
+  début d'activité, l'ACRE et le taux dentiste préparés le même jour (`parametres_des_cotisations`, deux tables hors de
+  `dossiers`, que le client lit ; l'estimation les reçoit en entrée obligatoire, `{ tenus: false }` drapeau baissé,
+  `PARAMETRES_DES_COTISATIONS_EXPORTES` ; TNS-Q1, TNS-Q4) → « LES PARAMÈTRES DES COTISATIONS : LE DÉBUT D'ACTIVITÉ,
+  L'ACRE ET LE TAUX DENTISTE » ; restent hors de l'estimation — retraite, revenus de remplacement, exonérations,
+  outre-mer (une entrée en base chacun, que le moteur couvre sauf les DROM), la régularisation, préparée le 07/11/2026
+  (`regularisation_des_cotisations` : l'organisme, l'année payée et la nature d'une échéance, et la part d'un
+  prélèvement mixte qui régularise l'année d'avant, signée (TNS-Q2-B (B)) ; `lib/regularisationDesCotisations.ts`, muet
+  sur ce qu'il ne sait pas ; `REGULARISATION_DES_COTISATIONS_EXPORTEE` baissé ; TNS-Q2, à appliquer) ; DSCS proposée
+  depuis la ligne 4 de la 2035-A, à confirmer sur une première déclaration réelle ; un banc de charge d'une année
+  fictive (`outils/charge/`) mesure les calculs avant les données réelles → « LES COTISATIONS : CE QUE LE MOTEUR DE
+  L'URSSAF PERMET D'ESTIMER EN PLUS (LIGNE 27) », « LA RÉGULARISATION DES COTISATIONS (LIGNE 27, TNS-Q2) », « LE BANC DE
+  CHARGE D'UNE ANNÉE ».
 - **CFE et CVAE** (ligne 48) : restent la saisie par exercice de la part déductible des loyers, du cadre des
   mono-établissements et de l'effectif (une table à créer), celle de BW, les dates d'activité d'un dossier qui cesse en
   cours d'année, le millésime 2027, le plafonnement de la CET (plus tard, 48-Q9) → « L'ANNEXE 2035-E SE TIRE DE LA 2035
