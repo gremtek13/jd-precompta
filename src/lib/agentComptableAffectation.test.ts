@@ -123,20 +123,22 @@ const libelles = (c: Categorie[]) => c.map((x) => x.libelle)
 // plus courant de la batterie, son jour même — qui le fige —, et la fin de son exercice.
 const FRONTIERES = [null, '2025-03-09', '2025-03-10', '2025-12-31'] as const
 
-/** Les deux copies doivent rendre EXACTEMENT la même chose sur les mêmes entrées, sous chaque frontière. */
-function memeResultat(
-  ecritures: EcritureBrouillon[], lignes: LigneBancaire[], assujetti: boolean, copie: Copie = deployee, frontiere: string | null = null,
+/** Les deux copies doivent rendre EXACTEMENT la même chose sur les mêmes entrées, sous chaque frontière — et sous le plan
+ *  donné : la copie de la garde, extraite sous lui, et src/lib, ses entrées portées sous lui (`entreesSous`). */
+const memeResultatSous = (plan: PlanComptable, copieDuPlan: Copie) => function memeResultat(
+  ecritures: EcritureBrouillon[], lignes: LigneBancaire[], assujetti: boolean, copie: Copie = copieDuPlan, frontiere: string | null = null,
 ) {
+  const { mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux } = entreesSous(lib_affectationBanque, plan)
   const ici = mouvementsAffectes(lignes, CATEGORIES, assujetti)
   const la = copie.mouvementsAffectes(lignes, CATEGORIES, assujetti)
   expect(resumeAffectes(la), 'mouvementsAffectes a dérivé').toEqual(resumeAffectes(ici))
   for (const f of FRONTIERES) {
     expect(ids(copie.mouvementsAffectesDesynchronises(ecritures, la, f)), `mouvementsAffectesDesynchronises a dérivé (frontière ${f})`)
-      .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, f, PLAN_PAR_DEFAUT)))
+      .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, f, plan)))
     expect(ids(copie.recettesAffecteesSansTaux(la, assujetti, f)), `recettesAffecteesSansTaux a dérivé (frontière ${f})`)
       .toEqual(ids(recettesAffecteesSansTaux(ici, assujetti, f)))
   }
-  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, frontiere, PLAN_PAR_DEFAUT)) }
+  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, frontiere, plan)) }
 }
 
 // Une recette taxée, écrite comme l'affectation l'écrit : le hors taxe au 706, la TVA au 445710, le
@@ -150,6 +152,7 @@ const taxee = (id: string, ht: number, tva: number): EcritureBrouillon[] => [
 describe.each(PLANS_DES_GARDES)('agent-comptable / bloc AFFECTATION (copie déployée), sous le %s', (_plan, plan) => {
   // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
   const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
+  const memeResultat = memeResultatSous(plan, deployee)
   const { mouvementsAffectes, natureDuCompte, recettesAffecteesSansTaux } = entreesSous(lib_affectationBanque, plan)
   const { categoriesSansCompte, categoriesSansPoste } = entreesSous(lib_controles, plan)
   it('n’est pas la fonction de src/lib elle-même', () => {
@@ -231,7 +234,7 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc AFFECTATION (copie dépl
     const lignes = [ligne({ id: 'a' }), ligne({ id: 'b' }), ligne({ id: 'c' }), ligne({ id: 'd' }), ligne({ id: 'e' }), ligne({ id: 'f' })]
     const ecritures = [
       // a : aucune écriture
-      ...conforme('b', '706100', 100),
+      ...conforme('b', '706200', 100), // un autre compte sous chaque plan (706100 est le 706 du plan décalé)
       ...conforme('c', '706000', -100).map((e) => ({ ...e, ligne_bancaire_id: 'c' })),
       ...conforme('d', '706000', 100, '2025-03-11'),
       ...conforme('e', '706000', 100.03),
@@ -406,7 +409,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
       'const piecesQuiComptent = horsDesExemplairesDesSources(piecesTyped, sources)',
       'const designees: ExemplaireRow[] = piecesTyped',
       'const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)',
-      'const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele.mode)',
+      'const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele)',
       '...piecesTyped.flatMap((p) => (p.date_piece ? [Number(p.date_piece.slice(0, 4))] : [])),',
     ])
   })
@@ -433,6 +436,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
 
 describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s', (_plan, plan) => {
   // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const memeResultat = memeResultatSous(plan, entreesSous(extraire(sourceDeployee(), plan), plan))
   const { natureDuCompte } = entreesSous(lib_affectationBanque, plan)
   const { categoriesSansCompte } = entreesSous(lib_controles, plan)
   const { virementsPersonnelsAEcrire } = entreesSous(lib_virementPersonnel, plan)
@@ -514,13 +518,12 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
   })
 
   it('attrape une copie dont la TVA ne va plus au 445710', () => {
-    const source = sourceDeployee()
-    const derivee = entreesSous(extraire(source.replace('const plan.tva_collectee = "445710"', 'const plan.tva_collectee = "445660"'), plan), plan)
+    const derivee = planter('    ...(tva > 0 ? [{ compte: plan.tva_collectee, sens: sensCompte, montant: tva }] : []),', '    ...(tva > 0 ? [{ compte: plan.tva_deductible, sens: sensCompte, montant: tva }] : []),')
     echoue(() => memeResultat(taxee('taxee', 100, 20), TAXEE, true, derivee))
   })
 
   it('attrape une copie qui écrit toujours sur le compte de l’exploitant', () => {
-    const derivee = planter('return modele.mode === "engagement" ? modele.compteNotesDeFrais : plan.exploitant', 'return plan.exploitant')
+    const derivee = planter('return modele.mode === "engagement" ? modele.compteNotesDeFrais : modele.plan.exploitant', 'return modele.plan.exploitant')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null)))
       .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null))))
   })
@@ -586,8 +589,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
   })
 
   it('attrape une copie dont la contrepartie n’est plus la banque', () => {
-    const source = sourceDeployee()
-    const derivee = entreesSous(extraire(source.replace('const plan.banque = "512000"', 'const plan.banque = "512100"'), plan), plan)
+    const derivee = planter('    { compte: plan.banque, sens: entree ? "debit" : "credit", montant: Math.abs(ligne.montant) },', '    { compte: "512200", sens: entree ? "debit" : "credit", montant: Math.abs(ligne.montant) },')
     echoue(() => memeResultat(conforme('encaissement', '706000', 100), [ligne({ id: 'encaissement' })], false, derivee))
   })
 })

@@ -225,7 +225,7 @@ describe('agent-comptable / points_a_traiter lit le registre et ses dotations', 
   it('rend le point de la Checklist, l’exercice en cours lu dans le fuseau du cabinet', () => {
     expect(corps).toContain('const anneeCourante = Number(aujourdHuiCabinet().slice(0, 4))')
     expect(corps).toContain('const ouverture = rANouveaux.lignes[0]?.date ?? null')
-    expect(corps).toMatch(/dotationsEnDefaut\(\s*dotationsDuRegistre\(rImmobilisations\.lignes, rNatures\.lignes, ecrituresTyped, ouverture, anneeCourante, frontiere\),\s*anneeCourante,\s*\)/)
+    expect(corps).toMatch(/dotationsEnDefaut\(\s*dotationsDuRegistre\(rImmobilisations\.lignes, rNatures\.lignes, ecrituresTyped, ouverture, anneeCourante, frontiere, plan\),\s*anneeCourante,\s*\)/)
     expect(corps).toMatch(/dotations_aux_amortissements_a_ecrire_ou_qui_ne_suivent_plus_le_registre: dotationsManquantes\.length/)
   })
 
