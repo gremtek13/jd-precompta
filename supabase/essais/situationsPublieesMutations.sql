@@ -108,9 +108,10 @@ rollback;
 insert into mutations_situations values (5, 'M5. les totaux ne sont plus la somme des postes', 'le rang 17', :m_en_faute, :'m_rangs');
 
 -- ── M6. La forme à trois décoche « Comptes » au lieu de la laisser ──
+-- (le cinquième argument de son appel, `p_comptes`, sous C4a comme sous B1, où l'appel en porte trois de plus)
 begin;
 select pg_temp.planter('public.changer_droits_acces(uuid, boolean, boolean)',
-  $x$null::boolean, null::boolean);$x$, $x$null::boolean, false);$x$);
+  $x$p_banque, null::boolean, null::boolean$x$, $x$p_banque, null::boolean, false$x$);
 \o /dev/null
 \ir situationsPubliees.sql
 \o

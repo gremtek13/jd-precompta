@@ -14,12 +14,16 @@ begin
   if exists (select 1 from public.memberships m where m.droit_achats or m.droit_frais or m.droit_documents) then
     raise exception 'Un accès porte la case « Achats », « Notes de frais » ou « Documents » : la décocher d''abord (changer_droits_acces). Rien n''est défait.';
   end if;
+  -- Une fonction lit les cases si elle nomme leurs colonnes, ou si elle porte l'un des trois mots ET appelle
+  -- `client_du_dossier` ou `droits_sur_le_dossier` (le mot, où qu'il soit dans le corps : une parenthèse ni une variable
+  -- ne le cachent). Le mot seul ne suffit pas : deux fonctions de l'e-reporting portent 'achats', le flux des achats.
+  -- Les policies : de tous les schémas, comme le contrôle TC3 de rls.sql.
   if exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace
               and p.proname not in ('client_du_dossier', 'droits_sur_le_dossier', 'changer_droits_acces', 'tracer_les_droits')
               and (p.prosrc like '%droit_achats%' or p.prosrc like '%droit_frais%' or p.prosrc like '%droit_documents%'
-                   or p.prosrc ~ 'client_du_dossier[(][^)]*''(achats|frais|documents)'''))
-     or exists (select 1 from pg_policies p where p.schemaname = 'public'
-                 and coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ '''(achats|frais|documents)''') then
+                   or (p.prosrc ~ '''(achats|frais|documents)''' and p.prosrc ~ '(client_du_dossier|droits_sur_le_dossier)')))
+     or exists (select 1 from pg_policies p
+                 where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ '''(achats|frais|documents)''') then
     raise exception 'Une fonction ou une policy d''une étape d''après lit les trois cases : défaire d''abord cette étape. Rien n''est défait.';
   end if;
 end

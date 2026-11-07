@@ -166,13 +166,15 @@ begin
         and obs = 'achats=true cabinet=true documents=true frais=true');
 
     -- 12. B1 n'ouvre rien, au catalogue : aucune policy (de tous les schémas) ne nomme les trois mots ; aucune fonction hors des
-    --     quatre de la migration ne lit les trois colonnes ni ne demande les trois mots à client_du_dossier.
+    --     quatre de la migration ne lit les trois colonnes, ni ne porte les trois mots en appelant client_du_dossier ou
+    --     droits_sur_le_dossier (la garde du retour, au mot près : le mot seul ne suffit pas, l'e-reporting porte 'achats').
     select coalesce((select string_agg(p.schemaname || '.' || p.tablename || '.' || p.policyname, ', ') from pg_policies p
               where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ '''(achats|frais|documents)'''), 'aucune policy')
         || ' | ' || coalesce((select string_agg(p.proname, ', ' order by p.proname) from pg_proc p
               where p.pronamespace = 'public'::regnamespace
                 and p.proname not in ('client_du_dossier', 'droits_sur_le_dossier', 'changer_droits_acces', 'tracer_les_droits')
-                and (p.prosrc ~ 'droit_(achats|frais|documents)' or p.prosrc ~ 'client_du_dossier[(][^)]*''(achats|frais|documents)''')), 'aucune autre fonction')
+                and (p.prosrc ~ 'droit_(achats|frais|documents)'
+                     or (p.prosrc ~ '''(achats|frais|documents)''' and p.prosrc ~ '(client_du_dossier|droits_sur_le_dossier)'))), 'aucune autre fonction')
       into obs;
     verdicts := verdicts || jsonb_build_object('rang', 12, 'etape', '12. B1 n''ouvre rien, au catalogue : ni policy ni autre fonction ne lit les trois cases', 'observe', obs,
       'ok', obs = 'aucune policy | aucune autre fonction');

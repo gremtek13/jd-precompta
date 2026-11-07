@@ -49284,5 +49284,7 @@ mêmes lignes partout. Sa garde refuse, en le disant, une base sans la trace, pu
 `situationsPubliees.sql` à 0 sur chaque état, rendus conscients de l'état ; `rls.sql` 107 lignes, 0 en faute, 79
 mutations sur 79 (bloc TC) ; `restauration.sql` identique (81 tables) ; banc du leurre SÛR ; aller, retour, aller égaux.
 Écrans derrière `TROIS_CASES_EXPORTEES`, baissé : l'onglet Accès, une phrase par case (« ne change encore rien »).
-Rejouée le 07/11/2026 sur la branche du jour (C7) : l'essai de la trace épingle ses trois empreintes, état par état ; 25
-cas au banc ; le motif de « Ventes » lit `p_ventes`, ni nul ni signature (les deux essais de C4a sortent de la liste).
+Intégrée le 07/11/2026 après C7 : la trace épinglée à ses trois empreintes, 25 cas au banc, le motif de « Ventes » sur
+`p_ventes` (les deux essais de C4a sortent). Relecture adverse : contrôles 4 et 83 de `droitsAcces.sql` selon l'état, M6
+sur `p_comptes`, garde du retour (policies de tous les schémas ; le mot ET l'appel : l'e-reporting porte 'achats'), deux
+commentaires de C4a (sha256 `4fd2cf0f…`) ; mère 17 (P1-trace, C4a, B1) : 0 en faute, M1 à M8 et 90 à 95 mordent, SÛR.
