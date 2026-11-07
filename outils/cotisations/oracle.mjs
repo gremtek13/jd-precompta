@@ -13,9 +13,12 @@
 // conventionnés par l'Assurance maladie, chaque règle renvoyant à son texte. Son aîné `modele-social`
 // calcule encore sur l'ancienne assiette (mesuré le 28/09/2026) : ne pas le prendre à sa place.
 //
-// Ce que les cas NE couvrent PAS, parce que l'application ne l'estime pas : les médecins et les
-// chirurgiens-dentistes (prise en charge et CURPS différentes), les revenus de remplacement, l'ACRE,
-// l'outre-mer et la retraite (appelée par la CARPIMKO, pas par l'Urssaf).
+// Ce que les cas NE couvrent PAS, parce que l'application ne l'estime pas (relevé règle par règle le
+// 07/11/2026, HISTORIQUE.md « LES COTISATIONS : CE QUE LE MOTEUR DE L'URSSAF PERMET D'ESTIMER EN PLUS ») :
+// les chirurgiens-dentistes (leur prise en charge demande le « taux dentiste » du relevé SNIR, que
+// l'application ne tient pas), les revenus de remplacement, l'ACRE, les exonérations (invalidité),
+// l'outre-mer, une activité créée dans l'année, et la retraite (appelée par la caisse, pas par
+// l'Urssaf). Les médecins de secteur 1 et de secteur 2 y sont depuis le 07/11/2026.
 import Engine from 'publicodes'
 import regles from 'modele-ti'
 import { readFileSync } from 'node:fs'
@@ -36,7 +39,12 @@ const moteur = new Engine(regles, {
 
 const P = 'indépendant . profession libérale . réglementée . PAMC . '
 const C = 'indépendant . cotisations et contributions . '
-const METIERS = { auxiliaire_medical: 'auxiliaire médical', sage_femme: 'sage-femme' }
+const METIERS = {
+  auxiliaire_medical: { metier: 'auxiliaire médical' },
+  sage_femme: { metier: 'sage-femme' },
+  medecin_secteur_1: { metier: 'médecin', secteur: 'S1' },
+  medecin_secteur_2: { metier: 'médecin', secteur: 'S2' },
+}
 // Les charges ne comptent que pour faire du chiffre d'affaires un revenu brut : le moteur prend
 // « chiffre d'affaires − charges », l'application le revenu brut social de la 2035.
 const CHARGES = 20_000
@@ -51,7 +59,10 @@ function evaluer({ annee, profession, remplacant, revenuBrutSocial, partConventi
     'entreprise . date de création': '01/01/2015',
     'entreprise . activité': "'libérale'",
     'entreprise . activité . libérale . réglementée': 'oui',
-    'indépendant . profession libérale . réglementée . métier': `'santé . ${METIERS[profession]}'`,
+    'indépendant . profession libérale . réglementée . métier': `'santé . ${METIERS[profession].metier}'`,
+    ...(METIERS[profession].secteur
+      ? { 'indépendant . profession libérale . réglementée . métier . santé . médecin . secteur': `'${METIERS[profession].secteur}'` }
+      : {}),
     'entreprise . imposition': "'IR'",
     'entreprise . imposition . IR . régime micro-fiscal': 'non',
     "entreprise . chiffre d'affaires": `${recettesBrutes} €/an`,
@@ -75,9 +86,12 @@ function evaluer({ annee, profession, remplacant, revenuBrutSocial, partConventi
     csgCrdsNonDeductible: valeur(C + 'CSG-CRDS . non déductible'),
     maladie: valeur(C + 'cotisations . maladie-maternité . après exonérations'),
     priseEnChargeMaladie: valeur(P + 'participation CPAM . maladie'),
+    priseEnChargeAllocationsFamiliales: valeur(P + 'participation CPAM . allocations familiales'),
     contributionAdditionnelle: valeur(P + 'contribution maladie additionnelle'),
     indemnitesJournalieres: valeur(C + 'cotisations . indemnités journalières'),
-    allocationsFamiliales: valeur(C + 'cotisations . allocations familiales'),
+    // Avant la prise en charge, comme la maladie : la règle « cotisations . allocations familiales »
+    // la retranche déjà pour un médecin de secteur 1, et le total la retire une fois.
+    allocationsFamiliales: valeur(C + 'cotisations . allocations familiales . après exonérations'),
     curps: valeur(P + 'CURPS'),
     formationProfessionnelle: valeur(C + 'formation professionnelle'),
     total: valeur(C + 'Urssaf'),
@@ -114,6 +128,22 @@ for (const annee of [2025, 2026]) {
   cas.push({ nom: `${annee}, 60000 €, remplaçant`, annee, profession: 'auxiliaire_medical', remplacant: true, revenuBrutSocial: 60_000, partConventionnee: 1, partDepassements: 0 })
   cas.push({ nom: `${annee}, 60000 €, sage-femme`, annee, profession: 'sage_femme', remplacant: false, revenuBrutSocial: 60_000, partConventionnee: 1, partDepassements: 0 })
   cas.push({ nom: `${annee}, 300000 €, sage-femme à moitié conventionnée`, annee, profession: 'sage_femme', remplacant: false, revenuBrutSocial: 300_000, partConventionnee: 0.5, partDepassements: 0 })
+  // Les médecins : la prise en charge des allocations familiales du secteur 1 a ses propres tranches
+  // (140 % et 250 % du plafond), que la grille des revenus franchit ; le secteur 2 n'a aucune prise en
+  // charge, et ses dépassements sont plus lourds.
+  for (const revenuBrutSocial of REVENUS) {
+    cas.push({ nom: `${annee}, ${revenuBrutSocial} €, médecin secteur 1 tout conventionné`, annee, profession: 'medecin_secteur_1', remplacant: false, revenuBrutSocial, partConventionnee: 1, partDepassements: 0 })
+    cas.push({ nom: `${annee}, ${revenuBrutSocial} €, médecin secteur 1, 80 % conventionné dont 5 % de dépassements`, annee, profession: 'medecin_secteur_1', remplacant: false, revenuBrutSocial, partConventionnee: 0.8, partDepassements: 0.05 })
+    cas.push({ nom: `${annee}, ${revenuBrutSocial} €, médecin secteur 2, 90 % conventionné dont 30 % de dépassements`, annee, profession: 'medecin_secteur_2', remplacant: false, revenuBrutSocial, partConventionnee: 0.9, partDepassements: 0.3 })
+  }
+  // Les bornes de 140 % et 250 % du plafond, de part et d'autre : l'assiette de la prise en charge y
+  // tombe juste dessous, puis pile dessus — la borne atteinte passe à la tranche suivante.
+  const BORNES = { 2025: [89_107, 89_108, 159_120, 159_122], 2026: [90_923, 90_924, 162_364, 162_365] }
+  for (const revenuBrutSocial of BORNES[annee]) {
+    cas.push({ nom: `${annee}, ${revenuBrutSocial} €, médecin secteur 1 à une borne de la prise en charge`, annee, profession: 'medecin_secteur_1', remplacant: false, revenuBrutSocial, partConventionnee: 1, partDepassements: 0 })
+  }
+  cas.push({ nom: `${annee}, 60000 €, médecin secteur 1 remplaçant`, annee, profession: 'medecin_secteur_1', remplacant: true, revenuBrutSocial: 60_000, partConventionnee: 1, partDepassements: 0 })
+  cas.push({ nom: `${annee}, 130000 €, médecin secteur 2 tout conventionné`, annee, profession: 'medecin_secteur_2', remplacant: false, revenuBrutSocial: 130_000, partConventionnee: 1, partDepassements: 0 })
 }
 
 const lignes = cas.map(({ nom, ...c }) => `  ${JSON.stringify({ cas: nom, ...evaluer(c) })},`)
@@ -126,7 +156,7 @@ export interface CasReference {
   cas: string
   entree: {
     annee: number
-    profession: 'auxiliaire_medical' | 'sage_femme'
+    profession: 'auxiliaire_medical' | 'sage_femme' | 'medecin_secteur_1' | 'medecin_secteur_2'
     remplacant: boolean
     revenuBrutSocial: number
     revenuProfessionnelPositif: boolean
@@ -142,6 +172,7 @@ export interface CasReference {
     csgCrdsNonDeductible: number
     maladie: number
     priseEnChargeMaladie: number
+    priseEnChargeAllocationsFamiliales: number
     contributionAdditionnelle: number
     indemnitesJournalieres: number
     allocationsFamiliales: number

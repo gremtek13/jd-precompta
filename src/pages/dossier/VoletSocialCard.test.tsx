@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import VoletSocialCard from './VoletSocialCard'
 import type { VoletSocialPamc } from '../../lib/types'
+import { CAS_REFERENCE } from '../../lib/voletSocialPamcReference'
 
 // LE CALCUL EST DANS `lib/voletSocialPamc.ts`, TESTÉ CONTRE LE MOTEUR DE L'URSSAF — CE QUI SE JOUE
 // ICI EST LA SAISIE GARDÉE. Trois choses qu'aucun test du module ne peut voir : une lecture ratée ne
@@ -74,6 +75,11 @@ async function afficher(blocage: string | null = null) {
   render(<VoletSocialCard dossierId="d" annee={2025} valeurs={VALEURS} blocage={blocage} />)
   await act(async () => {})
 }
+
+// L'écran sépare les milliers et l'euro par des insécables : les tests des médecins comparent un texte ramené aux espaces
+// ordinaires à un montant de la grille écrit de même.
+const normaliser = (texte: string | null | undefined) => (texte ?? '').replace(/[\u00a0\u202f]/g, ' ').replace(/\s+/g, ' ').trim()
+const euroEcran = (n: number) => `${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`
 
 const saisir = (libelle: RegExp, valeur: string) =>
   fireEvent.change(screen.getByLabelText(libelle), { target: { value: valeur } })
@@ -257,6 +263,38 @@ describe('le volet social d’un praticien conventionné', () => {
     expect(screen.queryByText(reserve)).toBeNull()
     saisir(/Recettes en structures de soins/, '12000')
     expect(screen.getByText(reserve)).toBeTruthy()
+  })
+
+  // LES MÉDECINS (07/11/2026) : leurs chiffres attendus sont ceux du moteur de l'Urssaf, lus dans la grille qu'il a
+  // produite, jamais recopiés ici — un médecin de secteur 1 à 200 000 € de revenu brut social, dont l'Assurance maladie
+  // prend 60 % des allocations familiales, et un médecin de secteur 2, sans aucune prise en charge.
+  it('chiffre un médecin de secteur 1 comme le moteur de l’Urssaf, la prise en charge des allocations familiales dite', async () => {
+    const reference = CAS_REFERENCE.find((c) => c.cas === '2025, 200000 €, médecin secteur 1 tout conventionné')!.attendu
+    render(<VoletSocialCard dossierId="d" annee={2025} valeurs={new Map([['AA', 220_000], ['BA', 20_000]])} blocage={null} />)
+    await act(async () => {})
+    saisir(/Profession/, 'medecin_secteur_1')
+    saisir(/Honoraires conventionnés/, '220000')
+    const af = screen.getByText(/^Allocations familiales .*moins la prise en charge/)
+    expect(normaliser(af.textContent)).toBe(
+      `Allocations familiales ${euroEcran(reference.allocationsFamiliales)}, moins la prise en charge par l'Assurance maladie (${euroEcran(reference.priseEnChargeAllocationsFamiliales)})`,
+    )
+    expect(normaliser(af.nextElementSibling?.textContent)).toBe(euroEcran(reference.allocationsFamiliales - reference.priseEnChargeAllocationsFamiliales))
+    expect(screen.getByText(euroEcran(reference.curps))).toBeTruthy()
+    expect(normaliser(screen.getByText('Total à la charge du praticien').nextElementSibling?.textContent)).toBe(euroEcran(reference.total))
+  })
+
+  it('chiffre un médecin de secteur 2 sans prise en charge, et refuse le chirurgien-dentiste en disant pourquoi', async () => {
+    const reference = CAS_REFERENCE.find((c) => c.cas === '2025, 60000 €, médecin secteur 2, 90 % conventionné dont 30 % de dépassements')!
+    await afficher()
+    saisir(/Profession/, 'medecin_secteur_2')
+    saisir(/Honoraires conventionnés/, String(reference.entree.honorairesConventionnes))
+    saisir(/Dépassements/, String(reference.entree.depassements))
+    expect(screen.queryByText(/^Allocations familiales .*moins la prise en charge/)).toBeNull()
+    expect(normaliser(screen.getByText(/^Maladie-maternité/).textContent)).toMatch(/prise en charge par l'Assurance maladie \(0 €\)$/)
+    expect(normaliser(screen.getByText('Total à la charge du praticien').nextElementSibling?.textContent)).toBe(euroEcran(reference.attendu.total))
+    saisir(/Profession/, 'chirurgien_dentiste')
+    expect(screen.getByText(/taux dentiste/)).toBeTruthy()
+    expect(screen.queryByText('Total à la charge du praticien')).toBeNull()
   })
 
   it('suspend la proposition et l’estimation sur une déclaration lue en partie', async () => {
