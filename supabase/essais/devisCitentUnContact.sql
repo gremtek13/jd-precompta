@@ -1,7 +1,7 @@
 -- LES DEVIS CITENT LE CONTACT D'OÙ VIENT LEUR CLIENT, ÉPROUVÉ EN BASE — à rejouer par `execute_sql` après toute migration
 -- qui touche `devis`, `contacts`, `enregistrer_devis`, `facturer_devis`, `facturer_acompte_devis`, `enregistrer_facture` ou
--- la garde des devis. La migration : supabase/preparees/20261106160000_devis_citent_un_contact.sql (PRÉPARÉE, PAS
--- APPLIQUÉE) ; le module qui la redit : src/lib/devis.ts (`REFUS_CONTACT_DU_DEVIS`, `DEVIS_CITENT_UN_CONTACT`) ; le récit :
+-- la garde des devis. La migration : supabase/schema/20261107163632_devis_citent_un_contact.sql (en production depuis
+-- le 07/11/2026) ; le module qui la redit : src/lib/devis.ts (`REFUS_CONTACT_DU_DEVIS`, `DEVIS_CITENT_UN_CONTACT`) ; le récit :
 -- HISTORIQUE.md, « LES DEVIS CITENT LEUR CONTACT, ET LES CLIENTS SANS ACTIVITÉ DEPUIS TROIS ANS ».
 --
 -- Ce qui se prouve ici :

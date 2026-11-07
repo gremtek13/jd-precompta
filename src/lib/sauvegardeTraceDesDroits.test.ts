@@ -28,11 +28,11 @@ import {
   violationsOrdre,
 } from './sauvegarde'
 
-// LA TRACE DES DROITS AU PLAN DE SAUVEGARDE (espace client, étape P1-trace). Sa migration, `trace_des_droits`, est préparée,
-// pas appliquée : tant que l'export ne la porte pas, le plan effectif ne doit RIEN dire de la table — une sauvegarde lirait une
-// table absente et échouerait —, et le plan PRÉVU doit déjà être juste, pour que lever `TRACE_DES_DROITS_PREVUE` suffise le
-// jour venu. Les tests qui confrontent le plan au schéma exporté jugent l'état effectif ; celui-ci juge le plan prévu, le plan
-// du jour dans les deux états du drapeau, et leur lien.
+// LA TRACE DES DROITS AU PLAN DE SAUVEGARDE (espace client, étape P1-trace). Sa migration, `trace_des_droits`, est en
+// production depuis le 07/11/2026 et le drapeau levé : la table est au plan effectif. Avant, le plan effectif ne devait RIEN
+// dire de la table — une sauvegarde aurait lu une table absente et échoué —, et cet état d'avant reste éprouvé tant que son
+// code existe (le drapeau rebaissé par `vi.doMock`, plus bas). Les tests qui confrontent le plan au schéma exporté jugent
+// l'état effectif ; celui-ci juge le plan prévu, le plan du jour dans les deux états du drapeau, et leur lien.
 
 const TABLE = 'trace_des_droits'
 

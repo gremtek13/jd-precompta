@@ -6,6 +6,7 @@ import type { Devis, DevisFacture } from '../lib/types'
 export function devis(p: Partial<Devis> = {}): Devis {
   return {
     id: 'dv1', dossier_id: 'd1', numero: null, statut: 'brouillon',
+    contact_id: null,
     date_emission: '2026-10-01', date_validite: '2026-11-01', objet: null,
     tiers_nom: 'ALPHA FICTIVE SAS', tiers_adresse: '1 rue Fictive, 75000 Paris', tiers_siret: null, tiers_email: null,
     type_client: null, tiers_siren: null, tiers_adresse_electronique: null, code_service: null, numero_engagement: null,

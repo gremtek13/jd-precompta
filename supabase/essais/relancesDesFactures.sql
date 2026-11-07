@@ -1,7 +1,7 @@
 -- LA RELANCE D'UNE FACTURE EN RETARD, JOURNALISÉE, ÉPROUVÉE EN BASE (espace client, étape C5 de la ligne 51.5) — à
 -- rejouer par `execute_sql` après toute migration qui touche `emails_envoyes`, la migration `relances_des_factures`,
--- `memberships`, `client_du_dossier` ou `admin_du_dossier`. La migration : supabase/preparees/
--- 20261106140000_relances_des_factures.sql (puis supabase/schema/, le jour de son application) ; le récit : HISTORIQUE.md,
+-- `memberships`, `client_du_dossier` ou `admin_du_dossier`. La migration : supabase/schema/
+-- 20261107163303_relances_des_factures.sql (en production depuis le 07/11/2026) ; le récit : HISTORIQUE.md,
 -- « 06/11/2026 — RELANCER SES CLIENTS (C5) (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
 -- Ce qui se prouve ici :

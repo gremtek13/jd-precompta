@@ -2,6 +2,7 @@
 -- (la table, la colonne, cinq fonctions retirées) : il se COLLE dans l'éditeur SQL, dans une transaction, sur l'accord
 -- explicite du cabinet. Il se refuse tant qu'une situation est publiée ou qu'un accès porte la case « Comptes » : il
 -- détruirait ce que le client a lu, ou une case que le cabinet a cochée — on les retire d'abord, de leurs fonctions.
+-- La migration : supabase/schema/20261107164102_situations_publiees.sql (en production depuis le 07/11/2026).
 do $garde$
 begin
   if to_regclass('public.situations_publiees') is null then

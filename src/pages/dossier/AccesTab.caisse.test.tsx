@@ -26,6 +26,12 @@ const faux = vi.hoisted(() => ({
   reponseRpc: null as null | { data: unknown; error: unknown },
 }))
 
+// L'ÉTAT D'AVANT LA CASE « COMPTES » (étape C4a, en production depuis le 07/11/2026) : ce fichier joue l'onglet du drapeau
+// baissé, éprouvé tant que son code existe ; le drapeau levé se joue dans AccesTab.comptes.test.tsx.
+vi.mock('../../lib/situationsPubliees', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../lib/situationsPubliees')>(),
+  SITUATIONS_PUBLIEES_EXPORTEES: false,
+}))
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
   // La forme à quatre de `changer_droits_acces` (migration `caisse_du_client`) ; la forme à trois lève ici.

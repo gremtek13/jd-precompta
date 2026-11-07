@@ -5,7 +5,7 @@ import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // LA TRACE DES DROITS D'UN ACCÈS, CONFRONTÉE À LA BASE (étape P1-trace). Trois juges : le TEXTE de la migration
-// `trace_des_droits`, où qu'elle soit (préparée aujourd'hui, dans l'export le jour de son application) — ce qu'elle retire,
+// `trace_des_droits`, où qu'elle soit (dans l'export depuis son application, le 07/11/2026) — ce qu'elle retire,
 // ses empreintes, son déclencheur et ses deux policies ; ses ESSAIS (supabase/essais/traceDesDroits.sql et
 // traceDesDroitsSuppression.sql), ce que la base a répondu sur la réplique, et son RETOUR ARRIÈRE ; et le DRAPEAU, qui suit
 // le fichier.

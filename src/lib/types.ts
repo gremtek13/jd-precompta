@@ -1010,17 +1010,35 @@ export interface Membership {
   // depuis le premier écran qui le lit (l'onglet Accès, C11 ; lib/droitsAcces.ts) ; une ligne d'avant la migration ne le
   // porte pas, et `droitsDeLaLigne` n'en accorde alors aucun.
   droit_caisse: boolean
-  // LE DROIT « COMPTES » (espace client, étape C4a ; migration `situations_publiees`, PRÉPARÉE, pas appliquée — voir
-  // lib/situationsPubliees.ts) : lire les situations que le cabinet publie ; posé par `changer_droits_acces` à cinq
-  // paramètres seule, faux par défaut. FACULTATIF tant que la colonne n'est pas en base : une ligne lue aujourd'hui ne le
-  // porte pas ; il deviendra obligatoire avec le premier écran qui le lit (C4b).
-  droit_comptes?: boolean
+  // LE DROIT « COMPTES » (espace client, étape C4a ; migration `situations_publiees`, en production depuis le 07/11/2026 —
+  // voir lib/situationsPubliees.ts) : lire les situations que le cabinet publie ; posé par `changer_droits_acces` à cinq
+  // paramètres seule, NOT NULL, faux par défaut. OBLIGATOIRE depuis que les écrans de C4b le lisent ; la table des
+  // situations a son type dans lib/situationsPubliees.ts (`SituationPubliee`), le seul.
+  droit_comptes: boolean
   // LES TROIS CASES DE B1 (espace client, étape B1 ; migration `trois_cases_de_l_acces`, PRÉPARÉE, pas appliquée — voir
   // lib/troisCasesDeLAcces.ts) : « Achats », « Notes de frais », « Documents », posées par `changer_droits_acces` à huit
   // paramètres seule, fausses par défaut, et qui n'ouvrent encore rien. FACULTATIVES tant que leurs colonnes manquent.
   droit_achats?: boolean
   droit_frais?: boolean
   droit_documents?: boolean
+}
+
+// LA TRACE DES DROITS D'UN ACCÈS CLIENT (étape P1-trace ; migration `trace_des_droits`, en production depuis le 07/11/2026 —
+// voir lib/traceDesDroits.ts) : une ligne par case qui change, écrite par le déclencheur de `memberships` seul, immuable,
+// lue par le cabinet du dossier. Ni l'accès ni les comptes n'ont de clé : la trace survit au retrait de l'accès. Un texte
+// pour `droit` et `geste`, comme le générateur de Supabase le rend : leurs contraintes (`trace_des_droits_droit`,
+// `trace_des_droits_geste`) n'admettent que des mots que l'écran de la trace, un lot à part, vérifiera à la lecture.
+export interface TraceDesDroits {
+  id: string
+  dossier_id: string
+  acces_id: string
+  client_id: string
+  droit: string
+  coche: boolean
+  geste: string
+  // Nul sans session (une écriture du service).
+  auteur_id: string | null
+  fait_le: string
 }
 
 export type RoleCabinetAdmin = 'comptable_en_chef' | 'comptable'
@@ -1707,6 +1725,9 @@ export interface Devis {
   date_reponse: string | null
   decide_par: string | null
   decide_le: string | null
+  // Le contact d'où vient le client (migration `devis_citent_un_contact`, en production depuis le 07/11/2026) : une
+  // PROVENANCE sans clé, comme celle d'une facture, écrite par `enregistrer_devis` seule ; nulle sans contact.
+  contact_id: string | null
 }
 
 // La facture tirée d'un devis accepté (`facturer_devis`, `facturer_acompte_devis`) : une facture vient d'un devis au plus.

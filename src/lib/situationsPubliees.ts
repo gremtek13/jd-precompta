@@ -5,7 +5,7 @@ import type { SituationIntermediaire } from './situationIntermediaire'
 // LES SITUATIONS PUBLIÉES (espace client, ligne 51.5, partie C, étape C4a ; MEG3-Q2, « la publication »). Le cabinet PUBLIE
 // au client une situation datée — recettes, dépenses par poste de la 2035, résultat, TVA due, comparaison à N−1 —, figée,
 // « provisoire » ou « validée » ; le client la lit sous sa case « Comptes ». Ce module COMPOSE le contenu que
-// `publier_situation` fige (migration `situations_publiees`, supabase/preparees/20261106150000, PRÉPARÉE, pas appliquée),
+// `publier_situation` fige (migration `situations_publiees`, supabase/schema/20261107164102, en production le 07/11/2026),
 // depuis les moteurs qui existent : la 2035 « à ce jour » (`calculerSituationIntermediaire`, lib/situationIntermediaire.ts)
 // et la CA3 (`calculerCa3`, lib/declarationTva.ts), sur la même période. Pur : la lecture viendra avec les écrans (C4b).
 //
@@ -21,9 +21,11 @@ import type { SituationIntermediaire } from './situationIntermediaire'
 //     sans poste, une pièce ou une recette dont la TVA est écartée) retient la publication : un chiffre montré au client
 //     ne tait pas un trou.
 
-// LE DRAPEAU : baissé tant que la migration n'est pas dans l'export (situationsPubliees.test.ts le lie au fichier). Le jour
-// de son application, il se lève : la table entre au plan de sauvegarde (lib/sauvegarde.ts, `auPlanAujourdHui`).
-export const SITUATIONS_PUBLIEES_EXPORTEES = false
+// LE DRAPEAU : levé le 07/11/2026, la migration dans l'export sous la version 20261107164102 (C4A-Q1, C4B-Q1 ;
+// situationsPubliees.test.ts le lie au fichier) : la table entre au plan de sauvegarde (lib/sauvegarde.ts,
+// `auPlanAujourdHui`), et les écrans de C4b s'ouvrent — « Publier au client », « Mes comptes », la case « Comptes ».
+// Baissé — l'état d'avant, que leurs tests jouent encore (`vi.mock`, `vi.doMock`, `…Selon(false)`) —, rien de cela.
+export const SITUATIONS_PUBLIEES_EXPORTEES = true
 
 export const VERSION_DU_CONTENU = 1
 
@@ -93,7 +95,7 @@ export interface EntreeDeLaSituation {
 
 export type CompositionDeLaSituation = { ok: true; contenu: ContenuDeLaSituation } | { ok: false; refus: string }
 
-// Les mots de la base (supabase/preparees/20261106150000_situations_publiees.sql), confrontés au texte par le test.
+// Les mots de la base (supabase/schema/20261107164102_situations_publiees.sql), confrontés au texte par le test.
 export const REFUS_SITUATION = {
   dateAbsente: 'Une situation porte la date à laquelle elle est arrêtée.',
   dateAVenir: 'Une situation ne s\'arrête pas à une date à venir.',

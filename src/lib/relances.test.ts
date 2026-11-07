@@ -14,7 +14,7 @@ const entree = (o: Partial<EntreeDesPenalites>): EntreeDesPenalites => ({
 })
 
 describe('le drapeau et la table des taux', () => {
-  it('le drapeau reste baissé tant que la migration et le déploiement manquent', () => {
+  it('le drapeau reste baissé tant que le redéploiement de send-email manque (la migration est en production)', () => {
     expect(RELANCES_EXPORTEES).toBe(false)
   })
 

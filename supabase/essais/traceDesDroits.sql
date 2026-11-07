@@ -1,5 +1,5 @@
--- LA TRACE DES DROITS D'UN ACCÈS CLIENT (espace client, étape P1-trace ; la migration `trace_des_droits`, PRÉPARÉE le
--- 05/11/2026, supabase/preparees/). Le récit : HISTORIQUE.md, « 05/11/2026 — LA TRACE DES DROITS D'UN ACCÈS, EN BASE
+-- LA TRACE DES DROITS D'UN ACCÈS CLIENT (espace client, étape P1-trace ; la migration `trace_des_droits`, en production
+-- depuis le 07/11/2026, supabase/schema/20261107163158_trace_des_droits.sql). Le récit : HISTORIQUE.md, « 05/11/2026 — LA TRACE DES DROITS D'UN ACCÈS, EN BASE
 -- (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après toute migration qui touche `memberships`, ses
 -- gardes, `changer_droits_acces`, `trace_des_droits` ou ses fonctions. Le retrait d'un accès et la suppression d'un dossier
 -- se jouent à part, sur une réplique : `traceDesDroitsSuppression.sql`.

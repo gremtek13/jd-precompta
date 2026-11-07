@@ -87,6 +87,18 @@ vi.mock('../../lib/supabase', async () => {
         return { data: ecrit, error: null }
       },
       from: (table: string) => {
+        // Les factures et les devis qui citent un contact (la liste des clients sans activité, sous
+        // `DEVIS_CITENT_UN_CONTACT`, levé depuis le 07/11/2026) : aucun ici — la liste se joue dans
+        // ContactsVueSansActivite.test.tsx. Leur lecture ne compte pas parmi celles des contacts.
+        if (table === 'factures_emises' || table === 'devis') {
+          const vide: Record<string, unknown> = {}
+          Object.assign(vide, {
+            select: () => vide, eq: () => vide, order: () => vide, range: () => vide,
+            then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) =>
+              Promise.resolve({ data: [], error: null, count: 0 }).then(suite, echec),
+          })
+          return vide
+        }
         if (table !== 'contacts') throw new Error(`Table non attendue dans ce test : ${table}`)
         const predicats: Predicat[] = []
         let debut = 0

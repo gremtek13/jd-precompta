@@ -5,8 +5,9 @@ import { ceQueDitLaCaseComptes } from '../../lib/droitsAcces'
 
 // LA CASE « COMPTES » DANS L'ONGLET ACCÈS (étape C4b), LE DRAPEAU LEVÉ : sa colonne lue, sa quatrième case, sa phrase, et
 // l'écriture par la forme à CINQ de `changer_droits_acces`, le seul droit cliqué non nul. Les colonnes et les cases se
-// calculent au chargement des modules : l'état baissé (l'état réel) est celui des autres tests de l'onglet, qui gardent
-// l'onglet d'hier, et des tests de leurs fonctions (droitsAcces.test.ts, `domainesSelon`, `demandeDeChangementSelon`).
+// calculent au chargement des modules : le drapeau est levé depuis le 07/11/2026 (l'état réel), et l'état baissé est
+// celui des autres tests de l'onglet, qui le baissent par `vi.mock` et gardent l'onglet d'hier, et des tests de leurs
+// fonctions (droitsAcces.test.ts, `domainesSelon`, `demandeDeChangementSelon`).
 
 vi.mock('../../lib/situationsPubliees', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../lib/situationsPubliees')>(),

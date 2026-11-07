@@ -15,7 +15,7 @@ import {
   RAISON_DU_DOSSIER_EN_ENGAGEMENT, raisonDuModeIllisible, avisDuStatutSousLaCase,
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE, ceQueMontreMaCaisseSelon,
-  CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, demandeDeChangementSelon, domainesSelon,
+  CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, demandeDeChangementSelon, domainesSelon, type Domaine,
 } from './droitsAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
@@ -144,12 +144,16 @@ describe('les droits par dossier', () => {
 
 describe('une case cliquée n’envoie que son droit', () => {
   it('les autres droits partent nuls, donc inchangés en base ; le droit cliqué part seul — jamais trois nuls', () => {
-    expect(demandeDeChangement('m1', 'ventes', true)).toEqual({ p_membership_id: 'm1', p_ventes: true, p_banque: null, p_caisse: null })
-    expect(demandeDeChangement('m1', 'ventes', false)).toEqual({ p_membership_id: 'm1', p_ventes: false, p_banque: null, p_caisse: null })
-    expect(demandeDeChangement('m2', 'banque', true)).toEqual({ p_membership_id: 'm2', p_ventes: null, p_banque: true, p_caisse: null })
-    expect(demandeDeChangement('m2', 'banque', false)).toEqual({ p_membership_id: 'm2', p_ventes: null, p_banque: false, p_caisse: null })
-    expect(demandeDeChangement('m3', 'caisse', true)).toEqual({ p_membership_id: 'm3', p_ventes: null, p_banque: null, p_caisse: true })
-    expect(demandeDeChangement('m3', 'caisse', false)).toEqual({ p_membership_id: 'm3', p_ventes: null, p_banque: null, p_caisse: false })
+    // La forme à quatre, celle d'avant la case « Comptes » (son état d'avant, éprouvé tant que son code existe) ; la forme à
+    // cinq, celle du jour depuis le 07/11/2026 (C4a), porte en plus `p_comptes` nul.
+    const quatre = (m: string, d: Domaine, v: boolean) => demandeDeChangementSelon(false, m, d, v)
+    expect(quatre('m1', 'ventes', true)).toEqual({ p_membership_id: 'm1', p_ventes: true, p_banque: null, p_caisse: null })
+    expect(quatre('m1', 'ventes', false)).toEqual({ p_membership_id: 'm1', p_ventes: false, p_banque: null, p_caisse: null })
+    expect(quatre('m2', 'banque', true)).toEqual({ p_membership_id: 'm2', p_ventes: null, p_banque: true, p_caisse: null })
+    expect(quatre('m2', 'banque', false)).toEqual({ p_membership_id: 'm2', p_ventes: null, p_banque: false, p_caisse: null })
+    expect(quatre('m3', 'caisse', true)).toEqual({ p_membership_id: 'm3', p_ventes: null, p_banque: null, p_caisse: true })
+    expect(quatre('m3', 'caisse', false)).toEqual({ p_membership_id: 'm3', p_ventes: null, p_banque: null, p_caisse: false })
+    expect(demandeDeChangement('m3', 'caisse', true)).toEqual({ p_membership_id: 'm3', p_ventes: null, p_banque: null, p_caisse: true, p_comptes: null })
     for (const { domaine } of DOMAINES) {
       for (const valeur of [true, false]) {
         const { p_membership_id: _id, ...droits } = demandeDeChangement('m', domaine, valeur)
@@ -158,16 +162,18 @@ describe('une case cliquée n’envoie que son droit', () => {
     }
   })
 
-  it('la demande part à la forme à QUATRE : ses noms sont ceux de la dernière forme en base, dans son ordre, et elle seule écrit', () => {
+  it('la forme à QUATRE (état d’avant C4a) : ses noms sont ceux de la migration de la caisse, dans son ordre, et elle y écrit seule', () => {
     // La forme à quatre de la migration `caisse_du_client` : `create function`, et non `create or replace` (elle est neuve).
     const signature = /create function public\.changer_droits_acces\(([^)]*)\)/.exec(CAISSE_DU_CLIENT)
     expect(signature, 'la forme à quatre introuvable dans l’export').not.toBeNull()
     const parametres = signature![1].split(',').map((p) => p.trim().split(/\s+/)[0])
-    expect(parametres).toEqual(Object.keys(demandeDeChangement('m', 'ventes', true)))
+    expect(parametres).toEqual(Object.keys(demandeDeChangementSelon(false, 'm', 'ventes', true)))
     expect(parametres).toEqual(['p_membership_id', 'p_ventes', 'p_banque', 'p_caisse'])
-    // La forme à quatre est la dernière définition du nom (celle que relit `derniereDefinitionSql`), et elle écrit les trois
-    // colonnes, un droit nul inchangé ; la forme à trois ne fait que l'appeler, « Caisse » nul.
-    const derniere = derniereDefinitionSql('changer_droits_acces')
+    // La forme à quatre, dans sa migration, écrit les trois colonnes, un droit nul inchangé ; la forme à trois ne fait que
+    // l'appeler, « Caisse » nul. Depuis C4a, la dernière définition du nom est une forme plus courte qui appelle celle à
+    // cinq (le bloc C4b, plus bas, juge celle-ci).
+    const debutQuatre = CAISSE_DU_CLIENT.indexOf('create function public.changer_droits_acces(')
+    const derniere = CAISSE_DU_CLIENT.slice(debutQuatre, CAISSE_DU_CLIENT.indexOf('\n$$;', debutQuatre))
     expect(derniere).toContain('p_caisse boolean')
     expect(derniere).toContain('droit_caisse = coalesce(p_caisse, m.droit_caisse)')
     expect(derniere).toContain("if p_ventes is null and p_banque is null and p_caisse is null then")
@@ -197,12 +203,14 @@ describe('le module, la migration et les écrans disent la même chose', () => {
       // Les deux premières dans le même `alter table` (droits_des_acces_clients), la troisième seule (caisse_du_client).
       expect(export_, colonne).toMatch(new RegExp(`alter table public\\.memberships\\s+(add column \\w+ boolean not null default false,\\s+)?add column ${colonne} boolean not null default false[,;]`))
     }
-    expect(DOMAINES.map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse'])
+    expect(DOMAINES.map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse', 'comptes'])
     expect(() => definitionDe('inconnu' as never)).toThrow('Domaine inconnu')
   })
 
   it('ce que l’écran dit d’un droit est ce que dit le commentaire de sa colonne en base — le dernier que l’export pose', () => {
-    for (const { colonne, libelle, ouvrira } of DOMAINES) {
+    // « Comptes » (C4a) se dit autrement en base, « : » et non une parenthèse : le bloc C4b, plus bas, juge sa phrase aux mots
+    // de son commentaire.
+    for (const { colonne, libelle, ouvrira } of DOMAINES.filter((d) => d.domaine !== 'comptes')) {
       // Le dernier commentaire, fichiers dans l'ordre de leur nom puis texte dans l'ordre : celui de la colonne en base. Une
       // apostrophe s'y double (`''`) ; l'étape VF8f réécrit celui de `droit_ventes`.
       const motif = new RegExp(`comment on column public\\.memberships\\.${colonne} is\\s+'((?:[^']|'')*)'`, 'g')
@@ -1830,7 +1838,8 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     expect(enumeration(['a'])).toBe('a')
     expect(enumeration(['a', 'b'])).toBe('a et b')
     expect(enumeration(['a', 'b', 'c'])).toBe('a, b et c')
-    expect(libellesDesCases()).toBe('« Ventes », « Banque » et « Caisse »')
+    expect(libellesDesCases()).toBe('« Ventes », « Banque », « Caisse » et « Comptes »')
+    expect(libellesDesCases(domainesSelon(false))).toBe('« Ventes », « Banque » et « Caisse »')
     expect(libelleDeLaCase('caisse', 'client@exemple.fr')).toBe('Droit « Caisse » de client@exemple.fr')
     expect(messageDuRefus('caisse', 'client@exemple.fr', REFUS_CAISSE_DOSSIER_NON_EXCLU.message))
       .toBe(`Le droit « Caisse » de client@exemple.fr n’a pas été enregistré : ${REFUS_CAISSE_DOSSIER_NON_EXCLU.message}`)
@@ -1863,13 +1872,15 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
 
 // ── La case « Comptes » (étape C4b) ─────────────────────────────────────────────────────────────────────────────────────
 describe('la case « Comptes » (étape C4b), derrière sa migration', () => {
-  const MIGRATION_SP = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261106150000_situations_publiees.sql'), 'utf8')
+  const MIGRATION_SP = readFileSync(resolve(process.cwd(), 'supabase/schema/20261107164102_situations_publiees.sql'), 'utf8')
 
-  it('drapeau baissé, l’onglet garde ses trois cases et la forme à quatre ; levé, la quatrième et la forme à cinq', () => {
-    expect(SITUATIONS_PUBLIEES_EXPORTEES).toBe(false)
-    expect(DOMAINES.map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse'])
+  it('drapeau baissé, l’onglet garde ses trois cases et la forme à quatre ; levé (depuis le 07/11/2026), la quatrième et la forme à cinq', () => {
+    expect(SITUATIONS_PUBLIEES_EXPORTEES).toBe(true)
+    expect(DOMAINES.map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse', 'comptes'])
+    expect(domainesSelon(false).map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse'])
     expect(domainesSelon(true).map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse', 'comptes'])
-    expect(Object.keys(demandeDeChangement('m', 'ventes', true))).toEqual(['p_membership_id', 'p_ventes', 'p_banque', 'p_caisse'])
+    expect(Object.keys(demandeDeChangementSelon(false, 'm', 'ventes', true))).toEqual(['p_membership_id', 'p_ventes', 'p_banque', 'p_caisse'])
+    expect(Object.keys(demandeDeChangement('m', 'ventes', true))).toEqual(['p_membership_id', 'p_ventes', 'p_banque', 'p_caisse', 'p_comptes'])
     expect(demandeDeChangementSelon(true, 'm', 'comptes', true))
       .toEqual({ p_membership_id: 'm', p_ventes: null, p_banque: null, p_caisse: null, p_comptes: true })
     expect(demandeDeChangementSelon(true, 'm', 'ventes', false))

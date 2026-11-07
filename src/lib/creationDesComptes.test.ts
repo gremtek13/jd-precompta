@@ -163,9 +163,10 @@ describe('le rattachement d’un compte que ce cabinet ne connaît pas, ou plus 
     expect(phrase).toContain('avec son propre mot de passe')
     // Ce que l'accès ouvre : la phrase de l'onglet, à l'état de son drapeau — jamais une règle recopiée.
     expect(c.paragraphes).toContain(CE_QUE_DONNE_UN_ACCES)
-    // Les trois cases (« Caisse » depuis l'étape C11), nommées chacune, dans l'ordre des colonnes.
-    expect(DOMAINES.map((d) => d.libelle)).toEqual(['Ventes', 'Banque', 'Caisse'])
-    expect(c.paragraphes.join(' ')).toContain('sans les cases « Ventes », « Banque » et « Caisse » : tu les coches ensuite')
+    // Les quatre cases (« Caisse » depuis l'étape C11, « Comptes » depuis C4a, en production le 07/11/2026), nommées
+    // chacune, dans l'ordre des colonnes.
+    expect(DOMAINES.map((d) => d.libelle)).toEqual(['Ventes', 'Banque', 'Caisse', 'Comptes'])
+    expect(c.paragraphes.join(' ')).toContain('sans les cases « Ventes », « Banque », « Caisse » et « Comptes » : tu les coches ensuite')
     expect(c.paragraphes.join(' ')).toContain('Le mot de passe initial que tu as saisi ne sert pas : ce compte garde le sien')
     expect(c.paragraphes.join(' ')).toContain('« Envoyer un lien de réinitialisation »')
     expect(`${phrase} ${c.paragraphes.join(' ')}`).not.toContain('communique-lui')
@@ -249,7 +250,8 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
       "Le mot de passe que tu as saisi ne sert pas : ce compte garde le sien, et rien n'y est changé. Si elle ne s'en "
         + "souvient plus, « Mot de passe oublié », sur l'écran de connexion, lui envoie un lien pour en choisir un autre.",
     ])
-    expect(CE_QUE_PERD_LE_CLIENT).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
+    // Le drapeau baissé (l'état d'avant C4a), mot pour mot ; levé, « Mes comptes » s'y ajoute (le cas qui suit le vérifie).
+    expect(ceQuePerdLeClientSelon(false)).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
       + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
       + "réponses à tes précisions), « Mes informations », « Ma simulation », « Mon échéancier » et, selon les cases de ses "
       + 'accès, « Mes ventes », « Ma banque », « Mon analyse » et « Ma caisse » —, pour chacune de ses sociétés.')

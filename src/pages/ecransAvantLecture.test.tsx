@@ -87,6 +87,7 @@ import VirementsTab from './dossier/VirementsTab'
 import VoletSocialCard from './dossier/VoletSocialCard'
 import PiecesJointesEcartees from './dossier/PiecesJointesEcartees'
 import { ACCES_EN_COURS } from '../lib/auteursVentes'
+import { ceQueDitLaCaseComptes } from '../lib/droitsAcces'
 import { ECARTS_ET_DECLARATIONS_VIDES } from '../test/ereportingDeLaPiece'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES } from '../lib/planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
@@ -650,6 +651,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
 // LES PHRASES FIXES qui contiennent un mot du vide sans rien affirmer d'une liste : une explication, une consigne. Chacune
 // avec son écran, sa raison et son nombre d'occurrences — un nombre qui change dit que l'écran a changé.
 const PHRASES_FIXES: { ecran: string; texte: string; fois: number; raison: string }[] = [
+  {
+    ecran: 'AccesTab', texte: ceQueDitLaCaseComptes(), fois: 1,
+    raison: 'ce que la case « Comptes » ouvre (sous SITUATIONS_PUBLIEES_EXPORTEES, levé le 07/11/2026), pas ce qui a été lu',
+  },
   { ecran: 'ClientHome', texte: 'Trois étapes, rien à trier de ton côté.', fois: 1, raison: 'le mode d’emploi de l’accueil' },
   {
     ecran: 'DevisSaisieModal', texte: '0,00 €', fois: 3,

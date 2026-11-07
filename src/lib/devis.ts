@@ -59,14 +59,16 @@ export const ACOMPTES_PREVUS: boolean = true
 // par `vi.mock` (FacturesTabDevis.test.tsx), l'état d'avant restant éprouvé tant que le code existe.
 export const ENVOI_DES_DEVIS_OFFERT: boolean = true
 
-// LES DEVIS CITENT LE CONTACT D'OÙ VIENT LEUR CLIENT (migration `devis_citent_un_contact`, 20261106160000, PRÉPARÉE, PAS
-// APPLIQUÉE : supabase/preparees/ ; son essai : supabase/essais/devisCitentUnContact.sql) : `devis.contact_id`, une
+// LES DEVIS CITENT LE CONTACT D'OÙ VIENT LEUR CLIENT (migration `devis_citent_un_contact`, en production depuis le
+// 07/11/2026 : supabase/schema/20261107163632_devis_citent_un_contact.sql ; son essai :
+// supabase/essais/devisCitentUnContact.sql) : `devis.contact_id`, une
 // provenance sans clé comme celle d'une facture, écrite par `enregistrer_devis` dès le brouillon (16 bis : un contact de CE
 // dossier) et reprise par la facture tirée du devis. Baissé, rien ne change : l'écriture ne nomme aucun contact (la fonction
 // d'aujourd'hui ne lit pas la clé), le formulaire n'offre pas « Choisir un client », et la vue « Clients » ne montre pas les
 // clients sans activité depuis trois ans — sans les devis, cette liste serait FAUSSE (un client à qui l'on vient d'adresser un
-// devis y serait proposé à l'effacement). Il se lève avec la migration, son fichier passé dans l'export.
-export const DEVIS_CITENT_UN_CONTACT: boolean = false
+// devis y serait proposé à l'effacement). Levé le 07/11/2026 avec la migration (DEVC-Q1) ; l'état baissé reste joué par
+// un accesseur (DevisSaisieModalContacts.test.tsx, ContactsVueSansActivite.test.tsx, ecransAvantLecture.test.tsx).
+export const DEVIS_CITENT_UN_CONTACT: boolean = true
 
 // ── Les constantes de la base, confrontées au texte des migrations par le test ─────────────────────────────────────
 export const PREFIXE_DEVIS = 'D'
@@ -733,8 +735,8 @@ export function saisieDuDevis(d: Devis | null, defauts: DefautsDuDevis): Omit<Sa
     conditions: d.conditions ?? '',
     mentionsLegales: d.mentions_legales ?? '',
     notes: d.notes ?? '',
-    // La colonne de la migration préparée : absente du type tant qu'elle n'est pas en base, lue sous le drapeau seulement.
-    ...(DEVIS_CITENT_UN_CONTACT ? { contactId: (d as Devis & { contact_id?: string | null }).contact_id ?? null } : {}),
+    // La colonne de la migration `devis_citent_un_contact` (en production) ; lue sous le drapeau seulement.
+    ...(DEVIS_CITENT_UN_CONTACT ? { contactId: d.contact_id ?? null } : {}),
   }
 }
 

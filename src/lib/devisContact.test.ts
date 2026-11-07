@@ -6,12 +6,12 @@ import {
 } from './devis'
 import { fichiersDuSchema } from '../test/schema'
 
-// LES DEVIS CITENT LEUR CONTACT (migration `devis_citent_un_contact`, PRÉPARÉE). Ce que ces cas gardent : le module redit le
-// refus 16 bis de la migration préparée, à sa place et sous ses mots ; son essai l'exige de la base sous P0002 ; la fonction
-// préparée lit la clé que le module écrira ; le drapeau reste baissé tant que l'export ne porte pas la migration ; et le
+// LES DEVIS CITENT LEUR CONTACT (migration `devis_citent_un_contact`, en production depuis le 07/11/2026). Ce que ces cas
+// gardent : le module redit le refus 16 bis de la migration, à sa place et sous ses mots ; son essai l'exige de la base sous
+// P0002 ; la fonction lit la clé que le module écrit ; le drapeau suit l'export, qui porte la migration ; et le
 // jugement avant le clic : la liste lue en entier, ou rien ne part.
 
-const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261106160000_devis_citent_un_contact.sql', import.meta.url), 'utf8')
+const MIGRATION = readFileSync(new URL('../../supabase/schema/20261107163632_devis_citent_un_contact.sql', import.meta.url), 'utf8')
 const ESSAI = readFileSync(new URL('../../supabase/essais/devisCitentUnContact.sql', import.meta.url), 'utf8')
 const sansDoubles = (s: string) => s.replace(/''/g, "'")
 const messagesSql = (sql: string) => [...sql.matchAll(/raise exception '((?:[^']|'')*)'/g)].map((m) => sansDoubles(m[1]))
@@ -22,7 +22,7 @@ function definition(texte: string, nom: string): string {
   return texte.slice(debut, texte.indexOf('\n$$;', debut))
 }
 
-describe('la migration préparée et son essai', () => {
+describe('la migration de l’export et son essai', () => {
   it('enregistrer_devis lève les refus du module, le contact entre les montants et l’IBAN', () => {
     expect(messagesSql(definition(MIGRATION, 'enregistrer_devis'))).toEqual(modelesDEnregistrementDevis(true))
     expect(modelesDEnregistrementDevis(false)).not.toContain(REFUS_CONTACT_DU_DEVIS.modele)
@@ -40,7 +40,7 @@ describe('la migration préparée et son essai', () => {
     expect(ESSAI.split(exige).length - 1).toBeGreaterThanOrEqual(5)
   })
 
-  it('le drapeau reste baissé tant que l’export ne porte pas la migration', () => {
+  it('le drapeau suit l’export : levé, la migration y est', () => {
     const exportee = fichiersDuSchema().some((f) => f.chemin.includes('devis_citent_un_contact'))
     expect(DEVIS_CITENT_UN_CONTACT).toBe(exportee)
   })
