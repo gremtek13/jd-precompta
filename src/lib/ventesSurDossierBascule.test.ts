@@ -282,10 +282,20 @@ describe('les chemins qui posent ou changent droit_ventes', () => {
 
 // ── Les essais ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Une écriture de `droit_ventes` dans un essai : un `set`, une insertion qui le nomme, la fonction qui le coche. */
+/**
+ * `changer_droits_acces` qui écrit `droit_ventes` : son SECOND argument — `p_ventes`, à chacune de ses formes (à trois,
+ * quatre, cinq et huit) —, quel qu'il soit, sauf `null` (« inchangé ») et le nom d'un type (la signature qu'un essai cite
+ * pour un droit d'exécution, `changer_droits_acces(uuid, boolean, …)`). Le premier argument peut être une sous-requête.
+ * Jusqu'au 07/11/2026, le motif prenait n'importe quel argument après le premier : les nuls de la forme à cinq, les cases
+ * « Achats », « Frais » et « Documents » de la forme à huit, et la signature, pour une case « Ventes » cochée.
+ */
+const ECRIT_VENTES_PAR_LA_FONCTION =
+  /changer_droits_acces\s*\(\s*(?:\((?:[^();]|\([^();]*\))*\)|[^,;()]+)\s*,\s*(?!null\b(?:\s*::\s*boolean)?\s*[,)]|boolean\s*[,)])(?:\(|[^,;()\s][^,;()]*[,()])/i
+
+/** Une écriture de `droit_ventes` dans un essai : un `set`, une insertion qui le nomme, la fonction qui l'écrit. */
 const ECRIT_VENTES = [
   /\bset\s+(?:[a-z_]+\s*=[^;]*?,\s*)?droit_ventes\s*=/i,
-  /changer_droits_acces\s*\([^;)]*?,\s*(?:true|[a-z_.]+)\s*,/i,
+  ECRIT_VENTES_PAR_LA_FONCTION,
   /insert\s+into\s+(?:public\.)?memberships\s*\([^)]*\bdroit_ventes\b/i,
   /\bdroit_ventes\s*=\s*true\b/i,
 ]
@@ -305,9 +315,12 @@ describe('les essais qui cochent « Ventes »', () => {
     // envoiDesDevis.sql depuis l'étape P6c1 : le client porte « Ventes » sur A, qu'il insère basculé. acomptesDesDevis.sql depuis
     // l'étape P5b2 : de même, sur son dossier A. traceDesDroits.sql depuis l'étape P1-trace : le chef coche « Ventes » sur un
     // accès de DT, un dossier jetable qu'il insère basculé. relancesDesFactures.sql depuis l'étape C5 : le client porte « Ventes »
-    // sur A, inséré basculé. situationsPubliees.sql depuis l'étape C4a : sa forme à cinq passe des nuls, que le motif prend
-    // pour une case ; ses deux dossiers jetables sont insérés basculés ; situationsPublieesMutations.sql (réplique
-    // seulement) les rejoue sous ses six mutations.
+    // sur A, inséré basculé. situationsPubliees.sql et situationsPublieesMutations.sql, entrés à l'étape C4a, sont sortis le
+    // 07/11/2026 (B1), quand le motif de la fonction a lu son second argument : leur forme à cinq passe des nuls à
+    // `p_ventes`, et ils ne citent la forme à trois que par sa signature — ils ne cochent pas « Ventes » (leurs deux dossiers
+    // jetables restent basculés, la garde de « Ventes » admettant la case). troisCasesDeLAcces.sql (B1) n'y entre pas pour la
+    // même raison : sa forme à huit coche « Achats », « Frais » et « Documents », jamais « Ventes », sur des dossiers
+    // jetables qui n'ont pas basculé.
     // devisCitentUnContact.sql (06/11/2026) : le client porte « Ventes » sur A, qu'il insère basculé.
     // apercuFactureElectronique.sql depuis l'étape C3 : le client porte « Ventes » sur A, un dossier jetable inséré basculé.
     // factureInternationale.sql (07/11/2026, étape e7a) : le client porte « Ventes » sur V, un dossier jetable inséré basculé.
@@ -316,9 +329,13 @@ describe('les essais qui cochent « Ventes »', () => {
       'devisCitentUnContact.sql', 'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'envoiDesDevis.sql', 'etatFactureElectronique.sql',
       'exemplairesDesFactures.sql', 'factureInternationale.sql', 'factures.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
       'mentionsFigees.sql', 'parametresFacturation.sql', 'piecesJointesEcartees.sql', 'relancesDesFactures.sql', 'rls.sql',
-      'simulationDesVentesFacturees.sql', 'situationsPubliees.sql', 'situationsPublieesMutations.sql', 'traceDesDroits.sql',
+      'simulationDesVentesFacturees.sql', 'traceDesDroits.sql',
       'ventesClient.sql', 'ventesFacturees.sql',
     ])
+    // Le plancher du motif de la fonction : il voit les deux essais qui passent `true` à `p_ventes`.
+    for (const n of ['droitsAcces.sql', 'traceDesDroits.sql']) {
+      expect(ECRIT_VENTES_PAR_LA_FONCTION.test(lire(`supabase/essais/${n}`)), n).toBe(true)
+    }
     // Un essai qui en rejoue un autre par psql (`\ir`, les mutations de situationsPubliees.sql) bascule par celui qu'il lit.
     const avecSesInclus = (n: string): string => {
       const texte = lire(`supabase/essais/${n}`)
@@ -326,6 +343,32 @@ describe('les essais qui cochent « Ventes »', () => {
       return [texte, ...new Set(inclus)].map((x, i) => (i === 0 ? x : lire(`supabase/essais/${x}`))).join('\n')
     }
     for (const n of ecrivent) expect(BASCULE.some((m) => m.test(avecSesInclus(n))), n).toBe(true)
+  })
+
+  it('le motif de la fonction lit son second argument, `p_ventes` : des défauts plantés', () => {
+    const ecrit = [
+      "perform changer_droits_acces(acces, true, null);",
+      "select changer_droits_acces('{A}', TRUE, null, null, null);",
+      "perform changer_droits_acces(t.acces, v_ventes, null, null);",
+      "perform changer_droits_acces(acces, false, null);",
+      "perform changer_droits_acces( acces , true , null );",
+      "perform changer_droits_acces(acces, (n = 2), null);",
+      "perform changer_droits_acces(acces, coalesce(v, true), null);",
+      "select changer_droits_acces((select m.id from memberships m where m.dossier_id = '{R}'), true, null);",
+      "select changer_droits_acces((select m.id from memberships m where m.user_id = any(array['{C}']::uuid[])), true, null);",
+      "perform changer_droits_acces(p_membership_id => acces, p_ventes => true);",
+    ]
+    for (const texte of ecrit) expect(ECRIT_VENTES_PAR_LA_FONCTION.test(texte), texte).toBe(true)
+    const nEcritPas = [
+      "perform changer_droits_acces(acces_a, null, null, null, null, true, null, null);",
+      "perform changer_droits_acces(acces, NULL, true);",
+      "perform changer_droits_acces(acces, null::boolean, true);",
+      "perform changer_droits_acces(acces, null);",
+      "huit constant text := 'public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean, boolean, boolean, boolean)';",
+      "select to_regprocedure('public.changer_droits_acces(uuid,boolean,boolean)');",
+      "select pg_temp.planter('public.changer_droits_acces(uuid, boolean, boolean)', $x$null::boolean, null::boolean);$x$);",
+    ]
+    for (const texte of nEcritPas) expect(ECRIT_VENTES_PAR_LA_FONCTION.test(texte), texte).toBe(false)
   })
 
   it('droitsAcces.sql joue la garde : les contrôles 70 à 83 et les mutations 90 à 95, « rien n’est resté » compte les bascules', () => {

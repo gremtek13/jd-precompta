@@ -25,14 +25,23 @@ function corps(texte: string, nom: string): string {
   return texte.slice(debut, texte.indexOf('\n$$;', debut) + 1)
 }
 
-/** La dernière définition d'une fonction dans l'export : celle que la migration appelle. */
-function corpsDansLExport(nom: string): string {
-  const avec = fichiersDuSchema().filter((f) => new RegExp(`create (?:or replace )?function public\\.${nom}\\(`).test(f.texte))
-  const texte = avec[avec.length - 1].texte
+/** Le corps de la DERNIÈRE définition d'une fonction dans un texte, `create` ou `create or replace`. */
+function dernierCorps(texte: string, nom: string): string {
   const debuts = [...texte.matchAll(new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'g'))]
   const debut = texte.indexOf('as $$', debuts[debuts.length - 1].index) + 'as $$'.length
   return texte.slice(debut, texte.indexOf('\n$$;', debut) + 1)
 }
+
+/** La dernière définition d'une fonction dans l'export : celle que la migration appelle. */
+function corpsDansLExport(nom: string): string {
+  const avec = fichiersDuSchema().filter((f) => new RegExp(`create (?:or replace )?function public\\.${nom}\\(`).test(f.texte))
+  return dernierCorps(avec[avec.length - 1].texte, nom)
+}
+
+// Les deux migrations qui, après P1-trace, redéfinissent la fonction et le déclencheur de la trace (`create or replace`) :
+// C4a (« Comptes »), puis B1 (« Achats », « Notes de frais », « Documents »), où qu'elles soient.
+const C4A = MIGRATIONS.find((f) => /\d{14}_situations_publiees\.sql$/.test(f.chemin))
+const B1 = MIGRATIONS.find((f) => /\d{14}_trois_cases_de_l_acces\.sql$/.test(f.chemin))
 
 describe('la migration, où qu’elle soit', () => {
   it('est là une fois, préparée ou dans l’export, et le drapeau suit son fichier', () => {
@@ -83,9 +92,31 @@ describe('la migration, où qu’elle soit', () => {
 })
 
 describe('les essais et le retour arrière redisent la migration', () => {
-  it('l’essai épingle les corps des deux fonctions à leur empreinte, et ne supprime rien (il se joue en production)', () => {
+  it('l’essai épingle les corps des deux fonctions à leur empreinte, état par état, et ne supprime rien (il se joue en production)', () => {
     expect(ESSAI).toContain(`garder_trace_des_droits false search_path=public false false false ${md5(corps(MIGRATION.texte, 'garder_trace_des_droits'))}`)
-    expect(ESSAI).toContain(`tracer_les_droits true search_path=public false false false ${md5(corps(MIGRATION.texte, 'tracer_les_droits'))}`)
+    // Le déclencheur de la trace : le rang 38 lit l'empreinte que l'état de la base désigne — chacune celle du texte qui
+    // l'écrit en dernier —, l'état se reconnaissant à la colonne que C4a, puis B1, ajoutent à memberships.
+    expect(C4A, 'la migration situations_publiees').toBeDefined()
+    expect(B1, 'la migration trois_cases_de_l_acces').toBeDefined()
+    expect(ESSAI).toContain("tracer_les_droits true search_path=public false false false ' || tracer_attendu || ' | -'")
+    expect(ESSAI).toContain(`tracer_attendu constant text := case etat when 'b1' then '${md5(dernierCorps(B1!.texte, 'tracer_les_droits'))}'`
+      + ` when 'c4a' then '${md5(dernierCorps(C4A!.texte, 'tracer_les_droits'))}'\n    else '${md5(corps(MIGRATION.texte, 'tracer_les_droits'))}' end;`)
+    expect(ESSAI).toContain("a.attname = 'droit_documents' and not a.attisdropped) then 'b1'")
+    expect(ESSAI).toContain("a.attname = 'droit_comptes' and not a.attisdropped) then 'c4a'")
+    expect(B1!.texte).toContain('add column droit_documents boolean not null default false;')
+    expect(C4A!.texte).toContain('add column droit_comptes boolean not null default false;')
+    // Le rang 39, de même : les cases que le déclencheur nomme, dans l'ordre du texte de chaque état.
+    const colonnes = {
+      b1: 'droit_ventes, droit_banque, droit_caisse, droit_comptes, droit_achats, droit_frais, droit_documents',
+      c4a: 'droit_ventes, droit_banque, droit_caisse, droit_comptes',
+      p1: 'droit_ventes, droit_banque, droit_caisse',
+    }
+    expect(ESSAI).toContain(`colonnes_tracees constant text := case etat when 'b1' then '${colonnes.b1}'\n    when 'c4a' then '${colonnes.c4a}' else '${colonnes.p1}' end;`)
+    expect(ESSAI).toContain("'CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF ' || colonnes_tracees || ', dossier_id, user_id, id ON public.memberships")
+    for (const [texte, liste] of [[B1!.texte, colonnes.b1], [C4A!.texte, colonnes.c4a], [MIGRATION.texte, colonnes.p1]]) {
+      const declencheurs = [...texte.replace(/\s+/g, ' ').matchAll(/trigger memberships_trace_des_droits after insert or update of ([^;]*?), dossier_id, user_id, id or delete on public\.memberships/g)]
+      expect(declencheurs.map((m) => m[1]), liste).toEqual([liste])
+    }
     expect(sansCommentaires(ESSAI)).not.toMatch(/\bdelete\s+from\b|\btruncate\b|\bdrop\b/i)
     expect(ESSAI).toContain("'0. EN ATTENTE de la migration trace_des_droits'")
   })

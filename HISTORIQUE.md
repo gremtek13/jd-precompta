@@ -49284,3 +49284,5 @@ mêmes lignes partout. Sa garde refuse, en le disant, une base sans la trace, pu
 `situationsPubliees.sql` à 0 sur chaque état, rendus conscients de l'état ; `rls.sql` 107 lignes, 0 en faute, 79
 mutations sur 79 (bloc TC) ; `restauration.sql` identique (81 tables) ; banc du leurre SÛR ; aller, retour, aller égaux.
 Écrans derrière `TROIS_CASES_EXPORTEES`, baissé : l'onglet Accès, une phrase par case (« ne change encore rien »).
+Rejouée le 07/11/2026 sur la branche du jour (C7) : l'essai de la trace épingle ses trois empreintes, état par état ; 25
+cas au banc ; le motif de « Ventes » lit `p_ventes`, ni nul ni signature (les deux essais de C4a sortent de la liste).
