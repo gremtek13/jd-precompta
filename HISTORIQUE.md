@@ -49511,6 +49511,14 @@ leurs pièces et des encaissements qui le citent — un crédit, ou un débit en
 d'une facture ou d'un encaissement par `nomDuClientEcrit` (le prédicat d'IdClient, FEC22-Q7 ; `tiers_siret` entre dans
 `FactureDesExports` et la lecture des lettrages) ; « Fichier justificatif », et le libellé d'un achat sans tiers qui
 retombait sur lui, par `designationDUnePiece` : la date de dépôt à Paris et les huit premiers caractères de
-`storage_hash`, « Pièce sans nom » sans lui ; la lecture des exemplaires ne lit plus leur nom. Rien en base, au FEC (ses
+`storage_hash`, « Pièce déposée le JJ/MM/AAAA, sans empreinte » sans lui ; la lecture des exemplaires ne lit plus leur nom. Rien en base, au FEC (ses
 tests inchangés) ni à l'écran. Trois tests neufs ; une mutation par règle, toutes mordent (3, 2 et 2 tests). Reste : le
 « Libellé écriture » d'une ligne déjà au brouillon garde son texte (comme FEC22Q7-Q1). L'assistant n'a pas de copie.
+
+Relu le même soir par deux sceptiques. Corrigés : « Pièce sans nom » devient « Pièce déposée le JJ/MM/AAAA, sans
+empreinte » (ce qui manque est l'empreinte, pas le nom) ; la phrase de CLAUDE.md dit la règle des débits. Reste, et posé
+au cabinet (JJ1Q1-Q2) : la colonne « Libellé écriture » reprend le libellé COMPOSÉ de l'écriture, et celui d'un achat,
+d'une note de frais ou d'une pièce « autre » dont le fournisseur n'a pas été lu retombe sur le nom du fichier
+(`libelleDUnePiece`), dans le FEC comme dans la piste, pour les écritures composées aujourd'hui aussi. Le remplacer par
+« Pièce du JJ/MM/AAAA » changerait l'EcritureLib des écritures à venir ; ce qui est au brouillon garde son libellé
+(FEC22Q7-Q1).

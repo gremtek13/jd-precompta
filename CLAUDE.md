@@ -494,11 +494,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   JJ/MM/AAAA — F… », `libelleDUnMouvementDesVentes`), jamais celui de la banque, qui nomme qui a payé ; un mouvement
   classé hors des ventes facturées porte « Crédit du relevé du JJ/MM/AAAA », ou « Débit du relevé du JJ/MM/AAAA » quand
   il rend ou défait l'argent d'un client (une ligne en classe 7 ou 41, la définition de VF9CQ1B), tout autre débit
-  gardant le libellé de la banque (`lib/libellesDuReleve.ts`, JJ1-Q1, le 07/11/2026) ; la piste d'audit tait aussi le
-  texte de la banque d'un crédit, le tiers d'une pièce de vente, le client d'une facture qui n'est pas une entreprise et
-  le nom du fichier d'une pièce (JJ1Q1-Q1) → « JJ1 : LE NOM D'UN PATIENT NE PASSE PLUS AU FEC PAR LE LIBELLÉ DU
-  RELEVÉ », « JJ1-Q1 : LE LIBELLÉ DE LA BANQUE HORS DES ÉCRITURES DU RELEVÉ », « JJ1Q1-Q1 : LA PISTE D'AUDIT NE NOMME
-  PLUS UN PATIENT ».
+  gardant le libellé de la banque (`lib/libellesDuReleve.ts`, JJ1-Q1, le 07/11/2026) ; la piste d'audit suit la même
+  règle pour le libellé de la banque, tait le tiers d'une pièce de vente et le client d'une facture qui n'est pas une
+  entreprise, et sa colonne du justificatif dit la date de dépôt et l'empreinte, jamais le nom du fichier (JJ1Q1-Q1 ; le
+  libellé d'une écriture d'achat sans fournisseur lu le reprend encore : JJ1Q1-Q2) → « JJ1 : LE NOM D'UN PATIENT NE
+  PASSE PLUS AU FEC PAR LE LIBELLÉ DU RELEVÉ », « JJ1-Q1 : LE LIBELLÉ DE LA BANQUE HORS DES ÉCRITURES DU RELEVÉ »,
+  « JJ1Q1-Q1 : LA PISTE D'AUDIT NE NOMME PLUS UN PATIENT ».
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT, conçu (seul le
   titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération automatique ou au clic (RGPD.md
   §8.8).
