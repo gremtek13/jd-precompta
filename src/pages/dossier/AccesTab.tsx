@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import DeuxFacteursDesComptes from '../../components/DeuxFacteursDesComptes'
+import { casesDesAcces } from '../../lib/deuxFacteursExiges'
 import { supabase } from '../../lib/supabase'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -487,7 +488,10 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
         </form>
       </div>
 
-      <DeuxFacteursDesComptes perimetre={{ genre: 'acces', dossierId }} />
+      {/* Les cases de chaque accès, pour la recommandation de SEC-Q2 : d'une liste lue EN ENTIER seulement ; avant son retour,
+          lue en partie ou illisible, aucune (le composant ne recommande alors rien à un accès client). */}
+      <DeuxFacteursDesComptes perimetre={{ genre: 'acces', dossierId }}
+        cases={!chargement && erreurLecture === null && lecturePartielle === null ? casesDesAcces(rows) : undefined} />
       <h3>Accès actuels</h3>
       {reglage !== null && (
         <p className="muted" id="ce-que-disent-les-cases" style={{ marginTop: -8 }}>{ceQueDisentLesCasesDuDossier(reglage)}</p>

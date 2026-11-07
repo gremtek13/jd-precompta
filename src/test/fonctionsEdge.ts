@@ -252,10 +252,12 @@ export interface Monde {
   schemaPrepare: boolean
   /**
    * La double authentification exigée (C7, second temps ; migration `deux_facteurs_exiges`, PRÉPARÉE) : les comptes que
-   * le cabinet a exigés, et les jetons de session qui portent `aal2`. `deux_facteurs_satisfaits` les lit comme la base :
-   * vrai sans exigence, ou sur un jeton `aal2`. Vides par défaut : personne n'est exigé.
+   * le cabinet a exigés, les jetons de session qui portent `aal2`, et ceux émis avant le dernier retrait du second facteur
+   * de leur compte (la base compare leur `iat` à `retraits_deux_facteurs`). `deux_facteurs_satisfaits` les lit comme la
+   * base : faux pour un jeton d'avant un retrait, quels que soient son niveau et l'exigence ; sinon vrai sans exigence, ou
+   * sur un jeton `aal2`. Vides par défaut : personne n'est exigé, rien n'est retiré.
    */
-  deuxFacteurs: { exiges: string[]; jetonsAal2: string[] }
+  deuxFacteurs: { exiges: string[]; jetonsAal2: string[]; jetonsAvantRetrait: string[] }
 }
 
 export function nouveauMonde(): Monde {
@@ -266,7 +268,7 @@ export function nouveauMonde(): Monde {
     comptes: [],
     regleDesMotsDePasse: REGLE_D_UN_PROJET_NEUF,
     sessions: {},
-    deuxFacteurs: { exiges: [], jetonsAal2: [] },
+    deuxFacteurs: { exiges: [], jetonsAal2: [], jetonsAvantRetrait: [] },
     hotes: {},
     textract: null,
     s3: null,
@@ -469,13 +471,15 @@ const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Rec
     })
   },
   // `deux_facteurs_satisfaits()` (migration `deux_facteurs_exiges`, PRÉPARÉE) : exécutable par authenticated et le
-  // service, jamais par l'anonyme ; vraie sans compte, sans exigence, ou sur un jeton `aal2`.
+  // service, jamais par l'anonyme ; vraie sans compte ; fausse pour un jeton émis avant le retrait du second facteur du
+  // compte ; sinon vraie sans exigence, ou sur un jeton `aal2`.
   deux_facteurs_satisfaits: (monde, { utilisateur, role, jeton }, args) => {
     if (Object.keys(args).length !== 0) throw new Error('Faux PostgREST : deux_facteurs_satisfaits ne prend aucun argument')
     if (role === 'anonyme') {
       throw new ErreurPostgrest({ code: '42501', message: 'permission denied for function deux_facteurs_satisfaits', status: 403 })
     }
     if (!utilisateur) return true
+    if (jeton != null && monde.deuxFacteurs.jetonsAvantRetrait.includes(jeton)) return false
     return !monde.deuxFacteurs.exiges.includes(utilisateur) || (jeton != null && monde.deuxFacteurs.jetonsAal2.includes(jeton))
   },
   droits_sur_le_dossier: (monde, { utilisateur }, args) => droitsSurLeDossier(monde, utilisateur, args.p_dossier_id),

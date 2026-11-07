@@ -1493,10 +1493,11 @@ function actionPermise(table: Readonly<Record<string, DroitExige>>, action: stri
 // ── DÉBUT DEUX FACTEURS ──────────────────────────────────────────────────────────────────────────────────────────────
 // La double authentification exigée d'un compte (C7, second temps ; migration `deux_facteurs_exiges`, PRÉPARÉE). Une
 // fonction qui lit avec la clé secrète contourne la RLS et la pré-requête de PostgREST : elle refuse donc elle-même, en
-// 403 et avant toute dépense, un jeton `aal1` d'un compte que le cabinet a exigé. La base le dit, lue au jeton de
-// l'appelant (`deux_facteurs_satisfaits`, que la pré-requête laisse passer) ; une réponse illisible rend 503 (le côté
-// fermé). Le drapeau reste baissé tant que la migration n'est pas en base : la fonction SQL n'existerait pas, et chaque
-// appel tomberait en 503. Bloc identique dans chaque fonction qui agit pour un compte (edgeFunctionsDeuxFacteurs.test.ts).
+// 403 et avant toute dépense, un jeton `aal1` d'un compte que le cabinet a exigé, et tout jeton émis avant le retrait du
+// second facteur du compte (l'appareil perdu, `aal2` compris). La base le dit, lue au jeton de l'appelant
+// (`deux_facteurs_satisfaits`, que la pré-requête laisse passer) ; une réponse illisible rend 503 (le côté fermé). Le
+// drapeau reste baissé tant que la migration n'est pas en base : la fonction SQL n'existerait pas, et chaque appel
+// tomberait en 503. Bloc identique dans chaque fonction qui agit pour un compte (edgeFunctionsDeuxFacteurs.test.ts).
 const DEUX_FACTEURS_EXIGES_EN_BASE = false
 
 interface AppelantDesDeuxFacteurs {
@@ -1515,7 +1516,7 @@ async function refusDesDeuxFacteurs(appelant: AppelantDesDeuxFacteurs): Promise<
   if (satisfaite === true) return null
   if (satisfaite === false) {
     return json({
-      error: "La double authentification est exigée pour ce compte : le code de l'application d'authentification se donne avant de recommencer.",
+      error: "Cette session ne satisfait pas la double authentification de ce compte : donner le code de l'application d'authentification, ou se reconnecter si le second facteur a été retiré, avant de recommencer.",
     }, 403)
   }
   return json({ error: "La double authentification de ce compte n'a pas pu être vérifiée : recommencer dans un instant." }, 503)

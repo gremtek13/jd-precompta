@@ -167,7 +167,9 @@ begin
     'ok', coalesce(obs = 'droit_banque boolean non nulle défaut false, droit_ventes boolean non nulle défaut false', false));
 
   select string_agg(po.polname || ' ' || po.polcmd::text, ', ' order by po.polname) into obs
-    from pg_policy po where po.polrelid = 'public.memberships'::regclass;
+    from pg_policy po where po.polrelid = 'public.memberships'::regclass
+     -- La restrictive de C7 (second temps, `deux_facteurs`) n'ouvre rien : elle ne fait que retenir (bloc DF de rls.sql).
+     and not (po.polname = 'deux_facteurs' and not po.polpermissive);
   verdicts := verdicts || jsonb_build_object('controle', '2. aucune policy de mise à jour sur memberships, pour personne : les trois d''avant (lecture, insertion, suppression)',
     'observe', coalesce(obs, 'aucune') || ', RLS ' || (select relrowsecurity from pg_class where oid = 'public.memberships'::regclass),
     'ok', coalesce(obs = 'memberships_delete d, memberships_select r, memberships_write a'

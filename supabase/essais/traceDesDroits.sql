@@ -205,7 +205,8 @@ begin
       (37, 'proprietaire', '37. … ses deux policies, à authenticated seul : la lecture du cabinet du dossier, l''insertion du super-administrateur', null,
         $q$select string_agg(p.policyname || ' ' || p.cmd || ' ' || array_to_string(p.roles, ',') || ' ' || coalesce(p.qual, '-') || ' '
   || coalesce(p.with_check, '-') || ' ' || p.permissive, ' ; ' order by p.policyname) from pg_policies p
-  where p.schemaname = 'public' and p.tablename = 'trace_des_droits'$q$, null, 'OK',
+  where p.schemaname = 'public' and p.tablename = 'trace_des_droits'
+    and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')$q$, null, 'OK',
         'trace_des_droits_lecture SELECT authenticated admin_du_dossier(dossier_id) - PERMISSIVE ; trace_des_droits_restauration INSERT authenticated - is_super_admin() PERMISSIVE | -'),
       (38, 'proprietaire', '38. … ses deux fonctions : la garde aux droits de l''appelant, le déclencheur aux droits du propriétaire, leur chemin fixé, aucun rôle de l''API, leurs corps à leur empreinte', null,
         $q$select string_agg(p.proname || ' ' || p.prosecdef || ' ' || coalesce(array_to_string(p.proconfig, ','), '-') || ' '

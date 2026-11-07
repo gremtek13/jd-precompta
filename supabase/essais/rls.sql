@@ -60,7 +60,8 @@
 --      d'anon et d'authenticated intact, service_role et le propriétaire gardent tout.
 --   8. La double authentification exigée (bloc DF, migration `deux_facteurs_exiges`) : chaque table de public — une table
 --      créée demain comprise : la boucle part de `pg_class` — et storage.objects portent la policy restrictive
---      `deux_facteurs`, et la pré-requête de PostgREST garde les fonctions que la RLS ne voit pas. Six mutations.
+--      `deux_facteurs`, à l'expression exacte, et la pré-requête de PostgREST garde les fonctions que la RLS ne voit pas.
+--      Sept mutations.
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -4304,7 +4305,7 @@ end $$;
 --   SP1. Le chef coche « Comptes » sur l'accès du client et publie une situation de son dossier : le client la lit (le
 --        contrôle POSITIF) ; la case décochée, il n'en lit rien ; l'anonyme non plus.
 --   SP2. Le client ne l'écrit pas en direct (42501, la garde, sous ses mots).
---   SP3. Le catalogue : la RLS active, trois policies à authenticated seul.
+--   SP3. Le catalogue : la RLS active, trois policies à authenticated seul, hors la restrictive `deux_facteurs` (C7).
 -- Deux mutations, qui doivent mordre : M-SP1 (la lecture du client passée à « membre », sans `situation_publiee_en_cours`,
 -- qui garde aussi la case depuis la relecture de sécurité du 06/11/2026 : la case décochée, il lit encore), M-SP2 (la
 -- lecture du client fermée : la case cochée, il ne lit plus). Avant la migration, une ligne dit que le bloc attend.
@@ -4430,9 +4431,11 @@ begin
        or (p.policyname = 'situations_publiees_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
   verdicts := verdicts || jsonb_build_object('controle', 'SP3. la RLS active ; trois policies à authenticated seul : la lecture du cabinet, celle d''un accès « Comptes », l''insertion du super-administrateur (lecture du catalogue)',
     'cible', 'situations_publiees',
-    'observe', n || ' sur 3, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'situations_publiees') || ' en tout, RLS '
+    'observe', n || ' sur 3, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'situations_publiees'
+                                     and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
       || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.situations_publiees'::regclass),
-    'ok', n = 3 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'situations_publiees') = 3
+    'ok', n = 3 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'situations_publiees'
+                       and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 3
       and (select c.relrowsecurity from pg_class c where c.oid = 'public.situations_publiees'::regclass));
   verdicts := verdicts || jsonb_build_object('controle', 'SP. le jeu d''essai des situations s''est construit', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
@@ -4997,17 +5000,20 @@ end $$;
 -- leur sous-transaction : il se joue en production comme sur une réplique. La preuve par le geste (chaque profil à aal1
 -- et à aal2, la pré-requête, les fonctions du cabinet) : supabase/essais/deuxFacteurs.sql, sur une réplique seulement.
 --   DF1. Chaque table de public porte la policy `deux_facteurs` : restrictive, de toutes les commandes, à authenticated
---        seul, son expression ET sa vérification dépendant de deux_facteurs_satisfaits() (pg_depend, et le texte rendu).
+--        seul, son expression ET sa vérification EXACTEMENT `(select public.deux_facteurs_satisfaits())` — le texte rendu
+--        sous un chemin vide, qui nomme chaque schéma : un `or true` ajouté, une homonyme d'un autre schéma ne passent
+--        pas — et dépendant d'elle (pg_depend).
 --   DF2. storage.objects aussi.
 --   DF3. La pré-requête de PostgREST est posée sur authenticator, vers deux_facteurs_avant_requete(), qui existe et que
 --        anon, authenticated et service_role exécutent (sans elle, une fonction security definer répondrait à aal1).
 --   DF4. Les tables de l'exigence n'ont aucune autre policy (rien ne s'y écrit qu'au travers des fonctions), l'anonyme
 --        n'exécute ni deux_facteurs_satisfaits ni une fonction du cabinet, et aucun rôle de l'API deux_facteurs_autorite.
 --   Et un plancher : au moins les 87 tables du relevé du 07/11/2026 (85, et les deux de la migration), toutes examinées.
--- Six mutations, qui doivent mordre : M-DF1 (une table neuve, en RLS, sans la policy : DF1), M-DF2 (la policy de
+-- Sept mutations, qui doivent mordre : M-DF1 (une table neuve, en RLS, sans la policy : DF1), M-DF2 (la policy de
 -- cabinet_admins ouverte aussi à anon : DF1), M-DF3 (celle de storage.objects réduite à `true` : DF2), M-DF4 (DF3 jugé
 -- pour anon, qui ne porte pas la pré-requête), M-DF5 (deux_facteurs_autorite rendue à authenticated : DF4), M-DF6 (une
--- policy d'insertion posée sur exigences_deux_facteurs : DF4). EN ATTENTE tant que l'historique ne porte pas la migration
+-- policy d'insertion posée sur exigences_deux_facteurs : DF4), M-DF7 (celle de cabinet_admins qui nomme toujours la
+-- fonction, mais s'ouvre d'un `or true` : DF1, au texte). EN ATTENTE tant que l'historique ne porte pas la migration
 -- (ou porte un retour plus récent) et qu'aucune policy `deux_facteurs` n'existe.
 do $df$
 declare
@@ -5015,8 +5021,8 @@ declare
     select case when count(*) = 0 then 'sans la policy deux_facteurs'
                 when bool_and(not p.polpermissive and p.polcmd = '*' and p.polroles = array[to_regrole('authenticated')]::oid[]
                               and p.polqual is not null and p.polwithcheck is not null
-                              and pg_get_expr(p.polqual, p.polrelid) like '%deux_facteurs_satisfaits()%'
-                              and pg_get_expr(p.polwithcheck, p.polrelid) like '%deux_facteurs_satisfaits()%'
+                              and pg_get_expr(p.polqual, p.polrelid) = '( SELECT public.deux_facteurs_satisfaits() AS deux_facteurs_satisfaits)'
+                              and pg_get_expr(p.polwithcheck, p.polrelid) = '( SELECT public.deux_facteurs_satisfaits() AS deux_facteurs_satisfaits)'
                               and exists (select 1 from pg_depend d
                                            where d.classid = 'pg_policy'::regclass and d.objid = p.oid
                                              and d.refclassid = 'pg_proc'::regclass
@@ -5047,6 +5053,7 @@ declare
        where has_function_privilege(r, 'public.deux_facteurs_autorite(uuid, boolean)', 'EXECUTE')) l$q$;
   rel record; applique text; retour text; obs text; examinees bigint := 0;
   mutations jsonb := '[]'::jsonb;
+  chemin constant text := current_setting('search_path');
 begin
   select max(version) filter (where name = 'deux_facteurs_exiges'), max(version) filter (where name = 'retour_deux_facteurs_exiges')
     into applique, retour from supabase_migrations.schema_migrations;
@@ -5056,6 +5063,9 @@ begin
       'les tables de public et storage.objects', 'l''historique ne la porte pas, et aucune policy deux_facteurs n''existe : elles se jugent dès que la migration y est', true);
     return;
   end if;
+  -- Le texte des expressions se rend sous un chemin vide, qui nomme le schéma de chaque fonction (DF1, DF2) ; le chemin
+  -- d'avant revient à la fin du bloc.
+  perform set_config('search_path', '', true);
 
   for rel in select c.oid, c.relname::text as nom from pg_class c
               where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p') order by c.relname collate "C" loop
@@ -5136,6 +5146,19 @@ begin
   end;
   mutations := mutations || jsonb_build_object('mutation', 'M-DF6 — DF4 rejoué, une policy d''insertion sur exigences_deux_facteurs', 'attendu', 'DF4 en faute',
     'observe', coalesce(nullif(obs, ''), 'rien vu'), 'mord', coalesce(obs like '%exigences_deux_facteurs.df_mutation_ecriture%', false));
+  -- M-DF7 : la policy de cabinet_admins nomme toujours la fonction, mais s'ouvre d'un `or true` — DF1 doit le voir au texte.
+  obs := null;
+  begin
+    alter policy deux_facteurs on public.cabinet_admins
+      using ((select public.deux_facteurs_satisfaits()) or true) with check ((select public.deux_facteurs_satisfaits()) or true);
+    execute q_policy into obs using 'public.cabinet_admins'::regclass::oid;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then
+    if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+  end;
+  mutations := mutations || jsonb_build_object('mutation', 'M-DF7 — DF1 rejoué, la policy de cabinet_admins ouverte d''un or true', 'attendu', 'DF1 en faute',
+    'observe', coalesce(nullif(obs, ''), 'rien vu'), 'mord', coalesce(obs like 'policy deux_facteurs non conforme%OR true%', false));
+  perform set_config('search_path', chemin, true);
 
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);

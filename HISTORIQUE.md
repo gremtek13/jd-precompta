@@ -49267,6 +49267,12 @@ pour un compte, drapeau baissé. **Les écrans**, drapeau baissé : `DeuxFacteur
 mutations sur 7 ; `rls.sql` 101 lignes/0/75 avant, 105/0/81 après (bloc DF ; trois comptes de policies corrigés), le
 retour à l'identique ; `restauration.sql` identique ; le banc du leurre SÛR des deux côtés. Restent : le plan de
 sauvegarde des deux tables, les essais qui comptent les policies, l'e-mail (SEC2-Q3).
+Relecture adverse (07/11/2026, confirmée) : l'appareil perdu gardait l'accès jusqu'à l'expiration de son jeton ;
+`deux_facteurs_satisfaits` exige, exigence ou non, un `iat` postérieur au dernier retrait (sa seconde et un `iat` non
+numérique refusés, sans cast qui lève) ; le 403 et le bloc des treize fonctions le disent. Retour en deux temps ; l'expression
+exacte (M-DF7) ; SP3 et les essais de P1-trace, C4a, B1 laissent la restrictive ; l'onglet Accès passe `cases`. Mère 17
+(P1-trace, C4a, B1, elle ; GoTrue et `authenticator` posés sur la copie) : 28 lignes/0, 11 mutations sur 11 ; `rls.sql`
+115/0/85 avant, 119/0/92 après, le retour à l'identique ; `40f59441…`, retour `23b36ca8…`. SEC2-Q2 (aal2 pour affaiblir) reste.
 
 ### 07/11/2026 — LE BANC DE CHARGE : DEUX PENTES QUADRATIQUES RETIRÉES
 
