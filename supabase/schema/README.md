@@ -1141,22 +1141,18 @@ deux contrôles se rejouent contre la production. En production, après
 l'application (12/10/2026, version `20261012070920`) : les mêmes valeurs, socle 78 `91ae95ec…` et inventaire 1 875
 `ae3d8044…` des deux côtés.
 
-## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
+## Restaurer un schéma à partir d'ici — RÉPÉTÉ LE 07/11/2026
 
-**L'export n'a jamais été rejoué dans une base vide, et l'ordre écrit ici jusqu'au 29/09/2026
-ÉCHOUE** — constaté en le lisant, pas en le rejouant. « Les migrations dans l'ordre de leur nom, puis
-le socle » bute dès `20260904160206`, qui pose une policy sur `references_annuelles`, une table que
-seul le socle crée ; puis sur `multi_cabinet_rls`, qui vise les douze tables du socle ; puis sur
-`20260905064432`, qui modifie `generate_code_email`, que seul le complément crée. L'ordre inverse ne
-tient pas davantage : le socle est un instantané d'aujourd'hui, et il porte déjà ce que des migrations
-ajoutent ensuite.
-
-Ce que ce dossier garantit est donc plus faible que ce qu'il promettait : **tout ce que la base
-contient s'y trouve, nom par nom** (contrôles ci-dessus) — pas encore une procédure qui le rejoue.
-Aujourd'hui il faudrait intercaler à la main, erreur par erreur : une reprise faite ainsi un jour de
-panne est précisément ce qu'un plan de reprise existe pour éviter. Rejouer l'export dans une base vide
-et en tirer un ordre qui passe est un chantier inscrit à la feuille de route, différé comme le reste
-de la disponibilité (décision du cabinet, 25/09/2026).
+**L'export a été rejoué dans une base vide le 07/11/2026** (une grappe PostgreSQL 17 neuve, en ICU en-US comme la
+production) et la base obtenue est égale à la production : `signature.sql` neuf familles sur neuf, l'inventaire, le
+socle, la dérive et le relevé complet des droits. L'ordre « les migrations dans l'ordre de leur nom, puis le socle »
+ne passe pas — il bute dès `20260904160206`, qui pose une policy sur `references_annuelles`, une table que seul le socle
+crée — ni l'inverse, le socle étant un instantané d'aujourd'hui. Ce qui passe vit dans `reprise/` : les fondations
+d'une grappe nue, la doublure de pg_net, les objets d'hier, l'écart que ni les migrations ni le socle ne portent
+(`pieces.uploaded_by`, nullable en production), et `rejouer.py`, qui intercale le socle objet par objet (ses règles en
+tête). Le mode d'emploi et ses pièges : `PLAN_DE_REPRISE.md`, §4, étape 2 ; le récit : HISTORIQUE.md, « L'EXPORT
+REJOUÉ DANS UNE BASE VIDE ». Les fichiers de `reprise/` ne sont ni des migrations ni le socle : ni la dérive ni
+`socle.py` ni `inventaire.py` ne les lisent.
 
 Deux choses que ces fichiers ne recréent pas, et qu'il faut avoir sous la main avant :
 

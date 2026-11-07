@@ -1,0 +1,11 @@
+-- CE QUE NI LES MIGRATIONS NI LE SOCLE NE PORTENT, et que la production porte : relevé le 07/11/2026 en rejouant l'export
+-- dans une base vide puis en comparant `signature.sql` à la réplique mère (égale à la production à 177 migrations).
+-- `rejouer.py` le pose en dernier. Ce fichier n'est qu'un CONTOURNEMENT de répétition : l'écart appartient à l'export, qui
+-- devrait le porter (le socle et son générateur `supabase/essais/socle.sql`, sur décision du cabinet) ; tant qu'il ne le
+-- porte pas, une reprise qui l'oublierait rebâtirait une base qui refuse ce que la production accepte.
+--
+-- 1. `pieces.uploaded_by` : NOT NULL dans la migration qui crée la table (20260826164649_precompta_core_schema), NULLABLE
+--    en production — levé hors migration, à une date que le dépôt ne dit pas. Ni `inventaire.sql` (il compare des noms) ni
+--    `socle.sql` (il ne régénère que les douze tables et onze objets) ne le voyaient ; la famille « colonnes » de
+--    `signature.sql` le voit (`pieces|uploaded_by|uuid||false|` en production, `…|true|` rejoué).
+alter table public.pieces alter column uploaded_by drop not null;

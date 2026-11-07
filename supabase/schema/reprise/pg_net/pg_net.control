@@ -1,0 +1,8 @@
+# DOUBLURE de pg_net pour une répétition locale de la reprise (ligne 20.6) : PAS l'extension de Supabase.
+# Un projet Supabase porte la vraie ; une grappe PostgreSQL nue ne l'a pas, et la migration
+# 20260918111836_activer_pg_net_pour_appels_sortants l'installe. rejouer.py --doublure-pg-net copie ce fichier et
+# pg_net--0.0.sql dans le répertoire des extensions de la grappe de répétition, et les retire à la fin.
+comment = 'doublure de pg_net : le schéma net et deux fonctions qui ne font rien'
+default_version = '0.0'
+relocatable = false
+trusted = true

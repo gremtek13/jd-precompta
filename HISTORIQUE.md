@@ -49300,3 +49300,20 @@ les retours restent préparés, leur en-tête nomme le nouveau chemin. C2-Q2 à 
 l'état ; l'encart, trois cas neufs). Contrôles de l'export, égaux des deux côtés : dérive 179 `5cd50f1b…`, socle 81
 `3a79a158…`, inventaire 2 441 `5e71548d…`. Les deux essais quittent la famille « apres » du leurre (22 cas) ; le faux
 Supabase du banc rend les phases.
+
+### 07/11/2026 — L'EXPORT REJOUÉ DANS UNE BASE VIDE (LIGNE 20.6, MVP-D3)
+
+Une grappe PostgreSQL 17 neuve (UTF8, ICU en-US, en_US.UTF-8), le dépôt seul : `supabase/schema/reprise/` porte les
+fondations d'une grappe nue (rôles, `auth.users` et `auth.uid()`, le stockage, l'historique, les droits par défaut d'un
+projet d'avant `droits_hors_rls`), une doublure de pg_net et `rejouer.py`, qui rejoue les 177 migrations avec leur ligne
+d'historique et intercale le socle objet par objet : 102 objets, en 21 secondes, sans reprise. Les arrêts trouvés : les
+douze tables du socle dès `20260904160206` ; `generate_code_email` à `20260905064432` ; la colonne du complément que
+la garde de `caisse_du_client` compte (le complément se pose donc dès que possible) ; 17 policies et une clé que
+`multi_cabinet_rls` et `informations_dossier_cascade_suppression` suppriment avant de les recréer, dont six absentes de
+tout fichier (formes provisoires) ; la note de `documents_divers` et la clé d'hier de `regles_bancaires_ignorees`,
+tirées du socle d'avant `10754fb` ; pg_net, absent d'une grappe nue. Un écart que l'export ne porte pas : `pieces.uploaded_by`,
+nullable en production (`ecarts_hors_export.sql`, à verser au socle). Contre la copie de la mère : `signature.sql` 9/9,
+droits, inventaire, socle, dérive égaux ; `rls.sql` (le semis de la mère) 105 invariants, 0 en faute, 79 mutations sur
+79, `restauration.sql`, sorties identiques. La garde de `droits_hors_rls` refuse un projet sans les quatre droits (680
+manquent) ; les poser puis la rejouer inchangée passe. Reste : la transposition à un projet Supabase, à éprouver sur une
+branche.
