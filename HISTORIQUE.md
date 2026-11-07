@@ -49178,15 +49178,16 @@ sous le plan par défaut seul : un choix du FEC, que le plan ne touche pas.
 
 ### 07/11/2026 — LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (C6, LIGNE 51.5)
 
-MEG3-Q7 (« oui, à ce moment-là » : après EC-Q3). Déjà fait par EC-Q3 (EC3-Q4) : l'encaissement d'une facture SOURCE que le
-client enregistre avec son mouvement le réserve (G2) ; la carte de VF5a1 l'expose en tête de la fiche, « Classer par ses
-encaissements » (VF5c) est le seul geste offert, sous `sousVerrou` ; aucun lot ne le prend (`horsDesLots`) ; sur une
-lecture partielle, la fiche retient tout (`venteDuMouvement` à « retenu »). Ajouté, sans migration : la carte d'un mouvement
-réservé date la proposition (`mentionDuClient` : « proposé par le client le … », jour de `cree_le` ; « par le client » une
-fois classé). Le cas qui manquait : l'encaissement d'une facture d'AVANT la bascule, enregistré avec un crédit qu'aucune
-source ne réserve. `rapprochementProposeParLEncaissement` (lib/mouvementsDesVentes.ts) propose l'exemplaire unique et
-validé de la facture (`exemplaireUnique`), sous « Proposé par le client le … » ou « Enregistré avec ce mouvement le … »,
-jamais un nom ; s'il y a plusieurs factures ou pas d'exemplaire, une note seulement. `RapprochementProposeVue` le met en tête de la fiche,
-juge la pièce par `etatDeLaProposition` (le chemin de P9b), et « Associer » est le rapprochement d'hier (`agirSurMouvement`).
-Le crédit libre sort des lots (`JUSTIFICATIF_ENCAISSEMENT_CITE`). Tests : `rapprochementPropose.test.ts` (9), trois tests
-d'écran dans `BanqueTab.gestesDesVentes.test.tsx`, deux assertions reprises. Un dossier non basculé reste inchangé.
+MEG3-Q7 (« oui, à ce moment-là » : après EC-Q3). Déjà fait par EC-Q3 (EC3-Q4) : l'encaissement d'une facture SOURCE que
+le client enregistre avec son mouvement le réserve (G2) ; la carte de VF5a1 l'expose en tête de la fiche, « Classer par
+ses encaissements » (VF5c) est le seul geste offert, sous `sousVerrou` ; aucun lot ne le prend (`horsDesLots`) ; sur une
+lecture partielle, la fiche retient tout (`venteDuMouvement` à « retenu »). Ajouté, sans migration : la carte d'un
+mouvement réservé date la proposition (`mentionDuClient` : « proposé par le client le … », jour de `cree_le` ; « par le
+client » une fois classé). Le cas qui manquait : l'encaissement d'une facture d'AVANT la bascule, enregistré avec un
+crédit qu'aucune source ne réserve. `rapprochementProposeParLEncaissement` (lib/mouvementsDesVentes.ts) propose
+l'exemplaire unique et validé de la facture (`exemplaireUnique`), sous « Proposé par le client le … » ou « Enregistré
+avec ce mouvement le … », jamais un nom ; s'il y a plusieurs factures ou pas d'exemplaire, une note seulement.
+`RapprochementProposeVue` le met en tête de la fiche, juge la pièce par `etatDeLaProposition` (le chemin de P9b), et «
+Associer » est le rapprochement d'hier (`agirSurMouvement`). Le crédit libre sort des lots
+(`JUSTIFICATIF_ENCAISSEMENT_CITE`). Tests : `rapprochementPropose.test.ts` (9), trois tests d'écran dans
+`BanqueTab.gestesDesVentes.test.tsx`, deux assertions reprises. Un dossier non basculé reste inchangé.
