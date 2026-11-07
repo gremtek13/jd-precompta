@@ -332,7 +332,10 @@ describe('les essais de la base, rejoués en production', () => {
     // copie de la réplique mère.
     // Vingt-cinq le même jour : `facturesImportees` (A8a, `factures_importees`) entré dans la famille « apres », après sa
     // migration préparée ; SÛR au banc, sur une copie de la réplique mère.
-    expect(cas.length).toBe(25)
+    // Vingt-six le même jour (07/11/2026) : `parametresDesCotisations` (ligne 27, TNS-Q1 et TNS-Q4,
+    // `parametres_des_cotisations`) entré dans la famille « apres », après sa migration préparée ; SÛR au banc, sur une copie
+    // de la réplique mère.
+    expect(cas.length).toBe(26)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
