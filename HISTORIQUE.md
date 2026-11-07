@@ -49443,19 +49443,23 @@ au cabinet TNS-Q1-A (un taux au-dessus de 1) et TNS-Q1-B (le début d'activité 
 
 ### 07/11/2026 — JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS ADRESSE NE SE VALIDE PAS (PRÉPARÉE, PAS APPLIQUÉE)
 
-(Un agent architecte ; la réponse du cabinet à JJ-Q4 : « Oui, refuser à la validation ». Rien en production.) La
-migration `adresse_du_client_exigee` (20261107200000, md5 `1b1ff9e3e774c7f7e60cd03e95cc429c`, sans mot de retrait : par
-l'outil ; son retour se colle) pose un déclencheur à lui, `factures_emises_figees_adresse_du_client`, au seul passage à
-« validée » : une FACTURE (acompte et finale comprises) dont le type de client figé est « assujetti » ou « organisme_public »
-et l'adresse nulle ou faite des blancs de `trim` se refuse en 22023 (CGI, ann. II, art. 242 nonies A, I, 1°, relu sur
-Légifrance ; C. com., art. L441-9, I). Non jugés : l'avoir (il copie le client de sa facture), une facture déjà validée, la
-restauration, le particulier, le client établi hors de France (JJQ4-Q1), le type à préciser. Un déclencheur et non un bloc de
-la garde : `facture_internationale` vérifie la garde à son empreinte et redéfinit `enregistrer_facture` ; ni l'une ni
-l'autre n'est touchée, et les deux migrations se combinent dans les deux ordres. Le nom de la garde est le début du sien :
-le rang 19, après la date et le bloc E7A, avant la source de la vente (essai 30, 31). `refusDeLAdresseDuClient` le redit sous
-`ADRESSE_DU_CLIENT_EXIGEE`, baissé ; le formulaire le dit avant le clic. Copies de la réplique mère au niveau de la production
-(179) : l'essai 18/18 et 5 mutations sur 5, dans les deux ordres avec e7a (sa version de la relecture adverse) ; une facture
-validée sans adresse avant la migration reste à l'empreinte, son avoir se valide. Quatre essais validaient des factures à une
-entreprise sans adresse (`factures`, `devis`, `mentionsFigees`, `rls`) : une adresse fictive, et leurs sorties d'hier et
-d'aujourd'hui sont identiques sans la migration comme avec elle, `factureInternationale` aussi ; le banc du leurre, SÛR sur
-les cinq.
+### 07/11/2026 — JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS ADRESSE NE SE VALIDE PAS, ET LA LIGNE À 0 % D'UN REDEVABLE (A7C-Q1) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Un agent architecte ; JJ-Q4, « oui » ; A7C-Q1, « (A) ». Rien en production.) La migration `adresse_du_client_exigee`
+(20261107200000, md5 `ce5c7c18e6a48427c7e581d60a3ab24a`, sans mot de retrait : par l'outil ; son retour se colle) pose
+un déclencheur, `factures_emises_figees_mentions` (`garder_mentions_a_la_validation`, DEFINER), au seul passage à «
+validée » d'une FACTURE (acompte et finale comprises ; un avoir suit sa facture) : deux refus en 22023 sur ce qu'elle
+fige. Rang 19, un client « assujetti » ou « organisme_public » sans adresse (nulle, ou des blancs de `trim` ; CGI, ann.
+II, art. 242 nonies A, I, 1°, relu sur Légifrance ; C. com., art. L441-9, I). Rang 20, une ligne au taux 0 sous le
+statut « redevable » sans article, hors d'un régime d'e7a que la TVA française ne taxe pas, lu par `to_jsonb(new)` pour
+tenir sans sa colonne (les débours hors de la facture, CGI, art. 267, II, 2°). Non jugés : la facture déjà validée, la
+restauration, le particulier, le client établi hors de France (JJQ4-Q1), le type à préciser ; l'exonéré, la franchise,
+le redevable qui a son article. Un déclencheur, non un bloc de la garde : `facture_internationale` vérifie la garde à
+son empreinte et redéfinit `enregistrer_facture`, que rien ici ne touche ; les deux se combinent dans les deux ordres.
+Le nom de la garde est le début du sien : après la date et le bloc E7A, avant la source de la vente (essai 30 à 32). Le
+module les redit sous `ADRESSE_DU_CLIENT_EXIGEE`, baissé, et le formulaire avant le clic. Copies de la mère au niveau de
+la production (179) : l'essai, 26 contrôles et 6 mutations, dans les deux ordres avec e7a ; une facture validée avant,
+sans adresse et à 0 %, reste à l'empreinte et son avoir se valide. Cinq essais validaient ce que les règles refusent :
+une adresse fictive (`factures`, `devis`, `mentionsFigees`, `rls`), un article aux dossiers des acomptes ; sorties
+d'hier et d'aujourd'hui identiques, avec et sans la migration ; le banc SÛR. À l'essai d'e7a : sa facture « d'avant »
+(53, f5), à 0 % sans régime, se refuse ; au taux de 20 %, il est identique avec ou sans elle.

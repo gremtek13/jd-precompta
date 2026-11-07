@@ -1,6 +1,7 @@
 import { remplirModele } from './encaissementsFactures'
+import { horsDeLaTvaFrancaise } from './factureInternationale'
 import { mentionTva } from './statutTva'
-import type { ArticleExoneration, FactureEmise, StatutTva, TypeClient } from './types'
+import type { ArticleExoneration, FactureEmise, RegimeInternational, StatutTva, TypeClient } from './types'
 
 // CE QUE LA VALIDATION EXIGE D'UNE FACTURE, DEPUIS LA CORRECTION DE LA FACTURE (31/10/2026, reprise le 02/11/2026 pour
 // FACTURE-Q1 ; migration `facture_dates_centimes_mention_tva`, en production depuis le 02/11/2026 (version 20261102112003) ;
@@ -189,8 +190,9 @@ export function refusDeLaValidation(v: ValidationAJuger): RefusDeLaValidation | 
 // ── L'ADRESSE DU CLIENT (JJ-Q4, la réponse du cabinet du 07/11/2026 : « Oui, refuser à la validation ») ──────────────
 // La migration `adresse_du_client_exigee`, PRÉPARÉE, PAS APPLIQUÉE (supabase/preparees/20261107200000_adresse_du_client_exigee.sql ;
 // son essai : supabase/essais/adresseDuClientExigee.sql ; HISTORIQUE.md, « JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS
-// ADRESSE NE SE VALIDE PAS (PRÉPARÉE, PAS APPLIQUÉE) »). Un déclencheur à lui, qui suit la garde des factures dans l'ordre
-// des noms (`factures_emises_figees_adresse_du_client`) : son refus vient après les cinq de la garde (et le bloc d'e7a,
+// ADRESSE NE SE VALIDE PAS, ET LA LIGNE À 0 % D'UN REDEVABLE (A7C-Q1) (PRÉPARÉE, PAS APPLIQUÉE) »). Un déclencheur à lui, qui
+// suit la garde des factures dans l'ordre des noms (`factures_emises_figees_mentions`, sa fonction
+// `garder_mentions_a_la_validation`, qui porte aussi le refus d'A7C-Q1, plus bas) : ce refus vient après les cinq de la garde (et le bloc d'e7a,
 // lib/factureInternationale.ts, quand sa migration est en base), et avant ceux de la source de la vente — le rang 19. Une
 // FACTURE (une facture d'acompte et la finale d'un devis comprises) dont le type de client, tel qu'il part, est une
 // entreprise établie en France ou un organisme public (`versEntreprise`, lib/mentionsFacture.ts), sans l'adresse de son
@@ -198,7 +200,8 @@ export function refusDeLaValidation(v: ValidationAJuger): RefusDeLaValidation | 
 // reprend le client de sa facture et n'en est pas jugé ; un particulier, un client établi hors de France ou un type à
 // préciser se valident comme hier. Sources : CGI, ann. II, art. 242 nonies A, I, 1° ; code de commerce, art. L441-9, I.
 
-// Baissé tant que la migration n'est pas en base : l'écran ne retient pas une validation que la base accepte encore.
+// Le drapeau de la migration, pour ses deux refus (JJ-Q4 et A7C-Q1). Baissé tant qu'elle n'est pas en base : l'écran ne
+// retient pas une validation que la base accepte encore.
 export const ADRESSE_DU_CLIENT_EXIGEE: boolean = false
 
 /** Le refus du déclencheur, sous ses mots et son code (validationDeLaFacture.test.ts le confronte à la migration). */
@@ -230,4 +233,49 @@ export function refusDeLAdresseDuClient(v: AdresseDuClientAJuger): RefusDeLAdres
   if (v.typeClient !== 'assujetti' && v.typeClient !== 'organisme_public') return null
   if ((v.tiersAdresse ?? '').trim() !== '') return null
   return { cle: REFUS_ADRESSE_DU_CLIENT.cle, code: REFUS_ADRESSE_DU_CLIENT.code, message: REFUS_ADRESSE_DU_CLIENT.modele }
+}
+
+// ── LA LIGNE À 0 % D'UN REDEVABLE SANS ARTICLE (A7C-Q1, la réponse du cabinet du 07/11/2026 : « (A) Refuser, comme
+// recommandé ») ── Le second refus du même déclencheur, dans la même migration et sous le même drapeau, le rang 20 : une
+// FACTURE qui fige le statut « redevable » sans article d'exonération, dont une ligne est au taux 0, se refuse — elle ne
+// dirait pas pourquoi elle ne porte pas de TVA (CGI, ann. II, art. 242 nonies A, I), et partait à la transmission comme une
+// exonération sous un article que le dossier n'a pas. Sauf sous un régime d'e7a que la TVA française ne taxe pas
+// (`horsDeLaTvaFrancaise`, lib/factureInternationale.ts), qui imprime sa propre mention. Un avoir suit sa facture. Des
+// débours ne sont pas des recettes de la facture (CGI, art. 267, II, 2°). La réponse (B), le motif par ligne, viendra avec
+// e7.
+
+/** Le refus du rang 20, sous ses mots et son code (validationDeLaFacture.test.ts le confronte à la migration). */
+export const REFUS_LIGNE_A_ZERO = {
+  cle: 'ligne_a_zero', rang: 20, code: '22023',
+  modele: "Une ligne est au taux 0 dans un dossier redevable de la TVA sans article d'exonération : la facture ne dirait "
+    + "pas pourquoi elle ne porte pas de TVA (CGI, ann. II, art. 242 nonies A, I). L'article d'exonération du dossier se "
+    + 'choisit avant la validation, ou la ligne prend son taux ; des débours, payés au nom et pour le compte du client, '
+    + 'restent hors de la facture (CGI, art. 267, II, 2°).',
+} as const
+
+/** Ce que le déclencheur juge des lignes d'une facture (ou d'un avoir) qui se valide, telle qu'elle part. */
+export interface LigneAZeroAJuger {
+  type: 'facture' | 'avoir'
+  // Le statut de TVA et l'article que la validation fige : ceux du dossier (`mentionsAFiger`, lib/mentionsFigees.ts).
+  statutTva: StatutTva | null
+  articleExoneration: ArticleExoneration | null
+  // Le régime d'e7a de la facture, nul hors de lui (et tant que l'écran d'e7b ne le saisit pas).
+  regimeInternational: RegimeInternational | null
+  // Les taux des lignes telles qu'elles partent.
+  tauxDesLignes: readonly number[]
+}
+
+export interface RefusDeLaLigneAZero {
+  cle: typeof REFUS_LIGNE_A_ZERO.cle
+  code: string
+  message: string
+}
+
+/** Le refus du rang 20 ; null quand le déclencheur laisse la validation se faire. */
+export function refusDeLaLigneAZero(v: LigneAZeroAJuger): RefusDeLaLigneAZero | null {
+  if (v.type !== 'facture') return null
+  if (v.statutTva !== 'redevable' || v.articleExoneration != null) return null
+  if (horsDeLaTvaFrancaise(v.regimeInternational)) return null
+  if (!v.tauxDesLignes.some((taux) => taux === 0)) return null
+  return { cle: REFUS_LIGNE_A_ZERO.cle, code: REFUS_LIGNE_A_ZERO.code, message: REFUS_LIGNE_A_ZERO.modele }
 }

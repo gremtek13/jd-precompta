@@ -1263,9 +1263,9 @@ begin
       -- ══ Le jeu : deux dossiers, un accès d'essai, des devis émis et acceptés par leurs fonctions ══════════
       ('j1', 'jeu', 'dossiers jetables A (basculé, trésorerie) et B (engagement)', 'proprietaire', null,
         $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures, forme_juridique,
-             denomination_imprimee, siret, adresse, mode_comptable) values
-          ('{DA}', 'ESSAI ACOMPTE A', '{CAB}', 'redevable', true, true, '5710', 'ESSAI ACOMPTE A SAS', '12345678200010', '1 rue de l''Essai, 75001 Paris', 'tresorerie'),
-          ('{DB}', 'ESSAI ACOMPTE B', '{CAB}', 'redevable', true, false, '5710', 'ESSAI ACOMPTE B SAS', '12345678200028', '2 rue de l''Essai, 75001 Paris', 'engagement')$q$, 'OK', null, null),
+             denomination_imprimee, siret, adresse, mode_comptable, article_exoneration) values
+          ('{DA}', 'ESSAI ACOMPTE A', '{CAB}', 'redevable', true, true, '5710', 'ESSAI ACOMPTE A SAS', '12345678200010', '1 rue de l''Essai, 75001 Paris', 'tresorerie', 'cgi_261_4_4_a'),
+          ('{DB}', 'ESSAI ACOMPTE B', '{CAB}', 'redevable', true, false, '5710', 'ESSAI ACOMPTE B SAS', '12345678200028', '2 rue de l''Essai, 75001 Paris', 'engagement', 'cgi_261_4_4_a')$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-acompte@exemple.invalid')$q$, 'OK', null, null),
       ('j3', 'jeu', 'DV1 : 1 000 € à 20 % et 500 € à 10 %', 'chef', null, $q$DEVIS {DA} [{"designation":"ESSAI-A-20","quantite":1,"prix_unitaire_ht":1000,"taux_tva":20},{"designation":"ESSAI-A-10","quantite":1,"prix_unitaire_ht":500,"taux_tva":10}] 1500 250 1750 acceptee$q$, 'OK', null, 'DV1'),

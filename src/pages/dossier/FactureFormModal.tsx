@@ -27,8 +27,8 @@ import {
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
 import {
-  ADRESSE_DU_CLIENT_EXIGEE, avisDuStatutDeTva, refusDeLAdresseDuClient, refusDeLaDateDEmission, refusDuStatutDeTva,
-  type FactureDeLaSerie,
+  ADRESSE_DU_CLIENT_EXIGEE, avisDuStatutDeTva, refusDeLAdresseDuClient, refusDeLaDateDEmission, refusDeLaLigneAZero,
+  refusDuStatutDeTva, type FactureDeLaSerie,
 } from '../../lib/validationDeLaFacture'
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue,
@@ -414,6 +414,14 @@ export default function FactureFormModal(props: Props) {
   // pour tout auteur ; le brouillon reste enregistrable. Sous `ADRESSE_DU_CLIENT_EXIGEE`, levé avec la migration.
   const refusDeLAdresse = ADRESSE_DU_CLIENT_EXIGEE
     ? refusDeLAdresseDuClient({ type: 'facture', typeClient: entete.type_client, tiersAdresse: entete.tiers_adresse })
+    : null
+  // LA LIGNE À 0 % D'UN REDEVABLE SANS ARTICLE (A7C-Q1 ; le rang 20, le même déclencheur, sous le même drapeau) : le statut
+  // et l'article du dossier, que la validation figera, et les lignes telles qu'elles partent. Aucun régime d'e7a : le
+  // formulaire ne le saisit pas encore (e7b). Levé, le drapeau remplace l'alerte d'hier (`zeroSansArticle`) par le refus.
+  const refusDeLaLigne = ADRESSE_DU_CLIENT_EXIGEE
+    ? refusDeLaLigneAZero({
+      type: 'facture', statutTva, articleExoneration, regimeInternational: null, tauxDesLignes: lignesValides.map((l) => l.taux_tva),
+    })
     : null
   // Ce que la base refuserait des mentions : ni le brouillon ni la validation ne partent, et l'écran dit pourquoi.
   const refusMentions = refusDesMentions(mentions, tiersSiret, 'facture')
@@ -851,9 +859,14 @@ export default function FactureFormModal(props: Props) {
       setError(refusDeLaDate.message)
       return
     }
-    // Seconde ceinture : de même sur l'adresse du client (JJ-Q4), qui suit la date dans l'ordre de la base.
+    // Seconde ceinture : de même sur l'adresse du client (JJ-Q4), qui suit la date dans l'ordre de la base, puis sur la
+    // ligne à 0 % d'un redevable sans article (A7C-Q1).
     if (statutCible === 'validee' && refusDeLAdresse) {
       setError(refusDeLAdresse.message)
+      return
+    }
+    if (statutCible === 'validee' && refusDeLaLigne) {
+      setError(refusDeLaLigne.message)
       return
     }
     // Seconde ceinture : le bouton de validation est déjà grisé sur un refus de la source, dit avant le clic.
@@ -1304,7 +1317,7 @@ export default function FactureFormModal(props: Props) {
               {messageArticle && <p role="status" style={{ marginTop: 8 }}>{messageArticle}</p>}
               {erreurArticle && !fenetreArticle && <p className="error-text" role="alert" style={{ marginTop: 8 }}>{erreurArticle}</p>}
               {refusTaxe && <p className="error-text">{pourLEspace(espace, refusTaxe)}</p>}
-              {zeroSansArticle && (
+              {zeroSansArticle && !refusDeLaLigne && (
                 <p className="alerte-tva" style={{ marginTop: 8 }}>
                   {espace === 'client'
                     ? 'Une ligne à 0 % : pour une société redevable, l’exonération se justifie par son article. Ton cabinet '
@@ -1389,6 +1402,7 @@ export default function FactureFormModal(props: Props) {
             {refusDuStatut && <p className="error-text" role="alert">{pourLEspace(espace, refusDuStatut.message)}</p>}
             {refusDeLaDate && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLaDate.message)}</p>}
             {refusDeLAdresse && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLAdresse.message)}</p>}
+            {refusDeLaLigne && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLaLigne.message)}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
             {avisDuStatut && <p className="note-info" role="note">{avisDuStatut}</p>}
 
@@ -1399,7 +1413,7 @@ export default function FactureFormModal(props: Props) {
               <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0 || refusFigeBrouillon != null}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusDeLaDate != null || refusDeLAdresse != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null || refusDeLAcompte != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusDeLaDate != null || refusDeLAdresse != null || refusDeLaLigne != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null || refusDeLAcompte != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>
