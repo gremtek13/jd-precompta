@@ -44,16 +44,20 @@ const sousLesCopiesDeTravail = (chemin: string) => chemin === copiesDeTravail ||
 
 // LES DRAPEAUX D'UNE MIGRATION QUI ATTEND, LEVÉS DANS LE BANC SEUL (`BANC_DRAPEAUX=DEVIS_EXPORTES npx vite --config …`) : un
 // écran derrière son drapeau se mesure avant sa migration, en simulation. La source servie est réécrite à la volée — le
-// fichier n'est jamais touché — et seule une déclaration `export const NOM: boolean = false` se lève ; une autre forme laisse
+// fichier n'est jamais touché — et seule une déclaration `export const NOM: boolean = false` ou `export const NOM = false` (certains
+// drapeaux, comme `SITUATIONS_PUBLIEES_EXPORTEES` ou `SAISIES_2035_EXPORTEES`, n'ont pas d'annotation) se lève ; une autre forme laisse
 // le drapeau baissé, et l'écran absent du banc le dit.
-const drapeauxLeves = (process.env.BANC_DRAPEAUX ?? '').split(',').map((d) => d.trim()).filter((d) => /^[A-Z_]+$/.test(d))
+const drapeauxLeves = (process.env.BANC_DRAPEAUX ?? '').split(',').map((d) => d.trim()).filter((d) => /^[A-Z_0-9]+$/.test(d))
 const leverLesDrapeaux = {
   name: 'drapeaux-du-banc',
   enforce: 'pre' as const,
   transform(code: string, id: string) {
     if (drapeauxLeves.length === 0 || !id.includes('/src/lib/')) return null
     let suite = code
-    for (const d of drapeauxLeves) suite = suite.replace(`export const ${d}: boolean = false`, `export const ${d}: boolean = true`)
+    for (const d of drapeauxLeves) {
+      suite = suite.replace(`export const ${d}: boolean = false`, `export const ${d}: boolean = true`)
+      suite = suite.replace(`export const ${d} = false`, `export const ${d} = true`)
+    }
     return suite === code ? null : suite
   },
 }
