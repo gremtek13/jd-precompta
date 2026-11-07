@@ -2,7 +2,8 @@ import {
   ecritureConforme, ecrituresSansPieceParMouvement,
   type LigneEcritureMouvement, type MouvementBancaire,
 } from './affectationBanque'
-import { ecartEnJours, libelleExploitable } from './appariementBanque'
+import { ecartEnJours } from './appariementBanque'
+import { libellerLEcritureDuReleve } from './libellesDuReleve'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import { genererEcheancier, type Emprunt, type LigneEcheancier } from './emprunts'
 import type { CleRoleComptable, PlanComptable } from './planComptable'
@@ -130,21 +131,21 @@ export function capitalDeLEcheance(ligne: Pick<MouvementBancaire, 'montant'>, d:
 // sortie crédite la banque, un déblocage la débite. Les quatre comptes — l'emprunt, ses intérêts, son assurance, la
 // banque — sont ceux du PLAN du dossier, que `rapprocher_echeance_emprunt` relit au même plan.
 export function ecritureDeLEcheance(ligne: MouvementBancaire, d: DecoupageEcheance, plan: PlanComptable): LigneEcritureMouvement[] {
-  const libelle = libelleExploitable(ligne) || ligne.libelle
   const total = centimes(Math.abs(ligne.montant)) / 100
+  // Le libellé, de la règle seule (lib/libellesDuReleve.ts, JJ1-Q1) : un déblocage, un crédit, ne recopie pas la banque.
   if (estDeblocage(ligne)) {
-    return [
-      { compte: plan.emprunt, sens: 'credit', montant: total, libelle },
-      { compte: plan.banque, sens: 'debit', montant: total, libelle },
-    ]
+    return libellerLEcritureDuReleve(ligne, [
+      { compte: plan.emprunt, sens: 'credit', montant: total },
+      { compte: plan.banque, sens: 'debit', montant: total },
+    ])
   }
-  const lignes: LigneEcritureMouvement[] = [
-    { compte: plan.emprunt, sens: 'debit', montant: capitalDeLEcheance(ligne, d), libelle },
-    { compte: plan.interets_emprunt, sens: 'debit', montant: centimes(d.interets) / 100, libelle },
-    { compte: plan.assurance_emprunt, sens: 'debit', montant: centimes(d.assurance) / 100, libelle },
-    { compte: plan.banque, sens: 'credit', montant: total, libelle },
+  const lignes: Omit<LigneEcritureMouvement, 'libelle'>[] = [
+    { compte: plan.emprunt, sens: 'debit', montant: capitalDeLEcheance(ligne, d) },
+    { compte: plan.interets_emprunt, sens: 'debit', montant: centimes(d.interets) / 100 },
+    { compte: plan.assurance_emprunt, sens: 'debit', montant: centimes(d.assurance) / 100 },
+    { compte: plan.banque, sens: 'credit', montant: total },
   ]
-  return lignes.filter((l) => l.montant > 0)
+  return libellerLEcritureDuReleve(ligne, lignes.filter((l) => l.montant > 0))
 }
 
 // Le découpage GARDÉ sur un mouvement rapproché d'un emprunt — ce que la base a vérifié et écrit.

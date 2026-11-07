@@ -1,4 +1,4 @@
-import { libelleExploitable } from './appariementBanque'
+import { libellerLEcritureDuReleve } from './libellesDuReleve'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import type { PlanComptable } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
@@ -122,14 +122,13 @@ export function ecritureDuMouvement(
   const { ht, tva } = horsTaxeEtTva(ligne.montant, taux)
   const entree = ligne.montant >= 0
   const sensCompte = entree ? 'credit' : 'debit'
-  // Le libellé complet quand l'import n'a gardé que le générique « Mouvement bancaire » : c'est ce
-  // qu'un vérificateur lira dans le FEC pour retrouver la ligne du relevé.
-  const libelle = libelleExploitable(ligne) || ligne.libelle
-  return [
-    { compte: compteCategorie, sens: sensCompte, montant: ht, libelle },
-    ...(tva > 0 ? [{ compte: plan.tva_collectee, sens: sensCompte, montant: tva, libelle } as const] : []),
-    { compte: plan.banque, sens: entree ? 'debit' : 'credit', montant: Math.abs(ligne.montant), libelle },
-  ]
+  // Le libellé, de la règle seule (lib/libellesDuReleve.ts, JJ1-Q1) : un crédit, ou un débit sur un produit ou un client,
+  // ne recopie pas le texte de la banque, qui nomme qui a payé ; un autre débit le garde.
+  return libellerLEcritureDuReleve(ligne, [
+    { compte: compteCategorie, sens: sensCompte, montant: ht },
+    ...(tva > 0 ? [{ compte: plan.tva_collectee, sens: sensCompte, montant: tva } as const] : []),
+    { compte: plan.banque, sens: entree ? 'debit' : 'credit', montant: Math.abs(ligne.montant) },
+  ])
 }
 
 export interface MouvementAffecte {

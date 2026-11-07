@@ -370,8 +370,8 @@ describe('ecritureDuCompteDeBilan — le compte choisi face à la banque, dans l
   it('un dépôt de garantie rendu crédite le 275000 et débite la banque', () => {
     const rendu = mouvement({ montant: 1200, libelle: 'VIR RESTITUTION DEPOT' })
     expect(ecritureDuCompteDeBilan(rendu, COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, PLAN_PAR_DEFAUT)).toEqual([
-      { compte: COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, sens: 'credit', montant: 1200, libelle: 'VIR RESTITUTION DEPOT' },
-      { compte: COMPTE_BANQUE, sens: 'debit', montant: 1200, libelle: 'VIR RESTITUTION DEPOT' },
+      { compte: COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, sens: 'credit', montant: 1200, libelle: 'Crédit du relevé du 12/03/2026' },
+      { compte: COMPTE_BANQUE, sens: 'debit', montant: 1200, libelle: 'Crédit du relevé du 12/03/2026' },
     ])
   })
 

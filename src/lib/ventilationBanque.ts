@@ -2,7 +2,7 @@ import {
   ecritureConforme, ecrituresSansPieceParMouvement, natureDuCompte,
   type LigneEcritureMouvement, type MouvementBancaire, type NatureCompte,
 } from './affectationBanque'
-import { libelleExploitable } from './appariementBanque'
+import { libellerLEcritureDuReleve } from './libellesDuReleve'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
@@ -147,9 +147,8 @@ export function ecritureDeLaVentilation(
   modele: ModeleComptable,
   assujettiTva: boolean,
 ): LigneEcritureMouvement[] | null {
-  const libelle = libelleExploitable(ligne) || ligne.libelle
   const parId = new Map(categories.map((c) => [c.id, c]))
-  const lignes: LigneEcritureMouvement[] = []
+  const lignes: Omit<LigneEcritureMouvement, 'libelle'>[] = []
   for (const p of parts) {
     let compte: string | null = null
     let taux: number | null = null
@@ -164,11 +163,12 @@ export function ecritureDeLaVentilation(
     if (!compte) return null
     const sens = p.montant > 0 ? 'credit' : 'debit'
     const { ht, tva } = horsTaxeEtTva(p.montant, taux)
-    lignes.push({ compte, sens, montant: ht, libelle })
-    if (tva > 0) lignes.push({ compte: modele.plan.tva_collectee, sens, montant: tva, libelle })
+    lignes.push({ compte, sens, montant: ht })
+    if (tva > 0) lignes.push({ compte: modele.plan.tva_collectee, sens, montant: tva })
   }
-  lignes.push({ compte: modele.plan.banque, sens: ligne.montant > 0 ? 'debit' : 'credit', montant: Math.abs(centimes(ligne.montant)) / 100, libelle })
-  return lignes
+  lignes.push({ compte: modele.plan.banque, sens: ligne.montant > 0 ? 'debit' : 'credit', montant: Math.abs(centimes(ligne.montant)) / 100 })
+  // Le libellé, de la règle seule (lib/libellesDuReleve.ts, JJ1-Q1), sur les comptes de TOUTES les parts.
+  return libellerLEcritureDuReleve(ligne, lignes)
 }
 
 // LES PARTS TELLES QU'ELLES SE RÉÉCRIVENT SOUS LE STATUT ACTUEL DU DOSSIER (« Réécrire », dans Écritures) :

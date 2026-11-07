@@ -201,8 +201,8 @@ describe('la caisse en base : « Versement d’espèces » avec le solde de la c
       args: {
         p_ligne_bancaire_id: 'm-vir', p_compte: CAISSE,
         p_ecritures: [
-          { compte: CAISSE, sens: 'credit', montant: 200, libelle: 'VIR CLIENT DIVERS' },
-          { compte: '512000', sens: 'debit', montant: 200, libelle: 'VIR CLIENT DIVERS' },
+          { compte: CAISSE, sens: 'credit', montant: 200, libelle: 'Crédit du relevé du 12/03/2026' },
+          { compte: '512000', sens: 'debit', montant: 200, libelle: 'Crédit du relevé du 12/03/2026' },
         ],
       },
     }])

@@ -1798,8 +1798,8 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
     choisir('cat-recettes')
     await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
     expect(faux.rpcs[0].args.p_ecritures).toEqual([
-      { compte: '706000', sens: 'credit', montant: 250, libelle: 'VIR CPAM' },
-      { compte: '512000', sens: 'debit', montant: 250, libelle: 'VIR CPAM' },
+      { compte: '706000', sens: 'credit', montant: 250, libelle: 'Crédit du relevé du 02/06/2025' },
+      { compte: '512000', sens: 'debit', montant: 250, libelle: 'Crédit du relevé du 02/06/2025' },
     ])
   })
 
@@ -1826,9 +1826,9 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
         p_ligne_bancaire_id: 'ligne-1',
         p_categorie_id: 'cat-recettes',
         p_ecritures: [
-          { compte: '706000', sens: 'credit', montant: 100, libelle: 'VIR CPAM' },
-          { compte: '445710', sens: 'credit', montant: 20, libelle: 'VIR CPAM' },
-          { compte: '512000', sens: 'debit', montant: 120, libelle: 'VIR CPAM' },
+          { compte: '706000', sens: 'credit', montant: 100, libelle: 'Crédit du relevé du 02/06/2025' },
+          { compte: '445710', sens: 'credit', montant: 20, libelle: 'Crédit du relevé du 02/06/2025' },
+          { compte: '512000', sens: 'debit', montant: 120, libelle: 'Crédit du relevé du 02/06/2025' },
         ],
         p_taux_tva: 20,
       },
@@ -1849,8 +1849,8 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
       p_ligne_bancaire_id: 'ligne-1',
       p_categorie_id: 'cat-recettes',
       p_ecritures: [
-        { compte: '706000', sens: 'credit', montant: 250, libelle: 'VIR CPAM' },
-        { compte: '512000', sens: 'debit', montant: 250, libelle: 'VIR CPAM' },
+        { compte: '706000', sens: 'credit', montant: 250, libelle: 'Crédit du relevé du 02/06/2025' },
+        { compte: '512000', sens: 'debit', montant: 250, libelle: 'Crédit du relevé du 02/06/2025' },
       ],
       p_taux_tva: 0,
     })
@@ -2113,12 +2113,12 @@ describe('BanqueTab — les règles d’affectation et le lot', () => {
       args: {
         p_affectations: [
           { ligne_bancaire_id: 'l-cpam-1', categorie_id: 'cat-recettes', taux_tva: null, ecritures: [
-            { compte: '706000', sens: 'credit', montant: 250, libelle: 'VIR CPAM 13 SOINS' },
-            { compte: '512000', sens: 'debit', montant: 250, libelle: 'VIR CPAM 13 SOINS' },
+            { compte: '706000', sens: 'credit', montant: 250, libelle: 'Crédit du relevé du 03/06/2025' },
+            { compte: '512000', sens: 'debit', montant: 250, libelle: 'Crédit du relevé du 03/06/2025' },
           ] },
           { ligne_bancaire_id: 'l-cpam-2', categorie_id: 'cat-recettes', taux_tva: null, ecritures: [
-            { compte: '706000', sens: 'credit', montant: 180, libelle: 'VIR CPAM 13 SOINS' },
-            { compte: '512000', sens: 'debit', montant: 180, libelle: 'VIR CPAM 13 SOINS' },
+            { compte: '706000', sens: 'credit', montant: 180, libelle: 'Crédit du relevé du 10/06/2025' },
+            { compte: '512000', sens: 'debit', montant: 180, libelle: 'Crédit du relevé du 10/06/2025' },
           ] },
           { ligne_bancaire_id: 'l-frais', categorie_id: 'cat-frais', taux_tva: null, ecritures: [
             { compte: '627000', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
@@ -2148,9 +2148,9 @@ describe('BanqueTab — les règles d’affectation et le lot', () => {
     const envoi = envoisDuLot()[0].args.p_affectations as { ligne_bancaire_id: string; taux_tva: number | null; ecritures: unknown }[]
     expect(envoi.find((a) => a.ligne_bancaire_id === 'l-cpam-1')).toEqual({
       ligne_bancaire_id: 'l-cpam-1', categorie_id: 'cat-recettes', taux_tva: 20, ecritures: [
-        { compte: '706000', sens: 'credit', montant: 208.33, libelle: 'VIR CPAM 13 SOINS' },
-        { compte: '445710', sens: 'credit', montant: 41.67, libelle: 'VIR CPAM 13 SOINS' },
-        { compte: '512000', sens: 'debit', montant: 250, libelle: 'VIR CPAM 13 SOINS' },
+        { compte: '706000', sens: 'credit', montant: 208.33, libelle: 'Crédit du relevé du 03/06/2025' },
+        { compte: '445710', sens: 'credit', montant: 41.67, libelle: 'Crédit du relevé du 03/06/2025' },
+        { compte: '512000', sens: 'debit', montant: 250, libelle: 'Crédit du relevé du 03/06/2025' },
       ],
     })
     expect(envoi.find((a) => a.ligne_bancaire_id === 'l-frais')?.taux_tva).toBeNull()
@@ -2565,8 +2565,8 @@ describe('BanqueTab — le virement personnel s’écrit', () => {
 
     await waitFor(() => expect(faux.rpcs).toHaveLength(1))
     expect(faux.rpcs[0].args.p_ecritures).toEqual([
-      { compte: '455000', sens: 'credit', montant: 2000, libelle: 'VIR APPORT' },
-      { compte: '512000', sens: 'debit', montant: 2000, libelle: 'VIR APPORT' },
+      { compte: '455000', sens: 'credit', montant: 2000, libelle: 'Crédit du relevé du 02/06/2025' },
+      { compte: '512000', sens: 'debit', montant: 2000, libelle: 'Crédit du relevé du 02/06/2025' },
     ])
   })
 
@@ -2997,8 +2997,8 @@ describe('BanqueTab — une échéance d’emprunt se découpe et s’écrit', (
       args: {
         p_ligne_bancaire_id: 'ligne-1', p_emprunt_id: 'emp-1', p_echeance: null, p_interets: 0, p_assurance: 0,
         p_ecritures: [
-          { compte: '164000', sens: 'credit', montant: 12000, libelle: 'VIR DEBLOCAGE PRET' },
-          { compte: '512000', sens: 'debit', montant: 12000, libelle: 'VIR DEBLOCAGE PRET' },
+          { compte: '164000', sens: 'credit', montant: 12000, libelle: 'Crédit du relevé du 07/01/2025' },
+          { compte: '512000', sens: 'debit', montant: 12000, libelle: 'Crédit du relevé du 07/01/2025' },
         ],
       },
     }])
@@ -3347,10 +3347,10 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
           { categorie_id: 'cat-frais', part_personnelle: false, montant: -5, taux_tva: null },
         ],
         p_ecritures: [
-          { compte: '706000', sens: 'credit', montant: 83.33, libelle: 'REMISE CB' },
-          { compte: '445710', sens: 'credit', montant: 16.67, libelle: 'REMISE CB' },
-          { compte: '627000', sens: 'debit', montant: 5, libelle: 'REMISE CB' },
-          { compte: '512000', sens: 'debit', montant: 95, libelle: 'REMISE CB' },
+          { compte: '706000', sens: 'credit', montant: 83.33, libelle: 'Crédit du relevé du 02/06/2025' },
+          { compte: '445710', sens: 'credit', montant: 16.67, libelle: 'Crédit du relevé du 02/06/2025' },
+          { compte: '627000', sens: 'debit', montant: 5, libelle: 'Crédit du relevé du 02/06/2025' },
+          { compte: '512000', sens: 'debit', montant: 95, libelle: 'Crédit du relevé du 02/06/2025' },
         ],
       },
     }])
@@ -4426,8 +4426,8 @@ describe('BanqueTab — un mouvement vers un compte de bilan s’écrit', () => 
 
     await waitFor(() => expect(within(volet()).getByRole('heading', { name: 'Écrit sur un compte de bilan' })).toBeTruthy())
     expect(faux.rpcs[0].args.p_ecritures).toEqual([
-      { compte: '275000', sens: 'credit', montant: 1500, libelle: 'VIR RESTITUTION DEPOT' },
-      { compte: '512000', sens: 'debit', montant: 1500, libelle: 'VIR RESTITUTION DEPOT' },
+      { compte: '275000', sens: 'credit', montant: 1500, libelle: 'Crédit du relevé du 02/06/2025' },
+      { compte: '512000', sens: 'debit', montant: 1500, libelle: 'Crédit du relevé du 02/06/2025' },
     ])
     expect(within(volet()).getByText('Compte 275000 — Dépôts et cautionnements versés · au crédit')).toBeTruthy()
   })
@@ -4716,8 +4716,8 @@ describe('BanqueTab — le paiement et le remboursement de la TVA', () => {
     await act(async () => { panneau.getByRole('button', { name: 'Rapprocher de cette déclaration' }).click() })
     await waitFor(() => expect(within(volet()).getByText('Remboursement de TVA — 2e trimestre 2025')).toBeTruthy())
     expect(faux.rpcs[0].args.p_ecriture).toEqual([
-      { compte: '512000', sens: 'debit', montant: 800, libelle: 'VIR DGFIP REMBOURSEMENT CREDIT TVA' },
-      { compte: '445830', sens: 'credit', montant: 800, libelle: 'VIR DGFIP REMBOURSEMENT CREDIT TVA' },
+      { compte: '512000', sens: 'debit', montant: 800, libelle: 'Crédit du relevé du 02/09/2025' },
+      { compte: '445830', sens: 'credit', montant: 800, libelle: 'Crédit du relevé du 02/09/2025' },
     ])
     expect(within(volet()).getByText('Déposée le 15/07/2025 · remboursement reçu')).toBeTruthy()
   })
@@ -5936,9 +5936,9 @@ describe('BanqueTab — sous le plan du dossier', () => {
     expect(within(volet()).getByText(/Recette au hors taxe : 100,00.*TVA collectée \(445711\) : 20,00/)).toBeTruthy()
     await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
     expect(faux.rpcs[0].args.p_ecritures).toEqual([
-      { compte: '706000', sens: 'credit', montant: 100, libelle: 'VIR CPAM' },
-      { compte: '445711', sens: 'credit', montant: 20, libelle: 'VIR CPAM' },
-      { compte: '512100', sens: 'debit', montant: 120, libelle: 'VIR CPAM' },
+      { compte: '706000', sens: 'credit', montant: 100, libelle: 'Crédit du relevé du 02/06/2025' },
+      { compte: '445711', sens: 'credit', montant: 20, libelle: 'Crédit du relevé du 02/06/2025' },
+      { compte: '512100', sens: 'debit', montant: 120, libelle: 'Crédit du relevé du 02/06/2025' },
     ])
   })
 })

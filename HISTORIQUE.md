@@ -49317,3 +49317,21 @@ droits, inventaire, socle, dérive égaux ; `rls.sql` (le semis de la mère) 105
 79, `restauration.sql`, sorties identiques. La garde de `droits_hors_rls` refuse un projet sans les quatre droits (680
 manquent) ; les poser puis la rejouer inchangée passe. Reste : la transposition à un projet Supabase, à éprouver sur une
 branche.
+
+### 07/11/2026 — JJ1-Q1 : LE LIBELLÉ DE LA BANQUE HORS DES ÉCRITURES DU RELEVÉ (LIGNE 26.6)
+
+Réponse du cabinet du 07/11/2026 : « Oui, la règle de l'assistant (crédits et remboursements composés) ». La règle vit
+dans `lib/libellesDuReleve.ts`, pure : l'écriture d'un mouvement du relevé hors des ventes facturées porte, pour un
+CRÉDIT, « Crédit du relevé du JJ/MM/AAAA » (`formatDate`, calendrier civil) ; pour un DÉBIT dont une ligne est sur un
+produit (classe 7) ou un client (classe 41) — la définition de VF9CQ1B, ses racines confrontées par le test à la
+constante de l'assistant —, « Débit du relevé du JJ/MM/AAAA » ; tout autre débit garde le libellé de la banque
+(`libelleExploitable`). Les cinq compositeurs passent par `libellerLEcritureDuReleve` : l'affectation (à la main, les
+règles et leurs lots, la recette d'un assujetti, le virement personnel, le compte de bilan avec la caisse), la
+ventilation, la cotisation, l'emprunt, la TVA. Aucune fonction SQL ne compare le libellé (relu en production : elles
+insèrent `coalesce(e->>'libelle', '')`), ni `ecritureConforme` : rien au brouillon n'est réécrit ni dit « à réécrire »
+(comme FEC22Q7-Q1). L'assistant ne compose aucun libellé du relevé (sa copie compare sans libellé) : rien à recopier.
+`libellesDuReleve.test.ts` relève toute la source (un libellé de la banque dans une écriture composée, huit exceptions
+d'autres sources, chacune à son nombre), un défaut planté sous quatre formes, trois mutations sur la source réelle. La
+piste d'audit tait le tiers d'une pièce de vente (`tiersAuFec`) et nomme une pièce sans écriture par `libelleDUnePiece`
+: le test a trouvé que son libellé recopiait le tiers lu. Restent, au cabinet : la colonne « libellé du mouvement » de
+la piste d'audit (le texte de la banque) et le tiers d'une facture source dans la même piste (JJ1Q1-Q1).

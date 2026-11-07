@@ -296,8 +296,9 @@ describe('aucun nom lu hors de la règle, dans une écriture composée ni dans l
     expect(releve.ecritures.get('src/lib/engagement.ts')).toBeGreaterThanOrEqual(2)
     expect(releve.ecritures.get('src/lib/ecrituresVentesFacturees.ts')).toBeGreaterThanOrEqual(4)
     expect(releve.regleAuFec.get('src/lib/fec.ts')).toBe(1)
-    // Et toutes les autres écritures composées — le relevé, la caisse, l'emprunt, les cotisations, l'inventaire, l'assistant.
-    expect([...releve.ecritures.values()].reduce((s, n) => s + n, 0)).toBeGreaterThan(40)
+    // Et toutes les autres écritures composées — la caisse, l'inventaire, l'assistant. Celles d'un mouvement du relevé se
+    // composent sans libellé et le reçoivent de `libellerLEcritureDuReleve` (JJ1-Q1), que libellesDuReleve.test.ts relève.
+    expect([...releve.ecritures.values()].reduce((s, n) => s + n, 0)).toBeGreaterThan(25)
     expect(releve.ecritures.get('supabase/functions/agent-comptable/index.ts')).toBeGreaterThanOrEqual(4)
   })
 

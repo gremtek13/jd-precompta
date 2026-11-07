@@ -132,10 +132,11 @@ describe('ecritureDuMouvement — le compte de la catégorie face à la banque',
     ])
   })
 
+  // Un crédit ne recopie pas le libellé de la banque, qui nomme qui a payé (JJ1-Q1, lib/libellesDuReleve.ts).
   it('un encaissement : la banque au débit, le produit au crédit', () => {
     expect(ecritureDuMouvement(mouvement({ montant: 1234.56, libelle: 'VIR CPAM' }), '706000', null, PLAN_PAR_DEFAUT)).toEqual([
-      { compte: '706000', sens: 'credit', montant: 1234.56, libelle: 'VIR CPAM' },
-      { compte: '512000', sens: 'debit', montant: 1234.56, libelle: 'VIR CPAM' },
+      { compte: '706000', sens: 'credit', montant: 1234.56, libelle: 'Crédit du relevé du 12/03/2025' },
+      { compte: '512000', sens: 'debit', montant: 1234.56, libelle: 'Crédit du relevé du 12/03/2025' },
     ])
   })
 
@@ -151,9 +152,9 @@ describe('ecritureDuMouvement — le compte de la catégorie face à la banque',
 
   it('une recette taxée : la banque au TTC, la recette au hors taxe, la TVA collectée à côté', () => {
     expect(ecritureDuMouvement(mouvement({ montant: 492.6, libelle: 'VIR CLIENT' }), '706000', 20, PLAN_PAR_DEFAUT)).toEqual([
-      { compte: '706000', sens: 'credit', montant: 410.5, libelle: 'VIR CLIENT' },
-      { compte: '445710', sens: 'credit', montant: 82.1, libelle: 'VIR CLIENT' },
-      { compte: '512000', sens: 'debit', montant: 492.6, libelle: 'VIR CLIENT' },
+      { compte: '706000', sens: 'credit', montant: 410.5, libelle: 'Crédit du relevé du 12/03/2025' },
+      { compte: '445710', sens: 'credit', montant: 82.1, libelle: 'Crédit du relevé du 12/03/2025' },
+      { compte: '512000', sens: 'debit', montant: 492.6, libelle: 'Crédit du relevé du 12/03/2025' },
     ])
   })
 

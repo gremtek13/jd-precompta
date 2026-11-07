@@ -234,8 +234,8 @@ describe('VirementsTab — les virements personnels sans écriture', () => {
 
     // Un apport CRÉDITE le compte du dirigeant.
     expect(faux.rpcs[0].args.p_ecritures).toEqual([
-      { compte: '455000', sens: 'credit', montant: 2000, libelle: 'VIR APPORT' },
-      { compte: '512000', sens: 'debit', montant: 2000, libelle: 'VIR APPORT' },
+      { compte: '455000', sens: 'credit', montant: 2000, libelle: 'Crédit du relevé du 02/06/2025' },
+      { compte: '512000', sens: 'debit', montant: 2000, libelle: 'Crédit du relevé du 02/06/2025' },
     ])
     await screen.findByText('Compte 455000')
   })
