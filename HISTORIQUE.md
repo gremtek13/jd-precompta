@@ -49441,8 +49441,6 @@ l'essai 36/36, dix mutations tuées ; `rls.sql` 108/0/79 avant, 111/0/82 après 
 `restauration.sql` IDENTIQUE ; le retour refuse puis défait tout. L'écran sous le volet social, drapeau baissé. Restent
 au cabinet TNS-Q1-A (un taux au-dessus de 1) et TNS-Q1-B (le début d'activité hors du gel).
 
-### 07/11/2026 — JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS ADRESSE NE SE VALIDE PAS (PRÉPARÉE, PAS APPLIQUÉE)
-
 ### 07/11/2026 — JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS ADRESSE NE SE VALIDE PAS, ET LA LIGNE À 0 % D'UN REDEVABLE (A7C-Q1) (PRÉPARÉE, PAS APPLIQUÉE)
 
 (Un agent architecte ; JJ-Q4, « oui » ; A7C-Q1, « (A) ». Rien en production.) La migration `adresse_du_client_exigee`
@@ -49547,3 +49545,16 @@ la place de la condition au texte. Copie de la mère 17 au niveau de la producti
 `deuxFacteurs.sql` 34 lignes/0, 15 mutations sur 15 (M-DF12 à M-DF15 : la condition ôtée, ou jugée avant l'autorité),
 l'essai neuf rouge contre la migration d'hier (DF10) ; `rls.sql` 117/0/86 avant, 121/0/93 après, le retour inchangé
 (`23b36ca8…`, sa garde ne lit aucun corps) à l'identique. Migration `e41a0b3a…` (hier `40f59441…`), essai `6e77322e…`.
+
+### 07/11/2026 — LA RELECTURE DU 07/11 AU SOIR : CE QUI EST CORRIGÉ ET CE QUI RESTE
+
+Corrigé : `devis.ts` tire ses deux branches du contact dans `ecritureDuDevisSelon` et `saisieDuDevisSelon`, le drapeau
+en paramètre ; « Publier au client » et le volet social sans paramètres des cotisations rejoués baissés par un accesseur
+(aucune lecture, l'estimation d'hier), une mutation par cas ; `sauvegarde.ts` et deux tests ne disent plus « préparée »
+des migrations du jour ; CLAUDE.md : la relance d'une facture par « Ventes » (MEG3-Q3), les quatre colonnes facultatives
+de `cotisations_declarees` ; le titre orphelin de JJ-Q4 retiré. Contrôles égaux : dérive 186 `28a3a11e…`, socle 81
+`c6cf69c1…`, inventaire 2 558 `1c59d374…`. Reste : le banc du leurre sur `regularisationDesCotisations`,
+`parametresDesCotisations` et `saisies2035` avant leur rejeu en production ; `reprise/rejouer.py` dans une base vide (le
+socle porte les quatre colonnes) ; les deux policies de `cotisations_declarees` sans `to` (rôle `public`, relu en
+production), un resserrement à présenter au cabinet ; le reste dû d'une facture, que `send-email` ne vérifie pas avant
+une relance (au cabinet) ; deux en-têtes de `rls.sql`, laissés pour son empreinte.

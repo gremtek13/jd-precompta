@@ -448,8 +448,8 @@ const GESTES_DES_FONCTIONS: Record<string, readonly (readonly [FonctionDeLaVente
 // ne dit pas ce que le client ne peut pas encore faire. Le jour où l'export porte la migration (`ENVOI_DES_DEVIS_PREVU`
 // levé), la liste se vide, et la confrontation ci-dessous exige que la phrase nomme l'envoi d'un devis.
 // La relance d'une facture en retard (`send-email › relance_facture`, étape C5) de même : la fonction la sait, sous une
-// constante baissée jusqu'à la migration préparée `relances_des_factures` ; la phrase la nomme le jour où
-// `RELANCES_EXPORTEES` se lève.
+// constante (`RELANCES_EN_BASE`) qui ne vaut qu'au redéploiement de `send-email` — la migration `relances_des_factures` est
+// en production depuis le 07/11/2026 ; la phrase la nomme le jour où `RELANCES_EXPORTEES` se lève, après ce déploiement.
 const PAS_ENCORE_NOMMEES: readonly (readonly [FonctionDeLaVente, string])[] = [
   ...(ENVOI_DES_DEVIS_PREVU ? [] : [['send-email', 'devis'] as const]),
   ...(RELANCES_EXPORTEES ? [] : [['send-email', 'relance_facture'] as const]),

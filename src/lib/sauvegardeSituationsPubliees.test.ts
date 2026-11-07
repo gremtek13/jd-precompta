@@ -29,9 +29,10 @@ import {
   violationsOrdre,
 } from './sauvegarde'
 
-// LES SITUATIONS PUBLIÉES AU PLAN DE SAUVEGARDE (espace client, étape C4a). Leur migration, `situations_publiees`, est
-// préparée, pas appliquée : drapeau baissé, le plan effectif ne dit RIEN de la table — une sauvegarde lirait une table absente
-// et échouerait —, et le plan PRÉVU est déjà juste, pour que lever `SITUATIONS_PUBLIEES_EXPORTEES` suffise le jour venu.
+// LES SITUATIONS PUBLIÉES AU PLAN DE SAUVEGARDE (espace client, étape C4a). Leur migration, `situations_publiees`, est en
+// production depuis le 07/11/2026 (supabase/schema/20261107164102_situations_publiees.sql) et le drapeau levé : la table est
+// au plan effectif. Baissé — l'état d'avant, éprouvé tant que son code existe (`vi.doMock`, plus bas) —, le plan effectif ne
+// dit RIEN de la table : une sauvegarde lirait une table absente et échouerait ; le plan PRÉVU, lui, est le même.
 
 const TABLE = 'situations_publiees'
 

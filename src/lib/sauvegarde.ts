@@ -132,10 +132,11 @@ export function auPlanDeLaCaisse(table: string, caisseExportee: boolean): boolea
   return caisseExportee || !TABLES_DE_LA_CAISSE.includes(table)
 }
 
-// LA TRACE DES DROITS D'UN ACCÈS (espace client, étape P1-trace ; migration `trace_des_droits`, PRÉPARÉE, pas appliquée) :
-// qui a coché ou décoché quelle case d'un accès, et quand. Le patron du journal des désignations, sous le drapeau de la
-// migration (`TRACE_DES_DROITS_PREVUE`, src/lib/traceDesDroits.ts), baissé : la production n'a pas la table, et la lire ferait
-// échouer toute sauvegarde. Sa table est déclarée ci-dessous à sa place — sa relation (le dossier en cascade ; ni l'accès ni
+// LA TRACE DES DROITS D'UN ACCÈS (espace client, étape P1-trace ; migration `trace_des_droits`, en production depuis le
+// 07/11/2026 : supabase/schema/20261107163158_trace_des_droits.sql) : qui a coché ou décoché quelle case d'un accès, et quand.
+// Le patron du journal des désignations, sous le drapeau de la migration (`TRACE_DES_DROITS_PREVUE`,
+// src/lib/traceDesDroits.ts), levé avec elle ; baissé (son retour), la production n'aurait pas la table, et la lire ferait
+// échouer toute sauvegarde — l'état que sauvegardeTraceDesDroits.test.ts joue encore. Sa table est déclarée ci-dessous à sa place — sa relation (le dossier en cascade ; ni l'accès ni
 // les comptes n'ont de clé : la trace survit au retrait de l'accès), son rang (juste après les accès), son chemin ; aucune
 // vague, une ligne n'en pointe aucune autre ; sa clé est la commune, `id`. La restauration la réinsère par la porte que sa
 // garde et sa policy ouvrent au super-administrateur, APRÈS les accès, dont la réinsertion par le super-administrateur ne
@@ -148,10 +149,11 @@ export function auPlanDeLaTraceDesDroits(table: string, tracePrevue: boolean): b
   return tracePrevue || !TABLES_DE_LA_TRACE_DES_DROITS.includes(table)
 }
 
-// LES SITUATIONS PUBLIÉES (espace client, étape C4a ; migration `situations_publiees`, PRÉPARÉE, pas appliquée) : ce que le
-// cabinet a publié au client « Comptes », publications et retraits. Sous le drapeau de la migration
-// (`SITUATIONS_PUBLIEES_EXPORTEES`, src/lib/situationsPubliees.ts), baissé : la production n'a pas la table, et la lire ferait
-// échouer toute sauvegarde. Sa relation au dossier (cascade) et à elle-même (`remplace_id`, une chaîne : par vagues), son
+// LES SITUATIONS PUBLIÉES (espace client, étape C4a ; migration `situations_publiees`, en production depuis le 07/11/2026 :
+// supabase/schema/20261107164102_situations_publiees.sql) : ce que le cabinet a publié au client « Comptes », publications et
+// retraits. Sous le drapeau de la migration (`SITUATIONS_PUBLIEES_EXPORTEES`, src/lib/situationsPubliees.ts), levé avec
+// elle ; baissé (son retour), la production n'aurait pas la table, et la lire ferait échouer toute sauvegarde — l'état que
+// sauvegardeSituationsPubliees.test.ts joue encore. Sa relation au dossier (cascade) et à elle-même (`remplace_id`, une chaîne : par vagues), son
 // rang (après les accès), son chemin ; sa clé est la commune, `id`. La restauration la réinsère par la porte que sa garde et
 // sa policy ouvrent au super-administrateur, l'historique tel qu'il a été publié. sauvegardeSituationsPubliees.test.ts
 // éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.

@@ -32,6 +32,8 @@ import {
   ENVOI_DES_DEVIS_PREVU,
   DUREE_VALIDITE_PAR_DEFAUT_MOIS,
   ecritureDuDevis,
+  ecritureDuDevisSelon,
+  saisieDuDevisSelon,
   etatDuDevis,
   LIBELLES_ETAT_DEVIS,
   LIGNES_MAX,
@@ -483,6 +485,32 @@ describe('les calculs du module', () => {
     expect(e.devis).toMatchObject({ montant_ht: t.montant_ht, montant_tva: t.montant_tva, montant_ttc: t.montant_ttc })
     // Ce qu'elle écrit, la base l'accepte : aucun refus de la fonction.
     expect(refusEnregistrementDevis(DA, { nouveau: true }, e, AUJOURD_HUI, EMISSION)).toBeNull()
+  })
+
+  it('le contact du devis, drapeau par drapeau : baissé, ni clé contact_id ni contactId ; levé, présents, nuls sans contact', () => {
+    // Le drapeau en paramètre : un accesseur des tests d'écran ne change que l'export, jamais la liaison locale du module.
+    const defauts = { aujourdHui: AUJOURD_HUI, statutTva: null, articleExoneration: null }
+    const avec: SaisieDevis = { ...SAISIE, contactId: 'c1' }
+    // Baissé : l'écriture d'avant la migration, sans la clé, même quand la saisie porte un contact.
+    expect(ecritureDuDevisSelon(avec, false, false).devis).not.toHaveProperty('contact_id')
+    expect(ecritureDuDevisSelon(SAISIE, false, false).devis).not.toHaveProperty('contact_id')
+    expect(saisieDuDevisSelon(devisFictif({ contact_id: 'c1' }), defauts, false)).not.toHaveProperty('contactId')
+    // Levé : la clé toujours présente, nulle sans contact.
+    expect(ecritureDuDevisSelon(avec, false, true).devis).toHaveProperty('contact_id', 'c1')
+    expect(ecritureDuDevisSelon(SAISIE, false, true).devis).toHaveProperty('contact_id', null)
+    expect(saisieDuDevisSelon(devisFictif({ contact_id: 'c1' }), defauts, true)).toHaveProperty('contactId', 'c1')
+    expect(saisieDuDevisSelon(devisFictif(), defauts, true)).toHaveProperty('contactId', null)
+    // Un devis neuf n'en porte jamais, sous les deux états.
+    expect(saisieDuDevisSelon(null, defauts, true)).not.toHaveProperty('contactId')
+    expect(saisieDuDevisSelon(null, defauts, false)).not.toHaveProperty('contactId')
+    // Les deux états ne diffèrent que par cette clé.
+    const sansCle = Object.fromEntries(
+      Object.entries(ecritureDuDevisSelon(avec, true, true).devis as Record<string, unknown>).filter(([k]) => k !== 'contact_id'),
+    )
+    expect(ecritureDuDevisSelon(avec, true, false).devis).toEqual(sansCle)
+    // Le module passe son drapeau, levé : ce que l'écran envoie est l'état levé, à l'identique.
+    expect(DEVIS_CITENT_UN_CONTACT).toBe(true)
+    expect(ecritureDuDevis(avec, true)).toEqual(ecritureDuDevisSelon(avec, true, true))
   })
 })
 

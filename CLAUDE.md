@@ -112,7 +112,8 @@ et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉE
   - `extract-piece` — OCR (Textract) puis citation des champs ; réservée à un compte RATTACHÉ et à `receive-email` (clé
     secrète en `apikey`).
   - `receive-email` (webhook Resend, par dossier) ; `send-email` (facture : le cabinet et le client « Ventes », trente
-    e-mails par dossier et par jour de Paris pour un client ; relance : le cabinet seul).
+    e-mails par dossier et par jour de Paris pour un client ; relance de pièces : le cabinet seul ; relance d'une
+    facture en retard : le cabinet et le client « Ventes » (MEG3-Q3), dans le même plafond).
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; le client « Ventes » relie et transmet, la
     réception reste au cabinet.
   - `proposer-categorie` (sur un clic, rien d'écrit) ; `evaluer-extraction` (harnais de MESURE, facturé dans une fenêtre
@@ -613,12 +614,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   - « Aller plus loin », le 06/11/2026 : C1, « Mon échéancier » (à tout accès client, les montants sous « Banque »),
     sans migration ; C2 en production depuis le 07/11/2026 (`phase_des_exercices`, `ETAT_DU_DOSSIER_EXPORTE` levé, C2-Q1
     à Q4) ; C7, son premier temps (Contraintes de sécurité) → « « MON ÉCHÉANCIER » : L'ÉCHÉANCIER FISCAL ET SOCIAL DU
-    CLIENT », « L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Le même soir, préparées, en production depuis le
-    07/11/2026 : C5, les relances d'une facture en retard (pénalités calculées et montrées, jamais facturées ; `send-email`
-    sous `RELANCES_EN_BASE` levé, à redéployer avant `RELANCES_EXPORTEES` ; C5-Q1 à Q3) ; C4a, les situations publiées
-    et la case « Comptes » (`changer_droits_acces` à cinq paramètres ; C4A-Q1 et Q2 ; reprise le 07/11/2026 par B1, elle
-    exige P1-trace, dont la contrainte connaît d'avance les sept cases ; `situation_publiee_en_cours` ne répond qu'au cabinet et à l'accès « Comptes » du dossier),
-    et ses écrans, C4b (« Publier au client » sous la situation intermédiaire, « Mes comptes » côté client, sous
+    CLIENT », « L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Préparées le même soir, en production depuis le
+    07/11/2026 : C5, les relances d'une facture en retard (pénalités calculées et montrées, jamais facturées ;
+    `send-email` sous `RELANCES_EN_BASE` levé, à redéployer avant `RELANCES_EXPORTEES` ; C5-Q1 à Q3) ; C4a, les
+    situations publiées et la case « Comptes » (`changer_droits_acces` à cinq paramètres ; C4A-Q1 et Q2 ; reprise le
+    07/11/2026 par B1, elle exige P1-trace, dont la contrainte connaît d'avance les sept cases ;
+    `situation_publiee_en_cours` ne répond qu'au cabinet et à l'accès « Comptes » du dossier), et ses écrans, C4b
+    (« Publier au client » sous la situation intermédiaire, « Mes comptes » côté client, sous
     `SITUATIONS_PUBLIEES_EXPORTEES`, levé ; C4B-Q1) ; C3, la facture électronique et l'e-reporting en un coup d'œil (la
     fonction de l'état rend l'e-reporting en phases, rien du cabinet au-delà ; en production depuis le 07/11/2026,
     `APERCU_EREPORTING_EXPORTE` levé ; C3-Q1 à Q4) → « RELANCER SES CLIENTS (C5) », « LES SITUATIONS PUBLIÉES, EN BASE
@@ -653,8 +655,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 », « A7Q-Q1 : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS
     L'ESPACE CLIENT, DANS LA MIGRATION », « LES DEUX MIGRATIONS D'A7 EN PRODUCTION », « QUATRE RÉPONSES DU CABINET : LA
     MIGRATION DE C6 ET A7B-Q1 À Q3 » ; la liste des clients sans activité depuis trois ans et le devis qui cite son
-    contact, en production depuis le 07/11/2026 (`DEVIS_CITENT_UN_CONTACT` levé ; DEVC-Q1) ; la suite du premier groupe, dont A8, les factures
-    reprises, et A9, la numérotation (MEG1-Q5 : deux séries par dossier, celle du client et celle du mandataire, choisie
+    contact, en production depuis le 07/11/2026 (`DEVIS_CITENT_UN_CONTACT` levé ; DEVC-Q1) ; la suite du premier
+    groupe, dont A8, les factures reprises, et A9, la numérotation (MEG1-Q5 : deux séries par dossier, celle du client
+    et celle du mandataire, choisie
     selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit), reconçues le 06/11/2026,
     A8-Q1 à Q6 tranchées, A8a (la base) préparée le 07/11/2026, à coller → « A8 ET A9, LES FACTURES REPRISES ET LA
     NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ».
@@ -739,7 +742,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Une table préparée et non appliquée se déclare au plan de sauvegarde derrière son drapeau** (`*_PREVU(E)S`,
   `auPlanAujourdHui`) : la lire avant sa migration ferait échouer toute sauvegarde → « LES DEVIS, EN BASE ».
 - **Un type de `types.ts` décrit la table**, NOT NULL compris — et les déclencheurs comptent (`dossiers` remplit
-  `cabinet_id` et `code_email` s'ils sont nuls).
+  `cabinet_id` et `code_email` s'ils sont nuls) ; les quatre colonnes de `cotisations_declarees` posées par la
+  régularisation y restent facultatives : une lecture par liste de colonnes distingue l'absente de la nulle
+  (`lueAvecSaDescription`).
 - **Un drapeau qui attend une migration se bascule d'abord en SIMULATION** (le fichier posé dans l'export, le drapeau
   levé, la suite ENTIÈRE). Une réplique se monte en UTF8 ; un ordre de texte qu'une fonction ou un essai doit tenir
   s'écrit `collate "C"` → « LA BANQUE DU CLIENT EN BASE ». Depuis le 06/11/2026, en PostgreSQL 17 et en ICU `en-US`,
