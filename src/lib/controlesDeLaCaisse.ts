@@ -1,6 +1,6 @@
 import { ecritureConforme, mouvementsAffectes, type MouvementBancaire } from './affectationBanque'
 import {
-  ecritureDeLOperation, ensembleDuJour, especesDUneFactureSource, jourDit, ouvertureDuDossier, soldesDeLaCaisse,
+  ecritureDeLOperation, ensemblesDesJours, especesDUneFactureSource, jourDit, ouvertureDuDossier, soldesDeLaCaisse,
   type EncaissementDeLaCaisse, type EtatDeLaCaisse, type FactureDeLaCaisse, type OperationAEcrire,
 } from './caisse'
 import type { ModeleComptable } from './engagement'
@@ -474,11 +474,12 @@ export interface RecetteARevoir {
  * nouveau. Hors des exercices figés ; une recette vivante seulement (une remplacée est retirée).
  */
 export function recettesDeCaisseARevoir(operations: readonly OperationCaisse[], etat: EtatDeLaCaisse, frontiere: string | null): RecetteARevoir[] {
+  const ensembleDe = ensemblesDesJours(etat)
   return operations
     .filter((o) => o.genre === 'recette' && o.retire_le == null && !estFigee(o.date, frontiere))
     .flatMap((o) => {
       const reconnus = [...(o.encaissements_du_jour ?? [])].sort()
-      const attendus = ensembleDuJour(etat, o.date)
+      const attendus = ensembleDe(o.date)
       const memes = reconnus.length === attendus.length && reconnus.every((x, i) => x === attendus[i])
       return memes ? [] : [{ operation: o, reconnus, attendus }]
     })

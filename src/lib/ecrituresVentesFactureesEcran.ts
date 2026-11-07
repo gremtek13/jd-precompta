@@ -1,6 +1,6 @@
 import {
   argumentsChoisirCompteContrepartie, argumentsEcrireVenteFacturee, argumentsRetirerEcritureVenteFacturee,
-  ecrituresDeLaSource, identifiantDeLaSource, lignesDeLaSource, refusChoixCompteContrepartie, refusEcritureVenteFacturee,
+  ecrituresDeLaSource, identifiantDeLaSource, lignesDesSources, refusChoixCompteContrepartie, refusEcritureVenteFacturee,
   refusRetraitEcritureVenteFacturee, type ArgumentsEcrireVenteFacturee, type CleRefusCompteContrepartie, type ContexteEcritureVente,
   type LigneDuBrouillon, type MouvementPourEcriture,
 } from './ecritureVenteFacturee'
@@ -418,13 +418,14 @@ export function etatsDesVentesFacturees(entrees: EntreesEcrituresDeVente): Etats
   }
 
   const etats: SourceDeVenteEtat[] = []
+  const lignesDe = lignesDesSources(brouillon, dossierId)
   for (const [cle, source] of candidates) {
     // Une source dont la lecture n'a pas rendu la ligne : la composition ne la cite que depuis ce qu'elle a lu, et le
     // brouillon a été confronté plus haut ; un mouvement cité qui manque se dit par la composition (`mouvement_inconnu`).
     if (source.genre === 'mouvement' && !mouvements.has(source.ligneBancaireId)) continue
     const toutes = composition.ecritures.filter((e) => cleDeLaSource(e.source) === cle)
     const aEcrire = ecrituresDeLaSource(composition, source, anneesValidees)
-    const siennes = lignesDeLaSource(brouillon, source, dossierId) as LigneDuBrouillonLue[]
+    const siennes = lignesDe(source)
     const proposees = siennes.filter((l) => l.statut === 'proposee')
     const validees = siennes.filter((l) => l.statut === 'validee').length
     const nonEcrite = composition.nonEcrites.find((n) => cleDeLaSource(n.source) === cle)

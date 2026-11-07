@@ -49258,3 +49258,14 @@ pour un compte, drapeau baissé. **Les écrans**, drapeau baissé : `DeuxFacteur
 mutations sur 7 ; `rls.sql` 101 lignes/0/75 avant, 105/0/81 après (bloc DF ; trois comptes de policies corrigés), le
 retour à l'identique ; `restauration.sql` identique ; le banc du leurre SÛR des deux côtés. Restent : le plan de
 sauvegarde des deux tables, les essais qui comptent les policies, l'e-mail (SEC2-Q3).
+
+### 07/11/2026 — LE BANC DE CHARGE : DEUX PENTES QUADRATIQUES RETIRÉES
+
+Agent architecte, sans migration ni déploiement ; aucune des deux fonctions n'a de copie (Edge Functions comprises).
+`lignesDesSources` (ecritureVenteFacturee.ts) indexe le brouillon une fois pour `etatsDesVentesFacturees` ;
+`ensemblesDesJours` (caisse.ts) indexe l'ensemble de chaque jour pour `recettesDeCaisseARevoir`. `lignesDeLaSource` et
+`ensembleDuJour` restent telles quelles, leurs signatures aussi, et servent d'oracle : `lignesDesSources.test.ts` et
+`ensemblesDesJours.test.ts` les confrontent sur des jeux tirés de graines fixes (`tirage`), `toEqual` ordre compris ;
+deux mutations mordent. Le banc, médiane de 5 passes (1N | 4N, ms), avant → après : préalables 90,5 | 456 → 49 | 267 ;
+Checklist 44 | 159 → 29 | 92 ; FEC 12,5 | 42,7 → 11,8 | 42 (hors de ces chemins) ; « Ma caisse » 28,6 | 48,9 → 22,8 |
+53,1 (`caisseRejouee` n'y passe pas) ; les rendus du banc identiques. Les préalables restent au-dessus du linéaire.
