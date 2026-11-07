@@ -24,7 +24,10 @@
 --                                     TVA française ; O ;
 --        livraison_intracommunautaire des biens expédiés à une entreprise d'un autre État membre, exonérés (CGI, art. 262
 --                                     ter, I) : la mention de l'exonération et les deux numéros (I, 3°) — même BOFiP, § 50
---                                     et § 70 ; K ;
+--                                     et § 70 ; K. Jamais d'un dossier en franchise en base : la franchise exclut cette
+--                                     exonération (directive 2006/112/CE, art. 139, 1, premier alinéa), son client n'a
+--                                     aucune acquisition intracommunautaire à déclarer (art. 2, 1, b), i)), et sa vente se
+--                                     facture au régime taxable_en_france, sous la mention de la franchise (art. 293 B) ;
 --        exportation                  des biens expédiés hors de l'Union, exonérés (CGI, art. 262, I) : la mention de
 --                                     l'exonération (art. 242 nonies A, I) ; G ;
 --        taxable_en_france            une opération que la TVA française taxe (art. 259 A, ou la règle du 259, 2° pour un
@@ -43,18 +46,23 @@
 --      (20261105231034_acomptes_des_devis), vérifié ci-dessous à son empreinte, et seules les lignes marquées « E7a » s'y
 --      ajoutent ; ses droits restent ceux d'hier (`create or replace` les garde).
 --   4. La garde des factures (`garder_factures_validees`, l'export 20261102112003, vérifiée de même) : à la validation
---      d'une FACTURE qui porte l'une des trois colonnes, quinze refus en 22023 (le bloc « E7A »), dans l'ordre que le
---      module redit — le pays manque ; il n'est pas attribué ; le régime manque ; le client n'est ni « établi hors de
---      France » ni un particulier ; le hors champ du 259 B à une entreprise ; une autoliquidation, une prestation hors de
---      l'Union ou une livraison intracommunautaire à un particulier ; l'Union exigée ou exclue par le régime ; la nature
---      (biens ou services) que le régime impose ; le numéro de TVA du client exigé (I, 3° et 4°), son préfixe (EN 16931,
---      BR-CO-09), sa longueur dans l'Union ; le numéro de TVA du VENDEUR exigé par une autoliquidation ou une livraison
---      intracommunautaire — un franchisé ou un exonéré sans numéro attribué (CGI, art. 286 ter ; BOI-TVA-DECLA-20-10-20,
---      § 40), un statut à préciser — ; une ligne taxée ou une TVA non nulle sous un régime que la TVA française ne taxe
---      pas. Puis la mention de TVA du dossier (le refus 3 d'hier) ne s'exige plus que d'une opération que la TVA française
---      taxe, et une opération qu'elle ne taxe pas se refuse si ses mentions légales la portent (elle dirait une autre
---      raison que la sienne), d'une facture comme d'un avoir. Une facture qui ne porte aucune des trois colonnes se valide
---      comme hier, au caractère près ; la restauration n'y passe pas.
+--      d'une facture ou d'un avoir qui porte l'une des trois colonnes, seize refus en 22023 (le bloc « E7A »), dans
+--      l'ordre que le module redit — le pays manque ; il n'est pas attribué ; le régime manque ; le client n'est ni
+--      « établi hors de France » ni un particulier ; le hors champ du 259 B à une entreprise ; une autoliquidation, une
+--      prestation hors de l'Union ou une livraison intracommunautaire à un particulier ; une livraison
+--      intracommunautaire d'un dossier en franchise en base (directive 2006/112/CE, art. 139, 1, premier alinéa), ses
+--      mots renvoyant au régime taxable_en_france et à la mention de la franchise ; l'Union exigée ou exclue par le
+--      régime ; la nature (biens ou services) que le régime impose ; le numéro de TVA du client exigé (I, 3° et 4°), son
+--      préfixe (EN 16931, BR-CO-09), sa longueur dans l'Union ; le numéro de TVA du VENDEUR exigé par une
+--      autoliquidation ou une livraison intracommunautaire — un exonéré sans numéro attribué, un franchisé de même pour
+--      une autoliquidation (CGI, art. 286 ter ; BOI-TVA-DECLA-20-10-20, § 40), un statut à préciser — ; une ligne taxée
+--      ou une TVA non nulle sous un régime que la TVA française ne taxe pas. L'avoir reprend de sa facture tout ce que le
+--      bloc lit hors de ses lignes et de sa TVA (les trois colonnes, le type du client, la nature et, figés avec elle, le
+--      statut de TVA et le numéro du vendeur) : il passe où elle a passé, seule une ligne taxée le refuse, et un avoir au
+--      taux 0 se valide toujours. Puis la mention de TVA du dossier (le refus 3 d'hier) ne s'exige plus que d'une
+--      opération que la TVA française taxe, et une opération qu'elle ne taxe pas se refuse si ses mentions légales la
+--      portent (elle dirait une autre raison que la sienne), d'une facture comme d'un avoir. Une facture ou un avoir qui
+--      ne porte aucune des trois colonnes se valide comme hier, au caractère près ; la restauration n'y passe pas.
 --
 -- LES SOURCES (publiques ; les normes AFNOR XP Z12-012 et XP Z12-013 ne s'utilisent pas) : CGI, art. 259, 259 A, 259 B,
 -- 262, I, 262 ter, I, 283, 2, 286 ter, et ann. II, art. 242 nonies A, I ; BOFiP, BOI-TVA-DECLA-30-20-20-30 (mentions
@@ -67,6 +75,14 @@
 -- CE QU'ELLE NE FAIT PAS : aucune policy, aucun droit, aucune table, aucune donnée touchée ; ni le formulaire ni l'aperçu
 -- (e7b), ni le CII ni l'e-reporting (e7c), qui liront ces colonnes ; elle n'exige pas encore le pays et le régime d'une
 -- facture « établie hors de France » qui n'en porte aucun : ce resserrement vient après l'écran (E7A-Q2).
+--
+-- LIMITE CONNUE (E7A-Q4, au cabinet) : l'Union se lit au code ISO du pays où le client est établi, la liste de la fiche
+-- d'un achat hors de France. Les territoires d'un État membre exclus du territoire de la TVA de l'Union (directive
+-- 2006/112/CE, art. 6 : les îles Canaries, Ceuta, Melilla, le mont Athos, Heligoland, Büsingen, Livigno, Campione
+-- d'Italia…) portent le code de leur État : un client qui y est établi s'y lit dans l'Union, une autoliquidation ou une
+-- livraison intracommunautaire passent, une exportation se refuse. À l'inverse, l'Irlande du Nord (GB) suit les règles de
+-- l'Union pour les biens, sous un numéro de TVA préfixé XI, que le préfixe et l'Union refusent ici. Aucune liste de ces
+-- territoires n'est écrite : le cabinet dit s'il en faut une, et laquelle.
 --
 -- ELLE SE COLLE : le corps d'`enregistrer_facture` remplace les lignes d'un brouillon (une instruction de retrait, comme
 -- hier) ; `apply_migration` attendrait une confirmation. Le cabinet la colle dans l'éditeur SQL de Supabase, dans une
@@ -914,7 +930,9 @@ declare
   v_numero_suivi text;
   v_date_suivie date;
   -- E7a (07/11/2026) : la facture à un client établi hors de France. Les 249 codes attribués de l'ISO 3166-1 et les
-  -- vingt-six autres États membres de l'Union, ceux de la fiche d'un achat hors de France (20261010081009).
+  -- vingt-six autres États membres de l'Union, ceux de la fiche d'un achat hors de France (20261010081009). L'Union s'y
+  -- lit au code du pays : un territoire exclu de la TVA de l'Union (les îles Canaries…) s'y lit comme son État, une
+  -- limite connue (l'en-tête, E7A-Q4).
   v_pays_iso constant text[] := array[
     'AD','AE','AF','AG','AI','AL','AM','AO','AQ','AR','AS','AT','AU','AW','AX','AZ','BA','BB','BD','BE','BF','BG','BH',
     'BI','BJ','BL','BM','BN','BO','BQ','BR','BS','BT','BV','BW','BY','BZ','CA','CC','CD','CF','CG','CH','CI','CK','CL',
@@ -1008,10 +1026,13 @@ begin
       end if;
       -- ── DÉBUT E7A ── LA FACTURE À UN CLIENT ÉTABLI HORS DE FRANCE (ligne 28.5, étape e7a, 07/11/2026). Le pays où le
       -- client est établi, son numéro de TVA et le régime de l'opération, saisis sur le brouillon et figés avec lui. Une
-      -- facture, jamais un avoir : il reprend les trois colonnes de sa facture, qui les a jugées, et cette voie reste
-      -- toujours ouverte. Une facture qui n'en porte aucune n'en est pas jugée : elle se valide comme hier. Dans cet
-      -- ordre, en 22023, sous les mots que src/lib/factureInternationale.ts redit avant le clic (CGI, ann. II, art.
-      -- 242 nonies A, I, 3°, 4° et 13° ; BOI-TVA-DECLA-30-20-20-30, § 50 à § 105 ; norme EN 16931, BR-CO-09) :
+      -- facture, et l'avoir qui les reprend d'elle : il en reprend aussi tout ce que ce bloc lit hors de ses lignes et de
+      -- sa TVA (le type du client, la nature et, figés avec elle, le statut de TVA et le numéro du vendeur), passe où elle
+      -- a passé, et seule une ligne taxée le refuse — un avoir au taux 0 se valide toujours, cette voie reste ouverte.
+      -- Une facture ou un avoir qui n'en porte aucune n'en est pas jugé : il se valide comme hier. Dans cet ordre, en
+      -- 22023, sous les mots que src/lib/factureInternationale.ts redit avant le clic (CGI, ann. II, art. 242 nonies A,
+      -- I, 3°, 4° et 13° ; BOI-TVA-DECLA-30-20-20-30, § 50 à § 105 ; directive 2006/112/CE, art. 139, 1 ; norme EN
+      -- 16931, BR-CO-09) :
       v_regime_lu := case new.regime_international
         when 'autoliquidation_ue' then 'une autoliquidation par le client'
         when 'prestation_hors_ue' then 'une prestation hors de l''Union'
@@ -1020,7 +1041,7 @@ begin
         when 'taxable_en_france' then 'une opération taxable en France'
         when 'hors_champ' then 'une prestation hors champ (art. 259 B du CGI)'
       end;
-      if new.type = 'facture' and num_nonnulls(new.client_pays, new.client_numero_tva, new.regime_international) > 0 then
+      if num_nonnulls(new.client_pays, new.client_numero_tva, new.regime_international) > 0 then
         if new.client_pays is null then
           raise exception 'Le pays où le client est établi manque : le régime de l''opération et le numéro de TVA du client se portent avec lui.'
             using errcode = '22023';
@@ -1044,6 +1065,14 @@ begin
         if new.type_client = 'non_assujetti'
            and new.regime_international in ('autoliquidation_ue', 'prestation_hors_ue', 'livraison_intracommunautaire') then
           raise exception 'La facture porte %, qui ne se facture qu''à une entreprise (un assujetti), jamais à un particulier.', v_regime_lu
+            using errcode = '22023';
+        end if;
+        -- La franchise en base exclut l'exonération d'une livraison intracommunautaire (directive 2006/112/CE, art. 139,
+        -- 1, premier alinéa), et l'acheteur d'un franchisé n'a pas d'acquisition à déclarer (art. 2, 1, b), i)) : sa vente
+        -- se facture au régime taxable_en_france, sous la mention de la franchise, que la suite exige alors. Le statut
+        -- jugé est celui que la validation fige (celui de la facture, pour un avoir).
+        if new.regime_international = 'livraison_intracommunautaire' and new.statut_tva = 'franchise' then
+          raise exception 'La facture porte une livraison intracommunautaire, que la franchise en base exclut : un dossier en franchise ne bénéficie pas de l''exonération de l''art. 262 ter, I du CGI (directive 2006/112/CE, art. 139, 1, premier alinéa), et son client n''a aucune acquisition intracommunautaire à déclarer. Elle porte le régime d''une opération taxable en France, sous la mention de la franchise, « TVA non applicable, art. 293 B du CGI. ».'
             using errcode = '22023';
         end if;
         if new.regime_international in ('autoliquidation_ue', 'livraison_intracommunautaire') and not (new.client_pays = any (v_union)) then
@@ -1075,8 +1104,10 @@ begin
             new.client_numero_tva using errcode = '22023';
         end if;
         if new.regime_international in ('autoliquidation_ue', 'livraison_intracommunautaire') and new.numero_tva_imprime is null then
-          raise exception 'La facture porte %, qui exige le numéro de TVA du vendeur (CGI, ann. II, art. 242 nonies A, I, 3° et 4°) : ce dossier n''en imprime aucun. En franchise ou exonéré, le cabinet coche le numéro attribué (CGI, art. 286 ter) ; un statut de TVA à préciser se précise.',
-            v_regime_lu using errcode = '22023';
+          -- Un franchisé ne parvient ici que d'une autoliquidation : sa livraison intracommunautaire s'est refusée plus haut.
+          raise exception 'La facture porte %, qui exige le numéro de TVA du vendeur (CGI, ann. II, art. 242 nonies A, I, 3° et 4°) : ce dossier n''en imprime aucun. %, le cabinet coche le numéro attribué (CGI, art. 286 ter) ; un statut de TVA à préciser se précise.',
+            v_regime_lu, case new.regime_international when 'autoliquidation_ue' then 'En franchise ou exonéré' else 'Exonéré' end
+            using errcode = '22023';
         end if;
         if new.regime_international <> 'taxable_en_france'
            and (new.montant_tva <> 0

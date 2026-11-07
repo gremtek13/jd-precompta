@@ -4,13 +4,21 @@
 -- dit sa mention de TVA. Le drapeau `FACTURE_INTERNATIONALE_EXPORTEE` (src/lib/factureInternationale.ts) se baisse AVANT
 -- ce retour. À coller seulement sur l'accord explicite du cabinet, dans une transaction.
 -- Les deux fonctions reprennent leur texte de l'export (20261105231034_acomptes_des_devis,
--- 20261102112003_facture_dates_centimes_mention_tva), au caractère près ; leurs droits restent ceux d'hier.
+-- 20261102112003_facture_dates_centimes_mention_tva), au caractère près ; leurs droits restent ceux d'hier. Sa garde de
+-- tête vérifie d'abord qu'elles sont celles que la migration a posées, à leurs empreintes : une migration d'après qui les
+-- aurait reprises perdrait son texte sous celui de l'export, et le retour se refuse.
 
 do $garde$
 begin
   if not exists (select 1 from information_schema.columns c
                   where c.table_schema = 'public' and c.table_name = 'factures_emises' and c.column_name = 'regime_international') then
     raise exception 'La migration facture_internationale n''est pas en base : rien à défaire.';
+  end if;
+  if (select md5(p.prosrc) from pg_proc p
+       where p.oid = to_regprocedure('public.enregistrer_facture(uuid, uuid, jsonb, jsonb, boolean)')) is distinct from '179fe55dde933acb7369f921640319ff'
+     or (select md5(p.prosrc) from pg_proc p
+          where p.oid = to_regprocedure('public.garder_factures_validees()')) is distinct from '7d955795243745ab03e4e2bd152c9ed4' then
+    raise exception 'enregistrer_facture ou garder_factures_validees n''est plus celle que la migration facture_internationale a posée (ses empreintes) : une migration d''après l''a reprise, et ce retour effacerait son texte sous celui de l''export. Le relire contre la base avant de le coller.';
   end if;
 end
 $garde$;
