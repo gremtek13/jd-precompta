@@ -49191,3 +49191,20 @@ avec ce mouvement le … », jamais un nom ; s'il y a plusieurs factures ou pas 
 Associer » est le rapprochement d'hier (`agirSurMouvement`). Le crédit libre sort des lots
 (`JUSTIFICATIF_ENCAISSEMENT_CITE`). Tests : `rapprochementPropose.test.ts` (9), trois tests d'écran dans
 `BanqueTab.gestesDesVentes.test.tsx`, deux assertions reprises. Un dossier non basculé reste inchangé.
+
+### 07/11/2026 — LA FACTURE À UN CLIENT ÉTABLI HORS DE FRANCE, EN BASE (E7A, LIGNE 28.5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par l'agent architecte, deux commits locaux ; ni écran ni Edge Function ; en production, rien.) Sur 28.5e-Q8,
+la migration `facture_internationale` (20261107120000, préparée ; son retour, destructif ; son essai
+`factureInternationale.sql`) pose sur `factures_emises` `client_pays` (ISO 3166-1, ni la France, ni Monaco, ni
+l'outre-mer), `client_numero_tva` (préfixé du pays, EL pour la Grèce) et `regime_international` (autoliquidation_ue,
+prestation_hors_ue, livraison_intracommunautaire, exportation, taxable_en_france, hors_champ), trois formes en CHECK.
+`enregistrer_facture` les écrit (une clé absente garde la valeur, l'avoir les reprend, le numéro lu pour un IBAN) ; la
+garde ajoute quinze refus en 22023 à la validation d'une facture qui en porte une, et n'exige plus la mention de TVA du
+dossier que d'une opération taxée en France (ailleurs, elle la refuse) ; les deux corps recopiés de l'export, vérifiés
+à leur empreinte ; une facture sans elles se valide comme hier. `lib/factureInternationale.ts` (drapeau baissé) redit
+les refus et tire du régime la mention, la catégorie (AE, O, K, G) et le VATEX du CII, le bloc de l'e-reporting.
+Sources : CGI, art. 259, 259 A, 259 B, 262, 262 ter, 286 ter, ann. II, art. 242 nonies A ; BOI-TVA-DECLA-30-20-20-30,
+§ 50 à § 105 (versions de 2013 et 2019 ; celle du 08/01/2025 à relire) ; directive 2006/112/CE, art. 44 et 196 ; EN 16931.
+Sur une copie de la réplique mère : l'essai 50 sur 50 (40 contrôles, 10 mutations) ; six mutations de la migration,
+toutes mordent ; rls.sql identique avant et après ; restauration IDENTIQUE ; banc SÛR ; le retour rend les corps d'hier.
