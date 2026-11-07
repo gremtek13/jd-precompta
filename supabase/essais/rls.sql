@@ -682,6 +682,11 @@
 -- (SP1 à SP3, M-SP1, M-SP2) ; EN ATTENTE sans la migration ; la boucle des invariants y voit la table de plus. Ce qu'il
 -- rend : HISTORIQUE.md, « LES SITUATIONS PUBLIÉES, EN BASE (C4A) (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
+-- 07/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (B1 : migration `trois_cases_de_l_acces`, PRÉPARÉE, pas appliquée, après
+-- P1-trace et C4a), qui pose trois cases de l'accès client — « Achats », « Notes de frais », « Documents » — qu'aucune
+-- policy ne lit encore. Le bloc TC (TC1 à TC3, M-TC1, M-TC2) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md,
+-- « TROIS CASES DE PLUS : « ACHATS », « NOTES DE FRAIS », « DOCUMENTS » (B1, LIGNE 51.5) (PRÉPARÉE, PAS APPLIQUÉE) ».
+--
 -- 06/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (relecture de sécurité : migration `droits_hors_rls`, PRÉPARÉE, pas
 -- appliquée), qui retire à anon et à authenticated les quatre droits d'une table que la RLS ne garde pas, sur toutes les
 -- relations de public et dans le défaut du propriétaire. Le bloc HR (HR1 à HR5, M-HR1 à M-HR6) ne lit que le catalogue et
@@ -4432,6 +4437,131 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', 'SP. le jeu d''essai des situations s''est construit', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ TC. Trois cases de plus sur un accès client (espace client, étape B1 ; migration `trois_cases_de_l_acces`) ═════════
+-- « Achats », « Notes de frais » et « Documents » : trois colonnes de `memberships` qu'aucune policy ne lit encore — B1
+-- n'ouvre rien ; B2, B4 et B7 s'en serviront, chacune présentant au cabinet la lecture qu'elle ouvre.
+--   TC1. Par le geste : le client, ses trois cases cochées sur son dossier (le temps d'une sous-transaction), voit, table par
+--        table de public et dans le stockage, exactement les lignes qu'il voit sans elles (seul l'écart est rendu).
+--   TC2. Il lit ses trois cases sur sa ligne (le contrôle POSITIF) ; il ne les écrit ni en direct (aucune policy de mise à
+--        jour : aucune ligne touchée) ni par `changer_droits_acces` à huit (42501).
+--   TC3. Le catalogue : aucune policy, de tous les schémas, ne nomme les trois mots.
+-- Deux mutations, qui doivent mordre : M-TC1 (la trace des droits lue sous « Achats » : il voit, avec la case, les lignes
+-- que le geste vient d'y écrire), M-TC2 (une policy de mise à jour de sa ligne : il décoche lui-même sa case). Avant la
+-- migration, une ligne dit que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  t record; obs text; ecarts text; comparees bigint; lue text; ecrites bigint; refus text; acces uuid;
+  sans jsonb; avec jsonb; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if not exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_documents'
+                  and not a.attisdropped) then
+    insert into rls_verdict values ('TC. trois cases de plus sur un accès client : EN ATTENTE de la migration trois_cases_de_l_acces',
+      'memberships', 'absente : elles se jugent dès que la migration y est', true);
+    return;
+  end if;
+  select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
+  -- TC1, puis M-TC1 : la même comparaison, sans puis avec la policy mutante.
+  for scenario in 0 .. 1 loop
+    begin
+      if scenario = 1 then
+        create policy essai_tc_achats on public.trace_des_droits for select to authenticated
+          using (client_du_dossier(dossier_id, 'achats'));
+      end if;
+      sans := '{}'::jsonb; avec := '{}'::jsonb;
+      for n in 1 .. 2 loop
+        perform set_config('request.jwt.claims', '', true);
+        update memberships set droit_achats = (n = 2), droit_frais = (n = 2), droit_documents = (n = 2) where id = acces;
+        for t in select c.relname as nom from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+                  where ns.nspname = 'public' and c.relkind = 'r' order by c.relname loop
+          set local role authenticated;
+          perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+          begin
+            execute format('select count(*)::text from public.%I', t.nom) into obs;
+          exception when others then obs := sqlstate;
+          end;
+          reset role;
+          if n = 1 then sans := sans || jsonb_build_object(t.nom, obs); else avec := avec || jsonb_build_object(t.nom, obs); end if;
+        end loop;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        begin
+          select count(*)::text into obs from storage.objects;
+        exception when others then obs := sqlstate;
+        end;
+        reset role;
+        if n = 1 then sans := sans || jsonb_build_object('storage.objects', obs); else avec := avec || jsonb_build_object('storage.objects', obs); end if;
+      end loop;
+      select coalesce(string_agg(k, ', ' order by k), 'aucun') into ecarts from jsonb_each_text(avec) as e(k, v)
+       where v is distinct from sans ->> k;
+      comparees := (select count(*) from jsonb_object_keys(avec));
+      if scenario = 0 then
+        construit := true;
+        verdicts := verdicts || jsonb_build_object('controle', 'TC1. les trois cases cochées, le client voit les mêmes lignes partout : tables de public et stockage (l''écart seul)',
+          'cible', 'memberships', 'observe', 'écarts : ' || ecarts || ' (' || comparees || ' relations comparées)',
+          'ok', ecarts = 'aucun' and comparees > 50);
+      else
+        mutations := mutations || jsonb_build_object('mutation', 'M-TC1 — la trace des droits lue sous « Achats »',
+          'attendu', 'un écart sur trace_des_droits', 'observe', 'écarts : ' || ecarts, 'mord', ecarts like '%trace_des_droits%');
+      end if;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+  end loop;
+
+  -- TC2, puis M-TC2 : sa ligne, lue et pas écrite.
+  for scenario in 0 .. 1 loop
+    begin
+      if scenario = 1 then
+        create policy essai_tc_ecriture on public.memberships for update to authenticated
+          using (user_id = auth.uid()) with check (user_id = auth.uid());
+      end if;
+      perform set_config('request.jwt.claims', '', true);
+      update memberships set droit_achats = true, droit_frais = true, droit_documents = true where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select concat_ws(' ', m.droit_achats, m.droit_frais, m.droit_documents) into lue from memberships m where m.id = acces;
+      with x as (update memberships set droit_achats = false where id = acces returning 1) select count(*) into ecrites from x;
+      begin
+        perform changer_droits_acces(acces, null, null, null, null, null, false, null);
+        refus := 'ACCEPTÉ';
+      exception when others then refus := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      if scenario = 0 then
+        verdicts := verdicts || jsonb_build_object('controle', 'TC2. le client lit ses trois cases (le contrôle positif) ; il ne les écrit ni en direct ni par la forme à huit',
+          'cible', 'memberships', 'observe', 'lues : ' || coalesce(lue, '?') || ' | écrites : ' || ecrites || ' | forme à huit : ' || refus,
+          'ok', lue = 't t t' and ecrites = 0 and refus = '42501 Accès refusé à ce dossier.');
+      else
+        mutations := mutations || jsonb_build_object('mutation', 'M-TC2 — une policy de mise à jour de sa ligne',
+          'attendu', 'il décoche lui-même « Achats »', 'observe', ecrites || ' écrite(s)', 'mord', ecrites >= 1);
+      end if;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+  end loop;
+
+  -- TC3 : le catalogue.
+  select coalesce(string_agg(p.schemaname || '.' || p.tablename || '.' || p.policyname, ', '), 'aucune') into obs from pg_policies p
+   where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ '''(achats|frais|documents)''';
+  verdicts := verdicts || jsonb_build_object('controle', 'TC3. aucune policy, de tous les schémas, ne nomme « achats », « frais » ni « documents » (lecture du catalogue)',
+    'cible', 'pg_policies', 'observe', obs, 'ok', obs = 'aucune');
+  verdicts := verdicts || jsonb_build_object('controle', 'TC. le jeu d''essai des trois cases s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null and acces is not null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and acces is not null);
 
   insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
     from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);

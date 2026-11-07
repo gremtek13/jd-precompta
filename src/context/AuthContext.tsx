@@ -7,13 +7,17 @@ import { messageErreur } from '../lib/messageErreur'
 import { AUCUN_RETOUR, AVIS_LIEN_SANS_SESSION, avisDuRefus, type RetourDuLien } from '../lib/recuperationMotDePasse'
 import { droitsParDossier, type DroitsAcces } from '../lib/droitsAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from '../lib/situationsPubliees'
+import { TROIS_CASES_EXPORTEES } from '../lib/troisCasesDeLAcces'
 
 // Les colonnes des droits d'un accès. « Comptes » (étape C4b) n'est demandée qu'avec sa migration : avant, la colonne n'existe
 // pas, et la lecture échouerait — l'échec tombant du côté fermé, le client perdrait tous ses droits. Typée comme la forme
 // la plus longue : drapeau baissé, `droit_comptes` manque à la ligne, et `droitsDeLaLigne` n'en accorde aucun.
-const COLONNES_DES_DROITS = (SITUATIONS_PUBLIEES_EXPORTEES
-  ? 'dossier_id, droit_ventes, droit_banque, droit_caisse, droit_comptes'
-  : 'dossier_id, droit_ventes, droit_banque, droit_caisse') as 'dossier_id, droit_ventes, droit_banque, droit_caisse, droit_comptes'
+const COLONNES_DES_DROITS = (TROIS_CASES_EXPORTEES
+  ? 'dossier_id, droit_ventes, droit_banque, droit_caisse, droit_comptes, droit_achats, droit_frais, droit_documents'
+  : SITUATIONS_PUBLIEES_EXPORTEES
+    ? 'dossier_id, droit_ventes, droit_banque, droit_caisse, droit_comptes'
+    : 'dossier_id, droit_ventes, droit_banque, droit_caisse'
+) as 'dossier_id, droit_ventes, droit_banque, droit_caisse, droit_comptes, droit_achats, droit_frais, droit_documents'
 
 export type Role = 'cabinet' | 'client' | null
 

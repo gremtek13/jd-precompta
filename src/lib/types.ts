@@ -1012,6 +1012,12 @@ export interface Membership {
   // paramètres seule, faux par défaut. FACULTATIF tant que la colonne n'est pas en base : une ligne lue aujourd'hui ne le
   // porte pas ; il deviendra obligatoire avec le premier écran qui le lit (C4b).
   droit_comptes?: boolean
+  // LES TROIS CASES DE B1 (espace client, étape B1 ; migration `trois_cases_de_l_acces`, PRÉPARÉE, pas appliquée — voir
+  // lib/troisCasesDeLAcces.ts) : « Achats », « Notes de frais », « Documents », posées par `changer_droits_acces` à huit
+  // paramètres seule, fausses par défaut, et qui n'ouvrent encore rien. FACULTATIVES tant que leurs colonnes manquent.
+  droit_achats?: boolean
+  droit_frais?: boolean
+  droit_documents?: boolean
 }
 
 export type RoleCabinetAdmin = 'comptable_en_chef' | 'comptable'

@@ -49,9 +49,10 @@ import { SIMULATION_VENTES_FACTUREES_EXPORTEE } from './simulationVentesFacturee
 import { refus as refusDeLaCaisse, STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
+import { TROIS_CASES_EXPORTEES } from './troisCasesDeLAcces'
 import type { StatutTva } from './types'
 
-export type Domaine = 'ventes' | 'banque' | 'caisse' | 'comptes'
+export type Domaine = 'ventes' | 'banque' | 'caisse' | 'comptes' | 'achats' | 'frais' | 'documents'
 
 export interface DroitsAcces {
   ventes: boolean
@@ -59,13 +60,19 @@ export interface DroitsAcces {
   caisse: boolean
   /** « Comptes » (étape C4b) : faux tant que la colonne n'est pas en base — aucune lecture ne la demande avant. */
   comptes: boolean
+  /** « Achats », « Notes de frais », « Documents » (étape B1) : faux tant que leurs colonnes ne sont pas en base. */
+  achats: boolean
+  frais: boolean
+  documents: boolean
 }
 
-export const AUCUN_DROIT: Readonly<DroitsAcces> = Object.freeze({ ventes: false, banque: false, caisse: false, comptes: false })
+export const AUCUN_DROIT: Readonly<DroitsAcces> = Object.freeze({
+  ventes: false, banque: false, caisse: false, comptes: false, achats: false, frais: false, documents: false,
+})
 
 export interface DefinitionDomaine {
   domaine: Domaine
-  colonne: 'droit_ventes' | 'droit_banque' | 'droit_caisse' | 'droit_comptes'
+  colonne: 'droit_ventes' | 'droit_banque' | 'droit_caisse' | 'droit_comptes' | 'droit_achats' | 'droit_frais' | 'droit_documents'
   libelle: string
   ouvrira: string
 }
@@ -86,14 +93,31 @@ const TOUS_LES_DOMAINES: readonly DefinitionDomaine[] = [
     domaine: 'comptes', colonne: 'droit_comptes', libelle: 'Comptes',
     ouvrira: 'situations publiées : recettes, dépenses par poste de la 2035, résultat, TVA due, comparaison à N−1',
   },
+  // Étape B1 : les mots des commentaires des colonnes que la migration `trois_cases_de_l_acces` pose (la conception, B.0).
+  { domaine: 'achats', colonne: 'droit_achats', libelle: 'Achats', ouvrira: 'factures d’achat, échéances, règlements, fournisseurs' },
+  { domaine: 'frais', colonne: 'droit_frais', libelle: 'Notes de frais', ouvrira: 'saisie et suivi de ses notes de frais' },
+  {
+    domaine: 'documents', colonne: 'droit_documents', libelle: 'Documents',
+    ouvrira: 'documents mis à disposition par le cabinet : 2035, liasse, comptes, attestations, lettre de mission',
+  },
 ]
 
-/** Les cases de l'onglet, selon que la migration des situations publiées est en base. */
-export function domainesSelon(comptesEnBase: boolean): readonly DefinitionDomaine[] {
-  return comptesEnBase ? TOUS_LES_DOMAINES : TOUS_LES_DOMAINES.filter((d) => d.domaine !== 'comptes')
+/** Les trois cases de B1, qui n'ouvrent encore rien. */
+export const CASES_SANS_EFFET = ['achats', 'frais', 'documents'] as const
+export type CaseSansEffet = typeof CASES_SANS_EFFET[number]
+const estSansEffet = (d: Domaine): d is CaseSansEffet => (CASES_SANS_EFFET as readonly string[]).includes(d)
+
+/** Les cases de l'onglet, selon que les migrations des situations publiées (C4a) et des trois cases (B1) sont en base. */
+export function domainesSelonLesMigrations(comptesEnBase: boolean, troisCasesEnBase: boolean): readonly DefinitionDomaine[] {
+  return TOUS_LES_DOMAINES.filter((d) => (d.domaine !== 'comptes' || comptesEnBase) && (!estSansEffet(d.domaine) || troisCasesEnBase))
 }
 
-export const DOMAINES: readonly DefinitionDomaine[] = domainesSelon(SITUATIONS_PUBLIEES_EXPORTEES)
+/** Les cases de l'onglet, selon que la migration des situations publiées est en base (sans les trois cases de B1). */
+export function domainesSelon(comptesEnBase: boolean): readonly DefinitionDomaine[] {
+  return domainesSelonLesMigrations(comptesEnBase, false)
+}
+
+export const DOMAINES: readonly DefinitionDomaine[] = domainesSelonLesMigrations(SITUATIONS_PUBLIEES_EXPORTEES, TROIS_CASES_EXPORTEES)
 
 /** Une énumération française : « a », « a et b », « a, b et c ». */
 export function enumeration(termes: readonly string[]): string {
@@ -119,6 +143,9 @@ export interface LigneDroits {
   droit_banque?: unknown
   droit_caisse?: unknown
   droit_comptes?: unknown
+  droit_achats?: unknown
+  droit_frais?: unknown
+  droit_documents?: unknown
 }
 
 /**
@@ -128,7 +155,8 @@ export interface LigneDroits {
 export function droitsDeLaLigne(ligne: LigneDroits | null | undefined): DroitsAcces {
   return {
     ventes: ligne?.droit_ventes === true, banque: ligne?.droit_banque === true, caisse: ligne?.droit_caisse === true,
-    comptes: ligne?.droit_comptes === true,
+    comptes: ligne?.droit_comptes === true, achats: ligne?.droit_achats === true, frais: ligne?.droit_frais === true,
+    documents: ligne?.droit_documents === true,
   }
 }
 
@@ -147,7 +175,8 @@ export function droitsParDossier(
     resultat[ligne.dossier_id] = deja
       ? {
         ventes: deja.ventes && droits.ventes, banque: deja.banque && droits.banque, caisse: deja.caisse && droits.caisse,
-        comptes: deja.comptes && droits.comptes,
+        comptes: deja.comptes && droits.comptes, achats: deja.achats && droits.achats, frais: deja.frais && droits.frais,
+        documents: deja.documents && droits.documents,
       }
       : droits
   }
@@ -167,6 +196,10 @@ export interface DemandeDeChangement {
   p_caisse: boolean | null
   /** La forme à cinq (étape C4b) : seulement quand la migration des situations publiées est en base. */
   p_comptes?: boolean | null
+  /** La forme à huit (étape B1) : seulement quand la migration des trois cases est en base. */
+  p_achats?: boolean | null
+  p_frais?: boolean | null
+  p_documents?: boolean | null
 }
 
 /**
@@ -179,7 +212,8 @@ export interface DemandeDeChangement {
  * « Caisse ». Le droit cliqué part seul non nul : jamais trois nuls, que la base refuse (22023, « Aucun droit à changer »).
  */
 export function demandeDeChangement(membershipId: string, domaine: Domaine, valeur: boolean): DemandeDeChangement {
-  return demandeDeChangementSelon(SITUATIONS_PUBLIEES_EXPORTEES, membershipId, domaine, valeur)
+  return demandeDeChangementSelonLaForme(
+    formeDeChangerDroitsAcces(SITUATIONS_PUBLIEES_EXPORTEES, TROIS_CASES_EXPORTEES), membershipId, domaine, valeur)
 }
 
 /**
@@ -190,13 +224,36 @@ export function demandeDeChangement(membershipId: string, domaine: Domaine, vale
 export function demandeDeChangementSelon(
   cinqParametres: boolean, membershipId: string, domaine: Domaine, valeur: boolean,
 ): DemandeDeChangement {
+  return demandeDeChangementSelonLaForme(cinqParametres ? 5 : 4, membershipId, domaine, valeur)
+}
+
+/** La forme de `changer_droits_acces` que l'onglet appelle : à huit (B1), à cinq (C4a), sinon à quatre (C10). */
+export type FormeDesDroits = 4 | 5 | 8
+export function formeDeChangerDroitsAcces(comptesEnBase: boolean, troisCasesEnBase: boolean): FormeDesDroits {
+  return troisCasesEnBase ? 8 : comptesEnBase ? 5 : 4
+}
+
+/**
+ * LA FORME À HUIT (étape B1) : la migration `trois_cases_de_l_acces` en base, `p_comptes`, `p_achats`, `p_frais` et
+ * `p_documents` partent TOUJOURS, nuls ou non — les formes plus courtes, qu'elle garde comme des appels de la sienne,
+ * n'écriraient pas ses cases. Avant elle, la forme du jour, au paramètre près : PostgREST refuserait un paramètre qu'aucune
+ * forme ne nomme.
+ */
+export function demandeDeChangementSelonLaForme(
+  forme: FormeDesDroits, membershipId: string, domaine: Domaine, valeur: boolean,
+): DemandeDeChangement {
   const demande: DemandeDeChangement = {
     p_membership_id: membershipId,
     p_ventes: domaine === 'ventes' ? valeur : null,
     p_banque: domaine === 'banque' ? valeur : null,
     p_caisse: domaine === 'caisse' ? valeur : null,
   }
-  if (cinqParametres) demande.p_comptes = domaine === 'comptes' ? valeur : null
+  if (forme >= 5) demande.p_comptes = domaine === 'comptes' ? valeur : null
+  if (forme === 8) {
+    demande.p_achats = domaine === 'achats' ? valeur : null
+    demande.p_frais = domaine === 'frais' ? valeur : null
+    demande.p_documents = domaine === 'documents' ? valeur : null
+  }
   return demande
 }
 
@@ -553,6 +610,11 @@ export function gesteDeLaCase(domaine: Domaine, reglage: ReglageDuDossier, caiss
     // que le cabinet publie, et n'importe quel dossier en a.
     case 'comptes':
       return LES_DEUX_GESTES
+    // « Achats », « Notes de frais », « Documents » (étape B1) : aucune garde, et elles n'ouvrent encore rien.
+    case 'achats':
+    case 'frais':
+    case 'documents':
+      return LES_DEUX_GESTES
     case 'ventes':
       if (reglage.etat === 'bascule') return LES_DEUX_GESTES
       if (reglage.etat === 'non_bascule') {
@@ -827,6 +889,23 @@ export function ceQueDitLaCaseComptes(): string {
 }
 
 export const TABLES_LUES_AVEC_COMPTES = ['situations_publiees'] as const
+
+// ── Les trois cases de B1 (espace client, ligne 51.5, étape B1) ──────────────────────────────────────────────────────────
+// CE QU'ELLES OUVRENT À LA SESSION DU CLIENT, PAR LA BASE : RIEN. Aucune policy ni aucune autre fonction ne les lit
+// (supabase/essais/troisCasesDeLAcces.sql, rangs 12 et 13 ; le bloc TC de rls.sql) ; chacune se coche, se lit sur la ligne
+// de l'accès et se trace. L'étape qui s'en servira changera sa phrase : B2 les documents, B4 les achats, B7 les notes de frais.
+const ETAPE_QUI_S_EN_SERVIRA: Readonly<Record<CaseSansEffet, string>> = {
+  achats: 'à ses achats (étape B4)',
+  frais: 'à ses notes de frais (étape B7)',
+  documents: 'aux documents que tu mets à sa disposition (étape B2)',
+}
+
+/** Ce que dit une des trois cases de B1, sous celles d'hier : elle ne change encore rien. */
+export function ceQueDitLaCaseSansEffet(domaine: CaseSansEffet): string {
+  const { libelle, ouvrira } = definitionDe(domaine)
+  return `« ${libelle} » (${ouvrira}) : la case se coche et se garde, mais ne change encore rien — aucun écran du client ne `
+    + `la lit, et la base ne lui ouvre rien de plus. Elle servira ${ETAPE_QUI_S_EN_SERVIRA[domaine]}.`
+}
 
 /** La nature des recettes du client, telle que l'onglet l'a lue et résolue parmi les catégories (lib/natureDesRecettes.ts). */
 export type NatureDesRecettesDite =

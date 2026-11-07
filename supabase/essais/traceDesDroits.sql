@@ -75,6 +75,18 @@ declare
   ligne_lue constant text := 'DT A banque cochée changement par sans session';
   refus_garde constant text := 'La trace des droits ne s''écrit que par l''écriture des droits d''un accès.';
   refus_reecriture constant text := 'La trace des droits ne se réécrit pas : une ligne ne part qu''avec son dossier.';
+  -- L'état des cases : P1-trace seule, puis C4a (« Comptes »), puis B1 (« Achats », « Notes de frais », « Documents ») —
+  -- chacune étend la fonction et le déclencheur de la trace (rangs 38 à 40).
+  etat constant text := case
+    when exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_documents' and not a.attisdropped) then 'b1'
+    when exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_comptes' and not a.attisdropped) then 'c4a'
+    else 'p1' end;
+  tracer_attendu constant text := case etat when 'b1' then '2e86432a422c1d5d0371bb769e6053f1' when 'c4a' then '808b209e76b5ddaa079dc2cfac01e934'
+    else '0ef7ead57a5829ec8fed54fd7e561371' end;
+  colonnes_tracees constant text := case etat when 'b1' then 'droit_ventes, droit_banque, droit_caisse, droit_comptes, droit_achats, droit_frais, droit_documents'
+    when 'c4a' then 'droit_ventes, droit_banque, droit_caisse, droit_comptes' else 'droit_ventes, droit_banque, droit_caisse' end;
+  cases_lues constant text := case etat when 'b1' then 'droit_achats, droit_banque, droit_caisse, droit_comptes, droit_documents, droit_frais, droit_ventes'
+    when 'c4a' then 'droit_banque, droit_caisse, droit_comptes, droit_ventes' else 'droit_banque, droit_caisse, droit_ventes' end;
 begin
   if to_regclass('public.trace_des_droits') is null then
     perform set_config('essai.trace_des_droits', jsonb_build_array(jsonb_build_object('rang', 0,
@@ -189,7 +201,7 @@ begin
       (36, 'proprietaire', '36. … ses contraintes : le dossier en cascade, aucune clé vers l''accès ni vers un compte', null,
         $q$select string_agg(c.conname || ' ' || pg_get_constraintdef(c.oid), ' ; ' order by c.conname) from pg_constraint c
   where c.conrelid = 'public.trace_des_droits'::regclass$q$, null, 'OK',
-        'trace_des_droits_coche CHECK ((((geste <> ''creation''::text) OR coche) AND ((geste <> ''retrait''::text) OR (NOT coche)))) ; trace_des_droits_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE ; trace_des_droits_droit CHECK ((droit = ANY (ARRAY[''ventes''::text, ''banque''::text, ''caisse''::text]))) ; trace_des_droits_geste CHECK ((geste = ANY (ARRAY[''changement''::text, ''creation''::text, ''retrait''::text]))) ; trace_des_droits_pkey PRIMARY KEY (id) | -'),
+        'trace_des_droits_coche CHECK ((((geste <> ''creation''::text) OR coche) AND ((geste <> ''retrait''::text) OR (NOT coche)))) ; trace_des_droits_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE ; trace_des_droits_droit CHECK ((droit = ANY (ARRAY[''ventes''::text, ''banque''::text, ''caisse''::text, ''comptes''::text, ''achats''::text, ''frais''::text, ''documents''::text]))) ; trace_des_droits_geste CHECK ((geste = ANY (ARRAY[''changement''::text, ''creation''::text, ''retrait''::text]))) ; trace_des_droits_pkey PRIMARY KEY (id) | -'),
       (37, 'proprietaire', '37. … ses deux policies, à authenticated seul : la lecture du cabinet du dossier, l''insertion du super-administrateur', null,
         $q$select string_agg(p.policyname || ' ' || p.cmd || ' ' || array_to_string(p.roles, ',') || ' ' || coalesce(p.qual, '-') || ' '
   || coalesce(p.with_check, '-') || ' ' || p.permissive, ' ; ' order by p.policyname) from pg_policies p
@@ -201,19 +213,19 @@ begin
   || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
   || ' ' || md5(replace(p.prosrc, chr(13), '')), ' ; ' order by p.proname) from pg_proc p
   where p.oid in (to_regprocedure('public.garder_trace_des_droits()'), to_regprocedure('public.tracer_les_droits()'))$q$, null, 'OK',
-        'garder_trace_des_droits false search_path=public false false false a63a4b732282845e7cb30e3ce2dd763d ; tracer_les_droits true search_path=public false false false 0ef7ead57a5829ec8fed54fd7e561371 | -'),
+        'garder_trace_des_droits false search_path=public false false false a63a4b732282845e7cb30e3ce2dd763d ; tracer_les_droits true search_path=public false false false ' || tracer_attendu || ' | -'),
       (39, 'proprietaire', '39. … leurs déclencheurs, actifs ; celui de la trace après les deux gardes de memberships', null,
         $q$select string_agg(pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text, ' ; ' order by t.tgname) || ' | '
   || (select string_agg(m.tgname, ', ' order by m.tgname) from pg_trigger m where m.tgrelid = 'public.memberships'::regclass and not m.tgisinternal)
   from pg_trigger t where t.tgname in ('memberships_trace_des_droits', 'trace_des_droits_garde') and not t.tgisinternal$q$, null, 'OK',
-        'CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF droit_ventes, droit_banque, droit_caisse, dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O ; CREATE TRIGGER trace_des_droits_garde BEFORE INSERT OR DELETE OR UPDATE ON public.trace_des_droits FOR EACH ROW EXECUTE FUNCTION garder_trace_des_droits() O | memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits | -'),
+        'CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF ' || colonnes_tracees || ', dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O ; CREATE TRIGGER trace_des_droits_garde BEFORE INSERT OR DELETE OR UPDATE ON public.trace_des_droits FOR EACH ROW EXECUTE FUNCTION garder_trace_des_droits() O | memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits | -'),
       (40, 'proprietaire', '40. … toute case droit_… de memberships est tracée : nommée par le déclencheur, admise par la contrainte, lue par la fonction (sinon, en faute)', null,
         $q$select string_agg(a.attname, ', ' order by a.attname) || ' | non tracée : ' || coalesce(string_agg(a.attname, ', ' order by a.attname) filter (where not (
     a.attnum = any ((select t.tgattr from pg_trigger t where t.tgname = 'memberships_trace_des_droits' and not t.tgisinternal)::int2[])
     and strpos((select pg_get_constraintdef(c.oid) from pg_constraint c where c.conrelid = 'public.trace_des_droits'::regclass and c.conname = 'trace_des_droits_droit'), '''' || substr(a.attname, 7) || '''') > 0
     and strpos((select p.prosrc from pg_proc p where p.oid = to_regprocedure('public.tracer_les_droits()')), 'new.' || a.attname) > 0)), 'aucune')
   from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attnum > 0 and not a.attisdropped and left(a.attname, 6) = 'droit_'$q$, null, 'OK',
-        'droit_banque, droit_caisse, droit_ventes | non tracée : aucune | -')
+        cases_lues || ' | non tracée : aucune | -')
     ) as t(rang, profil, etape, avant, requete, apres, code, attendu) order by rang loop
       v_obs := null;
       v_code := 'OK';

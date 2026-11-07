@@ -49269,3 +49269,18 @@ Agent architecte, sans migration ni déploiement ; aucune des deux fonctions n'a
 deux mutations mordent. Le banc, médiane de 5 passes (1N | 4N, ms), avant → après : préalables 90,5 | 456 → 49 | 267 ;
 Checklist 44 | 159 → 29 | 92 ; FEC 12,5 | 42,7 → 11,8 | 42 (hors de ces chemins) ; « Ma caisse » 28,6 | 48,9 → 22,8 |
 53,1 (`caisseRejouee` n'y passe pas) ; les rendus du banc identiques. Les préalables restent au-dessus du linéaire.
+
+### 07/11/2026 — TROIS CASES DE PLUS : « ACHATS », « NOTES DE FRAIS », « DOCUMENTS » (B1, LIGNE 51.5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, sur une copie de la réplique mère (PostgreSQL 16), rien en production. L'ORDRE, FIXÉ : P1-trace, C4a,
+B1. La garde de C4a refusait la trace : C4a se reprend, elle l'exige et l'étend à « Comptes » ; la contrainte du droit
+de P1-trace admet dès le départ les quatre mots à venir, et C4a comme B1 n'étendent que la fonction et le déclencheur de
+la trace (`create or replace`, l'outil, aucun collage). B1 (`trois_cases_de_l_acces`, 20261107140000, `e57ca524…`) :
+`droit_achats`, `droit_frais`, `droit_documents`, faux ; `client_du_dossier` et `droits_sur_le_dossier` au corps de C4a
+plus trois mots et trois clés ; `changer_droits_acces` à huit, les formes à trois, quatre et cinq ses appels ; la trace
+aux sept cases. Elle n'ouvre RIEN : ni policy ni autre fonction ne lit les cases, et le client qui les porte voit les
+mêmes lignes partout. Sa garde refuse, en le disant, une base sans la trace, puis sans « Comptes ». Essais :
+`troisCasesDeLAcces.sql` 16 lignes, 0 en faute, onze mutations sur onze ; `traceDesDroits.sql`, `droitsAcces.sql` et
+`situationsPubliees.sql` à 0 sur chaque état, rendus conscients de l'état ; `rls.sql` 107 lignes, 0 en faute, 79
+mutations sur 79 (bloc TC) ; `restauration.sql` identique (81 tables) ; banc du leurre SÛR ; aller, retour, aller égaux.
+Écrans derrière `TROIS_CASES_EXPORTEES`, baissé : l'onglet Accès, une phrase par case (« ne change encore rien »).

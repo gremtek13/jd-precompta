@@ -101,7 +101,9 @@ declare
   acces_dn uuid := 'c10d0000-0000-4000-8000-0000000000a4';
   refus_caisse text := 'Le droit « Caisse » suppose un dossier exonéré de TVA ou en franchise en base, ce que le statut de ce dossier ne dit pas : sa caisse reste tenue par le cabinet.';
   refus_statut text := 'Un accès de ce dossier porte la case « Caisse », qui suppose un dossier exonéré de TVA ou en franchise en base : décoche-la d''abord.';
-  aucun_droit_c10 text := case when to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean)') is not null
+  aucun_droit_c10 text := case when to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean, boolean, boolean, boolean)') is not null
+    then 'Aucun droit à changer : précise « Ventes », « Banque », « Caisse », « Comptes », « Achats », « Notes de frais » ou « Documents ».'
+    when to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean)') is not null
     then 'Aucun droit à changer : précise « Ventes », « Banque », « Caisse » ou « Comptes ».'
     else 'Aucun droit à changer : précise « Ventes », « Banque » ou « Caisse ».' end;
   statuts_avant text;
@@ -168,9 +170,11 @@ begin
     into n, m
     from pg_proc p where p.pronamespace = 'public'::regnamespace
      and p.proname in ('client_du_dossier', 'gere_les_ventes', 'gere_la_banque', 'droits_sur_le_dossier', 'changer_droits_acces');
-  -- Avec la migration de l'étape C10, `changer_droits_acces` a deux formes : six définitions ; avec celle de C4a, trois : sept.
+  -- Avec la migration de l'étape C10, `changer_droits_acces` a deux formes : six définitions ; avec celle de C4a, trois : sept ;
+  -- avec celle de B1, quatre : huit.
   verdicts := verdicts || jsonb_build_object('controle', '3. les cinq fonctions : SECURITY DEFINER, search_path fixé ; les quatre lectures stables',
-    'observe', n || ' conforme(s) sur ' || m, 'ok', n = case when c4a then 7 when c10 then 6 else 5 end and m = n);
+    'observe', n || ' conforme(s) sur ' || m, 'ok', n = case when to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean, boolean, boolean, boolean)') is not null then 8
+      when c4a then 7 when c10 then 6 else 5 end and m = n);
 
   select string_agg(p.proname, ', ' order by p.proname) filter (where has_function_privilege('anon', p.oid, 'execute')
            or exists (select 1 from aclexplode(p.proacl) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')

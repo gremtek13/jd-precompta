@@ -76,18 +76,18 @@ const CAISSE_DU_CLIENT = fichiersDuSchema().find((f) => /\/\d{14}_caisse_du_clie
 
 describe('les droits d’une ligne : seul « vrai » accorde', () => {
   it('lit les trois colonnes', () => {
-    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: false, droit_caisse: false })).toEqual({ ventes: true, banque: false, caisse: false, comptes: false })
-    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: true, droit_caisse: false })).toEqual({ ventes: false, banque: true, caisse: false, comptes: false })
-    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: false, droit_caisse: true })).toEqual({ ventes: false, banque: false, caisse: true, comptes: false })
+    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: false, droit_caisse: false })).toEqual({ ventes: true, banque: false, caisse: false, comptes: false, achats: false, frais: false, documents: false })
+    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: true, droit_caisse: false })).toEqual({ ventes: false, banque: true, caisse: false, comptes: false, achats: false, frais: false, documents: false })
+    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: false, droit_caisse: true })).toEqual({ ventes: false, banque: false, caisse: true, comptes: false, achats: false, frais: false, documents: false })
   })
 
   it('une colonne absente, nulle ou d’un autre type ne donne rien — une ligne d’avant la migration non plus', () => {
-    const rien = { ventes: false, banque: false, caisse: false, comptes: false }
+    const rien = { ventes: false, banque: false, caisse: false, comptes: false, achats: false, frais: false, documents: false }
     for (const valeur of [undefined, null, 'true', 1, 'oui', {}]) {
       expect(droitsDeLaLigne({ droit_ventes: valeur, droit_banque: valeur, droit_caisse: valeur }), String(valeur)).toEqual(rien)
     }
     // Une ligne d'avant la migration `caisse_du_client` : ses deux droits, et pas de « Caisse ».
-    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: true })).toEqual({ ventes: true, banque: true, caisse: false, comptes: false })
+    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: true })).toEqual({ ventes: true, banque: true, caisse: false, comptes: false, achats: false, frais: false, documents: false })
     expect(droitsDeLaLigne({})).toEqual(rien)
     expect(droitsDeLaLigne(null)).toEqual(rien)
     expect(droitsDeLaLigne(undefined)).toEqual(rien)
@@ -102,11 +102,11 @@ describe('les droits par dossier', () => {
       { dossier_id: 'd3' },
     ])
     expect(droits).toEqual({
-      d1: { ventes: true, banque: false, caisse: false, comptes: false },
-      d2: { ventes: false, banque: true, caisse: true, comptes: false },
-      d3: { ventes: false, banque: false, caisse: false, comptes: false },
+      d1: { ventes: true, banque: false, caisse: false, comptes: false, achats: false, frais: false, documents: false },
+      d2: { ventes: false, banque: true, caisse: true, comptes: false, achats: false, frais: false, documents: false },
+      d3: { ventes: false, banque: false, caisse: false, comptes: false, achats: false, frais: false, documents: false },
     })
-    expect(droitsSur(droits, 'd1')).toEqual({ ventes: true, banque: false, caisse: false, comptes: false })
+    expect(droitsSur(droits, 'd1')).toEqual({ ventes: true, banque: false, caisse: false, comptes: false, achats: false, frais: false, documents: false })
     expect(droitsSur(droits, 'd2').caisse).toBe(true)
     expect(droitsSur(droits, 'd9')).toEqual(AUCUN_DROIT)
     expect(droitsSur(droits, null)).toEqual(AUCUN_DROIT)
@@ -118,15 +118,15 @@ describe('les droits par dossier', () => {
     expect(droitsParDossier([
       { dossier_id: 'd1', droit_ventes: true, droit_banque: true, droit_caisse: true },
       { dossier_id: 'd1', droit_ventes: false, droit_banque: true, droit_caisse: false },
-    ])).toEqual({ d1: { ventes: false, banque: true, caisse: false, comptes: false } })
+    ])).toEqual({ d1: { ventes: false, banque: true, caisse: false, comptes: false, achats: false, frais: false, documents: false } })
     expect(droitsParDossier([
       { dossier_id: 'd1', droit_ventes: false, droit_banque: false, droit_caisse: false },
       { dossier_id: 'd1', droit_ventes: true, droit_banque: true, droit_caisse: true },
-    ])).toEqual({ d1: { ventes: false, banque: false, caisse: false, comptes: false } })
+    ])).toEqual({ d1: { ventes: false, banque: false, caisse: false, comptes: false, achats: false, frais: false, documents: false } })
     expect(droitsParDossier([
       { dossier_id: 'd1', droit_caisse: true },
       { dossier_id: 'd1', droit_caisse: true },
-    ])).toEqual({ d1: { ventes: false, banque: false, caisse: true, comptes: false } })
+    ])).toEqual({ d1: { ventes: false, banque: false, caisse: true, comptes: false, achats: false, frais: false, documents: false } })
   })
 
   it('aucun accès, aucun droit', () => {
@@ -137,8 +137,8 @@ describe('les droits par dossier', () => {
     const rendus = droitsSur({}, 'd1')
     rendus.ventes = true
     rendus.caisse = true
-    expect(AUCUN_DROIT).toEqual({ ventes: false, banque: false, caisse: false, comptes: false })
-    expect(droitsSur({}, 'd1')).toEqual({ ventes: false, banque: false, caisse: false, comptes: false })
+    expect(AUCUN_DROIT).toEqual({ ventes: false, banque: false, caisse: false, comptes: false, achats: false, frais: false, documents: false })
+    expect(droitsSur({}, 'd1')).toEqual({ ventes: false, banque: false, caisse: false, comptes: false, achats: false, frais: false, documents: false })
   })
 })
 
@@ -198,7 +198,7 @@ describe('le module, la migration et les écrans disent la même chose', () => {
       expect(export_, colonne).toMatch(new RegExp(`alter table public\\.memberships\\s+(add column \\w+ boolean not null default false,\\s+)?add column ${colonne} boolean not null default false[,;]`))
     }
     expect(DOMAINES.map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse'])
-    expect(() => definitionDe('achats' as never)).toThrow('Domaine inconnu')
+    expect(() => definitionDe('inconnu' as never)).toThrow('Domaine inconnu')
   })
 
   it('ce que l’écran dit d’un droit est ce que dit le commentaire de sa colonne en base — le dernier que l’export pose', () => {
@@ -1885,7 +1885,7 @@ describe('la case « Comptes » (étape C4b), derrière sa migration', () => {
     expect(droitsDeLaLigne({ droit_comptes: true }).comptes).toBe(true)
     for (const valeur of [false, null, undefined, 'true', 1]) expect(droitsDeLaLigne({ droit_comptes: valeur }).comptes).toBe(false)
     expect(changementApplique({ droit_comptes: true }, 'comptes', true)).toBe(true)
-    expect(changementApplique({ droit_comptes: false }, 'comptes', true)).toBe(false)
+    expect(changementApplique({ droit_comptes: false, achats: false, frais: false, documents: false }, 'comptes', true)).toBe(false)
     expect(gesteDeLaCase('comptes', { etat: 'illisible', motif: 'x' }, { etat: 'illisible', motif: 'x' }))
       .toEqual({ cocher: true, decocher: true, raison: null })
   })
