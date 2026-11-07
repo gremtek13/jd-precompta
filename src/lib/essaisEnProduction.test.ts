@@ -330,7 +330,9 @@ describe('les essais de la base, rejoués en production', () => {
     // production).
     // Vingt-quatre le même jour : `saisies2035` (étapes 2035S3 à S5, `saisies_2035`), après la sienne ; SÛR au banc, sur une
     // copie de la réplique mère.
-    expect(cas.length).toBe(24)
+    // Vingt-cinq le même jour : `facturesImportees` (A8a, `factures_importees`) entré dans la famille « apres », après sa
+    // migration préparée ; SÛR au banc, sur une copie de la réplique mère.
+    expect(cas.length).toBe(25)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
