@@ -8,6 +8,8 @@ import {
 import type { DeclarationTva, EcritureBrouillon, LigneBancaire, PeriodiciteTva } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { avecLePlan } from '../test/copieAuPlan'
+import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DE LA TVA LIQUIDÉE ET PAYÉE (06/10/2026, ligne 26.8).
 //
@@ -45,7 +47,7 @@ interface Copie {
 // Le bloc LIQUIDATION TVA lit `ecrituresSansPieceParMouvement` et `ecritureConforme` du bloc AFFECTATION, `estFigee`
 // du bloc VALIDATION, et les comptes déclarés plus haut dans la fonction : tous repris de la MÊME source, pour qu'une
 // dérive de l'un d'eux morde ici aussi.
-function extraire(source: string): Copie {
+function extraire(source: string, plan: PlanComptable): Copie {
   const bornes = (nom: string) => {
     const debut = source.indexOf(`// ── DÉBUT ${nom}`)
     const fin = source.indexOf(`// ── FIN ${nom}`)
@@ -53,19 +55,12 @@ function extraire(source: string): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const compte = (nom: string) => {
-    const trouve = new RegExp(`const ${nom} = "(\\d+)"`).exec(source)
-    expect(trouve, `\`${nom}\` introuvable dans la source`).not.toBeNull()
-    return `const ${nom} = "${trouve![1]}"\n`
-  }
-  const bloc = compte('COMPTE_BANQUE') + compte('COMPTE_EXPLOITANT') + compte('COMPTE_TVA_COLLECTEE')
-    + compte('COMPTE_TVA_DEDUCTIBLE') + compte('COMPTE_TVA_IMMOBILISATIONS')
-    + `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('LIQUIDATION TVA')}`
+  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('LIQUIDATION TVA')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { ecritureDeLaLiquidation, ecritureDuPaiementTva, liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesDeLAnnee, periodesEnRetard }`)() as Copie
+  return avecLePlan(new Function(`${js}\nreturn { ecritureDeLaLiquidation, ecritureDuPaiementTva, liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesDeLAnnee, periodesEnRetard }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee())
+const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const FRONTIERES = [null, '2026-03-30', '2026-03-31', '2026-06-30', '2026-12-31'] as const
 
@@ -346,7 +341,7 @@ describe('le garde-fou du bloc LIQUIDATION TVA sait encore échouer', () => {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source)
+    return extraire(source, PLAN_PAR_DEFAUT)
   }
   // Une dérive doit faire échouer une ASSERTION, pas lever pour une autre raison (voir le bloc EMPRUNT).
   const echoue = (f: () => void) => {

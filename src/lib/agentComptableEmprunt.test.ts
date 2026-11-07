@@ -10,6 +10,8 @@ import { ajouterJours, ajouterMois } from './format'
 import type { EcritureBrouillon, LigneBancaire } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { avecLePlan } from '../test/copieAuPlan'
+import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES ÉCHÉANCES D'EMPRUNT (29/09/2026, ligne 26.6).
 //
@@ -43,7 +45,7 @@ interface Copie {
 // Le bloc EMPRUNT lit `ecrituresSansPieceParMouvement` et `ecritureConforme` du bloc AFFECTATION, et
 // `COMPTE_BANQUE` déclaré plus haut : les trois sont repris de la MÊME source, pour qu'une dérive de l'un
 // d'eux morde ici aussi.
-function extraire(source: string): Copie {
+function extraire(source: string, plan: PlanComptable): Copie {
   const bornes = (nom: string) => {
     const debut = source.indexOf(`// ── DÉBUT ${nom}`)
     const fin = source.indexOf(`// ── FIN ${nom}`)
@@ -51,17 +53,12 @@ function extraire(source: string): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const banque = /const COMPTE_BANQUE = "(\d+)"/.exec(source)
-  expect(banque, '`COMPTE_BANQUE` introuvable dans la source').not.toBeNull()
-  // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
-  const exploitant = /const COMPTE_EXPLOITANT = "(\d+)"/.exec(source)
-  expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('EMPRUNT')}`
+  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('EMPRUNT')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { ajouterMois, ajouterJours, genererEcheancier, echeancesNonRapprochees, couvertureDuReleve, ecritureDeLEcheance, echeancesDesynchronisees }`)() as Copie
+  return avecLePlan(new Function(`${js}\nreturn { ajouterMois, ajouterJours, genererEcheancier, echeancesNonRapprochees, couvertureDuReleve, ecritureDeLEcheance, echeancesDesynchronisees }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee())
+const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const emprunt = (o: Partial<Emprunt>): Emprunt => ({
   id: 'a', dossier_id: 'd', nom: 'Prêt matériel', organisme_preteur: null, capital_initial: 12000, taux_annuel: 3.6,
@@ -220,7 +217,7 @@ describe('le garde-fou du bloc EMPRUNT sait encore échouer', () => {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source)
+    return extraire(source, PLAN_PAR_DEFAUT)
   }
   // Une dérive doit faire échouer une ASSERTION. Une `ReferenceError` ou un `TypeError` levés par le test
   // lui-même — un helper hors de portée, une copie qui plante — passeraient sinon pour une dérive attrapée :

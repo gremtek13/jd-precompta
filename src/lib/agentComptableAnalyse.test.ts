@@ -20,6 +20,8 @@ import { dateAParis } from './format'
 import { estFigee, frontiereDeValidation } from './validationExercice'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { avecLePlan } from '../test/copieAuPlan'
+import type { PlanComptable } from './planComptable'
 
 // LE DRAPEAU DE LA GÉNÉRATION RÉPARTIE PAR RÈGLEMENT (lot FEC22c3), joué par un accesseur sur lib/champsBncExportes.ts : sans
 // demande (`undefined`), l'état réel — chaque cas d'avant compare l'application telle qu'elle est à la copie telle qu'elle
@@ -83,7 +85,7 @@ function sourceDeployee(): string {
 
 // Prend la SOURCE en paramètre plutôt que de la lire elle-même : c'est ce qui permet de lui donner
 // une source où une dérive a été PLANTÉE, et donc de prouver que ce garde-fou sait encore échouer.
-function extraire(source: string) {
+function extraire(source: string, plan: PlanComptable) {
   // DE LA PREMIÈRE COPIE DE src/lib/ecritures.ts À LA FIN D'`analyserEcritures` : les constantes
   // comptables, les blocs FACTURES SOURCES et VIREMENT MIXTE, `piecesAComptabiliser`, le bloc copié de
   // src/lib/rattachement.ts (qui décide de la DATE qu'une écriture doit porter) et `analyserEcritures`. Tout vient de
@@ -98,8 +100,8 @@ function extraire(source: string) {
   expect(fin, "fin d'`analyserEcritures` introuvable").toBeGreaterThan(ancreFin)
   const bloc = source.slice(debut, fin + 2)
   for (const attendu of [
-    'function piecesAComptabiliser(', 'function rattachementsTresorerie(', 'const COMPTE_BANQUE =',
-    'const COMPTE_FOURNISSEURS =', 'const COMPTE_FOURNISSEURS_IMMOBILISATIONS =', 'const COMPTE_TVA_IMMOBILISATIONS =',
+    'function piecesAComptabiliser(', 'function rattachementsTresorerie(', 
+    
     'function compteTvaDe(', 'function compteDeTiers(', 'function engagementDesynchronise(',
     'function desequilibresEngagement(', 'function paiementsDesPieces(', 'function banqueSuitLesPaiements(',
     'function frontiereDeValidation(', 'function estFigee(', 'function lignesPourPiece(', 'function partieOuverteDesynchronisee(',
@@ -107,7 +109,7 @@ function extraire(source: string) {
     '// ── FIN VIREMENT MIXTE ', 'function exemplaireDUneSource(', 'function facturesSourcesDe(', 'function exemplairesDesSources(',
     'function partsEncaissees(', 'function exemplaireUnique(',
     // Le paiement d'une pièce par la caisse (étape C13) : la dérivation, la contrepartie, et ce qui la juge.
-    'const COMPTE_CAISSE =', 'function paiementsParLaCaisse(', 'function estParLeReleve(', 'function cleDuPaiement(',
+    'function paiementsParLaCaisse(', 'function estParLeReleve(', 'function cleDuPaiement(',
     'function ligneContrepartieCaisse(', 'function ligneContrepartieDuPaiement(', 'function estContrepartieCaisse(',
     'function caisseSuitLesPaiements(', 'function contrepartiesSuiventLesPaiements(',
     // La génération répartie par règlement (lot FEC22c3) : le drapeau de la copie, ses règlements, leur répartition, et ce
@@ -122,7 +124,7 @@ function extraire(source: string) {
   // compilateur du projet plutôt que d'en retirer les types à la main — une traduction écrite à la
   // main mentirait au premier cas tordu.
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, paiementsParLaCaisse, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu, facturesSourcesDe, exemplairesDesSources, partsEncaissees }`)() as {
+  return avecLePlan(new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, paiementsParLaCaisse, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu, facturesSourcesDe, exemplairesDesSources, partsEncaissees }`)(), plan) as {
     piecesAComptabiliser: (
       p: Piece[], c: Categorie[], biens: ReadonlyMap<string, AcquisitionDuBien>, sources: FacturesSources,
     ) => ({ piece: Piece } & CibleComptable)[]
@@ -154,7 +156,7 @@ function extraire(source: string) {
   }
 }
 
-const deployee = extraire(sourceDeployee())
+const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const COMPTE_ACHATS = '606100'
 // La cible d'une pièce ordinaire, et celle de la facture d'un bien immobilisé (lib/ecritures.ts).
@@ -1419,7 +1421,7 @@ describe('le garde-fou sait encore échouer', () => {
     try { f() } catch (e) { erreur = e }
     expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
   }
-  const deriver = (avant: string, apres: string, quoi: string) => extraire(planter(sourceDeployee(), avant, apres, quoi))
+  const deriver = (avant: string, apres: string, quoi: string) => extraire(planter(sourceDeployee(), avant, apres, quoi), PLAN_PAR_DEFAUT)
 
   // La copie telle qu'elle était avant le correctif : elle attend la TVA de la pièce quel que soit le
   // statut du dossier. Le cas exonéré à une seule ligne doit la séparer de src/lib.
@@ -1428,7 +1430,7 @@ describe('le garde-fou sait encore échouer', () => {
   }
 
   it('attrape une copie déployée qui ignore le statut TVA du dossier', () => {
-    const derivee = extraire(sansStatutTva())
+    const derivee = extraire(sansStatutTva(), PLAN_PAR_DEFAUT)
     const ecritures = [
       ecriture({ id: 'a', piece_id: 'p1', montant: 120 }),
       ecriture({ id: 'b', piece_id: 'p1', compte: COMPTE_BANQUE, sens: 'credit', montant: 120, ligne_bancaire_id: 'l-p1' }),
@@ -1452,7 +1454,7 @@ describe('le garde-fou sait encore échouer', () => {
   }
 
   it('attrape une copie déployée à qui il manque la comparaison de compte', () => {
-    const derivee = extraire(sansComparaisonDeCompte())
+    const derivee = extraire(sansComparaisonDeCompte(), PLAN_PAR_DEFAUT)
     // Le cas qui les sépare : un compte changé à total rigoureusement identique.
     expect(() => memeResultat(
       groupeConforme('p1', { compte: '628000' }), [piece({ id: 'p1' })], [], derivee, true, [payee('p1')],
@@ -1477,7 +1479,7 @@ describe('le garde-fou sait encore échouer', () => {
 
   it('attrape une copie déployée qui attend la date de facture malgré le paiement', () => {
     // Le code d'avant ce chantier : il attendait `date_piece` partout.
-    const derivee = extraire(sansPaiements())
+    const derivee = extraire(sansPaiements(), PLAN_PAR_DEFAUT)
     const paye = [payee('p1', '2025-04-02')]
     expect(() => memeResultat(groupeConforme('p1', { date: '2025-04-02' }), [piece({ id: 'p1' })], [], derivee, true, paye)).toThrow()
   })
@@ -1490,7 +1492,7 @@ describe('le garde-fou sait encore échouer', () => {
   }
 
   it('attrape une copie du rattachement qui ne juge pas l’écart au centime', () => {
-    const derivee = extraire(seuilSansArrondi())
+    const derivee = extraire(seuilSansArrondi(), PLAN_PAR_DEFAUT)
     const p = piece({ id: 'p1', montant_ttc: 256.16 })
     const paye: LigneBancaire[] = [{
       id: 'l1', dossier_id: 'd1', date: '2025-04-02', libelle: 'PRLV', montant: -251.16, statut: 'rapprochee',
@@ -1522,7 +1524,7 @@ describe('le garde-fou sait encore échouer', () => {
     // laisserait tout vert : `analyserEcritures` reçoit alors la liste de la copie déployée, et les
     // deux implémentations tombent d'accord sur ce qu'elles en font. La porte d'entrée doit être
     // gardée autant que le calcul.
-    const derivee = extraire(sansFiltreImmobilisation())
+    const derivee = extraire(sansFiltreImmobilisation(), PLAN_PAR_DEFAUT)
     expect(() => memeResultat([], [piece({ id: 'immo' })], [['immo', acq('218300')]], derivee)).toThrow()
     expect(() => memeResultat([], [piece({ id: 'immo' })], [['immo', SANS_NATURE]], derivee)).toThrow()
     expect(() => memeResultat([], [piece({ id: 'immo' })], [['immo', REPRIS]], derivee)).toThrow()
@@ -1534,7 +1536,7 @@ describe('le garde-fou sait encore échouer', () => {
       '  return immobilisation ? COMPTE_TVA_IMMOBILISATIONS : COMPTE_TVA_DEDUCTIBLE\n',
       '  return COMPTE_TVA_DEDUCTIBLE\n',
       'le compte de TVA d’un bien',
-    ))
+    ), PLAN_PAR_DEFAUT)
     const p = piece({ id: 'p1' })
     const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `a${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
@@ -1547,7 +1549,7 @@ describe('le garde-fou sait encore échouer', () => {
       '  return immobilisation ? COMPTE_FOURNISSEURS_IMMOBILISATIONS : COMPTE_FOURNISSEURS\n',
       '  return COMPTE_FOURNISSEURS\n',
       'le compte de tiers d’un bien',
-    ))
+    ), PLAN_PAR_DEFAUT)
     const p = piece({ id: 'p1' })
     expect(() => memeResultat(brouillonEngagement(p, [paiement()], { cible: bien('218300') }), [p], [['p1', acq('218300')]], derivee, true, [paiement()], ENGAGEMENT))
       .toThrow()
@@ -1558,7 +1560,7 @@ describe('le garde-fou sait encore échouer', () => {
     const derivee = extraire(planter(
       sourceDeployee(),
       ') {\n  const piecesParGroupe = new Map<string, EcritureRow[]>()\n',
-      ') {\n  modele = { ...modele, mode: "tresorerie" }\n  const piecesParGroupe = new Map<string, EcritureRow[]>()\n',
+      ', PLAN_PAR_DEFAUT) {\n  modele = { ...modele, mode: "tresorerie" }\n  const piecesParGroupe = new Map<string, EcritureRow[]>()\n',
       "le début d'analyserEcritures",
     ))
     const p = piece({ id: 'p1' })
@@ -1591,7 +1593,7 @@ describe('le garde-fou sait encore échouer', () => {
       '    if (!mouvement || mouvement.statut !== "rapprochee" || !mouvement.reglement_groupe) continue\n',
       '    continue\n',
       'la lecture des parts',
-    ))
+    ), PLAN_PAR_DEFAUT)
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
@@ -1602,7 +1604,7 @@ describe('le garde-fou sait encore échouer', () => {
 
   it('attrape une copie qui prend la part d’un mouvement qui ne règle plus en groupe', () => {
     const derivee = extraire(planter(
-      sourceDeployee(), ' || !mouvement.reglement_groupe) continue\n', ') continue\n', 'le drapeau du règlement groupé',
+      sourceDeployee(), ' || !mouvement.reglement_groupe) continue\n', ', PLAN_PAR_DEFAUT) continue\n', 'le drapeau du règlement groupé',
     ))
     const simple = [paiement({ id: 'n', piece_id: null, montant: -90 })]
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'n', piece_id: 'p2', montant: -90 }]
@@ -1654,20 +1656,20 @@ describe('le garde-fou sait encore échouer', () => {
   it('attrape une copie qui laisse passer une contrepartie de trop', () => {
     const juste = groupeConforme('p1')
     const contrepartie = juste.find((e) => e.compte === COMPTE_BANQUE)!
-    const autre = extraire(planter(sourceDeployee(), '  if (attendus.size !== presents.size) return false\n', '', 'le compte des contreparties'))
+    const autre = extraire(planter(sourceDeployee(), '  if (attendus.size !== presents.size) return false\n', '', 'le compte des contreparties'), PLAN_PAR_DEFAUT)
     expect(() => memeResultat([...juste, { ...contrepartie, id: 'x', ligne_bancaire_id: 'x', montant: 50 }], [piece({ id: 'p1' })], [], autre, true, [payee('p1')]))
       .toThrow()
     const aucune = extraire(planter(
       // Réancrée à l'étape C13 : la banque et la caisse suivent leurs paiements par la même question, sur leur clé.
       sourceDeployee(), '    if (!cle) return false\n', '    if (!cle) continue\n', 'la contrepartie sans mouvement',
-    ))
+    ), PLAN_PAR_DEFAUT)
     expect(() => memeResultat([...juste, { ...contrepartie, id: 'y', ligne_bancaire_id: null, montant: 50 }], [piece({ id: 'p1' })], [], aucune, true, [payee('p1')]))
       .toThrow()
   })
 
   it('attrape une copie qui compte « en attente de rapprochement » une pièce payée', () => {
     const derivee = extraire(planter(
-      sourceDeployee(), ' && !paiements.has(pieceId))\n    .map(([pieceId]) => pieceId)\n', ')\n    .map(([pieceId]) => pieceId)\n',
+      sourceDeployee(), ' && !paiements.has(pieceId))\n    .map(([pieceId]) => pieceId)\n', ', PLAN_PAR_DEFAUT)\n    .map(([pieceId]) => pieceId)\n',
       'le compte des pièces sans contrepartie',
     ))
     const p = piece({ id: 'p1' })
@@ -1678,7 +1680,7 @@ describe('le garde-fou sait encore échouer', () => {
     const derivee = extraire(planter(
       sourceDeployee(), '  if (lignes.length === 0) return groupe.length > 0\n', '  if (lignes.length === 0) return false\n',
       'la garde des contreparties seules',
-    ))
+    ), PLAN_PAR_DEFAUT)
     const seule = groupeConforme('p1').filter((e) => e.compte === COMPTE_BANQUE)
     expect(() => memeResultat(seule, [piece({ id: 'p1' })], [], derivee, true, [payee('p1')])).toThrow()
   })
@@ -1715,7 +1717,7 @@ describe('le garde-fou sait encore échouer', () => {
   it('attrape une copie qui juge l’équilibre sur le groupe de la pièce', () => {
     const derivee = extraire(planter(
       sourceDeployee(), '      const ecriture = e.ligne_bancaire_id ?? ""\n', '      const ecriture = ""\n', "la clé d'écriture",
-    ))
+    ), PLAN_PAR_DEFAUT)
     const p = piece({ id: 'p1' })
     const lignes = brouillonEngagement(p, [paiement()])
     lignes.find((e) => e.compte === '401000' && !e.ligne_bancaire_id)!.montant = 110
@@ -1726,7 +1728,7 @@ describe('le garde-fou sait encore échouer', () => {
   it('attrape une copie qui passe les notes de frais au 401', () => {
     const derivee = extraire(planter(
       sourceDeployee(), '  if (piece.type_piece === "note_frais") return compteNotesDeFrais\n', '', 'le compte des notes de frais',
-    ))
+    ), PLAN_PAR_DEFAUT)
     const ndf = piece({ id: 'p1', type_piece: 'note_frais' })
     expect(() => memeResultat(brouillonEngagement(ndf, []), [ndf], [], derivee, true, [], ENGAGEMENT)).toThrow()
   })
@@ -2072,7 +2074,7 @@ describe('le garde-fou du paiement par la caisse sait encore échouer (étape C1
     try { f() } catch (e) { erreur = e }
     expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
   }
-  const deriver = (avant: string, apres: string, quoi: string) => extraire(planter(sourceDeployee(), avant, apres, quoi))
+  const deriver = (avant: string, apres: string, quoi: string) => extraire(planter(sourceDeployee(), avant, apres, quoi), PLAN_PAR_DEFAUT)
   const p = piece({ id: 'p1' })
   const caisse = [payeeParLaCaisse('oc1', '2025-03-10', -120)]
 
@@ -2184,7 +2186,7 @@ function constanteDeLaCopie(source: string): boolean {
 /** La copie d'une source de l'assistant, sa constante réécrite dans l'état demandé AVANT la transpilation. */
 function copieSelon(levee: boolean, source: string = sourceDeployee()): typeof deployee {
   constanteDeLaCopie(source)
-  return extraire(source.replace(/^const ECRITURE_PAR_REGLEMENT = (true|false)$/m, `const ECRITURE_PAR_REGLEMENT = ${levee}`))
+  return extraire(source.replace(/^const ECRITURE_PAR_REGLEMENT = (true|false)$/m, `const ECRITURE_PAR_REGLEMENT = ${levee}`), PLAN_PAR_DEFAUT)
 }
 
 /** Le drapeau de l'application et la constante de l'assistant sont-ils dans le même état ? */

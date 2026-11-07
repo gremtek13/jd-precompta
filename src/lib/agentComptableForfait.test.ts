@@ -8,6 +8,8 @@ import type { EcritureBrouillon, VehiculeDossier } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { avecLePlan } from '../test/copieAuPlan'
+import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES FORFAITS KILOMÉTRIQUES (04/10/2026, ligne 26.6, étape b).
 //
@@ -39,7 +41,7 @@ interface Copie {
 
 // Le bloc FORFAIT lit le compte du dirigeant dans le bloc AFFECTATION (`compteDuDirigeant`), qui lit lui-même
 // `COMPTE_BANQUE` — la forme d'extraction du bloc COTISATION.
-function extraire(source: string): Copie {
+function extraire(source: string, plan: PlanComptable): Copie {
   const bornes = (nom: string) => {
     const debut = source.indexOf(`// ── DÉBUT ${nom}`)
     const fin = source.indexOf(`// ── FIN ${nom}`)
@@ -47,17 +49,12 @@ function extraire(source: string): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const banque = /const COMPTE_BANQUE = "(\d+)"/.exec(source)
-  expect(banque, '`COMPTE_BANQUE` introuvable dans la source').not.toBeNull()
-  // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
-  const exploitant = /const COMPTE_EXPLOITANT = "(\d+)"/.exec(source)
-  expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('FORFAIT')}`
+  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('FORFAIT')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { indemniteKilometriqueCentimes, nomDuVehicule, ecritureDuForfait, forfaitsDuCadre7, forfaitsEnDefaut }`)() as Copie
+  return avecLePlan(new Function(`${js}\nreturn { indemniteKilometriqueCentimes, nomDuVehicule, ecritureDuForfait, forfaitsDuCadre7, forfaitsEnDefaut }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee())
+const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const vehicule = (o: Partial<VehiculeDossier> = {}): VehiculeDossier => ({
   id: 'v', dossier_id: 'd', annee: 2025, modele: 'Clio', type: 'voiture', puissance_fiscale: 5, bareme: 'bnc',
@@ -202,7 +199,7 @@ describe('le garde-fou du bloc FORFAIT sait encore échouer', () => {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source)
+    return extraire(source, PLAN_PAR_DEFAUT)
   }
   // Une dérive doit faire échouer une ASSERTION, pas lever pour une autre raison (voir le bloc EMPRUNT).
   const echoue = (f: () => void) => {

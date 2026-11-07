@@ -8,6 +8,8 @@ import {
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { avecLePlan } from '../test/copieAuPlan'
+import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES DOTATIONS AUX AMORTISSEMENTS (01/10/2026, ligne 26.6, étape b).
 //
@@ -45,7 +47,7 @@ interface Copie {
 
 // Le bloc AMORTISSEMENT ne lit de la fonction que `estFigee`, du bloc VALIDATION (la frontière des exercices
 // validés), repris de la MÊME source.
-function extraire(source: string): Copie {
+function extraire(source: string, plan: PlanComptable): Copie {
   const debut = source.indexOf('// ── DÉBUT AMORTISSEMENT')
   const fin = source.indexOf('// ── FIN AMORTISSEMENT')
   expect(debut, 'bornes du bloc AMORTISSEMENT introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
@@ -56,10 +58,10 @@ function extraire(source: string): Copie {
   expect(finValidation).toBeGreaterThan(debutValidation)
   const bloc = `${source.slice(debutValidation, finValidation)}\n${source.slice(debut, fin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { rang360, dotationDeLExercice, compteAmortissement, dotationAEcrire, dotationsDuRegistre, dotationsEnDefaut, bienRepris, acquisitionsDesBiens }`)() as Copie
+  return avecLePlan(new Function(`${js}\nreturn { rang360, dotationDeLExercice, compteAmortissement, dotationAEcrire, dotationsDuRegistre, dotationsEnDefaut, bienRepris, acquisitionsDesBiens }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee())
+const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const bien = (o: Partial<Immobilisation> = {}): Immobilisation => ({
   id: 'b', dossier_id: 'd', piece_id: 'p', nature_id: 'n-info', libelle: 'Ordinateur', valeur: 1200,
@@ -243,7 +245,7 @@ describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source)
+    return extraire(source, PLAN_PAR_DEFAUT)
   }
   // Une dérive doit faire échouer une ASSERTION, pas lever pour une autre raison (voir le bloc EMPRUNT).
   const echoue = (f: () => void) => {

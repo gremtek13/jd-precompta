@@ -49158,3 +49158,17 @@ validation 110, « Ma caisse » 30 à 50 ; rien n'est corrigé. La pente se voit
 FEC 120. Causes probables : `lignesDeLaSource` (`ecritureVenteFacturee.ts`) filtre tout le brouillon pour chaque source
 d'une vente facturée ; `paiementsDeVenteDuJour` (`caisse.ts`) toutes les opérations pour chaque jour. Le lettrage d'un
 BNC en trésorerie n'a rien à lettrer : sa mesure (0 ms) ne dit rien de l'engagement.
+
+### 07/11/2026 — L'ASSISTANT LIT LE PLAN DU DOSSIER (LIGNE 43, PC3B)
+
+Agent architecte, sans migration ni déploiement. `agent-comptable` lit `plan_du_dossier` avec le jeton de l'APPELANT (la
+fonction n'est pas `security definer` et refuse le rôle du service en 42501, `admin_du_dossier` lisant `auth.uid()` : la
+note de VF9, § 5, la disait « exécutable par service_role », ce qui ne suffit pas) ; le bloc PLAN DU DOSSIER recopie
+`planDeLaReponse`, `roleDuDirigeant` et `modeleDuDossier` ; un plan illisible, incomplet ou un dirigeant hors de ses trois
+rôles ferme l'assistant en 503, avant toute dépense. Les 27 constantes de comptes disparaissent : chaque fonction recopiée
+qui l'a gagné prend `plan` en dernier, ou lit `modele.plan` ; la consigne nomme les comptes du plan (« dans le plan par
+défaut » pour la caisse tant que la base la rend d'origine « application »). `comptesEnDur` : 141 → 0, l'exception tombe.
+Preuve : `agentComptableAuPlan.test.ts`, chaque scénario du contrat HTTP joué pour un BNC et une société, horloge figée,
+SHA-256 de tout ce qui part au modèle relevé sur dd14890 et inchangé ; sous `PLAN_DECALE`, aucun compte du catalogue dans
+la consigne. Les gardes reçoivent le plan par `avecLePlan` (src/test/copieAuPlan.ts). RESTE : 57 tests des gardes —
+leurs motifs plantés et leurs relevés textuels de `points_a_traiter` visent l'ancien texte —, et `PLAN_DECALE` dans chacune.
