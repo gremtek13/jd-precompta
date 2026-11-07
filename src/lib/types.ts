@@ -1163,7 +1163,20 @@ export interface FactureEmise {
   // OBLIGATOIRES : le message du statut « Encaissée » cite la facture sous le type qu'elle a (`FacturePourCdar.acompte`).
   acompte: boolean
   date_versement_acompte: string | null
+  // LA FACTURE À UN CLIENT ÉTABLI HORS DE FRANCE (ligne 28.5, étape e7a ; migration `facture_internationale`, PRÉPARÉE, PAS
+  // APPLIQUÉE ; `FACTURE_INTERNATIONALE_EXPORTEE`, lib/factureInternationale.ts) : le pays où le client est établi (ISO
+  // 3166-1, hors de France), son numéro de TVA, le régime de l'opération — saisis sur le brouillon, figés avec la
+  // validation, nuls sur une facture d'avant. Facultatifs tant que la migration n'est pas en base.
+  client_pays?: string | null
+  client_numero_tva?: string | null
+  regime_international?: RegimeInternational | null
 }
+
+// Le régime de l'opération d'une facture à un client établi hors de France (étape e7a) : une VALEUR, d'où l'application
+// tire la mention imprimée, la catégorie de TVA du CII et celle de l'e-reporting (lib/factureInternationale.ts).
+export type RegimeInternational =
+  | 'autoliquidation_ue' | 'prestation_hors_ue' | 'livraison_intracommunautaire' | 'exportation' | 'taxable_en_france'
+  | 'hors_champ'
 
 // Les mentions de la facture électronique, à part du reste : le module qui les juge et l'écran qui les saisit
 // (ligne 28.5, étape c) en parlent comme d'un tout.
