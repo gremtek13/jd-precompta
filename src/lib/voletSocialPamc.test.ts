@@ -154,7 +154,7 @@ describe('ce que l’estimation refuse, et dit', () => {
     })
 
     it('la date de début d’activité, toujours', () => {
-      expect(motif(tenus({ debutActivite: null }))).toMatch(/date de début d’activité/)
+      expect(motif(tenus({ debutActivite: null }))).toMatch(/^Saisissez la date de début d’activité du praticien/)
       expect(motif(tenus({ debutActivite: '2025-02-30' }))).toMatch(/illisible/)
       expect(motif(tenus({ debutActivite: '2026-01-01' }))).toMatch(/commence après l’exercice 2025/)
     })
