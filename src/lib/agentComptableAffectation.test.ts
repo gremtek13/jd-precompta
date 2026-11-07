@@ -11,6 +11,8 @@ import { compteDuDirigeant, virementsPersonnelsAEcrire } from './virementPersonn
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { avecLePlan } from '../test/copieAuPlan'
+import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS AFFECTÉS (29/09/2026, ligne 26.6).
 //
@@ -48,7 +50,7 @@ interface Copie {
 // plantée. Le bloc lit `COMPTE_BANQUE` et `COMPTE_TVA_COLLECTEE`, déclarés plus haut dans la fonction :
 // leur valeur est reprise de la MÊME source, pour qu'une dérive d'un numéro de compte morde ici aussi. Et
 // `estFigee`, du bloc VALIDATION (la frontière des exercices validés), extrait de la même source.
-function extraire(source: string): Copie {
+function extraire(source: string, plan: PlanComptable): Copie {
   const debut = source.indexOf('// ── DÉBUT AFFECTATION')
   const fin = source.indexOf('// ── FIN AFFECTATION')
   expect(debut, 'bornes du bloc AFFECTATION introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
@@ -57,20 +59,13 @@ function extraire(source: string): Copie {
   const finValidation = source.indexOf('// ── FIN VALIDATION')
   expect(debutValidation, 'bornes du bloc VALIDATION introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
   expect(finValidation).toBeGreaterThan(debutValidation)
-  const banque = /const COMPTE_BANQUE = "(\d+)"/.exec(source)
-  expect(banque, '`COMPTE_BANQUE` introuvable dans la source').not.toBeNull()
-  // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
-  const exploitant = /const COMPTE_EXPLOITANT = "(\d+)"/.exec(source)
-  expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
-  const tva = /const COMPTE_TVA_COLLECTEE = "(\d+)"/.exec(source)
-  expect(tva, '`COMPTE_TVA_COLLECTEE` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\nconst COMPTE_TVA_COLLECTEE = "${tva![1]}"\n`
+  const bloc = ``
     + `${source.slice(debutValidation, finValidation)}\n${source.slice(debut, fin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux, categoriesSansCompte, categoriesSansPoste, compteDuDirigeant, virementsPersonnelsAEcrire }`)() as Copie
+  return avecLePlan(new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux, categoriesSansCompte, categoriesSansPoste, compteDuDirigeant, virementsPersonnelsAEcrire }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee())
+const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const categorie = (o: Partial<Categorie>): Categorie => ({
   id: 'c', dossier_id: null, code: 'x', libelle: 'X', ordre: 0, compte_comptable: null, poste_2035: null, ...o,
@@ -430,7 +425,7 @@ describe('le garde-fou sait encore échouer', () => {
   const planter = (avant: string, apres: string) => {
     const source = sourceDeployee()
     expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
-    return extraire(source.replace(avant, apres))
+    return extraire(source.replace(avant, apres), PLAN_PAR_DEFAUT)
   }
   // Une dérive doit faire échouer une ASSERTION. Une `ReferenceError` ou un `TypeError` levés par le test
   // lui-même — un helper hors de portée, une copie qui plante — passeraient sinon pour une dérive attrapée :
@@ -505,7 +500,7 @@ describe('le garde-fou sait encore échouer', () => {
 
   it('attrape une copie dont la TVA ne va plus au 445710', () => {
     const source = sourceDeployee()
-    const derivee = extraire(source.replace('const COMPTE_TVA_COLLECTEE = "445710"', 'const COMPTE_TVA_COLLECTEE = "445660"'))
+    const derivee = extraire(source.replace('const COMPTE_TVA_COLLECTEE = "445710"', 'const COMPTE_TVA_COLLECTEE = "445660"'), PLAN_PAR_DEFAUT)
     echoue(() => memeResultat(taxee('taxee', 100, 20), TAXEE, true, derivee))
   })
 
@@ -577,7 +572,7 @@ describe('le garde-fou sait encore échouer', () => {
 
   it('attrape une copie dont la contrepartie n’est plus la banque', () => {
     const source = sourceDeployee()
-    const derivee = extraire(source.replace('const COMPTE_BANQUE = "512000"', 'const COMPTE_BANQUE = "512100"'))
+    const derivee = extraire(source.replace('const COMPTE_BANQUE = "512000"', 'const COMPTE_BANQUE = "512100"'), PLAN_PAR_DEFAUT)
     echoue(() => memeResultat(conforme('encaissement', '706000', 100), [ligne({ id: 'encaissement' })], false, derivee))
   })
 })

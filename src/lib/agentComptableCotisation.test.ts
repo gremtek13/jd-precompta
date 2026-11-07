@@ -10,6 +10,8 @@ import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { avecLePlan } from '../test/copieAuPlan'
+import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES ÉCHÉANCES DE COTISATION RAPPROCHÉES (01/10/2026, ligne 26.6,
 // étape b).
@@ -43,7 +45,7 @@ interface Copie {
 // Le bloc COTISATION lit `ecrituresSansPieceParMouvement`, `ecritureConforme` et `COMPTE_EXPLOITANT` du bloc
 // AFFECTATION, `estFigee` du bloc VALIDATION, et `COMPTE_BANQUE` déclaré plus haut : tous repris de la MÊME
 // source, pour qu'une dérive de l'un d'eux morde ici aussi.
-function extraire(source: string): Copie {
+function extraire(source: string, plan: PlanComptable): Copie {
   const bornes = (nom: string) => {
     const debut = source.indexOf(`// ── DÉBUT ${nom}`)
     const fin = source.indexOf(`// ── FIN ${nom}`)
@@ -51,17 +53,12 @@ function extraire(source: string): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const banque = /const COMPTE_BANQUE = "(\d+)"/.exec(source)
-  expect(banque, '`COMPTE_BANQUE` introuvable dans la source').not.toBeNull()
-  // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
-  const exploitant = /const COMPTE_EXPLOITANT = "(\d+)"/.exec(source)
-  expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('COTISATION')}`
+  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('COTISATION')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { montantDeLEcheance, csgDeLEcriture, refusRapprochementCotisation, ecritureDeLaCotisation, cotisationsAEcrire, rapprochementsCotisationRefuses }`)() as Copie
+  return avecLePlan(new Function(`${js}\nreturn { montantDeLEcheance, csgDeLEcriture, refusRapprochementCotisation, ecritureDeLaCotisation, cotisationsAEcrire, rapprochementsCotisationRefuses }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee())
+const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const MODES: ModeComptable[] = ['tresorerie', 'engagement']
 const FRONTIERES = [null, '2026-03-04', '2026-03-05', '2026-12-31'] as const
@@ -313,7 +310,7 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source)
+    return extraire(source, PLAN_PAR_DEFAUT)
   }
   // Une dérive doit faire échouer une ASSERTION, pas lever pour une autre raison (voir le bloc EMPRUNT).
   const echoue = (f: () => void) => {

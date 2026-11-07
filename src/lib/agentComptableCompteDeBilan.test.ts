@@ -8,6 +8,8 @@ import { formatMoney } from './format'
 import type { EcritureBrouillon, LigneBancaire } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { avecLePlan } from '../test/copieAuPlan'
+import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS ÉCRITS SUR UN COMPTE DE BILAN ET DES MOUVEMENTS
 // IGNORÉS (06/10/2026, ligne 26.7).
@@ -39,7 +41,7 @@ interface Copie {
 // Le bloc COMPTE DE BILAN lit `ecritureDuMouvement`, `ecrituresSansPieceParMouvement` et `ecritureConforme` du bloc
 // AFFECTATION, `estFigee` du bloc VALIDATION, et les comptes déclarés plus haut dans la fonction : tous repris de la
 // MÊME source, pour qu'une dérive de l'un d'eux morde ici aussi.
-function extraire(source: string): Copie {
+function extraire(source: string, plan: PlanComptable): Copie {
   const bornes = (nom: string) => {
     const debut = source.indexOf(`// ── DÉBUT ${nom}`)
     const fin = source.indexOf(`// ── FIN ${nom}`)
@@ -47,18 +49,12 @@ function extraire(source: string): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const compte = (nom: string) => {
-    const trouve = new RegExp(`const ${nom} = "(\\d+)"`).exec(source)
-    expect(trouve, `\`${nom}\` introuvable dans la source`).not.toBeNull()
-    return `const ${nom} = "${trouve![1]}"\n`
-  }
-  const bloc = compte('COMPTE_BANQUE') + compte('COMPTE_EXPLOITANT') + compte('COMPTE_TVA_COLLECTEE')
-    + `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('COMPTE DE BILAN')}`
+  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('COMPTE DE BILAN')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises, mouvementsIgnoresHorsFec, montantsDesMouvementsIgnores }`)() as Copie
+  return avecLePlan(new Function(`${js}\nreturn { ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises, mouvementsIgnoresHorsFec, montantsDesMouvementsIgnores }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee())
+const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const FRONTIERES = [null, '2026-03-04', '2026-03-05', '2026-12-31'] as const
 
@@ -237,7 +233,7 @@ describe('le garde-fou du bloc COMPTE DE BILAN sait encore échouer', () => {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source)
+    return extraire(source, PLAN_PAR_DEFAUT)
   }
   // Une dérive doit faire échouer une ASSERTION, pas lever pour une autre raison (voir le bloc EMPRUNT).
   const echoue = (f: () => void) => {

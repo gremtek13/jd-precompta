@@ -11,6 +11,9 @@ import { etatsDesLettragesManuels, piecesLettreesALaMain, type MotifLettrageManu
 import type { EcritureBrouillon, LettrageManuel, ModeComptable, Piece } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { modeleDeTest } from '../test/modeles'
+import { avecLePlan } from '../test/copieAuPlan'
+import { PLAN_PAR_DEFAUT } from './planComptable'
+import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES LETTRAGES FAITS À LA MAIN (06/10/2026, ligne 32, seconde brique).
 //
@@ -44,22 +47,21 @@ interface Copie {
 
 // Le bloc lit les trois comptes de tiers déclarés avec la copie de src/lib/engagement.ts : repris de la MÊME source,
 // pour qu'une dérive de l'un d'eux morde ici aussi.
-function extraire(source: string): Copie {
+function extraire(source: string, plan: PlanComptable): Copie {
   const debut = source.indexOf('// ── DÉBUT LETTRAGE MANUEL')
   const fin = source.indexOf('// ── FIN LETTRAGE MANUEL')
   expect(debut, 'bornes du bloc LETTRAGE MANUEL introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
   expect(fin).toBeGreaterThan(debut)
-  const comptes = ['COMPTE_FOURNISSEURS', 'COMPTE_FOURNISSEURS_IMMOBILISATIONS', 'COMPTE_CLIENTS'].map((nom) => {
-    const declaration = new RegExp(`^const ${nom} = "(\\d+)"$`, 'm').exec(source)
-    expect(declaration, `\`${nom}\` introuvable dans la source`).not.toBeNull()
-    return declaration![0]
-  })
-  const bloc = `${comptes.join('\n')}\n${source.slice(debut, fin)}`
+  const debutPlan = source.indexOf('// ── DÉBUT PLAN DU DOSSIER')
+  const finPlan = source.indexOf('// ── FIN PLAN DU DOSSIER')
+  expect(debutPlan, 'bornes du bloc PLAN DU DOSSIER introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
+  expect(finPlan).toBeGreaterThan(debutPlan)
+  const bloc = `${source.slice(debutPlan, finPlan)}\n${source.slice(debut, fin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { cleFournisseur, auxiliaireDuTiers, etatsDesLettragesManuels, piecesLettreesALaMain, MOTS_SANS_IDENTITE }`)() as Copie
+  return avecLePlan(new Function(`${js}\nreturn { cleFournisseur, auxiliaireDuTiers, etatsDesLettragesManuels, piecesLettreesALaMain, MOTS_SANS_IDENTITE }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee())
+const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 // Les mots d'un `new Set([...])` nommé, lus dans un texte source : la liste de src/lib/format.ts n'est pas exportée, et
 // c'est elle qui fait foi.
@@ -249,7 +251,7 @@ describe('le garde-fou du bloc LETTRAGE MANUEL sait encore échouer', () => {
   function planter(avant: string, apres: string, quoi: string): Copie {
     const source = sourceDeployee()
     expect(source.split(avant).length - 1, `${quoi} introuvable ou ambiguë — la dérive plantée ne mord plus`).toBe(1)
-    return extraire(source.replace(avant, apres))
+    return extraire(source.replace(avant, apres), PLAN_PAR_DEFAUT)
   }
   const cas = (nom: string) => CAS.find(([n]) => n === nom)!
   const diverge = (copie: Copie, nom: string) => expect(forme(la(copie, cas(nom)))).not.toEqual(forme(ici(cas(nom))))
