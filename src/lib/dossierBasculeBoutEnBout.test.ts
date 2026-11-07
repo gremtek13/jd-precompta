@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { describe, expect, it } from 'vitest'
 import { concordance2035 } from './concordance2035'
 import { calculerCa3, type DeclarationCa3 } from './declarationTva'
@@ -228,7 +229,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       facturesEmises: [], transmissions: [], facturesSources: ventes.sources,
       etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true }),
       ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation([])),
-      operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, champsBnc: { etat: 'non_exportes' },
+      operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035,
       declaration: null, concordance: null, ...o,
     })
     let declaration = null

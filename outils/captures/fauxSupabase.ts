@@ -14,6 +14,7 @@
 import { acquisitionsDesBiens, ecritureDeLaDotation } from '../../src/lib/amortissements'
 import { ecritureDuMouvement, type MouvementBancaire } from '../../src/lib/affectationBanque'
 import { arrondirPourFormulaire, valeursDesCases } from '../../src/lib/cases2035'
+import { AUCUNE_SAISIE_2035 } from '../../src/lib/saisies2035'
 import { cotisationsComptees, ecritureDeLaCotisation } from '../../src/lib/cotisationRapprochee'
 import { calculerDeclaration2035 } from '../../src/lib/declaration2035'
 import { calculerCa3, type DonneesTva } from '../../src/lib/declarationTva'
@@ -764,7 +765,7 @@ function valider(
     ventesFactureesVides(s.dossier),
     { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
-  const { valeurs } = valeursDesCases(declaration)
+  const { valeurs } = valeursDesCases(declaration, AUCUNE_SAISIE_2035)
   const dossier = dossiers.find((d) => d.id === s.dossier)!
   const entete = { nom: dossier.nom as string | null, activite: dossier.libelle_naf as string | null, siret: dossier.siret as string | null }
   const report = soldesAReporter(mouvementsDeCloture(numerotation), TRESORERIE, annee)

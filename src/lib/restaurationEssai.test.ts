@@ -9,6 +9,7 @@ import { JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
+import { SAISIES_2035_EXPORTEES } from './saisies2035'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
@@ -22,6 +23,7 @@ import {
   TABLES_DE_LA_CAISSE,
   TABLES_DE_LA_TRACE_DES_DROITS,
   TABLES_DES_SITUATIONS_PUBLIEES,
+  TABLES_DES_SAISIES_2035,
   TABLES_DES_ADRESSES_RECEPTION,
   TABLES_DES_ARTICLES,
   TABLES_DES_CONTACTS,
@@ -382,13 +384,36 @@ function blocDesSituations(texte: string): BlocDeLaCaisse {
 /** Le plan que le script joue quand la table des situations existe : la sienne après sa table d'ancrage, et sa vague. */
 const avecLesSituations = avecLaCaisse
 
+// LES SAISIES DE LA 2035 (étapes 2035S3 à S5) : un bloc à part met leur table au plan quand elle existe, juste après la table
+// qu'il nomme (`designations_des_pieces`, donc juste avant les exercices validés), avec son chemin ; aucune vague.
+const MARQUE_DES_SAISIES_2035 = '-- ══ Les saisies de la 2035 (étapes 2035S3 à S5) ══'
+
+function blocDesSaisies2035(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_SAISIES_2035)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.saisies_2035') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des saisies existe : la sienne après sa table d'ancrage. */
+const avecLesSaisies2035 = avecLesArticles
+
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai =>
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
-  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte))
+  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -462,7 +487,9 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLaTraceDuJour = TRACE_DES_DROITS_PREVUE ? avecLaTrace(avecLaCaisseDuJour, trace) : avecLaCaisseDuJour
   const situations = blocDesSituations(texteDeLEssai)
   const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLaTraceDuJour, devis) : avecLaTraceDuJour
-  const courant = SITUATIONS_PUBLIEES_EXPORTEES ? avecLesSituations(avecLesDevisDuJour, situations) : avecLesDevisDuJour
+  const avecLesSituationsDuJour = SITUATIONS_PUBLIEES_EXPORTEES ? avecLesSituations(avecLesDevisDuJour, situations) : avecLesDevisDuJour
+  const saisies2035 = blocDesSaisies2035(texteDeLEssai)
+  const courant = SAISIES_2035_EXPORTEES ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
@@ -592,6 +619,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DES_ADRESSES_RECEPTION.includes(t) && !TABLES_DES_CONTACTS.includes(t)
       && !TABLES_DES_PARAMETRES_FACTURATION.includes(t) && !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(t)
       && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t) && !TABLES_DES_SITUATIONS_PUBLIEES.includes(t)
+      && !TABLES_DES_SAISIES_2035.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

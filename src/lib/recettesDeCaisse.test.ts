@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { describe, expect, it } from 'vitest'
 import { ecritureDeLOperation } from './caisse'
 import { arrondirPourFormulaire, repartirEnCases, valeursDesCases } from './cases2035'
@@ -179,7 +180,7 @@ describe('la 2035', () => {
     expect(d.contributions.map((c) => [c.source.type, c.source.type === 'caisse' ? c.source.id : null, c.compte, c.centimes]))
       .toEqual([['caisse', 'r2', '706000', 4550], ['caisse', 'r3', '706000', 3000], ['caisse', 'r4', '768000', 1200], ['caisse', 'r5', '758000', 700]])
     // Les cases : AA, donc AD que le volet social reprend ; AE ; AF.
-    const { valeurs } = valeursDesCases(d)
+    const { valeurs } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect([valeurs.get('AA'), valeurs.get('AD'), valeurs.get('AE'), valeurs.get('AF'), valeurs.get('AG')]).toEqual([75.5, 75.5, 12, 7, 94.5])
     expect(repartirEnCases(d).cases.map((c) => [c.case.code, c.nbOperationsDeCaisse])).toEqual([['AA', 2], ['AE', 1], ['AF', 1]])
   })
@@ -391,7 +392,7 @@ describe('la situation, l’estimation, le plan de trésorerie, la revue', () =>
 describe('l’instantané validé', () => {
   const entete = { nom: 'Cabinet fictif', activite: 'Soins fictifs', siret: null }
   const instantaneDe = (d: Declaration2035) => {
-    const { valeurs } = valeursDesCases(d)
+    const { valeurs } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     return instantane2035(d, valeurs, arrondirPourFormulaire(valeurs, d.annee), entete)
   }
 

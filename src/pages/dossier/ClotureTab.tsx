@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, aujourdHuiAParis, aujourdHuiSql, formatMoney, formatDate } from '../../lib/format'
 import { doublonsProbables, phraseDuDoublon, piecesRegleesPourLesDoublons } from '../../lib/doublonsProbables'
@@ -69,6 +69,10 @@ import ConcordanceCard from './ConcordanceCard'
 import ValidationExerciceCard from './ValidationExerciceCard'
 import { AUCUNE_FACTURE_SOURCE, horsDesExemplairesDesSources } from '../../lib/facturesSources'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { AUCUNE_SAISIE_2035, motifDesSaisies2035, SAISIES_2035_EXPORTEES, saisiesDeLExercice } from '../../lib/saisies2035'
+import type { LectureDesSaisies2035 } from '../../lib/saisies2035'
+import { lireLesSaisies2035 } from '../../lib/saisies2035Lecture'
+import SaisiesDuCabinet2035Card from './SaisiesDuCabinet2035Card'
 import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
 import { operationsDeCaisseDuDossier, operationsPourLesControles } from '../../lib/controlesDeLaCaisse'
 import {
@@ -115,6 +119,24 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // Le nom dit « lecture » et non « pièces » : il a porté le second pendant que le garde-fou ne
   // vérifiait qu'une entrée sur quatre, ce qu'aucune relecture de l'écran ne pouvait montrer.
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // LES SAISIES DU CABINET DE LA 2035 (étapes 2035S3 à S5), gardées AVEC le dossier lu. Drapeau baissé, absentes d'emblée,
+  // sans lecture : la 2035 est celle d'hier. Levé, rien ne se calcule pour de bon avant qu'elles soient revenues entières —
+  // `saisiesIncompletes` suspend le PDF et la validation, comme toute lecture partielle.
+  const [saisiesLues, setSaisiesLues] = useState<LectureDesSaisies2035 | null>(null)
+  const lectureDesSaisies: LectureDesSaisies2035 | null = !SAISIES_2035_EXPORTEES ? { dossierId, etat: 'absentes' }
+    : saisiesLues?.dossierId === dossierId ? saisiesLues : null
+  const saisiesIncompletes = motifDesSaisies2035(lectureDesSaisies)
+  const relireLesSaisies = useCallback(async () => {
+    if (!SAISIES_2035_EXPORTEES) return
+    const lecture = await lireLesSaisies2035(dossierId)
+    setSaisiesLues(lecture)
+  }, [dossierId])
+  useEffect(() => {
+    if (!SAISIES_2035_EXPORTEES) return
+    let annule = false
+    void lireLesSaisies2035(dossierId).then((lecture) => { if (!annule) setSaisiesLues(lecture) })
+    return () => { annule = true }
+  }, [dossierId])
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Cadre 7 du 2035-B : le total des indemnités kilométriques alimente la case BJ, ligne 23.
@@ -571,7 +593,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // l'ordre imprimé. Une 2035 est annuelle : plutôt que de cumuler des cases de plusieurs exercices
   // (ce qui remplirait par exemple à la fois « excédent » et « insuffisance », impossible sur un vrai
   // formulaire), on affiche un tableau par exercice.
-  const formulaires = declarations.map((d) => ({ declaration: d, ...valeursDesCases(d) }))
+  // Les saisies du cabinet de l'exercice : pas encore lues entières, la 2035 se calcule sans elles et se suspend
+  // (`saisiesIncompletes`) — ni PDF, ni validation.
+  const formulaires = declarations.map((d) => ({
+    declaration: d, ...valeursDesCases(d, saisiesDeLExercice(lectureDesSaisies, d.annee) ?? AUCUNE_SAISIE_2035),
+  }))
 
   // CE QU'UN EXERCICE VALIDÉ A FIGÉ NE SE RÉCLAME PLUS (lib/validationExercice.ts). Sa 2035 est celle que la base garde,
   // et ni ses sources ni ses écritures ne changent plus : les cartes qui suivent appellent un geste — rapprocher,
@@ -741,6 +767,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const champsBncIncomplets = champsDeLaValidation !== null ? null
     : lectureChampsDuDossier?.etat === 'incomplete' ? `les champs du FEC d’un BNC : ${lectureChampsDuDossier.motif}` : null
   const motifValidation = lectureIncomplete ?? ecrituresIncompletes ?? naturesIncompletes ?? empruntsIncomplets ?? validationIncomplete
+    ?? saisiesIncompletes
     ?? (lectureVentesDuDossier?.etat === 'incomplete' ? `les ventes facturées : ${lectureVentesDuDossier.motif}` : null)
     ?? (caisseIncomplete !== null ? `la caisse : ${caisseIncomplete}` : null)
     ?? champsBncIncomplets
@@ -762,6 +789,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       facturesSources: ventesLues?.sources ?? null,
       etatsDesVentes, ventesDeLaChecklist: ventesDeLaVueDEnsemble, operationsDeCaisse, champsBnc: champsDeLaValidation,
       declaration: formulaire?.declaration ?? null,
+      saisies2035: formulaire ? saisiesDeLExercice(lectureDesSaisies, annee) : AUCUNE_SAISIE_2035,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
     })
     const demande = etat.validable && etat.numerotation
@@ -1884,14 +1912,20 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                   genere={genere === annee}
                   onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe)}
                   annexe2035E={annexe}
-                  lectureAnnexe={instantane ? null : lectureIncomplete}
-                  blocage={lectureIncomplete}
+                  lectureAnnexe={instantane ? null : lectureIncomplete ?? saisiesIncompletes}
+                  blocage={lectureIncomplete ?? saisiesIncompletes}
                   cotisations={cotisations}
                   exerciceValide={anneesValidees.includes(annee)}
                   avertissement={avertissementDuFormulaire(annee)}
                   cloture={cloturesConnues.has(annee)}
                   onCloturer={() => handleCloturer(annee)}
                 />
+              )}
+              {SAISIES_2035_EXPORTEES && (
+                <SaisiesDuCabinet2035Card
+                  key={`${annee}:${JSON.stringify(saisiesDeLExercice(lectureDesSaisies, annee))}`}
+                  dossierId={dossierId} annee={annee} lecture={lectureDesSaisies}
+                  fige={exerciceQuiFige(annee, anneesValidees) !== null} onRelire={relireLesSaisies} />
               )}
               <ConcordanceCard
                 concordance={concordances.get(annee)!.concordance}

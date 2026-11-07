@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -73,7 +74,7 @@ describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB
       lignes: [cpam, mouvement({ id: 'mad', categorie_id: 'c-mad', montant: -1_200 }), mouvement({ id: 'ord', categorie_id: 'c-ord', montant: -180 })],
       cotisations: [urssaf],
     })
-    const { valeurs } = valeursDesCases(d)
+    const { valeurs } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     // Le Madelin rangé sous le poste GÉNÉRIQUE ne dit pas sa nature : BZ reste vide (2035S-Q2, (A)), et Clôture dit la part
     // de BK que rien ne qualifie (`partDeBKSansNature`).
     expect(new Map(NEUF.map((code) => [code, valeurs.get(code)]))).toEqual(new Map([
@@ -90,7 +91,7 @@ describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB
   // revenu brut social.
   it('les « dont » remplis ne changent ni BR, ni le résultat, ni le revenu brut social', () => {
     const d = exonere({ categories: [recettes, ordre], lignes: [cpam, mouvement({ id: 'ord', categorie_id: 'c-ord', montant: -180 })], cotisations: [urssaf] })
-    const { valeurs } = valeursDesCases(d)
+    const { valeurs } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(valeurs.get('BT')).toBe(9_000)
     expect(valeurs.get('BY')).toBe(180)
     expect(valeurs.get('BR')).toBe(9_180)
@@ -103,7 +104,7 @@ describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB
   // professionnelles », envoyé en BM). BY est la somme de ce seul poste ; rien n'est à saisir.
   it('BY se DÉDUIT du poste « Cotisations syndicales et professionnelles »', () => {
     const d = exonere({ categories: [recettes, ordre], lignes: [cpam, mouvement({ id: 'ord', categorie_id: 'c-ord', montant: -180 })] })
-    expect(valeursDesCases(d).valeurs.get('BY')).toBe(180)
+    expect(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('BY')).toBe(180)
   })
 
   // SE DÉDUIT (étape 2035S1) : les échéances de l'onglet Cotisations sont les cotisations obligatoires (Urssaf, caisse de
@@ -111,7 +112,7 @@ describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB
   // sociales personnelles ». BT est leur part de BK.
   it('BT se DÉDUIT des échéances de l’onglet Cotisations', () => {
     const d = exonere({ categories: [recettes, madelin], lignes: [cpam, mouvement({ id: 'mad', categorie_id: 'c-mad', montant: -1_200 })], cotisations: [urssaf] })
-    expect(valeursDesCases(d).valeurs.get('BT')).toBe(9_000)
+    expect(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('BT')).toBe(9_000)
   })
 
   // SE DÉDUIT D'UN POSTE PROPRE (étape 2035S1) : un contrat Madelin rangé sous « Cotisations facultatives Madelin » va en BK
@@ -120,7 +121,7 @@ describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB
   it('BZ se déduit d’un poste « Cotisations facultatives Madelin »', () => {
     const madelinPropre = { ...madelin, poste_2035: 'Cotisations facultatives Madelin' }
     const d = exonere({ categories: [recettes, madelinPropre], lignes: [cpam, mouvement({ id: 'mad', categorie_id: 'c-mad', montant: -1_200 })] })
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(postesSansCase).toEqual([])
     expect(valeurs.get('BK')).toBe(1_200)
     expect(valeurs.get('BZ')).toBe(1_200)
@@ -131,7 +132,7 @@ describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB
   // porter le total des locations […] y compris ces redevances, en ligne BG ».
   it('BW se déduit d’un poste « Redevances de collaboration », compté aussi en BG', () => {
     const d = exonere({ categories: [recettes, collaboration], lignes: [cpam, mouvement({ id: 'col', categorie_id: 'c-col', montant: -2_400 })] })
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(postesSansCase).toEqual([])
     expect(valeurs.get('BG')).toBe(2_400)
     expect(valeurs.get('BW')).toBe(2_400)
@@ -141,7 +142,7 @@ describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB
   // poste propre (étape 2035S1, 2035S-Q3 (A)), elles vont en AF ET en DB.
   it('les indemnités journalières rangées en gains divers vont en AF et en DB', () => {
     const d = exonere({ categories: [recettes, ij], lignes: [cpam, mouvement({ id: 'ij', categorie_id: 'c-ij', montant: 1_500 })], cotisations: [urssaf] })
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(postesSansCase).toEqual([])
     expect(valeurs.get('AF')).toBe(1_500)
     expect(valeurs.get('DB')).toBe(1_500)
@@ -193,7 +194,7 @@ describe('point 2 — une échéance prévisionnelle et l’appel définitif d�
     const remplacee = { ...prevueDeFevrier, echeance: '2026-02-05', montant_appele: 320, previsionnel: false }
     const paiement = mouvement({ ...prelevement, cotisation_id: 'prev' })
     const d = exonere({ annee: 2026, categories: [], lignes: [paiement], cotisations: [remplacee] })
-    expect(valeursDesCases(d).valeurs.get('BK')).toBe(320)
+    expect(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('BK')).toBe(320)
   })
 
   // CE QUE LA RÉPONSE (A) LAISSE : l'exemple même de la relecture — 20/01, puis 05/02 — n'est pas du même mois. Rien ne se
@@ -210,7 +211,7 @@ describe('point 2 — une échéance prévisionnelle et l’appel définitif d�
       mouvement({ id: 'm-ferme', date: '2026-03-31', montant: -10, statut: 'non_rapprochee' })]
     expect(previsionnellesSansPaiement([prevue, appel], releve, 'tresorerie', null).map((c) => c.id)).toEqual(['prev'])
     const d = exonere({ annee: 2026, categories: [], lignes: [prelevement], cotisations: [prevue, appel] })
-    expect(valeursDesCases(d).valeurs.get('BK')).toBe(620)
+    expect(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('BK')).toBe(620)
   })
 })
 

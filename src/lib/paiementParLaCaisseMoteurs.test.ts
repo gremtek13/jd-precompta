@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { valeursDesCases } from './cases2035'
 import type { EtatDeLaCaisse } from './caisse'
@@ -102,7 +103,7 @@ const declaration = (annee: number, pieces: Piece[], p: PaiementsDesPieces, lign
     annee, pieces, CATEGORIES, [], [], [], assujetti, p, partsDuReleve(lignes, CATEGORIES, [], assujetti), [], PLAN_PAR_DEFAUT,
     ventesFactureesVides(D), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
-const cases = (annee: number, pieces: Piece[], p: PaiementsDesPieces) => valeursDesCases(declaration(annee, pieces, p)).valeurs
+const cases = (annee: number, pieces: Piece[], p: PaiementsDesPieces) => valeursDesCases(declaration(annee, pieces, p), AUCUNE_SAISIE_2035).valeurs
 const etatDeLaCaisse = (ops: readonly OperationCaisse[], plan: PlanComptable = PLAN_PAR_DEFAUT): EtatDeLaCaisse => ({
   compteCaisse: plan.caisse, ouvertures: [], operations: ops, mouvements: [], encaissements: [], factures: [],
 })
