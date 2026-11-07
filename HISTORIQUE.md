@@ -49414,4 +49414,5 @@ empreinte : les deux s'appliquent dans tout ordre) ; le cabinet du dossier SEUL 
 « Ventes » sans présentation : l'ouverture viendra avec l'écran, A8d) ; l'avoir repris cite sa facture par `origine_id`,
 jamais `facture_origine_id`, que la seconde passe de la restauration récrirait ; le lien de la pièce (A8-Q5) suit en A8b. Sur
 une copie de la réplique mère : `rls.sql` 104 lignes, 0 en faute, 79 mutations sur 79 ; `factures.sql` 144 sur 144 avant
-comme après ; `restauration.sql` IDENTIQUE, son bloc conditionné ; le plan derrière `FACTURES_IMPORTEES_PREVUES`.
+comme après ; `restauration.sql` IDENTIQUE, son bloc conditionné ; le plan derrière `FACTURES_IMPORTEES_PREVUES` ; les deux
+essais SÛRS au banc du leurre (son complément porte une facture reprise par dossier). Restent A8b, A8c, A8d, A9.
