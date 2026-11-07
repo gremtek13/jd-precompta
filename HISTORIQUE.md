@@ -49436,7 +49436,7 @@ valeurs lues. L'estimation reçoit `ParametresEstimation`, obligatoire (`{ tenus
 familiales ; pas de CURPS l'année d'une création après le 1er janvier ; l'ACRE (D. 131-6-1 : tout avant 2026, le quart
 depuis, dégressive de 75 à 100 % du plafond proratisé, au prorata l'année qui suit) ; le dentiste, sa part conventionnée
 divisée par 1 + le taux, sa CURPS à 0,3 %. Oracle : 276 cas, 106 nouveaux, zéro écart ; quinze mutations du module
-tuées, la seizième équivalente (l'ACRE des allocations familiales, nulles sous le plafond). Sur une copie de la mère 17
-: l'essai 36/36, dix mutations tuées ; `rls.sql` 108/0/79 avant, 111/0/82 après (bloc PC) ; le banc SÛR ;
+tuées, la seizième équivalente (l'ACRE des allocations familiales, nulles sous le plafond). Sur une copie de la mère 17,
+l'essai 36/36, dix mutations tuées ; `rls.sql` 108/0/79 avant, 111/0/82 après (bloc PC) ; le banc SÛR ;
 `restauration.sql` IDENTIQUE ; le retour refuse puis défait tout. L'écran sous le volet social, drapeau baissé. Restent
 au cabinet TNS-Q1-A (un taux au-dessus de 1) et TNS-Q1-B (le début d'activité hors du gel).
