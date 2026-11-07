@@ -310,10 +310,11 @@ describe('les essais qui cochent « Ventes »', () => {
     // seulement) les rejoue sous ses six mutations.
     // devisCitentUnContact.sql (06/11/2026) : le client porte « Ventes » sur A, qu'il insère basculé.
     // apercuFactureElectronique.sql depuis l'étape C3 : le client porte « Ventes » sur A, un dossier jetable inséré basculé.
+    // factureInternationale.sql (07/11/2026, étape e7a) : le client porte « Ventes » sur V, un dossier jetable inséré basculé.
     expect(ecrivent).toEqual([
       'acomptesDesDevis.sql', 'apercuFactureElectronique.sql', 'articles.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'caisse.sql', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
       'devisCitentUnContact.sql', 'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'envoiDesDevis.sql', 'etatFactureElectronique.sql',
-      'exemplairesDesFactures.sql', 'factures.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
+      'exemplairesDesFactures.sql', 'factureInternationale.sql', 'factures.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
       'mentionsFigees.sql', 'parametresFacturation.sql', 'piecesJointesEcartees.sql', 'relancesDesFactures.sql', 'rls.sql',
       'simulationDesVentesFacturees.sql', 'situationsPubliees.sql', 'situationsPublieesMutations.sql', 'traceDesDroits.sql',
       'ventesClient.sql', 'ventesFacturees.sql',
