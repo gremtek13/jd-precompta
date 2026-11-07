@@ -49490,3 +49490,15 @@ table au plan de sauvegarde (une saisie écrite en base sans que la sauvegarde l
 change. `types.ts` : `LigneSaisies2035`. Le leurre sort `saisies2035` (22 cas). Contrôles : dérive 184 `d39944d4…`, la
 production à 186 sans les deux migrations des cotisations (même empreinte) ; socle et inventaire égaux une fois leur lot
 rejoint ; `anon` et `authenticated` n'ont sur la table que SELECT, INSERT, UPDATE, DELETE.
+
+### 07/11/2026 — QUATRE RÉPONSES DU CABINET : SEC2-Q1 À Q3 ET MVP-BANQUES-Q1
+
+Toutes à la recommandation, le 07/11/2026 à 16 h 57 (page des arbitrages). SEC2-Q1 : la double authentification exigée
+en base (`deux_facteurs_exiges`) reste préparée et s'appliquera après le MVP, en dernier, comme SEC-Q1 ; les comptes
+du cabinet s'inscrivent d'ici là dans « Sécurité du compte ». SEC2-Q2 : un compte rattaché à deux cabinets ne
+s'affaiblit (exigence levée, appareils retirés) que par le super-administrateur — la migration préparée le tient
+(`deux_facteurs_autorite`, l'autorité ENTIÈRE) —, et celui qui le fait doit lui-même avoir donné son code (un jeton
+`aal2`) — ce qu'elle ne tient pas encore : `lever_deux_facteurs` et `retirer_second_facteur` l'exigeront. SEC2-Q3 : un e-mail au texte fixe, sans lien, prévient le
+titulaire à la levée de son exigence et au retrait de ses appareils, jamais à la pose ; une petite fonction à écrire
+avec le second temps, après le MVP. MVP-BANQUES-Q1 : le nombre de comptes bancaires professionnels du premier praticien
+se vérifie avec lui avant le 20 novembre ; rien ne s'écrit d'ici là.
