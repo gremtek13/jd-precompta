@@ -1041,6 +1041,23 @@ export interface TraceDesDroits {
   fait_le: string
 }
 
+// LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, en production depuis le 07/11/2026,
+// relevée dans information_schema.columns — voir lib/saisies2035.ts) : une ligne par dossier, exercice et case, écrite par
+// `enregistrer_saisies_2035` seule. `code` est un texte, comme le générateur de Supabase le rend : sa contrainte
+// (`saisies_2035_code`) n'admet que les codes de `CodeSaisie2035`, que `lireSaisie2035` vérifie à la lecture. `centimes`
+// est un `bigint` en base, rendu en nombre : des centimes entiers, positifs ou nuls (nul : la case vidée). La note
+// annexe, celle de CC et de CL seules.
+export interface LigneSaisies2035 {
+  id: string
+  dossier_id: string
+  annee: number
+  code: string
+  centimes: number
+  note_annexe: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type RoleCabinetAdmin = 'comptable_en_chef' | 'comptable'
 
 // Un membre de l'équipe du cabinet (voir EquipePage) — "en chef" voit tous les dossiers du cabinet,

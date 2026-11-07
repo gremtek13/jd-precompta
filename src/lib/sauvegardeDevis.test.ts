@@ -9,7 +9,7 @@ import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
-import { SAISIES_2035_EXPORTEES } from './saisies2035'
+import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
@@ -79,7 +79,7 @@ describe('le filtre du plan', () => {
         && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
         && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE) && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
         && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
-        && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES) && auPlanDesSaisies2035(table, SAISIES_2035_EXPORTEES)
+        && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES) && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
         && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
         && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES))
     }

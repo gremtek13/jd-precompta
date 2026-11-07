@@ -12,9 +12,9 @@ import {
 import type { CodeSaisie2035, Saisie2035, ValeurSaisie } from './saisies2035'
 
 // LES SAISIES DU CABINET DE LA 2035 (étapes 2035S3 à S5) : le moteur qui les reçoit, le module qui les juge, et la
-// migration préparée qu'il redit (supabase/preparees/20261107180000_saisies_2035.sql ; l'essai : supabase/essais/saisies2035.sql).
+// migration qu'il redit (supabase/schema/20261107172059_saisies_2035.sql, en production depuis le 07/11/2026 ; l'essai : supabase/essais/saisies2035.sql).
 
-const MIGRATION = readFileSync('supabase/preparees/20261107180000_saisies_2035.sql', 'utf8')
+const MIGRATION = readFileSync('supabase/schema/20261107172059_saisies_2035.sql', 'utf8')
 
 const ligne = (o: Partial<LigneDeclaration>): LigneDeclaration =>
   ({ poste: 'Achats', nature: 'depense', montant: 100, nbPieces: 1, nbMouvements: 0, nbEncaissements: 0, ...o })

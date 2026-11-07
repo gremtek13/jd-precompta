@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SAISIES_2035_EXPORTEES } from './saisies2035'
+import { SAISIES_2035_EN_BASE, SAISIES_2035_EXPORTEES } from './saisies2035'
 import {
   auPlanAujourdHui,
   auPlanDesSaisies2035,
@@ -30,31 +30,35 @@ import {
   violationsOrdre,
 } from './sauvegarde'
 
-// LES SAISIES DE LA 2035 AU PLAN DE SAUVEGARDE (étapes 2035S3 à S5). Leur migration, `saisies_2035`, est préparée, pas
-// appliquée : drapeau baissé, le plan effectif ne dit RIEN de la table — une sauvegarde lirait une table absente et
-// échouerait —, et le plan PRÉVU est déjà juste, pour que lever `SAISIES_2035_EXPORTEES` suffise le jour venu.
+// LES SAISIES DE LA 2035 AU PLAN DE SAUVEGARDE (étapes 2035S3 à S5). Leur migration, `saisies_2035`, est en production
+// depuis le 07/11/2026 (2035S3-Q3) et `SAISIES_2035_EN_BASE` levée : la table est au plan effectif, alors que l'écran
+// (`SAISIES_2035_EXPORTEES`) reste baissé. Avant, le plan effectif ne devait RIEN dire de la table — une sauvegarde aurait lu
+// une table absente et échoué —, et cet état d'avant reste éprouvé tant que son code existe (la constante rebaissée par
+// `vi.doMock`, plus bas, et `auPlanDesSaisies2035(…, false)`).
 
 const TABLE = 'saisies_2035'
 
 describe('le filtre du plan, côté saisies de la 2035', () => {
-  it('la table n’est au plan que le drapeau levé ; toute autre l’est toujours ; le filtre du jour suit le drapeau', () => {
+  it('la table n’est au plan que la constante levée ; toute autre l’est toujours ; le filtre du jour suit la constante, pas l’écran', () => {
     expect(TABLES_DES_SAISIES_2035).toEqual([TABLE])
     expect(auPlanDesSaisies2035(TABLE, false)).toBe(false)
     expect(auPlanDesSaisies2035(TABLE, true)).toBe(true)
     expect(auPlanDesSaisies2035('exercices_valides', false)).toBe(true)
-    expect(auPlanAujourdHui(TABLE)).toBe(SAISIES_2035_EXPORTEES)
+    expect(SAISIES_2035_EN_BASE).toBe(true)
+    expect(SAISIES_2035_EXPORTEES).toBe(false)
+    expect(auPlanAujourdHui(TABLE)).toBe(SAISIES_2035_EN_BASE)
     const autres = [...TABLES_DES_DEVIS, ...TABLES_DES_ARTICLES, ...TABLES_DES_ADRESSES_RECEPTION, ...TABLES_DES_CONTACTS,
       ...TABLES_DES_PARAMETRES_FACTURATION, ...TABLES_DU_JOURNAL_DES_DESIGNATIONS, ...TABLES_DE_LA_CAISSE,
       ...TABLES_DE_LA_TRACE_DES_DROITS, ...TABLES_DES_SITUATIONS_PUBLIEES]
     expect(TABLES_DES_SAISIES_2035.filter((t) => autres.includes(t))).toEqual([])
   })
 
-  it('drapeau baissé, le plan effectif ne nomme pas la table ; sa clé est la commune', () => {
+  it('le plan effectif nomme la table selon la constante ; sa clé est la commune', () => {
     const nommees = new Set([
       ...RELATIONS.flatMap((r) => [r.enfant, r.parent]), ...ORDRE_RESTAURATION, ...Object.keys(CHEMINS_DOSSIER),
       ...TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((a) => a.table), ...Object.keys(CLES_PRIMAIRES),
     ])
-    expect(nommees.has(TABLE)).toBe(SAISIES_2035_EXPORTEES)
+    expect(nommees.has(TABLE)).toBe(SAISIES_2035_EN_BASE)
     expect(Object.keys(CLES_PRIMAIRES_PREVUES)).not.toContain(TABLE)
     expect(clePrimaire(TABLE)).toEqual(['id'])
   })
@@ -81,7 +85,7 @@ describe('le plan prévu, saisies comprises', () => {
   })
 })
 
-describe('les saisies dans les deux états du drapeau : la réinsertion', () => {
+describe('les saisies dans les deux états de la constante : la réinsertion', () => {
   afterEach(() => {
     vi.doUnmock('./saisies2035')
     vi.resetModules()
@@ -89,7 +93,7 @@ describe('les saisies dans les deux états du drapeau : la réinsertion', () => 
 
   async function sauvegardeSous(drapeau: boolean) {
     vi.resetModules()
-    vi.doMock('./saisies2035', async (original) => ({ ...(await original<typeof import('./saisies2035')>()), SAISIES_2035_EXPORTEES: drapeau }))
+    vi.doMock('./saisies2035', async (original) => ({ ...(await original<typeof import('./saisies2035')>()), SAISIES_2035_EN_BASE: drapeau }))
     return import('./sauvegarde')
   }
 
@@ -103,7 +107,7 @@ describe('les saisies dans les deux états du drapeau : la réinsertion', () => 
     ],
   }
 
-  it('levé : les deux saisies, telles quelles, en une étape', async () => {
+  it('levée : les deux saisies, telles quelles, en une étape', async () => {
     const s = await sauvegardeSous(true)
     const etapes = s.planReinsertion(contenu).etapes.filter((e) => e.table === TABLE)
     expect(etapes.map((e) => e.lignes.map((l) => l.id))).toEqual([['s1', 's2']])
@@ -111,7 +115,7 @@ describe('les saisies dans les deux états du drapeau : la réinsertion', () => 
     expect(s.liensPerdus(contenu)).toEqual([])
   })
 
-  it('baissé : rien n’en part, et rien ne s’en dit', async () => {
+  it('baissée : rien n’en part, et rien ne s’en dit', async () => {
     const s = await sauvegardeSous(false)
     expect(s.planReinsertion(contenu).etapes.some((e) => e.table === TABLE)).toBe(false)
     expect(s.ORDRE_RESTAURATION).not.toContain(TABLE)

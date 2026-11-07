@@ -19,7 +19,7 @@ import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
-import { SAISIES_2035_EXPORTEES } from './saisies2035'
+import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 
@@ -162,19 +162,20 @@ export function auPlanDesSituationsPubliees(table: string, exportees: boolean): 
   return exportees || !TABLES_DES_SITUATIONS_PUBLIEES.includes(table)
 }
 
-// LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, PRÉPARÉE, pas appliquée) : CC, CL et
-// ses « dont », DE, le reste de DB, une ligne par dossier, exercice et case. Sous le drapeau de la migration
-// (`SAISIES_2035_EXPORTEES`, src/lib/saisies2035.ts), baissé : la production n'a pas la table, et la lire ferait échouer
-// toute sauvegarde. Le même drapeau que l'écran : une table que Clôture écrirait sans que la sauvegarde la lise se perdrait
-// à la restauration. Sa relation au dossier (cascade), son rang (juste avant les exercices validés : leur gel refuserait
-// une saisie réinsérée après eux), son chemin ; aucune vague ; sa clé est la commune, `id`. La restauration la réinsère
-// comme toute ligne d'un dossier qui ne porte encore aucun exercice validé. sauvegardeSaisies2035.test.ts éprouve le plan
-// prévu et le plan du jour, sous chaque état du drapeau.
+// LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, en production depuis le 07/11/2026,
+// 2035S3-Q3) : CC, CL et ses « dont », DE, le reste de DB, une ligne par dossier, exercice et case. Sous la constante de la
+// table (`SAISIES_2035_EN_BASE`, src/lib/saisies2035.ts), levée : la table est en base, elle est au plan — PAS sous
+// l'interrupteur de l'écran (`SAISIES_2035_EXPORTEES`), resté baissé jusqu'à la 2035 déposée : une saisie écrite en base
+// sans que la sauvegarde la lise se perdrait à la restauration. Rebaissée (le retour de la migration), la lire ferait
+// échouer toute sauvegarde. Sa relation au dossier (cascade), son rang (juste avant les exercices validés : leur gel
+// refuserait une saisie réinsérée après eux), son chemin ; aucune vague ; sa clé est la commune, `id`. La restauration la
+// réinsère comme toute ligne d'un dossier qui ne porte encore aucun exercice validé. sauvegardeSaisies2035.test.ts éprouve
+// le plan prévu et le plan du jour, sous chaque état de la constante.
 export const TABLES_DES_SAISIES_2035: readonly string[] = ['saisies_2035']
 
-/** Une table au plan, côté saisies de la 2035 : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
-export function auPlanDesSaisies2035(table: string, exportees: boolean): boolean {
-  return exportees || !TABLES_DES_SAISIES_2035.includes(table)
+/** Une table au plan, côté saisies de la 2035 : toutes, sauf la sienne tant que sa table n'est pas en base. */
+export function auPlanDesSaisies2035(table: string, enBase: boolean): boolean {
+  return enBase || !TABLES_DES_SAISIES_2035.includes(table)
 }
 
 // LES FACTURES REPRISES (ligne 51.5, étape A8a ; migration `factures_importees`, PRÉPARÉE, pas appliquée) : le lot d'un import
@@ -221,7 +222,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
     && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
-    && auPlanDesSaisies2035(table, SAISIES_2035_EXPORTEES)
+    && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
     && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
 }

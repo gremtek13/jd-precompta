@@ -434,11 +434,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   prévisionnelle qu'aucun paiement ne
   date, et une autre se dit en attention (`lib/previsionnelles.ts`) ; un modèle par millésime, le dernier livré sans le sien
   (`lib/modeles2035.ts`) — 2035S-Q5, contre la recommandation : imprimé sur le dernier millésime, l'avertissement dit à l'écran et sur le PDF ; les quatre postes neufs sont entrés le 01/11/2026 dans les listes fermées du FEC (ci-dessous).
-  CC, CL et ses « dont », DE et le reste de DB (2035S3 à S5) préparés le 07/11/2026 derrière `SAISIES_2035_EXPORTEES` baissé, la
-  migration additive `saisies_2035` à appliquer → « LA 2035 : LES SAISIES DU CABINET (2035S3 À S5) (PRÉPARÉE, PAS APPLIQUÉE) » ; 2035S-Q1, regarder
-  d'abord la 2035 déposée, à la répétition générale → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
-  ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION », « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF
-  D'UN MILLÉSIME (2035S1, S2 ET S6) », « 2035S-Q5 : LE PDF D'UN MILLÉSIME ABSENT S'IMPRIME AVEC UN AVERTISSEMENT ».
+  CC, CL et ses « dont », DE et le reste de DB (2035S3 à S5) : la table `saisies_2035` en production depuis le
+  07/11/2026, au plan de sauvegarde (`SAISIES_2035_EN_BASE`), l'écran derrière `SAISIES_2035_EXPORTEES` baissé
+  jusqu'à la 2035 déposée (2035S3-Q3) → « LA 2035 : LES SAISIES DU CABINET (2035S3 À S5) (PRÉPARÉE, PAS APPLIQUÉE) »,
+  « LES SAISIES DE LA 2035 EN PRODUCTION (2035S3-Q3) » ; 2035S-Q1, regarder d'abord la 2035 déposée, à la répétition
+  générale → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 : ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION »,
+  « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF D'UN MILLÉSIME (2035S1, S2 ET S6) »,
+  « 2035S-Q5 : LE PDF D'UN MILLÉSIME ABSENT S'IMPRIME AVEC UN AVERTISSEMENT ».
 - **Déclarations TNS** (ligne 27) : les médecins de secteur 1 et 2 estimés depuis le 07/11/2026, contre l'oracle ; le
   début d'activité, l'ACRE et le taux dentiste préparés le même jour (`parametres_des_cotisations`, deux tables hors de
   `dossiers`, que le client lit ; l'estimation les reçoit en entrée obligatoire, `{ tenus: false }` drapeau baissé,
