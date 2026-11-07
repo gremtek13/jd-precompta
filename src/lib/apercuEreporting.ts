@@ -8,8 +8,8 @@ import type { ArticleExoneration, EtatFactureElectroniqueLu, PeriodiciteTva, Sta
 
 // LA FACTURE ÉLECTRONIQUE ET L'E-REPORTING EN UN COUP D'ŒIL (espace client, partie C, étape C3, ligne 51.5 ; conception :
 // HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », C3). Un
-// module PUR : il lit la quatrième clé que la migration `apercu_facture_electronique` (préparée,
-// supabase/preparees/20261106170000_apercu_facture_electronique.sql) ajoute à `etat_facture_electronique`, SANS RIEN
+// module PUR : il lit la quatrième clé que la migration `apercu_facture_electronique` (en production
+// depuis le 07/11/2026, supabase/schema/20261107145209_apercu_facture_electronique.sql ; C3-Q1 à Q4) ajoute à `etat_facture_electronique`, SANS RIEN
 // DEVINER, et en tire la prochaine période d'e-reporting de chaque objet : « prête », « en attente de ton cabinet » ou
 // « déclarée le … ». Il ne lit rien en base, n'appelle personne et ne lit pas l'horloge : le jour de Paris, l'appelant le
 // DONNE.
@@ -26,15 +26,16 @@ import type { ArticleExoneration, EtatFactureElectroniqueLu, PeriodiciteTva, Sta
 // cabinet, qui la déclare — ou sait qu'elle n'a pas d'opération : aucune transmission à blanc (BOI-TVA-DECLA-20-30-50-30,
 // §80) ; ce module ne dit jamais qu'il y a quelque chose à déclarer.
 
-/** Levé quand la migration `apercu_facture_electronique` est en production (le fichier posé dans l'export). */
-export const APERCU_EREPORTING_EXPORTE = false
+/** Levé le 07/11/2026 : la migration `apercu_facture_electronique` est en production (version 20261107145209, C3-Q1).
+ * Baissé — l'état d'avant, que EncartFactureElectronique.test.tsx joue encore par un accesseur —, la carte d'hier. */
+export const APERCU_EREPORTING_EXPORTE: boolean = true
 
 /** La fonction ne rend que les déclarations dont la période a fini il y a ce nombre de jours au plus : la prochaine
  * échéance tombe au plus 25 jours après la fin de sa période (le 25 du mois qui suit un bimestre civil). */
 export const JOURS_DES_DECLARATIONS_RENDUES = 92
 
 /** Au-delà de ce nombre de jours sans relevé, les statuts des factures transmises se disent « non relus depuis longtemps »
- * (C3-Q3, à trancher par le cabinet). */
+ * (C3-Q3, tranchée par le cabinet le 07/11/2026 : sept jours). */
 export const JOURS_SANS_RELEVE = 7
 
 export const CLES_DE_L_EREPORTING = {

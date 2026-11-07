@@ -2,6 +2,7 @@
 -- d'hier, au caractère près (migration `adresses_reception`, 20261014143141), et son commentaire. Rien d'autre : la
 -- migration n'a créé ni table ni policy. Aucune donnée n'est retirée — il passe par `apply_migration`. Un écran levé sur
 -- la clé `ereporting` revient à l'écran d'hier (une clé absente veut dire la fonction d'hier, src/lib/apercuEreporting.ts).
+-- La migration : supabase/schema/20261107145209_apercu_facture_electronique.sql (en production depuis le 07/11/2026).
 do $garde$
 begin
   if (select position('regimes_ereporting' in p.prosrc) = 0 from pg_proc p

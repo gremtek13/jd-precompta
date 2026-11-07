@@ -29,6 +29,19 @@ const faux = vi.hoisted(() => ({
   enAttente: [] as (() => void)[],
 }))
 
+// LE DRAPEAU DE C3 (`APERCU_EREPORTING_EXPORTE`, levé le 07/11/2026) joué dans ses deux états par un accesseur (CLAUDE.md,
+// « Un drapeau d'export levé garde son état d'avant éprouvé ») : levé par défaut, comme en production ; baissé, la carte
+// d'hier au caractère près (le bloc « le drapeau de C3 », en fin de fichier).
+const drapeau = vi.hoisted(() => ({ leve: true }))
+vi.mock('../../lib/apercuEreporting', async (original) => {
+  const reel = await original<typeof import('../../lib/apercuEreporting')>()
+  return { ...reel, get APERCU_EREPORTING_EXPORTE() { return drapeau.leve } }
+})
+
+// Les statuts relevés la veille du jour figé : la ligne « Statuts des factures » (C3) ne paraît que dans les cas qui la
+// demandent.
+const ETAT_RELU = etatFictif({ plateforme: { ...ETAT_FICTIF.plateforme, statuts_lus_le: '2027-11-19T09:00:00+00:00' } })
+
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     rpc: async (nom: string, args: unknown) => {
@@ -43,7 +56,8 @@ vi.mock('../../lib/supabase', () => ({
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2027-11-20T10:00:00Z'))
-  faux.data = ETAT_FICTIF
+  drapeau.leve = true
+  faux.data = ETAT_RELU
   faux.erreur = null
   faux.leve = null
   faux.retenir = false
@@ -370,5 +384,42 @@ describe('la tuile du téléphone, par la grille et non par la fenêtre', () => 
   it('la source ne lit aucune largeur de fenêtre', () => {
     const source = readFileSync(SOURCE_DE_LA_CARTE, 'utf8')
     expect(source).not.toMatch(/innerWidth|matchMedia|ResizeObserver|clientWidth/)
+  })
+})
+
+// ── 8. Le drapeau de C3, dans ses deux états ──────────────────────────────────────────────────────────────────────────
+describe('le drapeau de C3 (e-reporting et statuts non relus), levé puis baissé', () => {
+  // La clé telle que la base la rend (aux noms de la base, avant la lecture de lib/apercuEreporting.ts).
+  const EREPORTING = {
+    statut_du_dossier: { statut_tva: 'franchise', article_exoneration: null, tva_periodicite: 'trimestrielle', tva_sur_debits: false },
+    regimes: [{
+      depuis: '2026-01-01', statut_tva: 'franchise', article_exoneration: null, tva_periodicite: null, tva_sur_debits: false,
+      frequence_transactions: 'bimestre', frequence_paiements: 'bimestre',
+    }],
+    declarations: [],
+  }
+  const ANCIEN = etatFictif({ plateforme: { ...ETAT_FICTIF.plateforme, statuts_lus_le: '2026-10-10T09:00:00+00:00' } })
+
+  it('levé : la clé `ereporting` donne sa ligne, des statuts non relus depuis plus de sept jours la leur', async () => {
+    faux.data = { ...ANCIEN, ereporting: EREPORTING }
+    monterCabinet()
+    await lire()
+    expect(titresDeLignes()).toEqual(['Adresse de réception', 'Plateformes', 'E-reporting', 'Statuts des factures'])
+    expect(texte()).toContain('n’ont pas été relevés depuis le 10/10/2026')
+  })
+
+  it('levé sur la fonction d’hier (sans `ereporting`) et des statuts relus la veille : la carte d’hier', async () => {
+    monterCabinet()
+    await lire()
+    expect(titresDeLignes()).toEqual(['Adresse de réception', 'Plateformes'])
+  })
+
+  it('baissé : ni e-reporting ni statuts, même avec la clé et des statuts anciens — la carte d’hier', async () => {
+    drapeau.leve = false
+    faux.data = { ...ANCIEN, ereporting: EREPORTING }
+    monterCabinet()
+    await lire()
+    expect(titresDeLignes()).toEqual(['Adresse de réception', 'Plateformes'])
+    expect(texte()).not.toContain('relevés')
   })
 })

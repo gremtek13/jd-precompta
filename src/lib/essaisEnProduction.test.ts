@@ -325,7 +325,10 @@ describe('les essais de la base, rejoués en production', () => {
     // Vingt-cinq le même jour : `troisCasesDeLAcces` (B1, `trois_cases_de_l_acces`) entré dans la famille « apres », après
     // sa migration préparée et les deux qu'elle suppose, dans cet ordre (P1-trace, `trace_des_droits` ; C4a, reprise pour
     // exiger la trace et l'étendre à « Comptes ») : un seul modèle « apres » porte les trois ; SÛR au banc.
-    expect(cas.length).toBe(25)
+    // Vingt-trois le même jour : `phaseDesExercices` et `apercuFactureElectronique` sortis (C2 et C3 en production,
+    // 20261107145111 et 20261107145209 ; ni l'un ni l'autre ne cherche un semis, ils se jouent comme des essais de la
+    // production).
+    expect(cas.length).toBe(23)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

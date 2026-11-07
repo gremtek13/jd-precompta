@@ -49288,3 +49288,15 @@ Intégrée le 07/11/2026 après C7 : la trace épinglée à ses trois empreintes
 `p_ventes` (les deux essais de C4a sortent). Relecture adverse : contrôles 4 et 83 de `droitsAcces.sql` selon l'état, M6
 sur `p_comptes`, garde du retour (policies de tous les schémas ; le mot ET l'appel : l'e-reporting porte 'achats'), deux
 commentaires de C4a (sha256 `4fd2cf0f…`) ; mère 17 (P1-trace, C4a, B1) : 0 en faute, M1 à M8 et 90 à 95 mordent, SÛR.
+
+### 07/11/2026 — C2 ET C3 EN PRODUCTION (LIGNE 51.5)
+
+Appliquées par la session sur l'accord du cabinet (C2-Q1 « telle quelle » ; C3-Q1 « oui, après les plus urgentes ») :
+`phase_des_exercices` sous `20261107145111` (`a4c05fb9…`) et `apercu_facture_electronique` sous `20261107145209`
+(`13fa3e4b…`), les empreintes de l'historique égales aux fichiers, passés de `preparees/` à l'export, texte inchangé ;
+les retours restent préparés, leur en-tête nomme le nouveau chemin. C2-Q2 à Q4 et C3-Q2 à Q4 tranchées comme codé
+(pièces attendues jusqu'à la clôture, « enregistrée », « en cours chez ton cabinet » ; sept jours).
+`ETAT_DU_DOSSIER_EXPORTE` et `APERCU_EREPORTING_EXPORTE` levés, l'état baissé joué par un accesseur (la carte de
+l'état ; l'encart, trois cas neufs). Contrôles de l'export, égaux des deux côtés : dérive 179 `5cd50f1b…`, socle 81
+`3a79a158…`, inventaire 2 441 `5e71548d…`. Les deux essais quittent la famille « apres » du leurre (22 cas) ; le faux
+Supabase du banc rend les phases.

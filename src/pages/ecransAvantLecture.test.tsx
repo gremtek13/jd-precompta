@@ -630,7 +630,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'components/EnvoyerEmailModal.tsx': 'n’appelle la fonction d’envoi que sur un clic',
   'components/FilCommentaires.tsx': 'reçoit le fil de l’écran qui l’ouvre ; n’écrit qu’à l’envoi',
   'pages/dossier/BilanReleveStatuts.tsx': 'reçoit le relevé des statuts que l’écran qui l’offre a lancé sur un clic (FacturesTab, EncaissementsFactureModal, PlateformeClientModal, montés ici)',
-  'components/CarteEtatDuDossier.tsx': 'drapeau baissé (ETAT_DU_DOSSIER_EXPORTE, la migration phase_des_exercices préparée) : ni lecture ni carte au montage de l’accueil ; levé, un squelette avant la lecture, une lecture refusée dite, la réponse d’une société quittée tue — CarteEtatDuDossier.test.tsx ; n’écrit rien',
+  'components/CarteEtatDuDossier.tsx': 'drapeau levé (ETAT_DU_DOSSIER_EXPORTE, la migration phase_des_exercices en production depuis le 07/11/2026) ; baissé, ni lecture ni carte au montage de l’accueil ; levé, un squelette avant la lecture, une lecture refusée dite, la réponse d’une société quittée tue — CarteEtatDuDossier.test.tsx ; n’écrit rien',
   'context/AuthContext.tsx': 'pas un écran : tant qu’il lit la session, App ne montre que « Chargement… »',
   'pages/TuilesVentesClient.tsx': 'ne lit plus (étape A6b2) : reçoit la lecture des ventes de l’accueil (AccueilVentesClient, montée ici) et ne fait que compter ses pastilles ; n’écrit rien',
   'pages/PaiementParMaCaisse.tsx': 'reçoit de « Mes pièces » (ClientUpload) une caisse lue en entier et rejouée et des pièces lues en entier (caisseDeMesPieces) — rien ne le monte avant ; ne paie ni ne retire qu’au clic confirmé, puis relit la caisse (ClientUpload.caisse.test.tsx)',

@@ -9,10 +9,10 @@ import { fichiersDuSchema } from '../test/schema'
 
 // L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT (ligne 51.5, étape C2). Ce qui se garde ici : une réponse de la base
 // qu'on ne sait pas lire ne passe jamais pour une liste ; chaque phase se dit aux mots du client, sans rien dire de plus
-// que la base ; la migration préparée est celle que le module lit, et le drapeau dit ce que porte l'export.
+// que la base ; la migration de l'export (en production depuis le 07/11/2026) est celle que le module lit, et le drapeau dit ce que porte l'export.
 
 const ligne = (p: Partial<Record<string, unknown>> = {}) => ({ annee: 2026, phase: 'pieces_attendues', valide_le: null, declaration_2035: false, ...p })
-const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261106110000_phase_des_exercices.sql', import.meta.url), 'utf8')
+const MIGRATION = readFileSync(new URL('../../supabase/schema/20261107145111_phase_des_exercices.sql', import.meta.url), 'utf8')
 
 describe('ce que la base rend', () => {
   it('lit les quatre phases, du plus récent au plus ancien', () => {

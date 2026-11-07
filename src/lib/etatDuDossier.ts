@@ -2,19 +2,20 @@
 // les mots, sans lecture (la lecture : lib/etatDuDossierLecture.ts ; la carte : components/CarteEtatDuDossier.tsx).
 //
 // La base rend, par exercice, une PHASE et, pour un exercice validé, le jour de sa validation et si sa 2035 y est gardée
-// (`phase_des_exercices`, supabase/preparees/20261106110000_phase_des_exercices.sql) — jamais un montant, un compte, un
+// (`phase_des_exercices`, supabase/schema/20261107145111_phase_des_exercices.sql) — jamais un montant, un compte, un
 // nombre, un libellé ni un nom. Ce module n'en déduit rien de plus : une réponse qu'il ne sait pas lire n'est ni « rien à
 // dire » ni une liste, elle se SIGNALE ; et chaque phase se dit avec ce que la base prouve, pas davantage — « enregistrée »,
 // jamais « déposée » (la base ne sait rien du dépôt), « en cours » pour ce qui ne se prouve pas.
 //
-// LE DRAPEAU : la migration est PRÉPARÉE, pas appliquée (une lecture neuve ouverte au client se présente au cabinet
-// d'abord). Baissé, la carte de l'accueil ne lit rien et ne montre rien ; il se lève quand l'export porte la fonction
-// (etatDuDossier.test.ts le confronte à l'export).
+// LE DRAPEAU : levé le 07/11/2026, la migration en production sous la version 20261107145111 (C2-Q1, « l'appliquer telle
+// quelle » ; C2-Q2 à Q4 tranchées comme codées : « pièces attendues » jusqu'à la clôture, « enregistrée » seulement, « en
+// cours chez ton cabinet »). Baissé, la carte de l'accueil ne lit rien et ne montre rien — l'état d'avant, que
+// CarteEtatDuDossier.test.tsx joue encore par un accesseur ; etatDuDossier.test.ts confronte le drapeau à l'export.
 import type { ReponseDeLaBase } from './couvertureReleve'
 import { formatDate } from './format'
 import { messageErreur } from './messageErreur'
 
-export const ETAT_DU_DOSSIER_EXPORTE: boolean = false
+export const ETAT_DU_DOSSIER_EXPORTE: boolean = true
 
 export type PhaseDUnExercice = 'pieces_attendues' | 'en_revision' | 'en_cours' | 'validee'
 
