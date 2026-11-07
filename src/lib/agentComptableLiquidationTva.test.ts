@@ -4,7 +4,7 @@ import * as lib_liquidationTva from './liquidationTva'
 import { describe, expect, it } from 'vitest'
 import { periodesDeLAnnee } from './declarationTva'
 import {
-  ecritureDeLaLiquidation, ecritureDuPaiementTva, liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesEnRetard,
+  ecritureDeLaLiquidation, ecritureDuPaiementTva,
 } from './liquidationTva'
 import type { DeclarationTva, EcritureBrouillon, LigneBancaire, PeriodiciteTva } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
@@ -61,7 +61,6 @@ function extraire(source: string, plan: PlanComptable): Copie {
   return avecLePlan(new Function(`${js}\nreturn { ecritureDeLaLiquidation, ecritureDuPaiementTva, liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesDeLAnnee, periodesEnRetard }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const FRONTIERES = [null, '2026-03-30', '2026-03-31', '2026-06-30', '2026-12-31'] as const
 

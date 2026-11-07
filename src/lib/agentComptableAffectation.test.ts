@@ -5,12 +5,11 @@ import * as lib_controles from './controles'
 import * as lib_affectationBanque from './affectationBanque'
 import { describe, expect, it } from 'vitest'
 import {
-  mouvementsAffectes, mouvementsAffectesDesynchronises, natureDuCompte, recettesAffecteesSansTaux,
+  natureDuCompte, 
 } from './affectationBanque'
-import { categoriesSansCompte, categoriesSansPoste } from './controles'
 import type { ModeleComptable } from './engagement'
 import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
-import { compteDuDirigeant, virementsPersonnelsAEcrire } from './virementPersonnel'
+import { compteDuDirigeant } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
@@ -68,7 +67,6 @@ function extraire(source: string, plan: PlanComptable): Copie {
   return avecLePlan(new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux, categoriesSansCompte, categoriesSansPoste, compteDuDirigeant, virementsPersonnelsAEcrire }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const categorie = (o: Partial<Categorie>): Categorie => ({
   id: 'c', dossier_id: null, code: 'x', libelle: 'X', ordre: 0, compte_comptable: null, poste_2035: null, ...o,

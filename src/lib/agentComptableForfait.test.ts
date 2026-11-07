@@ -4,7 +4,6 @@ import * as lib_forfaitKilometrique from './forfaitKilometrique'
 import { describe, expect, it } from 'vitest'
 import { indemniteKilometriqueCentimes, vehiculeDuDossier } from './baremeKilometrique'
 import type { ModeleComptable } from './engagement'
-import { ecritureDuForfait, forfaitsDuCadre7, forfaitsEnDefaut, nomDuVehicule } from './forfaitKilometrique'
 import type { EcritureBrouillon, VehiculeDossier } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
@@ -55,7 +54,6 @@ function extraire(source: string, plan: PlanComptable): Copie {
   return avecLePlan(new Function(`${js}\nreturn { indemniteKilometriqueCentimes, nomDuVehicule, ecritureDuForfait, forfaitsDuCadre7, forfaitsEnDefaut }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const vehicule = (o: Partial<VehiculeDossier> = {}): VehiculeDossier => ({
   id: 'v', dossier_id: 'd', annee: 2025, modele: 'Clio', type: 'voiture', puissance_fiscale: 5, bareme: 'bnc',

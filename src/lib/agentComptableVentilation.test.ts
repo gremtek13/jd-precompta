@@ -6,8 +6,8 @@ import { COMPTE_BANQUE } from './comptes'
 import type { ModeleComptable } from './engagement'
 import type { Categorie, EcritureBrouillon, LigneBancaire, VentilationBancaire } from './types'
 import {
-  ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux,
-  ventilationsIncoherentes,
+  ecritureDeLaVentilation, 
+  
 } from './ventilationBanque'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
@@ -60,7 +60,6 @@ function extraire(source: string, plan: PlanComptable): Copie {
   return avecLePlan(new Function(`${js}\nreturn { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes, mouvementsVentilesDesynchronises }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const ENGAGEMENT_455: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }

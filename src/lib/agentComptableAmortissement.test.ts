@@ -3,12 +3,11 @@ import ts from 'typescript'
 import * as lib_amortissements from './amortissements'
 import { describe, expect, it } from 'vitest'
 import {
-  acquisitionsDesBiens, bienRepris, compteAmortissement, dotationAEcrire, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, rang360,
+  acquisitionsDesBiens, 
   type AcquisitionDuBien,
 } from './amortissements'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
-import { PLAN_PAR_DEFAUT } from './planComptable'
 import { PLANS_DES_GARDES, avecLePlan, entreesSous } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
@@ -62,7 +61,6 @@ function extraire(source: string, plan: PlanComptable): Copie {
   return avecLePlan(new Function(`${js}\nreturn { rang360, dotationDeLExercice, compteAmortissement, dotationAEcrire, dotationsDuRegistre, dotationsEnDefaut, bienRepris, acquisitionsDesBiens }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const bien = (o: Partial<Immobilisation> = {}): Immobilisation => ({
   id: 'b', dossier_id: 'd', piece_id: 'p', nature_id: 'n-info', libelle: 'Ordinateur', valeur: 1200,
@@ -244,7 +242,7 @@ describe('agent-comptable / points_a_traiter lit le registre et ses dotations', 
 
 describe.each(PLANS_DES_GARDES)('le garde-fou du bloc AMORTISSEMENT sait encore échouer, sous le %s', (_plan, plan) => {
   // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
-  const { bienRepris, compteAmortissement, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut } = entreesSous(lib_amortissements, plan)
+  const { compteAmortissement, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut } = entreesSous(lib_amortissements, plan)
   const planter = (...remplacements: [string, string][]) => {
     let source = sourceDeployee()
     for (const [avant, apres] of remplacements) {
