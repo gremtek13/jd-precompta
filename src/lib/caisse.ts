@@ -411,6 +411,29 @@ export function ensembleDuJour(etat: EtatDeLaCaisse, jour: string): string[] {
   return [...encaissementsDuJour(etat, jour), ...paiementsDeVenteDuJour(etat, jour)].sort()
 }
 
+/**
+ * `ensembleDuJour` de chaque jour d'un même état, indexé en une passe : un appelant qui le demande pour chaque recette de
+ * l'année (`recettesDeCaisseARevoir`) parcourait toutes les opérations et tous les encaissements pour chacune — une pente
+ * quadratique que le banc de charge a relevée le 07/11/2026. Pour tout jour, les mêmes identifiants, dans le même ordre,
+ * que `ensembleDuJour(etat, jour)` (`ensemblesDesJours.test.ts`) : la règle reste celle d'`encaissementsDuJour` et de
+ * `paiementsDeVenteDuJour`, seul le parcours change. L'état ne doit pas changer entre l'index et sa lecture.
+ */
+export function ensemblesDesJours(etat: EtatDeLaCaisse): (jour: string) => string[] {
+  const parJour = new Map<string, string[]>()
+  const ajouter = (jour: string, id: string) => {
+    const ids = parJour.get(jour)
+    if (ids) ids.push(id)
+    else parJour.set(jour, [id])
+  }
+  for (const e of etat.encaissements) if (especesDUneFactureSource(e, etat)) ajouter(e.date_encaissement, e.id)
+  const ventes = new Set(etat.piecesDeVente ?? [])
+  for (const o of etat.operations) {
+    if (o.genre === 'paiement' && o.retire_le == null && o.piece_id != null && ventes.has(o.piece_id)) ajouter(o.date, o.id)
+  }
+  for (const ids of parJour.values()) ids.sort()
+  return (jour) => [...(parJour.get(jour) ?? [])]
+}
+
 // ── L'écriture d'une opération, au plan du dossier ────────────────────────────────────────────────────────────────────
 
 /** Une ligne de l'écriture d'une opération de caisse, telle qu'elle part à la base. */

@@ -434,6 +434,36 @@ export function lignesDeLaSource(brouillon: readonly LigneDuBrouillon[], source:
 }
 
 /**
+ * `lignesDeLaSource` de chaque source d'un même brouillon, indexé en une passe : l'écran qui dit l'état de chaque source
+ * (`etatsDesVentesFacturees`) filtrait tout le brouillon pour chacune — une pente quadratique que le banc de charge a
+ * relevée le 07/11/2026. Pour toute source, les mêmes lignes, dans l'ordre du brouillon, que `lignesDeLaSource(brouillon,
+ * source, dossierId)` (`lignesDesSources.test.ts`) : les clés gardent leur valeur lue, nulle comprise, comme l'égalité
+ * stricte du filtre. Le brouillon ne doit pas changer entre l'index et sa lecture.
+ */
+export function lignesDesSources<L extends LigneDuBrouillon>(brouillon: readonly L[], dossierId: string): (source: SourceEcritureVente) => L[] {
+  const parFacture = new Map<string | null, L[]>()
+  const parEncaissement = new Map<string | null, L[]>()
+  const parMouvement = new Map<string | null, L[]>()
+  const ajouter = (index: Map<string | null, L[]>, cle: string | null, b: L) => {
+    const lignes = index.get(cle)
+    if (lignes) lignes.push(b)
+    else index.set(cle, [b])
+  }
+  for (const b of brouillon) {
+    if (b.dossier_id !== dossierId) continue
+    ajouter(parFacture, b.facture_id, b)
+    ajouter(parEncaissement, b.encaissement_id, b)
+    if (b.facture_id == null && b.encaissement_id == null && b.piece_id == null && b.immobilisation_id == null
+      && b.vehicule_id == null && b.declaration_tva_id == null && b.cotisation_id == null) ajouter(parMouvement, b.ligne_bancaire_id, b)
+  }
+  return (source) => {
+    const index = source.genre === 'facture' || source.genre === 'avoir' ? parFacture
+      : source.genre === 'encaissement' ? parEncaissement : parMouvement
+    return [...(index.get(identifiantDeLaSource(source)) ?? [])]
+  }
+}
+
+/**
  * Ce que `retirer_ecriture_vente_facturee` refuserait : le dossier qui n'a pas basculé ; la source introuvable ; un
  * mouvement classé autrement que par ses encaissements, dont les lignes sans pièce sont celles de cet autre classement ;
  * un mouvement libre qu'aucun encaissement d'une facture source n'a jamais cité (retirés compris) ; une source pour
