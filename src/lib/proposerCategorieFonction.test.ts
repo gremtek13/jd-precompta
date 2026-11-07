@@ -51,8 +51,9 @@ describe('proposer-categorie — le gestionnaire', () => {
     for (const ecriture of ['.insert(', '.update(', '.upsert(', '.delete(', '.storage']) {
       expect(CODE, `écriture « ${ecriture} » dans proposer-categorie`).not.toContain(ecriture)
     }
-    // La seule fonction SQL appelée est le contrôle d'accès, qui lit.
-    expect([...CODE.matchAll(/\.rpc\("([^"]+)"/g)].map((m) => m[1])).toEqual(['admin_du_dossier'])
+    // Les seules fonctions SQL appelées lisent : le second facteur de l'appelant (C7, second temps, préparée), puis le
+    // contrôle d'accès.
+    expect([...CODE.matchAll(/\.rpc\("([^"]+)"/g)].map((m) => m[1])).toEqual(['deux_facteurs_satisfaits', 'admin_du_dossier'])
   })
 
   it('lit avec le jeton de l’appelant, jamais avec la clé secrète', () => {
