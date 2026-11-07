@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { arrondirPourFormulaire } from '../../lib/cases2035'
 import { formaterMontant } from '../../lib/gabarit2035'
@@ -11,6 +11,12 @@ import {
   REGULARISATION_DES_COTISATIONS_EXPORTEE, estimerLaRegularisation, type RegularisationEstimee,
 } from '../../lib/regularisationDesCotisations'
 import { aujourdHuiAParis } from '../../lib/format'
+import {
+  PARAMETRES_DES_COTISATIONS_EXPORTES, parametresDeLEstimation, type LectureDesParametres,
+} from '../../lib/parametresDesCotisations'
+import { lireLesParametresDesCotisations } from '../../lib/parametresDesCotisationsLecture'
+import type { ParametresEstimation } from '../../lib/voletSocialPamc'
+import ParametresDesCotisationsCard from './ParametresDesCotisationsCard'
 import { messageErreur } from '../../lib/messageErreur'
 
 // Le volet social d'un praticien ou auxiliaire médical conventionné, sous le report du revenu brut
@@ -94,6 +100,24 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
   // n'écrivent qu'une fois.
   const enregistrementEnCours = useRef(false)
 
+  // LES PARAMÈTRES DES COTISATIONS (TNS-Q1, TNS-Q4), sous leur drapeau : lus pour CE dossier, gardés avec l'identifiant lu.
+  // Drapeau baissé, rien ne se lit et l'estimation reçoit `{ tenus: false }`, celle d'hier.
+  const [parametresLus, setParametresLus] = useState<LectureDesParametres | null>(null)
+  const relireLesParametres = useCallback(async () => {
+    const lue = await lireLesParametresDesCotisations(dossierId)
+    setParametresLus(lue)
+  }, [dossierId])
+  useEffect(() => {
+    if (!PARAMETRES_DES_COTISATIONS_EXPORTES) return
+    let annule = false
+    void lireLesParametresDesCotisations(dossierId).then((lue) => { if (!annule) setParametresLus(lue) })
+    return () => { annule = true }
+  }, [dossierId])
+  const parametresDuDossier = parametresLus !== null && parametresLus.dossierId === dossierId ? parametresLus : null
+  const parametres: ParametresEstimation | null = PARAMETRES_DES_COTISATIONS_EXPORTES
+    ? parametresDeLEstimation(parametresDuDossier, annee)
+    : { tenus: false }
+
   useEffect(() => {
     let annule = false
     ;(async () => {
@@ -126,16 +150,25 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
   const nombre = (v: number | null | 'invalide') => (v === 'invalide' ? null : v)
   const recettes = recettesBrutesRetenues({ recettes_brutes: nombre(saisis.recettesBrutes) }, recettesNettes)
   const ratio = ratioConventionne(nombre(saisis.honoraires), recettes.montant)
-  const estimation = estimerCotisationsUrssaf({
-    annee,
-    profession: champs.profession === '' ? null : champs.profession,
-    remplacant: champs.remplacant,
-    revenuBrutSocial,
-    revenuProfessionnelPositif: (formulaire.get('CP') ?? 0) > 0,
-    recettesBrutes: recettes.montant,
-    honorairesConventionnes: nombre(saisis.honoraires),
-    depassements: nombre(saisis.depassements),
-  })
+  // Des paramètres pas encore lus, ou lus en partie : l'estimation se tait, et le dit.
+  const estimation: ReturnType<typeof estimerCotisationsUrssaf> = parametres === null
+    ? {
+        disponible: false,
+        motif: parametresDuDossier === null
+          ? 'Les paramètres des cotisations se lisent : l’estimation attend.'
+          : 'Les paramètres des cotisations n’ont pas été lus en entier : l’estimation se tait.',
+      }
+    : estimerCotisationsUrssaf({
+        annee,
+        profession: champs.profession === '' ? null : champs.profession,
+        remplacant: champs.remplacant,
+        revenuBrutSocial,
+        revenuProfessionnelPositif: (formulaire.get('CP') ?? 0) > 0,
+        recettesBrutes: recettes.montant,
+        honorairesConventionnes: nombre(saisis.honoraires),
+        depassements: nombre(saisis.depassements),
+        parametres,
+      })
 
   // UN AUTRE EXERCICE EST UNE AUTRE LIGNE. La carte reste montée quand l'exercice change dans l'en-tête : sans ceci elle
   // montrait sous « Volet social 2026 » les chiffres de 2025 jusqu'au retour de la lecture — et « Enregistrer » les écrivait
@@ -335,8 +368,13 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
                 la déclaration.
               </p>
 
+              {PARAMETRES_DES_COTISATIONS_EXPORTES && (
+                <ParametresDesCotisationsCard dossierId={dossierId} annee={annee} lecture={parametresDuDossier}
+                  profession={champs.profession === '' ? null : champs.profession} exerciceValide={exerciceValide}
+                  onRelire={relireLesParametres} />
+              )}
               <EstimationCotisations annee={annee} revenuBrutSocial={revenuBrutSocial} resultat={estimation}
-                avecStructures={(nombre(saisis.structures) ?? 0) > 0} />
+                avecStructures={(nombre(saisis.structures) ?? 0) > 0} parametresTenus={parametres?.tenus === true} />
               {REGULARISATION_DES_COTISATIONS_EXPORTEE && cotisations !== null && (
                 <Regularisation resultat={estimerLaRegularisation({
                   annee, definitives: estimation, echeances: cotisations, exerciceValide, aujourdhui: aujourdHuiAParis(),
@@ -350,9 +388,11 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
   )
 }
 
-function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructures }: {
+function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructures, parametresTenus }: {
   annee: number
   revenuBrutSocial: number
+  // Les paramètres des cotisations sont tenus (TNS-Q1, TNS-Q4) : l'année de la création et l'ACRE sont estimées, et se disent.
+  parametresTenus: boolean
   // Des recettes en structures de soins sont saisies : leur prise en charge éventuelle n'est pas
   // estimée, et le dire seulement quand il y en a évite une réserve de plus sur tous les dossiers.
   avecStructures: boolean
@@ -431,8 +471,15 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
           <p className="muted" style={{ margin: '6px 0 0' }}>
             Cotisations définitives estimées comme le fait le simulateur de l'Urssaf, d'après les chiffres
             ci-dessus. Hors retraite (appelée par la caisse, pas par l'Urssaf), hors indemnités
-            journalières perçues, ACRE, exonérations et outre-mer ; activité supposée commencée avant
-            {' '}{annee}. La régularisation est l'écart avec les cotisations provisionnelles appelées pour
+            journalières perçues, {parametresTenus ? 'exonérations d’invalidité' : 'ACRE, exonérations'} et outre-mer
+            {parametresTenus ? '' : `, activité supposée commencée avant ${annee}`}.
+            {parametresTenus && resultat.estimation.plafondProratise < resultat.estimation.plafond && (
+              ` Activité commencée en ${annee} : le plafond est proratisé à ${euros(resultat.estimation.plafondProratise)} pour la maladie et les allocations familiales, et la CURPS n’est pas due.`
+            )}
+            {parametresTenus && resultat.estimation.acreAppliquee && (
+              ' ACRE : l’exonération de début d’activité est déduite de la maladie, des indemnités journalières et des allocations familiales.'
+            )}
+            {' '}La régularisation est l'écart avec les cotisations provisionnelles appelées pour
             {' '}{annee}{REGULARISATION_DES_COTISATIONS_EXPORTEE
               ? ' : elle s’estime ci-dessous, sur les échéances que l’onglet Cotisations décrit, et seul l’avis de l’Urssaf la chiffre.'
               : " : seul l'avis de l'Urssaf la chiffre, les échéances de l'onglet Cotisations ne disant ni l'organisme qui les appelle ni l'année qu'elles paient."}
