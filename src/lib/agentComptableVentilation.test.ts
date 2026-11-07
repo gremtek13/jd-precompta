@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import * as lib_ventilationBanque from './ventilationBanque'
 import { describe, expect, it } from 'vitest'
 import { COMPTE_BANQUE } from './comptes'
 import type { ModeleComptable } from './engagement'
@@ -11,7 +12,7 @@ import {
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
-import { avecLePlan } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS VENTILÉS (30/09/2026, ligne 26.6).
@@ -108,7 +109,10 @@ const conforme = (l: LigneBancaire, parts: VentilationBancaire[], modele: Modele
   (ecritureDeLaVentilation(l, parts, CATEGORIES, modele, assujetti) ?? [])
     .map((e, i) => ecriture({ id: `${l.id}-${i}`, ligne_bancaire_id: l.id, date, compte: e.compte, sens: e.sens, montant: e.montant }))
 
-describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
+describe.each(PLANS_DES_GARDES)('agent-comptable / bloc VENTILATION (copie déployée), sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
+  const { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } = entreesSous(lib_ventilationBanque, plan)
   it('n’est pas la fonction de src/lib elle-même', () => {
     expect(deployee.ecritureDeLaVentilation).not.toBe(ecritureDeLaVentilation)
     expect(deployee.mouvementsVentilesDesynchronises).not.toBe(mouvementsVentilesDesynchronises)
@@ -149,18 +153,18 @@ describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
     }
     // La batterie exerce bien ce qui décide : la part personnelle suit le modèle, la commission se débite.
     const perso = (m: ModeleComptable) => sansLibelle(ecritureDeLaVentilation(ligne({}), cas[0][1], CATEGORIES, m, false))!.map((e) => e.compte)
-    expect(perso(TRESORERIE)).toEqual(['626000', '108000', COMPTE_BANQUE])
-    expect(perso(ENGAGEMENT_467)).toEqual(['626000', '467000', COMPTE_BANQUE])
+    expect(perso(TRESORERIE)).toEqual(traduire(['626000', '108000', COMPTE_BANQUE], plan))
+    expect(perso(ENGAGEMENT_467)).toEqual(traduire(['626000', '467000', COMPTE_BANQUE], plan))
     expect(sansLibelle(ecritureDeLaVentilation(ligne({ montant: 4950 }), cas[1][1], CATEGORIES, TRESORERIE, false)))
-      .toEqual([{ compte: '706000', sens: 'credit', montant: 5000 }, { compte: '627000', sens: 'debit', montant: 50 }, { compte: COMPTE_BANQUE, sens: 'debit', montant: 4950 }])
+      .toEqual(traduire([{ compte: '706000', sens: 'credit', montant: 5000 }, { compte: '627000', sens: 'debit', montant: 50 }, { compte: COMPTE_BANQUE, sens: 'debit', montant: 4950 }], plan))
     // Et la TVA : la recette taxée au hors taxe, le 445710 à côté — sur un dossier assujetti seulement.
     expect(sansLibelle(ecritureDeLaVentilation(ligne({ montant: 4950 }), cas[7][1], CATEGORIES, TRESORERIE, true)))
-      .toEqual([
+      .toEqual(traduire([
         { compte: '706000', sens: 'credit', montant: 4166.67 }, { compte: '445710', sens: 'credit', montant: 833.33 },
         { compte: '627000', sens: 'debit', montant: 50 }, { compte: COMPTE_BANQUE, sens: 'debit', montant: 4950 },
-      ])
+      ], plan))
     expect(sansLibelle(ecritureDeLaVentilation(ligne({ montant: 0.04 }), cas[11][1], CATEGORIES, TRESORERIE, true))![1])
-      .toEqual({ compte: '445710', sens: 'credit', montant: 0.01 })
+      .toEqual(traduire({ compte: '445710', sens: 'credit', montant: 0.01 }, plan))
   })
 
   // Les mouvements du relevé : des ventilations cohérentes et incohérentes, un mouvement ventilé mais pas
@@ -300,14 +304,16 @@ describe('agent-comptable / points_a_traiter lit les parts des mouvements ventil
   })
 })
 
-describe('le garde-fou du bloc VENTILATION sait encore échouer', () => {
+describe.each(PLANS_DES_GARDES)('le garde-fou du bloc VENTILATION sait encore échouer, sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } = entreesSous(lib_ventilationBanque, plan)
   const planter = (...remplacements: [string, string][]) => {
     let source = sourceDeployee()
     for (const [avant, apres] of remplacements) {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source, PLAN_PAR_DEFAUT)
+    return entreesSous(extraire(source, plan), plan)
   }
   // Une dérive doit faire échouer une ASSERTION. Une `ReferenceError` ou un `TypeError` levés par le test
   // lui-même — un helper hors de portée, une copie qui plante — passeraient sinon pour une dérive attrapée :
@@ -317,12 +323,13 @@ describe('le garde-fou du bloc VENTILATION sait encore échouer', () => {
     let erreur: unknown = null
     try { f() } catch (e) { erreur = e }
     expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    expect(String(erreur), 'un motif introuvable n’est pas une dérive attrapée').not.toMatch(/motif à planter introuvable|introuvable ou ambigu/)
   }
   const PAIEMENT = [part('l', 'tel', -84), part('l', null, -36)]
   const REMISE = [part('l', 'recettes', 5000), part('l', 'frais', -50)]
 
   it('attrape une part personnelle qui ne suit plus le modèle', () => {
-    const derivee = planter(['      compte = compteDuDirigeant(modele)\n    } else if (p.categorie_id) {', '      compte = COMPTE_EXPLOITANT\n    } else if (p.categorie_id) {'])
+    const derivee = planter(['      compte = compteDuDirigeant(modele)\n    } else if (p.categorie_id) {', '      compte = modele.plan.exploitant\n    } else if (p.categorie_id) {'])
     echoue(() => expect(derivee.ecritureDeLaVentilation({ montant: -120 }, PAIEMENT, CATEGORIES, ENGAGEMENT_455, false))
       .toEqual(sansLibelle(ecritureDeLaVentilation(ligne({}), PAIEMENT, CATEGORIES, ENGAGEMENT_455, false))))
   })
@@ -334,7 +341,7 @@ describe('le garde-fou du bloc VENTILATION sait encore échouer', () => {
   })
 
   it('attrape une banque écrite dans le mauvais sens', () => {
-    const derivee = planter(['  lignes.push({ compte: COMPTE_BANQUE, sens: ligne.montant > 0 ? "debit" : "credit"', '  lignes.push({ compte: COMPTE_BANQUE, sens: ligne.montant > 0 ? "credit" : "debit"'])
+    const derivee = planter(['  lignes.push({ compte: modele.plan.banque, sens: ligne.montant > 0 ? "debit" : "credit"', '  lignes.push({ compte: modele.plan.banque, sens: ligne.montant > 0 ? "credit" : "debit"'])
     echoue(() => expect(derivee.ecritureDeLaVentilation({ montant: -120 }, PAIEMENT, CATEGORIES, TRESORERIE, false))
       .toEqual(sansLibelle(ecritureDeLaVentilation(ligne({}), PAIEMENT, CATEGORIES, TRESORERIE, false))))
   })
@@ -416,7 +423,7 @@ describe('le garde-fou du bloc VENTILATION sait encore échouer', () => {
   const REMISE_TAXEE = [part('l', 'recettes', 5000, 'l-r', 20), part('l', 'frais', -50)]
 
   it('attrape une copie qui n’écrit plus la TVA collectée d’une part de recette', () => {
-    const derivee = planter(['    if (tva > 0) lignes.push({ compte: COMPTE_TVA_COLLECTEE, sens, montant: tva })\n', ''])
+    const derivee = planter(['    if (tva > 0) lignes.push({ compte: modele.plan.tva_collectee, sens, montant: tva })\n', ''])
     echoue(() => expect(derivee.ecritureDeLaVentilation({ montant: 4950 }, REMISE_TAXEE, CATEGORIES, TRESORERIE, true))
       .toEqual(sansLibelle(ecritureDeLaVentilation(ligne({ montant: 4950 }), REMISE_TAXEE, CATEGORIES, TRESORERIE, true))))
   })

@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import * as lib_virementPersonnel from './virementPersonnel'
+import * as lib_controles from './controles'
+import * as lib_affectationBanque from './affectationBanque'
 import { describe, expect, it } from 'vitest'
 import {
   mouvementsAffectes, mouvementsAffectesDesynchronises, natureDuCompte, recettesAffecteesSansTaux,
@@ -11,7 +14,7 @@ import { compteDuDirigeant, virementsPersonnelsAEcrire } from './virementPersonn
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
-import { avecLePlan } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlan, entreesSous } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS AFFECTÉS (29/09/2026, ligne 26.6).
@@ -144,7 +147,11 @@ const taxee = (id: string, ht: number, tva: number): EcritureBrouillon[] => [
   ecriture({ id: `${id}-b`, ligne_bancaire_id: id, compte: '512000', sens: 'debit', montant: Math.round((ht + tva) * 100) / 100 }),
 ]
 
-describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
+describe.each(PLANS_DES_GARDES)('agent-comptable / bloc AFFECTATION (copie déployée), sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
+  const { mouvementsAffectes, natureDuCompte, recettesAffecteesSansTaux } = entreesSous(lib_affectationBanque, plan)
+  const { categoriesSansCompte, categoriesSansPoste } = entreesSous(lib_controles, plan)
   it('n’est pas la fonction de src/lib elle-même', () => {
     // Sans ce contrôle, un garde qui comparerait src/lib à lui-même resterait vert quoi qu'il arrive
     // à la copie — l'aveuglement trouvé sur `agentComptableAnalyse`.
@@ -326,7 +333,10 @@ const ECRITURES_VIREMENTS: EcritureBrouillon[] = [
   ...conforme('apport', '108000', 800),
 ]
 
-describe('agent-comptable / bloc AFFECTATION — les virements personnels', () => {
+describe.each(PLANS_DES_GARDES)('agent-comptable / bloc AFFECTATION — les virements personnels, sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
+  const { compteDuDirigeant, virementsPersonnelsAEcrire } = entreesSous(lib_virementPersonnel, plan)
   it('lit le compte du dirigeant dans le modèle comme src/lib', () => {
     for (const modele of [TRESORERIE, ENGAGEMENT, { ...ENGAGEMENT, compteNotesDeFrais: '455000' as const }, { ...ENGAGEMENT, compteNotesDeFrais: '108000' as const }]) {
       expect(deployee.compteDuDirigeant(modele)).toBe(compteDuDirigeant(modele))
@@ -375,7 +385,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
     expect(corps).toContain('const pieceIdsImmobilisees = new Set(acquisitions.keys())')
     expect(corps).toContain('piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)')
     expect(corps).toContain('mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)')
-    expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere)')
+    expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere, plan)')
     expect(corps).toContain('recettesAffecteesSansTaux(affectes, dossier.assujetti_tva, frontiere)')
     expect(corps).toMatch(/mouvements_affectes_a_reaffecter: affectesAReaffecter\.length/)
     expect(corps).toMatch(/encaissements_affectes_ou_ventiles_en_recette_sans_taux_de_tva_sur_dossier_assujetti: recettesAffecteesSansTva\.length \+ recettesVentileesSansTva\.length/)
@@ -421,11 +431,15 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
   })
 })
 
-describe('le garde-fou sait encore échouer', () => {
+describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const { natureDuCompte } = entreesSous(lib_affectationBanque, plan)
+  const { categoriesSansCompte } = entreesSous(lib_controles, plan)
+  const { virementsPersonnelsAEcrire } = entreesSous(lib_virementPersonnel, plan)
   const planter = (avant: string, apres: string) => {
     const source = sourceDeployee()
     expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
-    return extraire(source.replace(avant, apres), PLAN_PAR_DEFAUT)
+    return entreesSous(extraire(source.replace(avant, apres), plan), plan)
   }
   // Une dérive doit faire échouer une ASSERTION. Une `ReferenceError` ou un `TypeError` levés par le test
   // lui-même — un helper hors de portée, une copie qui plante — passeraient sinon pour une dérive attrapée :
@@ -435,6 +449,7 @@ describe('le garde-fou sait encore échouer', () => {
     let erreur: unknown = null
     try { f() } catch (e) { erreur = e }
     expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    expect(String(erreur), 'un motif introuvable n’est pas une dérive attrapée').not.toMatch(/motif à planter introuvable|introuvable ou ambigu/)
   }
 
   it('attrape une copie qui ne compte plus les mouvements dans les catégories', () => {
@@ -474,12 +489,12 @@ describe('le garde-fou sait encore échouer', () => {
   const TAXEE = [ligne({ id: 'taxee', montant: 120, taux_tva: 20 })]
 
   it('attrape une copie qui n’écrit plus la ligne de TVA collectée', () => {
-    const derivee = planter('    ...(tva > 0 ? [{ compte: COMPTE_TVA_COLLECTEE, sens: sensCompte, montant: tva }] : []),\n', '')
+    const derivee = planter('    ...(tva > 0 ? [{ compte: plan.tva_collectee, sens: sensCompte, montant: tva }] : []),\n', '')
     echoue(() => memeResultat(taxee('taxee', 100, 20), TAXEE, true, derivee))
   })
 
   it('attrape une copie qui écrit la banque au hors taxe', () => {
-    const derivee = planter('{ compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant: Math.abs(ligne.montant) }', '{ compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant: ht }')
+    const derivee = planter('{ compte: plan.banque, sens: entree ? "debit" : "credit", montant: Math.abs(ligne.montant) }', '{ compte: plan.banque, sens: entree ? "debit" : "credit", montant: ht }')
     echoue(() => memeResultat(taxee('taxee', 100, 20), TAXEE, true, derivee))
   })
 
@@ -500,12 +515,12 @@ describe('le garde-fou sait encore échouer', () => {
 
   it('attrape une copie dont la TVA ne va plus au 445710', () => {
     const source = sourceDeployee()
-    const derivee = extraire(source.replace('const COMPTE_TVA_COLLECTEE = "445710"', 'const COMPTE_TVA_COLLECTEE = "445660"'), PLAN_PAR_DEFAUT)
+    const derivee = entreesSous(extraire(source.replace('const plan.tva_collectee = "445710"', 'const plan.tva_collectee = "445660"'), plan), plan)
     echoue(() => memeResultat(taxee('taxee', 100, 20), TAXEE, true, derivee))
   })
 
   it('attrape une copie qui écrit toujours sur le compte de l’exploitant', () => {
-    const derivee = planter('return modele.mode === "engagement" ? modele.compteNotesDeFrais : COMPTE_EXPLOITANT', 'return COMPTE_EXPLOITANT')
+    const derivee = planter('return modele.mode === "engagement" ? modele.compteNotesDeFrais : plan.exploitant', 'return plan.exploitant')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null)))
       .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null))))
   })
@@ -572,7 +587,7 @@ describe('le garde-fou sait encore échouer', () => {
 
   it('attrape une copie dont la contrepartie n’est plus la banque', () => {
     const source = sourceDeployee()
-    const derivee = extraire(source.replace('const COMPTE_BANQUE = "512000"', 'const COMPTE_BANQUE = "512100"'), PLAN_PAR_DEFAUT)
+    const derivee = entreesSous(extraire(source.replace('const plan.banque = "512000"', 'const plan.banque = "512100"'), plan), plan)
     echoue(() => memeResultat(conforme('encaissement', '706000', 100), [ligne({ id: 'encaissement' })], false, derivee))
   })
 })

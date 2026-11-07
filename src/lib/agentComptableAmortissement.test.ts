@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import * as lib_amortissements from './amortissements'
 import { describe, expect, it } from 'vitest'
 import {
   acquisitionsDesBiens, bienRepris, compteAmortissement, dotationAEcrire, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, rang360,
@@ -8,7 +9,7 @@ import {
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import { avecLePlan } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlan, entreesSous } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES DOTATIONS AUX AMORTISSEMENTS (01/10/2026, ligne 26.6, étape b).
@@ -122,7 +123,10 @@ const etats = (d: Dotation[]) => d.map((x) => [x.immobilisation.id, x.annee, x.m
 // Les frontières de validation sous lesquelles les deux copies sont comparées : aucune, puis 2024 et 2025 validés.
 const FRONTIERES = [null, '2024-12-31', '2025-12-31'] as const
 
-describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
+describe.each(PLANS_DES_GARDES)('agent-comptable / bloc AMORTISSEMENT (copie déployée), sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
+  const { acquisitionsDesBiens, bienRepris, compteAmortissement, dotationAEcrire, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, rang360 } = entreesSous(lib_amortissements, plan)
   it('n’est pas la fonction de src/lib elle-même', () => {
     // Sans ce garde, comparer la copie à src/lib pourrait comparer src/lib à elle-même.
     expect(deployee.dotationDeLExercice).not.toBe(dotationDeLExercice)
@@ -159,7 +163,7 @@ describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
     for (const ouverture of [null, '2026-01-01']) {
       for (const anneeCourante of [2025, 2026, 2027]) {
         for (const f of FRONTIERES) {
-          const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, f, PLAN_PAR_DEFAUT)
+          const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, f, plan)
           const copie = deployee.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, f)
           expect(etats(copie), `${ouverture} / ${anneeCourante} / ${f}`).toEqual(etats(attendu))
           expect(etats(deployee.dotationsEnDefaut(copie, anneeCourante)), `${ouverture} / ${anneeCourante} / ${f}`)
@@ -168,11 +172,11 @@ describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
       }
     }
     // Et la frontière décide : un exercice validé ne réclame plus sa dotation, même validée et divergente.
-    const reclamees = (f: string | null) => etats(dotationsEnDefaut(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, f, PLAN_PAR_DEFAUT), 2026))
+    const reclamees = (f: string | null) => etats(dotationsEnDefaut(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, f, plan), 2026))
     expect(reclamees(null).some(([, annee]) => annee === 2025)).toBe(true)
     expect(reclamees('2025-12-31').some(([, annee]) => (annee as number) <= 2025)).toBe(false)
     // Et le registre exerce bien chaque état : sans quoi l'égalité ci-dessus ne prouverait rien de lui.
-    const tous = new Set(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, null, PLAN_PAR_DEFAUT).map((d) => d.etat))
+    const tous = new Set(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, null, plan).map((d) => d.etat))
     expect([...tous].sort()).toEqual(['a_ecrire', 'a_reecrire', 'a_retirer', 'ecrite', 'validee'])
   })
 
@@ -228,30 +232,33 @@ describe('agent-comptable / points_a_traiter lit le registre et ses dotations', 
   // L'ACQUISITION : sans cette phrase, le modèle prendrait la facture d'un bien sur un compte de classe 2 — ou
   // celle d'un bien repris, qui ne s'écrit pas du tout — pour une anomalie à signaler.
   it('dit au modèle où s’écrit la facture d’un bien, et que celle d’un bien repris ne s’écrit pas', () => {
-    expect(source).toMatch(/La facture d'un BIEN IMMOBILISÉ[^\n]*s'écrit sur le compte d'immobilisation de sa nature[^\n]*sa TVA au 445620[^\n]*Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur\. Rien de cela n'est une anomalie\./)
-    expect(source).toMatch(/401000 Fournisseurs \(404000 Fournisseurs d'immobilisations pour celle d'un bien\)/)
+    expect(source).toMatch(/La facture d'un BIEN IMMOBILISÉ[^\n]*s'écrit sur le compte d'immobilisation de sa nature[^\n]*sa TVA au \$\{plan\.tva_immobilisations\}[^\n]*Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur\. Rien de cela n'est une anomalie\./)
+    expect(source).toMatch(/\$\{plan\.fournisseurs\} Fournisseurs \(\$\{plan\.fournisseurs_immobilisations\} Fournisseurs d'immobilisations pour celle d'un bien\)/)
   })
 
   it('dit au modèle qu’une dotation s’écrit sans pièce, au 31 décembre, et l’annonce dans l’outil', () => {
-    expect(source).toMatch(/Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le 681100 au débit, le compte d'amortissement du bien \(28…\) au crédit[^\n]*Ce n'est pas une anomalie\./)
+    expect(source).toMatch(/Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le \$\{plan\.dotations_amortissements\} au débit, le compte d'amortissement du bien \(28…\) au crédit[^\n]*Ce n'est pas une anomalie\./)
     expect(source).toMatch(/dotations aux amortissements à écrire \(exercice fini\) ou qui ne suivent plus le registre/)
   })
 })
 
-describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
+describe.each(PLANS_DES_GARDES)('le garde-fou du bloc AMORTISSEMENT sait encore échouer, sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const { bienRepris, compteAmortissement, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut } = entreesSous(lib_amortissements, plan)
   const planter = (...remplacements: [string, string][]) => {
     let source = sourceDeployee()
     for (const [avant, apres] of remplacements) {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source, PLAN_PAR_DEFAUT)
+    return entreesSous(extraire(source, plan), plan)
   }
   // Une dérive doit faire échouer une ASSERTION, pas lever pour une autre raison (voir le bloc EMPRUNT).
   const echoue = (f: () => void) => {
     let erreur: unknown = null
     try { f() } catch (e) { erreur = e }
     expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    expect(String(erreur), 'un motif introuvable n’est pas une dérive attrapée').not.toMatch(/motif à planter introuvable|introuvable ou ambigu/)
   }
   const memesDotations = (copie: Copie) => {
     for (const b of BIENS) {
@@ -262,7 +269,7 @@ describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
     }
   }
   const memeRegistre = (copie: Copie, anneeCourante = 2026, ouverture: string | null = null, frontiere: string | null = null) => {
-    const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, frontiere, PLAN_PAR_DEFAUT)
+    const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, frontiere, plan)
     const rendu = copie.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, frontiere)
     expect(etats(rendu)).toEqual(etats(attendu))
     expect(etats(copie.dotationsEnDefaut(rendu, anneeCourante))).toEqual(etats(dotationsEnDefaut(attendu, anneeCourante)))

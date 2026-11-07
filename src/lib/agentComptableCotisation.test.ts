@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import * as lib_cotisationRapprochee from './cotisationRapprochee'
 import { describe, expect, it } from 'vitest'
 import { COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT } from './comptes'
 import {
@@ -10,7 +11,7 @@ import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import { avecLePlan } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES ÉCHÉANCES DE COTISATION RAPPROCHÉES (01/10/2026, ligne 26.6,
@@ -148,7 +149,10 @@ const ECHEANCES: CotisationDeclaree[] = [
   cotisation({ id: 'payee-perso-csg', montant_csg_crds: 25, paiement_personnel_le: '2026-03-10' }),
 ]
 
-describe('agent-comptable / bloc COTISATION (copie déployée)', () => {
+describe.each(PLANS_DES_GARDES)('agent-comptable / bloc COTISATION (copie déployée), sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
+  const { cotisationsAEcrire, csgDeLEcriture, ecritureDeLaCotisation, montantDeLEcheance, rapprochementsCotisationRefuses, refusRapprochementCotisation } = entreesSous(lib_cotisationRapprochee, plan)
   it('n’est pas la fonction de src/lib elle-même', () => {
     expect(deployee.refusRapprochementCotisation).not.toBe(refusRapprochementCotisation)
     expect(deployee.cotisationsAEcrire).not.toBe(cotisationsAEcrire)
@@ -199,12 +203,12 @@ describe('agent-comptable / bloc COTISATION (copie déployée)', () => {
     for (const [montant, c] of cas) {
       for (const mode of MODES) {
         expect(deployee.ecritureDeLaCotisation({ montant }, c, mode), `${montant} / ${c.montant_csg_crds} / ${mode}`)
-          .toEqual(sansLibelle(ecritureDeLaCotisation(ligne({ montant }), c, mode, PLAN_PAR_DEFAUT)))
+          .toEqual(sansLibelle(ecritureDeLaCotisation(ligne({ montant }), c, mode, plan)))
       }
     }
     // Les comptes sont bien ceux de src/lib.
-    expect(sansLibelle(ecritureDeLaCotisation(ligne({}), cotisation({ montant_csg_crds: 48.5 }), 'tresorerie', PLAN_PAR_DEFAUT)).map((e) => e.compte))
-      .toEqual([COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT])
+    expect(sansLibelle(ecritureDeLaCotisation(ligne({}), cotisation({ montant_csg_crds: 48.5 }), 'tresorerie', plan)).map((e) => e.compte))
+      .toEqual(traduire([COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT], plan))
   })
 
   it('rend les mêmes échéances à écrire et les mêmes rapprochements refusés, dans les deux modèles', () => {
@@ -246,7 +250,7 @@ describe('agent-comptable / bloc COTISATION (copie déployée)', () => {
       // et la fin de leur exercice.
       for (const f of FRONTIERES) {
         expect(paires(deployee.cotisationsAEcrire(ecritures, lignes, cotisations, mode, f)), `${mode}, frontière ${f}`)
-          .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, mode, f, PLAN_PAR_DEFAUT)))
+          .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, mode, f, plan)))
         expect(paires(deployee.rapprochementsCotisationRefuses(lignes, cotisations, mode, f)), `${mode}, frontière ${f}`)
           .toEqual(paires(rapprochementsCotisationRefuses(lignes, cotisations, mode, f)))
       }
@@ -260,14 +264,14 @@ describe('agent-comptable / bloc COTISATION (copie déployée)', () => {
       ...conforme(lignes[4], cotisations[4], 'tresorerie').map((e) => (e.compte === COMPTE_BANQUE ? e : { ...e, montant: 450 })),
       ...conforme(lignes[8], cotisations[7], 'tresorerie'),
     ]
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', null, PLAN_PAR_DEFAUT)))
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', null, plan)))
       .toEqual(['l-absente→absente', 'l-perimee→perimee', 'l-autre-date→autre-date', 'l-autre-montant→autre-montant'])
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'engagement', null, PLAN_PAR_DEFAUT))).not.toContain('l-perimee→perimee')
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'engagement', null, plan))).not.toContain('l-perimee→perimee')
     expect(paires(rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie', null))).toEqual(['l-refusee→refusee'])
     // Et la frontière décide : un paiement d'un exercice validé ne se réclame plus, ni son écriture ni son refus — le
     // prélèvement du 9 mars reste ouvert sous une frontière au 5.
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-05', PLAN_PAR_DEFAUT))).toEqual([])
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-04', PLAN_PAR_DEFAUT)))
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-05', plan))).toEqual([])
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-04', plan)))
       .toEqual(['l-absente→absente', 'l-perimee→perimee', 'l-autre-date→autre-date', 'l-autre-montant→autre-montant'])
     expect(paires(rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie', '2026-03-05'))).toEqual([])
   })
@@ -286,37 +290,40 @@ describe('agent-comptable / points_a_traiter lit les échéances de cotisation',
   })
 
   it('rend les deux points de la Checklist, selon le modèle du dossier', () => {
-    expect(corps).toContain('const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)')
+    expect(corps).toContain('const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere, plan)')
     expect(corps).toContain('const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)')
     expect(corps).toMatch(/echeances_de_cotisation_payees_dont_l_ecriture_manque_ou_n_est_plus_a_jour: cotisationsSansEcriture\.length/)
     expect(corps).toMatch(/rapprochements_d_une_echeance_de_cotisation_qui_ne_peuvent_pas_s_ecrire: cotisationsRefusees\.length/)
   })
 
   it('dit au modèle qu’une échéance rapprochée s’écrit sans pièce, au 646000 et au 108000 en trésorerie', () => {
-    expect(source).toMatch(/Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000[^\n]*mode_comptable === "engagement" \? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement[^"]*"\}\. Ce n'est pas une anomalie\./)
+    expect(source).toMatch(/Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au \$\{plan\.banque\}, sans pièce : la cotisation au \$\{plan\.cotisations_exploitant\}[^\n]*mode_comptable === "engagement" \? "" : ` et sa CSG-CRDS, quand elle est saisie, au \$\{plan\.exploitant\} Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement[^`]*`\}\. Ce n'est pas une anomalie\./)
     // Et la description de l'outil les annonce, pour que le modèle sache les demander.
     expect(source).toMatch(/échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire/)
   })
 
   it('dit au modèle qu’une échéance payée depuis le compte personnel s’écrit face au compte du dirigeant, sans pièce ni mouvement', () => {
-    expect(source).toMatch(/Une ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant \(un apport\) s'écrit au jour de ce paiement, sans pièce ni mouvement, au journal des opérations diverses : la cotisation au 646000 face au compte du dirigeant — \$\{dossierRow\.mode_comptable === "engagement" \? dossierRow\.compte_notes_de_frais \+ ", toute l'échéance" : "108000 Compte de l'exploitant, pour l'échéance hors CSG-CRDS[^"]*"\}[^\n]*Une échéance ne se paie que d'une façon : par un mouvement rapproché ou par le compte personnel\. Ce n'est pas une anomalie\./)
+    expect(source).toMatch(/Une ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant \(un apport\) s'écrit au jour de ce paiement, sans pièce ni mouvement, au journal des opérations diverses : la cotisation au \$\{plan\.cotisations_exploitant\} face au compte du dirigeant — \$\{dossierRow\.mode_comptable === "engagement" \? dossierRow\.compte_notes_de_frais \+ ", toute l'échéance" : `\$\{plan\.exploitant\} Compte de l'exploitant, pour l'échéance hors CSG-CRDS[^`]*`\}[^\n]*Une échéance ne se paie que d'une façon : par un mouvement rapproché ou par le compte personnel\. Ce n'est pas une anomalie\./)
   })
 })
 
-describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
+describe.each(PLANS_DES_GARDES)('le garde-fou du bloc COTISATION sait encore échouer, sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const { cotisationsAEcrire, ecritureDeLaCotisation, montantDeLEcheance, rapprochementsCotisationRefuses, refusRapprochementCotisation } = entreesSous(lib_cotisationRapprochee, plan)
   const planter = (...remplacements: [string, string][]) => {
     let source = sourceDeployee()
     for (const [avant, apres] of remplacements) {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source, PLAN_PAR_DEFAUT)
+    return entreesSous(extraire(source, plan), plan)
   }
   // Une dérive doit faire échouer une ASSERTION, pas lever pour une autre raison (voir le bloc EMPRUNT).
   const echoue = (f: () => void) => {
     let erreur: unknown = null
     try { f() } catch (e) { erreur = e }
     expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    expect(String(erreur), 'un motif introuvable n’est pas une dérive attrapée').not.toMatch(/motif à planter introuvable|introuvable ou ambigu/)
   }
   const memesRefus = (copie: Copie) => {
     for (const l of MOUVEMENTS) {
@@ -337,7 +344,7 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
   it('attrape une CSG-CRDS portée au 108000 en engagement', () => {
     const derivee = planter(['  return mode === "tresorerie" && c.montant_csg_crds != null ? Math.abs(c.montant_csg_crds) : 0\n}\n\n// Pourquoi ce rapprochement', '  return c.montant_csg_crds != null ? Math.abs(c.montant_csg_crds) : 0\n}\n\n// Pourquoi ce rapprochement'])
     echoue(() => expect(derivee.ecritureDeLaCotisation({ montant: -500 }, cotisation({ montant_csg_crds: 48.5 }), 'engagement'))
-      .toEqual(sansLibelle(ecritureDeLaCotisation(ligne({}), cotisation({ montant_csg_crds: 48.5 }), 'engagement', PLAN_PAR_DEFAUT))))
+      .toEqual(sansLibelle(ecritureDeLaCotisation(ligne({}), cotisation({ montant_csg_crds: 48.5 }), 'engagement', plan))))
   })
 
   it('attrape un encaissement qui paierait un appel', () => {
@@ -394,13 +401,13 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
   it('attrape une écriture qui garde ses lignes à zéro', () => {
     const derivee = planter(['  ].filter((l) => l.montant > 0)\n}\n\n// Les mouvements rapprochés d\'une échéance LUE', '  ]\n}\n\n// Les mouvements rapprochés d\'une échéance LUE'])
     echoue(() => expect(derivee.ecritureDeLaCotisation({ montant: -500 }, cotisation({}), 'tresorerie'))
-      .toEqual(sansLibelle(ecritureDeLaCotisation(ligne({}), cotisation({}), 'tresorerie', PLAN_PAR_DEFAUT))))
+      .toEqual(sansLibelle(ecritureDeLaCotisation(ligne({}), cotisation({}), 'tresorerie', plan))))
   })
 
   it('attrape un remboursement écrit dans le sens d’un prélèvement', () => {
-    const derivee = planter(['  const sensCompte = sortie ? "debit" : "credit"\n  return [\n    { compte: COMPTE_BANQUE, sens: sortie ? "credit" : "debit", montant: total / 100 },\n    { compte: COMPTE_COTISATIONS_EXPLOITANT', '  const sensCompte = "debit"\n  return [\n    { compte: COMPTE_BANQUE, sens: "credit", montant: total / 100 },\n    { compte: COMPTE_COTISATIONS_EXPLOITANT'])
+    const derivee = planter(['  const sensCompte = sortie ? "debit" : "credit"\n  return [\n    { compte: plan.banque, sens: sortie ? "credit" : "debit", montant: total / 100 },\n    { compte: plan.cotisations_exploitant', '  const sensCompte = "debit"\n  return [\n    { compte: plan.banque, sens: "credit", montant: total / 100 },\n    { compte: plan.cotisations_exploitant'])
     echoue(() => expect(derivee.ecritureDeLaCotisation({ montant: 120 }, cotisation({ montant_appele: -120 }), 'tresorerie'))
-      .toEqual(sansLibelle(ecritureDeLaCotisation(ligne({ montant: 120 }), cotisation({ montant_appele: -120 }), 'tresorerie', PLAN_PAR_DEFAUT))))
+      .toEqual(sansLibelle(ecritureDeLaCotisation(ligne({ montant: 120 }), cotisation({ montant_appele: -120 }), 'tresorerie', plan))))
   })
 
   it('attrape un rapprochement refusé compté parmi les échéances à écrire', () => {
@@ -408,17 +415,17 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
     const lignes = [ligne({ id: 'l-refusee', cotisation_id: 'refusee', montant: 500 })]
     const cotisations = [cotisation({ id: 'refusee' })]
     echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null)))
-      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null, PLAN_PAR_DEFAUT))))
+      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null, plan))))
   })
 
   it('attrape une écriture jugée à la date de l’échéance plutôt qu’à celle du mouvement', () => {
-    const derivee = planter(['ecritureDeLaCotisation(ligne, cotisation, mode), ligne.date))', 'ecritureDeLaCotisation(ligne, cotisation, mode), cotisation.echeance))'])
+    const derivee = planter(['ecritureDeLaCotisation(ligne, cotisation, mode, plan), ligne.date))', 'ecritureDeLaCotisation(ligne, cotisation, mode, plan), cotisation.echeance))'])
     // Prélevée le 9 mars pour une échéance du 5 : l'écriture juste porte le 9.
     const lignes = [ligne({ id: 'l-tard', date: '2026-03-09' })]
     const cotisations = [cotisation({})]
     const ecritures = conforme(lignes[0], cotisations[0], 'tresorerie')
     echoue(() => expect(paires(derivee.cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie', null)))
-      .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie', null, PLAN_PAR_DEFAUT))))
+      .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie', null, plan))))
   })
 
   // LA FRONTIÈRE DE VALIDATION : un paiement d'un exercice validé ne se réclame plus, ni son écriture ni son refus.
@@ -427,7 +434,7 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
     const lignes = [ligne({ id: 'l-figee' })]
     const cotisations = [cotisation({})]
     echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', '2026-03-05')))
-      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', '2026-03-05', PLAN_PAR_DEFAUT))))
+      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', '2026-03-05', plan))))
   })
 
   it('attrape une copie qui dit le refus d’un rapprochement figé', () => {
@@ -443,6 +450,6 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
     const lignes = [ligne({ id: 'l-non-rapprochee', statut: 'non_rapprochee' })]
     const cotisations = [cotisation({})]
     echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null)))
-      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null, PLAN_PAR_DEFAUT))))
+      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null, plan))))
   })
 })
