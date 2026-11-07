@@ -278,11 +278,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   **Qui voit quoi** : `rls.sql` (tables et stockage, pas la suppression d'un fichier) ; `edgeFunctionsHttp.test.ts` (les
   Edge Functions en HTTP).
 - **Les droits d'une table que la RLS ne garde pas** (TRUNCATE, TRIGGER, REFERENCES, et MAINTAIN de PostgreSQL 17,
-  qu'`information_schema` tait : lire `aclexplode`) : `anon` et `authenticated` les portent sur les 85 tables, et le
-  défaut de `postgres` les donne à toute table neuve ; aucune voie de l'API ne les atteint. La migration `droits_hors_rls`
-  les retire (préparée, pas appliquée : DHR-Q1 ; le mot `truncate` la fait coller) ; le bloc HR de `rls.sql` et
-  `droitsHorsRls.sql` (réplique) l'éprouvent ; LOCK reste ouvert par UPDATE et DELETE ; le défaut de `supabase_admin` et
-  le schéma `net` sont hors de portée → « LES DROITS QUE LA RLS NE GARDE PAS ».
+  qu'`information_schema` tait : lire `aclexplode`) : `anon` et `authenticated` n'ont plus, sur les tables de public et
+  dans le défaut de `postgres`, que SELECT, INSERT, UPDATE et DELETE — migration `droits_hors_rls`, en production depuis
+  le 07/11/2026 (DHR-Q1 (A), collée : le mot `truncate` retient l'outil) ; une table neuve naît ainsi. Le bloc HR de
+  `rls.sql` le juge (une régression y est EN FAUTE), `droitsHorsRls.sql` (réplique) tente chaque geste ; LOCK reste ouvert
+  par UPDATE et DELETE ; le défaut de `supabase_admin` et le schéma `net` sont hors de portée → « LES DROITS QUE LA RLS NE
+  GARDE PAS », « LES DROITS QUE LA RLS NE GARDE PAS, EN PRODUCTION ».
 - RLS activée sur toutes les tables. **Les accès clients sont restreints** (dépôt de pièces, pas de montants,
   catégories, packs ni autres onglets) — ne jamais les élargir sans décision explicite. **Trois domaines font
   exception** (décision du cabinet du 09/10/2026, « remplacer MEG ») : les devis, les factures et leur facture
