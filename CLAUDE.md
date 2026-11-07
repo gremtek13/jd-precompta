@@ -698,8 +698,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 ### Base de données et schéma
 
 - **Un export de schéma n'est pas un schéma** : des objets créés hors migration vivent dans `socle/`, que `socle.py` et
-  `inventaire.py` comparent au catalogue ; la procédure qui rejouerait l'export n'a jamais tourné (ligne 20.6, sans
-  urgence) → « UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA ».
+  `inventaire.py` comparent au catalogue ; l'export se REJOUE dans une base vide depuis le 07/11/2026
+  (`supabase/schema/reprise/rejouer.py`, le socle intercalé objet par objet, PLAN_DE_REPRISE.md §4) et redonne la
+  production, `signature.sql` égal sur ses neuf familles ; un écart créé hors migration (`pieces.uploaded_by` nullable)
+  vit dans `reprise/ecarts_hors_export.sql` ; à rejouer après chaque lot de migrations → « UN EXPORT DE SCHÉMA N'EST PAS
+  UN SCHÉMA », « L'EXPORT REJOUÉ DANS UNE BASE VIDE ».
 - **Une colonne GÉNÉRÉE ne se restaure pas, elle se recalcule** (`COLONNES_GENEREES`, `planReinsertion`) ; une empreinte
   qu'une GARDE vérifie reste une colonne ordinaire → « UNE COLONNE GÉNÉRÉE NE SE RESTAURE PAS, ELLE SE RECALCULE ».
 - **La sauvegarde a deux formats** (`VERSION_SAUVEGARDE`) : 1, les lignes ; 2, plus les logos des factures (`fichiers`,
