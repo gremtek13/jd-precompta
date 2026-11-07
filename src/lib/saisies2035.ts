@@ -1,7 +1,7 @@
 import { lireMontantSaisi } from './encaissementsAffichage'
 
 // LES CASES DE LA 2035 QUE LA COMPTABILITÉ NE DONNE PAS, SAISIES PAR LE CABINET (étapes 2035S3 à S5). La table
-// `saisies_2035` (migration préparée `saisies_2035`, supabase/preparees/20261107180000_saisies_2035.sql) en porte une ligne
+// `saisies_2035` (migration `saisies_2035`, en production depuis le 07/11/2026, supabase/schema/20261107172059_saisies_2035.sql) en porte une ligne
 // par dossier, exercice et case ; `enregistrer_saisies_2035` les écrit, tout ou rien, chacune contre la valeur lue qu'elle
 // remplace. Le moteur les reçoit en entrée OBLIGATOIRE (`valeursDesCases`, lib/cases2035.ts) ; la carte « Saisies du
 // cabinet » de Clôture les offre. Le récit : HISTORIQUE.md, « 07/11/2026 — LA 2035 : LES SAISIES DU CABINET (2035S3 À S5)
@@ -11,11 +11,19 @@ import { lireMontantSaisi } from './encaissementsAffichage'
 // 2035-sd_5385.pdf) : renvois (17) CC, (21) CL et ses « dont », (24) DE, (25) DB, (26) le revenu brut social. Le
 // formulaire 2035-B-SD 2026 (public/formulaires/2035-sd-2026.pdf), ligne 43 : les douze cases « dont » de CL.
 
-// LE DRAPEAU DE LA MIGRATION, BAISSÉ : la production n'a pas la table. Baissé, rien ne la lit — ni Clôture, ni la
-// sauvegarde (`auPlanDesSaisies2035`, lib/sauvegarde.ts) —, les douze « dont » de CL ne sont pas au tableau des cases
-// (`casesDu2035`), et la 2035 est celle d'hier, au centime et à la clé près (cases2035.test.ts le prouve). Il se lève
-// quand la migration est en base et dans l'export, en simulation d'abord, la suite ENTIÈRE ; 2035S-Q1 : quand la 2035 de
-// 2025 déposée porte une de ces cases.
+// DEUX CONSTANTES, DEPUIS LE 07/11/2026 : la migration est en production (version 20261107172059, 2035S3-Q3), mais
+// l'écran attend la 2035 de 2025 déposée. La table EXISTE : elle entre au plan de sauvegarde, sans quoi une saisie écrite
+// en base (par l'outil, ou l'écran levé plus tard) se perdrait à la restauration ; l'écran, lui, reste baissé.
+//
+// `SAISIES_2035_EN_BASE`, LEVÉE : la table est en base et dans l'export. La sauvegarde la lit (`auPlanDesSaisies2035`,
+// lib/sauvegarde.ts) ; rebaissée, la sauvegarde ne la nommerait plus (l'état d'avant, que sauvegardeSaisies2035.test.ts
+// éprouve encore). Elle ne se rebaisse qu'avec le retour de la migration.
+export const SAISIES_2035_EN_BASE = true
+
+// `SAISIES_2035_EXPORTEES`, L'INTERRUPTEUR DE L'ÉCRAN, BAISSÉ : baissé, ni Clôture ni sa lecture (lib/saisies2035Lecture.ts)
+// ne touchent la table, les douze « dont » de CL ne sont pas au tableau des cases (`casesDu2035`), et la 2035 est celle
+// d'hier, au centime et à la clé près (cases2035.test.ts le prouve). La réponse du cabinet (2035S3-Q3, après 2035S-Q1) le
+// lève seulement si la 2035 de 2025 déposée porte l'une de ces cases, en simulation d'abord, la suite ENTIÈRE.
 export const SAISIES_2035_EXPORTEES = false
 
 /** La forme d'un code que la table accepte (sa contrainte `saisies_2035_code`), dans l'ordre du formulaire. */

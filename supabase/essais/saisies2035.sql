@@ -1,5 +1,5 @@
--- LA 2035 : LES SAISIES DU CABINET (étapes 2035S3 à S5 ; la migration `saisies_2035`, PRÉPARÉE le 07/11/2026,
--- supabase/preparees/). Le récit : HISTORIQUE.md, « 07/11/2026 — LA 2035 : LES SAISIES DU CABINET (2035S3 À S5) (PRÉPARÉE,
+-- LA 2035 : LES SAISIES DU CABINET (étapes 2035S3 à S5 ; la migration `saisies_2035`, en production depuis le 07/11/2026,
+-- supabase/schema/20261107172059_saisies_2035.sql). Le récit : HISTORIQUE.md, « 07/11/2026 — LA 2035 : LES SAISIES DU CABINET (2035S3 À S5) (PRÉPARÉE,
 -- PAS APPLIQUÉE) ». À rejouer par `execute_sql` après toute migration qui touche `saisies_2035`, ses contraintes,
 -- `garder_saisie_2035_validee`, `enregistrer_saisies_2035`, `admin_du_dossier` ou la frontière de la validation.
 --

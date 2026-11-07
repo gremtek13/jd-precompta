@@ -49478,3 +49478,15 @@ les retours nomment le nouveau chemin. Levés : `TRACE_DES_DROITS_PREVUE` (la ta
 La garde de B1 attend `tracer_les_droits` à `808b209e…`, celle de la production. Contrôles égaux : dérive 183
 `facc8ecd…`, socle 81 `3a79a158…`, inventaire 2 499 `2d815320…` ; `anon` et `authenticated` n'ont sur les deux tables
 neuves que SELECT, INSERT, UPDATE, DELETE.
+
+### 07/11/2026 — LES SAISIES DE LA 2035 EN PRODUCTION (2035S3-Q3)
+
+Sur l'accord du cabinet (2035S3-Q3 : « Oui, appliquez-la ») : `saisies_2035` par l'outil (`20261107172059`), l'historique,
+CR retirés, `186108a9…`, égal au fichier, passé à l'export inchangé ; le retour et l'essai nomment le nouveau chemin.
+Tranchées à la recommandation : 2035S3-Q1, une ligne par case, le détail en note annexe ; 2035S3-Q2, CL saisi comme le
+formulaire l'imprime, chaque « dont » au plus CL. Deux constantes désormais : `SAISIES_2035_EN_BASE`, levée, met la
+table au plan de sauvegarde (une saisie écrite en base sans que la sauvegarde la lise se perdrait) ;
+`SAISIES_2035_EXPORTEES`, l'écran, les cases et Clôture, reste baissé jusqu'à la 2035 de 2025 déposée : aucune 2035 ne
+change. `types.ts` : `LigneSaisies2035`. Le leurre sort `saisies2035` (22 cas). Contrôles : dérive 184 `d39944d4…`, la
+production à 186 sans les deux migrations des cotisations (même empreinte) ; socle et inventaire égaux une fois leur lot
+rejoint ; `anon` et `authenticated` n'ont sur la table que SELECT, INSERT, UPDATE, DELETE.

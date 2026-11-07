@@ -341,7 +341,9 @@ describe('les essais de la base, rejoués en production', () => {
     // sortis (P1-trace, C5, DEVC et C4a en production, 20261107163158, 20261107163303, 20261107163632 et 20261107164102 ;
     // aucun ne cherche un semis, ils se jouent comme des essais de la production) ; `troisCasesDeLAcces` reste, son modèle
     // « apres » ne portant plus que B1.
-    expect(cas.length).toBe(23)
+    // Vingt-deux le même jour : `saisies2035` sorti (2035S3 à S5 en production, 20261107172059, 2035S3-Q3 ; l'essai ne
+    // cherche aucun semis, il se joue comme un essai de la production).
+    expect(cas.length).toBe(22)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

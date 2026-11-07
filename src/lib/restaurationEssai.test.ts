@@ -10,7 +10,7 @@ import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
-import { SAISIES_2035_EXPORTEES } from './saisies2035'
+import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   CHEMINS_DOSSIER,
@@ -544,7 +544,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLaTraceDuJour, devis) : avecLaTraceDuJour
   const avecLesSituationsDuJour = SITUATIONS_PUBLIEES_EXPORTEES ? avecLesSituations(avecLesDevisDuJour, situations) : avecLesDevisDuJour
   const saisies2035 = blocDesSaisies2035(texteDeLEssai)
-  const avecLesSaisies2035DuJour = SAISIES_2035_EXPORTEES ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
+  const avecLesSaisies2035DuJour = SAISIES_2035_EN_BASE ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
   const parametresDesCotisations = blocDesParametresDesCotisations(texteDeLEssai)
   const avecLesCotisationsDuJour = PARAMETRES_DES_COTISATIONS_EXPORTES
     ? avecLesParametresDesCotisations(avecLesSaisies2035DuJour, parametresDesCotisations) : avecLesSaisies2035DuJour

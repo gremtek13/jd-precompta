@@ -1,8 +1,9 @@
--- Le retour de la migration `saisies_2035` (20261107180000, étapes 2035S3 à S5). Il DÉTRUIT la table des saisies du
+-- Le retour de la migration `saisies_2035` (supabase/schema/20261107172059_saisies_2035.sql, en production depuis le
+-- 07/11/2026 ; étapes 2035S3 à S5). Il DÉTRUIT la table des saisies du
 -- cabinet, sa garde et sa fonction d'écriture : il refuse tant qu'une saisie non nulle y vit (la perdre changerait la 2035
 -- d'un exercice), et se colle dans l'éditeur SQL (le mot `drop` le fait coller). Avant lui : baisser
--- `SAISIES_2035_EXPORTEES` (src/lib/saisies2035.ts) et le publier, sans quoi l'écran et la sauvegarde liraient une table
--- absente ; après lui, rejouer les trois contrôles de l'export et retirer le fichier de la migration de supabase/schema/.
+-- `SAISIES_2035_EXPORTEES` et `SAISIES_2035_EN_BASE` (src/lib/saisies2035.ts) et le publier, sans quoi l'écran et la
+-- sauvegarde liraient une table absente ; après lui, rejouer les trois contrôles de l'export et retirer le fichier de la migration de supabase/schema/.
 
 do $garde$
 begin
