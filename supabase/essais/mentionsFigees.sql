@@ -225,9 +225,11 @@ begin
         'OK', 'CHECK (((code_service IS NULL) OR COALESCE((type_client = ''organisme_public''::text), false)))', null),
       -- Celle d'hier, ou celle de la correction de la facture (31/10/2026, reprise le 02/11/2026 pour FACTURE-Q1 ; migration
       -- `facture_dates_centimes_mention_tva`), qui la recopie au caractère près et n'y ajoute que ce que la validation exige
-      -- (supabase/essais/factures.sql, 107 à 116).
-      ('0g', 'valeur', 'la garde des factures validées est celle d''hier, ou celle de la correction de la facture : elle fige toute colonne hors de v_modifiables', 'proprietaire', null,
-        $q$select (md5(replace(p.prosrc, chr(13), '')) in ('e3dfa6dc1b3f127c66bab26d5637ef89', 'd79a5f95f74afe0077049c4b2531ebe3'))::text from pg_proc p
+      -- (supabase/essais/factures.sql, 107 à 116) ; ou celle d'e7a (07/11/2026 ; migration `facture_internationale`, préparée),
+      -- qui recopie celle-ci et n'y ajoute que son bloc et la mention selon le régime (src/lib/factureInternationale.test.ts
+      -- le vérifie, et que cette liste porte son empreinte).
+      ('0g', 'valeur', 'la garde des factures validées est celle d''hier, celle de la correction de la facture ou celle d''e7a : elle fige toute colonne hors de v_modifiables', 'proprietaire', null,
+        $q$select (md5(replace(p.prosrc, chr(13), '')) in ('e3dfa6dc1b3f127c66bab26d5637ef89', 'd79a5f95f74afe0077049c4b2531ebe3', '7d955795243745ab03e4e2bd152c9ed4'))::text from pg_proc p
             where p.oid = 'public.garder_factures_validees()'::regprocedure$q$, 'OK', 'true', null),
       ('0h', 'valeur', 'les factures validées avant l''étape gardent leurs colonnes nulles, et leurs lignes aussi', 'proprietaire', null,
         $q$select (select count(*) from factures_emises f where f.validated_at < '2026-10-28' and f.dossier_id not in ('{DD}')

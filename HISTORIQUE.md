@@ -49211,6 +49211,12 @@ Sources : CGI, art. 259, 259 A, 259 B, 262, 262 ter, 286 ter, ann. II, art. 242 
 § 50 à § 105 (versions de 2013 et 2019 ; celle du 08/01/2025 à relire) ; directive 2006/112/CE, art. 44 et 196 ; EN 16931.
 Sur une copie de la réplique mère : l'essai 50 sur 50 (40 contrôles, 10 mutations) ; six mutations de la migration,
 toutes mordent ; rls.sql identique avant et après ; restauration IDENTIQUE ; banc SÛR ; le retour rend les corps d'hier.
+Relecture adverse (deux relecteurs) : un franchisé validait une livraison intracommunautaire exonérée (art. 262 ter, I),
+que la franchise exclut (directive 2006/112/CE, art. 139, 1, premier alinéa), et la base y refusait la mention de l'art.
+293 B ; seize refus : celui-ci avant le numéro du vendeur, qui ne dit plus la franchise que d'une autoliquidation, et
+le module prend le statut de TVA. L'avoir se juge comme sa facture (une ligne taxée le refuse) ; le retour vérifie les
+deux corps posés ; l'Union au code du pays, limite dite (E7A-Q4). Copie de la mère 17 : l'essai 56 sur 56, trois
+mutations mordent, rls.sql 106/0/79 inchangé, huit essais des factures identiques ; mentionsFigees 0g accepte la garde.
 
 ### 07/11/2026 — LA RÉGULARISATION DES COTISATIONS (LIGNE 27, TNS-Q2) (PRÉPARÉE, PAS APPLIQUÉE)
 

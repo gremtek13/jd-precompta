@@ -10,11 +10,15 @@
 --   - LES FORMES (23514) : le pays (la France, deux minuscules), le numéro (un blanc), le régime inconnu ;
 --   - L'ÉCRITURE du brouillon par `enregistrer_facture` : les trois colonnes écrites, gardées quand la clé est absente,
 --     effacées quand elle est vide ; un IBAN dans le numéro de TVA du client refusé ;
---   - LA VALIDATION : une autoliquidation conforme se valide, puis ne se modifie plus ; chacun des quinze refus du bloc
---     « E7A » de la garde (22023, les mots du module), chacun avec, à côté, le cas qui passe ; la mention de TVA d'un
---     franchisé refusée sous une autoliquidation, exigée sous une opération taxable en France ; une facture qui ne porte
---     aucune des trois colonnes se valide comme hier ; l'avoir reprend les trois colonnes de sa facture et se juge sur la
---     mention de TVA ; le client « Ventes » écrit et voit les mêmes refus ;
+--   - LA VALIDATION : une autoliquidation conforme se valide, puis ne se modifie plus ; chacun des seize refus du bloc
+--     « E7A » de la garde (22023, les mots du module), chacun avec, à côté, le cas qui passe ; la livraison
+--     intracommunautaire d'un franchisé refusée, avant le numéro du vendeur comme avec le numéro attribué (la franchise
+--     exclut l'exonération), sa vente validée en opération taxable en France sous la mention de la franchise ; le numéro
+--     du vendeur d'un exonéré sous ses mots ; la mention de TVA d'un franchisé refusée sous une autoliquidation, exigée
+--     sous une opération taxable en France ; une facture qui ne porte aucune des trois colonnes se valide comme hier ;
+--     l'avoir reprend les trois colonnes de sa facture et se juge comme elle (une ligne taxée le refuse ; l'avoir d'une
+--     facture d'avant, la même ligne comprise, se valide comme hier) et sur la mention de TVA ; le client « Ventes » écrit
+--     et voit les mêmes refus ;
 --   - et que RIEN ne reste en base.
 -- Tout se joue dans trois dossiers JETABLES du cabinet du chef (A, redevable ; F, en franchise sans numéro attribué ;
 -- V, basculé, où le client de l'essai a un accès « Ventes »), au sein d'un bloc qui s'annule entièrement à la fin
@@ -73,6 +77,7 @@ begin
     'LB', '[{"designation":"ESSAI E7A BIENS","quantite":1,"prix_unitaire_ht":100,"taux_tva":0,"nature":"biens"}]',
     'L20', '[{"designation":"ESSAI E7A TAXEE","quantite":1,"prix_unitaire_ht":100,"taux_tva":20,"nature":"services"}]',
     'LAV', '[{"designation":"ESSAI E7A AVOIR","quantite":-1,"prix_unitaire_ht":100,"taux_tva":0,"nature":"services"}]',
+    'LAV20', '[{"designation":"ESSAI E7A AVOIR TAXE","quantite":-0.5,"prix_unitaire_ht":100,"taux_tva":20,"nature":"services"}]',
     'LIRE', 'select coalesce(regime_international, ''∅'') || ''|'' || coalesce(client_pays, ''∅'') || ''|'' || coalesce(client_numero_tva, ''∅'') || ''|'' || statut from factures_emises where id = ');
 
   select string_agg(n::text, '/') into avant from (values
@@ -221,12 +226,18 @@ begin
       ('M46', 'mutation', 'le contrôle 46, le numéro attribué coché : il se valide', 'chef',
         $q$update dossiers set numero_tva_attribue = true where id = '{DF}' returning id::text ;; select f.facture_id::text from enregistrer_facture('{DF}', null, '{BASE}'::jsonb || '{"emetteur_nom":"ESSAI E7A FRANCHISE SAS"}'::jsonb, '{L0}'::jsonb, true) f$q$,
         'OK', null, null),
+      ('46b', 'controle', 'une livraison intracommunautaire d''un exonéré sans numéro attribué : le numéro du vendeur, sans la franchise', 'chef',
+        $q$update dossiers set statut_tva = 'exonere', article_exoneration = 'cgi_261_4_1' where id = '{DF}' returning id::text ;; select f.facture_id::text from enregistrer_facture('{DF}', null, '{BASE}'::jsonb || '{"regime_international":"livraison_intracommunautaire","nature_operation":"biens"}'::jsonb, '{LB}'::jsonb, true) f$q$,
+        '22023', 'La facture porte une livraison intracommunautaire, qui exige le numéro de TVA du vendeur (CGI, ann. II, art. 242 nonies A, I, 3° et 4°) : ce dossier n''en imprime aucun. Exonéré, le cabinet coche le numéro attribué (CGI, art. 286 ter) ; un statut de TVA à préciser se précise.', null),
       ('47', 'controle', 'une autoliquidation dont une ligne est taxée', 'chef',
         $q$select f.facture_id::text from enregistrer_facture('{DA}', null, '{BASE}'::jsonb || '{"montant_tva":20,"montant_ttc":120}'::jsonb, '{L20}'::jsonb, true) f$q$,
         '22023', 'La facture porte une autoliquidation par le client, que la TVA française ne taxe pas : chaque ligne est au taux 0.', null),
       ('48', 'controle', 'une autoliquidation dont une ligne est taxée, sa TVA enregistrée nulle : la ligne suffit', 'chef',
         $q$select f.facture_id::text from enregistrer_facture('{DA}', null, '{BASE}'::jsonb, '{L20}'::jsonb, true) f$q$,
         '22023', 'La facture porte une autoliquidation par le client, que la TVA française ne taxe pas : chaque ligne est au taux 0.', null),
+      ('49', 'controle', 'une livraison intracommunautaire d''un franchisé sans numéro attribué : la franchise, avant le numéro du vendeur', 'chef',
+        $q$select f.facture_id::text from enregistrer_facture('{DF}', null, '{BASE}'::jsonb || '{"regime_international":"livraison_intracommunautaire","nature_operation":"biens"}'::jsonb, '{LB}'::jsonb, true) f$q$,
+        '22023', 'La facture porte une livraison intracommunautaire, que la franchise en base exclut : %', null),
 
       -- ══ 5. La mention de TVA du dossier, selon le régime ══════════
       ('f3', 'fait', 'F : le numéro attribué coché', 'chef',
@@ -246,6 +257,12 @@ begin
       ('53', 'controle', 'une facture d''avant (un client établi hors de France, aucune des trois colonnes) se valide comme hier', 'chef',
         $q$select f.facture_id::text from enregistrer_facture('{DA}', null, '{BASE}'::jsonb - 'client_pays' - 'client_numero_tva' - 'regime_international', '{L0}'::jsonb, true) f ;; {LIRE} '{RENDU}'$q$,
         'OK', '∅|∅|∅|validee', null),
+      ('54', 'controle', 'une livraison intracommunautaire d''un franchisé au numéro attribué : refusée, la franchise exclut l''exonération', 'chef',
+        $q$select f.facture_id::text from enregistrer_facture('{DF}', null, '{BASE}'::jsonb || '{"regime_international":"livraison_intracommunautaire","nature_operation":"biens"}'::jsonb, '{LB}'::jsonb, true) f$q$,
+        '22023', 'La facture porte une livraison intracommunautaire, que la franchise en base exclut : un dossier en franchise ne bénéficie pas de l''exonération de l''art. 262 ter, I du CGI (directive 2006/112/CE, art. 139, 1, premier alinéa), et son client n''a aucune acquisition intracommunautaire à déclarer. Elle porte le régime d''une opération taxable en France, sous la mention de la franchise, « TVA non applicable, art. 293 B du CGI. ».', null),
+      ('M54', 'mutation', 'le contrôle 54 en opération taxable en France, sous la mention de la franchise : il se valide', 'chef',
+        $q$select f.facture_id::text from enregistrer_facture('{DF}', null, '{BASE}'::jsonb || '{"regime_international":"taxable_en_france","nature_operation":"biens","mentions_legales":"TVA non applicable, art. 293 B du CGI."}'::jsonb, '{LB}'::jsonb, true) f ;; {LIRE} '{RENDU}'$q$,
+        'OK', 'taxable_en_france|DE|DE123456789|validee', null),
 
       -- ══ 6. L'avoir ══════════
       ('60', 'controle', 'l''avoir de FV reprend ses trois colonnes', 'chef',
@@ -259,6 +276,14 @@ begin
       ('M61', 'mutation', 'le contrôle 61 sans la mention : il se valide', 'chef',
         $q$select f.facture_id::text from enregistrer_facture('{DF}', null, '{"type":"avoir","facture_origine_id":"{FVF}","date_emission":"{JOUR}","montant_ht":-100,"montant_tva":0,"montant_ttc":-100,"mentions_legales":"Avoir"}'::jsonb, '{LAV}'::jsonb, true) f ;; {LIRE} '{RENDU}'$q$,
         'OK', 'autoliquidation_ue|DE|DE123456789|validee', null),
+      ('62', 'controle', 'l''avoir de FV dont une ligne est taxée : refusé, comme sa facture', 'chef',
+        $q$select f.facture_id::text from enregistrer_facture('{DA}', null, '{"type":"avoir","facture_origine_id":"{FV}","date_emission":"{JOUR}","montant_ht":-50,"montant_tva":-10,"montant_ttc":-60,"mentions_legales":"Avoir"}'::jsonb, '{LAV20}'::jsonb, true) f$q$,
+        '22023', 'La facture porte une autoliquidation par le client, que la TVA française ne taxe pas : chaque ligne est au taux 0.', null),
+      ('f5', 'fait', 'FA : une facture d''avant validée de A (aucune des trois colonnes)', 'chef',
+        $q$select f.facture_id::text from enregistrer_facture('{DA}', null, '{BASE}'::jsonb - 'client_pays' - 'client_numero_tva' - 'regime_international', '{L0}'::jsonb, true) f$q$, 'OK', null, 'FA'),
+      ('M62', 'mutation', 'le contrôle 62 sur l''avoir d''une facture d''avant : il se valide comme hier', 'chef',
+        $q$select f.facture_id::text from enregistrer_facture('{DA}', null, '{"type":"avoir","facture_origine_id":"{FA}","date_emission":"{JOUR}","montant_ht":-50,"montant_tva":-10,"montant_ttc":-60,"mentions_legales":"Avoir"}'::jsonb, '{LAV20}'::jsonb, true) f ;; {LIRE} '{RENDU}'$q$,
+        'OK', '∅|∅|∅|validee', null),
 
       -- ══ 7. Le client « Ventes » ══════════
       ('70', 'controle', 'le client « Ventes » écrit les trois colonnes sur un brouillon', 'client',

@@ -89,15 +89,32 @@ describe('la migration facture_internationale, confrontée à l’export', () =>
     expect(restants.filter((l) => /v_hors_tva|E7a|au régime|jamais celle du dossier|raise exception 'Les mentions légales portent|v_mention, v_regime_lu/.test(l))).toHaveLength(7)
   })
 
+  it('la garde du retour vérifie, à leurs empreintes, les deux fonctions que la migration pose', () => {
+    expect([...RETOUR.matchAll(/is distinct from '([0-9a-f]{32})'/g)].map((m) => m[1])).toEqual([md5(EF.corps), md5(GARDE.corps)])
+    const garde = RETOUR.slice(RETOUR.indexOf('do $garde$'), RETOUR.indexOf('$garde$;'))
+    expect(garde.indexOf("to_regprocedure('public.enregistrer_facture(uuid, uuid, jsonb, jsonb, boolean)')")).toBeGreaterThan(0)
+    expect(garde.indexOf("to_regprocedure('public.garder_factures_validees()')")).toBeGreaterThan(0)
+    expect(RETOUR.indexOf('do $garde$')).toBeLessThan(RETOUR.indexOf('drop column'))
+  })
+
   it('le retour reprend les deux fonctions de l’export au caractère près, puis retire les trois colonnes', () => {
     expect(fonction(RETOUR, 'enregistrer_facture').definition).toBe(EXPORT_EF.definition)
     expect(fonction(RETOUR, 'garder_factures_validees').definition).toBe(EXPORT_GARDE.definition)
     expect(RETOUR).toMatch(/drop column client_pays,\n {2}drop column client_numero_tva,\n {2}drop column regime_international;/)
   })
 
-  it('les quinze refus du bloc, dans l’ordre et sous les mots du module, tous en 22023', () => {
+  it('les seize refus du bloc, dans l’ordre et sous les mots du module, tous en 22023', () => {
     expect(messagesSql(BLOC)).toEqual([...R])
-    expect(codesSql(BLOC)).toEqual(Array(15).fill('22023'))
+    expect(codesSql(BLOC)).toEqual(Array(16).fill('22023'))
+    // La livraison intracommunautaire d'un franchisé renvoie au régime d'une opération taxable en France et à la mention
+    // de la franchise ; le numéro du vendeur ne dit la franchise que d'une autoliquidation.
+    expect(R[6]).toContain(`le régime d'${LIBELLES_DES_REGIMES.taxable_en_france}`)
+    expect(R[6]).toContain(`« ${MENTION_FRANCHISE} »`)
+    expect(BLOC).toContain("if new.regime_international = 'livraison_intracommunautaire' and new.statut_tva = 'franchise' then")
+    expect(BLOC).toContain("case new.regime_international when 'autoliquidation_ue' then 'En franchise ou exonéré' else 'Exonéré' end")
+    // La facture et l'avoir : le bloc ne regarde plus le type.
+    expect(BLOC).toContain('      if num_nonnulls(new.client_pays, new.client_numero_tva, new.regime_international) > 0 then')
+    expect(BLOC).not.toMatch(/new\.type\b/)
     const apres = GARDE.corps.slice(GARDE.corps.indexOf('-- ── FIN E7A ──'))
     expect(messagesSql(apres)).toContain(REFUS_DE_LA_MENTION_DU_DOSSIER)
     expect(messagesSql(GARDE.corps).filter((m) => m.startsWith('Les mentions légales ne portent pas la mention de TVA du dossier'))).toHaveLength(1)
@@ -126,6 +143,13 @@ describe('la migration facture_internationale, confrontée à l’export', () =>
     }
   })
 
+  it('l’essai des mentions figées accepte la garde que la migration pose (son contrôle 0g)', () => {
+    const essai = lire('supabase/essais/mentionsFigees.sql')
+    const controle = essai.slice(essai.indexOf("('0g'"), essai.indexOf("('0h'"))
+    expect(controle).toContain(`'${md5(GARDE.corps)}'`)
+    expect(controle).toContain(`'${md5(EXPORT_GARDE.corps)}'`)
+  })
+
   it('le drapeau reste baissé tant que la migration est préparée', () => {
     const preparee = fichiersPrepares().some((f) => /_facture_internationale\.sql$/.test(f.chemin))
     expect(FACTURE_INTERNATIONALE_EXPORTEE).toBe(!preparee)
@@ -134,10 +158,12 @@ describe('la migration facture_internationale, confrontée à l’export', () =>
 
 describe('le module redit la garde : les cas de l’essai, tels que la base y a répondu', () => {
   const BASE: SaisieInternationale = {
-    type: 'facture', typeClient: 'etranger', pays: 'DE', numeroTva: 'DE123456789', regime: 'autoliquidation_ue',
-    nature: 'services', numeroTvaDuVendeur: 'FR32123456782', montantTva: 0, tauxDesLignes: [0],
+    typeClient: 'etranger', pays: 'DE', numeroTva: 'DE123456789', regime: 'autoliquidation_ue', nature: 'services',
+    statutTva: 'redevable', numeroTvaDuVendeur: 'FR32123456782', montantTva: 0, tauxDesLignes: [0],
   }
   const lu = 'La facture porte une autoliquidation par le client'
+  const vendeur = (regime: string, conseil: string) => `La facture porte ${regime}, qui exige le numéro de TVA du vendeur (CGI, ann. II, art. 242 nonies A, I, 3° et 4°) : ce dossier n'en imprime aucun. ${conseil}, le cabinet coche le numéro attribué (CGI, art. 286 ter) ; un statut de TVA à préciser se précise.`
+  const LIVRAISON = { regime: 'livraison_intracommunautaire', nature: 'biens' } as const
   const CAS: [string, Partial<SaisieInternationale>, string | null][] = [
     ['30', {}, null],
     ['32', { pays: null }, R[0]],
@@ -159,12 +185,20 @@ describe('le module redit la garde : les cas de l’essai, tels que la base y a 
     ['44', { pays: 'GR', numeroTva: 'GR123456789' }, 'Le numéro de TVA du client, « GR123456789 », commence par le code de son pays, « EL » (norme EN 16931, règle BR-CO-09).'],
     ['M44', { pays: 'GR', numeroTva: 'EL123456789' }, null],
     ['45', { numeroTva: 'DE1234567890123' }, "Le numéro de TVA d'un client de l'Union tient en deux lettres suivies de deux à douze chiffres ou lettres : « DE1234567890123 » n'en a pas la forme."],
-    ['46', { numeroTvaDuVendeur: null }, R[13].replace('%', 'une autoliquidation par le client')],
+    ['46', { statutTva: 'franchise', numeroTvaDuVendeur: null }, vendeur('une autoliquidation par le client', 'En franchise ou exonéré')],
+    ['46b', { ...LIVRAISON, statutTva: 'exonere', numeroTvaDuVendeur: null }, vendeur('une livraison intracommunautaire', 'Exonéré')],
     ['47', { montantTva: 20, tauxDesLignes: [20] }, `${lu}, que la TVA française ne taxe pas : chaque ligne est au taux 0.`],
     ['48', { tauxDesLignes: [20] }, `${lu}, que la TVA française ne taxe pas : chaque ligne est au taux 0.`],
+    ['49', { ...LIVRAISON, statutTva: 'franchise', numeroTvaDuVendeur: null }, R[6]],
     ['52', { regime: 'taxable_en_france', numeroTva: null, tauxDesLignes: [20], montantTva: 20 }, null],
     ['53', { pays: null, numeroTva: null, regime: null }, null],
-    ['60', { type: 'avoir', numeroTva: null }, null],
+    ['54', { ...LIVRAISON, statutTva: 'franchise' }, R[6]],
+    ['M54', { regime: 'taxable_en_france', nature: 'biens', statutTva: 'franchise' }, null],
+    // L'avoir de FV reprend d'elle tout ce que les refus lisent : il passe où elle a passé, une ligne taxée le refuse ;
+    // celui d'une facture d'avant (aucune des trois colonnes) se valide comme hier.
+    ['60', { montantTva: 0, tauxDesLignes: [0] }, null],
+    ['62', { montantTva: -10, tauxDesLignes: [20] }, `${lu}, que la TVA française ne taxe pas : chaque ligne est au taux 0.`],
+    ['M62', { pays: null, numeroTva: null, regime: null, montantTva: -10, tauxDesLignes: [20] }, null],
   ]
   it.each(CAS)('le cas %s', (_cas, ecart, attendu) => {
     expect(refusDeLaFactureInternationale({ ...BASE, ...ecart })).toBe(attendu)

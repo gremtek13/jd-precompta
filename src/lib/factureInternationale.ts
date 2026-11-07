@@ -11,7 +11,19 @@
 // Les sources : CGI, art. 259, 1°, 259 A, 259 B, 262, I, 262 ter, I, 286 ter, et ann. II, art. 242 nonies A, I, 3°, 4° et 13° ;
 // BOI-TVA-DECLA-30-20-20-30, § 50 à § 105 ; directive 2006/112/CE, art. 44 et 196 ; norme EN 16931-1 (catégories AE, K, G, O,
 // E, S ; règle BR-CO-09 ; liste VATEX) ; DGFiP, spécifications externes v3.2, annexe 7 (G1.68). Aucune norme AFNOR.
-import type { NatureOperation, RegimeInternational, TypeClient } from './types'
+//
+// La relecture adverse du 07/11/2026 : une livraison intracommunautaire ne se facture pas d'un dossier en franchise en
+// base — la franchise exclut l'exonération de l'art. 262 ter, I (directive 2006/112/CE, art. 139, 1, premier alinéa), et
+// l'acheteur d'un franchisé n'a pas d'acquisition à déclarer (art. 2, 1, b), i)) : sa vente est une opération taxable en
+// France, sous la mention de la franchise. L'avoir se juge comme sa facture, dont il reprend tout ce que les refus lisent
+// hors de ses lignes et de sa TVA : seule une ligne taxée le refuse.
+//
+// LIMITE CONNUE (E7A-Q4, au cabinet) : l'Union se lit au code ISO du pays (`ETATS_MEMBRES`). Un territoire d'un État
+// membre exclu du territoire de la TVA de l'Union (directive 2006/112/CE, art. 6 : les îles Canaries, Ceuta, Melilla, le
+// mont Athos, Heligoland, Büsingen, Livigno…) se lit comme son État ; l'Irlande du Nord (GB), qui suit les règles de
+// l'Union pour les biens sous un numéro préfixé XI, se lit hors de l'Union. Aucune liste n'en est écrite ici sans le
+// cabinet.
+import type { NatureOperation, RegimeInternational, StatutTva, TypeClient } from './types'
 
 // Baissé tant que la migration n'est pas en base : l'écran (e7b) n'envoie ni ne lit les trois colonnes avant elle.
 export const FACTURE_INTERNATIONALE_EXPORTEE: boolean = false
@@ -30,6 +42,7 @@ export const PAYS_ATTRIBUES: readonly string[] = (
   + 'MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD '
   + 'SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ '
   + 'VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW').split(' ')
+// L'Union au code du pays seulement : la limite connue de l'en-tête (E7A-Q4).
 export const ETATS_MEMBRES: readonly string[] = (
   'AT BE BG CY CZ DE DK EE ES FI GR HR HU IE IT LT LU LV MT NL PL PT RO SE SI SK').split(' ')
 // Ce qui n'est pas un pays étranger : la France, Monaco (du territoire de la TVA française) et l'outre-mer français.
@@ -90,8 +103,10 @@ const A_UNE_ENTREPRISE: readonly RegimeInternational[] = ['autoliquidation_ue', 
 const DE_BIENS: readonly RegimeInternational[] = ['livraison_intracommunautaire', 'exportation']
 const DE_SERVICES: readonly RegimeInternational[] = ['autoliquidation_ue', 'prestation_hors_ue', 'hors_champ']
 
-// LES QUINZE REFUS DU BLOC « E7A » DE LA GARDE, dans son ordre et sous ses mots ; « % » y tient la place de chaque valeur,
-// comme dans la base. Le test les confronte au texte de la migration.
+// LES SEIZE REFUS DU BLOC « E7A » DE LA GARDE, dans son ordre et sous ses mots ; « % » y tient la place de chaque valeur,
+// comme dans la base. Le test les confronte au texte de la migration. Le septième, la livraison intracommunautaire d'un
+// franchisé, renvoie au régime d'une opération taxable en France et à la mention de la franchise (lib/statutTva.ts,
+// `MENTION_FRANCHISE`) ; le quinzième, le numéro du vendeur, ne dit la franchise que d'une autoliquidation.
 export const REFUS_DE_LA_FACTURE_INTERNATIONALE: readonly string[] = [
   "Le pays où le client est établi manque : le régime de l'opération et le numéro de TVA du client se portent avec lui.",
   "Le pays du client, « % », n'est pas un code de pays attribué (ISO 3166-1, deux lettres).",
@@ -99,6 +114,7 @@ export const REFUS_DE_LA_FACTURE_INTERNATIONALE: readonly string[] = [
   'Un client établi hors de France est une entreprise établie hors de France ou un particulier : la facture le dit par le type de son client.',
   "Le hors champ de l'art. 259 B du CGI ne vise qu'un client non assujetti : une entreprise établie hors de l'Union reçoit une prestation hors de l'Union (art. 259, 1° du CGI).",
   "La facture porte %, qui ne se facture qu'à une entreprise (un assujetti), jamais à un particulier.",
+  "La facture porte une livraison intracommunautaire, que la franchise en base exclut : un dossier en franchise ne bénéficie pas de l'exonération de l'art. 262 ter, I du CGI (directive 2006/112/CE, art. 139, 1, premier alinéa), et son client n'a aucune acquisition intracommunautaire à déclarer. Elle porte le régime d'une opération taxable en France, sous la mention de la franchise, « TVA non applicable, art. 293 B du CGI. ».",
   "La facture porte %, qui vise un client établi dans un autre État membre de l'Union : « % » n'en est pas un.",
   "La facture porte %, qui vise un client établi hors de l'Union : « % » en est un État membre.",
   'La facture porte %, une livraison de biens : sa nature est « biens ».',
@@ -106,7 +122,7 @@ export const REFUS_DE_LA_FACTURE_INTERNATIONALE: readonly string[] = [
   'La facture porte %, qui exige le numéro de TVA du client (CGI, ann. II, art. 242 nonies A, I, 3° et 4°).',
   'Le numéro de TVA du client, « % », commence par le code de son pays, « % » (norme EN 16931, règle BR-CO-09).',
   "Le numéro de TVA d'un client de l'Union tient en deux lettres suivies de deux à douze chiffres ou lettres : « % » n'en a pas la forme.",
-  "La facture porte %, qui exige le numéro de TVA du vendeur (CGI, ann. II, art. 242 nonies A, I, 3° et 4°) : ce dossier n'en imprime aucun. En franchise ou exonéré, le cabinet coche le numéro attribué (CGI, art. 286 ter) ; un statut de TVA à préciser se précise.",
+  "La facture porte %, qui exige le numéro de TVA du vendeur (CGI, ann. II, art. 242 nonies A, I, 3° et 4°) : ce dossier n'en imprime aucun. %, le cabinet coche le numéro attribué (CGI, art. 286 ter) ; un statut de TVA à préciser se précise.",
   'La facture porte %, que la TVA française ne taxe pas : chaque ligne est au taux 0.',
 ]
 // Le refus qui suit la mention de TVA du dossier, d'une facture comme d'un avoir.
@@ -118,25 +134,30 @@ function dire(gabarit: string, ...valeurs: string[]): string {
   return gabarit.replace(/%/g, () => valeurs[i++] ?? '%')
 }
 
+// Une facture, ou l'avoir qui reprend d'elle les trois colonnes, le type du client, la nature, et ce qu'elle a figé : le
+// statut de TVA et le numéro du vendeur.
 export interface SaisieInternationale {
-  type: 'facture' | 'avoir'
   typeClient: TypeClient | null
   pays: string | null
   numeroTva: string | null
   regime: RegimeInternational | null
   nature: NatureOperation | null
+  // Le statut de TVA que la validation figera (`statut_tva` : celui du dossier ; pour un avoir, celui de sa facture), nul
+  // pour un statut à préciser. La franchise refuse la livraison intracommunautaire.
+  statutTva: StatutTva | null
   // Le numéro de TVA que la validation figera (`numero_tva_imprime` : celui du dossier, nul en franchise ou exonéré sans
-  // numéro attribué, pour un statut à préciser, ou sur un SIRET illisible).
+  // numéro attribué, pour un statut à préciser, ou sur un SIRET illisible ; pour un avoir, celui de sa facture).
   numeroTvaDuVendeur: string | null
   montantTva: number
   tauxDesLignes: readonly number[]
 }
 
-/** Le premier refus de la garde à la validation de cette facture, sous ses mots ; nul quand elle passe. Un avoir n'en est
- * pas jugé (il reprend les trois colonnes de sa facture), ni une facture qui n'en porte aucune (elle se valide comme hier). */
+/** Le premier refus de la garde à la validation de cette facture ou de cet avoir, sous ses mots ; nul quand il passe. Un
+ * avoir se juge comme sa facture : il passe où elle a passé, et seule une ligne taxée le refuse. Une facture ou un avoir
+ * qui ne porte aucune des trois colonnes n'en est pas jugé : il se valide comme hier. */
 export function refusDeLaFactureInternationale(s: SaisieInternationale): string | null {
   const { pays, numeroTva: numero, regime } = s
-  if (s.type !== 'facture' || (pays == null && numero == null && regime == null)) return null
+  if (pays == null && numero == null && regime == null) return null
   const R = REFUS_DE_LA_FACTURE_INTERNATIONALE
   if (pays == null) return R[0]
   if (!PAYS_ATTRIBUES.includes(pays)) return dire(R[1], pays)
@@ -145,17 +166,21 @@ export function refusDeLaFactureInternationale(s: SaisieInternationale): string 
   if (s.typeClient === 'etranger' && regime === 'hors_champ') return R[4]
   const lu = LIBELLES_DES_REGIMES[regime]
   if (s.typeClient === 'non_assujetti' && A_UNE_ENTREPRISE.includes(regime)) return dire(R[5], lu)
+  if (regime === 'livraison_intracommunautaire' && s.statutTva === 'franchise') return R[6]
   const dansLUnion = ETATS_MEMBRES.includes(pays)
-  if (UNION_EXIGEE.includes(regime) && !dansLUnion) return dire(R[6], lu, pays)
-  if (UNION_EXCLUE.includes(regime) && dansLUnion) return dire(R[7], lu, pays)
-  if (DE_BIENS.includes(regime) && s.nature !== 'biens') return dire(R[8], lu)
-  if (DE_SERVICES.includes(regime) && s.nature !== 'services') return dire(R[9], lu)
-  if (UNION_EXIGEE.includes(regime) && numero == null) return dire(R[10], lu)
+  if (UNION_EXIGEE.includes(regime) && !dansLUnion) return dire(R[7], lu, pays)
+  if (UNION_EXCLUE.includes(regime) && dansLUnion) return dire(R[8], lu, pays)
+  if (DE_BIENS.includes(regime) && s.nature !== 'biens') return dire(R[9], lu)
+  if (DE_SERVICES.includes(regime) && s.nature !== 'services') return dire(R[10], lu)
+  if (UNION_EXIGEE.includes(regime) && numero == null) return dire(R[11], lu)
   const prefixe = prefixeDuNumeroDeTva(pays)
-  if (numero != null && numero.slice(0, 2) !== prefixe) return dire(R[11], numero, prefixe)
-  if (numero != null && dansLUnion && numero.length > 14) return dire(R[12], numero)
-  if (UNION_EXIGEE.includes(regime) && s.numeroTvaDuVendeur == null) return dire(R[13], lu)
-  if (horsDeLaTvaFrancaise(regime) && (s.montantTva !== 0 || s.tauxDesLignes.some((t) => t !== 0))) return dire(R[14], lu)
+  if (numero != null && numero.slice(0, 2) !== prefixe) return dire(R[12], numero, prefixe)
+  if (numero != null && dansLUnion && numero.length > 14) return dire(R[13], numero)
+  // Un franchisé n'arrive ici que d'une autoliquidation : sa livraison intracommunautaire s'est refusée plus haut.
+  if (UNION_EXIGEE.includes(regime) && s.numeroTvaDuVendeur == null) {
+    return dire(R[14], lu, regime === 'autoliquidation_ue' ? 'En franchise ou exonéré' : 'Exonéré')
+  }
+  if (horsDeLaTvaFrancaise(regime) && (s.montantTva !== 0 || s.tauxDesLignes.some((t) => t !== 0))) return dire(R[15], lu)
   return null
 }
 
