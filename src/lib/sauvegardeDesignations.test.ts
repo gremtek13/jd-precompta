@@ -95,7 +95,8 @@ describe('le plan prévu, journal compris', () => {
   it('après les paramètres de facturation, à la fin de ce que la marque d’une pièce suppose — avant `exercices_valides` (les devis, depuis l’étape P6c1, avant le journal des e-mails)', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(ORDRE_RESTAURATION_PREVU[rang(TABLE) - 1]).toBe('parametres_facturation')
-    expect(ORDRE_RESTAURATION_PREVU[rang(TABLE) + 1]).toBe('exercices_valides')
+    // Depuis les étapes 2035S3 à S5, les saisies de la 2035 s'intercalent entre lui et les exercices validés.
+    expect(ORDRE_RESTAURATION_PREVU.slice(rang(TABLE) + 1, rang('exercices_valides'))).toEqual(['saisies_2035'])
     for (const parent of ['dossiers', 'factures_emises', 'pieces']) expect(rang(TABLE), parent).toBeGreaterThan(rang(parent))
     expect(rang(TABLE)).toBeLessThan(rang('exercices_valides'))
   })
