@@ -49232,6 +49232,12 @@ une échéance qui pourrait payer N sans ses trois champs, sans appel ou sur une
 volet social ; « Réunir » refuse deux organismes et ne garde que la description commune. Réplique 16 (176 migrations) :
 27 verdicts sur 27, onze mutations tuées ; rls.sql, restauration et cinq essais inchangés ; banc du leurre SÛR ;
 treize mutations du module tuées. Reste au cabinet : TNS-Q2 et le prélèvement mêlé (TNS-Q2-B).
+Relecture adverse du même jour, confirmée par un second relecteur : le gel figeait la description qu'exige l'estimation
+d'une année validée. La migration remplace `garder_cotisation_valide`, les trois champs hors de sa comparaison (sa garde
+exige le corps d'hier, md5 dfa6faab, relu dans l'export et en production) ; « Modifier » (« Décrire » sur une ligne figée)
+décrit une échéance figée ou payée depuis le compte personnel, ses montants et sa date intacts ; « Réunir » nomme la
+description perdue ; sans année dite, une échéance se juge de N − 1 à N + 5 ; le retour remet le corps d'hier. Mère 17 :
+39 verdicts, quinze mutations tuées, rls.sql et signature inchangés, banc du leurre SÛR ; huit mutations du module tuées.
 
 ### 07/11/2026 — LA RÉPLIQUE MÈRE EN POSTGRESQL 17 DANS CE CONTENEUR, ET LA RÉPÉTITION DES HUIT MIGRATIONS PRÉPARÉES
 
