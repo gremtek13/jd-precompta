@@ -1615,6 +1615,10 @@ export const PERSONNES: Record<Personne, { id: string; email: string; jeton: str
 }
 
 const SANS_BASCULE = { ventes_par_les_factures: false, ventes_par_les_factures_depuis: null }
+// Le modèle comptable que la table pose par défaut (`mode_comptable` et `compte_notes_de_frais`, NOT NULL, migration du
+// modèle comptable) : l'assistant juge le compte du dirigeant au plan du dossier (ligne 43, étape PC3b), et une valeur
+// absente de la ligne se lirait nulle — un compte qu'aucun rôle ne tient, qui fermerait l'assistant pour tout dossier.
+const MODELE_PAR_DEFAUT = { mode_comptable: 'tresorerie', compte_notes_de_frais: '455000' }
 
 /**
  * Deux cabinets, trois dossiers, et les sept personnes : un chef et deux comptables du premier cabinet (l'un assigné au
@@ -1633,9 +1637,9 @@ export function mondeDeReference(): Monde {
     // La source des ventes (`ventes_par_les_factures`, NOT NULL, faux par défaut ; sa date, nulle) telle que la table la
     // pose : une valeur absente de la ligne se lirait nulle, et l'assistant appliquerait sa garde (VF9a) à tout dossier.
     dossiers: [
-      { id: ID.dossier, nom: 'Dossier fictif', cabinet_id: ID.cabinet, code_email: 'dossier-fictif', ...SANS_BASCULE },
-      { id: ID.dossierAutreCabinet, nom: 'Dossier d’un autre cabinet', cabinet_id: ID.autreCabinet, code_email: 'autre-cabinet', ...SANS_BASCULE },
-      { id: ID.dossierVoisin, nom: 'Dossier voisin', cabinet_id: ID.cabinet, code_email: 'dossier-voisin', ...SANS_BASCULE },
+      { id: ID.dossier, nom: 'Dossier fictif', cabinet_id: ID.cabinet, code_email: 'dossier-fictif', ...SANS_BASCULE, ...MODELE_PAR_DEFAUT },
+      { id: ID.dossierAutreCabinet, nom: 'Dossier d’un autre cabinet', cabinet_id: ID.autreCabinet, code_email: 'autre-cabinet', ...SANS_BASCULE, ...MODELE_PAR_DEFAUT },
+      { id: ID.dossierVoisin, nom: 'Dossier voisin', cabinet_id: ID.cabinet, code_email: 'dossier-voisin', ...SANS_BASCULE, ...MODELE_PAR_DEFAUT },
     ],
     cabinet_admins: [
       { user_id: PERSONNES.chef.id, cabinet_id: ID.cabinet, role: 'comptable_en_chef', email: PERSONNES.chef.email },

@@ -5,6 +5,7 @@ import {
   COMPTE_TVA_COLLECTEE_EN_ATTENTE, COMPTE_VALEURS_A_L_ENCAISSEMENT, COMPTE_VENTES_DE_BIENS,
 } from './comptes'
 import { DEBUT_EMISSION_PME, DEBUT_RECEPTION, declarationDuNonRedevable, obligationsFacturationElectronique } from './statutTva'
+import { PLAN_PAR_DEFAUT, type CleRoleComptable } from './planComptable'
 import { DEBUT_EREPORTING_PME } from './periodesEreporting'
 
 // LA CONSIGNE DE L'ASSISTANT (`agent-comptable`, `systemPrompt`) : ce que le modèle croit d'un dossier avant tout outil.
@@ -173,16 +174,17 @@ describe('la consigne de l’assistant', () => {
     expect(texte.split('\n- La CAISSE du dossier').length - 1).toBe(1)
     expect(texte.indexOf(ligne![0])).toBeLessThan(texte.indexOf('${repereVentes}'))
     const phrase = ligne![1]
-    expect(phrase).toContain('sans pièce ni mouvement, face au compte de la caisse (${COMPTE_CAISSE} Caisse dans le plan par défaut)')
-    expect(phrase).toContain('sa TVA au ${COMPTE_TVA_COLLECTEE} pour un dossier redevable')
+    // Le compte de la caisse et celui de la TVA collectée sont ceux du plan du dossier (ligne 43, étape PC3b) ; « dans le plan
+    // par défaut » tant que la base rend la caisse du catalogue (son origine, « application »).
+    expect(phrase).toContain('sans pièce ni mouvement, face au compte de la caisse (${plan.caisse} Caisse ${caisseDuCatalogue(reponsePlan) ? "dans le plan par défaut" : "dans le plan du dossier"})')
+    expect(phrase).toContain('sa TVA au ${plan.tva_collectee} pour un dossier redevable')
     expect(phrase).toContain('Son justificatif est le brouillard de caisse que l\'exploitant tient hors de l\'application : ce n\'est pas une anomalie.')
     expect(phrase).toContain('La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas, ne le devine pas')
     expect(phrase).toContain('Un VERSEMENT d\'espèces en banque est un crédit du relevé écrit sur le compte de la caisse')
     // Étape C13 : la contrepartie d'un paiement par la caisse, au compte de la caisse, n'est pas une anomalie.
     expect(phrase).toContain('Une PIÈCE PAYÉE EN ESPÈCES par la caisse a sa contrepartie au compte de la caisse, au jour du paiement, à la place de la banque (lister_ecritures nomme cette ligne comme sa pièce) : elle n\'attend aucun rapprochement, ce n\'est pas une anomalie, et elle compte dans la 2035 à cette date.')
     expect(phrase).toMatch(/renvoie à l'onglet Caisse et à la Vue d'ensemble, qui les disent\.$/)
-    expect(source).toContain(`\nconst COMPTE_CAISSE = "${COMPTE_CAISSE}"\n`)
-    expect(source).toContain(`\nconst COMPTE_TVA_COLLECTEE = "${COMPTE_TVA_COLLECTEE}"\n`)
+    expect(source).not.toMatch(/\nconst COMPTE_(CAISSE|TVA_COLLECTEE) = /)
     // `points_a_traiter` : une clé, pour tout dossier, qui dit la caisse non vérifiée ; les quatre points qu'elle désigne
     // existent dans la Vue d'ensemble.
     // Depuis l'étape C13 : d'un dossier dont la caisse paie des pièces — un paiement vivant lu —, la phrase nomme aussi les trois
@@ -204,18 +206,22 @@ describe('la consigne de l’assistant', () => {
     for (const outil of ['resume_dossier', 'lister_comptes', 'lister_pieces']) expect(description(outil), outil).not.toMatch(/caisse|espèces/i)
   })
 
-  // Les comptes que le paragraphe nomme sont ceux de la vente facturée, dupliqués de src/lib/comptes.ts (étape VF4a) :
-  // une valeur qui y change fait tomber ce test avant que l'assistant ne nomme un autre compte que l'écran.
-  it('nomme, pour la vente facturée, les comptes de src/lib/comptes.ts', () => {
+  // Les comptes que le paragraphe nomme sont ceux de la vente facturée (étape VF4a), lus au plan du dossier depuis l'étape
+  // PC3b : chacun par son rôle, dont le défaut est la constante de src/lib/comptes.ts — une valeur qui y change fait tomber
+  // ce test avant que l'assistant ne nomme un autre compte que l'écran.
+  it('nomme, pour la vente facturée, les comptes du plan du dossier, au défaut de src/lib/comptes.ts', () => {
     const source = readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
     const paragraphe = /`\\n- Les VENTES FACTURÉES : ([^`]+)`/.exec(source)?.[1] ?? ''
-    const attendus: Record<string, string> = {
-      COMPTE_PRESTATIONS_DE_SERVICES, COMPTE_VENTES_DE_BIENS, COMPTE_TVA_COLLECTEE_EN_ATTENTE, COMPTE_VALEURS_A_L_ENCAISSEMENT,
-      COMPTE_CAISSE, COMPTE_SERVICES_BANCAIRES, COMPTE_TVA_COLLECTEE, COMPTE_CLIENTS, COMPTE_BANQUE,
+    const attendus: [CleRoleComptable, string][] = [
+      ['prestations_de_services', COMPTE_PRESTATIONS_DE_SERVICES], ['ventes_de_biens', COMPTE_VENTES_DE_BIENS],
+      ['tva_collectee_en_attente', COMPTE_TVA_COLLECTEE_EN_ATTENTE], ['valeurs_a_l_encaissement', COMPTE_VALEURS_A_L_ENCAISSEMENT],
+      ['caisse', COMPTE_CAISSE], ['services_bancaires', COMPTE_SERVICES_BANCAIRES], ['tva_collectee', COMPTE_TVA_COLLECTEE],
+      ['clients', COMPTE_CLIENTS], ['banque', COMPTE_BANQUE],
+    ]
+    for (const [role, valeur] of attendus) {
+      expect(PLAN_PAR_DEFAUT[role], role).toBe(valeur)
+      expect(paragraphe, role).toContain(`\${plan.${role}}`)
     }
-    for (const [nom, valeur] of Object.entries(attendus)) {
-      expect(source, nom).toContain(`\nconst ${nom} = "${valeur}"\n`)
-      expect(paragraphe, nom).toContain(`\${${nom}}`)
-    }
+    expect(paragraphe).not.toMatch(/(?<!\d)\d{6}(?!\d)/)
   })
 })
