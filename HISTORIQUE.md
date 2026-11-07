@@ -49238,6 +49238,12 @@ exige le corps d'hier, md5 dfa6faab, relu dans l'export et en production) ; « M
 décrit une échéance figée ou payée depuis le compte personnel, ses montants et sa date intacts ; « Réunir » nomme la
 description perdue ; sans année dite, une échéance se juge de N − 1 à N + 5 ; le retour remet le corps d'hier. Mère 17 :
 39 verdicts, quinze mutations tuées, rls.sql et signature inchangés, banc du leurre SÛR ; huit mutations du module tuées.
+Tranchée le même jour, TNS-Q2 « appliquez-la », TNS-Q2-B (B), une colonne. `part_regularisation` (numeric, nulle), sur
+une provisionnelle ou un acompte, la part de l'appelé qui régularise l'année d'avant l'année payée, signée (R. 131-4 et
+R. 131-5 : un trop-versé se rembourse, l'Urssaf l'imputant d'abord sur les échéances à venir) ; deux contraintes (nature
+et année dites ; jamais zéro, |part| au plus l'appelé) ; hors du gel comme la description (corps `1b004781…`). Le module
+l'ôte de la provisionnelle de N, la dit déjà appelée pour N − 1 ; « Réunir » somme les parts ou nomme la perdue.
+Mère 17 : 56 verdicts, 9 mutations sur 9 (9 du module) ; rls.sql 107/0/79 sur 79 ; retour : signature d'avant ; banc SÛR.
 
 ### 07/11/2026 — LA RÉPLIQUE MÈRE EN POSTGRESQL 17 DANS CE CONTENEUR, ET LA RÉPÉTITION DES HUIT MIGRATIONS PRÉPARÉES
 
