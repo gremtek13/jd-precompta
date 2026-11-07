@@ -254,20 +254,71 @@ incompréhensible trois étapes plus loin.
 1. **Le projet Supabase** — recréer, région `eu-west-1` (RGPD). Les appels à AWS ne suivent pas
    cette région : elle est écrite dans le code de l'assistant et lue dans `AWS_REGION` pour le reste
    (inventaire du §3).
-2. **Le schéma — L'ÉTAPE QUI N'A JAMAIS ÉTÉ RÉPÉTÉE, et l'ordre écrit ici jusqu'au 29/09/2026
-   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les migrations, une par fichier
-   (leur nombre est tenu dans le README du schéma, vérifié par empreinte), puis le socle,
-   `socle/1_tables_sans_migration.sql` et `socle/2_objets_sans_migration.sql` —, vérifié nom
-   par nom contre le catalogue le 29/09/2026. Mais les jouer « migrations d'abord, socle ensuite » bute
-   dès `20260904160206`, qui pose une policy sur `references_annuelles`, une table que seul le socle
-   crée ; et l'ordre inverse aussi, le socle étant un instantané d'aujourd'hui qui porte déjà ce que
-   des migrations ajoutent ensuite (`20260905071332` recrée une contrainte qu'il contient). Il faudrait
-   donc intercaler à la main, erreur par erreur — c'est précisément ce qu'un plan de reprise existe
-   pour éviter, et c'est pourquoi cette étape est un chantier de la feuille de route : rejouer l'export
-   dans une base vide et en tirer un ordre qui passe (différé comme le reste de la disponibilité,
-   décision du 25/09/2026). Sans cette étape rien d'autre n'est possible — et avec les migrations
-   seules, on obtient un schéma qui a l'air complet et auquel il manque la banque, les écritures et les
-   colonnes qui décident de la 2035.
+2. **Le schéma — répété le 07/11/2026 dans une grappe PostgreSQL 17 neuve, et égal à la production**
+   (HISTORIQUE.md, « L'EXPORT REJOUÉ DANS UNE BASE VIDE »). Tout est dans `supabase/schema/` : les migrations, une par
+   fichier (leur nombre tenu par le README du schéma), le socle (`socle/`), et `reprise/` : les fondations d'une grappe
+   nue (`0_fondations_supabase.sql`, ce qu'un projet Supabase porte déjà, au minimum, ses approximations dites en tête),
+   une doublure de pg_net (`pg_net/`), les objets d'hier (`objets_d_hier.sql`), l'écart hors export
+   (`ecarts_hors_export.sql`) et le script qui joue le tout, `reprise/rejouer.py`. Ni « les migrations, puis le socle »
+   ni l'inverse ne passent : le socle est un INSTANTANÉ d'aujourd'hui, qui porte ce que des migrations ajoutent ensuite.
+   Le script intercale le socle objet par objet — ce qu'une migration crée lui est laissé, le reste se pose dès qu'il le
+   peut, un objet qu'une migration supprime avant de le recréer se pose juste avant elle (ses six règles en tête du
+   fichier) — et rejoue chaque migration dans l'ordre de sa version, avec sa ligne d'historique dans la même
+   transaction, comme `apply_migration` : sept migrations y cherchent une version précédente.
+
+   **La répétition, pas à pas** (une grappe NEUVE, jamais la réplique mère ; PostgreSQL refuse root : dans ce conteneur,
+   chaque commande serveur passe sous `unshare -U --map-user=1000 --map-group=1000`) :
+   ```
+   B=/usr/lib/postgresql/17/bin
+   $B/initdb -D <grappe> -E UTF8 --locale-provider=icu --icu-locale=en-US --locale=en_US.UTF-8 -A trust -U postgres
+   $B/pg_ctl -D <grappe> -o "-p <port> -k /tmp/<socket> -c listen_addresses=''" -l <grappe>.log -w start
+   python3 -I supabase/schema/reprise/rejouer.py --psql $B/psql --hote /tmp/<socket> --port <port> \
+       --super postgres --base rejouee --journal <dossier> --doublure-pg-net
+   ```
+   Il rend « 177 migrations rejouées, 102 objets du socle intercalés, 6 forme(s) provisoire(s), 0 reprise(s) » en une
+   vingtaine de secondes ; `<dossier>/journal.txt` dit chaque étape, `<dossier>/plan.json` l'ordre suivi. Puis la
+   preuve, contre la production (`execute_sql` en lecture) ou la réplique mère : `supabase/essais/signature.sql` (neuf
+   familles), `inventaire.sql`, `socle.sql` et la dérive du README du schéma. Mesuré le 07/11/2026 : neuf familles sur
+   neuf, inventaire 2 440 objets `062299d0…`, socle 81 instructions `3a79a158…`, dérive 177 lignes `8bfc4f4e…`, et le
+   relevé complet des droits (MAINTAIN, colonnes, défauts, schéma public) égal à celui de la mère.
+
+   **Les pièges.**
+   - **pg_net** n'existe pas dans une grappe nue, et `20260918111836` l'installe : `--doublure-pg-net` copie
+     `reprise/pg_net/` dans le répertoire des extensions le temps du rejeu (il faut l'écrire : root), puis l'en retire.
+   - **La garde de tête de `droits_hors_rls`** (la 177e) exige l'état relevé le 06/11/2026 : chaque table de public
+     donne à `anon` et `authenticated` TRUNCATE, REFERENCES, TRIGGER et MAINTAIN, de la main du propriétaire, et le
+     défaut du propriétaire dans public les donne aussi. Les fondations posent ces défauts (ceux d'un projet Supabase
+     d'avant la migration), et le script les vérifie AVANT la première migration. Un projet dont les défauts diffèrent
+     (Supabase peut changer ceux d'un projet neuf) est refusé à la fin, sans rien appliquer : « L'état relevé le
+     06/11/2026 n'est plus celui de la base : 680 droit(s) manquent » (mesuré sur une copie sans ces droits). La
+     procédure : avant la première migration, `alter default privileges in schema public grant all on tables to anon,
+     authenticated, service_role` (et de même `on sequences`, `execute on functions`), sous le propriétaire. Si l'on ne
+     s'en aperçoit qu'à la fin : sous le propriétaire, dans une transaction, `grant truncate, references, trigger,
+     maintain on all tables in schema public to anon, authenticated;` puis `alter default privileges in schema public
+     grant truncate, references, trigger, maintain on tables to anon, authenticated;`, et la migration se rejoue
+     INCHANGÉE, avec sa ligne d'historique : ses gardes de fin vérifient tout (mesuré : elle passe, `signature.sql` et
+     les droits égaux à la mère). Jamais son texte retouché, jamais sa ligne d'historique posée sans elle.
+   - **L'écart hors export** : `pieces.uploaded_by`, NOT NULL dans sa migration, nullable en production (levé hors
+     migration). Sans `ecarts_hors_export.sql`, la base rebâtie refuse une pièce sans déposant.
+   - **Six formes provisoires et deux objets d'hier** : des objets qu'une migration supprimait, absents de tout fichier.
+     Les premiers (cinq policies d'avant `multi_cabinet_rls`, une contrainte d'avant
+     `affectation_des_mouvements_bancaires`) ne sont lus de personne ; les seconds — la note de `documents_divers` que
+     `notes_internes_du_cabinet` recopie, la clé unique d'hier que la garde de `sens_des_regles_ignorees` exige — sont
+     tirés du socle d'avant leur suppression.
+   - **L'historique** se rejoue au texte des fichiers : la dérive est égale ; les textes BRUTS ne le sont pas (les
+     migrations collées par le cabinet portent `\r\n` en production) — sans effet sur le schéma.
+
+   **Ce qui ne se rejoue pas** : les comptes `auth.users` (étape 3, leurs UUID d'origine : quatre clés NOT NULL les
+   visent) et le reste du schéma `auth` de Supabase ; les secrets (étape 7) ; les Edge Functions (étape 8) ; les
+   fichiers du stockage (étape 6 : les seaux, eux, se recréent par leurs migrations) ; les déclencheurs d'événement de
+   Supabase.
+
+   **Sur un projet Supabase neuf : NON répété.** `rejouer.py` crée et supprime des bases et pose des fondations qu'un
+   projet porte déjà : il ne s'y adresse pas. La voie, à éprouver d'abord sur une branche Supabase (plan Pro) : le même
+   ordre — `plan.json` le donne, migration par migration et objet par objet —, chaque migration par `apply_migration`,
+   les objets du socle, d'hier et provisoires et l'écart par l'éditeur SQL, sous `postgres` ; avant la première, les
+   droits par défaut vérifiés (ci-dessus). Les essais d'après (`rls.sql`, `restauration.sql`) demandent un semis, qui
+   n'est pas dans le dépôt : la répétition a versé celui de la réplique mère.
 3. **Les comptes utilisateurs**, avec leurs UUID d'origine (§3.1).
 4. **Le cabinet** — la ligne `cabinets`, et sa charte graphique.
 5. **Les dossiers, un par un** — écran super-admin → « Restaurer une sauvegarde ». L'écran lit le
