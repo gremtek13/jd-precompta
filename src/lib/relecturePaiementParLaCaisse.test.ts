@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { calculerDeclaration2035 } from './declaration2035'
 import { concordance2035 } from './concordance2035'
@@ -100,7 +101,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE,
     etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
-    champsBnc: { etat: 'non_exportes' }, ...o,
+    champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, ...o,
   }
   // La 2035 comme Clôture la calcule, la caisse comprise : ses paiements datent les pièces qu'ils règlent.
   const operations = base.operationsDeCaisse?.etat === 'lue' ? base.operationsDeCaisse.operations : []

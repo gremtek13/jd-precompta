@@ -1,3 +1,4 @@
+import type { Saisie2035 } from './saisies2035'
 import type { ModeleComptable } from './engagement'
 import type { DossierTab } from './ongletsDossier'
 import type { Concordance2035 } from './concordance2035'
@@ -190,6 +191,10 @@ export interface DonneesDeValidation {
   // En trésorerie, la 2035 de l'exercice et sa concordance avec les écritures ; RIEN en engagement, où la 2035 ne se
   // produit pas — l'appelant ne la calcule pas, et la base refuserait de la recevoir.
   declaration: Declaration2035 | null
+  // LES SAISIES DU CABINET de la 2035 de l'exercice (étapes 2035S3 à S5) : `AUCUNE_SAISIE_2035` tant que leur drapeau est
+  // baissé ou en engagement, NULLES tant qu'elles ne sont pas revenues entières — la validation se suspend alors, comme sur
+  // toute lecture partielle : la 2035 figée les porterait, ou les tairait.
+  saisies2035: readonly Saisie2035[] | null
   concordance: Concordance2035 | null
 }
 
@@ -493,8 +498,9 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     ?? ventesIllisibles(d)
     ?? (d.operationsDeCaisse === null ? 'la caisse du dossier n’est pas lue en entier' : null)
     ?? (d.champsBnc === null ? 'les factures et les cotisations que le FEC d’un BNC en trésorerie lit ne sont pas lues en entier' : null)
+    ?? (d.saisies2035 === null ? 'les saisies du cabinet de la 2035 ne sont pas lues en entier' : null)
   if (lectureIncomplete !== null || d.facturesSources === null || d.etatsDesVentes === null || d.ventesDeLaChecklist === null
-    || d.operationsDeCaisse === null || d.champsBnc === null) {
+    || d.operationsDeCaisse === null || d.champsBnc === null || d.saisies2035 === null) {
     prealables.push({
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
       message: `La lecture du dossier est restée partielle (${lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
@@ -779,6 +785,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // qu'elle a de faux se taisent une fois l'exercice validé — ce qu'elles demandent, la base le refuserait. Ce qu'elles
   // signalent se refuse donc ICI, avant, ou se lit : chaque carte de Clôture est reprise ou écartée avec sa raison
   // (`CARTES_DE_CLOTURE`, en fin de fichier). Les cartes sont au-dessus de celle de la validation, sur le même écran.
+  const saisies2035 = d.saisies2035
   if (d.declaration) {
     const e = d.declaration.exclusions
     bloque({
@@ -807,7 +814,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     // est : la case de ce libellé la refuse, et la ligne se corrige par le poste de sa catégorie, ou en changeant de
     // catégorie la pièce rangée à contresens.
     bloque({
-      id: 'postes-sans-case', nb: valeursDesCases(d.declaration).postesSansCase.length, cible: 'cloture',
+      id: 'postes-sans-case', nb: valeursDesCases(d.declaration, saisies2035).postesSansCase.length, cible: 'cloture',
       message: "poste(s) de la 2035 qu'aucune case du formulaire ne porte — leur montant n'y paraîtrait pas : donner à leur catégorie un poste du formulaire, ou changer de catégorie une pièce rangée à contresens (carte « Postes sans case du formulaire » ci-dessus).",
     })
     // Le formulaire n'admet pas de montant négatif : une case que des avoirs ou des remboursements font passer sous zéro
@@ -821,7 +828,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     // de l'onglet Cotisations) fait baisser BK sans toucher BT : la 2035 figée porterait un « dont » plus fort que son total.
     // Le MÊME calcul que la carte « Cases « dont » incohérentes » de Clôture (`incoherencesDesCases`), sur l'exercice validé.
     bloque({
-      id: 'cases-dont-incoherentes', nb: incoherencesDesCases(valeursDesCases(d.declaration).valeurs).length, cible: 'cloture',
+      id: 'cases-dont-incoherentes', nb: incoherencesDesCases(valeursDesCases(d.declaration, saisies2035).valeurs).length, cible: 'cloture',
       message: "case(s) « dont » supérieure(s) à leur case porteuse — le plus souvent un remboursement de cotisations classé en charge : le saisir en échéance négative dans l'onglet Cotisations avant la validation (carte « Cases « dont » incohérentes » ci-dessus).",
     })
     // Le barème kilométrique et les frais au réel du véhicule dans la même case BJ : la même dépense deux fois.

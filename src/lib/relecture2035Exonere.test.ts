@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { describe, expect, it } from 'vitest'
 import { ecritureDuMouvement } from './affectationBanque'
 import { paiementNet, soldeDesPaiements } from './alignementBanque'
@@ -68,7 +69,7 @@ describe('relecture — les honoraires rétrocédés (ligne 3, AC) et les débou
 
   it('rangée dans une catégorie de CHARGE (6226), la rétrocession atteint AC, en positif, et AD est net', () => {
     const d = exonere({ categories: [recettes, retroEnCharge], lignes: [cpam, remplacante] })
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(valeurs.get('AA')).toBe(50_000)
     expect(valeurs.get('AC')).toBe(10_000)
     expect(valeurs.get('AD')).toBe(40_000)
@@ -90,7 +91,7 @@ describe('relecture — les honoraires rétrocédés (ligne 3, AC) et les débou
     expect(c.ecarts).toEqual([])
     expect(c.ecritures).toEqual({ recettes: 50_000, depenses: 10_000, resultat: 40_000 })
     // Le résultat des écritures est celui que le formulaire déclare en CP.
-    expect(c.ecritures.resultat).toBe(valeursDesCases(d).valeurs.get('CP'))
+    expect(c.ecritures.resultat).toBe(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('CP'))
   })
 
   it('les débours payés pour le client (AB) suivent la même règle', () => {
@@ -98,7 +99,7 @@ describe('relecture — les honoraires rétrocédés (ligne 3, AC) et les débou
     const d = exonere({ categories: [recettes, { ...debours, compte_comptable: '622800' }], lignes: [
       cpam, mouvement({ id: 'deb', categorie_id: 'c-deb', montant: -1_200 }),
     ] })
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(valeurs.get('AB')).toBe(1_200)
     expect(valeurs.get('AD')).toBe(48_800)
     expect(postesSansCase).toEqual([])
@@ -110,7 +111,7 @@ describe('relecture — les honoraires rétrocédés (ligne 3, AC) et les débou
     // (AC = −10 000, AD = 60 000 hier), et Clôture la montre, avec le code de la case refusée.
     const retroEnProduit = { id: 'c-retro', compte_comptable: '706100', poste_2035: 'Honoraires rétrocédés' } as Categorie
     const d = exonere({ categories: [recettes, retroEnProduit], lignes: [cpam, remplacante] })
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(d.resultat).toBe(40_000)
     expect(valeurs.get('AC')).toBe(0)
     expect(postesSansCase.map((p) => [p.ligne.nature, p.raison, p.codeRefuse])).toEqual([['recette', 'case du mauvais sens', 'AC']])
@@ -122,7 +123,7 @@ describe('relecture — les honoraires rétrocédés (ligne 3, AC) et les débou
     // moteur l'ajoutait. Le formulaire déclarait 20 000 € de moins que le moteur, sans rien dire.
     const recue = { id: 'c-recue', compte_comptable: '706000', poste_2035: 'Rétrocessions' } as Categorie
     const d = exonere({ categories: [recue], lignes: [mouvement({ id: 'tit', categorie_id: 'c-recue', montant: 10_000 })] })
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(valeurs.get('AC')).toBe(0)
     expect(postesSansCase.map((p) => p.codeRefuse)).toEqual(['AC'])
   })
@@ -130,7 +131,7 @@ describe('relecture — les honoraires rétrocédés (ligne 3, AC) et les débou
   it('une case de recettes qui ne se retranche pas refuse toujours une dépense', () => {
     const malRangee = { id: 'c-mal', compte_comptable: '606000', poste_2035: 'Recettes' } as Categorie
     const d = exonere({ categories: [recettes, malRangee], lignes: [cpam, mouvement({ id: 'x', categorie_id: 'c-mal', montant: -300 })] })
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(valeurs.get('AA')).toBe(50_000)
     expect(postesSansCase.map((p) => [p.ligne.nature, p.raison, p.codeRefuse])).toEqual([['depense', 'case du mauvais sens', 'AA']])
   })
@@ -151,19 +152,19 @@ describe('relecture — le remboursement d’une échéance de cotisation, selon
 
   it('rapproché : BK −270, BV −21,03', () => {
     const credit = mouvement({ id: 'urssaf', date: '2025-11-20', montant: 300, cotisation_id: 'rbt' })
-    const { valeurs } = valeursDesCases(exonere({ categories: cats, lignes: [credit], cotisations: [cotisation] }))
+    const { valeurs } = valeursDesCases(exonere({ categories: cats, lignes: [credit], cotisations: [cotisation] }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('BK')).toBe(-270)
     expect(valeurs.get('BV')).toBe(-21.03)
   })
 
   it('non rapproché : le même remboursement donne les mêmes cases', () => {
-    const { valeurs } = valeursDesCases(exonere({ categories: cats, cotisations: [cotisation] }))
+    const { valeurs } = valeursDesCases(exonere({ categories: cats, cotisations: [cotisation] }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('BK')).toBe(-270)
     expect(valeurs.get('BV')).toBe(-21.03)
   })
 
   it('payé depuis le compte personnel : les mêmes cases encore', () => {
-    const { valeurs } = valeursDesCases(exonere({ categories: cats, cotisations: [{ ...cotisation, paiement_personnel_le: '2025-11-20' }] }))
+    const { valeurs } = valeursDesCases(exonere({ categories: cats, cotisations: [{ ...cotisation, paiement_personnel_le: '2025-11-20' }] }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('BK')).toBe(-270)
     expect(valeurs.get('BV')).toBe(-21.03)
   })
@@ -172,7 +173,7 @@ describe('relecture — le remboursement d’une échéance de cotisation, selon
     for (const csg of [30, -30]) {
       const payee = { ...cotisation, id: `p${csg}`, montant_appele: 300, montant_csg_crds: csg }
       expect(cotisationsComptees([payee], [], 'tresorerie')[0]).toMatchObject({ montant: 300, csgCrds: 30, ligne: null })
-      const { valeurs } = valeursDesCases(exonere({ categories: cats, cotisations: [payee] }))
+      const { valeurs } = valeursDesCases(exonere({ categories: cats, cotisations: [payee] }), AUCUNE_SAISIE_2035)
       expect(valeurs.get('BK')).toBe(270)
       expect(valeurs.get('BV')).toBe(21.03)
     }

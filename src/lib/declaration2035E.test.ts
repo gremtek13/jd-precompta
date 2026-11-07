@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { describe, expect, it } from 'vitest'
 import {
   CODES_2035E, LIGNES_2035E, SAISIES_2035E_ABSENTES, SEUIL_ANNEXE_2035E, SEUIL_CVAE_A_PAYER, cadreMonoEtablissement,
@@ -298,7 +299,7 @@ describe('de bout en bout depuis les pièces', () => {
       piece({ id: 'a', categorie_id: 'c-achats', montant_ttc: 1_000.4 }),
       piece({ id: 'l', categorie_id: 'c-loyer', montant_ttc: 9_600 }),
     ], categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
-    const { valeurs } = valeursDesCases(d)
+    const { valeurs } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     const a = calculer2035E({
       annee: 2025, cases: valeurs, formulaire: arrondirPourFormulaire(valeurs, 2025),
       forfaitKilometrique: forfaitKilometriqueDesPostes([...d.recettes, ...d.depenses]), saisies: SAISIES_2035E_ABSENTES,

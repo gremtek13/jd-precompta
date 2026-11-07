@@ -18,6 +18,7 @@ import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
+import { SAISIES_2035_EXPORTEES } from './saisies2035'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
@@ -159,6 +160,21 @@ export function auPlanDesSituationsPubliees(table: string, exportees: boolean): 
   return exportees || !TABLES_DES_SITUATIONS_PUBLIEES.includes(table)
 }
 
+// LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, PRÉPARÉE, pas appliquée) : CC, CL et
+// ses « dont », DE, le reste de DB, une ligne par dossier, exercice et case. Sous le drapeau de la migration
+// (`SAISIES_2035_EXPORTEES`, src/lib/saisies2035.ts), baissé : la production n'a pas la table, et la lire ferait échouer
+// toute sauvegarde. Le même drapeau que l'écran : une table que Clôture écrirait sans que la sauvegarde la lise se perdrait
+// à la restauration. Sa relation au dossier (cascade), son rang (juste avant les exercices validés : leur gel refuserait
+// une saisie réinsérée après eux), son chemin ; aucune vague ; sa clé est la commune, `id`. La restauration la réinsère
+// comme toute ligne d'un dossier qui ne porte encore aucun exercice validé. sauvegardeSaisies2035.test.ts éprouve le plan
+// prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DES_SAISIES_2035: readonly string[] = ['saisies_2035']
+
+/** Une table au plan, côté saisies de la 2035 : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
+export function auPlanDesSaisies2035(table: string, exportees: boolean): boolean {
+  return exportees || !TABLES_DES_SAISIES_2035.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -170,6 +186,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
     && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
+    && auPlanDesSaisies2035(table, SAISIES_2035_EXPORTEES)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -322,6 +339,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'trace_des_droits', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'situations_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'saisies_2035', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'mouvements_cca', parent: 'comptes_courants_associes', colonne: 'compte_id', aLaSuppression: 'cascade' },
   { enfant: 'natures_immobilisation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'notes_internes', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'cascade' },
@@ -693,6 +711,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'contacts',
   'parametres_facturation',
   'designations_des_pieces',
+  'saisies_2035',
   'exercices_valides',
 ]
 
@@ -1152,6 +1171,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   memberships: { acces: 'direct' },
   trace_des_droits: { acces: 'direct' },
   situations_publiees: { acces: 'direct' },
+  saisies_2035: { acces: 'direct' },
   notes_internes: { acces: 'direct' },
   packs: { acces: 'direct' },
   piece_commentaires: { acces: 'direct' },

@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -173,7 +174,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE,
     etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
-    champsBnc: { etat: 'non_exportes' }, ...o,
+    champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, ...o,
   }
   if (o.controlesReleves === undefined) base.controlesReleves = [releveQuiConcorde(base)]
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
@@ -1270,7 +1271,7 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
       expect(p).toMatchObject({ bloquant: true, nb: 1, cible: 'cloture', message: MESSAGE })
       expect(prealablesDeValidation(d).validable).toBe(false)
       // La carte de Clôture et le préalable disent la même chose : BK = 600 + 400 − 300, contre 600 + 400 de « dont ».
-      const incoherences = incoherencesDesCases(valeursDesCases(d.declaration!).valeurs)
+      const incoherences = incoherencesDesCases(valeursDesCases(d.declaration!, AUCUNE_SAISIE_2035).valeurs)
       expect(incoherences.map((i) => [i.porteuse.code, i.totalSousCases, i.montantPorteuse])).toEqual([['BK', 1000, 700]])
     })
 

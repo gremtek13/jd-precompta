@@ -36,6 +36,7 @@ import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { pisteAudit } from '../../src/lib/pisteAudit'
 import { pointsDeLaChecklist } from '../../src/lib/pointsDeLaChecklist'
 import { prealablesDeValidation } from '../../src/lib/prealablesValidation'
+import { AUCUNE_SAISIE_2035 } from '../../src/lib/saisies2035'
 import { ventesDeLaChecklist } from '../../src/lib/ventesDeLaChecklist'
 import { etatsDesVentesFacturees } from '../../src/lib/ecrituresVentesFactureesEcran'
 import { paiementsDesPieces } from '../../src/lib/rattachement'
@@ -375,7 +376,7 @@ function mesurer(k: number): Map<string, number | string> {
         controlesReleves: [], doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources,
         etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, anneesValidees: [], ventesParLesFactures: true }),
         ventesDeLaChecklist: ventesDeLaChecklist(lectureDesSources, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
-        declaration, concordance,
+        declaration, saisies2035: AUCUNE_SAISIE_2035, concordance,
       }), (r) => JSON.stringify(r).slice(0, 200))
       const etat: EtatDeLaCaisse = {
         compteCaisse: PLAN.caisse, ouvertures: [{ date: `${ANNEE}-01-01`, compte: PLAN.caisse, sens: 'debit', montant: 200 }],

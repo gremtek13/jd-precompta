@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { describe, expect, it } from 'vitest'
 import {
   arrondirPourFormulaire,
@@ -280,7 +281,7 @@ describe('valeurs des cases — l’addition du formulaire', () => {
     const { valeurs } = valeursDesCases(declaration({
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000 })],
       depenses: [ligne({ poste: 'Achats', montant: 1000 }), ligne({ poste: 'Loyers et charges locatives', montant: 500 })],
-    }))
+    }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('AD')).toBe(10_000)
     expect(valeurs.get('AG')).toBe(10_000)
     expect(valeurs.get('BR')).toBe(1500)
@@ -295,7 +296,7 @@ describe('valeurs des cases — l’addition du formulaire', () => {
         ligne({ poste: 'Honoraires rétrocédés', nature: 'depense', montant: 600 }),
       ],
     })
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(postesSansCase).toEqual([])
     expect(valeurs.get('AA')).toBe(10_000)
     expect(valeurs.get('AB')).toBe(400)
@@ -314,7 +315,7 @@ describe('valeurs des cases — l’addition du formulaire', () => {
         ligne({ poste: 'Débours', nature: 'recette', montant: 400 }),
         ligne({ poste: 'Honoraires rétrocédés', nature: 'recette', montant: 600 }),
       ],
-    }))
+    }), AUCUNE_SAISIE_2035)
     expect(postesSansCase.map((p) => [p.ligne.poste, p.raison, p.codeRefuse])).toEqual([
       ['Débours', 'case du mauvais sens', 'AB'],
       ['Honoraires rétrocédés', 'case du mauvais sens', 'AC'],
@@ -328,14 +329,14 @@ describe('valeurs des cases — l’addition du formulaire', () => {
     const benefice = valeursDesCases(declaration({
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000 })],
       depenses: [ligne({ poste: 'Achats', montant: 4000 })],
-    })).valeurs
+    }), AUCUNE_SAISIE_2035).valeurs
     expect(benefice.get('CA')).toBe(6000)
     expect(benefice.get('CF')).toBe(0)
 
     const deficit = valeursDesCases(declaration({
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 1000 })],
       depenses: [ligne({ poste: 'Achats', montant: 4000 })],
-    })).valeurs
+    }), AUCUNE_SAISIE_2035).valeurs
     expect(deficit.get('CA')).toBe(0)
     expect(deficit.get('CF')).toBe(3000)
   })
@@ -344,7 +345,7 @@ describe('valeurs des cases — l’addition du formulaire', () => {
     const { valeurs } = valeursDesCases(declaration({
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000 })],
       depenses: [ligne({ poste: 'Achats', montant: 1000 }), ligne({ poste: POSTE_AMORTISSEMENTS, montant: 2000 })],
-    }))
+    }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('BR')).toBe(1000)
     expect(valeurs.get('CH')).toBe(2000)
     expect(valeurs.get('CA')).toBe(9000)
@@ -357,7 +358,7 @@ describe('valeurs des cases — l’addition du formulaire', () => {
     const { valeurs } = valeursDesCases(declaration({
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 1000 })],
       depenses: [ligne({ poste: 'Achats', montant: 1200 }), ligne({ poste: POSTE_AMORTISSEMENTS, montant: 500 })],
-    }))
+    }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('CF')).toBe(200)
     expect(valeurs.get('CN')).toBe(700)
     expect(valeurs.get('CP')).toBe(0)
@@ -367,7 +368,7 @@ describe('valeurs des cases — l’addition du formulaire', () => {
   it('met un zéro dans toutes les cases, y compris celles qu’aucun poste n’alimente', () => {
     // Le PDF a besoin d'une valeur par case : un trou laisserait une case blanche là où le
     // formulaire attend un chiffre.
-    const { valeurs } = valeursDesCases(declaration({}))
+    const { valeurs } = valeursDesCases(declaration({}), AUCUNE_SAISIE_2035)
     for (const c of CASES_2035) expect(valeurs.get(c.code), c.code).toBe(0)
   })
 })
@@ -422,7 +423,7 @@ describe('arrondi à l’euro — le formulaire doit s’additionner', () => {
     const { valeurs } = valeursDesCases(declaration({
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000.49 })],
       depenses: [ligne({ poste: 'Achats', montant: 1234.56 })],
-    }))
+    }), AUCUNE_SAISIE_2035)
     const arrondies = arrondirPourFormulaire(valeurs, 2025)
     for (const [code, montant] of arrondies) expect(Number.isInteger(montant), `${code} = ${montant}`).toBe(true)
     expect(arrondies.get('AA')).toBe(10_000)
@@ -449,7 +450,7 @@ describe('bout en bout depuis les pièces', () => {
       piece({ id: 'c', categorie_id: 'c-vente', type_piece: 'vente', montant_ht: 5000 }),
     ], categories, [], [], [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
 
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(postesSansCase).toEqual([])
     expect(valeurs.get('AA')).toBe(5000)
     expect(valeurs.get('BH')).toBe(1000)
@@ -465,7 +466,7 @@ describe('bout en bout depuis les pièces', () => {
     const achat = piece({ id: 'a', categorie_id: 'c-hono', montant_ht: 800 })
     const vente = piece({ id: 'v', categorie_id: 'c-hono', type_piece: 'vente', montant_ht: 300 })
     for (const pieces of [[achat, vente], [vente, achat]]) {
-      const { valeurs, postesSansCase } = valeursDesCases(calculerDeclaration2035(2025, pieces, categories, [], [], [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE))
+      const { valeurs, postesSansCase } = valeursDesCases(calculerDeclaration2035(2025, pieces, categories, [], [], [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE), AUCUNE_SAISIE_2035)
       expect(valeurs.get('BH')).toBe(800)
       expect(valeurs.get('AA')).toBe(0)
       expect(postesSansCase.map((p) => [p.ligne.nature, p.ligne.montant, p.raison, p.codeRefuse]))
@@ -484,7 +485,7 @@ describe('le barème kilométrique arrive en case BJ', () => {
   it('porte le « total A » du cadre 7 ligne 23, comme le dit le formulaire', () => {
     // Le bas du 2035-B : « Total A à reporter ligne 23 de l'annexe 2035 A ». Ligne 23 = BJ.
     const d = calculerDeclaration2035(2025, [], [], [], [], [vehicule({})], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
-    const { valeurs, postesSansCase } = valeursDesCases(d)
+    const { valeurs, postesSansCase } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(postesSansCase).toEqual([])
     expect(valeurs.get('BJ')).toBe(2660)
     // Et il compte bien dans le total des dépenses : une case BJ remplie mais hors de BR ne
@@ -501,7 +502,7 @@ describe('le barème kilométrique arrive en case BJ', () => {
       montant_ht: 340, montant_ttc: 340, categorie_id: 'c-depl',
     } as Piece
     const d = calculerDeclaration2035(2025, [piece], categories, [], [], [vehicule({})], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
-    expect(valeursDesCases(d).valeurs.get('BJ')).toBe(2660 + 340)
+    expect(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('BJ')).toBe(2660 + 340)
   })
 })
 
@@ -606,7 +607,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
         ligne({ poste: POSTE_CSG_DEDUCTIBLE, montant: 1500 }),
         ligne({ poste: POSTE_AMORTISSEMENTS, montant: 2000 }),
       ],
-    }))
+    }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('CP')).toBe(48_000)
     // 48 000 + 12 000 (BK) + 1 500 (BV) — et surtout pas l'abattement de 26 % de l'Urssaf.
     expect(valeurs.get('DD')).toBe(61_500)
@@ -619,7 +620,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
     const { valeurs } = valeursDesCases(declaration({
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000 })],
       depenses: [ligne({ poste: POSTE_COTISATIONS, montant: 12_000 })],
-    }))
+    }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('CR')).toBe(2000)
     expect(valeurs.get('DD')).toBe(10_000)
     expect(valeurs.get('DC')).toBe(0)
@@ -630,7 +631,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
     const { valeurs } = valeursDesCases(declaration({
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 1000 })],
       depenses: [ligne({ poste: 'Achats', montant: 5000 }), ligne({ poste: POSTE_COTISATIONS, montant: 500 })],
-    }))
+    }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('CR')).toBe(4500)
     expect(valeurs.get('DC')).toBe(4000)
     expect(valeurs.get('DD')).toBe(0)
@@ -643,7 +644,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
     const categories = [{ id: 'c-rec', poste_2035: 'Recettes' }] as Categorie[]
     const recette = { id: 'r', statut: 'validee', type_piece: 'vente', date_piece: '2025-06-15', montant_ht: 50_000, montant_ttc: 50_000, categorie_id: 'c-rec' } as Piece
     const avec = (montant_csg_crds: number | null) =>
-      valeursDesCases(calculerDeclaration2035(2025, [recette], categories, [], cotisationsComptees([cotisation({ montant_csg_crds })], [], 'tresorerie'), [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)).valeurs
+      valeursDesCases(calculerDeclaration2035(2025, [recette], categories, [], cotisationsComptees([cotisation({ montant_csg_crds })], [], 'tresorerie'), [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE), AUCUNE_SAISIE_2035).valeurs
 
     const brute = avec(null)
     const ventilee = avec(970)
@@ -670,7 +671,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
       annee: 2024,
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 80_000 })],
       depenses: [ligne({ poste: POSTE_COTISATIONS, montant: 12_000 })],
-    })).valeurs
+    }), AUCUNE_SAISIE_2035).valeurs
     expect(avant.get('CP')).toBe(68_000)
     expect(avant.get('DD')).toBe(0)
     expect(avant.get('DC')).toBe(0)
@@ -680,7 +681,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
       annee: 2025,
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 80_000 })],
       depenses: [ligne({ poste: POSTE_COTISATIONS, montant: 12_000 })],
-    })).valeurs
+    }), AUCUNE_SAISIE_2035).valeurs
     expect(apres.get('DD')).toBe(80_000)
   })
 
@@ -691,7 +692,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
     const { valeurs } = valeursDesCases(declaration({
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000.49 })],
       depenses: [ligne({ poste: 'Achats', montant: 1234.56 }), ligne({ poste: POSTE_COTISATIONS, montant: 1000.49 })],
-    }))
+    }), AUCUNE_SAISIE_2035)
     expect(valeurs.get('DD')).toBe(8765.93)
     const arrondies = arrondirPourFormulaire(valeurs, 2025)
     expect(arrondies.get('CP')).toBe(7765)
@@ -719,7 +720,7 @@ describe('casesNegatives', () => {
       ],
     })
     expect(casesNegatives(d)).toEqual([])
-    expect(valeursDesCases(d).valeurs.get('BH')).toBe(470)
+    expect(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('BH')).toBe(470)
   })
 
   it('se tait sur une case que ses postes ramènent à zéro : zéro n’est pas négatif', () => {
@@ -800,7 +801,7 @@ describe('les secondes cases qu’un poste alimente aussi', () => {
         ligne({ poste: "Plan d'épargne retraite", montant: 800 }),
       ],
     })
-    const { valeurs } = valeursDesCases(d)
+    const { valeurs } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(['BM', 'BY', 'BG', 'BW', 'BK', 'BZ', 'BU'].map((c) => valeurs.get(c))).toEqual([200, 180, 3_000, 2_400, 2_000, 1_200, 800])
     // BR, la somme des porteuses : les « dont » n'y entrent pas.
     expect(valeurs.get('BR')).toBe(5_200)
@@ -823,7 +824,7 @@ describe('les secondes cases qu’un poste alimente aussi', () => {
         { source: { type: 'piece', id: 'p1', piece: { id: 'p1' } as Piece }, poste: POSTE_COTISATIONS, nature: 'depense', compte: '646100', centimes: 50_000 },
       ],
     })
-    const { valeurs } = valeursDesCases(d)
+    const { valeurs } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(valeurs.get('BK')).toBe(10_700)
     expect(valeurs.get('BT')).toBe(9_000)
     expect(partDeBKSansNature(valeurs)).toBe(1_700)
@@ -841,7 +842,7 @@ describe('les secondes cases qu’un poste alimente aussi', () => {
       2025, [], [], [], cotisationsComptees(cotisations, [], 'tresorerie'), [], false, paiementsDesPieces([], [], [], []),
       partsDuReleve([], [], [], false), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
     )
-    const { valeurs } = valeursDesCases(d)
+    const { valeurs } = valeursDesCases(d, AUCUNE_SAISIE_2035)
     expect(valeurs.get('BK')).toBe(903)
     expect(valeurs.get('BT')).toBe(903)
     expect(valeurs.get('BV')).toBe(68)
@@ -850,14 +851,14 @@ describe('les secondes cases qu’un poste alimente aussi', () => {
 
   it('DB ne se remplit qu’à partir des revenus 2025 ; avant, les indemnités journalières restent en AF seulement', () => {
     const ij = ligne({ poste: 'Indemnités journalières', nature: 'recette', montant: 1_500 })
-    expect(valeursDesCases(declaration({ annee: 2025, recettes: [ij] })).valeurs.get('DB')).toBe(1_500)
-    const avant = valeursDesCases(declaration({ annee: 2024, recettes: [ij] })).valeurs
+    expect(valeursDesCases(declaration({ annee: 2025, recettes: [ij] }), AUCUNE_SAISIE_2035).valeurs.get('DB')).toBe(1_500)
+    const avant = valeursDesCases(declaration({ annee: 2024, recettes: [ij] }), AUCUNE_SAISIE_2035).valeurs
     expect(avant.get('AF')).toBe(1_500)
     expect(avant.get('DB')).toBe(0)
   })
 
   it('une indemnité journalière en dépense est du mauvais sens : ni AF, ni DB', () => {
-    const { valeurs, postesSansCase } = valeursDesCases(declaration({ depenses: [ligne({ poste: 'Indemnités journalières', montant: 100 })] }))
+    const { valeurs, postesSansCase } = valeursDesCases(declaration({ depenses: [ligne({ poste: 'Indemnités journalières', montant: 100 })] }), AUCUNE_SAISIE_2035)
     expect(postesSansCase.map((p) => p.raison)).toEqual(['case du mauvais sens'])
     expect(valeurs.get('DB')).toBe(0)
   })

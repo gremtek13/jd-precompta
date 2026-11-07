@@ -1,3 +1,4 @@
+import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { describe, expect, it } from 'vitest'
 import {
   calculerDeclaration2035, csgDeductible, partCsgNonDeductible,
@@ -1090,7 +1091,7 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
 
   it('le poste des ventes facturées est la ligne 1, case AA', () => {
     expect(caseDuPoste(POSTE_VENTES_FACTUREES)?.code).toBe('AA')
-    expect(valeursDesCases(avec(ventes(), { annee: 2025 })).valeurs.get('AA')).toBe(500)
+    expect(valeursDesCases(avec(ventes(), { annee: 2025 }), AUCUNE_SAISIE_2035).valeurs.get('AA')).toBe(500)
   })
 
   it('la recette est le hors taxe que la facture porte, quel que soit le statut du dossier ; à 0 %, le TTC', () => {
@@ -1229,7 +1230,7 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
     expect(d.resultat).toBe(700.1)
     // Deux lignes de recettes, une par poste, et la case AA les reçoit toutes les deux.
     expect(d.recettes.map((l) => l.poste).sort()).toEqual([POSTE_VENTES_FACTUREES, 'Recettes'].sort())
-    expect(valeursDesCases(d).valeurs.get('AA')).toBe(800.2)
+    expect(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('AA')).toBe(800.2)
     // Chaque poste est la somme exacte de ses contributions.
     for (const l of d.recettes) {
       expect(d.contributions.filter((c) => c.poste === l.poste && c.nature === l.nature).reduce((s, c) => s + c.centimes, 0) / 100).toBe(l.montant)
@@ -1283,7 +1284,7 @@ describe('calculerDeclaration2035 — les frais d’un mouvement d’encaissemen
     expect(d.resultat).toBe(Math.round((d.totalRecettes - 2) * 100) / 100)
     expect(d.exclusions.fraisSansPoste).toEqual([])
     // En case BN, ligne 31 du 2035-A.
-    expect(valeursDesCases(d).valeurs.get('BN')).toBe(2)
+    expect(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('BN')).toBe(2)
   })
 
   // L'INSTANTANÉ VALIDÉ LE GARDE (étape VF7d) : le poste des frais compte le mouvement d'encaissements parmi ses mouvements,
@@ -1291,7 +1292,7 @@ describe('calculerDeclaration2035 — les frais d’un mouvement d’encaissemen
   // aller-retour par la base, tel quel.
   it('l’instantané validé garde le mouvement du poste des frais, et les encaissements du poste des ventes', () => {
     const d = declarer(sources())
-    const valeurs = valeursDesCases(d).valeurs
+    const valeurs = valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs
     const i = instantane2035(d, valeurs, arrondirPourFormulaire(valeurs, 2025), { nom: 'Dossier fictif', activite: null, siret: null })
     const encaissementsDe2025 = new Set(d.contributions.flatMap((c) => (c.source.type === 'encaissement' ? [c.source.id] : [])))
     expect(encaissementsDe2025.size).toBeGreaterThan(1)

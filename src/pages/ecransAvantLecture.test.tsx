@@ -618,6 +618,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'components/BarreDossiers.tsx': 'reçoit la liste des dossiers de la coque (Layout, montée ici) et son état de chargement',
   'pages/dossier/StatutTvaCard.tsx': 'reçoit le statut de TVA du dossier ; n’écrit que sur « Enregistrer »',
   'pages/dossier/ValidationExerciceCard.tsx': 'reçoit les préalables de la Clôture (montée ici) ; ne valide que sur un clic',
+  'pages/dossier/SaisiesDuCabinet2035Card.tsx': 'reçoit la lecture des saisies de la Clôture (drapeau `SAISIES_2035_EXPORTEES` '
+    + 'baissé : non montée) ; son test (SaisiesDuCabinet2035Card.test.tsx) éprouve « chargement… » et aucun geste sur une lecture '
+    + 'incomplète ; n’écrit que sur « Enregistrer les saisies »',
   'pages/Login.tsx': 'se connecte, ou demande un lien « Mot de passe oublié », à la soumission du formulaire ; ne lit rien avant',
   'pages/NouveauMotDePasse.tsx': 'ne lit rien ; change le mot de passe à la soumission du formulaire',
   'pages/CodeDeConnexion.tsx': 'reçoit les appareils que porte la session ; ne vérifie le code qu’à la soumission du formulaire',

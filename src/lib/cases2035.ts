@@ -3,6 +3,8 @@ import type { Declaration2035, LigneDeclaration } from './declaration2035'
 import type { MouvementBancaire } from './affectationBanque'
 import type { Categorie, VentilationBancaire } from './types'
 import { partsDesVentilations } from './ventilationBanque'
+import { DONT_DE_CL_RENDUS_AU_REVENU_BRUT_SOCIAL, SAISIES_2035_EXPORTEES } from './saisies2035'
+import type { Saisie2035 } from './saisies2035'
 
 // Rattachement des postes du moteur (voir declaration2035.ts) aux cases du formulaire officiel.
 //
@@ -65,8 +67,9 @@ export interface Case2035 {
   depuisExercice?: number
 }
 
-// Le formulaire, cadre par cadre. Ordre d'impression, donc ordre d'affichage.
-export const CASES_2035: Case2035[] = [
+// Le formulaire, cadre par cadre. Ordre d'impression, donc ordre d'affichage. Les douze « dont » de CL n'y entrent qu'avec
+// les saisies du cabinet (`casesDu2035`, plus bas).
+const CASES_2035_SANS_LES_DONT_DE_CL: Case2035[] = [
   // ── 2035-A-SD, cadre 2 : recettes ────────────────────────────────────────────────────────────
   { code: 'AA', ligne: '1', libelle: 'Recettes encaissées y compris les remboursements de frais', formulaire: '2035-A', cadre: 'recettes' },
   { code: 'AB', ligne: '2', libelle: 'Débours payés pour le compte des clients', formulaire: '2035-A', cadre: 'recettes', soustractive: true },
@@ -137,6 +140,37 @@ export const CASES_2035: Case2035[] = [
   { code: 'DC', ligne: 'cadre 8', libelle: 'Revenu brut social (si le montant est négatif)', formulaire: '2035-B', cadre: 'travailleursIndependants', calculee: 'renvoi (26) : CE − CN + BK + BV + exonérations de la ligne 43 + DE − DB, s’il est négatif', depuisExercice: PREMIER_EXERCICE_REVENU_BRUT_SOCIAL },
   { code: 'DD', ligne: 'cadre 8', libelle: 'Revenu brut social (si le montant est positif)', formulaire: '2035-B', cadre: 'travailleursIndependants', calculee: 'renvoi (26) : CE − CN + BK + BV + exonérations de la ligne 43 + DE − DB, s’il est positif', depuisExercice: PREMIER_EXERCICE_REVENU_BRUT_SOCIAL },
 ]
+
+// LES DOUZE « DONT » DE LA LIGNE 43, « Divers à déduire » (CL), relevés sur le formulaire 2035-B-SD 2026 dans l'ordre
+// d'impression (deux colonnes, de haut en bas) ; leurs libellés recopiés du formulaire, leur sens de la notice, renvoi (21).
+// Chacun est une part de CL, saisie par le cabinet (étape 2035S5) : ils ne s'additionnent jamais au total, leur somme ne
+// dépasse pas CL (`incoherencesDesCases`), et huit reviennent au revenu brut social (renvoi (26),
+// `DONT_DE_CL_RENDUS_AU_REVENU_BRUT_SOCIAL`).
+export const DONT_DE_CL: readonly Case2035[] = [
+  { code: 'CS', libelle: 'dont exonération sur le bénéfice « entrepreneur zone franche urbaine territoire entrepreneur »' },
+  { code: 'CT', libelle: 'dont l’abondement sur l’épargne salariale' },
+  { code: 'AW', libelle: 'dont exonération sur le bénéfice « entreprise nouvelle »' },
+  { code: 'CO', libelle: 'dont exonération sur le bénéfice « jeunes artistes »' },
+  { code: 'CU', libelle: 'dont exonération « jeunes entreprises innovantes »' },
+  { code: 'CQ', libelle: 'dont plus-values à court terme exonérées (art. 151 septies ; 151 septies A et 238 quindecies)' },
+  { code: 'DF', libelle: 'dont déductions « médecins conventionnés de secteur I » – frais de représentation de 2 %' },
+  { code: 'DG', libelle: 'dont déductions « médecins conventionnés de secteur I » – déduction complémentaire de 3 %' },
+  { code: 'CI', libelle: 'dont exonération médecins « zones déficitaires en offre de soins »' },
+  { code: 'CJ', libelle: 'dont exonération Zone France Ruralités Revitalisation (ZFRR)' },
+  { code: 'AX', libelle: 'dont revenus nets de cession, concession et sous concession de brevets taxables à 10 %' },
+  { code: 'DH', libelle: 'dont déductions « médecins conventionnés de secteur I » – abattement forfaitaire pour frais du groupe III' },
+].map((c) => ({ ...c, ligne: '43', formulaire: '2035-B' as const, cadre: 'resultat' as const, sousCaseDe: 'CL', saisieCabinet: true as const }))
+
+// LE TABLEAU DES CASES SELON LE DRAPEAU DES SAISIES : sans lui, celui d'hier, exactement ; avec lui, les douze « dont » de CL
+// juste avant leur porteuse, comme toute case « dont ». Une fonction, pour que chacun des deux états se teste (une constante
+// calculée au chargement d'un module ne se teste que dans l'état où le module l'a trouvée).
+export function casesDu2035(avecLesDontDeCL: boolean): Case2035[] {
+  if (!avecLesDontDeCL) return [...CASES_2035_SANS_LES_DONT_DE_CL]
+  const rang = CASES_2035_SANS_LES_DONT_DE_CL.findIndex((c) => c.code === 'CL')
+  return [...CASES_2035_SANS_LES_DONT_DE_CL.slice(0, rang), ...DONT_DE_CL, ...CASES_2035_SANS_LES_DONT_DE_CL.slice(rang)]
+}
+
+export const CASES_2035: Case2035[] = casesDu2035(SAISIES_2035_EXPORTEES)
 
 export const CASE_PAR_CODE = new Map(CASES_2035.map((c) => [c.code, c]))
 
@@ -514,13 +548,30 @@ export function casesNegatives(declaration: Declaration2035): CaseRemplie[] {
 // Toutes les cases du formulaire, y compris celles qu'aucun poste n'alimente et celles qui se
 // calculent. Une case sans montant vaut 0 : sur un formulaire, l'absence est un zéro, et le PDF a
 // besoin d'une valeur par case plutôt que d'un trou.
-export function valeursDesCases(declaration: Declaration2035): {
+//
+// LES SAISIES DU CABINET (étapes 2035S3 à S5), une entrée OBLIGATOIRE : CC et CL entrent aux totaux de la ligne 38 et de la
+// ligne 45, donc au bénéfice ; DE et DB au revenu brut social, DB s'ajoutant aux indemnités journalières de leur poste
+// (renvoi (25)) ; les « dont » de CL à leur case. `AUCUNE_SAISIE_2035` tant que le drapeau est baissé, ou pour un exercice
+// sans saisie : la 2035 d'hier. Une saisie qu'aucune case de ce formulaire ne porte (un « dont » de CL drapeau baissé, DE
+// avant les revenus 2025), ou deux pour une même case, LÈVE : la base n'en rend pas, et la taire changerait la 2035 en
+// silence.
+export function valeursDesCases(declaration: Declaration2035, saisies: readonly Saisie2035[]): {
   valeurs: Map<string, number>
   postesSansCase: PosteNonRattache[]
 } {
   const { cases, secondes, postesSansCase } = repartirEnCases(declaration)
   const valeurs = new Map<string, number>(CASES_2035.map((c) => [c.code, 0]))
   for (const r of [...cases, ...secondes]) valeurs.set(r.case.code, r.montant)
+  const vues = new Set<string>()
+  for (const s of saisies) {
+    const c = CASE_PAR_CODE.get(s.code)
+    if (!c || !c.saisieCabinet || !porteeEn(c, declaration.annee) || vues.has(s.code)
+      || !Number.isSafeInteger(s.centimes) || s.centimes < 0) {
+      throw new Error(`Saisie de la 2035 que le formulaire de ${declaration.annee} ne porte pas : ${s.code} (${s.centimes} centimes).`)
+    }
+    vues.add(s.code)
+    valeurs.set(s.code, ((valeurs.get(s.code) ?? 0) * 100 + s.centimes) / 100)
+  }
 
   calculerLesCasesCalculees(valeurs, declaration.annee)
 
@@ -584,8 +635,12 @@ function calculerLesCasesCalculees(valeurs: Map<string, number>, annee: number):
 //
 // Pour une société, le renvoi retranche en plus les rémunérations des associés comprises en CC : une
 // saisie du cabinet, nulle ici, et le calcul reste juste tant qu'elle l'est.
+//
+// DEPUIS LES SAISIES DU CABINET (étape 2035S5), les huit « dont » de CL que le renvoi nomme y entrent
+// (`DONT_DE_CL_RENDUS_AU_REVENU_BRUT_SOCIAL`) ; drapeau baissé, aucun n'est au tableau des cases, et ils valent zéro.
 function revenuBrutSocial(v: (code: string) => number): number {
-  return v('CE') - v('CN') + v('BK') + v('BV') + v('DE') - v('DB')
+  const rendus = DONT_DE_CL_RENDUS_AU_REVENU_BRUT_SOCIAL.reduce((s, code) => s + v(code), 0)
+  return v('CE') - v('CN') + v('BK') + v('BV') + rendus + v('DE') - v('DB')
 }
 
 // Les postes dont la dépense est DÉJÀ couverte par le barème kilométrique. Note (12) de la notice
