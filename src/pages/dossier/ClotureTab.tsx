@@ -1886,6 +1886,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                   annexe2035E={annexe}
                   lectureAnnexe={instantane ? null : lectureIncomplete}
                   blocage={lectureIncomplete}
+                  cotisations={cotisations}
+                  exerciceValide={anneesValidees.includes(annee)}
                   avertissement={avertissementDuFormulaire(annee)}
                   cloture={cloturesConnues.has(annee)}
                   onCloturer={() => handleCloturer(annee)}
@@ -1934,7 +1936,8 @@ function BoutonCloture({ cloture, onCloturer }: { cloture: boolean; onCloturer: 
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
 function FormulaireAnnuel({
-  dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, lectureAnnexe, blocage, avertissement, cloture, onCloturer,
+  dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, lectureAnnexe, blocage, cotisations, exerciceValide,
+  avertissement, cloture, onCloturer,
 }: {
   dossierId: string
   annee: number
@@ -1954,6 +1957,10 @@ function FormulaireAnnuel({
   // Non nul quand la lecture des pièces n'a pas pu se dire complète : le bouton est alors grisé et
   // dit pourquoi, plutôt que de produire un formulaire qu'on croirait complet.
   blocage: string | null
+  // Les échéances du dossier (toutes années) et l'exercice validé ou non : la régularisation estimée du volet social (TNS-Q2),
+  // que la carte ne montre que sur des lectures entières (`blocage` nul) et sous son drapeau.
+  cotisations: readonly CotisationDeclaree[]
+  exerciceValide: boolean
   // Non nul quand l'application n'a pas le millésime du formulaire de cet exercice (étape 2035S6, lib/modeles2035.ts) : le
   // bouton est retenu, et la phrase le dit sous l'en-tête — jamais un PDF sous l'en-tête d'une autre année.
   avertissement: string | null
@@ -2046,7 +2053,8 @@ function FormulaireAnnuel({
       <Annexe2035ECard annexe={annexe2035E} lectureIncomplete={lectureAnnexe} />
       {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && <ReportDeclarationRevenus annee={annee} valeurs={valeurs} formulaire={formulaire} />}
       {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && (
-        <VoletSocialCard dossierId={dossierId} annee={annee} valeurs={valeurs} blocage={blocage} />
+        <VoletSocialCard dossierId={dossierId} annee={annee} valeurs={valeurs} blocage={blocage}
+          cotisations={blocage === null ? cotisations : null} exerciceValide={exerciceValide} />
       )}
     </div>
   )

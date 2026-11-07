@@ -6,7 +6,11 @@ import {
   AUXILIAIRES_MEDICAUX, LIBELLES_PROFESSION, estimerCotisationsUrssaf, natureAbattement, ratioConventionne,
   recettesBrutesRetenues,
 } from '../../lib/voletSocialPamc'
-import type { ProfessionPamc, VoletSocialPamc } from '../../lib/types'
+import type { CotisationDeclaree, ProfessionPamc, VoletSocialPamc } from '../../lib/types'
+import {
+  REGULARISATION_DES_COTISATIONS_EXPORTEE, estimerLaRegularisation, type RegularisationEstimee,
+} from '../../lib/regularisationDesCotisations'
+import { aujourdHuiAParis } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 
 // Le volet social d'un praticien ou auxiliaire médical conventionné, sous le report du revenu brut
@@ -70,10 +74,14 @@ const ABATTEMENT: Record<ReturnType<typeof natureAbattement>, string> = {
   plafond: "l'abattement maximal, 130 % du plafond de la sécurité sociale",
 }
 
-export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: {
+export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, cotisations = null, exerciceValide = false }: {
   dossierId: string
   annee: number
   valeurs: Map<string, number>
+  // Les échéances du dossier, LUES EN ENTIER, et l'exercice validé ou non : la régularisation estimée (TNS-Q2), sous
+  // `REGULARISATION_DES_COTISATIONS_EXPORTEE`. Nulles, ou sous un blocage, la carte n'en dit rien.
+  cotisations?: readonly CotisationDeclaree[] | null
+  exerciceValide?: boolean
   // Non nul quand une entrée de la déclaration n'a pas été lue en entier : la proposition des
   // recettes et l'estimation reposeraient sur une 2035 amputée, elles se suspendent.
   blocage: string | null
@@ -329,6 +337,11 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
 
               <EstimationCotisations annee={annee} revenuBrutSocial={revenuBrutSocial} resultat={estimation}
                 avecStructures={(nombre(saisis.structures) ?? 0) > 0} />
+              {REGULARISATION_DES_COTISATIONS_EXPORTEE && cotisations !== null && (
+                <Regularisation resultat={estimerLaRegularisation({
+                  annee, definitives: estimation, echeances: cotisations, exerciceValide, aujourdhui: aujourdHuiAParis(),
+                })} />
+              )}
             </>
           )}
         </>
@@ -420,13 +433,57 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
             ci-dessus. Hors retraite (appelée par la caisse, pas par l'Urssaf), hors indemnités
             journalières perçues, ACRE, exonérations et outre-mer ; activité supposée commencée avant
             {' '}{annee}. La régularisation est l'écart avec les cotisations provisionnelles appelées pour
-            {' '}{annee} : seul l'avis de l'Urssaf la chiffre, les échéances de l'onglet Cotisations ne disant ni
-            l'organisme qui les appelle ni l'année qu'elles paient.
+            {' '}{annee}{REGULARISATION_DES_COTISATIONS_EXPORTEE
+              ? ' : elle s’estime ci-dessous, sur les échéances que l’onglet Cotisations décrit, et seul l’avis de l’Urssaf la chiffre.'
+              : " : seul l'avis de l'Urssaf la chiffre, les échéances de l'onglet Cotisations ne disant ni l'organisme qui les appelle ni l'année qu'elles paient."}
             {avecStructures && (
               ' La prise en charge ouverte par les recettes en structures de soins n’est pas estimée : ' +
               'le simulateur de l’Urssaf ne la calcule pas non plus, et l’estimation peut donc être plus haute ' +
               'que l’appel.'
             )}
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+// LA RÉGULARISATION ESTIMÉE (ligne 27, TNS-Q2 ; lib/regularisationDesCotisations.ts) : les définitives ci-dessus, moins ce que
+// l'Urssaf a appelé au titre de l'année, sa source dite ; ce qu'elle ne sait pas, dit à la place du chiffre.
+function Regularisation({ resultat }: { resultat: RegularisationEstimee }) {
+  const droite = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } as const
+  return (
+    <div style={{ marginTop: 14 }}>
+      <strong>Régularisation estimée de {resultat.annee}</strong>
+      {resultat.etat === 'inconnue' ? (
+        <>
+          <p className="muted" style={{ margin: '6px 0 4px' }}>Elle ne s’estime pas encore :</p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>{resultat.manques.map((m) => <li key={m}>{m}</li>)}</ul>
+        </>
+      ) : (
+        <>
+          <div className="table-scroll" style={{ marginTop: 8 }}>
+            <table>
+              <tbody>
+                <tr><td>Cotisations définitives estimées ci-dessus</td><td style={droite}>{euros(resultat.definitives)}</td></tr>
+                <tr>
+                  <td>Appelées par l’Urssaf au titre de {resultat.annee} ({resultat.comptees.length} échéance{resultat.comptees.length > 1 ? 's' : ''}, provisionnelles ou acomptes)</td>
+                  <td style={droite}>{euros(resultat.appelees)}</td>
+                </tr>
+                <tr style={{ fontWeight: 600 }}>
+                  <td>
+                    {resultat.sens === 'due' ? `À payer en ${resultat.payableEn}`
+                      : resultat.sens === 'remboursee' ? `À rembourser par l’Urssaf en ${resultat.payableEn}` : 'Aucune régularisation'}
+                  </td>
+                  <td style={droite}>{euros(Math.abs(resultat.regularisation))}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="muted" style={{ margin: '6px 0 0' }}>
+            Source : les échéances de l’onglet Cotisations décrites « Urssaf, {resultat.annee}, provisionnelle » ou
+            « acompte », leur montant appelé ; une régularisation d’une autre année n’y entre pas.
+            {resultat.reserves.map((r) => ` ${r}`).join('')}
           </p>
         </>
       )}

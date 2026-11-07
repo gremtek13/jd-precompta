@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from 'react'
 import { jugerLaModification, saisieDe, type ContexteDesGestes, type SaisieDeLEcheance } from '../../lib/gestesDesEcheances'
 import { formatDate } from '../../lib/format'
 import type { CotisationDeclaree } from '../../lib/types'
+import ChampsDeLaDescription from './ChampsDeLaDescription'
 
 // LA FENÊTRE « MODIFIER » D'UNE ÉCHÉANCE DE COTISATION (COT-Q3) : l'échéance pré-remplie telle qu'elle est en base, et, avant
 // le clic, ce que la base refuserait ou ce que le geste change à son rapprochement. Rien n'est jugé ici : le refus et les
@@ -58,6 +59,11 @@ export default function ModifierEcheanceModal({
             Prévisionnel (estimation, pas encore un appel définitif)
           </label>
         </div>
+        {/* L'organisme, l'année payée et la nature (TNS-Q2) : seulement sous le drapeau, sur une échéance lue avec ses colonnes. */}
+        {saisie.description && (
+          <ChampsDeLaDescription valeur={saisie.description} disabled={enCours} prefixe="modifier"
+            onChange={(description) => setSaisie((s) => ({ ...s, description }))} />
+        )}
         {'refus' in jugement
           ? <p className={jugement.refus.discret ? 'muted' : 'error-text'}>{jugement.refus.message}</p>
           : (

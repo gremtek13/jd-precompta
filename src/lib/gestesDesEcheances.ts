@@ -5,6 +5,10 @@ import {
 import { formatDate, formatMoney } from './format'
 import type { PlanComptable } from './planComptable'
 import type { CotisationDeclaree, EcritureBrouillon, ModeComptable } from './types'
+import {
+  REGULARISATION_DES_COTISATIONS_EXPORTEE, descriptionDite, lireLaDescription, saisieDeLaDescription,
+  type DescriptionDeLEcheance, type SaisieDeLaDescription,
+} from './regularisationDesCotisations'
 
 // « MODIFIER » ET « RÉUNIR » UNE ÉCHÉANCE DE COTISATION (relecture du 03/11/2026, D1 et D5 ; COT-Q1 et COT-Q3, écrites sur la
 // recommandation le 04/11/2026). Les règles et les mots, ici ; l'onglet Cotisations les montre avant le clic et écrit.
@@ -41,8 +45,12 @@ import type { CotisationDeclaree, EcritureBrouillon, ModeComptable } from './typ
 //   - du MÊME SENS (deux appels, ou deux remboursements) et non nulles ;
 //   - leurs CSG-CRDS toutes deux saisies, ou toutes deux non saisies : une saisie et une inconnue donneraient une somme qui
 //     se croirait complète ;
-//   - DU MÊME ORGANISME : la base ne porte pas l'organisme d'une échéance (la colonne `nature` de COT-Q3, D3, viendra après
-//     le MVP). La confirmation le demande au cabinet, en le disant.
+//   - DU MÊME ORGANISME : la confirmation le demande au cabinet. Depuis la migration `regularisation_des_cotisations`
+//     (préparée, ligne 27, TNS-Q2), une échéance peut dire son organisme, son année payée et sa nature : deux organismes
+//     DITS et différents se refusent (un prélèvement n'en paie qu'un), et l'échéance réunie ne garde de la description que
+//     ce que les deux disent à l'identique — une provisionnelle et une régularisation réunies sont une échéance MÊLÉE, que
+//     l'estimation de la régularisation dit non décrite plutôt que de la compter d'une seule nature. Ces règles suivent les
+//     colonnes LUES (une colonne absente de la lecture ne s'écrit pas), pas le drapeau de l'écran.
 //
 // DEUX ÉCRITURES, PAS TOUT OU RIEN — l'ordre : L'ÉCHÉANCE GARDÉE D'ABORD, portée à la somme ; L'AUTRE ENSUITE, retirée.
 // Un échec entre les deux laisse les deux échéances en base, la gardée à la somme : la somme compte deux fois, mais RIEN
@@ -57,6 +65,7 @@ const DATE_CIVILE = /^\d{4}-\d{2}-\d{2}$/
 
 /** Ce qu'une modification ou une réunion écrit sur une échéance. */
 export type ValeursDeLEcheance = Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'previsionnel'>
+  & Partial<DescriptionDeLEcheance>
 
 /** La saisie de la fenêtre « Modifier », telle que tapée. */
 export interface SaisieDeLEcheance {
@@ -65,6 +74,9 @@ export interface SaisieDeLEcheance {
   verse: string
   csg: string
   previsionnel: boolean
+  // L'organisme, l'année payée et la nature (TNS-Q2) : présents seulement sous `REGULARISATION_DES_COTISATIONS_EXPORTEE`, sur
+  // une échéance lue avec ses colonnes.
+  description?: SaisieDeLaDescription
 }
 
 /** Ce que l'onglet a lu, EN ENTIER, pour juger un geste : sur une lecture partielle, il n'en offre aucun. */
@@ -89,12 +101,18 @@ export interface RefusDuGeste {
 }
 
 /** La saisie pré-remplie d'une échéance, telle qu'elle est en base. */
-export function saisieDe(c: CotisationDeclaree): SaisieDeLEcheance {
+export function saisieDe(c: CotisationDeclaree, avecDescription = REGULARISATION_DES_COTISATIONS_EXPORTEE): SaisieDeLEcheance {
   const texte = (n: number | null) => (n == null ? '' : String(n))
   return {
     echeance: c.echeance, appele: texte(c.montant_appele), verse: texte(c.montant_verse), csg: texte(c.montant_csg_crds),
     previsionnel: c.previsionnel,
+    ...(avecDescription && lueAvecSaDescription(c) ? { description: saisieDeLaDescription(c) } : {}),
   }
+}
+
+/** L'échéance a-t-elle été lue avec les trois colonnes ? Absentes de la lecture, elles ne s'écrivent ni ne se retiennent. */
+export function lueAvecSaDescription(c: Partial<DescriptionDeLEcheance>): boolean {
+  return c.organisme !== undefined && c.annee_payee !== undefined && c.nature !== undefined
 }
 
 type Lu = { ok: true; valeur: number | null } | { ok: false; message: string }
@@ -127,10 +145,12 @@ export function lireLaSaisie(s: SaisieDeLEcheance): { valeurs: ValeursDeLEcheanc
   if (!verse.ok) return { refus: { message: verse.message } }
   const csg = lireMontant(s.csg, 'La CSG-CRDS')
   if (!csg.ok) return { refus: { message: csg.message } }
+  const description = s.description ? lireLaDescription(s.description, s.echeance) : null
+  if (description && 'refus' in description) return { refus: { message: description.refus } }
   return {
     valeurs: {
       echeance: s.echeance, montant_appele: appele.valeur, montant_verse: verse.valeur, montant_csg_crds: csg.valeur,
-      previsionnel: s.previsionnel,
+      previsionnel: s.previsionnel, ...(description ? description.valeurs : {}),
     },
   }
 }
@@ -153,7 +173,11 @@ function ecritureValideeDu(ligne: Pick<MouvementBancaire, 'id'>, ecritures: read
 
 const memesValeurs = (c: CotisationDeclaree, v: ValeursDeLEcheance) =>
   c.echeance === v.echeance && c.montant_appele === v.montant_appele && c.montant_verse === v.montant_verse
-  && c.montant_csg_crds === v.montant_csg_crds && c.previsionnel === v.previsionnel
+  && c.montant_csg_crds === v.montant_csg_crds && c.previsionnel === v.previsionnel && !descriptionChangee(c, v)
+
+const descriptionChangee = (c: CotisationDeclaree, v: ValeursDeLEcheance) =>
+  (v.organisme !== undefined && v.organisme !== c.organisme) || (v.annee_payee !== undefined && v.annee_payee !== c.annee_payee)
+  || (v.nature !== undefined && v.nature !== c.nature)
 
 export type JugementDeLaModification =
   | { refus: RefusDuGeste }
@@ -236,6 +260,9 @@ export function jugerLaModification(
     effets.push(`Aucun mouvement ne la paie : elle compte à son échéance, le ${formatDate(v.echeance)}, pour ${formatMoney(montant)}, tant qu’aucun paiement ne la date.`)
   }
 
+  if (descriptionChangee(c, v)) {
+    effets.push(`Elle se dit désormais : ${descriptionDite({ ...c, ...v })} — l’estimation de la régularisation la lit ainsi.`)
+  }
   if (c.montant_csg_crds !== v.montant_csg_crds) {
     if (v.montant_csg_crds === null) {
       effets.push('Sans CSG-CRDS saisie, l’échéance est « sans ventilation » : la 2035 ne sort rien d’elle de BK, et la Clôture la cite parmi les cotisations dont la CSG-CRDS n’est pas saisie.')
@@ -291,6 +318,9 @@ export function refusDeLaReunion(gardee: CotisationDeclaree, retiree: Cotisation
       return `Les montants de l’échéance du ${formatDate(c.echeance)} ne sont pas au centime : corrige-les avec « Modifier ».`
     }
   }
+  if (gardee.organisme != null && retiree.organisme != null && gardee.organisme !== retiree.organisme) {
+    return `Ces deux échéances ne viennent pas du même organisme (${descriptionDite({ organisme: gardee.organisme })}, ${descriptionDite({ organisme: retiree.organisme })}) : un prélèvement n’en paie qu’un.`
+  }
   if ((gardee.montant_csg_crds == null) !== (retiree.montant_csg_crds == null)) {
     const sans = gardee.montant_csg_crds == null ? gardee : retiree
     return `La CSG-CRDS de l’échéance du ${formatDate(sans.echeance)} n’est pas saisie : saisis-la avec « Modifier » (0 si l’organisme n’en prélève pas), puis réunis.`
@@ -312,6 +342,18 @@ export function valeursReunies(gardee: CotisationDeclaree, retiree: CotisationDe
       ? null
       : somme(Math.abs(gardee.montant_csg_crds), Math.abs(retiree.montant_csg_crds)),
     previsionnel: false,
+    ...descriptionReunie(gardee, retiree),
+  }
+}
+
+/** La description de l'échéance réunie : ce que les deux disent à l'identique, le reste nul ; rien si l'une est lue sans. */
+export function descriptionReunie(gardee: CotisationDeclaree, retiree: CotisationDeclaree): Partial<DescriptionDeLEcheance> {
+  if (!lueAvecSaDescription(gardee) || !lueAvecSaDescription(retiree)) return {}
+  const commun = <T>(a: T | null | undefined, b: T | null | undefined): T | null => (a != null && a === b ? a : null)
+  return {
+    organisme: commun(gardee.organisme, retiree.organisme),
+    annee_payee: commun(gardee.annee_payee, retiree.annee_payee),
+    nature: commun(gardee.nature, retiree.nature),
   }
 }
 
