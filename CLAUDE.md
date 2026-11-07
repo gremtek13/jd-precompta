@@ -485,8 +485,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
   APRÈS COUP ». L'écriture d'un mouvement que ses encaissements classent porte un libellé composé (« Relevé du
   JJ/MM/AAAA — F… », `libelleDUnMouvementDesVentes`), jamais celui de la banque, qui nomme qui a payé ; un mouvement
-  classé hors des ventes facturées garde encore le sien (JJ1-Q1, au cabinet) → « JJ1 : LE NOM D'UN PATIENT NE PASSE
-  PLUS AU FEC PAR LE LIBELLÉ DU RELEVÉ ».
+  classé hors des ventes facturées porte « Crédit du relevé du JJ/MM/AAAA », ou « Débit du relevé du JJ/MM/AAAA » quand
+  il rend ou défait l'argent d'un client (une ligne en classe 7 ou 41, la définition de VF9CQ1B), tout autre débit
+  gardant le libellé de la banque (`lib/libellesDuReleve.ts`, JJ1-Q1, le 07/11/2026) ; la piste d'audit tait le tiers
+  d'une pièce de vente → « JJ1 : LE NOM D'UN PATIENT NE PASSE PLUS AU FEC PAR LE LIBELLÉ DU RELEVÉ », « JJ1-Q1 : LE
+  LIBELLÉ DE LA BANQUE HORS DES ÉCRITURES DU RELEVÉ ».
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT, conçu (seul le
   titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération automatique ou au clic (RGPD.md
   §8.8).
