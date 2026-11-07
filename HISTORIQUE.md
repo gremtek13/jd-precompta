@@ -49393,9 +49393,9 @@ RELEVÉ (LIGNE 26.6) » ; C6R-Q1 et Q2 → « LE RAPPROCHEMENT PROPOSÉ PAR L'EN
 maintenant » (la migration se corrige d'abord : la franchise exclut l'exonération d'une livraison intracommunautaire) et
 E7A-Q2 à Q4 → « LA FACTURE À UN CLIENT ÉTABLI HORS DE FRANCE, EN BASE » ; SEC-Q2 à Q4 → « LA DOUBLE AUTHENTIFICATION,
 SECOND TEMPS : EXIGÉE EN BASE » ; P1T-migration et P1T-Q1 à Q3, C4A-Q1 et Q2, C5-Q1 à Q3, E6Q8-Q1 : les blocs à coller
-(P1-trace puis C4a, C5, E6-Q8 à la levée du bouton) ; DEVC-Q1 (après les plus urgentes, par l'outil) ; JJ-Q4 (le refus
-d'une facture à une entreprise sans adresse, préparé) ; A8-Q1 à Q6 (A8a, la base des factures reprises, préparée) ;
+(P1-trace puis C4a, C5, E6-Q8 à la levée du bouton) ; DEVC-Q1 (après les plus urgentes, par l'outil) ; JJ-Q4 et A7C-Q1 (A)
+(le refus d'une facture à une entreprise sans adresse, et d'une ligne à 0 % d'un redevable sans article, préparés) ; A8-Q1 à Q6 (A8a, la base des factures reprises, préparée) ;
 TNS-Q3 (les revenus de remplacement saisis en brut le jour où un dossier réel en perçoit) ; TNS-Q5 (la retraite, un
 chantier à part après le MVP). Sans geste, ce qui est en ligne restant ainsi : JJ-Q1 (relever d'abord), JJ-Q2 (demander
-le volume au praticien), A7C-Q1 (A), C4B-Q1, B9A-Q1, B9B-Q1 (trente jours), B9B-Q2 (vingt), B9C-Q1, B9C-Q2, E6Q8-Q2,
+le volume au praticien), C4B-Q1, B9A-Q1, B9B-Q1 (trente jours), B9B-Q2 (vingt), B9C-Q1, B9C-Q2, E6Q8-Q2,
 C1-Q1 (juger sur l'iPhone).
