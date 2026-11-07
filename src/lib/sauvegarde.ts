@@ -16,6 +16,7 @@ import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
 import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
+import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SAISIES_2035_EXPORTEES } from './saisies2035'
@@ -175,6 +176,23 @@ export function auPlanDesSaisies2035(table: string, exportees: boolean): boolean
   return exportees || !TABLES_DES_SAISIES_2035.includes(table)
 }
 
+// LES FACTURES REPRISES (ligne 51.5, étape A8a ; migration `factures_importees`, PRÉPARÉE, pas appliquée) : le lot d'un import
+// et une ligne par facture reprise de l'ancien logiciel. Sous le drapeau de la migration (`FACTURES_IMPORTEES_PREVUES`,
+// src/lib/facturesImportees.ts), baissé : la production n'a pas les tables, et les lire ferait échouer toute sauvegarde. Leurs
+// relations (le dossier en cascade ; la facture en cascade ; le lot et la facture d'origine d'un avoir repris SANS ACTION : un
+// import ne part qu'en entier, par `retirer_import`, ou avec son dossier), leur rang (juste après les factures, le lot avant
+// ses factures), leurs chemins ; aucune vague, une ligne n'en pointe aucune de sa table ; la clé de `factures_importees` est
+// sa facture. La restauration les réinsère par la porte que leurs gardes et leurs policies ouvrent au super-administrateur,
+// dans un dossier sans numérotation (`restauration_des_factures`), comme les factures. Les fichiers d'un import (le seau
+// `ventes`, A8d) vont au pack, jamais à la sauvegarde. sauvegardeFacturesImportees.test.ts éprouve le plan prévu et le plan
+// du jour, sous chaque état du drapeau.
+export const TABLES_DES_FACTURES_IMPORTEES: readonly string[] = ['imports_factures', 'factures_importees']
+
+/** Une table au plan, côté factures reprises : toutes, sauf les leurs tant que leur migration n'est pas exportée. */
+export function auPlanDesFacturesImportees(table: string, prevues: boolean): boolean {
+  return prevues || !TABLES_DES_FACTURES_IMPORTEES.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -187,6 +205,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
     && auPlanDesSaisies2035(table, SAISIES_2035_EXPORTEES)
+    && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -340,6 +359,11 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'situations_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'situations_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'saisies_2035', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'imports_factures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'factures_importees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
+  { enfant: 'factures_importees', parent: 'imports_factures', colonne: 'import_id', aLaSuppression: 'bloque' },
+  { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'origine_id', aLaSuppression: 'bloque' },
   { enfant: 'mouvements_cca', parent: 'comptes_courants_associes', colonne: 'compte_id', aLaSuppression: 'cascade' },
   { enfant: 'natures_immobilisation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'notes_internes', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'cascade' },
@@ -645,6 +669,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'exercices_clotures',
   'facture_numerotation',
   'factures_emises',
+  'imports_factures',
+  'factures_importees',
   'informations_dossier',
   'memberships',
   // Les situations publiées (espace client, étape C4a) : le dossier et elles-mêmes (par vagues), juste après les accès ;
@@ -964,6 +990,7 @@ export const CLES_PRIMAIRES_PREVUES: Readonly<Record<string, readonly string[]>>
   encaissements_factures_taux: ['encaissement_id', 'taux'],
   exercices_valides: ['dossier_id', 'annee'],
   facture_numerotation: ['dossier_id', 'annee', 'type'],
+  factures_importees: ['facture_id'],
   pieces_hors_de_france_taux: ['fiche_id', 'code_tva', 'taux'],
   plan_comptable_dossier: ['dossier_id', 'role'],
   previsionnels_bancaires: ['dossier_id'],
@@ -1172,6 +1199,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   trace_des_droits: { acces: 'direct' },
   situations_publiees: { acces: 'direct' },
   saisies_2035: { acces: 'direct' },
+  imports_factures: { acces: 'direct' },
+  factures_importees: { acces: 'direct' },
   notes_internes: { acces: 'direct' },
   packs: { acces: 'direct' },
   piece_commentaires: { acces: 'direct' },

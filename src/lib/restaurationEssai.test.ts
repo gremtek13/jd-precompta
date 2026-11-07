@@ -6,6 +6,7 @@ import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
 import { JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
+import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
@@ -22,6 +23,7 @@ import {
   TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES,
   TABLES_DE_LA_CAISSE,
   TABLES_DE_LA_TRACE_DES_DROITS,
+  TABLES_DES_FACTURES_IMPORTEES,
   TABLES_DES_SITUATIONS_PUBLIEES,
   TABLES_DES_SAISIES_2035,
   TABLES_DES_ADRESSES_RECEPTION,
@@ -407,13 +409,41 @@ function blocDesSaisies2035(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table des saisies existe : la sienne après sa table d'ancrage. */
 const avecLesSaisies2035 = avecLesArticles
 
+// LES FACTURES REPRISES (ligne 51.5, étape A8a) : un dixième bloc à part les met au plan quand leurs tables existent, juste
+// après la table qu'il nomme (`factures_emises`), le lot puis ses factures reprises, les rangs qui suivent reculant d'autant
+// — le geste des articles —, avec leurs chemins ; aucune vague. Joué en dernier, après les devis.
+const MARQUE_DES_FACTURES_REPRISES = '-- ══ Les factures reprises (ligne 51.5, étape A8a) ══'
+
+function blocDesFacturesReprises(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_FACTURES_REPRISES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const tables = [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2])
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables,
+    chemins,
+    // Les rangs qui suivent reculent d'autant de rangs que le bloc met de tables.
+    recule: tables.length > 0 && corps.includes(`set rang = -(rang + ${tables.length}) where rang > v_rang;`)
+      && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.factures_importees') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand les tables des factures reprises existent : les leurs après leur table d'ancrage. */
+const avecLesFacturesReprises = avecLesArticles
+
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesFacturesReprises(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
-  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte))
+  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
+  blocDesFacturesReprises(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -489,7 +519,9 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLaTraceDuJour, devis) : avecLaTraceDuJour
   const avecLesSituationsDuJour = SITUATIONS_PUBLIEES_EXPORTEES ? avecLesSituations(avecLesDevisDuJour, situations) : avecLesDevisDuJour
   const saisies2035 = blocDesSaisies2035(texteDeLEssai)
-  const courant = SAISIES_2035_EXPORTEES ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
+  const avecLesSaisiesDuJour = SAISIES_2035_EXPORTEES ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
+  const reprises = blocDesFacturesReprises(texteDeLEssai)
+  const courant = FACTURES_IMPORTEES_PREVUES ? avecLesFacturesReprises(avecLesSaisiesDuJour, reprises) : avecLesSaisiesDuJour
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
@@ -593,6 +625,21 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(texteDeLEssai.indexOf(MARQUE_DE_LA_TRACE)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_DEVIS))
   })
 
+  it('le bloc des factures reprises a été lu : ses tables, son ancre, leurs chemins, les rangs qui suivent reculés', () => {
+    expect(reprises.tables).toEqual([...TABLES_DES_FACTURES_IMPORTEES])
+    expect(reprises.ancre).toBe(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(TABLES_DES_FACTURES_IMPORTEES[0]) - 1])
+    expect(reprises.chemins).toEqual({
+      imports_factures: { acces: 'direct', parent: null, colonne: null },
+      factures_importees: { acces: 'direct', parent: null, colonne: null },
+    })
+    expect(reprises.recule).toBe(true)
+    expect(reprises.conditionne).toBe(true)
+    // Joué en dernier, avant la création des tables d'essai.
+    expect(texteDeLEssai.indexOf(MARQUE_DES_FACTURES_REPRISES)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_DEVIS))
+    expect(texteDeLEssai.indexOf(MARQUE_DES_FACTURES_REPRISES))
+      .toBeLessThan(texteDeLEssai.indexOf("execute format('create table essai_restauration.%I (like public.%I"))
+  })
+
   it('avec les tables des huit blocs, le script joue le plan PRÉVU du code — quels que soient les drapeaux', () => {
     expect(ecartsAuCode(prevu, ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS, TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES)).toEqual([])
   })
@@ -620,6 +667,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DES_PARAMETRES_FACTURATION.includes(t) && !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(t)
       && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t) && !TABLES_DES_SITUATIONS_PUBLIEES.includes(t)
       && !TABLES_DES_SAISIES_2035.includes(t)
+      && !TABLES_DES_FACTURES_IMPORTEES.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))
