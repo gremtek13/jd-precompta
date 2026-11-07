@@ -250,6 +250,12 @@ export interface Monde {
    * tables et ses clés étrangères sont alors celles du texte préparé, pas une supposition.
    */
   schemaPrepare: boolean
+  /**
+   * La double authentification exigée (C7, second temps ; migration `deux_facteurs_exiges`, PRÉPARÉE) : les comptes que
+   * le cabinet a exigés, et les jetons de session qui portent `aal2`. `deux_facteurs_satisfaits` les lit comme la base :
+   * vrai sans exigence, ou sur un jeton `aal2`. Vides par défaut : personne n'est exigé.
+   */
+  deuxFacteurs: { exiges: string[]; jetonsAal2: string[] }
 }
 
 export function nouveauMonde(): Monde {
@@ -260,6 +266,7 @@ export function nouveauMonde(): Monde {
     comptes: [],
     regleDesMotsDePasse: REGLE_D_UN_PROJET_NEUF,
     sessions: {},
+    deuxFacteurs: { exiges: [], jetonsAal2: [] },
     hotes: {},
     textract: null,
     s3: null,
@@ -417,7 +424,7 @@ const POLITIQUES_LECTURE: Record<string, Politique> = {
 }
 
 /** Qui appelle une fonction SQL : le compte de la session (nul sous une clé seule), et le rôle sous lequel PostgREST la sert. */
-interface Appelant { utilisateur: string | null; role: Role }
+interface Appelant { utilisateur: string | null; role: Role; jeton?: string | null }
 
 // L'ordre de `ventes_facturees_de_l_exercice` : le genre de la source, après son jour.
 const RANG_DU_GENRE: Readonly<Record<string, number>> = { facture: 0, avoir: 1, encaissement: 2 }
@@ -446,6 +453,16 @@ const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Rec
         prefixe_auxiliaire: p?.prefixe_auxiliaire ?? r.prefixeAuxiliaireDefaut, origine: p?.origine ?? 'application',
       }
     })
+  },
+  // `deux_facteurs_satisfaits()` (migration `deux_facteurs_exiges`, PRÉPARÉE) : exécutable par authenticated et le
+  // service, jamais par l'anonyme ; vraie sans compte, sans exigence, ou sur un jeton `aal2`.
+  deux_facteurs_satisfaits: (monde, { utilisateur, role, jeton }, args) => {
+    if (Object.keys(args).length !== 0) throw new Error('Faux PostgREST : deux_facteurs_satisfaits ne prend aucun argument')
+    if (role === 'anonyme') {
+      throw new ErreurPostgrest({ code: '42501', message: 'permission denied for function deux_facteurs_satisfaits', status: 403 })
+    }
+    if (!utilisateur) return true
+    return !monde.deuxFacteurs.exiges.includes(utilisateur) || (jeton != null && monde.deuxFacteurs.jetonsAal2.includes(jeton))
   },
   droits_sur_le_dossier: (monde, { utilisateur }, args) => droitsSurLeDossier(monde, utilisateur, args.p_dossier_id),
   // `ventes_facturees_de_l_exercice(p_dossier_id, p_annee)` (migration `validation_des_ventes_facturees`) : exécutable
@@ -620,6 +637,8 @@ interface ContexteClient {
   role: Role
   utilisateur: string | null
   refus: ErreurFactice | null
+  /** Le jeton porteur d'un compte connecté : son niveau (`aal1`, `aal2`) se lit dans `monde.deuxFacteurs`. */
+  jeton?: string | null
 }
 
 /** Une requête PostgREST que l'on CONSTRUIT puis qu'on attend : elle part au `then`, comme la vraie. */
@@ -965,7 +984,7 @@ class AppelFactice {
   }
 
   private executer(): ReponseBase {
-    const { monde, role, utilisateur, refus } = this.contexte
+    const { monde, role, utilisateur, refus, jeton } = this.contexte
     monde.journal.push({ genre: 'rpc', nom: this.nom, role })
     if (refus) return echec(refus)
     const panne = panneDe(monde, (p) => 'rpc' in p && p.rpc === this.nom)
@@ -974,7 +993,7 @@ class AppelFactice {
     if (!corps) throw new Error(`Faux PostgREST : la fonction SQL « ${this.nom} » n'est pas modélisée`)
     let rendu: unknown
     try {
-      rendu = corps(monde, { utilisateur, role }, this.args)
+      rendu = corps(monde, { utilisateur, role, jeton }, this.args)
     } catch (e) {
       if (e instanceof ErreurPostgrest) return echec(e.erreur)
       throw e
@@ -1139,7 +1158,7 @@ function contexteDe(monde: Monde, cle: 'publiable' | 'secrete' | 'inconnue', aut
   if (!autorisation) return { monde, role: 'anonyme', utilisateur: null, refus: null }
   const compte = utilisateurDe(monde, jetonPorteur(autorisation))
   if (!compte) return { monde, role: 'refuse', utilisateur: null, refus: { code: 'PGRST301', message: 'JWT invalide', status: 401 } }
-  return { monde, role: 'authentifie', utilisateur: compte.id, refus: null }
+  return { monde, role: 'authentifie', utilisateur: compte.id, refus: null, jeton: jetonPorteur(autorisation) }
 }
 
 function clientSupabase(monde: Monde, env: Environnement, url: unknown, cleRecue: unknown, options: unknown) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import DeuxFacteursDesComptes from '../components/DeuxFacteursDesComptes'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { extraireErreurFonction } from '../lib/invokeErreur'
@@ -210,6 +211,7 @@ export default function EquipePage() {
         <h1>Équipe</h1>
         <button className="btn btn-primary btn-sm" onClick={() => setAjout(true)}>+ Ajouter un membre</button>
       </div>
+      {monCabinetId && <DeuxFacteursDesComptes perimetre={{ genre: 'equipe', cabinetId: monCabinetId }} />}
       <p className="muted" style={{ marginTop: -12, marginBottom: 20 }}>
         Un comptable en chef voit tous les dossiers du cabinet ; un comptable ne voit que ceux qui lui
         sont assignés explicitement ci-dessous.

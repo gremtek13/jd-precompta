@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { DEUX_FACTEURS_EXIGES_EXPORTE } from '../lib/deuxFacteursExiges'
+import { niveauDuJeton } from '../lib/doubleAuthentification'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
@@ -170,6 +172,10 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
   // saisissait — l'aperçu d'une récupération bancaire disparaissait ainsi après un passage par une
   // autre fenêtre, et chaque écran relisait toute sa base, deux fois.
   const userId = session?.user.id ?? null
+  // Le second temps de la double authentification (C7), derrière son drapeau : à aal1, un compte exigé ne lit rien —
+  // ses rôles se relisent quand le code est donné, au changement de NIVEAU. Le drapeau baissé : l'identité seule.
+  const cleDesRoles = userId !== null && DEUX_FACTEURS_EXIGES_EXPORTE
+    ? `${userId}|${niveauDuJeton(session?.access_token ?? '') ?? '?'}` : userId
 
   // Le chargement se DÉDUIT, il ne se pose pas. Posé par l'effet qui lit les rôles, il retombait
   // à faux dès le premier rendu — aucune session n'étant encore connue, il n'y avait rien à lire —, puis
@@ -178,7 +184,7 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
   // aussitôt ; et quand un autre compte se connectait, un rendu passait avec sa session et les rôles du
   // compte précédent. Déduit, il est vrai DANS le rendu où la session arrive ou change de compte.
   // Personne n'étant connecté, il n'y a rien à attendre : l'écran de connexion vient tout de suite.
-  const loading = !sessionConnue || (userId !== null && rolesDe !== userId)
+  const loading = !sessionConnue || (cleDesRoles !== null && rolesDe !== cleDesRoles)
 
   // Déduite comme le chargement : le drapeau ne vaut que pour le compte connecté (une session n'est posée qu'une fois
   // connue). Elle n'attend pas les rôles — l'écran du nouveau mot de passe n'en a pas besoin, et rien d'autre ne doit
@@ -226,7 +232,7 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
         setIsSuperAdmin(!!estSuperAdmin)
         setEstChef(!!estSuperAdmin || adminRow.role === 'comptable_en_chef')
         setMonCabinetId(adminRow.cabinet_id)
-        setRolesDe(userId)
+        setRolesDe(cleDesRoles)
         return
       }
 
@@ -269,14 +275,14 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
       setIsSuperAdmin(false)
       setEstChef(false)
       setMonCabinetId(null)
-      setRolesDe(userId)
+      setRolesDe(cleDesRoles)
     }
 
     resolveRole()
     return () => {
       cancelled = true
     }
-  }, [userId])
+  }, [userId, cleDesRoles])
 
   async function signOut() {
     // CE QUE LA SOURCE DE LA BIBLIOTHÈQUE DIT, ET QUI CORRIGE L'INTUITION (vérifié dans

@@ -4366,6 +4366,38 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
 }
 // ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT DEUX FACTEURS ──────────────────────────────────────────────────────────────────────────────────────────────
+// La double authentification exigée d'un compte (C7, second temps ; migration `deux_facteurs_exiges`, PRÉPARÉE). Une
+// fonction qui lit avec la clé secrète contourne la RLS et la pré-requête de PostgREST : elle refuse donc elle-même, en
+// 403 et avant toute dépense, un jeton `aal1` d'un compte que le cabinet a exigé. La base le dit, lue au jeton de
+// l'appelant (`deux_facteurs_satisfaits`, que la pré-requête laisse passer) ; une réponse illisible rend 503 (le côté
+// fermé). Le drapeau reste baissé tant que la migration n'est pas en base : la fonction SQL n'existerait pas, et chaque
+// appel tomberait en 503. Bloc identique dans chaque fonction qui agit pour un compte (edgeFunctionsDeuxFacteurs.test.ts).
+const DEUX_FACTEURS_EXIGES_EN_BASE = false
+
+interface AppelantDesDeuxFacteurs {
+  rpc: (fonction: "deux_facteurs_satisfaits") => PromiseLike<{ data: unknown; error: unknown }>
+}
+
+async function refusDesDeuxFacteurs(appelant: AppelantDesDeuxFacteurs): Promise<Response | null> {
+  if (!DEUX_FACTEURS_EXIGES_EN_BASE) return null
+  let satisfaite: unknown = null
+  try {
+    const { data, error } = await appelant.rpc("deux_facteurs_satisfaits")
+    satisfaite = error ? null : data
+  } catch {
+    satisfaite = null
+  }
+  if (satisfaite === true) return null
+  if (satisfaite === false) {
+    return json({
+      error: "La double authentification est exigée pour ce compte : le code de l'application d'authentification se donne avant de recommencer.",
+    }, 403)
+  }
+  return json({ error: "La double authentification de ce compte n'a pas pu être vérifiée : recommencer dans un instant." }, 503)
+}
+// ── FIN DEUX FACTEURS ────────────────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -4397,6 +4429,9 @@ Deno.serve(async (req: Request) => {
   if (callerError || !callerData.user) {
     return json({ error: "Non authentifié." }, 401)
   }
+  // La double authentification exigée (bloc DEUX FACTEURS) : refusée avant toute autre lecture.
+  const refusDeuxFacteurs = await refusDesDeuxFacteurs(supabaseAsCaller)
+  if (refusDeuxFacteurs) return refusDeuxFacteurs
 
   const admin = createClient(supabaseUrl, cleSecrete)
 

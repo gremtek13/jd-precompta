@@ -140,6 +140,16 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     nature: 'lecture',
     raison: 'Le cours publié par la BCE pour une devise et une date : rien d’écrit, rien de facturé.',
   },
+  'lib:lireLesComptes': {
+    nature: 'lecture',
+    raison: '`deux_facteurs_des_comptes` (C7, second temps) : la liste des comptes et de leur second facteur, lue ; '
+      + 'rien n’est écrit (les gestes passent `agirSurLeCompte`, sous le verrou du composant).',
+  },
+  'lib:useExigenceDeuxFacteurs': {
+    nature: 'lecture',
+    raison: '`ma_double_authentification` (C7, second temps) : la porte lit ce que la base exige du compte connecté, '
+      + 'une fois par compte et par niveau ; rien n’est écrit.',
+  },
   'lib:lireConnexionPlateforme': {
     nature: 'lecture',
     raison: 'Action « statut » de `plateforme-agreee` : elle ne lit que la base, sans appeler la plateforme.',

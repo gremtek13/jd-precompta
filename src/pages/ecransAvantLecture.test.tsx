@@ -613,6 +613,8 @@ const ECRANS: Ecran[] = [
 // Les fichiers qui parlent à la base sans RIEN lire au montage : ils lisent ou écrivent sur un geste, ou reçoivent leurs
 // données de l'écran qui les ouvre (et qui, lui, est monté ici). Chacun avec sa raison.
 const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
+  'components/DeuxFacteursDesComptes.tsx': 'drapeau `DEUX_FACTEURS_EXIGES_EXPORTE` baissé : ne rend ni ne lit rien ; levé, '
+    + 'son propre test (DeuxFacteursDesComptes.test.tsx) éprouve « Chargement… » avant la lecture et aucun geste illisible',
   'components/BarreDossiers.tsx': 'reçoit la liste des dossiers de la coque (Layout, montée ici) et son état de chargement',
   'pages/dossier/StatutTvaCard.tsx': 'reçoit le statut de TVA du dossier ; n’écrit que sur « Enregistrer »',
   'pages/dossier/ValidationExerciceCard.tsx': 'reçoit les préalables de la Clôture (montée ici) ; ne valide que sur un clic',
