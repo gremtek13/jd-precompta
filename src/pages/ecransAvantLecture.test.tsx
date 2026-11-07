@@ -623,7 +623,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
     + 'baissé : non montée) ; son test (SaisiesDuCabinet2035Card.test.tsx) éprouve « chargement… » et aucun geste sur une lecture '
     + 'incomplète ; n’écrit que sur « Enregistrer les saisies »',
   'pages/dossier/ParametresDesCotisationsCard.tsx': 'reçoit la lecture des paramètres des cotisations du volet social '
-    + '(VoletSocialCard, montée ici ; drapeau `PARAMETRES_DES_COTISATIONS_EXPORTES` baissé : non montée) ; son test '
+    + '(VoletSocialCard, montée ici ; drapeau `PARAMETRES_DES_COTISATIONS_EXPORTES` levé le 07/11/2026) ; son test '
     + '(ParametresDesCotisationsCard.test.tsx) éprouve « chargement… » et aucun formulaire sur une lecture incomplète ; '
     + 'n’écrit que sur « Enregistrer les paramètres »',
   'pages/Login.tsx': 'se connecte, ou demande un lien « Mot de passe oublié », à la soumission du formulaire ; ne lit rien avant',
@@ -917,10 +917,9 @@ const ECRITURES_SANS_LISTE: { ecran: string; geste: string; ecritures: string[];
     ecran: 'AccesTab', geste: 'form « Email du client', ecritures: ['fonction:create-client-access'],
     raison: 'la fonction reprend un compte existant, et la base refuse un second accès (unique (user_id, dossier_id))',
   },
-  {
-    ecran: 'CotisationsTab', geste: 'form « Échéance', ecritures: ['cotisations_declarees insert'],
-    raison: 'une échéance saisie à la main ne se dédoublonne pas : seul l’exercice validé la refuse, et il vient de la page du dossier',
-  },
+  // CotisationsTab, « form « Échéance » (une échéance saisie à la main ne se dédoublonne pas) : admise jusqu'au 07/11/2026.
+  // Depuis que `REGULARISATION_DES_COTISATIONS_EXPORTEE` est levé, le formulaire porte la description (TNS-Q2) ; l'année
+  // payée et la part, remplies ici de « Valeur fictive », s'y refusent avant le clic, et rien ne part : aucune entrée.
   { ecran: 'FinancementTab', geste: 'form « Nom', ecritures: ['emprunts insert'], raison: 'un emprunt neuf, saisi en entier' },
   { ecran: 'FinancementTab (basculé)', geste: 'form « Nom', ecritures: ['emprunts insert'], raison: 'un emprunt neuf, saisi en entier' },
   { ecran: 'ImmobilisationsTab', geste: 'form « Ajouter une nature', ecritures: ['natures_immobilisation insert'], raison: 'une nature neuve, saisie en entier' },

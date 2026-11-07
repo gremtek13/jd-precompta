@@ -1,6 +1,7 @@
 -- LA RÉGULARISATION DES COTISATIONS : L'ORGANISME, L'ANNÉE PAYÉE, LA NATURE D'UNE ÉCHÉANCE ET SA PART QUI RÉGULARISE L'ANNÉE
 -- D'AVANT (ligne 27, TNS-Q2 et TNS-Q2-B ; la migration
--- `regularisation_des_cotisations`, PRÉPARÉE le 07/11/2026, supabase/preparees/). Le récit : HISTORIQUE.md, « 07/11/2026 —
+-- `regularisation_des_cotisations`, en production depuis le 07/11/2026,
+-- supabase/schema/20261107165415_regularisation_des_cotisations.sql). Le récit : HISTORIQUE.md, « 07/11/2026 —
 -- LA RÉGULARISATION DES COTISATIONS (LIGNE 27, TNS-Q2) (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après toute
 -- migration qui touche `cotisations_declarees`, ses contraintes ou `garder_cotisation_valide`.
 --

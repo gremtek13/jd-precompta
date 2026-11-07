@@ -5,17 +5,19 @@ import {
   parametresDeLEstimation, saisieDe, tauxDentisteAdmis, valeursSaisies,
 } from './parametresDesCotisations'
 
+// Un client qui lève à toute lecture : drapeau baissé, aucun appel ; levé, la lecture qui lève se dit incomplète.
 vi.mock('./supabase', () => ({ supabase: { from: () => { throw new Error('aucune lecture attendue, drapeau baissé') } } }))
 
 // LES PARAMÈTRES DES COTISATIONS (ligne 27, TNS-Q1 et TNS-Q4) : ce que le module croit d'une ligne lue, ce qu'il donne à
-// l'estimation, et les refus de la base qu'il redit avant le clic, confrontés au texte de la migration préparée.
-const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261107190000_parametres_des_cotisations.sql', import.meta.url), 'utf8')
+// l'estimation, et les refus de la base qu'il redit avant le clic, confrontés au texte de la migration (dans l'export depuis le 07/11/2026).
+const MIGRATION = readFileSync(new URL('../../supabase/schema/20261107165534_parametres_des_cotisations.sql', import.meta.url), 'utf8')
 
 describe('le drapeau', () => {
-  it('baissé tant que la migration n’est pas en base : la lecture ne fait aucun appel et rend « absents »', async () => {
-    expect(PARAMETRES_DES_COTISATIONS_EXPORTES).toBe(false)
+  // Levé le 07/11/2026, le jour de l'application : la lecture part. Son état d'avant reste éprouvé par la fonction …Selon(false).
+  it('levé : la lecture part ; baissé, elle ne fait aucun appel et rend « absents »', async () => {
+    expect(PARAMETRES_DES_COTISATIONS_EXPORTES).toBe(true)
     const { lireLesParametresDesCotisations, lireLesParametresDesCotisationsSelon } = await import('./parametresDesCotisationsLecture')
-    expect(await lireLesParametresDesCotisations('d')).toEqual({ dossierId: 'd', etat: 'absents' })
+    expect((await lireLesParametresDesCotisations('d')).etat).toBe('incomplets')
     expect(await lireLesParametresDesCotisationsSelon('d', false)).toEqual({ dossierId: 'd', etat: 'absents' })
     // Levé, la lecture part, et une lecture qui lève se dit incomplète, sans rejeter.
     expect((await lireLesParametresDesCotisationsSelon('d', true)).etat).toBe('incomplets')

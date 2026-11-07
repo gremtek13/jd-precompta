@@ -695,10 +695,12 @@ export interface CotisationDeclaree {
   // pour ne pas la confondre avec un montant définitif. Repassée à false quand l'appel définitif
   // arrive et corrige le montant (voir CotisationsTab.creerEcheancesProposees).
   previsionnel: boolean
-  // Qui appelle l'échéance, l'année au titre de laquelle elle est due, sa nature (ligne 27, TNS-Q2) ; nul : non dit. FACULTATIFS
-  // dans ce type : la migration `regularisation_des_cotisations` est PRÉPARÉE, pas appliquée
-  // (`REGULARISATION_DES_COTISATIONS_EXPORTEE`, lib/regularisationDesCotisations.ts) — une colonne absente d'une lecture
-  // n'est pas une colonne nulle. « provisionnelle » n'est pas `previsionnel` : l'Urssaf l'appelle, sur un revenu antérieur.
+  // Qui appelle l'échéance, l'année au titre de laquelle elle est due, sa nature (ligne 27, TNS-Q2) ; nul : non dit. Les
+  // colonnes de la migration `regularisation_des_cotisations`, en production depuis le 07/11/2026 (texte, entier, texte,
+  // numeric, toutes nullables, sans défaut). FACULTATIVES dans ce type, à dessein : une lecture qui ne les nomme pas (une
+  // liste de colonnes, l'état baissé de `REGULARISATION_DES_COTISATIONS_EXPORTEE`, encore éprouvé) ne les porte pas, et
+  // une colonne absente n'est pas une colonne nulle — `lueAvecSaDescription` (lib/gestesDesEcheances.ts) le juge sur la
+  // ligne lue. « provisionnelle » n'est pas `previsionnel` : l'Urssaf l'appelle, sur un revenu antérieur.
   organisme?: OrganismeCotisation | null
   annee_payee?: number | null
   nature?: NatureCotisation | null
@@ -711,6 +713,31 @@ export interface CotisationDeclaree {
   // sur une échéance qu'un mouvement paie. Seule `enregistrer_paiement_personnel_cotisation` le pose, avec son
   // écriture ; tant qu'il est posé, les montants de l'échéance ne changent plus.
   paiement_personnel_le: string | null
+}
+
+// LES PARAMÈTRES DES COTISATIONS (ligne 27, TNS-Q1 et TNS-Q4 ; la migration `parametres_des_cotisations`, en production
+// depuis le 07/11/2026). Le début d'activité d'un dossier, à part de `dossiers` (que le client lit) : une ligne au plus
+// par dossier (`debuts_d_activite_un_par_dossier`), sa date nulle tant qu'elle n'est pas dite ; il se corrige encore
+// après une validation. L'application l'écrit par `enregistrer_parametres_des_cotisations`, contre les valeurs lues.
+export interface DebutDActivite {
+  id: string
+  dossier_id: string
+  date_debut: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Les paramètres d'un exercice : l'ACRE et le « taux dentiste » du relevé SNIR (0 à 1, au centième), nuls tant qu'ils ne
+// sont pas dits ; une ligne par dossier et par exercice (`parametres_des_cotisations_un_par_exercice`, de 2025 à 2100),
+// figée avec l'exercice validé.
+export interface ParametresDesCotisations {
+  id: string
+  dossier_id: string
+  annee: number
+  acre: boolean | null
+  taux_dentiste: number | null
+  created_at: string
+  updated_at: string
 }
 
 // Détail par poste (Achats, Loyer, Assurance...) d'un repère annuel — complète le CA et les

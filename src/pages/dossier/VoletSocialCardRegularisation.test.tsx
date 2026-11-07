@@ -12,6 +12,13 @@ vi.mock('../../lib/regularisationDesCotisations', async (importer) => {
   const reel = await importer<typeof import('../../lib/regularisationDesCotisations')>()
   return { ...reel, get REGULARISATION_DES_COTISATIONS_EXPORTEE() { return drapeau.leve } }
 })
+// Les paramètres des cotisations (TNS-Q1, TNS-Q4), drapeau levé depuis le 07/11/2026 : la carte les lit par ce module ;
+// ici, une activité ouverte en 2010 et rien d'autre de saisi — l'estimation d'hier, ses paramètres tenus.
+vi.mock('../../lib/parametresDesCotisationsLecture', () => ({
+  lireLesParametresDesCotisations: (dossierId: string) =>
+    Promise.resolve({ dossierId, etat: 'lus', debutActivite: '2010-01-01', parExercice: new Map() }),
+}))
+
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => {

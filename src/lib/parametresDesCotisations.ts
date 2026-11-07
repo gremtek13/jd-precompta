@@ -2,8 +2,8 @@ import type { ParametresEstimation } from './voletSocialPamc'
 
 // LES PARAMÈTRES DES COTISATIONS (ligne 27, TNS-Q1 et TNS-Q4, réponses du cabinet du 07/11/2026) : le début d'activité du
 // dossier, et pour chaque exercice le bénéfice de l'ACRE et le « taux dentiste » du relevé SNIR d'un chirurgien-dentiste.
-// La migration préparée `parametres_des_cotisations` (supabase/preparees/20261107190000_parametres_des_cotisations.sql)
-// pose `debuts_d_activite` (à part de `dossiers`, que le client lit) et `parametres_des_cotisations` (figée avec
+// La migration `parametres_des_cotisations` (supabase/schema/20261107165534_parametres_des_cotisations.sql), en
+// production depuis le 07/11/2026, pose `debuts_d_activite` (à part de `dossiers`, que le client lit) et `parametres_des_cotisations` (figée avec
 // l'exercice validé) ; `enregistrer_parametres_des_cotisations` les écrit d'un seul tenant, contre les valeurs lues.
 // L'estimation des cotisations les reçoit en entrée OBLIGATOIRE (`ParametresEstimation`, lib/voletSocialPamc.ts). Le
 // récit : HISTORIQUE.md, « 07/11/2026 — LES PARAMÈTRES DES COTISATIONS : LE DÉBUT D'ACTIVITÉ, L'ACRE ET LE TAUX
@@ -14,11 +14,12 @@ import type { ParametresEstimation } from './voletSocialPamc'
 // (plancher 0, plafond 1, arrondi au centième). Code de la sécurité sociale, art. D. 131-6-1. Convention nationale des
 // chirurgiens-dentistes libéraux, art. 51.
 
-// LE DRAPEAU DE LA MIGRATION, BAISSÉ : la production n'a pas les tables. Baissé, rien ne les lit — ni la carte du volet
-// social (onglet Clôture), ni la sauvegarde (`auPlanDesParametresDesCotisations`, lib/sauvegarde.ts) —, et l'estimation
-// reçoit `{ tenus: false }` : celle d'hier, une activité ouverte avant l'exercice, sans ACRE, un chirurgien-dentiste
-// refusé. Il se lève quand la migration est en base et dans l'export, en simulation d'abord, la suite ENTIÈRE.
-export const PARAMETRES_DES_COTISATIONS_EXPORTES = false
+// LE DRAPEAU DE LA MIGRATION, LEVÉ le 07/11/2026, le jour de son application : la carte du volet social (onglet Clôture)
+// et la sauvegarde (`auPlanDesParametresDesCotisations`, lib/sauvegarde.ts) lisent les deux tables. Baissé — son état
+// d'avant, que les tests jouent (`lireLesParametresDesCotisationsSelon(…, false)`, `vi.mock`) —, rien ne les lit, et
+// l'estimation reçoit `{ tenus: false }` : celle d'hier, une activité ouverte avant l'exercice, sans ACRE, un
+// chirurgien-dentiste refusé.
+export const PARAMETRES_DES_COTISATIONS_EXPORTES = true
 
 /** Ce qu'une ligne des deux tables porte, une fois lue et crue. */
 export interface ParametresDUnExercice {

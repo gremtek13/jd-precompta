@@ -195,11 +195,11 @@ export function auPlanDesFacturesImportees(table: string, prevues: boolean): boo
   return prevues || !TABLES_DES_FACTURES_IMPORTEES.includes(table)
 }
 
-// LES PARAMÈTRES DES COTISATIONS (ligne 27, TNS-Q1 et TNS-Q4 ; migration `parametres_des_cotisations`, PRÉPARÉE, pas
-// appliquée) : le début d'activité d'un dossier (`debuts_d_activite`, une ligne au plus) et l'ACRE et le taux dentiste
+// LES PARAMÈTRES DES COTISATIONS (ligne 27, TNS-Q1 et TNS-Q4 ; migration `parametres_des_cotisations`, en production
+// depuis le 07/11/2026) : le début d'activité d'un dossier (`debuts_d_activite`, une ligne au plus) et l'ACRE et le taux dentiste
 // d'un exercice (`parametres_des_cotisations`). Sous le drapeau de la migration (`PARAMETRES_DES_COTISATIONS_EXPORTES`,
-// src/lib/parametresDesCotisations.ts), baissé : la production n'a pas les tables, et les lire ferait échouer toute
-// sauvegarde. Le même drapeau que l'écran : une saisie que Clôture écrirait sans que la sauvegarde la lise se perdrait à la
+// src/lib/parametresDesCotisations.ts), levé le 07/11/2026 ; baissé, la production n'aurait pas les tables, et les lire
+// ferait échouer toute sauvegarde. Le même drapeau que l'écran : une saisie que Clôture écrirait sans que la sauvegarde la lise se perdrait à la
 // restauration. Leurs relations au dossier (cascade), leurs rangs (avant les exercices validés, que le gel des paramètres
 // d'un exercice exige, et avant les saisies de la 2035, qui les suivent), leurs chemins ; aucune vague ; leur clé
 // est la commune, `id`. sauvegardeParametresDesCotisations.test.ts éprouve le plan prévu et le plan du jour, sous chaque

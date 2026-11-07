@@ -43,6 +43,9 @@
 -- personnel ; nulle tant qu'elle n'est pas payée ainsi. Le déclencheur qui la garde
 -- (`cotisations_declarees_paiement_personnel`) vit dans cette migration-là : ce socle ne porte pas les
 -- déclencheurs d'une table.
+-- RÉGÉNÉRÉE LE 07/11/2026 depuis le catalogue, après `regularisation_des_cotisations` (20261107165415, ligne 27,
+-- TNS-Q2) : ses quatre colonnes (`organisme`, `annee_payee`, `nature`, `part_regularisation`) et ses six contraintes
+-- de forme, que sa migration pose aussi — l'instantané d'aujourd'hui, comme le rend `socle.sql`.
 create table public.cotisations_declarees (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -53,8 +56,18 @@ create table public.cotisations_declarees (
   created_at timestamp with time zone default now() not null,
   previsionnel boolean default false not null,
   paiement_personnel_le date,
+  organisme text,
+  annee_payee integer,
+  nature text,
+  part_regularisation numeric,
   constraint cotisations_declarees_pkey PRIMARY KEY (id),
-  constraint cotisations_declarees_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE
+  constraint cotisations_declarees_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
+  constraint cotisations_declarees_annee_payee_bornes CHECK (((annee_payee >= ((EXTRACT(year FROM echeance))::integer - 5)) AND (annee_payee <= ((EXTRACT(year FROM echeance))::integer + 1)))),
+  constraint cotisations_declarees_nature_liste CHECK ((nature = ANY (ARRAY['provisionnelle'::text, 'regularisation'::text, 'acompte'::text]))),
+  constraint cotisations_declarees_organisme_liste CHECK ((organisme = ANY (ARRAY['urssaf'::text, 'carmf'::text, 'carcdsf'::text, 'carpimko'::text, 'cavp'::text, 'carpv'::text, 'cavec'::text, 'cavom'::text, 'cavamac'::text, 'cipav'::text, 'cprn'::text, 'cnbf'::text]))),
+  constraint cotisations_declarees_part_regularisation_bornee CHECK (((part_regularisation IS NULL) OR ((part_regularisation <> (0)::numeric) AND (abs(part_regularisation) <= abs(montant_appele))))),
+  constraint cotisations_declarees_part_regularisation_nature CHECK (((part_regularisation IS NULL) OR ((nature IS NOT NULL) AND (nature = ANY (ARRAY['provisionnelle'::text, 'acompte'::text])) AND (annee_payee IS NOT NULL)))),
+  constraint cotisations_declarees_regularisation_apres_son_annee CHECK (((nature IS DISTINCT FROM 'regularisation'::text) OR (annee_payee IS NULL) OR (annee_payee <= (EXTRACT(year FROM echeance))::integer)))
 );
 
 -- RÉGÉNÉRÉE LE 01/10/2026 depuis le catalogue, après la migration `dotations_aux_amortissements`
