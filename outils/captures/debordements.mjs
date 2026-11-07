@@ -153,6 +153,70 @@ const VISITES = [
     dossier: 'd7', onglet: 'checklist', nom: 'espace-client/journal',
     apres: (page) => page.locator('[role="list"][aria-label="Gestes du client"]').waitFor({ timeout: 10000 }),
   },
+  // (Sur téléphone l'encart se replie en tuile : la ligne est dans la page mais cachée, d'où l'attente de sa présence, non de sa vue.)
+  // L'encart « Facture électronique » du cabinet, avec la ligne « E-reporting » de C3 (la prochaine période de chaque objet, lue sur
+  // les phases que la fonction de l'état rend) : l'atelier (d7) a un régime confirmé — ses ventes déclarées, ses achats et ses
+  // paiements « prêts » — et le cabinet infirmier (d1) n'en a aucun, la phrase la plus longue. Chacune attend la fin de la lecture.
+  {
+    dossier: 'd7', onglet: 'checklist', nom: 'facture-electronique/ereporting-periodes',
+    apres: (page) => page.locator('section.encart-fe .encart-fe-titre', { hasText: /^E-reporting$/ }).waitFor({ state: 'attached', timeout: 10000 }),
+  },
+  {
+    dossier: 'd1', onglet: 'checklist', nom: 'facture-electronique/ereporting-sans-regime',
+    apres: (page) => page.locator('section.encart-fe .encart-fe-titre', { hasText: /^E-reporting$/ }).waitFor({ state: 'attached', timeout: 10000 }),
+  },
+  // La carte « Saisies du cabinet » de Clôture (2035S4 et S5), derrière `SAISIES_2035_EXPORTEES` — le banc la lève par
+  // `BANC_DRAPEAUX=SAISIES_2035_EXPORTEES` (vite.config.ts) ; baissée, la carte n'existe pas et la visite le dit. Un champ par case
+  // (seize, chacun sous sa phrase de la notice, les notes annexes de CC et CL) ; puis un montant illisible, dont le refus se dit
+  // sous le bouton ; puis l'exercice validé de d9, qui ne montre que ce qu'il porte.
+  {
+    dossier: 'd1', onglet: 'cloture', nom: 'cloture/saisies-du-cabinet',
+    apres: (page) => page.getByText(/^Saisies du cabinet — \d{4}$/).first().waitFor({ timeout: 10000 }),
+  },
+  {
+    dossier: 'd1', onglet: 'cloture', nom: 'cloture/saisies-refus',
+    apres: async (page) => {
+      await page.getByText(/^Saisies du cabinet — \d{4}$/).first().waitFor({ timeout: 10000 })
+      await page.locator('input[id^="saisie-"][id$="-CC"]').first().fill('douze euros cinquante')
+      await page.getByText(/^Le montant de CC ne se lit pas/).first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'cloture', nom: 'cloture/saisies-figees',
+    apres: async (page) => {
+      await exercice('2025')(page)
+      await page.getByText('Saisies du cabinet — 2025', { exact: true }).waitFor({ timeout: 10000 })
+      await page.getByText(/^L’exercice 2025 est figé : ses saisies ne changent plus\./).waitFor({ timeout: 10000 })
+    },
+  },
+  // « Publier au client » (C4a, ses écrans en C4b), sous la situation intermédiaire de Financement et derrière
+  // `SITUATIONS_PUBLIEES_EXPORTEES` (baissé, la section n'existe pas et la visite le dit). La fenêtre de l'atelier (d7, assujetti) :
+  // le refus dit avant le clic, sous le bouton grisé, et ses deux situations publiées en tableau. Puis, sur le cabinet infirmier
+  // (d1, exonéré), les deux confirmations : celle de la publication et celle du retrait, qui nomment ce qui part.
+  {
+    dossier: 'd7', onglet: 'financement', nom: 'situations-publiees/fenetre', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLaSituation(page)
+      await page.getByText(/^Ce dossier est assujetti à la TVA/).first().waitFor({ timeout: 10000 })
+      await page.getByRole('button', { name: 'Retirer', exact: true }).first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'financement', nom: 'situations-publiees/confirmer-publication', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaSituation(page)
+      await page.getByRole('button', { name: /^(Publier cette situation|Remplacer la situation)/ }).click()
+      await page.locator('[role="dialog"], [role="alertdialog"]').first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'financement', nom: 'situations-publiees/confirmer-retrait', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaSituation(page)
+      await page.getByRole('button', { name: 'Retirer', exact: true }).first().click()
+      await page.locator('[role="dialog"], [role="alertdialog"]').first().waitFor({ timeout: 10000 })
+    },
+  },
   // Sa TVA LIQUIDÉE (lib/liquidationTva.ts) : la fiche du prélèvement rapproché de la déclaration du deuxième trimestre,
   // et celle du complément, à traiter, qui propose la même déclaration dont il paie exactement le reste. Une fiche ne
   // s'ouvre que sur un clic.
@@ -1559,6 +1623,35 @@ const VISITES_CLIENT = [
     chemin: '#/mon-analyse', nom: 'client/mon-analyse', nav: true,
     apres: (page) => page.getByRole('heading', { name: 'Tes indicateurs' }).waitFor({ timeout: 10000 }),
   },
+  // « Mes comptes » (étape C4b), derrière `SITUATIONS_PUBLIEES_EXPORTEES` — levé par `BANC_DRAPEAUX` (vite.config.ts), le banc donne
+  // alors la case « Comptes » à l'accès de l'atelier ; baissé, la route n'existe pas et la visite le dit. Deux situations publiées :
+  // la plus récente, face à N−1 (deux cartes de totaux, un tableau à trois colonnes aux postes longs) ; puis la plus ancienne, que son
+  // cabinet n'a pas publiée avec l'exercice précédent. La barre du bas du téléphone gagne une entrée (`nav`).
+  {
+    chemin: '#/mes-comptes', nom: 'client/mes-comptes', nav: true,
+    apres: (page) => page.getByRole('heading', { name: /^Situation arrêtée au/ }).waitFor({ timeout: 10000 }),
+  },
+  {
+    chemin: '#/mes-comptes', nom: 'client/mes-comptes-sans-n-1', nav: true,
+    apres: async (page) => {
+      await page.getByRole('heading', { name: /^Situation arrêtée au/ }).waitFor({ timeout: 10000 })
+      await page.locator('#comptes-situation').selectOption('sp-1')
+      await page.getByText(/ton cabinet ne l’a pas publiée avec l’exercice précédent/).waitFor({ timeout: 10000 })
+    },
+  },
+  // La carte « Ton dossier chez ton cabinet » de l'accueil (étape C2) : une ligne par exercice, sa phase aux mots du client. Puis
+  // l'encart « Facture électronique » avec sa ligne « E-reporting » (C3) et celle des statuts non relus depuis plus de sept jours.
+  {
+    chemin: '#/accueil', nom: 'client/accueil-etat-du-dossier',
+    apres: (page) => page.locator('ul.liste-etat-dossier li').first().waitFor({ timeout: 10000 }),
+  },
+  {
+    chemin: '#/accueil', nom: 'client/accueil-ereporting',
+    apres: async (page) => {
+      await page.locator('section.encart-fe .encart-fe-titre', { hasText: /^E-reporting$/ }).waitFor({ state: 'attached', timeout: 10000 })
+      await page.locator('section.encart-fe .encart-fe-titre', { hasText: /^Statuts des factures$/ }).waitFor({ state: 'attached', timeout: 10000 })
+    },
+  },
   // « Sécurité du compte » (ligne 51.5, étape C7) : la même page qu'au cabinet, tutoyée, l'ajout ouvert.
   {
     chemin: '#/securite', nom: 'client/securite', nav: true,
@@ -1977,6 +2070,12 @@ const VISITES_CAISSE_CLIENT = [
   // « Mon échéancier » (étape C1) sur le cabinet infirmier, avec « Banque » : ses cotisations et leurs montants, et la carte de
   // l'accueil, sous les sept entrées de la barre du bas (huit avec la sienne).
   { chemin: '#/accueil', nom: 'client/echeancier-accueil', apres: (page) => page.locator('.echeance').first().waitFor({ timeout: 10000 }) },
+  // L'état du dossier (C2) et la ligne d'e-reporting (C3) du cabinet infirmier, sans régime confirmé : la phrase la plus longue.
+  { chemin: '#/accueil', nom: 'client/etat-du-dossier-caisse', apres: (page) => page.locator('ul.liste-etat-dossier li').first().waitFor({ timeout: 10000 }) },
+  {
+    chemin: '#/accueil', nom: 'client/ereporting-sans-regime-caisse',
+    apres: (page) => page.locator('section.encart-fe .encart-fe-titre', { hasText: /^E-reporting$/ }).waitFor({ state: 'attached', timeout: 10000 }),
+  },
   { chemin: '#/mon-echeancier', nom: 'client/mon-echeancier-caisse', nav: true, apres: (page) => page.locator('.echeance').first().waitFor({ timeout: 10000 }) },
   { chemin: '#/ma-caisse', nom: 'client/ma-caisse', nav: true, apres: async (page) => { await page.getByText(/^Ta caisse n’a bougé aucun jour de|^Au \d/).first().waitFor({ timeout: 10000 }) } },
   { chemin: '#/ma-caisse', nom: 'client/ma-caisse-septembre', nav: true, apres: choisirSeptembre },
@@ -2113,6 +2212,14 @@ async function fermerLesFenetres(page) {
     await fermer.first().click()
     await page.waitForTimeout(200)
   }
+}
+
+// La situation intermédiaire de l'onglet Financement, ouverte (« Générer », le premier des quatre) avec sa section « Publier au
+// client » : les fenêtres d'une visite d'avant se ferment d'abord, la page ne se recharge pas d'une visite à l'autre.
+async function ouvrirLaSituation(page) {
+  await fermerLesFenetres(page)
+  await page.getByRole('button', { name: 'Générer', exact: true }).first().click()
+  await page.getByRole('heading', { name: 'Publier au client' }).waitFor({ timeout: 10000 })
 }
 
 // Le formulaire d'une facture neuve, ouvert une fois les articles du dossier lus (« Choisir un article » n'existe qu'alors). Dans

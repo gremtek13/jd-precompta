@@ -2014,6 +2014,51 @@ function rpcDesParametres(nom: string, args?: Ligne): { data: unknown; error: nu
   return null
 }
 
+const POSTES_SITUATION_N = [
+  { poste: 'Honoraires', montant: 4_820_000 },
+  { poste: 'Gains divers — indemnités journalières et remboursements de frais de formation', montant: 135_050 },
+  { poste: 'Loyers et charges locatives', montant: -980_000 },
+  { poste: 'Honoraires rétrocédés — collaborateurs et remplaçants', montant: -612_340 },
+  { poste: 'Frais de véhicule (barème kilométrique)', montant: -439_380 },
+]
+const POSTES_SITUATION_N1 = [
+  { poste: 'Honoraires', montant: 4_310_000 },
+  { poste: 'Loyers et charges locatives', montant: -940_000 },
+  { poste: 'Frais de véhicule (barème kilométrique)', montant: -401_200 },
+]
+function chiffresDeLaSituation(debut: string, fin: string, postes: { poste: string; montant: number }[], tva: unknown) {
+  const recettes = postes.filter((p) => p.montant > 0).reduce((t, p) => t + p.montant, 0)
+  const depenses = postes.filter((p) => p.montant < 0).reduce((t, p) => t - p.montant, 0)
+  return { periode: { debut, fin }, postes, recettes, depenses, resultat: recettes - depenses, tva }
+}
+function situationPubliee(id: string, arretee: string, statut: 'provisoire' | 'validee', publieeLe: string, avecN1: boolean, dossier = 'd7') {
+  const annee = Number(arretee.slice(0, 4))
+  return {
+    id, dossier_id: dossier, annee, geste: 'publication', arretee_au: arretee, statut, remplace_id: null,
+    auteur: 'u-cabinet', publiee_le: publieeLe,
+    contenu: {
+      version: 1, statut,
+      ...chiffresDeLaSituation(`${annee}-01-01`, arretee, POSTES_SITUATION_N, dossier === 'd7' ? { assujetti: true, nette: 612_800 } : { assujetti: false }),
+      n_moins_1: avecN1
+        ? chiffresDeLaSituation(`${annee - 1}-01-01`, `${annee - 1}${arretee.slice(4)}`, POSTES_SITUATION_N1, dossier === 'd7' ? { assujetti: true, nette: -45_000 } : { assujetti: false })
+        : null,
+    },
+  }
+}
+const SITUATIONS_PUBLIEES_D7 = [
+  situationPubliee('sp-1', '2026-06-30', 'provisoire', '2026-07-08T09:10:00+02:00', false),
+  situationPubliee('sp-2', '2026-09-30', 'provisoire', '2026-10-06T14:20:00+02:00', true),
+  // Le cabinet infirmier (d1, exonéré) : le seul dossier dont la situation se PUBLIE (un assujetti est refusé tant que la TVA de la
+  // période ne se calcule pas), avec une situation déjà publiée que « Retirer » vise.
+  situationPubliee('sp-3', '2026-06-30', 'provisoire', '2026-07-08T09:10:00+02:00', true, 'd1'),
+]
+const SAISIES_2035_D1 = [
+  { id: 'sa-1', dossier_id: 'd1', annee: 2026, code: 'CC', centimes: 184_560, note_annexe: 'Quote-part personnelle du loyer du cabinet (30 % de 4 800 €), du chauffage et du téléphone, et avantage en nature de l’usage personnel du véhicule : le détail est dans la note jointe à la liasse, avec les justificatifs du calcul.' },
+  { id: 'sa-2', dossier_id: 'd1', annee: 2026, code: 'CL', centimes: 1_250_000, note_annexe: null },
+  { id: 'sa-3', dossier_id: 'd1', annee: 2026, code: 'CS', centimes: 600_000, note_annexe: null },
+  { id: 'sa-4', dossier_id: 'd1', annee: 2025, code: 'CC', centimes: 171_200, note_annexe: null },
+]
+
 const TABLES: Record<string, Ligne[]> = {
   revision_seuils: REVUE_D9.seuils,
   revision_explications: REVUE_D9.explications,
@@ -2075,7 +2120,7 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'm-bernard-d7', user_id: 'u-bernard', dossier_id: 'd7', role: 'client', email: 'bernard@atelier-exemple.fr', droit_ventes: true, droit_banque: false, droit_caisse: false, created_at: '2026-01-06T09:00:00Z' },
     ...(CLIENT_DU_BANC && VENTES_DU_BANC && !CLIENT_DU_DOSSIER_BASCULE
       ? [{ id: 'm-u1-d7',
- user_id: 'u1', dossier_id: 'd7', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: VENTES_DU_BANC === 'banque', droit_caisse: false, created_at: '2026-01-05T09:00:00Z' }]
+ user_id: 'u1', dossier_id: 'd7', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: VENTES_DU_BANC === 'banque', droit_caisse: false, droit_comptes: true, created_at: '2026-01-05T09:00:00Z' }]
       : []),
     // La titulaire du dossier basculé (d12), « Ventes » et « Banque » : l'onglet Banque la reconnaît comme « le client ».
     { id: 'm-clara-d12', user_id: 'u-clara', dossier_id: 'd12', role: 'client', email: 'clara.fontaine@exemple-fictif.fr', droit_ventes: true, droit_banque: true, droit_caisse: false, created_at: '2026-01-07T09:00:00Z' },
@@ -2088,6 +2133,14 @@ const TABLES: Record<string, Ligne[]> = {
       : []),
   ],
   notes_internes: NOTES_INTERNES,
+  // « Mes comptes » (étape C4b) et la publication du cabinet (C4a) : les situations que le cabinet a publiées à l'atelier (d7), DERRIÈRE
+  // `SITUATIONS_PUBLIEES_EXPORTEES` (le banc le lève : `BANC_DRAPEAUX`, voir vite.config.ts) — baissé, aucune lecture. Le contenu
+  // est celui que `publier_situation` fige : des centimes entiers, la recette positive et la dépense négative, un poste au nom
+  // long pour éprouver le passage à la ligne, la comparaison avec N−1 sur l'une, et un statut provisoire puis validé.
+  situations_publiees: SITUATIONS_PUBLIEES_D7,
+  // Les saisies du cabinet de la 2035 (étapes 2035S3 à S5), DERRIÈRE `SAISIES_2035_EXPORTEES` : celles du cabinet infirmier (d1), dont
+  // une note annexe longue. Des centimes, des codes de la liste fermée de `lib/saisies2035.ts`.
+  saisies_2035: SAISIES_2035_D1,
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
   // Pour le membre de l'équipe, ce que `dossiers_select` lui rend : ses dossiers assignés, et celui dont il est client.
   dossiers: MEMBRE_DU_BANC
@@ -2572,6 +2625,29 @@ const session = { user: { id: 'u1', email: CLIENT_DU_BANC ? 'client@exemple.fr' 
 // `couverture_du_releve` : les mois (au premier jour) où le relevé du dossier porte un mouvement ;
 // `droits_sur_le_dossier` : comme en base, le cabinet gère les ventes et la banque ; un client, selon les cases de son
 // accès (`memberships`).
+// La quatrième clé de `etat_facture_electronique` (étape C3, en production depuis le 07/11/2026) : des PHASES, jamais une période
+// calculée — le statut du dossier, ses régimes d'e-reporting actifs et leurs fréquences, ses déclarations actives récentes. L'atelier
+// de conseil (d7) a un régime confirmé (transactions et paiements chaque mois) et la première période des ventes déjà déclarée :
+// la carte dit « prête » pour les achats et les paiements, « déclarée le … » pour les ventes. Le cabinet infirmier (d1) n'en a
+// aucun : « régime pas encore confirmé », la phrase la plus longue du volet. Un autre dossier rend la fonction d'hier (sans la clé).
+function ereportingDuBanc(dossierId: string | undefined): { ereporting?: unknown } {
+  if (dossierId !== 'd7' && dossierId !== 'd1') return {}
+  const statut = dossierId === 'd7'
+    ? { statut_tva: 'redevable', article_exoneration: null, tva_periodicite: 'trimestrielle', tva_sur_debits: false }
+    : { statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1', tva_periodicite: 'trimestrielle', tva_sur_debits: false }
+  return {
+    ereporting: {
+      statut_du_dossier: statut,
+      regimes: dossierId === 'd7'
+        ? [{ depuis: '2026-01-01', ...statut, frequence_transactions: 'mois', frequence_paiements: 'mois' }]
+        : [],
+      declarations: dossierId === 'd7'
+        ? [{ objet: 'ventes', debut: '2027-09-01', fin: '2027-09-30', declaree_le: '2026-11-02T09:30:00+01:00' }]
+        : [],
+    },
+  }
+}
+
 function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown; error: null | { message: string } } {
   if (nom === 'couverture_du_releve') {
     const mois = new Set((TABLES.lignes_bancaires ?? []).filter((l) => l.dossier_id === dossierId)
@@ -2586,6 +2662,7 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
       ventes: !CLIENT_DU_BANC || acces?.droit_ventes === true,
       banque: !CLIENT_DU_BANC || acces?.droit_banque === true,
       caisse: !CLIENT_DU_BANC || acces?.droit_caisse === true,
+      comptes: !CLIENT_DU_BANC || acces?.droit_comptes === true,
     }
     return { data: droits, error: null }
   }
@@ -2612,6 +2689,7 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
             statuts_lus_le: connexion.cycle_vie_lu_le,
           },
         superpdp: superpdp ? { relie: true, depuis: '2026-09-05T14:00:00+02:00' } : { relie: false, depuis: null },
+        ...ereportingDuBanc(dossierId),
         adresse: courante === undefined ? null : {
           id: uuidDuBanc(String(courante.id)), forme: courante.forme, identifiant: courante.identifiant,
           plateforme: courante.plateforme, prise_effet: courante.prise_effet, verification: courante.verification,
