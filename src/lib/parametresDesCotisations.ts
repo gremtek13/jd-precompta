@@ -111,8 +111,11 @@ export function valeursSaisies(s: SaisieDesParametres): { valeurs: ValeursDesPar
   let debut: string | null = null
   if (s.debutActivite.trim() !== '') {
     const d = s.debutActivite.trim()
-    const jour = FORME_DATE.test(d) ? new Date(`${d}T00:00:00Z`) : null
-    if (jour === null || Number.isNaN(jour.getTime()) || jour.toISOString().slice(0, 10) !== d || d < '1900-01-01' || d > '2100-12-31') {
+    // Une date du calendrier : ses trois parties relues telles quelles, sans fuseau (le 30 février se refuse).
+    const [a, m, j] = FORME_DATE.test(d) ? d.split('-').map(Number) : [Number.NaN, Number.NaN, Number.NaN]
+    const jour = new Date(Date.UTC(a, m - 1, j))
+    const existe = jour.getUTCFullYear() === a && jour.getUTCMonth() === m - 1 && jour.getUTCDate() === j
+    if (!existe || d < '1900-01-01' || d > '2100-12-31') {
       return { valeurs: null, refus: 'La date de début d’activité n’est pas une date du calendrier.' }
     }
     debut = d
