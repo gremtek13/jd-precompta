@@ -233,6 +233,15 @@ export interface EcritureDevis {
 }
 
 export function ecritureDuDevis(s: SaisieDevis, emettre: boolean): EcritureDevis {
+  return ecritureDuDevisSelon(s, emettre, DEVIS_CITENT_UN_CONTACT)
+}
+
+/**
+ * L'écriture sous un état DONNÉ du drapeau : baissé, aucune clé `contact_id` (la fonction d'avant la migration ne la lit
+ * pas) ; levé, la clé toujours présente, nulle sans contact. Le drapeau en paramètre, pour que ses deux états se jouent
+ * (un accesseur des tests d'écran ne change que l'export, jamais la liaison locale du module).
+ */
+export function ecritureDuDevisSelon(s: SaisieDevis, emettre: boolean, citeUnContact: boolean): EcritureDevis {
   const texte = (v: string | null) => v?.trim() || null
   const t = totauxDuDevis(s.lignes)
   const m = mentionsAEnregistrer(s.mentions, 'devis')
@@ -252,7 +261,7 @@ export function ecritureDuDevis(s: SaisieDevis, emettre: boolean): EcritureDevis
       conditions: texte(s.conditions),
       mentions_legales: texte(s.mentionsLegales),
       notes: texte(s.notes),
-      ...(DEVIS_CITENT_UN_CONTACT ? { contact_id: s.contactId ?? null } : {}),
+      ...(citeUnContact ? { contact_id: s.contactId ?? null } : {}),
     },
     lignes: s.lignes.map((l) => ({
       designation: l.designation, quantite: l.quantite, prix_unitaire_ht: l.prix_unitaire_ht, taux_tva: l.taux_tva,
@@ -712,6 +721,16 @@ export interface DefautsDuDevis {
  * proposée ; un brouillon lu tel que la base le garde. Aucun émetteur : la base le pose à l'émission, depuis le dossier.
  */
 export function saisieDuDevis(d: Devis | null, defauts: DefautsDuDevis): Omit<SaisieDevis, 'lignes'> {
+  return saisieDuDevisSelon(d, defauts, DEVIS_CITENT_UN_CONTACT)
+}
+
+/**
+ * La saisie sous un état DONNÉ du drapeau : baissé, aucun `contactId` (la colonne n'existait pas) ; levé, celui du brouillon
+ * lu, nul sans contact. Un devis neuf n'en porte jamais : « Choisir un client » le pose.
+ */
+export function saisieDuDevisSelon(
+  d: Devis | null, defauts: DefautsDuDevis, citeUnContact: boolean,
+): Omit<SaisieDevis, 'lignes'> {
   if (d == null) {
     return {
       dateEmission: defauts.aujourdHui,
@@ -736,7 +755,7 @@ export function saisieDuDevis(d: Devis | null, defauts: DefautsDuDevis): Omit<Sa
     mentionsLegales: d.mentions_legales ?? '',
     notes: d.notes ?? '',
     // La colonne de la migration `devis_citent_un_contact` (en production) ; lue sous le drapeau seulement.
-    ...(DEVIS_CITENT_UN_CONTACT ? { contactId: d.contact_id ?? null } : {}),
+    ...(citeUnContact ? { contactId: d.contact_id ?? null } : {}),
   }
 }
 

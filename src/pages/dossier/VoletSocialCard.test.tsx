@@ -24,10 +24,19 @@ const faux = vi.hoisted(() => ({
 }))
 
 // Les paramètres des cotisations (TNS-Q1, TNS-Q4), drapeau levé depuis le 07/11/2026 : la carte les lit par ce module ;
-// ici, une activité ouverte en 2010 et rien d'autre de saisi — l'estimation d'hier, ses paramètres tenus.
+// ici, une activité ouverte en 2010 et rien d'autre de saisi — l'estimation d'hier, ses paramètres tenus. Le drapeau se
+// joue dans ses deux états par un accesseur (CLAUDE.md, Tests), levé par défaut comme en production ; chaque lecture des
+// paramètres se compte.
+const parametres = vi.hoisted(() => ({ exportes: true, lectures: 0 }))
+vi.mock('../../lib/parametresDesCotisations', async (importer) => {
+  const reel = await importer<typeof import('../../lib/parametresDesCotisations')>()
+  return { ...reel, get PARAMETRES_DES_COTISATIONS_EXPORTES() { return parametres.exportes } }
+})
 vi.mock('../../lib/parametresDesCotisationsLecture', () => ({
-  lireLesParametresDesCotisations: (dossierId: string) =>
-    Promise.resolve({ dossierId, etat: 'lus', debutActivite: '2010-01-01', parExercice: new Map() }),
+  lireLesParametresDesCotisations: (dossierId: string) => {
+    parametres.lectures += 1
+    return Promise.resolve({ dossierId, etat: 'lus', debutActivite: '2010-01-01', parExercice: new Map() })
+  },
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -99,6 +108,8 @@ beforeEach(() => {
   faux.enregistrementRefuse = false
   faux.parAnnee = {}
   faux.porte = null
+  parametres.exportes = true
+  parametres.lectures = 0
 })
 
 describe('le volet social d’un praticien conventionné', () => {
@@ -311,6 +322,31 @@ describe('le volet social d’un praticien conventionné', () => {
     expect(screen.getByText(/sont suspendues/)).toBeTruthy()
     expect(screen.queryByText('Total à la charge du praticien')).toBeNull()
     expect(screen.queryByText('proposées : ligne 4 de la 2035-A')).toBeNull()
+  })
+})
+
+// LE DRAPEAU DES PARAMÈTRES BAISSÉ : la carte d'avant TNS-Q1 et TNS-Q4, que plus rien ne jouait depuis sa levée.
+describe('le volet social, les paramètres des cotisations baissés', () => {
+  it('ne lit aucun paramètre, rend l’estimation d’hier, et refuse le chirurgien-dentiste sous le message d’avant', async () => {
+    parametres.exportes = false
+    await afficher()
+    saisir(/Profession/, 'auxiliaire_medical')
+    saisir(/Honoraires conventionnés/, '80000')
+    // L'estimation d'hier, `{ tenus: false }` : une activité ouverte avant l'exercice, le cas du moteur de l'Urssaf.
+    expect(normaliser(screen.getByText('Total à la charge du praticien').nextElementSibling?.textContent)).toBe('4 646 €')
+    expect(screen.queryByText(/Paramètres des cotisations/)).toBeNull()
+    saisir(/Profession/, 'chirurgien_dentiste')
+    expect(screen.getByText(/que l’application ne tient pas encore/)).toBeTruthy()
+    expect(screen.queryByText(/Saisissez le « taux dentiste »/)).toBeNull()
+    expect(screen.queryByText('Total à la charge du praticien')).toBeNull()
+    expect(parametres.lectures).toBe(0)
+  })
+
+  it('levé, la même carte lit les paramètres du dossier et les offre', async () => {
+    await afficher()
+    saisir(/Profession/, 'auxiliaire_medical')
+    expect(parametres.lectures).toBeGreaterThan(0)
+    expect(screen.queryAllByText(/Paramètres des cotisations/).length).toBeGreaterThan(0)
   })
 })
 

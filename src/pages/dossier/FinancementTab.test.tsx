@@ -29,6 +29,15 @@ vi.mock('../../lib/caisseLecture', async (original) => {
 })
 afterEach(() => { caisseDuTest.lecture = null })
 
+// PUBLIER AU CLIENT (ligne 51.5, étape C4b) : le drapeau `SITUATIONS_PUBLIEES_EXPORTEES`, levé le 07/11/2026 avec sa
+// migration, joué dans ses deux états par un accesseur (CLAUDE.md, Tests) ; levé par défaut, comme en production.
+const situationsDuTest = vi.hoisted(() => ({ exportees: true }))
+vi.mock('../../lib/situationsPubliees', async (original) => {
+  const vrai = await original<typeof import('../../lib/situationsPubliees')>()
+  return { ...vrai, get SITUATIONS_PUBLIEES_EXPORTEES() { return situationsDuTest.exportees } }
+})
+afterEach(() => { situationsDuTest.exportees = true })
+
 const faux = vi.hoisted(() => ({
   pieces: [] as unknown[],
   categories: [] as unknown[],
@@ -61,6 +70,8 @@ const faux = vi.hoisted(() => ({
   creations: [] as { table: string; ligne: unknown }[],
   porteCreation: null as Promise<void> | null,
   erreurCreation: null as { message: string } | null,
+  // Les tables que l'écran a nommées, dans l'ordre : ce qu'il lit (ou écrit) de la base.
+  lues: [] as string[],
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -116,7 +127,7 @@ vi.mock('../../lib/supabase', async () => {
     }
     return c
   }
-  return { supabase: { from: (table: string) => chaine(table) } }
+  return { supabase: { from: (table: string) => { faux.lues.push(table); return chaine(table) } } }
 })
 
 // Typé sans `as` : le compilateur vérifie chaque champ contre la table (voir CLAUDE.md, quatre
@@ -202,6 +213,7 @@ afterEach(() => {
   faux.creations = []
   faux.porteCreation = null
   faux.erreurCreation = null
+  faux.lues = []
 })
 
 describe('FinancementTab — situation intermédiaire', () => {
@@ -342,6 +354,27 @@ describe('FinancementTab — situation intermédiaire', () => {
 // bancaire pour 954 lignes de relevé importées, donc TOUT dossier ouvrant cet écran aujourd'hui lit
 // une projection plate à zéro. Le module a raison de rendre 0 ; ce qui manquait est que l'écran
 // distingue ce zéro-là d'un zéro observé.
+describe('FinancementTab — « Publier au client », drapeau par drapeau', () => {
+  it('baissé : le bloc absent, et rien lu de situations_publiees', async () => {
+    situationsDuTest.exportees = false
+    faux.pieces = [recette()]
+    faux.categories = [CATEGORIE]
+    const modale = await ouvrirLaSituation('2026-06-30')
+    // La situation s'est calculée (sa ligne de recettes est là) : l'absence du bloc n'est pas un écran vide.
+    expect(totalDuPoste(modale, 'Recettes')).not.toBeNull()
+    expect(within(modale).queryByRole('heading', { name: 'Publier au client' })).toBeNull()
+    expect(faux.lues).not.toContain('situations_publiees')
+  })
+
+  it('levé : le bloc présent, et la lecture des situations partie', async () => {
+    faux.pieces = [recette()]
+    faux.categories = [CATEGORIE]
+    const modale = await ouvrirLaSituation('2026-06-30')
+    expect(await within(modale).findByRole('heading', { name: 'Publier au client' })).toBeTruthy()
+    await waitFor(() => expect(faux.lues).toContain('situations_publiees'))
+  })
+})
+
 describe('FinancementTab — ce sur quoi la projection repose', () => {
   function ecritureBanque(mois: string, montant: number) {
     return { date: `${mois}-15`, sens: 'debit', montant }
