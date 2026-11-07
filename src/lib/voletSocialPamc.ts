@@ -485,6 +485,8 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
   const indemnitesJournalieres = arrondiUrssaf(abattue(appliquer(assietteIndemnites, INDEMNITES_JOURNALIERES), exonerationIndemnites))
 
   const tauxAllocations = arrondiUrssaf(tauxProgressif(assiette, plafondProratise, ALLOCATIONS_FAMILIALES), 2)
+  // L'ACRE des allocations familiales, recopiée du moteur, n'a pas d'effet en métropole : elle ne joue que sous le plafond
+  // proratisé, où la cotisation est nulle (son taux part de 110 %). Elle en aurait outre-mer, que l'estimation ne couvre pas.
   const allocationsAvant = arrondiUrssaf(appliquer(assiette, tauxAllocations))
   const exonerationAllocations =
     acre && assiette > 0 ? tauxExonerationAcre(assiette, plafondProratise, maximumAcre, activite.creeeAvant2026, prorataAcre) : 0
