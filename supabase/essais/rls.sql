@@ -1745,7 +1745,7 @@ begin
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select e.facture_id into f_validee from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS","date_emission":"1999-01-15","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '{"tiers_nom":"ESSAI RLS","date_emission":"1999-01-15","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","tiers_adresse":"Adresse fictive du client","nature_operation":"services"}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
     select e.facture_id into f_brouillon from enregistrer_facture(dossier_du_client, null,
       '{"tiers_nom":"ESSAI RLS","date_emission":"1999-01-16","montant_ht":100,"montant_tva":20,"montant_ttc":120}'::jsonb,
@@ -2391,7 +2391,7 @@ begin
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS FE","date_emission":"2025-06-15","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '{"tiers_nom":"ESSAI RLS FE","date_emission":"2025-06-15","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","tiers_adresse":"Adresse fictive du client","nature_operation":"services"}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
     reset role;
 
@@ -2575,7 +2575,7 @@ begin
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS VB","date_emission":"2025-03-01","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '{"tiers_nom":"ESSAI RLS VB","date_emission":"2025-03-01","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","tiers_adresse":"Adresse fictive du client","nature_operation":"services"}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
     perform enregistrer_encaissement(dossier_du_client, f_source, '2025-03-10', 120, 'virement', m_reserve, '[{"taux":20,"montant":120}]'::jsonb);
     reset role;
@@ -2751,7 +2751,7 @@ begin
     select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
       jsonb_build_object('tiers_nom', 'ESSAI RLS SI', 'date_emission', jour_facture,
         'mentions_legales', 'TVA non applicable, art. 293 B du CGI.', 'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120,
-        'type_client', 'assujetti', 'nature_operation', 'services'),
+        'type_client', 'assujetti', 'tiers_adresse', 'Adresse fictive du client', 'nature_operation', 'services'),
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
     perform enregistrer_encaissement(dossier_du_client, f_source, jour_encaissement, 120, 'cheque', null, '[{"taux":20,"montant":120}]'::jsonb);
     reset role;
