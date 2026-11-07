@@ -349,11 +349,6 @@ describe('FinancementTab — situation intermédiaire', () => {
 })
 
 
-// CE QU'AUCUN TEST DE `src/lib` NE PEUT VOIR : le plan de trésorerie lit `ecritures_brouillon`, pas
-// les relevés importés. Mesuré le 22/09/2026 — les quatre dossiers de la base portent 0 écriture
-// bancaire pour 954 lignes de relevé importées, donc TOUT dossier ouvrant cet écran aujourd'hui lit
-// une projection plate à zéro. Le module a raison de rendre 0 ; ce qui manquait est que l'écran
-// distingue ce zéro-là d'un zéro observé.
 describe('FinancementTab — « Publier au client », drapeau par drapeau', () => {
   it('baissé : le bloc absent, et rien lu de situations_publiees', async () => {
     situationsDuTest.exportees = false
@@ -375,6 +370,11 @@ describe('FinancementTab — « Publier au client », drapeau par drapeau', () =
   })
 })
 
+// CE QU'AUCUN TEST DE `src/lib` NE PEUT VOIR : le plan de trésorerie lit `ecritures_brouillon`, pas
+// les relevés importés. Mesuré le 22/09/2026 — les quatre dossiers de la base portent 0 écriture
+// bancaire pour 954 lignes de relevé importées, donc TOUT dossier ouvrant cet écran aujourd'hui lit
+// une projection plate à zéro. Le module a raison de rendre 0 ; ce qui manquait est que l'écran
+// distingue ce zéro-là d'un zéro observé.
 describe('FinancementTab — ce sur quoi la projection repose', () => {
   function ecritureBanque(mois: string, montant: number) {
     return { date: `${mois}-15`, sens: 'debit', montant }
