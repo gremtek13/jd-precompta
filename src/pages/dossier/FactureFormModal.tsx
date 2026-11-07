@@ -26,7 +26,10 @@ import {
 } from '../../lib/contactsFacture'
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
-import { avisDuStatutDeTva, refusDeLaDateDEmission, refusDuStatutDeTva, type FactureDeLaSerie } from '../../lib/validationDeLaFacture'
+import {
+  ADRESSE_DU_CLIENT_EXIGEE, avisDuStatutDeTva, refusDeLAdresseDuClient, refusDeLaDateDEmission, refusDuStatutDeTva,
+  type FactureDeLaSerie,
+} from '../../lib/validationDeLaFacture'
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue,
   provenanceQuiPart, refusSansPenalites, sansPhraseDeRetard,
@@ -406,6 +409,12 @@ export default function FactureFormModal(props: Props) {
     // Le contact d'où vient le client (étape A7b) : la clé part toujours, nulle sans contact — un brouillon rouvert garde le sien.
     ...(MENTIONS_FIGEES_EXPORTEES ? { contact_id: contactChoisi } : {}),
   }
+  // L'ADRESSE DU CLIENT (JJ-Q4 ; le rang 19, le déclencheur qui suit la garde des factures ; lib/validationDeLaFacture.ts) :
+  // une facture à une entreprise ou à un organisme public, sans l'adresse de son client, jugée sur l'en-tête TEL QU'IL PART,
+  // pour tout auteur ; le brouillon reste enregistrable. Sous `ADRESSE_DU_CLIENT_EXIGEE`, levé avec la migration.
+  const refusDeLAdresse = ADRESSE_DU_CLIENT_EXIGEE
+    ? refusDeLAdresseDuClient({ type: 'facture', typeClient: entete.type_client, tiersAdresse: entete.tiers_adresse })
+    : null
   // Ce que la base refuserait des mentions : ni le brouillon ni la validation ne partent, et l'écran dit pourquoi.
   const refusMentions = refusDesMentions(mentions, tiersSiret, 'facture')
   // L'option pour les débits ne vise que des prestations de services (CGI, ann. II, art. 242 nonies A, I, 11° bis).
@@ -840,6 +849,11 @@ export default function FactureFormModal(props: Props) {
     // Seconde ceinture : le bouton de validation est déjà grisé sur un refus de la date, dit avant le clic.
     if (statutCible === 'validee' && refusDeLaDate) {
       setError(refusDeLaDate.message)
+      return
+    }
+    // Seconde ceinture : de même sur l'adresse du client (JJ-Q4), qui suit la date dans l'ordre de la base.
+    if (statutCible === 'validee' && refusDeLAdresse) {
+      setError(refusDeLAdresse.message)
       return
     }
     // Seconde ceinture : le bouton de validation est déjà grisé sur un refus de la source, dit avant le clic.
@@ -1374,6 +1388,7 @@ export default function FactureFormModal(props: Props) {
             {refusDeLAcompte && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLAcompte)}</p>}
             {refusDuStatut && <p className="error-text" role="alert">{pourLEspace(espace, refusDuStatut.message)}</p>}
             {refusDeLaDate && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLaDate.message)}</p>}
+            {refusDeLAdresse && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLAdresse.message)}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
             {avisDuStatut && <p className="note-info" role="note">{avisDuStatut}</p>}
 
@@ -1384,7 +1399,7 @@ export default function FactureFormModal(props: Props) {
               <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0 || refusFigeBrouillon != null}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusDeLaDate != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null || refusDeLAcompte != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusDeLaDate != null || refusDeLAdresse != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null || refusDeLAcompte != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>

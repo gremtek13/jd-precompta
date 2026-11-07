@@ -1,6 +1,6 @@
 import { remplirModele } from './encaissementsFactures'
 import { mentionTva } from './statutTva'
-import type { ArticleExoneration, FactureEmise, StatutTva } from './types'
+import type { ArticleExoneration, FactureEmise, StatutTva, TypeClient } from './types'
 
 // CE QUE LA VALIDATION EXIGE D'UNE FACTURE, DEPUIS LA CORRECTION DE LA FACTURE (31/10/2026, reprise le 02/11/2026 pour
 // FACTURE-Q1 ; migration `facture_dates_centimes_mention_tva`, en production depuis le 02/11/2026 (version 20261102112003) ;
@@ -184,4 +184,50 @@ export function refusDeLaValidation(v: ValidationAJuger): RefusDeLaValidation | 
   const mention = mentionTva(v.statutTva, v.articleExoneration)
   if (mention !== null && !(v.mentionsLegales ?? '').includes(mention)) return refus('mention_tva_absente', mention)
   return refusDeLaDateDEmission(v)
+}
+
+// ── L'ADRESSE DU CLIENT (JJ-Q4, la réponse du cabinet du 07/11/2026 : « Oui, refuser à la validation ») ──────────────
+// La migration `adresse_du_client_exigee`, PRÉPARÉE, PAS APPLIQUÉE (supabase/preparees/20261107200000_adresse_du_client_exigee.sql ;
+// son essai : supabase/essais/adresseDuClientExigee.sql ; HISTORIQUE.md, « JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS
+// ADRESSE NE SE VALIDE PAS (PRÉPARÉE, PAS APPLIQUÉE) »). Un déclencheur à lui, qui suit la garde des factures dans l'ordre
+// des noms (`factures_emises_figees_adresse_du_client`) : son refus vient après les cinq de la garde (et le bloc d'e7a,
+// lib/factureInternationale.ts, quand sa migration est en base), et avant ceux de la source de la vente — le rang 19. Une
+// FACTURE (une facture d'acompte et la finale d'un devis comprises) dont le type de client, tel qu'il part, est une
+// entreprise établie en France ou un organisme public (`versEntreprise`, lib/mentionsFacture.ts), sans l'adresse de son
+// client — nulle, ou faite des seuls blancs que `trim` retire, ceux de la base —, se refuse, pour tout auteur. Un avoir
+// reprend le client de sa facture et n'en est pas jugé ; un particulier, un client établi hors de France ou un type à
+// préciser se valident comme hier. Sources : CGI, ann. II, art. 242 nonies A, I, 1° ; code de commerce, art. L441-9, I.
+
+// Baissé tant que la migration n'est pas en base : l'écran ne retient pas une validation que la base accepte encore.
+export const ADRESSE_DU_CLIENT_EXIGEE: boolean = false
+
+/** Le refus du déclencheur, sous ses mots et son code (validationDeLaFacture.test.ts le confronte à la migration). */
+export const REFUS_ADRESSE_DU_CLIENT = {
+  cle: 'adresse_du_client', rang: 19, code: '22023',
+  modele: "L'adresse du client manque : une facture à une entreprise ou à un organisme public porte le nom complet et "
+    + "l'adresse de son client (CGI, ann. II, art. 242 nonies A, I, 1° ; code de commerce, art. L441-9, I). Elle se "
+    + 'renseigne avant la validation : une facture validée ne se corrige que par un avoir.',
+} as const
+
+/** Ce que le déclencheur juge d'une facture (ou d'un avoir) qui se valide, telle qu'elle part. */
+export interface AdresseDuClientAJuger {
+  type: 'facture' | 'avoir'
+  // Le type du client de l'en-tête (`type_client`) : nul quand il est à préciser.
+  typeClient: TypeClient | null
+  // L'adresse du client de l'en-tête (`tiers_adresse`).
+  tiersAdresse: string | null
+}
+
+export interface RefusDeLAdresseDuClient {
+  cle: typeof REFUS_ADRESSE_DU_CLIENT.cle
+  code: string
+  message: string
+}
+
+/** Le refus du rang 19 ; null quand le déclencheur laisse la validation se faire. */
+export function refusDeLAdresseDuClient(v: AdresseDuClientAJuger): RefusDeLAdresseDuClient | null {
+  if (v.type !== 'facture') return null
+  if (v.typeClient !== 'assujetti' && v.typeClient !== 'organisme_public') return null
+  if ((v.tiersAdresse ?? '').trim() !== '') return null
+  return { cle: REFUS_ADRESSE_DU_CLIENT.cle, code: REFUS_ADRESSE_DU_CLIENT.code, message: REFUS_ADRESSE_DU_CLIENT.modele }
 }
