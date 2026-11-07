@@ -12,7 +12,7 @@ import type { CotisationDeclaree } from './types'
 
 // Des montants construits à la main : les définitives sont un total posé, jamais recalculé ici (le calcul est celui de
 // lib/voletSocialPamc.ts, éprouvé contre le moteur de l'Urssaf) ; les échéances, des appels ronds dont la somme se lit.
-const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261107170000_regularisation_des_cotisations.sql', import.meta.url), 'utf8')
+const MIGRATION = readFileSync(new URL('../../supabase/schema/20261107165415_regularisation_des_cotisations.sql', import.meta.url), 'utf8')
 const RETOUR = readFileSync(new URL('../../supabase/preparees/retour/20261107170100_retour_regularisation_des_cotisations.sql', import.meta.url), 'utf8')
 const ESSAI = readFileSync(new URL('../../supabase/essais/regularisationDesCotisations.sql', import.meta.url), 'utf8')
 const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex')
@@ -82,9 +82,13 @@ describe('les listes fermées, confrontées à la migration', () => {
 })
 
 describe('le gel : la description hors de sa comparaison, rien d’autre', () => {
-  // La fonction d'aujourd'hui, telle que l'export la porte (paiement_personnel_des_cotisations), et le corps que la
-  // production rendait le 07/11/2026.
-  const hier = `${derniereDefinitionSql('garder_cotisation_valide')}$$;`
+  // La fonction d'avant la migration, telle que l'export la porte (paiement_personnel_des_cotisations), et le corps que la
+  // production rendait le 07/11/2026 avant elle. Depuis que l'export porte la migration (07/11/2026), sa dernière
+  // définition est celle de la migration : celle d'avant se lit dans l'export sans le fichier de la migration.
+  const hier = `${derniereDefinitionSql('garder_cotisation_valide', (f) => !f.chemin.endsWith('_regularisation_des_cotisations.sql'))}$$;`
+  it('l’export porte la migration : la dernière définition du gel est la sienne', () => {
+    expect(`${derniereDefinitionSql('garder_cotisation_valide')}$$;`).toBe(definitionDuGel(MIGRATION))
+  })
   it('la migration la remplace par le même texte, sa comparaison seule changée', () => {
     expect(md5(corps(hier))).toBe('dfa6faabda81af162016e620ea6375fe')
     const ligne = '      if to_jsonb(new) is distinct from to_jsonb(old) then\n'

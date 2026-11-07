@@ -25,7 +25,7 @@
 // des allocations familiales, une part de la cotisation fixée par la tranche où tombe l'assiette de
 // la prise en charge (100 % jusqu'à 140 % du plafond, 75 % jusqu'à 250 %, 60 % au-delà).
 //
-// LES PARAMÈTRES DES COTISATIONS (TNS-Q1, TNS-Q4, 07/11/2026 ; migration préparée
+// LES PARAMÈTRES DES COTISATIONS (TNS-Q1, TNS-Q4, 07/11/2026 ; migration en production le même jour,
 // `parametres_des_cotisations`, src/lib/parametresDesCotisations.ts) : le début d'activité du dossier,
 // l'ACRE et le « taux dentiste » de l'exercice, une entrée OBLIGATOIRE (`ParametresEstimation`), sans
 // défaut. L'année de la création, le plafond se proratise aux jours d'activité (le taux de maladie, ses

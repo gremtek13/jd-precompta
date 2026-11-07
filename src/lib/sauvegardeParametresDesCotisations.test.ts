@@ -32,9 +32,9 @@ import {
 } from './sauvegarde'
 
 // LES PARAMÈTRES DES COTISATIONS AU PLAN DE SAUVEGARDE (ligne 27, TNS-Q1 et TNS-Q4). Leur migration,
-// `parametres_des_cotisations`, est préparée, pas appliquée : drapeau baissé, le plan effectif ne dit RIEN des deux tables
-// — une sauvegarde lirait une table absente et échouerait —, et le plan PRÉVU est déjà juste, pour que lever
-// `PARAMETRES_DES_COTISATIONS_EXPORTES` suffise le jour venu.
+// `parametres_des_cotisations`, est en production depuis le 07/11/2026, `PARAMETRES_DES_COTISATIONS_EXPORTES` levé : le plan
+// effectif porte les deux tables. Baissé — son état d'avant, joué ici par `vi.doMock` —, il n'en dirait RIEN (une
+// sauvegarde lirait une table absente et échouerait), et le plan PRÉVU reste celui que le drapeau levé suit.
 
 const DEBUT = 'debuts_d_activite'
 const TABLE = 'parametres_des_cotisations'

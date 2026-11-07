@@ -23,6 +23,13 @@ const faux = vi.hoisted(() => ({
   porte: null as Promise<void> | null,
 }))
 
+// Les paramètres des cotisations (TNS-Q1, TNS-Q4), drapeau levé depuis le 07/11/2026 : la carte les lit par ce module ;
+// ici, une activité ouverte en 2010 et rien d'autre de saisi — l'estimation d'hier, ses paramètres tenus.
+vi.mock('../../lib/parametresDesCotisationsLecture', () => ({
+  lireLesParametresDesCotisations: (dossierId: string) =>
+    Promise.resolve({ dossierId, etat: 'lus', debutActivite: '2010-01-01', parExercice: new Map() }),
+}))
+
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
@@ -293,7 +300,8 @@ describe('le volet social d’un praticien conventionné', () => {
     expect(normaliser(screen.getByText(/^Maladie-maternité/).textContent)).toMatch(/prise en charge par l'Assurance maladie \(0 €\)$/)
     expect(normaliser(screen.getByText('Total à la charge du praticien').nextElementSibling?.textContent)).toBe(euroEcran(reference.attendu.total))
     saisir(/Profession/, 'chirurgien_dentiste')
-    expect(screen.getByText(/taux dentiste/)).toBeTruthy()
+    // Les paramètres tenus (drapeau levé le 07/11/2026) : le refus nomme le taux dentiste qui manque, et sa carte l'offre.
+    expect(screen.getByText(/Saisissez le « taux dentiste » du relevé SNIR 2025/)).toBeTruthy()
     expect(screen.queryByText('Total à la charge du praticien')).toBeNull()
   })
 

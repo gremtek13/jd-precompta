@@ -1,9 +1,9 @@
-// LA RÉGULARISATION DES COTISATIONS D'UN PRATICIEN BNC (ligne 27, TNS-Q2), PRÉPARÉE le 07/11/2026, tranchée par le cabinet
+// LA RÉGULARISATION DES COTISATIONS D'UN PRATICIEN BNC (ligne 27, TNS-Q2), préparée le 07/11/2026, tranchée par le cabinet
 // le même jour (TNS-Q2 : « appliquez-la » ; TNS-Q2-B : (B), une colonne pour la part). La migration
-// `regularisation_des_cotisations` (supabase/preparees/20261107170000_regularisation_des_cotisations.sql) pose quatre
-// colonnes de `cotisations_declarees` : l'organisme qui appelle, l'année payée, la nature, et la part de l'appel qui
-// régularise l'année d'avant. Elle n'est PAS appliquée : `REGULARISATION_DES_COTISATIONS_EXPORTEE` reste baissé, l'onglet
-// Cotisations ne les montre ni ne les écrit, et la carte du volet social n'estime rien.
+// `regularisation_des_cotisations` (supabase/schema/20261107165415_regularisation_des_cotisations.sql), en production
+// depuis le 07/11/2026, pose quatre colonnes de `cotisations_declarees` : l'organisme qui appelle, l'année payée, la
+// nature, et la part de l'appel qui régularise l'année d'avant. `REGULARISATION_DES_COTISATIONS_EXPORTEE` est levé :
+// l'onglet Cotisations les montre et les écrit, et la carte du volet social estime la régularisation.
 //
 // LA RÈGLE (code de la sécurité sociale, art. L. 131-6-2) : les cotisations d'un indépendant sont dues annuellement,
 // calculées « à titre provisionnel » sur le revenu d'une année antérieure, puis régularisées quand le revenu de l'année au
@@ -48,8 +48,9 @@ import { anneeDe, formatDate, formatMoney } from './format'
 import type { ResultatEstimation } from './voletSocialPamc'
 import type { CotisationDeclaree, NatureCotisation, OrganismeCotisation } from './types'
 
-/** La migration `regularisation_des_cotisations` est-elle en base ? Baissé : rien des trois colonnes ne se lit ni ne s'écrit. */
-export const REGULARISATION_DES_COTISATIONS_EXPORTEE = false
+/** La migration `regularisation_des_cotisations` est-elle en base ? Levé le 07/11/2026, le jour de son application. Baissé
+ *  (son état d'avant, que les tests jouent par un accesseur) : rien des quatre colonnes ne se lit ni ne s'écrit. */
+export const REGULARISATION_DES_COTISATIONS_EXPORTEE = true
 
 /** La liste fermée de la base (`cotisations_declarees_organisme_liste`), dans son ordre. */
 export const ORGANISMES: readonly OrganismeCotisation[] = [

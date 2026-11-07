@@ -268,9 +268,10 @@ export function relationsDuSchema(fichiers: { chemin: string; texte: string }[])
 // celle que la base exécute. Une migration qui la redéfinit l'écrit `create or replace` — chercher `create function`
 // seul relirait la première, et l'application serait comparée à un texte que la base n'a plus. Lève quand la fonction
 // est introuvable : un test qui la compare ne doit jamais passer sur un texte vide.
-export function derniereDefinitionSql(nom: string): string {
+// `retenu` écarte des fichiers : la définition d'AVANT une migration de l'export, qu'un test compare à la sienne.
+export function derniereDefinitionSql(nom: string, retenu: (f: { chemin: string }) => boolean = () => true): string {
   const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
-  const definitions = fichiersDuSchema().filter((f) => new RegExp(motif.source).test(f.texte))
+  const definitions = fichiersDuSchema().filter(retenu).filter((f) => new RegExp(motif.source).test(f.texte))
   if (definitions.length === 0) throw new Error(`Fonction ${nom} introuvable dans le schéma exporté.`)
   const texte = definitions[definitions.length - 1].texte
   const positions = [...texte.matchAll(motif)].map((m) => m.index)

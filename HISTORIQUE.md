@@ -49522,3 +49522,16 @@ d'une note de frais ou d'une pièce « autre » dont le fournisseur n'a pas ét�
 (`libelleDUnePiece`), dans le FEC comme dans la piste, pour les écritures composées aujourd'hui aussi. Le remplacer par
 « Pièce du JJ/MM/AAAA » changerait l'EcritureLib des écritures à venir ; ce qui est au brouillon garde son libellé
 (FEC22Q7-Q1).
+
+### 07/11/2026 — LA RÉGULARISATION ET LES PARAMÈTRES DES COTISATIONS EN PRODUCTION (LIGNE 27)
+
+Sur l'accord du cabinet, par l'outil : `regularisation_des_cotisations` (`20261107165415`, `e5937069…`) et
+`parametres_des_cotisations` (`20261107165534`, `f64d9884…`) ; chaque historique, CR retirés, égal au fichier, passé à
+l'export inchangé. Levés : `REGULARISATION_DES_COTISATIONS_EXPORTEE` et `PARAMETRES_DES_COTISATIONS_EXPORTES` (les deux
+tables au plan) ; l'état baissé reste joué (accesseurs, `vi.doMock`, `…Selon(…, false)`). Levé, l'estimation se tait
+sans début d'activité. `types.ts` : les quatre colonnes facultatives (une lecture qui ne les nomme pas),
+`DebutDActivite`, `ParametresDesCotisations`. Le socle régénère `cotisations_declarees` (quatre colonnes, six
+contraintes) ; le formulaire « Échéance » sort des écritures admises du garde des lectures (ses champs fictifs s'y
+refusent). Contrôles égaux : dérive 185 `8df832d8…`, socle 81 `c6cf69c1…`, inventaire 2 537 `30d0989f…` (avec
+saisies_2035 : 186 `28a3a11e…`, 2 558 `1c59d374…`, la production) ; les deux tables : RLS, une policy `to
+authenticated`, quatre droits à `anon` et `authenticated`.

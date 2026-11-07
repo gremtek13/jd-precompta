@@ -16,8 +16,10 @@ const contexte: ContexteDesGestes = {
 const decrite = cotisation({ organisme: 'urssaf', annee_payee: 2026, nature: 'provisionnelle', part_regularisation: null, montant_csg_crds: 300 })
 
 describe('la saisie de « Modifier »', () => {
-  it('sans le drapeau (le défaut), aucune description ; avec, celle de la ligne lue ; jamais sur une ligne lue sans les colonnes', () => {
-    expect(saisieDe(decrite).description).toBeUndefined()
+  // Le drapeau levé le 07/11/2026 (le défaut) ; son état baissé, joué par le paramètre, reste éprouvé.
+  it('drapeau baissé, aucune description ; levé (le défaut), celle de la ligne lue ; jamais sur une ligne lue sans les colonnes', () => {
+    expect(saisieDe(decrite, false).description).toBeUndefined()
+    expect(saisieDe(decrite)).toEqual(saisieDe(decrite, true))
     expect(saisieDe(decrite, true).description).toEqual({ organisme: 'urssaf', annee: '2026', nature: 'provisionnelle', part: '' })
     // Les trois colonnes sans la quatrième : une lecture qui n'est pas celle de la migration, rien ne s'écrit.
     expect(lueAvecSaDescription(cotisation({ organisme: 'urssaf', annee_payee: 2026, nature: 'provisionnelle' }))).toBe(false)
@@ -67,7 +69,7 @@ describe('« Modifier » sur une échéance figée ou payée depuis le compte pe
     expect(jugerLaModification(decrite, { ...decrire(decrite, {}), echeance: '2026-03-21' }, figee)).toEqual({ refus: { message: refus } })
     expect(jugerLaModification(decrite, { ...decrire(decrite, {}), previsionnel: true }, figee)).toEqual({ refus: { message: refus } })
     // Le drapeau baissé (la saisie sans description) : rien ne change, même sans rien d'autre de changé.
-    expect(jugerLaModification(decrite, saisieDe(decrite), figee)).toEqual({ refus: { message: refus } })
+    expect(jugerLaModification(decrite, saisieDe(decrite, false), figee)).toEqual({ refus: { message: refus } })
     expect(jugerLaModification(decrite, decrire(decrite, {}), figee)).toEqual({ refus: { message: 'Rien n’a changé.', discret: true } })
     expect(jugerLaModification(decrite, decrire(decrite, { annee: '2028' }), figee))
       .toEqual({ refus: { message: 'L’année payée d’une échéance de 2026 va de 2021 à 2027.' } })

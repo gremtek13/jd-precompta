@@ -1,7 +1,7 @@
 -- LE RETOUR ARRIÈRE DE LA MIGRATION `regularisation_des_cotisations` (ligne 27, TNS-Q2) — PRÉPARÉ, À NE COLLER QU'AVEC
 -- L'ACCORD EXPLICITE DU CABINET : il DÉTRUIT des données. À coller dans l'éditeur SQL de Supabase, dans une transaction,
 -- avec sa ligne d'historique (CLAUDE.md, « Quand `apply_migration` attend une confirmation »). La migration :
--- supabase/preparees/20261107170000_regularisation_des_cotisations.sql (puis supabase/schema/, le jour de son application).
+-- supabase/schema/20261107165415_regularisation_des_cotisations.sql (en production depuis le 07/11/2026).
 --
 -- L'ORDRE : D'ABORD l'application — `REGULARISATION_DES_COTISATIONS_EXPORTEE` rebaissé (src/lib/regularisationDesCotisations.ts),
 -- `types.ts` remis, et mis en ligne : sinon l'onglet Cotisations écrirait des colonnes absentes et chaque saisie se refuserait —,

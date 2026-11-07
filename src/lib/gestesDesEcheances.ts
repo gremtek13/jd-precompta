@@ -55,7 +55,7 @@ import {
 //   - leurs CSG-CRDS toutes deux saisies, ou toutes deux non saisies : une saisie et une inconnue donneraient une somme qui
 //     se croirait complète ;
 //   - DU MÊME ORGANISME : la confirmation le demande au cabinet. Depuis la migration `regularisation_des_cotisations`
-//     (préparée, ligne 27, TNS-Q2), une échéance peut dire son organisme, son année payée et sa nature : deux organismes
+//     (en production depuis le 07/11/2026, ligne 27, TNS-Q2), une échéance peut dire son organisme, son année payée et sa nature : deux organismes
 //     DITS et différents se refusent (un prélèvement n'en paie qu'un), et l'échéance réunie ne garde de la description que
 //     ce que les deux disent à l'identique — une provisionnelle et une régularisation réunies sont une échéance MÊLÉE, que
 //     l'estimation de la régularisation dit non décrite plutôt que de la compter d'une seule nature. La part qui régularise

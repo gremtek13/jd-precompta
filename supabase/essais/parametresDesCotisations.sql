@@ -1,5 +1,6 @@
 -- LES PARAMÈTRES DES COTISATIONS : LE DÉBUT D'ACTIVITÉ, L'ACRE ET LE TAUX DENTISTE (ligne 27, TNS-Q1 et TNS-Q4 ; la
--- migration `parametres_des_cotisations`, PRÉPARÉE le 07/11/2026, supabase/preparees/). Le récit : HISTORIQUE.md,
+-- migration `parametres_des_cotisations`, en production depuis le 07/11/2026,
+-- supabase/schema/20261107165534_parametres_des_cotisations.sql). Le récit : HISTORIQUE.md,
 -- « 07/11/2026 — LES PARAMÈTRES DES COTISATIONS : LE DÉBUT D'ACTIVITÉ, L'ACRE ET LE TAUX DENTISTE (TNS-Q1, TNS-Q4)
 -- (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après toute migration qui touche `debuts_d_activite`,
 -- `parametres_des_cotisations`, leurs contraintes, `garder_parametres_des_cotisations_valides`,

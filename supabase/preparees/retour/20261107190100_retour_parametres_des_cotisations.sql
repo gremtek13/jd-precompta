@@ -1,4 +1,5 @@
--- Le retour de la migration `parametres_des_cotisations` (20261107190000, ligne 27, TNS-Q1 et TNS-Q4). Il DÉTRUIT les deux
+-- Le retour de la migration `parametres_des_cotisations` (supabase/schema/20261107165534_parametres_des_cotisations.sql,
+-- en production depuis le 07/11/2026, ligne 27, TNS-Q1 et TNS-Q4). Il DÉTRUIT les deux
 -- tables (le début d'activité des dossiers, l'ACRE et le taux dentiste des exercices), la garde du gel et la fonction
 -- d'écriture : il refuse tant qu'une valeur y vit (la perdre changerait l'estimation des cotisations d'un exercice), et se
 -- colle dans l'éditeur SQL (le mot `drop` le fait coller) — sur l'accord explicite du cabinet seulement. Avant lui : baisser
