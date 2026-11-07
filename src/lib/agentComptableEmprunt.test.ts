@@ -4,7 +4,7 @@ import * as lib_echeanceEmprunt from './echeanceEmprunt'
 import { describe, expect, it } from 'vitest'
 import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT } from './comptes'
 import {
-  couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees, ecritureDeLEcheance, MARGE_PRELEVEMENT_JOURS,
+  couvertureDuReleve, ecritureDeLEcheance, MARGE_PRELEVEMENT_JOURS,
 } from './echeanceEmprunt'
 import { genererEcheancier, type Emprunt } from './emprunts'
 import { ajouterJours, ajouterMois } from './format'
@@ -59,7 +59,6 @@ function extraire(source: string, plan: PlanComptable): Copie {
   return avecLePlan(new Function(`${js}\nreturn { ajouterMois, ajouterJours, genererEcheancier, echeancesNonRapprochees, couvertureDuReleve, ecritureDeLEcheance, echeancesDesynchronisees }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const emprunt = (o: Partial<Emprunt>): Emprunt => ({
   id: 'a', dossier_id: 'd', nom: 'Prêt matériel', organisme_preteur: null, capital_initial: 12000, taux_annuel: 3.6,

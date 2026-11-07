@@ -4,8 +4,7 @@ import * as lib_controles from './controles'
 import * as lib_compteDeBilan from './compteDeBilan'
 import { describe, expect, it } from 'vitest'
 import { COMPTE_BANQUE, COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, COMPTE_VIREMENTS_INTERNES } from './comptes'
-import { ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises } from './compteDeBilan'
-import { montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec } from './controles'
+import { ecritureDuCompteDeBilan } from './compteDeBilan'
 import { formatMoney } from './format'
 import type { EcritureBrouillon, LigneBancaire } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
@@ -56,7 +55,6 @@ function extraire(source: string, plan: PlanComptable): Copie {
   return avecLePlan(new Function(`${js}\nreturn { ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises, mouvementsIgnoresHorsFec, montantsDesMouvementsIgnores }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 const FRONTIERES = [null, '2026-03-04', '2026-03-05', '2026-12-31'] as const
 

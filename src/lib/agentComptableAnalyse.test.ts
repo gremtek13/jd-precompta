@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { paiementsDesPieces as paiementsDesPiecesDeSrcLib } from './rattachement'
-import * as lib_engagement from './engagement'
 import * as lib_ecritures from './ecritures'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
@@ -350,7 +349,7 @@ function entreesDesVentes(cas: CasDesVentes, copies: CopiesDesVentes) {
  */
 // Sous le plan donné (ligne 43, étape PC3b) : la copie de la garde, extraite sous lui, et src/lib, ses entrées — le
 // brouillon, les pièces, le modèle — portées sous lui (`entreesSous`).
-const memeResultatSous = (plan: PlanComptable, copieDuPlan: Copie) => function memeResultat(
+const memeResultatSous = (plan: PlanComptable, copieDuPlan: typeof deployee) => function memeResultat(
   ecritures: EcritureBrouillon[], pieces: Piece[], biens: [string, AcquisitionDuBien][] = [], copie = copieDuPlan, assujettiTva = true,
   paiements: LigneBancaire[] = [], modele: ModeleComptable = TRESORERIE, parts: PartReglee[] = [], frontiere: string | null = null,
   ventes: VentesDuCas | null = null,
@@ -1553,7 +1552,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
       planter(source, '  const paye = paiements.reduce((s, m) => s + regle(m), 0)\n', '  const paye = paiements.reduce((s, m) => s + Math.abs(m.montant), 0)\n', 'le total payé'),
       '  const regle = (m: Pick<PaiementDePiece, "montant">) => m.montant * sens\n',
       '  const regle = (m: Pick<PaiementDePiece, "montant">) => Math.abs(m.montant)\n', 'la part de chaque paiement',
-    ))
+    ), plan)
     const p = piece({ id: 'p1', montant_ttc: 120 })
     const rejete = [
       paiement({ id: 'a', date: '2025-04-01', montant: -120 }), paiement({ id: 'r', date: '2025-04-08', montant: 120 }),
@@ -1616,7 +1615,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
       '  if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true\n',
       '',
       'la comparaison des règlements',
-    ))
+    ), plan)
     // Un règlement dont la ligne de tiers reste alors que sa ligne de banque est partie, sur un mouvement
     // que plus rien ne rapproche : seule la comparaison des règlements le voit, la banque suivant les
     // paiements.
@@ -1686,7 +1685,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
       '  if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === plan.banque), paiementsPiece)) return true\n',
       '',
       'la comparaison de la banque en trésorerie',
-    ))
+    ), plan)
     const p = piece({ id: 'p1' })
     const acompte = paiement({ id: 'a', date: '2025-03-20', montant: -48 })
     const solde = paiement({ id: 's', date: '2025-04-15', montant: -72 })
@@ -1734,7 +1733,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
       '  const attendus = new Set(paiementsPiece.filter(estParLeReleve).filter((m) => m.montant !== 0).map((m) => m.id))\n',
       '  const attendus = new Set(paiementsPiece.filter(estParLeReleve).map((m) => m.id))\n',
       'les règlements attendus',
-    ))
+    ), plan)
     const p = piece({ id: 'p1' })
     const nul = paiement({ montant: 0 })
     expect(() => memeResultat(brouillonEngagement(p, [nul]), [p], [], derivee, true, [nul], ENGAGEMENT)).toThrow()
@@ -1746,7 +1745,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
       '  return !banqueSuitLesPaiements(reglements.filter((e) => e.compte === plan.banque), paiementsPiece)\n',
       '  return false\n',
       'la comparaison de la banque en engagement',
-    ))
+    ), plan)
     // Réglée de nouveau avec une autre part : le règlement est resté à l'ancien montant.
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
@@ -1962,7 +1961,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
         '  const presentes = groupe.filter((e) => !estFigee(e.date, frontiere)).map(cle).sort()\n', '  const presentes = groupe.map(cle).sort()\n',
         'les lignes présentes'),
       '  const ouvertes = attendues.filter((l) => !estFigee(l.date, frontiere)).map(cle).sort()\n', '  const ouvertes = attendues.map(cle).sort()\n',
-      'les lignes ouvertes'))
+      'les lignes ouvertes'), plan)
       echoue(() => memeResultat(regeneree, [piece({ categorie_id: 'cat-autre' })], [], toutCompare, true, enDeuxFois, TRESORERIE, [], '2025-03-31'))
       const sansMouvement = deriver(
         '    [l.date, l.compte, l.sens, Math.round(l.montant * 100), l.ligne_bancaire_id ?? "", l.operation_caisse_id ?? ""].join("|")\n',
@@ -2112,7 +2111,6 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / le paiement d’une pièce pa
 
 describe.each(PLANS_DES_GARDES)('le garde-fou du paiement par la caisse sait encore échouer (étape C13), sous le %s', (_plan, plan) => {
   // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
-  const { lignesEngagementPourPiece } = entreesSous(lib_engagement, plan)
   const memeResultat = memeResultatSous(plan, entreesSous(extraire(sourceDeployee(), plan), plan))
   function planter(source: string, avant: string, apres: string, quoi: string): string {
     expect(source.split(avant).length - 1, `${quoi} introuvable ou ambiguë — la dérive plantée ne mord plus`).toBe(1)
