@@ -49372,3 +49372,30 @@ l'imprime, total et « dont » (`incoherencesDesCases` retient un « dont » plu
 l'instantané sont ceux d'hier (`casesDu2035`). Éprouvé : `saisies2035.sql` 33/33 (EN ATTENTE sans elle) ; `rls.sql` 106
 lignes/0/79 avant, 109/0/82 après ; `restauration.sql` identique (deux saisies semées, rendues) ; le banc SÛR ; le retour
 refuse une saisie non nulle, puis défait tout ; un retrait figé refusé, joué à part. Restent 2035S3-Q1 à Q3.
+
+### 07/11/2026 — CINQUANTE-CINQ RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 07/11/2026)
+
+Relue en entier le 07/11/2026 à 16 h 55 (heure de Paris) : 418 réponses, dont cinquante-cinq du jour, données entre
+13 h 29 et 16 h 38. À la recommandation, cinquante.
+
+Contre la recommandation, cinq :
+- SEC-Q1 « Oui, après le MVP » : le second temps de la double authentification attend le MVP ; `deux_facteurs_exiges`
+  reste préparée, ses drapeaux baissés ;
+- TNS-Q1 « Oui, tout de suite » et TNS-Q4 « Le faire maintenant » : la date de début d'activité, l'ACRE et le taux
+  dentiste du relevé SNIR entrent dès maintenant dans l'estimation (une migration préparée, `parametres_des_cotisations`) ;
+- TNS-Q2 « Oui, appliquez-la », avec TNS-Q2-B « (B) une colonne » : la régularisation s'applique dans sa version
+  corrigée (la description d'une échéance d'un exercice validé reste modifiable, son montant et sa date figés), et la
+  part de régularisation d'un prélèvement qui paie aussi la provisionnelle porte sa propre colonne.
+
+À la recommandation, suivies : C2-Q1 à Q4 et C3-Q1 à Q4 → « C2 ET C3 EN PRODUCTION (LIGNE 51.5) » ; DHR-Q1 → « LES DROITS
+QUE LA RLS NE GARDE PAS, EN PRODUCTION (DHR-Q1) » ; JJ1-Q1 → « JJ1-Q1 : LE LIBELLÉ DE LA BANQUE HORS DES ÉCRITURES DU
+RELEVÉ (LIGNE 26.6) » ; C6R-Q1 et Q2 → « LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (C6, LIGNE 51.5) » ; E7A-Q1 « Pas
+maintenant » (la migration se corrige d'abord : la franchise exclut l'exonération d'une livraison intracommunautaire) et
+E7A-Q2 à Q4 → « LA FACTURE À UN CLIENT ÉTABLI HORS DE FRANCE, EN BASE » ; SEC-Q2 à Q4 → « LA DOUBLE AUTHENTIFICATION,
+SECOND TEMPS : EXIGÉE EN BASE » ; P1T-migration et P1T-Q1 à Q3, C4A-Q1 et Q2, C5-Q1 à Q3, E6Q8-Q1 : les blocs à coller
+(P1-trace puis C4a, C5, E6-Q8 à la levée du bouton) ; DEVC-Q1 (après les plus urgentes, par l'outil) ; JJ-Q4 (le refus
+d'une facture à une entreprise sans adresse, préparé) ; A8-Q1 à Q6 (A8a, la base des factures reprises, préparée) ;
+TNS-Q3 (les revenus de remplacement saisis en brut le jour où un dossier réel en perçoit) ; TNS-Q5 (la retraite, un
+chantier à part après le MVP). Sans geste, ce qui est en ligne restant ainsi : JJ-Q1 (relever d'abord), JJ-Q2 (demander
+le volume au praticien), A7C-Q1 (A), C4B-Q1, B9A-Q1, B9B-Q1 (trente jours), B9B-Q2 (vingt), B9C-Q1, B9C-Q2, E6Q8-Q2,
+C1-Q1 (juger sur l'iPhone).
