@@ -4993,6 +4993,204 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $$;
 
+-- ══ PC. Les paramètres des cotisations (ligne 27, TNS-Q1 et TNS-Q4 ; migration `parametres_des_cotisations`, PRÉPARÉE) ════
+-- Deux tables du cabinet que le client ne lit pas, pas même pour son dossier : le début d'activité (`debuts_d_activite`,
+-- hors de `dossiers`, que le client lit), l'ACRE et le taux dentiste d'un exercice (`parametres_des_cotisations`) ; une
+-- seule policy chacune, `for all to authenticated` sur `admin_du_dossier(dossier_id)`, aucune branche client ; l'écriture
+-- par `enregistrer_parametres_des_cotisations`, aux droits de l'appelant. Le gel se rejoue dans `parametresDesCotisations.sql`.
+--   PC1. Le chef écrit les paramètres de 2099 dans le dossier du client et les lit (le contrôle POSITIF) ; le client, qui a
+--        un accès à ce dossier, ne lit rien des deux tables ; l'anonyme non plus.
+--   PC2. Le client n'écrit pas par la fonction (42501, sous ses mots), ni en direct dans l'une ou l'autre (42501, la RLS),
+--        et ne réécrit rien.
+--   PC3. Le catalogue : la RLS active sur les deux, une seule policy permissive chacune, à authenticated, `admin_du_dossier`
+--        des deux côtés.
+-- Trois mutations, qui doivent mordre : M-PC1 (la lecture des paramètres d'un exercice élargie au client « membre »),
+-- M-PC2 (la policy du début d'activité fermée : le chef ne lit plus sa ligne), M-PC3 (l'écriture du début d'activité
+-- élargie au client « membre »). Avant la migration, une ligne dit que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  lus jsonb; chef_apres bigint; debut_du_chef bigint; du_client bigint; debut_du_client bigint; de_l_anon text;
+  par_la_fonction text; en_direct text; debut_en_direct text; reecrites bigint; elargie bigint; fermee bigint;
+  ecrite_elargie text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.parametres_des_cotisations') is null then
+    insert into rls_verdict values ('PC. les paramètres des cotisations : EN ATTENTE de la migration parametres_des_cotisations',
+      'parametres_des_cotisations', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef saisit l'ACRE de 2099 (un exercice qu'aucune validation ne fige) et le début d'activité du dossier
+    --    du client, contre les valeurs qu'il en lit ──
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select jsonb_build_object('debut_activite', (select d.date_debut::text from debuts_d_activite d where d.dossier_id = dossier_du_client),
+      'acre', (select c.acre from parametres_des_cotisations c where c.dossier_id = dossier_du_client and c.annee = 2099),
+      'taux_dentiste', (select c.taux_dentiste from parametres_des_cotisations c where c.dossier_id = dossier_du_client and c.annee = 2099))
+      into lus;
+    perform enregistrer_parametres_des_cotisations(dossier_du_client, 2099, lus,
+      '{"debut_activite": "2098-07-01", "acre": true, "taux_dentiste": 0.42}'::jsonb);
+    select count(*) into chef_apres from parametres_des_cotisations
+     where dossier_id = dossier_du_client and annee = 2099 and acre and taux_dentiste = 0.42;
+    select count(*) into debut_du_chef from debuts_d_activite where dossier_id = dossier_du_client and date_debut = date '2098-07-01';
+    reset role;
+    construit := true;
+
+    -- PC1 : le client, puis l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from parametres_des_cotisations where dossier_id = dossier_du_client;
+    select count(*) into debut_du_client from debuts_d_activite where dossier_id = dossier_du_client;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select ((select count(*) from parametres_des_cotisations) + (select count(*) from debuts_d_activite))::text into de_l_anon;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'PC1. le chef lit les paramètres des cotisations qu''il a écrits dans le dossier du client (le contrôle positif) ; le client n''en lit rien, ni l''anonyme',
+      'cible', 'parametres_des_cotisations, debuts_d_activite',
+      'observe', 'le chef : ' || chef_apres || ' et ' || debut_du_chef || ' | le client : ' || du_client || ' et ' || debut_du_client
+        || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_apres = 1 and debut_du_chef = 1 and du_client = 0 and debut_du_client = 0 and de_l_anon = '0');
+
+    -- PC2 : le client n'écrit ni ne réécrit les paramètres.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_parametres_des_cotisations(dossier_du_client, 2098,
+        '{"debut_activite": null, "acre": null, "taux_dentiste": null}'::jsonb, '{"debut_activite": null, "acre": true, "taux_dentiste": null}'::jsonb);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into parametres_des_cotisations (dossier_id, annee, acre) values (dossier_du_client, 2098, true);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      -- Le dossier du client porte déjà le début que le chef vient d'écrire : la RLS refuse avant l'unicité.
+      insert into debuts_d_activite (dossier_id, date_debut) values (dossier_du_client, date '2098-01-01');
+      debut_en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if debut_en_direct is null then debut_en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update parametres_des_cotisations set acre = false where dossier_id = dossier_du_client returning 1),
+         u as (update debuts_d_activite set date_debut = null where dossier_id = dossier_du_client returning 1)
+      select (select count(*) from t) + (select count(*) from u) into reecrites;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'PC2. le client n''écrit pas les paramètres des cotisations (la fonction, puis la RLS des deux tables) et ne les réécrit pas',
+      'cible', 'parametres_des_cotisations, debuts_d_activite',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?')
+        || ' | le début en direct : ' || coalesce(debut_en_direct, '?') || ' | réécrites : ' || reecrites,
+      'ok', par_la_fonction = '42501 Les paramètres des cotisations ne s''écrivent que par le cabinet du dossier.'
+        and en_direct like '42501 new row violates row-level security policy%'
+        and debut_en_direct like '42501 new row violates row-level security policy%' and reecrites = 0);
+
+    -- M-PC1 : la lecture des paramètres d'un exercice élargie au client « membre ».
+    begin
+      alter policy parametres_des_cotisations_cabinet on public.parametres_des_cotisations
+        using (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from parametres_des_cotisations where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PC1 — la lecture des paramètres des cotisations élargie au client « membre »',
+      'attendu', 'le client lit la ligne de son dossier', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-PC2 : la policy du début d'activité fermée.
+    begin
+      alter policy debuts_d_activite_cabinet on public.debuts_d_activite using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from debuts_d_activite where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PC2 — la policy du début d''activité fermée',
+      'attendu', 'le chef ne lit plus la ligne', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-PC3 : l'écriture du début d'activité élargie au client « membre ».
+    begin
+      alter policy debuts_d_activite_cabinet on public.debuts_d_activite
+        with check (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      -- La ligne du dossier existe (le chef l'a écrite) : élargie, la RLS laisse passer, et seule l'unicité refuse (23505).
+      begin
+        insert into debuts_d_activite (dossier_id, date_debut) values (dossier_du_client, date '2098-01-01');
+        ecrite_elargie := 'ACCEPTÉ';
+      exception when others then ecrite_elargie := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PC3 — l''écriture du début d''activité élargie au client « membre »',
+      'attendu', 'la RLS ne refuse plus son insertion directe', 'observe', coalesce(ecrite_elargie, '?'),
+      'mord', coalesce(ecrite_elargie not like '42501%', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- PC3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.roles = array['authenticated']::name[] and p.permissive = 'PERMISSIVE' and p.cmd = 'ALL'
+     and ((p.tablename = 'parametres_des_cotisations' and p.policyname = 'parametres_des_cotisations_cabinet')
+       or (p.tablename = 'debuts_d_activite' and p.policyname = 'debuts_d_activite_cabinet'))
+     and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check = 'admin_du_dossier(dossier_id)';
+  verdicts := verdicts || jsonb_build_object('controle', 'PC3. la RLS active sur les deux tables ; une seule policy chacune, à authenticated, le cabinet du dossier des deux côtés (lecture du catalogue)',
+    'cible', 'parametres_des_cotisations, debuts_d_activite',
+    'observe', n || ' sur 2, ' || (select count(*) from pg_policies p where p.schemaname = 'public'
+        and p.tablename in ('parametres_des_cotisations', 'debuts_d_activite') and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE'))
+      || ' en tout, RLS ' || (select string_agg(c.relrowsecurity::text, ' et ' order by c.relname)
+        from pg_class c where c.oid in ('public.parametres_des_cotisations'::regclass, 'public.debuts_d_activite'::regclass)),
+    'ok', n = 2 and (select count(*) from pg_policies p where p.schemaname = 'public'
+        and p.tablename in ('parametres_des_cotisations', 'debuts_d_activite') and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 2
+      and (select bool_and(c.relrowsecurity) from pg_class c
+        where c.oid in ('public.parametres_des_cotisations'::regclass, 'public.debuts_d_activite'::regclass)));
+  verdicts := verdicts || jsonb_build_object('controle', 'PC. le jeu d''essai des paramètres des cotisations s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
 -- ══ DF. La double authentification exigée (C7, second temps ; migration `deux_facteurs_exiges`, PRÉPARÉE) ═══════════════
 -- Une policy RESTRICTIVE ne garde que la table qui la porte : la migration la pose sur chaque table de public présente à
 -- son application et sur storage.objects ; une table créée APRÈS doit poser la sienne, sinon un compte exigé y lirait à
