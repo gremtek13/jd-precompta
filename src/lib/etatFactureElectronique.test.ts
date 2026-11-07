@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
+import { CLES_DE_L_EREPORTING } from './apercuEreporting'
 import { CLES_DE_L_ETAT, etatDeLaFactureElectronique, lireEtatFactureElectronique } from './etatFactureElectronique'
 import type { EtatFactureElectroniqueLu } from './types'
 import { derniereDefinitionSql } from '../test/schema'
@@ -61,11 +62,15 @@ describe('les clés que le module attend sont celles que la base rend', () => {
     const premierAppel = sql.indexOf('return jsonb_build_object(')
     // Une clé est suivie de sa valeur, sur la même ligne ou sur la suivante (l'adresse) : la virgule, puis un blanc.
     const cles = [...sql.slice(premierAppel).matchAll(/'(\w+)',\s/g)].map((m) => m[1])
-    // Le texte nomme chaque clé à sa place : la racine, la plateforme reliée, puis non reliée, Super PDP relié, puis non, l'adresse.
+    // Le texte nomme chaque clé à sa place : la racine, la plateforme reliée, puis non reliée, Super PDP relié, puis non, l'adresse
+    // — puis, depuis C3 (`apercu_facture_electronique`, en production le 07/11/2026), la quatrième clé `ereporting` et les
+    // siennes, que lib/apercuEreporting.ts lit (apercuEreporting.test.ts les confronte une à une).
     expect(cles).toEqual([
       'plateforme', ...CLES_DE_L_ETAT.plateforme, ...CLES_DE_L_ETAT.plateforme,
       'superpdp', ...CLES_DE_L_ETAT.superpdp, ...CLES_DE_L_ETAT.superpdp,
       'adresse', ...CLES_DE_L_ETAT.adresse,
+      'ereporting', 'statut_du_dossier', ...CLES_DE_L_EREPORTING.statut, 'regimes', ...CLES_DE_L_EREPORTING.regime,
+      'declarations', ...CLES_DE_L_EREPORTING.declaration,
     ])
     for (const colonne of ['url_flux', 'url_jeton', 'client_id', 'client_secret', 'organisation_id', 'portee', 'recherche_depuis',
       'cycle_vie_depuis', 'created_by', 'updated_at']) {

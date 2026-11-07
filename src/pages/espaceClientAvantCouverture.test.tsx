@@ -23,6 +23,12 @@ vi.mock('../lib/piecesJointesEcarteesClient', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/piecesJointesEcarteesClient')>(),
   ECARTEES_DU_CLIENT_EXPORTEES: false,
 }))
+// Ni l'état du dossier chez le cabinet (étape C2, `phase_des_exercices`, en production depuis le 07/11/2026) : l'accueil
+// n'en demandait pas.
+vi.mock('../lib/etatDuDossier', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/etatDuDossier')>(),
+  ETAT_DU_DOSSIER_EXPORTE: false,
+}))
 // Ni les ventes facturées de « Ma simulation » (chantier EC-Q3, étape VF8e), que la base ne rend qu'à la case « Banque »
 // (`ventes_facturees_de_la_simulation`, sous `gere_la_banque`, un prédicat de P7) : « Ma simulation » n'en demandait pas.
 vi.mock('../lib/simulationVentesFacturees', async (importOriginal) => ({
