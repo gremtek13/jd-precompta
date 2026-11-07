@@ -49110,3 +49110,20 @@ comptes du plan ; Statistiques reçoit `modele`. La garde `lettrages_manuels_com
 relevée sur c00866e avant toute modification ; sous `PLAN_DECALE`, FO, IM et CL lus, 401100 lettré, rien sous le défaut.
 Tests : un codemod (85 fichiers, `src/test/modeles.ts`). `comptesEnDur` : 19 → 0 pour le reste de PC3a ;
 restent le catalogue, deux suggestions de catégorie, l'assistant (PC3b) et `compteDeBilan.ts` (PC4).
+
+### 07/11/2026 — LES DROITS QUE LA RLS NE GARDE PAS, EN PRODUCTION (DHR-Q1)
+
+Le cabinet a demandé le bloc à coller : c'est la réponse (A) à DHR-Q1, les quatre droits. Avant de le lui donner, la
+production relue (lecture seule) : l'état du relevé, intact — 85 tables à `postgres`, les quatre droits partout, aucun
+autre chemin, 176 migrations. Le bloc a été réduit de moitié : la ligne d'historique d'abord, puis son propre texte
+exécuté (`execute`) dans la même transaction — ce qui s'exécute est, par construction, ce que l'historique garde ; il se
+lit à la ligne la plus récente du nom, pour qu'un second collage soit refusé par la garde elle-même (« 680 droit(s)
+manquent »), la ligne comprise. Éprouvé tel quel sur deux copies de la réplique PG 17 (sous `proprietaire`, l'historique
+donné au propriétaire comme en production). Collé le 07/11/2026 : version `20261107122909`, une instruction, l'empreinte du
+fichier (`3c6f2807…`, les retours chariot de l'iPhone écartés). Relus ensuite : le relevé complet des droits égal à celui
+de la réplique migrée (table 2 039 `17fff655…`, défaut 88 `f14f6932…`, colonne 1 `83060797…`) ; `signature.sql`, seule
+« droits_tables » change (`983384e8…`) ; les trois contrôles de l'export, égaux des deux côtés — dérive 177
+`8bfc4f4e…`, socle 81 `3a79a158…`, inventaire 2 440 `062299d0…`, le fichier passé de `supabase/preparees/` à l'export
+sous sa version, texte inchangé (le retour reste dans `preparees/retour/`). Le bloc HR de `rls.sql`, seul, en production
+(la migration ne touche que des droits ; le fichier entier a été rejoué sur la réplique migrée) : le texte reçu
+`f5c5bed8…`, huit lignes, 0 en faute, six mutations sur six, sous `postgres`. Rien à redéployer.

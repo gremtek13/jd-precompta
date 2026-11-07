@@ -3,9 +3,10 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
-// LES DROITS QUI NE PASSENT PAS PAR LA RLS (relecture de sécurité du 06/11/2026 ; migration `droits_hors_rls`, PRÉPARÉE
-// dans supabase/preparees/, pas appliquée). Le relevé du jour : `anon` et `authenticated` portent, sur les 85 tables de
-// public et dans les droits par défaut du propriétaire, TRUNCATE, REFERENCES, TRIGGER et MAINTAIN — quatre droits que ni la
+// LES DROITS QUI NE PASSENT PAS PAR LA RLS (relecture de sécurité du 06/11/2026 ; migration `droits_hors_rls`, collée par
+// le cabinet le 07/11/2026 sous la version 20261107122909, DHR-Q1 (A), et depuis dans l'export). Le relevé du
+// 06/11/2026 : `anon` et `authenticated` portaient, sur les 85 tables de public et dans les droits par défaut du
+// propriétaire, TRUNCATE, REFERENCES, TRIGGER et MAINTAIN — quatre droits que ni la
 // RLS ni les déclencheurs de ligne ne gardent (MAINTAIN, qu'information_schema tait, compris). La migration les retire, et
 // rien d'autre. Ce garde la confronte à la décision : ses deux instructions exactes entre ses deux gardes, les conditions
 // qui la refusent sur une autre base que celle du relevé, l'empreinte du reste lue de la même façon partout ; son retour,
@@ -16,7 +17,7 @@ import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 const RACINE = resolve(process.cwd())
 const lire = (chemin: string) => readFileSync(resolve(RACINE, chemin), 'utf8')
 
-const MIGRATION = 'supabase/preparees/20261106180000_droits_hors_rls.sql'
+const MIGRATION = 'supabase/schema/20261107122909_droits_hors_rls.sql'
 const RETOUR = 'supabase/preparees/retour/20261106180100_retour_droits_hors_rls.sql'
 const ESSAI = 'supabase/essais/droitsHorsRls.sql'
 
@@ -62,9 +63,9 @@ const texteMigration = lire(MIGRATION)
 const texteRetour = lire(RETOUR)
 
 describe('la migration droits_hors_rls', () => {
-  it('est préparée, hors de l’export, sous sa version provisoire', () => {
-    expect(fichiersDuSchema().filter((f) => /_droits_hors_rls\.sql$/.test(f.chemin))).toEqual([])
-    expect(fichiersPrepares().map((f) => f.chemin).filter((c) => /_droits_hors_rls\.sql$/.test(c))).toEqual([MIGRATION])
+  it('est dans l’export, une fois, sous la version de sa ligne d’historique (collée le 07/11/2026), et plus dans les préparées', () => {
+    expect(fichiersDuSchema().map((f) => f.chemin).filter((c) => /_droits_hors_rls\.sql$/.test(c))).toEqual([MIGRATION])
+    expect(fichiersPrepares().map((f) => f.chemin).filter((c) => /_droits_hors_rls\.sql$/.test(c))).toEqual([])
   })
 
   it('n’exécute que ses deux instructions, entre ses deux gardes', () => {

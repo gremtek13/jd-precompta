@@ -1,7 +1,7 @@
 -- RETOUR ARRIÈRE DE `droits_hors_rls` (relecture de sécurité du 06/11/2026) — UN ÉLARGISSEMENT, À ACCORDER PAR LE CABINET,
 -- À COLLER dans l'éditeur SQL de Supabase, dans une transaction, avec sa ligne d'historique (`retour_droits_hors_rls`) : le
 -- texte rend des droits, dont le mot `truncate`, et `apply_migration` attendrait une confirmation qui n'arrive pas. La
--- migration : supabase/preparees/20261106180000_droits_hors_rls.sql.
+-- migration : supabase/schema/20261107122909_droits_hors_rls.sql (en production depuis le 07/11/2026).
 --
 -- CE QU'IL REND : à `anon` et à `authenticated`, TRUNCATE, TRIGGER, REFERENCES et MAINTAIN sur toutes les relations de
 -- public, donnés par le propriétaire, non transmissibles, et dans les droits par défaut du propriétaire pour les tables de

@@ -687,6 +687,13 @@
 -- lignes d'invariants, 0 en faute, 73 mutations sur 73, HR EN ATTENTE ; avec elle, 104 lignes, 0 en faute, 79 sur 79 ;
 -- après son retour, de nouveau EN ATTENTE. La preuve par le geste, sur une réplique seulement : `droitsHorsRls.sql`. Ce
 -- qu'il rend : HISTORIQUE.md, « LES DROITS QUE LA RLS NE GARDE PAS ».
+--
+-- 07/11/2026 — EN PRODUCTION, LE BLOC HR SEUL, après `droits_hors_rls` (collée par le cabinet, version 20261107122909),
+-- qui ne touche que des droits — ni policy, ni table, ni fonction : le reste du fichier, rejoué entier la veille sur la
+-- réplique migrée (dont le relevé des droits et la signature sont ceux de la production), ne peut pas en changer. Le
+-- texte transmis, le bloc tel qu'il est ici, exécuté depuis une table d'un seul tenant, rend sa longueur et son
+-- empreinte (18 946 caractères, f5c5bed8f977ae99fdc09a6319a2a0c9) ; les deux tables de résultats `on commit drop`. HR
+-- jugé : huit lignes d'invariants, 0 en faute, six mutations sur six qui mordent, sous postgres.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
