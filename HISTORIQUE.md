@@ -49147,3 +49147,14 @@ maladie » hors S2 ; « participation CPAM . allocations familiales », S1 seul,
 75 % sous 250 %, 60 % au-delà, la borne atteinte passant au-dessus). L'oracle prend désormais les allocations
 familiales AVANT la prise en charge, comme la maladie (68 cas d'avant inchangés) : 170 cas, 102 nouveaux dont huit
 aux bornes, zéro écart ; dix mutations, toutes tuées ; la carte du volet social (onglet Clôture) dit la prise en charge.
+
+### 07/11/2026 — LE BANC DE CHARGE D'UNE ANNÉE : LES TEMPS DES CALCULS AVANT LES DONNÉES RÉELLES
+
+`outils/charge/annee.mts` (lancé par `node outils/charge/lancer.mjs`, Vite faute de `tsx`, hors de `npm test`, vérifié
+par `tsc -b`) rejoue une année fictive d'un BNC, d'une graine fixe : 600 pièces, 1 200 mouvements dont 900 rapprochés,
+150 factures sources encaissées, 250 jours de caisse, 60 cotisations, 10 biens, le brouillon composé par les moteurs.
+À N (Node 22, Xeon 2,1 GHz), tout tient sous 200 ms : la 2035 5 ms, le FEC 11, la Checklist 65, les préalables de la
+validation 110, « Ma caisse » 30 à 50 ; rien n'est corrigé. La pente se voit à 4N : préalables 520 ms, Checklist 214,
+FEC 120. Causes probables : `lignesDeLaSource` (`ecritureVenteFacturee.ts`) filtre tout le brouillon pour chaque source
+d'une vente facturée ; `paiementsDeVenteDuJour` (`caisse.ts`) toutes les opérations pour chaque jour. Le lettrage d'un
+BNC en trésorerie n'a rien à lettrer : sa mesure (0 ms) ne dit rien de l'engagement.
