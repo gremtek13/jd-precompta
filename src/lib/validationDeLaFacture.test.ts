@@ -9,8 +9,9 @@ import { REFUS_DE_LA_VALIDATION_FIGEE } from './mentionsFigees'
 import { EXONERATIONS, MENTION_FRANCHISE, mentionTva } from './statutTva'
 import type { ArticleExoneration, StatutTva } from './types'
 import {
-  AVIS_ARTICLE_A_CHOISIR, AVIS_STATUT_A_PRECISER, REFUS_DE_LA_VALIDATION, avisDuStatutDeTva, plusRecenteDeLaSerie,
-  refusDeLaDateDEmission, refusDeLaValidation, refusDuStatutDeTva, type FactureDeLaSerie, type ValidationAJuger,
+  ADRESSE_DU_CLIENT_EXIGEE, AVIS_ARTICLE_A_CHOISIR, AVIS_STATUT_A_PRECISER, REFUS_ADRESSE_DU_CLIENT, REFUS_DE_LA_VALIDATION,
+  avisDuStatutDeTva, plusRecenteDeLaSerie, refusDeLAdresseDuClient, refusDeLaDateDEmission, refusDeLaValidation,
+  refusDuStatutDeTva, type AdresseDuClientAJuger, type FactureDeLaSerie, type ValidationAJuger,
 } from './validationDeLaFacture'
 
 // CE QUE LA VALIDATION EXIGE D'UNE FACTURE (correction de la facture, 31/10/2026, reprise le 02/11/2026 pour FACTURE-Q1 ;
@@ -444,5 +445,115 @@ describe('le retour arrière rend les deux fonctions de l’export, sous sa gard
     for (const interdit of [/\bdrop\b/i, /\btruncate\b/i, /\bgrant\b/i, /\brevoke\b/i, /\bdelete\s+from\b/i, /\balter\s+table\b/i]) {
       expect(instructions, String(interdit)).not.toMatch(interdit)
     }
+  })
+})
+
+// ── L'ADRESSE DU CLIENT (JJ-Q4) ─────────────────────────────────────────────────────────────────────────────────────
+// Le refus du déclencheur `factures_emises_figees_adresse_du_client` (migration `adresse_du_client_exigee`, préparée le
+// 07/11/2026), CONFRONTÉ AU TEXTE DE SA MIGRATION, où qu'elle soit — préparée aujourd'hui, dans l'export le jour de son
+// application —, à son retour, à la garde qu'il suit, et rejoué sur les cas de son essai
+// (supabase/essais/adresseDuClientExigee.sql) tels que la réplique y a répondu.
+const MIGRATION_ADRESSE = /\/\d{14}_adresse_du_client_exigee\.sql$/
+const RETOUR_ADRESSE = /^\d{14}_retour_adresse_du_client_exigee\.sql$/
+const ESSAI_ADRESSE = new URL('../../supabase/essais/adresseDuClientExigee.sql', import.meta.url)
+
+function laMigrationDeLAdresse(): { chemin: string; texte: string; dansLExport: boolean } {
+  const preparees = fichiersPrepares().filter((x) => MIGRATION_ADRESSE.test(x.chemin))
+  const exportees = fichiersDuSchema().filter((x) => MIGRATION_ADRESSE.test(x.chemin))
+  expect([...preparees, ...exportees].map((f) => f.chemin), 'la migration adresse_du_client_exigee, une fois').toHaveLength(1)
+  return { ...[...preparees, ...exportees][0], dansLExport: exportees.length === 1 }
+}
+
+// La fonction du déclencheur : de son `create function` au `$$;` qui la ferme ; son corps, ce que `prosrc` garde.
+function laFonctionDeLAdresse(texte: string): { definition: string; corps: string } {
+  const debut = texte.indexOf('create function public.garder_adresse_du_client(')
+  expect(debut, 'la définition de garder_adresse_du_client').toBeGreaterThanOrEqual(0)
+  const definition = texte.slice(debut, texte.indexOf('$$;', debut))
+  return { definition, corps: definition.slice(definition.indexOf('as $$') + 'as $$'.length) }
+}
+
+const blancsDe = (texte: string) => (texte.match(/v_blancs constant text := ([\s\S]*?);/)?.[1] ?? '').replace(/\s+/g, ' ')
+
+describe('l’adresse du client (JJ-Q4) : le module redit le refus de la migration', () => {
+  it('un refus, au caractère près, en 22023 ; sa condition sur les valeurs que la facture porte', () => {
+    const { definition } = laFonctionDeLAdresse(laMigrationDeLAdresse().texte)
+    expect(messagesSql(definition)).toEqual([REFUS_ADRESSE_DU_CLIENT.modele])
+    expect(codesSql(definition)).toEqual([REFUS_ADRESSE_DU_CLIENT.code])
+    expect(REFUS_ADRESSE_DU_CLIENT.code).toBe('22023')
+    // Une facture, jamais un avoir ; le type de client et l'adresse de la ligne qui se valide, jamais la fiche du contact.
+    expect(definition).toContain("if new.type = 'facture' and new.type_client in ('assujetti', 'organisme_public')")
+    expect(definition).toContain("and btrim(coalesce(new.tiers_adresse, ''), v_blancs) = '' then")
+    expect(definition).not.toMatch(/\bcontacts\b|\bfrom\b/)
+  })
+
+  it('ses blancs sont ceux d’enregistrer_facture, que `trim` retire', () => {
+    const { definition } = laFonctionDeLAdresse(laMigrationDeLAdresse().texte)
+    // La dernière définition d'`enregistrer_facture` dans l'export (une migration collée l'écrit en capitales).
+    const motif = /create or replace function public\.enregistrer_facture\(/gi
+    const exportes = fichiersDuSchema().filter((f) => new RegExp(motif.source, 'i').test(f.texte))
+    expect(exportes.length, 'enregistrer_facture, dans l’export').toBeGreaterThan(0)
+    const texte = exportes[exportes.length - 1].texte
+    const derniere = texte.slice([...texte.matchAll(motif)].pop()?.index as number)
+    expect(blancsDe(derniere), 'les blancs d’enregistrer_facture').toMatch(/^chr\(9\)/)
+    expect(blancsDe(definition)).toBe(blancsDe(derniere))
+    // Le même ensemble que `String.prototype.trim` : chaque blanc de la base se retire, un caractère visible reste.
+    const codes = [...blancsDe(definition).matchAll(/chr\((\d+)\)/g)].map((m) => Number(m[1]))
+    expect(codes).toHaveLength(25)
+    for (const c of codes) expect(String.fromCodePoint(c).trim(), String(c)).toBe('')
+    for (const c of [0x200b, 0x2d, 0x5f]) expect(String.fromCodePoint(c).trim(), String(c)).not.toBe('')
+  })
+
+  it('son déclencheur suit la garde des factures dans l’ordre des noms, au seul passage à « validée »', () => {
+    const { texte } = laMigrationDeLAdresse()
+    const declencheur = texte.match(/create trigger (\w+)\s+before update on public\.factures_emises\s+for each row\s+when \(([^\n]*)\)\s+execute function public\.garder_adresse_du_client\(\);/)
+    expect(declencheur, 'le déclencheur, avant la mise à jour, ligne').not.toBeNull()
+    const [, nom, quand] = declencheur as RegExpMatchArray
+    expect(quand).toBe("new.statut = 'validee' and old.statut is distinct from 'validee'")
+    // Le nom de la garde en est le début : il la suit, avant la marque d'acompte et la source de la vente.
+    expect(nom.startsWith('factures_emises_figees_')).toBe(true)
+    const ordre = ['factures_emises_figees', nom, 'factures_emises_marque_d_acompte', 'factures_emises_source_de_la_vente']
+    expect([...ordre].sort()).toEqual(ordre)
+    // Personne n'exécute la fonction ; la migration ne porte aucun mot de retrait (elle s'applique par l'outil).
+    expect(texte).toContain('revoke execute on function public.garder_adresse_du_client() from public, anon, authenticated;')
+    expect(texte).not.toMatch(/\b(delete|drop|truncate)\b|attisdropped/i)
+  })
+
+  it('le retour retire ce que la migration pose, sous sa garde, à l’empreinte de la fonction', () => {
+    const dossier = new URL('../../supabase/preparees/retour/', import.meta.url).pathname
+    const nom = readdirSync(dossier).find((n) => RETOUR_ADRESSE.test(n))
+    expect(nom, 'le retour de adresse_du_client_exigee').toBeDefined()
+    const retour = readFileSync(dossier + nom, 'utf8')
+    const empreinte = md5(laFonctionDeLAdresse(laMigrationDeLAdresse().texte).corps)
+    const garde = retour.indexOf(`is distinct from '${empreinte}' then`)
+    expect(garde, 'l’empreinte du corps posé').toBeGreaterThan(0)
+    expect(retour.indexOf('drop trigger factures_emises_figees_adresse_du_client on public.factures_emises;')).toBeGreaterThan(garde)
+    expect(retour.indexOf('drop function public.garder_adresse_du_client();')).toBeGreaterThan(garde)
+  })
+
+  it('le drapeau suit la migration : baissé tant qu’elle n’est que préparée, levé quand elle entre dans l’export', () => {
+    expect(ADRESSE_DU_CLIENT_EXIGEE).toBe(laMigrationDeLAdresse().dansLExport)
+  })
+
+  // Les cas de l'essai, tels que la réplique y a répondu le 07/11/2026 (la migration appliquée) : refusé, ou validé.
+  const CAS_DE_L_ESSAI: [string, AdresseDuClientAJuger, boolean][] = [
+    ['10', { type: 'facture', typeClient: 'assujetti', tiersAdresse: null }, true],
+    ['M10', { type: 'facture', typeClient: 'assujetti', tiersAdresse: '5 avenue de l Essai, 69001 Lyon' }, false],
+    ['11', { type: 'facture', typeClient: 'assujetti', tiersAdresse: ' \t\n  ' }, true],
+    ['12', { type: 'facture', typeClient: 'organisme_public', tiersAdresse: null }, true],
+    ['M12', { type: 'facture', typeClient: 'organisme_public', tiersAdresse: '5 avenue de l Essai, 69001 Lyon' }, false],
+    ['20', { type: 'facture', typeClient: 'non_assujetti', tiersAdresse: null }, false],
+    ['22', { type: 'facture', typeClient: 'etranger', tiersAdresse: null }, false],
+    ['23', { type: 'facture', typeClient: null, tiersAdresse: null }, false],
+    ['24', { type: 'avoir', typeClient: 'assujetti', tiersAdresse: null }, false],
+  ]
+  it.each(CAS_DE_L_ESSAI)('le cas %s de l’essai', (num, cas, refuse) => {
+    expect(readFileSync(ESSAI_ADRESSE, 'utf8'), `le contrôle ${num} dans l’essai`).toContain(`('${num}', `)
+    const r = refusDeLAdresseDuClient(cas)
+    expect(r !== null, num).toBe(refuse)
+    if (r) expect(r).toEqual({ cle: 'adresse_du_client', code: '22023', message: REFUS_ADRESSE_DU_CLIENT.modele })
+  })
+
+  it('l’essai attend le message du module, mot pour mot', () => {
+    expect(readFileSync(ESSAI_ADRESSE, 'utf8')).toContain(`'22023', '${REFUS_ADRESSE_DU_CLIENT.modele.replace(/'/g, "''")}'`)
   })
 })
