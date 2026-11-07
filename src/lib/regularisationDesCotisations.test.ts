@@ -26,7 +26,7 @@ const corps = (definition: string) => definition.slice(definition.indexOf('$$') 
 const definitivesDe = (total: number): ResultatEstimation => ({
   disponible: true,
   estimation: {
-    plafond: 0, abattement: 0, assiette: 0, csgCrdsDeductible: 0, csgCrdsNonDeductible: 0, maladie: 0, priseEnChargeMaladie: 0,
+    plafond: 0, plafondProratise: 0, acreAppliquee: false, abattement: 0, assiette: 0, csgCrdsDeductible: 0, csgCrdsNonDeductible: 0, maladie: 0, priseEnChargeMaladie: 0,
     priseEnChargeAllocationsFamiliales: 0, contributionAdditionnelle: 0, indemnitesJournalieres: 0, allocationsFamiliales: 0,
     curps: 0, formationProfessionnelle: 0, total,
   } satisfies EstimationCotisations,
@@ -219,7 +219,7 @@ describe('la régularisation estimée de 2026', () => {
   it('les définitives sont le total du moteur, tel quel', () => {
     const definitives = estimerCotisationsUrssaf({
       annee: 2026, profession: 'auxiliaire_medical', remplacant: false, revenuBrutSocial: 60_000, revenuProfessionnelPositif: true,
-      recettesBrutes: 90_000, honorairesConventionnes: 85_000, depassements: 0,
+      recettesBrutes: 90_000, honorairesConventionnes: 85_000, depassements: 0, parametres: { tenus: false },
     })
     if (!definitives.disponible) throw new Error(definitives.motif)
     expect(estimee({ definitives }).definitives).toBe(definitives.estimation.total)

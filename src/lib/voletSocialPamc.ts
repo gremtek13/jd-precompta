@@ -25,12 +25,23 @@
 // des allocations familiales, une part de la cotisation fixée par la tranche où tombe l'assiette de
 // la prise en charge (100 % jusqu'à 140 % du plafond, 75 % jusqu'à 250 %, 60 % au-delà).
 //
-// CE QUE L'ESTIMATION NE COUVRE PAS, et que l'écran dit : les chirurgiens-dentistes (leur prise en
-// charge se calcule sur le « taux dentiste » du relevé SNIR, que l'application ne tient pas), les
-// médecins non conventionnés (aucun choix ne les porte), les revenus de remplacement
-// (indemnités journalières perçues, qui s'ajoutent à l'assiette des cotisations), l'ACRE, les
-// exonérations d'invalidité, l'outre-mer, et une activité créée dans l'année (pas de CURPS la
-// première année). Et elle porte sur les cotisations DÉFINITIVES de l'exercice : la différence avec
+// LES PARAMÈTRES DES COTISATIONS (TNS-Q1, TNS-Q4, 07/11/2026 ; migration préparée
+// `parametres_des_cotisations`, src/lib/parametresDesCotisations.ts) : le début d'activité du dossier,
+// l'ACRE et le « taux dentiste » de l'exercice, une entrée OBLIGATOIRE (`ParametresEstimation`), sans
+// défaut. L'année de la création, le plafond se proratise aux jours d'activité (le taux de maladie, ses
+// trois plafonds, les allocations familiales ; le reste garde le plafond annuel) et la CURPS n'est pas
+// due ; l'ACRE, l'année de la création et la suivante au prorata des jours qui restent, exonère la
+// maladie, les indemnités journalières et les allocations familiales (art. D. 131-6-1 : le quart au plus
+// depuis les créations de 2026, tout avant ; dégressive de 75 à 100 % du plafond proratisé) ; un
+// chirurgien-dentiste a sa prise en charge sur sa part conventionnée divisée par 1 + le taux dentiste
+// (convention nationale des chirurgiens-dentistes, art. 51), et sa CURPS à 0,3 %. Tant que leur migration
+// n'est pas en base, l'appelant le dit (`tenus: false`) et l'estimation est celle d'hier : une activité
+// ouverte avant l'exercice, sans ACRE, un chirurgien-dentiste refusé.
+//
+// CE QUE L'ESTIMATION NE COUVRE PAS, et que l'écran dit : les médecins non conventionnés (aucun choix
+// ne les porte), les revenus de remplacement (indemnités journalières perçues, qui s'ajoutent à
+// l'assiette des cotisations), les exonérations d'invalidité, l'outre-mer, et une activité qui cesse en
+// cours d'année. Et elle porte sur les cotisations DÉFINITIVES de l'exercice : la différence avec
 // les provisionnelles appelées pour la même année est la régularisation, que seul l'avis de l'Urssaf
 // chiffre — l'échéancier d'une année mêle les provisionnelles de l'année et la régularisation de
 // la précédente.
@@ -50,8 +61,6 @@ export const PLAFONDS_SECURITE_SOCIALE: Readonly<Record<number, number>> = {
   2026: 48_060,
 }
 
-/** Les professions dont l'application estime les cotisations, toutes éprouvées contre le moteur de l'Urssaf. */
-const PROFESSIONS_ESTIMEES: readonly ProfessionPamc[] = ['auxiliaire_medical', 'sage_femme', 'medecin_secteur_1', 'medecin_secteur_2']
 
 export const LIBELLES_PROFESSION: Readonly<Record<ProfessionPamc, string>> = {
   auxiliaire_medical: 'Auxiliaire médical',
@@ -183,11 +192,12 @@ function partPriseEnChargeAllocations(assiette: number, plafond: number): number
 }
 // La CURPS (modele-ti, « PAMC . CURPS ») : 0,5 % pour un médecin, 0,1 % pour un auxiliaire médical ou
 // une sage-femme, dans la limite de 0,5 % du plafond.
-const TAUX_CURPS: Readonly<Partial<Record<ProfessionPamc, number>>> = {
+const TAUX_CURPS: Readonly<Record<ProfessionPamc, number>> = {
   auxiliaire_medical: 0.1,
   sage_femme: 0.1,
   medecin_secteur_1: 0.5,
   medecin_secteur_2: 0.5,
+  chirurgien_dentiste: 0.3,
 }
 
 // Article D. 621-3 : 0,30 % pour les professions libérales, sur au moins 40 % du plafond et au plus
@@ -213,12 +223,29 @@ export interface EntreeEstimation {
   recettesBrutes: number
   /** DSAV. */
   honorairesConventionnes: number | null
-  /** DSAW ; absent : aucun dépassement. */
+  /** DSAW ; absent : aucun dépassement. Un chirurgien-dentiste n'en a pas l'usage : son taux dentiste les porte. */
   depassements: number | null
+  /** Le début d'activité, l'ACRE et le taux dentiste : OBLIGATOIRES, voir `ParametresEstimation`. */
+  parametres: ParametresEstimation
 }
+
+/**
+ * Les paramètres des cotisations, tels que l'appelant les a lus — jamais un défaut.
+ *  - `tenus: false` : leur migration n'est pas en base (`PARAMETRES_DES_COTISATIONS_EXPORTES` baissé) ;
+ *    l'estimation d'hier, une activité ouverte avant l'exercice, sans ACRE, un chirurgien-dentiste refusé.
+ *  - `tenus: true` : chaque valeur telle que le cabinet l'a saisie, nulle tant qu'il ne l'a pas dite — le
+ *    début d'activité du dossier (AAAA-MM-JJ), l'ACRE et le taux dentiste de l'exercice (0 à 1, au centième).
+ */
+export type ParametresEstimation =
+  | { tenus: false }
+  | { tenus: true; debutActivite: string | null; acre: boolean | null; tauxDentiste: number | null }
 
 export interface EstimationCotisations {
   plafond: number
+  /** Le plafond aux jours d'activité de l'année (le moteur : « PASS proratisé ») ; le plafond annuel hors de l'année de la création. */
+  plafondProratise: number
+  /** L'ACRE joue-t-elle sur l'exercice ? Dite, elle ne joue qu'à moins d'un an d'activité au 1er janvier. */
+  acreAppliquee: boolean
   abattement: number
   assiette: number
   csgCrdsDeductible: number
@@ -240,6 +267,85 @@ export interface EstimationCotisations {
 
 export type ResultatEstimation = { disponible: true; estimation: EstimationCotisations } | { disponible: false; motif: string }
 
+// ── L'activité de l'exercice : l'année de la création, l'ACRE ─────────────────────────────────────
+
+/** « 1 an » du moteur de l'Urssaf, en jours : la proratisation y divise toujours par 365, même une année bissextile. */
+const JOURS_PAR_AN = 365
+const FORME_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+/** Le jour d'une date civile (AAAA-MM-JJ) depuis l'époque, sans fuseau ; null si la date n'existe pas. */
+function jourCivil(iso: string): number | null {
+  const m = FORME_DATE.exec(iso)
+  if (!m) return null
+  const [a, mo, j] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const t = Date.UTC(a, mo - 1, j)
+  const d = new Date(t)
+  if (d.getUTCFullYear() !== a || d.getUTCMonth() !== mo - 1 || d.getUTCDate() !== j) return null
+  return t / 86_400_000
+}
+
+/** Ce que le début d'activité fait à l'exercice, comme le moteur le compte (« entreprise . durée d'activité … »). */
+interface ActiviteDeLExercice {
+  /** Les jours d'activité de l'exercice : 365 hors de l'année de la création (« prorata temporis »). */
+  joursCetteAnnee: number
+  /** Créée après le 1er janvier : pas de CURPS (« date de création <= période . début d'année »). */
+  creeeApresLePremierJanvier: boolean
+  /** Les jours d'activité au 1er janvier, jamais négatifs (« durée d'activité . en début d'année »). */
+  joursAuPremierJanvier: number
+  /** Créée avant 2026 : l'ACRE exonère jusqu'au tout ; depuis, jusqu'au quart (« exonération maximale »). */
+  creeeAvant2026: boolean
+}
+
+type Activite = { activite: ActiviteDeLExercice; motif: null } | { activite: null; motif: string }
+
+function activiteDeLExercice(annee: number, debutActivite: string): Activite {
+  const debut = jourCivil(debutActivite)
+  const premierJanvier = jourCivil(`${annee}-01-01`)
+  const trenteEtUn = jourCivil(`${annee}-12-31`)
+  const an2026 = jourCivil('2026-01-01')
+  if (debut === null || premierJanvier === null || trenteEtUn === null || an2026 === null) {
+    return { activite: null, motif: 'La date de début d’activité est illisible : la ressaisir.' }
+  }
+  if (debut > trenteEtUn) {
+    return { activite: null, motif: `L’activité commence après l’exercice ${annee} : il n’a pas de cotisations à estimer.` }
+  }
+  const creeeCetteAnnee = debut >= premierJanvier
+  return {
+    activite: {
+      joursCetteAnnee: creeeCetteAnnee ? trenteEtUn - debut + 1 : JOURS_PAR_AN,
+      creeeApresLePremierJanvier: debut > premierJanvier,
+      joursAuPremierJanvier: Math.max(0, premierJanvier - debut),
+      creeeAvant2026: debut < an2026,
+    },
+    motif: null,
+  }
+}
+
+/** Une activité ouverte avant l'exercice : l'estimation d'hier, que l'appelant demande tant que les paramètres ne sont pas tenus. */
+const ACTIVITE_OUVERTE_AVANT: ActiviteDeLExercice = {
+  joursCetteAnnee: JOURS_PAR_AN,
+  creeeApresLePremierJanvier: false,
+  joursAuPremierJanvier: JOURS_PAR_AN * 10,
+  creeeAvant2026: true,
+}
+
+/**
+ * Le taux d'exonération de l'ACRE sur une cotisation de la forme assiette × taux (indemnités journalières,
+ * allocations familiales), en pourcentage, prorata compris : le moteur (« Acre . exonération . taux … ») le
+ * tire de la formule de l'article D. 131-6-1 — (plafond − assiette) × E / plafond, E la cotisation à 75 % du
+ * plafond — ramenée au rapport à la cotisation, 0,75 × (plafond − assiette) / assiette, rapporté au quart.
+ */
+function tauxExonerationAcre(assiette: number, plafondProratise: number, maximum: number, creeeAvant2026: boolean, prorata: number): number {
+  let taux: number
+  if (assiette > plafondProratise) taux = 0
+  else if (assiette < appliquer(plafondProratise, 75)) taux = maximum
+  else taux = seizeDecimales((((plafondProratise - assiette) / assiette) * (creeeAvant2026 ? 3 : 0.75)) / 0.01)
+  return appliquer(taux, prorata)
+}
+
+/** Une cotisation diminuée d'un pourcentage (le mécanisme `abattement` du moteur, qui ne descend jamais sous zéro). */
+const abattue = (montant: number, pourcent: number) => Math.max(0, montant - appliquer(montant, pourcent))
+
 export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimation {
   if (e.annee < PREMIER_EXERCICE_REVENU_BRUT_SOCIAL) {
     return { disponible: false, motif: `L'estimation suit la nouvelle assiette, en vigueur depuis les revenus ${PREMIER_EXERCICE_REVENU_BRUT_SOCIAL}.` }
@@ -248,18 +354,60 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
   if (plafond === undefined) {
     return { disponible: false, motif: `Le plafond de la sécurité sociale ${e.annee} n'est pas encore saisi dans l'application.` }
   }
-  if (e.profession === null) {
+  const profession = e.profession
+  if (profession === null) {
     return { disponible: false, motif: 'Choisissez la profession pour estimer les cotisations.' }
   }
-  if (!PROFESSIONS_ESTIMEES.includes(e.profession)) {
+  const p = e.parametres
+  if (profession === 'chirurgien_dentiste' && !p.tenus) {
     return {
       disponible: false,
       motif:
         'Estimation proposée pour les auxiliaires médicaux, les sages-femmes et les médecins de secteur 1 ' +
         'ou 2 : la prise en charge d’un chirurgien-dentiste se calcule sur le « taux dentiste » de son ' +
-        'relevé SNIR, que l’application ne tient pas.',
+        'relevé SNIR, que l’application ne tient pas encore.',
     }
   }
+  // Les paramètres tenus : chacun dit, ou l'estimation se tait en disant lequel manque.
+  let activite = ACTIVITE_OUVERTE_AVANT
+  let acre = false
+  let tauxDentiste = 0
+  if (p.tenus) {
+    if (p.debutActivite === null) {
+      return {
+        disponible: false,
+        motif:
+          'Saisissez la date de début d’activité du praticien : l’année où elle commence, le plafond se ' +
+          'proratise et la CURPS n’est pas due ; l’année qui suit, l’ACRE peut encore jouer.',
+      }
+    }
+    const lue = activiteDeLExercice(e.annee, p.debutActivite)
+    if (lue.activite === null) return { disponible: false, motif: lue.motif }
+    activite = lue.activite
+    if (profession === 'chirurgien_dentiste') {
+      if (p.tauxDentiste === null) {
+        return {
+          disponible: false,
+          motif: `Saisissez le « taux dentiste » du relevé SNIR ${e.annee} : la prise en charge d’un chirurgien-dentiste se calcule sur lui.`,
+        }
+      }
+      if (!(p.tauxDentiste >= 0 && p.tauxDentiste <= 1) || arrondiUrssaf(p.tauxDentiste, 2) !== p.tauxDentiste) {
+        return { disponible: false, motif: 'Le taux dentiste se lit entre 0 et 1, au centième, comme le relevé SNIR le porte.' }
+      }
+      tauxDentiste = p.tauxDentiste
+    }
+    // L'ACRE ne joue qu'à moins d'un an d'activité au 1er janvier (« applicable si … en début d'année < 1 an »).
+    if (activite.joursAuPremierJanvier < JOURS_PAR_AN) {
+      if (p.acre === null) {
+        return {
+          disponible: false,
+          motif: `Dites si le praticien bénéficie de l’ACRE en ${e.annee} : son activité a moins d’un an au 1er janvier, ou commence dans l’année.`,
+        }
+      }
+      acre = p.acre
+    }
+  }
+
   const ratio = ratioConventionne(e.honorairesConventionnes, e.recettesBrutes)
   if (ratio.ratio === null) return { disponible: false, motif: ratio.motif }
   const honoraires = e.honorairesConventionnes ?? 0
@@ -267,6 +415,11 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
   if (depassements > honoraires) {
     return { disponible: false, motif: 'Les dépassements (DSAW) ne peuvent pas dépasser les honoraires conventionnés (DSAV).' }
   }
+
+  // Le plafond aux jours d'activité (« PASS proratisé ») : le taux de maladie, ses trois plafonds et le taux
+  // des allocations familiales le prennent ; l'abattement, les indemnités journalières, la CURPS, la formation
+  // professionnelle et la prise en charge des allocations familiales gardent le plafond annuel, comme le moteur.
+  const plafondProratise = arrondiUrssaf(appliquer(plafond, seizeDecimales(activite.joursCetteAnnee / JOURS_PAR_AN / 0.01)))
 
   // L'assiette : revenu brut social moins 26 %, l'abattement borné entre 1,76 % et 130 % du plafond
   // (décret n° 2024-688, article 1), jamais négative. La même pour les cotisations et la CSG-CRDS
@@ -279,41 +432,73 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
   const csgCrdsDeductible = arrondiUrssaf(appliquer(assiette, 6.8))
   const csgCrdsNonDeductible = arrondiUrssaf(appliquer(assiette, 2.9))
 
-  const tauxMaladie = arrondiUrssaf(tauxProgressif(assiette, plafond, MALADIE), 2)
-  const maladie =
-    assiette === 0
-      ? 0
-      : arrondiUrssaf(
-          Math.min(assiette, 3 * plafond) * seizeDecimales(tauxMaladie * 0.01) +
-            (assiette > 3 * plafond ? (assiette - 3 * plafond) * seizeDecimales(MALADIE_AU_DELA_DE_TROIS_PLAFONDS * 0.01) : 0),
-        )
+  // La maladie avant toute exonération, non arrondie : le barème du moteur, sur une assiette donnée.
+  const maladieAvant = (a: number) => {
+    if (a === 0) return 0
+    const taux = arrondiUrssaf(tauxProgressif(a, plafondProratise, MALADIE), 2)
+    return (
+      Math.min(a, 3 * plafondProratise) * seizeDecimales(taux * 0.01) +
+      (a > 3 * plafondProratise ? (a - 3 * plafondProratise) * seizeDecimales(MALADIE_AU_DELA_DE_TROIS_PLAFONDS * 0.01) : 0)
+    )
+  }
 
-  // La prise en charge porte sur la part conventionnée de l'assiette, dépassements retirés, et
-  // laisse au praticien 0,1 point du taux effectivement appliqué. Le reste de l'assiette paie la
-  // contribution de 3,25 %.
-  const assietteParticipation = honoraires > 0 ? assiette * (honoraires / e.recettesBrutes) * ((honoraires - depassements) / honoraires) : 0
+  // L'ACRE (art. D. 131-6-1, « exonérations . Acre ») : l'exonération au plus — le tout pour une création
+  // d'avant 2026, le quart depuis —, au prorata des jours d'ACRE qui restent dans l'année.
+  const maximumAcre = activite.creeeAvant2026 ? 100 : 25
+  const prorataAcre = seizeDecimales((JOURS_PAR_AN - activite.joursAuPremierJanvier) / JOURS_PAR_AN / 0.01)
+  let exonerationMaladie = 0
+  if (acre && assiette <= plafondProratise) {
+    const seuil = appliquer(plafondProratise, 75)
+    const brute =
+      assiette < seuil
+        ? appliquer(maladieAvant(assiette), maximumAcre)
+        : (plafondProratise - assiette) * maladieAvant(seuil) * (1 / plafondProratise) * (activite.creeeAvant2026 ? 1 / 0.25 : 1)
+    exonerationMaladie = arrondiUrssaf(appliquer(brute, prorataAcre))
+  }
+  // L'abattement du moteur ne descend jamais sous zéro : une exonération arrondie peut dépasser d'un demi-euro la
+  // cotisation qu'elle exonère toute.
+  const maladie = arrondiUrssaf(Math.max(0, maladieAvant(assiette) - exonerationMaladie))
+
+  // La prise en charge porte sur la part conventionnée de l'assiette, dépassements retirés — pour un
+  // chirurgien-dentiste, divisée par 1 + son taux dentiste, ses dépassements ignorés —, et laisse au praticien
+  // 0,1 point du taux effectivement appliqué. Le reste de l'assiette paie la contribution de 3,25 %.
+  const assietteConventionnee = honoraires > 0 ? assiette * (honoraires / e.recettesBrutes) : 0
+  const assietteParticipation =
+    honoraires === 0
+      ? 0
+      : profession === 'chirurgien_dentiste'
+        ? assietteConventionnee * (1 - tauxDentiste / (1 + tauxDentiste))
+        : assietteConventionnee * ((honoraires - depassements) / honoraires)
   const tauxEffectif = assiette > 0 ? seizeDecimales(maladie / assiette / 0.01) : 0
   // Un médecin de secteur 2 n'a pas de prise en charge (« non applicable si secteur = S2 ») ; ses
   // honoraires conventionnés, dépassements retirés, n'en restent pas moins hors de la contribution.
   const priseEnChargeMaladie =
-    e.profession === 'medecin_secteur_2'
+    profession === 'medecin_secteur_2'
       ? 0
       : arrondiUrssaf(appliquer(assietteParticipation, Math.max(0, tauxEffectif - MALADIE_RESTE_AU_PRATICIEN)))
   const contributionAdditionnelle = arrondiUrssaf(appliquer(assiette - assietteParticipation, CONTRIBUTION_ADDITIONNELLE))
 
   const assietteIndemnites = Math.min(Math.max(assiette, arrondiUrssaf(appliquer(plafond, 40))), plafond * 3)
-  const indemnitesJournalieres = arrondiUrssaf(appliquer(assietteIndemnites, INDEMNITES_JOURNALIERES))
+  const exonerationIndemnites = acre
+    ? tauxExonerationAcre(assietteIndemnites, plafondProratise, maximumAcre, activite.creeeAvant2026, prorataAcre)
+    : 0
+  const indemnitesJournalieres = arrondiUrssaf(abattue(appliquer(assietteIndemnites, INDEMNITES_JOURNALIERES), exonerationIndemnites))
 
-  const tauxAllocations = arrondiUrssaf(tauxProgressif(assiette, plafond, ALLOCATIONS_FAMILIALES), 2)
-  const allocationsFamiliales = arrondiUrssaf(appliquer(assiette, tauxAllocations))
+  const tauxAllocations = arrondiUrssaf(tauxProgressif(assiette, plafondProratise, ALLOCATIONS_FAMILIALES), 2)
+  const allocationsAvant = arrondiUrssaf(appliquer(assiette, tauxAllocations))
+  const exonerationAllocations =
+    acre && assiette > 0 ? tauxExonerationAcre(assiette, plafondProratise, maximumAcre, activite.creeeAvant2026, prorataAcre) : 0
+  const allocationsFamiliales = arrondiUrssaf(abattue(allocationsAvant, exonerationAllocations))
   const priseEnChargeAllocationsFamiliales =
-    e.profession === 'medecin_secteur_1'
+    profession === 'medecin_secteur_1'
       ? arrondiUrssaf(appliquer(allocationsFamiliales, partPriseEnChargeAllocations(assietteParticipation, plafond)))
       : 0
 
-  // CURPS : pas pour un remplaçant, ni sans revenu professionnel.
-  const tauxCurps = TAUX_CURPS[e.profession] ?? 0
-  const curps = !e.remplacant && e.revenuProfessionnelPositif ? arrondiUrssaf(Math.min(appliquer(assiette, tauxCurps), appliquer(plafond, 0.5))) : 0
+  // CURPS : pas pour un remplaçant, ni sans revenu professionnel, ni l'année d'une création après le 1er janvier.
+  const curps =
+    !e.remplacant && e.revenuProfessionnelPositif && !activite.creeeApresLePremierJanvier
+      ? arrondiUrssaf(Math.min(appliquer(assiette, TAUX_CURPS[profession]), appliquer(plafond, 0.5)))
+      : 0
 
   const formationProfessionnelle = arrondiUrssaf(appliquer(plafond, 0.25))
 
@@ -325,6 +510,8 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
     disponible: true,
     estimation: {
       plafond,
+      plafondProratise,
+      acreAppliquee: acre,
       abattement,
       assiette,
       csgCrdsDeductible,
