@@ -3,11 +3,11 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { calculerBalance } from './ecritures'
 import { anneeDe } from './format'
-import { PLAN_PAR_DEFAUT } from './planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
 import { etatDeLOuverture, exploitantIndividuel, ouvertureDeLExercice, type EtatDeLOuverture } from './reportDesSoldes'
 import type { ANouveau, EcritureBrouillon, SensEcriture, SoldeReporte } from './types'
 import { NON_VALIDEE, A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
-import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { planLuDe } from '../test/modeles'
 
 // L'ASSISTANT ANNONCE LA MÊME BALANCE QUE L'ÉCRAN, À-NOUVEAUX COMPRIS (26/09/2026).
 //
@@ -396,13 +396,17 @@ describe('agent-comptable — les outils lisent les à-nouveaux et les soldes re
   // condition est EXÉCUTÉE ici sur chaque modèle, et comparée à la règle — une condition inversée ferait annoncer au
   // modèle un 120000 là où la validation écrit un 101000.
   it('le prompt dit la règle du report qui vaut pour le dossier, celle de src/lib', () => {
-    const trouve = /\$\{(dossierRow\.[^?]+?) \? "le résultat y attend son affectation, au 120000 pour un bénéfice et au 129000 pour une perte" : "le compte de l'exploitant et le résultat passent au 101000 Capital individuel, et l'exercice repart d'un compte de l'exploitant vide"\}/.exec(source)
+    // Les comptes du report sont ceux du plan du dossier (ligne 43, étape PC3b) : la condition est jouée sous le plan par
+    // défaut et sous le plan décalé, le compte du dirigeant pris parmi les trois rôles de chacun.
+    const trouve = /\$\{(dossierRow\.[^?]+?) \? `le résultat y attend son affectation, au \$\{plan\.resultat_benefice\} pour un bénéfice et au \$\{plan\.resultat_perte\} pour une perte` : `le compte de l'exploitant et le résultat passent au \$\{plan\.capital_individuel\} Capital individuel, et l'exercice repart d'un compte de l'exploitant vide`\}/.exec(source)
     expect(trouve, 'la phrase du report introuvable dans le prompt').not.toBeNull()
-    const societe = new Function('dossierRow', `return (${trouve![1]})`) as (d: { mode_comptable: string; compte_notes_de_frais: string }) => boolean
-    for (const mode of ['tresorerie', 'engagement'] as const) {
-      for (const compteNotesDeFrais of ['455000', '108000', '467000'] as const) {
-        expect(societe({ mode_comptable: mode, compte_notes_de_frais: compteNotesDeFrais }), `${mode}, ${compteNotesDeFrais}`)
-          .toBe(!exploitantIndividuel({ mode, compteNotesDeFrais, plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }))
+    const societe = new Function('dossierRow', 'plan', `return (${trouve![1]})`) as (d: { mode_comptable: string; compte_notes_de_frais: string }, plan: PlanComptable) => boolean
+    for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
+      for (const mode of ['tresorerie', 'engagement'] as const) {
+        for (const compteNotesDeFrais of [plan.associe, plan.exploitant, plan.autres_debiteurs_crediteurs]) {
+          expect(societe({ mode_comptable: mode, compte_notes_de_frais: compteNotesDeFrais }, plan), `${mode}, ${compteNotesDeFrais}`)
+            .toBe(!exploitantIndividuel({ mode, compteNotesDeFrais, ...planLuDe(plan) }))
+        }
       }
     }
   })
