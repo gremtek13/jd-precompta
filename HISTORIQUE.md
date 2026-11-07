@@ -49338,3 +49338,19 @@ d'autres sources, chacune à son nombre), un défaut planté sous quatre formes,
 piste d'audit tait le tiers d'une pièce de vente (`tiersAuFec`) et nomme une pièce sans écriture par `libelleDUnePiece`
 : le test a trouvé que son libellé recopiait le tiers lu. Restent, au cabinet : la colonne « libellé du mouvement » de
 la piste d'audit (le texte de la banque) et le tiers d'une facture source dans la même piste (JJ1Q1-Q1).
+
+### 07/11/2026 — LA 2035 : LES SAISIES DU CABINET (2035S3 À S5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par un agent architecte. Rien en production ; la migration sur une copie de la réplique mère PostgreSQL 17.)
+La migration `saisies_2035` (20261107180000, md5 `186108a99a75b0baaa4b2b38c72d6608`, additive, sans instruction de
+suppression : elle passe par l'outil) pose une ligne par dossier, exercice et case — CC, CL et les douze « dont » de la ligne
+43 relevés sur le PDF 2026 (CS, CT, AW, CO, CU, CQ, DF, DG, CI, CJ, AX, DH), DE, le reste de DB —, en centimes entiers
+(zéro vide une case, sans suppression), la note annexe de CC et CL seules (renvois 17 et 21) ; une seule policy, le cabinet
+du dossier ; le gel sur le patron de `garder_vehicule_valide`, sans porte du super-administrateur (la restauration réinsère
+les exercices validés en dernier) ; `enregistrer_saisies_2035`, aux droits de l'appelant, tout ou rien contre les valeurs
+lues (40001). Deux écarts à la conception du 01/11, sur la mission : une ligne par CASE, et CL saisi comme le formulaire
+l'imprime, total et « dont » (`incoherencesDesCases` retient un « dont » plus fort), plutôt qu'une somme de natures et un
+`CL_AUTRE`. Le moteur reçoit les saisies en entrée obligatoire ; drapeau baissé, le tableau des cases, les valeurs et
+l'instantané sont ceux d'hier (`casesDu2035`). Éprouvé : `saisies2035.sql` 33/33 (EN ATTENTE sans elle) ; `rls.sql` 106
+lignes/0/79 avant, 109/0/82 après ; `restauration.sql` identique (deux saisies semées, rendues) ; le banc SÛR ; le retour
+refuse une saisie non nulle, puis défait tout ; un retrait figé refusé, joué à part. Restent 2035S3-Q1 à Q3.
