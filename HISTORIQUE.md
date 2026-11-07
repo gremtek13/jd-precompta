@@ -49208,3 +49208,18 @@ Sources : CGI, art. 259, 259 A, 259 B, 262, 262 ter, 286 ter, ann. II, art. 242 
 § 50 à § 105 (versions de 2013 et 2019 ; celle du 08/01/2025 à relire) ; directive 2006/112/CE, art. 44 et 196 ; EN 16931.
 Sur une copie de la réplique mère : l'essai 50 sur 50 (40 contrôles, 10 mutations) ; six mutations de la migration,
 toutes mordent ; rls.sql identique avant et après ; restauration IDENTIQUE ; banc SÛR ; le retour rend les corps d'hier.
+
+### 07/11/2026 — LA RÉGULARISATION DES COTISATIONS (LIGNE 27, TNS-Q2) (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, sur la recommandation du matin, que le cabinet n'a pas tranchée ; rien en production. La migration
+`20261107170000_regularisation_des_cotisations` (supabase/preparees/, son retour destructif, son essai) pose sur
+`cotisations_declarees` trois colonnes nulles : `organisme` (l'Urssaf, les dix sections de la CNAVPL, la CNBF),
+`annee_payee` (de N − 5 à N + 1 de l'échéance), `nature` (provisionnelle, régularisation, acompte ; une régularisation
+jamais d'une année postérieure). Le gel les couvre déjà (`garder_cotisation_valide` compare la ligne entière, la garde
+de tête l'exige). `lib/regularisationDesCotisations.ts` : les définitives du moteur moins l'appelé de l'Urssaf au titre
+de N (provisionnelles et acomptes, art. L. 131-6-2), due ou remboursée en N + 1 ; aucun chiffre avant la fin de N, sur
+une échéance qui pourrait payer N sans ses trois champs, sans appel ou sur une prévisionnelle. Écrans sous
+`REGULARISATION_DES_COTISATIONS_EXPORTEE`, baissé : les trois champs (ajout, « Modifier », version retenue), la carte du
+volet social ; « Réunir » refuse deux organismes et ne garde que la description commune. Réplique 16 (176 migrations) :
+27 verdicts sur 27, onze mutations tuées ; rls.sql, restauration et cinq essais inchangés ; banc du leurre SÛR ;
+treize mutations du module tuées. Reste au cabinet : TNS-Q2 et le prélèvement mêlé (TNS-Q2-B).
