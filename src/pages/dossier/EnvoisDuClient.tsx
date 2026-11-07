@@ -12,6 +12,7 @@ import { ouvrirJustificatif } from '../../lib/depot'
 import { LIBELLE_QUESTION_MOUVEMENT } from '../../lib/droitsAcces'
 import { fichierAMontrer } from '../../lib/fichiersPiece'
 import { formatDate, formatMoney } from '../../lib/format'
+import { TITRE_RAPPROCHEMENT_PROPOSE, type RapprochementPropose } from '../../lib/mouvementsDesVentes'
 import { nomDeLaPiece } from '../../lib/reglementGroupe'
 import type { LigneBancaire } from '../../lib/types'
 
@@ -199,6 +200,70 @@ export function FilDuMouvement({ dossierId, ligne, envois, acces, occupe, onDema
           Demander au client
         </button>
       </div>
+    </section>
+  )
+}
+
+// LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (étape C6 de la ligne 51.5 ; lib/mouvementsDesVentes.ts,
+// `rapprochementProposeParLEncaissement`) : l'encaissement d'une facture d'avant la bascule, enregistré avec ce crédit —
+// par le client ou par le cabinet —, propose l'exemplaire de sa facture EN TÊTE de la fiche, sous ce qui a été saisi et
+// quand. « Associer cette pièce » passe par le rapprochement de la fiche (`onRapprocher`), avec les refus du choix à la
+// main, comme une pièce que le client a proposée : rien ne s'écrit sans ce clic.
+export function RapprochementProposeVue({ ligne, propose, contexte, aTraiter, occupe, onAssocier }: {
+  ligne: LigneBancaire
+  propose: RapprochementPropose
+  contexte: (pieceId: string) => ContexteDeLaProposition
+  // La fiche l'offre : un mouvement à traiter, que rien ne fige, et des paiements lus en entier.
+  aTraiter: boolean
+  occupe: boolean
+  onAssocier: (pieceId: string) => void
+}) {
+  const pieceId = propose.pieceId
+  const c = pieceId !== null ? contexte(pieceId) : null
+  const piece = c !== null ? c.pieces.find((x) => x.id === pieceId) ?? null : null
+  const etat = c !== null && pieceId !== null ? etatDeLaProposition({ piece_id: pieceId }, c) : null
+  const phrase = etat !== null ? phraseDeLEtat(etat) : null
+  const offert = aTraiter && propose.libre && etat !== null && associable(etat)
+  return (
+    <section className="fiche-mouvement-section" aria-label={TITRE_RAPPROCHEMENT_PROPOSE}>
+      <h3>{TITRE_RAPPROCHEMENT_PROPOSE}</h3>
+      {propose.encaissements.map((e) => <p key={e.id} className="fiche-mouvement-note">{e.origine} : {e.libelle}.</p>)}
+      {propose.noteDesAuteurs && <p className="fiche-mouvement-note">{propose.noteDesAuteurs}</p>}
+      {propose.note && <p className="fiche-mouvement-note">{propose.note}</p>}
+      {pieceId !== null && etat !== null && (
+        <div className="carte-rapprochement carte-proposee">
+          <div className="carte-rapprochement-entete">
+            <div className="carte-rapprochement-titres">
+              <strong className="nom-fichier">{piece ? nomDeLaPiece(piece) : 'Pièce non lue'}</strong>
+              <span>L’exemplaire de la facture, qui compte sa vente</span>
+            </div>
+            {piece && <strong className="carte-rapprochement-montant">{formatMoney(piece.montant_ttc)}</strong>}
+          </div>
+          {piece && etat.etat !== 'retenue' && etat.etat !== 'mouvement_classe' && (
+            <ul className="signaux-rapprochement">
+              {signauxDeLaProposition(piece, ligne).map((s) => (
+                <li key={s.texte} className={s.ok ? 'signal-concordant' : 'signal-reserve'}>
+                  {s.ok ? <IconCoche width={15} height={15} aria-hidden="true" /> : <IconAttention width={15} height={15} aria-hidden="true" />}
+                  <span>{s.texte}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {phrase && <p className={associable(etat) || etat.etat === 'retenue' ? 'fiche-mouvement-note' : 'fiche-mouvement-alerte'}>{phrase}</p>}
+          <div className="carte-rapprochement-actions">
+            {piece && (
+              <button type="button" className="carte-rapprochement-lien" onClick={() => ouvrirJustificatif(fichierAMontrer(piece).chemin)}>
+                Voir le justificatif
+              </button>
+            )}
+            {offert && (
+              <button type="button" className="btn btn-primary btn-sm" disabled={occupe} onClick={() => onAssocier(pieceId)}>
+                Associer cette pièce
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   )
 }

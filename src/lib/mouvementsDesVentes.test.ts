@@ -294,7 +294,10 @@ describe('venteDuMouvement et carteDeVente : la fiche', () => {
       ['Facture F2026-0014 — virement du 09/03/2026', 400],
       ['Facture F2026-0015 — chèque du 10/03/2026', 200],
     ])
-    expect(carte.lignes.map((l) => l.parLeClient)).toEqual([{ libelle: 'par le client', titre: 'Encaissement enregistré par le client' }, null])
+    // Réservé, ce que le client a saisi est une proposition, datée du jour où il l'a enregistrée (étape C6).
+    expect(carte.lignes.map((l) => l.parLeClient)).toEqual([
+      { libelle: 'proposé par le client le 10/03/2026', titre: 'Encaissement enregistré par le client' }, null,
+    ])
     expect(carte.ensemble?.replace(/\s/g, ' ')).toBe('Ensemble : 600,00 € ; le mouvement : 598,50 €.')
     expect(carte.pourquoi).toBe(m.refus.message)
     expect(carte.suite).toMatch(/^Tant qu’il n’est pas classé par ses encaissements/)
