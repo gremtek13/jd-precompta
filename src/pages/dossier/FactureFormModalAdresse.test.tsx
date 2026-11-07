@@ -2,7 +2,7 @@ import { CABINET_DU_DOSSIER } from '../../test/mentionsFigees'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
-import { REFUS_ADRESSE_DU_CLIENT } from '../../lib/validationDeLaFacture'
+import { REFUS_ADRESSE_DU_CLIENT, REFUS_LIGNE_A_ZERO } from '../../lib/validationDeLaFacture'
 import { NON_BASCULE } from '../../test/factures'
 import FactureFormModal from './FactureFormModal'
 
@@ -55,11 +55,11 @@ type Type = '' | 'assujetti' | 'organisme_public' | 'non_assujetti' | 'etranger'
 
 // Un dossier redevable ; la facture d'une prestation à 20 %, datée du jour, aux mentions qui disent les pénalités de
 // retard (une facture à une entreprise les dit : lib/mentionsFigeesVue.ts) ; le client de ce type, à cette adresse.
-function monter(espace: Espace, type: Type, adresse: string) {
+function monter(espace: Espace, type: Type, adresse: string, ligne?: { taux: string; article: 'cgi_261_4_4_a' | null }) {
   const commun = {
     dossierId: 'd1', dossierNom: 'Dossier fictif', dossierSiret: null, dossierAdresse: null, statutTva: 'redevable' as const,
-    articleExoneration: null, numeroTvaAttribue: false, tvaSurDebits: false, facture: null, reglageDesVentes: NON_BASCULE,
-    acompte: SANS_ACOMPTE, facturesDeLaSerie: [], onClose: () => {}, onSaved: () => {},
+    articleExoneration: ligne?.article ?? null, numeroTvaAttribue: false, tvaSurDebits: false, facture: null,
+    reglageDesVentes: NON_BASCULE, acompte: SANS_ACOMPTE, facturesDeLaSerie: [], onClose: () => {}, onSaved: () => {},
   }
   render(espace === 'client'
     ? <FactureFormModal espace="client" {...commun} />
@@ -68,7 +68,10 @@ function monter(espace: Espace, type: Type, adresse: string) {
   fireEvent.change(document.querySelector('#type-client')!, { target: { value: type } })
   fireEvent.change(document.querySelector('#tiers-adresse')!, { target: { value: adresse } })
   fireEvent.change(document.querySelectorAll('tbody input')[0]!, { target: { value: 'Prestation' } })
-  fireEvent.change(document.querySelector('#mentions')!, { target: { value: 'Pénalités de retard : 10 % par an.' } })
+  // L'article choisi, la ligne à 0 % porte sa mention (le formulaire l'exige : lib/statutTva.ts).
+  const mention = ligne?.article ? 'Exonération de TVA, art. 261, 4, 4° a du CGI. ' : ''
+  fireEvent.change(document.querySelector('#mentions')!, { target: { value: `${mention}Pénalités de retard : 10 % par an.` } })
+  if (ligne) fireEvent.change(document.querySelector('td[data-libelle="TVA %"] input')!, { target: { value: ligne.taux } })
 }
 
 const valider = () => screen.getByRole('button', { name: 'Valider la facture' }) as HTMLButtonElement
@@ -124,6 +127,39 @@ describe.each(['cabinet', 'client'] as const)('FactureFormModal — l’adresse 
     drapeau.leve = false
     monter(espace, 'assujetti', '')
     expect(refusDeLAdresse()).toEqual([])
+    expect(valider().disabled).toBe(false)
+  })
+})
+
+// LA LIGNE À 0 % D'UN REDEVABLE SANS ARTICLE (A7C-Q1 ; le rang 20, le même déclencheur et le même drapeau) : le refus de la
+// base se dit avant le clic et retient la validation ; levé, il remplace l'alerte d'hier, qui reste tant qu'il est baissé.
+const refusDeLaLigne = () => screen.queryAllByRole('alert').map((a) => a.textContent ?? '').filter((t) => /Une ligne est au taux 0/.test(t))
+const alerteDHier = () => [...document.querySelectorAll('.alerte-tva')].map((a) => a.textContent ?? '').filter((t) => /Une ligne à 0 %/.test(t))
+
+describe.each(['cabinet', 'client'] as const)('FactureFormModal — la ligne à 0 % d’un redevable, dans l’espace « %s »', (espace) => {
+  it('sans article : le refus de la base, la validation retenue, le brouillon libre, l’alerte d’hier tue', () => {
+    monter(espace, 'assujetti', '5 avenue de l’Essai, 69001 Lyon', { taux: '0', article: null })
+    expect(refusDeLaLigne()).toEqual([REFUS_LIGNE_A_ZERO.modele])
+    expect(alerteDHier()).toEqual([])
+    expect(valider().disabled).toBe(true)
+    expect(brouillon().disabled).toBe(false)
+  })
+
+  it('l’article du dossier choisi, ou la ligne à 20 % : rien ne retient la validation', () => {
+    monter(espace, 'assujetti', '5 avenue de l’Essai, 69001 Lyon', { taux: '0', article: 'cgi_261_4_4_a' })
+    expect(refusDeLaLigne()).toEqual([])
+    expect(valider().disabled).toBe(false)
+    cleanup()
+    monter(espace, 'assujetti', '5 avenue de l’Essai, 69001 Lyon', { taux: '20', article: null })
+    expect(refusDeLaLigne()).toEqual([])
+    expect(valider().disabled).toBe(false)
+  })
+
+  it('le drapeau baissé : l’alerte d’hier, et la validation offerte comme la base l’accepte', () => {
+    drapeau.leve = false
+    monter(espace, 'assujetti', '5 avenue de l’Essai, 69001 Lyon', { taux: '0', article: null })
+    expect(refusDeLaLigne()).toEqual([])
+    expect(alerteDHier()).toHaveLength(1)
     expect(valider().disabled).toBe(false)
   })
 })

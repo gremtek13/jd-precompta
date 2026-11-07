@@ -7,11 +7,13 @@ import { derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from '../te
 import { motsDuCabinet, pourLEspace } from './espaceVentes'
 import { REFUS_DE_LA_VALIDATION_FIGEE } from './mentionsFigees'
 import { EXONERATIONS, MENTION_FRANCHISE, mentionTva } from './statutTva'
-import type { ArticleExoneration, StatutTva } from './types'
+import type { ArticleExoneration, RegimeInternational, StatutTva } from './types'
+import { REGIMES_INTERNATIONAUX, horsDeLaTvaFrancaise } from './factureInternationale'
 import {
   ADRESSE_DU_CLIENT_EXIGEE, AVIS_ARTICLE_A_CHOISIR, AVIS_STATUT_A_PRECISER, REFUS_ADRESSE_DU_CLIENT, REFUS_DE_LA_VALIDATION,
-  avisDuStatutDeTva, plusRecenteDeLaSerie, refusDeLAdresseDuClient, refusDeLaDateDEmission, refusDeLaValidation,
-  refusDuStatutDeTva, type AdresseDuClientAJuger, type FactureDeLaSerie, type ValidationAJuger,
+  REFUS_LIGNE_A_ZERO, avisDuStatutDeTva, plusRecenteDeLaSerie, refusDeLAdresseDuClient, refusDeLaDateDEmission,
+  refusDeLaLigneAZero, refusDeLaValidation, refusDuStatutDeTva, type AdresseDuClientAJuger, type FactureDeLaSerie,
+  type LigneAZeroAJuger, type ValidationAJuger,
 } from './validationDeLaFacture'
 
 // CE QUE LA VALIDATION EXIGE D'UNE FACTURE (correction de la facture, 31/10/2026, reprise le 02/11/2026 pour FACTURE-Q1 ;
@@ -448,14 +450,16 @@ describe('le retour arrière rend les deux fonctions de l’export, sous sa gard
   })
 })
 
-// ── L'ADRESSE DU CLIENT (JJ-Q4) ─────────────────────────────────────────────────────────────────────────────────────
-// Le refus du déclencheur `factures_emises_figees_adresse_du_client` (migration `adresse_du_client_exigee`, préparée le
-// 07/11/2026), CONFRONTÉ AU TEXTE DE SA MIGRATION, où qu'elle soit — préparée aujourd'hui, dans l'export le jour de son
-// application —, à son retour, à la garde qu'il suit, et rejoué sur les cas de son essai
+// ── L'ADRESSE DU CLIENT (JJ-Q4) ET LA LIGNE À 0 % D'UN REDEVABLE (A7C-Q1) ──────────────────────────────────────────
+// Les deux refus du déclencheur `factures_emises_figees_mentions` (migration `adresse_du_client_exigee`, préparée le
+// 07/11/2026), CONFRONTÉS AU TEXTE DE SA MIGRATION, où qu'elle soit — préparée aujourd'hui, dans l'export le jour de son
+// application —, à son retour, à la garde qu'il suit, et rejoués sur les cas de son essai
 // (supabase/essais/adresseDuClientExigee.sql) tels que la réplique y a répondu.
 const MIGRATION_ADRESSE = /\/\d{14}_adresse_du_client_exigee\.sql$/
 const RETOUR_ADRESSE = /^\d{14}_retour_adresse_du_client_exigee\.sql$/
 const ESSAI_ADRESSE = new URL('../../supabase/essais/adresseDuClientExigee.sql', import.meta.url)
+const FONCTION = 'garder_mentions_a_la_validation'
+const DECLENCHEUR = 'factures_emises_figees_mentions'
 
 function laMigrationDeLAdresse(): { chemin: string; texte: string; dansLExport: boolean } {
   const preparees = fichiersPrepares().filter((x) => MIGRATION_ADRESSE.test(x.chemin))
@@ -466,24 +470,31 @@ function laMigrationDeLAdresse(): { chemin: string; texte: string; dansLExport: 
 
 // La fonction du déclencheur : de son `create function` au `$$;` qui la ferme ; son corps, ce que `prosrc` garde.
 function laFonctionDeLAdresse(texte: string): { definition: string; corps: string } {
-  const debut = texte.indexOf('create function public.garder_adresse_du_client(')
-  expect(debut, 'la définition de garder_adresse_du_client').toBeGreaterThanOrEqual(0)
+  const debut = texte.indexOf(`create function public.${FONCTION}(`)
+  expect(debut, `la définition de ${FONCTION}`).toBeGreaterThanOrEqual(0)
   const definition = texte.slice(debut, texte.indexOf('$$;', debut))
   return { definition, corps: definition.slice(definition.indexOf('as $$') + 'as $$'.length) }
 }
 
 const blancsDe = (texte: string) => (texte.match(/v_blancs constant text := ([\s\S]*?);/)?.[1] ?? '').replace(/\s+/g, ' ')
 
-describe('l’adresse du client (JJ-Q4) : le module redit le refus de la migration', () => {
-  it('un refus, au caractère près, en 22023 ; sa condition sur les valeurs que la facture porte', () => {
+describe('l’adresse du client (JJ-Q4) et la ligne à 0 % (A7C-Q1) : le module redit les refus de la migration', () => {
+  it('deux refus, au caractère près, en 22023, dans l’ordre du module ; leurs conditions sur les valeurs que la facture fige', () => {
     const { definition } = laFonctionDeLAdresse(laMigrationDeLAdresse().texte)
-    expect(messagesSql(definition)).toEqual([REFUS_ADRESSE_DU_CLIENT.modele])
-    expect(codesSql(definition)).toEqual([REFUS_ADRESSE_DU_CLIENT.code])
-    expect(REFUS_ADRESSE_DU_CLIENT.code).toBe('22023')
-    // Une facture, jamais un avoir ; le type de client et l'adresse de la ligne qui se valide, jamais la fiche du contact.
-    expect(definition).toContain("if new.type = 'facture' and new.type_client in ('assujetti', 'organisme_public')")
-    expect(definition).toContain("and btrim(coalesce(new.tiers_adresse, ''), v_blancs) = '' then")
-    expect(definition).not.toMatch(/\bcontacts\b|\bfrom\b/)
+    expect(messagesSql(definition)).toEqual([REFUS_ADRESSE_DU_CLIENT.modele, REFUS_LIGNE_A_ZERO.modele])
+    expect(codesSql(definition)).toEqual([REFUS_ADRESSE_DU_CLIENT.code, REFUS_LIGNE_A_ZERO.code])
+    expect([REFUS_ADRESSE_DU_CLIENT.rang, REFUS_LIGNE_A_ZERO.rang]).toEqual([19, 20])
+    // Un avoir suit sa facture ; le type de client, l'adresse, le statut et l'article de la ligne qui se valide, jamais la
+    // fiche du contact ni le dossier vivant ; le régime d'e7a lu sans exiger sa colonne.
+    expect(definition).toContain("if new.type <> 'facture' then\n    return new;\n  end if;")
+    expect(definition).toContain("if new.type_client in ('assujetti', 'organisme_public')\n     and btrim(coalesce(new.tiers_adresse, ''), v_blancs) = '' then")
+    expect(definition).toContain("if new.statut_tva = 'redevable' and new.article_exoneration is null\n"
+      + "     and coalesce(to_jsonb(new) ->> 'regime_international', 'taxable_en_france') = 'taxable_en_france'\n"
+      + '     and exists (select 1 from public.facture_lignes l where l.facture_id = new.id and l.taux_tva = 0) then')
+    expect(definition).not.toMatch(/\bcontacts\b|\bdossiers\b/)
+    expect(definition.indexOf('L\'\'adresse du client manque')).toBeLessThan(definition.indexOf('Une ligne est au taux 0'))
+    // DEFINER, comme la garde, pour lire les lignes quelle que soit la RLS de l'appelant.
+    expect(definition).toMatch(/language plpgsql\nsecurity definer\nset search_path = public\nas \$\$/)
   })
 
   it('ses blancs sont ceux d’enregistrer_facture, que `trim` retire', () => {
@@ -503,18 +514,29 @@ describe('l’adresse du client (JJ-Q4) : le module redit le refus de la migrati
     for (const c of [0x200b, 0x2d, 0x5f]) expect(String.fromCodePoint(c).trim(), String(c)).not.toBe('')
   })
 
+  it('le régime qui exempte la ligne à 0 % est celui que lib/factureInternationale.ts dit hors de la TVA française', () => {
+    const regimes: (RegimeInternational | null)[] = [null, ...REGIMES_INTERNATIONAUX]
+    for (const regime of regimes) {
+      const juge = refusDeLaLigneAZero({ type: 'facture', statutTva: 'redevable', articleExoneration: null, regimeInternational: regime, tauxDesLignes: [0] })
+      // La base : exemptée quand le régime, ou « taxable_en_france » à défaut, n'est pas « taxable_en_france ».
+      expect(juge === null, String(regime)).toBe((regime ?? 'taxable_en_france') !== 'taxable_en_france')
+      expect(juge === null, String(regime)).toBe(horsDeLaTvaFrancaise(regime))
+    }
+  })
+
   it('son déclencheur suit la garde des factures dans l’ordre des noms, au seul passage à « validée »', () => {
     const { texte } = laMigrationDeLAdresse()
-    const declencheur = texte.match(/create trigger (\w+)\s+before update on public\.factures_emises\s+for each row\s+when \(([^\n]*)\)\s+execute function public\.garder_adresse_du_client\(\);/)
+    const declencheur = texte.match(new RegExp(`create trigger (\\w+)\\s+before update on public\\.factures_emises\\s+for each row\\s+when \\(([^\\n]*)\\)\\s+execute function public\\.${FONCTION}\\(\\);`))
     expect(declencheur, 'le déclencheur, avant la mise à jour, ligne').not.toBeNull()
     const [, nom, quand] = declencheur as RegExpMatchArray
+    expect(nom).toBe(DECLENCHEUR)
     expect(quand).toBe("new.statut = 'validee' and old.statut is distinct from 'validee'")
     // Le nom de la garde en est le début : il la suit, avant la marque d'acompte et la source de la vente.
     expect(nom.startsWith('factures_emises_figees_')).toBe(true)
     const ordre = ['factures_emises_figees', nom, 'factures_emises_marque_d_acompte', 'factures_emises_source_de_la_vente']
     expect([...ordre].sort()).toEqual(ordre)
     // Personne n'exécute la fonction ; la migration ne porte aucun mot de retrait (elle s'applique par l'outil).
-    expect(texte).toContain('revoke execute on function public.garder_adresse_du_client() from public, anon, authenticated;')
+    expect(texte).toContain(`revoke execute on function public.${FONCTION}() from public, anon, authenticated;`)
     expect(texte).not.toMatch(/\b(delete|drop|truncate)\b|attisdropped/i)
   })
 
@@ -526,8 +548,8 @@ describe('l’adresse du client (JJ-Q4) : le module redit le refus de la migrati
     const empreinte = md5(laFonctionDeLAdresse(laMigrationDeLAdresse().texte).corps)
     const garde = retour.indexOf(`is distinct from '${empreinte}' then`)
     expect(garde, 'l’empreinte du corps posé').toBeGreaterThan(0)
-    expect(retour.indexOf('drop trigger factures_emises_figees_adresse_du_client on public.factures_emises;')).toBeGreaterThan(garde)
-    expect(retour.indexOf('drop function public.garder_adresse_du_client();')).toBeGreaterThan(garde)
+    expect(retour.indexOf(`drop trigger ${DECLENCHEUR} on public.factures_emises;`)).toBeGreaterThan(garde)
+    expect(retour.indexOf(`drop function public.${FONCTION}();`)).toBeGreaterThan(garde)
   })
 
   it('le drapeau suit la migration : baissé tant qu’elle n’est que préparée, levé quand elle entre dans l’export', () => {
@@ -535,7 +557,7 @@ describe('l’adresse du client (JJ-Q4) : le module redit le refus de la migrati
   })
 
   // Les cas de l'essai, tels que la réplique y a répondu le 07/11/2026 (la migration appliquée) : refusé, ou validé.
-  const CAS_DE_L_ESSAI: [string, AdresseDuClientAJuger, boolean][] = [
+  const CAS_DE_L_ADRESSE: [string, AdresseDuClientAJuger, boolean][] = [
     ['10', { type: 'facture', typeClient: 'assujetti', tiersAdresse: null }, true],
     ['M10', { type: 'facture', typeClient: 'assujetti', tiersAdresse: '5 avenue de l Essai, 69001 Lyon' }, false],
     ['11', { type: 'facture', typeClient: 'assujetti', tiersAdresse: ' \t\n  ' }, true],
@@ -546,14 +568,43 @@ describe('l’adresse du client (JJ-Q4) : le module redit le refus de la migrati
     ['23', { type: 'facture', typeClient: null, tiersAdresse: null }, false],
     ['24', { type: 'avoir', typeClient: 'assujetti', tiersAdresse: null }, false],
   ]
-  it.each(CAS_DE_L_ESSAI)('le cas %s de l’essai', (num, cas, refuse) => {
+  it.each(CAS_DE_L_ADRESSE)('le cas %s de l’essai (l’adresse)', (num, cas, refuse) => {
     expect(readFileSync(ESSAI_ADRESSE, 'utf8'), `le contrôle ${num} dans l’essai`).toContain(`('${num}', `)
     const r = refusDeLAdresseDuClient(cas)
     expect(r !== null, num).toBe(refuse)
     if (r) expect(r).toEqual({ cle: 'adresse_du_client', code: '22023', message: REFUS_ADRESSE_DU_CLIENT.modele })
   })
 
-  it('l’essai attend le message du module, mot pour mot', () => {
-    expect(readFileSync(ESSAI_ADRESSE, 'utf8')).toContain(`'22023', '${REFUS_ADRESSE_DU_CLIENT.modele.replace(/'/g, "''")}'`)
+  const ligne = (v: Partial<LigneAZeroAJuger>): LigneAZeroAJuger => ({
+    type: 'facture', statutTva: 'redevable', articleExoneration: null, regimeInternational: null, tauxDesLignes: [0], ...v,
+  })
+  const CAS_DE_LA_LIGNE: [string, LigneAZeroAJuger, boolean][] = [
+    ['40', ligne({}), true],
+    ['M40', ligne({ tauxDesLignes: [20] }), false],
+    ['41', ligne({ articleExoneration: 'cgi_261_4_4_a' }), false],
+    ['42', ligne({ statutTva: 'franchise' }), false],
+    ['43', ligne({ statutTva: 'exonere', articleExoneration: 'cgi_261_4_1' }), false],
+    ['44', ligne({ regimeInternational: 'autoliquidation_ue' }), false],
+    ['45', ligne({ regimeInternational: 'taxable_en_france' }), true],
+    ['46', ligne({}), true],
+  ]
+  it.each(CAS_DE_LA_LIGNE)('le cas %s de l’essai (la ligne à 0 %%)', (num, cas, refuse) => {
+    expect(readFileSync(ESSAI_ADRESSE, 'utf8'), `le contrôle ${num} dans l’essai`).toContain(`('${num}', `)
+    const r = refusDeLaLigneAZero(cas)
+    expect(r !== null, num).toBe(refuse)
+    if (r) expect(r).toEqual({ cle: 'ligne_a_zero', code: '22023', message: REFUS_LIGNE_A_ZERO.modele })
+  })
+
+  it('un avoir, un statut à préciser : la ligne à 0 % ne se juge pas ; parmi d’autres taux, elle se juge', () => {
+    expect(refusDeLaLigneAZero(ligne({ tauxDesLignes: [20, 0] }))?.cle).toBe('ligne_a_zero')
+    expect(refusDeLaLigneAZero(ligne({ type: 'avoir' }))).toBeNull()
+    expect(refusDeLaLigneAZero(ligne({ statutTva: null }))).toBeNull()
+    expect(refusDeLaLigneAZero(ligne({ tauxDesLignes: [] }))).toBeNull()
+  })
+
+  it('l’essai attend les messages du module, mot pour mot', () => {
+    const essai = readFileSync(ESSAI_ADRESSE, 'utf8')
+    expect(essai).toContain(`'22023', '${REFUS_ADRESSE_DU_CLIENT.modele.replace(/'/g, "''")}'`)
+    expect(essai).toContain(`'22023', '${REFUS_LIGNE_A_ZERO.modele.replace(/'/g, "''")}'`)
   })
 })
