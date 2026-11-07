@@ -11,6 +11,9 @@
 --      le mot « comptes » ; `droits_sur_le_dossier` rend la clé `comptes` (le cabinet du dossier, ou un accès « Comptes ») —
 --      une clé de plus, sans changer la signature : les Edge Functions de la vente lisent leurs cases et ne ferment rien
 --      sur une de plus. Aucune garde : « Comptes » ne suppose rien du dossier.
+--   1 bis. La trace des droits (P1-trace) étendue à « Comptes » : la fonction de son déclencheur, `tracer_les_droits`, au
+--      corps de P1-trace plus la case, et la liste des colonnes du déclencheur `memberships_trace_des_droits`, plus
+--      `droit_comptes`, par des `create or replace` ; la contrainte du droit admet déjà le mot.
 --   2. `changer_droits_acces` à CINQ paramètres (`p_comptes`, sans valeur par défaut), la seule écriture des droits, au
 --      corps de la forme à quatre plus la case ; les formes à TROIS et à QUATRE deviennent chacune un appel DIRECT de la
 --      forme à cinq, les cases qu'elles ne nomment pas nulles donc inchangées — un seul corps écrit `memberships`, aucune
@@ -73,7 +76,8 @@
 -- cabinet, la page du client) viendront à l'étape C4b. Le retour : supabase/preparees/retour/20261106150100.
 
 -- ══ 0. La garde de tête ══════════
--- Elle refuse une seconde application ; la trace des droits en base ; une fonction remplacée ou appelée qui ne serait plus
+-- Elle refuse une seconde application ; une base SANS la trace des droits, ou dont la trace n'est plus celle de
+-- P1-trace ; une fonction remplacée ou appelée qui ne serait plus
 -- celle que cette migration suppose — à l'empreinte de son corps, les retours chariot d'un collage écartés ; et une base
 -- où manquerait une colonne qu'elle lit.
 do $garde$

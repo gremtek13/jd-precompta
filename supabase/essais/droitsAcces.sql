@@ -91,6 +91,15 @@ declare
   -- La trace des droits (étape P1-trace ; migration `trace_des_droits`, PRÉPARÉE) : son déclencheur s'ajoute à ceux que le
   -- contrôle 83 lit, APRÈS les deux gardes (l'ordre des noms) ; ce qu'il trace se joue dans `traceDesDroits.sql`.
   trace boolean := to_regclass('public.trace_des_droits') is not null;
+  -- … et les cases que ce déclencheur nomme : celles de P1-trace, puis « Comptes » avec C4a (`situations_publiees`), puis
+  -- « Achats », « Notes de frais » et « Documents » avec B1 (`trois_cases_de_l_acces`) — chacune le redéfinit ; l'état se
+  -- lit à la colonne que chacune ajoute, comme `colonnes_tracees` de traceDesDroits.sql.
+  colonnes_tracees text := case
+    when exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_documents' and not a.attisdropped)
+      then 'droit_ventes, droit_banque, droit_caisse, droit_comptes, droit_achats, droit_frais, droit_documents'
+    when exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_comptes' and not a.attisdropped)
+      then 'droit_ventes, droit_banque, droit_caisse, droit_comptes'
+    else 'droit_ventes, droit_banque, droit_caisse' end;
   dx uuid := 'c10d0000-0000-4000-8000-0000000000d1';
   df uuid := 'c10d0000-0000-4000-8000-0000000000d2';
   dr uuid := 'c10d0000-0000-4000-8000-0000000000d3';
@@ -185,7 +194,8 @@ begin
     from pg_proc p where p.pronamespace = 'public'::regnamespace
      and p.proname in ('client_du_dossier', 'gere_les_ventes', 'gere_la_banque', 'droits_sur_le_dossier', 'changer_droits_acces');
   verdicts := verdicts || jsonb_build_object('controle', '4. aucune des cinq ne s''exécute par anon ni PUBLIC ; authenticated et service_role les exécutent',
-    'observe', n || ' fonction(s), en faute : ' || coalesce(obs, 'aucune'), 'ok', n = case when c4a then 7 when c10 then 6 else 5 end and obs is null);
+    'observe', n || ' fonction(s), en faute : ' || coalesce(obs, 'aucune'), 'ok', n = case when to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean, boolean, boolean, boolean)') is not null then 8
+      when c4a then 7 when c10 then 6 else 5 end and obs is null);
 
   -- ══ 6. Le client lit ses seules lignes ═════════════════════════════════════════════════════════════════════
   -- L'accès d'une autre personne à SON dossier (le compte du chef, le temps du bloc) ne lui est pas rendu ; ses deux
@@ -831,7 +841,8 @@ begin
     'ok', coalesce(obs = 'true v search_path=public plpgsql anon false authenticated false public false | '
       || case when c10 then 'CREATE TRIGGER memberships_droit_caisse AFTER INSERT OR UPDATE OF droit_caisse, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_caisse() O ; ' else '' end
       || 'CREATE TRIGGER memberships_droit_ventes AFTER INSERT OR UPDATE OF droit_ventes, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_ventes() O'
-      || case when trace then ' ; CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF droit_ventes, droit_banque, droit_caisse, dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O' else '' end, false));
+      || case when trace then ' ; CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF ' || colonnes_tracees
+           || ', dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O' else '' end, false));
 
   -- ══ 90 à 95. Les mutations de la garde : chacune doit MORDRE ════════════════════════════════════════════════
   for t in select * from (values
