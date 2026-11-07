@@ -1,7 +1,7 @@
 -- LES TABLES QUE LE REMPLISSEUR DU BANC NE SAIT PAS REMPLIR, POUR LE LEURRE (outils/leurre/banc.py ; SUR UNE RÉPLIQUE
 -- SEULEMENT) : une ligne marquée par dossier de leurre, écrite à la main selon les CHECK de la table, déclencheurs coupés
 -- — dix tables de dossier, et deux sans `dossier_id` qui porteront des données réelles ; sur la réplique qui porte une
--- migration préparée, ses tables aussi (la caisse hier, les devis aujourd'hui), chacune sous `to_regclass`.
+-- migration préparée, ses tables aussi (la caisse hier, les devis, les factures reprises), chacune sous `to_regclass`.
 \set ON_ERROR_STOP on
 begin;
 set local session_replication_role = replica;
@@ -86,5 +86,25 @@ begin
              (select f.id from factures_emises f where f.dossier_id = lc.d order by 1 limit 1), chef from lc$i$;
   end if;
 end $devis$;
+-- Les factures reprises (migration `factures_importees`, étape A8a, sur la réplique qui la porte) : une facture reprise par
+-- leurre, son lot et sa ligne, chaque texte libre marqué, selon les CHECK des tables (un numéro de la forme de G1.05, la
+-- marque de source et l'option d'une reprise, la plateforme nommée).
+do $reprises$
+begin
+  if to_regclass('public.factures_importees') is not null then
+    execute $i$insert into public.factures_emises (id, dossier_id, numero, statut, type, date_emission, tiers_nom, tiers_adresse,
+        type_client, nature_operation, option_debits, montant_ht, montant_tva, montant_ttc, source_de_la_vente, created_by)
+      select (pfx || '-0000-4000-8000-0000000007' || h || '1')::uuid, d, 'LEURRE7Q3' || x || 'R', 'importee', 'facture',
+             '2025-06-18', m || ' client de la facture reprise', m || ' adresse du client repris', 'non_assujetti', 'services',
+             false, montant, 0, montant, true, chef from lc$i$;
+    execute $i$insert into public.imports_factures (id, dossier_id, format, nombre_factures, importe_par)
+      select (pfx || '-0000-4000-8000-0000000007' || h || '2')::uuid, d, 'csv', 1, chef from lc$i$;
+    execute $i$insert into public.factures_importees (facture_id, dossier_id, import_id, rang, ligne_csv, encaisse_avant_reprise,
+        encaisse_par_taux, encaisse_au_prorata, transmise_par, plateforme_nom)
+      select (pfx || '-0000-4000-8000-0000000007' || h || '1')::uuid, d, (pfx || '-0000-4000-8000-0000000007' || h || '2')::uuid,
+             1, 2, montant, jsonb_build_array(jsonb_build_object('taux', 0, 'encaisse', montant)), false, 'plateforme',
+             m || ' plateforme de la facture reprise' from lc$i$;
+  end if;
+end $reprises$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;
