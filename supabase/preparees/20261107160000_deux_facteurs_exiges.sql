@@ -2,8 +2,9 @@
 -- PAS APPLIQUÉE. SEC-Q1 à Q4 tranchées le 07/11/2026 comme recommandé : le cabinet et le super-administrateur, après le
 -- MVP (Q1) ; les accès « Banque », « Achats », « Documents », et « Ventes » (Q2) ; compte par compte, une fois le compte
 -- inscrit (Q3) ; le chef pour les siens, le super-administrateur pour les chefs (Q4). Elle s'applique après le MVP, en
--- dernier, sur la réponse à SEC2-Q1 (SEC2-Q2 et Q3 attendues, page « Arbitrages du cabinet »). Le récit : HISTORIQUE.md,
--- « 07/11/2026 — LA DOUBLE AUTHENTIFICATION, SECOND TEMPS : EXIGÉE EN BASE (PRÉPARÉE, PAS APPLIQUÉE) » ; l'essai :
+-- dernier (SEC2-Q1, tranchée le 07/11/2026) ; SEC2-Q2 y est tenue (les fonctions du cabinet, plus bas) ; SEC2-Q3, l'e-mail,
+-- attend sa fonction. Le récit : HISTORIQUE.md, « 07/11/2026 — LA DOUBLE AUTHENTIFICATION, SECOND TEMPS : EXIGÉE EN BASE
+-- (PRÉPARÉE, PAS APPLIQUÉE) » et « SEC2-Q2 : L'AUTEUR D'UN AFFAIBLISSEMENT DONNE SON CODE » ; l'essai :
 -- supabase/essais/deuxFacteurs.sql (réplique seulement) et le bloc DF de supabase/essais/rls.sql ; le module :
 -- src/lib/deuxFacteursExiges.ts ; le drapeau : `DEUX_FACTEURS_EXIGES_EXPORTE` (src/lib/deuxFacteursExiges.ts) et, dans
 -- chaque Edge Function qui agit pour un compte, `DEUX_FACTEURS_EXIGES_EN_BASE` (bloc « DEUX FACTEURS »).
@@ -43,10 +44,16 @@
 -- tout jeton émis avant elle, `aal2` compris ; l'exigence RESTE, et le compte est mené à une nouvelle inscription avant
 -- tout écran, SEC-Q3). L'autorité : le super-administrateur sur tout
 -- compte ; le chef d'un cabinet sur les membres de son cabinet et les clients de ses dossiers, jamais sur un chef ni sur un
--- super-administrateur. Lever ou retirer (ce qui affaiblit) demande l'autorité sur le compte ENTIER : un compte rattaché
--- aussi à un autre cabinet ne s'affaiblit que par le super-administrateur (SEC2-Q1). L'e-mail qui prévient le compte n'est
--- pas ici (SEC2-Q3). `deux_facteurs_des_comptes` dit au cabinet, compte par compte, s'il a un facteur vérifié (jamais son
--- nom, son type ni sa clé), depuis quand l'exigence court, le dernier retrait, et les gestes que l'appelant y a.
+-- super-administrateur. Lever ou retirer (ce qui affaiblit) demande deux choses (SEC2-Q2, « oui aux deux », 07/11/2026) :
+-- l'autorité sur le compte ENTIER — un compte rattaché aussi à un autre cabinet ne s'affaiblit que par le
+-- super-administrateur — et un auteur qui a lui-même donné son code, un jeton `aal2`, super-administrateur compris (sans
+-- quoi un mot de passe de chef volé suffirait à lever l'exigence d'un autre compte). Ce second refus vient APRÈS celui de
+-- l'autorité (un compte sans autorité reçoit le refus d'hier, à aal1 comme à aal2) et avant toute lecture ou écriture, en
+-- 42501, sous les mots que l'écran redit avant le clic (`CODE_AVANT_D_AFFAIBLIR`, src/lib/deuxFacteursExiges.ts). Exiger
+-- renforce le compte : il ne le demande pas. L'e-mail qui prévient le compte n'est pas ici (SEC2-Q3).
+-- `deux_facteurs_des_comptes` dit au cabinet, compte par compte, s'il a un facteur vérifié (jamais son nom, son type ni sa
+-- clé), depuis quand l'exigence court, le dernier retrait, et les gestes que son autorité lui donne (le niveau de sa
+-- session, l'écran le lit de son jeton).
 --
 -- CE QU'ELLE NE CHANGE PAS : aucune policy existante, aucun prédicat, aucune donnée ; rien n'est exigé de personne tant que
 -- le cabinet ne pose pas l'exigence ni ne retire un facteur : `deux_facteurs_satisfaits()` est vrai pour tout compte sans
@@ -265,7 +272,7 @@ begin
 end;
 $$;
 comment on function public.deux_facteurs_des_comptes(uuid, uuid) is
-  'Les comptes de l''équipe d''un cabinet (p_cabinet_id, son chef seul) ou les accès d''un dossier (p_dossier_id, qui administre le dossier) : un facteur vérifié ou non (jamais son nom, son type ni sa clé), l''exigence en cours, le dernier retrait, et les gestes que l''appelant y a (C7, second temps).';
+  'Les comptes de l''équipe d''un cabinet (p_cabinet_id, son chef seul) ou les accès d''un dossier (p_dossier_id, qui administre le dossier) : un facteur vérifié ou non (jamais son nom, son type ni sa clé), l''exigence en cours, le dernier retrait, et les gestes que l''autorité de l''appelant lui donne (C7, second temps) ; lever et retirer demandent en plus son propre code, un jeton aal2 (SEC2-Q2), que l''écran lit de la session.';
 
 create function public.exiger_deux_facteurs(p_compte uuid)
 returns void
@@ -278,6 +285,9 @@ begin
     raise exception 'Accès refusé : la double authentification d''un compte s''exige par le chef de son cabinet, celle d''un chef par le super-administrateur.'
       using errcode = '42501';
   end if;
+  -- Exiger RENFORCE le compte : le code de l'auteur n'est pas demandé ici (SEC2-Q2 ne vise que lever et retirer). Un mot de
+  -- passe volé qui exigerait la double authentification d'un compte ne lui ouvre rien de plus : le titulaire a un facteur
+  -- vérifié (refusé sinon, plus bas) et donne son code.
   perform pg_advisory_xact_lock(hashtextextended('deux_facteurs:' || p_compte::text, 0));
   if exists (select 1 from public.exigences_deux_facteurs e where e.user_id = p_compte and e.levee_le is null) then
     raise exception 'La double authentification est déjà exigée pour ce compte.';
@@ -298,6 +308,13 @@ as $$
 begin
   if not public.deux_facteurs_autorite(p_compte, true) then
     raise exception 'Accès refusé : l''exigence d''un compte se lève par le chef de son cabinet (le super-administrateur pour un chef, ou pour un compte rattaché à un autre cabinet).'
+      using errcode = '42501';
+  end if;
+  -- SEC2-Q2 : l'auteur a lui-même donné son code (un jeton aal2), super-administrateur compris. Après l'autorité, avant
+  -- toute lecture ou écriture ; une revendication absente se lit refusée. Un jeton émis avant le retrait du second facteur
+  -- de l'auteur n'arrive pas jusqu'ici : la pré-requête le refuse (`deux_facteurs_satisfaits`).
+  if coalesce(auth.jwt() ->> 'aal', '') <> 'aal2' then
+    raise exception 'Accès refusé : pour lever l''exigence d''un compte ou retirer ses appareils, donnez d''abord votre propre code, depuis « Sécurité du compte ».'
       using errcode = '42501';
   end if;
   perform pg_advisory_xact_lock(hashtextextended('deux_facteurs:' || p_compte::text, 0));
@@ -324,6 +341,11 @@ begin
     raise exception 'Accès refusé : le second facteur d''un compte se retire par le chef de son cabinet (le super-administrateur pour un chef, ou pour un compte rattaché à un autre cabinet).'
       using errcode = '42501';
   end if;
+  -- SEC2-Q2 : le même refus que `lever_deux_facteurs`, au même endroit (après l'autorité, avant toute lecture ou écriture).
+  if coalesce(auth.jwt() ->> 'aal', '') <> 'aal2' then
+    raise exception 'Accès refusé : pour lever l''exigence d''un compte ou retirer ses appareils, donnez d''abord votre propre code, depuis « Sécurité du compte ».'
+      using errcode = '42501';
+  end if;
   if p_compte = auth.uid() then
     raise exception 'Votre propre appareil se retire depuis « Sécurité du compte ».';
   end if;
@@ -343,7 +365,7 @@ begin
 end;
 $$;
 comment on function public.retirer_second_facteur(uuid) is
-  'L''appareil perdu (SEC-Q4) : retire tous les facteurs du compte et ferme ses sessions, la trace gardée dans retraits_deux_facteurs. L''exigence reste : le compte inscrit un nouvel appareil avant tout écran (SEC-Q3).';
+  'L''appareil perdu (SEC-Q4) : retire tous les facteurs du compte et ferme ses sessions, la trace gardée dans retraits_deux_facteurs. L''exigence reste : le compte inscrit un nouvel appareil avant tout écran (SEC-Q3). Son auteur a l''autorité sur le compte entier et a lui-même donné son code, un jeton aal2 (SEC2-Q2), comme pour lever_deux_facteurs.';
 
 -- ── 4. LA PRÉ-REQUÊTE DE POSTGREST ──────────────────────────────────────────────────────────────────────────────────
 

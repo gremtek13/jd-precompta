@@ -27,8 +27,14 @@
 --   DF9. L'appareil perdu : après `retirer_second_facteur`, un jeton émis avant le retrait (son `iat`) ne lit plus rien,
 --        `aal2` compris, exigé ou non, ni dans la seconde du retrait, ni sans `iat` numérique (sans lever) ; un jeton émis
 --        après (la reconnexion) lit ses accès, et un compte sans retrait lit comme hier.
--- Onze mutations, qui doivent mordre (M-DF1 à M-DF11), chacune annulée avec sa sous-transaction : M-DF8 à M-DF11 ôtent la
--- clause du retrait, la réservent au compte exigé, la laissent passer sans `iat`, ou la font refuser pour toujours.
+--   DF10. SEC2-Q2 : l'auteur d'un affaiblissement a donné son code. À aal1, un chef ne lève ni ne retire sur un compte de
+--        son cabinet, le super-administrateur non plus, sous les mots que l'écran redit, et rien n'a changé (l'exigence, le
+--        facteur, aucune trace) ; à aal2, ils le font. Exiger renforce : à aal1 aussi. Un compte sans autorité reçoit le
+--        refus d'hier, au caractère près, à aal1 comme à aal2 : l'autorité se juge d'abord.
+-- Quinze mutations, qui doivent mordre (M-DF1 à M-DF15), chacune annulée avec sa sous-transaction : M-DF8 à M-DF11 ôtent la
+-- clause du retrait, la réservent au compte exigé, la laissent passer sans `iat`, ou la font refuser pour toujours ;
+-- M-DF12 et M-DF13 ôtent le refus de l'auteur sans code de lever, puis de retirer (le corps relu au catalogue, la condition
+-- rendue fausse) ; M-DF14 et M-DF15 le jugent AVANT l'autorité, dans l'une puis l'autre.
 \set ON_ERROR_STOP 1
 set client_min_messages = warning;
 create temp table df_verdict (controle text, cible text, observe text, ok boolean);
@@ -83,7 +89,12 @@ declare
   d_client constant uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
   d_quatre constant uuid := 'd0551e20-0000-4000-8000-000000000004';
   obs text; obs2 text; n bigint; j jsonb; mutation text; t0 bigint; b boolean; b2 boolean; b3 boolean;
+  o1 text; o2 text; o3 text; o4 text;
   v jsonb := '[]'::jsonb;
+  -- DF10 : les refus, au caractère près (sqlstate, puis le message) — celui de SEC2-Q2, que l'écran redit, et ceux d'hier.
+  code_d_abord constant text := '42501 Accès refusé : pour lever l''exigence d''un compte ou retirer ses appareils, donnez d''abord votre propre code, depuis « Sécurité du compte ».';
+  autorite_lever constant text := '42501 Accès refusé : l''exigence d''un compte se lève par le chef de son cabinet (le super-administrateur pour un chef, ou pour un compte rattaché à un autre cabinet).';
+  autorite_retirer constant text := '42501 Accès refusé : le second facteur d''un compte se retire par le chef de son cabinet (le super-administrateur pour un chef, ou pour un compte rattaché à un autre cabinet).';
 begin
   -- Le décor, défait à la fin : K et son rattachement, un facteur vérifié pour S, M et C, deux sessions pour C.
   insert into auth.users (id, email) values (k, 'second-chef@essai.invalid');
@@ -221,7 +232,8 @@ begin
       and exists (select 1 from public.retraits_deux_facteurs r where r.user_id = c and r.facteurs = 1 and r.sessions = 2 and r.retire_par = s)
       and exists (select 1 from public.exigences_deux_facteurs e where e.user_id = c and e.levee_le is null)));
   perform pg_temp.comme(s, 'aal2'); obs := pg_temp.raison(format('select public.retirer_second_facteur(%L)', s)); reset role;
-  v := v || jsonb_build_array(jsonb_build_array('DF6. son propre appareil ne se retire pas d''ici', 'S sur S', obs, obs like '%Sécurité du compte%'));
+  -- Le refus de SEC2-Q2 nomme aussi « Sécurité du compte » : le contrôle lit la phrase de l'appareil propre.
+  v := v || jsonb_build_array(jsonb_build_array('DF6. son propre appareil ne se retire pas d''ici', 'S sur S', obs, obs like '%Votre propre appareil se retire depuis « Sécurité du compte »%'));
 
   -- ── DF7 : la lecture du cabinet ─────────────────────────────────────────────────────────────────────────────────
   perform pg_temp.comme(s, 'aal2');
@@ -268,6 +280,73 @@ begin
   v := v || jsonb_build_array(jsonb_build_array('DF9. un jeton sans iat numérique : refusé au compte qui a un retrait, comme hier sans retrait',
     'C sans iat ; C iat « hier » ; S sans iat', b::text || ' ; ' || b2::text || ' ; ' || b3::text, not b and not b2 and b3));
 
+  -- ── DF10 : SEC2-Q2, l'auteur d'un affaiblissement a donné son code ─────────────────────────────────────────────────
+  -- L'état laissé par DF6 et DF9 : M a son facteur, plus d'exigence ; C n'a plus de facteur, reste exigé (l'exigence que K
+  -- a posée) et est rattaché à un second cabinet ; K, chef sans facteur. Exiger renforce : K le pose sur M à aal1.
+  perform pg_temp.comme(k, 'aal1'); obs := pg_temp.raison(format('select public.exiger_deux_facteurs(%L)', m)); reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF10. exiger renforce : à aal1 aussi, le code de l''auteur n''est pas demandé', 'K sur M', obs,
+    obs = 'accepté' and exists (select 1 from public.exigences_deux_facteurs e where e.user_id = m and e.posee_par = k and e.levee_le is null)));
+  perform pg_temp.comme(k, 'aal1');
+  o1 := pg_temp.raison(format('select public.lever_deux_facteurs(%L)', m));
+  o2 := pg_temp.raison(format('select public.retirer_second_facteur(%L)', m));
+  reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF10. un chef qui n''a pas donné son code (aal1) ne lève ni ne retire, et rien ne change', 'K sur M',
+    o1 || ' | ' || o2 || ' | exigence ' || (select count(*) from public.exigences_deux_facteurs e where e.user_id = m and e.levee_le is null)
+      || ', facteurs ' || (select count(*) from auth.mfa_factors f where f.user_id = m)
+      || ', traces de K ' || (select count(*) from public.retraits_deux_facteurs r where r.retire_par = k),
+    o1 = code_d_abord and o2 = code_d_abord
+      and (select count(*) from public.exigences_deux_facteurs e where e.user_id = m and e.levee_le is null) = 1
+      and (select count(*) from auth.mfa_factors f where f.user_id = m) = 1
+      and not exists (select 1 from public.retraits_deux_facteurs r where r.retire_par = k)));
+  perform pg_temp.comme(k, 'aal2');
+  o1 := pg_temp.raison(format('select public.lever_deux_facteurs(%L)', m));
+  o2 := pg_temp.raison(format('select public.retirer_second_facteur(%L)', m));
+  reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF10. contrôle positif : le chef qui a donné son code (aal2) lève et retire', 'K sur M',
+    o1 || ' | ' || o2,
+    o1 = 'accepté' and o2 = 'accepté'
+      and exists (select 1 from public.exigences_deux_facteurs e where e.user_id = m and e.posee_par = k and e.levee_par = k)
+      and not exists (select 1 from auth.mfa_factors f where f.user_id = m)
+      and exists (select 1 from public.retraits_deux_facteurs r where r.user_id = m and r.retire_par = k and r.facteurs = 1)));
+  -- Le super-administrateur sur C, qu'il est seul à pouvoir affaiblir (rattaché à deux cabinets) : C, exigé, reçoit un
+  -- nouveau facteur.
+  insert into auth.mfa_factors (user_id, friendly_name, status) values (c, 'téléphone C, le second', 'verified');
+  perform pg_temp.comme(s, 'aal1');
+  o1 := pg_temp.raison(format('select public.lever_deux_facteurs(%L)', c));
+  o2 := pg_temp.raison(format('select public.retirer_second_facteur(%L)', c));
+  reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF10. le super-administrateur aussi : à aal1, ni lever ni retirer, et rien ne change', 'S sur C',
+    o1 || ' | ' || o2 || ' | exigence ' || (select count(*) from public.exigences_deux_facteurs e where e.user_id = c and e.levee_le is null)
+      || ', facteurs ' || (select count(*) from auth.mfa_factors f where f.user_id = c),
+    o1 = code_d_abord and o2 = code_d_abord
+      and (select count(*) from public.exigences_deux_facteurs e where e.user_id = c and e.levee_le is null) = 1
+      and (select count(*) from auth.mfa_factors f where f.user_id = c) = 1));
+  perform pg_temp.comme(s, 'aal2');
+  o1 := pg_temp.raison(format('select public.lever_deux_facteurs(%L)', c));
+  o2 := pg_temp.raison(format('select public.retirer_second_facteur(%L)', c));
+  reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF10. contrôle positif : le super-administrateur à aal2 lève et retire', 'S sur C',
+    o1 || ' | ' || o2,
+    o1 = 'accepté' and o2 = 'accepté'
+      and not exists (select 1 from public.exigences_deux_facteurs e where e.user_id = c and e.levee_le is null)
+      and not exists (select 1 from auth.mfa_factors f where f.user_id = c)));
+  -- Sans autorité : le refus d'hier, au caractère près, que le jeton dise aal1 ou aal2 (l'autorité se juge d'abord).
+  perform pg_temp.comme(k, 'aal2');
+  o1 := pg_temp.raison(format('select public.lever_deux_facteurs(%L)', c));
+  o2 := pg_temp.raison(format('select public.retirer_second_facteur(%L)', c));
+  reset role;
+  perform pg_temp.comme(k, 'aal1');
+  o3 := pg_temp.raison(format('select public.lever_deux_facteurs(%L)', c));
+  o4 := pg_temp.raison(format('select public.retirer_second_facteur(%L)', c));
+  reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF10. sans autorité, le refus d''hier, à aal2 comme à aal1 (l''autorité d''abord)', 'K sur C',
+    o1 || ' | ' || o2 || ' | ' || o3 || ' | ' || o4,
+    o1 = autorite_lever and o2 = autorite_retirer and o3 = autorite_lever and o4 = autorite_retirer));
+  perform pg_temp.comme(m, 'aal1'); o1 := pg_temp.raison(format('select public.lever_deux_facteurs(%L)', s)); reset role;
+  perform pg_temp.comme(c, 'aal1'); o2 := pg_temp.raison(format('select public.retirer_second_facteur(%L)', m)); reset role;
+  v := v || jsonb_build_array(jsonb_build_array('DF10. sans autorité, le refus d''hier, à aal2 comme à aal1 (l''autorité d''abord)', 'M sur S ; C sur M, aal1',
+    o1 || ' | ' || o2, o1 = autorite_lever and o2 = autorite_retirer));
+
   raise exception 'ANNULATION_ESSAI';
 exception when others then
   reset role;
@@ -286,10 +365,17 @@ declare
   s constant uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   m constant uuid := '3e3b0000-0000-4000-8000-000000000001';
   c constant uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
-  obs text; n bigint; mut text; att text; mord boolean;
+  obs text; n bigint; mut text; att text; mord boolean; def text; mute text;
   t0 constant bigint := floor(extract(epoch from now()))::bigint;
+  -- M-DF12 à M-DF15 : la condition de SEC2-Q2, telle que le corps l'écrit, et le refus qu'elle lève.
+  condition constant text := $r$if coalesce(auth.jwt() ->> 'aal', '') <> 'aal2' then$r$;
+  autorite constant text := 'if not public.deux_facteurs_autorite(p_compte, true) then';
+  avant_l_autorite constant text := $r$if coalesce(auth.jwt() ->> 'aal', '') <> 'aal2' then raise exception 'Accès refusé : pour lever l''exigence d''un compte ou retirer ses appareils, donnez d''abord votre propre code, depuis « Sécurité du compte ».' using errcode = '42501'; end if;
+  if not public.deux_facteurs_autorite(p_compte, true) then$r$;
+  code_d_abord constant text := '42501 Accès refusé : pour lever l''exigence d''un compte ou retirer ses appareils, donnez d''abord votre propre code, depuis « Sécurité du compte ».';
 begin
-  for mut in select unnest(array['M-DF1', 'M-DF2', 'M-DF3', 'M-DF4', 'M-DF5', 'M-DF6', 'M-DF7', 'M-DF8', 'M-DF9', 'M-DF10', 'M-DF11']) loop
+  for mut in select unnest(array['M-DF1', 'M-DF2', 'M-DF3', 'M-DF4', 'M-DF5', 'M-DF6', 'M-DF7', 'M-DF8', 'M-DF9', 'M-DF10', 'M-DF11',
+                                 'M-DF12', 'M-DF13', 'M-DF14', 'M-DF15']) loop
     obs := null; mord := false;
     begin
       insert into auth.mfa_factors (user_id, friendly_name, status) values (s, 'S', 'verified'), (m, 'M', 'verified');
@@ -385,6 +471,47 @@ begin
         insert into public.retraits_deux_facteurs (user_id, facteurs, sessions, retire_par) values (c, 1, 1, s);
         perform pg_temp.comme(c, 'aal2', 'dossiers', t0 + 60); obs := coalesce(nullif(pg_temp.lu_partout(), ''), 'rien lu'); reset role;
         mord := obs = 'rien lu';
+      elsif mut in ('M-DF12', 'M-DF13') then
+        -- Le corps relu au catalogue, la condition de SEC2-Q2 rendue fausse : à aal1, le super-administrateur affaiblit.
+        def := pg_get_functiondef(case mut when 'M-DF12' then 'public.lever_deux_facteurs(uuid)'
+                                           else 'public.retirer_second_facteur(uuid)' end::regprocedure);
+        mute := replace(def, condition, 'if false then');
+        if mut = 'M-DF12' then
+          att := 'DF10 en faute (le super-administrateur à aal1 lève l''exigence de C : le refus ôté de lever_deux_facteurs)';
+        else
+          att := 'DF10 en faute (le super-administrateur à aal1 retire le facteur de M : le refus ôté de retirer_second_facteur)';
+        end if;
+        if mute = def then
+          obs := 'la mutation n''a rien changé (la condition n''est pas dans le corps)';
+        else
+          execute mute;
+          perform pg_temp.comme(s, 'aal1');
+          obs := pg_temp.raison(case mut when 'M-DF12' then format('select public.lever_deux_facteurs(%L)', c)
+                                         else format('select public.retirer_second_facteur(%L)', m) end);
+          reset role;
+          mord := obs = 'accepté';
+        end if;
+      elsif mut in ('M-DF14', 'M-DF15') then
+        -- Le refus de l'auteur sans code jugé AVANT l'autorité : un compte sans autorité ne reçoit plus le refus d'hier.
+        def := pg_get_functiondef(case mut when 'M-DF14' then 'public.lever_deux_facteurs(uuid)'
+                                           else 'public.retirer_second_facteur(uuid)' end::regprocedure);
+        mute := replace(def, autorite, avant_l_autorite);
+        if mut = 'M-DF14' then
+          att := 'DF10 en faute (le membre M, sans autorité, à aal1, reçoit le refus du code et non celui de l''autorité : lever)';
+        else
+          att := 'DF10 en faute (le client C, sans autorité, à aal1, reçoit le refus du code et non celui de l''autorité : retirer)';
+        end if;
+        if mute = def then
+          obs := 'la mutation n''a rien changé (l''autorité n''est pas dans le corps)';
+        else
+          execute mute;
+          if mut = 'M-DF14' then
+            perform pg_temp.comme(m, 'aal1'); obs := pg_temp.raison(format('select public.lever_deux_facteurs(%L)', c)); reset role;
+          else
+            perform pg_temp.comme(c, 'aal1'); obs := pg_temp.raison(format('select public.retirer_second_facteur(%L)', m)); reset role;
+          end if;
+          mord := obs = code_d_abord;
+        end if;
       end if;
       raise exception 'ANNULATION_ESSAI';
     exception when others then

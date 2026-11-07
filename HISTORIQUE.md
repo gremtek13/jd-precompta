@@ -49498,7 +49498,7 @@ en base (`deux_facteurs_exiges`) reste préparée et s'appliquera après le MVP,
 du cabinet s'inscrivent d'ici là dans « Sécurité du compte ». SEC2-Q2 : un compte rattaché à deux cabinets ne
 s'affaiblit (exigence levée, appareils retirés) que par le super-administrateur — la migration préparée le tient
 (`deux_facteurs_autorite`, l'autorité ENTIÈRE) —, et celui qui le fait doit lui-même avoir donné son code (un jeton
-`aal2`) — ce qu'elle ne tient pas encore : `lever_deux_facteurs` et `retirer_second_facteur` l'exigeront. SEC2-Q3 : un e-mail au texte fixe, sans lien, prévient le
+`aal2`) — ce que la migration tient depuis (l'entrée suivante). SEC2-Q3 : un e-mail au texte fixe, sans lien, prévient le
 titulaire à la levée de son exigence et au retrait de ses appareils, jamais à la pose ; une petite fonction à écrire
 avec le second temps, après le MVP. MVP-BANQUES-Q1 : le nombre de comptes bancaires professionnels du premier praticien
 se vérifie avec lui avant le 20 novembre ; rien ne s'écrit d'ici là.
@@ -49535,3 +49535,15 @@ contraintes) ; le formulaire « Échéance » sort des écritures admises du gar
 refusent). Contrôles égaux : dérive 185 `8df832d8…`, socle 81 `c6cf69c1…`, inventaire 2 537 `30d0989f…` (avec
 saisies_2035 : 186 `28a3a11e…`, 2 558 `1c59d374…`, la production) ; les deux tables : RLS, une policy `to
 authenticated`, quatre droits à `anon` et `authenticated`.
+
+### 07/11/2026 — SEC2-Q2 : L'AUTEUR D'UN AFFAIBLISSEMENT DONNE SON CODE (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, rien en production. `lever_deux_facteurs` et `retirer_second_facteur` refusent en 42501 un auteur sans
+jeton `aal2` (revendication absente comprise), super-administrateur compris, APRÈS l'autorité (un compte sans autorité
+garde le refus d'hier, au caractère près) et avant toute lecture ; exiger renforce et ne le demande pas ; `peut_lever` et
+`peut_retirer` restent l'autorité seule. L'écran redit le refus avant le clic depuis le jeton de la session
+(`niveauDuJeton`, aucune lecture neuve) : `CODE_AVANT_D_AFFAIBLIR`, deux boutons retenus ; un test confronte les mots et
+la place de la condition au texte. Copie de la mère 17 au niveau de la production (184 migrations, dérive identique) :
+`deuxFacteurs.sql` 34 lignes/0, 15 mutations sur 15 (M-DF12 à M-DF15 : la condition ôtée, ou jugée avant l'autorité),
+l'essai neuf rouge contre la migration d'hier (DF10) ; `rls.sql` 117/0/86 avant, 121/0/93 après, le retour inchangé
+(`23b36ca8…`, sa garde ne lit aucun corps) à l'identique. Migration `e41a0b3a…` (hier `40f59441…`), essai `6e77322e…`.
