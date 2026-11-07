@@ -49502,3 +49502,15 @@ s'affaiblit (exigence levée, appareils retirés) que par le super-administrateu
 titulaire à la levée de son exigence et au retrait de ses appareils, jamais à la pose ; une petite fonction à écrire
 avec le second temps, après le MVP. MVP-BANQUES-Q1 : le nombre de comptes bancaires professionnels du premier praticien
 se vérifie avec lui avant le 20 novembre ; rien ne s'écrit d'ici là.
+
+### 07/11/2026 — JJ1Q1-Q1 : LA PISTE D'AUDIT NE NOMME PLUS UN PATIENT
+
+Réponse du cabinet du 07/11/2026 : « Oui, comme recommandé ». Dans `lib/pisteAudit.ts`, sans règle neuve : « Libellé
+bancaire » passe par `libelleDeLEcritureDuReleve` (JJ1-Q1), sur les comptes des écritures qui citent le mouvement, de
+leurs pièces et des encaissements qui le citent — un crédit, ou un débit en classe 7 ou 41, sous sa date ; « Tiers »
+d'une facture ou d'un encaissement par `nomDuClientEcrit` (le prédicat d'IdClient, FEC22-Q7 ; `tiers_siret` entre dans
+`FactureDesExports` et la lecture des lettrages) ; « Fichier justificatif », et le libellé d'un achat sans tiers qui
+retombait sur lui, par `designationDUnePiece` : la date de dépôt à Paris et les huit premiers caractères de
+`storage_hash`, « Pièce sans nom » sans lui ; la lecture des exemplaires ne lit plus leur nom. Rien en base, au FEC (ses
+tests inchangés) ni à l'écran. Trois tests neufs ; une mutation par règle, toutes mordent (3, 2 et 2 tests). Reste : le
+« Libellé écriture » d'une ligne déjà au brouillon garde son texte (comme FEC22Q7-Q1). L'assistant n'a pas de copie.

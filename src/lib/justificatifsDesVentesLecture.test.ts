@@ -56,7 +56,8 @@ vi.mock('./supabase', async () => {
 })
 
 const exemplaire = (o: Record<string, unknown> = {}) => ({
-  id: 'p1', dossier_id: 'd1', facture_id: 'f1', nom_fichier: 'F2025-0001.pdf', storage_hash: 'a'.repeat(64), statut: 'a_valider', ...o,
+  id: 'p1', dossier_id: 'd1', facture_id: 'f1', nom_fichier: 'F2025-0001.pdf', storage_hash: 'a'.repeat(64), statut: 'a_valider',
+  created_at: '2025-11-05T10:00:00Z', ...o,
 })
 const transmission = (o: Record<string, unknown> = {}) => ({
   id: 't1', dossier_id: 'd1', facture_id: 'f1', etat: 'accepte', sha256: 'b'.repeat(64), hote: 'api.superpdp.tech',
@@ -86,14 +87,15 @@ describe('lireLesJustificatifsDesVentes', () => {
   it('lit les exemplaires désignés, quel que soit leur statut, et les transmissions du dossier, réduits à leurs colonnes', async () => {
     expect(await lireLesJustificatifsDesVentes('d1')).toEqual({
       etat: 'lue',
-      exemplaires: [{ id: 'p1', dossier_id: 'd1', facture_id: 'f1', nom_fichier: 'F2025-0001.pdf', storage_hash: 'a'.repeat(64) }],
+      // Jamais le nom du fichier (JJ1Q1-Q1) : la piste désigne l'exemplaire par son dépôt et son empreinte.
+      exemplaires: [{ id: 'p1', dossier_id: 'd1', facture_id: 'f1', storage_hash: 'a'.repeat(64), created_at: '2025-11-05T10:00:00Z' }],
       transmissions: [
         { id: 't1', dossier_id: 'd1', facture_id: 'f1', etat: 'accepte', sha256: 'b'.repeat(64), hote: 'api.superpdp.tech' },
         { id: 't2', dossier_id: 'd1', facture_id: 'f1', etat: 'echec', sha256: 'b'.repeat(64), hote: 'api.superpdp.tech' },
       ],
     })
     expect(faux.demandes).toEqual([
-      'pieces: id, dossier_id, facture_id, nom_fichier, storage_hash',
+      'pieces: id, dossier_id, facture_id, storage_hash, created_at',
       'transmissions_factures: id, dossier_id, facture_id, etat, sha256, hote',
     ])
   })

@@ -11,7 +11,7 @@ import { lignesPourPiece } from './ecritures'
 import { formatMoney } from './format'
 import { comptesDeTiers, lettrages, lettragesDesFactures, phraseDuLettrage } from './lettrage'
 import {
-  genererPisteAuditCsv, MANQUE_ECRITURE_PERIMEE, pisteAudit, type JustificatifsDesVentes, type RegistreAudit,
+  designationDUnePiece, genererPisteAuditCsv, MANQUE_ECRITURE_PERIMEE, pisteAudit, type JustificatifsDesVentes, type RegistreAudit,
 } from './pisteAudit'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
 import type { EcritureBrouillon, ModeComptable, Piece } from './types'
@@ -350,10 +350,12 @@ describe('la piste d’audit d’un dossier qui a basculé', () => {
     expect(lignes).toHaveLength(brouillon.length)
     for (const l of lignes) expect(l.manque, `${l.ecritureId} ${l.compte}`).toEqual([])
     const premiere = (p: (b: EcritureBrouillon) => boolean) => lignes.find((l) => l.ecritureId === brouillon.find(p)!.id)!
-    // La facture et son exemplaire désigné : le nom de l'original et son empreinte.
+    // La facture et son exemplaire désigné : son dépôt et son empreinte, jamais son nom ; le client, un particulier, se tait
+    // (JJ1Q1-Q1).
     expect(premiere((b) => b.facture_id === 'f1')).toMatchObject({
-      pieceTiers: 'Client fictif', pieceDate: '2025-11-10', pieceMontantTtc: 120,
-      pieceFichier: 'Facture F2025-0001 — exemplaire : F2025-0001.pdf', pieceEmpreinte: 'a'.repeat(64), mouvementDate: null,
+      pieceTiers: null, pieceDate: '2025-11-10', pieceMontantTtc: 120,
+      pieceFichier: `Facture F2025-0001 — exemplaire : ${designationDUnePiece(EXEMPLAIRE)}`, pieceEmpreinte: 'a'.repeat(64),
+      mouvementDate: null,
     })
     // Sans exemplaire, le CII déposé : l'empreinte de la transmission déposée, jamais celle d'un échec.
     expect(premiere((b) => b.facture_id === 'f2')).toMatchObject({
@@ -364,18 +366,39 @@ describe('la piste d’audit d’un dossier qui a basculé', () => {
     expect(premiere((b) => b.facture_id === 'a1')).toMatchObject({ pieceFichier: 'Avoir A2025-0001', pieceMontantTtc: -60 })
     // L'encaissement : son registre, et son mouvement — même sur une ligne qui ne le porte pas (le 411).
     expect(premiere((b) => b.encaissement_id === 'e1' && b.compte === '411000')).toMatchObject({
-      pieceTiers: 'Client fictif', pieceDate: '2025-11-20', pieceMontantTtc: 120, pieceEmpreinte: null,
+      pieceTiers: null, pieceDate: '2025-11-20', pieceMontantTtc: 120, pieceEmpreinte: null,
       pieceFichier: 'Registre des encaissements : encaissement du 20/11/2025 (virement) — Facture F2025-0001',
       mouvementDate: '2025-11-20', mouvementMontant: 120,
     })
     expect(premiere((b) => b.encaissement_id === 'e2' && b.compte === '511000')).toMatchObject({
       pieceFichier: 'Registre des encaissements : encaissement du 21/11/2025 (chèque) — Facture F2025-0002',
-      mouvementDate: '2025-11-22', mouvementLibelle: 'REMISE CHEQUE FICTIVE',
+      // Un crédit, sous sa date, jamais le texte de la banque (JJ1Q1-Q1).
+      mouvementDate: '2025-11-22', mouvementLibelle: 'Crédit du relevé du 22/11/2025',
     })
     // Le mouvement que ses encaissements classent : le relevé qui le porte.
     expect(premiere((b) => b.ligne_bancaire_id === 'm2' && b.encaissement_id == null)).toMatchObject({
       pieceFichier: 'Relevé bancaire : releve-fictif.csv', pieceDate: '2025-11-22', mouvementMontant: 100,
     })
+  })
+
+  // JJ1Q1-Q1 : le client d'une facture n'apparaît que s'il est une entreprise, au prédicat d'IdClient (`nomDuClientEcrit`).
+  it('nomme le client d’une facture et de ses encaissements seulement quand c’est une entreprise (JJ1Q1-Q1)', () => {
+    const { brouillon, exports } = jeu('engagement')
+    const tiers = (lignes: ReturnType<typeof pisteAudit>) => {
+      const de = (p: (b: EcritureBrouillon) => boolean) => lignes.find((l) => l.ecritureId === brouillon.find(p)!.id)!.pieceTiers
+      return [
+        de((b) => b.facture_id === 'f1'), de((b) => b.encaissement_id === 'e1' && b.compte === '411000'),
+        de((b) => b.facture_id === 'f2'), de((b) => b.encaissement_id === 'e2' && b.compte === '511000'),
+      ]
+    }
+    // F2025-0001, à un particulier, se tait ; F2025-0002, à une entreprise (son SIRET figé), se nomme.
+    const lignes = pisteAudit(brouillon, [], releve, [], registre(justificatifs(exports)))
+    expect(tiers(lignes)).toEqual([null, null, 'Clinique du Parc', 'Clinique du Parc'])
+    expect(genererPisteAuditCsv(lignes)).not.toContain('Client fictif')
+    // Le même client, une entreprise : son nom revient.
+    const entreprise = { ...exports, factures: exports.factures.map((f) => (f.id === 'f1' ? { ...f, tiers_siret: '12345678200010' } : f)) }
+    expect(tiers(pisteAudit(brouillon, [], releve, [], registre(justificatifs(entreprise)))))
+      .toEqual(['Client fictif', 'Client fictif', 'Clinique du Parc', 'Clinique du Parc'])
   })
 
   it('une ligne qui n’est plus celle de sa source le dit, son justificatif restant nommé', () => {

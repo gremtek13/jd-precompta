@@ -5,15 +5,15 @@ import type { JustificatifsDesVentes } from './pisteAudit'
 
 // LES PREUVES DES FACTURES QUE LA PISTE D'AUDIT CITE (ligne 28.6, chantier EC-Q3, étape VF4c2 ; lib/pisteAudit.ts,
 // `JustificatifsDesVentes`) : les pièces désignées EXEMPLAIRES d'une facture ou d'un avoir (`pieces.facture_id`, quel que
-// soit leur statut — l'original revenu de la plateforme, ou le PDF), leur nom et leur empreinte ; et les TRANSMISSIONS des
-// factures (`transmissions_factures`), l'empreinte du CII déposé et la plateforme qui l'a reçu. Lues sur le clic de
-// l'export, comme le relevé : rien d'autre dans l'onglet n'en a besoin.
+// soit leur statut — l'original revenu de la plateforme, ou le PDF), leur date de dépôt et leur empreinte, jamais leur nom
+// (JJ1Q1-Q1) ; et les TRANSMISSIONS des factures (`transmissions_factures`), l'empreinte du CII déposé et la plateforme qui
+// l'a reçu. Lues sur le clic de l'export, comme le relevé : rien d'autre dans l'onglet n'en a besoin.
 //
 // Chacune EN ENTIER par `lireTout`. LE TOUT OU RIEN : une lecture partielle, refusée ou rompue, et l'export se refuse — une
 // piste qui tairait l'empreinte d'un exemplaire qu'elle n'a pas lu la laisserait croire absente. GARDÉE AVEC LE DOSSIER :
 // chaque ligne rendue est confrontée au dossier demandé. Ce module ne rejette jamais.
 
-export const COLONNES_EXEMPLAIRES = 'id, dossier_id, facture_id, nom_fichier, storage_hash'
+export const COLONNES_EXEMPLAIRES = 'id, dossier_id, facture_id, storage_hash, created_at'
 export const COLONNES_TRANSMISSIONS = 'id, dossier_id, facture_id, etat, sha256, hote'
 
 type Exemplaire = JustificatifsDesVentes['exemplaires'][number] & { dossier_id: string }

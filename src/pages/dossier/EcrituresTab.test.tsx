@@ -1499,7 +1499,9 @@ describe('EcrituresTab — la date du paiement', () => {
     await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
     const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
     expect(csv).not.toMatch(/hors du jeu chargé/)
-    expect(csv).toMatch(/facture\.pdf/)
+    // La pièce se désigne par son dépôt, jamais par le nom de son fichier (JJ1Q1-Q1).
+    expect(csv).toMatch(/Pièce (sans nom, )?déposée le \d{2}\/\d{2}\/\d{4}/)
+    expect(csv).not.toMatch(/facture\.pdf/)
   })
 })
 
@@ -3031,7 +3033,8 @@ describe('EcrituresTab — les dotations aux amortissements', () => {
     await screen.findByText(/2 écritures proposées/)
     await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
     const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
-    expect(csv).toMatch(/Tableau d'amortissement : Ordinateur — facture facture-ordinateur\.pdf;f{64}/)
+    expect(csv).toMatch(/Tableau d'amortissement : Ordinateur — facture : Pièce déposée le \d{2}\/\d{2}\/\d{4}, empreinte f{8};f{64}/)
+    expect(csv).not.toMatch(/facture-ordinateur\.pdf/)
     expect(csv).not.toMatch(/hors du jeu chargé/)
   })
 })

@@ -678,7 +678,10 @@ describe('le FEC, la piste d’audit et le lettrage d’un dossier qui a bascul�
   it('la piste d’audit justifie chaque ligne par sa facture, son registre et son mouvement, et lit les preuves sur le clic', async () => {
     poser({
       ecritures_brouillon: ECRITES,
-      pieces: [{ id: 'p-ex', dossier_id: D, facture_id: 'f1', nom_fichier: 'F2025-0001.pdf', storage_hash: 'a'.repeat(64), statut: 'a_valider' }],
+      pieces: [{
+        id: 'p-ex', dossier_id: D, facture_id: 'f1', nom_fichier: 'F2025-0001.pdf', storage_hash: 'a'.repeat(64), statut: 'a_valider',
+        created_at: '2025-11-05T10:00:00Z',
+      }],
     })
     monter({ modele: ENGAGEMENT, annee: 2025 })
     await waitFor(() => expect(within(ligneDe(/^La facture F2025-0001/)).getByText('à jour')).toBeTruthy())
@@ -688,7 +691,10 @@ describe('le FEC, la piste d’audit et le lettrage d’un dossier qui a bascul�
     expect(faux.tables).toEqual(expect.arrayContaining(['pieces', 'transmissions_factures']))
     const corps = telecharge.fichiers[0].contenu.split('\r\n').slice(1)
     expect(corps).toHaveLength(ECRITES.length)
-    expect(corps.filter((r) => r.includes('Facture F2025-0001 — exemplaire : F2025-0001.pdf;' + 'a'.repeat(64)))).toHaveLength(3)
+    // L'exemplaire par son dépôt et son empreinte courte, jamais son nom (JJ1Q1-Q1).
+    expect(corps.filter((r) => r.includes('Facture F2025-0001 — exemplaire : Pièce déposée le 05/11/2025, empreinte aaaaaaaa;' + 'a'.repeat(64))))
+      .toHaveLength(3)
+    expect(corps.filter((r) => r.includes('F2025-0001.pdf'))).toEqual([])
     expect(corps.filter((r) => r.includes('Registre des encaissements : encaissement du 20/11/2025 (virement)'))).toHaveLength(4)
     // Rien ne manque : la dernière colonne est vide sur chaque ligne.
     for (const r of corps) expect(r.endsWith(';'), r).toBe(true)
