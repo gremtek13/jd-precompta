@@ -113,7 +113,8 @@ et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉE
     secrète en `apikey`).
   - `receive-email` (webhook Resend, par dossier) ; `send-email` (facture : le cabinet et le client « Ventes », trente
     e-mails par dossier et par jour de Paris pour un client ; relance de pièces : le cabinet seul ; relance d'une
-    facture en retard : le cabinet et le client « Ventes » (MEG3-Q3), dans le même plafond).
+    facture en retard : le cabinet et le client « Ventes » (MEG3-Q3), dans le même plafond, au redéploiement de
+    `send-email` qui porte `RELANCES_EN_BASE` levé).
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; le client « Ventes » relie et transmet, la
     réception reste au cabinet.
   - `proposer-categorie` (sur un clic, rien d'écrit) ; `evaluer-extraction` (harnais de MESURE, facturé dans une fenêtre
@@ -468,7 +469,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (2033 ou 2050), les exercices décalés.
 - **FEC** (lignes 26.5 et 26.6, étape (e) ; MVP-D5) : les vingt-deux champs d'un BNC en trésorerie et les montants en
   devise, CONÇUS le 31/10/2026 — quatre valeurs lues, jamais devinées, jamais un nom de patient ; six lots, FEC22a à
-  FEC22f, dont une migration (FEC22b) à appliquer avant toute validation d'un exercice en trésorerie ; six questions au
+  FEC22f, dont une migration (FEC22b), préalable à toute validation d'un exercice en trésorerie ; six questions au
   cabinet, tranchées le 31/10/2026 — Q1 selon le logiciel de l'expert-comptable (FEC22-E2), ModeRglt « Banque » pour le
   relevé, NatOp la nature et le poste de la 2035 (« Dépense — Achats »), IdClient le SIREN d'une entreprise, sinon le
   numéro de la facture, Q5 et Q6 à la recommandation —, et quatorze pour l'expert-comptable (FEC22-E1 à E14), à son
@@ -657,8 +658,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     MIGRATION DE C6 ET A7B-Q1 À Q3 » ; la liste des clients sans activité depuis trois ans et le devis qui cite son
     contact, en production depuis le 07/11/2026 (`DEVIS_CITENT_UN_CONTACT` levé ; DEVC-Q1) ; la suite du premier
     groupe, dont A8, les factures reprises, et A9, la numérotation (MEG1-Q5 : deux séries par dossier, celle du client
-    et celle du mandataire, choisie
-    selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit), reconçues le 06/11/2026,
+    et celle du mandataire, choisie selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est
+    écrit), reconçues le 06/11/2026,
     A8-Q1 à Q6 tranchées, A8a (la base) préparée le 07/11/2026, à coller → « A8 ET A9, LES FACTURES REPRISES ET LA
     NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
