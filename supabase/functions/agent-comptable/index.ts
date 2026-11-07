@@ -1125,7 +1125,7 @@ function ligneContrepartieBanque(paiement: Pick<PaiementParLeReleve, "id" | "dat
 // La contrepartie CAISSE d'un paiement de la pièce par la caisse, en trésorerie (étape C13 ; src/lib/ecritures.ts) : le compte
 // de la caisse, à la date de l'opération, de son montant, au débit quand les espèces entrent, au crédit quand elles sortent,
 // l'opération citée — la seule ligne que la garde du brouillon admet pour un paiement (`garder_ecriture_de_caisse`). Le compte
-// est celui du plan par défaut : l'assistant ne lit pas encore le plan du dossier (PC3b), dont aucun ne change ce rôle.
+// est celui du rôle `caisse` du plan du dossier (`plan.caisse`, lu par `plan_du_dossier` avant le premier outil, PC3b).
 function ligneContrepartieCaisse(paiement: Pick<PaiementParLaCaisse, "operation_caisse_id" | "date" | "montant">, plan: PlanComptable): LigneAttendue | null {
   if (!paiement.montant) return null
   return {
@@ -3389,11 +3389,10 @@ const CAISSE_NON_VERIFIEE = "non vérifiée par l'assistant : l'onglet Caisse et
 // paraître ces trois points : la phrase ne nomme jamais un point que la Vue d'ensemble ne montre pas.
 const CAISSE_PAYANTE_NON_VERIFIEE = `${CAISSE_NON_VERIFIEE} ; la caisse de ce dossier payant des pièces, la Vue d'ensemble dit aussi les paiements par la caisse à retirer (leur sens contredit leur pièce, ou ils la laissent à quelques centimes), les pièces à valider qu'un paiement par la caisse règle, et les mouvements d'avant l'ouverture du dossier classés sur la caisse`
 
-// Les comptes que la consigne nomme pour la vente facturée — dupliqués de src/lib/comptes.ts (étape VF4a) : le produit
-// d'une facture source, des services puis des biens, la TVA collectée en attente, les valeurs à l'encaissement et la caisse
-// qui reçoivent un encaissement, les services bancaires qui reçoivent les frais d'un mouvement classé par ses encaissements.
-// (La caisse, `plan.caisse`, se déclare avec les comptes du générateur, plus haut : depuis l'étape C13, la contrepartie d'un
-// paiement par la caisse l'écrit.)
+// Les comptes que la consigne nomme pour la vente facturée (étape VF4a) : le produit d'une facture source, des services puis
+// des biens, la TVA collectée en attente, les valeurs à l'encaissement et la caisse qui reçoivent un encaissement, les
+// services bancaires qui reçoivent les frais d'un mouvement classé par ses encaissements. Aucun n'est plus déclaré ici : chacun est le compte de son rôle dans le plan du dossier (`plan`, lu par `plan_du_dossier`,
+// PC3b) — la caisse comprise, `plan.caisse`, que la contrepartie d'un paiement par la caisse écrit aussi (étape C13).
 
 // Une source de vente facturée en défaut, telle que `ventes_facturees_de_l_exercice` la rend : à écrire, à réécrire, à
 // retirer, ou qui ne s'écrit pas — ce que la validation de l'exercice refuserait (VF7b). Son nom ne porte que des numéros
