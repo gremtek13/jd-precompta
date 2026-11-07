@@ -49170,5 +49170,8 @@ qui l'a gagné prend `plan` en dernier, ou lit `modele.plan` ; la consigne nomme
 défaut » pour la caisse tant que la base la rend d'origine « application »). `comptesEnDur` : 141 → 0, l'exception tombe.
 Preuve : `agentComptableAuPlan.test.ts`, chaque scénario du contrat HTTP joué pour un BNC et une société, horloge figée,
 SHA-256 de tout ce qui part au modèle relevé sur dd14890 et inchangé ; sous `PLAN_DECALE`, aucun compte du catalogue dans
-la consigne. Les gardes reçoivent le plan par `avecLePlan` (src/test/copieAuPlan.ts). RESTE : 57 tests des gardes —
-leurs motifs plantés et leurs relevés textuels de `points_a_traiter` visent l'ancien texte —, et `PLAN_DECALE` dans chacune.
+la consigne. Les dix gardes jouent leurs comparaisons et leurs dérives sous les deux plans (src/test/copieAuPlan.ts :
+`avecLePlan` place le plan, `entreesSous` porte les jeux d'essai sous lui) ; `agentComptablePlan.test.ts` garde le bloc
+du plan. Trouvé en route : un `echoue` avalait l'erreur d'un motif introuvable, et des dérives ne mordaient plus sans rien
+dire (dont deux sur un motif déjà ambigu avant PC3b) ; il la refuse désormais. La génération répartie (FEC22c3) reste
+sous le plan par défaut seul : un choix du FEC, que le plan ne touche pas.
