@@ -677,6 +677,11 @@ export interface Immobilisation {
 // séparément du montant total appelé car un appel URSSAF cumule plusieurs cotisations (maladie,
 // retraite, CSG-CRDS...) — seule la part CSG-CRDS visible sur le décompte peut être ventilée
 // déductible/non déductible, jamais le montant appelé dans son ensemble.
+// Les listes fermées de la migration `regularisation_des_cotisations` (ses contraintes `…_organisme_liste`, `…_nature_liste`).
+export type OrganismeCotisation =
+  | 'urssaf' | 'carmf' | 'carcdsf' | 'carpimko' | 'cavp' | 'carpv' | 'cavec' | 'cavom' | 'cavamac' | 'cipav' | 'cprn' | 'cnbf'
+export type NatureCotisation = 'provisionnelle' | 'regularisation' | 'acompte'
+
 export interface CotisationDeclaree {
   id: string
   dossier_id: string
@@ -690,6 +695,13 @@ export interface CotisationDeclaree {
   // pour ne pas la confondre avec un montant définitif. Repassée à false quand l'appel définitif
   // arrive et corrige le montant (voir CotisationsTab.creerEcheancesProposees).
   previsionnel: boolean
+  // Qui appelle l'échéance, l'année au titre de laquelle elle est due, sa nature (ligne 27, TNS-Q2) ; nul : non dit. FACULTATIFS
+  // dans ce type : la migration `regularisation_des_cotisations` est PRÉPARÉE, pas appliquée
+  // (`REGULARISATION_DES_COTISATIONS_EXPORTEE`, lib/regularisationDesCotisations.ts) — une colonne absente d'une lecture
+  // n'est pas une colonne nulle. « provisionnelle » n'est pas `previsionnel` : l'Urssaf l'appelle, sur un revenu antérieur.
+  organisme?: OrganismeCotisation | null
+  annee_payee?: number | null
+  nature?: NatureCotisation | null
   created_at: string
   // Le jour où l'exploitant l'a payée DEPUIS SON COMPTE PERSONNEL (ligne 26.6 — voir lib/cotisationPersonnelle.ts) :
   // un apport, écrit face au compte du dirigeant, et la date à laquelle la 2035 la compte. Nul sinon, et toujours nul

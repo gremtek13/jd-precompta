@@ -316,8 +316,9 @@ describe('les essais de la base, rejoués en production', () => {
     // `identifiant_du_fichier_ereporting`, joué par le super-utilisateur) et `relancesDesFactures` (C5,
     // `relances_des_factures`) entrés dans la famille « apres », après leurs migrations préparées ; tous SÛRS au banc.
     // Vingt-trois le 07/11/2026 : `factureInternationale` (e7a, `facture_internationale`) entré dans la famille « apres »,
-    // après sa migration préparée ; SÛR au banc, sur une copie de la réplique mère.
-    expect(cas.length).toBe(23)
+    // après sa migration préparée ; SÛR au banc, sur une copie de la réplique mère. Vingt-quatre le même jour :
+    // `regularisationDesCotisations` (ligne 27, TNS-Q2, `regularisation_des_cotisations`), après la sienne ; SÛR au banc.
+    expect(cas.length).toBe(24)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

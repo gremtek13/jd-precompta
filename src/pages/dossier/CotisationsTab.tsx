@@ -35,6 +35,11 @@ import {
   type ContexteDesGestes, type ReunionInachevee, type SaisieDeLEcheance, type ValeursDeLEcheance,
 } from '../../lib/gestesDesEcheances'
 import ModifierEcheanceModal from './ModifierEcheanceModal'
+import ChampsDeLaDescription from './ChampsDeLaDescription'
+import {
+  REGULARISATION_DES_COTISATIONS_EXPORTEE, lireLaDescription, saisieDeLaDescription,
+} from '../../lib/regularisationDesCotisations'
+import { lueAvecSaDescription } from '../../lib/gestesDesEcheances'
 import ReunirEcheancesModal from './ReunirEcheancesModal'
 
 // Palier 5, brique 4 — suivi des cotisations sociales. Saisie manuelle des appels et versements
@@ -92,6 +97,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   const [montantVerse, setMontantVerse] = useState('')
   const [montantCsgCrds, setMontantCsgCrds] = useState('')
   const [previsionnel, setPrevisionnel] = useState(false)
+  // L'organisme, l'année payée et la nature (TNS-Q2), sous `REGULARISATION_DES_COTISATIONS_EXPORTEE` seulement.
+  const [description, setDescription] = useState(() => saisieDeLaDescription({}))
   // Verrou d'exécution de l'échéance saisie à la main, en `useRef` : `setSaving(true)` ne prend effet qu'au rendu suivant,
   // donc `disabled={saving}` laissait passer deux soumissions rapprochées (deux « Entrée » suffisent), et
   // `cotisations_declarees` n'a d'unique que son identifiant — une cotisation comptée deux fois en case BK de la 2035.
@@ -183,7 +190,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     // Seconde ceinture : le bouton est grisé sur une échéance d'un exercice figé, et la raison déjà dite au-dessus.
-    if (refusAjout) return
+    if (refusAjout || refusDescription) return
     // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
     // premier, encore en cours.
     if (saisieEnCours.current) return
@@ -198,8 +205,10 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
         montant_verse: montantVerse ? parseFloat(montantVerse) : null,
         montant_csg_crds: montantCsgCrds ? parseFloat(montantCsgCrds) : null,
         previsionnel,
+        ...(descriptionLue && 'valeurs' in descriptionLue ? descriptionLue.valeurs : {}),
       })
       if (insertError) throw insertError
+      setDescription(saisieDeLaDescription({}))
       setEcheance('')
       setMontantAppele('')
       setMontantVerse('')
@@ -340,6 +349,13 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
       .is('paiement_personnel_le', null)
     requete = c.montant_verse == null ? requete.is('montant_verse', null) : requete.eq('montant_verse', c.montant_verse)
     requete = c.montant_csg_crds == null ? requete.is('montant_csg_crds', null) : requete.eq('montant_csg_crds', c.montant_csg_crds)
+    // La description lue se retient aussi (TNS-Q2), quand les colonnes sont dans la lecture : une échéance décrite autrement
+    // depuis ne s'écrase pas.
+    if (lueAvecSaDescription(c)) {
+      requete = c.organisme == null ? requete.is('organisme', null) : requete.eq('organisme', c.organisme)
+      requete = c.annee_payee == null ? requete.is('annee_payee', null) : requete.eq('annee_payee', c.annee_payee)
+      requete = c.nature == null ? requete.is('nature', null) : requete.eq('nature', c.nature)
+    }
     const { data, error: erreurMaj } = await requete.select('id').maybeSingle()
     if (erreurMaj) return messageErreur(erreurMaj, 'raison inconnue')
     if (!data) return 'elle a changé depuis sa lecture, ou la base ne l’a pas laissée écrire ; relis la liste et recommence'
@@ -639,6 +655,9 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   // qui décide aussi du versé, et il se montre même figé — sans le conseil d'un geste que la base refuserait.
   const refuses = new Map(rapprochementsCotisationRefuses(paiements, cotisations, modeComptable, null).map((r) => [r.cotisation.id, r.raison]))
   // Une échéance saisie dans un exercice figé ne s'ajoute plus ; une proposée par un document non plus.
+  // La description telle qu'elle part, jugée avant le clic sous les règles des contraintes de la base.
+  const descriptionLue = REGULARISATION_DES_COTISATIONS_EXPORTEE ? lireLaDescription(description, echeance) : null
+  const refusDescription = descriptionLue && 'refus' in descriptionLue ? descriptionLue.refus : null
   const refusAjout = echeance && dateFigee(echeance, anneesValidees)
     ? `${dateFigee(echeance, anneesValidees)} : une échéance ne s’y ajoute plus.`
     : null
@@ -791,10 +810,14 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
               Prévisionnel (estimation, pas encore un appel définitif)
             </label>
           </div>
+          {REGULARISATION_DES_COTISATIONS_EXPORTEE && (
+            <ChampsDeLaDescription valeur={description} onChange={setDescription} disabled={saving} prefixe="ajout" />
+          )}
+          {refusDescription && <p className="error-text">{refusDescription}</p>}
           {refusAjout && <p className="error-text">{refusAjout}</p>}
           {error && <p className="error-text">{error}</p>}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={saving || refusAjout !== null}>
+            <button className="btn btn-primary btn-sm" type="submit" disabled={saving || refusAjout !== null || refusDescription !== null}>
               {saving ? 'Enregistrement…' : 'Ajouter'}
             </button>
             <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>
