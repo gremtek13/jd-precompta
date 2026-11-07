@@ -21,6 +21,7 @@ const COLONNE = 'identification_client'
 // Les fonctions de la base que l'assistant appelle, chacune avec ce qu'elle rend.
 const RPC_ADMISES: Readonly<Record<string, string>> = {
   admin_du_dossier: 'un booléen : le droit de l’appelant sur le dossier',
+  deux_facteurs_satisfaits: 'un booléen : le second facteur de l’appelant, lu à son jeton (C7, second temps, préparée)',
   plan_du_dossier: 'une table fixe (role, compte, libelle, prefixe_auxiliaire, origine), relue dans l’export : le plan du dossier (PC3b)',
   ventes_facturees_de_l_exercice: 'une table fixe (source, source_id, jour, etat, motif, detail, nom), relue dans l’export',
 }
