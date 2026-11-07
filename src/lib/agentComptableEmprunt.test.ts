@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import * as lib_echeanceEmprunt from './echeanceEmprunt'
 import { describe, expect, it } from 'vitest'
 import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT } from './comptes'
 import {
@@ -10,7 +11,7 @@ import { ajouterJours, ajouterMois } from './format'
 import type { EcritureBrouillon, LigneBancaire } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import { avecLePlan } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES ÉCHÉANCES D'EMPRUNT (29/09/2026, ligne 26.6).
@@ -105,7 +106,10 @@ const RELEVE: LigneBancaire[] = [
   ligne({ id: 'fin', date: '2025-06-30', montant: -8.5, statut: 'non_rapprochee', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null }),
 ]
 
-describe('agent-comptable / bloc EMPRUNT (copie déployée)', () => {
+describe.each(PLANS_DES_GARDES)('agent-comptable / bloc EMPRUNT (copie déployée), sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
+  const { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees, ecritureDeLEcheance } = entreesSous(lib_echeanceEmprunt, plan)
   it('n’est pas la fonction de src/lib elle-même', () => {
     expect(deployee.genererEcheancier).not.toBe(genererEcheancier)
     expect(deployee.echeancesNonRapprochees).not.toBe(echeancesNonRapprochees)
@@ -154,11 +158,11 @@ describe('agent-comptable / bloc EMPRUNT (copie déployée)', () => {
     ]
     for (const [montant, interets, assurance] of cas) {
       expect(deployee.ecritureDeLEcheance({ montant }, interets, assurance), `${montant} / ${interets} / ${assurance}`)
-        .toEqual(sansLibelle(ecritureDeLEcheance(ligne({ montant }), { echeance: montant > 0 ? null : 1, interets, assurance }, PLAN_PAR_DEFAUT)))
+        .toEqual(sansLibelle(ecritureDeLEcheance(ligne({ montant }), { echeance: montant > 0 ? null : 1, interets, assurance }, plan)))
     }
     // Les comptes sont bien ceux de src/lib.
-    expect(sansLibelle(ecritureDeLEcheance(ligne({}), { echeance: 1, interets: 36, assurance: 21.03 }, PLAN_PAR_DEFAUT)).map((e) => e.compte))
-      .toEqual([COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT, COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE])
+    expect(sansLibelle(ecritureDeLEcheance(ligne({}), { echeance: 1, interets: 36, assurance: 21.03 }, plan)).map((e) => e.compte))
+      .toEqual(traduire([COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT, COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE], plan))
   })
 
   it('rend les mêmes échéances dont l’écriture ne suit plus le découpage', () => {
@@ -180,8 +184,8 @@ describe('agent-comptable / bloc EMPRUNT (copie déployée)', () => {
       // Les écritures d'une PIÈCE qui désignent le même mouvement n'en sont pas.
       ecriture({ id: 'piece', piece_id: 'p1', ligne_bancaire_id: 'juste', compte: '606100', sens: 'debit', montant: 540 }),
     ]
-    expect(ids(deployee.echeancesDesynchronisees(ecritures, echeances))).toEqual(ids(echeancesDesynchronisees(ecritures, echeances, PLAN_PAR_DEFAUT)))
-    expect(ids(echeancesDesynchronisees(ecritures, echeances, PLAN_PAR_DEFAUT))).toEqual(['absente', 'amputee', 'autre-montant', 'autre-date'])
+    expect(ids(deployee.echeancesDesynchronisees(ecritures, echeances))).toEqual(ids(echeancesDesynchronisees(ecritures, echeances, plan)))
+    expect(ids(echeancesDesynchronisees(ecritures, echeances, plan))).toEqual(['absente', 'amputee', 'autre-montant', 'autre-date'])
   })
 })
 
@@ -200,24 +204,26 @@ describe('agent-comptable / points_a_traiter lit les emprunts et le relevé', ()
   it('borne la réclamation à la couverture du relevé, et rend les deux points de la Checklist', () => {
     expect(corps).toContain('const couverture = couvertureDuReleve(rReleve.lignes, frontiere)')
     expect(corps).toContain('echeancesNonRapprochees(rEmprunts.lignes, rReleve.lignes, couverture.debut, couverture.fin)')
-    expect(corps).toContain('echeancesDesynchronisees(ecrituresTyped, rReleve.lignes)')
+    expect(corps).toContain('echeancesDesynchronisees(ecrituresTyped, rReleve.lignes, plan)')
     expect(corps).toMatch(/echeances_emprunt_couvertes_par_le_releve_sans_mouvement_rapproche: echeancesManquantes\.length/)
     expect(corps).toMatch(/echeances_emprunt_dont_l_ecriture_ne_suit_plus_le_decoupage: echeancesPerimees\.length/)
   })
 
   it('dit au modèle qu’une échéance s’écrit sur trois comptes sans pièce, et qu’un déblocage n’est pas une recette', () => {
-    expect(source).toMatch(/Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000[^\n]*les intérêts au 661100 et l'assurance au 616800[^\n]*Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette/)
+    expect(source).toMatch(/Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au \$\{plan\.banque\}, sans pièce, sur trois comptes : le capital remboursé au \$\{plan\.emprunt\}[^\n]*les intérêts au \$\{plan\.interets_emprunt\} et l'assurance au \$\{plan\.assurance_emprunt\}[^\n]*Le DÉBLOCAGE d'un emprunt crédite le \$\{plan\.emprunt\} face au \$\{plan\.banque\} : ce n'est pas une recette/)
   })
 })
 
-describe('le garde-fou du bloc EMPRUNT sait encore échouer', () => {
+describe.each(PLANS_DES_GARDES)('le garde-fou du bloc EMPRUNT sait encore échouer, sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees, ecritureDeLEcheance } = entreesSous(lib_echeanceEmprunt, plan)
   const planter = (...remplacements: [string, string][]) => {
     let source = sourceDeployee()
     for (const [avant, apres] of remplacements) {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source, PLAN_PAR_DEFAUT)
+    return entreesSous(extraire(source, plan), plan)
   }
   // Une dérive doit faire échouer une ASSERTION. Une `ReferenceError` ou un `TypeError` levés par le test
   // lui-même — un helper hors de portée, une copie qui plante — passeraient sinon pour une dérive attrapée :
@@ -227,6 +233,7 @@ describe('le garde-fou du bloc EMPRUNT sait encore échouer', () => {
     let erreur: unknown = null
     try { f() } catch (e) { erreur = e }
     expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    expect(String(erreur), 'un motif introuvable n’est pas une dérive attrapée').not.toMatch(/motif à planter introuvable|introuvable ou ambigu/)
   }
 
   it('attrape un mois qui ne se ramène plus au dernier jour', () => {
@@ -273,24 +280,24 @@ describe('le garde-fou du bloc EMPRUNT sait encore échouer', () => {
   it('attrape une écriture qui garde ses lignes à zéro', () => {
     const derivee = planter(['  ].filter((l) => l.montant > 0)\n}\n\n// Un mouvement rapproché d\'un emprunt', '  ]\n}\n\n// Un mouvement rapproché d\'un emprunt'])
     echoue(() => expect(derivee.ecritureDeLEcheance({ montant: -540 }, 36, 0))
-      .toEqual(sansLibelle(ecritureDeLEcheance(ligne({}), { echeance: 1, interets: 36, assurance: 0 }, PLAN_PAR_DEFAUT))))
+      .toEqual(sansLibelle(ecritureDeLEcheance(ligne({}), { echeance: 1, interets: 36, assurance: 0 }, plan))))
   })
 
   it('attrape un déblocage écrit dans le mauvais sens', () => {
-    const derivee = planter(['      { compte: COMPTE_EMPRUNT, sens: "credit", montant: total / 100 },', '      { compte: COMPTE_EMPRUNT, sens: "debit", montant: total / 100 },'])
+    const derivee = planter(['      { compte: plan.emprunt, sens: "credit", montant: total / 100 },', '      { compte: plan.emprunt, sens: "debit", montant: total / 100 },'])
     echoue(() => expect(derivee.ecritureDeLEcheance({ montant: 12000 }, 0, 0))
-      .toEqual(sansLibelle(ecritureDeLEcheance(ligne({ montant: 12000 }), { echeance: null, interets: 0, assurance: 0 }, PLAN_PAR_DEFAUT))))
+      .toEqual(sansLibelle(ecritureDeLEcheance(ligne({ montant: 12000 }), { echeance: null, interets: 0, assurance: 0 }, plan))))
   })
 
   it('attrape un compte d’intérêts qui a changé', () => {
-    const derivee = planter(['const COMPTE_INTERETS_EMPRUNT = "661100"', 'const COMPTE_INTERETS_EMPRUNT = "661000"'])
+    const derivee = planter(['    { compte: plan.interets_emprunt, sens: "debit", montant: centimesEmprunt(interets) / 100 },', '    { compte: "661000", sens: "debit", montant: centimesEmprunt(interets) / 100 },'])
     echoue(() => expect(derivee.ecritureDeLEcheance({ montant: -540 }, 36, 21.03))
-      .toEqual(sansLibelle(ecritureDeLEcheance(ligne({}), { echeance: 1, interets: 36, assurance: 21.03 }, PLAN_PAR_DEFAUT))))
+      .toEqual(sansLibelle(ecritureDeLEcheance(ligne({}), { echeance: 1, interets: 36, assurance: 21.03 }, plan))))
   })
 
   it('attrape une copie qui prend tout mouvement pour une échéance', () => {
     const derivee = planter(['    if (!ligne.emprunt_id) return false\n    const attendue', '    const attendue'])
     const releve = [ligne({ id: 'pas-un-emprunt', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null })]
-    echoue(() => expect(ids(derivee.echeancesDesynchronisees([], releve))).toEqual(ids(echeancesDesynchronisees([], releve, PLAN_PAR_DEFAUT))))
+    echoue(() => expect(ids(derivee.echeancesDesynchronisees([], releve))).toEqual(ids(echeancesDesynchronisees([], releve, plan))))
   })
 })

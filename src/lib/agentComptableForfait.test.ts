@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import * as lib_forfaitKilometrique from './forfaitKilometrique'
 import { describe, expect, it } from 'vitest'
 import { indemniteKilometriqueCentimes, vehiculeDuDossier } from './baremeKilometrique'
 import type { ModeleComptable } from './engagement'
@@ -8,7 +9,7 @@ import type { EcritureBrouillon, VehiculeDossier } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
-import { avecLePlan } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlan, entreesSous } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES FORFAITS KILOMÉTRIQUES (04/10/2026, ligne 26.6, étape b).
@@ -109,7 +110,10 @@ const etats = (f: Forfait[]) => f.map((x) => [x.vehicule.id, x.vehicule.annee, x
 // Les frontières de validation sous lesquelles les deux copies sont comparées : aucune, puis 2024 et 2025 validés.
 const FRONTIERES = [null, '2024-12-31', '2025-12-31'] as const
 
-describe('agent-comptable / bloc FORFAIT (copie déployée)', () => {
+describe.each(PLANS_DES_GARDES)('agent-comptable / bloc FORFAIT (copie déployée), sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
+  const { ecritureDuForfait, forfaitsDuCadre7, forfaitsEnDefaut, nomDuVehicule } = entreesSous(lib_forfaitKilometrique, plan)
   it('n’est pas la fonction de src/lib elle-même', () => {
     // Sans ce garde, comparer la copie à src/lib pourrait comparer src/lib à elle-même.
     expect(deployee.indemniteKilometriqueCentimes).not.toBe(indemniteKilometriqueCentimes)
@@ -187,25 +191,28 @@ describe('agent-comptable / points_a_traiter lit le cadre 7 et ses forfaits', ()
   })
 
   it('dit au modèle que le forfait s’écrit sans pièce, au 31 décembre, et l’annonce dans l’outil', () => {
-    expect(source).toMatch(/Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du 625110, au crédit du compte du dirigeant[^\n]*Il compte en case BJ de la 2035[^\n]*Ce n'est pas une anomalie\./)
+    expect(source).toMatch(/Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du \$\{plan\.indemnites_kilometriques\}, au crédit du compte du dirigeant[^\n]*Il compte en case BJ de la 2035[^\n]*Ce n'est pas une anomalie\./)
     expect(source).toMatch(/forfaits kilométriques à écrire \(exercice fini\) ou qui ne suivent plus le cadre 7/)
   })
 })
 
-describe('le garde-fou du bloc FORFAIT sait encore échouer', () => {
+describe.each(PLANS_DES_GARDES)('le garde-fou du bloc FORFAIT sait encore échouer, sous le %s', (_plan, plan) => {
+  // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
+  const { forfaitsDuCadre7, forfaitsEnDefaut } = entreesSous(lib_forfaitKilometrique, plan)
   const planter = (...remplacements: [string, string][]) => {
     let source = sourceDeployee()
     for (const [avant, apres] of remplacements) {
       expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
-    return extraire(source, PLAN_PAR_DEFAUT)
+    return entreesSous(extraire(source, plan), plan)
   }
   // Une dérive doit faire échouer une ASSERTION, pas lever pour une autre raison (voir le bloc EMPRUNT).
   const echoue = (f: () => void) => {
     let erreur: unknown = null
     try { f() } catch (e) { erreur = e }
     expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    expect(String(erreur), 'un motif introuvable n’est pas une dérive attrapée').not.toMatch(/motif à planter introuvable|introuvable ou ambigu/)
   }
   const memesIndemnites = (copie: Copie) => {
     for (const annee of [2025, 2026, 2027]) {

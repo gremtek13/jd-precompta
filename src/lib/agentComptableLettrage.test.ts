@@ -10,8 +10,8 @@ import { cleFournisseur } from './format'
 import { etatsDesLettragesManuels, piecesLettreesALaMain, type MotifLettrageManuel } from './lettrage'
 import type { EcritureBrouillon, LettrageManuel, ModeComptable, Piece } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
-import { modeleDeTest } from '../test/modeles'
-import { avecLePlan } from '../test/copieAuPlan'
+import type { ModeleComptable } from './engagement'
+import { PLANS_DES_GARDES, avecLePlan, modeleSous, traduire } from '../test/copieAuPlan'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import type { PlanComptable } from './planComptable'
 
@@ -37,9 +37,9 @@ function sourceDeployee(): string {
 interface EtatCopie { groupe: string; pieceIds: string[]; motif: MotifLettrageManuel | null }
 interface Copie {
   cleFournisseur: (tiers: string | null) => string | null
-  auxiliaireDuTiers: (piece: { tiers: string | null }, compte: string) => string | null
+  auxiliaireDuTiers: (piece: { tiers: string | null }, compte: string, modele: ModeleComptable) => string | null
   etatsDesLettragesManuels: (
-    e: readonly EcritureBrouillon[], p: readonly Pick<Piece, 'id' | 'tiers'>[], lm: readonly LettrageManuel[], mode: ModeComptable,
+    e: readonly EcritureBrouillon[], p: readonly Pick<Piece, 'id' | 'tiers'>[], lm: readonly LettrageManuel[], modele: ModeleComptable,
   ) => EtatCopie[]
   piecesLettreesALaMain: (etats: readonly EtatCopie[]) => Set<string>
   MOTS_SANS_IDENTITE: Set<string>
@@ -61,7 +61,6 @@ function extraire(source: string, plan: PlanComptable): Copie {
   return avecLePlan(new Function(`${js}\nreturn { cleFournisseur, auxiliaireDuTiers, etatsDesLettragesManuels, piecesLettreesALaMain, MOTS_SANS_IDENTITE }`)(), plan) as Copie
 }
 
-const deployee = extraire(sourceDeployee(), PLAN_PAR_DEFAUT)
 
 // Les mots d'un `new Set([...])` nommé, lus dans un texte source : la liste de src/lib/format.ts n'est pas exportée, et
 // c'est elle qui fait foi.
@@ -147,8 +146,11 @@ const CAS: Cas[] = [
 const forme = (etats: readonly { groupe: string; pieceIds: string[]; motif: string | null }[]) =>
   etats.map((e) => `${e.groupe}:${e.pieceIds.join(',')}:${e.motif ?? 'tient'}`).sort()
 
-const ici = ([, b, p, lm, mode]: Cas) => etatsDesLettragesManuels(b, p, lm, modeleDeTest(mode))
-const la = (copie: Copie, [, b, p, lm, mode]: Cas) => copie.etatsDesLettragesManuels(b, p, lm, mode)
+// Chaque cas se joue sous un plan : ses comptes portés sous lui (`traduire`), le modèle du dossier sous lui (`modeleSous`).
+const iciSous = ([, b, p, lm, mode]: Cas, plan: PlanComptable) =>
+  etatsDesLettragesManuels(traduire(b, plan), p, traduire(lm, plan), modeleSous(plan, mode))
+const laSous = (copie: Copie, [, b, p, lm, mode]: Cas, plan: PlanComptable) =>
+  copie.etatsDesLettragesManuels(traduire(b, plan), p, traduire(lm, plan), modeleSous(plan, mode))
 
 const TIERS = [
   null, '', 'Transmedical', 'Transmedical / et redevient', 'TRANSMEDICAL', 'C.P.A.M. Marseille', 'CPAM', 'E.D.F.', 'EDF',
@@ -161,7 +163,11 @@ const COMPTES = [
   COMPTE_AUTRES_DEBITEURS_CREDITEURS, COMPTE_EXPLOITANT,
 ]
 
-describe('agent-comptable / bloc LETTRAGE MANUEL (copie déployée)', () => {
+describe.each(PLANS_DES_GARDES)('agent-comptable / bloc LETTRAGE MANUEL (copie déployée), sous le %s', (_nom, plan) => {
+  const deployee = extraire(sourceDeployee(), plan)
+  const ici = (c: Cas) => iciSous(c, plan)
+  const la = (copie: Copie, c: Cas) => laSous(copie, c, plan)
+
   it('n’est pas la fonction de src/lib elle-même', () => {
     expect(deployee.etatsDesLettragesManuels).not.toBe(etatsDesLettragesManuels)
     expect(deployee.piecesLettreesALaMain).not.toBe(piecesLettreesALaMain)
@@ -178,8 +184,9 @@ describe('agent-comptable / bloc LETTRAGE MANUEL (copie déployée)', () => {
   it('tire la même clé de chaque tiers, et le même compte auxiliaire sur chaque compte', () => {
     for (const tiers of TIERS) {
       expect(deployee.cleFournisseur(tiers), `${tiers}`).toBe(cleFournisseur(tiers))
-      for (const compte of COMPTES) {
-        expect(deployee.auxiliaireDuTiers({ tiers }, compte), `${tiers} au ${compte}`).toBe(auxiliaireDuTiers({ tiers }, compte, modeleDeTest('engagement'))?.num ?? null)
+      for (const compte of traduire(COMPTES, plan)) {
+        const modele = modeleSous(plan, 'engagement')
+        expect(deployee.auxiliaireDuTiers({ tiers }, compte, modele), `${tiers} au ${compte}`).toBe(auxiliaireDuTiers({ tiers }, compte, modele)?.num ?? null)
       }
     }
   })
@@ -226,7 +233,7 @@ describe('agent-comptable / points_a_traiter lit les lettrages faits à la main'
   it('retire des factures sans règlement les pièces d’un lettrage qui tient, et compte ceux qui ne se soldent plus', () => {
     // TOUTES les pièces, validées ou non, comme la Checklist : une pièce absente ferait dire « pièce non lue » d'un
     // lettrage juste.
-    expect(corps).toContain('const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele.mode)')
+    expect(corps).toContain('const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele)')
     expect(corps).toContain('const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)')
     expect(corps).toContain('const sansReglement = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length')
     // Depuis l'étape C13, indisponible quand les paiements par la caisse ne se lisent pas (`caisseIllisible`).
@@ -246,12 +253,15 @@ describe('agent-comptable / points_a_traiter lit les lettrages faits à la main'
   })
 })
 
-describe('le garde-fou du bloc LETTRAGE MANUEL sait encore échouer', () => {
+describe.each(PLANS_DES_GARDES)('le garde-fou du bloc LETTRAGE MANUEL sait encore échouer, sous le %s', (_nom, plan) => {
+  const deployee = extraire(sourceDeployee(), plan)
+  const ici = (c: Cas) => iciSous(c, plan)
+  const la = (copie: Copie, c: Cas) => laSous(copie, c, plan)
   // Une ancre qui figurerait deux fois ferait planter la dérive au mauvais endroit : on l'exige unique.
   function planter(avant: string, apres: string, quoi: string): Copie {
     const source = sourceDeployee()
     expect(source.split(avant).length - 1, `${quoi} introuvable ou ambiguë — la dérive plantée ne mord plus`).toBe(1)
-    return extraire(source.replace(avant, apres), PLAN_PAR_DEFAUT)
+    return extraire(source.replace(avant, apres), plan)
   }
   const cas = (nom: string) => CAS.find(([n]) => n === nom)!
   const diverge = (copie: Copie, nom: string) => expect(forme(la(copie, cas(nom)))).not.toEqual(forme(ici(cas(nom))))
@@ -266,7 +276,7 @@ describe('le garde-fou du bloc LETTRAGE MANUEL sait encore échouer', () => {
 
   it('attrape une copie qui laisse passer le compte « divers »', () => {
     const derivee = planter(
-      '    else if (auxiliaires.some((a) => a !== null && estDivers(compte, a))) motif = "tiers_non_identifie"\n', '',
+      '    else if (auxiliaires.some((a) => a !== null && estDivers(compte, a, modele))) motif = "tiers_non_identifie"\n', '',
       'la garde du compte « divers »',
     )
     diverge(derivee, 'une pièce sans tiers identifié')
@@ -274,7 +284,7 @@ describe('le garde-fou du bloc LETTRAGE MANUEL sait encore échouer', () => {
 
   it('attrape une copie qui reconnaît le compte « divers » à sa fin plutôt qu’à son numéro', () => {
     const derivee = planter(
-      '  return auxiliaire === auxiliaireDuTiers({ tiers: null }, compte)\n', '  return auxiliaire.endsWith("DIVERS")\n',
+      '  return auxiliaire === auxiliaireDuTiers({ tiers: null }, compte, modele)\n', '  return auxiliaire.endsWith("DIVERS")\n',
       'la comparaison au numéro exact',
     )
     diverge(derivee, 'un fournisseur dont la clé finit par « divers »')
@@ -319,8 +329,17 @@ describe('le garde-fou du bloc LETTRAGE MANUEL sait encore échouer', () => {
   })
 
   it('attrape une copie qui lettre aussi en trésorerie', () => {
-    const derivee = planter('  if (mode !== "engagement") return []\n  const pieceById', '  const pieceById', 'la garde du modèle')
+    const derivee = planter('  if (modele.mode !== "engagement") return []\n', '', 'la garde du modèle')
     diverge(derivee, 'le même en trésorerie, où rien ne se lettre')
+  })
+
+  it('attrape une copie qui lettre les comptes du catalogue plutôt que ceux du plan du dossier (PC3b)', () => {
+    if (plan === PLAN_PAR_DEFAUT) return
+    const derivee = planter(
+      '  return [plan.fournisseurs, plan.fournisseurs_immobilisations, plan.clients, plan.associe, plan.autres_debiteurs_crediteurs]\n',
+      '  return ["401000", "404000", "411000", "455000", "467000"]\n', 'les comptes lettrables du plan',
+    )
+    diverge(derivee, 'un lettrage qui tient')
   })
 
   it('et il ne crie PAS au loup sur la copie réellement déployée', () => {
