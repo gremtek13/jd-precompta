@@ -647,6 +647,26 @@ begin
   end if;
 end $$;
 
+-- ══ Les factures reprises (ligne 51.5, étape A8a) ══ Au plan du code quand `FACTURES_IMPORTEES_PREVUES` est levé —
+-- c'est-à-dire quand leur migration est en base : le script les y met dès que leurs tables existent, juste après
+-- `factures_emises` (ORDRE_RESTAURATION_PREVU : le lot, puis ses factures reprises, qui pointent une facture et leur lot) ;
+-- les tables qui suivent reculent de deux rangs — le geste des articles ; leurs chemins. Aucune vague : une ligne n'en
+-- pointe aucune de sa table. Absentes de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts
+-- confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.factures_importees') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'factures_emises';
+    update essai_restauration._ordre set rang = -(rang + 2) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'imports_factures');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 2, 'factures_importees');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('imports_factures','direct',null,null),('factures_importees','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

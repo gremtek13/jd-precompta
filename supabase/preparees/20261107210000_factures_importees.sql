@@ -30,8 +30,9 @@
 --      jour de Paris de la bascule (`ventes_par_les_factures_depuis`, un instant), figé dès le premier import ; une
 --      importée se date d'AVANT, son encaissement (A8b) de ce jour ou d'après. Une garde la tient : la colonne ne s'écrit
 --      que par cette fonction, ou à la réinsertion d'un dossier par le super-administrateur (la restauration).
---   4. Deux tables, écrites par les seules fonctions d'import (et la restauration), lues par le cabinet du dossier et par
---      un accès « Ventes » (le patron d'`encaissements_factures`) :
+--   4. Deux tables, écrites par les seules fonctions d'import (et la restauration), lues par le cabinet du dossier seul
+--      (le patron d'`encaissements_factures`, sans sa lecture au client : l'ouvrir au client « Ventes », avec les deux
+--      fonctions, se présente au cabinet avec l'écran, A8d — rls.sql tient la liste des tables présentées) :
 --        imports_factures    le LOT : son format (facturx, cii, ubl, pdf, csv), son fichier s'il en a un (empreinte
 --                            SHA-256, taille, chemin `<dossier>/imports/<lot>/…` du seau `ventes`, que A8d ouvrira — une
 --                            policy du seau, présentée alors), le nombre de ses factures, qui l'a importé et quand ;
@@ -57,8 +58,8 @@
 --   6. `fixer_source_de_la_vente` étendue (A8-Q1) : l'insertion d'une importée garde la marque de source que l'import pose
 --      — dans un dossier basculé seulement —, SANS la frontière d'un exercice validé (une facture d'un exercice validé se
 --      reprend), et une importée ne se rejuge plus ensuite.
---   7. `importer_factures(p_dossier_id, p_lot, p_factures)` : la porte unique, tout ou rien. L'accès (`gere_les_ventes`)
---      avant toute lecture ; le dossier verrouillé ; la comptabilité d'engagement refusée pour l'instant (A8-Q3 : la créance
+--   7. `importer_factures(p_dossier_id, p_lot, p_factures)` : la porte unique, tout ou rien. L'accès (le cabinet du
+--      dossier, `admin_du_dossier`) avant toute lecture ; le dossier verrouillé ; la comptabilité d'engagement refusée pour l'instant (A8-Q3 : la créance
 --      d'une facture d'avant est au 411 de la reprise, que l'application n'écrit pas encore — A8e, avec l'expert-comptable) ;
 --      la bascule et la date de reprise exigées (A8-Q2) ; le lot ; puis chaque facture, nommée par son rang : ses clés
 --      ÉNUMÉRÉES (une clé inconnue se refuse, plutôt que se perdre), son numéro (G1.05, pas déjà au dossier ni au lot ; de
@@ -135,8 +136,7 @@ begin
      or not exists (select 1 from pg_trigger t
                      where t.tgrelid = 'public.facture_lignes'::regclass and t.tgname = 'facture_lignes_figees')
      or to_regprocedure('public.centimes_ligne_facture(numeric, numeric, numeric, boolean)') is null
-     or to_regprocedure('public.gere_les_ventes(uuid)') is null
-     or to_regprocedure('public.client_du_dossier(uuid, text)') is null
+     or to_regprocedure('public.admin_du_dossier(uuid)') is null
      or to_regprocedure('public.restauration_des_factures(uuid)') is null
      or to_regprocedure('public.est_chef_du_cabinet(uuid)') is null then
     raise exception 'La garde des factures, ses lignes ou les fonctions qu''appellent les factures reprises manquent.';
@@ -288,7 +288,7 @@ create table public.imports_factures (
 create index imports_factures_dossier_idx on public.imports_factures (dossier_id, importe_le);
 
 comment on table public.imports_factures is
-  'Un lot de factures reprises de l''ancien logiciel d''un client (A8a) : son format, son fichier s''il en a un (empreinte SHA-256, taille, chemin du seau ventes), le nombre de ses factures, qui l''a importé et quand. Écrit par importer_factures seule (et la restauration), retiré en entier par retirer_import seule, jamais modifié ; lu par le cabinet du dossier et par un accès « Ventes ».';
+  'Un lot de factures reprises de l''ancien logiciel d''un client (A8a) : son format, son fichier s''il en a un (empreinte SHA-256, taille, chemin du seau ventes), le nombre de ses factures, qui l''a importé et quand. Écrit par importer_factures seule (et la restauration), retiré en entier par retirer_import seule, jamais modifié ; lu par le cabinet du dossier.';
 
 create table public.factures_importees (
   facture_id uuid primary key references public.factures_emises(id) on delete cascade,
@@ -325,15 +325,11 @@ alter table public.factures_importees enable row level security;
 
 create policy imports_factures_lecture on public.imports_factures
   for select to authenticated using (public.admin_du_dossier(dossier_id));
-create policy imports_factures_lecture_ventes on public.imports_factures
-  for select to authenticated using (public.client_du_dossier(dossier_id, 'ventes'));
 create policy imports_factures_restauration on public.imports_factures
   for insert to authenticated with check (public.is_super_admin());
 
 create policy factures_importees_lecture on public.factures_importees
   for select to authenticated using (public.admin_du_dossier(dossier_id));
-create policy factures_importees_lecture_ventes on public.factures_importees
-  for select to authenticated using (public.client_du_dossier(dossier_id, 'ventes'));
 create policy factures_importees_restauration on public.factures_importees
   for insert to authenticated with check (public.is_super_admin());
 
@@ -652,8 +648,8 @@ declare
   v_taux_ttc jsonb;
   v_ttc_negatif boolean;
 begin
-  -- 1. L'accès, avant toute lecture.
-  if p_dossier_id is null or not public.gere_les_ventes(p_dossier_id) then
+  -- 1. L'accès, avant toute lecture : le cabinet du dossier (l'ouvrir au client « Ventes » se présente avec l'écran, A8d).
+  if p_dossier_id is null or not public.admin_du_dossier(p_dossier_id) then
     raise exception 'Accès refusé à ce dossier.' using errcode = '42501';
   end if;
   -- 2. Le dossier, verrouillé : deux imports se suivent, et la date de reprise ne bouge pas sous l'import.
@@ -807,7 +803,9 @@ begin
     -- Un numéro de la forme de l'application continue sa série (`prochain_numero_facture` le lit) : sa lettre, son année,
     -- un compteur qu'elle sait lire, et une série que l'application n'a pas encore continuée — sous son verrou.
     if v_numero ~ '^[FA][0-9]{4}-[0-9]+$' then
-      if left(v_numero, 1) <> case when v_type = 'avoir' then 'A' else 'F' end
+      -- (Une expression CASE ne vit pas dans la condition d'un IF de PL/pgSQL, qui s'arrête à son premier THEN.)
+      v_texte := case when v_type = 'avoir' then 'A' else 'F' end;
+      if left(v_numero, 1) <> v_texte
          or substr(v_numero, 2, 4)::integer <> extract(year from v_date)::integer
          or char_length(split_part(v_numero, '-', 2)) > 9 then
         raise exception 'La facture % (rang % du lot) porte un numéro de la forme de l''application : sa lettre est celle de son type (F, A pour un avoir), son année celle de sa date, son compteur de neuf chiffres au plus.',
@@ -1195,7 +1193,7 @@ end
 $$;
 
 comment on function public.importer_factures(uuid, jsonb, jsonb) is
-  'La porte unique des factures reprises de l''ancien logiciel (A8a), tout ou rien : l''accès (gere_les_ventes, 42501) avant toute lecture ; refusée en comptabilité d''engagement (A8-Q3) ; la bascule et la date de reprise exigées (A8-Q2) ; le lot (format, fichier) ; chaque facture nommée par son rang, ses clés énumérées : numéro (G1.05, unique au dossier, la forme de l''application tenue), type, date (avant la reprise, G1.36), client, nature, option sur les débits, lignes et montants (le HT de ses lignes, la TVA par taux ou ligne à ligne, l''écart chiffré), encaissé avant la reprise par taux ou au prorata (A8-Q6), transmission, fichier ; un avoir repris cite une facture reprise du dossier et ne crédite pas plus qu''elle ne porte. Refus en 22023. Rend l''identifiant du lot.';
+  'La porte unique des factures reprises de l''ancien logiciel (A8a), tout ou rien : l''accès (le cabinet du dossier, 42501) avant toute lecture ; refusée en comptabilité d''engagement (A8-Q3) ; la bascule et la date de reprise exigées (A8-Q2) ; le lot (format, fichier) ; chaque facture nommée par son rang, ses clés énumérées : numéro (G1.05, unique au dossier, la forme de l''application tenue), type, date (avant la reprise, G1.36), client, nature, option sur les débits, lignes et montants (le HT de ses lignes, la TVA par taux ou ligne à ligne, l''écart chiffré), encaissé avant la reprise par taux ou au prorata (A8-Q6), transmission, fichier ; un avoir repris cite une facture reprise du dossier et ne crédite pas plus qu''elle ne porte. Refus en 22023. Rend l''identifiant du lot.';
 
 -- ══ 8. LE RETRAIT D'UN LOT ══════════
 
@@ -1208,8 +1206,9 @@ declare
   v_texte text;
   v_texte2 text;
   v_nombre integer;
+  v_factures integer;
 begin
-  if p_dossier_id is null or not public.gere_les_ventes(p_dossier_id) then
+  if p_dossier_id is null or not public.admin_du_dossier(p_dossier_id) then
     raise exception 'Accès refusé à ce dossier.' using errcode = '42501';
   end if;
   perform 1 from public.dossiers d where d.id = p_dossier_id for update;
@@ -1260,10 +1259,17 @@ begin
     raise exception 'L''application a continué la série de la facture reprise % (la facture %) : son import ne se retire plus, il y creuserait un trou.',
       v_texte, v_texte2 using errcode = '23514';
   end if;
+  -- Les avoirs d'abord, puis les factures qu'ils créditent : la clé de l'avoir vers sa facture (`origine_id`, sans action)
+  -- ne voit jamais une facture partie avant son avoir.
   perform set_config('jd.retrait_import', p_import_id::text, true);
   delete from public.factures_emises f
-   where f.id in (select fi.facture_id from public.factures_importees fi where fi.import_id = p_import_id);
+   where f.type = 'avoir'
+     and f.id in (select fi.facture_id from public.factures_importees fi where fi.import_id = p_import_id);
   get diagnostics v_nombre = row_count;
+  delete from public.factures_emises f
+   where f.id in (select fi.facture_id from public.factures_importees fi where fi.import_id = p_import_id);
+  get diagnostics v_factures = row_count;
+  v_nombre := v_nombre + v_factures;
   delete from public.imports_factures l where l.id = p_import_id;
   perform set_config('jd.retrait_import', '', true);
   return v_nombre;
@@ -1271,7 +1277,7 @@ end
 $$;
 
 comment on function public.retirer_import(uuid, uuid) is
-  'Retire un import de factures reprises EN ENTIER (A8a) : ses factures, leurs lignes, le lot. L''accès (gere_les_ventes, 42501) ; refusé (23514) dès qu''une de ses factures a un encaissement, un avoir de l''application ou d''un autre import, ou que l''application a validé une facture dans une série qu''il continue. Rend le nombre de factures retirées.';
+  'Retire un import de factures reprises EN ENTIER (A8a) : ses factures, leurs lignes, le lot. L''accès (le cabinet du dossier, 42501) ; refusé (23514) dès qu''une de ses factures a un encaissement, un avoir de l''application ou d''un autre import, ou que l''application a validé une facture dans une série qu''il continue. Rend le nombre de factures retirées.';
 
 -- ══ 9. LES DROITS DES FONCTIONS ══════════
 
