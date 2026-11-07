@@ -275,7 +275,7 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
     // du fichier à la place laisserait croire à une preuve d'intégrité qui n'existe pas.
     const lignes = pisteAudit([ecriture({ piece_id: 'p1' })], [piece('p1', { storage_hash: null })], [], [], SANS_REGISTRE)
     expect(lignes[0].pieceEmpreinte).toBeNull()
-    expect(lignes[0].pieceFichier).toBe('Pièce sans nom, déposée le 10/03/2026')
+    expect(lignes[0].pieceFichier).toBe('Pièce déposée le 10/03/2026, sans empreinte')
   })
 })
 
@@ -311,10 +311,10 @@ describe('pisteAudit — ne nomme pas un patient (JJ1Q1-Q1)', () => {
     const nommee = piece('p1', { nom_fichier: 'patiente-fictive.pdf', created_at: '2026-03-09T23:30:00Z', storage_hash: '0123456789abcdef'.repeat(4) })
     const sansEmpreinte = piece('p2', { nom_fichier: 'patient-fictif.pdf', created_at: '2026-03-11T08:00:00Z', storage_hash: null })
     expect(designationDUnePiece(nommee)).toBe('Pièce déposée le 10/03/2026, empreinte 01234567')
-    expect(designationDUnePiece(sansEmpreinte)).toBe('Pièce sans nom, déposée le 11/03/2026')
+    expect(designationDUnePiece(sansEmpreinte)).toBe('Pièce déposée le 11/03/2026, sans empreinte')
     const lignes = pisteAudit([ecriture({ piece_id: 'p1' })], [nommee, sansEmpreinte], [], [], SANS_REGISTRE)
     expect(new Map(lignes.map((l) => [l.pieceId, l.pieceFichier]))).toEqual(new Map([
-      ['p1', 'Pièce déposée le 10/03/2026, empreinte 01234567'], ['p2', 'Pièce sans nom, déposée le 11/03/2026'],
+      ['p1', 'Pièce déposée le 10/03/2026, empreinte 01234567'], ['p2', 'Pièce déposée le 11/03/2026, sans empreinte'],
     ]))
     // L'empreinte entière garde sa colonne, inchangée.
     expect(lignes.find((l) => l.pieceId === 'p1')!.pieceEmpreinte).toBe('0123456789abcdef'.repeat(4))

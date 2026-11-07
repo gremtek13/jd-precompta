@@ -274,7 +274,7 @@ export interface RegistreAudit {
 //     lib/libellesDesVentes.ts, le prédicat d'IdClient, FEC22-Q7) ; sinon la colonne se tait ;
 //   - « Fichier justificatif » (et le libellé d'une pièce sans écriture qui retombait sur lui) : jamais le nom du fichier
 //     déposé, mais sa date de dépôt à Paris et les huit premiers caractères de l'empreinte que la pièce porte déjà
-//     (`designationDUnePiece`) ; sans empreinte, la pièce se dit sans nom.
+//     (`designationDUnePiece`) ; sans empreinte, la pièce le dit.
 // Rien ne change en base, ni dans le FEC, ni à l'écran : le relevé importé garde son texte.
 
 /** La longueur de l'empreinte courte qui désigne une pièce dans la piste d'audit (son SHA-256 entier a sa colonne). */
@@ -284,7 +284,7 @@ export const LONGUEUR_DE_L_EMPREINTE_COURTE = 8
 export function designationDUnePiece(piece: Pick<Piece, 'created_at' | 'storage_hash'>): string {
   const depot = formatDate(dateAParis(piece.created_at))
   const empreinte = piece.storage_hash?.trim() ?? ''
-  return empreinte === '' ? `Pièce sans nom, déposée le ${depot}`
+  return empreinte === '' ? `Pièce déposée le ${depot}, sans empreinte`
     : `Pièce déposée le ${depot}, empreinte ${empreinte.slice(0, LONGUEUR_DE_L_EMPREINTE_COURTE)}`
 }
 
