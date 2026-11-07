@@ -58,6 +58,25 @@ export function gestesDuCompte(c: CompteDeuxFacteurs): GesteDesDeuxFacteurs[] {
   return gestes
 }
 
+/**
+ * SEC2-Q2 (« oui aux deux », 07/11/2026) : ce qui affaiblit un compte — lever son exigence, retirer ses appareils — demande
+ * que son auteur ait lui-même donné son code, un jeton `aal2`, super-administrateur compris (sans quoi un mot de passe de
+ * chef volé suffirait à lever l'exigence d'un autre compte). La base le refuse en 42501 sous ces mots, après l'autorité et
+ * avant toute lecture (`lever_deux_facteurs`, `retirer_second_facteur`) ; l'écran les redit avant le clic. Exiger renforce
+ * le compte : il ne le demande pas.
+ */
+export const CODE_AVANT_D_AFFAIBLIR =
+  'Pour lever l’exigence d’un compte ou retirer ses appareils, donnez d’abord votre propre code, depuis « Sécurité du compte ».'
+
+/**
+ * Le refus que la base opposerait au geste, dit avant le clic, ou nul. `niveau` : celui du jeton de la session
+ * (`niveauDuJeton`), que la base lit (`auth.jwt() ->> 'aal'`) ; nul — un jeton sans `aal`, ou illisible —, il se lit
+ * refusé, comme la base lit une revendication absente.
+ */
+export function refusDuGesteAvantLeClic(geste: GesteDesDeuxFacteurs, niveau: Niveau | null): string | null {
+  return geste !== 'exiger' && niveau !== 'aal2' ? CODE_AVANT_D_AFFAIBLIR : null
+}
+
 /** Les cases d'un accès client qui recommandent l'exigence (SEC-Q2, MEG3-Q4) : « Caisse » seule n'y suffit pas. */
 export const CASES_QUI_RECOMMANDENT: readonly string[] = ['ventes', 'banque', 'achats', 'documents']
 

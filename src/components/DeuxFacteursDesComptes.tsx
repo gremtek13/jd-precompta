@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { niveauDuJeton } from '../lib/doubleAuthentification'
 import {
-  DEUX_FACTEURS_EXIGES_EXPORTE, confirmationDuGeste, etatDuCompteEnMots, exigenceRecommandee, gestesDuCompte,
-  type CompteDeuxFacteurs, type GesteDesDeuxFacteurs,
+  CODE_AVANT_D_AFFAIBLIR, DEUX_FACTEURS_EXIGES_EXPORTE, confirmationDuGeste, etatDuCompteEnMots, exigenceRecommandee,
+  gestesDuCompte, refusDuGesteAvantLeClic, type CompteDeuxFacteurs, type GesteDesDeuxFacteurs,
 } from '../lib/deuxFacteursExiges'
 import { agirSurLeCompte, lireLesComptes, type PerimetreDesComptes } from '../lib/deuxFacteursExigesAppels'
 import { formatDate } from '../lib/format'
@@ -10,7 +12,9 @@ import { formatDate } from '../lib/format'
 // retirer le second facteur d'un appareil perdu, compte par compte. Monté d'une ligne dans l'onglet Équipe et dans
 // l'onglet Accès ; le drapeau baissé, il ne rend rien et ne lit rien. La liste se lit EN ENTIER, rien avant son retour ;
 // illisible, il le dit et n'offre aucun geste. Chaque geste se confirme en nommant le compte, part sous un verrou relâché
-// après la relecture, et la base juge (l'autorité, le facteur vérifié) : l'écran n'offre que ce qu'elle dit permis.
+// après la relecture, et la base juge (l'autorité, le facteur vérifié) : l'écran n'offre que ce qu'elle dit permis. Lever
+// et retirer demandent que l'auteur ait donné son code (SEC2-Q2) : le niveau de la session, lu de son jeton comme la porte
+// de l'application le lit (aucune lecture neuve), dit ce refus avant le clic, aux mots de la base.
 
 const LIBELLES: Readonly<Record<GesteDesDeuxFacteurs, string>> = {
   exiger: 'Exiger', lever: 'Ne plus exiger', retirer: 'Retirer le second facteur (appareil perdu)',
@@ -39,6 +43,9 @@ function ListeDesComptes({ perimetre, cases }: {
   const [relecture, setRelecture] = useState(0)
   const gesteEnCours = useRef(false)
   const [occupe, setOccupe] = useState(false)
+  // Le jeton que la requête portera, celui dont la base lit `aal` (SEC2-Q2).
+  const { session } = useAuth()
+  const niveau = session ? niveauDuJeton(session.access_token) : null
 
   useEffect(() => {
     let annule = false
@@ -53,6 +60,8 @@ function ListeDesComptes({ perimetre, cases }: {
 
   async function agir(geste: GesteDesDeuxFacteurs, compte: CompteDeuxFacteurs) {
     if (gesteEnCours.current) return
+    const refus = refusDuGesteAvantLeClic(geste, niveau)
+    if (refus !== null) { setMessage(refus); return }
     if (!window.confirm(confirmationDuGeste(geste, compte))) return
     gesteEnCours.current = true
     setOccupe(true)
@@ -69,6 +78,8 @@ function ListeDesComptes({ perimetre, cases }: {
   }
 
   const valeur: Lecture = lecture.cle === cle ? lecture.valeur : { etat: 'lecture' }
+  const affaiblirRefuse = valeur.etat === 'lue'
+    && valeur.comptes.some((c) => gestesDuCompte(c).some((g) => refusDuGesteAvantLeClic(g, niveau) !== null))
   return (
     <div className="card" data-testid="deux-facteurs-des-comptes">
       <h3 style={{ marginTop: 0 }}>Double authentification des comptes</h3>
@@ -77,6 +88,7 @@ function ListeDesComptes({ perimetre, cases }: {
         cabinet, l’équipe et tout accès client qui porte « Ventes », « Banque », « Achats » ou « Documents ».
       </p>
       {message && <p role="status">{message}</p>}
+      {affaiblirRefuse && <p className="muted" data-testid="code-avant-d-affaiblir">{CODE_AVANT_D_AFFAIBLIR}</p>}
       {valeur.etat === 'lecture' && <p className="muted">Chargement…</p>}
       {valeur.etat === 'illisible' && (
         <p role="alert">La double authentification des comptes n’a pas pu être lue : {valeur.message} Aucun geste n’est offert.</p>
@@ -91,7 +103,8 @@ function ListeDesComptes({ perimetre, cases }: {
               {c.exigeeDepuis === null && exigenceRecommandee(c, cases?.[c.userId] ?? null) && <em> (recommandée)</em>}
               <span className="field-row" style={{ flexWrap: 'wrap', gap: 8 }}>
                 {gestesDuCompte(c).map((g) => (
-                  <button key={g} type="button" className="btn btn-sm" disabled={occupe} onClick={() => { void agir(g, c) }}>
+                  <button key={g} type="button" className="btn btn-sm" disabled={occupe || refusDuGesteAvantLeClic(g, niveau) !== null}
+                    onClick={() => { void agir(g, c) }}>
                     {LIBELLES[g]}
                   </button>
                 ))}

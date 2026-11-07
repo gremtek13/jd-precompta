@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEUX_FACTEURS_EXIGES_EXPORTE, casesDesAcces, compteLu, confirmationDuGeste, exigenceRecommandee, gestesDuCompte,
-  monExigenceLue, porteDeLExigence, type CompteDeuxFacteurs,
+  CODE_AVANT_D_AFFAIBLIR, DEUX_FACTEURS_EXIGES_EXPORTE, casesDesAcces, compteLu, confirmationDuGeste, exigenceRecommandee,
+  gestesDuCompte, monExigenceLue, porteDeLExigence, refusDuGesteAvantLeClic, type CompteDeuxFacteurs,
 } from './deuxFacteursExiges'
+import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+
+// La migration, préparée (supabase/preparees/) ou dans l'export sous la version de son application : le même texte.
+const SQL = [...fichiersDuSchema(), ...fichiersPrepares()].find((f) => /\d{14}_deux_facteurs_exiges\.sql$/.test(f.chemin))?.texte ?? ''
+/** Le corps d'une fonction de la migration, de sa création à la suivante. */
+const corps = (nom: string) => {
+  const debut = SQL.indexOf(`create function public.${nom}(`)
+  return debut < 0 ? '' : SQL.slice(debut, SQL.indexOf('create function', debut + 1))
+}
+// Une apostrophe se double en SQL, se courbe à l'écran : comparées, elles sont la même.
+const sansApostrophes = (s: string) => s.replace(/''/g, "'").replace(/’/g, "'")
+const CONDITION = "if coalesce(auth.jwt() ->> 'aal', '') <> 'aal2' then"
 
 const LIGNE = {
   user_id: 'u1', email: 'membre@essai.invalid', genre: 'membre', a_un_facteur: true, exigee_depuis: null,
@@ -72,6 +84,39 @@ describe('la double authentification exigée — la règle (C7, second temps)', 
     expect(porteDeLExigence(true, 'aal1', lue(true), 'code-a-donner')).toBe('ouverte')
     expect(porteDeLExigence(true, 'aal1', lue(false), 'sans-facteur')).toBe('ouverte')
     expect(porteDeLExigence(true, null, lue(true), 'sans-facteur')).toBe('inscription')
+  })
+
+  it('SEC2-Q2 : lever et retirer demandent le code de l’auteur (aal2) ; nul, le niveau se lit refusé ; exiger ne le demande pas', () => {
+    expect(refusDuGesteAvantLeClic('lever', 'aal1')).toBe(CODE_AVANT_D_AFFAIBLIR)
+    expect(refusDuGesteAvantLeClic('retirer', 'aal1')).toBe(CODE_AVANT_D_AFFAIBLIR)
+    expect(refusDuGesteAvantLeClic('retirer', null)).toBe(CODE_AVANT_D_AFFAIBLIR)
+    expect(refusDuGesteAvantLeClic('lever', 'aal2')).toBeNull()
+    expect(refusDuGesteAvantLeClic('retirer', 'aal2')).toBeNull()
+    expect(refusDuGesteAvantLeClic('exiger', 'aal1')).toBeNull()
+    expect(refusDuGesteAvantLeClic('exiger', null)).toBeNull()
+  })
+
+  it('SEC2-Q2 dans la migration : lever et retirer refusent en 42501 aux mots de l’écran, après l’autorité, avant toute lecture ; exiger ne le demande pas', () => {
+    expect(SQL, 'la migration deux_facteurs_exiges, préparée ou exportée').not.toBe('')
+    const message = `Accès refusé : ${CODE_AVANT_D_AFFAIBLIR[0].toLowerCase()}${CODE_AVANT_D_AFFAIBLIR.slice(1)}`
+    for (const nom of ['lever_deux_facteurs', 'retirer_second_facteur']) {
+      const c = corps(nom)
+      const autorite = c.indexOf('if not public.deux_facteurs_autorite(p_compte, true) then')
+      const condition = c.indexOf(CONDITION)
+      // La première lecture ou écriture qui suit : le verrou, puis la table ou GoTrue.
+      const premiereLecture = Math.min(...['pg_advisory_xact_lock', 'update public.', 'delete from', 'insert into', 'select ']
+        .map((m) => c.indexOf(m, autorite + 1)).filter((i) => i >= 0))
+      expect(autorite, nom).toBeGreaterThan(0)
+      expect(condition, nom).toBeGreaterThan(autorite)
+      expect(condition, nom).toBeLessThan(premiereLecture)
+      // Le refus de la condition, juste après elle : ces mots, en 42501.
+      const refus = c.slice(condition, c.indexOf('end if;', condition))
+      expect(sansApostrophes(refus), nom).toContain(`raise exception '${sansApostrophes(message)}'`)
+      expect(refus, nom).toContain("using errcode = '42501'")
+      expect(c.split(CONDITION).length - 1, nom).toBe(1)
+    }
+    expect(corps('exiger_deux_facteurs')).not.toBe('')
+    expect(corps('exiger_deux_facteurs')).not.toContain("auth.jwt() ->> 'aal'")
   })
 
   it('ce que la porte lit se refuse sur une autre forme', () => {
