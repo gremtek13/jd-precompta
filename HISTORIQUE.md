@@ -49596,3 +49596,17 @@ composées, la piste d'audit (une pièce sans écriture, sa désignation restant
 immobilisé depuis sa pièce, que ses dotations recopient. Le brouillon garde son libellé (FEC22Q7-Q1) ; rien en
 base. Restent, hors de la décision : PieceRef, le nom du fichier au FEC ; le commentaire périmé de l'assistant, qui
 n'a pas de copie de la règle. Mutations : la règle rendue au fichier (6 tests rouges), le bien immobilisé (1).
+
+### 08/11/2026 — LES DIX MIGRATIONS DES 7 ET 8 NOVEMBRE ÉPROUVÉES : LA RÉPLIQUE À 187, LE BANC, LE REJEU, LES ESSAIS EN PRODUCTION
+
+Une copie de la réplique mère PostgreSQL 17 (`cp -a`, la mère intacte et arrêtée) reçoit les dix migrations de
+`phase_des_exercices` à `adresse_du_client_exigee`, chacune avec la version et le nom de la production ; les deux collées
+en CRLF (`trace_des_droits`, `relances_des_factures`) au texte brut de la production, si bien que les dix lignes
+d'historique sont égales octet pour octet. `signature.sql` : neuf familles sur neuf égales à la production (colonnes
+1 017, contraintes 794, déclencheurs 97, fonctions 258, index 265, policies 176, RLS 90), relevées des deux côtés ; la
+dérive 187 `e2b3a969…`. Le banc du leurre (81 tables couvertes, le témoin vu de ses trois façons) : SÛR pour
+`adresseDuClientExigee`, `parametresDesCotisations`, `regularisationDesCotisations` et `saisies2035`. `rejouer.py`
+dans une grappe neuve : 187 migrations, 102 objets du socle intercalés, 6 formes provisoires, 0 reprise, la signature
+égale (l'historique des deux migrations en CRLF y porte le texte LF de l'export, la dérive le ramène). Puis les quatre
+essais rejoués en production par `execute_sql` : 33, 36, 56 et 32 verdicts justes, les six mutations de l'adresse
+mordent, aucun dossier jetable resté, l'écart des comptes à 0. La copie (`r187/`, hors du dépôt) reste arrêtée.
