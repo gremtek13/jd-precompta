@@ -566,7 +566,7 @@ describe('prealablesDeValidation — la numérotation et la 2035', () => {
   // Le cas courant en trésorerie : une facture dont le paiement n'est pas rapproché a sa charge sans sa banque.
   it('nomme l’écriture déséquilibrée et son écart, et renvoie à Banque', () => {
     const p = prealable(donnees({ lignes: [ligne('l1', { statut: 'non_rapprochee', date: '2026-01-05' })], ecritures: [ecriture('e1', { date: '2025-03-10' })] }), 'ecritures-desequilibrees')
-    expect(p).toMatchObject({ nb: 1, cible: 'banque', bloquant: true, detail: 'p1.pdf (écart de 120,00 €)' })
+    expect(p).toMatchObject({ nb: 1, cible: 'banque', bloquant: true, detail: '20250310-p1 (écart de 120,00 €)' })
   })
 
   it('refuse une écriture que rien ne rattache, et l’écart qu’elle fait avec la 2035', () => {
@@ -2241,7 +2241,7 @@ describe('les quatre champs du FEC d’un BNC en trésorerie (FEC22c2)', () => {
   it('levé, le brouillon d’avant la répartition retient la validation, la pièce nommée — et non sous « défaut de numérotation »', () => {
     const etat = prealablesDeValidation(avec(brouillonDeLAchat(null), { champsBnc: exportes }))
     expect(etat.prealables.map((p) => p.id)).toEqual(['ecritures-a-repartir'])
-    expect(etat.prealables[0]).toMatchObject({ nb: 1, bloquant: true, cible: 'ecritures', detail: 'p-a.pdf' })
+    expect(etat.prealables[0]).toMatchObject({ nb: 1, bloquant: true, cible: 'ecritures', detail: '20250601-p-a' })
     expect(etat.validable).toBe(false)
   })
 

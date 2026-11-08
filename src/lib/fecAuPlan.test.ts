@@ -18,6 +18,11 @@ import { colonnes } from '../test/fecDgfip'
 // relevées sur ce code-là avant toute modification. Trois dossiers fictifs : un praticien en trésorerie, une société en
 // engagement avec ses tiers (401, 404, 411, un tiers sans nom, une facture payée en partie, un lettrage fait à la main), et
 // un dossier basculé, ses ventes facturées dans les deux modèles. Données FICTIVES.
+//
+// JJ1Q1-Q3 (08/11/2026) : la PieceRef d'une pièce n'est plus le nom de son fichier mais `referenceDUnePiece` (sa date et
+// son empreinte courte, ici sans empreinte : le début de son identifiant). Les deux empreintes des dossiers qui portent des
+// pièces ont été relevées de nouveau, après avoir confronté colonne par colonne le fichier d'avant au fichier neuf : seule
+// la colonne PieceRef diffère (« achat.pdf » devenu « 20260310-achat », …). Les dossiers basculés n'en ont pas : inchangés.
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', nom_fichier: `${id}.pdf`, chemin_stockage: '', statut: 'validee',
@@ -121,12 +126,12 @@ function fecDuDossierBascule(mode: ModeComptable): string {
 describe('le FEC sous le plan par défaut, à l’octet près', () => {
   it('le praticien en trésorerie', () => {
     expect(empreinte(fecDuDossier('tresorerie', TRESORERIE.pieces, TRESORERIE.brouillon, [], CATEGORIES))).toEqual({
-      sha256: '41e3483b87435e8f5380b310b495db4e395aa3c8c12ba81553757f8aaba17aef', octets: 954, lignes: 8,
+      sha256: '6238e9904700bfbae21c6ee04c353e1b11add9ed4fbc9c72dfb1777eb5cfc518', octets: 977, lignes: 8,
     })
   })
   it('la société en engagement, ses tiers, ses lettrages', () => {
     expect(empreinte(fecDuDossier('engagement', ENGAGEMENT.pieces, ENGAGEMENT.brouillon, ENGAGEMENT.manuels, CATEGORIES))).toEqual({
-      sha256: '25d21258924bb26562e57481f0e4ea587e67206944d06a2220f13d4c8fcde16c', octets: 2964, lignes: 24,
+      sha256: 'af49417586fc0e32a16e96d50d6f7dc196ae71ff7beeca55f4d0b2b906f47809', octets: 3055, lignes: 24,
     })
   })
   it('le dossier basculé en trésorerie, ses ventes facturées', () => {

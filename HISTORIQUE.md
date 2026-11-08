@@ -49624,3 +49624,20 @@ recalculé qui diffère de l'en-tête : 500 ; une facture soldée : 400, la conv
 retient la relance — rien d'envoyé, rien de journalisé, avant le compte du plafond. L'e-mail dit le total TTC et « il en
 reste … à régler ». Dix scénarios HTTP neufs ; l'écran ne change pas ; à déployer (send-email par sa ligne d'import).
 Mutations : le refus retiré (5 tests rouges), l'avoir oublié dans le module et la copie (5).
+
+### 08/11/2026 — JJ1Q1-Q3 : LA RÉFÉRENCE D'UNE PIÈCE AU FEC NE REPREND PLUS LE NOM DU FICHIER
+
+Réponse du cabinet : « Oui, une référence neutre ». PieceRef d'une pièce valait le nom du fichier déposé, que le praticien
+nomme parfois d'après un patient. `referenceDUnePiece` (lib/fec.ts), seule règle : « AAAAMMJJ-xxxxxxxx », la date de la
+pièce, sans elle le jour du dépôt à Paris (`dateAParis(created_at)`, jamais la date d'une ligne : la référence ne bouge
+pas quand un paiement change), puis les huit premiers caractères de `storage_hash` en minuscules ; sans empreinte, ou
+d'une forme non hexadécimale, les huit premiers de l'identifiant (le repli d'hier), jamais le nom. La longueur courte
+(`LONGUEUR_DE_L_EMPREINTE_COURTE`) passe de la piste d'audit à lib/fec.ts, que la piste importe : rien n'y change. Les
+autres références (caisse, relevé, liquidation, dotations, forfait, compte personnel, vente facturée) restent. La demande
+de validation reprend la PieceRef de la numérotation (`piece_ref`) et la base ne la compose pas : aucune migration, et
+aucun exercice n'est validé en base. L'assistant n'a pas de copie de PieceRef ; son commentaire périmé sur le libellé
+d'une pièce est corrigé (aucun redéploiement nécessaire, commentaire seul). `fecAuPlan.test.ts` : ses deux empreintes
+relevées de nouveau, après une confrontation colonne par colonne de l'ancien et du nouveau fichier (seule PieceRef
+diffère). Un nom de fichier piège sur chaque sorte de pièce, dans les deux modèles, n'atteint pas le fichier. Les
+préalables de la validation nomment désormais une écriture déséquilibrée par cette référence. Mutations : le nom rendu
+(14 tests rouges), le jour UTC à la place de Paris (1).

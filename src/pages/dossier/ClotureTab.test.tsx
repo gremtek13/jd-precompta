@@ -2161,7 +2161,7 @@ describe('ClotureTab — valider l’exercice', () => {
       p_a_nouveaux: unknown[]; p_declaration: { resultat: number; formulaire: Record<string, number>; entete: unknown } | null
     }
     expect([params.p_dossier_id, params.p_annee]).toEqual(['dossier-de-test', 2025])
-    expect(params.p_lignes.map((l) => [l.id, l.journal, l.numero, l.piece_ref])).toEqual([['e1', 'AC', 1, 'facture.pdf'], ['e2', 'AC', 1, 'facture.pdf']])
+    expect(params.p_lignes.map((l) => [l.id, l.journal, l.numero, l.piece_ref])).toEqual([['e1', 'AC', 1, '20250310-p1'], ['e2', 'AC', 1, '20250310-p1']])
     expect(params.p_a_nouveaux).toEqual([])
     expect(params.p_declaration?.resultat).toBe(-120)
     expect(params.p_declaration?.formulaire.BA).toBe(120)

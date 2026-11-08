@@ -110,6 +110,30 @@ export function referenceDuPaiementPersonnel(date: string): string {
   return `Compte personnel du ${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`
 }
 
+/** La longueur de l'empreinte courte qui désigne une pièce : dans PieceRef, et dans la piste d'audit (lib/pisteAudit.ts). */
+export const LONGUEUR_DE_L_EMPREINTE_COURTE = 8
+
+// LA RÉFÉRENCE D'UNE PIÈCE (PieceRef) NE PORTE JAMAIS LE NOM DE SON FICHIER (JJ1Q1-Q3, réponse du cabinet du 08/11/2026 :
+// « Oui, une référence neutre »). Le nom d'un fichier, le praticien l'a choisi, et il nomme souvent un patient (RGPD.md,
+// § 8.7) ; le FEC part chez l'expert-comptable et, au contrôle, chez le vérificateur. La référence est tirée de ce que la
+// pièce porte déjà et qui ne nomme personne : sa date, puis les huit premiers caractères de son empreinte SHA-256
+// (`storage_hash`, celle que la piste d'audit cite) — « AAAAMMJJ-xxxxxxxx ». Déterministe et stable : deux exports du
+// même brouillon rendent la même référence, et c'est elle que la validation fige (`piece_ref`, lib/validationExercice.ts).
+//   - la date : celle de la pièce ; sans elle, le jour de son dépôt À PARIS (`created_at` est un instant), jamais la date
+//     d'une ligne — la référence ne bouge pas quand un paiement change ;
+//   - l'empreinte : sans elle (une pièce déposée avant le champ), ou d'une forme qui n'est pas hexadécimale, les huit
+//     premiers caractères de l'identifiant de la pièce, comme le repli d'hier — jamais le nom.
+// Les autres références du FEC (caisse, relevé, liquidation, dotations, forfait, compte personnel, vente facturée — le
+// numéro de la facture) ne changent pas.
+export function referenceDUnePiece(piece: Pick<Piece, 'id' | 'date_piece' | 'created_at' | 'storage_hash'>): string {
+  const date = piece.date_piece ?? dateAParis(piece.created_at)
+  const jour = `${date.slice(0, 4)}${date.slice(5, 7)}${date.slice(8, 10)}`
+  const empreinte = (piece.storage_hash ?? '').trim()
+  const court = /^[0-9a-f]{8}/i.test(empreinte) ? empreinte.slice(0, LONGUEUR_DE_L_EMPREINTE_COURTE)
+    : piece.id.slice(0, LONGUEUR_DE_L_EMPREINTE_COURTE)
+  return `${jour}-${court.toLowerCase()}`
+}
+
 // Libellé du compte pour la colonne CompteLib — les comptes que l'application tient elle-même (TVA,
 // banque, tiers, dotations et amortissements) d'abord, sinon celui de la catégorie qui porte ce
 // compte_comptable, sinon celui du plan comptable pour un compte de bilan choisi par le cabinet (ligne 26.7,
@@ -739,13 +763,14 @@ export function numeroterFec(
       // Un règlement d'engagement : ses lignes désignent leur mouvement, celles de la facture aucun — la clé les sépare.
       const reglement = modele.mode === 'engagement' && Boolean(rows[0].ligne_bancaire_id)
       // Date de la pièce (PieceDate) : celle du justificatif lui-même, avec pour repli la plus ancienne de
-      // ses lignes. Sa référence : le nom du fichier, sinon le début de son identifiant — jamais vide, la
-      // validation refuse une ligne sans pièce.
+      // ses lignes. Sa référence : sa date et son empreinte courte (`referenceDUnePiece`), jamais le nom du fichier —
+      // jamais vide, la validation refuse une ligne sans pièce. Une pièce que la lecture ne rend pas : le début de son
+      // identifiant, comme hier.
       return {
         cle, sorte: 'piece', pieceId, rows, ordre,
         journal: reglement ? 'BQ' as const : piece?.type_piece === 'vente' ? 'VE' as const : 'AC' as const,
         pieceDate: piece?.date_piece ?? ordre,
-        pieceRef: champFec(piece?.nom_fichier ?? '') || pieceId.slice(0, 8),
+        pieceRef: piece ? referenceDUnePiece(piece) : pieceId.slice(0, 8),
         reglement: null,
       }
     })

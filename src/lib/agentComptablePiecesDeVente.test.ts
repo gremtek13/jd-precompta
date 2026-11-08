@@ -12,8 +12,8 @@ import { fichiersDuSchema, fichiersPrepares, relationsDuSchema } from '../test/s
 // brouillon.
 //
 // Le tiers d'une pièce de vente est son client — chez un praticien, un patient (RGPD.md, § 8.7) —, le nom de son fichier
-// le porte souvent, et le libellé de ses écritures le recopie (`piece.tiers ?? piece.nom_fichier`, src/lib/ecritures.ts et
-// src/lib/engagement.ts). Le libellé qu'une ligne du brouillon tient d'un mouvement du relevé est celui de la banque, et celui
+// le porte souvent ; le libellé que la composition donne à ses écritures n'en recopie plus aucun (`libelleDUnePiece`,
+// FEC22-Q7 et JJ1Q1-Q2), mais une ligne déjà au brouillon garde le sien (FEC22Q7-Q1). Le libellé qu'une ligne du brouillon tient d'un mouvement du relevé est celui de la banque, et celui
 // d'un crédit nomme souvent qui a payé ; l'écriture restée d'une pièce supprimée garde le libellé qui nomme son client. Pour
 // tout dossier, `agent-comptable` nomme une pièce de vente par sa date et son montant, une ligne d'un crédit par la date et le
 // montant du mouvement, et tait celui d'une ligne rattachée à rien ; un débit qui rend ou défait l'argent d'un client — une ligne
