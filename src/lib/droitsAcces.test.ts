@@ -15,7 +15,7 @@ import {
   RAISON_DU_DOSSIER_EN_ENGAGEMENT, raisonDuModeIllisible, avisDuStatutSousLaCase,
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE, ceQueMontreMaCaisseSelon,
-  CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, demandeDeChangementSelon, domainesSelon, type Domaine,
+  CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, demandeDeChangementSelon, domainesSelon, phraseDesRelancesSelon, type Domaine,
 } from './droitsAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
@@ -447,9 +447,9 @@ const GESTES_DES_FONCTIONS: Record<string, readonly (readonly [FonctionDeLaVente
 // déploie qu'après la migration préparée `envoi_des_devis` (le journal refuse jusque-là une ligne « devis ») ; la phrase
 // ne dit pas ce que le client ne peut pas encore faire. Le jour où l'export porte la migration (`ENVOI_DES_DEVIS_PREVU`
 // levé), la liste se vide, et la confrontation ci-dessous exige que la phrase nomme l'envoi d'un devis.
-// La relance d'une facture en retard (`send-email › relance_facture`, étape C5) de même : la fonction la sait, sous une
-// constante (`RELANCES_EN_BASE`) qui ne vaut qu'au redéploiement de `send-email` — la migration `relances_des_factures` est
-// en production depuis le 07/11/2026 ; la phrase la nomme le jour où `RELANCES_EXPORTEES` se lève, après ce déploiement.
+// La relance d'une facture en retard (`send-email › relance_facture`, étape C5) s'y trouvait de même, tant que
+// `RELANCES_EXPORTEES` restait baissé : levé le 08/11/2026 (`send-email` v11 en production), la phrase la nomme ; la liste
+// ne la porte plus que si le drapeau se rebaisse.
 const PAS_ENCORE_NOMMEES: readonly (readonly [FonctionDeLaVente, string])[] = [
   ...(ENVOI_DES_DEVIS_PREVU ? [] : [['send-email', 'devis'] as const]),
   ...(RELANCES_EXPORTEES ? [] : [['send-email', 'relance_facture'] as const]),
@@ -942,7 +942,8 @@ describe('ce que disent les cases, les devis ouverts (étape P5)', () => {
     expect(debut).toBeGreaterThan(0)
     // La phrase des devis s'insère après celle des ventes, et rien d'autre ne change.
     expect(phrase.slice(0, debut) + phrase.slice(fin)).toBe(avant)
-    expect(phrase.slice(0, debut).endsWith('trente par dossier et par jour au plus.')).toBe(true)
+    // (la relance d'une facture en retard, levée le 08/11/2026, vient juste après l'envoi des factures, avant les devis)
+    expect(phrase.slice(0, debut).endsWith('trente par dossier et par jour au plus.' + phraseDesRelancesSelon(RELANCES_EXPORTEES))).toBe(true)
     // Aucun écran ne les montre encore : la phrase n'en nomme aucun, et ne les dit pas à venir.
     expect(phrase.slice(debut, fin)).not.toMatch(/«|écran|ensuite/)
     // Drapeau baissé : plus un mot des devis après le préfixe.
@@ -954,6 +955,28 @@ describe('ce que disent les cases, les devis ouverts (étape P5)', () => {
       expect(ceQueDisentLesCases(banque, false, true, true, true, true, true, true, true, BASCULE, true, true))
         .toBe(ceQueDisentLesCases(banque, false, true, true, true, true, true, true, true, BASCULE, true, false))
     }
+  })
+})
+
+// LA RELANCE D'UNE FACTURE EN RETARD (étape C5) : `phraseDesRelancesSelon` prend le drapeau en paramètre, pour jouer ses
+// deux états ; `ceQueDisentLesCases` lui passe `RELANCES_EXPORTEES`, levé le 08/11/2026.
+describe('ce que disent les cases, la relance d’une facture en retard (étape C5), dans ses deux états', () => {
+  const RELANCE = ' Il peut aussi relancer par e-mail une facture en retard, dans le même plafond.'
+
+  it('baissé, la phrase est vide ; levé, elle nomme la relance et son plafond', () => {
+    expect(phraseDesRelancesSelon(false)).toBe('')
+    expect(phraseDesRelancesSelon(true)).toBe(RELANCE)
+  })
+
+  it('la phrase des ventes porte celle de la relance, au drapeau du module, juste après l’envoi des factures', () => {
+    const phrase = ceQueDisentLesCases(true, true, false, false, false, false, false, false, false, BASCULE, false, false)
+    expect(phrase.includes(RELANCE)).toBe(RELANCES_EXPORTEES)
+    expect(RELANCES_EXPORTEES).toBe(true)
+    expect(phrase).toContain('trente par dossier et par jour au plus.' + RELANCE)
+  })
+
+  it('sans « Ventes », rien de la relance : la phrase n’est dite qu’avec les ventes', () => {
+    expect(ceQueDisentLesCases(true, false, false, false, false, false, false, false, false, BASCULE, false, false)).not.toContain('relancer')
   })
 })
 

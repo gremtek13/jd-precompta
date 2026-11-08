@@ -292,6 +292,14 @@ export const PHRASE_DES_VENTES_DE_LA_SIMULATION = ' La case lui ouvre aussi sa s
   + 'd’un dossier dont les factures sont la source de leurs ventes, la base lui rend le total hors taxe de chaque mois et la '
   + 'liste de ses factures et avoirs qui comptent eux-mêmes leur vente — leurs identifiants, sans leur contenu.'
 
+/**
+ * La phrase de la relance d'une facture en retard (étape C5), sous son drapeau (`RELANCES_EXPORTEES`, levé le 08/11/2026) :
+ * le drapeau est un PARAMÈTRE, pour que les deux états se jouent sans simuler le module ; baissé, rien n'est dit.
+ */
+export function phraseDesRelancesSelon(relances: boolean): string {
+  return relances ? ' Il peut aussi relancer par e-mail une facture en retard, dans le même plafond.' : ''
+}
+
 // LA SECONDE DIT CE QU'UNE CASE CHANGE, ET CE N'EST PAS UNE AFFAIRE D'ÉCRANS (contrôle croisé P2 × P7, 10/10/2026 : elle
 // ne lisait que le drapeau de P7, et aurait dit qu'une case ne change rien une fois les ventes du client en base). Deux
 // étapes ouvrent un droit à la SESSION du client avant tout écran :
@@ -399,8 +407,7 @@ export function ceQueDisentLesCases(
       + 'lui-même sa plateforme agréée et Super PDP et en voir l’état, y transmettre une facture et en suivre la '
       + 'transmission, relever les statuts de sa plateforme, et envoyer une facture par e-mail, trente par dossier et par '
       + 'jour au plus.'
-      // La relance d'une facture en retard (étape C5), sous son drapeau : la migration de son journal d'abord.
-      + (RELANCES_EXPORTEES ? ' Il peut aussi relancer par e-mail une facture en retard, dans le même plafond.' : '')
+      + phraseDesRelancesSelon(RELANCES_EXPORTEES)
     : ''
   // Les devis (étape P5) : la lecture des deux tables que leur migration ouvre à « Ventes », les quatre gestes de leurs
   // fonctions, puis leur envoi par e-mail (`send-email`, étape P6c), qui compte dans le même plafond que les factures.

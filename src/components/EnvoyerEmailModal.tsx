@@ -5,7 +5,8 @@ import { messageErreur } from '../lib/messageErreur'
 
 interface Props {
   dossierId: string
-  // « relance_facture » : la relance d'une facture en retard (étape C5), sous `RELANCES_EXPORTEES`.
+  // « relance_facture » : la relance d'une facture en retard (étape C5), offerte par l'onglet des factures sous
+  // `RELANCES_EXPORTEES` (levé le 08/11/2026, `send-email` v11 en production).
   type: 'facture' | 'relance_pieces' | 'relance_facture'
   // Adresse déjà connue (memberships.email pour une relance, factures_emises.tiers_email pour un
   // renvoi) — pré-remplie mais toujours modifiable, un cabinet peut vouloir viser une autre adresse.

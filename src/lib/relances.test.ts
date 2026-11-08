@@ -14,8 +14,8 @@ const entree = (o: Partial<EntreeDesPenalites>): EntreeDesPenalites => ({
 })
 
 describe('le drapeau et la table des taux', () => {
-  it('le drapeau reste baissé tant que le redéploiement de send-email manque (la migration est en production)', () => {
-    expect(RELANCES_EXPORTEES).toBe(false)
+  it('le drapeau est levé depuis le 08/11/2026 : la migration et send-email v11 sont en production', () => {
+    expect(RELANCES_EXPORTEES).toBe(true)
   })
 
   it('la table porte les seuls semestres relus sur la page de la BCE, en centièmes de point', () => {

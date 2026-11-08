@@ -49558,3 +49558,11 @@ de `cotisations_declarees` ; le titre orphelin de JJ-Q4 retiré. Contrôles éga
 socle porte les quatre colonnes) ; les deux policies de `cotisations_declarees` sans `to` (rôle `public`, relu en
 production), un resserrement à présenter au cabinet ; le reste dû d'une facture, que `send-email` ne vérifie pas avant
 une relance (au cabinet) ; deux en-têtes de `rls.sql`, laissés pour son empreinte.
+
+### 08/11/2026 — LES RELANCES D'UNE FACTURE EN RETARD À L'ÉCRAN (C5)
+
+`RELANCES_EXPORTEES` levé (`src/lib/relances.ts`) : la migration `relances_des_factures` est en production depuis le
+07/11/2026, `send-email` v11 depuis le 08/11/2026 (commit c17dbe5, `RELANCES_EN_BASE` levé) ; l'ordre reste gardé par
+`relancesHttp.test.ts`. L'onglet des factures offre la pastille « En retard », « Relancée le … » et « Relancer », rejoués
+dans les deux états par un accesseur (`FacturesTab.relances.test.tsx`) ; mutations : garde de lecture ôtée et garde du retard
+ôtée, chacune fait virer le cas baissé au rouge ; `phraseDesRelancesSelon` sort le drapeau de `droitsAcces.ts` en paramètre.
