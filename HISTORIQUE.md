@@ -49641,3 +49641,19 @@ relevées de nouveau, après une confrontation colonne par colonne de l'ancien e
 diffère). Un nom de fichier piège sur chaque sorte de pièce, dans les deux modèles, n'atteint pas le fichier. Les
 préalables de la validation nomment désormais une écriture déséquilibrée par cette référence. Mutations : le nom rendu
 (14 tests rouges), le jour UTC à la place de Paris (1).
+
+### 08/11/2026 — LA RÉPÉTITION D'UNE ANNÉE SUR DONNÉES FICTIVES (MVP-D6)
+
+`src/lib/repetitionDUneAnnee.test.ts`, sur `src/test/repetitionDUneAnnee.ts` : l'année 2025 fictive d'un praticien BNC en
+trésorerie, exonéré, basculé (MVP-D1), sans aucun nom — 25 factures (virement, chèque, espèces, une impayée au 31/12),
+l'Assurance maladie par catégorie, la caisse (recettes, une pièce payée, un prélèvement, trois versements), achats, un
+virement groupé, un prélèvement rejeté puis repris, loyer, frais bancaires, Urssaf (une provisionnelle, une
+régularisation) et retraite, un véhicule au barème, un appareil amorti, des virements personnels, une balance reprise.
+Le relevé entre par le vrai chemin (CSV détecté, interprété, solde contrôlé ; l'OFX du même relevé rend les mêmes
+opérations). Attendus écrits à la main : AA, BA, BF, BM, BN, BK, BT, BV, BJ, CH, BR, CP, le 512 et la caisse au 31/12 ;
+tous égaux au calculé, la 2035 concorde au centime, la Checklist sans aucun point, les préalables vides, le FEC à 18
+colonnes équilibré par écriture, la piste d'audit sans maillon manquant. Trois écarts trouvés, tous du JEU : les soldes
+d'un CSV Débit/Crédit posés en Débit (lus négatifs, le contrôle en écart de 430,62) ; le paiement d'un achat par la
+caisse saisi positif (il ENTRAIT 45 € : caisse à 205 au lieu de 115, `caisse-paiements-a-retirer`, une écriture
+déséquilibrée) ; l'écriture d'un prélèvement de cotisation portant `cotisation_id`, que la concordance lit comme un
+paiement personnel (30 écarts). Aucun écart du moteur. Mutation : un loyer à 850 € rend 8 tests rouges.
