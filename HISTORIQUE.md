@@ -49657,3 +49657,19 @@ d'un CSV Débit/Crédit posés en Débit (lus négatifs, le contrôle en écart 
 caisse saisi positif (il ENTRAIT 45 € : caisse à 205 au lieu de 115, `caisse-paiements-a-retirer`, une écriture
 déséquilibrée) ; l'écriture d'un prélèvement de cotisation portant `cotisation_id`, que la concordance lit comme un
 paiement personnel (30 écarts). Aucun écart du moteur. Mutation : un loyer à 850 € rend 8 tests rouges.
+
+### 08/11/2026 — LA RÉPÉTITION, SECONDE PASSE : LES RELEVÉS MENSUELS, LE 20 NOVEMBRE, L'OUVERTURE DE 2026
+
+`src/lib/repetitionDUneAnnee2.test.ts`, sur les données de la première passe, attendus inchangés. L'onglet Banque simulé dans
+l'ordre de `ImportCsv` (décodage, OFX ou détection des colonnes, interprétation, refus, multiplicité, recouvrement confirmé,
+insertion, contrôle par fichier). Douze CSV mensuels : le relevé final est celui de la première passe, douze contrôles qui
+bouclent, décembre dit le 31/12. Un mois redéposé, même sous un autre nom : rien n'entre, les doublons dits. Mars exporté
+jusqu'au 05/04 : trois doublons comptés, rien à confirmer. Janvier exporté avant le virement du 28/01, puis un fichier du 28/01
+au 28/02 : un doublon, le recouvrement confirmé, le virement entré une fois (refusé, rien de février n'entre). Douze fichiers
+inversés, de décembre à janvier : tout boucle. Juin en OFX : mêmes opérations, un seul solde, sans contrôle et dit. Août absent :
+la Vue d'ensemble le réclame, la validation avertit de 1 137,50 (`banque-au-releve`). Au 20/11/2026 (horloge factice, Paris) :
+Checklist et préalables vides, 2026 réclamé dans les documents attendus seulement. Le report (101000 C 7 390,31, 215400, 281540,
+512000 4 215,31, 530000 115) ouvre 2026, concordant avec la clôture de 2025. Aucun écart du moteur. Reste un risque : une
+quinzaine manquante (août jusqu'au 15) ne se voit qu'à la validation, en avertissement — rien ne confronte la clôture d'un
+fichier à l'ouverture du suivant. Mutations : sans dédoublonnage, 4 rouges ; mars hors du dédoublonnage, 1 ; une opération
+dupliquée dans mai, 13 ; un solde reporté faussé d'un euro, 3.
