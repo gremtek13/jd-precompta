@@ -13,7 +13,9 @@ import type { FactureEmise, Piece } from './types'
 //   - toute autre facture se nomme par son NUMÉRO, que le libellé porte déjà, et son 411 va au compte « Clients divers » ;
 //   - une PIÈCE DE VENTE déposée, dont rien ne dit si le client est une entreprise, s'écrit « Recette » et sa date, jamais
 //     le nom lu (ni le tiers que l'OCR a lu, ni le nom du fichier), et son 411 va au compte « Clients divers » au FEC ;
-//   - un achat (et toute pièce qui n'est pas de vente) garde le nom de son fournisseur, comme hier.
+//   - un achat (et toute pièce qui n'est pas de vente) garde le nom de son fournisseur, comme hier ; sans fournisseur lu,
+//     « Pièce du JJ/MM/AAAA » à la date de la pièce (« Pièce sans date » sans elle), jamais le nom de son fichier, que le
+//     praticien a pu nommer d'après un patient (JJ1Q1-Q2, réponse du cabinet du 08/11/2026).
 // Un module PUR : ni la base, ni l'horloge. libellesDesVentes.test.ts relève, dans TOUTE la source, les écritures
 // composées et le compte auxiliaire du FEC : un nom lu hors de ces fonctions y est une faute.
 
@@ -88,17 +90,24 @@ export function libelleDUnMouvementDesVentes(date: string, factures: readonly Fa
   return `${debut} — ${numeros[0]} et ${autres} autre${autres > 1 ? 's' : ''} facture${autres > 1 ? 's' : ''}`.slice(0, LONGUEUR_DU_LIBELLE_D_UN_MOUVEMENT)
 }
 
-/** Une pièce telle que son libellé la lit. */
-export type PieceLibellee = Pick<Piece, 'type_piece' | 'tiers' | 'nom_fichier' | 'date_piece'>
+/** Une pièce telle que son libellé la lit : jamais le nom de son fichier (JJ1Q1-Q2), que le type ne laisse pas lire. */
+export type PieceLibellee = Pick<Piece, 'type_piece' | 'tiers' | 'date_piece'>
+
+/** Le libellé d'une pièce dont le fournisseur n'a pas été lu (JJ1Q1-Q2) : sa date, jamais une date devinée. */
+export const LIBELLE_D_UNE_PIECE_SANS_DATE = 'Pièce sans date'
 
 /**
  * Le libellé des écritures d'une pièce (sa charge ou son produit, sa TVA, son compte de tiers, ses contreparties) : une
  * pièce de vente, « Recette du JJ/MM/AAAA » à la date de la pièce (« Recette » sans date lue) ; toute autre pièce, son
- * tiers lu, sinon le nom de son fichier, comme hier.
+ * tiers lu, tel quel, comme hier ; sans tiers lu (nul ou blanc), « Pièce du JJ/MM/AAAA » à la date de la pièce, « Pièce
+ * sans date » sans elle — jamais le nom de son fichier (JJ1Q1-Q2), ni la date du dépôt, qui n'est pas celle de la pièce.
+ * Ce qui est déjà au brouillon garde son libellé (FEC22Q7-Q1) : seules les écritures composées ensuite le portent.
  */
 export function libelleDUnePiece(piece: PieceLibellee): string {
   if (piece.type_piece === 'vente') return piece.date_piece ? `Recette du ${formatDate(piece.date_piece)}` : 'Recette'
-  return piece.tiers ?? piece.nom_fichier
+  // `!= null` : une lecture qui n'a pas demandé la colonne (undefined) n'a pas lu de tiers non plus.
+  if (piece.tiers != null && piece.tiers.trim() !== '') return piece.tiers
+  return piece.date_piece ? `Pièce du ${formatDate(piece.date_piece)}` : LIBELLE_D_UNE_PIECE_SANS_DATE
 }
 
 /**
