@@ -3461,9 +3461,11 @@ function avertissementDesVentes(enDefaut: { lues: SourceEnDefautRow[] } | { moti
 
 // ── DÉBUT PIÈCES DE VENTE ────────────────────────────────────────────────────────────────────────
 // LE CLIENT D'UNE PIÈCE DE VENTE NE PART PAS AU MODÈLE (VF9C-Q1 : la réponse (A) du cabinet du 28/10/2026 ; chantier
-// EC-Q3, ligne 28.65). Le tiers d'une pièce de vente est son client — chez un praticien, un patient (RGPD.md, § 8.7) —, le
-// nom de son fichier le porte souvent, et le libellé de ses écritures le recopie (`piece.tiers ?? piece.nom_fichier`,
-// src/lib/ecritures.ts et src/lib/engagement.ts). Pour toute pièce de vente de tout dossier — qu'il ait basculé ou non, que
+// EC-Q3, ligne 28.65). Le tiers d'une pièce de vente est son client — chez un praticien, un patient (RGPD.md, § 8.7) —, et le
+// nom de son fichier le porte souvent. Le libellé que la composition donne aujourd'hui à ses écritures n'en recopie aucun
+// (`libelleDUnePiece`, src/lib/libellesDesVentes.ts : « Recette du JJ/MM/AAAA » depuis FEC22-Q7, et « Pièce du JJ/MM/AAAA »
+// pour une pièce sans fournisseur lu depuis JJ1Q1-Q2), mais une ligne déjà au brouillon garde le texte qu'elle a reçu, le
+// tiers ou le nom du fichier (FEC22Q7-Q1). Pour toute pièce de vente de tout dossier — qu'il ait basculé ou non, que
 // la source de ses ventes se lise ou non —, aucun des trois ne part au modèle : la pièce se nomme par sa date et son
 // montant (« Pièce de vente du 15/01/2026, 120,00 € »), et l'outil qui donne déjà son identifiant le donne encore. Le
 // fournisseur d'une pièce d'achat, d'une note de frais ou d'une pièce « autre » reste dit. Aucun calcul ne change : le

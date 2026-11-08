@@ -6,7 +6,7 @@ import {
 import { NON_VALIDEE } from '../test/ecritures'
 import { anomaliesDgfip, colonnes, desequilibresDgfip } from '../test/fecDgfip'
 import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
-import { CHAMPS_BNC_NON_EXPORTES, formaterFec, genererFec, numerotationValidee, numeroterFec } from './fec'
+import { CHAMPS_BNC_NON_EXPORTES, formaterFec, genererFec, numerotationValidee, numeroterFec, referenceDUnePiece } from './fec'
 import { lignesPourPiece } from './ecritures'
 import { formatMoney } from './format'
 import { comptesDeTiers, lettrages, lettragesDesFactures, phraseDuLettrage } from './lettrage'
@@ -255,8 +255,8 @@ describe('le FEC d’un dossier qui a basculé', () => {
     expect(new Set(divers.map((r) => r[7]))).toEqual(new Set(['Clients divers']))
     expect(rows.filter((r) => r[6] === 'CFICTIF')).toEqual([])
     expect(rows.filter((r) => /fictif/i.test(r[7]) || /fictif/i.test(r[10]))).toEqual([])
-    // La pièce déposée : « Recette » et sa date.
-    expect(new Set(rows.filter((r) => r[8] === vente.nom_fichier).map((r) => r[10]))).toEqual(new Set(['Recette du 05/11/2025']))
+    // La pièce déposée : « Recette » et sa date ; sa référence, sa date et son empreinte, jamais son fichier (JJ1Q1-Q3).
+    expect(new Set(rows.filter((r) => r[8] === referenceDUnePiece(vente)).map((r) => r[10]))).toEqual(new Set(['Recette du 05/11/2025']))
     // L'entreprise, elle, garde son compte et son nom.
     expect(new Set(rows.filter((r) => r[6] === 'CCLINIQUE').map((r) => r[7]))).toEqual(new Set(['Clinique du Parc']))
   })

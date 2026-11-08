@@ -1063,7 +1063,7 @@ describe('EcrituresTab — les soldes reportés ouvrent l’exercice qui suit un
     expect(lignes.slice(1).map((l) => [l[0], l[3], l[4], l[8], l[10]])).toEqual([
       ['AN', '20260101', '101000', 'Exercice 2025 validé', 'À-nouveau Capital individuel'],
       ['AN', '20260101', '512000', 'Exercice 2025 validé', 'À-nouveau Banque'],
-      ['AC', '20260210', '606100', 'facture.pdf', 'FOURNISSEUR MARSEILLE'],
+      ['AC', '20260210', '606100', '20260210-p2', 'FOURNISSEUR MARSEILLE'],
     ])
     expect(lignes[1][12]).toBe('2800,00')
   })

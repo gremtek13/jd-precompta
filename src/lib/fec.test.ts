@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CHAMPS_BNC_NON_EXPORTES, formaterFec, genererFec, libelleCompte, nomFichierFec, type NumerotationFec, numerotationValidee, numeroterFec } from './fec'
+import { CHAMPS_BNC_NON_EXPORTES, formaterFec, genererFec, libelleCompte, nomFichierFec, type NumerotationFec, numerotationValidee, numeroterFec, referenceDUnePiece } from './fec'
 import { COMPTE_BANQUE } from './comptes'
 import { ecritureDuPaiementPersonnel } from './cotisationPersonnelle'
 import type { ModeleComptable } from './engagement'
@@ -34,6 +34,66 @@ const ligne = (pieceId: string, o: Partial<EcritureBrouillon> = {}): EcritureBro
 // Relit un montant tel que la norme l'écrit, virgule décimale comprise — `Number('6000,00')` rend NaN.
 const lireMontant = (champ: string) => Number(champ.replace(',', '.'))
 
+// LA RÉFÉRENCE D'UNE PIÈCE (PieceRef) NE PORTE JAMAIS LE NOM DE SON FICHIER (JJ1Q1-Q3) : sa date et son empreinte courte.
+describe('referenceDUnePiece — PieceRef sans le nom du fichier (JJ1Q1-Q3)', () => {
+  const HASH = '3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b'
+
+  it('rend « AAAAMMJJ-xxxxxxxx » : la date de la pièce et les huit premiers caractères de son empreinte', () => {
+    expect(referenceDUnePiece(piece('p1', { date_piece: '2026-01-15', storage_hash: HASH }))).toBe('20260115-3a7bd3e2')
+  })
+
+  it('sans date de pièce, prend le jour du dépôt À PARIS, jamais le jour UTC de l’instant', () => {
+    // 22 h 30 UTC le 31 mars 2026 : déjà le 1er avril à Paris (heure d'été).
+    expect(referenceDUnePiece(piece('p1', { date_piece: null, created_at: '2026-03-31T22:30:00Z', storage_hash: HASH })))
+      .toBe('20260401-3a7bd3e2')
+  })
+
+  it('sans empreinte, ou d’une forme qui n’est pas hexadécimale, prend le début de l’identifiant — jamais le nom', () => {
+    const id = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0'
+    expect(referenceDUnePiece(piece(id, { storage_hash: null }))).toBe('20260310-0f1e2d3c')
+    expect(referenceDUnePiece(piece(id, { storage_hash: '   ' }))).toBe('20260310-0f1e2d3c')
+    expect(referenceDUnePiece(piece(id, { storage_hash: 'Dupont-Marie.pdf' }))).toBe('20260310-0f1e2d3c')
+  })
+
+  it('est stable : la même pièce rend la même référence, quel que soit son nom de fichier', () => {
+    const a = piece('p1', { storage_hash: HASH.toUpperCase(), nom_fichier: 'Durand Paul - séance.pdf' })
+    const b = piece('p1', { storage_hash: HASH, nom_fichier: 'autre.pdf' })
+    expect(referenceDUnePiece(a)).toBe(referenceDUnePiece(b))
+  })
+
+  // Un nom de fichier piège sur chaque pièce, de chaque sorte, dans les deux modèles : aucun n'atteint le fichier.
+  it('aucun nom de fichier n’atteint le FEC, en trésorerie comme en engagement', () => {
+    const PIEGE = 'PATIENT-DUPONT-MARIE'
+    const pieces = [
+      piece('achat', { tiers: 'Transmedical', nom_fichier: `${PIEGE}-achat.pdf`, storage_hash: HASH }),
+      piece('sans-tiers', { nom_fichier: `${PIEGE}-sans-tiers.pdf`, storage_hash: null }),
+      piece('vente', { type_piece: 'vente', date_piece: '2026-03-15', nom_fichier: `${PIEGE}-vente.pdf`, storage_hash: HASH.slice(8) }),
+      piece('sans-date', { date_piece: null, nom_fichier: `${PIEGE}-sans-date.pdf` }),
+    ]
+    const brouillon = [
+      ligne('achat', { id: 'a1', compte: '606100', montant: 50 }),
+      ligne('achat', { id: 'a2', compte: '401000', sens: 'credit', montant: 50 }),
+      ligne('achat', { id: 'a3', compte: '401000', montant: 50, date: '2026-04-05', ligne_bancaire_id: 'l-a' }),
+      ligne('achat', { id: 'a4', compte: COMPTE_BANQUE, sens: 'credit', montant: 50, date: '2026-04-05', ligne_bancaire_id: 'l-a' }),
+      ligne('sans-tiers', { id: 's1', compte: '606100', libelle: 'Pièce du 10/03/2026', montant: 30 }),
+      ligne('sans-tiers', { id: 's2', compte: COMPTE_BANQUE, sens: 'credit', libelle: 'Pièce du 10/03/2026', montant: 30 }),
+      ligne('vente', { id: 'v1', compte: '706000', sens: 'credit', libelle: 'Recette du 15/03/2026', montant: 80, date: '2026-03-15' }),
+      ligne('vente', { id: 'v2', compte: COMPTE_BANQUE, libelle: 'Recette du 15/03/2026', montant: 80, date: '2026-03-15' }),
+      ligne('sans-date', { id: 'd1', compte: '606100', libelle: 'Pièce sans date', montant: 10 }),
+      ligne('sans-date', { id: 'd2', compte: COMPTE_BANQUE, sens: 'credit', libelle: 'Pièce sans date', montant: 10 }),
+    ]
+    for (const mode of ['tresorerie', 'engagement'] as const) {
+      const fec = genererFec(brouillon, pieces, [], [], modeleDeTest(mode), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+      expect(fec).not.toContain('PATIENT')
+      expect(fec).not.toContain('.pdf')
+      // Le dépôt de la pièce sans date (le 10/03/2026 à Paris), le début de l'identifiant d'une pièce sans empreinte.
+      expect(new Set(colonnes(fec).slice(1).map((r) => r[8]))).toEqual(new Set(
+        ['20260310-3a7bd3e2', '20260310-sans-tie', `20260315-${HASH.slice(8, 16)}`, '20260310-sans-dat'],
+      ))
+    }
+  })
+})
+
 describe('genererFec — intégrité du fichier', () => {
   it("neutralise les sauts de ligne d'un libellé venu de l'OCR", () => {
     // Cas réel relevé en base : un en-tête de facture sur trois lignes ressort tel quel de
@@ -58,9 +118,10 @@ describe('genererFec — intégrité du fichier', () => {
     expect(rows[1][10]).toBe('ACME SARL')
   })
 
-  it('neutralise aussi un nom de fichier piégé', () => {
-    const fec = genererFec([ligne('p1')], [piece('p1', { nom_fichier: 'facture\tmars.pdf' })], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
-    expect(colonnes(fec)[1][8]).toBe('facture mars.pdf')
+  it('n’imprime jamais le nom du fichier, même piégé : la pièce se réfère par sa date et son empreinte (JJ1Q1-Q3)', () => {
+    const fec = genererFec([ligne('p1')], [piece('p1', { nom_fichier: 'Durand\tsoins.pdf', storage_hash: 'abcdef0123456789' })], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
+    expect(colonnes(fec)[1][8]).toBe('20260310-abcdef01')
+    expect(fec).not.toMatch(/Durand|soins/)
   })
 
   it('garde toutes les lignes à 18 colonnes, quoi qu’il arrive', () => {
@@ -226,7 +287,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
   const debitMoinsCredit = (r: string[]) => Math.round((lireMontant(r[11]) - lireMontant(r[12])) * 100) / 100
 
   it('fait d’une pièce payée en deux fois deux écritures, une par paiement, chacune équilibrée', () => {
-    const p = piece('p1', { montant_ttc: 100, date_piece: '2026-02-20', nom_fichier: 'facture.pdf' })
+    const p = piece('p1', { montant_ttc: 100, date_piece: '2026-02-20', nom_fichier: 'facture.pdf', storage_hash: 'C0FFEE00aa11bb22' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
       [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)], TRESORERIE).map(enBase('a'))
     const fec = genererFec(brouillon, [p], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
@@ -236,7 +297,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
       ['AC00002', '20260405', '606100', 40], ['AC00002', '20260405', COMPTE_BANQUE, -40],
     ])
     // La pièce reste la même : sa référence et sa date, sur les deux écritures.
-    expect(new Set(rows.map((r) => `${r[8]}|${r[9]}`))).toEqual(new Set(['facture.pdf|20260220']))
+    expect(new Set(rows.map((r) => `${r[8]}|${r[9]}`))).toEqual(new Set(['20260220-c0ffee00|20260220']))
     expect(anomaliesDgfip(fec)).toEqual([])
     expect(desequilibresDgfip(fec)).toEqual([])
     expect(defautsDeNumerotation(numeroterFec(brouillon, [p], [], [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES))).toEqual([])
@@ -638,9 +699,9 @@ describe('genererFec — l’acquisition d’un bien immobilisé', () => {
     ]
     const r = colonnes(genererFec(brouillon, [facture], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(r.map((x) => [x[0], x[2], x[4], x[5], x[8], x[11], x[12]])).toEqual([
-      ['AC', 'AC00001', '215400', 'Matériel industriel', 'fauteuil.pdf', '1000,00', '0,00'],
-      ['AC', 'AC00001', '445620', 'TVA déductible sur immobilisations', 'fauteuil.pdf', '200,00', '0,00'],
-      ['AC', 'AC00001', COMPTE_BANQUE, 'Banque', 'fauteuil.pdf', '0,00', '1200,00'],
+      ['AC', 'AC00001', '215400', 'Matériel industriel', '20260310-bien', '1000,00', '0,00'],
+      ['AC', 'AC00001', '445620', 'TVA déductible sur immobilisations', '20260310-bien', '200,00', '0,00'],
+      ['AC', 'AC00001', COMPTE_BANQUE, 'Banque', '20260310-bien', '0,00', '1200,00'],
     ])
   })
 
@@ -1054,7 +1115,7 @@ describe('genererFec — l’échéance payée depuis le compte personnel', () =
 // `valider_exercice` reçoit ce que `numeroterFec` décide et le fige sur les écritures ; le FEC d'un exercice
 // validé se relit ensuite depuis ce qui a été figé. Les deux temps doivent rendre le même fichier.
 describe('numeroterFec — ce que la validation reçoit', () => {
-  const achat = piece('achat', { tiers: 'Transmedical', montant_ttc: 120, nom_fichier: 'facture-mars.pdf' })
+  const achat = piece('achat', { tiers: 'Transmedical', montant_ttc: 120, nom_fichier: 'facture-mars.pdf', storage_hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08' })
   const vente = piece('vente', { tiers: 'CPAM', type_piece: 'vente', date_piece: '2026-03-15', montant_ttc: 50 })
   const brouillon = [
     ligne('achat', { id: 'a1', compte: '606100', sens: 'debit', montant: 120 }),
@@ -1068,14 +1129,14 @@ describe('numeroterFec — ce que la validation reçoit', () => {
   it('donne à chaque ligne son journal, son numéro, sa pièce et le libellé de son compte', () => {
     const n = numeroterFec(brouillon, [achat, vente], [], [], modeleDeTest('engagement'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(n.lignes.map((l) => [l.ecriture.id, l.journal, l.numero, l.pieceRef, l.pieceDate, l.compteLib, l.compAuxNum, l.compAuxLib, l.validDate])).toEqual([
-      ['a1', 'AC', 1, 'facture-mars.pdf', '2026-03-10', '606100', null, null, '2026-03-10'],
-      ['a2', 'AC', 1, 'facture-mars.pdf', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-03-10'],
+      ['a1', 'AC', 1, '20260310-9f86d081', '2026-03-10', '606100', null, null, '2026-03-10'],
+      ['a2', 'AC', 1, '20260310-9f86d081', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-03-10'],
       // Le 411 d'une pièce de vente : « Clients divers », jamais le nom lu (FEC22-Q7).
-      ['v2', 'VE', 1, 'vente.pdf', '2026-03-15', 'Clients', 'CDIVERS', 'Clients divers', '2026-03-15'],
+      ['v2', 'VE', 1, '20260315-vente', '2026-03-15', 'Clients', 'CDIVERS', 'Clients divers', '2026-03-15'],
       // Le nom du plan comptable général, depuis l'étape VF4c2 (VF4A-Q1) : le 706000 n'est plus nommé par son numéro.
-      ['v1', 'VE', 1, 'vente.pdf', '2026-03-15', 'Prestations de services', null, null, '2026-03-15'],
-      ['a3', 'BQ', 1, 'facture-mars.pdf', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-04-05'],
-      ['a4', 'BQ', 1, 'facture-mars.pdf', '2026-03-10', 'Banque', null, null, '2026-04-05'],
+      ['v1', 'VE', 1, '20260315-vente', '2026-03-15', 'Prestations de services', null, null, '2026-03-15'],
+      ['a3', 'BQ', 1, '20260310-9f86d081', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-04-05'],
+      ['a4', 'BQ', 1, '20260310-9f86d081', '2026-03-10', 'Banque', null, null, '2026-04-05'],
     ])
     expect(n.horsFec).toEqual([])
   })
@@ -1100,7 +1161,8 @@ describe('numeroterFec — ce que la validation reçoit', () => {
   it('ne laisse jamais une pièce sans référence', () => {
     const sansNom = piece('p-sans-nom-de-fichier', { nom_fichier: '  ' })
     const n = numeroterFec([ligne('p-sans-nom-de-fichier')], [sansNom], [], [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
-    expect(n.lignes[0].pieceRef).toBe('p-sans-n')
+    // Ni nom ni empreinte : sa date, et le début de son identifiant (JJ1Q1-Q3) — jamais vide.
+    expect(n.lignes[0].pieceRef).toBe('20260310-p-sans-n')
   })
 
   // La validation refuse un compte qui porte deux libellés, à-nouveaux compris : le FEC aussi n'en écrit qu'un.
@@ -1144,7 +1206,7 @@ describe('numeroterFec — la note de frais en trésorerie', () => {
 })
 
 describe('numerotationValidee — le FEC d’un exercice validé se relit depuis ce qui a été figé', () => {
-  const achat = piece('achat', { tiers: 'Transmedical', montant_ttc: 120, nom_fichier: 'facture-mars.pdf' })
+  const achat = piece('achat', { tiers: 'Transmedical', montant_ttc: 120, nom_fichier: 'facture-mars.pdf', storage_hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08' })
   const brouillon = [
     ligne('achat', { id: 'a1', compte: '606100', sens: 'debit', montant: 120 }),
     ligne('achat', { id: 'a2', compte: '401000', sens: 'credit', montant: 120 }),

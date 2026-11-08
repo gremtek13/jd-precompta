@@ -1,7 +1,7 @@
 import { libelleEcritureANouveau } from './aNouveaux'
 import { mouvementJustifieParLeReleve } from './affectationBanque'
 import { nomDuVehicule } from './forfaitKilometrique'
-import { referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
+import { LONGUEUR_DE_L_EMPREINTE_COURTE, referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
 import { justificatifDeLaCaisse, operationsDe, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
@@ -278,8 +278,8 @@ export interface RegistreAudit {
 //     (`libelleDUnePiece` : « Pièce du JJ/MM/AAAA » sans fournisseur lu).
 // Rien ne change en base, ni dans le FEC, ni à l'écran : le relevé importé garde son texte.
 
-/** La longueur de l'empreinte courte qui désigne une pièce dans la piste d'audit (son SHA-256 entier a sa colonne). */
-export const LONGUEUR_DE_L_EMPREINTE_COURTE = 8
+// La longueur de l'empreinte courte (`LONGUEUR_DE_L_EMPREINTE_COURTE`, lib/fec.ts) est celle de PieceRef (JJ1Q1-Q3) : le
+// FEC et la piste désignent la même pièce par les mêmes huit caractères ; son SHA-256 entier a sa colonne ici.
 
 /** Ce que la piste dit d'une pièce à la place du nom de son fichier : son dépôt, au jour de Paris, et son empreinte courte. */
 export function designationDUnePiece(piece: Pick<Piece, 'created_at' | 'storage_hash'>): string {

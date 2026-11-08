@@ -102,7 +102,7 @@ describe('defautsDeNumerotation — ce que la base refusera, nommé', () => {
   it('nomme l’écriture déséquilibrée, sa pièce et son écart en centimes', () => {
     const n = numeroterFec([ecriture({ id: 'a1', piece_id: 'achat', compte: '606100', montant: 120 })], [achat], [], [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(defautsDeNumerotation(n)).toEqual([
-      { type: 'desequilibre', journal: 'AC', numero: 1, pieceRef: 'facture-mars.pdf', ecartCentimes: 12000 },
+      { type: 'desequilibre', journal: 'AC', numero: 1, pieceRef: '20250310-achat', ecartCentimes: 12000 },
     ])
   })
 
@@ -189,8 +189,8 @@ describe('demandeDeValidation — ce que `valider_exercice` reçoit', () => {
     ], [achat], [], [ouverture], modeleDeTest('engagement'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(demandeDeValidation(n, null)).toEqual({
       p_lignes: [
-        { id: 'a1', journal: 'AC', numero: 1, piece_ref: 'facture-mars.pdf', piece_date: '2025-03-10', compte_lib: '606100', comp_aux_num: null, comp_aux_lib: null },
-        { id: 'a2', journal: 'AC', numero: 1, piece_ref: 'facture-mars.pdf', piece_date: '2025-03-10', compte_lib: 'Fournisseurs', comp_aux_num: 'FTRANSMEDICAL', comp_aux_lib: 'Transmedical' },
+        { id: 'a1', journal: 'AC', numero: 1, piece_ref: '20250310-achat', piece_date: '2025-03-10', compte_lib: '606100', comp_aux_num: null, comp_aux_lib: null },
+        { id: 'a2', journal: 'AC', numero: 1, piece_ref: '20250310-achat', piece_date: '2025-03-10', compte_lib: 'Fournisseurs', comp_aux_num: 'FTRANSMEDICAL', comp_aux_lib: 'Transmedical' },
       ],
       p_a_nouveaux: [{ id: 'an1', compte_lib: 'Banque', ecriture_lib: 'À-nouveau 51210000 BNP' }],
       p_declaration: null,

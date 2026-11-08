@@ -276,7 +276,7 @@ describe('le drapeau levé : une ligne par règlement, et la demande porte les c
     expect(a.piecesDesynchronisees.map((p) => p.id).sort()).toEqual(['p-achat', 'p-note'])
     const defauts = defautsDeNumerotation(numeroter(dHier, [ACHAT, NOTE], exportes()))
     expect(defauts.map((x) => (x.type === 'ligne_numerotee_deux_fois' ? [x.journal, x.numero, x.pieceRef, x.ligneId] : x.type))).toEqual([
-      ['AC', 1, 'p-achat.pdf', 'p-achat-hier-01'], ['AC', 1, 'p-achat.pdf', 'p-achat-hier-00'], ['AC', 3, 'p-note.pdf', 'p-note-hier-00'],
+      ['AC', 1, '20250320-p-achat', 'p-achat-hier-01'], ['AC', 1, '20250320-p-achat', 'p-achat-hier-00'], ['AC', 3, '20250601-p-note', 'p-note-hier-00'],
     ])
     // Et régénéré, plus rien : ni « à régénérer », ni défaut.
     const regeneres = [...brouillonDe(VIDES, ACHAT, true), ...brouillonDe(VIDES, NOTE, false)]
