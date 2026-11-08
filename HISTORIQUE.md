@@ -49610,3 +49610,17 @@ dans une grappe neuve : 187 migrations, 102 objets du socle intercalés, 6 forme
 égale (l'historique des deux migrations en CRLF y porte le texte LF de l'export, la dérive le ramène). Puis les quatre
 essais rejoués en production par `execute_sql` : 33, 36, 56 et 32 verdicts justes, les six mutations de l'adresse
 mordent, aucun dossier jetable resté, l'écart des comptes à 0. La copie (`r187/`, hors du dépôt) reste arrêtée.
+
+### 08/11/2026 — C5-Q4 : LA RELANCE RELIT ELLE-MÊME LE RESTE DÛ DE LA FACTURE
+
+Réponse du cabinet : « Oui, la fonction relit le reste dû ». `send-email` (modèle `relance_facture`), après les refus de
+la facture (validée, numérotée, en retard au jour de Paris), lit par le client admin ses lignes, ses encaissements
+(dossier et facture de la requête) et les avoirs VALIDÉS qui la citent, chacun en entier (compte exact, borne de 1 000
+lignes : une lecture partielle refuse en 500), puis calcule par le bloc `resteDuDeLaFacture` de lib/relances.ts, copié
+entre ses bornes (il lit `calculerLigne` du bloc montantsFacture) : le TTC ligne par ligne, moins les encaissements non
+retirés nets des contre-passations, moins le crédité — exactement `resteAEncaisser` moins `dejaCredite` de l'onglet
+Factures, ce que resteDuDeLaFactureCopie.test.ts confronte sur 400 cas tirés. Une lecture en erreur : 503 ; un TTC
+recalculé qui diffère de l'en-tête : 500 ; une facture soldée : 400, la convention de la fonction pour un état qui
+retient la relance — rien d'envoyé, rien de journalisé, avant le compte du plafond. L'e-mail dit le total TTC et « il en
+reste … à régler ». Dix scénarios HTTP neufs ; l'écran ne change pas ; à déployer (send-email par sa ligne d'import).
+Mutations : le refus retiré (5 tests rouges), l'avoir oublié dans le module et la copie (5).

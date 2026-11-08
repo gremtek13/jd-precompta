@@ -1,4 +1,5 @@
 import { dateAParis } from './format'
+import { calculerLigne } from './montantsFacture'
 import type { TypeClient } from './types'
 
 // RELANCER SES CLIENTS (espace client, étape C5 de la ligne 51.5 ; MEG3-Q3, « oui » du cabinet) — la règle et les mots,
@@ -105,6 +106,66 @@ export function retardDeLaFacture(
   if (resteCentimes == null) return { etat: 'illisible', raison: 'Les encaissements de la facture ne sont pas lus en entier : son retard ne se dit pas.' }
   return resteCentimes > 0 ? { etat: 'en_retard', jours, resteCentimes } : { etat: 'a_jour' }
 }
+
+// ── DÉBUT COPIE resteDuDeLaFacture ───────────────────────────────────────────────────────────────────────────────────
+// Ce bloc est recopié AU CARACTÈRE PRÈS dans send-email, qui relit le reste dû avant de relancer (C5-Q4, « oui » du
+// cabinet du 08/11/2026) : une facture soldée ne se relance pas, et l'e-mail dit ce qu'il en reste dû. Il lit
+// `calculerLigne`, du bloc montantsFacture que send-email recopie aussi. resteDuDeLaFactureCopie.test.ts compare la
+// copie à celui-ci, l'exécute seule avec ce bloc-là, et confronte les deux au calcul de l'onglet Factures
+// (`resteAEncaisser`, moins `dejaCredite`), sur une batterie.
+/** Une ligne de la facture, telle que la base la garde. */
+export interface LigneDuReste {
+  quantite: number
+  prix_unitaire_ht: number
+  taux_tva: number
+}
+
+/** Un encaissement du registre de la facture : les contre-passations y sont, en négatif. */
+export interface EncaissementDuReste {
+  montant: number
+  retire_le: string | null
+}
+
+/** Un avoir validé qui cite la facture : son TTC est stocké négatif. */
+export interface AvoirDuReste {
+  montant_ttc: number
+}
+
+export interface ResteDuDeLaFacture {
+  ttcCentimes: number
+  resteCentimes: number
+}
+
+/**
+ * Le TTC d'une facture et ce qu'il en reste dû — ni encaissé ni crédité par un avoir —, en centimes entiers : le TTC de
+ * chaque ligne au centime (le HT, puis la TVA sur ce HT), moins les encaissements non retirés, NETS des contre-passations,
+ * moins ce que les avoirs ont crédité. Null si une valeur n'est pas un nombre fini : rien ne s'en affirme.
+ */
+export function resteDuDeLaFacture(
+  lignes: readonly LigneDuReste[],
+  encaissements: readonly EncaissementDuReste[],
+  avoirs: readonly AvoirDuReste[],
+): ResteDuDeLaFacture | null {
+  let ttcCentimes = 0
+  for (const l of lignes) {
+    const c = calculerLigne(l.quantite, l.prix_unitaire_ht, l.taux_tva)
+    if (!Number.isFinite(c.montant_ht) || !Number.isFinite(c.montant_tva)) return null
+    ttcCentimes += Math.round(c.montant_ht * 100) + Math.round(c.montant_tva * 100)
+  }
+  let encaisseCentimes = 0
+  for (const e of encaissements) {
+    if (e.retire_le != null) continue
+    if (!Number.isFinite(e.montant)) return null
+    encaisseCentimes += Math.round(e.montant * 100)
+  }
+  let crediteCentimes = 0
+  for (const a of avoirs) {
+    if (!Number.isFinite(a.montant_ttc)) return null
+    crediteCentimes += Math.round(-a.montant_ttc * 100)
+  }
+  return { ttcCentimes, resteCentimes: ttcCentimes - encaisseCentimes - crediteCentimes }
+}
+// ── FIN COPIE resteDuDeLaFacture ─────────────────────────────────────────────────────────────────────────────────────
 
 // ── « Relancée le … », déduit du journal ────────────────────────────────────────────────────────────────────────────
 /** Une ligne du journal des e-mails, telle que la lecture des relances la rend. */

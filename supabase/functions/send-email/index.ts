@@ -241,6 +241,66 @@ export function calculerLigne(quantite: number, prixUnitaireHt: number, tauxTva:
 }
 // ── FIN COPIE montantsFacture ────────────────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT COPIE resteDuDeLaFacture ───────────────────────────────────────────────────────────────────────────────────
+// Ce bloc est recopié AU CARACTÈRE PRÈS dans send-email, qui relit le reste dû avant de relancer (C5-Q4, « oui » du
+// cabinet du 08/11/2026) : une facture soldée ne se relance pas, et l'e-mail dit ce qu'il en reste dû. Il lit
+// `calculerLigne`, du bloc montantsFacture que send-email recopie aussi. resteDuDeLaFactureCopie.test.ts compare la
+// copie à celui-ci, l'exécute seule avec ce bloc-là, et confronte les deux au calcul de l'onglet Factures
+// (`resteAEncaisser`, moins `dejaCredite`), sur une batterie.
+/** Une ligne de la facture, telle que la base la garde. */
+export interface LigneDuReste {
+  quantite: number
+  prix_unitaire_ht: number
+  taux_tva: number
+}
+
+/** Un encaissement du registre de la facture : les contre-passations y sont, en négatif. */
+export interface EncaissementDuReste {
+  montant: number
+  retire_le: string | null
+}
+
+/** Un avoir validé qui cite la facture : son TTC est stocké négatif. */
+export interface AvoirDuReste {
+  montant_ttc: number
+}
+
+export interface ResteDuDeLaFacture {
+  ttcCentimes: number
+  resteCentimes: number
+}
+
+/**
+ * Le TTC d'une facture et ce qu'il en reste dû — ni encaissé ni crédité par un avoir —, en centimes entiers : le TTC de
+ * chaque ligne au centime (le HT, puis la TVA sur ce HT), moins les encaissements non retirés, NETS des contre-passations,
+ * moins ce que les avoirs ont crédité. Null si une valeur n'est pas un nombre fini : rien ne s'en affirme.
+ */
+export function resteDuDeLaFacture(
+  lignes: readonly LigneDuReste[],
+  encaissements: readonly EncaissementDuReste[],
+  avoirs: readonly AvoirDuReste[],
+): ResteDuDeLaFacture | null {
+  let ttcCentimes = 0
+  for (const l of lignes) {
+    const c = calculerLigne(l.quantite, l.prix_unitaire_ht, l.taux_tva)
+    if (!Number.isFinite(c.montant_ht) || !Number.isFinite(c.montant_tva)) return null
+    ttcCentimes += Math.round(c.montant_ht * 100) + Math.round(c.montant_tva * 100)
+  }
+  let encaisseCentimes = 0
+  for (const e of encaissements) {
+    if (e.retire_le != null) continue
+    if (!Number.isFinite(e.montant)) return null
+    encaisseCentimes += Math.round(e.montant * 100)
+  }
+  let crediteCentimes = 0
+  for (const a of avoirs) {
+    if (!Number.isFinite(a.montant_ttc)) return null
+    crediteCentimes += Math.round(-a.montant_ttc * 100)
+  }
+  return { ttcCentimes, resteCentimes: ttcCentimes - encaisseCentimes - crediteCentimes }
+}
+// ── FIN COPIE resteDuDeLaFacture ─────────────────────────────────────────────────────────────────────────────────────
+
 // `date_emission` et `date_echeance` sont des colonnes `date` de Postgres : une date CIVILE, qui n'a
 // pas d'heure, donc pas de fuseau — son libellé est ce qu'il faut lire. Passer par `new Date(d)`
 // l'interpréterait comme minuit UTC puis la replacerait dans le fuseau du runtime : juste tant que
@@ -259,8 +319,9 @@ function echapper(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
-// Les colonnes d'une facture que la relance lit, et elles seules : ni ses lignes, ni l'adresse de son client, ni ses
-// mentions ; le montant est son TTC, tel que la facture le porte.
+// Les colonnes d'une facture que la relance lit, et elles seules : ni l'adresse de son client, ni ses mentions ; le
+// montant est son TTC, tel que la facture le porte. Ses lignes ne se lisent que pour leurs montants, avec ses
+// encaissements et ses avoirs (`lireLeResteDu`) : le reste dû que l'e-mail dit, et qui refuse une facture soldée.
 interface FactureRelancee {
   id: string; numero: string | null; statut: string; type: string; date_echeance: string | null
   montant_ttc: number | null; emetteur_nom: string | null
@@ -268,7 +329,7 @@ interface FactureRelancee {
 
 // Ce qui retient la relance, dit avant tout envoi : une facture validée — ni un brouillon ni un avoir —, qui porte son
 // numéro et son montant, et dont l'échéance est PASSÉE au jour de Paris (le lendemain de l'échéance est le premier jour
-// de retard, C. com., art. L441-10, II). Qu'il en reste dû, l'écran le juge sur le registre des encaissements.
+// de retard, C. com., art. L441-10, II). Qu'il en reste dû, la fonction le relit ensuite (`refusDuResteDu`, C5-Q4).
 function refusDeLaRelance(f: FactureRelancee, aujourdHui: string): { statut: number; message: string } | null {
   if (f.statut !== "validee" || f.type !== "facture") {
     return { statut: 400, message: "Seule une facture validée se relance — jamais un brouillon ni un avoir." }
@@ -285,15 +346,71 @@ function refusDeLaRelance(f: FactureRelancee, aujourdHui: string): { statut: num
   return null
 }
 
+// La relance ne lit le registre qu'en entier : au-delà de cette borne, une lecture rendrait une partie des lignes sans le
+// dire (le plafond de PostgREST), et le reste dû serait faux. Le compte exact le vérifie ; une liste plus longue refuse.
+const BORNE_DU_RESTE_DU = 1000
+
+// Le reste dû de la facture relancée (C5-Q4) : ses lignes, ses encaissements (contre-passations comprises) et les avoirs
+// VALIDÉS qui la citent — la somme que fait la base (`enregistrer_encaissement`) —, lus par le client admin, bornés à la
+// facture et au dossier de la requête, chacun EN ENTIER. Une lecture en erreur n'est pas une facture soldée : 503, comme
+// la lecture de la facture ; une lecture partielle, 500 ; le calcul est le bloc resteDuDeLaFacture, celui de l'écran.
+async function lireLeResteDu(
+  admin: ReturnType<typeof createClient>, dossierId: string, f: FactureRelancee & { montant_ttc: number },
+): Promise<{ reste: ResteDuDeLaFacture } | { statut: number; message: string }> {
+  const fin = BORNE_DU_RESTE_DU - 1
+  const [lignes, encaissements, avoirs] = await Promise.all([
+    admin.from("facture_lignes").select("quantite, prix_unitaire_ht, taux_tva", { count: "exact" })
+      .eq("facture_id", f.id).order("id").range(0, fin),
+    admin.from("encaissements_factures").select("montant, retire_le", { count: "exact" })
+      .eq("dossier_id", dossierId).eq("facture_id", f.id).order("id").range(0, fin),
+    admin.from("factures_emises").select("montant_ttc", { count: "exact" })
+      .eq("dossier_id", dossierId).eq("facture_origine_id", f.id).eq("type", "avoir").eq("statut", "validee")
+      .order("id").range(0, fin),
+  ])
+  const lectures = [
+    ["Les lignes de la facture", lignes], ["Les encaissements de la facture", encaissements],
+    ["Les avoirs de la facture", avoirs],
+  ] as const
+  for (const [quoi, lu] of lectures) {
+    if (lu.error) {
+      return { statut: 503, message: `${quoi} n'ont pas pu être lus (${lu.error.message}) : son reste dû ne se juge pas, et la relance n'est pas partie. Réessaie dans un instant.` }
+    }
+  }
+  for (const [quoi, lu] of lectures) {
+    if (!Array.isArray(lu.data) || lu.count !== lu.data.length) {
+      return { statut: 500, message: `${quoi} ne se lisent pas en entier : son reste dû ne se juge pas, et la relance n'est pas partie.` }
+    }
+  }
+  const reste = resteDuDeLaFacture(
+    lignes.data as LigneDuReste[], encaissements.data as EncaissementDuReste[], avoirs.data as AvoirDuReste[],
+  )
+  if (reste === null || reste.ttcCentimes !== Math.round(f.montant_ttc * 100)) {
+    return { statut: 500, message: "Le total de cette facture ne se retrouve pas dans ses lignes : la relance n'est pas partie." }
+  }
+  return { reste }
+}
+
+// Une facture soldée — encaissée, ou créditée par ses avoirs — ne se relance pas : 400, comme les autres états de la
+// facture qui retiennent la relance (`refusDeLaRelance`).
+function refusDuResteDu(reste: ResteDuDeLaFacture): { statut: number; message: string } | null {
+  if (reste.resteCentimes <= 0) {
+    return { statut: 400, message: "Il ne reste rien à régler sur cette facture — encaissée, ou créditée par un avoir : elle ne se relance pas." }
+  }
+  return null
+}
+
 function construireEmailRelanceFacture(
-  f: FactureRelancee & { numero: string; montant_ttc: number; date_echeance: string }, messagePerso: string | null,
+  f: FactureRelancee & { numero: string; montant_ttc: number; date_echeance: string }, reste: ResteDuDeLaFacture,
+  messagePerso: string | null,
 ): { objet: string; html: string } {
   const emetteur = f.emetteur_nom ?? "Le cabinet"
+  // Le reste dû ET le total : une facture payée en partie se relance pour ce qu'il en manque, et le client retrouve sa
+  // facture à son total.
   const html = `
     <div style="font-family:sans-serif;color:#222;max-width:560px;">
       <p>Bonjour,</p>
       ${messagePerso ? `<p>${echapper(messagePerso)}</p>` : ""}
-      <p>Sauf erreur de notre part, la facture <strong>${echapper(f.numero)}</strong>, d'un montant de <strong>${formaterMontant(f.montant_ttc)}</strong> TTC, arrivée à échéance le ${formaterDate(f.date_echeance)}, n'a pas encore été réglée.</p>
+      <p>Sauf erreur de notre part, la facture <strong>${echapper(f.numero)}</strong>, d'un montant total de <strong>${formaterMontant(f.montant_ttc)}</strong> TTC, arrivée à échéance le ${formaterDate(f.date_echeance)}, n'a pas encore été entièrement réglée : il en reste <strong>${formaterMontant(reste.resteCentimes / 100)}</strong> à régler.</p>
       <p>Si le règlement est déjà parti, merci de ne pas tenir compte de ce message.</p>
       <p style="margin-top:24px;">Cordialement,<br>${echapper(emetteur)}</p>
     </div>`
@@ -688,9 +805,18 @@ Deno.serve(async (req: Request) => {
     if (refus) {
       return json({ error: refus.message }, refus.statut)
     }
-    const construit = construireEmailRelanceFacture(
-      facture as FactureRelancee & { numero: string; montant_ttc: number; date_echeance: string }, messagePerso,
-    )
+    const relue = facture as FactureRelancee & { numero: string; montant_ttc: number; date_echeance: string }
+    // Le reste dû, relu ici avant tout envoi (C5-Q4) : l'écran le juge, mais une facture soldée entre-temps, ou une
+    // demande qui ne vient pas de l'écran, ne relance pas un client qui ne doit plus rien.
+    const lu = await lireLeResteDu(admin, dossierId, relue)
+    if ("statut" in lu) {
+      return json({ error: lu.message }, lu.statut)
+    }
+    const solde = refusDuResteDu(lu.reste)
+    if (solde) {
+      return json({ error: solde.message }, solde.statut)
+    }
+    const construit = construireEmailRelanceFacture(relue, lu.reste, messagePerso)
     objet = construit.objet
     html = construit.html
     // Le journal cite la facture relancée : « Relancée le … » s'en déduit, rien d'autre ne se stocke.

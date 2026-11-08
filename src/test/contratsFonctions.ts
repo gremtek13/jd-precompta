@@ -4773,20 +4773,56 @@ function relanceJournalisee(_r: Resultat, m: Monde): string[] {
   return fautes
 }
 
-/** Le corps envoyé : le numéro, le TTC et l'échéance ; ni les lignes, ni l'adresse du client, ni une pénalité. */
-function corpsDeLaRelance(_r: Resultat, m: Monde): string[] {
+const enEuros = (n: number) => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
+
+/**
+ * Le corps envoyé : le numéro, le TTC total, le reste dû (C5-Q4) et l'échéance ; ni les lignes, ni l'adresse du client,
+ * ni une pénalité. Le reste dû attendu, en euros : le TTC entier par défaut (rien d'encaissé).
+ */
+const corpsDeLaRelanceAvec = (resteAttendu?: number) => (_r: Resultat, m: Monde): string[] => {
   const envois = (m.notes.envois ?? []) as { subject?: unknown; html?: unknown; to?: unknown }[]
   if (envois.length !== 1) return [`${envois.length} envoi(s)`]
   const corps = String(envois[0].html)
   const ttc = lignes(m, 'factures_emises')[0]?.montant_ttc as number
   const fautes: string[] = []
-  const montant = ttc.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
-  for (const attendu of ['F2026-0001', montant, 'arrivée à échéance le 15/10/2026', 'Atelier Démo Conseil']) {
+  for (const attendu of [
+    'F2026-0001', `d'un montant total de <strong>${enEuros(ttc)}</strong> TTC`, 'arrivée à échéance le 15/10/2026',
+    `il en reste <strong>${enEuros(resteAttendu ?? ttc)}</strong> à régler`, 'Atelier Démo Conseil',
+  ]) {
     if (!corps.includes(attendu)) fautes.push(`le corps ne dit pas « ${attendu} »`)
   }
   for (const interdit of ['Désignation', 'énalit', 'ndemnit']) if (corps.includes(interdit)) fautes.push(`le corps porte « ${interdit} »`)
   if (envois[0].to !== RELANCE.destinataire) fautes.push(`destinataire : ${String(envois[0].to)}`)
   return fautes
+}
+const corpsDeLaRelance = corpsDeLaRelanceAvec()
+
+// Le registre et les avoirs de la facture du harnais (TTC 120 €), pour le reste dû que la fonction relit (C5-Q4).
+const encaissementDeLaRelance = (m: Monde, montant: number, valeurs: Record<string, unknown> = {}) => {
+  (m.base.encaissements_factures ??= []).push({
+    id: identifiantGenere(), dossier_id: D, facture_id: FACTURE, montant, retire_le: null, ...valeurs,
+  })
+}
+const avoirDeLaRelance = (m: Monde, valeurs: Record<string, unknown> = {}) => {
+  (m.base.factures_emises ??= []).push({
+    // Ses lignes stockées négatives : son TTC, −120 €, crédite la facture entière.
+    ...factureEnBase([ligneDeFacture({ quantite: -1 })], { id: identifiantGenere(), dossier_id: D, type: 'avoir', facture_origine_id: FACTURE }),
+    numero: 'A2026-0001', ...valeurs,
+  })
+}
+const REFUS_D_UNE_FACTURE_SOLDEE = 'Il ne reste rien à régler sur cette facture — encaissée, ou créditée par un avoir : elle ne se relance pas.'
+const soldeeRefusee = (nom: string, preparer: (m: Monde) => void): Scenario => {
+  const base = relanceRefusee(nom, 400, preparer)
+  return {
+    ...base,
+    attendu: {
+      ...base.attendu,
+      verifier: (r, m) => [
+        ...(corpsDe(r).error === REFUS_D_UNE_FACTURE_SOLDEE ? [] : [`refus : ${r.texte}`]),
+        ...jamais(m, 'ecriture', 'une écriture'),
+      ],
+    },
+  }
 }
 
 const relanceRefusee = (nom: string, statut: number, preparer: (m: Monde) => void, corps: unknown = RELANCE_FACTURE): Scenario => ({
@@ -4850,6 +4886,69 @@ export const SCENARIOS_RELANCES: readonly Scenario[] = [
   },
   relanceRefusee('relance — la lecture de la facture en panne : 503 qui le dit, rien d’envoyé', 503, (m) => {
     factureEnRetard(m); m.pannes.push({ table: 'factures_emises', operation: 'select', erreur: { message: 'délai dépassé' } })
+  }),
+  // Le reste dû, relu par la fonction avant tout envoi (C5-Q4).
+  soldeeRefusee('relance — une facture soldée par ses encaissements : 400 qui le dit, rien d’envoyé ni journalisé', (m) => {
+    factureEnRetard(m); encaissementDeLaRelance(m, 70); encaissementDeLaRelance(m, 50)
+  }),
+  soldeeRefusee('relance — une facture soldée par un avoir validé : 400 qui le dit, rien d’envoyé ni journalisé', (m) => {
+    factureEnRetard(m); avoirDeLaRelance(m)
+  }),
+  soldeeRefusee('relance — soldée en partie par un encaissement, pour le reste par un avoir : 400', (m) => {
+    factureEnRetard(m); encaissementDeLaRelance(m, 60)
+    avoirDeLaRelance(m, { montant_ht: -50, montant_tva: -10, montant_ttc: -60 })
+  }),
+  {
+    nom: 'relance — payée en partie : la relance part, et dit le reste dû et le total',
+    preparer: (m) => { factureEnRetard(m); encaissementDeLaRelance(m, 50) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_FACTURE }),
+    attendu: {
+      statut: 200, depenses: ENVOI_RELANCE_JOURNALISE,
+      verifier: (r, m) => [...relanceJournalisee(r, m), ...corpsDeLaRelanceAvec(70)(r, m)],
+    },
+  },
+  {
+    nom: 'relance — un encaissement retiré, un autre contre-passé, l’avoir d’un brouillon ou d’un autre dossier : rien ne solde, le TTC entier reste dû',
+    preparer: (m) => {
+      factureEnRetard(m)
+      encaissementDeLaRelance(m, 120, { retire_le: '2026-10-20T09:00:00Z' })
+      encaissementDeLaRelance(m, 120); encaissementDeLaRelance(m, -120)
+      avoirDeLaRelance(m, { statut: 'brouillon' }); avoirDeLaRelance(m, { dossier_id: ID.dossierVoisin })
+      encaissementDeLaRelance(m, 120, { dossier_id: ID.dossierVoisin })
+    },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_FACTURE }),
+    attendu: {
+      statut: 200, depenses: ENVOI_RELANCE_JOURNALISE,
+      verifier: (r, m) => [...relanceJournalisee(r, m), ...corpsDeLaRelance(r, m)],
+    },
+  },
+  {
+    ...relanceRefusee('relance — client « Ventes » : une facture soldée se refuse avant le compte du plafond, rien d’envoyé', 400, (m) => {
+      factureEnRetard(m); accesDuClient({ ventes: true })(m); encaissementDeLaRelance(m, 120)
+    }),
+    requete: (s) => requeteDe(s, { personne: 'client', corps: RELANCE_FACTURE }),
+  },
+  ...([
+    ['ses lignes', 'facture_lignes', 'Les lignes'],
+    ['ses encaissements', 'encaissements_factures', 'Les encaissements'],
+  ] as const).map(([quoi, table, mots]): Scenario => {
+    const base = relanceRefusee(`relance — la lecture de ${quoi} en panne : 503 qui le dit, rien d’envoyé ni journalisé`, 503, (m) => {
+      factureEnRetard(m); encaissementDeLaRelance(m, 120)
+      m.pannes.push({ table, operation: 'select', erreur: { message: 'délai dépassé' } })
+    })
+    return {
+      ...base,
+      attendu: {
+        ...base.attendu,
+        verifier: (r) => (String(corpsDe(r).error).startsWith(`${mots} de la facture n'ont pas pu être lus (délai dépassé)`) ? [] : [r.texte]),
+      },
+    }
+  }),
+  relanceRefusee('relance — la lecture des avoirs en panne : 503, rien d’envoyé', 503, (m) => {
+    factureEnRetard(m); m.pannes.push({ table: 'factures_emises', operation: 'select', sauter: 1, erreur: { message: 'délai dépassé' } })
+  }),
+  relanceRefusee('relance — des encaissements lus en partie (le plafond de PostgREST) : 500, rien d’envoyé', 500, (m) => {
+    factureEnRetard(m); encaissementDeLaRelance(m, 10); encaissementDeLaRelance(m, 10); m.maxLignes = 1
   }),
   ...([
     ['absent', { ...RELANCE, type: 'relance_facture' }],
