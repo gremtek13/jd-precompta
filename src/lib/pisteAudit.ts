@@ -272,9 +272,10 @@ export interface RegistreAudit {
 //     citent le mouvement, de celles de leurs pièces, et de celles des encaissements qui le citent (`comptesDesMouvements`) ;
 //   - « Tiers » d'une facture ou d'un encaissement : le client seulement quand c'est une entreprise (`nomDuClientEcrit`,
 //     lib/libellesDesVentes.ts, le prédicat d'IdClient, FEC22-Q7) ; sinon la colonne se tait ;
-//   - « Fichier justificatif » (et le libellé d'une pièce sans écriture qui retombait sur lui) : jamais le nom du fichier
-//     déposé, mais sa date de dépôt à Paris et les huit premiers caractères de l'empreinte que la pièce porte déjà
-//     (`designationDUnePiece`) ; sans empreinte, la pièce le dit.
+//   - « Fichier justificatif » : jamais le nom du fichier déposé, mais sa date de dépôt à Paris et les huit premiers
+//     caractères de l'empreinte que la pièce porte déjà (`designationDUnePiece`) ; sans empreinte, la pièce le dit. Le
+//     libellé d'une pièce sans écriture, qui retombait sur lui, suit depuis JJ1Q1-Q2 la règle de ses écritures
+//     (`libelleDUnePiece` : « Pièce du JJ/MM/AAAA » sans fournisseur lu).
 // Rien ne change en base, ni dans le FEC, ni à l'écran : le relevé importé garde son texte.
 
 /** La longueur de l'empreinte courte qui désigne une pièce dans la piste d'audit (son SHA-256 entier a sa colonne). */
@@ -404,8 +405,9 @@ export function pisteAudit(
       libelle: exemplaireDUneSource(p)
         ? `Exemplaire de : ${nomDuDocument(exemplaireDUneSource(p)!)} — la vente est comptée par la facture`
         // Une pièce de vente, « Recette du JJ/MM/AAAA », jamais le tiers lu (JJ1-Q1, la règle de FEC22-Q7) ; un achat, son
-        // fournisseur, sinon sa désignation, jamais le nom de son fichier (JJ1Q1-Q1).
-        : libelleDUnePiece({ ...p, nom_fichier: designationDUnePiece(p) }),
+        // fournisseur, sinon « Pièce du JJ/MM/AAAA » comme ses écritures, jamais le nom de son fichier (JJ1Q1-Q2) : sa
+        // désignation reste dans sa colonne.
+        : libelleDUnePiece(p),
       debit: 0,
       credit: 0,
       pieceId: p.id,

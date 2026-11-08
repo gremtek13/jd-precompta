@@ -190,9 +190,10 @@ describe('synchroniserContrepartieBanque', () => {
     expect(insere).toMatchObject({ montant: 119.98, date: '2026-03-12' })
   })
 
-  it('libelle par le tiers, sinon par le nom du fichier', async () => {
+  // JJ1Q1-Q2 : sans fournisseur lu, la date de la pièce, jamais le nom de son fichier (qui peut nommer un patient).
+  it('libelle par le tiers, sinon « Pièce du JJ/MM/AAAA », jamais par le nom du fichier', async () => {
     await synchroniserContrepartieBanque('d1', piece({ tiers: null }), ligne(-120), TRESORERIE)
-    expect(insere).toMatchObject({ libelle: 'facture.pdf' })
+    expect(insere).toMatchObject({ libelle: 'Pièce du 10/03/2026' })
   })
 
   it('n’écrit rien tant que la pièce n’a pas sa ligne de charge', async () => {

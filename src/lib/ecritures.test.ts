@@ -80,9 +80,12 @@ describe('lignesChargeProduitPourPiece', () => {
     expect(sansDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
-  it('libelle par le tiers, sinon par le nom du fichier', () => {
+  // JJ1Q1-Q2 : sans fournisseur lu, la date de la pièce, jamais le nom de son fichier (qui peut nommer un patient).
+  it('libelle par le tiers, sinon « Pièce du JJ/MM/AAAA », jamais par le nom du fichier', () => {
     expect(lignesChargeProduitPourPiece('d1', piece({ tiers: 'EDF' }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)[0].libelle).toBe('EDF')
-    expect(lignesChargeProduitPourPiece('d1', piece({ tiers: null }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)[0].libelle).toBe('facture.pdf')
+    expect(lignesChargeProduitPourPiece('d1', piece({ tiers: null }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)[0].libelle).toBe('Pièce du 10/03/2026')
+    expect(lignesChargeProduitPourPiece('d1', piece({ tiers: null, date_piece: null }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)
+      .map((l) => l.libelle)).not.toContain('facture.pdf')
   })
 })
 
@@ -788,7 +791,7 @@ describe('lignesPourPiece — la génération suit le modèle du dossier', () =>
     expect(lignesPourPiece('d1', p, cible(ACHATS), true, payee, TRESORERIE)).toEqual([
       ...lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, payee, PLAN_PAR_DEFAUT),
       {
-        dossier_id: 'd1', piece_id: p.id, ligne_bancaire_id: 'l1', date: '2026-01-05', libelle: 'facture.pdf',
+        dossier_id: 'd1', piece_id: p.id, ligne_bancaire_id: 'l1', date: '2026-01-05', libelle: 'Pièce du 10/03/2026',
         statut: 'proposee', compte: COMPTE_BANQUE, montant: 120, sens: 'credit',
       },
     ])

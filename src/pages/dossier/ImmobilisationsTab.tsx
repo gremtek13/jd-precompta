@@ -17,6 +17,7 @@ import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { messageErreur } from '../../lib/messageErreur'
 import { montantRetenu } from '../../lib/montantRetenu'
+import { libelleDUnePiece } from '../../lib/libellesDesVentes'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { biensFiges, dateFigee } from '../../lib/validationExercice'
@@ -337,7 +338,9 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
         dossier_id: dossierId,
         piece_id: piece.id,
         nature_id: naturesChoisies[piece.id],
-        libelle: piece.tiers ?? piece.nom_fichier,
+        // Le nom du bien, que sa dotation recopie dans son libellé, donc au FEC : le fournisseur lu, sinon « Pièce du
+        // JJ/MM/AAAA », jamais le nom du fichier (JJ1Q1-Q2). Le cabinet le renomme dans le registre.
+        libelle: libelleDUnePiece(piece),
         valeur: montantRetenu(piece, assujettiTva),
         date_acquisition: dateDAcquisition(piece),
         duree_annees: duree,

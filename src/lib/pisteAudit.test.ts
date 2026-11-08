@@ -264,10 +264,15 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
     expect(lignes[0].manque).toEqual([])
   })
 
-  it('retombe sur la désignation de la pièce quand la pièce non comptabilisée n\'a pas de tiers, jamais sur son fichier', () => {
-    // Une ligne de piste sans libellé ne désigne rien ; la désignation de la pièce est le dernier repère (JJ1Q1-Q1).
+  it('nomme la pièce non comptabilisée sans tiers comme ses écritures, par sa date, jamais par son fichier', () => {
+    // Une ligne de piste sans libellé ne désigne rien : « Pièce du JJ/MM/AAAA » (JJ1Q1-Q2), « Pièce sans date » sans date ;
+    // la désignation de la pièce (JJ1Q1-Q1) reste dans sa colonne.
     const lignes = pisteAudit([], [piece('p9', { tiers: null, storage_hash: 'c'.repeat(64) })], [], [], SANS_REGISTRE)
-    expect(lignes[0].libelle).toBe('Pièce déposée le 10/03/2026, empreinte cccccccc')
+    expect(lignes[0].libelle).toBe('Pièce du 10/03/2026')
+    expect(lignes[0].pieceFichier).toBe('Pièce déposée le 10/03/2026, empreinte cccccccc')
+    const sansDate = pisteAudit([], [piece('p8', { tiers: null, date_piece: null })], [], [], SANS_REGISTRE)
+    expect(sansDate[0].libelle).toBe('Pièce sans date')
+    for (const l of [...lignes, ...sansDate]) expect(l.libelle).not.toMatch(/\.pdf/)
   })
 
   it('montre une empreinte absente comme absente, sans fabriquer une preuve', () => {

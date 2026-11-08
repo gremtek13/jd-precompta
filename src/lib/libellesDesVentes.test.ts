@@ -5,8 +5,9 @@ import { identificationDuClient, type FactureDuClient } from './champsBncDuFec'
 import { auxiliaireDuTiers } from './engagement'
 import {
   LONGUEUR_DU_LIBELLE_D_UN_MOUVEMENT, libelleDUnMouvementDesVentes, libelleDUnePiece, libelleDUneVenteFacturee, nomDuClientEcrit,
-  sirenDuClient, tiersAuFec, type PieceLibellee,
+  LIBELLE_D_UNE_PIECE_SANS_DATE, sirenDuClient, tiersAuFec, type PieceLibellee,
 } from './libellesDesVentes'
+import type { Piece } from './types'
 import { modeleDeTest } from '../test/modeles'
 
 // FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE (lib/libellesDesVentes.ts). Deux parties : la règle, cas par
@@ -18,7 +19,10 @@ const SIREN_VALIDE = '123456782'
 const SIRET_INVALIDE = '12345678200011'
 const SIREN_INVALIDE = '123456789'
 
-const piece = (o: Partial<PieceLibellee> = {}): PieceLibellee => ({
+// Le nom du fichier est porté par la pièce telle que l'appelant la lit, même si la règle ne le lit pas : une règle qui le
+// relirait (une mutation) le rendrait.
+type PieceLue = PieceLibellee & Pick<Piece, 'nom_fichier'>
+const piece = (o: Partial<PieceLue> = {}): PieceLue => ({
   type_piece: 'vente', tiers: 'Patient Fictif', nom_fichier: 'facture-patient-fictif.pdf', date_piece: '2026-03-05', ...o,
 })
 
@@ -86,11 +90,25 @@ describe('la règle', () => {
     }
   })
 
-  it('un achat, une note de frais, une autre pièce : le fournisseur lu, sinon le fichier — comme hier', () => {
+  it('un achat, une note de frais, une autre pièce : le fournisseur lu, tel quel — comme hier', () => {
     expect(libelleDUnePiece(piece({ type_piece: 'achat', tiers: 'Fournisseur Fictif' }))).toBe('Fournisseur Fictif')
-    expect(libelleDUnePiece(piece({ type_piece: 'achat', tiers: null }))).toBe('facture-patient-fictif.pdf')
+    expect(libelleDUnePiece(piece({ type_piece: 'achat', tiers: '  Fournisseur  Fictif ' }))).toBe('  Fournisseur  Fictif ')
     expect(libelleDUnePiece(piece({ type_piece: 'note_frais', tiers: 'Péage fictif' }))).toBe('Péage fictif')
     expect(libelleDUnePiece(piece({ type_piece: 'autre', tiers: 'Banque fictive' }))).toBe('Banque fictive')
+  })
+
+  // JJ1Q1-Q2 (réponse du cabinet du 08/11/2026) : le praticien a pu nommer le fichier d'après un patient.
+  it('sans fournisseur lu : « Pièce du JJ/MM/AAAA », « Pièce sans date » sans date — jamais le nom du fichier', () => {
+    for (const type_piece of ['achat', 'note_frais', 'autre'] as const) {
+      expect(libelleDUnePiece(piece({ type_piece, tiers: null }))).toBe('Pièce du 05/03/2026')
+      // Un tiers blanc n'a pas été lu : un libellé vide serait une faute du FEC (EcritureLib).
+      expect(libelleDUnePiece(piece({ type_piece, tiers: '   ' }))).toBe('Pièce du 05/03/2026')
+      expect(libelleDUnePiece(piece({ type_piece, tiers: null, date_piece: null }))).toBe(LIBELLE_D_UNE_PIECE_SANS_DATE)
+      expect(LIBELLE_D_UNE_PIECE_SANS_DATE).toBe('Pièce sans date')
+      for (const p of [piece({ type_piece, tiers: null }), piece({ type_piece, tiers: '', date_piece: null })]) {
+        expect(libelleDUnePiece(p)).not.toMatch(/patient|fictif|pdf/i)
+      }
+    }
   })
 
   it('le compte auxiliaire du FEC : « Clients divers » pour une pièce de vente, le fournisseur pour un achat', () => {

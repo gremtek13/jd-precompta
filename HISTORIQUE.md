@@ -49586,3 +49586,13 @@ l'écran avec e7b. TNS-Q1-A : le taux dentiste borné entre 0 et 1 tant qu'un re
 la date de début d'activité reste modifiable après la validation. TNS-Q2-B2 : pas de trop-versé plus fort que l'appel
 avant un avis réel de l'Urssaf. TNS-Q2-C : les bornes de la base, N − 1 à N + 5. TNS-Q2-D : l'estimation de la
 régularisation d'une année validée suit la description du jour. Rien ne change le code, sauf JJ1Q1-Q2, en cours ailleurs.
+
+### 08/11/2026 — JJ1Q1-Q2 : LE LIBELLÉ D'UNE PIÈCE SANS FOURNISSEUR NE REPREND PLUS LE NOM DU FICHIER
+
+Réponse du cabinet : « Oui, « Pièce du JJ/MM/AAAA » ». `libelleDUnePiece` (lib/libellesDesVentes.ts), seule règle : un
+achat, une note de frais ou une pièce « autre » sans tiers lu (nul ou blanc) se libelle « Pièce du JJ/MM/AAAA », « Pièce
+sans date » sans date (jamais la date du dépôt) ; son type ne lit plus `nom_fichier`. La suivent les écritures
+composées, la piste d'audit (une pièce sans écriture, sa désignation restant dans sa colonne) et le nom d'un bien
+immobilisé depuis sa pièce, que ses dotations recopient. Le brouillon garde son libellé (FEC22Q7-Q1) ; rien en
+base. Restent, hors de la décision : PieceRef, le nom du fichier au FEC ; le commentaire périmé de l'assistant, qui
+n'a pas de copie de la règle. Mutations : la règle rendue au fichier (6 tests rouges), le bien immobilisé (1).

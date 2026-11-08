@@ -498,10 +498,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   il rend ou défait l'argent d'un client (une ligne en classe 7 ou 41, la définition de VF9CQ1B), tout autre débit
   gardant le libellé de la banque (`lib/libellesDuReleve.ts`, JJ1-Q1, le 07/11/2026) ; la piste d'audit suit la même
   règle pour le libellé de la banque, tait le tiers d'une pièce de vente et le client d'une facture qui n'est pas une
-  entreprise, et sa colonne du justificatif dit la date de dépôt et l'empreinte, jamais le nom du fichier (JJ1Q1-Q1 ; le
-  libellé d'une écriture d'achat sans fournisseur lu le reprend encore : JJ1Q1-Q2) → « JJ1 : LE NOM D'UN PATIENT NE
-  PASSE PLUS AU FEC PAR LE LIBELLÉ DU RELEVÉ », « JJ1-Q1 : LE LIBELLÉ DE LA BANQUE HORS DES ÉCRITURES DU RELEVÉ »,
-  « JJ1Q1-Q1 : LA PISTE D'AUDIT NE NOMME PLUS UN PATIENT ».
+  entreprise, et sa colonne du justificatif dit la date de dépôt et l'empreinte, jamais le nom du fichier (JJ1Q1-Q1
+  et JJ1Q1-Q2 : le libellé d'une écriture d'achat sans fournisseur lu dit « Pièce du JJ/MM/AAAA ») → « JJ1 : LE NOM
+  D'UN PATIENT NE PASSE PLUS AU FEC PAR LE LIBELLÉ DU RELEVÉ », « JJ1-Q1 : LE LIBELLÉ DE LA BANQUE HORS DES
+  ÉCRITURES DU RELEVÉ », « JJ1Q1-Q1 : LA PISTE D'AUDIT NE NOMME PLUS UN PATIENT », « JJ1Q1-Q2 : LE LIBELLÉ D'UNE
+  PIÈCE SANS FOURNISSEUR NE REPREND PLUS LE NOM DU FICHIER ».
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT, conçu (seul le
   titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération automatique ou au clic (RGPD.md
   §8.8).

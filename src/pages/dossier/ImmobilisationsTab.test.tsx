@@ -799,6 +799,20 @@ describe('ImmobilisationsTab — enregistrer une candidate', () => {
     expect(faux.inserees[0].valeur.nature_id).toBe('n-propre')
   })
 
+  // JJ1Q1-Q2 : le nom du bien passe dans le libellé de ses dotations, donc au FEC ; sans fournisseur lu, il se nomme par la
+  // date de la pièce, jamais par le nom de son fichier (qui peut nommer un patient).
+  it.each([
+    ['MATÉRIEL MÉDICAL', 'MATÉRIEL MÉDICAL'],
+    [null, 'Pièce du 02/04/2025'],
+  ])('un fournisseur lu %s : le bien s’enregistre sous « %s »', async (tiers, libelle) => {
+    poser([], { pieces: [{ ...candidate, tiers, nom_fichier: 'patient-fictif.pdf' }] })
+    monter()
+    fireEvent.change(await screen.findByLabelText(`Nature de ${tiers ?? 'patient-fictif.pdf'}`), { target: { value: 'n-propre' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer comme immobilisation' }))
+    await waitFor(() => expect(faux.inserees).toHaveLength(1))
+    expect(faux.inserees[0].valeur.libelle).toBe(libelle)
+  })
+
   // Le seuil se juge sur la même valeur : 450 € hors taxes, 540 € TTC.
   it.each([
     [true, false],

@@ -242,6 +242,21 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
     expect(defautsDeNumerotation(numeroterFec(brouillon, [p], [], [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES))).toEqual([])
   })
 
+  // JJ1Q1-Q2 : un achat sans fournisseur lu se compose « Pièce du JJ/MM/AAAA » ; ce qui est déjà au brouillon garde son
+  // libellé (FEC22Q7-Q1) — EcritureLib relit la ligne, jamais la pièce, et le FEC d'un brouillon existant ne change pas.
+  it('EcritureLib : « Pièce du JJ/MM/AAAA » pour une écriture composée, le libellé d’une ligne déjà au brouillon sinon', () => {
+    const p = piece('p1', { montant_ttc: 100, date_piece: '2026-02-20', nom_fichier: 'patient-fictif.pdf', tiers: null })
+    const composee = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
+      [paiement('l1', '2026-03-05', -100)], TRESORERIE).map(enBase('a'))
+    const fecNeuf = colonnes(genererFec(composee, [p], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
+    expect(fecNeuf.map((r) => r[10])).toEqual(['Pièce du 20/02/2026', 'Pièce du 20/02/2026'])
+    const dejaEcrite = composee.map((l) => ({ ...l, libelle: 'patient-fictif.pdf' }))
+    const fecAncien = colonnes(genererFec(dejaEcrite, [p], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
+    expect(fecAncien.map((r) => r[10])).toEqual(['patient-fictif.pdf', 'patient-fictif.pdf'])
+    // Le reste de la ligne est le même dans les deux fichiers : seul EcritureLib suit le brouillon.
+    expect(fecAncien.map((r) => r.filter((_, i) => i !== 10))).toEqual(fecNeuf.map((r) => r.filter((_, i) => i !== 10)))
+  })
+
   it('garde la TVA d’une date avec sa charge : chaque écriture s’équilibre face à son paiement', () => {
     const p = piece('p2', { montant_ttc: 120, montant_ht: 100, montant_tva: 20, date_piece: '2026-02-20' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, true,
