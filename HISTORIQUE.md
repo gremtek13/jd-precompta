@@ -49673,3 +49673,11 @@ Checklist et préalables vides, 2026 réclamé dans les documents attendus seule
 quinzaine manquante (août jusqu'au 15) ne se voit qu'à la validation, en avertissement — rien ne confronte la clôture d'un
 fichier à l'ouverture du suivant. Mutations : sans dédoublonnage, 4 rouges ; mars hors du dédoublonnage, 1 ; une opération
 dupliquée dans mai, 13 ; un solde reporté faussé d'un euro, 3.
+
+### 08/11/2026 — SEND-EMAIL V12 : LA RELANCE QUI RELIT LE RESTE DÛ, EN PRODUCTION (C5-Q4)
+
+La demande n° 311 fusionnée (57e5967) ; `send-email` redéployée par sa ligne d'import au commit 57e5967 de `main`,
+`verify_jwt` à `false` comme le veut `supabase/config.toml` ; la copie déployée relue avant (v11, import à c17dbe5) et
+après ; `allerretour.py` : identique au dépôt, 892 lignes, rien recopié. Une relance d'une facture soldée se refuse
+désormais en production, et l'e-mail dit le total et le reste dû. Posée au cabinet le même soir : RELEVE-Q1 (la rupture
+de solde entre deux relevés importés, dite dès l'import).
