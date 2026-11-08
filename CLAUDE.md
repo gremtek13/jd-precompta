@@ -691,11 +691,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **La case « MVP »** (28/10/2026) : cochée sur ce qui compte pour le premier dossier réel ; l'encadré « Le MVP » de la
   page de tête dit quelle partie de chaque ligne, et suit chaque changement de la case.
 - **Un chantier apparu en route reçoit sa ligne** (souvent un défaut trouvé en passant), avec sa case « Hors BNC ».
-- **Deux barres d'avancement en tête de page**, recomptées dans la même édition que la ligne, par une requête sur la
+- **Trois barres d'avancement en tête de page**, recomptées dans la même édition que la ligne, par une requête sur la
   base (`GROUP BY "Phase", "État"`), jamais de tête : la part des lignes à `État = Fait` parmi celles qui ne sont pas en
   phase « 7 — Hors d'atteinte » ; puis la même sans les lignes `"Hors BNC" = '__YES__'` (celles qui ne servent qu'aux
   dossiers BIC / IS — la case porte la décision, pas la phase). Dix cases, une 🟩 par dizaine faite, arrondie au plus
-  proche. Une ligne vaut une ligne : la barre compte des chantiers, pas du temps, et la phrase sous elle le dit.
+  proche. Une ligne vaut une ligne : la barre compte des chantiers, pas du temps, et la phrase sous elle le dit. Une
+  troisième barre, « Le MVP » (décision du cabinet du 08/11/2026), compte de même les seules lignes cochées « MVP » hors
+  de la phase 7, recomptée dans la même édition.
 - **Installation sur site : en attente** (décision du cabinet du 25/09/2026, sous-page « Rester migrable vers une
   installation sur site ») : ne pas ouvrir ce chantier en passant (pas de module OCR ou LLM commun, pas de file
   d'attente, pas de SMTP). Seule exception admise : une fonction redéployée pour une AUTRE raison peut passer son
