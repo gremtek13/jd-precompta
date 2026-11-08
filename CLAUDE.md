@@ -1059,8 +1059,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `centimes_ligne_facture`), confrontés par une batterie → « LA FACTURE : LA MIGRATION EN PRODUCTION (FACTURE-Q1) »,
   « LA FACTURE : LES DEUX REFUS DE DATE DITS AVANT LE CLIC (LIGNE 51.5) » ; une facture à une entreprise ou à un
   organisme public sans l'adresse du client, puis une ligne à 0 % d'un redevable sans article hors d'un régime d'e7a, se
-  refuseront, par un déclencheur qui suit la garde (JJ-Q4 et A7C-Q1, préparée, `ADRESSE_DU_CLIENT_EXIGEE` baissé)
-  → « JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS ADRESSE NE SE VALIDE PAS, ET LA LIGNE À 0 % D'UN REDEVABLE (A7C-Q1) ». À sa
+  refusent, par un déclencheur qui suit la garde, en production depuis le 08/11/2026, et le formulaire le dit avant le
+  clic (JJ-Q4 et A7C-Q1, `ADRESSE_DU_CLIENT_EXIGEE` levé) → « JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS ADRESSE NE SE
+  VALIDE PAS, ET LA LIGNE À 0 % D'UN REDEVABLE (A7C-Q1) », « JJ-Q4 ET A7C-Q1 EN PRODUCTION ». À sa
   validation, elle fige son statut et son numéro de TVA, l'identité légale, les paramètres, le RIB confirmé, le logo et
   le mandataire, et ses lignes leur provenance (A7a, en base depuis le 29/10/2026) ; l'aperçu d'une facture figée
   n'imprime que ses colonnes, le logo vérifié à son empreinte figée, une facture d'avant comme hier (A7b), et celle que

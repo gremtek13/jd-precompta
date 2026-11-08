@@ -49566,3 +49566,23 @@ une relance (au cabinet) ; deux en-têtes de `rls.sql`, laissés pour son emprei
 `relancesHttp.test.ts`. L'onglet des factures offre la pastille « En retard », « Relancée le … » et « Relancer », rejoués
 dans les deux états par un accesseur (`FacturesTab.relances.test.tsx`) ; mutations : garde de lecture ôtée et garde du retard
 ôtée, chacune fait virer le cas baissé au rouge ; `phraseDesRelancesSelon` sort le drapeau de `droitsAcces.ts` en paramètre.
+
+### 08/11/2026 — JJ-Q4 ET A7C-Q1 EN PRODUCTION
+
+Appliquée par l'outil le 08/11/2026 sur l'accord du cabinet (JJQ4-migration : « Oui, maintenant ») :
+`adresse_du_client_exigee` sous 20261108190701, l'historique (statements joints, CR retirés) à `ce5c7c18…`, le fichier
+préparé passé à l'export texte inchangé ; le retour reste préparé, son en-tête et celui de l'essai nomment le chemin neuf.
+`ADRESSE_DU_CLIENT_EXIGEE` levé ; l'état baissé reste éprouvé par l'accesseur de `FactureFormModalAdresse.test.tsx`.
+Contrôles égaux : dérive 187 `a0a96402…`, socle 81 `c6cf69c1…`, inventaire 2 560 `e39bde99…` ; la fonction, corps
+`2d722f66…`, n'est exécutée ni par `anon` ni par `authenticated`. Le leurre sort l'essai de la famille « apres » (19 cas).
+
+### 08/11/2026 — ONZE RÉPONSES DU CABINET
+
+Toutes à la recommandation. JJQ4-migration : oui, maintenant (l'entrée précédente). JJQ4-Q1 : l'adresse d'un client
+établi hors de France s'exigera avec e7b, après le MVP. JJ1Q1-Q2 : le libellé d'une écriture d'achat sans fournisseur lu
+dira « Pièce du JJ/MM/AAAA », un autre lot. A8A-migration : plus tard, collée avec A8b. A8A-Q1 : l'import ouvert au
+client « Ventes » avec son écran (A8d), d'ici là au cabinet seul. E7A-Q5 : (A), l'Union jugée au code du pays, dite à
+l'écran avec e7b. TNS-Q1-A : le taux dentiste borné entre 0 et 1 tant qu'un relevé réel ne montre pas plus. TNS-Q1-B :
+la date de début d'activité reste modifiable après la validation. TNS-Q2-B2 : pas de trop-versé plus fort que l'appel
+avant un avis réel de l'Urssaf. TNS-Q2-C : les bornes de la base, N − 1 à N + 5. TNS-Q2-D : l'estimation de la
+régularisation d'une année validée suit la description du jour. Rien ne change le code, sauf JJ1Q1-Q2, en cours ailleurs.
