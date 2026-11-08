@@ -30,7 +30,10 @@ import {
   decoderReleve, lireReleveOfxQif, NOM_DU_FORMAT, phraseDesSensDouteux, phraseDuSoldeAnnonce, REGLAGE_OFX_QIF,
   type ReleveOfxQifLu,
 } from '../../lib/releveOfxQif'
-import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
+import { chargerControlesReleves, enregistrerControleReleve } from '../../lib/controlesReleves'
+import {
+  controleDuFichier, jonctionsDesReleves, phraseDeLaRupture, phraseDeLaSuiteDuFichier, relevesIncoherentsDe, rupturesDesReleves,
+} from '../../lib/suiteDesReleves'
 import {
   analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE,
   libelleExploitable, lotDesCertains, piecesDuMemeMontant, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
@@ -245,7 +248,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const [mouvementOuvert, setMouvementOuvert] = useState<{ id: string; rang: number } | null>(null)
   // Relevés dont l'arithmétique ne tombe pas juste. Affichés en permanence, pas seulement à l'import :
   // c'est toute la raison d'être de leur conservation en base (voir lib/controlesReleves.ts).
-  const [relevesIncoherents, setRelevesIncoherents] = useState<ControleReleveBancaire[]>([])
+  // TOUS les contrôles des relevés (RELEVE-Q1) : ceux qui ne bouclent pas s'en tirent, et la suite des soldes d'un relevé à
+  // l'autre aussi. `null` : illisibles — l'import le dit, et aucune rupture ne s'affirme.
+  const [controlesReleves, setControlesReleves] = useState<ControleReleveBancaire[] | null>(null)
+  const relevesIncoherents = useMemo(() => relevesIncoherentsDe(controlesReleves ?? []), [controlesReleves])
+  // Les ruptures de la suite des soldes, sur un relevé lu en entier seulement : un mouvement non lu ferait dire une rupture.
+  const rupturesDuReleve = useMemo(
+    () => (controlesReleves === null || lignesIncompletes ? [] : rupturesDesReleves(jonctionsDesReleves(controlesReleves, lignes))),
+    [controlesReleves, lignes, lignesIncompletes],
+  )
   // « MA BANQUE », CÔTÉ CABINET (espace client, étape P9b ; lib/banqueCabinet.ts) : les pièces que le client a proposées et
   // le fil des mouvements, lus ENSEMBLE, et les accès du dossier. Remis « en cours » à CHAQUE lecture, la première comme
   // une relecture : pendant qu'ils reviennent, la fiche n'en dit rien et n'offre ni « Associer » ni « Demander ».
@@ -396,9 +407,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
-    const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
+    const controles = await chargerControlesReleves(dossierId).catch((err) => {
       console.error(err)
-      return [] as ControleReleveBancaire[]
+      return null
     })
 
     setLignes(lignesData)
@@ -416,7 +427,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     const envois = await lireLesEnvoisDuClient(dossierId)
     const accesLus = await lireLesAccesDuReleve(dossierId)
 
-    setRelevesIncoherents(controles)
+    setControlesReleves(controles)
     setEnvoisDuClient(envois)
     setAccesDuReleve(accesLus)
     setLectureVentes(lectureDesVentes)
@@ -1839,7 +1850,26 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         lectureIncomplete={lignesIncompletes ?? referencesIncompletes}
         lectureEnCours={loading}
         frontiere={frontiere}
+        controlesReleves={controlesReleves}
       />
+
+      {rupturesDuReleve.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            {rupturesDuReleve.length === 1 ? 'Deux relevés ne se suivent pas' : `${rupturesDuReleve.length} paires de relevés ne se suivent pas`}
+            <span className="badge badge-warning">à regarder</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Chaque relevé boucle en lui-même, mais le solde de clôture de l’un n’est pas le solde d’ouverture du suivant : un
+            relevé exporté en partie, ou une période qui n’a pas été importée. Rien n’est bloqué.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {rupturesDuReleve.map((j) => (
+              <li key={`${j.precedent.id}|${j.suivant.id}`} style={{ marginBottom: 4 }}>{phraseDeLaRupture(j)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {relevesIncoherents.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
@@ -2584,8 +2614,10 @@ const AVERTISSEMENT = { color: 'var(--color-warning)', fontSize: '0.875rem' } as
 // Il NOMME aussi ce qui ne s'importera pas comme un mouvement : les lignes retirées avant les données (préambule, en-tête),
 // les soldes retenus — « SOLDE DU COMPTE » pris pour un solde serait une opération perdue —, et les lignes qui disent
 // « solde » sans en avoir la forme, que le cabinet tranche une à une (`onDecider`) avant que l'import parte.
-function ApercuInterprete({ interpretation, phraseSoldes, doute, recouvrement, retirees, enteteReconnu, onDecider }: {
+function ApercuInterprete({ interpretation, phraseSoldes, doute, recouvrement, suite, retirees, enteteReconnu, onDecider }: {
   interpretation: ReturnType<typeof interpreterReleve>; phraseSoldes: string | null; doute: string | null; recouvrement: string | null
+  // La suite des soldes avec les relevés déjà importés (RELEVE-Q1) : une rupture, ou ce qui ne se compare pas.
+  suite: string | null
   retirees: readonly string[][]; enteteReconnu: boolean
   onDecider: (ligne: readonly string[], decision: DecisionDeSolde | null) => void
 }) {
@@ -2641,6 +2673,7 @@ function ApercuInterprete({ interpretation, phraseSoldes, doute, recouvrement, r
       )}
       {phraseSoldes && <p style={AVERTISSEMENT}>{phraseSoldes}</p>}
       {recouvrement && <p style={AVERTISSEMENT}>{recouvrement}</p>}
+      {suite && <p style={{ ...AVERTISSEMENT, whiteSpace: 'pre-line' }}>{suite}</p>}
       <div className="table-scroll" style={{ marginBottom: 6, border: '1px solid var(--color-border)', borderRadius: 8 }}>
         <table>
           <thead><tr><th>Date</th><th>Libellé</th><th>Montant lu</th><th>Ligne</th></tr></thead>
@@ -2664,9 +2697,11 @@ function ApercuInterprete({ interpretation, phraseSoldes, doute, recouvrement, r
 // `frontiere` : un mouvement daté d'un exercice validé ne s'importe plus — la base refuserait le lot entier. Il est
 // écarté et compté, comme un doublon, et l'alerte de fin d'import le dit : un relevé qui en porte, c'est un exercice
 // validé auquel il manque des mouvements, et rien ne peut plus les y ajouter.
-function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureIncomplete, lectureEnCours, frontiere }: {
+// `controlesReleves` : les contrôles des relevés déjà importés, lus en entier, ou `null` — la suite des soldes avec le fichier
+// (RELEVE-Q1) se dit dans l'aperçu et dans l'alerte de fin d'import, et une lecture ratée le dit au lieu de se taire.
+function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureIncomplete, lectureEnCours, frontiere, controlesReleves }: {
   dossierId: string; onImported: () => void; regles: RegleBancaireIgnoree[]; lignesExistantes: LigneBancaire[]
-  lectureIncomplete: string | null; lectureEnCours: boolean; frontiere: string | null
+  lectureIncomplete: string | null; lectureEnCours: boolean; frontiere: string | null; controlesReleves: ControleReleveBancaire[] | null
 }) {
   const [source, setSource] = useState<'csv' | 'pdf'>('csv')
   const [rows, setRows] = useState<string[][] | null>(null)
@@ -2825,6 +2860,16 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
     const { nouvelles } = partagerParMultiplicite(interpretation.operations, lignesExistantes)
     return recouvrements(nouvelles.map((o) => o.date), lignesExistantes)
   }, [interpretation, lignesExistantes])
+  // La suite des soldes, avant l'import (RELEVE-Q1) : le contrôle du fichier, confronté aux relevés déjà importés, le relevé
+  // en base augmenté des opérations du fichier sous son nom (le dédoublonnage n'en écarte que celles déjà en base). Un fichier
+  // sans ses deux soldes : la phrase des soldes le dit déjà, rien de plus.
+  const suiteCsv = useMemo(() => {
+    if (!interpretation) return null
+    const controle = controlerSolde(interpretation.soldes, interpretation.operations)
+    if (!controle) return null
+    const { nouvelles } = partagerParMultiplicite(interpretation.operations, lignesExistantes)
+    return phraseDeLaSuiteDuFichier(controlesReleves, [...lignesExistantes, ...nouvelles.map((o) => ({ ...o, source_fichier: sourceFileName }))], controleDuFichier(sourceFileName, controle))
+  }, [interpretation, lignesExistantes, controlesReleves, sourceFileName])
   const recouvrementsPdf = useMemo(() => {
     if (!pdfRows) return []
     const { nouvelles } = partagerParMultiplicite(operationsDuPdf(pdfRows).operations, lignesExistantes)
@@ -2947,6 +2992,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       // un écart qui n'existe pas dès qu'un relevé chevauche un import précédent (comme côté CSV).
       const controlePdf = controlerSolde(soldesDesignes, operations)
       if (controlePdf) await enregistrerControleReleve(dossierId, sourceFileName, controlePdf)
+      // La suite des soldes (RELEVE-Q1), comme pour un CSV : le contrôle du relevé, confronté aux relevés déjà importés.
+      const insereesPdf = aInserer.map((r) => ({ date: r.date, montant: r.montant, source_fichier: sourceFileName }))
+      const suitePdf = controlePdf ? phraseDeLaSuiteDuFichier(controlesReleves, [...lignesExistantes, ...insereesPdf], controleDuFichier(sourceFileName, controlePdf))
+        : soldesDesignes.length > 0 ? phraseDeLaSuiteDuFichier(controlesReleves, lignesExistantes, null) : null
       const alertePdf = controlePdf && !controlePdf.coherent
         ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controlePdf.soldeInitial.toFixed(2)} € + mouvements ${controlePdf.sommeMouvements.toFixed(2)} € = ${controlePdf.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controlePdf.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controlePdf.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
         : ''
@@ -2956,11 +3005,11 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       setSourceFileName(null)
       onImported()
       const ignoresDites = phraseDesIgnores(aInserer, regles)
-      if (doublons > 0 || figees > 0 || alertePdf || nulles > 0 || sansDate > 0 || ignoresDites) {
+      if (doublons > 0 || figees > 0 || alertePdf || nulles > 0 || sansDate > 0 || ignoresDites || suitePdf) {
         window.alert(`${aInserer.length} ligne(s) importée(s)${doublons > 0 ? `, ${doublons} déjà présente(s) ignorée(s)` : ''}`
           + `${nulles > 0 ? `, ${nulles} à 0,00 € ignorée(s)` : ''}${sansDate > 0 ? `, ${sansDate} sans date ignorée(s)` : ''}`
           + `${soldesDesignes.length > 0 ? `, ${soldesDesignes.length} ligne(s) de solde écartée(s)` : ''}.`
-          + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '') + alertePdf + ignoresDites)
+          + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '') + alertePdf + (suitePdf ? `\n\n${suitePdf}` : '') + ignoresDites)
       }
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))
@@ -3037,13 +3086,17 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       // Conservé en base, et pas seulement annoncé : l'alerte ci-dessous disparaît au premier clic,
       // alors qu'un relevé qui ne boucle pas reste un problème tant qu'il n'est pas traité.
       if (controle) await enregistrerControleReleve(dossierId, sourceFileName, controle)
+      // La suite des soldes avec les relevés déjà importés (RELEVE-Q1), dite après l'import : le relevé en base tel qu'il est
+      // devenu. Un fichier sans ses deux soldes a sa phrase des soldes ; sans aucune ligne de solde, l'aperçu l'a dit.
+      const suite = controle ? phraseDeLaSuiteDuFichier(controlesReleves, [...lignesExistantes, ...aInserer], controleDuFichier(sourceFileName, controle))
+        : soldes.length > 0 ? phraseDeLaSuiteDuFichier(controlesReleves, lignesExistantes, null) : null
       const alerte = controle && !controle.coherent
         ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controle.soldeInitial.toFixed(2)} € + mouvements ${controle.sommeMouvements.toFixed(2)} € = ${controle.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controle.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controle.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
         : ''
       const ignoresDites = phraseDesIgnores(aInserer, regles)
-      if (doublons > 0 || phraseEcartees || soldes.length > 0 || figees > 0 || alerte || ignoresDites) {
+      if (doublons > 0 || phraseEcartees || soldes.length > 0 || figees > 0 || alerte || ignoresDites || suite) {
         window.alert(messages.join(', ') + '.' + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '')
-          + (phraseSoldes ? `\n\n${phraseSoldes}` : '') + alerte + ignoresDites)
+          + (phraseSoldes ? `\n\n${phraseSoldes}` : '') + alerte + (suite ? `\n\n${suite}` : '') + ignoresDites)
       }
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))
@@ -3212,6 +3265,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
               phraseSoldes={phraseDesSoldes(interpretation.soldes.length)}
               doute={douteDuSens(reglage, interpretation.operations)}
               recouvrement={phraseDesRecouvrements(recouvrementsCsv)}
+              suite={suiteCsv}
               retirees={retirees}
               enteteReconnu={ligneEnTete !== null}
               onDecider={decider}

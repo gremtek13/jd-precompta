@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
-import { chargerRelevesIncoherents } from './controlesReleves'
+import { chargerControlesReleves } from './controlesReleves'
+import { relevesIncoherentsDe } from './suiteDesReleves'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from './doublonsTexte'
 import { lireAnneesCloturees } from './clotureExercice'
 import { chargerInformationsDossier } from './informationsDossier'
@@ -176,10 +177,13 @@ export async function lireLaChecklist(
     lireLaCaisse(dossierId),
   ])
   // Best-effort, comme dans BanqueTab : l'échec est journalisé, et rendu NUL — jamais lu ici comme « aucun écart ».
-  const relevesIncoherents = await chargerRelevesIncoherents(dossierId).catch((err) => {
+  // TOUS les contrôles, lus une fois (RELEVE-Q1) : ceux qui ne bouclent pas s'en tirent, et la suite des soldes d'un relevé à
+  // l'autre aussi.
+  const controlesReleves = await chargerControlesReleves(dossierId).catch((err) => {
     console.error(err)
     return null
   })
+  const relevesIncoherents = controlesReleves === null ? null : relevesIncoherentsDe(controlesReleves)
   // Même posture : journalisé, rendu nul.
   const doublonsTexte = await chargerDoublonsDeTexte(dossierId).catch((err) => {
     console.error(err)
@@ -191,6 +195,8 @@ export async function lireLaChecklist(
     cotisations: lectureCotisations.lignes,
     lignes: lectureLignes.lignes,
     relevesIncoherents,
+    // Une rupture se calcule sur les contrôles ET le relevé : l'un des deux lu en partie, le point se tait.
+    controlesReleves: lectureLignes.complete ? controlesReleves : null,
     doublonsTexte,
     // TOUTES les collections dont dépend un point de cette liste, pas seulement les quatre grosses.
     // `categoriesSansCompte` et `categoriesSansPoste` partent des CATÉGORIES, `ecrituresSansObjet` des

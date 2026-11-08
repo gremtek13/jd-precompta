@@ -4,7 +4,7 @@ import { ContexteDossier } from '../../test/exercicesValides'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type {
-  Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, LettrageManuel, LigneBancaire, OperationCaisse, Piece,
+  Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, LettrageManuel, LigneBancaire, OperationCaisse, Piece,
   RegleAffectationBancaire, RegleBancaireIgnoree, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
@@ -110,6 +110,8 @@ const faux = vi.hoisted(() => ({
   // Les opérations de la caisse du dossier (lib/caisseLecture.ts) : aucune par défaut. Un paiement d'une pièce par la caisse
   // (étape C9a) est un paiement de plus de cette pièce, que l'alignement sur la banque compte (relecture du 01/11/2026).
   operationsCaisse: [] as OperationCaisse[],
+  // Les contrôles des relevés déjà importés (lib/controlesReleves.ts) : aucun par défaut ; `null` : leur lecture refusée.
+  controlesReleves: [] as ControleReleveBancaire[] | null,
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -353,6 +355,10 @@ vi.mock('../../lib/supabase', async () => {
         if (table === 'documents_divers' && faux.erreurReleves) {
           return Promise.resolve({ data: null, error: { message: faux.erreurReleves }, count: null }).then(suite)
         }
+        if (table === 'controles_releves_bancaires') {
+          if (faux.controlesReleves === null) return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
+          return Promise.resolve({ data: faux.controlesReleves, error: null, count: faux.controlesReleves.length }).then(suite)
+        }
         if (table === 'operations_caisse') {
           return Promise.resolve({ data: faux.operationsCaisse, error: null, count: faux.operationsCaisse.length }).then(suite)
         }
@@ -549,6 +555,7 @@ function reinitialiser() {
   faux.brouillon = []
   faux.declarations = []
   faux.operationsCaisse = []
+  faux.controlesReleves = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -6691,5 +6698,86 @@ describe('BanqueTab — l’import compte les mouvements ignorés par règle', (
     expect(statutsImportes()).toEqual([['PRLV CPAM PARTICIPATION', 'ignoree'], ['VIR CPAM DES YVELINES', 'ignoree']])
     expect(alertes[0]).toContain('2 mouvements ignorés par une règle « toujours ignorer » : « cpam » 2 (dont 1 encaissement).'
       + ' Une règle ne retient pas encore le sens du mouvement')
+  })
+})
+
+// RELEVE-Q1 (08/11/2026) : la suite des soldes d'un relevé importé au suivant, dite dès l'import — dans l'aperçu, dans l'alerte
+// de fin d'import —, et montrée par l'onglet, où mène le point de la Vue d'ensemble. Une alerte seulement : l'import part.
+describe('RELEVE-Q1 — la rupture de solde entre deux relevés', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  // Août exporté jusqu'au 15 : son contrôle boucle, il finit à 1 000,00 €.
+  const AOUT_AU_15: ControleReleveBancaire = {
+    id: 'controle-aout', dossier_id: 'dossier-de-test', source_fichier: 'releve-aout.csv', solde_initial: 1200, solde_final: 1000,
+    somme_mouvements: -200, ecart: 0, coherent: true, periode_debut: '2025-08-01', periode_fin: '2025-08-15', created_at: '2025-09-02T10:00:00Z',
+  }
+  const LIGNE_AOUT = { id: 'aout', date: '2025-08-10', libelle: 'PRLV LOYER', montant: -200, source_fichier: 'releve-aout.csv' }
+  // Septembre s'ouvre à 750,00 € : la seconde quinzaine d'août, 250,00 €, manque.
+  const CSV_SEPTEMBRE = [
+    'Date;Libellé;Montant',
+    '01/09/2025;SOLDE CREDITEUR AU 01/09/2025;750,00',
+    '12/09/2025;VIR HONORAIRES;50,00',
+    '30/09/2025;SOLDE CREDITEUR AU 30/09/2025;800,00',
+  ].join('\n')
+  async function deposer(csv: string, nom: string) {
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], nom, { type: 'text/csv' })] } }) })
+    return screen.findByRole('button', { name: /Importer 1 ligne\(s\)/ })
+  }
+  const RUPTURE = /Le relevé du 01\/08\/2025 au 15\/08\/2025 \(« releve-aout\.csv »\) finit à 1\s000,00\s€ ; le relevé du 01\/09\/2025 au 30\/09\/2025 \(« releve-septembre\.csv »\) s'ouvre à 750,00\s€ : un écart de 250,00\s€\./
+
+  it('l’aperçu de septembre dit la rupture avec août, l’import part quand même, et l’alerte la redit', async () => {
+    reinitialiser()
+    faux.lignes = [ligneDeTest(LIGNE_AOUT)]
+    faux.controlesReleves = [AOUT_AU_15]
+    rendre()
+    const bouton = await deposer(CSV_SEPTEMBRE, 'releve-septembre.csv')
+    expect(screen.getByText(RUPTURE)).toBeTruthy()
+    expect((bouton as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => { bouton.click() })
+    expect(faux.insertions.filter((i) => i.table === 'lignes_bancaires')).toHaveLength(1)
+    expect(alertes).toEqual([expect.stringMatching(RUPTURE)])
+    expect(alertes[0]).toMatch(/^1 ligne\(s\) importée\(s\), 2 ligne\(s\) de solde écartée\(s\)\.\n\n⚠ Le relevé du 01\/08\/2025/)
+  })
+
+  it('deux relevés qui se suivent : ni l’aperçu ni l’alerte n’en disent rien', async () => {
+    reinitialiser()
+    // Août entier, cette fois : il finit à 750,00 €, où septembre s'ouvre.
+    faux.controlesReleves = [{ ...AOUT_AU_15, periode_fin: '2025-08-31', solde_final: 750, somme_mouvements: -450 }]
+    faux.lignes = [ligneDeTest({ ...LIGNE_AOUT, montant: -450 })]
+    rendre()
+    const bouton = await deposer(CSV_SEPTEMBRE, 'releve-septembre.csv')
+    expect(screen.queryByText(/ne se suivent pas|finit à/)).toBeNull()
+    await act(async () => { bouton.click() })
+    expect(alertes).toEqual([expect.not.stringMatching(/finit à|ne se comparent pas/)])
+  })
+
+  it('l’onglet montre la rupture des relevés déjà importés, en « à regarder », chaque période et l’écart nommés', async () => {
+    reinitialiser()
+    const septembre: ControleReleveBancaire = {
+      ...AOUT_AU_15, id: 'controle-septembre', source_fichier: 'releve-septembre.csv', solde_initial: 750, solde_final: 800, somme_mouvements: 50,
+      periode_debut: '2025-09-01', periode_fin: '2025-09-30',
+    }
+    faux.lignes = [ligneDeTest(LIGNE_AOUT), ligneDeTest({ id: 'sept', date: '2025-09-12', libelle: 'VIR HONORAIRES', montant: 50, source_fichier: 'releve-septembre.csv' })]
+    faux.controlesReleves = [septembre, AOUT_AU_15]
+    rendre()
+    const titre = await screen.findByText('Deux relevés ne se suivent pas')
+    const carte = titre.closest('.card') as HTMLElement
+    expect(within(carte).getByText('à regarder')).toBeTruthy()
+    expect(within(carte).getByText(RUPTURE)).toBeTruthy()
+  })
+
+  it('les contrôles déjà en base illisibles : l’aperçu le dit, et l’onglet n’affirme aucune rupture', async () => {
+    reinitialiser()
+    faux.lignes = [ligneDeTest(LIGNE_AOUT)]
+    faux.controlesReleves = null
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    rendre()
+    await deposer(CSV_SEPTEMBRE, 'releve-septembre.csv')
+    expect(screen.getByText('Les relevés déjà importés n’ont pas pu être relus : la suite des soldes avec ce relevé n’est pas vérifiée.')).toBeTruthy()
+    expect(screen.queryByText(/ne se suivent pas/)).toBeNull()
   })
 })

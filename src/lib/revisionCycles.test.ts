@@ -278,7 +278,7 @@ describe('le rangement des contrôles existants', () => {
   // « piste-rompue », dont elle range une moitié (l'écriture de banque sans mouvement) à la trésorerie.
   const RANGEMENT: Record<CycleRevision, string[]> = {
     tresorerie: [
-      'releve-incoherent', 'releves-inconnus', 'mouvements-a-traiter', 'lignes-non-rapprochees', 'mouvements-ignores',
+      'releve-incoherent', 'releves-en-rupture', 'releves-inconnus', 'mouvements-a-traiter', 'lignes-non-rapprochees', 'mouvements-ignores',
       'rapproches-sans-objet', 'ventilations-incoherentes', 'reglements-groupes-incoherents', 'affectes-perimes',
       'ventiles-perimes', 'comptes-de-bilan-perimes', 'montant-suspect', 'banque',
       // Étape VF5f : le mouvement du relevé que des encaissements de factures réservent, à classer.

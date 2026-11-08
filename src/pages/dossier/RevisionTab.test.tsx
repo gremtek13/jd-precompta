@@ -78,7 +78,7 @@ vi.mock('../../lib/supabase', async () => {
   }
 })
 vi.mock('../../lib/controlesReleves', () => ({
-  chargerRelevesIncoherents: async () => {
+  chargerControlesReleves: async () => {
     if (faux.relevesIllisibles) throw new Error('lecture refusée')
     return []
   },

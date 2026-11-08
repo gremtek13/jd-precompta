@@ -95,7 +95,7 @@ vi.mock('../../lib/supabase', async () => {
     },
   }
 })
-vi.mock('../../lib/controlesReleves', () => ({ chargerRelevesIncoherents: async () => [] }))
+vi.mock('../../lib/controlesReleves', () => ({ chargerControlesReleves: async () => [] }))
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: AUTEUR } }, estChef: faux.estChef }) }))
 

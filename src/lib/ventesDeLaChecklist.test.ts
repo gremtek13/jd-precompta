@@ -189,7 +189,7 @@ describe('ventesDeLaChecklist : les encaissements sans mouvement du relevé', ()
 
 function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
   return {
-    piecesValidees: [], piecesAValider: [], cotisations: [], lignes: [], relevesIncoherents: [], doublonsTexte: [], immobilisations: [],
+    piecesValidees: [], piecesAValider: [], cotisations: [], lignes: [], relevesIncoherents: [], controlesReleves: [], doublonsTexte: [], immobilisations: [],
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,

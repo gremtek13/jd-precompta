@@ -5,7 +5,8 @@
 //      (`ImportCsv`, BanqueTab.tsx : `decoderReleve`, `lireReleveOfxQif` ou la détection des colonnes, `interpreterReleve`, les
 //      refus du réglage, `partagerParMultiplicite`, `recouvrements` à confirmer, l'insertion, `controlerSolde` enregistré par
 //      fichier), puis les cas réels — un mois importé deux fois, deux fichiers qui se recouvrent, un export du plus récent au
-//      plus ancien, un mois manquant, un OFX parmi des CSV ;
+//      plus ancien, un mois manquant, un OFX parmi des CSV ; et la suite des soldes d'un fichier au suivant (RELEVE-Q1,
+//      `phraseDeLaSuiteDuFichier`, lib/suiteDesReleves.ts), dite à l'import et dans la Vue d'ensemble ;
 //   2. l'horloge au 20/11/2026, à Paris : la Checklist et les préalables de la validation de 2025, sur l'année complète ;
 //   3. l'ouverture de 2026 : la validation de 2025 simulée (ce que l'application envoie, `report` ; ce qu'elle relit, les
 //      soldes reportés que `soldes_a_reporter` écrit), puis l'ouverture de 2026 confrontée au bilan de clôture de 2025.
@@ -21,6 +22,7 @@ import {
 import { decoderReleve, lireReleveOfxQif, REGLAGE_OFX_QIF } from './releveOfxQif'
 import { controlerSolde, phraseDesSoldes, type ControleSolde } from './soldeReleve'
 import { relevesAuTrenteEtUn } from './releveAuTrenteEtUn'
+import { controleDuFichier, PHRASE_FICHIER_SANS_SOLDES, phraseDeLaSuiteDuFichier } from './suiteDesReleves'
 import { cotisationsComptees, ecritureDeLaCotisation } from './cotisationRapprochee'
 import { concordance2035 } from './concordance2035'
 import { calculerDeclaration2035 } from './declaration2035'
@@ -135,6 +137,8 @@ interface CompteRendu {
   /** Ce que l'alerte d'après l'import dit des soldes (une ligne de solde, ou plus de deux) et du contrôle. */
   phraseSoldes: string | null
   controle: ControleSolde | null
+  /** Ce que l'alerte d'après l'import dit de la suite des soldes avec les relevés déjà importés (RELEVE-Q1). */
+  suite: string | null
   ecartees: string | null
   doute: string | null
 }
@@ -145,7 +149,7 @@ class Banque {
   controles = new Map<string, ControleSolde>()
 
   importer(nom: string, texte: string, confirmer: (phrase: string) => boolean = () => true): CompteRendu {
-    const vide: CompteRendu = { erreur: null, inserees: 0, doublons: 0, recouvrement: null, phraseSoldes: null, controle: null, ecartees: null, doute: null }
+    const vide: CompteRendu = { erreur: null, inserees: 0, doublons: 0, recouvrement: null, phraseSoldes: null, controle: null, suite: null, ecartees: null, doute: null }
     // `handleFile` : les octets décodés, un OFX ou un QIF reconnu au contenu, sinon la détection des colonnes d'un CSV.
     const { texte: decode } = decoderReleve(new TextEncoder().encode(texte))
     const ofx = lireReleveOfxQif(decode)
@@ -181,9 +185,12 @@ class Banque {
     if (recouvrement !== null && !confirmer(recouvrement)) return { ...vide, doublons, recouvrement }
     this.lignes.push(...aInserer)
     const controle = controlerSolde(soldes, toInsert)
+    // `handleImport` : les contrôles déjà en base, le relevé tel qu'il est devenu, le contrôle du fichier.
+    const suite = controle ? phraseDeLaSuiteDuFichier(this.controlesEnBase(), this.lignes, controleDuFichier(nom, controle))
+      : soldes.length > 0 ? phraseDeLaSuiteDuFichier(this.controlesEnBase(), this.lignes, null) : null
     if (controle) this.controles.set(nom, controle)
     return {
-      erreur: null, inserees: aInserer.length, doublons, recouvrement, controle, ecartees: phraseDesEcartees(ecartees),
+      erreur: null, inserees: aInserer.length, doublons, recouvrement, controle, suite, ecartees: phraseDesEcartees(ecartees),
       phraseSoldes: soldes.length > 0 ? phraseDesSoldes(soldes.length) : null, doute: douteDuSens(reglage, interpretation.operations),
     }
   }
@@ -313,7 +320,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
   const frontiere = frontiereDeValidation(v.anneesValidees)
 
   const checklist = pointsDeLaChecklist({
-    piecesValidees: PIECES, piecesAValider: [], cotisations: COTISATIONS, lignes, relevesIncoherents: controles.filter((k) => !k.coherent), doublonsTexte: [],
+    piecesValidees: PIECES, piecesAValider: [], cotisations: COTISATIONS, lignes, relevesIncoherents: controles.filter((k) => !k.coherent), controlesReleves: controles, doublonsTexte: [],
     immobilisations: IMMOBILISATIONS, natures: [NATURE_MATERIEL], categories: CATEGORIES, ecritures: brouillon, emprunts: [], ventilations: [],
     ventilationsPartielles: false, reglements, reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: VEHICULES,
     declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,
@@ -370,6 +377,8 @@ describe('la seconde passe : douze relevés mensuels, importés l’un après l�
     expect(r.map((x) => x.inserees)).toEqual(DOUZE.map((m) => operationsDe(mois(m)).length))
     expect(r.map((x) => [x.doublons, x.recouvrement, x.phraseSoldes, x.ecartees, x.doute])).toEqual(DOUZE.map(() => [0, null, null, null, null]))
     expect(r.map((x) => x.controle?.coherent)).toEqual(DOUZE.map(() => true))
+    // Chaque mois s'ouvre au solde où le précédent finit : la suite des soldes n'a rien à dire (RELEVE-Q1).
+    expect(r.map((x) => x.suite)).toEqual(DOUZE.map(() => null))
     expect(multiensemble(b.lignes)).toEqual(PREMIERE_PASSE)
     expect(b.lignes).toHaveLength(MOUVEMENTS.length)
     // Le solde du 31/12 se lit sur le relevé de décembre, celui qui finit ce jour (la règle de la Révision et de MVPD7-Q2).
@@ -403,6 +412,8 @@ describe('la seconde passe : douze relevés mensuels, importés l’un après l�
     expect(marsEtDebutAvril).toMatchObject({ erreur: null, doublons: 0, recouvrement: null, controle: { coherent: true } })
     expect(avril).toMatchObject({ erreur: null, doublons: communs, inserees: operationsDe(mois(4)).length - communs, recouvrement: null, controle: { coherent: true } })
     expect([...avant, ...apres].every((x) => x.erreur === null && x.controle?.coherent === true)).toBe(true)
+    // Mars porte le solde du matin du 01/04 (son final, moins ses trois mouvements d'avril) : celui où avril s'ouvre.
+    expect([...avant, marsEtDebutAvril, avril, ...apres].map((x) => x.suite)).toEqual(DOUZE.map(() => null))
     expect(multiensemble(b.lignes)).toEqual(PREMIERE_PASSE)
   })
 
@@ -421,6 +432,9 @@ describe('la seconde passe : douze relevés mensuels, importés l’un après l�
     expect(confirmations).toHaveLength(1)
     expect(confirmations[0]).toContain(`« ${nomDuMois(1)} »`)
     expect(suite.every((x) => x.erreur === null && x.recouvrement === null && x.controle?.coherent === true)).toBe(true)
+    // Janvier, arrêté le 28 avant le virement du jour, porte le solde du matin du 28/01 : celui où le fichier suivant s'ouvre.
+    // Aucune rupture inventée par l'export en cours de journée.
+    expect([janvier, fevrier, ...suite].map((x) => x.suite)).toEqual(DOUZE.map(() => null))
     expect(multiensemble(b.lignes)).toEqual(PREMIERE_PASSE)
   })
 
@@ -442,6 +456,8 @@ describe('la seconde passe : douze relevés mensuels, importés l’un après l�
     expect(r.map((x) => x.controle?.coherent)).toEqual(DOUZE.map(() => true))
     // Les deux soldes se reconnaissent à leur DATE, pas à leur place dans le fichier.
     expect(r[0].controle).toMatchObject({ dateInitiale: debutDuMois(12), dateFinale: finDuMois(12), soldeFinal: 4215.31 })
+    // Importé avant le mois qui le précède, chaque fichier se confronte à son SUIVANT : rien à dire non plus.
+    expect(r.map((x) => x.suite)).toEqual(DOUZE.map(() => null))
     expect(multiensemble(b.lignes)).toEqual(PREMIERE_PASSE)
   })
 
@@ -451,6 +467,13 @@ describe('la seconde passe : douze relevés mensuels, importés l’un après l�
     expect(r.map((x) => x.erreur)).toEqual(DOUZE.map(() => null))
     expect(r[5]).toMatchObject({ inserees: operationsDe(mois(6)).length, doublons: 0, recouvrement: null, controle: null })
     expect(r[5].phraseSoldes).toBe(phraseDesSoldes(1))
+    // Juin n'a pas de contrôle : il ne se compare pas, et mai et juillet, que ses mouvements séparent, non plus — dit, sans
+    // rupture inventée (RELEVE-Q1).
+    expect(r[5].suite).toBe(PHRASE_FICHIER_SANS_SOLDES)
+    expect(r[6].suite).toBe(`Le relevé du 01/05/${ANNEE} au 31/05/${ANNEE} (« ${nomDuMois(5)} ») et le relevé du 01/07/${ANNEE} au 31/07/${ANNEE} `
+      + `(« ${nomDuMois(7)} ») ne se comparent pas : des mouvements datés entre les deux ne viennent d’aucun relevé contrôlé (un fichier sans ses deux soldes, ou une saisie).`)
+    expect(r.filter((_, i) => i !== 5 && i !== 6).map((x) => x.suite)).toEqual(DOUZE.slice(2).map(() => null))
+    expect(parcours(b.lignes, b.controlesEnBase(), horlogeDuJour()).checklist.tousLesPointsATraiter.find((x) => x.id === 'releves-en-rupture')?.nb).toBe(0)
     expect(multiensemble(b.lignes)).toEqual(PREMIERE_PASSE)
     // Juin redéposé en CSV ensuite : ses lignes ont la même signature, rien n'entre deux fois.
     const juinEnCsv = b.importer(nomDuMois(6), csvDeLaPeriode(mois(6)))
@@ -458,10 +481,14 @@ describe('la seconde passe : douze relevés mensuels, importés l’un après l�
     expect(multiensemble(b.lignes)).toEqual(PREMIERE_PASSE)
   })
 
-  it('un mois manquant (août) : chaque fichier boucle, rien ne le dit à l’import ; la Vue d’ensemble le réclame, la validation avertit', () => {
+  it('un mois manquant (août) : chaque fichier boucle ; l’import de septembre dit la rupture, la Vue d’ensemble réclame août, la validation avertit', () => {
     const b = new Banque()
     const r = douzeMois(b, DOUZE.filter((m) => m !== 8))
     expect(r.every((x) => x.erreur === null && x.controle?.coherent === true && x.recouvrement === null)).toBe(true)
+    // RELEVE-Q1 : juillet finit où août aurait commencé, septembre s'ouvre ailleurs — de la somme d'août, 1 137,50.
+    expect(r.map((x) => x.suite !== null)).toEqual([...Array<boolean>(7).fill(false), true, false, false, false])
+    expect(r[7].suite).toContain(`⚠ Le relevé du 01/07/${ANNEE} au 31/07/${ANNEE} (« ${nomDuMois(7)} ») finit à`)
+    expect(r[7].suite).toContain(`un écart de ${formatMoney(1137.5)}.`)
     expect(b.lignes).toHaveLength(MOUVEMENTS.length - operationsDe(mois(8)).length)
     const p = parcours(b.lignes, b.controlesEnBase(), horlogeDuJour())
     // L'exercice 2025 n'est pas clôturé : la Vue d'ensemble le réclame encore, mois par mois.
@@ -474,20 +501,42 @@ describe('la seconde passe : douze relevés mensuels, importés l’un après l�
     const banque = p.validation.prealables.find((x) => x.id === 'banque-au-releve')
     expect(banque?.bloquant).toBe(false)
     expect(banque?.message).toContain(`de solde final ${formatMoney(4215.31)} : un écart de ${formatMoney(-aout)}.`)
-    // Importé ensuite, août complète le relevé : celui de la première passe, rien en double.
+    expect(p.checklist.tousLesPointsATraiter.find((x) => x.id === 'releves-en-rupture')).toMatchObject({ nb: 1, severite: 'attention', cible: 'banque' })
+    // Importé ensuite, août complète le relevé : celui de la première passe, rien en double, et la suite des soldes se referme.
     const tardif = b.importer(nomDuMois(8), csvDeLaPeriode(mois(8)))
-    expect(tardif).toMatchObject({ erreur: null, doublons: 0, recouvrement: null, controle: { coherent: true } })
+    expect(tardif).toMatchObject({ erreur: null, doublons: 0, recouvrement: null, controle: { coherent: true }, suite: null })
     expect(multiensemble(b.lignes)).toEqual(PREMIERE_PASSE)
+    expect(parcours(b.lignes, b.controlesEnBase(), horlogeDuJour()).checklist.tousLesPointsATraiter.find((x) => x.id === 'releves-en-rupture')?.nb).toBe(0)
   })
-  it('un mois incomplet (août exporté jusqu’au 15) : chaque fichier boucle, la Vue d’ensemble se tait, seule la validation avertit', () => {
-    // Aucune règle ne confronte le solde de clôture d'un fichier à l'ouverture du suivant (15/08 et 01/09 ici) : la Vue
-    // d'ensemble compte les MOIS présents, et août en a. Seule la confrontation du 512 au relevé de décembre (MVPD7-Q2), un
-    // avertissement voulu, dit l'écart : la seconde quinzaine d'août, à la main — frais −7,50, virement personnel −2 000.
+  it('un mois incomplet (août exporté jusqu’au 15) : chaque fichier boucle ; l’import de septembre et la Vue d’ensemble disent la rupture, la validation avertit', () => {
+    // RELEVE-Q1 (08/11/2026) : le solde de clôture d'août (15/08) confronté à l'ouverture de septembre (01/09). La Vue d'ensemble
+    // compte les MOIS présents, et août en a : seule la suite des soldes voit la quinzaine manquante, à l'import de septembre et
+    // en « attention ». La confrontation du 512 au relevé de décembre (MVPD7-Q2) dit le même écart, à la main — frais −7,50,
+    // virement personnel −2 000.
+    const quinzaine = { du: debutDuMois(8), au: `${ANNEE}-08-15` }
     const b = new Banque()
-    const r = DOUZE.map((m) => b.importer(nomDuMois(m), csvDeLaPeriode(m === 8 ? { du: debutDuMois(8), au: `${ANNEE}-08-15` } : mois(m))))
+    const r = DOUZE.map((m) => b.importer(nomDuMois(m), csvDeLaPeriode(m === 8 ? quinzaine : mois(m))))
     expect(r.every((x) => x.erreur === null && x.controle?.coherent === true && x.recouvrement === null)).toBe(true)
+    const finDuQuinze = formatMoney((soldeAvant(debutDuMois(8)) + operationsDe(quinzaine).reduce((s, x) => s + c(x.montant), 0)) / 100)
+    const ouvertureDeSeptembre = formatMoney(soldeAvant(debutDuMois(9)) / 100)
+    expect(r.map((x) => x.suite)).toEqual(DOUZE.map((m) => (m === 9
+      ? `⚠ Le relevé du 01/08/${ANNEE} au 15/08/${ANNEE} (« ${nomDuMois(8)} ») finit à ${finDuQuinze} ; le relevé du 01/09/${ANNEE} au `
+        + `30/09/${ANNEE} (« ${nomDuMois(9)} ») s'ouvre à ${ouvertureDeSeptembre} : un écart de ${formatMoney(7.5 + 2000)}. Des opérations `
+        + 'manquent probablement entre les deux (un relevé exporté en partie, ou une période non importée) ; rien n’est bloqué, mais les '
+        + 'totaux bancaires en dépendent.'
+      : null)))
     const p = parcours(b.lignes, b.controlesEnBase(), horlogeDuJour())
     expect(p.checklist.documentsAttendus.filter((x) => x.id === `banque-${ANNEE}`)).toEqual([])
+    // Un point « attention », jamais une erreur, qui mène à l'onglet Banque, où la rupture se montre.
+    expect(p.checklist.tousLesPointsATraiter.filter((x) => x.nb > 0).map((x) => `${x.severite} ${x.id} (${x.nb})`)).toEqual(['attention releves-en-rupture (1)'])
+    expect(p.checklist.tousLesPointsATraiter.find((x) => x.id === 'releves-en-rupture')).toMatchObject({
+      cible: 'banque', detail: `du 01/08/${ANNEE} au 15/08/${ANNEE}, puis du 01/09/${ANNEE} au 30/09/${ANNEE} : un écart de ${formatMoney(2007.5)}.`,
+    })
+    // Le même mois importé dans l'autre sens — septembre d'abord, puis la quinzaine d'août : l'import d'août dit la rupture
+    // avec le relevé qui le SUIT.
+    const b2 = new Banque()
+    const r2 = [...DOUZE.filter((m) => m !== 8), 8].map((m) => b2.importer(nomDuMois(m), csvDeLaPeriode(m === 8 ? quinzaine : mois(m))))
+    expect(r2[11].suite).toContain(`« ${nomDuMois(8)} ») finit à ${finDuQuinze}`)
     const banque = p.validation.prealables.find((x) => x.id === 'banque-au-releve')
     expect(banque?.bloquant).toBe(false)
     expect(banque?.message).toContain(`un écart de ${formatMoney(7.5 + 2000)}.`)

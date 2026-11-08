@@ -160,7 +160,7 @@ vi.mock('../../lib/supabase', async () => {
 
 // Deux lectures best-effort que le composant fait hors du client Supabase.
 vi.mock('../../lib/controlesReleves', () => ({
-  chargerRelevesIncoherents: async () => {
+  chargerControlesReleves: async () => {
     if (faux.relevesIllisibles) throw new Error('lecture des relevés refusée')
     return []
   },
