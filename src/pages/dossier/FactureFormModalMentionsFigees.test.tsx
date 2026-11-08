@@ -235,8 +235,10 @@ for (const espace of ['cabinet', 'client'] as const) {
     it('une facture qui ne pourrait pas partir : UNE confirmation, ce qu’on perd d’abord, puis ce qui se fige, puis la question', async () => {
       monter(espace)
       await remplir()
-      // Une entreprise sans SIREN : la plateforme ne la recevrait pas.
+      // Une entreprise sans SIREN : la plateforme ne la recevrait pas. Son adresse saisie, que la base exige depuis le
+      // 08/11/2026 (JJ-Q4, `ADRESSE_DU_CLIENT_EXIGEE` levé) : sans elle, la validation serait retenue avant toute confirmation.
       fireEvent.change(document.querySelector('#type-client')!, { target: { value: 'assujetti' } })
+      fireEvent.change(document.querySelector('#tiers-adresse')!, { target: { value: '5 avenue de l’Essai, 69001 Lyon' } })
       reponseConfirmation = false
       await act(async () => { valider().click() })
       expect(confirmations).toHaveLength(1)
@@ -454,6 +456,8 @@ for (const espace of ['cabinet', 'client'] as const) {
       monter(espace)
       await remplirSansAttendre()
       typeDuClient('assujetti')
+      // L'adresse d'une entreprise, que la base exige depuis le 08/11/2026 (JJ-Q4) : seul le refus des pénalités reste à juger.
+      fireEvent.change(document.querySelector('#tiers-adresse')!, { target: { value: '5 avenue de l’Essai, 69001 Lyon' } })
       await waitFor(() => expect(mentionsLegales().value).toBe(PHRASE_D_HIER))
       fireEvent.change(mentionsLegales(), { target: { value: 'Paiement à réception.' } })
       await waitFor(() => expect(valider().disabled).toBe(true))

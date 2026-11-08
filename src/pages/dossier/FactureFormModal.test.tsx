@@ -250,7 +250,10 @@ describe('FactureFormModal — la facture suit le statut de TVA du dossier', () 
   it('une ligne à 0 % d’un redevable sans article le signale ; avec son article, propose sa mention', () => {
     monter('redevable')
     fireEvent.change(tauxDeLaLigne(), { target: { value: '0' } })
-    expect(screen.getByText(/Une ligne à 0 % : sur un dossier redevable, l’exonération se justifie par son article/)).toBeTruthy()
+    // Depuis le 08/11/2026 (`ADRESSE_DU_CLIENT_EXIGEE` levé, A7C-Q1), le refus de la base remplace l'alerte d'hier, que
+    // FactureFormModalAdresse.test.tsx éprouve encore sous le drapeau baissé.
+    expect(screen.getByText(/Une ligne est au taux 0 dans un dossier redevable de la TVA sans article d'exonération/)).toBeTruthy()
+    expect(screen.queryAllByText(/Une ligne à 0 % : sur un dossier redevable/)).toHaveLength(0)
     cleanup()
 
     monter('redevable', 'cgi_261_4_1')

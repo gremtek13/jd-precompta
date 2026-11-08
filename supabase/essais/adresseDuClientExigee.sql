@@ -1,7 +1,7 @@
 -- L'ADRESSE DU CLIENT EXIGÉE À LA VALIDATION D'UNE FACTURE À UNE ENTREPRISE OU À UN ORGANISME PUBLIC (JJ-Q4), ET LA LIGNE
 -- À 0 % D'UN DOSSIER REDEVABLE SANS ARTICLE D'EXONÉRATION (A7C-Q1), ÉPROUVÉES EN BASE (07/11/2026) — à rejouer par `execute_sql` après toute migration qui touche `factures_emises`, ses déclencheurs,
 -- `enregistrer_facture` ou la garde des factures (`garder_factures_validees`). La migration :
--- supabase/preparees/20261107200000_adresse_du_client_exigee.sql (PRÉPARÉE, PAS APPLIQUÉE) ; le module qui la redit :
+-- supabase/schema/20261108190701_adresse_du_client_exigee.sql (en production depuis le 08/11/2026) ; le module qui la redit :
 -- src/lib/validationDeLaFacture.ts (`refusDeLAdresseDuClient`, `refusDeLaLigneAZero`, sous `ADRESSE_DU_CLIENT_EXIGEE`) ; le
 -- récit : HISTORIQUE.md, « JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS ADRESSE NE SE VALIDE PAS, ET LA LIGNE À 0 % D'UN
 -- REDEVABLE (A7C-Q1) (PRÉPARÉE, PAS APPLIQUÉE) ».

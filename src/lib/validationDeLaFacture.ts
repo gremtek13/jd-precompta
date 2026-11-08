@@ -188,7 +188,7 @@ export function refusDeLaValidation(v: ValidationAJuger): RefusDeLaValidation | 
 }
 
 // ── L'ADRESSE DU CLIENT (JJ-Q4, la réponse du cabinet du 07/11/2026 : « Oui, refuser à la validation ») ──────────────
-// La migration `adresse_du_client_exigee`, PRÉPARÉE, PAS APPLIQUÉE (supabase/preparees/20261107200000_adresse_du_client_exigee.sql ;
+// La migration `adresse_du_client_exigee`, en production depuis le 08/11/2026 (supabase/schema/20261108190701_adresse_du_client_exigee.sql ;
 // son essai : supabase/essais/adresseDuClientExigee.sql ; HISTORIQUE.md, « JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS
 // ADRESSE NE SE VALIDE PAS, ET LA LIGNE À 0 % D'UN REDEVABLE (A7C-Q1) (PRÉPARÉE, PAS APPLIQUÉE) »). Un déclencheur à lui, qui
 // suit la garde des factures dans l'ordre des noms (`factures_emises_figees_mentions`, sa fonction
@@ -200,9 +200,11 @@ export function refusDeLaValidation(v: ValidationAJuger): RefusDeLaValidation | 
 // reprend le client de sa facture et n'en est pas jugé ; un particulier, un client établi hors de France ou un type à
 // préciser se valident comme hier. Sources : CGI, ann. II, art. 242 nonies A, I, 1° ; code de commerce, art. L441-9, I.
 
-// Le drapeau de la migration, pour ses deux refus (JJ-Q4 et A7C-Q1). Baissé tant qu'elle n'est pas en base : l'écran ne
-// retient pas une validation que la base accepte encore.
-export const ADRESSE_DU_CLIENT_EXIGEE: boolean = false
+// Le drapeau de la migration, pour ses deux refus (JJ-Q4 et A7C-Q1). Levé le 08/11/2026, la migration en base : le
+// formulaire de la facture dit les deux refus avant le clic. Il se baisse AVANT tout retour de la migration (l'écran dirait
+// des refus que la base ne tiendrait plus) ; l'état baissé reste éprouvé (FactureFormModalAdresse.test.tsx, par un
+// accesseur).
+export const ADRESSE_DU_CLIENT_EXIGEE: boolean = true
 
 /** Le refus du déclencheur, sous ses mots et son code (validationDeLaFacture.test.ts le confronte à la migration). */
 export const REFUS_ADRESSE_DU_CLIENT = {

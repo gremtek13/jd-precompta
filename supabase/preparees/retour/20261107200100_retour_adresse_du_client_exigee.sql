@@ -1,4 +1,5 @@
--- LE RETOUR D'`adresse_du_client_exigee` (20261107200000, JJ-Q4 et A7C-Q1) : il retire le déclencheur et sa fonction, rien
+-- LE RETOUR D'`adresse_du_client_exigee` (supabase/schema/20261108190701_adresse_du_client_exigee.sql, en production
+-- depuis le 08/11/2026 ; JJ-Q4 et A7C-Q1) : il retire le déclencheur et sa fonction, rien
 -- d'autre — aucune donnée : une facture validée sous ces règles garde son adresse et ses lignes, et une facture à une
 -- entreprise sans adresse, ou une ligne à 0 % d'un redevable sans article, se valide de nouveau, comme avant. Le drapeau
 -- `ADRESSE_DU_CLIENT_EXIGEE` (src/lib/validationDeLaFacture.ts) se baisse AVANT ce retour (l'écran dirait des refus que la

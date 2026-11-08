@@ -452,8 +452,8 @@ describe('le retour arrière rend les deux fonctions de l’export, sous sa gard
 
 // ── L'ADRESSE DU CLIENT (JJ-Q4) ET LA LIGNE À 0 % D'UN REDEVABLE (A7C-Q1) ──────────────────────────────────────────
 // Les deux refus du déclencheur `factures_emises_figees_mentions` (migration `adresse_du_client_exigee`, préparée le
-// 07/11/2026), CONFRONTÉS AU TEXTE DE SA MIGRATION, où qu'elle soit — préparée aujourd'hui, dans l'export le jour de son
-// application —, à son retour, à la garde qu'il suit, et rejoués sur les cas de son essai
+// 07/11/2026, en production depuis le 08/11/2026), CONFRONTÉS AU TEXTE DE SA MIGRATION, où qu'elle soit — préparée hier,
+// dans l'export depuis son application —, à son retour, à la garde qu'il suit, et rejoués sur les cas de son essai
 // (supabase/essais/adresseDuClientExigee.sql) tels que la réplique y a répondu.
 const MIGRATION_ADRESSE = /\/\d{14}_adresse_du_client_exigee\.sql$/
 const RETOUR_ADRESSE = /^\d{14}_retour_adresse_du_client_exigee\.sql$/

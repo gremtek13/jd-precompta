@@ -346,7 +346,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Vingt le même jour : `regularisationDesCotisations` et `parametresDesCotisations` sortis (TNS-Q2 et TNS-Q1/Q4 en
     // production, 20261107165415 et 20261107165534 ; ni l'un ni l'autre ne cherche un semis : chacun se joue dans un
     // dossier jetable, comme un essai de la production).
-    expect(cas.length).toBe(20)
+    // Dix-neuf le 08/11/2026 : `adresseDuClientExigee` sorti (JJ-Q4 et A7C-Q1 en production, 20261108190701 ; l'essai ne
+    // cherche aucun semis, il se joue dans cinq dossiers jetables, comme un essai de la production).
+    expect(cas.length).toBe(19)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

@@ -7,11 +7,12 @@ import { NON_BASCULE } from '../../test/factures'
 import FactureFormModal from './FactureFormModal'
 
 // L'ADRESSE DU CLIENT, DITE AVANT LE CLIC (JJ-Q4 ; le rang 19, le déclencheur qui suit la garde des factures ;
-// lib/validationDeLaFacture.ts, que validationDeLaFacture.test.ts confronte à la migration préparée
-// `adresse_du_client_exigee`). Le formulaire juge l'en-tête TEL QU'IL PART, dans les deux espaces : une facture à une
+// lib/validationDeLaFacture.ts, que validationDeLaFacture.test.ts confronte à la migration `adresse_du_client_exigee`, en
+// production depuis le 08/11/2026). Le formulaire juge l'en-tête TEL QU'IL PART, dans les deux espaces : une facture à une
 // entreprise ou à un organisme public sans l'adresse de son client retient « Valider la facture » sans empêcher le
 // brouillon, sous les mots de la base. Le drapeau `ADRESSE_DU_CLIENT_EXIGEE` joue ses deux états par un accesseur : levé
-// (la migration en base), et baissé — l'état d'aujourd'hui, où la base valide encore et l'écran ne retient rien.
+// (la migration en base, l'état depuis le 08/11/2026), et baissé — l'état d'avant, où la base validait encore et l'écran
+// ne retenait rien, qui revient si le drapeau se baisse avant un retour de la migration.
 // L'état d'avant l'étape A7b (MENTIONS_FIGEES_EXPORTEES baissé), comme les autres tests du formulaire.
 const drapeau = vi.hoisted(() => ({ leve: true }))
 vi.mock('../../lib/validationDeLaFacture', async (importOriginal) => ({
