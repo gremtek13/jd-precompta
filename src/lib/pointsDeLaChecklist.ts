@@ -17,6 +17,7 @@ import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesEnReta
 import type { Emprunt } from './emprunts'
 import type { DoublonDeTexte } from './doublonsTexte'
 import { anneeDe } from './format'
+import { detailDesRuptures, jonctionsDesReleves, rupturesDesReleves } from './suiteDesReleves'
 import { detailDesDoublonsProbables, doublonsProbables, piecesRegleesPourLesDoublons } from './doublonsProbables'
 import { estFigee } from './validationExercice'
 import { confronterLOuverture, exerciceAConfronter, ouvertureEnEcart } from './ouvertureConfrontee'
@@ -97,6 +98,9 @@ export interface DonneesDeLaChecklist {
   cotisations: CotisationDeclaree[]
   lignes: LigneBancaire[]
   relevesIncoherents: ControleReleveBancaire[]
+  // TOUS les contrôles des relevés, pour la suite des soldes d'un relevé à l'autre (RELEVE-Q1, lib/suiteDesReleves.ts). Nul
+  // quand eux, ou le relevé (`lignes`), n'ont pas été lus en entier : une rupture se calcule sur les deux, et le point se tait.
+  controlesReleves: ControleReleveBancaire[] | null
   doublonsTexte: DoublonDeTexte[]
   immobilisations: Immobilisation[]
   natures: NatureImmobilisation[]
@@ -192,7 +196,7 @@ export interface PointsDeLaChecklist {
 
 export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChecklist): PointsDeLaChecklist {
   const {
-    piecesValidees, piecesAValider, cotisations, lignes, relevesIncoherents, doublonsTexte, immobilisations, natures,
+    piecesValidees, piecesAValider, cotisations, lignes, relevesIncoherents, controlesReleves, doublonsTexte, immobilisations, natures,
     categories, ecritures, emprunts, ventilations, ventilationsPartielles, reglements, reglementsPartiels, paiementsPartiels,
     lettragesManuels, vehicules, declarationsTva, declarationsPartielles, facturesEmises, transmissions, jumellesPartielles,
     info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete, ventesFacturees, facturesSources, aNouveaux, soldesReportes,
@@ -586,6 +590,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const piecesAValiderPayees = caisseJugee === null || !PAIEMENT_PAR_LA_CAISSE_EXPORTE ? []
     : paiementsDePiecesAValider(caisseJugee, piecesAValider, frontiere)
 
+  const rupturesDuReleve = controlesReleves === null ? [] : rupturesDesReleves(jonctionsDesReleves(controlesReleves, lignes))
   const tousLesPointsATraiter: PointATraiter[] = [
     // En tête, et en « erreur » : c'est le seul point de cette liste qui ne se voit nulle part
     // ailleurs. Une pièce validée sans catégorie a l'air traitée — elle ne produit pourtant ni
@@ -594,6 +599,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     // rapprochement, les totaux et la clôture. Corriger en aval ce qui vient d'une source amputée
     // revient à bâtir sur du sable.
     { id: 'releve-incoherent', label: 'relevé(s) bancaire(s) qui ne bouclent pas — mouvements manquants', action: 'Voir les relevés en écart', nb: relevesIncoherents.length, cible: 'banque', severite: 'erreur' },
+    // RELEVE-Q1 : deux relevés qui se suivent, le solde de clôture de l'un n'est pas le solde d'ouverture de l'autre — un relevé
+    // exporté en partie, que son propre contrôle ne voit pas (il boucle). « Attention » : une alerte, jamais un blocage ; l'onglet
+    // Banque montre chaque rupture. Muet sur une lecture partielle des contrôles ou du relevé (`controlesReleves` nul).
+    { id: 'releves-en-rupture', label: 'paire(s) de relevés bancaires qui ne se suivent pas — le solde de clôture de l’un n’est pas l’ouverture du suivant', action: 'Voir ces relevés', nb: rupturesDuReleve.length, cible: 'banque', severite: 'attention', detail: detailDesRuptures(rupturesDuReleve) },
     // Un montant qui n'apparaît nulle part dans le relevé, à aucune date : relevé incomplet ou montant
     // faux, deux causes qu'aucune règle interne au document ne peut départager (voir CLAUDE.md,
     // « Fiabilité de l'extraction OCR sur les montants »).

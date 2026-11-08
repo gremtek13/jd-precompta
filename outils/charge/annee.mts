@@ -357,7 +357,7 @@ function mesurer(k: number): Map<string, number | string> {
       const lectureDuReleve = { dossierId: D, etat: 'lue' as const, sources: sourcesEcritures }
       const facturesEmises = a.factures.map((f) => ({ ...f, emetteur_siret: null, superpdp_invoice_id: null }))
       t('points de la Checklist', () => pointsDeLaChecklist({
-        piecesValidees: a.pieces, piecesAValider: [], cotisations: a.cotisations, lignes: a.lignes, relevesIncoherents: [], doublonsTexte: [],
+        piecesValidees: a.pieces, piecesAValider: [], cotisations: a.cotisations, lignes: a.lignes, relevesIncoherents: [], controlesReleves: [], doublonsTexte: [],
         immobilisations: a.immobilisations, natures: [], categories: CATEGORIES, ecritures: brouillon, emprunts: [], ventilations: [],
         ventilationsPartielles: false, reglements: [], reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [],
         declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,

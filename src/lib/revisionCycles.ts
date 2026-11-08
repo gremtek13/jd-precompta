@@ -175,6 +175,8 @@ export function cyclesDuDossier(d: DossierPourLesCycles): CycleRevision[] {
 export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readonly<Record<ModeComptable, CycleRevision>>>> = {
   // La trésorerie : le relevé, ses mouvements et ce qu'ils écrivent.
   'releve-incoherent': 'tresorerie',
+  // RELEVE-Q1 : deux relevés qui ne se suivent pas — le solde de clôture de l'un n'est pas l'ouverture du suivant.
+  'releves-en-rupture': 'tresorerie',
   'releves-inconnus': 'tresorerie',
   // Le compte de banque confronté au relevé du 31 décembre, et la banque d'un dossier ouvert sans balance reprise alors que
   // son premier relevé part d'un solde (MVPD7-Q2) : ce que le relevé affirme, face au 512.

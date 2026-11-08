@@ -49681,3 +49681,19 @@ La demande n° 311 fusionnée (57e5967) ; `send-email` redéployée par sa ligne
 après ; `allerretour.py` : identique au dépôt, 892 lignes, rien recopié. Une relance d'une facture soldée se refuse
 désormais en production, et l'e-mail dit le total et le reste dû. Posée au cabinet le même soir : RELEVE-Q1 (la rupture
 de solde entre deux relevés importés, dite dès l'import).
+
+### 08/11/2026 — RELEVE-Q1 : UNE RUPTURE DE SOLDE ENTRE DEUX RELEVÉS SE DIT DÈS L'IMPORT
+
+Réponse du cabinet : « Oui, le signaler dès l'import ». `lib/suiteDesReleves.ts`, pur, sur les contrôles que l'import garde
+déjà (`controles_releves_bancaires`) et le relevé en base ; aucune migration, rien ne bloque ni ne s'écrit. Rangés par début,
+fin, identifiant ; le précédent d'un relevé est celui qui va le plus loin. Consécutifs : le solde final du précédent est le
+solde initial du suivant, au centime — sauf des mouvements datés entre les deux qu'aucun des deux ne porte (un OFX sans ses
+deux soldes, une saisie) : « ne se comparent pas ». Qui se recouvrent : le PRÉCÉDENT porte le solde du début du suivant (son
+final moins ses mouvements datés de ce jour ou après), retrouvé au matin ou au soir de ce jour, s'il boucle et que ses
+mouvements font encore la somme contrôlée ; le suivant ne le peut pas (ses doublons écartés ne sont pas sous son nom, et
+janvier exporté le 28 avant le virement du jour aurait inventé une rupture). L'aperçu et l'alerte de fin d'import (CSV, PDF)
+nomment les deux périodes et l'écart ; l'onglet Banque les montre (« Deux relevés ne se suivent pas », « à regarder ») ; la
+Vue d'ensemble compte `releves-en-rupture` en attention, muet sur une lecture partielle, et les contrôles y sont lus une
+fois (les incohérents s'en tirent). La seconde passe : août jusqu'au 15 se dit à l'import de septembre (écart 2 007,50) et
+dans la Vue d'ensemble, août absent aussi (1 137,50) ; les recouvrements, l'ordre inverse et l'OFX de juin ne disent aucune
+rupture. Mutation : la comparaison neutralisée, 12 rouges.

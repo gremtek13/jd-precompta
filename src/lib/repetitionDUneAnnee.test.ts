@@ -210,7 +210,7 @@ beforeAll(() => {
   }] : []
 
   const checklist = pointsDeLaChecklist({
-    piecesValidees: PIECES, piecesAValider: [], cotisations: COTISATIONS, lignes, relevesIncoherents: controlesReleves.filter((k) => !k.coherent), doublonsTexte: [],
+    piecesValidees: PIECES, piecesAValider: [], cotisations: COTISATIONS, lignes, relevesIncoherents: controlesReleves.filter((k) => !k.coherent), controlesReleves, doublonsTexte: [],
     immobilisations: IMMOBILISATIONS, natures: [NATURE_MATERIEL], categories: CATEGORIES, ecritures: brouillon, emprunts: [], ventilations: [],
     ventilationsPartielles: false, reglements, reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: VEHICULES,
     declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,

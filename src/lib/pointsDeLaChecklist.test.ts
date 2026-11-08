@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
 import type {
-  ANouveau, Categorie, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, OperationCaisse,
+  ANouveau, Categorie, ControleReleveBancaire, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, OperationCaisse,
   Piece, SoldeReporte,
 } from './types'
 import { ecritureDeLOperation } from './caisse'
@@ -31,7 +31,7 @@ afterEach(() => { drapeau.leve = null })
 
 function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
   return {
-    piecesValidees: [], piecesAValider: [], cotisations: [], lignes: [], relevesIncoherents: [], doublonsTexte: [], immobilisations: [],
+    piecesValidees: [], piecesAValider: [], cotisations: [], lignes: [], relevesIncoherents: [], controlesReleves: [], doublonsTexte: [], immobilisations: [],
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
@@ -943,5 +943,29 @@ describe('pointsDeLaChecklist — le doublon probable (D1)', () => {
   it('une paire qu’un exercice validé fige entière ne se dit plus', () => {
     expect(point({}, { frontiere: '2026-12-31', anneesValidees: [2026] })?.nb).toBe(0)
     expect(point({}, { frontiere: '2025-12-31', anneesValidees: [2025] })?.nb).toBe(1)
+  })
+})
+
+// RELEVE-Q1 : deux relevés qui ne se suivent pas, en « attention », vers l'onglet Banque ; muet quand les contrôles ou le
+// relevé n'ont pas été lus en entier (`controlesReleves` nul).
+describe('le point « releves-en-rupture »', () => {
+  const controle = (id: string, debut: string, fin: string, initial: number, final: number): ControleReleveBancaire => ({
+    id, dossier_id: 'd1', source_fichier: `${id}.csv`, solde_initial: initial, solde_final: final, somme_mouvements: final - initial,
+    ecart: 0, coherent: true, periode_debut: debut, periode_fin: fin, created_at: '2025-10-01T10:00:00Z',
+  })
+  const AOUT = controle('aout', '2025-08-01', '2025-08-15', 1200, 1000)
+  const SEPTEMBRE = controle('septembre', '2025-09-01', '2025-09-30', 750, 800)
+  const point = (controlesReleves: ControleReleveBancaire[] | null) =>
+    pointsDeLaChecklist(donnees({ controlesReleves }), CONTEXTE).tousLesPointsATraiter.find((p) => p.id === 'releves-en-rupture')
+
+  it('compte chaque rupture, en attention, et en dit les périodes et l’écart', () => {
+    expect(point([SEPTEMBRE, AOUT])).toMatchObject({
+      nb: 1, severite: 'attention', cible: 'banque', detail: `du 01/08/2025 au 15/08/2025, puis du 01/09/2025 au 30/09/2025 : un écart de ${formatMoney(250)}.`,
+    })
+    expect(point([AOUT, { ...SEPTEMBRE, solde_initial: 1000 }])?.nb).toBe(0)
+  })
+
+  it('se tait sur une lecture partielle', () => {
+    expect(point(null)?.nb).toBe(0)
   })
 })
