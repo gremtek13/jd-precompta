@@ -25,13 +25,13 @@ import type { TypeClient } from './types'
 // centime, le demi vers le haut.
 
 /**
- * Le bouton « Relancer », les pastilles « En retard » et « Relancée le … » : baissé tant que `send-email` n'a pas été
- * redéployée, sa constante `RELANCES_EN_BASE` levée — la migration `relances_des_factures` est en production depuis le
- * 07/11/2026 (supabase/schema/20261107163303_relances_des_factures.sql), la constante levée dans le dépôt le même jour.
- * L'ordre : la migration, puis le déploiement, puis ce drapeau (`relancesHttp.test.ts` refuse le drapeau levé sur une
- * fonction qui refuserait la relance).
+ * Le bouton « Relancer », les pastilles « En retard » et « Relancée le … » : levé le 08/11/2026, `send-email` v11 en
+ * production depuis le commit c17dbe5 (sa constante `RELANCES_EN_BASE` levée) ; la migration `relances_des_factures` l'est
+ * depuis le 07/11/2026 (supabase/schema/20261107163303_relances_des_factures.sql). L'ordre — la migration, puis le
+ * déploiement, puis ce drapeau — reste gardé par `relancesHttp.test.ts`, qui refuse le drapeau levé sur une fonction qui
+ * refuserait la relance. L'état d'avant (baissé) reste éprouvé : l'écran des factures le joue par un accesseur.
  */
-export const RELANCES_EXPORTEES = false
+export const RELANCES_EXPORTEES = true
 
 /** Le type d'une ligne du journal des e-mails (`emails_envoyes.type`) que laisse une relance de facture. */
 export const TYPE_RELANCE_FACTURE = 'relance_facture'

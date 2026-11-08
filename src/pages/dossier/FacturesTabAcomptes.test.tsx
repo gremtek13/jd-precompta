@@ -24,6 +24,14 @@ const faux = vi.hoisted(() => ({
   // Une table dont toute lecture est refusée.
   refusee: null as string | null,
   acomptes: false,
+  // Le drapeau des relances (C5, levé le 08/11/2026), baissé ICI : les empreintes d'hier ont été relevées avant la relance,
+  // et ce fichier ne juge pas la relance (FacturesTab.relances.test.tsx la joue dans ses deux états).
+  relances: false,
+}))
+
+vi.mock('../../lib/relances', async (original) => ({
+  ...(await original<typeof import('../../lib/relances')>()),
+  get RELANCES_EXPORTEES() { return faux.relances },
 }))
 
 vi.mock('../../lib/devis', async (original) => ({
@@ -115,6 +123,7 @@ beforeEach(() => {
   // était déjà minuit le 5 à Auckland, et la fenêtre d'avoir, qui affiche la date du jour, changeait d'empreinte.
   vi.setSystemTime(new Date('2026-11-04T10:00:00Z'))
   faux.acomptes = false
+  faux.relances = false
   faux.lectures = []
   faux.appels = []
   faux.refusee = null

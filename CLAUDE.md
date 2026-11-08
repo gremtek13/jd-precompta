@@ -113,8 +113,7 @@ et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉE
     secrète en `apikey`).
   - `receive-email` (webhook Resend, par dossier) ; `send-email` (facture : le cabinet et le client « Ventes », trente
     e-mails par dossier et par jour de Paris pour un client ; relance de pièces : le cabinet seul ; relance d'une
-    facture en retard : le cabinet et le client « Ventes » (MEG3-Q3), dans le même plafond, au redéploiement de
-    `send-email` qui porte `RELANCES_EN_BASE` levé).
+    facture en retard : le cabinet et le client « Ventes » (MEG3-Q3), dans le même plafond).
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; le client « Ventes » relie et transmet, la
     réception reste au cabinet.
   - `proposer-categorie` (sur un clic, rien d'écrit) ; `evaluer-extraction` (harnais de MESURE, facturé dans une fenêtre
@@ -617,7 +616,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     à Q4) ; C7, son premier temps (Contraintes de sécurité) → « « MON ÉCHÉANCIER » : L'ÉCHÉANCIER FISCAL ET SOCIAL DU
     CLIENT », « L'ÉTAT DU DOSSIER CHEZ LE CABINET, MONTRÉ AU CLIENT ». Préparées le même soir, en production depuis le
     07/11/2026 : C5, les relances d'une facture en retard (pénalités calculées et montrées, jamais facturées ;
-    `send-email` sous `RELANCES_EN_BASE` levé, à redéployer avant `RELANCES_EXPORTEES` ; C5-Q1 à Q3) ; C4a, les
+    `send-email` v11 et `RELANCES_EXPORTEES` levés le 08/11/2026 ; C5-Q1 à Q3) ; C4a, les
     situations publiées et la case « Comptes » (`changer_droits_acces` à cinq paramètres ; C4A-Q1 et Q2 ; reprise le
     07/11/2026 par B1, elle exige P1-trace, dont la contrainte connaît d'avance les sept cases ;
     `situation_publiee_en_cours` ne répond qu'au cabinet et à l'accès « Comptes » du dossier), et ses écrans, C4b
