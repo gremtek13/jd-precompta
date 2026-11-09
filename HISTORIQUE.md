@@ -49745,3 +49745,84 @@ l'export sous sa version ; la relation `tiers_categories_cabinet.categorie_id > 
 (`b619c882…`), 2 561 objets (`50dc288d…`), 81 instructions du socle (`c6cf69c1…`) ; l'essai rejoué en production, 6 cas
 sur 6, rien de resté. Reste, sans effet aujourd'hui : une ligne d'un AUTRE dossier qui citerait une catégorie propre
 bloquerait encore la suppression du dossier (six tables, aucune garde en base, zéro ligne en production).
+
+### 09/11/2026 — PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : LA CONCEPTION (LIGNE 26.6, MVP-BANQUES-Q1)
+
+(Conception de l'agent architecte, sur `759c6fb` ; rien d'écrit, ni code ni migration. Production lue en SELECT : le
+catalogue et des comptes, aucun libellé. Lus : « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION » (§ 0, 1, 9), MVP-D7 ; les
+modules du relevé, `aNouveaux.ts`, `compteDeBilan.ts`, `fec.ts`, `sauvegarde.ts`, `agent-comptable`, `banque-connexion`.)
+
+**LE RÉSUMÉ.** Aucune dimension « compte bancaire » : tout le relevé d'un dossier est UN compte, au 512 du rôle `banque`.
+Importer aujourd'hui un second compte serait une perte silencieuse : le dédoublonnage (date, libellé, montant) écarterait
+les frais identiques des deux comptes, le recouvrement crierait au doublon, la couverture d'un mois cacherait le trou de
+l'autre, la suite des soldes dirait des ruptures fausses. D'ici MCB, un second compte NE S'IMPORTE PAS. Deux temps : la
+DIMENSION (chaque mouvement et chaque contrôle sous son compte, un seul 512), puis le GRAND LIVRE (un 512 par compte).
+
+**L'ÉTAT, MESURÉ.** 4 dossiers, 3 avec un relevé (998 mouvements), 1 contrôle, 1 connexion (`unique (dossier_id)`) ;
+aucun plan réglé, rien au 58 ni au 512 hors du relevé. `controles_releves_bancaires` : `unique (dossier_id,
+source_fichier)`, la clé par laquelle `releveAuTrenteEtUn` et `suiteDesReleves` retrouvent un fichier. Aucun 512 en dur
+hors des tests (`comptesEnDur.test.ts`) : tout passe par `plan.banque`, ce qui rend le second temps mécanique.
+
+**TEMPS 1, LA DIMENSION.** Une table `comptes_bancaires` (dossier, libellé, `compte` nul pour le principal, qui suit
+`compte_du_role(dossier, 'banque')`, `principal`, ouverture, clôture, auteur), `to authenticated` sur `admin_du_dossier`,
+lue par le client « Banque » ; un principal par dossier. `compte_bancaire_id` NOT NULL sur `lignes_bancaires` et
+`controles_releves_bancaires`, rempli par la migration (un principal pour chacun des 3 dossiers). Un déclencheur BEFORE
+INSERT pose le principal quand la colonne est nulle et que le dossier n'a qu'un compte (le créant s'il n'en a aucun), et
+refuse (P0001, sa raison) dès deux : l'import, `banque-connexion`, la restauration des formats 1 et 2 et les essais
+restent inchangés ; un dossier à un compte ne change pas, à l'octet près. Écartés : le principal implicite à
+`compte_bancaire_id` nul (le piège des catégories communes) ; le principal créé à la naissance du dossier (il heurterait
+celui d'une sauvegarde restaurée). Un seul 512 suffit en droit (PCG au 1er janvier 2026, liste des comptes, 512
+« Banques » ; article non vérifié) : `banque-au-releve` compare le 512 à la SOMME des soldes au 31/12 de chaque compte —
+« plusieurs relevés au 31 décembre ne s'additionnent jamais » vaut DANS un compte.
+
+**TEMPS 2, LE GRAND LIVRE.** Un compte secondaire porte son 512xxx (unique par dossier, distinct du rôle, figé au premier
+mouvement) ; une écriture du relevé prend le compte de SON compte (`compteDuMouvement`), et la « jambe de banque » devient
+`estCompteDeBanque`. Le FEC suit (CompteNum, CompteLib) ; le lettrage ne lettre pas la banque.
+
+**LES VIREMENTS INTERNES.** Les deux jambes au 580000, par le chemin du compte de bilan qui existe (aucune migration ;
+`refus_compte_de_bilan` y renvoie déjà un « second compte bancaire »), le 58 soldé à la clôture — la preuve
+`virements-internes` de la Révision le juge ; neutres pour la 2035. Écartés : la jambe A au 512 de B et la jambe B
+rapprochée sans écriture (une colonne et un appariement de plus, « chaque mouvement s'écrit » rompu) ; ignorer les deux
+(piste d'audit trouée). Plus tard, la paire PROPOSÉE (montants opposés, deux comptes, trois jours), écrite au clic.
+
+**CE QUI SUPPOSE UN SEUL COMPTE, PAR GREP.** Base : 51 fonctions nomment `lignes_bancaires` ; 10 lisent le rôle `banque`
+(`affecter_…`, `ventiler_mouvement_bancaire`, `classer_virement_personnel`, `ecrire_mouvement_compte_bilan`,
+`rapprocher_cotisation`, `…_declaration_tva`, `…_echeance_emprunt`, `ecriture_attendue_vente_facturee`,
+`ecritures_attendues_de_la_periode`, `refus_compte_de_contrepartie`), temps 2, À COLLER (des suppressions du brouillon
+dans leur corps) ; `couverture_du_releve`, temps 1 ; 8 déclencheurs, indifférents. Navigateur : 23 fichiers lisent
+`lignes_bancaires`, 9 les contrôles — temps 1 : `importReleve` (compte choisi, dédoublonnage et recouvrement par compte),
+`suiteDesReleves`, `releveAuTrenteEtUn`, `controlesReleves`, `prealablesValidation` (`banque-au-releve`,
+`ouverture-sans-reprise`), `couvertureReleve`, `analyseClientLecture`, `RevisionTab`, `ClientBanque` ; `plan.banque`,
+37 emplois dans 17 fichiers, temps 2 (les compositions, `pisteAudit`, `revisionPreuves`, `tableauPilotage`,
+`aNouveaux` — qui range tout 512… sur la banque —, `BalanceCard`, `FicheMouvement`, `FinancementTab`).
+`agent-comptable` : 23 emplois dans ses copies gardées.
+
+**CLIENT, ASSISTANT, SAUVEGARDE.** « Ma banque » : un solde et une couverture par compte, tous les comptes sous
+« Banque » ; le libellé, texte libre que le client lit, le dit (`LIBELLE_*`), sans IBAN. L'assistant : rien en temps 1 ;
+en temps 2, ses copies, ou une garde provisoire. Sauvegarde : la table au plan derrière `COMPTES_BANCAIRES_PREVUS`, avant
+ses enfants, deux relations `bloque` ; un format 1 ou 2 se restaure par le déclencheur.
+
+**LES LOTS.** Temps 1 : MCB1, la migration par l'outil, `rls.sql` et un essai (deux jours) ; MCB2, module, lecture,
+types, sauvegarde (un) ; MCB3, les contrôles par compte (deux) ; MCB4, le compte à l'import, Banque filtrée avec un solde
+par compte, Informations, Clôture (un et demi) ; MCB5, « Ma banque » et « Ma simulation » (un). Temps 2 : MCB6, les dix
+fonctions (un et demi) ; MCB7, les 17 fichiers et l'ouverture éclatée (trois) ; MCB8, l'assistant (un) ; MCB9, la paire
+proposée (un) ; MCB10, la connexion par compte, après le MVP (un). Environ 7,5 jours, puis 8,5.
+
+**LE PLUS PETIT SOUS-ENSEMBLE.** Un livret sans recette ni dépense professionnelle : RIEN — non tenu, ses virements au
+580000 (livret professionnel) ou au compte de l'exploitant (personnel), ses intérêts hors de la 2035 (revenus de
+capitaux mobiliers, à confirmer par l'expert-comptable). Un second compte courant : MCB1 à MCB4, environ six jours et
+demi, avant l'import de 2025 pour la répétition ; MCB5 si le praticien a « Banque ». Le temps 2 avant la validation de
+2026, et seulement si l'expert-comptable veut deux 512 dans son FEC.
+
+**LES QUESTIONS.** MCB-Q1 : deux temps (recommandé) ; un 512 par compte d'emblée (quinze jours) ; rien avant la réponse
+du praticien. MCB-Q2 : un livret non tenu (recommandé), ou tenu. MCB-Q3 : les deux jambes au 580000 (recommandé),
+l'appariement sans écriture, ou ignorer. MCB-Q4 : un 512 par compte au FEC, demandé à l'expert-comptable avec FEC22-E
+(recommandé), ou un seul 512. MCB-Q5 : un seul journal BQ (recommandé), ou un par compte (la contrainte
+`ecritures_brouillon_validation_complete` et `valider_exercice` changent). MCB-Q6 : le nom de fichier unique par dossier
+en temps 1, l'import le disant (recommandé), ou unique par compte (un `drop constraint`, l'accord du cabinet). MCB-Q7 :
+2025 validé à un seul 512, 2026 ouvert par un à-nouveau éclaté d'après les relevés du 31/12 (recommandé), ou le temps 2
+avant la validation de 2025. MCB-Q8 : « Banque » ouvre tous les comptes (recommandé), ou une case par compte.
+
+**RISQUES.** Dès deux comptes, le déclencheur est la seule barrière d'une ligne sans compte : rejoué par chaque chemin
+d'insertion. Un exercice validé à un seul 512 reste tel. Le retour arrière du temps 1 retire table et colonnes :
+destructif, il demande l'accord du cabinet.
