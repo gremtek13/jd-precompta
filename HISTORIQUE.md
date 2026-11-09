@@ -49716,3 +49716,20 @@ et les deux compteurs de numérotation, rien n'étant perdu (`greatest(repère, 
 `prochain_numero_facture` et `enregistrer_devis` exportés et confronté par le test). Mutations : la garde « créée par cette
 tentative » retirée, puis réduite à la table, une rouge chacune. RESTAU-Q2 et RESTAU-Q3 tranchées par le cabinet le
 09/11/2026, à la recommandation.
+
+### 09/11/2026 — RESTAU-Q1 ET RESTAU-Q4 : LES COMMENTAIRES SE RESTAURENT, UNE RÈGLE DU CABINET NE BLOQUE PLUS LA SUPPRESSION D'UN DOSSIER (PRÉPARÉE, PAS APPLIQUÉE)
+
+Établis par une restauration complète d'un dossier sur la réplique, par le code de l'application (MVP-D3). Q1 : la seule policy
+d'insertion de `piece_commentaires` exige `auteur_id = auth.uid()` ; le super-administrateur qui réinsère le commentaire d'un
+autre (ou d'un compte supprimé, auteur nul) s'arrêtait en 42501. `piece_commentaires_restauration`, `for insert to authenticated
+with check (is_super_admin())`, le motif des autres tables, et rien d'autre : aucune mise à jour, les trois policies d'hier
+intactes. Q4 : `tiers_categories_cabinet_categorie_id_fkey` reposée sous son nom en `on delete cascade` (23503 avant). Les six
+autres clés vers `categories` sont sur des tables dont le `dossier_id` part en cascade : leur NO ACTION juge à la fin de
+l'instruction, elles ne retiennent rien. Reste un chemin, non corrigé : une ligne d'un AUTRE dossier qui citerait une catégorie
+propre (aucune garde en base ; l'application n'écrit une règle du cabinet que sur une catégorie commune ; la production : 0).
+Migration `supabase/preparees/20261109100000_restauration_et_suppression_d_un_dossier.sql` (`e26d0426…`), retour en 20261109100100
+(`ac4e290f…`), à COLLER l'une et l'autre ; garde : les trois policies à leur empreinte, la clé NO ACTION seule vers `categories`,
+`is_super_admin` ; second passage refusé. Sur une copie de la réplique égale à la production (neuf familles) : l'essai
+`restaurationEtSuppressionDUnDossier.sql` EN ATTENTE puis six lignes vraies ; `rls.sql` 123 invariants à 0, 92 mutations qui
+mordent (M-PR1 à M-PR3) ; le retour rend `signature.sql` à l'identique ; le collage en CRLF, la même empreinte ; la restauration
+complète réinsère le commentaire du client, et le dossier se supprime sans qu'on retire la règle ; banc du leurre : SÛR.
