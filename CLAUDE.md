@@ -497,7 +497,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   02/11/2026 », « VINGT ET UNE RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 02/11/2026) ».
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
-  APRÈS COUP ». L'écriture d'un mouvement que ses encaissements classent porte un libellé composé (« Relevé du
+  APRÈS COUP ». Un dossier ne tient qu'UN compte bancaire : le relevé d'un second ne s'importe pas (doublons écartés en
+  silence, ruptures fausses) tant que MCB n'est pas fait — conçu le 09/11/2026 en deux temps, MCB-Q1 à Q8 au cabinet,
+  rien d'écrit avant la réponse du praticien (MVP-BANQUES-Q1) → « PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : LA
+  CONCEPTION ». L'écriture d'un mouvement que ses encaissements classent porte un libellé composé (« Relevé du
   JJ/MM/AAAA — F… », `libelleDUnMouvementDesVentes`), jamais celui de la banque, qui nomme qui a payé ; un mouvement
   classé hors des ventes facturées porte « Crédit du relevé du JJ/MM/AAAA », ou « Débit du relevé du JJ/MM/AAAA » quand
   il rend ou défait l'argent d'un client (une ligne en classe 7 ou 41, la définition de VF9CQ1B), tout autre débit
