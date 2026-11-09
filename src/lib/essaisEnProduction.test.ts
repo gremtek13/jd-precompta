@@ -351,7 +351,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Vingt le 09/11/2026 : `restaurationEtSuppressionDUnDossier` (RESTAU-Q1 et RESTAU-Q4,
     // `restauration_et_suppression_d_un_dossier`) entré dans la famille « apres », après sa migration préparée ; SÛR au
     // banc, sur une copie de la réplique au niveau de la production.
-    expect(cas.length).toBe(20)
+    // Dix-neuf le même jour : `restaurationEtSuppressionDUnDossier` sorti (RESTAU-Q1 et RESTAU-Q4 en production,
+    // 20261109193056, collée par le cabinet ; l'essai ne cherche aucun semis, il se joue comme un essai de la production).
+    expect(cas.length).toBe(19)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

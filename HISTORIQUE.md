@@ -49733,3 +49733,15 @@ Migration `supabase/preparees/20261109100000_restauration_et_suppression_d_un_do
 `restaurationEtSuppressionDUnDossier.sql` EN ATTENTE puis six lignes vraies ; `rls.sql` 123 invariants à 0, 92 mutations qui
 mordent (M-PR1 à M-PR3) ; le retour rend `signature.sql` à l'identique ; le collage en CRLF, la même empreinte ; la restauration
 complète réinsère le commentaire du client, et le dossier se supprime sans qu'on retire la règle ; banc du leurre : SÛR.
+
+### 09/11/2026 — RESTAU-Q1 ET RESTAU-Q4 EN PRODUCTION
+
+Collée par le cabinet le 09/11/2026 sur sa réponse (RESTAU-Q1 « oui, préparer et appliquer », RESTAU-Q4 « oui, avec
+RESTAU-Q1 ») : version `20261109193056`, empreinte de l'historique `e26d0426…` égale au fichier, la policy
+`piece_commentaires_restauration` et la clé en cascade relues au catalogue. Avant le collage, la garde de tête relue contre
+la production (les trois empreintes égales, aucune règle du cabinet sur une catégorie propre). Après : le fichier passe dans
+l'export sous sa version ; la relation `tiers_categories_cabinet.categorie_id > categories` passe à « cascade » dans
+`RELATIONS` ; l'essai sort de la famille « apres » (dix-neuf). Les trois contrôles de l'export concordent : 188 migrations
+(`b619c882…`), 2 561 objets (`50dc288d…`), 81 instructions du socle (`c6cf69c1…`) ; l'essai rejoué en production, 6 cas
+sur 6, rien de resté. Reste, sans effet aujourd'hui : une ligne d'un AUTRE dossier qui citerait une catégorie propre
+bloquerait encore la suppression du dossier (six tables, aucune garde en base, zéro ligne en production).

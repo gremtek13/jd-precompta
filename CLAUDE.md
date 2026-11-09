@@ -420,6 +420,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Exports** : pack, export d'un cabinet, sauvegarde et restauration — **une sauvegarde n'est pas un pack** : le pack
   porte les fichiers, la sauvegarde les lignes qui les relient, et les logos des factures (PLAN_DE_REPRISE.md §4, point
   6).
+- **La restauration, éprouvée de bout en bout le 09/11/2026** (MVP-D3) : arrêtée après la création du dossier, elle se
+  retire sur confirmation, le stockage intact (RESTAU-Q2) ; la sauvegarde dit les connexions, les identifiants Super PDP
+  et les compteurs qu'elle ne porte pas (RESTAU-Q3) ; les commentaires se restaurent et une règle du cabinet part avec sa
+  catégorie, en production (RESTAU-Q1, Q4) → « RESTAU-Q2 ET RESTAU-Q3 : LA RESTAURATION INTERROMPUE ET CE QUE LA SAUVEGARDE
+  NE PORTE PAS », « RESTAU-Q1 ET RESTAU-Q4 EN PRODUCTION ».
 
 ## Fonctionnalités actuellement en cours
 

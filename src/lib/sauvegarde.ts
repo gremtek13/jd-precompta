@@ -447,7 +447,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'tiers_categories', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
   { enfant: 'tiers_categories', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'tiers_categories_cabinet', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
-  { enfant: 'tiers_categories_cabinet', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
+  { enfant: 'tiers_categories_cabinet', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'cascade' },
   { enfant: 'transmissions_encaissements', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'transmissions_encaissements', parent: 'encaissements_factures', colonne: 'encaissement_id', aLaSuppression: 'bloque' },
   { enfant: 'transmissions_encaissements', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
