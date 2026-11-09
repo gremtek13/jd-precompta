@@ -32,6 +32,10 @@ const base = {
   // seule de ses lignes, et quelle que soit la valeur, NULL compris — est refusé en entier (428C9), puisque PostgREST
   // insère l'union des clés du lot ; une ligne écrite sans elle la reçoit calculée.
   generees: {} as Record<string, Record<string, (ligne: Ligne) => unknown>>,
+  // Une suppression que la RLS refuse : zéro ligne rendue, sans erreur (RESTAU-Q2).
+  suppressionMuette: false,
+  // Une écriture refusée sur une table que la restauration lit aussi (`dossiers`) : la lecture passe, l'insertion non.
+  erreurALInsertion: {} as Record<string, Error>,
 }
 const journal: { table: string; filtres: string[]; tri: string[] }[] = []
 // Les lignes telles que la restauration les ENVOIE, avant que la base y mette ses valeurs par défaut.
@@ -117,7 +121,7 @@ function constructeur(table: string) {
 function ecrivain(table: string) {
   return {
     insert: (lignes: Ligne[], options: { defaultToNull?: boolean } = {}) => {
-      const erreur = base.erreurParTable[table] ?? base.erreur
+      const erreur = base.erreurALInsertion[table] ?? base.erreurParTable[table] ?? base.erreur
       if (erreur) return Promise.resolve({ error: erreur })
       const generees = base.generees[table] ?? {}
       const nommee = Object.keys(generees).find((colonne) => lignes.some((l) => colonne in l))
@@ -149,6 +153,26 @@ function ecrivain(table: string) {
       base.tables[table] = [...(base.tables[table] ?? []), ...ecrites]
       return Promise.resolve({ error: null })
     },
+    // La suppression d'un dossier, que la base fait cascader : toute ligne qui le cite part avec lui.
+    delete: () => ({
+      eq: (colonne: string, valeur: unknown) => ({
+        select: () => ({
+          maybeSingle: async () => {
+            const erreur = base.erreurParTable[table] ?? base.erreur
+            if (erreur) return { data: null, error: erreur }
+            const visee = (base.tables[table] ?? []).find((l) => String(l[colonne]) === String(valeur))
+            if (!visee || base.suppressionMuette) return { data: null, error: null }
+            base.tables[table] = (base.tables[table] ?? []).filter((l) => l !== visee)
+            if (table === 'dossiers') {
+              for (const nom of Object.keys(base.tables)) {
+                base.tables[nom] = base.tables[nom].filter((l) => String(l.dossier_id) !== String(valeur))
+              }
+            }
+            return { data: { id: visee.id }, error: null }
+          },
+        }),
+      }),
+    }),
     update: (patch: Ligne) => ({
       eq: (colonne: string, valeur: unknown) => {
         const erreur = base.erreurParTable[table] ?? base.erreur
@@ -173,10 +197,11 @@ vi.mock('./supabase', async () => ({
 }))
 
 const {
-  exporterDossier, horsPerimetre, lotsDEcriture, restaurerSauvegarde, verifierRestauration, ETAPE_DES_LOGOS, LOGO_HORS_PERIMETRE,
+  exporterDossier, horsPerimetre, lotsDEcriture, restaurerSauvegarde, retirerDossierPartiel, verifierRestauration, ETAPE_DES_LOGOS, LOGO_HORS_PERIMETRE,
   TAILLE_LOT_ECRITURE, TAILLE_PAGE, VERSION_SAUVEGARDE,
 } = await import('./sauvegardeDonnees')
 const { LOGO_DES_FACTURES_EXPORTE, cheminDuLogo } = await import('./logoDesFactures')
+const { HORS_PERIMETRE_DES_SECRETS, RestaurationInterrompue, dossierPartielDe } = await import('./restaurationInterrompue')
 const { enBase64, explicationDuManque } = await import('./sauvegardeLogos')
 const { mondeDuSeau: seau } = await import('../test/stockageFactice')
 const { empreinteDe, logoDe } = await import('../test/logoFictif')
@@ -192,6 +217,8 @@ beforeEach(() => {
   base.erreurParTable = {}
   base.defauts = {}
   base.generees = {}
+  base.suppressionMuette = false
+  base.erreurALInsertion = {}
   journal.length = 0
   ecritures.length = 0
   for (const table of Object.keys(envoyees)) delete envoyees[table]
@@ -211,8 +238,10 @@ describe('export d’un dossier', () => {
     // fichiers, les comptes, la ligne du cabinet et le catalogue des rôles comptables (ligne 43, PC1).
     // Le logo des factures (A5c1) s'y ajoute le jour où sa migration est en base : le manifeste suit le drapeau.
     expect(manifeste.horsPerimetre).toEqual(horsPerimetre(LOGO_DES_FACTURES_EXPORTE))
-    expect(manifeste.horsPerimetre).toHaveLength(LOGO_DES_FACTURES_EXPORTE ? 5 : 4)
+    expect(manifeste.horsPerimetre).toHaveLength(LOGO_DES_FACTURES_EXPORTE ? 9 : 8)
     expect(manifeste.horsPerimetre[3]).toMatch(/catalogue des rôles comptables/)
+    // RESTAU-Q3 : les connexions et les compteurs de numérotation, que leurs tables sans policy rendent vides.
+    expect(manifeste.horsPerimetre.slice(4, 8)).toEqual([...HORS_PERIMETRE_DES_SECRETS])
     expect(manifeste.comptes.facultatifs).toEqual(['u1'])
     expect(manifeste.referencesExternes).toEqual([
       { table: 'dossiers', colonne: 'cabinet_id', parent: 'cabinets', valeurs: [CABINET] },
@@ -222,7 +251,7 @@ describe('export d’un dossier', () => {
   it('dit ce qu’elle ne porte pas du seau des ventes dès que la migration du logo est en base, et seulement alors', () => {
     // Le seau `ventes` (A5c1) n'est ni une pièce ni un pack : l'export de pack ne le porte pas. Depuis le format 2 (A5c2b),
     // la sauvegarde porte le logo que les versions désignent ; le manifeste dit ce qu'elle ne porte pas du seau.
-    expect(horsPerimetre(false)).toHaveLength(4)
+    expect(horsPerimetre(false)).toHaveLength(8)
     expect(horsPerimetre(false).some((ligne) => /logo/i.test(ligne))).toBe(false)
     expect(horsPerimetre(true)).toEqual([...horsPerimetre(false), LOGO_HORS_PERIMETRE])
     expect(LOGO_HORS_PERIMETRE).toMatch(/seau `ventes`/)
@@ -749,6 +778,96 @@ describe('restauration', () => {
     base.erreurParTable.pieces = new Error('new row violates row-level security policy')
 
     await expect(restaurerSauvegarde(sauvegarde)).rejects.toThrow(/Restauration interrompue sur « pieces »/)
+  })
+
+  // RESTAU-Q2. Un arrêt après la création du dossier le désigne, et lui seul ; tout autre arrêt ne désigne rien.
+  async function erreurDe(promesse: Promise<unknown>): Promise<unknown> {
+    try { await promesse } catch (e) { return e }
+    throw new Error('la restauration aurait dû échouer')
+  }
+
+  it('un arrêt après la création du dossier le désigne, avec ce que la tentative a écrit', async () => {
+    base.tables.categories = [{ id: 'c1', dossier_id: null, nom: 'Honoraires' }]
+    base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER, categorie_id: 'c1' }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    baseVide()
+    base.erreurParTable.pieces = new Error('new row violates row-level security policy')
+
+    const erreur = await erreurDe(restaurerSauvegarde(sauvegarde))
+    expect(erreur).toBeInstanceOf(RestaurationInterrompue)
+    // Le message d'hier, intact : la carte le montre tel quel.
+    expect((erreur as Error).message).toMatch(/^Restauration interrompue sur « pieces » : new row violates/)
+    expect(dossierPartielDe(erreur)).toEqual({
+      id: DOSSIER, nom: 'Cabinet Martin', lignesEcrites: { dossiers: 1, categories: 1 }, partageesEcrites: 1,
+    })
+  })
+
+  it('un refus d’avant la première écriture ne désigne aucun dossier : celui qui existe déjà n’est pas le sien', async () => {
+    base.tables.pieces = []
+    const sauvegarde = await exporterDossier(DOSSIER)
+    const erreur = await erreurDe(restaurerSauvegarde(sauvegarde))
+    expect((erreur as Error).message).toMatch(/existe déjà/)
+    expect(dossierPartielDe(erreur)).toBeNull()
+  })
+
+  it('la ligne du dossier refusée ne désigne aucun dossier : la tentative n’en a créé aucun', async () => {
+    base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    baseVide()
+    base.erreurALInsertion.dossiers = new Error('new row violates row-level security policy')
+    const erreur = await erreurDe(restaurerSauvegarde(sauvegarde))
+    expect((erreur as Error).message).toMatch(/^Restauration interrompue sur « dossiers »/)
+    expect(dossierPartielDe(erreur)).toBeNull()
+    expect(base.tables.dossiers).toEqual([])
+  })
+
+  it('un dossier écrit sous un autre identifiant que celui du manifeste ne se désigne pas : seul celui qu’on a vu absent', async () => {
+    // Un fichier retouché à la main : la lecture préalable n'a vu absent que le dossier du manifeste.
+    base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    sauvegarde.contenu.dossiers = sauvegarde.contenu.dossiers.map((l) => ({ ...l, id: 'autre' }))
+    sauvegarde.contenu.pieces = sauvegarde.contenu.pieces.map((l) => ({ ...l, dossier_id: 'autre' }))
+    baseVide()
+    base.erreurParTable.pieces = new Error('refus')
+    const erreur = await erreurDe(restaurerSauvegarde(sauvegarde))
+    expect((erreur as Error).message).toMatch(/^Restauration interrompue sur « pieces »/)
+    expect(dossierPartielDe(erreur)).toBeNull()
+  })
+
+  it('un objet qui imite le champ ne désigne rien : seule l’erreur de la restauration fait foi', () => {
+    const imitation = Object.assign(new Error('x'), { dossierPartiel: { id: DOSSIER, nom: '', lignesEcrites: {}, partageesEcrites: 0 } })
+    expect(dossierPartielDe(imitation)).toBeNull()
+    expect(dossierPartielDe({ dossierPartiel: { id: DOSSIER } })).toBeNull()
+  })
+
+  it('le dossier partiel retiré, la restauration repart et se vérifie', async () => {
+    base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }, { id: 'p2', dossier_id: DOSSIER }]
+    base.tables.lignes_bancaires = [{ id: 'l1', dossier_id: DOSSIER, piece_id: 'p1', montant: -12 }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    baseVide()
+    base.erreurParTable.lignes_bancaires = new Error('délai dépassé')
+    const partiel = dossierPartielDe(await erreurDe(restaurerSauvegarde(sauvegarde)))
+    expect(partiel).not.toBeNull()
+    // Un nouvel essai, le dossier partiel en place : refusé.
+    delete base.erreurParTable.lignes_bancaires
+    await expect(restaurerSauvegarde(sauvegarde)).rejects.toThrow(/existe déjà/)
+
+    await retirerDossierPartiel(partiel!)
+    expect(base.tables.dossiers).toEqual([])
+    expect(base.tables.pieces).toEqual([])
+    await restaurerSauvegarde(sauvegarde)
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
+  it('un retrait que la base ne rend pas se dit : jamais « retiré » d’un dossier resté en place', async () => {
+    base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    baseVide()
+    base.erreurParTable.pieces = new Error('refus')
+    const partiel = dossierPartielDe(await erreurDe(restaurerSauvegarde(sauvegarde)))!
+    base.suppressionMuette = true
+    await expect(retirerDossierPartiel(partiel)).rejects.toThrow(/aucune ligne supprimée/)
+    expect(base.tables.dossiers).toHaveLength(1)
   })
 
   it('voit une ligne qui manque à l’appel après restauration', async () => {
