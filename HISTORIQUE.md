@@ -49697,3 +49697,22 @@ Vue d'ensemble compte `releves-en-rupture` en attention, muet sur une lecture pa
 fois (les incohérents s'en tirent). La seconde passe : août jusqu'au 15 se dit à l'import de septembre (écart 2 007,50) et
 dans la Vue d'ensemble, août absent aussi (1 137,50) ; les recouvrements, l'ordre inverse et l'OFX de juin ne disent aucune
 rupture. Mutation : la comparaison neutralisée, 12 rouges.
+
+### 09/11/2026 — RESTAU-Q2 ET RESTAU-Q3 : LA RESTAURATION INTERROMPUE ET CE QUE LA SAUVEGARDE NE PORTE PAS
+
+Côté application, sans migration ni changement de format (`VERSION_SAUVEGARDE` inchangée). RESTAU-Q2 : une restauration
+arrêtée après avoir écrit la ligne du dossier lève une `RestaurationInterrompue` (`lib/restaurationInterrompue.ts`) qui porte
+le dossier partiel et ce que la tentative a écrit, son message d'hier intact ; elle ne la lève que si la lecture préalable a
+vu le dossier ABSENT et si l'étape `dossiers` a écrit sans erreur une seule ligne, à l'identifiant du manifeste. Tout autre
+arrêt (refus d'avant la première écriture, ligne du dossier refusée, fichier retouché sous un autre identifiant) part tel
+quel, et `dossierPartielDe` ne lit qu'une instance de la classe. La carte propose alors « Retirer le dossier partiel », sous
+`ConfirmationSuppression` (le nom à taper, la description qui nomme le dossier, compte les lignes qui partent et dit que les
+lignes communes restent), verrou `useRef` ; la restauration attend le retrait, puis repart. Écart à la demande, relu et retenu :
+le retrait supprime la ligne `dossiers` (la cascade emporte le reste, la ligne exigée RENDUE par la base), mais ne vide PAS le
+stockage comme `supprimerDossierDefinitivement` — l'arrêt précède toujours l'étape des logos, et les fichiers rangés sous le
+préfixe sont ceux que la restauration vient rejoindre. RESTAU-Q3 : le manifeste et la carte disent les connexions bancaires,
+les connexions aux plateformes et les identifiants Super PDP (tables sans policy, lues à zéro ligne) et ce qu'il faut refaire,
+et les deux compteurs de numérotation, rien n'étant perdu (`greatest(repère, plus haut émis) + 1`, vérifié dans
+`prochain_numero_facture` et `enregistrer_devis` exportés et confronté par le test). Mutations : la garde « créée par cette
+tentative » retirée, puis réduite à la table, une rouge chacune. RESTAU-Q2 et RESTAU-Q3 tranchées par le cabinet le
+09/11/2026, à la recommandation.

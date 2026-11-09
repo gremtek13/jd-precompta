@@ -3,6 +3,7 @@ import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { lireLeLogo } from './logoDesFacturesLecture'
 import { deposerLeLogo } from './logoDesFacturesEcriture'
 import { messageErreur } from './messageErreur'
+import { HORS_PERIMETRE_DES_SECRETS, RestaurationInterrompue, type DossierPartiel } from './restaurationInterrompue'
 import {
   EXPLICATION_DEJA_LA, EXPLICATION_REDEPOSE, VERSION_SAUVEGARDE, bilanDesLogos, ecartsDesLogos, explicationDuDepotEchoue,
   logoInclus, logoSauvegarde, logosDesVersions, planDesLogos, type FichierDeSauvegarde, type LogoManquant, type LogoRestaure,
@@ -38,8 +39,9 @@ import {
 // Ce que cette sauvegarde contient : les lignes de base d'un dossier, et depuis le format 2 (étape A5c2b) le fichier de
 // chaque logo des factures que ses versions des paramètres désignent (src/lib/sauvegardeLogos.ts). Ce qu'elle ne contient
 // pas, et qui est dit en toutes lettres dans son manifeste : les autres fichiers du stockage (l'export de pack les couvre
-// déjà), les comptes utilisateurs, la ligne `cabinets` du cabinet propriétaire, et le catalogue des rôles comptables
-// (`roles_comptables`), posé par migration dans toute base.
+// déjà), les comptes utilisateurs, la ligne `cabinets` du cabinet propriétaire, le catalogue des rôles comptables
+// (`roles_comptables`), posé par migration dans toute base, et depuis RESTAU-Q3 (09/11/2026) les connexions et les
+// compteurs de numérotation, que leurs tables sans policy rendent vides (src/lib/restaurationInterrompue.ts).
 
 /** Nombre de lignes lues par aller-retour. Voir `lireToutesLesLignes` pour ce qui en dépend. */
 export const TAILLE_PAGE = 500
@@ -91,6 +93,9 @@ const HORS_PERIMETRE = [
   'Les comptes utilisateurs (auth.users) ne sont ni lus ni restaurés. Voir `comptes` : trois tables en exigent, et refusent NULL.',
   'La ligne du cabinet propriétaire n’est pas incluse : elle doit exister dans la base d’arrivée. Voir `referencesExternes`.',
   'Le catalogue des rôles comptables n’est pas inclus : une migration le pose dans toute base, qui doit connaître chaque rôle que le plan du dossier désigne. Voir `referencesExternes`.',
+  // RESTAU-Q3 : les connexions et les compteurs de numérotation, lus à zéro ligne (aucune policy), et ce qu'il faut
+  // refaire après une restauration. Une sauvegarde d'avant ne les nomme pas : l'écran de la restauration les ajoute.
+  ...HORS_PERIMETRE_DES_SECRETS,
 ]
 
 // Le logo des factures (seau `ventes`) n'est ni une pièce ni un pack : l'export de pack ne le porte pas. Depuis le format 2
@@ -453,6 +458,8 @@ export async function restaurerSauvegarde(
   const { data: dejaLa, error: erreurDeja } = await supabase
     .from('dossiers').select('id').eq('id', manifeste.dossierId).maybeSingle()
   if (erreurDeja) throw erreurDeja
+  // La première moitié de la preuve qu'un dossier partiel vient de CETTE tentative (RESTAU-Q2) : il était absent ici.
+  const absentAvant = !dejaLa
   if (dejaLa) refus.push(`Le dossier « ${manifeste.dossierId} » existe déjà dans cette base. La restauration n'écrase jamais.`)
 
   if (refus.length > 0) {
@@ -468,39 +475,60 @@ export async function restaurerSauvegarde(
   // Les étapes des tables, puis celle des logos.
   const total = plan.etapes.length + 1
   let fait = 0
+  // La seconde moitié de la preuve (RESTAU-Q2) : la ligne du dossier, et elle seule, écrite sans erreur par cette tentative.
+  // Tant qu'elle est fausse, un arrêt ne laisse aucun dossier en base, et rien ne se propose de retirer.
+  let dossierCree = false
+  let partageesEcrites = 0
 
-  for (const etape of plan.etapes) {
-    onProgression?.(fait, total, etape.table)
+  try {
+    for (const etape of plan.etapes) {
+      onProgression?.(fait, total, etape.table)
 
-    // Une ligne partagée appartient à tout le cabinet : si elle est déjà là, on la laisse. Une
-    // catégorie renommée depuis la sauvegarde, ou dont le compte comptable a été corrigé, sert tous
-    // les dossiers — restaurer un client n'est pas une raison de la ramener en arrière pour eux.
-    const partagees = etape.lignes.filter((l) => estLignePartagee(etape.table, l))
-    let aEcrire = etape.lignes
-    if (partagees.length > 0) {
-      const dejaEnBase = await lireToutesLesLignes(etape.table, (r) => r.is('dossier_id', null))
-      const presentes = new Set(dejaEnBase.map((l) => identiteLigne(etape.table, l)))
-      const conservees = partagees.filter((l) => presentes.has(identiteLigne(etape.table, l)))
-      resultat.partageesConservees += conservees.length
-      aEcrire = etape.lignes.filter((l) => !presentes.has(identiteLigne(etape.table, l)))
+      // Une ligne partagée appartient à tout le cabinet : si elle est déjà là, on la laisse. Une
+      // catégorie renommée depuis la sauvegarde, ou dont le compte comptable a été corrigé, sert tous
+      // les dossiers — restaurer un client n'est pas une raison de la ramener en arrière pour eux.
+      const partagees = etape.lignes.filter((l) => estLignePartagee(etape.table, l))
+      let aEcrire = etape.lignes
+      let partageesEcritesDeLEtape = 0
+      if (partagees.length > 0) {
+        const dejaEnBase = await lireToutesLesLignes(etape.table, (r) => r.is('dossier_id', null))
+        const presentes = new Set(dejaEnBase.map((l) => identiteLigne(etape.table, l)))
+        const conservees = partagees.filter((l) => presentes.has(identiteLigne(etape.table, l)))
+        resultat.partageesConservees += conservees.length
+        aEcrire = etape.lignes.filter((l) => !presentes.has(identiteLigne(etape.table, l)))
+        partageesEcritesDeLEtape = partagees.length - conservees.length
+      }
+
+      await ecrireParLots(etape.table, aEcrire)
+      partageesEcrites += partageesEcritesDeLEtape
+      if (
+        absentAvant && etape.table === 'dossiers' && aEcrire.length === 1 && String(aEcrire[0].id) === manifeste.dossierId
+      ) dossierCree = true
+      // Additionné et non remplacé : une table auto-référencée par vagues (TABLES_AUTO_REFERENCEES_PAR_VAGUES) a
+      // plusieurs étapes, et la dernière ne dit que ses propres lignes.
+      resultat.lignesParTable[etape.table] = (resultat.lignesParTable[etape.table] ?? 0) + aEcrire.length
+      fait += 1
     }
 
-    await ecrireParLots(etape.table, aEcrire)
-    // Additionné et non remplacé : une table auto-référencée par vagues (TABLES_AUTO_REFERENCEES_PAR_VAGUES) a
-    // plusieurs étapes, et la dernière ne dit que ses propres lignes.
-    resultat.lignesParTable[etape.table] = (resultat.lignesParTable[etape.table] ?? 0) + aEcrire.length
-    fait += 1
-  }
-
-  // La seconde passe : les liens auto-référencés, reposés une fois toutes les lignes en place. Une
-  // mise à jour par ligne, et c'est assez — ces liens sont des avoirs, il y en a un par facture
-  // corrigée, pas un par facture.
-  for (const passe of plan.secondePasse) {
-    for (const { id, valeur } of passe.valeurs) {
-      const { error } = await supabase.from(passe.table).update({ [passe.colonne]: valeur }).eq('id', id)
-      if (error) throw new Error(`Seconde passe interrompue sur ${passe.table}.${passe.colonne} : ${error.message}`)
-      resultat.liensReposes += 1
+    // La seconde passe : les liens auto-référencés, reposés une fois toutes les lignes en place. Une
+    // mise à jour par ligne, et c'est assez — ces liens sont des avoirs, il y en a un par facture
+    // corrigée, pas un par facture.
+    for (const passe of plan.secondePasse) {
+      for (const { id, valeur } of passe.valeurs) {
+        const { error } = await supabase.from(passe.table).update({ [passe.colonne]: valeur }).eq('id', id)
+        if (error) throw new Error(`Seconde passe interrompue sur ${passe.table}.${passe.colonne} : ${error.message}`)
+        resultat.liensReposes += 1
+      }
     }
+  } catch (erreur) {
+    // Un arrêt APRÈS la création du dossier le laisse en base, à moitié restauré : il se dit, avec ce que la tentative a
+    // écrit, et l'écran en propose le retrait sur confirmation (RESTAU-Q2). Avant, l'erreur part telle quelle. L'étape des
+    // logos, qui suit, ne lève jamais : un arrêt survient donc toujours avant tout dépôt dans le stockage.
+    if (!dossierCree) throw erreur
+    const partiel: DossierPartiel = {
+      id: manifeste.dossierId, nom: manifeste.dossierNom, lignesEcrites: { ...resultat.lignesParTable }, partageesEcrites,
+    }
+    throw new RestaurationInterrompue(messageErreur(erreur, 'La restauration s’est interrompue.'), partiel)
   }
 
   // LES FICHIERS DES LOGOS, APRÈS TOUTES LES LIGNES (question A5C2B-Q4). Le dossier existe donc, et ses versions des
@@ -530,6 +558,21 @@ export async function restaurerSauvegarde(
 
   onProgression?.(fait, total, '')
   return resultat
+}
+
+// LE RETRAIT D'UN DOSSIER PARTIEL (RESTAU-Q2), sur la confirmation de l'écran, jamais seul. Il ne prend qu'un
+// `DossierPartiel`, que seule une `RestaurationInterrompue` porte. La ligne du dossier se supprime, la base fait cascader
+// ce que la tentative a écrit ; la base doit RENDRE la ligne supprimée — une suppression que la RLS refuse rend zéro ligne
+// sans erreur, et l'écran dirait « retiré » d'un dossier resté en place. Le stockage n'est pas touché : voir
+// src/lib/restaurationInterrompue.ts, la tentative n'y a rien déposé et ce qui s'y trouve est ce qu'elle vient rejoindre.
+export async function retirerDossierPartiel(partiel: DossierPartiel): Promise<void> {
+  const { data, error } = await supabase.from('dossiers').delete().eq('id', partiel.id).select('id').maybeSingle()
+  if (error) throw new Error(`Le dossier partiel n’a pas été retiré : ${messageErreur(error, 'la base a refusé la suppression')}.`)
+  if (!data) {
+    throw new Error(
+      'Le dossier partiel n’a pas été retiré : la base n’a rendu aucune ligne supprimée (droit refusé, ou dossier déjà parti). Relis la base avant de relancer la restauration.',
+    )
+  }
 }
 
 // Le verdict, et il n'est pas rendu par la restauration elle-même : on relit le dossier avec l'export,

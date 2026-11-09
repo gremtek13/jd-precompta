@@ -1,5 +1,10 @@
 import { useRef, useState, type ChangeEvent } from 'react'
-import { restaurerSauvegarde, verifierRestauration, type SauvegardeDossier } from '../lib/sauvegardeDonnees'
+import { restaurerSauvegarde, retirerDossierPartiel, verifierRestauration, type SauvegardeDossier } from '../lib/sauvegardeDonnees'
+import {
+  LIBELLE_RETRAIT_DU_DOSSIER_PARTIEL, avisDuDossierPartiel, descriptionDuRetrait, dossierPartielDe, horsPerimetreAAfficher,
+  messageApresRetrait, nomDuDossierPartiel, type DossierPartiel,
+} from '../lib/restaurationInterrompue'
+import ConfirmationSuppression from '../components/ConfirmationSuppression'
 import { lireSauvegarde } from '../lib/sauvegardeFichier'
 import { phrasesDuBilanDesLogos, resumeDesLogos } from '../lib/sauvegardeLogos'
 import { messageErreur } from '../lib/messageErreur'
@@ -18,6 +23,11 @@ import { phrasesDesAnciennesNotes, sansAnciennesNotes } from '../lib/sauvegarde'
 //
 // Les logos des factures (étape A5c2b) : ce qu'une sauvegarde au format 2 porte se redépose après les lignes, et le bilan
 // dit chaque logo — redéposé, déjà là, non redéposé et pourquoi, absent de la sauvegarde —, que la relecture soit juste ou non.
+//
+// Une restauration arrêtée APRÈS avoir créé le dossier (RESTAU-Q2) : la carte le dit et propose « Retirer le dossier
+// partiel », sur une confirmation qui le nomme et dit ce qui part — jamais seule, et seulement sur le dossier que
+// l'erreur de CETTE tentative désigne (`dossierPartielDe`) ; un autre fichier choisi, ou une nouvelle tentative, l'oublie.
+// Ce que la sauvegarde ne porte pas, et ce qu'il faut refaire après, se lit avant le clic (RESTAU-Q3).
 export default function RestaurationCard() {
   const [sauvegarde, setSauvegarde] = useState<SauvegardeDossier | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
@@ -26,6 +36,12 @@ export default function RestaurationCard() {
   // Ce que la restauration a fait des logos, une ligne par logo : dit dans les deux issues de la relecture.
   const [bilanDesLogos, setBilanDesLogos] = useState<string[]>([])
   const verrou = useRef(false)
+  // Le dossier que la tentative a créé puis laissé inachevé, tel que l'erreur de la restauration le désigne.
+  const [dossierPartiel, setDossierPartiel] = useState<DossierPartiel | null>(null)
+  const [confirmerRetrait, setConfirmerRetrait] = useState(false)
+  const [retraitEnCours, setRetraitEnCours] = useState(false)
+  const [retraitErreur, setRetraitErreur] = useState<string | null>(null)
+  const verrouRetrait = useRef(false)
 
   async function choisirFichier(e: ChangeEvent<HTMLInputElement>) {
     const fichier = e.target.files?.[0]
@@ -35,6 +51,8 @@ export default function RestaurationCard() {
     setErreur(null)
     setResultat(null)
     setBilanDesLogos([])
+    setDossierPartiel(null)
+    setConfirmerRetrait(false)
     if (!fichier) return
     try {
       setSauvegarde(await lireSauvegarde(await fichier.text()))
@@ -48,7 +66,9 @@ export default function RestaurationCard() {
     verrou.current = true
     setEnCours(true)
     setErreur(null)
+    setResultat(null)
     setBilanDesLogos([])
+    setDossierPartiel(null)
     try {
       const bilan = await restaurerSauvegarde(sauvegarde)
       setBilanDesLogos(phrasesDuBilanDesLogos(bilan.logos))
@@ -70,9 +90,29 @@ export default function RestaurationCard() {
       }
     } catch (err) {
       setErreur(messageErreur(err, 'La restauration a échoué.'))
+      setDossierPartiel(dossierPartielDe(err))
     } finally {
       verrou.current = false
       setEnCours(false)
+    }
+  }
+
+  async function retirerLeDossierPartiel() {
+    if (!dossierPartiel || verrouRetrait.current) return
+    verrouRetrait.current = true
+    setRetraitEnCours(true)
+    setRetraitErreur(null)
+    try {
+      await retirerDossierPartiel(dossierPartiel)
+      setDossierPartiel(null)
+      setConfirmerRetrait(false)
+      setErreur(null)
+      setResultat(messageApresRetrait(dossierPartiel))
+    } catch (err) {
+      setRetraitErreur(messageErreur(err, 'Le retrait du dossier partiel a échoué.'))
+    } finally {
+      verrouRetrait.current = false
+      setRetraitEnCours(false)
     }
   }
 
@@ -95,6 +135,14 @@ export default function RestaurationCard() {
       <input type="file" accept="application/json,.json" onChange={choisirFichier} disabled={enCours} />
 
       {erreur && <p className="error-text" style={{ whiteSpace: 'pre-wrap' }}>{erreur}</p>}
+      {dossierPartiel && (
+        <div style={{ marginTop: 8 }}>
+          <p>{avisDuDossierPartiel(dossierPartiel)}</p>
+          <button type="button" className="btn btn-danger" onClick={() => { setRetraitErreur(null); setConfirmerRetrait(true) }}>
+            {LIBELLE_RETRAIT_DU_DOSSIER_PARTIEL}
+          </button>
+        </div>
+      )}
       {resultat && <p style={{ color: 'var(--color-success, inherit)' }}>{resultat}</p>}
       {bilanDesLogos.length > 0 && (
         <div style={{ marginTop: 8 }}>
@@ -133,6 +181,13 @@ export default function RestaurationCard() {
           )}
 
           <details>
+            <summary className="muted">Ce que la sauvegarde ne contient pas, et ce qu'il faudra refaire</summary>
+            <ul aria-label="Hors périmètre de la sauvegarde" className="muted" style={{ marginTop: 8 }}>
+              {horsPerimetreAAfficher(m).map((ligne) => <li key={ligne}>{ligne}</li>)}
+            </ul>
+          </details>
+
+          <details>
             <summary className="muted">Le détail, table par table</summary>
             <ul className="muted" style={{ marginTop: 8, columns: 2 }}>
               {Object.entries(m.lignesParTable)
@@ -150,11 +205,29 @@ export default function RestaurationCard() {
             className="btn btn-primary"
             style={{ marginTop: 10 }}
             onClick={restaurer}
-            disabled={enCours}
+            disabled={enCours || dossierPartiel !== null}
           >
             {enCours ? 'Restauration…' : `Restaurer « ${m.dossierNom || m.dossierId} » dans cette base`}
           </button>
+          {dossierPartiel && (
+            <p className="muted" style={{ marginTop: 6 }}>
+              Retire d'abord le dossier partiel : la restauration n'écrit jamais par-dessus un dossier existant.
+            </p>
+          )}
         </div>
+      )}
+
+      {confirmerRetrait && dossierPartiel && (
+        <ConfirmationSuppression
+          titre={LIBELLE_RETRAIT_DU_DOSSIER_PARTIEL}
+          description={descriptionDuRetrait(dossierPartiel)}
+          nomAttendu={nomDuDossierPartiel(dossierPartiel)}
+          boutonLabel="Retirer définitivement"
+          enCours={retraitEnCours}
+          erreur={retraitErreur}
+          onConfirmer={retirerLeDossierPartiel}
+          onAnnuler={() => { setConfirmerRetrait(false); setRetraitErreur(null) }}
+        />
       )}
     </div>
   )
