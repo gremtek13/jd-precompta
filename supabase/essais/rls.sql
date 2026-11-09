@@ -5362,6 +5362,179 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $df$;
 
+-- ══ PR. La restauration des commentaires (RESTAU-Q1, MVP-D3 ; migration `restauration_et_suppression_d_un_dossier`,
+-- PRÉPARÉE) ════════════════════════════════════════════════════════════════════════════════════════════════════════════
+-- `piece_commentaires`, que le client écrit, liste ses droits un par un : la lecture (le cabinet du dossier, son client),
+-- l'insertion par l'auteur lui-même sous l'origine que son droit dit, la suppression par le cabinet — et, depuis la
+-- migration, l'insertion de la restauration, au super-administrateur seul. Aucune mise à jour : une parole datée ne se
+-- réécrit pas.
+--   PR1. Sur une pièce posée dans le dossier du client : le super-administrateur réinsère le commentaire du client (un
+--        autre auteur, l'origine « client » — le contrôle POSITIF de la policy neuve) ; le client n'insère pas celui du
+--        chef sous l'origine « cabinet » (42501), l'anonyme non plus ; le super-administrateur ne réécrit pas le
+--        commentaire (aucune ligne touchée, le texte relu).
+--   PR2. Le catalogue : quatre policies hors de la restrictive `deux_facteurs` — la lecture, l'insertion de l'auteur, la
+--        suppression du cabinet, et l'insertion de la restauration, à authenticated seul, sur `is_super_admin()` ;
+--        aucune policy de mise à jour ni pour toute commande.
+-- Trois mutations, qui doivent mordre : M-PR1 (la policy de la restauration ouverte à tout compte : le client insère le
+-- commentaire du chef), M-PR2 (la policy fermée : le super-administrateur ne réinsère plus le commentaire du client),
+-- M-PR3 (une policy de mise à jour au super-administrateur : il réécrit le commentaire). Avant la migration, une ligne dit
+-- que le bloc attend. Le récit : HISTORIQUE.md, « 09/11/2026 — RESTAU-Q1 ET RESTAU-Q4 ». L'essai de la migration :
+-- `restaurationEtSuppressionDUnDossier.sql`.
+do $pr$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  piece uuid := 'e57a0000-0000-4000-8109-0000000000f9';
+  c_reinsere uuid := 'e57a0000-0000-4000-8109-0000000000e1';
+  c_du_chef uuid := 'e57a0000-0000-4000-8109-0000000000e2';
+  c_anon uuid := 'e57a0000-0000-4000-8109-0000000000e3';
+  c_mutation uuid := 'e57a0000-0000-4000-8109-0000000000e4';
+  reinsere text; du_chef text; de_l_anon text; reecrites bigint; relu text; elargie text; fermee text; maj bigint;
+  n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if not exists (select 1 from pg_policy p
+                  where p.polrelid = 'public.piece_commentaires'::regclass and p.polname = 'piece_commentaires_restauration') then
+    insert into rls_verdict values ('PR. la restauration des commentaires : EN ATTENTE de la migration restauration_et_suppression_d_un_dossier',
+      'piece_commentaires', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : une pièce du dossier du client, posée par le propriétaire ──
+    perform set_config('request.jwt.claims', '', true);
+    insert into pieces (id, dossier_id, storage_path, nom_fichier)
+      values (piece, dossier_du_client, dossier_du_client::text || '/essai-pr.pdf', 'essai-pr.pdf');
+    construit := true;
+
+    -- PR1 : le super-administrateur réinsère le commentaire du client, puis tente de le réécrire.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    begin
+      insert into piece_commentaires (id, dossier_id, piece_id, auteur_id, origine, texte)
+        values (c_reinsere, dossier_du_client, piece, client, 'client', 'Restauré.');
+      reinsere := 'accepté';
+    exception when others then reinsere := sqlstate;
+    end;
+    with t as (update piece_commentaires set texte = 'Réécrit.' where id = c_reinsere returning 1) select count(*) into reecrites from t;
+    reset role;
+    -- Le client signe du chef ; l'anonyme écrit.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    begin
+      insert into piece_commentaires (id, dossier_id, piece_id, auteur_id, origine, texte)
+        values (c_du_chef, dossier_du_client, piece, chef, 'cabinet', 'Signé du chef.');
+      du_chef := 'ACCEPTÉ';
+    exception when others then du_chef := sqlstate;
+    end;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      insert into piece_commentaires (id, dossier_id, piece_id, auteur_id, origine, texte)
+        values (c_anon, dossier_du_client, piece, null, 'client', 'Sans session.');
+      de_l_anon := 'ACCEPTÉ';
+    exception when others then de_l_anon := sqlstate;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select k.texte into relu from piece_commentaires k where k.id = c_reinsere;
+    verdicts := verdicts || jsonb_build_object('controle', 'PR1. le super-administrateur réinsère le commentaire du client (le contrôle positif) et ne le réécrit pas ; le client ne signe pas du chef, l''anonyme n''écrit rien',
+      'cible', 'piece_commentaires',
+      'observe', 'réinséré : ' || coalesce(reinsere, '?') || ' | réécrit : ' || reecrites || ' | relu : ' || coalesce(relu, 'rien')
+        || ' | le client sous le chef : ' || coalesce(du_chef, '?') || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', reinsere = 'accepté' and reecrites = 0 and relu = 'Restauré.' and du_chef = '42501' and de_l_anon = '42501');
+
+    -- M-PR1 : la policy de la restauration ouverte à tout compte.
+    begin
+      alter policy piece_commentaires_restauration on public.piece_commentaires with check (true);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into piece_commentaires (id, dossier_id, piece_id, auteur_id, origine, texte)
+          values (c_mutation, dossier_du_client, piece, chef, 'cabinet', 'Signé du chef.');
+        elargie := 'accepté';
+      exception when others then elargie := sqlstate;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PR1 — la policy de la restauration des commentaires ouverte à tout compte',
+      'attendu', 'le client insère le commentaire du chef', 'observe', coalesce(elargie, '?'), 'mord', coalesce(elargie = 'accepté', false));
+
+    -- M-PR2 : la policy de la restauration fermée.
+    begin
+      alter policy piece_commentaires_restauration on public.piece_commentaires with check (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      begin
+        insert into piece_commentaires (id, dossier_id, piece_id, auteur_id, origine, texte)
+          values (c_mutation, dossier_du_client, piece, client, 'client', 'Restauré.');
+        fermee := 'accepté';
+      exception when others then fermee := sqlstate;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PR2 — la policy de la restauration des commentaires fermée',
+      'attendu', 'le super-administrateur ne réinsère plus le commentaire du client (42501)', 'observe', coalesce(fermee, '?'), 'mord', coalesce(fermee = '42501', false));
+
+    -- M-PR3 : une policy de mise à jour au super-administrateur.
+    begin
+      create policy pr_mutation_mise_a_jour on public.piece_commentaires for update to authenticated using (is_super_admin());
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      with t as (update piece_commentaires set texte = 'Réécrit.' where id = c_reinsere returning 1) select count(*) into maj from t;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PR3 — une policy de mise à jour des commentaires au super-administrateur',
+      'attendu', 'il réécrit le commentaire réinséré', 'observe', coalesce(maj::text, '?') || ' réécrit(s)', 'mord', coalesce(maj >= 1, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- PR2 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'piece_commentaires' and p.policyname = 'piece_commentaires_restauration'
+     and p.permissive = 'PERMISSIVE' and p.cmd = 'INSERT' and p.roles = array['authenticated']::name[]
+     and p.qual is null and p.with_check = 'is_super_admin()';
+  verdicts := verdicts || jsonb_build_object('controle', 'PR2. quatre policies (la lecture, l''insertion de l''auteur, la suppression du cabinet, la restauration à authenticated seul sur is_super_admin()) ; aucune de mise à jour (lecture du catalogue)',
+    'cible', 'piece_commentaires',
+    'observe', n || ' | ' || (select string_agg(p.policyname || '=' || p.cmd, ',' order by p.policyname collate "C") from pg_policies p
+                               where p.schemaname = 'public' and p.tablename = 'piece_commentaires' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE'))
+      || ' | RLS ' || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.piece_commentaires'::regclass),
+    'ok', n = 1 and (select string_agg(p.policyname || '=' || p.cmd, ',' order by p.policyname collate "C") from pg_policies p
+                      where p.schemaname = 'public' and p.tablename = 'piece_commentaires' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE'))
+           = 'piece_commentaires_delete=DELETE,piece_commentaires_insert=INSERT,piece_commentaires_restauration=INSERT,piece_commentaires_select=SELECT'
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.piece_commentaires'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'PR. le jeu d''essai des commentaires s''est construit, et rien n''en est resté', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end
+      || ' | restés : ' || ((select count(*) from piece_commentaires where id in (c_reinsere, c_du_chef, c_anon, c_mutation)) + (select count(*) from pieces where id = piece)),
+    'ok', construit and erreur is null
+      and not exists (select 1 from piece_commentaires where id in (c_reinsere, c_du_chef, c_anon, c_mutation))
+      and not exists (select 1 from pieces where id = piece));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $pr$;
+
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
 -- invariants — le principal — ne s'afficherait jamais. Un harnais dont on ne voit pas la réponse est
