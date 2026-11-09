@@ -1,4 +1,4 @@
-import { AUCUNE_SAISIE_2035 } from './saisies2035'
+import { AUCUNE_SAISIE_2035, type Saisie2035 } from './saisies2035'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -151,15 +151,21 @@ describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB
 
   // SE SAISIT : CC (renvoi (17) : quote-part personnelle de dépenses mixtes, avantage en nature du véhicule, fraction non
   // déductible de l'amortissement d'un véhicule…), CL (renvoi (21) : exonérations ZFU, ZFRR, zones déficitaires en offre de
-  // soins, abattements des médecins de secteur I…), DE (renvoi (24)) sont des arbitrages : aucune table ne les porte
-  // (catalogue de la production relu le 01/11/2026 : ni table, ni colonne), et le calcul n'a pas d'entrée pour eux.
-  it.fails('une saisie du cabinet en CC, CL ou DE atteint le formulaire (défaut non corrigé : aucune entrée)', () => {
+  // soins, abattements des médecins de secteur I…), DE (renvoi (24)) sont des arbitrages. CORRIGÉ (étapes 2035S3 à S5,
+  // table `saisies_2035`, en production le 07/11/2026) : le calcul les reçoit en entrée obligatoire. Ce cas a été écrit
+  // en `it.fails` avant la table, sous une forme d'entrée imaginée ; il l'est désormais sous la forme réelle (09/11/2026).
+  it('une saisie du cabinet en CC, CL ou DE atteint le formulaire', () => {
     const d = exonere({ categories: [recettes], lignes: [cpam], cotisations: [urssaf] })
-    // L'entrée qui manque, sous la forme qu'elle prendrait : le calcul l'ignore aujourd'hui.
-    const avecSaisies = valeursDesCases as unknown as (d: unknown, s: ReadonlyMap<string, number>) => ReturnType<typeof valeursDesCases>
-    const { valeurs } = avecSaisies(d, new Map([['CC', 600], ['CL', 0], ['DE', 0]]))
+    const saisies: Saisie2035[] = [
+      { code: 'CC', centimes: 60_000, noteAnnexe: null },
+      { code: 'CL', centimes: 0, noteAnnexe: null },
+      { code: 'DE', centimes: 0, noteAnnexe: null },
+    ]
+    const { valeurs } = valeursDesCases(d, saisies)
     expect(valeurs.get('CC')).toBe(600)
     expect(valeurs.get('CP')).toBe(51_600)
+    // Sans saisie, la même déclaration : CC reste à zéro, et l'écart de CP est exactement la saisie.
+    expect(valeursDesCases(d, AUCUNE_SAISIE_2035).valeurs.get('CP')).toBe(51_000)
   })
 })
 
