@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { definitionsSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // LE FILET DE LA BASE : LA VALIDATION D'UN EXERCICE DEVANT LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6 ; la relecture du
 // 01/11/2026, le défaut 1). La migration `validation_des_paiements_par_la_caisse` — préparée dans supabase/preparees/, à
@@ -33,10 +33,7 @@ function definitionDans(texte: string, fonction: string): string {
 
 // La dernière définition d'une fonction dans l'export, avant un nom de fichier.
 function dansLExportAvant(fonction: string, nom: string): string {
-  const avant = fichiersDuSchema().filter((f) => f.chemin.split('/').pop()! < nom && motifDe(fonction).test(f.texte))
-  const texte = avant[avant.length - 1].texte
-  const debut = [...texte.matchAll(motifDe(fonction))].pop()!.index
-  return texte.slice(debut, texte.indexOf('$$;', debut))
+  return definitionsSql(fonction, fichiersDuSchema().filter((f) => f.chemin.split('/').pop()! < nom)).at(-1)!.definition
 }
 
 // Le commentaire qu'un texte pose sur `valider_exercice`.

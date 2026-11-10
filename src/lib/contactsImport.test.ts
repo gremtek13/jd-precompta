@@ -467,7 +467,7 @@ describe('refusDesLignes : chaque ligne, comme si les lignes refusées avant ell
 // ── 4. Le drapeau et l'export ─────────────────────────────────────────────────────────────────────────────────────────
 
 describe('IMPORT_CONTACTS_EXPORTE dit ce que porte l’export', () => {
-  const portee = fichiersDuSchema().some((f) => /create function public\.importer_contacts\(/.test(f.texte))
+  const portee = fichiersDuSchema().some((f) => /create\s+function\s+public\.importer_contacts\(/i.test(f.texte))
 
   it('le drapeau, et la migration avec lui', () => {
     expect(portee, 'IMPORT_CONTACTS_EXPORTE ne dit plus ce que porte l’export').toBe(IMPORT_CONTACTS_EXPORTE)

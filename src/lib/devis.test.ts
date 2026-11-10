@@ -60,7 +60,7 @@ import type { Devis, LigneDevis } from './types'
 import type { EmetteurDuDossier, EmissionAJuger } from './devis'
 import { facture, ligne } from '../test/facturesCii'
 import { devis as devisDeTest } from '../test/devis'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema, motifDeDefinition } from '../test/schema'
 
 // LE MODULE DES DEVIS, CONFRONTÉ À LA BASE (espace client, étape P5). Les migrations attendent l'accord du cabinet : elles
 // ne sont pas dans l'export (supabase/schema), et ce que la base refuse ne peut pas s'y relire. La RÉFÉRENCE est donc
@@ -366,7 +366,7 @@ describe('les refus qui lisent la base, sous les mots de l’essai', () => {
 
 const messagesSql = (sql: string) => [...sql.matchAll(/raise exception '((?:[^']|'')*)'/g)].map((m) => sansDoubles(m[1]))
 const exportPorte = (fonction: string) =>
-  fichiersDuSchema().some((f) => new RegExp(`create (or replace )?function public\\.${fonction}\\(`).test(f.texte))
+  fichiersDuSchema().some((f) => new RegExp(motifDeDefinition(fonction).source, 'i').test(f.texte))
 
 describe('DEVIS_EXPORTES dit ce que porte l’export', () => {
   it('les deux migrations ensemble, et le drapeau avec elles', () => {

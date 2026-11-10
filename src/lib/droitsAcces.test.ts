@@ -763,7 +763,7 @@ describe('ce que disent les cases, l’import des contacts ouvert (étape A4b3a)
   // fonction de l'export qui l'ouvre à « Ventes », l'accès d'abord, et la migration des contacts y est.
   it('l’import ouvert : le geste que la phrase nomme, l’export l’ouvre à « Ventes », l’accès d’abord', () => {
     const porte = (motif: RegExp) => fichiersDuSchema().some((f) => motif.test(f.texte))
-    expect(porte(/create function public\.importer_contacts\(/), 'IMPORT_CONTACTS_EXPORTE ne dit plus ce que porte l’export')
+    expect(porte(/create\s+function\s+public\.importer_contacts\(/i), 'IMPORT_CONTACTS_EXPORTE ne dit plus ce que porte l’export')
       .toBe(IMPORT_CONTACTS_EXPORTE)
     if (!IMPORT_CONTACTS_EXPORTE) return
     expect(CONTACTS_EXPORTES, 'la migration de l’import exige celle des contacts').toBe(true)
@@ -1017,7 +1017,7 @@ describe('ce que disent les cases, confronté à l’export', () => {
   const fichiers = fichiersDuSchema()
   const porte = (motif: RegExp) => fichiers.some((f) => motif.test(f.texte))
   const premiereDesVentes = porte(/create policy factures_emises_lecture_ventes on public\.factures_emises\b/)
-  const secondeDesVentes = porte(/create (or replace )?function public\.supprimer_brouillon_facture\(/)
+  const secondeDesVentes = porte(/create\s+(or\s+replace\s+)?function\s+public\.supprimer_brouillon_facture\(/i)
 
   // LES DEUX MIGRATIONS DES VENTES S'EXPORTENT ENSEMBLE : la première ouvre la lecture et les encaissements, la seconde
   // les brouillons et leur validation ; la phrase lit le drapeau de la première et dit les deux. Un export qui porterait
@@ -1311,7 +1311,7 @@ describe('ce que disent les cases, le dernier changement du RIB ouvert (étape A
   // est ouverte à la case « Banque », l'accès d'abord, et la migration exige celle des paramètres.
   it('le dernier changement ouvert : la fonction que la phrase nomme, l’export l’ouvre à « Banque », l’accès d’abord', () => {
     const porte = (motif: RegExp) => fichiersDuSchema().some((f) => motif.test(f.texte))
-    expect(porte(/create function public\.dernier_changement_de_rib\(/), 'CHANGEMENT_DE_RIB_EXPORTE ne dit plus ce que porte l’export')
+    expect(porte(/create\s+function\s+public\.dernier_changement_de_rib\(/i), 'CHANGEMENT_DE_RIB_EXPORTE ne dit plus ce que porte l’export')
       .toBe(CHANGEMENT_DE_RIB_EXPORTE)
     if (!CHANGEMENT_DE_RIB_EXPORTE) return
     expect(PARAMETRES_FACTURATION_EXPORTES, 'la migration du dernier changement du RIB exige celle des paramètres').toBe(true)
@@ -1451,7 +1451,7 @@ describe('ce que disent les cases, les ventes facturées de la simulation ouvert
   })
 
   it('la fonction qu’elle dit : dans l’export, ouverte à la case « Banque », l’accès jugé avant toute lecture', () => {
-    expect(fichiersDuSchema().some((f) => /create function public\.ventes_facturees_de_la_simulation\(/.test(f.texte))).toBe(true)
+    expect(fichiersDuSchema().some((f) => /create\s+function\s+public\.ventes_facturees_de_la_simulation\(/i.test(f.texte))).toBe(true)
     expect(derniereDefinitionSql('ventes_facturees_de_la_simulation'))
       .toMatch(/\bbegin\s+(--[^\n]*\n\s*)*if not public\.gere_la_banque\(p_dossier_id\) or not exists \(select 1 from public\.dossiers d where d\.id = p_dossier_id\) then/)
   })

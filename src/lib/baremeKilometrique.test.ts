@@ -388,7 +388,7 @@ describe('le barème est le même en base et ici', () => {
   // migration qui la remplace l'emporte sur les précédentes, comme en base.
   function baremeEnBase(): Map<number, string[]> {
     const definitions = fichiersDuSchema()
-      .filter((f) => /create (or replace )?function public\.bareme_kilometrique\(\)/.test(f.texte))
+      .filter((f) => /create\s+(or\s+replace\s+)?function\s+public\.bareme_kilometrique\(\)/i.test(f.texte))
     expect(definitions.length, 'aucune migration ne définit bareme_kilometrique()').toBeGreaterThan(0)
     const texte = definitions[definitions.length - 1].texte
     const debut = texte.indexOf('-- ── DÉBUT BARÈME ──')

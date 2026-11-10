@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { REFUS_VENTES_DOSSIER_NON_BASCULE } from './droitsAcces'
 import { ORDRE_RESTAURATION } from './sauvegarde'
 
@@ -61,11 +61,7 @@ function instructions(texte: string): string[] {
 function corpsAvantLaMigration(nom: string): string {
   const nomDuFichier = (chemin: string) => chemin.split('/').pop() as string
   const borne = nomDuFichier(fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.chemin ?? '')
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
-  const avant = fichiersDuSchema().filter((f) => nomDuFichier(f.chemin) < borne && new RegExp(motif.source).test(f.texte))
-  const texte = avant[avant.length - 1].texte
-  const debut = [...texte.matchAll(motif)].pop()!.index
-  const definition = texte.slice(debut, texte.indexOf('$$;', debut))
+  const definition = definitionsSql(nom, fichiersDuSchema().filter((f) => nomDuFichier(f.chemin) < borne)).at(-1)!.definition
   return definition.slice(definition.indexOf('$$') + 2)
 }
 

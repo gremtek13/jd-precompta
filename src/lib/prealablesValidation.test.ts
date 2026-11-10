@@ -26,7 +26,7 @@ import type { FacturePourJumelle } from './ventesJumelles'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { SANS_FACTURE_SOURCE, ventesFactureesVides } from '../test/ventesFacturees'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { argumentsSql, codesSql, messagesSql } from '../test/raiseSql'
 import { etapesDe } from '../test/essaiSql'
 import { correspondAuModele } from '../test/essaiVentesFacturees'
@@ -1640,10 +1640,7 @@ describe('les refus de la validation pour les ventes facturées (étape VF7b) �
   const migration = fichiers.find((f) => /\/\d{14}_validation_des_ventes_facturees\.sql$/.test(f.chemin))
   const avant = (() => {
     const rang = fichiers.findIndex((f) => f === migration)
-    const motif = /create (or replace )?function public\.valider_exercice\(/g
-    const texte = fichiers.slice(0, rang).filter((f) => new RegExp(motif.source).test(f.texte)).at(-1)?.texte ?? ''
-    const debut = [...texte.matchAll(motif)].at(-1)?.index ?? -1
-    return debut < 0 ? '' : texte.slice(debut, texte.indexOf('$$;', debut))
+    return definitionsSql('valider_exercice', fichiers.slice(0, rang)).at(-1)?.definition ?? ''
   })()
   // La définition que CETTE migration pose. Une migration postérieure la reprend — `champs_bnc_du_fec` (ligne 26.6, lot
   // FEC22b), qui y ajoute les quatre champs du FEC d'un BNC, puis `validation_des_paiements_par_la_caisse` (la relecture du
@@ -1661,7 +1658,7 @@ describe('les refus de la validation pour les ventes facturées (étape VF7b) �
   it('la migration : ses refus d’hier au caractère près, la définition d’hier contenue ligne à ligne dans la nouvelle', () => {
     expect(migration).toBeDefined()
     expect(avant).toContain('create or replace function public.valider_exercice(')
-    const derniere = fichiers.filter((f) => /create (or replace )?function public\.valider_exercice\(/.test(f.texte)).at(-1)?.chemin ?? ''
+    const derniere = definitionsSql('valider_exercice', fichiers).at(-1)?.chemin ?? ''
     expect(derniere === migration?.chemin || repriseDepuis.test(derniere), derniere).toBe(true)
     // Tant qu'elle est la dernière, la base exécute ce qu'elle pose.
     if (derniere === migration?.chemin) expect(sql).toBe(posee)

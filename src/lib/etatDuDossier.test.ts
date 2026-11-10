@@ -101,7 +101,7 @@ describe('la migration préparée est celle que le module lit', () => {
   })
 
   it('ETAT_DU_DOSSIER_EXPORTE si et seulement si l’export porte la fonction', () => {
-    const exportee = fichiersDuSchema().some((f) => /create (or replace )?function public\.phase_des_exercices\(/.test(f.texte))
+    const exportee = fichiersDuSchema().some((f) => /create\s+(or\s+replace\s+)?function\s+public\.phase_des_exercices\(/i.test(f.texte))
     expect(exportee, 'ETAT_DU_DOSSIER_EXPORTE ne dit plus ce que porte l’export').toBe(ETAT_DU_DOSSIER_EXPORTE)
   })
 })

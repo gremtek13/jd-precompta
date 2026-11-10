@@ -264,21 +264,54 @@ export function relationsDuSchema(fichiers: { chemin: string; texte: string }[])
     a.enfant.localeCompare(b.enfant) || a.colonne.localeCompare(b.colonne) || a.parent.localeCompare(b.parent))
 }
 
-// LA DERNIÈRE DÉFINITION D'UNE FONCTION SQL dans le schéma exporté, de `create function` à la fin de son corps (`$$;`) :
-// celle que la base exécute. Une migration qui la redéfinit l'écrit `create or replace` — chercher `create function`
-// seul relirait la première, et l'application serait comparée à un texte que la base n'a plus. Lève quand la fonction
-// est introuvable : un test qui la compare ne doit jamais passer sur un texte vide.
+// LE DÉBUT D'UNE DÉFINITION DE FONCTION, CAPITALES COMPRISES. SQL ne distingue pas `create or replace function` de
+// `CREATE OR REPLACE FUNCTION`, ni un espace d'un retour à la ligne : un motif qui les distingue relit, sans rien dire,
+// une définition plus ancienne. C'est arrivé : la migration acomptes_des_devis (05/11/2026) écrit
+// `enregistrer_facture` en capitales, recopiée de `pg_get_functiondef`, et jusqu'au 10/11/2026 les tests lisaient
+// celle de mentions_figees (29/10/2026) — voir HISTORIQUE.md, « LES TESTS LISAIENT UNE ANCIENNE ENREGISTRER_FACTURE ».
+// Le nom n'est pas échappé : c'est un identifiant SQL (`\w+`), jamais une saisie.
+export function motifDeDefinition(nom: string): RegExp {
+  return new RegExp(String.raw`create\s+(?:or\s+replace\s+)?function\s+public\.${nom}\(`, 'gi')
+}
+
+// LA FIN DU CORPS d'une définition qui commence en `debut` : le délimiteur qui ferme celui qui l'ouvre — `$$`, mais
+// aussi `$function$`, celui de `pg_get_functiondef`, ou tout autre `$étiquette$`. Chercher `$$;` en dur menait, après un
+// corps `$function$`, au `$$;` d'une AUTRE fonction plus loin. Le délimiteur ouvrant est le premier `$…$` qui suit, avant
+// tout `;` : une définition dont le corps ne s'ouvre pas ainsi (`begin atomic`, une chaîne entre apostrophes) n'existe
+// pas dans l'export, et lève plutôt que de rendre un texte faux. Rend la position du délimiteur FERMANT, exclu du texte.
+export function finDuCorps(texte: string, debut: number, nom = '?'): number {
+  const ouverture = /\$(\w*)\$/.exec(texte.slice(debut))
+  if (!ouverture || texte.slice(debut, debut + ouverture.index).includes(';')) {
+    throw new FormeInconnue(`Corps de ${nom} : aucun délimiteur \`$…$\` avant la fin de l'instruction.`)
+  }
+  const corps = debut + ouverture.index + ouverture[0].length
+  const fin = texte.indexOf(ouverture[0], corps)
+  if (fin < 0) throw new Error(`Corps de ${nom} : le délimiteur ${ouverture[0]} ne se referme pas.`)
+  return fin
+}
+
+/** Une définition de fonction lue dans un fichier : son fichier, et son texte de `create` au délimiteur fermant exclu. */
+export interface DefinitionSql {
+  chemin: string
+  definition: string
+}
+
+// TOUTES LES DÉFINITIONS d'une fonction `public.<nom>` dans des fichiers rangés dans l'ordre où ils s'appliquent, dans
+// l'ordre des fichiers puis du texte. La dernière est celle que la base exécute.
+export function definitionsSql(nom: string, fichiers: { chemin: string; texte: string }[]): DefinitionSql[] {
+  return fichiers.flatMap(({ chemin, texte }) =>
+    [...texte.matchAll(motifDeDefinition(nom))].map((m) => ({ chemin, definition: texte.slice(m.index, finDuCorps(texte, m.index, nom)) })))
+}
+
+// LA DERNIÈRE DÉFINITION D'UNE FONCTION SQL dans le schéma exporté, de `create function` à la fin de son corps (le
+// délimiteur fermant exclu) : celle que la base exécute. Une migration qui la redéfinit l'écrit `create or replace` —
+// chercher `create function` seul relirait la première, et l'application serait comparée à un texte que la base n'a
+// plus. Lève quand la fonction est introuvable : un test qui la compare ne doit jamais passer sur un texte vide.
 // `retenu` écarte des fichiers : la définition d'AVANT une migration de l'export, qu'un test compare à la sienne.
 export function derniereDefinitionSql(nom: string, retenu: (f: { chemin: string }) => boolean = () => true): string {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
-  const definitions = fichiersDuSchema().filter(retenu).filter((f) => new RegExp(motif.source).test(f.texte))
+  const definitions = definitionsSql(nom, fichiersDuSchema().filter(retenu))
   if (definitions.length === 0) throw new Error(`Fonction ${nom} introuvable dans le schéma exporté.`)
-  const texte = definitions[definitions.length - 1].texte
-  const positions = [...texte.matchAll(motif)].map((m) => m.index)
-  const debut = positions[positions.length - 1]
-  const fin = texte.indexOf('$$;', debut)
-  if (fin < 0) throw new Error(`Corps de ${nom} introuvable dans le schéma exporté.`)
-  return texte.slice(debut, fin)
+  return definitions[definitions.length - 1].definition
 }
 
 /** Une colonne GÉNÉRÉE lue dans le schéma exporté : la base la calcule, et refuse qu'une insertion y écrive. */

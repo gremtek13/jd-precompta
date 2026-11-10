@@ -3,7 +3,7 @@ import {
   CODE_AVANT_D_AFFAIBLIR, DEUX_FACTEURS_EXIGES_EXPORTE, casesDesAcces, compteLu, confirmationDuGeste, exigenceRecommandee,
   gestesDuCompte, monExigenceLue, porteDeLExigence, refusDuGesteAvantLeClic, type CompteDeuxFacteurs,
 } from './deuxFacteursExiges'
-import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { definitionsSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // La migration, préparée (supabase/preparees/) ou dans l'export sous la version de son application : le même texte.
 const FICHIERS = [...fichiersDuSchema(), ...fichiersPrepares()]
@@ -12,18 +12,7 @@ const SQL = FICHIERS.find((f) => /\d{14}_deux_facteurs_exiges\.sql$/.test(f.chem
  * La DERNIÈRE définition d'une fonction, exportée puis préparée, dans l'ordre où elles s'appliquent — celle que la base
  * exécutera : une migration qui la redéfinirait sans le refus de SEC2-Q2 se verrait. De `create` à la fin du corps.
  */
-const corps = (nom: string) => {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
-  let dernier = ''
-  for (const f of FICHIERS) {
-    const debuts = [...f.texte.matchAll(motif)].map((m) => m.index)
-    if (debuts.length > 0) {
-      const debut = debuts[debuts.length - 1]
-      dernier = f.texte.slice(debut, f.texte.indexOf('$$;', debut))
-    }
-  }
-  return dernier
-}
+const corps = (nom: string) => definitionsSql(nom, FICHIERS).at(-1)?.definition ?? ''
 // Une apostrophe se double en SQL, se courbe à l'écran : comparées, elles sont la même.
 const sansApostrophes = (s: string) => s.replace(/''/g, "'").replace(/’/g, "'")
 const CONDITION = "if coalesce(auth.jwt() ->> 'aal', '') <> 'aal2' then"

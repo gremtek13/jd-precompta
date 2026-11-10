@@ -6,7 +6,7 @@ import {
   depensesDe, fuitesDans, muter, mondeDeReference, nouveauMonde, preflightDe, prechauffer, requeteDe, signerWebhook,
   slugsDesFonctions, sourceDe, verifierWebhookSvix, verifyJwtDe, type Monde,
 } from './fonctionsEdge'
-import { derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from './schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from './schema'
 
 // LE HARNAIS SE TESTE AUSSI : un faux qui accepte tout rendrait chaque contrat vert. Chaque faux est éprouvé ici par ce
 // qu'il doit REFUSER — un hôte non déclaré, un filtre qu'il ne sait pas appliquer, une table inconnue, une clé étrangère
@@ -586,12 +586,8 @@ describe('droits_sur_le_dossier : le faux est tiré du texte de la migration (é
     // Dans l'ordre où elles s'appliquent : l'export, puis les préparées — jamais par le nom : `situations_publiees`, entrée
     // dans l'export sous 20261107164102, précède B1, préparée sous un nom plus ancien (20261107140000).
     const fichiers = [...fichiersDuSchema(), ...fichiersPrepares()]
-    const derniere = (fonction: string) => {
-      const motif = new RegExp(`create (or replace )?function public\\.${fonction}\\(`, 'g')
-      const texte = fichiers.filter((f) => new RegExp(motif.source).test(f.texte)).pop()!.texte
-      const debut = [...texte.matchAll(motif)].pop()!.index
-      return texte.slice(debut, texte.indexOf('$$;', debut))
-    }
+    // La lecture de `derniereDefinitionSql`, capitales comprises, sur l'export puis les préparées.
+    const derniere = (fonction: string) => definitionsSql(fonction, fichiers).at(-1)!.definition
     expect(droitsDeLaDefinition(derniere)).toEqual(droitsDuDossierSelon(true, true, true))
     expect(casesDeLaDefinition(derniere('client_du_dossier'))).toEqual(casesDesDroitsSelon(true, true, true))
     // Et la confrontation mord sur ce texte-là aussi : la case de « Caisse » lue dans celle de « Ventes ».

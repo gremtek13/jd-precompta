@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { REFUS_ECRITURE_VENTE } from './ecritureVenteFacturee'
 import { REFUS_CLASSEMENT } from './encaissementsFactures'
 
@@ -23,23 +23,17 @@ const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f
 // La définition d'une fonction telle que la dernière migration AVANT celle-ci la laisse : celle que la production
 // exécute aujourd'hui.
 function definitionAvantLaMigration(nom: string): string {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
   const fichiers = fichiersDuSchema()
   const ici = fichiers.findIndex((f) => MIGRATION.test(f.chemin))
   expect(ici, 'la migration virement_mixte dans l’export').toBeGreaterThan(0)
-  const avant = fichiers.slice(0, ici).filter((f) => new RegExp(motif.source).test(f.texte))
+  const avant = definitionsSql(nom, fichiers.slice(0, ici))
   expect(avant.length, nom).toBeGreaterThan(0)
-  const texte = avant[avant.length - 1].texte
-  const positions = [...texte.matchAll(motif)].map((m) => m.index as number)
-  const debut = positions[positions.length - 1]
-  return texte.slice(debut, texte.indexOf('$$;', debut))
+  return avant[avant.length - 1].definition
 }
 
 // Le fichier de l'export qui porte la DERNIÈRE définition d'une fonction : celle que la base exécutera.
 function fichierDeLaDerniereDefinition(nom: string): string {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`)
-  const fichiers = fichiersDuSchema().filter((f) => motif.test(f.texte))
-  return fichiers[fichiers.length - 1]?.chemin ?? ''
+  return definitionsSql(nom, fichiersDuSchema()).at(-1)?.chemin ?? ''
 }
 
 const corps = (definition: string) => definition.slice(definition.indexOf('as $$') + 'as $$'.length)

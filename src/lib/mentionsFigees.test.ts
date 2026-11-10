@@ -13,7 +13,7 @@ import {
 import { MODELE_IBAN_DANS_UN_TEXTE } from './parametresFacturation'
 import type { StatutTva } from './types'
 import { correspondAuModele } from '../test/essaiVentesFacturees'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, motifDeDefinition } from '../test/schema'
 
 // LA FACTURE FIGE SES MENTIONS (espace client, étape A7a, ligne 51.5 ; migration `mentions_figees`, PRÉPARÉE sous une
 // version provisoire, pas encore en base), CONFRONTÉE AU TEXTE DE SA MIGRATION ET À SON ESSAI : chaque refus neuf du
@@ -35,11 +35,11 @@ const MODULE = readFileSync(new URL('./mentionsFigees.ts', import.meta.url), 'ut
 // La définition d'une fonction dans le dernier fichier de l'export qui la pose AVANT la migration : celle que la
 // production porte aujourd'hui, et que la garde de tête suppose.
 function definitionDAvant(nom: string): { chemin: string; corps: string; texte: string } {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
-  const avant = fichiersDuSchema().filter((f) => f.chemin < MIGRATION.chemin && new RegExp(motif.source).test(f.texte))
+  const motif = motifDeDefinition(nom)
+  const avant = fichiersDuSchema().filter((f) => f.chemin < MIGRATION.chemin && new RegExp(motif.source, 'i').test(f.texte))
   const fichier = avant[avant.length - 1]
   const debut = [...fichier.texte.matchAll(motif)].map((m) => m.index).pop() as number
-  const ouverture = /\bas\s+(\$\w*\$)/.exec(fichier.texte.slice(debut)) as RegExpExecArray
+  const ouverture = /\bas\s+(\$\w*\$)/i.exec(fichier.texte.slice(debut)) as RegExpExecArray
   const corpsDebut = debut + ouverture.index + ouverture[0].length
   const corpsFin = fichier.texte.indexOf(ouverture[1], corpsDebut)
   return { chemin: fichier.chemin, corps: fichier.texte.slice(corpsDebut, corpsFin), texte: fichier.texte.slice(debut, corpsFin) }
@@ -54,7 +54,18 @@ const valeursSql = (sql: string) =>
   [...sql.matchAll(/raise exception '(?:[^']|'')*'([\s\S]*?)using errcode/g)]
     .map((m) => m[1].replace(/\s+/g, ' ').trim().replace(/^,\s*/, '').trim())
 
+// La définition que la base exécute : depuis le 05/11/2026, celle d'acomptes_des_devis, écrite en capitales. Jusqu'au
+// 10/11/2026, `derniereDefinitionSql` ne lisait que les minuscules et rendait ici celle de mentions_figees (HISTORIQUE.md,
+// « LES TESTS LISAIENT UNE ANCIENNE ENREGISTRER_FACTURE ») : les blocs d'A7 qu'on y confronte sont ceux de la version en
+// vigueur, et les refus qu'acomptes_des_devis y ajoute sont gardés par acomptesDesFactures.test.ts et acomptesDuDevis.test.ts.
 const FONCTION = MIGRATION.texte === '' ? '' : derniereDefinitionSql('enregistrer_facture')
+// La définition que CETTE migration pose : celle dont les refus neufs suivent ceux d'hier, à la lettre.
+const POSEE = MIGRATION.texte === '' ? '' : definitionsSql('enregistrer_facture', [MIGRATION]).at(-1)?.definition ?? ''
+// Les refus qu'acomptes_des_devis ajoute à enregistrer_facture, relevés le 10/11/2026 : seize, tous d'un acompte — deux
+// parmi ceux d'hier (l'avoir d'un acompte), six dans la provenance (la date du versement, les reprises, les lignes d'un
+// acompte), huit à la validation (le devis, le cumul, la facture finale) ; aucun de mentions_figees retiré.
+const AJOUTES_PAR_LES_ACOMPTES = 16
+const AJOUTES_A_LA_PROVENANCE = 6
 // Le texte entre deux bornes, la première comprise ; des bornes introuvables font échouer le test qui les cherche.
 const entre = (texte: string, debut: string, fin: string) => {
   const i = texte.indexOf(debut)
@@ -81,10 +92,11 @@ describe('le drapeau et la migration', () => {
   it('la migration est dans l’export, une fois, et seule à définir les trois fonctions neuves', () => {
     expect(MIGRATIONS).toHaveLength(1)
     for (const nom of ['numero_tva_du_vendeur', 'porte_la_mention_ei', 'porte_un_iban']) {
-      expect(fichiersDuSchema().filter((f) => new RegExp(`create (or replace )?function public\\.${nom}\\(`).test(f.texte))
+      expect(fichiersDuSchema().filter((f) => new RegExp(motifDeDefinition(nom).source, 'i').test(f.texte))
         .map((f) => f.chemin), nom).toEqual([MIGRATION.chemin])
     }
-    // Et la dernière définition d'`enregistrer_facture` est la sienne.
+    // Et la dernière définition d'`enregistrer_facture` — celle d'acomptes_des_devis depuis le 05/11/2026 — garde ses blocs.
+    expect(POSEE).toContain('-- A7. LA PROVENANCE')
     expect(FONCTION).toContain('-- A7. LA PROVENANCE')
   })
 
@@ -116,24 +128,36 @@ describe('les refus neufs d’enregistrer_facture, confrontés à son texte', ()
 
   it('ceux d’hier d’abord, dans le même ordre et sous les mêmes mots, puis la provenance, les textes, la validation', () => {
     const hier = definitionDAvant('enregistrer_facture').texte
-    expect(messagesSql(FONCTION)).toEqual([
+    // Jugé sur la définition que la migration pose (attendu repris le 10/11/2026 : il se lisait, sans le savoir, sur elle).
+    expect(messagesSql(POSEE)).toEqual([
       ...messagesSql(hier),
       ...REFUS_DE_LA_PROVENANCE.map((r) => r.modele),
       ...REFUS_DES_TEXTES.map((r) => r.modele),
       ...REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.modele),
     ])
-    expect(codesSql(FONCTION)).toEqual([
+    expect(codesSql(POSEE)).toEqual([
       ...codesSql(hier), ...REFUS_DE_LA_PROVENANCE.map((r) => r.code), ...REFUS_DES_TEXTES.map((r) => r.code),
       ...REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.code),
     ])
-    expect(valeursSql(FONCTION).slice(0, messagesSql(hier).length)).toEqual(valeursSql(hier))
+    expect(valeursSql(POSEE).slice(0, messagesSql(hier).length)).toEqual(valeursSql(hier))
+    // Et la version en vigueur les garde tous, dans le même ordre, sous les mêmes codes : acomptes_des_devis n'en ajoute
+    // que les siens, aucun n'est retiré ni déplacé.
+    const posee = messagesSql(POSEE).map((m, i) => `${codesSql(POSEE)[i]} ${m}`)
+    const enVigueur = messagesSql(FONCTION).map((m, i) => `${codesSql(FONCTION)[i]} ${m}`)
+    let k = 0
+    for (const refus of enVigueur) if (refus === posee[k]) k++
+    expect(k, 'les refus de mentions_figees, sous-suite de la version en vigueur').toBe(posee.length)
+    expect(enVigueur.length - posee.length).toBe(AJOUTES_PAR_LES_ACOMPTES)
   })
 
   it('la provenance : les mêmes refus, dans l’ordre du module, la ligne en valeur', () => {
     expect(REFUS_DE_LA_PROVENANCE.map((r) => r.cle)).toEqual([...PROV])
-    expect(messagesSql(PROVENANCE())).toEqual(REFUS_DE_LA_PROVENANCE.map((r) => r.modele))
-    expect(codesSql(PROVENANCE())).toEqual(REFUS_DE_LA_PROVENANCE.map((r) => r.code))
-    expect(valeursSql(PROVENANCE())).toEqual(['v_ligne.ord', 'v_ligne.ord', 'v_ligne.ord', '', 'v_ligne.ord'])
+    // Les refus d'A7 d'abord ; acomptes_des_devis en ajoute six après eux, dans le même bloc (attendu repris le 10/11/2026).
+    const a7 = REFUS_DE_LA_PROVENANCE.length
+    expect(messagesSql(PROVENANCE())).toHaveLength(a7 + AJOUTES_A_LA_PROVENANCE)
+    expect(messagesSql(PROVENANCE()).slice(0, a7)).toEqual(REFUS_DE_LA_PROVENANCE.map((r) => r.modele))
+    expect(codesSql(PROVENANCE()).slice(0, a7)).toEqual(REFUS_DE_LA_PROVENANCE.map((r) => r.code))
+    expect(valeursSql(PROVENANCE()).slice(0, a7)).toEqual(['v_ligne.ord', 'v_ligne.ord', 'v_ligne.ord', '', 'v_ligne.ord'])
     REFUS_DE_LA_PROVENANCE.forEach((r, i) => expect(r.modele.split('%').length - 1, r.cle).toBe(valeursSql(PROVENANCE())[i] ? 1 : 0))
     // Le rang dit l'ordre des passes : les formes des lignes, le contact, les articles.
     expect(REFUS_DE_LA_PROVENANCE.map((r) => r.rang)).toEqual([1, 1, 1, 2, 3])
@@ -172,8 +196,10 @@ describe('les refus neufs d’enregistrer_facture, confrontés à son texte', ()
       + "      if translate(coalesce(v_dossier.siret, ''), v_blancs, '') = '' then")
     expect(VALIDATION()).toContain("      if translate(coalesce(v_emetteur_siret, ''), v_blancs, '') <> translate(v_dossier.siret, v_blancs, '') then")
     expect(VALIDATION()).toContain("      if btrim(coalesce(v_dossier.adresse, ''), v_blancs) = '' then")
-    expect(VALIDATION()).toContain("      if btrim(replace(replace(coalesce(v_emetteur_adresse, ''), E'\\r\\n', E'\\n'), E'\\r', E'\\n'), v_blancs)\n"
-      + "         <> btrim(replace(replace(v_dossier.adresse, E'\\r\\n', E'\\n'), E'\\r', E'\\n'), v_blancs) then")
+    // acomptes_des_devis écrit les fins de ligne par `chr()`, sans barre oblique inverse : chr(13) || chr(10) est E'\\r\\n',
+    // chr(10) E'\\n', chr(13) E'\\r' — les mêmes caractères (attendu repris le 10/11/2026, écrit sur mentions_figees).
+    expect(VALIDATION()).toContain("      if btrim(replace(replace(coalesce(v_emetteur_adresse, ''), chr(13) || chr(10), chr(10)), chr(13), chr(10)), v_blancs)\n"
+      + "         <> btrim(replace(replace(v_dossier.adresse, chr(13) || chr(10), chr(10)), chr(13), chr(10)), v_blancs) then")
     expect(FONCTION).toContain('    select f.contact_id, f.emetteur_siret, f.emetteur_adresse into v_contact, v_emetteur_siret, v_emetteur_adresse\n'
       + '      from factures_emises f where f.id = v_id;')
     // A7-Q3 à la validation : l'identité, sauf celle qu'un avoir reprend, puis les textes de la version courante, dans l'ordre
@@ -257,8 +283,11 @@ describe('les unités, les natures et la référence d’une ligne sont celles d
     const forme = "char_length(reference) between 1 and 100 and btrim(reference, E' \\t\\n\\r') = reference"
     expect(articles).toContain(`constraint articles_reference_forme\n      check (${forme})`)
     expect(MIGRATION.texte).toContain(`constraint facture_lignes_reference_forme\n      check (${forme})`)
+    // Dans la version en vigueur (acomptes_des_devis), les quatre blancs s'écrivent par `chr()` : ' ' || chr(9) || chr(10)
+    // || chr(13) est E' \\t\\n\\r', les mêmes caractères (attendu repris le 10/11/2026, écrit sur mentions_figees).
     expect(PROVENANCE()).toContain("or char_length(v_ligne.valeur->>'reference') not between 1 and 100\n"
-      + "            or btrim(v_ligne.valeur->>'reference', E' \\t\\n\\r') <> v_ligne.valeur->>'reference') then")
+      + "            or btrim(v_ligne.valeur->>'reference', ' ' || chr(9) || chr(10) || chr(13)) <> v_ligne.valeur->>'reference') then")
+    expect(POSEE).toContain("or btrim(v_ligne.valeur->>'reference', E' \\t\\n\\r') <> v_ligne.valeur->>'reference') then")
   })
 })
 

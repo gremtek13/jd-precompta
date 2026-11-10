@@ -23,7 +23,7 @@ import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_PLATEFORME, STATUTS_ANNULATION_SUPERPDP } from './transmissionsFactures'
 import type { MoyenEncaissement, StatutTva } from './types'
 import { tirage } from '../test/encaissementsBatterie'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // LE MODULE DES ENCAISSEMENTS D'UNE FACTURE ÉMISE (ligne 28.5, étape d2), confronté à ce qui fait foi : la migration
 // d1 (supabase/schema/20261008180607_encaissements_des_factures.sql) pour l'ordre et les mots des refus, ses
@@ -1020,16 +1020,12 @@ function codesSql(sql: string): string[] {
 // La définition d'une fonction AVANT une migration de l'export (son nom, sans version) : la dernière des fichiers qui la
 // précèdent — la lecture de `derniereDefinitionSql`, sur les fichiers d'avant.
 function definitionAvantLaMigration(nom: string, migration: string): string {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
   const fichiers = fichiersDuSchema()
   const m2 = fichiers.findIndex((f) => new RegExp(`/\\d{14}_${migration}\\.sql$`).test(f.chemin))
   expect(m2, migration).toBeGreaterThan(0)
-  const avant = fichiers.slice(0, m2).filter((f) => new RegExp(motif.source).test(f.texte))
+  const avant = definitionsSql(nom, fichiers.slice(0, m2))
   expect(avant.length, nom).toBeGreaterThan(0)
-  const texte = avant[avant.length - 1].texte
-  const positions = [...texte.matchAll(motif)].map((m) => m.index as number)
-  const debut = positions[positions.length - 1]
-  return texte.slice(debut, texte.indexOf('$$;', debut))
+  return avant[avant.length - 1].definition
 }
 
 const definitionAvantLaVenteFacturee = (nom: string) => definitionAvantLaMigration(nom, 'encaissements_de_la_vente_facturee')
