@@ -10,12 +10,16 @@ import type { CotisationDeclaree, ProfessionPamc, VoletSocialPamc } from '../../
 import {
   REGULARISATION_DES_COTISATIONS_EXPORTEE, estimerLaRegularisation, type RegularisationEstimee,
 } from '../../lib/regularisationDesCotisations'
-import { aujourdHuiAParis } from '../../lib/format'
+import { aujourdHuiAParis, formatMoney } from '../../lib/format'
 import {
   PARAMETRES_DES_COTISATIONS_EXPORTES, parametresDeLEstimation, type LectureDesParametres,
 } from '../../lib/parametresDesCotisations'
 import { lireLesParametresDesCotisations } from '../../lib/parametresDesCotisationsLecture'
-import type { ParametresEstimation } from '../../lib/voletSocialPamc'
+import type { EntreeEstimation, ParametresEstimation } from '../../lib/voletSocialPamc'
+import {
+  CE_QUE_L_ESTIMATION_NE_FAIT_PAS, PHRASE_DE_LA_CAISSE, cumulDeLEntree, demandeLeCumul, estimerLaRetraiteAffichee,
+  hypothesesDeLaRetraite, lignesDeLaRetraite, titreDeLaRetraite, type CumulChoisi,
+} from '../../lib/retraiteAffichee'
 import ParametresDesCotisationsCard from './ParametresDesCotisationsCard'
 import { messageErreur } from '../../lib/messageErreur'
 
@@ -151,14 +155,10 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
   const recettes = recettesBrutesRetenues({ recettes_brutes: nombre(saisis.recettesBrutes) }, recettesNettes)
   const ratio = ratioConventionne(nombre(saisis.honoraires), recettes.montant)
   // Des paramètres pas encore lus, ou lus en partie : l'estimation se tait, et le dit.
-  const estimation: ReturnType<typeof estimerCotisationsUrssaf> = parametres === null
-    ? {
-        disponible: false,
-        motif: parametresDuDossier === null
-          ? 'Les paramètres des cotisations se lisent : l’estimation attend.'
-          : 'Les paramètres des cotisations n’ont pas été lus en entier : l’estimation se tait.',
-      }
-    : estimerCotisationsUrssaf({
+  // L'entrée de l'estimation, UNE SEULE FOIS : l'Urssaf et la caisse de retraite (ligne 27.1) la reçoivent telle quelle.
+  const entree: EntreeEstimation | null = parametres === null
+    ? null
+    : {
         annee,
         profession: champs.profession === '' ? null : champs.profession,
         remplacant: champs.remplacant,
@@ -168,7 +168,21 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
         honorairesConventionnes: nombre(saisis.honoraires),
         depassements: nombre(saisis.depassements),
         parametres,
-      })
+      }
+  const estimation: ReturnType<typeof estimerCotisationsUrssaf> = entree === null
+    ? {
+        disponible: false,
+        motif: parametresDuDossier === null
+          ? 'Les paramètres des cotisations se lisent : l’estimation attend.'
+          : 'Les paramètres des cotisations n’ont pas été lus en entier : l’estimation se tait.',
+      }
+    : estimerCotisationsUrssaf(entree)
+
+  // LE CUMUL EMPLOI-RETRAITE D'UN MÉDECIN (RET-Q2) n'est pas en base : un choix local, non enregistré, sans valeur par défaut,
+  // qui ne vaut que pour le dossier et l'exercice où il a été fait.
+  const cleDuCumul = `${dossierId}:${annee}`
+  const [cumulDit, setCumulDit] = useState<{ cle: string; choix: CumulChoisi }>({ cle: '', choix: 'non_renseigne' })
+  const cumul: CumulChoisi = cumulDit.cle === cleDuCumul ? cumulDit.choix : 'non_renseigne'
 
   // UN AUTRE EXERCICE EST UNE AUTRE LIGNE. La carte reste montée quand l'exercice change dans l'en-tête : sans ceci elle
   // montrait sous « Volet social 2026 » les chiffres de 2025 jusqu'au retour de la lecture — et « Enregistrer » les écrivait
@@ -375,6 +389,8 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
               )}
               <EstimationCotisations annee={annee} revenuBrutSocial={revenuBrutSocial} resultat={estimation}
                 avecStructures={(nombre(saisis.structures) ?? 0) > 0} parametresTenus={parametres?.tenus === true} />
+              <EstimationRetraite entree={entree} motifSansEntree={estimation.disponible ? null : estimation.motif}
+                cumul={cumul} onCumul={(choix) => setCumulDit({ cle: cleDuCumul, choix })} />
               {REGULARISATION_DES_COTISATIONS_EXPORTEE && cotisations !== null && (
                 <Regularisation resultat={estimerLaRegularisation({
                   annee, definitives: estimation, echeances: cotisations, exerciceValide, aujourdhui: aujourdHuiAParis(),
@@ -492,6 +508,61 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
         </>
       )}
     </div>
+  )
+}
+
+// LA RETRAITE DES PROFESSIONS LIBÉRALES (ligne 27.1, RET-Q5 ; lib/retraiteAffichee.ts, lib/retraiteDesLiberaux.ts) : sous les
+// cotisations de l'Urssaf, les quatre cotisations de la caisse de la profession, sur la MÊME entrée. Un refus du module
+// (exercice sans barème, médecin qui n'a pas dit son cumul…) se dit à la place des chiffres, jamais zéro.
+function EstimationRetraite({ entree, motifSansEntree, cumul, onCumul }: {
+  entree: EntreeEstimation | null
+  // Pas d'entrée (paramètres pas lus) : la retraite attend pour la même raison que l'Urssaf.
+  motifSansEntree: string | null
+  cumul: CumulChoisi
+  onCumul: (choix: CumulChoisi) => void
+}) {
+  const profession = entree?.profession ?? null
+  const resultat = entree === null ? null : estimerLaRetraiteAffichee(entree, cumul)
+  const droite = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } as const
+  const enEuros = (centimes: number) => formatMoney(centimes / 100)
+  return (
+    <section aria-label="Retraite" style={{ marginTop: 14 }}>
+      <strong>{titreDeLaRetraite(profession)}</strong>
+      {demandeLeCumul(profession) && (
+        <div className="field" style={{ marginTop: 8, maxWidth: 360 }}>
+          <label htmlFor="cumul-emploi-retraite">Le médecin cumule-t-il sa retraite et son activité ?</label>
+          <select id="cumul-emploi-retraite" value={cumul} onChange={(e) => onCumul(e.target.value as CumulChoisi)} style={{ maxWidth: '100%' }}>
+            <option value="non_renseigne">non renseigné</option>
+            <option value="oui">oui</option>
+            <option value="non">non</option>
+          </select>
+          <span className="muted" style={{ fontSize: '0.8rem' }}>Ce renseignement n’est pas enregistré : il se redit à chaque visite.</span>
+        </div>
+      )}
+      {resultat === null || !resultat.disponible ? (
+        <p className="muted" style={{ margin: '6px 0 0' }}>{resultat === null ? motifSansEntree : resultat.motif}</p>
+      ) : (
+        <>
+          <div className="table-scroll" style={{ marginTop: 8 }}>
+            <table>
+              <tbody>
+                {lignesDeLaRetraite(resultat.estimation, enEuros).map((l) => (
+                  <tr key={l.cle} style={l.cle === 'total' ? { fontWeight: 600 } : undefined}>
+                    <td>{l.libelle}</td>
+                    <td style={droite}>{enEuros(l.centimes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {hypothesesDeLaRetraite(resultat.estimation, cumulDeLEntree(profession, cumul)).map((h) => (
+            <p key={h} className="muted" style={{ margin: '6px 0 0' }}>{h}</p>
+          ))}
+          <p className="muted" style={{ margin: '6px 0 0' }}>{CE_QUE_L_ESTIMATION_NE_FAIT_PAS}</p>
+        </>
+      )}
+      <p className="muted" style={{ margin: '6px 0 0' }}>{PHRASE_DE_LA_CAISSE}</p>
+    </section>
   )
 }
 

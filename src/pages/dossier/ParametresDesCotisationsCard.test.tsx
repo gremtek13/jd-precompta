@@ -166,14 +166,15 @@ describe('la carte du volet social, le drapeau levé', () => {
   it('l’estimation réclame la date de début d’activité tant qu’elle manque', async () => {
     faux.lecture = { etat: 'lus', debutActivite: null, parExercice: new Map() }
     await afficherLeVolet()
-    expect(screen.getByText(/Saisissez la date de début d’activité du praticien/)).toBeTruthy()
+    // Sous les cotisations de l'Urssaf et sous la retraite, qui reçoit la même entrée (ligne 27.1).
+    expect(screen.getAllByText(/Saisissez la date de début d’activité du praticien/)).toHaveLength(2)
     expect(screen.getByLabelText('Début d’activité')).toBeTruthy()
   })
 
   it('puis le taux dentiste, à saisir tant qu’il manque', async () => {
     faux.lecture = { etat: 'lus', debutActivite: '2015-01-01', parExercice: new Map() }
     await afficherLeVolet()
-    expect(screen.getByText(/Saisissez le « taux dentiste » du relevé SNIR 2025/)).toBeTruthy()
+    expect(screen.getAllByText(/Saisissez le « taux dentiste » du relevé SNIR 2025/)).toHaveLength(2)
   })
 
   it('estime un chirurgien-dentiste dont le taux est saisi', async () => {
@@ -185,7 +186,7 @@ describe('la carte du volet social, le drapeau levé', () => {
   it('une lecture partielle des paramètres fait taire l’estimation, et n’offre aucun formulaire', async () => {
     faux.lecture = { etat: 'incomplets', motif: 'lecture partielle' }
     await afficherLeVolet()
-    expect(screen.getByText('Les paramètres des cotisations n’ont pas été lus en entier : l’estimation se tait.')).toBeTruthy()
+    expect(screen.getAllByText('Les paramètres des cotisations n’ont pas été lus en entier : l’estimation se tait.')).toHaveLength(2)
     expect(screen.getByText(/n’ont pas été lus en entier \(lecture partielle\) : rien ne s’écrit/)).toBeTruthy()
     expect(screen.queryByLabelText('Début d’activité')).toBeNull()
     expect(screen.queryByText('Total à la charge du praticien')).toBeNull()
