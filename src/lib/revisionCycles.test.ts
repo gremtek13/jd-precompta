@@ -301,6 +301,8 @@ describe('le rangement des contrôles existants', () => {
       'encaissements-en-cours', 'ventes-facturees-a-ecrire',
       // Étape C3b : une recette en espèces dont le jour a changé depuis sa saisie (CAISSE-Q2).
       'recettes-de-caisse-a-revoir',
+      // Étape A8c4 : la pièce de vente citée pour original par une facture reprise, réglée par le registre de sa facture.
+      'reglee-par-sa-facture-reprise',
     ],
     depenses: [
       'pieces-a-valider', 'pieces-sans-date', 'date-impossible', 'sans-categorie', 'comptes-manquants', 'postes-manquants',
