@@ -73,6 +73,11 @@ vi.mock('./supabase', async () => {
             predicats.push(predicatNot(c, operateur, v))
             return q
           },
+          // Le lien actif d'une pièce citée par une facture reprise (A8c4) : `retire_le` nul.
+          is: (c: string, v: unknown) => {
+            predicats.push((l) => (l[c] ?? null) === v)
+            return q
+          },
           order: () => q,
           range: async (debut: number, fin: number) => {
             faux.tranches++
@@ -132,6 +137,8 @@ beforeEach(() => {
   faux.demandes = []
   faux.tranches = 0
   faux.tables = {
+    // Les liens des pièces citées par une facture reprise (A8c4) : aucun par défaut.
+    pieces_des_factures_reprises: [],
     factures_emises: [
       facture(),
       facture({ id: 'f-hier', numero: 'F2026-0100', source_de_la_vente: false }),

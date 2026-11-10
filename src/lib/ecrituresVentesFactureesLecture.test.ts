@@ -58,6 +58,11 @@ vi.mock('./supabase', async () => {
             predicats.push(predicatNot(c, operateur, v))
             return q
           },
+          // Le lien actif d'une pièce citée par une facture reprise (A8c4) : `retire_le` nul.
+          is: (c: string, v: unknown) => {
+            predicats.push((l) => (l[c] ?? null) === v)
+            return q
+          },
           order: () => q,
           range: async (debut: number, fin: number) => {
             faux.tranches++
@@ -149,6 +154,8 @@ beforeEach(() => {
     ],
     // Les reprises (étape A8c3) : aucune par défaut ; le bloc des reprises les pose.
     factures_importees: [],
+    // Les liens des pièces citées par une facture reprise (A8c4) : aucun par défaut.
+    pieces_des_factures_reprises: [],
   }
 })
 
@@ -314,7 +321,10 @@ describe('les reprises du dossier, dans les deux états de `FACTURES_IMPORTEES_P
     expect(faux.demandes.slice(6)).toEqual([
       'factures_importees: facture_id, dossier_id, origine_id, encaisse_par_taux',
       'factures_emises: id, dossier_id, montant_tva',
+      // Une reprise lue, les liens de ses pièces citées aussi (A8c4) : aucun ici.
+      'pieces_des_factures_reprises: id, dossier_id, piece_id',
     ])
+    expect([...s.piecesCitees]).toEqual([])
     expect(lue(await lireLesSourcesDesEcrituresDeVente('d2')).reprises.map((r) => r.facture_id)).toEqual(['r-d2'])
     // La lecture des sources et du brouillon ensemble les rend aussi.
     const l = await lireLesEcrituresDesVentes('d1')
