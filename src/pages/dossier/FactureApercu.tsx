@@ -6,6 +6,7 @@ import { mentionsImprimees, numeroTvaImprime, type DossierCii } from '../../lib/
 import { formatDate, formatMoney, formaterPrixUnitaire } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
+import { ceQueLaFactureInternationaleImprime } from '../../lib/factureInternationaleVue'
 import {
   FACTURE_D_AVANT, LOGO_EN_LECTURE, ceQueLaFactureImprime, logoNonImprime, tauxImprime as tauxLisible, uniteImprimee,
 } from '../../lib/mentionsFigeesVue'
@@ -55,6 +56,9 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
   const dAvant = MENTIONS_FIGEES_EXPORTEES && figee === null
   const mentions = figee ? figee.mentions : mentionsImprimees(facture)
   const numeroTva = figee ? figee.numeroTva : numeroTvaImprime(facture, dossier)
+  // Le client établi hors de France (étape e7b) : de ses seules colonnes figées, la mention de son régime comprise ; nul pour une
+  // facture d'avant, un brouillon, ou drapeau baissé — l'aperçu d'hier.
+  const international = ceQueLaFactureInternationaleImprime(facture)
 
   // LE LOGO FIGÉ, relu dans le seau des ventes et montré seulement APRÈS que son empreinte recalculée a été trouvée égale à
   // celle que la facture a figée (lib/logoDesFacturesLecture.ts). L'image est une URL d'objet créée avec la réponse et
@@ -162,6 +166,8 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
           <strong>{facture.tiers_nom}</strong>
           {facture.tiers_adresse && <div className="muted" style={{ whiteSpace: 'pre-line' }}>{facture.tiers_adresse}</div>}
           {facture.tiers_siret && <div className="muted">SIRET {facture.tiers_siret}</div>}
+          {international?.pays && <div className="muted">Pays : {international.pays}</div>}
+          {international?.numeroTva && <div className="muted">N° TVA {international.numeroTva}</div>}
         </div>
 
         {mentions.length > 0 && (
@@ -234,8 +240,11 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
           </div>
         )}
 
+        {international?.mention && (
+          <p className="muted" style={{ marginTop: 24, fontSize: '0.8rem' }}>{international.mention}</p>
+        )}
         {facture.mentions_legales && (
-          <p className="muted" style={{ marginTop: 24, whiteSpace: 'pre-line', fontSize: '0.8rem' }}>{facture.mentions_legales}</p>
+          <p className="muted" style={{ marginTop: international?.mention ? 4 : 24, whiteSpace: 'pre-line', fontSize: '0.8rem' }}>{facture.mentions_legales}</p>
         )}
         {figee?.complementaires && (
           <p className="muted" style={{ marginTop: 12, whiteSpace: 'pre-line', fontSize: '0.8rem' }}>{figee.complementaires}</p>

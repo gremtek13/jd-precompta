@@ -27,6 +27,11 @@ import {
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
 import {
+  OPTIONS_DES_REGIMES, champsInternationaux, confirmationInternationale, horsTvaQuiPart, internationaleOuverte,
+  internationaleQuiPart, jugementInternational, mentionDuRegimeDite, numeroDeTvaOuvert, saisieInternationaleLue,
+  type SaisieInternationaleEcran,
+} from '../../lib/factureInternationaleVue'
+import {
   ADRESSE_DU_CLIENT_EXIGEE, avisDuStatutDeTva, refusDeLAdresseDuClient, refusDeLaDateDEmission, refusDeLaLigneAZero,
   refusDuStatutDeTva, type FactureDeLaSerie, type ModeleDeLaSerie,
 } from '../../lib/validationDeLaFacture'
@@ -207,7 +212,15 @@ export default function FactureFormModal(props: Props) {
   // revenue entière (drapeau baissé, elle ne part jamais). Une saisie, même vide, est la sienne : la lecture qui revient ne la
   // remplace pas ; le type du client qui change, tant qu'on n'a pas touché au texte, la refait.
   const lectureDesParametres = lectureValidation?.cle === dossierId ? lectureValidation.lu : null
-  const mentionsLegales = mentionsLegalesSaisies ?? mentionsLegalesParDefaut(statutTva, articleExoneration,
+  // LE CLIENT ÉTABLI HORS DE FRANCE (ligne 28.5, étape e7b ; lib/factureInternationaleVue.ts, sous
+  // `FACTURE_INTERNATIONALE_EXPORTEE`) : le pays, le numéro de TVA et le régime de l'opération, que la validation fige. Un
+  // brouillon rouvert garde les siens ; drapeau baissé, rien n'est saisi ni ne part (`qp` vaut trois nuls).
+  const [international, setInternational] = useState<SaisieInternationaleEcran>(() => saisieInternationaleLue(facture))
+  const qp = internationaleQuiPart(international, mentions.typeClient)
+  // Une opération que la TVA française ne taxe pas n'imprime pas la mention de TVA du dossier, qui en dirait une autre raison
+  // (la garde la refuse) : la mention proposée s'en passe, et elle ne s'exige plus.
+  const horsTva = horsTvaQuiPart(qp)
+  const mentionsLegales = mentionsLegalesSaisies ?? mentionsLegalesParDefaut(horsTva ? null : statutTva, articleExoneration,
     sansPhraseDeRetard(lectureDesParametres, dossierId, mentions.typeClient))
   // Ce que le choix a retenu de l'échéance (le délai du contact, la date d'émission d'alors) : la date d'émission qui change ensuite
   // le DIT, elle ne recalcule rien d'elle-même.
@@ -342,12 +355,12 @@ export default function FactureFormModal(props: Props) {
   // La mention de TVA que la facture doit porter : celle du statut, ou — pour un redevable — celle de l'article de
   // son exonération dès qu'une ligne est à 0 %. Absente du texte (effacée, ou un brouillon d'avant), elle se propose.
   const ligneAZero = lignesValides.some((l) => l.taux_tva === 0)
-  const mentionAttendue = statutTva === 'redevable'
+  const mentionAttendue = horsTva ? null : statutTva === 'redevable'
     ? (ligneAZero ? exonerationDe(articleExoneration)?.mention ?? null : null)
     : mentionTva(statutTva, articleExoneration)
   const mentionAbsente = mentionAttendue != null && !mentionsLegales.includes(mentionAttendue) ? mentionAttendue : null
   // Un redevable sans article dont une ligne est à 0 % : on ne sait pas quelle exonération la justifie.
-  const zeroSansArticle = statutTva === 'redevable' && ligneAZero && exonerationDe(articleExoneration) == null
+  const zeroSansArticle = !horsTva && statutTva === 'redevable' && ligneAZero && exonerationDe(articleExoneration) == null
   // La mention de la franchise sur un dossier qui n'y est pas : celle que l'application proposait à tout dossier non
   // assujetti, donc à un dossier de soins exonérés.
   const franchiseHorsStatut = statutTva !== 'franchise' && mentionsLegales.includes('293 B')
@@ -413,6 +426,8 @@ export default function FactureFormModal(props: Props) {
     ...mentionsAEnregistrer(mentions, 'facture'),
     // Le contact d'où vient le client (étape A7b) : la clé part toujours, nulle sans contact — un brouillon rouvert garde le sien.
     ...(MENTIONS_FIGEES_EXPORTEES ? { contact_id: contactChoisi } : {}),
+    // Les trois colonnes d'e7a : aucune clé drapeau baissé, les trois toujours levé (un champ caché repart à nul).
+    ...champsInternationaux(qp),
   }
   // L'ADRESSE DU CLIENT (JJ-Q4 ; le rang 19, le déclencheur qui suit la garde des factures ; lib/validationDeLaFacture.ts) :
   // une facture à une entreprise ou à un organisme public, sans l'adresse de son client, jugée sur l'en-tête TEL QU'IL PART,
@@ -421,11 +436,11 @@ export default function FactureFormModal(props: Props) {
     ? refusDeLAdresseDuClient({ type: 'facture', typeClient: entete.type_client, tiersAdresse: entete.tiers_adresse })
     : null
   // LA LIGNE À 0 % D'UN REDEVABLE SANS ARTICLE (A7C-Q1 ; le rang 20, le même déclencheur, sous le même drapeau) : le statut
-  // et l'article du dossier, que la validation figera, et les lignes telles qu'elles partent. Aucun régime d'e7a : le
-  // formulaire ne le saisit pas encore (e7b). Levé, le drapeau remplace l'alerte d'hier (`zeroSansArticle`) par le refus.
+  // et l'article du dossier, que la validation figera, et les lignes telles qu'elles partent, et le régime d'e7a tel qu'il part
+  // (nul drapeau d'e7b baissé). Levé, le drapeau remplace l'alerte d'hier (`zeroSansArticle`) par le refus.
   const refusDeLaLigne = ADRESSE_DU_CLIENT_EXIGEE
     ? refusDeLaLigneAZero({
-      type: 'facture', statutTva, articleExoneration, regimeInternational: null, tauxDesLignes: lignesValides.map((l) => l.taux_tva),
+      type: 'facture', statutTva, articleExoneration, regimeInternational: qp.regime, tauxDesLignes: lignesValides.map((l) => l.taux_tva),
     })
     : null
   // Ce que la base refuserait des mentions : ni le brouillon ni la validation ne partent, et l'écran dit pourquoi.
@@ -695,6 +710,17 @@ export default function FactureFormModal(props: Props) {
     : null
   const refusFigeBrouillon = jugementMentions?.refusDeLEnregistrement ?? null
   const refusFigeValidation = refusFigeBrouillon ?? jugementMentions?.retenue ?? jugementMentions?.refusDeLaValidation ?? null
+  // CE QUE LA GARDE REFUSERAIT DU CLIENT ÉTABLI HORS DE FRANCE (étape e7b) : la forme, pour tout enregistrement ; puis le bloc
+  // E7A et la mention du dossier, pour la validation — sur la saisie TELLE QU'ELLE PART, aux mots de
+  // lib/factureInternationale.ts. Le numéro du vendeur est celui que la validation figera, lu du jugement des mentions.
+  const jugementInter = jugementInternational({
+    qp, typeClient: entete.type_client, nature: entete.nature_operation, statutTva,
+    numeroTvaDuVendeur: jugementMentions?.mentions ? jugementMentions.mentions.numero_tva_imprime ?? null : undefined,
+    montantTva: entete.montant_tva, tauxDesLignes: lignesValides.map((l) => l.taux_tva),
+    mentionDuDossier: mentionTva(statutTva, articleExoneration), mentionsLegales,
+  })
+  const refusInterBrouillon = jugementInter.refusDeLEnregistrement
+  const refusInterValidation = jugementInter.refusDeLaValidation
 
   async function relireContacts() {
     try {
@@ -874,6 +900,11 @@ export default function FactureFormModal(props: Props) {
       setError(refusDeLaLigne.message)
       return
     }
+    // Seconde ceinture : les boutons sont déjà grisés sur un refus du client établi hors de France (étape e7b).
+    if (refusInterBrouillon || (statutCible === 'validee' && refusInterValidation)) {
+      setError(refusInterBrouillon ?? refusInterValidation)
+      return
+    }
     // Seconde ceinture : le bouton de validation est déjà grisé sur un refus de la source, dit avant le clic.
     if (statutCible === 'validee' && jugementSource.refus) {
       setError(jugementSource.refus)
@@ -894,9 +925,13 @@ export default function FactureFormModal(props: Props) {
     // paragraphe qui précède la question.
     // La facture d'acompte ou la finale (étape P5b5b) : le premier paragraphe nomme ce qui part. Rien sur une autre facture.
     const deLAcompte = statutCible === 'validee' ? confirmationDeLaValidation(acompte, lignesQuiPartent) : null
-    const figer = statutCible === 'validee' && jugementMentions?.mentions
-      ? `\n\n${pourLEspace(espace, confirmationDesMentions(jugementMentions.mentions, entete.emetteur_nom, false))}`
-      : ''
+    // Le client établi hors de France (étape e7b) : la confirmation nomme ce que la validation figera de lui, au même paragraphe.
+    const figerInter = statutCible === 'validee' ? confirmationInternationale(qp) : null
+    const figerMentions = statutCible === 'validee' && jugementMentions?.mentions
+      ? pourLEspace(espace, confirmationDesMentions(jugementMentions.mentions, entete.emetteur_nom, false))
+      : null
+    const figerTexte = [figerMentions, figerInter == null ? null : pourLEspace(espace, figerInter)].filter((t) => t != null).join('\n\n')
+    const figer = figerTexte ? `\n\n${figerTexte}` : ''
     const tete = deLAcompte ? `${pourLEspace(espace, deLAcompte)}\n\n` : ''
     if (statutCible === 'validee' && nonTransmissible) {
       const premier = pourLEspace(espace, nonTransmissible.refus[0] ?? 'régler la TVA, comme le formulaire le signale.')
@@ -1101,6 +1136,43 @@ export default function FactureFormModal(props: Props) {
                 </div>
               </div>
             )}
+            {/* LE CLIENT ÉTABLI HORS DE FRANCE (étape e7b, sous `FACTURE_INTERNATIONALE_EXPORTEE`) : pour une entreprise établie
+                hors de France ou un particulier, le pays, le numéro de TVA (l'entreprise seule) et le régime, d'où vient la
+                mention que la facture imprimera. Un particulier établi en France laisse le pays vide : rien ne part. */}
+            {internationaleOuverte(mentions.typeClient) && (
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="client-pays">
+                    {mentions.typeClient === 'etranger' ? 'Pays où le client est établi (deux lettres)' : 'Pays où le particulier est établi, s’il est hors de France (deux lettres)'}
+                  </label>
+                  <input
+                    id="client-pays" maxLength={2} autoCapitalize="characters" value={international.pays}
+                    onChange={(e) => setInternational((s) => ({ ...s, pays: e.target.value }))}
+                  />
+                </div>
+                {numeroDeTvaOuvert(mentions.typeClient) && (
+                  <div className="field">
+                    <label htmlFor="client-numero-tva">Numéro de TVA du client (s’il en a un)</label>
+                    <input
+                      id="client-numero-tva" autoCapitalize="characters" value={international.numeroTva}
+                      onChange={(e) => setInternational((s) => ({ ...s, numeroTva: e.target.value }))}
+                    />
+                  </div>
+                )}
+                <div className="field">
+                  <label htmlFor="regime-international">Régime de l’opération</label>
+                  <select
+                    id="regime-international" value={international.regime}
+                    onChange={(e) => setInternational((s) => ({ ...s, regime: e.target.value as SaisieInternationaleEcran['regime'] }))}
+                  >
+                    <option value="">— à préciser —</option>
+                    {OPTIONS_DES_REGIMES.map((o) => <option key={o.valeur} value={o.valeur}>{o.libelle}</option>)}
+                  </select>
+                  {mentionDuRegimeDite(qp.regime) && <span className="muted" style={{ fontSize: '0.8rem' }}>{pourLEspaceSiTexte(espace, mentionDuRegimeDite(qp.regime))}</span>}
+                </div>
+              </div>
+            )}
+            {refusInterBrouillon && <p className="error-text" role="alert">{pourLEspace(espace, refusInterBrouillon)}</p>}
             {/* Le bon de commande d'une entreprise (A7B-Q3 ; C. com., art. L441-9, I) : la base l'accepte de tout acheteur
                 depuis A7a, l'aperçu l'imprime et la facture électronique le transmet (BT-13). */}
             {mentions.typeClient !== 'organisme_public' && bonDeCommandeOuvert(mentions.typeClient, 'facture') && (
@@ -1408,6 +1480,7 @@ export default function FactureFormModal(props: Props) {
             {refusDeLaDate && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLaDate.message)}</p>}
             {refusDeLAdresse && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLAdresse.message)}</p>}
             {refusDeLaLigne && <p className="error-text" role="alert">{pourLEspace(espace, refusDeLaLigne.message)}</p>}
+            {refusInterValidation && <p className="error-text" role="alert">{pourLEspace(espace, refusInterValidation)}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
             {avisDuStatut && <p className="note-info" role="note">{avisDuStatut}</p>}
 
@@ -1415,10 +1488,10 @@ export default function FactureFormModal(props: Props) {
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-outline" onClick={onClose} disabled={!!saving}>Annuler</button>
-              <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0 || refusFigeBrouillon != null}>
+              <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0 || refusFigeBrouillon != null || refusInterBrouillon != null}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusDeLaDate != null || refusDeLAdresse != null || refusDeLaLigne != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null || refusDeLAcompte != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusDeLaDate != null || refusDeLAdresse != null || refusDeLaLigne != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null || refusDeLAcompte != null || refusInterValidation != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>

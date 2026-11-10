@@ -50398,3 +50398,20 @@ le bouton « Paquet d'archive AAAA » à côté de l'export du FEC validé, dans
 Verrou `useRef`, un `catch` qui dit une fabrication qui lève (trouvé par le test : sans lui, le clic ne montrait rien).
 **Vérifié** : 18 tests neufs, trois mutations qui mordent (la comparaison des empreintes, le contrôle de lecture partielle,
 le verrou). Restent INAL3b (la table des téléchargements), la piste d'audit et le PDF de la 2035 dans le paquet.
+
+### 10/11/2026 — LA FACTURE À UN CLIENT ÉTABLI HORS DE FRANCE, À L'ÉCRAN (E7B, LIGNE 28.5)
+
+Agent architecte, un commit local ; ni migration, ni Edge Function ; `FACTURE_INTERNATIONALE_EXPORTEE` reste BAISSÉ.
+`lib/factureInternationaleVue.ts` assemble la saisie telle qu'elle part (pays et numéro en capitales, sans blanc ; le numéro
+à l'entreprise seule ; un type de client qui ferme le bloc remet les trois colonnes à nul dans la même écriture) et ne fait
+que la donner à `lib/factureInternationale.ts` : la forme grise les deux boutons, la garde (bloc E7A) puis la mention du
+dossier la validation seule, aux mots du module ; le numéro du vendeur est celui que la validation figera (le jugement des
+mentions figées), et tant qu'il n'est pas là le refus qui le lit se tait (la validation est retenue par ailleurs). Le
+formulaire (les deux espaces) ouvre le pays, le numéro et le régime pour une entreprise établie hors de France ou un
+particulier, dit sous le choix la mention imprimée, cesse d'exiger et de proposer la mention de TVA du dossier hors de la
+TVA française, passe le régime au refus de la ligne à 0 % (A7C-Q1), et la confirmation nomme ce qui se fige. L'aperçu d'une
+facture figée imprime le pays, le numéro et la mention du régime de ses seules colonnes. Les trois clés ne partent que
+drapeau levé. Le contact ne les porte pas (aucune colonne) : rien n'est proposé de lui (E7B-Q1). La migration préparée
+recopie des corps d'avant A8a/A9a (10/11/2026) : sa garde d'empreinte la refusera, elle se refait sur les corps du jour.
+**Vérifié** : `tsc -b`, lint 0 erreur, 33 fichiers touchés (1011 tests) et 77 qui relisent la source (3099) ; 22 tests
+neufs (le module, le formulaire par espace et par état du drapeau, le verrou, l'aperçu) ; deux mutations mordent.

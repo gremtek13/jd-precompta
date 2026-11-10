@@ -545,7 +545,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   de France, préparée le 07/11/2026 en base et en module (`facture_internationale` : le pays, le numéro de TVA et le
   régime de l'opération figés, quinze refus à la validation aux mots de `lib/factureInternationale.ts`, une facture sans
   eux validée comme hier ; à coller ; `FACTURE_INTERNATIONALE_EXPORTEE` baissé ; E7A-Q1 à Q4) → « LA FACTURE À UN CLIENT
-  ÉTABLI HORS DE FRANCE, EN BASE » ; restent e7b (l'écran), e7c (le CII et l'e-reporting) ; e8 : les recettes sans
+  ÉTABLI HORS DE FRANCE, EN BASE » ; e7b, l'écran, fait le 10/11/2026 derrière le même drapeau
+  (`lib/factureInternationaleVue.ts`) → « LA FACTURE À UN CLIENT ÉTABLI HORS DE FRANCE, À L'ÉCRAN » ; restent e7c (le CII
+  et l'e-reporting) ; e8 : les recettes sans
   facture vendues à des particuliers — e7 et e8 se construiront après le MVP, 28.5e-Q1 ; e9 : `fluxEreporting` recopié
   dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING », « UNE
   RÉPONSE DU CABINET : 28.5E-Q8 ».
