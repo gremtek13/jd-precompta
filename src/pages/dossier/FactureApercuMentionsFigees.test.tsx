@@ -9,6 +9,7 @@ import { empreinteDe, logoDe } from '../../test/logoFictif'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import { FACTURE_D_AVANT, INDEMNITE_DE_RECOUVREMENT } from '../../lib/mentionsFigeesVue'
 import { formatMoney } from '../../lib/format'
+import { MENTIONS_DES_REGIMES } from '../../lib/factureInternationale'
 import type { DossierCii } from '../../lib/factureCii'
 
 // L'APERÇU D'UNE FACTURE QUI A FIGÉ SES MENTIONS (étape A7b) — le document qu'on imprime et qu'on envoie, le même aux deux
@@ -24,11 +25,19 @@ const faux = vi.hoisted(() => ({
   urls: [] as string[],
   revoquees: [] as string[],
   figees: true,
+  international: false,
 }))
 
 vi.mock('../../lib/mentionsFigees', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/mentionsFigees')>()),
   get MENTIONS_FIGEES_EXPORTEES() { return faux.figees },
+}))
+
+// Le client établi hors de France (étape e7b) : `FACTURE_INTERNATIONALE_EXPORTEE` joué par un accesseur, BAISSÉ par défaut —
+// chaque cas d'hier s'y rejoue tel quel ; levé, le bloc qui suit.
+vi.mock('../../lib/factureInternationale', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/factureInternationale')>()),
+  get FACTURE_INTERNATIONALE_EXPORTEE() { return faux.international },
 }))
 
 // `ACOMPTES_PREVUS` forcé BAISSÉ : ces cas éprouvent l'écran d'avant l'acompte d'un devis, qui reste éprouvé tant que son
@@ -72,6 +81,7 @@ beforeEach(() => {
   faux.urls = []
   faux.revoquees = []
   faux.figees = true
+  faux.international = false
   // jsdom n'a pas de fabrique d'adresses d'objet : une fausse, qui note ce qu'elle crée et ce qu'on révoque.
   URL.createObjectURL = () => { const url = `blob:logo-${faux.urls.length + 1}`; faux.urls.push(url); return url }
   URL.revokeObjectURL = (url: string) => { faux.revoquees.push(url) }
@@ -209,6 +219,36 @@ describe('le mandat de facturation s’imprime sous l’identité de l’émette
     render(<FactureApercu facture={factureFigee({ mandataire_nom: 'Cabinet Fictif' })} dossier={dossier} onClose={() => {}} />)
     await screen.findByText('Séance d’essai')
     expect(papier()).not.toMatch(/établie? par|au nom et pour le compte/)
+  })
+})
+
+describe('le client établi hors de France : ses colonnes figées et la mention de son régime (étape e7b)', () => {
+  const AUTOLIQUIDEE = { client_pays: 'DE', client_numero_tva: 'DE123456789', regime_international: 'autoliquidation_ue' as const, type_client: 'etranger' as const }
+
+  it('drapeau levé, une facture figée imprime le pays, le numéro de TVA du client et la mention de son régime', async () => {
+    faux.international = true
+    render(<FactureApercu facture={factureFigee(AUTOLIQUIDEE)} dossier={DOSSIER_CHANGE} onClose={() => {}} />)
+    await screen.findByText('Séance d’essai')
+    const p = papier()
+    expect(p).toContain('Pays : DE')
+    expect(p).toContain('N° TVA DE123456789')
+    expect(p).toContain(MENTIONS_DES_REGIMES.autoliquidation_ue)
+  })
+
+  it('drapeau baissé, la même facture s’imprime comme hier ; levé, une facture d’avant et une facture sans ces colonnes aussi', async () => {
+    const hier = (f: Parameters<typeof factureFigee>[0]) => {
+      render(<FactureApercu facture={factureFigee(f)} dossier={DOSSIER_CHANGE} onClose={() => {}} />)
+      return screen.findByText('Séance d’essai').then(() => { const p = papier(); cleanup(); return p })
+    }
+    const sansRien = await hier({ type_client: 'etranger' })
+    const baisse = await hier(AUTOLIQUIDEE)
+    expect(baisse).toBe(sansRien)
+    expect(baisse).not.toContain(MENTIONS_DES_REGIMES.autoliquidation_ue)
+    faux.international = true
+    expect(await hier({ type_client: 'etranger' })).toBe(sansRien)
+    const dAvant = await hier({ ...AUTOLIQUIDEE, mentions_figees: false })
+    expect(dAvant).not.toContain('Pays : DE')
+    expect(dAvant).not.toContain(MENTIONS_DES_REGIMES.autoliquidation_ue)
   })
 })
 
