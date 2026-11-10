@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF, seuilAlignement } from './alignementBanque'
 import {
   BORNE_MONTANT_EUROS, DATE_PLANCHER, ETATS_DECLARANTS, LONGUEUR_MAX_TEXTE, MOYENS_ENCAISSEMENT, REFUS_CLASSEMENT,
-  REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_GARDE_FRONTIERE, REFUS_GARDE_MOUVEMENTS,
+  REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, refusEnregistrementExportes, REFUS_GARDE_FRONTIERE, REFUS_GARDE_MOUVEMENTS,
   REFUS_RATTACHEMENT, REFUS_RETRAIT, REFUS_RETRAIT_CLASSEMENT, SEUIL_PLAFOND_CENTIMES, SEUIL_POUR_CENT, STATUT_DEPOSEE_SUPERPDP,
   centimesExacts, contrePassationDe, echeanceDeDeclaration, ecartDeFrais, encaissementsDeclares, euroCommeLaBase,
   obligationEncaissee, piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement,
@@ -360,8 +360,12 @@ describe('les refus de la base, tels que la migration les écrit', () => {
     // 25 depuis l'étape P2 ; 29 depuis la migration encaissements_de_la_vente_facturee (étape VF2), ses quatre refus d'une
     // facture source à leur rang (11, 17, 27 et 29) ; 30 depuis la migration registre_virement_mixte (étape VF5h2), le rang
     // 18 d'une facture qui n'est pas source, ceux qui le suivent un cran plus loin.
-    expect(messagesSql(sql)).toHaveLength(VENTES_DU_CLIENT_EXPORTEES ? 30 : 29)
-    expect(REFUS_DE_L_EXPORT.map((r) => r.modele)).toEqual(messagesSql(sql))
+    // 34 avec la migration factures_reprises_encaissements (A8b), ses quatre refus d'une facture reprise à leur rang.
+    const reprises = refusEnregistrementExportes().length - REFUS_ENREGISTREMENT.length
+    expect(messagesSql(sql)).toHaveLength((VENTES_DU_CLIENT_EXPORTEES ? 30 : 29) + reprises)
+    const deLExport = refusEnregistrementExportes().filter((r) => VENTES_DU_CLIENT_EXPORTEES || r.cle !== 'mouvement_sans_banque')
+    expect(deLExport.map((r) => r.modele)).toEqual(messagesSql(sql))
+    expect(REFUS_DE_L_EXPORT).toHaveLength(REFUS_ENREGISTREMENT.length - (VENTES_DU_CLIENT_EXPORTEES ? 0 : 1))
     expect(new Set(REFUS_ENREGISTREMENT.map((r) => r.cle)).size).toBe(REFUS_ENREGISTREMENT.length)
   })
 
@@ -1051,7 +1055,10 @@ describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne v
       const hier = liste.filter((r) => !('venteFacturee' in r) && !('contrePassationBanque' in r) && !('virementMixte' in r))
         .map((r) => r.modele)
       expect(hier, nom).toEqual(messagesSql(definitionAvantLaVenteFacturee(nom)))
-      expect(liste.map((r) => r.modele), nom).toEqual(messagesSql(derniereDefinitionSql(nom)))
+      // `enregistrer_encaissement` : ses refus d'une facture reprise (A8b) à leur rang, le jour où la migration et le drapeau
+      // `FACTURES_IMPORTEES_PREVUES` entrent ensemble dans l'export.
+      const exportee = nom === 'enregistrer_encaissement' ? refusEnregistrementExportes() : liste
+      expect(exportee.map((r) => r.modele), nom).toEqual(messagesSql(derniereDefinitionSql(nom)))
     }
     const marques = (liste: readonly { cle: string }[]) => liste.filter((r) => 'venteFacturee' in r).map((r) => r.cle)
     expect(marques(REFUS_ENREGISTREMENT)).toEqual(['frontiere', 'mouvement_classe', 'plafond_facture_net', 'plafond_taux_net'])

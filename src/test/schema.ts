@@ -43,6 +43,39 @@ export function fichiersPrepares(): { chemin: string; texte: string }[] {
     .map((n) => ({ chemin: `supabase/preparees/${n}`, texte: readFileSync(racine + n, 'utf8') }))
 }
 
+// LES MIGRATIONS DES FACTURES REPRISES (ligne 51.5 : A8a, A9a, A8b), préparées, à coller ensemble, dans cet ordre. Tant
+// qu'elles sont hors de l'export, la définition « en vigueur après elles » d'une fonction est celle de la dernière qui la
+// porte, sinon celle de l'export ; le jour où elles y entrent, `derniereDefinitionSql` la rend seule.
+export const MIGRATIONS_DES_FACTURES_REPRISES = [
+  /^\d{14}_factures_importees\.sql$/, /^\d{14}_numerotation_continue\.sql$/, /^\d{14}_factures_reprises_encaissements\.sql$/,
+] as const
+
+/**
+ * La définition d'une fonction en vigueur après les migrations PRÉPARÉES nommées (des motifs de noms de fichiers, dans
+ * l'ordre d'application) : la dernière qui la porte (`create [or replace] function`, casse ignorée), sinon celle de
+ * l'export. Un motif qui ne désigne pas exactement un fichier — préparé ou déjà dans l'export — lève : la définition
+ * rendue ne doit jamais être celle d'un ordre qu'on n'a pas choisi.
+ */
+export function definitionApresLesPreparees(nom: string, preparees: readonly RegExp[]): string {
+  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'gi')
+  const exportees = fichiersDuSchema()
+  const prepares = fichiersPrepares()
+  for (const m of [...preparees].reverse()) {
+    const dansLExport = exportees.filter((f) => m.test(f.chemin.split('/').pop() as string))
+    const trouves = prepares.filter((f) => m.test(f.chemin.split('/').pop() as string))
+    if (dansLExport.length + trouves.length !== 1) throw new Error(`${m} ne désigne pas exactement une migration.`)
+    if (dansLExport.length === 1) continue
+    const texte = trouves[0].texte
+    const positions = [...texte.matchAll(motif)].map((x) => x.index)
+    if (positions.length === 0) continue
+    const debut = positions[positions.length - 1]
+    const fin = texte.indexOf('$$;', debut)
+    if (fin < 0) throw new Error(`Corps de ${nom} introuvable dans ${trouves[0].chemin}.`)
+    return texte.slice(debut, fin)
+  }
+  return derniereDefinitionSql(nom)
+}
+
 /** Le contenu d'un groupe de parenthèses ouvert en `i`, parenthèses appariées. */
 function groupe(texte: string, i: number): { corps: string; fin: number } {
   let profondeur = 0

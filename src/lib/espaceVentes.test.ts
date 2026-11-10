@@ -17,7 +17,8 @@ import { REFUS_ENREGISTREMENT_CONTACT, REFUS_REPRISE_CONTACT } from './contacts'
 import { manqueMentionTva, motifExoneration, refusTauxPositif } from './statutTva'
 import { refusEmission } from './factureCii'
 import {
-  REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_ESPECES_SUR_UN_CREDIT,
+  REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_ENREGISTREMENT_DES_REPRISES,
+  REFUS_ESPECES_SUR_UN_CREDIT, REFUS_REPRISE_NON_LUE,
   REFUS_GARDE_FRONTIERE, REFUS_RETRAIT, obligationEncaissee,
 } from './encaissementsFactures'
 import { bilanDuReleve, refusDuReleve, verificationAvantDeclaration } from './statutsLus'
@@ -78,6 +79,10 @@ const PRODUITES: Record<string, () => string> = {
   'REFUS_ENREGISTREMENT, REFUS_RETRAIT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION': () => [
     ...REFUS_ENREGISTREMENT, ...REFUS_RETRAIT, ...REFUS_CONTRE_PASSATION, ...REFUS_DECLARATION,
   ].map((r) => r.modele).join('\n'),
+  // Les quatre refus d'`enregistrer_encaissement` pour une facture reprise (A8b, dits par le module depuis A8c, le drapeau
+  // `FACTURES_IMPORTEES_PREVUES` levé) et le refus de l'écran sans sa reprise lue : aucun ne nomme ce que le cabinet seul fait.
+  'REFUS_ENREGISTREMENT_DES_REPRISES, REFUS_REPRISE_NON_LUE': () => [...REFUS_ENREGISTREMENT_DES_REPRISES, REFUS_REPRISE_NON_LUE]
+    .map((r) => r.modele).join('\n'),
   // Le refus du rang 7 du classement (le virement mixte, étape VF5h), que la fenêtre cite au client quand son geste
   // laisserait un mouvement inclassable : il vouvoie, et nomme ce que le cabinet seul fait.
   'REFUS_CLASSEMENT, rang 7': () => REFUS_CLASSEMENT.find((r) => r.cle === 'exemplaire_a_designer')?.modele ?? '',

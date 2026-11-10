@@ -1,6 +1,11 @@
 import { SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF } from './alignementBanque'
 import { libelleExploitable, tiersConfirmeParBanque } from './appariementBanque'
+import {
+  REFUS_ENCAISSEMENT_D_UNE_REPRISE, refusAvecLesNeufs, type CleRefusEncaissementDUneReprise,
+} from './encaissementsDesReprises'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
+import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
+import { estUneFactureReprise, estUneVente } from './facturesReprises'
 import { anneeDe, dernierJourDuMois, formatDate, formatMoney, moisDe } from './format'
 import { frequenceDesPaiements, periodeDe } from './periodesEreporting'
 import { estParLeReleve, type PaiementsDesPieces, type PartEncaissee } from './rattachement'
@@ -111,6 +116,46 @@ export interface ContexteFacture {
   statutsRecus: readonly StatutPlateformeLu[]
   encaissements: readonly EncaissementLu[]
   parts: readonly PartLue[]
+  /**
+   * Ce qu'une facture REPRISE de l'ancien logiciel demande de lire de plus (étape A8c, le drapeau
+   * `FACTURES_IMPORTEES_PREVUES` levé) : sa date de reprise, sa nature, ce qui en était encaissé avant, ses avoirs repris.
+   * Sans objet pour toute autre facture. Pour une reprise, OBLIGATOIRE : absent, ou d'une autre facture, le module refuse
+   * tout encaissement (`REFUS_REPRISE_NON_LUE`) — on ne juge pas un plafond sur ce qu'on n'a pas lu.
+   */
+  reprise?: RepriseDeLaFacture
+}
+
+/** Ce qui était encaissé d'une facture reprise avant la reprise, à un taux (`factures_importees.encaisse_par_taux`). */
+export interface EncaisseDuTaux {
+  taux: number
+  /** En euros. */
+  encaisse: number
+}
+
+/**
+ * Un avoir REPRIS de l'ancien logiciel, tel que les plafonds d'une facture reprise le lisent : son en-tête, son état, et la
+ * facture reprise qu'il crédite (`factures_importees.origine_id` — jamais `facture_origine_id`, que seule la validation d'un
+ * avoir de l'application pose). Ses lignes vont dans `ContexteFacture.lignes`.
+ */
+export type AvoirRepris = Pick<FactureEmise, 'id' | 'type' | 'montant_tva' | 'montant_ttc'> & {
+  statut: string
+  origine_id: string | null
+}
+
+/** Ce qu'une facture reprise demande de lire de plus : `dossiers`, `factures_emises` et `factures_importees` (le cabinet). */
+export interface RepriseDeLaFacture {
+  /** La facture reprise que ces valeurs décrivent : celles d'une autre ne valent pas. */
+  factureId: string
+  /** La date de reprise des factures du dossier (`dossiers.reprise_des_factures_le`), AAAA-MM-JJ. */
+  repriseLe: string | null
+  /** `factures_emises.nature_operation` de la facture reprise : « mixte » ne reçoit pas encore d'encaissement (A8B-Q1). */
+  natureOperation: string | null
+  /** `factures_importees.encaisse_avant_reprise`, en euros, net des remboursements. */
+  encaisseAvantReprise: number
+  /** `factures_importees.encaisse_par_taux`. */
+  encaisseParTaux: readonly EncaisseDuTaux[]
+  /** Les avoirs repris du dossier — le module garde ceux qui la créditent. */
+  avoirsRepris: readonly AvoirRepris[]
 }
 
 // ── Les moyens de paiement ──────────────────────────────────────────────────────────────────────────────────────────
@@ -286,6 +331,48 @@ export function ttcParTaux(facture: Pick<FactureEmise, 'id' | 'type'>, lignes: r
     .map((g) => ({ taux: g.taux, ttcCentimes: g.baseCentimes + g.tvaCentimes }))
 }
 
+/** Les montants d'un document à un taux, dans le sens du document (un avoir en positif), en centimes. */
+export interface MontantsDuTauxDuDocument {
+  taux: number
+  baseCentimes: number
+  tvaCentimes: number
+  ttcCentimes: number
+}
+
+/** Un document tel que `montants_par_taux_du_document` le lit : son état et sa TVA déclarée disent la règle d'une reprise. */
+export type DocumentParTaux = Pick<FactureEmise, 'id' | 'type' | 'montant_tva'> & { statut: string }
+
+// round(base × taux × 0,01) de la base — le demi loin de zéro (`round(numeric)`) —, en entiers longs : le taux en centièmes
+// de point, exact pour les taux de la facturation électronique (deux décimales au plus).
+function tvaArrondieDuTaux(baseCentimes: number, taux: number): number {
+  const n = BigInt(baseCentimes) * BigInt(Math.round(taux * 100))
+  const absolu = n < 0n ? -n : n
+  const q = (2n * absolu + 10_000n) / 20_000n
+  return Number(n < 0n ? -q : q)
+}
+
+/**
+ * Les montants par taux d'un document, comme `montants_par_taux_du_document` (A8b) : ceux qu'il transmet, ligne à ligne
+ * (`montantsDuDocument`, le calcul de `montants_par_taux_facture`) ; d'une facture ou d'un avoir REPRIS (le drapeau levé),
+ * ceux de la règle de TVA que ses montants déclarés suivaient, celle qu'`importer_factures` a reconnue — par taux (la base
+ * du taux × le taux, arrondie : EN 16931, BR-CO-17) quand la somme des TVA de ses taux fait sa TVA déclarée, sinon ligne à
+ * ligne. Du taux le plus fort au plus faible.
+ */
+export function montantsParTauxDuDocument(doc: DocumentParTaux, lignes: readonly LigneDeFacture[]): MontantsDuTauxDuDocument[] {
+  const groupes = montantsDuDocument(doc, lignes.filter((l) => l.facture_id === doc.id), null).groupes
+  const ligneALigne = groupes.map((g) =>
+    ({ taux: g.taux, baseCentimes: g.baseCentimes, tvaCentimes: g.tvaCentimes, ttcCentimes: g.baseCentimes + g.tvaCentimes }))
+  if (!estUneFactureReprise(doc)) return ligneALigne
+  const parTaux = groupes.map((g) => ({ taux: g.taux, base: g.baseCentimes, tva: tvaArrondieDuTaux(g.baseCentimes, g.taux) }))
+  // La TVA déclarée, dans le sens du document ; une valeur qui n'est pas au centime ne fait jamais la somme.
+  const declaree = centimesExacts(doc.montant_tva)
+  const regleParTaux = declaree != null
+    && parTaux.reduce((s, t) => s + t.tva, 0) === (doc.type === 'avoir' ? -declaree : declaree)
+  return regleParTaux
+    ? parTaux.map((t) => ({ taux: t.taux, baseCentimes: t.base, tvaCentimes: t.tva, ttcCentimes: t.base + t.tva }))
+    : ligneALigne
+}
+
 export interface ResteDuTaux {
   taux: number
   ttcCentimes: number
@@ -456,7 +543,29 @@ export const REFUS_ENREGISTREMENT = [
   },
 ] as const
 
-export type CleRefusEnregistrement = (typeof REFUS_ENREGISTREMENT)[number]['cle']
+// LES REFUS D'UNE FACTURE REPRISE (étape A8c ; migration `factures_reprises_encaissements`, A8b, préparée) : quatre refus
+// neufs, que lib/encaissementsDesReprises.ts dit sous les mots de la migration, insérés chacun à son rang. Le jour où elle
+// entre dans l'export, `FACTURES_IMPORTEES_PREVUES` se lève, et c'est cette liste-ci que la dernière définition exportée
+// porte (`refusEnregistrementExportes`, que encaissementsFactures.test.ts confronte au texte). Le drapeau baissé, aucun ne
+// se dit : une facture reprise est refusée dès son état, comme aujourd'hui.
+export const REFUS_ENREGISTREMENT_DES_REPRISES: readonly { cle: string; modele: string }[] =
+  refusAvecLesNeufs(REFUS_ENREGISTREMENT, REFUS_ENCAISSEMENT_D_UNE_REPRISE)
+
+/** Les refus d'`enregistrer_encaissement` tels que la base les porte, selon le drapeau : lu à chaque appel. */
+export function refusEnregistrementExportes(): readonly { cle: string; modele: string }[] {
+  return FACTURES_IMPORTEES_PREVUES ? REFUS_ENREGISTREMENT_DES_REPRISES : REFUS_ENREGISTREMENT
+}
+
+// Un refus de l'ÉCRAN, pas de la base (étape A8c) : une facture reprise dont l'appelant n'a pas passé — ou pas lu — ce que
+// sa reprise porte (`ContexteFacture.reprise`). Le module ne juge pas un plafond sur une lecture qui manque : il refuse,
+// et le dit. La base, elle, lit ces valeurs elle-même ; ce refus ne sort jamais d'elle.
+export const REFUS_REPRISE_NON_LUE = {
+  cle: 'reprise_non_lue',
+  modele: "Ce que la facture reprise portait encaissé avant la reprise n'est pas lu : ses encaissements ne se jugent pas d'ici.",
+} as const
+
+export type CleRefusEnregistrement =
+  | (typeof REFUS_ENREGISTREMENT)[number]['cle'] | CleRefusEncaissementDUneReprise | typeof REFUS_REPRISE_NON_LUE.cle
 
 // Les refus de `retirer_encaissement`, de même ; les rangs 6 et 7 pour une facture source seulement, le rang 8 (étape VF5h2)
 // pour une facture qui ne l'est pas, sur un mouvement classé par ses encaissements.
@@ -498,7 +607,9 @@ export function remplirModele(modele: string, valeurs: readonly string[]): strin
 }
 
 function refus(cle: CleRefusEnregistrement, ...valeurs: string[]): RefusEncaissement<CleRefusEnregistrement> {
-  const { modele } = REFUS_ENREGISTREMENT.find((r) => r.cle === cle) as (typeof REFUS_ENREGISTREMENT)[number]
+  // Les refus d'hier, ceux d'une reprise et celui de l'écran : la liste complète, quel que soit le drapeau — baissé, les
+  // jugements n'atteignent jamais un refus d'une reprise.
+  const { modele } = [...REFUS_ENREGISTREMENT_DES_REPRISES, REFUS_REPRISE_NON_LUE].find((r) => r.cle === cle) as { modele: string }
   return { cle, message: remplirModele(modele, valeurs) }
 }
 
@@ -585,19 +696,35 @@ export function justifieSonMouvement(e: Pick<EncaissementLu, 'id'>, encaissement
 export function refusDeLaFacture(c: ContexteFacture): RefusEncaissement<CleRefusEnregistrement> | null {
   const f = c.facture
   if (f.dossier_id !== c.dossierId) return refus('facture_introuvable')
-  if (f.statut !== 'validee') return refus('brouillon')
+  // Une facture reprise (A8b, le drapeau levé) reçoit ses encaissements d'après la reprise, comme une validée.
+  if (!estUneVente(f)) return refus('brouillon')
   if (f.type !== 'facture') return refus('avoir')
   if (c.transmissions.some((t) => t.facture_id === f.id && t.etat === 'rejete')
     || c.evenementsSuperpdp.some((e) => e.facture_id === f.id && STATUTS_ANNULATION_SUPERPDP.includes(e.status_code))
     || annuleeSurSaPlateforme(c.statutsRecus, f.id)) {
     return refus('rejetee')
   }
-  const m = montantsDuDocument(f, c.lignes.filter((l) => l.facture_id === f.id), null)
-  if (centimesExacts(f.montant_ht) !== m.htCentimes || centimesExacts(f.montant_tva) !== m.tvaCentimes
-    || centimesExacts(f.montant_ttc) !== m.htCentimes + m.tvaCentimes) {
+  if (estUneFactureReprise(f)) {
+    const reprise = repriseLue(c)
+    if (!reprise) return refus(REFUS_REPRISE_NON_LUE.cle)
+    // A8B-Q1 : une facture reprise qui mêle biens et services ne reçoit pas encore d'encaissement.
+    if (reprise.natureOperation === 'mixte') return refus('reprise_mixte', f.numero ?? '<NULL>')
+  }
+  // Les montants du document par taux : ceux qu'il transmet ; d'une facture reprise, ceux de la règle de TVA que ses
+  // montants déclarés suivaient (`montantsParTauxDuDocument`).
+  const m = montantsParTauxDuDocument(f, c.lignes)
+  const base = m.reduce((s, t) => s + t.baseCentimes, 0)
+  const tva = m.reduce((s, t) => s + t.tvaCentimes, 0)
+  if (centimesExacts(f.montant_ht) !== base || centimesExacts(f.montant_tva) !== tva
+    || centimesExacts(f.montant_ttc) !== base + tva) {
     return refus('lignes_incoherentes')
   }
   return null
+}
+
+// Ce que l'appelant a lu de la reprise de CETTE facture, ou rien.
+function repriseLue(c: Pick<ContexteFacture, 'facture' | 'reprise'>): RepriseDeLaFacture | null {
+  return c.reprise != null && c.reprise.factureId === c.facture.id ? c.reprise : null
 }
 
 export interface PartSaisie {
@@ -689,6 +816,12 @@ function jugerEnregistrement(
   if (s.date == null || !dateCivile(s.date)) return refus('date_absente')
   if (s.date < DATE_PLANCHER) return refus('date_avant_2000')
   if (s.date > aujourdHui) return refus('date_future', formatDate(aujourdHui))
+  // A8-Q2 : l'encaissement d'une facture reprise se date de la reprise des factures du dossier, ou d'après — ce qui en
+  // était encaissé avant est déjà dans sa reprise. Une date de reprise nulle s'écrit comme la base l'écrit.
+  const reprise = estUneFactureReprise(f) ? repriseLue(c) as RepriseDeLaFacture : null
+  if (reprise && (reprise.repriseLe == null || s.date < reprise.repriseLe)) {
+    return refus('avant_la_reprise', f.numero ?? '<NULL>', reprise.repriseLe == null ? '<NULL>' : formatDate(reprise.repriseLe))
+  }
   if (vente != null && source) {
     const fige = dateFigeePourLaVente(s.date, vente.anneesValidees)
     if (fige) return refus('frontiere', fige)
@@ -756,24 +889,37 @@ function jugerEnregistrement(
   // Le total de la facture est son en-tête, au centime depuis le refus 6 ; le TTC d'un taux, celui de ses lignes. Pour une
   // facture source, l'un et l'autre moins ce que ses avoirs validés créditent (EC3-Q10, rangs 28 et 30 depuis l'étape
   // VF5h2, 27 et 29 avant elle), tel que leurs lignes le transmettent.
+  // Une facture REPRISE (A8b, A8-Q6) : son TTC net de ses avoirs — ceux que l'application a validés, tels que leurs lignes
+  // les transmettent, et ses avoirs repris, leur en-tête au total, leur règle de TVA à un taux — et de ce qui en était
+  // encaissé avant la reprise, au total puis à chaque taux. Ses avoirs validés se lisent comme ceux d'une facture source
+  // (`vente`) ; sans elle, comme hier, aucun.
   const comptes = c.encaissements.filter((e) => e.facture_id === f.id && compte(e))
   const deja = comptes.reduce((total, e) => total + centimes(e.montant), 0)
-  const credites = vente != null && source ? creditesDesAvoirs(f.id, c.lignes, vente) : new Map<number, number>()
+  const credites = vente != null && (source || reprise) ? creditesDesAvoirs(f.id, c.lignes, vente) : new Map<number, number>()
   const credite = [...credites.values()].reduce((total, x) => total + x, 0)
-  const ttc = (centimesExacts(f.montant_ttc) as number) - credite
+  const repris = reprise ? reprise.avoirsRepris.filter((a) => a.origine_id === f.id && a.type === 'avoir' && a.statut === 'importee') : []
+  const crediteRepris = repris.reduce((total, a) => total - (centimesExacts(a.montant_ttc) ?? 0), 0)
+  const avant = reprise ? centimesExacts(reprise.encaisseAvantReprise) ?? 0 : 0
+  const ttc = (centimesExacts(f.montant_ttc) as number) - credite - crediteRepris - avant
   if (deja + montant > ttc) {
-    return refus(source ? 'plafond_facture_net' : 'plafond_facture', euroCommeLaBase(Math.max(ttc - deja, 0)))
+    const cle = reprise ? 'plafond_reprise' : source ? 'plafond_facture_net' : 'plafond_facture'
+    return refus(cle, euroCommeLaBase(Math.max(ttc - deja, 0)))
   }
   const ids = new Set(comptes.map((e) => e.id))
-  const ttcDesTaux = new Map(ttcParTaux(f, c.lignes).map((t) => [t.taux, t.ttcCentimes]))
+  const ttcDesTaux = new Map(montantsParTauxDuDocument(f, c.lignes).map((t) => [t.taux, t.ttcCentimes]))
+  const reprisAuTaux = (taux: number) => repris
+    .reduce((total, a) => total + (montantsParTauxDuDocument(a, c.lignes).find((t) => t.taux === taux)?.ttcCentimes ?? 0), 0)
+  const avantAuTaux = (taux: number) => (reprise ? reprise.encaisseParTaux : [])
+    .filter((g) => g.taux === taux).reduce((total, g) => total + (centimesExacts(g.encaisse) ?? 0), 0)
   for (const [i, p] of r.entries()) {
     // Un taux des lignes de la facture : le refus 11 l'a vérifié.
     const ttcDuTaux = (ttcDesTaux.get(p.taux) as number) - (credites.get(p.taux) ?? 0)
+      - (reprise ? reprisAuTaux(p.taux) + avantAuTaux(p.taux) : 0)
     const dejaDuTaux = c.parts.filter((x) => ids.has(x.encaissement_id) && x.taux === p.taux)
       .reduce((total, x) => total + centimes(x.montant), 0)
     if (dejaDuTaux + parts[i] > ttcDuTaux) {
-      return refus(source ? 'plafond_taux_net' : 'plafond_taux', tauxCommeLaBase(p.taux),
-        euroCommeLaBase(Math.max(ttcDuTaux - dejaDuTaux, 0)))
+      const cle = reprise ? 'plafond_reprise_taux' : source ? 'plafond_taux_net' : 'plafond_taux'
+      return refus(cle, tauxCommeLaBase(p.taux), euroCommeLaBase(Math.max(ttcDuTaux - dejaDuTaux, 0)))
     }
   }
 
