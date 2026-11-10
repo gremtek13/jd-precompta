@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { lignesPourPiece } from './ecritures'
@@ -55,7 +56,7 @@ const LIGNES = [ligneDeFacture('f1', 500), ligneDeFacture('f2', 500), ligneDeFac
 function lue(
   mouvements: readonly LigneBancaire[], encaissements: readonly EncaissementDuMouvementLu[] = [], exemplaires: readonly ExemplaireLu[] = [],
 ): LectureDesVentesDuReleve {
-  const s: SourcesDesGestes = {
+  const s: SourcesDesGestes = { piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements, mouvements, exemplaires,
     parts: encaissements.filter((e) => e.annule_id == null).map((e) => ({ encaissement_id: e.id, taux: 20, montant: e.montant })),
   }

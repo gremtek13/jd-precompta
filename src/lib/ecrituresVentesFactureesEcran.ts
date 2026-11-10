@@ -4,6 +4,7 @@ import {
   refusRetraitEcritureVenteFacturee, type ArgumentsEcrireVenteFacturee, type CleRefusCompteContrepartie, type ContexteEcritureVente,
   type LigneDuBrouillon, type MouvementPourEcriture,
 } from './ecritureVenteFacturee'
+import type { PiecesCitees } from './facturesSources'
 import {
   ecrituresDesVentesFacturees, memeEcritureQueLeBrouillon, type EcrituresDesVentesFacturees, type EcritureVenteFacturee,
   type MotifNonEcrite, type MouvementDesEncaissements, type SourceEcritureVente,
@@ -79,6 +80,12 @@ export type MouvementDesEcritures = MouvementDesEncaissements & MouvementPourEcr
 /** Ce que la lecture rend, EN ENTIER (lib/ecrituresVentesFactureesLecture.ts). */
 export interface SourcesDesEcrituresDeVente {
   dossierId: string
+  /**
+   * Les pièces citées par une facture reprise, lien ACTIF (étape A8c4 ; lib/facturesSources.ts) : OBLIGATOIRES. Elles ne
+   * changent rien aux écritures d'une facture ; le brouillon des PIÈCES les lit (`marquerLesPiecesCitees`), et la
+   * Checklist les dit « réglées par le registre de leur facture reprise ».
+   */
+  piecesCitees: PiecesCitees
   factures: readonly FactureDesEcritures[]
   lignes: readonly LigneDeFacture[]
   encaissements: readonly EncaissementDesEcritures[]

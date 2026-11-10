@@ -44,7 +44,10 @@ import type { DossierTab } from './ongletsDossier'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, type ExerciceAReclamer } from './resteAEnvoyer'
 import type { LectureDesVentesDuReleve } from './mouvementsDesVentes'
 import { detailDesEncaissementsSansMouvement, ventesDeLaChecklist } from './ventesDeLaChecklist'
-import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSources } from './facturesSources'
+import {
+  AUCUNE_PIECE_CITEE, exemplairesDesSources, horsDesExemplairesDesSources, marquerLesPiecesCitees, resteRegleParSaReprise,
+  type FacturesSources,
+} from './facturesSources'
 import { recettesVivantes, type CaisseLue } from './recettesDeCaisse'
 import {
   caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesPaiementsARetirer, detailDesPaiementsDePiecesAValider,
@@ -252,7 +255,13 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     : piecesValidees
   // L'exemplaire d'une facture source ne s'écrit pas (étape VF6a) : sa facture écrit la vente. Les validées, pour les
   // contrôles qui partent de l'écriture : celles que `ecrituresSansObjet` juge, où son écriture se dit et se retire.
-  const aComptabiliser = piecesAComptabiliser(piecesJugees, categories, acquisitions, facturesSources)
+  // La pièce citée par une facture reprise (étape A8c4) : en trésorerie, elle ne s'écrit qu'à ses paiements — la cible de
+  // la génération, que les contrôles du brouillon jugent. Lue avec les ventes facturées ; sans elles, aucune.
+  const piecesCitees = ventesFacturees?.etat === 'lue' ? ventesFacturees.sources.piecesCitees : AUCUNE_PIECE_CITEE
+  const reglesParLeurFactureReprise = piecesValidees.filter((p) => resteRegleParSaReprise(p, piecesCitees, modele.mode))
+  const aComptabiliser = marquerLesPiecesCitees(
+    piecesAComptabiliser(piecesJugees, categories, acquisitions, facturesSources), piecesCitees,
+  )
   const exemplaires = exemplairesDesSources(piecesValidees, facturesSources)
   // Les pièces qui COMPTENT, pour les points qui jugent une pièce par ses montants ou ses paiements : l'exemplaire d'une
   // facture source n'en est plus une — sa TVA, son montant et son règlement sont ceux de sa facture.
@@ -607,6 +616,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     // faux, deux causes qu'aucune règle interne au document ne peut départager (voir CLAUDE.md,
     // « Fiabilité de l'extraction OCR sur les montants »).
     { id: 'montant-suspect', label: 'pièce(s) validée(s) dont le montant ne correspond à aucun mouvement bancaire', action: 'Voir ces montants', nb: montantSuspect.length, cible: 'banque', severite: 'erreur' },
+    // UNE INFORMATION, JAMAIS UN BLOCAGE (étape A8c4) : la pièce de vente citée par une facture reprise ne compte plus, en
+    // trésorerie, que ses paiements d'avant la reprise ; son reste est réglé par le registre de sa facture reprise. La
+    // Checklist n'a que deux sévérités : « attention », la plus douce, sans rien retenir.
+    { id: 'reglee-par-sa-facture-reprise', label: 'pièce(s) de vente réglée(s) par le registre de leur facture reprise — seuls leurs paiements d’avant la reprise comptent', action: 'Voir ces pièces', nb: reglesParLeurFactureReprise.length, cible: 'pieces', severite: 'attention' },
     { id: 'piste-rompue', label: "écriture(s) sans justificatif ou sans mouvement — piste d'audit rompue", action: 'Voir les écritures concernées', nb: ruptures.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'sans-categorie', label: 'pièce(s) validée(s) sans catégorie — invisibles en compta', action: 'Catégoriser ces pièces', nb: sansCategorie.length, cible: 'pieces', severite: 'erreur', detail: detailPiecesSansDate(sansCategorie) },
     // « Erreur » et non « attention » : ce n'est pas une TVA douteuse, c'est une TVA dont le calcul

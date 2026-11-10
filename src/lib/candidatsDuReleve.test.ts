@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { lotDesCertains, planRapprochementAutomatique, type Appariement } from './appariementBanque'
 import type { AccesDuDossier } from './auteursVentes'
@@ -82,7 +83,7 @@ const partsDe = (encaissements: readonly EncaissementDuMouvementLu[]): PartLue[]
   encaissements.filter((e) => e.annule_id == null).map((e) => ({ encaissement_id: e.id, taux: 20, montant: e.montant }))
 
 function sources(mouvements: readonly LigneBancaire[], encaissements: readonly EncaissementDuMouvementLu[] = []): SourcesDesGestes {
-  return { dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements, parts: partsDe(encaissements), mouvements, exemplaires: [] }
+  return { piecesCitees: AUCUNE_PIECE_CITEE, dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements, parts: partsDe(encaissements), mouvements, exemplaires: [] }
 }
 const lue = (s: SourcesDesGestes): LectureDesGestes => ({ dossierId: D, etat: 'lue', sources: s })
 const candidatsDe = (s: SourcesDesGestes, annees: readonly number[] = []): CandidatsDeLaVente =>

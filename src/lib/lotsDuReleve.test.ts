@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { lotDesCertains, planRapprochementAutomatique, type Appariement } from './appariementBanque'
 import { REFUS_GARDE_MOUVEMENTS, type FactureDuDossier } from './encaissementsFactures'
@@ -67,7 +68,7 @@ const RELEVE = [RESERVE, CLASSE, LIBRE, FRAIS]
 const LUE: VentesDuReleve = ventesDuReleve(true, D, {
   dossierId: D,
   etat: 'lue',
-  sources: {
+  sources: { piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId: D,
     factures: [facture('f1', 'F2026-0014'), facture('f2', 'F2026-0015')],
     encaissements: [

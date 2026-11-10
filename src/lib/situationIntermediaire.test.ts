@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { partsDuReleve } from './partsDuReleve'
 import { calculerSituationIntermediaire, fractionDeLAnnee, moisEcoulesDeLAnnee } from './situationIntermediaire'
@@ -381,7 +382,7 @@ describe('calculerSituationIntermediaire — les ventes facturées', () => {
   const premier = encaissementVendu({ id: 'e1', facture_id: 'fs', date_encaissement: '2026-03-20', montant: 600 })
   const second = encaissementVendu({ id: 'e2', facture_id: 'fs', date_encaissement: '2026-07-15', montant: 600 })
   const ventes = (o: { factures?: FactureVendue[]; lignes?: LigneDeFacture[]; encaissements?: ReturnType<typeof encaissementVendu>[] } = {}) =>
-    ventesFacturees({
+    ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
       acomptes: SANS_ACOMPTE, dossierId: 'd1',
       factures: o.factures ?? [F],
       lignes: o.lignes ?? [ligneVendue('fs', 1000, 20)],
@@ -494,7 +495,7 @@ describe('calculerSituationIntermediaire — les frais d’un mouvement d’enca
       mouvements: s.mouvements.map((m) => (m.id === 'm1' ? { ...m, montant: 118, ...o.m1 } : { ...m, montant: 98, ...o.m2 })),
     }
   }
-  const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
+  const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
     acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
   })
   const situation = (debut: string, fin: string, o: {

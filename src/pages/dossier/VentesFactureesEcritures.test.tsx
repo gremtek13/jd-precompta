@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from '../../lib/facturesSources'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { etatsDesVentesFacturees, type EtatsDesVentes } from '../../lib/ecrituresVentesFactureesEcran'
@@ -14,7 +15,7 @@ vi.mock('../../lib/supabase', () => ({
 
 function etats(): Extract<EtatsDesVentes, { etat: 'lus' }> {
   const r = etatsDesVentesFacturees({
-    sources: {
+    sources: { piecesCitees: AUCUNE_PIECE_CITEE,
       dossierId: 'd1',
       factures: [{
         id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2025-0001', date_emission: '2025-11-10',
@@ -48,7 +49,7 @@ describe('la section des ventes facturées, seule', () => {
 
   it('« Changer le compte » ne s’ouvre pas pendant une relecture : les états affichés sont ceux d’avant', () => {
     const r = etatsDesVentesFacturees({
-      sources: {
+      sources: { piecesCitees: AUCUNE_PIECE_CITEE,
         dossierId: 'd1',
         factures: [{
           id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2025-0001', date_emission: '2025-11-10',

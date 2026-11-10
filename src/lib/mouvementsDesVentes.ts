@@ -1,4 +1,5 @@
 import { RAISON_VERSEMENT_D_ESPECES } from './controlesDeLaCaisse'
+import type { PiecesCitees } from './facturesSources'
 import { libelleExploitable, motsDuLibelle, motsIdentifiants, motsSeConfirment, tiersConfirmeParBanque } from './appariementBanque'
 import { ACCES_SANS_OBJET, estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
@@ -92,6 +93,8 @@ export interface SourcesDuReleve {
   /** Les pièces désignées du dossier (`pieces.facture_id`, étape VF1) : le classement d'un virement mixte les juge (étape
    *  VF5h). */
   exemplaires: readonly ExemplaireLu[]
+  /** Les pièces citées par une facture reprise, lien actif (étape A8c4) : la Checklist les dit, le brouillon les marque. */
+  piecesCitees: PiecesCitees
 }
 
 /** La lecture telle que l'onglet la reçoit : lue, ou incomplète avec le motif de son premier manque. */

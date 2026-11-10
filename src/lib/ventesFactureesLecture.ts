@@ -6,6 +6,8 @@ import type { PartEncaissee } from './rattachement'
 import { ACOMPTES_PREVUS } from './devis'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { estUneVente, etatsDesVentes } from './facturesReprises'
+import { AUCUNE_PIECE_CITEE, type PiecesCitees } from './facturesSources'
+import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE } from './pieceDUneFactureReprise'
 import {
   SANS_ACOMPTE, ventesFacturees, type AcomptesDesVentes, type EncaissementVendu, type FactureVendue, type PartVendue,
   type RepriseDAcompte, type RepriseVendue, type VentesFacturees,
@@ -88,6 +90,34 @@ export function reprisesDesLignesLues(lues: readonly RepriseLue[], tva: readonly
     reprises.push({ ...r, montant_tva: montant })
   }
   return reprises
+}
+
+// Les pièces citées pour ORIGINAL par une facture reprise (A8-Q5 ; étape A8c4) : les liens ACTIFS seuls (`retire_le` nul).
+export const COLONNES_PIECES_CITEES = 'id, dossier_id, piece_id'
+export const NOM_DE_LA_LECTURE_DES_PIECES_CITEES = 'les pièces citées par les factures reprises'
+type LienLu = { id: string; dossier_id: string; piece_id: string }
+
+/**
+ * LES PIÈCES CITÉES PAR LES FACTURES REPRISES DU DOSSIER, LUES EN ENTIER (étape A8c4) : la pièce de chaque lien ACTIF de
+ * `pieces_des_factures_reprises`, que le cabinet seul lit. En trésorerie, une telle pièce ne compte que ses paiements
+ * (lib/facturesSources.ts, `resteRegleParSaReprise`) : un lien non lu laisserait compter son reste impayé à côté de
+ * l'encaissement de sa facture reprise. Partielle, refusée ou d'un autre dossier : « incomplète », jamais un ensemble vide.
+ * L'appelant l'appelle dans son propre `try`.
+ */
+export async function lireLesPiecesCitees(
+  dossierId: string,
+): Promise<{ etat: 'lues'; citees: PiecesCitees } | { etat: 'incomplete'; motif: string }> {
+  const liens = await lireTout<LienLu>((debut, fin) =>
+    supabase.from('pieces_des_factures_reprises').select(COLONNES_PIECES_CITEES, { count: 'exact' })
+      .eq('dossier_id', dossierId).is('retire_le', null).order('id').range(debut, fin),
+  )
+  if (!liens.complete) return { etat: 'incomplete', motif: `${NOM_DE_LA_LECTURE_DES_PIECES_CITEES} : ${liens.motif ?? 'lecture incomplète'}` }
+  const horsDossier = horsDuDossier(NOM_DE_LA_LECTURE_DES_PIECES_CITEES, liens, (l) => l.dossier_id, dossierId)
+  if (horsDossier !== null) return { etat: 'incomplete', motif: horsDossier }
+  if (liens.lignes.some((l) => typeof l.piece_id !== 'string')) {
+    return { etat: 'incomplete', motif: `${NOM_DE_LA_LECTURE_DES_PIECES_CITEES} : la pièce d'un lien n'est pas lue` }
+  }
+  return { etat: 'lues', citees: new Set(liens.lignes.map((l) => l.piece_id)) }
 }
 
 /** Une ligne de facture : elle n'a pas de dossier ; c'est sa facture, lue à part, qui le porte. */
@@ -219,6 +249,14 @@ export async function lireLesVentesFacturees(dossierId: string): Promise<Lecture
       if (lues.etat === 'incomplete') return { dossierId, etat: 'incomplete', motif: lues.motif }
       reprises = lues.reprises
     }
+    // Les pièces citées par une facture reprise (A8c4), seulement si une reprise est lue : un lien cite une ligne de
+    // `factures_importees`, et sans elle il n'y en a aucun — un dossier sans reprise n'a pas une lecture de plus.
+    let piecesCitees: PiecesCitees = AUCUNE_PIECE_CITEE
+    if (PIECE_D_UNE_FACTURE_REPRISE_PREVUE && reprises.length > 0) {
+      const liens = await lireLesPiecesCitees(dossierId)
+      if (liens.etat === 'incomplete') return { dossierId, etat: 'incomplete', motif: liens.motif }
+      piecesCitees = liens.citees
+    }
     // Les exemplaires, seulement si une part de virement mixte peut exister (l'en-tête) ; lus, en entier et du dossier.
     let exemplaires: readonly ExemplaireLu[] = []
     if (factures.lignes.length > 0 && encaissements.lignes.some((e) => e.ligne_bancaire_id != null && !sourcesLues.has(e.facture_id))) {
@@ -243,6 +281,7 @@ export async function lireLesVentesFacturees(dossierId: string): Promise<Lecture
         parts: parts.lignes,
         acomptes,
         reprises,
+        piecesCitees,
       }),
       // Les factures lues sont les seules sources : celle d'un encaissement qu'elles ne portent pas n'est pas source.
       encaissees: partsEncaissees(dossierId, encaissements.lignes, { factures: factures.lignes }, exemplaires),

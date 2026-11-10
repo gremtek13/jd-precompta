@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import type { AccesDuDossier } from './auteursVentes'
 import type { ExemplaireLu, LigneDeFacture, PartLue } from './encaissementsFactures'
@@ -61,7 +62,7 @@ function candidatsDe(
   exemplaires: readonly ExemplaireLu[] = [exemplaire('p0', 'f0')],
   annees: readonly number[] = [],
 ): CandidatsDeLaVente {
-  const s: SourcesDesGestes = {
+  const s: SourcesDesGestes = { piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements, parts: partsDe(encaissements), mouvements, exemplaires,
   }
   const lue: LectureDesGestes = { dossierId: D, etat: 'lue', sources: s }

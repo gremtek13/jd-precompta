@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ecrituresDesVentesFacturees } from './ecrituresVentesFacturees'
 import {
@@ -51,7 +52,7 @@ const MOUVEMENT: MouvementDesEcritures = {
   compte_bilan: null, declaration_tva_id: null, ventilee: false, reglement_groupe: false, prelevement_personnel: false,
 }
 
-const sources = (reprises: readonly RepriseVendue[] = REPRISES): SourcesDesEcrituresDeVente => ({
+const sources = (reprises: readonly RepriseVendue[] = REPRISES): SourcesDesEcrituresDeVente => ({ piecesCitees: AUCUNE_PIECE_CITEE,
   dossierId: D, factures: [facture()], lignes: LIGNES, encaissements: [ENCAISSEMENT], parts: PARTS, mouvements: [MOUVEMENT],
   exemplaires: [], reprises,
 })

@@ -60,7 +60,10 @@ import {
 import { rattachementDesVentes, type VentesFactureesDesExports } from '../../lib/ventesFactureesDesExports'
 import { lireLesJustificatifsDesVentes } from '../../lib/justificatifsDesVentesLecture'
 import VentesFactureesEcritures from './VentesFactureesEcritures'
-import { exemplairesDesSources, facturesSourcesDe, horsDesExemplairesDesSources, type FacturesSources } from '../../lib/facturesSources'
+import {
+  AUCUNE_PIECE_CITEE, exemplairesDesSources, facturesSourcesDe, horsDesExemplairesDesSources, marquerLesPiecesCitees,
+  type FacturesSources,
+} from '../../lib/facturesSources'
 
 // Aucune facture source : celles d'un dossier qui n'a pas basculé (étape VF6a). La base refuse qu'une facture y soit source
 // de sa vente (`fixer_source_de_la_vente`), et qu'un dossier qui en porte une revienne en arrière
@@ -419,7 +422,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const sourcesNonLues = facturesSources !== null ? null
     : lectureDesSources?.etat === 'incomplete' ? lectureDesSources.motif : 'pas encore lues'
   const sourcesDesControles = facturesSources ?? AUCUNE_FACTURE_SOURCE
-  const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, acquisitions, sourcesDesControles)
+  // Et la pièce citée par une facture reprise (étape A8c4 ; lib/facturesSources.ts) : en trésorerie, elle ne s'écrit qu'à
+  // ses paiements — le registre de sa facture reprise écrit le reste. Lue avec les factures sources, sous la même garde.
+  const piecesCitees = lectureDesSources?.etat === 'lue' ? lectureDesSources.sources.piecesCitees : AUCUNE_PIECE_CITEE
+  const aComptabiliser = marquerLesPiecesCitees(
+    piecesAComptabiliser(piecesValidees, categories, acquisitions, sourcesDesControles), piecesCitees,
+  )
   // Catégories utilisées par au moins une pièce validée, un mouvement affecté ou une part d'un mouvement
   // ventilé mais sans compte associé — impossible de générer l'écriture correspondante tant que ce n'est
   // pas renseigné (voir lib/controles.ts). La facture d'un bien n'y compte pas : elle s'écrit sur le

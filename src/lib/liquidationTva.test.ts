@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { refusAffectation, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
 import { refusPaieUneDeclarationTva } from './classementsDuMouvement'
@@ -958,13 +959,13 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
       id: 'e1', date_encaissement: o.date ?? '2026-03-10', montant: ttc, moyen: o.moyen ?? 'virement',
       retire_le: o.retire ? '2026-03-20T10:00:00Z' : null,
     }, taux)
-    return {
+    return { piecesCitees: AUCUNE_PIECE_CITEE,
       dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: o.emission ?? '2026-03-01', montant_ttc: ttc })],
       lignes: [ligneVendue('f1', Math.round((ttc * 10000) / (100 + taux)) / 100, taux)],
       encaissements: [{ ...encaissement, compte_contrepartie: null, cree_par: null }], parts: [part], mouvements: [], exemplaires: [], reprises: [],
     }
   }
-  const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
+  const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
     acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
   })
   const ca3De = (s: SourcesDesEcrituresDeVente, periode = T1) => calculerCa3(
@@ -1036,7 +1037,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
   it('une régularisation — une contre-passation — écrite : la liquidation se tient', () => {
     const e = encaissementVendu({ id: 'e1', date_encaissement: '2025-12-10', montant: 120 })
     const cp = encaissementVendu({ id: 'c1', date_encaissement: '2026-02-10', montant: -120, annule_id: 'e1' })
-    const s: SourcesDesEcrituresDeVente = {
+    const s: SourcesDesEcrituresDeVente = { piecesCitees: AUCUNE_PIECE_CITEE,
       dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: '2025-12-01' })], lignes: [ligneVendue('f1', 100, 20)],
       encaissements: [e, cp].map((x) => ({ ...x.encaissement, compte_contrepartie: null, cree_par: null })), parts: [e.part, cp.part], mouvements: [],
       exemplaires: [], reprises: [],
@@ -1109,7 +1110,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     // Un dossier qui n'a pas basculé n'a rien à lire.
     expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: { etat: 'sans_bascule' } }))).toBeNull()
     // Une facture source ÉCARTÉE par le module (sans date qu'on puisse lui donner) ne retient pas une période.
-    const ecartee = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [factureVendue({ id: 'f1' })], lignes: [], encaissements: [], parts: [] })
+    const ecartee = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE, acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [factureVendue({ id: 'f1' })], lignes: [], encaissements: [], parts: [] })
     const avecEcartee = calculerCa3(
       { pieces, paiements: paiementsDesPieces(lignes, [], [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ecartee, caisse: CAISSE_ABSENTE }, T1, false, 0, 0,
     )
@@ -1147,7 +1148,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
   it('une exigibilité dont l’état des écritures ne liste pas la source : refusée, sans la prêter à une autre source', () => {
     // Un bien livré le 1er février, et son avoir du 10 avril : l'avoir rend au deuxième trimestre une TVA négative.
     const biens = { nature_operation: 'biens' as const }
-    const s: SourcesDesEcrituresDeVente = {
+    const s: SourcesDesEcrituresDeVente = { piecesCitees: AUCUNE_PIECE_CITEE,
       dossierId: 'd1',
       factures: [
         factureDesEcritures({ id: 'f1', date_emission: '2026-02-01', montant_ttc: 120, ...biens }),

@@ -4,6 +4,7 @@ import {
   centimesExacts, ecartDeFrais, factureSansExemplaire, justifieSonMouvement, type ExemplaireLu,
 } from './encaissementsFactures'
 import { motDuDocument } from './facturesReprises'
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { formatDate } from './format'
 import { libelleDUneVenteFacturee, libelleDUnMouvementDesVentes, nomDuClientEcrit } from './libellesDesVentes'
 import type { PlanComptable } from './planComptable'
@@ -122,7 +123,7 @@ export interface EntreesEcrituresVentes {
   /** Les lignes que la lecture des ventes facturées a rendues, EN ENTIER (lib/ventesFactureesLecture.ts), et le SIRET figé
    *  du client de chaque facture ; le drapeau `FACTURES_IMPORTEES_PREVUES` levé, `reprises` (lib/ventesFacturees.ts), sans
    *  lesquelles une facture reprise est écartée, jamais écrite d'un cumul parti de zéro. */
-  sources: Omit<SourcesVentesFacturees, 'factures' | 'acomptes'> & { factures: readonly FactureDesVentesEcrites[] }
+  sources: Omit<SourcesVentesFacturees, 'factures' | 'acomptes' | 'piecesCitees'> & { factures: readonly FactureDesVentesEcrites[] }
   /** Les mouvements que les encaissements citent — d'autres peuvent y être, seuls ceux-là comptent. */
   mouvements: readonly MouvementDesEncaissements[]
   /** Le compte de bilan choisi pour un encaissement par compensation (ou par un autre moyen sans mouvement), par
@@ -294,7 +295,9 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
   // y répond, la base refusant l'acompte d'un devis de biens ou mixte (`facturer_acompte_devis`) tant que ses écritures ne
   // l'apprennent pas (HISTORIQUE.md, « L'ACOMPTE D'UN DEVIS DANS LES MOTEURS (P5B3) », « L'ACOMPTE D'UN DEVIS : P5B3-Q1 ET
   // P5B2-Q1 ÉCRITS DANS LA MIGRATION »).
-  const ventes = ventesFacturees({ ...sources, acomptes: SANS_ACOMPTE })
+  // Les pièces citées par une facture reprise (A8c4) ne changent rien aux écritures d'une FACTURE, seulement à celles des
+  // pièces (lib/ecritures.ts) : aucune ici.
+  const ventes = ventesFacturees({ ...sources, acomptes: SANS_ACOMPTE, piecesCitees: AUCUNE_PIECE_CITEE })
   const nonEcrites: SourceNonEcrite[] = []
   const nonEcrite = (source: SourceEcritureVente, motif: MotifNonEcrite, precision?: string, facture?: string) =>
     nonEcrites.push({

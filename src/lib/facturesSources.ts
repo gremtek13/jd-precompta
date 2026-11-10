@@ -1,5 +1,6 @@
 import { estUneVente } from './facturesReprises'
-import type { FactureEmise, Piece } from './types'
+import type { PieceAComptabiliser } from './ecritures'
+import type { FactureEmise, ModeComptable, Piece } from './types'
 
 // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE COMPTE NULLE PART (ligne 28.65, chantier EC-Q3 ; étape VF6a). Désignée exemplaire
 // d'une facture ou d'un avoir SOURCE de sa vente (`pieces.facture_id`, étape VF1 ; `factures_emises.source_de_la_vente`,
@@ -24,9 +25,17 @@ import type { FactureEmise, Piece } from './types'
 // (`pieces_des_factures_reprises`, A8-Q5) n'en est pas un : elle garde ce qu'elle a compté avant la date de reprise — ses
 // paiements d'avant sont l'encaissé avant la reprise, dont la règle du cumul part sans le recompter —, et la base refuse
 // qu'elle se règle à la date de reprise ou après (`garder_reglement_d_une_piece_reprise`). L'écarter tout entière ôterait de
-// la 2035 une recette encaissée avant la reprise. RESTE OUVERT (le défaut confirmé le 10/11/2026, HISTORIQUE.md, « A8C3 ») :
-// en trésorerie, son reste IMPAYÉ compte encore à la date de la pièce (`sans_paiement`) alors que le registre de la reprise
-// compte l'encaissement d'après — la règle à poser ici : une pièce citée par un lien ACTIF ne compte que ses paiements.
+// la 2035 une recette encaissée avant la reprise. SON RESTE IMPAYÉ NE COMPTE PLUS (étape A8c4, le défaut confirmé le
+// 10/11/2026, HISTORIQUE.md, « A8C4 ») : en TRÉSORERIE, une pièce citée par un lien ACTIF ne compte que ses paiements — ceux
+// d'avant la reprise, les seuls que la base laisse —, jamais la part que rien ne paie (`sans_paiement`, à la date de la
+// pièce) : l'encaissement d'après la reprise, c'est le registre de la facture qui le compte. Le prédicat
+// (`resteRegleParSaReprise`, `rattachementsQuiComptent`) est lu par la 2035, la situation intermédiaire, l'Estimation et le
+// brouillon (`piecesAComptabiliser` marque la cible, lib/ecritures.ts) — donc le FEC et la concordance, qui comparent les
+// deux —, les préalables de la validation, et la Checklist, qui dit la pièce « réglée par le registre de sa facture
+// reprise ». En ENGAGEMENT, rien ne change : la pièce compte à sa date, en entier, comme hier. Les liens se lisent avec les
+// ventes (lib/ventesFactureesLecture.ts, le cabinet seul) et voyagent dans `VentesFacturees.piecesCitees`, OBLIGATOIRES ;
+// non lus, la lecture se dit incomplète — jamais un ensemble vide deviné. Hors d'ici : « Ma simulation » du client, qui ne
+// lit pas les liens (A8Q5-Q2), et la copie de l'assistant (supabase/functions/agent-comptable), qui ne les lit pas non plus.
 
 /** Les identifiants des factures et avoirs validés SOURCES de leur vente (`VentesFacturees.sources`, lus en entier). */
 export type FacturesSources = ReadonlySet<string>
@@ -68,3 +77,48 @@ export function facturesSourcesDe(
  * (`fixer_source_de_la_vente`). Jamais pour des factures qui ne sont pas encore lues : ce vide est une affirmation.
  */
 export const AUCUNE_FACTURE_SOURCE: FacturesSources = new Set()
+
+/**
+ * Les pièces citées pour ORIGINAL par une facture reprise, par un lien ACTIF (`pieces_des_factures_reprises`, `retire_le`
+ * nul ; A8-Q5), lues EN ENTIER par le cabinet. Un ensemble vide est une affirmation, comme celui des factures sources.
+ */
+export type PiecesCitees = ReadonlySet<string>
+
+/**
+ * Aucune pièce citée : le fait d'un dossier sans facture reprise, ou d'un état qui ne compte rien des pièces (le FEC relu
+ * d'une cible seule). Jamais pour des liens qui ne sont pas encore lus.
+ */
+export const AUCUNE_PIECE_CITEE: PiecesCitees = new Set()
+
+/**
+ * LA RÈGLE (A8c4) : en trésorerie, la pièce citée par une facture reprise ne compte que ses paiements ; son reste impayé est
+ * réglé par le registre de sa facture reprise, qui le compte à ses encaissements. En engagement, jamais : elle compte à sa
+ * date, en entier.
+ */
+export function resteRegleParSaReprise(
+  piece: Pick<Piece, 'id'>, citees: PiecesCitees, mode: ModeComptable,
+): boolean {
+  return mode === 'tresorerie' && citees.has(piece.id)
+}
+
+/**
+ * Les rattachements d'une pièce qui COMPTENT (lib/rattachement.ts) : tous, moins la part que rien ne paie
+ * (`sans_paiement`) d'une pièce dont le reste est réglé par sa facture reprise. Les parts gardées ne somment plus à 1 :
+ * c'est voulu — la pièce ne compte que ce qu'elle a payé.
+ */
+export function rattachementsQuiComptent<R extends { source: string }>(
+  piece: Pick<Piece, 'id'>, rattachements: readonly R[], citees: PiecesCitees, mode: ModeComptable,
+): R[] {
+  return resteRegleParSaReprise(piece, citees, mode) ? rattachements.filter((r) => r.source !== 'sans_paiement') : [...rattachements]
+}
+
+/**
+ * Ce que le BROUILLON doit écrire de chaque pièce (`piecesAComptabiliser`, lib/ecritures.ts), la pièce citée par une facture
+ * reprise marquée : en trésorerie, elle ne s'écrit qu'à ses paiements (`paiementsSeuls`), comme la 2035 la compte — sans
+ * quoi le FEC, la balance et la concordance porteraient son reste à sa date, à côté de l'encaissement de sa facture. Les
+ * contrôles du brouillon (`analyserEcritures`) jugent la même cible. Sans effet en engagement : la marque n'y est lue par
+ * personne, et la pièce s'y écrit à sa date, en entier.
+ */
+export function marquerLesPiecesCitees<P extends PieceAComptabiliser>(aComptabiliser: readonly P[], citees: PiecesCitees): P[] {
+  return aComptabiliser.map((a) => (resteRegleParSaReprise(a.piece, citees, 'tresorerie') ? { ...a, paiementsSeuls: true } : a))
+}

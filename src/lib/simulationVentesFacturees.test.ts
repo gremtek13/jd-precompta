@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -36,7 +37,7 @@ const F1 = 'aaaaaaaa-0000-4000-8000-000000000101'
 const F2 = 'aaaaaaaa-0000-4000-8000-000000000102'
 
 const comptees = (parMois: [string, number][], sources: string[]): RecettesFacturees =>
-  ({ etat: 'comptees', parMois: new Map(parMois), sources: new Set(sources) })
+  ({ etat: 'comptees', parMois: new Map(parMois), sources: new Set(sources), piecesCitees: AUCUNE_PIECE_CITEE })
 
 describe('la valeur de la base, sous la forme « comptées »', () => {
   it('lit les deux clés : les mois de l’année demandée, en centimes, et les sources', () => {

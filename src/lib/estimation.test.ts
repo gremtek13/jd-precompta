@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { partsDuReleve } from './partsDuReleve'
 import {
@@ -420,7 +421,7 @@ describe('l’estimation et les ventes facturées', () => {
     encaissementVendu({ id: 'e1', facture_id: 'fs', date_encaissement: '2026-01-10', montant: 600 }),
     encaissementVendu({ id: 'e2', facture_id: 'fs', date_encaissement: '2026-05-12', montant: 600 }),
   ]
-  const VENTES = ventesFacturees({
+  const VENTES = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
     acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F], lignes: [ligneVendue('fs', 1000, 20)],
     encaissements: encaissements.map((e) => e.encaissement), parts: encaissements.map((e) => e.part),
   })
@@ -438,13 +439,13 @@ describe('l’estimation et les ventes facturées', () => {
       encaissementVendu({ id: 'e1', facture_id: 'fs', date_encaissement: '2026-01-10', montant: 600 }),
       encaissementVendu({ id: 'e2', facture_id: 'fs', date_encaissement: '2026-01-25', montant: 600 }),
     ]
-    const v = ventesFacturees({
+    const v = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
       acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F], lignes: [ligneVendue('fs', 1000, 20)],
       encaissements: deux.map((e) => e.encaissement), parts: deux.map((e) => e.part),
     })
     expect([...recettesFactureesParMois(v, 'tresorerie')]).toEqual([['2026-01', 100000]])
     const annulee = [deux[0], encaissementVendu({ id: 'e3', facture_id: 'fs', date_encaissement: '2026-01-28', montant: -600, annule_id: 'e1' })]
-    const w = ventesFacturees({
+    const w = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
       acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F], lignes: [ligneVendue('fs', 1000, 20)],
       encaissements: annulee.map((e) => e.encaissement), parts: annulee.map((e) => e.part),
     })
@@ -457,7 +458,7 @@ describe('l’estimation et les ventes facturées', () => {
     const avoir = factureVendue({ id: 'av', type: 'avoir', facture_origine_id: 'fs', date_emission: '2026-06-03' })
     const annulation = encaissementVendu({ id: 'e3', facture_id: 'fs', date_encaissement: '2026-07-01', montant: -600, annule_id: 'e2' })
     const tous = [...encaissements, annulation]
-    const v = ventesFacturees({
+    const v = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
       acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [F, avoir], lignes: [ligneVendue('fs', 1000, 20), { ...ligneVendue('av', 100, 20), quantite: -1 }],
       encaissements: tous.map((e) => e.encaissement), parts: tous.map((e) => e.part),
     })

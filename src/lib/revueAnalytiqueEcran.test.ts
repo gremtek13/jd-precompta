@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { calculerDeclaration2035 } from './declaration2035'
@@ -153,7 +154,7 @@ describe('donneesDeLaRevueAnalytique', () => {
   // une lecture qui n'est pas revenue entière —, aucune 2035, plutôt qu'une 2035 sans ses ventes facturées.
   it('compte les ventes facturées comme le moteur, et n’a pas de 2035 sans elles', () => {
     const e = encaissementVendu({ id: 'e1', date_encaissement: '2025-06-10', montant: 1200 })
-    const ventes = ventesFacturees({
+    const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
       acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [factureVendue({ date_emission: '2025-06-01' })], lignes: [ligneVendue('f1', 1000, 20)],
       encaissements: [e.encaissement], parts: [e.part],
     })
@@ -173,7 +174,7 @@ describe('donneesDeLaRevueAnalytique', () => {
   it('compte les frais d’un mouvement d’encaissements comme le moteur, et n’a pas de 2035 sans les écritures des ventes', () => {
     const sourcesBasculees = sourcesDuDossierBascule()
     const s = { ...sourcesBasculees, mouvements: sourcesBasculees.mouvements.map((m) => (m.id === 'm1' ? { ...m, montant: 118 } : m)) }
-    const ventes = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
+    const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE, acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
     const ecrituresDesVentes = { etat: 'composees' as const, composition: composition(s, 'tresorerie', PLAN_PAR_DEFAUT) }
     const fraisBancaires = { id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 3, compte_comptable: '627000', poste_2035: 'Frais financiers' } satisfies Categorie
     const sources = {

@@ -1,4 +1,5 @@
 import { dotationDeLExercice } from './amortissements'
+import { rattachementsQuiComptent, resteRegleParSaReprise } from './facturesSources'
 import { anneeDe } from './format'
 import { indemniteKilometriqueCentimes, totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
 import { arrondiDeLaLiquidation } from './liquidationTva'
@@ -9,7 +10,7 @@ import type { PlanComptable } from './planComptable'
 import {
   compteDuProduit, fraisDesMouvements, type EcrituresDesVentesFacturees, type FraisDUnMouvement,
 } from './ecrituresVentesFacturees'
-import { centimesParDate, partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
+import { centimesParDateSelon, partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
 import type { MouvementBancaire } from './affectationBanque'
@@ -474,7 +475,13 @@ export function calculerDeclaration2035(
     // L'ordre des contrôles porte une intention : une pièce d'un autre exercice n'est pas une
     // anomalie, elle n'a juste rien à faire ici — elle sort avant d'être comptée comme un défaut.
     const paiementsPiece = paiements.get(piece.id) ?? []
-    const rattachements = rattachementsTresorerie(piece, paiementsPiece)
+    // LA PIÈCE CITÉE PAR UNE FACTURE REPRISE (étape A8c4 ; lib/facturesSources.ts) : ses seuls paiements, ceux d'avant la
+    // reprise ; son reste, le registre de la facture reprise le compte à ses encaissements, plus bas. Jamais « sans
+    // paiement connu » : rien ne la règlera plus.
+    const paiementsSeuls = resteRegleParSaReprise(piece, ventesFacturees.piecesCitees, 'tresorerie')
+    const rattachements = rattachementsQuiComptent(
+      piece, rattachementsTresorerie(piece, paiementsPiece), ventesFacturees.piecesCitees, 'tresorerie',
+    )
     // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE COMPTE PLUS (§ 8) : sa facture compte la vente, par ses encaissements, plus bas.
     // Dit dans l'exercice où la pièce aurait compté, par la même règle de date qu'une autre ; une pièce qui n'y aurait pas
     // compté n'a rien à y faire, et sortie AVANT les contrôles, elle ne se dit ni sans date ni sans montant ni sans poste.
@@ -502,7 +509,7 @@ export function calculerDeclaration2035(
     // (`centimesParDate`), la part sans date en moins — l'écriture la porte au dépôt, la 2035 nulle part.
     // Additionner `montant × part` laissait un centime d'écart avec le FEC sur une pièce payée sur deux
     // exercices.
-    const centimes = centimesParDate(piece, montant, paiementsPiece)
+    const centimes = centimesParDateSelon(piece, montant, paiementsPiece, paiementsSeuls)
       .filter((m) => anneeDe(m.date) === annee)
       .reduce((s, m) => s + m.centimes - m.centimesSansDate, 0)
 

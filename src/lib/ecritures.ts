@@ -3,7 +3,7 @@ import { comptesDeTiers, compteDeTiers, lignesEngagementPourPiece, type ModeleCo
 import type { PlanComptable } from './planComptable'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
 import {
-  centimesParDate, estParLeReleve, rattachementsTresorerie, type PaiementDePiece, type PaiementParLaCaisse, type PaiementParLeReleve,
+  centimesParDateSelon, estParLeReleve, rattachementsTresorerie, type PaiementDePiece, type PaiementParLaCaisse, type PaiementParLeReleve,
   type PaiementsDesPieces,
 } from './rattachement'
 import type { AcquisitionDuBien } from './amortissements'
@@ -62,6 +62,12 @@ export interface LigneAGenerer {
 export interface CibleComptable {
   compte: string
   immobilisation: boolean
+  /**
+   * En trésorerie, la pièce ne s'écrit qu'à ses paiements, jamais pour la part que rien ne paie (étape A8c4) : la pièce
+   * citée par une facture reprise, dont le registre de la facture règle le reste. Posé par `marquerLesPiecesCitees`
+   * (lib/facturesSources.ts) seulement ; absent, la pièce s'écrit comme hier. Sans effet en engagement.
+   */
+  paiementsSeuls?: true
 }
 
 // Ligne(s) charge/produit (+ TVA séparée le cas échéant) pour une pièce donnée — extrait de
@@ -126,9 +132,10 @@ export function lignesChargeProduitPourPiece(
   // équilibrée au centime, la refusait sans qu'aucun geste ne puisse la réparer. La TVA de la pièce reste entière.
   const tva = tvaVentilee(piece, assujettiTva)
   const charge = tva ? montantRetenu(piece, assujettiTva)! : piece.montant_ttc!
-  const charges = centimesParDate(piece, charge, paiements)
+  const paiementsSeuls = cible.paiementsSeuls === true
+  const charges = centimesParDateSelon(piece, charge, paiements, paiementsSeuls)
   const tvas = tva
-    ? centimesParDate(piece, charge + tva, paiements).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
+    ? centimesParDateSelon(piece, charge + tva, paiements, paiementsSeuls).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
     : []
 
   const compteTva = compteTvaDe(piece, cible.immobilisation, plan)
@@ -298,8 +305,12 @@ function lignesTresoreriePourPiece(
 // Les dates que les lignes d'une pièce DOIVENT porter, ou null quand l'une d'elles serait le repli sur
 // la date de dépôt — un INSTANT lu dans le fuseau de qui génère, donc rien qu'on puisse opposer à une
 // écriture générée ailleurs (voir analyserEcritures).
-function datesAttendues(piece: Piece, paiements: readonly PaiementDePiece[]): Set<string> | null {
+function datesAttendues(
+  piece: Piece, cible: Pick<CibleComptable, 'paiementsSeuls'>, paiements: readonly PaiementDePiece[],
+): Set<string> | null {
+  // La pièce citée par une facture reprise (A8c4) : les dates de ses seuls paiements.
   const rattachements = rattachementsTresorerie(piece, paiements)
+    .filter((r) => cible.paiementsSeuls !== true || r.source !== 'sans_paiement')
   if (rattachements.some((r) => r.date === null)) return null
   return new Set(rattachements.map((r) => r.date!))
 }
@@ -682,10 +693,10 @@ export function ecrituresAGenerer(
 ): GenerationDesEcritures {
   const ecrites = new Set(ecritures.map((e) => e.piece_id).filter((id): id is string => !!id))
   const generation: GenerationDesEcritures = { pieces: [], lignes: [], dansUnExerciceValide: [] }
-  for (const { piece, compte, immobilisation } of aComptabiliser) {
+  for (const { piece, ...cible } of aComptabiliser) {
     if (ecrites.has(piece.id)) continue
     const paiementsDeLaPiece = paiements.get(piece.id) ?? []
-    const lignes = lignesPourPiece(dossierId, piece, { compte, immobilisation }, assujettiTva, paiementsDeLaPiece, modele)
+    const lignes = lignesPourPiece(dossierId, piece, cible, assujettiTva, paiementsDeLaPiece, modele)
     const ouvertes = lignesOuvertes(lignes, frontiere)
     if (ouvertes.length < lignes.length) {
       generation.dansUnExerciceValide.push({ piece, suite: suiteDansUnExerciceValide(piece, paiementsDeLaPiece, modele, ouvertes.length > 0) })
@@ -821,7 +832,7 @@ function tresorerieDesynchronisee(
   // compte à chaque date, pas le découpage en lignes — deux lignes de 60 € valent une de 120 €, deux qui s'annulent ne
   // valent rien, comme une part que la génération arrondit à zéro et que la base refuserait —, et la date n'entre dans
   // la comparaison que si chaque part de la pièce en a une.
-  const dateComparee = datesAttendues(p, paiementsPiece) !== null
+  const dateComparee = datesAttendues(p, cible, paiementsPiece) !== null
   const soldesParDate = (ls: readonly Pick<EcritureBrouillon, 'date' | 'compte' | 'sens' | 'montant'>[]) => {
     const soldes = new Map<string, number>()
     for (const l of ls) {

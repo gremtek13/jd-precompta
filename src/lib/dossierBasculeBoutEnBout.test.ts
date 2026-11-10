@@ -1,4 +1,5 @@
 import { AUCUNE_SAISIE_2035 } from './saisies2035'
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { concordance2035 } from './concordance2035'
 import { calculerCa3, type DeclarationCa3 } from './declarationTva'
@@ -33,7 +34,7 @@ const PLANS: readonly [string, PlanComptable][] = [['plan par défaut', PLAN_PAR
 function leDossier(mode: ModeComptable, plan: PlanComptable) {
   const sources: SourcesDesEcrituresDeVente = sourcesDuDossierBascule()
   const brouillon: EcritureBrouillon[] = brouillonDesVentes(composition(sources, mode, plan))
-  const ventes = ventesFacturees({
+  const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
     acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
   })
   const etats = etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true })
@@ -120,7 +121,7 @@ describe.each(PLANS)('les frais d’un mouvement d’encaissements, de bout en b
     const sources = sourcesAvecFrais()
     const c = composition(sources, 'tresorerie', plan)
     const brouillon = brouillonDesVentes(c)
-    const ventes = ventesFacturees({
+    const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
       acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
     })
     const declaration = calculerDeclaration2035(
@@ -166,7 +167,7 @@ describe.each(PLANS)('la situation de l’année et la 2035 comptent les mêmes 
   }
   const lesDeux = (mode: ModeComptable, categories: Categorie[]) => {
     const s = sources()
-    const ventes = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
+    const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE, acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
     const ecritures: EcrituresDesVentesDeLa2035 = { etat: 'composees', composition: composition(s, mode, plan) }
     return {
       situation: calculerSituationIntermediaire([], categories, [], [], '2025-01-01', '2025-12-31', true, new Map(), mode, [], ventes, plan, ecritures, CAISSE_ABSENTE),
@@ -218,7 +219,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
     const c = composition(sources, mode, plan)
     const brouillon = brouillonDesVentes(c)
     const lignes = sources.mouvements.map(ligneBancaire)
-    const ventes = ventesFacturees({
+    const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
       acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
     })
     const ouvert = (o: Partial<DonneesDeValidation>): DonneesDeValidation => ({

@@ -1,4 +1,6 @@
 import { supabase } from './supabase'
+import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE } from './pieceDUneFactureReprise'
+import { AUCUNE_PIECE_CITEE, type PiecesCitees } from './facturesSources'
 import type { ExemplaireLu, LigneDeFacture } from './encaissementsFactures'
 import type {
   EncaissementDesEcritures, FactureDesEcritures, MouvementDesEcritures, SourcesDesEcrituresDeVente,
@@ -8,7 +10,7 @@ import { messageErreur } from './messageErreur'
 import type { EcritureBrouillon } from './types'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import type { PartVendue, RepriseVendue } from './ventesFacturees'
-import { COLONNES_LIGNES, COLONNES_PARTS, lireLesReprisesDuDossier } from './ventesFactureesLecture'
+import { COLONNES_LIGNES, COLONNES_PARTS, lireLesPiecesCitees, lireLesReprisesDuDossier } from './ventesFactureesLecture'
 
 // CE QUE L'ONGLET ÉCRITURES LIT DES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.6, chantier EC-Q3, étape VF4c1 ;
 // le module pur est lib/ecrituresVentesFactureesEcran.ts). À part de lib/ventesFactureesLecture.ts, qui rend le CALCUL des
@@ -110,6 +112,14 @@ export async function lireLesSourcesDesEcrituresDeVente(dossierId: string): Prom
       if (lues.etat === 'incomplete') return { dossierId, etat: 'incomplete', motif: lues.motif }
       reprises = lues.reprises
     }
+    // Les pièces citées par une facture reprise (A8c4), seulement si une reprise est lue — la règle de la lecture des
+    // moteurs (lib/ventesFactureesLecture.ts).
+    let piecesCitees: PiecesCitees = AUCUNE_PIECE_CITEE
+    if (PIECE_D_UNE_FACTURE_REPRISE_PREVUE && reprises.length > 0) {
+      const liens = await lireLesPiecesCitees(dossierId)
+      if (liens.etat === 'incomplete') return { dossierId, etat: 'incomplete', motif: liens.motif }
+      piecesCitees = liens.citees
+    }
     return {
       dossierId,
       etat: 'lue',
@@ -123,6 +133,7 @@ export async function lireLesSourcesDesEcrituresDeVente(dossierId: string): Prom
         mouvements: mouvements.lignes,
         exemplaires: exemplaires.lignes,
         reprises,
+        piecesCitees,
       },
     }
   } catch (erreur) {

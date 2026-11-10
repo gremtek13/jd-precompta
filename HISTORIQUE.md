@@ -50358,3 +50358,19 @@ composition, `estSource` remis à « validee ») qui virent au rouge. **Défaut 
 une facture reprise (A8-Q5) compte encore en trésorerie son reste impayé à sa date (`sans_paiement` : 2035, situation,
 Estimation, brouillon) en plus de l'encaissement d'après la reprise par le registre — 200 € au lieu de 100 € sur le cas
 fictif ; la règle (un lien ACTIF : ses paiements seuls) reste à poser dans `facturesSources.ts` et les moteurs.
+
+### 10/11/2026 — A8C4 : LA PIÈCE CITÉE PAR UNE FACTURE REPRISE NE COMPTE QUE SES PAIEMENTS (LIGNE 51.5)
+
+(Agent architecte ; aucune migration, aucune écriture en production.) Le défaut confirmé sous « A8C3 » corrigé côté cabinet.
+La règle, une fois, dans `src/lib/facturesSources.ts` : en TRÉSORERIE, une pièce citée par un lien ACTIF de
+`pieces_des_factures_reprises` ne compte que ses paiements (ceux d'avant la reprise), jamais son reste `sans_paiement` ;
+en engagement, rien ne change (`resteRegleParSaReprise`, `rattachementsQuiComptent`, `marquerLesPiecesCitees`).
+`lireLesPiecesCitees` lit les liens (`retire_le` nul), seulement si une reprise est lue ; partielle, refusée ou d'un autre
+dossier, la lecture des ventes se dit incomplète. `VentesFacturees`, `SourcesDesEcrituresDeVente`, `SourcesDuReleve` et
+l'état « comptées » de l'Estimation portent `piecesCitees`, OBLIGATOIRES. Lus par la 2035 (`centimesParDateSelon`), la
+situation intermédiaire, l'Estimation, le brouillon (la cible `paiementsSeuls`, donc le FEC et la concordance) ; la
+Checklist dit la pièce « réglée par le registre de sa facture reprise » (`reglee-par-sa-facture-reprise`, en « attention »
+faute d'une sévérité « info », rien de retenu). Le cas fictif (100 € repris du 20/11, reprise le 01/12, 100 € encaissés le
+15/12) : 200 € avant, 100 € après, dans `pieceCiteeParUneReprise.test.ts`. Restent : « Ma simulation » (A8Q5-Q2, elle
+passe `AUCUNE_PIECE_CITEE` et compte encore 200 €), la pièce figée (A8Q5-Q3), la copie de l'assistant, qui ne lit pas les
+liens, et les préalables de la validation (`datesDesEcrituresAttendues` lit encore le reste).

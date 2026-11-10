@@ -1,4 +1,5 @@
 import { dotationSurPeriode } from './amortissements'
+import { rattachementsQuiComptent } from './facturesSources'
 import { anneeDe, jourDe, moisDe } from './format'
 import type { PartDuReleve } from './partsDuReleve'
 import { montantRetenu } from './montantRetenu'
@@ -144,7 +145,11 @@ export function calculerSituationIntermediaire(
     // règle de la 2035 (voir lib/rattachement.ts). Un état arrêté au 31 janvier ne porte donc pas une
     // facture de janvier réglée en février, et porte celle de décembre réglée en janvier. En
     // engagement, c'est celle de sa facture.
-    const part = partDansLaPeriode(rattachements(p, paiements.get(p.id) ?? [], mode), periodeDebut, periodeFin)
+    // La pièce citée par une facture reprise (A8c4 ; lib/facturesSources.ts) : en trésorerie, ses seuls paiements.
+    const part = partDansLaPeriode(
+      rattachementsQuiComptent(p, rattachements(p, paiements.get(p.id) ?? [], mode), ventesFacturees.piecesCitees, mode),
+      periodeDebut, periodeFin,
+    )
     // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE COMPTE PLUS : sa facture compte la vente, plus bas. Dit seulement dans la période
     // où la pièce aurait compté, par la même règle de date qu'une autre.
     if (exemplaireDUneFactureSource(p, ventesFacturees)) {
