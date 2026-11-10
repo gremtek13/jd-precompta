@@ -57,7 +57,6 @@ export const MIGRATIONS_DES_FACTURES_REPRISES = [
  * rendue ne doit jamais être celle d'un ordre qu'on n'a pas choisi.
  */
 export function definitionApresLesPreparees(nom: string, preparees: readonly RegExp[]): string {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'gi')
   const exportees = fichiersDuSchema()
   const prepares = fichiersPrepares()
   for (const m of [...preparees].reverse()) {
@@ -65,13 +64,11 @@ export function definitionApresLesPreparees(nom: string, preparees: readonly Reg
     const trouves = prepares.filter((f) => m.test(f.chemin.split('/').pop() as string))
     if (dansLExport.length + trouves.length !== 1) throw new Error(`${m} ne désigne pas exactement une migration.`)
     if (dansLExport.length === 1) continue
-    const texte = trouves[0].texte
-    const positions = [...texte.matchAll(motif)].map((x) => x.index)
-    if (positions.length === 0) continue
-    const debut = positions[positions.length - 1]
-    const fin = texte.indexOf('$$;', debut)
-    if (fin < 0) throw new Error(`Corps de ${nom} introuvable dans ${trouves[0].chemin}.`)
-    return texte.slice(debut, fin)
+    // Le même motif et la même fin de corps que `derniereDefinitionSql` (capitales, `$function$`) : une copie locale
+    // qui cherchait `$$;` en dur est exactement le défaut du 10/11/2026.
+    const definitions = definitionsSql(nom, trouves)
+    if (definitions.length === 0) continue
+    return definitions[definitions.length - 1].definition
   }
   return derniereDefinitionSql(nom)
 }
