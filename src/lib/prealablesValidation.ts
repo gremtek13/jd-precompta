@@ -35,7 +35,10 @@ import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from './correction
 import { defautsDeNumerotation, demandeDeValidation, estFigee, frontiereDeValidation } from './validationExercice'
 import { mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, type ReportDesSoldes } from './reportDesSoldes'
 import { jumellesDuDossier, ventesEnDouble, type FacturePourJumelle, type TransmissionPourJumelle } from './ventesJumelles'
-import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSources } from './facturesSources'
+import {
+  AUCUNE_PIECE_CITEE, exemplairesDesSources, horsDesExemplairesDesSources, marquerLesPiecesCitees, rattachementsQuiComptent,
+  type FacturesSources, type PiecesCitees,
+} from './facturesSources'
 import { memeEcritureQueLeBrouillon } from './ecrituresVentesFacturees'
 import { LIBELLE_ETAT_SOURCE, type EtatsDesVentes, type SourceDeVenteEtat } from './ecrituresVentesFactureesEcran'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
@@ -166,6 +169,10 @@ export interface DonneesDeValidation {
   // attendrait son écriture, sa catégorie ou sa conversion, que rien ne lit. NULLES quand on ne les a pas lues en entier :
   // la validation se suspend, comme sur toute lecture partielle. Sans valeur par défaut.
   facturesSources: FacturesSources | null
+  // Les pièces citées par une facture reprise, lien actif (étape A8c4 ; `VentesFacturees.piecesCitees`) : en trésorerie,
+  // elles ne s'écrivent qu'à leurs paiements — la pièce jamais payée n'a pas d'écriture à attendre, ni d'exercice à
+  // ouvrir par sa date. NULLES quand elles ne sont pas lues en entier : la validation se suspend. Sans valeur par défaut.
+  piecesCitees: PiecesCitees | null
   // LES VENTES FACTURÉES D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF7c), sur la lecture que Clôture fait déjà
   // (lib/ecrituresVentesFactureesLecture.ts) et le brouillon entier : les états de la section « Ventes facturées » de
   // l'onglet Écritures (`etatsDesVentesFacturees` — la composition que la numérotation reçoit, et chaque source à écrire,
@@ -251,11 +258,17 @@ function lignesAJugerDe(n: NumerotationFec): LigneAJuger[] {
 
 // Les dates où une pièce s'écrit, ou s'écrira : en trésorerie, celles de ses paiements et, pour le reste, sa date
 // de facture (lib/rattachement.ts) ; en engagement, sa facture à sa date et chacun de ses règlements à la sienne.
-function datesDesEcrituresAttendues(piece: Piece, paiements: PaiementsDesPieces, modele: ModeleComptable): string[] {
+//
+// LA PIÈCE CITÉE PAR UNE FACTURE REPRISE (étape A8c4 ; lib/facturesSources.ts) : en trésorerie, les dates de ses seuls
+// paiements, comme le brouillon l'écrit — sa date de facture n'attend aucune écriture, le registre de sa facture reprise
+// règle son reste.
+function datesDesEcrituresAttendues(
+  piece: Piece, paiements: PaiementsDesPieces, modele: ModeleComptable, citees: PiecesCitees,
+): string[] {
   const p = paiements.get(piece.id) ?? []
   const dates = modele.mode === 'engagement'
     ? [piece.date_piece, ...p.map((m) => m.date)]
-    : rattachementsTresorerie(piece, p).map((r) => r.date)
+    : rattachementsQuiComptent(piece, rattachementsTresorerie(piece, p), citees, modele.mode).map((r) => r.date)
   return dates.filter((d): d is string => d !== null)
 }
 
@@ -272,7 +285,8 @@ function paiementsDeLaValidation(
 // Ce qui décide de l'ordre des exercices : ce qui est validé, l'ouverture, et ce que chaque année porte.
 export type SuiteDesExercices = Pick<DonneesDeValidation,
   'anneeCourante' | 'modele' | 'anneesValidees' | 'aNouveaux' | 'ecritures' | 'lignes' | 'reglements' | 'encaissees'
-  | 'operationsDeCaisse' | 'piecesValidees' | 'piecesAValider' | 'cotisations' | 'vehicules' | 'immobilisations' | 'etatsDesVentes'>
+  | 'operationsDeCaisse' | 'piecesValidees' | 'piecesAValider' | 'cotisations' | 'vehicules' | 'immobilisations' | 'etatsDesVentes'
+  | 'piecesCitees'>
 
 // Les années qui portent quelque chose : une écriture, un mouvement qui n'est pas ignoré (un virement personnel
 // l'est, et s'écrit), une pièce validée à la date où elle s'écrit, une pièce à valider, une échéance de
@@ -286,7 +300,10 @@ function anneesActives(d: SuiteDesExercices, paiements: PaiementsDesPieces): Set
   const noter = (date: string | null) => { if (date) annees.add(anneeDe(date)) }
   for (const e of d.ecritures) noter(e.date)
   for (const l of d.lignes) if (l.statut !== 'ignoree' || l.prelevement_personnel) noter(l.date)
-  for (const p of d.piecesValidees) for (const date of datesDesEcrituresAttendues(p, paiements, d.modele)) noter(date)
+  // Les pièces citées, non lues : aucune — la date de leur reste ouvre au pire un exercice, que la validation suspend
+  // ensuite faute de les avoir lues (`lecture-partielle`).
+  const citees = d.piecesCitees ?? AUCUNE_PIECE_CITEE
+  for (const p of d.piecesValidees) for (const date of datesDesEcrituresAttendues(p, paiements, d.modele, citees)) noter(date)
   for (const p of d.piecesAValider) noter(p.date_piece)
   for (const c of cotisationsComptees(d.cotisations, d.lignes, d.modele.mode)) noter(c.date)
   for (const v of d.vehicules) if (v.km_professionnel > 0) annees.add(v.annee)
@@ -495,11 +512,12 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // rattache », et ses préalables se tairaient.
   const lectureIncomplete = d.lectureIncomplete
     ?? (d.facturesSources === null ? 'les factures sources de leurs ventes ne sont pas lues en entier' : null)
+    ?? (d.piecesCitees === null ? 'les pièces citées par les factures reprises ne sont pas lues en entier' : null)
     ?? ventesIllisibles(d)
     ?? (d.operationsDeCaisse === null ? 'la caisse du dossier n’est pas lue en entier' : null)
     ?? (d.champsBnc === null ? 'les factures et les cotisations que le FEC d’un BNC en trésorerie lit ne sont pas lues en entier' : null)
     ?? (d.saisies2035 === null ? 'les saisies du cabinet de la 2035 ne sont pas lues en entier' : null)
-  if (lectureIncomplete !== null || d.facturesSources === null || d.etatsDesVentes === null || d.ventesDeLaChecklist === null
+  if (lectureIncomplete !== null || d.facturesSources === null || d.piecesCitees === null || d.etatsDesVentes === null || d.ventesDeLaChecklist === null
     || d.operationsDeCaisse === null || d.champsBnc === null || d.saisies2035 === null) {
     prealables.push({
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
@@ -508,6 +526,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     return { prealables, numerotation: null, report: null, validable: false, fecSansChampsBnc: false }
   }
   const sources = d.facturesSources
+  const piecesCitees = d.piecesCitees
   // Les états de la section « Ventes facturées » et ce que la Vue d'ensemble en dit, lus pour un dossier basculé ; rien
   // pour un autre (`ventesIllisibles` a écarté tout le reste).
   const etatsDesVentes = d.etatsDesVentes.etat === 'lus' ? d.etatsDesVentes : null
@@ -848,7 +867,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // produire y tombera.
   const pieceDeLExercice = (p: Piece) =>
     (ecrituresParPiece.get(p.id) ?? []).some((e) => dansLExercice(e.date))
-    || datesDesEcrituresAttendues(p, paiements, d.modele).some(dansLExercice)
+    || datesDesEcrituresAttendues(p, paiements, d.modele, piecesCitees).some(dansLExercice)
   const mouvementDeLExercice = (l: { date: string }) => dansLExercice(l.date)
 
   // Ce que les exercices déjà validés ont figé ne se compare plus (lib/validationExercice.ts) : une pièce payée dans
@@ -856,7 +875,10 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   const frontiere = frontiereDeValidation(d.anneesValidees)
   // Ni l'écriture, ni la catégorie, ni la conversion, ni la TVA, ni le paiement de l'exemplaire d'une facture source (étape
   // VF6a) : sa facture compte la vente. Son écriture déjà passée, elle, est sans objet — et refusée comme telle.
-  const aComptabiliser = piecesAComptabiliser([...d.piecesValidees], [...d.categories], acquisitions, sources)
+  // La pièce citée par une facture reprise (A8c4) : la cible de la génération, marquée comme l'onglet Écritures la marque.
+  const aComptabiliser = marquerLesPiecesCitees(
+    piecesAComptabiliser([...d.piecesValidees], [...d.categories], acquisitions, sources), piecesCitees,
+  )
   const validesQuiComptent = horsDesExemplairesDesSources(d.piecesValidees, sources)
   const { piecesDesynchronisees } = analyserEcritures(
     [...d.ecritures], aComptabiliser, d.assujettiTva, paiements, d.modele, frontiere, exemplairesDesSources(d.piecesValidees, sources),

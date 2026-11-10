@@ -227,7 +227,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       anneesValidees: [], lectureIncomplete: null, piecesValidees: [], piecesAValider: [], categories: [], immobilisations: [], natures: [],
       ecritures: brouillon, lignes, ventilations: [], reglements: [], encaissees: [], cotisations: [], vehicules: [], emprunts: [],
       aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [], doublonsTexte: [],
-      facturesEmises: [], transmissions: [], facturesSources: ventes.sources,
+      facturesEmises: [], transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
       etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true }),
       ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation([])),
       operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035,
