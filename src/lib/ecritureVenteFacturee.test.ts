@@ -53,7 +53,7 @@ function contexte(numero: 1 | 2, o: Partial<ContexteEcritureVente> = {}): Contex
     anneesValidees: numero === 1 ? [2025] : [],
     factures: j.factures.map((f) => ({
       id: f.id, dossier_id: f.dossier_id, type: f.type, numero: f.numero, source_de_la_vente: f.source_de_la_vente,
-      facture_origine_id: f.facture_origine_id,
+      facture_origine_id: f.facture_origine_id, statut: f.statut,
     })),
     encaissements: j.encaissements.map((e) => ({
       id: e.id, dossier_id: e.dossier_id, facture_id: e.facture_id, date_encaissement: e.date_encaissement, montant: e.montant,

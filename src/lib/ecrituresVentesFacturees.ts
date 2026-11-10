@@ -3,6 +3,7 @@ import { auxiliaireDuTiers, type CompteAuxiliaire, type ModeleComptable } from '
 import {
   centimesExacts, ecartDeFrais, factureSansExemplaire, justifieSonMouvement, type ExemplaireLu,
 } from './encaissementsFactures'
+import { motDuDocument } from './facturesReprises'
 import { formatDate } from './format'
 import { libelleDUneVenteFacturee, libelleDUnMouvementDesVentes, nomDuClientEcrit } from './libellesDesVentes'
 import type { PlanComptable } from './planComptable'
@@ -87,6 +88,18 @@ import {
 // VF4c donnera à la numérotation du FEC (`numeroterFec`) sont celles d'ici : `facture|<facture ou avoir>|<date>`,
 // `encaissement|<encaissement>|<date>`, `mouvement-encaissements|<mouvement>` — une écriture, une date (LPF, art. A47 A-1).
 //
+// UNE FACTURE REPRISE DE L'ANCIEN LOGICIEL (étape A8c2, derrière `FACTURES_IMPORTEES_PREVUES` ; la base depuis la migration
+// `factures_reprises_encaissements`, A8b, préparée) : `ecriture_attendue_vente_facturee` la compte comme une facture validée
+// source, sur la règle du cumul de `calcul_vente_facturee` — ce que ce module fait en lisant `ventesFacturees`, qui la compte
+// le drapeau levé, `reprises` passées avec les sources. Elle n'a ni document (sa créance est dans la reprise) ni exigibilité
+// de sa livraison ou de sa facture sur les débits (l'ancien logiciel les a déclarées) : seules ses PARTS s'écrivent, et
+// l'avoir que l'application émet sur elle. En trésorerie, la TVA d'une part qui n'est pas exigible à son encaissement (un
+// bien, des services sur les débits) solde donc le 411, comme pour une facture de l'application — un 411 que la reprise
+// n'ouvre pas : il viendra d'une balance reprise (A8e). Ce que la base fait là, le module le redit, rien de plus. La pièce
+// d'une écriture cite la facture reprise par son numéro (celui de l'ancien logiciel), et son libellé la dit reprise
+// (`motDuDocument`). Sans ce que sa reprise porte (`reprises`), le module des ventes facturées l'écarte (`reprise_illisible`,
+// un motif du module seul) : elle ne s'écrit pas d'ici, et lib/ecritureVenteFacturee.ts ne prête pas ce refus à la base.
+//
 // CE QUE LA BASE VÉRIFIERA (VF4b, G5) : chaque écriture porte sa SOURCE — `facture_id` (la facture ou l'avoir),
 // `encaissement_id`, ou, pour un mouvement, le seul `ligne_bancaire_id` de ses lignes — et se recompose à l'identique
 // depuis les lignes de la base qu'elle cite : la composition ne dépend que d'elles, du compte de contrepartie et du plan.
@@ -107,7 +120,8 @@ export type FactureDesVentesEcrites = FactureVendue & Pick<FactureEmise, 'tiers_
 
 export interface EntreesEcrituresVentes {
   /** Les lignes que la lecture des ventes facturées a rendues, EN ENTIER (lib/ventesFactureesLecture.ts), et le SIRET figé
-   *  du client de chaque facture. */
+   *  du client de chaque facture ; le drapeau `FACTURES_IMPORTEES_PREVUES` levé, `reprises` (lib/ventesFacturees.ts), sans
+   *  lesquelles une facture reprise est écartée, jamais écrite d'un cumul parti de zéro. */
   sources: Omit<SourcesVentesFacturees, 'factures' | 'acomptes'> & { factures: readonly FactureDesVentesEcrites[] }
   /** Les mouvements que les encaissements citent — d'autres peuvent y être, seuls ceux-là comptent. */
   mouvements: readonly MouvementDesEncaissements[]
@@ -359,7 +373,7 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
     const solde = ecriture({
       source: { genre: 'encaissement', encaissementId: e.id, factureId: f.id }, cle: cleFecEncaissement(e.id, p.date),
       date: p.date, journal: mode === 'tresorerie' ? 'VE' : 'BQ', pieceRef: nommer(f), pieceDate: f.date_emission,
-      libelle: libelleDUneVenteFacturee(`${e.annule_id == null ? 'Encaissement' : 'Contre-passation'}, facture ${nommer(f)}`, f),
+      libelle: libelleDUneVenteFacturee(`${e.annule_id == null ? 'Encaissement' : 'Contre-passation'}, ${motDuDocument(f)} ${nommer(f)}`, f),
       tiers: nomDuClientEcrit(f),
     })
     const exigible = exigiblesALEncaissement.has(`${e.id}|${p.taux}`)

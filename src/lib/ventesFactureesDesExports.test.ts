@@ -152,8 +152,8 @@ describe('factureDeLaLigne — la créance qu’une ligne porte au 411', () => {
   })
 
   it('nomme un document, et dit qu’une ligne porte une source', () => {
-    expect(nomDuDocument({ type: 'facture', numero: 'F2025-0001', id: 'f1' })).toBe('Facture F2025-0001')
-    expect(nomDuDocument({ type: 'avoir', numero: null, id: '0123456789' })).toBe('Avoir 01234567')
+    expect(nomDuDocument({ type: 'facture', numero: 'F2025-0001', id: 'f1', statut: 'validee' })).toBe('Facture F2025-0001')
+    expect(nomDuDocument({ type: 'avoir', numero: null, id: '0123456789', statut: 'validee' })).toBe('Avoir 01234567')
     expect(porteUneSourceDeVente({ facture_id: null, encaissement_id: 'e1' })).toBe(true)
     expect(porteUneSourceDeVente({ facture_id: null, encaissement_id: null })).toBe(false)
   })

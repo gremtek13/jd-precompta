@@ -33,3 +33,15 @@ export function estUneVente(f: AvecUnStatut): boolean {
 export function etatsDesVentes(): string[] {
   return FACTURES_IMPORTEES_PREVUES ? ['validee', 'importee'] : ['validee']
 }
+
+/**
+ * LE MOT QUI NOMME UN DOCUMENT DE VENTE dans un libellé, une pièce ou une carte (étape A8c2) : « facture » ou « avoir » ;
+ * d'un document REPRIS de l'ancien logiciel, le drapeau levé, « facture reprise » ou « avoir repris » — la pièce d'une
+ * écriture, la piste d'audit et la fiche d'un mouvement citent la facture reprise pour ce qu'elle est (son numéro est celui
+ * de l'ancien logiciel, sans exemplaire ni CII de l'application). Le drapeau baissé, le mot d'hier, toujours.
+ */
+export function motDuDocument(f: AvecUnStatut & { readonly type: string }): string {
+  const avoir = f.type === 'avoir'
+  if (!estUneFactureReprise(f)) return avoir ? 'avoir' : 'facture'
+  return avoir ? 'avoir repris' : 'facture reprise'
+}

@@ -11,8 +11,8 @@ import { describe, expect, it } from 'vitest'
 //     de la table des reprises, nommée et comptée ;
 //   - les modules À OUVRIR sont comptés de même, au nombre près : le jour où l'un s'ouvre, il passe d'une liste à l'autre.
 // Que le drapeau baissé ne compte aucune reprise, les tests des modules le jouent (un accesseur sur
-// lib/facturesImportees.ts) : encaissementsDesReprisesJugement.test.ts, ventesFactureesDesReprises.test.ts et
-// ventesFactureesLecture.test.ts.
+// lib/facturesImportees.ts) : encaissementsDesReprisesJugement.test.ts, ventesFactureesDesReprises.test.ts,
+// ventesFactureesLecture.test.ts et, depuis A8c2, ecrituresVentesFactureesDesReprises.test.ts.
 
 const ETAT_VALIDEE = /statut\s*[!=]==?\s*'validee'|'statut',\s*'validee'/g
 const ETAT_IMPORTEE = /'importee'/g
@@ -40,16 +40,26 @@ const OUVERTS: Record<string, Exception> = {
     importee: 1,
     raison: "la requête d'hier, mot pour mot, le drapeau baissé ; et la TVA déclarée des documents repris, le drapeau levé",
   },
+  // Étape A8c2 : les écritures, le FEC, la piste d'audit, le lettrage et la fiche d'un mouvement.
+  'ecrituresVentesFacturees.ts': { validee: 0, importee: 0, raison: '' },
+  'ecritureVenteFacturee.ts': {
+    validee: 1,
+    importee: 0,
+    raison: "l'état d'une ÉCRITURE du brouillon (proposée ou validée) que le retrait lit, jamais celui d'une facture",
+  },
+  'ventesFactureesDesExports.ts': { validee: 0, importee: 0, raison: '' },
+  'mouvementsDesVentes.ts': {
+    validee: 2,
+    importee: 0,
+    raison: "les factures sources que la fiche d'un crédit et ses candidats proposent à l'encaissement : leur reste "
+      + "(`resteAEncaisserVente`), que l'encaissé avant la reprise réduirait, attend A8d — une reprise n'y est pas proposée",
+  },
 }
 
 // Ce qui reste à ouvrir (le découpage d'A8c, HISTORIQUE.md) : le nombre de ses tests d'état à « validee », et pourquoi il
 // attend. Un module qui ne teste pas l'état lit les ventes par un autre (ses reprises viendront de lui).
 const A_OUVRIR: Record<string, { validee: number; raison: string }> = {
   'facturesSources.ts': { validee: 1, raison: "le pont et l'exemplaire d'une facture : la pièce déjà au dossier d'une reprise, A8-Q5" },
-  'mouvementsDesVentes.ts': { validee: 2, raison: 'la fiche d’un crédit : ses gestes sur une facture reprise' },
-  'ecrituresVentesFacturees.ts': { validee: 0, raison: 'la composition des écritures : passe `reprises` à `ventesFacturees`' },
-  'ecritureVenteFacturee.ts': { validee: 1, raison: "l'état d'une écriture (proposée, validée), pas d'une facture" },
-  'ventesFactureesDesExports.ts': { validee: 0, raison: 'le FEC et la piste d’audit, sur la facture et son numéro' },
   'factures.ts': { validee: 1, raison: "`refusAvoir` : l'avoir d'une reprise, ses avoirs repris, la date de reprise" },
   'acomptesDesFactures.ts': { validee: 3, raison: '`refusAvoir`, sa copie ; une facture d’acompte ne se reprend pas' },
   'mentionsFigeesVue.ts': { validee: 0, raison: "l'émetteur de l'avoir d'une reprise, lu sur l'avoir" },
@@ -78,6 +88,8 @@ describe('les lecteurs des factures reprises s’ouvrent nommément', () => {
 
   it('aucun module n’est à la fois ouvert et à ouvrir ; le prédicat vit dans un seul module', () => {
     expect(Object.keys(OUVERTS).filter((m) => m in A_OUVRIR)).toEqual([])
+    // Le découpage d'A8c, au nombre près : sept modules ouverts (trois par A8c, quatre par A8c2), cinq à ouvrir.
+    expect([Object.keys(OUVERTS).length, Object.keys(A_OUVRIR).length]).toEqual([7, 5])
     const predicat = texte('facturesReprises.ts')
     expect(predicat).toMatch(/export function estUneVente\(/)
     expect(predicat).toMatch(/export function estUneFactureReprise\(/)

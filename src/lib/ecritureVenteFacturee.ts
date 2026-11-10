@@ -2,11 +2,12 @@ import { justifieSonMouvement, mouvementLibre, remplirModele, type RefusEncaisse
 import {
   refusCompteDeContrepartie, type EcrituresDesVentesFacturees, type EcritureVenteFacturee, type SourceEcritureVente,
 } from './ecrituresVentesFacturees'
+import { estUneFactureReprise } from './facturesReprises'
 import { anneeDe } from './format'
 import type { PlanComptable } from './planComptable'
 import type { EcritureBrouillon, EncaissementFacture, FactureEmise, LigneBancaire } from './types'
 import { exerciceQuiFige, frontiereDeValidation } from './validationExercice'
-import { LIBELLE_MOTIF_VENTE } from './ventesFacturees'
+import { LIBELLE_MOTIF_VENTE, type VentesFacturees } from './ventesFacturees'
 
 // LES ÉCRITURES D'UNE VENTE FACTURÉE, ENVOYÉES À LA BASE (ligne 28.6, chantier EC-Q3, étape VF4b ; conception :
 // HISTORIQUE.md, « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION », § 5, 6, 7 et 14). Un module PUR — il ne lit
@@ -215,6 +216,18 @@ export const REFUS_GARDE_CONTREPARTIE = [
   },
 ] as const
 
+// Un refus de l'ÉCRAN, pas de la base (étape A8c2) : une facture reprise que la composition écarte faute de ce que sa
+// reprise porte (`reprise_illisible`, un motif du module des ventes facturées SEUL — la base lit `factures_importees`
+// elle-même, et ne l'écarte pas pour cela). Le module ne prête pas à la base un refus qu'elle ne dirait pas : il dit ce qui
+// manque à l'écran. Ce refus ne sort jamais d'elle, et ne se confronte à aucun texte SQL.
+export const REFUS_REPRISE_NON_LUE_ECRITURE = {
+  cle: 'reprise_non_lue',
+  modele: "Ce que la facture reprise % portait encaissé avant la reprise n'est pas lu : ses écritures ne se composent pas d'ici.",
+} as const
+
+/** Un refus d'`ecrire_vente_facturee`, ou celui de l'écran qui ne lit pas la reprise d'une facture reprise. */
+export type CleRefusEcritureVenteOuEcran = CleRefusEcritureVente | typeof REFUS_REPRISE_NON_LUE_ECRITURE.cle
+
 type Liste = readonly { readonly cle: string; readonly modele: string }[]
 
 function refusDe<C extends string>(liste: Liste, cle: C, ...valeurs: string[]): RefusEncaissement<C> {
@@ -225,6 +238,8 @@ function refusDe<C extends string>(liste: Liste, cle: C, ...valeurs: string[]): 
 
 /** Une facture ou un avoir, tel que ces refus le lisent. */
 export type FacturePourEcriture = Pick<FactureEmise, 'id' | 'dossier_id' | 'type' | 'numero' | 'source_de_la_vente' | 'facture_origine_id'>
+  // L'état, tel que la base le porte (« importee » d'une facture reprise, étape A8c2 : `estUneFactureReprise`).
+  & { statut: string }
 
 /** Un encaissement du registre, tel que ces refus le lisent — retirés et contre-passations compris. */
 export type EncaissementPourEcriture = Pick<EncaissementFacture,
@@ -390,13 +405,15 @@ function factureDeLaSource(source: SourceEcritureVente, c: ContexteEcritureVente
  */
 export function refusEcritureVenteFacturee(
   source: SourceEcritureVente, c: ContexteEcritureVente,
-): RefusEncaissement<CleRefusEcritureVente> | null {
+): RefusEncaissement<CleRefusEcritureVenteOuEcran> | null {
   const non = (cle: CleRefusEcritureVente, ...valeurs: string[]) => refusDe(REFUS_ECRITURE_VENTE, cle, ...valeurs)
   if (!c.ventesParLesFactures) return non('dossier_non_bascule')
   const introuvable = refusDeLaSource(source, c, true)
   if (introuvable) return introuvable
   const factureId = factureDeLaSource(source, c)
   const ecartee = factureId == null ? undefined : c.composition.ventes.ecartees.find((x) => x.factureId === factureId)
+  // Une facture reprise dont l'écran n'a pas lu la reprise (étape A8c2) : le refus de l'écran, jamais celui de la base.
+  if (ecartee && repriseNonLue(ecartee, c)) return repriseNonLueDe(ecartee)
   if (ecartee) {
     // Une facture validée porte toujours son numéro ; un `%` nul, `raise` l'écrirait `<NULL>`.
     return non('vente_ecartee', ecartee.numero ?? '<NULL>', LIBELLE_MOTIF_VENTE[ecartee.motif])
@@ -408,11 +425,35 @@ export function refusEcritureVenteFacturee(
   }
   // Le virement mixte (étape VF5h) : la facture d'avant que la composition nomme, comme la base la nomme.
   if (nonEcrite?.motif === 'mouvement_facture_non_source') return non('mouvement_facture_non_source', nonEcrite.facture ?? '<NULL>')
+  // Un mouvement que la composition ne dit « écarté » que par des factures reprises dont la reprise n'est pas lue (étape
+  // A8c2) : la base, qui la lit, en jugerait autrement — le refus de l'écran, la première d'entre elles nommée.
+  if (nonEcrite?.motif === 'mouvement_vente_ecartee' && source.genre === 'mouvement') {
+    const ecarteesDuMouvement = c.encaissements
+      .filter((e) => e.ligne_bancaire_id === source.ligneBancaireId && e.dossier_id === c.dossierId && e.retire_le == null
+        && justifieSonMouvement(e, c.encaissements))
+      .flatMap((e) => c.composition.ventes.ecartees.filter((x) => x.factureId === e.facture_id))
+      .sort((a, b) => ordreC(a.numero ?? '', b.numero ?? '') || ordreC(a.factureId, b.factureId))
+    if (ecarteesDuMouvement.length > 0 && ecarteesDuMouvement.every((x) => repriseNonLue(x, c))) return repriseNonLueDe(ecarteesDuMouvement[0])
+  }
   if (nonEcrite && nonEcrite.motif in MOTIF_VERS_REFUS) return non(MOTIF_VERS_REFUS[nonEcrite.motif as keyof typeof MOTIF_VERS_REFUS])
   // Un mouvement que la composition n'a pas lu : elle ne sait pas ce qu'il écrit, et la base, qui le lit, en jugera.
   if (nonEcrite) return null
   if (ecrituresDeLaSource(c.composition, source, c.anneesValidees).length === 0) return non('rien_a_ecrire')
   return null
+}
+
+// L'écart d'une facture reprise faute de sa reprise lue : le motif que le module des ventes facturées oppose seul.
+function repriseNonLue(ecartee: VentesFacturees['ecartees'][number], c: ContexteEcritureVente): boolean {
+  const facture = c.factures.find((f) => f.id === ecartee.factureId && f.dossier_id === c.dossierId)
+  return facture !== undefined && estUneFactureReprise(facture) && ecartee.motif === 'reprise_illisible'
+}
+
+function repriseNonLueDe(ecartee: VentesFacturees['ecartees'][number]): RefusEncaissement<CleRefusEcritureVenteOuEcran> {
+  return { cle: REFUS_REPRISE_NON_LUE_ECRITURE.cle, message: remplirModele(REFUS_REPRISE_NON_LUE_ECRITURE.modele, [ecartee.numero ?? '<NULL>']) }
+}
+
+function ordreC(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
 }
 
 // Le compte de contrepartie qui écrit un encaissement : le sien, ou, pour une contre-passation sans mouvement, celui de

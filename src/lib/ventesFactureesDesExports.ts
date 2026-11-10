@@ -1,6 +1,7 @@
 import {
   cleFecEncaissement, cleFecFacture, cleFecMouvementEncaissements, memeEcritureQueLeBrouillon, type EcritureVenteFacturee,
 } from './ecrituresVentesFacturees'
+import { motDuDocument } from './facturesReprises'
 import type { EcritureBrouillon, EncaissementFacture, FactureEmise } from './types'
 
 // LES EXPORTS LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE (ligne 28.6, chantier EC-Q3, étape VF4c2 ; conception : HISTORIQUE.md,
@@ -23,10 +24,11 @@ import type { EcritureBrouillon, EncaissementFacture, FactureEmise } from './typ
 // quand même mettrait dans le fichier une écriture qui n'est plus celle que sa source commande, sous la pièce d'une autre.
 
 /** Une facture ou un avoir du dossier, tel que les exports le nomment. Son SIRET figé dit si son client est une entreprise
- *  (`nomDuClientEcrit`, lib/libellesDesVentes.ts) : la piste d'audit ne nomme que celui-là (JJ1Q1-Q1). */
+ *  (`nomDuClientEcrit`, lib/libellesDesVentes.ts) : la piste d'audit ne nomme que celui-là (JJ1Q1-Q1). Son état dit s'il
+ *  est repris de l'ancien logiciel (« importee », étape A8c2) : la pièce le cite alors pour ce qu'il est (`nomDuDocument`). */
 export type FactureDesExports = Pick<FactureEmise,
   'id' | 'dossier_id' | 'type' | 'numero' | 'tiers_nom' | 'tiers_siret' | 'date_emission' | 'montant_ttc' | 'facture_origine_id'
-  | 'source_de_la_vente'>
+  | 'source_de_la_vente'> & { statut: string }
 
 /** Un encaissement du registre (contre-passations comprises), tel que les exports le nomment. */
 export type EncaissementDesExports = Pick<EncaissementFacture,
@@ -120,7 +122,13 @@ export function factureDeLaLigne(b: Pick<EcritureBrouillon, 'facture_id' | 'enca
   return null
 }
 
-/** Le nom d'une facture ou d'un avoir, en clair : « la facture F2025-0001 », « l'avoir A2025-0002 ». */
-export function nomDuDocument(f: Pick<FactureDesExports, 'type' | 'numero' | 'id'>): string {
-  return `${f.type === 'avoir' ? 'Avoir' : 'Facture'} ${f.numero ?? f.id.slice(0, 8)}`
+/**
+ * Le nom d'une facture ou d'un avoir, en clair : « Facture F2025-0001 », « Avoir A2025-0002 » ; d'un document repris de
+ * l'ancien logiciel, le drapeau `FACTURES_IMPORTEES_PREVUES` levé, « Facture reprise FA-118 », « Avoir repris AV-7 »
+ * (étape A8c2) : la pièce que la piste d'audit et le lettrage citent est la facture reprise, sous le numéro de l'ancien
+ * logiciel — jamais le nom de son client, que seule la règle de FEC22-Q7 écrit (lib/libellesDesVentes.ts).
+ */
+export function nomDuDocument(f: Pick<FactureDesExports, 'type' | 'numero' | 'id' | 'statut'>): string {
+  const mot = motDuDocument(f)
+  return `${mot.charAt(0).toUpperCase()}${mot.slice(1)} ${f.numero ?? f.id.slice(0, 8)}`
 }
