@@ -50111,3 +50111,34 @@ recouvrement et jugement, confronté au texte et aux réponses de la réplique (
 derrière `NUMEROTATION_CONTINUE_PREVUE`, baissé. Hors d'A9a, déjà en faute sur la base d'aujourd'hui :
 `validationExercice.sql` 141 (46 déclencheurs attendus, 50 lus) et `caisse.sql` 289b. Restent A9b (la carte du cabinet),
 puis A8b.
+
+### 10/11/2026 — INAL1 ET INAL2 : LA PIÈCE FIGÉE DANS LE STOCKAGE ET L'EMPREINTE EN FORME 2 (PRÉPARÉES, PAS APPLIQUÉES)
+
+Agent architecte, sur INAL-Q5 et INAL-Q1 à leur recommandation ; en production, des SELECT seulement : 188 migrations
+(`b619c882…`), neuf familles égales à la réplique, 0 exercice validé, 77 pièces dont 33 sans `storage_hash`, onze policies
+sur `storage.objects` (`f0b1080f…`). **Un constat qui corrige la conception** : la suppression d'un dossier vide le
+stockage AVANT sa ligne (`supprimerDossierDefinitivement`), et non après — sans la ligne, `admin_du_dossier` ne laisse au
+chef ni lire ni supprimer un fichier du dossier. **INAL1** (`piece_figee_dans_le_stockage`, 20261110120000, `878604d7…`,
+15 101 octets, à COLLER : « delete » est dans le nom de la policy, aucun retrait) : `fichier_fige(chemin)`, `security
+definer`, NULLE pour qui n'administre pas le dossier du chemin ; vraie pour le fichier ou la version lisible d'une pièce que
+`garder_piece_validee` fige (une écriture validée la cite, ou son bien) ou que `garder_source_citee` retient (preuve,
+dossier permanent), et pour un document cité ; cherchée dans toutes les lignes (trois index). `pieces_storage_delete` :
+son prédicat d'hier et `not fichier_fige(name)`, à `authenticated` (ALTER POLICY, rien retiré). L'application suit :
+un second passage, après la ligne du dossier, reprend les fichiers que plus rien ne fige — le super-administrateur les
+retire, un chef qui ne l'est pas ne les voit plus et le bilan les compte (INAL12-Q1). **INAL2**
+(`empreinte_des_exercices_forme_2`, 20261110120100, `d4d613ad…`, 53 833 octets, par l'OUTIL) : `forme_empreinte` (1 par
+défaut : une ligne d'avant, ou restaurée d'une sauvegarde d'avant) ; `empreinte_exercice_forme_2`, le SHA-256 d'une
+étiquette, de l'en-tête (dossier, exercice, bornes, instant et auteur, mode, comptes, totaux), de la forme 1 inchangée,
+des pièces citées (identifiant, chemin, SHA-256, version lisible) et de la 2035 ; `valider_exercice` au caractère près
+hors de trois fragments ; `verifier_exercice_valide` par forme, une forme inconnue fausse. Hors d'elle : l'exemplaire
+d'une facture source, qu'une première désignation peut rejoindre après la validation (INAL12-Q3). **Les preuves**, sur
+une copie de r187 munie de la 188ᵉ (PostgreSQL 17, port 54521 ; `proprietaire` prend, le temps de la transaction,
+l'appartenance à `supabase_storage_admin` que supautils donne à `postgres`) : `pieceFigeeDansLeStockage.sql` (réplique
+seulement) 28 justes, 9 mutations sur 9 ; `empreinteDesExercices.sql` 26 justes, 8 sur 8 ; `rls.sql` 129 invariants, 0
+en faute, 94 mutations sur 94 (bloc PF ; 125/0/92 avant) ; `validationExercice.sql` 245 justes avant et après, son 141
+CORRIGÉ (cinquante déclencheurs : la trace, les situations publiées, les paramètres des cotisations, les saisies de la
+2035, du 07/11) ; tous les essais rejoués avant et après : 90 sur 93 égaux, les trois autres les deux neufs et `rls.sql`,
+après deux lectures du catalogue qui admettent `fichier_fige` à son empreinte (`dossierPermanent` 176,
+`exemplairesDesFactures` 448) ; `restauration.sql` IDENTIQUE avec un exercice de forme 2 ; les retours rendent la
+signature et les policies du stockage de la 188ᵉ, puis l'aller les rend de nouveau ; cinq refus des gardes ; cinq essais
+SÛRS au banc du leurre. Restent INAL12-Q1 à Q3, puis l'application (indépendantes par leurs gardes ; éprouvées INAL1 puis INAL2).

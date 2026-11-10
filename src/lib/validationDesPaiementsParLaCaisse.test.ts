@@ -123,9 +123,14 @@ describe('le filet reprend la validation de FEC22b, et n’y ajoute qu’un refu
     expect(messagesSql(posee).toSpliced(i, 1)).toEqual(messagesSql(fec))
     expect(codesSql(posee)[i]).toBe('23514')
     expect(codesSql(posee).toSpliced(i, 1)).toEqual(codesSql(fec))
-    // Dit une fois, dans ce texte, et nulle part ailleurs dans le schéma ni les migrations préparées.
+    // Dit une fois, dans ce texte, et nulle part ailleurs dans le schéma ni les migrations préparées — hors d'une migration
+    // qui reprend `valider_exercice` en entier, et le recopie donc avec elle (la forme 2 de l'empreinte, INAL2,
+    // `empreinte_des_exercices_forme_2`, préparée le 10/11/2026) : seul compte ce qui est dit hors d'une telle définition.
+    const horsDeLaValidation = (texte: string) =>
+      [...texte.matchAll(motifDe('valider_exercice'))].reverse()
+        .reduce((reste, m) => reste.slice(0, m.index) + reste.slice(texte.indexOf('$$;', m.index)), texte)
     const ailleurs = [...fichiersDuSchema(), ...fichiersPrepares()].filter((f) => f.chemin !== FILET().chemin)
-      .filter((f) => f.texte.includes('sans sa contrepartie entière au compte de la caisse'))
+      .filter((f) => horsDeLaValidation(f.texte).includes('sans sa contrepartie entière au compte de la caisse'))
     expect(ailleurs.map((f) => f.chemin)).toEqual([])
   })
 
