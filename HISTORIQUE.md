@@ -50290,3 +50290,21 @@ textes) ; les motifs ont pris `i`, les textes passent par `indiceSql`, `dernierI
 Une exception motivée (`schema.test.ts`, 1 : l'assertion en capitales), planchers de 600 fichiers et de 120 motifs
 conformes (721 et 160 mesurés). **Éprouvé** : des formes plantées en mémoire, et 37 mutations tuées sur 37 (trois
 survivantes du premier jeu, des assertions retirées, jugent désormais des fonctions pures plantées à leur tour).
+
+### 10/11/2026 — A8C2 : LES ÉCRITURES, LE FEC ET LES MOUVEMENTS OUVERTS AUX FACTURES REPRISES, DERRIÈRE LEUR DRAPEAU (LIGNE 51.5)
+
+(Agent architecte ; aucune migration, aucune écriture en production.) Second sous-lot d'A8c, derrière `FACTURES_IMPORTEES_PREVUES`
+(baissé). `ecrituresVentesFacturees.ts` composait déjà une reprise comme `ecriture_attendue_vente_facturee` d'A8b dès qu'on lui
+passe `reprises` (la règle vient de `ventesFacturees`, ouvert par A8c) : ses seules parts, ni document ni exigibilité d'avant la
+reprise — la TVA d'un bien ou des débits solde donc le 411, que la balance reprise ouvrira (A8e) —, l'avoir de l'application à sa
+date ; le module le dit et nomme l'encaissement « Encaissement, facture reprise FA-… ». Le mot vit dans `motDuDocument`
+(lib/facturesReprises.ts), que `nomDuDocument` (piste d'audit, lettrage ; `FactureDesExports` porte désormais `statut`, que
+`lettragesLecture.ts` lit) et la carte d'un mouvement (`EncaissementPorte.document`) partagent. `ecritureVenteFacturee.ts` : une
+reprise écartée faute de sa reprise lue (`reprise_illisible`, un motif du module seul) reçoit un refus de l'ÉCRAN,
+`REFUS_REPRISE_NON_LUE_ECRITURE`, jamais `vente_ecartee` ni `mouvement_vente_ecartee` prêtés à la base. `mouvementsDesVentes.ts`
+lisait déjà la reprise comme source (`source_de_la_vente`) ; ses deux tests d'état à « validee » restent : son reste à encaisser
+attend A8d. Le garde de source compte sept modules ouverts, cinq à ouvrir. Vérifié : `tsc -b`, lint, `--changed` (14 913 tests),
+les 84 fichiers des essais et des préparées ; `ecrituresVentesFactureesDesReprises.test.ts` joue les deux états et confronte le
+texte d'après les préparées ; trois mutations virent au rouge. Restent : passer `reprises` à la composition depuis l'écran
+(`compositionDesSources`, la lecture des sources des écritures), puis `facturesSources.ts`, `refusAvoir` et sa copie,
+`mentionsFigeesVue`, le CII de l'avoir, `resteAEncaisser` et la fenêtre (A8d).
