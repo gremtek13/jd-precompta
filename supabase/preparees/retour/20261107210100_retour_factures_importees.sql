@@ -1,4 +1,5 @@
--- RETOUR ARRIÈRE de 20261107210000_factures_importees (ligne 51.5, étape A8a : les factures reprises de l'ancien logiciel
+-- RETOUR ARRIÈRE de factures_importees (supabase/schema/20261110143020_factures_importees.sql, en production depuis le
+-- 10/11/2026 ; ligne 51.5, étape A8a : les factures reprises de l'ancien logiciel
 -- d'un client). PRÉPARÉ le 07/11/2026, à ne coller que sur décision du cabinet : il DÉTRUIT — les deux tables
 -- (`imports_factures`, `factures_importees`), la colonne `dossiers.reprise_des_factures_le` (une date de reprise posée se
 -- perd : la relever d'abord, `select id, reprise_des_factures_le from dossiers where reprise_des_factures_le is not null`),

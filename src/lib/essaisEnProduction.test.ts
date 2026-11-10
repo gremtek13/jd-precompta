@@ -369,7 +369,11 @@ describe('les essais de la base, rejoués en production', () => {
     // ordre) ; SÛR au banc, sur une copie de la réplique au niveau de la production.
     // Vingt-quatre le 10/11/2026 : `pieceDUneFactureReprise` (A8-Q5, `piece_d_une_facture_reprise`) entré dans la famille
     // « apres », après sa migration préparée, par-dessus celles d'A8a, A9a et A8b.
-    expect(cas.length).toBe(24)
+    // Dix-neuf le même jour, le jour J : les sept migrations en production (INAL1, INAL2, PC4, A8a, A9a, A8b, A8-Q5) ;
+    // `facturesImportees`, `reglerLePlanDuDossier`, `numerotationContinue`, `encaissementsDesReprises` et
+    // `pieceDUneFactureReprise` sortis (ils ne cherchent aucun semis et se jouent comme des essais de la production) ;
+    // `empreinteDesExercices` quitte la famille « apres » et reste un cas particulier, joué par le super-utilisateur.
+    expect(cas.length).toBe(19)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

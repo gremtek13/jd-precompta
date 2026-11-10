@@ -6,6 +6,6 @@ export function exerciceValide(annee: number, autres: Partial<ExerciceValide> = 
   return {
     dossier_id: 'd1', annee, valide_le: `${annee + 1}-03-01T10:00:00Z`, valide_par: 'u-chef', mode_comptable: 'tresorerie',
     nb_lignes: 0, nb_ecritures: 0, total_debit: 0, total_credit: 0, empreinte_precedente: null,
-    empreinte: 'empreinte-de-test', declaration: null, ...autres,
+    empreinte: 'empreinte-de-test', forme_empreinte: 1, declaration: null, ...autres,
   }
 }

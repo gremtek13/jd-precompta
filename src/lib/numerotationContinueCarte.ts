@@ -2,7 +2,7 @@
 // (`etat_de_la_numerotation`, `continuite_des_series`, `modeles_numerotation`, jugé forme par forme), ce qu'elle dit de chaque
 // série, et les refus qu'elle redit AVANT le clic, aux mots de la base, sur la saisie TELLE QU'ELLE PART — jamais une règle
 // recopiée d'ailleurs que de `src/lib/numerotationContinue.ts` et du texte de `fixer_modele_numerotation`,
-// `confirmer_fin_de_serie` et `lever_trous_de_numerotation` (migration préparée 20261110100000_numerotation_continue.sql, A9a ;
+// `confirmer_fin_de_serie` et `lever_trous_de_numerotation` (migration 20261110143033_numerotation_continue.sql de l'export, A9a ;
 // numerotationContinueCarte.test.ts les confronte à ce texte). La base reste seule juge : ce module ne fait que dire plus tôt
 // ce qu'elle dirait. Pur : il n'importe jamais `supabase.ts`. Le drapeau qui garde la carte : `NUMEROTATION_CONTINUE_PREVUE`.
 

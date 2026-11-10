@@ -97,6 +97,9 @@ export interface Dossier {
   // sauvegarde faite avant la migration ne la porte pas, et se restaure pourtant — la ligne part sans elle, la base la pose
   // nulle (`lotsDEcriture`, sauvegardeVenteFacturee.test.ts) ; la carte lit une colonne absente sans la croire nulle.
   ventes_par_les_factures_depuis: string | null
+  // La date de reprise des factures de l'ancien logiciel (A8a, en base depuis le 10/11/2026) : écrite par
+  // `fixer_reprise_des_factures` seule ; nulle tant que rien n'est repris.
+  reprise_des_factures_le: string | null
 }
 
 export interface Categorie {
@@ -984,6 +987,9 @@ export interface ExerciceValide {
   total_credit: number
   empreinte_precedente: string | null
   empreinte: string
+  // La forme de l'empreinte (INAL2, en base depuis le 10/11/2026) : 1, une validation d'avant ou restaurée d'une sauvegarde
+  // d'avant ; 2, qui scelle aussi les pièces citées et la 2035 (`empreinte_exercice_forme_2`).
+  forme_empreinte: 1 | 2
   declaration: Record<string, unknown> | null
 }
 
@@ -1106,6 +1112,11 @@ export interface DossierAssignation {
 }
 
 export type StatutFacture = 'brouillon' | 'validee'
+// La colonne porte un troisième état depuis le 10/11/2026 (A8a) : « importee », une facture reprise de l'ancien logiciel,
+// source de sa vente, jamais validée ni émise par l'application. `FactureEmise` garde les deux états qu'un écran de la
+// facture lit et que les copies du CII et du message CDAR (Edge Functions comprises) émettent ; un lecteur qui compte une
+// reprise la reconnaît par lib/facturesReprises.ts, sur ce type-ci.
+export type StatutFactureEnBase = StatutFacture | 'importee'
 export type TypeFacture = 'facture' | 'avoir'
 // Le client d'une facture (ligne 28.5, étape c) : il décide du chemin qu'elle prend avec la facturation
 // électronique — un assujetti établi en France la reçoit par sa plateforme, un organisme public par Chorus Pro,
@@ -1274,6 +1285,80 @@ export type MentionsFacture = Pick<
 // client (plateforme-agreee, « déposer ») ou par Super PDP (superpdp-emit). Une seule ACTIVE par facture, tous canaux
 // confondus (envoi, depose, accepte) ; les échecs et les rejets s'accumulent. Le cabinet la lit, seules les fonctions
 // l'écrivent. `envoi` : partie sans issue connue — elle ne repart pas tant que rien ne l'a tranchée.
+// LES FACTURES REPRISES DE L'ANCIEN LOGICIEL ET LA NUMÉROTATION QUI CONTINUE (ligne 51.5 : A8a, A9a, A8b, A8-Q5 ; en base
+// depuis le 10/11/2026). Le lot d'un import (`importer_factures`, le cabinet du dossier seul ; il ne se retire qu'en entier).
+export interface ImportFactures {
+  id: string
+  dossier_id: string
+  format: 'facturx' | 'cii' | 'ubl' | 'pdf' | 'csv'
+  fichier_sha256: string | null
+  fichier_taille: number | null
+  fichier_chemin: string | null
+  nombre_factures: number
+  importe_par: string | null
+  importe_le: string
+}
+
+// Une facture reprise : sa ligne de `factures_emises` (statut « importee »), et ce que l'ancien logiciel en savait. Clé : la
+// facture. Lue par le cabinet du dossier seul (A8C-Q1).
+export interface FactureImportee {
+  facture_id: string
+  dossier_id: string
+  import_id: string
+  rang: number
+  ligne_csv: number | null
+  fichier_sha256: string | null
+  fichier_chemin: string | null
+  encaisse_avant_reprise: number
+  encaisse_par_taux: Record<string, unknown>
+  encaisse_au_prorata: boolean
+  transmise_par: 'papier' | 'pdf' | 'plateforme' | 'inconnu'
+  // Non nul si et seulement si `transmise_par` vaut « plateforme ».
+  plateforme_nom: string | null
+  origine_id: string | null
+}
+
+// Le modèle de numéro d'une série (A9a) : posé par le chef (`fixer_modele_numerotation`), jamais modifié.
+export interface ModeleNumerotation {
+  id: string
+  dossier_id: string
+  nature: 'facture' | 'avoir'
+  emetteur: 'client' | 'mandataire'
+  modele: string
+  annuel: boolean
+  depuis: number
+  premier_numero: number
+  pose_par: string | null
+  pose_le: string
+}
+
+// Une parole du cabinet sur une suite reprise (A9a) : la fin confirmée, ou des trous levés, avec leur motif ; jamais retirée.
+export interface ContinuiteDesSeries {
+  id: string
+  dossier_id: string
+  modele: string
+  annuel: boolean
+  annee: number
+  geste: 'fin' | 'trous'
+  premier: number
+  dernier: number
+  motif: string
+  pose_par: string | null
+  pose_le: string
+}
+
+// La pièce qu'une facture reprise cite (A8-Q5) : un lien, retiré par une date, jamais effacé.
+export interface PieceDUneFactureReprise {
+  id: string
+  dossier_id: string
+  facture_id: string
+  piece_id: string
+  cite_par: string | null
+  cite_le: string
+  retire_par: string | null
+  retire_le: string | null
+}
+
 export type CanalTransmission = 'plateforme' | 'superpdp'
 export type EtatTransmission = 'envoi' | 'echec' | 'depose' | 'accepte' | 'rejete'
 export interface TransmissionFacture {

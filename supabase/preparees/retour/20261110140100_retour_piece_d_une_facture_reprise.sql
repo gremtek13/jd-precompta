@@ -1,5 +1,5 @@
--- LE RETOUR DE « LA PIÈCE D'UNE FACTURE REPRISE » (20261110140000_piece_d_une_facture_reprise, A8-Q5), PRÉPARÉ le
--- 10/11/2026. Il retire ce que la migration a posé — les six déclencheurs, les cinq fonctions, la table des liens et ses
+-- LE RETOUR DE « LA PIÈCE D'UNE FACTURE REPRISE » (supabase/schema/20261110143243_piece_d_une_facture_reprise.sql, A8-Q5,
+-- en production depuis le 10/11/2026), PRÉPARÉ le 10/11/2026. Il retire ce que la migration a posé — les six déclencheurs, les cinq fonctions, la table des liens et ses
 -- policies — et rend la base d'avant, à la signature près (éprouvé sur la réplique : supabase/essais/signature.sql égal à
 -- celle d'avant la migration). DESTRUCTIF : il supprime une table et des fonctions ; il se présente au cabinet et se colle
 -- (l'outil retient ses `drop`). Il se REFUSE tant qu'une ligne vit dans la table des liens, active ou retirée : il

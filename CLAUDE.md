@@ -666,11 +666,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     MIGRATION DE C6 ET A7B-Q1 À Q3 » ; la liste des clients sans activité depuis trois ans et le devis qui cite son
     contact, en production depuis le 07/11/2026 (`DEVIS_CITENT_UN_CONTACT` levé ; DEVC-Q1) ; la suite du premier
     groupe, dont A8, les factures reprises, et A9, la numérotation (MEG1-Q5 : deux séries par dossier, celle du client
-    et celle du mandataire, choisie selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est
-    écrit), reconçues le 06/11/2026,
-    A8-Q1 à Q6 tranchées, A8a (la base) préparée le 07/11/2026, à coller → « A8 ET A9, LES FACTURES REPRISES ET LA
-    NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) » ; A8-Q5 préparée le
-    10/11/2026 → « A8-Q5 : LA PIÈCE D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ».
+    et celle du mandataire, choisie selon qui valide, et la série de l'ancien logiciel qui continue), reconçues le
+    06/11/2026, A8-Q1 à Q6 tranchées ; leur base — A8a, A9a, A8b, A8-Q5 — en production depuis le 10/11/2026, les
+    lecteurs et le plan de sauvegarde ouverts (`FACTURES_IMPORTEES_PREVUES`, `NUMEROTATION_CONTINUE_PREVUE`,
+    `PIECE_D_UNE_FACTURE_REPRISE_PREVUE` levés), la carte de la numérotation (A9b) derrière
+    `CARTE_DE_LA_NUMEROTATION_OFFERTE`, baissé jusqu'à la décision du cabinet ; restent l'écran d'import (A8d) et la
+    suite → « A8 ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE
+    (PRÉPARÉE, PAS APPLIQUÉE) », « A8-Q5 : LA PIÈCE D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) », « LE JOUR J DU 10/11/2026 : SEPT MIGRATIONS EN PRODUCTION (INAL1, INAL2, PC4, A8A, A9A, A8B, A8-Q5) ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
   sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU
@@ -680,10 +682,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   libellé et le préfixe de chaque rôle (§ 3.9), le lettrage, l'auxiliaire du FEC et le sens des comptes de tiers, le FEC
   du plan par défaut identique à l'octet (`fecAuPlan.test.ts`) ; PC3b le 07/11/2026, l'assistant lit le plan du dossier
   (`plan_du_dossier` au jeton de l'appelant ; `comptesEnDur.test.ts` : plus aucun emploi hors du catalogue ; les gardes
-  de copie sous deux plans) → « L'ASSISTANT LIT LE PLAN DU DOSSIER (LIGNE 43, PC3B) » ; restent PC4, la fonction qui
-  réglera le plan, qui remplace la contrainte `lettrages_manuels_compte` par le plan du dossier et déplace le compte des
-  notes de frais du dirigeant dans la même transaction (PC3-Q1) ; PC6 range les comptes ouverts par une balance
-  reprise ; puis la suite jusqu'à PC9 → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
+  de copie sous deux plans) → « L'ASSISTANT LIT LE PLAN DU DOSSIER (LIGNE 43, PC3B) » ; PC4, en production depuis le
+  10/11/2026 : `regler_plan_du_dossier` règle le plan entier et déplace le dirigeant avec son rôle (PC3-Q1), les deux
+  contraintes devenues des contrôles contre le plan → « PC4 : RÉGLER LE PLAN D'UN DOSSIER, EN BASE (PRÉPARÉE, PAS
+  APPLIQUÉE) » ; restent PC6, qui range les comptes ouverts par une balance reprise, puis la suite jusqu'à PC9 → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
   PLAN ».
 
 ## Feuille de route — page Notion à tenir à jour
@@ -977,7 +979,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   garde l'ancien numéro ; le 468 se traitera comme le 467 (Q12) → « LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION ». **Le
   plan d'un dossier** : un rôle sans ligne prend le défaut du catalogue (`roles_comptables`), trente-deux rôles depuis
   VF4a, dont les six de la vente facturée, au nom du plan comptable général dans `LIBELLES_COMPTES` (le 706000 et le
-  627000 depuis VF4c2, VF4A-Q1 ; les quatre autres depuis VF4c3, VF4C2-Q1) ; aucune policy d'écriture avant PC4 ;
+  627000 depuis VF4c2, VF4A-Q1 ; les quatre autres depuis VF4c3, VF4C2-Q1) ; écrit par `regler_plan_du_dossier` seule depuis PC4 (10/11/2026), la restauration exceptée ;
   catalogue hors sauvegarde (`PARENTS_HORS_PLAN_VOULUS`) ; la base et l'application le lisent — plan absent ou
   incomplet, aucun onglet ne se monte —, jamais un compte de rôle en dur (`comptesEnDur.test.ts`,
   `compositionsAuPlan.test.ts`) → « L'APPLICATION LIT LE PLAN ».
@@ -1008,7 +1010,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`lignes_bancaires_un_seul_rapprochement`) → « LA BANQUE FAIT FOI, MAIS SOUS UN SEUIL ». **Un exercice validé se
   fige** par DÉCLENCHEURS, frontière au 31 décembre, deux sorties seulement (suppression du dossier, restauration) ; une
   échéance de cotisation se fige à la date qui la compte ; préalables dits avant le clic (`prealablesValidation.ts`)
-  → « UN EXERCICE VALIDÉ SE FIGE EN BASE ».
+  → « UN EXERCICE VALIDÉ SE FIGE EN BASE » ; depuis le 10/11/2026, son empreinte en forme 2 scelle aussi les pièces
+  citées et la 2035, et le stockage garde le fichier d'une pièce figée (`fichier_fige`) → « INAL1 ET INAL2 : LA PIÈCE
+  FIGÉE DANS LE STOCKAGE ET L'EMPREINTE EN FORME 2 (PRÉPARÉES, PAS APPLIQUÉES) ».
 
 ### Import, OCR, classification
 
@@ -1052,8 +1056,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ### Facturation électronique
 
-- **La racine du mandataire (G1.45)** : deux séries par dossier, choisie selon QUI valide (MEG1-Q5) ; rien n'est écrit,
-  la série du mandataire vient avec A9 ou avant une facture réelle validée par le cabinet.
+- **La racine du mandataire (G1.45)** : deux séries par dossier, choisie selon QUI valide (MEG1-Q5), en base depuis le
+  10/11/2026 (A9a) : le cabinet numérote en M<année>-, ses avoirs en MA<année>-, le client dans sa série ; deux séries
+  ne produisent jamais un même numéro (`modeles_se_recouvrent`).
 - **Pièges EN 16931 / Super PDP** : TVA sur chaque ligne, unité `C62`, n° de TVA du vendeur, `is_valid=false` sur des
   avertissements, SIRET = l'entreprise authentifiée → « Pièges EN16931/Super PDP ». **Le statut de TVA du dossier**
   décide de la mention et du motif → « LE STATUT DE TVA DU DOSSIER ». En franchise ou exonéré, le numéro de TVA tient à

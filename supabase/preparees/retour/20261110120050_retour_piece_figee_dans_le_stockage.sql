@@ -1,4 +1,5 @@
--- LE RETOUR DE `piece_figee_dans_le_stockage` (supabase/preparees/20261110120000, INAL1 ; PRÉPARÉ, comme elle ; sa version
+-- LE RETOUR DE `piece_figee_dans_le_stockage` (supabase/schema/20261110125435, INAL1, en production depuis le 10/11/2026 ;
+-- le retour reste PRÉPARÉ ; sa version
 -- est celle de la migration plus 50, la migration plus 100 étant la version préparée d'INAL2) : il rend à
 -- `pieces_storage_delete` son prédicat et son rôle d'hier (`public`), puis retire `fichier_fige` et ses trois index —
 -- aucune donnée. C'est un ÉLARGISSEMENT : le fichier d'une pièce figée se supprime de nouveau par l'API, pour qui

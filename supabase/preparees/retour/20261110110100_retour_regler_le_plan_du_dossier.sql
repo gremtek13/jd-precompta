@@ -1,5 +1,5 @@
--- LE RETOUR DE `regler_le_plan_du_dossier` (supabase/preparees/20261110110000, ligne 43, étape PC4 ; PRÉPARÉ, comme
--- elle) : la base d'avant, au caractère près des corps, des contraintes et des commentaires qu'elle avait. DESTRUCTIF (une
+-- LE RETOUR DE `regler_le_plan_du_dossier` (supabase/schema/20261110143003, ligne 43, étape PC4, en production depuis le
+-- 10/11/2026 ; le retour reste PRÉPARÉ) : la base d'avant, au caractère près des corps, des contraintes et des commentaires qu'elle avait. DESTRUCTIF (une
 -- fonction, quatre déclencheurs et leurs fonctions, une policy retirés) : il se COLLE dans l'éditeur SQL, dans une
 -- transaction, sur l'accord explicite du cabinet. Il se refuse dès qu'un dossier règle un rôle de son plan : les deux
 -- contraintes en dur reviendraient sur des comptes qu'elles ignorent, et un plan réglé, puis écrit, ne se défait plus

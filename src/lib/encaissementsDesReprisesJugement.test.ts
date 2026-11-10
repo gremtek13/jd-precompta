@@ -6,7 +6,7 @@ import {
   type AvoirRepris, type ContexteFacture, type ContexteVente, type FacturePourEncaissement, type LigneDeFacture,
   type RepriseDeLaFacture, type SaisieEncaissement,
 } from './encaissementsFactures'
-import { MIGRATIONS_DES_FACTURES_REPRISES, definitionApresLesPreparees } from '../test/schema'
+import { derniereDefinitionSql } from '../test/schema'
 import { messagesSql } from '../test/raiseSql'
 
 // LES ENCAISSEMENTS D'UNE FACTURE REPRISE, JUGÉS AVANT LE CLIC (étape A8c ; la migration `factures_reprises_encaissements`,
@@ -89,7 +89,7 @@ describe('drapeau levé : les refus et les plafonds d’une facture reprise, sou
 
   it('les refus en vigueur après les trois migrations : ceux d’hier, les quatre neufs à leur rang', () => {
     expect(refusEnregistrementExportes()).toBe(REFUS_ENREGISTREMENT_DES_REPRISES)
-    const sql = definitionApresLesPreparees('enregistrer_encaissement', MIGRATIONS_DES_FACTURES_REPRISES)
+    const sql = derniereDefinitionSql('enregistrer_encaissement')
     expect(REFUS_ENREGISTREMENT_DES_REPRISES.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(REFUS_ENREGISTREMENT_DES_REPRISES).toHaveLength(REFUS_ENREGISTREMENT.length + REFUS_ENCAISSEMENT_D_UNE_REPRISE.length)
   })

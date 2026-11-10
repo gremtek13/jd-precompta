@@ -50315,3 +50315,23 @@ les 84 fichiers des essais et des préparées ; `ecrituresVentesFactureesDesRepr
 texte d'après les préparées ; trois mutations virent au rouge. Restent : passer `reprises` à la composition depuis l'écran
 (`compositionDesSources`, la lecture des sources des écritures), puis `facturesSources.ts`, `refusAvoir` et sa copie,
 `mentionsFigeesVue`, le CII de l'avoir, `resteAEncaisser` et la fenêtre (A8d).
+
+### 10/11/2026 — LE JOUR J DU 10/11/2026 : SEPT MIGRATIONS EN PRODUCTION (INAL1, INAL2, PC4, A8A, A9A, A8B, A8-Q5)
+
+(Agent architecte ; en production, des SELECT seulement.) L'historique compte 195 migrations ; chaque texte (statements
+joints, retours chariot ôtés) a l'empreinte du fichier préparé, passé à l'export sous sa version, texte inchangé :
+INAL2 `empreinte_des_exercices_forme_2` 20261110124917 (`d4d613ad…`) et A8-Q5 `piece_d_une_facture_reprise`
+20261110143243 (`e2e72e72…`) par l'OUTIL ; collées par le cabinet, INAL1 `piece_figee_dans_le_stockage` 20261110125435
+(`878604d7…`), PC4 `regler_le_plan_du_dossier` 20261110143003 (`ee1ba91c…`), A8a `factures_importees` 20261110143020
+(`bb22d5bc…`), A9a `numerotation_continue` 20261110143033 (`3a64e2c5…`), A8b `factures_reprises_encaissements`
+20261110143044 (`90adcfdb…`). Les retours restent préparés, leur en-tête au nouveau chemin. Levés : `FACTURES_IMPORTEES_PREVUES`,
+`NUMEROTATION_CONTINUE_PREVUE`, `PIECE_D_UNE_FACTURE_REPRISE_PREVUE` (le plan de sauvegarde et les lecteurs) ; la carte
+d'A9b, qui offre trois gestes au chef, passe derrière un drapeau à elle, `CARTE_DE_LA_NUMEROTATION_OFFERTE`, baissé jusqu'à
+la décision du cabinet. Suivent : les attendus de sept essais (le commit du jour J), `derniereDefinitionSql` seule
+(`definitionApresLesPreparees` retirée), les 34 refus d'`enregistrer_encaissement`, le leurre (cinq essais sortis, le
+sixième joué par le super-utilisateur hors de la famille « apres » : 19 cas), `types.ts` (cinq tables, deux colonnes,
+`StatutFactureEnBase` : `StatutFacture` reste à deux états, ceux qu'émettent les copies du CII et du CDAR). Contrôles,
+production et dépôt égaux : dérive 195 `f7b9cef0…` ; socle 82 `8a0e4907…`, re-rendu (l'index d'INAL1 sur
+`documents_divers`) ; inventaire 2 748 `c07f0f5b…` ; `signature.sql` égal à la réplique du jour J sur ses neuf familles.
+`essai.py` compte désormais « *** EN FAUTE *** » et « NE MORD PAS » : faute de quoi les répétitions d'A9a et d'A8-Q5
+n'avaient pas vu sept essais tomber.

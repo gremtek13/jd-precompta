@@ -1,7 +1,7 @@
 // LA NUMÉROTATION QUI CONTINUE (ligne 51.5, étape A9a ; MEG1-Q5, tranchée par le cabinet le 16/10/2026 : deux séries par
 // dossier, celle du client et celle du cabinet mandataire, choisie selon QUI valide ; le client qui quitte son ancien
-// logiciel continue sa série). La migration `numerotation_continue` (supabase/preparees/20261110100000_numerotation_continue.sql,
-// PRÉPARÉE, pas appliquée, à COLLER, par-dessus A8a) pose le modèle de numéro d'un dossier (`modeles_numerotation`), la
+// logiciel continue sa série). La migration `numerotation_continue` (supabase/schema/20261110143033_numerotation_continue.sql,
+// collée par le cabinet le 10/11/2026, par-dessus A8a) pose le modèle de numéro d'un dossier (`modeles_numerotation`), la
 // série de qui valide, la continuité d'une suite reprise (`continuite_des_series` : la fin confirmée, les trous levés) et
 // la chronologie de la série. Ce module redit, au caractère près, ce que la carte du cabinet (A9b) dira AVANT le clic : les
 // refus d'un modèle (`refus_du_modele`), son numéro (`numero_du_modele`), son motif (`motif_du_modele`), le recouvrement de
@@ -10,10 +10,15 @@
 // de son essai (supabase/essais/numerotationContinue.sql) tels que la réplique y a répondu. Le récit : HISTORIQUE.md,
 // « A9A : LA NUMÉROTATION QUI CONTINUE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ».
 //
-// LE DRAPEAU : baissé tant que la migration n'est pas dans l'export. Le jour de son application, il se lève, et ses deux
-// tables entrent au plan de sauvegarde (`auPlanAujourdHui`, src/lib/sauvegarde.ts) : avant, les lire ferait échouer toute
-// sauvegarde. sauvegardeNumerotationContinue.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
-export const NUMEROTATION_CONTINUE_PREVUE = false
+// LE DRAPEAU DE LA MIGRATION : levé le 10/11/2026, la migration dans l'export ; ses deux tables sont au plan de sauvegarde
+// (`auPlanAujourdHui`, src/lib/sauvegarde.ts). sauvegardeNumerotationContinue.test.ts éprouve le plan prévu et le plan du
+// jour, sous chaque état du drapeau.
+export const NUMEROTATION_CONTINUE_PREVUE: boolean = true
+
+// LE DRAPEAU DE LA CARTE (A9b), à part depuis le jour J du 10/11/2026 : la carte « Numérotation des factures » de l'onglet
+// Informations offre au chef trois gestes (poser un modèle, confirmer la fin d'une suite reprise, lever des trous), et un
+// geste ne s'ouvre que sur la décision du cabinet. Baissé, la carte ne rend ni ne lit rien ; son test joue les deux états.
+export const CARTE_DE_LA_NUMEROTATION_OFFERTE: boolean = false
 
 /** La nature d'une série : les factures, ou les avoirs. */
 export type NatureDeSerie = 'facture' | 'avoir'

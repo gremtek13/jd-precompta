@@ -381,6 +381,7 @@ create table public.ecritures_brouillon (
 -- ─────────────────────────────── 3. index hors contraintes
 
 CREATE INDEX documents_divers_dossier_hash_idx ON public.documents_divers USING btree (dossier_id, storage_hash);
+CREATE INDEX documents_divers_storage_path_idx ON public.documents_divers USING btree (storage_path);
 CREATE UNIQUE INDEX immobilisations_piece_unique ON public.immobilisations USING btree (piece_id) WHERE (piece_id IS NOT NULL);
 CREATE INDEX lignes_bancaires_dossier_id_idx ON public.lignes_bancaires USING btree (dossier_id);
 CREATE INDEX lignes_bancaires_statut_idx ON public.lignes_bancaires USING btree (statut);

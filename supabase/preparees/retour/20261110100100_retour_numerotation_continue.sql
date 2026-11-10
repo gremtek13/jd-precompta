@@ -1,4 +1,5 @@
--- RETOUR ARRIÈRE de 20261110100000_numerotation_continue (ligne 51.5, étape A9a : la numérotation qui continue, la série
+-- RETOUR ARRIÈRE de numerotation_continue (supabase/schema/20261110143033_numerotation_continue.sql, en production depuis
+-- le 10/11/2026 ; ligne 51.5, étape A9a : la numérotation qui continue, la série
 -- du mandataire). PRÉPARÉ le 10/11/2026, à ne coller que sur décision du cabinet : il DÉTRUIT — les deux tables
 -- (`modeles_numerotation`, `continuite_des_series` : les modèles posés, les fins confirmées et les trous levés se
 -- perdent ; les relever d'abord, `select * from modeles_numerotation` et `select * from continuite_des_series`), les
