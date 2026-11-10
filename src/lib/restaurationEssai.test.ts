@@ -8,6 +8,7 @@ import { DEVIS_EXPORTES } from './devis'
 import { JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
+import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
@@ -490,14 +491,40 @@ function blocDeLaNumerotation(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand les tables de la numérotation existent : les siennes après leur table d'ancrage. */
 const avecLaNumerotation = avecLesArticles
 
+// LA PIÈCE D'UNE FACTURE REPRISE (ligne 51.5, A8-Q5) : un bloc à part met sa table au plan quand elle existe, juste après la
+// table qu'il nomme (`ecritures_brouillon`), les rangs qui suivent reculant d'un rang — le geste des articles —, avec son chemin ;
+// aucune vague. Joué en dernier, après le bloc de la numérotation.
+const MARQUE_DE_LA_PIECE_D_UNE_REPRISE = "-- ══ La pièce d'une facture reprise (ligne 51.5, A8-Q5) ══"
+
+function blocDeLaPieceDUneReprise(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DE_LA_PIECE_D_UNE_REPRISE)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const tables = [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2])
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables,
+    chemins,
+    recule: tables.length > 0 && corps.includes(`set rang = -(rang + ${tables.length}) where rang > v_rang;`)
+      && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.pieces_des_factures_reprises') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des liens existe : la sienne après sa table d'ancrage. */
+const avecLaPieceDUneReprise = avecLesArticles
+
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
-  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte))
+  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -580,7 +607,17 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const reprises = blocDesFacturesReprises(texteDeLEssai)
   const avecLesReprisesDuJour = FACTURES_IMPORTEES_PREVUES ? avecLesFacturesReprises(avecLesCotisationsDuJour, reprises) : avecLesCotisationsDuJour
   const numerotation = blocDeLaNumerotation(texteDeLEssai)
-  const courant = NUMEROTATION_CONTINUE_PREVUE ? avecLaNumerotation(avecLesReprisesDuJour, numerotation) : avecLesReprisesDuJour
+  const avecLaNumerotationDuJour = NUMEROTATION_CONTINUE_PREVUE ? avecLaNumerotation(avecLesReprisesDuJour, numerotation) : avecLesReprisesDuJour
+  const pieceDUneReprise = blocDeLaPieceDUneReprise(texteDeLEssai)
+  const courant = PIECE_D_UNE_FACTURE_REPRISE_PREVUE
+    ? avecLaPieceDUneReprise(avecLaNumerotationDuJour, pieceDUneReprise) : avecLaNumerotationDuJour
+
+  it('le bloc de la pièce d’une facture reprise : sa table, après `ecritures_brouillon`, conditionné, son chemin (A8-Q5)', () => {
+    expect(pieceDUneReprise).toEqual({
+      ancre: 'ecritures_brouillon', tables: [...TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE], recule: true, conditionne: true,
+      chemins: { pieces_des_factures_reprises: { acces: 'direct', parent: null, colonne: null } },
+    })
+  })
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
@@ -751,6 +788,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t) && !TABLES_DES_SITUATIONS_PUBLIEES.includes(t)
       && !TABLES_DES_SAISIES_2035.includes(t) && !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(t)
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t) && !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(t)
+      && !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

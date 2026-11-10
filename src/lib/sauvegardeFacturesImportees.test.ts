@@ -89,7 +89,8 @@ describe('le plan prévu, factures reprises comprises', () => {
 
   it('leurs relations, telles que la migration les déclare : le dossier et la facture en cascade, le lot et l’origine d’un avoir sans action', () => {
     const desReprises = RELATIONS_PREVUES
-      .filter((r) => TABLES_DES_FACTURES_IMPORTEES.includes(r.enfant) || TABLES_DES_FACTURES_IMPORTEES.includes(r.parent))
+      .filter((r) => TABLES_DES_FACTURES_IMPORTEES.includes(r.enfant)
+        || (TABLES_DES_FACTURES_IMPORTEES.includes(r.parent) && r.enfant !== 'pieces_des_factures_reprises'))
       .map((r) => `${r.enfant}.${r.colonne} → ${r.parent} (${r.aLaSuppression})`)
     expect(desReprises).toEqual([
       'imports_factures.dossier_id → dossiers (cascade)',
