@@ -181,11 +181,14 @@ begin
         'OK', 'dossiers_delete/d/est_chef_du_cabinet(cabinet_id)| ; dossiers_update/w/admin_du_dossier(id)|admin_du_dossier(id) ; dossiers_write/a/|est_chef_du_cabinet(cabinet_id)', null),
       -- Depuis l'étape PC4 (ligne 43), `regler_plan_du_dossier` écrit `dossiers` une fois : le compte du dirigeant, qu'elle
       -- déplace avec son rôle, et aucune des quatre colonnes ; elle se compte à part, sa seule écriture lue dans son texte.
-      ('0i', 'valeur', 'aucune fonction du schéma n''écrit dossiers : la policy du cabinet est le seul chemin de ses quatre colonnes (hors le compte du dirigeant que regler_plan_du_dossier déplace, PC4)', 'proprietaire', null,
+      ('0i', 'valeur', 'aucune fonction du schéma n''écrit dossiers : la policy du cabinet est le seul chemin de ses quatre colonnes (hors le compte du dirigeant que regler_plan_du_dossier déplace, PC4, et la date de reprise des factures que fixer_reprise_des_factures pose, A8a)', 'proprietaire', null,
         $q$select count(*)::text from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prosrc ~* '(update|insert\s+into)\s+(public\.)?dossiers\M'
              and not (p.proname = 'regler_plan_du_dossier' and p.prosrc !~* 'insert\s+into\s+(public\.)?dossiers\M'
                       and (select count(*) from regexp_matches(p.prosrc, 'update\s+(public\.)?dossiers\M', 'gi')) = 1
-                      and p.prosrc ~* 'update\s+public\.dossiers\s+set\s+compte_notes_de_frais\s*=\s*v_dirigeant\s+where\s+id\s*=\s*p_dossier_id\s+and\s+compte_notes_de_frais\s+is\s+distinct\s+from\s+v_dirigeant\s*;')$q$,
+                      and p.prosrc ~* 'update\s+public\.dossiers\s+set\s+compte_notes_de_frais\s*=\s*v_dirigeant\s+where\s+id\s*=\s*p_dossier_id\s+and\s+compte_notes_de_frais\s+is\s+distinct\s+from\s+v_dirigeant\s*;')
+             and not (p.proname = 'fixer_reprise_des_factures' and p.prosrc !~* 'insert\s+into\s+(public\.)?dossiers\M'
+                      and (select count(*) from regexp_matches(p.prosrc, 'update\s+(public\.)?dossiers\M', 'gi')) = 1
+                      and p.prosrc ~* 'update\s+public\.dossiers\s+set\s+reprise_des_factures_le\s*=\s*p_reprise_le\s+where\s+id\s*=\s*p_dossier_id\s*;')$q$,
         'OK', '0', null),
       ('0j', 'valeur', 'la forme juridique : une liste FERMÉE, les 260 codes de l''INSEE au niveau III (empreinte des codes triés)', 'proprietaire', null,
         $q$select count(*) || ' ' || md5(string_agg(m[1], ',' order by m[1] collate "C"))

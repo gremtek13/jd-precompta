@@ -518,11 +518,13 @@ begin
                  || 'CREATE CONSTRAINT TRIGGER plan_comptable_dossier_dirigeant AFTER INSERT OR DELETE ON public.plan_comptable_dossier DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION garder_dirigeant_du_plan()',
       'observe', v_obs);
     -- L'ordre des déclencheurs BEFORE : la garde des lignes de pièce avant celle qui prenait seule le verrou partagé ; la
-    -- garde du lettrage après celle de l'exemplaire d'une facture source.
+    -- garde du lettrage après celle de l'exemplaire d'une facture source. Depuis A8-Q5 (le jour J, 10/11/2026), la garde des
+    -- règlements d'une pièce citée par une facture reprise (`ecritures_brouillon_piece_d_une_facture_reprise`), après elle.
     select string_agg(t.tgname, ',' order by t.tgname collate "C") into v_obs from pg_trigger t
      where not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgrelid in ('public.ecritures_brouillon'::regclass, 'public.lettrages_manuels'::regclass);
     verdicts := verdicts || jsonb_build_object('rang', 142, 'etape', '142. l''ordre des déclencheurs BEFORE du brouillon et des lettrages',
       'ok', v_obs = 'ecritures_brouillon_caisse,ecritures_brouillon_comptes_des_pieces,ecritures_brouillon_intangibles,ecritures_brouillon_paiement_personnel,'
+                 || 'ecritures_brouillon_piece_d_une_facture_reprise,'
                  || 'ecritures_brouillon_sans_exemplaire_d_une_source,ecritures_brouillon_vente_facturee,ecritures_brouillon_vente_facturee_lignes,'
                  || 'lettrages_manuels_sans_exemplaire_d_une_source,lettrages_manuels_un_compte_qui_se_lettre',
       'observe', v_obs);
