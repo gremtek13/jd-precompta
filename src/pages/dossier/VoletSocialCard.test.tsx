@@ -125,7 +125,8 @@ describe('le volet social d’un praticien conventionné', () => {
     await afficher()
     expect(screen.getByText('proposées : ligne 4 de la 2035-A')).toBeTruthy()
     expect(screen.getByText('80 000 €')).toBeTruthy()
-    expect(screen.getByText('Choisissez la profession pour estimer les cotisations.')).toBeTruthy()
+    // Le refus se dit sous les cotisations de l'Urssaf ET sous la retraite, qui reçoit la même entrée (ligne 27.1).
+    expect(screen.getAllByText('Choisissez la profession pour estimer les cotisations.')).toHaveLength(2)
     expect((screen.getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
@@ -312,7 +313,7 @@ describe('le volet social d’un praticien conventionné', () => {
     expect(normaliser(screen.getByText('Total à la charge du praticien').nextElementSibling?.textContent)).toBe(euroEcran(reference.attendu.total))
     saisir(/Profession/, 'chirurgien_dentiste')
     // Les paramètres tenus (drapeau levé le 07/11/2026) : le refus nomme le taux dentiste qui manque, et sa carte l'offre.
-    expect(screen.getByText(/Saisissez le « taux dentiste » du relevé SNIR 2025/)).toBeTruthy()
+    expect(screen.getAllByText(/Saisissez le « taux dentiste » du relevé SNIR 2025/)).toHaveLength(2)
     expect(screen.queryByText('Total à la charge du praticien')).toBeNull()
   })
 
@@ -336,7 +337,7 @@ describe('le volet social, les paramètres des cotisations baissés', () => {
     expect(normaliser(screen.getByText('Total à la charge du praticien').nextElementSibling?.textContent)).toBe('4 646 €')
     expect(screen.queryByText(/Paramètres des cotisations/)).toBeNull()
     saisir(/Profession/, 'chirurgien_dentiste')
-    expect(screen.getByText(/que l’application ne tient pas encore/)).toBeTruthy()
+    expect(screen.getAllByText(/que l’application ne tient pas encore/)).toHaveLength(2)
     expect(screen.queryByText(/Saisissez le « taux dentiste »/)).toBeNull()
     expect(screen.queryByText('Total à la charge du praticien')).toBeNull()
     expect(parametres.lectures).toBe(0)

@@ -50066,3 +50066,18 @@ pièce figée ? Reco : oui ; autre : laisser la suppression ouverte. INAL-Q6 —
 puis suppression conditionnée au téléchargement ; autres : interdire la suppression dix ans, ou ne rien changer. INAL-Q7 —
 une clôture mensuelle ? Reco : non, celle de l'exercice suffit (BOFiP §140) ; autres : mensuelle, ou trimestrielle avec la
 CA3. INAL-Q8 — la documentation du traitement dans chaque paquet ? Reco : oui ; autre : à part, une fois.
+
+### 10/11/2026 — LA RETRAITE DES PROFESSIONS LIBÉRALES, À L'ÉCRAN (LIGNE 27.1, RET-Q5)
+
+Le lot de l'écran, sur la recommandation de RET-Q5 : sous les cotisations de l'Urssaf, dans `VoletSocialCard.tsx`, une section
+« Retraite (caisse : CARPIMKO, CARMF ou CARCDSF selon la profession) », la caisse nommée dès que la profession la désigne. Ni
+lecture, ni écriture, ni migration, ni `index.css` (le tableau suit les `.table-scroll` voisins). **La même entrée** : la carte
+construit l'`EntreeEstimation` UNE fois, l'Urssaf et la caisse la reçoivent telle quelle ; sans entrée (paramètres pas lus), la
+retraite attend comme l'Urssaf. **La règle**, dans `lib/retraiteAffichee.ts` (pur, testé) : quatre lignes (base et PCV nets de
+la prise en charge, dite dans leur libellé), la part de l'Assurance maladie à part seulement quand elle n'est pas nulle, le total
+« de la retraite » (nommé ainsi pour ne pas doubler celui de l'Urssaf), les hypothèses du module en clair, la phrase de la caisse
+(revenu antérieur, régularisation) et ce que l'estimation ne fait pas (CIPAV, incapacité, conjoint, outre-mer, facultatives).
+**Le médecin** : son cumul emploi-retraite (RET-Q2) est un choix LOCAL « non renseigné / oui / non », sans défaut, gardé avec le
+dossier et l'exercice ; « non renseigné » passe au module comme `null`, qui refuse en disant pourquoi — aucun montant, jamais un
+« non » deviné. Un refus du module se dit à la place des chiffres : le motif de l'Urssaf s'affiche donc deux fois, et trois
+assertions de `VoletSocialCard.test.tsx` comptent deux occurrences. Tests : `retraiteAffichee.test.ts` (9), `VoletSocialCardRetraite.test.tsx` (5).
