@@ -49856,3 +49856,81 @@ PCV, rouge ; `<` → `<=` aux bornes du secteur 1, survivante, puis rouge une fo
 `parametres_des_cotisations`, au lot de l'écran) ; RET-Q3 (CARCDSF : suivre le moteur et le dire) ; RET-Q4 (BT garde les
 échéances payées, dont l'organisme peut être la caisse) ; RET-Q5 (l'Estimation montre les quatre lignes sous le volet
 de l'Urssaf, prises en charge, hypothèses, et dit que la caisse appelle sur un revenu antérieur). Reste : l'écran.
+
+### 10/11/2026 — LA LETTRE DE MISSION ET LES HONORAIRES DU CABINET : LA CONCEPTION (LIGNE 47)
+
+(Agent architecte ; conception seule : ni code, ni migration, ni écriture en production.) **Le constat.** L'application
+facture pour les clients DU client ; le cabinet ne facture pas ses honoraires d'ici, et la lettre de mission n'est
+qu'une entrée possible du dossier permanent (R7, nature `lettre_mission`, une pièce citée). **Mesuré le 10/11/2026**
+(comptes seulement) : 1 cabinet, 4 dossiers, 6 factures, 0 devis, 0 contact, 0 entrée au dossier permanent ;
+`cabinets` ne porte que nom, charte, logo et plafonds de l'assistant (ni SIREN, ni adresse, ni TVA) ; `memberships` n'a
+pas encore les cases de B1. **Sources** : décret n° 2012-432, art. 151 (relu sur Légifrance le 11/10/2026, voir R7) :
+« un contrat écrit définissant leur mission », qui « peut prendre la forme d'une lettre de mission » ; modifié par le
+décret n° 2014-912 (JO du 21/08/2014), il « fait état, le cas échéant, du mandat confié » — NON RELU sur Légifrance ce
+jour (page illisible par l'outil), comme l'art. 152 et ce que le code dit des honoraires : à relire avant LM4. CGI,
+art. 289, I-2 et BOI-TVA-DECLA-30-20-10 (le mandat de facturation préalable, EC-Q2) ; RGPD, art. 28 (la clause de
+sous-traitance, EC-Q2) ; C. civ., art. 1366 et 1367 (l'écrit et la signature électroniques) ; NP 2300, A9 (« un
+exemplaire de la lettre de mission » au dossier). Aucune norme AFNOR.
+
+**1. Où vit la facturation du cabinet : un dossier du cabinet, à lui-même (retenu).** Il réutilise tout — identité
+légale (A5b2), statut de TVA, paramètres et RIB confirmé, série et numérotation, avoirs, facture figée (A7), CII et
+Super PDP (la facture électronique s'imposera aussi au cabinet), e-mail, devis (P5), encaissements, relances (C5). Les
+factures restent dans `factures_emises` du dossier DU CABINET, jamais de celui du client (règle posée le 18/10/2026,
+§4.1 de la conception de l'espace client). **Écarté** : un espace à part (`cabinet_id`), qui recopierait la chaîne
+entière et ses gardes ; facturer hors de l'application (le but du 29/09/2026). **Les pièges, et leur garde** :
+(a) `enregistrer_facture` fige le nom du cabinet dans `mandataire_nom` dès qu'un membre valide — sur son propre dossier,
+la facture imprimerait « établie par le cabinet au nom et pour le compte » de lui-même : le dossier du cabinet se
+DÉSIGNE (`cabinets.dossier_du_cabinet`, unique, du même cabinet, posé par le chef seul, irréversible dès une facture
+validée) et le mandataire y est nul ; (b) un accès client sur ce dossier lirait les honoraires de tous les clients :
+`memberships` le refuse en base (une garde, 23514), et `changer_droits_acces` aussi ; (c) la suppression d'un dossier
+emporte ses factures (la sortie de `factures_emises_figees`) : celui du cabinet ne se supprime qu'avec le cabinet, et
+`delete-cabinet` le nomme ; (d) la liste des dossiers, le tableau de bord, les RIB à confirmer et l'échéancier le
+comptaient comme un client : il se range à part (« Mon cabinet ») ; (e) l'équipe : `admin_du_dossier` ouvre ce dossier
+au chef et aux seuls membres qui y sont assignés, ce qui suffit (LM-Q2) ; (f) sa comptabilité reste facultative : rien
+ne l'oblige à tenir ses comptes ici, et rien ne bascule ses ventes.
+
+**2. Le client du cabinet : le dossier est la source.** Une fiche de `contacts` du dossier du cabinet reçoit
+`dossier_client_id` (un dossier du même cabinet, unique parmi les fiches non effacées, `ON DELETE SET NULL` adjugé : la
+facture garde sa copie, la fiche reste). Liée, la fiche ne garde que ce qui est propre à la facturation (délai,
+adresse de réception, code de service, e-mail de facturation) ; dénomination, SIREN, adresse et forme se lisent du
+dossier au remplissage de la facture, qui en fige la COPIE comme aujourd'hui. Écarté : la fiche source (deux identités
+qui divergent) ; une copie synchronisée par déclencheur (une écriture silencieuse dans une autre table).
+
+**3. La lettre de mission : un document versionné, figé à la proposition.** Deux tables, dans le dossier du cabinet :
+`modeles_lettre_de_mission` (le texte des conditions générales et le catalogue des missions, versionnés) et
+`lettres_de_mission` (une fiche cliente ; une chaîne `remplace_id`, comme R7 ; états brouillon, proposée, acceptée,
+refusée, retirée, échue). Proposée, elle FIGE : les missions (cases fermées : tenue, présentation des comptes, 2035,
+CA3, volet social, facturation au nom du client, relances), la répartition des tâches cabinet / client, les honoraires
+structurés (§4), la durée (date d'effet, exercice, reconduction, préavis), la version des conditions générales, les
+clauses de mandat de facturation et de sous-traitance (cochées par les missions qui les exigent), le signataire
+désigné, et l'EMPREINTE SHA-256 du PDF tiré de ces colonnes. Un avenant est une version nouvelle. **Acceptée** par
+`accepter_lettre_de_mission` (`security definer`) : le compte désigné, depuis son espace, sous la case « Documents »
+(B1) ; l'instant, le compte et l'empreinte figés ; ou bien un exemplaire signé sur papier, déposé et cité. **R7** :
+le dossier permanent du client la DÉDUIT (une lettre acceptée en vigueur satisfait l'élément `lettre_mission`) ; aucune
+entrée écrite d'office. Les membres assignés au dossier du client lisent les missions en vigueur, jamais les montants.
+
+**4. Les honoraires, sans rien émettre seul.** Trois formes, dans la lettre : forfait périodique (mois, trimestre,
+année), prestation à la tâche (un prix par livrable : la 2035, une CA3, le bilan), temps passé (taux horaire, plus
+tard). Un écran « À facturer » PROPOSE chaque période échue et chaque tâche marquée faite ; un clic crée le brouillon
+par `enregistrer_facture`, et une table `honoraires_factures` (lettre, période ou tâche, facture) l'y attache sous
+une contrainte TOTALE, qui refuse de facturer deux fois la même période. Chaque facture se valide d'un clic, comme
+toute facture. La facture d'honoraires validée se dépose, sur un clic, comme pièce « à valider » du dossier du client
+(une dépense au 622600 chez lui), et « Mes honoraires » la montre au client sous « Documents ».
+
+**5. Lots** (≈ 19 jours) : **LM1** la base du dossier du cabinet (désignation, mandataire nul, gardes des accès et de la
+suppression ; essais, `rls.sql`), 1,5 j ; **LM2** son écran et sa place à part, 1 j ; **LM3** la fiche liée au dossier
+client et l'identité lue (migration, formulaire), 1,5 j ; **LM4** les lettres en base (deux tables, quatre fonctions,
+essais), 3 j ; **LM5** l'écran du cabinet (modèle, rédaction, PDF figé), 2,5 j ; **LM6** l'espace client (lire,
+accepter) et la déduction de R7, après B1, 2 j ; **LM7** « À facturer » et `honoraires_factures`, 3 j ; **LM8** le dépôt
+chez le client et « Mes honoraires », 1,5 j ; **LM9** le temps passé, 2,5 j, plus tard. **Hors du MVP** (LM-Q9).
+**Questions** : LM-Q1 le dossier du cabinet (recommandé) ou un espace à part ; LM-Q2 les honoraires vus du chef et des
+membres assignés au dossier du cabinet (recommandé) ou du chef seul ; LM-Q3 le dossier client source de l'identité
+(recommandé) ou la fiche ; LM-Q4 la lettre dans le dossier du cabinet (recommandé : elle survit au départ du client,
+prescription de cinq ans, C. civ. 2224) ou dans celui du client ; LM-Q5 l'acceptation d'un clic du signataire désigné,
+empreinte et instant figés, ou le papier déposé (recommandé : les deux), ou un prestataire de signature avancée (un
+tiers de plus à la liste des services) ; LM-Q6 R7 déduit (recommandé) ou une entrée écrite à l'acceptation ; LM-Q7
+forfait et tâche d'abord, temps passé plus tard (recommandé), et chaque facture validée une à une (recommandé) ou en lot
+sous une confirmation qui les nomme ; LM-Q8 le dépôt chez le client sur un clic (recommandé), d'office « à valider », ou
+jamais ; LM-Q9 hors du MVP, le premier client signant une lettre papier citée au dossier permanent (recommandé) ;
+LM-Q10 le droit de rétractation d'un professionnel de cinq salariés au plus hors de son activité principale
+(C. consom., L221-3), NON VÉRIFIÉ pour une lettre acceptée à distance : à trancher avec l'expert-comptable avant LM5.
