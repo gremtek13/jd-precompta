@@ -18,6 +18,7 @@ import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
+import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
@@ -214,6 +215,20 @@ export function auPlanDeLaNumerotationContinue(table: string, prevue: boolean): 
   return prevue || !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(table)
 }
 
+// LA PIÈCE D'UNE FACTURE REPRISE (ligne 51.5, A8-Q5 ; migration `piece_d_une_facture_reprise`, PRÉPARÉE, pas appliquée,
+// par-dessus A8a, A9a et A8b) : le lien d'une facture reprise à la pièce de vente qui en est l'original
+// (`pieces_des_factures_reprises`). Sous le drapeau de la migration (`PIECE_D_UNE_FACTURE_REPRISE_PREVUE`,
+// src/lib/pieceDUneFactureReprise.ts), baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde.
+// Ses relations (le dossier, la facture reprise et la pièce, en cascade : un lien part avec chacun d'eux), son rang (après
+// les pièces, les mouvements, les parts, la caisse et les écritures, que sa garde des règlements ne juge donc pas contre un
+// lien à la restauration ; juste après `ecritures_brouillon`), son chemin ; aucune vague ; sa clé est
+// la commune, `id`. La restauration la réinsère par la porte que sa garde et sa policy ouvrent au super-administrateur, dans
+// un dossier sans numérotation (`restauration_des_factures`). sauvegardePieceDUneFactureReprise.test.ts éprouve le plan.
+/** Une table au plan, côté pièce d'une facture reprise : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
+export function auPlanDeLaPieceDUneFactureReprise(table: string, prevue: boolean): boolean {
+  return prevue || !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(table)
+}
+
 // LES PARAMÈTRES DES COTISATIONS (ligne 27, TNS-Q1 et TNS-Q4 ; migration `parametres_des_cotisations`, en production
 // depuis le 07/11/2026) : le début d'activité d'un dossier (`debuts_d_activite`, une ligne au plus) et l'ACRE et le taux dentiste
 // d'un exercice (`parametres_des_cotisations`). Sous le drapeau de la migration (`PARAMETRES_DES_COTISATIONS_EXPORTES`,
@@ -244,6 +259,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
     && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
+    && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
     && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
 }
 
@@ -403,6 +419,9 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
   { enfant: 'factures_importees', parent: 'imports_factures', colonne: 'import_id', aLaSuppression: 'bloque' },
   { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'origine_id', aLaSuppression: 'bloque' },
+  { enfant: 'pieces_des_factures_reprises', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'pieces_des_factures_reprises', parent: 'factures_importees', colonne: 'facture_id', aLaSuppression: 'cascade' },
+  { enfant: 'pieces_des_factures_reprises', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
   { enfant: 'modeles_numerotation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'continuite_des_series', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'debuts_d_activite', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -763,6 +782,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'pieces_hors_de_france_taux',
   'operations_caisse',
   'ecritures_brouillon',
+  'pieces_des_factures_reprises',
   'revision_justifications',
   'revision_preuves',
   'revision_conclusions',
@@ -1250,6 +1270,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   factures_importees: { acces: 'direct' },
   modeles_numerotation: { acces: 'direct' },
   continuite_des_series: { acces: 'direct' },
+  pieces_des_factures_reprises: { acces: 'direct' },
   debuts_d_activite: { acces: 'direct' },
   parametres_des_cotisations: { acces: 'direct' },
   notes_internes: { acces: 'direct' },

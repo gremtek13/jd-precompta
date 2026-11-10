@@ -7,6 +7,7 @@ import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
+import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
@@ -20,7 +21,7 @@ import {
   auPlan,
   auPlanAujourdHui,
   auPlanDeLaCaisse,
-  auPlanDeLaNumerotationContinue,
+  auPlanDeLaNumerotationContinue, auPlanDeLaPieceDUneFactureReprise,
   auPlanDeLaTraceDesDroits,
   auPlanDesFacturesImportees,
   auPlanDesSituationsPubliees,
@@ -85,6 +86,7 @@ describe('le filtre du plan', () => {
         && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES) && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
         && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
         && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
+        && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
         && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES

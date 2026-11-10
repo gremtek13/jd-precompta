@@ -367,7 +367,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Vingt-trois le même jour : `encaissementsDesReprises` (A8b, `factures_reprises_encaissements`) entré dans la famille
     // « apres », après sa migration préparée, par-dessus celles d'A8a et d'A9a (le modèle « apres » porte les trois, dans cet
     // ordre) ; SÛR au banc, sur une copie de la réplique au niveau de la production.
-    expect(cas.length).toBe(23)
+    // Vingt-quatre le 10/11/2026 : `pieceDUneFactureReprise` (A8-Q5, `piece_d_une_facture_reprise`) entré dans la famille
+    // « apres », après sa migration préparée, par-dessus celles d'A8a, A9a et A8b.
+    expect(cas.length).toBe(24)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

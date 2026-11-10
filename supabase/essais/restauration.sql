@@ -709,6 +709,25 @@ begin
   end if;
 end $$;
 
+-- ══ La pièce d'une facture reprise (ligne 51.5, A8-Q5) ══ Au plan du code quand `PIECE_D_UNE_FACTURE_REPRISE_PREVUE` est
+-- levé — c'est-à-dire quand sa migration est en base, par-dessus A8a, A9a et A8b : le script la met dès que sa table existe,
+-- juste après `ecritures_brouillon` (ORDRE_RESTAURATION_PREVU : après les pièces, les mouvements, les parts, la caisse et les
+-- écritures, que sa garde des règlements ne juge donc pas contre un lien) ; les tables qui
+-- suivent reculent d'un rang — le geste des articles ; son chemin. Aucune vague : une ligne n'en pointe aucune de sa table.
+-- Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.pieces_des_factures_reprises') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'ecritures_brouillon';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'pieces_des_factures_reprises');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('pieces_des_factures_reprises','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin
