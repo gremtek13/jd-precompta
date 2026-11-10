@@ -1,5 +1,6 @@
 import { montantsDuDocument } from './factureCii'
-import { centimesExacts, type LigneDeFacture } from './encaissementsFactures'
+import { centimesExacts, montantsParTauxDuDocument, type LigneDeFacture } from './encaissementsFactures'
+import { estUneFactureReprise, estUneVente } from './facturesReprises'
 import { exemplaireDUneSource } from './facturesSources'
 import type { EncaissementFacture, EncaissementFactureTaux, FactureEmise, ModeComptable, Piece } from './types'
 
@@ -117,6 +118,26 @@ export interface SourcesVentesFacturees {
   parts: readonly PartVendue[]
   /** Les factures d'acompte d'un devis et les lignes qui les reprennent (étape P5b3) : OBLIGATOIRE, sans défaut. */
   acomptes: AcomptesDesVentes
+  /**
+   * Ce que les factures REPRISES de l'ancien logiciel portent de plus (étape A8c, le drapeau `FACTURES_IMPORTEES_PREVUES`
+   * levé) : une ligne de `factures_importees` par document repris du dossier. Sans objet tant qu'aucune reprise n'est lue
+   * — le drapeau baissé, aucune facture reprise ne compte. Une reprise que ces lignes ne décrivent pas est ÉCARTÉE
+   * (`reprise_illisible`) : on ne fait pas partir la règle du cumul d'un encaissé avant la reprise qu'on n'a pas lu.
+   */
+  reprises?: readonly RepriseVendue[]
+}
+
+/**
+ * Un document repris, tel que la règle du cumul le lit (`factures_importees`, lue par le cabinet) : ce qui en était encaissé
+ * avant la reprise, par taux, et, pour un avoir repris, la facture reprise qu'il crédite. Sa TVA déclarée
+ * (`factures_emises.montant_tva`, lue avec lui) dit la règle de ses montants par taux (`montantsParTauxDuDocument`).
+ */
+export interface RepriseVendue {
+  facture_id: string
+  dossier_id: string
+  origine_id: string | null
+  encaisse_par_taux: readonly { taux: number; encaisse: number }[]
+  montant_tva: number
 }
 
 // ── L'ACOMPTE D'UN DEVIS (étape P5b3, derrière `ACOMPTES_PREVUS` ; conception : HISTORIQUE.md, « L'ACOMPTE D'UN DEVIS : LA
@@ -225,6 +246,13 @@ export interface DocumentVenteFacturee extends FactureNommee {
 
 export type MotifVenteEcartee =
   | 'nature' | 'option_debits' | 'sans_lignes' | 'encaissement_illisible' | 'contre_passation_illisible' | 'ttc_nul'
+  | 'reprise_illisible'
+
+/**
+ * Les motifs que le module oppose SEUL (étape A8c) : la base lit elle-même ce qu'il lui faudrait recevoir, et ne les écrit
+ * pas (`ecrire_vente_facturee` dit les autres, sous les mêmes mots).
+ */
+export const MOTIFS_DU_MODULE_SEUL: readonly MotifVenteEcartee[] = ['reprise_illisible']
 
 export const LIBELLE_MOTIF_VENTE: Record<MotifVenteEcartee, string> = {
   nature: 'la facture ne dit pas si elle porte sur des biens ou sur des services : on ne sait ni quand sa TVA est due, ni où la compter',
@@ -233,6 +261,8 @@ export const LIBELLE_MOTIF_VENTE: Record<MotifVenteEcartee, string> = {
   encaissement_illisible: "un encaissement ne se répartit pas sur les taux de la facture, au centime, pour son montant : la règle du cumul ne s'y applique pas",
   contre_passation_illisible: "une contre-passation n'est pas l'exact opposé d'un encaissement compté avant elle",
   ttc_nul: "ses avoirs datés au plus tard du jour d'un encaissement annulent le taux de cet encaissement : la règle du cumul n'a plus de TTC à répartir",
+  // Un motif du module seul (étape A8c) : la base lit `factures_importees` elle-même, et ne l'oppose jamais.
+  reprise_illisible: "la facture est reprise de l'ancien logiciel, et ce qu'elle portait encaissé avant la reprise n'est pas lu : la règle du cumul ne sait pas d'où partir",
 }
 
 /**
@@ -335,26 +365,48 @@ function ecart(motif: MotifVenteEcartee, precision?: string): Resultat {
   return { ecart: { motif, detail: precision ? `${LIBELLE_MOTIF_VENTE[motif]} (${precision})` : LIBELLE_MOTIF_VENTE[motif] } }
 }
 
+/**
+ * Ce qu'une facture REPRISE ajoute à la règle (étape A8c ; `calcul_vente_facturee` depuis A8b) : sa TVA déclarée, ce qui en
+ * était encaissé avant la reprise, ses avoirs repris (chacun avec la sienne). Nul pour toute autre facture.
+ */
+interface RepriseDeLaVente {
+  montantTva: number
+  encaisseParTaux: RepriseVendue['encaisse_par_taux']
+  avoirsRepris: readonly { avoir: FactureVendue; montantTva: number }[]
+}
+
+// Les montants d'un document repris par taux, selon la règle de TVA de ses montants déclarés (`montants_par_taux_du_document`).
+function parTauxRepris(document: FactureVendue, montantTva: number, lignes: readonly LigneDeFacture[]): Map<number, MontantsDuTaux> {
+  return new Map(montantsParTauxDuDocument({ ...document, montant_tva: montantTva }, lignes)
+    .map((t) => [t.taux, { base: t.baseCentimes, tva: t.tvaCentimes }]))
+}
+
 function uneFacture(
   facture: FactureVendue, avoirs: readonly FactureVendue[], lignes: readonly LigneDeFacture[],
   encaissements: readonly EncaissementVendu[], partsLues: readonly PartVendue[], acompte: MarqueDAcompte,
+  reprise: RepriseDeLaVente | null,
 ): Resultat {
   const regime = regimeDeLaFacture(facture)
   if (regime !== 'livraison' && regime !== 'debits' && regime !== 'encaissement') return ecart(regime)
   const nommee: FactureNommee = { factureId: facture.id, numero: facture.numero, tiers: facture.tiers_nom }
 
-  const montantsFacture = parTaux(facture, lignes)
+  // Une facture reprise : ses montants selon la règle de TVA que ses montants déclarés suivaient (A8b).
+  const montantsFacture = reprise ? parTauxRepris(facture, reprise.montantTva, lignes) : parTaux(facture, lignes)
   if (montantsFacture.size === 0) return ecart('sans_lignes')
   const avoirsLus = [...avoirs]
     .sort((a, b) => ordreC(a.date_emission, b.date_emission) || ordreC(a.id, b.id))
     .map((a) => ({ avoir: a, montants: parTaux(a, lignes) }))
+  // Ses avoirs repris, datés d'avant la reprise : ils réduisent V et T, et ne sont jamais un document ni une exigibilité.
+  const avoirsReprisLus = (reprise?.avoirsRepris ?? [])
+    .map(({ avoir, montantTva }) => ({ avoir, montants: parTauxRepris(avoir, montantTva, lignes) }))
 
-  // V et T d'un taux, nets des avoirs datés au plus tard de `date`.
-  const netAu = (taux: number, date: string) => {
+  // V et T d'un taux, nets des avoirs datés au plus tard de `date` — ceux de l'application, et les avoirs repris ; le départ
+  // du cumul d'une reprise (`seulsLesRepris`) ne déduit que les avoirs repris, comme la base.
+  const netAu = (taux: number, date: string, seulsLesRepris = false) => {
     const f = montantsFacture.get(taux) ?? { base: 0, tva: 0 }
     let base = f.base
     let tva = f.tva
-    for (const { avoir, montants } of avoirsLus) {
+    for (const { avoir, montants } of seulsLesRepris ? avoirsReprisLus : [...avoirsLus, ...avoirsReprisLus]) {
       if (avoir.date_emission > date) continue
       const a = montants.get(taux)
       if (a) {
@@ -390,6 +442,18 @@ function uneFacture(
   const parts: PartVenteFacturee[] = []
   const tvaPortee = new Map<number, number>()
   const encaisse = new Map<number, number>()
+  // A8-Q6 : d'une facture reprise, le cumul part de ce qui en était encaissé avant la reprise, taux par taux, et de la TVA
+  // que la règle lui rend sur V et T nets de TOUS ses avoirs repris (datés d'avant la reprise) : celle que l'ancien logiciel
+  // a portée. Un taux que ses avoirs repris annulent n'a plus de TTC à répartir.
+  for (const g of reprise?.encaisseParTaux ?? []) {
+    const p = centimesExacts(g.encaisse)
+    if (p == null) return ecart('reprise_illisible', `à ${g.taux} %`)
+    if (p === 0) continue
+    const { V, T } = netAu(g.taux, '9999-12-31', true)
+    if (T <= 0) return ecart('ttc_nul', `à ${g.taux} %, avant la reprise`)
+    encaisse.set(g.taux, p)
+    tvaPortee.set(g.taux, prorataArrondi(V, p, T))
+  }
   const tvaDe = new Map<string, Map<number, number>>()
   for (const e of comptes) {
     const sesParts = partsParEncaissement.get(e.id)!
@@ -442,7 +506,9 @@ function uneFacture(
       })
     }
   }
-  pousserDocument(facture.date_emission, null, montantsFacture, 1)
+  // Une facture reprise n'a pas de document : émise par l'ancien logiciel, sa créance est dans la reprise. Ses avoirs
+  // repris non plus ; seuls ceux que l'application émet sur elle.
+  if (!reprise) pousserDocument(facture.date_emission, null, montantsFacture, 1)
   for (const { avoir, montants } of avoirsLus) pousserDocument(avoir.date_emission, avoir.id, montants, -1)
 
   // Les exigibilités de la CA3, selon le régime.
@@ -470,9 +536,11 @@ function uneFacture(
     // chantier).
     // Un acompte de biens : la livraison de sa finale, jamais sa propre date (voir « L'ACOMPTE D'UN DEVIS » en tête).
     const L = livraisonDeLAcompte ?? (regime === 'livraison' ? dateDeLivraison(facture) : facture.date_emission)
-    const avant = parts.filter((p) => p.date < L)
+    // Une facture reprise : ni les parts d'avant ni le fait générateur — la livraison d'un bien et la facture sur les débits,
+    // d'avant la reprise, l'ancien logiciel les a déclarées (A8b). Ses avoirs de l'application seuls, plus bas.
+    const avant = reprise ? [] : parts.filter((p) => p.date < L)
     exigibilites.push(...avant.map(depuisPart))
-    const taux = new Set([...montantsFacture.keys(), ...avoirsLus.flatMap((a) => [...a.montants.keys()])])
+    const taux = new Set(reprise ? [] : [...montantsFacture.keys(), ...avoirsLus.flatMap((a) => [...a.montants.keys()])])
     for (const t of [...taux].sort((a, b) => b - a)) {
       const { V, T } = netAu(t, L)
       const tvaAvant = avant.filter((p) => p.taux === t).reduce((s, p) => s + p.tvaCentimes, 0)
@@ -489,6 +557,22 @@ function uneFacture(
   }
 
   return { parts, exigibilites, documents, excedents }
+}
+
+// Ce qu'une facture reprise ajoute à la règle, lu sur les lignes de `factures_importees` ; « illisible » quand la sienne
+// manque. Un avoir repris la cite par `origine_id` ; celui dont la facture n'est pas lue parmi les ventes ne compte pas.
+function repriseDeLaVente(
+  facture: FactureVendue, validees: readonly FactureVendue[], lues: readonly RepriseVendue[],
+): RepriseDeLaVente | 'illisible' {
+  const sienne = lues.find((r) => r.facture_id === facture.id)
+  if (!sienne) return 'illisible'
+  const avoirsRepris: { avoir: FactureVendue; montantTva: number }[] = []
+  for (const r of lues) {
+    if (r.origine_id !== facture.id) continue
+    const avoir = validees.find((a) => a.id === r.facture_id && a.type === 'avoir' && estUneFactureReprise(a))
+    if (avoir) avoirsRepris.push({ avoir, montantTva: r.montant_tva })
+  }
+  return { montantTva: sienne.montant_tva, encaisseParTaux: sienne.encaisse_par_taux, avoirsRepris }
 }
 
 /**
@@ -509,7 +593,9 @@ function marqueDAcompte(facture: FactureVendue, factures: readonly FactureVendue
  */
 export function ventesFacturees(sources: SourcesVentesFacturees): VentesFacturees {
   const duDossier = <T extends { dossier_id: string }>(l: readonly T[]) => l.filter((x) => x.dossier_id === sources.dossierId)
-  const validees = duDossier(sources.factures).filter((f) => f.statut === 'validee' && f.source_de_la_vente)
+  // Les factures validées sources, et, le drapeau levé, les factures reprises (A8c), qu'`importer_factures` marque sources.
+  const validees = duDossier(sources.factures).filter((f) => estUneVente(f) && f.source_de_la_vente)
+  const reprisesLues = duDossier(sources.reprises ?? [])
   const ids = new Set(validees.map((f) => f.id))
   const encaissements = duDossier(sources.encaissements)
   const partsLues = duDossier(sources.parts)
@@ -519,11 +605,15 @@ export function ventesFacturees(sources: SourcesVentesFacturees): VentesFacturee
   }
   const factures = validees.filter((f) => f.type === 'facture').sort((a, b) => ordreC(a.id, b.id))
   for (const facture of factures) {
-    const avoirs = validees.filter((a) => a.type === 'avoir' && a.facture_origine_id === facture.id)
-    const r = uneFacture(
-      facture, avoirs, sources.lignes, encaissements.filter((e) => e.facture_id === facture.id), partsLues,
-      marqueDAcompte(facture, factures, sources.acomptes),
-    )
+    // Les avoirs de l'application : `facture_origine_id`, que seule leur validation pose — jamais un avoir repris.
+    const avoirs = validees.filter((a) => a.type === 'avoir' && a.facture_origine_id === facture.id && !estUneFactureReprise(a))
+    const reprise = estUneFactureReprise(facture) ? repriseDeLaVente(facture, validees, reprisesLues) : null
+    const r = reprise === 'illisible'
+      ? ecart('reprise_illisible')
+      : uneFacture(
+        facture, avoirs, sources.lignes, encaissements.filter((e) => e.facture_id === facture.id), partsLues,
+        marqueDAcompte(facture, factures, sources.acomptes), reprise,
+      )
     if ('ecart' in r) {
       resultat.ecartees.push({ factureId: facture.id, numero: facture.numero, tiers: facture.tiers_nom, ...r.ecart })
       continue

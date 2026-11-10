@@ -19,7 +19,7 @@ import { refusClassement, type ExemplaireLu, type MouvementClasse } from './enca
 import { ecrituresDesVentesFacturees, refusCompteDeContrepartie, type SourceEcritureVente } from './ecrituresVentesFacturees'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { COLONNES_GENEREES } from './sauvegarde'
-import { LIBELLE_MOTIF_VENTE, type MotifVenteEcartee } from './ventesFacturees'
+import { LIBELLE_MOTIF_VENTE, MOTIFS_DU_MODULE_SEUL, type MotifVenteEcartee } from './ventesFacturees'
 
 // LES ÉCRITURES D'UNE VENTE FACTURÉE, ENVOYÉES À LA BASE (chantier EC-Q3, étape VF4b ; migration
 // `ecritures_de_la_vente_facturee`, dans l'export) : ce que le module envoie, ses refus rang par rang sur le jeu de l'essai,
@@ -137,8 +137,12 @@ describe('chaque liste redit sa fonction, dans son ordre, sous ses mots et ses c
   it('le motif d’une facture écartée se dit sous les mots du module des ventes facturées', () => {
     const sql = derniereDefinitionSql('ecrire_vente_facturee')
     const libelles = Object.fromEntries([...sql.matchAll(/when '(\w+)' then '((?:[^']|'')*)'/g)].map((m) => [m[1], m[2].replace(/''/g, "'")]))
-    expect(libelles).toEqual(LIBELLE_MOTIF_VENTE)
-    expect(Object.keys(libelles).sort()).toEqual((Object.keys(LIBELLE_MOTIF_VENTE) as MotifVenteEcartee[]).sort())
+    // Sans les motifs que le module oppose seul (`reprise_illisible`, étape A8c : la base lit `factures_importees` elle-même).
+    const deLaBase = Object.fromEntries(Object.entries(LIBELLE_MOTIF_VENTE)
+      .filter(([m]) => !MOTIFS_DU_MODULE_SEUL.includes(m as MotifVenteEcartee)))
+    expect(libelles).toEqual(deLaBase)
+    expect(Object.keys(libelles).sort()).toEqual(Object.keys(deLaBase).sort())
+    expect(MOTIFS_DU_MODULE_SEUL).toEqual(['reprise_illisible'])
   })
 
   it('les refus d’un compte de contrepartie : ceux de `refusCompteDeContrepartie`, dans son ordre', () => {

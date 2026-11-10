@@ -897,7 +897,7 @@ function jugerEnregistrement(
   const deja = comptes.reduce((total, e) => total + centimes(e.montant), 0)
   const credites = vente != null && (source || reprise) ? creditesDesAvoirs(f.id, c.lignes, vente) : new Map<number, number>()
   const credite = [...credites.values()].reduce((total, x) => total + x, 0)
-  const repris = reprise ? reprise.avoirsRepris.filter((a) => a.origine_id === f.id && a.type === 'avoir' && a.statut === 'importee') : []
+  const repris = reprise ? reprise.avoirsRepris.filter((a) => a.origine_id === f.id && a.type === 'avoir' && estUneFactureReprise(a)) : []
   const crediteRepris = repris.reduce((total, a) => total - (centimesExacts(a.montant_ttc) ?? 0), 0)
   const avant = reprise ? centimesExacts(reprise.encaisseAvantReprise) ?? 0 : 0
   const ttc = (centimesExacts(f.montant_ttc) as number) - credite - crediteRepris - avant
