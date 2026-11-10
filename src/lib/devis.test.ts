@@ -346,7 +346,8 @@ describe('les refus qui lisent la base, sous les mots de l’essai', () => {
     exige('65', refusFacturationDevis(DA, DV3, null))
     exige('66', refusFacturationDevis(DA, DV1_REFUSE, null))
     exige('69', refusFacturationDevis(DA, DV2_ACCEPTE, { numero: null }))
-    exige('74', refusFacturationDevis(DA, DV2_ACCEPTE, { numero: 'F2026-0001' }))
+    // La facture tirée du devis, validée par le chef, prend la série du mandataire (A9a, MEG1-Q5).
+    exige('74', refusFacturationDevis(DA, DV2_ACCEPTE, { numero: 'M2026-0001' }))
     // Transformé, puis de nouveau une fois son brouillon de facture supprimé.
     exige('67', refusFacturationDevis(DA, DV2_ACCEPTE, null))
     exige('72', refusFacturationDevis(DA, DV2_ACCEPTE, null))

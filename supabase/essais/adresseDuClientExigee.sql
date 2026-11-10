@@ -142,7 +142,7 @@ begin
         $q$select string_agg(t.tgname::text, ',' order by t.tgname::text collate "C") from pg_trigger t
             where t.tgrelid = 'public.factures_emises'::regclass and not t.tgisinternal
               and (t.tgtype & 1) <> 0 and (t.tgtype & 2) <> 0 and (t.tgtype & 16) <> 0$q$,
-        'OK', 'factures_emises_figees,factures_emises_figees_mentions,factures_emises_marque_d_acompte,factures_emises_source_de_la_vente', null),
+        'OK', 'factures_emises_figees,factures_emises_figees_mentions,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_numerotation,factures_emises_source_de_la_vente', null),
 
       -- ══ 1. Le refus ══════════
       ('10', 'controle', 'une facture à une entreprise sans adresse : refusée', 'chef',
