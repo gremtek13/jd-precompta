@@ -50335,3 +50335,10 @@ production et dépôt égaux : dérive 195 `f7b9cef0…` ; socle 82 `8a0e4907…
 `documents_divers`) ; inventaire 2 748 `c07f0f5b…` ; `signature.sql` égal à la réplique du jour J sur ses neuf familles.
 `essai.py` compte désormais « *** EN FAUTE *** » et « NE MORD PAS » : faute de quoi les répétitions d'A9a et d'A8-Q5
 n'avaient pas vu sept essais tomber.
+Le commit du jour J laissait la barrière ROUGE (20 fichiers, 436 tests), non verte ; remise au vert le même jour, sans rien
+en base : douze gardes de l'export lisent leur fonction reprise par INAL2, A8a, A9a ou A8b, et le module redit chaque refus
+neuf à son rang (`sourceDeLaVente`, les deux d'une facture reprise ; les deux avoirs d'A8b, `REFUS_AVOIR_D_UNE_REPRISE`) ;
+huit faux clients servent `.in('statut', …)` et la seconde vague des reprises. Un défaut réel, en ligne : la date d'émission
+se jugeait contre la série F (A) ; elle se juge dans la série de QUI valide, au modèle en vigueur, validées et reprises
+(`serieDeLaValidation`), et se tait dans l'espace client, qui ne lit pas les modèles. Suite entière : 673 fichiers,
+19 242 tests verts.
