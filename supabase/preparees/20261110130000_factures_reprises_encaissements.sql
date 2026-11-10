@@ -4,7 +4,7 @@
 -- LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE : LA CONCEPTION REMISE À JOUR » (06/11/2026), points 2 et 5 et le
 -- découpage. Son essai : supabase/essais/encaissementsDesReprises.sql ; son retour : supabase/preparees/retour/
 -- 20261110130100_retour_factures_reprises_encaissements.sql. Les refus neufs d'`enregistrer_encaissement`, que
--- src/lib/encaissementsFactures.ts redit derrière `ENCAISSEMENTS_DES_REPRISES_EXPORTES` (baissé), confrontés à ce texte.
+-- src/lib/encaissementsFactures.ts redit derrière `FACTURES_IMPORTEES_PREVUES` (baissé ; le drapeau des trois migrations des factures reprises), confrontés à ce texte.
 --
 -- ELLE S'ÉCRIT PAR-DESSUS A8a (20261107210000_factures_importees) ET A9a (20261110100000_numerotation_continue), toutes deux
 -- préparées, à coller AVANT elle : sa garde de tête les exige. À COLLER (l'outil retient ce texte : le corps

@@ -50180,8 +50180,8 @@ montage (drapeau baissé). Reste, le jour de l'application : lever le drapeau, r
 ### 10/11/2026 — A8B : LES ENCAISSEMENTS ET L'AVOIR D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
 
 (Agent architecte ; en production, des SELECT seulement : 188 migrations, les sept fonctions remplacées à l'empreinte de
-l'export.) La migration `factures_reprises_encaissements` (20261110130000, md5 `e9c64a690ae7d9d828c1c8ead54a9a32`,
-169 853 octets, LF), À COLLER après A8a et A9a (le corps d'`enregistrer_facture` supprime les lignes d'un brouillon, comme
+l'export.) La migration `factures_reprises_encaissements` (20261110130000, md5 `90adcfdbee7beefcce4926378f4f5a02` depuis le 10/11 (le drapeau de son en-tête corrigé ; avant, `e9c64a69…`),
+169 900 octets, LF), À COLLER après A8a et A9a (le corps d'`enregistrer_facture` supprime les lignes d'un brouillon, comme
 hier ; aucun `drop`), et son retour (130100 : un `drop function`, refusé tant qu'une facture reprise a un encaissement ou
 un avoir de l'application). Une fonction neuve, `montants_par_taux_du_document` : d'une facture ou d'un avoir repris, la
 règle de TVA que ses montants déclarés suivaient — par taux, ou ligne à ligne, celle qu'`importer_factures` a reconnue —,
