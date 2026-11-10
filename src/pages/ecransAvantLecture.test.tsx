@@ -397,11 +397,11 @@ const ECRANS: Ecran[] = [
   ) },
   // Le nom du cabinet que la validation du cabinet fige (P4) n'est pas revenu non plus : `mandataire={null}`, comme toute lecture ici.
   { nom: 'FactureAvoirModal', fichier: 'pages/dossier/FactureAvoirModal.tsx', rendre: () => (
-    <Dossier1><FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet" mandataire={null} dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
+    <Dossier1><FactureAvoirModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet" mandataire={null} dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
   ) },
   { nom: 'FactureFormModal', fichier: 'pages/dossier/FactureFormModal.tsx', rendre: () => (
     <Dossier1>
-      <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet"
+      <FactureFormModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="cabinet"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} facture={facture({ statut: 'brouillon', numero: null })}
         onAdresseUpdated={rien} mandataire={null} onClose={rien} onSaved={rien}
@@ -411,7 +411,7 @@ const ECRANS: Ecran[] = [
   // Le même formulaire dans l'espace du client « Ventes » (étape A2b : un article dans la facture, lu EN ENTIER à l'ouverture).
   { nom: 'FactureFormModal (client)', fichier: 'pages/dossier/FactureFormModal.tsx', rendre: () => (
     <Dossier1>
-      <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="client"
+      <FactureFormModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} espace="client"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} facture={facture({ statut: 'brouillon', numero: null })}
         onClose={rien} onSaved={rien}
@@ -1300,7 +1300,9 @@ describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
       const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
       reinitialiser('retenir')
       etat.lignesUniques = { dossiers: dossier() }
-      etat.toujoursRetenues = new Set(TABLES_DES_VENTES)
+      // A8c : les factures reprises (`factures_importees`, puis la TVA des reprises sur `factures_emises`) se lisent APRÈS
+      // les quatre premières lectures, et sont des ventes facturées comme elles : retenues de même.
+      etat.toujoursRetenues = new Set([...TABLES_DES_VENTES, 'factures_importees'])
       render(<>{ecran.rendre()}</>)
       await laisserPasser()
       await act(async () => { libererTout('vide') })
@@ -1319,6 +1321,12 @@ describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
       // de la page — ne dépend pas plus des ventes facturées que du reste.
       const admises = new Set(ECRITURES_SANS_LISTE.filter((x) => x.ecran === nom).flatMap((x) => x.ecritures))
       expect(etat.ecritures.filter((e) => !LECTURES_PAR_RPC.has(e) && !LECTURES_PAR_FONCTION.has(e) && !admises.has(e)), 'une écriture avant les ventes facturées').toEqual([])
+      await act(async () => { libererRetenues() })
+      await laisserPasser()
+      // La seconde vague (A8c) : les factures reprises, demandées une fois les quatre revenues ; l'écran attend encore.
+      expect(etat.demandes.has('factures_importees'), 'les factures reprises se demandent après les ventes').toBe(true)
+      expect(attendEncore(), 'l’écran attend les factures reprises').toBe(true)
+      expect(etat.ecritures.filter((e) => !LECTURES_PAR_RPC.has(e) && !LECTURES_PAR_FONCTION.has(e) && !admises.has(e)), 'une écriture avant les factures reprises').toEqual([])
       await act(async () => { libererRetenues() })
       await laisserPasser()
       expect(attendEncore(), 'revenues, l’attente se lève').toBe(false)

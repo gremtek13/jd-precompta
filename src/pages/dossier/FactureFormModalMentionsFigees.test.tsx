@@ -144,8 +144,8 @@ function formulaire(espace: EspaceVentes, o: Options = {}) {
     reglageDesVentes: NON_BASCULE, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   }
   return espace === 'cabinet'
-    ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} mandataire={mandataire} {...commun} />
-    : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="client" {...commun} />
+    ? <FactureFormModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} mandataire={mandataire} {...commun} />
+    : <FactureFormModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]} espace="client" {...commun} />
 }
 
 function monter(espace: EspaceVentes, o: Options = {}) {

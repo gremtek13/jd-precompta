@@ -11,8 +11,8 @@ import type { ArticleExoneration, RegimeInternational, StatutTva } from './types
 import { REGIMES_INTERNATIONAUX, horsDeLaTvaFrancaise } from './factureInternationale'
 import {
   ADRESSE_DU_CLIENT_EXIGEE, AVIS_ARTICLE_A_CHOISIR, AVIS_STATUT_A_PRECISER, REFUS_ADRESSE_DU_CLIENT, REFUS_DE_LA_VALIDATION,
-  REFUS_LIGNE_A_ZERO, avisDuStatutDeTva, plusRecenteDeLaSerie, refusDeLAdresseDuClient, refusDeLaDateDEmission,
-  refusDeLaLigneAZero, refusDeLaValidation, refusDuStatutDeTva, type AdresseDuClientAJuger, type FactureDeLaSerie,
+  REFUS_LIGNE_A_ZERO, avisDuStatutDeTva, plusRecentesDeLaSerie, REFUS_DATE_AVANT_LA_REPRISE, refusDeLAdresseDuClient, serieDeLaValidation, refusDeLaDateDEmission,
+  refusDeLaLigneAZero, refusDeLaValidation, refusDuStatutDeTva, type AdresseDuClientAJuger, type FactureDeLaSerie, type ModeleDeLaSerie,
   type LigneAZeroAJuger, type ValidationAJuger,
 } from './validationDeLaFacture'
 
@@ -238,28 +238,82 @@ describe('la série : celle que la base lit sous le verrou, celle que le module 
     const prise = enregistrer.indexOf('v_numero := attribuer_numero_facture(p_dossier_id, extract(year from v_date_emission)::integer, v_type);')
     expect(prise).toBeGreaterThan(0)
     expect(prise).toBeLessThan(enregistrer.indexOf("    set statut = 'validee', numero = v_numero, validated_at = now()"))
-    expect(derniereDefinitionSql('attribuer_numero_facture')).toContain('v_sequence := prochain_numero_facture(p_dossier_id, p_annee, p_type);')
-    expect(derniereDefinitionSql('prochain_numero_facture')).toMatch(/from facture_numerotation n\s+where n\.dossier_id = p_dossier_id and n\.annee = p_annee and n\.type = p_type\s+for update;/)
+    // Depuis A9a (`numerotation_continue`, jour J du 10/11/2026), le numéro vient de la série de QUI valide, sous son verrou.
+    expect(derniereDefinitionSql('attribuer_numero_facture')).toContain('return (public.numerotation_suivante(p_dossier_id, p_annee, p_type)).numero_attribue;')
+    expect(derniereDefinitionSql('numerotation_suivante'))
+      .toContain("v_emetteur := case when public.admin_du_dossier(p_dossier_id) then 'mandataire' else 'client' end;")
+  })
+
+  it('la base, depuis A9a : la série de qui valide, au modèle en vigueur ; ses factures validées et reprises ; la date, puis le compteur', () => {
+    const garde = derniereDefinitionSql('garder_la_numerotation')
+    expect(garde).toContain("from public.modele_en_vigueur(new.dossier_id, new.type,\n"
+      + "                                    case when new.mandataire_nom is not null then 'mandataire' else 'client' end, v_annee);")
+    expect(garde).toContain("where f.dossier_id = new.dossier_id and f.id <> new.id and f.statut in ('validee', 'importee') and f.numero ~ v_motif\n"
+      + "     order by f.date_emission desc, substring(f.numero from v_motif)::numeric desc\n     limit 1;")
+    // Ses deux refus de la date : devant une facture reprise, puis devant une facture de l'application — les mots du rang 18.
+    const messages = messagesSql(garde)
+    const k = messages.indexOf(REFUS_DATE_AVANT_LA_REPRISE.modele)
+    expect(k).toBeGreaterThan(0)
+    expect(messages[k + 1]).toBe(REFUS_DE_LA_VALIDATION.find((r) => r.cle === 'date_avant_la_derniere')?.modele)
+    expect(codesSql(garde).slice(k, k + 2)).toEqual([REFUS_DATE_AVANT_LA_REPRISE.code, '22023'])
+    // Le modèle en vigueur : le dernier posé qui vaut depuis l'année, sinon celui par défaut — ceux du module.
+    const vigueur = derniereDefinitionSql('modele_en_vigueur')
+    expect(vigueur).toContain('and m.depuis <= p_annee')
+    expect(vigueur).toContain("select null::uuid, public.modele_par_defaut(p_nature, p_emetteur), true, 1, null::integer")
+    for (const [emetteur, natures] of Object.entries({ client: ['F', 'A'], mandataire: ['M', 'MA'] })) {
+      expect(serieDeLaValidation(emetteur === 'client' ? 'client' : 'cabinet', 'facture', 2026, [])?.modele.startsWith(`${natures[0]}{AAAA}-`)).toBe(true)
+      expect(serieDeLaValidation(emetteur === 'client' ? 'client' : 'cabinet', 'avoir', 2026, [])?.modele.startsWith(`${natures[1]}{AAAA}-`)).toBe(true)
+    }
   })
 
   const f = (numero: string | null, date: string, statut: 'validee' | 'brouillon' = 'validee'): FactureDeLaSerie =>
     ({ numero, date_emission: date, statut })
 
-  it('le module : les brouillons, l’autre lettre et l’autre année n’en sont pas ; à date égale, le plus grand rang, en nombre', () => {
+  it('le module : les brouillons, l’autre série et l’autre année n’en sont pas ; à date égale, le plus grand rang, en nombre', () => {
     const factures = [
       f('F2025-0001', '2025-12-05'), f(null, '2025-12-20', 'brouillon'), f('A2025-0001', '2025-12-30'), f('F2024-0007', '2024-12-31'),
-      f('F2025-9999', '2025-12-10'), f('F2025-10000', '2025-12-10'),
+      f('F2025-9999', '2025-12-10'), f('F2025-10000', '2025-12-10'), f('M2025-0003', '2025-12-28'), f('MA2025-0001', '2025-12-29'),
     ]
-    expect(plusRecenteDeLaSerie('facture', '2025-12-15', factures)).toEqual({ numero: 'F2025-10000', date: '2025-12-10' })
-    expect(plusRecenteDeLaSerie('avoir', '2025-12-15', factures)).toEqual({ numero: 'A2025-0001', date: '2025-12-30' })
-    expect(plusRecenteDeLaSerie('facture', '2024-06-01', factures)).toEqual({ numero: 'F2024-0007', date: '2024-12-31' })
-    expect(plusRecenteDeLaSerie('facture', '2026-01-02', factures)).toBeNull()
+    const client = (type: 'facture' | 'avoir', date: string) =>
+      plusRecentesDeLaSerie(date, factures, serieDeLaValidation('client', type, Number(date.slice(0, 4)), []) as never)
+    const derniere = (numero: string, date: string) => ({ numero, date, reprise: false })
+    expect(client('facture', '2025-12-15')).toEqual({ validee: derniere('F2025-10000', '2025-12-10'), deLaSerie: derniere('F2025-10000', '2025-12-10') })
+    expect(client('avoir', '2025-12-15')?.validee).toEqual(derniere('A2025-0001', '2025-12-30'))
+    expect(client('facture', '2024-06-01')?.validee).toEqual(derniere('F2024-0007', '2024-12-31'))
+    expect(client('facture', '2026-01-02')).toEqual({ validee: null, deLaSerie: null })
+    // Le cabinet : la série de son mandataire, M et MA.
+    const cabinet = plusRecentesDeLaSerie('2025-12-15', factures, serieDeLaValidation('cabinet', 'facture', 2025, []) as never)
+    expect(cabinet?.validee).toEqual(derniere('M2025-0003', '2025-12-28'))
+    // Une facture reprise compte dans la série (la garde de la numérotation), pas dans le préfixe des validées.
+    const reprise = { numero: 'F2025-0042', date_emission: '2025-12-31', statut: 'importee' as const }
+    expect(plusRecentesDeLaSerie('2025-12-15', [...factures, reprise], serieDeLaValidation('client', 'facture', 2025, []) as never))
+      .toEqual({ validee: derniere('F2025-10000', '2025-12-10'), deLaSerie: { numero: 'F2025-0042', date: '2025-12-31', reprise: true } })
+    // Une validée du même préfixe qui n'est pas de la série : la base la compterait autrement — l'écran ne juge pas.
+    expect(plusRecentesDeLaSerie('2025-12-15', [...factures, f('F2025-X1', '2025-12-01')], serieDeLaValidation('client', 'facture', 2025, []) as never)).toBeNull()
+  })
+
+  it('la série de qui valide : le dernier modèle posé qui vaut pour l’année, sinon celui par défaut ; non lus, aucune', () => {
+    const m = (o: Partial<ModeleDeLaSerie>): ModeleDeLaSerie => ({ id: 'm1', nature: 'facture', emetteur: 'mandataire',
+      modele: 'F{AAAA}-{N:4}', annuel: true, depuis: 2026, pose_le: '2026-11-10T10:00:00+00:00', ...o })
+    expect(serieDeLaValidation('cabinet', 'facture', 2026, null)).toBeNull()
+    expect(serieDeLaValidation('client', 'facture', 2026, null)).toBeNull()
+    expect(serieDeLaValidation('cabinet', 'facture', 2026, [m({})])).toEqual({ modele: 'F{AAAA}-{N:4}', annuel: true })
+    // Une année d'avant son départ, un autre emplacement : le modèle par défaut.
+    expect(serieDeLaValidation('cabinet', 'facture', 2026, [m({ depuis: 2027 }), m({ id: 'm2', emetteur: 'client' }),
+      m({ id: 'm3', nature: 'avoir' })])).toEqual({ modele: 'M{AAAA}-{N:4}', annuel: true })
+    // Le dernier posé l'emporte ; à même instant, le plus grand identifiant.
+    expect(serieDeLaValidation('cabinet', 'facture', 2026, [m({ modele: 'X{AAAA}-{N:4}', pose_le: '2026-11-10T11:00:00+00:00' }),
+      m({ id: 'm2' })])?.modele).toBe('X{AAAA}-{N:4}')
+    expect(serieDeLaValidation('cabinet', 'facture', 2026, [m({ id: 'm9', modele: 'Y{AAAA}-{N:4}' }), m({ id: 'm2' })])?.modele)
+      .toBe('Y{AAAA}-{N:4}')
+    // Un préfixe qui dépend du compteur : la garde des factures le comparerait, l'écran ne le connaît pas.
+    expect(serieDeLaValidation('cabinet', 'facture', 2026, [m({ modele: '{N:4}-{AAAA}' })])).toBeNull()
   })
 
   it('une date égale à la plus récente passe ; une date d’avant se refuse ; une date qui n’en est pas une ne se juge pas', () => {
     const factures = [f('F2025-0001', '2025-12-05')]
     const juge = (dateEmission: string, aujourdhui = '2026-10-31') =>
-      refusDeLaDateDEmission({ type: 'facture', dateEmission, aujourdhui, factures })
+      refusDeLaDateDEmission({ type: 'facture', dateEmission, aujourdhui, factures, espace: 'client', modeles: [] })
     expect(juge('2025-12-05')).toBeNull()
     expect(juge('2025-12-04')?.cle).toBe('date_avant_la_derniere')
     expect(juge('2026-10-31')).toBeNull()
@@ -290,11 +344,17 @@ function messageAttendu(id: string, demain: string, aujourdhui: string): string 
 // exonéré sans article et V sans statut (où valide le client « Ventes »).
 const AUJOURDHUI = '2026-10-31'
 const DEMAIN = '2026-11-01'
+// Les modèles que l'essai pose à chacun de ses dossiers depuis A9a, valables depuis 2000 : au cabinet la série d'hier (F, A),
+// au client C et D (supabase/essais/factures.sql, « A9a : la série d'hier au cabinet »).
+const MODELES_DE_L_ESSAI: ModeleDeLaSerie[] = ([['facture', 'client', 'C{AAAA}-{N:4}'], ['avoir', 'client', 'D{AAAA}-{N:4}'],
+  ['facture', 'mandataire', 'F{AAAA}-{N:4}'], ['avoir', 'mandataire', 'A{AAAA}-{N:4}']] as const)
+  .map(([nature, emetteur, modele], i) => ({ id: `m${i + 1}`, nature, emetteur, modele, annuel: true, depuis: 2000, pose_le: '2026-10-31T00:00:00+00:00' }))
 const SERIE_K = [{ numero: 'F2025-0001', date_emission: '2025-12-05', statut: 'validee' as const },
   { numero: 'A2025-0001', date_emission: '2025-12-06', statut: 'validee' as const }]
 const base = (o: Partial<ValidationAJuger>): ValidationAJuger => ({
   type: 'facture', dateEmission: '2026-03-02', aujourdhui: AUJOURDHUI, factures: [], statutTva: 'redevable',
-  articleExoneration: null, cabinet: true, mentionsLegales: null, ...o,
+  articleExoneration: null, cabinet: true, mentionsLegales: null, espace: o.cabinet === false ? 'client' : 'cabinet',
+  modeles: MODELES_DE_L_ESSAI, ...o,
 })
 // La facture de V, telle que l'essai la fait valider (107, M107, M107b) ; la restaurée qui la précède dans sa série.
 const FACTURE_V: Partial<ValidationAJuger> = {

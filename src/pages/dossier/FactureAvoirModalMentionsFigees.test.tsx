@@ -97,7 +97,7 @@ const figee = (o: Partial<FactureEmise> = {}) => factureFigee({ date_emission: '
 // `mandataire` : le nom du cabinet tel que l'onglet l'a lu (P4) — lu par défaut, `null` tant que la lecture n'est pas revenue.
 function avoir(espace: EspaceVentes, origine: FactureEmise, mandataire: LectureDuMandataire | null) {
   const qui = espace === 'cabinet' ? { espace, mandataire } as const : quiCree(espace)
-  return <FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} {...qui} dossierId="d1" factureOrigine={origine} credite={0} onClose={() => {}} onCreated={() => {}} />
+  return <FactureAvoirModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]} reglageDesVentes={NON_BASCULE} {...qui} dossierId="d1" factureOrigine={origine} credite={0} onClose={() => {}} onCreated={() => {}} />
 }
 async function monter(espace: EspaceVentes, origine: FactureEmise = figee(), mandataire: LectureDuMandataire | null = CABINET_DU_DOSSIER) {
   const rendu = render(avoir(espace, origine, mandataire))

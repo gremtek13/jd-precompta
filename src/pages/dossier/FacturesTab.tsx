@@ -58,6 +58,8 @@ import {
 import { lireLesAccesDuDossier } from '../../lib/auteursVentesLecture'
 import type { ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import { lireLeMandataire } from '../../lib/mandataireLecture'
+import { lireLesModelesDeNumerotation } from '../../lib/numerotationContinueLecture'
+import type { ModeleDeLaSerie } from '../../lib/validationDeLaFacture'
 import type { LectureDuMandataire } from '../../lib/mentionsFigeesVue'
 
 // QUI REGARDE (espace client, étape P4a) : le cabinet, depuis l'onglet Factures d'un dossier, qui peut aussi enregistrer
@@ -162,6 +164,16 @@ export default function FacturesTab(props: Props) {
     lireLeMandataire(dossierId).then((lu) => { if (!annule) setMandataireLu({ dossierId, lu }) })
     return () => { annule = true }
   }, [dossierId, espace])
+  // LES MODÈLES DE NUMÉROTATION (A9a), au cabinet seul — la table ne s'ouvre qu'à lui : la série où il valide, que la date
+  // d'émission juge avant le clic. Lus en entier et gardés AVEC le dossier lu ; sinon null, et la base juge la série au clic.
+  const [modelesLus, setModelesLus] = useState<{ dossierId: string; modeles: readonly ModeleDeLaSerie[] | null } | null>(null)
+  useEffect(() => {
+    if (espace !== 'cabinet') return
+    let annule = false
+    lireLesModelesDeNumerotation(dossierId).then((modeles) => { if (!annule) setModelesLus({ dossierId, modeles }) })
+    return () => { annule = true }
+  }, [dossierId, espace])
+  const modelesDeNumerotation = espace === 'cabinet' && modelesLus?.dossierId === dossierId ? modelesLus.modeles : null
   // La case « Émises par le client » : une préférence d'AFFICHAGE, qui ne vaut que sur des accès lus en entier.
   const [filtreClient, setFiltreClient] = useState(false)
   const filtre = etatDuFiltre(acces)
@@ -772,6 +784,7 @@ export default function FacturesTab(props: Props) {
           facture={editing === 'new' ? null : editing}
           acompte={editing === 'new' ? SANS_ACOMPTE : acompteDe(editing.id)}
           facturesDeLaSerie={facturesDeLaSerie}
+          modelesDeNumerotation={modelesDeNumerotation}
           onClose={() => setEditing(null)}
           onSaved={load}
         />
@@ -794,6 +807,7 @@ export default function FacturesTab(props: Props) {
           // facture de cette année. Lue en partie, on ne sait pas ce qui a été crédité, et c'est la base qui juge.
           credite={lectureIncomplete ? null : dejaCredite(avoirDe.id, factures)}
           facturesDeLaSerie={facturesDeLaSerie}
+          modelesDeNumerotation={modelesDeNumerotation}
           acompte={acompteDe(avoirDe.id)}
           reglageDesVentes={reglageDesVentes}
           onClose={() => setAvoirDe(null)}

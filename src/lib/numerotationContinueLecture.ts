@@ -12,6 +12,7 @@
 import { supabase } from './supabase'
 import { lireTout, type LectureComplete } from './lectureComplete'
 import { messageErreur } from './messageErreur'
+import type { ModeleDeLaSerie } from './validationDeLaFacture'
 import {
   modelePose, paroleLue, seriesLues,
   type ModelePose, type ParametresDeLaFin, type ParametresDeLaPose, type ParametresDesTrous, type ParoleLue, type SerieLue,
@@ -93,5 +94,28 @@ export async function leverLesTrous(parametres: ParametresDesTrous): Promise<Iss
     return error ? { ok: false, message: messageErreur(error, REPLI_DU_GESTE) } : { ok: true }
   } catch (erreur) {
     return { ok: false, message: messageErreur(erreur, REPLI_DU_GESTE) }
+  }
+}
+
+// LES MODÈLES QUE L'ONGLET FACTURES LIT (jour J du 10/11/2026 ; lib/validationDeLaFacture.ts, `serieDeLaValidation`) : les
+// modèles posés, EN ENTIER, pour savoir dans quelle série le cabinet valide. Rend null — et la date ne se juge alors que
+// contre l'avenir — sur un refus, une lecture partielle ou une ligne d'une autre forme ; ne rejette jamais. Le cabinet du
+// dossier seul la lit (la table ne s'ouvre qu'à lui) : l'espace client ne l'appelle pas.
+export async function lireLesModelesDeNumerotation(dossierId: string): Promise<ModeleDeLaSerie[] | null> {
+  try {
+    const lu = await lireTout<Record<string, unknown>>((debut, fin) =>
+      supabase.from('modeles_numerotation').select('id, nature, emetteur, modele, annuel, depuis, pose_le', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    )
+    if (!lu.complete) return null
+    const modeles = lu.lignes.map((l): ModeleDeLaSerie | null => (
+      typeof l.id === 'string' && (l.nature === 'facture' || l.nature === 'avoir')
+        && (l.emetteur === 'client' || l.emetteur === 'mandataire') && typeof l.modele === 'string'
+        && typeof l.annuel === 'boolean' && typeof l.depuis === 'number' && Number.isInteger(l.depuis) && typeof l.pose_le === 'string'
+        ? { id: l.id, nature: l.nature, emetteur: l.emetteur, modele: l.modele, annuel: l.annuel, depuis: l.depuis, pose_le: l.pose_le }
+        : null))
+    return modeles.every((m) => m !== null) ? modeles as ModeleDeLaSerie[] : null
+  } catch {
+    return null
   }
 }

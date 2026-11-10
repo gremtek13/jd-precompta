@@ -60,7 +60,7 @@ function monter(espace: Espace, type: Type, adresse: string, ligne?: { taux: str
   const commun = {
     dossierId: 'd1', dossierNom: 'Dossier fictif', dossierSiret: null, dossierAdresse: null, statutTva: 'redevable' as const,
     articleExoneration: ligne?.article ?? null, numeroTvaAttribue: false, tvaSurDebits: false, facture: null,
-    reglageDesVentes: NON_BASCULE, acompte: SANS_ACOMPTE, facturesDeLaSerie: [], onClose: () => {}, onSaved: () => {},
+    reglageDesVentes: NON_BASCULE, acompte: SANS_ACOMPTE, facturesDeLaSerie: [], modelesDeNumerotation: null, onClose: () => {}, onSaved: () => {},
   }
   render(espace === 'client'
     ? <FactureFormModal espace="client" {...commun} />

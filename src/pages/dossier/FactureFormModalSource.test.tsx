@@ -65,8 +65,8 @@ function monter(espace: EspaceVentes, reglage: ReglageDesVentes, saisie: { natur
     onClose: () => {}, onSaved: () => {},
   }
   render(espace === 'client'
-    ? <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="client" {...commun} />
-    : <FactureFormModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} mandataire={CABINET_DU_DOSSIER} {...commun} />)
+    ? <FactureFormModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]} espace="client" {...commun} />
+    : <FactureFormModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]} espace="cabinet" onAdresseUpdated={() => {}} mandataire={CABINET_DU_DOSSIER} {...commun} />)
   fireEvent.change(document.querySelector('#tiers-nom')!, { target: { value: 'Client fictif' } })
   fireEvent.change(document.querySelectorAll('tbody input')[0]!, { target: { value: 'Prestation' } })
   fireEvent.change(document.querySelector('#nature-operation')!, { target: { value: saisie.nature ?? '' } })

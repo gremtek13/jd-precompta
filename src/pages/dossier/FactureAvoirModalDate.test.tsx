@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SANS_ACOMPTE } from '../../lib/acomptesDesFactures'
 import { motsDuCabinet, type EspaceVentes } from '../../lib/espaceVentes'
 import type { FactureEmise } from '../../lib/types'
-import type { FactureDeLaSerie } from '../../lib/validationDeLaFacture'
+import type { FactureDeLaSerie, ModeleDeLaSerie } from '../../lib/validationDeLaFacture'
 import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
 import FactureAvoirModal from './FactureAvoirModal'
 
@@ -57,19 +57,25 @@ const origine: FactureEmise = {
 }
 
 const validee = (numero: string, date_emission: string): FactureDeLaSerie => ({ statut: 'validee', numero, date_emission })
-// Le plus récent des avoirs validés de la série A de 2026 : le 10 octobre. Les factures de la série F, plus récentes, ne comptent pas.
+// LA SÉRIE DE QUI VALIDE (A9a, jour J du 10/11/2026) : le cabinet crée l'avoir dans la série de son mandataire (MA…), un accès
+// « Ventes » dans celle du client (A…). Le plus récent des avoirs validés de la série MA de 2026 : le 10 octobre ; ceux de la
+// série A du client, et les factures, plus récentes, ne comptent pas pour le cabinet. Le client ne lit pas les modèles : la
+// série ne se juge pas avant son clic.
 const SERIE: FactureDeLaSerie[] = [
   validee('F2026-0001', '2026-09-01'),
   validee('F2026-0002', '2026-10-25'),
   validee('A2026-0001', '2026-09-20'),
-  validee('A2026-0002', '2026-10-10'),
+  validee('A2026-0002', '2026-10-30'),
+  validee('MA2026-0001', '2026-09-20'),
+  validee('MA2026-0002', '2026-10-10'),
 ]
+const MODELES: Record<EspaceVentes, readonly ModeleDeLaSerie[] | null> = { cabinet: [], client: null }
 
 async function monter(espace: EspaceVentes, facturesDeLaSerie: readonly FactureDeLaSerie[] | null, dateEmission: string) {
   render(
     <FactureAvoirModal
       acompte={SANS_ACOMPTE} {...quiCree(espace)} dossierId="d1" factureOrigine={origine} credite={0} reglageDesVentes={NON_BASCULE}
-      facturesDeLaSerie={facturesDeLaSerie} onClose={() => {}} onCreated={() => {}}
+      modelesDeNumerotation={MODELES[espace]} facturesDeLaSerie={facturesDeLaSerie} onClose={() => {}} onCreated={() => {}}
     />,
   )
   await screen.findByDisplayValue('Consultation')
@@ -80,7 +86,7 @@ const valider = () => screen.getByRole('button', { name: "Valider l'avoir" }) as
 const refusDeLaDate = () => screen.queryAllByText(/La date d'émission/).map((p) => p.textContent ?? '')
 
 const A_VENIR = "La date d'émission, le 07/11/2026, est à venir : nous sommes le 06/11/2026 à Paris."
-const AVANT_LE_DERNIER = "La date d'émission, le 05/10/2026, précède celle de A2026-0002 (le 10/10/2026), la plus récente de la même série"
+const AVANT_LE_DERNIER = "La date d'émission, le 05/10/2026, précède celle de MA2026-0002 (le 10/10/2026), la plus récente de la même série"
 
 describe.each(['cabinet', 'client'] as const)('FactureAvoirModal — la date d’émission, dans l’espace « %s »', (espace) => {
   it('une date à venir : le rang 17 se dit avant le clic, la création est retenue', async () => {
@@ -93,9 +99,14 @@ describe.each(['cabinet', 'client'] as const)('FactureAvoirModal — la date d�
     expect(faux.appelsRpc).toHaveLength(0)
   })
 
-  it('une date antérieure au plus récent avoir validé de la série A : le rang 18 nomme cet avoir', async () => {
+  it('une date antérieure au plus récent avoir validé de sa série : le cabinet le nomme (MA) ; le client se tait, la base juge', async () => {
     await monter(espace, SERIE, '2026-10-05')
     const dits = refusDeLaDate()
+    if (espace === 'client') {
+      expect(dits).toEqual([])
+      expect(valider().disabled).toBe(false)
+      return
+    }
     expect(dits).toHaveLength(1)
     expect(dits[0]).toContain(AVANT_LE_DERNIER)
     expect(valider().disabled).toBe(true)
@@ -136,8 +147,9 @@ describe.each(['cabinet', 'client'] as const)('FactureAvoirModal — la date d�
 })
 
 describe('FactureAvoirModal — la date d’émission, les mots du client', () => {
-  it('« Mes ventes » dit les deux refus sans un mot du cabinet', async () => {
-    for (const date of ['2026-11-07', '2026-10-05']) {
+  // Le client ne lit pas sa série (A9a) : seul le refus de la date à venir se dit avant son clic.
+  it('« Mes ventes » dit le refus de la date à venir sans un mot du cabinet', async () => {
+    for (const date of ['2026-11-07']) {
       await monter('client', SERIE, date)
       const dits = refusDeLaDate()
       expect(dits, date).toHaveLength(1)

@@ -15,7 +15,7 @@ import {
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import { lireLesContacts } from '../../lib/contactsLecture'
 import { ACOMPTES_PREVUS } from '../../lib/devis'
-import { refusDeLaDateDEmission, type FactureDeLaSerie } from '../../lib/validationDeLaFacture'
+import { refusDeLaDateDEmission, type FactureDeLaSerie, type ModeleDeLaSerie } from '../../lib/validationDeLaFacture'
 import { avisDeLAvoir, refusDeLAvoir as refusDeLAvoirAvecAcompte, type AcompteDeLaFacture } from '../../lib/acomptesDesFactures'
 
 // L'unité, la référence et la nature de la ligne créditée (étape A7b) : l'avoir les reprend de la ligne qu'il crédite, et les
@@ -49,6 +49,9 @@ type Props = QuiCree & {
   // la garde, lib/validationDeLaFacture.ts) ; null quand la liste n'est pas lue en entier. Sans valeur par défaut : un écran
   // qui l'oublierait ne compile pas, et la base ne dirait ses refus de date qu'au clic.
   facturesDeLaSerie: readonly FactureDeLaSerie[] | null
+  // Les modèles de numérotation du dossier (A9a), lus EN ENTIER par l'onglet du cabinet ; null ailleurs — l'espace client ne
+  // les lit pas — ou sur une lecture partielle : la date ne se juge alors que contre l'avenir, et la base juge la série au clic.
+  modelesDeNumerotation: readonly ModeleDeLaSerie[] | null
   // La source des ventes du dossier et ses exercices validés (étape VF8c ; lib/sourceDeLaVente.ts) : un avoir prend la source
   // de la facture qu'il corrige, et un avoir source ne se valide pas au-delà de la frontière d'un exercice validé.
   reglageDesVentes: ReglageDesVentes
@@ -77,7 +80,7 @@ type Props = QuiCree & {
 // creerAvoir) : sommer tous les montant_ttc d'un dossier/année annule alors automatiquement l'effet de
 // l'avoir sur le total, sans cas particulier à coder ailleurs (FactureApercu, un futur export...).
 export default function FactureAvoirModal(props: Props) {
-  const { dossierId, espace, factureOrigine, credite, facturesDeLaSerie, reglageDesVentes, acompte, onClose, onCreated } = props
+  const { dossierId, espace, factureOrigine, credite, facturesDeLaSerie, modelesDeNumerotation, reglageDesVentes, acompte, onClose, onCreated } = props
   // Le jour de PARIS, celui que la base juge (rang 17) : le jour local d'un navigateur en avance sur Paris serait « à venir ».
   const [dateEmission, setDateEmission] = useState(aujourdHuiAParis())
   const [motif, setMotif] = useState('')
@@ -211,12 +214,13 @@ export default function FactureAvoirModal(props: Props) {
   const refusDeLAvoir = acompte.etat === 'acompte' || acompte.etat === 'finale'
     ? refusDeLAvoirAvecAcompte(factureOrigine, acompte, dateEmission, lignesQuiPartent, credite)
     : refusAvoir(factureOrigine, dateEmission, lignesValides, credite)
-  // LA DATE D'ÉMISSION DE L'AVOIR (rangs 17 et 18 de la garde) : à venir après le jour de Paris, ou antérieure au plus récent des
-  // avoirs VALIDÉS de la série A de son année. Dite avant le clic, pour tout auteur, sur la date telle qu'elle part. Sur une liste
+  // LA DATE D'ÉMISSION DE L'AVOIR (rangs 17 et 18 de la garde) : à venir après le jour de Paris, ou antérieure au plus récent de
+  // la série où la base le numérotera — celle de QUI valide (A9a : le cabinet, MA ; le client, A), au modèle en vigueur ;
+  // l'espace client ne lit pas les modèles, le rang 18 s'y tait et la base le juge au clic. Dite avant le clic, pour tout auteur, sur la date telle qu'elle part. Sur une liste
   // lue en partie, le rang 18 se tait — un avoir plus récent peut manquer, et la base le dira au clic — mais le rang 17 ne
   // dépend d'aucune liste : on le dit encore. Le jour de Paris se lit ici, à chaque rendu, jamais au chargement du module.
   const refusDeLaDate = refusDeLaDateDEmission({
-    type: 'avoir', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [],
+    type: 'avoir', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [], espace, modeles: modelesDeNumerotation,
   })?.message ?? null
   const retenue = refusDeLAvoir == null && jugementMentions?.refusDeLEnregistrement == null ? jugementMentions?.retenue ?? null : null
   const refus = refusDeLAvoir ?? jugementMentions?.refusDeLEnregistrement

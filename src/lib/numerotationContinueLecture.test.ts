@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { confirmerLaFin, leverLesTrous, lireLaNumerotation, poserLeModele } from './numerotationContinueLecture'
+import { confirmerLaFin, leverLesTrous, lireLaNumerotation, lireLesModelesDeNumerotation, poserLeModele } from './numerotationContinueLecture'
 
 // CE QUE LA CARTE « NUMÉROTATION DES FACTURES » LIT ET ÉCRIT (ligne 51.5, étape A9b) : l'état des quatre séries par la fonction
 // de la base, puis les paroles du cabinet et les modèles posés EN ENTIER — jamais un rejet : un refus, une forme inattendue, une
@@ -142,5 +142,28 @@ describe('les trois gestes : la fonction SQL seule, une issue, jamais une except
     faux.levees[fonction] = new Error('réseau coupé')
     const rompu = await geste()
     expect(rompu.ok).toBe(false)
+  })
+})
+
+// LES MODÈLES QUE L'ONGLET FACTURES LIT (jour J du 10/11/2026) : ceux du seul dossier, en entier, sous leur forme ; sinon null.
+describe('lireLesModelesDeNumerotation', () => {
+  it('rend les modèles du seul dossier, tels que la base les rend', async () => {
+    expect(await lireLesModelesDeNumerotation('d1')).toEqual([{ id: 'm1', nature: 'facture', emetteur: 'client',
+      modele: 'F{AAAA}-{N:4}', annuel: true, depuis: 2026, pose_le: '2026-11-09T10:00:00+00:00' }])
+    expect(await lireLesModelesDeNumerotation('d2')).toEqual([])
+  })
+
+  it('une lecture partielle, refusée ou qui lève, une ligne d’une autre forme : null, sans rejeter', async () => {
+    faux.comptesMentis = { modeles_numerotation: 2 }
+    expect(await lireLesModelesDeNumerotation('d1')).toBeNull()
+    faux.comptesMentis = {}
+    faux.erreurs = { modeles_numerotation: { message: 'refus' } }
+    expect(await lireLesModelesDeNumerotation('d1')).toBeNull()
+    faux.erreurs = {}
+    faux.levees = { modeles_numerotation: new Error('rompue') }
+    expect(await lireLesModelesDeNumerotation('d1')).toBeNull()
+    faux.levees = {}
+    faux.tables.modeles_numerotation = [{ ...faux.tables.modeles_numerotation[0], depuis: '2026' }]
+    expect(await lireLesModelesDeNumerotation('d1')).toBeNull()
   })
 })

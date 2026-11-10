@@ -116,7 +116,7 @@ async function monter(
   faux.lectureLignesRefusee = false
   faux.lignes = lignes
   render(
-    <FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]}
+    <FactureAvoirModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]}
       {...quiCree(espace)} dossierId="d1" factureOrigine={origine} credite={credite} reglageDesVentes={reglage} onClose={() => {}} onCreated={() => {}}
     />,
   )
@@ -282,7 +282,7 @@ describe('FactureAvoirModal — une lecture refusée ne passe pas pour « rien �
     faux.appelsRpc = []
     faux.lectureLignesRefusee = true
     render(
-      <FactureAvoirModal acompte={SANS_ACOMPTE} facturesDeLaSerie={[]} {...quiCree('cabinet')} dossierId="d1" factureOrigine={factureOrigine} credite={0} reglageDesVentes={NON_BASCULE} onClose={() => {}} onCreated={() => {}} />,
+      <FactureAvoirModal acompte={SANS_ACOMPTE} modelesDeNumerotation={null} facturesDeLaSerie={[]} {...quiCree('cabinet')} dossierId="d1" factureOrigine={factureOrigine} credite={0} reglageDesVentes={NON_BASCULE} onClose={() => {}} onCreated={() => {}} />,
     )
     expect(await screen.findByText(/JWT expired/)).toBeTruthy()
     expect(screen.getByText(/on ne l'a pas lue/)).toBeTruthy()
