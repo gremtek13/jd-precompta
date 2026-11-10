@@ -50250,3 +50250,30 @@ ne se rejoue pas, le retour rend la signature d'avant (neuf familles) ; 59 essai
 141 de `validationExercice.sql` en faute avant comme après (58 déclencheurs au lieu de 57 : la garde de la pièce, classée
 « dossier »). `src/lib/pieceDUneFactureReprise.ts` redit les refus des cinq fonctions, confrontés au texte. Restent l'écran
 (A8d), la Checklist (« réglée par le registre de sa facture reprise »), A8Q5-Q1 (la pièce figée, au cabinet).
+
+### 10/11/2026 — A8C : LES LECTEURS OUVERTS AUX FACTURES REPRISES, DERRIÈRE LEUR DRAPEAU (LIGNE 51.5)
+
+(Agent architecte ; aucune migration, aucune écriture en production.) Premier sous-lot d'A8c : les encaissements, puis la
+2035 et la CA3, derrière `FACTURES_IMPORTEES_PREVUES` (baissé ; il se lève le jour où A8a, A9a et A8b entrent ensemble dans
+l'export). Le prédicat vit dans `src/lib/facturesReprises.ts` (`estUneVente`, `estUneFactureReprise`, `etatsDesVentes`),
+qui lit le drapeau à chaque appel : les tests jouent ses deux états par un accesseur sur `facturesImportees.ts`.
+- `encaissementsFactures.ts` : les quatre refus neufs d'A8b à leur rang (`REFUS_ENREGISTREMENT_DES_REPRISES`,
+  `refusEnregistrementExportes`, que la confrontation à l'export suit) ; `montantsParTauxDuDocument`, la règle de
+  `montants_par_taux_du_document` en centimes (par taux, le demi loin de zéro, quand la somme fait la TVA déclarée, sinon
+  ligne à ligne) ; `refusDeLaFacture` et `jugerEnregistrement` ouverts — la reprise mixte, la date de reprise, les plafonds
+  nets des avoirs (de l'application, repris) et de l'encaissé avant la reprise, au total puis par taux. Ce que la reprise
+  porte (`ContexteFacture.reprise`) se lit dans `factures_importees`, que le cabinet seul lit : absent, le module refuse
+  (`REFUS_REPRISE_NON_LUE`, un refus de l'écran), jamais un plafond deviné.
+- `ventesFacturees.ts` et sa lecture : le cumul part de l'encaissé avant la reprise (V et T nets des avoirs repris), ni
+  document, ni exigibilité de livraison ou de débits, l'avoir de l'application à sa date ; une reprise sans sa ligne de
+  `factures_importees` est écartée (`reprise_illisible`, un motif du module seul). La lecture garde la requête d'hier mot
+  pour mot drapeau baissé ; levé, elle lit `factures_importees` et la TVA déclarée des reprises.
+- `facturesReprisesLecteurs.test.ts` : le garde de source — les modules ouverts importent le prédicat, leurs tests d'état
+  à « validee » comptés avec leur raison ; neuf modules À OUVRIR, comptés au nombre près.
+Vérifié : `tsc -b`, lint, la suite entière ; les tests neufs jouent les deux états (drapeau baissé : `brouillon`, aucune
+part, la requête d'hier) ; deux mutations (l'encaissé avant au taux, le signe de la TVA d'un avoir) virent au rouge. Une base
+qui porterait la migration sans le drapeau levé : la lecture des ventes se dit incomplète (une ligne d'une reprise, marquée
+source, sans sa facture), jamais un calcul faux. Restent : `facturesSources.ts` (A8-Q5), `mouvementsDesVentes.ts`,
+`ecrituresVentesFacturees.ts` et `ecritureVenteFacturee.ts` (une reprise y est écartée d'ici là), le FEC et la piste d'audit,
+`refusAvoir` et sa copie, `mentionsFigeesVue`, le CII de l'avoir, `resteAEncaisser` et la fenêtre (A8d). A8C-Q1 au cabinet :
+le client « Ventes » ne lit pas `factures_importees`.
