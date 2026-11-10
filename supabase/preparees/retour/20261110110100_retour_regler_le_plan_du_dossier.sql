@@ -100,7 +100,8 @@ comment on column public.dossiers.compte_notes_de_frais is
 
 do $fin$
 begin
-  if (select md5(p.prosrc) from pg_proc p where p.oid = to_regprocedure('public.garder_plan_comptable_dossier()'))
+  -- Fins de ligne ramenées à \n : collé dans l'éditeur, le corps peut arriver en \r\n.
+  if (select md5(replace(p.prosrc, E'\r\n', E'\n')) from pg_proc p where p.oid = to_regprocedure('public.garder_plan_comptable_dossier()'))
      is distinct from '11935e7eb713ef1a82f3f26f928d34a1' then
     raise exception 'La garde du plan rendue n''est pas celle de l''étape PC1 : rien n''est défait.';
   end if;
