@@ -145,6 +145,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: '`deux_facteurs_des_comptes` (C7, second temps) : la liste des comptes et de leur second facteur, lue ; '
       + 'rien n’est écrit (les gestes passent `agirSurLeCompte`, sous le verrou du composant).',
   },
+  'lib:lireLaNumerotation': {
+    nature: 'lecture',
+    raison: '`etat_de_la_numerotation` (A9b, `stable`) puis deux lectures `lireTout` : l’état des quatre séries, les paroles du '
+      + 'cabinet et les modèles posés, derrière `NUMEROTATION_CONTINUE_PREVUE` ; rien n’est écrit (les trois gestes passent '
+      + '`poserLeModele`, `confirmerLaFin` et `leverLesTrous`, sous le verrou de la carte).',
+  },
   'lib:useExigenceDeuxFacteurs': {
     nature: 'lecture',
     raison: '`ma_double_authentification` (C7, second temps) : la porte lit ce que la base exige du compte connecté, '

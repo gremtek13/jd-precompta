@@ -50158,3 +50158,21 @@ libellé, tirés du code. Constat en l'écrivant : les lignes d'une pièce sont 
 (`documentationDesTraitements.test.ts`) range chaque nom entre accents graves dans six formes, une forme inconnue en
 faute, un plancher par forme ; quatre mutations mordent (une fonction renommée dans le document, un symbole dans le code,
 une fonction dans l'export, le contrôle des fonctions éteint). Reste : `contactsVue.ts` dit encore L123-22 à l'écran.
+
+### 10/11/2026 — A9B : LA CARTE DE LA NUMÉROTATION, DERRIÈRE SON DRAPEAU (LIGNE 51.5)
+
+(Agent dev ; aucune migration, aucun CSS.) La carte « Numérotation des factures » de l'onglet Informations
+(`NumerotationDesFacturesCard.tsx`, montée sous « Source des ventes »), derrière `NUMEROTATION_CONTINUE_PREVUE`, baissé :
+elle ne rend ni ne lit rien, et rien d'autre ne change tant que la migration d'A9a n'est pas collée. Levée, elle lit
+l'exercice de l'en-tête (`useAnnee`, un exercice précis) : `etat_de_la_numerotation` (quatre lignes, jugées une à une),
+puis `continuite_des_series` et `modeles_numerotation` par `lireTout` (`lib/numerotationContinueLecture.ts`, qui ne rejette
+jamais) ; lue en partie, refusée ou rompue, elle le dit et n'offre aucun geste. Par série : le modèle en vigueur et un
+exemple, la fin confirmée, les trous nommés en numéros, ceux qui sont levés avec leur motif. Au chef seul (A9A-Q2) : poser
+un modèle, confirmer la fin d'une suite reprise (A9A-Q3), lever des trous. Les refus se disent avant le clic, sur la saisie
+telle qu'elle part (`lib/numerotationContinueCarte.ts`, pur : `jugerLaPose` rejoue la boucle de `fixer_modele_numerotation`
+sur les modèles lus, les années à venir comprises ; `jugerLaFin` et `jugerLesTrous` jugent sur l'état rendu) ; chaque
+confirmation nomme le numéro, le motif et dit que la parole ne se retire jamais (A9A-Q6) ; un verrou `useRef` relâché après
+la relecture. Les mots sont confrontés au texte de la migration (littéraux de chaque fonction, noms et ordre des paramètres,
+colonnes de l'état) : 58 + 9 + 19 tests, la mutation du verrou en fait échouer trois. `verrousEcritures.test.ts` déclare
+`lib:lireLaNumerotation` (lecture par RPC) ; `ecransAvantLecture.test.tsx` met la carte aux fichiers sans lecture au
+montage (drapeau baissé). Reste, le jour de l'application : lever le drapeau, rejouer la suite, ouvrir la carte sur un dossier.
