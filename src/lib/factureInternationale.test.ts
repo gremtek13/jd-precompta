@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { fichiersDuSchema, fichiersPrepares, indiceSql } from '../test/schema'
 import {
   ETATS_MEMBRES, FACTURE_INTERNATIONALE_EXPORTEE, FORME_DU_NUMERO_DE_TVA, FORME_DU_PAYS, LIBELLES_DES_REGIMES,
   MENTIONS_DES_REGIMES, PAYS_ATTRIBUES, PAYS_QUI_NE_SONT_PAS_ETRANGERS, REFUS_DE_LA_FACTURE_INTERNATIONALE as R,
@@ -94,13 +94,13 @@ describe('la migration facture_internationale, confrontée à l’export', () =>
     const garde = RETOUR.slice(RETOUR.indexOf('do $garde$'), RETOUR.indexOf('$garde$;'))
     expect(garde.indexOf("to_regprocedure('public.enregistrer_facture(uuid, uuid, jsonb, jsonb, boolean)')")).toBeGreaterThan(0)
     expect(garde.indexOf("to_regprocedure('public.garder_factures_validees()')")).toBeGreaterThan(0)
-    expect(RETOUR.indexOf('do $garde$')).toBeLessThan(RETOUR.indexOf('drop column'))
+    expect(RETOUR.indexOf('do $garde$')).toBeLessThan(indiceSql(RETOUR, 'drop column'))
   })
 
   it('le retour reprend les deux fonctions de l’export au caractère près, puis retire les trois colonnes', () => {
     expect(fonction(RETOUR, 'enregistrer_facture').definition).toBe(EXPORT_EF.definition)
     expect(fonction(RETOUR, 'garder_factures_validees').definition).toBe(EXPORT_GARDE.definition)
-    expect(RETOUR).toMatch(/drop column client_pays,\n {2}drop column client_numero_tva,\n {2}drop column regime_international;/)
+    expect(RETOUR).toMatch(/drop column client_pays,\n {2}drop column client_numero_tva,\n {2}drop column regime_international;/i)
   })
 
   it('les seize refus du bloc, dans l’ordre et sous les mots du module, tous en 22023', () => {

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { messagesSql } from '../test/raiseSql'
-import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { fichiersDuSchema, fichiersPrepares, indiceSql } from '../test/schema'
 import { MOTS_DE_LA_CAISSE, STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
 
 // LE DROIT « CAISSE » D'UN ACCÈS CLIENT, EN BASE (ligne 26.6, étape C10 ; MVP-D2 ; CAISSE-Q1, (B) ; CAISSE2-Q2 et Q3, (B)).
@@ -35,7 +35,7 @@ interface Definition { args: string; definition: string }
 
 // Les définitions qu'un texte donne à une fonction, chacune de son « create » au « $$; » qui la ferme, avec ses arguments.
 function definitionsDans(texte: string, fonction: string): Definition[] {
-  return [...texte.matchAll(new RegExp(`create (?:or replace )?function public\\.${fonction}\\(`, 'g'))].map((m) => {
+  return [...texte.matchAll(new RegExp(`create (?:or replace )?function public\\.${fonction}\\(`, 'gi'))].map((m) => {
     const definition = texte.slice(m.index, texte.indexOf('$$;', m.index))
     return { args: definition.slice(definition.indexOf('(') + 1, definition.indexOf(')')), definition }
   })
@@ -71,7 +71,7 @@ function uneFois(texte: string, de: string, vers: string): string {
   return texte.replace(de, () => vers)
 }
 
-const ouRemplace = (definition: string) => definition.replace(/^create function /, 'create or replace function ')
+const ouRemplace = (definition: string) => definition.replace(/^create function /i, 'create or replace function ')
 
 // Le retour arrière, dans supabase/preparees/retour/.
 function leRetour(): string {
@@ -87,12 +87,12 @@ function leRetour(): string {
 const DEFAIRE: { fonction: string; args?: string; migration: string; defaire: (posee: string) => string }[] = [
   {
     fonction: 'client_du_dossier', migration: 'droits_des_acces_clients',
-    defaire: (posee) => uneFois(posee, "            when 'caisse' then m.droit_caisse\n", '').replace(/^create or replace function /, 'create function '),
+    defaire: (posee) => uneFois(posee, "            when 'caisse' then m.droit_caisse\n", '').replace(/^create or replace function /i, 'create function '),
   },
   {
     fonction: 'droits_sur_le_dossier', migration: 'droits_des_acces_clients',
     defaire: (posee) => uneFois(posee, "    'banque', public.gere_la_banque(p_dossier_id),\n    'caisse', public.gere_la_caisse(p_dossier_id)\n",
-      "    'banque', public.gere_la_banque(p_dossier_id)\n").replace(/^create or replace function /, 'create function '),
+      "    'banque', public.gere_la_banque(p_dossier_id)\n").replace(/^create or replace function /i, 'create function '),
   },
   {
     // La forme à QUATRE, défaite, est la forme à trois d'hier : le seul corps qui écrit `memberships`.
@@ -122,7 +122,7 @@ const DEFAIRE: { fonction: string; args?: string; migration: string; defaire: (p
       using errcode = '23514';
   end if;
 `, '')
-      return t.replace(/^create or replace function /, 'create function ')
+      return t.replace(/^create or replace function /i, 'create function ')
     },
   },
   {
@@ -192,7 +192,7 @@ describe('la migration caisse_du_client reprend cinq fonctions, et n’y ajoute 
 
   it('sa garde de tête : une seconde application, les trois migrations du jour de C8, et vingt-deux corps à leur empreinte d’hier', () => {
     const texte = laMigration().texte
-    const premiereDefinition = texte.indexOf('\ncreate ')
+    const premiereDefinition = indiceSql(texte, '\ncreate ')
     const garde = texte.slice(texte.indexOf('do $garde$'), texte.indexOf('$garde$;'))
     expect(texte.indexOf('do $garde$')).toBeLessThan(premiereDefinition)
     expect(garde).toContain("'La migration caisse_du_client est déjà en base : elle ne s''applique pas deux fois.'")
@@ -220,18 +220,18 @@ describe('la migration caisse_du_client reprend cinq fonctions, et n’y ajoute 
   it('le texte : onze définitions, deux colonnes, une policy, trois déclencheurs, ses droits, rien de retiré, ni barre oblique inverse ni retour chariot', () => {
     const texte = laMigration().texte
     const sansCommentaires = texte.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n')
-    expect([...sansCommentaires.matchAll(/create (or replace )?function public\.(\w+)\(/g)].map((m) => `${m[1] ? 'r' : 'c'} ${m[2]}`)).toEqual([
+    expect([...sansCommentaires.matchAll(/create (or replace )?function public\.(\w+)\(/gi)].map((m) => `${m[1] ? 'r' : 'c'} ${m[2]}`)).toEqual([
       'r client_du_dossier', 'c gere_la_caisse', 'r droits_sur_le_dossier', 'r changer_droits_acces', 'c changer_droits_acces',
       'c garder_droit_caisse', 'c garder_statut_tva_de_la_caisse', 'c garder_categorie_recettes_client', 'r qui_ecrit_la_caisse',
       'r enregistrer_operation_caisse', 'c caisse_du_client',
     ])
-    expect([...sansCommentaires.matchAll(/alter table public\.(\w+)\s+add column (\w+) ([^;]*);/g)].map((m) => `${m[1]}.${m[2]} ${m[3]}`))
+    expect([...sansCommentaires.matchAll(/alter table public\.(\w+)\s+add column (\w+) ([^;]*);/gi)].map((m) => `${m[1]}.${m[2]} ${m[3]}`))
       .toEqual(['memberships.droit_caisse boolean not null default false', 'dossiers.categorie_recettes_client uuid'])
     expect(sansCommentaires.match(/\balter table\b/gi)).toHaveLength(2)
     expect(sansCommentaires.replace(/\s+/g, ' ')).toContain("create policy operations_caisse_lecture_caisse on public.operations_caisse "
       + "for select to authenticated using (public.client_du_dossier(dossier_id, 'caisse'));")
-    expect(sansCommentaires.match(/create policy/g)).toHaveLength(1)
-    expect([...sansCommentaires.matchAll(/create trigger (\w+)\s+([^;]*);/g)].map((m) => `${m[1]} ${m[2].replace(/\s+/g, ' ')}`)).toEqual([
+    expect(sansCommentaires.match(/create policy/gi)).toHaveLength(1)
+    expect([...sansCommentaires.matchAll(/create trigger (\w+)\s+([^;]*);/gi)].map((m) => `${m[1]} ${m[2].replace(/\s+/g, ' ')}`)).toEqual([
       'memberships_droit_caisse after insert or update of droit_caisse, dossier_id on public.memberships for each row execute function public.garder_droit_caisse()',
       'dossiers_statut_tva_de_la_caisse after update on public.dossiers for each row when (old.statut_tva is distinct from new.statut_tva) execute function public.garder_statut_tva_de_la_caisse()',
       'dossiers_categorie_recettes_client after insert or update of categorie_recettes_client on public.dossiers for each row execute function public.garder_categorie_recettes_client()',
@@ -375,7 +375,7 @@ describe('le retour arrière : les cinq corps d’hier, au caractère près, pui
   it('il exige les onze corps que la migration a posés, refuse une case cochée ou une nature fixée, avant toute définition', () => {
     const retour = leRetour()
     const texte = laMigration().texte
-    const premiereDefinition = retour.indexOf('\ncreate ')
+    const premiereDefinition = indiceSql(retour, '\ncreate ')
     const posees = [
       ['client_du_dossier'], ['gere_la_caisse'], ['droits_sur_le_dossier'], ['changer_droits_acces', QUATRE], ['changer_droits_acces', TROIS],
       ['garder_droit_caisse'], ['garder_statut_tva_de_la_caisse'], ['garder_categorie_recettes_client'], ['qui_ecrit_la_caisse'],
@@ -401,7 +401,7 @@ describe('le retour arrière : les cinq corps d’hier, au caractère près, pui
       ['client_du_dossier', undefined]] as const) {
       expect(definitionDans(retour, fonction, args), fonction).toBe(ouRemplace(avantLaMigration(fonction, args).definition))
     }
-    expect(retour.match(/create (or replace )?function/g)).toHaveLength(5)
+    expect(retour.match(/create (or replace )?function/gi)).toHaveLength(5)
     // Les commentaires d'hier : ceux de `droits_des_acces_clients`, et aucun sur les deux fonctions de la caisse.
     const p1 = lire('supabase/schema/20261009224031_droits_des_acces_clients.sql')
     for (const signature of ['changer_droits_acces(uuid, boolean, boolean)', 'droits_sur_le_dossier(uuid)', 'client_du_dossier(uuid, text)']) {
@@ -415,7 +415,7 @@ describe('le retour arrière : les cinq corps d’hier, au caractère près, pui
 
   it('il ne retire que ce que la migration a créé, après les définitions', () => {
     const retour = leRetour()
-    const retraits = [...retour.matchAll(/^(drop [^;]*|alter table [^;]*);$/gm)].map((m) => m[1])
+    const retraits = [...retour.matchAll(/^(drop [^;]*|alter table [^;]*);$/gmi)].map((m) => m[1])
     expect(retraits).toEqual([
       'drop policy operations_caisse_lecture_caisse on public.operations_caisse',
       'drop trigger memberships_droit_caisse on public.memberships',
@@ -430,7 +430,7 @@ describe('le retour arrière : les cinq corps d’hier, au caractère près, pui
       'alter table public.dossiers drop column categorie_recettes_client',
       'alter table public.memberships drop column droit_caisse',
     ])
-    expect(retour.indexOf('drop policy')).toBeGreaterThan(retour.lastIndexOf('$$;'))
+    expect(indiceSql(retour, 'drop policy')).toBeGreaterThan(retour.lastIndexOf('$$;'))
     expect(retour).not.toMatch(/\b(grant|revoke|truncate)\b/i)
     expect(retour).not.toMatch(/\bdelete from\b/i)
     expect(retour).not.toContain('\\')

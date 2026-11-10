@@ -6,6 +6,7 @@ import {
   jugerLaFin, jugerLaPose, jugerLesTrous, libelleDEmplacement, modeleEnVigueur, modelePose, nomDIntervalle, paroleLue, serieLue,
   seriesLues, type ModelePose, type ParoleLue, type SerieLue,
 } from './numerotationContinueCarte'
+import { indiceSql } from '../test/schema'
 
 // LA CARTE « NUMÉROTATION DES FACTURES » (ligne 51.5, étape A9b), sa règle : ce qu'elle lit (jugé forme par forme), ce qu'elle
 // dit de chaque série, et les refus qu'elle redit avant le clic — aux mots de `fixer_modele_numerotation`,
@@ -25,7 +26,7 @@ function laMigration(): string {
 }
 
 function laFonction(texte: string, nom: string): string {
-  const debut = texte.indexOf(`create function public.${nom}(`)
+  const debut = indiceSql(texte, `create function public.${nom}(`)
   expect(debut, `la définition de ${nom}`).toBeGreaterThanOrEqual(0)
   return texte.slice(debut, texte.indexOf('\n$$;', debut))
 }

@@ -9,7 +9,7 @@ import {
 } from './sensDesReglesIgnorees'
 import type { MouvementBancaire } from './affectationBanque'
 import type { CotisationDeclaree, SensMouvementBancaire } from './types'
-import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { fichiersDuSchema, fichiersPrepares, indiceSql } from '../test/schema'
 
 // LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, CONFRONTÉS À LA BASE (REGLES-Q1). Trois
 // juges : le TEXTE de la migration `sens_des_regles_ignorees`, où qu'elle soit (préparée aujourd'hui, dans l'export le jour
@@ -30,7 +30,7 @@ const MIGRATION = MIGRATIONS.find((f) => /\d{14}_sens_des_regles_ignorees\.sql$/
 
 /** Le corps (`prosrc`) de la dernière définition d'une fonction dans un texte : entre `as $$` et `$$;`, sauts de ligne compris. */
 function corps(texte: string, nom: string): string {
-  const debuts = [...texte.matchAll(new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'g'))]
+  const debuts = [...texte.matchAll(new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'gi'))]
   if (debuts.length === 0) throw new Error(`${nom} absente`)
   const debut = texte.indexOf('as $$', debuts[debuts.length - 1].index) + 'as $$'.length
   return texte.slice(debut, texte.indexOf('\n$$;', debut) + 1)
@@ -39,7 +39,7 @@ function corps(texte: string, nom: string): string {
 /** La dernière définition d'une fonction AVANT la migration : celle qu'elle remplace. */
 function corpsAvant(nom: string): string {
   const avant = MIGRATIONS.slice(0, MIGRATIONS.indexOf(MIGRATION))
-    .filter((f) => new RegExp(`create (?:or replace )?function public\\.${nom}\\(`).test(f.texte))
+    .filter((f) => new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'i').test(f.texte))
   return corps(avant[avant.length - 1].texte, nom)
 }
 
@@ -147,7 +147,7 @@ describe('la règle : la colonne, sa contrainte, la clé remplacée', () => {
     expect(MIGRATION.texte).toContain(`add constraint ${CLE_DES_REGLES} unique nulls not distinct (dossier_id, motif, sens);`)
     expect(MIGRATION.texte).toContain(`c.conname = '${CLE_D_HIER}' and c.contype = 'u'\n                  and pg_get_constraintdef(c.oid) = 'UNIQUE (dossier_id, motif)'`)
     // La nouvelle avant le retrait de l'ancienne.
-    expect(MIGRATION.texte.indexOf(`add constraint ${CLE_DES_REGLES}`)).toBeLessThan(MIGRATION.texte.indexOf(`drop constraint ${CLE_D_HIER}`))
+    expect(MIGRATION.texte.indexOf(`add constraint ${CLE_DES_REGLES}`)).toBeLessThan(indiceSql(MIGRATION.texte, `drop constraint ${CLE_D_HIER}`))
     // Le retour arrière la rend, sous son nom, et retire ce que la migration a posé.
     for (const morceau of [
       `add constraint ${CLE_D_HIER} unique (dossier_id, motif);`, `drop constraint ${CLE_DES_REGLES};`,

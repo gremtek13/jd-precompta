@@ -8,7 +8,7 @@ import {
 } from './dossierPermanent'
 import type { EntreeDossierPermanent, RevisionJustification, RevisionPreuve } from './types'
 import { argumentsSql, codesSql, messagesSql, numerosSql } from '../test/raiseSql'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { contientSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // LE DOSSIER PERMANENT (ligne 41, étape R7), confronté à ce qui fait foi : la migration `dossier_permanent` — le texte des
 // deux fonctions, de la garde et de `garder_source_citee` que l'export porte — pour l'ordre, les mots, les codes et les
@@ -21,7 +21,7 @@ const parametresDe = (nom: string) => (/function public\.\w+\(([^)]*)\)/.exec(sq
   .split(',').map((p) => p.trim().split(/\s+/)[0])
 
 function migration(): string {
-  const f = fichiersDuSchema().find((x) => x.texte.includes('create table public.dossier_permanent ('))
+  const f = fichiersDuSchema().find((x) => contientSql(x.texte, 'create table public.dossier_permanent ('))
   expect(f, 'la migration du dossier permanent dans l’export').toBeDefined()
   return f?.texte ?? ''
 }

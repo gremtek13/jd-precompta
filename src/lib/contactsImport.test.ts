@@ -513,7 +513,7 @@ describe('IMPORT_CONTACTS_EXPORTE dit ce que porte l’export', () => {
       .toMatch(/\$\$\ndeclare[\s\S]*?\nbegin\n(?: {2}--[^\n]*\n)* {2}if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
     const instructions = texte.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n')
     expect(instructions).not.toMatch(/\b(delete|drop|truncate|insert|update|alter)\b/i)
-    expect([...texte.matchAll(/create (or replace )?(function|table|policy|trigger)\b/g)].map((m) => m[2])).toEqual(['function'])
+    expect([...texte.matchAll(/create (or replace )?(function|table|policy|trigger)\b/gi)].map((m) => m[2])).toEqual(['function'])
   })
 })
 

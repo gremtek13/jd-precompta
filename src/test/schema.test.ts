@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FormeInconnue, definitionsSql, derniereDefinitionSql, fichiersDuSchema, finDuCorps, motifDeDefinition } from './schema'
+import { contientSql, definitionsSql, derniereDefinitionSql, dernierIndiceSql, fichiersDuSchema, finDuCorps, FormeInconnue, indiceSql, motifDeDefinition } from './schema'
 
 // LA DERNIÈRE DÉFINITION D'UNE FONCTION, CAPITALES COMPRISES (10/11/2026).
 //
@@ -83,5 +83,22 @@ describe('la dernière définition d’une fonction, capitales comprises', () =>
       // Le texte rendu ne déborde jamais sur la définition suivante.
       expect([...derniere.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\./gi)], nom).toHaveLength(1)
     }
+  })
+})
+
+describe('les recherches de texte fixe, capitales comprises', () => {
+  const texte = 'x\nCREATE OR REPLACE FUNCTION public.f() as $$ $$;\ncreate or replace function public.f() as $$ $$;'
+
+  it('trouvent la forme en capitales comme celle en minuscules, aux positions du texte d’origine', () => {
+    expect(indiceSql(texte, 'create or replace function')).toBe(2)
+    expect(indiceSql(texte, 'CREATE OR REPLACE FUNCTION', 3)).toBe(dernierIndiceSql(texte, 'create'))
+    expect(dernierIndiceSql(texte, 'create or replace function')).toBe(dernierIndiceSql(texte, 'create'))
+    expect(contientSql(texte, 'Create Or Replace Function public.f(')).toBe(true)
+    expect(contientSql(texte, 'create function')).toBe(false)
+    expect(indiceSql(texte, 'create table')).toBe(-1)
+  })
+
+  it('refusent un texte dont la mise en minuscules déplacerait les positions', () => {
+    expect(() => indiceSql('İ create function', 'create function')).toThrow(FormeInconnue)
   })
 })

@@ -18,7 +18,7 @@ import {
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { paiementsDesPieces } from './rattachement'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
-import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { fichiersDuSchema, fichiersPrepares, indiceSql } from '../test/schema'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 
 // CORRIGER UN PAIEMENT EN ESPÈCES D'UN SEUL GESTE, CONFRONTÉ À LA BASE (C12B-Q1 ; ligne 26.6). La migration
@@ -50,7 +50,7 @@ function laMigration(): { chemin: string; texte: string } {
 
 // Les définitions qu'un texte donne à une fonction, chacune de son « create » au « $$; » qui la ferme.
 function definitionsDans(texte: string, fonction: string): string[] {
-  return [...texte.matchAll(new RegExp(`create (?:or replace )?function public\\.${fonction}\\(`, 'g'))]
+  return [...texte.matchAll(new RegExp(`create (?:or replace )?function public\\.${fonction}\\(`, 'gi'))]
     .map((m) => texte.slice(m.index, texte.indexOf('$$;', m.index)))
 }
 
@@ -115,7 +115,7 @@ describe('la migration correction_du_paiement_par_la_caisse', () => {
   it('le texte : une fonction neuve, son commentaire, ses droits — rien de remplacé, rien de retiré', () => {
     const texte = laMigration().texte
     const sansCommentaires = lignesDeCode(texte).join('\n')
-    expect([...sansCommentaires.matchAll(/create (or replace )?function public\.(\w+)\(/g)].map((m) => `${m[1] ? 'r' : 'c'} ${m[2]}`))
+    expect([...sansCommentaires.matchAll(/create (or replace )?function public\.(\w+)\(/gi)].map((m) => `${m[1] ? 'r' : 'c'} ${m[2]}`))
       .toEqual(['c remplacer_paiement_par_la_caisse'])
     expect(sansCommentaires).toContain('comment on function public.remplacer_paiement_par_la_caisse(uuid, uuid, date, numeric) is')
     expect([...sansCommentaires.matchAll(/\b(grant|revoke) execute on function public\.([^;]*);/g)].map((m) => `${m[1]} ${m[2]}`)).toEqual([
@@ -137,7 +137,7 @@ describe('la migration correction_du_paiement_par_la_caisse', () => {
   it('sa garde de tête, avant toute définition : une seconde application, les migrations qu’elle suppose, treize corps à leur empreinte d’hier', () => {
     const texte = laMigration().texte
     const garde = texte.slice(texte.indexOf('do $garde$'), texte.indexOf('$garde$;'))
-    expect(texte.indexOf('do $garde$')).toBeLessThan(texte.indexOf('\ncreate '))
+    expect(texte.indexOf('do $garde$')).toBeLessThan(indiceSql(texte, '\ncreate '))
     expect(garde).toContain("'La migration correction_du_paiement_par_la_caisse est déjà en base : elle ne s''applique pas deux fois.'")
     expect(garde).toContain("if to_regprocedure('public.caisse_du_client(uuid, integer)') is null")
     const epinglees = [...garde.matchAll(/\('(\w+)', 'public\.(\w+)\(([^)]*)\)', '([0-9a-f]{32})'\)/g)]

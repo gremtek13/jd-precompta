@@ -7,7 +7,7 @@ import {
 } from './revisionSoldes'
 import type { ANouveau, EcritureBrouillon, SensEcriture, SoldeReporte } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { contientSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 type Ligne = [date: string, compte: string, sens: SensEcriture, montant: number]
 
@@ -281,7 +281,7 @@ describe('l’ouverture de l’exercice, comme la base la juge avant de laisser 
 // la base exécute, et la migration qui crée les tables.
 describe('les littéraux sont ceux de la base', () => {
   const sansApostrophes = (s: string) => s.replace(/''/g, "'")
-  const migration = fichiersDuSchema().find((f) => f.texte.includes('create table public.revision_justifications ('))?.texte ?? ''
+  const migration = fichiersDuSchema().find((f) => contientSql(f.texte, 'create table public.revision_justifications ('))?.texte ?? ''
   const blancs = `E'${BLANCS_D_UN_TEXTE.replace(/\t/g, '\\t').replace(/\n/g, '\\n').replace(/\r/g, '\\r')}'`
 
   it('la migration est dans l’export', () => {

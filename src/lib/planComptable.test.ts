@@ -359,7 +359,7 @@ describe('la garde du plan (`garder_plan_comptable_dossier`)', () => {
 function dernieresDefinitions(): Map<string, { definition: string; corps: string }> {
   const vues = new Map<string, { definition: string; corps: string }>()
   for (const { texte } of fichiersDuSchema()) {
-    for (const m of texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/g)) {
+    for (const m of texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/gi)) {
       const ouverture = /\bas\s+(\$\w*\$)/i.exec(texte.slice(m.index))
       if (!ouverture) throw new Error(`Corps de ${m[1]} introuvable dans le schéma exporté.`)
       const debutDuCorps = m.index + ouverture.index + ouverture[0].length

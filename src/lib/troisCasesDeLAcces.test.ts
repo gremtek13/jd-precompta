@@ -90,7 +90,7 @@ describe('les trois cases de B1 : les mots de l’écran confrontés à la migra
 
   it('le retour : les trois colonnes et la forme à huit, refusé sous une case cochée', () => {
     expect(RETOUR).toContain('drop function public.changer_droits_acces(uuid, boolean, boolean, boolean, boolean, boolean, boolean, boolean);')
-    expect(RETOUR).toMatch(/drop column droit_achats,\s+drop column droit_frais,\s+drop column droit_documents;/)
+    expect(RETOUR).toMatch(/drop column droit_achats,\s+drop column droit_frais,\s+drop column droit_documents;/i)
     expect(RETOUR).toContain('where m.droit_achats or m.droit_frais or m.droit_documents')
   })
 })

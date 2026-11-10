@@ -32,7 +32,7 @@ const avant = (fonction: string) => derniereDefinitionSql(fonction, (f) => !f.ch
 
 // La définition qu'un texte donne à une fonction (la seule qu'il en donne), de `create` au `$$;` exclu.
 function definitionDans(texte: string, fonction: string): string {
-  const motif = new RegExp(`create (or replace )?function public\\.${fonction}\\(`, 'g')
+  const motif = new RegExp(`create (or replace )?function public\\.${fonction}\\(`, 'gi')
   const positions = [...texte.matchAll(motif)].map((m) => m.index)
   expect(positions, fonction).toHaveLength(1)
   return texte.slice(positions[0], texte.indexOf('$$;', positions[0]))

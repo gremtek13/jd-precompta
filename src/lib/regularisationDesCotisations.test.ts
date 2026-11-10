@@ -5,7 +5,7 @@ import {
   NATURES, NATURES_A_PART, ORGANISMES, anneesPayables, descriptionDite, estimerLaRegularisation, lireLaDescription,
   saisieDeLaDescription, type EntreeRegularisation,
 } from './regularisationDesCotisations'
-import { derniereDefinitionSql } from '../test/schema'
+import { derniereDefinitionSql, indiceSql } from '../test/schema'
 import { estimerCotisationsUrssaf, type EstimationCotisations, type ResultatEstimation } from './voletSocialPamc'
 import { formatMoney } from './format'
 import type { CotisationDeclaree } from './types'
@@ -18,7 +18,7 @@ const ESSAI = readFileSync(new URL('../../supabase/essais/regularisationDesCotis
 const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex')
 // Le texte d'une définition de la fonction du gel, de son `create or replace` à son `$$;` ; et son corps, ce que `prosrc` garde.
 const definitionDuGel = (texte: string) => {
-  const debut = texte.indexOf('create or replace function public.garder_cotisation_valide()')
+  const debut = indiceSql(texte, 'create or replace function public.garder_cotisation_valide()')
   return texte.slice(debut, texte.indexOf('$$;', debut) + 3)
 }
 const corps = (definition: string) => definition.slice(definition.indexOf('$$') + 2, definition.lastIndexOf('$$'))

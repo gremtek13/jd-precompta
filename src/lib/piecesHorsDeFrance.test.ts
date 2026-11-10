@@ -10,7 +10,7 @@ import {
 } from './piecesHorsDeFrance'
 import type { EcritureBrouillon, Immobilisation, PieceHorsDeFrance, TypePiece } from './types'
 import { piecesFigees } from './validationExercice'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { contientSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // LA FICHE « FOURNISSEUR ÉTABLI HORS DE FRANCE » D'UNE PIÈCE (ligne 28.5, étape e2), confrontée à ce qui fait foi : la
 // migration `pieces_hors_de_france` — le texte de `enregistrer_fiche_hors_de_france` et de `retirer_fiche_hors_de_france`
@@ -67,7 +67,7 @@ const sqlDeLEnregistrement = () => derniereDefinitionSql('enregistrer_fiche_hors
 const sqlDuRetrait = () => derniereDefinitionSql('retirer_fiche_hors_de_france')
 
 function migration(): string {
-  const f = fichiersDuSchema().find((x) => x.texte.includes('create table public.pieces_hors_de_france ('))
+  const f = fichiersDuSchema().find((x) => contientSql(x.texte, 'create table public.pieces_hors_de_france ('))
   expect(f, 'la migration de la fiche dans l’export').toBeDefined()
   return f?.texte ?? ''
 }

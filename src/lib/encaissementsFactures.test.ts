@@ -23,7 +23,7 @@ import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_PLATEFORME, STATUTS_ANNULATION_SUPERPDP } from './transmissionsFactures'
 import type { MoyenEncaissement, StatutTva } from './types'
 import { tirage } from '../test/encaissementsBatterie'
-import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { contientSql, definitionsSql, derniereDefinitionSql, fichiersDuSchema, indiceSql } from '../test/schema'
 
 // LE MODULE DES ENCAISSEMENTS D'UNE FACTURE ÉMISE (ligne 28.5, étape d2), confronté à ce qui fait foi : la migration
 // d1 (supabase/schema/20261008180607_encaissements_des_factures.sql) pour l'ordre et les mots des refus, ses
@@ -896,7 +896,7 @@ describe('refusRetrait — les refus de retirer_encaissement', () => {
 const ESSAI_D4 = readFileSync(new URL('../../supabase/essais/transmissionsEncaissements.sql', import.meta.url), 'utf8')
 
 // La migration de l'étape d4, trouvée par ce qu'elle crée : sa version n'est connue qu'une fois appliquée.
-const MIGRATION_D4 = fichiersDuSchema().find((f) => f.texte.includes('create table public.transmissions_encaissements ('))?.texte ?? ''
+const MIGRATION_D4 = fichiersDuSchema().find((f) => contientSql(f.texte, 'create table public.transmissions_encaissements ('))?.texte ?? ''
 
 // Le tuple d'un contrôle de l'essai d4, de « ('42. » au tuple suivant ou à la fin de sa liste. Un message se cherche
 // DANS le tuple de son contrôle : une recherche qui court au-delà rendrait en silence le message d'un autre contrôle.
@@ -993,7 +993,7 @@ describe('les refus des déclarations, tels que la migration les écrit', () => 
     const etats = (texte: string) => [...texte.matchAll(/'([a-z]+)'/g)].map((m) => m[1])
     const corps = /t\.etat in \(([^)]*)\)\)\s*$/.exec(derniereDefinitionSql('encaissement_declare'))
     expect(etats((corps as RegExpExecArray)[1])).toEqual([...ETATS_DECLARANTS])
-    const index = /create unique index transmissions_encaissements_une_active[^;]*where etat in \(([^)]*)\);/.exec(MIGRATION_D4)
+    const index = /create unique index transmissions_encaissements_une_active[^;]*where etat in \(([^)]*)\);/i.exec(MIGRATION_D4)
     expect(etats((index as RegExpExecArray)[1])).toEqual([...ETATS_DECLARANTS])
     const sql = derniereDefinitionSql('declarer_encaissement_hors_application')
     expect(sql).toContain(`e.status_code = '${STATUT_DEPOSEE_SUPERPDP}'`)
@@ -1097,7 +1097,7 @@ describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne v
 
   it('annuler_encaissement prend un cinquième paramètre, le débit, nul par défaut ; l’ancienne signature est retirée', () => {
     const sql = derniereDefinitionSql('annuler_encaissement')
-    expect(sql).toMatch(/^create (or replace )?function public\.annuler_encaissement\(\s*p_dossier_id uuid,\s*p_encaissement_id uuid,\s*p_date date,\s*p_motif text,\s*p_ligne_bancaire_id uuid default null\s*\)/)
+    expect(sql).toMatch(/^create (or replace )?function public\.annuler_encaissement\(\s*p_dossier_id uuid,\s*p_encaissement_id uuid,\s*p_date date,\s*p_motif text,\s*p_ligne_bancaire_id uuid default null\s*\)/i)
     const m2 = fichiersDuSchema().find((f) => /\/\d{14}_encaissements_de_la_vente_facturee\.sql$/.test(f.chemin))?.texte ?? ''
     expect(m2).toContain('drop function public.annuler_encaissement(uuid, uuid, date, text);')
     expect(m2).toContain('grant execute on function public.annuler_encaissement(uuid, uuid, date, text, uuid) to authenticated;')
@@ -1154,7 +1154,7 @@ describe('la contre-passation ne cite un débit qu’avec « Banque » (migratio
 
   it('hors de ce refus et de son commentaire, la définition de VF2 au caractère près', () => {
     const avant = definitionAvantLaMigration('annuler_encaissement', 'contre_passation_banque')
-    expect(avant.startsWith('create function public.annuler_encaissement(')).toBe(true)
+    expect(indiceSql(avant, 'create function public.annuler_encaissement(')).toBe(0)
     // La définition de cette migration-ci : celle qui précède la migration impaye_non_declare (étape VF5d2), qui la reprend.
     const apres = definitionAvantLaMigration('annuler_encaissement', 'impaye_non_declare')
     const debut = apres.indexOf(DEBUT_DU_BLOC_BANQUE)
@@ -1233,7 +1233,7 @@ describe('l’impayé d’un encaissement jamais déclaré (migration impaye_non
     const corps = correctif.slice(correctif.indexOf('as $$') + 'as $$'.length)
     expect(texte).toContain(`chr(13), '')) <> '${createHash('md5').update(corps).digest('hex')}' then`)
     expect(texte).toContain("chr(13), '')) <> '280da760fa49f59627d483b4a4741f6b' then")
-    expect(texte.match(/create or replace function public\.annuler_encaissement\(/g)).toHaveLength(1)
+    expect(texte.match(/create or replace function public\.annuler_encaissement\(/gi)).toHaveLength(1)
     expect(texte).not.toMatch(/\b(grant|revoke)\b/i)
     expect(texte).not.toMatch(/\b(drop|delete|truncate)\b/i)
     expect(texte).not.toContain('\\')
@@ -1573,7 +1573,7 @@ describe('contrePassationDe — ce que la contre-passation écrira', () => {
 const ESSAI_D7 = readFileSync(new URL('../../supabase/essais/statutsFacturesRecus.sql', import.meta.url), 'utf8')
 
 // La migration de l'étape d7, trouvée par ce qu'elle crée.
-const MIGRATION_D7 = fichiersDuSchema().find((f) => f.texte.includes('create table public.statuts_factures_recus ('))?.texte ?? ''
+const MIGRATION_D7 = fichiersDuSchema().find((f) => contientSql(f.texte, 'create table public.statuts_factures_recus ('))?.texte ?? ''
 
 // Le tuple d'un contrôle de l'essai d7, de « ('25. » au tuple suivant ou à la fin de sa liste, sans ses lignes de
 // commentaire : ce que le contrôle attend se cherche DANS son tuple, jamais dans celui d'un autre.
@@ -1618,7 +1618,7 @@ describe('les statuts lus sur la plateforme du client (étape d7), tels que la b
       // La règle est née avec la migration d7, qui définit les quatre fonctions ; la migration ventes_du_client (espace
       // client, étape P2) en reprend trois au caractère près, l'accès ou l'auteur d'une transmission changés : la
       // DERNIÈRE définition, d'où qu'elle vienne, porte la règle telle quelle.
-      expect(MIGRATION_D7, nom).toMatch(new RegExp(`create (or replace )?function public\\.${nom}\\(`))
+      expect(MIGRATION_D7, nom).toMatch(new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'i'))
       expect(codesLus(sql), nom).toEqual(Array.from({ length: combien }, () => [...STATUTS_ANNULATION_PLATEFORME]))
       expect(sql, nom).toContain('from public.statuts_factures_recus s')
     }

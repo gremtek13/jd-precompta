@@ -32,7 +32,7 @@ describe('la relation du devis envoyé, au graphe prévu', () => {
   it('telle que la migration la pose : le journal vers le devis, à nul à la suppression, une fois', () => {
     expect(RELATIONS_DE_L_ENVOI_DES_DEVIS).toEqual([{ enfant: 'emails_envoyes', colonne: 'devis_id' }])
     const action = (texte: string) => /on delete cascade/.test(texte) ? 'cascade' : /on delete set null/.test(texte) ? 'met_a_null' : 'bloque'
-    const deLaMigration = [...MIGRATION.matchAll(/alter table public\.emails_envoyes\s+add column (\w+) uuid references public\.(\w+) \(id\)([^;]*);/g)]
+    const deLaMigration = [...MIGRATION.matchAll(/alter table public\.emails_envoyes\s+add column (\w+) uuid references public\.(\w+) \(id\)([^;]*);/gi)]
       .map((m) => `emails_envoyes.${m[1]} → ${m[2]} (${action(m[3])})`)
     expect(deLaMigration).toEqual(['emails_envoyes.devis_id → devis (met_a_null)'])
     expect(RELATIONS_PREVUES.filter(DEVIS_ENVOYE).map(cle)).toEqual(deLaMigration)

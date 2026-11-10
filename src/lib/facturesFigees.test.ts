@@ -160,9 +160,9 @@ describe('les colonnes modifiables d\'une facture validée (garder_factures_vali
 
   it('… chacune existe dans la table, sans quoi la liste désignerait une colonne que la base n\'a pas', () => {
     const textes = fichiersDuSchema().map((f) => f.texte).join('\n')
-    const creation = /create table (?:public\.)?factures_emises\s*\(([\s\S]*?)\n\);/.exec(textes)?.[1] ?? ''
+    const creation = /create table (?:public\.)?factures_emises\s*\(([\s\S]*?)\n\);/i.exec(textes)?.[1] ?? ''
     for (const c of colonnesModifiables(definition())) {
-      const ajoutee = new RegExp(`alter table (?:public\\.)?factures_emises[^;]*add column (?:if not exists )?${c}\\b`).test(textes)
+      const ajoutee = new RegExp(`alter table (?:public\\.)?factures_emises[^;]*add column (?:if not exists )?${c}\\b`, 'i').test(textes)
       const creee = new RegExp(`^\\s+${c}\\s`, 'm').test(creation)
       expect(ajoutee || creee, c).toBe(true)
     }

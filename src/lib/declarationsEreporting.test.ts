@@ -23,7 +23,7 @@ import type {
 } from './types'
 import { appelsDe, commeLaBase, decouper, etapesDe, lignesInserees, remplacerLesNoms, type Etape } from '../test/essaiSql'
 import { argumentsSql, codesSql, messagesSql } from '../test/raiseSql'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { contientSql, derniereDefinitionSql, fichiersDuSchema, indiceSql } from '../test/schema'
 
 // LA DÉCLARATION D'E-REPORTING HORS APPLICATION (ligne 28.5, étape e5b1), confrontée à ce qui fait foi : la migration
 // `declarations_ereporting` — le texte de `declarer_ereporting_hors_application` et de `garder_piece_declaree` que
@@ -51,7 +51,7 @@ const PLAT = SQL.replace(/\s+/g, ' ')
 const AUJOURD_HUI = '2027-11-15'
 
 function migration(): string {
-  const f = fichiersDuSchema().find((x) => x.texte.includes('create table public.declarations_ereporting ('))
+  const f = fichiersDuSchema().find((x) => contientSql(x.texte, 'create table public.declarations_ereporting ('))
   expect(f, 'la migration des déclarations dans l’export').toBeDefined()
   return (f?.texte ?? '').replace(/\s+/g, ' ')
 }
@@ -1116,8 +1116,8 @@ describe('etatDeLaDeclaration — à jour, à rectifier, ou indéterminé [DG] [
 
 const PREPAREE = readFileSync(new URL('../../supabase/preparees/20261106130000_identifiant_du_fichier_ereporting.sql', import.meta.url), 'utf8')
 const RETOUR_PREPARE = readFileSync(new URL('../../supabase/preparees/retour/20261106130100_retour_identifiant_du_fichier_ereporting.sql', import.meta.url), 'utf8')
-const FONCTION_PREPAREE = PREPAREE.slice(PREPAREE.indexOf('create function public.declarer_ereporting_hors_application('),
-  PREPAREE.indexOf('$$;', PREPAREE.indexOf('create function public.declarer_ereporting_hors_application(')))
+const FONCTION_PREPAREE = PREPAREE.slice(indiceSql(PREPAREE, 'create function public.declarer_ereporting_hors_application('),
+  PREPAREE.indexOf('$$;', indiceSql(PREPAREE, 'create function public.declarer_ereporting_hors_application(')))
 const X = u(0xa1)
 
 describe('E6-Q8 — l’identifiant du fichier, état du drapeau par état', () => {
@@ -1173,7 +1173,7 @@ describe('E6-Q8 — l’identifiant du fichier, état du drapeau par état', () 
 
   it('le retour arrière rend la fonction d’hier au caractère près, et se refuse tant qu’un identifiant est porté', () => {
     const e5b1 = fichiersDuSchema().find((f) => /\d{14}_declarations_ereporting\.sql$/.test(f.chemin))?.texte ?? ''
-    const debut = e5b1.indexOf('create function public.declarer_ereporting_hors_application(')
+    const debut = indiceSql(e5b1, 'create function public.declarer_ereporting_hors_application(')
     expect(debut).toBeGreaterThan(0)
     expect(RETOUR_PREPARE).toContain(e5b1.slice(debut, e5b1.indexOf('$$;', debut) + 3))
     expect(RETOUR_PREPARE).toContain('where identifiant_fichier is not null')

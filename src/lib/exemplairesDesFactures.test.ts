@@ -1100,7 +1100,7 @@ describe('refusDuLienDeLExemplaire — G4', () => {
 
 /** La définition d'une fonction dans UN texte de migration : la dernière qu'il porte, jusqu'à la fin de son corps. */
 function definitionDans(texte: string, nom: string): string {
-  const positions = [...texte.matchAll(new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g'))].map((m) => m.index)
+  const positions = [...texte.matchAll(new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'gi'))].map((m) => m.index)
   const debut = positions.at(-1)
   if (debut === undefined) throw new Error(`Fonction ${nom} introuvable dans ce texte.`)
   const fin = texte.indexOf('$$;', debut)
@@ -1245,7 +1245,7 @@ describe('les drapeaux, et les deux modules confrontés au texte exporté', () =
     expect(VF6B).toContain('alter table public.designations_des_pieces enable row level security;')
     // Les gestes du journal : ceux du module, dans l'ordre de sa contrainte.
     expect(VF6B).toContain(`check (geste in (${GESTES_DU_JOURNAL.map((g) => `'${g}'`).join(', ')}))`)
-    expect([...VF6B.matchAll(/create policy (\w+) on public\.(\w+)\n\s+for (\w+) to (\w+) (?:using|with check) \(([^;]*)\);/g)]
+    expect([...VF6B.matchAll(/create policy (\w+) on public\.(\w+)\n\s+for (\w+) to (\w+) (?:using|with check) \(([^;]*)\);/gi)]
       .map((m) => m.slice(1).join(' '))).toEqual([
       'designations_des_pieces_lecture designations_des_pieces select authenticated admin_du_dossier(dossier_id)',
       'designations_des_pieces_restauration designations_des_pieces insert authenticated is_super_admin()',
@@ -1316,7 +1316,7 @@ describe('les drapeaux, et les deux modules confrontés au texte exporté', () =
     if (VF7E === undefined) return
     for (const nom of ['exercice_figeant_la_facture_source', 'exercice_figeant_la_designation']) {
       const def = derniereDefinitionSql(nom)
-      expect(def, nom).toMatch(new RegExp(`^create function public\\.${nom}\\(p_\\w+ uuid\\) returns integer\\nlanguage sql stable set search_path = public as`))
+      expect(def, nom).toMatch(new RegExp(`^create function public\\.${nom}\\(p_\\w+ uuid\\) returns integer\\nlanguage sql stable set search_path = public as`, 'i'))
       expect(def, nom).not.toContain('security definer')
       expect(VF7E, nom).toContain(`revoke execute on function public.${nom}(uuid) from public, anon, authenticated;`)
     }

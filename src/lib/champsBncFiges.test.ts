@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { definitionsSql, fichiersDuSchema, fichiersPrepares, type DefinitionSql } from '../test/schema'
+import { definitionsSql, fichiersDuSchema, fichiersPrepares, indiceSql, type DefinitionSql } from '../test/schema'
 import { CASES_2035, POSTES_RATTACHES, caseDuPoste, posteRattache } from './cases2035'
 import {
   MODES_REGLEMENT, NATURES_OPERATION, SEPARATEUR_DU_POSTE, natOpDeLaLigne, type ChampsBnc, type LigneACaracteriser,
@@ -25,7 +25,7 @@ const MIGRATION = /\/\d{14}_champs_bnc_du_fec\.sql$/
 const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
 const corps = (definition: string) => definition.slice(definition.indexOf('as $$') + 'as $$'.length)
 const nomDuFichier = (chemin: string) => chemin.split('/').pop() as string
-const motifDe = (fonction: string) => new RegExp(`create (or replace )?function public\\.${fonction}\\(`, 'g')
+const motifDe = (fonction: string) => new RegExp(`create (or replace )?function public\\.${fonction}\\(`, 'gi')
 
 // Les trois fonctions reprises, chacune avec la migration dont l'export tient la définition d'hier, et l'empreinte de son
 // corps que la garde de tête exige.
@@ -147,7 +147,7 @@ const litteraux = (sql: string): string[] => [...sql.split('\n').filter((l) => !
 describe('la migration champs_bnc_du_fec reprend trois fonctions, et n’y ajoute que les quatre champs', () => {
   it('sa garde de tête exige, avant toute définition, les corps que l’export laisse aux trois fonctions', () => {
     const texte = laMigration().texte
-    const premiereDefinition = texte.indexOf('create or replace function')
+    const premiereDefinition = indiceSql(texte, 'create or replace function')
     for (const r of REPRISES) {
       const hier = avantLaMigration(r.fonction)
       expect(hier.chemin, r.fonction).toMatch(new RegExp(`/\\d{14}_${r.migration}\\.sql$`))
@@ -185,7 +185,7 @@ describe('la migration champs_bnc_du_fec reprend trois fonctions, et n’y ajout
 
   it('le texte : trois définitions, une seule table modifiée, aucun droit, aucun objet ni donnée retirés, ni barre oblique inverse ni retour chariot', () => {
     const texte = laMigration().texte
-    expect(texte.match(/create (or replace )?function/g)).toHaveLength(3)
+    expect(texte.match(/create (or replace )?function/gi)).toHaveLength(3)
     expect(texte.match(/\balter table\b/gi)).toHaveLength(1)
     expect(texte).toContain('alter table public.ecritures_brouillon\n  add column date_reglement date,')
     expect(texte).not.toMatch(/\b(grant|revoke|drop|truncate)\b/i)
@@ -201,7 +201,7 @@ describe('la migration champs_bnc_du_fec reprend trois fonctions, et n’y ajout
 describe('les colonnes et les clés : les cinq du module, dans son ordre', () => {
   it('cinq colonnes nulles, sans valeur par défaut, dans l’ordre de COLONNES_CHAMPS_BNC', () => {
     const texte = laMigration().texte
-    const alter = texte.slice(texte.indexOf('alter table public.ecritures_brouillon'), texte.indexOf('add constraint'))
+    const alter = texte.slice(indiceSql(texte, 'alter table public.ecritures_brouillon'), texte.indexOf('add constraint'))
     expect([...alter.matchAll(/add column (\w+) (\w+),/g)].map((m) => `${m[1]} ${m[2]}`)).toEqual([
       'date_reglement date', 'mode_reglement text', 'nature_operation text', 'poste_rattache text', 'identification_client text',
     ])
@@ -336,14 +336,14 @@ describe('les listes fermées que la base copie : celles de lib/champsBncDuFec.t
 describe('le retour arrière : les trois fonctions d’hier, au caractère près, puis la contrainte et les colonnes retirées', () => {
   it('il exige les corps que la migration a posés, et rend ceux d’hier', () => {
     const retour = leRetour()
-    const premiereDefinition = retour.indexOf('create or replace function')
+    const premiereDefinition = indiceSql(retour, 'create or replace function')
     for (const r of REPRISES) {
       const pose = md5(corps(definitionDans(laMigration().texte, r.fonction)))
       expect(retour.indexOf(`'${pose}'`), r.fonction).toBeGreaterThan(0)
       expect(retour.indexOf(`'${pose}'`), r.fonction).toBeLessThan(premiereDefinition)
       expect(definitionDans(retour, r.fonction), r.fonction).toBe(avantLaMigration(r.fonction).definition)
     }
-    expect(retour.match(/create (or replace )?function/g)).toHaveLength(3)
+    expect(retour.match(/create (or replace )?function/gi)).toHaveLength(3)
   })
 
   it('il se refuse dès qu’une ligne porte l’un des champs, et ne retire que la contrainte et les cinq colonnes, en dernier', () => {
@@ -351,7 +351,7 @@ describe('le retour arrière : les trois fonctions d’hier, au caractère près
     expect(retour.replace(/\s+/g, ' ')).toContain(`num_nonnulls(${COLONNES_CHAMPS_BNC.join(', ')}) > 0`)
     const retraits = [...retour.matchAll(/\bdrop (constraint|column) (\w+)/g)].map((m) => `${m[1]} ${m[2]}`)
     expect(retraits).toEqual(['constraint ecritures_brouillon_champs_bnc_du_fec', ...COLONNES_CHAMPS_BNC.map((c) => `column ${c}`)])
-    expect(retour.indexOf('drop constraint')).toBeGreaterThan(retour.lastIndexOf('$$;'))
+    expect(indiceSql(retour, 'drop constraint')).toBeGreaterThan(retour.lastIndexOf('$$;'))
     expect(retour).not.toMatch(/\b(grant|revoke|truncate)\b/i)
     expect(retour).not.toMatch(/\bdelete from\b/i)
     expect(retour).not.toContain('\\')

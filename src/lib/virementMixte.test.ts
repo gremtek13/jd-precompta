@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, indiceSql } from '../test/schema'
 import { REFUS_ECRITURE_VENTE } from './ecritureVenteFacturee'
 import { REFUS_CLASSEMENT } from './encaissementsFactures'
 
@@ -42,7 +42,7 @@ const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('h
 // La définition qu'une fonction reçoit de CETTE migration — la seule que son texte lui donne.
 function definitionPosee(nom: string): string {
   const texte = texteDeLaMigration()
-  const debut = texte.indexOf(`create or replace function public.${nom}(`)
+  const debut = indiceSql(texte, `create or replace function public.${nom}(`)
   expect(debut, nom).toBeGreaterThan(0)
   return texte.slice(debut, texte.indexOf('$$;', debut))
 }
@@ -126,7 +126,7 @@ describe('la migration du virement mixte reprend quatre fonctions d’hier, et n
       expect(md5(corps(definitionAvantLaMigration(nom))), nom).toBe(empreinte)
       expect(texte, nom).toContain(`, '${empreinte}', '${migration}')`)
       // Avant toute définition : un corps qui n'est plus celui d'hier ne se remplace pas.
-      expect(texte.indexOf(`'${empreinte}'`), nom).toBeLessThan(texte.indexOf('create or replace function'))
+      expect(texte.indexOf(`'${empreinte}'`), nom).toBeLessThan(indiceSql(texte, 'create or replace function'))
     }
     expect(texte).toContain("md5(replace((select p.prosrc from pg_proc p where p.oid = to_regprocedure(v.fonction)), chr(13), '')) <> v.empreinte then")
   })
@@ -138,7 +138,7 @@ describe('la migration du virement mixte reprend quatre fonctions d’hier, et n
       const demain = definitionPosee(nom)
       // Tant qu'elle est la dernière, la base exécute ce qu'elle pose.
       if (MIGRATION.test(derniere)) expect(derniereDefinitionSql(nom), nom).toBe(demain)
-      expect(demain.startsWith(`create or replace function public.${nom}(`), nom).toBe(true)
+      expect(indiceSql(demain, `create or replace function public.${nom}(`), nom).toBe(0)
       expect(hierDepuisDemain(nom, demain), nom).toBe(definitionAvantLaMigration(nom))
     }
     // Sept remplacements, chacun dans sa fonction.
@@ -183,9 +183,9 @@ describe('la migration du virement mixte reprend quatre fonctions d’hier, et n
   it('le texte : une seule définition de chacune, ni droits rejoués ni objet retiré, aucune barre oblique inverse', () => {
     const texte = texteDeLaMigration()
     for (const [nom] of REPRISES) {
-      expect(texte.match(new RegExp(`create or replace function public\\.${nom}\\(`, 'g')), nom).toHaveLength(1)
+      expect(texte.match(new RegExp(`create or replace function public\\.${nom}\\(`, 'gi')), nom).toHaveLength(1)
     }
-    expect(texte.match(/create (or replace )?function/g)).toHaveLength(4)
+    expect(texte.match(/create (or replace )?function/gi)).toHaveLength(4)
     expect(texte).not.toMatch(/\b(grant|revoke|drop|truncate|alter)\b/i)
     expect(texte).not.toMatch(/\b(create|drop)\s+(table|policy|trigger|index)\b/i)
     // La seule suppression : celle qu'`ecrire_vente_facturee` faisait déjà, des écritures proposées de la source qu'elle

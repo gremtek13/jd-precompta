@@ -36,7 +36,7 @@ import { SIMULATION_VENTES_FACTUREES_EXPORTEE } from './simulationVentesFacturee
 import { contact } from '../test/contacts'
 import { versionParametres } from '../test/parametresFacturation'
 import { QUI_PEUT_QUOI_ATTENDU } from '../test/quiPeutQuoi'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { contientSql, derniereDefinitionSql, fichiersDuSchema, indiceSql } from '../test/schema'
 import { codesSql, messagesSql } from '../test/raiseSql'
 import { MOTS_DE_LA_CAISSE, STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
 
@@ -164,7 +164,7 @@ describe('une case cliquée n’envoie que son droit', () => {
 
   it('la forme à QUATRE (état d’avant C4a) : ses noms sont ceux de la migration de la caisse, dans son ordre, et elle y écrit seule', () => {
     // La forme à quatre de la migration `caisse_du_client` : `create function`, et non `create or replace` (elle est neuve).
-    const signature = /create function public\.changer_droits_acces\(([^)]*)\)/.exec(CAISSE_DU_CLIENT)
+    const signature = /create function public\.changer_droits_acces\(([^)]*)\)/i.exec(CAISSE_DU_CLIENT)
     expect(signature, 'la forme à quatre introuvable dans l’export').not.toBeNull()
     const parametres = signature![1].split(',').map((p) => p.trim().split(/\s+/)[0])
     expect(parametres).toEqual(Object.keys(demandeDeChangementSelon(false, 'm', 'ventes', true)))
@@ -172,12 +172,12 @@ describe('une case cliquée n’envoie que son droit', () => {
     // La forme à quatre, dans sa migration, écrit les trois colonnes, un droit nul inchangé ; la forme à trois ne fait que
     // l'appeler, « Caisse » nul. Depuis C4a, la dernière définition du nom est une forme plus courte qui appelle celle à
     // cinq (le bloc C4b, plus bas, juge celle-ci).
-    const debutQuatre = CAISSE_DU_CLIENT.indexOf('create function public.changer_droits_acces(')
+    const debutQuatre = indiceSql(CAISSE_DU_CLIENT, 'create function public.changer_droits_acces(')
     const derniere = CAISSE_DU_CLIENT.slice(debutQuatre, CAISSE_DU_CLIENT.indexOf('\n$$;', debutQuatre))
     expect(derniere).toContain('p_caisse boolean')
     expect(derniere).toContain('droit_caisse = coalesce(p_caisse, m.droit_caisse)')
     expect(derniere).toContain("if p_ventes is null and p_banque is null and p_caisse is null then")
-    const trois = /create or replace function public\.changer_droits_acces\(p_membership_id uuid, p_ventes boolean, p_banque boolean\)[\s\S]*?\$\$([\s\S]*?)\$\$;/
+    const trois = /create or replace function public\.changer_droits_acces\(p_membership_id uuid, p_ventes boolean, p_banque boolean\)[\s\S]*?\$\$([\s\S]*?)\$\$;/i
       .exec(CAISSE_DU_CLIENT)?.[1] ?? ''
     expect(trois.trim()).toBe('begin\n  return public.changer_droits_acces(p_membership_id, p_ventes, p_banque, null::boolean);\nend;')
     expect(CAISSE_DU_CLIENT).toContain('grant execute on function public.changer_droits_acces(uuid, boolean, boolean, boolean) to authenticated;')
@@ -201,7 +201,7 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     const export_ = fichiersDuSchema().map((f) => f.texte).join('\n')
     for (const { colonne } of DOMAINES) {
       // Les deux premières dans le même `alter table` (droits_des_acces_clients), la troisième seule (caisse_du_client).
-      expect(export_, colonne).toMatch(new RegExp(`alter table public\\.memberships\\s+(add column \\w+ boolean not null default false,\\s+)?add column ${colonne} boolean not null default false[,;]`))
+      expect(export_, colonne).toMatch(new RegExp(`alter table public\\.memberships\\s+(add column \\w+ boolean not null default false,\\s+)?add column ${colonne} boolean not null default false[,;]`, 'i'))
     }
     expect(DOMAINES.map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse', 'comptes'])
     expect(() => definitionDe('inconnu' as never)).toThrow('Domaine inconnu')
@@ -227,7 +227,7 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     for (const { domaine, colonne } of DOMAINES) expect(corps, domaine).toContain(`when '${domaine}' then m.${colonne}`)
     expect(corps).toMatch(/else false/)
     // Et la première définition, d'hier, ne connaissait que les deux premiers.
-    const hier = /create function public\.client_du_dossier[\s\S]*?\$\$([\s\S]*?)\$\$/.exec(MIGRATION)?.[1] ?? ''
+    const hier = /create function public\.client_du_dossier[\s\S]*?\$\$([\s\S]*?)\$\$/i.exec(MIGRATION)?.[1] ?? ''
     expect([...hier.matchAll(/when '(\w+)' then/g)].map((m) => m[1]).sort()).toEqual(['banque', 'membre', 'ventes'])
   })
 
@@ -854,12 +854,12 @@ describe('ce que disent les cases, les paramètres de facturation ouverts (étap
   // confirmation du RIB, elle, reste au cabinet.
   it('les paramètres ouverts : leur lecture et leur enregistrement, l’export les ouvre à « Ventes » ; la confirmation, au cabinet seul', () => {
     const porte = (motif: RegExp) => fichiersDuSchema().some((f) => motif.test(f.texte))
-    expect(porte(/create table public\.parametres_facturation \(/), 'PARAMETRES_FACTURATION_EXPORTES ne dit plus ce que porte l’export')
+    expect(porte(/create table public\.parametres_facturation \(/i), 'PARAMETRES_FACTURATION_EXPORTES ne dit plus ce que porte l’export')
       .toBe(PARAMETRES_FACTURATION_EXPORTES)
     if (!PARAMETRES_FACTURATION_EXPORTES) return
     expect(VENTES_DU_CLIENT_EXPORTEES, 'la migration des paramètres exige celles des ventes').toBe(true)
     for (const table of Object.values(LU_AVEC_PARAMETRES).flat()) {
-      expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`)), table)
+      expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`, 'i')), table)
         .toBe(true)
     }
     for (const fonction of Object.values(GESTES_AVEC_PARAMETRES).flat()) {
@@ -1016,7 +1016,7 @@ describe('ce que « Ventes » ouvre dans les fonctions de la vente (P3), confron
 describe('ce que disent les cases, confronté à l’export', () => {
   const fichiers = fichiersDuSchema()
   const porte = (motif: RegExp) => fichiers.some((f) => motif.test(f.texte))
-  const premiereDesVentes = porte(/create policy factures_emises_lecture_ventes on public\.factures_emises\b/)
+  const premiereDesVentes = porte(/create policy factures_emises_lecture_ventes on public\.factures_emises\b/i)
   const secondeDesVentes = porte(/create\s+(or\s+replace\s+)?function\s+public\.supprimer_brouillon_facture\(/i)
 
   // LES DEUX MIGRATIONS DES VENTES S'EXPORTENT ENSEMBLE : la première ouvre la lecture et les encaissements, la seconde
@@ -1030,7 +1030,7 @@ describe('ce que disent les cases, confronté à l’export', () => {
   it('les ventes ouvertes : chaque table lue et chaque geste que la phrase nomme, l’export les ouvre à « Ventes »', () => {
     if (!premiereDesVentes) return
     const policies = [...fichiers.map((f) => f.texte).join('\n')
-      .matchAll(/create policy \w+_lecture_ventes on public\.(\w+)\s+for select to authenticated\s+using \(([^;]*)\);/g)]
+      .matchAll(/create policy \w+_lecture_ventes on public\.(\w+)\s+for select to authenticated\s+using \(([^;]*)\);/gi)]
     for (const [, table, predicat] of policies) {
       expect(predicat, table).toMatch(/client_du_dossier\((f\.)?dossier_id, 'ventes'\)/)
     }
@@ -1053,7 +1053,7 @@ describe('ce que disent les cases, confronté à l’export', () => {
 
   it('la banque ouverte (P7) : le contrôle de solde et chaque geste que la phrase nomme, l’export les ouvre à « Banque »', () => {
     if (!COUVERTURE_EXPORTEE) return
-    expect(porte(/create policy \w+ on public\.controles_releves_bancaires\s+for select to authenticated using \(client_du_dossier\(dossier_id, 'banque'\)\);/))
+    expect(porte(/create policy \w+ on public\.controles_releves_bancaires\s+for select to authenticated using \(client_du_dossier\(dossier_id, 'banque'\)\);/i))
       .toBe(true)
     for (const fonction of Object.values(GESTES_AVEC_BANQUE).flat()) {
       expect(derniereDefinitionSql(fonction), fonction).toContain('if not public.gere_la_banque(p_dossier_id)')
@@ -1063,11 +1063,11 @@ describe('ce que disent les cases, confronté à l’export', () => {
   // LES ARTICLES (étape A1) : le drapeau dit ce que porte l'export (articles.test.ts le garde aussi) ; levé, la lecture que
   // la phrase nomme est ouverte au droit « Ventes », et chacun de ses gestes est une fonction qui l'accepte.
   it('les articles ouverts (A1) : la lecture du catalogue et chaque geste que la phrase nomme, l’export les ouvre à « Ventes »', () => {
-    expect(porte(/create table public\.articles \(/), 'ARTICLES_EXPORTES ne dit plus ce que porte l’export').toBe(ARTICLES_EXPORTES)
+    expect(porte(/create table public\.articles \(/i), 'ARTICLES_EXPORTES ne dit plus ce que porte l’export').toBe(ARTICLES_EXPORTES)
     if (!ARTICLES_EXPORTES) return
     expect(premiereDesVentes, 'la migration des articles exige celles des ventes').toBe(true)
     for (const table of Object.values(LU_AVEC_ARTICLES).flat()) {
-      expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`)), table)
+      expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`, 'i')), table)
         .toBe(true)
     }
     for (const fonction of Object.values(GESTES_AVEC_ARTICLES).flat()) {
@@ -1079,12 +1079,12 @@ describe('ce que disent les cases, confronté à l’export', () => {
   // aussi) ; levé, la lecture que la phrase nomme est ouverte au droit « Ventes », et la déclaration comme l'état de la
   // facture électronique sont des fonctions qui l'acceptent, l'accès d'abord.
   it('les adresses de réception ouvertes (A6a) : leur lecture, leur déclaration et l’état, l’export les ouvre à « Ventes »', () => {
-    expect(porte(/create table public\.adresses_reception \(/), 'ADRESSES_RECEPTION_EXPORTEES ne dit plus ce que porte l’export')
+    expect(porte(/create table public\.adresses_reception \(/i), 'ADRESSES_RECEPTION_EXPORTEES ne dit plus ce que porte l’export')
       .toBe(ADRESSES_RECEPTION_EXPORTEES)
     if (!ADRESSES_RECEPTION_EXPORTEES) return
     expect(premiereDesVentes, 'la migration des adresses de réception exige celles des ventes').toBe(true)
     for (const table of Object.values(LU_AVEC_ADRESSES).flat()) {
-      expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`)), table)
+      expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`, 'i')), table)
         .toBe(true)
     }
     for (const fonction of Object.values(GESTES_AVEC_ADRESSES).flat()) {
@@ -1098,11 +1098,11 @@ describe('ce que disent les cases, confronté à l’export', () => {
   // que la phrase nomme est ouverte au droit « Ventes », et chacun des quatre gestes est une fonction qui l'accepte,
   // l'accès d'abord.
   it('les contacts ouverts (A4a) : la lecture du fichier de ses clients et ses quatre gestes, l’export les ouvre à « Ventes »', () => {
-    expect(porte(/create table public\.contacts \(/), 'CONTACTS_EXPORTES ne dit plus ce que porte l’export').toBe(CONTACTS_EXPORTES)
+    expect(porte(/create table public\.contacts \(/i), 'CONTACTS_EXPORTES ne dit plus ce que porte l’export').toBe(CONTACTS_EXPORTES)
     if (!CONTACTS_EXPORTES) return
     expect(premiereDesVentes, 'la migration des contacts exige celles des ventes').toBe(true)
     for (const table of Object.values(LU_AVEC_CONTACTS).flat()) {
-      expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`)), table)
+      expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`, 'i')), table)
         .toBe(true)
     }
     for (const fonction of Object.values(GESTES_AVEC_CONTACTS).flat()) {
@@ -1160,7 +1160,7 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
     for (const table of tables) expect(Object.values(LU_AVEC_VENTES).flat()).toContain(table)
     if (!VENTES_DU_CLIENT_EXPORTEES) return
     for (const table of tables) {
-      expect(fichiersDuSchema().some((f) => f.texte.includes(`create policy ${table}_lecture_ventes on public.${table}`)), table).toBe(true)
+      expect(fichiersDuSchema().some((f) => contientSql(f.texte, `create policy ${table}_lecture_ventes on public.${table}`)), table).toBe(true)
     }
   })
 
@@ -1168,16 +1168,16 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
   // dès l'export de sa migration : sans cela, leurs libellés diraient lu ce que le client ne lit pas.
   it('la désignation et la description d’un article vivent dans une table que l’export ouvre à « Ventes »', () => {
     if (!ARTICLES_EXPORTES) return
-    expect(fichiersDuSchema().some((f) => f.texte.includes('create policy articles_lecture_ventes on public.articles'))).toBe(true)
-    expect(fichiersDuSchema().some((f) => /create table public\.articles \([^;]*\bdesignation text\b[^;]*\bdescription text\b/.test(f.texte))).toBe(true)
+    expect(fichiersDuSchema().some((f) => contientSql(f.texte, 'create policy articles_lecture_ventes on public.articles'))).toBe(true)
+    expect(fichiersDuSchema().some((f) => /create table public\.articles \([^;]*\bdesignation text\b[^;]*\bdescription text\b/i.test(f.texte))).toBe(true)
   })
 
   // Le nom, l'adresse et les observations d'un contact (étape A4b1) vivent dans `contacts`, que « Ventes » lit dès l'export de sa
   // migration, colonnes comprises : sans cela, leurs libellés diraient lu ce que le client ne lit pas.
   it('le nom, l’adresse et les observations d’un contact vivent dans une table que l’export ouvre à « Ventes »', () => {
     if (!CONTACTS_EXPORTES) return
-    expect(fichiersDuSchema().some((f) => f.texte.includes('create policy contacts_lecture_ventes on public.contacts'))).toBe(true)
-    expect(fichiersDuSchema().some((f) => /create table public\.contacts \([^;]*\bnom text\b[^;]*\badresse text\b[^;]*\bobservations text\b/.test(f.texte))).toBe(true)
+    expect(fichiersDuSchema().some((f) => contientSql(f.texte, 'create policy contacts_lecture_ventes on public.contacts'))).toBe(true)
+    expect(fichiersDuSchema().some((f) => /create table public\.contacts \([^;]*\bnom text\b[^;]*\badresse text\b[^;]*\bobservations text\b/i.test(f.texte))).toBe(true)
   })
 })
 
@@ -1192,7 +1192,7 @@ describe('ce que le client « Banque » lit de la main du cabinet : la question 
 
   it('le fil vit dans une table que l’export ouvre à « Banque », et ne s’écrit que par sa fonction', () => {
     const fichiers = fichiersDuSchema()
-    expect(fichiers.some((f) => /create policy precisions_mouvements_lecture on public\.precisions_mouvements\s+for select to authenticated using \(gere_la_banque\(dossier_id\)\);/.test(f.texte)))
+    expect(fichiers.some((f) => /create policy precisions_mouvements_lecture on public\.precisions_mouvements\s+for select to authenticated using \(gere_la_banque\(dossier_id\)\);/i.test(f.texte)))
       .toBe(true)
     expect(derniereDefinitionSql('ecrire_precision_mouvement')).toContain('if not public.gere_la_banque(p_dossier_id)')
   })
@@ -1222,7 +1222,7 @@ describe('les textes libres des paramètres de facturation : chaque libellé dit
 
   it('la table qu’ils décrivent est ouverte à « Ventes » par l’export', () => {
     const migration = readFileSync(resolve(process.cwd(), 'supabase/schema/20261016064317_parametres_facturation.sql'), 'utf8')
-    expect(migration).toMatch(/create policy parametres_facturation_lecture_ventes on public\.parametres_facturation\s+for select to authenticated using \(public\.client_du_dossier\(dossier_id, 'ventes'\)\)/)
+    expect(migration).toMatch(/create policy parametres_facturation_lecture_ventes on public\.parametres_facturation\s+for select to authenticated using \(public\.client_du_dossier\(dossier_id, 'ventes'\)\)/i)
   })
 })
 
@@ -1245,9 +1245,9 @@ describe('les textes libres de l’identité du dossier : chaque libellé dit qu
       const texte = trouvees[trouvees.length - 1]?.texte ?? ''
       return (texte.match(new RegExp(motif.source + '[^;]*;', 'g')) ?? []).pop() ?? ''
     }
-    expect(derniere(/create policy dossiers_select on (?:public\.)?dossiers for select/))
+    expect(derniere(/create policy dossiers_select on (?:public\.)?dossiers for select/i))
       .toMatch(/using \(admin_du_dossier\(id\) or exists \(select 1 from memberships m where m\.dossier_id = dossiers\.id and m\.user_id = auth\.uid\(\)\)\)/)
-    expect(derniere(/create policy dossiers_update on (?:public\.)?dossiers for update/))
+    expect(derniere(/create policy dossiers_update on (?:public\.)?dossiers for update/i))
       .toMatch(/using \(admin_du_dossier\(id\)\) with check \(admin_du_dossier\(id\)\)/)
   })
 
@@ -1381,10 +1381,10 @@ describe('ce que disent les cases, le logo des factures ouvert (étape A5c1)', (
     expect(PARAMETRES_FACTURATION_EXPORTES, 'la migration du logo exige celle des paramètres').toBe(true)
     const texte = migrations[0].texte.replace(/\s+/g, ' ')
     expect(texte).toContain("values ('ventes', 'ventes', false, 512000, array['image/png', 'image/jpeg'])")
-    expect(texte).toMatch(/create policy ventes_lecture on storage\.objects for select to authenticated using \(bucket_id = 'ventes' and case when [^;]* then public\.gere_les_ventes\(/)
-    expect(texte).toMatch(/create policy ventes_depot_d_un_logo on storage\.objects for insert to authenticated with check \(bucket_id = 'ventes' and case when [^;]*\/logos\/[^;]* then public\.gere_les_ventes\(/)
-    expect(texte).toMatch(/create policy ventes_suppression_par_le_chef on storage\.objects for delete to authenticated using \([^;]*public\.est_chef_du_cabinet\(d\.cabinet_id\)/)
-    expect(texte).not.toMatch(/create policy \w+ on storage\.objects for (update|all)\b/)
+    expect(texte).toMatch(/create policy ventes_lecture on storage\.objects for select to authenticated using \(bucket_id = 'ventes' and case when [^;]* then public\.gere_les_ventes\(/i)
+    expect(texte).toMatch(/create policy ventes_depot_d_un_logo on storage\.objects for insert to authenticated with check \(bucket_id = 'ventes' and case when [^;]*\/logos\/[^;]* then public\.gere_les_ventes\(/i)
+    expect(texte).toMatch(/create policy ventes_suppression_par_le_chef on storage\.objects for delete to authenticated using \([^;]*public\.est_chef_du_cabinet\(d\.cabinet_id\)/i)
+    expect(texte).not.toMatch(/create policy \w+ on storage\.objects for (update|all)\b/i)
     expect(derniereDefinitionSql('enregistrer_parametres_facturation'))
       .toMatch(/\$\$\s*(declare\s(?:(?!\bbegin\b)[\s\S])*)?\bbegin\s+if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
   })
@@ -1530,7 +1530,7 @@ describe('la case « Ventes » et la source des ventes du dossier (étape VF8d)'
 
   it('ce que la phrase et le refus redisent de la base : la colonne, le chef du cabinet, et la garde de « Ventes » (VF8f)', () => {
     // La colonne : booléenne, non nulle, fausse par défaut — « illisible » ne vient que d'une ligne qu'on n'a pas lue.
-    expect(fichiersDuSchema().some((f) => f.texte.includes(
+    expect(fichiersDuSchema().some((f) => contientSql(f.texte, 
       'alter table public.dossiers add column ventes_par_les_factures boolean not null default false;'))).toBe(true)
     // « Un réglage que le chef du cabinet posera » : la garde du réglage (VF8a, VF8-Q1) le réserve au chef depuis une session.
     expect(derniereDefinitionSql('garder_ventes_par_les_factures'))
@@ -1762,7 +1762,7 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     const tout = fichiersDuSchema().map((f) => f.texte).join('\n')
     // « il y lit toute la caisse de son dossier — chaque opération, celles que tu saisis et les retirées comprises » : la policy
     // de lecture, sur le mot « caisse », sans condition sur l'origine ni le retrait.
-    expect(tout).toMatch(/create policy operations_caisse_lecture_caisse on public\.operations_caisse\s+for select to authenticated\s+using \(public\.client_du_dossier\(dossier_id, 'caisse'\)\);/)
+    expect(tout).toMatch(/create policy operations_caisse_lecture_caisse on public\.operations_caisse\s+for select to authenticated\s+using \(public\.client_du_dossier\(dossier_id, 'caisse'\)\);/i)
     // « et sa caisse jour par jour … en totaux du jour et sans libellé (même sans « Banque » ni « Ventes »), et le solde » :
     // `caisse_du_client`, ouverte à `authenticated`, l'accès jugé par `gere_la_caisse` seul, avant toute lecture.
     const lecture = derniereDefinitionSql('caisse_du_client')
@@ -1842,13 +1842,13 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     expect(TABLES_LUES_AVEC_CAISSE).toEqual(['operations_caisse'])
     const tout = fichiersDuSchema().map((f) => f.texte).join('\n')
     // La table : ses colonnes de texte sont deux listes fermées que la base vérifie ; aucune autre colonne ne s'y ajoute.
-    const table = /create table public\.operations_caisse \(([\s\S]*?)\n\);/.exec(tout)?.[1] ?? ''
+    const table = /create table public\.operations_caisse \(([\s\S]*?)\n\);/i.exec(tout)?.[1] ?? ''
     const colonnes = table.split('\n').map((l) => l.trim()).filter((l) => /^[a-z_]+ /.test(l) && !l.startsWith('constraint'))
     const texte = colonnes.filter((l) => / text\b/.test(l)).map((l) => l.split(' ')[0])
     expect(texte).toEqual(['genre', 'origine'])
     expect(table).toContain("constraint operations_caisse_genre check (genre in ('recette', 'apport', 'prelevement', 'paiement'))")
     expect(table).toContain("constraint operations_caisse_origine check (origine in ('cabinet', 'client'))")
-    expect(tout).not.toMatch(/alter table public\.operations_caisse\s+add column/)
+    expect(tout).not.toMatch(/alter table public\.operations_caisse\s+add column/i)
     // La fonction : des jours, des montants, des identifiants et un booléen, jamais un texte.
     const rendu = /returns table \(([^)]*)\)/.exec(derniereDefinitionSql('caisse_du_client'))?.[1] ?? ''
     expect(rendu).not.toMatch(/\btext\b|varchar/)
@@ -1909,7 +1909,7 @@ describe('la case « Comptes » (étape C4b), derrière sa migration', () => {
     expect(demandeDeChangementSelon(true, 'm', 'ventes', false))
       .toEqual({ p_membership_id: 'm', p_ventes: false, p_banque: null, p_caisse: null, p_comptes: null })
     // Les noms des paramètres de la forme à cinq, ceux de la migration.
-    const debut = MIGRATION_SP.indexOf('create function public.changer_droits_acces(')
+    const debut = indiceSql(MIGRATION_SP, 'create function public.changer_droits_acces(')
     const entete = MIGRATION_SP.slice(debut, MIGRATION_SP.indexOf('returns public.memberships', debut))
     const parametres = [...entete.matchAll(/(p_\w+) (?:uuid|boolean)/g)].map((m) => m[1])
     expect(parametres).toEqual(Object.keys(demandeDeChangementSelon(true, 'm', 'comptes', true)))

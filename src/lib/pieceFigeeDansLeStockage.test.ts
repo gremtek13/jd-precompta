@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { contientSql, derniereDefinitionSql, dernierIndiceSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // LE FICHIER D'UNE PIÈCE FIGÉE DANS LE STOCKAGE (ligne 44, INAL1, sur INAL-Q5). La migration `piece_figee_dans_le_stockage`
 // — préparée dans supabase/preparees/, dans l'export sous la version de sa ligne d'historique le jour de son application,
@@ -34,9 +34,9 @@ const espaces = (texte: string) => texte.replace(/\s+/g, ' ').trim()
 
 // Le prédicat d'hier, tel que l'export le pose : la dernière `create policy pieces_storage_delete`, son `using (…)`.
 function predicatDHier(): string {
-  const avec = fichiersDuSchema().filter((f) => !f.chemin.includes(NOM) && f.texte.includes('create policy pieces_storage_delete'))
+  const avec = fichiersDuSchema().filter((f) => !f.chemin.includes(NOM) && contientSql(f.texte, 'create policy pieces_storage_delete'))
   const texte = avec[avec.length - 1].texte
-  const debut = texte.lastIndexOf('create policy pieces_storage_delete')
+  const debut = dernierIndiceSql(texte, 'create policy pieces_storage_delete')
   const using = texte.indexOf('using (', debut) + 'using ('.length
   return espaces(texte.slice(using, texte.indexOf(');', using)))
 }

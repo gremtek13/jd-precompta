@@ -6,6 +6,7 @@ import {
   rangerLesEcarts, REFUS_DE_MARQUER, refusDeMarquerVues, SANS_LISTE_EN_COURS, SANS_LISTE_PARTIELLE, titreDuSignalement,
 } from './piecesJointesEcartees'
 import type { PieceJointeEcartee } from './types'
+import { indiceSql } from '../test/schema'
 
 // CE QUE L'ONGLET JUSTIFICATIFS DIT D'UNE PIÈCE JOINTE ÉCARTÉE (ligne 22.7) : combien, quand, pourquoi, ce que le cabinet
 // peut faire — jamais un nom —, et les refus de `marquer_pieces_jointes_vues` redits avant le clic, sous les mots de la
@@ -210,7 +211,7 @@ describe('les refus de « Marquer comme vue », dits avant le clic', () => {
   })
 
   it('les mots sont ceux de la fonction de la migration, dans son ordre', () => {
-    const corps = MIGRATION.slice(MIGRATION.indexOf('create function public.marquer_pieces_jointes_vues'))
+    const corps = MIGRATION.slice(indiceSql(MIGRATION, 'create function public.marquer_pieces_jointes_vues'))
     const enSql = (t: string) => `'${t.replace(/'/g, "''")}'`
     const positions = [REFUS_DE_MARQUER.acces, REFUS_DE_MARQUER.aucune, REFUS_DE_MARQUER.autreDossier].map((t) => corps.indexOf(enSql(t)))
     expect(positions[0]).toBeGreaterThan(0)
@@ -228,9 +229,9 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
 
   it('les quatre raisons, et rien d’autre, des deux côtés : celle de 22.7 remplacée par celle de 22.8, puis par celle de 22.91', () => {
     expect(MIGRATION).toMatch(/constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille'\)\)/)
-    expect(MIGRATION_DEPOT).toMatch(/drop constraint pieces_jointes_ecartees_raison;/)
+    expect(MIGRATION_DEPOT).toMatch(/drop constraint pieces_jointes_ecartees_raison;/i)
     expect(MIGRATION_DEPOT).toMatch(/add constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille', 'depot'\)\)/)
-    expect(MIGRATION_VIDE).toMatch(/drop constraint pieces_jointes_ecartees_raison;/)
+    expect(MIGRATION_VIDE).toMatch(/drop constraint pieces_jointes_ecartees_raison;/i)
     const enVigueur = /add constraint pieces_jointes_ecartees_raison check \(raison in \(([^)]*)\)\)/.exec(MIGRATION_VIDE)
     const raisonsDeLaBase = [...(enVigueur?.[1] ?? '').matchAll(/'(\w+)'/g)].map((m) => m[1])
     expect(raisonsDeLaBase).toEqual(['format', 'taille', 'depot', 'vide'])
@@ -247,16 +248,16 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
 
   it('le poids : lu pour le format et la taille ; pour un dépôt échoué, inconnu AVANT la lecture, le poids lu après ; zéro pour la vide', () => {
     // La base : le poids admis inconnu pour la raison `depot` seule, zéro refusé partout (la contrainte de 22.7 tient).
-    expect(MIGRATION_DEPOT).toMatch(/alter column octets drop not null;/)
+    expect(MIGRATION_DEPOT).toMatch(/alter column octets drop not null;/i)
     expect(MIGRATION_DEPOT).toMatch(/add constraint pieces_jointes_ecartees_poids_connu check \(octets is not null or raison = 'depot'\);/)
-    expect(MIGRATION_DEPOT).not.toMatch(/(drop|add) constraint pieces_jointes_ecartees_octets\b/)
+    expect(MIGRATION_DEPOT).not.toMatch(/(drop|add) constraint pieces_jointes_ecartees_octets\b/i)
     expect(MIGRATION).toMatch(/constraint pieces_jointes_ecartees_octets check \(octets > 0\)/)
     // Puis (ligne 22.91) la règle du poids, raison par raison, sous le même nom : zéro pour la vide et pour elle seule ; la
     // contrainte du poids connu n'est pas touchée — le null reste réservé au dépôt échoué.
-    expect(MIGRATION_VIDE).toMatch(/drop constraint pieces_jointes_ecartees_octets;/)
+    expect(MIGRATION_VIDE).toMatch(/drop constraint pieces_jointes_ecartees_octets;/i)
     expect(MIGRATION_VIDE).toMatch(
       /add constraint pieces_jointes_ecartees_octets check \(case when raison = 'vide' then octets = 0 else octets > 0 end\);/)
-    expect(MIGRATION_VIDE).not.toMatch(/(drop|add) constraint pieces_jointes_ecartees_poids_connu\b/)
+    expect(MIGRATION_VIDE).not.toMatch(/(drop|add) constraint pieces_jointes_ecartees_poids_connu\b/i)
     // La fonction : chaque appel, dans l'ordre du fichier — deux pertes avant toute lecture, au poids inconnu ; la vide, au
     // poids zéro, sitôt téléchargée ; le format et la taille, au poids téléchargé ; quatre pertes après la lecture, au
     // poids lu (l'exception aussi : inconnu si elle est venue avant).
@@ -275,7 +276,7 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
   })
 
   it('aucune colonne pour un nom, une extension, un expéditeur ou un objet', () => {
-    const table = MIGRATION.slice(MIGRATION.indexOf('create table public.pieces_jointes_ecartees'), MIGRATION.indexOf('-- ══ La garde'))
+    const table = MIGRATION.slice(indiceSql(MIGRATION, 'create table public.pieces_jointes_ecartees'), MIGRATION.indexOf('-- ══ La garde'))
     expect(table).not.toMatch(/\b(nom|fichier|filename|extension|expediteur|objet|subject|sujet)\b/)
     const colonnes = [...table.matchAll(/^ {2}([a-z_]+) (?:uuid|timestamptz|text|bigint)/gm)].map((m) => m[1])
     expect(colonnes).toEqual(['id', 'dossier_id', 'recue_le', 'raison', 'octets', 'empreinte', 'vue_le', 'vue_par'])

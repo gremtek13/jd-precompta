@@ -30,7 +30,7 @@ describe('la reprise d’un acompte, au graphe prévu', () => {
   it('telle que la migration la pose : la ligne vers la facture d’acompte, sans action à la suppression, une fois', () => {
     expect(RELATIONS_DES_ACOMPTES).toEqual([{ enfant: 'facture_lignes', colonne: 'reprise_facture_id' }])
     const action = (texte: string) => /on delete cascade/.test(texte) ? 'cascade' : /on delete set null/.test(texte) ? 'met_a_null' : 'bloque'
-    const deLaMigration = [...MIGRATION.matchAll(/alter table public\.(\w+)\s+add column (\w+) uuid references public\.(\w+) \(id\)([^;]*);/g)]
+    const deLaMigration = [...MIGRATION.matchAll(/alter table public\.(\w+)\s+add column (\w+) uuid references public\.(\w+) \(id\)([^;]*);/gi)]
       .map((m) => `${m[1]}.${m[2]} → ${m[3]} (${action(m[4])})`)
     expect(deLaMigration).toEqual(['facture_lignes.reprise_facture_id → factures_emises (bloque)'])
     expect(RELATIONS_PREVUES.filter(REPRISE).map(cle)).toEqual(deLaMigration)

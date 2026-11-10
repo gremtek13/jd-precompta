@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { correspondAuModele, etapesDeLEssai, refusExigesParLEssai, TEXTE_ESSAI_VENTES_FACTUREES } from '../test/essaiVentesFacturees'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, type DefinitionSql } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, indiceSql, type DefinitionSql } from '../test/schema'
 import { REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT } from './encaissementsFactures'
 
 // L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS (chantier EC-Q3, ligne 28.65 ;
@@ -33,7 +33,7 @@ const REPRISE_DEPUIS = /\/\d{14}_(?:contre_passation_sur_mouvement_fige|especes_
 // Ce que cette migration a posé : la définition que son texte donne à la garde.
 function definitionPosee(): string {
   const texte = texteDeLaMigration()
-  const debut = texte.indexOf('create or replace function public.garder_encaissement_facture(')
+  const debut = indiceSql(texte, 'create or replace function public.garder_encaissement_facture(')
   expect(debut).toBeGreaterThan(0)
   return texte.slice(debut, texte.indexOf('$$;', debut))
 }
@@ -101,7 +101,7 @@ describe('la migration insertion_des_encaissements reprend la garde des encaisse
   it('sa garde de tête exige, avant toute définition, le corps que registre_virement_mixte a posé, celui de l’export', () => {
     const texte = texteDeLaMigration()
     expect(texte).not.toBe('')
-    const premiereDefinition = texte.indexOf('create or replace function')
+    const premiereDefinition = indiceSql(texte, 'create or replace function')
     const hier = avantLaMigration('garder_encaissement_facture')
     expect(hier.chemin).toMatch(/\/20261026000145_registre_virement_mixte\.sql$/)
     expect(md5(corps(hier.definition))).toBe('21c11ef2275292a9c70570eed2aebd9e')
@@ -174,7 +174,7 @@ describe('la migration insertion_des_encaissements reprend la garde des encaisse
 
   it('le texte : une seule définition, ni droits rejoués ni objet retiré, aucune barre oblique inverse ni retour chariot', () => {
     const texte = texteDeLaMigration()
-    expect(texte.match(/create (or replace )?function/g)).toHaveLength(1)
+    expect(texte.match(/create (or replace )?function/gi)).toHaveLength(1)
     expect(texte).toContain('create or replace function public.garder_encaissement_facture() returns trigger')
     expect(texte).not.toMatch(/\b(grant|revoke|drop|truncate|alter)\b/i)
     expect(texte).not.toMatch(/\b(create|drop)\s+(table|policy|trigger|index|view)\b/i)
@@ -190,7 +190,7 @@ describe('la migration insertion_des_encaissements reprend la garde des encaisse
 
 describe('aucune fonction n’atteint ces refus : seule une écriture directe les rencontre', () => {
   // Un scanner, pas une liste tenue à la main : la dernière définition de chaque fonction de l'export.
-  const noms = [...new Set(fichiersDuSchema().flatMap((f) => [...f.texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/g)].map((m) => m[1])))]
+  const noms = [...new Set(fichiersDuSchema().flatMap((f) => [...f.texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/gi)].map((m) => m[1])))]
   // Chaque dernière définition lue une fois : la relire par test coûterait plusieurs secondes.
   const definitions = new Map(noms.map((n) => [n, derniereDefinitionSql(n)]))
   const inserent = noms.filter((n) => /insert\s+into\s+(?:public\.)?encaissements_factures\s*\(/i.test(definitions.get(n) ?? '')).sort()

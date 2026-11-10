@@ -9,7 +9,7 @@ import {
   analyserXmlRecu, CODES_STATUT_RECU, LONGUEUR_MAX_TEXTE_RECU, lireStatutRecu, rattacherStatutRecu, TYPES_FACTURE_STATUT_RECU,
   type LectureStatutRecu, type StatutRecuLu,
 } from './cdarRecu'
-import { fichiersDuSchema } from '../test/schema'
+import { contientSql, fichiersDuSchema } from '../test/schema'
 
 // LA LECTURE D'UN STATUT REÇU (ligne 28.5, étape d7), éprouvée sur des messages FICTIFS qui passent au schéma CDAR D22B
 // (outils/facturation/cdar/recus/, valider.mjs), puis sur ce qu'on en abîme une donnée à la fois. Les chemins et les
@@ -348,7 +348,7 @@ describe('le rattachement à une facture du dossier : l’identité de G1.42', (
 // CE QUE LA BASE GARDE (migration cycle_de_vie_des_factures_emises) : tout ce que la lecture rend d'un message lisible
 // passe les contraintes de la table — sinon la fonction lirait un refus et ne pourrait pas l'écrire.
 describe('ce que la lecture rend, la table le garde', () => {
-  const MIGRATION = fichiersDuSchema().find((f) => f.texte.includes('create table public.statuts_factures_recus ('))?.texte ?? ''
+  const MIGRATION = fichiersDuSchema().find((f) => contientSql(f.texte, 'create table public.statuts_factures_recus ('))?.texte ?? ''
   const contrainte = (nom: string) => {
     const m = new RegExp(`constraint ${nom} check \\((.*)\\),?$`, 'm').exec(MIGRATION)
     expect(m, nom).not.toBeNull()

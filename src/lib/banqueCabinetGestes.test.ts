@@ -218,13 +218,13 @@ describe('la base permet les deux gestes, relus dans l’export du schéma', () 
 
   it('la policy qui ouvre la suppression d’un message au cabinet du dossier', () => {
     expect(texte).toMatch(
-      /create policy precisions_mouvements_suppression_cabinet on public\.precisions_mouvements\s+for delete to authenticated using \(admin_du_dossier\(dossier_id\)\)/,
+      /create policy precisions_mouvements_suppression_cabinet on public\.precisions_mouvements\s+for delete to authenticated using \(admin_du_dossier\(dossier_id\)\)/i,
     )
-    expect(texte).not.toMatch(/drop policy (if exists )?precisions_mouvements_suppression_cabinet/)
+    expect(texte).not.toMatch(/drop policy (if exists )?precisions_mouvements_suppression_cabinet/i)
   })
 
   it('aucun déclencheur ne s’oppose à la suppression d’un message : il garde l’insertion et la modification seulement', () => {
-    const declencheurs = [...texte.matchAll(/create trigger \w+\s+(before|after) ([a-z ]+?) on public\.precisions_mouvements/g)]
+    const declencheurs = [...texte.matchAll(/create trigger \w+\s+(before|after) ([a-z ]+?) on public\.precisions_mouvements/gi)]
     expect(declencheurs.length).toBeGreaterThan(0)
     for (const d of declencheurs) expect(d[2]).not.toContain('delete')
   })

@@ -13,7 +13,7 @@ import type { ANouveau, CompteNotesDeFrais, EcritureBrouillon, LettrageManuel, P
 import { ajouterJours } from './format'
 import { PLAN_PAR_DEFAUT, type CleRoleComptable } from './planComptable'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { contientSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
 import { modeleDeTest } from '../test/modeles'
 
@@ -689,7 +689,7 @@ describe('refusLettrageManuel — ce que la base refuserait, dit avant le clic',
   // La contrainte de la table nomme les comptes (l'étape PC4 la remplacera) ; la fonction, depuis l'étape PC2 (ligne 43),
   // lit dans le plan du dossier les cinq rôles dont ces comptes sont les défauts.
   it('lettre les mêmes comptes que la base : ni plus, ni moins', () => {
-    const texte = fichiersDuSchema().map((f) => f.texte).find((t) => t.includes('create table public.lettrages_manuels'))!
+    const texte = fichiersDuSchema().map((f) => f.texte).find((t) => contientSql(t, 'create table public.lettrages_manuels'))!
     const listes = [...texte.matchAll(/compte in \(([^)]*)\)/g)].map((m) => new Set(m[1].split(',').map((x) => x.trim().replace(/'/g, ''))))
     expect(listes.length).toBe(1)
     expect(listes[0]).toEqual(new Set(comptesLettrables(PLAN_PAR_DEFAUT)))

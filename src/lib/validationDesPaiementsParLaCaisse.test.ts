@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { definitionsSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { definitionsSql, fichiersDuSchema, fichiersPrepares, indiceSql } from '../test/schema'
 
 // LE FILET DE LA BASE : LA VALIDATION D'UN EXERCICE DEVANT LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6 ; la relecture du
 // 01/11/2026, le défaut 1). La migration `validation_des_paiements_par_la_caisse` — préparée dans supabase/preparees/, à
@@ -14,7 +14,7 @@ import { definitionsSql, fichiersDuSchema, fichiersPrepares } from '../test/sche
 
 const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
 const corps = (definition: string) => definition.slice(definition.indexOf('as $$') + 'as $$'.length)
-const motifDe = (fonction: string) => new RegExp(`create (or replace )?function public\\.${fonction}\\(`, 'g')
+const motifDe = (fonction: string) => new RegExp(`create (or replace )?function public\\.${fonction}\\(`, 'gi')
 
 // Une migration, où qu'elle soit : préparée aujourd'hui, dans l'export le jour de son application — jamais aux deux.
 function laMigration(nom: string): { chemin: string; texte: string } {
@@ -139,7 +139,7 @@ describe('le filet reprend la validation de FEC22b, et n’y ajoute qu’un refu
 describe('sa garde de tête exige, avant toute définition, les corps que C8 et FEC22b posent', () => {
   it('la validation de FEC22b, le paiement et la garde de C8, le compte du plan de l’export : leurs empreintes recalculées', () => {
     const texte = FILET().texte
-    const premiereDefinition = texte.indexOf('create or replace function')
+    const premiereDefinition = indiceSql(texte, 'create or replace function')
     const attendues: [string, string][] = [
       ['valider_exercice', md5(corps(definitionDans(FEC22B().texte, 'valider_exercice')))],
       ['regler_piece_par_la_caisse', md5(corps(definitionDans(C8().texte, 'regler_piece_par_la_caisse')))],
@@ -160,7 +160,7 @@ describe('sa garde de tête exige, avant toute définition, les corps que C8 et 
 describe('son retour arrière rend la validation de FEC22b', () => {
   it('sa garde exige le corps que le filet pose ; il rend la définition et le commentaire de FEC22b, au caractère près', () => {
     const retour = leRetour()
-    const premiereDefinition = retour.indexOf('create or replace function')
+    const premiereDefinition = indiceSql(retour, 'create or replace function')
     const filet = md5(corps(definitionDans(FILET().texte, 'valider_exercice')))
     expect(retour.indexOf(`'${filet}'`)).toBeGreaterThan(0)
     expect(retour.indexOf(`'${filet}'`)).toBeLessThan(premiereDefinition)
@@ -172,7 +172,7 @@ describe('son retour arrière rend la validation de FEC22b', () => {
 describe('les deux textes ne retirent rien, et s’appliquent par l’outil', () => {
   it('une définition, un commentaire ; ni droit, ni objet, ni donnée retirés ; ni barre oblique inverse ni retour chariot', () => {
     for (const texte of [FILET().texte, leRetour()]) {
-      expect(texte.match(/create (or replace )?function/g)).toHaveLength(1)
+      expect(texte.match(/create (or replace )?function/gi)).toHaveLength(1)
       expect(texte.match(/comment on function/g)).toHaveLength(1)
       expect(texte).not.toMatch(/\b(grant|revoke|drop|truncate|alter)\b/i)
       expect(texte).not.toMatch(/\bdelete\b/i)

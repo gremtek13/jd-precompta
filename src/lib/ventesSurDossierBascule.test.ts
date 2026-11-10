@@ -114,7 +114,7 @@ describe('la migration ventes_sur_dossier_bascule', () => {
     // Le déclencheur de la garde du réglage, tel que l'export le pose en dernier : avant l'insertion et la mise à jour des
     // deux colonnes, ligne par ligne (tgtype 23).
     const declencheurs = fichiersDuSchema().flatMap((f) => [...sansCommentaires(f.texte).matchAll(
-      /create (?:or replace )?trigger dossiers_ventes_par_les_factures\s+([^;]*);/g)].map((m) => m[1].replace(/\s+/g, ' ')))
+      /create (?:or replace )?trigger dossiers_ventes_par_les_factures\s+([^;]*);/gi)].map((m) => m[1].replace(/\s+/g, ' ')))
     expect(declencheurs.at(-1)).toBe('before insert or update of ventes_par_les_factures, ventes_par_les_factures_depuis '
       + 'on public.dossiers for each row execute function public.garder_ventes_par_les_factures()')
     expect(tete).toContain("and t.tgfoid = 'public.garder_ventes_par_les_factures()'::regprocedure and t.tgtype = 23 and t.tgenabled = 'O'")

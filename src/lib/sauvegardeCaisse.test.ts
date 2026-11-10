@@ -31,7 +31,7 @@ import {
   tablesSansChemin,
   violationsOrdre,
 } from './sauvegarde'
-import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { fichiersDuSchema, fichiersPrepares, indiceSql } from '../test/schema'
 
 // LA CAISSE AU PLAN DE SAUVEGARDE (ligne 26.6, étape C2). Ses migrations sont en base depuis le 30/10/2026, le drapeau
 // `CAISSE_EXPORTEE` levé : le plan effectif nomme la table et la colonne d'`ecritures_brouillon`. Baissé, il ne les
@@ -106,12 +106,12 @@ describe('le plan prévu, caisse comprise', () => {
   it('ses relations sont exactement les clés que la migration préparée déclare, action à la suppression comprise', () => {
     expect(MIGRATION).toContain('create table public.operations_caisse (')
     // Les clés de la table, lues dans son `create table`, et celle de la colonne du brouillon, dans son `alter table`.
-    const corps = MIGRATION.slice(MIGRATION.indexOf('create table public.operations_caisse ('), MIGRATION.indexOf('\n);', MIGRATION.indexOf('create table public.operations_caisse (')))
+    const corps = MIGRATION.slice(indiceSql(MIGRATION, 'create table public.operations_caisse ('), MIGRATION.indexOf('\n);', indiceSql(MIGRATION, 'create table public.operations_caisse (')))
     const action = (texte: string) => /on delete cascade/.test(texte) ? 'cascade' : /on delete set null/.test(texte) ? 'met_a_null' : 'bloque'
     const deLaMigration = [
       ...[...corps.matchAll(/^\s+(\w+) uuid (?:not null )?references public\.(\w+)\(id\)([^,\n]*)/gm)]
         .map((m) => `operations_caisse.${m[1]} → ${m[2]} (${action(m[3])})`),
-      ...[...MIGRATION.matchAll(/alter table public\.ecritures_brouillon\s+add column (\w+) uuid references public\.(\w+)\(id\)([^;]*);/g)]
+      ...[...MIGRATION.matchAll(/alter table public\.ecritures_brouillon\s+add column (\w+) uuid references public\.(\w+)\(id\)([^;]*);/gi)]
         .map((m) => `ecritures_brouillon.${m[1]} → ${m[2]} (${action(m[3])})`),
     ].sort()
     expect(deLaMigration).toHaveLength(5)

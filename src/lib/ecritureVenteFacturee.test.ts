@@ -7,7 +7,7 @@ import {
 } from '../test/essaiEcrituresVentesFacturees'
 import { correspondAuModele, etapesDeLEssai } from '../test/essaiVentesFacturees'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema, indiceSql } from '../test/schema'
 import {
   REFUS_COMPTE_CONTREPARTIE, REFUS_ECRITURE_VENTE, REFUS_GARDE_CONTREPARTIE, REFUS_GARDE_LIGNES_VENTE,
   REFUS_RETRAIT_ECRITURE_VENTE, argumentsChoisirCompteContrepartie, argumentsEcrireVenteFacturee,
@@ -107,7 +107,7 @@ describe('chaque liste redit sa fonction, dans son ordre, sous ses mots et ses c
       expect(TEXTE_MIGRATION, nom).toContain(`create function public.${nom}(`)
       const reprise = REPRISES_PAR_FEC22B.has(nom) && TEXTE_CHAMPS_BNC !== ''
       const texte = reprise ? TEXTE_CHAMPS_BNC : REPRISES_PAR_VF5H.has(nom) ? TEXTE_VIREMENT_MIXTE : TEXTE_MIGRATION
-      const debut = texte.indexOf(`${reprise || REPRISES_PAR_VF5H.has(nom) ? 'create or replace' : 'create'} function public.${nom}(`)
+      const debut = indiceSql(texte, `${reprise || REPRISES_PAR_VF5H.has(nom) ? 'create or replace' : 'create'} function public.${nom}(`)
       expect(debut, nom).toBeGreaterThanOrEqual(0)
       expect(derniereDefinitionSql(nom), nom).toBe(texte.slice(debut, texte.indexOf('$$;', debut)))
     }

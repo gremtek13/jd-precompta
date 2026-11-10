@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { correspondAuModele, etapesDeLEssai, refusExigesParLEssai } from '../test/essaiVentesFacturees'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, indiceSql } from '../test/schema'
 import {
   REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, refusContrePassation, refusContrePassationSansIssue,
   refusContrePassationVente, refusEnregistrement, refusEnregistrementVente, refusRetrait, refusRetraitVente,
@@ -46,7 +46,7 @@ const REPRISES_DEPUIS = new Map([
 function definitionPosee(nom: string): string {
   if (!REPRISES_DEPUIS.has(nom)) return derniereDefinitionSql(nom)
   const texte = texteDeLaMigration()
-  const debut = texte.indexOf(`create or replace function public.${nom}(`)
+  const debut = indiceSql(texte, `create or replace function public.${nom}(`)
   expect(debut, nom).toBeGreaterThan(0)
   return texte.slice(debut, texte.indexOf('$$;', debut))
 }
@@ -126,7 +126,7 @@ describe('la migration registre_virement_mixte reprend quatre fonctions d’hier
   it('sa garde suppose le virement mixte, puis exige le corps d’hier de chacune, celui que l’export porte avant elle', () => {
     const texte = texteDeLaMigration()
     expect(texte).not.toBe('')
-    const premiereDefinition = texte.indexOf('create or replace function')
+    const premiereDefinition = indiceSql(texte, 'create or replace function')
     expect(texte.indexOf("where m.name = 'virement_mixte')")).toBeGreaterThan(0)
     expect(texte.indexOf("where m.name = 'virement_mixte')")).toBeLessThan(premiereDefinition)
     for (const [nom, signature, empreinte, migration] of REPRISES) {
@@ -202,9 +202,9 @@ describe('la migration registre_virement_mixte reprend quatre fonctions d’hier
   it('le texte : une seule définition de chacune, ni droits rejoués ni commentaire ni objet retiré, aucune barre oblique inverse', () => {
     const texte = texteDeLaMigration()
     for (const [nom] of REPRISES) {
-      expect(texte.match(new RegExp(`create or replace function public\\.${nom}\\(`, 'g')), nom).toHaveLength(1)
+      expect(texte.match(new RegExp(`create or replace function public\\.${nom}\\(`, 'gi')), nom).toHaveLength(1)
     }
-    expect(texte.match(/create (or replace )?function/g)).toHaveLength(4)
+    expect(texte.match(/create (or replace )?function/gi)).toHaveLength(4)
     expect(texte).not.toMatch(/\b(grant|revoke|drop|truncate|alter)\b/i)
     expect(texte).not.toMatch(/\b(create|drop)\s+(table|policy|trigger|index|view)\b/i)
     // `create or replace` garde le commentaire de chaque fonction, son propriétaire et ses droits : rien ne se rejoue.
