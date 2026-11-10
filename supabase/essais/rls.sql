@@ -62,6 +62,9 @@
 --      créée demain comprise : la boucle part de `pg_class` — et storage.objects portent la policy restrictive
 --      `deux_facteurs`, à l'expression exacte, et la pré-requête de PostgREST garde les fonctions que la RLS ne voit pas.
 --      Sept mutations.
+--   9. La numérotation qui continue (bloc NC, migration `numerotation_continue`, préparée) : les modèles de numéro et les
+--      paroles du cabinet sur la suite reprise d'une série, au cabinet du dossier seul — le client, même avec un accès au
+--      dossier, n'en lit rien et n'en écrit rien —, un contrôle POSITIF, le catalogue, trois mutations.
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -1264,7 +1267,9 @@ begin
     select f.numero into raison from enregistrer_facture(dossier_du_client, null,
       '{"tiers_nom":"ESSAI RLS","date_emission":"1999-01-15","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":1,"montant_tva":0,"montant_ttc":1}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":1,"taux_tva":0}]'::jsonb, true) as f;
-    accepte := raison like 'F1999-%';
+    -- Depuis la numérotation qui continue (A9a, préparée ; son témoin : `modeles_numerotation`), le chef numérote dans la
+    -- série de son mandataire, M (MEG1-Q5) ; avant elle, dans la série unique, F.
+    accepte := raison like case when to_regclass('public.modeles_numerotation') is null then 'F1999-%' else 'M1999-%' end;
     raise exception 'ANNULATION_ESSAI';
   exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate; end;
   reset role;
@@ -5534,6 +5539,179 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $pr$;
+
+-- ══ NC. La numérotation qui continue (ligne 51.5, étape A9a ; migration `numerotation_continue`, PRÉPARÉE) ════════════
+-- Deux tables du cabinet que le client ne lit pas, pas même pour son dossier : `modeles_numerotation` (le modèle de numéro
+-- d'un dossier) et `continuite_des_series` (la fin confirmée d'une suite reprise, les trous levés, leur motif — un texte du
+-- cabinet). Chacune : la lecture au cabinet du dossier, l'insertion de la restauration au super-administrateur, rien
+-- d'autre ; l'écriture par les fonctions du chef, que la garde des deux tables annonce. Ce que ces fonctions refusent se
+-- rejoue dans numerotationContinue.sql.
+--   NC1. Le chef pose un modèle des factures du client dans le dossier du client, à partir de 2099 (aucune facture n'y est
+--        datée), et le lit (le contrôle POSITIF) ; le client, qui a un accès à ce dossier, n'en lit rien ; l'anonyme non plus.
+--   NC2. Le client ne pose pas de modèle par la fonction (42501, sous ses mots), ni en direct (42501, la garde), et ne
+--        réécrit rien.
+--   NC3. Le catalogue : la RLS active sur les deux tables, deux policies permissives chacune, à authenticated : la lecture
+--        sur `admin_du_dossier(dossier_id)`, l'insertion sur `is_super_admin()` ; aucune autre (la restrictive
+--        `deux_facteurs` mise à part).
+-- Trois mutations, qui doivent mordre : M-NC1 (la lecture élargie au client « membre » : il lit le modèle de son dossier),
+-- M-NC2 (la lecture fermée : le chef ne le lit plus), M-NC3 (l'insertion ouverte à tout compte, la garde ôtée : l'insertion
+-- directe du client passe). Avant la migration, une ligne dit que le bloc attend.
+do $nc$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  chef_lit bigint; du_client bigint; de_l_anon text; par_la_fonction text; en_direct text; reecrits bigint;
+  elargie bigint; fermee bigint; ecrite text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.modeles_numerotation') is null then
+    insert into rls_verdict values ('NC. la numérotation qui continue : EN ATTENTE de la migration numerotation_continue',
+      'modeles_numerotation', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef pose le modèle, et le relit ──
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform fixer_modele_numerotation(dossier_du_client, 'facture', 'client', 'RLS{AAAA}-{N:4}', true, 2099);
+    select count(*) into chef_lit from modeles_numerotation where dossier_id = dossier_du_client and modele = 'RLS{AAAA}-{N:4}';
+    reset role;
+    construit := true;
+
+    -- NC1 : le client, puis l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from modeles_numerotation where dossier_id = dossier_du_client;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from modeles_numerotation;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'NC1. le chef lit le modèle qu''il a posé dans le dossier du client (le contrôle positif) ; le client n''en lit rien, ni l''anonyme',
+      'cible', 'modeles_numerotation',
+      'observe', 'le chef : ' || chef_lit || ' | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_lit = 1 and du_client = 0 and de_l_anon = '0');
+
+    -- NC2 : le client ne pose ni ne réécrit un modèle.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform fixer_modele_numerotation(dossier_du_client, 'avoir', 'client', 'RLT{AAAA}-{N:4}', true, 2099);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into modeles_numerotation (dossier_id, nature, emetteur, modele, annuel, depuis)
+        values (dossier_du_client, 'avoir', 'client', 'RLT{AAAA}-{N:4}', true, 2099);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update modeles_numerotation set depuis = 2098 where dossier_id = dossier_du_client returning 1)
+      select count(*) into reecrits from t;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'NC2. le client ne pose pas de modèle (la fonction, puis la garde) et n''en réécrit aucun',
+      'cible', 'modeles_numerotation',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrits : ' || reecrits,
+      'ok', par_la_fonction = '42501 Accès refusé à ce dossier.'
+        and en_direct = '42501 Un modèle de numéro ne se pose que par sa fonction, qui le juge.' and reecrits = 0);
+
+    -- M-NC1 : la lecture élargie au client « membre ».
+    begin
+      alter policy modeles_numerotation_lecture on public.modeles_numerotation
+        using (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from modeles_numerotation where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-NC1 — la lecture des modèles de numéro élargie au client « membre »',
+      'attendu', 'le client lit le modèle de son dossier', 'observe', coalesce(elargie::text, '?') || ' lu(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-NC2 : la lecture fermée.
+    begin
+      alter policy modeles_numerotation_lecture on public.modeles_numerotation using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from modeles_numerotation where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-NC2 — la lecture des modèles de numéro fermée',
+      'attendu', 'le chef ne lit plus le modèle', 'observe', coalesce(fermee::text, '?') || ' lu(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-NC3 : l'insertion ouverte à tout compte, la garde ôtée.
+    begin
+      alter policy modeles_numerotation_restauration on public.modeles_numerotation with check (true);
+      alter table public.modeles_numerotation disable trigger modeles_numerotation_garde;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into modeles_numerotation (dossier_id, nature, emetteur, modele, annuel, depuis)
+          values (dossier_du_client, 'avoir', 'client', 'RLT{AAAA}-{N:4}', true, 2099);
+        ecrite := 'ACCEPTÉ';
+      exception when others then ecrite := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-NC3 — l''insertion des modèles de numéro ouverte à tout compte, sans la garde',
+      'attendu', 'l''insertion directe du client passe', 'observe', coalesce(ecrite, '?'), 'mord', coalesce(ecrite = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- NC3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename in ('modeles_numerotation', 'continuite_des_series')
+     and p.roles = array['authenticated']::name[] and p.permissive = 'PERMISSIVE'
+     and ((p.policyname = p.tablename || '_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = p.tablename || '_restauration' and p.cmd = 'INSERT' and p.with_check = 'is_super_admin()' and p.qual is null));
+  verdicts := verdicts || jsonb_build_object('controle', 'NC3. la RLS active sur les deux tables ; deux policies chacune, à authenticated : la lecture du cabinet, l''insertion de la restauration (lecture du catalogue)',
+    'cible', 'modeles_numerotation, continuite_des_series',
+    'observe', n || ' sur 4, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename in ('modeles_numerotation', 'continuite_des_series') and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select string_agg(c.relrowsecurity::text, '/' order by c.relname) from pg_class c where c.oid in ('public.modeles_numerotation'::regclass, 'public.continuite_des_series'::regclass)),
+    'ok', n = 4 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename in ('modeles_numerotation', 'continuite_des_series') and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 4
+      and (select bool_and(c.relrowsecurity) from pg_class c where c.oid in ('public.modeles_numerotation'::regclass, 'public.continuite_des_series'::regclass)));
+  verdicts := verdicts || jsonb_build_object('controle', 'NC. le jeu d''essai de la numérotation qui continue s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end
+      || ' | restés : ' || (select count(*) from modeles_numerotation where dossier_id = dossier_du_client and modele in ('RLS{AAAA}-{N:4}', 'RLT{AAAA}-{N:4}')),
+    'ok', construit and erreur is null
+      and not exists (select 1 from modeles_numerotation where dossier_id = dossier_du_client and modele in ('RLS{AAAA}-{N:4}', 'RLT{AAAA}-{N:4}')));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $nc$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

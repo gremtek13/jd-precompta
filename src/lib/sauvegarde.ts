@@ -17,6 +17,7 @@ import { CONTACTS_EXPORTES } from './contacts'
 import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
+import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
@@ -197,6 +198,22 @@ export function auPlanDesFacturesImportees(table: string, prevues: boolean): boo
   return prevues || !TABLES_DES_FACTURES_IMPORTEES.includes(table)
 }
 
+// LA NUMÉROTATION QUI CONTINUE (ligne 51.5, étape A9a ; migration `numerotation_continue`, PRÉPARÉE, pas appliquée, par-dessus
+// A8a) : le modèle de numéro d'un dossier (`modeles_numerotation`) et les paroles du cabinet sur la suite reprise d'une série
+// — la fin confirmée, les trous levés (`continuite_des_series`). Sous le drapeau de la migration (`NUMEROTATION_CONTINUE_PREVUE`,
+// src/lib/numerotationContinue.ts), baissé : la production n'a pas les tables, et les lire ferait échouer toute sauvegarde.
+// Leur relation au dossier (cascade), leur rang (juste après les factures reprises), leurs chemins ; aucune vague ; leur clé
+// est la commune, `id`. La restauration les réinsère par la porte que leurs gardes et leurs policies ouvrent au
+// super-administrateur, dans un dossier sans numérotation (`restauration_des_factures`), comme les factures ; le compteur
+// (`facture_numerotation`, sans policy) ne se sauvegarde pas, la numérotation reprend du plus haut numéro de chaque série.
+// sauvegardeNumerotationContinue.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DE_LA_NUMEROTATION_CONTINUE: readonly string[] = ['modeles_numerotation', 'continuite_des_series']
+
+/** Une table au plan, côté numérotation qui continue : toutes, sauf les siennes tant que leur migration n'est pas exportée. */
+export function auPlanDeLaNumerotationContinue(table: string, prevue: boolean): boolean {
+  return prevue || !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(table)
+}
+
 // LES PARAMÈTRES DES COTISATIONS (ligne 27, TNS-Q1 et TNS-Q4 ; migration `parametres_des_cotisations`, en production
 // depuis le 07/11/2026) : le début d'activité d'un dossier (`debuts_d_activite`, une ligne au plus) et l'ACRE et le taux dentiste
 // d'un exercice (`parametres_des_cotisations`). Sous le drapeau de la migration (`PARAMETRES_DES_COTISATIONS_EXPORTES`,
@@ -226,6 +243,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
     && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
+    && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
     && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
 }
 
@@ -385,6 +403,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
   { enfant: 'factures_importees', parent: 'imports_factures', colonne: 'import_id', aLaSuppression: 'bloque' },
   { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'origine_id', aLaSuppression: 'bloque' },
+  { enfant: 'modeles_numerotation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'continuite_des_series', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'debuts_d_activite', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'parametres_des_cotisations', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'mouvements_cca', parent: 'comptes_courants_associes', colonne: 'compte_id', aLaSuppression: 'cascade' },
@@ -694,6 +714,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'factures_emises',
   'imports_factures',
   'factures_importees',
+  'modeles_numerotation',
+  'continuite_des_series',
   'informations_dossier',
   'memberships',
   // Les situations publiées (espace client, étape C4a) : le dossier et elles-mêmes (par vagues), juste après les accès ;
@@ -1226,6 +1248,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   saisies_2035: { acces: 'direct' },
   imports_factures: { acces: 'direct' },
   factures_importees: { acces: 'direct' },
+  modeles_numerotation: { acces: 'direct' },
+  continuite_des_series: { acces: 'direct' },
   debuts_d_activite: { acces: 'direct' },
   parametres_des_cotisations: { acces: 'direct' },
   notes_internes: { acces: 'direct' },

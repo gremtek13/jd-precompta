@@ -143,6 +143,30 @@ begin
       ('{V}', 'ESSAI VF7B V', '{CAB}', 'tresorerie', '455000', false), ('{W}', 'ESSAI VF7B W', '{CAB}', 'engagement', '455000', true),
       ('{P}', 'ESSAI VF7B P', '{CAB}', 'tresorerie', '455000', true), ('{Q}', 'ESSAI VF7B Q', '{CAB}', 'tresorerie', '455000', true),
       ('{N}', 'ESSAI VF7B N', '{CAB}', 'tresorerie', '455000', false), ('{PE}', 'ESSAI VF7B PE', '{CAB}', 'engagement', '455000', true)$q$, '', ''],
+    -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
+    -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il
+    -- éprouve restent ceux d'hier (la série de qui valide s'éprouve dans numerotationContinue.sql). Sans la migration, rien.
+    array['jeu', 'A9a : la série d''hier au cabinet', 'postgres', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        execute 'set local role authenticated';
+        perform set_config('request.jwt.claims', '{"sub":"bd6bd047-0ef0-4c9d-a319-1b642aaf2162","role":"authenticated"}', true);
+        for d in select x.id from public.dossiers x
+                  where x.id::text like '7f7b0c00-0000-4000-%'
+                    and not exists (select 1 from public.modeles_numerotation y where y.dossier_id = x.id)
+                  order by x.id loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform public.fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+        execute 'reset role';
+        perform set_config('request.jwt.claims', '', true);
+      end $a9a$$q$, '', ''],
     -- Les mouvements de V : MX, à traiter, qui ne doit rien aux ventes, plus ancien que tout ; MA, le crédit d'un encaissement
     -- de FA ; M10, le crédit d'E10, que sa contre-passation sans mouvement défait ; M1, le crédit d'E1 ; MD, le débit de sa
     -- contre-passation.

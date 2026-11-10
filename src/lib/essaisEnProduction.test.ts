@@ -355,7 +355,10 @@ describe('les essais de la base, rejoués en production', () => {
     // 20261109193056, collée par le cabinet ; l'essai ne cherche aucun semis, il se joue comme un essai de la production).
     // Vingt le 10/11/2026 : `reglerLePlanDuDossier` (ligne 43, étape PC4, `regler_le_plan_du_dossier`) entré dans la famille
     // « apres », après sa migration préparée ; SÛR au banc, sur une copie de la réplique au niveau de la production.
-    expect(cas.length).toBe(20)
+    // Vingt et un le même jour : `numerotationContinue` (A9a, `numerotation_continue`) entré dans la famille « apres », après sa
+    // migration préparée, par-dessus celle d'A8a (le modèle « apres » porte les deux, dans cet ordre) ; SÛR au banc, sur une
+    // copie de la réplique au niveau de la production, le complément du leurre portant un modèle et une fin par dossier.
+    expect(cas.length).toBe(21)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

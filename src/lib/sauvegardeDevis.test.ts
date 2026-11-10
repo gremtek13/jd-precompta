@@ -6,6 +6,7 @@ import { CONTACTS_EXPORTES } from './contacts'
 import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
+import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
@@ -19,6 +20,7 @@ import {
   auPlan,
   auPlanAujourdHui,
   auPlanDeLaCaisse,
+  auPlanDeLaNumerotationContinue,
   auPlanDeLaTraceDesDroits,
   auPlanDesFacturesImportees,
   auPlanDesSituationsPubliees,
@@ -72,7 +74,8 @@ describe('le filtre du plan', () => {
     // relations — dont celle du brouillon vers une opération — tant que ses migrations ne sont pas exportées
     // (sauvegardeCaisse.test.ts) ; depuis l'étape P6c1, le graphe retire le devis envoyé tant que la migration de l'envoi
     // n'est pas exportée (sauvegardeEnvoiDesDevis.test.ts) ; depuis l'étape P1-trace, celui de la trace des droits
-    // (sauvegardeTraceDesDroits.test.ts) ; depuis l'étape A8a, celui des factures reprises (sauvegardeFacturesImportees.test.ts).
+    // (sauvegardeTraceDesDroits.test.ts) ; depuis l'étape A8a, celui des factures reprises (sauvegardeFacturesImportees.test.ts) ;
+    // depuis l'étape A9a, celui de la numérotation qui continue (sauvegardeNumerotationContinue.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -81,6 +84,7 @@ describe('le filtre du plan', () => {
         && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
         && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES) && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
         && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
+        && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
         && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES

@@ -355,6 +355,9 @@ export function rejouerLEssai(essai: string, aujourdhui: string): Issue[] {
       issues.push({ genre: 'hors_module', etape, raison: trouvees.length === 1 ? 'capturée' : 'capture illisible' })
       continue
     }
+    // Les modèles de numéro que pose l'étape A9a (la numérotation qui continue, préparée) : ni la caisse ni ses dossiers, et
+    // leur « {AAAA} » n'est pas une capture.
+    if (/^do \$a9a\$/.test(sql.trim())) { issues.push({ genre: 'hors_module', etape, raison: 'la numérotation : la base, pas le module' }); continue }
     if (/\{[A-Z0-9]+\}/.test(sql)) { issues.push({ genre: 'hors_jeu', etape, raison: 'une capture manque' }); continue }
     if (etape.profil === 'anon') { issues.push({ genre: 'hors_module', etape, raison: 'le droit d’exécution d’un rôle de l’API' }); continue }
 

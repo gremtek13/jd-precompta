@@ -1,7 +1,8 @@
 -- LES TABLES QUE LE REMPLISSEUR DU BANC NE SAIT PAS REMPLIR, POUR LE LEURRE (outils/leurre/banc.py ; SUR UNE RÉPLIQUE
 -- SEULEMENT) : une ligne marquée par dossier de leurre, écrite à la main selon les CHECK de la table, déclencheurs coupés
 -- — dix tables de dossier, et deux sans `dossier_id` qui porteront des données réelles ; sur la réplique qui porte une
--- migration préparée, ses tables aussi (la caisse hier, les devis, les factures reprises), chacune sous `to_regclass`.
+-- migration préparée, ses tables aussi (la caisse hier, les devis, les factures reprises, la numérotation qui continue),
+-- chacune sous `to_regclass`.
 \set ON_ERROR_STOP on
 begin;
 set local session_replication_role = replica;
@@ -106,5 +107,22 @@ begin
              m || ' plateforme de la facture reprise' from lc$i$;
   end if;
 end $reprises$;
+-- La numérotation qui continue (migration `numerotation_continue`, étape A9a, sur la réplique qui la porte, par-dessus celle
+-- des factures reprises) : un modèle de numéro par leurre et la fin confirmée de sa suite reprise, le modèle et le motif
+-- marqués, selon les CHECK des tables (un modèle que `refus_du_modele` reçoit, un compteur continu rangé à l'année 0, une
+-- fin d'un seul numéro). Déclencheurs coupés : la garde des deux tables n'y voit pas la fonction qui les pose.
+do $numerotation$
+begin
+  if to_regclass('public.modeles_numerotation') is not null then
+    execute $i$insert into public.modeles_numerotation (id, dossier_id, nature, emetteur, modele, annuel, depuis, premier_numero,
+        pose_par)
+      select (pfx || '-0000-4000-8000-0000000008' || h || '1')::uuid, d, 'facture', 'client', 'LEURRE7Q3' || x || '-{N:4}', false,
+             2025, 1, chef from lc$i$;
+    execute $i$insert into public.continuite_des_series (id, dossier_id, modele, annuel, annee, geste, premier, dernier, motif,
+        pose_par)
+      select (pfx || '-0000-4000-8000-0000000008' || h || '2')::uuid, d, 'LEURRE7Q3' || x || '-{N:4}', false, 0, 'fin', 7, 7,
+             m || ' motif de la fin confirmée', chef from lc$i$;
+  end if;
+end $numerotation$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;

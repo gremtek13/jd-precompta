@@ -14,7 +14,9 @@
 -- écart chiffré, l'encaissé, l'avoir, les clés inconnues, le fichier) ; ce qu'il écrit (l'état, la marque de source,
 -- l'option, l'encaissé par taux et son repli au prorata, l'avoir et sa facture) ; la garde (une importée ne naît que par
 -- l'import ou la restauration, ne se modifie pas, ses lignes non plus, aucune facture ne le devient) ; la validation d'une
--- facture de l'application refusée avant la plus récente reprise de sa série ; le retrait d'un import et ses refus ; ce
+-- facture de l'application refusée avant la plus récente reprise de sa série (validée par le client « Ventes », dont la
+-- série la continue ; avec la numérotation qui continue, A9a, la suite reprise confirmée et ses trous levés d'abord) ; le
+-- retrait d'un import et ses refus ; ce
 -- que lit chaque profil ; le catalogue.
 --
 -- Quatre dossiers jetables du cabinet du dossier `test` (préfixe `a8a00000-0000-4000-8000`) : DV, basculé, en trésorerie,
@@ -67,11 +69,21 @@ declare
      "lignes": [{"designation": "Séance", "quantite": 1, "prix_unitaire_ht": 50, "taux_tva": 0}], "transmise_par": "inconnu"}]';
   poser constant text := $q$select fixer_reprise_des_factures('{DV}', '{R}')$q$;
   importer constant text := $q$importer_factures('{DV}', '{"format": "csv"}'::jsonb, '{L}'::jsonb)$q$;
-  -- Une facture de l'application, validée par le cabinet (enregistrer_facture), à une date donnée.
-  valider constant text := $q$enregistrer_facture('{DV}', null, '{"tiers_nom": "Client D", "type_client": "non_assujetti", "nature_operation": "services", "date_emission": "{DATE}"}'::jsonb, '[{"designation": "Séance", "quantite": 1, "prix_unitaire_ht": 80, "taux_tva": 0}]'::jsonb, true)$q$;
+  -- Une facture de l'application (enregistrer_facture), à une date donnée : validée par le client « Ventes », dont la
+  -- série la continue — le cabinet valide dans celle de son mandataire depuis la numérotation qui continue (A9a,
+  -- préparée) —, d'où l'identité, le statut et la mention de DV, ce que la validation d'un accès « Ventes » exige.
+  valider constant text := $q$enregistrer_facture('{DV}', null, '{"tiers_nom": "Client D", "type_client": "non_assujetti", "nature_operation": "services", "date_emission": "{DATE}", "mentions_legales": "TVA non applicable, art. 293 B du CGI.", "emetteur_nom": "ESSAI FACTURES REPRISES SOCIÉTÉ DV", "emetteur_siret": "12345678200010", "emetteur_adresse": "ESSAI FACTURES REPRISES ADRESSE DV"}'::jsonb, '[{"designation": "Séance", "quantite": 1, "prix_unitaire_ht": 80, "taux_tva": 0}]'::jsonb, true)$q$;
   -- Datée d'avant la facture reprise de la série (dix jours avant la reprise), et d'après (cinq jours avant) : le même mois.
   valider_avant constant text := replace(valider, '{DATE}', (reprise - 20)::text);
   valider_apres constant text := replace(valider, '{DATE}', (reprise - 5)::text);
+  -- La session du client, dans ce que le chef pose (`{CLIENT}`).
+  au_client constant text := format($q$select set_config('request.jwt.claims', '{"sub": "%s", "role": "authenticated"}', true);$q$, client);
+  -- Avec la numérotation qui continue (A9a, préparée), une série qui porte une facture reprise ne continue qu'une fois sa
+  -- suite reprise confirmée — le dernier numéro de l'ancien logiciel, F…-0042 — et ses trous levés (`{SUITE}`) ; sans
+  -- elle, rien.
+  suite constant text := case when to_regprocedure('public.confirmer_fin_de_serie(uuid, text, text, integer, integer, text)') is null then ''
+    else format($q$select confirmer_fin_de_serie('{DV}', 'facture', 'client', %1$s, 42, 'Dernier numéro de l''ancien logiciel'); select lever_trous_de_numerotation('{DV}', 'facture', 'client', %1$s, 1, 41, 'Numéros de l''ancien logiciel, non repris');$q$,
+                extract(year from reprise - 10)::integer) end;
   e record; v_code text; v_msg text; v_req text; v_pose text; v_obs text; v_attendu text;
   verdicts jsonb := '[]'::jsonb;
 begin
@@ -84,11 +96,13 @@ begin
   begin
     -- Le jeu : quatre dossiers jetables, et un accès du client d'essai à DV (« Ventes ») et à DS (sans), insérés par le
     -- propriétaire comme `create-client-access` les insère.
-    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures) values
-      (dv::uuid, 'ESSAI FACTURES REPRISES DV', cabinet, 'tresorerie', '455000', true),
-      (ds::uuid, 'ESSAI FACTURES REPRISES DS', cabinet, 'tresorerie', '455000', true),
-      (de::uuid, 'ESSAI FACTURES REPRISES DE', cabinet, 'engagement', '455000', true),
-      (dn::uuid, 'ESSAI FACTURES REPRISES DN', cabinet, 'tresorerie', '455000', false);
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures, statut_tva, siret, adresse,
+                          forme_juridique, denomination_imprimee) values
+      (dv::uuid, 'ESSAI FACTURES REPRISES DV', cabinet, 'tresorerie', '455000', true, 'franchise', '12345678200010',
+       'ESSAI FACTURES REPRISES ADRESSE DV', '5710', 'ESSAI FACTURES REPRISES SOCIÉTÉ DV'),
+      (ds::uuid, 'ESSAI FACTURES REPRISES DS', cabinet, 'tresorerie', '455000', true, null, null, null, null, null),
+      (de::uuid, 'ESSAI FACTURES REPRISES DE', cabinet, 'engagement', '455000', true, null, null, null, null, null),
+      (dn::uuid, 'ESSAI FACTURES REPRISES DN', cabinet, 'tresorerie', '455000', false, null, null, null, null, null);
     insert into memberships (id, user_id, dossier_id, role, email, droit_ventes) values
       (acces_v::uuid, client::uuid, dv::uuid, 'client', 'essai-reprises-v@example.test', true),
       (acces_s::uuid, client::uuid, ds::uuid, 'client', 'essai-reprises-s@example.test', false);
@@ -213,11 +227,11 @@ begin
            select (select count(*) from l) || ' ' || (select count(*) from f)$q$,
         'OK', '1 1'),
       -- La chronologie de la série (le cinquième refus de la validation, étendu aux reprises).
-      (40, '40. la validation d''une facture de l''application, datée d''avant la plus récente reprise de sa série (22023)', $q$select fixer_reprise_des_factures('{DV}', '{R}'); select importer_factures('{DV}', '{"format": "csv"}'::jsonb, '{S}'::jsonb)$q$, 'chef',
+      (40, '40. la validation d''une facture de l''application, datée d''avant la plus récente reprise de sa série (22023)', $q$select fixer_reprise_des_factures('{DV}', '{R}'); select importer_factures('{DV}', '{"format": "csv"}'::jsonb, '{S}'::jsonb); {SUITE}$q$, 'client',
         $q$select ({VA}).numero$q$, '22023',
         format('La date d''émission, le %s, précède celle de F%s-0042 (le %s), la plus récente des factures reprises de la même série : les numéros suivent l''ordre des dates d''émission (CGI, ann. II, art. 242 nonies A, I, 7°). Une date du %s ou d''après se valide.',
           to_char(reprise - 20, 'DD/MM/YYYY'), extract(year from reprise - 10)::integer, to_char(reprise - 10, 'DD/MM/YYYY'), to_char(reprise - 10, 'DD/MM/YYYY'))),
-      (41, '41. datée de la reprise, elle se valide et continue la série reprise', $q$select fixer_reprise_des_factures('{DV}', '{R}'); select importer_factures('{DV}', '{"format": "csv"}'::jsonb, '{S}'::jsonb)$q$, 'chef',
+      (41, '41. datée de la reprise, elle se valide et continue la série reprise', $q$select fixer_reprise_des_factures('{DV}', '{R}'); select importer_factures('{DV}', '{"format": "csv"}'::jsonb, '{S}'::jsonb); {SUITE}$q$, 'client',
         $q$select ({VP}).numero$q$, 'OK', 'F' || extract(year from reprise - 10)::integer || '-0043'),
       -- Le retrait d'un import.
       (42, '42. le chef retire le lot : ses trois factures, leurs lignes, le lot', $q$select fixer_reprise_des_factures('{DV}', '{R}'); select {I}$q$, 'chef',
@@ -230,14 +244,14 @@ begin
         $q$select retirer_import('{DV}', (select fi.import_id from factures_importees fi join factures_emises f on f.id = fi.facture_id where f.dossier_id = '{DV}' and f.numero = 'FAC-2025-118'))::text$q$, '23514',
         'La facture reprise FAC-2025-118 est créditée par l''avoir repris AV 2025/3, d''un autre import : celui-ci se retire d''abord.'),
       (45, '45. le retrait refusé : l''application a continué la série (23514)',
-        $q$select fixer_reprise_des_factures('{DV}', '{R}'); select importer_factures('{DV}', '{"format": "csv"}'::jsonb, '{S}'::jsonb); select ({VP}).numero$q$, 'chef',
+        $q$select fixer_reprise_des_factures('{DV}', '{R}'); select importer_factures('{DV}', '{"format": "csv"}'::jsonb, '{S}'::jsonb); {SUITE} {CLIENT} select ({VP}).numero$q$, 'chef',
         $q$select retirer_import('{DV}', (select l.id from imports_factures l where l.dossier_id = '{DV}'))::text$q$, '23514',
         format('L''application a continué la série de la facture reprise F%s-0042 (la facture F%s-0043) : son import ne se retire plus, il y creuserait un trou.',
           extract(year from reprise - 10)::integer, extract(year from reprise - 10)::integer)),
       (46, '46. le client, même « Ventes », ne retire pas (42501)', $q$select fixer_reprise_des_factures('{DV}', '{R}'); select {I}$q$, 'client',
         $q$select retirer_import('{DV}', (select l.id from imports_factures l where l.dossier_id = '{DV}'))::text$q$, '42501', 'Accès refusé à ce dossier.'),
       (47, '47. une fois validée, une facture de la même série ne s''importe plus (22023)',
-        $q$select fixer_reprise_des_factures('{DV}', '{R}'); select ({VP}).numero$q$, 'chef',
+        $q$select fixer_reprise_des_factures('{DV}', '{R}'); {CLIENT} select ({VP}).numero$q$, 'chef',
         $q$select importer_factures('{DV}', '{"format": "csv"}'::jsonb, '{S}'::jsonb)::text$q$, '22023',
         format('La facture F%s-0042 (rang 1 du lot) reprendrait la série que l''application a déjà continuée (la facture F%s-0001) : une facture reprise précède toujours celles de l''application.',
           extract(year from reprise - 10)::integer, extract(year from reprise - 10)::integer))
@@ -248,7 +262,8 @@ begin
           insert into cabinet_admins (user_id, cabinet_id, role) values (client::uuid, cabinet, 'comptable_en_chef');
         end if;
         if e.pose is not null then
-          v_pose := replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(e.pose,
+          v_pose := replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(e.pose,
+            '{SUITE}', suite), '{CLIENT}', au_client),
             '{I}', importer), '{VA}', valider_avant), '{VP}', valider_apres), '{S}', seule), '{L}', lot), '{AN}', extract(year from reprise - 10)::integer::text),
             '{AVANT}', (reprise - 10)::text), '{DV}', dv), '{DN}', dn), '{R}', reprise::text);
           execute 'set local role authenticated';
@@ -309,9 +324,12 @@ begin
                  or (p.policyname like '%\_restauration' and p.cmd = 'INSERT' and p.with_check = 'is_super_admin()'))) = 4
         and (select p.roles = array['authenticated']::name[] from pg_policies p
               where p.schemaname = 'public' and p.tablename = 'factures_emises' and p.policyname = 'factures_emises_all')
+        -- Celle des mentions à la validation (JJ-Q4, en production depuis le 08/11/2026) entre la garde d'hier et celle des
+        -- reprises ; avec la numérotation qui continue (A9a, préparée), son déclencheur après la marque d'acompte.
         and (select string_agg(t.tgname, ',' order by t.tgname collate "C") from pg_trigger t
               where t.tgrelid = 'public.factures_emises'::regclass and not t.tgisinternal and (t.tgtype & 2) = 2)
-            = 'factures_emises_figees,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_source_de_la_vente'
+            in ('factures_emises_figees,factures_emises_figees_mentions,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_source_de_la_vente',
+                'factures_emises_figees,factures_emises_figees_mentions,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_numerotation,factures_emises_source_de_la_vente')
         and (select count(*) from pg_trigger t where not t.tgisinternal and t.tgtype = 31
                and t.tgname in ('imports_factures_garde', 'factures_importees_garde', 'factures_emises_figees_reprises', 'facture_lignes_figees_reprises')) = 4
         and (select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace
