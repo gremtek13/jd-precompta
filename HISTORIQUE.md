@@ -49826,3 +49826,33 @@ avant la validation de 2025. MCB-Q8 : « Banque » ouvre tous les comptes (recom
 **RISQUES.** Dès deux comptes, le déclencheur est la seule barrière d'une ligne sans compte : rejoué par chaque chemin
 d'insertion. Un exercice validé à un seul 512 reste tel. Le retour arrière du temps 1 retire table et colonnes :
 destructif, il demande l'accord du cabinet.
+
+### 10/11/2026 — LA RETRAITE DES PROFESSIONS LIBÉRALES : LA CONCEPTION (LIGNE 27.1) ET LE MODULE
+
+TNS-Q5 ouvert hors du MVP. **Ce que `modele-ti` 0.1.0 calcule** (« profession libérale . cotisations caisse de retraite »,
+relu règle par règle) : pour les trois caisses des PAMC, la base de la CNAVPL (8,73 % jusqu'au plafond proratisé, 1,87 %
+jusqu'à cinq, plancher de 450 heures au SMIC, aucun sous 90 jours d'activité ; l'ACRE l'exonère, et pour un médecin de
+secteur 1 l'Assurance maladie en prend 2,15 %, 1,51 % ou 1,12 % de l'assiette) ; le complémentaire (CARPIMKO : 2025 un
+forfait plus 3 %, 2026 8,70 % entre 0,5 et 3 plafonds ; CARMF : 10,2 % jusqu'à 3,5 plafonds ; CARCDSF : un forfait réduit
+sous 0,85 plafond plus 10,80 % jusqu'à cinq, au prorata de l'année) ; l'invalidité-décès (CARPIMKO forfait, CARMF trois
+classes, aucune en cumul emploi-retraite, CARCDSF un forfait par profession ; l'ACRE l'exonère aussi) ; les PCV, l'ancien
+ASV, prise en charge déduite (deux tiers du forfait ; de la part proportionnelle, 60 % CARPIMKO, deux tiers CARMF secteur 1,
+la moitié dentiste ; rien en secteur 2). La CIPAV : complémentaire et invalidité-décès seulement, sa base recouvrée par
+l'Urssaf — sans profession dans l'application (RET-Q1). Le moteur calcule sur l'assiette sociale de l'année : des
+cotisations DÉFINITIVES, pas l'échéancier (la CARPIMKO appelle 2026 sur les revenus 2025, carpimko.com, puis régularise ;
+la CARMF fixe complémentaire et classe sur l'avant-dernière année).
+**Le module**, `src/lib/retraiteDesLiberaux.ts`, pur, en centimes exacts (fractions BigInt, arrondies où le moteur
+arrondit) : la caisse se DÉDUIT de la profession, l'assiette, l'activité et l'ACRE viennent du volet de l'Urssaf
+(`voletSocialPamc.ts` n'a gagné que des `export` et `joursAuTrenteEtUn`) ; aucune colonne neuve, aucune migration. Un
+médecin doit dire son cumul emploi-retraite (sans défaut). `hypotheses` dit ce que le moteur suppose : les deux gestes
+« sur demande » de la CARCDSF (réduction du forfait, exonération des PCV), et le complémentaire de la CARMF compté dû les
+deux premières années, que le moteur ne dispense jamais (sa condition compare des jours à des années).
+**Mesuré** : `oracle.mjs retraite` rend 360 cas (deux années, cinq professions, création, ACRE, cumul, bornes de 1, 1,4,
+2,5 et 3 plafonds), l'oracle Urssaf régénéré à l'octet ; égalité au centime sauf une exception comptée (28) : le
+complémentaire 2026 de la CARPIMKO à son plancher ou plafond, que le moteur arrondit au mois (2 088 € et 12 540 €) quand
+la caisse publie 2 091 € et 12 544 € — l'application suit la caisse. Mutations : 60 % → 50 % de la prise en charge des
+PCV, rouge ; `<` → `<=` aux bornes du secteur 1, survivante, puis rouge une fois les bornes ajoutées.
+**Questions** : RET-Q1 (CIPAV : plus tard, au premier dossier) ; RET-Q2 (médecin : cumul et dispense des débuts dans
+`parametres_des_cotisations`, au lot de l'écran) ; RET-Q3 (CARCDSF : suivre le moteur et le dire) ; RET-Q4 (BT garde les
+échéances payées, dont l'organisme peut être la caisse) ; RET-Q5 (l'Estimation montre les quatre lignes sous le volet
+de l'Urssaf, prises en charge, hypothèses, et dit que la caisse appelle sur un revenu antérieur). Reste : l'écran.

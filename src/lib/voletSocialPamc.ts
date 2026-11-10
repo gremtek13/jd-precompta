@@ -270,7 +270,7 @@ export type ResultatEstimation = { disponible: true; estimation: EstimationCotis
 // ── L'activité de l'exercice : l'année de la création, l'ACRE ─────────────────────────────────────
 
 /** « 1 an » du moteur de l'Urssaf, en jours : la proratisation y divise toujours par 365, même une année bissextile. */
-const JOURS_PAR_AN = 365
+export const JOURS_PAR_AN = 365
 const FORME_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
 /** Le jour d'une date civile (AAAA-MM-JJ) depuis l'époque, sans fuseau ; null si la date n'existe pas. */
@@ -285,7 +285,7 @@ function jourCivil(iso: string): number | null {
 }
 
 /** Ce que le début d'activité fait à l'exercice, comme le moteur le compte (« entreprise . durée d'activité … »). */
-interface ActiviteDeLExercice {
+export interface ActiviteDeLExercice {
   /** Les jours d'activité de l'exercice : 365 hors de l'année de la création (« prorata temporis »). */
   joursCetteAnnee: number
   /** Créée après le 1er janvier : pas de CURPS (« date de création <= période . début d'année »). */
@@ -294,11 +294,13 @@ interface ActiviteDeLExercice {
   joursAuPremierJanvier: number
   /** Créée avant 2026 : l'ACRE exonère jusqu'au tout ; depuis, jusqu'au quart (« exonération maximale »). */
   creeeAvant2026: boolean
+  /** Les jours d'activité au 31 décembre, ce jour compris (« durée d'activité . en fin d'année ») : les deux premières années de la CARMF. */
+  joursAuTrenteEtUn: number
 }
 
 type Activite = { activite: ActiviteDeLExercice; motif: null } | { activite: null; motif: string }
 
-function activiteDeLExercice(annee: number, debutActivite: string): Activite {
+export function activiteDeLExercice(annee: number, debutActivite: string): Activite {
   const debut = jourCivil(debutActivite)
   const premierJanvier = jourCivil(`${annee}-01-01`)
   const trenteEtUn = jourCivil(`${annee}-12-31`)
@@ -316,17 +318,19 @@ function activiteDeLExercice(annee: number, debutActivite: string): Activite {
       creeeApresLePremierJanvier: debut > premierJanvier,
       joursAuPremierJanvier: Math.max(0, premierJanvier - debut),
       creeeAvant2026: debut < an2026,
+      joursAuTrenteEtUn: trenteEtUn - debut + 1,
     },
     motif: null,
   }
 }
 
 /** Une activité ouverte avant l'exercice : l'estimation d'hier, que l'appelant demande tant que les paramètres ne sont pas tenus. */
-const ACTIVITE_OUVERTE_AVANT: ActiviteDeLExercice = {
+export const ACTIVITE_OUVERTE_AVANT: ActiviteDeLExercice = {
   joursCetteAnnee: JOURS_PAR_AN,
   creeeApresLePremierJanvier: false,
   joursAuPremierJanvier: JOURS_PAR_AN * 10,
   creeeAvant2026: true,
+  joursAuTrenteEtUn: JOURS_PAR_AN * 11,
 }
 
 /**
