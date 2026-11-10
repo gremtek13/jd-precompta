@@ -8,6 +8,7 @@ import {
   type CleRefusGardeMouvements, type ContexteVente, type DeclarationLue, type EncaissementDuReleve, type EncaissementLu,
   type ExemplaireLu, type FactureDuDossier, type LigneDeFacture, type MouvementClasse, type PartLue, type RefusEncaissement,
 } from './encaissementsFactures'
+import { motDuDocument } from './facturesReprises'
 import { formatDate, formatMoney } from './format'
 import type { PlanComptable } from './planComptable'
 import type { EncaissementFacture, FactureEmise, LigneBancaire } from './types'
@@ -26,6 +27,13 @@ import { dateFigee } from './validationExercice'
 // derniers refus), les encaissements portés du même filtre que la garde et le classement (`encaissementsDuMouvement`),
 // dans l'ordre de la garde (`ordreDesEncaissements`) — lib/encaissementsFactures.ts, confronté au texte de la migration.
 // Les mots de « pourquoi rien d'autre ne s'offre » sont ceux de la garde, tels que la base les rendrait.
+//
+// UNE FACTURE REPRISE DE L'ANCIEN LOGICIEL (étape A8c2, derrière `FACTURES_IMPORTEES_PREVUES`) : source de sa vente par son
+// import (A8-Q1), elle réserve et classe son mouvement comme une facture source — la garde, le classement et ce module la
+// reconnaissent à `source_de_la_vente`, comme la base depuis A8b. La carte et la fiche la disent « facture reprise »
+// (`motDuDocument`). Ce qui reste à encaisser sur elle (`resteAEncaisserVente`, que l'encaissé avant la reprise réduit) attend
+// A8d : d'ici là, ni la fiche d'un crédit ni les candidats ne la proposent à l'encaissement (les deux tests d'état à
+// « validee » que facturesReprisesLecteurs.test.ts compte) ; ses encaissements enregistrés sans mouvement, si.
 //
 // L'AUTEUR : un encaissement enregistré par un compte qui porte un accès client du dossier est « proposé par le client »
 // (lib/auteursVentes.ts) — reconnu sur des accès lus EN ENTIER seulement ; sinon personne n'est nommé, et rien n'est jamais
@@ -99,6 +107,8 @@ export interface EncaissementPorte {
   factureId: string
   /** Le numéro de la facture ; une facture validée en porte toujours un (`factures_emises_figees`). */
   numero: string
+  /** Le mot qui la nomme : « facture », ou « facture reprise » d'une facture de l'ancien logiciel (`motDuDocument`). */
+  document: string
   date: string
   montant: number
   moyen: string
@@ -159,19 +169,23 @@ export function mouvementDeVente(
   const horsDesVentes = new Set(dAvant.map((e) => e.id))
   const encaissements = [...encaissementsDuMouvement(m.id, sources.encaissements, sources), ...dAvant]
     .sort(ordreDesEncaissements)
-    .map((e): EncaissementPorte => ({
-      id: e.id,
-      factureId: e.facture_id,
-      numero: sources.factures.find((f) => f.id === e.facture_id)?.numero ?? SANS_NUMERO,
-      date: e.date_encaissement,
-      montant: e.montant,
-      moyen: libelleDuMoyen(e.moyen),
-      contrePassation: e.annule_id != null,
-      horsDesVentesFacturees: !horsDesVentes.has(e.id) ? null
-        : exemplaireUnique(m.dossier_id, e.facture_id, sources.exemplaires) !== null ? 'exemplaire' : 'sans_exemplaire',
-      parLeClient: estLeClient(acces, e.cree_par),
-      creeLe: e.cree_le,
-    }))
+    .map((e): EncaissementPorte => {
+      const facture = sources.factures.find((f) => f.id === e.facture_id)
+      return {
+        id: e.id,
+        factureId: e.facture_id,
+        numero: facture?.numero ?? SANS_NUMERO,
+        document: facture ? motDuDocument(facture) : 'facture',
+        date: e.date_encaissement,
+        montant: e.montant,
+        moyen: libelleDuMoyen(e.moyen),
+        contrePassation: e.annule_id != null,
+        horsDesVentesFacturees: !horsDesVentes.has(e.id) ? null
+          : exemplaireUnique(m.dossier_id, e.facture_id, sources.exemplaires) !== null ? 'exemplaire' : 'sans_exemplaire',
+        parLeClient: estLeClient(acces, e.cree_par),
+        creeLe: e.cree_le,
+      }
+    })
   return {
     id: m.id,
     etat,
@@ -360,6 +374,8 @@ export interface PastilleDeVente {
 export const PASTILLE_CLASSE = 'Encaissements de factures'
 export const PROPOSE_PAR_LE_CLIENT = `proposé ${PAR_LE_CLIENT}`
 
+const majuscule = (mot: string) => `${mot.charAt(0).toUpperCase()}${mot.slice(1)}`
+
 function enumeration(numeros: readonly string[]): string {
   return numeros.join(', ')
 }
@@ -471,7 +487,7 @@ function noteDesAuteursDe(acces: AccesDuDossier): string | null {
 export function carteDeVente(m: MouvementDeVente, acces: AccesDuDossier): CarteDeVente {
   const lignes = m.encaissements.map((e): LigneDeLaCarte => ({
     cle: e.id,
-    libelle: `${e.contrePassation ? 'Contre-passation, facture' : 'Facture'} ${e.numero} — ${e.moyen.toLowerCase()} du ${formatDate(e.date)}`
+    libelle: `${e.contrePassation ? `Contre-passation, ${e.document}` : majuscule(e.document)} ${e.numero} — ${e.moyen.toLowerCase()} du ${formatDate(e.date)}`
       + (e.horsDesVentesFacturees ? ` — ${HORS_DES_VENTES_FACTUREES[e.horsDesVentesFacturees]}` : ''),
     montant: e.montant,
     parLeClient: e.parLeClient
@@ -634,7 +650,8 @@ export function montantSurLeCredit(resteFactureCentimes: number, manqueCentimes:
 // Une contre-passation se dit telle, comme dans la carte de VF5a1 : un débit n'en porte pas d'autres (étape VF5d).
 function libelleDeLEncaissement(e: EncaissementDuMouvementLu, factures: readonly FactureDesGestes[]): string {
   const f = factures.find((x) => x.id === e.facture_id)
-  return `${e.annule_id != null ? 'Contre-passation, facture' : 'Facture'} ${f?.numero ?? SANS_NUMERO}${f ? ` (${f.tiers_nom})` : ''} — `
+  const document = f ? motDuDocument(f) : 'facture'
+  return `${e.annule_id != null ? `Contre-passation, ${document}` : majuscule(document)} ${f?.numero ?? SANS_NUMERO}${f ? ` (${f.tiers_nom})` : ''} — `
     + `${libelleDuMoyen(e.moyen).toLowerCase()} du ${formatDate(e.date_encaissement)}`
 }
 
