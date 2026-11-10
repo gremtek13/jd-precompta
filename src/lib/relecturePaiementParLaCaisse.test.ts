@@ -1,4 +1,5 @@
 import { AUCUNE_SAISIE_2035 } from './saisies2035'
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { calculerDeclaration2035 } from './declaration2035'
 import { concordance2035 } from './concordance2035'
@@ -99,7 +100,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [],
-    doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE,
+    doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE, piecesCitees: AUCUNE_PIECE_CITEE,
     etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
     champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, ...o,
   }

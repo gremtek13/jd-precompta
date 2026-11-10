@@ -553,7 +553,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const prochainAValider = prochainExerciceAValider({
     anneeCourante, modele, anneesValidees, aNouveaux, ecritures,
     lignes: toutesLesLignes, reglements, encaissees, operationsDeCaisse, piecesValidees, piecesAValider, cotisations, vehicules, immobilisations,
-    etatsDesVentes,
+    etatsDesVentes, piecesCitees: ventesLues?.piecesCitees ?? null,
   })
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
@@ -787,6 +787,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       periodiciteTva, controlesReleves, doublonsTexte, facturesEmises, transmissions,
       // Les factures sources lues en entier pour CE dossier, ou rien : la validation se suspend alors (étape VF6a).
       facturesSources: ventesLues?.sources ?? null,
+      // Et les pièces citées par une facture reprise (A8c4), lues avec elles.
+      piecesCitees: ventesLues?.piecesCitees ?? null,
       etatsDesVentes, ventesDeLaChecklist: ventesDeLaVueDEnsemble, operationsDeCaisse, champsBnc: champsDeLaValidation,
       declaration: formulaire?.declaration ?? null,
       saisies2035: formulaire ? saisiesDeLExercice(lectureDesSaisies, annee) : AUCUNE_SAISIE_2035,

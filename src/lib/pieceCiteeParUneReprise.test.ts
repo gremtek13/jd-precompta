@@ -1,4 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
+import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
+import { pisteAudit } from './pisteAudit'
 import { describe, expect, it, vi } from 'vitest'
 import { calculerDeclaration2035 } from './declaration2035'
 import { lignesChargeProduitPourPiece, piecesAComptabiliser } from './ecritures'
@@ -61,7 +64,7 @@ const ventes = ventesFacturees({
 // règlements refuse tout rapprochement daté du 01/12/2026 ou d'après).
 const PIECE_CITEE = {
   id: 'p1', dossier_id: D, statut: 'validee', type_piece: 'vente', date_piece: '2026-11-20', montant_ht: 100,
-  montant_ttc: 100, categorie_id: 'c-recettes', facture_id: null,
+  montant_ttc: 100, categorie_id: 'c-recettes', facture_id: null, created_at: '2026-11-21T09:00:00Z', storage_hash: 'abc',
 } as Piece
 const CATEGORIES = [{ id: 'c-recettes', poste_2035: 'Recettes', compte_comptable: '706000' }] as Categorie[]
 const AUCUN_PAIEMENT = paiementsDesPieces([], [], [], AUCUN_PAIEMENT_PAR_LA_CAISSE)
@@ -140,6 +143,15 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
       { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE,
     )
     expect(d.totalRecettes).toBe(140)
+  })
+
+  it('la piste d’audit ne dit pas « écriture manquante » de la pièce citée et jamais payée ; non citée, si', () => {
+    const piste = (piecesCitees: ReadonlySet<string>) => pisteAudit([], [PIECE_CITEE], [], [], {
+      immobilisations: [], factures: [], vehicules: [], ventes: { ...SANS_VENTE_FACTUREE, piecesCitees },
+      caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT,
+    }).filter((l) => l.pieceId === 'p1').map((l) => l.manque)
+    expect(piste(ventes.piecesCitees)).toEqual([[]])
+    expect(piste(AUCUNE_PIECE_CITEE)).toEqual([['écriture']])
   })
 
   it('une pièce que rien ne cite (AUCUNE_PIECE_CITEE) ne reçoit aucune marque', () => {

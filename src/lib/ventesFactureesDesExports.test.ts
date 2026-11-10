@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import {
   brouillonDesVentes, composition, D_BASCULE, exportsDesVentes, ligneBancaire, mouvementDesVentes, pieceDeVente,
@@ -335,6 +336,7 @@ describe('la piste d’audit d’un dossier qui a basculé', () => {
   const justificatifs = (exports: ReturnType<typeof jeu>['exports']): JustificatifsDesVentes => ({
     ...exports,
     exemplaires: [EXEMPLAIRE],
+    piecesCitees: AUCUNE_PIECE_CITEE,
     transmissions: [
       // Une transmission échouée ne prouve rien ; la transmission déposée, si.
       { id: 't0', facture_id: 'f2', etat: 'echec', sha256: 'c'.repeat(64), hote: 'api.superpdp.tech' },

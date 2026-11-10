@@ -173,7 +173,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [],
-    doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE,
+    doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE, piecesCitees: AUCUNE_PIECE_CITEE,
     etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
     champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, ...o,
   }
@@ -593,6 +593,17 @@ describe('prealablesDeValidation — la numérotation et la 2035', () => {
 
   it('refuse une pièce validée de l’exercice que rien n’a encore écrite', () => {
     expect(prealable(donnees({ ecritures: [] }), 'ecritures-a-generer')?.nb).toBe(1)
+  })
+
+  // LA PIÈCE CITÉE PAR UNE FACTURE REPRISE (étape A8c4) : en trésorerie, jamais payée, elle ne s'écrit pas — le registre de sa
+  // facture reprise règle son reste —, et n'attend donc aucune écriture ; citée, elle ne bloque plus.
+  it('n’attend aucune écriture d’une pièce citée par une facture reprise et jamais payée ; la même, non citée, en attend une', () => {
+    const citee = piece('p9', { date_piece: '2025-11-20', montant_ttc: 100 })
+    const avec = (piecesCitees: ReadonlySet<string> | null) => donnees({ piecesValidees: [P1, citee], piecesCitees })
+    expect(prealable(avec(AUCUNE_PIECE_CITEE), 'ecritures-a-generer')?.nb).toBe(1)
+    expect(ids(avec(new Set(['p9'])))).not.toContain('ecritures-a-generer')
+    // Non lues : la validation se suspend, jamais une liste vide devinée.
+    expect(ids(avec(null))).toContain('lecture-partielle')
   })
 
   // En trésorerie une pièce compte à son PAIEMENT : réglée l'année suivante, elle s'écrira l'année suivante, et ne

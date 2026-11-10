@@ -763,7 +763,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice,
         {
           immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
-          ventes: { ...ventesDesExports, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions },
+          ventes: { ...ventesDesExports, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions, piecesCitees },
           caisse: operationsDuFec ?? OPERATIONS_DE_CAISSE_ABSENTES,
           plan: modele.plan,
         },

@@ -24,7 +24,7 @@ export const SANS_ECRITURE_DE_VENTE: readonly EcritureVenteFacturee[] = []
 
 /** Aucune vente facturée, ni preuve d'une facture : ce que la piste d'audit reçoit d'un jeu qui n'en parle pas (lib/pisteAudit.ts). */
 export const SANS_VENTE_FACTUREE: JustificatifsDesVentes = {
-  ecritures: [], factures: [], encaissements: [], exemplaires: [], transmissions: [],
+  ecritures: [], factures: [], encaissements: [], exemplaires: [], transmissions: [], piecesCitees: AUCUNE_PIECE_CITEE,
 }
 
 /**

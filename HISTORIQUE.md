@@ -50373,4 +50373,10 @@ Checklist dit la pièce « réglée par le registre de sa facture reprise » (`r
 faute d'une sévérité « info », rien de retenu). Le cas fictif (100 € repris du 20/11, reprise le 01/12, 100 € encaissés le
 15/12) : 200 € avant, 100 € après, dans `pieceCiteeParUneReprise.test.ts`. Restent : « Ma simulation » (A8Q5-Q2, elle
 passe `AUCUNE_PIECE_CITEE` et compte encore 200 €), la pièce figée (A8Q5-Q3), la copie de l'assistant, qui ne lit pas les
-liens, et les préalables de la validation (`datesDesEcrituresAttendues` lit encore le reste).
+liens. **La régression latente de ce lot, corrigée dans le lot même** : la pièce citée jamais payée ne s'écrivant plus, les
+préalables l'auraient dite « sans écriture » (`ecritures-a-generer`) et la piste d'audit « écriture manquante » ;
+`datesDesEcrituresAttendues` lit le même prédicat (`DonneesDeValidation.piecesCitees`, nulles : `lecture-partielle`), la
+cible des préalables est marquée, et la piste d'audit dit la pièce « réglée par le registre de sa facture reprise »
+(`JustificatifsDesVentes.piecesCitees`). Regardés sans retournement : la concordance (la pièce ne contribue plus à la
+2035), la Checklist et l'onglet Écritures (une pièce sans ligne à générer n'y est pas comptée). Deux mutations de plus
+(le prédicat retiré des préalables, puis de la piste d'audit) virent au rouge.

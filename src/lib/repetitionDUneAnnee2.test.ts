@@ -338,7 +338,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
     lectureIncomplete: null, piecesValidees: PIECES, piecesAValider: [], categories: CATEGORIES, immobilisations: IMMOBILISATIONS,
     natures: [NATURE_MATERIEL], ecritures: brouillon, lignes, ventilations: [], reglements, encaissees: [], cotisations: COTISATIONS,
     vehicules: VEHICULES, emprunts: [], aNouveaux: A_NOUVEAUX, soldesReportes: v.soldesReportes, declarationsTva: [], periodiciteTva: 'mensuelle',
-    controlesReleves: controles, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources,
+    controlesReleves: controles, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
     etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, anneesValidees: v.anneesValidees, ventesParLesFactures: true }),
     ventesDeLaChecklist: ventesDeLaChecklist(lectureDesSources, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
     declaration, saisies2035: AUCUNE_SAISIE_2035, concordance,

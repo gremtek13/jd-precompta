@@ -1,4 +1,5 @@
 import { libelleEcritureANouveau } from './aNouveaux'
+import { resteRegleParSaReprise, type PiecesCitees } from './facturesSources'
 import { mouvementJustifieParLeReleve } from './affectationBanque'
 import { nomDuVehicule } from './forfaitKilometrique'
 import { LONGUEUR_DE_L_EMPREINTE_COURTE, referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
@@ -238,6 +239,12 @@ export interface JustificatifsDesVentes extends VentesFactureesDesExports {
   /** Les pièces désignées exemplaires d'une facture ou d'un avoir, quel que soit leur statut : leur dépôt et leur empreinte,
    *  jamais leur nom (`designationDUnePiece`, JJ1Q1-Q1). */
   exemplaires: readonly Pick<Piece, 'id' | 'facture_id' | 'created_at' | 'storage_hash'>[]
+  /**
+   * Les pièces citées par une facture reprise, lien actif (étape A8c4 ; lib/facturesSources.ts) : en trésorerie, elles ne
+   * s'écrivent qu'à leurs paiements. Sans écriture, une telle pièce n'en « manque » pas : le registre de sa facture
+   * reprise règle son reste. Obligatoires, sans valeur par défaut.
+   */
+  piecesCitees: PiecesCitees
   /** Les transmissions des factures du dossier : l'empreinte du CII déposé, et la plateforme qui l'a reçu. */
   transmissions: readonly Pick<TransmissionFacture, 'id' | 'facture_id' | 'etat' | 'sha256' | 'hote'>[]
 }
@@ -396,6 +403,9 @@ export function pisteAudit(
     const f = p.facture_id == null ? undefined : index.factures.get(p.facture_id)
     return f !== undefined && f.source_de_la_vente === true ? f : null
   }
+  // La pièce citée par une facture reprise (A8c4) : une pièce sans écriture ici n'a pas de paiement que le brouillon écrirait
+  // — en engagement, elle s'écrit toujours à sa date, et n'arrive pas ici.
+  const regleeParSaReprise = (p: Piece) => resteRegleParSaReprise(p, registre.ventes.piecesCitees, 'tresorerie')
   const depuisPieces = pieces
     .filter((p) => !piecesCitees.has(p.id))
     .map((p): LignePisteAudit => ({
@@ -404,6 +414,8 @@ export function pisteAudit(
       compte: '',
       libelle: exemplaireDUneSource(p)
         ? `Exemplaire de : ${nomDuDocument(exemplaireDUneSource(p)!)} — la vente est comptée par la facture`
+        : regleeParSaReprise(p)
+        ? 'Réglée par le registre de sa facture reprise — seuls ses paiements d’avant la reprise s’écrivent'
         // Une pièce de vente, « Recette du JJ/MM/AAAA », jamais le tiers lu (JJ1-Q1, la règle de FEC22-Q7) ; un achat, son
         // fournisseur, sinon « Pièce du JJ/MM/AAAA » comme ses écritures, jamais le nom de son fichier (JJ1Q1-Q2) : sa
         // désignation reste dans sa colonne.
@@ -423,7 +435,7 @@ export function pisteAudit(
       // CHACUN d'eux (l'appelant ne peut pas la rattacher à l'un sans la retirer des autres, et la
       // taire serait pire — c'est la règle de la feuille « Pièces sans date » d'un pack). Le manque
       // est nommé pour que sa présence ne se lise jamais comme « elle est de cet exercice-là ».
-      manque: exemplaireDUneSource(p) ? [] : p.date_piece ? ['écriture'] : ['écriture', 'date'],
+      manque: exemplaireDUneSource(p) || regleeParSaReprise(p) ? [] : p.date_piece ? ['écriture'] : ['écriture', 'date'],
     }))
 
   const depuisANouveaux = aNouveaux.map((a): LignePisteAudit => ({
