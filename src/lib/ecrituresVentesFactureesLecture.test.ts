@@ -23,6 +23,11 @@ const faux = vi.hoisted(() => ({
   tranches: 0,
 }))
 
+// Le drapeau des factures reprises (étape A8c3), joué dans ses deux états par un accesseur : baissé par défaut, les six
+// collections d'hier ; levé, les reprises en plus (le bloc à part, plus bas).
+const drapeau = vi.hoisted(() => ({ reprises: false }))
+vi.mock('./facturesImportees', () => ({ get FACTURES_IMPORTEES_PREVUES() { return drapeau.reprises } }))
+
 vi.mock('./supabase', async () => {
   const { filtrer, predicatEq, predicatNot } = await import('../test/filtresPostgrest')
   return {
@@ -104,6 +109,7 @@ const TABLES = [
 ] as const
 
 beforeEach(() => {
+  drapeau.reprises = false
   faux.plafond = Infinity
   faux.muetApres = {}
   faux.refus = {}
@@ -141,6 +147,8 @@ beforeEach(() => {
       { id: 'b2', dossier_id: 'd1', encaissement_id: null, facture_id: null, piece_id: 'p1', date: '2027-01-15', compte: '606100', sens: 'debit', montant: 30, statut: 'proposee' },
       { id: 'b-d2', dossier_id: 'd2', encaissement_id: 'e-d2', facture_id: null, piece_id: null, date: '2027-02-01', compte: '445710', sens: 'credit', montant: 20, statut: 'proposee' },
     ],
+    // Les reprises (étape A8c3) : aucune par défaut ; le bloc des reprises les pose.
+    factures_importees: [],
   }
 })
 
@@ -269,5 +277,74 @@ describe('lireLesEcrituresDesVentes', () => {
   it('un client qui lève ne fait pas rejeter la lecture', async () => {
     faux.leve = true
     await expect(lireLesEcrituresDesVentes('d1')).resolves.toMatchObject({ dossierId: 'd1', etat: 'incomplete' })
+  })
+})
+
+// LES FACTURES REPRISES (étape A8c3) : le drapeau levé, la lecture des sources des écritures lit aussi les reprises du
+// dossier — sa ligne de `factures_importees` par document repris, avec la TVA déclarée du document —, par la lecture des
+// moteurs (`lireLesReprisesDuDossier`), APRÈS les six autres et tout ou rien comme elles. Le drapeau baissé, elle ne les
+// demande pas : la table n'existerait pas.
+describe('les reprises du dossier, dans les deux états de `FACTURES_IMPORTEES_PREVUES`', () => {
+  const poserUneReprise = () => {
+    faux.tables.factures_emises.push(
+      { ...facture({ id: 'r1', numero: 'FA-2026-118', date_emission: '2026-11-20', montant_ttc: 36.04 }), statut: 'importee', montant_tva: 6.01 },
+      { ...facture({ id: 'r-d2', dossier_id: 'd2', numero: 'FA-2026-900' }), statut: 'importee', montant_tva: 20 },
+    )
+    faux.tables.factures_importees = [
+      { facture_id: 'r1', dossier_id: 'd1', origine_id: null, encaisse_par_taux: [{ taux: 20, encaisse: 10 }], numero_d_origine: 'ignoré' },
+      { facture_id: 'r-d2', dossier_id: 'd2', origine_id: null, encaisse_par_taux: [] },
+    ]
+  }
+
+  it('baissé : aucune reprise demandée, la liste vide', async () => {
+    poserUneReprise()
+    const s = lue(await lireLesSourcesDesEcrituresDeVente('d1'))
+    expect(s.reprises).toEqual([])
+    expect(faux.demandes.some((d) => d.startsWith('factures_importees'))).toBe(false)
+    expect(faux.demandes).toHaveLength(6)
+  })
+
+  it('levé : les reprises du dossier, chacune avec la TVA déclarée de son document, et rien d’un autre dossier', async () => {
+    drapeau.reprises = true
+    poserUneReprise()
+    const s = lue(await lireLesSourcesDesEcrituresDeVente('d1'))
+    expect(s.reprises).toEqual([
+      { facture_id: 'r1', dossier_id: 'd1', origine_id: null, encaisse_par_taux: [{ taux: 20, encaisse: 10 }], montant_tva: 6.01 },
+    ])
+    expect(faux.demandes.slice(6)).toEqual([
+      'factures_importees: facture_id, dossier_id, origine_id, encaisse_par_taux',
+      'factures_emises: id, dossier_id, montant_tva',
+    ])
+    expect(lue(await lireLesSourcesDesEcrituresDeVente('d2')).reprises.map((r) => r.facture_id)).toEqual(['r-d2'])
+    // La lecture des sources et du brouillon ensemble les rend aussi.
+    const l = await lireLesEcrituresDesVentes('d1')
+    expect(l.etat === 'lue' && l.sources.reprises.map((r) => r.facture_id)).toEqual(['r1'])
+  })
+
+  it('levé : une session qui ne lit pas la table (A8C-Q1) reçoit zéro ligne — la liste vide, que la composition DIT écartée', async () => {
+    drapeau.reprises = true
+    poserUneReprise()
+    faux.tables.factures_importees = []
+    expect(lue(await lireLesSourcesDesEcrituresDeVente('d1')).reprises).toEqual([])
+  })
+
+  it('levé : une reprise lue en partie, refusée, qui fuit, ou sans sa TVA déclarée — RIEN ne se rend, l’état dit pourquoi', async () => {
+    drapeau.reprises = true
+    poserUneReprise()
+    faux.muetApres = { factures_importees: 0 }
+    expect(await lireLesSourcesDesEcrituresDeVente('d1'))
+      .toEqual({ dossierId: 'd1', etat: 'incomplete', motif: expect.stringContaining('les factures reprises') })
+    faux.muetApres = {}
+    faux.refus = { factures_importees: 'permission refusée' }
+    expect(await lireLesSourcesDesEcrituresDeVente('d1'))
+      .toEqual({ dossierId: 'd1', etat: 'incomplete', motif: expect.stringContaining('permission refusée') })
+    faux.refus = {}
+    faux.fuite = { factures_importees: true }
+    expect(await lireLesSourcesDesEcrituresDeVente('d1'))
+      .toEqual({ dossierId: 'd1', etat: 'incomplete', motif: expect.stringContaining("n'est pas de ce dossier") })
+    faux.fuite = {}
+    faux.tables.factures_emises = faux.tables.factures_emises.filter((f) => f.id !== 'r1')
+    expect(await lireLesSourcesDesEcrituresDeVente('d1'))
+      .toEqual({ dossierId: 'd1', etat: 'incomplete', motif: expect.stringContaining("une facture reprise n'est pas lue en entier") })
   })
 })

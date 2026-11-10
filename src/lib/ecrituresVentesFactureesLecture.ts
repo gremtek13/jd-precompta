@@ -6,8 +6,9 @@ import type {
 import { lireTout, type LectureComplete } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import type { EcritureBrouillon } from './types'
-import type { PartVendue } from './ventesFacturees'
-import { COLONNES_LIGNES, COLONNES_PARTS } from './ventesFactureesLecture'
+import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
+import type { PartVendue, RepriseVendue } from './ventesFacturees'
+import { COLONNES_LIGNES, COLONNES_PARTS, lireLesReprisesDuDossier } from './ventesFactureesLecture'
 
 // CE QUE L'ONGLET ÉCRITURES LIT DES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.6, chantier EC-Q3, étape VF4c1 ;
 // le module pur est lib/ecrituresVentesFactureesEcran.ts). À part de lib/ventesFactureesLecture.ts, qui rend le CALCUL des
@@ -24,7 +25,12 @@ import { COLONNES_LIGNES, COLONNES_PARTS } from './ventesFactureesLecture'
 //     mouvement cité pas encore classé ne l'est pas, et la composition le dirait « non lu » ;
 //   - les pièces DÉSIGNÉES du dossier (`pieces.facture_id`, étape VF1), validées ou non : le virement mixte (étape VF5h) ne
 //     se classe ni ne s'écrit qu'avec l'exemplaire unique et validé de sa facture d'avant, et cet exemplaire est la pièce
-//     que le mouvement paie (lib/encaissementsFactures.ts, `exemplaireUnique`, `partsEncaissees`).
+//     que le mouvement paie (lib/encaissementsFactures.ts, `exemplaireUnique`, `partsEncaissees`) ;
+//   - le drapeau `FACTURES_IMPORTEES_PREVUES` levé (étape A8c3), les REPRISES du dossier — sa ligne de `factures_importees`
+//     par document repris, avec sa TVA déclarée (`lireLesReprisesDuDossier`, la lecture des moteurs) : sans elles, la
+//     composition écarte une facture reprise (`reprise_illisible`) ; avec elles, elle la compose comme
+//     `ecriture_attendue_vente_facturee` d'A8b. Lues APRÈS les six autres, tout ou rien comme elles ; l'onglet Écritures
+//     est du cabinet seul (ventesFactureesEcrituresCabinetSeul.test.ts), qui lit la table (A8C-Q1).
 // Chacune EN ENTIER par `lireTout`. LE TOUT OU RIEN : une seule lecture partielle, refusée ou rompue, et rien ne se décide —
 // l'état le dit, avec le motif de la première qui a manqué ; l'écran n'offre alors AUCUN geste. GARDÉE AVEC LE DOSSIER :
 // chaque ligne rendue est confrontée au dossier demandé. Ce module ne rejette jamais.
@@ -97,6 +103,13 @@ export async function lireLesSourcesDesEcrituresDeVente(dossierId: string): Prom
       ?? horsDuDossier(NOMS_DES_LECTURES_ECRITURES[4], mouvements, (m) => m.dossier_id, dossierId)
       ?? horsDuDossier(NOMS_DES_LECTURES_ECRITURES[5], exemplaires, (p) => p.dossier_id, dossierId)
     if (motif !== null) return { dossierId, etat: 'incomplete', motif }
+    // Les factures reprises, le drapeau levé seulement (A8c3) : la table n'existe pas avant la migration.
+    let reprises: readonly RepriseVendue[] = []
+    if (FACTURES_IMPORTEES_PREVUES) {
+      const lues = await lireLesReprisesDuDossier(dossierId)
+      if (lues.etat === 'incomplete') return { dossierId, etat: 'incomplete', motif: lues.motif }
+      reprises = lues.reprises
+    }
     return {
       dossierId,
       etat: 'lue',
@@ -109,6 +122,7 @@ export async function lireLesSourcesDesEcrituresDeVente(dossierId: string): Prom
         parts: parts.lignes,
         mouvements: mouvements.lignes,
         exemplaires: exemplaires.lignes,
+        reprises,
       },
     }
   } catch (erreur) {

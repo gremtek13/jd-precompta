@@ -149,7 +149,7 @@ beforeAll(() => {
   const ventes = ventesFacturees({ dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts, acomptes: SANS_ACOMPTE })
   const mouvementsDesEncaissements = lignes.filter((l) => l.encaissements_de_factures)
   const sourcesEcritures: SourcesDesEcrituresDeVente = {
-    dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts, mouvements: mouvementsDesEncaissements, exemplaires: [],
+    dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts, mouvements: mouvementsDesEncaissements, exemplaires: [], reprises: [],
   }
   const pourLa2035 = ecrituresDesVentesPourLa2035({
     dossierId: D, ventesParLesFactures: true, facturesSources: ventes.sources, lecture: { dossierId: D, etat: 'lue', sources: sourcesEcritures },

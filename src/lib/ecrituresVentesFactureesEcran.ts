@@ -12,11 +12,14 @@ import type { EcrituresDesVentesDeLa2035 } from './declaration2035'
 import {
   MOYENS_ENCAISSEMENT, mouvementLibre, type ExemplaireLu, type LigneDeFacture, type RefusEncaissement,
 } from './encaissementsFactures'
+import { estUneVente, motDuDocument } from './facturesReprises'
 import { formatDate, formatMoney } from './format'
 import type { PlanComptable } from './planComptable'
 import type { EcritureBrouillon, EncaissementFacture, FactureEmise, ModeComptable } from './types'
 import { estFigee, frontiereDeValidation } from './validationExercice'
-import { LIBELLE_MOTIF_VENTE, type EncaissementVendu, type FactureVendue, type PartVendue } from './ventesFacturees'
+import {
+  LIBELLE_MOTIF_VENTE, type EncaissementVendu, type FactureVendue, type PartVendue, type RepriseVendue,
+} from './ventesFacturees'
 
 // L'ONGLET ÉCRITURES ÉCRIT LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF4c1 ; conception : HISTORIQUE.md,
 // « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION », § 5, 7, 11 et 14 ; « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN
@@ -84,6 +87,13 @@ export interface SourcesDesEcrituresDeVente {
   /** Les pièces désignées du dossier (`pieces.facture_id`, étape VF1) : le virement mixte s'écrit et se classe avec
    *  l'exemplaire unique et validé de sa facture d'avant (étape VF5h). */
   exemplaires: readonly ExemplaireLu[]
+  /**
+   * Les REPRISES du dossier (étape A8c3) : sa ligne de `factures_importees` par document repris, avec sa TVA déclarée,
+   * lues EN ENTIER par le cabinet ; vides le drapeau `FACTURES_IMPORTEES_PREVUES` baissé. OBLIGATOIRES, sans défaut : une
+   * facture reprise qu'elles ne décrivent pas est écartée (`reprise_illisible`) et l'écran le dit, jamais écrite d'un cumul
+   * parti de zéro ; décrite, elle se compose comme `ecriture_attendue_vente_facturee` (A8b).
+   */
+  reprises: readonly RepriseVendue[]
 }
 
 /** Une ligne du brouillon telle que ce module la confronte : la source, et ce que `memeEcritureQueLeBrouillon` compare. */
@@ -268,7 +278,7 @@ export function compositionDesSources(
       composition: ecrituresDesVentesFacturees({
         sources: {
           dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements,
-          parts: sources.parts,
+          parts: sources.parts, reprises: sources.reprises,
         },
         mouvements: sources.mouvements,
         comptesDeContrepartie: new Map(sources.encaissements
@@ -327,7 +337,8 @@ function nomDeLaSource(
   if (source.genre === 'facture' || source.genre === 'avoir') {
     const f = factures.get(source.factureId)!
     return {
-      nom: `${source.genre === 'facture' ? 'la facture' : 'l’avoir'} ${numeroDe(f, f.id)} (${f.tiers_nom})`,
+      // « la facture reprise FA-… » : son numéro est celui de l'ancien logiciel (A8c3, `motDuDocument`).
+      nom: `${source.genre === 'facture' ? 'la ' : 'l’'}${motDuDocument(f)} ${numeroDe(f, f.id)} (${f.tiers_nom})`,
       date: f.date_emission, montant: f.montant_ttc,
     }
   }
@@ -336,7 +347,7 @@ function nomDeLaSource(
     const f = factures.get(e.facture_id)
     const quoi = e.annule_id == null ? 'l’encaissement' : 'la contre-passation'
     return {
-      nom: `${quoi} du ${formatDate(e.date_encaissement)} de la facture ${numeroDe(f, e.facture_id)} (${f?.tiers_nom ?? 'client inconnu'}, ${libelleDuMoyen(e.moyen)}, ${formatMoney(e.montant)})`,
+      nom: `${quoi} du ${formatDate(e.date_encaissement)} de la ${f ? motDuDocument(f) : 'facture'} ${numeroDe(f, e.facture_id)} (${f?.tiers_nom ?? 'client inconnu'}, ${libelleDuMoyen(e.moyen)}, ${formatMoney(e.montant)})`,
       date: e.date_encaissement, montant: e.montant,
     }
   }
@@ -389,8 +400,11 @@ export function etatsDesVentesFacturees(entrees: EntreesEcrituresDeVente): Etats
     composition, plan,
   }
   const frontiere = frontiereDeValidation(anneesValidees)
-  const estSource = (factureId: string) => factures.get(factureId)?.source_de_la_vente === true
-    && factures.get(factureId)?.statut === 'validee'
+  // Une facture validée source, ou, le drapeau levé, une facture reprise (A8c3), qu'`importer_factures` marque source.
+  const estSource = (factureId: string) => {
+    const f = factures.get(factureId)
+    return f?.source_de_la_vente === true && estUneVente(f)
+  }
 
   // ── Les sources candidates : ce que la composition écrit ou dit, ce que le brouillon porte, et chaque encaissement
   // vivant d'une facture source (pour qu'aucun ne manque à la liste sans un mot).

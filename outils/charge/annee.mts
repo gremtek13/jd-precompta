@@ -291,7 +291,7 @@ function mesurer(k: number): Map<string, number | string> {
     const mouvementsDesEncaissements = a.lignes.filter((l) => l.encaissements_de_factures)
     const sourcesEcritures: SourcesDesEcrituresDeVente = {
       dossierId: D, factures: a.factures, lignes: a.lignesDeFacture, encaissements: a.encaissements, parts: a.parts,
-      mouvements: mouvementsDesEncaissements, exemplaires: [],
+      mouvements: mouvementsDesEncaissements, exemplaires: [], reprises: [],
     }
     const pourLa2035 = ecrituresDesVentesPourLa2035({
       dossierId: D, ventesParLesFactures: true, facturesSources: ventes.sources, lecture: { dossierId: D, etat: 'lue', sources: sourcesEcritures },

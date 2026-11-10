@@ -70,6 +70,7 @@ export function sourcesDuDossierBascule(): SourcesDesEcrituresDeVente {
     ],
     // Aucune pièce désignée : aucun virement mixte (étape VF5h).
     exemplaires: [],
+    reprises: [],
   }
 }
 

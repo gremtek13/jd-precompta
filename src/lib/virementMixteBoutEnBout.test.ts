@@ -58,6 +58,7 @@ function sources(exemplaires: readonly ExemplaireLu[]): SourcesDesEcrituresDeVen
     lignes: [ligneVendue('f-source', 100, 20), ligneVendue('f-avant', 50, 20)],
     encaissements: [ecran(source), ecran(avant)],
     parts: [source.part, avant.part],
+    reprises: [],
     mouvements: [mouvementDesVentes({ id: 'm', date: '2026-01-08', montant: 179.5 })],
     exemplaires,
   }
