@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { FacturePourStatutRecu, MontantRecu } from './cdarRecu'
 import { tirage } from '../test/encaissementsBatterie'
 import { ECHOS_RECUS, EXEMPLES_RECUS, SIREN_VENDEUR_RECU, echoRecu, factureRecue, messageRecu } from '../test/cdarRecu'
-import { fichiersDuSchema } from '../test/schema'
+import { contientSql, fichiersDuSchema, indiceSql } from '../test/schema'
 
 // `pointDeReprise` vit dans le module de la réception, qui parle à Supabase : on le confronte sans réseau.
 vi.mock('./supabase', () => ({ supabase: {} }))
@@ -268,8 +268,8 @@ describe('plateforme-agreee — le relevé des statuts', () => {
   })
 
   it('les lignes écrites portent les colonnes de la table, et l’appelant y ajoute le dossier, l’hôte et le lecteur', () => {
-    const migration = fichiersDuSchema().find((f) => f.texte.includes('create table public.statuts_factures_recus ('))?.texte ?? ''
-    const corps = migration.slice(migration.indexOf('create table public.statuts_factures_recus ('), migration.indexOf('\n);', migration.indexOf('create table public.statuts_factures_recus (')))
+    const migration = fichiersDuSchema().find((f) => contientSql(f.texte, 'create table public.statuts_factures_recus ('))?.texte ?? ''
+    const corps = migration.slice(indiceSql(migration, 'create table public.statuts_factures_recus ('), migration.indexOf('\n);', indiceSql(migration, 'create table public.statuts_factures_recus (')))
     const colonnes = [...corps.matchAll(/^ {2}([a-z_]+) /gm)].map((m) => m[1]).filter((c) => c !== 'constraint')
     expect(colonnes).toContain('facture_id')
     const ecrites = ['facture_id', 'flux_id', 'code', 'message_id', 'emis_le', 'createur_role', 'date_statut', 'motifs', 'commentaire', 'montants']

@@ -112,7 +112,7 @@ describe('le drapeau et la migration', () => {
   it('la garde de tête nomme chaque colonne que la migration ajoute, et rien d’autre', () => {
     const garde = entre(MIGRATION.texte, 'do $garde$', '$garde$;')
     const gardees = [...garde.matchAll(/\('(\w+)', '(\w+)'\)/g)].filter((m) => !/^[0-9a-f]{32}$/.test(m[2])).map((m) => `${m[1]}.${m[2]}`)
-    const ajoutees = [...MIGRATION.texte.matchAll(/alter table public\.(\w+)\s+((?:add column[\s\S]*?)(?=;\n))/g)]
+    const ajoutees = [...MIGRATION.texte.matchAll(/alter table public\.(\w+)\s+((?:add column[\s\S]*?)(?=;\n))/gi)]
       .flatMap((m) => [...m[2].matchAll(/add column (\w+)/g)].map((c) => `${m[1]}.${c[1]}`))
     expect(gardees.sort()).toEqual(ajoutees.sort())
     expect(ajoutees).toHaveLength(29)

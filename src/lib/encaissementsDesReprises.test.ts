@@ -33,7 +33,7 @@ const SEPT = [
 
 /** Une fonction d'un texte : de son `create … function public.<nom>(` au `$$;` qui la ferme, exclu. */
 function fonction(texte: string, nom: string): string {
-  const m = new RegExp(`create (or replace )?function public\\.${nom}\\(`).exec(texte)
+  const m = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'i').exec(texte)
   expect(m, nom).not.toBeNull()
   const debut = (m as RegExpExecArray).index
   return texte.slice(debut, texte.indexOf('$$;', debut))
@@ -119,7 +119,7 @@ describe('la migration et son retour se tiennent par leurs empreintes', () => {
   })
 
   it('le retour retire la fonction neuve, et n’en retire aucune autre', () => {
-    expect([...RETOUR.matchAll(/^drop function ([^;]+);/gm)].map((m) => m[1])).toEqual(['public.montants_par_taux_du_document(uuid)'])
+    expect([...RETOUR.matchAll(/^drop function ([^;]+);/gmi)].map((m) => m[1])).toEqual(['public.montants_par_taux_du_document(uuid)'])
     expect(MIGRATION).not.toMatch(/^\s*drop /im)
   })
 })

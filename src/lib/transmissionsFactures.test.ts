@@ -19,7 +19,7 @@ function transmission(o: Partial<TransmissionFacture> = {}): TransmissionFacture
 
 describe('les états d’une transmission', () => {
   it('les états actifs sont ceux de l’index unique de la base, et chaque état de la base a son libellé', () => {
-    const index = /create unique index transmissions_factures_une_active[\s\S]*?where etat in \(([^)]*)\)/.exec(MIGRATION)
+    const index = /create unique index transmissions_factures_une_active[\s\S]*?where etat in \(([^)]*)\)/i.exec(MIGRATION)
     expect(index).not.toBeNull()
     expect([...ETATS_ACTIFS].sort()).toEqual([...(index as RegExpExecArray)[1].matchAll(/'(\w+)'/g)].map((m) => m[1]).sort())
     const check = /constraint transmissions_factures_etat check \(etat in \(([^)]*)\)\)/.exec(MIGRATION)

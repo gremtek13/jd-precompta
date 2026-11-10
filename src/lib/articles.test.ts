@@ -506,7 +506,7 @@ const messagesSql = (sql: string) => [...sql.matchAll(/raise exception '((?:[^']
 const codesSql = (sql: string) => [...sql.matchAll(/raise exception '(?:[^']|'')*'[^;]*?using errcode = '(\w+)'/g)].map((m) => m[1])
 
 describe('ARTICLES_EXPORTES dit ce que porte l’export', () => {
-  const portee = fichiersDuSchema().some((f) => /create table public\.articles \(/.test(f.texte))
+  const portee = fichiersDuSchema().some((f) => /create table public\.articles \(/i.test(f.texte))
 
   it('le drapeau, et la migration avec lui', () => {
     expect(portee, 'ARTICLES_EXPORTES ne dit plus ce que porte l’export').toBe(ARTICLES_EXPORTES)
@@ -564,14 +564,14 @@ describe('ARTICLES_EXPORTES dit ce que porte l’export', () => {
   it('exportée, qui lit et qui écrit : trois policies aux connectés, aucune écriture directe hors de la restauration ; MEG1-Q1', () => {
     if (!ARTICLES_EXPORTES) return
     const texte = migration()
-    const policies = [...texte.matchAll(/create policy (\w+) on public\.articles\s+for (\w+) to (\w+) (using|with check) \(([^;]*)\);/g)]
+    const policies = [...texte.matchAll(/create policy (\w+) on public\.articles\s+for (\w+) to (\w+) (using|with check) \(([^;]*)\);/gi)]
       .map((m) => `${m[1]} ${m[2]} ${m[3]} ${m[4]} ${m[5]}`)
     expect(policies).toEqual([
       'articles_lecture select authenticated using public.admin_du_dossier(dossier_id)',
       "articles_lecture_ventes select authenticated using public.client_du_dossier(dossier_id, 'ventes')",
       'articles_restauration insert authenticated with check public.is_super_admin()',
     ])
-    expect([...texte.matchAll(/create policy/g)]).toHaveLength(3)
+    expect([...texte.matchAll(/create policy/gi)]).toHaveLength(3)
     for (const fonction of ['enregistrer_article(uuid, uuid, jsonb)', 'retirer_article(uuid, uuid)', 'reprendre_article(uuid, uuid)']) {
       expect(texte).toContain(`revoke execute on function public.${fonction} from public, anon;`)
       expect(texte).toContain(`grant execute on function public.${fonction} to authenticated;`)

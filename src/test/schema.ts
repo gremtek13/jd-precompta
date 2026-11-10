@@ -344,6 +344,32 @@ export function derniereDefinitionSql(nom: string, retenu: (f: { chemin: string 
   return definitions[definitions.length - 1].definition
 }
 
+// LES RECHERCHES DE TEXTE FIXE, CAPITALES COMPRISES. `texte.indexOf('create or replace function')` ne trouve pas
+// `CREATE OR REPLACE FUNCTION`, et la recherche qui rate ne dit rien : le test lit alors une autre définition, ou aucune.
+// Ces trois-là sont les `indexOf`, `lastIndexOf` et `includes` des tests qui cherchent une instruction SQL dans une
+// migration (`motifsSqlSensiblesALaCasse.test.ts` interdit les autres). Les positions rendues valent pour le texte
+// d'origine : un texte dont la mise en minuscules changerait la longueur (le `İ` turc) lève plutôt que de décaler.
+function enMinuscules(texte: string): string {
+  const bas = texte.toLowerCase()
+  if (bas.length !== texte.length) throw new FormeInconnue('Un caractère change de longueur en minuscules : les positions ne vaudraient plus pour le texte.')
+  return bas
+}
+
+/** `texte.indexOf(motif, depuis)`, sans distinguer les capitales. */
+export function indiceSql(texte: string, motif: string, depuis = 0): number {
+  return enMinuscules(texte).indexOf(motif.toLowerCase(), depuis)
+}
+
+/** `texte.lastIndexOf(motif)`, sans distinguer les capitales. */
+export function dernierIndiceSql(texte: string, motif: string): number {
+  return enMinuscules(texte).lastIndexOf(motif.toLowerCase())
+}
+
+/** `texte.includes(motif)`, sans distinguer les capitales. */
+export function contientSql(texte: string, motif: string): boolean {
+  return indiceSql(texte, motif) >= 0
+}
+
 /** Une colonne GÉNÉRÉE lue dans le schéma exporté : la base la calcule, et refuse qu'une insertion y écrive. */
 export interface ColonneGeneree {
   table: string

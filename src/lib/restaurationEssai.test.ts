@@ -39,6 +39,7 @@ import {
   TABLES_DU_JOURNAL_DES_DESIGNATIONS,
   type CheminDossier,
 } from './sauvegarde'
+import { indiceSql } from '../test/schema'
 
 // L'ESSAI DE RESTAURATION REJOUE LE PLAN DU CODE, OU IL NE PROUVE RIEN.
 //
@@ -741,7 +742,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     // Joué en dernier, avant la création des tables d'essai.
     expect(texteDeLEssai.indexOf(MARQUE_DES_FACTURES_REPRISES)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_DEVIS))
     expect(texteDeLEssai.indexOf(MARQUE_DES_FACTURES_REPRISES))
-      .toBeLessThan(texteDeLEssai.indexOf("execute format('create table essai_restauration.%I (like public.%I"))
+      .toBeLessThan(indiceSql(texteDeLEssai, "execute format('create table essai_restauration.%I (like public.%I"))
   })
 
   it('le bloc de la numérotation qui continue a été lu : ses tables, son ancre, leurs chemins, les rangs qui suivent reculés', () => {
@@ -757,7 +758,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     // Joué après le bloc des factures reprises, avant la création des tables d'essai.
     expect(texteDeLEssai.indexOf(MARQUE_DE_LA_NUMEROTATION)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_FACTURES_REPRISES))
     expect(texteDeLEssai.indexOf(MARQUE_DE_LA_NUMEROTATION))
-      .toBeLessThan(texteDeLEssai.indexOf("execute format('create table essai_restauration.%I (like public.%I"))
+      .toBeLessThan(indiceSql(texteDeLEssai, "execute format('create table essai_restauration.%I (like public.%I"))
   })
 
   it('avec les tables des huit blocs, le script joue le plan PRÉVU du code — quels que soient les drapeaux', () => {
@@ -974,7 +975,7 @@ function fautesDeLArret(texte: string): string[] {
   for (const m of texte.matchAll(/\\(?:un)?set\s+ON_ERROR_STOP\b[^\n]*/gi)) {
     if (m[0].trim() !== '\\set ON_ERROR_STOP on') fautes.push(`l’arrêt à la première erreur est touché plus loin : ${m[0].trim()}`)
   }
-  const recopie = texte.indexOf("execute format('alter table essai_restauration.%I add constraint %I %s'")
+  const recopie = indiceSql(texte, "execute format('alter table essai_restauration.%I add constraint %I %s'")
   const debut = texte.lastIndexOf('do $$', recopie)
   const fin = texte.indexOf('end $$;', recopie)
   if (recopie < 0 || debut < 0 || fin < 0) return [...fautes, 'le bloc qui recopie les clés étrangères est introuvable']
@@ -1051,10 +1052,10 @@ const CONTROLES_DE_LA_GENERATION = [
 
 function fautesDeLaGeneration(texte: string): string[] {
   const fautes: string[] = []
-  if (!/create table essai_restauration\.%I \(like public\.%I [^)]*\bincluding generated\)/.test(texte)) {
+  if (!/create table essai_restauration\.%I \(like public\.%I [^)]*\bincluding generated\)/i.test(texte)) {
     fautes.push('les tables d’essai ne portent pas la génération (`including generated`)')
   }
-  const debutListe = texte.indexOf('create function essai_restauration._colonnes(')
+  const debutListe = indiceSql(texte, 'create function essai_restauration._colonnes(')
   const liste = debutListe < 0 ? '' : texte.slice(debutListe, texte.indexOf('$f$;', debutListe))
   if (!liste.includes('a.attname not in (select g.colonne from essai_restauration._generees g where g.table_nom = t)')) {
     fautes.push('la liste des colonnes ne retire pas celles de `_generees`')

@@ -50277,3 +50277,16 @@ source, sans sa facture), jamais un calcul faux. Restent : `facturesSources.ts` 
 `ecrituresVentesFacturees.ts` et `ecritureVenteFacturee.ts` (une reprise y est écartée d'ici là), le FEC et la piste d'audit,
 `refusAvoir` et sa copie, `mentionsFigeesVue`, le CII de l'avoir, `resteAEncaisser` et la fenêtre (A8d). A8C-Q1 au cabinet :
 le client « Ventes » ne lit pas `factures_importees`.
+
+### 10/11/2026 — LES MOTIFS DE DÉFINITION SQL NE DISTINGUENT PLUS LES CAPITALES : UN CONTRÔLE CONTRE LE RETOUR DES COPIES
+
+Outillage de test seul. `src/test/motifsSqlSensiblesALaCasse.test.ts` (son lexeur : `src/test/motifsSql.ts`) lit les 721
+fichiers `src/**/*.test.ts(x)` et `src/test/**/*.ts` et juge l'EXPRESSION : un littéral ou un `new RegExp` qui nomme une
+définition (create, alter ou drop suivi de function, trigger, policy, table…) sans `i`, ou un `indexOf`, `lastIndexOf`,
+`includes`, `startsWith`, `split` sur un texte fixe qui la nomme ; un `toContain`, assertion sur le texte exact d'une
+migration nommée, n'en est pas une. **Trouvé** : 198 recherches en minuscules dans 63 fichiers (129 motifs sans `i`, 69
+textes) ; les motifs ont pris `i`, les textes passent par `indiceSql`, `dernierIndiceSql` et `contientSql`
+(`schema.ts`), et les 115 fichiers touchés ou dépendants restent verts : aucune copie ne lisait une ancienne version.
+Une exception motivée (`schema.test.ts`, 1 : l'assertion en capitales), planchers de 600 fichiers et de 120 motifs
+conformes (721 et 160 mesurés). **Éprouvé** : des formes plantées en mémoire, et 37 mutations tuées sur 37 (trois
+survivantes du premier jeu, des assertions retirées, jugent désormais des fonctions pures plantées à leur tour).

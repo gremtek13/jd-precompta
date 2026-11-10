@@ -92,7 +92,7 @@ describe('qui a fait le geste', () => {
     const sql = fichiersDuSchema().map((f) => f.texte).join('\n')
     const sansCommentaires = sql.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n')
     // Les policies d'écriture de la table : la dernière définition de chacune, et aucune de mise à jour ni `for all`.
-    const policies = [...sansCommentaires.matchAll(/create policy (memberships_\w+) on (?:public\.)?memberships\s+for (\w+)([^;]*);/g)]
+    const policies = [...sansCommentaires.matchAll(/create policy (memberships_\w+) on (?:public\.)?memberships\s+for (\w+)([^;]*);/gi)]
     const derniere = new Map(policies.map((m) => [m[1], { evenement: m[2], texte: m[3] }]))
     expect([...derniere.keys()].sort()).toEqual(['memberships_delete', 'memberships_select', 'memberships_write'])
     expect(derniere.get('memberships_write')).toMatchObject({ evenement: 'insert' })
@@ -103,7 +103,7 @@ describe('qui a fait le geste', () => {
     // enveloppes qui la rappellent) : elle juge l'appelant AVANT d'écrire.
     // Une signature par nombre de paramètres, la DERNIÈRE définition l'emportant (les migrations se rejouent dans l'ordre).
     const parSignature = new Map<number, RegExpMatchArray>()
-    for (const m of sansCommentaires.matchAll(/create (?:or replace )?function public\.changer_droits_acces\(([^)]*)\)[\s\S]*?\n\$\$;/g)) {
+    for (const m of sansCommentaires.matchAll(/create (?:or replace )?function public\.changer_droits_acces\(([^)]*)\)[\s\S]*?\n\$\$;/gi)) {
       parSignature.set(m[1].split(',').length, m)
     }
     const definitions = [...parSignature.values()]

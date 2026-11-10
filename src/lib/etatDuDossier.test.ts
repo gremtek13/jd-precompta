@@ -87,7 +87,7 @@ describe('les mots du client', () => {
 
 describe('la migration préparée est celle que le module lit', () => {
   it('l’accès d’abord, quatre clés, exécutable par les connectés seuls, aucune table ni policy', () => {
-    expect(MIGRATION).toMatch(/create function public\.phase_des_exercices\(p_dossier_id uuid\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public/)
+    expect(MIGRATION).toMatch(/create function public\.phase_des_exercices\(p_dossier_id uuid\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public/i)
     expect(MIGRATION).toContain("or not (public.admin_du_dossier(p_dossier_id) or public.client_du_dossier(p_dossier_id, 'membre'))")
     expect(MIGRATION.indexOf("raise exception 'Accès refusé à ce dossier.' using errcode = '42501'"))
       .toBeLessThan(MIGRATION.indexOf('from public.revision_conclusions'))

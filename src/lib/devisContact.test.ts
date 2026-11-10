@@ -4,7 +4,7 @@ import {
   DEVIS_CITENT_UN_CONTACT, REFUS_CONTACT_DU_DEVIS, RETENUE_CONTACT_DU_DEVIS, modelesDEnregistrementDevis, refusEnregistrementDevis,
   type EcritureDevis, type EmissionAJuger,
 } from './devis'
-import { fichiersDuSchema } from '../test/schema'
+import { fichiersDuSchema, indiceSql } from '../test/schema'
 
 // LES DEVIS CITENT LEUR CONTACT (migration `devis_citent_un_contact`, en production depuis le 07/11/2026). Ce que ces cas
 // gardent : le module redit le refus 16 bis de la migration, à sa place et sous ses mots ; son essai l'exige de la base sous
@@ -17,7 +17,7 @@ const sansDoubles = (s: string) => s.replace(/''/g, "'")
 const messagesSql = (sql: string) => [...sql.matchAll(/raise exception '((?:[^']|'')*)'/g)].map((m) => sansDoubles(m[1]))
 
 function definition(texte: string, nom: string): string {
-  const debut = texte.indexOf(`create or replace function public.${nom}(`)
+  const debut = indiceSql(texte, `create or replace function public.${nom}(`)
   if (debut < 0) throw new Error(`${nom} absente`)
   return texte.slice(debut, texte.indexOf('\n$$;', debut))
 }

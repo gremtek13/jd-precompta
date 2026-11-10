@@ -22,7 +22,7 @@ const RACINE = new URL('../../', import.meta.url)
 function dernieresDefinitions(): Map<string, string> {
   const corps = new Map<string, string>()
   for (const { texte } of fichiersDuSchema()) {
-    for (const m of texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/g)) {
+    for (const m of texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/gi)) {
       const ouverture = /\bas\s+(\$\w*\$)/i.exec(texte.slice(m.index))
       if (!ouverture) throw new Error(`Corps de ${m[1]} introuvable dans le schéma exporté.`)
       const debut = m.index + ouverture.index + ouverture[0].length

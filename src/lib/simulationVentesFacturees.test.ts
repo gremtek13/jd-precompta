@@ -192,7 +192,7 @@ describe('la fonction exportée rend ce que le module lit, à qui la case « Ban
   const corps = sql.slice(sql.indexOf('\nbegin\n'))
 
   it('sa signature : un dossier, une année, une seule valeur jsonb, security definer, stable, son chemin fixé', () => {
-    expect(sql).toMatch(/^create function public\.ventes_facturees_de_la_simulation\(p_dossier_id uuid, p_annee integer\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public\nas \$\$/)
+    expect(sql).toMatch(/^create function public\.ventes_facturees_de_la_simulation\(p_dossier_id uuid, p_annee integer\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public\nas \$\$/i)
   })
 
   it('l’accès d’abord — le cabinet du dossier ou un accès « Banque », sur un dossier qui existe —, puis l’année, avant toute lecture', () => {
@@ -234,7 +234,7 @@ describe('la fonction exportée rend ce que le module lit, à qui la case « Ban
     expect(MIGRATION).not.toMatch(/create (table|policy|trigger|index|view)|alter (table|policy)|\bdrop\b|\bdelete\b|\btruncate\b|\bupdate\b/i)
     expect(MIGRATION).not.toContain('\\')
     expect(MIGRATION).not.toContain('\r')
-    expect([...MIGRATION.matchAll(/create (or replace )?function/g)]).toHaveLength(1)
+    expect([...MIGRATION.matchAll(/create (or replace )?function/gi)]).toHaveLength(1)
   })
 
   it('sa garde de tête exige la règle du cumul et le prédicat de la banque tels que l’export les porte', () => {

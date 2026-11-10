@@ -117,9 +117,9 @@ describe('ce que la migration écrit en dur', () => {
     // Celles que la migration crée, et celles qu'une migration suivante de l'export ajoute (`alter table … add column`) :
     // le compte de contrepartie d'un encaissement (étape VF4b).
     const colonnesDe = (table: string) => {
-      const corps = listeDe(new RegExp(`create table public\\.${table} \\(\\n([\\s\\S]*?)\\n\\);`))
+      const corps = listeDe(new RegExp(`create table public\\.${table} \\(\\n([\\s\\S]*?)\\n\\);`, 'i'))
       const ajoutees = fichiersDuSchema().flatMap((f) =>
-        [...f.texte.matchAll(new RegExp(`alter table public\\.${table}\\s+add column (\\w+)`, 'g'))].map((m) => m[1]))
+        [...f.texte.matchAll(new RegExp(`alter table public\\.${table}\\s+add column (\\w+)`, 'gi'))].map((m) => m[1]))
       return [...corps.split('\n').map((l) => /^ {2}([a-z_]+) /.exec(l)?.[1]), ...ajoutees]
         .filter((c): c is string => c != null && c !== 'constraint' && c !== 'primary')
         .sort()

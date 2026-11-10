@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { correspondAuModele } from '../test/essaiVentesFacturees'
 import { argumentsSql, codesSql, messagesSql, nombreDeValeurs } from '../test/raiseSql'
-import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, type DefinitionSql } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, indiceSql, type DefinitionSql } from '../test/schema'
 import { motsDuCabinet, pourLEspace } from './espaceVentes'
 import { REFUS_DE_LA_VALIDATION_FIGEE } from './mentionsFigees'
 import { EXONERATIONS, MENTION_FRANCHISE, mentionTva } from './statutTva'
@@ -34,7 +34,7 @@ const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('h
 const nomDuFichier = (chemin: string) => chemin.split('/').pop() as string
 const corps = (definition: string) => definition.slice(definition.indexOf('as $$') + 'as $$'.length)
 // Une définition sans la forme de son instruction : `create function` (l'export) ou `create or replace function`.
-const uneDefinition = (definition: string) => definition.replace(/^create or replace function /, 'create function ')
+const uneDefinition = (definition: string) => definition.replace(/^create or replace function /i, 'create function ')
 
 // La migration, où qu'elle soit : préparée aujourd'hui, dans l'export le jour de son application.
 function laMigration(): { chemin: string; texte: string } {
@@ -45,9 +45,9 @@ function laMigration(): { chemin: string; texte: string } {
 
 // La définition qu'un texte donne à une fonction : du `create or replace function` au `$$;` qui la ferme.
 function definitionDans(texte: string, nom: string): string {
-  const debut = texte.indexOf(`create or replace function public.${nom}(`)
+  const debut = indiceSql(texte, `create or replace function public.${nom}(`)
   expect(debut, `la définition de ${nom}`).toBeGreaterThanOrEqual(0)
-  expect(texte.indexOf(`create or replace function public.${nom}(`, debut + 1), `${nom} définie deux fois`).toBe(-1)
+  expect(indiceSql(texte, `create or replace function public.${nom}(`, debut + 1), `${nom} définie deux fois`).toBe(-1)
   return texte.slice(debut, texte.indexOf('$$;', debut))
 }
 
@@ -99,7 +99,7 @@ const BLOC = () => {
 describe('la migration recopie la garde des factures, et n’y insère que ce que la validation exige', () => {
   it('sa garde de tête exige, avant toute définition, les deux corps que l’export et la production portent', () => {
     const texte = laMigration().texte
-    const premiere = texte.indexOf('create or replace function')
+    const premiere = indiceSql(texte, 'create or replace function')
     for (const [nom, signature, chemin, empreinte] of [
       [GARDE, 'public.garder_factures_validees()', /\/20261007193006_factures_validees_figees\.sql$/, 'e3dfa6dc1b3f127c66bab26d5637ef89'],
       ['centimes_ligne_facture', 'public.centimes_ligne_facture(numeric, numeric, numeric, boolean)',
@@ -120,7 +120,7 @@ describe('la migration recopie la garde des factures, et n’y insère que ce qu
   it('elle remplace deux fonctions et rien d’autre : ni table, ni droit, ni policy, ni suppression', () => {
     const texte = laMigration().texte
     const instructions = texte.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n')
-    expect([...instructions.matchAll(/create or replace function public\.(\w+)\(/g)].map((m) => m[1]))
+    expect([...instructions.matchAll(/create or replace function public\.(\w+)\(/gi)].map((m) => m[1]))
       .toEqual(['centimes_ligne_facture', GARDE])
     expect([...instructions.matchAll(/comment on function public\.(\w+)\(/g)].map((m) => m[1])).toEqual(['centimes_ligne_facture', GARDE])
     for (const interdit of [/\bdrop\b/i, /\btruncate\b/i, /\bgrant\b/i, /\brevoke\b/i, /\bdelete\s+from\b/i, /\balter\s+table\b/i,
@@ -432,7 +432,7 @@ describe('le statut de TVA à préciser et l’article manquant : refusés au se
 describe('le retour arrière rend les deux fonctions de l’export, sous sa garde de tête', () => {
   it('sa garde exige les corps que la migration pose, puis il redonne ceux d’hier au caractère près', () => {
     const retour = leRetour()
-    const premiere = retour.indexOf('create or replace function')
+    const premiere = indiceSql(retour, 'create or replace function')
     for (const nom of ['centimes_ligne_facture', GARDE]) {
       const empreinte = md5(corps(definitionDans(laMigration().texte, nom)))
       expect(retour.indexOf(`'${empreinte}')`), nom).toBeGreaterThan(0)
@@ -466,7 +466,7 @@ function laMigrationDeLAdresse(): { chemin: string; texte: string; dansLExport: 
 
 // La fonction du déclencheur : de son `create function` au `$$;` qui la ferme ; son corps, ce que `prosrc` garde.
 function laFonctionDeLAdresse(texte: string): { definition: string; corps: string } {
-  const debut = texte.indexOf(`create function public.${FONCTION}(`)
+  const debut = indiceSql(texte, `create function public.${FONCTION}(`)
   expect(debut, `la définition de ${FONCTION}`).toBeGreaterThanOrEqual(0)
   const definition = texte.slice(debut, texte.indexOf('$$;', debut))
   return { definition, corps: definition.slice(definition.indexOf('as $$') + 'as $$'.length) }
@@ -522,7 +522,7 @@ describe('l’adresse du client (JJ-Q4) et la ligne à 0 % (A7C-Q1) : le module 
 
   it('son déclencheur suit la garde des factures dans l’ordre des noms, au seul passage à « validée »', () => {
     const { texte } = laMigrationDeLAdresse()
-    const declencheur = texte.match(new RegExp(`create trigger (\\w+)\\s+before update on public\\.factures_emises\\s+for each row\\s+when \\(([^\\n]*)\\)\\s+execute function public\\.${FONCTION}\\(\\);`))
+    const declencheur = texte.match(new RegExp(`create trigger (\\w+)\\s+before update on public\\.factures_emises\\s+for each row\\s+when \\(([^\\n]*)\\)\\s+execute function public\\.${FONCTION}\\(\\);`, 'i'))
     expect(declencheur, 'le déclencheur, avant la mise à jour, ligne').not.toBeNull()
     const [, nom, quand] = declencheur as RegExpMatchArray
     expect(nom).toBe(DECLENCHEUR)
@@ -544,8 +544,8 @@ describe('l’adresse du client (JJ-Q4) et la ligne à 0 % (A7C-Q1) : le module 
     const empreinte = md5(laFonctionDeLAdresse(laMigrationDeLAdresse().texte).corps)
     const garde = retour.indexOf(`is distinct from '${empreinte}' then`)
     expect(garde, 'l’empreinte du corps posé').toBeGreaterThan(0)
-    expect(retour.indexOf(`drop trigger ${DECLENCHEUR} on public.factures_emises;`)).toBeGreaterThan(garde)
-    expect(retour.indexOf(`drop function public.${FONCTION}();`)).toBeGreaterThan(garde)
+    expect(indiceSql(retour, `drop trigger ${DECLENCHEUR} on public.factures_emises;`)).toBeGreaterThan(garde)
+    expect(indiceSql(retour, `drop function public.${FONCTION}();`)).toBeGreaterThan(garde)
   })
 
   it('le drapeau suit la migration : baissé tant qu’elle n’est que préparée, levé quand elle entre dans l’export', () => {

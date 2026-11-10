@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { correspondAuModele, etapesDeLEssai, refusExigesParLEssai, TEXTE_ESSAI_VENTES_FACTUREES } from '../test/essaiVentesFacturees'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, type DefinitionSql } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, indiceSql, type DefinitionSql } from '../test/schema'
 import { REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT } from './encaissementsFactures'
 import { ORDRE_RESTAURATION, ORDRE_RESTAURATION_PREVU, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PAR_VAGUES } from './sauvegarde'
 
@@ -52,7 +52,7 @@ const REPRISE_DEPUIS = /\/\d{14}_especes_sans_mouvement\.sql$/
 // Ce que cette migration a posé : la définition que son texte donne à la garde.
 function definitionPosee(): string {
   const texte = texteDeLaMigration()
-  const debut = texte.indexOf(`create or replace function public.${GARDE}(`)
+  const debut = indiceSql(texte, `create or replace function public.${GARDE}(`)
   expect(debut).toBeGreaterThan(0)
   return texte.slice(debut, texte.indexOf('$$;', debut))
 }
@@ -134,7 +134,7 @@ describe('la migration contre_passation_sur_mouvement_fige reprend la garde des 
   it('sa garde de tête exige, avant toute définition, le corps qu’insertion_des_encaissements a posé, celui de l’export', () => {
     const texte = texteDeLaMigration()
     expect(texte).not.toBe('')
-    const premiereDefinition = texte.indexOf('create or replace function')
+    const premiereDefinition = indiceSql(texte, 'create or replace function')
     const hier = avantLaMigration(GARDE)
     expect(hier.chemin).toMatch(/\/20261026150044_insertion_des_encaissements\.sql$/)
     expect(md5(corps(hier.definition))).toBe('922c8559fd54ddfc8f8a82ab0402c18e')
@@ -237,7 +237,7 @@ describe('la migration contre_passation_sur_mouvement_fige reprend la garde des 
 
   it('le texte : une seule définition, ni droits rejoués ni objet retiré, aucune barre oblique inverse ni retour chariot', () => {
     const texte = texteDeLaMigration()
-    expect(texte.match(/create (or replace )?function/g)).toHaveLength(1)
+    expect(texte.match(/create (or replace )?function/gi)).toHaveLength(1)
     expect(texte).toContain('create or replace function public.garder_encaissement_facture() returns trigger')
     expect(texte).not.toMatch(/\b(grant|revoke|drop|truncate|alter)\b/i)
     expect(texte).not.toMatch(/\b(create|drop)\s+(table|policy|trigger|index|view)\b/i)

@@ -601,7 +601,7 @@ const FONCTION = 'ventes_facturees_de_l_exercice'
 
 /** Les fonctions de l'export que la dernière définition de `nom` appelle, elle comprise, de proche en proche. */
 function chaineDe(nom: string): string[] {
-  const exportees = new Set(fichiersDuSchema().flatMap((f) => [...f.texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/g)].map((m) => m[1])))
+  const exportees = new Set(fichiersDuSchema().flatMap((f) => [...f.texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/gi)].map((m) => m[1])))
   const vues = new Set<string>()
   const a = [nom]
   while (a.length > 0) {
@@ -621,7 +621,7 @@ describe('ventes_facturees_de_l_exercice : ce que l’assistant demande à la ba
   const instructions = fichiersDuSchema().flatMap((f) => f.texte.match(/\b(?:revoke|grant|alter default privileges)\b[^;]*;/gi) ?? [])
 
   it('s’exécute aux droits de l’appelant, que la migration retire à toute session', () => {
-    expect(entete).toMatch(/^create function public\.ventes_facturees_de_l_exercice\(p_dossier_id uuid, p_annee integer\)\nreturns table \(/)
+    expect(entete).toMatch(/^create function public\.ventes_facturees_de_l_exercice\(p_dossier_id uuid, p_annee integer\)\nreturns table \(/i)
     expect(entete).not.toMatch(/security definer/i)
     expect(instructions).toContain(`revoke execute on function public.${FONCTION}(uuid, integer) from public, anon, authenticated;`)
   })

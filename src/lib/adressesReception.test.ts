@@ -460,7 +460,7 @@ const messagesSql = (sql: string) => [...sql.matchAll(/raise exception '((?:[^']
 const codesSql = (sql: string) => [...sql.matchAll(/raise exception '(?:[^']|'')*'[^;]*?using errcode = '(\w+)'/g)].map((m) => m[1])
 
 describe('ADRESSES_RECEPTION_EXPORTEES dit ce que porte l’export', () => {
-  const portee = fichiersDuSchema().some((f) => /create table public\.adresses_reception \(/.test(f.texte))
+  const portee = fichiersDuSchema().some((f) => /create table public\.adresses_reception \(/i.test(f.texte))
 
   it('le drapeau, et la migration avec lui', () => {
     expect(portee, 'ADRESSES_RECEPTION_EXPORTEES ne dit plus ce que porte l’export').toBe(ADRESSES_RECEPTION_EXPORTEES)
@@ -511,14 +511,14 @@ describe('ADRESSES_RECEPTION_EXPORTEES dit ce que porte l’export', () => {
   it('exportée, qui lit et qui écrit : trois policies aux connectés, aucune écriture directe hors de la restauration', () => {
     if (!ADRESSES_RECEPTION_EXPORTEES) return
     const texte = migration()
-    const policies = [...texte.matchAll(/create policy (\w+) on public\.adresses_reception\s+for (\w+) to (\w+) (using|with check) \(([^;]*)\);/g)]
+    const policies = [...texte.matchAll(/create policy (\w+) on public\.adresses_reception\s+for (\w+) to (\w+) (using|with check) \(([^;]*)\);/gi)]
       .map((m) => `${m[1]} ${m[2]} ${m[3]} ${m[4]} ${m[5]}`)
     expect(policies).toEqual([
       'adresses_reception_lecture select authenticated using public.admin_du_dossier(dossier_id)',
       "adresses_reception_lecture_ventes select authenticated using public.client_du_dossier(dossier_id, 'ventes')",
       'adresses_reception_restauration insert authenticated with check public.is_super_admin()',
     ])
-    expect([...texte.matchAll(/create policy/g)]).toHaveLength(3)
+    expect([...texte.matchAll(/create policy/gi)]).toHaveLength(3)
     for (const fonction of ['declarer_adresse_reception(uuid, text, text, text, date, text, date, uuid)', 'etat_facture_electronique(uuid)']) {
       expect(texte).toContain(`revoke execute on function public.${fonction} from public, anon;`)
       expect(texte).toContain(`grant execute on function public.${fonction} to authenticated;`)

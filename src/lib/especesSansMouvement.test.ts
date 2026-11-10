@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { etapesDeLEssai, rejouerLEssai } from '../test/essaiCaisse'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, type DefinitionSql } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, indiceSql, type DefinitionSql } from '../test/schema'
 import {
   MOYENS_ENCAISSEMENT, MOYENS_SANS_CREDIT, REFUS_ENREGISTREMENT, REFUS_ESPECES_SUR_UN_CREDIT, REFUS_RATTACHEMENT,
   moyenSansCredit, moyenSurUnCredit, moyensOfferts, rattachableApresLaFrontiere, refusEnregistrement, refusEnregistrementVente,
@@ -38,7 +38,7 @@ function laMigration(): { chemin: string; texte: string } {
 
 // La définition que son texte donne à la garde.
 function definitionPosee(texte = laMigration().texte): string {
-  const debut = texte.indexOf(`create or replace function public.${GARDE}(`)
+  const debut = indiceSql(texte, `create or replace function public.${GARDE}(`)
   expect(debut).toBeGreaterThan(0)
   return texte.slice(debut, texte.indexOf('$$;', debut))
 }
@@ -101,7 +101,7 @@ describe('la migration especes_sans_mouvement reprend la garde des encaissements
     const hier = avantLaMigration()
     expect(hier.chemin).toMatch(/\/20261027055337_contre_passation_sur_mouvement_fige\.sql$/)
     expect(md5(corps(hier.definition))).toBe('16af585818378356e7b4e58521dbe665')
-    const premiereDefinition = texte.indexOf('create or replace function')
+    const premiereDefinition = indiceSql(texte, 'create or replace function')
     expect(texte.indexOf("<> '16af585818378356e7b4e58521dbe665' then")).toBeGreaterThan(0)
     expect(texte.indexOf("<> '16af585818378356e7b4e58521dbe665' then")).toBeLessThan(premiereDefinition)
     expect(texte).toContain(`if to_regprocedure('public.${GARDE}()') is null`)
@@ -134,7 +134,7 @@ describe('la migration especes_sans_mouvement reprend la garde des encaissements
     expect(REGLE[1]).toBe("       and not (tg_op = 'INSERT' and v_ligne.cree_le < now() and public.is_super_admin()) and exists (")
     // `cree_le` prend `now()` par défaut, qu'aucune fonction ne donne : la ligne d'une fonction naît dans la transaction.
     const migrations = fichiersDuSchema().map((f) => f.texte).join('\n')
-    expect(migrations).toMatch(/create table public\.encaissements_factures \([\s\S]*?cree_le timestamptz not null default now\(\)/)
+    expect(migrations).toMatch(/create table public\.encaissements_factures \([\s\S]*?cree_le timestamptz not null default now\(\)/i)
     for (const f of ['enregistrer_encaissement', 'annuler_encaissement']) {
       const insertion = derniereDefinitionSql(f).match(/insert into public\.encaissements_factures \(([^)]*)\)/)
       expect(insertion?.[1], f).not.toMatch(/cree_le/)
@@ -157,7 +157,7 @@ describe('la migration especes_sans_mouvement reprend la garde des encaissements
 
   it('le texte : une seule définition, ni droit rejoué ni objet retiré, aucune barre oblique inverse ni retour chariot', () => {
     const texte = laMigration().texte
-    expect(texte.match(/create (or replace )?function/g)).toHaveLength(1)
+    expect(texte.match(/create (or replace )?function/gi)).toHaveLength(1)
     expect(texte).toContain(`create or replace function public.${GARDE}() returns trigger`)
     expect(texte).not.toMatch(/\b(grant|revoke|drop|truncate|alter)\b/i)
     expect(texte).not.toMatch(/\b(create|drop)\s+(table|policy|trigger|index|view)\b/i)
@@ -192,11 +192,11 @@ describe('le retour arrière : la garde d’hier, au caractère près, sous sa p
   it('il exige le corps que la migration a posé, et rend celui de contre_passation_sur_mouvement_fige', () => {
     const retour = leRetour()
     const md5Pose = md5(corps(definitionPosee()))
-    const premiereDefinition = retour.indexOf('create or replace function')
+    const premiereDefinition = indiceSql(retour, 'create or replace function')
     expect(retour.indexOf(`<> '${md5Pose}' then`)).toBeGreaterThan(0)
     expect(retour.indexOf(`<> '${md5Pose}' then`)).toBeLessThan(premiereDefinition)
     expect(definitionPosee(retour)).toBe(avantLaMigration().definition)
-    expect(retour.match(/create (or replace )?function/g)).toHaveLength(1)
+    expect(retour.match(/create (or replace )?function/gi)).toHaveLength(1)
     expect(retour).not.toMatch(/\b(grant|revoke|drop|truncate|alter)\b/i)
     expect(retour).not.toMatch(/\bdelete from\b/i)
     expect(retour).not.toContain('\\')

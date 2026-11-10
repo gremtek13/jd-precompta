@@ -14,6 +14,7 @@ import {
   refusDuModele,
   type SerieAJuger,
 } from './numerotationContinue'
+import { indiceSql } from '../test/schema'
 
 // LA NUMÉROTATION QUI CONTINUE (ligne 51.5, étape A9a) : le module redit la migration `numerotation_continue` — préparée le
 // 10/11/2026, dans l'export le jour de son application — et les cas de son essai, supabase/essais/numerotationContinue.sql,
@@ -36,7 +37,7 @@ function laMigration(): string {
 
 /** Une fonction de la migration, de son `create function` au `$$;` qui la ferme. */
 function laFonction(texte: string, nom: string): string {
-  const debut = texte.indexOf(`create function public.${nom}(`)
+  const debut = indiceSql(texte, `create function public.${nom}(`)
   expect(debut, `la définition de ${nom}`).toBeGreaterThanOrEqual(0)
   return texte.slice(debut, texte.indexOf('\n$$;', debut))
 }

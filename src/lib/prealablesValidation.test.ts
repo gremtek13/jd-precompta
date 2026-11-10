@@ -1650,7 +1650,7 @@ describe('les refus de la validation pour les ventes facturées (étape VF7b) �
   // posé, où que soit la dernière.
   const posee = (() => {
     const texte = migration?.texte ?? ''
-    const debut = texte.search(/create (or replace )?function public\.valider_exercice\(/)
+    const debut = texte.search(/create (or replace )?function public\.valider_exercice\(/i)
     return debut < 0 ? '' : texte.slice(debut, texte.indexOf('$$;', debut))
   })()
   const repriseDepuis = /\/\d{14}_(champs_bnc_du_fec|validation_des_paiements_par_la_caisse)\.sql$/

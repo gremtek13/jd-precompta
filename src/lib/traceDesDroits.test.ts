@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
-import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { fichiersDuSchema, fichiersPrepares, indiceSql } from '../test/schema'
 
 // LA TRACE DES DROITS D'UN ACCÈS, CONFRONTÉE À LA BASE (étape P1-trace). Trois juges : le TEXTE de la migration
 // `trace_des_droits`, où qu'elle soit (dans l'export depuis son application, le 07/11/2026) — ce qu'elle retire,
@@ -21,20 +21,20 @@ const sansCommentaires = (texte: string) => texte.split('\n').filter((l) => !l.t
 
 /** Le corps (`prosrc`) d'une fonction dans un texte : entre `as $$` et `$$;`, sauts de ligne compris. */
 function corps(texte: string, nom: string): string {
-  const debut = texte.indexOf('as $$', texte.indexOf(`create function public.${nom}(`)) + 'as $$'.length
+  const debut = texte.indexOf('as $$', indiceSql(texte, `create function public.${nom}(`)) + 'as $$'.length
   return texte.slice(debut, texte.indexOf('\n$$;', debut) + 1)
 }
 
 /** Le corps de la DERNIÈRE définition d'une fonction dans un texte, `create` ou `create or replace`. */
 function dernierCorps(texte: string, nom: string): string {
-  const debuts = [...texte.matchAll(new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'g'))]
+  const debuts = [...texte.matchAll(new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'gi'))]
   const debut = texte.indexOf('as $$', debuts[debuts.length - 1].index) + 'as $$'.length
   return texte.slice(debut, texte.indexOf('\n$$;', debut) + 1)
 }
 
 /** La dernière définition d'une fonction dans l'export : celle que la migration appelle. */
 function corpsDansLExport(nom: string): string {
-  const avec = fichiersDuSchema().filter((f) => new RegExp(`create (?:or replace )?function public\\.${nom}\\(`).test(f.texte))
+  const avec = fichiersDuSchema().filter((f) => new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'i').test(f.texte))
   return dernierCorps(avec[avec.length - 1].texte, nom)
 }
 
@@ -81,13 +81,13 @@ describe('la migration, où qu’elle soit', () => {
   })
 
   it('deux policies, à authenticated seul : la lecture du cabinet du dossier, l’insertion du super-administrateur — aucune autre', () => {
-    const policies = [...MIGRATION.texte.matchAll(/create policy (\w+) on public\.trace_des_droits\n\s+(for \w+ to \w+ (?:using|with check) \(.*\));/g)]
+    const policies = [...MIGRATION.texte.matchAll(/create policy (\w+) on public\.trace_des_droits\n\s+(for \w+ to \w+ (?:using|with check) \(.*\));/gi)]
       .map((m) => `${m[1]} ${m[2]}`)
     expect(policies).toEqual([
       'trace_des_droits_lecture for select to authenticated using (public.admin_du_dossier(dossier_id))',
       'trace_des_droits_restauration for insert to authenticated with check (public.is_super_admin())',
     ])
-    expect(MIGRATION.texte.match(/create policy/g)).toHaveLength(2)
+    expect(MIGRATION.texte.match(/create policy/gi)).toHaveLength(2)
   })
 })
 

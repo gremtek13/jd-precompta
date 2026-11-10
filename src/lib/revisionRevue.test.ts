@@ -391,7 +391,7 @@ describe('les arguments, tels que supabase-js les envoie', () => {
       { travail: 'Ajouté', fait: false, note: 'Une note' },
     ])
     // Les clés de la fonction, dans l'ordre de sa signature exportée.
-    const signature = /create function public\.conclure_cycle\(([\s\S]*?)\)\s*returns/.exec(MIGRATION) as RegExpExecArray
+    const signature = /create function public\.conclure_cycle\(([\s\S]*?)\)\s*returns/i.exec(MIGRATION) as RegExpExecArray
     expect([...signature[1].matchAll(/(p_\w+)/g)].map((m) => m[1])).toEqual(Object.keys(a))
     // Ce qui part passe les refus du module : le programme proposé tel quel, une conclusion de chaque cycle.
     for (const c of CYCLES_DE_REVISION) {
@@ -402,11 +402,11 @@ describe('les arguments, tels que supabase-js les envoie', () => {
 
   it('noter_revision et revoir_cycle : les cinq, dans l’ordre de leur signature', () => {
     const n = argumentsDeNoterRevision(DOSSIER, 2025, 'ensemble', 'consultation', 'Texte')
-    const sn = /create function public\.noter_revision\(([\s\S]*?)\)\s*returns/.exec(MIGRATION) as RegExpExecArray
+    const sn = /create function public\.noter_revision\(([\s\S]*?)\)\s*returns/i.exec(MIGRATION) as RegExpExecArray
     expect([...sn[1].matchAll(/(p_\w+)/g)].map((m) => m[1])).toEqual(Object.keys(n))
     expect(refusDeNoterRevision(n, contexte())).toBeNull()
     const r = argumentsDeRevoirCycle(DOSSIER, 2025, K2, 'approuve', '\t')
-    const sr = /create function public\.revoir_cycle\(([\s\S]*?)\)\s*returns/.exec(MIGRATION) as RegExpExecArray
+    const sr = /create function public\.revoir_cycle\(([\s\S]*?)\)\s*returns/i.exec(MIGRATION) as RegExpExecArray
     expect([...sr[1].matchAll(/(p_\w+)/g)].map((m) => m[1])).toEqual(Object.keys(r))
     expect(r.p_observation).toBeNull()
     expect(refusDeRevoirCycle(r, contexte())).toBeNull()

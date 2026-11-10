@@ -36,7 +36,7 @@ const MIGRATIONS = [...fichiersDuSchema(), ...fichiersPrepares()]
 
 /** La dernière définition d'une fonction, dans l'export, dans l'ordre des versions. */
 function definition(nom: string): string {
-  const motif = new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'g')
+  const motif = new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'gi')
   const fichier = MIGRATIONS.filter((f) => new RegExp(motif.source).test(f.texte)).pop()
   if (!fichier) throw new Error(`${nom} introuvable`)
   const debut = [...fichier.texte.matchAll(motif)].pop()!.index

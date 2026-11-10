@@ -12,7 +12,7 @@ import {
 import type { Dossier, PieceEcarteeEreporting, PieceHorsDeFrance, RegimeEreporting, TypePiece } from './types'
 import { appelsDe, commeLaBase, etapesDe, lignesInserees, remplacerLesNoms, valeurSql, type Etape } from '../test/essaiSql'
 import { argumentsSql, codesSql, messagesSql } from '../test/raiseSql'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { contientSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE (ligne 28.5, étape e5a), confrontés à ce qui fait foi : la migration
 // `regimes_ereporting_et_pieces_ecartees` — le texte des quatre fonctions que l'export porte — pour l'ordre et les mots des
@@ -43,7 +43,7 @@ const parametresDe = (nom: string) => (/function public\.\w+\(([^)]*)\)/.exec(sq
 const modeles = (liste: readonly { modele: string }[]) => liste.map((r) => r.modele)
 
 function migration(): string {
-  const f = fichiersDuSchema().find((x) => x.texte.includes('create table public.regimes_ereporting ('))
+  const f = fichiersDuSchema().find((x) => contientSql(x.texte, 'create table public.regimes_ereporting ('))
   expect(f, 'la migration des régimes dans l’export').toBeDefined()
   return f?.texte ?? ''
 }
