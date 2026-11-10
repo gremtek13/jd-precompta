@@ -49934,3 +49934,37 @@ sous une confirmation qui les nomme ; LM-Q8 le dépôt chez le client sur un cli
 jamais ; LM-Q9 hors du MVP, le premier client signant une lettre papier citée au dossier permanent (recommandé) ;
 LM-Q10 le droit de rétractation d'un professionnel de cinq salariés au plus hors de son activité principale
 (C. consom., L221-3), NON VÉRIFIÉ pour une lettre acceptée à distance : à trancher avec l'expert-comptable avant LM5.
+
+### 10/11/2026 — PC4 : RÉGLER LE PLAN D'UN DOSSIER, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, rien d'appliqué. `supabase/preparees/20261110110000_regler_le_plan_du_dossier.sql` (`ee1ba91c…`, 46 278
+octets), retour en 20261110110100 (`0fa46c20…`), à COLLER : deux `drop constraint` (`dossiers_compte_notes_de_frais_check`,
+`lettrages_manuels_compte`, 43-Q4), une suppression dans un corps. `regler_plan_du_dossier(p_dossier_id, p_comptes)` écrit
+le plan ENTIER (un rôle absent revient au catalogue), par `admin_du_dossier`, sous le verrou EXCLUSIF de la validation, ses
+refus dans l'ordre de la conception, et déplace le dirigeant avec son rôle (PC3-Q1) ; la garde du plan reçoit sa porte, la
+restauration sa policy d'insertion au super-administrateur ; les contraintes deviennent des contrôles contre le plan (le
+dirigeant, l'un de ses trois rôles, jugé au dossier et, différé, au plan ; un lettrage, l'un des cinq rôles de
+`lettrer_pieces`) ; une ligne de pièce sous la racine d'un des onze rôles que la génération écrit porte le compte du plan,
+ou celui de la catégorie de sa pièce (`garder_comptes_des_pieces`). Sous le plan par défaut, les deux contrôles acceptent
+exactement les listes d'hier, sauf une porte : la restauration d'un dossier au dirigeant réglé, jugée quand son plan arrive.
+Depuis la conception : 32 rôles (la caisse gardée comme la banque) ; le lettrage suit `lettrer_pieces`, non « le dirigeant
+en 455, 467 ou 468 » ; le verrou s'étend aux lettrages faits à la main, aux mouvements classés sur un compte de bilan, aux
+justifications de la révision, et à un compte de contrepartie que le plan rendrait refusé ; les natures d'immobilisation ne
+croisent aucune racine ; le 468 attend (PC4-Q2).
+
+Preuves, sur une copie de la réplique égale à la production (neuf familles, 188) : l'essai `reglerLePlanDuDossier.sql` EN
+ATTENTE, puis 106 étapes vraies ; 54 mutations sur 54 tuées ; la course de deux sessions (pièce, lettrage, dirigeant contre
+le réglage, et l'inverse) : la seconde attend puis se refuse, chaque mutant sans son verrou laisse un état faux ; les 89
+essais avant et après, identiques hors de l'horloge et de quatre essais adaptés (`planComptable`, `lettrageManuel`,
+`ecrituresVentesFacturees`, `parametresFacturation`), `rls.sql` compris ; banc du leurre SÛR ; le retour rend
+`signature.sql`, collé en `\r\n` aussi (sa garde de fin ramène désormais les fins de ligne) ; la restauration en trois temps
+passe, s'arrête au plan qui laisse le dirigeant hors de ses rôles ; en simulation, la suite verte, l'export à 189
+(`afe96a16…`), 2 570 objets (`dfe13394…`), le socle inchangé. Le coût de la garde (point 10), une génération en une
+insertion : 900 lignes 83 → 110 ms, 3 000 lignes 207 → 306 ms (28 µs par ligne). En production : 0 ligne du plan, 0 lettrage
+à la main, 0 dirigeant hors du plan, 0 des 2 lignes de pièce que la garde refuserait.
+
+Reste avant la carte « Plan de comptes du dossier » : les deux phrases « au 580000 » de `refus_compte_de_bilan` et leur
+copie (`compteDeBilan.ts`), les treize essais de mécanisme au plan décalé ; au collage, l'essai hors de la famille « apres »
+et les commentaires qui nomment les contraintes. Risque : une restauration arrêtée au plan laisse un dossier au dirigeant
+réglé sur le plan par défaut (RESTAU-Q2 le retire). Questions PC4-Q1 (le verrou étendu), Q2 (le 468), Q3 (le plan entier),
+Q4 (la garde des pièces, plus stricte sur des lignes que l'application n'écrit pas).
