@@ -50142,3 +50142,19 @@ après deux lectures du catalogue qui admettent `fichier_fige` à son empreinte 
 `exemplairesDesFactures` 448) ; `restauration.sql` IDENTIQUE avec un exercice de forme 2 ; les retours rendent la
 signature et les policies du stockage de la 188ᵉ, puis l'aller les rend de nouveau ; cinq refus des gardes ; cinq essais
 SÛRS au banc du leurre. Restent INAL12-Q1 à Q3, puis l'application (indépendantes par leurs gardes ; éprouvées INAL1 puis INAL2).
+
+### 10/11/2026 — INAL4 : LA DOCUMENTATION DES TRAITEMENTS ET LES DURÉES DE CONSERVATION CORRIGÉES (LIGNE 44)
+
+Lot de documentation : aucun code applicatif, aucune migration. **Les durées.** Relu sur Légifrance le 10/11/2026 : LPF,
+art. L102 B, I, al. 1, en vigueur depuis le 01/01/2023 (loi n° 2022-1726, art. 62) : « six ans à compter de la date de la
+dernière opération » ; sa version à venir du 01/01/2027 (loi n° 2026-534 du 25 juin 2026, art. 36) : « dix ans », même
+point de départ, pour les documents dont le délai expire après le 01/01/2027 (art. 36, I et II, rapportés en note) — donc
+tout ce que l'application porte. RGPD.md § 5 rangeait le BNC sous C. com. L123-22 (les seuls commerçants, L123-12) et
+donnait six ans au fiscal : corrigé, avec le livre-journal et le registre de CGI 99 et BOI-BNC-DECLA-10-20 § 180 ; trois
+autres renvois de RGPD.md suivent ; PLAN_DE_REPRISE.md ne cite aucune durée. **La documentation** (PCG, art. 1011-2 et
+1011-4) : DOCUMENTATION_DES_TRAITEMENTS.md, 301 lignes, chaque source avec sa fonction, ses rôles, son journal et son
+libellé, tirés du code. Constat en l'écrivant : les lignes d'une pièce sont les seules qu'aucune fonction SQL ne recompose
+(insérées par Écritures et par `synchroniserContrepartieBanque`), la base ne les jugeant qu'à la validation. **Le garde**
+(`documentationDesTraitements.test.ts`) range chaque nom entre accents graves dans six formes, une forme inconnue en
+faute, un plancher par forme ; quatre mutations mordent (une fonction renommée dans le document, un symbole dans le code,
+une fonction dans l'export, le contrôle des fonctions éteint). Reste : `contactsVue.ts` dit encore L123-22 à l'écran.
