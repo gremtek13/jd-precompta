@@ -6,7 +6,9 @@
 // 10/11/2026, pas appliquée, après A8a, A9a et A8b). Ce module en redit les refus, aux mots de la base et dans l'ordre où ses
 // fonctions les disent (pieceDUneFactureReprise.test.ts les confronte au texte de la migration), et le jugement d'une date de
 // règlement, pour qu'un écran (A8d) les dise avant le clic. Pur : il n'importe jamais `supabase.ts`. Aucun écran ne s'en sert
-// encore.
+// encore. A8Q5-Q1 (le 10/11/2026, « Oui, citer ; retrait refusé ») : une pièce que la validation d'un exercice a figée se cite
+// — rien ne change dans l'exercice validé, le lien ne ferme que ses rapprochements d'après la reprise —, et son lien ne se
+// retire pas : le refus « figée » n'est plus que celui du retrait.
 
 /**
  * La migration est-elle en base ? Baissé : la table des liens n'existe pas en production, et la lire ferait échouer toute
@@ -24,7 +26,7 @@ export interface RefusDeLaBase {
   modele: string
 }
 
-const FIGEE = "La pièce « % » justifie une écriture validée de l'exercice % : le lien qui la cite ne se pose ni ne se retire plus."
+const FIGEE = "La pièce « % » justifie une écriture validée de l'exercice % : le lien qui la cite ne se retire plus."
 const ACCES = 'Accès refusé à ce dossier.'
 
 /** Les refus de `citer_piece_de_facture_reprise`, dans l'ordre où la fonction les dit. */
@@ -44,7 +46,6 @@ export const REFUS_CITER = [
     code: '23514',
     modele: "La pièce « % » est déjà l'original de la facture reprise % : une pièce n'est l'original que d'une facture reprise.",
   },
-  { cle: 'figee', code: '23514', modele: FIGEE },
   {
     cle: 'reglee_apres_la_reprise',
     code: '23514',

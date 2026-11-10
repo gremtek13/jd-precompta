@@ -50251,6 +50251,13 @@ ne se rejoue pas, le retour rend la signature d'avant (neuf familles) ; 59 essai
 « dossier »). `src/lib/pieceDUneFactureReprise.ts` redit les refus des cinq fonctions, confrontés au texte. Restent l'écran
 (A8d), la Checklist (« réglée par le registre de sa facture reprise »), A8Q5-Q1 (la pièce figée, au cabinet).
 
+**A8Q5-Q1, tranchée le 10/11/2026 (« Oui, citer ; retrait refusé »), amendée le même jour** (agent architecte, avant le jour
+J) : `citer_piece_de_facture_reprise` ne refuse plus une pièce figée par un exercice validé — le lien ne touche ni sa ligne ni
+l'écriture validée (l'essai les relit à leur `xmin`, 39), et ne ferme que ses rapprochements d'après la reprise —, et
+`retirer_piece_de_facture_reprise` reste refusée, à ses mots neufs (« le lien qui la cite ne se retire plus », 23 et 40) ; la
+garde de tête compare son corps par `chr(13)`, plus aucune barre oblique inverse. md5 `e2e72e720fe4fef2d39193d1bcac62df`
+(30 138 octets) ; l'essai 41 sur 41 sur la réplique du jour J ; le refus « figée » retiré de `REFUS_CITER`, à son rang.
+
 ### 10/11/2026 — A8C : LES LECTEURS OUVERTS AUX FACTURES REPRISES, DERRIÈRE LEUR DRAPEAU (LIGNE 51.5)
 
 (Agent architecte ; aucune migration, aucune écriture en production.) Premier sous-lot d'A8c : les encaissements, puis la
