@@ -27,14 +27,16 @@ const faux = vi.hoisted(() => ({
 }))
 
 // Le drapeau de l'acompte d'un devis (étape P5b3), baissé par défaut comme dans src/lib/devis.ts : ses deux états se jouent.
-const drapeau = vi.hoisted(() => ({ acomptes: false }))
+const drapeau = vi.hoisted(() => ({ acomptes: false, reprises: false }))
+// Le drapeau des factures reprises (étape A8c), baissé comme dans src/lib/facturesImportees.ts : ses deux états se jouent.
+vi.mock('./facturesImportees', () => ({ get FACTURES_IMPORTEES_PREVUES() { return drapeau.reprises } }))
 vi.mock('./devis', async (importOriginal) => {
   const vrai = await importOriginal<typeof import('./devis')>()
   return { ...vrai, get ACOMPTES_PREVUS() { return drapeau.acomptes } }
 })
 
 vi.mock('./supabase', async () => {
-  const { filtrer, predicatEq, predicatNot } = await import('../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn, predicatNot } = await import('../test/filtresPostgrest')
   return {
     supabase: {
       from: (table: string) => {
@@ -60,6 +62,10 @@ vi.mock('./supabase', async () => {
             } else {
               predicats.push(predicatEq(c, v))
             }
+            return q
+          },
+          in: (c: string, v: readonly unknown[]) => {
+            predicats.push(predicatIn(c, v))
             return q
           },
           not: (c: string, operateur: string, v: unknown) => {
@@ -115,6 +121,7 @@ const PARTS = ENCAISSEMENTS.map((e) => part({ encaissement_id: e.id }))
 beforeEach(() => {
   // Levé, comme en production depuis la migration ; l'état d'avant se joue par ses cas, le drapeau baissé.
   drapeau.acomptes = true
+  drapeau.reprises = false
   faux.plafond = Infinity
   faux.muetApres = {}
   faux.refus = {}
@@ -341,3 +348,56 @@ describe('l’acompte d’un devis (étape P5b3), dans les deux états de `ACOMP
     })
   })
 })
+
+describe('les factures reprises (étape A8c), dans les deux états de `FACTURES_IMPORTEES_PREVUES`', () => {
+  // Une facture reprise de d1 (FA-2026-118 : 100 € HT à 20 %), dont 40 € étaient encaissés avant la reprise ; un encaissement
+  // de 80 € d'après la reprise la solde. Et la ligne de reprise d'un autre dossier, qui ne doit pas entrer.
+  const ajouterLaReprise = () => {
+    faux.tables.factures_emises.push({
+      ...facture({ id: 'r1', statut: 'importee' as FactureVendue['statut'], numero: 'FA-2026-118', date_emission: '2026-11-20' }),
+      montant_tva: 20,
+    })
+    faux.tables.facture_lignes.push(ligne({ id: 'l-r1', facture_id: 'r1' }))
+    faux.tables.encaissements_factures.push(encaissement({ id: 'e-r1', facture_id: 'r1', montant: 80, date_encaissement: '2027-02-10' }))
+    faux.tables.encaissements_factures_taux.push(part({ encaissement_id: 'e-r1', montant: 80 }))
+    faux.tables.factures_importees = [
+      { facture_id: 'r1', dossier_id: 'd1', origine_id: null, encaisse_par_taux: [{ taux: 20, encaisse: 40 }], rang: 1 },
+    ]
+  }
+
+  it('baissé : la requête d’hier, et une base qui porterait déjà une reprise se dit incomplète, jamais un calcul faux', async () => {
+    // Sans reprise, la lecture d'hier : les mêmes demandes, mot pour mot.
+    lue(await lireLesVentesFacturees('d1'))
+    expect(faux.demandes.some((d) => d.startsWith('factures_importees') || d.endsWith('montant_tva'))).toBe(false)
+    // La migration appliquée sans le drapeau levé : la ligne d'une reprise, marquée source, arrive sans sa facture — la
+    // lecture le dit. Le drapeau se lève le jour de la migration (src/lib/facturesImportees.ts).
+    ajouterLaReprise()
+    const l = await lireLesVentesFacturees('d1')
+    expect(l.etat === 'incomplete' && l.motif).toBe('leurs lignes : une ligne rendue n\'est pas de ce dossier')
+  })
+
+  it('levé : la reprise et la TVA déclarée lues, et le cumul part de l’encaissé avant la reprise', async () => {
+    drapeau.reprises = true
+    ajouterLaReprise()
+    const v = lue(await lireLesVentesFacturees('d1'))
+    // V = 2 000, T = 12 000 ; 4 000 avant la reprise portaient 667 ; le paiement qui solde porte 2 000 − 667 = 1 333.
+    expect(v.parts.filter((p) => p.factureId === 'r1').map((p) => [p.ttcCentimes, p.tvaCentimes])).toEqual([[8000, 1333]])
+    expect(v.documents.some((d) => d.factureId === 'r1')).toBe(false)
+    expect(faux.demandes).toContain('factures_importees: facture_id, dossier_id, origine_id, encaisse_par_taux')
+    expect(faux.demandes).toContain('factures_emises: id, dossier_id, montant_tva')
+  })
+
+  it('levé : une ligne de reprise d’un autre dossier, ou une lecture partielle, rend la lecture incomplète', async () => {
+    drapeau.reprises = true
+    ajouterLaReprise()
+    faux.fuite.factures_importees = true
+    faux.tables.factures_importees.push({ facture_id: 'r9', dossier_id: 'd2', origine_id: null, encaisse_par_taux: [], rang: 1 })
+    const l = await lireLesVentesFacturees('d1')
+    expect(l.etat === 'incomplete' && l.motif).toBe('les factures reprises : une ligne rendue n\'est pas de ce dossier')
+    faux.fuite.factures_importees = false
+    faux.refus.factures_importees = 'permission refusée'
+    const r = await lireLesVentesFacturees('d1')
+    expect(r.etat === 'incomplete' && r.motif).toMatch(/^les factures reprises : .*permission refusée/)
+  })
+})
+
