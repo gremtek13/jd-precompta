@@ -669,7 +669,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
   }
   const e1 = enc({ id: 'enc-1', date_encaissement: '2025-09-15', montant: 1310 })
   const sources = (o: Partial<SourcesDesEcrituresDeVente> = {}): SourcesDesEcrituresDeVente => ({
-    dossierId: 'd1', factures: [f], lignes, encaissements: [e1.e], parts: e1.parts, mouvements: [], exemplaires: [], ...o,
+    dossierId: 'd1', factures: [f], lignes, encaissements: [e1.e], parts: e1.parts, mouvements: [], exemplaires: [], reprises: [], ...o,
   })
   const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
     acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,

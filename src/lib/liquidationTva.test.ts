@@ -961,7 +961,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     return {
       dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: o.emission ?? '2026-03-01', montant_ttc: ttc })],
       lignes: [ligneVendue('f1', Math.round((ttc * 10000) / (100 + taux)) / 100, taux)],
-      encaissements: [{ ...encaissement, compte_contrepartie: null, cree_par: null }], parts: [part], mouvements: [], exemplaires: [],
+      encaissements: [{ ...encaissement, compte_contrepartie: null, cree_par: null }], parts: [part], mouvements: [], exemplaires: [], reprises: [],
     }
   }
   const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
@@ -1039,7 +1039,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     const s: SourcesDesEcrituresDeVente = {
       dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: '2025-12-01' })], lignes: [ligneVendue('f1', 100, 20)],
       encaissements: [e, cp].map((x) => ({ ...x.encaissement, compte_contrepartie: null, cree_par: null })), parts: [e.part, cp.part], mouvements: [],
-      exemplaires: [],
+      exemplaires: [], reprises: [],
     }
     const c = ca3De(s)
     expect(c.exigibilitesRetenues.map((x) => x.ligne)).toEqual(['B5'])
@@ -1154,7 +1154,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
         factureDesEcritures({ id: 'a1', type: 'avoir', numero: 'A2026-0001', facture_origine_id: 'f1', date_emission: '2026-04-10', montant_ttc: -120, ...biens }),
       ],
       lignes: [ligneVendue('f1', 100, 20), { ...ligneVendue('a1', 100, 20), quantite: -1 }],
-      encaissements: [], parts: [], mouvements: [], exemplaires: [],
+      encaissements: [], parts: [], mouvements: [], exemplaires: [], reprises: [],
     }
     const c = ca3De(s, T2)
     expect(c.exigibilitesRetenues.map((r) => [r.exigibilite.origine, r.ligne])).toEqual([['avoir', 'B5']])

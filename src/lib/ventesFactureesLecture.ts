@@ -112,6 +112,37 @@ function horsDuDossier<T>(nom: string, lecture: LectureComplete<T>, dossier: (l:
 }
 
 /**
+ * LES REPRISES DU DOSSIER, LUES EN ENTIER (étape A8c ; partagée depuis A8c3 avec la lecture des sources des écritures,
+ * lib/ecrituresVentesFactureesLecture.ts) : sa ligne de `factures_importees` par document repris, avec la TVA déclarée du
+ * document. `factures_importees` ne se lit que par le cabinet du dossier (A8C-Q1) : une session qui ne la lit pas reçoit
+ * ZÉRO ligne sans erreur, et chaque facture reprise est alors écartée par le module (`reprise_illisible`) — jamais un cumul
+ * parti de zéro. Partielle, refusée, d'un autre dossier ou mal assemblée : « incomplète », avec le motif. L'appelant
+ * l'appelle dans son propre `try` (un client qui lève).
+ */
+export async function lireLesReprisesDuDossier(
+  dossierId: string,
+): Promise<{ etat: 'lues'; reprises: RepriseVendue[] } | { etat: 'incomplete'; motif: string }> {
+  const [lues, tva] = await Promise.all([
+    lireTout<RepriseLue>((debut, fin) =>
+      supabase.from('factures_importees').select(COLONNES_REPRISES, { count: 'exact' })
+        .eq('dossier_id', dossierId).order('facture_id').range(debut, fin),
+    ),
+    lireTout<TvaDUneReprise>((debut, fin) =>
+      supabase.from('factures_emises').select(COLONNES_TVA_DES_REPRISES, { count: 'exact' })
+        .eq('dossier_id', dossierId).eq('statut', 'importee').order('id').range(debut, fin),
+    ),
+  ])
+  const manque = [lues, tva]
+    .map((l, i) => (l.complete ? null : `${NOMS_DES_LECTURES_DES_REPRISES[i]} : ${l.motif ?? 'lecture incomplète'}`))
+    .find((m) => m !== null)
+    ?? horsDuDossier(NOMS_DES_LECTURES_DES_REPRISES[0], lues, (r) => r.dossier_id, dossierId)
+    ?? horsDuDossier(NOMS_DES_LECTURES_DES_REPRISES[1], tva, (t) => t.dossier_id, dossierId)
+  if (manque != null) return { etat: 'incomplete', motif: manque }
+  const assemblees = reprisesDesLignesLues(lues.lignes, tva.lignes)
+  return typeof assemblees === 'string' ? { etat: 'incomplete', motif: assemblees } : { etat: 'lues', reprises: assemblees }
+}
+
+/**
  * Les acomptes que les lignes lues portent : `SANS_ACOMPTE` le drapeau baissé (rien n'a été demandé) ; levé, la marque de
  * chaque facture et la reprise de chaque ligne, chacune LUE — une valeur absente ou d'une autre forme est un motif, jamais
  * un « non ».
@@ -184,25 +215,9 @@ export async function lireLesVentesFacturees(dossierId: string): Promise<Lecture
     // Les factures reprises, le drapeau levé seulement (A8c) : la table n'existe pas avant la migration.
     let reprises: readonly RepriseVendue[] = []
     if (FACTURES_IMPORTEES_PREVUES) {
-      const [lues, tva] = await Promise.all([
-        lireTout<RepriseLue>((debut, fin) =>
-          supabase.from('factures_importees').select(COLONNES_REPRISES, { count: 'exact' })
-            .eq('dossier_id', dossierId).order('facture_id').range(debut, fin),
-        ),
-        lireTout<TvaDUneReprise>((debut, fin) =>
-          supabase.from('factures_emises').select(COLONNES_TVA_DES_REPRISES, { count: 'exact' })
-            .eq('dossier_id', dossierId).eq('statut', 'importee').order('id').range(debut, fin),
-        ),
-      ])
-      const manqueDesReprises = [lues, tva]
-        .map((l, i) => (l.complete ? null : `${NOMS_DES_LECTURES_DES_REPRISES[i]} : ${l.motif ?? 'lecture incomplète'}`))
-        .find((m) => m !== null)
-        ?? horsDuDossier(NOMS_DES_LECTURES_DES_REPRISES[0], lues, (r) => r.dossier_id, dossierId)
-        ?? horsDuDossier(NOMS_DES_LECTURES_DES_REPRISES[1], tva, (t) => t.dossier_id, dossierId)
-      if (manqueDesReprises != null) return { dossierId, etat: 'incomplete', motif: manqueDesReprises }
-      const assemblees = reprisesDesLignesLues(lues.lignes, tva.lignes)
-      if (typeof assemblees === 'string') return { dossierId, etat: 'incomplete', motif: assemblees }
-      reprises = assemblees
+      const lues = await lireLesReprisesDuDossier(dossierId)
+      if (lues.etat === 'incomplete') return { dossierId, etat: 'incomplete', motif: lues.motif }
+      reprises = lues.reprises
     }
     // Les exemplaires, seulement si une part de virement mixte peut exister (l'en-tête) ; lus, en entier et du dossier.
     let exemplaires: readonly ExemplaireLu[] = []

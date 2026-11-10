@@ -50342,3 +50342,19 @@ huit faux clients servent `.in('statut', …)` et la seconde vague des reprises.
 se jugeait contre la série F (A) ; elle se juge dans la série de QUI valide, au modèle en vigueur, validées et reprises
 (`serieDeLaValidation`), et se tait dans l'espace client, qui ne lit pas les modèles. Suite entière : 673 fichiers,
 19 242 tests verts.
+
+### 10/11/2026 — A8C3 : LA SECTION « VENTES FACTURÉES » COMPOSE UNE FACTURE REPRISE, ET LES FACTURES SOURCES DES PIÈCES (LIGNE 51.5)
+
+(Agent architecte ; aucune migration, aucune écriture en production.) Troisième sous-lot d'A8c. `SourcesDesEcrituresDeVente`
+porte `reprises`, OBLIGATOIRES, que `compositionDesSources` passe à la composition : la section « Ventes facturées », la
+liquidation de la TVA et la 2035 composent une facture reprise comme `ecriture_attendue_vente_facturee` d'A8b au lieu de
+l'écarter. Elles se lisent par `lireLesReprisesDuDossier`, extraite de lib/ventesFactureesLecture.ts (mêmes requêtes, même
+ordre), après les six collections, tout ou rien ; l'onglet est du cabinet seul, qui lit `factures_importees` (A8C-Q1). Une
+reprise non lue reste écartée (`reprise_illisible`) et SE DIT : l'encaissement vivant d'une reprise est désormais une source
+candidate (`estSource` par `estUneVente`), « ne s'écrit pas », sans geste — avant, il était tu. La source se nomme « la
+facture reprise FA-… » (`motDuDocument`). `facturesSourcesDe` compte la reprise, comme `VentesFacturees.sources`. Le garde de
+source : neuf modules ouverts, quatre à ouvrir. Vérifié : `tsc -b`, lint, `--changed`, deux mutations (la reprise omise de la
+composition, `estSource` remis à « validee ») qui virent au rouge. **Défaut confirmé, NON corrigé ici** : la pièce citée par
+une facture reprise (A8-Q5) compte encore en trésorerie son reste impayé à sa date (`sans_paiement` : 2035, situation,
+Estimation, brouillon) en plus de l'encaissement d'après la reprise par le registre — 200 € au lieu de 100 € sur le cas
+fictif ; la règle (un lien ACTIF : ses paiements seuls) reste à poser dans `facturesSources.ts` et les moteurs.

@@ -15,7 +15,7 @@ import type { ExemplaireLu, LigneDeFacture } from './encaissementsFactures'
 import { formatMoney } from './format'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
 import type { ModeComptable } from './types'
-import type { PartVendue } from './ventesFacturees'
+import type { PartVendue, RepriseVendue } from './ventesFacturees'
 
 // L'ÉTAT DE CHAQUE SOURCE D'UNE VENTE FACTURÉE, DANS L'ONGLET ÉCRITURES (chantier EC-Q3, étape VF4c1 ;
 // lib/ecrituresVentesFactureesEcran.ts) : chaque état, dans les deux modèles comptables et sous les deux plans ; la
@@ -48,6 +48,8 @@ interface Jeu {
   mouvements?: MouvementDesEcritures[]
   // Les pièces désignées (étape VF5h, le virement mixte) ; aucune par défaut.
   exemplaires?: ExemplaireLu[]
+  // Les reprises du dossier (étape A8c3) ; aucune par défaut.
+  reprises?: RepriseVendue[]
 }
 
 function sources(jeu: Jeu): SourcesDesEcrituresDeVente {
@@ -56,6 +58,7 @@ function sources(jeu: Jeu): SourcesDesEcrituresDeVente {
     dossierId: D, factures: jeu.factures ?? [facture()], lignes: jeu.lignes ?? [ligneVendue('f1', 100, 20)],
     encaissements: encs.map((e) => e.encaissement), parts: encs.map((e) => e.part), mouvements: jeu.mouvements ?? [],
     exemplaires: jeu.exemplaires ?? [],
+    reprises: jeu.reprises ?? [],
   }
 }
 
@@ -546,7 +549,7 @@ describe('ecrituresDesVentesPourLa2035', () => {
     return {
       dossierId: D, factures: [facture({ id: 'f1', date_emission: '2025-11-10' })], lignes: [ligneVendue('f1', 100, 20)],
       encaissements: [e1.encaissement], parts: [e1.part], mouvements: [mouvement({ id: 'm1', date: '2025-11-20', montant: 118 })],
-      exemplaires: [],
+      exemplaires: [], reprises: [],
     }
   }
   const lue = (s = sources(), dossierId = D) => ({ dossierId, etat: 'lue' as const, sources: s })
