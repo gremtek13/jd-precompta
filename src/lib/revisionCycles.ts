@@ -224,6 +224,9 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   // Une recette en espèces dont le jour a changé depuis sa saisie (CAISSE-Q2) : ce que la recette compte, face aux espèces des
   // factures de son jour.
   'recettes-de-caisse-a-revoir': 'recettes',
+  // La pièce de vente citée pour original par une facture reprise (étape A8c4) : son reste est réglé par le registre de sa
+  // facture, ce qui relie une recette à la facture qui la compte.
+  'reglee-par-sa-facture-reprise': 'recettes',
   // Les dépenses : les pièces, leurs écritures, leurs postes.
   'pieces-a-valider': 'depenses',
   // La pièce à valider qu'un paiement par la caisse cite (la relecture du 01/11/2026) : une pièce, comme celles d'au-dessus.
