@@ -81,8 +81,41 @@ async function listerTout(
   }
 }
 
-async function viderDossierDuStockage(bucket: SeauDuDossier, dossierId: string): Promise<NettoyageStockage> {
-  const resultat = vide()
+// Retire des chemins par lots et rend ceux que le stockage n'a PAS confirmés retirés — refusés avec une erreur, ou acceptés
+// sans être rendus (une policy écarte une ligne sans rien lever) —, ainsi que les échecs nommés. Lu par les deux passages.
+async function retirerParLots(
+  bucket: SeauDuDossier,
+  chemins: string[],
+): Promise<{ retires: number; restants: string[]; echecs: { chemin: string; raison: string }[] }> {
+  let retires = 0
+  const restants: string[] = []
+  const echecs: { chemin: string; raison: string }[] = []
+  // Suppression par lots, pour la même raison que la lecture : une liste trop longue passée d'un
+  // coup peut être refusée côté serveur. Un lot qui échoue ne fait pas abandonner les suivants —
+  // retirer les neuf dixièmes vaut mieux que rien, à condition de nommer le dixième restant.
+  for (let i = 0; i < chemins.length; i += TAILLE_PAGE) {
+    const lot = chemins.slice(i, i + TAILLE_PAGE)
+    const { data, error } = await supabase.storage.from(bucket).remove(lot)
+    if (error) {
+      const raison = messageErreur(error, 'retrait refusé par le stockage')
+      for (const chemin of lot) echecs.push({ chemin, raison })
+      restants.push(...lot)
+      continue
+    }
+    // Le stockage rend les objets qu'il a retirés, sous leur nom complet : ce qu'il ne rend pas est resté.
+    const rendus = new Set((data ?? []).map((objet) => objet.name))
+    retires += lot.filter((chemin) => rendus.has(chemin)).length
+    restants.push(...lot.filter((chemin) => !rendus.has(chemin)))
+  }
+  return { retires, restants, echecs }
+}
+
+// Le premier passage, avant la ligne du dossier : il rend aussi ce qui est resté, que le second passage reprend.
+async function viderDossierDuStockage(
+  bucket: SeauDuDossier,
+  dossierId: string,
+): Promise<NettoyageStockage & { restants: string[] }> {
+  const resultat = { ...vide(), restants: [] as string[] }
   try {
     const { entrees, complete } = await listerTout(bucket, dossierId)
     if (!complete) resultat.inventaireIncomplet = true
@@ -104,19 +137,10 @@ async function viderDossierDuStockage(bucket: SeauDuDossier, dossierId: string):
     }
     resultat.demandes = chemins.length
 
-    // Suppression par lots, pour la même raison que la lecture : une liste trop longue passée d'un
-    // coup peut être refusée côté serveur. Un lot qui échoue ne fait pas abandonner les suivants —
-    // retirer les neuf dixièmes vaut mieux que rien, à condition de nommer le dixième restant.
-    for (let i = 0; i < chemins.length; i += TAILLE_PAGE) {
-      const lot = chemins.slice(i, i + TAILLE_PAGE)
-      const { data, error } = await supabase.storage.from(bucket).remove(lot)
-      if (error) {
-        const raison = messageErreur(error, 'retrait refusé par le stockage')
-        for (const chemin of lot) resultat.echecs.push({ chemin, raison })
-        continue
-      }
-      resultat.retires += data?.length ?? 0
-    }
+    const { retires, restants, echecs } = await retirerParLots(bucket, chemins)
+    resultat.retires = retires
+    resultat.restants = restants
+    resultat.echecs.push(...echecs)
   } catch (err) {
     // Une exception (réseau coupé, etc.) laisse forcément l'inventaire dans le flou : on ne sait plus
     // ce qui a été retiré ni ce qui reste. Elle ne fait pas échouer la suppression du dossier, mais
@@ -141,9 +165,34 @@ async function viderDossierDuStockage(bucket: SeauDuDossier, dossierId: string):
  */
 export async function supprimerDossierDefinitivement(dossierId: string): Promise<NettoyageStockage> {
   const seaux: SeauDuDossier[] = LOGO_DES_FACTURES_EXPORTE ? ['pieces', 'packs', 'ventes'] : ['pieces', 'packs']
-  const bilans = await Promise.all(seaux.map((seau) => viderDossierDuStockage(seau, dossierId)))
+  const premiers = await Promise.all(seaux.map((seau) => viderDossierDuStockage(seau, dossierId)))
   const { error } = await supabase.from('dossiers').delete().eq('id', dossierId)
   if (error) throw error
+  // LE SECOND PASSAGE (ligne 44, INAL1 : la migration `piece_figee_dans_le_stockage`). Le stockage garde le fichier d'une
+  // pièce figée — une écriture validée la cite, ou son bien — et d'une source que la révision cite, tant que sa ligne
+  // existe : le premier passage les laisse, sans erreur. La ligne du dossier partie, ses pièces sont parties avec elle, et
+  // plus rien ne fige ces fichiers : on les reprend, et seulement eux. Le premier passage reste AVANT la ligne : la lecture
+  // et la suppression d'un fichier passent par `admin_du_dossier`, qui lit la ligne du dossier — sans elle, le chef du
+  // cabinet ne voit plus rien du dossier ; seul le super-administrateur les atteint encore. Pour un chef qui ne l'est pas,
+  // ce second passage ne retire rien, et le bilan compte ce qui reste (question INAL12-Q1). Un fichier qu'une pièce figée
+  // d'un AUTRE dossier désigne reste, lui, gardé.
+  const bilans = await Promise.all(
+    premiers.map(async ({ restants, ...premier }, i) => {
+      if (restants.length === 0) return premier
+      try {
+        const second = await retirerParLots(seaux[i], restants)
+        const reprises = new Set(restants)
+        return {
+          ...premier,
+          retires: premier.retires + second.retires,
+          // Un échec du premier passage que le second a levé n'en est plus un ; ce qui reste porte la raison la plus récente.
+          echecs: [...premier.echecs.filter((e) => !reprises.has(e.chemin)), ...second.echecs],
+        }
+      } catch (err) {
+        return { ...premier, inventaireIncomplet: true, echecs: [...premier.echecs, { chemin: `${seaux[i]}/${dossierId}`, raison: messageErreur(err, 'nettoyage interrompu') }] }
+      }
+    }),
+  )
   return bilans.reduce(fusionner, vide())
 }
 

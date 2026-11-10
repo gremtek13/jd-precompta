@@ -260,11 +260,14 @@ describe('les essais de la base, rejoués en production', () => {
     // Le neuvième, droitsHorsRls, le 06/11/2026 (relecture de sécurité, migration `droits_hors_rls`) : il tente, sous chaque
     // profil, de vider chaque table, d'y poser un déclencheur, une clé étrangère et un REINDEX — des verrous forts —, sous
     // la même garde.
+    // Le onzième, pieceFigeeDansLeStockage, le 10/11/2026 (ligne 44, INAL1, migration `piece_figee_dans_le_stockage`) : il
+    // supprime des lignes de `storage.objects` sous le réglage de l'API et altère la fonction de la policy, sous la même
+    // garde. Son catalogue et son prédicat, jugé sans supprimer, se rejouent partout : le bloc PF de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'caisseSuppression (son en-tête)', 'deuxFacteurs (son en-tête)', 'devisSuppression (son en-tête)',
       'droitsHorsRls (son en-tête)',
       'frontiereDesEncaissements (son en-tête)',
-      'logoDesFacturesSuppression (son en-tête)',
+      'logoDesFacturesSuppression (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
       'situationsPublieesMutations (une méta-commande de psql)', 'traceDesDroitsSuppression (son en-tête)',
     ])
@@ -358,7 +361,10 @@ describe('les essais de la base, rejoués en production', () => {
     // Vingt et un le même jour : `numerotationContinue` (A9a, `numerotation_continue`) entré dans la famille « apres », après sa
     // migration préparée, par-dessus celle d'A8a (le modèle « apres » porte les deux, dans cet ordre) ; SÛR au banc, sur une
     // copie de la réplique au niveau de la production, le complément du leurre portant un modèle et une fin par dossier.
-    expect(cas.length).toBe(21)
+    // Vingt-deux le même jour : `empreinteDesExercices` (ligne 44, INAL2, `empreinte_des_exercices_forme_2`) entré dans la
+    // famille « apres », après sa migration préparée, joué par le super-utilisateur ; SÛR au banc, sur une copie de la
+    // réplique au niveau de la production. Son pendant d'INAL1, `pieceFigeeDansLeStockage`, est de réplique seulement.
+    expect(cas.length).toBe(22)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

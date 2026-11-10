@@ -65,6 +65,10 @@
 --   9. La numérotation qui continue (bloc NC, migration `numerotation_continue`, préparée) : les modèles de numéro et les
 --      paroles du cabinet sur la suite reprise d'une série, au cabinet du dossier seul — le client, même avec un accès au
 --      dossier, n'en lit rien et n'en écrit rien —, un contrôle POSITIF, le catalogue, trois mutations.
+--  10. Le fichier d'une pièce figée, ou d'une source citée par la révision, ne se supprime plus du seau `pieces` (bloc PF,
+--      migration `piece_figee_dans_le_stockage`, INAL1) : la policy de suppression resserrée, lue au catalogue, et son
+--      prédicat jugé sous la session du chef, SANS suppression, sur un fichier figé et deux libres. Deux mutations. La
+--      suppression elle-même se joue sur une réplique seulement (`pieceFigeeDansLeStockage.sql`).
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -969,7 +973,8 @@ end $$;
 --
 -- Comme les policies de tables, toutes portent `roles = public`. Ici les prédicats sauvent la mise
 -- (`auth.uid()` est nul sans session, donc aucune branche n'est vraie), mais c'est la même forme
--- que la fuite trouvée sur `categories` : ce qui protège est le prédicat, pas le rôle.
+-- que la fuite trouvée sur `categories` : ce qui protège est le prédicat, pas le rôle. (INAL1, la migration
+-- `piece_figee_dans_le_stockage`, passe `pieces_storage_delete` à `authenticated` en la resserrant : le bloc PF la lit.)
 
 do $$
 declare
@@ -5712,6 +5717,171 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $nc$;
+
+-- ══ PF. Le fichier d'une pièce figée (ligne 44, INAL1 ; migration `piece_figee_dans_le_stockage`, PRÉPARÉE) ════════════
+-- La policy de suppression du seau `pieces` refuse le fichier d'une pièce qu'une écriture validée cite (ou son bien), ou
+-- que la révision cite, et d'un document que la révision cite (`fichier_fige`) ; elle passe à `authenticated`. Une
+-- suppression ne se joue pas en production : ce bloc la juge sans elle.
+--   PF1. Le catalogue : `pieces_storage_delete`, de suppression, permissive, à authenticated seul, sans vérification, son
+--        prédicat mot pour mot (lu sous un chemin vide, qui nomme le schéma de chaque fonction), et qui dépend de
+--        `fichier_fige`.
+--   PF2. Aucune autre policy permissive de suppression, ni « pour tout », ne nomme le seau `pieces` : une seconde, jointe
+--        par OU, défairait le resserrement.
+--   PF3. Le prédicat de la policy, lu au catalogue et jugé sous la session du chef (lecture et suppression : la suppression
+--        de l'API nomme et rend ses lignes, la policy de lecture s'y applique aussi), sur trois fichiers d'un dossier
+--        jetable de son cabinet : le fichier d'une pièce qu'une écriture validée cite ne se supprimerait pas ; celui d'une
+--        pièce libre et un fichier qu'aucune ligne ne désigne, si (le contrôle POSITIF). Sous la session du client, rien.
+--   PF4. `fichier_fige` : `security definer`, stable, son chemin de recherche ; exécutable par authenticated, pas par
+--        l'anonyme ni par PUBLIC.
+-- Deux mutations, qui doivent mordre : M-PF1 (le prédicat d'hier, le temps d'une sous-transaction : le fichier figé se
+-- supprimerait), M-PF2 (la policy rendue à `public` : PF1 tombe). Avant la migration, une ligne dit que le bloc attend.
+-- Le récit : HISTORIQUE.md, « 10/11/2026 — INAL1 ET INAL2 ».
+do $pf$
+declare
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  cabinet uuid;
+  dossier uuid := 'f19e0000-0000-4000-8109-0000000000a1';
+  piece_figee uuid := 'f19e0000-0000-4000-8109-000000000f01';
+  piece_libre uuid := 'f19e0000-0000-4000-8109-000000000f03';
+  chemin_avant text := current_setting('search_path');
+  attendu_predicat constant text := '((bucket_id = ''pieces''::text) AND public.admin_du_dossier(((storage.foldername(name))[1])::uuid) AND (NOT public.fichier_fige(name)))';
+  q_catalogue constant text := $q$select count(*) from pg_policy p
+     where p.polrelid = 'storage.objects'::regclass and p.polname = 'pieces_storage_delete' and p.polcmd = 'd' and p.polpermissive
+       and p.polroles = array['authenticated'::regrole]::oid[] and p.polwithcheck is null
+       and pg_get_expr(p.polqual, p.polrelid) = $1
+       and exists (select 1 from pg_depend d where d.classid = 'pg_policy'::regclass and d.objid = p.oid
+                     and d.refclassid = 'pg_proc'::regclass and d.refobjid = 'public.fichier_fige(text)'::regprocedure)$q$;
+  predicat text; vu_chef text; vu_client text; muee text; autres text;
+  n bigint; n_mutee bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.fichier_fige(text)') is null then
+    insert into rls_verdict values ('PF. le fichier d''une pièce figée : EN ATTENTE de la migration piece_figee_dans_le_stockage',
+      'storage.objects', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  select ca.cabinet_id into cabinet from cabinet_admins ca where ca.user_id = chef and ca.role = 'comptable_en_chef'
+   order by ca.cabinet_id limit 1;
+  begin
+    -- ── Le jeu : un dossier jetable du cabinet du chef, deux pièces et trois fichiers ; une écriture validée cite la
+    -- première (le réglage que pose `valider_exercice`, le temps de l'insertion).
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id) values (dossier, 'ESSAI RLS PF', cabinet);
+    insert into pieces (id, dossier_id, storage_path, nom_fichier) values
+      (piece_figee, dossier, dossier::text || '/fige.pdf', 'fige.pdf'), (piece_libre, dossier, dossier::text || '/libre.pdf', 'libre.pdf');
+    insert into storage.objects (bucket_id, name) values
+      ('pieces', dossier::text || '/fige.pdf'), ('pieces', dossier::text || '/libre.pdf'), ('pieces', dossier::text || '/orphelin.pdf');
+    perform set_config('jd.validation_exercice', dossier::text, true);
+    insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, statut, piece_id, valide_le, journal_code,
+                                     numero_ecriture, piece_ref, piece_date, compte_lib) values
+      (dossier, '2025-03-10', '606100', 'ESSAI RLS PF', 100, 'debit', 'validee', piece_figee, now(), 'AC', 1, 'F1', '2025-03-10', 'Achats'),
+      (dossier, '2025-03-10', '512000', 'ESSAI RLS PF', 100, 'credit', 'validee', piece_figee, now(), 'AC', 1, 'F1', '2025-03-10', 'Banque');
+    perform set_config('jd.validation_exercice', '', true);
+    construit := true;
+
+    -- PF3 : le prédicat de la policy, tel que le catalogue le porte (lu sous un chemin vide), jugé sous chaque session.
+    perform set_config('search_path', '', true);
+    select pg_get_expr(p.polqual, p.polrelid) into predicat from pg_policy p
+     where p.polrelid = 'storage.objects'::regclass and p.polname = 'pieces_storage_delete';
+    perform set_config('search_path', chemin_avant, true);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    execute format('select coalesce(string_agg(split_part(o.name, ''/'', 2), '','' order by o.name collate "C"), '''') from storage.objects o where o.bucket_id = ''pieces'' and o.name like %L and (%s)',
+                   dossier::text || '/%', predicat) into vu_chef;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    execute format('select coalesce(string_agg(split_part(o.name, ''/'', 2), '','' order by o.name collate "C"), '''') from storage.objects o where o.bucket_id = ''pieces'' and o.name like %L and (%s)',
+                   dossier::text || '/%', predicat) into vu_client;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'PF3. le prédicat de la suppression, jugé sans supprimer : le chef supprimerait le fichier libre et l''orphelin, pas le fichier figé (le contrôle positif) ; le client, rien',
+      'cible', 'storage.objects (pieces)',
+      'observe', 'le chef : ' || coalesce(vu_chef, '?') || ' | le client : ' || coalesce(nullif(vu_client, ''), 'rien'),
+      'ok', vu_chef = 'libre.pdf,orphelin.pdf' and vu_client = '');
+
+    -- M-PF1 : le prédicat d'hier, le temps d'une sous-transaction.
+    begin
+      alter policy pieces_storage_delete on storage.objects
+        using (bucket_id = 'pieces' and admin_du_dossier(((storage.foldername(name))[1])::uuid));
+      perform set_config('search_path', '', true);
+      select pg_get_expr(p.polqual, p.polrelid) into predicat from pg_policy p
+       where p.polrelid = 'storage.objects'::regclass and p.polname = 'pieces_storage_delete';
+      perform set_config('search_path', chemin_avant, true);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      execute format('select coalesce(string_agg(split_part(o.name, ''/'', 2), '','' order by o.name collate "C"), '''') from storage.objects o where o.bucket_id = ''pieces'' and o.name like %L and (%s)',
+                     dossier::text || '/%', predicat) into muee;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('search_path', chemin_avant, true);
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PF1 — le prédicat d''hier sur la suppression du seau pieces',
+      'attendu', 'le fichier figé se supprimerait', 'observe', coalesce(muee, '?'), 'mord', coalesce(muee like '%fige.pdf%', false));
+
+    -- M-PF2 : la policy rendue à public — PF1 tombe.
+    begin
+      alter policy pieces_storage_delete on storage.objects to public;
+      perform set_config('search_path', '', true);
+      execute q_catalogue into n_mutee using attendu_predicat;
+      perform set_config('search_path', chemin_avant, true);
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    perform set_config('search_path', chemin_avant, true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PF2 — la policy de suppression du seau pieces rendue à public',
+      'attendu', 'PF1 tombe (0 policy conforme)', 'observe', coalesce(n_mutee::text, '?') || ' conforme(s)', 'mord', coalesce(n_mutee = 0, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('jd.validation_exercice', '', true);
+  perform set_config('search_path', chemin_avant, true);
+
+  -- PF1 et PF2 : le catalogue.
+  perform set_config('search_path', '', true);
+  execute q_catalogue into n using attendu_predicat;
+  select string_agg(p.polname, ',' order by p.polname collate "C") into autres from pg_policy p
+   where p.polrelid = 'storage.objects'::regclass and p.polpermissive and p.polcmd in ('d', '*')
+     and coalesce(pg_get_expr(p.polqual, p.polrelid), '') like '%''pieces''%';
+  perform set_config('search_path', chemin_avant, true);
+  verdicts := verdicts || jsonb_build_object('controle', 'PF1. pieces_storage_delete : de suppression, permissive, à authenticated seul, son prédicat mot pour mot, qui dépend de fichier_fige (lecture du catalogue)',
+    'cible', 'storage.objects', 'observe', n || ' conforme(s)', 'ok', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'PF2. aucune autre policy permissive de suppression, ni « pour tout », ne nomme le seau pieces (lecture du catalogue)',
+    'cible', 'storage.objects', 'observe', coalesce(autres, 'aucune'), 'ok', autres = 'pieces_storage_delete');
+  -- PF4 : la fonction.
+  verdicts := verdicts || jsonb_build_object('controle', 'PF4. fichier_fige : security definer, stable, son chemin de recherche ; authenticated l''exécute, ni l''anonyme ni PUBLIC (lecture du catalogue)',
+    'cible', 'fichier_fige',
+    'observe', (select p.prosecdef || '/' || p.provolatile::text || '/' || coalesce(array_to_string(p.proconfig, ','), '')
+                  from pg_proc p where p.oid = 'public.fichier_fige(text)'::regprocedure)
+      || ' | anon ' || has_function_privilege('anon', 'public.fichier_fige(text)', 'execute')
+      || ' | authenticated ' || has_function_privilege('authenticated', 'public.fichier_fige(text)', 'execute')
+      || ' | public ' || coalesce((select bool_or(a.grantee = 0) from pg_proc p cross join lateral aclexplode(p.proacl) a
+                                    where p.oid = 'public.fichier_fige(text)'::regprocedure), false),
+    'ok', (select p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=public']
+             from pg_proc p where p.oid = 'public.fichier_fige(text)'::regprocedure)
+      and not has_function_privilege('anon', 'public.fichier_fige(text)', 'execute')
+      and has_function_privilege('authenticated', 'public.fichier_fige(text)', 'execute')
+      and not coalesce((select bool_or(a.grantee = 0) from pg_proc p cross join lateral aclexplode(p.proacl) a
+                         where p.oid = 'public.fichier_fige(text)'::regprocedure), false));
+  verdicts := verdicts || jsonb_build_object('controle', 'PF. le jeu d''essai du fichier figé s''est construit, et rien n''en est resté', 'cible', 'le dossier jetable',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end
+      || ' | restés : ' || ((select count(*) from dossiers where id = dossier)
+                            + (select count(*) from storage.objects where bucket_id = 'pieces' and name like dossier::text || '/%')),
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id = dossier)
+      and not exists (select 1 from storage.objects where bucket_id = 'pieces' and name like dossier::text || '/%'));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $pf$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

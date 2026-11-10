@@ -22,6 +22,13 @@ const etat = {
   // Le drapeau du logo des factures (étape A5c1), lu à chaque suppression : ses deux états se jouent ici, l'état réel
   // par défaut.
   logo: false,
+  // INAL1 (ligne 44) : les fichiers qu'une ligne figée retient tant que le dossier existe — `remove` les tait, sans
+  // erreur, comme la policy écarte une ligne. La ligne du dossier partie, le stockage les rend au super-administrateur
+  // (« tout ») et ne rend plus rien d'un dossier supprimé à un chef qui ne l'est pas (« rien »).
+  figes: new Set<string>(),
+  apresLaLigne: 'tout' as 'tout' | 'rien',
+  dossierParti: false,
+  secondLeve: false,
 }
 const journal: { action: string; cible: string }[] = []
 // Les lectures du stockage, seau et chemin : un seau qu'on ne doit pas lire ne se lit pas.
@@ -39,6 +46,7 @@ vi.mock('./supabase', () => ({
       delete: () => ({
         eq: (_col: string, id: string) => {
           journal.push({ action: 'delete:dossiers', cible: id })
+          if (!etat.deleteError) etat.dossierParti = true
           return Promise.resolve({ error: etat.deleteError })
         },
       }),
@@ -60,8 +68,11 @@ vi.mock('./supabase', () => ({
         },
         remove: (chemins: string[]) => {
           journal.push({ action: `remove:${bucket}`, cible: chemins.join(',') })
+          if (etat.dossierParti && etat.secondLeve) throw new Error('réseau coupé au second passage')
           if (etat.removeError) return Promise.resolve({ data: null, error: etat.removeError })
-          const retires = etat.removePartiel ? chemins.slice(0, 1) : chemins
+          if (etat.dossierParti && etat.apresLaLigne === 'rien') return Promise.resolve({ data: [], error: null })
+          const permis = etat.dossierParti ? chemins : chemins.filter((c) => !etat.figes.has(c))
+          const retires = etat.removePartiel ? permis.slice(0, 1) : permis
           return Promise.resolve({ data: retires.map((name) => ({ name })), error: null })
         },
       }),
@@ -84,6 +95,10 @@ beforeEach(() => {
   etat.listeLeve = false
   etat.deleteError = null
   etat.logo = LOGO_REEL
+  etat.figes = new Set()
+  etat.apresLaLigne = 'tout'
+  etat.dossierParti = false
+  etat.secondLeve = false
   journal.length = 0
   listes.length = 0
 })
@@ -123,11 +138,12 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
     etat.entrees[`pieces/${D}`] = fichiers(3)
     etat.removePartiel = true
     const bilan = await supprimerDossierDefinitivement(D)
-    expect(bilan.retires).toBe(1)
+    // Le second passage (INAL1) reprend les deux restés et en retire un de plus : il en reste un.
+    expect(bilan.retires).toBe(2)
     expect(bilan.echecs).toEqual([])
-    // Aucune erreur nulle part, et pourtant deux fichiers sont restés : c'est le compte qui le dit.
+    // Aucune erreur nulle part, et pourtant un fichier est resté : c'est le compte qui le dit.
     expect(nettoyageAMontrer(bilan)).toBe(true)
-    expect(messageNettoyage(bilan)).toContain('2 fichiers')
+    expect(messageNettoyage(bilan)).toContain("1 fichier n'a pas pu être retiré")
   })
 
   it('pagine au-delà du plafond de 100 de list()', async () => {
@@ -215,6 +231,74 @@ describe('le seau des ventes, selon que sa migration est en base', () => {
 
   it('l’état réel du drapeau est celui que ces cas jouent par défaut', () => {
     expect(etat.logo).toBe(LOGO_REEL)
+  })
+})
+
+// INAL1 (ligne 44, la migration `piece_figee_dans_le_stockage`) : le stockage garde le fichier d'une pièce figée tant que
+// sa ligne existe. Le premier passage le laisse, sans erreur ; la ligne du dossier partie, un second passage le reprend.
+describe('le second passage, après la ligne du dossier (INAL1)', () => {
+  const figes = () => {
+    etat.entrees[`pieces/${D}`] = fichiers(3)
+    etat.figes = new Set([`${D}/piece-0.pdf`, `${D}/piece-2.pdf`])
+  }
+
+  it('le super-administrateur : les fichiers figés partent au second passage, APRÈS la ligne, et seulement eux', async () => {
+    figes()
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan).toEqual({ demandes: 3, retires: 3, echecs: [], inventaireIncomplet: false })
+    expect(nettoyageAMontrer(bilan)).toBe(false)
+    expect(journal).toEqual([
+      { action: 'remove:pieces', cible: `${D}/piece-0.pdf,${D}/piece-1.pdf,${D}/piece-2.pdf` },
+      { action: 'delete:dossiers', cible: D },
+      { action: 'remove:pieces', cible: `${D}/piece-0.pdf,${D}/piece-2.pdf` },
+    ])
+  })
+
+  it('un chef qui n’est pas super-administrateur : le second passage ne retire rien, et le bilan le dit', async () => {
+    figes()
+    etat.apresLaLigne = 'rien'
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan).toEqual({ demandes: 3, retires: 1, echecs: [], inventaireIncomplet: false })
+    expect(nettoyageAMontrer(bilan)).toBe(true)
+    expect(messageNettoyage(bilan)).toContain('2 fichiers')
+    expect(messageNettoyage(bilan)).toContain("l'administrateur")
+    expect(journal.filter((j) => j.action === 'delete:dossiers')).toHaveLength(1)
+  })
+
+  it('aucun second passage dans un seau que le premier a vidé', async () => {
+    figes()
+    etat.entrees[`packs/${D}`] = [{ name: 'pack.zip', id: 'z1' }]
+    await supprimerDossierDefinitivement(D)
+    expect(journal.filter((j) => j.action === 'remove:packs')).toHaveLength(1)
+    expect(journal.filter((j) => j.action === 'remove:pieces')).toHaveLength(2)
+  })
+
+  it('aucun second passage quand la ligne du dossier ne part pas : les fichiers d’un dossier qui reste restent', async () => {
+    figes()
+    etat.deleteError = new Error('new row violates row-level security policy')
+    await expect(supprimerDossierDefinitivement(D)).rejects.toThrow('row-level security')
+    expect(journal.map((j) => j.action)).toEqual(['remove:pieces', 'delete:dossiers'])
+  })
+
+  it('un second passage qui lève ne fait pas lever la suppression : le bilan dit l’inventaire douteux', async () => {
+    figes()
+    etat.secondLeve = true
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan.inventaireIncomplet).toBe(true)
+    expect(bilan.retires).toBe(1)
+    expect(bilan.echecs.map((e) => e.raison)).toEqual(['réseau coupé au second passage'])
+    expect(messageNettoyage(bilan)).toContain('on ne sait pas combien de fichiers y restent')
+  })
+
+  it('un chemin qui échoue aux deux passages ne compte qu’un échec, sous la raison du second', async () => {
+    etat.entrees[`pieces/${D}`] = fichiers(2)
+    etat.removeError = new Error('objet verrouillé')
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan.echecs).toEqual([
+      { chemin: `${D}/piece-0.pdf`, raison: 'objet verrouillé' },
+      { chemin: `${D}/piece-1.pdf`, raison: 'objet verrouillé' },
+    ])
+    expect(journal.map((j) => j.action)).toEqual(['remove:pieces', 'delete:dossiers', 'remove:pieces'])
   })
 })
 
