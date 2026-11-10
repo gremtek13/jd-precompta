@@ -17,6 +17,7 @@
 // 10 immobilisations ; le brouillon est COMPOSÉ par les moteurs de l'application (pièces, caisse, ventes facturées), jamais
 // inventé ligne à ligne. Chaque mesure est la médiane de cinq passes, en millisecondes, après une passe de chauffe.
 
+import { AUCUNE_PIECE_CITEE } from '../../src/lib/facturesSources'
 import { analyserAppariements, candidatsPieces } from '../../src/lib/appariementBanque'
 import { bilanDeLExercice } from '../../src/lib/bilan'
 import { ecritureDeLOperation, soldesDeLaCaisse, premierJourNegatif, type EtatDeLaCaisse } from '../../src/lib/caisse'
@@ -286,12 +287,12 @@ function mesurer(k: number): Map<string, number | string> {
     const paiements = paiementsDesPieces(a.lignes, [], [], paiementsDeLaCaisse)
     const parts = partsDuReleve(a.lignes, CATEGORIES, [], assujetti)
     const comptees = cotisationsComptees(a.cotisations, a.lignes, MODELE.mode)
-    const sourcesVentes = { dossierId: D, factures: a.factures, lignes: a.lignesDeFacture, encaissements: a.encaissements, parts: a.parts, acomptes: SANS_ACOMPTE }
+    const sourcesVentes = { dossierId: D, factures: a.factures, lignes: a.lignesDeFacture, encaissements: a.encaissements, parts: a.parts, acomptes: SANS_ACOMPTE, piecesCitees: AUCUNE_PIECE_CITEE }
     const ventes = ventesFacturees(sourcesVentes)
     const mouvementsDesEncaissements = a.lignes.filter((l) => l.encaissements_de_factures)
     const sourcesEcritures: SourcesDesEcrituresDeVente = {
       dossierId: D, factures: a.factures, lignes: a.lignesDeFacture, encaissements: a.encaissements, parts: a.parts,
-      mouvements: mouvementsDesEncaissements, exemplaires: [], reprises: [],
+      mouvements: mouvementsDesEncaissements, exemplaires: [], reprises: [], piecesCitees: AUCUNE_PIECE_CITEE,
     }
     const pourLa2035 = ecrituresDesVentesPourLa2035({
       dossierId: D, ventesParLesFactures: true, facturesSources: ventes.sources, lecture: { dossierId: D, etat: 'lue', sources: sourcesEcritures },
@@ -342,7 +343,7 @@ function mesurer(k: number): Map<string, number | string> {
       t('FEC (numérotation et format)', () => formaterFec(numeroterFec(brouillon, a.pieces, CATEGORIES, [], MODELE, a.lignes, composition.ecritures, operationsDeCaisse, CHAMPS_BNC_NON_EXPORTES), new Map(), MODELE.mode))
       t('piste d\'audit', () => pisteAudit(brouillon, a.pieces, a.lignes, [], {
         immobilisations: a.immobilisations, factures: a.pieces, vehicules: [], caisse: operationsDeCaisse, plan: PLAN,
-        ventes: { ecritures: composition.ecritures, factures: a.factures, encaissements: a.encaissements, exemplaires: [], transmissions: [] },
+        ventes: { ecritures: composition.ecritures, factures: a.factures, encaissements: a.encaissements, exemplaires: [], transmissions: [], piecesCitees: AUCUNE_PIECE_CITEE },
       }))
       t('balance', () => calculerBalance(brouillon, CATEGORIES, []))
       t('bilan', () => bilanDeLExercice({ exercice: ANNEE, ecritures: brouillon, categories: CATEGORIES, reprise: [], reportes: [], anneesValidees: [], pieces: a.pieces, modele: MODELE, aujourdHui: `${ANNEE}-11-07` }))
@@ -373,7 +374,7 @@ function mesurer(k: number): Map<string, number | string> {
         lectureIncomplete: null, piecesValidees: a.pieces, piecesAValider: [], categories: CATEGORIES, immobilisations: a.immobilisations,
         natures: [], ecritures: brouillon, lignes: a.lignes, ventilations: [], reglements: [], encaissees: [], cotisations: a.cotisations,
         vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'mensuelle',
-        controlesReleves: [], doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources,
+        controlesReleves: [], doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
         etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, anneesValidees: [], ventesParLesFactures: true }),
         ventesDeLaChecklist: ventesDeLaChecklist(lectureDesSources, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
         declaration, saisies2035: AUCUNE_SAISIE_2035, concordance,
