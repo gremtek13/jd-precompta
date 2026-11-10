@@ -1,4 +1,5 @@
--- RETOUR ARRIÈRE de 20261110130000_factures_reprises_encaissements (ligne 51.5, étape A8b : les encaissements et l'avoir
+-- RETOUR ARRIÈRE de factures_reprises_encaissements (supabase/schema/20261110143044_factures_reprises_encaissements.sql,
+-- en production depuis le 10/11/2026 ; ligne 51.5, étape A8b : les encaissements et l'avoir
 -- d'une facture reprise). PRÉPARÉ le 10/11/2026, à ne coller que sur décision du cabinet. Il rend les sept fonctions
 -- remplacées au texte de l'export (calcul_vente_facturee, ecriture_attendue_vente_facturee,
 -- ecritures_attendues_de_la_periode, enregistrer_encaissement, enregistrer_facture, garder_encaissement_facture,

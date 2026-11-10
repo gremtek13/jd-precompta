@@ -2,8 +2,8 @@
 // d'une facture de l'ancien logiciel est déjà une pièce de vente du dossier, la facture reprise le cite, et la pièce ne se
 // règle plus par un mouvement, une part d'un virement groupé, une opération de caisse ni une écriture datés de la reprise des
 // factures ou d'après — ses paiements d'après passent par le registre de la facture reprise (A8b). La base le tient : la
-// migration `piece_d_une_facture_reprise` (supabase/preparees/20261110140000_piece_d_une_facture_reprise.sql, PRÉPARÉE le
-// 10/11/2026, pas appliquée, après A8a, A9a et A8b). Ce module en redit les refus, aux mots de la base et dans l'ordre où ses
+// migration `piece_d_une_facture_reprise` (supabase/schema/20261110143243_piece_d_une_facture_reprise.sql, préparée et
+// appliquée par l'outil le 10/11/2026, après A8a, A9a et A8b). Ce module en redit les refus, aux mots de la base et dans l'ordre où ses
 // fonctions les disent (pieceDUneFactureReprise.test.ts les confronte au texte de la migration), et le jugement d'une date de
 // règlement, pour qu'un écran (A8d) les dise avant le clic. Pur : il n'importe jamais `supabase.ts`. Aucun écran ne s'en sert
 // encore. A8Q5-Q1 (le 10/11/2026, « Oui, citer ; retrait refusé ») : une pièce que la validation d'un exercice a figée se cite
@@ -11,10 +11,11 @@
 // retire pas : le refus « figée » n'est plus que celui du retrait.
 
 /**
- * La migration est-elle en base ? Baissé : la table des liens n'existe pas en production, et la lire ferait échouer toute
- * sauvegarde (src/lib/sauvegarde.ts la met au plan derrière ce drapeau). Il se lève le jour où la migration est appliquée.
+ * La migration est-elle en base ? Levé le 10/11/2026, le jour de son application : la table des liens est au plan de
+ * sauvegarde (src/lib/sauvegarde.ts). Baissé, la lire aurait fait échouer toute sauvegarde ; le plan reste éprouvé sous les
+ * deux états (sauvegardePieceDUneFactureReprise.test.ts).
  */
-export const PIECE_D_UNE_FACTURE_REPRISE_PREVUE = false
+export const PIECE_D_UNE_FACTURE_REPRISE_PREVUE: boolean = true
 
 /** La table de la migration, au plan de sauvegarde derrière le drapeau. */
 export const TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE: readonly string[] = ['pieces_des_factures_reprises']

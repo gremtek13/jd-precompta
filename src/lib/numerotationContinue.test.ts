@@ -9,6 +9,7 @@ import {
   modelesSeRecouvrent,
   motifDuModele,
   numeroDuModele,
+  CARTE_DE_LA_NUMEROTATION_OFFERTE,
   NUMEROTATION_CONTINUE_PREVUE,
   REFUS_DU_MODELE,
   refusDuModele,
@@ -77,9 +78,14 @@ function attenduDeLEtape(rang: number): string {
   return tous[tous.length - 1]
 }
 
-describe('le drapeau de la migration', () => {
-  it('baissé : la migration est préparée, pas appliquée', () => {
-    expect(NUMEROTATION_CONTINUE_PREVUE).toBe(false)
+describe('les drapeaux de la migration et de la carte', () => {
+  it('levé : la migration est dans l’export, sous la version de sa ligne d’historique (20261110143033)', () => {
+    expect(NUMEROTATION_CONTINUE_PREVUE).toBe(true)
+    expect(existsSync(new URL('../../supabase/schema/20261110143033_numerotation_continue.sql', import.meta.url).pathname)).toBe(true)
+  })
+
+  it('la carte du cabinet reste baissée : ses trois gestes attendent la décision du cabinet', () => {
+    expect(CARTE_DE_LA_NUMEROTATION_OFFERTE).toBe(false)
   })
 })
 

@@ -174,7 +174,7 @@ function dossier(o: Partial<Dossier> = {}): Dossier {
     archive: false, created_at: '2026-01-05T09:00:00Z', code_email: 'abc123', assujetti_tva: true,
     statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false, tva_periodicite: 'trimestrielle',
     tva_sur_debits: false, mode_comptable: 'tresorerie', compte_notes_de_frais: '108000', code_naf: null, libelle_naf: null,
-    adresse: null, ventes_par_les_factures: false, ventes_par_les_factures_depuis: null, categorie_recettes_client: null, ...o,
+    adresse: null, ventes_par_les_factures: false, ventes_par_les_factures_depuis: null, reprise_des_factures_le: null, categorie_recettes_client: null, ...o,
   }
 }
 
@@ -622,7 +622,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/SaisiesDuCabinet2035Card.tsx': 'reçoit la lecture des saisies de la Clôture (drapeau `SAISIES_2035_EXPORTEES` '
     + 'baissé : non montée) ; son test (SaisiesDuCabinet2035Card.test.tsx) éprouve « chargement… » et aucun geste sur une lecture '
     + 'incomplète ; n’écrit que sur « Enregistrer les saisies »',
-  'pages/dossier/NumerotationDesFacturesCard.tsx': 'drapeau `NUMEROTATION_CONTINUE_PREVUE` baissé : ne rend ni ne lit rien ; levé, son propre '
+  'pages/dossier/NumerotationDesFacturesCard.tsx': 'drapeau `CARTE_DE_LA_NUMEROTATION_OFFERTE` baissé : ne rend ni ne lit rien ; levé, son propre '
     + 'test (NumerotationDesFacturesCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun geste sur une lecture illisible ou '
     + 'pour un membre de l’équipe ; n’écrit que sur « Poser le modèle », « Confirmer la fin » et « Lever ces trous »',
   'pages/dossier/ParametresDesCotisationsCard.tsx':'reçoit la lecture des paramètres des cotisations du volet social '

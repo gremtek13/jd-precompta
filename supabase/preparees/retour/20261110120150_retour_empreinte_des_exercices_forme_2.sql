@@ -1,4 +1,5 @@
--- LE RETOUR DE `empreinte_des_exercices_forme_2` (supabase/preparees/20261110120100, INAL2 ; PRÉPARÉ, comme elle) : il
+-- LE RETOUR DE `empreinte_des_exercices_forme_2` (supabase/schema/20261110124917, INAL2, en production depuis le
+-- 10/11/2026 ; le retour reste PRÉPARÉ) : il
 -- rend `valider_exercice` et `verifier_exercice_valide` telles que l'export les porte (`validation_des_paiements_par_la_caisse`
 -- et `validation_des_exercices`, recopiées au caractère près), puis retire la fonction de forme 2, la contrainte et la
 -- colonne `forme_empreinte`. Il ne se joue que tant qu'aucun exercice n'a été validé en forme 2 : sa garde le refuse sinon

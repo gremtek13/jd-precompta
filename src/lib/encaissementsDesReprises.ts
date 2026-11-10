@@ -1,6 +1,6 @@
 // LES ENCAISSEMENTS ET L'AVOIR D'UNE FACTURE REPRISE (ligne 51.5, étape A8b ; EC3-Q9, A8-Q1, A8-Q2, A8-Q6). La migration
-// `factures_reprises_encaissements` (supabase/preparees/20261110130000_factures_reprises_encaissements.sql, PRÉPARÉE, pas
-// appliquée, à COLLER après A8a et A9a) ouvre à une facture reprise de l'ancien logiciel le registre de ses encaissements,
+// `factures_reprises_encaissements` (supabase/schema/20261110143044_factures_reprises_encaissements.sql, collée par le
+// cabinet le 10/11/2026 après A8a et A9a) ouvre à une facture reprise de l'ancien logiciel le registre de ses encaissements,
 // la règle du cumul (`calcul_vente_facturee`, `ecritures_attendues_de_la_periode`) et l'avoir que l'application émet sur
 // elle (`enregistrer_facture`). Le récit : HISTORIQUE.md, « A8B : LES ENCAISSEMENTS ET L'AVOIR D'UNE FACTURE REPRISE, EN
 // BASE (PRÉPARÉE, PAS APPLIQUÉE) » ; l'essai : supabase/essais/encaissementsDesReprises.sql.

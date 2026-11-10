@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAnnee } from '../../context/AnneeContext'
 import { useAuth } from '../../context/AuthContext'
-import { NUMEROTATION_CONTINUE_PREVUE, numeroDuModele } from '../../lib/numerotationContinue'
+import { CARTE_DE_LA_NUMEROTATION_OFFERTE, NUMEROTATION_CONTINUE_PREVUE, numeroDuModele } from '../../lib/numerotationContinue'
 import {
   EMPLACEMENTS, carteDesSeries, confirmationDeLaFin, confirmationDeLaPose, confirmationDesTrous, jugerLaFin, jugerLaPose,
   jugerLesTrous, titreDEmplacement, type SerieAffichee,
@@ -12,7 +12,8 @@ import {
 
 // LA CARTE « NUMÉROTATION DES FACTURES » DE L'ONGLET INFORMATIONS (ligne 51.5, étape A9b ; HISTORIQUE.md, « A9A : LA
 // NUMÉROTATION QUI CONTINUE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) » et « A9B : LA CARTE DE LA NUMÉROTATION, DERRIÈRE SON DRAPEAU »),
-// derrière `NUMEROTATION_CONTINUE_PREVUE` : baissé, elle ne rend rien et ne lit rien (la migration d'A9a n'est pas en base).
+// derrière `CARTE_DE_LA_NUMEROTATION_OFFERTE` (la décision du cabinet) et `NUMEROTATION_CONTINUE_PREVUE` (la migration d'A9a,
+// en base depuis le 10/11/2026) : l'un baissé, elle ne rend rien et ne lit rien.
 // Elle dit, pour chaque série — les factures et les avoirs, du client et du cabinet mandataire —, le modèle en vigueur et un
 // exemple de numéro, la fin confirmée de la suite reprise, les trous nommés et ceux qui ont été levés, avec leur motif ; et
 // offre au chef du cabinet seul (A9A-Q2) de poser un modèle, de confirmer la fin d'une suite reprise (A9A-Q3) et de lever des
@@ -23,7 +24,7 @@ import {
 // l'en-tête (`useAnnee`) : la série d'un compteur annuel est celle de son année.
 
 export default function NumerotationDesFacturesCard({ dossierId }: { dossierId: string }) {
-  if (!NUMEROTATION_CONTINUE_PREVUE) return null
+  if (!NUMEROTATION_CONTINUE_PREVUE || !CARTE_DE_LA_NUMEROTATION_OFFERTE) return null
   return <CarteDeLaNumerotation dossierId={dossierId} />
 }
 

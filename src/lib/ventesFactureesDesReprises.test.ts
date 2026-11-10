@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LigneDeFacture } from './encaissementsFactures'
-import { definitionApresLesPreparees, MIGRATIONS_DES_FACTURES_REPRISES } from '../test/schema'
+import { derniereDefinitionSql } from '../test/schema'
 import {
   SANS_ACOMPTE, prorataArrondi, recettesFactureesDeLaPeriode, ventesFacturees, type EncaissementVendu, type FactureVendue,
   type PartVendue, type RepriseVendue, type SourcesVentesFacturees,
@@ -66,7 +66,7 @@ describe('drapeau levé : la règle de `calcul_vente_facturee` après les trois 
   })
 
   it('le texte en vigueur ferme le document et les exigibilités d’avant la reprise sur l’état « importee »', () => {
-    const sql = definitionApresLesPreparees('calcul_vente_facturee', MIGRATIONS_DES_FACTURES_REPRISES)
+    const sql = derniereDefinitionSql('calcul_vente_facturee')
     expect(sql).toContain("f.statut in ('validee', 'importee')")
     expect(sql).toContain("v_reprise := v_facture.statut = 'importee';")
     expect(sql).toContain('montants_par_taux_du_document(p_facture_id)')

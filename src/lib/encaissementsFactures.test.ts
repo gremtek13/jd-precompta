@@ -39,7 +39,8 @@ const ESSAI_P2 = readFileSync(new URL('../../supabase/essais/ventesClient.sql', 
 
 // Les refus que l'EXPORT doit porter, dans l'ordre : tous, le refus neuf de l'étape P2 compris depuis que sa migration
 // est en base (le 10/10/2026, `VENTES_DU_CLIENT_EXPORTEES`) ; sans lui tant qu'elle n'y était pas.
-const REFUS_DE_L_EXPORT = REFUS_ENREGISTREMENT.filter((r) => VENTES_DU_CLIENT_EXPORTEES || r.cle !== 'mouvement_sans_banque')
+// Depuis le 10/11/2026 (A8b dans l'export, `FACTURES_IMPORTEES_PREVUES` levé) : avec les quatre refus d'une facture reprise.
+const REFUS_DE_L_EXPORT = refusEnregistrementExportes().filter((r) => VENTES_DU_CLIENT_EXPORTEES || r.cle !== 'mouvement_sans_banque')
 
 const D = 'd1'
 const AUJOURD_HUI = '2027-11-02'
@@ -365,7 +366,7 @@ describe('les refus de la base, tels que la migration les écrit', () => {
     expect(messagesSql(sql)).toHaveLength((VENTES_DU_CLIENT_EXPORTEES ? 30 : 29) + reprises)
     const deLExport = refusEnregistrementExportes().filter((r) => VENTES_DU_CLIENT_EXPORTEES || r.cle !== 'mouvement_sans_banque')
     expect(deLExport.map((r) => r.modele)).toEqual(messagesSql(sql))
-    expect(REFUS_DE_L_EXPORT).toHaveLength(REFUS_ENREGISTREMENT.length - (VENTES_DU_CLIENT_EXPORTEES ? 0 : 1))
+    expect(REFUS_DE_L_EXPORT).toHaveLength(refusEnregistrementExportes().length - (VENTES_DU_CLIENT_EXPORTEES ? 0 : 1))
     expect(new Set(REFUS_ENREGISTREMENT.map((r) => r.cle)).size).toBe(REFUS_ENREGISTREMENT.length)
   })
 
@@ -431,6 +432,11 @@ describe('les refus de la base, tels que la migration les écrit', () => {
       plafond_facture_net: [MONTANT('greatest(v_plafond - v_deja, 0)')],
       plafond_taux: [TAUX('v_part.taux'), MONTANT('greatest(v_ttc / 100.0 - v_deja, 0)')],
       plafond_taux_net: [TAUX('v_part.taux'), MONTANT('greatest((v_ttc - v_credite) / 100.0 - v_deja, 0)')],
+      // Les quatre refus d'une facture reprise (A8b, dans l'export depuis le 10/11/2026).
+      reprise_mixte: ['v_facture.numero'],
+      avant_la_reprise: ['v_facture.numero', "to_char(v_reprise, 'DD/MM/YYYY')"],
+      plafond_reprise: [MONTANT('greatest(v_plafond - v_deja, 0)')],
+      plafond_reprise_taux: [TAUX('v_part.taux'), MONTANT('greatest((v_ttc - v_credite - v_credite_repris_taux - v_avant_taux) / 100.0 - v_deja, 0)')],
     }
     const args = argumentsSql(sql)
     expect(args).toHaveLength(REFUS_DE_L_EXPORT.length)
@@ -1076,8 +1082,10 @@ describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne v
   it('chaque refus, d’hier ou neuf, sous le code de sa famille', () => {
     for (const [nom, liste] of LISTES) {
       const codes = codesSql(derniereDefinitionSql(nom))
-      expect(codes, nom).toHaveLength(liste.length)
-      liste.forEach((r, i) => expect(codes[i], `${nom} ${r.cle}`).toBe(codeDeLaFamille(r.cle)))
+      // `enregistrer_encaissement` : avec ses refus d'une facture reprise (A8b), dans l'export depuis le 10/11/2026.
+      const exportee = nom === 'enregistrer_encaissement' ? refusEnregistrementExportes() : liste
+      expect(codes, nom).toHaveLength(exportee.length)
+      exportee.forEach((r, i) => expect(codes[i], `${nom} ${r.cle}`).toBe(codeDeLaFamille(r.cle)))
     }
   })
 

@@ -11,7 +11,7 @@ import type { LigneDeFacture } from './encaissementsFactures'
 import { motDuDocument } from './facturesReprises'
 import { carteDeVente, mouvementDeVente, type EncaissementDuMouvementLu } from './mouvementsDesVentes'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import { definitionApresLesPreparees, MIGRATIONS_DES_FACTURES_REPRISES } from '../test/schema'
+import { derniereDefinitionSql } from '../test/schema'
 import { LIBELLE_MOTIF_VENTE, MOTIFS_DU_MODULE_SEUL, type EncaissementVendu, type MotifVenteEcartee, type PartVendue, type RepriseVendue } from './ventesFacturees'
 import { nomDuDocument } from './ventesFactureesDesExports'
 import type { ModeComptable } from './types'
@@ -80,7 +80,7 @@ const enClair = (e: EcritureVenteFacturee) => ({
 
 describe('le texte en vigueur après les trois migrations : ce que la composition redit', () => {
   it('`ecriture_attendue_vente_facturee` : une reprise source compte le mouvement comme une facture validée source', () => {
-    const sql = definitionApresLesPreparees('ecriture_attendue_vente_facturee', MIGRATIONS_DES_FACTURES_REPRISES)
+    const sql = derniereDefinitionSql('ecriture_attendue_vente_facturee')
     expect(sql.match(/f\.statut in \('validee', 'importee'\) and f\.source_de_la_vente/g)).toHaveLength(2)
     // Ses motifs sont ceux de la composition, et aucun n'est celui que le module oppose seul.
     const motifs = new Set([...sql.matchAll(/motif := '(\w+)'/g)].map((m) => m[1]))
@@ -90,14 +90,14 @@ describe('le texte en vigueur après les trois migrations : ce que la compositio
   })
 
   it('`ecritures_attendues_de_la_periode` : la même règle, recomposée d’un bloc — ni document ni exigibilité d’avant', () => {
-    const sql = definitionApresLesPreparees('ecritures_attendues_de_la_periode', MIGRATIONS_DES_FACTURES_REPRISES)
+    const sql = derniereDefinitionSql('ecritures_attendues_de_la_periode')
     expect(sql).toContain("f.statut = 'importee' as reprise")
     expect(sql).toContain("f.statut in ('validee', 'importee') and f.source_de_la_vente")
     expect(sql).toMatch(/where not x\.reprise/)
   })
 
   it('`ecrire_vente_facturee`, que les préparées ne touchent pas : les motifs d’une facture écartée, sans ceux du module seul', () => {
-    const sql = definitionApresLesPreparees('ecrire_vente_facturee', MIGRATIONS_DES_FACTURES_REPRISES)
+    const sql = derniereDefinitionSql('ecrire_vente_facturee')
     const libelles = Object.fromEntries([...sql.matchAll(/when '(\w+)' then '((?:[^']|'')*)'/g)].map((m) => [m[1], m[2].replace(/''/g, "'")]))
     const deLaBase = Object.fromEntries(Object.entries(LIBELLE_MOTIF_VENTE)
       .filter(([m]) => !MOTIFS_DU_MODULE_SEUL.includes(m as MotifVenteEcartee)))

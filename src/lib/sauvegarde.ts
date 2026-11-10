@@ -182,9 +182,10 @@ export function auPlanDesSaisies2035(table: string, enBase: boolean): boolean {
   return enBase || !TABLES_DES_SAISIES_2035.includes(table)
 }
 
-// LES FACTURES REPRISES (ligne 51.5, étape A8a ; migration `factures_importees`, PRÉPARÉE, pas appliquée) : le lot d'un import
-// et une ligne par facture reprise de l'ancien logiciel. Sous le drapeau de la migration (`FACTURES_IMPORTEES_PREVUES`,
-// src/lib/facturesImportees.ts), baissé : la production n'a pas les tables, et les lire ferait échouer toute sauvegarde. Leurs
+// LES FACTURES REPRISES (ligne 51.5, étape A8a ; migration `factures_importees`, en production depuis le 10/11/2026) : le lot
+// d'un import et une ligne par facture reprise de l'ancien logiciel. Sous le drapeau de la migration
+// (`FACTURES_IMPORTEES_PREVUES`, src/lib/facturesImportees.ts), levé le 10/11/2026 : baissé, il les tenait hors du plan tant
+// que la production n'avait pas les tables, dont la lecture aurait fait échouer toute sauvegarde. Leurs
 // relations (le dossier en cascade ; la facture en cascade ; le lot et la facture d'origine d'un avoir repris SANS ACTION : un
 // import ne part qu'en entier, par `retirer_import`, ou avec son dossier), leur rang (juste après les factures, le lot avant
 // ses factures), leurs chemins ; aucune vague, une ligne n'en pointe aucune de sa table ; la clé de `factures_importees` est
@@ -199,11 +200,10 @@ export function auPlanDesFacturesImportees(table: string, prevues: boolean): boo
   return prevues || !TABLES_DES_FACTURES_IMPORTEES.includes(table)
 }
 
-// LA NUMÉROTATION QUI CONTINUE (ligne 51.5, étape A9a ; migration `numerotation_continue`, PRÉPARÉE, pas appliquée, par-dessus
-// A8a) : le modèle de numéro d'un dossier (`modeles_numerotation`) et les paroles du cabinet sur la suite reprise d'une série
+// LA NUMÉROTATION QUI CONTINUE (ligne 51.5, étape A9a ; migration `numerotation_continue`, en production depuis le 10/11/2026,
+// par-dessus A8a) : le modèle de numéro d'un dossier (`modeles_numerotation`) et les paroles du cabinet sur la suite reprise d'une série
 // — la fin confirmée, les trous levés (`continuite_des_series`). Sous le drapeau de la migration (`NUMEROTATION_CONTINUE_PREVUE`,
-// src/lib/numerotationContinue.ts), baissé : la production n'a pas les tables, et les lire ferait échouer toute sauvegarde.
-// Leur relation au dossier (cascade), leur rang (juste après les factures reprises), leurs chemins ; aucune vague ; leur clé
+// src/lib/numerotationContinue.ts), levé le 10/11/2026 (baissé, il les tenait hors du plan avant la migration). Leur relation au dossier (cascade), leur rang (juste après les factures reprises), leurs chemins ; aucune vague ; leur clé
 // est la commune, `id`. La restauration les réinsère par la porte que leurs gardes et leurs policies ouvrent au
 // super-administrateur, dans un dossier sans numérotation (`restauration_des_factures`), comme les factures ; le compteur
 // (`facture_numerotation`, sans policy) ne se sauvegarde pas, la numérotation reprend du plus haut numéro de chaque série.
@@ -215,11 +215,11 @@ export function auPlanDeLaNumerotationContinue(table: string, prevue: boolean): 
   return prevue || !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(table)
 }
 
-// LA PIÈCE D'UNE FACTURE REPRISE (ligne 51.5, A8-Q5 ; migration `piece_d_une_facture_reprise`, PRÉPARÉE, pas appliquée,
-// par-dessus A8a, A9a et A8b) : le lien d'une facture reprise à la pièce de vente qui en est l'original
+// LA PIÈCE D'UNE FACTURE REPRISE (ligne 51.5, A8-Q5 ; migration `piece_d_une_facture_reprise`, en production depuis le
+// 10/11/2026, par-dessus A8a, A9a et A8b) : le lien d'une facture reprise à la pièce de vente qui en est l'original
 // (`pieces_des_factures_reprises`). Sous le drapeau de la migration (`PIECE_D_UNE_FACTURE_REPRISE_PREVUE`,
-// src/lib/pieceDUneFactureReprise.ts), baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde.
-// Ses relations (le dossier, la facture reprise et la pièce, en cascade : un lien part avec chacun d'eux), son rang (après
+// src/lib/pieceDUneFactureReprise.ts), levé le 10/11/2026 (baissé, il la tenait hors du plan avant la migration). Ses
+// relations (le dossier, la facture reprise et la pièce, en cascade : un lien part avec chacun d'eux), son rang (après
 // les pièces, les mouvements, les parts, la caisse et les écritures, que sa garde des règlements ne juge donc pas contre un
 // lien à la restauration ; juste après `ecritures_brouillon`), son chemin ; aucune vague ; sa clé est
 // la commune, `id`. La restauration la réinsère par la porte que sa garde et sa policy ouvrent au super-administrateur, dans

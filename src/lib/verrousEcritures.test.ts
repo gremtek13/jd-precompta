@@ -148,7 +148,7 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
   'lib:lireLaNumerotation': {
     nature: 'lecture',
     raison: '`etat_de_la_numerotation` (A9b, `stable`) puis deux lectures `lireTout` : l’état des quatre séries, les paroles du '
-      + 'cabinet et les modèles posés, derrière `NUMEROTATION_CONTINUE_PREVUE` ; rien n’est écrit (les trois gestes passent '
+      + 'cabinet et les modèles posés, derrière `CARTE_DE_LA_NUMEROTATION_OFFERTE` ; rien n’est écrit (les trois gestes passent '
       + '`poserLeModele`, `confirmerLaFin` et `leverLesTrous`, sous le verrou de la carte).',
   },
   'lib:useExigenceDeuxFacteurs': {

@@ -91,8 +91,9 @@ describe('la migration se tient', () => {
       expect(MIGRATION).toContain(`revoke all on function public.${nom}() from public, anon, authenticated, service_role;`)
     }
   })
-  it('le drapeau est baissé tant que la migration est préparée, et nomme sa table', () => {
-    expect(PIECE_D_UNE_FACTURE_REPRISE_PREVUE).toBe(false)
+  it('le drapeau est levé, la migration dans l’export sous sa version de production, et nomme sa table', () => {
+    expect(PIECE_D_UNE_FACTURE_REPRISE_PREVUE).toBe(true)
+    expect(existsSync(new URL('../../supabase/schema/20261110143243_piece_d_une_facture_reprise.sql', import.meta.url).pathname)).toBe(true)
     expect(TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE).toEqual(['pieces_des_factures_reprises'])
     expect(MIGRATION).toContain('create table public.pieces_des_factures_reprises (')
   })

@@ -15,7 +15,7 @@ const appels = vi.hoisted(() => ({ lire: vi.fn(), poser: vi.fn(), confirmer: vi.
 
 vi.mock('../../lib/numerotationContinue', async (original) => {
   const reel = await original<typeof import('../../lib/numerotationContinue')>()
-  return { ...reel, get NUMEROTATION_CONTINUE_PREVUE() { return etat.prevue } }
+  return { ...reel, get NUMEROTATION_CONTINUE_PREVUE() { return etat.prevue }, get CARTE_DE_LA_NUMEROTATION_OFFERTE() { return etat.prevue } }
 })
 vi.mock('../../lib/numerotationContinueLecture', () => ({
   lireLaNumerotation: appels.lire, poserLeModele: appels.poser, confirmerLaFin: appels.confirmer, leverLesTrous: appels.lever,
