@@ -364,7 +364,10 @@ describe('les essais de la base, rejoués en production', () => {
     // Vingt-deux le même jour : `empreinteDesExercices` (ligne 44, INAL2, `empreinte_des_exercices_forme_2`) entré dans la
     // famille « apres », après sa migration préparée, joué par le super-utilisateur ; SÛR au banc, sur une copie de la
     // réplique au niveau de la production. Son pendant d'INAL1, `pieceFigeeDansLeStockage`, est de réplique seulement.
-    expect(cas.length).toBe(22)
+    // Vingt-trois le même jour : `encaissementsDesReprises` (A8b, `factures_reprises_encaissements`) entré dans la famille
+    // « apres », après sa migration préparée, par-dessus celles d'A8a et d'A9a (le modèle « apres » porte les trois, dans cet
+    // ordre) ; SÛR au banc, sur une copie de la réplique au niveau de la production.
+    expect(cas.length).toBe(23)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
