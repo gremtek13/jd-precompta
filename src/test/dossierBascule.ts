@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from '../lib/facturesSources'
 import { ecrituresDesVentesFacturees, lignesAuBrouillon, type EcrituresDesVentesFacturees } from '../lib/ecrituresVentesFacturees'
 import type {
   EncaissementDesEcritures, FactureDesEcritures, MouvementDesEcritures, SourcesDesEcrituresDeVente,
@@ -50,7 +51,7 @@ export function sourcesDuDossierBascule(): SourcesDesEcrituresDeVente {
     encaissement({ id: 'e1', facture_id: 'f1', date_encaissement: '2025-11-20', montant: 120, ligne_bancaire_id: 'm1' }),
     encaissement({ id: 'e2', facture_id: 'f2', date_encaissement: '2025-11-21', montant: 100, moyen: 'cheque', ligne_bancaire_id: 'm2' }),
   ]
-  return {
+  return { piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId: D_BASCULE,
     factures: [
       facture({ id: 'f1', numero: 'F2025-0001', date_emission: '2025-11-10', tiers_nom: 'Client fictif', montant_ttc: 120 }),

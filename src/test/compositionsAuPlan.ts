@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from '../lib/facturesSources'
 import { calculerDeclaration2035 } from '../lib/declaration2035'
 import { cotisationsComptees, cotisationsAEcrire, ecritureDeLaCotisation } from '../lib/cotisationRapprochee'
 import {
@@ -596,7 +597,7 @@ const CAS_DES_VENTES_FACTUREES: CasDuPlan[] = [
       })
       const fraisBancaires = categorie({ id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires fictifs', poste_2035: 'Frais financiers' })
       return calculerDeclaration2035(
-        2025, [], [fraisBancaires], [], [], [], true, new Map(), [], [], plan, ventesFacturees({ ...sources, acomptes: SANS_ACOMPTE }), { etat: 'composees', composition }, CAISSE_ABSENTE,
+        2025, [], [fraisBancaires], [], [], [], true, new Map(), [], [], plan, ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE, ...sources, acomptes: SANS_ACOMPTE }), { etat: 'composees', composition }, CAISSE_ABSENTE,
       ).contributions
     },
   },

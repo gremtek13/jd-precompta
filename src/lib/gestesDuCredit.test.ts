@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import type { AccesDuDossier } from './auteursVentes'
 import {
@@ -58,7 +59,7 @@ const FACTURES = [
 const LIGNES = [ligne('f1', 500), ligne('f2', 500), ligne('f3', 250), ligne('f0', 500), ligne('a2', 100, -1), ligne('fb', 500)]
 
 function sources(o: Partial<SourcesDesGestes> = {}): SourcesDesGestes {
-  return { dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements: [], parts: [], mouvements: [], exemplaires: [], ...o }
+  return { piecesCitees: AUCUNE_PIECE_CITEE, dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements: [], parts: [], mouvements: [], exemplaires: [], ...o }
 }
 
 // Les parts d'un encaissement, à un seul taux : ce que le reste d'une facture lit.

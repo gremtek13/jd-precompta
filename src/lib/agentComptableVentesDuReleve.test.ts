@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
@@ -146,7 +147,7 @@ function lue(
 ): LectureDesVentesDuReleve {
   return {
     dossierId: D, etat: 'lue',
-    sources: { dossierId: D, factures: o.factures ?? FACTURES, encaissements, mouvements, exemplaires: o.exemplaires ?? [] },
+    sources: { piecesCitees: AUCUNE_PIECE_CITEE, dossierId: D, factures: o.factures ?? FACTURES, encaissements, mouvements, exemplaires: o.exemplaires ?? [] },
   }
 }
 
@@ -349,7 +350,7 @@ function batterie(nombre: number, graine: number): Cas[] {
     const r = suivant()
     const lecture: LectureDesVentesDuReleve = r < 0.04
       ? { dossierId: D, etat: 'incomplete', motif: 'les encaissements : 1000 lignes lues sur 1200' }
-      : { dossierId: D, etat: 'lue', sources: { dossierId: r < 0.07 ? AUTRE : D, factures, encaissements, mouvements, exemplaires: [] } }
+      : { dossierId: D, etat: 'lue', sources: { dossierId: r < 0.07 ? AUTRE : D, factures, encaissements, mouvements, exemplaires: [], piecesCitees: AUCUNE_PIECE_CITEE } }
     return cas(lecture, [souvent(0.5) ? null : '2025-12-31'])
   })
 }

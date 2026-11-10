@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from '../lib/facturesSources'
 import { readFileSync } from 'node:fs'
 import type { LigneDeFacture } from '../lib/encaissementsFactures'
 import { montantsDuDocument } from '../lib/factureCii'
@@ -166,7 +167,7 @@ export function sourcesDuDossier(numero: number): SourcesVentesFacturees {
   const d = dossierDuJeu(numero)
   const u = (i: number) => uuidSimulation(i + d.decalage)
   const dossierId = uuidSimulation(d.numero)
-  return {
+  return { piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId,
     // Le jeu de la simulation en base ne porte aucun acompte : `simulation_des_ventes_facturees` ne les connaît pas.
     acomptes: SANS_ACOMPTE,

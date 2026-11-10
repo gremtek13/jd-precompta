@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LectureSourcesDesEcrituresDeVente } from './ecrituresVentesFactureesLecture'
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import {
   COLONNES_DECLARATIONS_DU_RELEVE, NOM_DES_DECLARATIONS_DU_RELEVE, lireLesVentesDuReleve, type DeclarationDuReleve,
 } from './ventesDuReleveLecture'
@@ -54,7 +55,7 @@ vi.mock('./supabase', async () => {
 const declaration = (o: Partial<DeclarationDuReleve> = {}): DeclarationDuReleve => ({
   id: 't1', dossier_id: 'd1', encaissement_id: 'e1', etat: 'accepte', ...o,
 })
-const SOURCES = { dossierId: 'd1', factures: [], lignes: [], encaissements: [], parts: [], mouvements: [], exemplaires: [], reprises: [] }
+const SOURCES = { dossierId: 'd1', factures: [], lignes: [], encaissements: [], parts: [], mouvements: [], exemplaires: [], reprises: [], piecesCitees: AUCUNE_PIECE_CITEE }
 
 beforeEach(() => {
   faux.ventes = { dossierId: 'd1', etat: 'lue', sources: SOURCES }

@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import type { LigneDeFacture } from './encaissementsFactures'
@@ -49,7 +50,7 @@ const contrePassation = (de: EncaissementVendu, partsDe: readonly PartVendue[], 
   return { c, parts: partsDe.filter((p) => p.encaissement_id === de.id).map((p) => part(c, p.taux, -p.montant)) }
 }
 
-const sources = (o: Partial<SourcesVentesFacturees>): SourcesVentesFacturees => ({
+const sources = (o: Partial<SourcesVentesFacturees>): SourcesVentesFacturees => ({ piecesCitees: AUCUNE_PIECE_CITEE,
   acomptes: SANS_ACOMPTE, dossierId: D, factures: [facture()], lignes: [ligne('f1', 100, 20)], encaissements: [], parts: [], ...o,
 })
 

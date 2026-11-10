@@ -1,4 +1,5 @@
 import type { ReponseDeLaBase } from './couvertureReleve'
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import {
   RECETTES_FACTUREES_NON_COMPTEES, simulationDitNePasCompterLesVentesFacturees, type RecettesFacturees,
 } from './estimation'
@@ -68,7 +69,9 @@ export function recettesDeLaSimulation(rendu: unknown, annee: number): RecettesF
     if (typeof id !== 'string' || !IDENTIFIANT.test(id) || sources.has(id)) return null
     sources.add(id)
   }
-  return { etat: 'comptees', parMois, sources }
+  // Les pièces citées par une facture reprise (A8c4) : la session du client ne lit pas `pieces_des_factures_reprises`, et la
+  // base ne les lui rend pas encore — la question A8Q5-Q2, au cabinet. Hors de cette étape : aucune, comme hier.
+  return { etat: 'comptees', parMois, sources, piecesCitees: AUCUNE_PIECE_CITEE }
 }
 
 /** La réponse de la base, attendue, en lecture : les recettes « comptées », ou le motif de leur manque. */

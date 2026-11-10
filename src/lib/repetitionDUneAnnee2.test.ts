@@ -13,6 +13,7 @@
 //
 // Un écart ou un blocage ne se corrige pas ici, ni dans un moteur : il se marque `it.fails` ou `it.todo` avec sa cause.
 
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { detectColumnMapping, lignesDeDonnees, parseCsv } from './csv'
 import {
@@ -265,9 +266,9 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
   const paiements = paiementsDesPieces(lignes, reglements, [], paiementsDeLaCaisse)
   const partsReleve = partsDuReleve(lignes, CATEGORIES, [], ASSUJETTI)
   const comptees = cotisationsComptees(COTISATIONS, lignes, MODELE.mode)
-  const ventes = ventesFacturees({ dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts, acomptes: SANS_ACOMPTE })
+  const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE, dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts, acomptes: SANS_ACOMPTE })
   const mouvementsDesEncaissements = lignes.filter((l) => l.encaissements_de_factures)
-  const sourcesEcritures: SourcesDesEcrituresDeVente = {
+  const sourcesEcritures: SourcesDesEcrituresDeVente = { piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts, mouvements: mouvementsDesEncaissements, exemplaires: [], reprises: [],
   }
   const pourLa2035 = ecrituresDesVentesPourLa2035({

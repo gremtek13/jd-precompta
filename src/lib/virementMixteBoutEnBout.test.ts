@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { concordance2035 } from './concordance2035'
 import { calculerCa3 } from './declarationTva'
@@ -49,7 +50,7 @@ function sources(exemplaires: readonly ExemplaireLu[]): SourcesDesEcrituresDeVen
   const source = encaissementVendu({ id: 'e-source', facture_id: 'f-source', date_encaissement: '2026-01-08', montant: 120, ligne_bancaire_id: 'm' })
   const avant = encaissementVendu({ id: 'e-avant', facture_id: 'f-avant', date_encaissement: '2026-01-05', montant: 60, ligne_bancaire_id: 'm' })
   const ecran = (e: typeof source) => ({ ...e.encaissement, cree_le: `${e.encaissement.date_encaissement}T10:00:00Z`, compte_contrepartie: null, cree_par: null })
-  return {
+  return { piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId: D_BASCULE,
     factures: [
       facture({ id: 'f-source', numero: 'F2026-0001', date_emission: '2026-01-02', montant_ttc: 120 }),
@@ -69,7 +70,7 @@ function sources(exemplaires: readonly ExemplaireLu[]): SourcesDesEcrituresDeVen
 function leDossier(plan: PlanComptable, exemplaires: readonly ExemplaireLu[] = [DESIGNEE]) {
   const s = sources(exemplaires)
   const c = composition(s, 'tresorerie', plan)
-  const ventes = ventesFacturees({ acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
+  const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE, acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
   const encaissees: PartEncaissee[] = partsEncaissees(D_BASCULE, s.encaissements, { factures: s.factures }, exemplaires)
   const paiements = paiementsDesPieces(s.mouvements.map(ligneBancaire), [], encaissees, [])
   const lignesDeLExemplaire = lignesPourPiece(D_BASCULE, EXEMPLAIRE, { compte: '706000', immobilisation: false }, true,

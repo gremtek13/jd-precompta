@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { encaissementVendu, factureVendue, ligneVendue } from '../test/ventesFacturees'
 import {
@@ -54,7 +55,7 @@ interface Jeu {
 
 function sources(jeu: Jeu): SourcesDesEcrituresDeVente {
   const encs = jeu.encaissements ?? []
-  return {
+  return { piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId: D, factures: jeu.factures ?? [facture()], lignes: jeu.lignes ?? [ligneVendue('f1', 100, 20)],
     encaissements: encs.map((e) => e.encaissement), parts: encs.map((e) => e.part), mouvements: jeu.mouvements ?? [],
     exemplaires: jeu.exemplaires ?? [],
@@ -546,7 +547,7 @@ describe('les lignes d’une vente facturée, que les contrôles d’hier ne jug
 describe('ecrituresDesVentesPourLa2035', () => {
   const sources = (): SourcesDesEcrituresDeVente => {
     const e1 = encaissement({ id: 'e1', facture_id: 'f1', date_encaissement: '2025-11-20', montant: 120, ligne_bancaire_id: 'm1' })
-    return {
+    return { piecesCitees: AUCUNE_PIECE_CITEE,
       dossierId: D, factures: [facture({ id: 'f1', date_emission: '2025-11-10' })], lignes: [ligneVendue('f1', 100, 20)],
       encaissements: [e1.encaissement], parts: [e1.part], mouvements: [mouvement({ id: 'm1', date: '2025-11-20', montant: 118 })],
       exemplaires: [], reprises: [],

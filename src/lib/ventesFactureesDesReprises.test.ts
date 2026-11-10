@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LigneDeFacture } from './encaissementsFactures'
 import { derniereDefinitionSql } from '../test/schema'
@@ -40,7 +41,7 @@ const encaissement = (o: Partial<EncaissementVendu> = {}): EncaissementVendu => 
 })
 const PARTS: PartVendue[] = [{ encaissement_id: 'e1', dossier_id: D, taux: 20, montant: 20.03 }]
 
-const sources = (o: Partial<SourcesVentesFacturees> = {}): SourcesVentesFacturees => ({
+const sources = (o: Partial<SourcesVentesFacturees> = {}): SourcesVentesFacturees => ({ piecesCitees: AUCUNE_PIECE_CITEE,
   dossierId: D, factures: [facture(), AVOIR_REPRIS], lignes: LIGNES, encaissements: [encaissement()], parts: PARTS,
   acomptes: SANS_ACOMPTE, reprises: REPRISES, ...o,
 })

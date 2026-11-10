@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { ACCES_EN_COURS, type AccesDuDossier } from './auteursVentes'
 import { REFUS_GARDE_MOUVEMENTS, type FactureDuDossier, type MouvementClasse } from './encaissementsFactures'
@@ -40,7 +41,7 @@ const FACTURES = [
 ]
 
 function sources(o: Partial<SourcesDuReleve> = {}): SourcesDuReleve {
-  return { dossierId: D, factures: FACTURES, encaissements: [], mouvements: [], exemplaires: [], ...o }
+  return { piecesCitees: AUCUNE_PIECE_CITEE, dossierId: D, factures: FACTURES, encaissements: [], mouvements: [], exemplaires: [], ...o }
 }
 
 const lue = (s: SourcesDuReleve): LectureDesVentesDuReleve => ({ dossierId: D, etat: 'lue', sources: s })

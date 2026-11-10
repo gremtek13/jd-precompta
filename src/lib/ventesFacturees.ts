@@ -1,7 +1,7 @@
 import { montantsDuDocument } from './factureCii'
 import { centimesExacts, montantsParTauxDuDocument, type LigneDeFacture } from './encaissementsFactures'
 import { estUneFactureReprise, estUneVente } from './facturesReprises'
-import { exemplaireDUneSource } from './facturesSources'
+import { exemplaireDUneSource, type PiecesCitees } from './facturesSources'
 import type { EncaissementFacture, EncaissementFactureTaux, FactureEmise, ModeComptable, Piece } from './types'
 
 // LES VENTES FACTURÉES, TELLES QUE LES MOTEURS LES COMPTERONT (ligne 28.6, chantier EC-Q3, étape VF3a ; décision du cabinet
@@ -125,6 +125,13 @@ export interface SourcesVentesFacturees {
    * (`reprise_illisible`) : on ne fait pas partir la règle du cumul d'un encaissé avant la reprise qu'on n'a pas lu.
    */
   reprises?: readonly RepriseVendue[]
+  /**
+   * Les pièces citées pour ORIGINAL par une facture reprise, par un lien ACTIF (`pieces_des_factures_reprises`, A8-Q5 ;
+   * étape A8c4) : OBLIGATOIRES, sans défaut. En trésorerie, une telle pièce ne compte plus que ses paiements — le registre
+   * de sa facture reprise compte le reste à ses encaissements (lib/facturesSources.ts, `resteRegleParSaReprise`). Un
+   * ensemble vide est une affirmation (`AUCUNE_PIECE_CITEE`) : aucun lien actif, lu en entier.
+   */
+  piecesCitees: PiecesCitees
 }
 
 /**
@@ -293,6 +300,8 @@ export interface VentesFacturees {
   excedents: ExcedentVenteFacturee[]
   /** Les factures et avoirs validés SOURCES du dossier — écartés compris : leur exemplaire ne compte pas non plus. */
   sources: ReadonlySet<string>
+  /** Les pièces citées par une facture reprise, lien actif (A8c4) : en trésorerie, leurs seuls paiements comptent. */
+  piecesCitees: PiecesCitees
 }
 
 // ── Les calculs ───────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -602,6 +611,7 @@ export function ventesFacturees(sources: SourcesVentesFacturees): VentesFacturee
 
   const resultat: VentesFacturees = {
     dossierId: sources.dossierId, parts: [], exigibilites: [], documents: [], ecartees: [], excedents: [], sources: ids,
+    piecesCitees: sources.piecesCitees,
   }
   const factures = validees.filter((f) => f.type === 'facture').sort((a, b) => ordreC(a.id, b.id))
   for (const facture of factures) {

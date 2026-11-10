@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -1725,7 +1726,7 @@ describe('prealablesDeValidation — les ventes facturées d’un dossier bascul
     const ecrit = brouillonDesVentes(c)
     const brouillon = o.brouillon ? o.brouillon(ecrit) : ecrit
     const anneesValidees = o.anneesValidees ?? []
-    const ventes = ventesFacturees({
+    const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
       acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
     })
     const categories = o.categories ?? []

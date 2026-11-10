@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import { ecritureDuMouvement } from './affectationBanque'
 import { ecritureDeLaDotation } from './amortissements'
@@ -668,10 +669,10 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
     return { e, parts: [{ ...part, taux: 20, montant: Math.round(1200 * ratio * 100) / 100 }, { ...part, taux: 10, montant: Math.round(110 * ratio * 100) / 100 }] }
   }
   const e1 = enc({ id: 'enc-1', date_encaissement: '2025-09-15', montant: 1310 })
-  const sources = (o: Partial<SourcesDesEcrituresDeVente> = {}): SourcesDesEcrituresDeVente => ({
+  const sources = (o: Partial<SourcesDesEcrituresDeVente> = {}): SourcesDesEcrituresDeVente => ({ piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId: 'd1', factures: [f], lignes, encaissements: [e1.e], parts: e1.parts, mouvements: [], exemplaires: [], reprises: [], ...o,
   })
-  const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
+  const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
     acomptes: SANS_ACOMPTE, dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
   })
   // Le dossier complet, plus les écritures de ses ventes facturées telles que la fonction de VF4b les écrit.

@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
 import type { LigneDeFacture } from './encaissementsFactures'
 import {
@@ -37,7 +38,7 @@ interface Jeu {
   encaissements: [EncaissementVendu, PartVendue[]][]
   acomptes: AcomptesDesVentes
 }
-const calculer = (j: Jeu, acomptes: AcomptesDesVentes = j.acomptes): VentesFacturees => ventesFacturees({
+const calculer = (j: Jeu, acomptes: AcomptesDesVentes = j.acomptes): VentesFacturees => ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
   dossierId: D, factures: j.factures, lignes: j.lignes, encaissements: j.encaissements.map(([e]) => e),
   parts: j.encaissements.flatMap(([, p]) => p), acomptes,
 })

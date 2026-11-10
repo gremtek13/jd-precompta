@@ -1,4 +1,5 @@
 import { anneeDe } from './format'
+import { AUCUNE_PIECE_CITEE, rattachementsQuiComptent, type PiecesCitees } from './facturesSources'
 import type { PartDuReleve } from './partsDuReleve'
 import { montantRetenu } from './montantRetenu'
 import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rattachement'
@@ -36,7 +37,12 @@ function montantDansLaPeriode(
     // — la session d'un client ne lit pas les factures — et la pièce compte comme hier : la vente l'est alors une fois, par
     // elle, et la facture pas du tout.
     if (recettesFacturees.etat === 'comptees' && exemplaireDUneFactureSource(p, recettesFacturees)) return sum
-    const part = partDansLaPeriode(rattachements(p, paiements.get(p.id) ?? [], mode), debut, fin)
+    // LA PIÈCE CITÉE PAR UNE FACTURE REPRISE (A8c4 ; lib/facturesSources.ts) : en trésorerie, ses seuls paiements — le
+    // registre de sa facture reprise compte le reste, dans les recettes facturées.
+    const citees = recettesFacturees.etat === 'comptees' ? recettesFacturees.piecesCitees : AUCUNE_PIECE_CITEE
+    const part = partDansLaPeriode(
+      rattachementsQuiComptent(p, rattachements(p, paiements.get(p.id) ?? [], mode), citees, mode), debut, fin,
+    )
     return part === 0 ? sum : sum + (montantRetenu(p, assujettiTva) ?? 0) * part
   }, 0)
 }
@@ -60,6 +66,11 @@ export type RecettesFacturees =
       parMois: ReadonlyMap<string, number>
       /** Les factures et avoirs sources : la pièce désignée comme l'exemplaire de l'un d'eux ne compte plus. */
       sources: ReadonlySet<string>
+      /**
+       * Les pièces citées par une facture reprise, lien actif (A8c4) : en trésorerie, leurs seuls paiements comptent. La
+       * simulation du client ne lit pas les liens (A8Q5-Q2) : elle passe `AUCUNE_PIECE_CITEE`, et le dit.
+       */
+      piecesCitees: PiecesCitees
     }
   | { etat: 'non_comptees' }
 
@@ -85,7 +96,7 @@ export function simulationDitNePasCompterLesVentesFacturees(ventesParLesFactures
 
 /** Les recettes facturées du dossier, telles que le cabinet les compte, dans le modèle comptable du dossier. */
 export function recettesFactureesDuDossier(ventes: VentesFacturees, mode: ModeComptable): RecettesFacturees {
-  return { etat: 'comptees', parMois: recettesFactureesParMois(ventes, mode), sources: ventes.sources }
+  return { etat: 'comptees', parMois: recettesFactureesParMois(ventes, mode), sources: ventes.sources, piecesCitees: ventes.piecesCitees }
 }
 
 // Les recettes facturées des mois de `debut` à `fin` (des dates civiles), bornes comprises, en euros.

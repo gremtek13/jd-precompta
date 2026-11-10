@@ -1,3 +1,4 @@
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LigneDeFacture } from './encaissementsFactures'
 import { SANS_ACOMPTE, ventesFacturees, type EncaissementVendu, type FactureVendue, type PartVendue } from './ventesFacturees'
@@ -176,7 +177,7 @@ describe('lireLesVentesFacturees', () => {
     // Ce que le virement mixte paie de l'exemplaire de la facture d'avant (étape VF5h) : tiré du même registre.
     expect(l.etat === 'lue' && l.encaissees).toEqual([{ ligne_bancaire_id: 'm-mixte', piece_id: 'p-hier', montant: 40 }])
     const v = lue(l)
-    expect(v).toEqual(ventesFacturees({
+    expect(v).toEqual(ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
       acomptes: SANS_ACOMPTE, dossierId: 'd1', factures: [facture()],
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
       encaissements: ENCAISSEMENTS, parts: PARTS,

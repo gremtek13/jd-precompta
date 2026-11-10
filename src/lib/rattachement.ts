@@ -362,8 +362,23 @@ export function centimesParDate(
   montant: number,
   paiements: readonly Pick<LigneBancaire, 'date' | 'montant'>[],
 ): MontantDate[] {
+  return centimesParDateSelon(piece, montant, paiements, false)
+}
+
+// LA PIÈCE CITÉE PAR UNE FACTURE REPRISE (étape A8c4 ; lib/facturesSources.ts, `resteRegleParSaReprise`, qui décide de
+// `paiementsSeuls`) : ses seuls paiements, au centime, sans la part que rien ne paie — le registre de sa facture reprise
+// règle ce reste. Le total est alors la part payée de la pièce, arrondie au centime, et le dernier morceau prend l'arrondi
+// pour que la somme soit ce total. `paiementsSeuls` faux : `centimesParDate`, au bit près.
+export function centimesParDateSelon(
+  piece: Pick<Piece, 'date_piece' | 'montant_ttc' | 'type_piece' | 'created_at'>,
+  montant: number,
+  paiements: readonly Pick<LigneBancaire, 'date' | 'montant'>[],
+  paiementsSeuls: boolean,
+): MontantDate[] {
+  const fractions = rattachementsTresorerie(piece, paiements).filter((r) => !paiementsSeuls || r.source !== 'sans_paiement')
+  if (fractions.length === 0) return []
   const reunies: { date: string; part: number; partSansDate: number }[] = []
-  for (const r of rattachementsTresorerie(piece, paiements)) {
+  for (const r of fractions) {
     const date = r.date ?? dateLocaleDe(piece.created_at)
     const partSansDate = r.date === null ? r.part : 0
     const meme = reunies.find((x) => x.date === date)
@@ -372,8 +387,9 @@ export function centimesParDate(
       meme.partSansDate += partSansDate
     } else reunies.push({ date, part: r.part, partSansDate })
   }
-  const total = Math.round(montant * 100)
-  const morceaux = reunies.map((f) => Math.round(total * f.part))
+  const totalDeLaPiece = Math.round(montant * 100)
+  const total = paiementsSeuls ? Math.round(totalDeLaPiece * reunies.reduce((s, f) => s + f.part, 0)) : totalDeLaPiece
+  const morceaux = reunies.map((f) => Math.round(totalDeLaPiece * f.part))
   morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
   // Une date dont la part nette est NULLE — un paiement et son rejet le même jour, ou le rejet d'un paiement partiel qui
   // tombe le jour du dépôt d'une pièce sans date — ne se divise pas : sa part sans date se prend alors sur le total de la
@@ -383,7 +399,7 @@ export function centimesParDate(
     centimes: morceaux[i],
     centimesSansDate: f.partSansDate === 0 ? 0
       : f.partSansDate === f.part ? morceaux[i]
-      : Math.abs(f.part) < 1e-12 ? Math.round(total * f.partSansDate)
+      : Math.abs(f.part) < 1e-12 ? Math.round(totalDeLaPiece * f.partSansDate)
       : Math.round(morceaux[i] * (f.partSansDate / f.part)),
   }))
 }

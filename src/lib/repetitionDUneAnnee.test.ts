@@ -6,6 +6,7 @@
 //
 // Un écart ou un blocage ne se corrige pas ici : il se marque `it.fails` avec sa cause, pour le lot qui le corrigera.
 
+import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { lignesDeDonnees, parseCsv, detectColumnMapping } from './csv'
 import { AUCUNE_DECISION, interpreterReleve, type ReleveInterprete } from './importReleve'
@@ -146,9 +147,9 @@ beforeAll(() => {
   const paiements = paiementsDesPieces(lignes, reglements, [], paiementsDeLaCaisse)
   const partsReleve = partsDuReleve(lignes, CATEGORIES, [], ASSUJETTI)
   const comptees = cotisationsComptees(COTISATIONS, lignes, MODELE.mode)
-  const ventes = ventesFacturees({ dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts, acomptes: SANS_ACOMPTE })
+  const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE, dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts, acomptes: SANS_ACOMPTE })
   const mouvementsDesEncaissements = lignes.filter((l) => l.encaissements_de_factures)
-  const sourcesEcritures: SourcesDesEcrituresDeVente = {
+  const sourcesEcritures: SourcesDesEcrituresDeVente = { piecesCitees: AUCUNE_PIECE_CITEE,
     dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts, mouvements: mouvementsDesEncaissements, exemplaires: [], reprises: [],
   }
   const pourLa2035 = ecrituresDesVentesPourLa2035({

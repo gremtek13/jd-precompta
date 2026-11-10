@@ -1,4 +1,5 @@
 import type { LigneDeFacture } from '../lib/encaissementsFactures'
+import { AUCUNE_PIECE_CITEE } from '../lib/facturesSources'
 import type { EncaissementVendu, PartVendue, VentesFacturees } from '../lib/ventesFacturees'
 import type { RecettesFacturees } from '../lib/estimation'
 import type { EcritureVenteFacturee, FactureDesVentesEcrites } from '../lib/ecrituresVentesFacturees'
@@ -44,7 +45,7 @@ export const SANS_VIREMENT_MIXTE: readonly PartEncaissee[] = []
 
 /** Aucune facture source : ni part, ni exigibilité, ni document, ni écart, ni excédent. */
 export function ventesFactureesVides(dossierId: string): VentesFacturees {
-  return { dossierId, parts: [], exigibilites: [], documents: [], ecartees: [], excedents: [], sources: new Set<string>() }
+  return { piecesCitees: AUCUNE_PIECE_CITEE, dossierId, parts: [], exigibilites: [], documents: [], ecartees: [], excedents: [], sources: new Set<string>() }
 }
 
 /**
@@ -52,7 +53,7 @@ export function ventesFactureesVides(dossierId: string): VentesFacturees {
  * chemin du cabinet. À ne pas confondre avec « non comptées », l'état que choisit « Ma simulation » et que son écran dit.
  */
 export function recettesFactureesVides(): RecettesFacturees {
-  return { etat: 'comptees', parMois: new Map<string, number>(), sources: new Set<string>() }
+  return { etat: 'comptees', parMois: new Map<string, number>(), sources: new Set<string>(), piecesCitees: AUCUNE_PIECE_CITEE }
 }
 
 /**
