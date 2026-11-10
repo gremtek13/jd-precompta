@@ -28,7 +28,7 @@ import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceD
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
 import {
   ADRESSE_DU_CLIENT_EXIGEE, avisDuStatutDeTva, refusDeLAdresseDuClient, refusDeLaDateDEmission, refusDeLaLigneAZero,
-  refusDuStatutDeTva, type FactureDeLaSerie,
+  refusDuStatutDeTva, type FactureDeLaSerie, type ModeleDeLaSerie,
 } from '../../lib/validationDeLaFacture'
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue,
@@ -133,6 +133,9 @@ type Props = QuiRedige & {
   // la garde, lib/validationDeLaFacture.ts) ; null quand la liste n'est pas lue en entier. Sans valeur par défaut : un écran
   // qui l'oublierait ne compile pas, et la base ne dirait ses refus de date qu'au clic.
   facturesDeLaSerie: readonly FactureDeLaSerie[] | null
+  // Les modèles de numérotation du dossier (A9a), lus EN ENTIER par l'onglet du cabinet ; null ailleurs — l'espace client ne
+  // les lit pas — ou sur une lecture partielle : la date ne se juge alors que contre l'avenir, et la base juge la série au clic.
+  modelesDeNumerotation: readonly ModeleDeLaSerie[] | null
   facture: FactureEmise | null // null = nouvelle facture ; jamais une facture déjà validée (voir FacturesTab)
   // Ce qu'est le brouillon (étape P5b5b ; lib/acomptesDesFactures.ts) : une facture d'acompte, une finale, ou ni l'une ni
   // l'autre (`SANS_ACOMPTE`, passé explicitement : une facture neuve, et toute facture drapeau baissé). Obligatoire.
@@ -146,7 +149,7 @@ type Props = QuiRedige & {
 // tout modifier librement. "Valider" attribue le numéro définitif (voir lib/factures.ts) et ferme la
 // possibilité de reéditer — geste volontairement séparé d'un simple enregistrement de brouillon.
 export default function FactureFormModal(props: Props) {
-  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, reglageDesVentes, facture, facturesDeLaSerie, onClose, onSaved } = props
+  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, reglageDesVentes, facture, facturesDeLaSerie, modelesDeNumerotation, onClose, onSaved } = props
   const { espace } = props
   const { acompte } = props
   // Les lignes du brouillon d'un acompte, lues telles quelles : elles repartent sans retouche (étape P5b5b).
@@ -361,13 +364,15 @@ export default function FactureFormModal(props: Props) {
   const statutAJuger = { type: 'facture' as const, statutTva, articleExoneration, cabinet: espace === 'cabinet' }
   const refusDuStatut = refusDuStatutDeTva(statutAJuger)
   const avisDuStatut = avisDuStatutDeTva(statutAJuger)
-  // LA DATE D'ÉMISSION (rangs 17 et 18 de la même garde) : à venir après le jour de Paris, ou antérieure à la plus récente des
-  // factures VALIDÉES de la série F de son année. Jugée sur la date TELLE QU'ELLE PART, pour tout auteur, et dite avant le clic ;
+  // LA DATE D'ÉMISSION (rangs 17 et 18 de la même garde) : à venir après le jour de Paris, ou antérieure à la plus récente
+  // de la série où la base la numérotera — celle de QUI valide (A9a : le cabinet, son mandataire ; le client, la sienne), au
+  // modèle en vigueur, ses factures validées et reprises (lib/validationDeLaFacture.ts). L'espace client ne lit pas les
+  // modèles : le rang 18 s'y tait, et la base le juge au clic. Jugée sur la date TELLE QU'ELLE PART, pour tout auteur, et dite avant le clic ;
   // le brouillon reste enregistrable (la date ne se juge qu'à la validation). Sur une liste lue en partie, le rang 18 se tait —
   // une facture plus récente peut manquer, et la base le dira au clic — mais le rang 17 ne dépend d'aucune liste : on le dit encore.
   // Le jour de Paris se lit ici, à chaque rendu, jamais au chargement du module.
   const refusDeLaDate = refusDeLaDateDEmission({
-    type: 'facture', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [],
+    type: 'facture', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [], espace, modeles: modelesDeNumerotation,
   })
 
   function ajouterMention(mention: string) {

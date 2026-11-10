@@ -1,7 +1,8 @@
 import { remplirModele } from './encaissementsFactures'
 import { horsDeLaTvaFrancaise } from './factureInternationale'
 import { mentionTva } from './statutTva'
-import type { ArticleExoneration, FactureEmise, RegimeInternational, StatutTva, TypeClient } from './types'
+import { MODELES_PAR_DEFAUT, compteurDansLaSerie, numeroDuModele, type Emetteur, type NatureDeSerie } from './numerotationContinue'
+import type { ArticleExoneration, FactureEmise, RegimeInternational, StatutFactureEnBase, StatutTva, TypeClient } from './types'
 
 // CE QUE LA VALIDATION EXIGE D'UNE FACTURE, DEPUIS LA CORRECTION DE LA FACTURE (31/10/2026, reprise le 02/11/2026 pour
 // FACTURE-Q1 ; migration `facture_dates_centimes_mention_tva`, en production depuis le 02/11/2026 (version 20261102112003) ;
@@ -64,7 +65,16 @@ export const REFUS_DE_LA_VALIDATION = [
   },
 ] as const
 
-export type CleRefusDeLaValidation = (typeof REFUS_DE_LA_VALIDATION)[number]['cle']
+// LE REFUS DE LA CHRONOLOGIE DEVANT UNE FACTURE REPRISE (A9a, `garder_la_numerotation`, en production depuis le 10/11/2026) :
+// la plus récente de la série est une facture reprise de l'ancien logiciel. Ses mots, juste avant ceux du rang 18, qu'elle
+// redit pour une facture de l'application ; validationDeLaFacture.test.ts les confronte à son texte.
+export const REFUS_DATE_AVANT_LA_REPRISE = {
+  cle: 'date_avant_la_derniere_reprise', code: '22023',
+  modele: "La date d'émission, le %, précède celle de % (le %), la plus récente des factures reprises de la même série : les "
+    + "numéros suivent l'ordre des dates d'émission (CGI, ann. II, art. 242 nonies A, I, 7°). Une date du % ou d'après se valide.",
+} as const
+
+export type CleRefusDeLaValidation = (typeof REFUS_DE_LA_VALIDATION)[number]['cle'] | typeof REFUS_DATE_AVANT_LA_REPRISE.cle
 
 export interface RefusDeLaValidation {
   cle: CleRefusDeLaValidation
@@ -73,7 +83,7 @@ export interface RefusDeLaValidation {
 }
 
 function refus(cle: CleRefusDeLaValidation, ...valeurs: string[]): RefusDeLaValidation {
-  const r = REFUS_DE_LA_VALIDATION.find((x) => x.cle === cle) as (typeof REFUS_DE_LA_VALIDATION)[number]
+  const r = [...REFUS_DE_LA_VALIDATION, REFUS_DATE_AVANT_LA_REPRISE].find((x) => x.cle === cle) as { code: string; modele: string }
   return { cle, code: r.code, message: remplirModele(r.modele, valeurs) }
 }
 
@@ -81,27 +91,88 @@ function refus(cle: CleRefusDeLaValidation, ...valeurs: string[]): RefusDeLaVali
 const enClair = (date: string) => `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`
 const DATE_CIVILE = /^\d{4}-\d{2}-\d{2}$/
 
-/** Une facture ou un avoir du dossier, tel que la liste de l'onglet le lit. */
-export type FactureDeLaSerie = Pick<FactureEmise, 'statut' | 'numero' | 'date_emission'>
+/** Une facture ou un avoir du dossier, tel que la liste de l'onglet le lit : tous ses états, une facture reprise de l'ancien
+ *  logiciel comprise (`importee`, A8a). */
+export type FactureDeLaSerie = Pick<FactureEmise, 'numero' | 'date_emission'> & { statut: StatutFactureEnBase }
+
+/** Un modèle de numérotation posé pour le dossier (`modeles_numerotation`, A9a), tel que l'onglet du cabinet le lit. */
+export interface ModeleDeLaSerie {
+  id: string
+  nature: NatureDeSerie
+  emetteur: Emetteur
+  modele: string
+  annuel: boolean
+  depuis: number
+  // L'instant de la pose, tel que la base le rend (une même forme pour toute la lecture) : le plus récent l'emporte.
+  pose_le: string
+}
+
+/** La série d'une validation : le modèle de numéro, son compteur annuel. */
+export interface SerieDeLaValidation {
+  modele: string
+  annuel: boolean
+}
 
 /**
- * La plus récente des factures VALIDÉES de la série dans laquelle se numérotera une facture (ou un avoir) de cette date :
- * la lettre de son type, l'année de sa date — celle que la base lit sous le verrou de la série. La plus tardive des
- * dates ; à date égale, le plus grand numéro. Null quand la série est vide.
+ * LA SÉRIE OÙ LA BASE NUMÉROTERA ce qui se valide (A9a : `numerotation_suivante`, puis `garder_la_numerotation`) : celle de
+ * QUI valide — le cabinet, son mandataire (`admin_du_dossier`) ; un accès « Ventes », le client —, au modèle en vigueur pour
+ * l'année de la date (`modele_en_vigueur`) : parmi les modèles posés pour cette nature et cet émetteur qui valent depuis
+ * l'année ou avant, le dernier posé (l'instant, puis l'identifiant, décroissants) ; sans aucun, le modèle par défaut,
+ * annuel. Null quand l'écran ne la connaît pas, et la chronologie se tait alors — la base la juge au clic : des modèles non
+ * lus (l'espace client ne les lit pas, la table ne s'ouvrant qu'au cabinet du dossier ; une lecture ratée ou partielle), ou
+ * un modèle dont le préfixe — ce qui précède le premier tiret, que la garde des factures compare — dépend du compteur.
  */
-export function plusRecenteDeLaSerie(
-  type: 'facture' | 'avoir', dateEmission: string, factures: readonly FactureDeLaSerie[],
-): { numero: string; date: string } | null {
-  const serie = `${type === 'avoir' ? 'A' : 'F'}${dateEmission.slice(0, 4)}`
-  const rang = (numero: string) => Number(numero.split('-')[1])
-  let retenue: { numero: string; date: string } | null = null
+export function serieDeLaValidation(
+  espace: 'cabinet' | 'client', type: NatureDeSerie, annee: number, modeles: readonly ModeleDeLaSerie[] | null,
+): SerieDeLaValidation | null {
+  if (modeles === null) return null
+  const emetteur: Emetteur = espace === 'cabinet' ? 'mandataire' : 'client'
+  const plusRecentDAbord = (a: ModeleDeLaSerie, b: ModeleDeLaSerie) =>
+    a.pose_le < b.pose_le ? 1 : a.pose_le > b.pose_le ? -1 : a.id < b.id ? 1 : a.id > b.id ? -1 : 0
+  const pose = modeles.filter((m) => m.nature === type && m.emetteur === emetteur && m.depuis <= annee).sort(plusRecentDAbord)[0]
+  const serie = pose ? { modele: pose.modele, annuel: pose.annuel } : { modele: MODELES_PAR_DEFAUT[emetteur][type], annuel: true }
+  const prefixe = (compteur: number) => numeroDuModele(serie.modele, annee, compteur).split('-')[0]
+  return prefixe(1) === prefixe(999999999) ? serie : null
+}
+
+/** Une facture la plus récente d'une série : son numéro, sa date, et si elle est reprise de l'ancien logiciel. */
+export interface PlusRecente {
+  numero: string
+  date: string
+  reprise: boolean
+}
+
+/**
+ * LES PLUS RÉCENTES de la série où se numérotera une facture (ou un avoir) de cette date, comme la base les lit sous le
+ * verrou de la série, aux deux gardes qui jugent la date, dans leur ordre :
+ *   - la garde des factures (rang 18) : les factures VALIDÉES dont le numéro a le préfixe — ce qui précède son premier
+ *     tiret — de celui que la série attribuera ; la plus tardive des dates, puis le plus grand rang (ce qui suit le tiret) ;
+ *   - la garde de la numérotation (A9a) : les factures validées ET REPRISES de la série (son motif) ; la plus tardive des
+ *     dates, puis le plus grand compteur.
+ * Null quand une facture validée porte ce préfixe sans être de la série : la base la compterait autrement (son rang n'est
+ * peut-être pas un nombre), et l'écran ne juge pas.
+ */
+export function plusRecentesDeLaSerie(
+  dateEmission: string, factures: readonly FactureDeLaSerie[], serie: SerieDeLaValidation,
+): { validee: PlusRecente | null; deLaSerie: PlusRecente | null } | null {
+  const annee = Number(dateEmission.slice(0, 4))
+  const prefixe = numeroDuModele(serie.modele, annee, 1).split('-')[0]
+  const compteur = (numero: string) => compteurDansLaSerie(numero, serie.modele, serie.annuel, annee)
+  const plusRecente = (a: PlusRecente | null, f: FactureDeLaSerie & { numero: string }, rang: (n: string) => number) =>
+    a === null || f.date_emission > a.date || (f.date_emission === a.date && rang(f.numero) > rang(a.numero))
+      ? { numero: f.numero, date: f.date_emission, reprise: f.statut === 'importee' } : a
+  let validee: PlusRecente | null = null
+  let deLaSerie: PlusRecente | null = null
   for (const f of factures) {
-    if (f.statut !== 'validee' || f.numero == null || f.numero.split('-')[0] !== serie) continue
-    if (retenue === null || f.date_emission > retenue.date || (f.date_emission === retenue.date && rang(f.numero) > rang(retenue.numero))) {
-      retenue = { numero: f.numero, date: f.date_emission }
+    if (f.numero == null || (f.statut !== 'validee' && f.statut !== 'importee')) continue
+    const numero = { ...f, numero: f.numero }
+    if (f.statut === 'validee' && f.numero.split('-')[0] === prefixe) {
+      if (compteur(f.numero) === null) return null
+      validee = plusRecente(validee, numero, (n) => Number(n.split('-')[1]))
     }
+    if (compteur(f.numero) !== null) deLaSerie = plusRecente(deLaSerie, numero, (n) => compteur(n) as number)
   }
-  return retenue
+  return { validee, deLaSerie }
 }
 
 /** Ce que la garde juge de la date d'émission d'une facture (ou d'un avoir) qui se valide. */
@@ -113,6 +184,10 @@ export interface DateDEmissionAJuger {
   aujourdhui: string
   // Les factures et les avoirs du dossier, LUS EN ENTIER : sur une liste partielle, l'appelant ne demande rien ici.
   factures: readonly FactureDeLaSerie[]
+  // QUI valide (A9a) : le cabinet numérote dans la série de son mandataire, un accès « Ventes » dans celle du client.
+  espace: 'cabinet' | 'client'
+  // Les modèles de numérotation du dossier, LUS EN ENTIER (le cabinet seul les lit) ; null : non lus, et le rang 18 se tait.
+  modeles: readonly ModeleDeLaSerie[] | null
 }
 
 /**
@@ -122,11 +197,17 @@ export interface DateDEmissionAJuger {
 export function refusDeLaDateDEmission(d: DateDEmissionAJuger): RefusDeLaValidation | null {
   if (!DATE_CIVILE.test(d.dateEmission)) return null
   if (d.dateEmission > d.aujourdhui) return refus('date_a_venir', enClair(d.dateEmission), enClair(d.aujourdhui))
-  const derniere = plusRecenteDeLaSerie(d.type, d.dateEmission, d.factures)
-  if (derniere !== null && d.dateEmission < derniere.date) {
-    return refus('date_avant_la_derniere', enClair(d.dateEmission), derniere.numero, enClair(derniere.date), enClair(derniere.date))
-  }
-  return null
+  const serie = serieDeLaValidation(d.espace, d.type, Number(d.dateEmission.slice(0, 4)), d.modeles)
+  const dernieres = serie === null ? null : plusRecentesDeLaSerie(d.dateEmission, d.factures, serie)
+  if (dernieres === null) return null
+  const avant = (p: PlusRecente | null): p is PlusRecente => p !== null && d.dateEmission < p.date
+  // La garde des factures d'abord, puis celle de la numérotation : celle-ci ne refuse plus, après elle, qu'une date
+  // d'avant une facture REPRISE de la série, sous ses mots à elle.
+  const [cle, p] = avant(dernieres.validee) ? ['date_avant_la_derniere', dernieres.validee] as const
+    : avant(dernieres.deLaSerie) ? [dernieres.deLaSerie.reprise ? 'date_avant_la_derniere_reprise' : 'date_avant_la_derniere', dernieres.deLaSerie] as const
+      : [null, null] as const
+  if (cle === null) return null
+  return refus(cle, enClair(d.dateEmission), p.numero, enClair(p.date), enClair(p.date))
 }
 
 /** Ce que la garde juge du statut de TVA d'une facture (ou d'un avoir) qui se valide, et de qui la valide. */
