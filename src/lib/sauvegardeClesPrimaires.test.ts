@@ -87,8 +87,10 @@ describe('clés primaires — ce que la sauvegarde suppose du schéma', () => {
       'un parent dont la clé primaire n’est pas d’une seule colonne, ou pas celle de `clePrimaire` : `liensPerdus` ' +
         'déclarerait perdue chaque ligne fille, donc `restaurerSauvegarde` refuserait tout.',
     ).toEqual([])
-    // Le seul parent dont la clé ne s'appelle pas `id`, compté : un second se verra ici avant de se voir ailleurs.
-    expect(parents.filter((p) => !estId(cles.get(p) ?? []))).toEqual(['roles_comptables'])
+    // Les parents dont la clé ne s'appelle pas `id`, comptés : un de plus se verra ici avant de se voir ailleurs. Le second,
+    // depuis le jour J du 10/11/2026 : `factures_importees` (A8a), une ligne par facture reprise, clé `facture_id`, que
+    // `pieces_des_factures_reprises` (A8-Q5) cite — la clé d'UNE colonne que `clePrimaire` déclare, vérifiée juste au-dessus.
+    expect(parents.filter((p) => !estId(cles.get(p) ?? []))).toEqual(['factures_importees', 'roles_comptables'])
   })
 
   it('rejoue les instructions dans l’ORDRE ÉCRIT, pas dans l’ordre des motifs', () => {

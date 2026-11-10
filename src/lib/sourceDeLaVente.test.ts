@@ -33,8 +33,10 @@ const parCle = (cle: string) => [...REFUS_SOURCE_DE_LA_VENTE, ...REFUS_VALIDATIO
 const FONCTIONS = [
   ['garder_ventes_par_les_factures', ['reglage_irreversible', 'reglage_reserve_au_chef', 'reglage_retenu_par_ventes'],
     ['v_numero', '', '']],
-  ['fixer_source_de_la_vente', ['restauration_hors_bascule', 'source_posee', 'nature_absente', 'mixte', 'frontiere'],
-    ['', '', '', '', 'public.exercice_fige(new.dossier_id, extract(year from new.date_emission)::integer)']],
+  // A8a (`factures_importees`, 10/11/2026) insère, après le premier, les deux refus d'une facture reprise.
+  ['fixer_source_de_la_vente', ['restauration_hors_bascule', 'reprise_sans_marque', 'reprise_hors_bascule', 'source_posee',
+    'nature_absente', 'mixte', 'frontiere'],
+  ['', '', '', '', '', '', 'public.exercice_fige(new.dossier_id, extract(year from new.date_emission)::integer)']],
   ['garder_ecriture_vente_facturee', ['ecriture_hors_fonction', 'ecriture_hors_fonction'], ['', '']],
 ] as const
 
@@ -47,7 +49,7 @@ const migration = (nom: string) => {
 }
 const DEFINIE_DANS: Record<(typeof FONCTIONS)[number][0], readonly string[]> = {
   garder_ventes_par_les_factures: ['source_de_la_vente', 'reglage_des_ventes'],
-  fixer_source_de_la_vente: ['source_de_la_vente'],
+  fixer_source_de_la_vente: ['source_de_la_vente', 'factures_importees'],
   garder_ecriture_vente_facturee: ['source_de_la_vente'],
 }
 
@@ -76,9 +78,10 @@ describe('les refus de la source de la vente, confrontés au texte de leurs fonc
     const cles = new Set(FONCTIONS.flatMap(([, c]) => c))
     expect([...REFUS_SOURCE_DE_LA_VENTE, ...REFUS_VALIDATION_SOURCE].map((r) => r.cle).sort()).toEqual([...cles].sort())
     // Les refus de la validation sont les trois derniers de `fixer_source_de_la_vente`, dans son ordre ; les autres suivent
-    // l'ordre du texte : les trois de la garde du réglage, puis les deux premiers de la validation, puis celui des écritures.
-    expect(REFUS_VALIDATION_SOURCE.map((r) => r.cle)).toEqual(FONCTIONS[1][1].slice(2))
-    expect(REFUS_SOURCE_DE_LA_VENTE.map((r) => r.cle)).toEqual([...FONCTIONS[0][1], ...FONCTIONS[1][1].slice(0, 2), FONCTIONS[2][1][0]])
+    // l'ordre du texte : les trois de la garde du réglage, puis les quatre premiers de la validation (la restauration, les
+    // deux d'une facture reprise, la source posée), puis celui des écritures.
+    expect(REFUS_VALIDATION_SOURCE.map((r) => r.cle)).toEqual(FONCTIONS[1][1].slice(4))
+    expect(REFUS_SOURCE_DE_LA_VENTE.map((r) => r.cle)).toEqual([...FONCTIONS[0][1], ...FONCTIONS[1][1].slice(0, 4), FONCTIONS[2][1][0]])
   })
 
   // LA BORNE DU HARNAIS : une confrontation qui ne saurait pas virer au rouge ne prouverait rien.
@@ -357,8 +360,17 @@ describe('l’essai de la vente facturée, rejoué par le module', () => {
     return e as NonNullable<typeof e>
   }
 
+  // Deux refus ne s'atteignent pas par cet essai : ceux d'une facture reprise (A8a, `factures_importees`). La garde des
+  // reprises les précède — une insertion directe s'y refuse d'abord (42501, « Une facture reprise ne naît que par
+  // importer_factures, qui la juge. », cas 34 de supabase/essais/facturesImportees.sql) — et l'import pose la marque
+  // lui-même : seule une écriture hors des fonctions, une restauration, les rencontrerait. Comptés ; leurs mots, leur code
+  // et leur rang sont confrontés au texte de la fonction plus haut.
+  const HORS_DE_L_ESSAI = ['reprise_sans_marque', 'reprise_hors_bascule']
+
   it('chaque refus du module y est exigé, sous ses mots et son code', () => {
+    expect(REFUS_SOURCE_DE_LA_VENTE.filter((r) => HORS_DE_L_ESSAI.includes(r.cle)).map((r) => r.cle)).toEqual(HORS_DE_L_ESSAI)
     for (const r of [...REFUS_SOURCE_DE_LA_VENTE, ...REFUS_VALIDATION_SOURCE]) {
+      if (HORS_DE_L_ESSAI.includes(r.cle)) continue
       expect(refus.some((e) => e.code === r.code && correspondAuModele(r.modele, e.attendu)), r.cle).toBe(true)
     }
   })

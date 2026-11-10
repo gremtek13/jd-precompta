@@ -180,8 +180,11 @@ describe('le drapeau', () => {
 
   it('la migration est dans l’export, une fois, et y définit la fonction que l’écran appellera le drapeau levé', () => {
     expect(FICHIERS_DE_LA_MIGRATION).toHaveLength(1)
-    expect(fichiersDuSchema().filter((f) => /create\s+(or\s+replace\s+)?function\s+public\.ventes_facturees_de_la_simulation\(/i.test(f.texte)))
-      .toHaveLength(1)
+    // Elle la crée ; A8b (`factures_reprises_encaissements`, en production depuis le 10/11/2026) la reprend, sans rien changer
+    // à ce qu'elle rend ni à qui : une facture reprise y compte par les encaissements d'après sa reprise (EC3-Q9).
+    expect(fichiersDuSchema().filter((f) => /create\s+(or\s+replace\s+)?function\s+public\.ventes_facturees_de_la_simulation\(/i.test(f.texte))
+      .map((f) => f.chemin.split('/').pop()))
+      .toEqual([FICHIERS_DE_LA_MIGRATION[0], '20261110143044_factures_reprises_encaissements.sql'])
     const ecran = readFileSync(resolve(process.cwd(), 'src/pages/ClientSimulation.tsx'), 'utf8')
     expect(ecran).toContain("supabase.rpc('ventes_facturees_de_la_simulation', { p_dossier_id: dossierLu, p_annee: annee })")
   })
@@ -192,7 +195,7 @@ describe('la fonction exportée rend ce que le module lit, à qui la case « Ban
   const corps = sql.slice(sql.indexOf('\nbegin\n'))
 
   it('sa signature : un dossier, une année, une seule valeur jsonb, security definer, stable, son chemin fixé', () => {
-    expect(sql).toMatch(/^create function public\.ventes_facturees_de_la_simulation\(p_dossier_id uuid, p_annee integer\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public\nas \$\$/i)
+    expect(sql).toMatch(/^create (?:or replace )?function public\.ventes_facturees_de_la_simulation\(p_dossier_id uuid, p_annee integer\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public\nas \$\$/i)
   })
 
   it('l’accès d’abord — le cabinet du dossier ou un accès « Banque », sur un dossier qui existe —, puis l’année, avant toute lecture', () => {
@@ -237,9 +240,11 @@ describe('la fonction exportée rend ce que le module lit, à qui la case « Ban
     expect([...MIGRATION.matchAll(/create (or replace )?function/gi)]).toHaveLength(1)
   })
 
-  it('sa garde de tête exige la règle du cumul et le prédicat de la banque tels que l’export les porte', () => {
+  it('sa garde de tête exige la règle du cumul et le prédicat de la banque tels que l’export les portait avant elle', () => {
+    // Avant elle : A8b a repris depuis la règle du cumul (les factures reprises), sous sa propre garde de tête.
+    const avantElle = (f: { chemin: string }) => (f.chemin.split('/').pop() ?? '') < FICHIERS_DE_LA_MIGRATION[0]
     for (const [nom, signature] of [['calcul_vente_facturee', 'public.calcul_vente_facturee(uuid)'], ['gere_la_banque', 'public.gere_la_banque(uuid)']]) {
-      const empreinte = md5(corpsDe(derniereDefinitionSql(nom)))
+      const empreinte = md5(corpsDe(derniereDefinitionSql(nom, avantElle)))
       expect(MIGRATION, nom).toContain(`('${signature}', '${empreinte}', `)
     }
     expect(MIGRATION).toContain("if to_regprocedure('public.ventes_facturees_de_la_simulation(uuid, integer)') is not null then")

@@ -1653,7 +1653,9 @@ describe('les refus de la validation pour les ventes facturées (étape VF7b) �
     const debut = texte.search(/create (or replace )?function public\.valider_exercice\(/i)
     return debut < 0 ? '' : texte.slice(debut, texte.indexOf('$$;', debut))
   })()
-  const repriseDepuis = /\/\d{14}_(champs_bnc_du_fec|validation_des_paiements_par_la_caisse)\.sql$/
+  // INAL2 (`empreinte_des_exercices_forme_2`, en production depuis le 10/11/2026) la reprend pour l'empreinte en forme 2 :
+  // ses 41 refus, au caractère près et dans le même ordre, ceux que le module redit.
+  const repriseDepuis = /\/\d{14}_(champs_bnc_du_fec|validation_des_paiements_par_la_caisse|empreinte_des_exercices_forme_2)\.sql$/
 
   it('la migration : ses refus d’hier au caractère près, la définition d’hier contenue ligne à ligne dans la nouvelle', () => {
     expect(migration).toBeDefined()

@@ -52,7 +52,10 @@ export type CleRefusValidationSource = (typeof REFUS_VALIDATION_SOURCE)[number][
 /** Les autres refus, dans l'ordre du texte de leurs fonctions : les trois du réglage — celui d'hier (migration
  * `source_de_la_vente`), puis les deux de l'étape VF8a (migration `reglage_des_ventes`) —, qu'un écran dira avant le clic
  * (étape VF8b), puis ceux qu'on ne rencontre qu'en écrivant hors des fonctions — une restauration dans un dossier qui n'a
- * pas basculé, la source posée à la main, une écriture qui porterait une facture ou un encaissement. */
+ * pas basculé, les deux d'une facture reprise (A8a, migration `factures_importees`, en production depuis le 10/11/2026 :
+ * sa marque, que son import pose, dans un dossier basculé seulement — ne les rencontrent qu'un import, par
+ * `importer_factures`, ou une restauration ; l'écran de l'import, A8d, les dira avant le clic), la source posée à la main,
+ * une écriture qui porterait une facture ou un encaissement. */
 export const REFUS_SOURCE_DE_LA_VENTE = [
   {
     cle: 'reglage_irreversible',
@@ -67,6 +70,14 @@ export const REFUS_SOURCE_DE_LA_VENTE = [
   },
   {
     cle: 'restauration_hors_bascule',
+    modele: "Une facture n'est la source de sa vente que dans un dossier dont les factures sont la source de leurs ventes.",
+    code: '23514',
+  },
+  // A8a (A8-Q1) : une facture reprise naît source de sa vente, la marque posée par son import…
+  { cle: 'reprise_sans_marque', modele: 'Une facture reprise est la source de sa vente : son import pose la marque (A8-Q1).', code: '23514' },
+  // … dans un dossier basculé seulement : les mots de la restauration hors bascule, au rang qui suit.
+  {
+    cle: 'reprise_hors_bascule',
     modele: "Une facture n'est la source de sa vente que dans un dossier dont les factures sont la source de leurs ventes.",
     code: '23514',
   },

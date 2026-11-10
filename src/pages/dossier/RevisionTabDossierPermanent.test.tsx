@@ -41,7 +41,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatOr, predicatIn } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     const predicats: ReturnType<typeof predicatEq>[] = []
     let debut = 0
@@ -60,6 +60,9 @@ vi.mock('../../lib/supabase', async () => {
       select: () => c,
       eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
+      // Les ventes facturées lisent les factures validées ET reprises (A8c : `.in('statut', etatsDesVentes())`) : le faux
+      // applique ce filtre comme la base, une facture reprise d'un autre état écartée.
+      in: (colonne: string, valeurs: readonly unknown[]) => { predicats.push(predicatIn(colonne, valeurs)); return c },
       order: () => c,
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => (faux.attente ?? Promise.resolve()).then(() => {

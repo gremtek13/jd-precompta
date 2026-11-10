@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { contientSql, definitionsSql, derniereDefinitionSql, dernierIndiceSql, fichiersDuSchema, finDuCorps, FormeInconnue, indiceSql, motifDeDefinition } from './schema'
 
@@ -62,15 +63,18 @@ describe('la dernière définition d’une fonction, capitales comprises', () =>
     expect(() => finDuCorps('create function public.h() as $a$ select 1', 0, 'h')).toThrow(/ne se referme pas/)
   })
 
-  it('dans le schéma exporté, enregistrer_facture est celle d’acomptes_des_devis, en entier', () => {
+  it('dans le schéma exporté, enregistrer_facture est celle de factures_reprises_encaissements (A8b), en entier', () => {
     const definitions = definitionsSql('enregistrer_facture', fichiersDuSchema())
-    expect(definitions.at(-1)?.chemin).toMatch(/_acomptes_des_devis\.sql$/)
+    expect(definitions.at(-1)?.chemin).toMatch(/_factures_reprises_encaissements\.sql$/)
+    // Celle d'avant, en capitales (acomptes_des_devis, recopiée de `pg_get_functiondef`) : le motif la lit aussi.
+    expect(definitions.at(-2)?.chemin).toMatch(/_acomptes_des_devis\.sql$/)
+    expect(definitions.at(-2)?.definition).toMatch(/^CREATE OR REPLACE FUNCTION public\.enregistrer_facture\(/)
     const derniere = derniereDefinitionSql('enregistrer_facture')
-    expect(derniere).toMatch(/^CREATE OR REPLACE FUNCTION public\.enregistrer_facture\(/)
-    // Le corps, de `AS $function$` à son délimiteur fermant : 47 479 caractères, md5 6dc9348c… — ceux de `prosrc` en
-    // production, relevés le 10/11/2026 par `select md5(prosrc), length(prosrc) from pg_proc`.
-    const corps = derniere.slice(derniere.indexOf('AS $function$') + 'AS $function$'.length)
-    expect(corps).toHaveLength(47479)
+    // Le corps, de `as $$` à son délimiteur fermant : 49 957 caractères, md5 38dda448… — ceux de `prosrc` en production,
+    // relevés le 10/11/2026 après le jour J par `select md5(prosrc), length(prosrc) from pg_proc`.
+    const corps = derniere.slice(derniere.indexOf('as $$') + 'as $$'.length)
+    expect(corps).toHaveLength(49957)
+    expect(createHash('md5').update(corps).digest('hex')).toBe('38dda448e60491760ef7f2cb7fce96cc')
   })
 
   it('chaque fonction du schéma exporté a un corps qui se referme, et sa dernière définition se lit', () => {
