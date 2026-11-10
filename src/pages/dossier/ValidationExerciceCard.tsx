@@ -111,7 +111,9 @@ export default function ValidationExerciceCard({
           Ses écritures ne se modifient plus, et ce qui les a produites est figé avec elles : pièces, mouvements
           bancaires, biens, lignes du cadre 7, échéances de cotisation de l'exercice. Une erreur trouvée désormais se
           corrige sur l'exercice suivant. Le FEC de l'exercice se relit depuis ses écritures validées, dans
-          l'onglet Écritures.
+          l'onglet Écritures, avec son paquet d'archive — le FEC, la 2035 validée, les originaux des pièces relus à
+          leur empreinte, la documentation des traitements et un manifeste —, à télécharger et à garder hors de
+          l'application.
         </p>
         {reportesEcrits !== null && (
           <p className="muted">

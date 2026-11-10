@@ -1,0 +1,210 @@
+import JSZip from 'jszip'
+import { referenceDUnePiece } from './fec'
+import { dateAParis } from './format'
+import type { ExerciceValide, Piece } from './types'
+
+// LE PAQUET D'ARCHIVE D'UN EXERCICE VALIDÉ (ligne 44, inaltérabilité, lot INAL3a ; conception « L'archivage des pièces »,
+// HISTORIQUE.md, et INAL-Q8 à sa recommandation). Un ZIP qui se garde hors de la base : le FEC de l'exercice tel que
+// l'application le relit des colonnes figées, la 2035 validée (`exercices_valides.declaration`, que la forme 2 scelle), les
+// ORIGINAUX des pièces que les écritures validées citent — directement ou par leur bien, l'ensemble même que
+// `empreinte_exercice_forme_2` compte —, la documentation des traitements en vigueur (INAL4) et un manifeste lisible.
+//
+// Ce module est PUR : il reçoit ce que `lib/paquetDArchiveLecture.ts` a lu EN ENTIER, ne lit rien et ne télécharge rien.
+//
+// CHAQUE ORIGINAL SE RELIT À SON EMPREINTE AVANT D'ENTRER (LPF, art. L102 B : le document sous la forme reçue) : son SHA-256
+// recalculé sur les octets lus doit être celui que la pièce porte depuis son dépôt (`storage_hash`), que la forme 2 de
+// l'empreinte scelle — d'où, côté lecture, `verifier_exercice_valide` d'abord. UN ÉCART, OU UNE PIÈCE SANS EMPREINTE, REFUSE
+// TOUT LE PAQUET ET LE DIT : jamais un paquet partiel, qui aurait l'air complet.
+//
+// AUCUN NOM DE FICHIER D'ORIGINE (le praticien nomme parfois un fichier d'après un patient) : un original s'appelle par la
+// référence que le FEC lui donne en PieceRef (`referenceDUnePiece`, JJ1Q1-Q3 : « AAAAMMJJ-xxxxxxxx », la date et le début
+// de l'empreinte), suivie de l'extension de son chemin ; le FEC par son nom imposé (SIREN), la 2035 par son exercice.
+
+// Ce que la lecture rend d'une pièce citée : jamais son nom de fichier.
+export type PieceDuPaquet = Pick<Piece, 'id' | 'date_piece' | 'created_at' | 'storage_path' | 'storage_hash'>
+
+export interface OriginalLu {
+  piece: PieceDuPaquet
+  octets: Uint8Array
+}
+
+// L'exercice tel que la base le garde, relu par la lecture du paquet (jamais celui d'un écran).
+export type ExerciceDuPaquet = Pick<ExerciceValide,
+  'dossier_id' | 'annee' | 'valide_le' | 'empreinte' | 'empreinte_precedente' | 'forme_empreinte' | 'nb_ecritures'
+  | 'nb_lignes' | 'declaration'>
+
+export interface EntreesDuPaquet {
+  exercice: ExerciceDuPaquet
+  // Les identifiants des pièces que l'exercice cite (`piecesCiteesParLExercice`) : chacune doit avoir son original.
+  piecesCitees: readonly string[]
+  originaux: readonly OriginalLu[]
+  // Le FEC de l'exercice validé, tel que l'onglet Écritures l'exporte (`numerotationValidee` puis `formaterFec`).
+  fec: { nom: string; contenu: string }
+  // La documentation des traitements que l'application porte (DOCUMENTATION_DES_TRAITEMENTS.md).
+  documentation: string
+  // L'instant de la fabrication : le manifeste en dit la date de Paris. Sans valeur par défaut (« maintenant » ne se lit
+  // pas ici : un test le fixe).
+  fabriqueLe: Date
+}
+
+export interface FichierDuManifeste { chemin: string; taille: number; sha256: string }
+
+export type PaquetFabrique = {
+  ok: true
+  zip: Uint8Array
+  manifeste: string
+  // Le SHA-256 du manifeste : l'empreinte du paquet, celle qu'un horodatage scellera (INAL7, plus tard).
+  empreinteDuManifeste: string
+  fichiers: readonly FichierDuManifeste[]
+}
+export type PaquetRefuse = { ok: false; message: string }
+
+export const NOM_DU_MANIFESTE = 'MANIFESTE.txt'
+export const NOM_DE_LA_DOCUMENTATION = 'DOCUMENTATION_DES_TRAITEMENTS.md'
+export const DOSSIER_DES_ORIGINAUX = 'pieces'
+const SHA256_HEX = /^[0-9a-f]{64}$/
+
+// Les pièces que les écritures VALIDÉES de l'exercice citent, directement ou par leur bien : l'ensemble que
+// `empreinte_exercice_forme_2` compte (migration `empreinte_des_exercices_forme_2`). L'appelant ne passe que les lignes
+// validées de l'exercice ; les identifiants, uniques et triés.
+export function piecesCiteesParLExercice(
+  lignes: readonly { piece_id: string | null; immobilisation_id: string | null }[],
+  immobilisations: readonly { id: string; piece_id: string | null }[],
+): string[] {
+  const pieceDuBien = new Map(immobilisations.map((i) => [i.id, i.piece_id]))
+  const ids = new Set<string>()
+  for (const l of lignes) {
+    if (l.piece_id) ids.add(l.piece_id)
+    const parLeBien = l.immobilisation_id ? pieceDuBien.get(l.immobilisation_id) : null
+    if (parLeBien) ids.add(parLeBien)
+  }
+  return [...ids].sort()
+}
+
+export async function sha256Hex(octets: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', octets as Uint8Array<ArrayBuffer>)
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+// L'extension d'un chemin de stockage, en minuscules, si elle a la forme d'une extension ; sinon « bin ».
+function extensionDuChemin(chemin: string): string {
+  const m = /\.([A-Za-z0-9]{1,5})$/.exec(chemin)
+  return m ? m[1].toLowerCase() : 'bin'
+}
+
+// Le nom d'un original dans le paquet : sa référence au FEC et son extension ; deux pièces de même référence (le même
+// fichier déposé deux fois le même jour) se distinguent par un rang, dans l'ordre des identifiants.
+export function nomsDesOriginaux(pieces: readonly PieceDuPaquet[]): Map<string, string> {
+  const noms = new Map<string, string>()
+  const pris = new Set<string>()
+  for (const p of [...pieces].sort((a, b) => a.id.localeCompare(b.id))) {
+    const base = `${DOSSIER_DES_ORIGINAUX}/${referenceDUnePiece(p)}`
+    const ext = extensionDuChemin(p.storage_path)
+    let nom = `${base}.${ext}`
+    for (let rang = 2; pris.has(nom); rang++) nom = `${base}-${rang}.${ext}`
+    pris.add(nom)
+    noms.set(p.id, nom)
+  }
+  return noms
+}
+
+export function nomDuPaquet(siret: string | null, annee: number): string {
+  const siren = siret ? siret.replace(/\D/g, '').slice(0, 9) : ''
+  return `${siren || 'A_COMPLETER'}-exercice-${annee}-archive.zip`
+}
+
+const encodeur = new TextEncoder()
+
+export async function fabriquerLePaquet(e: EntreesDuPaquet): Promise<PaquetFabrique | PaquetRefuse> {
+  const { exercice, fec } = e
+  const refus = (message: string): PaquetRefuse => ({ ok: false, message: `Aucun paquet d’archive : ${message}` })
+  if (fec.contenu.trim() === '') return refus(`le FEC de l’exercice ${exercice.annee} est vide.`)
+  if (e.documentation.trim() === '') return refus('la documentation des traitements est absente.')
+
+  // Chaque pièce citée a son original, et seulement elles.
+  const parId = new Map(e.originaux.map((o) => [o.piece.id, o]))
+  const manquantes = e.piecesCitees.filter((id) => !parId.has(id))
+  if (manquantes.length > 0) {
+    return refus(`${manquantes.length} pièce(s) citée(s) par l’exercice n’ont pas été lue(s).`)
+  }
+  const citees = new Set(e.piecesCitees)
+  if (e.originaux.some((o) => !citees.has(o.piece.id)) || parId.size !== e.originaux.length) {
+    return refus('la lecture a rendu des fichiers que l’exercice ne cite pas.')
+  }
+
+  // Chaque original relu à son empreinte AVANT d'entrer : le premier écart arrête tout.
+  for (const o of [...e.originaux].sort((a, b) => a.piece.id.localeCompare(b.piece.id))) {
+    const ref = referenceDUnePiece(o.piece)
+    const attendue = (o.piece.storage_hash ?? '').trim().toLowerCase()
+    if (!SHA256_HEX.test(attendue)) {
+      return refus(`la pièce ${ref} n’a pas d’empreinte de dépôt : son original ne peut pas être vérifié.`)
+    }
+    const relue = await sha256Hex(o.octets)
+    if (relue !== attendue) {
+      return refus(
+        `l’original de la pièce ${ref} ne correspond plus à son empreinte de dépôt (attendue ${attendue.slice(0, 16)}…, `
+        + `relue ${relue.slice(0, 16)}…). Le fichier a changé dans le stockage : à signaler sans attendre.`,
+      )
+    }
+  }
+
+  const noms = nomsDesOriginaux(e.originaux.map((o) => o.piece))
+  const contenus: { chemin: string; octets: Uint8Array }[] = [
+    { chemin: fec.nom, octets: encodeur.encode(fec.contenu) },
+    ...(exercice.declaration !== null
+      ? [{ chemin: `2035-${exercice.annee}.json`, octets: encodeur.encode(JSON.stringify(exercice.declaration, null, 2)) }]
+      : []),
+    { chemin: NOM_DE_LA_DOCUMENTATION, octets: encodeur.encode(e.documentation) },
+    ...[...e.originaux]
+      .sort((a, b) => noms.get(a.piece.id)!.localeCompare(noms.get(b.piece.id)!))
+      .map((o) => ({ chemin: noms.get(o.piece.id)!, octets: o.octets })),
+  ]
+  const fichiers: FichierDuManifeste[] = []
+  for (const c of contenus) fichiers.push({ chemin: c.chemin, taille: c.octets.length, sha256: await sha256Hex(c.octets) })
+
+  const manifeste = manifesteDuPaquet(e, fichiers, noms)
+  const zip = new JSZip()
+  // Une seule date pour toutes les entrées : celle de la fabrication (sinon JSZip date chaque entrée de son horloge).
+  // Une copie dans le `Uint8Array` de la page : un tableau venu d'un autre domaine d'exécution (un `TextEncoder` d'ailleurs)
+  // échappe au `instanceof` de JSZip, qui refuserait alors l'entrée.
+  for (const c of contenus) zip.file(c.chemin, new Uint8Array(c.octets), { date: e.fabriqueLe, binary: true })
+  zip.file(NOM_DU_MANIFESTE, manifeste, { date: e.fabriqueLe })
+  const octets = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+  return { ok: true, zip: octets, manifeste, empreinteDuManifeste: await sha256Hex(encodeur.encode(manifeste)), fichiers }
+}
+
+export const ENTETE_DES_FICHIERS = 'FICHIERS (chemin, taille en octets, SHA-256)'
+
+function manifesteDuPaquet(e: EntreesDuPaquet, fichiers: readonly FichierDuManifeste[], noms: ReadonlyMap<string, string>): string {
+  const x = e.exercice
+  const forme = x.forme_empreinte === 2
+    ? '2 — elle scelle les écritures validées, les à-nouveaux, les soldes reportés, l’en-tête de la validation, les empreintes de dépôt des pièces citées et la 2035 validée'
+    : '1 — elle scelle les écritures validées, les à-nouveaux et les soldes reportés, pas les fichiers des pièces : leurs empreintes ci-dessous sont celles de leur dépôt'
+  const pieces = [...e.originaux]
+    .sort((a, b) => noms.get(a.piece.id)!.localeCompare(noms.get(b.piece.id)!))
+    .map((o) => `${noms.get(o.piece.id)}\t${o.piece.id}\t${(o.piece.storage_hash ?? '').trim().toLowerCase()}`)
+  return [
+    `PAQUET D'ARCHIVE — EXERCICE ${x.annee} VALIDÉ`,
+    '',
+    `Dossier : ${x.dossier_id}`,
+    `Exercice : du ${x.annee}-01-01 au ${x.annee}-12-31`,
+    `Validé le : ${dateAParis(x.valide_le)} (date de Paris ; instant ${x.valide_le})`,
+    `Écritures validées : ${x.nb_ecritures} ; lignes : ${x.nb_lignes}`,
+    `Forme de l'empreinte : ${forme}`,
+    `Empreinte de l'exercice : ${x.empreinte}`,
+    `Empreinte de l'exercice validé précédent : ${x.empreinte_precedente ?? 'aucune (premier exercice validé du dossier)'}`,
+    `Fabriqué le : ${dateAParis(e.fabriqueLe)} (date de Paris)`,
+    '',
+    'Avant d’entrer dans ce paquet, l’empreinte de l’exercice a été vérifiée en base (verifier_exercice_valide) et chaque',
+    'original relu à son empreinte de dépôt. La 2035 est celle que la validation a figée ; le FEC, celui que l’application',
+    'relit des écritures validées (son lettrage dit l’état des comptes de tiers au jour de la fabrication). La documentation',
+    'des traitements est celle que l’application portait au jour de la fabrication.',
+    '',
+    ENTETE_DES_FICHIERS,
+    ...fichiers.map((f) => `${f.chemin}\t${f.taille}\t${f.sha256}`),
+    '',
+    `PIÈCES CITÉES (${pieces.length} ; fichier, identifiant de la pièce, empreinte de dépôt — le nom du fichier est sa PieceRef au FEC)`,
+    ...pieces,
+    '',
+  ].join('\n')
+}

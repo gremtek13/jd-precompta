@@ -15,7 +15,9 @@ validation d'un exercice et les restitue dans le fichier des écritures comptabl
   `lib/documentationDesTraitements.test.ts` fait tomber la suite si l'un de ces noms disparaît : le document vieillit
   avec le code, ou la suite le dit.
 - **Version.** Celle du commit qui le porte : la documentation en vigueur pour un exercice est celle du dépôt au jour
-  de sa validation (`exercices_valides`, colonne `valide_le`). L'archive d'un exercice (INAL3, à venir) la joindra.
+  de sa validation (`exercices_valides`, colonne `valide_le`). Le paquet d'archive d'un exercice validé
+  (`lib/paquetDArchive.ts`) joint celle que l'application porte au jour où il se fabrique : le télécharger le jour de la
+  validation.
 - **Hors de son champ.** La comptabilité d'ENGAGEMENT (un dossier BIC ou une société : `lib/engagement.ts`), dite en
   une ligne quand elle diffère ; la déclaration 2035 elle-même, qui se calcule depuis les sources et se compare aux
   écritures (`lib/concordance2035.ts`) sans en produire.
