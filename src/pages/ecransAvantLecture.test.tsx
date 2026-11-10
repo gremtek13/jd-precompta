@@ -646,6 +646,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/ExemplaireDeLaFacture.tsx': 'reçoit de la fiche d’une pièce (FichePiece, montée ici, que PiecesTab ouvre) les factures émises validées, le gel de la pièce et ce qu’elle est (la bascule, le pont, les liens, le journal, que la fiche lit), « en cours » tant qu’ils ne sont pas revenus ; ne désigne, ne défait, ne déclare ni ne retire qu’au clic confirmé, et seulement sur des lectures entières (ExemplaireDeLaFacture.test.tsx)',
   'pages/dossier/VentesFactureesEcritures.tsx': 'reçoit de l’onglet Écritures (monté ici, et basculé dans « EcrituresTab (ventes facturées) ») les états des ventes facturées, nuls tant que le brouillon et les ventes facturées ne sont pas revenus en entier ; n’écrit, ne retire et ne choisit un compte qu’au clic confirmé (EcrituresTab.ventesFacturees.test.tsx)',
   'pages/dossier/EnvoisDuClient.tsx': 'reçoit les envois du client et les accès de BanqueTab (monté ici), « en cours » tant qu’ils ne sont pas revenus ; n’ouvre un justificatif, n’écarte une proposition et ne supprime un message que sur un clic confirmé, et seulement sur des envois lus en entier',
+  'pages/dossier/TraceDesDroitsDesAcces.tsx': 'monté par AccesTab (ici) une fois la liste des accès revenue, jamais avant ; sa lecture (la trace) dit « Chargement… » avant son retour, ne dit « aucun » que d’une trace lue en entier, et n’écrit rien (AccesTab.trace.test.tsx)',
 }
 
 // LES PHRASES FIXES qui contiennent un mot du vide sans rien affirmer d'une liste : une explication, une consigne. Chacune

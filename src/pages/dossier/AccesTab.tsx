@@ -32,6 +32,8 @@ import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
 import { adresseDeCollecte } from '../../lib/adresseCollecte'
 import { useCopieDuTexte } from '../../lib/copieDuTexte'
 import type { Membership } from '../../lib/types'
+import { accesDeLaLecture } from '../../lib/auteursVentes'
+import TraceDesDroitsDesAcces from './TraceDesDroitsDesAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from '../../lib/situationsPubliees'
 import { TROIS_CASES_EXPORTEES } from '../../lib/troisCasesDeLAcces'
 
@@ -83,6 +85,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // Le numéro de la dernière lecture partie : une lecture plus lente qu'une suivante (une création puis un retrait
   // rapprochés) ne réécrit pas la liste après elle.
   const derniereLecture = useRef(0)
+  // Le numéro de la dernière lecture REVENUE de la liste : la trace des droits (« Droits changés ») se relit avec elle, car une
+  // case cochée ou un accès créé en a écrit une ligne.
+  const [lectureNo, setLectureNo] = useState(0)
   // Le réglage du dossier (`ventes_par_les_factures`, chantier EC-Q3, étape VF8d), lu avec la liste, dans la même vague :
   // la case « Ventes » ne se coche que sur un dossier basculé, ne se change pas sur un réglage illisible
   // (lib/droitsAcces.ts, `gesteDeLaCase`). Gardé AVEC le dossier lu : une réponse pour un autre dossier ne juge pas celui-ci.
@@ -163,6 +168,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     setErreurLecture(rien ? `La liste des accès n'a pas pu être lue (${lecture.motif ?? 'raison inconnue'}).` : null)
     setLecturePartielle(!lecture.complete && !rien ? lecture.motif : null)
     setRows(lecture.lignes)
+    setLectureNo(numero)
     setChargement(false)
     setRelecture(false)
   }
@@ -595,6 +601,20 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
           <div className="empty-state">Aucun accès client pour ce dossier.</div>
         )}
       </div>
+
+      {/* LA TRACE DES DROITS (étape P1-trace) : qui a coché ou décoché quelle case, un volet par accès. Rien avant le retour de la
+          liste des accès ; « retiré » ne se dit que d'une liste lue en entier, et le client n'est reconnu que sur elle. */}
+      {!chargement && (
+        <TraceDesDroitsDesAcces
+          dossierId={dossierId}
+          acces={rows.map((r) => ({ id: r.id, email: r.email }))}
+          listeLue={erreurLecture === null && lecturePartielle === null}
+          accesDuDossier={erreurLecture === null && lecturePartielle === null
+            ? accesDeLaLecture({ lignes: rows, complete: true, motif: null })
+            : { etat: 'incomplets', motif: erreurLecture ?? lecturePartielle ?? 'lecture incomplète' }}
+          lectureNo={lectureNo}
+        />
+      )}
 
       {/* LA NATURE DES RECETTES EN ESPÈCES DU CLIENT (étape C11 ; CAISSE2-Q2, (B)) : le cabinet la fixe pour le dossier, sous la
           liste, à côté de la case qu'elle sert. Rien ne s'offre avant le retour de la ligne du dossier et de ses catégories, ni

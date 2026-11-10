@@ -5,8 +5,8 @@
 // le geste, le geste (« changement », « creation », « retrait »), l'auteur (nul sans session) et l'instant —, écrite par un
 // déclencheur sur `memberships` pour que tout chemin soit pris, immuable, lue par le cabinet du dossier seul. Le récit :
 // HISTORIQUE.md, « LA TRACE DES DROITS D'UN ACCÈS, EN BASE (P1-TRACE) (PRÉPARÉE, PAS APPLIQUÉE) » ; les essais :
-// supabase/essais/traceDesDroits.sql et, sur une réplique seulement, traceDesDroitsSuppression.sql. L'écran qui la montrera
-// viendra dans un lot à part.
+// supabase/essais/traceDesDroits.sql et, sur une réplique seulement, traceDesDroitsSuppression.sql. L'écran qui la montre (10/11/2026) :
+// pages/dossier/TraceDesDroitsDesAcces.tsx, les règles dans lib/traceDesDroitsVue.ts.
 //
 // LE DRAPEAU : levé le 07/11/2026, la migration dans l'export sous la version 20261107163158 (traceDesDroits.test.ts le lie
 // au fichier) : la table entre au plan de sauvegarde (`auPlanAujourdHui`, src/lib/sauvegarde.ts). Baissé — l'état d'avant,

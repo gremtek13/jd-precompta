@@ -49968,3 +49968,25 @@ copie (`compteDeBilan.ts`), les treize essais de mécanisme au plan décalé ; a
 et les commentaires qui nomment les contraintes. Risque : une restauration arrêtée au plan laisse un dossier au dirigeant
 réglé sur le plan par défaut (RESTAU-Q2 le retire). Questions PC4-Q1 (le verrou étendu), Q2 (le 468), Q3 (le plan entier),
 Q4 (la garde des pièces, plus stricte sur des lignes que l'application n'écrit pas).
+
+### 10/11/2026 — LA TRACE DES DROITS D'UN ACCÈS, À L'ÉCRAN (P1-TRACE, LIGNE 51.5)
+
+(Du code et des tests, rien en base : la table est en production depuis le 07/11/2026.) L'onglet Accès porte, sous la liste, la
+carte « Droits changés » (`TraceDesDroitsDesAcces`) : un volet repliable par accès, les gestes les plus récents d'abord, chacun
+à la date et l'heure de Paris, à la case (libellés de `definitionDe` : « Notes de frais », pas « frais »), cochée, décochée,
+« cochée à la création de l'accès » ou « cochée jusqu'au retrait de l'accès » (un retrait s'écrit case décochée : ce n'est pas un
+décochage), et à son auteur. Les règles dans `lib/traceDesDroitsVue.ts`, pur ; la lecture dans `lib/traceDesDroitsLecture.ts`
+(`lireTout`, tri `fait_le` décroissant puis `id`, une requête qui lève tombe du côté signalé, le dossier lu rendu avec elle).
+L'auteur : nul, « Sans session » ; le compte que la ligne enregistre, ou un compte portant un accès du dossier sur une liste lue
+en entier (`estLeClient`), « Le client » ; tout autre compte connecté, « Le cabinet » — prouvé par la base, pas deviné (aucune
+écriture de `memberships` par une session hors `admin_du_dossier` : `changer_droits_acces`, les policies d'insertion et de retrait, aucune
+de mise à jour ; `traceDesDroitsVue.test.ts` le confronte à l'export). Aucun identifiant ne s'affiche : un accès sans adresse se dit
+« Accès sans adresse lisible » ; un accès parti, que la trace garde, « Accès retiré depuis (tracé dès le … ) » — « retiré » ne se dit
+que d'une liste d'accès lue en entier, sinon « absent de la liste lue ». « Chargement… » avant le retour ; « aucun changement tracé »
+ne se dit que d'une trace lue en entier, et une ligne aux mots inconnus (migration plus récente) rend la lecture partielle ;
+lue en partie, refusée ou rompue, `BandeauLecturePartielle`, les volets disant « rien de lu ». La trace se relit avec la liste des
+accès (`lectureNo`) ; sous `TRACE_DES_DROITS_PREVUE` baissé, ni lecture ni carte. Pas de CSS neuf (`<details>`, `table-empilable-etroite`).
+Tests : `traceDesDroitsVue.test.ts` (17), `traceDesDroitsLecture.test.ts` (7), `AccesTab.trace.test.tsx` (10), le drapeau (1) ; les
+cinq tests de l'onglet doublent la lecture de la trace (leurs compteurs de lectures sont ceux des accès) ; `lecturesSignalees` a
+exigé que la lecture lise `complete` à découvert. Suite entière 18 954 verts. Questions P1T-E1 (« Le cabinet » pour tout compte connecté
+non reconnu) et P1T-E2 (le nom d'un accès retiré) au cabinet.
