@@ -50176,3 +50176,32 @@ la relecture. Les mots sont confrontés au texte de la migration (littéraux de 
 colonnes de l'état) : 58 + 9 + 19 tests, la mutation du verrou en fait échouer trois. `verrousEcritures.test.ts` déclare
 `lib:lireLaNumerotation` (lecture par RPC) ; `ecransAvantLecture.test.tsx` met la carte aux fichiers sans lecture au
 montage (drapeau baissé). Reste, le jour de l'application : lever le drapeau, rejouer la suite, ouvrir la carte sur un dossier.
+
+### 10/11/2026 — A8B : LES ENCAISSEMENTS ET L'AVOIR D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; en production, des SELECT seulement : 188 migrations, les sept fonctions remplacées à l'empreinte de
+l'export.) La migration `factures_reprises_encaissements` (20261110130000, md5 `e9c64a690ae7d9d828c1c8ead54a9a32`,
+169 853 octets, LF), À COLLER après A8a et A9a (le corps d'`enregistrer_facture` supprime les lignes d'un brouillon, comme
+hier ; aucun `drop`), et son retour (130100 : un `drop function`, refusé tant qu'une facture reprise a un encaissement ou
+un avoir de l'application). Une fonction neuve, `montants_par_taux_du_document` : d'une facture ou d'un avoir repris, la
+règle de TVA que ses montants déclarés suivaient — par taux, ou ligne à ligne, celle qu'`importer_factures` a reconnue —,
+sans laquelle une reprise arrondie par taux ne recevait aucun encaissement. Sept remplacées : `enregistrer_encaissement` (le
+refus 4 admet `importee` ; refusés, une reprise qui mêle biens et services, A8B-Q1, et un encaissement d'avant la reprise ;
+les plafonds, au total puis par taux, nets des avoirs de l'application et repris et de l'encaissé avant la reprise par taux,
+A8-Q6), `garder_encaissement_facture` (l'état admis), `calcul_vente_facturee` et `ecritures_attendues_de_la_periode` (le
+cumul part de l'encaissé avant la reprise et de la TVA qu'il lui rend, V et T nets des avoirs repris ; ni document, ni
+exigibilité de livraison ou de débits ; l'avoir de l'application régularise à sa date), `enregistrer_facture` (l'avoir
+d'une reprise : ses avoirs repris déduits de ce qui reste à créditer, daté de la reprise ou d'après, refusé sur une reprise
+mixte, l'émetteur du dossier, A8B-Q2 ; le cabinet en MA, A9a ; les trois chaînes d'A9a intactes). Écarts à la conception :
+`ecriture_attendue_vente_facturee` et `ventes_facturees_de_la_simulation` suivent (sans elles, le mouvement d'un
+encaissement d'une reprise se disait « facture qui n'est pas source »), et la garde des encaissements, qui refusait
+l'insertion ; `calcul_vente_facturee` lit les montants de la facture une fois — la recomposition, 34 s avant, 28 s après
+(56 à 193 s avec un appel par part, mesuré puis corrigé). Sur une copie de r187 (188, A8a, A9a, A8b, sous `proprietaire`) :
+l'essai neuf `encaissementsDesReprises.sql` 36 sur 36 (34 étapes, le catalogue, « rien n'est resté »), 25 mutations sur 25 ;
+avant/après IDENTIQUES : encaissementsFactures 113, ventesFacturees 339, validationDesVentesFacturees 77,
+ecrituresVentesFacturees 208, frontiereDesEncaissements 13, recompositionDesVentes 8 (3 310 sources, 0 écart), factures 145,
+numerotationContinue 67, facturesImportees 48, simulationDesVentesFacturees 30, exemplairesDesFactures 323, `restauration.sql` ;
+`rls.sql` 128 invariants, 0 en faute, 95 mutations sur 95 ; `validationExercice.sql` 141 (57 déclencheurs : les gardes
+d'A8a et A9a) et `caisse.sql` 289b, en faute avant comme après ; le retour rend les sept définitions et leurs droits ; trois
+essais SÛRS au banc. `src/lib/encaissementsDesReprises.ts` redit les six refus neufs, confrontés aux deux fichiers. Restent
+A8c (les lecteurs), A8-Q5 (la pièce déjà au dossier, que l'en-tête d'A8a annonçait ici), et A8B-Q1 à Q3.
