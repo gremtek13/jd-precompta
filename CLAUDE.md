@@ -669,7 +669,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     et celle du mandataire, choisie selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est
     écrit), reconçues le 06/11/2026,
     A8-Q1 à Q6 tranchées, A8a (la base) préparée le 07/11/2026, à coller → « A8 ET A9, LES FACTURES REPRISES ET LA
-    NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ».
+    NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) » ; A8-Q5 préparée le
+    10/11/2026 → « A8-Q5 : LA PIÈCE D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
   sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU
