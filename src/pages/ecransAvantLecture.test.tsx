@@ -622,7 +622,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/SaisiesDuCabinet2035Card.tsx': 'reçoit la lecture des saisies de la Clôture (drapeau `SAISIES_2035_EXPORTEES` '
     + 'baissé : non montée) ; son test (SaisiesDuCabinet2035Card.test.tsx) éprouve « chargement… » et aucun geste sur une lecture '
     + 'incomplète ; n’écrit que sur « Enregistrer les saisies »',
-  'pages/dossier/ParametresDesCotisationsCard.tsx': 'reçoit la lecture des paramètres des cotisations du volet social '
+  'pages/dossier/NumerotationDesFacturesCard.tsx': 'drapeau `NUMEROTATION_CONTINUE_PREVUE` baissé : ne rend ni ne lit rien ; levé, son propre '
+    + 'test (NumerotationDesFacturesCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun geste sur une lecture illisible ou '
+    + 'pour un membre de l’équipe ; n’écrit que sur « Poser le modèle », « Confirmer la fin » et « Lever ces trous »',
+  'pages/dossier/ParametresDesCotisationsCard.tsx':'reçoit la lecture des paramètres des cotisations du volet social '
     + '(VoletSocialCard, montée ici ; drapeau `PARAMETRES_DES_COTISATIONS_EXPORTES` levé le 07/11/2026) ; son test '
     + '(ParametresDesCotisationsCard.test.tsx) éprouve « chargement… » et aucun formulaire sur une lecture incomplète ; '
     + 'n’écrit que sur « Enregistrer les paramètres »',
