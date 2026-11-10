@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { contientSql, definitionsSql, derniereDefinitionSql, dernierIndiceSql, fichiersDuSchema, finDuCorps, FormeInconnue, indiceSql, motifDeDefinition } from './schema'
 
 // LA DERNIÈRE DÉFINITION D'UNE FONCTION, CAPITALES COMPRISES (10/11/2026).
@@ -77,16 +77,39 @@ describe('la dernière définition d’une fonction, capitales comprises', () =>
     expect(createHash('md5').update(corps).digest('hex')).toBe('38dda448e60491760ef7f2cb7fce96cc')
   })
 
-  it('chaque fonction du schéma exporté a un corps qui se referme, et sa dernière définition se lit', () => {
-    const noms = new Set(fichiersDuSchema().flatMap((f) =>
-      [...f.texte.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)\(/gi)].map((m) => m[1])))
-    // Un plancher : zéro faute n'est pas un scanner aveugle (256 fonctions le 10/11/2026).
-    expect(noms.size).toBeGreaterThan(250)
-    for (const nom of noms) {
-      const derniere = derniereDefinitionSql(nom)
-      // Le texte rendu ne déborde jamais sur la définition suivante.
-      expect([...derniere.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\./gi)], nom).toHaveLength(1)
-    }
+  describe('le schéma réel, fonction par fonction', () => {
+    // Le schéma se lit UNE fois, dans un beforeAll (CLAUDE.md : un calcul lourd ne se paie jamais en relevant le délai d'un
+    // test) : `derniereDefinitionSql` relit tous les fichiers à chaque appel, et ses 256 appels dépassaient les 5 s d'un test
+    // sous la charge de la suite entière (CI du 10/11/2026). `definitionsSql` sur les fichiers lus une fois rend la même
+    // dernière définition.
+    let noms = new Set<string>()
+    const dernieres = new Map<string, string>()
+    beforeAll(() => {
+      const fichiers = fichiersDuSchema()
+      noms = new Set(fichiers.flatMap((f) =>
+        [...f.texte.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)\(/gi)].map((m) => m[1])))
+      for (const nom of noms) {
+        const definitions = definitionsSql(nom, fichiers)
+        if (definitions.length > 0) dernieres.set(nom, definitions[definitions.length - 1].definition)
+      }
+    })
+
+    it('chaque fonction du schéma exporté a un corps qui se referme, et sa dernière définition se lit', () => {
+      // Un plancher : zéro faute n'est pas un scanner aveugle (256 fonctions le 10/11/2026).
+      expect(noms.size).toBeGreaterThan(250)
+      for (const nom of noms) {
+        const derniere = dernieres.get(nom)
+        expect(derniere, nom).toBeDefined()
+        // Le texte rendu ne déborde jamais sur la définition suivante.
+        expect([...(derniere ?? '').matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\./gi)], nom).toHaveLength(1)
+      }
+    })
+
+    it('la lecture unique rend la même dernière définition que derniereDefinitionSql', () => {
+      for (const nom of ['enregistrer_facture', 'valider_exercice', 'enregistrer_encaissement']) {
+        expect(dernieres.get(nom), nom).toBe(derniereDefinitionSql(nom))
+      }
+    })
   })
 })
 
