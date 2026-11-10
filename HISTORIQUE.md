@@ -50226,3 +50226,27 @@ figées se retrouvent dans la version en vigueur. Quatre attendus de `mentionsFi
 l'ancienne : l'ordre « hier puis neufs » se juge sur la définition que mentions_figees pose, la version en vigueur les
 gardant en sous-suite plus seize refus d'acompte ; six refus d'acompte suivent ceux de la provenance ; `E'\r\n'` et
 `E' \t\n\r'` s'y écrivent `chr(13) || chr(10)` et `' ' || chr(9) || chr(10) || chr(13)`, les mêmes caractères.
+
+### 10/11/2026 — A8-Q5 : LA PIÈCE D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; en production, des SELECT seulement : 188 migrations.) La migration `piece_d_une_facture_reprise`
+(20261110140000, md5 `da2c91d24ac656a6cba088584fdd9a50`, 29 878 octets, LF), ADDITIVE — ni `drop`, ni `delete from`, ni
+`truncate`, aucune fonction remplacée : l'outil devrait la prendre —, après A8a, A9a et A8b, que sa garde de tête exige ; son
+retour (140100) se refuse tant qu'une ligne vit dans la table. Une TABLE plutôt qu'une colonne de `factures_importees`, que sa
+garde fige et que la restauration réinsère avant les pièces : `pieces_des_factures_reprises`, un lien actif par facture
+reprise et par pièce, une pièce de vente du même dossier, qui l'a cité et retiré (retiré en le DATANT, jamais effacé), lue
+par le cabinet seul, au plan de sauvegarde derrière `PIECE_D_UNE_FACTURE_REPRISE_PREVUE` (baissé), restaurée juste après
+`ecritures_brouillon`. `citer_piece_de_facture_reprise` et `retirer_piece_de_facture_reprise` : le cabinet, le verrou partagé de la
+validation, une pièce figée refusée (A8Q5-Q1), un règlement de la pièce daté de la reprise ou d'après à défaire d'abord. La
+garde des règlements, sur `lignes_bancaires`, `reglements_groupes` (datée de son mouvement), `operations_caisse` et
+`ecritures_brouillon`, verrouille la pièce avant de lire le lien ; la garde de la pièce citée refuse un autre type, une
+désignation, une suppression tant que le lien vit. ÉCART : aucune exception par `restauration_des_factures`, que le chef
+super-administrateur aurait passée dans tout dossier dont l'application n'a validé aucune facture ; la restauration passe par
+l'ordre. Sur une copie de r187 (188, A8a, A9a, A8b, elle, sous `proprietaire`) : l'essai neuf `pieceDUneFactureReprise.sql`
+39 sur 39, 17 mutations sur 17 ; hors essai, la pièce citée ne se supprime pas, le dossier part avec son lien, la migration
+ne se rejoue pas, le retour rend la signature d'avant (neuf familles) ; 59 essais avant/après IDENTIQUES hors de l'ajout —
+`rls.sql` 0 en faute (une table de plus), `restauration.sql` (son bloc conditionné, la table au rang 72), 151 de
+`ecrituresVentesFacturees` et 448 d'`exemplairesDesFactures`, qui photographient le catalogue, en écartent les objets neufs ;
+141 de `validationExercice.sql` en faute avant comme après (58 déclencheurs au lieu de 57 : la garde de la pièce, classée
+« dossier »). `src/lib/pieceDUneFactureReprise.ts` redit les refus des cinq fonctions, confrontés au texte. Restent l'écran
+(A8d), la Checklist (« réglée par le registre de sa facture reprise »), A8Q5-Q1 (la pièce figée, au cabinet).
