@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import PaquetDArchiveBouton from './PaquetDArchiveBouton'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import {
@@ -1890,7 +1891,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         <p className="muted" style={{ fontSize: '0.85rem', textAlign: 'right', margin: '0 0 8px' }}>{phraseOuverture}</p>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 14 }}>
         {horsFec.nb > 0 && (
           <span className="badge badge-danger" title="Le format FEC n'a pas de place pour le dire : c'est ici ou nulle part.">
             {/* « seront » et non « sera » + « ont » : l'accord s'écrivait « ne seraont » au pluriel,
@@ -1945,6 +1946,19 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         >
           Exporter FEC {typeof anneeFilter === 'number' ? anneeFilter : ''}{fecValide ? ' (validé)' : ''}
         </button>
+        {/* Le paquet d'archive d'un exercice validé (ligne 44, INAL3a) : il porte CE FEC-là, calculé au clic comme ci-dessus. */}
+        {fecValide && typeof anneeFilter === 'number' && (
+          <PaquetDArchiveBouton
+            dossierId={dossierId}
+            dossierSiret={dossierSiret}
+            annee={anneeFilter}
+            indisponible={
+              brouillonIncomplet ?? aNouveauxIncomplets ?? reportesIncomplets ?? lettragesManquants ?? ventesIndisponibles
+              ?? caisseIndisponible ?? (ventesDesExports === null || operationsDuFec === null ? 'les ventes facturées ou la caisse ne sont pas encore lues' : null)
+            }
+            fec={() => ({ nom: nomFichierFec(dossierSiret, anneeFilter), contenu: formaterFec(fecValide, lettrage, modele.mode) })}
+          />
+        )}
         <button
           className="btn btn-outline btn-sm"
           // `loading` : avant la lecture du brouillon et des pièces, la piste se bâtirait sur des listes vides — un fichier

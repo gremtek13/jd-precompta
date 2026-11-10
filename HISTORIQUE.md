@@ -50380,3 +50380,21 @@ cible des préalables est marquée, et la piste d'audit dit la pièce « réglé
 (`JustificatifsDesVentes.piecesCitees`). Regardés sans retournement : la concordance (la pièce ne contribue plus à la
 2035), la Checklist et l'onglet Écritures (une pièce sans ligne à générer n'y est pas comptée). Deux mutations de plus
 (le prédicat retiré des préalables, puis de la piste d'audit) virent au rouge.
+
+### 10/11/2026 — INAL3A : LE PAQUET D'ARCHIVE D'UN EXERCICE VALIDÉ, SUR UN CLIC DU CABINET (LIGNE 44)
+
+Agent architecte ; aucune migration, aucune écriture en base (un SELECT : 33 pièces sur 77 sans `storage_hash`, toutes
+déposées du 26/08 au 09/09/2026, les 44 autres en hexadécimal). **Le paquet** (`lib/paquetDArchive.ts`, pur) : le FEC tel
+que « Exporter FEC (validé) » le relit (`numerotationValidee` puis `formaterFec`), la 2035 validée (`declaration`, en JSON),
+les originaux des pièces citées — l'ensemble même d'`empreinte_exercice_forme_2`, directement ou par leur bien —, la
+documentation des traitements (INAL-Q8 à sa recommandation, importée `?raw`) et `MANIFESTE.txt` (les deux empreintes, la
+forme, chaque fichier, sa taille et son SHA-256, la date de Paris de la fabrication ; son propre SHA-256 dit à l'écran, pour
+INAL7). Chaque original recalculé à son SHA-256 AVANT d'entrer ; un écart, une pièce sans empreinte, une pièce citée non
+lue ou un fichier non cité refusent TOUT le paquet. Un original s'appelle par sa PieceRef (`referenceDUnePiece`, JJ1Q1-Q3),
+jamais par son nom ; le paquet par le SIREN. **La lecture** (`lib/paquetDArchiveLecture.ts`) : `verifier_exercice_valide`
+d'abord (en forme 2 il scelle les empreintes de dépôt), puis tout par `lireTout`, lue en partie = aucun paquet. **L'écran** :
+le bouton « Paquet d'archive AAAA » à côté de l'export du FEC validé, dans l'onglet Écritures — c'est là que ce FEC se calcule
+(son lettrage n'est pas figé : le recalculer dans Clôture dupliquait dix lectures) ; la carte de la validation y renvoie.
+Verrou `useRef`, un `catch` qui dit une fabrication qui lève (trouvé par le test : sans lui, le clic ne montrait rien).
+**Vérifié** : 18 tests neufs, trois mutations qui mordent (la comparaison des empreintes, le contrôle de lecture partielle,
+le verrou). Restent INAL3b (la table des téléchargements), la piste d'audit et le PDF de la 2035 dans le paquet.
