@@ -49990,3 +49990,79 @@ Tests : `traceDesDroitsVue.test.ts` (17), `traceDesDroitsLecture.test.ts` (7), `
 cinq tests de l'onglet doublent la lecture de la trace (leurs compteurs de lectures sont ceux des accès) ; `lecturesSignalees` a
 exigé que la lecture lise `complete` à découvert. Suite entière 18 954 verts. Questions P1T-E1 (« Le cabinet » pour tout compte connecté
 non reconnu) et P1T-E2 (le nom d'un accès retiré) au cabinet.
+
+### 10/11/2026 — L'INALTÉRABILITÉ ET L'ARCHIVAGE À VALEUR PROBANTE : LA CONCEPTION (LIGNE 44)
+
+Conception seule : aucun code, aucune migration. Lu au catalogue le 10/11/2026 (comptes seulement) : 0 exercice validé ;
+`exercices_valides` porte DÉJÀ `empreinte` et `empreinte_precedente`, posées par `valider_exercice` (`empreinte_exercice`,
+SHA-256 des écritures validées, des à-nouveaux et des soldes reportés, chaînée par dossier ; `verifier_exercice_valide` la
+recalcule) : la ligne 44 n'a pas à créer le chaînage, mais à dire ce qu'il ne prouve pas. 77 pièces, dont 33 sans
+`storage_hash` (d'avant le champ) ; 150 fichiers, 24 Mo ; seize déclencheurs de gel ; et la policy `pieces_storage_delete`
+laisse à qui administre le dossier SUPPRIMER le fichier d'une pièce figée (la ligne est gelée, pas l'objet du stockage).
+
+**Ce qui est EXIGÉ.** Le caractère définitif des écritures par « une procédure de validation, qui interdit toute
+modification ou suppression », et une clôture qui fige la chronologie « au plus tard avant l'expiration de la période
+suivante » (PCG 2026, art. 1031-3 et 1031-4, les 921-3 et 921-4 que cite encore le BOFiP ; le 911-1 de 2026 est le
+tableau de financement) ; la piste d'audit (art. 1011-3) ; une documentation des procédures, gardée aussi longtemps que
+les documents (art. 1011-2, 1011-4 ; BOI-BIC-DECLA-30-10-20-40 §290 à §410) ; une pièce sur un support qui en assure « la
+fiabilité, la conservation et la restitution en clair » (art. 1032-2) ; le FEC (LPF L47 A, A47 A-1 ; BOI-CF-IOR-60-40-20
+§250 : la validation fait passer l'écriture du brouillard au définitif) ; la conservation DIX ans « à compter de la date
+de la dernière opération mentionnée sur les livres », sous la forme informatique où le document a été établi ou reçu (LPF
+L102 B, version du 01/01/2027 relue sur Légifrance ; C. com. L123-22, dix ans aussi, pour les seuls commerçants). Le BOFiP
+interdit la réouverture d'un exercice clôturé et tient un logiciel qui la permet pour un motif de douter du caractère
+probant (BOI-BIC-DECLA-30-10-20-40 §110 à §140). L'obligation de conserver pèse sur le CONTRIBUABLE : l'application la
+sert, aucun texte ne certifie un logiciel de comptabilité. Hors champ, à dire : le système de caisse sécurisé (CGI 286 I
+3° bis) exclut la franchise en base et l'assujetti « réalisant exclusivement des opérations exonérées »
+(BOI-TVA-DECLA-30-10-30 §25), ce que `garder_droit_caisse` assure au praticien ; un dossier redevable qui tiendrait des
+espèces de particuliers par « Caisse » y entrerait (§40 : tout logiciel qui a la fonction de caisse).
+**Ce qui est RECOMMANDÉ.** Un archivage proposé à chaque clôture (même BOI, §580, « pourra utilement »), en format ouvert,
+TXT ou CSV (§550) ; le chaînage et l'horodatage par un tiers, qu'aucun texte n'impose à une comptabilité ; pour une
+facture papier numérisée, A102 B-2 : copie fidèle sans traitement d'image, en PDF ou PDF/A-3, sous cachet, empreinte ou
+signature, horodatée au moins par une source interne — à défaut, le papier se garde.
+
+**Le chaînage, face au super-administrateur.** Il montre qu'une écriture validée changée par un chemin qui contourne les
+déclencheurs se voit, et que l'ordre des exercices tient. Il ne prouve RIEN contre qui peut tout : le super-administrateur
+(ici aussi chef du cabinet) supprime le dossier puis le restaure retouché — la restauration réinsère écritures validées et
+`exercices_valides`, et l'empreinte se recalcule de bout en bout ; `postgres` peut désactiver un déclencheur. Seul un
+TÉMOIN hors de la base l'arrête : une copie gardée ailleurs, un jeton d'horodatage. Et l'empreinte ne couvre ni les
+fichiers (le `storage_hash` des pièces citées), ni la 2035 validée (`declaration`), ni l'en-tête (mode, totaux, date).
+**L'horodatage par un tiers** (RFC 3161, RFC 5816 pour SHA-256) : seule l'empreinte part (aucune donnée personnelle), le
+jeton revient signé et se vérifie hors ligne (`openssl ts -verify`) ; nul ne fabrique un jeton daté du passé, le garder EN
+BASE suffit. Qualifié (règlement eIDAS 910/2014, art. 41 et 42 : présomption d'exactitude de la date et d'intégrité des
+données ; prestataires sur les listes de confiance de l'UE et de l'ANSSI), il coûte un abonnement sur devis, pour quelques
+jetons par an et par dossier ; non qualifié (un service gratuit), il n'a pas la présomption et dépend d'un inconnu. Un
+appel tiers neuf : sur un clic, par une Edge Function, une ligne de RGPD.md §3 et de PLAN_DE_REPRISE.md §3. Sur dix ans
+le certificat du prestataire expire : ré-horodater l'archive avant l'échéance.
+
+**L'archivage des pièces.** Le fichier ORIGINAL, à l'octet (L102 B : la forme reçue), relu à son `storage_hash` avant
+d'entrer dans l'archive ; une conversion en PDF/A ferait une copie, pas la preuve, et ne se propose que pour la
+numérisation d'A102 B-2 (Q4). Par exercice validé, un paquet : le FEC, la piste d'audit, la 2035 telle que validée, les
+originaux cités, la documentation du traitement en vigueur, et un manifeste (l'empreinte de l'exercice et la précédente,
+chaque fichier et son SHA-256), dont l'empreinte se horodate. Le lieu — MVP-D3 a dit « une copie mensuelle des fichiers
+hors de Google Drive », formule à relire avec le cabinet (ligne 20.65) : le stockage du cabinet, ou un seau S3 de l'UE en
+Object Lock « compliance », dont même le compte racine ne raccourcit pas la rétention (AWS est déjà sous-traitant). Dix
+ans à compter du 31/12 de l'exercice. Le client qui part : l'obligation est la sienne ; le cabinet lui RESTITUE les
+paquets (RGPD, art. 28.3 g), puis supprime ; la suppression d'un dossier qui porte un exercice validé exige que chaque
+paquet ait été téléchargé, et sa confirmation le nomme.
+
+**Lots, dans l'ordre** (≈ 11 jours) : INAL1, le stockage gèle le fichier d'une pièce figée et d'une source citée par la
+révision (resserrement de `pieces_storage_delete`, bloc de `rls.sql` ; la suppression d'un dossier passe, ses lignes
+parties d'abord), 1 j ; INAL2, l'empreinte en forme 2 (fichiers cités, `declaration`, en-tête ; une colonne de forme,
+`verifier_exercice_valide` lit les deux), AVANT toute validation, la répétition 2025 comprise, 1,5 j ; INAL3, le paquet
+d'archive d'un exercice validé, sur un clic (jszip, chaque fichier relu à son empreinte, refus sur un écart, une table de
+ses téléchargements), 3 j ; INAL4, la documentation du traitement, versionnée, et RGPD.md §5 corrigé (il dit six ans pour
+L102 B et range le BNC sous L123-22), 1 j ; INAL5, la suppression et le départ d'un client, 1 j ; INAL6, la copie hors de
+Supabase selon Q3, 1 à 2,5 j ; INAL7, l'horodatage selon Q2, 2 j. MVP : INAL1 et INAL2 avant la répétition générale,
+INAL3 avant la validation de 2026.
+
+**Questions au cabinet.** INAL-Q1 — l'empreinte en forme 2 avant toute validation ? Reco : oui (sinon deux formes à
+vérifier dix ans ; ou garder la forme 1, muette sur les fichiers). INAL-Q2 — l'horodatage ? Reco : pas pour le MVP, le
+témoin est le paquet gardé hors de la base ; un prestataire QUALIFIÉ sur devis au second dossier ; écartés : qualifié dès
+maintenant, un service gratuit non qualifié. INAL-Q3 — le lieu de la copie ? Reco : le stockage du cabinet pour le MVP,
+puis un seau S3 en Object Lock dans l'UE ; autres : le cabinet seul à jamais, un service d'archivage qualifié (eIDAS 2,
+règlement 2024/1183, à relire sur EUR-Lex). INAL-Q4 — les photos de tickets papier ? Reco : la consigne au praticien de
+garder le papier ; autre : numériser selon A102 B-2 (PDF sans perte, horodaté), 2 à 3 j. INAL-Q5 — geler le fichier d'une
+pièce figée ? Reco : oui ; autre : laisser la suppression ouverte. INAL-Q6 — le départ d'un client ? Reco : restitution,
+puis suppression conditionnée au téléchargement ; autres : interdire la suppression dix ans, ou ne rien changer. INAL-Q7 —
+une clôture mensuelle ? Reco : non, celle de l'exercice suffit (BOFiP §140) ; autres : mensuelle, ou trimestrielle avec la
+CA3. INAL-Q8 — la documentation du traitement dans chaque paquet ? Reco : oui ; autre : à part, une fois.
