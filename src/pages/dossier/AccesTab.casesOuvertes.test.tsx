@@ -50,6 +50,11 @@ type LigneAcces = {
 const faux = vi.hoisted(() => ({ lignes: [] as LigneAcces[] }))
 
 // La lecture des accès, seule faite au montage : le faux client APPLIQUE ses filtres d'égalité et sa tranche.
+// La trace des droits (étape P1-trace) a sa lecture et son écran testés à part (traceDesDroitsLecture.test.ts, AccesTab.trace.test.tsx) :
+// ici, lue en entier et vide, pour que les lectures que ce fichier compte restent celles des accès.
+vi.mock('../../lib/traceDesDroitsLecture', () => ({
+  lireLaTraceDuDossier: async (dossierId: string) => ({ dossierId, lignes: [], motif: null }),
+}))
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
   return {

@@ -71,6 +71,11 @@ vi.mock('../../lib/situationsPubliees', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../lib/situationsPubliees')>(),
   SITUATIONS_PUBLIEES_EXPORTEES: false,
 }))
+// La trace des droits (étape P1-trace) a sa lecture et son écran testés à part (traceDesDroitsLecture.test.ts, AccesTab.trace.test.tsx) :
+// ici, lue en entier et vide, pour que les lectures que ce fichier compte restent celles des accès.
+vi.mock('../../lib/traceDesDroitsLecture', () => ({
+  lireLaTraceDuDossier: async (dossierId: string) => ({ dossierId, lignes: [], motif: null }),
+}))
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
   // Ce que fait la fonction en base (la forme à quatre de la migration `caisse_du_client`) : un accès inconnu se refuse comme
