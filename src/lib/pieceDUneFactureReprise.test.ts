@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { definitionsSql } from '../test/schema'
 import {
   PIECE_D_UNE_FACTURE_REPRISE_PREVUE, REFUS_CITER, REFUS_DE_LA_PIECE, REFUS_DU_LIEN, REFUS_DU_REGLEMENT, REFUS_RETIRER,
   TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE, jourDit, refusDuReglement, reglementRefuse, remplir,
@@ -24,12 +25,12 @@ const MIGRATION = leFichier(/^\d{14}_piece_d_une_facture_reprise\.sql$/, ['../..
 const RETOUR = leFichier(/^\d{14}_retour_piece_d_une_facture_reprise\.sql$/, ['../../supabase/preparees/retour/'])
 const ESSAI = readFileSync(new URL('../../supabase/essais/pieceDUneFactureReprise.sql', import.meta.url), 'utf8')
 
-/** Une fonction de la migration : de son `create function public.<nom>(` au `$$;` qui la ferme, exclu. */
+/** Une fonction de la migration : sa dernière définition, de `create function public.<nom>(` au délimiteur qui la ferme, exclu
+ * (capitales comprises : `definitionsSql`, src/test/schema.ts). */
 function fonction(nom: string): string {
-  const m = new RegExp(`create (or replace )?function public\\.${nom}\\(`).exec(MIGRATION)
-  expect(m, nom).not.toBeNull()
-  const debut = (m as RegExpExecArray).index
-  return MIGRATION.slice(debut, MIGRATION.indexOf('$$;', debut))
+  const definitions = definitionsSql(nom, [{ chemin: 'piece_d_une_facture_reprise', texte: MIGRATION }])
+  expect(definitions, nom).not.toHaveLength(0)
+  return definitions[definitions.length - 1].definition
 }
 
 /** Les refus d'un texte SQL, dans l'ordre : leurs mots (les apostrophes doublées rendues) et leur code. */
@@ -54,7 +55,7 @@ describe('les refus de la migration, aux mots et au code de la base', () => {
     const garde = fonction('garder_reglement_d_une_piece_reprise')
     expect(garde).toContain('if v_date >= v_reprise then')
     for (const table of ['lignes_bancaires', 'reglements_groupes', 'operations_caisse', 'ecritures_brouillon']) {
-      expect(MIGRATION).toMatch(new RegExp(`create trigger ${table}_piece_d_une_facture_reprise\\n  before insert or update of [a-z_, ]+ on public\\.${table}\\n  for each row execute function public\\.garder_reglement_d_une_piece_reprise\\(\\);`))
+      expect(MIGRATION).toMatch(new RegExp(`create trigger ${table}_piece_d_une_facture_reprise\\n  before insert or update of [a-z_, ]+ on public\\.${table}\\n  for each row execute function public\\.garder_reglement_d_une_piece_reprise\\(\\);`, 'i'))
     }
   })
 })
@@ -65,10 +66,10 @@ describe('la migration se tient', () => {
     expect(MIGRATION).not.toMatch(/create or replace/i)
   })
   it('son retour retire chaque objet qu’elle crée, et se refuse tant qu’un lien vit', () => {
-    const crees = [...MIGRATION.matchAll(/^create (function|table|trigger) public\.(\w+)|^create trigger (\w+)/gm)].map((m) => m[2] ?? m[3])
+    const crees = [...MIGRATION.matchAll(/^create (function|table|trigger) public\.(\w+)|^create trigger (\w+)/gim)].map((m) => m[2] ?? m[3])
     expect(crees).toHaveLength(12)
     // La garde de la table part avec elle (`drop table`) ; tout autre objet a son `drop`.
-    for (const nom of crees.filter((n) => n !== 'pieces_des_factures_reprises_garde')) expect(RETOUR, nom).toMatch(new RegExp(`drop (function|table|trigger) (public\\.)?${nom}\\b`))
+    for (const nom of crees.filter((n) => n !== 'pieces_des_factures_reprises_garde')) expect(RETOUR, nom).toMatch(new RegExp(`drop (function|table|trigger) (public\\.)?${nom}\\b`, 'i'))
     expect(RETOUR).toContain('if exists (select 1 from public.pieces_des_factures_reprises) then')
   })
   it('les fonctions du cabinet : aux droits du propriétaire, leur chemin fixé, aux connectés seuls ; les gardes à personne', () => {
