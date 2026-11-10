@@ -602,7 +602,7 @@ describe('ce que l’avis dit à chacun', () => {
 
 // ── 6. Le drapeau, et le texte de la fonction exportée ──────────────────────────────────────────────────────────────
 describe('le module et la fonction exportée disent la même chose', () => {
-  const exportee = fichiersDuSchema().some((f) => /create function public\.dernier_changement_de_rib\(/.test(f.texte))
+  const exportee = fichiersDuSchema().some((f) => /create\s+function\s+public\.dernier_changement_de_rib\(/i.test(f.texte))
 
   it('le drapeau dit ce que porte l’export : faux tant que la migration n’y est pas', () => {
     expect(CHANGEMENT_DE_RIB_EXPORTE, 'CHANGEMENT_DE_RIB_EXPORTE ne dit plus ce que porte l’export').toBe(exportee)
@@ -666,7 +666,7 @@ describe('le module et la fonction exportée disent la même chose', () => {
 
   it('exportée : l’anonyme et PUBLIC n’exécutent pas la fonction ; les connectés, oui', () => {
     if (!CHANGEMENT_DE_RIB_EXPORTE) return
-    const texte = fichiersDuSchema().find((f) => /create function public\.dernier_changement_de_rib\(/.test(f.texte))?.texte as string
+    const texte = fichiersDuSchema().find((f) => /create\s+function\s+public\.dernier_changement_de_rib\(/i.test(f.texte))?.texte as string
     expect(texte).toContain('revoke execute on function public.dernier_changement_de_rib(uuid) from public, anon;')
     expect(texte).toContain('grant execute on function public.dernier_changement_de_rib(uuid) to authenticated;')
   })

@@ -588,7 +588,7 @@ describe('le retrait d’un paiement depuis le compte personnel', () => {
   })
 
   it('l’export porte la fonction du retrait si et seulement si RETRAIT_EXPORTE le dit — et alors, ses mots sont ceux du module', () => {
-    const exportee = fichiersDuSchema().some((f) => /create (or replace )?function public\.retirer_paiement_personnel_cotisation\(/.test(f.texte))
+    const exportee = fichiersDuSchema().some((f) => /create\s+(or\s+replace\s+)?function\s+public\.retirer_paiement_personnel_cotisation\(/i.test(f.texte))
     expect(exportee, 'RETRAIT_EXPORTE ne dit plus ce que porte l’export').toBe(RETRAIT_EXPORTE)
     if (!exportee) return
     const sql = derniereDefinitionSql('retirer_paiement_personnel_cotisation')

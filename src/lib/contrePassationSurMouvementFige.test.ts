@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { correspondAuModele, etapesDeLEssai, refusExigesParLEssai, TEXTE_ESSAI_VENTES_FACTUREES } from '../test/essaiVentesFacturees'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, type DefinitionSql } from '../test/schema'
 import { REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT } from './encaissementsFactures'
 import { ORDRE_RESTAURATION, ORDRE_RESTAURATION_PREVU, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PAR_VAGUES } from './sauvegarde'
 
@@ -33,22 +33,15 @@ const GARDE = 'garder_encaissement_facture'
 // La définition d'une fonction telle que la dernière migration AVANT celle-ci la laisse — celle que la production
 // exécute aujourd'hui —, et le fichier qui la porte.
 function avantLaMigration(nom: string): { chemin: string; definition: string } {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
   const fichiers = fichiersDuSchema()
   const ici = fichiers.findIndex((f) => MIGRATION.test(f.chemin))
   expect(ici, 'la migration contre_passation_sur_mouvement_fige dans l’export').toBeGreaterThan(0)
-  const avant = fichiers.slice(0, ici).filter((f) => new RegExp(motif.source).test(f.texte))
-  const { chemin, texte } = avant[avant.length - 1]
-  const positions = [...texte.matchAll(motif)].map((m) => m.index as number)
-  const debut = positions[positions.length - 1]
-  return { chemin, definition: texte.slice(debut, texte.indexOf('$$;', debut)) }
+  return definitionsSql(nom, fichiers.slice(0, ici)).at(-1) as DefinitionSql
 }
 
 // Le fichier de l'export qui porte la DERNIÈRE définition d'une fonction : celle que la base exécutera.
 function fichierDeLaDerniereDefinition(nom: string): string {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`)
-  const fichiers = fichiersDuSchema().filter((f) => motif.test(f.texte))
-  return fichiers[fichiers.length - 1]?.chemin ?? ''
+  return definitionsSql(nom, fichiersDuSchema()).at(-1)?.chemin ?? ''
 }
 
 // La migration POSTÉRIEURE qui reprend la garde — la caisse, étape C6 : `especes_sans_mouvement`, dans l'export depuis

@@ -1111,8 +1111,8 @@ function definitionDans(texte: string, nom: string): string {
 describe('les drapeaux, et les deux modules confrontés au texte exporté', () => {
   const fichiers = fichiersDuSchema()
   const texteDe = (motif: RegExp) => fichiers.find((f) => motif.test(f.texte))?.texte
-  const VF1A = texteDe(/create function public\.designer_exemplaire_facture\(/)
-  const VF6B = texteDe(/create function public\.declarer_vente_hors_des_factures\(/)
+  const VF1A = texteDe(/create\s+function\s+public\.designer_exemplaire_facture\(/i)
+  const VF6B = texteDe(/create\s+function\s+public\.declarer_vente_hors_des_factures\(/i)
 
   it('chaque drapeau dit ce que porte l’export : levé quand sa migration y est, baissé sinon', () => {
     expect(EXEMPLAIRES_DES_FACTURES_EXPORTES, 'EXEMPLAIRES_DES_FACTURES_EXPORTES ne dit plus ce que porte l’export').toBe(VF1A !== undefined)

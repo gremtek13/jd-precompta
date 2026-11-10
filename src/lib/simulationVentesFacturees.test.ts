@@ -180,7 +180,7 @@ describe('le drapeau', () => {
 
   it('la migration est dans l’export, une fois, et y définit la fonction que l’écran appellera le drapeau levé', () => {
     expect(FICHIERS_DE_LA_MIGRATION).toHaveLength(1)
-    expect(fichiersDuSchema().filter((f) => /create (or replace )?function public\.ventes_facturees_de_la_simulation\(/.test(f.texte)))
+    expect(fichiersDuSchema().filter((f) => /create\s+(or\s+replace\s+)?function\s+public\.ventes_facturees_de_la_simulation\(/i.test(f.texte)))
       .toHaveLength(1)
     const ecran = readFileSync(resolve(process.cwd(), 'src/pages/ClientSimulation.tsx'), 'utf8')
     expect(ecran).toContain("supabase.rpc('ventes_facturees_de_la_simulation', { p_dossier_id: dossierLu, p_annee: annee })")

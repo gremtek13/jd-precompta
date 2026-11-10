@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { definitionsSql, fichiersDuSchema, fichiersPrepares, type DefinitionSql } from '../test/schema'
 import { CASES_2035, POSTES_RATTACHES, caseDuPoste, posteRattache } from './cases2035'
 import {
   MODES_REGLEMENT, NATURES_OPERATION, SEPARATEUR_DU_POSTE, natOpDeLaLigne, type ChampsBnc, type LigneACaracteriser,
@@ -53,10 +53,7 @@ function definitionDans(texte: string, fonction: string): string {
 // pas appliquée.
 function avantLaMigration(fonction: string): { chemin: string; definition: string } {
   const nom = nomDuFichier(laMigration().chemin)
-  const avant = fichiersDuSchema().filter((f) => nomDuFichier(f.chemin) < nom && motifDe(fonction).test(f.texte))
-  const { chemin, texte } = avant[avant.length - 1]
-  const debut = [...texte.matchAll(motifDe(fonction))].pop()?.index as number
-  return { chemin, definition: texte.slice(debut, texte.indexOf('$$;', debut)) }
+  return definitionsSql(fonction, fichiersDuSchema().filter((f) => nomDuFichier(f.chemin) < nom)).at(-1) as DefinitionSql
 }
 
 // Le retour arrière, dans supabase/preparees/retour/.

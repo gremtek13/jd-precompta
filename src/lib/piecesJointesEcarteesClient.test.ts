@@ -296,7 +296,7 @@ describe('la phrase de l’onglet Accès sur la collecte (S229-Q5) : ce que la b
 
 describe('le drapeau dit ce que porte l’export', () => {
   it('ECARTEES_DU_CLIENT_EXPORTEES si et seulement si l’export porte la fonction — et alors, sa forme est celle qu’on lit', () => {
-    const exportee = fichiersDuSchema().some((f) => /create (or replace )?function public\.pieces_jointes_ecartees_du_client\(/.test(f.texte))
+    const exportee = fichiersDuSchema().some((f) => /create\s+(or\s+replace\s+)?function\s+public\.pieces_jointes_ecartees_du_client\(/i.test(f.texte))
     expect(exportee, 'ECARTEES_DU_CLIENT_EXPORTEES ne dit plus ce que porte l’export').toBe(ECARTEES_DU_CLIENT_EXPORTEES)
     if (!exportee) return
     const sql = derniereDefinitionSql('pieces_jointes_ecartees_du_client')

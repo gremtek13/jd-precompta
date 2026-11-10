@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { correspondAuModele } from '../test/essaiVentesFacturees'
 import { argumentsSql, codesSql, messagesSql, nombreDeValeurs } from '../test/raiseSql'
-import { derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, type DefinitionSql } from '../test/schema'
 import { motsDuCabinet, pourLEspace } from './espaceVentes'
 import { REFUS_DE_LA_VALIDATION_FIGEE } from './mentionsFigees'
 import { EXONERATIONS, MENTION_FRANCHISE, mentionTva } from './statutTva'
@@ -53,12 +53,8 @@ function definitionDans(texte: string, nom: string): string {
 
 // La définition que l'export portait AVANT la migration : celle que la production porte le 31/10/2026.
 function avantLaMigration(nom: string): { chemin: string; definition: string } {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
   const limite = nomDuFichier(laMigration().chemin)
-  const avant = fichiersDuSchema().filter((f) => nomDuFichier(f.chemin) < limite && new RegExp(motif.source).test(f.texte))
-  const { chemin, texte } = avant[avant.length - 1]
-  const debut = [...texte.matchAll(motif)].pop()?.index as number
-  return { chemin, definition: texte.slice(debut, texte.indexOf('$$;', debut)) }
+  return definitionsSql(nom, fichiersDuSchema().filter((f) => nomDuFichier(f.chemin) < limite)).at(-1) as DefinitionSql
 }
 
 // Le retour arrière, dans supabase/preparees/retour/.

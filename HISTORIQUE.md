@@ -50205,3 +50205,24 @@ numerotationContinue 67, facturesImportees 48, simulationDesVentesFacturees 30, 
 d'A8a et A9a) et `caisse.sql` 289b, en faute avant comme après ; le retour rend les sept définitions et leurs droits ; trois
 essais SÛRS au banc. `src/lib/encaissementsDesReprises.ts` redit les six refus neufs, confrontés aux deux fichiers. Restent
 A8c (les lecteurs), A8-Q5 (la pièce déjà au dossier, que l'en-tête d'A8a annonçait ici), et A8B-Q1 à Q3.
+
+### 10/11/2026 — LES TESTS LISAIENT UNE ANCIENNE ENREGISTRER_FACTURE : LA DERNIÈRE DÉFINITION, CAPITALES COMPRISES
+
+Outillage de test seul : aucune migration, aucun code applicatif. **Ce qui était lu.** `derniereDefinitionSql`
+(`src/test/schema.ts`) cherchait `create (or replace )?function public.<nom>(` en minuscules et fermait le corps au
+premier `$$;`. acomptes_des_devis (05/11/2026) écrit `CREATE OR REPLACE FUNCTION public.enregistrer_facture(` … `AS
+$function$` : les tests lisaient la version de mentions_figees (29/10). Mesuré sur les 256 fonctions de l'export : deux
+seules diffèrent — `enregistrer_facture` et `generate_code_email` (socle, introuvable avant) ; trois corps seulement
+s'ouvrent par `$function$` (ces deux-là et l'`enregistrer_facture` de mentions_de_la_facture), les autres par `$$`.
+Confronté à `pg_proc` en SELECT : le corps d'acomptes_des_devis a le `md5(prosrc)` de la production (47 479
+caractères) ; celui de `generate_code_email` ne diffère que par ses fins de ligne `\r\n`. **Ce qui l'est désormais.**
+`motifDeDefinition` (insensible à la casse et aux blancs), `finDuCorps` (le délimiteur qui ferme celui qui ouvre, une
+forme sans `$…$` lève) et `definitionsSql` ; `derniereDefinitionSql` passe par eux. Dix-neuf copies locales, dans
+quatorze fichiers, qui cherchaient dans tout l'export (« avant la migration », « fichier de la dernière définition »)
+passent par `definitionsSql` ; vingt et une recherches d'existence prennent `/i` ; les lectures d'un fichier nommé restent.
+`src/test/schema.test.ts` plante les deux formes et les deux délimiteurs ; deux mutations mordent (le motif sans `i`,
+la fin à `$$;`). **Les écarts.** Aucun entre l'application et la base : les refus d'A7, la validation et les colonnes
+figées se retrouvent dans la version en vigueur. Quatre attendus de `mentionsFigees.test.ts` étaient écrits sur
+l'ancienne : l'ordre « hier puis neufs » se juge sur la définition que mentions_figees pose, la version en vigueur les
+gardant en sous-suite plus seize refus d'acompte ; six refus d'acompte suivent ceux de la provenance ; `E'\r\n'` et
+`E' \t\n\r'` s'y écrivent `chr(13) || chr(10)` et `' ' || chr(9) || chr(10) || chr(13)`, les mêmes caractères.

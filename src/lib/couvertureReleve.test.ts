@@ -133,7 +133,7 @@ describe('le drapeau dit ce que porte l’export', () => {
   // la fonction exportée à ce que les écrans lui envoient et en attendent, et vire au rouge si le drapeau et l'export
   // se contredisent — un drapeau rebaissé, ou un export qui perdrait la fonction.
   it('l’export porte couverture_du_releve si et seulement si COUVERTURE_EXPORTEE le dit — et alors, sa forme est celle qu’on lit', () => {
-    const exportee = fichiersDuSchema().some((f) => /create (or replace )?function public\.couverture_du_releve\(/.test(f.texte))
+    const exportee = fichiersDuSchema().some((f) => /create\s+(or\s+replace\s+)?function\s+public\.couverture_du_releve\(/i.test(f.texte))
     expect(exportee, 'COUVERTURE_EXPORTEE ne dit plus ce que porte l’export').toBe(COUVERTURE_EXPORTEE)
     if (!exportee) return
     const sql = derniereDefinitionSql('couverture_du_releve')

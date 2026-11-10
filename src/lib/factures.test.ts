@@ -349,7 +349,7 @@ describe('supprimerBrouillon', () => {
   })
 
   it('l’export porte la fonction si et seulement si SUPPRESSION_BROUILLON_EXPORTEE le dit', () => {
-    const exportee = fichiersDuSchema().some((f) => /create (or replace )?function public\.supprimer_brouillon_facture\(/.test(f.texte))
+    const exportee = fichiersDuSchema().some((f) => /create\s+(or\s+replace\s+)?function\s+public\.supprimer_brouillon_facture\(/i.test(f.texte))
     expect(exportee, 'SUPPRESSION_BROUILLON_EXPORTEE ne dit plus ce que porte l’export').toBe(SUPPRESSION_BROUILLON_EXPORTEE)
   })
 })

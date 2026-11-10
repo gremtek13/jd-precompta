@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { etapesDeLEssai, rejouerLEssai } from '../test/essaiCaisse'
 import { codesSql, messagesSql } from '../test/raiseSql'
-import { derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, type DefinitionSql } from '../test/schema'
 import {
   MOYENS_ENCAISSEMENT, MOYENS_SANS_CREDIT, REFUS_ENREGISTREMENT, REFUS_ESPECES_SUR_UN_CREDIT, REFUS_RATTACHEMENT,
   moyenSansCredit, moyenSurUnCredit, moyensOfferts, rattachableApresLaFrontiere, refusEnregistrement, refusEnregistrementVente,
@@ -46,12 +46,8 @@ function definitionPosee(texte = laMigration().texte): string {
 // La définition de la garde que la migration reprend : la dernière de l'export AVANT elle — celle que la production exécute
 // tant qu'elle n'est pas appliquée.
 function avantLaMigration(): { chemin: string; definition: string } {
-  const motif = new RegExp(`create (or replace )?function public\\.${GARDE}\\(`, 'g')
   const nom = nomDuFichier(laMigration().chemin)
-  const avant = fichiersDuSchema().filter((f) => nomDuFichier(f.chemin) < nom && new RegExp(motif.source).test(f.texte))
-  const { chemin, texte } = avant[avant.length - 1]
-  const debut = [...texte.matchAll(motif)].pop()?.index as number
-  return { chemin, definition: texte.slice(debut, texte.indexOf('$$;', debut)) }
+  return definitionsSql(GARDE, fichiersDuSchema().filter((f) => nomDuFichier(f.chemin) < nom)).at(-1) as DefinitionSql
 }
 
 // Le retour arrière, dans supabase/preparees/retour/ : la garde d'hier rendue, sous sa propre garde de tête.

@@ -369,7 +369,7 @@ describe('ce qu’un écran en dira', () => {
 
 // ── 5. Le drapeau, et le texte de la fonction exportée ──────────────────────────────────────────────────────────────
 describe('le module et la fonction exportée disent la même chose', () => {
-  const exportee = fichiersDuSchema().some((f) => /create function public\.dossiers_au_rib_a_confirmer\(/.test(f.texte))
+  const exportee = fichiersDuSchema().some((f) => /create\s+function\s+public\.dossiers_au_rib_a_confirmer\(/i.test(f.texte))
 
   it('le drapeau dit ce que porte l’export : faux tant que la migration n’y est pas', () => {
     expect(DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE, 'DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE ne dit plus ce que porte l’export').toBe(exportee)
@@ -411,7 +411,7 @@ describe('le module et la fonction exportée disent la même chose', () => {
 
   it('exportée : l’anonyme et PUBLIC n’exécutent pas la fonction ; les connectés, oui', () => {
     if (!DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE) return
-    const texte = fichiersDuSchema().find((f) => /create function public\.dossiers_au_rib_a_confirmer\(/.test(f.texte))?.texte as string
+    const texte = fichiersDuSchema().find((f) => /create\s+function\s+public\.dossiers_au_rib_a_confirmer\(/i.test(f.texte))?.texte as string
     expect(texte).toContain('revoke execute on function public.dossiers_au_rib_a_confirmer() from public, anon;')
     expect(texte).toContain('grant execute on function public.dossiers_au_rib_a_confirmer() to authenticated;')
   })

@@ -8,7 +8,7 @@ import { ANNEES_ILLISIBLES, FRONTIERE_JUGEE_PAR_LA_BASE } from './encaissementsF
 import { motsDuCabinet, pourLEspace } from './espaceVentes'
 import type { FactureEmise } from './types'
 import { correspondAuModele, etapesDeLEssai, refusExigesParLEssai } from '../test/essaiVentesFacturees'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema, motifDeDefinition } from '../test/schema'
 
 // LA SOURCE DE LA VENTE (chantier EC-Q3, étape VF2 ; migration `source_de_la_vente`, en base et dans l'export depuis le
 // 18/10/2026), CONFRONTÉE AU TEXTE DE SES TROIS FONCTIONS : chaque refus du module est celui de la base — même message,
@@ -57,7 +57,7 @@ const lignesDeCode = (sql: string) => sql.split('\n').filter((l) => !l.trim().st
 describe('les refus de la source de la vente, confrontés au texte de leurs fonctions', () => {
   it('les deux migrations sont dans l’export, et chaque fonction n’y a que les définitions qu’elles posent', () => {
     for (const [nom] of FONCTIONS) {
-      const definitions = fichiersDuSchema().filter((f) => new RegExp(`create (or replace )?function public\\.${nom}\\(`).test(f.texte))
+      const definitions = fichiersDuSchema().filter((f) => new RegExp(motifDeDefinition(nom).source, 'i').test(f.texte))
       expect(definitions.map((f) => f.chemin), nom).toEqual(DEFINIE_DANS[nom].map((m) => migration(m).chemin))
     }
   })
