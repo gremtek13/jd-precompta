@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { AVOIR_NE_PRECEDE_PAS, REFUS_AVOIR_D_UNE_REPRISE } from './encaissementsDesReprises'
 import { describe, expect, it } from 'vitest'
 import { NATURES_ARTICLE, UNITES_ARTICLE } from './articles'
 import { numeroTvaImprime } from './factureCii'
@@ -141,13 +142,19 @@ describe('les refus neufs d’enregistrer_facture, confrontés à son texte', ()
     ])
     expect(valeursSql(POSEE).slice(0, messagesSql(hier).length)).toEqual(valeursSql(hier))
     // Et la version en vigueur les garde tous, dans le même ordre, sous les mêmes codes : acomptes_des_devis n'en ajoute
-    // que les siens, aucun n'est retiré ni déplacé.
+    // que les siens, puis A8b (`factures_reprises_encaissements`, en production depuis le 10/11/2026) les deux de l'avoir
+    // d'une facture reprise, que REFUS_AVOIR_D_UNE_REPRISE (encaissementsDesReprises.ts) redit juste après « Un avoir ne
+    // précède pas la facture qu'il corrige » ; aucun n'est retiré ni déplacé.
     const posee = messagesSql(POSEE).map((m, i) => `${codesSql(POSEE)[i]} ${m}`)
     const enVigueur = messagesSql(FONCTION).map((m, i) => `${codesSql(FONCTION)[i]} ${m}`)
     let k = 0
     for (const refus of enVigueur) if (refus === posee[k]) k++
     expect(k, 'les refus de mentions_figees, sous-suite de la version en vigueur').toBe(posee.length)
-    expect(enVigueur.length - posee.length).toBe(AJOUTES_PAR_LES_ACOMPTES)
+    expect(enVigueur.length - posee.length).toBe(AJOUTES_PAR_LES_ACOMPTES + REFUS_AVOIR_D_UNE_REPRISE.length)
+    const rangDeLAvoir = enVigueur.indexOf(`22023 ${AVOIR_NE_PRECEDE_PAS}`)
+    expect(rangDeLAvoir).toBeGreaterThan(0)
+    REFUS_AVOIR_D_UNE_REPRISE.forEach((r, i) => expect(enVigueur[rangDeLAvoir + 1 + i], r.cle).toBe(`22023 ${r.modele}`))
+    expect(posee.filter((r) => REFUS_AVOIR_D_UNE_REPRISE.some((n) => r.endsWith(n.modele)))).toEqual([])
   })
 
   it('la provenance : les mêmes refus, dans l’ordre du module, la ligne en valeur', () => {

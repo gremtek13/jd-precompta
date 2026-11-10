@@ -32,7 +32,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot, predicatOr, predicatIn } = await import('../../test/filtresPostgrest')
   // Le relevé aussi, depuis la ligne 28.65 : les sources des écritures lisent les mouvements du dossier, et un mouvement d'un
   // autre dossier fermerait leur lecture.
   const TABLES_DES_VENTES = ['factures_emises', 'encaissements_factures', 'encaissements_factures_taux', 'lignes_bancaires']
@@ -62,6 +62,9 @@ vi.mock('../../lib/supabase', async () => {
         return c
       },
       not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
+      // Les ventes facturées lisent les factures validées ET reprises (A8c : `.in('statut', etatsDesVentes())`) : le faux
+      // applique ce filtre comme la base, une facture reprise d'un autre état écartée.
+      in: (colonne: string, valeurs: readonly unknown[]) => { predicats.push(predicatIn(colonne, valeurs)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => Promise.resolve({ data: null, error: null }),

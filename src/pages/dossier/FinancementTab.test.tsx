@@ -75,7 +75,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatNot, predicatOr, predicatIn } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     const c: Record<string, unknown> = {}
     let debut = 0
@@ -91,6 +91,9 @@ vi.mock('../../lib/supabase', async () => {
       update: (valeur: Record<string, unknown>) => { operation = 'update'; faux.misesAJour.push({ table, valeur }); return c },
       insert: (ligne: unknown) => { operation = 'insert'; faux.creations.push({ table, ligne }); return c },
       not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
+      // Les ventes facturées lisent les factures validées ET reprises (A8c : `.in('statut', etatsDesVentes())`) : le faux
+      // applique ce filtre comme la base, une facture reprise d'un autre état écartée.
+      in: (colonne: string, valeurs: readonly unknown[]) => { predicats.push(predicatIn(colonne, valeurs)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => (faux.porte ?? Promise.resolve()).then(() => (faux.refusees.has(table)

@@ -53,6 +53,8 @@ function definitionPosee(nom: string): string {
 // celle-ci. Ce garde-ci confronte donc ce que CETTE migration pose, où que soit la dernière.
 const REPRISES_DEPUIS: ReadonlyMap<string, RegExp> = new Map([
   ['garder_lignes_de_la_vente_facturee', /\/\d{14}_champs_bnc_du_fec\.sql$/],
+  // A8b (`factures_reprises_encaissements`, 10/11/2026) : la composition d'un mouvement d'encaissements d'une facture reprise.
+  ['ecriture_attendue_vente_facturee', /\/\d{14}_factures_reprises_encaissements\.sql$/],
 ])
 
 // Les quatre fonctions reprises : l'empreinte de leur corps d'hier (celle que la production portait le 23/10/2026, relevée

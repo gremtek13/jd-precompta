@@ -28,7 +28,9 @@ const MIGRATION = /\/\d{14}_insertion_des_encaissements\.sql$/
 const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.texte ?? ''
 // La migration POSTÉRIEURE qui a repris la garde, et en porte désormais la dernière définition — puis celle de la
 // caisse (étape C6 : `especes_sans_mouvement`, dans l'export depuis le 30/10/2026), qui la reprend à son tour.
-const REPRISE_DEPUIS = /\/\d{14}_(?:contre_passation_sur_mouvement_fige|especes_sans_mouvement)\.sql$/
+// Puis A8b (`factures_reprises_encaissements`, en production depuis le 10/11/2026), qui l'ouvre à une facture reprise sans
+// toucher à ces deux règles.
+const REPRISE_DEPUIS = /\/\d{14}_(?:contre_passation_sur_mouvement_fige|especes_sans_mouvement|factures_reprises_encaissements)\.sql$/
 
 // Ce que cette migration a posé : la définition que son texte donne à la garde.
 function definitionPosee(): string {

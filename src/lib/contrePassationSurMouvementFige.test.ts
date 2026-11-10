@@ -47,7 +47,8 @@ function fichierDeLaDerniereDefinition(nom: string): string {
 // La migration POSTÉRIEURE qui reprend la garde — la caisse, étape C6 : `especes_sans_mouvement`, dans l'export depuis
 // le 30/10/2026 — et en porte la dernière définition ; especesSansMouvement.test.ts confronte la sienne à
 // celle-ci. Ce garde-ci confronte donc la définition que CETTE migration pose, où que soit la dernière.
-const REPRISE_DEPUIS = /\/\d{14}_especes_sans_mouvement\.sql$/
+// Puis A8b (`factures_reprises_encaissements`, en production depuis le 10/11/2026), qui l'ouvre à une facture reprise.
+const REPRISE_DEPUIS = /\/\d{14}_(?:especes_sans_mouvement|factures_reprises_encaissements)\.sql$/
 
 // Ce que cette migration a posé : la définition que son texte donne à la garde.
 function definitionPosee(): string {

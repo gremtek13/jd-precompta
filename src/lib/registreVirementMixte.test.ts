@@ -4,7 +4,7 @@ import { correspondAuModele, etapesDeLEssai, refusExigesParLEssai } from '../tes
 import { codesSql, messagesSql } from '../test/raiseSql'
 import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, indiceSql } from '../test/schema'
 import {
-  REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, refusContrePassation, refusContrePassationSansIssue,
+  REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, refusEnregistrementExportes, refusContrePassation, refusContrePassationSansIssue,
   refusContrePassationVente, refusEnregistrement, refusEnregistrementVente, refusRetrait, refusRetraitVente,
   type ContexteFacture, type ContexteVente, type EncaissementPourContrePassation, type FactureDuDossier,
   type FacturePourEncaissement, type LigneDeFacture, type MouvementClasse, type SaisieEncaissement,
@@ -38,7 +38,10 @@ const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f
 // Les fonctions qu'une migration POSTÉRIEURE a reprises, et le fichier qui en porte désormais la dernière définition — la
 // garde, celle de la caisse (étape C6 : `especes_sans_mouvement`, dans l'export depuis le 30/10/2026).
 const REPRISES_DEPUIS = new Map([
-  ['garder_encaissement_facture', /\/\d{14}_(?:contre_passation_sur_mouvement_fige|especes_sans_mouvement)\.sql$/],
+  ['garder_encaissement_facture', /\/\d{14}_(?:contre_passation_sur_mouvement_fige|especes_sans_mouvement|factures_reprises_encaissements)\.sql$/],
+  // A8b (`factures_reprises_encaissements`, 10/11/2026) : quatre refus d'une facture reprise, que
+  // `REFUS_ENREGISTREMENT_DES_REPRISES` (encaissementsFactures.ts) range à leur rang.
+  ['enregistrer_encaissement', /\/\d{14}_factures_reprises_encaissements\.sql$/],
 ])
 
 // Ce que cette migration a posé : la définition que son texte donne à une fonction — la dernière de l'export, sauf pour
@@ -181,7 +184,11 @@ describe('la migration registre_virement_mixte reprend quatre fonctions d’hier
     expect(REFUS_ENREGISTREMENT.findIndex((r) => r.cle === 'mouvement_classe_facture_d_avant')).toBe(17)
     expect(REFUS_RETRAIT.findIndex((r) => r.cle === 'mouvement_classe_facture_d_avant')).toBe(7)
     expect(REFUS_CONTRE_PASSATION.findIndex((r) => r.cle === 'mouvement_encaissement_classe_facture_d_avant')).toBe(20)
-    expect(messagesSql(derniereDefinitionSql('enregistrer_encaissement')).indexOf(NEUF_ENREGISTRER)).toBe(17)
+    expect(messagesSql(definitionPosee('enregistrer_encaissement')).indexOf(NEUF_ENREGISTRER)).toBe(17)
+    // Depuis A8b, deux refus d'une facture reprise le précèdent dans la base : le module qu'elle lit le range au même rang.
+    const rangEnVigueur = refusEnregistrementExportes().findIndex((r) => r.cle === 'mouvement_classe_facture_d_avant')
+    expect(rangEnVigueur).toBe(19)
+    expect(messagesSql(derniereDefinitionSql('enregistrer_encaissement')).indexOf(NEUF_ENREGISTRER)).toBe(rangEnVigueur)
     expect(messagesSql(derniereDefinitionSql('retirer_encaissement')).indexOf(NEUF_RETIRER)).toBe(7)
     expect(messagesSql(derniereDefinitionSql('annuler_encaissement')).indexOf(NEUF_ANNULER)).toBe(20)
   })
