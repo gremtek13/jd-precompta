@@ -65,6 +65,13 @@
 -- ADAPTÉ LE 29/10/2026 À LA CAISSE (ligne 26.6, étape C1 ; migration `caisse`, PRÉPARÉE dans `supabase/preparees/`,
 -- pas encore en base) : `enregistrer_operation_caisse` lit le compte de l'exploitant par `compte_du_dirigeant`, une
 -- fois. Le contrôle 8 l'attend avec la migration, et sans elle attend les cinq d'hier ; rien d'autre ne change.
+--
+-- ADAPTÉ LE 10/11/2026 À L'ÉTAPE PC4 (migration `regler_le_plan_du_dossier`, PRÉPARÉE dans `supabase/preparees/`, pas
+-- encore en base) : elle ouvre la restauration d'un plan au super-administrateur par une policy d'insertion. Avec elle,
+-- le contrôle 4 attend trois policies (la restauration en plus), et le contrôle 18 voit l'insertion du chef
+-- super-administrateur ACCEPTÉE — la RLS le laisse passer, et la garde accepte la restauration dans un dossier sans
+-- écriture ; sans elle, rien ne change. Les refus 20 à 22 portent la phrase neuve de la garde, que leur préfixe reconnaît.
+-- Ce que PC4 ajoute se prouve dans supabase/essais/reglerLePlanDuDossier.sql.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -87,6 +94,10 @@ declare
   forme_du_case constant text :=
     '(case when (?:\w+\.)?mode_comptable = ''engagement'' then (?:\w+\.)?compte_notes_de_frais else ''108000'' end)';
   avec_case int;
+  -- L'étape PC4 (migration `regler_le_plan_du_dossier`, préparée le 10/11/2026) ouvre la restauration d'un plan au
+  -- super-administrateur par une policy d'insertion : les contrôles 4 et 18 attendent l'une ou l'autre base.
+  pc4 constant boolean := to_regprocedure('public.regler_plan_du_dossier(uuid, jsonb)') is not null;
+  restauration int;
 
   dossier_client uuid; dossier_libre uuid; cabinet uuid;
   plans_avant int; roles_avant int; admins_avant int; assignations_avant int; ecritures_avant int; anouveaux_avant int;
@@ -152,13 +163,17 @@ begin
          count(*) filter (where po.polrelid = 'public.plan_comptable_dossier'::regclass and po.polcmd = 'r'
                             and po.polroles = array['authenticated'::regrole]::oid[]
                             and pg_get_expr(po.polqual, po.polrelid) = 'admin_du_dossier(dossier_id)'),
+         count(*) filter (where po.polrelid = 'public.plan_comptable_dossier'::regclass and po.polcmd = 'a'
+                            and po.polroles = array['authenticated'::regrole]::oid[] and po.polqual is null
+                            and pg_get_expr(po.polwithcheck, po.polrelid) = 'is_super_admin()'),
          count(*)
-    into n, m, k from pg_policy po where po.polrelid in ('public.roles_comptables'::regclass, 'public.plan_comptable_dossier'::regclass);
+    into n, m, restauration, k from pg_policy po where po.polrelid in ('public.roles_comptables'::regclass, 'public.plan_comptable_dossier'::regclass);
   select count(*) into total from pg_class c where c.oid in ('public.roles_comptables'::regclass, 'public.plan_comptable_dossier'::regclass)
    and c.relrowsecurity;
-  verdicts := verdicts || jsonb_build_object('controle', '4. une policy de lecture par table, aux connectés : le catalogue pour tous, le plan sur admin_du_dossier ; aucune d''écriture ; RLS active',
-    'observe', k || ' policy(s), ' || n || ' + ' || m || ' conforme(s), RLS sur ' || total || ' table(s)',
-    'ok', coalesce(n = 1 and m = 1 and k = 2 and total = 2, false));
+  verdicts := verdicts || jsonb_build_object('controle', '4. une policy de lecture par table, aux connectés : le catalogue pour tous, le plan sur admin_du_dossier ; '
+      || case when pc4 then 'une d''écriture, l''insertion de la restauration au super-administrateur (PC4)' else 'aucune d''écriture' end || ' ; RLS active',
+    'observe', k || ' policy(s), ' || n || ' + ' || m || ' + ' || restauration || ' conforme(s), RLS sur ' || total || ' table(s)',
+    'ok', coalesce(n = 1 and m = 1 and restauration = pc4::int and k = 2 + pc4::int and total = 2, false));
 
   select string_agg(p.proname || ':' || case when p.prosecdef then 'definer' else 'invoker' end || ':' || p.provolatile::text
            || ':anon=' || has_function_privilege('anon', p.oid, 'execute')
@@ -430,11 +445,13 @@ begin
     end;
     reset role;
   end loop;
-  verdicts := verdicts || jsonb_build_object('controle', '18. aucun des six profils n''insère une ligne du plan ni un rôle (42501) — pour le chef super-administrateur, le refus de la RLS',
+  verdicts := verdicts || jsonb_build_object('controle', '18. aucun des six profils n''insère un rôle, ni une ligne du plan (42501) — '
+      || case when pc4 then 'hors le chef super-administrateur, à qui la policy de PC4 ouvre la restauration' else 'pour le chef super-administrateur, le refus de la RLS' end,
     'observe', obs,
     'ok', obs = 'anonyme : plan 42501, catalogue 42501 ; rattaché à rien : plan 42501, catalogue 42501 ; client : plan 42501, catalogue 42501 ; '
              || 'membre non affecté : plan 42501, catalogue 42501 ; membre affecté : plan 42501, catalogue 42501 ; '
-             || 'chef : plan 42501 (new row violates row-level security policy for table "plan_comptable_dossier"), catalogue 42501 ; ');
+             || case when pc4 then 'chef : plan ACCEPTÉ (), catalogue 42501 ; '
+                     else 'chef : plan 42501 (new row violates row-level security policy for table "plan_comptable_dossier"), catalogue 42501 ; ' end);
 
   obs := '';
   for f in select * from (values ('rattaché à rien', gen_random_uuid(), false, false), ('client', client, false, false),

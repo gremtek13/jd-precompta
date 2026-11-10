@@ -267,9 +267,14 @@ begin
       raise exception 'ANNULATION_ESSAI';
     exception when others then code_recu := sqlstate; message := sqlerrm;
     end;
+    -- Depuis l'étape PC4 (migration `regler_le_plan_du_dossier`), la contrainte en dur est remplacée par un contrôle contre le
+    -- plan du dossier (`lettrages_manuels_un_compte_qui_se_lettre`), qui refuse sous ses mots ; sans la migration, la
+    -- contrainte.
     verdicts := verdicts || jsonb_build_object('controle', '20. contrainte : un compte de tiers qui se lettre',
       'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
-      'ok', not accepte and code_recu = '23514' and message like '%lettrages_manuels_compte%');
+      'ok', not accepte and code_recu = '23514'
+            and case when to_regprocedure('public.regler_plan_du_dossier(uuid, jsonb)') is null then message like '%lettrages_manuels_compte%'
+                     else message = 'Le compte « 512000 » n''est pas, dans le plan de ce dossier, un compte de tiers qui se lettre : 401000, 404000, 411000, 455000, 467000.' end);
 
     -- ══ 21. Le client ne lit rien, même de son propre dossier ; le chef, si ═══════════════════════════════════
     accepte := false; code_recu := null; message := null; obs := null; ok := false;
