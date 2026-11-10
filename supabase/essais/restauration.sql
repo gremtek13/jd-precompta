@@ -689,6 +689,26 @@ begin
   end if;
 end $$;
 
+-- ══ La numérotation qui continue (ligne 51.5, étape A9a) ══ Au plan du code quand `NUMEROTATION_CONTINUE_PREVUE` est levé
+-- — c'est-à-dire quand sa migration est en base, par-dessus celle des factures reprises : le script les y met dès que leurs
+-- tables existent, juste après `factures_importees` (ORDRE_RESTAURATION_PREVU : les modèles de numéro, puis les paroles du
+-- cabinet sur la suite reprise d'une série) ; les tables qui suivent reculent de deux rangs — le geste des articles ; leurs
+-- chemins. Aucune vague : une ligne n'en pointe aucune de sa table. Absentes de la base, rien n'entre : le plan est celui
+-- d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.modeles_numerotation') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'factures_importees';
+    update essai_restauration._ordre set rang = -(rang + 2) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'modeles_numerotation');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 2, 'continuite_des_series');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('modeles_numerotation','direct',null,null),('continuite_des_series','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

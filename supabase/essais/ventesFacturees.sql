@@ -369,6 +369,30 @@ begin
     array['jeu', 'dossiers jetables', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures) values
       ('{T}', 'ESSAI VF2 T', '{CAB}', 'tresorerie', '455000', false), ('{A}', 'ESSAI VF2 A', '{CAB}', 'tresorerie', '455000', false),
       ('{R}', 'ESSAI VF2 R', '{CAB}', 'tresorerie', '455000', true), ('{N}', 'ESSAI VF2 N', '{CAB}', 'tresorerie', '455000', false)$q$, '', ''],
+    -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
+    -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il
+    -- éprouve restent ceux d'hier (la série de qui valide s'éprouve dans numerotationContinue.sql). Sans la migration, rien.
+    array['jeu', 'A9a : la série d''hier au cabinet', 'postgres', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        execute 'set local role authenticated';
+        perform set_config('request.jwt.claims', '{"sub":"bd6bd047-0ef0-4c9d-a319-1b642aaf2162","role":"authenticated"}', true);
+        for d in select x.id from public.dossiers x
+                  where x.id::text like '5f200000-0000-4000-%'
+                    and not exists (select 1 from public.modeles_numerotation y where y.dossier_id = x.id)
+                  order by x.id loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform public.fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+        execute 'reset role';
+        perform set_config('request.jwt.claims', '', true);
+      end $a9a$$q$, '', ''],
     array['jeu', 'mouvements', 'postgres', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, compte_bilan) values
       ('{M1}', '{T}', '2026-03-02', 'ESSAI', 100, 'non_rapprochee', null), ('{M2}', '{T}', '2026-03-03', 'ESSAI', 100, 'non_rapprochee', null),
       ('{M3}', '{T}', '2026-03-10', 'ESSAI', -100, 'non_rapprochee', null), ('{M4}', '{T}', '2026-03-04', 'ESSAI', 50, 'rapprochee', '467000'),
@@ -703,7 +727,9 @@ begin
     array['valeur', '152. les cinq colonnes', 'postgres', $q$select string_agg(c.relname || '.' || a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || ' ' || a.attnotnull || ' ' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-'), ',' order by c.relname, a.attname) from pg_attribute a join pg_class c on c.oid = a.attrelid left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum where c.relnamespace = 'public'::regnamespace and not a.attisdropped and (c.relname, a.attname) in (('dossiers', 'ventes_par_les_factures'), ('factures_emises', 'source_de_la_vente'), ('lignes_bancaires', 'encaissements_de_factures'), ('ecritures_brouillon', 'encaissement_id'), ('ecritures_brouillon', 'facture_id'))$q$, '',
       'dossiers.ventes_par_les_factures boolean true false,ecritures_brouillon.encaissement_id uuid false -,ecritures_brouillon.facture_id uuid false -,factures_emises.source_de_la_vente boolean true false,lignes_bancaires.encaissements_de_factures boolean true false'],
     array['valeur', '153. les contraintes, et celle des annulations retirée', 'postgres', $q$select string_agg(conname || ' ' || pg_get_constraintdef(oid), ' | ' order by conname) from pg_constraint where conrelid in ('public.factures_emises'::regclass, 'public.lignes_bancaires'::regclass, 'public.ecritures_brouillon'::regclass, 'public.encaissements_factures'::regclass) and conname in ('factures_emises_source_d_une_facture_validee', 'lignes_bancaires_un_seul_rapprochement', 'lignes_bancaires_encaissements_rapproches', 'ecritures_brouillon_encaissement_id_fkey', 'ecritures_brouillon_facture_id_fkey', 'encaissements_factures_annulation_sans_mouvement')$q$, '',
-      'ecritures_brouillon_encaissement_id_fkey FOREIGN KEY (encaissement_id) REFERENCES encaissements_factures(id) | ecritures_brouillon_facture_id_fkey FOREIGN KEY (facture_id) REFERENCES factures_emises(id) | factures_emises_source_d_une_facture_validee CHECK (((NOT source_de_la_vente) OR (statut = ''validee''::text))) | lignes_bancaires_encaissements_rapproches CHECK (((NOT encaissements_de_factures) OR ((statut = ''rapprochee''::text) AND (NOT prelevement_personnel)))) | lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, NULLIF(ventilee, false), NULLIF(reglement_groupe, false), NULLIF(encaissements_de_factures, false)) <= 1))'],
+      -- La contrainte de la source de la vente admet la facture reprise depuis A8a (`factures_importees`, préparée).
+      case when to_regclass('public.factures_importees') is null then 'ecritures_brouillon_encaissement_id_fkey FOREIGN KEY (encaissement_id) REFERENCES encaissements_factures(id) | ecritures_brouillon_facture_id_fkey FOREIGN KEY (facture_id) REFERENCES factures_emises(id) | factures_emises_source_d_une_facture_validee CHECK (((NOT source_de_la_vente) OR (statut = ''validee''::text))) | lignes_bancaires_encaissements_rapproches CHECK (((NOT encaissements_de_factures) OR ((statut = ''rapprochee''::text) AND (NOT prelevement_personnel)))) | lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, NULLIF(ventilee, false), NULLIF(reglement_groupe, false), NULLIF(encaissements_de_factures, false)) <= 1))'
+           else 'ecritures_brouillon_encaissement_id_fkey FOREIGN KEY (encaissement_id) REFERENCES encaissements_factures(id) | ecritures_brouillon_facture_id_fkey FOREIGN KEY (facture_id) REFERENCES factures_emises(id) | factures_emises_source_d_une_facture_validee CHECK (((NOT source_de_la_vente) OR (statut = ANY (ARRAY[''validee''::text, ''importee''::text])))) | lignes_bancaires_encaissements_rapproches CHECK (((NOT encaissements_de_factures) OR ((statut = ''rapprochee''::text) AND (NOT prelevement_personnel)))) | lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, NULLIF(ventilee, false), NULLIF(reglement_groupe, false), NULLIF(encaissements_de_factures, false)) <= 1))' end],
     array['valeur', '153b. les deux index partiels des écritures', 'postgres', $q$select string_agg(d, ' | ' order by d) from (select pg_get_indexdef(indexrelid) d from pg_index where indrelid = 'public.ecritures_brouillon'::regclass) x where d ~ '(encaissement|facture)_id\)'$q$, '',
       'CREATE INDEX ecritures_brouillon_encaissement_id_idx ON public.ecritures_brouillon USING btree (encaissement_id) WHERE (encaissement_id IS NOT NULL) | CREATE INDEX ecritures_brouillon_facture_id_idx ON public.ecritures_brouillon USING btree (facture_id) WHERE (facture_id IS NOT NULL)'],
     array['valeur', '154. les quatre déclencheurs, actifs', 'postgres', $q$select string_agg(pg_get_triggerdef(oid) || ' ' || tgenabled::text, ' | ' order by tgname) from pg_trigger where not tgisinternal and tgname in ('dossiers_ventes_par_les_factures', 'factures_emises_source_de_la_vente', 'ecritures_brouillon_vente_facturee', 'lignes_bancaires_reservees_aux_encaissements')$q$, '',

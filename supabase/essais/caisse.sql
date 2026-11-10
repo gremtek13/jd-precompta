@@ -381,6 +381,30 @@ begin
       ('{O}', 'ESSAI CAISSE O', '{CAB}', 'tresorerie', '455000', null, false), ('{B}', 'ESSAI CAISSE B', '{CAB}', 'tresorerie', '455000', null, true),
       ('{R}', 'ESSAI CAISSE R', '{CAB}', 'tresorerie', '455000', null, false), ('{L}', 'ESSAI CAISSE L', '{CAB}', 'tresorerie', '455000', null, false),
       ('{G}', 'ESSAI CAISSE G', '{CAB}', 'tresorerie', '455000', null, false), ('{P}', 'ESSAI CAISSE P', '{CAB}', 'tresorerie', '455000', null, false)$q$, '', ''],
+    -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
+    -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il
+    -- éprouve restent ceux d'hier (la série de qui valide s'éprouve dans numerotationContinue.sql). Sans la migration, rien.
+    array['jeu', 'A9a : la série d''hier au cabinet', 'postgres', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        execute 'set local role authenticated';
+        perform set_config('request.jwt.claims', '{"sub":"bd6bd047-0ef0-4c9d-a319-1b642aaf2162","role":"authenticated"}', true);
+        for d in select x.id from public.dossiers x
+                  where x.id::text like 'ca155e00-0000-4000-%'
+                    and not exists (select 1 from public.modeles_numerotation y where y.dossier_id = x.id)
+                  order by x.id loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform public.fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+        execute 'reset role';
+        perform set_config('request.jwt.claims', '', true);
+      end $a9a$$q$, '', ''],
     array['jeu', 'catégories', 'postgres', $q$insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
       ('{KT}', '{T}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KTC}', '{T}', 'essai_fou', 'Fournitures', '606400', null),
       ('{KA}', '{A}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KB}', '{B}', 'essai_hon', 'Honoraires', '706000', 'AA'),
@@ -1053,6 +1077,30 @@ begin
       ('{V7}', '{DC}', '2026-03-05', 'ESSAI VERSEMENT ESPECES', 10, 'non_rapprochee');
       insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut) values
       ('{PR6}', '{R6}', '{R6}/essai-caisse-r6.pdf', 'essai-caisse-r6.pdf', 'achat', 'a_valider')$q$, '', ''],
+    -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
+    -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il
+    -- éprouve restent ceux d'hier (la série de qui valide s'éprouve dans numerotationContinue.sql). Sans la migration, rien.
+    array['jeu2', 'A9a : la série d''hier au cabinet (2)', 'postgres', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        execute 'set local role authenticated';
+        perform set_config('request.jwt.claims', '{"sub":"bd6bd047-0ef0-4c9d-a319-1b642aaf2162","role":"authenticated"}', true);
+        for d in select x.id from public.dossiers x
+                  where x.id::text like 'ca155e00-0000-4000-%'
+                    and not exists (select 1 from public.modeles_numerotation y where y.dossier_id = x.id)
+                  order by x.id loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform public.fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+        execute 'reset role';
+        perform set_config('request.jwt.claims', '', true);
+      end $a9a$$q$, '', ''],
     array['jeu2', 'C1b : le plan de R4, la caisse au 531000, restauré par le super-administrateur avant toute écriture', 'postgres', $q$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true);
       insert into plan_comptable_dossier (dossier_id, role, compte, origine) values ('{R4}', 'caisse', '531000', 'dossier');
       select set_config('request.jwt.claims', '', true)$q$, '', ''],
@@ -1375,6 +1423,30 @@ begin
       ('{MS1}', '{S6}', '2026-03-12', 'ESSAI VERSEMENT ESPECES', 50, 'non_rapprochee'), ('{MS3}', '{S6}', '2026-03-20', 'ESSAI REMBOURSEMENT', -50, 'non_rapprochee'),
       ('{MN1}', '{N6}', '2026-03-12', 'ESSAI VERSEMENT ESPECES', 40, 'non_rapprochee');
       insert into memberships (user_id, dossier_id, role, droit_ventes, droit_banque) values ('797fe440-df8d-4b8e-828b-d148927bfd60', '{S6}', 'client', true, true)$q$, '', ''],
+    -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
+    -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il
+    -- éprouve restent ceux d'hier (la série de qui valide s'éprouve dans numerotationContinue.sql). Sans la migration, rien.
+    array['jeu3', 'A9a : la série d''hier au cabinet (3)', 'postgres', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        execute 'set local role authenticated';
+        perform set_config('request.jwt.claims', '{"sub":"bd6bd047-0ef0-4c9d-a319-1b642aaf2162","role":"authenticated"}', true);
+        for d in select x.id from public.dossiers x
+                  where x.id::text like 'ca155e00-0000-4000-%'
+                    and not exists (select 1 from public.modeles_numerotation y where y.dossier_id = x.id)
+                  order by x.id loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform public.fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+        execute 'reset role';
+        perform set_config('request.jwt.claims', '', true);
+      end $a9a$$q$, '', ''],
     array['fait3', '170. une facture source de S6, une facture de N6, validées', 'chef', $q$select enregistrer_facture('{S6}', null, {FACTURE});
       select enregistrer_facture('{N6}', null, {FACTURE})$q$, 'OK', ''],
     -- 171 et 172. La fonction qui enregistre : la garde refuse, pour le chef comme pour le client, de toute facture — APRÈS
@@ -1474,6 +1546,30 @@ begin
       ('{AO1}', '{O8}', '2026-01-01', '530000', 'debit', 300, 'balance-essai-o8.csv', repeat('e', 64)), ('{AO2}', '{O8}', '2026-01-01', '101000', 'credit', 300, 'balance-essai-o8.csv', repeat('e', 64)),
       ('{AZ1}', '{Z8}', '2026-01-01', '512000', 'debit', 50, 'balance-essai-z8.csv', repeat('f', 64)), ('{AZ2}', '{Z8}', '2026-01-01', '101000', 'credit', 50, 'balance-essai-z8.csv', repeat('f', 64)),
       ('{AY1}', '{Y8}', '2026-01-01', '530000', 'debit', 10, 'balance-essai-y8.csv', repeat('b', 64)), ('{AY2}', '{Y8}', '2026-01-01', '101000', 'credit', 10, 'balance-essai-y8.csv', repeat('b', 64))$q$, '', ''],
+    -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
+    -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il
+    -- éprouve restent ceux d'hier (la série de qui valide s'éprouve dans numerotationContinue.sql). Sans la migration, rien.
+    array['jeu4', 'A9a : la série d''hier au cabinet (4)', 'postgres', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        execute 'set local role authenticated';
+        perform set_config('request.jwt.claims', '{"sub":"bd6bd047-0ef0-4c9d-a319-1b642aaf2162","role":"authenticated"}', true);
+        for d in select x.id from public.dossiers x
+                  where x.id::text like 'ca155e00-0000-4000-%'
+                    and not exists (select 1 from public.modeles_numerotation y where y.dossier_id = x.id)
+                  order by x.id loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform public.fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+        execute 'reset role';
+        perform set_config('request.jwt.claims', '', true);
+      end $a9a$$q$, '', ''],
     array['fait4', '200. une facture source de B8, validée ; son exemplaire, réinséré par le super-administrateur', 'chef', $q$select enregistrer_facture('{B8}', null, {FACTURE});
       insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, montant_ttc, facture_id)
       select '{QB2}', '{B8}', '{B8}/essai-qb2.pdf', 'essai-qb2.pdf', 'vente', 'a_valider', 1200, f.id from factures_emises f where f.dossier_id = '{B8}'$q$, 'OK', ''],
@@ -1817,6 +1913,30 @@ begin
       ('{MRB}', '{R9}', '2026-03-02', 'ESSAI PRLV RB', -60, 'rapprochee', '{RB}'), ('{MRF}', '{R9}', '2026-03-02', 'ESSAI PRLV RF', -40, 'rapprochee', '{RF}');
       insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, reglement_groupe) values
       ('{MGA}', '{G9}', '2026-03-02', 'ESSAI VIREMENT GROUPE', -60, 'rapprochee', true)$q$, '', ''],
+    -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
+    -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il
+    -- éprouve restent ceux d'hier (la série de qui valide s'éprouve dans numerotationContinue.sql). Sans la migration, rien.
+    array['jeu4', 'A9a : la série d''hier au cabinet (5)', 'postgres', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        execute 'set local role authenticated';
+        perform set_config('request.jwt.claims', '{"sub":"bd6bd047-0ef0-4c9d-a319-1b642aaf2162","role":"authenticated"}', true);
+        for d in select x.id from public.dossiers x
+                  where x.id::text like 'ca155e00-0000-4000-%'
+                    and not exists (select 1 from public.modeles_numerotation y where y.dossier_id = x.id)
+                  order by x.id loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform public.fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+        execute 'reset role';
+        perform set_config('request.jwt.claims', '', true);
+      end $a9a$$q$, '', ''],
     -- La part du virement groupé, à part : src/test/essaiCaisse.ts ne la rejoue pas, et met G9 seul hors de son jeu.
     array['jeu4', '232-. la part de GA dans le virement groupé de G9', 'postgres', $q$insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant) values ('{G9}', '{MGA}', '{GA}', -60)$q$, '', ''],
     array['fait4', '232a. 2 000 € en caisse le 01/03 dans R9', 'chef', $q$select enregistrer_operation_caisse('{R9}', 'apport', '2026-03-01', 2000, null, null, null, '[{"compte":"530000","sens":"debit","montant":2000},{"compte":"108000","sens":"credit","montant":2000}]')$q$,
@@ -1896,6 +2016,30 @@ begin
       ('{R10}', 'ESSAI CAISSE R10', '{CAB}', 'tresorerie', '455000', 'redevable', false), ('{Z10}', 'ESSAI CAISSE Z10', '{CAB}', 'tresorerie', '455000', 'exonere', false),
       ('{N10}', 'ESSAI CAISSE N10', '{CAB}', 'tresorerie', '455000', 'exonere', false), ('{B10}', 'ESSAI CAISSE B10', '{CAB}', 'tresorerie', '455000', null, true),
       ('{V10}', 'ESSAI CAISSE V10', '{CAB}', 'tresorerie', '455000', 'exonere', false), ('{W10}', 'ESSAI CAISSE W10', '{CAB}', 'tresorerie', '455000', 'exonere', false)$q$, '', ''],
+    -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
+    -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il
+    -- éprouve restent ceux d'hier (la série de qui valide s'éprouve dans numerotationContinue.sql). Sans la migration, rien.
+    array['jeu5', 'A9a : la série d''hier au cabinet (6)', 'postgres', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        execute 'set local role authenticated';
+        perform set_config('request.jwt.claims', '{"sub":"bd6bd047-0ef0-4c9d-a319-1b642aaf2162","role":"authenticated"}', true);
+        for d in select x.id from public.dossiers x
+                  where x.id::text like 'ca155e00-0000-4000-%'
+                    and not exists (select 1 from public.modeles_numerotation y where y.dossier_id = x.id)
+                  order by x.id loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform public.fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+        execute 'reset role';
+        perform set_config('request.jwt.claims', '', true);
+      end $a9a$$q$, '', ''],
     array['jeu5', '240b. leurs catégories', 'postgres', $q$insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
       ('{KX10}', '{X10}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KX10C}', '{X10}', 'essai_fou', 'Fournitures', '606400', null),
       ('{KF10}', '{F10}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KZ10}', '{Z10}', 'essai_hon', 'Honoraires', '706000', 'AA'),

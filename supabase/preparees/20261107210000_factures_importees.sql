@@ -397,7 +397,8 @@ create trigger factures_importees_garde
 -- ══ 5. LA GARDE DES FACTURES REPRISES ══════════
 
 -- Le déclencheur suit `factures_emises_figees` (l'ordre des noms) : la garde d'hier juge d'abord, intacte — elle laisse
--- passer une facture qui n'est pas validée, et la garde neuve ferme alors ce qui touche une importée.
+-- passer une facture qui n'est pas validée, et la garde neuve ferme alors ce qui touche une importée. Celle des mentions à
+-- la validation (`factures_emises_figees_mentions`, JJ-Q4) se place entre les deux, et ne regarde qu'une validation.
 create function public.garder_factures_reprises() returns trigger
 language plpgsql
 security definer
@@ -1296,13 +1297,15 @@ revoke all on function public.garder_lignes_des_factures_reprises() from public,
 
 do $fin$
 begin
-  -- Les gardes des factures, dans l'ordre des noms : celle d'hier, puis celle des reprises, avant la marque d'acompte et la
-  -- source de la vente.
+  -- Les gardes des factures, dans l'ordre des noms : celle d'hier, celle des mentions à la validation (JJ-Q4 et A7C-Q1,
+  -- `adresse_du_client_exigee`, en production depuis le 08/11/2026), puis celle des reprises, avant la marque d'acompte et
+  -- la source de la vente. (Corrigé le 10/11/2026 : la liste du 07/11/2026 ignorait le déclencheur de JJ-Q4, appliqué
+  -- après la préparation de cette migration, et sa garde de fin la refusait sur la production du jour.)
   if (select string_agg(t.tgname, ',' order by t.tgname collate "C")
         from pg_trigger t
        where t.tgrelid = 'public.factures_emises'::regclass and not t.tgisinternal and t.tgname like 'factures_emises_%'
          and (t.tgtype & 2) = 2)
-     is distinct from 'factures_emises_figees,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_source_de_la_vente' then
+     is distinct from 'factures_emises_figees,factures_emises_figees_mentions,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_source_de_la_vente' then
     raise exception 'Les déclencheurs AVANT de factures_emises ne sont pas dans l''ordre attendu.';
   end if;
   if not (select relrowsecurity from pg_class where oid = 'public.imports_factures'::regclass)

@@ -50081,3 +50081,33 @@ la prise en charge, dite dans leur libellé), la part de l'Assurance maladie à 
 dossier et l'exercice ; « non renseigné » passe au module comme `null`, qui refuse en disant pourquoi — aucun montant, jamais un
 « non » deviné. Un refus du module se dit à la place des chiffres : le motif de l'Urssaf s'affiche donc deux fois, et trois
 assertions de `VoletSocialCard.test.tsx` comptent deux occurrences. Tests : `retraiteAffichee.test.ts` (9), `VoletSocialCardRetraite.test.tsx` (5).
+
+### 10/11/2026 — A9A : LA NUMÉROTATION QUI CONTINUE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; en production, un SELECT de l'historique : 188 migrations, la dernière 20261109193056.) La migration
+`numerotation_continue` (20261110100000, md5 `3a64e2c592d4985ba14f8e64dafe542a`, 73 814 octets, fins de ligne LF), À
+COLLER après A8a : deux `drop constraint` remplacées dans la même transaction (la contrainte de type de
+`facture_numerotation`, élargie aux clés `modele:<a|c>:<modèle>` ; `factures_emises_numero_de_sa_serie`, ramenée à la
+forme de G1.05), aucune table, colonne ni ligne retirée. Elle pose `modeles_numerotation` et `continuite_des_series`
+(lues par le cabinet du dossier, écrites par leurs fonctions seules ou la restauration, jamais modifiées),
+`fixer_modele_numerotation`, `confirmer_fin_de_serie`, `lever_trous_de_numerotation` (le chef seul, A9A-Q2),
+`etat_de_la_numerotation` ; la série de qui valide dans `attribuer_numero_facture`, même signature,
+`enregistrer_facture` intacte : le cabinet en M<année>- et MA<année>- (A9A-Q1), le client dans la sienne ; la continuité
+d'une suite reprise (sa fin confirmée tant que rien n'y est validé, A9A-Q3 ; chaque trou nommé, importé ou levé) ; la
+chronologie de la série à la validation (le déclencheur `factures_emises_numerotation`, qui reprend le cinquième refus
+étendu retiré de `garder_factures_reprises`). Deux séries ne produisent jamais un même numéro (`modeles_se_recouvrent`,
+exact) ; après le premier tiret, un nombre seul, car la garde d'hier et celle d'e7a lisent `split_part(numero, '-',
+2)::integer` (la règle levée, elles échouent en 22P02 ; une garde le dit avant). A8a corrigée au plus juste : sa garde
+de fin ignorait le déclencheur de JJ-Q4 et refusait la base d'aujourd'hui. Le cabinet validant désormais en M, six
+essais posent la série d'hier au cabinet par une étape sans effet sans la migration (factures, facturesImportees,
+ventesFacturees, validationDesVentesFacturees, validationExercice, caisse), et `rls.sql` (M5ter) lit l'une ou l'autre.
+Sur une copie de r187, A8a puis A9a : `numerotationContinue.sql` 67 sur 67, seize mutations qui mordent ; `rls.sql` 127
+invariants, 0 en faute, 95 mutations sur 95 (bloc NC) ; `factures.sql` 145 sur 145 avant comme après ;
+`facturesImportees.sql` 48 sur 48 avec A8a seule et avec A9a ; `restauration.sql` IDENTIQUE (88 tables, les deux neuves
+semées par leurs fonctions ; planté, le modèle avant son dossier, l'arrêt sur la clé) ; le retour rend la signature
+d'A8a, puis, suivi de celui d'A8a, celle d'avant (la policy resserrée gardée) ; huit essais SÛRS au banc du leurre, dont
+le complément porte un modèle et une fin par dossier. `src/lib/numerotationContinue.ts` redit refus, formatage,
+recouvrement et jugement, confronté au texte et aux réponses de la réplique (huit mutations qui mordent) ; le plan
+derrière `NUMEROTATION_CONTINUE_PREVUE`, baissé. Hors d'A9a, déjà en faute sur la base d'aujourd'hui :
+`validationExercice.sql` 141 (46 déclencheurs attendus, 50 lus) et `caisse.sql` 289b. Restent A9b (la carte du cabinet),
+puis A8b.

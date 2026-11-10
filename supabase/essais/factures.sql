@@ -100,6 +100,8 @@ declare
   mentions_figees boolean;
   -- La correction de la facture (31/10/2026) : son témoin, et les jours que ses contrôles nomment, lus à Paris.
   correction boolean;
+  -- La numérotation qui continue (étape A9a, préparée ; son témoin : la table `modeles_numerotation`).
+  numerotation_continue boolean;
   aujourdhui date := (now() at time zone 'Europe/Paris')::date;
   demain date := (now() at time zone 'Europe/Paris')::date + 1;
   verdicts jsonb := '[]'::jsonb;
@@ -120,6 +122,12 @@ begin
   -- numéro d'engagement s'ouvre à tout acheteur : le contrôle 28 attend l'état où la base se trouve.
   select exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'mentions_figees'
                  and not attisdropped) into mentions_figees;
+  -- Depuis la numérotation qui continue (étape A9a ; son témoin : la table `modeles_numerotation`), le cabinet valide dans
+  -- la série de son mandataire (M, MA) : les dossiers de cet essai lui posent la série d'hier (F, A), celle du client
+  -- prenant C et D, pour que les numéros qu'il éprouve restent ceux d'hier — la série de qui valide s'éprouve dans
+  -- numerotationContinue.sql ; et la contrainte du numéro ne juge plus que sa forme (G1.05), le modèle se jugeant à la
+  -- validation (101 à 103).
+  numerotation_continue := to_regclass('public.modeles_numerotation') is not null;
   -- Depuis la correction de la facture (son témoin : le bloc de la garde), la validation exige le statut de TVA du dossier,
   -- sa mention de TVA et une date dans l'ordre de la série : la section 107 à 116 attend l'état où la base se trouve.
   select coalesce(strpos(p.prosrc, 'CE QUE LA VALIDATION EXIGE DE LA FACTURE') > 0, false) into correction
@@ -164,6 +172,20 @@ begin
     -- correction de la facture, reprise pour FACTURE-Q1 (02/11/2026), seul un accès « Ventes » se voit refuser la facture
     -- d'un dossier au statut à préciser (section 107 à 116).
     array['jeu', 'ses dossiers', 'postgres', $q$insert into dossiers (id, nom, cabinet_id) values ('{J1}', 'ESSAI FACTURES J1', '{CJ}'), ('{J2}', 'ESSAI FACTURES J2', '{CJ}')$q$, '', ''],
+    array['fait', 'A9a : la série d''hier au cabinet dans A, B, X, Y, J1 et J2', 'chef', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        foreach d in array array['{A}', '{B}', '{X}', '{Y}', '{J1}', '{J2}']::uuid[] loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+      end $a9a$$q$, 'OK', ''],
 
     -- ══ Qui enregistre ══════════
     array['controle', '1. anonyme : pas le droit d''appeler', 'anon', $q$select enregistrer_facture('{A}', null, '{"tiers_nom":"ESSAI"}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":1,"taux_tva":0}]'::jsonb, false)$q$, '42501', 'permission denied%'],
@@ -308,9 +330,11 @@ begin
     array['controle', '99. un TTC qui fait la somme du HT et de la TVA', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, montant_ht, montant_tva, montant_ttc) values ('{A}', 'ESSAI CONTRAINTE', 10, 2, 13)$q$, '23514', '%"factures_emises_ttc_du_ht_et_de_la_tva"%'],
     array['controle', '100. une facture n''a pas d''origine', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, facture_origine_id) values ('{A}', 'ESSAI CONTRAINTE', (select id from factures_emises where dossier_id = '{A}' and numero = 'F2026-0001'))$q$, '23514', '%"factures_emises_origine_d_un_avoir"%'],
     -- Y n'a jamais validé de facture : la porte de la restauration y est ouverte, et les contraintes s'y appliquent.
-    array['controle', '101. un numéro d''avoir sur une facture', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'A2026-0001', now(), '2026-03-01')$q$, '23514', '%"factures_emises_numero_de_sa_serie"%'],
-    array['controle', '102. un numéro d''une autre année', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'F2025-0001', now(), '2026-03-01')$q$, '23514', '%"factures_emises_numero_de_sa_serie"%'],
-    array['controle', '103. un numéro mal formé', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'F2026-1', now(), '2026-03-01')$q$, '23514', '%"factures_emises_numero_de_sa_serie"%'],
+    -- Depuis A9a, la restauration pose un numéro de la forme de G1.05, quel qu'il soit : le modèle se juge à la validation.
+    array['controle', '101. un numéro d''avoir sur une facture', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'A2026-0001', now(), '2026-03-01')$q$, case when numerotation_continue then 'OK' else '23514' end, case when numerotation_continue then '' else '%"factures_emises_numero_de_sa_serie"%' end],
+    array['controle', '102. un numéro d''une autre année', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'F2025-0001', now(), '2026-03-01')$q$, case when numerotation_continue then 'OK' else '23514' end, case when numerotation_continue then '' else '%"factures_emises_numero_de_sa_serie"%' end],
+    array['controle', '103. un numéro mal formé', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'F2026-1', now(), '2026-03-01')$q$, case when numerotation_continue then 'OK' else '23514' end, case when numerotation_continue then '' else '%"factures_emises_numero_de_sa_serie"%' end],
+    array['controle', '103b. un numéro hors de la forme de G1.05 (une espace en fin)', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'F2026-0001 ', now(), '2026-03-01')$q$, '23514', '%"factures_emises_numero_de_sa_serie"%'],
     array['controle', '104. un numéro de sa série et de son année passe', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'F2026-0001', now(), '2026-03-01')$q$, 'OK', ''],
 
     -- ══ Ce que la production ne peut que lire ══════════
@@ -319,7 +343,7 @@ begin
     -- factures reprises (A8a, migration factures_importees, préparée le 07/11/2026) de même, dans facturesImportees.sql
     -- (son contrôle 48). La garde des mentions (JJ-Q4 et A7C-Q1, migration adresse_du_client_exigee, préparée) de même,
     -- dans adresseDuClientExigee.sql.
-    array['valeur', '105. les déclencheurs couvrent l''insertion, la modification et la suppression', 'postgres', $q$select string_agg(tgname || '=' || tgtype || case when tgdeferrable then ' différable' else '' end || case when tginitdeferred then ' différée' else '' end || case when tgenabled = 'O' then '' else ' DÉSACTIVÉ' end, '|' order by tgname) from pg_trigger where tgrelid in ('public.factures_emises'::regclass, 'public.facture_lignes'::regclass) and not tgisinternal and tgname not in ('facture_lignes_gardes_d_acompte', 'factures_emises_marque_d_acompte', 'facture_lignes_figees_reprises', 'factures_emises_figees_reprises', 'factures_emises_figees_mentions')$q$, '','facture_lignes_figees=31|factures_emises_avoir_sans_brouillon=5 différable différée|factures_emises_figees=31|factures_emises_source_de_la_vente=23'],
+    array['valeur', '105. les déclencheurs couvrent l''insertion, la modification et la suppression', 'postgres', $q$select string_agg(tgname || '=' || tgtype || case when tgdeferrable then ' différable' else '' end || case when tginitdeferred then ' différée' else '' end || case when tgenabled = 'O' then '' else ' DÉSACTIVÉ' end, '|' order by tgname) from pg_trigger where tgrelid in ('public.factures_emises'::regclass, 'public.facture_lignes'::regclass) and not tgisinternal and tgname not in ('facture_lignes_gardes_d_acompte', 'factures_emises_marque_d_acompte', 'facture_lignes_figees_reprises', 'factures_emises_figees_reprises', 'factures_emises_figees_mentions', 'factures_emises_numerotation')$q$, '','facture_lignes_figees=31|factures_emises_avoir_sans_brouillon=5 différable différée|factures_emises_figees=31|factures_emises_source_de_la_vente=23'],
 
     -- ══ La correction de la facture (31/10/2026, reprise le 02/11/2026 pour FACTURE-Q1) : ce que la validation exige ═════
     -- Chaque contrôle attend l'état où la base se trouve (`correction`) : sans la migration, la validation passe — le
@@ -334,6 +358,20 @@ begin
       ('{CV}', 'ESSAI FACTURES V', '{CAB}', null, null, '12345678200010', 'ESSAI FACTURES ADRESSE V', true, '5710', 'ESSAI FACTURES SOCIÉTÉ V');
       insert into memberships (id, user_id, dossier_id, role, email, droit_ventes) values ('{ACS}', '{CLIENT}', '{CS}', 'client', 'essai-factures-s@example.test', true),
       ('{ACV}', '{CLIENT}', '{CV}', 'client', 'essai-factures-v@example.test', true)$q$, '', ''],
+    array['fait', 'A9a : la série d''hier au cabinet dans K, F, E, N, S et V', 'chef', $q$do $a9a$
+      declare d uuid; m record;
+      begin
+        if to_regprocedure('public.fixer_modele_numerotation(uuid, text, text, text, boolean, integer, integer)') is null then
+          return;
+        end if;
+        foreach d in array array['{CK}', '{CF}', '{CE}', '{CN}', '{CS}', '{CV}']::uuid[] loop
+          for m in select * from (values (1, 'facture', 'client', 'C{AAAA}-{N:4}'), (2, 'avoir', 'client', 'D{AAAA}-{N:4}'),
+                                         (3, 'facture', 'mandataire', 'F{AAAA}-{N:4}'), (4, 'avoir', 'mandataire', 'A{AAAA}-{N:4}')) as v(rang, nature, emetteur, modele)
+                   order by v.rang loop
+            perform fixer_modele_numerotation(d, m.nature, m.emetteur, m.modele, true, 2000);
+          end loop;
+        end loop;
+      end $a9a$$q$, 'OK', ''],
     -- 1. Le statut de TVA à préciser (FACTURE-Q1, la réponse du cabinet du 02/11/2026 : « seulement depuis l'espace
     -- client ») : le client « Ventes » ne valide pas une facture ; le cabinet la valide encore, dans un dossier basculé
     -- comme dans un autre ; l'avoir du client n'en est pas jugé. La facture de V porte la mention de la franchise : sans
