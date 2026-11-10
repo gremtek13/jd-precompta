@@ -821,7 +821,7 @@ describe('Clients — « Effacer »', () => {
       'son nom', 'son adresse', 'son SIREN', 'son SIRET', 'son adresse de facturation électronique', 'son code service',
       'son délai de paiement', 'ses observations',
     ])
-    expect(within(dialogue).getByText('Les factures qui le nomment gardent leur copie, dix ans (C. com., art. L123-22) : l’effacement ne les touche pas. Le geste ne se défait pas.')).toBeTruthy()
+    expect(within(dialogue).getByText('Les factures qui le nomment gardent leur copie, dix ans (LPF, art. L102 B) : l’effacement ne les touche pas. Le geste ne se défait pas.')).toBeTruthy()
     expect(faux.rpcs).toEqual([])
   })
 

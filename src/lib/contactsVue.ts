@@ -243,7 +243,7 @@ export interface ConfirmationDeLEffacement {
 
 /**
  * La confirmation d'un effacement : elle NOMME le contact et ce qui part (ses données renseignées, rien d'autre), dit que les
- * factures qui le nomment gardent leur copie, dix ans (C. com., art. L123-22 ; RGPD.md), et que le geste ne se défait pas.
+ * factures qui le nomment gardent leur copie, dix ans (LPF, art. L102 B, dans sa version du 1er janvier 2027 ; RGPD.md), et que le geste ne se défait pas.
  */
 export function confirmationDeLEffacement(espace: EspaceVentes, c: Contact): ConfirmationDeLEffacement {
   const client = espace === 'client'
@@ -251,7 +251,7 @@ export function confirmationDeLEffacement(espace: EspaceVentes, c: Contact): Con
     titre: `Effacer le client « ${nomDansUnRefus(c.nom)} » ?`,
     chapeau: 'Effacer un client vide ses données — la ligne ne s’affichera plus nulle part :',
     partent: cePartAvecLEffacement(c),
-    reste: `${client ? 'Tes factures' : 'Les factures'} qui le nomment gardent leur copie, dix ans (C. com., art. L123-22) : `
+    reste: `${client ? 'Tes factures' : 'Les factures'} qui le nomment gardent leur copie, dix ans (LPF, art. L102 B) : `
       + 'l’effacement ne les touche pas. Le geste ne se défait pas.',
   }
 }

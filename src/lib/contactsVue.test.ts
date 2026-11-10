@@ -425,7 +425,7 @@ describe('l’effacement : ce qui part, et ce qui reste', () => {
     expect(c.titre).toBe('Effacer le client « Société Essai » ?')
     expect(c.chapeau).toContain('vide ses données')
     expect(c.chapeau).toContain('ne s’affichera plus nulle part')
-    expect(c.reste).toBe('Les factures qui le nomment gardent leur copie, dix ans (C. com., art. L123-22) : l’effacement ne les touche pas. Le geste ne se défait pas.')
+    expect(c.reste).toBe('Les factures qui le nomment gardent leur copie, dix ans (LPF, art. L102 B) : l’effacement ne les touche pas. Le geste ne se défait pas.')
   })
 
   it('un nom très long est coupé comme dans un refus, jamais déroulé en titre', () => {
