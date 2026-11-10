@@ -46,6 +46,15 @@ describe('les refus de la migration, aux mots et au code de la base', () => {
   it('retirer_piece_de_facture_reprise', () => {
     expect(refusSql(fonction('retirer_piece_de_facture_reprise'))).toEqual(duModule(REFUS_RETIRER))
   })
+  it('A8Q5-Q1 : la pièce figée se cite, son lien ne se retire pas', () => {
+    expect(fonction('citer_piece_de_facture_reprise')).not.toContain('exercice_figeant_la_piece')
+    expect(fonction('retirer_piece_de_facture_reprise')).toContain('v_annee := public.exercice_figeant_la_piece(v_piece);')
+    expect(REFUS_CITER.map((r) => r.cle)).not.toContain('figee')
+    expect(REFUS_RETIRER.map((r) => r.cle)).toEqual(['acces', 'aucun_lien', 'figee'])
+    // L'essai cite la pièce figée (10), relit sa ligne et l'écriture qui la fige (39), refuse son retrait (40).
+    expect(ESSAI).toContain("'10. une pièce figée par une écriture validée se cite aussi (A8Q5-Q1)'")
+    expect(ESSAI).toContain("'OK', 'true:true:1'")
+  })
   it('la garde des règlements, la garde du lien, la garde de la pièce citée', () => {
     expect(refusSql(fonction('garder_reglement_d_une_piece_reprise'))).toEqual(duModule([REFUS_DU_REGLEMENT]))
     expect(refusSql(fonction('garder_pieces_des_factures_reprises'))).toEqual(duModule(REFUS_DU_LIEN))

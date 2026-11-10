@@ -8,11 +8,12 @@
 -- Ce qui se prouve ici, et ne se relit pas : le lien d'une facture reprise à la pièce de vente qui en est l'original — cité
 -- par le chef du cabinet, et par un chef qui n'est pas super-administrateur ; refusé au client « Ventes » et à un compte sans
 -- accès, sur une pièce d'achat, sur une pièce d'un autre dossier, sur ce qui n'est pas une facture reprise, sur une facture
--- qui cite déjà une pièce, sur une pièce déjà citée, sur une pièce figée par une écriture validée, sur une pièce réglée à la
--- date de reprise ou après, et accepté sur une pièce réglée la veille — ; la garde des règlements — tant que le lien vit, le
+-- qui cite déjà une pièce, sur une pièce déjà citée, sur une pièce réglée à la date de reprise ou après, et accepté sur une
+-- pièce réglée la veille et sur une pièce figée par une écriture validée (A8Q5-Q1, le 10/11/2026 : ni sa ligne ni l'écriture
+-- qui la fige ne changent, à leur `xmin` près) — ; la garde des règlements — tant que le lien vit, le
 -- rapprochement, la part d'un virement groupé et l'écriture datés de la reprise ou d'après se refusent, ceux de la veille
 -- passent, et après le retrait le rapprochement s'ouvre de nouveau — ; le retrait (au cabinet seul, d'un lien qui vit, sur
--- une pièce que la validation n'a pas figée) ; la garde du lien (il ne se modifie pas, ne s'insère pas hors de sa fonction ni
+-- une pièce que la validation n'a pas figée : la pièce figée garde son lien, qu'elle l'ait reçu figée ou avant) ; la garde du lien (il ne se modifie pas, ne s'insère pas hors de sa fonction ni
 -- de la restauration, ne cite qu'une pièce de vente, ni une pièce qu'un règlement d'après la reprise cite) ; la garde de la
 -- pièce citée (ni un autre type, ni une désignation) ; le retrait de l'import qui emporte le lien ; ce que le client lit ; le
 -- catalogue. Ce qu'une suppression rencontre (la pièce citée qui ne se supprime pas, le dossier qui part avec son lien) se
@@ -64,6 +65,9 @@ declare
   refus_reglement text := format('La pièce « essai-a8q5-r-pdf-1.pdf » est l''original de la facture reprise R-PDF-1 : ses règlements datés de la reprise des factures (le %s) ou d''après passent par le registre de la facture, et le règlement du %s ne la cite pas.',
     to_char(reprise, 'DD/MM/YYYY'), to_char(reprise, 'DD/MM/YYYY'));
   e record; v_code text; v_msg text; v_req text; v_pose text; v_obs text; v_texte text; v_f record;
+  -- PF et l'écriture validée qui la fige, relues après le jeu (leur ligne entière et son `xmin`) : une citation qui les
+  -- réécrirait, même à l'identique, changerait l'un ou l'autre (39).
+  pf_avant text; efig_avant text;
   verdicts jsonb := '[]'::jsonb;
 begin
   if to_regclass('public.pieces_des_factures_reprises') is null then
@@ -102,6 +106,8 @@ begin
        'ESSAI A8Q5 PF', reprise - 20, 'Prestations');
     reset role;
     perform set_config('request.jwt.claims', '', true);
+    pf_avant := (select md5(to_jsonb(p)::text) || ':' || p.xmin::text from pieces p where p.id = pf::uuid);
+    efig_avant := (select md5(to_jsonb(x)::text) || ':' || x.xmin::text from ecritures_brouillon x where x.id = efig::uuid);
 
     -- Une étape : {rang, étape, ce que le CHEF pose d'abord (sous sa session), le profil — `chef`, `chef_simple` (un chef du
     -- cabinet qui n'est pas super-administrateur : le compte client rattaché au cabinet le temps de la sous-transaction),
@@ -136,9 +142,9 @@ begin
       (9, '9. une pièce déjà l''original d''une autre facture reprise (23514)', '{P} {C}', 'chef',
         $q$select citer_piece_de_facture_reprise('{DR}', {F2}, '{PV1}')::text$q$,
         '23514', 'La pièce « essai-a8q5-r-pdf-1.pdf » est déjà l''original de la facture reprise R-PDF-1 : une pièce n''est l''original que d''une facture reprise.'),
-      (10, '10. une pièce figée par une écriture validée (23514)', '{P}', 'chef',
-        $q$select citer_piece_de_facture_reprise('{DR}', {F2}, '{PF}')::text$q$,
-        '23514', format('La pièce « essai-a8q5-figee.pdf » justifie une écriture validée de l''exercice %s : le lien qui la cite ne se pose ni ne se retire plus.', extract(year from reprise - 20)::integer)),
+      (10, '10. une pièce figée par une écriture validée se cite aussi (A8Q5-Q1)', '{P}', 'chef',
+        $q$select (citer_piece_de_facture_reprise('{DR}', {F2}, '{PF}') is not null)::text$q$,
+        'OK', 'true'),
       (11, '11. une pièce rapprochée d''un mouvement du jour de la reprise : le rapprochement se défait d''abord (23514)', '{P} update lignes_bancaires set piece_id = ''{PV1}'' where id = ''{MR}'';', 'chef',
         $q$select citer_piece_de_facture_reprise('{DR}', {F1}, '{PV1}')::text$q$,
         '23514', format('La pièce « essai-a8q5-r-pdf-1.pdf » est réglée le %s, à la date de reprise des factures (le %s) ou après : ce règlement passe par le registre de la facture reprise R-PDF-1. Défaire d''abord ce rapprochement.', to_char(reprise, 'DD/MM/YYYY'), to_char(reprise, 'DD/MM/YYYY'))),
@@ -179,7 +185,7 @@ begin
         '42501', 'Accès refusé à ce dossier.'),
       (23, '23. une pièce figée après la citation : le lien ne se retire plus (23514)', '{P} {C} insert into ecritures_brouillon (dossier_id, piece_id, date, compte, libelle, montant, sens, statut, valide_le, journal_code, numero_ecriture, piece_ref, piece_date, compte_lib) values (''{DR}'', ''{PV1}'', (''{R}''::date - 1), ''706000'', ''ESSAI A8Q5'', 120, ''credit'', ''validee'', now(), ''VE'', 2, ''ESSAI A8Q5'', (''{R}''::date - 1), ''Prestations'');', 'chef',
         $q$select retirer_piece_de_facture_reprise('{DR}', {F1})::text$q$,
-        '23514', format('La pièce « essai-a8q5-r-pdf-1.pdf » justifie une écriture validée de l''exercice %s : le lien qui la cite ne se pose ni ne se retire plus.', extract(year from reprise - 1)::integer)),
+        '23514', format('La pièce « essai-a8q5-r-pdf-1.pdf » justifie une écriture validée de l''exercice %s : le lien qui la cite ne se retire plus.', extract(year from reprise - 1)::integer)),
       -- La garde du lien.
       (24, '24. le lien ne se modifie pas (23514)', '{P} {C}', 'postgres',
         $q$update pieces_des_factures_reprises set piece_id = '{PV2}' where dossier_id = '{DR}' returning id::text$q$,
@@ -224,7 +230,16 @@ begin
         'OK', '1'),
       (38, '38. le retrait est daté, et dit qui l''a fait', '{P} {C} select retirer_piece_de_facture_reprise(''{DR}'', {F1});', 'chef',
         $q$select count(*)::text from pieces_des_factures_reprises r where r.dossier_id = '{DR}' and r.retire_le is not null and r.retire_par = '{CHEF}'$q$,
-        'OK', '1')
+        'OK', '1'),
+      -- La pièce figée (A8Q5-Q1).
+      (39, '39. la pièce figée citée : sa ligne et l''écriture validée qui la fige ne changent pas (la garde de la pièce citée et celle de la pièce validée laissent poser le lien)', '{P} select citer_piece_de_facture_reprise(''{DR}'', {F2}, ''{PF}'');', 'postgres',
+        $q$select ((select md5(to_jsonb(p)::text) || ':' || p.xmin::text from pieces p where p.id = '{PF}') = '{PFA}')::text || ':'
+          || ((select md5(to_jsonb(x)::text) || ':' || x.xmin::text from ecritures_brouillon x where x.id = '{EFIG}') = '{EFA}')::text || ':'
+          || (select count(*) from pieces_des_factures_reprises r where r.piece_id = '{PF}' and r.retire_le is null)$q$,
+        'OK', 'true:true:1'),
+      (40, '40. … et son lien ne se retire pas (23514)', '{P} select citer_piece_de_facture_reprise(''{DR}'', {F2}, ''{PF}'');', 'chef',
+        $q$select retirer_piece_de_facture_reprise('{DR}', {F2})::text$q$,
+        '23514', format('La pièce « essai-a8q5-figee.pdf » justifie une écriture validée de l''exercice %s : le lien qui la cite ne se retire plus.', extract(year from reprise - 20)::integer))
     ) as t(rang, etape, pose, profil, requete, code, attendu) loop
       v_code := 'OK'; v_msg := null; v_obs := null;
       begin
@@ -236,6 +251,7 @@ begin
             '{F2}', '(select f.id from factures_emises f where f.dossier_id = ''{DR}'' and f.numero = ''R-PDF-2'')');
           v_texte := replace(replace(replace(replace(replace(replace(v_texte, '{PV1}', pv1), '{PV2}', pv2), '{PA}', pa), '{PF}', pf), '{PO}', po), '{CHEF}', chef);
           v_texte := replace(replace(replace(replace(replace(v_texte, '{MA}', ma), '{MR}', mr), '{MG}', mg), '{DR}', dr), '{R}', reprise::text);
+          v_texte := replace(replace(replace(v_texte, '{PFA}', pf_avant), '{EFA}', efig_avant), '{EFIG}', efig);
           if v_f.rang = 1 then
             v_pose := v_texte;
           else

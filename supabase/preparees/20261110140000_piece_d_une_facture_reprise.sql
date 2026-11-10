@@ -1,6 +1,6 @@
 -- LA PIÈCE D'UNE FACTURE REPRISE, EN BASE (ligne 51.5, A8-Q5, tranchée par le cabinet le 07/11/2026 à la recommandation).
--- PRÉPARÉE le 10/11/2026, PAS APPLIQUÉE. Le récit : HISTORIQUE.md, « A8-Q5 : LA PIÈCE D'UNE FACTURE REPRISE, EN BASE
--- (PRÉPARÉE, PAS APPLIQUÉE) » ; la conception : « A8 ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE : LA
+-- PRÉPARÉE le 10/11/2026, AMENDÉE le même jour sur A8Q5-Q1, PAS APPLIQUÉE. Le récit : HISTORIQUE.md, « A8-Q5 : LA PIÈCE
+-- D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) » ; la conception : « A8 ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE : LA
 -- CONCEPTION REMISE À JOUR » (06/11/2026). Son essai : supabase/essais/pieceDUneFactureReprise.sql ; son retour :
 -- supabase/preparees/retour/20261110140100_retour_piece_d_une_facture_reprise.sql. Ses refus, que
 -- src/lib/pieceDUneFactureReprise.ts redit, confrontés à ce texte ; sa table au plan de sauvegarde derrière
@@ -34,12 +34,15 @@
 --   2. `citer_piece_de_facture_reprise(p_dossier_id, p_facture_id, p_piece_id)` : l'accès (le cabinet du dossier) avant
 --      toute lecture ; le verrou partagé de la validation (`cle_validation`, comme la désignation d'un exemplaire) ; la
 --      facture reprise de ce dossier, verrouillée, qui ne cite encore aucune pièce ; la pièce de ce dossier, verrouillée,
---      de vente, exemplaire d'aucune facture de l'application, original d'aucune autre facture reprise, que la validation
---      d'un exercice n'a pas figée (`exercice_figeant_la_piece`) ; et qu'aucun mouvement, aucune part d'un virement groupé,
---      aucune opération de caisse non retirée, aucune écriture ne règle à la date de reprise ou après — un tel règlement se
---      défait d'abord, puis passe par le registre. Rien de ce que la pièce a compté n'est touché. Rend l'identifiant du lien.
+--      de vente, exemplaire d'aucune facture de l'application, original d'aucune autre facture reprise ; et qu'aucun
+--      mouvement, aucune part d'un virement groupé, aucune opération de caisse non retirée, aucune écriture ne règle à la
+--      date de reprise ou après — un tel règlement se défait d'abord, puis passe par le registre. Rien de ce que la pièce a
+--      compté n'est touché. Rend l'identifiant du lien. Une pièce que la validation d'un exercice a figée
+--      (`exercice_figeant_la_piece`) se cite aussi (A8Q5-Q1, le 10/11/2026) : le lien ne change rien dans l'exercice validé
+--      — ni la ligne de la pièce, ni ses écritures — et ne ferme que ses rapprochements d'après la reprise.
 --   3. `retirer_piece_de_facture_reprise(p_dossier_id, p_facture_id)` : le retrait daté du lien actif, sur une pièce que la
---      validation n'a pas figée. Rend la pièce. Ses rapprochements d'après la reprise s'ouvrent de nouveau.
+--      validation n'a pas figée (A8Q5-Q1 : figée, la pièce garde son lien). Rend la pièce. Ses rapprochements d'après la
+--      reprise s'ouvrent de nouveau.
 --   4. La garde des règlements, `garder_reglement_d_une_piece_reprise`, sur les quatre tables par lesquelles une pièce se
 --      rapproche d'un mouvement ou se règle — `lignes_bancaires` (le rapprochement, direct ou par les fonctions du relevé et
 --      les lots), `reglements_groupes` (la part d'un virement groupé ou mixte, datée de son mouvement), `operations_caisse`
@@ -89,11 +92,12 @@ begin
     raise exception 'Les factures reprises (A8a), la numérotation qui continue (A9a) et leurs encaissements (A8b) précèdent cette migration.';
   end if;
   -- Ce que les fonctions neuves appellent, et ce que « figée » veut dire : la pièce qui justifie une écriture validée
-  -- (l'export : 20261024052424_jumelle_inversee ; la garde des pièces lit la même chose).
+  -- (l'export : 20261024052424_jumelle_inversee ; la garde des pièces lit la même chose). Son corps se compare ses retours
+  -- chariot ôtés par `chr(13)` : aucune barre oblique inverse dans un texte que l'outil reçoit (A8Q5-Q1).
   if to_regprocedure('public.admin_du_dossier(uuid)') is null
      or to_regprocedure('public.cle_validation(uuid)') is null
      or to_regprocedure('public.restauration_des_factures(uuid)') is null
-     or (select md5(replace(p.prosrc, E'\r\n', E'\n')) from pg_proc p where p.oid = to_regprocedure('public.exercice_figeant_la_piece(uuid)'))
+     or (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.exercice_figeant_la_piece(uuid)'))
         is distinct from '78624664a1794b06816acb2e70436802' then
     raise exception 'admin_du_dossier, cle_validation, restauration_des_factures ou exercice_figeant_la_piece n''est plus celle que cette migration suppose.';
   end if;
@@ -217,7 +221,6 @@ declare
   v_reprise date;
   v_piece public.pieces;
   v_autre text;
-  v_annee integer;
   v_date date;
   v_id uuid;
 begin
@@ -267,13 +270,9 @@ begin
     raise exception 'La pièce « % » est déjà l''original de la facture reprise % : une pièce n''est l''original que d''une facture reprise.',
       v_piece.nom_fichier, v_autre using errcode = '23514';
   end if;
-  -- 4. Le gel de la validation : la pièce qui justifie une écriture validée ne reçoit plus ce lien.
-  v_annee := public.exercice_figeant_la_piece(p_piece_id);
-  if v_annee is not null then
-    raise exception 'La pièce « % » justifie une écriture validée de l''exercice % : le lien qui la cite ne se pose ni ne se retire plus.',
-      v_piece.nom_fichier, v_annee using errcode = '23514';
-  end if;
-  -- 5. Un règlement de la pièce daté de la reprise ou d'après se défait d'abord : il passera par le registre.
+  -- Une pièce que la validation d'un exercice a figée se cite aussi (A8Q5-Q1) : le lien ne touche ni sa ligne ni ses
+  -- écritures, et ne ferme que ses rapprochements d'après la reprise, qu'aucun exercice validé ne porte.
+  -- 4. Un règlement de la pièce daté de la reprise ou d'après se défait d'abord : il passera par le registre.
   select d.reprise_des_factures_le into v_reprise from public.dossiers d where d.id = p_dossier_id;
   select min(x.jour) into v_date
     from (select l.date as jour from public.lignes_bancaires l where l.piece_id = p_piece_id and l.date >= v_reprise
@@ -289,7 +288,7 @@ begin
     raise exception 'La pièce « % » est réglée le %, à la date de reprise des factures (le %) ou après : ce règlement passe par le registre de la facture reprise %. Défaire d''abord ce rapprochement.',
       v_piece.nom_fichier, to_char(v_date, 'DD/MM/YYYY'), to_char(v_reprise, 'DD/MM/YYYY'), v_numero using errcode = '23514';
   end if;
-  -- 6. Le lien.
+  -- 5. Le lien.
   perform set_config('jd.piece_de_reprise', p_facture_id::text, true);
   insert into public.pieces_des_factures_reprises (dossier_id, facture_id, piece_id, cite_par)
     values (p_dossier_id, p_facture_id, p_piece_id, auth.uid())
@@ -300,7 +299,7 @@ end
 $$;
 
 comment on function public.citer_piece_de_facture_reprise(uuid, uuid, uuid) is
-  'Cite la pièce de vente qui est l''original d''une facture reprise (A8-Q5) : le cabinet du dossier (42501) ; une facture reprise de ce dossier (22023) qui n''en cite pas déjà une (23514) ; une pièce de ce dossier (P0002), de vente (22023), exemplaire d''aucune facture de l''application, original d''aucune autre facture reprise, que la validation n''a pas figée, et que rien ne règle à la date de reprise ou après (23514). Rend l''identifiant du lien.';
+  'Cite la pièce de vente qui est l''original d''une facture reprise (A8-Q5) : le cabinet du dossier (42501) ; une facture reprise de ce dossier (22023) qui n''en cite pas déjà une (23514) ; une pièce de ce dossier (P0002), de vente (22023), exemplaire d''aucune facture de l''application, original d''aucune autre facture reprise, et que rien ne règle à la date de reprise ou après (23514) ; figée par un exercice validé, elle se cite aussi (A8Q5-Q1). Rend l''identifiant du lien.';
 
 -- ══ 3. RETIRER LE LIEN ══════════
 
@@ -330,7 +329,7 @@ begin
   end if;
   v_annee := public.exercice_figeant_la_piece(v_piece);
   if v_annee is not null then
-    raise exception 'La pièce « % » justifie une écriture validée de l''exercice % : le lien qui la cite ne se pose ni ne se retire plus.',
+    raise exception 'La pièce « % » justifie une écriture validée de l''exercice % : le lien qui la cite ne se retire plus.',
       v_nom, v_annee using errcode = '23514';
   end if;
   perform set_config('jd.piece_de_reprise_retiree', v_id::text, true);
