@@ -17,6 +17,7 @@ import { CONTACTS_EXPORTES } from './contacts'
 import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
+import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
@@ -270,6 +271,23 @@ export function auGrapheDesComptesBancaires(r: Relation, prevus: boolean): boole
   return prevus || (!TABLES_DES_COMPTES_BANCAIRES.includes(r.enfant) && !TABLES_DES_COMPTES_BANCAIRES.includes(r.parent))
 }
 
+// LES LETTRES DE MISSION (ligne 47, lot LM4 ; migration `lettres_de_mission`, PRÉPARÉE le 11/11/2026, après LM1) : les
+// modèles et les lettres de mission du cabinet, dans le dossier du cabinet. Sous le drapeau de la migration
+// (`LETTRES_DE_MISSION_PREVUES`, src/lib/lettresDeMission.ts), baissé : la production n'a pas les tables, et les lire ferait
+// échouer toute sauvegarde. Leurs relations (le dossier en cascade ; le modèle remplacé, le modèle d'une lettre, la lettre
+// remplacée et le papier signé SANS ACTION : rien ne se supprime qu'avec le dossier), leurs rangs (après les documents, que
+// le papier signé cite, le modèle avant la lettre, après `precisions_mouvements`), leurs chemins, leurs vagues (`remplace_id`) ; leur clé est la commune,
+// `id`. Le dossier du client n'est pas une clé : une référence que la sauvegarde garde telle quelle, la lettre survivant à
+// son client (LM-Q4). La restauration les réinsère par la porte que leurs policies ouvrent au super-administrateur, et leur
+// garde accepte l'histoire telle qu'écrite — sauf une acceptation en ligne, tant que la base la ferme.
+// sauvegardeLettresDeMission.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DES_LETTRES_DE_MISSION: readonly string[] = ['modeles_lettre_de_mission', 'lettres_de_mission']
+
+/** Une table au plan, côté lettres de mission : toutes, sauf les leurs tant que leur migration n'est pas exportée. */
+export function auPlanDesLettresDeMission(table: string, prevues: boolean): boolean {
+  return prevues || !TABLES_DES_LETTRES_DE_MISSION.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -287,6 +305,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
     && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
     && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS)
+    && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -554,6 +573,13 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'operations_caisse', parent: 'operations_caisse', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'operations_caisse', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'operations_caisse', colonne: 'operation_caisse_id', aLaSuppression: 'cascade' },
+  // Les lettres de mission (ligne 47, LM4) : le dossier du cabinet, en cascade ; le reste sans action.
+  { enfant: 'modeles_lettre_de_mission', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'modeles_lettre_de_mission', parent: 'modeles_lettre_de_mission', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'lettres_de_mission', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'lettres_de_mission', parent: 'modeles_lettre_de_mission', colonne: 'modele_id', aLaSuppression: 'bloque' },
+  { enfant: 'lettres_de_mission', parent: 'lettres_de_mission', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'lettres_de_mission', parent: 'documents_divers', colonne: 'document_signe_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -822,6 +848,10 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'revision_explications',
   'justificatifs_proposes',
   'precisions_mouvements',
+  // Les lettres de mission (LM4) : après les documents, que le papier signé cite ; le modèle avant la lettre. Une place
+  // qu'aucun voisin ne fixe : l'essai de restauration les met après `precisions_mouvements`.
+  'modeles_lettre_de_mission',
+  'lettres_de_mission',
   'regimes_ereporting',
   'pieces_ecartees_ereporting',
   'declarations_ereporting',
@@ -915,6 +945,10 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES: readonly { table: strin
   // Les situations publiées (espace client, étape C4a) : une publication en remplace une autre, un retrait en retire une
   // (`remplace_id`) ; jamais modifiées, elles ne partent pas à NULL, et leur garde lit la ligne citée.
   { table: 'situations_publiees', colonne: 'remplace_id' },
+  // Les lettres de mission (ligne 47, LM4) : un modèle, une lettre en remplacent un autre, une autre de leur dossier
+  // (`remplace_id`) ; jamais réécrits, ils ne partent pas à NULL, et leur garde lit la version remplacée.
+  { table: 'modeles_lettre_de_mission', colonne: 'remplace_id' },
+  { table: 'lettres_de_mission', colonne: 'remplace_id' },
 ]
 
 // Les vagues telles qu'elles s'appliquent AUJOURD'HUI : sans celle des adresses de réception, ni celle des paramètres de
@@ -1278,6 +1312,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   documents_divers: { acces: 'direct' },
   dossier_assignations: { acces: 'direct' },
   dossier_permanent: { acces: 'direct' },
+  modeles_lettre_de_mission: { acces: 'direct' },
+  lettres_de_mission: { acces: 'direct' },
   ecritures_brouillon: { acces: 'direct' },
   emails_envoyes: { acces: 'direct' },
   emprunts: { acces: 'direct' },
