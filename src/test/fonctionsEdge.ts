@@ -106,6 +106,19 @@ export function relancesBaissees(source: string): string {
   return muter(source, [[RELANCES_LEVEES, RELANCES_BAISSEES]])
 }
 
+/** La constante de send-email qui admet la relance d'une demande (étape B3b), telle qu'elle est servie : baissée. */
+export const RELANCES_DE_DEMANDES_BAISSEES = 'const RELANCES_DE_DEMANDES_EN_BASE = false'
+/** La même, levée : la source du jour où la migration `relance_des_demandes_par_email` sera en base. */
+export const RELANCES_DE_DEMANDES_LEVEES = 'const RELANCES_DE_DEMANDES_EN_BASE = true'
+
+/**
+ * La source de send-email telle qu'elle se servira APRÈS la migration `relance_des_demandes_par_email` : la constante
+ * levée, en mémoire, rien d'autre de changé. Une occurrence exactement de la constante baissée, sinon `muter` lève.
+ */
+export function relancesDeDemandesLevees(source: string): string {
+  return muter(source, [[RELANCES_DE_DEMANDES_BAISSEES, RELANCES_DE_DEMANDES_LEVEES]])
+}
+
 /**
  * Le `verify_jwt` d'une fonction, tel que `supabase/config.toml` le fixe — la valeur que tout déploiement repasse. Une
  * fonction sans section lève : la passerelle la traiterait à `true`, et le harnais ne devine pas.
@@ -492,6 +505,41 @@ const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Rec
   // basculé (`coalesce(ventes_par_les_factures, false)`) ; sinon, les sources en défaut de la période qui va de la
   // frontière des exercices validés (`frontiere_validation`, exclue) au 31 décembre de l'année, dans l'ordre de la base —
   // le jour, le genre, l'identifiant. Ce qu'elle juge en défaut, le scénario le pose (`monde.sourcesEnDefaut`).
+  // `journaliser_relance_de_demande(...)` (migration PRÉPARÉE `relance_des_demandes_par_email`, étape B3b) : exécutable par
+  // le rôle du service SEUL ; la ligne du journal « relance_demande » et la relance au canal « email » qui la cite, d'un
+  // seul tenant, dans le dossier de la demande ; une demande inconnue ou d'un autre dossier, ou un destinataire, un objet
+  // ou un auteur vides : 22023, rien d'écrit. Les deux écritures se journalisent comme celles du faux PostgREST.
+  journaliser_relance_de_demande: (monde, { role }, args) => {
+    if (role !== 'service') {
+      throw new ErreurPostgrest({ code: '42501', message: 'permission denied for function journaliser_relance_de_demande', status: 403 })
+    }
+    const cles = ['p_dossier_id', 'p_demande_id', 'p_destinataire', 'p_objet', 'p_resend_id', 'p_envoye_par']
+    if (Object.keys(args).sort().join() !== [...cles].sort().join()) {
+      throw new Error(`Faux PostgREST : journaliser_relance_de_demande(${JSON.stringify(args)}) n'est pas modélisé`)
+    }
+    const demande = (monde.base.demandes_cabinet ?? []).find((d) => d.id === args.p_demande_id)
+    if (!demande || demande.dossier_id !== args.p_dossier_id) {
+      throw new ErreurPostgrest({ code: '22023', message: 'Cette demande n\'est pas une demande de ce dossier : la relance par e-mail ne s\'inscrit pas.', status: 400 })
+    }
+    const vide = (v: unknown) => typeof v !== 'string' || v.trim() === ''
+    if (vide(args.p_destinataire) || vide(args.p_objet) || vide(args.p_envoye_par)) {
+      throw new ErreurPostgrest({ code: '22023', message: 'Une relance par e-mail s\'inscrit avec son destinataire, son objet et son auteur.', status: 400 })
+    }
+    const email = {
+      id: identifiantGenere(), dossier_id: demande.dossier_id, type: 'relance_demande', destinataire: args.p_destinataire,
+      objet: args.p_objet, facture_id: null, resend_id: args.p_resend_id ?? null, envoye_par: args.p_envoye_par,
+      created_at: new Date().toISOString(),
+    }
+    const relance = {
+      id: identifiantGenere(), dossier_id: demande.dossier_id, demande_id: demande.id, canal: 'email', email_id: email.id,
+      relancee_par: args.p_envoye_par, relancee_le: email.created_at,
+    }
+    ;(monde.base.emails_envoyes ??= []).push(email)
+    monde.journal.push({ genre: 'ecriture', table: 'emails_envoyes', operation: 'insert', role })
+    ;(monde.base.relances_demandes ??= []).push(relance)
+    monde.journal.push({ genre: 'ecriture', table: 'relances_demandes', operation: 'insert', role })
+    return relance
+  },
   ventes_facturees_de_l_exercice: (monde, { role }, args) => {
     if (role !== 'service') {
       throw new ErreurPostgrest({ code: '42501', message: 'permission denied for function ventes_facturees_de_l_exercice', status: 403 })

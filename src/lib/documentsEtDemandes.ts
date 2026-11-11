@@ -14,6 +14,15 @@
 /** La migration `documents_et_demandes` est-elle en base ? Non : préparée le 11/11/2026 (B2), pas appliquée. */
 export const DOCUMENTS_ET_DEMANDES_PREVUS: boolean = false
 
+/**
+ * La relance d'une demande PAR E-MAIL (étape B3b) est-elle offerte ? Non : sa migration `relance_des_demandes_par_email`
+ * (supabase/preparees/20261111239000, après B1 et B2) est préparée, pas appliquée, et `send-email` la refuse tant que sa
+ * constante `RELANCES_DE_DEMANDES_EN_BASE` est baissée. L'ordre : la migration, la fonction redéployée sa constante levée,
+ * puis ce drapeau, avec `DOCUMENTS_ET_DEMANDES_PREVUS` ; relancesDeDemandesHttp.test.ts refuse ce drapeau levé sur une
+ * fonction qui refuserait la relance. Le bouton qu'il ouvrira reste à écrire (B3b, seconde partie).
+ */
+export const RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE: boolean = false
+
 /** Les cinq tables de la migration, dans l'ordre de leur restauration. */
 export const TABLES_DES_DOCUMENTS_ET_DEMANDES = [
   'documents_cabinet', 'lectures_documents', 'demandes_cabinet', 'demandes_reponses', 'relances_demandes',
