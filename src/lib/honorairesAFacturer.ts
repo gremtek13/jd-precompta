@@ -167,7 +167,7 @@ export function factureCrediteeEnEntier(factureId: string, factures: readonly Fa
 }
 
 /** La première version de la chaîne d'une lettre (`racine_de_la_lettre`). */
-function racine(lettreId: string, lettres: readonly LettreLue[]): string {
+export function racine(lettreId: string, lettres: readonly LettreLue[]): string {
   let courante = lettres.find((l) => l.id === lettreId)
   const vues = new Set<string>()
   while (courante?.remplace_id && !vues.has(courante.id)) {

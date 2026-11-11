@@ -26,6 +26,8 @@ import EncaissementsFactureModal from './EncaissementsFactureModal'
 import ImportDesFactures from './ImportDesFactures'
 import { IMPORT_DES_FACTURES_OFFERT } from '../../lib/importDesFacturesVue'
 import DepotDesHonorairesCard from './DepotDesHonorairesCard'
+import HonorairesAFacturerCard from './HonorairesAFacturerCard'
+import { HONORAIRES_FACTURES_PREVUS } from '../../lib/honorairesAFacturer'
 import { DEPOT_DES_HONORAIRES_PREVU } from '../../lib/depotDesHonoraires'
 import ReglementsSection from './ReglementsSection'
 import ArticlesVue from './ArticlesVue'
@@ -360,13 +362,15 @@ export default function FacturesTab(props: Props) {
 
   // LE BROUILLON TIRÉ D'UN DEVIS (étape P6a2) : la vue « Devis » l'a fait tirer par la base ; on revient aux factures, RELUES,
   // et il s'ouvre par le même chemin qu'une facture de la liste. Absent de la liste relue, on le dit, sans rien ouvrir.
-  async function ouvrirLaFactureTiree(factureId: string) {
+  async function ouvrirLaFactureTiree(
+    factureId: string, absente = 'Le brouillon de facture tiré du devis n’a pas été relu : il est dans la liste des factures, à ouvrir d’ici.',
+  ) {
     setVue('factures')
     setErreur(null)
     const relues = await load()
     const tiree = relues.find((f) => f.id === factureId)
     if (tiree) ouvrir(tiree)
-    else setErreur('Le brouillon de facture tiré du devis n’a pas été relu : il est dans la liste des factures, à ouvrir d’ici.')
+    else setErreur(absente)
   }
 
   return (
@@ -791,6 +795,14 @@ export default function FacturesTab(props: Props) {
               `DEPOT_DES_HONORAIRES_PREVU` ; baissé, rien n'est lu ni rendu. Il reçoit les factures que l'onglet a lues. */}
           {espace === 'cabinet' && DEPOT_DES_HONORAIRES_PREVU && (
             <DepotDesHonorairesCard dossierId={dossierId} lues={loading ? null : { factures, motif: lectureIncomplete }} />
+          )}
+          {/* « À facturer » (ligne 47, LM7) : le dossier du cabinet seul, côté cabinet, derrière `HONORAIRES_FACTURES_PREVUS` ;
+              baissé, rien n'est lu ni rendu. Il reçoit les factures que l'onglet a lues, et le brouillon créé s'ouvre par le
+              chemin d'une facture de la liste relue. */}
+          {espace === 'cabinet' && HONORAIRES_FACTURES_PREVUS && (
+            <HonorairesAFacturerCard dossierId={dossierId} lues={loading ? null : { factures, motif: lectureIncomplete }}
+              onFacturee={() => { void load() }}
+              ouvrirLeBrouillon={(id) => { void ouvrirLaFactureTiree(id, 'Le brouillon de la facture d’honoraires n’a pas été relu : il est dans la liste des factures, à ouvrir d’ici.') }} />
           )}
         </>
       )}

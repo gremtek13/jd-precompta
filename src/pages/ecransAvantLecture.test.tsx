@@ -631,6 +631,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/DepotDesHonorairesCard.tsx': 'drapeau `DEPOT_DES_HONORAIRES_PREVU` baissé : ne rend ni ne lit rien ; levé, montée '
     + 'dans le seul dossier du cabinet, son test (DepotDesHonorairesCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun '
     + 'geste sur une lecture illisible ni sur une liste de factures lue en partie ; n’écrit que sur « Déposer chez le client »',
+  'pages/dossier/HonorairesAFacturerCard.tsx': 'drapeau `HONORAIRES_FACTURES_PREVUS` baissé : ne rend ni ne lit rien ; levé, montée '
+    + 'dans le seul dossier du cabinet, son test (HonorairesAFacturerCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun '
+    + 'geste sur une lecture illisible ni sur une liste de factures lue en partie, jamais « aucune lettre » avant d’avoir lu ; '
+    + 'n’écrit que sur « Facturer »',
   'pages/dossier/DossierDuCabinetCard.tsx': 'drapeau `DOSSIER_DU_CABINET_PREVU` baissé : ne rend rien ; levé, elle ne lit pas — elle '
     + 'reçoit la désignation lue par InformationsTab (`useDesignationDuDossier`) ; son test (DossierDuCabinetCard.test.tsx) éprouve '
     + '« Chargement… » avant la lecture, aucun geste sur une lecture illisible ni pour un membre ; n’écrit que sur « Désigner… » '
