@@ -81,6 +81,12 @@
 --      compte rattaché à rien, ni le client ne lient ni ne lisent l'identité ; le chef lie et lit (contrôle positif) ;
 --      l'insertion directe au super-administrateur seul ; le catalogue — et trois mutations ; avant la migration
 --      `fiche_liee_au_dossier_du_client`, une ligne « EN ATTENTE ».
+--   6quinquies-quinquies. Les MISSIONS D'UN CLIENT, sans ses honoraires (LM5-Q2, ligne 47 ; bloc « Les missions d'un
+--      client, sans ses honoraires », après la fiche liée) : MV1 à MV7 — la lecture ni par l'anonyme, ni par un compte
+--      rattaché à rien, ni par le client, ni par un membre que le dossier du client n'a pas ; le membre assigné au seul
+--      dossier du client lit (contrôle positif), la table des lettres lui restant fermée ; ses clés seules, aucun mot ni
+--      montant des honoraires ; le catalogue — et trois mutations ; avant la migration `missions_du_client`, une ligne
+--      « EN ATTENTE ».
 --   6sexies. L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2, ligne 51.5 ; bloc AR, après le bloc TD) : AR1 à AR3 — le cabinet du
 --      dossier la lit (contrôle positif), ni le client ni l'anonyme ; le client ne l'écrit ni ne la réécrit ; le catalogue —
 --      et deux mutations ; avant la migration `adresse_des_acces_retires`, une ligne « EN ATTENTE ».
@@ -780,6 +786,11 @@
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM3, ligne 47 : migration `fiche_liee_au_dossier_du_client`, PRÉPARÉE,
 -- pas appliquée, après LM1), qui lie une fiche du dossier du cabinet au dossier de son client. Le bloc FL (FL1 à FL6,
 -- M-FL2, M-FL3, M-FL6) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM3 ».
+--
+-- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM5-Q2, ligne 47 : migration `missions_du_client`, PRÉPARÉE, pas
+-- appliquée, après LM1 et LM4), qui ne crée ni ne change aucune policy, mais une fonction de lecture `security definer` :
+-- les lettres proposées d'un client, sans leurs honoraires, à qui lit son dossier au titre du cabinet. Le bloc MV (MV1 à
+-- MV7, M-MV3, M-MV5, M-MV6) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « LM5-Q2 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (P1T-E2, ligne 51.5 : migration `adresse_des_acces_retires`, PRÉPARÉE,
 -- pas appliquée), qui garde l'adresse d'un accès retiré que la trace nomme — la lecture du cabinet du dossier, l'insertion
@@ -3565,6 +3576,178 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $fl$;
+
+-- ═══ Les missions d'un client, sans ses honoraires (LM5-Q2, ligne 47) ══════════════════════════════════════════════════
+--
+-- La migration `missions_du_client` ne crée ni ne change aucune policy : une fonction de lecture `security definer` rend,
+-- pour le dossier d'un client, ses lettres de mission proposées sans leurs honoraires — à qui lit ce dossier au titre du
+-- cabinet (`admin_du_dossier`), alors que la table des lettres reste fermée à qui n'est pas du dossier du cabinet. Ce
+-- qu'elle ouvre et ferme : l'anonyme ne l'exécute pas (MV1) ; un compte rattaché à rien et le client du dossier, par son
+-- accès, sont refusés en 42501, la raison exigée (MV2, MV3) ; un membre de l'équipe que le dossier du client n'a pas aussi
+-- (MV4) ; assigné au SEUL dossier du client, il lit — le contrôle POSITIF — alors que la table lui reste fermée (MV5) ; la
+-- valeur ne porte que ses clés, et aucun mot ni montant des honoraires (MV6) ; au catalogue, `security definer`, chemin
+-- fixé, `stable`, exécutable par `authenticated` seul (MV7). Le jeu : deux dossiers jetables du cabinet de la réplique et
+-- son membre d'équipe, dans une sous-transaction annulée. Trois mutations, qui doivent mordre. EN ATTENTE tant que la
+-- fonction n'est pas en base. Ce qu'elle rend en détail (l'ordre, le brouillon, l'autre client, le dossier inconnu, le
+-- cabinet sans dossier désigné) : `missionsDuClient.sql`.
+do $mv$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  inconnu uuid := gen_random_uuid();
+  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  k uuid := '1a100000-0000-4000-8000-0000000000fc';
+  c uuid := '1a100000-0000-4000-8000-0000000000fd';
+  refus text := 'Accès refusé à ce dossier.';
+  cles text[] := array['id', 'remplace_id', 'dossier_client_id', 'missions', 'date_effet', 'fin_initiale', 'reconduction_tacite',
+                       'proposee_le', 'acceptee_le', 'refusee_le', 'retiree_le', 'fin_au'];
+  interdit text := '(montant|libell|periodicit|livrable|honorair|repartition|identite|empreinte|clause|signataire|modele|auteur|2468\.13)';
+  m uuid; l uuid; v jsonb; ligne jsonb;
+  n bigint; etat text; message text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.missions_du_client(uuid)') is null then
+    insert into rls_verdict values ('MV. les missions d''un client : EN ATTENTE de la migration missions_du_client',
+      'missions_du_client', 'absente : ses droits se jugent dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef désigne K, y écrit un modèle et une lettre pour C (un forfait de 2468.13 €), et la propose ──
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, siret, adresse) values
+      (k, 'RLS DOSSIER DU CABINET MV', cabinet, 'tresorerie', '455000', '12345678200010', 'RLS ADRESSE'),
+      (c, 'RLS CLIENT MV', cabinet, 'tresorerie', '455000', null, 'RLS ADRESSE');
+    insert into memberships (user_id, dossier_id, role, email) values (client, c, 'client', 'rls-mv@example.test');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform public.designer_dossier_du_cabinet(cabinet, k);
+    select (public.enregistrer_modele_de_lettre(k, 'Modèle RLS MV', 'Conditions RLS',
+      '{"tenue_comptable": "Tenir la comptabilité."}'::jsonb, '{"sous_traitance": "Clause RLS."}'::jsonb, null)).id into m;
+    select (public.enregistrer_brouillon_de_lettre(k, null, jsonb_build_object('dossier_client_id', c, 'modele_id', m,
+      'missions', jsonb_build_array('tenue_comptable'), 'date_effet', '2026-01-01', 'premier_exercice', 2026,
+      'fin_initiale', '2026-12-31', 'signataire_nom', 'Signataire RLS', 'signataire_qualite', 'Titulaire', 'repartition', '[{"tache": "Transmettre les pièces", "par": "client"}]'::jsonb,
+      'honoraires', '[{"forme": "forfait", "libelle": "Tenue RLS", "montant_ht": 2468.13, "periodicite": "trimestre"}]'::jsonb), null)).id into l;
+    perform public.proposer_lettre_de_mission(k, l, (select modifiee_le from lettres_de_mission where id = l));
+    reset role;
+    construit := true;
+
+    -- MV1 : l'anonyme n'exécute pas la fonction.
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+      perform public.missions_du_client(c);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'MV1. anonyme n''exécute pas la lecture des missions d''un client', 'cible', 'missions_du_client',
+      'observe', etat, 'ok', etat = '42501');
+
+    -- MV2 et MV3 : un compte rattaché à rien, puis le client, par son accès au dossier.
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      perform public.missions_du_client(c);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'MV2. inconnu authentifié ne lit pas les missions d''un client', 'cible', 'missions_du_client',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = refus);
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform public.missions_du_client(c);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'MV3. client ne lit pas les missions de son dossier (ni leurs honoraires)', 'cible', 'missions_du_client',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = refus);
+    -- M-MV3 : MV3 rejoué sous le chef — il lit.
+    v := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      v := public.missions_du_client(c);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-MV3 — MV3 rejoué sous le chef du cabinet', 'attendu', 'la lecture acceptée',
+      'observe', etat, 'mord', etat = 'acceptée' and jsonb_array_length(v -> 'lettres') = 1);
+
+    -- MV4 : le membre de l'équipe, que le dossier du client n'a pas.
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      perform public.missions_du_client(c);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'MV4. membre de l''équipe non assigné au dossier du client ne lit pas ses missions', 'cible', 'missions_du_client',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = refus);
+
+    -- MV5 : assigné au SEUL dossier du client, il lit ; la table des lettres lui reste fermée.
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossier_assignations (dossier_id, user_id) values (c, membre);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+    v := public.missions_du_client(c);
+    select count(*) into n from lettres_de_mission where dossier_id = k;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'MV5. le membre assigné au seul dossier du client lit ses missions, la table des lettres fermée (contrôle positif)', 'cible', 'missions_du_client',
+      'observe', coalesce(jsonb_array_length(v -> 'lettres'), -1) || ' lettre(s) rendue(s), ' || n || ' ligne(s) de la table',
+      'ok', jsonb_array_length(v -> 'lettres') = 1 and v -> 'lettres' -> 0 ->> 'id' = l::text and n = 0);
+    -- M-MV5 : la même lecture de la table sous le chef — il la lit.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into n from lettres_de_mission where dossier_id = k;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-MV5 — la table relue sous le chef', 'attendu', 'la lettre lue',
+      'observe', n || ' ligne(s)', 'mord', n = 1);
+
+    -- MV6 : ses clés, et aucun mot ni montant des honoraires ; M-MV6 : le même contrôle sur la ligne de la table.
+    select count(*) into n from jsonb_array_elements(v -> 'lettres') e
+     where (select count(*) from jsonb_object_keys(e) x) <> 12 or exists (select 1 from jsonb_object_keys(e) x where x <> all (cles));
+    verdicts := verdicts || jsonb_build_object('controle', 'MV6. les missions d''un client ne portent que leurs clés, sans montant ni contenu réservé', 'cible', 'missions_du_client',
+      'observe', n || ' lettre(s) à clé de trop, ' || case when v::text ~* interdit then 'un mot des honoraires' else 'aucun mot des honoraires' end,
+      'ok', n = 0 and v::text !~* interdit
+        and (select array_agg(x order by x collate "C") from jsonb_object_keys(v) x) = array['dossier_du_cabinet_designe', 'lettres']);
+    select to_jsonb(t) into ligne from lettres_de_mission t where t.id = l;
+    mutations := mutations || jsonb_build_object('mutation', 'M-MV6 — MV6 appliqué à la ligne de la table', 'attendu', 'un mot des honoraires',
+      'observe', case when ligne::text ~* interdit then 'un mot des honoraires' else 'aucun' end, 'mord', ligne::text ~* interdit);
+    raise exception 'annuler le jeu' using errcode = 'P0001';
+  exception
+    when sqlstate 'P0001' then null;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- MV7 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.oid = to_regprocedure('public.missions_du_client(uuid)') and p.prosecdef and p.provolatile = 's'
+     and coalesce(array_to_string(p.proconfig, ','), '') = 'search_path=public'
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE'), false);
+  verdicts := verdicts || jsonb_build_object('controle', 'MV7. la lecture des missions d''un client : security definer, chemin fixé, stable, exécutable par authenticated seul (lecture du catalogue)',
+    'cible', 'missions_du_client', 'observe', n || ' telle(s) quelle(s)', 'ok', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'MV. le jeu d''essai des missions d''un client s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
+      and not exists (select 1 from cabinets where dossier_du_cabinet = k));
+
+  insert into rls_verdict select v2.controle, v2.cible, v2.observe, v2.ok
+    from jsonb_to_recordset(verdicts) as v2(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m2.mutation, m2.attendu, m2.observe, m2.mord
+    from jsonb_to_recordset(mutations) as m2(mutation text, attendu text, observe text, mord boolean);
+end $mv$;
 
 -- ═══ La frontière des encaissements (chantier EC-Q3, étape VF7a) ═══════════════════════════════════════════════
 --
