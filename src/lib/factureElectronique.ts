@@ -128,9 +128,15 @@ function chemin(el: Element | null, etapes: readonly (readonly [string, string])
 }
 
 function texte(el: Element | null): string | null {
+  return texteEntier(el)?.slice(0, MAX_TEXTE) ?? null
+}
+
+// Le texte d'un champ SANS la borne du texte lu : la reprise d'une facture (lireFactureXmlDetaillee) ne coupe rien en
+// silence, elle refuse ce qui ne tient pas.
+function texteEntier(el: Element | null): string | null {
   if (!el) return null
   const net = (el.textContent ?? '').replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ').trim()
-  return net === '' ? null : net.slice(0, MAX_TEXTE)
+  return net === '' ? null : net
 }
 
 function attribut(el: Element | null, nom: string): string | null {
@@ -237,6 +243,14 @@ function tvaDansLaDevise(candidats: Element[], devise: string | null): Element |
  * facture ou un avoir de l'une des deux syntaxes ; tout le reste se lit champ par champ.
  */
 export function lireFactureXml(xml: string): LectureFacture {
+  const r = racineDeLaFacture(xml)
+  if ('refus' in r) return r
+  return { facture: r.syntaxe === 'CII' ? lireCii(r.racine) : lireUbl(r.racine, r.avoir) }
+}
+
+// L'ouverture du XML, commune aux deux lectures (`lireFactureXml`, `lireFactureXmlDetaillee`) : les mêmes refus, la même
+// racine, un seul analyseur.
+function racineDeLaFacture(xml: string): { racine: Element; syntaxe: SyntaxeXml; avoir: boolean } | { refus: string } {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) {
     return { refus: 'Ce XML déclare une DTD ou des entités : une facture électronique n’en porte pas, il n’est pas lu.' }
   }
@@ -250,9 +264,9 @@ export function lireFactureXml(xml: string): LectureFacture {
     return { refus: 'Ce fichier n’est pas un XML bien formé.' }
   }
   const racine = document.documentElement
-  if (racine.namespaceURI === NS.rsm && racine.localName === 'CrossIndustryInvoice') return { facture: lireCii(racine) }
-  if (racine.namespaceURI === NS.facture && racine.localName === 'Invoice') return { facture: lireUbl(racine, false) }
-  if (racine.namespaceURI === NS.avoir && racine.localName === 'CreditNote') return { facture: lireUbl(racine, true) }
+  if (racine.namespaceURI === NS.rsm && racine.localName === 'CrossIndustryInvoice') return { racine, syntaxe: 'CII', avoir: false }
+  if (racine.namespaceURI === NS.facture && racine.localName === 'Invoice') return { racine, syntaxe: 'UBL', avoir: false }
+  if (racine.namespaceURI === NS.avoir && racine.localName === 'CreditNote') return { racine, syntaxe: 'UBL', avoir: true }
   return { refus: 'Ce XML n’est ni une facture CII ni une facture UBL.' }
 }
 
@@ -448,6 +462,193 @@ function completer(f: FactureLue): FactureLue {
     anomalies.push('Le total TTC ne vaut pas le hors taxes plus la TVA')
   }
   return { ...f, montantTva, anomalies }
+}
+
+// ── La lecture détaillée : ce qu'une facture REPRISE de l'ancien logiciel doit dire (ligne 51.5, étape A8d1) ──────────
+// La pièce reçue n'a besoin que de l'en-tête ; une facture reprise (lib/lectureDesFacturesReprises.ts) recompose ses
+// lignes en base (`importer_factures`), et il lui faut donc, de chaque ligne, sa quantité, son prix et son taux, et de
+// l'en-tête, ce que la pièce ne lit pas. Ce module ne fait que LIRE, à la place que la norme donne à chaque champ (les
+// artefacts EN 16931 de la Commission, syntaxes CII D16B et UBL 2.1) : une valeur absente reste nulle, une valeur écrite
+// qu'on ne sait pas lire est « illisible », et c'est l'appelant qui juge. Aucun texte n'y est coupé.
+
+/** Une valeur écrite : nulle quand le champ manque, « illisible » quand il est écrit sans se lire. */
+export type ValeurLue<T> = T | null | 'illisible'
+
+export interface LigneDetaillee {
+  /** Le nom de l'article (BT-153), entier. */
+  designation: string | null
+  /** La quantité facturée (BT-129), six décimales au plus, dans le sens du document. */
+  quantite: ValeurLue<number>
+  /** Son unité (BT-130), un code des recommandations 20 et 21 de la CEE-ONU. */
+  unite: string | null
+  /** Le prix net de l'article (BT-146), six décimales au plus. */
+  prixNet: ValeurLue<number>
+  /** La quantité de base du prix (BT-149) ; nulle quand elle n'est pas écrite (elle vaut alors un). */
+  quantiteDeBase: ValeurLue<number>
+  /** Le montant net de la ligne (BT-131), en centimes. */
+  montantNetCentimes: ValeurLue<number>
+  /** La catégorie de TVA de la ligne (BT-151) et son taux (BT-152), quatre décimales au plus. */
+  categorie: string | null
+  taux: ValeurLue<number>
+  /** Le nombre de remises et de frais portés par la ligne (BG-27, BG-28). */
+  remisesOuFrais: number
+}
+
+export interface DetailDeLaFacture {
+  /** Le cadre de facturation (BT-23 ; DGFiP, règle G1.02 : B1, S1, M1…), tel qu'écrit. */
+  cadre: string | null
+  /** Les factures antérieures citées (BT-25), chacune une fois, dans l'ordre du document. */
+  references: string[]
+  /** Une échéance (BT-9) est-elle écrite, lisible ou non ? La lecture de l'en-tête rend nulle une date illisible. */
+  echeanceEcrite: boolean
+  /** Le nom de l'acheteur (BT-44, sinon BT-45), entier. */
+  acheteurNom: string | null
+  /** Les SIRET que l'acheteur porte (schéma 0009, BT-46 ou BT-47), chacun une fois. */
+  acheteurSirets: string[]
+  /** L'adresse postale de l'acheteur (BG-8), ses lignes, son code postal et sa ville, son pays s'il n'est pas la France. */
+  acheteurAdresse: string | null
+  /** Le code de la date d'exigibilité de la TVA (BT-8), tel qu'écrit à chaque endroit où il l'est. */
+  exigibilite: string[]
+  /** Le nombre de remises et de frais de l'en-tête (BG-20, BG-21). */
+  remisesOuFraisDuDocument: number
+  /** La somme des montants nets des lignes (BT-106), en centimes. */
+  totalDesLignesCentimes: ValeurLue<number>
+  /** TOUTES les lignes du document. */
+  lignes: LigneDetaillee[]
+}
+
+export type LectureDetaillee = { facture: FactureLue; detail: DetailDeLaFacture } | { refus: string }
+
+// Un décimal XML (quantité, prix, taux), lu sans exposant, au plus neuf chiffres avant la virgule et `decimales` après
+// (les zéros de fin ne comptent pas) : quinze chiffres significatifs au plus, qu'un nombre à virgule flottante rend
+// EXACTEMENT par son écriture la plus courte — celle que JSON envoie, et que la base garde dans un `numeric`.
+function decimalLu(el: Element | null, decimales: number): ValeurLue<number> {
+  const v = texteEntier(el)
+  if (v === null) return null
+  const m = /^([+-])?(\d{1,9})(?:\.(\d+))?$/.exec(v)
+  if (!m) return 'illisible'
+  const fraction = (m[3] ?? '').replace(/0+$/, '')
+  if (fraction.length > decimales) return 'illisible'
+  const n = Number(`${m[1] === '-' ? '-' : ''}${m[2]}${fraction ? `.${fraction}` : ''}`)
+  return n === 0 ? 0 : n
+}
+
+function centimesLus(el: Element | null): ValeurLue<number> {
+  return centimesDe(texteEntier(el))
+}
+
+const distincts = (valeurs: (string | null)[]): string[] =>
+  valeurs.filter((v, i, tous): v is string => v !== null && tous.indexOf(v) === i)
+
+function adresseEnTexte(lignes: (string | null)[], codePostal: string | null, ville: string | null, pays: string | null): string | null {
+  const parties = lignes.filter((l): l is string => l !== null)
+  const localite = [codePostal, ville].filter((x): x is string => x !== null).join(' ')
+  if (localite !== '') parties.push(localite)
+  if (pays !== null && pays.toUpperCase() !== 'FR') parties.push(pays)
+  return parties.length > 0 ? parties.join('\n') : null
+}
+
+/**
+ * Lit une facture électronique CII ou UBL en ENTIER : son en-tête, comme `lireFactureXml`, et ce qu'une reprise en
+ * demande de plus (`DetailDeLaFacture`). Les mêmes refus que `lireFactureXml`, rien d'autre : le reste se juge ailleurs.
+ */
+export function lireFactureXmlDetaillee(xml: string): LectureDetaillee {
+  const r = racineDeLaFacture(xml)
+  if ('refus' in r) return r
+  if (r.syntaxe === 'CII') return { facture: lireCii(r.racine), detail: detailCii(r.racine) }
+  return { facture: lireUbl(r.racine, r.avoir), detail: detailUbl(r.racine, r.avoir) }
+}
+
+function detailCii(racine: Element): DetailDeLaFacture {
+  const { rsm, ram } = NS
+  const transaction = enfant(racine, rsm, 'SupplyChainTradeTransaction')
+  const accord = enfant(transaction, ram, 'ApplicableHeaderTradeAgreement')
+  const reglement = enfant(transaction, ram, 'ApplicableHeaderTradeSettlement')
+  const acheteur = enfant(accord, ram, 'BuyerTradeParty')
+  const organisation = enfant(acheteur, ram, 'SpecifiedLegalOrganization')
+  const adresse = enfant(acheteur, ram, 'PostalTradeAddress')
+  const siret = (el: Element | null) => (attribut(el, 'schemeID') === '0009' ? texteEntier(el)?.replace(/\s/g, '') ?? null : null)
+  return {
+    cadre: texteEntier(chemin(racine, [
+      [rsm, 'ExchangedDocumentContext'], [ram, 'BusinessProcessSpecifiedDocumentContextParameter'], [ram, 'ID'],
+    ])),
+    references: distincts(enfants(reglement, ram, 'InvoiceReferencedDocument').map((d) => texteEntier(enfant(d, ram, 'IssuerAssignedID')))),
+    echeanceEcrite: enfants(reglement, ram, 'SpecifiedTradePaymentTerms').some((t) => enfant(t, ram, 'DueDateDateTime') !== null),
+    acheteurNom: texteEntier(enfant(acheteur, ram, 'Name')) ?? texteEntier(enfant(organisation, ram, 'TradingBusinessName')),
+    acheteurSirets: distincts([...enfants(acheteur, ram, 'GlobalID').map(siret), siret(enfant(organisation, ram, 'ID'))]),
+    acheteurAdresse: adresse === null ? null : adresseEnTexte(
+      [texteEntier(enfant(adresse, ram, 'LineOne')), texteEntier(enfant(adresse, ram, 'LineTwo')), texteEntier(enfant(adresse, ram, 'LineThree'))],
+      texteEntier(enfant(adresse, ram, 'PostcodeCode')), texteEntier(enfant(adresse, ram, 'CityName')),
+      texteEntier(enfant(adresse, ram, 'CountryID'))),
+    exigibilite: enfants(reglement, ram, 'ApplicableTradeTax')
+      .map((t) => texteEntier(enfant(t, ram, 'DueDateTypeCode'))).filter((c): c is string => c !== null),
+    remisesOuFraisDuDocument: enfants(reglement, ram, 'SpecifiedTradeAllowanceCharge').length,
+    totalDesLignesCentimes: centimesLus(chemin(reglement, [[ram, 'SpecifiedTradeSettlementHeaderMonetarySummation'], [ram, 'LineTotalAmount']])),
+    lignes: enfants(transaction, ram, 'IncludedSupplyChainTradeLineItem').map((l): LigneDetaillee => {
+      const prix = chemin(l, [[ram, 'SpecifiedLineTradeAgreement'], [ram, 'NetPriceProductTradePrice']])
+      const quantite = chemin(l, [[ram, 'SpecifiedLineTradeDelivery'], [ram, 'BilledQuantity']])
+      const reglementLigne = enfant(l, ram, 'SpecifiedLineTradeSettlement')
+      const taxe = enfant(reglementLigne, ram, 'ApplicableTradeTax')
+      return {
+        designation: texteEntier(chemin(l, [[ram, 'SpecifiedTradeProduct'], [ram, 'Name']])),
+        quantite: decimalLu(quantite, 6),
+        unite: attribut(quantite, 'unitCode'),
+        prixNet: decimalLu(enfant(prix, ram, 'ChargeAmount'), 6),
+        quantiteDeBase: decimalLu(enfant(prix, ram, 'BasisQuantity'), 6),
+        montantNetCentimes: centimesLus(chemin(reglementLigne, [
+          [ram, 'SpecifiedTradeSettlementLineMonetarySummation'], [ram, 'LineTotalAmount'],
+        ])),
+        categorie: texteEntier(enfant(taxe, ram, 'CategoryCode')),
+        taux: decimalLu(enfant(taxe, ram, 'RateApplicablePercent'), 4),
+        remisesOuFrais: enfants(reglementLigne, ram, 'SpecifiedTradeAllowanceCharge').length,
+      }
+    }),
+  }
+}
+
+function detailUbl(racine: Element, avoir: boolean): DetailDeLaFacture {
+  const { cac, cbc } = NS
+  const partie = chemin(racine, [[cac, 'AccountingCustomerParty'], [cac, 'Party']])
+  const legal = enfant(partie, cac, 'PartyLegalEntity')
+  const adresse = enfant(partie, cac, 'PostalAddress')
+  const siret = (el: Element | null) => (attribut(el, 'schemeID') === '0009' ? texteEntier(el)?.replace(/\s/g, '') ?? null : null)
+  return {
+    cadre: texteEntier(enfant(racine, cbc, 'ProfileID')),
+    references: distincts(enfants(racine, cac, 'BillingReference')
+      .map((b) => texteEntier(chemin(b, [[cac, 'InvoiceDocumentReference'], [cbc, 'ID']])))),
+    echeanceEcrite: enfant(racine, cbc, 'DueDate') !== null ||
+      enfants(racine, cac, 'PaymentMeans').some((p) => enfant(p, cbc, 'PaymentDueDate') !== null),
+    acheteurNom: texteEntier(enfant(legal, cbc, 'RegistrationName')) ?? texteEntier(chemin(partie, [[cac, 'PartyName'], [cbc, 'Name']])),
+    acheteurSirets: distincts([
+      ...enfants(partie, cac, 'PartyIdentification').map((i) => siret(enfant(i, cbc, 'ID'))),
+      siret(enfant(legal, cbc, 'CompanyID')),
+    ]),
+    acheteurAdresse: adresse === null ? null : adresseEnTexte(
+      [texteEntier(enfant(adresse, cbc, 'StreetName')), texteEntier(enfant(adresse, cbc, 'AdditionalStreetName')),
+        texteEntier(chemin(adresse, [[cac, 'AddressLine'], [cbc, 'Line']]))],
+      texteEntier(enfant(adresse, cbc, 'PostalZone')), texteEntier(enfant(adresse, cbc, 'CityName')),
+      texteEntier(chemin(adresse, [[cac, 'Country'], [cbc, 'IdentificationCode']]))),
+    exigibilite: enfants(racine, cac, 'InvoicePeriod')
+      .map((p) => texteEntier(enfant(p, cbc, 'DescriptionCode'))).filter((c): c is string => c !== null),
+    remisesOuFraisDuDocument: enfants(racine, cac, 'AllowanceCharge').length,
+    totalDesLignesCentimes: centimesLus(chemin(racine, [[cac, 'LegalMonetaryTotal'], [cbc, 'LineExtensionAmount']])),
+    lignes: enfants(racine, cac, avoir ? 'CreditNoteLine' : 'InvoiceLine').map((l): LigneDetaillee => {
+      const quantite = enfant(l, cbc, avoir ? 'CreditedQuantity' : 'InvoicedQuantity')
+      const prix = enfant(l, cac, 'Price')
+      const taxe = chemin(l, [[cac, 'Item'], [cac, 'ClassifiedTaxCategory']])
+      return {
+        designation: texteEntier(chemin(l, [[cac, 'Item'], [cbc, 'Name']])),
+        quantite: decimalLu(quantite, 6),
+        unite: attribut(quantite, 'unitCode'),
+        prixNet: decimalLu(enfant(prix, cbc, 'PriceAmount'), 6),
+        quantiteDeBase: decimalLu(enfant(prix, cbc, 'BaseQuantity'), 6),
+        montantNetCentimes: centimesLus(enfant(l, cbc, 'LineExtensionAmount')),
+        categorie: texteEntier(enfant(taxe, cbc, 'ID')),
+        taux: decimalLu(enfant(taxe, cbc, 'Percent'), 4),
+        remisesOuFrais: enfants(l, cac, 'AllowanceCharge').length,
+      }
+    }),
+  }
 }
 
 // ── Ce que la pièce en reçoit ────────────────────────────────────────────────────────────────────────────────────

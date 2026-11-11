@@ -50415,3 +50415,21 @@ drapeau levé. Le contact ne les porte pas (aucune colonne) : rien n'est propos�
 recopie des corps d'avant A8a/A9a (10/11/2026) : sa garde d'empreinte la refusera, elle se refait sur les corps du jour.
 **Vérifié** : `tsc -b`, lint 0 erreur, 33 fichiers touchés (1011 tests) et 77 qui relisent la source (3099) ; 22 tests
 neufs (le module, le formulaire par espace et par état du drapeau, le verrou, l'aperçu) ; deux mutations mordent.
+
+### 11/11/2026 — A8D1 : LA LECTURE D'UNE FACTURE DE L'ANCIEN LOGICIEL (FACTUR-X, CII, UBL) (LIGNE 51.5)
+
+(Agent architecte ; aucune migration, rien en production.) `lib/lectureDesFacturesReprises.ts`, pur, lit UNE facture de
+l'ancien logiciel et rend l'objet qu'`importer_factures` attend, ou TOUS ses refus, nommés champ par champ. Aucun lecteur
+neuf : le PDF passe par `xmlDuFacturX` (factureX.ts), le XML par le lecteur de la réception (factureElectronique.ts), dont
+l'ouverture est désormais commune et qui gagne `lireFactureXmlDetaillee` — chaque ligne (BT-129 à BT-131, BT-146, BT-149,
+BT-151, BT-152), le cadre BT-23, BT-8, BT-25, l'adresse et le SIRET de l'acheteur, les remises, sans couper aucun texte.
+Le format se décide au contenu. Refusés : un vendeur dont le SIREN n'est pas celui du dossier (ou illisible, ou un dossier
+sans SIREN), un type autre que 380 et 381, un avoir sans BT-25 ou qui en cite plusieurs, une devise autre que l'euro, un
+numéro hors de G1.05, une échéance illisible, un cadre 4 (après acompte), les remises et frais (BG-20/21, BG-27/28), une
+quantité de base autre que un, une unité hors de la liste de l'application, un taux hors de celle d'`importer_factures`,
+une ligne dont le net ne vaut pas quantité × prix (`calculerLigne`), un HT ou une TVA (par taux, BR-CO-17, ou ligne à
+ligne) que les lignes ne font pas, une ventilation BG-23 d'autres bases ; et toute anomalie de l'en-tête. Le type du client,
+la transmission, l'encaissé avant la reprise, et la nature et l'option quand BT-23 et BT-8 ne les disent pas, sont des
+CHOIX sans défaut (`formeDImport`). Le test confronte les clés, taux, formats, listes et bornes au texte d'`importer_factures`
+(quatre clés laissées, chacune avec sa raison) ; 23 tests ; trois mutations mordent. Restent A8d2 (l'écran, le dépôt sous
+`<dossier>/imports/`, la policy du seau à présenter, `encaisse_par_taux`), le CSV (A4B3-Q6).
