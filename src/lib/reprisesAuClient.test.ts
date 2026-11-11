@@ -81,8 +81,8 @@ describe('le drapeau', () => {
 
 describe('la migration, confrontée au module', () => {
   it('pose les deux fonctions que l’écran appelle, et rien d’autre : ni table, ni policy, ni droit d’une table, ni suppression', () => {
-    expect(fonction(FONCTION_DE_LA_REPRISE)).toMatch(/^create function public\.reprise_de_la_facture\(p_dossier_id uuid, p_facture_id uuid\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public\nas \$\$/)
-    expect(fonction(FONCTION_DES_PIECES_CITEES)).toMatch(/^create function public\.pieces_citees_de_la_simulation\(p_dossier_id uuid\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public\nas \$\$/)
+    expect(fonction(FONCTION_DE_LA_REPRISE)).toMatch(/^create function public\.reprise_de_la_facture\(p_dossier_id uuid, p_facture_id uuid\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public\nas \$\$/i)
+    expect(fonction(FONCTION_DES_PIECES_CITEES)).toMatch(/^create function public\.pieces_citees_de_la_simulation\(p_dossier_id uuid\)\nreturns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = public\nas \$\$/i)
     const instructions = MIGRATION.split('\n').filter((l) => !l.startsWith('--'))
       .join('\n').match(/^(create|alter|grant|revoke|comment|insert|update|drop|delete|truncate|do)\b[^\n]*/gim) ?? []
     expect(instructions.map((l) => l.split(' ').slice(0, 2).join(' ').toLowerCase())).toEqual([
@@ -116,6 +116,13 @@ describe('la migration, confrontée au module', () => {
     const construites = [...fonction(FONCTION_DE_LA_REPRISE).matchAll(/^\s+'([a-z_]+)', /gm)].map((m) => m[1]).sort()
     expect(construites).toEqual([...CLES_DE_LA_REPRISE])
     expect([...CLES_DE_LA_REPRISE]).toEqual([...CLES_DE_LA_REPRISE].sort())
+  })
+
+  it('les écrans appellent les deux fonctions sous leur nom, en toutes lettres (le garde des verrous lit le nom)', () => {
+    const simulation = readFileSync(new URL('../pages/ClientSimulation.tsx', import.meta.url), 'utf8')
+    const fenetre = readFileSync(new URL('../pages/dossier/EncaissementsFactureModal.tsx', import.meta.url), 'utf8')
+    expect(simulation).toContain(`supabase.rpc('${FONCTION_DES_PIECES_CITEES}', { p_dossier_id: dossierLu })`)
+    expect(fenetre).toContain(`supabase.rpc('${FONCTION_DE_LA_REPRISE}', { p_dossier_id: dossierId, p_facture_id: factureId })`)
   })
 
   it('ses droits : l’anonyme et PUBLIC n’exécutent pas, les connectés oui', () => {

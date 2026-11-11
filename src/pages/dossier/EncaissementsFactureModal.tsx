@@ -45,7 +45,7 @@ import { CAISSE_EXPORTEE } from '../../lib/caisse'
 import { lireLaCaisse } from '../../lib/caisseLecture'
 import { lireLaRepriseDeLaCaisse } from '../../lib/caisseDuDossierLecture'
 import { estUneFactureReprise } from '../../lib/facturesReprises'
-import { FONCTION_DE_LA_REPRISE, lireLaRepriseDeLaFacture, reprisesAuClientPrevues } from '../../lib/reprisesAuClient'
+import { lireLaRepriseDeLaFacture, reprisesAuClientPrevues } from '../../lib/reprisesAuClient'
 import {
   caisseDeLaFenetre, contrePassationPourLaCaisse, PERMIS_PAR_LA_CAISSE, retenuParLaCaisse, retraitPourLaCaisse,
   type CaisseDeLaFenetre,
@@ -282,7 +282,7 @@ async function lireDonnees(
   const ouverte = factures.lignes.find((f) => f.id === factureId)
   const lectureDeLaReprise = reprisesAuClientPrevues() && ouverte && estUneFactureReprise(ouverte)
     ? await lireLaRepriseDeLaFacture(factureId,
-      supabase.rpc(FONCTION_DE_LA_REPRISE, { p_dossier_id: dossierId, p_facture_id: factureId }))
+      supabase.rpc('reprise_de_la_facture', { p_dossier_id: dossierId, p_facture_id: factureId }))
     : null
 
   const manques: Manque[] = []

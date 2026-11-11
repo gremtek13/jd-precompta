@@ -77,6 +77,18 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
       + '`stable`, `security definer`, sans écriture ; migration `simulation_des_ventes_facturees`, étape VF8e, préparée), au '
       + 'montage de « Ma simulation » — derrière `SIMULATION_VENTES_FACTUREES_EXPORTEE`.',
   },
+  'rpc:pieces_citees_de_la_simulation': {
+    nature: 'lecture',
+    raison: 'Les pièces d’un dossier qui sont l’original d’une facture reprise, leurs seuls identifiants (fonction `stable`, '
+      + '`security definer`, sans écriture ; migration `reprises_au_client`, A8Q5-Q2, préparée), au montage de « Ma '
+      + 'simulation » — derrière `REPRISES_AU_CLIENT_PREVUES`.',
+  },
+  'rpc:reprise_de_la_facture': {
+    nature: 'lecture',
+    raison: 'Ce que l’encaissement d’une facture reprise demande — date de reprise, encaissé avant la reprise, avoirs repris, '
+      + 'en centimes (fonction `stable`, `security definer`, sans écriture ; migration `reprises_au_client`, A8C-Q1, préparée), '
+      + 'lue par la fenêtre des encaissements avec le reste de sa lecture — derrière `REPRISES_AU_CLIENT_PREVUES`.',
+  },
   'rpc:pieces_jointes_ecartees_du_client': {
     nature: 'lecture',
     raison: 'Le jour, la raison et le poids des pièces jointes écartées d’un dossier (fonction `stable`, `security definer`, '
