@@ -25,6 +25,7 @@ import { detailDesDoublonsProbables, doublonsProbables, piecesRegleesPourLesDoub
 import { estFigee } from './validationExercice'
 import { MESSAGE_PIECES_SANS_EMPREINTE, sansEmpreinteDeDepot } from './empreinteDeDepot'
 import { confronterLOuverture, exerciceAConfronter, ouvertureEnEcart } from './ouvertureConfrontee'
+import { eclatementsAFaire } from './ouvertureEclatee'
 import { confronterLesAmortissementsRepris, detailDesAmortissementsSousUnAutreNumero, detailDesEcartsDeLaReprise } from './repriseDesAmortissements'
 import type { OuvertureBanque } from './planTresorerie'
 import type {
@@ -573,6 +574,22 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     }, 'complete')
   const ecartDOuverture = confrontation?.etat === 'ecarts' ? ouvertureEnEcart(confrontation) : null
 
+  // L'OUVERTURE DE LA BANQUE ÉCLATÉE ENTRE LES COMPTES BANCAIRES (ligne 26.6, MCB5g ; lib/ouvertureEclatee.ts) : l'écriture du
+  // 1er janvier qui passe à chaque compte bancaire son solde au relevé de la veille, dite à écrire, à réécrire ou à retirer pour
+  // chaque exercice ouvert, aux mots de la carte de l'onglet Écritures et du préalable de la validation (`phraseDeLEclatement`) —
+  // dite ici avant le geste. Les comptes lus en entier seulement : drapeau `COMPTES_BANCAIRES_PREVUS` baissé (`sans_objet`) ou
+  // comptes illisibles, rien ; le relevé ou ses contrôles lus en partie (`controlesReleves` nul), rien ; le brouillon, la reprise
+  // ou les soldes reportés lus en partie (`entreesDeLOuvertureIncompletes`), rien — jamais « rien à éclater » sur ce qu'on n'a
+  // pas lu en entier, et l'écran le dit (`lectureIncomplete`).
+  const eclatements = comptesBancaires.etat !== 'lus' || controlesReleves === null || releveDesComptes.etat !== 'parts'
+    || entreesDeLOuvertureIncompletes !== null
+    ? []
+    : eclatementsAFaire({
+      role: modele.plan.banque, parts: releveDesComptes.parts, reprise: aNouveaux, reportes: soldesReportes, anneesValidees,
+      datesDesEcritures: ecritures.map((e) => e.date), datesDesMouvements: lignes.map((l) => l.date),
+    }, ecritures)
+  const exercicesAEclater = eclatements.map((x) => x.annee)
+
   // LA CAISSE DU DOSSIER (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts ; conception, § 4 et § 5) : quatre points, que
   // la caisse lue EN ENTIER fait paraître. ABSENTE (le drapeau baissé), rien n'est calculé et la liste est celle d'hier, au
   // caractère près. Lue en partie, ou une de ses entrées (`entreesDeLaCaisseIncompletes`), ils se taisent — leur silence ne
@@ -818,6 +835,17 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     {
       id: 'ouverture-en-ecart', label: ecartDOuverture?.message ?? '', action: 'Voir l’ouverture dans le bilan',
       nb: ecartDOuverture === null ? 0 : 1, cible: 'bilan', severite: 'erreur', detail: ecartDOuverture?.detail, sansNombre: true,
+    },
+    // « Erreur » : la validation de l'exercice se refuse tant que son éclatement n'est pas à jour (même identifiant que son
+    // préalable ; en base, le filet de MCB5G-Q2). Le point renvoie à l'onglet Écritures, dont la carte « Ouverture de la banque
+    // par compte » MONTRE l'éclatement de l'exercice affiché et l'écrit, le réécrit ou le retire d'un clic : le détail nomme
+    // l'exercice à choisir. Le libellé, la phrase du plus ancien ; `nb`, le nombre d'exercices, que le libellé ne compte pas.
+    {
+      id: 'ouverture-a-eclater', label: eclatements[0]?.phrase ?? '', action: 'Éclater l’ouverture dans Écritures',
+      nb: eclatements.length, cible: 'ecritures', severite: 'erreur', sansNombre: true,
+      detail: eclatements.length === 0 ? undefined
+        : `Dans Écritures, sur ${exercicesAEclater.length > 1 ? `les exercices ${exercicesAEclater.slice(0, -1).join(', ')} et ${exercicesAEclater[exercicesAEclater.length - 1]}` : `l’exercice ${exercicesAEclater[0]}`}, `
+          + 'la carte « Ouverture de la banque par compte » l’écrit, la réécrit ou la retire d’un clic.',
     },
     // Plus de point « déclaration de TVA en écart avec le brouillon » (retiré le 28/09/2026) : le
     // brouillon date la TVA à la PIÈCE et ne porte aucune écriture pour un bien immobilisé, donc il

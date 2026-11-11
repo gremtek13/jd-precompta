@@ -1029,3 +1029,82 @@ describe('les points du relevé, compte par compte (MCB4)', () => {
     expect(releves({ lignes, comptesBancaires: deux })).toMatchObject({ ok: false, detail: 'Mois manquants : avril (compte « Livret pro »)' })
   })
 })
+
+// MCB5g : l'ouverture de la banque éclatée entre les comptes bancaires, dite AVANT le geste de validation, aux mots de la carte de
+// l'onglet Écritures et du préalable (`phraseDeLEclatement`, lib/ouvertureEclatee.ts). Le dossier fictif du préalable : 2025
+// validé, 2026 ouvert à 1 250 € au 512000 ; le principal finit 2025 à 1 000 €, le second à 250 €, et tient son 512200 depuis
+// le 01/01/2026. Drapeau baissé (la fabrique, `sans_objet`), rien ; et rien non plus sur ce qui n'est pas lu en entier.
+describe('l’ouverture de la banque à éclater (MCB5g)', () => {
+  const compteLu = (id: string, libelle: string, principal: boolean, depuis: string | null = null) => ({
+    id, libelle, principal, fin_d_identifiant: null, compte: principal ? null : '512200', compte_propre_depuis: depuis,
+    ouvert_le: null, clos_le: null,
+  })
+  const LUS = { etat: 'lus' as const, comptes: [compteLu('cp', 'Compte principal', true), compteLu('cs', 'Compte second fictif', false, '2026-01-01')] }
+  const k = (id: string, compte: string, initial: number, final: number): ControleReleveBancaire => ({
+    id, dossier_id: 'd1', compte_bancaire_id: compte, source_fichier: `${id}.csv`, solde_initial: initial, solde_final: final,
+    somme_mouvements: final - initial, ecart: 0, coherent: true, periode_debut: '2025-12-01', periode_fin: '2025-12-31', created_at: '2026-01-05T10:00:00Z',
+  })
+  const LIBELLE = 'Ouverture du 512200 au relevé du 31/12/2025'
+  const ecrite = (id: string, date: string, compte: string, sens: 'debit' | 'credit', montant: number): EcritureBrouillon => ({
+    id, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date, compte, libelle: LIBELLE, montant, sens, statut: 'validee',
+    created_at: `${date}T10:00:00Z`, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
+    encaissement_id: null, facture_id: null, ...NON_VALIDEE, ouverture_compte_bancaire_id: 'cs',
+  })
+  const paire = (montant: number) => [ecrite('o1', '2026-01-01', '512200', 'debit', montant), ecrite('o2', '2026-01-01', '512000', 'credit', montant)]
+  const reporte = (id: string, compte: string, sens: 'debit' | 'credit'): SoldeReporte => ({
+    id, dossier_id: 'd1', date: '2026-01-01', compte, libelle: `Compte ${compte}`, sens, montant: 1250, source_nom: 'Exercice 2025 validé',
+    source_empreinte: 'b'.repeat(64), created_at: '2026-01-01T00:00:00Z', ...A_NOUVEAU_NON_VALIDE,
+  })
+  const mouvements = (second: number) => [
+    ligne({ id: 'mp', compte_bancaire_id: 'cp', date: '2025-12-15', montant: 100, source_fichier: 'rp.csv' }),
+    ligne({ id: 'ms', compte_bancaire_id: 'cs', date: '2025-12-10', montant: second, source_fichier: 'rs.csv' }),
+  ]
+  const base = (o: Partial<DonneesDeLaChecklist> = {}): Partial<DonneesDeLaChecklist> => ({
+    comptesBancaires: LUS, lignes: mouvements(50), controlesReleves: [k('rp', 'cp', 900, 1000), k('rs', 'cs', 200, 250)],
+    soldesReportes: [reporte('r1', '512000', 'debit'), reporte('r2', '101000', 'credit')], ...o,
+  })
+  const APRES_2025: ContexteDeLaChecklist = { ...CONTEXTE, anneesValidees: [2025], frontiere: '2025-12-31' }
+  const resultat = (d: Partial<DonneesDeLaChecklist>, c: ContexteDeLaChecklist = APRES_2025) => pointsDeLaChecklist(donnees(d), c)
+  const point = (d: Partial<DonneesDeLaChecklist>, c?: ContexteDeLaChecklist) =>
+    resultat(d, c).tousLesPointsATraiter.find((x) => x.id === 'ouverture-a-eclater')
+
+  it('à écrire : en erreur, vers Écritures, aux mots du préalable, l’exercice nommé', () => {
+    const r = resultat(base())
+    expect(r.tousLesPointsATraiter.find((x) => x.id === 'ouverture-a-eclater')).toEqual({
+      id: 'ouverture-a-eclater',
+      label: 'L’ouverture du 01/01/2026 porte au compte de banque du rôle l’argent de tous les comptes bancaires : l’écriture qui passe le '
+        + 'solde de chaque compte à son 512, d’après ses relevés du 31/12/2025, n’est pas écrite.',
+      action: 'Éclater l’ouverture dans Écritures', nb: 1, cible: 'ecritures', severite: 'erreur', sansNombre: true,
+      detail: 'Dans Écritures, sur l’exercice 2026, la carte « Ouverture de la banque par compte » l’écrit, la réécrit ou la retire d’un clic.',
+    })
+    expect(r.pointsTravail.map((x) => x.id)).toContain('ouverture-a-eclater')
+    expect(r.pointsParametrage.map((x) => x.id)).not.toContain('ouverture-a-eclater')
+  })
+
+  it('à jour : rien ; à réécrire et à retirer : dits', () => {
+    expect(point(base({ ecritures: paire(250) }))?.nb).toBe(0)
+    expect(resultat(base({ ecritures: paire(250) })).pointsATraiter.map((x) => x.id)).not.toContain('ouverture-a-eclater')
+    expect(point(base({ ecritures: paire(200) }))?.label)
+      .toMatch(/^L’écriture qui éclate l’ouverture de la banque au 01\/01\/2026 n’est plus celle que les relevés du 31\/12\/2025 commandent/)
+    // Le second compte fini à zéro : plus rien à éclater, l'écriture est à retirer.
+    const aZero = base({ ecritures: paire(250), lignes: mouvements(-50), controlesReleves: [k('rp', 'cp', 900, 1000), k('rs', 'cs', 50, 0)] })
+    expect(point(aZero)).toMatchObject({ nb: 1, label: expect.stringMatching(/la retirer/) })
+  })
+
+  it('deux exercices ouverts : la phrase du plus ancien, les deux nommés', () => {
+    const p = point(base({ ecritures: [ecrite('x', '2027-01-01', '512200', 'debit', 10), ecrite('y', '2027-01-01', '512000', 'credit', 10)] }))
+    expect(p).toMatchObject({ nb: 2, label: expect.stringMatching(/^L’ouverture du 01\/01\/2026/) })
+    expect(p?.detail).toBe('Dans Écritures, sur les exercices 2026 et 2027, la carte « Ouverture de la banque par compte » l’écrit, '
+      + 'la réécrit ou la retire d’un clic.')
+  })
+
+  it('se tait : drapeau baissé, comptes illisibles, relevé ou entrées lus en partie, exercice validé, ouverture retenue', () => {
+    expect(point(base({ comptesBancaires: { etat: 'sans_objet' } }))?.nb).toBe(0)
+    expect(point(base({ comptesBancaires: { etat: 'illisible', motif: 'refus' } }))?.nb).toBe(0)
+    expect(point(base({ controlesReleves: null }))?.nb).toBe(0)
+    expect(point(base({ entreesDeLOuvertureIncompletes: 'le brouillon : lecture incomplète' }))?.nb).toBe(0)
+    expect(point(base(), { ...APRES_2025, anneesValidees: [2025, 2026], frontiere: '2026-12-31' })?.nb).toBe(0)
+    // Le relevé du second compte au 31/12 manque : la carte et le préalable le disent ; rien ne s'y écrit d'un clic.
+    expect(point(base({ controlesReleves: [k('rp', 'cp', 900, 1000)] }))?.nb).toBe(0)
+  })
+})
