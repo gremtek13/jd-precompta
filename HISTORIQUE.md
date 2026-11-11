@@ -50787,3 +50787,18 @@ un crédit négatif : illisible, l'avoir retenu, la fenêtre le dit aux mots du 
 Baissé : le chemin d'hier, au caractère près. Le cabinet garde sa lecture du registre (aucun appel de la fonction).
 Tests : trois dans `avoirDUneFactureRepriseLecture.test.ts`, deux (× deux espaces, deux états du drapeau) dans
 `FacturesTabAcomptes.test.tsx` ; la mutation « le client ne lit plus la fonction » fait tomber quatre tests.
+
+### 11/11/2026 — A8D2B-Q2 : DES FORMATS MÊLÉS, COUPÉS EN PLUSIEURS IMPORTS (LIGNE 51.5)
+
+(Agent dev ; aucune migration.) Réponse du cabinet du 11/11/2026, contre la recommandation : « Couper en plusieurs imports ».
+L'écran d'import (`ImportDesFactures.tsx`, derrière `IMPORT_DES_FACTURES_OFFERT`) ne refuse plus un dépôt de formats mêlés :
+`jugerLeLot` (lib/importDesFacturesVue.ts) le DÉCOUPE en un import par format (`decoupage`, puis `imports` quand tout est
+prêt ; `pret` disparaît). **L'ordre** : l'import qui porte la facture qu'un avoir d'un autre format cite part avant lui (la
+base ne reconnaît une facture citée que plus haut dans le lot ou d'un import d'avant) ; sinon le plus ancien d'abord, puis
+Factur-X, CII, UBL ; des avoirs qui se citent en boucle d'un format à l'autre refusent le dépôt, et le disent. **Établi** :
+rien d'autre ne lie deux imports (la séquence des numéros oppose les factures de l'application aux reprises). Le plafond
+de 2 000 vaut par import ; un fichier retenu retient tous les imports. **Avant le clic**, une note nomme chaque import et
+ses fichiers ; la confirmation (`confirmationDesImports`) nomme chacun ; d'un seul format, les mots d'hier au caractère près.
+**Après** : les imports partent l'un après l'autre par `importerLeLot` (ses originaux déposés avant lui, retirés s'il échoue),
+le premier refus arrête la suite ; `bilanDesImports` dit, import par import, passé, refusé ou pas parti ; ce qui est passé
+quitte les fichiers déposés, le reste y demeure avec ses choix. Tests : huit de règle, trois d'écran ; quatre mutations mordent.

@@ -6,9 +6,9 @@ import { ORIGINAUX_DES_IMPORTS_PREVUS } from '../../lib/bornesStockage'
 import { NATURES, TRANSMISSIONS, TYPES_CLIENT, type TransmiseePar } from '../../lib/lectureDesFacturesReprises'
 import {
   CSV_A_VENIR, ENCAISSE_AU_PRORATA, IMPORT_DES_FACTURES_OFFERT, LIBELLES_FORMAT, LIBELLES_NATURE, LIBELLES_TRANSMISSION,
-  LIBELLES_TYPE_CLIENT, ORIGINAUX_PAS_ENCORE_GARDES, choixVides, confirmationDeLaDateDeReprise, confirmationDeLImport,
-  confirmationDuRetrait, jjmmaaaa, jugerLeLot, premierDuMois, refusDeLaDateDeReprise, refusDuDossier,
-  type ChoixSaisis, type FichierLu, type LectureDeLImport, type LotLu,
+  LIBELLES_TYPE_CLIENT, ORIGINAUX_PAS_ENCORE_GARDES, avisDuDecoupage, bilanDesImports, choixVides, confirmationDeLaDateDeReprise,
+  confirmationDesImports, confirmationDuRetrait, fichiersDUnImport, jjmmaaaa, jugerLeLot, premierDuMois, refusDeLaDateDeReprise,
+  refusDuDossier, titreDUnImport, type ChoixSaisis, type FichierLu, type IssueDUnImport, type LectureDeLImport, type LotLu,
 } from '../../lib/importDesFacturesVue'
 import {
   fixerLaDateDeReprise, importerLeLot, lireLEtatDeLImport, lireLesFichiers, retirerLImport, type IssueDUnGeste,
@@ -19,7 +19,9 @@ import type { NatureOperation, TypeClient } from '../../lib/types'
 // derrière `IMPORT_DES_FACTURES_OFFERT` : baissé, rien n'est lu ni rendu (l'onglet d'hier). La règle et les mots vivent dans
 // lib/importDesFacturesVue.ts, la lecture et les gestes dans lib/importDesFacturesLecture.ts. Une lecture illisible n'offre
 // aucun geste ; chaque geste passe par sa fonction de la base, sous un verrou `useRef` relâché après la relecture ; les
-// refus se disent avant le clic, fichier par fichier ; la confirmation nomme ce qui part.
+// refus se disent avant le clic, fichier par fichier ; la confirmation nomme ce qui part. Des fichiers de formats différents
+// déposés ensemble partent en un import par format (A8D2B-Q2) : le découpage se dit avant le clic, la confirmation nomme chaque
+// import, et le bilan dit lequel est passé, lequel a été refusé, lequel n'est pas parti.
 
 interface Props {
   dossierId: string
@@ -102,15 +104,34 @@ export default function ImportDesFactures({ dossierId, onChange }: Props) {
     })))
   }
 
+  // Les imports partent l'un après l'autre, chacun par `importerLeLot` (tout ou rien, ses originaux déposés avant lui et
+  // retirés s'il est refusé) ; le premier refus arrête la suite — un import qui suit peut citer une facture de celui qui a
+  // échoué, et le cabinet décide de nouveau sur ce qui reste. Ce qui est passé quitte les fichiers déposés ; le reste y
+  // demeure, avec ses choix.
   const importer = async () => {
-    if (!jugement?.pret || importEnCours.current) return
-    if (!window.confirm(confirmationDeLImport(jugement.pret, ORIGINAUX_DES_IMPORTS_PREVUS))) return
+    const imports = jugement?.imports
+    if (!imports || importEnCours.current) return
+    if (!window.confirm(confirmationDesImports(imports, ORIGINAUX_DES_IMPORTS_PREVUS))) return
     importEnCours.current = true
     setEnCours(true)
     const dossierEcrit = dossierId
     try {
-      const issue = await importerLeLot(dossierEcrit, jugement.pret, liste, ORIGINAUX_DES_IMPORTS_PREVUS)
-      await finir(dossierEcrit, issue, () => { setFichiers(null); setChoix({}) })
+      const issues: IssueDUnImport[] = []
+      for (const pret of imports) {
+        if (issues.some((i) => i.etat !== 'repris')) { issues.push({ etat: 'pas_parti' }); continue }
+        const issue = await importerLeLot(dossierEcrit, pret, liste, ORIGINAUX_DES_IMPORTS_PREVUS)
+        issues.push(issue.ok ? { etat: 'repris', message: issue.message } : { etat: 'refuse', erreur: issue.erreur })
+      }
+      const reprises = new Set(imports.flatMap((p, i) => (issues[i].etat === 'repris' ? p.factures.map((f) => f.cle) : [])))
+      await relire(dossierEcrit)
+      if (dossierAffiche.current !== dossierEcrit) return
+      const bilan = bilanDesImports(imports, issues)
+      setAvis({ dossierId: dossierEcrit, erreur: bilan.erreur, fait: bilan.fait })
+      if (reprises.size > 0) {
+        setFichiers((f) => (f && f.dossierId === dossierEcrit ? { ...f, liste: f.liste.filter((x) => !reprises.has(x.cle)) } : f))
+        setChoix((c) => Object.fromEntries(Object.entries(c).filter(([cle]) => !reprises.has(cle))))
+        onChange()
+      }
     } finally {
       importEnCours.current = false
       setEnCours(false)
@@ -192,7 +213,8 @@ export default function ImportDesFactures({ dossierId, onChange }: Props) {
           {!refusDossier && ouvert && jugement && (
             <div className="import-factures">
               <p className="muted">
-                Factur-X (PDF), CII ou UBL : un fichier par facture, un format par import. {CSV_A_VENIR}{' '}
+                Factur-X (PDF), CII ou UBL : un fichier par facture, un format par import — des formats mêlés partent en
+                plusieurs imports. {CSV_A_VENIR}{' '}
                 {!ORIGINAUX_DES_IMPORTS_PREVUS && ORIGINAUX_PAS_ENCORE_GARDES}
               </p>
               <label>
@@ -325,12 +347,31 @@ export default function ImportDesFactures({ dossierId, onChange }: Props) {
               {liste.length > 0 && (
                 <>
                   <p className="muted">{ENCAISSE_AU_PRORATA}</p>
-                  {jugement.refusDuLot.map((r, i) => <p key={i} className="error-text">{r}</p>)}
-                  {!jugement.pret && jugement.refusDuLot.length === 0 && (
-                    <p className="muted">Un fichier retenu retient tout l’import : la base reprend tout ou rien.</p>
+                  {avisDuDecoupage(jugement.decoupage) && (
+                    <div className="note-info" role="note" aria-label="Le découpage en imports">
+                      <p style={{ marginTop: 0 }}>{avisDuDecoupage(jugement.decoupage)}</p>
+                      <ol style={{ marginBottom: 0 }}>
+                        {jugement.decoupage.map((d, i) => (
+                          <li key={d.format}>
+                            {titreDUnImport(i + 1, jugement.decoupage.length, d.format)} — <span className="nom-fichier">{fichiersDUnImport(d)}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
                   )}
-                  <button type="button" className="btn btn-primary btn-sm" disabled={enCours || !jugement.pret} onClick={importer}>
-                    {enCours ? 'Import…' : `Importer ${liste.length} document${liste.length > 1 ? 's' : ''}`}
+                  {jugement.refusDuLot.map((r, i) => <p key={i} className="error-text">{r}</p>)}
+                  {!jugement.imports && jugement.refusDuLot.length === 0 && (
+                    <p className="muted">
+                      {jugement.decoupage.length > 1
+                        ? 'Un fichier retenu retient tous les imports : rien ne part tant qu’un fichier est retenu.'
+                        : 'Un fichier retenu retient tout l’import : la base reprend tout ou rien.'}
+                    </p>
+                  )}
+                  <button type="button" className="btn btn-primary btn-sm" disabled={enCours || !jugement.imports} onClick={importer}>
+                    {enCours
+                      ? 'Import…'
+                      : `Importer ${liste.length} document${liste.length > 1 ? 's' : ''}`
+                        + (jugement.decoupage.length > 1 ? ` en ${jugement.decoupage.length} imports` : '')}
                   </button>
                 </>
               )}

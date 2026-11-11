@@ -5,7 +5,11 @@ import {
   choixVides,
   confirmationDeLaDateDeReprise,
   confirmationDeLImport,
+  confirmationDesImports,
   confirmationDuRetrait,
+  avisDuDecoupage,
+  bilanDesImports,
+  FACTURES_PAR_LOT_MAX,
   sortDesOriginaux,
   jugerLeLot,
   refusDeLaDateDeReprise,
@@ -95,8 +99,8 @@ describe('le jugement du lot', () => {
     expect(j.fichiers[0].refus).toEqual([])
     expect(j.fichiers[0].apercu).toMatchObject({ numero: 'FA-2025/118', ht_centimes: 15000, ttc_centimes: 18000, nature: 'services',
       par_taux: [{ taux: 20, ht_centimes: 15000, tva_centimes: 3000 }] })
-    expect(j.pret?.factures[0].facture).toMatchObject({ numero: 'FA-2025/118', type_client: 'assujetti', transmise_par: 'pdf', encaisse_avant_reprise: 30 })
-    expect(j.pret?.format).toBe('cii')
+    expect(j.imports?.[0].factures[0].facture).toMatchObject({ numero: 'FA-2025/118', type_client: 'assujetti', transmise_par: 'pdf', encaisse_avant_reprise: 30 })
+    expect(j.imports?.[0].format).toBe('cii')
   })
 
   it('les choix sont SANS défaut : rien de choisi, tout se dit, rien ne part', () => {
@@ -108,14 +112,14 @@ describe('le jugement du lot', () => {
       'Le fichier ne dit pas la nature des opérations (BT-23) : biens, services ou mixte, à préciser.',
       'Le fichier ne dit pas si la facture a été émise sous l’option pour les débits (BT-8) : à préciser.',
     ])
-    expect(j.pret).toBeNull()
+    expect(j.imports).toBeNull()
   })
 
   it('une facture mixte dit la nature de chaque ligne', () => {
     const lue = facture({ nature_lue: 'mixte' })
     expect(jugerLeLot(etat(), [fichier('a', lue)], { a: remplis() }, false).fichiers[0].refus)
       .toEqual(['Une facture mixte dit la nature de chacune de ses 2 lignes : à choisir.'])
-    const pret = jugerLeLot(etat(), [fichier('a', lue)], { a: remplis({ natures_des_lignes: ['services', 'biens'] }) }, false).pret
+    const pret = jugerLeLot(etat(), [fichier('a', lue)], { a: remplis({ natures_des_lignes: ['services', 'biens'] }) }, false).imports?.[0]
     expect(pret?.factures[0].facture.lignes.map((l) => l.nature)).toEqual(['services', 'biens'])
   })
 
@@ -131,7 +135,7 @@ describe('le jugement du lot', () => {
     const j = jugerLeLot(etat(), [fichier('a', facture()), fichier('b', ['Ce fichier n’est ni un PDF ni un XML.'])], { a: remplis() }, false)
     expect(j.fichiers[1].refus).toEqual(['Ce fichier n’est ni un PDF ni un XML.'])
     expect(j.fichiers[0].refus).toEqual([])
-    expect(j.pret).toBeNull()
+    expect(j.imports).toBeNull()
   })
 
   it('les doublons : un numéro déjà en base ou dans le lot, une empreinte déjà importée ou déposée deux fois', () => {
@@ -143,7 +147,7 @@ describe('le jugement du lot', () => {
     const dansLeLot = jugerLeLot(etat(), [fichier('a', facture(), 'f'.repeat(64)), fichier('b', facture(), 'f'.repeat(64))], { a: remplis(), b: remplis() }, false)
     expect(dansLeLot.fichiers[0].refus).toEqual([])
     expect(dansLeLot.fichiers[1].refus).toEqual(['Ce fichier est déposé deux fois dans ce lot.', 'Le numéro FA-2025/118 est aussi celui d’un autre fichier de ce lot.'])
-    expect(dansLeLot.pret).toBeNull()
+    expect(dansLeLot.imports).toBeNull()
   })
 
   it('une facture datée de la reprise ou après se refuse', () => {
@@ -162,30 +166,109 @@ describe('le jugement du lot', () => {
     // L'avoir déposé en premier, sa facture en second, le même jour : la facture part d'abord.
     const lot = jugerLeLot(etat(), [fichier('v', avoir), fichier('a', facture({ date_emission: '2025-11-20' }))], { v: remplis(), a: remplis() }, false)
     expect(lot.fichiers.map((f) => f.refus)).toEqual([[], []])
-    expect(lot.pret?.factures.map((f) => f.facture.numero)).toEqual(['FA-2025/118', 'AV-2025/3'])
-    expect(lot.pret?.factures[1].facture.encaisse_avant_reprise).toBe(0)
+    expect(lot.imports?.[0].factures.map((f) => f.facture.numero)).toEqual(['FA-2025/118', 'AV-2025/3'])
+    expect(lot.imports?.[0].factures[1].facture.encaisse_avant_reprise).toBe(0)
   })
 
-  it('un lot ne mêle pas les formats, et le dossier qui retient se dit au lot', () => {
-    const j = jugerLeLot(etat(), [fichier('a', facture()), fichier('b', facture({ numero: 'FA-2025/119', format: 'ubl' }))], { a: remplis(), b: remplis() }, false)
-    expect(j.refusDuLot).toEqual(['Un import ne mêle pas les formats (CII, UBL) : importer chaque format à part.'])
-    expect(j.pret).toBeNull()
+  it('le dossier qui retient se dit au lot', () => {
     const engagement = jugerLeLot(etat({ modeComptable: 'engagement' }), [fichier('a', facture())], { a: remplis() }, false)
     expect(engagement.refusDuLot).toEqual([IMPORT_EN_ENGAGEMENT])
-    expect(engagement.pret).toBeNull()
+    expect(engagement.imports).toBeNull()
   })
 
   it('originaux prévus : un original que le seau refuse retient le fichier ; baissé, il ne compte pas', () => {
     const f = { ...fichier('a', facture()), original: { refus: { raison: 'taille' as const, message: 'pèse 21 Mo', taille: 21e6 } } }
     expect(jugerLeLot(etat(), [f], { a: remplis() }, true).fichiers[0].refus).toEqual(['Son original ne se dépose pas : pèse 21 Mo.'])
-    expect(jugerLeLot(etat(), [f], { a: remplis() }, false).pret).not.toBeNull()
+    expect(jugerLeLot(etat(), [f], { a: remplis() }, false).imports).not.toBeNull()
+  })
+})
+
+// A8D2B-Q2 (« Couper en plusieurs imports », 11/11/2026) : des formats mêlés ne se refusent plus, ils partent en un import par
+// format ; le découpage se dit avant le clic, l'ordre fait passer la facture citée avant l'avoir qui la cite.
+describe('le découpage d’un dépôt en imports (A8D2B-Q2)', () => {
+  const ubl = (o: Partial<FactureRepriseLue> = {}) => facture({ numero: 'FA-2025/119', format: 'ubl', ...o })
+  const facturx = (o: Partial<FactureRepriseLue> = {}) => facture({ numero: 'FX-7', format: 'facturx', ...o })
+
+  it('un seul format : un import, aucun découpage dit — l’écran d’hier', () => {
+    const j = jugerLeLot(etat(), [fichier('a', facture()), fichier('b', facture({ numero: 'FA-2025/119' }))], { a: remplis(), b: remplis() }, false)
+    expect(j.decoupage).toEqual([{ format: 'cii', cles: ['a', 'b'], noms: ['a.xml', 'b.xml'] }])
+    expect(j.imports?.map((p) => p.format)).toEqual(['cii'])
+    expect(avisDuDecoupage(j.decoupage)).toBeNull()
+  })
+
+  it('des formats mêlés partent en un import par format, le plus ancien d’abord, chacun dans l’ordre de la base', () => {
+    const fichiers = [fichier('u', ubl({ date_emission: '2025-08-01' })), fichier('c2', facture({ numero: 'FA-2025/120', date_emission: '2025-12-01' })),
+      fichier('c1', facture({ date_emission: '2025-09-15' })), fichier('x', facturx({ date_emission: '2025-09-15' }))]
+    const j = jugerLeLot(etat(), fichiers, { u: remplis(), c1: remplis(), c2: remplis(), x: remplis() }, false)
+    expect(j.refusDuLot).toEqual([])
+    // UBL commence le plus tôt ; CII et Factur-X le même jour : l'ordre des formats les départage (Factur-X, CII, UBL).
+    expect(j.decoupage.map((d) => [d.format, d.noms])).toEqual([['ubl', ['u.xml']], ['facturx', ['x.xml']], ['cii', ['c2.xml', 'c1.xml']]])
+    expect(j.imports?.map((p) => [p.format, p.factures.map((f) => f.facture.numero), p.noms])).toEqual([
+      ['ubl', ['FA-2025/119'], ['u.xml']], ['facturx', ['FX-7'], ['x.xml']], ['cii', ['FA-2025/118', 'FA-2025/120'], ['c1.xml', 'c2.xml']]])
+    expect(avisDuDecoupage(j.decoupage)).toMatch(/mêlent 3 formats : .* en 3 imports, l’un après l’autre/)
+  })
+
+  it('l’avoir d’un format qui cite la facture d’un autre part après elle, même plus ancien', () => {
+    const avoir = ubl({ numero: 'AV-9', type: 'avoir', origine_numero: 'FA-2025/118', date_emission: '2025-11-20',
+      ht_centimes: -5000, tva_centimes: -1000, ttc_centimes: -6000, lignes: [{ designation: 'Geste', quantite: -1, prix_unitaire_ht: 50, taux_tva: 20, unite: null }] })
+    const autre = ubl({ numero: 'FA-1', date_emission: '2025-01-05' })
+    const j = jugerLeLot(etat(), [fichier('v', avoir), fichier('w', autre), fichier('a', facture())], { v: remplis(), w: remplis(), a: remplis() }, false)
+    expect(j.fichiers.map((f) => f.refus)).toEqual([[], [], []])
+    expect(j.imports?.map((p) => p.format)).toEqual(['cii', 'ubl'])
+  })
+
+  it('des avoirs qui se citent en boucle d’un format à l’autre : aucun ordre, le dépôt se refuse et le dit', () => {
+    const avoirCii = facture({ numero: 'AV-C', type: 'avoir', origine_numero: 'FA-U', date_emission: '2025-11-25',
+      ht_centimes: -5000, tva_centimes: -1000, ttc_centimes: -6000, lignes: [{ designation: 'Geste', quantite: -1, prix_unitaire_ht: 50, taux_tva: 20, unite: null }] })
+    const avoirUbl = ubl({ numero: 'AV-U', type: 'avoir', origine_numero: 'FA-2025/118', date_emission: '2025-11-25',
+      ht_centimes: -5000, tva_centimes: -1000, ttc_centimes: -6000, lignes: [{ designation: 'Geste', quantite: -1, prix_unitaire_ht: 50, taux_tva: 20, unite: null }] })
+    const j = jugerLeLot(etat(), [fichier('a', facture()), fichier('b', avoirCii), fichier('c', ubl({ numero: 'FA-U' })), fichier('d', avoirUbl)],
+      { a: remplis(), b: remplis(), c: remplis(), d: remplis() }, false)
+    expect(j.refusDuLot).toEqual([expect.stringMatching(/^Des avoirs CII, UBL citent chacun une facture d’un autre de ces formats/)])
+    expect(j.imports).toBeNull()
+  })
+
+  it('un fichier retenu retient tous les imports ; un fichier illisible n’entre dans aucun', () => {
+    const j = jugerLeLot(etat(), [fichier('a', facture()), fichier('b', ubl()), fichier('z', ['Illisible.'])], { a: remplis(), b: remplis() }, false)
+    expect(j.decoupage.map((d) => d.cles)).toEqual([['a'], ['b']])
+    expect(j.imports).toBeNull()
+  })
+
+  it('le plafond de la base vaut pour chaque import, nommé par son format', () => {
+    const beaucoup = Array.from({ length: FACTURES_PAR_LOT_MAX + 1 }, (_, i) => fichier(`c${i}`, facture({ numero: `N-${i}` })))
+    const j = jugerLeLot(etat(), [...beaucoup, fichier('u', ubl())], {}, false)
+    expect(j.refusDuLot).toEqual([`Un import porte ${FACTURES_PAR_LOT_MAX} factures au plus : celui au format CII en porte ${FACTURES_PAR_LOT_MAX + 1}. Le scinder.`])
+    const seul = jugerLeLot(etat(), beaucoup, {}, false)
+    expect(seul.refusDuLot).toEqual([`Un import porte ${FACTURES_PAR_LOT_MAX} factures au plus : celui-ci en porte ${FACTURES_PAR_LOT_MAX + 1}. Le scinder.`])
+  })
+
+  it('la confirmation nomme chaque import, ses fichiers et ce qu’il reprend ; d’un seul, celle d’hier', () => {
+    const j = jugerLeLot(etat(), [fichier('a', facture()), fichier('b', ubl())], { a: remplis(), b: remplis() }, true)
+    const texte = confirmationDesImports(j.imports!, true)
+    expect(texte).toMatch(/^Ces fichiers partent en 2 imports, l’un après l’autre, chacun tout ou rien :\n/)
+    expect(texte).toMatch(/Import 1 sur 2, au format CII \(1 fichier : a\.xml\) : reprendre 1 facture de l’ancien logiciel, au format CII : FA-2025\/118/)
+    expect(texte).toMatch(/Import 2 sur 2, au format UBL \(1 fichier : b\.xml\) : reprendre 1 facture/)
+    expect(texte).toMatch(/Un import refusé ne reprend aucun de ses fichiers, et ceux qui le suivent ne partent pas/)
+    expect(texte).toMatch(/se déposent avec lui, et se retirent s’il est refusé/)
+    const un = jugerLeLot(etat(), [fichier('a', facture())], { a: remplis() }, false).imports!
+    expect(confirmationDesImports(un, false)).toBe(confirmationDeLImport(un[0], false))
+  })
+
+  it('le bilan dit lequel est passé, lequel est refusé, lequel n’est pas parti ; d’un seul, les mots d’hier', () => {
+    const j = jugerLeLot(etat(), [fichier('a', facture()), fichier('b', ubl()), fichier('x', facturx())], { a: remplis(), b: remplis(), x: remplis() }, false)
+    const [p1, p2, p3] = j.imports!
+    const bilan = bilanDesImports([p1, p2, p3], [{ etat: 'repris', message: '1 document repris de l’ancien logiciel.' }, { etat: 'refuse', erreur: 'Refus fictif.' }, { etat: 'pas_parti' }])
+    expect(bilan.fait).toBe(`Import 1 sur 3, au format ${p1.format === 'facturx' ? 'Factur-X' : 'CII'} : passé — 1 document repris de l’ancien logiciel.`)
+    expect(bilan.erreur).toMatch(/Import 2 sur 3, au format .* : refusé, aucun de ses fichiers n’est repris — Refus fictif\. Import 3 sur 3, au format .* : pas parti/)
+    expect(bilanDesImports([p1], [{ etat: 'refuse', erreur: 'Refus fictif.' }])).toEqual({ fait: null, erreur: 'Refus fictif.' })
+    expect(bilanDesImports([p1], [{ etat: 'repris', message: 'Fait.' }])).toEqual({ fait: 'Fait.', erreur: null })
   })
 })
 
 describe('les confirmations', () => {
   it('l’import nomme ce qui part et dit qu’il ne se défait que par « Retirer l’import »', () => {
-    const pret = jugerLeLot(etat(), [fichier('a', facture())], { a: remplis() }, false).pret
-    expect(pret).not.toBeNull()
+    const pret = jugerLeLot(etat(), [fichier('a', facture())], { a: remplis() }, false).imports?.[0]
+    expect(pret).toBeTruthy()
     const texte = confirmationDeLImport(pret!, false)
     expect(texte).toMatch(/1 facture de l’ancien logiciel, au format CII : FA-2025\/118/)
     expect(texte).toMatch(/180,00\s€ TTC/)
