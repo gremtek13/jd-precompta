@@ -300,8 +300,10 @@ describe('les essais de la base, rejoués en production', () => {
     ])
     // Les outils ne se rejouent pas ; un outil de plus se lit avant d'entrer (l'audit du 29/10/2026 a lu ces cinq-là ; le
     // sixième, batterieDesLignes.mjs, est entré le 31/10/2026 avec la correction de la facture : il ne lit qu'une fonction
-    // immuable, sur une table temporaire, dans une transaction annulée).
-    expect(CLASSEMENT.outils).toEqual(['allerretour.py', 'batterieDesLignes.mjs', 'batterieEncaissements.mjs', 'bordures.py', 'inventaire.py', 'socle.py'])
+    // immuable, sur une table temporaire, dans une transaction annulée ; batterieDesProrata.mjs, entré le 11/11/2026 avec le
+    // prorata des honoraires (LM7-Q4 (C)), lu de même : une fonction immuable, une table temporaire, une transaction annulée).
+    expect(CLASSEMENT.outils).toEqual(['allerretour.py', 'batterieDesLignes.mjs', 'batterieDesProrata.mjs', 'batterieEncaissements.mjs',
+      'bordures.py', 'inventaire.py', 'socle.py'])
     // Le plancher : 63 essais joués en production le 29/10/2026 ; sous lui, la règle ne verrait plus les essais.
     expect(CLASSEMENT.production.length).toBeGreaterThanOrEqual(63)
   })

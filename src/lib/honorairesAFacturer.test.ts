@@ -2,9 +2,10 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { definitionsSql } from '../test/schema'
 import {
-  HONORAIRES_FACTURES_PREVUS, REFUS_DE_LA_FACTURATION, TAUX_DES_HONORAIRES, designationDeLElement, factureCrediteeEnEntier,
-  lettreEnVigueurLe, motsDuRefusDeLaFacturation, periodeDeForfaitValide, periodeDeTacheValide, periodesAFacturer,
-  periodesDuForfait, refusDeLElement, refusDeLaDemande, totauxDuBrouillon,
+  HONORAIRES_FACTURES_PREVUS, REFUS_DE_LA_FACTURATION, TAUX_DES_HONORAIRES, centimesAuProrata, designationDeLElement,
+  factureCrediteeEnEntier, joursDeVigueur, joursDuProrata, lettreEnVigueurLe, lienQuiCouvre, motsDuRefusDeLaFacturation,
+  periodeCivile, periodeDeForfaitValide, periodeDeTacheValide, periodesAFacturer, periodesDuForfait, refusDeLElement,
+  refusDeLaDemande, totauxDuBrouillon,
   type FactureDuCabinet, type LettreAFacturer, type LienDHonoraires, type LigneDHonoraires,
 } from './honorairesAFacturer'
 
@@ -68,10 +69,10 @@ describe('la migration, redite', () => {
     }
   })
 
-  it('le retour retire la table et les six fonctions que la migration crée, et se refuse sous un lien', () => {
+  it('le retour retire la table et les neuf fonctions que la migration crée, et se refuse sous un lien', () => {
     const creees = [...MIGRATION.matchAll(/^create function public\.([a-z_]+)\(/gim)].map((m) => m[1]).sort()
     const retirees = [...RETOUR.matchAll(/^drop function public\.([a-z_]+)\(/gim)].map((m) => m[1]).sort()
-    expect(creees).toHaveLength(6)
+    expect(creees).toHaveLength(9)
     expect(retirees).toEqual(creees)
     expect(RETOUR).toContain('drop table public.honoraires_factures;')
     expect(RETOUR).toContain('if exists (select 1 from public.honoraires_factures) then')
@@ -87,7 +88,14 @@ describe('la migration, redite', () => {
 })
 
 describe('les périodes', () => {
-  it('un mois, un trimestre, une année civils, du premier au dernier jour', () => {
+  it('un mois, un trimestre, une année civils, ou une part de l’un d’eux (LM7-Q4 (C)) ; jamais à cheval sur deux', () => {
+    expect(periodeDeForfaitValide('mois', '2026-01-15', '2026-01-31')).toBe(true)
+    expect(periodeDeForfaitValide('trimestre', '2026-02-15', '2026-03-31')).toBe(true)
+    expect(periodeDeForfaitValide('annee', '2026-03-01', '2026-03-01')).toBe(true)
+    expect(periodeDeForfaitValide('mois', '2026-01-31', '2026-01-30')).toBe(false)
+    expect(periodeCivile('trimestre', '2026-05-17')).toEqual({ debut: '2026-04-01', fin: '2026-06-30' })
+    expect(periodeCivile('mois', '2028-02-10')).toEqual({ debut: '2028-02-01', fin: '2028-02-29' })
+    expect(periodeCivile('annee', '2100-07-04')).toEqual({ debut: '2100-01-01', fin: '2100-12-31' })
     expect(periodeDeForfaitValide('mois', '2026-02-01', '2026-02-28')).toBe(true)
     expect(periodeDeForfaitValide('mois', '2028-02-01', '2028-02-29')).toBe(true)
     expect(periodeDeForfaitValide('mois', '2026-01-02', '2026-02-01')).toBe(false)
@@ -245,7 +253,7 @@ describe('les périodes à facturer', () => {
     expect(cles).toEqual(['L1:3:2026-01-01', 'L1:1:2026-02-01', 'L1:1:2026-03-01', 'L1:1:2026-04-01', 'L1:3:2026-04-01',
       'L1:1:2026-05-01', 'L1:1:2026-06-01', 'L1B:1:2026-07-01', 'L1B:1:2026-08-01', 'L1B:1:2026-09-01', 'L1B:1:2026-10-01'])
     expect(a[0]).toEqual({ lettre_id: 'L1', ligne: 3, periode_debut: '2026-01-01', periode_fin: '2026-03-31',
-      designation: 'Forfait social — 1er trimestre 2026', montant_ht: 300 })
+      designation: 'Forfait social — 1er trimestre 2026', montant_ht: 300, prorata: null })
   })
 
   it('à échoir : le mois commencé aussi ; un avoir qui crédite tout rend la période, un avoir partiel non', () => {
@@ -260,9 +268,137 @@ describe('les périodes à facturer', () => {
     expect(juillet([f, avoir('A', 'F', 50), avoir('B', 'F', 142)])).toBe(true)
   })
 
-  it('une lettre ni acceptée ni d’effet ne propose rien ; une lettre résiliée s’arrête au mois qu’elle finit', () => {
+  it('une lettre ni acceptée ni d’effet ne propose rien ; une lettre résiliée le 15 mars facture ses quinze jours de mars', () => {
     expect(periodesAFacturer([lettre('P', { acceptee_le: null })], [], [], [], AUJOURDHUI, 'echu')).toEqual([])
-    const l4 = periodesAFacturer([L4], [], [], [], AUJOURDHUI, 'echu').filter((p) => p.ligne === 1).map((p) => p.periode_debut)
-    expect(l4).toEqual(['2026-01-01', '2026-02-01'])
+    const l4 = periodesAFacturer([L4], [], [], [], AUJOURDHUI, 'echu').filter((p) => p.ligne === 1)
+    expect(l4.map((p) => p.periode_debut)).toEqual(['2026-01-01', '2026-02-01', '2026-03-01'])
+    expect(l4[2]).toMatchObject({ periode_fin: '2026-03-15', montant_ht: 72.58, prorata: { jours: 15, sur: 31, prixDeLaPeriode: 150 },
+      designation: 'Tenue mensuelle — mars 2026, du 01/03/2026 au 15/03/2026 (15 jours sur 31)' })
+  })
+})
+
+// LE PRORATA AU JOUR PRÈS (LM7-Q4 (C)) : le jeu des étapes 59 à 75 de l'essai — L5 (C3, d'effet au 15/01/2026 : 100,01 € par
+// mois, 300 € par trimestre, 1 200 € par an) et son avenant L5B (d'effet au 16/04/2026 : 100,01 €, 330 €, 1 200 €).
+const H5: LigneDHonoraires[] = [
+  { forme: 'forfait', libelle: 'Tenue au prorata', montant_ht: 100.01, periodicite: 'mois' },
+  { forme: 'forfait', libelle: 'Social au prorata', montant_ht: 300, periodicite: 'trimestre' },
+  { forme: 'forfait', libelle: 'Annuel au prorata', montant_ht: 1200, periodicite: 'annee' },
+]
+const L5 = lettre('L5', { dossier_client_id: 'C3', date_effet: '2026-01-15', honoraires: H5 })
+const L5B = lettre('L5B', { dossier_client_id: 'C3', remplace_id: 'L5', date_effet: '2026-04-16', fin_initiale: '2027-04-15', honoraires: [
+  { forme: 'forfait', libelle: 'Tenue (avenant)', montant_ht: 100.01, periodicite: 'mois' },
+  { forme: 'forfait', libelle: 'Social (avenant)', montant_ht: 330, periodicite: 'trimestre' },
+  { forme: 'forfait', libelle: 'Annuel (avenant)', montant_ht: 1200, periodicite: 'annee' }] })
+
+describe('le prorata au jour près (LM7-Q4 (C))', () => {
+  it('redit la migration : le calcul en entiers, la période civile, la part exacte, un jour facturé une fois', () => {
+    const prorata = fonction('honoraires_au_prorata')
+    for (const morceau of ['prorata_arrondi((p_montant_ht * 100)::bigint,', '(p_fin - public.periode_civile_debut(p_periodicite, p_debut) + 1)::bigint',
+      '(p_debut - public.periode_civile_debut(p_periodicite, p_debut))::bigint', '              - public.prorata_arrondi(',
+      'p_montant_ht = round(p_montant_ht, 2)']) expect(prorata, morceau).toContain(morceau)
+    expect(fonction('periode_civile_debut')).toContain('((extract(month from p_jour)::integer - 1) / 3) * 3 + 1')
+    expect(fonction('periode_de_forfait_valide')).toContain(
+      'public.periode_civile_debut(p_periodicite, p_debut) = public.periode_civile_debut(p_periodicite, p_fin)')
+    expect(fonction('garder_honoraires_factures')).toContain('then h.periode_debut <= new.periode_fin and new.periode_debut <= h.periode_fin')
+    const facturer = fonction('facturer_honoraires')
+    for (const morceau of ['public.lettre_en_vigueur_le(v_lettre.id, v_debut) and public.lettre_en_vigueur_le(v_lettre.id, v_fin)',
+      'public.lettre_en_vigueur_le(v_lettre.id, v_debut - 1)', 'public.lettre_en_vigueur_le(v_lettre.id, v_fin + 1)',
+      "' sur ' || (v_civil_fin - v_civil_debut + 1) || ')'"]) expect(facturer, morceau).toContain(morceau)
+    expect(MIGRATION).toContain('revoke execute on function public.honoraires_au_prorata(numeric, text, date, date) from public, anon, authenticated;')
+  })
+
+  it('les montants de l’essai, écrits en toutes lettres : le module les rend au centime', () => {
+    const parts: [number, 'mois' | 'trimestre' | 'annee', string, string, number][] = [
+      [100.01, 'mois', '2026-01-15', '2026-01-31', 5484], [300, 'trimestre', '2026-01-15', '2026-03-31', 25333],
+      [100.01, 'mois', '2026-04-01', '2026-04-15', 5001], [100.01, 'mois', '2026-04-16', '2026-04-30', 5000],
+      [300, 'trimestre', '2026-04-01', '2026-04-15', 4945], [330, 'trimestre', '2026-04-16', '2026-06-30', 27560],
+      [1200, 'annee', '2026-01-15', '2026-04-15', 29918], [1200, 'annee', '2026-04-16', '2026-12-31', 85479],
+    ]
+    for (const [prix, p, debut, fin, attendu] of parts) expect(centimesAuProrata(prix, p, debut, fin), `${p} ${debut}`).toBe(attendu)
+    for (const texte of ['1×54.84', '1×253.33', '50.01', '50.00 = 100.01', '49.45 275.60 299.18 854.79 = 1479.02']) expect(ESSAI, texte).toContain(texte)
+    expect(joursDuProrata('trimestre', '2026-01-15', '2026-03-31')).toEqual({ jours: 76, sur: 90 })
+    expect(centimesAuProrata(100.01, 'mois', '2026-01-15', '2026-02-14')).toBeNull()
+    expect(centimesAuProrata(100.005, 'mois', '2026-01-15', '2026-01-31')).toBeNull()
+  })
+
+  it('deux parts d’un même mois au même prix font ce prix, jamais un centime de plus ; à deux prix, jamais plus que le plus élevé', () => {
+    // L'arrondi de chaque moitié seule : 50,01 + 50,01 = 100,02 €. Le cumul : 50,01 + 50,00.
+    expect(2 * Math.round(10001 * 15 / 30)).toBe(10002)
+    for (const prix of [1, 3, 10001, 4321_98, 99_999_999_999]) {
+      for (const [debut, fin, n] of [['2026-02-01', '2026-02-28', 28], ['2026-04-01', '2026-04-30', 30], ['2028-01-01', '2028-12-31', 366]] as const) {
+        const periodicite = n === 366 ? 'annee' : 'mois'
+        for (let k = 1; k < n; k += 1) {
+          const jour = (i: number) => new Date(Date.UTC(Number(debut.slice(0, 4)), Number(debut.slice(5, 7)) - 1, 1 + i)).toISOString().slice(0, 10)
+          const tete = centimesAuProrata(prix / 100, periodicite, debut, jour(k - 1))!
+          const queue = centimesAuProrata(prix / 100, periodicite, jour(k), fin)!
+          expect(tete + queue).toBe(prix)
+          const autre = centimesAuProrata((prix + 77) / 100, periodicite, jour(k), fin)!
+          expect(tete + autre).toBeLessThanOrEqual(prix + 77)
+        }
+      }
+    }
+  })
+
+  it('les jours de vigueur d’une lettre, d’un seul tenant, sont ceux que lettreEnVigueurLe dit jour par jour', () => {
+    const lettres = [L1, L4, L1B, L5, L5B, lettre('P', { acceptee_le: null })]
+    expect(joursDeVigueur(L1, lettres)).toEqual({ debut: '2026-01-01', fin: '2026-06-30' })
+    expect(joursDeVigueur(L4, lettres)).toEqual({ debut: '2026-01-01', fin: '2026-03-15' })
+    expect(joursDeVigueur(L5, lettres)).toEqual({ debut: '2026-01-15', fin: '2026-04-15' })
+    expect(joursDeVigueur(L5B, lettres)).toEqual({ debut: '2026-04-16', fin: null })
+    expect(joursDeVigueur(lettres[5], lettres)).toBeNull()
+    const sansReconduction = lettre('S', { reconduction_tacite: false, fin_initiale: '2026-05-31' })
+    expect(joursDeVigueur(sansReconduction, [sansReconduction])).toEqual({ debut: '2026-01-01', fin: '2026-05-31' })
+    for (const l of lettres.slice(0, 5)) {
+      const v = joursDeVigueur(l, lettres)!
+      for (let i = 0; i < 365; i += 1) {
+        const jour = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10)
+        expect(lettreEnVigueurLe(l, lettres, jour), `${l.id} ${jour}`).toBe(jour >= v.debut && (v.fin === null || jour <= v.fin))
+      }
+    }
+  })
+
+  it('les refus d’une part, dans l’ordre de la base (les étapes 59 à 62 et 66 de l’essai)', () => {
+    const lettres = [L5, L5B]
+    const refus = (debut: string, fin: string, ligne = 1, id = 'L5') => refusDeLElement(el(id, ligne, debut, fin), lettres, [], [], [], AUJOURDHUI)
+    expect(refus('2026-01-01', '2026-01-31')).toBe('horsDeVigueur')
+    expect(refus('2026-01-16', '2026-01-31')).toBe('joursDeLaLettre')
+    expect(refus('2026-01-15', '2026-01-30')).toBe('joursDeLaLettre')
+    expect(refus('2026-01-15', '2026-02-14')).toBe('periodeDuForfait')
+    expect(refus('2026-04-01', '2026-04-30')).toBe('horsDeVigueur')
+    expect(refus('2026-01-15', '2026-01-31')).toBeNull()
+    expect(refus('2026-04-16', '2026-04-30', 1, 'L5B')).toBeNull()
+    expect(refus('2026-01-15', '2026-04-15', 3)).toBeNull()
+    expect(motsDuRefusDeLaFacturation('joursDeLaLettre')).toBe('La période d’un forfait suit la lettre au jour près : tous ses jours dans le mois, le trimestre ou l’année, et eux seuls.')
+  })
+
+  it('un jour d’un forfait ne se facture qu’une fois : la même ligne, ou l’avenant (les étapes 70 et 71) ; une tâche garde sa période', () => {
+    const lettres = [L5, L5B]
+    const factures = [facture('F6', 369.81, { statut: 'brouillon' })]
+    const liens = [lien('F6', 'L5', 1, '2026-04-01', '2026-04-15')]
+    expect(lienQuiCouvre(el('L5', 1, '2026-04-10', '2026-04-20'), lettres, liens, factures, [])).not.toBeNull()
+    expect(lienQuiCouvre(el('L5B', 1, '2026-04-01', '2026-04-15'), lettres, liens, factures, [])).not.toBeNull()
+    expect(lienQuiCouvre(el('L5B', 1, '2026-04-16', '2026-04-30'), lettres, liens, factures, [])).toBeNull()
+    expect(lienQuiCouvre(el('L5', 2, '2026-04-01', '2026-04-15'), lettres, liens, factures, [])).toBeNull()
+    const taches = [lien('F6', 'L1', 4, '2026-06-15', '2026-06-15')]
+    expect(lienQuiCouvre(el('L1', 4, '2026-06-01', '2026-06-30'), [L1], taches, factures, [])).toBeNull()
+  })
+
+  it('les parts à facturer : la lettre d’effet au 15 janvier et son avenant du 16 avril, chacun au prix de sa lettre, dits comme la base les écrit', () => {
+    const a = periodesAFacturer([L5, L5B], [], [], [], AUJOURDHUI, 'echu')
+    const parts = a.filter((p) => p.prorata !== null).map((p) => `${p.lettre_id}:${p.ligne}:${p.periode_debut}:${p.periode_fin}:${p.montant_ht}`)
+    expect(parts).toEqual(['L5:1:2026-01-15:2026-01-31:54.84', 'L5:2:2026-01-15:2026-03-31:253.33', 'L5:3:2026-01-15:2026-04-15:299.18',
+      'L5:1:2026-04-01:2026-04-15:50.01',
+      'L5:2:2026-04-01:2026-04-15:49.45', 'L5B:1:2026-04-16:2026-04-30:50', 'L5B:2:2026-04-16:2026-06-30:275.6'])
+    // L'année de L5 (du 15 janvier au 15 avril) est échue à son dernier jour ; celle de l'avenant, au 31 décembre.
+    expect(a.filter((p) => p.ligne === 3).map((p) => p.lettre_id)).toEqual(['L5'])
+    expect(periodesAFacturer([L5, L5B], [], [], [], '2026-12-31', 'echu').filter((p) => p.ligne === 3).map((p) => p.montant_ht)).toEqual([299.18, 854.79])
+    const janvier = a.find((p) => p.lettre_id === 'L5' && p.ligne === 1 && p.periode_debut === '2026-01-15')!
+    expect(janvier.prorata).toEqual({ jours: 17, sur: 31, prixDeLaPeriode: 100.01 })
+    // Les libellés que l'essai lit en base (64, 67) : janvier et le premier trimestre de L5, avril des deux lettres.
+    const lus = a.filter((x) => x.prorata !== null && (x.ligne === 1 || x.periode_debut === '2026-01-15') && x.ligne < 3)
+    expect(lus).toHaveLength(4)
+    for (const p of lus) expect(ESSAI, p.designation).toContain(p.designation)
+    expect(designationDeLElement(H5[0], '2026-01-31', '2026-01-31')).toBe('Tenue au prorata — janvier 2026, le 31/01/2026 (1 jour sur 31)')
+    expect(designationDeLElement(H5[1], '2026-02-16', '2026-03-31')).toBe('Social au prorata — 1er trimestre 2026, du 16/02/2026 au 31/03/2026 (44 jours sur 90)')
   })
 })

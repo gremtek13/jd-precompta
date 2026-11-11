@@ -14,13 +14,20 @@
 -- facturée, l'avoir qui crédite le reste la rend (la facturation suivante) ; la lettre en vigueur (l'avenant remplace,
 -- la résiliation arrête, le premier exercice borne) ; la même période d'une autre version de la lettre ; la garde pour
 -- tout auteur (ni avoir, ni autre dossier, un seul client, ni modification ni retrait, la contrainte totale) ; qui lit ;
--- la porte de la restauration au super-administrateur ; le catalogue.
+-- la porte de la restauration au super-administrateur ; le catalogue ; puis LE PRORATA AU JOUR PRÈS (LM7-Q4 (C), 59 à
+-- 75) : une lettre d'effet au 15 janvier facture ses seuls jours de janvier, de son premier trimestre et de son année,
+-- jamais plus ni moins que ses jours ; son avenant d'effet au 16 avril et elle se partagent avril, le deuxième trimestre
+-- et l'année, chacune au prix de sa lettre ; les deux moitiés d'un mois de 30 jours à 100,01 € font 100,01 €, là où
+-- l'arrondi de chaque moitié ferait 100,02 € ; un jour ne se facture qu'une fois, pour tout auteur ; les montants attendus
+-- sont écrits en toutes lettres, calculés à part de la base.
 --
 -- Le jeu, inséré par le propriétaire : au cabinet de la réplique, le dossier du cabinet K (SIRET, adresse, redevable de
 -- la TVA), deux dossiers clients C (SIRET, adresse) et C2 ; des lettres ACCEPTÉES sur papier (un document de K), écrites
 -- comme une restauration les réinsère : L1 (C, du 01/01/2026 : un forfait mensuel, la 2035, un forfait trimestriel, une
 -- tâche « autre »), L2 (C2, un forfait annuel), L3 (C, proposée seulement), L4 (C, résiliée au 15/03/2026) ; puis, en
--- cours d'essai, L1B, l'avenant de L1 (C, d'effet au 01/07/2026). Le membre de l'équipe de la réplique est affecté à K.
+-- cours d'essai, L1B, l'avenant de L1 (C, d'effet au 01/07/2026) ; pour le prorata, un troisième client C3, sa lettre L5
+-- (d'effet au 15/01/2026 : un forfait mensuel de 100,01 €, un trimestriel de 300 €, un annuel de 1 200 €) et son avenant
+-- L5B (d'effet au 16/04/2026 : 100,01 €, 330 €, 1 200 €). Le membre de l'équipe de la réplique est affecté à K.
 -- Sans la migration, une ligne dit qu'il attend (EN ATTENTE). Une garde de tête refuse de le jouer hors d'une réplique
 -- (ESSAI_HORS_REPLIQUE), avant toute écriture.
 begin;
@@ -71,6 +78,16 @@ declare
   k constant uuid := '1b700000-0000-4000-8000-0000000000a1';
   c constant uuid := '1b700000-0000-4000-8000-0000000000c1';
   c2 constant uuid := '1b700000-0000-4000-8000-0000000000c2';
+  c3 constant uuid := '1b700000-0000-4000-8000-0000000000c3';
+  l5 constant uuid := '1b700000-0000-4000-8000-0000000000e6';
+  l5b constant uuid := '1b700000-0000-4000-8000-0000000000e7';
+  h5 constant jsonb := '[{"forme": "forfait", "libelle": "Tenue au prorata", "montant_ht": 100.01, "periodicite": "mois"},
+                         {"forme": "forfait", "libelle": "Social au prorata", "montant_ht": 300, "periodicite": "trimestre"},
+                         {"forme": "forfait", "libelle": "Annuel au prorata", "montant_ht": 1200, "periodicite": "annee"}]';
+  h5b constant jsonb := '[{"forme": "forfait", "libelle": "Tenue (avenant)", "montant_ht": 100.01, "periodicite": "mois"},
+                          {"forme": "forfait", "libelle": "Social (avenant)", "montant_ht": 330, "periodicite": "trimestre"},
+                          {"forme": "forfait", "libelle": "Annuel (avenant)", "montant_ht": 1200, "periodicite": "annee"}]';
+  f6 uuid; f7 uuid; f8 uuid;
   dk constant uuid := '1b700000-0000-4000-8000-0000000000d1';
   l1 constant uuid := '1b700000-0000-4000-8000-0000000000e1';
   l2 constant uuid := '1b700000-0000-4000-8000-0000000000e2';
@@ -105,7 +122,8 @@ begin
   insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, siret, adresse, statut_tva) values
     (k, 'ESSAI LM7 CABINET', cabinet, 'tresorerie', '455000', '12345678200010', 'ESSAI LM7 ADRESSE DU CABINET', 'redevable'),
     (c, 'ESSAI LM7 CLIENT', cabinet, 'tresorerie', '455000', '98765432100017', 'ESSAI LM7 ADRESSE DU CLIENT', null),
-    (c2, 'ESSAI LM7 SECOND CLIENT', cabinet, 'tresorerie', '455000', null, 'ESSAI LM7 AILLEURS', null);
+    (c2, 'ESSAI LM7 SECOND CLIENT', cabinet, 'tresorerie', '455000', null, 'ESSAI LM7 AILLEURS', null),
+    (c3, 'ESSAI LM7 TROISIÈME CLIENT', cabinet, 'tresorerie', '455000', null, 'ESSAI LM7 AU PRORATA', null);
   insert into documents_divers (id, dossier_id, storage_path, nom_fichier, categorie, storage_hash) values
     (dk, k, k || '/divers/signee.pdf', 'signee.pdf', 'autre', hash_dk);
   insert into memberships (user_id, dossier_id, role, email) values (client::uuid, c, 'client', 'essai-lm7@example.test');
@@ -166,9 +184,9 @@ begin
   r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l1, 9, '2026-01-01', '2026-01-31'))));
   perform pg_temp.noter(15, 'une ligne introuvable se refuse', '22023:Ligne d''honoraires introuvable dans la lettre.', r);
   r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l1, 1, '2026-01-02', '2026-02-01'))));
-  perform pg_temp.noter(16, 'un mois qui n''est pas civil se refuse', '22023:Une période de forfait est un mois, un trimestre ou une année civils', r);
+  perform pg_temp.noter(16, 'un mois qui n''est pas civil se refuse', '22023:Une période de forfait tient dans un mois, un trimestre ou une année civils', r);
   r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l1, 3, '2026-02-01', '2026-04-30'))));
-  perform pg_temp.noter(17, 'un trimestre qui n''est pas civil se refuse', '22023:Une période de forfait est un mois, un trimestre ou une année civils', r);
+  perform pg_temp.noter(17, 'un trimestre qui n''est pas civil se refuse', '22023:Une période de forfait tient dans un mois, un trimestre ou une année civils', r);
   r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l1, 2, '2026-01-01', '2027-01-01'))));
   perform pg_temp.noter(18, 'une tâche sur plus d''un an se refuse', '22023:La période d''une tâche tient en un an au plus', r);
   r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l1, 1, futur::text, ((futur + interval '1 month')::date - 1)::text))));
@@ -254,7 +272,7 @@ begin
   r := pg_temp.essayer(null, format($q$insert into honoraires_factures (dossier_id, facture_id, lettre_id, ligne, periode_debut, periode_fin, auteur) values (%L, %L, %L, 1, '2026-01-01', '2026-12-31', %L) returning 1$q$, k, f4, l2, super));
   perform pg_temp.noter(42, 'une facture d''un client ne facture pas un autre client', '23514:Une facture d''honoraires s''adresse à un seul client.', r);
   r := pg_temp.essayer(null, format($q$insert into honoraires_factures (dossier_id, facture_id, lettre_id, ligne, periode_debut, periode_fin, auteur) values (%L, %L, %L, 1, '2026-10-02', '2026-11-01', %L) returning 1$q$, k, f4, l1b, super));
-  perform pg_temp.noter(43, 'la garde juge la forme de la période d''un forfait', '23514:Une période de forfait est un mois', r);
+  perform pg_temp.noter(43, 'la garde juge la forme de la période d''un forfait', '23514:Une période de forfait tient dans un mois', r);
   r := pg_temp.essayer(null, format($q$insert into honoraires_factures (dossier_id, facture_id, lettre_id, ligne, periode_debut, periode_fin, auteur) values (%L, %L, %L, 1, '2026-10-01', '2026-10-31', %L) returning 1$q$, k, f4, l3, super));
   perform pg_temp.noter(44, 'la garde refuse une lettre qui n''est pas acceptée', '23514:Une lettre de mission se facture une fois acceptée.', r);
   r := pg_temp.essayer(null, format($q$update honoraires_factures set periode_debut = '2026-10-01', periode_fin = '2026-10-31' where facture_id = %L returning 1$q$, f5));
@@ -288,9 +306,10 @@ begin
   perform pg_temp.noter(54, 'la garde : aucun rôle de session', '0', n::text);
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and not p.prosecdef
-     and p.proname in ('periode_de_forfait_valide', 'lettre_en_vigueur_le', 'facture_creditee_en_entier', 'racine_de_la_lettre')
+     and p.proname in ('periode_de_forfait_valide', 'lettre_en_vigueur_le', 'facture_creditee_en_entier', 'racine_de_la_lettre',
+                       'periode_civile_debut', 'periode_civile_fin')
      and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute');
-  perform pg_temp.noter(55, 'les quatre contrôles : aux droits de l''appelant, authenticated seul', '4', n::text);
+  perform pg_temp.noter(55, 'les six contrôles : aux droits de l''appelant, authenticated seul', '6', n::text);
   select count(*) into n from pg_policies where schemaname = 'public' and tablename = 'honoraires_factures'
      and roles = '{authenticated}' and cmd in ('SELECT', 'INSERT');
   perform pg_temp.noter(56, 'deux policies to authenticated, lecture et restauration', '2', n::text
@@ -302,6 +321,70 @@ begin
   perform pg_temp.noter(57, 'un brouillon supprimé directement emporte ses liens', 'OK:1 0', r || ' ' || n);
   r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l1b, 2, '2026-01-01', '2026-12-31'))));
   perform pg_temp.noter(58, 'la 2035 de 2026 redevient à facturer', 'OK:', r);
+
+  -- LE PRORATA AU JOUR PRÈS (LM7-Q4 (C)). L5 : d'effet au 15 janvier, acceptée ; son avenant L5B viendra au 16 avril.
+  insert into lettres_de_mission (id, dossier_id, dossier_client_id, missions, honoraires, date_effet, premier_exercice,
+      fin_initiale, reconduction_tacite, signataire_nom, identite_client, identite_cabinet, clauses, empreinte, proposee_le,
+      proposee_par, acceptee_le, acceptee_par, mode_acceptation, empreinte_acceptee, document_signe_id, empreinte_papier,
+      signee_le, auteur)
+  values (l5, k, c3, '{tenue_comptable}', h5, '2026-01-15', 2026, '2026-12-31', true, 'Signataire', '{}', '{}', '{sous_traitance}',
+          repeat('6', 64), '2026-01-05', super::uuid, '2026-01-10', super::uuid, 'papier', repeat('6', 64), dk, hash_dk, '2026-01-09', super::uuid);
+  r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l5, 1, '2026-01-01', '2026-01-31'))));
+  perform pg_temp.noter(59, 'le mois entier d''une lettre d''effet au 15 se refuse : elle n''est pas en vigueur le 1er', '22023:La lettre n''est pas en vigueur pour cette période.', r);
+  r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l5, 1, '2026-01-16', '2026-01-31'))));
+  perform pg_temp.noter(60, 'une part qui laisse un jour de la lettre (le 15) se refuse', '22023:La période d''un forfait suit la lettre au jour près', r);
+  r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l5, 1, '2026-01-15', '2026-01-30'))));
+  perform pg_temp.noter(61, 'une part qui laisse le dernier jour du mois se refuse', '22023:La période d''un forfait suit la lettre au jour près', r);
+  r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l5, 1, '2026-01-15', '2026-02-14'))));
+  perform pg_temp.noter(62, 'une part à cheval sur deux mois se refuse', '22023:Une période de forfait tient dans un mois', r);
+  r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l5, 1, '2026-01-15', '2026-01-31'), pg_temp.el(l5, 2, '2026-01-15', '2026-03-31'))));
+  perform pg_temp.noter(63, 'janvier du 15 au 31 et le premier trimestre du 15 janvier, au prorata (contrôle positif)', 'OK:', r);
+  f6 := pg_temp.id(r);
+  select string_agg(fl.designation || ' ' || fl.quantite || '×' || fl.prix_unitaire_ht, ' | ' order by fl.ordre) into r
+    from facture_lignes fl where fl.facture_id = f6;
+  perform pg_temp.noter(64, 'les lignes disent la part (17 jours sur 31, 76 sur 90) et son montant : 100,01 × 17/31 = 54,84 ; 300 − arrondi(300 × 14/90) = 253,33',
+    'Tenue au prorata — janvier 2026, du 15/01/2026 au 31/01/2026 (17 jours sur 31) 1×54.84 | Social au prorata — 1er trimestre 2026, du 15/01/2026 au 31/03/2026 (76 jours sur 90) 1×253.33', r);
+  select f.montant_ht || ' ' || f.montant_tva || ' ' || f.montant_ttc || ' ' || f.periode_debut || ' ' || f.periode_fin into r from factures_emises f where f.id = f6;
+  perform pg_temp.noter(65, 'les totaux du brouillon au centime, la TVA par ligne, et sa période', '308.17 61.64 369.81 2026-01-15 2026-03-31', r);
+  -- L'avenant L5B, d'effet au 16 avril : L5 cesse le 15.
+  insert into lettres_de_mission (id, dossier_id, dossier_client_id, remplace_id, missions, honoraires, date_effet, premier_exercice,
+      fin_initiale, reconduction_tacite, signataire_nom, identite_client, identite_cabinet, clauses, empreinte, proposee_le,
+      proposee_par, acceptee_le, acceptee_par, mode_acceptation, empreinte_acceptee, document_signe_id, empreinte_papier,
+      signee_le, auteur)
+  values (l5b, k, c3, l5, '{tenue_comptable}', h5b, '2026-04-16', 2026, '2027-04-15', true, 'Signataire', '{}', '{}', '{sous_traitance}',
+          repeat('7', 64), '2026-04-01', super::uuid, '2026-04-05', super::uuid, 'papier', repeat('7', 64), dk, hash_dk, '2026-04-04', super::uuid);
+  r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l5, 1, '2026-04-01', '2026-04-30'))));
+  perform pg_temp.noter(66, 'avril entier sous la lettre que l''avenant remplace le 16 se refuse', '22023:La lettre n''est pas en vigueur pour cette période.', r);
+  r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l5, 1, '2026-04-01', '2026-04-15'), pg_temp.el(l5b, 1, '2026-04-16', '2026-04-30'))));
+  f7 := pg_temp.id(r);
+  select string_agg(fl.designation || ' ' || fl.prix_unitaire_ht, ' | ' order by fl.ordre) || ' = ' || (select montant_ht from factures_emises where id = f7)
+    into r from facture_lignes fl where fl.facture_id = f7;
+  perform pg_temp.noter(67, 'avril partagé au même prix, quinze jours chacune : 50,01 + 50,00 = 100,01, le prix du mois, jamais 100,02',
+    'Tenue au prorata — avril 2026, du 01/04/2026 au 15/04/2026 (15 jours sur 30) 50.01 | Tenue (avenant) — avril 2026, du 16/04/2026 au 30/04/2026 (15 jours sur 30) 50.00 = 100.01', coalesce(r, '∅'));
+  perform pg_temp.noter(68, 'l''arrondi de chaque moitié seule aurait fait un centime de trop (le contre-exemple, calculé)', '10002 10001',
+    (2 * round(10001 * 15 / 30.0))::bigint || ' ' || (honoraires_au_prorata(100.01, 'mois', '2026-04-01', '2026-04-15') + honoraires_au_prorata(100.01, 'mois', '2026-04-16', '2026-04-30')));
+  r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l5, 2, '2026-04-01', '2026-04-15'), pg_temp.el(l5b, 2, '2026-04-16', '2026-06-30'),
+         pg_temp.el(l5, 3, '2026-01-15', '2026-04-15'), pg_temp.el(l5b, 3, '2026-04-16', '2026-12-31'))));
+  f8 := pg_temp.id(r);
+  select string_agg(fl.prix_unitaire_ht::text, ' ' order by fl.ordre) || ' = ' || (select montant_ht from factures_emises where id = f8)
+    into r from facture_lignes fl where fl.facture_id = f8;
+  perform pg_temp.noter(69, 'le trimestre et l''année au prorata, chacune au prix de sa lettre : 300 × 15/91, 330 − arrondi(330 × 15/91), 1 200 de mi-janvier à mi-avril, puis le reste',
+    '49.45 275.60 299.18 854.79 = 1479.02', coalesce(r, '∅'));
+  -- Un jour ne se facture qu'une fois, pour tout auteur (le propriétaire sans session), d'une version à l'autre.
+  r := pg_temp.essayer(null, format($q$insert into honoraires_factures (dossier_id, facture_id, lettre_id, ligne, periode_debut, periode_fin, auteur) values (%L, %L, %L, 1, '2026-04-10', '2026-04-20', %L) returning 1$q$, k, f6, l5, super));
+  perform pg_temp.noter(70, 'la garde : une part qui recouvre des jours déjà facturés de la même ligne se refuse', '23514:Cette période est déjà facturée', r);
+  r := pg_temp.essayer(null, format($q$insert into honoraires_factures (dossier_id, facture_id, lettre_id, ligne, periode_debut, periode_fin, auteur) values (%L, %L, %L, 1, '2026-04-01', '2026-04-15', %L) returning 1$q$, k, f6, l5b, super));
+  perform pg_temp.noter(71, 'la garde : les jours de la lettre d''avant, sous l''avenant, se refusent', '23514:Cette période est déjà facturée', r);
+  r := pg_temp.essayer(null, format($q$insert into honoraires_factures (dossier_id, facture_id, lettre_id, ligne, periode_debut, periode_fin, auteur) values (%L, %L, %L, 1, '2026-01-15', '2026-02-03', %L) returning 1$q$, k, f6, l5, super));
+  perform pg_temp.noter(72, 'la garde : une part à cheval sur deux mois se refuse', '23514:Une période de forfait tient dans un mois', r);
+  r := pg_temp.essayer(null, format($q$insert into honoraires_factures (dossier_id, facture_id, lettre_id, ligne, periode_debut, periode_fin, auteur) values (%L, %L, %L, 1, '2026-02-01', '2026-02-28', %L) returning 1$q$, k, f6, l5, super));
+  perform pg_temp.noter(73, 'la garde : un mois qui ne recouvre rien passe (une restauration réinsère l''histoire)', 'OK:1', r);
+  r := pg_temp.essayer(membre, pg_temp.facturer(k, jsonb_build_array(pg_temp.el(l5b, 1, '2026-05-01', '2026-05-31'))));
+  perform pg_temp.noter(74, 'mai entier sous l''avenant, en vigueur tout le mois : la période entière, à son prix', 'OK:', r);
+  select count(*) into n from pg_proc p
+   where p.oid = to_regprocedure('public.honoraires_au_prorata(numeric, text, date, date)') and p.provolatile = 'i' and not p.prosecdef
+     and not has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute');
+  perform pg_temp.noter(75, 'le prorata : immuable, aucun rôle de session (la fonction seule l''appelle)', '1', n::text);
 end
 $essai$;
 

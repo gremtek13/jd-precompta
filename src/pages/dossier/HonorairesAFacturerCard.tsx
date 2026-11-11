@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { HONORAIRES_FACTURES_PREVUS, TAUX_DES_HONORAIRES, type FactureDuCabinet } from '../../lib/honorairesAFacturer'
 import {
-  aFacturerParClient, confirmationDeLaFacturation, libelleDuTaux, motsDeLaFacturee, refusDeLaSelection, type ClientAFacturer,
+  aFacturerParClient, confirmationDeLaFacturation, libelleDuTaux, motsDeLaFacturee, motsDuProrata, refusDeLaSelection, type ClientAFacturer,
   type ElementPropose,
 } from '../../lib/honorairesAFacturerVue'
 import { facturerLesHonoraires, useHonorairesAFacturer } from '../../lib/honorairesAFacturerLecture'
@@ -11,8 +11,9 @@ import type { FacturesDeLOnglet } from './DepotDesHonorairesCard'
 
 // « À FACTURER » (ligne 47, LM7), dans l'onglet Factures du DOSSIER DU CABINET seul, côté cabinet, derrière
 // `HONORAIRES_FACTURES_PREVUS` (baissé : rien ne se monte, rien ne se lit). Par client puis par lettre acceptée : les
-// périodes de forfait échues (LM7-Q2) et les tâches par exercice (le clic qui les facture les dit faites, LM7-Q1), sous la
-// lettre en vigueur au dernier jour (LM7-Q4) ; ce qui est déjà facturé, avec sa facture ; la période qu'un avoir total rend à
+// périodes de forfait échues (LM7-Q2) — la part d'une lettre qui commence ou finit en cours de période, au prorata de ses
+// jours, dite « 17 jours sur 31 » (LM7-Q4 (C)) — et les tâches par exercice (le clic qui les facture les dit faites,
+// LM7-Q1) ; ce qui est déjà facturé, avec sa facture ; la période qu'un avoir total rend à
 // facturer (LM7-Q3). « Facturer » crée un BROUILLON par `facturer_honoraires` seule (LM-Q8) : la confirmation nomme le client,
 // les périodes et le montant hors taxes ; le refus du module se dit avant le clic ; un verrou `useRef`, relâché après la
 // relecture ; puis un lien vers le brouillon. Les factures (celles de l'onglet), les lettres, les liens, les avoirs repris et
@@ -157,7 +158,7 @@ function Carte({ dossierId, lues, onFacturee, ouvrirLeBrouillon }: Props) {
                       <li key={e.cle}>
                         <label>
                           <input type="checkbox" checked={estCoche(e)} disabled={enCours} onChange={(ev) => cocher(e.cle, ev.target.checked)} />{' '}
-                          {e.designation} — {formatMoney(e.montant_ht)} HT{e.forme === 'tache' ? ' (tâche : à cocher une fois faite)' : ''}
+                          {e.designation} — {formatMoney(e.montant_ht)} HT{e.prorata ? ` — au prorata : ${motsDuProrata(e)}` : ''}{e.forme === 'tache' ? ' (tâche : à cocher une fois faite)' : ''}
                         </label>
                         {e.rendueParLAvoirDe !== null && (
                           <div className="muted">Redevenue à facturer : la facture {e.rendueParLAvoirDe} a été créditée en entier par un avoir.</div>

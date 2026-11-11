@@ -1,7 +1,7 @@
 import {
   factureCrediteeEnEntier, designationDeLElement, lettreEnVigueurLe, motsDuRefusDeLaFacturation, periodesAFacturer, racine,
   refusDeLaDemande, refusDeLElement, totauxDuBrouillon, type AvoirRepris, type FactureDuCabinet, type LettreAFacturer,
-  type LienDHonoraires,
+  type LienDHonoraires, type Prorata,
 } from './honorairesAFacturer'
 import { formatDate, formatMoney } from './format'
 
@@ -10,7 +10,9 @@ import { formatDate, formatMoney } from './format'
 // puis par lettre acceptée ce qui se facture — les périodes de forfait échues (LM7-Q2, à terme échu) telles que
 // `periodesAFacturer` les calcule, et les tâches par exercice, que le clic qui les facture dit faites (LM7-Q1) —, ce qui est
 // déjà facturé, avec sa facture, et la période qu'un avoir total a rendue à facturer (LM7-Q3, l'avoir partiel la laisse
-// facturée). La lettre d'une période est celle EN VIGUEUR à son dernier jour (LM7-Q4, sans prorata) : la règle du module.
+// facturée). Un forfait se facture pour les jours de chaque lettre EN VIGUEUR dans sa période civile, au prorata quand
+// elle commence ou finit en cours de période — l'avenant facturant les siens (LM7-Q4 (C), « 17 jours sur 31 ») : la règle
+// du module.
 // Les refus avant le clic sont ceux du module, à ses mots. Récit : HISTORIQUE.md, « 11/11/2026 — LM7 : « À FACTURER », À
 // L'ÉCRAN ».
 
@@ -27,6 +29,8 @@ export interface ElementPropose {
   periode_fin: string
   designation: string
   montant_ht: number
+  /** La part d'une période d'un forfait, au prorata de ses jours (LM7-Q4 (C)) ; nulle pour une période entière ou une tâche. */
+  prorata: Prorata | null
   /** Le numéro de la facture qu'un avoir total a créditée en entier, quand cette période l'avait déjà été. */
   rendueParLAvoirDe: string | null
 }
@@ -84,7 +88,7 @@ function tachesAFacturer(
       const autreAuDernierJour = !lettreEnVigueurLe(lettre, lettres, element.periode_fin) && lettres.some((l) => l.id !== lettre.id
         && racine(l.id, lettres) === sienne && lettreEnVigueurLe(l, lettres, element.periode_fin))
       if (autreAuDernierJour) continue
-      resultat.push({ cle: cleDe(element), forme: 'tache', ...element, designation: designationDeLElement(ligne, element.periode_debut, element.periode_fin), montant_ht: ligne.montant_ht })
+      resultat.push({ cle: cleDe(element), forme: 'tache', ...element, designation: designationDeLElement(ligne, element.periode_debut, element.periode_fin), montant_ht: ligne.montant_ht, prorata: null })
     }
   })
   return resultat
@@ -144,6 +148,12 @@ export function motsDeLaFacturee(f: PeriodeFacturee): string {
   return f.crediteeEnEntier ? `Facturée par ${facture}, créditée en entier par un avoir : à facturer de nouveau` : `Facturée par ${facture}`
 }
 
+/** La part au prorata, dite à l'écran : « 17 jours sur 31 du forfait de 150,00 € HT » ; vide pour une période entière. */
+export function motsDuProrata(e: Pick<ElementPropose, 'prorata'>): string {
+  return e.prorata === null ? ''
+    : `${e.prorata.jours} ${e.prorata.jours === 1 ? 'jour' : 'jours'} sur ${e.prorata.sur} du forfait de ${formatMoney(e.prorata.prixDeLaPeriode)} HT`
+}
+
 /** Le refus, avant le clic, de la sélection d'un client au taux choisi (`null` : aucun taux choisi) : ses mots, ou `null`. */
 export function refusDeLaSelection(
   elements: readonly ElementPropose[], lettres: readonly LettreAFacturer[], liens: readonly LienDHonoraires[],
@@ -167,8 +177,10 @@ export function confirmationDeLaFacturation(nomDuClient: string | null, elements
   const taches = elements.some((e) => e.forme === 'tache')
   return [
     `Créer le brouillon d’une facture d’honoraires pour « ${nomDuClient ?? 'dossier non lu'} » :`,
-    ...elements.map((e) => `— ${e.designation} : ${formatMoney(e.montant_ht)} HT`),
+    ...elements.map((e) => `— ${e.designation} : ${formatMoney(e.montant_ht)} HT${e.prorata ? ` (au prorata du forfait de ${formatMoney(e.prorata.prixDeLaPeriode)} HT)` : ''}`),
     `Total : ${formatMoney(totaux.montant_ht)} HT, TVA à ${enTaux(taux)} : ${formatMoney(totaux.montant_tva)}, soit ${formatMoney(totaux.montant_ttc)} TTC.`,
+    ...(elements.some((e) => e.prorata !== null)
+      ? ['Un forfait que sa lettre commence ou finit en cours de période se facture au prorata de ses jours, arrondi au centime.'] : []),
     ...(taches ? ['Facturer une tâche la dit faite.'] : []),
     'La facture se crée en brouillon, puis se valide comme toute facture.',
   ].join('\n')
