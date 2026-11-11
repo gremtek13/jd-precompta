@@ -76,6 +76,11 @@
 --      un compte rattaché à rien, ni par le client ; le chef dépose et lit (contrôle positif) ; le client ne lit aucun dépôt
 --      ni ceux du cabinet, mais lit que sa pièce vient de son cabinet ; l'insertion directe au super-administrateur seul ;
 --      le catalogue — et trois mutations ; avant la migration `depot_des_honoraires`, une ligne « EN ATTENTE ».
+--   6quinquies-quater. La FICHE DE FACTURATION LIÉE au dossier d'un client (LM3, ligne 47 ; bloc « La fiche de facturation
+--      d'un client du cabinet, liée à son dossier », après le dépôt des honoraires) : FL1 à FL6 — ni l'anonyme, ni un
+--      compte rattaché à rien, ni le client ne lient ni ne lisent l'identité ; le chef lie et lit (contrôle positif) ;
+--      l'insertion directe au super-administrateur seul ; le catalogue — et trois mutations ; avant la migration
+--      `fiche_liee_au_dossier_du_client`, une ligne « EN ATTENTE ».
 --   6sexies. L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2, ligne 51.5 ; bloc AR, après le bloc TD) : AR1 à AR3 — le cabinet du
 --      dossier la lit (contrôle positif), ni le client ni l'anonyme ; le client ne l'écrit ni ne la réécrit ; le catalogue —
 --      et deux mutations ; avant la migration `adresse_des_acces_retires`, une ligne « EN ATTENTE ».
@@ -766,6 +771,10 @@
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM8, ligne 47 : migration `depot_des_honoraires`, PRÉPARÉE, pas
 -- appliquée, après LM1, LM4 et LM7), qui dépose la facture d'honoraires validée dans le dossier de son client. Le bloc HD
 -- (HD1 à HD7, M-HD2, M-HD5, M-HD7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM8 ».
+--
+-- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM3, ligne 47 : migration `fiche_liee_au_dossier_du_client`, PRÉPARÉE,
+-- pas appliquée, après LM1), qui lie une fiche du dossier du cabinet au dossier de son client. Le bloc FL (FL1 à FL6,
+-- M-FL2, M-FL3, M-FL6) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM3 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (P1T-E2, ligne 51.5 : migration `adresse_des_acces_retires`, PRÉPARÉE,
 -- pas appliquée), qui garde l'adresse d'un accès retiré que la trace nomme — la lecture du cabinet du dossier, l'insertion
@@ -3375,6 +3384,182 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $hd$;
+
+-- ═══ La fiche de facturation d'un client du cabinet, liée à son dossier (LM3, ligne 47) ════════════════════════════════
+--
+-- La migration `fiche_liee_au_dossier_du_client` lie une fiche de `contacts` du dossier du cabinet au dossier de son
+-- client (`dossier_client_id`, par `enregistrer_contact`, rang 4 bis) ; liée, la fiche ne garde aucune identité, que
+-- `identites_des_fiches_liees`, `security definer`, lit du dossier pour le cabinet du dossier du cabinet. Ce qu'elle ouvre
+-- et ferme, aux quatre profils : ni l'anonyme ni un compte rattaché à rien ne lient ni ne lisent l'identité (FL1, FL2) ;
+-- le client d'un dossier lié ne lie rien dans le dossier du cabinet, n'en lit ni les fiches ni l'identité de son propre
+-- dossier par cette porte (FL3) ; le chef lie et lit (FL4, le contrôle POSITIF) ; un compte rattaché à rien n'insère pas
+-- de fiche liée directement — la porte de la restauration est au super-administrateur (FL5) ; au catalogue, la lecture
+-- est `security definer` et exécutable par `authenticated` seul, les deux gardes par aucun rôle de session, et les
+-- policies des contacts restent trois (FL6). Le jeu : un dossier du cabinet désigné et un dossier client jetables, dans
+-- une sous-transaction annulée. Trois mutations, qui doivent mordre. EN ATTENTE tant que la colonne n'est pas en base.
+-- Ce que la fonction refuse encore, la garde, l'effacement, le dossier parti : `fichesLieesAuxDossiers.sql`.
+do $fl$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  k uuid := '1a100000-0000-4000-8000-0000000000fa';
+  c uuid := '1a100000-0000-4000-8000-0000000000fb';
+  fiche uuid;
+  n bigint; etat text; message text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'contacts' and column_name = 'dossier_client_id') then
+    insert into rls_verdict values ('FL. la fiche liée au dossier du client : EN ATTENTE de la migration fiche_liee_au_dossier_du_client',
+      'contacts', 'absente : les fiches liées se jugent dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, siret, adresse, statut_tva) values
+      (k, 'RLS DOSSIER DU CABINET FL', cabinet, 'tresorerie', '455000', '12345678200010', 'RLS ADRESSE', 'redevable'),
+      (c, 'RLS CLIENT FL', cabinet, 'tresorerie', '455000', '98765432100017', 'RLS ADRESSE', null);
+    insert into memberships (user_id, dossier_id, role, email) values (client, c, 'client', 'rls-fl@example.test');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform public.designer_dossier_du_cabinet(cabinet, k);
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    construit := true;
+
+    -- FL1 : l'anonyme ne lie pas et ne lit pas l'identité.
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+      perform public.enregistrer_contact(k, null, jsonb_build_object('dossier_client_id', c));
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+      perform 1 from public.identites_des_fiches_liees(k);
+      message := 'acceptée';
+    exception when others then message := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FL1. anonyme ne lie pas de fiche et ne lit pas l''identité des dossiers liés', 'cible', 'identites_des_fiches_liees',
+      'observe', etat || ' / ' || message, 'ok', etat = '42501' and message = '42501');
+
+    -- FL2 : un compte rattaché à rien. M-FL2 : FL2 rejoué sous le chef — il lie (annulé aussitôt).
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      perform public.enregistrer_contact(k, null, jsonb_build_object('dossier_client_id', c));
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FL2. inconnu authentifié ne lie pas de fiche', 'cible', 'enregistrer_contact',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce dossier.');
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform public.enregistrer_contact(k, null, jsonb_build_object('dossier_client_id', c));
+      raise exception 'annuler' using errcode = 'P0001';
+    exception when sqlstate 'P0001' then etat := 'acceptée'; when others then etat := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-FL2 — FL2 rejoué sous le chef du cabinet', 'attendu', 'la fiche liée',
+      'observe', etat, 'mord', etat = 'acceptée');
+
+    -- FL4 : le chef lie et lit l'identité (contrôle positif) ; la fiche reste, pour FL3.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    fiche := (public.enregistrer_contact(k, null, jsonb_build_object('dossier_client_id', c, 'delai_paiement_jours', 30))).id;
+    select count(*) into n from public.identites_des_fiches_liees(k) i where i.contact_id = fiche and i.tiers_siret = '98765432100017';
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FL4. le chef lie la fiche et lit l''identité que le dossier donne (contrôle positif)', 'cible', 'identites_des_fiches_liees',
+      'observe', n || ' ligne(s)', 'ok', n = 1);
+
+    -- FL3 : le client du dossier lié ne lie rien dans le dossier du cabinet, n'en lit ni les fiches ni l'identité.
+    -- M-FL3 : la même lecture des fiches sous le chef.
+    message := null;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into n from contacts where dossier_id = k or dossier_client_id = c;
+    begin
+      perform public.enregistrer_contact(k, null, jsonb_build_object('dossier_client_id', c));
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    begin
+      perform 1 from public.identites_des_fiches_liees(k);
+      message := 'acceptée';
+    exception when others then message := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FL3. client ne lie rien dans le dossier du cabinet, n''en lit ni les fiches ni l''identité de son dossier', 'cible', 'contacts',
+      'observe', n || ' fiche(s), lier ' || etat || ', lire ' || message, 'ok', n = 0 and etat = '42501' and message = '42501');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into n from contacts where dossier_id = k or dossier_client_id = c;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-FL3 — FL3 rejoué sous le chef', 'attendu', 'la fiche lue',
+      'observe', n || ' fiche(s)', 'mord', n >= 1);
+
+    -- FL5 : un compte rattaché à rien n'insère pas de fiche liée directement.
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      insert into contacts (dossier_id, dossier_client_id) values (k, gen_random_uuid());
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FL5. inconnu authentifié n''insère pas de fiche liée directement (la restauration est au super-administrateur)', 'cible', 'contacts_restauration',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501');
+    raise exception 'annuler le jeu' using errcode = 'P0001';
+  exception
+    when sqlstate 'P0001' then null;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- FL6 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.prosecdef and p.proname = 'identites_des_fiches_liees'
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE'), false);
+  verdicts := verdicts || jsonb_build_object('controle', 'FL6. la lecture des identités liées : security definer, exécutable par authenticated seul (lecture du catalogue)',
+    'cible', 'identites_des_fiches_liees', 'observe', n || ' telle(s) quelle(s)', 'ok', n = 1);
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.proname in ('garder_fiche_liee', 'garder_designation_des_fiches_liees')
+     and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
+  verdicts := verdicts || jsonb_build_object('controle', 'FL6. les gardes des fiches liées : aucun rôle de session ne les exécute (lecture du catalogue)',
+    'cible', 'garder_fiche_liee', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  -- M-FL6 : la même lecture pour le propriétaire, qui les exécute.
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.proname in ('garder_fiche_liee', 'garder_designation_des_fiches_liees')
+     and has_function_privilege('proprietaire', p.oid, 'execute');
+  mutations := mutations || jsonb_build_object('mutation', 'M-FL6 — FL6 rejoué pour le propriétaire', 'attendu', 'les deux gardes exécutables',
+    'observe', n || ' exécutable(s)', 'mord', n = 2);
+  select count(*) into n from pg_policies
+   where schemaname = 'public' and tablename = 'contacts' and not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'));
+  verdicts := verdicts || jsonb_build_object('controle', 'FL6. les contacts : trois policies to authenticated, deux lectures et la restauration, rien d''autre (lecture du catalogue)',
+    'cible', 'contacts', 'observe', n || ' autre(s)', 'ok', n = 0
+      and (select count(*) from pg_policies where schemaname = 'public' and tablename = 'contacts') = 3);
+  verdicts := verdicts || jsonb_build_object('controle', 'FL. le jeu d''essai des fiches liées s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
+      and not exists (select 1 from cabinets where dossier_du_cabinet = k));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $fl$;
 
 -- ═══ La frontière des encaissements (chantier EC-Q3, étape VF7a) ═══════════════════════════════════════════════
 --
