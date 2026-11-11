@@ -13,8 +13,13 @@ import type { ExerciceValide, Piece } from './types'
 //
 // CHAQUE ORIGINAL SE RELIT À SON EMPREINTE AVANT D'ENTRER (LPF, art. L102 B : le document sous la forme reçue) : son SHA-256
 // recalculé sur les octets lus doit être celui que la pièce porte depuis son dépôt (`storage_hash`), que la forme 2 de
-// l'empreinte scelle — d'où, côté lecture, `verifier_exercice_valide` d'abord. UN ÉCART, OU UNE PIÈCE SANS EMPREINTE, REFUSE
+// l'empreinte scelle — d'où, côté lecture, `verifier_exercice_valide` d'abord. UN ÉCART, OU UNE EMPREINTE ILLISIBLE, REFUSE
 // TOUT LE PAQUET ET LE DIT : jamais un paquet partiel, qui aurait l'air complet.
+//
+// UNE PIÈCE SANS EMPREINTE DE DÉPÔT (`storage_hash` nul ou vide : une pièce déposée avant que le dépôt la calcule) ENTRE
+// MARQUÉE « NON VÉRIFIÉE » (INAL3-Q1, réponse du cabinet du 11/11/2026, contre la recommandation de la refuser) : son
+// original est celui que le stockage rend au jour de la fabrication, rien ne prouve qu'il est celui du dépôt, et le
+// manifeste le dit, pièce par pièce et en tête. L'écran le dit avant le clic (`piecesSansEmpreinte`, PaquetDArchiveBouton).
 //
 // AUCUN NOM DE FICHIER D'ORIGINE (le praticien nomme parfois un fichier d'après un patient) : un original s'appelle par la
 // référence que le FEC lui donne en PieceRef (`referenceDUnePiece`, JJ1Q1-Q3 : « AAAAMMJJ-xxxxxxxx », la date et le début
@@ -53,6 +58,8 @@ export type PaquetFabrique = {
   ok: true
   zip: Uint8Array
   manifeste: string
+  // Les originaux entrés sans empreinte de dépôt, donc sans vérification (INAL3-Q1) : leur nombre.
+  nonVerifiees: number
   // Le SHA-256 du manifeste : l'empreinte du paquet, celle qu'un horodatage scellera (INAL7, plus tard).
   empreinteDuManifeste: string
   fichiers: readonly FichierDuManifeste[]
@@ -63,6 +70,28 @@ export const NOM_DU_MANIFESTE = 'MANIFESTE.txt'
 export const NOM_DE_LA_DOCUMENTATION = 'DOCUMENTATION_DES_TRAITEMENTS.md'
 export const DOSSIER_DES_ORIGINAUX = 'pieces'
 const SHA256_HEX = /^[0-9a-f]{64}$/
+/** Ce que le manifeste dit, à la place de l'empreinte de dépôt, d'une pièce qui n'en a pas (INAL3-Q1). */
+export const MARQUE_NON_VERIFIEE = 'non vérifiée (aucune empreinte de dépôt)'
+
+// L'empreinte de dépôt d'une pièce, en minuscules ; nulle quand la pièce n'en porte pas (nulle ou vide). Une valeur
+// présente mais d'une autre forme qu'un SHA-256 n'est PAS une absence : elle se refuse (`fabriquerLePaquet`).
+function empreinteDeDepot(piece: Pick<PieceDuPaquet, 'storage_hash'>): string | null {
+  const e = (piece.storage_hash ?? '').trim().toLowerCase()
+  return e === '' ? null : e
+}
+
+/**
+ * Les pièces citées par l'exercice qui n'ont pas d'empreinte de dépôt : elles entreront au paquet marquées « non
+ * vérifiée ». L'écran le dit AVANT le clic, sur les pièces qu'il a lues ; une citée qu'il n'a pas lue n'y compte pas (la
+ * lecture du paquet, elle, refuse une pièce introuvable).
+ */
+export function piecesSansEmpreinte(
+  pieces: readonly Pick<PieceDuPaquet, 'id' | 'storage_hash'>[],
+  piecesCitees: readonly string[],
+): string[] {
+  const citees = new Set(piecesCitees)
+  return pieces.filter((p) => citees.has(p.id) && empreinteDeDepot(p) === null).map((p) => p.id).sort()
+}
 
 // Les pièces que les écritures VALIDÉES de l'exercice citent, directement ou par leur bien : l'ensemble que
 // `empreinte_exercice_forme_2` compte (migration `empreinte_des_exercices_forme_2`). L'appelant ne passe que les lignes
@@ -132,12 +161,18 @@ export async function fabriquerLePaquet(e: EntreesDuPaquet): Promise<PaquetFabri
     return refus('la lecture a rendu des fichiers que l’exercice ne cite pas.')
   }
 
-  // Chaque original relu à son empreinte AVANT d'entrer : le premier écart arrête tout.
+  // Chaque original relu à son empreinte AVANT d'entrer : le premier écart arrête tout. Sans empreinte, il entre sans
+  // vérification, et le manifeste le dit (INAL3-Q1).
+  let nonVerifiees = 0
   for (const o of [...e.originaux].sort((a, b) => a.piece.id.localeCompare(b.piece.id))) {
     const ref = referenceDUnePiece(o.piece)
-    const attendue = (o.piece.storage_hash ?? '').trim().toLowerCase()
+    const attendue = empreinteDeDepot(o.piece)
+    if (attendue === null) {
+      nonVerifiees++
+      continue
+    }
     if (!SHA256_HEX.test(attendue)) {
-      return refus(`la pièce ${ref} n’a pas d’empreinte de dépôt : son original ne peut pas être vérifié.`)
+      return refus(`l’empreinte de dépôt de la pièce ${ref} est illisible : son original ne peut pas être vérifié.`)
     }
     const relue = await sha256Hex(o.octets)
     if (relue !== attendue) {
@@ -170,7 +205,7 @@ export async function fabriquerLePaquet(e: EntreesDuPaquet): Promise<PaquetFabri
   for (const c of contenus) zip.file(c.chemin, new Uint8Array(c.octets), { date: e.fabriqueLe, binary: true })
   zip.file(NOM_DU_MANIFESTE, manifeste, { date: e.fabriqueLe })
   const octets = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
-  return { ok: true, zip: octets, manifeste, empreinteDuManifeste: await sha256Hex(encodeur.encode(manifeste)), fichiers }
+  return { ok: true, zip: octets, manifeste, nonVerifiees, empreinteDuManifeste: await sha256Hex(encodeur.encode(manifeste)), fichiers }
 }
 
 export const ENTETE_DES_FICHIERS = 'FICHIERS (chemin, taille en octets, SHA-256)'
@@ -182,7 +217,8 @@ function manifesteDuPaquet(e: EntreesDuPaquet, fichiers: readonly FichierDuManif
     : '1 — elle scelle les écritures validées, les à-nouveaux et les soldes reportés, pas les fichiers des pièces : leurs empreintes ci-dessous sont celles de leur dépôt'
   const pieces = [...e.originaux]
     .sort((a, b) => noms.get(a.piece.id)!.localeCompare(noms.get(b.piece.id)!))
-    .map((o) => `${noms.get(o.piece.id)}\t${o.piece.id}\t${(o.piece.storage_hash ?? '').trim().toLowerCase()}`)
+    .map((o) => `${noms.get(o.piece.id)}\t${o.piece.id}\t${empreinteDeDepot(o.piece) ?? MARQUE_NON_VERIFIEE}`)
+  const nonVerifiees = e.originaux.filter((o) => empreinteDeDepot(o.piece) === null).length
   return [
     `PAQUET D'ARCHIVE — EXERCICE ${x.annee} VALIDÉ`,
     '',
@@ -199,6 +235,14 @@ function manifesteDuPaquet(e: EntreesDuPaquet, fichiers: readonly FichierDuManif
     'original relu à son empreinte de dépôt. La 2035 est celle que la validation a figée ; le FEC, celui que l’application',
     'relit des écritures validées (son lettrage dit l’état des comptes de tiers au jour de la fabrication). La documentation',
     'des traitements est celle que l’application portait au jour de la fabrication.',
+    ...(nonVerifiees > 0
+      ? [
+        '',
+        `PIÈCES NON VÉRIFIÉES : ${nonVerifiees}. Ces pièces n’ont pas d’empreinte de dépôt ; leur original est celui que le`,
+        'stockage rendait au jour de la fabrication, et rien ne prouve qu’il est celui du dépôt. Elles sont marquées',
+        `« ${MARQUE_NON_VERIFIEE} » dans la liste des pièces citées.`,
+      ]
+      : []),
     '',
     ENTETE_DES_FICHIERS,
     ...fichiers.map((f) => `${f.chemin}\t${f.taille}\t${f.sha256}`),

@@ -11,8 +11,12 @@ import { messageErreur } from '../../lib/messageErreur'
 // relit chaque original à son empreinte. Un refus de l'une ou de l'autre se dit, et rien ne se télécharge.
 //
 // Verrou `useRef` posé avant le `try`, relâché dans le `finally` : deux clics ne fabriquent qu'un paquet.
+//
+// Une pièce citée sans empreinte de dépôt entre au paquet marquée « non vérifiée » (INAL3-Q1) : le bouton le dit AVANT le
+// clic (`sansEmpreinte`, compté par l'onglet sur les pièces qu'il a lues, `piecesSansEmpreinte`), et le message qui suit le
+// téléchargement redit le nombre que la fabrication a compté.
 
-export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, fec, indisponible }: {
+export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, fec, indisponible, sansEmpreinte }: {
   dossierId: string
   dossierSiret: string | null
   annee: number
@@ -20,11 +24,13 @@ export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, f
   fec: () => { nom: string; contenu: string } | null
   // Pourquoi le FEC ne peut pas encore se calculer (une lecture partielle de l'onglet), ou nul.
   indisponible: string | null
+  // Le nombre de pièces citées par l'exercice qui n'ont pas d'empreinte de dépôt, sans valeur par défaut.
+  sansEmpreinte: number
 }) {
   const fabricationEnCours = useRef(false)
   const [enCours, setEnCours] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
-  const [fait, setFait] = useState<{ fichiers: number; empreinte: string } | null>(null)
+  const [fait, setFait] = useState<{ fichiers: number; nonVerifiees: number; empreinte: string } | null>(null)
 
   async function fabriquer() {
     if (fabricationEnCours.current || indisponible !== null) return
@@ -52,7 +58,7 @@ export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, f
         return
       }
       telechargerOctets(nomDuPaquet(dossierSiret, annee), paquet.zip)
-      setFait({ fichiers: paquet.fichiers.length, empreinte: paquet.empreinteDuManifeste })
+      setFait({ fichiers: paquet.fichiers.length, nonVerifiees: paquet.nonVerifiees, empreinte: paquet.empreinteDuManifeste })
     } catch (e) {
       // Une fabrication qui lève (le FEC, JSZip, le navigateur) se dit : sans ce `catch`, le clic n'aurait rien montré.
       setErreur(`Aucun paquet d’archive : ${messageErreur(e, 'la fabrication a été interrompue.')}`)
@@ -72,10 +78,18 @@ export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, f
       >
         {enCours ? 'Paquet en cours…' : `Paquet d’archive ${annee}`}
       </button>
+      {sansEmpreinte > 0 && !fait && (
+        <p className="muted" style={{ flexBasis: '100%' }}>
+          {sansEmpreinte} pièce(s) citée(s) par l’exercice {annee} n’ont pas d’empreinte de dépôt : elles entreront au paquet
+          d’archive marquées « non vérifiée », leur original n’étant pas relu à une empreinte.
+        </p>
+      )}
       {erreur && <p className="error-text" role="alert" style={{ flexBasis: '100%' }}>{erreur}</p>}
       {fait && (
         <p className="muted" style={{ flexBasis: '100%' }}>
-          Paquet d’archive téléchargé : {fait.fichiers} fichier(s) vérifié(s), manifeste d’empreinte
+          Paquet d’archive téléchargé : {fait.fichiers} fichier(s)
+          {fait.nonVerifiees > 0 ? `, dont ${fait.nonVerifiees} original(aux) non vérifié(s) (sans empreinte de dépôt)` : ' vérifié(s)'},
+          manifeste d’empreinte
           {' '}<span style={{ fontFamily: 'monospace' }}>{fait.empreinte.slice(0, 16)}…</span>
         </p>
       )}

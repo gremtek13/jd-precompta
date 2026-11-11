@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import PaquetDArchiveBouton from './PaquetDArchiveBouton'
+import { piecesCiteesParLExercice, piecesSansEmpreinte } from '../../lib/paquetDArchive'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import {
@@ -630,6 +631,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // et deux exports rendent le même, au lettrage près : il suit les règlements écrits depuis (lib/lettrage.ts).
   const exerciceValideAffiche = typeof anneeFilter === 'number' ? exercicesValides.find((e) => e.annee === anneeFilter) ?? null : null
   const fecValide = exerciceValideAffiche ? numerotationValidee(ecrituresFiltrees, aNouveauxExercice, exerciceValideAffiche.valide_le, choixDesChampsBnc) : null
+  // Les pièces que l'exercice validé cite sans empreinte de dépôt : le paquet d'archive les prendra marquées « non vérifiée »
+  // (INAL3-Q1), et son bouton le dit avant le clic. Comptées sur les pièces validées lues ici (une pièce citée l'est
+  // toujours : `garder_piece_validee`) ; la lecture du paquet relit tout au clic.
+  const sansEmpreinteAuPaquet = exerciceValideAffiche
+    ? piecesSansEmpreinte(piecesValidees, piecesCiteesParLExercice(ecrituresFiltrees.filter((e) => e.statut === 'validee'), immobilisations)).length
+    : 0
   // LE LETTRAGE des comptes de tiers (lib/lettrage.ts), calculé sur TOUT le brouillon et non sur l'exercice affiché :
   // une facture de décembre réglée en janvier porte le même code dans les deux FEC. Il ne se fige pas avec l'exercice —
   // il dit l'état des comptes de tiers au jour de l'export, le FEC validé compris. Les lettrages faits à la main y
@@ -1957,6 +1964,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               ?? caisseIndisponible ?? (ventesDesExports === null || operationsDuFec === null ? 'les ventes facturées ou la caisse ne sont pas encore lues' : null)
             }
             fec={() => ({ nom: nomFichierFec(dossierSiret, anneeFilter), contenu: formaterFec(fecValide, lettrage, modele.mode) })}
+            sansEmpreinte={sansEmpreinteAuPaquet}
           />
         )}
         <button
