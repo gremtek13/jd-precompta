@@ -265,6 +265,37 @@ export function phraseDeLEclatement(etat: EtatDeLEclatement, annee: number): str
   return (refusALaValidation(etat, annee) as RefusDit).message
 }
 
+// ── Ce que la Vue d'ensemble en dit (MCB5g ; lib/pointsDeLaChecklist.ts, le point `ouverture-a-eclater`) ──────────────────
+
+/** Un exercice ouvert dont l'éclatement appelle un clic, sous la phrase de la carte. */
+export interface EclatementDUnExercice { annee: number; etat: EclatementAFaire['etat']; phrase: string }
+
+/**
+ * Les exercices OUVERTS — après le dernier validé : l'ouverture d'un exercice validé est figée avec lui — dont l'écriture qui
+ * éclate l'ouverture de la banque est à écrire, à réécrire ou à retirer, du plus ancien au plus récent, chacun sous la phrase de
+ * la carte et du préalable (`phraseDeLEclatement`). Les exercices jugés : ceux dont un compte bancaire autre que le principal
+ * ouvre le 512 propre (le 1er janvier de son `compte_propre_depuis`), ceux qu'une balance reprise ouvre (elle porte aussi les
+ * comptes propres d'avant), et ceux dont le brouillon porte une ligne de la source — de quoi dire « à retirer ». Un exercice
+ * RETENU (son ouverture qui attend la validation du précédent, un relevé du 31 décembre qui manque ou qui contredit l'autre, la
+ * somme qui ne fait pas l'ouverture) ne se dit pas ici : rien ne s'y écrit d'un clic, et la carte de l'onglet Écritures et le
+ * préalable de la validation le disent. Sans défaut : l'appelant dit tout ce qu'il a lu, en entier.
+ */
+export function eclatementsAFaire(e: Omit<EntreesDeLEclatement, 'annee'>, brouillon: readonly LigneEcriteDeLEclatement[]): EclatementDUnExercice[] {
+  const annees = new Set<number>()
+  for (const p of e.parts) {
+    if (p.compte !== null && !p.compte.principal && p.compte.compte_propre_depuis !== null) annees.add(Number(p.compte.compte_propre_depuis.slice(0, 4)))
+  }
+  for (const a of e.reprise) annees.add(Number(a.date.slice(0, 4)))
+  for (const l of brouillon) if (l.ouverture_compte_bancaire_id != null) annees.add(Number(l.date.slice(0, 4)))
+  return [...annees]
+    .filter((annee) => Number.isInteger(annee) && !e.anneesValidees.some((v) => v >= annee))
+    .sort((a, b) => a - b)
+    .flatMap((annee) => {
+      const etat = eclatementDeLExercice({ ...e, annee }, brouillon)
+      return eclatementAFaire(etat) ? [{ annee, etat: etat.etat, phrase: phraseDeLEclatement(etat, annee) as string }] : []
+    })
+}
+
 /** La confirmation du clic : chaque compte ouvert et son montant, et ce que l'écriture remplace ; ou le retrait. */
 export function confirmationDeLEclatement(etat: EclatementAFaire, annee: number): string {
   if (etat.etat === 'a_retirer') {

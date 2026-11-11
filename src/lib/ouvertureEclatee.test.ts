@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
 import type { CompteDuReleve } from './importParCompte'
 import {
-  REFUS_DE_LA_VALIDATION, REFUS_DE_L_ECLATEMENT, REFUS_DU_CLIC, etatDeLEclatement, eurosDeLaBase, libelleDeLEclatement,
+  REFUS_DE_LA_VALIDATION, REFUS_DE_L_ECLATEMENT, REFUS_DU_CLIC, eclatementsAFaire, etatDeLEclatement, eurosDeLaBase, libelleDeLEclatement,
   ouvertureEclateeAttendue, phraseDeLEclatement, refusALaValidation, type EntreesDeLEclatement,
 } from './ouvertureEclatee'
 import { releveParCompte } from './releveParCompte'
@@ -198,5 +198,33 @@ describe('le filet de la validation, au texte de sa migration', () => {
     expect(RETOUR_FILET).toMatch(/drop function public\.garder_ouverture_eclatee_a_la_validation\(\);/i)
     expect(RETOUR_OUVERTURE).toContain("if to_regprocedure('public.garder_ouverture_eclatee_a_la_validation()') is not null then")
     expect(RETOUR_OUVERTURE.indexOf('garder_ouverture_eclatee_a_la_validation')).toBeLessThan(RETOUR_OUVERTURE.search(/^drop /im))
+  })
+})
+
+// ── Les exercices dont l'éclatement appelle un clic (MCB5g ; le point `ouverture-a-eclater` de la Vue d'ensemble) ─────────
+describe('les exercices dont l’éclatement appelle un clic', () => {
+  const { annee: _annee, ...sansAnnee } = entrees()
+  const ecrite = (l: (typeof BONNE)[number], date = '2026-01-01') => ({ date, compte: l.compte, sens: l.sens as 'debit' | 'credit',
+    montant: l.montant, libelle: l.libelle, ouverture_compte_bancaire_id: l.compte_bancaire_id })
+  const A_ECRIRE = { annee: 2026, etat: 'a_ecrire', phrase: phraseDeLEclatement({ etat: 'a_ecrire', lignes: [] }, 2026) }
+
+  it('l’exercice qu’un compte ouvre, et celui d’une ligne de la source ; jamais un exercice validé', () => {
+    expect(eclatementsAFaire(sansAnnee, [])).toEqual([A_ECRIRE])
+    expect(eclatementsAFaire(sansAnnee, BONNE.map((l) => ecrite(l)))).toEqual([])
+    // Une ligne de la source au 01/01/2025, exercice validé : figée avec lui, elle ne se dit pas.
+    expect(eclatementsAFaire(sansAnnee, [ecrite(BONNE[0], '2025-01-01')])).toEqual([A_ECRIRE])
+    // Une ligne au 01/01/2027, où rien n'est à éclater : à retirer, après 2026.
+    expect(eclatementsAFaire(sansAnnee, [ecrite(BONNE[0], '2027-01-01')]).map((x) => [x.annee, x.etat])).toEqual([[2026, 'a_ecrire'], [2027, 'a_retirer']])
+    expect(eclatementsAFaire({ ...sansAnnee, anneesValidees: [2025, 2026] }, [])).toEqual([])
+  })
+
+  it('sous une balance reprise au 01/01/2026, un compte propre depuis 2025 : l’exercice de la reprise', () => {
+    const { annee: _a, ...repris } = entrees({ comptes: [P, { ...S, compte_propre_depuis: '2025-01-01' }], reprise: report(1250), reportes: [], validees: [] })
+    expect(eclatementsAFaire(repris, []).map((x) => [x.annee, x.etat])).toEqual([[2026, 'a_ecrire']])
+  })
+
+  it('une ouverture retenue ne se dit pas : rien ne s’y écrit d’un clic', () => {
+    const { annee: _a, ...retenue } = entrees({ reportes: report(1300) })
+    expect(eclatementsAFaire(retenue, [])).toEqual([])
   })
 })
