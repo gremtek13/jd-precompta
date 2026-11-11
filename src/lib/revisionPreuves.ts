@@ -9,6 +9,9 @@ import { formatDate, formatMoney } from './format'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { etatDeLOuverture, ouvertureDeLExercice } from './reportDesSoldes'
 import { premierReleveDeLaTenue, relevesAuTrenteEtUn } from './releveAuTrenteEtUn'
+import { compteDeBanqueDuMouvement } from './comptesBancaires'
+import type { LectureDesComptes } from './importParCompte'
+import { banquesAuTrenteEtUn, duCompte, releveParCompte, type PartDuReleve } from './releveParCompte'
 import { TAILLE_MAX_PREUVE_APPLICATION } from './revisionSoldes'
 import type {
   ANouveau, ControleReleveBancaire, DeclarationTva, DocumentDivers, EcritureBrouillon, ExerciceValide, Immobilisation,
@@ -61,6 +64,11 @@ export interface DonneesDesPreuves {
   verificationPrecedent: boolean | null
   lignes: readonly LigneBancaire[]
   controlesReleves: readonly ControleReleveBancaire[]
+  // Les comptes bancaires du dossier (ligne 26.6, MCB6 ; lib/comptesBancairesLecture.ts) : `sans_objet` tant que le drapeau
+  // `COMPTES_BANCAIRES_PREVUS` est baissé — la preuve du relevé d'hier, au caractère près ; lus, chaque compte se juge par ses
+  // seuls relevés (lib/releveParCompte.ts, `banquesAuTrenteEtUn`), comme la validation. Sans défaut : la lecture de la Vue
+  // d'ensemble les porte (lib/checklistLecture.ts), et la Révision les lui prend.
+  comptesBancaires: LectureDesComptes
   pieces: readonly PiecePourRevision[]
   documents: readonly DocumentPourRevision[]
   immobilisations: readonly Immobilisation[]
@@ -157,22 +165,33 @@ export interface PreuveProposee {
 
 // CE QUE CHAQUE PREUVE ÉTABLIT ET N'ÉTABLIT PAS (§ 3.6), écrit une fois : l'écran le montre, l'instantané le garde. Les
 // comptes qu'il nomme sont ceux du plan du dossier (ligne 43, étape PC3 ; conception, § 2.5) : sous le plan vide, le
-// texte d'hier au caractère près — un instantané déjà gardé se relit donc tel qu'il a été écrit.
-export function textesDesPreuves(plan: PlanComptable): Readonly<Record<TypeDePreuve, { etablit: string; netablitPas: string }>> {
+// texte d'hier au caractère près — un instantané déjà gardé se relit donc tel qu'il a été écrit. `parCompte` (MCB6) : les
+// comptes bancaires du dossier sont lus, chaque relevé est jugé sous son compte — ce que la preuve du relevé n'établit pas
+// change ; faux (le drapeau baissé), le texte d'hier.
+export function textesDesPreuves(
+  plan: PlanComptable,
+  parCompte: boolean,
+): Readonly<Record<TypeDePreuve, { etablit: string; netablitPas: string }>> {
   return {
     releve: {
       etablit: 'Le solde de la banque au 31 décembre, tiré d’un relevé qui boucle — celui dont la période finit le 31 '
         + 'décembre, sinon celui qui couvre la fin de ce jour, par son solde initial et ses mouvements jusqu’au 31 '
         + `décembre —, comparé au ${plan.banque} ; un écart se dit avec ses causes possibles.`,
-      netablitPas: 'Qu’aucun compte bancaire ne manque — un relevé ne dit pas de quel compte il est : plusieurs relevés au '
-        + '31 décembre se montrent un à un, sans s’additionner — ; le relevé lui-même, dont le document se cite ; une '
-        + 'remise de chèques de fin d’exercice.',
+      netablitPas: parCompte
+        ? 'Qu’aucun compte bancaire ne manque au dossier — chaque relevé se juge sous son compte, et plusieurs relevés d’un '
+          + 'même compte au 31 décembre ne s’additionnent jamais — ; le relevé lui-même, dont le document se cite ; une remise '
+          + 'de chèques de fin d’exercice.'
+        : 'Qu’aucun compte bancaire ne manque — un relevé ne dit pas de quel compte il est : plusieurs relevés au '
+          + '31 décembre se montrent un à un, sans s’additionner — ; le relevé lui-même, dont le document se cite ; une '
+          + 'remise de chèques de fin d’exercice.',
     },
     'virements-internes': {
       etablit: 'Que le compte est soldé au 31 décembre, ou la liste des virements de l’exercice sans contrepartie de même '
         + 'montant.',
-      netablitPas: 'Le solde d’un compte que l’application ne tient pas — un compte d’épargne, un second compte bancaire : '
-        + 'son relevé se cite.',
+      netablitPas: parCompte
+        ? 'Le solde d’un compte que l’application ne tient pas — un compte d’épargne : son relevé se cite.'
+        : 'Le solde d’un compte que l’application ne tient pas — un compte d’épargne, un second compte bancaire : '
+          + 'son relevé se cite.',
     },
     'registre-valeurs': {
       etablit: 'Que le solde du compte est la valeur des biens que le registre range à ce compte, acquis au plus tard le 31 '
@@ -329,7 +348,7 @@ function resumeDe(
 function conclure(
   type: TypeDePreuve,
   compte: string,
-  d: Pick<DonneesDesPreuves, 'annee' | 'modele'>,
+  d: Pick<DonneesDesPreuves, 'annee' | 'modele' | 'comptesBancaires'>,
   soldeCentimes: number,
   attenduCentimes: number | null,
   verdictForce: VerdictDePreuve | null,
@@ -343,7 +362,7 @@ function conclure(
   const ecartCentimes = attenduCentimes === null ? null : soldeCentimes - attenduCentimes
   const verdict: VerdictDePreuve = verdictForce ?? (ecartCentimes === 0 ? 'concorde' : 'ecart')
   return {
-    type, compte, annee, titre, ...textesDesPreuves(d.modele.plan)[type], soldeCentimes, attenduCentimes, ecartCentimes, verdict,
+    type, compte, annee, titre, ...textesDesPreuves(d.modele.plan, d.comptesBancaires.etat !== 'sans_objet')[type], soldeCentimes, attenduCentimes, ecartCentimes, verdict,
     resume: resumeDe(titre, verdict, soldeCentimes, attenduCentimes, ecartCentimes, raison), faits, detail, sourcesProposees,
   }
 }
@@ -362,9 +381,9 @@ function conclure(
 // La preuve les montre alors un à un, avec leur somme, et ne conclut pas : le cabinet sait, lui, combien le dossier a de
 // comptes.
 function preuveDuReleve(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
+  if (d.comptesBancaires.etat !== 'sans_objet') return preuveDuReleveParCompte(compte, soldeCentimes, d)
   // La sélection des relevés et le solde que chacun dit au 31 décembre : lib/releveAuTrenteEtUn.ts, que la validation lit
   // aussi (MVPD7-Q2) — une règle, écrite une fois.
-  const fin = `${d.annee}-12-31`
   const { finissent, couvrent, regardes, soldes: lus } = relevesAuTrenteEtUn(d.controlesReleves, d.lignes, d.annee)
   const faits: FaitDeLaPreuve[] = []
   const detail: LigneDeDetail[] = []
@@ -430,55 +449,194 @@ function preuveDuReleve(compte: string, soldeCentimes: number, d: DonneesDesPreu
   // LES CAUSES POSSIBLES D'UN ÉCART, sans en choisir une — dès que la preuve ne tombe pas juste. Le 512 du 31 décembre
   // cumule tout depuis l'ouverture : chaque cause se compte depuis la reprise, jusqu'au 31 décembre.
   if (attendu === null || attendu !== soldeCentimes) {
-    const reprise = dateDeLaReprise(d)
-    const ouvre = ouvertureDeLExercice(d.reprise, d.reportes, d.annee).some((a) => a.compte === compte)
     // Le premier relevé de la TENUE du dossier : celui qui commence au plus tôt parmi ceux qui finissent APRÈS le jour de
     // la reprise. Un relevé plus ancien est dans les comptes repris, et son solde initial ne dit rien de l'ouverture ; celui
     // qui finit le jour même aussi : son solde de clôture, daté de ce jour, est l'ouverture — comme le solde initial d'un
     // relevé qui commence le 1er janvier est celui de la fin du 31 décembre.
-    const premier = premierReleveDeLaTenue(d.controlesReleves, reprise)
-    if (premier && centimes(premier.solde_initial) !== 0) {
-      const initial = centimes(premier.solde_initial)
-      if (attendu !== null && soldeCentimes - attendu === -initial) {
-        faits.push(fait('ecart-egal-solde-initial',
-          `L’écart est exactement le solde initial du premier relevé du dossier (${soldeEnMots(initial)} au ${formatDate(premier.periode_debut)}) : `
-          + (ouvre ? 'l’ouverture du dossier ne le porte pas.' : `l’exercice n’a pas d’ouverture sur le ${compte}, qui part de zéro.`),
-          initial, null))
-      } else if (!ouvre) {
-        faits.push(fait('ouverture-absente',
-          `L’exercice n’a pas d’ouverture sur le ${compte}, et le premier relevé du dossier commence à ${soldeEnMots(initial)} : sans balance reprise, le ${compte} part de zéro.`,
-          initial, null))
-      }
-    }
-    const depuisLaReprise = (date: string) => date <= fin && (reprise === null || date >= reprise)
-    const ignores = mouvementsIgnoresHorsFec(d.lignes, reprise, null).filter((l) => l.date <= fin)
-    if (ignores.length > 0) {
-      const net = ignores.reduce((s, l) => s + centimes(l.montant), 0)
-      // Les deux sens à part (`montantsDesMouvementsIgnores`) : leur net seul cacherait un encaissement derrière un
-      // paiement du même montant.
-      faits.push(fait('mouvements-ignores',
-        `${pluriel(ignores.length, 'mouvement ignoré', 'mouvements ignorés')} jusqu’au 31/12/${d.annee} (${montantsDesMouvementsIgnores(ignores) ?? 'aucun montant'}), ${soldeEnMots(net)} au net : un doublon le reste, un mouvement réel manque au ${compte}.`,
-        net, ignores.length))
-    }
-    const aTraiter = d.lignes.filter((l) => l.statut === 'non_rapprochee' && depuisLaReprise(l.date))
-    if (aTraiter.length > 0) {
-      const net = aTraiter.reduce((s, l) => s + centimes(l.montant), 0)
-      faits.push(fait('mouvements-a-traiter',
-        `${pluriel(aTraiter.length, 'mouvement', 'mouvements')} à traiter jusqu’au 31/12/${d.annee}, ${soldeEnMots(net)} au net : ${accord(aTraiter.length, 'son', 'leur')} écriture manque au ${compte}.`,
-        net, aTraiter.length))
-    }
-    const sansMouvement = d.ecritures.filter((e) => e.compte === compte && !e.ligne_bancaire_id && depuisLaReprise(e.date))
-    if (sansMouvement.length > 0) {
-      const net = sommeEcritures(sansMouvement)
-      faits.push(fait('banque-sans-mouvement',
-        `${pluriel(sansMouvement.length, 'écriture', 'écritures')} du ${compte} jusqu’au 31/12/${d.annee} ${accord(sansMouvement.length, 'ne désigne', 'ne désignent')} aucun mouvement du relevé, ${soldeEnMots(net)} au net.`,
-        net, sansMouvement.length))
-    }
+    const premier = premierReleveDeLaTenue(d.controlesReleves, dateDeLaReprise(d))
+    faits.push(...causesDUnEcart(compte, soldeCentimes, attendu, d, d.lignes, premier ? [{ nom: null, releve: premier }] : []))
   }
   return conclure('releve', compte, d, soldeCentimes, attendu, verdictForce, raison, faits, detail, sources)
 }
 
 // ── Les virements internes (580000) ───────────────────────────────────────────────────────────────────────────────
+
+// LES CAUSES POSSIBLES D'UN ÉCART DU 512, écrites une fois pour la preuve d'hier et pour celle d'un compte bancaire (MCB6) :
+// `lignes`, les mouvements dont la banque s'écrit à ce compte (tout le relevé, le drapeau baissé) ; `premiers`, le premier
+// relevé de la tenue de chaque compte bancaire qui s'y écrit (`nom` nul : celui du dossier, les mots d'hier).
+function causesDUnEcart(
+  compte: string,
+  soldeCentimes: number,
+  attendu: number | null,
+  d: DonneesDesPreuves,
+  lignes: readonly LigneBancaire[],
+  premiers: readonly { nom: string | null; releve: ControleReleveBancaire }[],
+): FaitDeLaPreuve[] {
+  const faits: FaitDeLaPreuve[] = []
+  const fin = `${d.annee}-12-31`
+  const reprise = dateDeLaReprise(d)
+  const ouvre = ouvertureDeLExercice(d.reprise, d.reportes, d.annee).some((a) => a.compte === compte)
+  const avecSolde = premiers.filter((p) => centimes(p.releve.solde_initial) !== 0)
+  if (avecSolde.length > 0) {
+    const initial = avecSolde.reduce((t, p) => t + centimes(p.releve.solde_initial), 0)
+    const seul = avecSolde.length === 1 ? avecSolde[0] : null
+    const duPremier = seul === null ? '' : seul.nom === null ? 'du dossier' : `du compte « ${seul.nom} »`
+    const chacun = avecSolde.map((p) => `« ${p.nom ?? ''} » (${soldeEnMots(centimes(p.releve.solde_initial))} au ${formatDate(p.releve.periode_debut)})`)
+    const enUne = (liste: readonly string[]) => (liste.length > 1 ? `${liste.slice(0, -1).join(', ')} et ${liste[liste.length - 1]}` : liste[0])
+    if (attendu !== null && soldeCentimes - attendu === -initial) {
+      faits.push(fait('ecart-egal-solde-initial',
+        (seul !== null
+          ? `L’écart est exactement le solde initial du premier relevé ${duPremier} (${soldeEnMots(initial)} au ${formatDate(seul.releve.periode_debut)}) : `
+          : `L’écart est exactement la somme des soldes initiaux des premiers relevés des comptes ${enUne(chacun)}, ${soldeEnMots(initial)} à eux tous : `)
+        + (ouvre ? `l’ouverture du dossier ne ${seul !== null ? 'le' : 'la'} porte pas.` : `l’exercice n’a pas d’ouverture sur le ${compte}, qui part de zéro.`),
+        initial, null))
+    } else if (!ouvre) {
+      faits.push(fait('ouverture-absente',
+        (seul !== null
+          ? `L’exercice n’a pas d’ouverture sur le ${compte}, et le premier relevé ${duPremier} commence à ${soldeEnMots(initial)}`
+          : `L’exercice n’a pas d’ouverture sur le ${compte}, et les premiers relevés des comptes ${enUne(chacun)} commencent à ${soldeEnMots(initial)} à eux tous`)
+        + ` : sans balance reprise, le ${compte} part de zéro.`,
+        initial, null))
+    }
+  }
+  const depuisLaReprise = (date: string) => date <= fin && (reprise === null || date >= reprise)
+  const ignores = mouvementsIgnoresHorsFec(lignes, reprise, null).filter((l) => l.date <= fin)
+  if (ignores.length > 0) {
+    const net = ignores.reduce((s, l) => s + centimes(l.montant), 0)
+    // Les deux sens à part (`montantsDesMouvementsIgnores`) : leur net seul cacherait un encaissement derrière un
+    // paiement du même montant.
+    faits.push(fait('mouvements-ignores',
+      `${pluriel(ignores.length, 'mouvement ignoré', 'mouvements ignorés')} jusqu’au 31/12/${d.annee} (${montantsDesMouvementsIgnores(ignores) ?? 'aucun montant'}), ${soldeEnMots(net)} au net : un doublon le reste, un mouvement réel manque au ${compte}.`,
+      net, ignores.length))
+  }
+  const aTraiter = lignes.filter((l) => l.statut === 'non_rapprochee' && depuisLaReprise(l.date))
+  if (aTraiter.length > 0) {
+    const net = aTraiter.reduce((s, l) => s + centimes(l.montant), 0)
+    faits.push(fait('mouvements-a-traiter',
+      `${pluriel(aTraiter.length, 'mouvement', 'mouvements')} à traiter jusqu’au 31/12/${d.annee}, ${soldeEnMots(net)} au net : ${accord(aTraiter.length, 'son', 'leur')} écriture manque au ${compte}.`,
+      net, aTraiter.length))
+  }
+  const sansMouvement = d.ecritures.filter((e) => e.compte === compte && !e.ligne_bancaire_id && depuisLaReprise(e.date))
+  if (sansMouvement.length > 0) {
+    const net = sommeEcritures(sansMouvement)
+    faits.push(fait('banque-sans-mouvement',
+      `${pluriel(sansMouvement.length, 'écriture', 'écritures')} du ${compte} jusqu’au 31/12/${d.annee} ${accord(sansMouvement.length, 'ne désigne', 'ne désignent')} aucun mouvement du relevé, ${soldeEnMots(net)} au net.`,
+      net, sansMouvement.length))
+  }
+  return faits
+}
+
+// LE RELEVÉ AU 31 DÉCEMBRE, COMPTE BANCAIRE PAR COMPTE BANCAIRE (ligne 26.6, MCB6 ; MCB-Q7). Les comptes du dossier lus, la
+// base dit de quel compte est chaque relevé : la preuve n'a plus à douter. Elle suit la règle de la validation
+// (lib/releveParCompte.ts, `banquesAuTrenteEtUn`) : les comptes bancaires dont la banque s'écrit à ce 512 dans l'exercice —
+// le principal et, avant leur 1er janvier, les autres au 512 du rôle `banque` ; depuis, chacun au sien — disent chacun leur
+// solde au 31 décembre par leurs SEULS relevés ; plusieurs relevés d'un même compte qui disent le même solde n'en font qu'un
+// (le mensuel et l'annuel), jamais additionnés ; des soldes différents d'un même compte ne concluent pas ; un compte clos au
+// plus tard le 31 décembre compte pour zéro. Le 512 se compare à la somme des comptes, qui sont distincts. Les causes d'un
+// écart ne regardent que les mouvements dont la banque s'écrit à ce 512, et le premier relevé de chaque compte : pour un compte
+// qui tient son propre 512, celui qui finit après la veille de son 1er janvier.
+function preuveDuReleveParCompte(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
+  const faits: FaitDeLaPreuve[] = []
+  const detail: LigneDeDetail[] = []
+  const sources: SourceProposee[] = []
+  const releve = releveParCompte(d.comptesBancaires, d.lignes, d.controlesReleves)
+  if (releve.etat === 'retenu') {
+    return conclure('releve', compte, d, soldeCentimes, null, 'incomplete',
+      `${releve.raison} : le solde de chaque compte au 31/12/${d.annee} ne se lit pas.`, faits, detail, sources)
+  }
+  const banque = d.modele.plan.banque
+  const fin = `${d.annee}-12-31`
+  const groupe = banquesAuTrenteEtUn(releve.parts, d.annee, banque).find((g) => g.compte === compte)
+  const periodeDe = (c: ControleReleveBancaire) => `du ${formatDate(c.periode_debut)} au ${formatDate(c.periode_fin)}`
+  const raisons: string[] = []
+  if (groupe === undefined) {
+    faits.push(fait('aucun-releve', `Aucun compte bancaire du dossier ne tient le ${compte} en ${d.annee} : aucun relevé ne le prouve.`, null, null))
+    raisons.push(`aucun compte bancaire du dossier ne tient le ${compte} en ${d.annee}`)
+  }
+  for (const s of groupe?.soldes ?? []) {
+    const du = duCompte(s.part.nom)
+    if (s.etat === 'clos') {
+      detail.push({ libelle: `Compte${s.part.nom === null ? '' : ` « ${s.part.nom} »`} clos le ${formatDate(s.closLe)} : solde nul au 31/12/${d.annee}`, montantCentimes: 0, reference: null })
+      continue
+    }
+    const r = relevesAuTrenteEtUn(s.part.controles, s.part.lignes, d.annee)
+    for (const c of r.regardes.filter((x) => !x.coherent)) {
+      faits.push(fait('releve-ne-boucle-pas',
+        `Le relevé ${periodeDe(c)}${du} ne boucle pas — un écart de ${enEuros(centimes(c.ecart))} entre ses soldes et ses mouvements : il ne prouve pas le solde.`,
+        centimes(c.ecart), null))
+    }
+    for (const l of r.soldes) {
+      const c = l.controle
+      if (l.lu === null) {
+        faits.push(l.raison === 'sans_fichier'
+          ? fait('releve-sans-fichier',
+            `Le relevé ${periodeDe(c)}${du} couvre le 31/12/${d.annee}, mais son import n’a pas gardé de nom de fichier : ses mouvements ne se retrouvent pas, et son solde au 31 décembre ne se calcule pas.`, null, null)
+          : fait('mouvements-modifies',
+            `Les mouvements du relevé ${periodeDe(c)}${du} ne font plus en base la somme contrôlée à son import : son solde au 31 décembre ne se calcule pas.`, null, null))
+        continue
+      }
+      if (l.lu === 'solde_final' && l.mouvementsModifies) {
+        faits.push(fait('mouvements-modifies',
+          `Les mouvements du relevé ${periodeDe(c)}${du} ne font plus en base la somme contrôlée à son import : un mouvement a été retiré ou ajouté depuis.`, null, null))
+      }
+      detail.push({ libelle: `Relevé ${periodeDe(c)}${du} : solde au 31/12/${d.annee}`, montantCentimes: l.centimes, reference: { type: 'releve', id: c.id } })
+      for (const doc of d.documents) {
+        if (c.source_fichier !== null && doc.categorie === 'releve_bancaire' && doc.nom_fichier === c.source_fichier
+          && !sources.some((x) => x.documentId === doc.id)) {
+          sources.push({ pieceId: null, documentId: doc.id, raison: `Le relevé bancaire déposé sous le nom du relevé ${periodeDe(c)}${du}.` })
+        }
+      }
+    }
+    if (s.etat === 'inconnu') {
+      if (r.finissent.length === 0 && r.couvrent.length === 0) {
+        faits.push(fait('aucun-releve', `Aucun relevé importé${du} ne finit le 31/12/${d.annee} ni ne couvre la fin de ce jour.`, null, null))
+      }
+      raisons.push(`aucun relevé qui boucle ne donne le solde au 31/12/${d.annee}${du}`)
+    } else if (s.etat === 'plusieurs') {
+      // Plusieurs relevés d'un MÊME compte qui disent des soldes différents : l'un d'eux ne dit pas le bon. Jamais additionnés.
+      faits.push(fait('plusieurs-releves',
+        `${s.lus.length} relevés${du} disent des soldes différents au 31/12/${d.annee} (${s.lus.map((l) => soldeEnMots(l.centimes)).join(' ; ')}) : l’un d’eux ne dit pas le bon solde, ou est d’un autre compte.`,
+        null, s.lus.length))
+      raisons.push(`les relevés${du} disent des soldes différents au 31/12/${d.annee}`)
+    }
+  }
+  const attendu = groupe?.centimes ?? null
+  const raison = attendu === null ? `${raisons.join(' ; ')}.` : null
+  if (attendu === null || attendu !== soldeCentimes) {
+    const parts = groupe?.soldes.map((s) => s.part) ?? []
+    faits.push(...causesDUnEcart(compte, soldeCentimes, attendu, d, lignesAuCompte(parts, compte, banque, fin),
+      premiersDesComptes(parts, compte, banque, dateDeLaReprise(d))))
+  }
+  return conclure('releve', compte, d, soldeCentimes, attendu, attendu === null ? 'incomplete' : null, raison, faits, detail, sources)
+}
+
+// Les mouvements dont la jambe de banque s'écrit à `compte` (`compte_de_banque_du_mouvement`), jusqu'au 31 décembre.
+function lignesAuCompte(
+  parts: readonly PartDuReleve<LigneBancaire, ControleReleveBancaire>[],
+  compte: string,
+  banque: string,
+  fin: string,
+): LigneBancaire[] {
+  return parts.flatMap((p) => p.lignes.filter((l) => l.date <= fin
+    && (p.compte === null ? banque : compteDeBanqueDuMouvement(p.compte, l.date, banque)) === compte))
+}
+
+// Le premier relevé de la tenue de chaque compte : depuis la reprise ; pour un compte qui tient son propre 512 (`compte`
+// n'est pas celui du rôle `banque`), depuis la veille de son 1er janvier — ses relevés d'avant sont au 512 du principal.
+function premiersDesComptes(
+  parts: readonly PartDuReleve<LigneBancaire, ControleReleveBancaire>[],
+  compte: string,
+  banque: string,
+  reprise: string | null,
+): { nom: string | null; releve: ControleReleveBancaire }[] {
+  return parts.flatMap((p) => {
+    const veille = compte !== banque && p.compte !== null && p.compte.compte_propre_depuis !== null
+      ? `${Number(p.compte.compte_propre_depuis.slice(0, 4)) - 1}-12-31` : null
+    const limite = veille !== null && (reprise === null || veille > reprise) ? veille : reprise
+    const premier = premierReleveDeLaTenue(p.controles, limite)
+    return premier === undefined ? [] : [{ nom: p.nom, releve: premier }]
+  })
+}
 
 function preuveDesVirementsInternes(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
   if (soldeCentimes === 0) return conclure('virements-internes', compte, d, soldeCentimes, 0, null, null, [], [], [])
@@ -900,7 +1058,10 @@ function compositionDeLExploitant(compte: string, soldeCentimes: number, d: Donn
 
 /** La preuve que l'application propose pour un compte de bilan, à son solde de fin d'exercice (en centimes). */
 export function preuveDuCompte(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
-  switch (typeDePreuveDuCompte(compte, d.modele.plan)) {
+  // Le 512 propre d'un compte bancaire autre que le principal (MCB-Q1) se prouve par le relevé, comme celui du rôle `banque`.
+  const tenuParUnCompteBancaire = d.comptesBancaires.etat === 'lus'
+    && d.comptesBancaires.comptes.some((c) => !c.principal && c.compte === compte)
+  switch (tenuParUnCompteBancaire ? 'releve' : typeDePreuveDuCompte(compte, d.modele.plan)) {
     case 'releve': return preuveDuReleve(compte, soldeCentimes, d)
     case 'virements-internes': return preuveDesVirementsInternes(compte, soldeCentimes, d)
     case 'registre-valeurs': return preuveDuRegistreValeurs(compte, soldeCentimes, d)

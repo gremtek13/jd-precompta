@@ -44,7 +44,7 @@ describe('la preuve de chaque compte (conception, § 3.6)', () => {
       expect(typeDePreuveDuCompte(PLAN_DECALE[role], PLAN_DECALE), role).toBe(type)
       expect(typeDePreuveDuCompte(PLAN_PAR_DEFAUT[role], PLAN_DECALE), role).toBe('aucune')
     }
-    const textes = textesDesPreuves(PLAN_DECALE)
+    const textes = textesDesPreuves(PLAN_DECALE, false)
     expect(textes.releve.etablit).toContain('comparé au 512100 ;')
     expect(textes['declarations-tva'].etablit).toContain('au 445511 la TVA déclarée et non payée au 31 décembre, au 445671 le crédit reporté, au 445831 le remboursement demandé')
     expect(JSON.stringify(textes)).not.toMatch(/512000|445510|445670|445830/)
@@ -60,12 +60,12 @@ describe('la preuve de chaque compte (conception, § 3.6)', () => {
 
   it('dit ce que chaque preuve établit et n’établit pas', () => {
     for (const type of TYPES_DE_PREUVE) {
-      expect(textesDesPreuves(PLAN_PAR_DEFAUT)[type].etablit.length, type).toBeGreaterThan(20)
-      expect(textesDesPreuves(PLAN_PAR_DEFAUT)[type].netablitPas.length, type).toBeGreaterThan(20)
+      expect(textesDesPreuves(PLAN_PAR_DEFAUT, false)[type].etablit.length, type).toBeGreaterThan(20)
+      expect(textesDesPreuves(PLAN_PAR_DEFAUT, false)[type].netablitPas.length, type).toBeGreaterThan(20)
     }
     // Ce que la conception range dans « n'établit pas » se dit (§ 3.6) — et ce que la relecture y a ajouté.
-    expect(textesDesPreuves(PLAN_PAR_DEFAUT).releve.netablitPas).toContain('aucun compte bancaire ne manque')
-    expect(textesDesPreuves(PLAN_PAR_DEFAUT)['declarations-tva'].netablitPas).toContain('exigibilité')
+    expect(textesDesPreuves(PLAN_PAR_DEFAUT, false).releve.netablitPas).toContain('aucun compte bancaire ne manque')
+    expect(textesDesPreuves(PLAN_PAR_DEFAUT, false)['declarations-tva'].netablitPas).toContain('exigibilité')
   })
 
   it('un compte sans preuve : rien d’attendu, et le dire', () => {
@@ -1069,7 +1069,7 @@ describe('l’instantané d’une preuve, gardé avec la décision', () => {
       expect(instantane).toMatchObject({ type: p.type, compte: p.compte, annee: p.annee, verdict: p.verdict, soldeCentimes: p.soldeCentimes, resume: p.resume })
       const relu = lireInstantaneDePreuve(JSON.parse(JSON.stringify(instantane)))
       expect(relu, p.type).toEqual(instantane)
-      expect(relu?.etablit).toBe(textesDesPreuves(PLAN_PAR_DEFAUT)[p.type].etablit)
+      expect(relu?.etablit).toBe(textesDesPreuves(PLAN_PAR_DEFAUT, false)[p.type].etablit)
     }
   })
 
