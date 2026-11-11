@@ -154,6 +154,14 @@ describe('les missions en vigueur, dans le dossier d’un client', () => {
     expect(screen.getByText(/ne t’est pas ouvert/)).toBeTruthy()
   })
 
+  it('la lecture refusée par la base (LM5-Q2) : dite refusée, à ses mots, jamais « aucune lettre »', () => {
+    etat.missions = { etat: 'refusee', dossierClientId: C, motif: 'Accès refusé à ce dossier.' }
+    render(<MissionsEnVigueurCard dossierId={C} estLeDossierDuCabinet={false} />)
+    expect(screen.queryByText(/Aucune lettre/)).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('La base a refusé la lecture des lettres de mission de ce client '
+      + '(Accès refusé à ce dossier.) : ce qu’elles confient au cabinet ne se dit pas ici.')
+  })
+
   it('lue : les missions et leurs dates, aucun montant', () => {
     etat.missions = {
       etat: 'lue', dossierClientId: C, lettres: [{ ...lettre({ proposee_le: '2026-11-10T09:00:00Z', acceptee_le: '2026-11-10T12:00:00Z', date_effet: '2026-01-01' }) }],

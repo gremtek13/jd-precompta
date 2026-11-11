@@ -100,6 +100,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
       + '`security definer`, sans écriture ; migration `reprises_au_client`, A8Q5-Q2, préparée), au montage de « Ma '
       + 'simulation » — derrière `REPRISES_AU_CLIENT_PREVUES`.',
   },
+  'rpc:missions_du_client': {
+    nature: 'lecture',
+    raison: 'Les lettres de mission proposées d’un client, sans leurs honoraires (fonction `stable`, `security definer`, sans '
+      + 'écriture ; migration `missions_du_client`, LM5-Q2, préparée), au montage de la carte « Missions confiées au cabinet » '
+      + 'du dossier du client — derrière `MISSIONS_DU_CLIENT_PREVUES`.',
+  },
   'rpc:reprise_de_la_facture': {
     nature: 'lecture',
     raison: 'Ce que l’encaissement d’une facture reprise demande — date de reprise, encaissé avant la reprise, avoirs repris, '
