@@ -515,8 +515,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   par compte et le virement entre comptes ; MCB4, la suite des soldes, le 31 décembre par 512, les mois manquants et la
   validation par compte (`lib/releveParCompte.ts`), `couverture_du_releve` par compte préparée ; MCB5 (première partie), la jambe
   de banque au 512 du compte du mouvement : les dix fonctions du relevé préparées, à coller (`jambe_de_banque_par_compte`), la
-  composition par `lib/banqueDuMouvement.ts` dans la fiche Banque ; MCB6, la carte « Comptes bancaires » (Informations) et la
-  preuve du relevé par compte → « LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES DIX FONCTIONS DU RELEVÉ (MCB5) », « LES ÉCRANS
+  composition par `lib/banqueDuMouvement.ts` dans la fiche Banque, puis (seconde partie) dans Écritures, Virements,
+  Cotisations, le lot des règles et les sept détecteurs (`banques`, paramètre obligatoire ; une banque inconnue ne se juge pas) ; MCB6, la carte « Comptes bancaires » (Informations) et la
+  preuve du relevé par compte → « LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES DIX FONCTIONS DU RELEVÉ (MCB5) », « LA JAMBE DE BANQUE PAR COMPTE
+  BANCAIRE : LES GESTES HORS DE BANQUE ET LES DÉTECTEURS (MCB5, SECONDE PARTIE) », « LES ÉCRANS
   DU CABINET POUR PLUSIEURS COMPTES BANCAIRES (MCB6) », « LA SUITE DES SOLDES, LE 31
   DÉCEMBRE, LA COUVERTURE ET LA VALIDATION PAR COMPTE BANCAIRE (MCB4) », « PLUSIEURS COMPTES
   BANCAIRES D'UN DOSSIER : LA CONCEPTION », « PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : D'EMBLÉE, LES LOTS, ET LA BASE
