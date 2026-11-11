@@ -239,6 +239,11 @@ const VISITES = [
   },
   // Sa Clôture : la concordance de la 2035 avec les écritures, dont le bien sans nature est l'écart.
   { dossier: 'd7', onglet: 'cloture', nom: 'assujetti/cloture' },
+  // Le dossier basculé (d12) : sa Clôture porte le volet social d'une profession relevant de la CIPAV (ligne 27.1,
+  // `PROFESSIONS_CIPAV_PREVUES` levé le 11/11/2026), et son onglet Factures la section « Factures de l'ancien logiciel »
+  // (A8d2b, `IMPORT_DES_FACTURES_OFFERT` levé le même jour).
+  { dossier: 'd12', onglet: 'cloture', nom: 'cipav/cloture' },
+  { dossier: 'd12', onglet: 'factures', nom: 'import/factures-de-l-ancien-logiciel' },
   // Le registre des immobilisations déplié : le tableau d'amortissement d'un bien, le formulaire qui le
   // modifie et celui d'une nature n'apparaissent qu'après un clic. Puis un bien sans nature et plusieurs
   // candidates (dossier assujetti), et une dotation d'un exercice fini qui manque (engagement).

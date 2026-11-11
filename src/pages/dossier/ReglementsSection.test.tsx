@@ -8,6 +8,12 @@ import type {
 } from '../../lib/types'
 import { NON_BASCULE } from '../../test/factures'
 
+// La section « Factures de l'ancien logiciel » (A8d2b) se monte dans l'onglet du cabinet depuis que
+// `IMPORT_DES_FACTURES_OFFERT` est levé (11/11/2026) ; elle lit l'import et demande la session. Ces cas jugent le reste de
+// l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
+// FacturesTab.test.tsx.
+vi.mock('./ImportDesFactures', () => ({ default: () => null }))
+
 // « RÈGLEMENTS » (espace client, étape A3) : la vue de l'onglet Factures, montée pour le cabinet et pour le client « Ventes »,
 // avec la VRAIE fenêtre des encaissements. Ce que ces cas gardent, et qu'aucun calcul pur ne voit :
 //  1. avant sa lecture, ni « aucun », ni total, ni export ; lue vide en entier, elle le dit ; lue en partie, rien que le motif ;

@@ -1,4 +1,5 @@
--- RETOUR de `professions_cipav` (20261111130000) : la contrainte d'hier et les commentaires d'hier.
+-- RETOUR de `professions_cipav` (20261111130000, en production depuis le 11/11/2026 : supabase/schema/
+-- 20261111130000_professions_cipav.sql) : la contrainte d'hier et les commentaires d'hier.
 --
 -- Il ne retire aucune ligne. Une ligne qui porte `liberal_cipav` le fait REFUSER (la contrainte d'hier ne s'ajoute pas
 -- sur elle, 23514) : défaire la migration demanderait alors d'abord de vider ces professions, une perte de données que

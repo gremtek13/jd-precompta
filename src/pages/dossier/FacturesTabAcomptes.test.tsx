@@ -10,6 +10,12 @@ import {
   REFUS_FINALE_ACOMPTE_EN_BROUILLON, refusAcompteRepris, refusCumulDesAcomptes,
 } from '../../lib/acomptesDesFactures'
 
+// La section « Factures de l'ancien logiciel » (A8d2b) se monte dans l'onglet du cabinet depuis que
+// `IMPORT_DES_FACTURES_OFFERT` est levé (11/11/2026) ; elle lit l'import et demande la session. Ces cas jugent le reste de
+// l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
+// FacturesTab.test.tsx.
+vi.mock('./ImportDesFactures', () => ({ default: () => null }))
+
 // LA FACTURE D'ACOMPTE ET LA FINALE DANS L'ONGLET DES FACTURES (étape P5b5b), avec le VRAI onglet, son formulaire et sa
 // fenêtre d'avoir, et un faux client qui APPLIQUE les filtres, projette les colonnes demandées et annonce un compte. Ce que
 // ces cas gardent, dans les deux espaces : le drapeau baissé, l'onglet d'hier au caractère près et aucune colonne neuve

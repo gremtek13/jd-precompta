@@ -50676,3 +50676,19 @@ Agent architecte, rien d'appliqué ; LM-Q2 à LM-Q6 et LM-Q10. `supabase/prepare
 **L'acceptation en ligne** est prévue par le schéma (mode, compte, empreinte acceptée) et fermée : aucune fonction ne l'écrit, la garde la refuse à tout auteur, restauration comprise, tant que `acceptation_en_ligne_ouverte()` rend faux ; l'ouvrir (LM6) remplace ce drapeau et ajoute la fonction du client. Écartés : la fonction écrite derrière le drapeau (un code qui lirait des colonnes de B1 absentes, que rien n'éprouve) ; rien au schéma (l'ouverture changerait les contraintes d'une table déjà peuplée).
 
 **Preuves**, sur une copie de la réplique de LM1 (195 migrations égales à la production, LM1 posée) : l'essai neuf `lettresDeMission.sql` (réplique seulement), 62 étapes vraies, EN ATTENTE sans la migration ; dix mutations de la migration, toutes tuées ; `rls.sql` entier, bloc LM neuf (LM1 à LM7, trois mutations) : avec la migration 153 lignes, 0 en faute, 103 mutations sur 103, sans elle 143, 0 en faute, 100 sur 100, LM EN ATTENTE ; `restauration.sql` (son bloc neuf) IDENTIQUE ; le retour rend la signature d'avant (neuf familles). Module pur `lib/lettresDeMission.ts` derrière `LETTRES_DE_MISSION_PREVUES` baissé, au plan de sauvegarde derrière le même drapeau. Questions LM4-Q1 (la clause de sous-traitance de toute lettre) et LM4-Q2 (le numéro d'inscription à l'Ordre). Pour LM5 : l'empreinte du PDF, s'il se garde ; dire avant le clic qu'un papier signé ne se supprime plus (23503) ; la lecture des missions en vigueur par les membres du dossier du client.
+
+### 11/11/2026 — LE JOUR J DU 11/11/2026 : DEUX MIGRATIONS EN PRODUCTION (CIPAV, A8D2A) ET L'IMPORT DES FACTURES OFFERT
+
+(Agent architecte ; en production, des SELECT seulement.) L'historique compte 197 migrations ; chaque texte (statements
+joints, retours chariot ôtés) a l'empreinte du fichier préparé, passé à l'export sous sa version, texte inchangé : RET-Q1
+`professions_cipav` 20261111130000 (`2d45a47c…`, collée par le cabinet) et A8d2a `originaux_des_imports` 20261111131855
+(`25ca5c0b…`, par l'outil). Les retours restent préparés, leur en-tête au nouveau chemin. Levés : `PROFESSIONS_CIPAV_PREVUES`
+(le volet social offre la CIPAV), `ORIGINAUX_DES_IMPORTS_PREVUS` (le seau des ventes du module à 20 Mio, PDF, texte brut et
+CSV ; le pack et la sauvegarde portent les originaux), puis `IMPORT_DES_FACTURES_OFFERT` (A8D2B-Q3 : « après la
+modification du stockage »). Leur état d'avant reste éprouvé : `bornesDuSeauDesVentes(false)` contre la migration du logo
+et la première ligne de bornesStockage.sql (le logo jugé à `TAILLE_MAX_LOGO_DE_FACTURE`, plus à la borne du seau),
+`professionsOffertes(false, …)`, les accesseurs des tests d'écran. Contrôles, production et dépôt égaux : dérive 197
+`07779d7b…` ; socle 82 `8a0e4907…`, inchangé ; inventaire 2 749 `f522cbe9…` (2 748 avant : la policy de dépôt des
+originaux). Le banc : `d12` porte une date de reprise et un volet social CIPAV ; six vues (`pc-volet-cipav*`,
+`pc-import-factures*`) et deux visites de `debordements.mjs`. Les essais `professionsCipav.sql`, `originauxDesImports.sql`,
+`bornesStockage.sql`, `logoDesFactures.sql` et le bloc OI de `rls.sql` se rejouent en production par la session.

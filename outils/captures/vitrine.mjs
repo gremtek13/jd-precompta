@@ -120,6 +120,11 @@ const VUES = [
   { nom: 'pc-volet-sombre', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Total à la charge du praticien' },
   { nom: 'pc-volet-assistant', chemin: '#/dossiers/d1/cloture', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'Volet social 2026' },
   { nom: 'mobile-volet-clair', chemin: '#/dossiers/d1/cloture', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Total à la charge du praticien' },
+  // Le volet social d'une profession relevant de la CIPAV (ligne 27.1, RET-Q1 ; `PROFESSIONS_CIPAV_PREVUES` levé le
+  // 11/11/2026), sur le dossier basculé d12 : la profession choisie, la retraite recouvrée par l'Urssaf.
+  { nom: 'pc-volet-cipav', chemin: '#/dossiers/d12/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Volet social 2026' },
+  { nom: 'pc-volet-cipav-sombre', chemin: '#/dossiers/d12/cloture', l: 1280, h: 800, theme: 'dark', reduite: false, vers: 'Paramètres des cotisations' },
+  { nom: 'mobile-volet-cipav', chemin: '#/dossiers/d12/cloture', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Volet social 2026' },
   // La CA3 préparée case par case, sur le seul dossier assujetti du banc (d7) : le régime, la
   // déclaration de la dernière période close, puis l'historique des déclarations déposées.
   { nom: 'pc-tva-clair', chemin: '#/dossiers/d7/tva', l: 1440, h: 900, theme: 'light', reduite: false },
@@ -351,6 +356,11 @@ const VUES = [
   // encaissements (ses statuts, le refus en tête, l'enregistrement refusé), la déclaration d'un chèque de F2026-0008 (« Statuts
   // lus sur … : aucun refus de l'acheteur », et ses trois statuts), puis « Relire les statuts depuis le début » du cabinet
   // infirmier, confirmation acceptée.
+  // Les factures de l'ancien logiciel (ligne 51.5, A8d2b ; `IMPORT_DES_FACTURES_OFFERT` levé le 11/11/2026), sur le
+  // dossier basculé d12 : la date de reprise, le choix des fichiers, aucun import encore.
+  { nom: 'pc-import-factures', chemin: '#/dossiers/d12/factures', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Factures de l’ancien logiciel' },
+  { nom: 'pc-import-factures-sombre', chemin: '#/dossiers/d12/factures', l: 1024, h: 768, theme: 'dark', reduite: false, vers: 'Factures de l’ancien logiciel' },
+  { nom: 'mobile-import-factures', chemin: '#/dossiers/d12/factures', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Factures de l’ancien logiciel' },
   { nom: 'pc-factures-statuts', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Lire les statuts de la plateforme' },
   { nom: 'pc-factures-statuts-sombre', chemin: '#/dossiers/d7/factures', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Lire les statuts de la plateforme' },
   { nom: 'mobile-factures-statuts', chemin: '#/dossiers/d7/factures', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Lire les statuts de la plateforme' },

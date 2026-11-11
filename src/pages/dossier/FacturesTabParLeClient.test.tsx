@@ -5,6 +5,12 @@ import { facture as factureCii } from '../../test/facturesCii'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 import { NON_BASCULE } from '../../test/factures'
 
+// La section « Factures de l'ancien logiciel » (A8d2b) se monte dans l'onglet du cabinet depuis que
+// `IMPORT_DES_FACTURES_OFFERT` est levé (11/11/2026) ; elle lit l'import et demande la session. Ces cas jugent le reste de
+// l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
+// FacturesTab.test.tsx.
+vi.mock('./ImportDesFactures', () => ({ default: () => null }))
+
 // « PAR LE CLIENT » DANS L'ONGLET FACTURES DU CABINET (espace client, étape P4c). Le cabinet voit tout ce que le client fait,
 // et QUI : le compte qui a validé une facture, ou qui a rédigé un brouillon, se reconnaît parmi les accès du dossier
 // (`memberships.user_id`). Ce que ces cas gardent :

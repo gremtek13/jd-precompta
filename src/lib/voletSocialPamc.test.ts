@@ -222,15 +222,16 @@ describe('la CIPAV (ligne 27.1, RET-Q1)', () => {
   })
 
   it('ne s’offre à l’écran que sous son drapeau, ou quand la ligne lue la porte déjà', () => {
-    expect(PROFESSIONS_CIPAV_PREVUES).toBe(false)
+    // Levé le 11/11/2026, la migration `professions_cipav` en production ; baissé, l'écran ne l'offrait pas.
+    expect(PROFESSIONS_CIPAV_PREVUES).toBe(true)
     expect(professionsOffertes(false, '')).not.toContain('liberal_cipav')
     expect(professionsOffertes(false, '').length).toBe(5)
     expect(professionsOffertes(true, '')).toContain('liberal_cipav')
     expect(professionsOffertes(false, 'liberal_cipav')).toContain('liberal_cipav')
   })
 
-  it('dit les mêmes professions que la contrainte de la migration préparée, au caractère près', () => {
-    const migration = readFileSync('supabase/preparees/20261111130000_professions_cipav.sql', 'utf8')
+  it('dit les mêmes professions que la contrainte de la migration (en production le 11/11/2026), au caractère près', () => {
+    const migration = readFileSync('supabase/schema/20261111130000_professions_cipav.sql', 'utf8')
     const liste = /add constraint volet_social_pamc_profession_check check \(profession in \(([^)]*)\)\)/.exec(migration)
     expect(liste).not.toBeNull()
     const enBase = [...liste![1].matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1])

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TAILLE_MAX } from './bornesStockage'
+import { TAILLE_MAX_LOGO_DE_FACTURE } from './bornesStockage'
 import { motsDuCabinet } from './espaceVentes'
 import { MENTIONS_FIGEES_EXPORTEES } from './mentionsFigees'
 import { cheminDuLogo, type LogoLu } from './logoDesFactures'
@@ -197,7 +197,7 @@ describe('le refus que la base opposerait, dit avant le clic', () => {
   })
 
   it('le fichier déposé est bien compté : un poids au-delà de la borne, un type qui n’est pas celui du nom', () => {
-    expect(refusDuNouveauLogo(D, PLEINE, versions, pret(H1, { taille: TAILLE_MAX.ventes + 1 }))).toMatchObject({ cle: 'logo_poids' })
+    expect(refusDuNouveauLogo(D, PLEINE, versions, pret(H1, { taille: TAILLE_MAX_LOGO_DE_FACTURE + 1 }))).toMatchObject({ cle: 'logo_poids' })
     expect(refusDuNouveauLogo(D, PLEINE, versions, { ...pret(H1), type: 'image/jpeg' })).toMatchObject({ cle: 'logo_type' })
   })
 

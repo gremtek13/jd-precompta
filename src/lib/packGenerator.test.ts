@@ -476,7 +476,9 @@ describe('les originaux des factures reprises (A8d2c)', () => {
     expect(originauxDeLaPeriode(lots, reprises, new Set())).toEqual([])
   })
 
-  it('l’état réel du drapeau est celui que ces cas jouent par défaut, et il est baissé tant que la migration attend', () => {
-    expect(ORIGINAUX_REEL).toBe(false)
+  // Levé le 11/11/2026 (`originaux_des_imports` en production) : les cas jouent l'état réel par défaut ; l'état d'avant, sans
+  // aucune lecture des imports, reste joué ci-dessus (`etat.originaux = false`).
+  it('l’état réel du drapeau est celui que ces cas jouent par défaut : levé, la migration en production', () => {
+    expect(ORIGINAUX_REEL).toBe(true)
   })
 })

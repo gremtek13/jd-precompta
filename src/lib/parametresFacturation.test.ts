@@ -937,9 +937,10 @@ describe('PARAMETRES_FACTURATION_EXPORTES dit ce que porte l’export', () => {
       expect(texte).toContain(`grant execute on function public.${fonction} to authenticated;`)
     }
     expect(texte).toContain('revoke execute on function public.garder_parametres_facturation() from public, anon, authenticated;')
-    // L'accès d'abord : les ventes pour enregistrer, le cabinet pour confirmer.
+    // L'accès d'abord : les ventes pour enregistrer, le cabinet pour confirmer. Depuis A8d2a (`originaux_des_imports`), la
+    // dernière définition de la première est la recopie de la production, dont le corps s'ouvre par `$function$`.
     expect(derniereDefinitionSql('enregistrer_parametres_facturation'))
-      .toMatch(/\$\$\ndeclare[\s\S]*?\nbegin\n {2}if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
+      .toMatch(/\$(?:function)?\$\ndeclare[\s\S]*?\nbegin\n {2}if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
     expect(derniereDefinitionSql('confirmer_rib'))
       .toMatch(/\$\$\ndeclare[\s\S]*?\nbegin\n {2}if not public\.admin_du_dossier\(p_dossier_id\) or not exists/)
     // Rien n'y retire quoi que ce soit : le mot n'y paraît que dans trois formes, qu'`apply_migration` prend sans confirmation.

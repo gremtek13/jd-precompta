@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TAILLE_MAX } from './bornesStockage'
+import { TAILLE_MAX_LOGO_DE_FACTURE } from './bornesStockage'
 import { lireLeLogo } from './logoDesFacturesLecture'
 import { supabase } from './supabase'
 import { empreinteDe, jpegFictif, logoDe } from '../test/logoFictif'
@@ -60,7 +60,7 @@ describe('le fichier que la version désigne, lu et vérifié', () => {
   it('un fichier vide, ou plus gros que la borne du seau : illisible, sans calcul d’empreinte', async () => {
     deposer(CHEMIN, new Uint8Array(0))
     expect(await lireLeLogo({ chemin: CHEMIN, empreinte: H })).toEqual({ etat: 'illisible' })
-    deposer(CHEMIN, logoDe(TAILLE_MAX.ventes))
+    deposer(CHEMIN, logoDe(TAILLE_MAX_LOGO_DE_FACTURE))
     expect(await lireLeLogo({ chemin: CHEMIN, empreinte: H })).toEqual({ etat: 'illisible' })
   })
 

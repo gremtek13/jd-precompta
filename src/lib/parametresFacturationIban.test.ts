@@ -170,9 +170,12 @@ describe('la migration iban_hors_des_parametres', () => {
   const neuve = entre(IBAN_PARAMETRES.texte, 'create or replace function public.enregistrer_parametres_facturation(', '$$;\n')
   const RANG_9 = entre(neuve, '  -- 9. Un IBAN dans un texte libre', "  -- L'état du RIB (MEG1-Q12, hypothèse)")
 
-  it('après mentions_figees, qu’elle suppose ; la dernière définition de la fonction est la sienne', () => {
+  // Jusqu'à A8d2a (`originaux_des_imports`, 20261111131855), qui la recopie de la production avec trois lignes de plus (la
+  // borne du logo : bornesStockage.test.ts) — la garde de cette migration en a vérifié l'empreinte avant de la remplacer.
+  it('après mentions_figees, qu’elle suppose ; sa définition est la dernière jusqu’aux originaux des imports', () => {
     expect(version(IBAN_PARAMETRES) > version(MENTIONS)).toBe(true)
-    expect(derniereDefinitionSql('enregistrer_parametres_facturation')).toBe(neuve)
+    expect(derniereDefinitionSql('enregistrer_parametres_facturation', (f) => (/\/(\d{14})_/.exec(f.chemin)?.[1] ?? '') < '20261111131855')).toBe(neuve)
+    expect(derniereDefinitionSql('enregistrer_parametres_facturation')).not.toBe(neuve)
   })
 
   it('le texte de l’étape A5c1 au caractère près, hors de ses deux insertions : la variable et le neuvième rang', () => {

@@ -4,6 +4,12 @@ import FacturesTab from './FacturesTab'
 import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
 import type { FactureEmise } from '../../lib/types'
 
+// La section « Factures de l'ancien logiciel » (A8d2b) se monte dans l'onglet du cabinet depuis que
+// `IMPORT_DES_FACTURES_OFFERT` est levé (11/11/2026) ; elle lit l'import et demande la session. Ces cas jugent le reste de
+// l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
+// FacturesTab.test.tsx.
+vi.mock('./ImportDesFactures', () => ({ default: () => null }))
+
 // LA SUPPRESSION D'UN BROUILLON, DANS LES DEUX ÉTATS DU DRAPEAU (espace client, étape P2). `supprimer_brouillon_facture`
 // vit dans une migration que le cabinet a collée le 10/10/2026 (20261010130643) ; l'export la porte depuis, et
 // `SUPPRESSION_BROUILLON_EXPORTEE` est levé dans lib/factures.ts (factures.test.ts confronte l'un à l'autre) : l'onglet

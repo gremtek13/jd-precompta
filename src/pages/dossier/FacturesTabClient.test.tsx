@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
 import { motsDuCabinet } from '../../lib/espaceVentes'
@@ -8,6 +8,18 @@ import type {
   TransmissionFacture,
 } from '../../lib/types'
 import { NON_BASCULE } from '../../test/factures'
+
+// La section « Factures de l'ancien logiciel » (A8d2b) se monte dans l'onglet du cabinet depuis que
+// `IMPORT_DES_FACTURES_OFFERT` est levé (11/11/2026) ; elle lit l'import et demande la session. Ces cas jugent le reste de
+// l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
+// FacturesTab.test.tsx. Ici, un marqueur compte ses montages : l'espace client ne la monte jamais.
+const importDesFactures = vi.hoisted(() => ({ montes: 0 }))
+vi.mock('./ImportDesFactures', () => ({
+  default: () => {
+    importDesFactures.montes += 1
+    return null
+  },
+}))
 
 // L'ÉTAT D'AVANT L'ÉTAPE A7B, éprouvé tant que son code existe (CLAUDE.md, « Tests ») : le drapeau `MENTIONS_FIGEES_EXPORTEES`
 // baissé, le formulaire n'envoie ni ne lit rien de neuf. Ce que le drapeau levé change se joue dans
@@ -457,6 +469,15 @@ describe('FacturesTab en mode client — le garde des mots', () => {
 
 // ── 2. Les gestes du cabinet retirés ─────────────────────────────────────────────────────────────────────────────────
 describe('FacturesTab en mode client — les gestes du cabinet retirés', () => {
+  it('la section des factures de l’ancien logiciel (A8d2b, drapeau levé) ne se monte que pour le cabinet', async () => {
+    importDesFactures.montes = 0
+    await monter('client')
+    expect(importDesFactures.montes).toBe(0)
+    cleanup()
+    await monter('cabinet')
+    expect(importDesFactures.montes).toBeGreaterThan(0)
+  })
+
   it('l’adresse du dossier ne s’enregistre pas depuis la facture ; absente, elle se dit', async () => {
     await monter('client')
     fireEvent.click(screen.getByRole('button', { name: '+ Nouvelle facture' }))

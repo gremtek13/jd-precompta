@@ -73,15 +73,17 @@ export function typeDUnePiece(nom: string, debut: Uint8Array): string | null {
 // ni SVG, qui porte du script — et 500 Kio, la borne de la conception (§A.5.2) : une en-tête de facture, pas une
 // photographie. Jusqu'à A8d2a, le seau ne portait que lui, et ses bornes étaient celles du seau.
 //
-// La migration `originaux_des_imports` (supabase/preparees/, PRÉPARÉE, pas appliquée) y range aussi l'ORIGINAL d'une
+// La migration `originaux_des_imports` (supabase/schema/20261111131855_originaux_des_imports.sql, en production depuis le
+// 11/11/2026) y range aussi l'ORIGINAL d'une
 // facture reprise de l'ancien logiciel, sous `<dossier>/imports/<lot>/<empreinte>.<pdf|xml|csv>` : le stockage jugeant le
 // type et la taille au niveau du SEAU (une policy ne voit pas le fichier), le seau admet alors l'union — 20 Mio, et le
 // PDF, le texte brut (un XML, rangé en `text/plain` : servi sous un type XML, il peut porter du script, comme un SVG) et
 // le CSV en plus —, et `enregistrer_parametres_facturation` borne le logo à la plus petite de la borne du seau et de
-// 512 000 octets. `ORIGINAUX_DES_IMPORTS_PREVUS` dit si elle est en base : baissé, le seau garde ses bornes d'hier.
+// 512 000 octets. `ORIGINAUX_DES_IMPORTS_PREVUS` dit si elle est en base : levé le 11/11/2026 ; son état d'avant (le seau aux bornes du
+// logo) reste éprouvé par `bornesDuSeauDesVentes(false)` et, dans les écrans, par un accesseur.
 
-/** La migration `originaux_des_imports` est-elle en base ? Baissé tant qu'elle n'est que préparée (A8d2a). */
-export const ORIGINAUX_DES_IMPORTS_PREVUS = false
+/** La migration `originaux_des_imports` est-elle en base ? Oui depuis le 11/11/2026 (A8d2a, version 20261111131855). */
+export const ORIGINAUX_DES_IMPORTS_PREVUS: boolean = true
 
 /** Ce que `preparerLogoDeFacture` peut envoyer : PNG ou JPEG. */
 export const TYPES_DES_LOGOS_DE_FACTURE = ['image/png', 'image/jpeg'] as const

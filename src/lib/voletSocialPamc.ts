@@ -93,11 +93,12 @@ export const METIERS_CIPAV =
   'qu’artiste-auteur, expert devant les tribunaux, expert en automobile, mandataire judiciaire à la protection des majeurs'
 
 /**
- * La migration `professions_cipav` (supabase/preparees/20261111130000_professions_cipav.sql) élargit la liste fermée de
- * `volet_social_pamc.profession`. Baissé tant qu'elle n'est pas appliquée : l'écran n'offre pas la CIPAV (la base la
- * refuserait, 23514). Le calcul, lui, la connaît déjà, contrôlé contre le moteur de l'Urssaf.
+ * La migration `professions_cipav` (supabase/schema/20261111130000_professions_cipav.sql) élargit la liste fermée de
+ * `volet_social_pamc.profession`. Levé le 11/11/2026, la migration en production : l'écran offre la CIPAV. Baissé, il ne
+ * l'offrait pas (la base l'aurait refusée, 23514) ; cet état reste joué par `professionsOffertes(false, …)` et l'accesseur
+ * de VoletSocialCardCipav.test.tsx. Le calcul la connaît, contrôlé contre le moteur de l'Urssaf.
  */
-export const PROFESSIONS_CIPAV_PREVUES = false
+export const PROFESSIONS_CIPAV_PREVUES: boolean = true
 
 /** Les professions que la liste déroulante offre : la CIPAV sous son drapeau, ou si la ligne lue la porte déjà. */
 export function professionsOffertes(cipavPrevues: boolean, actuelle: ProfessionLiberale | ''): ProfessionLiberale[] {

@@ -4,6 +4,12 @@ import FacturesTab from './FacturesTab'
 import { facture as factureCii, SIRET_VENDEUR } from '../../test/facturesCii'
 import { NON_BASCULE } from '../../test/factures'
 
+// La section « Factures de l'ancien logiciel » (A8d2b) se monte dans l'onglet du cabinet depuis que
+// `IMPORT_DES_FACTURES_OFFERT` est levé (11/11/2026) ; elle lit l'import et demande la session. Ces cas jugent le reste de
+// l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
+// FacturesTab.test.tsx.
+vi.mock('./ImportDesFactures', () => ({ default: () => null }))
+
 // LA RELANCE D'UNE FACTURE EN RETARD DANS L'ONGLET DES FACTURES (étape C5), `RELANCES_EXPORTEES` levé le 08/11/2026 : avec
 // le VRAI onglet et un faux client qui applique les filtres. Le drapeau se joue dans ses DEUX états par un accesseur
 // (CLAUDE.md, Tests : un drapeau levé garde son état d'avant éprouvé tant que son code existe). Baissé : le journal des

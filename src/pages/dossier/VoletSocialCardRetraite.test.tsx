@@ -9,6 +9,13 @@ import { PHRASE_DE_LA_CAISSE } from '../../lib/retraiteAffichee'
 // contre le moteur de l'Urssaf, la règle d'affichage dans `lib/retraiteAffichee.ts` : ce qui se joue ici est le CÂBLAGE — la
 // même entrée que l'Urssaf, le choix du cumul d'un médecin (local, sans valeur par défaut), le motif dit à la place d'un
 // chiffre.
+// La CIPAV offerte à l'écran sous `PROFESSIONS_CIPAV_PREVUES`, levé le 11/11/2026 : ces cas jouent l'état réel ; l'état
+// d'avant (les trois caisses, « Hors CIPAV ») se rejoue par l'accesseur, baissé, dans son propre cas.
+const drapeau = vi.hoisted(() => ({ cipav: true }))
+vi.mock('../../lib/voletSocialPamc', async (importer) => {
+  const reel = await importer<typeof import('../../lib/voletSocialPamc')>()
+  return { ...reel, get PROFESSIONS_CIPAV_PREVUES() { return drapeau.cipav } }
+})
 vi.mock('../../lib/parametresDesCotisations', async (importer) => {
   const reel = await importer<typeof import('../../lib/parametresDesCotisations')>()
   return { ...reel, PARAMETRES_DES_COTISATIONS_EXPORTES: true }
@@ -54,9 +61,22 @@ function attendue(profession: 'auxiliaire_medical' | 'medecin_secteur_1', cumul:
 }
 
 describe('la retraite dans le volet social', () => {
+  it('drapeau baissé, l’écran d’avant : les trois caisses, et « Hors CIPAV »', async () => {
+    drapeau.cipav = false
+    try {
+      await afficher()
+      expect(retraite().getByText('Retraite (caisse : CARPIMKO, CARMF ou CARCDSF selon la profession)')).toBeTruthy()
+      saisir(/Profession/, 'auxiliaire_medical')
+      saisir(/Honoraires conventionnés/, '80000')
+      expect(retraite().getByText(/Hors CIPAV/)).toBeTruthy()
+    } finally {
+      drapeau.cipav = true
+    }
+  })
+
   it('sans profession, nomme les trois caisses et dit pourquoi elle ne chiffre rien', async () => {
     await afficher()
-    expect(retraite().getByText('Retraite (caisse : CARPIMKO, CARMF ou CARCDSF selon la profession)')).toBeTruthy()
+    expect(retraite().getByText('Retraite (caisse : CARPIMKO, CARMF, CARCDSF ou CIPAV selon la profession)')).toBeTruthy()
     expect(retraite().getByText('Choisissez la profession pour estimer les cotisations.')).toBeTruthy()
     expect(retraite().queryByRole('table')).toBeNull()
     expect(retraite().queryByLabelText(/cumule-t-il/)).toBeNull()
@@ -80,7 +100,8 @@ describe('la retraite dans le volet social', () => {
     expect(ligneDe(/^Prise en charge par l’Assurance maladie, déjà déduite/)).toBe(enEuros(e.priseEnChargePcv))
     expect(ligneDe(/^Total de la retraite à la charge du praticien$/)).toBe(enEuros(e.total))
     expect(retraite().getByText(PHRASE_DE_LA_CAISSE)).toBeTruthy()
-    expect(retraite().getByText(/Hors CIPAV/)).toBeTruthy()
+    expect(retraite().getByText(/^Hors exonération pour incapacité d’exercice, .*affiliées à la CIPAV\.$/)).toBeTruthy()
+    expect(retraite().queryByText(/Hors CIPAV/)).toBeNull()
     // Les cotisations de l'Urssaf gardent leur total, que la retraite n'a pas touché.
     expect(screen.getByText('Total à la charge du praticien')).toBeTruthy()
   })
