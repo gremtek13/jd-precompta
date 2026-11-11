@@ -12,6 +12,7 @@ import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
+import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
@@ -47,7 +48,7 @@ import {
   RELATIONS_PREVUES,
   TABLES_DES_DEVIS,
   tablesSansChemin,
-  violationsOrdre,
+  violationsOrdre, auPlanDesLettresDeMission
 } from './sauvegarde'
 
 // LES DEVIS AU PLAN DE SAUVEGARDE (espace client, étape P5). Leurs migrations attendent l'accord du cabinet : tant que
@@ -93,7 +94,8 @@ describe('le filtre du plan', () => {
         && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
         && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
         && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
-        && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS))
+        && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS)
+        && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)

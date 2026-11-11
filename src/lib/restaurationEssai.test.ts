@@ -7,6 +7,7 @@ import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
 import { JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
+import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
@@ -39,6 +40,7 @@ import {
   TABLES_DES_PARAMETRES_FACTURATION,
   TABLES_DU_JOURNAL_DES_DESIGNATIONS,
   type CheminDossier,
+  TABLES_DES_LETTRES_DE_MISSION,
 } from './sauvegarde'
 import { indiceSql } from '../test/schema'
 
@@ -521,7 +523,7 @@ const avecLaPieceDUneReprise = avecLesArticles
 
 // LES COMPTES BANCAIRES D'UN DOSSIER (ligne 26.6, lot MCB1) : un bloc à part met leur table au plan quand elle existe, juste
 // après `categories`, les rangs qui suivent reculant d'un — le geste des articles —, avec son chemin ; aucune vague. Joué
-// en dernier.
+// avant le bloc des lettres de mission.
 const MARQUE_DES_COMPTES_BANCAIRES = "-- ══ Les comptes bancaires d'un dossier (ligne 26.6, lot MCB1) ══"
 
 function blocDesComptesBancaires(texte: string): BlocDesArticles {
@@ -543,14 +545,42 @@ function blocDesComptesBancaires(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table des comptes bancaires existe : la sienne après sa table d'ancrage. */
 const avecLesComptesBancaires = avecLesArticles
 
+// LES LETTRES DE MISSION (ligne 47, LM4) : un bloc à part met leurs deux tables au plan quand elles existent, juste après la
+// table qu'il nomme (`precisions_mouvements`), les rangs qui suivent reculant de deux, avec leurs chemins et leurs vagues
+// (`remplace_id`) — le geste de la caisse. Joué en dernier : ses vagues viennent après toutes les autres.
+const MARQUE_DES_LETTRES_DE_MISSION = '-- ══ Les lettres de mission (ligne 47, LM4) ══'
+
+function blocDesLettresDeMission(texte: string): BlocDeLaCaisse {
+  const debut = texte.indexOf(MARQUE_DES_LETTRES_DE_MISSION)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const vagues = /insert into essai_restauration\._vagues \(table_nom, colonne\) values\s*([^;]*);/.exec(corps)?.[1] ?? ''
+  const tables = [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2])
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables,
+    chemins,
+    vagues: [...vagues.matchAll(/\('(\w+)','(\w+)'\)/g)].map((m) => ({ table: m[1], colonne: m[2] })),
+    recule: tables.length > 0 && corps.includes(`set rang = -(rang + ${tables.length}) where rang > v_rang;`)
+      && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.lettres_de_mission') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand les tables des lettres existent : les leurs après leur table d'ancrage, et leurs vagues. */
+const avecLesLettresDeMission = avecLaCaisse
+
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesLettresDeMission(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
-  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte))
+  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesLettresDeMission(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -638,7 +668,17 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLaPieceDuJour = PIECE_D_UNE_FACTURE_REPRISE_PREVUE
     ? avecLaPieceDUneReprise(avecLaNumerotationDuJour, pieceDUneReprise) : avecLaNumerotationDuJour
   const comptesBancaires = blocDesComptesBancaires(texteDeLEssai)
-  const courant = COMPTES_BANCAIRES_PREVUS ? avecLesComptesBancaires(avecLaPieceDuJour, comptesBancaires) : avecLaPieceDuJour
+  const avecLesComptesDuJour = COMPTES_BANCAIRES_PREVUS ? avecLesComptesBancaires(avecLaPieceDuJour, comptesBancaires) : avecLaPieceDuJour
+  const lettresDeMission = blocDesLettresDeMission(texteDeLEssai)
+  const courant = LETTRES_DE_MISSION_PREVUES ? avecLesLettresDeMission(avecLesComptesDuJour, lettresDeMission) : avecLesComptesDuJour
+
+  it('le bloc des lettres de mission : leurs deux tables, après `precisions_mouvements`, conditionné, leurs chemins et leurs vagues (LM4)', () => {
+    expect(lettresDeMission).toEqual({
+      ancre: 'precisions_mouvements', tables: [...TABLES_DES_LETTRES_DE_MISSION], recule: true, conditionne: true,
+      chemins: Object.fromEntries(TABLES_DES_LETTRES_DE_MISSION.map((t) => [t, { acces: 'direct', parent: null, colonne: null }])),
+      vagues: TABLES_DES_LETTRES_DE_MISSION.map((table) => ({ table, colonne: 'remplace_id' })),
+    })
+  })
 
   it('le bloc des comptes bancaires : sa table, après `categories`, conditionnée, son chemin (MCB1)', () => {
     expect(comptesBancaires).toEqual({
@@ -824,6 +864,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DES_SAISIES_2035.includes(t) && !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(t)
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t) && !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(t)
       && !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(t) && !TABLES_DES_COMPTES_BANCAIRES.includes(t)
+      && !TABLES_DES_LETTRES_DE_MISSION.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

@@ -62,6 +62,11 @@
 --      désignation ni par l'anonyme, ni par un compte rattaché à rien, ni par le client ; la colonne pas par la policy du
 --      cabinet ; le chef désigne (contrôle positif) ; aucun accès client sur le dossier désigné ; le catalogue — et trois
 --      mutations ; avant la migration `dossier_du_cabinet`, une ligne « EN ATTENTE ».
+--   6quinquies. Les LETTRES DE MISSION (LM4, ligne 47 ; bloc « Les lettres de mission », après le dossier du cabinet) :
+--      LM1 à LM7 — les six fonctions ni par l'anonyme, ni par un compte rattaché à rien, ni par le client ; le chef écrit
+--      et lit (contrôle positif) ; le client ne lit rien ; l'insertion directe au super-administrateur seul ; le catalogue,
+--      le drapeau de l'acceptation en ligne baissé — et trois mutations ; avant la migration `lettres_de_mission`, une
+--      ligne « EN ATTENTE ».
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -736,6 +741,10 @@
 -- que l'encaissement d'une facture reprise demande, au cabinet et à l'accès « Ventes » ; les pièces citées par une facture
 -- reprise, au cabinet et à l'accès « Banque ». Le bloc RC (RC1 à RC5, M-RC1 à M-RC3) ; EN ATTENTE sans la migration. Ce
 -- qu'il rend : HISTORIQUE.md, « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT ».
+--
+-- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM4, ligne 47 : migration `lettres_de_mission`, PRÉPARÉE, pas
+-- appliquée, après LM1), qui range les modèles et les lettres de mission dans le dossier du cabinet. Le bloc LM (LM1 à LM7,
+-- M-LM2, M-LM5, M-LM7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM4 ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -2770,6 +2779,175 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $dc$;
+-- ═══ Les lettres de mission (LM4, ligne 47) ═════════════════════════════════════════════════════════════════════════
+--
+-- La migration `lettres_de_mission` range les modèles et les lettres de mission du cabinet dans le dossier du cabinet
+-- (LM1), écrits par six fonctions `security definer`, lus par `admin_du_dossier` seul. Ce qu'elle ouvre et ferme, aux
+-- quatre profils : les fonctions ne s'exécutent pas par l'anonyme (LM1), se refusent en 42501 à un compte rattaché à rien
+-- et au client, même le dossier désigné (LM2, LM3) ; le chef écrit un modèle et un brouillon et les lit (LM4, le contrôle
+-- POSITIF) ; le client ne lit ni l'un ni l'autre (LM5) ; un compte rattaché à rien n'insère pas directement — la porte
+-- de la restauration est au super-administrateur (LM6) ; au catalogue, les six fonctions sont `security definer` et
+-- exécutables par `authenticated` seul, l'empreinte et les gardes par aucun rôle de session, le drapeau de l'acceptation
+-- en ligne rend faux, et les deux tables n'ont que des policies `to authenticated` (LM7). Le jeu : deux dossiers jetables
+-- du cabinet, dans une sous-transaction annulée. Trois mutations, qui doivent mordre. EN ATTENTE tant que la table n'est
+-- pas en base. Ce que les fonctions refusent encore, la proposition figée, la réponse et le retrait : `lettresDeMission.sql`.
+do $lm$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  k uuid := '1a100000-0000-4000-8000-0000000000e4';
+  c uuid := '1a100000-0000-4000-8000-0000000000e5';
+  missions jsonb := '{"tenue_comptable": "Tenir la comptabilité."}';
+  n bigint; etat text; message text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.lettres_de_mission') is null then
+    insert into rls_verdict values ('LM. les lettres de mission : EN ATTENTE de la migration lettres_de_mission',
+      'lettres_de_mission', 'absente : les lettres se jugent dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, siret, adresse) values
+      (k, 'RLS DOSSIER DU CABINET LM', cabinet, 'tresorerie', '455000', '12345678200010', 'RLS ADRESSE'),
+      (c, 'RLS CLIENT LM', cabinet, 'tresorerie', '455000', null, 'RLS ADRESSE');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform public.designer_dossier_du_cabinet(cabinet, k);
+    reset role;
+    construit := true;
+
+    -- LM1 : l'anonyme n'exécute pas les fonctions.
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+      perform public.enregistrer_modele_de_lettre(k, 'T', 'CG', missions, '{}', null);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'LM1. anonyme n''exécute pas les fonctions des lettres de mission', 'cible', 'enregistrer_modele_de_lettre',
+      'observe', etat, 'ok', etat = '42501');
+
+    -- LM2 et LM3 : un compte rattaché à rien, puis le client.
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      perform public.enregistrer_brouillon_de_lettre(k, null, '{}'::jsonb, null);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'LM2. inconnu authentifié n''écrit pas de lettre de mission', 'cible', 'enregistrer_brouillon_de_lettre',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce dossier.');
+    -- M-LM2 : LM2 rejoué sous le chef — il écrit (annulé aussitôt).
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform public.enregistrer_brouillon_de_lettre(k, null, '{}'::jsonb, null);
+      raise exception 'annuler' using errcode = 'P0001';
+    exception when sqlstate 'P0001' then etat := 'acceptée'; when others then etat := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-LM2 — LM2 rejoué sous le chef du cabinet', 'attendu', 'le brouillon accepté',
+      'observe', etat, 'mord', etat = 'acceptée');
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform public.enregistrer_modele_de_lettre(k, 'T', 'CG', missions, '{}', null);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'LM3. client n''écrit pas de modèle de lettre de mission', 'cible', 'enregistrer_modele_de_lettre',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce dossier.');
+
+    -- LM4 : le chef écrit un modèle et un brouillon, et les lit (contrôle positif).
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform public.enregistrer_modele_de_lettre(k, 'Modèle RLS', 'Conditions RLS', missions, '{}', null);
+    perform public.enregistrer_brouillon_de_lettre(k, null, jsonb_build_object('dossier_client_id', c), null);
+    select (select count(*) from lettres_de_mission where dossier_id = k) + (select count(*) from modeles_lettre_de_mission where dossier_id = k) into n;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'LM4. le chef écrit et lit un modèle et une lettre du dossier du cabinet (contrôle positif)', 'cible', 'lettres_de_mission',
+      'observe', n || ' ligne(s)', 'ok', n = 2);
+
+    -- LM5 : le client ne lit rien ; M-LM5 : la même lecture sous le chef.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select (select count(*) from lettres_de_mission where dossier_id = k) + (select count(*) from modeles_lettre_de_mission where dossier_id = k) into n;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'LM5. client ne lit ni les modèles ni les lettres de mission', 'cible', 'lettres_de_mission',
+      'observe', n || ' ligne(s)', 'ok', n = 0);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select (select count(*) from lettres_de_mission where dossier_id = k) into n;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-LM5 — LM5 rejoué sous le chef', 'attendu', 'la lettre lue',
+      'observe', n || ' ligne(s)', 'mord', n = 1);
+
+    -- LM6 : un compte rattaché à rien n'insère pas directement.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      insert into lettres_de_mission (dossier_id, auteur) values (k, inconnu);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'LM6. inconnu authentifié n''insère pas de lettre directement (la restauration est au super-administrateur)', 'cible', 'lettres_de_mission_restauration',
+      'observe', etat, 'ok', etat = '42501');
+    raise exception 'annuler le jeu' using errcode = 'P0001';
+  exception
+    when sqlstate 'P0001' then null;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- LM7 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.prosecdef
+     and p.proname in ('enregistrer_modele_de_lettre', 'retirer_modele_de_lettre', 'enregistrer_brouillon_de_lettre',
+                       'proposer_lettre_de_mission', 'enregistrer_reponse_a_la_lettre', 'retirer_lettre_de_mission')
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE'), false);
+  verdicts := verdicts || jsonb_build_object('controle', 'LM7. les six fonctions des lettres : security definer, exécutables par authenticated seul (lecture du catalogue)',
+    'cible', 'les six fonctions', 'observe', n || ' telle(s) quelle(s)', 'ok', n = 6);
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace
+     and p.proname in ('empreinte_de_la_lettre', 'garder_modele_de_lettre', 'garder_lettre_de_mission', 'garder_designation_des_lettres')
+     and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
+  verdicts := verdicts || jsonb_build_object('controle', 'LM7. l''empreinte et les gardes des lettres : aucun rôle de session ne les exécute (lecture du catalogue)',
+    'cible', 'empreinte_de_la_lettre et les trois gardes', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  -- M-LM7 : la même lecture pour le propriétaire, qui les exécute.
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.proname = 'empreinte_de_la_lettre'
+     and has_function_privilege('proprietaire', p.oid, 'execute');
+  mutations := mutations || jsonb_build_object('mutation', 'M-LM7 — LM7 rejoué pour le propriétaire', 'attendu', 'l''empreinte exécutable',
+    'observe', n || ' exécutable(s)', 'mord', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'LM7. l''acceptation en ligne : le drapeau de la base rend faux', 'cible', 'acceptation_en_ligne_ouverte',
+    'observe', public.acceptation_en_ligne_ouverte()::text, 'ok', not public.acceptation_en_ligne_ouverte());
+  select count(*) into n from pg_policies
+   where schemaname = 'public' and tablename in ('lettres_de_mission', 'modeles_lettre_de_mission')
+     and not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'));
+  verdicts := verdicts || jsonb_build_object('controle', 'LM7. les deux tables : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
+    'cible', 'lettres_de_mission, modeles_lettre_de_mission', 'observe', n || ' autre(s)', 'ok', n = 0
+      and (select count(*) from pg_policies where schemaname = 'public' and tablename in ('lettres_de_mission', 'modeles_lettre_de_mission')) = 4);
+  verdicts := verdicts || jsonb_build_object('controle', 'LM. le jeu d''essai des lettres de mission s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
+      and not exists (select 1 from cabinets where dossier_du_cabinet = k));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $lm$;
 
 -- ═══ La frontière des encaissements (chantier EC-Q3, étape VF7a) ═══════════════════════════════════════════════
 --

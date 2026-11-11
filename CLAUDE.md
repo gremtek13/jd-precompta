@@ -430,7 +430,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 
 - **Proposition de catégorie** : à éprouver par un premier clic réel du cabinet.
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : LM1, le dossier du cabinet, préparée le 11/11/2026, à
-  coller (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU` baissé) ; restent LM2 à LM8 → « LM1 : LE DOSSIER DU CABINET, EN BASE ».
+  coller (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU` baissé) ; LM4, les lettres de mission et leurs versions figées,
+  préparée le même jour, à coller APRÈS LM1 (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` baissé ; l'acceptation en
+  ligne prévue et fermée par la base jusqu'à LM-Q10) ; restent LM2, LM3 et LM5 à LM8 → « LM1 : LE DOSSIER DU CABINET, EN
+  BASE », « LM4 : LES LETTRES DE MISSION ET LEURS VERSIONS FIGÉES, EN BASE ».
 - **Contre-calcul par l'expert-comptable** (ligne 23.3) : quatre dossiers de référence remis (2035, CA3, amortissements,
   bilan 2033-A) ; restent ses chiffres, l'analyse des écarts, puis ses chiffres en cas de référence → « LES DOSSIERS DE
   RÉFÉRENCE ».

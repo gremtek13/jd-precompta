@@ -746,6 +746,28 @@ begin
   end if;
 end $$;
 
+-- ══ Les lettres de mission (ligne 47, LM4) ══ Au plan du code quand `LETTRES_DE_MISSION_PREVUES` est levé — c'est-à-dire
+-- quand sa migration est en base, après LM1 : le script les y met dès que leurs tables existent, juste après
+-- `precisions_mouvements` (ORDRE_RESTAURATION_PREVU : après les documents que le papier signé cite, le modèle avant la
+-- lettre) ; les tables qui suivent reculent de deux rangs — le geste des articles ; leurs chemins ; leurs vagues
+-- (`remplace_id` : une version en remplace une autre). Joué en dernier : ses vagues viennent après celles des autres blocs,
+-- comme dans la liste du code. Absentes de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts
+-- confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.lettres_de_mission') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'precisions_mouvements';
+    update essai_restauration._ordre set rang = -(rang + 2) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'modeles_lettre_de_mission');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 2, 'lettres_de_mission');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('modeles_lettre_de_mission','direct',null,null),('lettres_de_mission','direct',null,null);
+    insert into essai_restauration._vagues (table_nom, colonne) values ('modeles_lettre_de_mission','remplace_id'),('lettres_de_mission','remplace_id');
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

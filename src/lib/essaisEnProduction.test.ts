@@ -267,10 +267,12 @@ describe('les essais de la base, rejoués en production', () => {
     // garde. Son catalogue et son prédicat, jugé sans supprimer, se rejouent partout : le bloc PF de rls.sql.
     // Le treizième, comptesBancairesSuppression, le 11/11/2026 (ligne 26.6, MCB1, migration `comptes_bancaires`) : il retire
     // des comptes bancaires et un dossier, sous la même garde.
+    // Le quatorzième, lettresDeMission, le 11/11/2026 (LM4, migration `lettres_de_mission`) : il désigne le dossier du
+    // cabinet et supprime en dernier un dossier jetable, sous la même garde. Son catalogue se rejoue partout : le bloc LM de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)',
-      'frontiereDesEncaissements (son en-tête)',
+      'frontiereDesEncaissements (son en-tête)', 'lettresDeMission (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
       'situationsPublieesMutations (une méta-commande de psql)', 'traceDesDroitsSuppression (son en-tête)',
