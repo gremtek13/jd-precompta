@@ -3,12 +3,15 @@ import {
   PLAFONDS_SECURITE_SOCIALE,
   arrondiUrssaf,
   estimerCotisationsUrssaf,
+  PROFESSIONS_CIPAV_PREVUES,
   natureAbattement,
+  professionsOffertes,
   ratioConventionne,
   recettesBrutesRetenues,
   type EntreeEstimation,
 } from './voletSocialPamc'
 import { CAS_REFERENCE, MOTEUR_REFERENCE } from './voletSocialPamcReference'
+import { readFileSync } from 'node:fs'
 
 // Une infirmière à 60 000 € de revenu brut social en 2025, tout conventionné : le cas que le moteur
 // de l'Urssaf chiffre à 4 646 € (voir voletSocialPamcReference.ts).
@@ -189,6 +192,49 @@ describe('ce que l’estimation refuse, et dit', () => {
 
   it('des dépassements non saisis valent aucun dépassement', () => {
     expect(estimerCotisationsUrssaf({ ...infirmiere, depassements: null })).toEqual(estimerCotisationsUrssaf(infirmiere))
+  })
+})
+
+describe('la CIPAV (ligne 27.1, RET-Q1)', () => {
+  const cipav = CAS_REFERENCE.filter((c) => c.entree.profession === 'liberal_cipav')
+
+  it('porte une grille réelle : les deux années, la création, l’ACRE, les revenus faibles et élevés', () => {
+    expect(cipav.length).toBeGreaterThanOrEqual(80)
+    expect(new Set(cipav.map((c) => c.entree.annee))).toEqual(new Set([2025, 2026]))
+    expect(cipav.filter((c) => c.attendu.plafondProratise < c.attendu.plafond).length).toBeGreaterThanOrEqual(10)
+    expect(cipav.filter((c) => c.attendu.acreAppliquee).length).toBeGreaterThanOrEqual(10)
+    expect(cipav.some((c) => c.attendu.assiette === 0)).toBe(true)
+    expect(cipav.some((c) => c.attendu.assiette > 3 * c.attendu.plafond)).toBe(true)
+  })
+
+  it('n’a ni prise en charge, ni contribution de 3,25 %, ni CURPS, et aucune rubrique du SNIR', () => {
+    for (const c of cipav) {
+      expect(c.entree.honorairesConventionnes, c.cas).toBeNull()
+      expect(c.attendu.priseEnChargeMaladie + c.attendu.priseEnChargeAllocationsFamiliales + c.attendu.contributionAdditionnelle + c.attendu.curps, c.cas).toBe(0)
+    }
+  })
+
+  it('n’est jamais refusée faute des rubriques du SNIR, même saisies par erreur', () => {
+    const e: EntreeEstimation = { ...infirmiere, profession: 'liberal_cipav', honorairesConventionnes: null, depassements: null }
+    expect(estimerCotisationsUrssaf(e).disponible).toBe(true)
+    // Des chiffres du SNIR restés d'une autre profession ne changent rien : ils sont sans objet.
+    expect(estimerCotisationsUrssaf({ ...e, honorairesConventionnes: 90_000, depassements: 95_000 })).toEqual(estimerCotisationsUrssaf(e))
+  })
+
+  it('ne s’offre à l’écran que sous son drapeau, ou quand la ligne lue la porte déjà', () => {
+    expect(PROFESSIONS_CIPAV_PREVUES).toBe(false)
+    expect(professionsOffertes(false, '')).not.toContain('liberal_cipav')
+    expect(professionsOffertes(false, '').length).toBe(5)
+    expect(professionsOffertes(true, '')).toContain('liberal_cipav')
+    expect(professionsOffertes(false, 'liberal_cipav')).toContain('liberal_cipav')
+  })
+
+  it('dit les mêmes professions que la contrainte de la migration préparée, au caractère près', () => {
+    const migration = readFileSync('supabase/preparees/20261111130000_professions_cipav.sql', 'utf8')
+    const liste = /add constraint volet_social_pamc_profession_check check \(profession in \(([^)]*)\)\)/.exec(migration)
+    expect(liste).not.toBeNull()
+    const enBase = [...liste![1].matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1])
+    expect(enBase).toEqual(professionsOffertes(true, ''))
   })
 })
 

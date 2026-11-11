@@ -43,12 +43,17 @@ const moteur = new Engine(regles, {
 const P = 'indépendant . profession libérale . réglementée . PAMC . '
 const C = 'indépendant . cotisations et contributions . '
 const METIERS = {
-  auxiliaire_medical: { metier: 'auxiliaire médical' },
-  sage_femme: { metier: 'sage-femme' },
-  medecin_secteur_1: { metier: 'médecin', secteur: 'S1' },
-  medecin_secteur_2: { metier: 'médecin', secteur: 'S2' },
-  chirurgien_dentiste: { metier: 'chirurgien-dentiste' },
+  auxiliaire_medical: { metier: 'santé . auxiliaire médical' },
+  sage_femme: { metier: 'santé . sage-femme' },
+  medecin_secteur_1: { metier: 'santé . médecin', secteur: 'S1' },
+  medecin_secteur_2: { metier: 'santé . médecin', secteur: 'S2' },
+  chirurgien_dentiste: { metier: 'santé . chirurgien-dentiste' },
+  // LA CIPAV (ligne 27.1, RET-Q1, 11/11/2026) : « métier . rattaché Cipav », une profession libérale réglementée hors de
+  // la santé conventionnée — ni SNIR, ni prise en charge, ni CURPS, ni contribution de 3,25 % ; sa retraite (base,
+  // complémentaire, invalidité-décès) recouvrée par l'Urssaf, donc dans « cotisations et contributions . Urssaf ».
+  liberal_cipav: { metier: 'rattaché Cipav', cipav: true },
 }
+const estCipav = (profession) => METIERS[profession].cipav === true
 // Une activité ouverte avant l'année, comme les cas d'avant le 07/11/2026 : ni plafond proratisé, ni ACRE
 // possible, la CURPS due.
 const OUVERTE_AVANT = '2015-01-01'
@@ -78,7 +83,7 @@ function poser({
     ...(tauxDentiste === null ? {} : { [P + 'assiette participation CPAM . taux dentiste']: String(tauxDentiste) }),
     'entreprise . activité': "'libérale'",
     'entreprise . activité . libérale . réglementée': 'oui',
-    'indépendant . profession libérale . réglementée . métier': `'santé . ${METIERS[profession].metier}'`,
+    'indépendant . profession libérale . réglementée . métier': `'${METIERS[profession].metier}'`,
     ...(METIERS[profession].secteur
       ? { 'indépendant . profession libérale . réglementée . métier . santé . médecin . secteur': `'${METIERS[profession].secteur}'` }
       : {}),
@@ -86,12 +91,31 @@ function poser({
     'entreprise . imposition . IR . régime micro-fiscal': 'non',
     "entreprise . chiffre d'affaires": `${recettesBrutes} €/an`,
     'entreprise . charges': `${CHARGES} €/an`,
-    [P + 'recettes activité conventionnée']: `${honorairesConventionnes} €/an`,
-    [P + "dépassements d'honoraire"]: `${depassements} €/an`,
-    [P + 'remplaçant']: remplacant ? 'oui' : 'non',
+    // Les rubriques du SNIR et le remplaçant n'existent que pour un praticien conventionné.
+    ...(estCipav(profession)
+      ? {}
+      : {
+          [P + 'recettes activité conventionnée']: `${honorairesConventionnes} €/an`,
+          [P + "dépassements d'honoraire"]: `${depassements} €/an`,
+          [P + 'remplaçant']: remplacant ? 'oui' : 'non',
+        }),
   })
-  return { recettesBrutes, honorairesConventionnes, depassements }
+  return estCipav(profession)
+    ? { recettesBrutes, honorairesConventionnes: null, depassements: null }
+    : { recettesBrutes, honorairesConventionnes, depassements }
 }
+
+// Les cotisations de l'Urssaf hors retraite, après les prises en charge : ce que le volet de l'application estime.
+function horsRetraite() {
+  return valeur(C + 'CSG-CRDS . déductible') + valeur(C + 'CSG-CRDS . non déductible') +
+    valeur(C + 'cotisations . maladie-maternité . après exonérations') - valeur(P + 'participation CPAM . maladie') +
+    valeur(P + 'contribution maladie additionnelle') + valeur(C + 'cotisations . indemnités journalières') +
+    valeur(C + 'cotisations . allocations familiales . après exonérations') - valeur(P + 'participation CPAM . allocations familiales') +
+    valeur(P + 'CURPS') + valeur(C + 'formation professionnelle')
+}
+// La retraite d'un affilié à la CIPAV, telle que l'Urssaf la recouvre : la base, le complémentaire, l'invalidité-décès.
+const retraiteCipav = () =>
+  valeur(C + 'cotisations . retraite de base') + valeur(C + 'cotisations . retraite complémentaire') + valeur(C + 'cotisations . invalidité et décès')
 
 const valeur = (nom) => {
   const v = moteur.evaluate(nom).nodeValue
@@ -124,7 +148,12 @@ function evaluer(c) {
     allocationsFamiliales: valeur(C + 'cotisations . allocations familiales . après exonérations'),
     curps: valeur(P + 'CURPS'),
     formationProfessionnelle: valeur(C + 'formation professionnelle'),
-    total: valeur(C + 'Urssaf'),
+    total: estCipav(profession) ? horsRetraite() : valeur(C + 'Urssaf'),
+  }
+  // La CIPAV : l'Urssaf recouvre aussi sa retraite, que le volet de l'application laisse à la section de la retraite.
+  // Son total est donc la somme des cotisations hors retraite ; il se réconcilie avec celui du moteur, retraite ajoutée.
+  if (estCipav(profession) && Math.round(attendu.total + retraiteCipav()) !== valeur(C + 'Urssaf')) {
+    throw new Error(`CIPAV : ${attendu.total} plus la retraite ne fait pas le total de l'Urssaf du moteur`)
   }
   // Les deux assiettes ne se séparent qu'avec des revenus de remplacement, que ces cas n'ont pas : si
   // elles divergent ici, le moteur a changé de règle et il faut relire ce script.
@@ -211,6 +240,19 @@ for (const annee of [2025, 2026]) {
   cas.push({ ...base, nom: `${annee}, 80000 €, chirurgien-dentiste, 80 % conventionné dont 20 % de dépassements`, profession: 'chirurgien_dentiste', revenuBrutSocial: 80_000, partConventionnee: 0.8, partDepassements: 0.2, tauxDentiste: 0.47 })
   cas.push({ ...base, nom: `${annee}, 80000 €, chirurgien-dentiste remplaçant`, profession: 'chirurgien_dentiste', remplacant: true, revenuBrutSocial: 80_000, tauxDentiste: 0.6 })
   cas.push({ ...base, nom: `${annee}, 80000 €, chirurgien-dentiste créé le ${annee}-07-01, ACRE`, profession: 'chirurgien_dentiste', revenuBrutSocial: 80_000, debutActivite: `${annee}-07-01`, acre: true, tauxDentiste: 0.25 })
+  // LA CIPAV (RET-Q1) : la grille des revenus, l'année de la création, l'ACRE des deux années — sans SNIR.
+  const cipav = { annee, remplacant: false, partConventionnee: 0, partDepassements: 0, profession: 'liberal_cipav' }
+  for (const revenuBrutSocial of REVENUS) cas.push({ ...cipav, nom: `${annee}, ${revenuBrutSocial} €, CIPAV`, revenuBrutSocial })
+  for (const debut of [`${annee}-01-01`, `${annee}-03-15`, `${annee}-07-01`, `${annee}-12-31`]) {
+    for (const revenuBrutSocial of [8_000, 30_000, 60_000, 150_000]) {
+      cas.push({ ...cipav, nom: `${annee}, ${revenuBrutSocial} €, CIPAV créée le ${debut}`, revenuBrutSocial, debutActivite: debut, acre: false })
+    }
+  }
+  for (const revenuBrutSocial of ACRE_REVENUS) {
+    for (const debut of [`${annee}-07-01`, `${annee - 1}-07-01`]) {
+      cas.push({ ...cipav, nom: `${annee}, ${revenuBrutSocial} €, CIPAV, ACRE, créée le ${debut}`, revenuBrutSocial, debutActivite: debut, acre: true })
+    }
+  }
 }
 
 // `oracle.mjs retraite` écrit les cas de la retraite (plus bas), sans évaluer ceux-ci.
@@ -224,13 +266,13 @@ export interface CasReference {
   cas: string
   entree: {
     annee: number
-    profession: 'auxiliaire_medical' | 'sage_femme' | 'medecin_secteur_1' | 'medecin_secteur_2' | 'chirurgien_dentiste'
+    profession: 'auxiliaire_medical' | 'sage_femme' | 'medecin_secteur_1' | 'medecin_secteur_2' | 'chirurgien_dentiste' | 'liberal_cipav'
     remplacant: boolean
     revenuBrutSocial: number
     revenuProfessionnelPositif: boolean
     recettesBrutes: number
-    honorairesConventionnes: number
-    depassements: number
+    honorairesConventionnes: number | null
+    depassements: number | null
     parametres: { tenus: true; debutActivite: string; acre: boolean | null; tauxDentiste: number | null }
   }
   attendu: {
@@ -278,6 +320,7 @@ const PCV_PRISE_EN_CHARGE = {
   medecin_secteur_1: R + 'CARMF . PCV . participation CPAM',
   medecin_secteur_2: R + 'CARMF . PCV . participation CPAM',
   chirurgien_dentiste: R + 'CARCDSF . chirurgien-dentiste . PCV . participation CPAM',
+  liberal_cipav: null,
 }
 
 function evaluerRetraite(c) {
@@ -295,11 +338,18 @@ function evaluerRetraite(c) {
     retraiteComplementaire: valeur(C + 'cotisations . retraite complémentaire'),
     invaliditeDeces: valeur(C + 'cotisations . invalidité et décès'),
     pcv: valeur(C + 'cotisations . PCV'),
-    priseEnChargePcv: pcvApplicable ? valeur(PCV_PRISE_EN_CHARGE[profession]) : 0,
+    priseEnChargePcv: pcvApplicable && PCV_PRISE_EN_CHARGE[profession] !== null ? valeur(PCV_PRISE_EN_CHARGE[profession]) : 0,
     total: valeur('indépendant . profession libérale . cotisations caisse de retraite'),
   }
   // Le total du moteur est la somme de ses quatre parts, arrondie : s'il s'en écarte, une règle a changé.
   const somme = attendu.retraiteDeBase + attendu.retraiteComplementaire + attendu.invaliditeDeces + attendu.pcv
+  if (estCipav(profession)) {
+    // La CIPAV : « cotisations caisse de retraite » est sans objet (l'Urssaf recouvre) ; son total, la somme arrondie de
+    // ses trois parts, se réconcilie avec le total de l'Urssaf du moteur, cotisations hors retraite ajoutées.
+    if (attendu.total !== 0 || attendu.pcv !== 0) throw new Error('CIPAV : une cotisation à la caisse, ou des PCV')
+    attendu.total = Math.round(somme)
+    if (Math.round(horsRetraite() + somme) !== valeur(C + 'Urssaf')) throw new Error('CIPAV : la retraite ne se réconcilie pas avec le total de l’Urssaf')
+  }
   if (Math.round(somme) !== attendu.total) throw new Error(`total divergent : ${somme} contre ${attendu.total}`)
   return {
     entree: {
@@ -354,6 +404,28 @@ function casDeLaRetraite() {
     for (const revenuBrutSocial of [30_000, 100_000]) {
       liste.push({ ...base, nom: `${annee}, ${revenuBrutSocial} €, médecin secteur 1 en cumul emploi-retraite`, profession: 'medecin_secteur_1', revenuBrutSocial, enRetraite: true })
     }
+    // LA CIPAV (RET-Q1) : la grille, la création (sous quatre-vingt-dix jours, plus de plancher à la base ; celui de
+    // l'invalidité-décès, 37 % du plafond proratisé, reste), l'ACRE ; puis les bornes, de part et d'autre : l'assiette à
+    // 37 % du plafond (plancher de l'invalidité-décès), à un plafond (première tranche du complémentaire), à 1,85 plafond
+    // (plafond de l'invalidité-décès) et à quatre (plafond du complémentaire).
+    const cipav = { ...base, partConventionnee: 0, profession: 'liberal_cipav' }
+    for (const revenuBrutSocial of REVENUS_R) liste.push({ ...cipav, nom: `${annee}, ${revenuBrutSocial} €, CIPAV`, revenuBrutSocial })
+    for (const debut of [`${annee}-03-15`, `${annee}-07-01`, `${annee}-10-15`]) {
+      for (const revenuBrutSocial of [3_000, 30_000, 150_000]) {
+        liste.push({ ...cipav, nom: `${annee}, ${revenuBrutSocial} €, CIPAV créée le ${debut}`, revenuBrutSocial, debutActivite: debut, acre: false })
+      }
+    }
+    for (const revenuBrutSocial of [15_000, 30_000, 45_000, 60_000]) {
+      for (const debut of [`${annee}-07-01`, `${annee - 1}-07-01`]) {
+        liste.push({ ...cipav, nom: `${annee}, ${revenuBrutSocial} €, CIPAV, ACRE, créée le ${debut}`, revenuBrutSocial, debutActivite: debut, acre: true })
+      }
+    }
+    const BORNES_CIPAV = { 2025: [23_550, 63_648, 117_750, 249_630], 2026: [24_030, 64_946, 120_150, 254_718] }
+    for (const borne of BORNES_CIPAV[annee]) {
+      for (const revenuBrutSocial of [borne - 1, borne, borne + 1]) {
+        liste.push({ ...cipav, nom: `${annee}, ${revenuBrutSocial} €, CIPAV à une borne`, revenuBrutSocial })
+      }
+    }
     // Les bornes, de part et d'autre : l'assiette juste sous 1, 1,4, 2,5 et 3 plafonds, puis pile dessus — les classes
     // de l'invalidité-décès de la CARMF et les tranches de la prise en charge de sa base, une borne atteinte passant à
     // la suivante.
@@ -375,17 +447,17 @@ function ecrireLaRetraite() {
 // Chaque cas porte ce que l'application donne au calcul (entree) et ce que le moteur répond (attendu), en euros,
 // au centime quand le moteur arrondit au centime (la CARCDSF) — voir retraiteDesLiberaux.test.ts.
 
-import type { ProfessionPamc } from './types'
+import type { ProfessionLiberale } from './types'
 
 export interface CasReferenceRetraite {
   cas: string
   entree: {
     annee: number
-    profession: ProfessionPamc
+    profession: ProfessionLiberale
     revenuBrutSocial: number
     recettesBrutes: number
-    honorairesConventionnes: number
-    depassements: number
+    honorairesConventionnes: number | null
+    depassements: number | null
     parametres: { tenus: true; debutActivite: string; acre: boolean | null; tauxDentiste: number | null }
     enRetraite: boolean
   }

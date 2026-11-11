@@ -42,7 +42,7 @@ describe('la retraite des professions libérales, contre le moteur de l’Urssaf
     expect(MOTEUR_REFERENCE_RETRAITE).toBe('modele-ti 0.1.0')
     expect(CAS_REFERENCE_RETRAITE.length).toBeGreaterThanOrEqual(300)
     expect(new Set(CAS_REFERENCE_RETRAITE.map((c) => c.entree.annee))).toEqual(new Set(Object.keys(BAREMES_RETRAITE).map(Number)))
-    for (const caisse of ['carpimko', 'carmf', 'carcdsf']) {
+    for (const caisse of ['carpimko', 'carmf', 'carcdsf', 'cipav']) {
       expect(CAS_REFERENCE_RETRAITE.filter((c) => CAISSE_DE_LA_PROFESSION[c.entree.profession] === caisse).length).toBeGreaterThanOrEqual(60)
     }
     expect(CAS_REFERENCE_RETRAITE.filter((c) => c.attendu.acreAppliquee).length).toBeGreaterThanOrEqual(20)
@@ -79,6 +79,38 @@ describe('la retraite des professions libérales, contre le moteur de l’Urssaf
       expect(e.total, c.cas).toBe(enCentimes(a.total + ecart))
     }
     expect(exceptions).toBe(EXCEPTIONS_ATTENDUES)
+  })
+})
+
+describe('la retraite de la CIPAV (RET-Q1), contre le moteur', () => {
+  const cipav = CAS_REFERENCE_RETRAITE.filter((c) => c.entree.profession === 'liberal_cipav')
+  const p = (c: CasReferenceRetraite) => c.attendu.plafond
+
+  it('franchit chaque borne : le plancher et le plafond de l’invalidité-décès, les deux tranches du complémentaire', () => {
+    for (const [nom, borne] of [['37 %', 0.37], ['1 plafond', 1], ['1,85 plafond', 1.85], ['4 plafonds', 4]] as const) {
+      expect(cipav.some((c) => c.attendu.assiette < borne * p(c)), nom).toBe(true)
+      expect(cipav.some((c) => c.attendu.assiette > borne * p(c)), nom).toBe(true)
+    }
+    expect(cipav.filter((c) => c.attendu.acreAppliquee).length).toBeGreaterThanOrEqual(8)
+    expect(cipav.filter((c) => c.attendu.plafondProratise < c.attendu.plafond).length).toBeGreaterThanOrEqual(12)
+  })
+
+  it('n’a ni PCV ni prise en charge, et suppose l’invalidité-décès due avant 68 ans', () => {
+    for (const c of cipav) {
+      expect(c.attendu.pcv + c.attendu.priseEnChargePcv + c.attendu.priseEnChargeRetraiteDeBase, c.cas).toBe(0)
+      const r = estimerRetraite(entreeDe(c))
+      if (!r.disponible) throw new Error(r.motif)
+      expect(r.estimation.caisse).toBe('cipav')
+      expect(r.estimation.hypotheses).toEqual(['cipav-invalidite-deces-avant-68-ans-supposee'])
+    }
+  })
+
+  it('chiffre un architecte à 60 000 € en 2026 comme le moteur, poste par poste', () => {
+    const c = cipav.find((x) => x.cas === '2026, 60000 €, CIPAV')!
+    // Assiette 44 400 € : base 8,73 % et 1,87 % ; complémentaire 11 % sous le plafond ; invalidité-décès 0,5 %.
+    expect(c.attendu).toMatchObject({ assiette: 44_400, retraiteDeBase: 3876 + 830, retraiteComplementaire: 4884, invaliditeDeces: 222, total: 9812 })
+    const r = estimerRetraite(entreeDe(c))
+    expect(r.disponible && r.estimation.total).toBe(981_200)
   })
 })
 

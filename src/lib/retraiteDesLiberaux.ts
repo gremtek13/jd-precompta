@@ -6,8 +6,18 @@
 // trois caisses), le régime complémentaire, l'invalidité-décès, et les prestations complémentaires de vieillesse (PCV,
 // l'ancien « avantage social vieillesse »), dont l'Assurance maladie prend une part pour un praticien conventionné. La
 // caisse se DÉDUIT de la profession, que le volet social porte déjà : CARPIMKO pour un auxiliaire médical, CARMF pour un
-// médecin, CARCDSF pour un chirurgien-dentiste ou une sage-femme. La CIPAV n'a pas de profession dans l'application
-// (RET-Q1).
+// médecin, CARCDSF pour un chirurgien-dentiste ou une sage-femme ; la CIPAV pour une profession libérale réglementée qui lui est
+// rattachée (RET-Q1, tranchée le 11/11/2026 : maintenant).
+//
+// LA CIPAV (11/11/2026) : TROIS cotisations, toutes RECOUVRÉES PAR L'URSSAF depuis 2023 (modele-ti, « CNAVPL . hors
+// Urssaf » : non pour la CIPAV ; urssaf.fr, « transfert des cotisations Cipav ») — la base de la CNAVPL, la même que
+// pour les autres caisses ; le complémentaire, 11 % jusqu'à un plafond annuel puis 21 % jusqu'à quatre depuis les revenus
+// 2025 (« Cipav . retraite complémentaire » ; décret n° 79-262 du 21 mars 1979, art. 2) ; l'invalidité-décès, 0,5 % d'une
+// assiette portée entre 37 % du plafond proratisé et 1,85 plafond (« Cipav . invalidité et décès », « assiette minimale .
+// invalidité et décès Cipav »). Ni PCV, ni prise en charge : ce ne sont pas des praticiens conventionnés. L'ACRE exonère
+// la base et l'invalidité-décès, pas le complémentaire, comme pour les autres caisses. Le moteur exonère
+// l'invalidité-décès à partir de l'année des 68 ans (« exonérations . âge ») : l'application ne sait pas l'âge, la
+// cotisation est comptée due et l'estimation le dit (`hypotheses`).
 //
 // LA RÉFÉRENCE EST LE MOTEUR DE L'URSSAF, `modele-ti` 0.1.0 (« profession libérale . cotisations caisse de retraite » et
 // ses règles, outils/cotisations/oracle.mjs retraite) : `retraiteDesLiberauxReference.ts` porte ses cas, et le test
@@ -24,14 +34,14 @@
 // CALCULÉ EN CENTIMES, EN NOMBRES EXACTS : chaque montant est une fraction d'entiers (BigInt), arrondie là où le moteur
 // arrondit — à l'euro, ou au centime pour la CARCDSF —, à la demie supérieure ; jamais une somme de flottants.
 //
-// CE QUE LE MODULE NE FAIT PAS, et que l'écran dira : la CIPAV ; l'exonération pour incapacité d'exercice (« CNAVPL .
+// CE QUE LE MODULE NE FAIT PAS, et que l'écran dira : une profession libérale non réglementée encore à la CIPAV ; l'exonération pour incapacité d'exercice (« CNAVPL .
 // exonération incapacité ») ; le conjoint collaborateur ; l'outre-mer ; les cotisations facultatives ; la règle de la
 // CARMF qui dispense du complémentaire les deux premières années un médecin installé avant quarante ans (le moteur
 // l'ignore ; l'estimation le compte dû et le dit, RET-Q2). Deux gestes que la CARCDSF accorde SUR DEMANDE — la réduction du forfait complémentaire sous 85 % du
 // plafond, l'exonération des PCV des faibles revenus — le moteur les suppose demandés ; l'estimation les suit et le dit
 // (`hypotheses`, RET-Q3).
 
-import type { ProfessionPamc } from './types'
+import type { ProfessionLiberale } from './types'
 import {
   ACTIVITE_OUVERTE_AVANT,
   JOURS_PAR_AN,
@@ -41,15 +51,16 @@ import {
   type EntreeEstimation,
 } from './voletSocialPamc'
 
-export type CaisseDeRetraite = 'carpimko' | 'carmf' | 'carcdsf'
+export type CaisseDeRetraite = 'carpimko' | 'carmf' | 'carcdsf' | 'cipav'
 
 /** La caisse de la profession : la liste fermée du volet social, aucune autre ne s'y range. */
-export const CAISSE_DE_LA_PROFESSION: Readonly<Record<ProfessionPamc, CaisseDeRetraite>> = {
+export const CAISSE_DE_LA_PROFESSION: Readonly<Record<ProfessionLiberale, CaisseDeRetraite>> = {
   auxiliaire_medical: 'carpimko',
   sage_femme: 'carcdsf',
   medecin_secteur_1: 'carmf',
   medecin_secteur_2: 'carmf',
   chirurgien_dentiste: 'carcdsf',
+  liberal_cipav: 'cipav',
 }
 
 // ── Les nombres exacts ───────────────────────────────────────────────────────────────────────────────────────────
@@ -147,6 +158,15 @@ const CARCDSF_PCV_TAUX = 145 // 1,45 % jusqu'à cinq plafonds
 const CARCDSF_PCV_SEUIL_DENTISTE = 500 * 23 // 500 consultations à 23 € (« exonération PCV »)
 const CARCDSF_PCV_SEUIL_SAGE_FEMME = 3120
 const CARCDSF_PCV_SAGE_FEMME = 780
+// La CIPAV, depuis les revenus 2025 (« après réforme ») : le complémentaire sur le plafond ANNUEL (« plafond sécurité
+// sociale . métropole », jamais proratisé), l'invalidité-décès entre un plancher sur le plafond proratisé et un plafond
+// annuel. Les deux années portent les mêmes valeurs.
+const CIPAV_COMPLEMENTAIRE_TRANCHE_1 = 1100 // 11 % jusqu'à un plafond
+const CIPAV_COMPLEMENTAIRE_TRANCHE_2 = 2100 // 21 % d'un à quatre plafonds
+const CIPAV_COMPLEMENTAIRE_PLAFONDS = 4
+const CIPAV_INVALIDITE_TAUX = 50 // 0,5 %
+const CIPAV_INVALIDITE_PLANCHER = 37 // % du plafond proratisé, arrondi à l'euro
+const CIPAV_INVALIDITE_PLAFOND = 185 // % du plafond annuel
 // La prise en charge du régime de base d'un médecin de secteur 1 (« CARMF . participation CPAM retraite »), selon la
 // tranche où tombe son assiette — non progressive, une borne atteinte passe à la suivante.
 const CARMF_PRISE_EN_CHARGE_BASE: readonly (readonly [pourcentDuPlafond: number, dixMilliemes: number])[] = [
@@ -170,6 +190,7 @@ export type HypotheseRetraite =
   | 'carcdsf-reduction-du-forfait-supposee-demandee'
   | 'carcdsf-exoneration-des-pcv-supposee-demandee'
   | 'carmf-debut-d-activite-complementaire-suppose-du'
+  | 'cipav-invalidite-deces-avant-68-ans-supposee'
 
 export interface EstimationRetraite {
   caisse: CaisseDeRetraite
@@ -204,7 +225,9 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
   if (bareme === undefined) {
     return { disponible: false, motif: `Les barèmes des caisses de retraite ${e.annee} ne sont pas encore saisis dans l'application.` }
   }
-  const profession = e.profession as ProfessionPamc
+  // Jamais nulle ici : le volet de l'Urssaf refuse une estimation sans profession.
+  const profession = e.profession
+  if (profession === null) return { disponible: false, motif: 'Choisissez la profession pour estimer les cotisations.' }
   const caisse = CAISSE_DE_LA_PROFESSION[profession]
   const medecin = caisse === 'carmf'
   if (medecin && e.cumulEmploiRetraite === null) {
@@ -268,6 +291,11 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
     // l'âge : la cotisation est comptée DUE, et l'estimation le dit (RET-Q2).
     complementaire = aLEuro(fois(min(a, partDuPlafond(350)), taux(CARMF_COMPLEMENTAIRE)))
     if (activite.joursAuTrenteEtUn < CARMF_DEUX_ANS) hypotheses.push('carmf-debut-d-activite-complementaire-suppose-du')
+  } else if (caisse === 'cipav') {
+    // Un barème sur le plafond annuel, arrondi à l'euro une fois (« Cipav . retraite complémentaire ») ; pas de plancher.
+    const tranche1 = fois(min(a, P), taux(CIPAV_COMPLEMENTAIRE_TRANCHE_1))
+    const tranche2 = fois(max(ZERO, moins(min(a, fois(P, q(CIPAV_COMPLEMENTAIRE_PLAFONDS))), P)), taux(CIPAV_COMPLEMENTAIRE_TRANCHE_2))
+    complementaire = aLEuro(plus(tranche1, tranche2))
   } else {
     const seuil = partDuPlafond(85)
     let forfait = euros(bareme.carcdsf.complementaireForfait)
@@ -287,6 +315,11 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
     else if (compare(a, P) < 0) invalidite = euros(bareme.carmf.invaliditeDecesClasseA)
     else if (compare(a, partDuPlafond(300)) < 0) invalidite = plus(euros(CARMF_INVALIDITE_B_FORFAIT), fois(a, taux(CARMF_INVALIDITE_B_TAUX)))
     else invalidite = euros(bareme.carmf.invaliditeDecesClasseC)
+  } else if (caisse === 'cipav') {
+    const plancher = aLEuro(fois(PP, q(CIPAV_INVALIDITE_PLANCHER, 100)))
+    const assietteInvalidite = min(max(a, plancher), partDuPlafond(CIPAV_INVALIDITE_PLAFOND))
+    invalidite = aLEuro(fois(assietteInvalidite, taux(CIPAV_INVALIDITE_TAUX)))
+    hypotheses.push('cipav-invalidite-deces-avant-68-ans-supposee')
   } else {
     invalidite = euros(profession === 'sage_femme' ? bareme.carcdsf.invaliditeDecesSageFemme : bareme.carcdsf.invaliditeDecesDentiste)
   }
@@ -300,7 +333,11 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
   const assietteConventionnee = honoraires.n === 0n ? ZERO : fois(a, divise(honoraires, recettes))
   let pcv: Q
   let priseEnChargePcv: Q
-  if (caisse === 'carpimko') {
+  if (caisse === 'cipav') {
+    // Ni PCV ni prise en charge : ce régime est celui des praticiens conventionnés (« cotisations . PCV », PAMC seul).
+    pcv = ZERO
+    priseEnChargePcv = ZERO
+  } else if (caisse === 'carpimko') {
     // Sur l'assiette de la prise en charge, dépassements retirés (« PAMC . assiette participation CPAM »).
     const assietteParticipation = honoraires.n === 0n ? ZERO : fois(assietteConventionnee, divise(moins(honoraires, depassements), honoraires))
     const forfait = euros(bareme.carpimko.pcvForfait)

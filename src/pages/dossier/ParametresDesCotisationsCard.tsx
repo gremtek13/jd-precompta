@@ -6,7 +6,7 @@ import {
   type LectureDesParametres, type SaisieDesParametres, type ValeursDesParametres,
 } from '../../lib/parametresDesCotisations'
 import { supabase } from '../../lib/supabase'
-import type { ProfessionPamc } from '../../lib/types'
+import type { ProfessionLiberale } from '../../lib/types'
 
 // LES PARAMÈTRES DES COTISATIONS, SOUS LE VOLET SOCIAL (ligne 27, TNS-Q1 et TNS-Q4), derrière
 // `PARAMETRES_DES_COTISATIONS_EXPORTES` : le début d'activité du dossier, l'ACRE et le taux dentiste de l'exercice, que
@@ -29,7 +29,7 @@ export default function ParametresDesCotisationsCard({ dossierId, annee, lecture
   annee: number
   // Lue pour CE dossier, ou null tant qu'elle n'est pas revenue.
   lecture: LectureDesParametres | null
-  profession: ProfessionPamc | null
+  profession: ProfessionLiberale | null
   // L'exercice est validé : la base refuse d'en changer l'ACRE ou le taux dentiste ; le début d'activité se corrige encore.
   exerciceValide: boolean
   // Relit les paramètres du dossier ; la carte l'attend avant de relâcher son verrou.
@@ -87,7 +87,7 @@ export default function ParametresDesCotisationsCard({ dossierId, annee, lecture
 function Formulaire({ annee, lus, profession, exerciceValide, enCours, message, onChange, onEnregistrer }: {
   annee: number
   lus: ValeursDesParametres
-  profession: ProfessionPamc | null
+  profession: ProfessionLiberale | null
   exerciceValide: boolean
   enCours: boolean
   message: { texte: string; erreur: boolean } | null

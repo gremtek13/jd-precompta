@@ -619,6 +619,13 @@ export type ProfessionPamc =
   | 'medecin_secteur_2'
   | 'chirurgien_dentiste'
 
+// Toute profession que le volet social porte : celles des praticiens conventionnés, et (ligne 27.1, RET-Q1) une profession
+// libérale réglementée rattachée à la CIPAV — architecte, ostéopathe, psychologue… (la liste : `METIERS_CIPAV`,
+// lib/voletSocialPamc.ts). La base n'accepte `liberal_cipav` qu'une fois la migration `professions_cipav` appliquée
+// (supabase/preparees/20261111130000_professions_cipav.sql) ; avant, l'écran ne l'offre pas
+// (`PROFESSIONS_CIPAV_PREVUES`), et aucune ligne ne la porte.
+export type ProfessionLiberale = ProfessionPamc | 'liberal_cipav'
+
 // Les chiffres du volet social d'un praticien conventionné pour un exercice (voir
 // lib/voletSocialPamc.ts), gardés parce qu'ils viennent du relevé SNIR et non de la comptabilité.
 // Un montant absent (null) veut dire « pas encore saisi », jamais zéro : un zéro se saisit.
@@ -626,7 +633,7 @@ export interface VoletSocialPamc {
   id: string
   dossier_id: string
   annee: number
-  profession: ProfessionPamc | null
+  profession: ProfessionLiberale | null
   // Remplaçant exclusif au 1er janvier : pas de CURPS, et DSAV porte les rétrocessions reçues.
   remplacant: boolean
   // DSCS. Absent : l'application reprend la ligne 4 de la 2035-A (recettes nettes).
