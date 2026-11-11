@@ -100,6 +100,12 @@
 --      compte rattaché à rien, rien ; le client n'écrit aucune des deux tables en direct, ni l'échéance d'une pièce, que le
 --      cabinet ne change que par sa fonction ; le catalogue — et quatre mutations ; avant la migration `achats_du_client`,
 --      une ligne « EN ATTENTE ». TC1 et TC3 ne jugent alors plus « Achats », et M-TC1 lit sous « Notes de frais ».
+--   6novies. Les NOTES DE FRAIS (B7, ligne 51.5 ; bloc NF, en fin de fichier) : NF1 à NF3 — le client « Notes de frais » lit
+--      la note qu'il a saisie et soumise (contrôle positif), sans la case rien ; l'accès « Achats » la lit, soumise ;
+--      l'anonyme et un compte rattaché à rien, rien ; le client n'écrit pas la table en direct ni ne la réécrit ; le
+--      catalogue — et trois mutations ; avant la migration `notes_de_frais`, une ligne « EN ATTENTE ». B7 lisant « Notes de
+--      frais » et « Achats », TC1 et TC3 ne jugent alors plus ni l'une ni l'autre, et M-TC1 lit sous « Documents » ; B2 en
+--      base aussi, TC1 et TC3 sont sans objet, et M-TC1 ne se joue plus.
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -6028,6 +6034,11 @@ declare
   -- B4 (`achats_du_client`, préparée) se sert de « Achats » : en base, TC1 et TC3 ne la jugent plus, et le bloc AC juge ce
   -- qu'elle ouvre ; M-TC1 lit donc la trace sous « Notes de frais », que ni B2 ni B4 n'ouvrent.
   b4 constant boolean := to_regclass('public.paiements_declares') is not null;
+  -- B7 (`notes_de_frais`, préparée) se sert de « Notes de frais » et de « Achats » (qui lit les notes soumises) : en base, TC1
+  -- et TC3 ne jugent plus ni l'une ni l'autre, et le bloc NF juge ce qu'elles ouvrent. M-TC1 lit la trace sous une case
+  -- qu'aucune migration en base n'ouvre ; B2 et B7 en base, il ne se joue plus (TC1 ne coche alors plus rien).
+  b7 constant boolean := to_regclass('public.notes_de_frais') is not null;
+  mot_libre constant text := case when not b7 then 'frais' when not b2 then 'documents' end;
 begin
   if not exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_documents'
                   and not a.attisdropped) then
@@ -6037,16 +6048,17 @@ begin
   end if;
   select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
   -- TC1, puis M-TC1 : la même comparaison, sans puis avec la policy mutante.
-  for scenario in 0 .. 1 loop
+  for scenario in 0 .. case when mot_libre is null then 0 else 1 end loop
     begin
       if scenario = 1 then
-        create policy essai_tc_achats on public.trace_des_droits for select to authenticated
-          using (client_du_dossier(dossier_id, 'frais'));
+        execute format('create policy essai_tc_achats on public.trace_des_droits for select to authenticated '
+                       'using (client_du_dossier(dossier_id, %L))', mot_libre);
       end if;
       sans := '{}'::jsonb; avec := '{}'::jsonb;
       for n in 1 .. 2 loop
         perform set_config('request.jwt.claims', '', true);
-        update memberships set droit_achats = case when b4 then droit_achats else (n = 2) end, droit_frais = (n = 2),
+        update memberships set droit_achats = case when b4 or b7 then droit_achats else (n = 2) end,
+          droit_frais = case when b7 then droit_frais else (n = 2) end,
           droit_documents = case when b2 then droit_documents else (n = 2) end where id = acces;
         for t in select c.relname as nom from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
                   where ns.nspname = 'public' and c.relkind = 'r' order by c.relname loop
@@ -6077,7 +6089,7 @@ begin
           'cible', 'memberships', 'observe', 'écarts : ' || ecarts || ' (' || comparees || ' relations comparées)',
           'ok', ecarts = 'aucun' and comparees > 50);
       else
-        mutations := mutations || jsonb_build_object('mutation', 'M-TC1 — la trace des droits lue sous « Notes de frais »',
+        mutations := mutations || jsonb_build_object('mutation', 'M-TC1 — la trace des droits lue sous la case « ' || mot_libre || ' »',
           'attendu', 'un écart sur trace_des_droits', 'observe', 'écarts : ' || ecarts, 'mord', ecarts like '%trace_des_droits%');
       end if;
       raise exception 'ANNULATION_ESSAI';
@@ -6123,8 +6135,10 @@ begin
 
   -- TC3 : le catalogue.
   select coalesce(string_agg(p.schemaname || '.' || p.tablename || '.' || p.policyname, ', '), 'aucune') into obs from pg_policies p
-   where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ ('''(' || array_to_string(array_remove(array_remove(
-           array['achats', 'frais', 'documents'], case when b4 then 'achats' end), case when b2 then 'documents' end), '|') || ')''');
+   where mot_libre is not null
+     and coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ ('''(' || array_to_string(array_remove(array_remove(array_remove(
+           array['achats', 'frais', 'documents'], case when b4 or b7 then 'achats' end), case when b2 then 'documents' end),
+           case when b7 then 'frais' end), '|') || ')''');
   verdicts := verdicts || jsonb_build_object('controle', 'TC3. aucune policy, de tous les schémas, ne nomme « achats », « frais » ni « documents » (lecture du catalogue)',
     'cible', 'pg_policies', 'observe', obs, 'ok', obs = 'aucune');
   verdicts := verdicts || jsonb_build_object('controle', 'TC. le jeu d''essai des trois cases s''est construit', 'cible', 'le dossier du client',
@@ -8390,6 +8404,147 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $ac$;
+
+-- ══ NF. Les notes de frais (espace client, étape B7 ; migration `notes_de_frais`, PRÉPARÉE) ══
+-- Une table : les notes de frais, lues par le cabinet, par leur auteur sous « Notes de frais », par « Achats » une fois
+-- soumises ; rien d'écrit en direct, tout par les six fonctions.
+--   NF1. Le client « Notes de frais » dépose un ticket, saisit sa note et la soumet : il la lit (le contrôle POSITIF) ; ses
+--        deux cases décochées, il ne la lit plus ; « Achats » seule cochée, il la lit, soumise ; l'anonyme et un compte
+--        rattaché à rien, rien.
+--   NF2. Le client n'écrit pas la table en direct (42501, la garde, avant la RLS), ni ne la réécrit (aucune policy de mise à
+--        jour : zéro ligne).
+--   NF3. Le catalogue : la RLS de la table, quatre policies à authenticated (hors la restrictive `deux_facteurs`), de lecture
+--        ou de restauration ; la garde de la table et celle du justificatif sur `pieces`.
+-- Trois mutations, qui doivent mordre : M-NF1 (la lecture de l'auteur sans sa case : ses cases décochées, il la lit),
+-- M-NF2 (la lecture « Achats » passée à « membre » : ses cases décochées, il la lit), M-NF3 (la lecture « Achats » fermée :
+-- « Achats » seule cochée, il ne la lit plus). Avant la migration, une ligne dit que le bloc attend.
+do $nf$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  piece uuid := gen_random_uuid();
+  note uuid;
+  acces uuid; obs text; frais_vu text; aucun_vu text; achats_vu text; anon_vu text; inconnu_vu text; ecritures text; erreur text;
+  construit boolean := false; n bigint;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.notes_de_frais') is null then
+    insert into rls_verdict values ('NF. les notes de frais : EN ATTENTE de la migration notes_de_frais',
+      'notes_de_frais', 'absente : elles se jugent dès que la migration y est', true);
+    return;
+  end if;
+  select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
+  for scenario in 0 .. 3 loop
+    begin
+      frais_vu := null; aucun_vu := null; achats_vu := null; anon_vu := null; inconnu_vu := null; ecritures := null;
+      if scenario = 1 then
+        alter policy notes_de_frais_lecture_auteur on public.notes_de_frais using (auteur = (select auth.uid()));
+      elsif scenario = 2 then
+        alter policy notes_de_frais_lecture_achats on public.notes_de_frais
+          using (etat not in ('brouillon', 'retiree') and client_du_dossier(dossier_id, 'membre'));
+      elsif scenario = 3 then
+        alter policy notes_de_frais_lecture_achats on public.notes_de_frais using (false);
+      end if;
+      -- Le jeu : la case « Notes de frais » cochée, le client dépose un ticket par le chemin d'aujourd'hui, saisit sa note et
+      -- la soumet.
+      perform set_config('request.jwt.claims', '', true);
+      update memberships set droit_frais = true, droit_achats = false where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into pieces (id, dossier_id, uploaded_by, storage_path, nom_fichier, type_piece)
+        values (piece, dossier_du_client, client, dossier_du_client::text || '/essai-rls-ticket.pdf', 'ticket.pdf', 'note_frais');
+      select n.id into note from enregistrer_note_de_frais(dossier_du_client, null, null, date '2026-11-02', 'repas', 'Déjeuner',
+        24.50, null, null, piece, null, null, null, null) n;
+      perform soumettre_note_de_frais(note, 1);
+      reset role;
+      construit := construit or scenario = 0;
+      -- Le client : « Notes de frais » seule, aucune case, « Achats » seule.
+      for n in 1 .. 3 loop
+        perform set_config('request.jwt.claims', '', true);
+        update memberships set droit_frais = (n = 1), droit_achats = (n = 3) where id = acces;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        obs := (select count(*) from notes_de_frais where id = note)::text;
+        reset role;
+        if n = 1 then frais_vu := obs; elsif n = 2 then aucun_vu := obs; else achats_vu := obs; end if;
+      end loop;
+      -- L'anonyme, puis un compte rattaché à rien.
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      anon_vu := (select count(*) from notes_de_frais)::text;
+      reset role;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      inconnu_vu := (select count(*) from notes_de_frais)::text;
+      reset role;
+      -- Le client, ses deux cases cochées : une écriture directe, puis une réécriture.
+      perform set_config('request.jwt.claims', '', true);
+      update memberships set droit_frais = true, droit_achats = true where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into notes_de_frais (dossier_id, auteur, date_depense, nature, motif, montant_ttc)
+          values (dossier_du_client, client, date '2026-11-02', 'repas', 'Déjeuner', 10);
+        ecritures := 'ACCEPTÉ ';
+      exception when others then ecritures := sqlstate || ' ';
+      end;
+      with x as (update notes_de_frais set motif = 'Autre' where id = note returning 1) select count(*) into n from x;
+      ecritures := ecritures || n;
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      if scenario = 0 then
+        verdicts := verdicts || jsonb_build_object('controle', 'NF1. le client « Notes de frais » lit la note qu''il a soumise (le contrôle positif) ; sans ses cases, rien ; « Achats » seule, il la lit ; l''anonyme et un compte rattaché à rien, rien',
+          'cible', 'notes_de_frais',
+          'observe', '« Notes de frais » : ' || frais_vu || ' | aucune case : ' || aucun_vu || ' | « Achats » : ' || achats_vu
+            || ' | l''anonyme : ' || anon_vu || ' | un inconnu : ' || inconnu_vu,
+          'ok', frais_vu = '1' and aucun_vu = '0' and achats_vu = '1' and anon_vu = '0' and inconnu_vu = '0');
+        verdicts := verdicts || jsonb_build_object('controle', 'NF2. le client n''écrit pas une note en direct (42501, la garde) ni ne la réécrit (zéro ligne)',
+          'cible', 'notes_de_frais', 'observe', ecritures, 'ok', ecritures = '42501 0');
+      elsif scenario = 1 then
+        mutations := mutations || jsonb_build_object('mutation', 'M-NF1 — la lecture de l''auteur sans sa case',
+          'attendu', 'sans ses cases, il lit sa note', 'observe', aucun_vu, 'mord', aucun_vu = '1');
+      elsif scenario = 2 then
+        mutations := mutations || jsonb_build_object('mutation', 'M-NF2 — la lecture « Achats » passée à « membre »',
+          'attendu', 'sans ses cases, il lit sa note soumise', 'observe', aucun_vu, 'mord', aucun_vu = '1');
+      else
+        mutations := mutations || jsonb_build_object('mutation', 'M-NF3 — la lecture « Achats » fermée',
+          'attendu', '« Achats » seule, il ne lit plus la note', 'observe', achats_vu, 'mord', achats_vu = '0');
+      end if;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, 'scénario ' || scenario || ' : ' || sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+  end loop;
+
+  -- NF3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'notes_de_frais'
+     and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')
+     and p.roles = array['authenticated']::name[] and p.cmd in ('SELECT', 'INSERT')
+     and (p.cmd = 'SELECT' or p.with_check = 'is_super_admin()');
+  verdicts := verdicts || jsonb_build_object('controle', 'NF3. la RLS de la table ; quatre policies à authenticated, de lecture ou de restauration ; la garde de la table et celle du justificatif sur pieces (lecture du catalogue)',
+    'cible', 'notes_de_frais, pieces',
+    'observe', n || ' sur 4, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'notes_de_frais'
+        and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout',
+    'ok', n = 4
+      and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'notes_de_frais'
+             and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 4
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.notes_de_frais'::regclass)
+      and exists (select 1 from pg_trigger t where t.tgrelid = 'public.notes_de_frais'::regclass and t.tgname = 'notes_de_frais_garde'
+                   and t.tgenabled = 'O')
+      and exists (select 1 from pg_trigger t where t.tgrelid = 'public.pieces'::regclass
+                   and t.tgname = 'pieces_justificatif_d_une_note_de_frais' and t.tgenabled = 'O'));
+  verdicts := verdicts || jsonb_build_object('controle', 'NF. le jeu d''essai des notes de frais s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null and acces is not null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and acces is not null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $nf$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

@@ -50,7 +50,13 @@ declare
   -- B2 (`documents_et_demandes`, préparée) se sert de « Documents » : en base, les rangs 12 et 13 ne jugent plus que
   -- « Achats » et « Notes de frais », et documentsCabinet.sql juge ce que « Documents » ouvre.
   b2 constant boolean := to_regclass('public.documents_cabinet') is not null;
-  mots constant text := case when to_regclass('public.documents_cabinet') is not null then 'achats|frais' else 'achats|frais|documents' end;
+  -- B4 (`achats_du_client`) et B7 (`notes_de_frais`, préparées) se servent de « Achats », B7 de « Notes de frais » : en base,
+  -- les rangs 12 et 13 ne les jugent plus (achatsClient.sql et notesDeFrais.sql jugent ce qu'elles ouvrent) ; les trois
+  -- cases jugées ailleurs, les deux rangs sont sans objet (`mots` nul : ni policy ni fonction ne se cherchent).
+  b4 constant boolean := to_regclass('public.paiements_declares') is not null;
+  b7 constant boolean := to_regclass('public.notes_de_frais') is not null;
+  mots constant text := nullif(array_to_string(array_remove(array_remove(array_remove(array['achats', 'frais', 'documents'],
+    case when b4 or b7 then 'achats' end), case when b7 then 'frais' end), case when b2 then 'documents' end), '|'), '');
 begin
   if not exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_documents'
                   and not a.attisdropped) then
@@ -186,7 +192,8 @@ begin
     -- 13. … et par le geste : le client, ses trois cases cochées sur son dossier, voit table par table et dans le stockage
     --     exactement ce qu'il voit sans elles (seul l'écart est rendu).
     for n in 1 .. 2 loop
-      update memberships set droit_achats = (n = 2), droit_frais = (n = 2), droit_documents = case when b2 then droit_documents else (n = 2) end
+      update memberships set droit_achats = case when b4 or b7 then droit_achats else (n = 2) end,
+        droit_frais = case when b7 then droit_frais else (n = 2) end, droit_documents = case when b2 then droit_documents else (n = 2) end
        where user_id = client and dossier_id = dossier_du_client;
       for t in select c.relname as nom from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
                 where ns.nspname = 'public' and c.relkind = 'r' order by c.relname loop

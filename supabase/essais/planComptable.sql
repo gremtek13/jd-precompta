@@ -85,7 +85,12 @@ declare
   -- historique en base décide laquelle des deux le catalogue doit porter.
   empreinte_catalogue_468 constant text := 'a568112079b85b82965e17c4de77614d';
   au_468 constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'dirigeant_au_468');
-  roles_du_catalogue constant int := 32;
+  -- Les mêmes, la migration `notes_de_frais` (B7, préparée) appliquée : le rôle `personnel` (421000, racines 421 et 4286, rang
+  -- 330) s'y ajoute — trente-trois rôles. src/lib/notesDeFrais.test.ts les recalcule. Son historique en base décide.
+  empreinte_catalogue_personnel constant text := 'c558802030c861d8da69077534f42a37';
+  empreinte_catalogue_468_personnel constant text := '9f72319a30681dc8dd7645227e67a930';
+  au_personnel constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'notes_de_frais');
+  roles_du_catalogue constant int := case when au_personnel then 33 else 32 end;
   -- Le `case` que cinq fonctions recopiaient : le compte du dirigeant, 108000 en trésorerie. Depuis l'étape PC2
   -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
   -- l'export les portent toutes : `pc2_exigee` est vrai, et le `case` recopié est une faute.
@@ -141,8 +146,10 @@ begin
   select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
            || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
     into n, texte from roles_comptables;
-  verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte)',
-    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue and texte = case when au_468 then empreinte_catalogue_468 else empreinte_catalogue end, false));
+  verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte) — 33 avec le personnel (B7)',
+    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue and texte = case
+      when au_468 and au_personnel then empreinte_catalogue_468_personnel when au_468 then empreinte_catalogue_468
+      when au_personnel then empreinte_catalogue_personnel else empreinte_catalogue end, false));
 
   select count(*) filter (where compte_defaut !~ '^[0-9]{6}$'
                             or not exists (select 1 from unnest(racines) x(r) where left(compte_defaut, length(x.r)) = x.r)),
@@ -612,6 +619,11 @@ begin
       ('tva_collectee_en_attente', '445801', null), ('valeurs_a_l_encaissement', '511100', null),
       ('caisse', '531000', null), ('services_bancaires', '627100', null)) as v(role, compte, prefixe);
     get diagnostics n = row_count;
+    -- Le personnel (B7, migration `notes_de_frais`, préparée) : en base, son compte décalé s'écrit aussi — le plan tout entier.
+    if au_personnel then
+      insert into plan_comptable_dossier (dossier_id, role, compte, prefixe_auxiliaire) values (dossier_libre, 'personnel', '421100', null);
+      n := n + 1;
+    end if;
     select count(*) filter (where public.compte_du_role(dossier_libre, p.role) is distinct from p.compte),
            count(*) filter (where public.compte_du_role(dossier_client, p.role) is distinct from r.compte_defaut)
       into m, k from plan_comptable_dossier p join roles_comptables r on r.role = p.role where p.dossier_id = dossier_libre;

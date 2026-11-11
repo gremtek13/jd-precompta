@@ -280,8 +280,10 @@ begin
   if tg_op = 'UPDATE' and new.dossier_id = old.dossier_id then
     return new;
   end if;
-  if exists (select 1 from public.notes_de_frais n where n.piece_id = old.id)
-     and exists (select 1 from public.dossiers d where d.id = old.dossier_id) then
+  if tg_op = 'DELETE' and not exists (select 1 from public.dossiers d where d.id = old.dossier_id) then
+    return old;
+  end if;
+  if exists (select 1 from public.notes_de_frais n where n.piece_id = old.id) then
     raise exception 'Cette pièce est le justificatif d''une note de frais : elle ne se supprime ni ne change de dossier tant que la note la cite.'
       using errcode = '23514';
   end if;

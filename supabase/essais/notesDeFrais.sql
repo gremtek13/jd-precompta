@@ -240,7 +240,7 @@ begin
         ('M7', 'M7 — la soumission sans la version lue', $m$FONCTION:soumettre_note_de_frais(uuid,integer):if v_note.version is distinct from p_version_lue then:if false then$m$, 34),
         ('M8', 'M8 — la garde laisse réécrire une note soumise', $m$FONCTION:garder_note_de_frais():if (to_jsonb(new) - array['etat', 'version', 'modifiee_le'] - v_passage):if false and (to_jsonb(new) - array['etat', 'version', 'modifiee_le'] - v_passage)$m$, 84),
         ('M9', 'M9 — la garde laisse une note soumise revenir au brouillon', $m$FONCTION:garder_note_de_frais():or (old.etat = 'soumise' and new.etat in ('approuvee', 'refusee')):or (old.etat = 'soumise' and new.etat in ('approuvee', 'refusee', 'brouillon'))$m$, 85),
-        ('M10', 'M10 — la garde de pieces laisse partir le justificatif', $m$FONCTION:garder_piece_d_une_note_de_frais():and exists (select 1 from public.dossiers d where d.id = old.dossier_id) then:and false then$m$, 86),
+        ('M10', 'M10 — la garde de pieces laisse partir le justificatif', $m$FONCTION:garder_piece_d_une_note_de_frais():if exists (select 1 from public.notes_de_frais n where n.piece_id = old.id) then:if false then$m$, 86),
         ('M11', 'M11 — la lecture de l''auteur sans sa case', $m$alter policy notes_de_frais_lecture_auteur on public.notes_de_frais using (auteur = (select auth.uid()))$m$, 71)
       )
       select null::text as m, null::text as libelle, null::text as ddl, t.* from etapes t

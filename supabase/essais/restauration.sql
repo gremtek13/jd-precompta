@@ -861,6 +861,26 @@ begin
   end if;
 end $$;
 
+-- ══ Les notes de frais (ligne 51.5, B7) ══ Au plan du code quand `NOTES_DE_FRAIS_PREVUES` est levé — c'est-à-dire quand sa
+-- migration est en base : le script met sa table dès qu'elle existe, juste après `dossier_permanent`, AVANT les blocs des
+-- achats du client et des documents et des demandes, qui se jouent après lui et passent devant (ORDRE_RESTAURATION_PREVU :
+-- les documents et les demandes, les achats du client, puis les notes de frais, bien après les pièces qu'elles citent) ; les
+-- tables qui suivent reculent d'un rang — le geste des articles ; son chemin. Aucune vague : elle ne se cite pas elle-même.
+-- Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du
+-- code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.notes_de_frais') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'dossier_permanent';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'notes_de_frais');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('notes_de_frais','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les achats du client (ligne 51.5, B4) ══ Au plan du code quand `ACHATS_DU_CLIENT_PREVUS` est levé — c'est-à-dire quand
 -- sa migration est en base : le script met ses deux tables dès qu'elles existent, juste après `dossier_permanent`, AVANT le
 -- bloc des documents et des demandes, qui se joue après lui et passe devant (ORDRE_RESTAURATION_PREVU : les documents et
