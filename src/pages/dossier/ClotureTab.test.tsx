@@ -62,7 +62,9 @@ const faux = vi.hoisted(() => ({
   exercicesRemplis: [] as number[],
   entetes: [] as unknown[],
   // Et l'annexe 2035-E portée en page 3, ou null quand elle n'est pas due.
-  annexes: [] as ({ valeurs: ReadonlyMap<string, number>; entete: Record<string, unknown> } | null)[],
+  annexes: [] as ({ valeurs: ReadonlyMap<string, number | null>; aSaisir: readonly string[]; entete: Record<string, unknown> } | null)[],
+  // Le drapeau `SAISIES_2035E_EXPORTEES`, que ce fichier ne lève que le temps d'un test (le mock du module le lit ici).
+  saisies2035E: false,
   // Les mises à jour envoyées, table et valeurs : l'enregistrement d'un poste manquant.
   misesAJour: [] as { table: string; valeurs: unknown }[],
   // Ce que l'écran croit de qui regarde (`useAuth().isSuperAdmin`), et ce qu'en sait la BASE : la policy d'écriture
@@ -175,11 +177,18 @@ const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLA
 const HUIT_CLES = ['id', 'journal', 'numero', 'piece_ref', 'piece_date', 'compte_lib', 'comp_aux_num', 'comp_aux_lib']
 const ENGAGEMENT = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT } as const
 
+vi.mock('../../lib/saisies2035E', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../lib/saisies2035E')>()
+  const module = { ...original }
+  Object.defineProperty(module, 'SAISIES_2035E_EXPORTEES', { get: () => faux.saisies2035E, enumerable: true })
+  return module
+})
+
 vi.mock('../../lib/remplir2035', () => ({
   remplir2035: (
     valeurs: Map<string, number>,
     entete: unknown,
-    annexe: { valeurs: ReadonlyMap<string, number>; entete: Record<string, unknown> } | null,
+    annexe: { valeurs: ReadonlyMap<string, number | null>; aSaisir: readonly string[]; entete: Record<string, unknown> } | null,
     annee: number,
   ) => {
     faux.exercicesRemplis.push(annee)
@@ -1248,6 +1257,31 @@ describe('ClotureTab — l’annexe 2035-E', () => {
     expect([annexe.valeurs.get('EF'), annexe.valeurs.get('EJ'), annexe.valeurs.get('EW'), annexe.valeurs.get('JU')])
       .toEqual([160_000, 120, 120, 128_000])
     expect(annexe.entete).toEqual({ nom: 'Dossier de test', siret: '12345678901234', adresse: '12 rue des Lilas\n75011 Paris', annee: 2025 })
+    // Drapeau des saisies baissé : rien à saisir, le PDF d'avant.
+    expect(annexe.aSaisir).toEqual([])
+  })
+
+  it('drapeau des saisies levé : le PDF reçoit les lignes « à saisir » en `null`, et leurs codes', async () => {
+    // Aucune saisie de l'exercice : EN, EK, EM, ER, EU, EV ne sont pas dites. Le total 1 (EI) en dépend, pas EF.
+    poser()
+    faux.saisies2035E = true
+    try {
+      faux.parTable.categories = [CATEGORIE, RECETTES]
+      faux.parTable.pieces = [PIECE, recette(160_000)]
+      faux.parTable.saisies_2035e = []
+      faux.annexes = []
+      monter(2025, false)
+      await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+      await telecharger()
+      expect(faux.annexes).toHaveLength(1)
+      const annexe = faux.annexes[0]!
+      expect(annexe.valeurs.get('EF')).toBe(160_000)
+      expect([annexe.valeurs.get('EN'), annexe.valeurs.get('EI'), annexe.valeurs.get('EW'), annexe.valeurs.get('JU')])
+        .toEqual([null, null, null, null])
+      expect(annexe.aSaisir).toEqual(['EN', 'EK', 'EM', 'ER', 'EU', 'EV'])
+    } finally {
+      faux.saisies2035E = false
+    }
   })
 
   it('dit les loyers qu’elle ne déduit pas, à leur montant', async () => {

@@ -4,6 +4,7 @@ import { ancragesDesCases, planDeRemplissage } from './gabarit2035'
 import type { EnteteDeclaration, FiletVertical, FragmentTexte, PageFormulaire } from './gabarit2035'
 import { planDeRemplissage2035E } from './gabarit2035E'
 import type { EnteteAnnexe2035E } from './gabarit2035E'
+import { mentionDeLAnnexe2035E } from './saisies2035E'
 import { mentionDuPdf, modeleDuFormulaire } from './modeles2035'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
@@ -77,7 +78,11 @@ export interface Remplissage2035 {
 
 // L'annexe 2035-E à porter sur la page 3 : ses lignes à l'euro (`calculer2035E(...).lignes`) et son en-tête.
 export interface Annexe2035EARemplir {
-  valeurs: ReadonlyMap<string, number>
+  // `null` : une ligne « à saisir » (lib/saisies2035E.ts), laissée vide sur le PDF, jamais écrite 0.
+  valeurs: ReadonlyMap<string, number | null>
+  // Les codes des lignes encore à saisir, que la page 3 nomme en rouge (`mentionDeLAnnexe2035E`) ; vide, rien ne s'écrit et
+  // le PDF est celui d'avant. Sans valeur par défaut : un appelant qui l'oublierait tairait ce qui manque.
+  aSaisir: readonly string[]
   entete: EnteteAnnexe2035E
 }
 
@@ -152,6 +157,16 @@ export async function remplir2035(
         feuille.drawText(ligne, { x: 28, y: haut - 14 - k * 9, size: 7, font: police, color: rgb(0.75, 0, 0) })
       })
     }
+  }
+
+  // Les lignes de l'annexe encore à saisir se disent sur SA page, sous la mention du millésime quand il y en a une.
+  const avertissementAnnexe = annexe2035E ? mentionDeLAnnexe2035E(annexe2035E.aSaisir) : []
+  const pageAnnexe = feuilles[PAGE_2035E - 1]
+  if (avertissementAnnexe.length > 0 && pageAnnexe) {
+    const haut = pageAnnexe.getHeight()
+    avertissementAnnexe.forEach((ligne, k) => {
+      pageAnnexe.drawText(ligne, { x: 28, y: haut - 14 - (mention.length + k) * 9, size: 7, font: police, color: rgb(0.75, 0, 0) })
+    })
   }
 
   return { pdf: await pdf.save(), codesSansAncrage, codesSansAncrage2035E }

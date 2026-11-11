@@ -51413,3 +51413,17 @@ et le mutant qui lit le plan avant l'insertion laisse un à-nouveau au 512000 so
 l'octet (`29f42ed5…`), la réapplication passe. Tests : 20 (`planDepuisLaBalance.test.ts`), trois mutations du module mordent.
 **Restent** : l'écran (la carte de la balance en deux temps, `regler_plan_du_dossier` puis les à-nouveaux) ; un appel direct
 d'une ligne dans `a_nouveaux` par le cabinet (policy `FOR ALL`) échappe à la fonction, comme son équilibre.
+
+### 11/11/2026 — LE PDF DE L'ANNEXE 2035-E DIT CE QUI RESTE À SAISIR (DERRIÈRE SON DRAPEAU)
+
+(Agent dev, ligne 48, sans migration ni déploiement.) Avant, l'écran passait au PDF les lignes de `annexe2035EAvecSaisie` après
+leur remplacement par 0 : EN, EK, EM, ER, EU, EV non dites ne s'imprimaient pas (un zéro ne s'écrit pas), mais EI, EW, EX et JU,
+calculés comme si ces lignes valaient 0, s'écrivaient — des totaux supposés. Maintenant `Annexe2035EARemplir` reçoit `valeurs`
+en `number | null` (une ligne `null` reste vide, `planDeRemplissage2035E` la saute) et `aSaisir`, obligatoire, que Clôture tire de
+`lignesDuPdfASaisir` : les seuls montants (EN, EK, EM, ER, EU, EV), pas le cadre AH et BK, que le PDF n'imprime jamais.
+`mentionDeLAnnexe2035E` (`lib/saisies2035E.ts`) écrit, en rouge au haut de la page 3 et sous la mention du millésime quand il y
+en a une, deux lignes WinAnsi qui nomment ces codes ; rien quand la liste est vide. Drapeau `SAISIES_2035E_EXPORTEES` baissé :
+`annexeSaisie` est nul, valeurs et liste vides, et le PDF est celui d'avant, à l'octet près — un haché sha256 relevé sur le code
+d'avant (dates figées, pdf-lib datant chaque chargement) le garde dans `remplir2035.test.ts`, qui relit la page 3 par pdf.js
+(case nulle absente, total supposé absent, aucun « 0 » de plus, avertissement présent) ; `ClotureTab.test.tsx` joue le drapeau levé
+(le module forcé par un accesseur) : les lignes `null` et les codes arrivent au PDF, la mutation qui repasse `annexe.lignes` le fait rougir.
