@@ -69,8 +69,8 @@ describe('la migration, redite', () => {
   })
 
   it('le retour retire la table et les six fonctions que la migration crée, et se refuse sous un lien', () => {
-    const creees = [...MIGRATION.matchAll(/^create function public\.([a-z_]+)\(/gm)].map((m) => m[1]).sort()
-    const retirees = [...RETOUR.matchAll(/^drop function public\.([a-z_]+)\(/gm)].map((m) => m[1]).sort()
+    const creees = [...MIGRATION.matchAll(/^create function public\.([a-z_]+)\(/gim)].map((m) => m[1]).sort()
+    const retirees = [...RETOUR.matchAll(/^drop function public\.([a-z_]+)\(/gim)].map((m) => m[1]).sort()
     expect(creees).toHaveLength(6)
     expect(retirees).toEqual(creees)
     expect(RETOUR).toContain('drop table public.honoraires_factures;')

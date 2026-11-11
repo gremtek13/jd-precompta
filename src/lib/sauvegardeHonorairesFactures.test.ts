@@ -46,7 +46,7 @@ describe('le plan prévu, factures d’honoraires comprises', () => {
   it('ses relations sont les clés étrangères de la migration, à leur action', () => {
     const siennes = RELATIONS_PREVUES.filter((r) => r.enfant === TABLE)
       .map((r) => `${r.colonne} → ${r.parent} (${r.aLaSuppression})`).sort()
-    const corps = /create table public\.honoraires_factures \(([\s\S]*?)\n\);/.exec(MIGRATION)![1]
+    const corps = /create table public\.honoraires_factures \(([\s\S]*?)\n\);/i.exec(MIGRATION)![1]
     const declarees = [...corps.matchAll(/^\s+([a-z_]+) uuid[^,\n]* references public\.([a-z_]+) \(id\)( on delete cascade)?/gm)]
       .map(([, colonne, parent, cascade]) => `${colonne} → ${parent} (${cascade ? 'cascade' : 'bloque'})`).sort()
     expect(declarees).toEqual(['dossier_id → dossiers (cascade)', 'facture_id → factures_emises (cascade)', 'lettre_id → lettres_de_mission (bloque)'])
