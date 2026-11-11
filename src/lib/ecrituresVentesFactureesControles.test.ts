@@ -93,7 +93,7 @@ const INVENTAIRE: Record<string, { nombre: number; raison: string }> = {
   'appel:soldeCompte': { nombre: 3, raison: 'les totaux de TVA de l’exercice : la TVA collectée d’une vente facturée y compte, à bon droit' },
   'appel:numerotationValidee': { nombre: 1, raison: 'le FEC d’un exercice validé, relu de ce que la validation a figé : VF7 y numérotera ces lignes' },
   'appel:absenceFec (filtré)': { nombre: 1, raison: 'ce qui n’ira pas au FEC, SANS les lignes qu’il rattache (VF4c2) : celles d’une vente facturée à réécrire ou à retirer y restent, et le badge le dit' },
-  'appel:genererFec': { nombre: 1, raison: 'le FEC, qui porte depuis VF4c2 les lignes rattachées à leur écriture composée' },
+  'appel:numeroterFec': { nombre: 1, raison: 'le FEC, qui porte depuis VF4c2 les lignes rattachées à leur écriture composée (sa numérotation, rendue par `rendreLesBanquesAuFec`, MCB5)' },
   'appel:piecesCiteesParLExercice (filtré)': { nombre: 1, raison: 'INAL3-Q1 : les pièces que l’exercice validé cite, par `piece_id` ou par leur bien, pour dire avant le clic du paquet d’archive celles qui n’ont pas d’empreinte ; une ligne d’une vente facturée ne cite aucune pièce' },
   'appel:pisteAudit': { nombre: 1, raison: 'l’export de la piste d’audit, qui justifie depuis VF4c2 ces lignes par leur facture, leur registre ou leur relevé' },
   'méthode:filter': { nombre: 4, raison: 'le compte des validées, l’exercice affiché, la recherche affichée : les lignes d’une vente facturée sont des écritures du journal comme les autres ; et (VF4c2) le compte de celles que le FEC ne rattache pas' },
@@ -116,7 +116,7 @@ describe('le relevé : chaque emploi du brouillon dans l’onglet Écritures, et
   })
 
   it('la rupture de la piste d’audit reçoit le brouillon SANS les lignes d’une vente facturée', () => {
-    expect(TEXTE_ONGLET).toMatch(/rupturesPisteAudit\(ecritures\.filter\(\(e\) => !ligneDUneVenteFacturee\(e, mouvementsDesVentes\)\), idsJustifies, modele\.plan\)/)
+    expect(TEXTE_ONGLET).toMatch(/rupturesPisteAudit\(ecritures\.filter\(\(e\) => !ligneDUneVenteFacturee\(e, mouvementsDesVentes\)\), idsJustifies, modele\.plan, banques\)/)
   })
 
   it('le scanner voit ce qu’on y plante : un emploi nouveau, une forme non reconnue', () => {
