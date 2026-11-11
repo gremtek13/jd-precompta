@@ -6,6 +6,9 @@ import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
+import DocumentsMisADisposition from './DocumentsMisADisposition'
+import DemandesAuClient from './DemandesAuClient'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from '../../lib/documentsEtDemandes'
 import { documentsAvecTexteOcr, enregistrerTexteOcr, lireTexteOcrDuDocument, texteOcrDuDocument } from '../../lib/texteOcr'
 import { documentsARelire, relireTextesDocuments } from '../../lib/relectureDocuments'
 import { lireTout } from '../../lib/lectureComplete'
@@ -709,6 +712,15 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           onClose={() => setAjoutOuvert(false)}
           onImported={load}
         />
+      )}
+
+      {/* Les documents que le cabinet met à disposition et ses demandes au client (ligne 51.5, étape B3a) : avec leur
+          migration seulement (`DOCUMENTS_ET_DEMANDES_PREVUS`) — avant, leurs tables n'existent pas. */}
+      {DOCUMENTS_ET_DEMANDES_PREVUS && (
+        <>
+          <DocumentsMisADisposition dossierId={dossierId} />
+          <DemandesAuClient dossierId={dossierId} />
+        </>
       )}
     </>
   )

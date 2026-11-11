@@ -4,7 +4,7 @@ import {
   CE_QU_ATTEND_UNE_DEMANDE, DOCUMENTS_ET_DEMANDES_PREVUS, etatDUneDemande, MOTIFS_DE_CLOTURE, NATURES_DES_DOCUMENTS, REFUS,
   refusDeLaCloture, refusDeLaDemande, refusDeLaPublication, refusDeLaReponse, TABLES_DES_DOCUMENTS_ET_DEMANDES,
 } from './documentsEtDemandes'
-import { CASES_SANS_EFFET } from './droitsAcces'
+import { CASES_SANS_EFFET, casesSansEffetSelon, ceQueDitLaCaseDocuments } from './droitsAcces'
 
 // LES DOCUMENTS ET LES DEMANDES DU CABINET (ligne 51.5, étape B2) : le module redit la migration PRÉPARÉE
 // `documents_et_demandes` — chaque refus à la lettre et dans son ordre, chaque liste fermée — et son essai la rejoue.
@@ -164,9 +164,14 @@ describe('l’état d’une demande se déduit', () => {
 })
 
 describe('le jour où le drapeau se lève', () => {
-  // L'onglet Accès dit, sous la case « Documents », qu'elle ne change encore rien (B1) : faux dès que la migration est en
-  // base. Ce garde tombe le jour où le drapeau se lève, tant que la phrase de la case n'a pas été réécrite (étape B3).
-  it('« Documents » ne se dit sans effet que tant que la migration n’est pas en base', () => {
-    expect((CASES_SANS_EFFET as readonly string[]).includes('documents')).toBe(!DOCUMENTS_ET_DEMANDES_PREVUS)
+  // L'onglet Accès dit, sous la case « Documents », qu'elle ne change encore rien (B1) tant que la migration n'est pas en
+  // base ; avec elle, ce qu'elle ouvre (étape B3a). Les deux états se jouent par la fonction ; la constante suit le drapeau.
+  it('« Documents » ne se dit sans effet que tant que la migration n’est pas en base — sous les deux états', () => {
+    for (const enBase of [false, true]) {
+      expect(casesSansEffetSelon(enBase).includes('documents')).toBe(!enBase)
+      expect(casesSansEffetSelon(enBase)).toEqual(expect.arrayContaining(['achats', 'frais']))
+    }
+    expect(CASES_SANS_EFFET).toEqual(casesSansEffetSelon(DOCUMENTS_ET_DEMANDES_PREVUS))
+    expect(ceQueDitLaCaseDocuments()).not.toContain('ne change encore rien')
   })
 })

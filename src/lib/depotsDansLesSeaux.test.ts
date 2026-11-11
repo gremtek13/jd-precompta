@@ -3,7 +3,8 @@ import { join, relative } from 'node:path'
 import ts from 'typescript'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
-  TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, TYPES_DES_LOGOS_DE_FACTURE, TYPES_DES_ORIGINAUX_D_IMPORT, typeSansParametres,
+  TYPES_DES_DOCUMENTS_DU_CABINET, TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, TYPES_DES_LOGOS_DE_FACTURE,
+  TYPES_DES_ORIGINAUX_D_IMPORT, typeSansParametres,
 } from './bornesStockage'
 import {
   bornesDeLaMigration, fichierDeLaMigrationDuLogo, seauDeLaMigrationDuLogo, texteDeLaMigration, type BornesLues,
@@ -83,6 +84,8 @@ const PREPARATEURS_A_SEAU_FIXE: Record<string, { seau: string; types: readonly s
   logoPret: { seau: 'ventes', types: TYPES_DES_LOGOS_DE_FACTURE },
   // L'original d'une facture reprise (A8d2a) : le même seau, sous `<dossier>/imports/` — PDF, texte brut (un XML), CSV.
   preparerOriginalDImport: { seau: 'ventes', types: TYPES_DES_ORIGINAUX_D_IMPORT },
+  // Un document que le cabinet met à disposition (B3a) : le seau privé `documents-cabinet` — PDF, JPEG, PNG.
+  preparerDocumentDuCabinet: { seau: 'documents-cabinet', types: TYPES_DES_DOCUMENTS_DU_CABINET },
 }
 
 function litteral(n: ts.Node | undefined): string | null {
@@ -265,6 +268,17 @@ function typesDesOriginaux(): string[] | null {
   return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1])
 }
 
+// Le seau des documents du cabinet tel que la migration `documents_et_demandes` (B2) le crée : l'écran des documents mis à
+// disposition (B3a) y dépose, derrière `DOCUMENTS_ET_DEMANDES_PREVUS`. Lu dans l'export, ou dans supabase/preparees/ tant
+// qu'elle y attend : le dépôt existe dans la source dès aujourd'hui, et son seau se juge comme les autres.
+function seauDesDocumentsDuCabinet(): BornesLues[] {
+  const dossiers = [new URL('../../supabase/schema/', import.meta.url), new URL('../../supabase/preparees/', import.meta.url)]
+  const fichiers = dossiers.flatMap((d) => readdirSync(d).filter((n) => /^\d{14}_documents_et_demandes\.sql$/.test(n)).map((n) => new URL(n, d)))
+  if (fichiers.length === 0) return []
+  const { seau, taille, types } = seauDeLaMigrationDuLogo(readFileSync(fichiers[0], 'utf8'))
+  return [{ seau, taille, types }]
+}
+
 function bornesDesSeaux(texteDesTroisSeaux: string = texteDeLaMigration()): BornesLues[] {
   const logo = fichierDeLaMigrationDuLogo()
   const ventes = logo === null ? [] : [seauDeLaMigrationDuLogo(readFileSync(logo, 'utf8'))]
@@ -272,6 +286,7 @@ function bornesDesSeaux(texteDesTroisSeaux: string = texteDeLaMigration()): Born
   return [
     ...bornesDeLaMigration(texteDesTroisSeaux),
     ...ventes.map(({ seau, taille, types }) => ({ seau, taille, types: originaux ?? types })),
+    ...seauDesDocumentsDuCabinet(),
   ]
 }
 
@@ -300,12 +315,14 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
     expect(tout.filter((s) => s.cote === 'navigateur').length).toBeGreaterThan(250)
     expect(tout.filter((s) => s.cote === 'fonction').length).toBeGreaterThanOrEqual(16)
     expect(analyses.reduce((n, a) => n + a.lus, 0)).toBeGreaterThanOrEqual(20)
-    // Quatorze dépôts : les dix chemins du navigateur (deux pour une facture reçue, deux pour un pack, l'original d'une facture
-    // reprise, la copie d'une facture d'honoraires déposée chez le client, LM8) et les deux fonctions.
+    // Quinze dépôts : les onze chemins du navigateur (deux pour une facture reçue, deux pour un pack, l'original d'une facture
+    // reprise, la copie d'une facture d'honoraires déposée chez le client, LM8, un document mis à disposition, B3a) et les
+    // deux fonctions.
     // Un dépôt de plus se juge ici comme les autres ; ce nombre dit seulement qu'on les voit tous.
     expect(depots().map((d) => `${d.chemin} → ${d.seau}`).sort()).toEqual([
       'src/lib/depot.ts → pieces',
       'src/lib/depotDesHonorairesLecture.ts → pieces',
+      'src/lib/documentsEtDemandesEcriture.ts → documents-cabinet',
       'src/lib/importDesFacturesLecture.ts → ventes',
       'src/lib/importFichiers.ts → pieces',
       'src/lib/logoDesFacturesEcriture.ts → ventes',

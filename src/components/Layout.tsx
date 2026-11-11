@@ -13,8 +13,10 @@ import { monAnalyseOuverte } from '../lib/analyseClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from '../lib/situationsPubliees'
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from '../lib/documentsEtDemandes'
+import { mesDemandesOuvertes, mesDocumentsOuverts } from '../lib/documentsEtDemandesVue'
 import {
-  IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconComptesMaster, IconDossiers, IconEcheancier,
+  IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconChecklist, IconComptesMaster, IconDocuments, IconDossiers, IconEcheancier,
   IconEquipe, IconEstimation, IconFactures, IconStatistiques,
   IconInformations, IconCadenas, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun,
@@ -104,6 +106,10 @@ function Coque() {
   // « Mes comptes » (ligne 51.5, étape C4b) : de même, avec la case « Comptes » sur la société affichée, comme sa route.
   const mesComptes = role === 'client'
     && mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)
+  // « Mes documents » (ligne 51.5, étape B3a) : de même, avec la case « Documents » ; « Mes demandes », à tout accès client.
+  const mesDocuments = role === 'client'
+    && mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)
+  const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
@@ -349,6 +355,20 @@ function Coque() {
                   <IconBilan width={18} height={18} />
                   <span className="nav-label-full">Mes comptes</span>
                   <span className="nav-label-court">Comptes</span>
+                </NavLink>
+              )}
+              {mesDocuments && (
+                <NavLink to="/mes-documents" title="Mes documents" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconDocuments width={18} height={18} />
+                  <span className="nav-label-full">Mes documents</span>
+                  <span className="nav-label-court">Docs</span>
+                </NavLink>
+              )}
+              {mesDemandes && (
+                <NavLink to="/mes-demandes" title="Mes demandes" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconChecklist width={18} height={18} />
+                  <span className="nav-label-full">Mes demandes</span>
+                  <span className="nav-label-court">Demandes</span>
                 </NavLink>
               )}
               {/* « Mon analyse » (étape B9a) : avec « Mes ventes » ou « Ma banque », comme sa route (lib/analyseClient.ts). */}

@@ -24,6 +24,10 @@ import ClientVentes from './ClientVentes'
 import ClientBanque from './ClientBanque'
 import ClientCaisse from './ClientCaisse'
 import ClientComptes from './ClientComptes'
+import ClientDocuments from './ClientDocuments'
+import ClientDemandes from './ClientDemandes'
+import DocumentsMisADisposition from './dossier/DocumentsMisADisposition'
+import DemandesAuClient from './dossier/DemandesAuClient'
 import SituationsPubliees from './dossier/SituationsPubliees'
 import ClientEcheancier from './ClientEcheancier'
 import ClientAnalyse from './ClientAnalyse'
@@ -272,6 +276,14 @@ const ECRANS: Ecran[] = [
         fraisSansPoste: [], recettesDeCaisseSansPoste: [] })}
     />
   ) },
+  // « Mes documents » et « Mes demandes » (ligne 51.5, étape B3a) : la case « Documents » relue à la base avec les documents ;
+  // les demandes, leurs réponses, leurs relances et les dépôts du client, lus en entier.
+  { nom: 'ClientDocuments', fichier: 'pages/ClientDocuments.tsx', rendre: () => <MemoryRouter><ClientDocuments /></MemoryRouter> },
+  { nom: 'ClientDemandes', fichier: 'pages/ClientDemandes.tsx', rendre: () => <MemoryRouter><ClientDemandes /></MemoryRouter> },
+  // Les sections du cabinet (étape B3a), sous l'onglet des documents administratifs : documents, ouvertures et accès ; demandes,
+  // réponses, relances et dépôts cités.
+  { nom: 'DocumentsMisADisposition', fichier: 'pages/dossier/DocumentsMisADisposition.tsx', rendre: () => <DocumentsMisADisposition dossierId="d1" /> },
+  { nom: 'DemandesAuClient', fichier: 'pages/dossier/DemandesAuClient.tsx', rendre: () => <DemandesAuClient dossierId="d1" /> },
   // « Mon échéancier » (ligne 51.5, étape C1) : le dossier et ses échéances de cotisation, lus en entier ; et sa carte de
   // l'accueil, montée seule (l'accueil ne la monte qu'une fois ses propres lectures revenues).
   { nom: 'ClientEcheancier', fichier: 'pages/ClientEcheancier.tsx', rendre: () => <MemoryRouter><ClientEcheancier /></MemoryRouter> },
