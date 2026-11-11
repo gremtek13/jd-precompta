@@ -28,6 +28,8 @@ import ClientDocuments from './ClientDocuments'
 import ClientDemandes from './ClientDemandes'
 import ClientAchats from './ClientAchats'
 import AchatDeLaPiece from './dossier/AchatDeLaPiece'
+import ClientNotesDeFrais from './ClientNotesDeFrais'
+import NotesDeFraisDuClient from './dossier/NotesDeFraisDuClient'
 import DocumentsMisADisposition from './dossier/DocumentsMisADisposition'
 import DemandesAuClient from './dossier/DemandesAuClient'
 import SituationsPubliees from './dossier/SituationsPubliees'
@@ -141,6 +143,13 @@ const achatsGarde = vi.hoisted(() => ({ leve: false }))
 vi.mock('../lib/achatsClient', async (original) => {
   const vrai = await original<typeof import('../lib/achatsClient')>()
   return { ...vrai, get ACHATS_DU_CLIENT_PREVUS() { return achatsGarde.leve } }
+})
+// LE DRAPEAU DES NOTES DE FRAIS (`NOTES_DE_FRAIS_PREVUES`, lib/notesDeFrais.ts), baissé : ses écrans ne lisent ni ne rendent
+// rien sans lui. Même patron : levé le temps du montage de « Mes notes de frais » et de la section du cabinet (étape B8).
+const notesDeFraisGarde = vi.hoisted(() => ({ leve: false }))
+vi.mock('../lib/notesDeFrais', async (original) => {
+  const vrai = await original<typeof import('../lib/notesDeFrais')>()
+  return { ...vrai, get NOTES_DE_FRAIS_PREVUES() { return notesDeFraisGarde.leve } }
 })
 const devisContactGarde = vi.hoisted(() => ({ leve: false }))
 vi.mock('../lib/devis', async (original) => {
@@ -293,6 +302,10 @@ const ECRANS: Ecran[] = [
   // les vues du compte ; et, côté cabinet, la section de la fiche d'une pièce d'achat : son échéance, ses déclarations, les accès.
   { nom: 'ClientAchats', fichier: 'pages/ClientAchats.tsx', rendre: () => { achatsGarde.leve = true; return <MemoryRouter><ClientAchats /></MemoryRouter> } },
   { nom: 'AchatDeLaPiece', fichier: 'pages/dossier/AchatDeLaPiece.tsx', rendre: () => { achatsGarde.leve = true; return <AchatDeLaPiece dossierId="d1" pieceId="p1" nomFichier="facture.pdf" /> } },
+  // « Mes notes de frais » (ligne 51.5, étape B8) : les cases « Notes de frais » et « Achats » relues à la base avec les notes et
+  // les pièces que le compte a déposées ; et, côté cabinet, la section de l'onglet Justificatifs : les notes et leurs justificatifs.
+  { nom: 'ClientNotesDeFrais', fichier: 'pages/ClientNotesDeFrais.tsx', rendre: () => { notesDeFraisGarde.leve = true; return <MemoryRouter><ClientNotesDeFrais /></MemoryRouter> } },
+  { nom: 'NotesDeFraisDuClient', fichier: 'pages/dossier/NotesDeFraisDuClient.tsx', rendre: () => { notesDeFraisGarde.leve = true; return <NotesDeFraisDuClient dossierId="d1" /> } },
   // Les sections du cabinet (étape B3a), sous l'onglet des documents administratifs : documents, ouvertures et accès ; demandes,
   // réponses, relances et dépôts cités.
   { nom: 'DocumentsMisADisposition', fichier: 'pages/dossier/DocumentsMisADisposition.tsx', rendre: () => <DocumentsMisADisposition dossierId="d1" /> },
@@ -837,7 +850,7 @@ beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-09T10:00:00Z'))
 })
-afterEach(() => { cleanup(); caisseDuGarde.levee = false; devisContactGarde.leve = false; achatsGarde.leve = false })
+afterEach(() => { cleanup(); caisseDuGarde.levee = false; devisContactGarde.leve = false; achatsGarde.leve = false; notesDeFraisGarde.leve = false })
 afterAll(() => { vi.useRealTimers() })
 
 // LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : la page d'un dossier le lit avec lui (`plan_du_dossier`) et ne monte

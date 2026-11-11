@@ -685,7 +685,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     DEMANDES, À L'ÉCRAN » ; B4 préparée le 11/11/2026 (`achats_du_client`, `ACHATS_DU_CLIENT_PREVUS` baissé ; la réception
     par « Achats » attend B4-Q1 à Q3), ses écrans le même jour derrière le même drapeau (B5 : « Mes achats », la section de
     la fiche d'une pièce d'achat) → « B5 : LES ACHATS DU CLIENT, À L'ÉCRAN » ; B7 préparée le 11/11/2026 (`notes_de_frais`,
-    le rôle `personnel` au 421000, `NOTES_DE_FRAIS_PREVUES` baissé ; B7-Q1 à Q4) → « B7 : LES NOTES DE FRAIS, EN BASE » ;
+    le rôle `personnel` au 421000, `NOTES_DE_FRAIS_PREVUES` baissé ; B7-Q1 à Q4), ses écrans (B8) derrière le même drapeau
+    → « B7 : LES NOTES DE FRAIS, EN BASE » ;
     « LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (C6, LIGNE 51.5) »,
     « TROIS CASES DE PLUS : « ACHATS », « NOTES DE FRAIS », « DOCUMENTS » (B1, LIGNE 51.5) ».
   - Du premier groupe, faits : A1 à A6 (sauf ce qui suit). Restent, dans l'ordre recommandé : A4B3-Q6 (la ligne
