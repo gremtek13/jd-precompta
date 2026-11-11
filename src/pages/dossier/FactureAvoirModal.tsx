@@ -10,13 +10,19 @@ import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceD
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLaLigneLue, provenanceQuiPart,
-  type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
+  emetteurDeLAvoir, type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import { lireLesContacts } from '../../lib/contactsLecture'
 import { ACOMPTES_PREVUS } from '../../lib/devis'
 import { refusDeLaDateDEmission, type FactureDeLaSerie, type ModeleDeLaSerie } from '../../lib/validationDeLaFacture'
 import { avisDeLAvoir, refusDeLAvoir as refusDeLAvoirAvecAcompte, type AcompteDeLaFacture } from '../../lib/acomptesDesFactures'
+import { estUneFactureReprise } from '../../lib/facturesReprises'
+import {
+  CREDITE_D_UNE_REPRISE_INCONNU, avisDeLAvoirDUneReprise, crediteDeLOrigine, retenueDeLaReprise, type LectureDeLaRepriseDeLOrigine,
+} from '../../lib/avoirDUneFactureReprise'
+import { lireCeQueLAvoirDUneRepriseDemande } from '../../lib/avoirDUneFactureRepriseLecture'
+import { serieDeLaValidation } from '../../lib/validationDeLaFacture'
 
 // L'unité, la référence et la nature de la ligne créditée (étape A7b) : l'avoir les reprend de la ligne qu'il crédite, et les
 // imprime comme elle ; elles ne partent que derrière `MENTIONS_FIGEES_EXPORTEES`.
@@ -149,6 +155,20 @@ export default function FactureAvoirModal(props: Props) {
     return () => { annule = true }
   }, [dossierId, contactDeLOrigine])
 
+  // L'AVOIR D'UNE FACTURE REPRISE DE L'ANCIEN LOGICIEL (étape A8c6 ; lib/avoirDUneFactureReprise.ts) : la date de reprise des
+  // factures du dossier et, au cabinet, ce que ses avoirs repris ont crédité, lus pour CETTE facture. Tant qu'ils ne sont pas
+  // revenus, ou lus de travers, l'avoir est retenu. Rien n'est lu pour une autre facture, ni le drapeau baissé.
+  const repriseDOrigine = estUneFactureReprise(factureOrigine)
+  const [lectureReprise, setLectureReprise] = useState<LectureDeLaRepriseDeLOrigine | null>(null)
+  useEffect(() => {
+    if (!repriseDOrigine) return
+    let annule = false
+    lireCeQueLAvoirDUneRepriseDemande(dossierId, factureOrigine.id, espace).then((lu) => { if (!annule) setLectureReprise(lu) })
+    return () => { annule = true }
+  }, [dossierId, factureOrigine.id, espace, repriseDOrigine])
+  const retenueReprise = retenueDeLaReprise(factureOrigine, lectureReprise)
+  const crediteEnTout = crediteDeLOrigine(factureOrigine, credite, lectureReprise)
+
   function majLigne(index: number, patch: Partial<LigneAvoirEdit>) {
     setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)))
   }
@@ -211,9 +231,11 @@ export default function FactureAvoirModal(props: Props) {
   // Ce que la base refuserait, dit avant le clic, dans son ordre : l'avoir (lib/factures.ts:refusAvoir), puis un IBAN dans un
   // texte et la validation figée (étape A7b), puis la source — la base juge l'avoir, puis fixe sa source. Ce qui RETIENT la
   // validation (une lecture qui n'est pas revenue entière) se dit à part, sans être un refus.
-  const refusDeLAvoir = acompte.etat === 'acompte' || acompte.etat === 'finale'
-    ? refusDeLAvoirAvecAcompte(factureOrigine, acompte, dateEmission, lignesQuiPartent, credite)
-    : refusAvoir(factureOrigine, dateEmission, lignesValides, credite)
+  // L'avoir d'une reprise dont la lecture n'est pas revenue : le module rend sa retenue à son rang, dite à part, sans être un refus.
+  const refusOuRetenue = acompte.etat === 'acompte' || acompte.etat === 'finale'
+    ? refusDeLAvoirAvecAcompte(factureOrigine, acompte, dateEmission, lignesQuiPartent, credite, lectureReprise)
+    : refusAvoir(factureOrigine, dateEmission, lignesValides, credite, lectureReprise)
+  const refusDeLAvoir = refusOuRetenue !== null && refusOuRetenue === retenueReprise ? null : refusOuRetenue
   // LA DATE D'ÉMISSION DE L'AVOIR (rangs 17 et 18 de la garde) : à venir après le jour de Paris, ou antérieure au plus récent de
   // la série où la base le numérotera — celle de QUI valide (A9a : le cabinet, MA ; le client, A), au modèle en vigueur ;
   // l'espace client ne lit pas les modèles, le rang 18 s'y tait et la base le juge au clic. Dite avant le clic, pour tout auteur, sur la date telle qu'elle part. Sur une liste
@@ -222,7 +244,13 @@ export default function FactureAvoirModal(props: Props) {
   const refusDeLaDate = refusDeLaDateDEmission({
     type: 'avoir', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [], espace, modeles: modelesDeNumerotation,
   })?.message ?? null
-  const retenue = refusDeLAvoir == null && jugementMentions?.refusDeLEnregistrement == null ? jugementMentions?.retenue ?? null : null
+  const retenue = refusDeLAvoir == null && jugementMentions?.refusDeLEnregistrement == null
+    ? retenueReprise ?? jugementMentions?.retenue ?? null : null
+  // Ce que la fenêtre dit d'une facture reprise avant le clic : un document de l'application, sa série, ce qu'il fige.
+  const anneeDeLAvoir = /^\d{4}-/.test(dateEmission) ? Number(dateEmission.slice(0, 4)) : Number(aujourdHuiAParis().slice(0, 4))
+  const avisReprise = avisDeLAvoirDUneReprise(
+    factureOrigine, espace, serieDeLaValidation(espace, 'avoir', anneeDeLAvoir, modelesDeNumerotation), anneeDeLAvoir, lectureReprise,
+  )
   const refus = refusDeLAvoir ?? jugementMentions?.refusDeLEnregistrement
     ?? (retenue != null ? null : jugementMentions?.refusDeLaValidation ?? refusDeLaDate ?? jugementSource.refus)
 
@@ -250,7 +278,12 @@ export default function FactureAvoirModal(props: Props) {
     // Un avoir source se confirme, sous la phrase du module : il réduira la vente de sa facture. Depuis l'étape A7b, chaque avoir
     // se confirme, et la confirmation NOMME ce qu'il figera et imprimera, au paragraphe qui précède la question.
     const figer = jugementMentions?.mentions
-      ? pourLEspace(espace, confirmationDesMentions(jugementMentions.mentions, factureOrigine.emetteur_nom, true))
+      // Le nom que l'avoir fige : celui de sa facture ; d'une facture reprise, celui du dossier (A8B-Q2).
+      ? pourLEspace(espace, confirmationDesMentions(
+        jugementMentions.mentions,
+        lectureCourante?.etat === 'lu' ? emetteurDeLAvoir(factureOrigine, lectureCourante.identite).nom : factureOrigine.emetteur_nom,
+        true,
+      ))
       : null
     const confirmation = [jugementSource.confirmation, figer].filter((x): x is string => x != null)
     if (confirmation.length > 0 && !window.confirm(`${confirmation.join('\n\n')}\n\nLe valider ?`)) return
@@ -279,11 +312,14 @@ export default function FactureAvoirModal(props: Props) {
           (série "A", indépendante des factures) est attribué dès la création : il n'y a pas de
           brouillon d'avoir.
         </p>
-        {credite != null && credite > 0 && (
+        {crediteEnTout != null && crediteEnTout > 0 && (
           <p className="muted">
-            D'autres avoirs ont déjà crédité {formatMoney(credite)} de cette facture : il en reste{' '}
-            {formatMoney(Math.max(factureOrigine.montant_ttc - credite, 0))} à créditer.
+            D'autres avoirs ont déjà crédité {formatMoney(crediteEnTout)} de cette facture : il en reste{' '}
+            {formatMoney(Math.max(factureOrigine.montant_ttc - crediteEnTout, 0))} à créditer.
           </p>
+        )}
+        {repriseDOrigine && credite != null && crediteEnTout == null && lectureReprise?.etat === 'lue' && (
+          <p className="muted">{pourLEspace(espace, CREDITE_D_UNE_REPRISE_INCONNU)}</p>
         )}
         {credite == null && (
           <p className="muted">
@@ -376,6 +412,7 @@ export default function FactureAvoirModal(props: Props) {
               <textarea id="avoir-mentions" rows={2} value={mentionsLegales} onChange={(e) => setMentionsLegales(e.target.value)} />
             </div>
 
+            {avisReprise && <p className="note-info" role="note">{pourLEspace(espace, avisReprise)}</p>}
             {avisAcompte && <p className="note-info" role="note">{pourLEspace(espace, avisAcompte)}</p>}
             {jugementSource.avis && <p className="note-info" role="note">{jugementSource.avis}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}

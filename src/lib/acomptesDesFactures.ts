@@ -5,6 +5,8 @@ import {
 import { etatDesAcomptes, type AcomptesLus, type EtatAcomptesDuDevis, type FactureDuDevis } from './acomptesDuDevis'
 import { calculerLigne, calculerTotaux } from './montantsFacture'
 import { formatDate, formatMoney } from './format'
+import { crediteDeLOrigine, refusDeLaReprise, type LectureDeLaRepriseDeLOrigine } from './avoirDUneFactureReprise'
+import { estUneVente } from './facturesReprises'
 import type { LigneAEnregistrer } from './factures'
 import type { FactureEmise, NatureArticle } from './types'
 
@@ -250,22 +252,28 @@ export type LigneCreditee = LigneAEnregistrer & { nature?: NatureArticle | null;
  * ou que d'autres avoirs ont déjà défaite. `credite` nul : la liste des factures lue en partie, le plafond jugé par la base.
  */
 export function refusDeLAvoir(
-  origine: Pick<FactureEmise, 'id' | 'type' | 'statut' | 'numero' | 'date_emission' | 'montant_ttc'>,
+  origine: Pick<FactureEmise, 'id' | 'type' | 'statut' | 'numero' | 'date_emission' | 'montant_ttc' | 'nature_operation'>,
   a: AcompteDeLaFacture,
   dateEmission: string,
   lignes: readonly LigneCreditee[],
   credite: number | null,
+  reprise: LectureDeLaRepriseDeLOrigine | null,
 ): string | null {
   if (lignes.length === 0) return 'Au moins une ligne avec une quantité doit rester à créditer.'
-  if (origine.type !== 'facture' || origine.statut !== 'validee') return 'Un avoir corrige une facture validée, jamais un brouillon ni un autre avoir.'
+  if (origine.type !== 'facture' || !estUneVente(origine)) return 'Un avoir corrige une facture validée, jamais un brouillon ni un autre avoir.'
   if (!dateEmission) return "Indique la date d'émission de l'avoir."
   if (dateEmission < origine.date_emission) return `Un avoir ne précède pas la facture qu'il corrige (émise le ${formatDate(origine.date_emission)}).`
+  // L'avoir d'une facture reprise (A8c6) : ses refus, au rang de la base — une facture d'acompte ou finale d'un devis n'est
+  // jamais reprise (elle naît de son devis, dans l'application), mais la copie suit l'original rang pour rang.
+  const refusDeLaFactureReprise = refusDeLaReprise(origine, dateEmission, reprise)
+  if (refusDeLaFactureReprise !== null) return refusDeLaFactureReprise
   const defaitUneReprise = (l: LigneCreditee) => a.etat === 'finale' && l.reprise_facture_id != null
   if (lignes.some((l) => !defaitUneReprise(l) && !(l.quantite > 0))) return 'Chaque ligne créditée porte une quantité positive.'
   const montant = Math.round(calculerTotaux(lignes.map((l) => ({ ...l }))).montant_ttc * 100)
   if (montant <= 0) return 'Un avoir crédite un montant : son total TTC doit être positif.'
-  if (credite !== null) {
-    const reste = Math.round(origine.montant_ttc * 100) - Math.round(credite * 100)
+  const dejaCrediteEnTout = crediteDeLOrigine(origine, credite, reprise)
+  if (dejaCrediteEnTout !== null) {
+    const reste = Math.round(origine.montant_ttc * 100) - Math.round(dejaCrediteEnTout * 100)
     if (montant > reste) {
       return `Cet avoir créditerait ${formatMoney(montant / 100)} : la facture ${origine.numero ?? ''} n'a plus que `
         + `${formatMoney(Math.max(reste, 0) / 100)} à créditer.`

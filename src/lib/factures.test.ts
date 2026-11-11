@@ -222,59 +222,59 @@ describe('dejaCredite', () => {
 })
 
 describe('refusAvoir', () => {
-  const origine = { type: 'facture' as const, statut: 'validee' as const, numero: 'F2026-0001', date_emission: '2026-03-10', montant_ttc: 120 }
+  const origine = { id: 'f1', nature_operation: 'services' as const, type: 'facture' as const, statut: 'validee' as const, numero: 'F2026-0001', date_emission: '2026-03-10', montant_ttc: 120 }
   const total = [{ designation: 'Consultation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }]
 
   it('accepte un avoir total sur une facture que rien n’a créditée', () => {
-    expect(refusAvoir(origine, '2026-03-10', total, 0)).toBeNull()
+    expect(refusAvoir(origine, '2026-03-10', total, 0, null)).toBeNull()
   })
 
   it('refuse sans ligne, avant tout le reste', () => {
-    expect(refusAvoir({ ...origine, statut: 'brouillon' }, '', [], 0)).toBe('Au moins une ligne avec une quantité doit rester à créditer.')
+    expect(refusAvoir({ ...origine, statut: 'brouillon' }, '', [], 0, null)).toBe('Au moins une ligne avec une quantité doit rester à créditer.')
   })
 
   it('refuse un brouillon et un autre avoir comme origine', () => {
     const message = 'Un avoir corrige une facture validée, jamais un brouillon ni un autre avoir.'
-    expect(refusAvoir({ ...origine, statut: 'brouillon' }, '2026-03-10', total, 0)).toBe(message)
-    expect(refusAvoir({ ...origine, type: 'avoir' }, '2026-03-10', total, 0)).toBe(message)
+    expect(refusAvoir({ ...origine, statut: 'brouillon' }, '2026-03-10', total, 0, null)).toBe(message)
+    expect(refusAvoir({ ...origine, type: 'avoir' }, '2026-03-10', total, 0, null)).toBe(message)
   })
 
   it('refuse un avoir sans date, et un avoir daté avant sa facture — pas le même jour', () => {
-    expect(refusAvoir(origine, '', total, 0)).toBe("Indique la date d'émission de l'avoir.")
-    expect(refusAvoir(origine, '2026-03-09', total, 0))
+    expect(refusAvoir(origine, '', total, 0, null)).toBe("Indique la date d'émission de l'avoir.")
+    expect(refusAvoir(origine, '2026-03-09', total, 0, null))
       .toBe("Un avoir ne précède pas la facture qu'il corrige (émise le 10/03/2026).")
-    expect(refusAvoir(origine, '2026-03-10', total, 0)).toBeNull()
+    expect(refusAvoir(origine, '2026-03-10', total, 0, null)).toBeNull()
   })
 
   it('refuse une ligne créditée à quantité nulle ou négative', () => {
-    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], quantite: 0 }], 0))
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], quantite: 0 }], 0, null))
       .toBe('Chaque ligne créditée porte une quantité positive.')
   })
 
   it('refuse un avoir dont le total ne crédite rien', () => {
-    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: -100 }], 0))
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: -100 }], 0, null))
       .toBe('Un avoir crédite un montant : son total TTC doit être positif.')
-    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: 0.004 }], 0))
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: 0.004 }], 0, null))
       .toBe('Un avoir crédite un montant : son total TTC doit être positif.')
   })
 
   it('refuse de créditer plus que ce qui reste, au centime', () => {
-    expect(refusAvoir(origine, '2026-03-10', total, 0.01))
+    expect(refusAvoir(origine, '2026-03-10', total, 0.01, null))
       .toMatch(/^Cet avoir créditerait 120,00\s€ : la facture F2026-0001 n'a plus que 119,99\s€ à créditer\.$/)
     // 66,67 € HT à 20 % font 80,00 € TTC : exactement ce qui reste après 40 €.
-    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: 66.67 }], 40)).toBeNull()
-    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: 66.68 }], 40)).toMatch(/plus que 80,00/)
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: 66.67 }], 40, null)).toBeNull()
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: 66.68 }], 40, null)).toMatch(/plus que 80,00/)
   })
 
   it('dit « 0,00 € » plutôt qu’un reste négatif quand la facture a déjà été trop créditée', () => {
-    expect(refusAvoir(origine, '2026-03-10', total, 130)).toMatch(/n'a plus que 0,00\s€/)
+    expect(refusAvoir(origine, '2026-03-10', total, 130, null)).toMatch(/n'a plus que 0,00\s€/)
   })
 
   // Liste lue en partie : on ne sait pas, la base juge.
   it('ne juge pas le plafond quand ce qui a été crédité n’est pas connu', () => {
-    expect(refusAvoir(origine, '2026-03-10', total, null)).toBeNull()
+    expect(refusAvoir(origine, '2026-03-10', total, null, null)).toBeNull()
     // Même au-delà du montant de la facture : sans savoir, ce n'est pas l'écran qui tranche — la base le refusera.
-    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], quantite: 2 }], null)).toBeNull()
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], quantite: 2 }], null, null)).toBeNull()
   })
 })
 

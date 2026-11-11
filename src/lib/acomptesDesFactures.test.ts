@@ -148,21 +148,21 @@ describe('la validation', () => {
 })
 
 describe('l’avoir', () => {
-  const ORIGINE = { id: 'fa1', type: 'facture' as const, statut: 'validee' as const, numero: 'F2026-0010', date_emission: '2026-10-10', montant_ttc: 360 }
+  const ORIGINE = { id: 'fa1', nature_operation: 'services' as const, type: 'facture' as const, statut: 'validee' as const, numero: 'F2026-0010', date_emission: '2026-10-10', montant_ttc: 360 }
   const toutes = [{ designation: 'Acompte', quantite: 1, prix_unitaire_ht: 300, taux_tva: 20 }]
   const finaleValidee = { numero: 'F2026-0020', statut: 'validee' as const, date_emission: '2026-10-20' }
 
   it('un acompte que la finale validée et active reprend : refusé (P5B2-Q2) ; la finale créditée en entier : permis (P5B-Q4)', () => {
     const repris = acompteDeLaFacture(lus({ finale: finaleValidee }), 'fa1')
-    expect(refusDeLAvoir(ORIGINE, repris, '2026-11-04', toutes, 0)).toBe(refusAcompteRepris('F2026-0010', 'F2026-0020'))
+    expect(refusDeLAvoir(ORIGINE, repris, '2026-11-04', toutes, 0, null)).toBe(refusAcompteRepris('F2026-0010', 'F2026-0020'))
     const annulee = lus({ finale: finaleValidee, avoirs: [facture({ id: 'av2', type: 'avoir', facture_origine_id: 'ff1', montant_ttc: -840 })] })
-    expect(refusDeLAvoir(ORIGINE, acompteDeLaFacture(annulee, 'fa1'), '2026-11-04', toutes, 0)).toBeNull()
+    expect(refusDeLAvoir(ORIGINE, acompteDeLaFacture(annulee, 'fa1'), '2026-11-04', toutes, 0, null)).toBeNull()
   })
 
   it('un acompte se crédite en entier et en une fois', () => {
     const a = acompteDeLaFacture(lus(), 'fa1')
-    expect(refusDeLAvoir(ORIGINE, a, '2026-11-04', [{ ...toutes[0], prix_unitaire_ht: 100 }], 0)).toBe(refusAvoirPartielDAcompte('F2026-0010', 360))
-    expect(refusDeLAvoir(ORIGINE, a, '2026-11-04', toutes, 0)).toBeNull()
+    expect(refusDeLAvoir(ORIGINE, a, '2026-11-04', [{ ...toutes[0], prix_unitaire_ht: 100 }], 0, null)).toBe(refusAvoirPartielDAcompte('F2026-0010', 360))
+    expect(refusDeLAvoir(ORIGINE, a, '2026-11-04', toutes, 0, null)).toBeNull()
   })
 
   it('une finale : sa reprise se défait à −1, une fois ; une seconde fois se refuse', () => {
@@ -171,12 +171,12 @@ describe('l’avoir', () => {
       { designation: 'Mission', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20 },
       { designation: 'Reprise', quantite: -1, prix_unitaire_ht: 300, taux_tva: 20, nature: null, reprise_facture_id: 'fa1' },
     ]
-    expect(refusDeLAvoir(FINALE, acompteDeLaFacture(lus({ finale: finaleValidee }), 'ff1'), '2026-11-04', lignes, 0)).toBeNull()
+    expect(refusDeLAvoir(FINALE, acompteDeLaFacture(lus({ finale: finaleValidee }), 'ff1'), '2026-11-04', lignes, 0, null)).toBeNull()
     const dejaDefaite = lus({
       finale: finaleValidee,
       avoirs: [facture({ id: 'av3', type: 'avoir', facture_origine_id: 'ff1', montant_ttc: -360 })],
       autres: { lignesDesFinales: [REPRISE, { ...REPRISE, facture_id: 'av3', quantite: 1 }] },
     })
-    expect(refusDeLAvoir(FINALE, acompteDeLaFacture(dejaDefaite, 'ff1'), '2026-11-04', lignes, 0)).toBe(refusRepriseDefaite('F2026-0020'))
+    expect(refusDeLAvoir(FINALE, acompteDeLaFacture(dejaDefaite, 'ff1'), '2026-11-04', lignes, 0, null)).toBe(refusRepriseDefaite('F2026-0020'))
   })
 })

@@ -1,3 +1,4 @@
+import { estUneFactureReprise } from './facturesReprises'
 import { calculerLigne } from './montantsFacture'
 import { formatDate } from './format'
 import { motifExoneration, refusTauxPositif } from './statutTva'
@@ -1008,6 +1009,27 @@ export function donneesDeLaFacture(
   }
 }
 // ── FIN COPIE factureCii ─────────────────────────────────────────────────────────────────────────────────────────────
+
+// ── LA FACTURE REPRISE, ET L'AVOIR QUI LA CORRIGE (étape A8c6, ligne 51.5) — HORS DE LA COPIE ─────────────────────────────
+//
+// Une facture reprise de l'ancien logiciel (`importee`, A8a) n'a pas de CII à elle : son original, et sa transmission, vivent
+// dans l'ancien logiciel, et l'application ne la réécrit pas — `refusEmission` la refuse déjà par son état (« Seule une
+// facture validée se transmet »), et `refusDuCii` le dit sous ses vrais mots. L'avoir que l'application émet sur elle se
+// transmet comme tout avoir : il cite la facture précédente (BG-3 : BT-25, son numéro ; BT-26, sa date) par le numéro et la
+// date de l'ANCIEN LOGICIEL, tels qu'`importer_factures` les a repris — ceux que l'acheteur a reçus —, jamais un numéro de
+// l'application ; un numéro que le format ne transmet pas, ou une date hors des bornes, se refuse avant le clic par les
+// règles de BT-25 et BT-26 (`refusEmission`), plutôt que d'être réécrit. Le bloc copié dans les fonctions qui transmettent
+// (superpdp-emit, plateforme-agreee) ne change pas : une facture et un avoir d'avant s'écrivent à l'octet près comme hier.
+
+export const REFUS_CII_D_UNE_REPRISE = 'Cette facture est reprise de l’ancien logiciel : elle n’a pas de facture électronique de '
+  + 'l’application — son original, et sa transmission, vivent dans l’ancien logiciel. Pour la corriger, un avoir de '
+  + 'l’application, qui la cite par son numéro et sa date.'
+
+/** Ce qui empêche de transmettre : une facture reprise, sous ses mots ; sinon le jugement des fonctions (`refusEmission`). */
+export function refusDuCii(d: DonneesCii): string[] {
+  if (estUneFactureReprise(d.facture)) return [REFUS_CII_D_UNE_REPRISE]
+  return refusEmission(d)
+}
 
 // ── Mentions imprimées ─────────────────────────────────────────────────────────────────────────────────────────────
 

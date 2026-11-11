@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiAParis, dateRelative, formatDate } from '../../lib/format'
-import { donneesDeLaFacture, refusEmission, type LigneCii, type OrigineCii } from '../../lib/factureCii'
+import { donneesDeLaFacture, refusDuCii, type LigneCii, type OrigineCii } from '../../lib/factureCii'
 import { acompteSansLecture, lireLAcompteDeLaFacture } from '../../lib/acompteDeLaFactureLecture'
 import {
   ACOMPTE_A_LIRE_AVANT_LA_TRANSMISSION, acompteIllisibleAvantLaTransmission, type LectureAcompte,
@@ -301,7 +301,7 @@ export default function TransmissionFactureModal(props: Props) {
   // Le jour est celui de PARIS, comme dans les fonctions qui transmettent : le jour local d'un navigateur en retard sur
   // Paris dirait « pas encore arrivé » une facture validée du jour.
   const refus = lignes != null && origine !== undefined && acompte?.etat === 'lue'
-    ? refusEmission(donneesDeLaFacture(facture, lignes,
+    ? refusDuCii(donneesDeLaFacture(facture, lignes,
       { statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: numeroTvaAttribue }, origine,
       acompte.acompte, aujourdHuiAParis()))
     : null

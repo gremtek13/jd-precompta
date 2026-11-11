@@ -62,16 +62,26 @@ const OUVERTS: Record<string, Exception> = {
     raison: "l'état d'une LIGNE du brouillon (ses lignes validées ne se réécrivent ni ne se retirent), jamais celui d'une facture",
   },
   'facturesSources.ts': { validee: 0, importee: 0, raison: '' },
+  // Étape A8c6 : l'avoir d'une facture reprise (lib/avoirDUneFactureReprise.ts), son émetteur et son CII.
+  'factures.ts': { validee: 0, importee: 0, raison: '' },
+  'acomptesDesFactures.ts': {
+    validee: 2,
+    importee: 0,
+    raison: "les factures d'acompte d'un devis, en brouillon ou validées, que la finale reprend : une facture d'acompte ou "
+      + "finale naît de son devis, dans l'application, et ne se reprend jamais de l'ancien logiciel",
+  },
+  'mentionsFigeesVue.ts': { validee: 0, importee: 0, raison: '' },
+  'factureCii.ts': {
+    validee: 1,
+    importee: 0,
+    raison: "« Seule une facture validée se transmet », dans le bloc que les fonctions qui transmettent copient : une facture "
+      + 'reprise n’a pas de CII à elle (`refusDuCii` le dit sous ses mots, hors de la copie)',
+  },
 }
 
-// Ce qui reste à ouvrir (le découpage d'A8c, HISTORIQUE.md) : le nombre de ses tests d'état à « validee », et pourquoi il
-// attend. Un module qui ne teste pas l'état lit les ventes par un autre (ses reprises viendront de lui).
-const A_OUVRIR: Record<string, { validee: number; raison: string }> = {
-  'factures.ts': { validee: 1, raison: "`refusAvoir` : l'avoir d'une reprise, ses avoirs repris, la date de reprise" },
-  'acomptesDesFactures.ts': { validee: 3, raison: '`refusAvoir`, sa copie ; une facture d’acompte ne se reprend pas' },
-  'mentionsFigeesVue.ts': { validee: 0, raison: "l'émetteur de l'avoir d'une reprise, lu sur l'avoir" },
-  'factureCii.ts': { validee: 1, raison: "le CII de l'avoir d'une reprise" },
-}
+// Ce qui reste à ouvrir : rien depuis A8c6. La liste reste, vide, pour qu'un module neuf qui testerait l'état d'une facture
+// y entre nommément, avec sa raison, plutôt que de passer inaperçu.
+const A_OUVRIR: Record<string, { validee: number; raison: string }> = {}
 
 describe('les lecteurs des factures reprises s’ouvrent nommément', () => {
   for (const [module, ex] of Object.entries(OUVERTS)) {
@@ -95,9 +105,9 @@ describe('les lecteurs des factures reprises s’ouvrent nommément', () => {
 
   it('aucun module n’est à la fois ouvert et à ouvrir ; le prédicat vit dans un seul module', () => {
     expect(Object.keys(OUVERTS).filter((m) => m in A_OUVRIR)).toEqual([])
-    // Le découpage d'A8c, au nombre près : neuf modules ouverts (trois par A8c, quatre par A8c2, deux par A8c3), quatre à
-    // ouvrir.
-    expect([Object.keys(OUVERTS).length, Object.keys(A_OUVRIR).length]).toEqual([9, 4])
+    // Le découpage d'A8c, au nombre près : treize modules ouverts (trois par A8c, quatre par A8c2, deux par A8c3, quatre par
+    // A8c6), aucun à ouvrir.
+    expect([Object.keys(OUVERTS).length, Object.keys(A_OUVRIR).length]).toEqual([13, 0])
     const predicat = texte('facturesReprises.ts')
     expect(predicat).toMatch(/export function estUneVente\(/)
     expect(predicat).toMatch(/export function estUneFactureReprise\(/)

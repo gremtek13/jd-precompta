@@ -20,7 +20,7 @@ export const AUTRE_IBAN_ESSAI = 'FR6099999000010000000000500'
 /** L'identité d'un dossier d'entrepreneur individuel, telle que la validation la lit : réglée par le cabinet. */
 export function identiteDuDossier(o: Partial<IdentiteDuDossier> = {}): IdentiteDuDossier {
   return {
-    siret: SIRET_VENDEUR, adresse: '1 rue des Essais\n69000 Lyon', statut_tva: 'redevable', article_exoneration: null,
+    nom: 'Camille Essai', siret: SIRET_VENDEUR, adresse: '1 rue des Essais\n69000 Lyon', statut_tva: 'redevable', article_exoneration: null,
     numero_tva_attribue: false, denomination_imprimee: 'Camille Essai EI', forme_juridique: '1000', capital: null, rcs_ville: null,
     mentions_identite: null,
     ...o,
