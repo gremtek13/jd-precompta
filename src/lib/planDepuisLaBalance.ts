@@ -23,7 +23,8 @@
 // ici pour qu'une proposition ne soit pas un refus (le 625100 de « Carburant / déplacements » dans la balance d'un BNC
 // n'est pas le compte du barème : le barème et les frais réels restent séparés).
 //
-// DERRIÈRE `PLAN_DEPUIS_LA_BALANCE_PREVU`, baissé : aucun écran ne l'appelle, et la reprise range comme hier. LE LEVER
+// DERRIÈRE `PLAN_DEPUIS_LA_BALANCE_PREVU`, baissé : la carte de la balance (pages/dossier/BalanceCard.tsx, son premier temps)
+// ne l'appelle pas, et la reprise range comme hier. LE LEVER
 // AVANT de coller la migration `plan_depuis_la_balance` (supabase/preparees/), qui fait refuser à `enregistrer_a_nouveaux`
 // ce que le rangement d'hier envoie encore (un 4455100, un 4010000) : ce qui s'ajoute, puis le resserrement.
 

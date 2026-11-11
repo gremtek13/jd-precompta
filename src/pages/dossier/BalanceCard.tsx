@@ -8,7 +8,21 @@ import { formatDate, formatMoney } from '../../lib/format'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import { supabase } from '../../lib/supabase'
-import type { PlanComptable } from '../../lib/planComptable'
+import type { LectureDuPlan } from '../../lib/planComptable'
+import { PLAN_DEPUIS_LA_BALANCE_PREVU, planDepuisLaBalance, type ChoixDuPlan, type PlanLu } from '../../lib/planDepuisLaBalance'
+import {
+  lireLesComptesDesCategories,
+  reglerPuisRelireLePlan,
+  type LectureDesComptesDesCategories,
+} from '../../lib/planDepuisLaBalanceLecture'
+import {
+  confirmationDuReglage,
+  etatDuPlanPropose,
+  nomDuRole,
+  phraseDesBanquesReunies,
+  texteDUnChangement,
+  texteDUnEcarte,
+} from '../../lib/planDepuisLaBalanceVue'
 import type { ANouveau } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
@@ -29,6 +43,14 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 // UN EXERCICE VALIDÉ FIGE L'OUVERTURE (ligne 26.6, étape d) : dès qu'un exercice du dossier l'est, les à-nouveaux ne
 // s'enregistrent, ne se remplacent ni ne se retirent plus — le refus de la base (`garder_a_nouveaux_valides`). La
 // balance se lit et se contrôle toujours : c'est une question sur un fichier, pas une écriture.
+//
+// LA REPRISE PROPOSE LE PLAN (ligne 43, étape PC6), derrière `PLAN_DEPUIS_LA_BALANCE_PREVU` — baissé, la carte d'hier à
+// l'identique. Levé, la balance équilibrée s'ouvre en DEUX TEMPS : (1) le plan qu'elle propose, rôle par rôle
+// (`planDepuisLaBalance`) — un compte, un choix entre plusieurs, rien —, les comptes écartés et pourquoi ; le cabinet
+// choisit là où il y en a plusieurs, et « Régler le plan » envoie le plan ENTIER à `regler_plan_du_dossier`, puis RELIT le
+// plan (`plan_du_dossier`), que la page reçoit aussi (`onPlanRelu`) ; (2) les à-nouveaux rangés sur ce plan relu, comme
+// hier. Les comptes des catégories du dossier et des communes sont LUS en entier ; lus en partie, aucun geste. Le second
+// temps ne s'offre que sur un plan À JOUR : le plan lu tient déjà tout ce que le cabinet retient de la balance.
 
 // Ce que la base dit d'une ouverture figée, mot pour mot.
 export const OUVERTURE_FIGEE = 'Un exercice de ce dossier est validé : son ouverture ne change plus.'
@@ -45,9 +67,14 @@ const decoder = (octets: ArrayBuffer): string => decoderUtf8OuWindows1252(octets
 
 const pluriel = (n: number, mot: string, marque = 's') => `${n} ${mot}${n > 1 ? marque : ''}`
 
-// `plan` : le plan comptable du dossier (lib/planComptable.ts) — la reprise y range la banque et la TVA, et y ouvre le
-// résultat d'avant.
-export default function BalanceCard({ dossierId, plan }: { dossierId: string; plan: PlanComptable }) {
+// `planLu` : le plan comptable du dossier (lib/planComptable.ts), ses libellés et ses préfixes — la reprise y range la
+// banque et la TVA (PC6 levé : tout compte de rôle), et y ouvre le résultat d'avant. `onPlanRelu` : le plan relu après
+// « Régler le plan », pour la page, qui le donne à tous les onglets.
+export default function BalanceCard({ dossierId, planLu, onPlanRelu }: {
+  dossierId: string
+  planLu: PlanLu
+  onPlanRelu: (dossierId: string, lecture: LectureDuPlan) => void
+}) {
   const [nomFichier, setNomFichier] = useState<string | null>(null)
   const [empreinte, setEmpreinte] = useState<string | null>(null)
   const [lecture, setLecture] = useState<ResultatLectureBalance | null>(null)
@@ -74,6 +101,29 @@ export default function BalanceCard({ dossierId, plan }: { dossierId: string; pl
   const { anneesValidees } = useExercicesValides()
   const ouvertureFigee = anneesValidees.length > 0
 
+  // PC6 : les comptes des catégories, lus avec le dossier pour lequel ils l'ont été ; le plan relu par cette carte après
+  // son réglage ; les choix du cabinet, rôle par rôle (remis à zéro avec le fichier).
+  const [categoriesLues, setCategoriesLues] = useState<LectureDesComptesDesCategories | null>(null)
+  const categories = categoriesLues && categoriesLues.dossierId === dossierId ? categoriesLues : null
+  const [planRelu, setPlanRelu] = useState<{ dossierId: string; lu: PlanLu } | null>(null)
+  const lu: PlanLu = planRelu && planRelu.dossierId === dossierId ? planRelu.lu : planLu
+  const plan = lu.plan
+  const [choix, setChoix] = useState<ChoixDuPlan>({})
+  const [reglage, setReglage] = useState(false)
+  // Verrou d'exécution du réglage : posé avant le `try`, relâché dans le `finally`, après la relecture du plan.
+  const reglageEnCours = useRef(false)
+  const [erreurReglage, setErreurReglage] = useState<string | null>(null)
+  const [confirmationReglage, setConfirmationReglage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!PLAN_DEPUIS_LA_BALANCE_PREVU) return
+    let annule = false
+    lireLesComptesDesCategories(dossierId).then((lecture) => {
+      if (!annule) setCategoriesLues(lecture)
+    })
+    return () => { annule = true }
+  }, [dossierId])
+
   useEffect(() => {
     let annule = false
     lireTout<ANouveau>((debut, fin) =>
@@ -98,6 +148,9 @@ export default function BalanceCard({ dossierId, plan }: { dossierId: string; pl
     setEmpreinte(null)
     setConfirmation(null)
     setErreurEnregistrement(null)
+    setChoix({})
+    setErreurReglage(null)
+    setConfirmationReglage(null)
     setNomFichier(fichier?.name ?? null)
     e.target.value = ''
     if (!fichier) return
@@ -118,12 +171,48 @@ export default function BalanceCard({ dossierId, plan }: { dossierId: string; pl
 
   // Seulement sur une balance reconnue ET équilibrée : sur un fichier amputé, préparer des à-nouveaux
   // reviendrait à ouvrir un dossier sur des soldes dont on sait qu'ils sont faux.
-  const preparation = lecture?.colonnes && controle?.equilibree ? preparerANouveaux(lecture.lignes, exercice, plan) : null
+  const balanceEquilibree = lecture?.colonnes && controle?.equilibree ? lecture.lignes : null
+  // PC6 : le plan que la balance propose, sur des catégories lues EN ENTIER — sinon aucune proposition, donc aucun geste.
+  const propositions = PLAN_DEPUIS_LA_BALANCE_PREVU && balanceEquilibree && categories?.etat === 'lus'
+    ? planDepuisLaBalance(balanceEquilibree, lu, categories.comptes) : null
+  const etatDuPlan = propositions ? etatDuPlanPropose(propositions, choix, lu) : null
+  // Le drapeau levé, les à-nouveaux ne se préparent que sur un plan à jour : rangés sur un autre, la base les refuserait.
+  const planPret = !PLAN_DEPUIS_LA_BALANCE_PREVU || etatDuPlan?.etat === 'a_jour'
+  const preparation = balanceEquilibree && planPret ? preparerANouveaux(balanceEquilibree, exercice, plan) : null
   const anneeCourante = new Date().getFullYear()
   const exercicesProposes = [anneeCourante - 3, anneeCourante - 2, anneeCourante - 1, anneeCourante, anneeCourante + 1]
 
+  async function reglerLePlan() {
+    if (etatDuPlan?.etat !== 'a_regler') return
+    if (reglageEnCours.current) return
+    if (!window.confirm(confirmationDuReglage(etatDuPlan.changements))) return
+    reglageEnCours.current = true
+    setReglage(true)
+    setErreurReglage(null)
+    setConfirmationReglage(null)
+    try {
+      const reglageFait = await reglerPuisRelireLePlan(dossierId, etatDuPlan.comptes)
+      if (!reglageFait.regle) {
+        setErreurReglage(reglageFait.refus)
+        return
+      }
+      const relue = reglageFait.lecture
+      if (relue.plan === null) {
+        setErreurReglage(`Le plan a été réglé, mais il n’a pas pu être relu (${relue.motif}) : recharge la page avant d’ouvrir le dossier.`)
+        return
+      }
+      setPlanRelu({ dossierId, lu: { plan: relue.plan, libelles: relue.libelles, prefixes: relue.prefixes } })
+      onPlanRelu(dossierId, relue)
+      setConfirmationReglage(`Plan réglé et relu : ${etatDuPlan.changements.length > 1 ? `${etatDuPlan.changements.length} comptes changent` : 'un compte change'}.`)
+    } finally {
+      reglageEnCours.current = false
+      setReglage(false)
+    }
+  }
+
   async function enregistrer() {
     if (!preparation || preparation.refus || !empreinte || !nomFichier) return
+    if (!planPret) return
     // Seconde ceinture : le bouton n'est pas rendu sur une ouverture figée.
     if (ouvertureFigee) {
       setErreurEnregistrement(OUVERTURE_FIGEE)
@@ -332,9 +421,135 @@ export default function BalanceCard({ dossierId, plan }: { dossierId: string; pl
             </details>
           )}
 
+          {PLAN_DEPUIS_LA_BALANCE_PREVU && balanceEquilibree && (
+            <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--color-border)' }}>
+              <h4 style={{ margin: '0 0 6px' }}>1. Le plan que la balance propose</h4>
+              <p className="muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>
+                Pour chaque rôle que l’application écrit, les comptes de la balance sous sa racine : un seul est proposé
+                avec son libellé, plusieurs se choisissent, aucun laisse le plan du dossier. Les à-nouveaux se rangent
+                ensuite sur ce plan.
+              </p>
+              {categories === null && <p className="muted">Lecture des catégories du dossier…</p>}
+              {categories?.etat === 'incomplets' && (
+                <BandeauLecturePartielle
+                  quoi="Les catégories du dossier"
+                  accord="lues"
+                  motif={categories.motif}
+                  consequence={
+                    'Le plan ne se propose pas, et les à-nouveaux ne s’enregistrent pas : un compte de la balance pourrait '
+                    + 'être celui d’une catégorie, que le plan ne prend pas. Recharge la page.'
+                  }
+                />
+              )}
+              {propositions && etatDuPlan && (
+                <>
+                  <div className="table-scroll tableau-adaptable">
+                    <table className="table-empilable-etroite table-empilable-sans-jeu">
+                      <thead><tr><th>Rôle</th><th>Plan du dossier</th><th>Ce que la balance propose</th></tr></thead>
+                      <tbody>
+                        {propositions.filter((p) => p.etat !== 'reste' || p.ecartes.length > 0).map((p) => (
+                          <tr key={p.role}>
+                            <td data-libelle="Rôle">{nomDuRole(p.role)}</td>
+                            <td data-libelle="Plan du dossier">{lu.plan[p.role]}{lu.libelles[p.role] ? ` « ${lu.libelles[p.role]} »` : ''}</td>
+                            <td data-libelle="Ce que la balance propose">
+                              {p.etat === 'propose' && (p.change ? (
+                                <label style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={choix[p.role] !== null}
+                                    disabled={reglage}
+                                    onChange={(e) => {
+                                      const retenir = e.target.checked
+                                      setChoix((c) => {
+                                        const suite = { ...c }
+                                        if (retenir) delete suite[p.role]
+                                        else suite[p.role] = null
+                                        return suite
+                                      })
+                                    }}
+                                  />
+                                  {`Retenir ${p.candidat.compte}${p.candidat.libelle ? ` « ${p.candidat.libelle} »` : ''}`
+                                    + ` (${p.candidat.comptesOrigine.join(', ')})`}
+                                </label>
+                              ) : `${p.candidat.compte} : déjà au plan`)}
+                              {p.etat === 'au_choix' && (
+                                <select
+                                  aria-label={`Compte du rôle « ${nomDuRole(p.role)} »`}
+                                  value={p.role in choix ? choix[p.role] ?? '' : '…'}
+                                  disabled={reglage}
+                                  onChange={(e) => {
+                                    const valeur = e.target.value
+                                    setChoix((c) => ({ ...c, [p.role]: valeur === '' ? null : valeur }))
+                                  }}
+                                >
+                                  <option value="…" disabled>— choisir —</option>
+                                  {p.candidats.map((c) => (
+                                    <option key={c.compte} value={c.compte}>
+                                      {`${c.compte}${c.libelle ? ` « ${c.libelle} »` : ''} (${c.comptesOrigine.join(', ')})`}
+                                    </option>
+                                  ))}
+                                  <option value="">{`Garder ${lu.plan[p.role]}, le compte du plan`}</option>
+                                </select>
+                              )}
+                              {p.etat === 'reste' && 'Aucun compte à proposer.'}
+                              {p.ecartes.length > 0 && (
+                                <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: '0.8rem' }} className="muted">
+                                  {p.ecartes.map((e) => <li key={e.compteOrigine}>{`Écarté : ${texteDUnEcarte(e)}`}</li>)}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {(() => {
+                    const restent = propositions.filter((p) => p.etat === 'reste' && p.ecartes.length === 0).length
+                    return restent > 0 && (
+                      <p className="muted" style={{ fontSize: '0.85rem' }}>
+                        {`${pluriel(restent, 'rôle')} sans compte dans la balance : le plan du dossier les garde.`}
+                      </p>
+                    )
+                  })()}
+                  {etatDuPlan.etat === 'a_choisir' && (
+                    <p className="muted" style={{ margin: '0 0 8px' }}>
+                      {`La balance porte plusieurs comptes pour ${etatDuPlan.roles.length > 1 ? 'ces rôles' : 'ce rôle'} : `
+                        + `${etatDuPlan.roles.map(nomDuRole).join(', ')}. Choisis-en un, ou garde le compte du plan.`}
+                    </p>
+                  )}
+                  {etatDuPlan.etat === 'refus' && <p className="error-text" style={{ margin: '0 0 8px' }}>{etatDuPlan.refus}</p>}
+                  {etatDuPlan.etat === 'a_regler' && (
+                    <>
+                      <p style={{ margin: '0 0 4px' }}>Ce que le réglage change au plan du dossier :</p>
+                      <ul style={{ margin: '0 0 8px', paddingLeft: 20, fontSize: '0.85rem' }}>
+                        {etatDuPlan.changements.map((c) => <li key={c.role}>{texteDUnChangement(c)}</li>)}
+                      </ul>
+                      <p className="muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>
+                        Pour garder un compte du plan, décoche sa proposition. Les à-nouveaux se préparent une fois le
+                        plan réglé et relu.
+                      </p>
+                      <button type="button" className="btn btn-primary btn-sm" onClick={reglerLePlan} disabled={reglage}>
+                        {reglage ? 'Réglage…' : 'Régler le plan'}
+                      </button>
+                    </>
+                  )}
+                  {etatDuPlan.etat === 'a_jour' && (
+                    <p style={{ margin: '0 0 8px' }}>
+                      Le plan du dossier tient ce que tu retiens de la balance : les à-nouveaux se rangent sur lui.
+                    </p>
+                  )}
+                </>
+              )}
+              {erreurReglage && <p className="error-text">{erreurReglage}</p>}
+              {confirmationReglage && <p className="muted">{confirmationReglage}</p>}
+            </div>
+          )}
+
           {preparation && (
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--color-border)' }}>
-              <h4 style={{ margin: '0 0 6px' }}>Ouvrir le dossier avec ces soldes</h4>
+              <h4 style={{ margin: '0 0 6px' }}>
+                {PLAN_DEPUIS_LA_BALANCE_PREVU ? '2. Ouvrir le dossier avec ces soldes, sur ce plan' : 'Ouvrir le dossier avec ces soldes'}
+              </h4>
               <p className="muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>
                 Seuls les comptes de bilan s’ouvrent. Le résultat de l’exercice précédent est repris en
                 120 ou 129, en attente d’affectation : l’application ne décide pas de son affectation.
@@ -380,6 +595,9 @@ export default function BalanceCard({ dossierId, plan }: { dossierId: string; pl
                           + 'dont le solde ne s’y soldera donc pas : quand elle écrit le même rôle, la balance et le FEC en portent '
                           + 'deux comptes.'}
                       </li>
+                    )}
+                    {PLAN_DEPUIS_LA_BALANCE_PREVU && phraseDesBanquesReunies(preparation.lignes, plan.banque) && (
+                      <li>{phraseDesBanquesReunies(preparation.lignes, plan.banque)}</li>
                     )}
                     {preparation.soldes > 0 && (
                       <li>{`${pluriel(preparation.soldes, 'compte')} de bilan soldé${preparation.soldes > 1 ? 's' : ''}, sans à-nouveau.`}</li>

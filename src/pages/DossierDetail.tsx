@@ -558,6 +558,9 @@ export default function DossierDetail() {
                 // La source des ventes RENDUE par la base après la bascule, pour le dossier écrit (`modifierDossier` ne
                 // touche que lui) : les onglets qui lisent le réglage le voient sans relire le dossier.
                 onReglageUpdated={(dossierEcrit, reglage) => modifierDossier(dossierEcrit, reglage)}
+                // Le plan relu après son réglage par la reprise d'une balance (PC6), pour le dossier réglé : sous un autre
+                // dossier, la page l'ignore (`planLu.id`).
+                onPlanRelu={(dossierRegle, lecture) => setPlanLu({ id: dossierRegle, lecture })}
               />
             )}
             {tab === 'virements' && modele && <VirementsTab dossierId={id} modele={modele} />}

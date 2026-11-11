@@ -8,6 +8,7 @@ import { supprimerDossierDefinitivement, messageNettoyage } from '../../lib/supp
 import ConfirmationSuppression from '../../components/ConfirmationSuppression'
 import type { VehiculeType } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
+import type { LectureDuPlan } from '../../lib/planComptable'
 import VehiculesCard from './VehiculesCard'
 import SauvegardeCard from './SauvegardeCard'
 import BalanceCard from './BalanceCard'
@@ -72,11 +73,14 @@ interface Props {
   // La source des ventes, telle que la base l'a rendue après la bascule (carte « Source des ventes », étape VF8b), pour le
   // dossier écrit : la page la fusionne dans sa ligne, et les onglets qui la lisent la voient sans relecture.
   onReglageUpdated: (dossierId: string, reglage: ReglageRendu) => void
+  // Le plan comptable relu après son réglage par la reprise d'une balance (carte de la balance, PC6), pour le dossier
+  // réglé : la page le prend, et tous les onglets composent sur lui.
+  onPlanRelu: (dossierId: string, lecture: LectureDuPlan) => void
 }
 
 export default function InformationsTab({
   dossierId, dossierNom, dossierSiret, dossierAdresse, dossierDenomination, dossierRcsVille, dossierFormeJuridique, dossierCapital,
-  modele, onIdentiteUpdated, onReglageUpdated,
+  modele, onIdentiteUpdated, onReglageUpdated, onPlanRelu,
 }: Props) {
   const { estChef, isSuperAdmin } = useAuth()
   const navigate = useNavigate()
@@ -545,7 +549,7 @@ export default function InformationsTab({
 
     {/* La reprise d'un dossier venu d'un autre logiciel commence ici, à côté de la sauvegarde : ce
         sont les deux moments où des données ENTRENT et SORTENT de la plateforme en bloc. */}
-    <BalanceCard dossierId={dossierId} plan={modele.plan} />
+    <BalanceCard dossierId={dossierId} planLu={modele} onPlanRelu={onPlanRelu} />
 
     {/* Le départ d'un client (ligne 44, INAL5) : les deux voies, juste avant la zone dangereuse qui porte la suppression. */}
     <DepartDuClientCard

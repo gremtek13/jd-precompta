@@ -168,6 +168,12 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
       + 'pour `regler_plan_du_dossier` ne porte que les rôles qui s’en écartent, et les refus 9 et 10 de la fonction, qu’elle '
       + 'redit avant le clic, exceptent le compte du catalogue d’un rôle du bilan ou des indemnités kilométriques.',
   },
+  'src/lib/planDepuisLaBalanceVue.ts': {
+    nombre: 1,
+    raison: 'LA CARTE DE LA REPRISE QUI PROPOSE LE PLAN (PC6) dit ce que le réglage change : un rôle absent du plan envoyé '
+      + 'revient au DÉFAUT du catalogue, comme `regler_plan_du_dossier` le fait — elle le nomme dans la confirmation, '
+      + 'sans jamais l’écrire.',
+  },
   'src/lib/compteDeBilan.ts': {
     nombre: 2,
     raison: 'Deux refus recopiés MOT POUR MOT de `refus_compte_de_bilan` (« s’écrit au 580000, virements internes »), que '

@@ -214,10 +214,14 @@ describe('les à-nouveaux rangés sur le plan (PC6)', () => {
       .toEqual(preparerANouveauxSurLePlanSelon(BALANCE, 2026, PLAN_PAR_DEFAUT, true))
     expect(preparerANouveauxSelonLesDrapeaux(BALANCE, 2026, PLAN_PAR_DEFAUT, true, false))
       .toEqual(preparerANouveauxSelon(BALANCE, 2026, PLAN_PAR_DEFAUT, true))
-    // Aucun écran n'appelle le module tant que le drapeau est baissé.
+    // Un seul écran appelle le module, la carte de la balance, et seulement derrière le drapeau (son second temps, PC6) :
+    // baissé, elle ne lit pas les catégories et prépare comme hier (BalanceCardPlan.test.tsx le joue).
     const ecrans = ['src/pages', 'src/pages/dossier', 'src/components'].flatMap((d) =>
-      readdirSync(new URL(d, RACINE)).filter((n) => n.endsWith('.tsx')).map((n) => lire(`${d}/${n}`)))
-    expect(ecrans.filter((t) => t.includes('planDepuisLaBalance'))).toEqual([])
+      readdirSync(new URL(d, RACINE)).filter((n) => n.endsWith('.tsx') && !n.endsWith('.test.tsx'))
+        .map((n) => ({ chemin: `${d}/${n}`, texte: lire(`${d}/${n}`) })))
+    const appelants = ecrans.filter((e) => e.texte.includes('planDepuisLaBalance'))
+    expect(appelants.map((e) => e.chemin)).toEqual(['src/pages/dossier/BalanceCard.tsx'])
+    expect(appelants[0].texte).toMatch(/if \(!PLAN_DEPUIS_LA_BALANCE_PREVU\) return/)
   })
 })
 
