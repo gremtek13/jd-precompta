@@ -218,12 +218,27 @@ export interface LotPret {
   format: FormatDUnFichier
   /** Les factures, dans l'ordre où la base les attend, chacune avec la clé de son fichier. */
   factures: { cle: string; facture: FactureAImporter }[]
+  /** Les noms des fichiers de cet import, dans l'ordre de ses factures : ce que la confirmation nomme. */
+  noms: string[]
+}
+
+/** Un import du découpage d'un dépôt : son format et ses fichiers lus, dans l'ordre où les imports partiront. */
+export interface ImportDuDecoupage {
+  format: FormatDUnFichier
+  cles: string[]
+  noms: string[]
 }
 
 export interface JugementDuLot {
   fichiers: FichierJuge[]
   refusDuLot: string[]
-  pret: LotPret | null
+  /**
+   * Le DÉCOUPAGE du dépôt (A8D2B-Q2) : un import par format, dans l'ordre où ils partiront — les fichiers lus seulement, dit
+   * avant le clic dès qu'il y en a plus d'un, que le dépôt soit prêt ou non.
+   */
+  decoupage: ImportDuDecoupage[]
+  /** Les imports prêts, dans l'ordre du découpage ; null tant qu'un fichier ou le dépôt retient. */
+  imports: LotPret[] | null
 }
 
 function apercuDe(lue: FactureRepriseLue, nature: NatureOperation | null): ApercuDUneFacture {
@@ -293,6 +308,57 @@ function choixDeLaReprise(lue: FactureRepriseLue, c: ChoixSaisis): { choix: Choi
 
 const ordreC = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
+const ORDRE_DES_FORMATS: readonly FormatDUnFichier[] = ['facturx', 'cii', 'ubl']
+
+/**
+ * LE DÉCOUPAGE D'UN DÉPÔT EN IMPORTS (A8D2B-Q2, « Couper en plusieurs imports », tranchée par le cabinet le 11/11/2026, contre
+ * la recommandation) : la base garde un seul format par import (`imports_factures.format`) et juge chaque import tout ou rien ;
+ * des fichiers de formats différents déposés ensemble partent donc en un import par format, l'un après l'autre. L'ordre : un
+ * import qui porte la facture qu'un avoir d'un autre format cite part AVANT celui de l'avoir (la base ne reconnaît une facture
+ * citée que « plus haut dans ce lot, ou d'un import d'avant ») ; à défaut, le plus ancien d'abord (sa première date), puis
+ * Factur-X, CII, UBL. Des formats dont les avoirs se citent en boucle n'ont aucun ordre : le dépôt se refuse, et le dit.
+ * Rien d'autre ne lie deux imports : la séquence des numéros que la base juge oppose les factures de l'application aux
+ * reprises, jamais deux imports entre eux.
+ */
+function decouper(
+  fichiers: readonly FichierLu[],
+  lues: readonly (FactureRepriseLue | null)[],
+): { decoupage: ImportDuDecoupage[]; cycle: FormatDUnFichier[] | null } {
+  const parFormat = new Map<FormatDUnFichier, { cles: string[]; noms: string[]; premiere: string; numeros: Set<string> }>()
+  lues.forEach((l, i) => {
+    if (!l) return
+    const g = parFormat.get(l.format) ?? { cles: [], noms: [], premiere: l.date_emission, numeros: new Set<string>() }
+    g.cles.push(fichiers[i].cle)
+    g.noms.push(fichiers[i].nom)
+    if (l.date_emission < g.premiere) g.premiere = l.date_emission
+    if (l.type === 'facture') g.numeros.add(l.numero)
+    parFormat.set(l.format, g)
+  })
+  // Les formats qu'un format attend : ceux qui portent une facture que l'un de ses avoirs cite.
+  const attend = new Map<FormatDUnFichier, Set<FormatDUnFichier>>()
+  for (const l of lues) {
+    if (!l || l.type !== 'avoir' || l.origine_numero === null || parFormat.get(l.format)?.numeros.has(l.origine_numero)) continue
+    for (const [format, g] of parFormat) {
+      if (format !== l.format && g.numeros.has(l.origine_numero)) {
+        const a = attend.get(l.format) ?? new Set<FormatDUnFichier>()
+        a.add(format)
+        attend.set(l.format, a)
+      }
+    }
+  }
+  const restants = ORDRE_DES_FORMATS.filter((f) => parFormat.has(f))
+  const ordre: FormatDUnFichier[] = []
+  while (restants.length > 0) {
+    const libres = restants.filter((f) => [...(attend.get(f) ?? [])].every((x) => ordre.includes(x)))
+    if (libres.length === 0) return { decoupage: [], cycle: restants }
+    // Le plus ancien d'abord ; à égalité, l'ordre des formats (`restants` le suit, et le tri est stable).
+    const suivant = [...libres].sort((a, b) => ordreC(parFormat.get(a)!.premiere, parFormat.get(b)!.premiere))[0]
+    ordre.push(suivant)
+    restants.splice(restants.indexOf(suivant), 1)
+  }
+  return { decoupage: ordre.map((format) => ({ format, cles: parFormat.get(format)!.cles, noms: parFormat.get(format)!.noms })), cycle: null }
+}
+
 /**
  * Juge les fichiers déposés et les choix du cabinet. Un fichier refusé, ou un refus du lot, retient TOUT le lot : la base
  * importe tout ou rien. Les refus de chaque fichier sont tous dits, dans l'ordre : sa lecture, ses doublons, sa date, son
@@ -358,24 +424,36 @@ export function jugerLeLot(
   const refusDuLot: string[] = []
   const refusDossier = refusDuDossier(etat)
   if (refusDossier) refusDuLot.push(refusDossier)
-  const formats = [...new Set(lues.filter((l): l is FactureRepriseLue => l !== null).map((l) => l.format))]
-  if (formats.length > 1) {
-    refusDuLot.push(`Un import ne mêle pas les formats (${formats.map((f) => LIBELLES_FORMAT[f]).join(', ')}) : importer chaque format à part.`)
+  const { decoupage, cycle } = decouper(fichiers, lues)
+  if (cycle) {
+    refusDuLot.push(`Des avoirs ${cycle.map((f) => LIBELLES_FORMAT[f]).join(', ')} citent chacun une facture d’un autre de ces formats : `
+      + 'aucun ordre d’import ne fait passer leurs factures avant eux. Reprendre d’abord les factures citées, seules, puis leurs avoirs.')
   }
-  if (fichiers.length > FACTURES_PAR_LOT_MAX) {
+  // Le plafond de la base vaut pour chaque import ; un dépôt d'un seul format garde les mots d'hier.
+  if (decoupage.length > 1) {
+    for (const d of decoupage) {
+      if (d.cles.length > FACTURES_PAR_LOT_MAX) {
+        refusDuLot.push(`Un import porte ${FACTURES_PAR_LOT_MAX} factures au plus : celui au format ${LIBELLES_FORMAT[d.format]} en porte ${d.cles.length}. Le scinder.`)
+      }
+    }
+  } else if (fichiers.length > FACTURES_PAR_LOT_MAX) {
     refusDuLot.push(`Un import porte ${FACTURES_PAR_LOT_MAX} factures au plus : celui-ci en porte ${fichiers.length}. Le scinder.`)
   }
 
   const toutesPretes = juges.length > 0 && juges.every((j) => j.refus.length === 0 && j.facture !== null)
-  if (!toutesPretes || refusDuLot.length > 0) return { fichiers: juges, refusDuLot, pret: null }
-  // L'ordre de la base : par date d'émission (la séquence chronologique de chaque série), la facture avant l'avoir du même
-  // jour (l'avoir cite une facture « plus haut dans ce lot »), puis le numéro.
-  const factures = juges
-    .map((j) => ({ cle: j.cle, facture: j.facture as FactureAImporter }))
-    .sort((a, b) => ordreC(a.facture.date_emission, b.facture.date_emission)
-      || (a.facture.type === b.facture.type ? 0 : a.facture.type === 'facture' ? -1 : 1)
-      || ordreC(a.facture.numero, b.facture.numero))
-  return { fichiers: juges, refusDuLot, pret: { format: formats[0], factures } }
+  if (!toutesPretes || refusDuLot.length > 0) return { fichiers: juges, refusDuLot, decoupage, imports: null }
+  // L'ordre de la base, dans chaque import : par date d'émission (la séquence chronologique de chaque série), la facture avant
+  // l'avoir du même jour (l'avoir cite une facture « plus haut dans ce lot »), puis le numéro.
+  const imports = decoupage.map((d): LotPret => {
+    const factures = juges
+      .filter((j) => d.cles.includes(j.cle))
+      .map((j) => ({ cle: j.cle, facture: j.facture as FactureAImporter }))
+      .sort((a, b) => ordreC(a.facture.date_emission, b.facture.date_emission)
+        || (a.facture.type === b.facture.type ? 0 : a.facture.type === 'facture' ? -1 : 1)
+        || ordreC(a.facture.numero, b.facture.numero))
+    return { format: d.format, factures, noms: factures.map((f) => fichiers.find((x) => x.cle === f.cle)?.nom ?? f.cle) }
+  })
+  return { fichiers: juges, refusDuLot, decoupage, imports }
 }
 
 // ── Les mots des gestes ──────────────────────────────────────────────────────────────────────────────────────────
@@ -387,18 +465,92 @@ export function jjmmaaaa(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso
 }
 
-/** La confirmation de l'import : elle NOMME ce qui part, et dit comment il se défait. */
-export function confirmationDeLImport(pret: LotPret, originauxDeposes: boolean): string {
+const enAbrege = (liste: readonly string[]) => (liste.length <= 6 ? liste.join(', ') : `${liste.slice(0, 3).join(', ')} … ${liste.slice(-2).join(', ')}`)
+
+/** Ce qu'un import reprend : ses documents, son format, ses numéros et son total. */
+function ceQueReprend(pret: LotPret): string {
   const n = pret.factures.length
   const avoirs = pret.factures.filter((f) => f.facture.type === 'avoir').length
   const ttc = pret.factures.reduce((s, f) => s + Math.round(f.facture.montant_ttc * 100), 0)
-  const numeros = pret.factures.map((f) => f.facture.numero)
-  const dits = numeros.length <= 6 ? numeros.join(', ') : `${numeros.slice(0, 3).join(', ')} … ${numeros.slice(-2).join(', ')}`
+  const dits = enAbrege(pret.factures.map((f) => f.facture.numero))
   const quoi = n === 1 ? (avoirs === 1 ? '1 avoir' : '1 facture') : `${n} documents (${n - avoirs} facture${n - avoirs > 1 ? 's' : ''}, ${avoirs} avoir${avoirs > 1 ? 's' : ''})`
-  return `Reprendre ${quoi} de l’ancien logiciel, au format ${LIBELLES_FORMAT[pret.format]} : ${dits} — ${euros(ttc)} TTC au total. `
-    + 'Elles comptent dès lors comme les factures sources de leurs ventes, chacune par son registre après la date de reprise. '
+  return `${quoi} de l’ancien logiciel, au format ${LIBELLES_FORMAT[pret.format]} : ${dits} — ${euros(ttc)} TTC au total`
+}
+
+const APRES_L_IMPORT = 'Elles comptent dès lors comme les factures sources de leurs ventes, chacune par son registre après la date de reprise. '
+
+/** La confirmation de l'import : elle NOMME ce qui part, et dit comment il se défait. */
+export function confirmationDeLImport(pret: LotPret, originauxDeposes: boolean): string {
+  return `Reprendre ${ceQueReprend(pret)}. `
+    + APRES_L_IMPORT
     + (originauxDeposes ? 'Leurs fichiers se déposent avec elles. ' : 'Leurs fichiers ne se gardent pas encore dans l’application. ')
     + 'L’import ne se défait que par « Retirer l’import », en entier, tant que rien ne s’y rattache. Continuer ?'
+}
+
+/** Le titre d'un import du découpage : son rang et son format (« Import 2 sur 3, au format CII »). */
+export function titreDUnImport(rang: number, nombre: number, format: FormatDUnFichier): string {
+  return `Import ${rang} sur ${nombre}, au format ${LIBELLES_FORMAT[format]}`
+}
+
+/**
+ * Ce que l'écran dit du découpage AVANT LE CLIC (A8D2B-Q2) : combien d'imports, dans quel ordre, et ce que « tout ou rien »
+ * veut dire alors ; l'écran nomme sous lui chaque import et ses fichiers. Null pour un dépôt d'un seul format.
+ */
+export function avisDuDecoupage(decoupage: readonly ImportDuDecoupage[]): string | null {
+  if (decoupage.length < 2) return null
+  return `Ces fichiers mêlent ${decoupage.length} formats : un import ne porte qu’un format, ils partiront donc en `
+    + `${decoupage.length} imports, l’un après l’autre, dans l’ordre ci-dessous. Chacun est tout ou rien : un import refusé ne `
+    + 'reprend aucun de ses fichiers, ceux qui le suivent ne partent pas, et ceux qui l’ont précédé restent repris.'
+}
+
+/** Les fichiers d'un import du découpage, nommés. */
+export function fichiersDUnImport(d: { noms: readonly string[] }): string {
+  return `${d.noms.length} fichier${d.noms.length > 1 ? 's' : ''} : ${enAbrege(d.noms)}`
+}
+
+/**
+ * La confirmation des imports : d'un seul, celle d'hier au caractère près ; de plusieurs, elle NOMME chacun — son rang, son
+ * format, ses fichiers, ce qu'il reprend —, dit qu'ils partent l'un après l'autre et ce qu'un refus arrête.
+ */
+export function confirmationDesImports(imports: readonly LotPret[], originauxDeposes: boolean): string {
+  if (imports.length === 1) return confirmationDeLImport(imports[0], originauxDeposes)
+  const chacun = imports.map((p, i) => `${titreDUnImport(i + 1, imports.length, p.format)} (${fichiersDUnImport(p)}) : reprendre ${ceQueReprend(p)}.`)
+  return `Ces fichiers partent en ${imports.length} imports, l’un après l’autre, chacun tout ou rien :\n`
+    + chacun.join('\n') + '\n'
+    + 'Un import refusé ne reprend aucun de ses fichiers, et ceux qui le suivent ne partent pas ; ceux qui l’ont précédé restent '
+    + 'repris. ' + APRES_L_IMPORT
+    + (originauxDeposes
+      ? 'Les fichiers de chaque import se déposent avec lui, et se retirent s’il est refusé. '
+      : 'Leurs fichiers ne se gardent pas encore dans l’application. ')
+    + 'Chaque import ne se défait que par son « Retirer l’import », en entier, tant que rien ne s’y rattache. Continuer ?'
+}
+
+/** L'issue d'un import du découpage. */
+export type IssueDUnImport =
+  | { etat: 'repris'; message: string }
+  | { etat: 'refuse'; erreur: string }
+  | { etat: 'pas_parti' }
+
+/**
+ * Le BILAN des imports, après le clic : chacun dit, sous son titre, s'il est passé, refusé (et pourquoi) ou pas parti —
+ * aucun ne passe en silence. `fait` porte ce qui est passé, `erreur` ce qui ne l'est pas ; d'un seul import, les mots d'hier.
+ */
+export function bilanDesImports(imports: readonly LotPret[], issues: readonly IssueDUnImport[]): { fait: string | null; erreur: string | null } {
+  if (imports.length === 1) {
+    const i = issues[0]
+    if (i?.etat === 'repris') return { fait: i.message, erreur: null }
+    return { fait: null, erreur: i?.etat === 'refuse' ? i.erreur : 'L’import n’est pas parti.' }
+  }
+  const faits: string[] = []
+  const erreurs: string[] = []
+  imports.forEach((p, n) => {
+    const titre = titreDUnImport(n + 1, imports.length, p.format)
+    const i = issues[n] ?? { etat: 'pas_parti' as const }
+    if (i.etat === 'repris') faits.push(`${titre} : passé — ${i.message}`)
+    else if (i.etat === 'refuse') erreurs.push(`${titre} : refusé, aucun de ses fichiers n’est repris — ${i.erreur}`)
+    else erreurs.push(`${titre} : pas parti, un import qui le précède a été refusé ; ses fichiers restent à reprendre.`)
+  })
+  return { fait: faits.length > 0 ? faits.join(' ') : null, erreur: erreurs.length > 0 ? erreurs.join(' ') : null }
 }
 
 /** Les chemins des originaux d'un lot, sans doublon : ce que l'écran retire du stockage APRÈS un retrait réussi. */

@@ -110,7 +110,7 @@ const PRET: LotPret = { format: 'cii', factures: [{ cle: 'a', facture: {
   numero: 'FA-2', type: 'facture', date_emission: '2025-10-02', tiers_nom: 'Société fictive', type_client: 'assujetti',
   nature_operation: 'services', option_debits: false, montant_ht: 100, montant_tva: 20, montant_ttc: 120,
   lignes: [{ designation: 'Conseil', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }], encaisse_avant_reprise: 0, transmise_par: 'pdf',
-} }] }
+} }], noms: ['fa2.xml'] }
 
 const LOT = { id: 'l1', format: 'cii', importe_le: '2026-11-10T10:00:00Z', nombre_factures: 1,
   factures: [{ facture_id: 'f1', numero: 'FA-1', rang: 1, fichier_chemin: 'd1/imports/l1/a.xml' }] }

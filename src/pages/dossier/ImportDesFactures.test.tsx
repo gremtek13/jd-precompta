@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import '../../test/ecrans'
 import type { EtatDeLImport, FichierLu, LectureDeLImport } from '../../lib/importDesFacturesVue'
@@ -198,5 +198,85 @@ describe('la date de reprise', () => {
     monter()
     await screen.findByText('pas encore posée')
     expect(screen.queryByLabelText('Premier mois repris par l’application')).toBeNull()
+  })
+})
+
+// A8D2B-Q2 (« Couper en plusieurs imports », 11/11/2026) : des fichiers de formats différents déposés ensemble partent en un
+// import par format. L'écran dit le découpage avant le clic, la confirmation nomme chaque import, les imports partent l'un
+// après l'autre (le premier refus arrête la suite), et le bilan dit lequel est passé, lequel est refusé, lequel n'est pas parti ;
+// ce qui est passé quitte les fichiers déposés, le reste y demeure.
+describe('des formats mêlés, coupés en plusieurs imports (A8D2B-Q2)', () => {
+  const UBL: FichierLu = {
+    ...FICHIER, cle: 'd1-1', nom: 'fa119.ubl.xml', fichier: new File(['<y/>'], 'fa119.ubl.xml'), sha256: 'c'.repeat(64),
+    lecture: { lue: { ...FACTURE, format: 'ubl', numero: 'FA-2025/119', date_emission: '2025-10-01' } },
+  }
+
+  async function deposerLesDeux() {
+    appels.fichiers.mockResolvedValue([FICHIER, UBL])
+    fireEvent.click(await screen.findByRole('button', { name: 'Reprendre des factures de l’ancien logiciel' }))
+    fireEvent.change(screen.getByLabelText('Fichiers des factures'), { target: { files: [FICHIER.fichier, UBL.fichier] } })
+    for (const nom of ['fa118.xml', 'fa119.ubl.xml']) {
+      const article = await screen.findByRole('article', { name: `Fichier ${nom}` })
+      fireEvent.change(within(article).getByLabelText('Type du client'), { target: { value: 'assujetti' } })
+      fireEvent.change(within(article).getByLabelText('Transmission'), { target: { value: 'pdf' } })
+      fireEvent.change(within(article).getByLabelText('Encaissé avant la reprise (€)'), { target: { value: '0' } })
+    }
+  }
+
+  it('l’interrupteur baissé : rien n’est lu ni rendu, aucun import', () => {
+    etat.offert = false
+    const { container } = monter()
+    expect(container.innerHTML).toBe('')
+    expect(appels.lire).not.toHaveBeenCalled()
+    expect(appels.importer).not.toHaveBeenCalled()
+  })
+
+  it('dit le découpage avant le clic, le nomme à la confirmation, puis dit lequel est passé et lequel est refusé', async () => {
+    const onChange = vi.fn()
+    monter(onChange)
+    await deposerLesDeux()
+    const note = screen.getByRole('note', { name: 'Le découpage en imports' })
+    expect(note.textContent).toMatch(/mêlent 2 formats : .* en 2 imports, l’un après l’autre/)
+    // L'UBL commence le plus tôt : il part le premier.
+    expect([...note.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      'Import 1 sur 2, au format UBL — 1 fichier : fa119.ubl.xml', 'Import 2 sur 2, au format CII — 1 fichier : fa118.xml'])
+    expect(screen.queryByText(/ne mêle pas les formats/)).toBeNull()
+    const bouton = screen.getByRole('button', { name: 'Importer 2 documents en 2 imports' }) as HTMLButtonElement
+    expect(bouton.disabled).toBe(false)
+
+    appels.importer
+      .mockResolvedValueOnce({ ok: true, message: '1 document repris de l’ancien logiciel.' })
+      .mockResolvedValueOnce({ ok: false, erreur: 'Refus fictif de la base.' })
+    appels.lire.mockResolvedValue(lue({ lots: [LOT], empreintes: ['c'.repeat(64)], numeros: ['FA-2025/119'] }))
+    await act(async () => { fireEvent.click(bouton); fireEvent.click(bouton) })
+    expect(window.confirm).toHaveBeenCalledTimes(1)
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(
+      /^Ces fichiers partent en 2 imports[\s\S]*Import 1 sur 2, au format UBL \(1 fichier : fa119\.ubl\.xml\)[\s\S]*Import 2 sur 2, au format CII \(1 fichier : fa118\.xml\)/))
+    await screen.findByRole('alert')
+    expect(appels.importer).toHaveBeenCalledTimes(2)
+    expect(appels.importer.mock.calls.map((c) => [c[1].format, c[1].factures.map((f: { cle: string }) => f.cle)])).toEqual([['ubl', ['d1-1']], ['cii', ['d1-0']]])
+    expect(screen.getByRole('status').textContent).toBe('Import 1 sur 2, au format UBL : passé — 1 document repris de l’ancien logiciel.')
+    expect(screen.getByRole('alert').textContent).toBe('Import 2 sur 2, au format CII : refusé, aucun de ses fichiers n’est repris — Refus fictif de la base.')
+    // Le passé quitte les fichiers déposés ; le refusé y demeure, ses choix gardés.
+    expect(screen.queryByRole('article', { name: 'Fichier fa119.ubl.xml' })).toBeNull()
+    const reste = screen.getByRole('article', { name: 'Fichier fa118.xml' })
+    expect((within(reste).getByLabelText('Type du client') as HTMLSelectElement).value).toBe('assujetti')
+    expect(screen.getByRole('button', { name: 'Importer 1 document' })).toBeTruthy()
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('le premier import refusé : le suivant ne part pas, et c’est dit ; rien n’est relu comme fait', async () => {
+    const onChange = vi.fn()
+    monter(onChange)
+    await deposerLesDeux()
+    appels.importer.mockResolvedValue({ ok: false, erreur: 'Refus fictif de la base.' })
+    fireEvent.click(screen.getByRole('button', { name: 'Importer 2 documents en 2 imports' }))
+    const alerte = await screen.findByRole('alert')
+    expect(appels.importer).toHaveBeenCalledTimes(1)
+    expect(alerte.textContent).toBe('Import 1 sur 2, au format UBL : refusé, aucun de ses fichiers n’est repris — Refus fictif de la base. '
+      + 'Import 2 sur 2, au format CII : pas parti, un import qui le précède a été refusé ; ses fichiers restent à reprendre.')
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getAllByRole('article')).toHaveLength(2)
+    expect(onChange).not.toHaveBeenCalled()
   })
 })
