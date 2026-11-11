@@ -112,6 +112,8 @@ const faux = vi.hoisted(() => ({
   operationsCaisse: [] as OperationCaisse[],
   // Les contrôles des relevés déjà importés (lib/controlesReleves.ts) : aucun par défaut ; `null` : leur lecture refusée.
   controlesReleves: [] as ControleReleveBancaire[] | null,
+  comptesBancaires: [] as { id: string; libelle: string; principal: boolean; fin_d_identifiant: string | null }[],
+  updatesComptes: [] as { valeur: Record<string, unknown>; filtres: string[] }[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -140,6 +142,13 @@ const drapeauDuSens = vi.hoisted(() => ({ leve: false }))
 vi.mock('../../lib/sensDesReglesIgnorees', async (original) => {
   const module = await original<typeof import('../../lib/sensDesReglesIgnorees')>()
   return { ...module, get SENS_DES_REGLES_IGNOREES_EXPORTE() { return drapeauDuSens.leve } }
+})
+// Plusieurs comptes bancaires (MCB2) : le drapeau `COMPTES_BANCAIRES_PREVUS` joué dans ses deux états ; baissé (le défaut),
+// l'import ne lit aucun compte et n'en écrit aucun, comme avant MCB ; levé, il lit `faux.comptesBancaires`.
+const drapeauDesComptes = vi.hoisted(() => ({ leve: false }))
+vi.mock('../../lib/comptesBancaires', async (original) => {
+  const module = await original<typeof import('../../lib/comptesBancaires')>()
+  return { ...module, get COMPTES_BANCAIRES_PREVUS() { return drapeauDesComptes.leve } }
 })
 // Le justificatif qu'on ouvre depuis la fiche d'un mouvement : le chemin demandé, sans ouvrir d'onglet.
 const justificatifs = vi.hoisted(() => ({ ouverts: [] as string[] }))
@@ -199,6 +208,7 @@ vi.mock('../../lib/supabase', async () => {
         if (table === 'lignes_bancaires') faux.updatesLignes.push(valeur)
         if (table === 'pieces') faux.updatesPieces.push(valeur)
         if (table === 'ecritures_brouillon') faux.updatesEcritures.push({ valeur, filtres })
+        if (table === 'comptes_bancaires') faux.updatesComptes.push({ valeur, filtres })
         return c
       },
       insert: (valeur: Record<string, unknown>) => {
@@ -354,6 +364,9 @@ vi.mock('../../lib/supabase', async () => {
         }
         if (table === 'documents_divers' && faux.erreurReleves) {
           return Promise.resolve({ data: null, error: { message: faux.erreurReleves }, count: null }).then(suite)
+        }
+        if (table === 'comptes_bancaires' && operation === 'select') {
+          return Promise.resolve({ data: faux.comptesBancaires, error: null, count: faux.comptesBancaires.length }).then(suite)
         }
         if (table === 'controles_releves_bancaires') {
           if (faux.controlesReleves === null) return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
@@ -527,6 +540,9 @@ function reinitialiser() {
   faux.resoudreLectureLignes = null
   faux.updatesPieces = []
   faux.insertions = []
+  faux.comptesBancaires = []
+  faux.updatesComptes = []
+  drapeauDesComptes.leve = false
   faux.muet = {}
   faux.lignesPdf = []
   faux.ecritures = []
@@ -1538,6 +1554,108 @@ describe('BanqueTab — import d’un relevé', () => {
 // LE RELEVÉ IMPORTÉ EN OFX OU EN QIF (`lib/releveOfxQif.ts`) : reconnu au contenu, il saute la détection des colonnes, dit
 // le format lu et le solde que la banque donne, et passe par le même aperçu signé et la même écriture qu'un CSV. Fichiers
 // FICTIFS (code banque 99999).
+describe('BanqueTab — l’import d’un relevé par compte bancaire (MCB2)', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  const CSV = 'Date;Libellé;Montant\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n05/06/2025;VIR CLIENT DUPONT;250,00\n'
+  const PRINCIPAL = { id: 'cb-p', libelle: 'Compte principal', principal: true, fin_d_identifiant: null }
+  const SECOND = { id: 'cb-s', libelle: 'Compte pro bis', principal: false, fin_d_identifiant: null }
+  const lot = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+  // Le relevé déjà en base est celui du compte principal.
+  function avecComptes(...comptes: typeof faux.comptesBancaires) {
+    reinitialiser()
+    drapeauDesComptes.leve = true
+    faux.comptesBancaires = comptes
+    faux.lignes = faux.lignes.map((l) => ({ ...l, compte_bancaire_id: 'cb-p' }))
+  }
+  async function deposer(contenu = CSV, nom = 'releve-juin.csv') {
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File([contenu], nom)] } }) })
+    return screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+  }
+  const choisir = async (id: string) => {
+    const liste = await screen.findByLabelText('Compte bancaire dont ce relevé est l’extrait')
+    await act(async () => { fireEvent.change(liste, { target: { value: id } }) })
+  }
+  const OFX = 'OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nENCODING:USASCII\r\nCHARSET:1252\r\n\r\n'
+    + '<OFX><BANKMSGSRSV1><STMTTRNRS><TRNUID>0<STMTRS><CURDEF>EUR<BANKACCTFROM><BANKID>99999<BRANCHID>00001<ACCTID>00012345678'
+    + '<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST>'
+    + '<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261103<TRNAMT>-45.20<FITID>F1<NAME>CB PHARMACIE FICTIVE</STMTTRN>'
+    + '<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261105<TRNAMT>250.00<FITID>F2<NAME>VIR PATIENT FICTIF</STMTTRN>'
+    + '</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>'
+
+  it('drapeau baissé : aucun compte lu ni écrit, comme avant MCB', async () => {
+    reinitialiser()
+    rendre()
+    const bouton = await deposer()
+    expect(screen.queryByLabelText('Compte bancaire dont ce relevé est l’extrait')).toBeNull()
+    await act(async () => { bouton.click() })
+    expect(lot()).toHaveLength(1)
+    expect(Object.keys((lot()[0].valeur as unknown as Record<string, unknown>[])[0])).not.toContain('compte_bancaire_id')
+  })
+
+  it('un seul compte : pris sans rien demander, écrit sur chaque mouvement, et le dédoublonnage le lit', async () => {
+    avecComptes(PRINCIPAL)
+    rendre()
+    const bouton = await deposer()
+    expect(screen.queryByLabelText('Compte bancaire dont ce relevé est l’extrait')).toBeNull()
+    await act(async () => { bouton.click() })
+    expect(lot()[0].valeur).toEqual([expect.objectContaining({ libelle: 'VIR CLIENT DUPONT', compte_bancaire_id: 'cb-p' })])
+    expect(alertes).toEqual([expect.stringContaining('1 déjà présente(s), ignorée(s)')])
+  })
+
+  it('deux comptes : aucun par défaut, l’import grisé et dit ; choisi, le relevé de l’autre compte n’est plus un doublon', async () => {
+    avecComptes(PRINCIPAL, SECOND)
+    rendre()
+    const bouton = await deposer()
+    expect(screen.getByText(/Ce dossier tient 2 comptes bancaires : choisis celui/)).toBeTruthy()
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(lot()).toHaveLength(0)
+    await choisir('cb-s')
+    const actif = screen.getByRole('button', { name: /Importer 2 ligne\(s\)/ })
+    expect(actif.hasAttribute('disabled')).toBe(false)
+    await act(async () => { actif.click() })
+    // Le prélèvement du 02/06 est au relevé du compte principal : sous le second compte, il s'importe.
+    expect(lot()[0].valeur).toEqual([
+      expect.objectContaining({ libelle: 'PRLV SEPA FOURNISSEUR', compte_bancaire_id: 'cb-s' }),
+      expect.objectContaining({ libelle: 'VIR CLIENT DUPONT', compte_bancaire_id: 'cb-s' }),
+    ])
+  })
+
+  it('le nom d’un relevé de l’autre compte se refuse avant le clic', async () => {
+    avecComptes(PRINCIPAL, SECOND)
+    faux.lignes = faux.lignes.map((l) => ({ ...l, source_fichier: 'releve-juin.csv' }))
+    rendre()
+    await deposer()
+    await choisir('cb-s')
+    expect(screen.getByText(/Le relevé « releve-juin\.csv » est déjà importé sous le compte « Compte principal »/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Importer 2 ligne\(s\)/ }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('un OFX d’un autre compte se refuse ; le premier OFX d’un compte lui donne la fin de son identifiant', async () => {
+    avecComptes({ ...PRINCIPAL, fin_d_identifiant: '5678' }, SECOND)
+    faux.lignes = []
+    rendre()
+    await deposer(OFX, 'releve.ofx')
+    await choisir('cb-s')
+    expect(screen.getByText(/Ce relevé OFX est celui du compte « Compte principal »/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Importer 2 ligne\(s\)/ }).hasAttribute('disabled')).toBe(true)
+
+    avecComptes(PRINCIPAL)
+    faux.lignes = []
+    cleanup()
+    rendre()
+    const bouton = await deposer(OFX, 'releve.ofx')
+    await act(async () => { bouton.click() })
+    expect(lot()).toHaveLength(1)
+    expect(faux.updatesComptes).toEqual([{ valeur: { fin_d_identifiant: '5678' }, filtres: ['id=cb-p', 'fin_d_identifiant is null'] }])
+  })
+})
+
 describe('BanqueTab — un relevé OFX ou QIF', () => {
   const alertes: string[] = []
   beforeEach(() => {

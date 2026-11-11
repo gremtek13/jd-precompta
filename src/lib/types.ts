@@ -210,12 +210,19 @@ export interface ControleReleveBancaire {
   coherent: boolean
   periode_debut: string | null
   periode_fin: string | null
+  // Le compte bancaire du relevé (MCB1, migration `comptes_bancaires` PRÉPARÉE, pas appliquée) : NOT NULL en base une fois
+  // appliquée. Facultatif ici tant qu'elle ne l'est pas — une lecture d'avant la migration ne le rend pas, et un absent n'est
+  // pas un nul ; il devient obligatoire le jour où `COMPTES_BANCAIRES_PREVUS` se lève (lib/comptesBancaires.ts).
+  compte_bancaire_id?: string
   created_at: string
 }
 
 export interface LigneBancaire {
   id: string
   dossier_id: string
+  // Le compte bancaire du mouvement (MCB1, PRÉPARÉE) : NOT NULL en base une fois la migration appliquée, facultatif ici
+  // jusque-là, comme sur `ControleReleveBancaire`.
+  compte_bancaire_id?: string
   date: string
   libelle: string
   montant: number

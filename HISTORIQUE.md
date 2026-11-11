@@ -50648,3 +50648,23 @@ fichier d'un seul compte (MCB-Q6), plan hors des comptes ; aucune fonction `secu
 n'apprend rien). Réplique à 195 migrations : `comptesBancaires.sql` 38/38, dix-sept mutations tuées ;
 `comptesBancairesSuppression.sql` (réplique) 7/7 — « le dossier qui part » ne mord pas, l'ordre des cascades retire les
 mouvements avant leur compte ; `rls.sql` 0 en faute, la banque à sept tables ; le retour (destructif) puis la réapplication.
+
+### 11/11/2026 — L'IMPORT D'UN RELEVÉ PAR COMPTE BANCAIRE (MCB2) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, sur MCB1, derrière `COMPTES_BANCAIRES_PREVUS`, baissé : rien ne change avant la bascule.) Un module pur,
+`lib/importParCompte.ts`, décide avant le clic : le compte du relevé — aucun par défaut dès deux comptes, le seul pris sans
+rien demander, aucun encore (un dossier neuf) laissé à la base, qui crée le principal ; une lecture des comptes en cours ou
+partielle retient l'import (`lib/comptesBancairesLecture.ts`, qui ne rejette jamais). Le dédoublonnage par multiplicité, le
+recouvrement et la suite des soldes reçoivent la PART du compte (`partDuCompte`) : deux frais de 2,50 € le même jour sur
+deux comptes ne sont plus des doublons. Le nom d'un fichier reste unique dans le dossier (MCB-Q6) : celui d'un relevé d'un
+autre compte se refuse avant le clic (la base ne le refuse que si ce relevé a son contrôle). Chaque mouvement et le
+contrôle portent `compte_bancaire_id` (`enregistrerControleReleve` le prend sans défaut) ; `types.ts` le dit FACULTATIF
+jusqu'à la migration (une lecture d'avant ne le rend pas). **L'OFX** : la table des comptes ne tient aucun numéro (la
+conception l'a écarté) ; une seconde migration préparée, `fin_d_identifiant_des_comptes_bancaires` (une colonne, quatre
+chiffres ou capitales, ni policy ni fonction), retient les quatre derniers caractères de l'ACCTID du premier OFX importé
+sous un compte ; un OFX dont la fin est celle d'un autre compte, ou contredit celle du compte choisi, se refuse.
+`releveOfxQif.ts` ne rend que ces quatre caractères, jamais dans une ligne ni un message. Réplique (196 + 1) : l'essai
+`finDIdentifiantDesComptes.sql` 12/12, une mutation de la contrainte mord (cinq étapes), retour puis réapplication ;
+`comptesBancaires.sql` toujours 38/38. Cinq mutations du module mordent sur les tests d'écran. MCB1-Q1 suivie (une date
+par compte, rien de changé). Reste : la fin d'un identifiant se corrige sur la fiche du compte (MCB6) ; le premier OFX
+d'un dossier sans compte ne la pose pas (le principal n'existe qu'après l'insertion), le suivant si.

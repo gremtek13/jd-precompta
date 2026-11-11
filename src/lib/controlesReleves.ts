@@ -28,13 +28,19 @@ import { lireTout } from './lectureComplete'
 // répéter sa clause WHERE, ce que le client Supabase ne sait pas produire. La première version de
 // cette table portait un index partiel ; l'upsert aurait échoué à chaque import, en silence, exactement
 // comme la règle tiers → catégorie de ce projet qui n'a rien écrit pendant des mois pour cette raison.
+//
+// `compteBancaireId` (MCB2, sans défaut) : le compte du relevé, écrit avec le contrôle quand l'import le connaît ; nul, la
+// colonne n'est pas nommée — drapeau `COMPTES_BANCAIRES_PREVUS` baissé, elle n'existe pas encore, et un dossier sans
+// compte reçoit de la base le principal qu'elle crée (MCB1).
 export async function enregistrerControleReleve(
   dossierId: string,
   sourceFichier: string | null,
   controle: ControleSolde,
+  compteBancaireId: string | null,
 ): Promise<void> {
   const ligne = {
     dossier_id: dossierId,
+    ...(compteBancaireId === null ? {} : { compte_bancaire_id: compteBancaireId }),
     source_fichier: sourceFichier,
     solde_initial: controle.soldeInitial,
     solde_final: controle.soldeFinal,
