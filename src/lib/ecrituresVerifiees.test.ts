@@ -110,6 +110,21 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       '`lib/simulationVentesFacturees.ts` attend la requête et lit son erreur : un refus, une valeur illisible ou une requête ' +
       'qui lève rendent une lecture INCOMPLÈTE, que l’écran dit sans rien projeter, jamais des recettes nulles',
   },
+  lireLesPiecesCiteesDeLaSimulation: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `pieces_citees_de_la_simulation` LIT les pièces qui sont l’original d’une facture reprise '
+      + '(A8Q5-Q2), pour « Ma simulation » d’un client « Banque ». `lib/reprisesAuClient.ts` attend la requête et lit son erreur : '
+      + 'un refus, une valeur illisible ou une requête qui lève rendent une lecture ILLISIBLE, et la simulation se dit incomplète, '
+      + 'jamais un ensemble vide deviné',
+  },
+  lireLaRepriseDeLaFacture: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `reprise_de_la_facture` LIT ce que l’encaissement d’une facture reprise demande (A8C-Q1), '
+      + 'pour la fenêtre des encaissements des deux espaces. `lib/reprisesAuClient.ts` attend la requête et lit son erreur : un '
+      + 'refus, une valeur illisible ou une requête qui lève rendent une lecture ILLISIBLE, que la fenêtre dit sans rien proposer',
+  },
   lireLesDroitsVentes: {
     // 2 depuis l'étape P4b : les tuiles « À encaisser » et « À déclarer » de l'accueil relisent aussi les cases ; 3 depuis
     // l'étape VF5g : « Ma banque » lit « Banque » et « Ventes », qui ouvre la lecture des encaissements de ses factures ; 4

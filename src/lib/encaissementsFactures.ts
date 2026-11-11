@@ -128,21 +128,22 @@ export interface ContexteFacture {
 /** Ce qui était encaissé d'une facture reprise avant la reprise, à un taux (`factures_importees.encaisse_par_taux`). */
 export interface EncaisseDuTaux {
   taux: number
-  /** En euros. */
-  encaisse: number
+  encaisseCentimes: number
+}
+
+/** Ce que les avoirs REPRIS d'une facture reprise créditent à un taux, la règle de TVA de leurs montants. */
+export interface CrediteDuTaux {
+  taux: number
+  ttcCentimes: number
 }
 
 /**
- * Un avoir REPRIS de l'ancien logiciel, tel que les plafonds d'une facture reprise le lisent : son en-tête, son état, et la
- * facture reprise qu'il crédite (`factures_importees.origine_id` — jamais `facture_origine_id`, que seule la validation d'un
- * avoir de l'application pose). Ses lignes vont dans `ContexteFacture.lignes`.
+ * Ce qu'une facture reprise demande de lire de plus, tel que `reprise_de_la_facture` le rend (A8C-Q1 ; migration
+ * `reprises_au_client`, lib/reprisesAuClient.ts) — au cabinet comme au client « Ventes », qui ne lit pas le registre des
+ * reprises : les chiffres mêmes que les plafonds d'`enregistrer_encaissement` lisent, en centimes. Les avoirs repris y sont
+ * déjà sommés par la base — ceux qui citent CETTE facture dans le registre (`factures_importees.origine_id`, jamais
+ * `facture_origine_id`) : au total leur en-tête, à un taux la règle de TVA de leurs montants (`montants_par_taux_du_document`).
  */
-export type AvoirRepris = Pick<FactureEmise, 'id' | 'type' | 'montant_tva' | 'montant_ttc'> & {
-  statut: string
-  origine_id: string | null
-}
-
-/** Ce qu'une facture reprise demande de lire de plus : `dossiers`, `factures_emises` et `factures_importees` (le cabinet). */
 export interface RepriseDeLaFacture {
   /** La facture reprise que ces valeurs décrivent : celles d'une autre ne valent pas. */
   factureId: string
@@ -150,12 +151,14 @@ export interface RepriseDeLaFacture {
   repriseLe: string | null
   /** `factures_emises.nature_operation` de la facture reprise : « mixte » ne reçoit pas encore d'encaissement (A8B-Q1). */
   natureOperation: string | null
-  /** `factures_importees.encaisse_avant_reprise`, en euros, net des remboursements. */
-  encaisseAvantReprise: number
-  /** `factures_importees.encaisse_par_taux`. */
+  /** `factures_importees.encaisse_avant_reprise`, net des remboursements. */
+  encaisseAvantRepriseCentimes: number
+  /** `factures_importees.encaisse_par_taux`, un taux répété sommé. */
   encaisseParTaux: readonly EncaisseDuTaux[]
-  /** Les avoirs repris du dossier — le module garde ceux qui la créditent. */
-  avoirsRepris: readonly AvoirRepris[]
+  /** Ce que ses avoirs repris créditent au total : la somme de leur en-tête, en positif. */
+  crediteParLesReprisCentimes: number
+  /** … et à chaque taux. */
+  crediteParLesReprisParTaux: readonly CrediteDuTaux[]
 }
 
 // ── Les moyens de paiement ──────────────────────────────────────────────────────────────────────────────────────────
@@ -890,16 +893,15 @@ function jugerEnregistrement(
   // facture source, l'un et l'autre moins ce que ses avoirs validés créditent (EC3-Q10, rangs 28 et 30 depuis l'étape
   // VF5h2, 27 et 29 avant elle), tel que leurs lignes le transmettent.
   // Une facture REPRISE (A8b, A8-Q6) : son TTC net de ses avoirs — ceux que l'application a validés, tels que leurs lignes
-  // les transmettent, et ses avoirs repris, leur en-tête au total, leur règle de TVA à un taux — et de ce qui en était
-  // encaissé avant la reprise, au total puis à chaque taux. Ses avoirs validés se lisent comme ceux d'une facture source
-  // (`vente`) ; sans elle, comme hier, aucun.
+  // les transmettent, et ses avoirs repris, leur en-tête au total, leur règle de TVA à un taux, sommés par la base
+  // (`reprise_de_la_facture`, A8C-Q1) — et de ce qui en était encaissé avant la reprise, au total puis à chaque taux. Ses
+  // avoirs validés se lisent comme ceux d'une facture source (`vente`) ; sans elle, comme hier, aucun.
   const comptes = c.encaissements.filter((e) => e.facture_id === f.id && compte(e))
   const deja = comptes.reduce((total, e) => total + centimes(e.montant), 0)
   const credites = vente != null && (source || reprise) ? creditesDesAvoirs(f.id, c.lignes, vente) : new Map<number, number>()
   const credite = [...credites.values()].reduce((total, x) => total + x, 0)
-  const repris = reprise ? reprise.avoirsRepris.filter((a) => a.origine_id === f.id && a.type === 'avoir' && estUneFactureReprise(a)) : []
-  const crediteRepris = repris.reduce((total, a) => total - (centimesExacts(a.montant_ttc) ?? 0), 0)
-  const avant = reprise ? centimesExacts(reprise.encaisseAvantReprise) ?? 0 : 0
+  const crediteRepris = reprise ? reprise.crediteParLesReprisCentimes : 0
+  const avant = reprise ? reprise.encaisseAvantRepriseCentimes : 0
   const ttc = (centimesExacts(f.montant_ttc) as number) - credite - crediteRepris - avant
   if (deja + montant > ttc) {
     const cle = reprise ? 'plafond_reprise' : source ? 'plafond_facture_net' : 'plafond_facture'
@@ -907,10 +909,10 @@ function jugerEnregistrement(
   }
   const ids = new Set(comptes.map((e) => e.id))
   const ttcDesTaux = new Map(montantsParTauxDuDocument(f, c.lignes).map((t) => [t.taux, t.ttcCentimes]))
-  const reprisAuTaux = (taux: number) => repris
-    .reduce((total, a) => total + (montantsParTauxDuDocument(a, c.lignes).find((t) => t.taux === taux)?.ttcCentimes ?? 0), 0)
+  const reprisAuTaux = (taux: number) => (reprise ? reprise.crediteParLesReprisParTaux : [])
+    .filter((t) => t.taux === taux).reduce((total, t) => total + t.ttcCentimes, 0)
   const avantAuTaux = (taux: number) => (reprise ? reprise.encaisseParTaux : [])
-    .filter((g) => g.taux === taux).reduce((total, g) => total + (centimesExacts(g.encaisse) ?? 0), 0)
+    .filter((g) => g.taux === taux).reduce((total, g) => total + g.encaisseCentimes, 0)
   for (const [i, p] of r.entries()) {
     // Un taux des lignes de la facture : le refus 11 l'a vérifié.
     const ttcDuTaux = (ttcDesTaux.get(p.taux) as number) - (credites.get(p.taux) ?? 0)
@@ -2352,6 +2354,35 @@ export function resteAEncaisserVente(
   })
   const ttcCentimes = brut.ttcCentimes - credite
   return { ttcCentimes, encaisseCentimes: brut.encaisseCentimes, resteCentimes: ttcCentimes - brut.encaisseCentimes, parTaux }
+}
+
+/**
+ * Ce qui reste à encaisser d'une facture REPRISE (A8b, A8-Q6 ; A8C-Q1), comme les plafonds d'`enregistrer_encaissement` le
+ * jugent : au total, son TTC — l'en-tête — net de ses avoirs de l'application (leurs lignes), de ses avoirs repris (leur
+ * en-tête) et de l'encaissé avant la reprise ; à chaque taux, le TTC de la règle de TVA de ses montants
+ * (`montantsParTauxDuDocument`), net des mêmes à ce taux ; puis, l'un et l'autre, de ses encaissements comptés. `reprise` :
+ * ce que `reprise_de_la_facture` a rendu de CETTE facture — l'appelant qui ne l'a pas lu n'offre aucun formulaire.
+ */
+export function resteAEncaisserDeLaReprise(
+  c: Pick<ContexteFacture, 'facture' | 'lignes' | 'encaissements' | 'parts'>,
+  vente: Pick<ContexteVente, 'factures'>,
+  reprise: RepriseDeLaFacture,
+): ResteAEncaisser {
+  const comptes = c.encaissements.filter((e) => e.facture_id === c.facture.id && compte(e))
+  const ids = new Set(comptes.map((e) => e.id))
+  const credites = creditesDesAvoirs(c.facture.id, c.lignes, vente)
+  const parTaux = montantsParTauxDuDocument(c.facture, c.lignes).map(({ taux, ttcCentimes: ttcDuDocument }) => {
+    const ttcCentimes = ttcDuDocument - (credites.get(taux) ?? 0)
+      - reprise.crediteParLesReprisParTaux.filter((t) => t.taux === taux).reduce((s, t) => s + t.ttcCentimes, 0)
+      - reprise.encaisseParTaux.filter((t) => t.taux === taux).reduce((s, t) => s + t.encaisseCentimes, 0)
+    const encaisseCentimes = c.parts.filter((p) => ids.has(p.encaissement_id) && p.taux === taux).reduce((s, p) => s + centimes(p.montant), 0)
+    return { taux, ttcCentimes, encaisseCentimes, resteCentimes: ttcCentimes - encaisseCentimes }
+  })
+  const credite = [...credites.values()].reduce((total, x) => total + x, 0)
+  const ttcCentimes = (centimesExacts(c.facture.montant_ttc) ?? 0) - credite - reprise.crediteParLesReprisCentimes
+    - reprise.encaisseAvantRepriseCentimes
+  const encaisseCentimes = comptes.reduce((s, e) => s + centimes(e.montant), 0)
+  return { ttcCentimes, encaisseCentimes, resteCentimes: ttcCentimes - encaisseCentimes, parTaux }
 }
 
 /**

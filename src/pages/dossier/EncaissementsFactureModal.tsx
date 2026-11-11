@@ -17,10 +17,10 @@ import {
   paireNonDeclaree, partsEncaissees,
   piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement, refusContrePassationAvantLaDate,
   refusContrePassationSansIssue, refusContrePassationVente, refusDeLaFacture, refusDeclaration, refusEnregistrementVente,
-  refusRetraitVente, repartitionProposee, resteAEncaisserVente,
+  refusRetraitVente, repartitionProposee, resteAEncaisserDeLaReprise, resteAEncaisserVente,
   type ContexteFacture, type ContexteVente, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee, type ExemplaireLu,
   type EvenementSuperpdpLu, type FactureDuDossier, type LigneDeFacture, type MouvementPropose, type PartLue, type PieceLue,
-  type ResteDuTaux, type SaisieEncaissement, type TransmissionLue, type TransmissionPourDeclaration,
+  type RepriseDeLaFacture, type ResteDuTaux, type SaisieEncaissement, type TransmissionLue, type TransmissionPourDeclaration,
 } from '../../lib/encaissementsFactures'
 import {
   PAIRE_DECLAREE_AILLEURS, PAIRE_NON_DECLAREE, lireMontantSaisi, montantPourSaisie, partsEnMots, tauxAffiche,
@@ -44,6 +44,8 @@ import {
 import { CAISSE_EXPORTEE } from '../../lib/caisse'
 import { lireLaCaisse } from '../../lib/caisseLecture'
 import { lireLaRepriseDeLaCaisse } from '../../lib/caisseDuDossierLecture'
+import { estUneFactureReprise } from '../../lib/facturesReprises'
+import { FONCTION_DE_LA_REPRISE, lireLaRepriseDeLaFacture, reprisesAuClientPrevues } from '../../lib/reprisesAuClient'
 import {
   caisseDeLaFenetre, contrePassationPourLaCaisse, PERMIS_PAR_LA_CAISSE, retenuParLaCaisse, retraitPourLaCaisse,
   type CaisseDeLaFenetre,
@@ -167,6 +169,10 @@ interface Lu {
   // reste, et sur le relevé, les encaissements et les factures ci-dessus ; une entrée pas lue en entier ne retient que les
   // gestes qui font sortir des espèces de la caisse — ce n'est pas un manque de la fenêtre. Au client, jugée par la base.
   caisse: CaisseDeLaFenetre
+  // Ce que la facture REPRISE porte, rendu par `reprise_de_la_facture` (A8C-Q1, le drapeau `REPRISES_AU_CLIENT_PREVUES` levé)
+  // au cabinet comme au client « Ventes » : la date de reprise, l'encaissé avant elle et ce que ses avoirs repris créditent.
+  // Nul pour toute autre facture, ou le drapeau baissé : la facture reprise reste alors refusée (`REFUS_REPRISE_NON_LUE`).
+  reprise: RepriseDeLaFacture | null
 }
 
 interface Manque {
@@ -271,6 +277,14 @@ async function lireDonnees(
       .order('facture_id').order('ordre').order('id').range(debut, fin),
   )
 
+  // Ce que porte une facture REPRISE (A8C-Q1), une fois la facture lue : la fonction de la base, au cabinet comme au client
+  // « Ventes » — le registre des reprises ne s'ouvre qu'au cabinet. Le drapeau baissé, rien n'est demandé.
+  const ouverte = factures.lignes.find((f) => f.id === factureId)
+  const lectureDeLaReprise = reprisesAuClientPrevues() && ouverte && estUneFactureReprise(ouverte)
+    ? await lireLaRepriseDeLaFacture(factureId,
+      supabase.rpc(FONCTION_DE_LA_REPRISE, { p_dossier_id: dossierId, p_facture_id: factureId }))
+    : null
+
   const manques: Manque[] = []
   // Chaque drapeau lu nommément : un drapeau jeté laisserait le bandeau éteint sur une lecture tronquée.
   const noter = (quoi: string, accord: AccordLecture, complete: boolean, motif: string | null, consequence = CONSEQUENCE) => {
@@ -289,6 +303,9 @@ async function lireDonnees(
   noter('Les pièces du dossier', 'lues', pieces.complete, pieces.motif)
   noter('Les déclarations des encaissements', 'lues', declarations.complete, declarations.motif, CONSEQUENCE_DECLARATIONS)
   noter(pourLEspace(espace, 'Les statuts lus sur la plateforme du client'), 'lus', statuts.complete, statuts.motif, CONSEQUENCE_STATUTS)
+  if (lectureDeLaReprise?.etat === 'illisible') {
+    manques.push({ quoi: 'Ce que la facture reprise portait avant la reprise', accord: 'lu', motif: lectureDeLaReprise.motif, consequence: CONSEQUENCE })
+  }
   return {
     lu: {
       factures: factures.lignes, facturesDuDossier: facturesDuDossier.lignes,
@@ -303,6 +320,7 @@ async function lireDonnees(
           espace: 'cabinet', dossierId, compteCaisse, caisse: lectureDeLaCaisse.caisse, reprise: lectureDeLaCaisse.reprise,
           mouvements: mouvements.lignes, encaissements: encaissements.lignes, factures: facturesDuDossier.lignes,
         }),
+      reprise: lectureDeLaReprise?.etat === 'lue' ? lectureDeLaReprise.reprise : null,
     },
     manques,
   }
@@ -377,7 +395,17 @@ function contexteDe(dossierId: string, factureId: string, lu: Lu): ContexteFactu
   return {
     dossierId, facture, lignes: lu.lignes, transmissions: lu.transmissions, evenementsSuperpdp: lu.evenements,
     statutsRecus: lu.statuts, encaissements: lu.encaissements, parts: lu.parts,
+    ...(lu.reprise ? { reprise: lu.reprise } : {}),
   }
+}
+
+// Ce qui reste à encaisser, comme la base le juge : d'une facture reprise dont la reprise est lue (A8C-Q1), net de
+// l'encaissé avant elle et de ses avoirs repris ; de toute autre facture — et d'une reprise non lue, que le module refuse
+// alors (`REFUS_REPRISE_NON_LUE`) —, le reste d'hier.
+function resteDe(c: ContexteFacture, lu: Lu) {
+  return estUneFactureReprise(c.facture) && c.reprise != null
+    ? resteAEncaisserDeLaReprise(c, venteDe(lu), c.reprise)
+    : resteAEncaisserVente(c, venteDe(lu))
 }
 
 // Ce que le formulaire envoie, tel que le module et la base le jugent. Une part laissée vide ne part pas : la base veut
@@ -414,7 +442,7 @@ function etatLu(r: { lu: Lu; manques: Manque[] }, dossierId: string, factureId: 
 } {
   if (r.manques.length > 0) return { manques: r.manques, lu: null, formulaire: undefined }
   const c = contexteDe(dossierId, factureId, r.lu)
-  const reste = c ? resteAEncaisserVente(c, venteDe(r.lu)) : null
+  const reste = c ? resteDe(c, r.lu) : null
   if (!reste) return { manques: [], lu: r.lu, formulaire: null }
   return {
     manques: [],
@@ -818,7 +846,7 @@ function Contenu({
   // Ce qu'une facture source demande de plus (étape VF5b) ; pour toute autre facture, les jugements rendent ceux d'hier.
   const vente = venteDe(lu)
   const source = facture.source_de_la_vente
-  const reste = resteAEncaisserVente(contexte, vente)
+  const reste = resteDe(contexte, lu)
   const colonneTtc = source ? 'TTC net des avoirs' : 'TTC de la facture'
   const surLaFacture = refusDeLaFacture(contexte)
   const siens = lu.encaissements.filter((e) => e.facture_id === facture.id)

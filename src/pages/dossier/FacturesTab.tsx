@@ -18,6 +18,7 @@ import { correspondALaRecherche } from '../../lib/recherche'
 import FactureFormModal from './FactureFormModal'
 import FactureAvoirModal from './FactureAvoirModal'
 import { estUneFactureReprise } from '../../lib/facturesReprises'
+import { reprisesAuClientPrevues } from '../../lib/reprisesAuClient'
 import { TITRE_AVOIR_D_UNE_REPRISE } from '../../lib/avoirDUneFactureReprise'
 import FactureApercu from './FactureApercu'
 import TransmissionFactureModal from './TransmissionFactureModal'
@@ -757,7 +758,10 @@ export default function FacturesTab(props: Props) {
                             {f.statut === 'validee' && (
                               <button className="btn btn-outline btn-sm" onClick={() => setTransmissionDe(f.id)}>Transmettre</button>
                             )}
-                            {f.statut === 'validee' && f.type === 'facture' && (
+                            {(f.statut === 'validee' || (reprisesAuClientPrevues() && estUneFactureReprise(f))) && f.type === 'facture' && (
+                              // Une facture reprise de l'ancien logiciel reçoit ses encaissements d'après la reprise (A8b) : la fenêtre
+                              // lit ce que sa reprise porte par `reprise_de_la_facture`, au cabinet comme au client « Ventes »
+                              // (A8C-Q1), le drapeau de la migration `reprises_au_client` levé.
                               <button className="btn btn-outline btn-sm" onClick={() => setEncaissementsDe(f.id)}>Encaissements</button>
                             )}
                             {f.statut === 'validee' && (

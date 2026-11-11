@@ -8,6 +8,7 @@ import { motsDuCabinet } from '../../lib/espaceVentes'
 import { RATTACHEMENT_APRES_LA_FRONTIERE } from '../../lib/encaissementsFactures'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { CAISSE_JUGEE_PAR_LA_BASE } from '../../lib/caisseDesEncaissements'
+import { DRAPEAU_DES_REPRISES_AU_CLIENT } from '../../lib/reprisesAuClient'
 
 import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, Piece, ReglementGroupe,
@@ -29,6 +30,9 @@ const faux = vi.hoisted(() => ({
   refus: {} as Record<string, string>,
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   erreurRpc: null as string | null,
+  // Ce que `reprise_de_la_facture` rend (A8C-Q1), ou le refus qu'elle oppose.
+  reprise: null as unknown,
+  refusReprise: null as string | null,
   // L'appel à la base reste EN ATTENTE jusqu'à ce que le cas le libère.
   retenirRpc: false,
   libererRpc: null as null | (() => void),
@@ -60,6 +64,10 @@ vi.mock('../../lib/supabase', async () => {
   let barriere: Promise<void> | null = null
   const executer = (nom: string, args: Record<string, unknown>) => {
     if (faux.erreurRpc) return { data: null, error: { message: faux.erreurRpc } }
+    // La lecture de la reprise d'une facture (A8C-Q1) : ce que le cas lui fait rendre.
+    if (nom === 'reprise_de_la_facture') {
+      return faux.refusReprise ? { data: null, error: { message: faux.refusReprise } } : { data: faux.reprise, error: null }
+    }
     // Ce que font les quatre fonctions de la base (supabase/schema/20261008180607_encaissements_des_factures.sql et
     // 20261008221156_transmissions_des_encaissements.sql), sans leurs refus : l'écran les dit avant le clic.
     if (nom === 'declarer_encaissement_hors_application') {
@@ -281,6 +289,9 @@ beforeEach(() => {
   faux.resoudreReleve = null
   faux.lecturesConnexion = 0
   faux.tablesLues = []
+  faux.reprise = null
+  faux.refusReprise = null
+  DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false
   drapeauCaisse.leve = true
   onUpdated.mockReset()
 
@@ -2305,5 +2316,53 @@ describe('EncaissementsFactureModal — la caisse juge les espèces d’une fact
       expect(faux.tablesLues).not.toContain('a_nouveaux')
       cleanup()
     }
+  })
+})
+
+// LA FACTURE REPRISE DE L'ANCIEN LOGICIEL (A8C-Q1 ; migration `reprises_au_client`, lib/reprisesAuClient.ts) : la fenêtre lit
+// ce que sa reprise porte par `reprise_de_la_facture`, au cabinet comme au client « Ventes », le drapeau levé ; baissé, elle ne
+// la demande pas, et la facture reprise reste refusée comme hier. La facture de l'essai, reprise : 1 355,50 € TTC, 10 €
+// encaissés avant la reprise à 20 %, 50 € crédités à 0 % par un avoir repris — il en reste 1 295,50 €.
+describe('EncaissementsFactureModal — une facture reprise de l’ancien logiciel (A8C-Q1)', () => {
+  const REPRISE = facture({ statut: 'importee' as FactureEmise['statut'], numero: 'FA-ANCIEN-7', date_emission: '2027-09-20', source_de_la_vente: true })
+  const RENDU = {
+    reprise_le: '2027-10-01', nature_operation: 'services', encaisse_avant_reprise_centimes: 1000,
+    encaisse_par_taux: [{ taux: 20, encaisse_centimes: 1000 }, { taux: 5.5, encaisse_centimes: 0 }, { taux: 0, encaisse_centimes: 0 }],
+    credite_par_les_repris_centimes: 5000, credite_par_les_repris_par_taux: [{ taux: 0, ttc_centimes: 5000 }],
+  }
+
+  it('drapeau baissé : la reprise n’est pas demandée, et la facture reprise reste refusée comme hier', async () => {
+    faux.reprise = RENDU
+    monter({ facture: REPRISE, client: { banque: false } })
+    await screen.findByText(/Ce que la facture reprise portait encaissé avant la reprise n'est pas lu/)
+    expect(faux.rpcs.map((r) => r.nom)).not.toContain('reprise_de_la_facture')
+    expect(screen.queryByRole('button', { name: 'Enregistrer l’encaissement' })).toBeNull()
+  })
+
+  for (const qui of ['cabinet', 'client'] as const) {
+    it(`drapeau levé, ${qui === 'client' ? 'le client « Ventes »' : 'le cabinet'} : la reprise est lue, et le reste proposé est celui de la base`, async () => {
+      DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+      faux.reprise = RENDU
+      monter({ facture: REPRISE, ...(qui === 'client' ? { client: { banque: false } } : {}) })
+      await bouton()
+      expect(faux.rpcs).toEqual([{ nom: 'reprise_de_la_facture', args: { p_dossier_id: 'd1', p_facture_id: REPRISE.id } }])
+      // 1 355,50 − 10 (avant la reprise) − 50 (l'avoir repris) = 1 295,50 €.
+      expect(champ('Montant encaissé (€)').value).toBe('1295,50')
+    })
+  }
+
+  it('drapeau levé, la reprise refusée ou illisible : la fenêtre le dit, et ne propose rien', async () => {
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+    faux.refusReprise = 'Accès refusé à ce dossier.'
+    monter({ facture: REPRISE, client: { banque: false } })
+    await screen.findByText(/Ce que la facture reprise portait avant la reprise/)
+    expect(screen.queryByRole('button', { name: 'Enregistrer l’encaissement' })).toBeNull()
+  })
+
+  it('drapeau levé, une facture de l’application : rien de plus n’est demandé', async () => {
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+    monter()
+    await bouton()
+    expect(faux.rpcs).toEqual([])
   })
 })

@@ -13,7 +13,7 @@ import type { LigneDeFacture } from './encaissementsFactures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from './rattachement'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
-import { recettesDeLaSimulation } from './simulationVentesFacturees'
+import { avecLesPiecesCitees, lectureDesVentesDeLaSimulation, recettesDeLaSimulation } from './simulationVentesFacturees'
 import { calculerSituationIntermediaire } from './situationIntermediaire'
 import type { Categorie, EcritureBrouillon, Piece } from './types'
 import {
@@ -84,12 +84,23 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
     expect(migration).toContain('for select to authenticated using (public.admin_du_dossier(dossier_id));')
   })
 
-  it('HORS DE CETTE ÉTAPE (A8Q5-Q2) : « Ma simulation » du client « Banque », qui ne lit pas les liens, compte encore 200 €', () => {
+  it('le drapeau `REPRISES_AU_CLIENT_PREVUES` baissé (A8Q5-Q2) : « Ma simulation » du client « Banque », qui ne lit pas les liens, compte encore 200 €', () => {
     // Exactement ce que rend `ventes_facturees_de_la_simulation` pour ce dossier et 2026.
     const recettes = recettesDeLaSimulation({ par_mois: { '2026-12': 10000 }, sources: [] }, 2026)
     expect(recettes).not.toBeNull()
     const p = projectionAnnuelle([PIECE_CITEE], [], '2026-12-31', false, AUCUN_PAIEMENT, 'tresorerie', [], recettes!, CAISSE_ABSENTE)
     expect(p.ca).toBe(200)
+  })
+
+  it('A8Q5-Q2, le drapeau `REPRISES_AU_CLIENT_PREVUES` levé : les pièces citées que rend `pieces_citees_de_la_simulation`, jointes à ses ventes, font 100 €', () => {
+    const lue = lectureDesVentesDeLaSimulation(D, 2026, { data: { par_mois: { '2026-12': 10000 }, sources: [] }, error: null })
+    const jointe = avecLesPiecesCitees(lue, { etat: 'lues', piecesCitees: new Set([PIECE_CITEE.id]) })
+    expect(jointe.etat).toBe('lue')
+    if (jointe.etat !== 'lue') return
+    const p = projectionAnnuelle([PIECE_CITEE], [], '2026-12-31', false, AUCUN_PAIEMENT, 'tresorerie', [], jointe.recettes, CAISSE_ABSENTE)
+    expect(p.ca).toBe(100)
+    // Baissé, rien n'est demandé (`null`) : la lecture d'hier, et ses 200 €.
+    expect(avecLesPiecesCitees(lue, null)).toBe(lue)
   })
 
   it('l’Estimation du cabinet : 100 €', () => {

@@ -5,6 +5,7 @@ import FacturesTab from './FacturesTab'
 import { facture as factureCii, SIRET_VENDEUR } from '../../test/facturesCii'
 import { NON_BASCULE } from '../../test/factures'
 import { motsDuCabinet } from '../../lib/espaceVentes'
+import { DRAPEAU_DES_REPRISES_AU_CLIENT } from '../../lib/reprisesAuClient'
 import {
   REFUS_FINALE_ACOMPTE_EN_BROUILLON, refusAcompteRepris, refusCumulDesAcomptes,
 } from '../../lib/acomptesDesFactures'
@@ -431,5 +432,20 @@ describe.each(['cabinet', 'client'] as const)('L’avoir d’une facture reprise
     fireEvent.change(screen.getByLabelText('Date d\'émission'), { target: { value: '2026-10-31' } })
     expect(screen.getByText(/son avoir se date du jour de la reprise des factures, le 01\/11\/2026, ou d'après/)).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Valider l\'avoir' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+  // L'ENCAISSEMENT D'UNE FACTURE REPRISE (A8C-Q1 ; migration `reprises_au_client`) : « Encaissements » ne s'offre sur une reprise
+  // que le drapeau levé — la fenêtre lit alors ce que sa reprise porte, au cabinet comme au client « Ventes ».
+  it('« Encaissements » sur la reprise : absent le drapeau baissé, offert levé', async () => {
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false
+    const { unmount } = await monter(espace)
+    expect(within(ligneDe('ANC-0042')).queryByRole('button', { name: 'Encaissements' })).toBeNull()
+    unmount()
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+    try {
+      await monter(espace)
+      expect(within(ligneDe('ANC-0042')).getByRole('button', { name: 'Encaissements' })).toBeTruthy()
+    } finally {
+      DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false
+    }
   })
 })

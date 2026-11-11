@@ -3,7 +3,7 @@ import { REFUS_ENCAISSEMENT_D_UNE_REPRISE } from './encaissementsDesReprises'
 import {
   REFUS_ENREGISTREMENT, REFUS_ENREGISTREMENT_DES_REPRISES, REFUS_REPRISE_NON_LUE, montantsParTauxDuDocument,
   refusDeLaFacture, refusEnregistrementExportes, refusEnregistrementVente,
-  type AvoirRepris, type ContexteFacture, type ContexteVente, type FacturePourEncaissement, type LigneDeFacture,
+  type DocumentParTaux, type ContexteFacture, type ContexteVente, type FacturePourEncaissement, type LigneDeFacture,
   type RepriseDeLaFacture, type SaisieEncaissement,
 } from './encaissementsFactures'
 import { derniereDefinitionSql } from '../test/schema'
@@ -39,12 +39,15 @@ function facture(o: Partial<FacturePourEncaissement> & { statut?: string } = {})
   } as FacturePourEncaissement
 }
 
-const AVOIR_REPRIS: AvoirRepris = { id: 'ar1', type: 'avoir', statut: 'importee', montant_tva: -1, montant_ttc: -6.01, origine_id: 'r1' }
+const AVOIR_REPRIS: DocumentParTaux = { id: 'ar1', type: 'avoir', statut: 'importee', montant_tva: -1 }
 
 function reprise(o: Partial<RepriseDeLaFacture> = {}): RepriseDeLaFacture {
   return {
-    factureId: 'r1', repriseLe: '2027-01-01', natureOperation: 'services', encaisseAvantReprise: 10,
-    encaisseParTaux: [{ taux: 20, encaisse: 10 }], avoirsRepris: [AVOIR_REPRIS], ...o,
+    // L'avoir repris AR1 (-6,01 € ; trois lignes de -1,67 € à 20 %), tel que `reprise_de_la_facture` le somme : son en-tête
+    // au total, la règle de TVA de ses montants au taux (`montantsParTauxDuDocument(AVOIR_REPRIS, LIGNES_AVOIR)`, ci-dessous).
+    factureId: 'r1', repriseLe: '2027-01-01', natureOperation: 'services', encaisseAvantRepriseCentimes: 1000,
+    encaisseParTaux: [{ taux: 20, encaisseCentimes: 1000 }], crediteParLesReprisCentimes: 601,
+    crediteParLesReprisParTaux: [{ taux: 20, ttcCentimes: 601 }], ...o,
   }
 }
 
@@ -138,8 +141,9 @@ describe('drapeau levé : les refus et les plafonds d’une facture reprise, sou
     const r = juger(contexte(), saisie({ montant: 20.04, repartition: [{ taux: 20, montant: 20.04 }] }))
     expect(r?.cle).toBe('plafond_reprise')
     expect(r?.message).toContain('il reste 20,03 € à encaisser.')
-    // Un avoir repris d'une autre facture, ou un avoir de l'application à l'état « importee » qui ne la cite pas, ne crédite rien.
-    const ailleurs = contexte({ reprise: reprise({ avoirsRepris: [{ ...AVOIR_REPRIS, origine_id: 'r2' }] }) })
+    // Ce que la base rend se prend tel quel : sans avoir repris qui la cite (`reprise_de_la_facture` ne somme que ceux-là),
+    // le plafond n'en déduit rien.
+    const ailleurs = contexte({ reprise: reprise({ crediteParLesReprisCentimes: 0, crediteParLesReprisParTaux: [] }) })
     expect(juger(ailleurs, saisie({ montant: 26.04, repartition: [{ taux: 20, montant: 26.04 }] }))).toBeNull()
     expect(juger(ailleurs, saisie({ montant: 26.05, repartition: [{ taux: 20, montant: 26.05 }] }))?.cle).toBe('plafond_reprise')
   })
@@ -147,7 +151,7 @@ describe('drapeau levé : les refus et les plafonds d’une facture reprise, sou
   it('A8-Q6 : le plafond d’un taux, net de ce qui était encaissé à ce taux avant la reprise', () => {
     // Aucun avoir repris : le total admet 36,04 − 10 = 26,04 € ; le taux, 36,04 − 14 = 22,04 € (l'encaissé avant se répartit
     // ici à 14 € sur le taux contre 10 € au total, un jeu d'essai que la base n'écrirait pas) : le taux refuse seul.
-    const c = contexte({ reprise: reprise({ avoirsRepris: [], encaisseParTaux: [{ taux: 20, encaisse: 14 }] }) })
+    const c = contexte({ reprise: reprise({ crediteParLesReprisCentimes: 0, crediteParLesReprisParTaux: [], encaisseParTaux: [{ taux: 20, encaisseCentimes: 1400 }] }) })
     const r = juger(c, saisie({ montant: 26.04, repartition: [{ taux: 20, montant: 26.04 }] }))
     expect(r?.cle).toBe('plafond_reprise_taux')
     expect(r?.message).toBe("À 20 %, l'encaissement dépasserait ce que la facture reprise porte encore, nette de ses avoirs et de ce qui en était encaissé avant la reprise : il reste 22,04 € à encaisser à ce taux.")
