@@ -1,4 +1,5 @@
 import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
+import { banqueDesLecteurs } from '../../lib/banqueDuMouvement'
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
@@ -114,6 +115,8 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   async function load() {
     const demande = ++derniereLecture.current
     setLoading(true)
+    // Les comptes de la banque du dossier, au moment de la lecture (MCB5, quatrième partie) : le rôle drapeau baissé.
+    const banque = banqueDesLecteurs(plan, banques)
     const [
       lectureEmprunts,
       lecturePieces,
@@ -157,10 +160,15 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
       // pouvoir aussi répondre "à telle date" dans la situation intermédiaire ci-dessous — sur tout
       // l'historique du brouillon d'écritures, comme un relevé, pas borné à l'année en cours. Au compte de la banque DU PLAN
       // (ligne 43, conception § 2.4) : au compte par défaut, sous un plan qui la tient ailleurs, la requête ne rendrait rien.
-      lireTout<{ date: string; sens: string; montant: number; ligne_bancaire_id: string | null }>((debut, fin) =>
-        supabase.from('ecritures_brouillon').select('date, sens, montant, ligne_bancaire_id, piece_id', { count: 'exact' })
-          .eq('dossier_id', dossierId).eq('compte', plan.banque).order('id').range(debut, fin),
-      ),
+      // Et au 512 propre de chaque compte bancaire (MCB5, quatrième partie) : la trésorerie est la somme des comptes. Des
+      // comptes qui ne se savent pas : la lecture se dit incomplète (elle tairait un compte), sans requête.
+      banque === null
+        ? Promise.resolve({ lignes: [], complete: false, motif: banques.cas === 'retenu' ? banques.raison : 'comptes bancaires inconnus' })
+        : lireTout<{ date: string; sens: string; montant: number; ligne_bancaire_id: string | null }>((debut, fin) => {
+          const requete = supabase.from('ecritures_brouillon').select('date, sens, montant, ligne_bancaire_id, piece_id', { count: 'exact' })
+            .eq('dossier_id', dossierId)
+          return (banque.size === 1 ? requete.eq('compte', plan.banque) : requete.in('compte', [...banque])).order('id').range(debut, fin)
+        }),
       lireTout<ANouveau>((debut, fin) =>
         supabase.from('a_nouveaux').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
@@ -216,7 +224,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
     setMouvementsRapproches(lecturePaiements.lignes)
     setVentilations(lectureVentilations.lignes)
     setReglements(lectureReglements.lignes)
-    setOuverture(ouvertureBanque(lectureANouveaux.lignes, plan))
+    setOuverture(banque === null ? null : ouvertureBanque(lectureANouveaux.lignes, banque))
     setPrevisionnelIllisible(previsionnelError ? messageErreur(previsionnelError, "Le prévisionnel enregistré n'a pas pu être lu.") : null)
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
     // Neuf lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
@@ -231,7 +239,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
     setLoading(false)
   }
   // Un dossier qui bascule relit ses ventes facturées, et les sources de leurs écritures.
-  useEffect(() => { load() }, [dossierId, ventesParLesFactures, plan])
+  useEffect(() => { load() }, [dossierId, ventesParLesFactures, plan, banques])
 
   // La lecture des ventes facturées de CE dossier, ou rien ; lue entière, ses ventes, sinon nulles et le motif.
   const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)

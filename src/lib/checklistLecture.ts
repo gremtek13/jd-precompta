@@ -7,6 +7,7 @@ import { chargerDoublonsDeTexte, type DoublonDeTexte } from './doublonsTexte'
 import { lireAnneesCloturees } from './clotureExercice'
 import { chargerInformationsDossier } from './informationsDossier'
 import { ouvertureBanque } from './aNouveaux'
+import { banquesDuDossier, banqueDesLecteurs } from './banqueDuMouvement'
 import type { PlanComptable } from './planComptable'
 import type { Emprunt } from './emprunts'
 import type { DonneesDeLaChecklist } from './pointsDeLaChecklist'
@@ -187,6 +188,8 @@ export async function lireLaChecklist(
   const relevesIncoherents = controlesReleves === null ? null : relevesIncoherentsDe(controlesReleves)
   // Les comptes bancaires du dossier (MCB4) : ne rejette jamais ; le drapeau baissé, `sans_objet`, sans toucher au réseau.
   const comptesBancaires = await lireLesComptesDuDossier(dossierId)
+  // Les comptes de la banque du dossier (MCB5, quatrième partie) : le rôle, et le 512 propre de chaque compte bancaire.
+  const banque = banqueDesLecteurs(plan, banquesDuDossier(comptesBancaires, plan))
   // Même posture : journalisé, rendu nul.
   const doublonsTexte = await chargerDoublonsDeTexte(dossierId).catch((err) => {
     console.error(err)
@@ -241,9 +244,11 @@ export async function lireLaChecklist(
     infoInconnue: lectureInfos.erreur,
     anneesCloturees: clotures.annees,
     clotureInconnue: clotures.erreur,
-    // Une ouverture lue à moitié donnerait un solde de départ faux : on n'en tire rien.
-    ouverture: lectureANouveaux.complete ? ouvertureBanque(lectureANouveaux.lignes, plan) : null,
-    ouvertureIncomplete: lectureANouveaux.motif,
+    // Une ouverture lue à moitié donnerait un solde de départ faux : on n'en tire rien. Ni sur des comptes bancaires qui ne
+    // se savent pas (MCB5, quatrième partie) : elle tairait le 512 propre d'un compte.
+    ouverture: lectureANouveaux.complete && banque !== null ? ouvertureBanque(lectureANouveaux.lignes, banque) : null,
+    ouvertureIncomplete: lectureANouveaux.motif
+      ?? (banque === null && comptesBancaires.etat === 'illisible' ? `les comptes bancaires du dossier : ${comptesBancaires.motif}` : null),
     aNouveaux: lectureANouveaux.lignes,
     soldesReportes: lectureReportes.lignes,
     soldesReportesIncomplets: lectureReportes.complete ? null : lectureReportes.motif ?? 'lecture incomplète',

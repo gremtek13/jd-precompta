@@ -324,7 +324,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // les compte pas parmi les ruptures — ce point non plus, sur la même règle (lib/ecrituresVentesFactureesEcran.ts).
   const mouvementsDesVentes = mouvementsClassesParEncaissements(lignes)
   const ruptures = rupturesPisteAudit(
-    ecritures.filter((e) => !ligneDUneVenteFacturee(e, mouvementsDesVentes)), idsMouvementsJustifiesParLeReleve(lignes), modele.plan,
+    ecritures.filter((e) => !ligneDUneVenteFacturee(e, mouvementsDesVentes)), idsMouvementsJustifiesParLeReleve(lignes), modele.plan, banques,
   )
   // L'écriture d'un mouvement affecté que son affectation ne produirait plus — la catégorie a changé de
   // compte depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore sa TVA. Même

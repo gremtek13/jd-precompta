@@ -128,3 +128,26 @@ export function refusDesBanquesDesPaiements(
   }
   return null
 }
+
+// ── LES LECTEURS DE LA BANQUE (MCB5, quatrième partie) ──────────────────────────────────────────────────────────────────
+//
+// Un LECTEUR des écritures (la piste d'audit, le pilotage, la trésorerie de Financement, l'ouverture de la banque) reconnaît
+// la banque à son compte. Hier le seul compte du rôle `banque` ; dès qu'un compte bancaire tient son 512 (MCB-Q1, MCB-Q7),
+// ses écritures s'y écrivent, et un lecteur qui ne regarderait que le rôle les tairait : une ligne de banque sans mouvement ne
+// romprait plus la piste, la trésorerie oublierait le second compte. L'ensemble est celui de `comptesDeBanqueDuDossier` ;
+// un lecteur distingue en plus des comptes qui ne se savent pas, où il ne compte pas (il tairait un compte).
+
+/** Les comptes de la banque du dossier pour un lecteur qui en COMPTE (une trésorerie, un solde) : `comptesDeBanqueDuDossier`,
+ *  ou nul quand les comptes ne se savent pas (en cours de lecture, illisibles). Drapeau baissé : le seul compte du rôle. */
+export function banqueDesLecteurs(plan: PlanComptable, banques: BanquesDuDossier): ReadonlySet<string> | null {
+  return banques.cas === 'retenu' ? null : comptesDeBanqueDuDossier(plan, banques)
+}
+
+/** Ce compte porte-t-il la banque du dossier ? Le compte du rôle toujours, quoi qu'on sache des comptes ; un autre, selon les
+ *  comptes lus — nul quand ils ne se savent pas : le lecteur ne le juge pas (un écran qui en compte le dit par son bandeau,
+ *  la Checklist et la validation se suspendent déjà sur des comptes lus en partie). */
+export function estUneBanque(compte: string, plan: PlanComptable, banques: BanquesDuDossier): boolean | null {
+  if (compte === plan.banque) return true
+  const comptes = banqueDesLecteurs(plan, banques)
+  return comptes === null ? null : comptes.has(compte)
+}

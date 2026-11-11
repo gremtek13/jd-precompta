@@ -237,7 +237,7 @@ beforeAll(() => {
 
   const fec = formaterFec(numeroterFec(brouillon, PIECES, CATEGORIES, A_NOUVEAUX, MODELE, lignes, composition.ecritures, operationsDeCaisse, CHAMPS_BNC_NON_EXPORTES), new Map(), MODELE.mode)
   const piste = pisteAudit(brouillon, PIECES, lignes, A_NOUVEAUX, {
-    immobilisations: IMMOBILISATIONS, factures: PIECES, vehicules: VEHICULES, caisse: operationsDeCaisse, plan: PLAN,
+    immobilisations: IMMOBILISATIONS, factures: PIECES, vehicules: VEHICULES, caisse: operationsDeCaisse, plan: PLAN, banques: { cas: 'role', compte: PLAN.banque },
     ventes: { ecritures: composition.ecritures, factures, encaissements, exemplaires: [], transmissions: [], piecesCitees: AUCUNE_PIECE_CITEE },
   })
   const etatDeLaCaisse: EtatDeLaCaisse = {

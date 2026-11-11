@@ -16,7 +16,7 @@ describe('calculerEvolutionMensuelle', () => {
       ligne('2026-01-10', 'debit', 1000),
       ligne('2026-01-20', 'credit', 300),
       ligne('2026-02-05', 'credit', 250),
-    ], 12, PLAN_PAR_DEFAUT)
+    ], 12, new Set([PLAN_PAR_DEFAUT.banque]))
     expect(evolution).toEqual([
       { mois: '2026-01', encaissements: 1000, decaissements: 300 },
       { mois: '2026-02', encaissements: 0, decaissements: 250 },
@@ -27,20 +27,20 @@ describe('calculerEvolutionMensuelle', () => {
     const evolution = calculerEvolutionMensuelle([
       ligne('2026-01-10', 'debit', 1000, '606100'),
       ligne('2026-01-10', 'debit', 50),
-    ], 12, PLAN_PAR_DEFAUT)
+    ], 12, new Set([PLAN_PAR_DEFAUT.banque]))
     expect(evolution).toEqual([{ mois: '2026-01', encaissements: 50, decaissements: 0 }])
   })
 
   it('ne garde que les derniers mois demandés, en ordre chronologique', () => {
     const evolution = calculerEvolutionMensuelle(
       ['2026-01-05', '2026-02-05', '2026-03-05'].map((d) => ligne(d, 'debit', 100)),
-      2, PLAN_PAR_DEFAUT
+      2, new Set([PLAN_PAR_DEFAUT.banque])
     )
     expect(evolution.map((m) => m.mois)).toEqual(['2026-02', '2026-03'])
   })
 
   it('rend une série vide sans mouvement bancaire', () => {
-    expect(calculerEvolutionMensuelle([], 12, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(calculerEvolutionMensuelle([], 12, new Set([PLAN_PAR_DEFAUT.banque]))).toEqual([])
   })
 })
 
@@ -52,7 +52,7 @@ describe('soldesFinDeMois', () => {
       ligne('2026-01-10', 'debit', 1000),
       ligne('2026-02-10', 'credit', 400),
       ligne('2026-03-10', 'debit', 200),
-    ], 12, null, PLAN_PAR_DEFAUT)).toEqual([
+    ], 12, null, new Set([PLAN_PAR_DEFAUT.banque]))).toEqual([
       { mois: '2026-01', solde: 1000 },
       { mois: '2026-02', solde: 600 },
       { mois: '2026-03', solde: 800 },
@@ -65,7 +65,7 @@ describe('soldesFinDeMois', () => {
       ligne('2026-01-10', 'debit', 1000),
       ligne('2026-02-10', 'debit', 500),
       ligne('2026-03-10', 'debit', 300),
-    ], 1, null, PLAN_PAR_DEFAUT)
+    ], 1, null, new Set([PLAN_PAR_DEFAUT.banque]))
     expect(soldes).toEqual([{ mois: '2026-03', solde: 1800 }])
   })
 
@@ -75,14 +75,14 @@ describe('soldesFinDeMois', () => {
     expect(soldesFinDeMois([
       ligne('2026-01-10', 'debit', 100),
       ligne('2026-03-10', 'debit', 100),
-    ], 12, null, PLAN_PAR_DEFAUT).map((s) => s.mois)).toEqual(['2026-01', '2026-03'])
+    ], 12, null, new Set([PLAN_PAR_DEFAUT.banque])).map((s) => s.mois)).toEqual(['2026-01', '2026-03'])
   })
 
   it('arrondit au centime', () => {
     expect(soldesFinDeMois([
       ligne('2026-01-10', 'debit', 0.1),
       ligne('2026-01-11', 'debit', 0.2),
-    ], 12, null, PLAN_PAR_DEFAUT)).toEqual([{ mois: '2026-01', solde: 0.3 }]) // 0.30000000000000004 sans arrondi
+    ], 12, null, new Set([PLAN_PAR_DEFAUT.banque]))).toEqual([{ mois: '2026-01', solde: 0.3 }]) // 0.30000000000000004 sans arrondi
   })
 })
 
@@ -95,23 +95,23 @@ describe('soldesFinDeMois — un dossier ouvert par des à-nouveaux', () => {
     expect(soldesFinDeMois([
       ligne('2025-12-15', 'credit', 5000),
       ligne('2026-02-10', 'credit', 300),
-    ], 12, OUVERTURE, PLAN_PAR_DEFAUT)).toEqual([
+    ], 12, OUVERTURE, new Set([PLAN_PAR_DEFAUT.banque]))).toEqual([
       { mois: '2026-01', solde: 8400 },
       { mois: '2026-02', solde: 8100 },
     ])
   })
 
   it('compte l’écriture du jour même de l’ouverture, comme le solde de la trésorerie', () => {
-    expect(soldesFinDeMois([ligne('2026-01-01', 'credit', 400)], 12, OUVERTURE, PLAN_PAR_DEFAUT))
+    expect(soldesFinDeMois([ligne('2026-01-01', 'credit', 400)], 12, OUVERTURE, new Set([PLAN_PAR_DEFAUT.banque])))
       .toEqual([{ mois: '2026-01', solde: 8000 }])
   })
 
   it('donne un solde au dossier qu’on vient d’ouvrir, avant toute écriture', () => {
-    expect(soldesFinDeMois([], 12, OUVERTURE, PLAN_PAR_DEFAUT)).toEqual([{ mois: '2026-01', solde: 8400 }])
+    expect(soldesFinDeMois([], 12, OUVERTURE, new Set([PLAN_PAR_DEFAUT.banque]))).toEqual([{ mois: '2026-01', solde: 8400 }])
   })
 
   it('tient une banque soldée à la reprise pour un zéro connu', () => {
-    expect(soldesFinDeMois([ligne('2026-03-10', 'debit', 250)], 12, { date: '2026-01-01', solde: 0 }, PLAN_PAR_DEFAUT))
+    expect(soldesFinDeMois([ligne('2026-03-10', 'debit', 250)], 12, { date: '2026-01-01', solde: 0 }, new Set([PLAN_PAR_DEFAUT.banque])))
       .toEqual([{ mois: '2026-01', solde: 0 }, { mois: '2026-03', solde: 250 }])
   })
 })
@@ -124,11 +124,11 @@ describe('la banque du plan du dossier', () => {
   ]
 
   it('sous un plan décalé, seule la banque du plan compte, et le compte par défaut ne compte plus', () => {
-    expect(calculerEvolutionMensuelle(ecritures, 12, PLAN_DECALE)).toEqual([{ mois: '2026-01', encaissements: 1000, decaissements: 0 }])
-    expect(soldesFinDeMois(ecritures, 12, null, PLAN_DECALE)).toEqual([{ mois: '2026-01', solde: 1000 }])
+    expect(calculerEvolutionMensuelle(ecritures, 12, new Set([PLAN_DECALE.banque]))).toEqual([{ mois: '2026-01', encaissements: 1000, decaissements: 0 }])
+    expect(soldesFinDeMois(ecritures, 12, null, new Set([PLAN_DECALE.banque]))).toEqual([{ mois: '2026-01', solde: 1000 }])
   })
 
   it('sous le plan par défaut, rien ne change', () => {
-    expect(soldesFinDeMois(ecritures, 12, null, PLAN_PAR_DEFAUT)).toEqual([{ mois: '2026-01', solde: -300 }])
+    expect(soldesFinDeMois(ecritures, 12, null, new Set([PLAN_PAR_DEFAUT.banque]))).toEqual([{ mois: '2026-01', solde: -300 }])
   })
 })

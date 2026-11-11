@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
+import { RENDU_DES_BANQUES_AU_FEC, rendreLesBanquesAuFec } from '../../lib/banquesAuFec'
 import { modeleDuMouvement, planDuMouvement, refusDesBanquesDesPaiements } from '../../lib/banqueDuMouvement'
 import PaquetDArchiveBouton from './PaquetDArchiveBouton'
 import { piecesCiteesParLExercice, piecesSansEmpreinte } from '../../lib/paquetDArchive'
@@ -13,7 +14,8 @@ import type { EcritureSansObjet, MotifSansObjet, SuiteDansUnExerciceValide } fro
 import { comptesDuDirigeant, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import {
-  CHAMPS_BNC_NON_EXPORTES, formaterFec, genererFec, nomFichierFec, numerotationValidee, telechargerTexte, type ChampsBncDuFec,
+  CHAMPS_BNC_NON_EXPORTES, formaterFec, nomFichierFec, numeroterFec, numerotationValidee, telechargerTexte, type ChampsBncDuFec,
+  type NumerotationFec,
 } from '../../lib/fec'
 import { CHAMPS_BNC_EXPORTES } from '../../lib/champsBncDuFec'
 import { lireLesChampsBnc, type LectureDesChampsBnc } from '../../lib/champsBncLecture'
@@ -630,12 +632,18 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Les écritures d'une VENTE FACTURÉE (étape VF4c1) n'ont pas de pièce par construction : leur justification est leur
   // facture, leur encaissement, ou le mouvement que ses encaissements classent. Elles ne sont pas une rupture — la section
   // des ventes facturées dit leur état, et qu'elles ne vont pas encore au FEC ni à la piste d'audit (VF4c2).
-  const ruptures = rupturesPisteAudit(ecritures.filter((e) => !ligneDUneVenteFacturee(e, mouvementsDesVentes)), idsJustifies, modele.plan)
+  const ruptures = rupturesPisteAudit(ecritures.filter((e) => !ligneDUneVenteFacturee(e, mouvementsDesVentes)), idsJustifies, modele.plan, banques)
   // L'EXERCICE AFFICHÉ EST-IL VALIDÉ ? Son FEC se relit alors depuis ce que la validation a figé (lib/fec.ts,
   // `numerotationValidee`) : journal, numéro, pièce et libellés de chaque écriture, tels que la base les a gardés.
   // Rien n'est relu des pièces ni des catégories d'aujourd'hui — une catégorie renommée ne change plus le fichier,
   // et deux exports rendent le même, au lettrage près : il suit les règlements écrits depuis (lib/lettrage.ts).
   const exerciceValideAffiche = typeof anneeFilter === 'number' ? exercicesValides.find((e) => e.annee === anneeFilter) ?? null : null
+  // Le FEC sous le rendu de la banque (MCB-Q4, lib/banquesAuFec.ts) : un 512 par compte bancaire, la numérotation telle
+  // quelle — le fichier d'hier tant qu'aucun compte ne tient son 512. Un rendu qui ne se calcule pas ne sort rien.
+  const fecRendu = (n: NumerotationFec): string | null => {
+    const r = rendreLesBanquesAuFec(n, RENDU_DES_BANQUES_AU_FEC, modele.plan, banques)
+    return 'refus' in r ? null : formaterFec(r, lettrage, modele.mode)
+  }
   const fecValide = exerciceValideAffiche ? numerotationValidee(ecrituresFiltrees, aNouveauxExercice, exerciceValideAffiche.valide_le, choixDesChampsBnc) : null
   // Les pièces que l'exercice validé cite sans empreinte de dépôt : le paquet d'archive les prendra marquées « non vérifiée »
   // (INAL3-Q1), et son bouton le dit avant le clic. Comptées sur les pièces validées lues ici (une pièce citée l'est
@@ -779,7 +787,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
           ventes: { ...ventesDesExports, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions, piecesCitees },
           caisse: operationsDuFec ?? OPERATIONS_DE_CAISSE_ABSENTES,
-          plan: modele.plan,
+          plan: modele.plan, banques,
         },
       ))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
@@ -1982,12 +1990,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             // champs (FEC22b, FEC22c2) et que le drapeau est levé, à dix-huit sinon (`numerotationValidee`). Les autres
             // attendent leurs entrées, lues en entier.
             const contenu = fecValide
-              ? formaterFec(fecValide, lettrage, modele.mode)
+              ? fecRendu(fecValide)
               : champsDuFec === null ? null
-              : genererFec(
-                ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele, lignesBancaires, lettrage,
+              : fecRendu(numeroterFec(
+                ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele, lignesBancaires,
                 ventesDesExports.ecritures, operationsDuFec, champsDuFec,
-              )
+              ))
             if (contenu === null) return
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}
@@ -2004,7 +2012,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               brouillonIncomplet ?? aNouveauxIncomplets ?? reportesIncomplets ?? lettragesManquants ?? ventesIndisponibles
               ?? caisseIndisponible ?? (ventesDesExports === null || operationsDuFec === null ? 'les ventes facturées ou la caisse ne sont pas encore lues' : null)
             }
-            fec={() => ({ nom: nomFichierFec(dossierSiret, anneeFilter), contenu: formaterFec(fecValide, lettrage, modele.mode) })}
+            fec={() => {
+              const contenu = fecRendu(fecValide)
+              return contenu === null ? null : { nom: nomFichierFec(dossierSiret, anneeFilter), contenu }
+            }}
             sansEmpreinte={sansEmpreinteAuPaquet}
           />
         )}

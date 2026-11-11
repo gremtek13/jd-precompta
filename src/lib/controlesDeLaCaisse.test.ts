@@ -346,7 +346,7 @@ describe('la piste d’audit : le brouillard du praticien, sans empreinte ; jama
 
   it('la ligne d’une opération de caisse', () => {
     const lignes = pisteAudit(BROUILLON, [], [], [], {
-      immobilisations: [], factures: [], vehicules: [], ventes: { ...SANS_VENTE_FACTUREE, exemplaires: [], transmissions: [] }, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT
+      immobilisations: [], factures: [], vehicules: [], ventes: { ...SANS_VENTE_FACTUREE, exemplaires: [], transmissions: [] }, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }
     })
     expect(lignes.map((l) => [l.compte, l.pieceFichier, l.pieceDate, l.pieceEmpreinte, l.pieceId, l.mouvementDate, l.manque])).toEqual([
       [PLAN_PAR_DEFAUT.caisse, 'Brouillard de caisse du 12/03/2026, tenu hors de l’application', '2026-03-12', null, null, null, []],
@@ -355,10 +355,10 @@ describe('la piste d’audit : le brouillard du praticien, sans empreinte ; jama
   })
 
   it('ni une rupture, ni un absent du FEC ; sans l’opération, la même ligne en était une', () => {
-    expect(rupturesPisteAudit(BROUILLON, new Set(), PLAN_PAR_DEFAUT)).toEqual([])
+    expect(rupturesPisteAudit(BROUILLON, new Set(), PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque })).toEqual([])
     expect(absenceFec(BROUILLON, new Set()).nb).toBe(0)
     const sansOperation = BROUILLON.map((e) => ({ ...e, operation_caisse_id: null }))
-    expect(rupturesPisteAudit(sansOperation, new Set(), PLAN_PAR_DEFAUT)).toHaveLength(2)
+    expect(rupturesPisteAudit(sansOperation, new Set(), PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque })).toHaveLength(2)
     expect(absenceFec(sansOperation, new Set()).nb).toBe(2)
   })
 })

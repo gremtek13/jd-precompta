@@ -269,11 +269,14 @@ export function preparerANouveauxSelon(balance: readonly LigneBalance[], exercic
 // première ligne la porte pour toutes.
 //
 // La banque est celle du PLAN du dossier (ligne 43, conception § 2.4), paramètre obligatoire : sous un plan qui la tient
-// au 512100, une recherche au compte par défaut ne trouverait aucune ligne et dirait « banque soldée », en silence.
-export function ouvertureBanque(aNouveaux: readonly ANouveau[], plan: PlanComptable): OuvertureBanque | null {
+// au 512100, une recherche au compte par défaut ne trouverait aucune ligne et dirait « banque soldée », en silence. ET LE 512
+// PROPRE DE CHAQUE COMPTE BANCAIRE (MCB5, quatrième partie) : `banque` est l'ensemble des comptes de la banque du dossier
+// (`banqueDesLecteurs`, lib/banqueDuMouvement.ts), le rôle seul drapeau baissé. L'ouverture d'un exercice qui suit un
+// exercice validé à plusieurs 512 porte un solde reporté par compte : la trésorerie est leur somme.
+export function ouvertureBanque(aNouveaux: readonly ANouveau[], banque: ReadonlySet<string>): OuvertureBanque | null {
   if (aNouveaux.length === 0) return null
   const centimes = aNouveaux
-    .filter((a) => a.compte === plan.banque)
+    .filter((a) => banque.has(a.compte))
     .reduce((s, a) => s + (a.sens === 'debit' ? 1 : -1) * enCentimes(a.montant), 0)
   return { date: aNouveaux[0].date, solde: centimes / 100 }
 }
