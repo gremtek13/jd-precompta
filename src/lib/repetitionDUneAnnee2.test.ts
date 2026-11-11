@@ -61,6 +61,7 @@ import {
   SOLDE_DU_01_01, SOLDE_DU_31_12_IMPRIME, VEHICULES, encaissementsEtParts, reglementsDuMouvement, texteDuReleveCsv,
   type MouvementDeLAnnee,
 } from '../test/repetitionDUneAnnee'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 const MODELE = modeleDeTest('tresorerie')
 const PLAN = MODELE.plan
@@ -284,7 +285,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
     declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, operation_caisse_id: null, ...x,
   })
   const acquisitions = acquisitionsDesBiens(IMMOBILISATIONS, [NATURE_MATERIEL], null)
-  const generation = ecrituresAGenerer(D, piecesAComptabiliser(PIECES, CATEGORIES, acquisitions, ventes.sources), [], ASSUJETTI, paiements, MODELE, null)
+  const generation = ecrituresAGenerer(D, piecesAComptabiliser(PIECES, CATEGORIES, acquisitions, ventes.sources), [], ASSUJETTI, paiements, MODELE, null, banquesDuDossier({ etat: 'sans_objet' }, MODELE.plan))
   const brouillon: EcritureBrouillon[] = generation.lignes.map((l) => ecriture(l))
   for (const l of lignes) {
     const x = classementDe(l)

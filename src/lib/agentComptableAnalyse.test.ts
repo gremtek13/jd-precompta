@@ -26,6 +26,7 @@ import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // LE DRAPEAU DE LA GÉNÉRATION RÉPARTIE PAR RÈGLEMENT (lot FEC22c3), joué par un accesseur sur lib/champsBncExportes.ts : sans
 // demande (`undefined`), l'état réel — chaque cas d'avant compare l'application telle qu'elle est à la copie telle qu'elle
@@ -408,14 +409,14 @@ const memeResultatSous = (plan: PlanComptable, copieDuPlan: typeof deployee) => 
     const paiementsLa = copie.paiementsDesPieces(cas.paiements, parts, ventesLa.encaissees, caisse)
     expect(enObjet(paiementsLa), `paiementsDesPieces a dérivé (${nom})`).toEqual(enObjet(paiementsIci))
     for (const f of new Set([...FRONTIERES, frontiere])) {
-      const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsIci, modele, f, ventesIci.exemplaires)
+      const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsIci, modele, f, ventesIci.exemplaires, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))
       const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, paiementsLa, modele, f, ventesLa.exemplaires)
       expect(forme(r2), `analyserEcritures a dérivé (${nom}, frontière ${f})`).toEqual(forme(r1))
       // Les pièces elles-mêmes, et pas seulement leur nombre : en engagement, celles d'un lettrage fait à la main qui
       // tient en sont retirées (bloc LETTRAGE MANUEL), donc deux listes de même longueur peuvent dire deux choses.
       expect(r2.piecesSansContrepartie, `piecesSansContrepartie a dérivé (${nom}, frontière ${f})`).toEqual(r1.piecesSansContrepartie)
     }
-    rendu ??= forme(analyserEcritures(ecritures, ici, assujettiTva, paiementsIci, modele, frontiere, ventesIci.exemplaires))
+    rendu ??= forme(analyserEcritures(ecritures, ici, assujettiTva, paiementsIci, modele, frontiere, ventesIci.exemplaires, banquesDuDossier({ etat: 'sans_objet' }, modele.plan)))
   }
   return rendu!
 }
@@ -543,7 +544,7 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / analyserEcritures (copie dép
   it('accepte une pièce réglée en partie, répartie sur ses deux dates', () => {
     const partiel = [paiement({ montant: -48 })]
     const p = piece({ id: 'p1' })
-    const reparties = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces(partiel, [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
+    const reparties = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces(partiel, [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .map((l, i) => ecriture({ ...l, id: `r${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(reparties, [p], [], deployee, true, partiel).piecesDesynchronisees).toEqual([])
     // Et la même écriture tout entière au paiement ne l'est pas.
@@ -562,7 +563,7 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / analyserEcritures (copie dép
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .map((l, i) => ecriture({ ...l, id: `g${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(genere, [p], [], deployee, true, [groupe], TRESORERIE, parts)).toEqual({
       nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [],
@@ -577,7 +578,7 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / analyserEcritures (copie dép
     const acompte = paiement({ id: 'a', date: '2025-03-20', montant: -48 })
     const groupe = paiement({ id: 'g', date: '2025-04-15', piece_id: null, montant: -272, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -72 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -200 }]
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, groupe], parts, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, groupe], parts, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .map((l, i) => ecriture({ ...l, id: `d${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(genere, [p], [], deployee, true, [acompte, groupe], TRESORERIE, parts).piecesDesynchronisees).toEqual([])
     const unSeul = genere.filter((e) => !(e.compte === plan.banque && e.ligne_bancaire_id === 'g'))
@@ -594,7 +595,7 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / analyserEcritures (copie dép
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const avant: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -118 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -182 }]
     const apres: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const ancienne = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], avant, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
+    const ancienne = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], avant, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .map((l, i) => ecriture({ ...l, id: `o${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(ancienne, [p], [], deployee, true, [groupe], TRESORERIE, apres).piecesDesynchronisees).toEqual(['p1'])
   })
@@ -726,12 +727,12 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / analyserEcritures (copie dép
 
   it('se tait sur l’acquisition telle que src/lib la génère, et voit la charge restée sur la catégorie', () => {
     const p = piece({ id: 'p1' })
-    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
+    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .map((l, i) => ecriture({ ...l, id: `a${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(acquisition.map((e) => e.compte)).toEqual(['218300', plan.tva_immobilisations, plan.banque])
     expect(memeResultat(acquisition, [p], [['p1', acq('218300')]], deployee, true, [paiement()]).piecesDesynchronisees).toEqual([])
     // La même pièce écrite en charge avant d'être immobilisée : « à régénérer » des deux côtés.
-    const charge = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
+    const charge = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .map((l, i) => ecriture({ ...l, id: `c${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(charge, [p], [['p1', acq('218300')]], deployee, true, [paiement()]).piecesDesynchronisees).toEqual(['p1'])
     // Et l'acquisition d'un bien qu'on retire du registre l'est aussi : elle repasse en charge.
@@ -756,7 +757,7 @@ function brouillonEngagement(
   p: Piece, mouvements: readonly Pick<LigneBancaire, 'id' | 'date' | 'montant'>[],
   o: { assujettiTva?: boolean; compteNotesDeFrais?: CompteNotesDeFrais; cible?: CibleComptable } = {},
 ): EcritureBrouillon[] {
-  return lignesEngagementPourPiece('d1', p, o.cible ?? cible(COMPTE_ACHATS), o.assujettiTva ?? true, o.compteNotesDeFrais ?? '455000', mouvements, PLAN_PAR_DEFAUT)
+  return lignesEngagementPourPiece('d1', p, o.cible ?? cible(COMPTE_ACHATS), o.assujettiTva ?? true, o.compteNotesDeFrais ?? '455000', mouvements, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))
     .map((l, i) => ecriture({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
 
@@ -892,7 +893,7 @@ function brouillonTresorerie(
   p: Piece, mouvements: LigneBancaire[], o: { assujettiTva?: boolean; compte?: string } = {},
 ): EcritureBrouillon[] {
   const paiementsPiece = paiementsDesPieces(mouvements, [], SANS_VIREMENT_MIXTE, []).get(p.id) ?? []
-  return lignesPourPiece('d1', p, cible(o.compte ?? COMPTE_ACHATS), o.assujettiTva ?? true, paiementsPiece, TRESORERIE)
+  return lignesPourPiece('d1', p, cible(o.compte ?? COMPTE_ACHATS), o.assujettiTva ?? true, paiementsPiece, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     .map((l, i) => ecriture({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
 
@@ -1067,7 +1068,7 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / les ventes facturées (copie 
     const parts = partsEncaissees('d1', ventes.encaissements, ventes, [{ id: 'pv', dossier_id: 'd1', facture_id: 'fa1', statut: 'validee', type_piece: 'vente' }])
     expect(parts).toEqual([{ ligne_bancaire_id: 'vm', piece_id: 'pv', montant: 120 }])
     for (const modele of [TRESORERIE, ENGAGEMENT]) {
-      const juste = lignesPourPiece('d1', v, cible(COMPTE_ACHATS), true, paiementsDesPieces([credit], [], parts, []).get('pv') ?? [], modele)
+      const juste = lignesPourPiece('d1', v, cible(COMPTE_ACHATS), true, paiementsDesPieces([credit], [], parts, []).get('pv') ?? [], modele, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))
         .map((l, i) => ecriture({ ...l, id: `v${i}`, piece_id: 'pv', ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
       expect(juste.some((e) => e.ligne_bancaire_id === 'vm' && e.date === '2025-04-20'), modele.mode).toBe(true)
       // Payée par le virement mixte, son écriture datée du crédit est juste…
@@ -1170,7 +1171,7 @@ function batterieDuGenerateur(copie: typeof deployee, plan: PlanComptable): stri
         expect(copie.paiementsDesPieces(mouvements, parts, encaissees, parLaCaisse).get(p.id) ?? [], 'paiementsDesPieces a dérivé').toEqual(paiementsPiece)
         for (const modele of modeles) {
           for (const assujettiTva of [true, false]) {
-            const ici = projeter(lignesPourPiece('d1', p, c, assujettiTva, paiementsPiece, modele))
+            const ici = projeter(lignesPourPiece('d1', p, c, assujettiTva, paiementsPiece, modele, banquesDuDossier({ etat: 'sans_objet' }, modele.plan)))
             const la = projeter(copie.lignesPourPiece(p, c, assujettiTva, paiementsPiece, modele))
             expect(la, `lignesPourPiece a dérivé : ${JSON.stringify({ piece: p, cible: c, paiementsPiece, modele, assujettiTva })}`).toEqual(ici)
             sorties.push(ici)
@@ -1288,7 +1289,7 @@ function brouillon(
   p: Piece, c: CibleComptable, mouvements: LigneBancaire[], modele: ModeleComptable, prefixe: string = p.id,
 ): EcritureBrouillon[] {
   const paiementsPiece = paiementsDesPieces(mouvements, [], SANS_VIREMENT_MIXTE, []).get(p.id) ?? []
-  return lignesPourPiece('d1', p, c, true, paiementsPiece, modele)
+  return lignesPourPiece('d1', p, c, true, paiementsPiece, modele, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))
     .map((l, i) => ecriture({ ...l, id: `${prefixe}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
 
@@ -1605,7 +1606,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
       'le compte de TVA d’un bien',
     ), plan)
     const p = piece({ id: 'p1' })
-    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
+    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .map((l, i) => ecriture({ ...l, id: `a${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(() => memeResultat(acquisition, [p], [['p1', acq('218300')]], derivee, true, [paiement()])).toThrow()
   })
@@ -1664,7 +1665,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .map((l, i) => ecriture({ ...l, id: `g${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(() => memeResultat(genere, [p], [], derivee, true, [groupe], TRESORERIE, parts)).toThrow()
   })
@@ -1714,7 +1715,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
     const p = piece({ id: 'p1' })
     const acompte = paiement({ id: 'a', date: '2025-03-20', montant: -48 })
     const solde = paiement({ id: 's', date: '2025-04-15', montant: -72 })
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, solde], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, solde], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .map((l, i) => ecriture({ ...l, id: `d${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     const unSeul = genere.filter((e) => !(e.compte === COMPTE_BANQUE && e.ligne_bancaire_id === 's'))
     expect(() => memeResultat(unSeul, [p], [], derivee, true, [acompte, solde])).toThrow()
@@ -2046,7 +2047,7 @@ const OPERATIONS_DE_LA_CAISSE: OperationPayante[] = [
 /** Le brouillon que src/lib génère pour la pièce, payée comme on le dit : la référence de « conforme ». */
 function brouillonGenere(p: Piece, mouvements: LigneBancaire[], parLaCaisse: PartPayeeParLaCaisse[], modele: ModeleComptable = TRESORERIE) {
   const paiementsPiece = paiementsDesPieces(mouvements, [], SANS_VIREMENT_MIXTE, parLaCaisse).get(p.id) ?? []
-  return lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsPiece, modele)
+  return lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsPiece, modele, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))
     .map((l, i) => ecriture({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null, operation_caisse_id: l.operation_caisse_id ?? null }))
 }
 
@@ -2300,7 +2301,7 @@ const SRC_LIB = { partsEncaissees, paiementsDesPieces }
 
 /** Ce que src/lib génère pour le cas, le drapeau dans l'état demandé, en lignes de brouillon. */
 function brouillonDuCas(c: CasReparti, levee: boolean): EcritureBrouillon[] {
-  return avecLaGeneration(levee, () => lignesPourPiece('d1', c.piece, cible(COMPTE_ACHATS), c.assujettiTva ?? true, paiementsDuCas(c, SRC_LIB), TRESORERIE))
+  return avecLaGeneration(levee, () => lignesPourPiece('d1', c.piece, cible(COMPTE_ACHATS), c.assujettiTva ?? true, paiementsDuCas(c, SRC_LIB), TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     .map((l, i) => ecriture({
       ...l, id: `${c.piece.id}-${levee ? 'r' : 'u'}${i}`, piece_id: c.piece.id,
       ligne_bancaire_id: l.ligne_bancaire_id ?? null, operation_caisse_id: l.operation_caisse_id ?? null,
@@ -2310,7 +2311,7 @@ function brouillonDuCas(c: CasReparti, levee: boolean): EcritureBrouillon[] {
 /** Les lignes du cas des deux côtés, dans l'état demandé : elles doivent être les mêmes. */
 function memesLignesDuCas(c: CasReparti, levee: boolean, copie: typeof deployee): string[] {
   const assujetti = c.assujettiTva ?? true
-  const ici = projeter(avecLaGeneration(levee, () => lignesPourPiece('d1', c.piece, cible(COMPTE_ACHATS), assujetti, paiementsDuCas(c, SRC_LIB), TRESORERIE)))
+  const ici = projeter(avecLaGeneration(levee, () => lignesPourPiece('d1', c.piece, cible(COMPTE_ACHATS), assujetti, paiementsDuCas(c, SRC_LIB), TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))))
   const la = projeter(copie.lignesPourPiece(c.piece, cible(COMPTE_ACHATS), assujetti, paiementsDuCas(c, copie), TRESORERIE))
   expect(la, `${c.nom} : lignesPourPiece a dérivé (drapeau ${levee ? 'levé' : 'baissé'})`).toEqual(ici)
   return ici
@@ -2532,8 +2533,9 @@ function sortieDuTirage(c: CasTire, copie: CopieDuTirage, brouillons: readonly E
 // src/lib, sous la forme d'une copie : `lignesPourPiece` de l'application prend le dossier en premier.
 const SRC_LIB_DU_TIRAGE: CopieDuTirage = {
   paiementsDesPieces,
-  lignesPourPiece: (p, c, a, paiements, modele) => lignesPourPiece('d1', p, c, a, paiements, modele),
-  analyserEcritures,
+  lignesPourPiece: (p, c, a, paiements, modele) => lignesPourPiece('d1', p, c, a, paiements, modele, banquesDuDossier({ etat: 'sans_objet' }, modele.plan)),
+  analyserEcritures: (e, a, assujettiTva, paiements, modele, frontiere, exemplaires) =>
+    analyserEcritures(e, a, assujettiTva, paiements, modele, frontiere, exemplaires, banquesDuDossier({ etat: 'sans_objet' }, modele.plan)),
 }
 
 interface TirageCalcule { cas: CasTire[]; brouillons: EcritureBrouillon[][][]; attendus: Record<'baissee' | 'levee', SortieDuTirage[]> }
@@ -2542,7 +2544,7 @@ function calculerLeTirage(): TirageCalcule {
   const cas = casTires(300, 20261103)
   const brouillons = cas.map((c) => {
     const paiementsPiece = paiementsDesPieces(c.mouvements, c.parts, c.encaissees, c.caisse).get(c.piece.id) ?? []
-    return [false, true].map((levee) => avecLaGeneration(levee, () => lignesPourPiece('d1', c.piece, cible(c.compte), c.assujettiTva, paiementsPiece, TRESORERIE))
+    return [false, true].map((levee) => avecLaGeneration(levee, () => lignesPourPiece('d1', c.piece, cible(c.compte), c.assujettiTva, paiementsPiece, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
       .map((l, i) => ecriture({
         ...l, id: `${c.piece.id}-${levee ? 'r' : 'u'}${i}`, piece_id: c.piece.id,
         ligne_bancaire_id: l.ligne_bancaire_id ?? null, operation_caisse_id: l.operation_caisse_id ?? null,

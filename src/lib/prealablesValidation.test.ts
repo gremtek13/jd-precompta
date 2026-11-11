@@ -44,6 +44,7 @@ import { ecritureDeLOperation } from './caisse'
 import { recetteDeCaisse } from './recettesDeCaisse'
 import type { OperationsDeCaisse } from './controlesDeLaCaisse'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -469,7 +470,7 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
     const janvier = ligne('l-jan', { date: '2026-01-05', piece_id: 'p1' })
     // Telles que la génération les écrit ; la facture a été validée avec 2025, son règlement est de 2026.
     const ecrites = lignesPourPiece('d1', facture, { compte: '606100', immobilisation: false }, false,
-      paiementsDesPieces([janvier], [], [], []).get('p1') ?? [], engagement)
+      paiementsDesPieces([janvier], [], [], []).get('p1') ?? [], engagement, banquesDuDossier({ etat: 'sans_objet' }, engagement.plan))
       .map((l, i) => ecriture(`e${i}`, { ...l, ligne_bancaire_id: l.ligne_bancaire_id ?? null, statut: l.date <= '2025-12-31' ? 'validee' : 'proposee' }))
     expect(ecrites.map((e) => [e.date, e.compte, e.statut])).toEqual([
       ['2025-12-20', '606100', 'validee'], ['2025-12-20', '401000', 'validee'],
@@ -1512,7 +1513,7 @@ describe('prealablesDeValidation et prochainExerciceAValider — la pièce qu’
   const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
   // Ses écritures telles que la génération les écrit : à la date du virement, sa banque sur lui.
   const ECRITES = lignesPourPiece('d1', RECETTE_D_AVANT, { compte: '706000', immobilisation: false }, false,
-    paiementsDesPieces([VIREMENT_MIXTE], [], PARTS, []).get('pv') ?? [], TRESORERIE)
+    paiementsDesPieces([VIREMENT_MIXTE], [], PARTS, []).get('pv') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     .map((l, i) => ecriture(`ev${i}`, { ...l, piece_id: 'pv', ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 
   it('les écritures de la pièce sont celles de son paiement par le virement : 2025 n’a rien à régénérer', () => {
@@ -2228,7 +2229,7 @@ describe('les quatre champs du FEC d’un BNC en trésorerie (FEC22c2)', () => {
     drapeauDeLaGeneration.choix = choix
     try {
       const paiements = paiementsDesPieces([LA], [], [], [{ operation_caisse_id: 'oc-pa', piece_id: 'p-a', date: '2025-06-01', montant: -50 }])
-      return lignesPourPiece('d1', ACHAT, { compte: '606100', immobilisation: false }, false, paiements.get('p-a') ?? [], TRESO)
+      return lignesPourPiece('d1', ACHAT, { compte: '606100', immobilisation: false }, false, paiements.get('p-a') ?? [], TRESO, banquesDuDossier({ etat: 'sans_objet' }, TRESO.plan))
         .map((l, i) => ecriture(`a${choix === null ? 'h' : 'r'}${i}`, {
           ...l, piece_id: 'p-a', ligne_bancaire_id: l.ligne_bancaire_id ?? null, operation_caisse_id: l.operation_caisse_id ?? null,
         }))

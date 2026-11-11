@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
-import { modeleDuMouvement, planDuMouvement } from '../../lib/banqueDuMouvement'
+import { modeleDuMouvement, planDuMouvement, refusDesBanquesDesPaiements } from '../../lib/banqueDuMouvement'
 import PaquetDArchiveBouton from './PaquetDArchiveBouton'
 import { piecesCiteesParLExercice, piecesSansEmpreinte } from '../../lib/paquetDArchive'
 import { supabase } from '../../lib/supabase'
@@ -470,7 +470,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // de validation (lib/validationExercice.ts) : la base le refuserait, et tout le lot avec, l'insertion étant d'un
   // seul tenant. Une pièce dont une part tombe dans un exercice validé est NOMMÉE plus bas, plutôt que de
   // disparaître du compte sans un mot.
-  const generation = ecrituresAGenerer(dossierId, aComptabiliser, ecritures, assujettiTva, paiements, modele, frontiere)
+  const generation = ecrituresAGenerer(dossierId, aComptabiliser, ecritures, assujettiTva, paiements, modele, frontiere, banques)
   const enAttente = generation.pieces
   const nbValidees = ecritures.filter((e) => e.statut === 'validee').length
   const nbProposees = ecritures.length - nbValidees
@@ -549,7 +549,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
-  const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplairesDesSources(piecesValidees, sourcesDesControles))
+  const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplairesDesSources(piecesValidees, sourcesDesControles), banques)
   // En engagement, une facture qu'un lettrage fait à la main solde avec son avoir n'attend plus de règlement : la compter
   // « sans règlement rapproché » enverrait chercher un paiement qui n'existera jamais (lib/lettrage.ts).
   const lettreesALaMain = piecesLettreesALaMain(etatsDesLettragesManuels(ecritures, piecesValidees, lettragesManuels, modele))
@@ -809,6 +809,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     if (!cible || brouillonIncomplet !== null || sourcesNonLues !== null || caisseNonLue !== null || regenerationsEnCours.current.has(piece.id)) return
     // Le bien d'une ouverture lue en partie : on ne sait pas s'il est repris (voir `biensSansOuverture`).
     if (cible.immobilisation && aNouveauxIncomplets !== null) return
+    // La banque d'un paiement qui ne se sait pas (MCB5, quatrième partie) : rien ne se retire ni ne s'écrit — la contrepartie
+    // irait sur un 512 qui n'est peut-être pas celui du compte de son mouvement, et la base ne la vérifie pas.
+    const refusDeBanque = refusDesBanquesDesPaiements(paiements.get(piece.id) ?? [], banques)
+    if (refusDeBanque !== null) {
+      setError(refusDeBanque)
+      return
+    }
     regenerationsEnCours.current.add(piece.id)
     setRegenerating(piece.id)
     setError(null)
@@ -821,6 +828,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       if (deleteError) throw deleteError
       const lignes = lignesOuvertes(lignesPourPiece(
         dossierId, piece, { compte: cible.compte, immobilisation: cible.immobilisation }, assujettiTva, paiements.get(piece.id) ?? [], modele,
+        banques,
       ), frontiere)
       // Une pièce dont tout tombe désormais dans un exercice validé n'a plus rien à écrire : la génération la nomme.
       if (lignes.length > 0) {
@@ -1832,6 +1840,15 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             : `Générer les écritures manquantes${enAttente.length > 0 && brouillonIncomplet === null ? ` (${enAttente.length})` : ''}`}
         </button>
       </div>
+
+      {/* LES PIÈCES QUE LA BANQUE D'UN PAIEMENT RETIENT (MCB5, quatrième partie) : leur contrepartie s'écrit au 512 du compte de
+          son mouvement, qui ne se sait pas. Nommées plutôt que tues ; jamais drapeau baissé. */}
+      {generation.banquesInconnues.length > 0 && brouillonIncomplet === null && (
+        <p className="error-text">
+          {generation.banquesInconnues.length} pièce(s) sans écriture attendent de savoir sur quel compte de banque s’écrit leur
+          paiement, et la génération ne les écrit pas : {generation.banquesInconnues[0].refus}
+        </p>
+      )}
 
       {/* LES PIÈCES QU'UN EXERCICE VALIDÉ EMPÊCHE D'ÉCRIRE, nommées plutôt que tues : la génération n'écrit rien au plus
           tard à la frontière, et une pièce déposée après la validation — une facture de l'exercice arrivée en retard —

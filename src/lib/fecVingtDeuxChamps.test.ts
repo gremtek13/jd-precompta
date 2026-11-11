@@ -28,6 +28,7 @@ import type {
 } from './types'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // LE FEC D'UN BNC EN TRÉSORERIE À VINGT-DEUX CHAMPS (lot FEC22c1 ; lib/fec.ts). Ce que ces cas gardent : le drapeau baissé,
 // le fichier d'hier ; en engagement, le fichier d'hier, OCTET POUR OCTET, quoi qu'on passe ; levé en trésorerie, l'en-tête du
@@ -110,7 +111,7 @@ const caisseLue = (operations: OperationCaisse[]): OperationsDeCaisse => ({ etat
 
 // Les lignes d'une pièce telles que la génération les écrit (`lignesPourPiece`), avec un identifiant.
 function lignesDeLaPiece(p: Piece, compte: string, immobilisation: boolean, assujetti: boolean, paiements: ReturnType<typeof paiementsDesPieces>) {
-  return lignesPourPiece(D, p, { compte, immobilisation }, assujetti, paiements.get(p.id) ?? [], TRESORERIE)
+  return lignesPourPiece(D, p, { compte, immobilisation }, assujetti, paiements.get(p.id) ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     .map((l, i) => ligne({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
 

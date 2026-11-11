@@ -13,6 +13,7 @@ import { NON_VALIDEE } from '../test/ecritures'
 import { detailDesEncaissementsSansMouvement, MOYENS_DU_RELEVE, ventesDeLaChecklist } from './ventesDeLaChecklist'
 import { CAISSE_PAS_EN_BASE } from './controlesDeLaCaisse'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // CE QUE LA VUE D'ENSEMBLE DIT DES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5f) :
 // les mouvements réservés à des encaissements de factures, à classer, et les encaissements par un moyen du relevé qui
@@ -271,7 +272,7 @@ describe('pointsDeLaChecklist : l’exemplaire qu’un virement mixte paie (éta
   // Les écritures de l'exemplaire, telles que la génération les écrit avec la part du virement mixte.
   const paiements = paiementsDesPieces([MIXTE], [], partsEncaissees(D, REGISTRE, { factures: FACTURES }, [DESIGNEE]), [])
   const ECRITES: EcritureBrouillon[] = lignesPourPiece(D, EXEMPLAIRE, { compte: '706000', immobilisation: false }, true,
-    paiements.get('p-avant') ?? [], CONTEXTE.modele).map((l, i) => ({
+    paiements.get('p-avant') ?? [], CONTEXTE.modele, banquesDuDossier({ etat: 'sans_objet' }, CONTEXTE.modele.plan)).map((l, i) => ({
     ...l, id: `ex${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null, created_at: `${l.date}T12:00:00Z`, immobilisation_id: null,
     vehicule_id: null, declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
   }))

@@ -12,6 +12,7 @@ import type { CibleComptable, LigneAGenerer } from './ecritures'
 import type { LigneBancaire, Piece } from './types'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PLAN_LU_DECALE, PLAN_LU_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest, planLuDe } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // Les comptes de tiers et les trois comptes du dirigeant sous le plan par défaut : ceux d'avant l'étape PC3.
 const COMPTES_DE_TIERS = comptesDeTiers(PLAN_PAR_DEFAUT)
@@ -219,7 +220,7 @@ describe('lignesEngagementPourPiece', () => {
     const lignes = lignesEngagementPourPiece('d1', piece(), cible(ACHATS), true, '455000', [
       mouvement({ id: 'l2', date: '2026-05-02', montant: -70 }),
       mouvement({ id: 'l1', date: '2026-04-05', montant: -50 }),
-    ], PLAN_PAR_DEFAUT)
+    ], PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))
     expect(lignes.map((l) => [l.compte, l.ligne_bancaire_id ?? null])).toEqual([
       [ACHATS, null], [COMPTE_TVA_DEDUCTIBLE, null], [COMPTE_FOURNISSEURS, null],
       [COMPTE_FOURNISSEURS, 'l1'], [COMPTE_BANQUE, 'l1'],

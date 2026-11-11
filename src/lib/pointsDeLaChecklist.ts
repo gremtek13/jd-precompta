@@ -301,7 +301,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const paiementsDeLaCaisse = paiementsParLaCaisseDuDossierSelon(PAIEMENT_PAR_LA_CAISSE_EXPORTE, caisse, caisse.dossierId)
   const paiementsDeLaCaisseInconnus = paiementsDeLaCaisse === null
   const paiements = paiementsDesPieces(lignes, reglements, encaissees, paiementsDeLaCaisse ?? [])
-  const analyse = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplaires)
+  const analyse = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplaires, banques)
   const { groupesDesequilibres } = analyse
   const payeesParLaCaisseAuBrouillon = new Set(ecritures.flatMap((e) => (estContrepartieCaisse(e) ? [e.piece_id!] : [])))
   const piecesDesynchronisees = paiementsDeLaCaisseInconnus

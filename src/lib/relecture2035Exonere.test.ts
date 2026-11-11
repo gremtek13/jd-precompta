@@ -18,6 +18,7 @@ import { NON_VALIDEE } from '../test/ecritures'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import type { Categorie, CotisationDeclaree, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // RELECTURE DU 31/10/2026 — la 2035 d'un soignant EXONÉRÉ en trésorerie. Trois défauts, prouvés d'abord par des
 // `it.fails`, puis corrigés : les tests ci-dessous disent ce que la déclaration doit dire, et ce qu'elle refuse.
@@ -219,7 +220,7 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
   })
 
   it('l’écriture de la pièce s’équilibre à chaque date, donc dans chaque exercice, et concorde avec la 2035', () => {
-    const generees = lignesPourPiece('d1', prime, { compte: '616000', immobilisation: false }, false, paiements(), TRESORERIE)
+    const generees = lignesPourPiece('d1', prime, { compte: '616000', immobilisation: false }, false, paiements(), TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     const soldeParDate = new Map<string, number>()
     for (const l of generees) {
       // Aucune ligne de montant négatif ni nul : la part négative s'écrit dans l'autre sens, comme un avoir.
@@ -265,7 +266,7 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
       { date: '2025-12-20', centimes: 0, centimesSansDate: 0 },
       { date: '2026-01-05', centimes: 120_000, centimesSansDate: 0 },
     ])
-    const generees = lignesPourPiece('d1', prime, { compte: '616000', immobilisation: false }, false, p, TRESORERIE)
+    const generees = lignesPourPiece('d1', prime, { compte: '616000', immobilisation: false }, false, p, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     expect(generees.filter((l) => l.date === '2025-12-20').map((l) => [l.compte, l.sens, l.montant]).sort())
       .toEqual([['512000', 'credit', 1200], ['512000', 'debit', 1200]])
     expect(exonere({ categories: [assurance], lignes: memeJour, pieces: [prime], annee: 2025 }).totalDepenses).toBe(0)

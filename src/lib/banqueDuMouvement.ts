@@ -93,3 +93,38 @@ export function modelePourJuger(modele: ModeleComptable, ligne: MouvementDUnComp
   const m = modeleDuMouvement(modele, ligne, banques)
   return 'refus' in m ? null : m.modele
 }
+
+// LE PAIEMENT D'UNE PIÈCE AU 512 DU COMPTE DE SON MOUVEMENT (MCB5, quatrième partie ; HISTORIQUE.md, « LA JAMBE DE BANQUE PAR
+// COMPTE BANCAIRE : LE PAIEMENT D'UNE PIÈCE »). Aucune fonction SQL ne vérifie la contrepartie d'une pièce : c'est
+// l'application qui l'écrit au compte du mouvement, et qui la RECONNAÎT ensuite sur l'ensemble des 512 du dossier.
+
+/** Les comptes de banque du dossier : celui du rôle et le 512 propre de chacun de ses comptes bancaires, quelle que soit sa
+ *  date (une ligne écrite au 512 d'un compte est une ligne de banque, même avant `compte_propre_depuis` : c'est alors une
+ *  ligne à réécrire, jamais une charge). Comptes en cours de lecture ou illisibles : le rôle seul — un détecteur ne juge
+ *  pas un paiement dont la banque ne se sait pas (`banquesDesPaiementsConnues`). Drapeau baissé, le rôle : hier. */
+export function comptesDeBanqueDuDossier(plan: PlanComptable, banques: BanquesDuDossier): ReadonlySet<string> {
+  if (banques.cas !== 'par_compte') return new Set([plan.banque])
+  const comptes = new Set([plan.banque, banques.role])
+  for (const c of banques.comptes.values()) if (c.compte !== null) comptes.add(c.compte)
+  return comptes
+}
+
+/** Ce qu'un paiement de pièce par le relevé porte de son mouvement : le mouvement, sa date, son compte bancaire. */
+export interface PaiementDUnMouvement {
+  id: string
+  date: string
+  compte_bancaire_id?: string | null
+}
+
+/** Le refus qui retient l'écriture d'une pièce : le premier paiement par le relevé dont la banque ne se sait pas. Nul quand
+ *  chaque banque se sait — toujours, drapeau baissé. Un paiement par la caisse (`origine: 'caisse'`) n'en a pas. */
+export function refusDesBanquesDesPaiements(
+  paiements: readonly ({ origine: string } & Partial<PaiementDUnMouvement>)[], banques: BanquesDuDossier,
+): string | null {
+  for (const p of paiements) {
+    if (p.origine === 'caisse' || p.id === undefined || p.date === undefined) continue
+    const banque = banqueDuMouvement({ date: p.date, compte_bancaire_id: p.compte_bancaire_id }, banques)
+    if ('refus' in banque) return banque.refus
+  }
+  return null
+}

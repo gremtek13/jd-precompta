@@ -14,6 +14,7 @@ import { ecritureDeLaLiquidation, ecritureDuPaiementTva, type DeclarationLiquida
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // Le lettrage d'un fichier (lib/lettrage.ts) : vide, sauf dans les tests qui le calculent comme l'écran.
 const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
@@ -289,7 +290,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
   it('fait d’une pièce payée en deux fois deux écritures, une par paiement, chacune équilibrée', () => {
     const p = piece('p1', { montant_ttc: 100, date_piece: '2026-02-20', nom_fichier: 'facture.pdf', storage_hash: 'C0FFEE00aa11bb22' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
-      [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)], TRESORERIE).map(enBase('a'))
+      [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)).map(enBase('a'))
     const fec = genererFec(brouillon, [p], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     const rows = colonnes(fec).slice(1)
     expect(rows.map((r) => [r[2], r[3], r[4], debitMoinsCredit(r)])).toEqual([
@@ -308,7 +309,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
   it('EcritureLib : « Pièce du JJ/MM/AAAA » pour une écriture composée, le libellé d’une ligne déjà au brouillon sinon', () => {
     const p = piece('p1', { montant_ttc: 100, date_piece: '2026-02-20', nom_fichier: 'patient-fictif.pdf', tiers: null })
     const composee = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
-      [paiement('l1', '2026-03-05', -100)], TRESORERIE).map(enBase('a'))
+      [paiement('l1', '2026-03-05', -100)], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)).map(enBase('a'))
     const fecNeuf = colonnes(genererFec(composee, [p], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(fecNeuf.map((r) => r[10])).toEqual(['Pièce du 20/02/2026', 'Pièce du 20/02/2026'])
     const dejaEcrite = composee.map((l) => ({ ...l, libelle: 'patient-fictif.pdf' }))
@@ -321,7 +322,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
   it('garde la TVA d’une date avec sa charge : chaque écriture s’équilibre face à son paiement', () => {
     const p = piece('p2', { montant_ttc: 120, montant_ht: 100, montant_tva: 20, date_piece: '2026-02-20' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, true,
-      [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -60)], TRESORERIE).map(enBase('t'))
+      [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -60)], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)).map(enBase('t'))
     const fec = genererFec(brouillon, [p], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(colonnes(fec).slice(1).map((r) => [r[2], r[4], debitMoinsCredit(r)])).toEqual([
       ['AC00001', '445660', 10], ['AC00001', '606100', 50], ['AC00001', COMPTE_BANQUE, -60],
@@ -334,7 +335,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
   it('sépare la note de frais remboursée en partie : le reste face au 108000 à sa date, le virement à la sienne', () => {
     const note = piece('note', { type_piece: 'note_frais', montant_ttc: 42.5, date_piece: '2026-03-10', nom_fichier: 'ticket.jpg' })
     const brouillon = lignesPourPiece('d1', note, { compte: '625700', immobilisation: false }, false,
-      [paiement('l1', '2026-03-20', -20)], TRESORERIE).map(enBase('n'))
+      [paiement('l1', '2026-03-20', -20)], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)).map(enBase('n'))
     const fec = genererFec(brouillon, [note], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(colonnes(fec).slice(1).map((r) => [r[2], r[3], r[4], debitMoinsCredit(r)])).toEqual([
       ['AC00001', '20260310', '625700', 22.5], ['AC00001', '20260310', '108000', -22.5],
@@ -347,7 +348,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
   it('garde ensemble deux paiements du même jour', () => {
     const p = piece('p3', { montant_ttc: 100, date_piece: '2026-02-20' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
-      [paiement('l1', '2026-03-05', -70), paiement('l2', '2026-03-05', -30)], TRESORERIE).map(enBase('m'))
+      [paiement('l1', '2026-03-05', -70), paiement('l2', '2026-03-05', -30)], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)).map(enBase('m'))
     const rows = colonnes(genererFec(brouillon, [p], [], [], modeleDeTest('tresorerie'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(new Set(rows.map((r) => r[2]))).toEqual(new Set(['AC00001']))
   })
@@ -357,7 +358,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
   it('laisse l’engagement tel qu’il était : la facture au journal des achats, chaque règlement au journal de banque', () => {
     const p = piece('p4', { montant_ttc: 100, date_piece: '2026-02-20', tiers: 'Transmedical' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
-      [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)], ENGAGEMENT).map(enBase('g'))
+      [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)], ENGAGEMENT, banquesDuDossier({ etat: 'sans_objet' }, ENGAGEMENT.plan)).map(enBase('g'))
     const fec = genererFec(brouillon, [p], [], [], modeleDeTest('engagement'), [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(colonnes(fec).slice(1).map((r) => [r[2], r[3], r[4]])).toEqual([
       ['AC00001', '20260220', '606100'], ['AC00001', '20260220', '401000'],
@@ -375,7 +376,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
     const p = piece('p6', { montant_ttc: 100, date_piece: '2026-02-20', tiers: 'Transmedical' })
     const paiements = [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)]
     for (const modele of [TRESORERIE, ENGAGEMENT]) {
-      const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false, paiements, modele)
+      const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false, paiements, modele, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))
         .map(enBase('o'))
       const fec = genererFec(brouillon, [p], [], [], modele, [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
       expect(genererFec([...brouillon].reverse(), [p], [], [], modele, [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).toBe(fec)
@@ -1194,7 +1195,7 @@ describe('numeroterFec — la note de frais en trésorerie', () => {
   it('fait une écriture équilibrée au journal des achats, le 108000 nommé, sans compte auxiliaire', () => {
     const note = piece('note', { type_piece: 'note_frais', tiers: 'Restaurant', montant_ttc: 42.5, nom_fichier: 'ticket.jpg' })
     const enBase = (l: LigneAGenerer, i: number): EcritureBrouillon => ligne('note', { ...l, id: `n${i}`, ligne_bancaire_id: null })
-    const brouillon = lignesPourPiece('d1', note, { compte: '625700', immobilisation: false }, false, [], { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT })
+    const brouillon = lignesPourPiece('d1', note, { compte: '625700', immobilisation: false }, false, [], { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, banquesDuDossier({ etat: 'sans_objet' }, ({ mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }).plan))
       .map(enBase)
     const n = numeroterFec(brouillon, [note], [], [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(n.lignes.map((l) => [l.journal, l.numero, l.ecriture.compte, l.ecriture.sens, l.ecriture.montant, l.compteLib, l.compAuxNum])).toEqual([

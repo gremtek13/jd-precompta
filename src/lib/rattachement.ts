@@ -73,9 +73,12 @@ export interface PaiementParLeReleve {
    *  les paiements d'une pièce — un filtre sur `piece_id` oublierait toutes les pièces réglées par un virement
    *  groupé, et celles qu'un virement mixte paie. */
   origine: 'rapprochement' | 'groupe' | 'encaissements'
-  /** Le compte bancaire du mouvement (lot MCB3), pour un rapprochement seulement, et seulement quand la ligne le porte : la
-   *  colonne n'existe qu'après la migration `comptes_bancaires` (lib/comptesBancaires.ts). Absent, rien ne change. Ce qui
-   *  le lit : le rejet d'un paiement, qui ne défait qu'un paiement de son compte (lib/rejetDuPaiement.ts). */
+  /** Le compte bancaire du mouvement (lot MCB3), lu sur le MOUVEMENT pour les trois origines (MCB5, quatrième partie : une
+   *  part d'un règlement groupé ou d'un virement mixte s'écrit au 512 du compte de son mouvement, comme un rapprochement),
+   *  et seulement quand la ligne le porte : la colonne n'existe qu'après la migration `comptes_bancaires`
+   *  (lib/comptesBancaires.ts). Absent, rien ne change. Ce qui le lit : le rejet d'un paiement, qui ne défait qu'un paiement
+   *  de son compte (lib/rejetDuPaiement.ts), et la contrepartie de la pièce, écrite au 512 du compte du mouvement
+   *  (lib/banqueDuMouvement.ts, `planDuMouvement`). */
   compte_bancaire_id?: string
 }
 
@@ -119,6 +122,12 @@ export interface PartPayeeParLaCaisse {
  *  qui ne lit pas la caisse ; le badge « Rapprochée » d'une pièce, qui dit un mouvement bancaire. Écrit en toutes lettres,
  *  jamais une valeur par défaut. */
 export const AUCUN_PAIEMENT_PAR_LA_CAISSE: readonly PartPayeeParLaCaisse[] = Object.freeze([])
+
+// Le compte bancaire d'un mouvement, recopié sur chacun de ses paiements seulement quand la ligne le porte (la colonne lue) :
+// absent, le paiement est celui d'hier, à la clé près.
+function compteDuMouvement(ligne: Pick<LignePayante, 'compte_bancaire_id'>): { compte_bancaire_id?: string } {
+  return ligne.compte_bancaire_id === undefined ? {} : { compte_bancaire_id: ligne.compte_bancaire_id }
+}
 
 // Les paiements de chaque pièce. Seul un mouvement RAPPROCHÉ paie une pièce : le statut est relu ici
 // plutôt que supposé du côté de l'appelant, un `piece_id` sur une ligne remise à traiter étant exactement
@@ -171,21 +180,18 @@ export function paiementsDesPieces(
   }
   for (const ligne of lignes) {
     if (ligne.statut !== 'rapprochee' || !ligne.piece_id) continue
-    ajouter(ligne.piece_id, {
-      id: ligne.id, date: ligne.date, montant: ligne.montant, origine: 'rapprochement',
-      ...(ligne.compte_bancaire_id === undefined ? {} : { compte_bancaire_id: ligne.compte_bancaire_id }),
-    })
+    ajouter(ligne.piece_id, { id: ligne.id, date: ligne.date, montant: ligne.montant, origine: 'rapprochement', ...compteDuMouvement(ligne) })
   }
   for (const part of reglements) {
     if (!part.piece_id) continue
     const mouvement = mouvements.get(part.ligne_bancaire_id)
     if (!mouvement || mouvement.statut !== 'rapprochee' || !mouvement.reglement_groupe) continue
-    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: 'groupe' })
+    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: 'groupe', ...compteDuMouvement(mouvement) })
   }
   for (const part of encaissees) {
     const mouvement = mouvements.get(part.ligne_bancaire_id)
     if (!mouvement || mouvement.statut !== 'rapprochee' || !mouvement.encaissements_de_factures) continue
-    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: 'encaissements' })
+    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: 'encaissements', ...compteDuMouvement(mouvement) })
   }
   for (const part of caisse) {
     ajouter(part.piece_id, { operation_caisse_id: part.operation_caisse_id, date: part.date, montant: part.montant, origine: 'caisse' })

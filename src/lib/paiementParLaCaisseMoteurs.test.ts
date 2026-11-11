@@ -32,6 +32,7 @@ import { NON_VALIDEE } from '../test/ecritures'
 import { tirage } from '../test/encaissementsBatterie'
 import { SANS_ECRITURE_DE_VENTE, SANS_EXEMPLAIRE, SANS_FACTURE_SOURCE, SANS_VENTE_FACTUREE, ventesFactureesVides } from '../test/ventesFacturees'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // LE DRAPEAU, ÉCRIT : un accesseur sous `vi.mock`, BAISSÉ par défaut — l'état d'aujourd'hui, quelle que soit la valeur du module,
 // que la migration lèvera — et `paiementsParLaCaisse`, la dérivation selon le drapeau, qui le suit (son corps lit la constante
@@ -200,7 +201,7 @@ describe('la neutralité, au caractère près', () => {
   const sorties = (pieces: Piece[], lignes: LigneBancaire[], caisse: readonly PartPayeeParLaCaisse[]) => {
     const p = paiementsDesPieces(lignes, [], [], caisse)
     const aComptabiliser: PieceAComptabiliser[] = pieces.map((x) => ({ piece: x, compte: x.categorie_id === 'c-honoraires' ? '706200' : '606100', immobilisation: false }))
-    const brouillon = enBase(pieces.flatMap((x) => lignesPourPiece(D, x, aComptabiliser.find((a) => a.piece.id === x.id)!, true, p.get(x.id) ?? [], TRESORERIE)))
+    const brouillon = enBase(pieces.flatMap((x) => lignesPourPiece(D, x, aComptabiliser.find((a) => a.piece.id === x.id)!, true, p.get(x.id) ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))))
     return JSON.stringify({
       paiements: [...p.entries()],
       d2025: declaration(2025, pieces, p, lignes), d2026: declaration(2026, pieces, p, lignes, true),
@@ -209,7 +210,7 @@ describe('la neutralité, au caractère près', () => {
       situation: calculerSituationIntermediaire(pieces, CATEGORIES, [], [], '2026-01-01', '2026-06-30', true, p, 'tresorerie', [],
         ventesFactureesVides(D), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, CAISSE_ABSENTE),
       brouillon: brouillon.map(({ id: _id, ...l }) => l),
-      analyse: analyserEcritures(brouillon, aComptabiliser, true, p, TRESORERIE, null, SANS_EXEMPLAIRE),
+      analyse: analyserEcritures(brouillon, aComptabiliser, true, p, TRESORERIE, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)),
       fec: genererFec(brouillon, pieces, CATEGORIES, [], modeleDeTest('tresorerie'), lignes, new Map(), SANS_ECRITURE_DE_VENTE,
         OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES),
       enTrop: piecesPayeesEnTrop(pieces, p),
@@ -337,33 +338,33 @@ describe('la contrepartie de caisse, au compte de la caisse du plan', () => {
   })
 
   it('la génération : la charge à la date des espèces, la TVA, la caisse au crédit — équilibrée', () => {
-    const lignes = lignesPourPiece(D, achat, cible, true, paiements([], [op]).get('p-achat')!, TRESORERIE)
+    const lignes = lignesPourPiece(D, achat, cible, true, paiements([], [op]).get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     expect(lignes.map((l) => [l.date, l.compte, l.sens, l.montant, l.ligne_bancaire_id ?? null, l.operation_caisse_id ?? null])).toEqual([
       ['2026-01-05', '606100', 'debit', 100, null, null],
       ['2026-01-05', '445660', 'debit', 20, null, null],
       ['2026-01-05', '530000', 'credit', 120, null, 'oc-1'],
     ])
     const brouillon = enBase(lignes)
-    const analyse = analyserEcritures(brouillon, [cible], true, paiements([], [op]), TRESORERIE, null, SANS_EXEMPLAIRE)
+    const analyse = analyserEcritures(brouillon, [cible], true, paiements([], [op]), TRESORERIE, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     expect(analyse).toEqual({ nbSansContrepartie: 0, piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [] })
-    const generation = ecrituresAGenerer(D, [cible], [], true, paiements([], [op]), TRESORERIE, null)
+    const generation = ecrituresAGenerer(D, [cible], [], true, paiements([], [op]), TRESORERIE, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     expect(generation.lignes).toEqual(lignes)
   })
 
   it('payée en partie par la banque et en partie par la caisse le même jour : une contrepartie par moyen', () => {
     const lignesBanque = [mouvement({ id: 'm-1', piece_id: 'p-achat', date: '2026-01-05', montant: -70 })]
     const p = paiements(lignesBanque, [operation({ id: 'oc-1', date: '2026-01-05', montant: -50 })])
-    const lignes = lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE)
+    const lignes = lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     expect(lignes.filter((l) => l.compte === '512000').map((l) => [l.sens, l.montant, l.ligne_bancaire_id])).toEqual([['credit', 70, 'm-1']])
     expect(lignes.filter((l) => l.compte === '530000').map((l) => [l.sens, l.montant, l.operation_caisse_id])).toEqual([['credit', 50, 'oc-1']])
-    expect(analyserEcritures(enBase(lignes), [cible], true, p, TRESORERIE, null, SANS_EXEMPLAIRE).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(enBase(lignes), [cible], true, p, TRESORERIE, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)).piecesDesynchronisees).toEqual([])
   })
 
   it('« à régénérer » quand la caisse ne suit plus : la ligne absente, un autre compte, un paiement retiré, un autre montant', () => {
     const p = paiements([], [op])
-    const juste = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE))
+    const juste = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     const desync = (brouillon: EcritureBrouillon[], q: PaiementsDesPieces = p) =>
-      analyserEcritures(brouillon, [cible], true, q, TRESORERIE, null, SANS_EXEMPLAIRE).piecesDesynchronisees.map((x) => x.id)
+      analyserEcritures(brouillon, [cible], true, q, TRESORERIE, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)).piecesDesynchronisees.map((x) => x.id)
     expect(desync(juste)).toEqual([])
     expect(desync(juste.filter((e) => e.compte !== '530000'))).toEqual(['p-achat'])
     expect(desync(juste.map((e) => (e.compte === '530000' ? { ...e, compte: '531000' } : e)))).toEqual(['p-achat'])
@@ -371,9 +372,9 @@ describe('la contrepartie de caisse, au compte de la caisse du plan', () => {
     expect(desync(juste, paiements([], [{ ...op, montant: -100 }]))).toEqual(['p-achat'])
     // Sous un plan décalé, la caisse du plan, et elle seule.
     const decale: ModeleComptable = { ...TRESORERIE, plan: PLAN_DECALE }
-    const sousDecale = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, decale))
+    const sousDecale = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, decale, banquesDuDossier({ etat: 'sans_objet' }, decale.plan)))
     expect(sousDecale.find((e) => e.operation_caisse_id)?.compte).toBe(PLAN_DECALE.caisse)
-    expect(analyserEcritures(juste, [cible], true, p, decale, null, SANS_EXEMPLAIRE).piecesDesynchronisees.map((x) => x.id)).toEqual(['p-achat'])
+    expect(analyserEcritures(juste, [cible], true, p, decale, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, decale.plan)).piecesDesynchronisees.map((x) => x.id)).toEqual(['p-achat'])
   })
 
   it('une pièce que la frontière coupe : sa part ouverte se compare opération pour opération', () => {
@@ -383,37 +384,37 @@ describe('la contrepartie de caisse, au compte de la caisse du plan', () => {
     const coupee = piece({ date_piece: '2025-12-20', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
     const c: PieceAComptabiliser = { piece: coupee, compte: '606100', immobilisation: false }
     const p = paiements(lignes, [operation({ id: 'oc-1', date: '2026-01-05', montant: -60 })])
-    const juste = enBase(lignesPourPiece(D, coupee, c, true, p.get('p-achat')!, TRESORERIE))
+    const juste = enBase(lignesPourPiece(D, coupee, c, true, p.get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     const desync = (b: EcritureBrouillon[]) =>
-      analyserEcritures(b, [c], true, p, TRESORERIE, '2025-12-31', SANS_EXEMPLAIRE).piecesDesynchronisees.map((x) => x.id)
+      analyserEcritures(b, [c], true, p, TRESORERIE, '2025-12-31', SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)).piecesDesynchronisees.map((x) => x.id)
     expect(desync(juste)).toEqual([])
     expect(desync(juste.map((e) => (e.operation_caisse_id ? { ...e, operation_caisse_id: 'oc-autre' } : e)))).toEqual(['p-achat'])
   })
 
   it('une écriture COMPLÈTE : la caisse est une contrepartie, et un déséquilibre se dit', () => {
     const p = paiements([], [op])
-    const juste = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE))
+    const juste = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     const fausse = juste.map((e) => (e.compte === '530000' ? { ...e, montant: 100 } : e))
-    const analyse = analyserEcritures(fausse, [cible], true, p, TRESORERIE, null, SANS_EXEMPLAIRE)
+    const analyse = analyserEcritures(fausse, [cible], true, p, TRESORERIE, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     expect(analyse.groupesDesequilibres.map((g) => [g.pieceId, Math.round(g.solde * 100)])).toEqual([['p-achat', 2000]])
   })
 
   it('en engagement, le relevé seul règle : un paiement par la caisse n’écrit aucun règlement, et rien n’est « à régénérer »', () => {
     const p = paiements([], [op])
-    const lignes = lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, ENGAGEMENT)
-    expect(lignes).toEqual(lignesPourPiece(D, achat, cible, true, [], ENGAGEMENT))
-    expect(analyserEcritures(enBase(lignes), [cible], true, p, ENGAGEMENT, null, SANS_EXEMPLAIRE).piecesDesynchronisees).toEqual([])
+    const lignes = lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, ENGAGEMENT, banquesDuDossier({ etat: 'sans_objet' }, ENGAGEMENT.plan))
+    expect(lignes).toEqual(lignesPourPiece(D, achat, cible, true, [], ENGAGEMENT, banquesDuDossier({ etat: 'sans_objet' }, ENGAGEMENT.plan)))
+    expect(analyserEcritures(enBase(lignes), [cible], true, p, ENGAGEMENT, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, ENGAGEMENT.plan)).piecesDesynchronisees).toEqual([])
   })
 
   it('une pièce qui ne s’écrit plus : sa caisse n’est pas comptée « en trop », comme la banque', () => {
     const p = paiements([], [op])
-    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE))
+    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     const [sansObjet] = ecrituresSansObjet(brouillon, [{ ...achat, categorie_id: null }], CATEGORIES, new Map(), null, PLAN_PAR_DEFAUT, SANS_FACTURE_SOURCE)
     expect([sansObjet.motif, sansObjet.nbLignes, sansObjet.montant]).toEqual(['sans_categorie', 2, 120])
   })
 
   it('le lettrage : en trésorerie, rien ne se lettre, la caisse non plus', () => {
-    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, paiements([], [op]).get('p-achat')!, TRESORERIE))
+    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, paiements([], [op]).get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     expect(lettrages(brouillon, [achat], [], modeleDeTest('tresorerie'), SANS_VENTE_FACTUREE).size).toBe(0)
   })
 })
@@ -447,7 +448,7 @@ describe('le FEC et la piste d’audit : le paiement par la caisse au journal de
   it('payée par la caisse seule : une écriture au journal des achats, la caisse au crédit, DateRglt le jour des espèces, « Espèces »', () => {
     const ops = [operation({ id: 'oc-1', date: '2026-01-05', montant: -120 })]
     const p = paiements([], ops)
-    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE))
+    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     const sans = colonnes(fec(brouillon, [], ops, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(sans.map((r) => [r[0], r[2], r[4], r[11], r[12]])).toEqual([
       ['AC', 'AC00001', '445660', '20,00', '0,00'], ['AC', 'AC00001', '606100', '100,00', '0,00'], ['AC', 'AC00001', '530000', '0,00', '120,00'],
@@ -469,7 +470,7 @@ describe('le FEC et la piste d’audit : le paiement par la caisse au journal de
     const lignes = [mouvement({ id: 'm-1', piece_id: 'p-achat', date: '2026-01-05', montant: -72 })]
     const ops = [operation({ id: 'oc-1', date: '2026-01-05', montant: -48 })]
     const p = paiements(lignes, ops)
-    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE))
+    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, p.get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     const f = fec(brouillon, lignes, ops, { etat: 'exportes', entrees: entrees(p) })
     expect(colonnes(f).slice(1).map((r) => [r[2], r[4], r[11], r[12], r[19]])).toEqual([
       ['AC00001', '445660', '12,00', '0,00', 'Banque'], ['AC00001', '606100', '60,00', '0,00', 'Banque'], ['AC00001', '512000', '0,00', '72,00', 'Banque'],
@@ -480,7 +481,7 @@ describe('le FEC et la piste d’audit : le paiement par la caisse au journal de
 
   it('la piste d’audit : la pièce pour justificatif, le paiement par la caisse pour opération réelle — sans nom, sans relevé', () => {
     const ops = [operation({ id: 'oc-1', date: '2026-01-05', montant: -120 })]
-    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, paiements([], ops).get('p-achat')!, TRESORERIE))
+    const brouillon = enBase(lignesPourPiece(D, achat, cible, true, paiements([], ops).get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     const registre = { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE }
     const [ligneCaisse] = pisteAudit(brouillon, [achat], [], [], { ...registre, caisse: caisseLue(ops), plan: PLAN_PAR_DEFAUT }).filter((l) => l.compte === '530000')
     expect(ligneCaisse).toMatchObject({

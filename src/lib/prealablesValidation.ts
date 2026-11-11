@@ -900,8 +900,13 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     piecesAComptabiliser([...d.piecesValidees], [...d.categories], acquisitions, sources), piecesCitees,
   )
   const validesQuiComptent = horsDesExemplairesDesSources(d.piecesValidees, sources)
+  // La banque de chaque mouvement (MCB5) : les détecteurs recomposent l'écriture attendue au 512 de son compte bancaire, et la
+  // contrepartie d'une pièce s'attend au 512 du compte de son mouvement ; des comptes lus en partie suspendent déjà la
+  // validation.
+  const banques = banquesDuDossier(d.comptesBancaires, d.modele.plan)
   const { piecesDesynchronisees } = analyserEcritures(
     [...d.ecritures], aComptabiliser, d.assujettiTva, paiements, d.modele, frontiere, exemplairesDesSources(d.piecesValidees, sources),
+    banques,
   )
   bloque({
     id: 'ecritures-a-generer', cible: 'ecritures',
@@ -1019,9 +1024,6 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     })
   }
 
-  // La banque de chaque mouvement (MCB5) : les détecteurs recomposent l'écriture attendue au 512 de son compte bancaire ;
-  // des comptes lus en partie suspendent déjà la validation.
-  const banques = banquesDuDossier(d.comptesBancaires, d.modele.plan)
   const affectes = mouvementsAffectes(d.lignes, d.categories, d.assujettiTva)
   bloque({
     id: 'affectes-perimes', nb: mouvementsAffectesDesynchronises(d.ecritures, affectes, frontiere, d.modele.plan, banques).filter((a) => mouvementDeLExercice(a.ligne)).length, cible: 'ecritures',

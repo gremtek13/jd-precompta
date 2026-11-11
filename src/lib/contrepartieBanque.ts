@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { comptesDeBanqueDuDossier, planDuMouvement, type BanquesDuDossier } from './banqueDuMouvement'
 import { estContrepartieCaisse, ligneContrepartieBanque } from './ecritures'
 import { lignesReglementEngagement, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
@@ -7,10 +8,18 @@ import type { PlanComptable } from './planComptable'
 import { partsDesPaiements, type PaiementParLeReleve } from './rattachement'
 import type { Piece } from './types'
 
-// Les comptes qu'une note de frais porte sans que ce soit sa CHARGE : la banque d'un paiement, sa TVA, et la
-// contrepartie au compte de l'exploitant — ceux du PLAN du dossier.
-function comptesHorsCharge(plan: PlanComptable): ReadonlySet<string> {
-  return new Set([plan.banque, plan.exploitant, plan.tva_deductible, plan.tva_immobilisations])
+// Les comptes qu'une note de frais porte sans que ce soit sa CHARGE : la banque d'un paiement — l'un des 512 du dossier
+// (MCB5, quatrième partie) —, sa TVA, et la contrepartie au compte de l'exploitant — ceux du PLAN du dossier.
+function comptesHorsCharge(plan: PlanComptable, comptesDeBanque: ReadonlySet<string>): ReadonlySet<string> {
+  return new Set([...comptesDeBanque, plan.exploitant, plan.tva_deductible, plan.tva_immobilisations])
+}
+
+// LES 512 DU DOSSIER DANS UNE REQUÊTE (MCB5, quatrième partie). Un seul — drapeau baissé, ou un dossier dont aucun compte ne
+// tient son 512 — : le filtre d'hier, `eq` ou `neq` au caractère près (contrepartieBanque.test.ts relit les filtres). Plusieurs :
+// `in` ou `not in` sur l'ensemble. Les numéros de compte sont des chiffres (`comptes_bancaires_512_propre`, MCB1 ; le plan
+// les juge de même) : la liste de PostgREST n'a rien à échapper.
+function listeDesComptes(comptes: ReadonlySet<string>): string {
+  return `(${[...comptes].sort().join(',')})`
 }
 
 // Les deux seules opérations d'écritures qui parlent à Supabase, tenues à l'écart de `ecritures.ts`
@@ -60,10 +69,19 @@ function comptesHorsCharge(plan: PlanComptable): ReadonlySet<string> {
 // redate de toute la pièce. Tant que la migration n'est pas en base (`PAIEMENT_PAR_LA_CAISSE_EXPORTE` baissé), aucune ligne
 // ne cite à la fois une pièce et une opération de caisse — la garde d'aujourd'hui le refuse : rien à écarter, et les
 // requêtes sont celles d'hier, filtre pour filtre (contrepartieBanque.test.ts joue les deux états).
+//
+// LA BANQUE EST CELLE DU COMPTE DU MOUVEMENT (MCB5, quatrième partie ; lib/banqueDuMouvement.ts) : la contrepartie et le
+// règlement s'écrivent au 512 de son compte bancaire (`planDuMouvement` ; le plan lui-même au rôle : hier), et la banque
+// qu'elle RETROUVE est l'un des 512 du dossier. Une banque qui ne se sait pas LÈVE avant toute lecture : rien ne s'écrit,
+// l'appelant le dit (le rapprochement est déjà enregistré, et « Régénérer » écrira la contrepartie une fois les comptes lus).
 export async function synchroniserContrepartieBanque(
-  dossierId: string, piece: Piece, paiement: Pick<PaiementParLeReleve, 'id' | 'date' | 'montant'>, modele: ModeleComptable,
+  dossierId: string, piece: Piece, paiement: Pick<PaiementParLeReleve, 'id' | 'date' | 'montant' | 'compte_bancaire_id'>,
+  modele: ModeleComptable, banques: BanquesDuDossier,
 ) {
-  const { plan } = modele
+  const duMouvement = planDuMouvement(modele.plan, paiement, banques)
+  if ('refus' in duMouvement) throw new Error(duMouvement.refus)
+  const plan = duMouvement.plan
+  const comptesDeBanque = comptesDeBanqueDuDossier(modele.plan, banques)
   const { data: existantes, error: lectureError } = await supabase
     .from('ecritures_brouillon')
     .select('id, compte, ligne_bancaire_id, piece_id, operation_caisse_id')
@@ -94,7 +112,7 @@ export async function synchroniserContrepartieBanque(
   // IDEMPOTENTE PAR MOUVEMENT, et non plus par pièce : elle sortait dès que la pièce portait UNE
   // contrepartie, donc une pièce payée en deux fois — un acompte puis un virement groupé — ne recevait
   // jamais la seconde, et son écriture restait déséquilibrée.
-  if (existantes.some((e) => e.compte === plan.banque && e.ligne_bancaire_id === paiement.id)) return
+  if (existantes.some((e) => comptesDeBanque.has(e.compte) && e.ligne_bancaire_id === paiement.id)) return
   const contrepartie = ligneContrepartieBanque(dossierId, piece, paiement, plan)
   if (!contrepartie) return
 
@@ -108,7 +126,7 @@ export async function synchroniserContrepartieBanque(
   // AVANT la contrepartie, et c'est l'ordre qui garde les messages vrais : si la date échoue, rien
   // n'est écrit ; si la contrepartie échoue ensuite, l'écriture est à la bonne date et l'appelant dit
   // bien que la contrepartie n'a pas été créée.
-  const autrePaiement = existantes.some((e) => e.compte === plan.banque || estContrepartieCaisse(e))
+  const autrePaiement = existantes.some((e) => comptesDeBanque.has(e.compte) || estContrepartieCaisse(e))
   if (!autrePaiement && partsDesPaiements(piece, [paiement]).reste === 0) {
     // Une NOTE DE FRAIS que ce virement rembourse en entier n'est plus due au dirigeant : sa contrepartie au compte
     // de l'exploitant (`ligneContrepartieDirigeant`) part AVANT la redate — redatée, elle resterait à côté de la
@@ -116,15 +134,17 @@ export async function synchroniserContrepartieBanque(
     // place, comme la charge : le contrôle des écritures demande alors « Régénérer », qui la recalcule. Seulement
     // quand la charge est AILLEURS : rangée dans une catégorie au 108000, la note y porte sa charge et n'a pas de
     // contrepartie à part (`estContrepartieDirigeant`) — la retirer effacerait la dépense.
-    const horsCharge = comptesHorsCharge(plan)
+    const horsCharge = comptesHorsCharge(plan, comptesDeBanque)
     const chargeAilleurs = existantes.some((e) => !horsCharge.has(e.compte))
     if (piece.type_piece === 'note_frais' && chargeAilleurs && existantes.some((e) => e.compte === plan.exploitant)) {
       const { error: dirigeantError } = await supabase.from('ecritures_brouillon')
         .delete().eq('piece_id', piece.id).eq('compte', plan.exploitant)
       if (dirigeantError) throw dirigeantError
     }
-    const redate = supabase.from('ecritures_brouillon')
-      .update({ date: paiement.date }).eq('piece_id', piece.id).neq('compte', plan.banque)
+    const sansBanque = supabase.from('ecritures_brouillon').update({ date: paiement.date }).eq('piece_id', piece.id)
+    const redate = comptesDeBanque.size === 1
+      ? sansBanque.neq('compte', modele.plan.banque)
+      : sansBanque.not('compte', 'in', listeDesComptes(comptesDeBanque))
     const { error: dateError } = await (PAIEMENT_PAR_LA_CAISSE_EXPORTE ? redate.is('operation_caisse_id', null) : redate)
     if (dateError) throw dateError
   }
@@ -153,6 +173,7 @@ export async function synchroniserContrepartieBanque(
 // facturée ne porte de pièce (`ecrire_vente_facturee` les écrit sans pièce, et G5 refuse qu'une autre écriture les change).
 export async function retirerContrepartieBanque(
   ligneId: string, pieceId: string, piece: Pick<Piece, 'date_piece' | 'created_at'> | null, modele: ModeleComptable,
+  banques: BanquesDuDossier,
 ) {
   if (modele.mode === 'engagement') {
     const { error } = await supabase.from('ecritures_brouillon').delete().eq('ligne_bancaire_id', ligneId)
@@ -163,7 +184,7 @@ export async function retirerContrepartieBanque(
   const { error } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('ligne_bancaire_id', ligneId)
   if (error) throw error
   if (!piece) return
-  await rendreAuxDatesDeFacture([{ id: pieceId, ...piece }], modele)
+  await rendreAuxDatesDeFacture([{ id: pieceId, ...piece }], modele, banques)
 }
 
 // Les pièces qu'un mouvement a cessé de payer — un rapprochement annulé, un règlement groupé retiré ou
@@ -179,13 +200,19 @@ export async function retirerContrepartieBanque(
 // requêtes sont celles d'hier.
 //
 // EN ENGAGEMENT, rien : la facture n'a jamais quitté sa date.
+//
+// UNE CONTREPARTIE SUR L'UN DES 512 DU DOSSIER (MCB5, quatrième partie) date encore la pièce : un paiement du livret aussi.
+// `banques` sans défaut ; un seul 512, le filtre d'hier.
 export async function rendreAuxDatesDeFacture(
-  pieces: readonly Pick<Piece, 'id' | 'date_piece' | 'created_at'>[], modele: ModeleComptable,
+  pieces: readonly Pick<Piece, 'id' | 'date_piece' | 'created_at'>[], modele: ModeleComptable, banques: BanquesDuDossier,
 ) {
   if (modele.mode === 'engagement') return
+  const comptesDeBanque = comptesDeBanqueDuDossier(modele.plan, banques)
   for (const piece of pieces) {
-    const { count, error: lectureError } = await supabase.from('ecritures_brouillon')
-      .select('id', { count: 'exact', head: true }).eq('piece_id', piece.id).eq('compte', modele.plan.banque)
+    const compte = supabase.from('ecritures_brouillon').select('id', { count: 'exact', head: true }).eq('piece_id', piece.id)
+    const { count, error: lectureError } = await (comptesDeBanque.size === 1
+      ? compte.eq('compte', modele.plan.banque)
+      : compte.in('compte', [...comptesDeBanque].sort()))
     if (lectureError) throw lectureError
     // Un compte que la base n'a pas rendu ne dit pas « plus aucun paiement » : on ne redate rien plutôt
     // que de ramener à sa facture une pièce qu'un paiement date peut-être encore.
