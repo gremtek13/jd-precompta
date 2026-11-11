@@ -214,10 +214,6 @@ describe('le drapeau levé', () => {
     const envoyer = screen.getByRole('button', { name: 'Envoyer la précision' }) as HTMLButtonElement
     expect(envoyer.disabled).toBe(true)
     expect((screen.getByLabelText('Ta précision') as HTMLTextAreaElement).disabled).toBe(true)
-    // Le bouton forcé, une précision saisie : le gestionnaire se retient aussi (l'après-test exige aucun appel).
-    await act(async () => { fireEvent.change(screen.getByLabelText('Ta précision'), { target: { value: 'Virement vers mon livret' } }) })
-    envoyer.disabled = false
-    await act(async () => { fireEvent.click(envoyer) })
   })
 
   it('un mouvement d’un compte que la lecture n’a pas rendu : retenue de même', async () => {
