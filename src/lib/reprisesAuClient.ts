@@ -5,7 +5,7 @@ import { messageErreur } from './messageErreur'
 
 // LES FACTURES REPRISES, AU CLIENT (ligne 51.5 ; A8C-Q1 et A8Q5-Q2, tranchées par le cabinet le 11/11/2026 ; HISTORIQUE.md,
 // « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT »). La migration `reprises_au_client`
-// (supabase/preparees/20261111150000_reprises_au_client.sql, PRÉPARÉE) pose deux fonctions de lecture :
+// (supabase/preparees/20261111151000_reprises_au_client.sql, PRÉPARÉE) pose deux fonctions de lecture :
 //   - `reprise_de_la_facture(dossier, facture)` : d'une facture reprise de l'ancien logiciel, les chiffres que les plafonds
 //     d'`enregistrer_encaissement` lisent dans le registre des reprises (`factures_importees`, que le cabinet lit seul) — la
 //     date de reprise, la nature, l'encaissé avant la reprise et ce que ses avoirs repris créditent, au total et par taux,
