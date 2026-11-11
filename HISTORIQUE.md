@@ -50452,3 +50452,15 @@ reprise (Checklist, onglet Écritures) ; `attenduDeLaPiece` compare à ce que la
 hier. Gardes : un cinquième régime dans `agentComptableAnalyse.test.ts` (chaque pièce citée), la batterie et trois dérives
 de plus dans `agentComptableFacturesSources.test.ts`, sept cas HTTP. Un dossier sans reprise ne lit rien de plus et rend la
 même sortie. Restent : le déploiement (sur un commit de main), `resume_dossier` (ne compte pas les reprises), « Ma simulation ».
+
+### 11/11/2026 — A8C5B : LE RÉSUMÉ DU DOSSIER COMPTE LES FACTURES REPRISES (LIGNE 51.5)
+
+(Agent architecte ; aucune migration, aucune écriture en production, aucun déploiement.) **Établi** dans l'export : une
+reprise naît toujours source (`factures_emises_reprise_entiere`), et son registre ne porte que l'après-reprise ;
+`encaissements_vivants_de_factures_sources` les comptait déjà (jointure sur `source_de_la_vente`). **Corrigé** :
+`factures_sources` et `avoirs_sources` prennent « validee » ou « importee » (le prédicat `estUneVente`) ; à part,
+`factures_reprises`, `avoirs_repris`, et `pieces_validees_citees_par_une_facture_reprise` (liens actifs, au jeton de
+l'appelant, lus seulement si une reprise est comptée ; illisibles, l'outil se ferme). La description et la consigne disent
+ce que vaut la pièce citée. Gardes : trois scénarios HTTP, sept mutations ; l'empreinte de `agentComptableAuPlan.test.ts`
+relevée de nouveau après avoir rejoué chaque scénario avant et après : seules la description, la phrase de la consigne
+d'un dossier basculé, trois clés à zéro et les scénarios neufs diffèrent. Reste : le déploiement.

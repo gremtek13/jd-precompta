@@ -1637,8 +1637,36 @@ const AUCUNE_EN_DEFAUT = { nombre: 0, par_etat: { a_ecrire: 0, a_reecrire: 0, a_
 const OUTILS_DU_DOSSIER_BASCULE = [...OUTILS_DES_VENTES, { id: 'comptes-2025', name: 'lister_comptes', input: { annee: 2025 } }]
 const CLES_DU_RESUME_BASCULE = [
   ...CLES_DU_RESUME, 'ventes_par_les_factures', 'ventes_par_les_factures_depuis', 'factures_sources', 'avoirs_sources',
-  'encaissements_vivants_de_factures_sources', 'pieces_validees_exemplaires_d_une_facture_source',
+  'factures_reprises', 'avoirs_repris', 'encaissements_vivants_de_factures_sources', 'pieces_validees_exemplaires_d_une_facture_source',
+  'pieces_validees_citees_par_une_facture_reprise',
 ]
+
+// LES FACTURES REPRISES DANS `resume_dossier` (A8C5B, ligne 51.5). Le dossier basculé, plus une facture et un avoir repris
+// de l'ancien logiciel (l'état « importee », sources de leur vente), un encaissement d'après la reprise, et les liens de
+// `pieces_des_factures_reprises` : un lien ACTIF sur la pièce validée libre p2 (comptée à part), un lien RETIRÉ sur p3, un
+// lien actif sur l'exemplaire à valider p4 (ni l'un ni l'autre ne comptent), et un lien d'un autre dossier.
+const R8 = {
+  reprise: 'f8c50000-0000-4000-8000-000000000001', avoirRepris: 'f8c50000-0000-4000-8000-000000000002',
+  encaissement: 'e8c50000-0000-4000-8000-000000000001',
+} as const
+function mondeDesReprises(m: Monde) {
+  mondeBascule(m, BASCULE_A)
+  const reprise = (id: string, type: string, numero: string) => ({
+    id, dossier_id: D, statut: 'importee', type, numero, source_de_la_vente: true, facture_origine_id: null,
+    tiers_nom: MARQUEUR_DU_CLIENT, date_emission: '2025-11-02',
+  })
+  lignes(m, 'factures_emises').push(reprise(R8.reprise, 'facture', 'FA-2025-118'), reprise(R8.avoirRepris, 'avoir', 'AV-2025-007'))
+  lignes(m, 'encaissements_factures').push(encaissementBascule(R8.encaissement, R8.reprise, 80, 'especes', { date_encaissement: '2026-02-03' }))
+  const lien = (n: number, pieceId: string, o: Record<string, unknown> = {}) => ({
+    id: `1e8c5000-0000-4000-8000-00000000000${n}`, dossier_id: D, facture_id: R8.reprise, piece_id: pieceId, retire_le: null, ...o,
+  })
+  m.base.pieces_des_factures_reprises = [
+    lien(1, V.p2),
+    lien(2, V.p3, { retire_le: '2026-01-20T09:00:00Z' }),
+    lien(3, V.p4),
+    lien(4, V.p2, { dossier_id: ID.dossierAutreCabinet }),
+  ]
+}
 
 /** Un dossier basculé, le modèle qui appelle `outils` au premier tour, puis répond. */
 function scenarioDuDossierBascule(
@@ -1692,6 +1720,10 @@ function ventesLues(constat: string, depuis: string | null) {
       ...verifie(r.resume.ventes_par_les_factures === true && r.resume.ventes_par_les_factures_depuis === depuis, `resume_dossier : la bascule ${JSON.stringify([r.resume.ventes_par_les_factures, r.resume.ventes_par_les_factures_depuis])}`),
       ...verifie(JSON.stringify([r.resume.factures_sources, r.resume.avoirs_sources, r.resume.encaissements_vivants_de_factures_sources, r.resume.pieces_validees_exemplaires_d_une_facture_source, r.resume.pieces_validees]) === '[2,1,5,1,3]',
         `resume_dossier compte : ${JSON.stringify([r.resume.factures_sources, r.resume.avoirs_sources, r.resume.encaissements_vivants_de_factures_sources, r.resume.pieces_validees_exemplaires_d_une_facture_source, r.resume.pieces_validees])}`),
+      // A8C5B : sans reprise, ses comptes disent zéro, et les liens des reprises ne se lisent pas.
+      ...verifie(JSON.stringify([r.resume.factures_reprises, r.resume.avoirs_repris, r.resume.pieces_validees_citees_par_une_facture_reprise]) === '[0,0,0]',
+        `resume_dossier, les reprises : ${JSON.stringify([r.resume.factures_reprises, r.resume.avoirs_repris, r.resume.pieces_validees_citees_par_une_facture_reprise])}`),
+      ...verifie(!m.journal.some((e) => e.genre === 'lecture' && e.table === 'pieces_des_factures_reprises'), 'un dossier sans reprise lit les liens des reprises'),
       // lister_comptes : les sources en défaut, jointes à l'avertissement d'aujourd'hui.
       ...verifie(texteDe(r['comptes-exercice'].avertissement).startsWith(`${EN_ATTENTE_D_OUVERTURE} ${DEBUT_DES_VENTES_EN_DEFAUT}2026 (`), `lister_comptes (2026) : ${texteDe(r['comptes-exercice'].avertissement).slice(0, 200)}`),
       ...verifie(/^3 source\(s\) de vente facturée — .* jusqu'au 31\/12\/20\d\d \(.*les écrit\.$/.test(texteDe(r.comptes.avertissement)), `lister_comptes : ${texteDe(r.comptes.avertissement).slice(0, 200)}`),
@@ -2640,6 +2672,36 @@ const SCENARIOS_DES_VENTES: Scenario[] = [
       // Refusé par les comptes de VF9c, après les comptes d'hier : les deux pièces d'hier, puis l'exemplaire, ont été lus.
       ...verifie(m.journal.filter((e) => e.genre === 'lecture' && e.table === 'pieces').length === 3, 'resume_dossier a refusé avant ses comptes de VF9c'),
     ])),
+  // A8C5B : les factures reprises dans resume_dossier.
+  scenarioDuDossierBascule('un dossier basculé qui a repris des factures : resume_dossier compte la facture et l’avoir repris parmi ses sources, l’encaissement d’une reprise, et à part la pièce validée qu’une reprise cite par un lien actif',
+    mondeDesReprises,
+    [{ id: 'resume', name: 'resume_dossier', input: {} }],
+    (_c, r, m) => {
+      const compte = ['factures_sources', 'avoirs_sources', 'factures_reprises', 'avoirs_repris', 'encaissements_vivants_de_factures_sources',
+        'pieces_validees_exemplaires_d_une_facture_source', 'pieces_validees_citees_par_une_facture_reprise', 'pieces_validees'].map((k) => r.resume[k])
+      const liens = m.journal.filter((e) => e.genre === 'lecture' && e.table === 'pieces_des_factures_reprises')
+      return [
+        ...verifie(JSON.stringify(Object.keys(r.resume)) === JSON.stringify(CLES_DU_RESUME_BASCULE), `resume_dossier rend : ${JSON.stringify(Object.keys(r.resume))}`),
+        ...verifie(JSON.stringify(compte) === '[3,2,1,1,6,1,1,3]', `resume_dossier compte : ${JSON.stringify(compte)}`),
+        // Les liens, au jeton de l'appelant : jamais par la clé du service, qui ne se prête pas à ce que la RLS refuse.
+        ...verifie(liens.length === 1 && liens.every((e) => e.genre === 'lecture' && e.role === 'authentifie'), `les liens des reprises : ${JSON.stringify(liens)}`),
+      ]
+    }),
+  scenarioDuDossierBascule('un dossier basculé qui a repris des factures, les liens de ses reprises refusés : resume_dossier se ferme, jamais un zéro deviné',
+    (m) => { mondeDesReprises(m); m.pannes.push({ table: 'pieces_des_factures_reprises', operation: 'select', erreur: { message: 'panne fictive des liens' } }) },
+    [{ id: 'resume', name: 'resume_dossier', input: {} }],
+    (_c, r) => verifie(JSON.stringify(Object.keys(r.resume)) === '["erreur"]'
+      && texteDe(r.resume.erreur).startsWith('Les pièces que citent les factures reprises de ce dossier n\'ont pas pu être lues (panne fictive des liens)')
+      && texteDe(r.resume.erreur).includes('ne tire aucune conclusion chiffrée'),
+    `resume_dossier : ${JSON.stringify(r.resume).slice(0, 200)}`)),
+  scenarioDuDossierBascule('un dossier basculé qui a repris des factures, le compte de ses reprises refusé : resume_dossier dit sa lecture partielle',
+    (m) => { mondeDesReprises(m); m.pannes.push({ table: 'factures_emises', operation: 'select', sauter: 2, fois: 1, erreur: { message: 'panne fictive du compte' } }) },
+    [{ id: 'resume', name: 'resume_dossier', input: {} }],
+    (_c, r, m) => [
+      ...verifie(JSON.stringify(Object.keys(r.resume)) === '["erreur"]' && texteDe(r.resume.erreur).startsWith('Lecture partielle : panne fictive du compte — ne tire aucune conclusion chiffrée'),
+        `resume_dossier : ${JSON.stringify(r.resume).slice(0, 200)}`),
+      ...verifie(!m.journal.some((e) => e.genre === 'lecture' && e.table === 'pieces_des_factures_reprises'), 'resume_dossier a lu les liens après un compte refusé'),
+    ]),
   ...['factures_emises', 'encaissements_factures', 'lignes_bancaires'].map((table) => scenarioDuDossierBascule(
     `un dossier basculé, ${table} lue en partie par lister_ecritures : l’outil refuse, aucun libellé ne part`,
     (m) => { mondeBascule(m, BASCULE_A); m.pannes.push({ table, operation: 'select', erreur: { message: 'panne fictive' } }) },

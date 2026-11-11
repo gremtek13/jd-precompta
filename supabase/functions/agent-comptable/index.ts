@@ -3277,7 +3277,7 @@ interface OutilContexte {
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "resume_dossier",
-    description: "Vue d'ensemble du dossier : nom, statut de TVA (statut_tva : redevable, franchise ou exonere — null : à préciser — et article_exoneration, l'article d'une exonération), régime TVA, modèle comptable (tresorerie ou engagement), compteurs (pièces à valider, pièces validées, écritures, années couvertes), a_nouveaux — la date d'ouverture d'un dossier repris d'un autre logiciel, null sinon — et exercices_valides, les exercices dont la comptabilité est validée, donc figée. À appeler en premier si le contexte n'est pas clair.",
+    description: "Vue d'ensemble du dossier : nom, statut de TVA (statut_tva : redevable, franchise ou exonere — null : à préciser — et article_exoneration, l'article d'une exonération), régime TVA, modèle comptable (tresorerie ou engagement), compteurs (pièces à valider, pièces validées, écritures, années couvertes), a_nouveaux — la date d'ouverture d'un dossier repris d'un autre logiciel, null sinon — et exercices_valides, les exercices dont la comptabilité est validée, donc figée. Pour un dossier qui compte ses ventes par ses factures (ventes_par_les_factures), aussi : factures_sources et avoirs_sources, validés ou REPRIS de l'ancien logiciel, dont factures_reprises et avoirs_repris ; et, compris dans pieces_validees mais dits à part, pieces_validees_exemplaires_d_une_facture_source, qui ne comptent pas, et pieces_validees_citees_par_une_facture_reprise, l'original qu'une facture reprise cite : en trésorerie, une telle pièce ne compte que ses paiements d'avant la reprise, la suite de sa vente se comptant par le registre de sa facture. À appeler en premier si le contexte n'est pas clair.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -3869,16 +3869,39 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // avoirs sources, les encaissements vivants de ses factures sources (ni retirés, ni contre-passations), et, à part de
     // pieces_validees, les pièces validées qui sont l'exemplaire d'une facture source — elles ne comptent pas. Des comptes
     // sans ligne (`head`), chacun lu ou refusé : jamais un zéro sur ce qui n'a pas été compté.
+    // A8C5B : une facture ou un avoir REPRIS de l'ancien logiciel (l'état « importee ») est une source, par le prédicat du
+    // bloc FACTURES SOURCES (`estUneVente` : validée ou reprise, et source de sa vente) ; factures_sources et avoirs_sources
+    // les comptent, et factures_reprises et avoirs_repris disent combien, à part. Une reprise naît toujours source
+    // (`factures_emises_reprise_entiere`) : la marque se relit quand même, le filtre restant celui du bloc. Le registre d'une
+    // reprise ne porte que ses encaissements d'après la reprise (l'encaissé d'avant est une colonne de `factures_importees`) :
+    // la jointure sur `source_de_la_vente`, sans filtre sur l'état, les compte déjà.
     if (ventes.reglage === true) {
-      const [c1, c2, c3, c4] = await Promise.all([
-        admin.from("factures_emises").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee").eq("source_de_la_vente", true).eq("type", "facture"),
-        admin.from("factures_emises").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee").eq("source_de_la_vente", true).eq("type", "avoir"),
+      const [c1, c2, c3, c4, c5, c6] = await Promise.all([
+        admin.from("factures_emises").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).in("statut", ["validee", "importee"]).eq("source_de_la_vente", true).eq("type", "facture"),
+        admin.from("factures_emises").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).in("statut", ["validee", "importee"]).eq("source_de_la_vente", true).eq("type", "avoir"),
         admin.from("encaissements_factures").select("id, factures_emises!inner(id)", { count: "exact", head: true }).eq("dossier_id", dossierId).is("retire_le", null).is("annule_id", null).eq("factures_emises.source_de_la_vente", true),
         admin.from("pieces").select("id, factures_emises!inner(id)", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee").eq("factures_emises.source_de_la_vente", true),
+        admin.from("factures_emises").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "importee").eq("source_de_la_vente", true).eq("type", "facture"),
+        admin.from("factures_emises").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "importee").eq("source_de_la_vente", true).eq("type", "avoir"),
       ])
-      const nonComptes = [c1, c2, c3, c4].filter((c) => c.error || typeof c.count !== "number")
+      const nonComptes = [c1, c2, c3, c4, c5, c6].filter((c) => c.error || typeof c.count !== "number")
       if (nonComptes.length > 0) {
         return { erreur: `Lecture partielle : ${nonComptes.map((c) => c.error?.message ?? "compte non annoncé").join(" ; ")} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
+      }
+      // A8C5B : à part de pieces_validees, les pièces validées qu'une facture reprise cite pour ORIGINAL par un lien ACTIF
+      // (`pieces_des_factures_reprises`, A8-Q5) — en trésorerie, elles ne comptent que leurs paiements d'avant la reprise
+      // (`resteRegleParSaReprise`). Lues comme `points_a_traiter` les lit (A8c5) : au jeton de l'APPELANT — la table ne se
+      // lit que par le cabinet du dossier —, et seulement quand une reprise est comptée ; sans reprise, aucun lien ne peut
+      // exister (il cite une facture reprise, et part avec elle) : le zéro y est une affirmation. Illisibles, l'outil se
+      // ferme, comme `points_a_traiter` devant les mêmes liens (la règle de VF9a) : jamais un zéro deviné.
+      let citees = 0
+      if ((c5.count ?? 0) + (c6.count ?? 0) > 0) {
+        const c7 = await ctx.appelant.from("pieces_des_factures_reprises").select("id, pieces!inner(id)", { count: "exact", head: true })
+          .eq("dossier_id", dossierId).is("retire_le", null).eq("pieces.dossier_id", dossierId).eq("pieces.statut", "validee")
+        if (c7.error || typeof c7.count !== "number") {
+          return { erreur: `Les pièces que citent les factures reprises de ce dossier n'ont pas pu être lues (${c7.error?.message ?? "compte non annoncé"}) : en trésorerie, une pièce citée ne compte que ses paiements d'avant la reprise, et pieces_validees la compte comme une autre. Ce résumé n'est pas disponible pour ce dossier — ne tire aucune conclusion chiffrée de ce résultat, et renvoie l'utilisateur à la Vue d'ensemble.` }
+        }
+        citees = c7.count
       }
       return {
         ...resume,
@@ -3886,8 +3909,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
         ventes_par_les_factures_depuis: ventes.depuis,
         factures_sources: c1.count,
         avoirs_sources: c2.count,
+        factures_reprises: c5.count,
+        avoirs_repris: c6.count,
         encaissements_vivants_de_factures_sources: c3.count,
         pieces_validees_exemplaires_d_une_facture_source: c4.count,
+        pieces_validees_citees_par_une_facture_reprise: citees,
       }
     }
     return {
@@ -4638,7 +4664,7 @@ Deno.serve(async (req: Request) => {
   // ligne de la garde provisoire (VF9a) pour une source des ventes qui ne se lit pas, rien pour un dossier qui n'a pas basculé.
   const ventes = gardeDesVentes(dossierRow.ventes_par_les_factures, dossierRow.ventes_par_les_factures_depuis)
   const repereVentes = ventes?.reglage === true
-    ? `\n- Les VENTES FACTURÉES : ${ventes.constat}. Chaque facture validée depuis est la SOURCE de sa vente ; ses écritures n'ont pas de pièce, ce n'est pas une anomalie. En trésorerie, la recette s'écrit à chaque encaissement — le hors taxe au ${plan.prestations_de_services} Prestations de services (${plan.ventes_de_biens} Ventes de marchandises pour des biens), la TVA au ${plan.tva_collectee} quand elle est due ; en engagement, la créance au ${plan.clients} à la date de la facture, sa TVA au ${plan.tva_collectee_en_attente} jusqu'à ce qu'elle soit due, et l'encaissement la solde. Un encaissement va au ${plan.banque} sur le mouvement de son jour, sinon au ${plan.valeurs_a_l_encaissement} Valeurs à l'encaissement (${plan.caisse} Caisse pour des espèces) ; le mouvement CLASSÉ PAR SES ENCAISSEMENTS les reporte au ${plan.banque}, et leurs frais au ${plan.services_bancaires}. Un mouvement RÉSERVÉ à des encaissements attend que le cabinet le classe par eux, dans Banque. L'EXEMPLAIRE d'une facture source la prouve et ne compte pas : ne l'additionne jamais à la vente. Un VIREMENT MIXTE, crédit qui paie aussi une facture d'avant la bascule, date la pièce de cette facture-là, qui compte comme avant. Une facture se nomme par son numéro, jamais par son client (lister_pieces : exemplaire_de ; lister_ecritures : source — piece, facture, avoir, encaissement, mouvement_d_encaissements, ou null pour une autre écriture sans pièce que décrit cette consigne). Tant que points_a_traiter ou lister_comptes disent des ventes facturées à écrire, à réécrire ou à retirer, ne cite ni le chiffre d'affaires ni la TVA collectée sans le dire.`
+    ? `\n- Les VENTES FACTURÉES : ${ventes.constat}. Chaque facture validée depuis est la SOURCE de sa vente ; ses écritures n'ont pas de pièce, ce n'est pas une anomalie. En trésorerie, la recette s'écrit à chaque encaissement — le hors taxe au ${plan.prestations_de_services} Prestations de services (${plan.ventes_de_biens} Ventes de marchandises pour des biens), la TVA au ${plan.tva_collectee} quand elle est due ; en engagement, la créance au ${plan.clients} à la date de la facture, sa TVA au ${plan.tva_collectee_en_attente} jusqu'à ce qu'elle soit due, et l'encaissement la solde. Un encaissement va au ${plan.banque} sur le mouvement de son jour, sinon au ${plan.valeurs_a_l_encaissement} Valeurs à l'encaissement (${plan.caisse} Caisse pour des espèces) ; le mouvement CLASSÉ PAR SES ENCAISSEMENTS les reporte au ${plan.banque}, et leurs frais au ${plan.services_bancaires}. Un mouvement RÉSERVÉ à des encaissements attend que le cabinet le classe par eux, dans Banque. L'EXEMPLAIRE d'une facture source la prouve et ne compte pas : ne l'additionne jamais à la vente. Une facture ou un avoir REPRIS de l'ancien logiciel (resume_dossier : factures_reprises, avoirs_repris, compris dans factures_sources et avoirs_sources) est une source : ses encaissements d'après la reprise la comptent, sans exemplaire. La pièce validée qu'elle cite pour original (resume_dossier : pieces_validees_citees_par_une_facture_reprise, comprise dans pieces_validees) ne compte, en trésorerie, que ses paiements d'avant la reprise : son reste n'est pas une recette à écrire, ne l'additionne jamais à l'encaissement de sa facture. Un VIREMENT MIXTE, crédit qui paie aussi une facture d'avant la bascule, date la pièce de cette facture-là, qui compte comme avant. Une facture se nomme par son numéro, jamais par son client (lister_pieces : exemplaire_de ; lister_ecritures : source — piece, facture, avoir, encaissement, mouvement_d_encaissements, ou null pour une autre écriture sans pièce que décrit cette consigne). Tant que points_a_traiter ou lister_comptes disent des ventes facturées à écrire, à réécrire ou à retirer, ne cite ni le chiffre d'affaires ni la TVA collectée sans le dire.`
     : ventes
       ? `\n- ${ventes.constat}. L'assistant ne lit pas encore les VENTES FACTURÉES : ne conclus RIEN sur les ventes de ce dossier — chiffre d'affaires, recettes, encaissements, pièces de vente, TVA collectée —, et une écriture sans pièce d'une facture ou d'un encaissement n'y est pas une anomalie ; resume_dossier, lister_comptes et lister_pieces le rappellent, points_a_traiter n'est pas disponible : renvoie à la Vue d'ensemble et à l'onglet Écritures.`
       : ""

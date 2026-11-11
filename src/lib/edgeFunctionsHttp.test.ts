@@ -265,6 +265,23 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
         scenario: panne,
       },
       { slug, quoi: 'lister_comptes sans les ventes facturées en défaut', remplacements: [['      return phrase === null ? balance : joindreAvertissement(balance, phrase)\n', '      return balance\n']], scenario: bascule },
+      // A8C5B : resume_dossier devant les factures reprises.
+      ...((): DefautPlante[] => {
+        const reprises = 'un dossier basculé qui a repris des factures : resume_dossier compte la facture et l’avoir repris parmi ses sources, l’encaissement d’une reprise, et à part la pièce validée qu’une reprise cite par un lien actif'
+        const liensRefuses = 'un dossier basculé qui a repris des factures, les liens de ses reprises refusés : resume_dossier se ferme, jamais un zéro deviné'
+        const sources = (type: string) => `.in("statut", ["validee", "importee"]).eq("source_de_la_vente", true).eq("type", "${type}"),\n`
+        const lien = '.eq("dossier_id", dossierId).is("retire_le", null).eq("pieces.dossier_id", dossierId).eq("pieces.statut", "validee")\n'
+        const refus = '        if (c7.error || typeof c7.count !== "number") {\n'
+        return [
+          { slug, quoi: 'factures_sources sans les reprises', remplacements: [[sources('facture'), sources('facture').replace('.in("statut", ["validee", "importee"])', '.eq("statut", "validee")')]], scenario: reprises },
+          { slug, quoi: 'avoirs_sources sans les avoirs repris', remplacements: [[sources('avoir'), sources('avoir').replace('.in("statut", ["validee", "importee"])', '.eq("statut", "validee")')]], scenario: reprises },
+          { slug, quoi: 'les sources comptées sans leur marque', remplacements: [[sources('facture'), sources('facture').replace('.eq("source_de_la_vente", true)', '')]], scenario: bascule },
+          { slug, quoi: 'la pièce citée comptée par un lien retiré', remplacements: [[lien, lien.replace('.is("retire_le", null)', '')]], scenario: reprises },
+          { slug, quoi: 'la pièce citée comptée à valider', remplacements: [[lien, lien.replace('.eq("pieces.statut", "validee")', '')]], scenario: reprises },
+          { slug, quoi: 'les liens lus par la clé du service', remplacements: [['await ctx.appelant.from("pieces_des_factures_reprises")', 'await admin.from("pieces_des_factures_reprises")']], scenario: reprises },
+          { slug, quoi: 'les liens refusés dits zéro', remplacements: [[refus, '        if (false) {\n']], scenario: liensRefuses },
+        ]
+      })(),
       // Réancré à VF9CQ1 : le libellé d'une vente facturée se recompose dans le seul passage (bloc PIÈCES DE VENTE).
       {
         slug, quoi: 'lister_ecritures rend le libellé d’une vente facturée tel que le brouillon le porte',
