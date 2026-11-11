@@ -16,6 +16,8 @@ import { retirerFichiers } from '../../lib/stockage'
 import { AUCUNE_LIGNE_SUPPRIMEE, confirmationSuppression, messageBilanSuppression } from '../../lib/bilanSuppression'
 import { ouvrirApercu } from '../../lib/apercu'
 import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
+import { lireLesPapiersSignes } from '../../lib/lettresDeMissionLecture'
+import { messageDUneSuppressionRetenue, refusDuPapierSigne, type LectureDesPapiersSignes } from '../../lib/lettresDeMissionVue'
 import { lireLesFacturesProbables, PHRASE_FACTURE_PROBABLE, type LectureDesFacturesProbables } from '../../lib/facturesProbablesLecture'
 
 // « C'est une facture » sur une lecture des citations partielle, ou pas encore revenue : la révision d'un solde parle
@@ -105,6 +107,11 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // ne se supprime plus, sauf avec son dossier (`garder_source_citee`, hypothèse Q8) — ni donc ne se transforme en
   // pièce, qui le supprime. Dit AVANT le clic, sous les mots de la base. Nulle avant sa première lecture.
   const [citations, setCitations] = useState<LectureDesCitations | null>(null)
+  // LE PAPIER SIGNÉ D'UNE LETTRE DE MISSION (ligne 47, LM5) : cité par une clé sans action, il ne se supprime plus (23503),
+  // ni donc ne se transforme en pièce. Dit AVANT le clic. Nulle sans rien lire tant que `LETTRES_DE_MISSION_PREVUES` est baissé.
+  const [papiers, setPapiers] = useState<LectureDesPapiersSignes | null>(null)
+  // Le refus d'une suppression : la révision et le dossier permanent d'abord (les mots de leur garde), puis la lettre.
+  const refusDuDocument = (id: string) => refusDeSuppression({ documentId: id }, citations) ?? refusDuPapierSigne(id, papiers)
   // LES FACTURES PROBABLES (relecture du 04/11/2026, D4, lib/facturesProbablesLecture.ts) : un document que la lecture a
   // rangé ici, mais dont le texte lu se donne pour une facture, le dit à sa ligne, à côté de « C'est une facture ». Nulle
   // avant sa lecture : aucune marque ne se pose.
@@ -148,6 +155,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     }
     setDoublonParDocument(parDocument)
     setCitations(await lireCitationsDeLaRevision(dossierId))
+    setPapiers(await lireLesPapiersSignes(dossierId))
     setFacturesProbables(await lireLesFacturesProbables(dossierId))
     setLoading(false)
   }
@@ -256,7 +264,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // rien. Une seule ligne au plus (la clé primaire), d'où `maybeSingle`.
   async function supprimerUnDocument(doc: DocumentDivers): Promise<string | null> {
     const { data, error } = await supabase.from('documents_divers').delete().eq('id', doc.id).select('id').maybeSingle()
-    if (error) return messageErreur(error, 'suppression refusée par la base')
+    if (error) return messageDUneSuppressionRetenue(error) ?? messageErreur(error, 'suppression refusée par la base')
     if (!data) return AUCUNE_LIGNE_SUPPRIMEE
     await retirerFichiers('pieces', [doc.storage_path], 'DocumentsTab')
     return null
@@ -265,7 +273,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   async function supprimer(doc: DocumentDivers) {
     // Le bouton n'est pas offert sur un document cité : si la lecture change entre-temps, la phrase de la base se dit
     // ici plutôt qu'une confirmation qui mènerait à son refus.
-    const refus = refusDeSuppression({ documentId: doc.id }, citations)
+    const refus = refusDuDocument(doc.id)
     if (refus) {
       setError(refus)
       return
@@ -306,14 +314,17 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     // UN DOCUMENT CITÉ PAR LA RÉVISION NE SE SUPPRIME PLUS (`garder_source_citee`) : écarté de la sélection, chacun
     // nommé avec la phrase de la base, plutôt qu'un refus de la base document par document.
     const cites = selection.flatMap((d) => {
-      const refus = refusDeSuppression({ documentId: d.id }, citations)
+      const refus = refusDuDocument(d.id)
       return refus === null ? [] : [{ document: d, refus }]
     })
     const cibles = selection.filter((d) => !cites.some((c) => c.document.id === d.id))
     const listeDesCites = cites.slice(0, 5).map((c) => `• ${c.document.nom_fichier} — ${c.refus}`).join('\n')
       + (cites.length > 5 ? `\n… et ${cites.length - 5} autre(s)` : '')
     // La révision des soldes, comme hier ; le dossier permanent, ou les deux, quand c'est lui qui cite.
-    const citant = citantDe(cites.map((c) => quiCite({ documentId: c.document.id }, citations)))
+    const sortes = cites.map((c) => quiCite({ documentId: c.document.id }, citations))
+    // Un document que ni la révision ni le dossier permanent ne citent l'est par une lettre de mission.
+    const citant = !sortes.includes(null) ? citantDe(sortes)
+      : sortes.every((s) => s === null) ? 'une lettre de mission' : `${citantDe(sortes)} et une lettre de mission`
     if (cibles.length === 0) {
       setError(cites.length === 1 ? cites[0].refus
         : `Ces ${cites.length} documents sont cités par ${citant} : ils ne se suppriment plus.\n${listeDesCites}`)
@@ -356,13 +367,18 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     // que la révision cite. Dit après, la pièce serait née et le document resté — le même fichier sous deux lignes, dont
     // la suppression de la pièce retirerait le fichier que la décision cite. Et sur une lecture des citations partielle
     // ou pas encore revenue, rien ne dit que le document n'est pas cité : la conversion attend.
-    const refus = refusDeSuppression({ documentId: doc.id }, citations)
+    const refus = refusDuDocument(doc.id)
     if (refus) {
       setError(`« C'est une facture » retirerait ce document d'ici : ${refus}`)
       return
     }
     if (citations === null || citations.motif !== null) {
       setError(conversionSuspendue(citations))
+      return
+    }
+    // Les lettres de mission lues en partie : rien ne dit que ce document n'en est pas le papier signé.
+    if (papiers !== null && papiers.motif !== null) {
+      setError(`« C'est une facture » attend : les lettres de mission de ce dossier n’ont pas pu être lues en entier (${papiers.motif}).`)
       return
     }
     conversionsEnCours.current.add(doc.id)
@@ -518,6 +534,14 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
         }
       />
       <BandeauLecturePartielle
+        quoi="Les lettres de mission de ce dossier"
+        motif={papiers?.motif ?? null}
+        consequence={
+          'Le papier signé d’une lettre peut donc paraître supprimable : la base refusera alors de le supprimer. « C’est une '
+          + 'facture » attend sur lui de même.'
+        }
+      />
+      <BandeauLecturePartielle
         quoi="Les entrées du dossier permanent"
         motif={citations?.motifDossierPermanent ?? null}
         consequence={
@@ -602,9 +626,10 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                             Doublon de contenu
                           </span>
                         )}
-                        {refusDeSuppression({ documentId: d.id }, citations) && (
+                        {refusDuDocument(d.id) && (
                           <span className="badge badge-neutral" style={{ marginLeft: 8, fontSize: '0.7rem' }}>
-                            {quiCite({ documentId: d.id }, citations) === 'dossier-permanent' ? 'Cité par le dossier permanent' : 'Cité par la révision'}
+                            {quiCite({ documentId: d.id }, citations) === 'dossier-permanent' ? 'Cité par le dossier permanent'
+                              : quiCite({ documentId: d.id }, citations) === 'revision' ? 'Cité par la révision' : 'Papier signé d’une lettre de mission'}
                           </span>
                         )}
                         {avecTexteOcr.has(d.id) && (
@@ -632,9 +657,9 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                     <td className="hide-mobile" data-libelle="Sous-dossier">{sousDossierLabel(d.sous_dossier_id)}</td>
                     <td className="hide-mobile" data-libelle="Ajouté le">{formatDate(d.created_at)}</td>
                     <td className="td-actions" onClick={(e) => e.stopPropagation()}>
-                      {refusDeSuppression({ documentId: d.id }, citations) ? (
+                      {refusDuDocument(d.id) ? (
                         // Ni supprimer, ni transformer en pièce, qui le supprime : la phrase de la base, avant le clic.
-                        <span className="muted" style={{ fontSize: '0.8rem' }}>{refusDeSuppression({ documentId: d.id }, citations)}</span>
+                        <span className="muted" style={{ fontSize: '0.8rem' }}>{refusDuDocument(d.id)}</span>
                       ) : (
                         <>
                           <button
