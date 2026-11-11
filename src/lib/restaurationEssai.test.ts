@@ -17,6 +17,7 @@ import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
+import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
@@ -570,6 +571,30 @@ function blocDesComptesBancaires(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table des comptes bancaires existe : la sienne après sa table d'ancrage. */
 const avecLesComptesBancaires = avecLesArticles
 
+// LES ORIGINAUX LIBÉRÉS D'UN DOSSIER SUPPRIMÉ (ligne 51.5, A8D2A-Q1) : un bloc à part met leur table au plan quand elle
+// existe, juste après `cabinet_admins`, les rangs qui suivent reculant d'un — le geste des articles —, avec son chemin
+// (`cabinet`) ; aucune vague. Joué après le bloc des comptes bancaires, avant celui des lettres de mission.
+const MARQUE_DES_ORIGINAUX_LIBERES = "-- ══ Les originaux libérés d'un dossier supprimé (ligne 51.5, A8D2A-Q1) ══"
+
+function blocDesOriginauxLiberes(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_ORIGINAUX_LIBERES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.originaux_liberes') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des originaux libérés existe : la sienne après sa table d'ancrage. */
+const avecLesOriginauxLiberes = avecLesArticles
+
 // LES LETTRES DE MISSION (ligne 47, LM4) : un bloc à part met leurs deux tables au plan quand elles existent, juste après la
 // table qu'il nomme (`precisions_mouvements`), les rangs qui suivent reculant de deux, avec leurs chemins et leurs vagues
 // (`remplace_id`) — le geste de la caisse. Joué en dernier : ses vagues viennent après toutes les autres.
@@ -601,11 +626,11 @@ const avecLesLettresDeMission = avecLaCaisse
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesLettresDeMission(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesLettresDeMission(avecLesOriginauxLiberes(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
-  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesLettresDeMission(texte))
+  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesOriginauxLiberes(texte)), blocDesLettresDeMission(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -697,14 +722,23 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     ? avecLaPieceDUneReprise(avecLaNumerotationDuJour, pieceDUneReprise) : avecLaNumerotationDuJour
   const comptesBancaires = blocDesComptesBancaires(texteDeLEssai)
   const avecLesComptesDuJour = COMPTES_BANCAIRES_PREVUS ? avecLesComptesBancaires(avecLaPieceDuJour, comptesBancaires) : avecLaPieceDuJour
+  const originaux = blocDesOriginauxLiberes(texteDeLEssai)
+  const avecLesOriginauxDuJour = ORIGINAUX_RETENUS_PREVUS ? avecLesOriginauxLiberes(avecLesComptesDuJour, originaux) : avecLesComptesDuJour
   const lettresDeMission = blocDesLettresDeMission(texteDeLEssai)
-  const courant = LETTRES_DE_MISSION_PREVUES ? avecLesLettresDeMission(avecLesComptesDuJour, lettresDeMission) : avecLesComptesDuJour
+  const courant = LETTRES_DE_MISSION_PREVUES ? avecLesLettresDeMission(avecLesOriginauxDuJour, lettresDeMission) : avecLesOriginauxDuJour
 
   it('le bloc des lettres de mission : leurs deux tables, après `precisions_mouvements`, conditionné, leurs chemins et leurs vagues (LM4)', () => {
     expect(lettresDeMission).toEqual({
       ancre: 'precisions_mouvements', tables: [...TABLES_DES_LETTRES_DE_MISSION], recule: true, conditionne: true,
       chemins: Object.fromEntries(TABLES_DES_LETTRES_DE_MISSION.map((t) => [t, { acces: 'direct', parent: null, colonne: null }])),
       vagues: TABLES_DES_LETTRES_DE_MISSION.map((table) => ({ table, colonne: 'remplace_id' })),
+    })
+  })
+
+  it('le bloc des originaux libérés : sa table, après `cabinet_admins`, conditionnée, son chemin de cabinet (A8D2A-Q1)', () => {
+    expect(originaux).toEqual({
+      ancre: 'cabinet_admins', tables: [...TABLES_DES_ORIGINAUX_LIBERES], recule: true, conditionne: true,
+      chemins: { originaux_liberes: { acces: 'cabinet', parent: null, colonne: null } },
     })
   })
 
@@ -903,7 +937,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DES_SAISIES_2035.includes(t) && !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(t)
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t) && !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(t)
       && !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(t) && !TABLES_DES_COMPTES_BANCAIRES.includes(t)
-      && !TABLES_DES_LETTRES_DE_MISSION.includes(t)
+      && !TABLES_DES_LETTRES_DE_MISSION.includes(t) && !TABLES_DES_ORIGINAUX_LIBERES.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

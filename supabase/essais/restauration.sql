@@ -763,6 +763,24 @@ begin
   end if;
 end $$;
 
+-- ══ Les originaux libérés d'un dossier supprimé (ligne 51.5, A8D2A-Q1) ══ Au plan du code quand `ORIGINAUX_RETENUS_PREVUS`
+-- est levé — c'est-à-dire quand la migration `originaux_retenus_par_leur_import` est en base : le script met sa table juste
+-- après `cabinet_admins` (ORDRE_RESTAURATION_PREVU : une table du cabinet, hors de l'export d'un dossier), les tables qui
+-- suivent reculant d'un rang ; son chemin (`cabinet`, que la restauration saute) ; aucune vague. Absente de la base, rien
+-- n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.originaux_liberes') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'cabinet_admins';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'originaux_liberes');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('originaux_liberes','cabinet',null,null);
+  end if;
+end $$;
+
 -- ══ Les lettres de mission (ligne 47, LM4) ══ Au plan du code quand `LETTRES_DE_MISSION_PREVUES` est levé — c'est-à-dire
 -- quand sa migration est en base, après LM1 : le script les y met dès que leurs tables existent, juste après
 -- `precisions_mouvements` (ORDRE_RESTAURATION_PREVU : après les documents que le papier signé cite, le modèle avant la

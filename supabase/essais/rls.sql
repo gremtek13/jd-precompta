@@ -754,6 +754,14 @@
 -- de restauration du super-administrateur, aucune branche client — et son déclencheur sur `memberships`. Le bloc AR (AR1 à
 -- AR3, M-AR1, M-AR2) ; EN ATTENTE sans la migration ; la boucle des invariants y voit la table de plus. Ce qu'il rend :
 -- HISTORIQUE.md, « 11/11/2026 — P1T-E2 ».
+--
+-- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (A8D2A-Q1, ligne 51.5 : migration `originaux_retenus_par_leur_import`,
+-- PRÉPARÉE, pas appliquée), qui refuse la suppression de l'original d'un import qui existe et rend au chef du cabinet
+-- d'un dossier supprimé les originaux que ce dossier retenait. Le bloc OR (OR1 à OR4, M-OR1 à M-OR3) ; EN ATTENTE sans la
+-- migration ; OI7 admet le cas `imports/` de la lecture suivi de la libération. Joué ENTIER, en une transaction, sur une
+-- copie de la réplique égale à la production (197 migrations) : sans la migration, 145 lignes d'invariants, 0 en faute,
+-- 103 mutations sur 103, OR EN ATTENTE ; avec, 150 lignes, 0 en faute, 106 sur 106. Ce qu'il rend : HISTORIQUE.md,
+-- « 11/11/2026 — A8D2A-Q1 ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -2613,7 +2621,9 @@ begin
     'cible', 'ventes_depot_d_un_original', 'observe', case when n = 1 then 'présente, telle quelle' else 'ABSENTE OU ÉLARGIE' end, 'ok', n = 1);
   select count(*) into n from pg_policy p
    where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_lecture' and p.polcmd = 'r'
-     and pg_get_expr(p.polqual, p.polrelid) ~ '/imports/''::text\) THEN (public\.)?admin_du_dossier\(';
+     -- Le cas `imports/` sur admin_du_dossier seul (A8d2a), ou suivi de la libération des originaux d'un dossier supprimé
+     -- (A8D2A-Q1, `originaux_retenus_par_leur_import`, dont le bloc OR juge le texte entier) — rien d'autre.
+     and pg_get_expr(p.polqual, p.polrelid) ~ '/imports/''::text\) THEN ((public\.)?admin_du_dossier\(\(\(storage\.foldername\(name\)\)\[1\]\)::uuid\)|\((public\.)?admin_du_dossier\(\(\(storage\.foldername\(name\)\)\[1\]\)::uuid\) OR (public\.)?original_libere\(name\)\))\s+WHEN';
   verdicts := verdicts || jsonb_build_object('controle', 'OI7. la lecture du seau des ventes réserve imports/ au cabinet du dossier (lecture du catalogue)',
     'cible', 'ventes_lecture', 'observe', case when n = 1 then 'cas imports/ sur admin_du_dossier' else 'ABSENT OU ÉLARGI' end, 'ok', n = 1);
   verdicts := verdicts || jsonb_build_object('controle', 'OI. le jeu d''essai des originaux s''est construit', 'cible', 'ventes (imports/)',
@@ -6848,6 +6858,242 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $rc$;
+
+-- ══ OR. L'original d'une facture reprise retenu par son import (ligne 51.5, A8D2A-Q1 ; migration
+-- `originaux_retenus_par_leur_import`, PRÉPARÉE) ══════════════════════════════════════════════════════════════════════════
+-- Sous `<dossier>/imports/` du seau `ventes`, la suppression refuse l'original d'un import qui existe
+-- (`original_d_un_import`) ; la suppression d'un dossier libère ses originaux au chef de son cabinet (`originaux_liberes`,
+-- le déclencheur `dossiers_liberer_les_originaux`), à qui la lecture et la suppression les ouvrent (`original_libere`).
+-- Une suppression ne se joue pas en production : ce bloc juge les deux prédicats, lus au catalogue, sans elle ; la
+-- suppression elle-même, le déclencheur et la restauration se jouent par `originalDUnImport.sql` (réplique).
+--   OR1. Le catalogue : `ventes_suppression_par_le_chef`, de suppression, permissive, à authenticated seul, sans
+--        vérification, son prédicat mot pour mot, qui dépend des deux fonctions ; `ventes_lecture`, de lecture, de même,
+--        qui dépend de `original_libere`.
+--   OR2. Aucune autre policy permissive de lecture, de suppression ni « pour tout » ne nomme le seau `ventes`.
+--   OR3. Les deux prédicats, jugés ensemble (la suppression de l'API nomme et rend ses lignes) sous chaque session, sur un
+--        dossier jetable du cabinet du chef qui porte un import (L, le fichier du lot ; X, un fichier du lot qu'aucune
+--        ligne ne désigne) et sur l'original libéré R d'un dossier qui n'existe plus : le chef supprimerait X et R, pas L
+--        (le contrôle POSITIF) ; le chef du cabinet qui n'est pas super-administrateur aussi ; le client et un compte
+--        rattaché à rien, rien.
+--   OR4. Les deux fonctions : `security definer`, stables, leur chemin de recherche ; authenticated les exécute, ni
+--        l'anonyme ni PUBLIC ; personne n'exécute le déclencheur ; il est BEFORE DELETE de chaque ligne de `dossiers`,
+--        actif ; `originaux_liberes` a sa RLS et aucune policy permissive.
+-- Trois mutations, qui doivent mordre : M-OR1 (le prédicat de suppression d'A8d2a : L se supprimerait), M-OR2 (la lecture
+-- sans la libération : le chef qui n'est pas super-administrateur ne verrait plus R), M-OR3 (une policy de lecture ouverte
+-- sur `originaux_liberes` : OR4 tombe). Avant la migration, une ligne dit que le bloc attend.
+do $or$
+declare
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  inconnu uuid := gen_random_uuid();
+  cabinet uuid;
+  dossier uuid := 'a8d2f000-0000-4000-8000-0000000000d1';
+  lot uuid := 'a8d2f000-0000-4000-8000-00000000001a';
+  chemin_l text := 'a8d2f000-0000-4000-8000-0000000000d1/imports/a8d2f000-0000-4000-8000-00000000001a/' || repeat('a', 64) || '.pdf';
+  chemin_x text := 'a8d2f000-0000-4000-8000-0000000000d1/imports/a8d2f000-0000-4000-8000-00000000001a/' || repeat('b', 64) || '.csv';
+  chemin_r text := 'a8d2f000-0000-4000-8000-0000000000e1/imports/a8d2f000-0000-4000-8000-00000000002a/' || repeat('c', 64) || '.xml';
+  chemin_avant text := current_setting('search_path');
+  attendu_suppression constant text := $a$((bucket_id = 'ventes'::text) AND
+CASE
+    WHEN (name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/imports/'::text) THEN (((EXISTS ( SELECT 1
+       FROM public.dossiers d
+      WHERE ((d.id = ((storage.foldername(objects.name))[1])::uuid) AND public.est_chef_du_cabinet(d.cabinet_id)))) AND (NOT public.original_d_un_import(name))) OR public.original_libere(name))
+    WHEN (name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/'::text) THEN (EXISTS ( SELECT 1
+       FROM public.dossiers d
+      WHERE ((d.id = ((storage.foldername(objects.name))[1])::uuid) AND public.est_chef_du_cabinet(d.cabinet_id))))
+    ELSE false
+END)$a$;
+  attendu_lecture constant text := $a$((bucket_id = 'ventes'::text) AND
+CASE
+    WHEN (name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/imports/'::text) THEN (public.admin_du_dossier(((storage.foldername(name))[1])::uuid) OR public.original_libere(name))
+    WHEN (name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/'::text) THEN public.gere_les_ventes(((storage.foldername(name))[1])::uuid)
+    ELSE false
+END)$a$;
+  -- Sans alias : le prédicat de suppression nomme la table (`objects.name`) dans sa sous-requête.
+  q_vus constant text := $q$select coalesce(string_agg(case name when %L then 'L' when %L then 'X' when %L then 'R' end, ',' order by name collate "C"), '')
+      from storage.objects where bucket_id = 'ventes' and name in (%L, %L, %L) and (%s) and (%s)$q$;
+  pred_suppression text; pred_lecture text;
+  vu_chef text; vu_chef_simple text; vu_client text; vu_inconnu text; muee1 text; muee2 text;
+  n bigint; n_lecture bigint; n_mutee bigint; autres text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.original_d_un_import(text)') is null and to_regclass('public.originaux_liberes') is null then
+    insert into rls_verdict values ('OR. l''original d''une facture reprise retenu par son import : EN ATTENTE de la migration originaux_retenus_par_leur_import',
+      'storage.objects (ventes, imports/)', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  select ca.cabinet_id into cabinet from cabinet_admins ca where ca.user_id = chef and ca.role = 'comptable_en_chef'
+   order by ca.cabinet_id limit 1;
+  begin
+    -- ── Le jeu, par le propriétaire sans session : un dossier jetable du cabinet du chef, son import (le réglage que pose
+    -- `importer_factures`, le temps de l'insertion), deux fichiers du lot ; l'original libéré d'un dossier qui n'existe pas.
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id) values (dossier, 'ESSAI RLS OR', cabinet);
+    perform set_config('jd.import_lot', lot::text, true);
+    insert into imports_factures (id, dossier_id, format, fichier_sha256, fichier_taille, fichier_chemin, nombre_factures)
+      values (lot, dossier, 'facturx', repeat('a', 64), 10, chemin_l, 1);
+    perform set_config('jd.import_lot', '', true);
+    insert into storage.objects (bucket_id, name, metadata) values
+      ('ventes', chemin_l, '{"size": 10, "mimetype": "application/pdf"}'), ('ventes', chemin_x, '{"size": 10, "mimetype": "text/csv"}'),
+      ('ventes', chemin_r, '{"size": 10, "mimetype": "text/plain"}');
+    insert into originaux_liberes (chemin, cabinet_id) values (chemin_r, cabinet);
+    construit := true;
+
+    -- OR3 : les deux prédicats, tels que le catalogue les porte (lus sous un chemin vide), jugés sous chaque session.
+    perform set_config('search_path', '', true);
+    select pg_get_expr(p.polqual, p.polrelid) into pred_suppression from pg_policy p
+     where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_suppression_par_le_chef';
+    select pg_get_expr(p.polqual, p.polrelid) into pred_lecture from pg_policy p
+     where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_lecture';
+    perform set_config('search_path', chemin_avant, true);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    execute format(q_vus, chemin_l, chemin_x, chemin_r, chemin_l, chemin_x, chemin_r, pred_suppression, pred_lecture) into vu_chef;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    execute format(q_vus, chemin_l, chemin_x, chemin_r, chemin_l, chemin_x, chemin_r, pred_suppression, pred_lecture) into vu_client;
+    perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+    execute format(q_vus, chemin_l, chemin_x, chemin_r, chemin_l, chemin_x, chemin_r, pred_suppression, pred_lecture) into vu_inconnu;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    -- Le chef du cabinet qui n'est pas super-administrateur : le compte du client, rangé ainsi le temps d'une
+    -- sous-transaction annulée.
+    begin
+      insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      execute format(q_vus, chemin_l, chemin_x, chemin_r, chemin_l, chemin_x, chemin_r, pred_suppression, pred_lecture) into vu_chef_simple;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'OR3. les prédicats de lecture et de suppression, jugés sans supprimer : le chef supprimerait X et R, pas L (le contrôle positif) ; le chef qui n''est pas super-administrateur aussi ; le client et un compte rattaché à rien, rien',
+      'cible', 'storage.objects (ventes, imports/)',
+      'observe', 'le chef : ' || coalesce(vu_chef, '?') || ' | le chef simple : ' || coalesce(vu_chef_simple, '?')
+        || ' | le client : ' || coalesce(nullif(vu_client, ''), 'rien') || ' | l''inconnu : ' || coalesce(nullif(vu_inconnu, ''), 'rien'),
+      'ok', vu_chef = 'X,R' and vu_chef_simple = 'X,R' and vu_client = '' and vu_inconnu = '');
+
+    -- M-OR1 : le prédicat de suppression d'A8d2a, le temps d'une sous-transaction — L se supprimerait.
+    begin
+      alter policy ventes_suppression_par_le_chef on storage.objects
+        using (bucket_id = 'ventes' and case
+          when name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/' then exists (select 1 from public.dossiers d where d.id = (storage.foldername(name))[1]::uuid and public.est_chef_du_cabinet(d.cabinet_id))
+          else false end);
+      perform set_config('search_path', '', true);
+      select pg_get_expr(p.polqual, p.polrelid) into pred_suppression from pg_policy p
+       where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_suppression_par_le_chef';
+      perform set_config('search_path', chemin_avant, true);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      execute format(q_vus, chemin_l, chemin_x, chemin_r, chemin_l, chemin_x, chemin_r, pred_suppression, pred_lecture) into muee1;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('search_path', chemin_avant, true);
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-OR1 — le prédicat de suppression d''A8d2a sur le seau des ventes',
+      'attendu', 'l''original L se supprimerait', 'observe', coalesce(muee1, '?'), 'mord', coalesce(muee1 like '%L%', false));
+
+    -- M-OR2 : la lecture sans la libération — le chef qui n'est pas super-administrateur ne voit plus R.
+    begin
+      insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+      perform set_config('search_path', '', true);
+      select pg_get_expr(p.polqual, p.polrelid) into pred_suppression from pg_policy p
+       where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_suppression_par_le_chef';
+      perform set_config('search_path', chemin_avant, true);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      execute format(q_vus, chemin_l, chemin_x, chemin_r, chemin_l, chemin_x, chemin_r, pred_suppression,
+                     replace(pred_lecture, ' OR public.original_libere(name)', '')) into muee2;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('search_path', chemin_avant, true);
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-OR2 — la lecture des originaux sans la libération',
+      'attendu', 'R n''est plus vu du chef qui n''est pas super-administrateur', 'observe', coalesce(nullif(muee2, ''), 'rien'),
+      'mord', coalesce(muee2 not like '%R%' and pred_lecture like '% OR public.original_libere(name)%', false));
+
+    -- M-OR3 : une policy de lecture ouverte sur la table des libérations — OR4 tombe.
+    begin
+      create policy essai_rls_or on public.originaux_liberes for select to authenticated using (true);
+      select count(*) into n_mutee from pg_policy p where p.polrelid = 'public.originaux_liberes'::regclass and p.polpermissive;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    mutations := mutations || jsonb_build_object('mutation', 'M-OR3 — une policy de lecture ouverte sur originaux_liberes',
+      'attendu', 'OR4 tombe (une policy permissive)', 'observe', coalesce(n_mutee::text, '?') || ' policy permissive', 'mord', coalesce(n_mutee > 0, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('jd.import_lot', '', true);
+  perform set_config('search_path', chemin_avant, true);
+
+  -- OR1 et OR2 : le catalogue, lu sous un chemin vide.
+  perform set_config('search_path', '', true);
+  select count(*) into n from pg_policy p
+   where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_suppression_par_le_chef' and p.polcmd = 'd' and p.polpermissive
+     and p.polroles = array['authenticated'::regrole]::oid[] and p.polwithcheck is null
+     and pg_get_expr(p.polqual, p.polrelid) = attendu_suppression
+     and (select count(*) from pg_depend d where d.classid = 'pg_policy'::regclass and d.objid = p.oid and d.refclassid = 'pg_proc'::regclass
+            and d.refobjid in (to_regprocedure('public.original_d_un_import(text)'), to_regprocedure('public.original_libere(text)'))) = 2;
+  select count(*) into n_lecture from pg_policy p
+   where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_lecture' and p.polcmd = 'r' and p.polpermissive
+     and p.polroles = array['authenticated'::regrole]::oid[] and p.polwithcheck is null
+     and pg_get_expr(p.polqual, p.polrelid) = attendu_lecture
+     and exists (select 1 from pg_depend d where d.classid = 'pg_policy'::regclass and d.objid = p.oid and d.refclassid = 'pg_proc'::regclass
+                   and d.refobjid = to_regprocedure('public.original_libere(text)'));
+  select string_agg(p.polname, ',' order by p.polname collate "C") into autres from pg_policy p
+   where p.polrelid = 'storage.objects'::regclass and p.polpermissive and p.polcmd in ('d', 'r', '*')
+     and coalesce(pg_get_expr(p.polqual, p.polrelid), '') like '%''ventes''%';
+  perform set_config('search_path', chemin_avant, true);
+  verdicts := verdicts || jsonb_build_object('controle', 'OR1. ventes_suppression_par_le_chef et ventes_lecture : leur commande, permissives, à authenticated seul, leur prédicat mot pour mot, qui dépend des fonctions (lecture du catalogue)',
+    'cible', 'storage.objects', 'observe', 'suppression ' || n || ' conforme(s) | lecture ' || n_lecture || ' conforme(s)', 'ok', n = 1 and n_lecture = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'OR2. aucune autre policy permissive de lecture, de suppression ni « pour tout » ne nomme le seau ventes (lecture du catalogue)',
+    'cible', 'storage.objects', 'observe', coalesce(autres, 'aucune'), 'ok', autres = 'ventes_lecture,ventes_suppression_par_le_chef');
+  -- OR4 : les fonctions, le déclencheur, la table.
+  verdicts := verdicts || jsonb_build_object('controle', 'OR4. original_d_un_import et original_libere : security definer, stables, leur chemin de recherche, exécutées par authenticated, ni par l''anonyme ni par PUBLIC ; le déclencheur de la libération, BEFORE DELETE de chaque ligne de dossiers, actif, que personne n''exécute ; originaux_liberes, sa RLS, aucune policy permissive (lecture du catalogue)',
+    'cible', 'original_d_un_import, original_libere, dossiers_liberer_les_originaux, originaux_liberes',
+    'observe', (select count(*) from pg_proc p where p.oid in (to_regprocedure('public.original_d_un_import(text)'), to_regprocedure('public.original_libere(text)'))
+                  and p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=public']
+                  and not has_function_privilege('anon', p.oid, 'execute') and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a), false))::text || ' fonction(s) conforme(s) | déclencheur '
+      || coalesce((select (t.tgtype = 11 and t.tgenabled = 'O')::text from pg_trigger t where t.tgrelid = 'public.dossiers'::regclass and t.tgname = 'dossiers_liberer_les_originaux'), 'absent')
+      || ' | exécutable par authenticated ' || coalesce(has_function_privilege('authenticated', to_regprocedure('public.liberer_les_originaux_du_dossier()'), 'execute')::text, '?')
+      || ' | RLS ' || coalesce((select c.relrowsecurity::text from pg_class c where c.oid = to_regclass('public.originaux_liberes')), 'table absente')
+      || ' | policies permissives ' || (select count(*) from pg_policy p where p.polrelid = to_regclass('public.originaux_liberes') and p.polpermissive),
+    'ok', (select count(*) from pg_proc p where p.oid in (to_regprocedure('public.original_d_un_import(text)'), to_regprocedure('public.original_libere(text)'))
+             and p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=public']
+             and not has_function_privilege('anon', p.oid, 'execute') and has_function_privilege('authenticated', p.oid, 'execute')
+             and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a), false)) = 2
+      and coalesce((select t.tgtype = 11 and t.tgenabled = 'O' from pg_trigger t
+                     where t.tgrelid = 'public.dossiers'::regclass and t.tgname = 'dossiers_liberer_les_originaux'
+                       and t.tgfoid = to_regprocedure('public.liberer_les_originaux_du_dossier()')), false)
+      and not coalesce(has_function_privilege('authenticated', to_regprocedure('public.liberer_les_originaux_du_dossier()'), 'execute'), true)
+      and coalesce((select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.originaux_liberes')), false)
+      and not exists (select 1 from pg_policy p where p.polrelid = to_regclass('public.originaux_liberes') and p.polpermissive));
+  verdicts := verdicts || jsonb_build_object('controle', 'OR. le jeu d''essai des originaux retenus s''est construit, et rien n''en est resté', 'cible', 'le dossier jetable',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end
+      || ' | restés : ' || ((select count(*) from dossiers where id = dossier)
+                            + (select count(*) from storage.objects where bucket_id = 'ventes' and name in (chemin_l, chemin_x, chemin_r))),
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id = dossier)
+      and not exists (select 1 from storage.objects where bucket_id = 'ventes' and name in (chemin_l, chemin_x, chemin_r)));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $or$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
