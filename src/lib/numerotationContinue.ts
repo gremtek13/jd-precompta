@@ -18,7 +18,9 @@ export const NUMEROTATION_CONTINUE_PREVUE: boolean = true
 // LE DRAPEAU DE LA CARTE (A9b), à part depuis le jour J du 10/11/2026 : la carte « Numérotation des factures » de l'onglet
 // Informations offre au chef trois gestes (poser un modèle, confirmer la fin d'une suite reprise, lever des trous), et un
 // geste ne s'ouvre que sur la décision du cabinet. Baissé, la carte ne rend ni ne lit rien ; son test joue les deux états.
-export const CARTE_DE_LA_NUMEROTATION_OFFERTE: boolean = false
+// Levé le 11/11/2026 sur la réponse du cabinet à A9B-Q0 (« L'ouvrir maintenant ») : la base d'A9a est en production depuis
+// le 10/11/2026. NumerotationDesFacturesCard.test.tsx garde l'état baissé éprouvé tant que ce drapeau existe.
+export const CARTE_DE_LA_NUMEROTATION_OFFERTE: boolean = true
 
 /** La nature d'une série : les factures, ou les avoirs. */
 export type NatureDeSerie = 'facture' | 'avoir'

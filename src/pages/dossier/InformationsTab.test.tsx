@@ -112,6 +112,11 @@ vi.mock('./SourceDesVentesCard', () => ({
   ),
 }))
 vi.mock('./BalanceCard', () => ({ default: () => null }))
+// La carte « Numérotation des factures » (A9b), offerte depuis A9B-Q0, lit et écrit seule sous l'exercice partagé, et a ses
+// propres tests (NumerotationDesFacturesCard.test.tsx) : doublée pour montrer le dossier que l'onglet lui passe.
+vi.mock('./NumerotationDesFacturesCard', () => ({
+  default: ({ dossierId }: { dossierId: string }) => <p>Numérotation des factures — {dossierId}</p>,
+}))
 vi.mock('../../lib/packGenerator', () => ({
   generatePack: async () => {
     faux.generations += 1
@@ -402,6 +407,13 @@ describe('la carte « Source des ventes » (étape VF8b)', () => {
     expect(faux.reglagesRendus).toEqual([
       ['d1', { ventes_par_les_factures: true, ventes_par_les_factures_depuis: '2026-10-26T09:00:00+00:00' }],
     ])
+  })
+})
+
+describe('la carte « Numérotation des factures » (A9b, offerte depuis A9B-Q0)', () => {
+  it('se monte avec le dossier de l’onglet', async () => {
+    monter()
+    expect(await screen.findByText('Numérotation des factures — d1')).toBeTruthy()
   })
 })
 

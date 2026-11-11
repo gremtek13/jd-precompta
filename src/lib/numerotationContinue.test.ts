@@ -84,8 +84,8 @@ describe('les drapeaux de la migration et de la carte', () => {
     expect(existsSync(new URL('../../supabase/schema/20261110143033_numerotation_continue.sql', import.meta.url).pathname)).toBe(true)
   })
 
-  it('la carte du cabinet reste baissée : ses trois gestes attendent la décision du cabinet', () => {
-    expect(CARTE_DE_LA_NUMEROTATION_OFFERTE).toBe(false)
+  it('la carte du cabinet est offerte depuis la réponse du cabinet à A9B-Q0 (11/11/2026)', () => {
+    expect(CARTE_DE_LA_NUMEROTATION_OFFERTE).toBe(true)
   })
 })
 
