@@ -178,3 +178,22 @@ export function annexe2035EAvecSaisie(entree: Omit<Entree2035E, 'saisies'>, sais
   if (cadre.etat === 'coche' && cadre.effectif === null) aSaisir.push('BK')
   return { annexe, lignes, aSaisir, cadre }
 }
+
+/** Les lignes à saisir que le PDF PORTERAIT : les montants seuls. Le cadre des mono-établissements (AH, BK) ne s'imprime
+ *  jamais (gabarit2035E.ts : le cocher affirmerait ce que personne n'a vérifié) : le nommer sur le papier ferait chercher
+ *  une case que l'application ne remplit pas ; l'écran, lui, le dit. */
+export function lignesDuPdfASaisir(annexe: Annexe2035ESaisie): string[] {
+  const imprimees: readonly string[] = MONTANTS_SAISIS_2035E.map((m) => m.code)
+  return annexe.aSaisir.filter((code) => imprimees.includes(code))
+}
+
+/** CE QUI S'ÉCRIT EN ROUGE, EN TÊTE DE LA PAGE DE L'ANNEXE, quand des lignes restent à saisir (même place et même forme que la
+ *  mention d'un millésime absent, `mentionDuPdf`) : lignes courtes, sans caractère hors de l'encodage WinAnsi des polices PDF
+ *  standard. Rien quand il ne reste rien. */
+export function mentionDeLAnnexe2035E(aSaisir: readonly string[]): string[] {
+  if (aSaisir.length === 0) return []
+  return [
+    `ATTENTION - annexe 2035-E incomplète : lignes encore à saisir par le cabinet : ${aSaisir.join(', ')}.`,
+    'Ces cases restent vides, ainsi que les totaux qui en dépendent (EI, EW, EX, JU) : ne pas déposer tel quel.',
+  ]
+}

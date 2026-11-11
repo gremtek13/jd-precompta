@@ -77,7 +77,7 @@ import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
 import { AUCUNE_SAISIE_2035, motifDesSaisies2035, SAISIES_2035_EXPORTEES, saisiesDeLExercice } from '../../lib/saisies2035'
 import type { LectureDesSaisies2035 } from '../../lib/saisies2035'
 import { lireLesSaisies2035 } from '../../lib/saisies2035Lecture'
-import { annexe2035EAvecSaisie, SAISIES_2035E_EXPORTEES, saisie2035EDeLExercice } from '../../lib/saisies2035E'
+import { annexe2035EAvecSaisie, lignesDuPdfASaisir, SAISIES_2035E_EXPORTEES, saisie2035EDeLExercice } from '../../lib/saisies2035E'
 import type { Annexe2035ESaisie, LectureDesSaisies2035E } from '../../lib/saisies2035E'
 import { lireLesSaisies2035E } from '../../lib/saisies2035ELecture'
 import Saisies2035ECard from './Saisies2035ECard'
@@ -843,7 +843,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // `instantane` : la 2035 d'un exercice VALIDÉ, remplie telle qu'elle a été validée — ses cases à l'euro et son
   // déclarant — plutôt que recalculée. `annexe` : la 2035-E de l'exercice, portée en page 3 quand elle est due — celle
   // que l'écran montre, tirée des mêmes cases.
-  async function telechargerFormulaire(annee: number, valeurs: Map<string, number>, instantane: Instantane2035 | null, annexe: Annexe2035E) {
+  async function telechargerFormulaire(
+    annee: number, valeurs: Map<string, number>, instantane: Instantane2035 | null, annexe: Annexe2035E,
+    annexeSaisie: Annexe2035ESaisie | null,
+  ) {
     // Sans le millésime de l'exercice, le PDF s'imprime sur le dernier livré (2035S-Q5, (B)) : la carte l'a dit avant le clic.
     if (generationEnCours.current || lectureIncomplete) return
     generationEnCours.current = true
@@ -856,8 +859,13 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
         instantane ? casesDeLInstantane(instantane.formulaire) : arrondirPourFormulaire(valeurs, annee),
         declarant,
         // L'adresse est celle d'aujourd'hui, même pour un exercice validé : l'instantané ne la garde pas.
+        // Drapeau levé, une ligne « à saisir » reste vide sur le papier et la page 3 le dit ; baissé, le PDF d'avant.
         annexe.obligatoire
-          ? { valeurs: annexe.lignes, entete: { nom: declarant.nom, siret: declarant.siret, adresse: dossier?.adresse ?? null, annee } }
+          ? {
+            valeurs: annexeSaisie ? annexeSaisie.lignes : annexe.lignes,
+            aSaisir: annexeSaisie ? lignesDuPdfASaisir(annexeSaisie) : [],
+            entete: { nom: declarant.nom, siret: declarant.siret, adresse: dossier?.adresse ?? null, annee },
+          }
           : null,
         annee,
       )
@@ -1950,7 +1958,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                     }
                     : undefined}
                   genere={genere === annee}
-                  onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe)}
+                  onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe, annexeSaisie)}
                   annexe2035E={annexe}
                   annexeSaisie={annexeSaisie}
                   lectureAnnexe={instantane ? null : lectureIncomplete ?? saisiesIncompletes}

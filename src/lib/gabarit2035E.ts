@@ -70,8 +70,9 @@ export function planDeRemplissage2035E(
   page: PageFormulaire,
   // La page du PDF où elle se trouve, 1-indexée : la troisième de la liasse.
   numeroDePage: number,
-  // Les lignes à l'euro (`calculer2035E(...).lignes`).
-  valeurs: ReadonlyMap<string, number>,
+  // Les lignes à l'euro (`calculer2035E(...).lignes`) ; `null`, une ligne « à saisir » (annexe2035EAvecSaisie) : elle reste
+  // vide, comme une ligne absente, jamais un zéro dessiné.
+  valeurs: ReadonlyMap<string, number | null>,
   entete: EnteteAnnexe2035E,
 ): { inscriptions: Inscription[]; codesSansAncrage: string[] } {
   const inscriptions: Inscription[] = []
@@ -81,8 +82,8 @@ export function planDeRemplissage2035E(
   // Une ligne à zéro ne s'inscrit pas, comme sur la 2035 : une case vide vaut zéro. Une ligne sans ancre est remontée,
   // jamais dessinée au jugé.
   for (const ligne of LIGNES_2035E) {
-    const montant = valeurs.get(ligne.code) ?? 0
-    if (montant === 0) continue
+    const montant = valeurs.get(ligne.code) ?? null
+    if (montant === null || montant === 0) continue
     const ancrage = ancrages.get(ligne.code)
     if (!ancrage) {
       codesSansAncrage.push(ligne.code)
