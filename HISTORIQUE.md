@@ -51427,3 +51427,16 @@ en a une, deux lignes WinAnsi qui nomment ces codes ; rien quand la liste est vi
 d'avant (dates figées, pdf-lib datant chaque chargement) le garde dans `remplir2035.test.ts`, qui relit la page 3 par pdf.js
 (case nulle absente, total supposé absent, aucun « 0 » de plus, avertissement présent) ; `ClotureTab.test.tsx` joue le drapeau levé
 (le module forcé par un accesseur) : les lignes `null` et les codes arrivent au PDF, la mutation qui repasse `annexe.lignes` le fait rougir.
+
+### 11/11/2026 — PC6 : L'ÉCRAN DE LA REPRISE QUI PROPOSE LE PLAN (DERRIÈRE SON DRAPEAU)
+
+(Agent dev, ligne 43, sans migration ni écriture en production ; `PLAN_DEPUIS_LA_BALANCE_PREVU` reste baissé.) La carte de la
+balance (`BalanceCard.tsx`) s'ouvre en deux temps le drapeau levé : (1) le plan proposé, rôle par rôle — coché, au choix (un
+compte de la balance ou « garder » celui du plan, choix exigé), écartés et leur raison —, l'état et les mots dans
+`lib/planDepuisLaBalanceVue.ts` (à choisir, refus de `planRetenu`, à régler, à jour), la confirmation qui nomme chaque compte
+qui change ; « Régler le plan » passe `regler_plan_du_dossier` seule puis RELIT `plan_du_dossier`
+(`lib/planDepuisLaBalanceLecture.ts`), sous un verrou relâché après la relecture, et la page reçoit le plan relu
+(`onPlanRelu`, `DossierDetail`) ; (2) les à-nouveaux, préparés seulement sur un plan À JOUR, rangés sur lui, les banques de la
+balance réunies et dites, le renvoi à la carte « Comptes bancaires » dès deux. Les catégories (du dossier et communes) lues en
+entier, sinon aucun geste. Baissé : la carte d'hier, sans lecture des catégories. Tests : 7 d'écran (`BalanceCardPlan.test.tsx`,
+la mutation du verrou mord), 5 du module de vue, une entrée drapeau levé dans `ecransAvantLecture`.

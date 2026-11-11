@@ -734,7 +734,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   APPLIQUÉE) » ; le dirigeant non associé au 467 ou au 468 (PC4-Q2, `dirigeant_au_468`, en production depuis le 11/11/2026,
   `DIRIGEANT_AU_468_PREVU` levé) ; PC6, la reprise qui propose le plan et range ses à-nouveaux sur lui, préparée le 11/11/2026
   (`plan_depuis_la_balance`, à coller APRÈS la levée de `PLAN_DEPUIS_LA_BALANCE_PREVU` ; tout 512… va à la banque du plan, MCB5g
-  l'éclate), son écran à faire → « PC6 : LA REPRISE PROPOSE LE PLAN (PRÉPARÉE, PAS APPLIQUÉE) » ; puis la suite jusqu'à PC9
+  l'éclate), son écran (la carte de la balance en deux temps) fait derrière le même drapeau ; restent la levée, le
+  déploiement, puis le collage → « PC6 : LA REPRISE PROPOSE LE PLAN (PRÉPARÉE, PAS APPLIQUÉE) », « PC6 : L'ÉCRAN DE LA
+  REPRISE QUI PROPOSE LE PLAN (DERRIÈRE SON DRAPEAU) » ; puis la suite jusqu'à PC9
   → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE PLAN ».
 
 ## Feuille de route — page Notion à tenir à jour
