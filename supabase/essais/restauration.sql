@@ -1053,7 +1053,7 @@ begin
     end if;
 
     execute format('select count(*) from essai_restauration.%I', r.table_nom) into n;
-    insert into essai_restauration._verdict values (lpad(r.rang::text,2,'0') || ' ' || r.table_nom,
+    insert into essai_restauration._verdict values (lpad(r.rang::text,3,'0') || ' ' || r.table_nom,
       n || ' lignes (' || r.acces || case when vagues > 0 then ', ' || vagues || ' vague(s)' else '' end || ')');
   end loop;
 exception when others then

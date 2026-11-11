@@ -2,7 +2,7 @@
 -- SEULEMENT) : une ligne marquée par dossier de leurre, écrite à la main selon les CHECK de la table, déclencheurs coupés
 -- — dix tables de dossier, et deux sans `dossier_id` qui porteront des données réelles ; sur la réplique qui porte une
 -- migration préparée, ses tables aussi (la caisse hier, les devis, les factures reprises, la numérotation qui continue,
--- la pièce d'une facture reprise, les documents du cabinet et leurs lectures),
+-- la pièce d'une facture reprise, les documents du cabinet et leurs lectures, les modèles de lettre de mission),
 -- chacune sous `to_regclass`.
 \set ON_ERROR_STOP on
 begin;
@@ -151,5 +151,19 @@ begin
       select d, (pfx || '-0000-4000-8000-0000000009' || h || '1')::uuid, chef from lc$i$;
   end if;
 end $documents$;
+-- Les modèles de lettre de mission (migration `lettres_de_mission`, LM4, sur la réplique qui la porte) : le remplisseur
+-- compose `missions` en un texte, que la contrainte `modeles_lettre_missions` refuse (un objet non vide, chaque clé une
+-- mission de `missions_de_lettre()`, chaque valeur un texte) ; un modèle par leurre, son titre, ses conditions et le texte
+-- de sa mission marqués, les clauses au défaut de la table.
+do $modeles_lettre$
+begin
+  if to_regclass('public.modeles_lettre_de_mission') is not null
+     and to_regprocedure('public.missions_de_lettre()') is not null then
+    execute $i$insert into public.modeles_lettre_de_mission (id, dossier_id, titre, conditions_generales, missions, auteur)
+      select (pfx || '-0000-4000-8000-000000000a' || h || '1')::uuid, d, m || ' titre du modèle de lettre',
+             m || ' conditions générales du modèle', jsonb_build_object('tenue_comptable', m || ' mission du modèle'), chef
+        from lc$i$;
+  end if;
+end $modeles_lettre$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;
