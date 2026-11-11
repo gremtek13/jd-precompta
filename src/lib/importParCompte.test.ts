@@ -173,7 +173,7 @@ describe('la migration de la fin d’identifiant', () => {
   it('n’ajoute qu’une colonne, sans rien retirer ; son retour la retire', () => {
     expect(migration).not.toMatch(/\b(drop|delete|truncate)\b/i)
     expect(migration).not.toMatch(/create (policy|function|trigger)|security definer/i)
-    expect(retour).toMatch(/alter table public\.comptes_bancaires drop column fin_d_identifiant;/)
+    expect(retour).toMatch(/alter table public\.comptes_bancaires drop column fin_d_identifiant;/i)
   })
   it('elle suit MCB1 sous le même drapeau : levé, elle est dans l’export elle aussi', () => {
     expect(COMPTES_BANCAIRES_PREVUS).toBe(chemin.includes('/supabase/schema/'))
