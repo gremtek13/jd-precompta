@@ -10,6 +10,7 @@ import { JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
+import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
@@ -45,6 +46,7 @@ import {
   type CheminDossier,
   TABLES_DES_LETTRES_DE_MISSION,
   TABLES_DES_HONORAIRES_FACTURES,
+  TABLES_DU_DEPART,
 } from './sauvegarde'
 import { indiceSql } from '../test/schema'
 
@@ -600,6 +602,29 @@ const avecLesOriginauxLiberes = avecLesArticles
 // LES LETTRES DE MISSION (ligne 47, LM4) : un bloc à part met leurs deux tables au plan quand elles existent, juste après la
 // table qu'il nomme (`precisions_mouvements`), les rangs qui suivent reculant de deux, avec leurs chemins et leurs vagues
 // (`remplace_id`) — le geste de la caisse. Joué en dernier : ses vagues viennent après toutes les autres.
+// LE DÉPART D'UN CLIENT (ligne 44, INAL5) : un bloc à part met ses deux tables au plan quand elles existent, après
+// `exercices_valides`, la dernière, les paquets avant la conservation ; leurs chemins ; aucune vague. Joué en dernier.
+const MARQUE_DU_DEPART = '-- ══ Le départ d\'un client (ligne 44, INAL5) ══'
+
+function blocDuDepart(texte: string): BlocDeLaCaisse {
+  const debut = texte.indexOf(MARQUE_DU_DEPART)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const tables = [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2])
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables,
+    chemins,
+    vagues: [],
+    recule: tables.length > 0 && corps.includes(`set rang = -(rang + ${tables.length}) where rang > v_rang;`)
+      && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.conservations_des_dossiers') is not null then"),
+  }
+}
+
 const MARQUE_DES_LETTRES_DE_MISSION = '-- ══ Les lettres de mission (ligne 47, LM4) ══'
 
 function blocDesLettresDeMission(texte: string): BlocDeLaCaisse {
@@ -654,11 +679,11 @@ const avecLesHonorairesFactures = avecLesArticles
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesHonorairesFactures(avecLesLettresDeMission(avecLesOriginauxLiberes(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLaCaisse(avecLesHonorairesFactures(avecLesLettresDeMission(avecLesOriginauxLiberes(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
-  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesOriginauxLiberes(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte))
+  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesOriginauxLiberes(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDuDepart(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -755,7 +780,17 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const lettresDeMission = blocDesLettresDeMission(texteDeLEssai)
   const avecLesLettresDuJour = LETTRES_DE_MISSION_PREVUES ? avecLesLettresDeMission(avecLesOriginauxDuJour, lettresDeMission) : avecLesOriginauxDuJour
   const honorairesFactures = blocDesHonorairesFactures(texteDeLEssai)
-  const courant = HONORAIRES_FACTURES_PREVUS ? avecLesHonorairesFactures(avecLesLettresDuJour, honorairesFactures) : avecLesLettresDuJour
+  const avecLesHonorairesDuJour = HONORAIRES_FACTURES_PREVUS ? avecLesHonorairesFactures(avecLesLettresDuJour, honorairesFactures) : avecLesLettresDuJour
+  const depart = blocDuDepart(texteDeLEssai)
+  const courant = DEPART_DU_CLIENT_PREVU ? avecLaCaisse(avecLesHonorairesDuJour, depart) : avecLesHonorairesDuJour
+
+  it('le bloc du départ d’un client : ses deux tables, après `exercices_valides`, conditionné, leurs chemins, aucune vague (INAL5)', () => {
+    expect(depart).toEqual({
+      ancre: 'exercices_valides', tables: [...TABLES_DU_DEPART], recule: true, conditionne: true, vagues: [],
+      chemins: Object.fromEntries(TABLES_DU_DEPART.map((t) => [t, { acces: 'direct', parent: null, colonne: null }])),
+    })
+    expect(texteDeLEssai.indexOf(MARQUE_DU_DEPART)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_HONORAIRES_FACTURES))
+  })
 
   it('le bloc des factures d’honoraires : sa table, après `lettres_de_mission`, conditionnée, son chemin (LM7)', () => {
     expect(honorairesFactures).toEqual({

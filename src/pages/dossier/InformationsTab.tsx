@@ -19,6 +19,10 @@ import LettresDeMissionCard from './LettresDeMissionCard'
 import MissionsEnVigueurCard from './MissionsEnVigueurCard'
 import { useDesignationDuDossier } from '../../lib/dossierDuCabinetLecture'
 import { refusDeLaSuppression } from '../../lib/dossierDuCabinet'
+import DepartDuClientCard from './DepartDuClientCard'
+import { useDepartDuDossier } from '../../lib/departDuClientLecture'
+import { DEPART_DU_CLIENT_PREVU, ceQueLaSuppressionPerd, exercicesSansPaquet, refusDeLaSuppressionAuDepart } from '../../lib/departDuClient'
+import { aujourdHuiAParis } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import { ouvrirApercu } from '../../lib/apercu'
 import { chargerInformationsDossier, enregistrerInformationsDossier } from '../../lib/informationsDossier'
@@ -81,9 +85,33 @@ export default function InformationsTab({
   // le drapeau baissé). La carte relit après un geste par le compteur.
   const [relectureDesignation, setRelectureDesignation] = useState(0)
   const designation = useDesignationDuDossier(dossierId, relectureDesignation)
-  const suppressionRefusee = designation?.etat === 'lue'
+  // LE DÉPART D'UN CLIENT (ligne 44, INAL5) : lu ici, une fois, pour la carte du départ et pour la zone dangereuse, qui dit
+  // avant le clic la conservation qui court et les paquets d'archive qui manquent, et que la confirmation nomme
+  // (lib/departDuClientLecture.ts ; `null` tant que la lecture n'est pas revenue, et toujours le drapeau baissé). La
+  // suppression les relit elle-même avant de vider le stockage.
+  const [relectureDepart, setRelectureDepart] = useState(0)
+  const depart = useDepartDuDossier(dossierId, relectureDepart)
+  const departLu = depart?.etat === 'lue' && depart.dossierId === dossierId ? depart : null
+  const suppressionRefusee = (designation?.etat === 'lue'
     ? refusDeLaSuppression({ estLeDossierDuCabinet: designation.dossierActuel === dossierId, superAdministrateur: isSuperAdmin })
-    : null
+    : null)
+    ?? (departLu !== null
+      ? refusDeLaSuppressionAuDepart({
+        superAdministrateur: isSuperAdmin, conservation: departLu.conservation, exercices: departLu.exercices,
+        paquets: departLu.paquets, jour: aujourdHuiAParis(),
+      })
+      // Pas encore lu, ou illisible : la suppression ne s'offre pas — sa confirmation ne saurait pas nommer ce qu'elle perd.
+      : DEPART_DU_CLIENT_PREVU
+        ? depart?.etat === 'illisible'
+          ? `Les paquets d’archive et la conservation du dossier n’ont pas pu être lus (${depart.motif}) : la suppression attend leur lecture.`
+          : 'Les paquets d’archive et la conservation du dossier se lisent : la suppression attend leur lecture.'
+        : null)
+  const ceQuePerdLaSuppression = departLu !== null
+    ? ceQueLaSuppressionPerd({
+      exercices: departLu.exercices, conservation: departLu.conservation, jour: aujourdHuiAParis(),
+      manquants: exercicesSansPaquet(departLu.exercices, departLu.paquets, aujourdHuiAParis()),
+    })
+    : ''
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -495,6 +523,11 @@ export default function InformationsTab({
         sont les deux moments où des données ENTRENT et SORTENT de la plateforme en bloc. */}
     <BalanceCard dossierId={dossierId} plan={modele.plan} />
 
+    {/* Le départ d'un client (ligne 44, INAL5) : les deux voies, juste avant la zone dangereuse qui porte la suppression. */}
+    <DepartDuClientCard
+      dossierId={dossierId} dossierNom={dossierNom} lecture={depart} onDepartEcrit={() => setRelectureDepart((n) => n + 1)}
+    />
+
     <div className="card" style={{ maxWidth: 640, marginTop: 20 }}>
       <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
         Zone dangereuse <span className="badge badge-danger">irréversible</span>
@@ -529,7 +562,7 @@ export default function InformationsTab({
     {confirmerSuppression && (
       <ConfirmationSuppression
         titre="Supprimer ce dossier"
-        description={`Cette action supprime définitivement "${dossierNom}" et tout ce qui lui est rattaché (pièces, écritures, immobilisations, factures, accès client...). Elle est irréversible.`}
+        description={`Cette action supprime définitivement "${dossierNom}" et tout ce qui lui est rattaché (pièces, écritures, immobilisations, factures, accès client...). Elle est irréversible.${ceQuePerdLaSuppression}`}
         nomAttendu={dossierNom}
         boutonLabel="Supprimer définitivement"
         enCours={suppressionEnCours}

@@ -11,6 +11,14 @@ const faux = vi.hoisted(() => ({
   liberer: null as null | (() => void),
   refus: null as string | null,
   telechargements: 0,
+  enregistrements: [] as Record<string, unknown>[],
+  enregistrement: { ok: true } as { ok: true } | { ok: false; message: string },
+}))
+
+// L'enregistrement du téléchargement (ligne 44, INAL5) : la lecture du départ simulée — le vrai module lit le drapeau, et
+// n'écrit rien tant qu'il est baissé ; ici on voit ce que le bouton lui passe, et ce qu'il dit d'un refus.
+vi.mock('../../lib/departDuClientLecture', () => ({
+  enregistrerLePaquetTelecharge: async (p: Record<string, unknown>) => { faux.enregistrements.push(p); return faux.enregistrement },
 }))
 
 vi.mock('../../lib/paquetDArchiveLecture', () => ({
@@ -35,6 +43,8 @@ beforeEach(() => {
   faux.liberer = null
   faux.refus = null
   faux.telechargements = 0
+  faux.enregistrements = []
+  faux.enregistrement = { ok: true }
   URL.createObjectURL = () => 'blob:paquet'
   URL.revokeObjectURL = () => {}
   HTMLAnchorElement.prototype.click = () => { faux.telechargements++ }
@@ -113,4 +123,16 @@ describe('le bouton du paquet d’archive', () => {
       'src/lib/paquetDArchiveLecture.ts', 'src/pages/dossier/EcrituresTab.tsx', 'src/pages/dossier/PaquetDArchiveBouton.tsx',
     ])
   })
+  it('le téléchargement s’enregistre APRÈS la remise au navigateur, à l’empreinte de l’exercice ; un refus se dit (INAL5)', async () => {
+    faux.enregistrement = { ok: false, message: 'refus fictif' }
+    const bouton = monter()
+    act(() => { fireEvent.click(bouton) })
+    await act(async () => { faux.liberer!() })
+    await vi.waitFor(() => expect(faux.enregistrements).toHaveLength(1))
+    expect(faux.telechargements).toBe(1)
+    expect(faux.enregistrements[0]).toMatchObject({ dossierId: 'd1', annee: 2025, empreinteExercice: 'e'.repeat(64), nonVerifiees: 0 })
+    expect(String(faux.enregistrements[0].empreinteDuManifeste)).toMatch(/^[0-9a-f]{64}$/)
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('la base ne l’a pas enregistré (refus fictif)'))
+  })
+
 })

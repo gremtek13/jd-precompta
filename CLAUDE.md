@@ -434,6 +434,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   préparée le même jour, à coller APRÈS LM1 (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` baissé ; l'acceptation en
   ligne prévue et fermée par la base jusqu'à LM-Q10) ; restent LM2, LM3 et LM5 à LM8 → « LM1 : LE DOSSIER DU CABINET, EN
   BASE », « LM4 : LES LETTRES DE MISSION ET LEURS VERSIONS FIGÉES, EN BASE ».
+- **Le départ d'un client** (ligne 44, INAL5, INAL-Q6) : `depart_du_client` préparée le 11/11/2026, à coller — les paquets
+  d'archive téléchargés, la conservation dix ans posée et levée par le chef, la suppression gardée ; `DEPART_DU_CLIENT_PREVU`
+  baissé → « INAL5 : LE DÉPART D'UN CLIENT, LES PAQUETS TÉLÉCHARGÉS ET LA CONSERVATION DIX ANS ».
 - **Contre-calcul par l'expert-comptable** (ligne 23.3) : quatre dossiers de référence remis (2035, CA3, amortissements,
   bilan 2033-A) ; restent ses chiffres, l'analyse des écarts, puis ses chiffres en cas de référence → « LES DOSSIERS DE
   RÉFÉRENCE ».

@@ -223,6 +223,8 @@ l'application devrait choisir seule.
   possible n'aura pas lieu avant 2033.
 - Il n'existe **aucun mécanisme de purge** dans l'application. Ce n'est pas urgent au sens des
   durées, et ça l'est au sens de la minimisation (le texte OCR, ci-dessus).
+- **Dossier « conservé »** (INAL5, préparée le 11/11/2026) : gardé jusqu'au 31/12 de la 10ᵉ année après son dernier exercice
+  validé (L102 B), sans ajout ni suppression avant (sauf super-administrateur) ; au terme, rien ne se purge seul (§8).
 
 ---
 

@@ -3,6 +3,9 @@ import { messageErreur } from './messageErreur'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { refusDeLaSuppression } from './dossierDuCabinet'
 import { estDesigneCommeDossierDuCabinet } from './dossierDuCabinetLecture'
+import { refusDeLaSuppressionAuDepart } from './departDuClient'
+import { lireLeDepartAvantLaSuppression } from './departDuClientLecture'
+import { aujourdHuiAParis } from './format'
 
 // Retire tous les fichiers de stockage d'un dossier (pièces + packs, et le logo de ses factures dans le seau `ventes` dès
 // que sa migration est en base, étape A5c1, comme l'original d'une facture reprise, sous `imports/<lot>/`, A8d2c) avant
@@ -198,6 +201,18 @@ export async function supprimerDossierDefinitivement(
     estLeDossierDuCabinet: await estDesigneCommeDossierDuCabinet(dossierId), superAdministrateur: qui.superAdministrateur,
   })
   if (refus !== null) throw new Error(refus)
+  // LE DÉPART D'UN CLIENT (ligne 44, INAL5 : la migration `depart_du_client`). La base refuse la ligne d'un dossier conservé
+  // avant son terme, ou qui porte un exercice validé dont le paquet d'archive n'a pas été téléchargé — sauf au
+  // super-administrateur. Elle ne refuse que la LIGNE : la condition se lit donc ici, AVANT de vider le stockage, et une
+  // lecture qui échoue lève sans rien retirer. Rien ne se lit le drapeau baissé.
+  const depart = await lireLeDepartAvantLaSuppression(dossierId)
+  if (depart !== null && depart.etat === 'lue') {
+    const refusDuDepart = refusDeLaSuppressionAuDepart({
+      superAdministrateur: qui.superAdministrateur, conservation: depart.conservation, exercices: depart.exercices,
+      paquets: depart.paquets, jour: aujourdHuiAParis(),
+    })
+    if (refusDuDepart !== null) throw new Error(refusDuDepart)
+  }
   const seaux: SeauDuDossier[] = LOGO_DES_FACTURES_EXPORTE ? ['pieces', 'packs', 'ventes'] : ['pieces', 'packs']
   const premiers = await Promise.all(seaux.map((seau) => viderDossierDuStockage(seau, dossierId)))
   const { error } = await supabase.from('dossiers').delete().eq('id', dossierId)

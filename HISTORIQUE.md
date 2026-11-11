@@ -50881,3 +50881,24 @@ les comptes lus : chaque compte par ses seuls relevés (le mensuel et l'annuel d
 différents ne concluent pas), les comptes d'un même 512 additionnés et nommés, un compte clos à zéro, le 512 propre d'un compte
 prouvé par le relevé ; les causes d'un écart ne lisent que les mouvements de ce 512 et le premier relevé de chaque compte.
 Clôture et la Vue d'ensemble nommaient déjà chaque compte (MCB4). Deux mutations de la carte mordent (le verrou, le champ figé).
+
+### 11/11/2026 — INAL5 : LE DÉPART D'UN CLIENT, LES PAQUETS TÉLÉCHARGÉS ET LA CONSERVATION DIX ANS (LIGNE 44) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, sur INAL-Q6, « Avoir le choix » ; en production, des SELECT seulement : 197 migrations, 0 exercice validé ; le
+seul super-administrateur est le seul chef du seul cabinet.) **La suppression aujourd'hui** : la policy `dossiers_delete`
+(`est_chef_du_cabinet`), aucune fonction SQL, l'écran `InformationsTab` par `supprimerDossierDefinitivement`, qui vide le stockage
+AVANT la ligne. **La migration** `depart_du_client` (20261111191000, `d813461e…`, 19 588 octets, À COLLER : « before delete » et
+« on delete cascade » ; rien ne se détruit ; retour 20261111191100, `17007ddd…`) : `paquets_d_archive_telecharges` (INAL3b) par
+`enregistrer_paquet_telecharge` seule (l'empreinte de l'exercice exigée et revérifiée) ; `conservations_des_dossiers`, posée et
+levée par le chef (`conserver_le_dossier`, `lever_la_conservation`), terme fixé à la pose au 31/12 de la dixième année après le
+dernier exercice validé, refusée sans exercice validé ou avec un accès client ; un dossier conservé ne reçoit plus, de PERSONNE, ni
+pièce, ni écriture, ni accès, ni validation (`garder_dossier_conserve`, la ligne du dossier en partage de clé) ; la suppression
+(`garder_depart_du_dossier`) se refuse, hors super-administrateur, tant que la conservation court, puis tant qu'un exercice encore
+à conserver n'a pas de paquet à son empreinte. La sauvegarde restaure la conservation EN DERNIER, après `exercices_valides`.
+**Preuves**, sur une copie de la réplique égale à la production (neuf familles de `signature.sql`, port 54721) : `departDuClient.sql`
+48 justes, 4 mutations ; 13 mutations de la migration, 13 tuées ; deux courses (la pose contre une pièce, un accès contre la pose)
+se suivent ; `rls.sql` 259 lignes, 0 en faute (bloc DP) ; `validationExercice.sql` (son 141, conditionné), `frontiereDesEncaissements.sql`
+(S11 enregistre d'abord son paquet) et `restauration.sql` égaux avant et après ; le retour rend la signature d'avant. L'écran derrière
+`DEPART_DU_CLIENT_PREVU` baissé : la carte « Le départ du client » (onglet Informations), la zone dangereuse qui dit et nomme les
+paquets manquants, la suppression qui les relit avant le stockage, le paquet qui s'enregistre après son téléchargement. Questions
+INAL5-Q1 à Q3.

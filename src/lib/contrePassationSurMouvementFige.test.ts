@@ -5,7 +5,7 @@ import { correspondAuModele, etapesDeLEssai, refusExigesParLEssai, TEXTE_ESSAI_V
 import { codesSql, messagesSql } from '../test/raiseSql'
 import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, indiceSql, type DefinitionSql } from '../test/schema'
 import { REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT } from './encaissementsFactures'
-import { ORDRE_RESTAURATION, ORDRE_RESTAURATION_PREVU, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PAR_VAGUES } from './sauvegarde'
+import { ORDRE_RESTAURATION, ORDRE_RESTAURATION_PREVU, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PAR_VAGUES, TABLES_DU_DEPART } from './sauvegarde'
 
 // LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ (chantier EC-Q3, ligne 28.65 ; VF5H2Q1-Q2, « La refuser
 // (petite migration à part) », et VF5H2Q1Q2-Q1, écrite sur la recommandation, le 26/10/2026 ; migration
@@ -293,7 +293,9 @@ describe('aucune fonction n’atteint ces refus, et la restauration les passe : 
       expect(ordre.indexOf('lignes_bancaires')).toBeGreaterThan(-1)
       expect(ordre.indexOf('lignes_bancaires')).toBeLessThan(ordre.indexOf('encaissements_factures'))
       expect(ordre.indexOf('encaissements_factures')).toBeLessThan(ordre.indexOf('exercices_valides'))
-      expect(ordre[ordre.length - 1]).toBe('exercices_valides')
+      // Seules les tables du départ d'un client (INAL5) suivent les exercices validés : aucun encaissement, et aucune garde
+      // de la validation ne les retient (sauvegardeDepartDuClient.test.ts).
+      expect(ordre.filter((t) => !TABLES_DU_DEPART.includes(t)).at(-1)).toBe('exercices_valides')
     }
     // Une contre-passation part dans une vague de sa table, à son rang ; la seconde passe, qui suit les exercices validés,
     // ne fait que des mises à jour (le test d'après), et jamais sur les encaissements : aucun ne s'insère après eux.

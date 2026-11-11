@@ -3,6 +3,7 @@ import documentation from '../../../DOCUMENTATION_DES_TRAITEMENTS.md?raw'
 import { fabriquerLePaquet, nomDuPaquet } from '../../lib/paquetDArchive'
 import { lireLePaquet } from '../../lib/paquetDArchiveLecture'
 import { messageErreur } from '../../lib/messageErreur'
+import { enregistrerLePaquetTelecharge } from '../../lib/departDuClientLecture'
 
 // LE PAQUET D'ARCHIVE D'UN EXERCICE VALIDÉ, SUR UN CLIC DU CABINET (ligne 44, INAL3a). Monté par l'onglet Écritures — un
 // onglet du cabinet, que l'espace client ne monte jamais —, à côté de « Exporter FEC (validé) » : c'est là que le FEC de
@@ -59,6 +60,17 @@ export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, f
       }
       telechargerOctets(nomDuPaquet(dossierSiret, annee), paquet.zip)
       setFait({ fichiers: paquet.fichiers.length, nonVerifiees: paquet.nonVerifiees, empreinte: paquet.empreinteDuManifeste })
+      // Le téléchargement s'enregistre APRÈS la remise au navigateur (ligne 44, INAL5) : la suppression du dossier l'exige,
+      // exercice par exercice, à l'empreinte que le paquet scelle. Un enregistrement refusé se dit : le fichier est là, mais
+      // la base ne le sait pas. Rien ne s'écrit le drapeau `DEPART_DU_CLIENT_PREVU` baissé.
+      const enregistre = await enregistrerLePaquetTelecharge({
+        dossierId, annee, empreinteExercice: lecture.exercice.empreinte, empreinteDuManifeste: paquet.empreinteDuManifeste,
+        fichiers: paquet.fichiers.length + 1, nonVerifiees: paquet.nonVerifiees,
+      })
+      if (!enregistre.ok) {
+        setErreur(`Le paquet est téléchargé, mais la base ne l’a pas enregistré (${enregistre.message}) : la suppression du dossier `
+          + 'l’attendra. Relance le paquet.')
+      }
     } catch (e) {
       // Une fabrication qui lève (le FEC, JSZip, le navigateur) se dit : sans ce `catch`, le clic n'aurait rien montré.
       setErreur(`Aucun paquet d’archive : ${messageErreur(e, 'la fabrication a été interrompue.')}`)
