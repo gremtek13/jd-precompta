@@ -2,7 +2,7 @@
 -- 11/11/2026, pas appliquée ; elle suit `comptes_bancaires` (MCB1), préparée elle aussi, et s'applique avec elle, juste
 -- après : l'application lit l'une et l'autre derrière le même drapeau (`COMPTES_BANCAIRES_PREVUS`). Le récit : HISTORIQUE.md,
 -- « 11/11/2026 — L'IMPORT D'UN RELEVÉ PAR COMPTE BANCAIRE (MCB2) ». Son essai : supabase/essais/finDIdentifiantDesComptes.sql ;
--- son retour (DESTRUCTIF) : supabase/preparees/retour/20261111160100_retour_fin_d_identifiant_des_comptes_bancaires.sql ;
+-- son retour (DESTRUCTIF) : supabase/preparees/retour/20261111153100_retour_fin_d_identifiant_des_comptes_bancaires.sql ;
 -- son module : src/lib/importParCompte.ts.
 --
 -- Un relevé OFX dit le compte qu'il décrit (ACCTID) ; la table des comptes, elle, ne tient aucun numéro de compte (la
