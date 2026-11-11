@@ -19,6 +19,7 @@ import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
+import { DEPOT_DES_HONORAIRES_PREVU } from './depotDesHonoraires'
 import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
@@ -332,6 +333,23 @@ export function auPlanDesHonorairesFactures(table: string, prevus: boolean): boo
   return prevus || !TABLES_DES_HONORAIRES_FACTURES.includes(table)
 }
 
+// LE DÉPÔT DES FACTURES D'HONORAIRES CHEZ LE CLIENT (ligne 47, lot LM8 ; migration `depot_des_honoraires`, PRÉPARÉE le
+// 11/11/2026, après LM1, LM4 et LM7) : le dépôt d'une facture validée du dossier du cabinet dans le dossier de son client.
+// Sous le drapeau de la migration (`DEPOT_DES_HONORAIRES_PREVU`, src/lib/depotDesHonoraires.ts), baissé : la production n'a
+// pas la table, et la lire ferait échouer toute sauvegarde. Ses relations : le dossier du cabinet EN CASCADE, la facture
+// SANS ACTION (une facture validée ne part qu'avec son dossier) ; le dossier du client et la pièce sont des références SANS
+// clé (un autre dossier : la sauvegarde du dossier du cabinet ne les porte pas, et leur absence ne retient rien) ; son
+// rang, après les factures d'honoraires, dont sa garde lit le client ; son chemin, direct ; sa clé, la commune. La
+// restauration la réinsère par la porte que sa policy ouvre au super-administrateur, et sa garde accepte l'histoire telle
+// qu'écrite — un dépôt dont la pièce n'est plus chez le client à côté de celui qui l'y a redéposée.
+// sauvegardeHonorairesDeposes.test.ts éprouve les deux plans.
+export const TABLES_DES_HONORAIRES_DEPOSES: readonly string[] = ['honoraires_deposes']
+
+/** Une table au plan, côté dépôt des honoraires : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
+export function auPlanDesHonorairesDeposes(table: string, prevu: boolean): boolean {
+  return prevu || !TABLES_DES_HONORAIRES_DEPOSES.includes(table)
+}
+
 // LE DÉPART D'UN CLIENT (ligne 44, lot INAL5 ; migration `depart_du_client`, PRÉPARÉE le 11/11/2026) : les paquets
 // d'archive téléchargés et les conservations d'un dossier, deux historiques que rien ne réécrit. Sous le drapeau de la
 // migration (`DEPART_DU_CLIENT_PREVU`, src/lib/departDuClient.ts), baissé : la production n'a pas les tables, et les lire
@@ -370,6 +388,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
     && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS)
     && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS)
+    && auPlanDesHonorairesDeposes(table, DEPOT_DES_HONORAIRES_PREVU)
     && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU)
 }
 
@@ -652,6 +671,9 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'honoraires_factures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'honoraires_factures', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
   { enfant: 'honoraires_factures', parent: 'lettres_de_mission', colonne: 'lettre_id', aLaSuppression: 'bloque' },
+  // Le dépôt des factures d'honoraires (LM8) : le dossier du cabinet, en cascade ; la facture, sans action.
+  { enfant: 'honoraires_deposes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'honoraires_deposes', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -929,6 +951,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'lettres_de_mission',
   // Les factures d'honoraires (LM7) : après les lettres qu'elles citent, et les factures, bien avant.
   'honoraires_factures',
+  // Le dépôt des factures d'honoraires (LM8) : après les factures d'honoraires, dont sa garde lit le client.
+  'honoraires_deposes',
   'regimes_ereporting',
   'pieces_ecartees_ereporting',
   'declarations_ereporting',
@@ -1398,6 +1422,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   modeles_lettre_de_mission: { acces: 'direct' },
   lettres_de_mission: { acces: 'direct' },
   honoraires_factures: { acces: 'direct' },
+  honoraires_deposes: { acces: 'direct' },
   paquets_d_archive_telecharges: { acces: 'direct' },
   conservations_des_dossiers: { acces: 'direct' },
   ecritures_brouillon: { acces: 'direct' },
