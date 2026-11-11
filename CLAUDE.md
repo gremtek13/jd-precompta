@@ -673,8 +673,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     et celle du mandataire, choisie selon qui valide, et la série de l'ancien logiciel qui continue), reconçues le
     06/11/2026, A8-Q1 à Q6 tranchées ; leur base — A8a, A9a, A8b, A8-Q5 — en production depuis le 10/11/2026, les
     lecteurs et le plan de sauvegarde ouverts (`FACTURES_IMPORTEES_PREVUES`, `NUMEROTATION_CONTINUE_PREVUE`,
-    `PIECE_D_UNE_FACTURE_REPRISE_PREVUE` levés), la carte de la numérotation (A9b) derrière
-    `CARTE_DE_LA_NUMEROTATION_OFFERTE`, baissé jusqu'à la décision du cabinet ; restent l'écran d'import (A8d) et la
+    `PIECE_D_UNE_FACTURE_REPRISE_PREVUE` levés), la carte de la numérotation (A9b) offerte depuis
+    le 11/11/2026 (`CARTE_DE_LA_NUMEROTATION_OFFERTE` levé, A9B-Q0) ; restent l'écran d'import (A8d) et la
     suite → « A8 ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE
     (PRÉPARÉE, PAS APPLIQUÉE) », « A8-Q5 : LA PIÈCE D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) », « LE JOUR J DU 10/11/2026 : SEPT MIGRATIONS EN PRODUCTION (INAL1, INAL2, PC4, A8A, A9A, A8B, A8-Q5) ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,

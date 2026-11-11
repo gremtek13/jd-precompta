@@ -50574,3 +50574,22 @@ Agent architecte, rien d'appliqué ; premier lot de la conception du 10/11/2026 
 Preuves, sur une copie de la réplique égale à la production (195 migrations, neuf familles de `signature.sql` égales, `fichier_fige` réaligné : la migration de stockage rejouée par le super-utilisateur l'avait laissé à lui) : l'essai neuf `dossierDuCabinet.sql` (réplique seulement : il supprime un dossier), 27 étapes vraies, EN ATTENTE sans la migration ; 13 mutations sur 13 tuées ; la course de deux sessions (désignation contre accès posé, dans les deux ordres) : la seconde attend puis se refuse ; `rls.sql` entier, bloc DC neuf (DC1 à DC7, trois mutations) : avec la migration 142 lignes, 0 en faute, 100 mutations sur 100, sans elle 134 lignes, 0 en faute, 97 sur 97, DC EN ATTENTE ; `numerotationContinue`, `mentionsFigees`, `factures`, `devis`, `acomptesDesDevis`, `facturesImportees` identiques avant et après (aux identifiants tirés près) ; le retour rend la signature d'avant. Module pur `lib/dossierDuCabinet.ts` derrière `DOSSIER_DU_CABINET_PREVU` baissé (11 tests, confrontés à la migration, au retour, à l'essai et à rls.sql).
 
 Pour LM2 : `supprimerDossierDefinitivement` vide le stockage AVANT la ligne — sur le dossier du cabinet, elle doit lire la désignation et refuser avant (`refusDeLaSuppression`) ; la confirmation de validation ne nomme plus le mandat sous `valideAuNomDuClient` ; `create-client-access` dira le 23514. La migration e7a (`facture_internationale`) redéfinit aussi `enregistrer_facture` : la seconde collée se refait sur la définition alors en production. Questions LM1-Q1 (le super-administrateur seul retire le dossier du cabinet) et LM1-Q2 (les refus d'identité d'un accès « Ventes » non appliqués aux factures du cabinet).
+
+### 11/11/2026 — QUATRE RÉPONSES DU CABINET : A9B-Q0, INAL4-Q1, INAL3-Q1 ET INAL12-Q2 (LIGNE 44, LIGNE 51.5)
+
+(Agent architecte ; aucune migration, aucune Edge Function.) **A9B-Q0** (« L'ouvrir maintenant ») :
+`CARTE_DE_LA_NUMEROTATION_OFFERTE` levé, la base d'A9a étant en production ; la carte garde son état baissé éprouvé
+(son test joue les deux), `InformationsTab.test.tsx` la double comme ses voisines. **INAL4-Q1** (« une référence
+neutre ») : `referenceDuReleve` ne reçoit plus que la date du mouvement, « Relevé du JJ/MM/AAAA », comme « Caisse du … » ;
+elle sert la PieceRef du FEC, les écritures des ventes facturées et la colonne justificatif de la piste d'audit, qui
+disait « Relevé bancaire : <nom du fichier> ». Aucune Edge Function n'en a de copie (l'assistant n'a pas de PieceRef) ; le
+FEC d'un exercice validé relit `piece_ref` figée, et la base ne compte aucun exercice validé ni écriture figée (lu le
+11/11/2026). `fecAuPlan.test.ts` : les deux empreintes des dossiers basculés relevées de nouveau, après avoir vérifié que
+ramener la seule PieceRef à l'ancien nom redonnait les anciennes à l'octet. **INAL3-Q1** (contre la recommandation) : une
+pièce citée sans empreinte de dépôt (nulle, vide ou blanche, `lib/empreinteDeDepot.ts`, la règle commune) entre au paquet
+d'archive sans être relue, marquée « non vérifiée (aucune empreinte de dépôt) » au manifeste, leur nombre dit en tête ; une
+empreinte illisible ou un original altéré refusent toujours tout. L'onglet Écritures les compte sur ses pièces validées
+(`piecesSansEmpreinte`) et le bouton le dit avant le clic. **INAL12-Q2** (« la signaler ») : rien ne le disait ; le
+préalable `pieces-sans-empreinte` (pièces validées de l'exercice, jamais bloquant) et le point de la Checklist (en
+attention, hors de ce qu'un exercice validé fige), rangés au cycle des dépenses. Les fixtures par défaut de
+`prealablesValidation.test.ts` et `ChecklistTab.test.tsx` portent désormais une empreinte.

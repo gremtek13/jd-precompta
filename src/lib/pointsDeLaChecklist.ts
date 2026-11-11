@@ -20,6 +20,7 @@ import { anneeDe } from './format'
 import { detailDesRuptures, jonctionsDesReleves, rupturesDesReleves } from './suiteDesReleves'
 import { detailDesDoublonsProbables, doublonsProbables, piecesRegleesPourLesDoublons } from './doublonsProbables'
 import { estFigee } from './validationExercice'
+import { MESSAGE_PIECES_SANS_EMPREINTE, sansEmpreinteDeDepot } from './empreinteDeDepot'
 import { confronterLOuverture, exerciceAConfronter, ouvertureEnEcart } from './ouvertureConfrontee'
 import { confronterLesAmortissementsRepris, detailDesAmortissementsSousUnAutreNumero, detailDesEcartsDeLaReprise } from './repriseDesAmortissements'
 import type { OuvertureBanque } from './planTresorerie'
@@ -425,6 +426,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // peut être faux (voir lib/controles.ts).
   const tvaImpossible = piecesTvaImpossible([...validesQuiComptent, ...aValiderQuiComptent])
   const deviseNonConvertie = piecesDeviseNonConvertie([...piecesValidees, ...piecesAValider], facturesSources)
+  // LA PIÈCE VALIDÉE SANS EMPREINTE DE FICHIER (INAL12-Q2 ; lib/empreinteDeDepot.ts) : le même avertissement que la validation,
+  // pour ce qu'aucun exercice validé ne fige encore — l'empreinte de l'exercice ne scellera pas son fichier, et le paquet
+  // d'archive la marquera « non vérifiée ». En « attention » : rien ne se corrige, rien ne bloque.
+  const sansEmpreinte = piecesValidees.filter((p) => sansEmpreinteDeDepot(p) && !estFigee(p.date_piece ?? '', frontiere))
   // Le pendant côté Banque de "en attente de rapprochement bancaire" ci-dessous (qui part des
   // écritures) : un mouvement bancaire importé mais jamais rattaché à une pièce, une cotisation, ou
   // marqué personnel/à ignorer — le seul cycle du dossier qui manquait encore à ce tableau de bord.
@@ -641,6 +646,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     // certain (voir lib/controles.ts) — le rapprochement, lui, n'annonce qu'un doute.
     { id: 'mois-en-double', label: "mois d'abonnement en double, avec un mois voisin vide — une pièce mal datée ou en double", action: 'Vérifier ces pièces', nb: moisEnDouble.length, cible: 'pieces', severite: 'attention' },
     // Le même achat entré deux fois (D1 de la relecture du 04/11/2026) : sa charge compte deux fois dans la 2035.
+    { id: 'pieces-sans-empreinte', label: MESSAGE_PIECES_SANS_EMPREINTE, action: 'Voir ces pièces', nb: sansEmpreinte.length, cible: 'pieces', severite: 'attention', detail: detailPiecesSansDate(sansEmpreinte) },
     { id: 'doublons-probables', label: 'paire(s) de pièces de dépense au même montant, du même fournisseur, à sept jours au plus — le même achat entré deux fois ?', action: 'Voir ces pièces', nb: doublonsDuDossier.length, cible: 'pieces', severite: 'attention', detail: detailDesDoublonsProbables(doublonsDuDossier) },
     // « Erreur » : si les deux sont validées et catégorisées, la même charge est comptée deux fois —
     // dans la 2035 comme dans la balance. Et l'empreinte du FICHIER ne peut pas le voir (voir
