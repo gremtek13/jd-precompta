@@ -60,7 +60,7 @@
 --
 -- À COLLER : les clés étrangères (en cascade) et la garde nomment l'action de suppression. Rien ne se détruit : une table,
 -- six fonctions, un déclencheur et deux policies s'ajoutent, rien ne se remplace. Son retour :
--- supabase/preparees/retour/20261111180100_retour_honoraires_factures.sql (à coller AVANT celui de LM4, dont la table est
+-- supabase/preparees/retour/20261111190100_retour_honoraires_factures.sql (à coller AVANT celui de LM4, dont la table est
 -- citée par la clé de la lettre). Son essai : supabase/essais/honorairesFactures.sql (sur une réplique : il désigne le
 -- dossier du cabinet et supprime un brouillon) ; puis rls.sql (le bloc HF).
 

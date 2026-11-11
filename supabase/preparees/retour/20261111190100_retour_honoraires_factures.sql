@@ -1,4 +1,4 @@
--- RETOUR DE LM7 (`honoraires_factures`, supabase/preparees/20261111180000_honoraires_factures.sql) — PRÉPARÉ, À COLLER
+-- RETOUR DE LM7 (`honoraires_factures`, supabase/preparees/20261111190000_honoraires_factures.sql) — PRÉPARÉ, À COLLER
 -- (il supprime une table et six fonctions). AVANT le retour de LM4 (`lettres_de_mission`), dont la table est citée par la
 -- clé de la lettre. Il rend la base d'avant la migration — `signature.sql` égale à celle d'avant, éprouvé sur la
 -- réplique — et SE REFUSE tant qu'un lien existe : retirer la table perdrait, sans le dire, quelle facture a facturé
