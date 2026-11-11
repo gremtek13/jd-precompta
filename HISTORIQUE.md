@@ -50549,3 +50549,20 @@ client, le cabinet choisira entre remettre les archives puis supprimer, et garde
 demande du cabinet d'aller plus vite, cinq agents en parallèle : MCB, LM (premier lot), les deux lectures du client des
 reprises (A8C-Q1, A8Q5-Q2), A8Q5-Q3, et les petits lots (A9B-Q0, INAL4-Q1, INAL3-Q1, INAL12-Q2). Restent à engager : la
 CIPAV, P1T-E2, le 468, INAL-Q6. Sans réponse : A8C6-Q1 et Q2, A8D2A-migration, A8D2A-Q1, A8D2B-Q1 à Q3, A8D2C-Q1, E7B-Q1 et Q2.
+
+### 11/11/2026 — A8Q5-Q3 : LA PIÈCE DÉJÀ COMPTÉE PAR UN EXERCICE VALIDÉ, PUIS L'ORIGINAL D'UNE FACTURE REPRISE (LIGNE 51.5)
+
+(Agent architecte ; aucune migration, aucune écriture en production ; une copie de la réplique du jour J, 195 migrations,
+l'historique réaligné sur la production.) **Le cas de la fiche ne se fige pas.** En trésorerie, une pièce de vente
+qu'aucun paiement ne règle s'écrit au 706 et au 44571 à sa date, sans banque : `valider_exercice` refuse son exercice
+(« Une écriture n'est pas équilibrée au centime »), et l'application aussi (`ecritures-desequilibrees`, ou
+`ecritures-a-generer` sans écriture ; `POINTS_DE_LA_CHECKLIST_ECARTES`, « montant-suspect »). Un exercice validé n'a donc
+jamais compté le reste impayé d'une pièce de vente, citée ou non (CGI, art. 93 : les recettes encaissées) : l'option (B)
+de A8Q5-Q3 n'a rien à déduire, et rien ne le dirait pièce par pièce (l'instantané de la 2035 porte des postes ; les
+écritures figées, les seuls paiements). **Ce qui reste, et existe** : la pièce figée PAYÉE en N, citée ensuite (A8Q5-Q1),
+d'une reprise dont l'import déclare moins d'encaissé avant la reprise que ses paiements — le registre (A8b) part du
+déclaré, et la même vente compterait en N et en N+1. L'essai neuf `pieceDejaCompteeDUneReprise.sql`, 6 sur 6 : le refus,
+le témoin sans écriture (la base valide, elle ne juge pas la 2035), la pièce citée avant la validation (une part, en N+1),
+la pièce figée et l'import juste (le registre refuse : « il reste 0,00 € »), le témoin de l'import à zéro (« 100 en 2025 ;
+12000 en 2026 »). Questions : A8Q5Q3-Q1 (fermer A8Q5-Q3), A8Q5Q3-Q2 (les paiements de la pièce citée, plancher de la base
+des encaissements, à la citation et au registre).
