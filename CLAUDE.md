@@ -683,7 +683,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     drapeau (B3a : deux sections de l'onglet Documents administratifs, « Mes documents » et « Mes demandes » ; reste B3b, la
     relance par e-mail) → « B2 : LES DOCUMENTS ET LES DEMANDES DU CABINET, EN BASE », « B3A : LES DOCUMENTS ET LES
     DEMANDES, À L'ÉCRAN » ; B4 préparée le 11/11/2026 (`achats_du_client`, `ACHATS_DU_CLIENT_PREVUS` baissé ; la réception
-    par « Achats » attend B4-Q1 à Q3) ; « LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (C6, LIGNE 51.5) »,
+    par « Achats » attend B4-Q1 à Q3), ses écrans le même jour derrière le même drapeau (B5 : « Mes achats », la section de
+    la fiche d'une pièce d'achat) → « B5 : LES ACHATS DU CLIENT, À L'ÉCRAN » ; « LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (C6, LIGNE 51.5) »,
     « TROIS CASES DE PLUS : « ACHATS », « NOTES DE FRAIS », « DOCUMENTS » (B1, LIGNE 51.5) ».
   - Du premier groupe, faits : A1 à A6 (sauf ce qui suit). Restent, dans l'ordre recommandé : A4B3-Q6 (la ligne
     d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7, la facture fige ses mentions
