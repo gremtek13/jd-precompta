@@ -822,6 +822,26 @@ begin
   end if;
 end $$;
 
+-- ══ Le départ d'un client (ligne 44, INAL5) ══
+-- Les paquets d'archive téléchargés et les conservations d'un dossier (migration `depart_du_client`, préparée), au plan quand
+-- leurs tables existent : APRÈS `exercices_valides`, la dernière (ORDRE_RESTAURATION_PREVU : une conservation en cours
+-- refuserait la restauration des pièces, des écritures, des accès et des exercices validés), les paquets avant la
+-- conservation ; leurs chemins ; aucune vague. Absentes de la base, rien n'entre : le plan est celui d'hier.
+-- restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.conservations_des_dossiers') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'exercices_valides';
+    update essai_restauration._ordre set rang = -(rang + 2) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'paquets_d_archive_telecharges');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 2, 'conservations_des_dossiers');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('paquets_d_archive_telecharges','direct',null,null),('conservations_des_dossiers','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

@@ -16,6 +16,7 @@ import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { ORIGINAUX_RETENUS_PREVUS } from './originauxRetenus'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
+import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
@@ -53,7 +54,8 @@ import {
   RELATIONS_PREVUES,
   TABLES_DES_DEVIS,
   tablesSansChemin,
-  violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures
+  violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures,
+  auPlanDuDepart, TABLES_DU_DEPART,
 } from './sauvegarde'
 
 // LES DEVIS AU PLAN DE SAUVEGARDE (espace client, étape P5). Leurs migrations attendent l'accord du cabinet : tant que
@@ -89,7 +91,7 @@ describe('le filtre du plan', () => {
     // celui des comptes bancaires, et le graphe retire les clés des mouvements et des contrôles vers leur compte
     // (sauvegardeComptesBancaires.test.ts) ; depuis P1T-E2, celui de l'adresse des accès retirés
     // (sauvegardeAdressesDesAccesRetires.test.ts) ; depuis LM7, celui des factures d'honoraires
-    // (sauvegardeHonorairesFactures.test.ts).
+    // (sauvegardeHonorairesFactures.test.ts) ; depuis INAL5, celui du départ d'un client (sauvegardeDepartDuClient.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -105,7 +107,8 @@ describe('le filtre du plan', () => {
         && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS)
         && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
         && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS)
-        && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS))
+        && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS)
+        && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
@@ -157,7 +160,10 @@ describe('le plan prévu, tables des devis comprises', () => {
   it('juste avant le journal des e-mails, qui cite un devis envoyé (étape P6c1) : la série, les devis, puis leurs liens', () => {
     const debut = ORDRE_RESTAURATION_PREVU.indexOf('devis_numerotation')
     expect(ORDRE_RESTAURATION_PREVU.slice(debut, debut + 4)).toEqual(['devis_numerotation', 'devis', 'devis_factures', 'emails_envoyes'])
-    expect(ORDRE_RESTAURATION_PREVU.at(-1)).toBe('exercices_valides')
+    // Les exercices validés en dernier — seules les tables du départ d'un client les suivent (INAL5 : la conservation en
+    // cours garde les exercices validés, elle se restaure après eux), qu'aucune garde de la validation ne retient.
+    expect(ORDRE_RESTAURATION_PREVU.filter((t) => !TABLES_DU_DEPART.includes(t)).at(-1)).toBe('exercices_valides')
+    expect(ORDRE_RESTAURATION_PREVU.slice(ORDRE_RESTAURATION_PREVU.indexOf('exercices_valides') + 1)).toEqual([...TABLES_DU_DEPART])
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(rang('devis_factures')).toBeGreaterThan(rang('factures_emises'))
     expect(rang('devis')).toBeGreaterThan(rang('dossiers'))

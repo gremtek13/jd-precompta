@@ -34,6 +34,19 @@ const journal: { action: string; cible: string }[] = []
 // Les lectures du stockage, seau et chemin : un seau qu'on ne doit pas lire ne se lit pas.
 const listes: string[] = []
 
+// LE DÉPART D'UN CLIENT (ligne 44, INAL5) : ce que la lecture rend avant la suppression — `null` le drapeau baissé (l'état
+// réel), une lecture du départ, ou une lecture qui lève.
+const depart = {
+  lecture: null as null | Record<string, unknown>,
+  leve: false,
+}
+vi.mock('./departDuClientLecture', () => ({
+  lireLeDepartAvantLaSuppression: async () => {
+    if (depart.leve) throw new Error('Les paquets d’archive et la conservation du dossier n’ont pas pu être lus : rien n’a été supprimé (panne fictive).')
+    return depart.lecture
+  },
+}))
+
 vi.mock('./logoDesFactures', () => ({
   get LOGO_DES_FACTURES_EXPORTE() {
     return etat.logo
@@ -359,6 +372,48 @@ describe('le second passage, après la ligne du dossier (INAL1)', () => {
       { chemin: `${D}/piece-1.pdf`, raison: 'objet verrouillé' },
     ])
     expect(journal.map((j) => j.action)).toEqual(['remove:pieces', 'delete:dossiers', 'remove:pieces'])
+  })
+})
+
+describe('le départ d’un client, lu avant de vider le stockage (INAL5)', () => {
+  const lue = (p: Record<string, unknown> = {}) => ({
+    etat: 'lue', dossierId: D, exercices: [{ annee: 2025, empreinte: 'e2025' }], paquets: [], conservation: null, accesClient: 0, ...p,
+  })
+  beforeEach(() => { depart.lecture = null; depart.leve = false })
+
+  it('un paquet qui manque : le refus, avant tout retrait du stockage et toute suppression de la ligne', async () => {
+    depart.lecture = lue()
+    etat.entrees = { [`pieces/${D}`]: fichiers(2) }
+    await expect(supprimerDossierDefinitivement(D, { superAdministrateur: false }))
+      .rejects.toThrow('Le paquet d’archive n’a pas été téléchargé pour l’exercice validé 2025.')
+    expect(journal).toEqual([])
+    expect(listes).toEqual([])
+  })
+
+  it('une conservation qui court : le refus, même paquets téléchargés', async () => {
+    depart.lecture = lue({
+      paquets: [{ annee: 2025, empreinte_exercice: 'e2025', telecharge_le: '2027-01-01T00:00:00Z' }],
+      conservation: { jusqu_au: '2099-12-31', dernier_exercice: 2089, posee_le: '2090-01-01T00:00:00Z' },
+    })
+    await expect(supprimerDossierDefinitivement(D, { superAdministrateur: false })).rejects.toThrow('Ce dossier est conservé jusqu’au 31/12/2099')
+    expect(journal).toEqual([])
+  })
+
+  it('le super-administrateur passe, et le paquet téléchargé aussi', async () => {
+    depart.lecture = lue()
+    await supprimerDossierDefinitivement(D, { superAdministrateur: true })
+    expect(journal.map((j) => j.action)).toContain('delete:dossiers')
+    journal.length = 0
+    depart.lecture = lue({ paquets: [{ annee: 2025, empreinte_exercice: 'e2025', telecharge_le: '2027-01-01T00:00:00Z' }] })
+    await supprimerDossierDefinitivement(D, { superAdministrateur: false })
+    expect(journal.map((j) => j.action)).toContain('delete:dossiers')
+  })
+
+  it('une lecture qui lève : rien n’est retiré', async () => {
+    depart.leve = true
+    etat.entrees = { [`pieces/${D}`]: fichiers(2) }
+    await expect(supprimerDossierDefinitivement(D, { superAdministrateur: true })).rejects.toThrow('rien n’a été supprimé')
+    expect(journal).toEqual([])
   })
 })
 

@@ -625,6 +625,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/ImportDesFactures.tsx': 'drapeau `IMPORT_DES_FACTURES_OFFERT` baissé : ne rend ni ne lit rien ; levé, son propre '
     + 'test (ImportDesFactures.test.tsx) éprouve « Chargement… » avant la lecture et aucun geste sur une lecture illisible ; '
     + 'n’écrit que sur « Poser la date de reprise », « Importer » et « Retirer l’import »',
+  'pages/dossier/DepartDuClientCard.tsx': 'drapeau `DEPART_DU_CLIENT_PREVU` baissé : ne rend rien ; levé, elle ne lit pas — elle '
+    + 'reçoit le départ lu par InformationsTab (`useDepartDuDossier`) ; son test (DepartDuClientCard.test.tsx) éprouve « Chargement… » '
+    + 'avant la lecture et aucun geste sur une lecture illisible',
   'pages/dossier/DossierDuCabinetCard.tsx': 'drapeau `DOSSIER_DU_CABINET_PREVU` baissé : ne rend rien ; levé, elle ne lit pas — elle '
     + 'reçoit la désignation lue par InformationsTab (`useDesignationDuDossier`) ; son test (DossierDuCabinetCard.test.tsx) éprouve '
     + '« Chargement… » avant la lecture, aucun geste sur une lecture illisible ni pour un membre ; n’écrit que sur « Désigner… » '

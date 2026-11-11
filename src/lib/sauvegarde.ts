@@ -19,6 +19,7 @@ import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
+import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
@@ -331,6 +332,23 @@ export function auPlanDesHonorairesFactures(table: string, prevus: boolean): boo
   return prevus || !TABLES_DES_HONORAIRES_FACTURES.includes(table)
 }
 
+// LE DÉPART D'UN CLIENT (ligne 44, lot INAL5 ; migration `depart_du_client`, PRÉPARÉE le 11/11/2026) : les paquets
+// d'archive téléchargés et les conservations d'un dossier, deux historiques que rien ne réécrit. Sous le drapeau de la
+// migration (`DEPART_DU_CLIENT_PREVU`, src/lib/departDuClient.ts), baissé : la production n'a pas les tables, et les lire
+// ferait échouer toute sauvegarde. Leurs relations (le dossier, en cascade) ; leurs chemins ; leur clé, la commune, `id`.
+// LEUR RANG EST LE DERNIER, et ce n'est pas un choix de présentation : une conservation EN COURS interdit, à tout auteur, une
+// nouvelle pièce, une nouvelle écriture, un accès client et un exercice validé (`garder_dossier_conserve`) — réinsérée avant
+// eux, elle refuserait leur restauration. Après `exercices_valides`, la dernière table, elle n'en garde plus aucune. Les
+// paquets la précèdent (un paquet cite son exercice par son année et son empreinte, sans clé). La restauration les réinsère
+// par la porte que leurs policies ouvrent au super-administrateur. sauvegardeDepartDuClient.test.ts éprouve le plan prévu et
+// le plan du jour, sous chaque état du drapeau.
+export const TABLES_DU_DEPART: readonly string[] = ['paquets_d_archive_telecharges', 'conservations_des_dossiers']
+
+/** Une table au plan, côté départ d'un client : toutes, sauf les siennes tant que sa migration n'est pas exportée. */
+export function auPlanDuDepart(table: string, prevu: boolean): boolean {
+  return prevu || !TABLES_DU_DEPART.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -352,6 +370,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
     && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS)
     && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS)
+    && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -625,6 +644,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'modeles_lettre_de_mission', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'modeles_lettre_de_mission', parent: 'modeles_lettre_de_mission', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'lettres_de_mission', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'paquets_d_archive_telecharges', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'conservations_des_dossiers', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'lettres_de_mission', parent: 'modeles_lettre_de_mission', colonne: 'modele_id', aLaSuppression: 'bloque' },
   { enfant: 'lettres_de_mission', parent: 'lettres_de_mission', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'lettres_de_mission', parent: 'documents_divers', colonne: 'document_signe_id', aLaSuppression: 'bloque' },
@@ -922,6 +943,10 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'parametres_des_cotisations',
   'saisies_2035',
   'exercices_valides',
+  // Le départ d'un client (INAL5) : la conservation EN DERNIER — en cours, elle refuserait la restauration des pièces, des
+  // écritures, des accès et des exercices validés (voir `TABLES_DU_DEPART`).
+  'paquets_d_archive_telecharges',
+  'conservations_des_dossiers',
 ]
 
 // L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception, des
@@ -1373,6 +1398,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   modeles_lettre_de_mission: { acces: 'direct' },
   lettres_de_mission: { acces: 'direct' },
   honoraires_factures: { acces: 'direct' },
+  paquets_d_archive_telecharges: { acces: 'direct' },
+  conservations_des_dossiers: { acces: 'direct' },
   ecritures_brouillon: { acces: 'direct' },
   emails_envoyes: { acces: 'direct' },
   emprunts: { acces: 'direct' },
