@@ -58,6 +58,10 @@
 --      fichier) : OI1 à OI7 — sous `<dossier>/imports/`, rien au client, même « Ventes », le cabinet du dossier seul en
 --      lecture et en dépôt, sous la forme exacte du chemin, aucune mise à jour — et six mutations ; avant la migration
 --      `originaux_des_imports`, une ligne « EN ATTENTE ».
+--   6quater. Le DOSSIER DU CABINET (LM1, ligne 47 ; bloc « Le dossier du cabinet », en fin de fichier) : DC1 à DC7 — la
+--      désignation ni par l'anonyme, ni par un compte rattaché à rien, ni par le client ; la colonne pas par la policy du
+--      cabinet ; le chef désigne (contrôle positif) ; aucun accès client sur le dossier désigné ; le catalogue — et trois
+--      mutations ; avant la migration `dossier_du_cabinet`, une ligne « EN ATTENTE ».
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -722,6 +726,10 @@
 -- d'invariants, 0 en faute, 103 mutations sur 103 ; les deux policies rendues à la forme large (le sous-arbre lu et déposé
 -- sous `gere_les_ventes`), OI3, OI4, OI5 et les deux OI7 en faute ; après son retour, 133 lignes, 0 en faute, 97 sur 97,
 -- OI EN ATTENTE. Ce qu'il rend : HISTORIQUE.md, « A8D2C ».
+--
+-- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM1, ligne 47 : migration `dossier_du_cabinet`, PRÉPARÉE, pas
+-- appliquée), qui fait désigner par le chef le dossier du cabinet et y refuse tout accès client. Le bloc DC (DC1 à DC7,
+-- M-DC2, M-DC6, M-DC7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM1 ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -2584,6 +2592,169 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $$;
+
+-- ═══ Le dossier du cabinet (LM1, ligne 47) ═════════════════════════════════════════════════════════════════════════
+--
+-- La migration `dossier_du_cabinet` fait DÉSIGNER par le cabinet l'un de ses dossiers comme le sien
+-- (`cabinets.dossier_du_cabinet`), où il facture ses honoraires en son propre nom. Ce qu'elle ouvre et ferme, aux quatre
+-- profils : la désignation ne s'exécute pas par l'anonyme (DC1), se refuse en 42501 à un compte rattaché à rien et au
+-- client (DC2, DC3) ; la colonne ne s'écrit pas par la policy `cabinets_update`, même du chef (DC4) ; le chef désigne
+-- (DC5, le contrôle POSITIF) ; aucun accès client ne se pose sur le dossier désigné, même par le chef (DC6) — un client y
+-- lirait les honoraires de tous les clients — ; au catalogue, la désignation est `security definer` et exécutable par
+-- `authenticated` seul, la lecture et les gardes par aucun rôle de session (DC7). Le jeu : un dossier jetable du cabinet,
+-- dans une sous-transaction annulée. Trois mutations, qui doivent mordre. EN ATTENTE tant que la colonne n'est pas en
+-- base. Ce que la désignation refuse encore, la série et le mandataire, la suppression : `dossierDuCabinet.sql`.
+do $dc$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  jetable uuid := '1a100000-0000-4000-8000-0000000000dc';
+  autre   uuid := '1a100000-0000-4000-8000-0000000000dd';
+  n bigint; etat text; message text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'cabinets' and column_name = 'dossier_du_cabinet') then
+    insert into rls_verdict values ('DC. le dossier du cabinet : EN ATTENTE de la migration dossier_du_cabinet',
+      'cabinets.dossier_du_cabinet', 'absente : la désignation se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais) values
+      (jetable, 'RLS DOSSIER DU CABINET', cabinet, 'tresorerie', '455000'),
+      (autre, 'RLS AUTRE DOSSIER', cabinet, 'tresorerie', '455000');
+    construit := true;
+
+    -- DC1 : l'anonyme n'exécute pas la désignation.
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+      perform public.designer_dossier_du_cabinet(cabinet, jetable);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DC1. anonyme n''exécute pas la désignation du dossier du cabinet', 'cible', 'designer_dossier_du_cabinet',
+      'observe', etat, 'ok', etat = '42501');
+
+    -- DC2 et DC3 : un compte rattaché à rien, puis le client.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      perform public.designer_dossier_du_cabinet(cabinet, jetable);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DC2. inconnu authentifié ne désigne pas le dossier du cabinet', 'cible', 'designer_dossier_du_cabinet',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce cabinet.');
+    -- M-DC2 : DC2 rejoué sous le chef — il désigne (annulé aussitôt).
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform public.designer_dossier_du_cabinet(cabinet, jetable);
+      raise exception 'annuler' using errcode = 'P0001';
+    exception when sqlstate 'P0001' then etat := 'acceptée'; when others then etat := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-DC2 — DC2 rejoué sous le chef du cabinet', 'attendu', 'la désignation acceptée',
+      'observe', etat, 'mord', etat = 'acceptée');
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform public.designer_dossier_du_cabinet(cabinet, jetable);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DC3. client ne désigne pas le dossier du cabinet', 'cible', 'designer_dossier_du_cabinet',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce cabinet.');
+
+    -- DC4 : la colonne ne s'écrit pas par la policy du cabinet, même du chef.
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      update cabinets set dossier_du_cabinet = jetable where id = cabinet;
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DC4. la colonne de la désignation ne s''écrit pas par cabinets_update, même du chef', 'cible', 'cabinets.dossier_du_cabinet',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501');
+
+    -- DC5 : le chef désigne (contrôle positif) ; DC6 : aucun accès client sur le dossier désigné, même par le chef.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform public.designer_dossier_du_cabinet(cabinet, jetable);
+    reset role;
+    select count(*) into n from cabinets where id = cabinet and dossier_du_cabinet = jetable;
+    verdicts := verdicts || jsonb_build_object('controle', 'DC5. le chef du cabinet désigne le dossier du cabinet (contrôle positif)', 'cible', 'cabinets.dossier_du_cabinet',
+      'observe', n || ' désignation(s)', 'ok', n = 1);
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into memberships (user_id, dossier_id, role, email) values (client, jetable, 'client', 'rls-dc@example.test');
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DC6. aucun accès client sur le dossier du cabinet, même posé par le chef', 'cible', 'memberships',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '23514');
+    -- M-DC6 : DC6 rejoué sur un autre dossier du cabinet — l'accès se pose (annulé aussitôt).
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into memberships (user_id, dossier_id, role, email) values (client, autre, 'client', 'rls-dc@example.test');
+      raise exception 'annuler' using errcode = 'P0001';
+    exception when sqlstate 'P0001' then etat := 'acceptée'; when others then etat := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-DC6 — DC6 rejoué sur un dossier qui n''est pas celui du cabinet', 'attendu', 'l''accès posé',
+      'observe', etat, 'mord', etat = 'acceptée');
+    raise exception 'annuler le jeu' using errcode = 'P0001';
+  exception
+    when sqlstate 'P0001' then null;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- DC7 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.oid = 'public.designer_dossier_du_cabinet(uuid, uuid)'::regprocedure and p.prosecdef
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE'), false);
+  verdicts := verdicts || jsonb_build_object('controle', 'DC7. la désignation : security definer, exécutable par authenticated seul (lecture du catalogue)',
+    'cible', 'designer_dossier_du_cabinet', 'observe', case when n = 1 then 'telle quelle' else 'ÉLARGIE OU ABSENTE' end, 'ok', n = 1);
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace
+     and p.proname in ('est_dossier_du_cabinet', 'garder_dossier_du_cabinet', 'garder_acces_au_dossier_du_cabinet',
+                       'garder_suppression_du_dossier_du_cabinet', 'garder_cabinet_du_dossier_du_cabinet')
+     and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
+  verdicts := verdicts || jsonb_build_object('controle', 'DC7. la lecture et les gardes de la désignation : aucun rôle de session ne les exécute (lecture du catalogue)',
+    'cible', 'est_dossier_du_cabinet et les quatre gardes', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  -- M-DC7 : DC7 rejoué en lisant le droit du propriétaire, qui les exécute.
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.proname = 'est_dossier_du_cabinet'
+     and has_function_privilege('proprietaire', p.oid, 'execute');
+  mutations := mutations || jsonb_build_object('mutation', 'M-DC7 — DC7 rejoué pour le propriétaire', 'attendu', 'la lecture exécutable',
+    'observe', n || ' exécutable(s)', 'mord', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'DC. le jeu d''essai du dossier du cabinet s''est construit, et rien n''en est resté', 'cible', 'le dossier jetable',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (jetable, autre))
+      and not exists (select 1 from cabinets where dossier_du_cabinet = jetable));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $dc$;
 
 -- ═══ La frontière des encaissements (chantier EC-Q3, étape VF7a) ═══════════════════════════════════════════════
 --
