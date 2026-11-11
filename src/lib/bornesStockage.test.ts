@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import {
-  bilanDesRefus, extensionDuLogo, poids, preparerContenu, preparerLogo, preparerLogoDeFacture, preparerPiece, refusDUnePiece,
-  refusDUnLogo, TAILLE_MAX, TAILLE_MAX_PIECE, TYPES_ADMIS, TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS,
-  TYPES_DES_LOGOS_DE_FACTURE, typeDUnePiece, typeDUnLogo, typeDUnLogoDeFacture, typeSansParametres, type IssueDuDepot, type Seau,
+  bilanDesRefus, bornesDuSeauDesVentes, cheminDUnOriginal, extensionDuLogo, FORME_CHEMIN_D_UN_ORIGINAL, ORIGINAUX_DES_IMPORTS_PREVUS,
+  poids, preparerContenu, preparerLogo, preparerLogoDeFacture, preparerOriginalDImport, preparerPiece, refusDUnePiece,
+  refusDUnLogo, TAILLE_MAX, TAILLE_MAX_LOGO_DE_FACTURE, TAILLE_MAX_ORIGINAL_D_IMPORT, TAILLE_MAX_PIECE, TYPES_ADMIS,
+  TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, TYPES_DES_LOGOS_DE_FACTURE, typeDUnePiece, typeDUnLogo, typeDUnLogoDeFacture,
+  typeDUnOriginal, typeSansParametres, type IssueDuDepot, type Seau,
 } from './bornesStockage'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import {
@@ -313,3 +315,94 @@ describe('le seau des ventes et le logo des factures', () => {
 
 /** Un fichier fictif pour le seau des ventes (le nom `fichier` y est pris par la migration lue). */
 const fichier_ = (nom: string, octets: number[] = [], typeDuNavigateur = '') => new File([new Uint8Array(octets)], nom, { type: typeDuNavigateur })
+
+// ── A8d2a : l'original d'une facture reprise dans le seau des ventes ─────────────────────────────────────────────────
+// La migration `originaux_des_imports` est PRÉPARÉE (supabase/preparees/), pas appliquée : `ORIGINAUX_DES_IMPORTS_PREVUS`
+// est baissé, et le seau garde ses bornes d'hier. Ses deux états se jouent par `bornesDuSeauDesVentes`, confrontés au texte
+// de la migration et aux deux lignes de l'essai (bornesStockage.sql : `attendu_d_avant`, `attendu_depuis_a8d2a`).
+describe('A8d2a : l’original d’une facture reprise, dans le seau des ventes', () => {
+  const dossier = (d: string) => new URL(`../../supabase/${d}/`, import.meta.url)
+  const nommees = (d: string) => readdirSync(dossier(d)).filter((nom) => /^\d{14}_originaux_des_imports\.sql$/.test(nom))
+  const migration = readFileSync(new URL(nommees('preparees')[0], dossier('preparees')), 'utf8')
+  const retour = readFileSync(new URL('20261111120100_retour_originaux_des_imports.sql', dossier('preparees/retour')), 'utf8')
+  const ventesDeLEssai = bornesDeLEssai(texteDeLEssai()).filter((b) => b.seau === 'ventes')
+  const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+  const octets = (c: string | readonly number[]) => (typeof c === 'string' ? new TextEncoder().encode(c) : new Uint8Array(c))
+  const fichierDe = (nom: string, contenu: string | readonly number[], typeDuNavigateur = '') =>
+    new File([octets(contenu)], nom, { type: typeDuNavigateur })
+  const CII = '\uFEFF<?xml version="1.0" encoding="UTF-8"?>\n<!-- export -->\n<rsm:CrossIndustryInvoice xmlns:rsm="urn:x">'
+
+  it('le drapeau est baissé : la migration est préparée, une seule fois, et l’export ne la porte pas', () => {
+    expect(ORIGINAUX_DES_IMPORTS_PREVUS).toBe(false)
+    expect(nommees('preparees')).toHaveLength(1)
+    expect(nommees('schema')).toHaveLength(ORIGINAUX_DES_IMPORTS_PREVUS ? 1 : 0)
+  })
+
+  it('l’état d’avant : le seau garde les bornes du logo, celles de l’essai tant que la migration n’est pas en base', () => {
+    expect({ types: [...TYPES_ADMIS.ventes], taille: TAILLE_MAX.ventes })
+      .toEqual({ types: [...bornesDuSeauDesVentes(false).types], taille: bornesDuSeauDesVentes(false).taille })
+    expect(bornesDuSeauDesVentes(false)).toEqual({ types: ['image/png', 'image/jpeg'], taille: 512_000 })
+    expect(ventesDeLEssai).toHaveLength(2)
+    expect(ventesDeLEssai[0]).toEqual({ seau: 'ventes', publique: false, taille: 512_000, types: ['image/png', 'image/jpeg'] })
+  })
+
+  it('l’état d’après : l’union, 20 Mio — celle que la migration pose et que l’essai attend depuis elle', () => {
+    const apres = bornesDuSeauDesVentes(true)
+    expect(apres).toEqual({ types: ['image/png', 'image/jpeg', 'application/pdf', 'text/plain', 'text/csv'], taille: TAILLE_MAX_PIECE })
+    expect(bornesDeLaMigration(migration)).toEqual([{ seau: 'ventes', taille: apres.taille, types: [...apres.types] }])
+    expect(ventesDeLEssai[1]).toEqual({ seau: 'ventes', publique: false, taille: apres.taille, types: [...apres.types] })
+    // Ni SVG, ni HTML, ni type XML : un original se lit, il ne s'exécute pas.
+    for (const type of apres.types) expect(type).not.toMatch(/svg|html|xml/)
+  })
+
+  it('le logo garde SES bornes dans les deux états : 500 Kio, PNG ou JPEG — la fonction des paramètres les tient', () => {
+    expect(TAILLE_MAX_LOGO_DE_FACTURE).toBe(512_000)
+    expect([...TYPES_DES_LOGOS_DE_FACTURE]).toEqual(['image/png', 'image/jpeg'])
+    expect(sansCommentairesSql(migration)).toContain(`v_borne := least(v_borne, ${TAILLE_MAX_LOGO_DE_FACTURE});`)
+    expect(sansCommentairesSql(migration).match(/least\(/g)).toHaveLength(1)
+  })
+
+  it('la forme du chemin d’un original est celle de la policy de dépôt, et la lecture d’un original va au cabinet seul', () => {
+    const code = sansCommentairesSql(migration)
+    const depot = /create policy ventes_depot_d_un_original on storage\.objects\s+for insert to authenticated\s+with check \(\s*bucket_id = 'ventes'\s+and case\s+when name ~ '([^']+)' then public\.admin_du_dossier\(\(storage\.foldername\(name\)\)\[1\]::uuid\)\s+else false\s+end\s*\);/i.exec(code)
+    expect(depot?.[1]).toBe(FORME_CHEMIN_D_UN_ORIGINAL.source.replace(/\\\//g, '/'))
+    expect(code).toContain(`when name ~ '^${UUID}/imports/' then public.admin_du_dossier((storage.foldername(name))[1]::uuid)\n      when name ~ '^${UUID}/' then public.gere_les_ventes(`)
+    // Par l'outil : aucun mot de retrait ; le retour, lui, retire une policy — il se colle.
+    expect(migration).not.toMatch(/\b(delete|drop|truncate)\b/i)
+    expect(sansCommentairesSql(retour)).toMatch(/^drop policy ventes_depot_d_un_original on storage\.objects;$/im)
+  })
+
+  it('le format se décide au contenu : PDF à sa signature, XML à sa racine de facture, CSV à son extension', () => {
+    const type = (nom: string, contenu: string | readonly number[]) => typeDUnOriginal(nom, octets(contenu))
+    expect(type('F2025-001.csv', PDF)).toBe('application/pdf')
+    expect(type('facture', CII)).toBe('text/plain')
+    expect(type('f.xml', '<Invoice xmlns="urn:oasis">')).toBe('text/plain')
+    expect(type('f.xml', '  <ubl:CreditNote>')).toBe('text/plain')
+    expect(type('export.CSV', 'numero;date\nF1;2025-01-02')).toBe('text/csv')
+    const refuses: [string, string | readonly number[]][] = [['f.xml', SVG], ['f.csv', '<svg onload="x">'],
+      ['f.xml', '<html><script>x</script>'], ['f.xml', '<?xml version="1.0"?><Invoices>'], ['f.txt', 'numero;date'], ['f.png', PNG]]
+    for (const [nom, contenu] of refuses) expect(type(nom, contenu), nom).toBeNull()
+  })
+
+  it('préparé : réétiqueté du type décidé, borné à 20 Mio — et le refus le dit', async () => {
+    const pret = corpsDe(await preparerOriginalDImport(fichierDe('Facture Dupont.pdf', CII, 'application/pdf')))
+    expect([pret.type, pret.corps.type]).toEqual(['text/plain', 'text/plain'])
+    expect('refus' in (await preparerOriginalDImport(pesant(fichierDe('f.pdf', PDF), TAILLE_MAX_ORIGINAL_D_IMPORT)))).toBe(false)
+    const trop = await preparerOriginalDImport(pesant(fichierDe('f.pdf', PDF), TAILLE_MAX_ORIGINAL_D_IMPORT + 1))
+    expect('refus' in trop && trop.refus.message)
+      .toBe('il pèse 20\u202f971\u202f521\u00a0octets, au-delà des 20\u202f971\u202f520\u00a0octets qu’un original de facture reprise peut peser')
+    const svg = await preparerOriginalDImport(fichierDe('f.xml', SVG, 'text/xml'))
+    expect('refus' in svg && svg.refus).toEqual(expect.objectContaining({
+      raison: 'format', message: 'format non pris en charge (un original de facture reprise se dépose en PDF (Factur-X), en XML (CII ou UBL) ou en CSV)',
+    }))
+  })
+
+  it('le chemin : le dossier, le lot, l’empreinte et l’extension du type — jamais le nom d’origine', () => {
+    const [d, l, h] = ['a8d20000-0000-4000-8000-0000000000a1', 'a8d20000-0000-4000-8000-00000000017a', 'b'.repeat(64)]
+    expect(cheminDUnOriginal(d, l, h, 'text/plain')).toBe(`${d}/imports/${l}/${h}.xml`)
+    expect(cheminDUnOriginal(d, l, h, 'application/pdf')).toBe(`${d}/imports/${l}/${h}.pdf`)
+    expect(cheminDUnOriginal(d.toUpperCase(), l, h, 'text/csv')).toBeNull()
+    expect(cheminDUnOriginal(d, 'lot-1', h, 'text/csv')).toBeNull()
+    expect(cheminDUnOriginal(d, l, 'B'.repeat(64), 'text/csv')).toBeNull()
+  })
+})

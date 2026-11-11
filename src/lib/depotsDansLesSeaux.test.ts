@@ -2,7 +2,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, TYPES_DES_LOGOS_DE_FACTURE, typeSansParametres } from './bornesStockage'
+import {
+  TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, TYPES_DES_LOGOS_DE_FACTURE, TYPES_DES_ORIGINAUX_D_IMPORT, typeSansParametres,
+} from './bornesStockage'
 import {
   bornesDeLaMigration, fichierDeLaMigrationDuLogo, seauDeLaMigrationDuLogo, texteDeLaMigration, type BornesLues,
 } from '../test/bornesStockage'
@@ -79,6 +81,8 @@ const PREPARATEURS_A_SEAU_FIXE: Record<string, { seau: string; types: readonly s
   // `logoPret` (src/lib/logoDesFactures.ts) APPELLE `preparerLogoDeFacture` puis y ajoute l'empreinte et le chemin : son corps
   // est le même Blob réétiqueté, PNG ou JPEG. C'est lui que le dépôt du logo (étape A5c2a) envoie.
   logoPret: { seau: 'ventes', types: TYPES_DES_LOGOS_DE_FACTURE },
+  // L'original d'une facture reprise (A8d2a) : le même seau, sous `<dossier>/imports/` — PDF, texte brut (un XML), CSV.
+  preparerOriginalDImport: { seau: 'ventes', types: TYPES_DES_ORIGINAUX_D_IMPORT },
 }
 
 function litteral(n: ts.Node | undefined): string | null {

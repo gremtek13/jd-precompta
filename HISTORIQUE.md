@@ -50481,3 +50481,21 @@ document de l'application, sa série (MA côté cabinet, par `serieDeLaValidatio
 `nom` rejoint `COLONNES_DE_L_IDENTITE`. **Le CII** : le bloc copié ne change pas (un avoir et une facture d'avant à l'octet
 près) ; hors copie, `refusDuCii` dit qu'une reprise n'a pas de CII à elle ; BG-3 cite le numéro et la date de l'ancien
 logiciel, un numéro intransmissible se refuse (BT-25). Mutation : le plafond sans les avoirs repris, deux tests rouges.
+
+### 11/11/2026 — A8D2A : LES ORIGINAUX DES FACTURES REPRISES DANS LE SEAU DES VENTES, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; en production, des SELECT du catalogue.) `supabase/preparees/20261111120000_originaux_des_imports.sql`
+(md5 `25ca5c0b22e5059788607f58e9cd0065`, par l'OUTIL : aucun mot de retrait) range l'original d'une facture reprise sous
+`<dossier>/imports/<lot>/<empreinte>.<pdf|xml|csv>`. **Établi** : le stockage juge type et taille au SEAU (une policy ne
+voit pas le fichier : la sonde d'avant le dépôt n'en a pas les métadonnées), et `enregistrer_parametres_facturation` bornait le logo à la
+borne du seau. D'où : le seau admet l'union (PNG, JPEG, PDF, `text/plain` pour un XML — servi sous un type XML, il porte du
+script comme un SVG —, CSV ; 20 Mio, S226-Q1) ; la fonction, recopiée à l'octet près (garde : `5d18ba49…`), prend
+`least(borne du seau, 512000)`, trois lignes ajoutées (38 et 38d de l'essai du logo valent tels quels) ; `ventes_lecture` (ALTER POLICY)
+réserve `<dossier>/imports/` à `admin_du_dossier`, le reste comme hier ; `ventes_depot_d_un_original`, au cabinet du dossier,
+sous la forme exacte jugée dans un `case`. Suppression inchangée (le chef, comme tout le seau). Écartés : un seau à part
+(contraire à la conception et au commentaire d'`imports_factures`), des bornes par policy (impossibles), la lecture du
+client fermée hors `logos/` (aucun fichier possible ; essai du logo à refaire). Retour (`445aae1b…`) À COLLER, refuse tant
+qu'un original vit. Copie du jour J (54581) : `originauxDesImports.sql` 62 verdicts, 0 en faute, 7 mutations ; `rls.sql`
+229 lignes identiques avant et après ; `logoDesFactures.sql` (0a à 0c rendus justes dans les deux états), `bornesStockage.sql`
+(deux lignes attendues), suppressions, paramètres : 0 en faute ; retour : signature égale (neuf familles). Code derrière
+`ORIGINAUX_DES_IMPORTS_PREVUS` (baissé) : `preparerOriginalDImport`, le logo sous ses propres bornes. Reste : A8D2A-Q1.

@@ -1,4 +1,4 @@
-import { TAILLE_MAX, TYPES_DES_LOGOS_DE_FACTURE } from './bornesStockage'
+import { TAILLE_MAX_LOGO_DE_FACTURE, TYPES_DES_LOGOS_DE_FACTURE } from './bornesStockage'
 import {
   FORME_CHEMIN_DU_LOGO, FORME_EMPREINTE_DU_LOGO, SEAU_DU_LOGO, logoDeLaVersion, logoPret, typeDuNomDuLogo, type LogoLu, type TypeDuLogo,
 } from './logoDesFactures'
@@ -184,8 +184,8 @@ function fauteDeForme(f: unknown): string | null {
   if (typeof f.type !== 'string' || !(TYPES_DES_LOGOS_DE_FACTURE as readonly string[]).includes(f.type) || f.type !== typeDuNomDuLogo(f.chemin)) {
     return 'n’a pas le type que dit son nom (PNG ou JPEG)'
   }
-  if (typeof f.octets !== 'number' || !Number.isSafeInteger(f.octets) || f.octets < 1 || f.octets > TAILLE_MAX.ventes) {
-    return `n’a pas un poids d’un à ${TAILLE_MAX.ventes} octets`
+  if (typeof f.octets !== 'number' || !Number.isSafeInteger(f.octets) || f.octets < 1 || f.octets > TAILLE_MAX_LOGO_DE_FACTURE) {
+    return `n’a pas un poids d’un à ${TAILLE_MAX_LOGO_DE_FACTURE} octets`
   }
   if (typeof f.base64 !== 'string') return 'n’a pas ses octets en base64'
   return null
