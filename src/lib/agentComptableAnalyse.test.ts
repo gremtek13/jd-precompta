@@ -10,7 +10,9 @@ import type { ChoixChampsBnc } from './champsBncExportes'
 import { analyserEcritures, lignesPourPiece, piecesAComptabiliser, type CibleComptable, type LigneAGenerer } from './ecritures'
 import { partsEncaissees, type EncaissementLu, type ExemplaireLu, type FactureDuDossier } from './encaissementsFactures'
 import { lignesEngagementPourPiece, type ModeleComptable } from './engagement'
-import { exemplairesDesSources, facturesSourcesDe, type FacturesSources } from './facturesSources'
+import {
+  AUCUNE_PIECE_CITEE, exemplairesDesSources, facturesSourcesDe, marquerLesPiecesCitees, type FacturesSources,
+} from './facturesSources'
 import { montantRetenu } from './montantRetenu'
 import {
   estParLeReleve, rattachementsTresorerie, paiementsDesPieces, type PaiementDePiece, type PaiementsDesPieces, type PartEncaissee,
@@ -110,6 +112,8 @@ function extraire(source: string, plan: PlanComptable) {
     'function dateDuDepot(', '// ── DÉBUT FACTURES SOURCES ', '// ── FIN FACTURES SOURCES ', '// ── DÉBUT VIREMENT MIXTE ',
     '// ── FIN VIREMENT MIXTE ', 'function exemplaireDUneSource(', 'function facturesSourcesDe(', 'function exemplairesDesSources(',
     'function partsEncaissees(', 'function exemplaireUnique(',
+    // La pièce citée par une facture reprise (étape A8c4) : la marque, et ce qui la juge.
+    'function marquerLesPiecesCitees<', 'function resteRegleParSaReprise(', 'function attenduDeLaPiece(',
     // Le paiement d'une pièce par la caisse (étape C13) : la dérivation, la contrepartie, et ce qui la juge.
     'function paiementsParLaCaisse(', 'function estParLeReleve(', 'function cleDuPaiement(',
     'function ligneContrepartieCaisse(', 'function ligneContrepartieDuPaiement(', 'function estContrepartieCaisse(',
@@ -126,7 +130,8 @@ function extraire(source: string, plan: PlanComptable) {
   // compilateur du projet plutôt que d'en retirer les types à la main — une traduction écrite à la
   // main mentirait au premier cas tordu.
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return avecLePlan(new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, paiementsParLaCaisse, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu, facturesSourcesDe, exemplairesDesSources, partsEncaissees }`)(), plan) as {
+  return avecLePlan(new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, paiementsParLaCaisse, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu, facturesSourcesDe, exemplairesDesSources, partsEncaissees, marquerLesPiecesCitees }`)(), plan) as {
+    marquerLesPiecesCitees: typeof marquerLesPiecesCitees
     piecesAComptabiliser: (
       p: Piece[], c: Categorie[], biens: ReadonlyMap<string, AcquisitionDuBien>, sources: FacturesSources,
     ) => ({ piece: Piece } & CibleComptable)[]
@@ -237,6 +242,8 @@ const payeeParLaCaisse = (operation: string, date: string, montant: number, piec
 interface VentesDuCas {
   factures: FactureDuDossier[]
   encaissements: EncaissementLu[]
+  // Les pièces citées par une facture reprise, par un lien actif (étape A8c4) : aucune sans elles.
+  citees?: ReadonlySet<string>
 }
 
 /** Un cas tel qu'un régime le donne : ses pièces, son relevé, ses ventes. */
@@ -305,6 +312,21 @@ const REGIMES: { nom: string; appliquer: (pieces: Piece[], paiements: LigneBanca
       },
     }),
   },
+  // Depuis le 11/11/2026 (étapes A8c3 et A8c4) : chaque pièce, ORIGINAL d'une facture reprise (l'état « importee », source,
+  // sans exemplaire) qui la cite par un lien actif — en trésorerie, elle ne s'écrit qu'à ses paiements, ses contrôles jugent
+  // cette cible, chaque côté la marquant par SA copie de `marquerLesPiecesCitees`.
+  {
+    nom: 'chaque pièce citée par une facture reprise',
+    appliquer: (pieces, paiements) => ({
+      pieces,
+      paiements,
+      ventes: {
+        factures: pieces.map((p) => factureDuCas({ id: `fr-${p.id}`, numero: `FR-${p.id}`, statut: 'importee' as FactureDuDossier['statut'] })),
+        encaissements: [],
+        citees: new Set(pieces.map((p) => p.id)),
+      },
+    }),
+  },
 ]
 
 /** Les paiements de chaque pièce, sous une forme comparable : par pièce, dans l'ordre de leur identifiant. */
@@ -359,7 +381,7 @@ const memeResultatSous = (plan: PlanComptable, copieDuPlan: typeof deployee) => 
 ) {
   const { piecesAComptabiliser, analyserEcritures } = entreesSous(lib_ecritures, plan)
   const paiementsDesPieces = entreesSous(paiementsDesPiecesDeSrcLib, plan)
-  const resume = (a: ({ piece: Piece } & CibleComptable)[]) => a.map((x) => `${x.piece.id}:${x.compte}:${x.immobilisation}`)
+  const resume = (a: ({ piece: Piece } & CibleComptable)[]) => a.map((x) => `${x.piece.id}:${x.compte}:${x.immobilisation}:${x.paiementsSeuls ?? '-'}`)
   const forme = (r: Pick<ReturnType<typeof analyserEcritures>, 'nbSansContrepartie' | 'groupesDesequilibres' | 'piecesDesynchronisees'>) => ({
     nbSansContrepartie: r.nbSansContrepartie,
     groupesDesequilibres: r.groupesDesequilibres.map((g) => `${g.pieceId}:${g.solde.toFixed(2)}`),
@@ -377,8 +399,10 @@ const memeResultatSous = (plan: PlanComptable, copieDuPlan: typeof deployee) => 
     expect(ventesLa.encaissees, `partsEncaissees a dérivé (${nom})`).toEqual(ventesIci.encaissees)
     // `biens` : la pièce de chaque bien du registre, et ce que sa facture écrit — le compte de sa nature, ou rien
     // (sans nature, ou acquis avant l'ouverture d'un dossier repris).
-    const ici = piecesAComptabiliser(cas.pieces, categories, new Map(biens), ventesIci.sources)
-    const la = copie.piecesAComptabiliser(cas.pieces, categories, new Map(biens), ventesLa.sources)
+    // La pièce citée par une facture reprise (A8c4), marquée par chaque côté de SA copie.
+    const citees = cas.ventes.citees ?? AUCUNE_PIECE_CITEE
+    const ici = marquerLesPiecesCitees(piecesAComptabiliser(cas.pieces, categories, new Map(biens), ventesIci.sources), citees)
+    const la = copie.marquerLesPiecesCitees(copie.piecesAComptabiliser(cas.pieces, categories, new Map(biens), ventesLa.sources), citees)
     expect(resume(la), `piecesAComptabiliser a dérivé (${nom})`).toEqual(resume(ici))
     const paiementsIci = paiementsDesPieces(cas.paiements, parts, ventesIci.encaissees, caisse)
     const paiementsLa = copie.paiementsDesPieces(cas.paiements, parts, ventesLa.encaissees, caisse)
@@ -1371,7 +1395,8 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
     // dossier et au statut de leur lecture.
     expect(corps).toContain('    const designees: ExemplaireRow[] = piecesTyped\n      .filter((p) => p.facture_id != null)\n      .map((p) => ({ id: p.id, dossier_id: dossierId, facture_id: p.facture_id, statut: "validee", type_piece: p.type_piece }))\n')
     expect(corps).toContain('    const encaissees = partsEncaissees(dossierId, rEncaissements.lignes, { factures: rFactures.lignes }, designees)\n')
-    expect(corps).toContain('    const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)\n')
+    // Depuis A8c4 (11/11/2026) : la pièce citée par une facture reprise, marquée par les liens lus.
+    expect(corps).toContain('    const aComptabiliser = marquerLesPiecesCitees(piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources), citees)\n')
   })
 
   // Un dossier qui n'a pas basculé ne lit rien de plus : ses factures et son registre ne se lisent que si la source de ses
@@ -1513,8 +1538,8 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
   // Le code d'avant ce chantier attendait `date_piece` partout. La date attendue vient désormais de la génération à
   // laquelle les soldes de chaque date se comparent (#183) : c'est là que la dérive oublie les paiements.
   function sansPaiements(): string {
-    const source = planter(sourceDeployee(), '  const dateComparee = datesAttendues(p, paiementsPiece) !== null\n',
-      '  const dateComparee = datesAttendues(p, []) !== null\n', 'la date attendue')
+    const source = planter(sourceDeployee(), '  const dateComparee = datesAttendues(p, cible, paiementsPiece) !== null\n',
+      '  const dateComparee = datesAttendues(p, cible, []) !== null\n', 'la date attendue')
     return planter(source, '  const chargesGenerees = lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece, plan)\n',
       '  const chargesGenerees = lignesChargeProduitPourPiece(p, cible, assujettiTva, [])\n', 'les soldes attendus')
   }
@@ -1911,8 +1936,8 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
       echoue(() => batterieDuGenerateur(sensBanque, plan))
       // L'arrondi du dernier morceau de `centimesParDate` : `repartir` (lot FEC22c3) porte la même ligne, d'où l'ancre de deux.
       const sansArrondi = deriver(
-        '  const morceaux = reunies.map((f) => Math.round(total * f.part))\n  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)\n',
-        '  const morceaux = reunies.map((f) => Math.round(total * f.part))\n', 'le dernier morceau')
+        '  const morceaux = reunies.map((f) => Math.round(totalDeLaPiece * f.part))\n  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)\n',
+        '  const morceaux = reunies.map((f) => Math.round(totalDeLaPiece * f.part))\n', 'le dernier morceau')
       echoue(() => batterieDuGenerateur(sansArrondi, plan))
     })
 

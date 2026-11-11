@@ -35,7 +35,8 @@ import type { FactureEmise, ModeComptable, Piece } from './types'
 // reprise ». En ENGAGEMENT, rien ne change : la pièce compte à sa date, en entier, comme hier. Les liens se lisent avec les
 // ventes (lib/ventesFactureesLecture.ts, le cabinet seul) et voyagent dans `VentesFacturees.piecesCitees`, OBLIGATOIRES ;
 // non lus, la lecture se dit incomplète — jamais un ensemble vide deviné. Hors d'ici : « Ma simulation » du client, qui ne
-// lit pas les liens (A8Q5-Q2), et la copie de l'assistant (supabase/functions/agent-comptable), qui ne les lit pas non plus.
+// lit pas les liens (A8Q5-Q2). La copie de l'assistant (supabase/functions/agent-comptable, bloc FACTURES SOURCES) les lit
+// depuis le 11/11/2026, au jeton de l'appelant, dans `points_a_traiter` (HISTORIQUE.md, « A8C5 »).
 
 /** Les identifiants des factures et avoirs validés SOURCES de leur vente (`VentesFacturees.sources`, lus en entier). */
 export type FacturesSources = ReadonlySet<string>

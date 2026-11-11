@@ -753,6 +753,21 @@ function contrepartiesSuiventLesPaiements(
   return true
 }
 
+// Le TTC et la TVA que l'écriture d'une pièce doit porter, signés par rapport à son sens. Ceux de la pièce — mais la pièce
+// citée par une facture reprise (étape A8c4, `paiementsSeuls`) ne s'écrit qu'à ses paiements : les siens sont ceux que la
+// génération écrit. Comparée à la pièce entière, l'écriture juste d'une pièce payée en partie avant la reprise se disait
+// « à régénérer » pour toujours, « Régénérer » réécrivant la même (trouvé le 11/11/2026 en alignant l'assistant).
+function attenduDeLaPiece(
+  p: Piece, cible: CibleComptable, assujettiTva: boolean, paiementsPiece: readonly PaiementDePiece[], plan: PlanComptable,
+): { ttc: number; tva: number } {
+  if (cible.paiementsSeuls !== true) return { ttc: p.montant_ttc!, tva: tvaVentilee(p, assujettiTva) }
+  const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
+  const compteTva = compteTvaDe(p, cible.immobilisation, plan)
+  const generees = lignesChargeProduitPourPiece(p.dossier_id, p, cible, assujettiTva, paiementsPiece, plan)
+  const somme = (ls: readonly LigneAGenerer[]) => ls.reduce((s, l) => s + (l.sens === sensPiece ? l.montant : -l.montant), 0)
+  return { ttc: somme(generees), tva: somme(generees.filter((l) => l.compte === compteTva)) }
+}
+
 // En TRÉSORERIE, ce qui rend l'écriture d'une pièce périmée : son compte, sa TVA, ses dates ou son
 // total ne sont plus ceux que la pièce produirait aujourd'hui, ou ses contreparties banque ne sont plus
 // ses paiements.
@@ -802,7 +817,8 @@ function tresorerieDesynchronisee(
   const tvaEnregistree = lignes
     .filter((e) => e.compte === compteTva)
     .reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-  if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
+  const attendu = attenduDeLaPiece(p, cible, assujettiTva, paiementsPiece, plan)
+  if (Math.abs(tvaEnregistree - attendu.tva) > EPSILON_EQUILIBRE) return true
   // LA DATE AUTANT QUE LE COMPTE, ET ELLE COÛTE PLUS CHER QUE LUI. Une pièce validée sans date
   // reçoit une écriture datée de son DÉPÔT (le repli de lignesChargeProduitPourPiece) ; « Retrouver
   // les dates manquantes » écrit ensuite `date_piece` sans toucher à l'écriture — par conception,
@@ -853,7 +869,7 @@ function tresorerieDesynchronisee(
   // de plus que les soldes.
   if (dateComparee && decoupageDiffere(lignes, chargesGenerees)) return true
   const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-  if (Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE) return true
+  if (Math.abs(total - attendu.ttc) > EPSILON_EQUILIBRE) return true
   // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT. Le rapprochement n'en écrivait qu'une par pièce — celle du
   // premier paiement —, donc une pièce payée en deux fois, ou réglée en partie par un virement groupé,
   // gardait une écriture déséquilibrée que rien ne savait compléter. « Régénérer » réécrit désormais la

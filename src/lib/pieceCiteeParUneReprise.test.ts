@@ -4,7 +4,8 @@ import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 import { pisteAudit } from './pisteAudit'
 import { describe, expect, it, vi } from 'vitest'
 import { calculerDeclaration2035 } from './declaration2035'
-import { lignesChargeProduitPourPiece, piecesAComptabiliser } from './ecritures'
+import { analyserEcritures, lignesChargeProduitPourPiece, piecesAComptabiliser } from './ecritures'
+import type { ModeleComptable } from './engagement'
 import { AUCUNE_FACTURE_SOURCE, AUCUNE_PIECE_CITEE, marquerLesPiecesCitees } from './facturesSources'
 import { lireLesPiecesCitees } from './ventesFactureesLecture'
 import { projectionAnnuelle, recettesFactureesDuDossier } from './estimation'
@@ -14,7 +15,7 @@ import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from './rattachement
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { recettesDeLaSimulation } from './simulationVentesFacturees'
 import { calculerSituationIntermediaire } from './situationIntermediaire'
-import type { Categorie, Piece } from './types'
+import type { Categorie, EcritureBrouillon, Piece } from './types'
 import {
   SANS_ACOMPTE, recettesFactureesParMois, ventesFacturees, type EncaissementVendu, type FactureVendue, type RepriseVendue,
 } from './ventesFacturees'
@@ -143,6 +144,27 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
       { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE,
     )
     expect(d.totalRecettes).toBe(140)
+  })
+
+  // Trouvé le 11/11/2026 en alignant l'assistant : le contrôle du brouillon comparait le total et la TVA de l'écriture à la
+  // pièce ENTIÈRE, et disait « à régénérer », pour toujours, l'écriture juste d'une pièce citée payée en partie avant la
+  // reprise (« Régénérer » réécrivait la même). Il les compare à ce que la génération écrit (`attenduDeLaPiece`).
+  it('les contrôles du brouillon : la pièce payée en partie avant la reprise, écrite à ses paiements, est juste ; écrite entière à sa date, à régénérer', () => {
+    const cible = marquerLesPiecesCitees(piecesAComptabiliser([PIECE_CITEE], CATEGORIES, new Map(), AUCUNE_FACTURE_SOURCE), ventes.piecesCitees)
+    const avant = paiementsDesPieces([{ id: 'm1', date: '2026-11-25', montant: 40, piece_id: 'p1', statut: 'rapprochee' }] as never, [], [], AUCUN_PAIEMENT_PAR_LA_CAISSE)
+    const modele = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT } as ModeleComptable
+    const ligne = (n: number, date: string, compte: string, sens: 'debit' | 'credit', montant: number, mvt: string | null = null) =>
+      ({ id: `e${n}`, dossier_id: D, piece_id: 'p1', date, compte, sens, montant, ligne_bancaire_id: mvt }) as EcritureBrouillon
+    const juste = [ligne(1, '2026-11-25', '706000', 'credit', 40), ligne(2, '2026-11-25', '512000', 'debit', 40, 'm1')]
+    const entiere = [ligne(1, '2026-11-20', '706000', 'credit', 60), ...juste]
+    const desynchronisees = (e: EcritureBrouillon[], a: typeof cible) =>
+      analyserEcritures(e, a, false, avant, modele, null, new Set()).piecesDesynchronisees.map((p) => p.id)
+    expect(desynchronisees(juste, cible)).toEqual([])
+    expect(desynchronisees(entiere, cible)).toEqual(['p1'])
+    // Témoin : non citée, la pièce doit ses 100 € — l'écriture à ses seuls paiements est à régénérer, l'entière juste.
+    const nonCitee = piecesAComptabiliser([PIECE_CITEE], CATEGORIES, new Map(), AUCUNE_FACTURE_SOURCE)
+    expect(desynchronisees(juste, nonCitee)).toEqual(['p1'])
+    expect(desynchronisees(entiere, nonCitee)).toEqual([])
   })
 
   it('la piste d’audit ne dit pas « écriture manquante » de la pièce citée et jamais payée ; non citée, si', () => {
