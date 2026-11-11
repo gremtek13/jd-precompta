@@ -1,3 +1,4 @@
+import { planPourJuger, type BanquesDuDossier } from './banqueDuMouvement'
 import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
 import { libellerLEcritureDuReleve } from './libellesDuReleve'
 import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
@@ -674,11 +675,14 @@ export function paiementsTvaDesynchronises<L extends MouvementBancaire>(
   frontiere: string | null,
   // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
   plan: PlanComptable,
+  // La banque de chaque mouvement (MCB5, lib/banqueDuMouvement.ts) : l'écriture attendue se recompose au 512 de SON
+  // compte bancaire ; drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
+  banques: BanquesDuDossier,
 ): L[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
-  return lignes.filter((l) =>
-    !!l.declaration_tva_id
-    && l.statut === 'rapprochee'
-    && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l, plan), l.date))
+  return lignes.filter((l) => {
+    if (!l.declaration_tva_id || l.statut !== 'rapprochee' || estFigee(l.date, frontiere)) return false
+    const duMouvement = planPourJuger(plan, l, banques)
+    return !!duMouvement && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l, duMouvement), l.date)
+  })
 }

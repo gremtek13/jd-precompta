@@ -1,3 +1,4 @@
+import { planDuMouvement, type BanquesDuDossier } from './banqueDuMouvement'
 import {
   candidatsCotisations, JOURS_TOLERANCE, libelleExploitable, piecesDuMemeMontant, sensCoherent, tiersConfirmeParBanque,
   type CotisationRapprochable,
@@ -412,19 +413,26 @@ export const TAILLE_ENVOI_AFFECTATION = 100
 export function envoisDuLot(
   propositions: readonly PropositionRegle[],
   plan: PlanComptable,
+  // La banque de chaque mouvement (MCB5, lib/banqueDuMouvement.ts) : chaque écriture au 512 de SON compte bancaire.
+  // Drapeau baissé, le plan lui-même, l'envoi d'hier ; un mouvement dont la banque ne se sait pas retient tout le lot.
+  banques: BanquesDuDossier,
   taille: number = TAILLE_ENVOI_AFFECTATION,
-): AffectationEnvoyee[][] {
+): { envois: AffectationEnvoyee[][] } | { refus: string } {
   // Une proposition a passé `refusAffectation`, donc sa catégorie a un compte de résultat ; le filtre ne
   // sert qu'au typage.
-  const affectations = propositions.flatMap((p) => p.categorie.compte_comptable
-    ? [{
-        ligne_bancaire_id: p.ligne.id,
-        categorie_id: p.categorie.id,
-        taux_tva: p.taux,
-        ecritures: ecritureDuMouvement(p.ligne, p.categorie.compte_comptable, p.taux, plan),
-      }]
-    : [])
+  const affectations: AffectationEnvoyee[] = []
+  for (const p of propositions) {
+    if (!p.categorie.compte_comptable) continue
+    const duMouvement = planDuMouvement(plan, p.ligne, banques)
+    if ('refus' in duMouvement) return duMouvement
+    affectations.push({
+      ligne_bancaire_id: p.ligne.id,
+      categorie_id: p.categorie.id,
+      taux_tva: p.taux,
+      ecritures: ecritureDuMouvement(p.ligne, p.categorie.compte_comptable, p.taux, duMouvement.plan),
+    })
+  }
   const envois: AffectationEnvoyee[][] = []
   for (let i = 0; i < affectations.length; i += taille) envois.push(affectations.slice(i, i + taille))
-  return envois
+  return { envois }
 }

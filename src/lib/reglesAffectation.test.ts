@@ -7,6 +7,8 @@ import {
 } from './reglesAffectation'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from './types'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { banquesDuDossier } from './banqueDuMouvement'
+import type { LectureDesComptes } from './importParCompte'
 import { AUCUN_CANDIDAT, AUCUN_HORS_DES_LOTS } from './mouvementsDesVentes'
 import { AUCUNE_FACTURE_SOURCE } from './facturesSources'
 
@@ -416,12 +418,40 @@ describe('totauxParCategorie — deux catégories au même rang', () => {
   })
 })
 
+// Le lot d'un dossier à un seul compte (drapeau baissé : la banque du rôle) — l'envoi d'hier.
+function lotDuRole(propositions: Parameters<typeof envoisDuLot>[0], taille?: number) {
+  const lot = envoisDuLot(propositions, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT), taille)
+  if ('refus' in lot) throw new Error(lot.refus)
+  return lot.envois
+}
+
+describe('envoisDuLot — la banque de chaque mouvement (MCB5)', () => {
+  const COMPTES: LectureDesComptes = { etat: 'lus', comptes: [
+    { id: 'P', libelle: 'Principal', principal: true, fin_d_identifiant: null, compte: null, compte_propre_depuis: null, ouvert_le: null, clos_le: null },
+    { id: 'S', libelle: 'Second', principal: false, fin_d_identifiant: null, compte: '512200', compte_propre_depuis: '2025-01-01', ouvert_le: null, clos_le: null },
+  ] }
+  const lot = (comptes: LectureDesComptes) => {
+    const plan = planAffectationParRegles([ligne({ id: 'a', compte_bancaire_id: 'P' }), ligne({ id: 'b', compte_bancaire_id: 'S' })], [regle()], [HONORAIRES], false,
+      aucunJustificatif, AUCUN_HORS_DES_LOTS)
+    return envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT, banquesDuDossier(comptes, PLAN_PAR_DEFAUT))
+  }
+  it('chaque écriture au 512 du compte de son mouvement : le principal au rôle, le second au sien', () => {
+    const l = lot(COMPTES)
+    if ('refus' in l) throw new Error(l.refus)
+    expect(l.envois[0].map((e) => e.ecritures.find((x) => x.compte.startsWith('512'))?.compte)).toEqual([PLAN_PAR_DEFAUT.banque, '512200'])
+  })
+  it('des comptes illisibles ou en cours de lecture retiennent tout le lot : rien ne part', () => {
+    expect(lot({ etat: 'illisible', motif: 'coupée' })).toHaveProperty('refus')
+    expect(lot({ etat: 'en_cours' })).toHaveProperty('refus')
+  })
+})
+
 describe('envoisDuLot — ce qui part vers la base', () => {
   it('l’écriture de chaque mouvement est celle de l’affectation à l’unité, dans l’ordre du lot', () => {
     const plan = planAffectationParRegles([ligne({ id: 'a' }), ligne({ id: 'b', libelle: 'VIR CPAM', montant: 48.2 })],
       [regle(), regle({ id: 'r2', motif: 'cpam', sens: 'encaissement', categorie_id: 'cat-recettes' })],
       [HONORAIRES, RECETTES], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
-    expect(envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT)).toEqual([[
+    expect(lotDuRole(plan.propositions)).toEqual([[
       { ligne_bancaire_id: 'a', categorie_id: 'cat-honoraires', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[0].ligne, '622600', null, PLAN_PAR_DEFAUT) },
       { ligne_bancaire_id: 'b', categorie_id: 'cat-recettes', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[1].ligne, '706000', null, PLAN_PAR_DEFAUT) },
     ]])
@@ -431,7 +461,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
     const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })],
       [regle({ id: 'r2', motif: 'client', sens: 'encaissement', categorie_id: 'cat-recettes', taux_tva: 20 })],
       [RECETTES], true, aucunJustificatif, AUCUN_HORS_DES_LOTS)
-    const [[envoi]] = envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT)
+    const [[envoi]] = lotDuRole(plan.propositions)
     expect(envoi.taux_tva).toBe(20)
     expect(envoi.ecritures.map((e) => [e.compte, e.sens, e.montant])).toEqual([
       ['706000', 'credit', 100],
@@ -443,7 +473,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
   it('découpe le lot en envois de la taille demandée, sans rien perdre ni doubler', () => {
     const lignes = Array.from({ length: 5 }, (_, i) => ligne({ id: `l${i}` }))
     const plan = planAffectationParRegles(lignes, [regle()], [HONORAIRES], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
-    const envois = envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT, 2)
+    const envois = lotDuRole(plan.propositions, 2)
     expect(envois.map((e) => e.map((a) => a.ligne_bancaire_id))).toEqual([['l0', 'l1'], ['l2', 'l3'], ['l4']])
   })
 
@@ -451,7 +481,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
     expect(TAILLE_ENVOI_AFFECTATION).toBe(100)
     const lignes = Array.from({ length: 250 }, (_, i) => ligne({ id: `l${i}` }))
     const plan = planAffectationParRegles(lignes, [regle()], [HONORAIRES], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
-    expect(envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT).map((e) => e.length)).toEqual([100, 100, 50])
+    expect(lotDuRole(plan.propositions).map((e) => e.length)).toEqual([100, 100, 50])
   })
 })
 

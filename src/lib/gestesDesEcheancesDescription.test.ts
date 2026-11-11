@@ -11,7 +11,7 @@ import type { CotisationDeclaree } from './types'
 // L'ORGANISME, L'ANNÉE PAYÉE ET LA NATURE DANS « MODIFIER » ET « RÉUNIR » (ligne 27, TNS-Q2) : les règles suivent les
 // colonnes LUES — absentes de la lecture (la migration pas appliquée), elles ne s'écrivent ni ne se retiennent.
 const contexte: ContexteDesGestes = {
-  mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, mouvementDe: () => null, figee: () => null, dateFigee: () => null, ecritures: [],
+  mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, mouvementDe: () => null, figee: () => null, dateFigee: () => null, ecritures: [],
 }
 const decrite = cotisation({ organisme: 'urssaf', annee_payee: 2026, nature: 'provisionnelle', part_regularisation: null, montant_csg_crds: 300 })
 

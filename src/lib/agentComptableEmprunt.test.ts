@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { banquesDuDossier } from './banqueDuMouvement'
 import ts from 'typescript'
 import * as lib_echeanceEmprunt from './echeanceEmprunt'
 import { describe, expect, it } from 'vitest'
@@ -183,8 +184,8 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc EMPRUNT (copie déployé
       // Les écritures d'une PIÈCE qui désignent le même mouvement n'en sont pas.
       ecriture({ id: 'piece', piece_id: 'p1', ligne_bancaire_id: 'juste', compte: '606100', sens: 'debit', montant: 540 }),
     ]
-    expect(ids(deployee.echeancesDesynchronisees(ecritures, echeances))).toEqual(ids(echeancesDesynchronisees(ecritures, echeances, plan)))
-    expect(ids(echeancesDesynchronisees(ecritures, echeances, plan))).toEqual(['absente', 'amputee', 'autre-montant', 'autre-date'])
+    expect(ids(deployee.echeancesDesynchronisees(ecritures, echeances))).toEqual(ids(echeancesDesynchronisees(ecritures, echeances, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
+    expect(ids(echeancesDesynchronisees(ecritures, echeances, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))).toEqual(['absente', 'amputee', 'autre-montant', 'autre-date'])
   })
 })
 
@@ -297,6 +298,6 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc EMPRUNT sait encore échou
   it('attrape une copie qui prend tout mouvement pour une échéance', () => {
     const derivee = planter(['    if (!ligne.emprunt_id) return false\n    const attendue', '    const attendue'])
     const releve = [ligne({ id: 'pas-un-emprunt', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null })]
-    echoue(() => expect(ids(derivee.echeancesDesynchronisees([], releve))).toEqual(ids(echeancesDesynchronisees([], releve, plan))))
+    echoue(() => expect(ids(derivee.echeancesDesynchronisees([], releve))).toEqual(ids(echeancesDesynchronisees([], releve, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))))
   })
 })

@@ -35,7 +35,7 @@ const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
 function contexte(o: Partial<ContexteDesGestes> & { mouvements?: Record<string, LigneBancaire> } = {}): ContexteDesGestes {
   const { mouvements = {}, ...reste } = o
   return {
-    mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, mouvementDe: (c) => mouvements[c.id] ?? null, figee: () => null,
+    mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, mouvementDe: (c) => mouvements[c.id] ?? null, figee: () => null,
     dateFigee: (date) => (date <= '2025-12-31' ? 'L\'exercice 2025 est validé' : null), ecritures: [], ...reste,
   }
 }

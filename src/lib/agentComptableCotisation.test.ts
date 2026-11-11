@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { banquesDuDossier } from './banqueDuMouvement'
 import ts from 'typescript'
 import * as lib_cotisationRapprochee from './cotisationRapprochee'
 import { describe, expect, it } from 'vitest'
@@ -249,7 +250,7 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc COTISATION (copie déplo
       // et la fin de leur exercice.
       for (const f of FRONTIERES) {
         expect(paires(deployee.cotisationsAEcrire(ecritures, lignes, cotisations, mode, f)), `${mode}, frontière ${f}`)
-          .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, mode, f, plan)))
+          .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, mode, f, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
         expect(paires(deployee.rapprochementsCotisationRefuses(lignes, cotisations, mode, f)), `${mode}, frontière ${f}`)
           .toEqual(paires(rapprochementsCotisationRefuses(lignes, cotisations, mode, f)))
       }
@@ -263,14 +264,14 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc COTISATION (copie déplo
       ...conforme(lignes[4], cotisations[4], 'tresorerie').map((e) => (e.compte === COMPTE_BANQUE ? e : { ...e, montant: 450 })),
       ...conforme(lignes[8], cotisations[7], 'tresorerie'),
     ]
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', null, plan)))
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
       .toEqual(['l-absente→absente', 'l-perimee→perimee', 'l-autre-date→autre-date', 'l-autre-montant→autre-montant'])
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'engagement', null, plan))).not.toContain('l-perimee→perimee')
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'engagement', null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))).not.toContain('l-perimee→perimee')
     expect(paires(rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie', null))).toEqual(['l-refusee→refusee'])
     // Et la frontière décide : un paiement d'un exercice validé ne se réclame plus, ni son écriture ni son refus — le
     // prélèvement du 9 mars reste ouvert sous une frontière au 5.
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-05', plan))).toEqual([])
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-04', plan)))
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-05', plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))).toEqual([])
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-04', plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
       .toEqual(['l-absente→absente', 'l-perimee→perimee', 'l-autre-date→autre-date', 'l-autre-montant→autre-montant'])
     expect(paires(rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie', '2026-03-05'))).toEqual([])
   })
@@ -414,7 +415,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc COTISATION sait encore éc
     const lignes = [ligne({ id: 'l-refusee', cotisation_id: 'refusee', montant: 500 })]
     const cotisations = [cotisation({ id: 'refusee' })]
     echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null)))
-      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null, plan))))
+      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))))
   })
 
   it('attrape une écriture jugée à la date de l’échéance plutôt qu’à celle du mouvement', () => {
@@ -424,7 +425,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc COTISATION sait encore éc
     const cotisations = [cotisation({})]
     const ecritures = conforme(lignes[0], cotisations[0], 'tresorerie')
     echoue(() => expect(paires(derivee.cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie', null)))
-      .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie', null, plan))))
+      .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie', null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))))
   })
 
   // LA FRONTIÈRE DE VALIDATION : un paiement d'un exercice validé ne se réclame plus, ni son écriture ni son refus.
@@ -433,7 +434,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc COTISATION sait encore éc
     const lignes = [ligne({ id: 'l-figee' })]
     const cotisations = [cotisation({})]
     echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', '2026-03-05')))
-      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', '2026-03-05', plan))))
+      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', '2026-03-05', plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))))
   })
 
   it('attrape une copie qui dit le refus d’un rapprochement figé', () => {
@@ -449,6 +450,6 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc COTISATION sait encore éc
     const lignes = [ligne({ id: 'l-non-rapprochee', statut: 'non_rapprochee' })]
     const cotisations = [cotisation({})]
     echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null)))
-      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null, plan))))
+      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))))
   })
 })

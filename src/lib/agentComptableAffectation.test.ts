@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { banquesDuDossier } from './banqueDuMouvement'
 import ts from 'typescript'
 import * as lib_virementPersonnel from './virementPersonnel'
 import * as lib_controles from './controles'
@@ -133,11 +134,11 @@ const memeResultatSous = (plan: PlanComptable, copieDuPlan: Copie) => function m
   expect(resumeAffectes(la), 'mouvementsAffectes a dérivé').toEqual(resumeAffectes(ici))
   for (const f of FRONTIERES) {
     expect(ids(copie.mouvementsAffectesDesynchronises(ecritures, la, f)), `mouvementsAffectesDesynchronises a dérivé (frontière ${f})`)
-      .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, f, plan)))
+      .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, f, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
     expect(ids(copie.recettesAffecteesSansTaux(la, assujetti, f)), `recettesAffecteesSansTaux a dérivé (frontière ${f})`)
       .toEqual(ids(recettesAffecteesSansTaux(ici, assujetti, f)))
   }
-  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, frontiere, plan)) }
+  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, frontiere, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))) }
 }
 
 // Une recette taxée, écrite comme l'affectation l'écrit : le hors taxe au 706, la TVA au 445710, le
@@ -349,17 +350,17 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc AFFECTATION — les vire
     for (const modele of [TRESORERIE, ENGAGEMENT]) {
       for (const f of FRONTIERES) {
         expect(ids2(deployee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele, f)), `modèle ${modele.mode}, frontière ${f}`)
-          .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele, f)))
+          .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele, f, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))))
       }
     }
     // La batterie exerce bien ce qui décide : l'écriture absente, le compte qui suit le modèle, et les
     // mouvements qu'on ne peut pas écrire (zéro euro, rapproché, affecté, réglé en groupe, écrit sur un compte de
     // bilan, rapproché d'un emprunt, ventilé, pas un virement personnel).
-    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))).toEqual(['sans-ecriture', 'ecrit-467'])
-    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null))).toEqual(['sans-ecriture', 'ecrit-108', 'apport'])
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))).toEqual(['sans-ecriture', 'ecrit-467'])
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null, banquesDuDossier({ etat: 'sans_objet' }, ENGAGEMENT.plan)))).toEqual(['sans-ecriture', 'ecrit-108', 'apport'])
     // Et la frontière décide : un exercice validé ne réclame plus son virement, la base n'y écrivant plus.
-    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10'))).toEqual([])
-    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-09'))).toEqual(['sans-ecriture', 'ecrit-467'])
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10', banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))).toEqual([])
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-09', banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))).toEqual(['sans-ecriture', 'ecrit-467'])
   })
 })
 
@@ -526,25 +527,25 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
   it('attrape une copie qui écrit toujours sur le compte de l’exploitant', () => {
     const derivee = planter('return modele.mode === "engagement" ? modele.compteNotesDeFrais : modele.plan.exploitant', 'return modele.plan.exploitant')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null)))
-      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null))))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null, banquesDuDossier({ etat: 'sans_objet' }, ENGAGEMENT.plan)))))
   })
 
   it('attrape une copie qui propose d’écrire un virement de zéro euro', () => {
     const derivee = planter(' && l.montant !== 0', '')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
-      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))))
   })
 
   it('attrape une copie qui écrirait un virement personnel posé sur un compte de bilan', () => {
     const derivee = planter(' && !l.compte_bilan && !l.declaration_tva_id\n', ' && !l.declaration_tva_id\n')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
-      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))))
   })
 
   it('attrape une copie qui écrirait un virement personnel rapproché d’une déclaration de TVA', () => {
     const derivee = planter(' && !l.compte_bilan && !l.declaration_tva_id\n', ' && !l.compte_bilan\n')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
-      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))))
   })
 
   it('attrape une copie qui écrirait un virement personnel réglé en groupe, rapproché d’un emprunt ou ventilé', () => {
@@ -555,14 +556,14 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
     ] as const) {
       const derivee = planter(avant, apres)
       echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
-        .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
+        .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))))
     }
   })
 
   it('attrape une copie qui prend tout mouvement pour un virement personnel', () => {
     const derivee = planter('    l.prelevement_personnel\n    && !l.reglement_groupe', '    !l.reglement_groupe')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
-      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))))
   })
 
   // LA FRONTIÈRE DE VALIDATION : chaque contrôle du bloc qui la lit.
@@ -581,7 +582,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
   it('attrape une copie qui réclame l’écriture d’un virement figé', () => {
     const derivee = planter('    && l.montant !== 0\n    && !estFigee(l.date, frontiere)\n', '    && l.montant !== 0\n')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10')))
-      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10'))))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10', banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))))
   })
 
   it('attrape une copie dont la frontière ne fige pas son propre jour', () => {

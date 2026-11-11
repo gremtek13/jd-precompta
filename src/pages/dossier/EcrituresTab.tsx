@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
+import { modeleDuMouvement, planDuMouvement } from '../../lib/banqueDuMouvement'
 import PaquetDArchiveBouton from './PaquetDArchiveBouton'
 import { piecesCiteesParLExercice, piecesSansEmpreinte } from '../../lib/paquetDArchive'
 import { supabase } from '../../lib/supabase'
@@ -190,6 +192,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Ce que les exercices validés ont figé (lib/validationExercice.ts) : la base refuse d'y écrire, de le modifier
   // ou de le retirer, donc les contrôles ne le comparent plus et aucun geste ne le propose.
   const { frontiere, exercices: exercicesValides } = useExercicesValides()
+  // La banque de chaque mouvement du relevé (MCB5, lib/banqueDuMouvement.ts) : « Réaffecter » et les « Réécrire » composent
+  // au 512 de son compte bancaire, et les contrôles recomposent de même. Drapeau baissé, le plan lui-même, sans attente ;
+  // comptes en cours de lecture ou illisibles, un mouvement n'est pas jugé et son geste se refuse, dits par le bandeau.
+  const { banques, lecture: lectureDesComptes } = useBanquesDuDossier(dossierId, modele.plan)
   const [regenerating, setRegenerating] = useState<string | null>(null)
   const [retrait, setRetrait] = useState<string | null>(null)
   const [exportPiste, setExportPiste] = useState(false)
@@ -672,22 +678,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Les mouvements affectés dont l'écriture n'est plus celle que leur catégorie produirait — le compte
   // de la catégorie a changé depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore
   // sa TVA (voir lib/affectationBanque.ts).
-  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories, assujettiTva), frontiere, modele.plan)
+  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories, assujettiTva), frontiere, modele.plan, banques)
   // Les mouvements ventilés dont l'écriture n'est plus celle que leurs parts produiraient — le compte d'une
   // catégorie a changé depuis (voir lib/ventilationBanque.ts). Sur des parts lues EN ENTIER seulement : une
   // part non lue ferait passer une ventilation pour incohérente, donc la tairait ici.
-  const ventilesPerimes = ventilationsIncompletes ? [] : mouvementsVentilesDesynchronises(ecritures, lignesBancaires, ventilations, categories, modele, assujettiTva, frontiere)
+  const ventilesPerimes = ventilationsIncompletes ? [] : mouvementsVentilesDesynchronises(ecritures, lignesBancaires, ventilations, categories, modele, assujettiTva, frontiere, banques)
   // Les mouvements écrits sur un compte de bilan dont l'écriture ne suit plus leur compte — DÉFENSIF : la base écrit le
   // compte et l'écriture ensemble (voir lib/compteDeBilan.ts). Un contrôle qui parle trop se corrige ; celui qui se tait
   // ne se voit pas.
-  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignesBancaires, frontiere, modele.plan)
+  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignesBancaires, frontiere, modele.plan, banques)
   // Les déclarations de TVA dont la liquidation ne suit plus ce qu'elles ont enregistré, et les mouvements qui en paient
   // une dont l'écriture ne suit plus leur montant — DÉFENSIF tous deux : la base les écrit ensemble (lib/liquidationTva.ts).
   // Une déclaration lue se juge sur elle-même, quelles que soient les autres : sur une lecture partielle, celles qui
   // manquent ne sont simplement pas jugées — le bandeau le dit —, et le paiement d'une déclaration non lue ne se réécrit
   // pas, son écriture se composant avec elle.
   const liquidationsPerimees = liquidationsDesynchronisees(ecritures, declarationsTva, frontiere, modele.plan)
-  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignesBancaires, frontiere, modele.plan)
+  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignesBancaires, frontiere, modele.plan, banques)
   const declarationById = (id: string | null) => (id ? declarationsTva.find((d) => d.id === id) ?? null : null)
   const pieceById = (id: string) => piecesValidees.find((p) => p.id === id) ?? null
 
@@ -843,6 +849,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       setError(refus ?? `La catégorie « ${m.categorie.libelle} » n’a pas de compte.`)
       return
     }
+    const duMouvement = planDuMouvement(modele.plan, m.ligne, banques)
+    if ('refus' in duMouvement) { setError(duMouvement.refus); return }
     reaffectationsEnCours.current.add(m.ligne.id)
     setReaffectation(m.ligne.id)
     setError(null)
@@ -850,7 +858,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       const { error: rpcError } = await supabase.rpc('affecter_mouvement_bancaire', {
         p_ligne_bancaire_id: m.ligne.id,
         p_categorie_id: m.categorie.id,
-        p_ecritures: ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux, modele.plan),
+        p_ecritures: ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux, duMouvement.plan),
         p_taux_tva: m.taux,
       })
       if (rpcError) throw rpcError
@@ -874,7 +882,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     if (ventilationsIncompletes || reaffectationsEnCours.current.has(ligne.id)) return
     const parts = partsAReecrire(ventilations.filter((v) => v.ligne_bancaire_id === ligne.id), categories, assujettiTva)
     const refus = refusVentilation(ligne, parts, categories, assujettiTva)
-    const ecriture = refus ? null : ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)
+    const duMouvement = modeleDuMouvement(modele, ligne, banques)
+    if (!refus && 'refus' in duMouvement) { setError(duMouvement.refus); return }
+    const ecriture = refus || 'refus' in duMouvement ? null : ecritureDeLaVentilation(ligne, parts, categories, duMouvement.modele, assujettiTva)
     if (!ecriture) {
       setError(refus ?? 'Une part n’a plus de compte de charge ou de produit : modifie la ventilation depuis la fiche du mouvement, dans Banque.')
       return
@@ -906,6 +916,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     if (!compte || reaffectationsEnCours.current.has(ligne.id)) return
     const refus = refusCompteDeBilanDuMouvement(ligne, compte, modele)
     if (refus) { setError(refus); return }
+    const duMouvement = planDuMouvement(modele.plan, ligne, banques)
+    if ('refus' in duMouvement) { setError(duMouvement.refus); return }
     reaffectationsEnCours.current.add(ligne.id)
     setReaffectation(ligne.id)
     setError(null)
@@ -913,7 +925,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       const { error: rpcError } = await supabase.rpc('ecrire_mouvement_compte_bilan', {
         p_ligne_bancaire_id: ligne.id,
         p_compte: compte,
-        p_ecritures: ecritureDuCompteDeBilan(ligne, compte, modele.plan),
+        p_ecritures: ecritureDuCompteDeBilan(ligne, compte, duMouvement.plan),
       })
       if (rpcError) throw rpcError
       await load()
@@ -956,6 +968,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     if (!declaration || reaffectationsEnCours.current.has(ligne.id)) return
     const refus = refusPaiementTva(ligne, declaration)
     if (refus) { setError(refus); return }
+    const duMouvement = planDuMouvement(modele.plan, ligne, banques)
+    if ('refus' in duMouvement) { setError(duMouvement.refus); return }
     reaffectationsEnCours.current.add(ligne.id)
     setReaffectation(ligne.id)
     setError(null)
@@ -963,7 +977,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       const { error: rpcError } = await supabase.rpc('rapprocher_declaration_tva', {
         p_ligne_bancaire_id: ligne.id,
         p_declaration_id: declaration.id,
-        p_ecriture: ecritureDuPaiementTva(ligne, modele.plan),
+        p_ecriture: ecritureDuPaiementTva(ligne, duMouvement.plan),
       })
       if (rpcError) throw rpcError
       await load()
@@ -1424,6 +1438,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           </div>
         </div>
       )}
+
+      <BandeauLecturePartielle
+        quoi="Les comptes bancaires du dossier"
+        accord="lus"
+        motif={lectureDesComptes.etat === 'illisible' ? lectureDesComptes.motif : null}
+        consequence={
+          'Un mouvement du relevé dont l’écriture ne suit plus sa catégorie, ses parts, son compte ou sa déclaration peut donc ne pas '
+          + 'être signalé : sa banque ne se sait pas, et « Réaffecter » comme « Réécrire » se refusent. Recharge la page.'
+        }
+      />
 
       <BandeauLecturePartielle
         quoi="Les parts des mouvements ventilés"

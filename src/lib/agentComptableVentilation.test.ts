@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { banquesDuDossier } from './banqueDuMouvement'
 import ts from 'typescript'
 import * as lib_ventilationBanque from './ventilationBanque'
 import { describe, expect, it } from 'vitest'
@@ -246,12 +247,12 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc VENTILATION (copie dépl
       ]
       for (const f of FRONTIERES) {
         expect(ids(deployee.mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, f)), `${modele.mode} ${modele.compteNotesDeFrais}, frontière ${f}`)
-          .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, f)))
+          .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, f, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))))
       }
-      expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, null)))
+      expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, null, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))))
         .toEqual(['absente', 'autre-compte', 'autre-montant', 'autre-date', 'hors-resultat'])
       // Et la frontière décide : un mouvement d'un exercice validé ne se juge plus.
-      expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, '2025-03-31'))).toEqual([])
+      expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, '2025-03-31', banquesDuDossier({ etat: 'sans_objet' }, modele.plan)))).toEqual([])
     }
     // Et le modèle compte : l'écriture juste en trésorerie est périmée en engagement.
     const ecrituresTresorerie = conforme(lignes[0], partsDe('juste'), TRESORERIE)
@@ -268,11 +269,11 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc VENTILATION (copie dépl
     ]
     for (const assujetti of [true, false]) {
       expect(ids(deployee.mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, assujetti, null)), `assujetti ${assujetti}`)
-        .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, assujetti, null)))
+        .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, assujetti, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))))
     }
     // Assujetti, l'écriture au TTC est périmée ; qui ne l'est plus, celle qui porte encore la TVA.
-    expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, true, null))).toEqual(['au-ttc'])
-    expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, false, null))).toEqual(['avec-tva'])
+    expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, true, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))).toEqual(['au-ttc'])
+    expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, false, null, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))).toEqual(['avec-tva'])
   })
 })
 
@@ -408,7 +409,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc VENTILATION sait encore é
     const lignes = [ligne({ id: 'l' })]
     const parts = [part('l', 'tel', -84), part('l', null, -36)]
     echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false, '2025-03-31')))
-      .toEqual(ids(mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false, '2025-03-31'))))
+      .toEqual(ids(mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false, '2025-03-31', banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))))
   })
 
   it('attrape une copie qui réclame le taux d’une recette figée', () => {

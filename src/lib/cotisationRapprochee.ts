@@ -1,3 +1,4 @@
+import { planPourJuger, type BanquesDuDossier } from './banqueDuMouvement'
 import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
 import { libellerLEcritureDuReleve } from './libellesDuReleve'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
@@ -305,12 +306,16 @@ export function cotisationsAEcrire<L extends MouvementBancaire>(
   frontiere: string | null,
   // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
   plan: PlanComptable,
+  // La banque de chaque mouvement (MCB5, lib/banqueDuMouvement.ts) : l'écriture attendue se recompose au 512 de SON
+  // compte bancaire ; drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
+  banques: BanquesDuDossier,
 ): RapprochementCotisation<L>[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
-  return rapprochementsDeCotisation(lignes, cotisations).filter(({ ligne, cotisation }) =>
-    !estFigee(ligne.date, frontiere)
-    && !refusRapprochementCotisation(ligne, cotisation, mode)
-    && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode, plan), ligne.date))
+  return rapprochementsDeCotisation(lignes, cotisations).filter(({ ligne, cotisation }) => {
+    if (estFigee(ligne.date, frontiere) || refusRapprochementCotisation(ligne, cotisation, mode)) return false
+    const duMouvement = planPourJuger(plan, ligne, banques)
+    return !!duMouvement && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode, duMouvement), ligne.date)
+  })
 }
 
 export interface RapprochementCotisationRefuse<L extends MouvementBancaire = MouvementBancaire> extends RapprochementCotisation<L> {

@@ -1,4 +1,5 @@
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
+import { banquesDuDossier } from './banqueDuMouvement'
 import type { ModeleComptable } from './engagement'
 import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
 import { mouvementsSurUnCompteDeBilanDesynchronises } from './compteDeBilan'
@@ -225,6 +226,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // Les mois manquants, compte par compte dès deux comptes (MCB4) : un mois que l'un couvre ne couvre plus le trou de l'autre.
   // Une part (drapeau baissé, un compte) : `moisManquantsDe`, au mois près. Les comptes illisibles : la règle d'hier.
   const releveDesComptes = releveParCompte(comptesBancaires, lignes, controlesReleves ?? [])
+  // La banque de chaque mouvement (MCB5) : les détecteurs recomposent l'écriture attendue au 512 de son compte bancaire.
+  const banques = banquesDuDossier(comptesBancaires, modele.plan)
   const manquantsDe = (ex: ExerciceAReclamer): MoisManquantsDuReleve => (releveDesComptes.etat === 'parts'
     ? moisManquantsParCompte(ex, releveDesComptes.parts) : { mois: moisManquantsDe(ex, lignes), comptes: new Map() })
   const manquantsCourants = manquantsDe(exerciceCourant)
@@ -326,7 +329,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // L'écriture d'un mouvement affecté que son affectation ne produirait plus — la catégorie a changé de
   // compte depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore sa TVA. Même
   // famille que les pièces « à régénérer », invisible de la même façon.
-  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes, frontiere, modele.plan)
+  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes, frontiere, modele.plan, banques)
   // Des encaissements affectés en recette SANS TAUX alors que le dossier est assujetti — affectés avant
   // qu'il le devienne : leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe en recette.
   // Pas d'un exercice validé : la base refuse de les réaffecter (lib/validationExercice.ts).
@@ -336,16 +339,16 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // Une ventilation dont les parts ne font plus le mouvement (défensif, la base vérifie la somme), et une
   // écriture de mouvement ventilé qui ne suit plus ses parts — le compte d'une catégorie a changé depuis.
   const ventilationsFausses = ventilationsPartielles ? [] : ventilationsIncoherentes(lignes, ventilations)
-  const ventilesPerimes = mouvementsVentilesDesynchronises(ecritures, lignes, ventilations, categories, modele, assujettiTva, frontiere)
+  const ventilesPerimes = mouvementsVentilesDesynchronises(ecritures, lignes, ventilations, categories, modele, assujettiTva, frontiere, banques)
   // Les virements personnels sans leur écriture — classés avant que ce classement s'écrive
   // (lib/virementPersonnel.ts). Ils ont l'air traités, et manquent au FEC comme à la trésorerie. Pas d'un
   // exercice validé : la base refuse d'y écrire.
-  const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele, frontiere)
+  const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele, frontiere, banques)
   // Les échéances de cotisation payées par un mouvement rapproché dont l'écriture manque ou n'est plus
   // celle du rapprochement — rapprochées avant qu'il s'écrive, ou une CSG-CRDS saisie depuis
   // (lib/cotisationRapprochee.ts). Elles ont l'air payées, et manquent au FEC comme à la trésorerie. Pas d'un
   // exercice validé : la base refuse d'y écrire.
-  const cotisationsSansEcriture = cotisationsAEcrire(ecritures, lignes, cotisations, modele.mode, frontiere, modele.plan)
+  const cotisationsSansEcriture = cotisationsAEcrire(ecritures, lignes, cotisations, modele.mode, frontiere, modele.plan, banques)
   // Un rapprochement d'échéance qui ne PEUT pas s'écrire — un encaissement rapproché d'un appel, posé
   // quand l'écran ne regardait pas le sens : il ne date rien et n'a pas d'écriture. Pas d'un exercice validé : ni le
   // mouvement ni l'échéance n'y changent plus.
@@ -371,7 +374,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const previsionnellesImpayees = paiementsPartiels ? [] : previsionnellesSansPaiement(cotisations, lignes, modele.mode, frontiere)
   // L'écriture d'une échéance rapprochée qui n'est plus celle de son découpage : défensif, la base les
   // écrivant ensemble — mais une écriture retirée par un autre chemin sortirait du FEC en silence.
-  const echeancesPerimees = echeancesDesynchronisees(ecritures, lignes, modele.plan)
+  const echeancesPerimees = echeancesDesynchronisees(ecritures, lignes, modele.plan, banques)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
   // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
   // La facture d'un bien n'y compte pas : elle s'écrit sur le compte de sa nature, et la 2035 l'écarte.
@@ -469,7 +472,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const montantsIgnores = montantsDesMouvementsIgnores(ignoresHorsFec)
   // Un mouvement écrit sur un compte de bilan dont l'écriture ne suit plus le compte. Défensif : la base écrit le compte
   // et l'écriture ensemble (lib/compteDeBilan.ts).
-  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignes, frontiere, modele.plan)
+  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignes, frontiere, modele.plan, banques)
   // L'AUTRE MOITIÉ DE « LA BANQUE FAIT FOI » (décision du cabinet, 23/09/2026) : sous le seuil la
   // pièce est ALIGNÉE au rapprochement et il n'y a rien à dire ; au-dessus, un écart large est
   // presque toujours un paiement partiel, donc on le signale sans rien écraser. Jugé sur le TOTAL
@@ -513,7 +516,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // le dossier a une activité, hors des exercices validés et des périodes reprises : elles se taisent sur une lecture
   // partielle des déclarations ou de l'ouverture, qui ferait réclamer une période déclarée ou reprise.
   const liquidationsPerimees = liquidationsDesynchronisees(ecritures, declarationsTva, frontiere, modele.plan)
-  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignes, frontiere, modele.plan)
+  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignes, frontiere, modele.plan, banques)
   const anneesActives = [
     ...lignes.map((l) => anneeDe(l.date)),
     ...piecesValidees.flatMap((p) => (p.date_piece ? [anneeDe(p.date_piece)] : [])),

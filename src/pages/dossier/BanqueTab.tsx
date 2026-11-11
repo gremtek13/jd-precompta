@@ -1611,7 +1611,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // si l'un d'eux n'est plus à traiter. Sous le verrou partagé des écritures de l'écran.
   async function affecterSelonLesRegles() {
     if (planRegles.propositions.length === 0 || lotReglesSuspendu) return
-    const envois = envoisDuLot(planRegles.propositions, modele.plan)
+    const lot = envoisDuLot(planRegles.propositions, modele.plan, banquesDesMouvements)
+    if ('refus' in lot) { window.alert(lot.refus); return }
+    const envois = lot.envois
     const total = planRegles.propositions.length
     await sousVerrou(setAffectationLotEnCours, async () => {
       let faits = 0

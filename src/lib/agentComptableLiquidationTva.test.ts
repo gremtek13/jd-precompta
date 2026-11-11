@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { banquesDuDossier } from './banqueDuMouvement'
 import ts from 'typescript'
 import * as lib_liquidationTva from './liquidationTva'
 import { describe, expect, it } from 'vitest'
@@ -247,11 +248,11 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc LIQUIDATION TVA (copie d
   it('rend les mêmes paiements à réécrire, sous chaque frontière', () => {
     for (const f of FRONTIERES) {
       expect(ids(deployee.paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f)), `frontière ${f}`)
-        .toEqual(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f, plan)))
+        .toEqual(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
     }
-    expect(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, null, plan)))
+    expect(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
       .toEqual(['absente', 'montant', 'sens', 'compte', 'date', 'piece', 'apres'])
-    expect(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, '2026-06-30', plan))).toEqual(['apres'])
+    expect(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, '2026-06-30', plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))).toEqual(['apres'])
   })
 
   it('découpe l’année en les mêmes périodes, avec le même nom', () => {
@@ -369,7 +370,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc LIQUIDATION TVA sait encor
   const memesPaiements = (copie: Copie) => {
     for (const f of FRONTIERES) {
       expect(ids(copie.paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f)))
-        .toEqual(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f, plan)))
+        .toEqual(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
     }
   }
   const memesPeriodes = (copie: Copie) => {

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { banquesDuDossier } from './banqueDuMouvement'
 import { join } from 'node:path'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
@@ -190,15 +191,15 @@ describe('la preuve : aucun contrôle d’hier ne signale les lignes d’une ven
         piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [],
       })
       expect(ecrituresAGenerer(D, [], LIGNES_DES_VENTES, true, paiements, modele, null)).toEqual({ pieces: [], lignes: [], dansUnExerciceValide: [] })
-      expect(mouvementsVentilesDesynchronises(LIGNES_DES_VENTES, MOUVEMENTS, [], [], modele, true, null)).toEqual([])
+      expect(mouvementsVentilesDesynchronises(LIGNES_DES_VENTES, MOUVEMENTS, [], [], modele, true, null, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))).toEqual([])
     })
   }
 
   it('ni à réaffecter, ni à réécrire sur un compte de bilan, ni liquidation ou paiement de TVA à réécrire', () => {
-    expect(mouvementsAffectesDesynchronises(LIGNES_DES_VENTES, mouvementsAffectes(MOUVEMENTS, [], true), null, PLAN_PAR_DEFAUT)).toEqual([])
-    expect(mouvementsSurUnCompteDeBilanDesynchronises(LIGNES_DES_VENTES, MOUVEMENTS, null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(mouvementsAffectesDesynchronises(LIGNES_DES_VENTES, mouvementsAffectes(MOUVEMENTS, [], true), null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises(LIGNES_DES_VENTES, MOUVEMENTS, null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
     expect(liquidationsDesynchronisees(LIGNES_DES_VENTES, [], null, PLAN_PAR_DEFAUT)).toEqual([])
-    expect(paiementsTvaDesynchronises(LIGNES_DES_VENTES, MOUVEMENTS, null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(paiementsTvaDesynchronises(LIGNES_DES_VENTES, MOUVEMENTS, null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
   })
 
   it('la piste d’audit les dirait rompues : l’onglet les écarte, et une vraie rupture reste vue', () => {

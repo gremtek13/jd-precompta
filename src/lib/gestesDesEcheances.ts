@@ -1,4 +1,5 @@
 import type { LigneEcritureMouvement, MouvementBancaire } from './affectationBanque'
+import { planDuMouvement, type BanquesDuDossier } from './banqueDuMouvement'
 import {
   csgDeLEcriture, ecritureDeLaCotisation, montantDeLEcheance, refusRapprochementCotisation,
 } from './cotisationRapprochee'
@@ -94,6 +95,9 @@ export interface SaisieDeLEcheance {
 export interface ContexteDesGestes {
   mode: ModeComptable
   plan: PlanComptable
+  // La banque de chaque mouvement (MCB5, lib/banqueDuMouvement.ts) : l'écriture réécrite dans le geste s'écrit au 512 du
+  // compte bancaire du mouvement qui paie l'échéance ; comptes illisibles, le geste qui la réécrirait se refuse.
+  banques: BanquesDuDossier
   // Le mouvement qui paie l'échéance, lu dans un relevé lu en entier ; nul : aucun ne la paie.
   mouvementDe: (c: CotisationDeclaree) => MouvementBancaire | null
   // L'exercice validé qui fige l'échéance — la date du mouvement qui la paie, sinon de son paiement personnel, sinon son
@@ -244,8 +248,10 @@ export function jugerLaModification(
         },
       }
     }
-    const avant = ecritureDeLaCotisation(mouvement, c, ctx.mode, ctx.plan)
-    const apres = ecritureDeLaCotisation(mouvement, v, ctx.mode, ctx.plan)
+    const duMouvement = planDuMouvement(ctx.plan, mouvement, ctx.banques)
+    if ('refus' in duMouvement) return { refus: { message: duMouvement.refus } }
+    const avant = ecritureDeLaCotisation(mouvement, c, ctx.mode, duMouvement.plan)
+    const apres = ecritureDeLaCotisation(mouvement, v, ctx.mode, duMouvement.plan)
     const change = JSON.stringify(avant.map(({ compte, sens, montant: m }) => [compte, sens, m]))
       !== JSON.stringify(apres.map(({ compte, sens, montant: m }) => [compte, sens, m]))
     if (change && ecritureValideeDu(mouvement, ctx.ecritures)) {

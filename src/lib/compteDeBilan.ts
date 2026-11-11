@@ -1,3 +1,4 @@
+import { planPourJuger, type BanquesDuDossier } from './banqueDuMouvement'
 import {
   ecritureConforme, ecritureDuMouvement, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire,
 } from './affectationBanque'
@@ -257,13 +258,16 @@ export function mouvementsSurUnCompteDeBilanDesynchronises<L extends MouvementBa
   frontiere: string | null,
   // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
   plan: PlanComptable,
+  // La banque de chaque mouvement (MCB5, lib/banqueDuMouvement.ts) : l'écriture attendue se recompose au 512 de SON
+  // compte bancaire ; drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
+  banques: BanquesDuDossier,
 ): L[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
-  return lignes.filter((l) =>
-    !!l.compte_bilan
-    && l.statut === 'rapprochee'
-    && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(l, l.compte_bilan, plan), l.date))
+  return lignes.filter((l) => {
+    if (!l.compte_bilan || l.statut !== 'rapprochee' || estFigee(l.date, frontiere)) return false
+    const duMouvement = planPourJuger(plan, l, banques)
+    return !!duMouvement && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(l, l.compte_bilan, duMouvement), l.date)
+  })
 }
 
 // LES MOUVEMENTS ÉCRITS SUR UN COMPTE DE BILAN NE SONT PAS UN RYTHME D'ACTIVITÉ. Un virement vers le compte d'épargne,

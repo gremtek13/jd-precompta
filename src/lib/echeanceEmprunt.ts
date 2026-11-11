@@ -1,3 +1,4 @@
+import { planPourJuger, type BanquesDuDossier } from './banqueDuMouvement'
 import {
   ecritureConforme, ecrituresSansPieceParMouvement,
   type LigneEcritureMouvement, type MouvementBancaire,
@@ -395,11 +396,16 @@ export function echeancesDesynchronisees(
   lignes: readonly MouvementBancaire[],
   // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
   plan: PlanComptable,
+  // La banque de chaque mouvement (MCB5, lib/banqueDuMouvement.ts) : l'écriture attendue se recompose au 512 de SON
+  // compte bancaire ; drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
+  banques: BanquesDuDossier,
 ): MouvementBancaire[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((ligne) => {
     const d = decoupageDuMouvement(ligne)
     if (!d) return false
-    return !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLEcheance(ligne, d, plan), ligne.date)
+    const duMouvement = planPourJuger(plan, ligne, banques)
+    if (!duMouvement) return false
+    return !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLEcheance(ligne, d, duMouvement), ligne.date)
   })
 }

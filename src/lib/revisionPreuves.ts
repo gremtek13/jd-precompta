@@ -1,4 +1,5 @@
 import { amortissementCumuleCentimes, compteAmortissement, dotationsDuRegistre, miseEnService, montantDeFactureDifferent, rang360 } from './amortissements'
+import { banquesDuDossier } from './banqueDuMouvement'
 import { immobilisationsSansJustificatif, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec } from './controles'
 import { creditReporte, libellePeriode } from './declarationTva'
 import { echeancesNonRapprochees } from './echeanceEmprunt'
@@ -915,7 +916,8 @@ function preuveDesDeclarations(compte: string, soldeCentimes: number, d: Donnees
         null, liquidations.length))
       causes++
     }
-    const paiements = paiementsTvaDesynchronises(d.ecritures, d.lignes.filter((l) => l.date >= `${d.annee}-01-01` && l.date <= fin), frontiere, d.modele.plan)
+    const paiements = paiementsTvaDesynchronises(d.ecritures, d.lignes.filter((l) => l.date >= `${d.annee}-01-01` && l.date <= fin), frontiere, d.modele.plan,
+      banquesDuDossier(d.comptesBancaires, d.modele.plan))
     if (paiements.length > 0) {
       faits.push(fait('paiements-a-reecrire',
         `${pluriel(paiements.length, 'paiement ou remboursement', 'paiements ou remboursements')} de TVA de l’exercice dont l’écriture ne suit plus le mouvement.`,
