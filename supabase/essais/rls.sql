@@ -730,6 +730,12 @@
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM1, ligne 47 : migration `dossier_du_cabinet`, PRÉPARÉE, pas
 -- appliquée), qui fait désigner par le chef le dossier du cabinet et y refuse tout accès client. Le bloc DC (DC1 à DC7,
 -- M-DC2, M-DC6, M-DC7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM1 ».
+--
+-- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (A8C-Q1 et A8Q5-Q2, ligne 51.5 : migration `reprises_au_client`,
+-- PRÉPARÉE, pas appliquée), qui ne crée ni ne change aucune policy, mais deux fonctions de lecture `security definer` : ce
+-- que l'encaissement d'une facture reprise demande, au cabinet et à l'accès « Ventes » ; les pièces citées par une facture
+-- reprise, au cabinet et à l'accès « Banque ». Le bloc RC (RC1 à RC5, M-RC1 à M-RC3) ; EN ATTENTE sans la migration. Ce
+-- qu'il rend : HISTORIQUE.md, « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -6292,6 +6298,221 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $pf$;
+
+-- ══ RC. Les factures reprises, au client (ligne 51.5, A8C-Q1 et A8Q5-Q2 ; migration `reprises_au_client`, PRÉPARÉE) ════════
+-- Deux fonctions neuves, `security definer`, lisent aux droits de leur propriétaire le registre des reprises et les liens
+-- des pièces, que le cabinet lit seul : `reprise_de_la_facture` rend au cabinet et à l'accès « Ventes » les chiffres des
+-- plafonds d'une facture reprise ; `pieces_citees_de_la_simulation` rend au cabinet et à l'accès « Banque » les pièces
+-- citées par un lien actif. Elles contournent la RLS : elles se rejouent, chaque refus jugé à sa RAISON.
+--   RC1. Le client qui porte « Ventes » lit ce que l'encaissement de sa facture reprise demande — le contrôle POSITIF —, et
+--        rien d'autre : les six clés de la fonction.
+--   RC2. Sans « Ventes » — « Banque » seule, puis aucune case — : « Accès refusé à ce dossier. » (42501).
+--   RC3. Le client qui porte « Banque » lit les pièces citées de son dossier (le contrôle POSITIF) ; « Ventes » seule, puis
+--        aucune case : refusé.
+--   RC4. L'autre dossier, où il n'a aucun accès, ses deux cases posées : refusé aux deux fonctions ; l'anonyme bute sur le
+--        droit d'exécution, un compte rattaché à rien sur la raison de la fonction.
+--   RC5. Le catalogue : `security definer`, stables, leur chemin fixé ; exécutables par les connectés, ni par l'anonyme ni
+--        par PUBLIC.
+-- Trois mutations, qui doivent mordre : M-RC1 (RC1 rejoué sans « Ventes » : refusé), M-RC2 (RC3 rejoué sans « Banque » :
+-- refusé), M-RC3 (l'exécution rendue à l'anonyme : il lit la raison de la fonction, plus le droit d'exécution). Le jeu : un
+-- dossier jetable du cabinet du chef, basculé, l'accès du client d'essai, sa date de reprise, une facture reprise et la
+-- pièce de vente qu'elle cite ; tout s'annule. Avant la migration, une ligne dit que le bloc attend. Le récit :
+-- HISTORIQUE.md, « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT ».
+do $rc$
+declare
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  inconnu uuid := gen_random_uuid();
+  autre_dossier uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
+  dossier uuid := 'a8c20000-0000-4000-8000-0000000000d1';
+  acces uuid := 'a8c20000-0000-4000-8000-0000000000a1';
+  piece uuid := 'a8c20000-0000-4000-8000-0000000000b1';
+  cabinet uuid;
+  reprise constant date := date_trunc('month', now() at time zone 'Europe/Paris')::date;
+  refus constant text := 'Accès refusé à ce dossier.';
+  cles constant text := 'credite_par_les_repris_centimes,credite_par_les_repris_par_taux,encaisse_avant_reprise_centimes,encaisse_par_taux,nature_operation,reprise_le';
+  facture uuid; profil text; n bigint; v jsonb; obs text; motif text; message text; accepte boolean;
+  erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.reprise_de_la_facture(uuid, uuid)') is null
+     or to_regprocedure('public.pieces_citees_de_la_simulation(uuid)') is null then
+    insert into rls_verdict values ('RC. les factures reprises, au client : EN ATTENTE de la migration reprises_au_client',
+      'reprise_de_la_facture, pieces_citees_de_la_simulation', 'absentes : leurs droits se jugent dès que la migration y est', true);
+    return;
+  end if;
+  select ca.cabinet_id into cabinet from cabinet_admins ca where ca.user_id = chef and ca.role = 'comptable_en_chef'
+   order by ca.cabinet_id limit 1;
+  begin
+    -- ── Le jeu, sans session : le dossier jetable, basculé, et l'accès du client ; puis, sous la session du chef, la date
+    -- de reprise, une facture reprise (50 € encaissés avant la reprise) et la pièce de vente qu'elle cite.
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures, statut_tva, siret,
+                          adresse, forme_juridique, denomination_imprimee) values
+      (dossier, 'ESSAI RLS RC', cabinet, 'tresorerie', '455000', true, 'redevable', '12345678200010',
+       'ESSAI RLS RC ADRESSE', '5710', 'ESSAI RLS RC SOCIÉTÉ');
+    insert into memberships (id, user_id, dossier_id, role, email, droit_ventes, droit_banque) values
+      (acces, client, dossier, 'client', 'essai-rls-rc@example.test', false, false);
+    insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, date_piece, montant_ttc) values
+      (piece, dossier, dossier::text || '/essai-rls-rc.pdf', 'essai-rls-rc.pdf', 'vente', 'a_valider', reprise - 10, 120);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform fixer_reprise_des_factures(dossier, reprise);
+    perform importer_factures(dossier, '{"format": "csv"}'::jsonb, jsonb_build_array(jsonb_build_object(
+      'numero', 'RC-1', 'type', 'facture', 'date_emission', reprise - 10, 'tiers_nom', 'Client RC', 'type_client', 'non_assujetti',
+      'nature_operation', 'services', 'option_debits', false, 'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120,
+      'lignes', jsonb_build_array(jsonb_build_object('designation', 'Prestation', 'quantite', 1, 'prix_unitaire_ht', 100, 'taux_tva', 20)),
+      'encaisse_avant_reprise', 50, 'encaisse_par_taux', jsonb_build_array(jsonb_build_object('taux', 20, 'encaisse', 50)),
+      'transmise_par', 'pdf')));
+    select f.id into facture from factures_emises f where f.dossier_id = dossier and f.numero = 'RC-1';
+    perform citer_piece_de_facture_reprise(dossier, facture, piece);
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    construit := true;
+
+    -- RC1, RC2 : `reprise_de_la_facture`, sous chaque case.
+    foreach profil in array array['ventes', 'banque', 'aucune'] loop
+      accepte := false; motif := null; message := null; v := null;
+      begin
+        update memberships set droit_ventes = (profil = 'ventes'), droit_banque = (profil = 'banque') where id = acces;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        v := reprise_de_la_facture(dossier, facture);
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || case when profil = 'ventes' then jsonb_build_object(
+        'controle', 'RC1. le client « Ventes » lit ce que l''encaissement de sa facture reprise demande, six clés et elles seules (contrôle positif)',
+        'cible', 'reprise_de_la_facture', 'observe', case when accepte then coalesce(v::text, '∅') else motif || ' ' || message end,
+        'ok', accepte and motif = 'P0001' and (v ->> 'encaisse_avant_reprise_centimes') = '5000'
+          and (select string_agg(k, ',' order by k collate "C") from jsonb_object_keys(v) k) = cles)
+      else jsonb_build_object(
+        'controle', 'RC2. sans « Ventes », le client ne lit pas ce qu''une facture reprise porte',
+        'cible', profil, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+        'ok', not accepte and motif = '42501' and message = refus) end;
+    end loop;
+
+    -- M-RC1 : RC1 rejoué sans « Ventes ».
+    obs := null;
+    begin
+      update memberships set droit_ventes = false, droit_banque = true where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform reprise_de_la_facture(dossier, facture);
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-RC1 — RC1 rejoué sans la case « Ventes »',
+      'attendu', 'refusé', 'observe', obs, 'mord', obs = '42501 ' || refus);
+
+    -- RC3 : `pieces_citees_de_la_simulation`, sous chaque case.
+    foreach profil in array array['banque', 'ventes', 'aucune'] loop
+      accepte := false; motif := null; message := null; v := null;
+      begin
+        update memberships set droit_ventes = (profil = 'ventes'), droit_banque = (profil = 'banque') where id = acces;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        v := pieces_citees_de_la_simulation(dossier);
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object(
+        'controle', 'RC3. le client « Banque » lit les pièces citées de son dossier (contrôle positif) ; « Ventes » seule ou aucune case, non',
+        'cible', profil, 'observe', case when accepte then coalesce(v::text, '∅') else motif || ' ' || message end,
+        'ok', case when profil = 'banque' then accepte and motif = 'P0001' and v = jsonb_build_array(piece)
+                   else not accepte and motif = '42501' and message = refus end);
+    end loop;
+
+    -- M-RC2 : RC3 rejoué sans « Banque ».
+    obs := null;
+    begin
+      update memberships set droit_ventes = true, droit_banque = false where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform pieces_citees_de_la_simulation(dossier);
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-RC2 — RC3 rejoué sans la case « Banque »',
+      'attendu', 'refusé', 'observe', obs, 'mord', obs = '42501 ' || refus);
+
+    -- RC4 : l'autre dossier, ses deux cases posées ; l'anonyme ; un compte rattaché à rien.
+    foreach profil in array array['autre', 'anon', 'inconnu'] loop
+      foreach obs in array array['reprise_de_la_facture', 'pieces_citees_de_la_simulation'] loop
+        accepte := false; motif := null; message := null;
+        begin
+          update memberships set droit_ventes = true, droit_banque = true where id = acces;
+          execute format('set local role %I', case profil when 'anon' then 'anon' else 'authenticated' end);
+          perform set_config('request.jwt.claims', case profil when 'anon' then '{"role":"anon"}'
+            else json_build_object('sub', case profil when 'inconnu' then inconnu else client end, 'role', 'authenticated')::text end, true);
+          if obs = 'reprise_de_la_facture' then
+            perform reprise_de_la_facture(case profil when 'autre' then autre_dossier else dossier end, facture);
+          else
+            perform pieces_citees_de_la_simulation(case profil when 'autre' then autre_dossier else dossier end);
+          end if;
+          accepte := true;
+          raise exception 'ANNULATION_ESSAI';
+        exception when others then motif := sqlstate; message := sqlerrm;
+        end;
+        reset role;
+        verdicts := verdicts || jsonb_build_object(
+          'controle', 'RC4. l''autre dossier et un compte rattaché à rien sont refusés ; l''anonyme n''exécute pas les fonctions',
+          'cible', profil || ' / ' || obs, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+          'ok', not accepte and motif = '42501'
+            and message = case profil when 'anon' then 'permission denied for function ' || obs else refus end);
+      end loop;
+    end loop;
+
+    -- M-RC3 : l'exécution rendue à l'anonyme — il lit la raison de la fonction, plus le droit d'exécution.
+    obs := null;
+    begin
+      grant execute on function public.reprise_de_la_facture(uuid, uuid) to anon;
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      perform reprise_de_la_facture(dossier, facture);
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-RC3 — RC4 rejoué, l''exécution rendue à l''anonyme',
+      'attendu', 'un autre refus que le droit d''exécution', 'observe', coalesce(obs, '?'),
+      'mord', obs is distinct from '42501 permission denied for function reprise_de_la_facture');
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- RC5 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.oid in (to_regprocedure('public.reprise_de_la_facture(uuid, uuid)'), to_regprocedure('public.pieces_citees_de_la_simulation(uuid)'))
+     and p.prosecdef and p.provolatile = 's' and p.proconfig @> array['search_path=public']
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0);
+  verdicts := verdicts || jsonb_build_object('controle', 'RC5. security definer, stables, leur chemin fixé ; les connectés les exécutent, ni l''anonyme ni PUBLIC (lecture du catalogue)',
+    'cible', 'reprise_de_la_facture, pieces_citees_de_la_simulation', 'observe', case when n = 2 then 'conformes' else 'NON CONFORMES' end, 'ok', n = 2);
+  verdicts := verdicts || jsonb_build_object('controle', 'RC. le jeu d''essai des reprises au client s''est construit, et rien n''en est resté', 'cible', 'le dossier jetable',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id = dossier)
+      and not exists (select 1 from memberships where id = acces));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $rc$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
