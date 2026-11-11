@@ -50,6 +50,7 @@ import { refus as refusDeLaCaisse, STATUTS_DE_LA_SAISIE_DU_CLIENT } from './cais
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { TROIS_CASES_EXPORTEES } from './troisCasesDeLAcces'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import type { StatutTva } from './types'
 
 export type Domaine = 'ventes' | 'banque' | 'caisse' | 'comptes' | 'achats' | 'frais' | 'documents'
@@ -102,10 +103,21 @@ const TOUS_LES_DOMAINES: readonly DefinitionDomaine[] = [
   },
 ]
 
-/** Les trois cases de B1, qui n'ouvrent encore rien. */
-export const CASES_SANS_EFFET = ['achats', 'frais', 'documents'] as const
-export type CaseSansEffet = typeof CASES_SANS_EFFET[number]
-const estSansEffet = (d: Domaine): d is CaseSansEffet => (CASES_SANS_EFFET as readonly string[]).includes(d)
+/** Les trois cases de B1, qui n'ouvraient rien à leur pose. */
+export const CASES_DE_B1 = ['achats', 'frais', 'documents'] as const
+export type CaseSansEffet = typeof CASES_DE_B1[number]
+const estSansEffet = (d: Domaine): d is CaseSansEffet => (CASES_DE_B1 as readonly string[]).includes(d)
+
+/**
+ * Celles des cases de B1 qui n'ouvrent encore rien : « Documents » en sort le jour où sa migration (B2,
+ * `documents_et_demandes`) est en base — elle ouvre alors les documents publiés (étape B3a).
+ */
+export function casesSansEffetSelon(documentsEnBase: boolean): readonly CaseSansEffet[] {
+  return CASES_DE_B1.filter((d) => d !== 'documents' || !documentsEnBase)
+}
+
+/** Les cases de B1 qui n'ouvrent encore rien, aujourd'hui. */
+export const CASES_SANS_EFFET: readonly CaseSansEffet[] = casesSansEffetSelon(DOCUMENTS_ET_DEMANDES_PREVUS)
 
 /** Les cases de l'onglet, selon que les migrations des situations publiées (C4a) et des trois cases (B1) sont en base. */
 export function domainesSelonLesMigrations(comptesEnBase: boolean, troisCasesEnBase: boolean): readonly DefinitionDomaine[] {
@@ -905,6 +917,27 @@ const ETAPE_QUI_S_EN_SERVIRA: Readonly<Record<CaseSansEffet, string>> = {
   achats: 'à ses achats (étape B4)',
   frais: 'à ses notes de frais (étape B7)',
   documents: 'aux documents que tu mets à sa disposition (étape B2)',
+}
+
+// « Documents », avec sa migration (B2) : CE QU'ELLE OUVRE À LA SESSION DU CLIENT, PAR LA BASE — les documents publiés et
+// non retirés de son dossier (`documents_cabinet_lecture_documents`), ses propres ouvertures
+// (`lectures_documents_lecture_du_lecteur`), et le fichier d'un document publié dans le seau privé ; l'ouverture date sa
+// première lecture (`marquer_document_lu`, à l'accès « Documents » seul). Les demandes, elles, tout accès du dossier les lit,
+// case ou non. droitsAcces.test.ts confronte ces termes à la migration.
+export const CE_QUE_LA_CASE_DOCUMENTS_OUVRE = 'il y lit les documents que tu publies sur ce dossier, tant que tu ne les retires '
+  + 'pas, et les ouvre ; sa première ouverture de chacun se date, et tu la vois. Un document retiré, il ne le lit plus.'
+
+/** Ce que l'espace du client en montre (« Mes documents », étape B3a), et d'où le cabinet publie. */
+export const CE_QUE_MONTRE_MES_DOCUMENTS = 'Son espace les lui montre dans « Mes documents » ; tu publies et retires un document '
+  + 'depuis l’onglet Documents administratifs. Tes demandes, tous les accès du dossier les lisent, avec ou sans la case.'
+
+export const TABLES_LUES_AVEC_DOCUMENTS = ['documents_cabinet', 'lectures_documents'] as const
+
+/** Ce que dit la case « Documents » une fois sa migration en base : ce que la base ouvre au client qui la porte. */
+export function ceQueDitLaCaseDocuments(): string {
+  const { libelle, ouvrira } = definitionDe('documents')
+  return `« ${libelle} » (${ouvrira}) : une case cochée ouvre au client, par la base, les documents que tu mets à sa `
+    + `disposition — ${CE_QUE_LA_CASE_DOCUMENTS_OUVRE} ${CE_QUE_MONTRE_MES_DOCUMENTS}`
 }
 
 /** Ce que dit une des trois cases de B1, sous celles d'hier : elle ne change encore rien. */

@@ -15,7 +15,8 @@ import {
   RAISON_DU_DOSSIER_EN_ENGAGEMENT, raisonDuModeIllisible, avisDuStatutSousLaCase,
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE, ceQueMontreMaCaisseSelon,
-  CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, demandeDeChangementSelon, domainesSelon, phraseDesRelancesSelon, type Domaine,
+  CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, CE_QUE_LA_CASE_DOCUMENTS_OUVRE,
+  TABLES_LUES_AVEC_DOCUMENTS, ceQueDitLaCaseDocuments, demandeDeChangementSelon, domainesSelon, phraseDesRelancesSelon, type Domaine,
 } from './droitsAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
@@ -246,15 +247,20 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(routesClient).toEqual([
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
       '/mon-echeancier ClientEcheancier', '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
-      '/mes-comptes ClientComptes', '/mon-analyse ClientAnalyse',
+      '/mes-comptes ClientComptes', '/mes-documents ClientDocuments', '/mes-demandes ClientDemandes', '/mon-analyse ClientAnalyse',
     ])
+    // DEPUIS L'ÉTAPE B3a, « Mes documents » lit la case « Documents », derrière `DOCUMENTS_ET_DEMANDES_PREVUS`
+    // (lib/documentsEtDemandesVue.ts, `mesDocumentsOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
+    // « Mes demandes » ne lit aucune case : tout accès du dossier lit ses demandes (MEG2-Q9).
+    expect(app).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
+    expect(app).toContain('mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />')
     // DEPUIS L'ÉTAPE C4b, « Mes comptes » lit la case « Comptes », derrière `SITUATIONS_PUBLIEES_EXPORTEES`
     // (lib/situationsPubliees.ts, `mesComptesOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     expect(app).toContain('mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)')
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual([
-      'ClientAnalyse.tsx', 'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientEcheancier.tsx', 'ClientHome.tsx',
-      'ClientInformations.tsx',
+      'ClientAnalyse.tsx', 'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientDemandes.tsx', 'ClientDocuments.tsx',
+      'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx',
       'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
     ])
     // DEPUIS L'ÉTAPE C1, « Mon échéancier » et sa carte de l'accueil lisent la case « Banque » de la société affichée pour les
@@ -1937,5 +1943,24 @@ describe('la case « Comptes » (étape C4b), derrière sa migration', () => {
     // La policy du client « Comptes » : les publications en cours seulement.
     expect(MIGRATION_SP).toContain("using (client_du_dossier(dossier_id, 'comptes') and geste = 'publication' and situation_publiee_en_cours(id))")
     for (const t of TABLES_LUES_AVEC_COMPTES) expect(MIGRATION_SP).toContain(`create policy situations_publiees_lecture_comptes on public.${t}`)
+  })
+})
+
+// LA CASE « DOCUMENTS », AVEC SA MIGRATION (étape B3a) : la phrase de l'onglet Accès dit ce que la migration
+// `documents_et_demandes` (préparée) ouvre au client qui la porte — les documents publiés et non retirés, ses ouvertures —, et
+// que les demandes ne lui demandent aucune case.
+describe('ce que dit la case « Documents », avec sa migration (B3a)', () => {
+  const preparees = resolve(process.cwd(), 'supabase/preparees')
+  const MIGRATION_DM = readFileSync(resolve(preparees, readdirSync(preparees).find((n) => /^\d{14}_documents_et_demandes\.sql$/.test(n))!), 'utf8')
+
+  it('la phrase dit les lectures que la base ouvre, et rien de « sans effet »', () => {
+    const phrase = ceQueDitLaCaseDocuments()
+    expect(phrase).toContain(CE_QUE_LA_CASE_DOCUMENTS_OUVRE)
+    expect(phrase).toContain('« Mes documents »')
+    expect(phrase).toContain('avec ou sans la case')
+    expect(phrase).not.toContain('ne change encore rien')
+    expect(MIGRATION_DM).toContain("for select to authenticated using (client_du_dossier(dossier_id, 'documents') and retire_le is null);")
+    expect(MIGRATION_DM).toContain("for select to authenticated using (lecteur = (select auth.uid()) and client_du_dossier(dossier_id, 'documents'));")
+    for (const t of TABLES_LUES_AVEC_DOCUMENTS) expect(MIGRATION_DM).toMatch(new RegExp(`create policy \\w+ on public\\.${t}\\s+for select to authenticated using \\([^;]*'documents'`))
   })
 })

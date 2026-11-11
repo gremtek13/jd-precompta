@@ -21,6 +21,8 @@ import ClientVentes from './pages/ClientVentes'
 import ClientBanque from './pages/ClientBanque'
 import ClientCaisse from './pages/ClientCaisse'
 import ClientComptes from './pages/ClientComptes'
+import ClientDocuments from './pages/ClientDocuments'
+import ClientDemandes from './pages/ClientDemandes'
 import ClientEcheancier from './pages/ClientEcheancier'
 import ClientAnalyse from './pages/ClientAnalyse'
 import { droitsSur } from './lib/droitsAcces'
@@ -29,6 +31,8 @@ import { VENTES_DU_CLIENT_EXPORTEES } from './lib/encaissementsFactures'
 import { maBanqueOuverte } from './lib/banqueClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from './lib/caisseClient'
 import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from './lib/situationsPubliees'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from './lib/documentsEtDemandes'
+import { mesDemandesOuvertes, mesDocumentsOuverts } from './lib/documentsEtDemandesVue'
 import { COUVERTURE_EXPORTEE } from './lib/couvertureReleve'
 import { monAnalyseOuverte } from './lib/analyseClient'
 import SuperAdminPage from './pages/SuperAdminPage'
@@ -174,6 +178,10 @@ function Gate() {
             {maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).caisse) && <Route path="/ma-caisse" element={<ClientCaisse />} />}
             {/* « Mes comptes » (ligne 51.5, étape C4b) : de même, seulement si la société AFFICHÉE porte la case « Comptes ». */}
             {mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes) && <Route path="/mes-comptes" element={<ClientComptes />} />}
+            {/* « Mes documents » (ligne 51.5, étape B3a) : avec sa migration, et la case « Documents » sur la société AFFICHÉE ;
+                « Mes demandes », à tout accès client, avec sa migration seulement. */}
+            {mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents) && <Route path="/mes-documents" element={<ClientDocuments />} />}
+            {mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />}
             {monAnalyseOuverte(mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes), maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}
             <Route path="/securite" element={<SecuriteDuCompte espace="client" />} />
             <Route path="*" element={<Navigate to="/accueil" replace />} />

@@ -13,7 +13,7 @@ import {
   questionDuLienEnvoye, refusDeLaRegle,
 } from '../../lib/recuperationMotDePasse'
 import {
-  CASES_SANS_EFFET, ceQueDitLaCaseSansEffet,
+  CASES_SANS_EFFET, ceQueDitLaCaseDocuments, ceQueDitLaCaseSansEffet,
   CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCasesDuDossier, ceQueDitLaCaseCaisse, ceQueDitLaCaseComptes, changementApplique,
   confirmationDeLaCaseCaisse, demandeDeChangement, droitsDeLaLigne, enumeration, gesteDeLaCase, libelleDeLaCase, messageDuRefus,
   refusDeLaCase, type Domaine,
@@ -534,6 +534,10 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       {TROIS_CASES_EXPORTEES && CASES_SANS_EFFET.map((d) => (
         <p className="muted" id={`ce-que-dit-la-case-${d}`} key={d}>{ceQueDitLaCaseSansEffet(d)}</p>
       ))}
+      {/* « Documents », avec sa migration (étape B3a) : ce que la base ouvre au client qui la porte. */}
+      {TROIS_CASES_EXPORTEES && !CASES_SANS_EFFET.includes('documents') && (
+        <p className="muted" id="ce-que-dit-la-case-documents">{ceQueDitLaCaseDocuments()}</p>
+      )}
       {rows.length > 0 && (
         <BandeauLecturePartielle
           quoi="La liste des accès" accord="lue" motif={lecturePartielle}
