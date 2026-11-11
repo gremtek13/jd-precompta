@@ -15,11 +15,13 @@ import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from '../lib/situati
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from '../lib/documentsEtDemandes'
 import { mesDemandesOuvertes, mesDocumentsOuverts } from '../lib/documentsEtDemandesVue'
+import { ACHATS_DU_CLIENT_PREVUS } from '../lib/achatsClient'
+import { mesAchatsOuverts } from '../lib/achatsClientVue'
 import {
   IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconChecklist, IconComptesMaster, IconDocuments, IconDossiers, IconEcheancier,
   IconEquipe, IconEstimation, IconFactures, IconStatistiques,
   IconInformations, IconCadenas, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
-  IconRecherche, IconSun,
+  IconRecherche, IconSun, IconVirements,
 } from './icons'
 import Avatar from './widgets/Avatar'
 import BarreDossiers from './BarreDossiers'
@@ -110,6 +112,9 @@ function Coque() {
   const mesDocuments = role === 'client'
     && mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)
   const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)
+  // « Mes achats » (ligne 51.5, étape B5) : de même, avec la case « Achats » sur la société affichée, comme sa route.
+  const mesAchats = role === 'client'
+    && mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
@@ -362,6 +367,13 @@ function Coque() {
                   <IconDocuments width={18} height={18} />
                   <span className="nav-label-full">Mes documents</span>
                   <span className="nav-label-court">Docs</span>
+                </NavLink>
+              )}
+              {mesAchats && (
+                <NavLink to="/mes-achats" title="Mes achats" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconVirements width={18} height={18} />
+                  <span className="nav-label-full">Mes achats</span>
+                  <span className="nav-label-court">Achats</span>
                 </NavLink>
               )}
               {mesDemandes && (

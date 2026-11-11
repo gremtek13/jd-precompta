@@ -31,6 +31,8 @@ import { lireCeQueLaPieceEst, relireLesMarquesDeLaPiece } from '../../lib/marque
 import { preparerPiece, refusDUnePiece } from '../../lib/bornesStockage'
 import { confianceDeLExtraction, dateDeduite as estDateDeduite } from '../../lib/dateDeduite'
 import ReglementParLaCaisse, { type CaisseDeLaPiece } from './ReglementParLaCaisse'
+import AchatDeLaPiece from './AchatDeLaPiece'
+import { ACHATS_DU_CLIENT_PREVUS } from '../../lib/achatsClient'
 import {
   etatDeLaCaisseDeLaFiche, refusDeLaDesignationParLaCaisse, refusDeSuppressionParLaCaisse, refusDuTypeDeLaPiece,
   suppressionRetenueParLaCaisse,
@@ -1194,6 +1196,10 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           )}
 
           {rapprochee && <p className="fiche-piece-rapprochee">Rapprochée avec un mouvement bancaire.</p>}
+          {/* Les achats du client (ligne 51.5, étape B5) : l'échéance et ses déclarations de paiement, avec sa migration. */}
+          {ACHATS_DU_CLIENT_PREVUS && piece !== null && piece.type_piece === 'achat' && (
+            <AchatDeLaPiece key={piece.id} dossierId={dossierId} pieceId={piece.id} nomFichier={piece.nom_fichier} />
+          )}
           {pieceMarquee && caisse && (
             <ReglementParLaCaisse dossierId={dossierId} piece={pieceMarquee} factures={exemplaire?.factures ?? null} caisse={caisse} />
           )}

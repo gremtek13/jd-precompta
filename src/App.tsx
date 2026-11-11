@@ -23,6 +23,7 @@ import ClientCaisse from './pages/ClientCaisse'
 import ClientComptes from './pages/ClientComptes'
 import ClientDocuments from './pages/ClientDocuments'
 import ClientDemandes from './pages/ClientDemandes'
+import ClientAchats from './pages/ClientAchats'
 import ClientEcheancier from './pages/ClientEcheancier'
 import ClientAnalyse from './pages/ClientAnalyse'
 import { droitsSur } from './lib/droitsAcces'
@@ -33,6 +34,8 @@ import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from './lib/caisseClient'
 import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from './lib/situationsPubliees'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from './lib/documentsEtDemandes'
 import { mesDemandesOuvertes, mesDocumentsOuverts } from './lib/documentsEtDemandesVue'
+import { ACHATS_DU_CLIENT_PREVUS } from './lib/achatsClient'
+import { mesAchatsOuverts } from './lib/achatsClientVue'
 import { COUVERTURE_EXPORTEE } from './lib/couvertureReleve'
 import { monAnalyseOuverte } from './lib/analyseClient'
 import SuperAdminPage from './pages/SuperAdminPage'
@@ -182,6 +185,8 @@ function Gate() {
                 « Mes demandes », à tout accès client, avec sa migration seulement. */}
             {mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents) && <Route path="/mes-documents" element={<ClientDocuments />} />}
             {mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />}
+            {/* « Mes achats » (ligne 51.5, étape B5) : avec sa migration (B4), et la case « Achats » sur la société AFFICHÉE. */}
+            {mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats) && <Route path="/mes-achats" element={<ClientAchats />} />}
             {monAnalyseOuverte(mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes), maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}
             <Route path="/securite" element={<SecuriteDuCompte espace="client" />} />
             <Route path="*" element={<Navigate to="/accueil" replace />} />

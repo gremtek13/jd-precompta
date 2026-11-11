@@ -5,6 +5,7 @@ import {
   refusDeLaCloture, refusDeLaDemande, refusDeLaPublication, refusDeLaReponse, TABLES_DES_DOCUMENTS_ET_DEMANDES,
 } from './documentsEtDemandes'
 import { CASES_SANS_EFFET, casesSansEffetSelon, ceQueDitLaCaseDocuments } from './droitsAcces'
+import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
 
 // LES DOCUMENTS ET LES DEMANDES DU CABINET (ligne 51.5, étape B2) : le module redit la migration PRÉPARÉE
 // `documents_et_demandes` — chaque refus à la lettre et dans son ordre, chaque liste fermée — et son essai la rejoue.
@@ -168,10 +169,10 @@ describe('le jour où le drapeau se lève', () => {
   // base ; avec elle, ce qu'elle ouvre (étape B3a). Les deux états se jouent par la fonction ; la constante suit le drapeau.
   it('« Documents » ne se dit sans effet que tant que la migration n’est pas en base — sous les deux états', () => {
     for (const enBase of [false, true]) {
-      expect(casesSansEffetSelon(enBase).includes('documents')).toBe(!enBase)
-      expect(casesSansEffetSelon(enBase)).toEqual(expect.arrayContaining(['achats', 'frais']))
+      expect(casesSansEffetSelon(enBase, false).includes('documents')).toBe(!enBase)
+      expect(casesSansEffetSelon(enBase, false)).toEqual(expect.arrayContaining(['achats', 'frais']))
     }
-    expect(CASES_SANS_EFFET).toEqual(casesSansEffetSelon(DOCUMENTS_ET_DEMANDES_PREVUS))
+    expect(CASES_SANS_EFFET).toEqual(casesSansEffetSelon(DOCUMENTS_ET_DEMANDES_PREVUS, ACHATS_DU_CLIENT_PREVUS))
     expect(ceQueDitLaCaseDocuments()).not.toContain('ne change encore rien')
   })
 })

@@ -51,6 +51,7 @@ import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { TROIS_CASES_EXPORTEES } from './troisCasesDeLAcces'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
+import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
 import type { StatutTva } from './types'
 
 export type Domaine = 'ventes' | 'banque' | 'caisse' | 'comptes' | 'achats' | 'frais' | 'documents'
@@ -110,14 +111,15 @@ const estSansEffet = (d: Domaine): d is CaseSansEffet => (CASES_DE_B1 as readonl
 
 /**
  * Celles des cases de B1 qui n'ouvrent encore rien : « Documents » en sort le jour où sa migration (B2,
- * `documents_et_demandes`) est en base — elle ouvre alors les documents publiés (étape B3a).
+ * `documents_et_demandes`) est en base — elle ouvre alors les documents publiés (étape B3a) ; « Achats », le jour où la
+ * sienne (B4, `achats_du_client`) l'est — elle ouvre alors les déclarations de paiement et « Mes achats » (étape B5).
  */
-export function casesSansEffetSelon(documentsEnBase: boolean): readonly CaseSansEffet[] {
-  return CASES_DE_B1.filter((d) => d !== 'documents' || !documentsEnBase)
+export function casesSansEffetSelon(documentsEnBase: boolean, achatsEnBase: boolean): readonly CaseSansEffet[] {
+  return CASES_DE_B1.filter((d) => (d !== 'documents' || !documentsEnBase) && (d !== 'achats' || !achatsEnBase))
 }
 
 /** Les cases de B1 qui n'ouvrent encore rien, aujourd'hui. */
-export const CASES_SANS_EFFET: readonly CaseSansEffet[] = casesSansEffetSelon(DOCUMENTS_ET_DEMANDES_PREVUS)
+export const CASES_SANS_EFFET: readonly CaseSansEffet[] = casesSansEffetSelon(DOCUMENTS_ET_DEMANDES_PREVUS, ACHATS_DU_CLIENT_PREVUS)
 
 /** Les cases de l'onglet, selon que les migrations des situations publiées (C4a) et des trois cases (B1) sont en base. */
 export function domainesSelonLesMigrations(comptesEnBase: boolean, troisCasesEnBase: boolean): readonly DefinitionDomaine[] {
@@ -938,6 +940,28 @@ export function ceQueDitLaCaseDocuments(): string {
   const { libelle, ouvrira } = definitionDe('documents')
   return `« ${libelle} » (${ouvrira}) : une case cochée ouvre au client, par la base, les documents que tu mets à sa `
     + `disposition — ${CE_QUE_LA_CASE_DOCUMENTS_OUVRE} ${CE_QUE_MONTRE_MES_DOCUMENTS}`
+}
+
+// « Achats », avec sa migration (B4) : CE QU'ELLE OUVRE À LA SESSION DU CLIENT, PAR LA BASE — les paiements déclarés sur
+// les factures d'achat de son dossier (`paiements_declares_lecture_achats`), ses propres pièces vues
+// (`pieces_vues_lecture_du_compte`), et trois fonctions à l'accès « Achats » : déclarer un paiement, fixer une échéance que
+// la facture électronique ne donne pas, marquer vues. Les factures d'achat elles-mêmes, tout accès les lit encore (le
+// resserrement est l'étape B6). droitsAcces.test.ts confronte ces termes à la migration.
+export const CE_QUE_LA_CASE_ACHATS_OUVRE = 'il y déclare qu’il a payé une facture d’achat — une proposition, qui n’écrit rien '
+  + 'en comptabilité, que tu vois dans la fiche de la pièce et peux retirer —, et y fixe l’échéance qu’une facture ne donne '
+  + 'pas ; une échéance lue sur la facture électronique, toi seul la corriges.'
+
+/** Ce que l'espace du client en montre (« Mes achats », étape B5). */
+export const CE_QUE_MONTRE_MES_ACHATS = 'Son espace les lui montre dans « Mes achats », avec leur échéance et ce qu’il n’a pas '
+  + 'encore vu ; ses factures d’achat, tous les accès du dossier les lisent encore, avec ou sans la case.'
+
+export const TABLES_LUES_AVEC_ACHATS = ['paiements_declares', 'pieces_vues'] as const
+
+/** Ce que dit la case « Achats » une fois sa migration en base : ce que la base ouvre au client qui la porte. */
+export function ceQueDitLaCaseAchats(): string {
+  const { libelle, ouvrira } = definitionDe('achats')
+  return `« ${libelle} » (${ouvrira}) : une case cochée ouvre au client, par la base, le suivi de ses factures d’achat — `
+    + `${CE_QUE_LA_CASE_ACHATS_OUVRE} ${CE_QUE_MONTRE_MES_ACHATS}`
 }
 
 /** Ce que dit une des trois cases de B1, sous celles d'hier : elle ne change encore rien. */

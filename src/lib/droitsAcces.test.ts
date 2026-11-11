@@ -16,7 +16,7 @@ import {
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE, ceQueMontreMaCaisseSelon,
   CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, CE_QUE_LA_CASE_DOCUMENTS_OUVRE,
-  TABLES_LUES_AVEC_DOCUMENTS, ceQueDitLaCaseDocuments, demandeDeChangementSelon, domainesSelon, phraseDesRelancesSelon, type Domaine,
+  TABLES_LUES_AVEC_DOCUMENTS, ceQueDitLaCaseDocuments, CE_QUE_LA_CASE_ACHATS_OUVRE, TABLES_LUES_AVEC_ACHATS, ceQueDitLaCaseAchats, demandeDeChangementSelon, domainesSelon, phraseDesRelancesSelon, type Domaine,
 } from './droitsAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
@@ -247,8 +247,12 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(routesClient).toEqual([
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
       '/mon-echeancier ClientEcheancier', '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
-      '/mes-comptes ClientComptes', '/mes-documents ClientDocuments', '/mes-demandes ClientDemandes', '/mon-analyse ClientAnalyse',
+      '/mes-comptes ClientComptes', '/mes-documents ClientDocuments', '/mes-demandes ClientDemandes', '/mes-achats ClientAchats',
+      '/mon-analyse ClientAnalyse',
     ])
+    // DEPUIS L'ÉTAPE B5, « Mes achats » lit la case « Achats », derrière `ACHATS_DU_CLIENT_PREVUS` (lib/achatsClientVue.ts,
+    // `mesAchatsOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
+    expect(app).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats) && <Route path="/mes-achats" element={<ClientAchats />} />')
     // DEPUIS L'ÉTAPE B3a, « Mes documents » lit la case « Documents », derrière `DOCUMENTS_ET_DEMANDES_PREVUS`
     // (lib/documentsEtDemandesVue.ts, `mesDocumentsOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     // « Mes demandes » ne lit aucune case : tout accès du dossier lit ses demandes (MEG2-Q9).
@@ -257,12 +261,13 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     const coque = readFileSync(resolve(process.cwd(), 'src/components/Layout.tsx'), 'utf8')
     expect(coque).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
     expect(coque).toContain("const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)")
+    expect(coque).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)')
     // DEPUIS L'ÉTAPE C4b, « Mes comptes » lit la case « Comptes », derrière `SITUATIONS_PUBLIEES_EXPORTEES`
     // (lib/situationsPubliees.ts, `mesComptesOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     expect(app).toContain('mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)')
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual([
-      'ClientAnalyse.tsx', 'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientDemandes.tsx', 'ClientDocuments.tsx',
+      'ClientAchats.tsx', 'ClientAnalyse.tsx', 'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientDemandes.tsx', 'ClientDocuments.tsx',
       'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx',
       'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
     ])
@@ -1946,6 +1951,28 @@ describe('la case « Comptes » (étape C4b), derrière sa migration', () => {
     // La policy du client « Comptes » : les publications en cours seulement.
     expect(MIGRATION_SP).toContain("using (client_du_dossier(dossier_id, 'comptes') and geste = 'publication' and situation_publiee_en_cours(id))")
     for (const t of TABLES_LUES_AVEC_COMPTES) expect(MIGRATION_SP).toContain(`create policy situations_publiees_lecture_comptes on public.${t}`)
+  })
+})
+
+// LA CASE « ACHATS », AVEC SA MIGRATION (étape B5) : la phrase de l'onglet Accès dit ce que la migration `achats_du_client`
+// (préparée) ouvre au client qui la porte — les déclarations, ses vues, ses trois fonctions —, et que les factures d'achat
+// elles-mêmes restent lues de tout accès jusqu'au resserrement (B6).
+describe('ce que dit la case « Achats », avec sa migration (B5)', () => {
+  const preparees = resolve(process.cwd(), 'supabase/preparees')
+  const MIGRATION_AC = readFileSync(resolve(preparees, readdirSync(preparees).find((n) => /^\d{14}_achats_du_client\.sql$/.test(n))!), 'utf8')
+
+  it('la phrase dit les lectures et les gestes que la base ouvre, et rien de « sans effet »', () => {
+    const phrase = ceQueDitLaCaseAchats()
+    expect(phrase).toContain(CE_QUE_LA_CASE_ACHATS_OUVRE)
+    expect(phrase).toContain('« Mes achats »')
+    expect(phrase).toContain('avec ou sans la case')
+    expect(phrase).not.toContain('ne change encore rien')
+    expect(MIGRATION_AC).toContain("for select to authenticated using (client_du_dossier(dossier_id, 'achats'));")
+    expect(MIGRATION_AC).toContain("for select to authenticated using (utilisateur = (select auth.uid()) and client_du_dossier(dossier_id, 'achats'));")
+    for (const t of TABLES_LUES_AVEC_ACHATS) expect(MIGRATION_AC).toMatch(new RegExp(`create policy \\w+ on public\\.${t}\\s+for select to authenticated using \\([^;]*'achats'`, 'i'))
+    // Une échéance lue sur la facture électronique, le cabinet seul la corrige ; aucune policy neuve sur `pieces` (B6).
+    expect(MIGRATION_AC).toContain("Cette échéance est lue sur la facture électronique : seul le cabinet la corrige.")
+    expect(MIGRATION_AC).not.toMatch(/create policy \w+ on public\.pieces\b/i)
   })
 })
 
