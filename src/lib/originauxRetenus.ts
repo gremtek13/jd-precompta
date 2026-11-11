@@ -1,5 +1,5 @@
 // L'ORIGINAL D'UNE FACTURE REPRISE RETENU PAR SON IMPORT (ligne 51.5, A8D2A-Q1 ; décision du cabinet du 11/11/2026, réponse
-// (B)). La migration `originaux_retenus_par_leur_import` (supabase/preparees/20261111173000_…, PRÉPARÉE, pas appliquée) :
+// (B)). La migration `originaux_retenus_par_leur_import` (supabase/preparees/20261111180000_…, PRÉPARÉE, pas appliquée) :
 //   - le seau `ventes` refuse la suppression de l'original d'un import qui existe — le fichier du lot ou celui d'une de ses
 //     factures (`original_d_un_import`), au super-administrateur aussi ; « Retirer l'import » (`retirer_import`) retire
 //     d'abord les lignes, et l'original redevient un fichier que le chef retire (l'ordre de `retirerLImport`) ;

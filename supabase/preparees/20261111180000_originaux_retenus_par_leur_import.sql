@@ -3,7 +3,7 @@
 -- « 11/11/2026 — A8D2A-Q1 : L'ORIGINAL D'UNE FACTURE REPRISE RETENU PAR SON IMPORT (PRÉPARÉE, PAS APPLIQUÉE) ». L'essai :
 -- supabase/essais/originalDUnImport.sql (sur une réplique seulement : il supprime des lignes de `storage.objects` et des
 -- dossiers) et le bloc OR de supabase/essais/rls.sql (en production aussi : il juge les prédicats sans rien supprimer).
--- Le retour : supabase/preparees/retour/20261111173100_retour_originaux_retenus_par_leur_import.sql.
+-- Le retour : supabase/preparees/retour/20261111180100_retour_originaux_retenus_par_leur_import.sql.
 --
 -- LE DÉFAUT. Depuis `originaux_des_imports` (A8d2a, en production le 11/11/2026), le seau `ventes` porte l'original d'une
 -- facture reprise de l'ancien logiciel sous `<dossier>/imports/<lot>/<empreinte>.<pdf|xml|csv>`, et les lignes de l'import
