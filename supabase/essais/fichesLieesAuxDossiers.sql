@@ -13,10 +13,14 @@
 -- assigné au dossier du cabinet la lit sans le dossier du client (LM-Q2, LM3-Q2) ; le dossier parti ; l'effacement qui
 -- délie ; la garde pour tout auteur (le lien qui ne change pas, le cabinet, le dossier du cabinet, la restauration du
 -- super-administrateur) ; les contraintes ; la désignation retenue ; une fiche à la main, l'import, comme hier ; le
--- catalogue.
+-- déliement (LM3-Q1 (B)) : au cabinet seul, ses refus dans leur ordre, à leurs mots et à leurs codes (introuvable,
+-- retirée, pas liée, une autre version, le dossier parti, le nom, l'adresse, l'adresse électronique, le SIRET déjà rangé),
+-- l'identité du dossier recopiée et ce qui est propre à la facturation gardé, la trace posée une fois, la fiche déliée
+-- réécrite comme une fiche à la main, jamais reliée, la place du dossier libérée ; le catalogue.
 --
 -- Le jeu, inséré par le propriétaire : au cabinet de la réplique, le dossier du cabinet K, trois dossiers clients — C (un
--- SIRET, un nom imprimé, une adresse, un accès client), C2 (sans SIRET), C3 —, et X, d'un second cabinet. Le membre de
+-- SIRET, un nom imprimé, une adresse, un accès client), C2 (sans SIRET), C3 (sans SIRET ni adresse), C4 (un SIRET, un nom
+-- imprimé entre des blancs, une adresse, pour le déliement) —, et X, d'un second cabinet. Le membre de
 -- l'équipe de la réplique est affecté à K. Sans la migration, une ligne dit qu'il attend (EN ATTENTE). Une garde de tête
 -- refuse de le jouer hors d'une réplique (ESSAI_HORS_REPLIQUE), avant toute écriture.
 begin;
@@ -56,6 +60,10 @@ create function pg_temp.id(r text) returns uuid language sql as $f$
 create function pg_temp.enregistrer(d uuid, contact uuid, saisie jsonb) returns text language sql as $f$
   select format('select (enregistrer_contact(%L, %L, %L::jsonb)).id::text', d, contact, saisie) $f$;
 
+-- L'appel de `delier_fiche_liee`, en texte, à la version que la fiche porte au moment de l'appel (lue par le propriétaire).
+create function pg_temp.delier(d uuid, contact uuid) returns text language sql as $f$
+  select format('select (delier_fiche_liee(%L, %L, %L)).id::text', d, contact, (select c.modifie_le from contacts c where c.id = contact)) $f$;
+
 do $essai$
 declare
   cabinet constant uuid := 'cab10000-0000-4000-8000-000000000001';
@@ -64,6 +72,7 @@ declare
   c constant uuid := '1b300000-0000-4000-8000-0000000000c1';
   c2 constant uuid := '1b300000-0000-4000-8000-0000000000c2';
   c3 constant uuid := '1b300000-0000-4000-8000-0000000000c3';
+  c4 constant uuid := '1b300000-0000-4000-8000-0000000000c4';
   x constant uuid := '1b300000-0000-4000-8000-0000000000e1';
   super constant text := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   client constant text := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -71,7 +80,7 @@ declare
   inconnu constant text := gen_random_uuid()::text;
   r text;
   n int;
-  f1 uuid; f2 uuid; f2b uuid; u uuid;
+  f1 uuid; f2 uuid; f2b uuid; u uuid; f3 uuid; f4 uuid; h uuid;
   v record;
 begin
   if not exists (select 1 from pg_roles where rolname = 'proprietaire') then
@@ -89,6 +98,7 @@ begin
     (c, 'ESSAI LM3 CLIENT', cabinet, 'tresorerie', '455000', '98765432100017', 'ESSAI LM3 ADRESSE DU CLIENT', null, 'ESSAI LM3 CLIENT SARL'),
     (c2, 'ESSAI LM3 SANS SIRET', cabinet, 'tresorerie', '455000', null, 'ESSAI LM3 AILLEURS', null, null),
     (c3, 'ESSAI LM3 TROISIÈME', cabinet, 'tresorerie', '455000', null, null, null, null),
+    (c4, 'ESSAI LM3 QUATRIÈME', cabinet, 'tresorerie', '455000', '73282932000017', 'ESSAI LM3 RUE QUATRE', null, '  ESSAI LM3 QUATRE SAS  '),
     (x, 'ESSAI LM3 AUTRE CABINET', cabinet2, 'tresorerie', '455000', null, null, null, null);
   insert into memberships (user_id, dossier_id, role, email) values (client::uuid, c, 'client', 'essai-lm3@example.test');
   r := pg_temp.essayer(super, format($q$select designer_dossier_du_cabinet(%L, %L)$q$, cabinet, k));
@@ -141,10 +151,10 @@ begin
 
   -- Le lien, posé à la création, ne change plus.
   r := pg_temp.essayer(super, pg_temp.enregistrer(k, f1, jsonb_build_object('dossier_client_id', c, 'adresse_electronique', '987654321', 'delai_paiement_jours', 15)));
-  perform pg_temp.noter(18, 'la fiche se réécrit en entier, son lien redit', 'OK:' || f1, r || case when (select delai_paiement_jours from contacts where id = f1) = 15
-    and (select email from contacts where id = f1) is null then '' else ' (pas réécrite en entier)' end);
+  perform pg_temp.noter(18, 'la fiche se réécrit en entier, son lien redit', 'OK:' || f1 || ' en entier', r || case when (select delai_paiement_jours from contacts where id = f1) = 15
+    and (select email from contacts where id = f1) is null then ' en entier' else ' pas en entier' end);
   r := pg_temp.essayer(super, pg_temp.enregistrer(k, f1, '{"nom": "Délier", "adresse": "Ici", "type_client": "assujetti"}'));
-  perform pg_temp.noter(19, 'une fiche liée ne se délie pas', '22023:Le lien d''une fiche au dossier de son client se pose à sa création et ne change plus : une autre fiche se crée.', r);
+  perform pg_temp.noter(19, 'une fiche liée ne se délie pas par enregistrer_contact (sa fonction recopie l''identité)', '22023:Le lien d''une fiche au dossier de son client se pose à sa création et ne change plus : une autre fiche se crée.', r);
   r := pg_temp.essayer(super, pg_temp.enregistrer(k, f1, jsonb_build_object('dossier_client_id', c3)));
   perform pg_temp.noter(20, 'une fiche liée ne change pas de dossier', '22023:Le lien d''une fiche au dossier de son client se pose à sa création', r);
   r := pg_temp.essayer(super, pg_temp.enregistrer(k, null, '{"nom": "À LA MAIN", "adresse": "Rue", "type_client": "assujetti"}'));
@@ -172,8 +182,8 @@ begin
   perform pg_temp.noter(29, 'un membre que le dossier du cabinet n''a pas ne la lit pas', '42501:Accès refusé à ce dossier.', r);
   insert into dossier_assignations (dossier_id, user_id) values (k, membre::uuid);
   r := pg_temp.essayer(membre, format('select count(*)::text from identites_des_fiches_liees(%L)', k));
-  perform pg_temp.noter(30, 'le membre assigné au dossier du cabinet la lit, sans le dossier du client (LM-Q2)', 'OK:2', r
-    || case when (select count(*) from dossier_assignations where dossier_id = c and user_id = membre::uuid) = 0 then '' else ' (assigné à C)' end);
+  perform pg_temp.noter(30, 'le membre assigné au dossier du cabinet la lit, sans le dossier du client (LM-Q2)', 'OK:2 sans C', r
+    || case when (select count(*) from dossier_assignations where dossier_id = c and user_id = membre::uuid) = 0 then ' sans C' else ' assigné à C' end);
   r := pg_temp.essayer(super, format('select count(*)::text from identites_des_fiches_liees(%L)', c3));
   perform pg_temp.noter(31, 'hors du dossier du cabinet, rien ne se lit', '22023:Les fiches liées au dossier d''un client vivent dans le dossier du cabinet.', r);
 
@@ -181,7 +191,7 @@ begin
   r := pg_temp.essayer(null, format('update contacts set dossier_client_id = %L where id = %L returning 1', c3, f1));
   perform pg_temp.noter(32, 'le propriétaire ne change pas un lien', '23514:Le lien d''une fiche au dossier de son client se pose à sa création', r);
   r := pg_temp.essayer(null, format('update contacts set dossier_client_id = null where id = %L returning 1', f1));
-  perform pg_temp.noter(33, 'ni ne le vide hors de l''effacement', '23514:Le lien d''une fiche au dossier de son client se pose à sa création', r);
+  perform pg_temp.noter(33, 'ni ne le vide hors de l''effacement et du déliement', '23514:Le lien d''une fiche au dossier de son client se pose à sa création', r);
   r := pg_temp.essayer(null, format($q$insert into contacts (dossier_id, dossier_client_id) values (%L, %L) returning 1$q$, c3, c2));
   perform pg_temp.noter(34, 'hors du dossier du cabinet, l''insertion directe est refusée', '23514:Une fiche ne se lie au dossier d''un client que dans le dossier du cabinet.', r);
   r := pg_temp.essayer(null, format($q$insert into contacts (dossier_id, dossier_client_id) values (%L, %L) returning 1$q$, k, x));
@@ -222,6 +232,72 @@ begin
   r := pg_temp.essayer(super, format($q$select concat_ws('|', dossier_present, coalesce(tiers_nom, '∅')) from identites_des_fiches_liees(%L) where contact_id = %L$q$, k, f2b));
   perform pg_temp.noter(52, 'un dossier passé à un autre cabinet se dit parti', 'OK:f|∅', r);
 
+  -- Le déliement (LM3-Q1 (B)) : la fiche de C4 et celle de C3, liées.
+  r := pg_temp.essayer(super, pg_temp.enregistrer(k, null, jsonb_build_object('dossier_client_id', c4, 'adresse_electronique', '732829320',
+         'email', 'compta@quatre.example', 'delai_paiement_jours', 30, 'observations', 'Virement')));
+  f4 := pg_temp.id(r);
+  perform pg_temp.noter(53, 'la fiche de C4, liée', 'OK:' || coalesce(f4::text, '?'), r);
+  r := pg_temp.essayer(super, pg_temp.enregistrer(k, null, jsonb_build_object('dossier_client_id', c3)));
+  f3 := pg_temp.id(r);
+  perform pg_temp.noter(53, 'la fiche de C3, liée', 'OK:' || coalesce(f3::text, '?'), r);
+  r := pg_temp.essayer('anon', pg_temp.delier(k, f4));
+  perform pg_temp.noter(54, 'l''anonyme ne délie pas', '42501:', r);
+  r := pg_temp.essayer(inconnu, pg_temp.delier(k, f4));
+  perform pg_temp.noter(55, 'un compte rattaché à rien ne délie pas', '42501:Accès refusé à ce dossier.', r);
+  r := pg_temp.essayer(super, pg_temp.delier(k, gen_random_uuid()));
+  perform pg_temp.noter(56, 'une fiche introuvable dans le dossier', 'P0002:Contact introuvable dans ce dossier.', r);
+  perform pg_temp.essayer(super, format('select (retirer_contact(%L, %L)).id::text', k, f4));
+  r := pg_temp.essayer(super, pg_temp.delier(k, f4));
+  perform pg_temp.noter(57, 'retirée, elle se reprend avant', '22023:Ce contact est retiré : le reprendre avant de le modifier.', r);
+  perform pg_temp.essayer(super, format('select (reprendre_contact(%L, %L)).id::text', k, f4));
+  r := pg_temp.essayer(super, pg_temp.delier(k, u));
+  perform pg_temp.noter(58, 'une fiche à la main ne se délie pas', '22023:Cette fiche n''est pas liée au dossier d''un client : rien ne se délie.', r);
+  r := pg_temp.essayer(super, format('select (delier_fiche_liee(%L, %L, null)).id::text', k, f4));
+  perform pg_temp.noter(59, 'lue à une autre version, elle se relit', '22023:La fiche a changé depuis sa lecture : relire avant de la délier.', r);
+  r := pg_temp.essayer(super, pg_temp.delier(k, f2b));
+  perform pg_temp.noter(60, 'son dossier parti du cabinet, rien ne se recopie', '22023:Le dossier de ce client n''est plus dans ce cabinet : rien ne se recopie. La fiche se retire ou s''efface.', r);
+  update dossiers set nom = repeat('N', 201) where id = c3;
+  r := pg_temp.essayer(super, pg_temp.delier(k, f3));
+  perform pg_temp.noter(61, 'un nom de plus de deux cents caractères', '22023:Le nom que donne le dossier de ce client est vide ou dépasse deux cents caractères', r);
+  update dossiers set nom = 'ESSAI LM3 TROISIÈME' where id = c3;
+  r := pg_temp.essayer(super, pg_temp.delier(k, f3));
+  perform pg_temp.noter(62, 'un dossier sans adresse', '22023:Le dossier de ce client n''a pas d''adresse', r);
+  update dossiers set siret = '44306184100013' where id = c4;
+  r := pg_temp.essayer(super, pg_temp.delier(k, f4));
+  perform pg_temp.noter(63, 'l''adresse électronique de la fiche, qui ne commence plus par le SIREN du dossier', '22023:L''adresse de facturation électronique de la fiche ne va plus avec l''identité du dossier', r);
+  update dossiers set siret = '73282932000017' where id = c4;
+  r := pg_temp.essayer(super, pg_temp.enregistrer(k, null, '{"nom": "À LA MAIN QUATRE", "adresse": "Rue", "type_client": "assujetti", "siren": "732829320", "siret": "73282932000017"}'));
+  h := pg_temp.id(r);
+  r := pg_temp.essayer(super, pg_temp.delier(k, f4));
+  perform pg_temp.noter(64, 'le SIRET du dossier, déjà rangé dans le dossier du cabinet', '23505:Le SIRET « 73282932000017 » est déjà celui du contact « À LA MAIN QUATRE » : un établissement ne se range qu''une fois par dossier.', r);
+  perform pg_temp.essayer(super, format('select (effacer_contact(%L, %L)).id::text', k, h));
+  r := pg_temp.essayer(membre, pg_temp.delier(k, f4));
+  select * into v from contacts where id = f4;
+  perform pg_temp.noter(65, 'le membre assigné au dossier du cabinet délie : l''identité du dossier recopiée, le reste gardé, la trace posée', 'OK:' || f4 || ' copie juste',
+    r || case when v.dossier_client_id is null and v.nom = 'ESSAI LM3 QUATRE SAS' and v.adresse = 'ESSAI LM3 RUE QUATRE'
+                   and v.type_client = 'assujetti' and v.siren = '732829320' and v.siret = '73282932000017'
+                   and v.adresse_electronique = '732829320' and v.email = 'compta@quatre.example' and v.delai_paiement_jours = 30
+                   and v.observations = 'Virement' and v.delie_le is not null and v.delie_par = membre::uuid
+                   and v.modifie_par = membre::uuid and v.code_service is null then ' copie juste' else ' copie fausse' end);
+  r := pg_temp.essayer(super, format('select count(*)::text from identites_des_fiches_liees(%L) where contact_id = %L', k, f4));
+  perform pg_temp.noter(66, 'déliée, elle sort de la lecture des identités', 'OK:0', r);
+  r := pg_temp.essayer(super, pg_temp.enregistrer(k, f4, '{"nom": "ESSAI LM3 QUATRE SAS", "adresse": "ESSAI LM3 RUE QUATRE", "type_client": "assujetti", "siren": "732829320", "siret": "73282932000017", "adresse_electronique": "732829320", "delai_paiement_jours": 15}'));
+  perform pg_temp.noter(67, 'elle se réécrit comme une fiche à la main', 'OK:' || f4, r);
+  r := pg_temp.essayer(super, pg_temp.enregistrer(k, f4, jsonb_build_object('dossier_client_id', c4)));
+  perform pg_temp.noter(68, 'elle ne se relie pas', '22023:Le lien d''une fiche au dossier de son client se pose à sa création', r);
+  r := pg_temp.essayer(super, pg_temp.delier(k, f4));
+  perform pg_temp.noter(69, 'ni ne se délie deux fois', '22023:Cette fiche n''est pas liée au dossier d''un client : rien ne se délie.', r);
+  r := pg_temp.essayer(super, pg_temp.enregistrer(k, null, jsonb_build_object('dossier_client_id', c4)));
+  perform pg_temp.noter(70, 'le dossier qu''elle a quitté reçoit une nouvelle fiche liée', 'OK:', r);
+  r := pg_temp.essayer(null, format('update contacts set delie_le = null, delie_par = null where id = %L returning 1', f4));
+  perform pg_temp.noter(71, 'la garde : la trace ne se réécrit pas, même par le propriétaire', '23514:La trace du déliement d''une fiche ne se réécrit pas.', r);
+  r := pg_temp.essayer(null, format('update contacts set delie_le = now(), delie_par = %L where id = %L returning 1', super, u));
+  perform pg_temp.noter(72, 'ni ne se pose hors du déliement', '23514:La trace du déliement d''une fiche ne se réécrit pas.', r);
+  r := pg_temp.essayer(null, format($q$insert into contacts (dossier_id, nom, type_client, adresse, delie_le) values (%L, 'X', 'assujetti', 'Rue', now()) returning 1$q$, k));
+  perform pg_temp.noter(73, 'une trace entière (la contrainte)', '23514:new row for relation "contacts" violates check constraint "contacts_deliement_entier"', r);
+  r := pg_temp.essayer(null, format($q$insert into contacts (dossier_id, dossier_client_id, delie_le, delie_par) values (%L, %L, now(), %L) returning 1$q$, k, c3, super));
+  perform pg_temp.noter(73, 'une fiche liée ne porte pas de trace (la contrainte)', '23514:new row for relation "contacts" violates check constraint "contacts_delie_sans_lien"', r);
+
   -- Sans la clé, comme hier ; l'import ne lie jamais.
   r := pg_temp.essayer(super, pg_temp.enregistrer(c3, null, '{"adresse": "Rue", "type_client": "assujetti"}'));
   perform pg_temp.noter(47, 'sans la clé, les refus d''hier', '22023:Le nom du contact est à renseigner.', r);
@@ -240,6 +316,12 @@ begin
   perform pg_temp.noter(50, 'les deux gardes : aucun rôle de session ne les exécute', '0', n::text);
   select count(*) into n from pg_policies where schemaname = 'public' and tablename = 'contacts';
   perform pg_temp.noter(51, 'les policies des contacts, inchangées (deux lectures, la restauration)', '3', n::text);
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.prosecdef and p.proname = 'delier_fiche_liee'
+     and p.proconfig = array['search_path=public']
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE'), false);
+  perform pg_temp.noter(74, 'le déliement : security definer, search_path, authenticated seul', '1', n::text);
 end
 $essai$;
 

@@ -22,10 +22,13 @@
 --   3. le dossier du cabinet ne reçoit AUCUN accès client (`garder_acces_au_dossier_du_cabinet`, 23514) : un client y
 --      lirait les honoraires de tous les clients du cabinet ; le chef et le super-administrateur compris, et
 --      `changer_droits_acces` aussi (elle écrit `memberships`) ;
---   4. il ne se supprime pas (`garder_suppression_du_dossier_du_cabinet`, 23514) — sa suppression emporterait les
---      factures du cabinet, la seule sortie de `factures_emises_figees` — sauf par le super-administrateur, quand il
---      retire le cabinet (`delete-cabinet` exige qu'aucun dossier ne reste) ; la désignation suit alors la ligne
---      (`on delete set null`) ;
+--   4. il ne se supprime que par le CHEF de son cabinet, le super-administrateur compris
+--      (`garder_suppression_du_dossier_du_cabinet`, 23514 pour tout autre auteur : un membre de l'équipe, que la policy
+--      `dossiers_delete` écarte déjà, une fonction sous la clé secrète, le propriétaire sans session) — réponse du cabinet
+--      LM1-Q1 (B) du 11/11/2026, contre la recommandation (A, le super-administrateur seul) : sa suppression emporte les
+--      factures du cabinet, la seule sortie de `factures_emises_figees` ; la base ne confirme rien, c'est l'écran qui
+--      NOMME avant le clic les factures validées qui partent (LM2). La cascade de la suppression d'un cabinet passe : sa
+--      ligne n'est plus quand la garde lit la désignation. La désignation suit la ligne (`on delete set null`) ;
 --   5. sur le dossier du cabinet, le cabinet facture EN SON PROPRE NOM : `enregistrer_facture` ne fige plus son nom en
 --      `mandataire_nom`, et `numerotation_suivante` numérote dans la série du dossier, jamais dans celle du mandataire
 --      (MEG1-Q5, A9a) — la garde `garder_la_numerotation` juge déjà la série sur `mandataire_nom`, et la mention du
@@ -37,7 +40,7 @@
 -- suivent, et chacune voit ce que l'autre a fait.
 --
 -- CE QU'ELLE NE FAIT PAS (lots suivants) : l'écran et la place à part du dossier (LM2 : « Mon cabinet », la liste des
--- dossiers, le tableau de bord, les RIB à confirmer, l'échéancier, la suppression qui ne s'offre pas, `delete-cabinet`
+-- dossiers, le tableau de bord, les RIB à confirmer, l'échéancier, la suppression au chef qui nomme les factures, `delete-cabinet`
 -- qui le nomme, la confirmation de validation qui ne dit plus le mandat) ; la fiche liée au dossier client (LM3) ; les
 -- lettres de mission (LM4) ; les honoraires à facturer (LM7). Rien n'est désigné d'office.
 --
@@ -124,7 +127,7 @@ begin
   if tg_op = 'INSERT' and new.dossier_du_cabinet is null then
     return new;
   end if;
-  -- La sortie de la clé étrangère : le dossier désigné n'est plus (le super-administrateur l'a retiré avec le cabinet),
+  -- La sortie de la clé étrangère : le dossier désigné n'est plus (son chef ou le super-administrateur l'a supprimé),
   -- la désignation le suit.
   if tg_op = 'UPDATE' and new.dossier_du_cabinet is null
      and not exists (select 1 from public.dossiers d where d.id = old.dossier_du_cabinet) then
@@ -218,7 +221,8 @@ create trigger memberships_dossier_du_cabinet
   after insert or update of dossier_id on public.memberships
   for each row execute function public.garder_acces_au_dossier_du_cabinet();
 
--- 6. Le dossier du cabinet ne se supprime qu'avec le cabinet.
+-- 6. Le dossier du cabinet ne se supprime que par le chef de son cabinet (LM1-Q1 (B)), le super-administrateur compris
+-- (`est_chef_du_cabinet` l'inclut). La cascade d'un cabinet qu'on supprime passe : la ligne du cabinet n'est plus.
 create function public.garder_suppression_du_dossier_du_cabinet()
  returns trigger
  language plpgsql
@@ -227,8 +231,8 @@ create function public.garder_suppression_du_dossier_du_cabinet()
 as $fonction$
 begin
   if exists (select 1 from public.cabinets c where c.id = old.cabinet_id and c.dossier_du_cabinet = old.id)
-     and not public.is_super_admin() then
-    raise exception 'Le dossier du cabinet ne se supprime pas : il porte les factures du cabinet. Seul le super-administrateur le retire, avec le cabinet.'
+     and not public.est_chef_du_cabinet(old.cabinet_id) then
+    raise exception 'Le dossier du cabinet ne se supprime que par le chef du cabinet : il porte les factures du cabinet, qui partent avec lui.'
       using errcode = '23514';
   end if;
   return old;

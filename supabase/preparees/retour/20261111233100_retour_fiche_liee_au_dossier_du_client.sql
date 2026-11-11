@@ -1,12 +1,14 @@
 -- RETOUR DE LM3 (`fiche_liee_au_dossier_du_client`, 20261111233000) : rend la base d'avant, `signature.sql` égale à
--- celle d'avant la migration (neuf familles). À COLLER (il retire une colonne, deux gardes, une lecture et quatre
--- contraintes, et remet le `not null` de `contacts.nom`), AVANT le retour de LM1.
+-- celle d'avant la migration (neuf familles). À COLLER (il retire trois colonnes, deux gardes, une lecture, le
+-- déliement et six contraintes, et remet le `not null` de `contacts.nom`), AVANT le retour de LM1.
 --
 -- CE QU'IL DÉTRUIT : la colonne `contacts.dossier_client_id`, c'est-à-dire le lien de chaque fiche du dossier du cabinet
 -- au dossier de son client. Une fiche liée n'a aucune identité à elle (ni nom, ni adresse) : sans son lien, elle ne
 -- dirait plus rien, et le `not null` du nom la refuserait. Il se refuse donc tant qu'une fiche est liée : le cabinet les
 -- efface d'abord (`effacer_contact`, qui vide le lien), ou les réécrit en fiches à la main après avoir relu leur
 -- identité. Une fiche effacée, qui n'a plus de lien, reste telle quelle. Les factures déjà faites gardent leur copie.
+-- Il détruit aussi la trace des déliements (`contacts.delie_le`, `delie_par`, LM3-Q1 (B)) : une fiche déliée reste une
+-- fiche saisie à la main, son identité recopiée gardée, sans plus dire qui l'a déliée ni quand.
 do $garde$
 begin
   if not exists (select 1 from information_schema.columns c
@@ -24,7 +26,10 @@ drop function public.garder_designation_des_fiches_liees();
 drop trigger contacts_fiche_liee on public.contacts;
 drop function public.garder_fiche_liee();
 drop function public.identites_des_fiches_liees(uuid);
+drop function public.delier_fiche_liee(uuid, uuid, timestamptz);
 alter table public.contacts
+  drop constraint contacts_delie_sans_lien,
+  drop constraint contacts_deliement_entier,
   drop constraint contacts_une_fiche_par_dossier_client,
   drop constraint contacts_efface_delie,
   drop constraint contacts_fiche_liee_sans_identite,
@@ -37,6 +42,7 @@ alter table public.contacts
   add constraint contacts_vivant_complet check (efface_le is not null or (type_client is not null and adresse is not null));
 alter table public.contacts alter column nom set not null;
 alter table public.contacts drop column dossier_client_id;
+alter table public.contacts drop column delie_le, drop column delie_par;
 
 -- Les deux fonctions, à leur corps de production (migration `contacts`, 20261015070431), à l'octet.
 create or replace function public.enregistrer_contact(p_dossier_id uuid, p_contact_id uuid, p_contact jsonb)

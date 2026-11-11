@@ -77,9 +77,10 @@
 --      ni ceux du cabinet, mais lit que sa pièce vient de son cabinet ; l'insertion directe au super-administrateur seul ;
 --      le catalogue — et trois mutations ; avant la migration `depot_des_honoraires`, une ligne « EN ATTENTE ».
 --   6quinquies-quater. La FICHE DE FACTURATION LIÉE au dossier d'un client (LM3, ligne 47 ; bloc « La fiche de facturation
---      d'un client du cabinet, liée à son dossier », après le dépôt des honoraires) : FL1 à FL6 — ni l'anonyme, ni un
+--      d'un client du cabinet, liée à son dossier », après le dépôt des honoraires) : FL1 à FL7 — ni l'anonyme, ni un
 --      compte rattaché à rien, ni le client ne lient ni ne lisent l'identité ; le chef lie et lit (contrôle positif) ;
---      l'insertion directe au super-administrateur seul ; le catalogue — et trois mutations ; avant la migration
+--      l'insertion directe au super-administrateur seul ; ni un compte rattaché à rien ni le client ne délient (LM3-Q1
+--      (B)) ; le catalogue — et quatre mutations ; avant la migration
 --      `fiche_liee_au_dossier_du_client`, une ligne « EN ATTENTE ».
 --   6quinquies-quinquies. Les MISSIONS D'UN CLIENT, sans ses honoraires (LM5-Q2, ligne 47 ; bloc « Les missions d'un
 --      client, sans ses honoraires », après la fiche liée) : MV1 à MV7 — la lecture ni par l'anonyme, ni par un compte
@@ -795,8 +796,8 @@
 -- (HD1 à HD7, M-HD2, M-HD5, M-HD7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM8 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM3, ligne 47 : migration `fiche_liee_au_dossier_du_client`, PRÉPARÉE,
--- pas appliquée, après LM1), qui lie une fiche du dossier du cabinet au dossier de son client. Le bloc FL (FL1 à FL6,
--- M-FL2, M-FL3, M-FL6) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM3 ».
+-- pas appliquée, après LM1), qui lie une fiche du dossier du cabinet au dossier de son client, et la délie (LM3-Q1 (B)).
+-- Le bloc FL (FL1 à FL7, M-FL2, M-FL3, M-FL6, M-FL7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM3 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM5-Q2, ligne 47 : migration `missions_du_client`, PRÉPARÉE, pas
 -- appliquée, après LM1 et LM4), qui ne crée ni ne change aucune policy, mais une fonction de lecture `security definer` :
@@ -3422,10 +3423,11 @@ end $hd$;
 -- le client d'un dossier lié ne lie rien dans le dossier du cabinet, n'en lit ni les fiches ni l'identité de son propre
 -- dossier par cette porte (FL3) ; le chef lie et lit (FL4, le contrôle POSITIF) ; un compte rattaché à rien n'insère pas
 -- de fiche liée directement — la porte de la restauration est au super-administrateur (FL5) ; au catalogue, la lecture
--- est `security definer` et exécutable par `authenticated` seul, les deux gardes par aucun rôle de session, et les
--- policies des contacts restent trois (FL6). Le jeu : un dossier du cabinet désigné et un dossier client jetables, dans
--- une sous-transaction annulée. Trois mutations, qui doivent mordre. EN ATTENTE tant que la colonne n'est pas en base.
--- Ce que la fonction refuse encore, la garde, l'effacement, le dossier parti : `fichesLieesAuxDossiers.sql`.
+-- et le déliement sont `security definer` et exécutables par `authenticated` seul, les deux gardes par aucun rôle de
+-- session, et les policies des contacts restent trois (FL6) ; ni un compte rattaché à rien ni le client du dossier lié ne
+-- délient la fiche, `delier_fiche_liee` (LM3-Q1 (B)), le chef si (FL7). Le jeu : un dossier du cabinet désigné et un dossier client jetables, dans
+-- une sous-transaction annulée. Quatre mutations, qui doivent mordre. EN ATTENTE tant que la colonne n'est pas en base.
+-- Ce que les fonctions refusent encore, la garde, l'effacement, le dossier parti, le déliement : `fichesLieesAuxDossiers.sql`.
 do $fl$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -3535,6 +3537,41 @@ begin
     mutations := mutations || jsonb_build_object('mutation', 'M-FL3 — FL3 rejoué sous le chef', 'attendu', 'la fiche lue',
       'observe', n || ' fiche(s)', 'mord', n >= 1);
 
+    -- FL7 : ni un compte rattaché à rien ni le client du dossier lié ne délient la fiche (LM3-Q1 (B)).
+    -- M-FL7 : FL7 rejoué sous le chef, à la version lue — la fiche se délie (annulé aussitôt).
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      perform public.delier_fiche_liee(k, fiche, null);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FL7. inconnu authentifié ne délie pas une fiche liée', 'cible', 'delier_fiche_liee',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce dossier.');
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform public.delier_fiche_liee(k, fiche, null);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FL7. client du dossier lié ne délie pas sa fiche dans le dossier du cabinet', 'cible', 'delier_fiche_liee',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce dossier.');
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform public.delier_fiche_liee(k, fiche, (select f.modifie_le from public.contacts f where f.id = fiche));
+      raise exception 'annuler' using errcode = 'P0001';
+    exception when sqlstate 'P0001' then etat := 'acceptée'; when others then etat := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-FL7 — FL7 rejoué sous le chef du cabinet', 'attendu', 'la fiche déliée',
+      'observe', etat, 'mord', etat = 'acceptée');
+
     -- FL5 : un compte rattaché à rien n'insère pas de fiche liée directement.
     message := null;
     begin
@@ -3557,11 +3594,11 @@ begin
 
   -- FL6 : le catalogue.
   select count(*) into n from pg_proc p
-   where p.pronamespace = 'public'::regnamespace and p.prosecdef and p.proname = 'identites_des_fiches_liees'
+   where p.pronamespace = 'public'::regnamespace and p.prosecdef and p.proname in ('identites_des_fiches_liees', 'delier_fiche_liee')
      and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
      and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE'), false);
-  verdicts := verdicts || jsonb_build_object('controle', 'FL6. la lecture des identités liées : security definer, exécutable par authenticated seul (lecture du catalogue)',
-    'cible', 'identites_des_fiches_liees', 'observe', n || ' telle(s) quelle(s)', 'ok', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'FL6. la lecture des identités liées et le déliement : security definer, exécutables par authenticated seul (lecture du catalogue)',
+    'cible', 'identites_des_fiches_liees', 'observe', n || ' telle(s) quelle(s)', 'ok', n = 2);
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.proname in ('garder_fiche_liee', 'garder_designation_des_fiches_liees')
      and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
