@@ -40,10 +40,10 @@ beforeEach(() => {
   HTMLAnchorElement.prototype.click = () => { faux.telechargements++ }
 })
 
-function monter(indisponible: string | null = null) {
+function monter(indisponible: string | null = null, sansEmpreinte = 0) {
   render(
     <PaquetDArchiveBouton
-      dossierId="d1" dossierSiret="12345678900012" annee={2025} indisponible={indisponible}
+      dossierId="d1" dossierSiret="12345678900012" annee={2025} indisponible={indisponible} sansEmpreinte={sansEmpreinte}
       fec={() => ({ nom: '123456789FEC20251231.txt', contenu: 'JournalCode\r\nAC' })}
     />,
   )
@@ -71,6 +71,22 @@ describe('le bouton du paquet d’archive', () => {
     expect(faux.telechargements).toBe(0)
   })
 
+  it('dit avant le clic les pièces citées sans empreinte de dépôt, qui entreront « non vérifiée » (INAL3-Q1)', async () => {
+    const bouton = monter(null, 3)
+    expect(screen.getByText(/3 pièce\(s\) citée\(s\) par l’exercice 2025 n’ont pas d’empreinte de dépôt : elles entreront au paquet/)
+      .textContent).toMatch(/marquées « non vérifiée »/)
+    expect(faux.lectures).toBe(0)
+    fireEvent.click(bouton)
+    await act(async () => { faux.liberer!() })
+    expect(await screen.findByText(/Paquet d’archive téléchargé/)).toBeTruthy()
+    expect(faux.telechargements).toBe(1)
+  })
+
+  it('sans pièce sans empreinte, rien n’est dit avant le clic', () => {
+    monter(null, 0)
+    expect(screen.queryByText(/n’ont pas d’empreinte de dépôt/)).toBeNull()
+  })
+
   it('une lecture partielle de l’onglet retient le bouton', () => {
     const bouton = monter('Brouillon lu incomplètement')
     expect((bouton as HTMLButtonElement).disabled).toBe(true)
@@ -91,7 +107,10 @@ describe('le bouton du paquet d’archive', () => {
     const importent = (module: RegExp) => fichiers.filter((f) => module.test(readFileSync(f, 'utf8'))).sort()
     expect(importent(/from '\.\/PaquetDArchiveBouton'/)).toEqual(['src/pages/dossier/EcrituresTab.tsx'])
     expect(importent(/from '[./]*(dossier\/)?EcrituresTab'/)).toEqual(['src/pages/DossierDetail.tsx'])
-    // Aucun écran de l'espace client n'importe la lecture ni la fabrication.
-    expect(importent(/paquetDArchive(Lecture)?'/)).toEqual(['src/lib/paquetDArchiveLecture.ts', 'src/pages/dossier/PaquetDArchiveBouton.tsx'])
+    // Aucun écran de l'espace client n'importe la lecture ni la fabrication ; l'onglet Écritures compte, avant le clic, les
+    // pièces citées sans empreinte de dépôt (INAL3-Q1).
+    expect(importent(/paquetDArchive(Lecture)?'/)).toEqual([
+      'src/lib/paquetDArchiveLecture.ts', 'src/pages/dossier/EcrituresTab.tsx', 'src/pages/dossier/PaquetDArchiveBouton.tsx',
+    ])
   })
 })

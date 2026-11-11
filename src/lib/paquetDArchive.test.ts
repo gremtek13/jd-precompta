@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import {
-  ENTETE_DES_FICHIERS, NOM_DE_LA_DOCUMENTATION, NOM_DU_MANIFESTE, fabriquerLePaquet, nomDuPaquet, nomsDesOriginaux,
-  piecesCiteesParLExercice, sha256Hex, type EntreesDuPaquet, type OriginalLu, type PieceDuPaquet,
+  ENTETE_DES_FICHIERS, MARQUE_NON_VERIFIEE, NOM_DE_LA_DOCUMENTATION, NOM_DU_MANIFESTE, fabriquerLePaquet, nomDuPaquet,
+  nomsDesOriginaux, piecesCiteesParLExercice, piecesSansEmpreinte, sha256Hex, type EntreesDuPaquet, type OriginalLu, type PieceDuPaquet,
 } from './paquetDArchive'
 
 const encodeur = new TextEncoder()
@@ -84,11 +84,45 @@ describe('le paquet d’archive d’un exercice validé', () => {
     expect(paquet).not.toHaveProperty('zip')
   })
 
-  it('une pièce sans empreinte de dépôt refuse le paquet', async () => {
+  it('une pièce sans empreinte de dépôt entre, marquée « non vérifiée » au manifeste (INAL3-Q1)', async () => {
     const e = await entrees()
-    const sans = { ...e.originaux[0], piece: { ...e.originaux[0].piece, storage_hash: null } }
-    const paquet = await fabriquerLePaquet({ ...e, originaux: [sans, e.originaux[1]] })
-    expect(paquet).toMatchObject({ ok: false, message: expect.stringContaining('n’a pas d’empreinte de dépôt') })
+    for (const absente of [null, '', '   ']) {
+      // Ses octets ne sont relus contre rien : même retouchés, ils entrent, et le manifeste dit qu'ils ne sont pas vérifiés.
+      const sans = { piece: { ...e.originaux[0].piece, storage_hash: absente }, octets: encodeur.encode('%PDF facture A, retouchée') }
+      const paquet = await fabriquerLePaquet({ ...e, originaux: [sans, e.originaux[1]] })
+      if (!paquet.ok) throw new Error(paquet.message)
+      expect(paquet.nonVerifiees).toBe(1)
+      const zip = await JSZip.loadAsync(paquet.zip)
+      const nom = Object.keys(zip.files).find((n) => n.startsWith('pieces/20250203-'))!
+      expect(await zip.file(nom)!.async('string')).toBe('%PDF facture A, retouchée')
+      const lignes = paquet.manifeste.split('\n')
+      expect(lignes).toContain(`${nom}\t${sans.piece.id}\t${MARQUE_NON_VERIFIEE}`)
+      expect(MARQUE_NON_VERIFIEE).toBe('non vérifiée (aucune empreinte de dépôt)')
+      expect(paquet.manifeste).toMatch(/^PIÈCES NON VÉRIFIÉES : 1\./m)
+      // L'autre pièce garde son empreinte de dépôt.
+      expect(lignes).toContain(`${Object.keys(zip.files).find((n) => n.startsWith('pieces/20250301-'))}\t${e.originaux[1].piece.id}\t${e.originaux[1].piece.storage_hash}`)
+    }
+  })
+
+  it('sans pièce à vérifier en moins, le manifeste ne dit rien de non vérifié', async () => {
+    const paquet = await fabriquerLePaquet(await entrees())
+    if (!paquet.ok) throw new Error(paquet.message)
+    expect(paquet.nonVerifiees).toBe(0)
+    expect(paquet.manifeste).not.toMatch(/non vérifiée|NON VÉRIFIÉES/)
+  })
+
+  it('une empreinte de dépôt présente mais illisible refuse le paquet : ce n’est pas une absence', async () => {
+    const e = await entrees()
+    const illisible = { ...e.originaux[0], piece: { ...e.originaux[0].piece, storage_hash: 'pas-une-empreinte' } }
+    const paquet = await fabriquerLePaquet({ ...e, originaux: [illisible, e.originaux[1]] })
+    expect(paquet).toMatchObject({ ok: false, message: expect.stringMatching(/^Aucun paquet d’archive : l’empreinte de dépôt de la pièce 20250203-[0-9a-f]{8} est illisible/) })
+  })
+
+  it('les pièces citées sans empreinte, que l’écran dit avant le clic : citées seulement, nulle ou vide', () => {
+    const p = (id: string, storage_hash: string | null) => ({ id, storage_hash })
+    expect(piecesSansEmpreinte([p('c', null), p('a', ''), p('b', 'ab'.repeat(32)), p('z', null), p('d', '  ')], ['a', 'b', 'c', 'd']))
+      .toEqual(['a', 'c', 'd'])
+    expect(piecesSansEmpreinte([p('a', null)], [])).toEqual([])
   })
 
   it('une pièce citée sans original, ou un original que l’exercice ne cite pas, refuse le paquet', async () => {

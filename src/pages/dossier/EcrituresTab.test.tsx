@@ -1091,6 +1091,23 @@ describe('EcrituresTab — les soldes reportés ouvrent l’exercice qui suit un
     expect(telecharge.fichiers[0].contenu).not.toContain('\nAN\t')
   })
 
+  // INAL3-Q1 : le paquet d'archive prend une pièce citée sans empreinte de dépôt, marquée « non vérifiée » ; l'onglet compte
+  // ces pièces sur ce qu'il a lu et le bouton le dit avant le clic. Garde le câblage : l'exercice VALIDÉ, ses pièces citées.
+  it('dit, avant le clic du paquet d’archive, la pièce citée qui n’a pas d’empreinte de dépôt', async () => {
+    const lignes = [ecriture({ id: 'f1', ...FIGE_2025 }), ecriture({ id: 'f2', compte: '512000', sens: 'credit', ...FIGE_2025, compte_lib: 'Banque' })]
+    poser({ pieces: [piece()], ecritures_brouillon: lignes })
+    monter(false, TRESORERIE, 2025, [2025])
+    expect(await screen.findByText(/1 pièce\(s\) citée\(s\) par l’exercice 2025 n’ont pas d’empreinte de dépôt/)).toBeTruthy()
+  })
+
+  it('ne dit rien quand chaque pièce citée a son empreinte de dépôt', async () => {
+    const lignes = [ecriture({ id: 'f1', ...FIGE_2025 }), ecriture({ id: 'f2', compte: '512000', sens: 'credit', ...FIGE_2025, compte_lib: 'Banque' })]
+    poser({ pieces: [piece({ storage_hash: 'a'.repeat(64) })], ecritures_brouillon: lignes })
+    monter(false, TRESORERIE, 2025, [2025])
+    await screen.findByRole('button', { name: 'Paquet d’archive 2025' })
+    expect(screen.queryByText(/n’ont pas d’empreinte de dépôt/)).toBeNull()
+  })
+
   it('dit qu’un exercice n’a pas encore d’ouverture tant que le précédent n’est pas validé', async () => {
     poser({
       pieces: [piece(), piece({ id: 'p2', date_piece: '2026-02-10' })],
