@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
+import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
+import { carteDeLEclatement, type LectureDuReleveDeLOuverture } from '../../lib/ouvertureEclatee'
+import { lireLOuvertureEclatee } from '../../lib/ouvertureEclateeLecture'
+import OuvertureEclateeCarte from './OuvertureEclateeCarte'
 import { RENDU_DES_BANQUES_AU_FEC, rendreLesBanquesAuFec } from '../../lib/banquesAuFec'
 import { modeleDuMouvement, planDuMouvement, refusDesBanquesDesPaiements } from '../../lib/banqueDuMouvement'
 import PaquetDArchiveBouton from './PaquetDArchiveBouton'
@@ -255,13 +259,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // numéro et le SIRET figé du client, jamais son nom) et ses échéances de cotisation. Lue avec le brouillon, gardée avec le
   // dossier qui l'a demandée ; le drapeau baissé, rien n'est lu (sans appel au réseau) et le FEC reste celui d'hier.
   const [lectureChampsBnc, setLectureChampsBnc] = useState<LectureDesChampsBnc | null>(null)
+  // L'OUVERTURE DE LA BANQUE ÉCLATÉE ENTRE LES COMPTES BANCAIRES (ligne 26.6, MCB5, sixième partie ; lib/ouvertureEclateeLecture.ts) :
+  // les comptes, tout le relevé et tous les contrôles, lus avec le brouillon, gardés avec le dossier qui les a demandés ; le
+  // drapeau `COMPTES_BANCAIRES_PREVUS` baissé, rien n'est lu (sans appel au réseau) et la carte ne se monte pas.
+  const [lectureOuverture, setLectureOuverture] = useState<LectureDuReleveDeLOuverture | null>(null)
 
   async function load() {
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
       lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations, lectureReportes, lectureDesVentes, lectureDeLaCaisse,
-      lectureDesChampsBnc,
+      lectureDesChampsBnc, lectureDeLOuverture,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -333,7 +341,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       lireLaCaisse(dossierId),
       // Ne rejette jamais ; le drapeau des vingt-deux champs baissé, ne touche pas au réseau.
       lireLesChampsBnc(dossierId),
+      // Ne rejette jamais ; le drapeau des comptes bancaires baissé, ne touche pas au réseau.
+      lireLOuvertureEclatee(dossierId),
     ])
+    setLectureOuverture(lectureDeLOuverture)
     setLectureVentes(lectureDesVentes)
     setLectureCaisse(lectureDeLaCaisse)
     setLectureChampsBnc(lectureDesChampsBnc)
@@ -1203,6 +1214,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           relecture={loading}
           relire={load}
           lettrageDesFactures={lettrageDesFactures}
+        />
+      )}
+
+      {/* L'ouverture de la banque éclatée entre les comptes bancaires (MCB5, sixième partie) : derrière son drapeau. */}
+      {COMPTES_BANCAIRES_PREVUS && (
+        <OuvertureEclateeCarte
+          dossierId={dossierId}
+          annee={anneeFilter}
+          carte={carteDeLEclatement({
+            dossierId, annee: anneeFilter, lecture: lectureOuverture,
+            motifs: [brouillonIncomplet, aNouveauxIncomplets, reportesIncomplets],
+            role: modele.plan.banque, reprise: aNouveaux, reportes: soldesReportes,
+            anneesValidees: exercicesValides.map((e) => e.annee), brouillon: ecritures,
+          })}
+          relecture={loading}
+          relire={load}
         />
       )}
 

@@ -3,7 +3,7 @@ import { estUneBanque, type BanquesDuDossier } from './banqueDuMouvement'
 import { resteRegleParSaReprise, type PiecesCitees } from './facturesSources'
 import { mouvementJustifieParLeReleve, referenceDuReleve } from './affectationBanque'
 import { nomDuVehicule } from './forfaitKilometrique'
-import { LONGUEUR_DE_L_EMPREINTE_COURTE, referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
+import { LONGUEUR_DE_L_EMPREINTE_COURTE, referenceDeLaLiquidation, referenceDeLOuvertureEclatee, referenceDuPaiementPersonnel } from './fec'
 import { justificatifDeLaCaisse, operationsDe, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
@@ -87,6 +87,11 @@ export interface RuptureAudit {
 // obligatoire : au compte par défaut, sous un plan qui la tient au 512100, une ligne sans mouvement se tairait. ET AU 512
 // PROPRE DE CHAQUE COMPTE BANCAIRE (MCB5, quatrième partie ; `banques`, obligatoire) : la ligne d'un second compte sans
 // mouvement rompt la piste comme celle du principal. Des comptes qui ne se savent pas : seule la banque du rôle se juge.
+// NI L'ÉCLATEMENT DE L'OUVERTURE DE LA BANQUE ENTRE LES COMPTES BANCAIRES (ligne 26.6, MCB5, sixième partie ;
+// lib/ouvertureEclatee.ts) : son justificatif est le relevé de chaque compte au 31 décembre qui précède, et sa clé vers le
+// compte bancaire est sans action — un compte qui l'ouvre ne se supprime pas sous elle, et la base ne l'écrit, ne la change
+// ni ne la retire que par `ecrire_ouverture_eclatee` : `ouverture_compte_bancaire_id` ne tombe jamais à nul sous elle. Ses
+// deux lignes sont de la banque, sans mouvement par nature : ni l'une ni l'autre ne rompt la piste.
 export function rupturesPisteAudit(
   ecritures: EcritureBrouillon[],
   idsJustifies: ReadonlySet<string>,
@@ -96,10 +101,12 @@ export function rupturesPisteAudit(
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
     if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id && !ecriture.vehicule_id
-      && !ecriture.declaration_tva_id && !ecriture.cotisation_id && !ecriture.operation_caisse_id) {
+      && !ecriture.declaration_tva_id && !ecriture.cotisation_id && !ecriture.operation_caisse_id
+      && !ecriture.ouverture_compte_bancaire_id) {
       ruptures.push({ ecriture, motif: 'sans_justificatif' })
     }
-    if (estUneBanque(ecriture.compte, plan, banques) === true && !ecriture.ligne_bancaire_id) {
+    // L'éclatement de l'ouverture n'a de mouvement par nature : il reporte des soldes de relevés, pas une opération.
+    if (estUneBanque(ecriture.compte, plan, banques) === true && !ecriture.ligne_bancaire_id && !ecriture.ouverture_compte_bancaire_id) {
       ruptures.push({ ecriture, motif: 'sans_mouvement' })
     }
   }
@@ -141,11 +148,12 @@ export interface AbsenceFec {
 // et la liquidation de la TVA, au journal des opérations diverses avec le tableau d'amortissement, le barème ou la
 // CA3 pour pièce, et le paiement d'une échéance depuis le compte personnel, avec le relevé de ce compte — et une opération de
 // la caisse (étape C3b), au journal des ventes ou des opérations diverses, avec le récapitulatif de son jour : l'écran ne
-// l'exporte que sur une caisse lue en entier, qui rend chaque opération qu'une ligne cite.
+// l'exporte que sur une caisse lue en entier, qui rend chaque opération qu'une ligne cite. Et l'éclatement de l'ouverture
+// de la banque (MCB5), au journal des opérations diverses, les relevés au 31 décembre pour pièce.
 export function absenceFec(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): AbsenceFec {
   const horsFec = ecritures.filter((e) =>
     !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id && !e.vehicule_id && !e.declaration_tva_id
-    && !e.cotisation_id && !e.operation_caisse_id)
+    && !e.cotisation_id && !e.operation_caisse_id && !e.ouverture_compte_bancaire_id)
   return {
     nb: horsFec.length,
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
@@ -348,6 +356,10 @@ export function pisteAudit(
   const index = indexDesFactures(registre.ventes)
   const comptesParMouvement = comptesDesMouvements(ecritures, index)
   const libelleDuMouvement = (m: LigneBancaire) => libelleDeLEcritureDuReleve(m, comptesParMouvement.get(m.id) ?? [])
+  // Le 512 que chaque paire de l'éclatement ouvre : sa ligne qui n'est pas au compte du rôle.
+  const comptesDesOuvertures = new Map(ecritures
+    .filter((e) => e.ouverture_compte_bancaire_id && e.compte !== registre.plan.banque)
+    .map((e) => [`${e.date}|${e.ouverture_compte_bancaire_id}`, e.compte]))
 
   const depuisEcritures = ecritures.map((e): LignePisteAudit => {
     if (porteUneSourceDeVente(e) || ventes.has(e.id)) {
@@ -358,6 +370,9 @@ export function pisteAudit(
     if (!e.piece_id && !e.ligne_bancaire_id && e.declaration_tva_id) return ligneDeLiquidation(e)
     if (!e.piece_id && !e.ligne_bancaire_id && e.cotisation_id) return ligneDuPaiementPersonnel(e)
     if (!e.piece_id && !e.ligne_bancaire_id && e.operation_caisse_id) return ligneDeLaCaisse(e)
+    if (!e.piece_id && !e.ligne_bancaire_id && e.ouverture_compte_bancaire_id) {
+      return ligneDeLOuvertureEclatee(e, comptesDesOuvertures.get(`${e.date}|${e.ouverture_compte_bancaire_id}`) ?? null)
+    }
     const piece = e.piece_id ? pieceParId.get(e.piece_id) ?? null : null
     const mouvement = e.ligne_bancaire_id ? ligneParId.get(e.ligne_bancaire_id) ?? null : null
     const releve = !e.piece_id && mouvement && mouvementJustifieParLeReleve(mouvement) ? mouvement : null
@@ -636,6 +651,34 @@ function ligneDeLiquidation(e: EcritureBrouillon): LignePisteAudit {
     pieceDate: e.date,
     pieceMontantTtc: null,
     pieceFichier: `Déclaration de TVA : ${referenceDeLaLiquidation(e.date)}`,
+    pieceEmpreinte: null,
+    mouvementDate: null,
+    mouvementLibelle: null,
+    mouvementMontant: null,
+    manque: [],
+  }
+}
+
+// La ligne de l'éclatement de l'ouverture de la banque (MCB5, sixième partie) : pour justificatif, le relevé au 31 décembre
+// qui précède du compte bancaire dont la paire ouvre le 512 — désigné par ce 512, jamais par le libellé du compte (un texte
+// libre) ni par celui d'un relevé ; la pièce du FEC, les relevés au 31 décembre de tous les comptes de l'écriture. Rien ne
+// lui manque : elle n'a ni pièce ni mouvement, par nature. Sans empreinte : le contrôle d'un relevé ne garde pas celle du
+// fichier importé, et la colonne reste vide plutôt que de laisser croire à une preuve.
+function ligneDeLOuvertureEclatee(e: EcritureBrouillon, compteOuvert: string | null): LignePisteAudit {
+  const veille = `${Number(e.date.slice(0, 4)) - 1}-12-31`
+  return {
+    ecritureId: e.id,
+    date: e.date,
+    compte: e.compte,
+    libelle: e.libelle,
+    debit: e.sens === 'debit' ? e.montant : 0,
+    credit: e.sens === 'credit' ? e.montant : 0,
+    pieceId: null,
+    pieceTiers: null,
+    pieceDate: veille,
+    pieceMontantTtc: null,
+    pieceFichier: compteOuvert === null ? referenceDeLOuvertureEclatee(e.date)
+      : `Relevé au ${formatDate(veille)} du compte bancaire du ${compteOuvert} (${referenceDeLOuvertureEclatee(e.date)})`,
     pieceEmpreinte: null,
     mouvementDate: null,
     mouvementLibelle: null,

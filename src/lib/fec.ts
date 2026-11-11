@@ -13,7 +13,7 @@ import { porteUneSourceDeVente, rattachementDesVentes } from './ventesFactureesD
 import { journalDeLOperation, operationsDe, referenceDeLaCaisse, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { AcquisitionDuBien } from './amortissements'
 import {
-  champsDeLaTvaDUneFacture, champsDesANouveaux, champsDUneDotation, champsDUneLiquidation, champsDUneOperationDeCaisse,
+  champsDeLaTvaDUneFacture, champsDeLOuvertureEclatee, champsDesANouveaux, champsDUneDotation, champsDUneLiquidation, champsDUneOperationDeCaisse,
   champsDUnEncaissement, champsDUnePiece, champsDUneSourceNonLue, champsDUnForfait, champsDUnMouvementDesEncaissements,
   champsDUnMouvementDuReleve, champsDUnPaiementPersonnel, partsDesReglementsALaDate, type ChampsBnc, type ChoixChampsBnc,
   type EncaissementDuRegistre, type FactureDuClient, type LigneACaracteriser, type ModeRglt, type NatureOperation,
@@ -108,6 +108,14 @@ export function referenceDeLaLiquidation(date: string): string {
 // vérificateur demandera. La date de l'écriture est celle du paiement. La piste d'audit la nomme de même.
 export function referenceDuPaiementPersonnel(date: string): string {
   return `Compte personnel du ${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`
+}
+
+// La pièce de l'écriture qui éclate l'ouverture de la banque entre les comptes bancaires (MCB5, sixième partie ;
+// lib/ouvertureEclatee.ts) : les relevés de chaque compte au 31 décembre qui précède, dont elle reporte les soldes — la date
+// de l'écriture est le 1er janvier qui suit. Jamais le libellé d'un compte (texte libre) ni celui d'un relevé. La piste
+// d'audit la nomme compte par compte (`justificatifDeLOuvertureEclatee`, lib/pisteAudit.ts).
+export function referenceDeLOuvertureEclatee(dateDeLEcriture: string): string {
+  return `Relevés au 31/12/${Number(dateDeLEcriture.slice(0, 4)) - 1}`
 }
 
 /** La longueur de l'empreinte courte qui désigne une pièce : dans PieceRef, et dans la piste d'audit (lib/pisteAudit.ts). */
@@ -491,6 +499,7 @@ function posteDeLaLigne(
         : l.compte === plan.arrondi_produit ? posteDuMoteur(POSTE_ARRONDIS_TVA_PRODUIT) : AUCUN_POSTE
     case 'paiement-personnel': return l.compte === plan.cotisations_exploitant ? posteDuMoteur(POSTE_COTISATIONS) : AUCUN_POSTE
     case 'facture': return AUCUN_POSTE
+    case 'ouverture-eclatee': return AUCUN_POSTE
     case 'encaissement':
       return l.compte === plan.prestations_de_services || l.compte === plan.ventes_de_biens ? posteDuMoteur(POSTE_VENTES_FACTUREES) : AUCUN_POSTE
     case 'mouvement-encaissements':
@@ -539,6 +548,7 @@ function champsDeLEcriture(e: EcritureANumeroter, x: ContexteDesChamps): ChampsB
     case 'dotation': return champsDUneDotation(date, lignes, choix)
     case 'forfait': return champsDUnForfait(date, lignes, choix)
     case 'liquidation': return champsDUneLiquidation(date, lignes, choix)
+    case 'ouverture-eclatee': return champsDeLOuvertureEclatee(date, lignes, choix)
     case 'paiement-personnel': {
       const id = premiere.cotisation_id ?? ''
       return champsDUnPaiementPersonnel(cotisations.find((c) => c.id === id) ?? { id, paiement_personnel_le: null }, lignes)
@@ -598,6 +608,13 @@ const champsDeLaLigne = (c: ChampsBnc, id: string): ChampsBncDeLaLigne => ({
 // écriture par déclaration, au dernier jour de sa période : sa pièce est la CA3 arrêtée à cette date. UNE ÉCHÉANCE DE
 // COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL (ligne 26.6, lib/cotisationPersonnelle.ts) de même, une écriture par
 // échéance, au jour du paiement : sa pièce est le relevé du compte personnel de ce jour (`referenceDuPaiementPersonnel`).
+// L'ÉCLATEMENT DE L'OUVERTURE DE LA BANQUE ENTRE LES COMPTES BANCAIRES (ligne 26.6, MCB5, sixième partie ;
+// lib/ouvertureEclatee.ts) de même, UNE écriture par 1er janvier — toutes ses paires, une par compte qui ouvre son 512 —, au
+// journal des opérations diverses (MCB5G-Q1) : sa pièce est les relevés au 31 décembre qui précède
+// (`referenceDeLOuvertureEclatee`), PieceDate ce 31 décembre ; la clé `ouverture-eclatee|date`. Écrite telle que le
+// brouillon la porte, à jour ou non : l'onglet Écritures dit son état, et la validation la retient tant qu'elle n'est pas à
+// jour (`ouverture-a-eclater`). Le rendu `un_seul_512` (lib/banquesAuFec.ts) en met les deux lignes au compte du rôle :
+// l'écriture y reste, équilibrée, sous son numéro.
 // Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
 //
 // UNE OPÉRATION DE LA CAISSE (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts) fait UNE écriture : les lignes qui la
@@ -704,6 +721,10 @@ export function numeroterFec(
       cle = `liquidation|${e.declaration_tva_id}|${e.date}`
     } else if (e.cotisation_id) {
       cle = `paiement-personnel|${e.cotisation_id}|${e.date}`
+    } else if (e.ouverture_compte_bancaire_id) {
+      // L'éclatement de l'ouverture de la banque (MCB5, sixième partie) : une écriture par 1er janvier, toutes ses paires —
+      // la base n'en écrit que là, sans autre source (`ecritures_brouillon_ouverture_eclatee`).
+      cle = `ouverture-eclatee|${e.date}`
     } else {
       horsFec.push(e)
       continue
@@ -753,6 +774,11 @@ export function numeroterFec(
       if (!pieceId && rows[0].cotisation_id && !rows[0].ligne_bancaire_id) {
         return { cle, sorte: 'paiement-personnel', pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
           pieceRef: referenceDuPaiementPersonnel(rows[0].date), reglement: null }
+      }
+      if (!pieceId && rows[0].ouverture_compte_bancaire_id) {
+        // Au journal des opérations diverses (MCB5G-Q1) ; sa pièce, les relevés du 31 décembre, à leur date.
+        return { cle, sorte: 'ouverture-eclatee', pieceId: null, rows, ordre, journal: 'OD' as const,
+          pieceDate: `${Number(rows[0].date.slice(0, 4)) - 1}-12-31`, pieceRef: referenceDeLOuvertureEclatee(rows[0].date), reglement: null }
       }
       if (!pieceId) {
         const mouvement = mouvementById.get(rows[0].ligne_bancaire_id!)!

@@ -5,7 +5,7 @@ import { POSTES_RATTACHES, posteRattache } from './cases2035'
 import * as champs from './champsBncDuFec'
 import {
   LIENS_DU_RELEVE, MODE_DU_MOYEN, MODES_REGLEMENT, NATURES_OPERATION, REGLES_DES_SORTES, SANS_REGLEMENT, SEPARATEUR_DU_POSTE,
-  champsDeLaTvaDUneFacture, champsDesANouveaux, champsDUnEncaissement, champsDUneDotation, champsDUneLiquidation,
+  champsDeLaTvaDUneFacture, champsDeLOuvertureEclatee, champsDesANouveaux, champsDUnEncaissement, champsDUneDotation, champsDUneLiquidation,
   champsDUnForfait, champsDUnMouvementDesEncaissements, champsDUnMouvementDuReleve, champsDUneOperationDeCaisse,
   champsDUnePiece, champsDUnPaiementPersonnel, identificationDuClient, natOpDeLaLigne, reglementsDeLaPieceALaDate,
   type ChampsBnc, type ChoixChampsBnc, type EncaissementDuRegistre, type FactureDuClient, type LigneACaracteriser,
@@ -376,6 +376,9 @@ describe('les écritures qui ne sont pas un règlement : le choix de FEC22-Q1, d
       'Liquidation de TVA'],
     ['à-nouveaux', (c) => champsDesANouveaux([{ id: 'an', compte: '512000', libelle: NOMS[7] }], '2026-12-31', c), 'À-nouveaux'],
     ['TVA due', (c) => champsDeLaTvaDUneFacture(facture({}), '2026-12-31', [ligne('c', '411000', AUCUN)], c), 'TVA due sur facture'],
+    // L'éclatement de l'ouverture de la banque (MCB5) : deux 512, une opération de bilan, jamais un poste.
+    ['ouverture éclatée', (c) => champsDeLOuvertureEclatee('2026-12-31', [ligne('p', '512200', AUCUN), ligne('r', '512000', AUCUN)], c),
+      'Opération de bilan'],
   ]
   for (const [nom, champsDe, nature] of cas) {
     it(`${nom} : vides, ou la date de l’écriture et « Sans règlement »`, () => {
@@ -390,6 +393,7 @@ describe('les écritures qui ne sont pas un règlement : le choix de FEC22-Q1, d
     expect(cas[1][1](VIDES).natOp.get('k')).toBe(`Frais de véhicule (barème) — ${POSTE_INDEMNITES_KM}`)
     expect(cas[2][1](VIDES).natOp.get('r')).toBe(`Liquidation de TVA — ${POSTE_ARRONDIS_TVA_CHARGE}`)
     expect(cas[3][1](VIDES).natOp).toEqual(new Map([['an', 'À-nouveaux']]))
+    expect(cas[5][1](VIDES).natOp).toEqual(new Map([['p', 'Opération de bilan'], ['r', 'Opération de bilan']]))
     expect(champsDUneDotation('2026-12-31', dot, VIDES).idClient).toBe('')
   })
 
@@ -489,6 +493,7 @@ describe('aucun nom ne paraît dans les quatre valeurs', () => {
       () => champsDUnForfait('2026-12-31', lignes(), choix()),
       () => champsDUneLiquidation('2026-12-31', lignes(), choix()),
       () => champsDesANouveaux([{ id: 'an', compte: '512000', libelle: nom() }], '2026-01-01', choix()),
+      () => champsDeLOuvertureEclatee('2026-01-01', lignes(), choix()),
       () => champsDUnPaiementPersonnel({ id: 'e', paiement_personnel_le: '2026-02-15' }, lignes()),
       () => champsDeLaTvaDUneFacture(fac(), '2026-03-31', lignes(), choix()),
       () => champsDUnEncaissement(enc(), fac(), lignes()),
@@ -573,8 +578,9 @@ describe('le scanner des sortes d’écriture du FEC', () => {
   it('chaque sorte que numeroterFec distingue a sa règle, et chaque règle sa sorte', () => {
     const lecture = lireLesSortes(fec, composition)
     expect(fautesDesRegles(lecture, REGLES_DES_SORTES)).toEqual([])
-    // Le plancher : onze sortes — une lecture devenue aveugle ne rendrait pas « zéro faute ».
-    expect(lecture.sortes.size).toBe(11)
+    // Le plancher : douze sortes depuis l'éclatement de l'ouverture (MCB5) — une lecture devenue aveugle ne rendrait pas
+    // « zéro faute ».
+    expect(lecture.sortes.size).toBe(12)
     // Les trois sorties hors du fichier — une ligne d'une vente à réécrire, une opération de caisse que la lecture ne rend
     // pas, le reste d'une pièce supprimée — n'ont pas de règle : elles ne sont pas dans le fichier. Comptées : une
     // quatrième serait une sorte à juger.

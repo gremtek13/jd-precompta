@@ -244,6 +244,7 @@ export const REGLES_DES_SORTES = {
   encaissement: 'champsDUnEncaissement',
   'mouvement-encaissements': 'champsDUnMouvementDesEncaissements',
   'a-nouveaux': 'champsDesANouveaux',
+  'ouverture-eclatee': 'champsDeLOuvertureEclatee',
 } as const
 
 // ── Une pièce ──
@@ -518,6 +519,16 @@ export function champsDUnForfait(dateDeLEcriture: string, lignes: readonly Ligne
 /** La liquidation d'une déclaration de TVA (clé `liquidation|déclaration|date`) : la CA3 arrêtée, son paiement est au relevé. */
 export function champsDUneLiquidation(dateDeLEcriture: string, lignes: readonly LigneACaracteriser[], choix: ChoixChampsBnc): ChampsBnc {
   return sansReglementDe('Liquidation de TVA', dateDeLEcriture, lignes, choix)
+}
+
+/**
+ * L'ouverture de la banque éclatée entre les comptes bancaires (clé `ouverture-eclatee|date`, au 1er janvier ; MCB5, sixième
+ * partie, lib/ouvertureEclatee.ts) : le solde de chaque compte au relevé de la veille passe du 512 du rôle au sien. Deux
+ * comptes de bilan, rien n'est payé ce jour-là : « Opération de bilan », sans règlement, comme les autres opérations
+ * diverses (FEC22-Q1). Pas « À-nouveaux » : ce n'est pas un solde repris, l'ouverture elle-même ne change pas.
+ */
+export function champsDeLOuvertureEclatee(dateDeLEcriture: string, lignes: readonly LigneACaracteriser[], choix: ChoixChampsBnc): ChampsBnc {
+  return sansReglementDe('Opération de bilan', dateDeLEcriture, lignes, choix)
 }
 
 /**

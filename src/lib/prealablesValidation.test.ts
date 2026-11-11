@@ -2572,3 +2572,56 @@ describe('prealablesDeValidation — la banque par compte bancaire (MCB4)', () =
     }
   })
 })
+
+// L'OUVERTURE DE LA BANQUE ÉCLATÉE ENTRE LES COMPTES BANCAIRES (MCB5, sixième partie, suite ; lib/ouvertureEclatee.ts) :
+// 2026 s'ouvre au 512 du rôle avec l'argent des deux comptes, le second tenant son 512 propre depuis le 1er janvier. La
+// validation de 2026 se retient tant que l'écriture qui l'éclate n'est pas à jour, avec les mots de la carte ; drapeau
+// baissé (la lecture des comptes `sans_objet`), rien ne se dit. Données FICTIVES.
+describe('prealablesDeValidation — l’ouverture de la banque à éclater (MCB5)', () => {
+  const PRINCIPAL: CompteDuReleve = { id: 'cp', libelle: 'Compte principal', principal: true, fin_d_identifiant: null, compte: null,
+    compte_propre_depuis: null, ouvert_le: null, clos_le: null }
+  const SECOND: CompteDuReleve = { id: 'cs', libelle: 'Compte second fictif', principal: false, fin_d_identifiant: null, compte: '512200',
+    compte_propre_depuis: '2026-01-01', ouvert_le: '2024-06-01', clos_le: null }
+  const LUS: LectureDesComptes = { etat: 'lus', comptes: [PRINCIPAL, SECOND] }
+  const LIBELLE = 'Ouverture du 512200 au relevé du 31/12/2025'
+  const releveDe = (id: string, compte: string, fichier: string, initial: number, final: number) =>
+    ({ ...controle({ id, source_fichier: fichier, solde_initial: initial, solde_final: final }), compte_bancaire_id: compte })
+  const base = (o: Partial<DonneesDeValidation>) => donnees({
+    annee: 2026, anneeCourante: 2027, aujourdHui: '2027-02-01', anneesValidees: [2025], piecesValidees: [], ecritures: [],
+    lignes: [ligne('mp', { date: '2025-12-15', montant: 100, statut: 'non_rapprochee', compte_bancaire_id: 'cp', source_fichier: 'p.csv' }),
+      ligne('ms', { date: '2025-12-10', montant: 50, statut: 'non_rapprochee', compte_bancaire_id: 'cs', source_fichier: 's.csv' })],
+    controlesReleves: [releveDe('rp', 'cp', 'p.csv', 900, 1000), releveDe('rs', 'cs', 's.csv', 200, 250)],
+    soldesReportes: [reporte('r1', '2026-01-01', '512000', 'Banque', 'debit', 1250), reporte('r2', '2026-01-01', '101000', 'Capital individuel', 'credit', 1250)],
+    comptesBancaires: LUS, ...o,
+  })
+  const paire = (montant: number) => [
+    ecriture('o1', { piece_id: null, date: '2026-01-01', compte: '512200', sens: 'debit', montant, libelle: LIBELLE, ouverture_compte_bancaire_id: 'cs' }),
+    ecriture('o2', { piece_id: null, date: '2026-01-01', compte: '512000', sens: 'credit', montant, libelle: LIBELLE, ouverture_compte_bancaire_id: 'cs' }),
+  ]
+
+  it('à écrire : bloquant, vers Écritures, avec les mots de la carte', () => {
+    const p = prealable(base({}), 'ouverture-a-eclater')
+    expect(p).toMatchObject({ bloquant: true, cible: 'ecritures' })
+    expect(p?.message).toMatch(/^L’ouverture du 01\/01\/2026 porte au compte de banque du rôle l’argent de tous les comptes bancaires/)
+  })
+
+  it('à jour : rien ; à réécrire : retenue ; numérotée au journal OD, hors des écritures que rien ne rattache', () => {
+    const aJour = prealablesDeValidation(base({ ecritures: paire(250) }))
+    expect(aJour.prealables.map((p) => p.id)).not.toContain('ouverture-a-eclater')
+    expect(aJour.prealables.map((p) => p.id)).not.toContain('ecritures-orphelines')
+    expect(aJour.numerotation?.lignes.map((l) => [l.ecriture.id, l.journal, l.pieceRef])).toEqual([
+      ['o1', 'OD', 'Relevés au 31/12/2025'], ['o2', 'OD', 'Relevés au 31/12/2025'],
+    ])
+    expect(prealable(base({ ecritures: paire(200) }), 'ouverture-a-eclater')?.message).toMatch(/n’est plus celle que les relevés du 31\/12\/2025 commandent/)
+  })
+
+  it('un relevé du 31/12 qui manque : retenue, avec les mots de la base', () => {
+    const d = base({ controlesReleves: [releveDe('rp', 'cp', 'p.csv', 900, 1000)] })
+    expect(prealable(d, 'ouverture-a-eclater')?.message).toMatch(/« Compte second fictif » ne se lit sur aucun de ses relevés contrôlés/)
+  })
+
+  it('drapeau baissé (sans objet), ou des contrôles illisibles : rien ne se dit ici', () => {
+    expect(prealable(base({ comptesBancaires: { etat: 'sans_objet' }, lignes: [] }), 'ouverture-a-eclater')).toBeUndefined()
+    expect(prealable(base({ controlesReleves: null }), 'ouverture-a-eclater')).toBeUndefined()
+  })
+})

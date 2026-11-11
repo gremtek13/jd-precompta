@@ -182,6 +182,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   // son premier relevé part d'un solde (MVPD7-Q2) : ce que le relevé affirme, face au 512.
   'banque-au-releve': 'tresorerie',
   'ouverture-sans-reprise': 'tresorerie',
+  // L'ouverture de la banque éclatée entre les comptes bancaires (MCB5, sixième partie) : la trésorerie de chaque compte.
+  'ouverture-a-eclater': 'tresorerie',
   'mouvements-a-traiter': 'tresorerie',
   'lignes-non-rapprochees': 'tresorerie',
   // Un mouvement du relevé que des encaissements de factures réservent, à classer (étape VF5f) : ce que le relevé porte.
