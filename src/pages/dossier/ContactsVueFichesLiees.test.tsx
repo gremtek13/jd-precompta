@@ -40,7 +40,7 @@ const LUE: LectureDesFichesLiees = {
     { id: C2, nom: 'Dossier Deux', denomination_imprimee: null, adresse: null, siret: null },
   ],
   identites: [{
-    contact_id: 'f1', dossier_client_id: C, dossier_present: true, tiers_nom: 'UN SARL', tiers_adresse: null,
+    contact_id: 'f1', dossier_client_id: C, dossier_present: true, tiers_nom: 'UN SARL', tiers_adresse: '1 rue A',
     tiers_siret: '12345678200010', tiers_siren: '123456782', type_client: 'assujetti',
   }],
 }
@@ -59,8 +59,16 @@ vi.mock('../../lib/supabase', async () => {
       rpc: async (nom: string, params: Record<string, unknown>) => {
         faux.rpcs.push({ nom, params })
         if (faux.retenirRpc) await new Promise<void>((r) => { faux.rpcEnAttente.push(r) })
-        if (nom !== 'enregistrer_contact') throw new Error(`Fonction non attendue dans ce test : ${nom}`)
         if (faux.refus) return { data: null, error: { message: faux.refus } }
+        if (nom === 'delier_fiche_liee') {
+          // La base délie : la fiche, sans lien, porte l'identité recopiée et sa trace (LM3-Q1 (B)).
+          const fiche = faux.contacts.find((c) => c.id === params.p_contact_id) as Record<string, unknown>
+          const deliee = { ...fiche, dossier_client_id: null, nom: 'UN SARL', adresse: '1 rue A', type_client: 'assujetti',
+            siren: '123456782', siret: '12345678200010', delie_le: '2027-11-20T10:00:00Z', delie_par: 'u-moi' }
+          faux.contacts = faux.contacts.map((c) => (c.id === params.p_contact_id ? deliee : c)) as typeof faux.contacts
+          return { data: deliee, error: null }
+        }
+        if (nom !== 'enregistrer_contact') throw new Error(`Fonction non attendue dans ce test : ${nom}`)
         const ecrit = {
           id: `neuf-${faux.contacts.length + 1}`, dossier_id: params.p_dossier_id, genre: 'client', nom: null, type_client: null, adresse: null,
           siren: null, siret: null, code_service: null, retire_le: null, retire_par: null, efface_le: null, efface_par: null, cree_par: 'u-moi',
@@ -158,6 +166,24 @@ describe('la vue « Clients » et les fiches liées (LM3)', () => {
     expect(screen.getByRole('status').textContent).toBe('Dossier « Dossier Deux » relié.')
     // La nouvelle fiche n'entre pas dans la liste des clients : elle n'a pas de nom.
     expect(lignesDuTableau()).toHaveLength(1)
+  })
+
+  it('drapeau levé, au cabinet : délier passe le verrou de la vue — un appel pour deux clics —, à la version lue, puis relit', async () => {
+    faux.drapeau = true
+    // Le client ordinaire porte un autre SIRET que le dossier relié : la base ne refuserait pas le SIRET recopié.
+    faux.contacts = [{ ...ORDINAIRE, siren: '732829320', siret: '73282932000017' }, FICHE]
+    await monter('cabinet')
+    fireEvent.click(screen.getByRole('button', { name: 'Délier' }))
+    const lecturesAvant = faux.lectures
+    faux.retenirRpc = true
+    const delier = screen.getByRole('button', { name: 'Délier la fiche' })
+    act(() => { fireEvent.click(delier); fireEvent.click(delier) })
+    await act(async () => {})
+    expect(faux.rpcs).toHaveLength(1)
+    await act(async () => { for (const r of faux.rpcEnAttente) r() })
+    expect(faux.rpcs).toEqual([{ nom: 'delier_fiche_liee', params: { p_dossier_id: K, p_contact_id: 'f1', p_modifie_le: null } }])
+    expect(faux.lectures).toBeGreaterThan(lecturesAvant)
+    expect(screen.getByRole('status').textContent).toBe('Fiche de « UN SARL » déliée : elle est désormais saisie à la main.')
   })
 
   it('drapeau levé : le refus de la base se dit dans la fenêtre, sous ses mots', async () => {

@@ -59,7 +59,26 @@ const faux = vi.hoisted(() => ({
   identitesRendues: [] as unknown[],
   // Ce que la carte « Source des ventes » a passé à la page (étape VF8b) : le dossier écrit et le réglage rendu.
   reglagesRendus: [] as unknown[],
+  // LE DOSSIER DU CABINET (LM1-Q1 (B)) : le drapeau, la désignation et les factures qui partiraient, tels que leurs lectures
+  // les rendent (le drapeau baissé par défaut : rien ne change d'hier) ; ce que la suppression a reçu.
+  dossierDuCabinetLeve: false,
+  designation: null as unknown,
+  facturesQuiPartent: null as unknown,
+  argumentsSuppression: [] as unknown[],
 }))
+
+vi.mock('../../lib/dossierDuCabinet', async (original) => {
+  const reel = await original<typeof import('../../lib/dossierDuCabinet')>()
+  return { ...reel, get DOSSIER_DU_CABINET_PREVU() { return faux.dossierDuCabinetLeve } }
+})
+vi.mock('../../lib/dossierDuCabinetLecture', async (original) => {
+  const reel = await original<typeof import('../../lib/dossierDuCabinetLecture')>()
+  return {
+    ...reel,
+    useDesignationDuDossier: () => (faux.dossierDuCabinetLeve ? faux.designation : null),
+    useFacturesQuiPartent: (_id: string, actif: boolean) => (faux.dossierDuCabinetLeve && actif ? faux.facturesQuiPartent : null),
+  }
+})
 
 vi.mock('../../lib/informationsDossier', () => ({
   chargerInformationsDossier: () => Promise.resolve(faux.lecture),
@@ -70,7 +89,8 @@ vi.mock('../../lib/informationsDossier', () => ({
 }))
 
 vi.mock('../../lib/suppressionDossier', () => ({
-  supprimerDossierDefinitivement: async () => {
+  supprimerDossierDefinitivement: async (_id: string, qui: unknown) => {
+    faux.argumentsSuppression.push(qui)
     faux.suppressions += 1
     await faux.porteSuppression
     if (faux.erreurSuppression) throw faux.erreurSuppression
@@ -231,10 +251,65 @@ beforeEach(() => {
   faux.aucuneLigne = false
   faux.reponseIdentite = null
   faux.identitesRendues = []
+  faux.dossierDuCabinetLeve = false
+  faux.designation = null
+  faux.facturesQuiPartent = null
+  faux.argumentsSuppression = []
   window.open = ((url: string) => {
     faux.ouvertures.push(url)
     return faux.ouvertureBloquee ? null : { opener: window as unknown } as Window
   }) as typeof window.open
+})
+
+describe('le dossier du cabinet : son chef le supprime, la confirmation nomme ses factures (LM1-Q1 (B))', () => {
+  const DESIGNATION = {
+    etat: 'lue', dossierId: 'd1', cabinetId: 'c1', dossierActuel: 'd1', nomDeLActuel: 'Cabinet Martin',
+    actuelPorteUneFactureValidee: true, porteUnAccesClient: false, porteUneFactureEnMandataire: false,
+  }
+  const FACTURES = [{ id: 'f2', numero: 'F2026-10' }, { id: 'f1', numero: 'F2026-9' }]
+
+  it('la confirmation dit le nombre et les numéros des factures qui partent, et la suppression reçoit celles qu’elle a nommées', async () => {
+    faux.dossierDuCabinetLeve = true
+    faux.designation = DESIGNATION
+    faux.facturesQuiPartent = { etat: 'lue', dossierId: 'd1', factures: FACTURES }
+    monter()
+    await screen.findByRole('button', { name: /Supprimer ce dossier définitivement/ })
+    await act(async () => { screen.getByRole('button', { name: /Supprimer ce dossier définitivement/ }).click() })
+    expect(document.body.textContent).toContain('C’est le dossier du cabinet : ses 2 factures validées partent avec lui, les factures F2026-9, F2026-10.')
+    await act(async () => { fireEvent.change(screen.getByLabelText(/pour confirmer/), { target: { value: 'Cabinet Martin' } }) })
+    const confirmer = screen.getByRole('button', { name: /^Supprimer définitivement$/ })
+    // Deux clics dans le même `act` : une seule suppression part (le verrou).
+    await act(async () => { confirmer.click(); confirmer.click() })
+    expect(faux.suppressions).toBe(1)
+    expect(faux.argumentsSuppression).toEqual([{ superAdministrateur: undefined, facturesNommees: ['f2', 'f1'] }])
+  })
+
+  it('ses factures pas encore lues, puis illisibles : aucun bouton, la raison dite avant le clic', async () => {
+    faux.dossierDuCabinetLeve = true
+    faux.designation = DESIGNATION
+    const { unmount } = monter()
+    expect(await screen.findByText(/Les factures du dossier du cabinet se lisent : la suppression attend leur lecture/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Supprimer ce dossier définitivement/ })).toBeNull()
+    unmount()
+    faux.facturesQuiPartent = { etat: 'illisible', dossierId: 'd1', motif: 'délai dépassé' }
+    monter()
+    expect(await screen.findByText(/n’ont pas pu être lues \(délai dépassé\)/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Supprimer ce dossier définitivement/ })).toBeNull()
+  })
+
+  it('un dossier client se supprime comme hier, sans rien nommer ; la désignation pas encore lue, rien ne s’offre', async () => {
+    faux.dossierDuCabinetLeve = true
+    faux.designation = { ...DESIGNATION, dossierActuel: 'autre' }
+    const { unmount } = monter()
+    await screen.findByRole('button', { name: /Supprimer ce dossier définitivement/ })
+    await supprimer('Cabinet Martin')
+    expect(faux.argumentsSuppression).toEqual([{ superAdministrateur: undefined, facturesNommees: undefined }])
+    unmount()
+    faux.designation = null
+    monter()
+    expect(await screen.findByText(/La désignation du dossier du cabinet se lit : la suppression attend sa lecture/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Supprimer ce dossier définitivement/ })).toBeNull()
+  })
 })
 
 describe('suppression d’un dossier : ce qui reste dans le stockage se dit', () => {

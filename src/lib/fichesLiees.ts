@@ -148,6 +148,8 @@ export interface FicheLiee {
   observations: string | null
   retire_le: string | null
   efface_le: string | null
+  /** La version lue (`modifie_le`), que le déliement retient (LM3-Q1 (B)). */
+  modifie_le?: string | null
 }
 
 /** Le client d'une facture en texte de champ, comme `ClientEnSaisie` (lib/contactsFacture.ts) le porte. */
@@ -208,5 +210,100 @@ export function saisieDeLaFicheLiee(s: {
     email: texte(s.email),
     delai_paiement_jours: delai != null && Number.isFinite(delai) ? delai : null,
     observations: s.observations === '' ? null : s.observations,
+  }
+}
+
+// ── Délier une fiche (LM3-Q1 (B), réponse du cabinet du 11/11/2026) ───────────────────────────────────────────────────────
+// `delier_fiche_liee` : au cabinet seul, la fiche redevient saisie à la main, l'identité que son dossier donne À CE MOMENT
+// recopiée dans la même transaction, ce qui est propre à la facturation gardé ; elle ne se relie plus. Ses refus, dans l'ordre
+// de la fonction, à ses mots et à ses codes ; le SIRET déjà rangé porte ses valeurs (« % »).
+export const REFUS_DU_DELIEMENT = [
+  { cle: 'acces', code: '42501', modele: 'Accès refusé à ce dossier.' },
+  { cle: 'introuvable', code: 'P0002', modele: 'Contact introuvable dans ce dossier.' },
+  { cle: 'retiree', code: '22023', modele: 'Ce contact est retiré : le reprendre avant de le modifier.' },
+  { cle: 'pasLiee', code: '22023', modele: 'Cette fiche n’est pas liée au dossier d’un client : rien ne se délie.' },
+  { cle: 'version', code: '22023', modele: 'La fiche a changé depuis sa lecture : relire avant de la délier.' },
+  {
+    cle: 'dossierParti', code: '22023',
+    modele: 'Le dossier de ce client n’est plus dans ce cabinet : rien ne se recopie. La fiche se retire ou s’efface.',
+  },
+  {
+    cle: 'nom', code: '22023',
+    modele: 'Le nom que donne le dossier de ce client est vide ou dépasse deux cents caractères : le corriger dans son identité avant de délier la fiche.',
+  },
+  {
+    cle: 'adresse', code: '22023',
+    modele: 'Le dossier de ce client n’a pas d’adresse (ou une de plus de mille caractères) : la renseigner dans son identité avant de délier la fiche.',
+  },
+  {
+    cle: 'adresseElectronique', code: '22023',
+    modele: 'L’adresse de facturation électronique de la fiche ne va plus avec l’identité du dossier (une entreprise, son SIREN en tête) : la corriger ou la retirer avant de délier la fiche.',
+  },
+  {
+    cle: 'siret', code: '23505',
+    modele: 'Le SIRET « % » est déjà celui du contact « % »% : un établissement ne se range qu’une fois par dossier.',
+  },
+] as const
+
+export type RefusDuDeliement = (typeof REFUS_DU_DELIEMENT)[number]['cle']
+
+const mots = (cle: RefusDuDeliement) => (REFUS_DU_DELIEMENT.find((r) => r.cle === cle) as { modele: string }).modele
+const blanc = (v: string) => v.replace(/[ \t\n\r]/g, '') === ''
+
+/**
+ * Ce que la base refuserait AVANT le clic, à ses mots, ou nul : la fiche telle que la liste l'a lue, l'identité que la lecture
+ * des fiches liées a rendue pour elle (nulle : pas rendue — rien ne se recopie, l'identité illisible se dit), et les contacts
+ * du dossier, lus en entier (le SIRET recopié ne s'y range qu'une fois). L'accès, la fiche introuvable et la version lue ne se
+ * jugent qu'en base. `char_length` compte des caractères : la longueur se compte ici en points de code.
+ */
+export function refusDuDeliement(e: {
+  fiche: { id: string; dossier_client_id: string | null; retire_le: string | null; adresse_electronique: string | null }
+  identite: IdentiteLue | null
+  contacts: readonly { id: string; nom: string | null; siret: string | null; retire_le: string | null }[]
+}): string | null {
+  if (e.fiche.retire_le != null) return mots('retiree')
+  if (e.fiche.dossier_client_id == null) return mots('pasLiee')
+  if (e.identite == null) return 'L’identité de ce client ne s’est pas lue de son dossier : rien ne se recopie.'
+  if (!e.identite.dossier_present) return mots('dossierParti')
+  const nom = e.identite.tiers_nom
+  if (nom == null || blanc(nom) || [...nom].length > 200) return mots('nom')
+  const adresse = e.identite.tiers_adresse
+  if (adresse == null || blanc(adresse) || [...adresse].length > 1000) return mots('adresse')
+  const siren = e.identite.tiers_siren
+  if (e.fiche.adresse_electronique != null && (siren == null || e.fiche.adresse_electronique.slice(0, 9) !== siren)) {
+    return mots('adresseElectronique')
+  }
+  const siret = e.identite.tiers_siret
+  const autre = siret == null ? undefined : e.contacts.find((c) => c.id !== e.fiche.id && c.siret === siret)
+  if (autre != null && siret != null) {
+    const n = autre.nom ?? ''
+    return `Le SIRET « ${siret} » est déjà celui du contact « ${[...n].length > 80 ? [...n].slice(0, 79).join('') + '…' : n} »`
+      + `${autre.retire_le != null ? ' (retiré)' : ''} : un établissement ne se range qu’une fois par dossier.`
+  }
+  return null
+}
+
+/**
+ * La confirmation du déliement : elle NOMME les valeurs du dossier qui se recopient, à ce jour, ce que la fiche garde, et ce
+ * que le geste change — la fiche redevient saisie à la main, ne suit plus le dossier et ne se relie plus.
+ */
+export function confirmationDuDeliement(i: IdentiteLue, fiche: FicheLiee): { titre: string; recopie: string[]; garde: string[]; regle: string } {
+  const garde: string[] = []
+  if (fiche.adresse_electronique) garde.push(`L’adresse de facturation électronique : ${fiche.adresse_electronique}`)
+  if (fiche.email) garde.push(`L’e-mail de facturation : ${fiche.email}`)
+  if (fiche.delai_paiement_jours != null) garde.push(`Le délai de paiement : ${fiche.delai_paiement_jours} jours`)
+  if (fiche.observations) garde.push('Les observations')
+  return {
+    titre: `Délier la fiche de « ${i.tiers_nom ?? ''} » du dossier de son client ?`,
+    recopie: [
+      `Nom : ${i.tiers_nom ?? ''}`,
+      `Adresse : ${i.tiers_adresse ?? ''}`,
+      i.tiers_siret != null ? `SIRET : ${i.tiers_siret} (SIREN ${i.tiers_siren ?? ''})` : 'Aucun SIRET',
+      i.type_client === 'assujetti' ? 'Une entreprise établie en France' : 'Un particulier ou un autre non-assujetti',
+    ],
+    garde,
+    regle: 'La fiche redevient saisie à la main, avec les valeurs du dossier à ce jour : elle ne suivra plus son identité. '
+      + 'Les factures déjà faites gardent leur provenance et leur copie. Elle ne se relie plus à aucun dossier ; le dossier, '
+      + 'lui, pourra recevoir une nouvelle fiche liée.',
   }
 }

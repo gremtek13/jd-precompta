@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { formatDate } from '../../lib/format'
 import { nomDansUnRefus } from '../../lib/articles'
-import { identiteDuDossier, saisieDeLaFicheLiee, type EtatDeLaFicheLiee, type FicheLiee } from '../../lib/fichesLiees'
+import { identiteDuDossier, saisieDeLaFicheLiee, type EtatDeLaFicheLiee, type FicheLiee, confirmationDuDeliement, refusDuDeliement } from '../../lib/fichesLiees'
 import { lireCeQueLesFichesLieesDemandent, type LectureDesFichesLiees } from '../../lib/fichesLieesLecture'
 import {
   PHRASE_DE_L_IDENTITE_ILLISIBLE, PHRASE_DU_DOSSIER_PARTI, confirmationDeLaLiaison, dossiersARelier, fichesLieesDuDossier,
@@ -32,16 +32,20 @@ interface Props {
   // quand la base a écrit. `envoi` : la saisie telle qu'elle part (`saisieDeLaFicheLiee`) ; `nom` : celui que le message dit.
   onEnregistrer: (fiche: FicheLiee | null, envoi: Record<string, string | number | null>, nom: string) => Promise<boolean>
   onBasculer: (fiche: FicheLiee, nom: string) => Promise<boolean>
+  // LM3-Q1 (B) : délier une fiche ; la section a nommé avant le clic ce qui se recopie et ce que la fiche garde.
+  onDelier: (fiche: FicheLiee, nom: string) => Promise<boolean>
   // Une fenêtre s'ouvre ou se ferme : la vue y laisse dire l'erreur, et efface la précédente à l'ouverture.
   onFenetre: (ouverte: boolean) => void
 }
 
 type Fenetre = { fiche: FicheLiee | null; saisie: SaisieDeFicheLiee; confirmer: boolean }
 
-export default function FichesLieesSection({ dossierId, contacts, complete, occupe, erreur, onEnregistrer, onBasculer, onFenetre }: Props) {
+export default function FichesLieesSection({ dossierId, contacts, complete, occupe, erreur, onEnregistrer, onBasculer, onDelier, onFenetre }: Props) {
   // Gardée AVEC le dossier et la liste de contacts pour lesquels elle a été faite : une relecture des contacts relit les identités.
   const [lecture, setLecture] = useState<{ cle: string; contacts: readonly Contact[]; lu: LectureDesFichesLiees } | null>(null)
   const [fenetre, setFenetre] = useState<Fenetre | null>(null)
+  // La fiche dont le déliement se confirme (LM3-Q1 (B)), ou nulle.
+  const [aDelier, setADelier] = useState<FicheLiee | null>(null)
   // Ouvrir ou fermer la fenêtre le dit à la vue ; une saisie qui change la garde ouverte (`setFenetre` seul).
   function basculerFenetre(f: Fenetre | null) {
     setFenetre(f)
@@ -152,8 +156,44 @@ export default function FichesLieesSection({ dossierId, contacts, complete, occu
                       <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => { void onBasculer(fiche, nom) }}>
                         {fiche.retire_le == null ? 'Retirer' : 'Reprendre'}
                       </button>
+                      <button
+                        type="button" className="btn btn-outline btn-sm" disabled={occupe || ligne.etat !== 'lue'}
+                        onClick={() => setADelier(aDelier?.id === fiche.id ? null : fiche)}
+                      >
+                        Délier
+                      </button>
                     </div>
                   )}
+                  {complete && aDelier?.id === fiche.id && (() => {
+                    const identite = identites.find((i) => i.contact_id === fiche.id && i.dossier_client_id === fiche.dossier_client_id) ?? null
+                    const refus = refusDuDeliement({ fiche, identite, contacts })
+                    const confirmation = identite != null && refus == null ? confirmationDuDeliement(identite, fiche) : null
+                    return (
+                      <div className="note-info" role="note" style={{ marginTop: 8 }}>
+                        {refus != null && <p className="error-text" style={{ margin: 0 }}>{refus}</p>}
+                        {confirmation != null && (
+                          <>
+                            <p style={{ marginTop: 0 }}><strong>{confirmation.titre}</strong></p>
+                            <p style={{ margin: '4px 0' }}>Se recopient dans la fiche, à ce jour :</p>
+                            <ul>{confirmation.recopie.map((r) => <li key={r}>{r}</li>)}</ul>
+                            {confirmation.garde.length > 0 && (
+                              <><p style={{ margin: '4px 0' }}>Elle garde :</p><ul>{confirmation.garde.map((g) => <li key={g}>{g}</li>)}</ul></>
+                            )}
+                            <p>{confirmation.regle}</p>
+                          </>
+                        )}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          <button
+                            type="button" className="btn btn-primary btn-sm" disabled={occupe || refus != null}
+                            onClick={() => { void onDelier(fiche, nom).then((fait) => { if (fait) setADelier(null) }) }}
+                          >
+                            Délier la fiche
+                          </button>
+                          <button type="button" className="btn btn-outline btn-sm" onClick={() => setADelier(null)}>Annuler</button>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </li>
               )
             })}

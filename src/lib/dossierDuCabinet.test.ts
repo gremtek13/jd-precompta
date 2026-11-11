@@ -4,6 +4,7 @@ import { definitionsSql } from '../test/schema'
 import {
   DOSSIER_DU_CABINET_PREVU, REFUS_ACCES_CLIENT, REFUS_CHANGEMENT_DE_CABINET, REFUS_DE_LA_DESIGNATION, REFUS_SUPPRESSION, estLeDossierDuCabinet,
   motsDuRefus, refusDeLaDesignation, refusDeLaSuppression, valideAuNomDuClient, type EtatDeLaDesignation,
+  ceQuePerdLeDossierDuCabinet, numerosQuiPartent, refusDesFacturesNommees,
   ceQueDitLaDesignation, confirmationDeLaDesignation, separerLeDossierDuCabinet,
   PHRASE_DESIGNATION_PAS_LUE, etatDuFormulaireDAcces, phraseDesignationIllisible,
 } from './dossierDuCabinet'
@@ -60,8 +61,9 @@ describe('le dossier du cabinet, confronté à sa migration', () => {
       { code: '42501', modele: 'Le dossier du cabinet se désigne par designer_dossier_du_cabinet seule.' },
     ])
   })
-  it('la suppression laisse passer le super-administrateur, et la désignation suit la ligne', () => {
-    expect(fonction('garder_suppression_du_dossier_du_cabinet')).toContain('and not public.is_super_admin() then')
+  it('la suppression laisse passer le chef du cabinet du dossier, le super-administrateur compris (LM1-Q1 (B)), et la désignation suit la ligne', () => {
+    expect(fonction('garder_suppression_du_dossier_du_cabinet')).toContain('and not public.est_chef_du_cabinet(old.cabinet_id) then')
+    expect(fonction('garder_suppression_du_dossier_du_cabinet')).not.toContain('is_super_admin')
     expect(MIGRATION).toContain('foreign key (dossier_du_cabinet) references public.dossiers (id) on delete set null;')
     expect(MIGRATION).toContain('add constraint cabinets_dossier_du_cabinet_key unique (dossier_du_cabinet);')
   })
@@ -125,9 +127,27 @@ describe('les refus dits avant le clic', () => {
     expect(valideAuNomDuClient({ valideParLeCabinet: true, estLeDossierDuCabinet: false })).toBe(true)
     expect(valideAuNomDuClient({ valideParLeCabinet: true, estLeDossierDuCabinet: true })).toBe(false)
     expect(valideAuNomDuClient({ valideParLeCabinet: false, estLeDossierDuCabinet: false })).toBe(false)
-    expect(refusDeLaSuppression({ estLeDossierDuCabinet: true, superAdministrateur: false })).toBe(REFUS_SUPPRESSION)
-    expect(refusDeLaSuppression({ estLeDossierDuCabinet: true, superAdministrateur: true })).toBeNull()
-    expect(refusDeLaSuppression({ estLeDossierDuCabinet: false, superAdministrateur: false })).toBeNull()
+    expect(refusDeLaSuppression({ estLeDossierDuCabinet: true, chefDuCabinet: false })).toBe(REFUS_SUPPRESSION)
+    expect(refusDeLaSuppression({ estLeDossierDuCabinet: true, chefDuCabinet: true })).toBeNull()
+    expect(refusDeLaSuppression({ estLeDossierDuCabinet: false, chefDuCabinet: false })).toBeNull()
+  })
+  it('la confirmation de la suppression du dossier du cabinet nomme ses factures : leur nombre et tous leurs numéros', () => {
+    const f = (id: string, numero: string | null) => ({ id, numero })
+    expect(numerosQuiPartent([f('a', 'F2026-10'), f('b', 'F2026-9'), f('c', null), f('d', 'MA2026-1')]))
+      .toEqual(['F2026-9', 'F2026-10', 'MA2026-1', 'sans numéro'])
+    expect(ceQuePerdLeDossierDuCabinet([])).toBe(' C’est le dossier du cabinet : il ne porte aucune facture validée.')
+    expect(ceQuePerdLeDossierDuCabinet([f('a', 'F2026-1')])).toBe(' C’est le dossier du cabinet : sa facture validée part avec lui, la facture F2026-1.')
+    expect(ceQuePerdLeDossierDuCabinet([f('a', 'F2026-2'), f('b', 'F2026-1')]))
+      .toBe(' C’est le dossier du cabinet : ses 2 factures validées partent avec lui, les factures F2026-1, F2026-2.')
+  })
+  it('la suppression relit les factures : celles que la confirmation a nommées, exactement, sinon rien ne part', () => {
+    const lues = [{ id: 'a', numero: 'F1' }, { id: 'b', numero: 'F2' }]
+    expect(refusDesFacturesNommees(['b', 'a'], lues)).toBeNull()
+    expect(refusDesFacturesNommees([], [])).toBeNull()
+    expect(refusDesFacturesNommees(null, [])).toMatch(/n’a pas nommé/)
+    expect(refusDesFacturesNommees(['a'], lues)).toMatch(/ont changé depuis la confirmation/)
+    expect(refusDesFacturesNommees(['a', 'b', 'c'], lues)).toMatch(/ont changé depuis la confirmation/)
+    expect(refusDesFacturesNommees(['a', 'c'], lues)).toMatch(/ont changé depuis la confirmation/)
   })
 })
 

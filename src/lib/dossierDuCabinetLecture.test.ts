@@ -10,7 +10,9 @@ const faux = vi.hoisted(() => ({
   leve: false,
   cabinets: [] as { id: string; nom: string; dossier_du_cabinet: string | null }[],
   dossiers: [] as { id: string; cabinet_id: string; nom: string }[],
+  factures: [] as { id: string; dossier_id: string; numero: string | null; statut: string }[],
   panneCabinets: false,
+  panneFactures: false,
   appels: [] as string[],
 }))
 
@@ -24,15 +26,18 @@ vi.mock('./supabase', () => {
     const filtres: [string, unknown][] = []
     let colonnes = '*'
     const lignes = () => {
-      const source = (table === 'cabinets' ? faux.cabinets : table === 'dossiers' ? faux.dossiers : []) as Record<string, unknown>[]
-      return source.filter((l) => filtres.every(([c, v]) => l[c] === v))
+      const source = (table === 'cabinets' ? faux.cabinets : table === 'dossiers' ? faux.dossiers
+        : table === 'factures_emises' ? faux.factures : []) as Record<string, unknown>[]
+      return source.filter((l) => filtres.every(([c, v]) => (c.startsWith('≠') ? l[c.slice(1)] !== v : l[c] === v)))
     }
     const projeter = (l: Record<string, unknown>) =>
       colonnes === '*' ? l : Object.fromEntries(colonnes.split(',').map((c) => c.trim()).map((c) => [c, l[c] ?? null]))
-    const erreur = () => (table === 'cabinets' && faux.panneCabinets ? { message: 'délai dépassé' } : null)
+    const erreur = () => ((table === 'cabinets' && faux.panneCabinets) || (table === 'factures_emises' && faux.panneFactures)
+      ? { message: 'délai dépassé' } : null)
     const r: Record<string, unknown> = {
       select: (c: string) => { colonnes = c; faux.appels.push(`select ${table}`); return r },
       eq: (c: string, v: unknown) => { filtres.push([c, v]); return r },
+      neq: (c: string, v: unknown) => { filtres.push(['≠' + c, v]); return r },
       order: () => r,
       range: () => r,
       delete: () => { faux.appels.push(`delete ${table}`); return r },
@@ -56,7 +61,7 @@ vi.mock('./supabase', () => {
   }
 })
 
-const { lireLesDossiersDesCabinets, estDesigneCommeDossierDuCabinet } = await import('./dossierDuCabinetLecture')
+const { lireLesDossiersDesCabinets, estDesigneCommeDossierDuCabinet, lireLesFacturesQuiPartent } = await import('./dossierDuCabinetLecture')
 const { supprimerDossierDefinitivement } = await import('./suppressionDossier')
 const { lireLeMandataire } = await import('./mandataireLecture')
 
@@ -67,7 +72,13 @@ const CLIENT = 'd0000000-0000-4000-8000-000000000002'
 beforeEach(() => {
   faux.leve = false
   faux.panneCabinets = false
+  faux.panneFactures = false
   faux.appels = []
+  faux.factures = [
+    { id: 'f0000000-0000-4000-8000-000000000001', dossier_id: DU_CABINET, numero: 'F2026-1', statut: 'validee' },
+    { id: 'f0000000-0000-4000-8000-000000000002', dossier_id: DU_CABINET, numero: 'F2026-2', statut: 'validee' },
+    { id: 'f0000000-0000-4000-8000-000000000003', dossier_id: DU_CABINET, numero: null, statut: 'brouillon' },
+  ]
   faux.cabinets = [{ id: CAB, nom: 'Cabinet fictif', dossier_du_cabinet: DU_CABINET }]
   faux.dossiers = [
     { id: DU_CABINET, cabinet_id: CAB, nom: 'Le cabinet lui-même' },
@@ -98,9 +109,26 @@ describe('le drapeau levé', () => {
     expect((await lireLesDossiersDesCabinets()).etat).toBe('illisible')
   })
 
-  it('la suppression du dossier du cabinet se refuse AVANT tout retrait du stockage', async () => {
-    await expect(supprimerDossierDefinitivement(DU_CABINET, { superAdministrateur: false })).rejects.toThrow(REFUS_SUPPRESSION)
+  const NOMMEES = ['f0000000-0000-4000-8000-000000000002', 'f0000000-0000-4000-8000-000000000001']
+
+  it('les factures qui partiraient se lisent en entier, les brouillons écartés ; une panne est illisible', async () => {
+    const lu = await lireLesFacturesQuiPartent(DU_CABINET)
+    expect(lu).toEqual({ etat: 'lue', dossierId: DU_CABINET, factures: [
+      { id: 'f0000000-0000-4000-8000-000000000001', numero: 'F2026-1' }, { id: 'f0000000-0000-4000-8000-000000000002', numero: 'F2026-2' },
+    ] })
+    faux.panneFactures = true
+    expect((await lireLesFacturesQuiPartent(DU_CABINET)).etat).toBe('illisible')
+  })
+
+  it('le dossier du cabinet sans ses factures nommées se refuse AVANT tout retrait du stockage (LM1-Q1 (B))', async () => {
+    await expect(supprimerDossierDefinitivement(DU_CABINET, { superAdministrateur: false })).rejects.toThrow(/n’a pas nommé/)
+    await expect(supprimerDossierDefinitivement(DU_CABINET, { superAdministrateur: false, facturesNommees: NOMMEES.slice(0, 1) }))
+      .rejects.toThrow(/ont changé depuis la confirmation/)
+    faux.panneFactures = true
+    await expect(supprimerDossierDefinitivement(DU_CABINET, { superAdministrateur: true, facturesNommees: NOMMEES }))
+      .rejects.toThrow(/n’ont pas pu être relues : rien n’a été supprimé/)
     expect(faux.appels.filter((a) => !a.startsWith('select'))).toEqual([])
+    expect(REFUS_SUPPRESSION).toMatch(/que par le chef du cabinet/)
   })
 
   it('une désignation illisible refuse aussi, sans rien retirer', async () => {
@@ -109,8 +137,8 @@ describe('le drapeau levé', () => {
     expect(faux.appels.filter((a) => !a.startsWith('select'))).toEqual([])
   })
 
-  it('le super-administrateur le supprime ; un dossier client se supprime comme hier', async () => {
-    await supprimerDossierDefinitivement(DU_CABINET, { superAdministrateur: true })
+  it('ses factures nommées, le chef le supprime ; un dossier client se supprime comme hier, sans rien nommer', async () => {
+    await supprimerDossierDefinitivement(DU_CABINET, { superAdministrateur: false, facturesNommees: NOMMEES })
     expect(faux.appels).toContain('list pieces')
     faux.appels = []
     await supprimerDossierDefinitivement(CLIENT, { superAdministrateur: false })

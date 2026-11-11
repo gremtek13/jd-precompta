@@ -83,3 +83,20 @@ export async function enregistrerFicheLiee(
   }
   return ligne
 }
+
+/**
+ * Délie une fiche du dossier de son client (LM3-Q1 (B), `FICHES_LIEES_PREVUES`), par `delier_fiche_liee` seule, à la version
+ * lue (`modifie_le`) : la base y recopie l'identité du dossier à ce jour. Rend la ligne écrite, qui n'a plus de lien et porte
+ * sa trace — sinon la base ne l'a pas déliée, et on le dit ; lève le refus de la base.
+ */
+export async function delierFicheLiee(dossierId: string, contactId: string, modifieLe: string | null): Promise<Contact> {
+  const { data, error } = await supabase.rpc('delier_fiche_liee', {
+    p_dossier_id: dossierId, p_contact_id: contactId, p_modifie_le: modifieLe,
+  })
+  if (error) throw new Error(error.message)
+  const ligne = ecrit(data, { id: contactId, retire: false, efface: false })
+  if (ligne.dossier_client_id != null || typeof ligne.delie_le !== 'string') {
+    throw new Error('La base n’a pas rendu la fiche déliée : relis la liste avant de recommencer.')
+  }
+  return ligne
+}

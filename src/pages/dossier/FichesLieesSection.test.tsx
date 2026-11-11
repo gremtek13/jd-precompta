@@ -45,10 +45,10 @@ const LUE: LectureDesFichesLiees = {
   }],
 }
 
-const gestes = { enregistrer: [] as unknown[][], basculer: [] as unknown[][], fenetre: [] as boolean[], reussit: true }
+const gestes = { enregistrer: [] as unknown[][], basculer: [] as unknown[][], delier: [] as unknown[][], fenetre: [] as boolean[], reussit: true }
 beforeEach(() => {
   lecture.rendu = LUE; lecture.appels = 0; lecture.enAttente = false
-  gestes.enregistrer = []; gestes.basculer = []; gestes.fenetre = []; gestes.reussit = true
+  gestes.enregistrer = []; gestes.basculer = []; gestes.delier = []; gestes.fenetre = []; gestes.reussit = true
 })
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -58,6 +58,7 @@ async function monter(contacts: readonly Contact[], o: { complete?: boolean; err
       dossierId={K} contacts={contacts} complete={o.complete ?? true} occupe={false} erreur={o.erreur ?? null}
       onEnregistrer={async (...a) => { gestes.enregistrer.push(a); return gestes.reussit }}
       onBasculer={async (...a) => { gestes.basculer.push(a); return true }}
+      onDelier={async (...a) => { gestes.delier.push(a); return gestes.reussit }}
       onFenetre={(o2) => { gestes.fenetre.push(o2) }}
     />,
   )
@@ -147,6 +148,27 @@ describe('les fiches reliées, dans la vue « Clients » du dossier du cabinet (
     await act(async () => { fireEvent.click(within(fenetre).getByRole('button', { name: 'Relier ce dossier' })) })
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(within(screen.getByRole('dialog')).getByRole('alert').textContent).toBe('Ce dossier a déjà sa fiche de facturation.')
+  })
+
+  it('« Délier » (LM3-Q1 (B)) : la confirmation nomme ce qui se recopie à ce jour et ce que la fiche garde, puis remonte à la vue', async () => {
+    await monter([liee({ email: 'a@b.fr', adresse_electronique: '123456782', modifie_le: '2026-11-11T10:00:00.123456+00:00' })])
+    fireEvent.click(bouton('Délier'))
+    const note = screen.getByText(/Délier la fiche de « UN SARL » du dossier de son client/).closest('[role="note"]') as HTMLElement
+    for (const mot of ['Nom : UN SARL', 'Adresse : 1 rue A', 'SIRET : 12345678200010 (SIREN 123456782)', 'Une entreprise établie en France',
+      'L’adresse de facturation électronique : 123456782', 'L’e-mail de facturation : a@b.fr', 'Le délai de paiement : 30 jours']) {
+      expect(note.textContent).toContain(mot)
+    }
+    expect(note.textContent).toContain('La fiche redevient saisie à la main, avec les valeurs du dossier à ce jour')
+    const delier = within(note).getByRole('button', { name: 'Délier la fiche' })
+    await act(async () => { fireEvent.click(delier) })
+    expect(gestes.delier).toEqual([[expect.objectContaining({ id: 'f1', modifie_le: '2026-11-11T10:00:00.123456+00:00' }), 'UN SARL']])
+  })
+
+  it('« Délier » se refuse avant le clic, aux mots de la base : l’adresse électronique qui ne va plus, le SIRET déjà rangé', async () => {
+    await monter([liee({ adresse_electronique: '987654321' })])
+    fireEvent.click(bouton('Délier'))
+    expect(screen.getByText(/L’adresse de facturation électronique de la fiche ne va plus avec l’identité du dossier/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Délier la fiche' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('« Modifier » garde le lien, et « Retirer » remonte à la vue', async () => {

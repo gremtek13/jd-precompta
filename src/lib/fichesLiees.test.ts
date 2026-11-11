@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { contientSql, indiceSql } from '../test/schema'
 import {
+  REFUS_DU_DELIEMENT, confirmationDuDeliement, refusDuDeliement,
   FICHES_LIEES_PREVUES, REFUS_DE_LA_FICHE_LIEE, REFUS_LECTURE_HORS_DU_DOSSIER_DU_CABINET, choixDeFicheLiee, identiteDuDossier,
   motsDuRefusDeLaFicheLiee, refusDeLaFicheLiee, saisieDeLaFicheLiee, type EtatDeLaFicheLiee, type FicheLiee, type IdentiteLue,
 } from './fichesLiees'
@@ -29,6 +30,52 @@ const fiche = (f: Partial<FicheLiee> = {}): FicheLiee => ({
 const lue = (i: Partial<IdentiteLue> = {}): IdentiteLue => ({
   contact_id: 'f1', dossier_client_id: C, dossier_present: true, tiers_nom: 'CLIENT SARL', tiers_adresse: '1 rue A',
   tiers_siret: '98765432100017', tiers_siren: '987654321', type_client: 'assujetti', ...i,
+})
+
+describe('délier une fiche (LM3-Q1 (B))', () => {
+  const corps = () => {
+    const debut = indiceSql(MIGRATION, 'create function public.delier_fiche_liee')
+    return MIGRATION.slice(debut, MIGRATION.indexOf('\n$$;', debut))
+  }
+  it('chaque refus est celui de la fonction, à son code, dans son ordre', () => {
+    const c = corps()
+    let apres = -1
+    for (const r of REFUS_DU_DELIEMENT) {
+      const sql = enSql(r.modele)
+      const i = c.indexOf(`'${sql}'`)
+      expect(i, r.cle).toBeGreaterThan(apres)
+      expect(c.slice(i, c.indexOf(';', i)), r.cle).toContain(`errcode = '${r.code}'`)
+      apres = i
+    }
+    expect(c).toContain('if p_modifie_le is distinct from v_fiche.modifie_le then')
+    expect(RETOUR).toContain('drop function public.delier_fiche_liee(uuid, uuid, timestamptz);')
+    expect(ESSAI).toContain(enSql(REFUS_DU_DELIEMENT[9].modele.split('%')[3]))
+    expect(RLS).toContain('FL7. inconnu authentifié ne délie pas une fiche liée')
+  })
+  it('les refus avant le clic, dans l’ordre de la base ; une fiche qui se délie, aucun', () => {
+    const f = { id: 'f1', dossier_client_id: C, retire_le: null, adresse_electronique: '987654321' }
+    const i = lue()
+    expect(refusDuDeliement({ fiche: f, identite: i, contacts: [] })).toBeNull()
+    expect(refusDuDeliement({ fiche: { ...f, retire_le: '2026-11-11' }, identite: i, contacts: [] })).toBe(REFUS_DU_DELIEMENT[2].modele)
+    expect(refusDuDeliement({ fiche: { ...f, dossier_client_id: null }, identite: i, contacts: [] })).toBe(REFUS_DU_DELIEMENT[3].modele)
+    expect(refusDuDeliement({ fiche: f, identite: null, contacts: [] })).toMatch(/ne s’est pas lue/)
+    expect(refusDuDeliement({ fiche: f, identite: lue({ dossier_present: false }), contacts: [] })).toBe(REFUS_DU_DELIEMENT[5].modele)
+    expect(refusDuDeliement({ fiche: f, identite: lue({ tiers_nom: 'N'.repeat(201) }), contacts: [] })).toBe(REFUS_DU_DELIEMENT[6].modele)
+    expect(refusDuDeliement({ fiche: f, identite: lue({ tiers_nom: 'N'.repeat(200) }), contacts: [] })).toBeNull()
+    expect(refusDuDeliement({ fiche: f, identite: lue({ tiers_adresse: ' \t' }), contacts: [] })).toBe(REFUS_DU_DELIEMENT[7].modele)
+    expect(refusDuDeliement({ fiche: f, identite: lue({ tiers_siren: '123456782', tiers_siret: '12345678200010' }), contacts: [] }))
+      .toBe(REFUS_DU_DELIEMENT[8].modele)
+    expect(refusDuDeliement({ fiche: { ...f, adresse_electronique: null }, identite: lue({ tiers_siren: null, tiers_siret: null }), contacts: [] }))
+      .toBeNull()
+    expect(refusDuDeliement({ fiche: f, identite: i, contacts: [{ id: 'h', nom: 'À LA MAIN', siret: '98765432100017', retire_le: '2026-11-01' }] }))
+      .toBe('Le SIRET « 98765432100017 » est déjà celui du contact « À LA MAIN » (retiré) : un établissement ne se range qu’une fois par dossier.')
+  })
+  it('la confirmation nomme ce qui se recopie et ce que la fiche garde', () => {
+    const c = confirmationDuDeliement(lue(), fiche({ email: 'a@b.fr' }))
+    expect(c.recopie).toEqual(['Nom : CLIENT SARL', 'Adresse : 1 rue A', 'SIRET : 98765432100017 (SIREN 987654321)', 'Une entreprise établie en France'])
+    expect(c.garde).toEqual(['L’adresse de facturation électronique : 987654321', 'L’e-mail de facturation : a@b.fr', 'Le délai de paiement : 30 jours'])
+    expect(c.regle).toMatch(/redevient saisie à la main, avec les valeurs du dossier à ce jour/)
+  })
 })
 
 describe('la fiche liée au dossier du client (LM3)', () => {
