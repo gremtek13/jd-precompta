@@ -178,7 +178,31 @@ function reinitialiser() {
   faux.dossierPermanentRefuse = false
 }
 
-afterEach(() => { vi.restoreAllMocks() })
+afterEach(() => { vi.restoreAllMocks(); drapeau.documents = false })
+
+// LES DOCUMENTS ET LES DEMANDES DU CABINET (ligne 51.5, étape B3a) : leurs deux sections ont leurs propres tests ; ici, qu'elles
+// ne se montent qu'avec leur migration. Le drapeau, joué sous ses deux états par un accesseur.
+const drapeau = vi.hoisted(() => ({ documents: false }))
+vi.mock('../../lib/documentsEtDemandes', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../lib/documentsEtDemandes')>()
+  return { ...original, get DOCUMENTS_ET_DEMANDES_PREVUS() { return drapeau.documents } }
+})
+vi.mock('./DocumentsMisADisposition', () => ({ default: ({ dossierId }: { dossierId: string }) => <p>Section des documents de {dossierId}</p> }))
+vi.mock('./DemandesAuClient', () => ({ default: ({ dossierId }: { dossierId: string }) => <p>Section des demandes de {dossierId}</p> }))
+
+describe('DocumentsTab — les documents et les demandes du cabinet (B3a)', () => {
+  it('baissé, l’onglet d’hier ; levé, les deux sections, sur ce dossier', async () => {
+    reinitialiser()
+    const baisse = render(<DocumentsTab dossierId="dossier-de-test" />)
+    await screen.findByRole('button', { name: "C'est une facture" })
+    expect(screen.queryByText(/Section des/)).toBeNull()
+    baisse.unmount()
+    drapeau.documents = true
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    expect(await screen.findByText('Section des documents de dossier-de-test')).toBeTruthy()
+    expect(screen.getByText('Section des demandes de dossier-de-test')).toBeTruthy()
+  })
+})
 
 describe('DocumentsTab — « C\'est une facture »', () => {
   it('ne crée qu\'une pièce quand le bouton est cliqué plusieurs fois de suite', async () => {

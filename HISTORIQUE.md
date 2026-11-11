@@ -51152,3 +51152,22 @@ frais ») : 160 invariants, 0 en faute, 109 sur 109 (sans B4 : 156, 105) ; `rest
 tables) ; aller, retour (destructif), aller : `signature.sql` égale ; banc du leurre SÛR (`achatsClient`, `rls`, sur la
 production puis sur B1 et B4). Derrière `ACHATS_DU_CLIENT_PREVUS` : le module, le plan de sauvegarde. NON FAIT : la réception ouverte à « Achats » (B4-Q1 à Q3 : la pièce écrite par le navigateur du client,
 `lister` qui rend aussi les ventes, le point de reprise commun) — ni `QUI_PEUT_QUOI` ni les Edge Functions.
+
+### 11/11/2026 — B3A : LES DOCUMENTS ET LES DEMANDES, À L'ÉCRAN (LIGNE 51.5) (DERRIÈRE SON DRAPEAU)
+
+Agent dev, sans migration (la base : B2, préparée), tout derrière `DOCUMENTS_ET_DEMANDES_PREVUS`, baissé : aucun écran
+d'hier ne change, rien ne se lit. Côté cabinet, deux sections sous l'onglet Documents administratifs :
+`DocumentsMisADisposition` (déposer puis publier par `lib/documentsEtDemandesEcriture.ts` — le fichier jugé à sa signature,
+déposé sous `<dossier>/<document>/<empreinte>.<ext>`, puis `publier_document_du_cabinet` avec le même identifiant ; un
+fichier déposé dont la publication échoue reste dans le seau, jamais retiré : une réponse perdue après une écriture réussie
+retirerait le fichier d'un document publié ; retirer ; qui a ouvert, sous l'adresse de l'accès, « un accès retiré » sinon ; la
+confirmation nomme le document et QUI le lira, d'une liste d'accès entière) et `DemandesAuClient` (ouvrir, relancer à
+l'écran, clore par la liste fermée sur une confirmation qui nomme le motif ; l'état déduit de listes entières ; ce qu'une
+réponse a joint, dit même après la suppression du dépôt, B2-Q3). Côté client, « Mes documents » (`/mes-documents`, la case
+relue à la base avec les documents ; ouvrir puis `marquer_document_lu`) et « Mes demandes » (`/mes-demandes`, à tout accès ;
+répondre en citant un dépôt que `depotsCitables` choisit comme la base : sa pièce ou un document du dossier, depuis
+l'ouverture, pas encore cité). Règles et mots dans `lib/documentsEtDemandesVue.ts`, lectures dans
+`lib/documentsEtDemandesLecture.ts`. L'onglet Accès dit ce que « Documents » ouvre une fois la migration en base
+(`casesSansEffetSelon`, `ceQueDitLaCaseDocuments`, confrontée aux policies), joué sous les deux états. Gardes mis à jour :
+`depotsDansLesSeaux` (le cinquième seau, lu de la migration préparée), `ecransAvantLecture` (quatre écrans), `droitsAcces`
+(routes et entrées). Reste B3b : la relance par e-mail (`send-email`, `emails_envoyes`).
