@@ -9,13 +9,19 @@ import { correspondALaRecherche } from '../lib/recherche'
 import { deposerFichier } from '../lib/depot'
 import {
   anneesDuReleve, argumentsDeLaPrecision, argumentsDeProposer, argumentsDeRetirer, attendUnePiece, auteurPourLeClient,
-  COLONNES_DE_LA_PIECE, COLONNES_DES_ENCAISSEMENTS, COLONNES_DES_FACTURES, COLONNES_DU_MOUVEMENT, correspondAuFiltre,
+  COLONNES_DE_LA_PIECE, COLONNES_DES_ENCAISSEMENTS, COLONNES_DES_FACTURES, COLONNES_DU_MOUVEMENT, COLONNES_DU_MOUVEMENT_PAR_COMPTE,
+  correspondAuFiltre,
   couvertureDuReleve, ENCAISSEMENTS_LUS_EN_PARTIE, FACTURES_LUES_EN_PARTIE, FILTRES_D_ETAT, LIBELLE_DE_L_ETAT, libelleDuMois, longueurEnCaracteres, LONGUEUR_MAX_PRECISION,
   proposableParLeClient, refusDeLaPrecision, refusDeProposer, refusDeRetirer, sensDeLaVente, situationsDuReleve,
   soldeAuReleve, ventesLues, type EncaissementDuClient, type EtatDuMouvement, type FactureDuClient, type FiltreEtat,
   type MouvementDuClient, type PieceDuClient, type SituationDuMouvement, type VentesDuClient,
 } from '../lib/banqueClient'
 import type { ControleReleveBancaire, JustificatifPropose, PrecisionMouvement, ReglementGroupe } from '../lib/types'
+import { COMPTES_BANCAIRES_PREVUS } from '../lib/comptesBancaires'
+import {
+  banqueParCompte, COLONNES_DES_COMPTES_DU_CLIENT, correspondAuCompte, filtreDeCompteValide, finDuNumero,
+  type ComptesDuClient, type CompteDuClient, type CouvertureDUnCompte, type FiltreDeCompte,
+} from '../lib/banqueClientParCompte'
 import BarreRecherche from '../components/BarreRecherche'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 
@@ -46,6 +52,13 @@ import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 // lit rien de plus (VF5-Q3). Le détail d'un virement mixte classé nomme aussi la facture d'avant la bascule qu'il paie, dans
 // la même ligne « Facture(s) » que les factures sources (étape VF8h, VF5H-Q3) : le module la tire du même registre, lu par
 // les mêmes deux lectures — rien de plus n'est lu.
+//
+// PLUSIEURS COMPTES BANCAIRES (ligne 26.6, lot MCB7 ; MCB-Q8 : « Banque » ouvre tous les comptes), derrière
+// `COMPTES_BANCAIRES_PREVUS` : levé, l'écran lit aussi les comptes du dossier (leur nom, leur rang, la fin de l'identifiant,
+// l'ouverture et la clôture — jamais leur compte du plan) et le compte de chaque mouvement et de chaque relevé contrôlé. Dès
+// deux comptes, chacun dit son solde LU au dernier relevé contrôlé de CE compte et ses mois sans mouvement, et les mouvements
+// se filtrent par compte (lib/banqueClientParCompte.ts). Les comptes illisibles, ou un mouvement d'un compte que la lecture
+// n'a pas rendu : ni solde ni mois ne se disent, et aucun geste ne s'offre. Baissé, rien de cela n'est lu : l'écran d'hier.
 
 type Lecture = {
   mouvements: LectureComplete<MouvementDuClient>
@@ -55,9 +68,10 @@ type Lecture = {
   pieces: LectureComplete<PieceDuClient>
   controles: LectureComplete<ControleDuClient>
   ventes: VentesDuClient
+  comptes: ComptesDuClient
 }
 
-type ControleDuClient = Pick<ControleReleveBancaire, 'id' | 'solde_final' | 'coherent' | 'periode_fin' | 'created_at'>
+type ControleDuClient = Pick<ControleReleveBancaire, 'id' | 'solde_final' | 'coherent' | 'periode_fin' | 'created_at' | 'compte_bancaire_id'>
 
 type Etat =
   | { etat: 'chargement' }
@@ -73,6 +87,7 @@ type Motifs = {
   reglements: string | null
   controles: string | null
   ventes: string | null
+  comptes: string | null
 }
 
 // Ce qu'un geste a rendu, dit sous le mouvement qui l'a reçu.
@@ -101,15 +116,40 @@ async function lireLesVentesDuClient(dossierId: string): Promise<VentesDuClient>
   }
 }
 
+// Les comptes bancaires du dossier (MCB7), les colonnes que l'écran montre et rien de plus ; ne rejette jamais — une
+// requête qui lève, ou une lecture partielle, rendent `illisible`.
+async function lireLesComptesDuClient(dossierId: string): Promise<ComptesDuClient> {
+  try {
+    const lecture = await lireTout<CompteDuClient>((debut, fin) =>
+      supabase.from('comptes_bancaires').select(COLONNES_DES_COMPTES_DU_CLIENT, { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    )
+    return lecture.complete ? { etat: 'lus', comptes: lecture.lignes } : { etat: 'illisible', motif: lecture.motif ?? 'lecture incomplète' }
+  } catch (erreur) {
+    return { etat: 'illisible', motif: messageErreur(erreur, 'lecture impossible') }
+  }
+}
+
+// Les gestes se retiennent quand les comptes ne se partagent pas (MCB7) : seconde ligne, l'écran ne les offre pas.
+function gestesRetenusParLesComptes(etat: Etat): boolean {
+  return etat.etat === 'lu' && banqueParCompte(etat.lecture.comptes, etat.lecture.mouvements, etat.lecture.controles).etat === 'retenue'
+}
+
 // Toutes les lectures de l'écran, et les cases vues par la base, en une vague ; puis, pour un client « Ventes », ses ventes.
 // Ce qui a été lu sans la case n'est pas montré : la base a pu rendre un relevé vide sans le dire.
 async function lireLaBanque(dossierId: string): Promise<Etat> {
+  // Lu une fois par lecture : le drapeau (une constante, que les tests jouent dans ses deux états) décide de toute la vague.
+  const parCompte = COMPTES_BANCAIRES_PREVUS
   try {
-    const [droits, mouvements, propositions, precisions, reglements, pieces, controles] = await Promise.all([
+    const [droits, mouvements, propositions, precisions, reglements, pieces, controles, comptes] = await Promise.all([
       lireLesDroitsVentes(supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId }), (e) => messageErreur(e, 'droits illisibles')),
       lireTout<MouvementDuClient>((debut, fin) =>
-        supabase.from('lignes_bancaires').select(COLONNES_DU_MOUVEMENT, { count: 'exact' })
-          .eq('dossier_id', dossierId).order('date', { ascending: false }).order('id').range(debut, fin),
+        // Deux chaînes littérales, deux requêtes : supabase-js lit le type de chacune.
+        parCompte
+          ? supabase.from('lignes_bancaires').select(COLONNES_DU_MOUVEMENT_PAR_COMPTE, { count: 'exact' })
+            .eq('dossier_id', dossierId).order('date', { ascending: false }).order('id').range(debut, fin)
+          : supabase.from('lignes_bancaires').select(COLONNES_DU_MOUVEMENT, { count: 'exact' })
+            .eq('dossier_id', dossierId).order('date', { ascending: false }).order('id').range(debut, fin),
       ),
       lireTout<JustificatifPropose>((debut, fin) =>
         supabase.from('justificatifs_proposes').select('*', { count: 'exact' })
@@ -128,9 +168,13 @@ async function lireLaBanque(dossierId: string): Promise<Etat> {
           .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
       ),
       lireTout<ControleDuClient>((debut, fin) =>
-        supabase.from('controles_releves_bancaires').select('id, solde_final, coherent, periode_fin, created_at', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+        parCompte
+          ? supabase.from('controles_releves_bancaires').select('id, solde_final, coherent, periode_fin, created_at, compte_bancaire_id', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin)
+          : supabase.from('controles_releves_bancaires').select('id, solde_final, coherent, periode_fin, created_at', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      parCompte ? lireLesComptesDuClient(dossierId) : Promise.resolve<ComptesDuClient>({ etat: 'sans_objet' }),
     ])
     if (droits.motif !== null) return { etat: 'echec', motif: `ton accès à ta banque n’a pas pu être vérifié (${droits.motif})` }
     if (!droits.droits.banque) return { etat: 'sans_banque' }
@@ -139,7 +183,7 @@ async function lireLaBanque(dossierId: string): Promise<Etat> {
     // et chacune a son motif, que l'écran dit avec sa conséquence propre : aucune lecture partielle ne passe pour entière.
     return {
       etat: 'lu',
-      lecture: { mouvements, propositions, precisions, reglements, pieces, controles, ventes },
+      lecture: { mouvements, propositions, precisions, reglements, pieces, controles, ventes, comptes },
       motifs: {
         mouvements: mouvements.motif,
         envois: [propositions, precisions].find((l) => !l.complete)?.motif ?? null,
@@ -147,6 +191,7 @@ async function lireLaBanque(dossierId: string): Promise<Etat> {
         reglements: reglements.motif,
         controles: controles.motif,
         ventes: ventes.droit === 'ventes' && !ventes.lues ? ventes.motif : null,
+        comptes: comptes.etat === 'illisible' ? comptes.motif : null,
       },
     }
   } catch (erreur) {
@@ -187,6 +232,7 @@ export default function ClientBanque() {
   // La période : une année du relevé, ou toutes. Nulle tant que le client n'a rien choisi : la plus récente.
   const [periode, setPeriode] = useState<number | 'toutes' | null>(null)
   const [filtre, setFiltre] = useState<FiltreEtat>('tous')
+  const [filtreCompte, setFiltreCompte] = useState<FiltreDeCompte>('tous')
   const [recherche, setRecherche] = useState('')
   const [ouvert, setOuvert] = useState<string | null>(null)
   const [retour, setRetour] = useState<Retour | null>(null)
@@ -211,7 +257,7 @@ export default function ClientBanque() {
   }
 
   async function proposer(mouvement: MouvementDuClient, pieceId: string) {
-    if (ecritureEnCours.current || !dossierId) return
+    if (ecritureEnCours.current || !dossierId || gestesRetenusParLesComptes(lecture)) return
     ecritureEnCours.current = true
     setEnCours(true)
     try {
@@ -230,7 +276,7 @@ export default function ClientBanque() {
   // après l'autre. Un fichier reconnu comme un document (un relevé, une attestation) ne se propose pas — la fonction exige
   // une pièce — et l'écran le dit ; une pièce déposée dont la proposition échoue reste déposée, et l'écran le dit aussi.
   async function deposerPuisProposer(mouvement: MouvementDuClient, fichier: File) {
-    if (ecritureEnCours.current || !dossierId) return
+    if (ecritureEnCours.current || !dossierId || gestesRetenusParLesComptes(lecture)) return
     ecritureEnCours.current = true
     setEnCours(true)
     try {
@@ -268,7 +314,7 @@ export default function ClientBanque() {
   }
 
   async function retirer(mouvementId: string, proposition: JustificatifPropose) {
-    if (ecritureEnCours.current || !dossierId) return
+    if (ecritureEnCours.current || !dossierId || gestesRetenusParLesComptes(lecture)) return
     ecritureEnCours.current = true
     setEnCours(true)
     try {
@@ -285,7 +331,7 @@ export default function ClientBanque() {
 
   // Rend vrai quand la précision est écrite : la zone de saisie se vide alors, et pas avant.
   async function preciser(mouvement: MouvementDuClient, texte: string): Promise<boolean> {
-    if (ecritureEnCours.current || !dossierId) return false
+    if (ecritureEnCours.current || !dossierId || gestesRetenusParLesComptes(lecture)) return false
     ecritureEnCours.current = true
     setEnCours(true)
     try {
@@ -329,6 +375,8 @@ export default function ClientBanque() {
           onPeriode={setPeriode}
           filtre={filtre}
           onFiltre={setFiltre}
+          filtreCompte={filtreCompte}
+          onFiltreCompte={setFiltreCompte}
           recherche={recherche}
           onRecherche={setRecherche}
           ouvert={ouvert}
@@ -354,6 +402,8 @@ interface ProprietesReleve {
   onPeriode: (p: number | 'toutes') => void
   filtre: FiltreEtat
   onFiltre: (f: FiltreEtat) => void
+  filtreCompte: FiltreDeCompte
+  onFiltreCompte: (c: FiltreDeCompte) => void
   recherche: string
   onRecherche: (r: string) => void
   ouvert: string | null
@@ -371,9 +421,17 @@ function Releve(p: ProprietesReleve) {
   const situations = situationsDuReleve(lecture)
   const solde = soldeAuReleve(lecture.controles)
   const couverture = couvertureDuReleve(lecture.mouvements)
+  // Les comptes bancaires (MCB7) : `un`, l'écran d'hier ; `comptes`, chacun nommé ; `retenue`, rien par compte ni aucun geste.
+  const banque = banqueParCompte(lecture.comptes, lecture.mouvements, lecture.controles)
+  const comptesNommes = banque.etat === 'comptes' ? banque.comptes : null
+  const gestesRetenus = banque.etat === 'retenue'
+  const filtreCompte = filtreDeCompteValide(p.filtreCompte, banque)
+  const nomDuCompte = new Map((comptesNommes ?? []).map((e) => [e.compte.id, e.compte.libelle]))
   const annees = anneesDuReleve(lecture.mouvements.lignes)
   const periode = p.periode ?? annees[0] ?? 'toutes'
-  const dansLaPeriode = lecture.mouvements.lignes.filter((m) => periode === 'toutes' || Number(m.date.slice(0, 4)) === periode)
+  // La période et le compte : les filtres de l'écran, que le résumé suit aussi (il le dit) ; la recherche, elle, n'y touche pas.
+  const dansLaPeriode = lecture.mouvements.lignes.filter((m) => (periode === 'toutes' || Number(m.date.slice(0, 4)) === periode)
+    && correspondAuCompte(m, filtreCompte))
   const etatDe = (m: MouvementDuClient): SituationDuMouvement | null => (situations.lues ? situations.parMouvement.get(m.id) ?? null : null)
   // Tous les états dits : ni situation muette, ni mouvement que le registre lu en partie tait (étape VF5g). Sinon, ni
   // résumé ni filtre d'état — un compte ou un filtre qui manquerait les mouvements tus affirmerait ce qu'on ne sait pas.
@@ -390,10 +448,12 @@ function Releve(p: ProprietesReleve) {
   })
   const affiches = filtres.filter((m) => {
     const s = etatDe(m)
-    return correspondALaRecherche([formatDate(m.date), m.libelle, m.montant, s ? LIBELLE_DE_L_ETAT[s.etat] : null], p.recherche)
+    return correspondALaRecherche([formatDate(m.date), m.libelle, m.montant, s ? LIBELLE_DE_L_ETAT[s.etat] : null,
+      nomDuCompte.get(m.compte_bancaire_id ?? '') ?? null], p.recherche)
   })
   const nomDesPieces = new Map(lecture.pieces.lignes.map((x) => [x.id, x.nom_fichier]))
-  const libellePeriode = periode === 'toutes' ? 'tout ton relevé' : `${periode}`
+  const libellePeriode = (periode === 'toutes' ? 'tout ton relevé' : `${periode}`)
+    + (filtreCompte === 'tous' ? '' : ` sur le compte « ${nomDuCompte.get(filtreCompte) ?? ''} »`)
   const attendent = situations.lues ? dansLaPeriode.filter((m) => attendUnePiece(situations.parMouvement.get(m.id)?.etat ?? 'traite')) : []
   const demandes = attendent.filter((m) => situations.lues && situations.parMouvement.get(m.id)?.etat === 'demande')
   const envoyes = situations.lues ? dansLaPeriode.filter((m) => situations.parMouvement.get(m.id)?.etat === 'propose') : []
@@ -429,12 +489,38 @@ function Releve(p: ProprietesReleve) {
         quoi="Les pièces des virements qui en règlent plusieurs" accord="lues" motif={p.motifs.reglements} technique={false}
         consequence="Leurs noms ne s’affichent pas. Recharge la page."
       />
+      <BandeauLecturePartielle
+        quoi="Tes comptes bancaires" accord="lus" motif={p.motifs.comptes} technique={false}
+        consequence="Ni le solde ni les mois de chaque compte ne s’affichent, et rien ne t’est proposé : le solde d’un compte passerait pour celui de toute ta banque. Recharge la page."
+      />
 
-      <div className="card" style={{ marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0 }}>Ton compte</h3>
-        <SoldeDuReleve solde={solde} motif={p.motifs.controles} />
-        <CouvertureDuCompte couverture={couverture} />
-      </div>
+      {banque.etat === 'retenue' ? (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Tes comptes</h3>
+          <p className="error-text" style={{ margin: 0 }} title={banque.raison}>
+            Ni le solde ni les mois de tes comptes ne s’affichent, et rien ne t’est proposé : tes comptes bancaires n’ont pas
+            pu être lus en entier, ou un mouvement est d’un compte qui ne s’est pas affiché. Recharge la page.
+          </p>
+        </div>
+      ) : comptesNommes !== null ? (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Tes comptes</h3>
+          {comptesNommes.map((e, i) => (
+            <section key={e.compte.id} aria-label={`Compte « ${e.compte.libelle} »`} style={i === 0 ? undefined : { borderTop: '1px solid var(--color-border)', paddingTop: 12, marginTop: 4 }}>
+              <h4 style={{ margin: '0 0 4px' }}>{e.compte.libelle}</h4>
+              <EtatDuCompte compte={e.compte} />
+              <SoldeDuReleve solde={e.solde} motif={p.motifs.controles} />
+              <CouvertureDUnCompteBancaire couverture={e.couverture} />
+            </section>
+          ))}
+        </div>
+      ) : (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Ton compte</h3>
+          <SoldeDuReleve solde={solde} motif={p.motifs.controles} />
+          <CouvertureDuCompte couverture={couverture} />
+        </div>
+      )}
 
       {lecture.mouvements.complete && (
         <>
@@ -472,6 +558,15 @@ function Releve(p: ProprietesReleve) {
                 {FILTRES_D_ETAT.map((f) => <option key={f.valeur} value={f.valeur}>{f.libelle}</option>)}
               </select>
             </div>
+            {comptesNommes !== null && (
+              <div className="field">
+                <label htmlFor="banque-compte">Compte</label>
+                <select id="banque-compte" value={filtreCompte} onChange={(e) => p.onFiltreCompte(e.target.value)}>
+                  <option value="tous">Tous les comptes</option>
+                  {comptesNommes.map((e) => <option key={e.compte.id} value={e.compte.id}>{e.compte.libelle}</option>)}
+                </select>
+              </div>
+            )}
           </div>
           <div style={{ marginBottom: 14 }}>
             <BarreRecherche
@@ -494,7 +589,11 @@ function Releve(p: ProprietesReleve) {
             ) : (
               <div className="tableau-adaptable">
                 <table className="table-empilable table-empilable-en-carte">
-                  <thead><tr><th>Date</th><th>Libellé</th><th>Montant</th><th>État</th><th>Détail</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Date</th>{comptesNommes !== null && <th>Compte</th>}<th>Libellé</th><th>Montant</th><th>État</th><th>Détail</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {affiches.map((m) => {
                       const s = etatDe(m)
@@ -503,6 +602,7 @@ function Releve(p: ProprietesReleve) {
                         <Fragment key={m.id}>
                           <tr>
                             <td data-libelle="Date">{formatDate(m.date)}</td>
+                            {comptesNommes !== null && <td data-libelle="Compte">{nomDuCompte.get(m.compte_bancaire_id ?? '')}</td>}
                             <td data-libelle="Libellé">{m.libelle}</td>
                             <td data-libelle="Montant" style={{ whiteSpace: 'nowrap' }}>{formatMoney(m.montant)}</td>
                             <td data-libelle="État">
@@ -530,7 +630,7 @@ function Releve(p: ProprietesReleve) {
                           </tr>
                           {estOuvert && (
                             <tr>
-                              <td colSpan={5} style={{ background: 'var(--color-surface-2)' }}>
+                              <td colSpan={comptesNommes !== null ? 6 : 5} style={{ background: 'var(--color-surface-2)' }}>
                                 <DetailDuMouvement
                                   {...p}
                                   mouvement={m}
@@ -540,6 +640,7 @@ function Releve(p: ProprietesReleve) {
                                   piecesLues={lecture.pieces.complete}
                                   pieces={lecture.pieces.lignes}
                                   propositionsDuDossier={lecture.propositions.lignes}
+                                  gestesRetenus={gestesRetenus}
                                 />
                               </td>
                             </tr>
@@ -606,6 +707,43 @@ function CouvertureDuCompte({ couverture }: { couverture: ReturnType<typeof couv
   )
 }
 
+// Ce que le client lit d'un compte, en une ligne discrète : le principal, la fin de son numéro, son ouverture et sa clôture.
+// Jamais son compte du plan.
+function EtatDuCompte({ compte }: { compte: CompteDuClient }) {
+  const morceaux = [
+    compte.principal ? 'compte principal' : null,
+    finDuNumero(compte),
+    compte.ouvert_le ? `ouvert le ${formatDate(compte.ouvert_le)}` : null,
+    compte.clos_le ? `clos le ${formatDate(compte.clos_le)}` : null,
+  ].filter((x): x is string => x !== null)
+  if (morceaux.length === 0) return null
+  const texte = morceaux.join(', ')
+  return <p className="muted" style={{ margin: '0 0 6px', fontSize: '0.85rem' }}>{texte.charAt(0).toUpperCase() + texte.slice(1)}.</p>
+}
+
+// Les mois d'un compte (MCB7) : son premier et son dernier mouvement, et les mois où il attend un relevé sans en porter, nommés
+// sous son nom. Muette sur des mouvements lus en partie, comme celle d'hier.
+function CouvertureDUnCompteBancaire({ couverture }: { couverture: CouvertureDUnCompte }) {
+  if (couverture.etat === 'muet') return null
+  return (
+    <>
+      {couverture.premierMouvement === null || couverture.dernierMouvement === null ? (
+        <p className="muted" style={{ margin: '0 0 4px' }}>Ce compte ne porte encore aucun mouvement dans ton relevé.</p>
+      ) : (
+        <p style={{ margin: '0 0 4px' }}>
+          Mouvements du {formatDate(couverture.premierMouvement)} au {formatDate(couverture.dernierMouvement)}.
+        </p>
+      )}
+      {couverture.moisSansMouvement.length > 0 && (
+        <p className="muted" style={{ margin: '0 0 8px', fontSize: '0.85rem' }}>
+          Mois sans aucun mouvement sur ce compte : {couverture.moisSansMouvement.map(libelleDuMois).join(', ')}. S’il manque
+          un relevé de ce compte, envoie-le dans « Mes pièces ».
+        </p>
+      )}
+    </>
+  )
+}
+
 function DetailDuMouvement(p: ProprietesReleve & {
   mouvement: MouvementDuClient
   situation: SituationDuMouvement | null
@@ -614,13 +752,15 @@ function DetailDuMouvement(p: ProprietesReleve & {
   piecesLues: boolean
   pieces: PieceDuClient[]
   propositionsDuDossier: JustificatifPropose[]
+  // Les comptes ne se partagent pas (MCB7) : aucun geste.
+  gestesRetenus: boolean
 }) {
   const { mouvement: m, situation: s } = p
   const [choix, setChoix] = useState('')
   const [texte, setTexte] = useState('')
   const nom = (id: string) => p.nomDesPieces.get(id) ?? 'une pièce'
   // Les gestes : jamais sur une situation tue (propositions ou fil lus en partie), ni pendant une écriture et sa relecture.
-  const gestes = s !== null && !p.enCours
+  const gestes = s !== null && !p.enCours && !p.gestesRetenus
   const retour = p.retour?.mouvementId === m.id ? p.retour : null
   const pieceChoisie = p.pieces.find((x) => x.id === choix) ?? null
   const refusDuChoix = pieceChoisie

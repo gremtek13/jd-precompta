@@ -71,7 +71,12 @@ export const COLONNES_DU_MOUVEMENT =
 export type MouvementDuClient = Pick<LigneBancaire,
   'id' | 'dossier_id' | 'date' | 'libelle' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
   | 'emprunt_id' | 'ventilee' | 'reglement_groupe' | 'compte_bilan' | 'declaration_tva_id' | 'prelevement_personnel'
-  | 'encaissements_de_factures' | 'created_at'>
+  | 'encaissements_de_factures' | 'created_at' | 'compte_bancaire_id'>
+
+// Les mêmes, et le compte bancaire de chaque mouvement (MCB7) : demandées seulement le drapeau `COMPTES_BANCAIRES_PREVUS`
+// levé — avant la migration `comptes_bancaires`, la colonne n'existe pas, et la nommer ferait échouer toute la lecture.
+export const COLONNES_DU_MOUVEMENT_PAR_COMPTE =
+  'id, dossier_id, date, libelle, montant, statut, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan, declaration_tva_id, prelevement_personnel, encaissements_de_factures, created_at, compte_bancaire_id'
 
 // Les colonnes d'une pièce que l'écran montre : son nom et son jour de dépôt, comme « Mes pièces » — ni montant, ni
 // catégorie, ni tiers lu par l'OCR (les accès clients restent restreints hors des trois domaines décidés).
