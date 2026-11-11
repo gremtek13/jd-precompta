@@ -12,7 +12,7 @@ import {
 } from './encaissementsFactures'
 
 // LES FACTURES REPRISES, AU CLIENT (A8C-Q1, A8Q5-Q2) : le module lit ce que les deux fonctions de la migration
-// `reprises_au_client` rendent — préparée le 11/11/2026, dans l'export le jour de son application — ; il en redit les clés,
+// `reprises_au_client` rendent — préparée le 11/11/2026, dans l'export depuis son application le même soir — ; il en redit les clés,
 // les refus et les droits, confrontés au texte ; son retour retire ce qu'elle pose ; son essai attend les mots du module, et
 // ce que la base y rend, relu par ce module, fait les plafonds que la base juge.
 
@@ -65,17 +65,20 @@ function valeurDeLEssai(repriseLe: string): unknown {
 }
 
 afterEach(() => {
-  DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false
+  DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
 })
 
 describe('le drapeau', () => {
-  it('est baissé : la migration n’est pas en production, et rien ne l’appelle', () => {
-    expect(reprisesAuClientPrevues()).toBe(false)
-    expect(MIGRATION).toMatch(/PRÉPARÉE le\s+-- 11\/11\/2026, PAS APPLIQUÉE/)
+  it('est levé depuis le 11/11/2026 : la migration en production, dans l’export et plus parmi les préparées', () => {
+    expect(reprisesAuClientPrevues()).toBe(true)
+    const schema = new URL('../../supabase/schema/', import.meta.url).pathname
+    const preparees = new URL('../../supabase/preparees/', import.meta.url).pathname
+    expect(readdirSync(schema).filter((n) => /^\d{14}_reprises_au_client\.sql$/.test(n))).toEqual(['20261111204440_reprises_au_client.sql'])
+    expect(readdirSync(preparees).filter((n) => /_reprises_au_client\.sql$/.test(n))).toEqual([])
   })
   it('se lit à chaque appel', () => {
-    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
-    expect(reprisesAuClientPrevues()).toBe(true)
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false
+    expect(reprisesAuClientPrevues()).toBe(false)
   })
 })
 

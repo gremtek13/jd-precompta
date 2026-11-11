@@ -169,7 +169,7 @@ const ROLES_DU_PLAN = [
   { role: "clients", racines: ["411"], deTiers: true },
   { role: "exploitant", racines: ["108"], deTiers: false },
   { role: "associe", racines: ["455"], deTiers: false },
-  { role: "autres_debiteurs_crediteurs", racines: ["467"], deTiers: false },
+  { role: "autres_debiteurs_crediteurs", racines: ["467", "468"], deTiers: false },
   { role: "emprunt", racines: ["164"], deTiers: false },
   { role: "interets_emprunt", racines: ["6611"], deTiers: false },
   { role: "assurance_emprunt", racines: ["616"], deTiers: false },

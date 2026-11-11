@@ -24,6 +24,8 @@ type Ligne = Record<string, unknown>
 const faux = vi.hoisted(() => ({
   acces: [] as Record<string, unknown>[],
   trace: [] as Record<string, unknown>[],
+  // Les adresses des accès retirés (P1T-E2, en base depuis le 11/11/2026), que l'écran lit avec la trace.
+  adresses: [] as Record<string, unknown>[],
   // 'entier' : tout ; 'muet' : la trace s'arrête après `muetApres` ligne(s) ; 'refus' ; 'leve'.
   mode: 'entier' as 'entier' | 'muet' | 'refus' | 'leve',
   muetApres: 1,
@@ -48,13 +50,13 @@ vi.mock('../../lib/supabase', async () => {
           order: () => c,
           range: (d: number, f: number) => { debut = d; fin = f; return c },
           then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
-            const source = table === 'trace_des_droits' ? faux.trace : faux.acces
+            const source = table === 'trace_des_droits' ? faux.trace : table === 'adresses_des_acces_retires' ? faux.adresses : faux.acces
             const repondre = () => {
               if (table === 'trace_des_droits') {
                 faux.lecturesDeLaTrace += 1
                 if (faux.mode === 'leve') throw new Error('réseau coupé')
                 if (faux.mode === 'refus') return { data: null, error: { message: 'accès refusé' }, count: null }
-              } else if (faux.accesRefuses) {
+              } else if (faux.accesRefuses && table !== 'adresses_des_acces_retires') {
                 return { data: null, error: { message: 'JWT expired' }, count: null }
               }
               const toutes = filtrer(source, predicats)

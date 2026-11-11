@@ -1093,7 +1093,7 @@ export interface TraceDesDroits {
   fait_le: string
 }
 
-// L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2 ; migration `adresse_des_acces_retires`, PRÉPARÉE, pas appliquée — voir
+// L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2 ; migration `adresse_des_acces_retires`, en production depuis le 11/11/2026 — voir
 // lib/adressesDesAccesRetires.ts) : l'adresse qu'un accès que la trace nomme portait au moment de son départ, écrite par le
 // déclencheur de `memberships` seul, immuable, partie avec son dossier, lue par le cabinet du dossier. L'accès n'a pas de clé.
 export interface AdresseDUnAccesRetire {

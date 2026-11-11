@@ -1,4 +1,5 @@
--- RETOUR ARRIÈRE de `reprises_au_client` (A8C-Q1 et A8Q5-Q2, ligne 51.5) — À COLLER dans l'éditeur SQL, dans une transaction,
+-- RETOUR ARRIÈRE de `reprises_au_client` (A8C-Q1 et A8Q5-Q2, ligne 51.5 ; en production depuis le 11/11/2026, version
+-- 20261111204440 : supabase/schema/20261111204440_reprises_au_client.sql) — À COLLER dans l'éditeur SQL, dans une transaction,
 -- avec la ligne d'historique `retour_reprises_au_client` : il retire les deux fonctions de lecture (« drop function »), que
 -- l'outil retiendrait.
 --

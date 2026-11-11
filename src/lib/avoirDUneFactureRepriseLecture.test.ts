@@ -83,7 +83,12 @@ beforeEach(() => {
   }
 })
 
+// Le drapeau de la migration `reprises_au_client` BAISSÉ — son état d'avant, levé depuis le 11/11/2026, éprouvé tant que son
+// code existe : au client, la date seule.
 describe('lireCeQueLAvoirDUneRepriseDemande', () => {
+  beforeEach(() => { DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false })
+  afterEach(() => { DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true })
+
   it('au cabinet : la date de reprise du dossier et ce que les avoirs repris de CETTE facture ont crédité', async () => {
     expect(await lireCeQueLAvoirDUneRepriseDemande('d1', 'r1', 'cabinet'))
       .toEqual({ etat: 'lue', factureId: 'r1', repriseLe: '2026-11-01', crediteParLesRepris: 40.1 })
@@ -118,11 +123,11 @@ describe('lireCeQueLAvoirDUneRepriseDemande', () => {
   })
 })
 
-// A8C6-Q1 (« L'offrir au client aussi ») : le drapeau de la migration `reprises_au_client` levé, le client lit la reprise par
+// A8C6-Q1 (« L'offrir au client aussi ») : le drapeau de la migration `reprises_au_client` levé (l'état réel depuis le
+// 11/11/2026), le client lit la reprise par
 // `reprise_de_la_facture`, et rien d'une table ; baissé, le chemin d'hier (ci-dessus).
 describe('au client, la migration reprises_au_client en base (drapeau levé)', () => {
   beforeEach(() => { DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true })
-  afterEach(() => { DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false })
 
   it('lit la date de reprise et ce que les avoirs repris créditent par la fonction, pour CETTE facture, et aucune table', async () => {
     expect(await lireCeQueLAvoirDUneRepriseDemande('d1', 'r1', 'client'))

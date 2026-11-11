@@ -50,10 +50,13 @@ vi.mock('../lib/supabase', () => ({
       faux.rpcs.push({ nom, args })
       // Les ventes facturées de la simulation (étape VF8e), que l'écran demande sous la même case dès que leur fonction est en
       // base : un dossier qui n'a pas basculé, rien à compter. Ce fichier vaut ainsi dans les deux états de leur drapeau ;
-      // ClientSimulation.test.tsx les joue.
+      // ClientSimulation.test.tsx les joue. De même les pièces citées par une facture reprise (A8Q5-Q2, en base depuis le
+      // 11/11/2026) : aucune.
       const donnees = nom === 'ventes_facturees_de_la_simulation'
         ? { data: { par_mois: {}, sources: [] }, error: null }
-        : faux.droitsBase
+        : nom === 'pieces_citees_de_la_simulation'
+          ? { data: [], error: null }
+          : faux.droitsBase
       const reponse = async () => {
         await faux.porte
         return { ...donnees, count: null, status: donnees.error ? 400 : 200, statusText: '' }
@@ -129,7 +132,7 @@ describe('ClientSimulation — drapeau levé : sous la case « Banque »', () =>
     poser({ droits: { ventes: false, banque: true }, base: { data: { cabinet: false, membre: true, ventes: false, banque: true } } })
     render(<ClientSimulation />)
     expect(await screen.findByText('CA encaissé à date')).toBeTruthy()
-    expect(faux.rpcs.filter((r) => r.nom !== 'ventes_facturees_de_la_simulation'))
+    expect(faux.rpcs.filter((r) => r.nom !== 'ventes_facturees_de_la_simulation' && r.nom !== 'pieces_citees_de_la_simulation'))
       .toEqual([{ nom: 'droits_sur_le_dossier', args: { p_dossier_id: 'dossier-de-test' } }])
     expect(faux.demandees).toContain('lignes_bancaires')
     expect(screen.queryByText(SIMULATION_SANS_BANQUE)).toBeNull()

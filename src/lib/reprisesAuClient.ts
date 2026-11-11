@@ -4,8 +4,8 @@ import type { RepriseDeLaFacture } from './encaissementsFactures'
 import { messageErreur } from './messageErreur'
 
 // LES FACTURES REPRISES, AU CLIENT (ligne 51.5 ; A8C-Q1 et A8Q5-Q2, tranchées par le cabinet le 11/11/2026 ; HISTORIQUE.md,
-// « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT »). La migration `reprises_au_client`
-// (supabase/preparees/20261111151000_reprises_au_client.sql, PRÉPARÉE) pose deux fonctions de lecture :
+// « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT »). La migration `reprises_au_client` (en production depuis le
+// 11/11/2026 : supabase/schema/20261111204440_reprises_au_client.sql) pose deux fonctions de lecture :
 //   - `reprise_de_la_facture(dossier, facture)` : d'une facture reprise de l'ancien logiciel, les chiffres que les plafonds
 //     d'`enregistrer_encaissement` lisent dans le registre des reprises (`factures_importees`, que le cabinet lit seul) — la
 //     date de reprise, la nature, l'encaissé avant la reprise et ce que ses avoirs repris créditent, au total et par taux,
@@ -21,16 +21,16 @@ import { messageErreur } from './messageErreur'
 // autre forme ou une requête qui lève rendent une lecture ILLISIBLE, avec son motif — jamais un plafond deviné ni un ensemble
 // de pièces vide.
 //
-// LE DRAPEAU, BAISSÉ tant que la migration n'est pas en production : la fenêtre des encaissements ne lit pas la reprise
-// d'une facture reprise (elle la refuse, `REFUS_REPRISE_NON_LUE`, et l'onglet Factures n'offre pas « Encaissements » sur
-// elle), et « Ma simulation » ne lit pas les pièces citées (`AUCUNE_PIECE_CITEE`, comme hier). Levé, l'une et l'autre
+// LE DRAPEAU, LEVÉ depuis le 11/11/2026 (la migration en production). Baissé — son état d'avant, que les tests jouent encore —,
+// la fenêtre des encaissements ne lit pas la reprise d'une facture reprise (elle la refuse, `REFUS_REPRISE_NON_LUE`, et
+// l'onglet Factures n'offre pas « Encaissements » sur elle), et « Ma simulation » ne lit pas les pièces citées (`AUCUNE_PIECE_CITEE`, comme hier). Levé, l'une et l'autre
 // appellent leur fonction ; et la fenêtre de l'avoir d'une facture reprise, au client « Ventes », lit par
 // `reprise_de_la_facture` ce que les avoirs repris ont crédité, et dit le plafond avant le clic (A8C6-Q1,
-// lib/avoirDUneFactureRepriseLecture.ts) — baissé, elle ne lit que la date, et la base juge seule du plafond. Il se lit À CHAQUE APPEL, par `reprisesAuClientPrevues` : les tests jouent ses deux états par un
-// accesseur sur l'objet ci-dessous.
+// lib/avoirDUneFactureRepriseLecture.ts) — baissé, elle ne lit que la date, et la base juge seule du plafond. Il se lit
+// À CHAQUE APPEL, par `reprisesAuClientPrevues` : les tests jouent ses deux états sur l'objet ci-dessous.
 export const DRAPEAU_DES_REPRISES_AU_CLIENT = {
-  /** Faux tant que la migration `reprises_au_client` n'est pas en production (puis dans l'export). */
-  REPRISES_AU_CLIENT_PREVUES: false as boolean,
+  /** Vrai depuis que la migration `reprises_au_client` est en production et dans l'export (11/11/2026). */
+  REPRISES_AU_CLIENT_PREVUES: true as boolean,
 }
 
 /** Le drapeau, lu à l'appel. */

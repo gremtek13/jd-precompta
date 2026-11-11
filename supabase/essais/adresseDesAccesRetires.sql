@@ -1,7 +1,7 @@
 -- L'ADRESSE D'UN ACCÈS RETIRÉ, GARDÉE AVEC LA TRACE DES DROITS (espace client, ligne 51.5, décision du cabinet P1T-E2 ; la
--- migration `adresse_des_acces_retires`, PRÉPARÉE : supabase/preparees/20261111173000_adresse_des_acces_retires.sql). Le
--- récit : HISTORIQUE.md, « 11/11/2026 — P1T-E2 : L'ADRESSE D'UN ACCÈS RETIRÉ, GARDÉE AVEC LA TRACE (PRÉPARÉE, PAS
--- APPLIQUÉE) ». À rejouer par `execute_sql` après toute migration qui touche `memberships`, ses déclencheurs,
+-- migration `adresse_des_acces_retires`, en production depuis le 11/11/2026 :
+-- supabase/schema/20261111204532_adresse_des_acces_retires.sql). Le récit : HISTORIQUE.md, « 11/11/2026 — P1T-E2 :
+-- L'ADRESSE D'UN ACCÈS RETIRÉ, GARDÉE AVEC LA TRACE (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après toute migration qui touche `memberships`, ses déclencheurs,
 -- `trace_des_droits`, `adresses_des_acces_retires` ou leurs fonctions. Le retrait d'un accès et la suppression d'un dossier
 -- se jouent à part, sur une réplique : `adresseDesAccesRetiresSuppression.sql`.
 --
