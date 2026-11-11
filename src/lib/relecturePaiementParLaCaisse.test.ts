@@ -23,6 +23,7 @@ import { defautsDeNumerotation } from './validationExercice'
 import { NON_VALIDEE } from '../test/ecritures'
 import { SANS_FACTURE_SOURCE, SANS_EXEMPLAIRE, SANS_ECRITURE_DE_VENTE, ventesFactureesVides } from '../test/ventesFacturees'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // RELECTURE INDÉPENDANTE DU PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6, lots C8, C9a et C9b ; CAISSE-Q4, (B)), AVANT QUE
 // LE DRAPEAU NE SE LÈVE. Chaque défaut confirmé y était prouvé par un `it.fails`, le drapeau `PAIEMENT_PAR_LA_CAISSE_EXPORTE`
@@ -215,7 +216,7 @@ describe('défaut 2 — un paiement par la caisse d’un centime de moins que la
   const ecrituresApres = (montant: number) => {
     const paiement = operation({ id: 'oc-pc', genre: 'paiement', piece_id: 'pc', date: '2026-03-12', montant })
     const p = paiementsDesPieces([], [], [], paiementsParLaCaisseSelon(true, [APPORT, paiement]))
-    return { paiement, p, lignes: lignesPourPiece('d1', PIECE, { compte: '606100', immobilisation: false }, false, p.get('pc') ?? [], TRESORERIE) }
+    return { paiement, p, lignes: lignesPourPiece('d1', PIECE, { compte: '606100', immobilisation: false }, false, p.get('pc') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)) }
   }
 
   const PIECE_DU_PAIEMENT = { id: 'pc', type_piece: 'achat', statut: 'validee', montant_ttc: 40, devise: 'EUR', exemplaire: null, paiementsDuReleve: [] } as const
@@ -228,7 +229,7 @@ describe('défaut 2 — un paiement par la caisse d’un centime de moins que la
   it('témoin : 39,99 € — l’onglet Écritures et « payée en partie » se taisent, la numérotation de la validation le refuse', () => {
     const { p, lignes } = ecrituresApres(-39.99)
     const brouillon = auBrouillon(lignes)
-    expect(analyserEcritures(brouillon, [{ piece: PIECE, compte: '606100', immobilisation: false }], false, p, TRESORERIE, null, SANS_EXEMPLAIRE)
+    expect(analyserEcritures(brouillon, [{ piece: PIECE, compte: '606100', immobilisation: false }], false, p, TRESORERIE, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
       .groupesDesequilibres).toEqual([])
     expect(piecesPayeesEnPartie([PIECE], p, 'tresorerie')).toEqual([])
     const defauts = defautsDeNumerotation(numeroterFec(brouillon, [PIECE], [ACHATS], [], modeleDeTest('tresorerie'), [], SANS_ECRITURE_DE_VENTE,
@@ -248,7 +249,7 @@ describe('défaut 2 — un paiement par la caisse d’un centime de moins que la
     const apport = operation({ id: 'oc-apport', date: '2025-03-01', montant: 100 })
     const changee = piece('pc', { date_piece: '2025-03-10', montant_ttc: 40.01 })
     const p = paiementsDesPieces([], [], [], paiementsParLaCaisseSelon(true, [apport, paiement]))
-    const lignes = auBrouillon(lignesPourPiece('d1', changee, { compte: '606100', immobilisation: false }, false, p.get('pc') ?? [], TRESORERIE))
+    const lignes = auBrouillon(lignesPourPiece('d1', changee, { compte: '606100', immobilisation: false }, false, p.get('pc') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     const d = donnees({
       piecesValidees: [P1, changee], operationsDeCaisse: caisseLue([apport, paiement]),
       ecritures: [E1, E2, ...lignesDeLOperation(apport), ...lignes],

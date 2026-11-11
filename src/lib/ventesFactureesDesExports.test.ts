@@ -21,6 +21,7 @@ import {
 } from './ventesFactureesDesExports'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest, planLuDe } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // LES EXPORTS LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE (chantier EC-Q3, étape VF4c2 ; lib/ventesFactureesDesExports.ts,
 // lib/fec.ts). Un dossier qui a basculé, de bout en bout : la composition de VF4a sur les lignes de la base, le brouillon que
@@ -216,7 +217,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
         const achat = pieceDeVente({ id: 'p-achat', type_piece: 'achat', tiers: 'Fournisseur fictif', date_piece: '2025-11-15', montant_ttc: 24 })
         const pieces = (mode === 'engagement' ? [vente, achat] : []).flatMap((p) => lignesPourPiece(
           D_BASCULE, p, { compte: p.type_piece === 'vente' ? '706000' : '606400', immobilisation: false }, false, [],
-          { mode, ...planLuDe(plan), compteNotesDeFrais: plan.associe },
+          { mode, ...planLuDe(plan), compteNotesDeFrais: plan.associe }, banquesDuDossier({ etat: 'sans_objet' }, ({ mode, ...planLuDe(plan), compteNotesDeFrais: plan.associe }).plan),
         ).map((l, i): EcritureBrouillon => ({
           ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null, created_at: `${l.date}T09:00:00Z`,
           immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, encaissement_id: null,
@@ -246,7 +247,9 @@ describe('le FEC d’un dossier qui a basculé', () => {
     const vente = pieceDeVente({ id: 'p-vente', tiers: 'CLIENT FICTIF', date_piece: '2025-11-05' })
     const lignes = lignesPourPiece(D_BASCULE, vente, { compte: '706000', immobilisation: false }, false, [], {
       mode: 'engagement', plan: PLAN_PAR_DEFAUT, compteNotesDeFrais: PLAN_PAR_DEFAUT.associe, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT,
-    }).map((l, i): EcritureBrouillon => ({
+    }, banquesDuDossier({ etat: 'sans_objet' }, ({
+      mode: 'engagement', plan: PLAN_PAR_DEFAUT, compteNotesDeFrais: PLAN_PAR_DEFAUT.associe, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT,
+    }).plan)).map((l, i): EcritureBrouillon => ({
       ...l, id: `pv-${i}`, ligne_bancaire_id: null, created_at: '2025-11-05T09:00:00Z', immobilisation_id: null, vehicule_id: null,
       declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
     }))
@@ -553,7 +556,9 @@ describe('les comptes de tiers d’un dossier qui a basculé', () => {
     const vente = pieceDeVente({ id: 'p-vente', tiers: 'Client fictif', date_piece: '2025-11-05' })
     const lignes = lignesPourPiece(D_BASCULE, vente, { compte: '706000', immobilisation: false }, false, [], {
       mode: 'engagement', plan: PLAN_PAR_DEFAUT, compteNotesDeFrais: PLAN_PAR_DEFAUT.associe, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT,
-    }).map((l, i): EcritureBrouillon => ({
+    }, banquesDuDossier({ etat: 'sans_objet' }, ({
+      mode: 'engagement', plan: PLAN_PAR_DEFAUT, compteNotesDeFrais: PLAN_PAR_DEFAUT.associe, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT,
+    }).plan)).map((l, i): EcritureBrouillon => ({
       ...l, id: `pv-${i}`, ligne_bancaire_id: null, created_at: '2025-11-05T09:00:00Z', immobilisation_id: null, vehicule_id: null,
       declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
     }))

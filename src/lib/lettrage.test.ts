@@ -16,6 +16,7 @@ import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { contientSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
 import { modeleDeTest } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // Une écriture du brouillon et une pièce, TYPÉES SANS `as` : le compilateur vérifie chaque colonne contre la table, et une colonne
 // ajoutée demain fait échouer ce fichier tant qu'elle n'y est pas.
@@ -45,7 +46,7 @@ function engagement(
   compteNotesDeFrais: CompteNotesDeFrais = '455000',
 ): EcritureBrouillon[] {
   const creation = new Map(paiements.map((m) => [m.id, m.creeLe ?? `${m.date}T10:00:00Z`]))
-  return lignesEngagementPourPiece('d1', p, cible, false, compteNotesDeFrais, paiements, PLAN_PAR_DEFAUT)
+  return lignesEngagementPourPiece('d1', p, cible, false, compteNotesDeFrais, paiements, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))
     .map((l: LigneAGenerer, i) => ecriture({
       ...l, id: `${p.id}-${i}`,
       created_at: l.ligne_bancaire_id ? creation.get(l.ligne_bancaire_id)! : `${l.date}T09:00:00Z`,

@@ -36,7 +36,7 @@ import {
   type LectureDesComptes,
 } from '../../lib/importParCompte'
 import { lireLesComptesDuDossier } from '../../lib/comptesBancairesLecture'
-import { banquesDuDossier, modeleDuMouvement } from '../../lib/banqueDuMouvement'
+import { banquesDuDossier, modeleDuMouvement, planDuMouvement } from '../../lib/banqueDuMouvement'
 import { jonctionsParCompte, releveParCompte } from '../../lib/releveParCompte'
 import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
 import {
@@ -912,6 +912,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // proposition du client — une seconde ceinture, que les mots de la garde disent.
     const exemplaire = exemplairesDesSources.raisons.get(pieceId)
     if (exemplaire !== undefined) { window.alert(exemplaire); return false }
+    // La banque du mouvement qui ne se sait pas (MCB5, quatrième partie) : sa contrepartie ne saurait sur quel 512 s'écrire,
+    // et rien ne se lie plutôt qu'un rapprochement sans son écriture. Jamais drapeau baissé.
+    const banqueInconnue = ligne ? planDuMouvement(modele.plan, ligne, banquesDesMouvements) : null
+    if (banqueInconnue && 'refus' in banqueInconnue) { window.alert(banqueInconnue.refus); return false }
     const dejaPayee = paiements.get(pieceId) ?? []
     if (ligne && pieceAvant && dejaPayee.length > 0) {
       const refus = refusSecondPaiement(ligne, pieceAvant, dejaPayee)
@@ -933,7 +937,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // annuler ce qui a réussi — la contrepartie se recréera au prochain passage, elle est idempotente.
     if (ligne && piece) {
       try {
-        await synchroniserContrepartieBanque(dossierId, piece, ligne, modele)
+        await synchroniserContrepartieBanque(dossierId, piece, ligne, modele, banquesDesMouvements)
       } catch (err) {
         window.alert(`Le rapprochement est enregistré, mais ${ecritureDeBanque} n'a pas pu être créée : ${messageErreur(err, 'raison inconnue')}`)
       }
@@ -1000,7 +1004,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // donc une écriture de paiement subsiste pour un mouvement qui n'est plus rapproché.
     if (ancienPieceId) {
       try {
-        await retirerContrepartieBanque(ligneId, ancienPieceId, pieces.find((p) => p.id === ancienPieceId) ?? null, modele)
+        await retirerContrepartieBanque(ligneId, ancienPieceId, pieces.find((p) => p.id === ancienPieceId) ?? null, modele, banquesDesMouvements)
       } catch (err) {
         window.alert(`Le rapprochement est annulé, mais ${ecritureDeBanque} n'a pas pu être retirée : ${messageErreur(err, 'raison inconnue')}\n\nElle reste dans le brouillon d'écritures.`)
       }
@@ -1248,7 +1252,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // d'abord à la date de leur facture quand plus rien ne les date ; chaque part reçoit ensuite sa
     // contrepartie, qui redate sa pièce au mouvement quand elle la règle à elle seule.
     try {
-      await rendreAuxDatesDeFacture(pieces.filter((p) => avant.includes(p.id)), modele)
+      await rendreAuxDatesDeFacture(pieces.filter((p) => avant.includes(p.id)), modele, banquesDesMouvements)
     } catch (err) {
       echecs.push(`retour à la date de facture : ${messageErreur(err, 'raison inconnue')}`)
     }
@@ -1260,7 +1264,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         // ailleurs, la part n'en est qu'une fraction, et l'aligner sur elle seule fausserait la pièce (voir
         // lib/reglementBanque.ts). Une pièce en devise quitte ainsi son cours provisoire.
         const piece = await reglerSiLibre(pieceAvant, ligne.id, part.montant)
-        await synchroniserContrepartieBanque(dossierId, piece, { id: ligne.id, date: ligne.date, montant: part.montant }, modele)
+        await synchroniserContrepartieBanque(dossierId, piece, { id: ligne.id, date: ligne.date, montant: part.montant, compte_bancaire_id: ligne.compte_bancaire_id }, modele, banquesDesMouvements)
       } catch (err) {
         echecs.push(`${nomDeLaPiece(pieceAvant)} : ${messageErreur(err, 'raison inconnue')}`)
       }
@@ -1287,7 +1291,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     const { error } = await supabase.rpc('retirer_reglement_groupe', { p_ligne_bancaire_id: ligneId })
     if (error) { window.alert(`Le règlement groupé n'a pas pu être annulé : ${messageErreur(error, 'raison inconnue')}`); return false }
     try {
-      await rendreAuxDatesDeFacture(pieces.filter((p) => reglees.includes(p.id)), modele)
+      await rendreAuxDatesDeFacture(pieces.filter((p) => reglees.includes(p.id)), modele, banquesDesMouvements)
     } catch (err) {
       window.alert(
         `Le règlement groupé est annulé, mais les écritures de ses pièces n'ont pas pu revenir à la date de leur facture : ${messageErreur(err, 'raison inconnue')}\n\n`
@@ -1667,7 +1671,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 
         try {
           const piece = await reglerSiLibre(a.piece, a.ligne.id, a.ligne.montant)
-          await synchroniserContrepartieBanque(dossierId, piece, a.ligne, modele)
+          await synchroniserContrepartieBanque(dossierId, piece, a.ligne, modele, banquesDesMouvements)
         } catch (err) {
           // La pièce est validée et le mouvement rapproché ; seule la contrepartie comptable manque.
           // On le dit plutôt que de laisser croire que tout est passé.
@@ -1758,7 +1762,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             const pieceAvant = pieces.find((p) => p.id === m.pieceId)
             if (!ligne || !pieceAvant) return
             const piece = await reglerSiLibre(pieceAvant, ligne.id, ligne.montant)
-            await synchroniserContrepartieBanque(dossierId, piece, ligne, modele)
+            await synchroniserContrepartieBanque(dossierId, piece, ligne, modele, banquesDesMouvements)
           }),
       )
       const contrepartiesEnEchec = contreparties.filter((r) => r.status === 'rejected')

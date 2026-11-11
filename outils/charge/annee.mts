@@ -305,7 +305,7 @@ function mesurer(k: number): Map<string, number | string> {
     // Le brouillon, composé par les moteurs : les pièces (leur paiement par le relevé ou la caisse compris), les recettes,
     // apports et prélèvements de la caisse, les ventes facturées.
     const aComptabiliser = piecesAComptabiliser(a.pieces, CATEGORIES, new Map(), ventes.sources)
-    const generation = ecrituresAGenerer(D, aComptabiliser, [], assujetti, paiements, MODELE, null)
+    const generation = ecrituresAGenerer(D, aComptabiliser, [], assujetti, paiements, MODELE, null, BANQUES)
     let e = 0
     const ecriture = (x: Pick<EcritureBrouillon, 'dossier_id' | 'date' | 'compte' | 'libelle' | 'montant' | 'sens'> & Partial<EcritureBrouillon>): EcritureBrouillon => ({
       ...NON_VALIDEE, id: uuid(8, e++), statut: 'proposee', created_at: `${ANNEE}-12-31T10:00:00Z`, piece_id: null, ligne_bancaire_id: null,

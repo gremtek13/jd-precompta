@@ -29,6 +29,7 @@ import { SANS_ACOMPTE, ventesFacturees, type VentesFacturees } from './ventesFac
 import { formatMoney } from './format'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // LA CONCORDANCE DE LA 2035 AVEC LES ÉCRITURES (ligne 26.6, étape c). Les écritures de ces tests viennent des
 // VRAIS générateurs de l'application — celui d'une pièce, d'un mouvement affecté, d'une échéance d'emprunt,
@@ -112,7 +113,7 @@ function dossier(o: { assujetti?: boolean } = {}) {
   const paiements = paiementsDesPieces(lignes, [], [], [])
   const ecritures: EcritureBrouillon[] = [
     ...[facture, recette].flatMap((p) => brouillon(
-      lignesPourPiece('d1', p, { compte: categories.find((c) => c.id === p.categorie_id)!.compte_comptable!, immobilisation: false }, assujetti, paiements.get(p.id) ?? [], TRESORERIE),
+      lignesPourPiece('d1', p, { compte: categories.find((c) => c.id === p.categorie_id)!.compte_comptable!, immobilisation: false }, assujetti, paiements.get(p.id) ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)),
       {},
     )),
     ...brouillon(ecritureDuMouvement(frais, '627000', null, PLAN_PAR_DEFAUT), { ligne_bancaire_id: 'l-frais', date: frais.date }),
@@ -188,7 +189,7 @@ describe('concordance2035 — une comptabilité écrite par l’application', ()
     d.pieces[0] = piece({ id: 'facture', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
     const paiements = paiementsDesPieces(d.lignes, [], [], [])
     d.ecritures = [
-      ...brouillon(lignesPourPiece('d1', d.pieces[0], { compte: '606100', immobilisation: false }, true, paiements.get('facture') ?? [], TRESORERIE), {}),
+      ...brouillon(lignesPourPiece('d1', d.pieces[0], { compte: '606100', immobilisation: false }, true, paiements.get('facture') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)), {}),
       ...d.ecritures.filter((e) => e.piece_id !== 'facture'),
     ]
     expect(concordance(d).ecarts).toEqual([])
@@ -204,7 +205,7 @@ describe('concordance2035 — une comptabilité écrite par l’application', ()
     ])
     const paiements = paiementsDesPieces(paiementsDeux, [], [], [])
     const e = { ...d, pieces: deux, lignes: paiementsDeux, ventilations: [], cotisations: [],
-      ecritures: deux.flatMap((p) => brouillon(lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, true, paiements.get(p.id) ?? [], TRESORERIE), {})) }
+      ecritures: deux.flatMap((p) => brouillon(lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, true, paiements.get(p.id) ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)), {})) }
     expect(concordance(e, { annee: 2025, immobilisations: [], vehicules: [] }).ecarts).toEqual([])
     expect(concordance(e, { annee: 2026, immobilisations: [], vehicules: [] }).ecarts).toEqual([])
   })
@@ -268,7 +269,7 @@ describe('concordance2035 — ce que la 2035 compte et que le brouillon ne porte
     const decembre = piece({ id: 'dec', date_piece: '2025-12-20' })
     d.pieces.push(decembre)
     d.lignes.push(ligne({ id: 'l-dec', piece_id: 'dec', date: '2026-01-05', montant: -120 }))
-    d.ecritures.push(...brouillon(lignesPourPiece('d1', decembre, { compte: '606100', immobilisation: false }, false, [], TRESORERIE), {}))
+    d.ecritures.push(...brouillon(lignesPourPiece('d1', decembre, { compte: '606100', immobilisation: false }, false, [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)), {}))
     expect(motifs(concordance(d, { annee: 2026, immobilisations: [], vehicules: [] }).ecarts)).toEqual([['piece:dec', 'ecriture_autre_exercice']])
     expect(concordance(d, { annee: 2026, immobilisations: [], vehicules: [] }).ecarts[0].autresExercices).toEqual([2025])
     expect(motifs(concordance(d).ecarts)).toEqual([['piece:dec', 'compte_autre_exercice']])
@@ -457,7 +458,7 @@ describe('concordance2035 — une écriture de l’exercice que la 2035 ne compt
     const d = dossier()
     const sansDate = piece({ id: 'sd', date_piece: null, created_at: '2025-05-10T08:00:00Z' })
     d.pieces.push(sansDate)
-    d.ecritures.push(...brouillon(lignesPourPiece('d1', sansDate, { compte: '606100', immobilisation: false }, false, [], TRESORERIE), {}))
+    d.ecritures.push(...brouillon(lignesPourPiece('d1', sansDate, { compte: '606100', immobilisation: false }, false, [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)), {}))
     expect(motifs(concordance(d).ecarts)).toEqual([['piece:sd', 'piece_sans_date']])
   })
 
@@ -468,7 +469,7 @@ describe('concordance2035 — une écriture de l’exercice que la 2035 ne compt
     const partiel = ligne({ id: 'l-sd', piece_id: 'sd', date: '2025-05-10', montant: -48 })
     d.pieces.push(sansDate)
     d.lignes.push(partiel)
-    d.ecritures.push(...brouillon(lignesPourPiece('d1', sansDate, { compte: '606100', immobilisation: false }, false, paiementsDesPieces([partiel], [], [], []).get('sd') ?? [], TRESORERIE), {}))
+    d.ecritures.push(...brouillon(lignesPourPiece('d1', sansDate, { compte: '606100', immobilisation: false }, false, paiementsDesPieces([partiel], [], [], []).get('sd') ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)), {}))
     const c = concordance(d)
     expect(motifs(c.ecarts)).toEqual([['piece:sd', 'piece_sans_date']])
     expect(c.ecarts[0]).toMatchObject({ declaration: -48, ecritures: -120 })
@@ -478,14 +479,14 @@ describe('concordance2035 — une écriture de l’exercice que la 2035 ne compt
     const d = dossier()
     const sansPoste = piece({ id: 'sp', categorie_id: 'c-sans-poste' })
     d.pieces.push(sansPoste)
-    d.ecritures.push(...brouillon(lignesPourPiece('d1', sansPoste, { compte: '628000', immobilisation: false }, false, [], TRESORERIE), {}))
+    d.ecritures.push(...brouillon(lignesPourPiece('d1', sansPoste, { compte: '628000', immobilisation: false }, false, [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)), {}))
     expect(motifs(concordance(d).ecarts)).toEqual([['piece:sp', 'sans_poste']])
   })
 
   it('la pièce n’a plus de montant lisible', () => {
     const d = dossier()
     const vide = piece({ id: 'vide' })
-    d.ecritures.push(...brouillon(lignesPourPiece('d1', vide, { compte: '606100', immobilisation: false }, false, [], TRESORERIE), {}))
+    d.ecritures.push(...brouillon(lignesPourPiece('d1', vide, { compte: '606100', immobilisation: false }, false, [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)), {}))
     d.pieces.push({ ...vide, montant_ht: null, montant_ttc: null })
     expect(motifs(concordance(d).ecarts)).toEqual([['piece:vide', 'sans_montant']])
   })

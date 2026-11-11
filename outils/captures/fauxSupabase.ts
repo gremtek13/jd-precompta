@@ -42,6 +42,7 @@ import type {
 } from '../../src/lib/types'
 import { CAISSE_ABSENTE } from '../../src/lib/recettesDeCaisse'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from '../../src/lib/controlesDeLaCaisse'
+import { banquesDuDossier } from '../../src/lib/banqueDuMouvement'
 
 type Ligne = Record<string, unknown>
 
@@ -703,7 +704,7 @@ function ecrituresDe(s: SourcesDeValidation): Ligne[] {
   // Les dossiers d9 et d10 n'ont pas basculé : aucune de leurs factures n'est source de sa vente (étape VF6a).
   const parPiece = piecesAComptabiliser(s.pieces as unknown as Piece[], categories as unknown as Categorie[], acquisitions, new Set())
     .flatMap(({ piece: p, compte, immobilisation }) =>
-      lignesPourPiece(s.dossier, p, { compte, immobilisation }, false, paiements.get(p.id) ?? [], TRESORERIE)
+      lignesPourPiece(s.dossier, p, { compte, immobilisation }, false, paiements.get(p.id) ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
         .map((l) => ecriture(l, { piece_id: l.piece_id, ligne_bancaire_id: l.ligne_bancaire_id ?? null })))
   const parMouvement = rapprochees.flatMap((m) => {
     const categorie = categories.find((c) => c.id === m.categorie_id)

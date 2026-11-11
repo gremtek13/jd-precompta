@@ -187,10 +187,10 @@ describe('la preuve : aucun contrôle d’hier ne signale les lignes d’une ven
     it(`${modele.mode} : ni sans objet, ni sans contrepartie, ni déséquilibrées, ni à régénérer, ni à générer`, () => {
       expect(ecrituresSansObjet(LIGNES_DES_VENTES, [], [], new Map(), null, PLAN_PAR_DEFAUT, SANS_FACTURE_SOURCE)).toEqual([])
       const paiements = paiementsDesPieces(MOUVEMENTS, [], [], [])
-      expect(analyserEcritures(LIGNES_DES_VENTES, [], true, paiements, modele, null, SANS_EXEMPLAIRE)).toMatchObject({
+      expect(analyserEcritures(LIGNES_DES_VENTES, [], true, paiements, modele, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))).toMatchObject({
         piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [],
       })
-      expect(ecrituresAGenerer(D, [], LIGNES_DES_VENTES, true, paiements, modele, null)).toEqual({ pieces: [], lignes: [], dansUnExerciceValide: [] })
+      expect(ecrituresAGenerer(D, [], LIGNES_DES_VENTES, true, paiements, modele, null, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))).toEqual({ pieces: [], lignes: [], dansUnExerciceValide: [], banquesInconnues: [] })
       expect(mouvementsVentilesDesynchronises(LIGNES_DES_VENTES, MOUVEMENTS, [], [], modele, true, null, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))).toEqual([])
     })
   }

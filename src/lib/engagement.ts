@@ -6,6 +6,7 @@ import {
   type RoleDuDirigeant,
 } from './planComptable'
 import type { CibleComptable, LigneAGenerer } from './ecritures'
+import { planDuMouvement, refusDesBanquesDesPaiements, type BanquesDuDossier } from './banqueDuMouvement'
 import type { CompteNotesDeFrais, Dossier, LigneBancaire, ModeComptable, Piece } from './types'
 
 // LA COMPTABILITÉ D'ENGAGEMENT (BIC, IS) — ligne 31 de la feuille de route, étape 1 (28/09/2026).
@@ -229,16 +230,26 @@ export function lignesReglementEngagement(
 // C'est aussi ce que « Régénérer » réécrit en entier — les règlements se déduisent des mouvements, donc
 // les reprendre ne perd rien, et c'est ce qui répare un règlement passé sur l'ancien compte de tiers
 // d'une pièce dont le type a changé depuis.
+//
+// CHAQUE RÈGLEMENT S'ÉCRIT AU 512 DU COMPTE DE SON MOUVEMENT (MCB5, quatrième partie ; lib/banqueDuMouvement.ts) : sous le
+// plan du mouvement, le plan lui-même au rôle — l'écriture d'hier. `banques` sans défaut ; une banque qui ne se sait pas
+// retient la pièce entière (rien ne s'écrit), comme `lignesPourPiece`.
 export function lignesEngagementPourPiece(
   dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean,
-  compteNotesDeFrais: CompteNotesDeFrais, mouvements: readonly Pick<LigneBancaire, 'id' | 'date' | 'montant'>[],
-  plan: PlanComptable,
+  compteNotesDeFrais: CompteNotesDeFrais,
+  mouvements: readonly (Pick<LigneBancaire, 'id' | 'date' | 'montant'> & { compte_bancaire_id?: string | null })[],
+  plan: PlanComptable, banques: BanquesDuDossier,
 ): LigneAGenerer[] {
+  if (refusDesBanquesDesPaiements(mouvements.map((m) => ({ ...m, origine: 'rapprochement' })), banques) !== null) return []
+  const planDe = (m: (typeof mouvements)[number]) => {
+    const p = planDuMouvement(plan, m, banques)
+    return 'refus' in p ? plan : p.plan
+  }
   return [
     ...lignesFactureEngagement(dossierId, piece, cible, assujettiTva, compteNotesDeFrais, plan),
     ...[...mouvements]
       .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
-      .flatMap((m) => lignesReglementEngagement(dossierId, piece, m, compteNotesDeFrais, cible.immobilisation, plan)),
+      .flatMap((m) => lignesReglementEngagement(dossierId, piece, m, compteNotesDeFrais, cible.immobilisation, planDe(m))),
   ]
 }
 

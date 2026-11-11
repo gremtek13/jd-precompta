@@ -150,7 +150,7 @@ const PAIEMENTS = new Map<string, PaiementDePiece[]>([
 // Le brouillon que la génération écrit pour ces quatre pièces, sous ce modèle — donc sous son plan.
 function brouillonGenere(m: ModeleComptable): EcritureBrouillon[] {
   return A_COMPTABILISER.flatMap(({ piece: p, compte, immobilisation }) =>
-    brouillonDesPieces(p.id, lignesPourPiece(D, p, { compte, immobilisation }, true, PAIEMENTS.get(p.id) ?? [], m)))
+    brouillonDesPieces(p.id, lignesPourPiece(D, p, { compte, immobilisation }, true, PAIEMENTS.get(p.id) ?? [], m, banquesDuDossier({ etat: 'sans_objet' }, m.plan))))
 }
 
 const CAS_DES_PIECES: CasDuPlan[] = [
@@ -158,25 +158,25 @@ const CAS_DES_PIECES: CasDuPlan[] = [
     nom: 'lignesPourPiece — trésorerie, achat, vente, bien et note de frais d’un dossier assujetti',
     roles: ['banque', 'tva_deductible', 'tva_collectee', 'tva_immobilisations', 'exploitant'],
     composer: (plan) => A_COMPTABILISER.map(({ piece: p, compte, immobilisation }) =>
-      lignesPourPiece(D, p, { compte, immobilisation }, true, PAIEMENTS.get(p.id) ?? [], modele(plan, 'tresorerie', 'exploitant'))),
+      lignesPourPiece(D, p, { compte, immobilisation }, true, PAIEMENTS.get(p.id) ?? [], modele(plan, 'tresorerie', 'exploitant'), banquesDuDossier({ etat: 'sans_objet' }, (modele(plan, 'tresorerie', 'exploitant')).plan))),
   },
   {
     nom: 'lignesPourPiece — engagement, dirigeant associé',
     roles: ['banque', 'tva_deductible', 'tva_collectee', 'tva_immobilisations', 'fournisseurs', 'clients', 'fournisseurs_immobilisations', 'associe'],
     composer: (plan) => A_COMPTABILISER.map(({ piece: p, compte, immobilisation }) =>
-      lignesPourPiece(D, p, { compte, immobilisation }, true, PAIEMENTS.get(p.id) ?? [], modele(plan, 'engagement', 'associe'))),
+      lignesPourPiece(D, p, { compte, immobilisation }, true, PAIEMENTS.get(p.id) ?? [], modele(plan, 'engagement', 'associe'), banquesDuDossier({ etat: 'sans_objet' }, (modele(plan, 'engagement', 'associe')).plan))),
   },
   {
     nom: 'lignesPourPiece — engagement, dirigeant non associé, et l’exploitant d’une entreprise individuelle',
     roles: ['autres_debiteurs_crediteurs', 'exploitant'],
     composer: (plan) => (['autres_debiteurs_crediteurs', 'exploitant'] as const).map((dirigeant) =>
-      lignesPourPiece(D, NOTE, { compte: '606100', immobilisation: false }, true, [], modele(plan, 'engagement', dirigeant))),
+      lignesPourPiece(D, NOTE, { compte: '606100', immobilisation: false }, true, [], modele(plan, 'engagement', dirigeant), banquesDuDossier({ etat: 'sans_objet' }, (modele(plan, 'engagement', dirigeant)).plan))),
   },
   {
     nom: 'lignesPourPiece — trésorerie, un achat payé en partie par la banque et en partie par la caisse',
     roles: ['banque', 'caisse', 'tva_deductible'],
     composer: (plan) => lignesPourPiece(D, ACHAT, { compte: '606100', immobilisation: false }, true,
-      [paiement('l-achat', -70), paiementEnEspeces('oc-achat', -50)], modele(plan, 'tresorerie', 'exploitant')),
+      [paiement('l-achat', -70), paiementEnEspeces('oc-achat', -50)], modele(plan, 'tresorerie', 'exploitant'), banquesDuDossier({ etat: 'sans_objet' }, (modele(plan, 'tresorerie', 'exploitant')).plan)),
   },
   {
     nom: 'les briques de la trésorerie : charge et TVA, banque, dirigeant',
@@ -192,7 +192,7 @@ const CAS_DES_PIECES: CasDuPlan[] = [
     composer: (plan) => [
       lignesFactureEngagement(D, ACHAT, { compte: '606100', immobilisation: false }, true, plan.associe, plan),
       lignesReglementEngagement(D, VENTE, { id: 'l-vente', date: '2026-03-20', montant: 600 }, plan.associe, false, plan),
-      lignesEngagementPourPiece(D, VENTE, { compte: '706200', immobilisation: false }, true, plan.associe, [{ id: 'l-vente', date: '2026-03-20', montant: 600 }], plan),
+      lignesEngagementPourPiece(D, VENTE, { compte: '706200', immobilisation: false }, true, plan.associe, [{ id: 'l-vente', date: '2026-03-20', montant: 600 }], plan, banquesDuDossier({ etat: 'sans_objet' }, plan)),
     ],
   },
   {
@@ -222,11 +222,11 @@ const CAS_DES_PIECES: CasDuPlan[] = [
     roles: [],
     composer: (plan) => (['tresorerie', 'engagement'] as const).map((mode) => {
       const m = modele(plan, mode, mode === 'tresorerie' ? 'exploitant' : 'associe')
-      return ecrituresAGenerer(D, A_COMPTABILISER, brouillonGenere(m), true, PAIEMENTS, m, null)
+      return ecrituresAGenerer(D, A_COMPTABILISER, brouillonGenere(m), true, PAIEMENTS, m, null, banquesDuDossier({ etat: 'sans_objet' }, m.plan))
     }),
     temoin: (plan) => (['tresorerie', 'engagement'] as const).map((mode) => {
       const m = modele(plan, mode, mode === 'tresorerie' ? 'exploitant' : 'associe')
-      return ecrituresAGenerer(D, A_COMPTABILISER, [], true, PAIEMENTS, m, null)
+      return ecrituresAGenerer(D, A_COMPTABILISER, [], true, PAIEMENTS, m, null, banquesDuDossier({ etat: 'sans_objet' }, m.plan))
     }),
   },
   {
@@ -234,12 +234,12 @@ const CAS_DES_PIECES: CasDuPlan[] = [
     roles: [],
     composer: (plan) => (['tresorerie', 'engagement'] as const).map((mode) => {
       const m = modele(plan, mode, mode === 'tresorerie' ? 'exploitant' : 'associe')
-      return analyserEcritures(brouillonGenere(m), A_COMPTABILISER, true, PAIEMENTS, m, null, SANS_EXEMPLAIRE)
+      return analyserEcritures(brouillonGenere(m), A_COMPTABILISER, true, PAIEMENTS, m, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, m.plan))
     }),
     temoin: (plan) => (['tresorerie', 'engagement'] as const).map((mode) => {
       const m = modele(plan, mode, mode === 'tresorerie' ? 'exploitant' : 'associe')
       // Le même brouillon, sa banque ôtée : l'analyse le dit déséquilibré.
-      return analyserEcritures(brouillonGenere(m).filter((e) => e.compte !== plan.banque), A_COMPTABILISER, true, PAIEMENTS, m, null, SANS_EXEMPLAIRE)
+      return analyserEcritures(brouillonGenere(m).filter((e) => e.compte !== plan.banque), A_COMPTABILISER, true, PAIEMENTS, m, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, m.plan))
     }),
   },
   {

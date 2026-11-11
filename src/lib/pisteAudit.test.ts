@@ -19,6 +19,7 @@ import { SANS_ECRITURE_DE_VENTE, SANS_EXEMPLAIRE, SANS_VENTE_FACTUREE } from '..
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // Le lettrage d'un fichier (lib/lettrage.ts) : vide, sauf dans les tests qui le calculent comme l'écran.
 const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
@@ -113,7 +114,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est invisible aux trois contrôles de analyserEcritures', () => {
     const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } =
-      analyserEcritures([orpheline], [], true, new Map(), TRESORERIE, null, SANS_EXEMPLAIRE)
+      analyserEcritures([orpheline], [], true, new Map(), TRESORERIE, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))
     expect(nbSansContrepartie).toBe(0)
     expect(groupesDesequilibres).toEqual([])
     expect(piecesDesynchronisees).toEqual([])

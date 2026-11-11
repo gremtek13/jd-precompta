@@ -20,6 +20,7 @@ import {
   SANS_ACOMPTE, recettesFactureesParMois, ventesFacturees, type EncaissementVendu, type FactureVendue, type RepriseVendue,
 } from './ventesFacturees'
 import { derniereDefinitionSql } from '../test/schema'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // LA PIÈCE CITÉE PAR UNE FACTURE REPRISE NE COMPTE QUE SES PAIEMENTS (étape A8c4 ; HISTORIQUE.md, « A8C4 »). Le défaut, confirmé
 // le 10/11/2026 : la pièce citée par une facture reprise (A8-Q5) comptait encore son reste impayé à sa date de pièce
@@ -169,7 +170,7 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
     const juste = [ligne(1, '2026-11-25', '706000', 'credit', 40), ligne(2, '2026-11-25', '512000', 'debit', 40, 'm1')]
     const entiere = [ligne(1, '2026-11-20', '706000', 'credit', 60), ...juste]
     const desynchronisees = (e: EcritureBrouillon[], a: typeof cible) =>
-      analyserEcritures(e, a, false, avant, modele, null, new Set()).piecesDesynchronisees.map((p) => p.id)
+      analyserEcritures(e, a, false, avant, modele, null, new Set(), banquesDuDossier({ etat: 'sans_objet' }, modele.plan)).piecesDesynchronisees.map((p) => p.id)
     expect(desynchronisees(juste, cible)).toEqual([])
     expect(desynchronisees(entiere, cible)).toEqual(['p1'])
     // Témoin : non citée, la pièce doit ses 100 € — l'écriture à ses seuls paiements est à régénérer, l'entière juste.

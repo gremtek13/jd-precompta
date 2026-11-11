@@ -23,6 +23,7 @@ import { centimesParDate, paiementsDesPieces, type PaiementDePiece, type PartPay
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { defautsDeNumerotation, demandeDeValidation, type LigneDemandee } from './validationExercice'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
+import { banquesDuDossier } from './banqueDuMouvement'
 
 // LA DEMANDE DE VALIDATION PORTE LES CLÉS DES QUATRE CHAMPS (lot FEC22c2 ; HISTORIQUE.md, « LE FEC D'UN BNC : LA DEMANDE DE
 // VALIDATION PORTE SES CLÉS (FEC22C2, DERRIÈRE SON DRAPEAU) »). Ce que ces cas gardent, le drapeau `CHAMPS_BNC_EXPORTES` joué
@@ -86,7 +87,7 @@ const PAIEMENTS = paiementsDesPieces([PRELEVEMENT, REMBOURSEMENT], [], [], [ESPE
 const cibleDe = (p: Piece): CibleComptable => ({ compte: p.categorie_id === 'c-divers' ? '625100' : '606100', immobilisation: false })
 const brouillonDe = (choix: ChoixChampsBnc | null, p: Piece, assujetti: boolean, paiements = PAIEMENTS) =>
   avecLeDrapeau(choix, () => enBrouillon(`${p.id}-${choix === null ? 'hier' : 'reglement'}`,
-    lignesPourPiece(D, p, cibleDe(p), assujetti, paiements.get(p.id) ?? [], TRESORERIE)))
+    lignesPourPiece(D, p, cibleDe(p), assujetti, paiements.get(p.id) ?? [], TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan))))
 
 const entrees = (o: Partial<EntreesDesChampsBnc> = {}): EntreesDesChampsBnc => ({
   choix: VIDES, paiements: PAIEMENTS, registre: [], factures: [], cotisations: [], ventilations: [], acquisitions: new Map(),
@@ -204,7 +205,7 @@ describe('le drapeau baissé : rien ne change, au caractère près', () => {
     const brouillon = [...brouillonDe(null, ACHAT, true), ...brouillonDe(null, NOTE, false)]
     const a = avecLeDrapeau(null, () => analyserEcritures(brouillon, [
       { piece: ACHAT, ...cibleDe(ACHAT) }, { piece: NOTE, ...cibleDe(NOTE) },
-    ], true, PAIEMENTS, TRESORERIE, null, new Set()))
+    ], true, PAIEMENTS, TRESORERIE, null, new Set(), banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     expect(a.piecesDesynchronisees).toEqual([])
     expect(defautsDeNumerotation(numeroter(brouillon, [ACHAT, NOTE], CHAMPS_BNC_NON_EXPORTES))).toEqual([])
   })
@@ -272,7 +273,7 @@ describe('le drapeau levé : une ligne par règlement, et la demande porte les c
     const dHier = [...brouillonDe(null, ACHAT, true), ...brouillonDe(null, NOTE, false)]
     const a = avecLeDrapeau(VIDES, () => analyserEcritures(dHier, [
       { piece: ACHAT, ...cibleDe(ACHAT) }, { piece: NOTE, ...cibleDe(NOTE) },
-    ], true, PAIEMENTS, TRESORERIE, null, new Set()))
+    ], true, PAIEMENTS, TRESORERIE, null, new Set(), banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     expect(a.piecesDesynchronisees.map((p) => p.id).sort()).toEqual(['p-achat', 'p-note'])
     const defauts = defautsDeNumerotation(numeroter(dHier, [ACHAT, NOTE], exportes()))
     expect(defauts.map((x) => (x.type === 'ligne_numerotee_deux_fois' ? [x.journal, x.numero, x.pieceRef, x.ligneId] : x.type))).toEqual([
@@ -282,7 +283,7 @@ describe('le drapeau levé : une ligne par règlement, et la demande porte les c
     const regeneres = [...brouillonDe(VIDES, ACHAT, true), ...brouillonDe(VIDES, NOTE, false)]
     const b = avecLeDrapeau(VIDES, () => analyserEcritures(regeneres, [
       { piece: ACHAT, ...cibleDe(ACHAT) }, { piece: NOTE, ...cibleDe(NOTE) },
-    ], true, PAIEMENTS, TRESORERIE, null, new Set()))
+    ], true, PAIEMENTS, TRESORERIE, null, new Set(), banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     expect(b.piecesDesynchronisees).toEqual([])
   })
 
@@ -448,7 +449,7 @@ describe('les bords du rangement et de la répartition', () => {
 
   it('une répartition fausse au centime, au même total et au même nombre de lignes, se dit « à régénérer »', () => {
     const faux = brouillonDe(VIDES, ACHAT, true).map((l) => (l.compte === '606100' ? { ...l, montant: l.montant === 58.33 ? 60 : 40 } : l))
-    const a = avecLeDrapeau(VIDES, () => analyserEcritures(faux, [{ piece: ACHAT, ...cibleDe(ACHAT) }], true, PAIEMENTS, TRESORERIE, null, new Set()))
+    const a = avecLeDrapeau(VIDES, () => analyserEcritures(faux, [{ piece: ACHAT, ...cibleDe(ACHAT) }], true, PAIEMENTS, TRESORERIE, null, new Set(), banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     expect(a.piecesDesynchronisees.map((p) => p.id)).toEqual(['p-achat'])
   })
 
