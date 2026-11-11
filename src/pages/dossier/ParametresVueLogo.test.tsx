@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import ParametresVue from './ParametresVue'
-import { TAILLE_MAX } from '../../lib/bornesStockage'
+import { TAILLE_MAX_LOGO_DE_FACTURE } from '../../lib/bornesStockage'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 import { cheminDuLogo } from '../../lib/logoDesFactures'
 import { PHRASE_LOGO_IDENTIQUE, PHRASE_REDEPOT } from '../../lib/logoDesFacturesVue'
@@ -437,7 +437,7 @@ describe.each(['cabinet', 'client'] as const)('choisir un fichier ne fait rien p
   it('un poids au-delà de la borne : dit tout de suite, avec le poids et la borne', async () => {
     monter(espace)
     await screen.findByAltText('Logo des factures')
-    await choisir(png(logoDe(TAILLE_MAX.ventes)), /^Ce logo n’est pas pris/)
+    await choisir(png(logoDe(TAILLE_MAX_LOGO_DE_FACTURE)), /^Ce logo n’est pas pris/)
     expect(lisible(bloc().getByRole('alert').textContent)).toBe('Ce logo n’est pas pris : il pèse 500,1 Ko, au-delà des 500 Ko qu’un logo de facture peut peser.')
     expect(bouton('Changer le logo').disabled).toBe(true)
     expect(faux.depots).toEqual([])

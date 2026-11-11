@@ -10,6 +10,21 @@ import type {
   StatutFactureRecu, StatutTva, TransmissionEncaissement, TransmissionFacture,
 } from '../../lib/types'
 
+// La section « Factures de l'ancien logiciel » (A8d2b), montée dans l'onglet du cabinet sous `IMPORT_DES_FACTURES_OFFERT`
+// (levé le 11/11/2026) : ici, son CÂBLAGE seul — un marqueur qui retient le dossier qu'il reçoit ; la section elle-même est
+// éprouvée par ImportDesFactures.test.tsx. Le drapeau se joue dans ses deux états par un accesseur, levé par défaut.
+const importDesFactures = vi.hoisted(() => ({ offert: true, montes: [] as string[] }))
+vi.mock('./ImportDesFactures', () => ({
+  default: (p: { dossierId: string }) => {
+    importDesFactures.montes.push(p.dossierId)
+    return null
+  },
+}))
+vi.mock('../../lib/importDesFacturesVue', async (original) => {
+  const reel = await original<typeof import('../../lib/importDesFacturesVue')>()
+  return { ...reel, get IMPORT_DES_FACTURES_OFFERT() { return importDesFactures.offert } }
+})
+
 // LE DERNIER DES DIX-SEPT ONGLETS À RECEVOIR UN TEST DE RENDU, et celui qui porte le seul document
 // légal que le cabinet émet lui-même. Ce que ce test garde et qu'aucun test de `src/lib` ne peut voir,
 // parce que tout vit dans le CÂBLAGE :
@@ -416,6 +431,29 @@ describe('FacturesTab — une lecture refusée', () => {
 
     await screen.findByText('Aucune facture.')
     expect(screen.queryByText('La liste des factures n’a pas pu être lue.')).toBeNull()
+  })
+})
+
+describe('FacturesTab — la section des factures de l’ancien logiciel (A8d2b)', () => {
+  afterEach(() => {
+    importDesFactures.offert = true
+    importDesFactures.montes = []
+  })
+
+  it('levé, la section se monte sous l’onglet du cabinet, pour son dossier', async () => {
+    poser([])
+    monter()
+    await screen.findByText('Aucune facture.')
+    expect(importDesFactures.montes.length).toBeGreaterThan(0)
+    expect(new Set(importDesFactures.montes)).toEqual(new Set(['dossier-de-test']))
+  })
+
+  it('baissé, l’onglet d’hier : la section ne se monte pas', async () => {
+    importDesFactures.offert = false
+    poser([])
+    monter()
+    await screen.findByText('Aucune facture.')
+    expect(importDesFactures.montes).toEqual([])
   })
 })
 

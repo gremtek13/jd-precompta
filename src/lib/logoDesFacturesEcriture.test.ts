@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TAILLE_MAX } from './bornesStockage'
+import { TAILLE_MAX_LOGO_DE_FACTURE } from './bornesStockage'
 import { deposerLeLogo } from './logoDesFacturesEcriture'
 import { empreinteDe, jpegFictif, logoDe } from '../test/logoFictif'
 import { mondeDuSeau as monde } from '../test/stockageFactice'
@@ -46,7 +46,7 @@ describe('un fichier que le seau refuserait ne part pas', () => {
   })
 
   it('un poids au-delà de la borne, dit avant tout envoi', async () => {
-    await expect(deposerLeLogo(D, fichier(logoDe(TAILLE_MAX.ventes)), H)).rejects.toThrow(/Ce logo n’est pas pris : il pèse .* qu’un logo de facture peut peser/)
+    await expect(deposerLeLogo(D, fichier(logoDe(TAILLE_MAX_LOGO_DE_FACTURE)), H)).rejects.toThrow(/Ce logo n’est pas pris : il pèse .* qu’un logo de facture peut peser/)
     expect(monde.envois).toEqual([])
   })
 

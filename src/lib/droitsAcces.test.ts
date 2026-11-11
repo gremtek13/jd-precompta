@@ -862,9 +862,10 @@ describe('ce que disent les cases, les paramètres de facturation ouverts (étap
       expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`, 'i')), table)
         .toBe(true)
     }
+    // `enregistrer_parametres_facturation` est, depuis A8d2a (11/11/2026), la recopie de la production : `$function$`.
     for (const fonction of Object.values(GESTES_AVEC_PARAMETRES).flat()) {
       expect(derniereDefinitionSql(fonction), fonction)
-        .toMatch(/\$\$\s*(declare\s(?:(?!\bbegin\b)[\s\S])*)?\bbegin\s+if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
+        .toMatch(/\$(?:function)?\$\s*(declare\s(?:(?!\bbegin\b)[\s\S])*)?\bbegin\s+if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
     }
     expect(derniereDefinitionSql('confirmer_rib'))
       .toMatch(/\$\$\s*(declare\s(?:(?!\bbegin\b)[\s\S])*)?\bbegin\s+if not public\.admin_du_dossier\(p_dossier_id\) or not exists/)
@@ -1385,8 +1386,10 @@ describe('ce que disent les cases, le logo des factures ouvert (étape A5c1)', (
     expect(texte).toMatch(/create policy ventes_depot_d_un_logo on storage\.objects for insert to authenticated with check \(bucket_id = 'ventes' and case when [^;]*\/logos\/[^;]* then public\.gere_les_ventes\(/i)
     expect(texte).toMatch(/create policy ventes_suppression_par_le_chef on storage\.objects for delete to authenticated using \([^;]*public\.est_chef_du_cabinet\(d\.cabinet_id\)/i)
     expect(texte).not.toMatch(/create policy \w+ on storage\.objects for (update|all)\b/i)
+    // Depuis A8d2a (`originaux_des_imports`, 11/11/2026), la dernière définition est la recopie que rend la production
+    // (`pg_get_functiondef`) : son corps s'ouvre par `$function$`.
     expect(derniereDefinitionSql('enregistrer_parametres_facturation'))
-      .toMatch(/\$\$\s*(declare\s(?:(?!\bbegin\b)[\s\S])*)?\bbegin\s+if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
+      .toMatch(/\$(?:function)?\$\s*(declare\s(?:(?!\bbegin\b)[\s\S])*)?\bbegin\s+if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
   })
 })
 

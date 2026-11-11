@@ -628,9 +628,8 @@ export type ProfessionPamc =
 
 // Toute profession que le volet social porte : celles des praticiens conventionnés, et (ligne 27.1, RET-Q1) une profession
 // libérale réglementée rattachée à la CIPAV — architecte, ostéopathe, psychologue… (la liste : `METIERS_CIPAV`,
-// lib/voletSocialPamc.ts). La base n'accepte `liberal_cipav` qu'une fois la migration `professions_cipav` appliquée
-// (supabase/preparees/20261111130000_professions_cipav.sql) ; avant, l'écran ne l'offre pas
-// (`PROFESSIONS_CIPAV_PREVUES`), et aucune ligne ne la porte.
+// lib/voletSocialPamc.ts). La base l'accepte depuis la migration `professions_cipav`, en production le 11/11/2026
+// (supabase/schema/20261111130000_professions_cipav.sql) ; l'écran l'offre sous `PROFESSIONS_CIPAV_PREVUES`, levé.
 export type ProfessionLiberale = ProfessionPamc | 'liberal_cipav'
 
 // Les chiffres du volet social d'un praticien conventionné pour un exercice (voir

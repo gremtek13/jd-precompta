@@ -4,6 +4,12 @@ import FacturesTab from './FacturesTab'
 import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
 import type { FactureEmise } from '../../lib/types'
 
+// La section « Factures de l'ancien logiciel » (A8d2b) se monte dans l'onglet du cabinet depuis que
+// `IMPORT_DES_FACTURES_OFFERT` est levé (11/11/2026) ; elle lit l'import et demande la session. Ces cas jugent le reste de
+// l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
+// FacturesTab.test.tsx.
+vi.mock('./ImportDesFactures', () => ({ default: () => null }))
+
 // LA LISTE QUE LES DEUX FORMULAIRES JUGENT LA DATE CONTRE (rangs 17 et 18 de la garde des factures). L'onglet passe à la facture
 // et à l'avoir `facturesDeLaSerie` : les factures et avoirs du dossier tels qu'il les a lus, ou `null` tant que la liste n'est
 // pas lue en entier — le rang 18 se tait alors, la base le dit au clic. Les deux formulaires sont doublés ici : ce fichier ne

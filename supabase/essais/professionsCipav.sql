@@ -1,5 +1,5 @@
 -- LES PROFESSIONS RELEVANT DE LA CIPAV DANS LE VOLET SOCIAL (ligne 27.1, RET-Q1 ; la migration `professions_cipav`,
--- PRÉPARÉE, supabase/preparees/20261111130000_professions_cipav.sql). Le récit : HISTORIQUE.md, « 11/11/2026 — LA CIPAV
+-- en production depuis le 11/11/2026, supabase/schema/20261111130000_professions_cipav.sql). Le récit : HISTORIQUE.md, « 11/11/2026 — LA CIPAV
 -- DANS L'ESTIMATION DES COTISATIONS (LIGNE 27.1, RET-Q1) (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après
 -- toute migration qui touche `volet_social_pamc`, ses contraintes ou `admin_du_dossier`.
 --

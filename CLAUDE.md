@@ -456,8 +456,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   début d'activité, l'ACRE et le taux dentiste en production depuis le 07/11/2026 (`parametres_des_cotisations`, deux
   tables hors de `dossiers`, que le client lit ; l'estimation les reçoit en entrée obligatoire, sans début d'activité
   elle se tait ; `PARAMETRES_DES_COTISATIONS_EXPORTES` levé ; TNS-Q1, TNS-Q4) → « LES PARAMÈTRES DES COTISATIONS : LE
-  DÉBUT D'ACTIVITÉ, L'ACRE ET LE TAUX DENTISTE » ; la retraite des quatre caisses estimée (ligne 27.1), la CIPAV derrière
-  `PROFESSIONS_CIPAV_PREVUES`, sa migration préparée → « LA CIPAV DANS L'ESTIMATION DES COTISATIONS » ; restent hors de l'estimation — revenus de remplacement,
+  DÉBUT D'ACTIVITÉ, L'ACRE ET LE TAUX DENTISTE » ; la retraite des quatre caisses estimée (ligne 27.1), la CIPAV en
+  production depuis le 11/11/2026 (`professions_cipav`, `PROFESSIONS_CIPAV_PREVUES` levé) → « LA CIPAV DANS L'ESTIMATION
+  DES COTISATIONS », « LE JOUR J DU 11/11/2026 » ; restent hors de l'estimation — revenus de remplacement,
   exonérations, outre-mer (une entrée en base chacun, que le moteur couvre sauf les DROM) ; la régularisation en
   production depuis le 07/11/2026 (`regularisation_des_cotisations` : l'organisme, l'année payée et la nature d'une
   échéance, et la part d'un prélèvement mixte qui régularise l'année d'avant, signée (TNS-Q2-B (B)) ;
@@ -683,8 +684,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     `PIECE_D_UNE_FACTURE_REPRISE_PREVUE` levés), la carte de la numérotation (A9b) offerte depuis
     le 11/11/2026 (`CARTE_DE_LA_NUMEROTATION_OFFERTE` levé, A9B-Q0) ; l'encaissement d'une reprise par le client
     « Ventes » (A8C-Q1) et ses pièces citées dans « Ma simulation » (A8Q5-Q2), préparés le 11/11/2026 (`reprises_au_client`,
-    deux lectures `security definer`, à appliquer par l'outil ; `REPRISES_AU_CLIENT_PREVUES` baissé) ; restent l'écran
-    d'import (A8d) et la suite → « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT (PRÉPARÉE, PAS APPLIQUÉE) », « A8
+    deux lectures `security definer`, à appliquer par l'outil ; `REPRISES_AU_CLIENT_PREVUES` baissé) ; l'écran d'import
+    (A8d2b) et les originaux dans le seau des ventes (A8d2a, `originaux_des_imports`) en production depuis le 11/11/2026
+    (`ORIGINAUX_DES_IMPORTS_PREVUS` et `IMPORT_DES_FACTURES_OFFERT` levés, A8D2B-Q3) ; reste la suite → « A8D2A : LES
+    ORIGINAUX DES FACTURES REPRISES DANS LE SEAU DES VENTES, EN BASE », « A8D2B : L'ÉCRAN D'IMPORT DES FACTURES
+    REPRISES », « LE JOUR J DU 11/11/2026 », « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT (PRÉPARÉE, PAS APPLIQUÉE) », « A8
     ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE
     (PRÉPARÉE, PAS APPLIQUÉE) », « A8-Q5 : LA PIÈCE D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) », « LE JOUR J DU 10/11/2026 : SEPT MIGRATIONS EN PRODUCTION (INAL1, INAL2, PC4, A8A, A9A, A8B, A8-Q5) ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
@@ -807,8 +811,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   « DELETE-CABINET RETIRE LE LOGO DU CABINET ».
 - **Les bornes des seaux** (`lib/bornesStockage.ts`) : tout dépôt passe par un `preparer…` : le type décidé par
   l'application (jamais `file.type`) et la taille jugés AVANT l'envoi, un Blob RÉÉTIQUETÉ ; pièces PDF, JPEG, PNG, CSV,
-  20 Mio ; packs ZIP, XLSX, 50 Mio ; logos PNG, JPEG, WebP, 500 Kio, jamais de SVG ; `ventes` PNG ou JPEG, 500 Kio ; les
-  mêmes en base (`bornesStockage.test.ts`, `depotsDansLesSeaux.test.ts`) → « LES BORNES DES SEAUX DU STOCKAGE ».
+  20 Mio ; packs ZIP, XLSX, 50 Mio ; logos PNG, JPEG, WebP, 500 Kio, jamais de SVG ; `ventes` 20 Mio, PNG, JPEG,
+  PDF, texte brut et CSV depuis le 11/11/2026 (A8d2a), un logo de facture restant PNG ou JPEG, 500 Kio ; les mêmes en base (`bornesStockage.test.ts`, `depotsDansLesSeaux.test.ts`) → « LES BORNES DES SEAUX DU STOCKAGE ».
 - **Une pièce jointe écartée se dit** : un `upsert` qui ne fait rien sur la clé (l'empreinte des identifiants Resend),
   jamais le nom, l'expéditeur ni l'objet ; raisons format, poids, `depot` (toute autre perte), `vide` ; « vue » par
   `marquer_pieces_jointes_vues` seule, l'insertion de restauration au super-administrateur ; le journal compte, ne

@@ -9,6 +9,12 @@ import { motsDuCabinet } from '../../lib/espaceVentes'
 import { formatMoney } from '../../lib/format'
 import { BON_POUR_ACCORD, MENTION_BROUILLON_IMPRIMEE } from '../../lib/devis'
 
+// La section « Factures de l'ancien logiciel » (A8d2b) se monte dans l'onglet du cabinet depuis que
+// `IMPORT_DES_FACTURES_OFFERT` est levé (11/11/2026) ; elle lit l'import et demande la session. Ces cas jugent le reste de
+// l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
+// FacturesTab.test.tsx.
+vi.mock('./ImportDesFactures', () => ({ default: () => null }))
+
 // LA VUE « DEVIS » DANS L'ONGLET FACTURES (espace client, étape P6a1), avec la VRAIE vue et son faux client, qui APPLIQUE les
 // filtres et annonce un compte. Ce que ces cas gardent, dans les deux espaces : le drapeau d'export (`DEVIS_EXPORTES`) décide
 // si la vue existe — baissé, aucun onglet et aucune lecture des devis ; la liste lue dit le numéro ou « Brouillon », le client,

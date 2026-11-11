@@ -1,4 +1,5 @@
--- RETOUR ARRIÈRE de `originaux_des_imports` (A8d2a, ligne 51.5) — À COLLER dans l'éditeur SQL, dans une transaction, avec
+-- RETOUR ARRIÈRE de `originaux_des_imports` (A8d2a, ligne 51.5 ; en production depuis le 11/11/2026, version 20261111131855 :
+-- supabase/schema/20261111131855_originaux_des_imports.sql) — À COLLER dans l'éditeur SQL, dans une transaction, avec
 -- la ligne d'historique `retour_originaux_des_imports` : il retire la policy de dépôt des originaux (« drop policy »),
 -- que l'outil retiendrait.
 --

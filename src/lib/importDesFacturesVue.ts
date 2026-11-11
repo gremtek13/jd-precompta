@@ -28,10 +28,12 @@ import type { ModeComptable, NatureOperation, TypeClient } from './types'
 // base × taux, arrondie) ; le reste, les refus d'`importer_factures` (supabase/schema/20261110143020_factures_importees.sql).
 
 /**
- * L'écran d'import est-il offert ? Baissé, l'onglet Factures est celui d'hier : rien n'est lu ni montré. Le lever est une
- * décision du cabinet (la base est en production depuis le 10/11/2026 ; le CSV attend A4B3-Q6).
+ * L'écran d'import est-il offert ? Levé le 11/11/2026, sur la décision du cabinet (A8D2B-Q3 : « après la modification du
+ * stockage », la migration `originaux_des_imports` en production le même jour ; la base depuis le 10/11/2026 ; le CSV
+ * attend A4B3-Q6). Baissé, l'onglet Factures était celui d'hier — rien lu ni montré —, un état que l'accesseur
+ * d'ImportDesFactures.test.tsx joue encore.
  */
-export const IMPORT_DES_FACTURES_OFFERT: boolean = false
+export const IMPORT_DES_FACTURES_OFFERT: boolean = true
 
 /** Le nombre de factures qu'un lot porte au plus (`importer_factures`). */
 export const FACTURES_PAR_LOT_MAX = 2000

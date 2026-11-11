@@ -45,8 +45,10 @@ const fichier = (cle: string, lue: FactureRepriseLue | string[], sha = cle.padEn
 const remplis = (o: Partial<ChoixSaisis> = {}): ChoixSaisis => ({ ...choixVides(), type_client: 'assujetti', transmise_par: 'pdf', encaisse: '0', ...o })
 
 describe('le drapeau', () => {
-  it('est baissé : l’onglet Factures est celui d’hier', () => {
-    expect(IMPORT_DES_FACTURES_OFFERT).toBe(false)
+  // Levé le 11/11/2026 (A8D2B-Q3 : après la migration des originaux) ; l'état baissé, l'onglet d'hier, reste joué par
+  // l'accesseur d'ImportDesFactures.test.tsx.
+  it('est levé : l’onglet Factures offre l’import des factures de l’ancien logiciel', () => {
+    expect(IMPORT_DES_FACTURES_OFFERT).toBe(true)
   })
 })
 

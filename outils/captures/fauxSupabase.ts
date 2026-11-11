@@ -166,6 +166,9 @@ dossiers.push({
   id: 'd12', nom: 'Clara Fontaine Conseil', siret: '44455566600019', code_naf: '70.22Z',
   libelle_naf: 'Conseil pour les affaires et autres conseils de gestion', code_email: 'd12', archive: true,
   ventes_par_les_factures: true, ventes_par_les_factures_depuis: '2026-09-01T07:30:00+00:00', ...IDENTITE_LEGALE_VIDE,
+  // La date de reprise des factures de l'ancien logiciel (A8d2b) : la section « Factures de l'ancien logiciel » de
+  // l'onglet Factures la lit, et se dirait illisible sans elle.
+  reprise_des_factures_le: '2026-09-01',
 })
 
 // Les postes sont ceux que le formulaire connaît (lib/cases2035.ts), comme un cabinet les saisit — sauf
@@ -2302,6 +2305,11 @@ const TABLES: Record<string, Ligne[]> = {
   volet_social_pamc: [{
     id: 'vs1', dossier_id: 'd1', annee: 2026, profession: 'auxiliaire_medical', remplacant: false,
     recettes_brutes: 64_000, honoraires_conventionnes: 61_500, depassements: 0, recettes_structures: null,
+  }, {
+    // Une profession libérale relevant de la CIPAV (ligne 27.1, RET-Q1), sur le dossier basculé : ni rubrique du SNIR,
+    // la retraite recouvrée par l'Urssaf.
+    id: 'vs12', dossier_id: 'd12', annee: 2026, profession: 'liberal_cipav', remplacant: false,
+    recettes_brutes: 58_000, honoraires_conventionnes: null, depassements: null, recettes_structures: null,
   }],
   // Les règles d'affectation du cabinet infirmier (lib/reglesAffectation.ts) : trois mouvements
   // proposés sur deux catégories, et un prélèvement « telecom » que la règle reconnaît mais que le lot

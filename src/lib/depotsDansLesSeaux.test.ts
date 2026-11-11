@@ -252,9 +252,10 @@ export function ecarts(depots: Depot[], bornes: BornesLues[]): string[] {
  * A5c1), le seau des ventes qu'elle crée.
  */
 // Le seau des ventes tel que la migration des ORIGINAUX (A8d2a, `originaux_des_imports`) le rend : l'écran d'import (A8d2b)
-// y dépose l'original d'une facture reprise derrière `ORIGINAUX_DES_IMPORTS_PREVUS`, baissé tant qu'elle n'est pas appliquée.
-// Ses types sont lus de son `update storage.buckets … where id = 'ventes'`, dans l'export ou dans supabase/preparees/ ; sans
-// elle, le seau est celui de la migration du logo.
+// y dépose l'original d'une facture reprise derrière `ORIGINAUX_DES_IMPORTS_PREVUS`, levé : elle est en production depuis le
+// 11/11/2026 (supabase/schema/20261111131855_originaux_des_imports.sql). Ses types sont lus de son `update storage.buckets …
+// where id = 'ventes'`, dans l'export (ou dans supabase/preparees/, où elle a attendu) ; sans elle, le seau est celui de la
+// migration du logo.
 function typesDesOriginaux(): string[] | null {
   const dossiers = [new URL('../../supabase/schema/', import.meta.url), new URL('../../supabase/preparees/', import.meta.url)]
   const fichiers = dossiers.flatMap((d) => readdirSync(d).filter((n) => /^\d{14}_originaux_des_imports\.sql$/.test(n)).map((n) => new URL(n, d)))

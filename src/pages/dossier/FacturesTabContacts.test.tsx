@@ -7,6 +7,12 @@ import type { ArticleExoneration, FactureEmise } from '../../lib/types'
 import { NON_BASCULE } from '../../test/factures'
 import { DEVIS_EXPORTES } from '../../lib/devis'
 
+// La section « Factures de l'ancien logiciel » (A8d2b) se monte dans l'onglet du cabinet depuis que
+// `IMPORT_DES_FACTURES_OFFERT` est levé (11/11/2026) ; elle lit l'import et demande la session. Ces cas jugent le reste de
+// l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
+// FacturesTab.test.tsx.
+vi.mock('./ImportDesFactures', () => ({ default: () => null }))
+
 // LA VUE « CLIENTS » DANS L'ONGLET FACTURES (espace client, étape A4b1), avec la VRAIE vue et son faux client. Ce que ces cas
 // gardent : le sélecteur nomme « Clients » à la suite de « Factures », « Règlements » et « Articles », au cabinet et au client
 // « Ventes » ; la vue par défaut reste « Factures » ; la vue ne lit la table des contacts que sur le clic ; le drapeau d'export

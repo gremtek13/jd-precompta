@@ -256,11 +256,16 @@ describe('le seau des ventes et le logo des factures', () => {
     expect(fichier !== null).toBe(LOGO_DES_FACTURES_EXPORTE)
   })
 
+  // Depuis A8d2a (`originaux_des_imports`, en production le 11/11/2026), le seau du module est l'union : la migration du
+  // logo et la première ligne de l'essai disent le seau d'AVANT, `bornesDuSeauDesVentes(false)`.
   it('même taille, mêmes types, dans le module et l’essai — et dans la migration quand l’export la porte : privé', () => {
     const attendue = essai.find((b) => b.seau === 'ventes')!
-    expect(attendue).toEqual({ seau: 'ventes', publique: false, taille: TAILLE_MAX.ventes, types: [...TYPES_ADMIS.ventes] })
-    expect(TAILLE_MAX.ventes).toBe(512_000)
-    expect([...TYPES_ADMIS.ventes]).toEqual(['image/png', 'image/jpeg'])
+    const avant = bornesDuSeauDesVentes(false)
+    expect(attendue).toEqual({ seau: 'ventes', publique: false, taille: avant.taille, types: [...avant.types] })
+    expect(avant.taille).toBe(512_000)
+    expect([...avant.types]).toEqual(['image/png', 'image/jpeg'])
+    const duModule = bornesDuSeauDesVentes(ORIGINAUX_DES_IMPORTS_PREVUS)
+    expect({ taille: TAILLE_MAX.ventes, types: [...TYPES_ADMIS.ventes] }).toEqual({ taille: duModule.taille, types: [...duModule.types] })
     if (fichier === null) return
     expect(seauDeLaMigrationDuLogo(readFileSync(fichier, 'utf8'))).toEqual(attendue)
   })
@@ -307,9 +312,9 @@ describe('le seau des ventes et le logo des factures', () => {
   it('le format se juge avant la taille, et la borne se dit à l’octet quand une décimale la confondrait', async () => {
     const lourd = await preparerLogoDeFacture(pesant(fichier_('logo.gif', GIF), 2 * 1024 * 1024))
     expect('refus' in lourd && lourd.refus.raison).toBe('format')
-    const trop = await preparerLogoDeFacture(pesant(fichier_('logo.png', PNG), TAILLE_MAX.ventes + 1))
+    const trop = await preparerLogoDeFacture(pesant(fichier_('logo.png', PNG), TAILLE_MAX_LOGO_DE_FACTURE + 1))
     expect('refus' in trop && trop.refus.message).toBe('il pèse 512\u202f001\u00a0octets, au-delà des 512\u202f000\u00a0octets qu’un logo de facture peut peser')
-    expect('refus' in (await preparerLogoDeFacture(pesant(fichier_('logo.png', PNG), TAILLE_MAX.ventes)))).toBe(false)
+    expect('refus' in (await preparerLogoDeFacture(pesant(fichier_('logo.png', PNG), TAILLE_MAX_LOGO_DE_FACTURE)))).toBe(false)
   })
 })
 
@@ -317,13 +322,14 @@ describe('le seau des ventes et le logo des factures', () => {
 const fichier_ = (nom: string, octets: number[] = [], typeDuNavigateur = '') => new File([new Uint8Array(octets)], nom, { type: typeDuNavigateur })
 
 // ── A8d2a : l'original d'une facture reprise dans le seau des ventes ─────────────────────────────────────────────────
-// La migration `originaux_des_imports` est PRÉPARÉE (supabase/preparees/), pas appliquée : `ORIGINAUX_DES_IMPORTS_PREVUS`
-// est baissé, et le seau garde ses bornes d'hier. Ses deux états se jouent par `bornesDuSeauDesVentes`, confrontés au texte
-// de la migration et aux deux lignes de l'essai (bornesStockage.sql : `attendu_d_avant`, `attendu_depuis_a8d2a`).
+// La migration `originaux_des_imports` est EN PRODUCTION depuis le 11/11/2026 (supabase/schema/, version 20261111131855) :
+// `ORIGINAUX_DES_IMPORTS_PREVUS` est levé, et le seau porte l'union. Ses deux états se jouent encore par
+// `bornesDuSeauDesVentes`, confrontés au texte de la migration et aux deux lignes de l'essai (bornesStockage.sql :
+// `attendu_d_avant`, `attendu_depuis_a8d2a`).
 describe('A8d2a : l’original d’une facture reprise, dans le seau des ventes', () => {
   const dossier = (d: string) => new URL(`../../supabase/${d}/`, import.meta.url)
   const nommees = (d: string) => readdirSync(dossier(d)).filter((nom) => /^\d{14}_originaux_des_imports\.sql$/.test(nom))
-  const migration = readFileSync(new URL(nommees('preparees')[0], dossier('preparees')), 'utf8')
+  const migration = readFileSync(new URL(nommees('schema')[0], dossier('schema')), 'utf8')
   const retour = readFileSync(new URL('20261111120100_retour_originaux_des_imports.sql', dossier('preparees/retour')), 'utf8')
   const ventesDeLEssai = bornesDeLEssai(texteDeLEssai()).filter((b) => b.seau === 'ventes')
   const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
@@ -332,15 +338,16 @@ describe('A8d2a : l’original d’une facture reprise, dans le seau des ventes'
     new File([octets(contenu)], nom, { type: typeDuNavigateur })
   const CII = '\uFEFF<?xml version="1.0" encoding="UTF-8"?>\n<!-- export -->\n<rsm:CrossIndustryInvoice xmlns:rsm="urn:x">'
 
-  it('le drapeau est baissé : la migration est préparée, une seule fois, et l’export ne la porte pas', () => {
-    expect(ORIGINAUX_DES_IMPORTS_PREVUS).toBe(false)
-    expect(nommees('preparees')).toHaveLength(1)
-    expect(nommees('schema')).toHaveLength(ORIGINAUX_DES_IMPORTS_PREVUS ? 1 : 0)
+  it('le drapeau est levé : la migration est dans l’export, une seule fois, et n’est plus préparée', () => {
+    expect(ORIGINAUX_DES_IMPORTS_PREVUS).toBe(true)
+    expect(nommees('schema')).toEqual(['20261111131855_originaux_des_imports.sql'])
+    expect(nommees('preparees')).toHaveLength(0)
+    // Le seau du code suit le drapeau : l'union, celle de la migration.
+    expect({ types: [...TYPES_ADMIS.ventes], taille: TAILLE_MAX.ventes })
+      .toEqual({ types: [...bornesDuSeauDesVentes(true).types], taille: bornesDuSeauDesVentes(true).taille })
   })
 
-  it('l’état d’avant : le seau garde les bornes du logo, celles de l’essai tant que la migration n’est pas en base', () => {
-    expect({ types: [...TYPES_ADMIS.ventes], taille: TAILLE_MAX.ventes })
-      .toEqual({ types: [...bornesDuSeauDesVentes(false).types], taille: bornesDuSeauDesVentes(false).taille })
+  it('l’état d’avant : le seau aux bornes du logo, celles que l’essai attend d’une base sans la migration', () => {
     expect(bornesDuSeauDesVentes(false)).toEqual({ types: ['image/png', 'image/jpeg'], taille: 512_000 })
     expect(ventesDeLEssai).toHaveLength(2)
     expect(ventesDeLEssai[0]).toEqual({ seau: 'ventes', publique: false, taille: 512_000, types: ['image/png', 'image/jpeg'] })

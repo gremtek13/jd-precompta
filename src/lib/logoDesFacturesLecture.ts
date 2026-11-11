@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
-import { TAILLE_MAX, typeDUnLogoDeFacture } from './bornesStockage'
+import { TAILLE_MAX_LOGO_DE_FACTURE, typeDUnLogoDeFacture } from './bornesStockage'
 import { empreinteSha256, typeDuNomDuLogo, type LogoLu } from './logoDesFactures'
 
 // LE FICHIER DU LOGO QU'UNE VERSION DÉSIGNE, RELU DANS LE SEAU `ventes` POUR L'ÉCRAN (espace client, étape A5c2a ; modèle :
@@ -40,9 +40,10 @@ export async function lireLeLogo(logo: { chemin: string; empreinte: string }): P
   const { data, error } = reponse
   if (error) return estIntrouvable(error) ? { etat: 'absent' } : { etat: 'refuse', motif: messageErreur(error, 'le stockage n’a pas rendu le fichier') }
   try {
-    // Ce qui n'est pas un fichier (une réponse d'une autre forme), un fichier vide ou plus gros que la borne du seau : pas un logo.
+    // Ce qui n'est pas un fichier (une réponse d'une autre forme), un fichier vide ou plus gros que la borne d'un LOGO : pas un
+    // logo. La borne du logo, plus celle du seau : depuis A8d2a (11/11/2026), le seau porte aussi les originaux, à 20 Mio.
     if (data == null || typeof data.arrayBuffer !== 'function' || typeof data.size !== 'number') return { etat: 'illisible' }
-    if (data.size === 0 || data.size > TAILLE_MAX.ventes) return { etat: 'illisible' }
+    if (data.size === 0 || data.size > TAILLE_MAX_LOGO_DE_FACTURE) return { etat: 'illisible' }
     if (await empreinteSha256(data) !== logo.empreinte) return { etat: 'autre_empreinte' }
     // L'empreinte juste, le type se relit pourtant : à la signature, jamais au type que le service déclare, et il doit être
     // celui que dit le nom du chemin (la base le refuse autrement).

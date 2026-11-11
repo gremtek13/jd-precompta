@@ -346,7 +346,7 @@ incompréhensible trois étapes plus loin.
    c'est le bon). Sans lui, les versions désignent un fichier absent (la base l'admet : un logo inchangé ne se rejuge
    pas), et une version nouvelle peut en poser un autre.
    **L'original d'une facture reprise** de l'ancien logiciel (seau `ventes`, `<dossier>/imports/<lot>/<empreinte>.pdf`,
-   `.xml` ou `.csv`, étape A8d2, une fois la migration `originaux_des_imports` appliquée) : la sauvegarde porte les
+   `.xml` ou `.csv`, étape A8d2, migration `originaux_des_imports` en production depuis le 11/11/2026) : la sauvegarde porte les
    lignes qui le citent (chemin et empreinte), jamais le fichier, et son manifeste le dit ; le pack d'une période le
    porte sous `Factures_reprises/<lot>/<fichier>`. La restauration ne le redépose PAS : le reverser à la main depuis le
    pack, au chemin `<dossier>/imports/<lot>/<fichier>`, son empreinte SHA-256 comparée au nom du fichier.

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { TAILLE_MAX } from './bornesStockage'
+import { TAILLE_MAX_LOGO_DE_FACTURE } from './bornesStockage'
 import { cheminDuLogo } from './logoDesFactures'
 import {
   EXPLICATION_DEJA_LA, EXPLICATION_REDEPOSE, VERSION_SAUVEGARDE, bilanDesLogos, depuisBase64, ecartsDesLogos, enBase64,
@@ -63,8 +63,8 @@ describe('le base64', () => {
     expect(enBase64(toutes)).toBe(Buffer.from(toutes).toString('base64'))
   })
 
-  it('un logo à la borne du seau, en plusieurs tranches, sans rien perdre', () => {
-    const o = octets(TAILLE_MAX.ventes)
+  it('un logo à la borne d’un logo de facture, en plusieurs tranches, sans rien perdre', () => {
+    const o = octets(TAILLE_MAX_LOGO_DE_FACTURE)
     const texte = enBase64(o)
     expect(texte).toBe(Buffer.from(o).toString('base64'))
     expect(Buffer.from(depuisBase64(texte) ?? new Uint8Array()).equals(Buffer.from(o))).toBe(true)
@@ -166,7 +166,7 @@ describe('la cohérence des logos d’une sauvegarde relue', () => {
     ['un type qui n’est pas celui de son nom', { type: 'image/jpeg' }, 'n’a pas le type que dit son nom'],
     ['un type d’un autre seau', { type: 'image/webp' }, 'n’a pas le type que dit son nom'],
     ['un poids nul', { octets: 0 }, 'n’a pas un poids d’un à 512000 octets'],
-    ['un poids au-delà de la borne', { octets: TAILLE_MAX.ventes + 1 }, 'n’a pas un poids d’un à 512000 octets'],
+    ['un poids au-delà de la borne', { octets: TAILLE_MAX_LOGO_DE_FACTURE + 1 }, 'n’a pas un poids d’un à 512000 octets'],
     ['des octets qui ne sont pas un texte', { base64: 12 }, 'n’a pas ses octets en base64'],
   ])('un fichier d’une autre forme : %s', (_quoi, change, faute) => {
     const s = coherente()
