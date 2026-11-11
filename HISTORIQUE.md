@@ -51171,3 +51171,12 @@ l'ouverture, pas encore cité). Règles et mots dans `lib/documentsEtDemandesVue
 (`casesSansEffetSelon`, `ceQueDitLaCaseDocuments`, confrontée aux policies), joué sous les deux états. Gardes mis à jour :
 `depotsDansLesSeaux` (le cinquième seau, lu de la migration préparée), `ecransAvantLecture` (quatre écrans), `droitsAcces`
 (routes et entrées). Reste B3b : la relance par e-mail (`send-email`, `emails_envoyes`).
+
+### 11/11/2026 — L'ASSISTANT REDÉPLOYÉ (V56) POUR LA JAMBE DE BANQUE PAR COMPTE BANCAIRE (MCB5, CINQUIÈME PARTIE)
+
+Après la fusion de la demande n° 342 (`main` à `4fe0b331317370f5e963fd81168ba5ce1c05861b`), `agent-comptable` est redéployée
+par la ligne qui importe le dépôt, à ce commit écrit en entier, `verify_jwt` à `false` comme le dit `supabase/config.toml` :
+v55 importait `4d95e96…`, v56 importe `4fe0b33…`. `allerretour.py` : la copie déployée importe le fichier de ce commit,
+identique au dépôt (5 103 lignes), rien n'a été recopié. OPTIONS rend 200, un POST sans session 401, avant toute dépense ;
+le modèle n'a pas été appelé. Drapeau `COMPTES_BANCAIRES_PREVUS` baissé : l'assistant ne lit rien de plus. Revenir en
+arrière : redéployer la ligne d'import au commit `4d95e96b6788b0f82bf846f6bb186e6e34997a75`.
