@@ -162,6 +162,12 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
       + 'Le compte d’une CATÉGORIE, que le cabinet règle, et non celui d’un rôle : depuis l’étape VF4a, ils égalent le défaut '
       + 'des rôles `services_bancaires` et `prestations_de_services`, sans en être l’emploi.',
   },
+  'src/lib/planDepuisLaBalance.ts': {
+    nombre: 3,
+    raison: 'LA REPRISE QUI PROPOSE LE PLAN (PC6) compare au DÉFAUT du catalogue, sans jamais l’écrire : le plan qu’elle compose '
+      + 'pour `regler_plan_du_dossier` ne porte que les rôles qui s’en écartent, et les refus 9 et 10 de la fonction, qu’elle '
+      + 'redit avant le clic, exceptent le compte du catalogue d’un rôle du bilan ou des indemnités kilométriques.',
+  },
   'src/lib/compteDeBilan.ts': {
     nombre: 2,
     raison: 'Deux refus recopiés MOT POUR MOT de `refus_compte_de_bilan` (« s’écrit au 580000, virements internes »), que '
