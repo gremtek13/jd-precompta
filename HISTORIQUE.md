@@ -50532,3 +50532,20 @@ avant l'appel, retirés si l'import échoue ; après « Retirer l'import » (`re
 `retirerFichiers` au chef seul (la policy du seau), restés pour un membre, ce que l'écran dit. La garde des dépôts lit les
 types du seau des ventes dans la migration des originaux ; treize dépôts. 36 tests ; trois mutations mordent (verrou,
 doublon, originaux du membre). Restent : le CSV (A4B3-Q6), A8D2B-Q1 à Q3.
+
+### 11/11/2026 — CINQUANTE-HUIT RÉPONSES DU CABINET (PAGE DES ARBITRAGES, LUES LE 11/11/2026)
+
+Données entre 05 h 33 et 05 h 55 (UTC), lues à la reprise. **À la recommandation** (cinquante) : A8B-Q1 à Q4, A8C2-Q1,
+A8D1-Q1 et Q2, A8Q5-Q2 (« Ma simulation » reçoit les identifiants seuls), A9A-Q1 à Q6, A9B-Q0 (la carte de la numérotation
+s'ouvre), INAL-Q1, Q2, Q3, Q5, Q7, Q8, INAL12-Q1 à Q3, INAL4-Q1 (la référence d'un relevé devient neutre), LM-Q1 à Q8 et Q10,
+MCB-Q2 à Q8, P1T-E1, PC4-Q1 à Q4 (PC4-Q2 : le 468 dans une migration à part), RET-Q2 à Q5 — déjà construites pour la plupart,
+le reste mis en chantier. **Contre la recommandation** (huit) : MCB-Q1, un 512 par compte bancaire d'emblée (environ quinze
+jours) ; LM-Q9, les lettres de mission et les honoraires du cabinet DANS le MVP (environ dix-neuf jours) ; RET-Q1, la CIPAV
+maintenant ; A8C-Q1, le client « Ventes » enregistre l'encaissement d'une facture reprise (une fonction de lecture de plus) ;
+A8Q5-Q3, le registre d'une reprise ne compte pas ce qu'un exercice validé a déjà compté ; INAL3-Q1, le paquet d'archive inclut
+une pièce sans empreinte, marquée « non vérifiée » ; P1T-E2, l'historique des droits garde l'adresse d'un accès retiré (une
+donnée personnelle de plus, au registre RGPD.md) ; INAL-Q6, sans option retenue, la note « Avoir le choix » : au départ d'un
+client, le cabinet choisira entre remettre les archives puis supprimer, et garder le dossier dix ans. Le même jour, sur une
+demande du cabinet d'aller plus vite, cinq agents en parallèle : MCB, LM (premier lot), les deux lectures du client des
+reprises (A8C-Q1, A8Q5-Q2), A8Q5-Q3, et les petits lots (A9B-Q0, INAL4-Q1, INAL3-Q1, INAL12-Q2). Restent à engager : la
+CIPAV, P1T-E2, le 468, INAL-Q6. Sans réponse : A8C6-Q1 et Q2, A8D2A-migration, A8D2A-Q1, A8D2B-Q1 à Q3, A8D2C-Q1, E7B-Q1 et Q2.
