@@ -21,7 +21,7 @@ import { messageErreur } from './messageErreur'
 // Le `catch` est nécessaire : `remove()` rend `{ error }` sur un refus du serveur, mais REJETTE sur
 // une coupure réseau. Les deux laissent le même fichier en place.
 export async function retirerFichiers(
-  bucket: 'pieces' | 'packs' | 'cabinet-logos',
+  bucket: 'pieces' | 'packs' | 'cabinet-logos' | 'ventes',
   chemins: string[],
   contexte: string,
 ): Promise<void> {

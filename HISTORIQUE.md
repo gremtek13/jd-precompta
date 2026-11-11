@@ -50517,3 +50517,18 @@ lignes, 0 en faute, 103 mutations sur 103 ; policies élargies, cinq lignes OI e
 par A8d2a retiré d'abord), 133 lignes, 0 en faute, 97 sur 97, OI EN ATTENTE. Le banc du leurre ne conclut pas : son
 leurre ne couvre pas `pieces_des_factures_reprises` (A8-Q5), défaut d'avant. Reste : l'écran d'import retire le fichier
 après `retirer_import`.
+
+### 11/11/2026 — A8D2B : L'ÉCRAN D'IMPORT DES FACTURES REPRISES, DERRIÈRE SON DRAPEAU (LIGNE 51.5)
+
+(Agent architecte ; aucune migration ni écriture en production.) Section « Factures de l'ancien logiciel » sous la liste de
+l'onglet Factures, au cabinet seul, derrière `IMPORT_DES_FACTURES_OFFERT` (baissé : rien n'est lu ni rendu, testé dans ses
+deux états) ; règle dans `lib/importDesFacturesVue.ts`, lecture et gestes dans `lib/importDesFacturesLecture.ts`. **Établi** :
+aucun écran ne posait `reprise_des_factures_le` ; la section le fait, au chef seul, refus dits avant le clic, la confirmation
+disant qu'elle se fige au premier import. Chaque fichier (Factur-X, CII, UBL ; plusieurs d'un coup) lu par A8d1, ses refus
+dits avant le clic avec ceux d'A8d1 tels quels : doublon de numéro ou d'empreinte, date de la reprise ou après, avoir sans sa
+facture reprise, choix SANS défaut (« Appliquer à toutes » est un geste). Un refus retient le lot ; un lot, un format ; trié
+par date, la facture avant l'avoir ; encaissé au prorata (l'aperçu le dit). Originaux levés : préparés de nouveau, déposés
+avant l'appel, retirés si l'import échoue ; après « Retirer l'import » (`retirer_import`, les lignes seules), retirés par
+`retirerFichiers` au chef seul (la policy du seau), restés pour un membre, ce que l'écran dit. La garde des dépôts lit les
+types du seau des ventes dans la migration des originaux ; treize dépôts. 36 tests ; trois mutations mordent (verrou,
+doublon, originaux du membre). Restent : le CSV (A4B3-Q6), A8D2B-Q1 à Q3.

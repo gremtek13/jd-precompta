@@ -22,6 +22,8 @@ import { TITRE_AVOIR_D_UNE_REPRISE } from '../../lib/avoirDUneFactureReprise'
 import FactureApercu from './FactureApercu'
 import TransmissionFactureModal from './TransmissionFactureModal'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
+import ImportDesFactures from './ImportDesFactures'
+import { IMPORT_DES_FACTURES_OFFERT } from '../../lib/importDesFacturesVue'
 import ReglementsSection from './ReglementsSection'
 import ArticlesVue from './ArticlesVue'
 import ContactsVue from './ContactsVue'
@@ -773,6 +775,12 @@ export default function FacturesTab(props: Props) {
               </div>
             )}
           </div>
+
+          {/* Les factures de l'ancien logiciel (ligne 51.5, A8d2b) : le cabinet seul, derrière `IMPORT_DES_FACTURES_OFFERT` ;
+              baissé, rien n'est lu ni rendu. */}
+          {espace === 'cabinet' && IMPORT_DES_FACTURES_OFFERT && (
+            <ImportDesFactures dossierId={dossierId} onChange={() => { void load() }} />
+          )}
         </>
       )}
 
