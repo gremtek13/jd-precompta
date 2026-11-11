@@ -14,6 +14,7 @@ import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
+import { ORIGINAUX_RETENUS_PREVUS } from './originauxRetenus'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
@@ -33,6 +34,7 @@ import {
   auPlanDesParametresDesCotisations,
   auPlanDesComptesBancaires,
   auGrapheDesComptesBancaires,
+  auPlanDesOriginauxLiberes,
   auPlanDesAdressesReception,
   auPlanDesArticles,
   auPlanDesContacts,
@@ -99,7 +101,8 @@ describe('le filtre du plan', () => {
         && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
         && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
         && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS)
-        && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES))
+        && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
+        && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
