@@ -23,8 +23,8 @@
 --      perd aussi son lien (`contacts_efface_delie`).
 --   2. `enregistrer_contact` (redéfinie, le corps de production à l'octet près plus ce qui suit) reçoit la clé
 --      `dossier_client_id` : un rang 4 bis, après le contact et avant le nom — un identifiant, dans le dossier du cabinet
---      seul, posé à la création et jamais changé (LM3-Q1), un autre dossier du même cabinet, une seule fiche par dossier
---      (23505) — ; une fiche liée refuse les clés d'identité (22023) ; le rang 8 juge son adresse de facturation
+--      seul, posé à la création et jamais changé ni reporté sur un autre dossier (il ne se retire que par
+--      `delier_fiche_liee`, point 7), un autre dossier du même cabinet, une seule fiche par dossier (23505) — ; une fiche liée refuse les clés d'identité (22023) ; le rang 8 juge son adresse de facturation
 --      électronique sur le type et le SIREN que le DOSSIER donne (la composition de `facturer_honoraires`, LM7 : une
 --      entreprise établie en France quand il a un SIRET) ; la règle des soins (rang 12) n'a rien à juger d'une fiche qui
 --      ne garde aucune identité. Sans la clé, la fonction est celle d'hier, refus et mots compris. `importer_contacts`
@@ -37,11 +37,25 @@
 --      cabinet se dit (`dossier_present` faux, l'identité nulle). Elle ne rend rien d'autre du dossier du client. Le
 --      formulaire de la facture la lit au choix du client ; la facture en garde la COPIE, figée à sa validation (A7a).
 --   5. Une garde pour tout auteur (`garder_fiche_liee`, la restauration comprise) : le lien ne change pas, sauf vidé par
---      l'effacement ; à l'insertion, il vise un autre dossier du même cabinet quand ce dossier existe (une restauration
+--      l'effacement ou par le déliement (qui pose sa trace, `delie_le` et `delie_par`, une fois : elle ne se réécrit pas) ; à l'insertion, il vise un autre dossier du même cabinet quand ce dossier existe (une restauration
 --      du dossier du cabinet dont un client est parti passe, comme une lettre de mission, LM4), et la fiche vit dans le
 --      dossier du cabinet — le super-administrateur excepté, qui restaure un dossier avant de le désigner (23514).
 --   6. Le dossier du cabinet qui porte une fiche liée ne change plus de désignation (`garder_designation_des_fiches_liees`,
 --      23514) : ses fiches y resteraient sans rien qui les lise.
+--   7. `delier_fiche_liee(dossier, fiche, version lue)` — réponse du cabinet LM3-Q1 (B) du 11/11/2026, contre la
+--      recommandation (A, le lien fixé) : au cabinet du dossier du cabinet seul (`admin_du_dossier` ; le dossier du cabinet
+--      n'a aucun accès client, LM1), une fiche liée se DÉLIE et redevient une fiche saisie à la main ; dans la même
+--      transaction, l'identité que son dossier donne À CE MOMENT (le nom, l'adresse, le type, le SIREN et le SIRET,
+--      composés comme `identites_des_fiches_liees`) se RECOPIE dans la fiche, pour que rien ne se perde ; ce qui est propre
+--      à la facturation reste ; la trace (`delie_le`, `delie_par`) et `modifie_le` se posent. La fiche retient la version
+--      lue (`modifie_le`, comme `enregistrer_brouillon_de_lettre` de LM4). Refus, dans cet ordre : l'accès (42501) ; la
+--      fiche introuvable dans le dossier (P0002) ; retirée ; pas liée ; lue à une autre version ; son dossier parti du
+--      cabinet ; un nom vide ou de plus de deux cents caractères ; une adresse absente ou de plus de mille ; l'adresse de
+--      facturation électronique qui ne va plus avec l'identité (une entreprise, son SIREN en tête) (22023) ; le SIRET déjà
+--      rangé dans le dossier (23505) — chacun ferait sinon une fiche que la table ou `enregistrer_contact` refuse. Les
+--      factures déjà faites gardent leur provenance (`factures_emises.contact_id` désigne la même ligne) et leur copie
+--      figée ; la fiche déliée ne se relie à aucun dossier (le rang 4 bis le refuse : son lien est nul), et le dossier
+--      qu'elle quitte peut recevoir une nouvelle fiche liée.
 --
 -- CE QUI A ÉTÉ CHOISI, ET POURQUOI :
 --   - la fiche liée SANS identité (la conception, point 2 : « liée, la fiche ne garde que ce qui est propre à la
@@ -52,8 +66,11 @@
 --   - le dossier du client, une RÉFÉRENCE sans clé étrangère, comme `lettres_de_mission.dossier_client_id` (LM4) : une clé
 --     vers un autre dossier que celui de la sauvegarde serait sacrifiée à chaque restauration du dossier du cabinet
 --     (`liensPerdus`, src/lib/sauvegarde.ts) ; la garde vérifie le cabinet à l'écriture, la lecture dit le dossier parti ;
---   - le lien posé à la création et jamais changé (LM3-Q1) : la provenance des factures déjà faites (`factures_emises.
---     contact_id`) désignerait sinon un autre client ;
+--   - le lien posé à la création, jamais reporté sur un autre dossier : la provenance des factures déjà faites
+--     (`factures_emises.contact_id`) désignerait sinon un autre client ; mais il se DÉLIE (LM3-Q1 (B)), la fiche gardant
+--     alors l'identité recopiée du dossier, que ses factures nomment déjà. Écartés : relier la fiche déliée à un autre
+--     dossier (LM3-Q1 (C)) ; délier en vidant l'identité (une fiche sans nom, que la table refuse) ; délier par
+--     `enregistrer_contact` (l'identité y viendrait de l'appelant, pas du dossier) ;
 --   - lier sans l'accès au dossier du client, comme une lettre de mission (LM4) : le chef et les membres assignés au
 --     dossier du cabinet voient les honoraires et l'identité des clients qu'ils facturent (LM-Q2) ; LM3-Q2.
 --
@@ -94,6 +111,8 @@ $garde$;
 
 -- ══ 1. La colonne et ses contraintes ══════════
 alter table public.contacts add column dossier_client_id uuid;
+-- La trace du déliement (LM3-Q1 (B)) : qui a délié la fiche, et quand ; posée une fois, par `delier_fiche_liee`.
+alter table public.contacts add column delie_le timestamptz, add column delie_par uuid;
 alter table public.contacts alter column nom drop not null;
 alter table public.contacts drop constraint contacts_vivant_complet;
 alter table public.contacts drop constraint contacts_adresse_electronique_routee;
@@ -108,6 +127,8 @@ alter table public.contacts
     check (dossier_client_id is null
            or (nom is null and type_client is null and adresse is null and siren is null and siret is null and code_service is null)),
   add constraint contacts_efface_delie check (efface_le is null or dossier_client_id is null),
+  add constraint contacts_deliement_entier check ((delie_le is null) = (delie_par is null)),
+  add constraint contacts_delie_sans_lien check (delie_le is null or dossier_client_id is null),
   add constraint contacts_une_fiche_par_dossier_client unique (dossier_id, dossier_client_id);
 
 -- ══ 2. Enregistrer un contact : le lien (rang 4 bis) ══════════
@@ -161,8 +182,8 @@ begin
 
   -- 4 bis. Le lien au dossier d'un client (LM3, LM-Q3 : son dossier est la source de son identité). Une clé
   -- `dossier_client_id` non nulle LIE la fiche : dans le dossier du cabinet seul (LM1) ; à un autre dossier du même
-  -- cabinet ; posé à la création, il ne change plus — ni lier une fiche qui ne l'est pas, ni délier, ni changer de dossier
-  -- (LM3-Q1) ; un dossier n'a qu'une fiche, retirées comprises (23505, comme un SIRET). Une fiche liée dont le dossier a
+  -- cabinet ; posé à la création, il ne change plus ici — ni lier une fiche qui ne l'est pas, ni délier (`delier_fiche_liee`
+  -- seule, qui recopie l'identité du dossier : LM3-Q1 (B)), ni changer de dossier ; un dossier n'a qu'une fiche, retirées comprises (23505, comme un SIRET). Une fiche liée dont le dossier a
   -- disparu ne se modifie plus : elle se retire et s'efface.
   if coalesce(jsonb_typeof(p_contact->'dossier_client_id'), 'null') <> 'null' then
     if jsonb_typeof(p_contact->'dossier_client_id') <> 'string' or not pg_input_is_valid(p_contact->>'dossier_client_id', 'uuid') then
@@ -426,6 +447,87 @@ begin
 end
 $$;
 
+-- ══ 2 bis. Délier une fiche (LM3-Q1 (B)) ══════════
+-- Au cabinet seul. La fiche redevient saisie à la main : l'identité que son dossier donne à ce moment s'y recopie, dans
+-- la même transaction, sous le verrou des contacts du dossier (celui d'`enregistrer_contact` : le SIRET recopié se juge
+-- sur ce qui est écrit). Les refus et leur ordre : l'en-tête, point 7.
+create function public.delier_fiche_liee(p_dossier_id uuid, p_contact_id uuid, p_modifie_le timestamptz)
+returns public.contacts
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_fiche public.contacts;
+  v_client public.dossiers;
+  v_autre public.contacts;
+  v_nom text;
+  v_siret text;
+  v_siren text;
+  v_type text;
+  v_ecrit public.contacts;
+begin
+  if not public.admin_du_dossier(p_dossier_id) or not exists (select 1 from public.dossiers d where d.id = p_dossier_id) then
+    raise exception 'Accès refusé à ce dossier.' using errcode = '42501';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('jd.contacts:' || p_dossier_id::text, 0));
+  select * into v_fiche from public.contacts c where c.id = p_contact_id and c.dossier_id = p_dossier_id for update;
+  if not found then
+    raise exception 'Contact introuvable dans ce dossier.' using errcode = 'P0002';
+  end if;
+  if v_fiche.retire_le is not null then
+    raise exception 'Ce contact est retiré : le reprendre avant de le modifier.' using errcode = '22023';
+  end if;
+  if v_fiche.dossier_client_id is null then
+    raise exception 'Cette fiche n''est pas liée au dossier d''un client : rien ne se délie.' using errcode = '22023';
+  end if;
+  if p_modifie_le is distinct from v_fiche.modifie_le then
+    raise exception 'La fiche a changé depuis sa lecture : relire avant de la délier.' using errcode = '22023';
+  end if;
+  select c.* into v_client from public.dossiers c join public.dossiers k on k.id = p_dossier_id
+   where c.id = v_fiche.dossier_client_id and c.cabinet_id = k.cabinet_id and c.id <> k.id;
+  if not found then
+    raise exception 'Le dossier de ce client n''est plus dans ce cabinet : rien ne se recopie. La fiche se retire ou s''efface.'
+      using errcode = '22023';
+  end if;
+  -- L'identité, composée comme `identites_des_fiches_liees` (et `facturer_honoraires`, LM7).
+  v_nom := coalesce(nullif(btrim(v_client.denomination_imprimee), ''), v_client.nom);
+  v_siret := case when v_client.siret ~ '^[0-9]{14}$' then v_client.siret end;
+  v_siren := left(v_siret, 9);
+  v_type := case when v_siret is not null then 'assujetti' else 'non_assujetti' end;
+  if v_nom is null or btrim(v_nom, E' \t\n\r') = '' or char_length(v_nom) > 200 then
+    raise exception 'Le nom que donne le dossier de ce client est vide ou dépasse deux cents caractères : le corriger dans son identité avant de délier la fiche.'
+      using errcode = '22023';
+  end if;
+  if v_client.adresse is null or btrim(v_client.adresse, E' \t\n\r') = '' or char_length(v_client.adresse) > 1000 then
+    raise exception 'Le dossier de ce client n''a pas d''adresse (ou une de plus de mille caractères) : la renseigner dans son identité avant de délier la fiche.'
+      using errcode = '22023';
+  end if;
+  if v_fiche.adresse_electronique is not null
+     and (v_siren is null or left(v_fiche.adresse_electronique, 9) <> v_siren) then
+    raise exception 'L''adresse de facturation électronique de la fiche ne va plus avec l''identité du dossier (une entreprise, son SIREN en tête) : la corriger ou la retirer avant de délier la fiche.'
+      using errcode = '22023';
+  end if;
+  if v_siret is not null then
+    select * into v_autre from public.contacts c
+     where c.dossier_id = p_dossier_id and c.siret = v_siret and c.id <> p_contact_id;
+    if found then
+      raise exception 'Le SIRET « % » est déjà celui du contact « % »% : un établissement ne se range qu''une fois par dossier.',
+        v_siret,
+        case when char_length(v_autre.nom) > 80 then left(v_autre.nom, 79) || '…' else v_autre.nom end,
+        case when v_autre.retire_le is not null then ' (retiré)' else '' end
+        using errcode = '23505';
+    end if;
+  end if;
+  update public.contacts c
+     set dossier_client_id = null, nom = v_nom, adresse = v_client.adresse, type_client = v_type, siren = v_siren,
+         siret = v_siret, delie_le = now(), delie_par = auth.uid(), modifie_le = now(), modifie_par = auth.uid()
+   where c.id = p_contact_id
+  returning * into v_ecrit;
+  return v_ecrit;
+end
+$$;
+
 -- ══ 3. La garde des fiches liées, pour tout auteur ══════════
 -- `security definer` : elle lit le cabinet des deux dossiers, que la RLS cacherait à un membre qui n'a pas le dossier du
 -- client ; aucun rôle de session ne l'exécute. La restauration (le super-administrateur, sous `authenticated`) la traverse
@@ -437,9 +539,15 @@ set search_path = public
 as $$
 begin
   if tg_op = 'UPDATE' and new.dossier_client_id is distinct from old.dossier_client_id
-     and not (new.dossier_client_id is null and new.efface_le is not null) then
+     and not (new.dossier_client_id is null and new.efface_le is not null)
+     and not (new.dossier_client_id is null and old.delie_le is null and new.delie_le is not null) then
     raise exception 'Le lien d''une fiche au dossier de son client se pose à sa création et ne change plus : une autre fiche se crée.'
       using errcode = '23514';
+  end if;
+  -- La trace du déliement se pose en déliant, une fois, et ne se réécrit plus.
+  if tg_op = 'UPDATE' and (new.delie_le, new.delie_par) is distinct from (old.delie_le, old.delie_par)
+     and not (old.delie_le is null and old.dossier_client_id is not null and new.dossier_client_id is null) then
+    raise exception 'La trace du déliement d''une fiche ne se réécrit pas.' using errcode = '23514';
   end if;
   if tg_op = 'INSERT' and new.dossier_client_id is not null then
     if exists (select 1 from public.dossiers c where c.id = new.dossier_client_id)
@@ -521,11 +629,17 @@ $$;
 -- La lecture vérifie l'accès elle-même ; les gardes ne servent qu'à la base.
 revoke execute on function public.identites_des_fiches_liees(uuid) from public, anon;
 grant execute on function public.identites_des_fiches_liees(uuid) to authenticated;
+revoke execute on function public.delier_fiche_liee(uuid, uuid, timestamptz) from public, anon;
+grant execute on function public.delier_fiche_liee(uuid, uuid, timestamptz) to authenticated;
 revoke execute on function public.garder_fiche_liee() from public, anon, authenticated;
 revoke execute on function public.garder_designation_des_fiches_liees() from public, anon, authenticated;
 
 comment on column public.contacts.dossier_client_id is
-  'LM3 (LM-Q3) : le dossier du client qu''une fiche du dossier du cabinet désigne — une référence sans clé, comme lettres_de_mission.dossier_client_id. Liée, la fiche ne garde aucune identité : elle se lit du dossier (identites_des_fiches_liees). Posé à la création, il ne change plus ; l''effacement le vide.';
+  'LM3 (LM-Q3) : le dossier du client qu''une fiche du dossier du cabinet désigne — une référence sans clé, comme lettres_de_mission.dossier_client_id. Liée, la fiche ne garde aucune identité : elle se lit du dossier (identites_des_fiches_liees). Posé à la création, il ne change plus ; l''effacement le vide, et delier_fiche_liee, qui recopie l''identité du dossier (LM3-Q1 (B)).';
+comment on column public.contacts.delie_le is
+  'LM3-Q1 (B) : quand la fiche, liée au dossier de son client, en a été déliée (delier_fiche_liee) : elle est depuis saisie à la main, l''identité du dossier recopiée ce jour-là. Posé une fois.';
+comment on function public.delier_fiche_liee(uuid, uuid, timestamptz) is
+  'LM3-Q1 (B) : au cabinet seul, délie une fiche du dossier du cabinet de son client ; dans la même transaction, l''identité que le dossier donne à ce moment s''y recopie, la trace se pose ; retient la version lue (modifie_le).';
 comment on function public.enregistrer_contact(uuid, uuid, jsonb) is
   'Crée ou réécrit un contact du dossier, pour le cabinet ou le client qui porte la case « Ventes » : l''accès d''abord, puis onze rangs de refus dans un ordre fixé, la règle des soins comprise, et le lien au dossier d''un client (rang 4 bis, dans le dossier du cabinet seul, LM3) ; rend le contact écrit.';
 comment on function public.identites_des_fiches_liees(uuid) is

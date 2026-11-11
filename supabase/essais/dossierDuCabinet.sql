@@ -13,13 +13,15 @@
 -- n'est validée ; qu'aucun accès client ne se pose sur le dossier du cabinet, ni ne s'y déplace, même sans session ;
 -- qu'il ne change pas de cabinet ; qu'une facture validée sur ce dossier, par le chef ou par un membre affecté, ne fige aucun mandataire et prend la série
 -- du dossier, quand la même validation sur un autre dossier fige le cabinet en mandataire, dans sa série (le contrôle
--- positif) ; que le dossier ne se supprime pas, même par son chef, et que le super-administrateur le retire, la
--- désignation suivant la ligne ; le catalogue (les droits d'exécution, `security definer`, le `search_path`, la clé
+-- positif) ; que le dossier ne se supprime que par le chef de son cabinet (LM1-Q1 (B)) — ni par un membre affecté, ni
+-- par le propriétaire sans session —, ses factures validées avec lui, la désignation suivant la ligne, et par le
+-- super-administrateur ; le catalogue (les droits d'exécution, `security definer`, le `search_path`, la clé
 -- étrangère, son action et l'unicité).
 --
--- Le jeu, inséré par le propriétaire : au cabinet de la réplique, quatre dossiers jetables (préfixe
+-- Le jeu, inséré par le propriétaire : au cabinet de la réplique, cinq dossiers jetables (préfixe
 -- `1a100000-0000-4000-8000`) — D et E, sans accès, D en franchise et son identité réglée ; M, où le cabinet a déjà
--- facturé en mandataire ; et un second cabinet avec son dossier F. Le chef « simple » est le compte du client d'essai,
+-- facturé en mandataire ; G, désigné après D pour que le super-administrateur le supprime ; et un second cabinet avec son
+-- dossier F. Le chef « simple » est le compte du client d'essai,
 -- rattaché au cabinet comme chef le temps de l'essai ; le membre de l'équipe de la réplique est affecté à D. Sans la
 -- migration, une ligne dit qu'il attend (EN ATTENTE) et rien ne s'écrit. Une garde de tête refuse de le jouer hors d'une
 -- réplique (ESSAI_HORS_REPLIQUE), avant toute écriture, comme `devisSuppression.sql`.
@@ -58,6 +60,7 @@ declare
   e constant uuid := '1a100000-0000-4000-8000-0000000000e1';
   m constant uuid := '1a100000-0000-4000-8000-0000000000a1';
   f constant uuid := '1a100000-0000-4000-8000-0000000000f1';
+  g constant uuid := '1a100000-0000-4000-8000-0000000000b1';
   acces_du_client constant uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
   super constant text := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   chef constant text := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -86,7 +89,8 @@ begin
     (d, 'ESSAI LM1 D', cabinet, 'tresorerie', '455000', 'franchise', '12345678200010', 'ESSAI LM1 ADRESSE', '5710', 'ESSAI LM1 SOCIÉTÉ'),
     (e, 'ESSAI LM1 E', cabinet, 'tresorerie', '455000', null, null, null, null, null),
     (m, 'ESSAI LM1 M', cabinet, 'tresorerie', '455000', 'franchise', '12345678200010', 'ESSAI LM1 ADRESSE', '5710', 'ESSAI LM1 SOCIÉTÉ'),
-    (f, 'ESSAI LM1 F', autre_cabinet, 'tresorerie', '455000', null, null, null, null, null);
+    (f, 'ESSAI LM1 F', autre_cabinet, 'tresorerie', '455000', null, null, null, null, null),
+    (g, 'ESSAI LM1 G', cabinet, 'tresorerie', '455000', null, null, null, null, null);
   insert into cabinet_admins (user_id, cabinet_id, role) values (chef::uuid, cabinet, 'comptable_en_chef');
   insert into dossier_assignations (dossier_id, user_id) values (d, membre::uuid);
 
@@ -168,16 +172,30 @@ begin
   insert into essai_dc values (20, 'le dossier du cabinet ne change pas de cabinet', '23514', r,
     r = '23514:Le dossier du cabinet ne change pas de cabinet.');
 
-  -- 21 et 22 : la suppression.
-  r := pg_temp.essayer(chef, format('delete from dossiers where id = %L returning 1', d));
-  insert into essai_dc values (21, 'son chef ne supprime pas le dossier du cabinet', '23514', r,
-    r = '23514:Le dossier du cabinet ne se supprime pas : il porte les factures du cabinet. Seul le super-administrateur le retire, avec le cabinet.');
+  -- 21 et 22 : la suppression — par le chef de son cabinet (LM1-Q1 (B), réponse du cabinet du 11/11/2026 : « le chef
+  -- aussi, après confirmation » ; la confirmation, qui nomme les factures perdues, est à l'écran : la base n'en voit rien).
+  r := pg_temp.essayer(membre, format('delete from dossiers where id = %L returning 1', d));
+  insert into essai_dc values (21, 'un membre affecté au dossier du cabinet ne le supprime pas (la policy)', 'OK:∅, le dossier présent', r,
+    r = 'OK:∅' and exists (select 1 from dossiers where id = d));
+  r := pg_temp.essayer(null, format('delete from dossiers where id = %L returning 1', d));
+  insert into essai_dc values (21, 'ni le propriétaire sans session (une fonction sous la clé secrète)', '23514', r,
+    r = '23514:Le dossier du cabinet ne se supprime que par le chef du cabinet : il porte les factures du cabinet, qui partent avec lui.');
   r := pg_temp.essayer(chef, format('delete from dossiers where id = %L returning 1', e));
-  insert into essai_dc values (21, 'il supprime un autre dossier du cabinet (contrôle positif)', 'OK:1', r, r = 'OK:1');
-  r := pg_temp.essayer(super, format('delete from dossiers where id = %L returning 1', d));
-  insert into essai_dc values (22, 'le super-administrateur le retire, la désignation suit la ligne', 'OK:1, désignation nulle', r,
+  insert into essai_dc values (21, 'son chef supprime un autre dossier du cabinet (contrôle positif)', 'OK:1', r, r = 'OK:1');
+  r := pg_temp.essayer(null, format('delete from dossiers where id = %L returning 1', f));
+  insert into essai_dc values (21, 'le propriétaire supprime un dossier qui n''est pas celui du cabinet (la garde ne veille que sur lui)', 'OK:1', r, r = 'OK:1');
+  select count(*) into n from factures_emises where dossier_id = d and statut <> 'brouillon';
+  r := pg_temp.essayer(chef, format('delete from dossiers where id = %L returning 1', d));
+  insert into essai_dc values (22, 'son chef le supprime, ses factures validées avec lui, la désignation suit la ligne', 'OK:1, '
+    || n || ' factures parties, désignation nulle', r || ', ' || n || ' factures',
+    r = 'OK:1' and n > 0 and (select c.dossier_du_cabinet from cabinets c where c.id = cabinet) is null
+      and not exists (select 1 from dossiers where id = d) and not exists (select 1 from factures_emises where dossier_id = d));
+  r := pg_temp.essayer(super, format('select designer_dossier_du_cabinet(%L, %L)::text', cabinet, g));
+  insert into essai_dc values (22, 'un autre dossier se désigne ensuite', 'OK:' || g, r, r = 'OK:' || g);
+  r := pg_temp.essayer(super, format('delete from dossiers where id = %L returning 1', g));
+  insert into essai_dc values (22, 'le super-administrateur le supprime aussi, la désignation suit la ligne', 'OK:1, désignation nulle', r,
     r = 'OK:1' and (select c.dossier_du_cabinet from cabinets c where c.id = cabinet) is null
-      and not exists (select 1 from dossiers where id = d));
+      and not exists (select 1 from dossiers where id = g));
 
   -- 23 : le catalogue.
   select count(*) into n from pg_proc p
