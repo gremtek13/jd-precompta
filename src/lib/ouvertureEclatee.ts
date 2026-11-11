@@ -1,7 +1,7 @@
 import { dateDite, formuler, type RefusDeLaBase, type RefusDit } from './comptesBancaires'
-import type { CompteDuReleve } from './importParCompte'
+import type { CompteDuReleve, LectureDesComptes } from './importParCompte'
 import { relevesAuTrenteEtUn, type SoldeDuReleve } from './releveAuTrenteEtUn'
-import { tenuDansLExercice, type PartDuReleve } from './releveParCompte'
+import { releveParCompte, tenuDansLExercice, type PartDuReleve } from './releveParCompte'
 import type { ANouveau, ControleReleveBancaire, LigneBancaire, SensEcriture, SoldeReporte } from './types'
 
 // L'OUVERTURE DE LA BANQUE ÉCLATÉE ENTRE LES COMPTES BANCAIRES (ligne 26.6, lot MCB5, sixième partie ; MCB-Q7, tranchée le
@@ -200,4 +200,111 @@ export function etatDeLEclatement(attendu: EclatementAttendu, brouillon: readonl
   const b = ecrites.map((l) => cle({ ...l, compte_bancaire_id: l.ouverture_compte_bancaire_id as string })).sort()
   const egal = a.length === b.length && a.every((k, i) => k === b[i])
   return { etat: egal ? 'a_jour' : 'a_reecrire', lignes: attendu.lignes }
+}
+
+// ── Ce que l'écran et la validation en disent (MCB5, sixième partie, suite) ─────────────────────────────────────────────
+// La carte de l'onglet Écritures (pages/dossier/OuvertureEclateeCarte.tsx) et le préalable `ouverture-a-eclater` de la
+// validation (lib/prealablesValidation.ts) lisent les mêmes mots, tirés du même état.
+
+/** L'état de l'éclatement de l'exercice, sur ses entrées lues en entier et TOUT le brouillon du dossier. */
+export function eclatementDeLExercice(e: EntreesDeLEclatement, brouillon: readonly LigneEcriteDeLEclatement[]): EtatDeLEclatement {
+  return etatDeLEclatement(ouvertureEclateeAttendue(e), brouillon, e.annee)
+}
+
+export const LIBELLE_ETAT_ECLATEMENT: Readonly<Record<Exclude<EtatDeLEclatement['etat'], 'sans_objet'>, string>> = {
+  a_ecrire: 'à écrire',
+  a_jour: 'à jour',
+  a_reecrire: 'à réécrire',
+  a_retirer: 'à retirer',
+  retenu: 'retenue',
+}
+
+/** Les états qui appellent un clic : écrire, réécrire, retirer. */
+export type EclatementAFaire = { etat: 'a_ecrire' | 'a_reecrire'; lignes: LigneDeLEclatement[] } | { etat: 'a_retirer' }
+export const eclatementAFaire = (e: EtatDeLEclatement): e is EclatementAFaire =>
+  e.etat === 'a_ecrire' || e.etat === 'a_reecrire' || e.etat === 'a_retirer'
+
+/** Ce que l'état dit, en une phrase qui se lit seule ; rien pour un éclatement sans objet. */
+export function phraseDeLEclatement(etat: EtatDeLEclatement, annee: number): string | null {
+  const jour = `01/01/${annee}`
+  const veille = `31/12/${annee - 1}`
+  switch (etat.etat) {
+    case 'sans_objet': return null
+    case 'a_ecrire':
+      return `L’ouverture du ${jour} porte au compte de banque du rôle l’argent de tous les comptes bancaires : l’écriture qui passe `
+        + `le solde de chaque compte à son 512, d’après ses relevés du ${veille}, n’est pas écrite.`
+    case 'a_jour': return `L’ouverture de la banque au ${jour} est éclatée entre les comptes bancaires, d’après leurs relevés du ${veille}.`
+    case 'a_reecrire':
+      return `L’écriture qui éclate l’ouverture de la banque au ${jour} n’est plus celle que les relevés du ${veille} commandent : la réécrire.`
+    case 'a_retirer':
+      return `Une écriture éclate l’ouverture de la banque au ${jour}, alors que plus rien n’est à éclater : la retirer.`
+    case 'retenu': return etat.refus.message
+  }
+}
+
+/** La confirmation du clic : chaque compte ouvert et son montant, et ce que l'écriture remplace ; ou le retrait. */
+export function confirmationDeLEclatement(etat: EclatementAFaire, annee: number): string {
+  if (etat.etat === 'a_retirer') {
+    return `Retirer l’écriture qui éclate l’ouverture de la banque au 01/01/${annee} ? Plus rien n’est à éclater : le compte de banque `
+      + 'du rôle garde toute l’ouverture.'
+  }
+  // Une paire par compte : sa ligne au 512 du compte d'abord, puis sa contrepartie au 512 du rôle (`ouvertureEclateeAttendue`).
+  const paires = etat.lignes.filter((_, i) => i % 2 === 0)
+  const dits = paires.map((l) => `${l.compte} : ${l.sens === 'debit' ? '' : '−'}${eurosDeLaBase(Math.round(l.montant * 100))} €`)
+  const role = etat.lignes[1]?.compte ?? ''
+  return `${etat.etat === 'a_reecrire' ? 'Réécrire' : 'Écrire'} l’écriture du 01/01/${annee} qui ouvre `
+    + `${paires.length > 1 ? 'ces comptes au solde de leurs relevés' : 'ce compte au solde de son relevé'} du 31/12/${annee - 1}, `
+    + `face au ${role} ?\n\n${dits.join('\n')}${etat.etat === 'a_reecrire' ? '\n\nElle remplace celle qui est au brouillon.' : ''}`
+}
+
+/** Ce que lib/ouvertureEclateeLecture.ts rend, gardé avec le dossier pour lequel il a été lu. */
+export type LectureDuReleveDeLOuverture =
+  | { dossierId: string; etat: 'sans_objet' }
+  | { dossierId: string; etat: 'illisible'; motif: string }
+  | { dossierId: string; etat: 'lue'; comptes: Extract<LectureDesComptes, { etat: 'lus' }>; lignes: readonly LigneDuReleve[]; controles: readonly ControleDuReleve[] }
+
+/** Ce que la carte de l'onglet Écritures montre. */
+export type CarteDeLEclatement =
+  | { etat: 'masquee' }
+  | { etat: 'chargement' }
+  | { etat: 'illisible'; motif: string }
+  | { etat: 'lue'; eclatement: Exclude<EtatDeLEclatement, { etat: 'sans_objet' }>; fige: boolean }
+
+/**
+ * La carte de l'exercice affiché : rien sur « toutes les années », drapeau baissé (`sans_objet`) ou sans rien à éclater ;
+ * « Chargement… » tant qu'une lecture n'est pas revenue pour CE dossier ; illisible sur une lecture partielle ou refusée
+ * (le motif de la première) — aucun geste alors ; sinon l'état, et s'il est figé par un exercice validé (aucun geste non
+ * plus : la base le refuserait). Sans défaut : l'appelant dit tout ce qu'il a lu.
+ */
+export function carteDeLEclatement(c: {
+  dossierId: string
+  annee: number | string
+  lecture: LectureDuReleveDeLOuverture | null
+  /** Les motifs des lectures de l'onglet qui comptent ici (le brouillon, la reprise, les soldes reportés), nuls si entières. */
+  motifs: readonly (string | null)[]
+  role: string
+  reprise: EntreesDeLEclatement['reprise']
+  reportes: EntreesDeLEclatement['reportes']
+  anneesValidees: readonly number[]
+  brouillon: readonly LigneEcriteDeLEclatement[]
+}): CarteDeLEclatement {
+  if (typeof c.annee !== 'number') return { etat: 'masquee' }
+  if (c.lecture === null || c.lecture.dossierId !== c.dossierId) return { etat: 'chargement' }
+  if (c.lecture.etat === 'sans_objet') return { etat: 'masquee' }
+  if (c.lecture.etat === 'illisible') return { etat: 'illisible', motif: c.lecture.motif }
+  const motif = c.motifs.find((m) => m !== null)
+  if (motif != null) return { etat: 'illisible', motif }
+  const releve = releveParCompte(c.lecture.comptes, c.lecture.lignes, c.lecture.controles)
+  if (releve.etat === 'retenu') return { etat: 'illisible', motif: releve.raison }
+  const eclatement = eclatementDeLExercice({
+    annee: c.annee, role: c.role, parts: releve.parts, reprise: c.reprise, reportes: c.reportes, anneesValidees: c.anneesValidees,
+    datesDesEcritures: c.brouillon.map((e) => e.date), datesDesMouvements: c.lecture.lignes.map((l) => l.date),
+  }, c.brouillon)
+  if (eclatement.etat === 'sans_objet') return { etat: 'masquee' }
+  return { etat: 'lue', eclatement, fige: c.anneesValidees.some((a) => a >= (c.annee as number)) }
+}
+
+/** Ce que le clic envoie à `ecrire_ouverture_eclatee` : la composition, vide pour un retrait. */
+export function argumentsDeLEclatement(dossierId: string, annee: number, etat: EclatementAFaire) {
+  return { p_dossier_id: dossierId, p_annee: annee, p_ecritures: etat.etat === 'a_retirer' ? [] : etat.lignes }
 }

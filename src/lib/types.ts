@@ -540,6 +540,12 @@ export interface EcritureBrouillon {
   // autre écriture. Elle devient obligatoire avec le premier moteur qui la lit (C3), comme `pieces.facture_id` l'est
   // devenue avec le premier écran qui la lisait (VF1b).
   operation_caisse_id?: string | null
+  // LE COMPTE BANCAIRE DONT CETTE ÉCRITURE OUVRE LE 512 PROPRE, au 1er janvier, d'après son relevé de la veille (ligne 26.6,
+  // MCB5, sixième partie ; MCB-Q7 ; migration `ouverture_eclatee_par_compte`, préparée, pas appliquée — lib/ouvertureEclatee.ts) :
+  // écrite par `ecrire_ouverture_eclatee` seule, sans autre source, datée d'un 1er janvier. FACULTATIVE, et c'est la vérité
+  // des deux côtés de la migration : avant elle, `select('*')` ne rend pas la colonne ; après, il la rend, nulle sur toute
+  // autre écriture. Une écriture qui ne la porte pas se lit comme hier, au caractère près.
+  ouverture_compte_bancaire_id?: string | null
   // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, FIGÉS À LA VALIDATION (ligne 26.6, étape e ; lot FEC22b ; migration
   // `champs_bnc_du_fec`, en base et dans l'export depuis le 02/11/2026 — voir lib/champsBncFiges.ts) : la date et le mode
   // du règlement, la nature de l'opération (une par écriture), le poste de la 2035 d'une ligne de charge ou de produit

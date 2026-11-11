@@ -83,6 +83,7 @@ const INVENTAIRE: Record<string, { nombre: number; raison: string }> = {
   'appel:lettragesDesFactures': { nombre: 1, raison: 'VF4c2 : ce que la section dit du lettrage de chaque facture source, ou pourquoi il n’y en a pas' },
   'appel:rattachementDesVentes': { nombre: 1, raison: 'VF4c2 : les lignes de l’exercice que le FEC rattache à leur écriture composée — les autres, que le badge compte' },
   'appel:etatDeLOuverture': { nombre: 1, raison: 'ne lit que les dates : une écriture d’une vente facturée datée avant l’exercice le précède, comme une autre' },
+  'appel:carteDeLEclatement': { nombre: 1, raison: 'MCB5 : l’éclatement de l’ouverture de la banque ne lit du brouillon que les lignes du 1er janvier qui portent sa source (`ouverture_compte_bancaire_id`), et les dates — qu’une vente facturée datée d’avant précède l’exercice comme une autre' },
   'appel:etatsDesVentesFacturees': { nombre: 1, raison: 'la section des ventes facturées : c’est elle qui juge ces lignes' },
   'appel:rupturesPisteAudit (filtré)': { nombre: 1, raison: 'les ruptures, SANS les lignes d’une vente facturée (`ligneDUneVenteFacturee`)' },
   'appel:mouvementsAffectesDesynchronises': { nombre: 1, raison: 'les mouvements affectés seuls ; un mouvement classé par ses encaissements ne l’est jamais (G1)' },
