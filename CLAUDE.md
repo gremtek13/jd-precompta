@@ -626,7 +626,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   LA CONCEPTION ». Restent :
   - P1-trace : garder qui a changé les droits d'un accès, et quand — en production depuis le 07/11/2026
     (`TRACE_DES_DROITS_PREVUE` levé, la table au plan de sauvegarde), à l'écran depuis le 10/11/2026 ; l'adresse d'un accès
-    retiré (P1T-E2), préparée le 11/11/2026 derrière `ADRESSES_DES_ACCES_RETIRES_PREVUES` → « P1T-E2 : L'ADRESSE D'UN ACCÈS RETIRÉ » ;
+    retiré (P1T-E2), en production depuis le 11/11/2026 (`ADRESSES_DES_ACCES_RETIRES_PREVUES` levé) → « P1T-E2 : L'ADRESSE D'UN ACCÈS RETIRÉ » ;
   - P4, la mention du mandataire : imprimée sous l'identité de l'émetteur et nommée à la confirmation depuis le
     06/11/2026, le nom du cabinet lu comme la base le lit → « LE MANDAT DE FACTURATION IMPRIMÉ ET NOMMÉ À LA
     CONFIRMATION (P4, LIGNE 51.5) » ;
@@ -711,8 +711,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     lecteurs et le plan de sauvegarde ouverts (`FACTURES_IMPORTEES_PREVUES`, `NUMEROTATION_CONTINUE_PREVUE`,
     `PIECE_D_UNE_FACTURE_REPRISE_PREVUE` levés), la carte de la numérotation (A9b) offerte depuis
     le 11/11/2026 (`CARTE_DE_LA_NUMEROTATION_OFFERTE` levé, A9B-Q0) ; l'encaissement d'une reprise par le client
-    « Ventes » (A8C-Q1) et ses pièces citées dans « Ma simulation » (A8Q5-Q2), préparés le 11/11/2026 (`reprises_au_client`,
-    deux lectures `security definer`, à appliquer par l'outil ; `REPRISES_AU_CLIENT_PREVUES` baissé) ; l'écran d'import
+    « Ventes » (A8C-Q1) et ses pièces citées dans « Ma simulation » (A8Q5-Q2), en production depuis le 11/11/2026 (`reprises_au_client`,
+    deux lectures `security definer` ; `REPRISES_AU_CLIENT_PREVUES` levé) ; l'écran d'import
     (A8d2b) et les originaux dans le seau des ventes (A8d2a, `originaux_des_imports`) en production depuis le 11/11/2026
     (`ORIGINAUX_DES_IMPORTS_PREVUS` et `IMPORT_DES_FACTURES_OFFERT` levés, A8D2B-Q3) ; reste la suite → « A8D2A : LES
     ORIGINAUX DES FACTURES REPRISES DANS LE SEAU DES VENTES, EN BASE », « A8D2B : L'ÉCRAN D'IMPORT DES FACTURES
@@ -731,7 +731,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   de copie sous deux plans) → « L'ASSISTANT LIT LE PLAN DU DOSSIER (LIGNE 43, PC3B) » ; PC4, en production depuis le
   10/11/2026 : `regler_plan_du_dossier` règle le plan entier et déplace le dirigeant avec son rôle (PC3-Q1), les deux
   contraintes devenues des contrôles contre le plan → « PC4 : RÉGLER LE PLAN D'UN DOSSIER, EN BASE (PRÉPARÉE, PAS
-  APPLIQUÉE) » ; restent PC6, qui range les comptes ouverts par une balance reprise, puis la suite jusqu'à PC9 → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
+  APPLIQUÉE) » ; le dirigeant non associé au 467 ou au 468 (PC4-Q2, `dirigeant_au_468`, en production depuis le 11/11/2026,
+  `DIRIGEANT_AU_468_PREVU` levé) ; restent PC6, qui range les comptes ouverts par une balance reprise, puis la suite jusqu'à PC9 → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
   PLAN ».
 
 ## Feuille de route — page Notion à tenir à jour
