@@ -650,7 +650,8 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
     + 'dans le seul dossier du cabinet, son test (LettresDeMissionCard.test.tsx) éprouve « Chargement… » avant la lecture et aucun '
     + 'geste sur une lecture illisible ; n’écrit que sur ses gestes, chacun par sa fonction SQL',
   'pages/dossier/MissionsEnVigueurCard.tsx': 'drapeau `LETTRES_DE_MISSION_PREVUES` baissé : ne rend ni ne lit rien ; levé, son test '
-    + '(LettresDeMissionCard.test.tsx) éprouve qu’un dossier du cabinet fermé ne se dit jamais « aucune lettre » ; n’écrit rien',
+    + '(LettresDeMissionCard.test.tsx) éprouve qu’un dossier du cabinet fermé, ou une lecture que la base refuse (LM5-Q2, '
+    + '`MISSIONS_DU_CLIENT_PREVUES`), ne se dit jamais « aucune lettre » ; n’écrit rien',
   'pages/dossier/NumerotationDesFacturesCard.tsx': 'drapeau `CARTE_DE_LA_NUMEROTATION_OFFERTE` baissé : ne rend ni ne lit rien ; levé, son propre '
     + 'test (NumerotationDesFacturesCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun geste sur une lecture illisible ou '
     + 'pour un membre de l’équipe ; n’écrit que sur « Poser le modèle », « Confirmer la fin » et « Lever ces trous »',

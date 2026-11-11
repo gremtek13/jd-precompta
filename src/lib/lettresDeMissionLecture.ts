@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
+import { lireLesMissionsParLaFonction, missionsDuClientPrevues } from './missionsDuClient'
 import {
   COLONNES_SANS_MONTANT, type ClientDuCabinet, type DocumentDuCabinet, type LectureDesPapiersSignes, type LettreComplete,
   type LettreSansMontant, type ModeleLu, type Reponse,
@@ -148,9 +149,17 @@ export type LectureDesMissions =
   | { etat: 'sansDossierDuCabinet'; dossierClientId: string }
   /** Le dossier du cabinet ne s'ouvre pas à ce compte : la RLS rendrait ZÉRO ligne sans erreur, jamais prise pour « aucune ». */
   | { etat: 'fermee'; dossierClientId: string }
+  /** La fonction `missions_du_client` a refusé ce compte (42501) : dit tel quel, rien n'est deviné. Drapeau levé seulement. */
+  | { etat: 'refusee'; dossierClientId: string; motif: string }
   | { etat: 'illisible'; dossierClientId: string; motif: string }
 
+/**
+ * Les missions d'un client, pour la carte de son dossier. `MISSIONS_DU_CLIENT_PREVUES` levé (LM5-Q2) : par la fonction
+ * `missions_du_client`, qui s'ouvre à qui lit le dossier du CLIENT au titre du cabinet, sans montant ; baissé : comme hier,
+ * par la policy du dossier du cabinet. Ne rejette jamais.
+ */
 export async function lireLesMissionsDuClient(dossierClientId: string): Promise<LectureDesMissions> {
+  if (missionsDuClientPrevues()) return lireLesMissionsParLaBase(dossierClientId)
   const illisible = (motif: string): LectureDesMissions => ({ etat: 'illisible', dossierClientId, motif })
   try {
     const dossier = await supabase.from('dossiers').select('cabinet_id').eq('id', dossierClientId).maybeSingle()
@@ -176,6 +185,20 @@ export async function lireLesMissionsDuClient(dossierClientId: string): Promise<
     return { etat: 'lue', dossierClientId, lettres: lecture.lignes }
   } catch (e) {
     return illisible(messageErreur(e, 'les missions n’ont pas pu être lues'))
+  }
+}
+
+/** Par la fonction `missions_du_client` (LM5-Q2) : un refus se dit refusé, une valeur qu'on ne reconnaît pas illisible. */
+async function lireLesMissionsParLaBase(dossierClientId: string): Promise<LectureDesMissions> {
+  try {
+    const lue = await lireLesMissionsParLaFonction(dossierClientId,
+      supabase.rpc('missions_du_client', { p_dossier_id: dossierClientId }))
+    if (lue.etat === 'refusee') return { etat: 'refusee', dossierClientId, motif: lue.motif }
+    if (lue.etat === 'illisible') return { etat: 'illisible', dossierClientId, motif: lue.motif }
+    if (!lue.dossierDuCabinetDesigne) return { etat: 'sansDossierDuCabinet', dossierClientId }
+    return { etat: 'lue', dossierClientId, lettres: lue.lettres }
+  } catch (e) {
+    return { etat: 'illisible', dossierClientId, motif: messageErreur(e, 'les missions n’ont pas pu être lues') }
   }
 }
 

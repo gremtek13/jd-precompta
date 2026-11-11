@@ -435,7 +435,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   ligne prévue et fermée par la base jusqu'à LM-Q10) ; LM8, le dépôt de la facture validée chez le client, préparé à coller
   APRÈS LM7 (`depot_des_honoraires`, `DEPOT_DES_HONORAIRES_PREVU` baissé ; son PDF et son écran restent) ; LM3, la fiche d'un
   client liée à son dossier, sans identité à elle, préparée à coller APRÈS LM1 (`fiche_liee_au_dossier_du_client`,
-  `FICHES_LIEES_PREVUES` baissé ; son écran reste) ; reste LM6 → « LM1 : LE DOSSIER DU CABINET, EN BASE », « LM4 : LES LETTRES
+  `FICHES_LIEES_PREVUES` baissé ; son écran reste) ; LM5-Q2, les missions d'un client lues sans ses honoraires par qui suit son
+  dossier, préparée APRÈS LM4 (`missions_du_client`, `MISSIONS_DU_CLIENT_PREVUES` baissé) ; reste LM6 → « LM1 : LE DOSSIER DU CABINET, EN BASE », « LM4 : LES LETTRES
   DE MISSION ET LEURS VERSIONS FIGÉES, EN BASE », « LM8 : LA FACTURE D'HONORAIRES DÉPOSÉE CHEZ LE CLIENT, EN BASE », « LM3 : LA
   FICHE DE FACTURATION D'UN CLIENT DU CABINET, LIÉE À SON DOSSIER ».
 - **Le départ d'un client** (ligne 44, INAL5, INAL-Q6) : `depart_du_client` préparée le 11/11/2026, à coller — les paquets

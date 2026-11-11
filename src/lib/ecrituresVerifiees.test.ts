@@ -126,6 +126,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       + 'un refus, une valeur illisible ou une requête qui lève rendent une lecture ILLISIBLE, et la simulation se dit incomplète, '
       + 'jamais un ensemble vide deviné',
   },
+  lireLesMissionsParLaFonction: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `missions_du_client` LIT les lettres de mission proposées d’un client, sans leurs '
+      + 'honoraires (LM5-Q2), pour la carte « Missions confiées au cabinet » de son dossier. `lib/missionsDuClient.ts` attend la '
+      + 'requête et lit son erreur : un refus se dit REFUSÉ, une valeur illisible ou une requête qui lève rendent une lecture '
+      + 'ILLISIBLE, que la carte dit, jamais « aucune lettre »',
+  },
   lireLaRepriseDeLaFacture: {
     nombre: 2,
     raison:
