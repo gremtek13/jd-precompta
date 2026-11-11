@@ -66,6 +66,8 @@ const faux = vi.hoisted(() => ({
   categories: [] as Categorie[],
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   erreurRpc: null as string | null,
+  // Le rang (à partir de 1, tous appels confondus) du seul appel que le faux serveur refuse — le virement entre comptes inachevé.
+  erreurRpcAuRang: null as number | null,
   // Les règles d'affectation, ce que l'écran en écrit (`upsert`) et en retire (`delete`) — et le refus
   // de l'un ou l'autre à la demande.
   reglesAffectation: [] as RegleAffectationBancaire[],
@@ -397,6 +399,7 @@ vi.mock('../../lib/supabase', async () => {
   function rpc(nom: string, args: Record<string, unknown>) {
     faux.rpcs.push({ nom, args })
     if (faux.erreurRpc) return Promise.resolve({ data: null, error: { message: faux.erreurRpc } })
+    if (faux.erreurRpcAuRang === faux.rpcs.length) return Promise.resolve({ data: null, error: { message: 'refus simulé au rang' } })
     if (nom === 'affecter_mouvements_bancaires') {
       const envoi = args.p_affectations as { ligne_bancaire_id: string; categorie_id: string; taux_tva: number | null }[]
       const rang = faux.rpcs.filter((r) => r.nom === nom).length
@@ -552,6 +555,7 @@ function reinitialiser() {
   faux.categories = []
   faux.rpcs = []
   faux.erreurRpc = null
+  faux.erreurRpcAuRang = null
   faux.reglesAffectation = []
   faux.upserts = []
   faux.suppressionsRegles = []
@@ -6897,5 +6901,84 @@ describe('RELEVE-Q1 — la rupture de solde entre deux relevés', () => {
     await deposer(CSV_SEPTEMBRE, 'releve-septembre.csv')
     expect(screen.getByText('Les relevés déjà importés n’ont pas pu être relus : la suite des soldes avec ce relevé n’est pas vérifiée.')).toBeTruthy()
     expect(screen.queryByText(/ne se suivent pas/)).toBeNull()
+  })
+})
+
+// LE RAPPROCHEMENT PAR COMPTE BANCAIRE ET LE VIREMENT ENTRE COMPTES (lot MCB3, lib/virementsInternes.ts) : drapeau
+// `COMPTES_BANCAIRES_PREVUS` joué dans ses deux états. Deux comptes, un débit sur le principal, le crédit du même montant sur
+// l'autre deux jours plus tard. Mouvements FICTIFS.
+describe('BanqueTab — le virement entre deux comptes du dossier (MCB3)', () => {
+  const PRINCIPAL = { id: 'cb-p', libelle: 'Compte principal', principal: true, fin_d_identifiant: null }
+  const SECOND = { id: 'cb-s', libelle: 'Compte pro bis', principal: false, fin_d_identifiant: null }
+  const alertes: string[] = []
+  function preparer(leve: boolean) {
+    reinitialiser()
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+    drapeauDesComptes.leve = leve
+    faux.comptesBancaires = [PRINCIPAL, SECOND]
+    faux.pieces = []
+    faux.lignes = [
+      ligneDeTest({ id: 'deb', date: '2026-03-12', libelle: 'VIR VERS COMPTE BIS', montant: -1500, compte_bancaire_id: 'cb-p' }),
+      ligneDeTest({ id: 'cre', date: '2026-03-14', libelle: 'VIR DE COMPTE PRINCIPAL', montant: 1500, compte_bancaire_id: 'cb-s' }),
+    ]
+  }
+  const ecrits = () => faux.rpcs.filter((r) => r.nom === 'ecrire_mouvement_compte_bilan')
+
+  it('drapeau baissé : ni compte ni virement proposé dans la fiche, comme avant MCB', async () => {
+    preparer(false)
+    rendre()
+    await ouvrir('VIR VERS COMPTE BIS')
+    expect(within(volet()).queryByText('Compte bancaire')).toBeNull()
+    expect(within(volet()).queryByRole('heading', { name: 'Virement entre comptes proposé' })).toBeNull()
+  })
+
+  it('drapeau levé : la fiche dit le compte, propose l’autre moitié, et un double clic écrit les deux au 580000 une fois', async () => {
+    preparer(true)
+    rendre()
+    await ouvrir('VIR VERS COMPTE BIS')
+    await waitFor(() => expect(within(volet()).getByText('Compte principal')).toBeTruthy())
+    expect(within(volet()).getByRole('heading', { name: 'Virement entre comptes proposé' })).toBeTruthy()
+    expect(within(volet()).getByText(/« Compte pro bis »/)).toBeTruthy()
+    const bouton = within(volet()).getByRole('button', { name: 'Virement entre comptes avec le mouvement du 14/03/2026' })
+    await act(async () => { bouton.click(); bouton.click() })
+    await waitFor(() => expect(ecrits()).toHaveLength(2))
+    expect(ecrits().map((r) => [r.args.p_ligne_bancaire_id, r.args.p_compte])).toEqual([['deb', '580000'], ['cre', '580000']])
+    expect((ecrits()[1].args.p_ecritures as { compte: string; sens: string; montant: number }[])
+      .map((l) => [l.compte, l.sens, l.montant]).sort()).toEqual([['512000', 'debit', 1500], ['580000', 'credit', 1500]])
+    expect(alertes).toEqual([])
+  })
+
+  it('le lot des règles ne prend pas un virement à confirmer ; le drapeau baissé, il le prend comme hier', async () => {
+    for (const leve of [false, true]) {
+      preparer(leve)
+      faux.categories = [categorieDeTest({
+        id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10, compte_comptable: '706000', poste_2035: 'Recettes',
+      })]
+      faux.reglesAffectation = [regleDeTest({ motif: 'compte principal' })]
+      rendre()
+      if (!leve) {
+        expect(await screen.findByText('Affectations proposées par vos règles (1)')).toBeTruthy()
+      } else {
+        expect(await screen.findByText(/1 a en face un mouvement du montant opposé sur un autre compte bancaire/)).toBeTruthy()
+        expect(screen.queryByText('Affectations proposées par vos règles (1)')).toBeNull()
+      }
+      cleanup()
+    }
+  })
+
+  it('le second refusé : le virement se dit inachevé, et la fiche du second propose de le compléter', async () => {
+    preparer(true)
+    faux.erreurRpcAuRang = 2
+    rendre()
+    await ouvrir('VIR VERS COMPTE BIS')
+    await waitFor(() => expect(within(volet()).getByText('Compte principal')).toBeTruthy())
+    await act(async () => { within(volet()).getByRole('button', { name: 'Virement entre comptes avec le mouvement du 14/03/2026' }).click() })
+    await waitFor(() => expect(alertes).toEqual([expect.stringContaining('Le virement entre comptes est inachevé')]))
+    await ouvrir('VIR DE COMPTE PRINCIPAL')
+    const completer = await waitFor(() => within(volet()).getByRole('button', { name: 'Virement entre comptes avec le mouvement du 12/03/2026' }))
+    expect(completer.textContent).toBe('Écrire ce mouvement au 580000')
+    await act(async () => { completer.click() })
+    await waitFor(() => expect(ecrits().map((r) => r.args.p_ligne_bancaire_id)).toEqual(['deb', 'cre', 'cre']))
   })
 })

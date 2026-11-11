@@ -291,3 +291,22 @@ describe('REJET-Q1 — les autres lecteurs', () => {
     expect(associable({ etat: 'reprise_d_un_rejet', reste: 1200, refus: 'Non.' })).toBe(false)
   })
 })
+
+// UN MOUVEMENT SE RAPPROCHE DANS SON COMPTE (lot MCB3, lib/virementsInternes.ts) : la banque rejette un prélèvement sur le
+// compte qui l'a payé. Sans compte d'un côté ou de l'autre (la migration `comptes_bancaires` pas appliquée), rien ne change.
+describe('MCB3 — le rejet ne défait qu’un paiement de son compte', () => {
+  it('le paiement d’un autre compte du dossier ne se propose pas ; celui du même compte, si', () => {
+    const debitA = { ...DEBIT, compte_bancaire_id: 'A' }
+    const p = paiements([debitA])
+    expect(piecesDuRejet({ ...REJET, compte_bancaire_id: 'B' }, [piece()], p, new Set())).toEqual([])
+    expect(rejetPossible({ ...REJET, compte_bancaire_id: 'B' }, [piece()], p)).toBe(false)
+    expect(piecesDuRejet({ ...REJET, compte_bancaire_id: 'A' }, [piece()], p, new Set()).map((c) => c.piece.id)).toEqual(['prime'])
+    expect(rejetPossible({ ...REJET, compte_bancaire_id: 'A' }, [piece()], p)).toBe(true)
+  })
+
+  it('sans compte, comme hier — et le paiement ne porte la clé que si la ligne la porte', () => {
+    expect(Object.keys(paiements([DEBIT]).get('prime')![0])).not.toContain('compte_bancaire_id')
+    expect(piecesDuRejet(REJET, [piece()], paiements([{ ...DEBIT, compte_bancaire_id: 'A' }]), new Set())).toHaveLength(1)
+    expect(piecesDuRejet({ ...REJET, compte_bancaire_id: 'B' }, [piece()], paiements([DEBIT]), new Set())).toHaveLength(1)
+  })
+})

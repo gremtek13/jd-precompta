@@ -99,6 +99,9 @@ import {
   AUCUN_EXEMPLAIRE_DE_SOURCE, AUCUN_REFUS_DE_VALIDATION, exemplairesDesSourcesDe, jugeDeLaValidation, refusDeValidationDesPieces, resumeDesPairesEcartees,
 } from '../../lib/lotsDeLaJumelleInversee'
 import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
+import {
+  compteDeLaFiche, ecritureDuVirementInterne, messageDuVirementInacheve, virementsInternes, virementsInternesHorsDesLots,
+} from '../../lib/virementsInternes'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
@@ -471,9 +474,30 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const repriseEtReleve = useMemo(() => repriseEtReleveDeBanque({
     dossierId, ouvertures: repriseDeLaCaisse, releve: lignes, releveIncomplet: lignesIncompletes, modele,
   }), [dossierId, repriseDeLaCaisse, lignes, lignesIncompletes, modele])
+  // PLUSIEURS COMPTES BANCAIRES (lot MCB3 ; lib/virementsInternes.ts) : les comptes du dossier, lus pour que la fiche d'un
+  // mouvement dise le sien, et le virement entre deux comptes du praticien — un débit sur l'un, le crédit du même montant sur
+  // l'autre, à trois jours au plus —, reconnu au relevé SEUL, proposé dans la fiche et écarté de tout lot tant qu'il n'est pas
+  // confirmé. Drapeau `COMPTES_BANCAIRES_PREVUS` baissé : `sans_objet`, rien ne se lit, aucune paire, la fiche d'hier. La
+  // lecture est gardée avec le dossier qu'elle lit.
+  const [comptesDuDossierLus, setComptesDuDossierLus] = useState<{ dossierId: string; lecture: LectureDesComptes } | null>(null)
+  useEffect(() => {
+    let annule = false
+    lireLesComptesDuDossier(dossierId).then((lecture) => { if (!annule) setComptesDuDossierLus({ dossierId, lecture }) })
+    return () => { annule = true }
+  }, [dossierId])
+  const lectureDesComptesDuReleve = useMemo<LectureDesComptes>(() => (!COMPTES_BANCAIRES_PREVUS ? { etat: 'sans_objet' }
+    : comptesDuDossierLus && comptesDuDossierLus.dossierId === dossierId ? comptesDuDossierLus.lecture : { etat: 'en_cours' }),
+  [comptesDuDossierLus, dossierId])
+  const virements = useMemo(
+    () => virementsInternes(lignes, lectureDesComptesDuReleve, modele.plan.virements_internes, mouvementsHorsDesLots(ventes), anneesValidees),
+    [lignes, lectureDesComptesDuReleve, modele.plan.virements_internes, ventes, anneesValidees],
+  )
   const horsDesLots = useMemo(
-    () => versementsDEspecesHorsDesLots(mouvementsHorsDesLots(ventes), caisseDuReleve, especesDeLaCaisse, repriseEtReleve, lignes),
-    [ventes, caisseDuReleve, especesDeLaCaisse, repriseEtReleve, lignes],
+    () => virementsInternesHorsDesLots(
+      versementsDEspecesHorsDesLots(mouvementsHorsDesLots(ventes), caisseDuReleve, especesDeLaCaisse, repriseEtReleve, lignes),
+      virements,
+    ),
+    [ventes, caisseDuReleve, especesDeLaCaisse, repriseEtReleve, lignes, virements],
   )
   // LA CAISSE QUE LA FICHE D'UN MOUVEMENT JUGE (étape C4 ; lib/caisseEcran.ts) : absente tant que la table n'est pas en base ;
   // sinon rejouée sur la caisse, la reprise, le relevé ENTIER de l'onglet et — pour un dossier basculé — les espèces des factures
@@ -1048,6 +1072,32 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       p_ecritures: ecritureDuCompteDeBilan(ligne, compte, modele.plan),
     })
     if (error) { window.alert(`Le mouvement n'a pas pu être écrit au compte ${compte} : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
+  // LE VIREMENT ENTRE DEUX COMPTES DU DOSSIER (lot MCB3 ; MCB-Q3) : chaque mouvement libre de la paire s'écrit au compte des
+  // virements internes par la même fonction, l'un après l'autre — ce mouvement-ci d'abord. Le second refusé, le premier reste
+  // écrit, ce qui est juste : l'alerte dit le virement inachevé, et la fiche du second propose de le compléter. Les refus sont
+  // dits avant tout appel, pour les deux mouvements. La jambe de banque reste le compte du rôle `banque` (MCB5 la changera).
+  async function ecrireVirementInterne(ligne: LigneBancaire, autreId: string): Promise<boolean> {
+    const candidat = (virements.candidats.get(ligne.id) ?? []).find((c) => c.autre.id === autreId)
+    if (!candidat) { window.alert('Ce mouvement n’est plus en face de celui-ci : la fiche a changé depuis l’affichage.'); return false }
+    const plan = ecritureDuVirementInterne(ligne, candidat, modele)
+    if (plan.cas === 'refus') { window.alert(plan.refus); return false }
+    let ecrit: Pick<LigneBancaire, 'date' | 'montant'> | null = null
+    for (const { ligne: m, ecriture } of plan.mouvements) {
+      const { error } = await supabase.rpc('ecrire_mouvement_compte_bilan', {
+        p_ligne_bancaire_id: m.id,
+        p_compte: modele.plan.virements_internes,
+        p_ecritures: ecriture,
+      })
+      if (error) {
+        const raison = messageErreur(error, 'raison inconnue')
+        window.alert(ecrit === null ? `Le virement entre comptes n'a pas pu être écrit : ${raison}` : messageDuVirementInacheve(ecrit, m, raison))
+        return ecrit !== null
+      }
+      ecrit = ecrit ?? m
+    }
     return true
   }
 
@@ -2553,6 +2603,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             caisse={caisseDeLaFiche(ligneOuverte, caisseDuRelevePourLaFiche, caisseDuReleve, especesDeLaCaisse, repriseEtReleve)}
             onEcrireCompteBilan={(compte) => agirSurMouvement(() => ecrireCompteBilan(ligneOuverte, compte))}
             onRetirerCompteBilan={() => agirSurMouvement(() => retirerCompteBilan(ligneOuverte.id))}
+            compteBancaire={compteDeLaFiche(ligneOuverte, lectureDesComptesDuReleve, virements)}
+            onConfirmerVirementInterne={(autreId) => agirSurMouvement(() => ecrireVirementInterne(ligneOuverte, autreId))}
             suivisTva={suivisTva}
             declarationsTvaIncompletes={declarationsTvaIncompletes}
             releveIncomplet={lignesIncompletes}
