@@ -803,6 +803,25 @@ begin
   end if;
 end $$;
 
+-- ══ Les factures d'honoraires (ligne 47, LM7) ══ Au plan du code quand `HONORAIRES_FACTURES_PREVUS` est levé — c'est-à-dire
+-- quand sa migration est en base, après LM1 et LM4 : le script met sa table dès qu'elle existe, juste après
+-- `lettres_de_mission` (ORDRE_RESTAURATION_PREVU : après les lettres et les factures que ses liens citent) ; les tables qui
+-- suivent reculent d'un rang — le geste des articles ; son chemin. Aucune vague : un lien n'en cite aucun autre. Joué après
+-- le bloc des lettres de mission, qui pose son ancre. Absente de la base, rien n'entre : le plan est celui d'hier.
+-- restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.honoraires_factures') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'lettres_de_mission';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'honoraires_factures');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('honoraires_factures','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin
