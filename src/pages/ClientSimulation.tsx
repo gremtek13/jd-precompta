@@ -7,8 +7,9 @@ import { CAISSE_EXPORTEE } from '../lib/caisse'
 import { recettesDeCaisseDuClient, simulationDitNePasCompterLaCaisse, SIMULATION_SANS_CAISSE } from '../lib/recettesDeCaisse'
 import {
   QUOI_DES_VENTES_DE_LA_SIMULATION, SANS_PROJECTION, SIMULATION_VENTES_FACTUREES_EXPORTEE, lectureDeLaSimulation,
-  lireLesVentesDeLaSimulation, ventesDeLaSimulation, type LectureDeLaSimulation,
+  avecLesPiecesCitees, lireLesVentesDeLaSimulation, ventesDeLaSimulation, type LectureDeLaSimulation,
 } from '../lib/simulationVentesFacturees'
+import { FONCTION_DES_PIECES_CITEES, lireLesPiecesCiteesDeLaSimulation, reprisesAuClientPrevues } from '../lib/reprisesAuClient'
 import { partsDuReleve } from '../lib/partsDuReleve'
 import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from '../lib/rattachement'
 import { cotisationsComptees } from '../lib/cotisationRapprochee'
@@ -100,7 +101,7 @@ export default function ClientSimulation() {
     async function load() {
       const [
         lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier, lecturePaiements,
-        lectureCategories, lectureVentilations, lectureReglements, droitDeLaBase, lectureDesVentes,
+        lectureCategories, lectureVentilations, lectureReglements, droitDeLaBase, lectureDesVentes, lectureDesPiecesCitees,
       ] = await Promise.all([
         lireTout<CotisationDeclaree>((debut, fin) =>
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
@@ -150,6 +151,11 @@ export default function ClientSimulation() {
           ? lireLesVentesDeLaSimulation(dossierLu, annee,
             supabase.rpc('ventes_facturees_de_la_simulation', { p_dossier_id: dossierLu, p_annee: annee }))
           : Promise.resolve(null),
+        // Les pièces qui sont l'original d'une facture reprise (A8Q5-Q2), sous la même case, le drapeau de la migration
+        // `reprises_au_client` levé : en trésorerie, elles ne comptent que leurs paiements. Baissé, rien n'est demandé.
+        SIMULATION_VENTES_FACTUREES_EXPORTEE && reprisesAuClientPrevues()
+          ? lireLesPiecesCiteesDeLaSimulation(supabase.rpc(FONCTION_DES_PIECES_CITEES, { p_dossier_id: dossierLu }))
+          : Promise.resolve(null),
       ])
       if (annule) return
       if (!droitDeLaBase.banque) {
@@ -171,7 +177,7 @@ export default function ClientSimulation() {
       setAssujettiTva(lectureDossier.data?.assujetti_tva ?? false)
       setModeComptable(lectureDossier.data?.mode_comptable ?? 'tresorerie')
       setVentesParLesFactures(lectureDossier.data?.ventes_par_les_factures ?? null)
-      setLectureVentes(lectureDesVentes)
+      setLectureVentes(lectureDesVentes === null ? null : avecLesPiecesCitees(lectureDesVentes, lectureDesPiecesCitees))
       // Jumelle d'`EstimationTab` : tronquées, ces lectures rendent une simulation plausible et BASSE.
       // Le statut TVA non lu la rend incertaine aussi — il décide du montant de chaque recette — et
       // le dire vaut mieux que de supposer : le repli « exonéré » est le cas de la plupart des

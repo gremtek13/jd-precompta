@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   QUOI_DES_VENTES_DE_LA_SIMULATION, SANS_PROJECTION, SIMULATION_VENTES_FACTUREES_EXPORTEE, lectureDeLaSimulation,
-  lectureDesVentesDeLaSimulation, lireLesVentesDeLaSimulation, recettesDeLaSimulation, ventesDeLaSimulation,
+  avecLesPiecesCitees, lectureDesVentesDeLaSimulation, lireLesVentesDeLaSimulation, recettesDeLaSimulation, ventesDeLaSimulation,
   type LectureDeLaSimulation,
 } from './simulationVentesFacturees'
 import {
@@ -305,5 +305,30 @@ describe('l’essai porte le jeu et les lectures que le module calcule', () => {
         expect((client as Extract<RecettesFacturees, { etat: 'comptees' }>).sources).toEqual(ventes.sources)
       }
     }
+  })
+})
+
+describe('les pièces citées par une facture reprise, jointes aux ventes (A8Q5-Q2)', () => {
+  const lue = lectureDesVentesDeLaSimulation(D, 2026, { data: { par_mois: { '2026-02': 10000 }, sources: [F1] }, error: null })
+  const P = 'b0000000-0000-4000-8000-000000000001'
+
+  it('le drapeau baissé, rien n’est demandé (`null`) : la lecture d’hier, telle quelle — aucune pièce citée', () => {
+    expect(avecLesPiecesCitees(lue, null)).toBe(lue)
+    expect(lue.etat === 'lue' && lue.recettes.etat === 'comptees' && lue.recettes.piecesCitees.size).toBe(0)
+  })
+
+  it('lues : elles rejoignent les recettes « comptées », le reste inchangé', () => {
+    const jointe = avecLesPiecesCitees(lue, { etat: 'lues', piecesCitees: new Set([P]) })
+    expect(jointe).toEqual({ ...lue, recettes: { ...(lue as Extract<typeof lue, { etat: 'lue' }>).recettes, piecesCitees: new Set([P]) } })
+  })
+
+  it('illisibles : la lecture des ventes se dit incomplète, avec leur motif — jamais un ensemble vide deviné', () => {
+    expect(avecLesPiecesCitees(lue, { etat: 'illisibles', motif: 'pièces citées illisibles' }))
+      .toEqual({ dossierId: D, annee: 2026, etat: 'incomplete', motif: 'pièces citées illisibles' })
+  })
+
+  it('une lecture des ventes déjà incomplète garde son motif', () => {
+    const incomplete = lectureDesVentesDeLaSimulation(D, 2026, { data: null, error: { message: 'Accès refusé à ce dossier.' } })
+    expect(avecLesPiecesCitees(incomplete, { etat: 'lues', piecesCitees: new Set([P]) })).toBe(incomplete)
   })
 })

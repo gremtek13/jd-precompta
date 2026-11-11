@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientSimulation from './ClientSimulation'
+import { DRAPEAU_DES_REPRISES_AU_CLIENT } from '../lib/reprisesAuClient'
 import type {
   Categorie, CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle, ReglementGroupe, VentilationBancaire,
 } from '../lib/types'
@@ -34,6 +35,8 @@ const faux = vi.hoisted(() => ({
   // Une réponse retenue de cette fonction, que le test rend quand il le décide : l'ordre des réponses.
   ventesRetenues: null as Promise<{ data: unknown; error: unknown }> | null,
   appels: [] as { nom: string; args: unknown }[],
+  // Les pièces citées par une facture reprise (A8Q5-Q2), ce que `pieces_citees_de_la_simulation` rend.
+  piecesCitees: { data: [], error: null } as { data: unknown; error: unknown },
 }))
 
 // LA CAISSE (ligne 26.6, étape C3a) : son drapeau, baissé comme dans ce lot sauf dans le bloc qui le lève.
@@ -110,7 +113,9 @@ vi.mock('../lib/supabase', async () => {
           ? { data: { cabinet: false, membre: true, ventes: false, banque: true }, error: null }
           : nom === 'ventes_facturees_de_la_simulation'
             ? (faux.ventesRetenues ?? faux.ventes)
-            : { data: null, error: { message: `fonction inattendue : ${nom}` } })
+            : nom === 'pieces_citees_de_la_simulation'
+              ? faux.piecesCitees
+              : { data: null, error: { message: `fonction inattendue : ${nom}` } })
       },
     },
   }
@@ -180,6 +185,8 @@ function poser(o: {
   faux.drapeau = false
   faux.ventes = { data: { par_mois: {}, sources: [] }, error: null }
   faux.ventesRetenues = null
+  faux.piecesCitees = { data: [], error: null }
+  DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false
   faux.appels = []
 }
 
@@ -620,6 +627,40 @@ describe('ClientSimulation — les ventes facturées, le drapeau levé (VF8e)', 
       .toEqual([{ nom: 'ventes_facturees_de_la_simulation', args: { p_dossier_id: 'dossier-de-test', p_annee: 2026 } }])
     expect(screen.queryByText(PHRASE)).toBeNull()
     expect(screen.queryByText(BANDEAU)).toBeNull()
+  })
+
+  // A8Q5-Q2 (migration `reprises_au_client`) : la pièce qui est l'original d'une facture reprise (PC, 200 €, jamais payée) ne
+  // compte plus que ses paiements — aucun —, le drapeau des reprises levé ; le registre de sa facture reprise compte le reste.
+  const PC = 'c0000000-0000-4000-8000-000000000001'
+  const AVEC_LA_PIECE_CITEE = [recette({ facture_id: SOURCE }), recette({ id: 'r2', montant_ttc: 300, facture_id: AUTRE }), recette({ id: PC, montant_ttc: 200 })]
+
+  it('A8Q5-Q2, le drapeau des reprises baissé : les pièces citées ne sont pas demandées, la pièce compte comme hier', async () => {
+    poserLeve({ recettes: AVEC_LA_PIECE_CITEE })
+    faux.ventes = { data: { par_mois: { '2026-02': 10000, '2026-05': 5000 }, sources: [SOURCE] }, error: null }
+    faux.piecesCitees = { data: [PC], error: null }
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('650,00 €')
+    expect(faux.appels.map((a) => a.nom)).not.toContain('pieces_citees_de_la_simulation')
+  })
+
+  it('A8Q5-Q2, le drapeau des reprises levé : la pièce citée ne compte que ses paiements, et l’appel nomme le dossier', async () => {
+    poserLeve({ recettes: AVEC_LA_PIECE_CITEE })
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+    faux.ventes = { data: { par_mois: { '2026-02': 10000, '2026-05': 5000 }, sources: [SOURCE] }, error: null }
+    faux.piecesCitees = { data: [PC], error: null }
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('450,00 €')
+    expect(faux.appels.filter((a) => a.nom === 'pieces_citees_de_la_simulation'))
+      .toEqual([{ nom: 'pieces_citees_de_la_simulation', args: { p_dossier_id: 'dossier-de-test' } }])
+  })
+
+  it('A8Q5-Q2, le drapeau levé, les pièces citées refusées : le bandeau, aucune projection — jamais la pièce comptée en entier', async () => {
+    poserLeve({ recettes: AVEC_LA_PIECE_CITEE })
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+    faux.piecesCitees = { data: null, error: { message: 'Accès refusé à ce dossier.' } }
+    await monter()
+    await screen.findByText(BANDEAU)
+    expect(screen.queryByText('650,00 €')).toBeNull()
   })
 
   it('en engagement, le CA facturé à date', async () => {

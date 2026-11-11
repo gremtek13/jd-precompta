@@ -4,6 +4,7 @@ import {
   RECETTES_FACTUREES_NON_COMPTEES, simulationDitNePasCompterLesVentesFacturees, type RecettesFacturees,
 } from './estimation'
 import { messageErreur } from './messageErreur'
+import type { LectureDesPiecesCitees } from './reprisesAuClient'
 
 // « MA SIMULATION » REÇOIT SES VENTES FACTURÉES (ligne 28.65, chantier EC-Q3, étape VF8e ; VF8-Q2 ; HISTORIQUE.md,
 // « VF8, LA BASCULE : LA CONCEPTION », § 3 (e), et « « MA SIMULATION » REÇOIT SES VENTES FACTURÉES »).
@@ -69,8 +70,9 @@ export function recettesDeLaSimulation(rendu: unknown, annee: number): RecettesF
     if (typeof id !== 'string' || !IDENTIFIANT.test(id) || sources.has(id)) return null
     sources.add(id)
   }
-  // Les pièces citées par une facture reprise (A8c4) : la session du client ne lit pas `pieces_des_factures_reprises`, et la
-  // base ne les lui rend pas encore — la question A8Q5-Q2, au cabinet. Hors de cette étape : aucune, comme hier.
+  // Les pièces citées par une facture reprise (A8c4) : la session du client ne lit pas `pieces_des_factures_reprises`. Elles
+  // viennent d'une seconde fonction (A8Q5-Q2, `pieces_citees_de_la_simulation`), jointes par `avecLesPiecesCitees` ; ici,
+  // aucune, comme hier.
   return { etat: 'comptees', parMois, sources, piecesCitees: AUCUNE_PIECE_CITEE }
 }
 
@@ -98,6 +100,24 @@ export async function lireLesVentesDeLaSimulation(
   } catch (erreur) {
     return lectureDesVentesDeLaSimulation(dossierId, annee, { data: null, error: erreur })
   }
+}
+
+/**
+ * LES PIÈCES CITÉES PAR UNE FACTURE REPRISE (A8Q5-Q2 ; lib/reprisesAuClient.ts, le drapeau `REPRISES_AU_CLIENT_PREVUES`
+ * levé) jointes aux ventes lues : en trésorerie, une telle pièce ne compte plus que ses paiements, le registre de sa
+ * facture reprise compte le reste. `null` : le drapeau baissé, rien n'a été demandé — la lecture d'hier, telle quelle. Lues
+ * en partie, refusées ou illisibles : la lecture des ventes se dit INCOMPLÈTE, avec leur motif — jamais un ensemble vide
+ * deviné, qui ferait compter la pièce et l'encaissement de sa facture.
+ */
+export function avecLesPiecesCitees(
+  lecture: LectureDeLaSimulation, piecesCitees: LectureDesPiecesCitees | null,
+): LectureDeLaSimulation {
+  if (piecesCitees === null || lecture.etat === 'incomplete') return lecture
+  if (piecesCitees.etat === 'illisibles') {
+    return { dossierId: lecture.dossierId, annee: lecture.annee, etat: 'incomplete', motif: piecesCitees.motif }
+  }
+  if (lecture.recettes.etat !== 'comptees') return lecture
+  return { ...lecture, recettes: { ...lecture.recettes, piecesCitees: piecesCitees.piecesCitees } }
 }
 
 /**
