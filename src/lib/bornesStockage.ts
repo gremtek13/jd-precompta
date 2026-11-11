@@ -67,17 +67,58 @@ export function typeDUnePiece(nom: string, debut: Uint8Array): string | null {
 }
 // ── FIN COPIE bornesDesPieces ────────────────────────────────────────────────────────────────────────────────────────
 
+// ── LE SEAU `ventes` : LE LOGO DES FACTURES, ET L'ORIGINAL D'UNE FACTURE REPRISE (A8d2a) ──────────────────────────────
+// Le logo des factures a SES bornes, quelles que soient celles du seau : deux formats que tout PDF sait porter (le JPEG par
+// `DCTDecode`, le PNG par `FlateDecode` et ses prédicteurs, ISO 32000-1, §7.4) — ni WebP, qu'aucun filtre du PDF ne lit,
+// ni SVG, qui porte du script — et 500 Kio, la borne de la conception (§A.5.2) : une en-tête de facture, pas une
+// photographie. Jusqu'à A8d2a, le seau ne portait que lui, et ses bornes étaient celles du seau.
+//
+// La migration `originaux_des_imports` (supabase/preparees/, PRÉPARÉE, pas appliquée) y range aussi l'ORIGINAL d'une
+// facture reprise de l'ancien logiciel, sous `<dossier>/imports/<lot>/<empreinte>.<pdf|xml|csv>` : le stockage jugeant le
+// type et la taille au niveau du SEAU (une policy ne voit pas le fichier), le seau admet alors l'union — 20 Mio, et le
+// PDF, le texte brut (un XML, rangé en `text/plain` : servi sous un type XML, il peut porter du script, comme un SVG) et
+// le CSV en plus —, et `enregistrer_parametres_facturation` borne le logo à la plus petite de la borne du seau et de
+// 512 000 octets. `ORIGINAUX_DES_IMPORTS_PREVUS` dit si elle est en base : baissé, le seau garde ses bornes d'hier.
+
+/** La migration `originaux_des_imports` est-elle en base ? Baissé tant qu'elle n'est que préparée (A8d2a). */
+export const ORIGINAUX_DES_IMPORTS_PREVUS = false
+
+/** Ce que `preparerLogoDeFacture` peut envoyer : PNG ou JPEG. */
+export const TYPES_DES_LOGOS_DE_FACTURE = ['image/png', 'image/jpeg'] as const
+
+/** Le poids d'un logo de facture : 500 Kio, la borne que la fonction des paramètres tient, quelle que soit celle du seau. */
+export const TAILLE_MAX_LOGO_DE_FACTURE = 500 * 1024
+
+/**
+ * Ce que `preparerOriginalDImport` peut envoyer : le PDF (une Factur-X), le texte brut (un XML CII ou UBL) et le CSV — ni
+ * SVG, ni HTML, ni type XML : un original se lit, il ne s'exécute pas.
+ */
+export const TYPES_DES_ORIGINAUX_D_IMPORT = ['application/pdf', 'text/plain', 'text/csv'] as const
+
+/** Le poids d'un original d'import : 20 Mio, la borne des pièces (S226-Q1) — une Factur-X en pèse quelques centaines de Ko. */
+export const TAILLE_MAX_ORIGINAL_D_IMPORT = TAILLE_MAX_PIECE
+
+type TypeDuSeauDesVentes = (typeof TYPES_DES_LOGOS_DE_FACTURE)[number] | (typeof TYPES_DES_ORIGINAUX_D_IMPORT)[number]
+
+/**
+ * Les bornes du seau `ventes`, migration `originaux_des_imports` en base ou non : sans elle, celles du logo ; avec elle,
+ * l'union, que la migration pose et que bornesStockage.test.ts confronte à son texte et à l'essai.
+ */
+export function bornesDuSeauDesVentes(originauxEnBase: boolean): { types: readonly TypeDuSeauDesVentes[]; taille: number } {
+  return originauxEnBase
+    ? { types: [...TYPES_DES_LOGOS_DE_FACTURE, ...TYPES_DES_ORIGINAUX_D_IMPORT], taille: TAILLE_MAX_ORIGINAL_D_IMPORT }
+    : { types: TYPES_DES_LOGOS_DE_FACTURE, taille: TAILLE_MAX_LOGO_DE_FACTURE }
+}
+
 /**
  * Les types que chaque seau admet : la liste de la migration `bornes_du_stockage` — et, pour `ventes`, celle de la migration
- * `logo_des_factures` —, rien d'autre.
+ * `logo_des_factures`, ou d'`originaux_des_imports` quand elle est en base —, rien d'autre.
  */
 export const TYPES_ADMIS = {
   pieces: ['application/pdf', 'image/jpeg', 'image/png', 'text/csv', 'text/plain'],
   packs: ['application/zip', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
   'cabinet-logos': ['image/png', 'image/jpeg', 'image/webp'],
-  // Le logo des factures : deux formats que tout PDF sait porter (le JPEG par `DCTDecode`, le PNG par `FlateDecode` et ses
-  // prédicteurs, ISO 32000-1, §7.4) ; ni WebP, qu'aucun filtre du PDF ne lit, ni SVG, qui porte du script.
-  ventes: ['image/png', 'image/jpeg'],
+  ventes: bornesDuSeauDesVentes(ORIGINAUX_DES_IMPORTS_PREVUS).types,
 } as const satisfies Record<Seau, readonly string[]>
 
 /** La plus grande taille que chaque seau admet, en octets : la valeur de la migration. */
@@ -88,8 +129,7 @@ export const TAILLE_MAX = {
   packs: 50 * 1024 * 1024,
   // Un logo s'affiche dans la barre latérale de chaque page : 500 Kio suffisent, et le logo d'aujourd'hui en pèse 26.
   'cabinet-logos': 500 * 1024,
-  // Le logo des factures : la même borne, celle de la conception (§A.5.2) — une en-tête de facture, pas une photographie.
-  ventes: 500 * 1024,
+  ventes: bornesDuSeauDesVentes(ORIGINAUX_DES_IMPORTS_PREVUS).taille,
 } as const satisfies Record<Seau, number>
 
 export type TypeAdmis<S extends Seau> = (typeof TYPES_ADMIS)[S][number]
@@ -102,9 +142,6 @@ export const TYPES_DES_FICHIERS_DE_PIECE = ['application/pdf', 'image/jpeg', 'im
 
 /** Ce que `preparerLogo` peut envoyer. */
 export const TYPES_DES_LOGOS = TYPES_ADMIS['cabinet-logos']
-
-/** Ce que `preparerLogoDeFacture` peut envoyer. */
-export const TYPES_DES_LOGOS_DE_FACTURE = TYPES_ADMIS.ventes
 
 /** Ce qu'un seau refuse, et pourquoi. */
 export interface RefusDuDepot {
@@ -166,22 +203,38 @@ export function poidsFaceALaBorne(octets: readonly number[], borne: number): { l
   return { lus: octets.map(aLOctet), borne: aLOctet(borne) }
 }
 
-function refusDeTaille(seau: Seau, taille: number): RefusDuDepot {
-  const dits = poidsFaceALaBorne([taille], TAILLE_MAX[seau])
+/**
+ * Ce qu'on dépose : sa borne, ce que c'est (pour dire le refus), ses formats. Un seau entier — ou, dans le seau `ventes`
+ * qui en porte deux depuis A8d2a, le logo des factures et l'original d'une facture reprise, chacun sous SES bornes.
+ */
+interface Genre { borne: number; ceQueCest: string; formats: string }
+
+const genreDuSeau = (seau: Seau): Genre => ({ borne: TAILLE_MAX[seau], ceQueCest: CE_QU_IL_CONTIENT[seau], formats: FORMATS_DITS[seau] })
+
+const LOGO_DE_FACTURE: Genre = { borne: TAILLE_MAX_LOGO_DE_FACTURE, ceQueCest: CE_QU_IL_CONTIENT.ventes, formats: FORMATS_DITS.ventes }
+
+const ORIGINAL_D_IMPORT: Genre = {
+  borne: TAILLE_MAX_ORIGINAL_D_IMPORT,
+  ceQueCest: 'un original de facture reprise',
+  formats: 'un original de facture reprise se dépose en PDF (Factur-X), en XML (CII ou UBL) ou en CSV',
+}
+
+function refusDeTaille(genre: Genre, taille: number): RefusDuDepot {
+  const dits = poidsFaceALaBorne([taille], genre.borne)
   return {
     raison: 'taille', taille,
-    message: `il pèse ${dits.lus[0]}, au-delà des ${dits.borne} qu’${CE_QU_IL_CONTIENT[seau]} peut peser`,
+    message: `il pèse ${dits.lus[0]}, au-delà des ${dits.borne} qu’${genre.ceQueCest} peut peser`,
   }
 }
 
-function refusDeFormat(seau: Seau, taille: number): RefusDuDepot {
-  return { raison: 'format', taille, message: `format non pris en charge (${FORMATS_DITS[seau]})` }
+function refusDeFormat(genre: Genre, taille: number): RefusDuDepot {
+  return { raison: 'format', taille, message: `format non pris en charge (${genre.formats})` }
 }
 
 /** Le refus de la taille, ou le corps réétiqueté : le dernier pas de chaque préparation. */
-function borner(seau: Seau, contenu: Blob | Uint8Array<ArrayBuffer>, type: string): IssueDuDepot {
+function borner(genre: Genre, contenu: Blob | Uint8Array<ArrayBuffer>, type: string): IssueDuDepot {
   const taille = contenu instanceof Uint8Array ? contenu.byteLength : contenu.size
-  if (taille > TAILLE_MAX[seau]) return { refus: refusDeTaille(seau, taille) }
+  if (taille > genre.borne) return { refus: refusDeTaille(genre, taille) }
   return { corps: new Blob([contenu], { type }), type, taille }
 }
 
@@ -195,8 +248,8 @@ async function premiersOctets(fichier: Blob): Promise<Uint8Array> {
  */
 export async function preparerPiece(fichier: File): Promise<IssueDuDepot> {
   const type = typeDUnePiece(fichier.name, await premiersOctets(fichier))
-  if (type === null) return { refus: refusDeFormat('pieces', fichier.size) }
-  return borner('pieces', fichier, type)
+  if (type === null) return { refus: refusDeFormat(genreDuSeau('pieces'), fichier.size) }
+  return borner(genreDuSeau('pieces'), fichier, type)
 }
 
 /** Le refus d'une pièce, ou null si elle peut partir : ce qu'un écran dit dès le choix du fichier. */
@@ -226,8 +279,8 @@ export function extensionDuLogo(type: string): string {
 /** Un logo de cabinet (seau `cabinet-logos`, public) : PNG, JPEG ou WebP, 500 Kio au plus. */
 export async function preparerLogo(fichier: Blob): Promise<IssueDuDepot> {
   const type = typeDUnLogo(await premiersOctets(fichier))
-  if (type === null) return { refus: refusDeFormat('cabinet-logos', fichier.size) }
-  return borner('cabinet-logos', fichier, type)
+  if (type === null) return { refus: refusDeFormat(genreDuSeau('cabinet-logos'), fichier.size) }
+  return borner(genreDuSeau('cabinet-logos'), fichier, type)
 }
 
 /** Le refus d'un logo, ou null s'il peut partir. */
@@ -240,19 +293,81 @@ export async function refusDUnLogo(fichier: Blob): Promise<RefusDuDepot | null> 
  * Le type du logo des factures, lu à sa SIGNATURE et jamais à son nom ni au type que déclare le navigateur : PNG (ses huit
  * octets) ou JPEG ; un WebP, un SVG ou tout autre fichier n'en est pas un. Le jumeau de `typeDUnLogo`, sans le WebP.
  */
-export function typeDUnLogoDeFacture(o: Uint8Array): TypeAdmis<'ventes'> | null {
+export function typeDUnLogoDeFacture(o: Uint8Array): (typeof TYPES_DES_LOGOS_DE_FACTURE)[number] | null {
   const type = typeDUnLogo(o)
   return type === 'image/png' || type === 'image/jpeg' ? type : null
 }
 
 /**
- * Le logo des factures d'un dossier (seau `ventes`, privé) : PNG ou JPEG, 500 Kio au plus, rendu dans un Blob RÉÉTIQUETÉ
- * du type que dit sa signature — celui que le stockage jugera, et que le chemin du logo dira (src/lib/logoDesFactures.ts).
+ * Le logo des factures d'un dossier (seau `ventes`, privé) : PNG ou JPEG, 500 Kio au plus — SES bornes, celles du seau ou
+ * non (A8d2a) —, rendu dans un Blob RÉÉTIQUETÉ du type que dit sa signature — celui que le stockage jugera, et que le
+ * chemin du logo dira (src/lib/logoDesFactures.ts).
  */
 export async function preparerLogoDeFacture(fichier: Blob): Promise<IssueDuDepot> {
   const type = typeDUnLogoDeFacture(await premiersOctets(fichier))
-  if (type === null) return { refus: refusDeFormat('ventes', fichier.size) }
-  return borner('ventes', fichier, type)
+  if (type === null) return { refus: refusDeFormat(LOGO_DE_FACTURE, fichier.size) }
+  return borner(LOGO_DE_FACTURE, fichier, type)
+}
+
+// ── L'ORIGINAL D'UNE FACTURE REPRISE (A8d2a) ─────────────────────────────────────────────────────────────────────────
+// Le fichier de l'ancien logiciel que l'import a lu (src/lib/lectureDesFacturesReprises.ts) : son FORMAT se décide au
+// CONTENU, jamais au nom ni au type du navigateur — un PDF à sa signature, un XML à sa racine (une facture CII ou UBL) ;
+// le CSV seul, qui n'a pas de signature, à son extension. Il se range sous un chemin dont la policy du seau exige la forme
+// EXACTE (`ventes_depot_d_un_original`) : le dossier et le lot en UUID minuscules, le nom l'empreinte SHA-256 du fichier,
+// l'extension tirée du type. Le nom d'origine, qui peut nommer un client, ne va pas au stockage.
+
+/** La forme du chemin d'un original : celle de la policy `ventes_depot_d_un_original` (bornesStockage.test.ts les confronte). */
+export const FORME_CHEMIN_D_UN_ORIGINAL =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/imports\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{64}\.(pdf|xml|csv)$/
+
+/** La racine d'une facture XML que l'import lit : CII (`CrossIndustryInvoice`) ou UBL (`Invoice`, `CreditNote`). */
+const RACINE_D_UNE_FACTURE_XML = /^<(?:[A-Za-z_][\w.-]*:)?(?:CrossIndustryInvoice|Invoice|CreditNote)[\s/>]/
+
+/** Le début d'un XML après son prologue, ses commentaires et ses instructions : là où sa racine s'ouvre. */
+function racineDuXml(texte: string): string {
+  let reste = texte.trimStart()
+  for (;;) {
+    const avant = reste
+    reste = reste.replace(/^<\?[\s\S]*?\?>/, '').replace(/^<!--[\s\S]*?-->/, '').trimStart()
+    if (reste === avant) return reste
+  }
+}
+
+/**
+ * Le type sous lequel un original se dépose, ou null s'il n'en est pas un : `application/pdf` (sa signature),
+ * `text/plain` (un XML dont la racine est une facture CII ou UBL — jamais un type XML, qui peut porter du script),
+ * `text/csv` (l'extension, le CSV n'ayant pas de signature, et un contenu qui n'est ni un PDF ni un balisage).
+ */
+export function typeDUnOriginal(nom: string, debut: Uint8Array): (typeof TYPES_DES_ORIGINAUX_D_IMPORT)[number] | null {
+  if (debut[0] === 0x25 && debut[1] === 0x50 && debut[2] === 0x44 && debut[3] === 0x46) return 'application/pdf'
+  // Les balises sont en ASCII : lues octet pour octet, après la marque d'ordre UTF-8 (EF BB BF) s'il y en a une.
+  const bom = debut[0] === 0xef && debut[1] === 0xbb && debut[2] === 0xbf ? 3 : 0
+  const racine = racineDuXml(new TextDecoder('latin1').decode(debut.subarray(bom)))
+  if (racine.startsWith('<')) return RACINE_D_UNE_FACTURE_XML.test(racine) ? 'text/plain' : null
+  return /\.csv$/i.test(nom) ? 'text/csv' : null
+}
+
+/** L'extension du chemin d'un original, tirée de son type — jamais du nom que portait le fichier. */
+export function extensionDeLOriginal(type: (typeof TYPES_DES_ORIGINAUX_D_IMPORT)[number]): 'pdf' | 'xml' | 'csv' {
+  return type === 'application/pdf' ? 'pdf' : type === 'text/plain' ? 'xml' : 'csv'
+}
+
+/** Le chemin d'un original : `<dossier>/imports/<lot>/<empreinte>.<extension>`, ou null si l'un d'eux n'a pas sa forme. */
+export function cheminDUnOriginal(dossierId: string, lotId: string, sha256: string, type: (typeof TYPES_DES_ORIGINAUX_D_IMPORT)[number]): string | null {
+  const chemin = `${dossierId}/imports/${lotId}/${sha256}.${extensionDeLOriginal(type)}`
+  return FORME_CHEMIN_D_UN_ORIGINAL.test(chemin) ? chemin : null
+}
+
+/**
+ * L'original d'une facture reprise (seau `ventes`, privé, A8d2a) : PDF, XML ou CSV, 20 Mio au plus, rendu dans un Blob
+ * RÉÉTIQUETÉ du type que dit son contenu. Les quatre premiers Kio suffisent à le reconnaître (le prologue d'un XML, ses
+ * commentaires, puis sa racine). Aucun écran ne l'appelle encore : le dépôt vient avec l'écran d'import (A8d2), après la
+ * migration `originaux_des_imports` (`ORIGINAUX_DES_IMPORTS_PREVUS`).
+ */
+export async function preparerOriginalDImport(fichier: File): Promise<IssueDuDepot> {
+  const type = typeDUnOriginal(fichier.name, new Uint8Array(await fichier.slice(0, 4096).arrayBuffer()))
+  if (type === null) return { refus: refusDeFormat(ORIGINAL_D_IMPORT, fichier.size) }
+  return borner(ORIGINAL_D_IMPORT, fichier, type)
 }
 
 /** `type/sous-type`, en minuscules, sans paramètres : ce que le stockage compare (RFC 9110, § 8.3.1). */
@@ -267,8 +382,8 @@ export function typeSansParametres(type: string): string {
  */
 export function preparerContenu<S extends Seau>(seau: S, contenu: Blob | Uint8Array<ArrayBuffer>, type: TypeDuSeau<S>): IssueDuDepot {
   const taille = contenu instanceof Uint8Array ? contenu.byteLength : contenu.size
-  if (!(TYPES_ADMIS[seau] as readonly string[]).includes(typeSansParametres(type))) return { refus: refusDeFormat(seau, taille) }
-  return borner(seau, contenu, type)
+  if (!(TYPES_ADMIS[seau] as readonly string[]).includes(typeSansParametres(type))) return { refus: refusDeFormat(genreDuSeau(seau), taille) }
+  return borner(genreDuSeau(seau), contenu, type)
 }
 
 /**

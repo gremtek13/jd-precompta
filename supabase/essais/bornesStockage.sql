@@ -17,14 +17,29 @@
 -- Joué le 12/10/2026 AVANT l'application (la migration préparée, pas appliquée) : les trois seaux EN FAUTE (« taille
 -- aucune »), trois seaux, aucun fichier hors des bornes — c'est l'état que la migration corrige.
 --
+-- Depuis A8d2a (migration `originaux_des_imports`, PRÉPARÉE le 11/11/2026) : le seau `ventes` porte aussi les originaux des
+-- factures reprises. Ses bornes attendues sont celles d'avant tant que sa policy de dépôt d'un original n'est pas en base,
+-- celles d'`attendu_depuis_a8d2a` ensuite : 20 Mio, et le PDF, le texte brut (un XML) et le CSV en plus.
+--
 -- Joué le 17/10/2026 sur une réplique égale à la production (étape A5c1) : sans `logo_des_factures`, les trois seaux
 -- « ok », `ventes` « EN ATTENTE », aucun seau sans borne attendue, aucun fichier hors des bornes ; avec elle, les quatre
 -- « ok ».
-with attendu(seau, publique, taille, types) as (
+with attendu_d_avant(seau, publique, taille, types) as (
   values ('pieces', false, 20971520::bigint, array['application/pdf', 'image/jpeg', 'image/png', 'text/csv', 'text/plain']),
          ('packs', false, 52428800::bigint, array['application/zip', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']),
          ('cabinet-logos', true, 512000::bigint, array['image/png', 'image/jpeg', 'image/webp']),
          ('ventes', false, 512000::bigint, array['image/png', 'image/jpeg'])
+),
+attendu_depuis_a8d2a(seau, publique, taille, types) as (
+  values ('ventes', false, 20971520::bigint, array['image/png', 'image/jpeg', 'application/pdf', 'text/plain', 'text/csv'])
+),
+a8d2a as (
+  select exists (select 1 from pg_policy o where o.polrelid = 'storage.objects'::regclass and o.polname = 'ventes_depot_d_un_original') as posee
+),
+attendu as (
+  select a.* from attendu_d_avant a where not (a.seau = 'ventes' and (select posee from a8d2a))
+  union all
+  select d.* from attendu_depuis_a8d2a d where (select posee from a8d2a)
 ),
 historique as (
   select max(version) filter (where name = 'logo_des_factures') as applique,

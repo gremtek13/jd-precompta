@@ -27,6 +27,12 @@
 --     du RIB (`dernier_changement_de_rib`) ;
 --   - et que RIEN ne reste en base.
 --
+-- ADAPTÉ LE 11/11/2026 À A8d2a (migration `originaux_des_imports`, PRÉPARÉE) : elle élargit le seau aux originaux des
+-- factures reprises (20 Mio ; PDF, texte brut, CSV), ajoute la policy `ventes_depot_d_un_original` et réserve au cabinet la
+-- lecture de `<dossier>/imports/`. Sous elle, 0a, 0b et 0c ramènent EXACTEMENT ce qu'elle change à l'état d'avant (une
+-- substitution de texte entier, qu'un écart d'un caractère laisse voir) ; originauxDesImports.sql éprouve le reste. Le
+-- logo, lui, ne change pas : 38 et 38d valent avec elle (la fonction prend la plus petite des bornes du seau et du logo).
+--
 -- ADAPTÉ LE 29/10/2026 À A7-Q3 (migration `iban_hors_des_parametres`, PRÉPARÉE, pas encore en base) : elle ajoute à
 -- `enregistrer_parametres_facturation` un neuvième rang, après le logo — un vingt-sixième message. Le contrôle 0g juge
 -- les vingt-cinq premiers, inchangés, et 0g2 ce qui suit : rien sans elle, son seul refus avec elle.
@@ -138,16 +144,24 @@ begin
 
       -- ══ 0. Le catalogue ══════════
       ('0a', 'valeur', 'le seau : privé, 500 Kio, PNG et JPEG', 'proprietaire', null,
-        $q$select b.id || ':' || b.public || ':' || b.file_size_limit || ':' || array_to_string(b.allowed_mime_types, ',') from storage.buckets b where b.id = 'ventes'$q$,
+        $q$select case when exists (select 1 from pg_policy o where o.polrelid = 'storage.objects'::regclass and o.polname = 'ventes_depot_d_un_original')
+                    then replace(v, 'ventes:false:20971520:image/png,image/jpeg,application/pdf,text/plain,text/csv', 'ventes:false:512000:image/png,image/jpeg')
+                    else v end
+             from (select b.id || ':' || b.public || ':' || b.file_size_limit || ':' || array_to_string(b.allowed_mime_types, ',') as v from storage.buckets b where b.id = 'ventes') x$q$,
         'OK', 'ventes:false:512000:image/png,image/jpeg', null),
       ('0b', 'valeur', 'les trois policies du seau, aux connectés : lecture, dépôt, suppression ; permissives', 'proprietaire', null,
-        $q$select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/' || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname)
+        $q$select case when exists (select 1 from pg_policy o where o.polrelid = 'storage.objects'::regclass and o.polname = 'ventes_depot_d_un_original')
+                    then replace(v, 'ventes_depot_d_un_original/a/true/authenticated,', '') else v end
+             from (select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/' || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) as v
              from pg_policy p where p.polrelid = 'storage.objects'::regclass
-              and (coalesce(pg_get_expr(p.polqual, p.polrelid), '') || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')) like '%''ventes''%'$q$,
+              and (coalesce(pg_get_expr(p.polqual, p.polrelid), '') || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')) like '%''ventes''%') x$q$,
         'OK', 'ventes_depot_d_un_logo/a/true/authenticated,ventes_lecture/r/true/authenticated,ventes_suppression_par_le_chef/d/true/authenticated', null),
       ('0c', 'valeur', 'leurs prédicats, mot pour mot : la forme du chemin d''abord, puis les ventes du dossier — le chef pour supprimer', 'proprietaire', null,
-        $q$select string_agg(p.polname || '=' || regexp_replace(coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), '\s+', ' ', 'g'), ' ; ' order by p.polname)
-             from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname like 'ventes\_%'$q$,
+        $q$select string_agg(p.polname || '=' || case when p.polname = 'ventes_lecture' and exists (select 1 from pg_policy o where o.polrelid = 'storage.objects'::regclass and o.polname = 'ventes_depot_d_un_original')
+                    then replace(regexp_replace(coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), '\s+', ' ', 'g'),
+                                 'CASE WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/imports/''::text) THEN admin_du_dossier(((storage.foldername(name))[1])::uuid) WHEN', 'CASE WHEN')
+                    else regexp_replace(coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), '\s+', ' ', 'g') end, ' ; ' order by p.polname)
+             from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname like 'ventes\_%' and p.polname <> 'ventes_depot_d_un_original'$q$,
         'OK', 'ventes_depot_d_un_logo=|((bucket_id = ''ventes''::text) AND CASE WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/logos/[0-9a-f]{64}\\.(png|jpg)$''::text) THEN gere_les_ventes(((storage.foldername(name))[1])::uuid) ELSE false END) ; ventes_lecture=((bucket_id = ''ventes''::text) AND CASE WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/''::text) THEN gere_les_ventes(((storage.foldername(name))[1])::uuid) ELSE false END)| ; ventes_suppression_par_le_chef=((bucket_id = ''ventes''::text) AND CASE WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/''::text) THEN (EXISTS ( SELECT 1 FROM dossiers d WHERE ((d.id = ((storage.foldername(objects.name))[1])::uuid) AND est_chef_du_cabinet(d.cabinet_id)))) ELSE false END)|', null),
       ('0d', 'valeur', 'aucune policy de mise à jour, ni « pour tout », n''atteint le seau : un fichier ne s''y modifie jamais', 'proprietaire', null,
         $q$select count(*)::text from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polcmd in ('w', '*')

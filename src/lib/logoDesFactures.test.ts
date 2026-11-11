@@ -39,7 +39,7 @@ const {
   refusEnregistrementParametres, versionCourante,
 } = await import('./parametresFacturation')
 const { champsChanges, parametresEnvoyes, refusDeLaSaisieParametres, saisieDeLaVersion } = await import('./parametresFacturationVue')
-const { TAILLE_MAX, TYPES_ADMIS } = await import('./bornesStockage')
+const { TAILLE_MAX_LOGO_DE_FACTURE, TYPES_DES_LOGOS_DE_FACTURE } = await import('./bornesStockage')
 const { hashFichier } = await import('./extraction')
 const { versionParametres } = await import('../test/parametresFacturation')
 
@@ -142,7 +142,7 @@ describe('l’essai, lu', () => {
   })
 
   it('le seau que la base a rendu est celui du module : privé, sa borne, ses deux types', () => {
-    expect(etape('0a').attendu).toBe(`${SEAU_DU_LOGO}:false:${TAILLE_MAX.ventes}:${TYPES_ADMIS.ventes.join(',')}`)
+    expect(etape('0a').attendu).toBe(`${SEAU_DU_LOGO}:false:${TAILLE_MAX_LOGO_DE_FACTURE}:${TYPES_DES_LOGOS_DE_FACTURE.join(',')}`)
   })
 
   it('la forme du chemin que la policy de dépôt exige est celle du module, et le dossier des logos aussi', () => {
@@ -301,9 +301,9 @@ function appliquerAuSeau(e: EtapeDeLEssai, etat: Etat) {
     etat.fichiers.set(renomme[1], f)
   } else if (types) {
     const lus = [...types[1].matchAll(/'([^']*)'/g)].map((m) => m[1])
-    etat.seauRetouche = lus.join(',') !== TYPES_ADMIS.ventes.join(',')
+    etat.seauRetouche = lus.join(',') !== TYPES_DES_LOGOS_DE_FACTURE.join(',')
   } else if (borne) {
-    etat.seauRetouche = Number(borne[1]) !== TAILLE_MAX.ventes
+    etat.seauRetouche = Number(borne[1]) !== TAILLE_MAX_LOGO_DE_FACTURE
   } else {
     throw new Error(`${e.num} : une étape gardée du propriétaire que le rejeu ne sait pas lire`)
   }
@@ -470,7 +470,7 @@ describe('l’empreinte et le chemin', () => {
     expect([extensionDuLogoDeFacture('image/png'), extensionDuLogoDeFacture('image/jpeg')]).toEqual(['png', 'jpg'])
     expect([typeDuNomDuLogo('a.png'), typeDuNomDuLogo('a.jpg'), typeDuNomDuLogo('a.jpeg'), typeDuNomDuLogo('a.svg'), typeDuNomDuLogo('a.PNG')])
       .toEqual(['image/png', 'image/jpeg', null, null, null])
-    for (const type of TYPES_ADMIS.ventes) expect(FORME_CHEMIN_DU_LOGO.test(cheminDuLogo(DA, e, type))).toBe(true)
+    for (const type of TYPES_DES_LOGOS_DE_FACTURE) expect(FORME_CHEMIN_DU_LOGO.test(cheminDuLogo(DA, e, type))).toBe(true)
     for (const faux of [`${DA.toUpperCase()}/logos/${e}.png`, `${DA}/logos/${e}.jpeg`, `${DA}/${e}.png`, `/${DA}/logos/${e}.png`,
       `${DA}/logos/${'A'.repeat(64)}.png`, `${DA}/logos/${e}.png/x`, `${DA}/logos/${e.slice(1)}.png`]) {
       expect(FORME_CHEMIN_DU_LOGO.test(faux), faux).toBe(false)
@@ -515,10 +515,10 @@ describe('le refus du logo, pour lui-même', () => {
   })
 
   it('le poids : la borne admise, un octet de plus non ; inconnu ou illisible, refusé ; la borne dite', () => {
-    expect(refusDuLogo(DA, null, saisie('2', 'jpg'), [fichier('2', 'jpg', 'image/jpeg', TAILLE_MAX.ventes)])).toBeNull()
-    for (const taille of [TAILLE_MAX.ventes + 1, null, -1, 1.5, Number.NaN]) {
+    expect(refusDuLogo(DA, null, saisie('2', 'jpg'), [fichier('2', 'jpg', 'image/jpeg', TAILLE_MAX_LOGO_DE_FACTURE)])).toBeNull()
+    for (const taille of [TAILLE_MAX_LOGO_DE_FACTURE + 1, null, -1, 1.5, Number.NaN]) {
       expect(refusDuLogo(DA, null, saisie('2', 'jpg'), [fichier('2', 'jpg', 'image/jpeg', taille)]), String(taille))
-        .toEqual({ cle: 'logo_poids', valeurs: [String(TAILLE_MAX.ventes)] })
+        .toEqual({ cle: 'logo_poids', valeurs: [String(TAILLE_MAX_LOGO_DE_FACTURE)] })
     }
   })
 

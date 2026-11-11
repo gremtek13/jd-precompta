@@ -1,4 +1,6 @@
-import { TAILLE_MAX, TYPES_ADMIS, preparerLogoDeFacture, type DepotPret, type RefusDuDepot } from './bornesStockage'
+import {
+  TAILLE_MAX_LOGO_DE_FACTURE, TYPES_DES_LOGOS_DE_FACTURE, preparerLogoDeFacture, type DepotPret, type RefusDuDepot,
+} from './bornesStockage'
 import type { ParametresFacturation } from './types'
 
 // LE LOGO DES FACTURES D'UN DOSSIER (espace client, étape A5c1 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE
@@ -35,7 +37,7 @@ export const DOSSIER_DES_LOGOS = 'logos'
 export const FORME_EMPREINTE_DU_LOGO = /^[0-9a-f]{64}$/
 export const FORME_CHEMIN_DU_LOGO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/logos\/[0-9a-f]{64}\.(png|jpg)$/
 
-export type TypeDuLogo = (typeof TYPES_ADMIS)['ventes'][number]
+export type TypeDuLogo = (typeof TYPES_DES_LOGOS_DE_FACTURE)[number]
 
 /** L'extension du chemin d'un logo, tirée de son type — jamais du nom que portait le fichier. */
 export function extensionDuLogoDeFacture(type: TypeDuLogo): 'png' | 'jpg' {
@@ -190,8 +192,9 @@ export function refusDuLogo(
   const fichier = fichiers.find((f) => f.chemin === chemin)
   if (!fichier) return refus('logo_absent')
   const type = fichier.type === null ? null : typeRange(fichier.type)
-  if (type === null || type !== typeDuNomDuLogo(chemin) || !(TYPES_ADMIS.ventes as readonly string[]).includes(type)) return refus('logo_type')
-  const borne = TAILLE_MAX.ventes
+  if (type === null || type !== typeDuNomDuLogo(chemin) || !(TYPES_DES_LOGOS_DE_FACTURE as readonly string[]).includes(type)) return refus('logo_type')
+  // La borne du LOGO, celle du seau ou non : depuis A8d2a, le seau porte aussi les originaux des factures reprises.
+  const borne = TAILLE_MAX_LOGO_DE_FACTURE
   if (fichier.taille === null || !Number.isSafeInteger(fichier.taille) || fichier.taille < 0 || fichier.taille > borne) {
     return refus('logo_poids', String(borne))
   }
