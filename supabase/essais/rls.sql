@@ -84,6 +84,11 @@
 --   6sexies. L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2, ligne 51.5 ; bloc AR, après le bloc TD) : AR1 à AR3 — le cabinet du
 --      dossier la lit (contrôle positif), ni le client ni l'anonyme ; le client ne l'écrit ni ne la réécrit ; le catalogue —
 --      et deux mutations ; avant la migration `adresse_des_acces_retires`, une ligne « EN ATTENTE ».
+--   6septies. Les DOCUMENTS ET LES DEMANDES DU CABINET (B2, ligne 51.5 ; bloc DM, en fin de fichier) : DM1 à DM4 — le client
+--      « Documents » lit le document publié de son dossier et son fichier (contrôle positif), sans la case ni l'un ni
+--      l'autre ; tout accès lit la demande ; l'anonyme et un compte rattaché à rien, rien ; le client n'écrit aucune des
+--      cinq tables en direct ni ne dépose dans le seau ; le catalogue — et quatre mutations ; avant la migration
+--      `documents_et_demandes`, une ligne « EN ATTENTE ». TC1 et TC3 ne jugent alors plus que « Achats » et « Notes de frais ».
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -5829,6 +5834,9 @@ declare
   t record; obs text; ecarts text; comparees bigint; lue text; ecrites bigint; refus text; acces uuid;
   sans jsonb; avec jsonb; erreur text; construit boolean := false;
   verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+  -- B2 (`documents_et_demandes`, préparée) se sert de « Documents » : en base, TC1 et TC3 ne jugent plus que « Achats » et
+  -- « Notes de frais », et le bloc DM juge ce que « Documents » ouvre.
+  b2 constant boolean := to_regclass('public.documents_cabinet') is not null;
 begin
   if not exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_documents'
                   and not a.attisdropped) then
@@ -5847,7 +5855,7 @@ begin
       sans := '{}'::jsonb; avec := '{}'::jsonb;
       for n in 1 .. 2 loop
         perform set_config('request.jwt.claims', '', true);
-        update memberships set droit_achats = (n = 2), droit_frais = (n = 2), droit_documents = (n = 2) where id = acces;
+        update memberships set droit_achats = (n = 2), droit_frais = (n = 2), droit_documents = case when b2 then droit_documents else (n = 2) end where id = acces;
         for t in select c.relname as nom from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
                   where ns.nspname = 'public' and c.relkind = 'r' order by c.relname loop
           set local role authenticated;
@@ -5923,7 +5931,7 @@ begin
 
   -- TC3 : le catalogue.
   select coalesce(string_agg(p.schemaname || '.' || p.tablename || '.' || p.policyname, ', '), 'aucune') into obs from pg_policies p
-   where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ '''(achats|frais|documents)''';
+   where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ case when b2 then '''(achats|frais)''' else '''(achats|frais|documents)''' end;
   verdicts := verdicts || jsonb_build_object('controle', 'TC3. aucune policy, de tous les schémas, ne nomme « achats », « frais » ni « documents » (lecture du catalogue)',
     'cible', 'pg_policies', 'observe', obs, 'ok', obs = 'aucune');
   verdicts := verdicts || jsonb_build_object('controle', 'TC. le jeu d''essai des trois cases s''est construit', 'cible', 'le dossier du client',
@@ -7833,6 +7841,194 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $dp$;
+
+-- ══ DM. Les documents et les demandes du cabinet (espace client, étape B2 ; migration `documents_et_demandes`, PRÉPARÉE) ══
+-- Cinq tables et un seau : ce que le cabinet met à disposition, lu par l'accès « Documents » seul ; ses demandes, leurs
+-- réponses et leurs relances, lues par tout accès du dossier ; rien d'écrit en direct, tout par les fonctions.
+--   DM1. Le chef publie un document du dossier du client et y ouvre une demande : le client « Documents » lit le document et
+--        son fichier (le contrôle POSITIF), et la demande ; sa case décochée, ni le document ni le fichier, mais la demande ;
+--        l'anonyme et un compte rattaché à rien, rien.
+--   DM2. Le client n'écrit directement aucune des cinq tables (42501, leurs gardes, avant la RLS).
+--   DM3. Le client « Documents » ne dépose rien dans le seau (la policy de dépôt, au cabinet du dossier seul).
+--   DM4. Le catalogue : la RLS des cinq tables, quinze policies à authenticated (hors la restrictive `deux_facteurs`), le
+--        seau privé, la suppression au chef du cabinet du dossier (une suppression SQL du stockage se refuse à tous : elle se
+--        lit au catalogue, RGPD.md §8.6 ; documentsCabinetSuppression.sql la joue sur une réplique).
+-- Quatre mutations, qui doivent mordre : M-DM1 (la lecture des documents passée à « membre » : sans la case, il lit le
+-- document), M-DM2 (la lecture du seau ouverte à tout accès du dossier : sans la case, il lit le fichier), M-DM3 (la lecture
+-- des demandes fermée : il ne lit plus la demande), M-DM4 (le dépôt du seau ouvert à tout accès : il dépose). Avant la
+-- migration, une ligne dit que le bloc attend.
+do $dm$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  doc uuid := gen_random_uuid();
+  chemin text;
+  acces uuid; obs text; avec text; sans text; anon_vu text; inconnu_vu text; depot text; ecritures text; erreur text;
+  construit boolean := false; n bigint;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.documents_cabinet') is null then
+    insert into rls_verdict values ('DM. les documents et les demandes du cabinet : EN ATTENTE de la migration documents_et_demandes',
+      'documents_cabinet', 'absente : elles se jugent dès que la migration y est', true);
+    return;
+  end if;
+  chemin := dossier_du_client::text || '/' || doc::text || '/' || repeat('d', 64) || '.pdf';
+  select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
+  for scenario in 0 .. 4 loop
+    begin
+      avec := null; sans := null; anon_vu := null; inconnu_vu := null; depot := null; ecritures := null;
+      if scenario = 1 then
+        alter policy documents_cabinet_lecture_documents on public.documents_cabinet
+          using (client_du_dossier(dossier_id, 'membre') and retire_le is null);
+      elsif scenario = 2 then
+        alter policy documents_cabinet_storage_lecture on storage.objects
+          using (bucket_id = 'documents-cabinet' and case when name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/'
+                 then public.client_du_dossier(((storage.foldername(name))[1])::uuid, 'membre') else false end);
+      elsif scenario = 3 then
+        alter policy demandes_cabinet_lecture_membre on public.demandes_cabinet using (false);
+      elsif scenario = 4 then
+        alter policy documents_cabinet_storage_depot on storage.objects
+          with check (bucket_id = 'documents-cabinet' and case when name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/'
+                      then public.admin_du_dossier(((storage.foldername(name))[1])::uuid)
+                           or public.client_du_dossier(((storage.foldername(name))[1])::uuid, 'membre') else false end);
+      end if;
+      -- Le jeu : le chef dépose le fichier, publie le document et ouvre une demande, sous sa session.
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into storage.objects (bucket_id, name, metadata) values ('documents-cabinet', chemin, '{"size": 10, "mimetype": "application/pdf"}');
+      perform publier_document_du_cabinet(dossier_du_client, doc, 'Essai RLS', '2035', 2025, 'essai.pdf', chemin);
+      perform ouvrir_demande(dossier_du_client, 'Essai RLS', null, null, 'fichier');
+      reset role;
+      construit := construit or scenario = 0;
+      -- Le client, avec puis sans la case : le document, son fichier, la demande.
+      for n in 1 .. 2 loop
+        perform set_config('request.jwt.claims', '', true);
+        update memberships set droit_documents = (n = 1) where id = acces;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        obs := (select count(*) from documents_cabinet where id = doc) || ' '
+          || (select count(*) from storage.objects where bucket_id = 'documents-cabinet' and name = chemin) || ' '
+          || (select count(*) from demandes_cabinet where dossier_id = dossier_du_client and objet = 'Essai RLS');
+        reset role;
+        if n = 1 then avec := obs; else sans := obs; end if;
+      end loop;
+      -- L'anonyme, puis un compte rattaché à rien.
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      anon_vu := ((select count(*) from documents_cabinet) + (select count(*) from demandes_cabinet)
+        + (select count(*) from storage.objects where bucket_id = 'documents-cabinet'))::text;
+      reset role;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      inconnu_vu := ((select count(*) from documents_cabinet) + (select count(*) from lectures_documents) + (select count(*) from demandes_cabinet)
+        + (select count(*) from demandes_reponses) + (select count(*) from relances_demandes)
+        + (select count(*) from storage.objects where bucket_id = 'documents-cabinet'))::text;
+      reset role;
+      -- Le client, la case cochée : un dépôt dans le seau, puis une écriture directe dans chacune des cinq tables.
+      perform set_config('request.jwt.claims', '', true);
+      update memberships set droit_documents = true where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into storage.objects (bucket_id, name, metadata)
+          values ('documents-cabinet', dossier_du_client::text || '/' || gen_random_uuid()::text || '/' || repeat('e', 64) || '.pdf', '{"size": 10, "mimetype": "application/pdf"}');
+        depot := 'ACCEPTÉ';
+      exception when others then depot := sqlstate;
+      end;
+      ecritures := '';
+      begin
+        insert into documents_cabinet (dossier_id, titre, nature, chemin, nom_fichier, sha256, taille, type_mime, publie_par)
+          values (dossier_du_client, 't', '2035', 'x', 'n', repeat('f', 64), 1, 'application/pdf', client);
+        ecritures := ecritures || 'ACCEPTÉ ';
+      exception when others then ecritures := ecritures || sqlstate || ' ';
+      end;
+      begin
+        insert into lectures_documents (dossier_id, document_id, lecteur) values (dossier_du_client, doc, client);
+        ecritures := ecritures || 'ACCEPTÉ ';
+      exception when others then ecritures := ecritures || sqlstate || ' ';
+      end;
+      begin
+        insert into demandes_cabinet (dossier_id, objet, attendu, auteur) values (dossier_du_client, 'x', 'fichier', client);
+        ecritures := ecritures || 'ACCEPTÉ ';
+      exception when others then ecritures := ecritures || sqlstate || ' ';
+      end;
+      begin
+        insert into demandes_reponses (dossier_id, demande_id, auteur, texte)
+          values (dossier_du_client, (select d.id from demandes_cabinet d where d.dossier_id = dossier_du_client and d.objet = 'Essai RLS'), client, 'x');
+        ecritures := ecritures || 'ACCEPTÉ ';
+      exception when others then ecritures := ecritures || sqlstate || ' ';
+      end;
+      begin
+        insert into relances_demandes (dossier_id, demande_id, canal, relancee_par)
+          values (dossier_du_client, (select d.id from demandes_cabinet d where d.dossier_id = dossier_du_client and d.objet = 'Essai RLS'), 'ecran', client);
+        ecritures := ecritures || 'ACCEPTÉ';
+      exception when others then ecritures := ecritures || sqlstate;
+      end;
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      if scenario = 0 then
+        verdicts := verdicts || jsonb_build_object('controle', 'DM1. le client « Documents » lit le document publié de son dossier, son fichier et la demande (le contrôle positif) ; sans la case, la demande seule ; l''anonyme et un compte rattaché à rien, rien',
+          'cible', 'documents_cabinet, storage.objects, demandes_cabinet',
+          'observe', 'avec la case : ' || avec || ' | sans : ' || sans || ' | l''anonyme : ' || anon_vu || ' | un inconnu : ' || inconnu_vu,
+          'ok', avec = '1 1 1' and sans = '0 0 1' and anon_vu = '0' and inconnu_vu = '0');
+        verdicts := verdicts || jsonb_build_object('controle', 'DM2. le client n''écrit directement aucune des cinq tables (42501, les gardes)',
+          'cible', 'les cinq tables', 'observe', ecritures, 'ok', ecritures = '42501 42501 42501 42501 42501');
+        verdicts := verdicts || jsonb_build_object('controle', 'DM3. le client « Documents » ne dépose rien dans le seau des documents',
+          'cible', 'storage.objects (documents-cabinet)', 'observe', depot, 'ok', depot = '42501');
+      elsif scenario = 1 then
+        mutations := mutations || jsonb_build_object('mutation', 'M-DM1 — la lecture des documents passée à « membre »',
+          'attendu', 'sans la case, il lit le document', 'observe', sans, 'mord', sans like '1 %');
+      elsif scenario = 2 then
+        mutations := mutations || jsonb_build_object('mutation', 'M-DM2 — la lecture du seau ouverte à tout accès du dossier',
+          'attendu', 'sans la case, il lit le fichier', 'observe', sans, 'mord', split_part(sans, ' ', 2) = '1');
+      elsif scenario = 3 then
+        mutations := mutations || jsonb_build_object('mutation', 'M-DM3 — la lecture des demandes fermée au client',
+          'attendu', 'il ne lit plus la demande', 'observe', avec, 'mord', split_part(avec, ' ', 3) = '0');
+      else
+        mutations := mutations || jsonb_build_object('mutation', 'M-DM4 — le dépôt du seau ouvert à tout accès du dossier',
+          'attendu', 'il dépose', 'observe', depot, 'mord', depot = 'ACCEPTÉ');
+      end if;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, 'scénario ' || scenario || ' : ' || sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+  end loop;
+
+  -- DM4 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public'
+     and p.tablename in ('documents_cabinet', 'lectures_documents', 'demandes_cabinet', 'demandes_reponses', 'relances_demandes')
+     and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')
+     and p.roles = array['authenticated']::name[] and p.cmd in ('SELECT', 'INSERT')
+     and (p.cmd = 'SELECT' or p.with_check = 'is_super_admin()');
+  verdicts := verdicts || jsonb_build_object('controle', 'DM4. la RLS des cinq tables ; quinze policies à authenticated, de lecture ou de restauration ; le seau privé ; sa suppression au chef du cabinet du dossier (lecture du catalogue)',
+    'cible', 'documents_cabinet, lectures_documents, demandes_cabinet, demandes_reponses, relances_demandes, documents-cabinet',
+    'observe', n || ' sur 15, ' || (select count(*) from pg_policies p where p.schemaname = 'public'
+        and p.tablename in ('documents_cabinet', 'lectures_documents', 'demandes_cabinet', 'demandes_reponses', 'relances_demandes')
+        and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout',
+    'ok', n = 15
+      and (select count(*) from pg_policies p where p.schemaname = 'public'
+             and p.tablename in ('documents_cabinet', 'lectures_documents', 'demandes_cabinet', 'demandes_reponses', 'relances_demandes')
+             and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 15
+      and (select count(*) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relrowsecurity
+             and c.relname in ('documents_cabinet', 'lectures_documents', 'demandes_cabinet', 'demandes_reponses', 'relances_demandes')) = 5
+      and exists (select 1 from storage.buckets b where b.id = 'documents-cabinet' and not b.public)
+      and exists (select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass
+                   and p.polname = 'documents_cabinet_storage_suppression' and p.polcmd = 'd'
+                   and pg_get_expr(p.polqual, p.polrelid) like '%est_chef_du_cabinet(d.cabinet_id)%'
+                   and pg_get_expr(p.polqual, p.polrelid) like '%''documents-cabinet''%'));
+  verdicts := verdicts || jsonb_build_object('controle', 'DM. le jeu d''essai des documents et des demandes s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null and acces is not null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and acces is not null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $dm$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
