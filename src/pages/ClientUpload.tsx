@@ -27,6 +27,8 @@ import {
 } from '../lib/adresseCollecte'
 import { useCopieDuTexte } from '../lib/copieDuTexte'
 import PiecesJointesEcarteesClient from './PiecesJointesEcarteesClient'
+import { useHonorairesDeposes } from '../lib/depotDesHonorairesLecture'
+import { honorairesDeposesIllisibles, motDuClientPourLaPiece } from '../lib/depotDesHonorairesVue'
 import PaiementParMaCaisse from './PaiementParMaCaisse'
 import { droitsSur } from '../lib/droitsAcces'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
@@ -125,6 +127,9 @@ export default function ClientUpload() {
   // l'accueil, écrite une fois (lib/piecesJointesEcarteesClientLecture.ts, ligne 22.94) : gardée avec la société, annulée à
   // son changement, nulle tant qu'elle n'est pas revenue ; rien ne se lit tant que la fonction n'est pas en base.
   const ecartees = useEcarteesDuClient(dossierId)
+  // Les pièces que le cabinet a déposées pour ses honoraires (ligne 47, LM8), derrière `DEPOT_DES_HONORAIRES_PREVU` : baissé,
+  // rien n'est lu et « Mes pièces » est celle d'hier.
+  const honorairesDeposes = useHonorairesDeposes(dossierId ?? null, 0)
 
   // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (étape C12b ; CAISSE2-Q4, (A)) : avec la case « Caisse » sur la société affichée
   // (lue à la connexion), la caisse se lit — et la case se RELIT à la base avec elle (lib/caisseClientLecture.ts) — depuis
@@ -337,15 +342,21 @@ export default function ClientUpload() {
     return <p className="muted">Aucun dossier ne t'est encore rattaché — contacte ton cabinet comptable.</p>
   }
 
+  const natureDesHonoraires = (pieceId: string): string | null =>
+    honorairesDeposes?.etat === 'lue' && honorairesDeposes.dossierId === dossierId ? honorairesDeposes.natures.get(pieceId) ?? null : null
   const depots: Depot[] = [
     ...pieces.map((p): Depot => ({
       id: `piece-${p.id}`,
       nomFichier: p.nom_fichier,
       createdAt: p.created_at,
       // Une pièce que la lecture n'a pas lue le dit, sans montant (D5) : le praticien sait que son cabinet la complétera.
-      label: p.statut === 'validee'
-        ? 'Facture — traitée'
-        : pieceNonLue(p) ? 'Facture — lecture non aboutie, ton cabinet la complétera' : 'Facture — en attente de traitement',
+      // Une facture d'honoraires que le cabinet a déposée (ligne 47, LM8) le dit, à la place de « Facture » ; lue en partie ou
+      // refusée, rien n'est deviné : la pièce reste une facture, et une ligne sous la liste le dit.
+      label: natureDesHonoraires(p.id) !== null
+        ? `${motDuClientPourLaPiece(natureDesHonoraires(p.id) ?? '')} — ${p.statut === 'validee' ? 'traitée' : 'en attente de traitement'}`
+        : p.statut === 'validee'
+          ? 'Facture — traitée'
+          : pieceNonLue(p) ? 'Facture — lecture non aboutie, ton cabinet la complétera' : 'Facture — en attente de traitement',
       traite: p.statut === 'validee',
       cible: { type: 'piece', id: p.id },
       piece: p,
@@ -555,6 +566,9 @@ export default function ClientUpload() {
           total={depots.length}
         />
       </div>
+      {honorairesDeposes?.etat === 'illisible' && honorairesDeposes.dossierId === dossierId && (
+        <p className="muted">{honorairesDeposesIllisibles(honorairesDeposes.motif)}</p>
+      )}
       {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : c'est l'écran du client, sur son téléphone — mais aussi sur un
           ordinateur de 1 024 pixels, où le bouton « Préciser » de chaque dépôt passait derrière un défilement latéral. Le statut
           de chaque dépôt aussi, et le nom d'un fichier sans espace, qui n'a rien à couper, allongeait la page de trois cents

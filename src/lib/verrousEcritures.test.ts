@@ -65,6 +65,18 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: 'Les cases de l’appelant sur un dossier (fonction `stable`, `security definer`, sans écriture ; étape P1), '
       + 'au montage de « Ma simulation » (P7).',
   },
+  'rpc:depots_des_honoraires': {
+    nature: 'lecture',
+    raison: 'Le dernier dépôt de chaque facture d’honoraires du dossier du cabinet, et si sa pièce est encore chez le client '
+      + '(fonction `stable`, `security definer`, sans écriture ; migration `depot_des_honoraires`, LM8, préparée), au montage de '
+      + 'la carte « Honoraires déposés chez les clients » et après chaque dépôt — derrière `DEPOT_DES_HONORAIRES_PREVU`.',
+  },
+  'rpc:honoraires_deposes_au_dossier': {
+    nature: 'lecture',
+    raison: 'Les pièces d’un dossier client que son cabinet y a déposées pour ses honoraires, leur nature et leur jour '
+      + '(fonction `stable`, `security definer`, sans écriture ; migration `depot_des_honoraires`, LM8, préparée), au montage '
+      + 'de « Mes pièces » — derrière `DEPOT_DES_HONORAIRES_PREVU`.',
+  },
   'rpc:caisse_du_client': {
     nature: 'lecture',
     raison: 'La caisse d’un dossier jour par jour, en totaux, jamais un libellé ni un nom (fonction `stable`, `security '
