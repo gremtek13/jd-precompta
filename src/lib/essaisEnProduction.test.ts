@@ -271,11 +271,13 @@ describe('les essais de la base, rejoués en production', () => {
     // cabinet et supprime en dernier un dossier jetable, sous la même garde. Son catalogue se rejoue partout : le bloc LM de rls.sql.
     // Le quinzième, adresseDesAccesRetiresSuppression, le 11/11/2026 (P1T-E2, migration `adresse_des_acces_retires`) : il
     // retire des accès et un dossier, sous la même garde ; son compagnon se joue en production.
+    // Le seizième, originalDUnImport, le 11/11/2026 (A8D2A-Q1, migration `originaux_retenus_par_leur_import`) : il supprime
+    // des fichiers du seau des ventes et des dossiers, sous la même garde. Ses prédicats se rejouent partout : le bloc OR de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'lettresDeMission (son en-tête)',
-      'logoDesFacturesSuppression (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
+      'logoDesFacturesSuppression (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
       'situationsPublieesMutations (une méta-commande de psql)', 'traceDesDroitsSuppression (son en-tête)',
     ])

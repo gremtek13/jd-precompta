@@ -210,6 +210,12 @@ export async function supprimerDossierDefinitivement(
   // cabinet ne voit plus rien du dossier ; seul le super-administrateur les atteint encore. Pour un chef qui ne l'est pas,
   // ce second passage ne retire rien, et le bilan compte ce qui reste (question INAL12-Q1). Un fichier qu'une pièce figée
   // d'un AUTRE dossier désigne reste, lui, gardé.
+  // LES ORIGINAUX DES FACTURES REPRISES (ligne 51.5, A8D2A-Q1 : la migration `originaux_retenus_par_leur_import`, préparée).
+  // Le seau `ventes` retient l'original d'un import qui existe : le premier passage le laisse, sans erreur. Mais là, le
+  // second passage n'attend pas le super-administrateur : la ligne du dossier partie, la base a rendu ses originaux au
+  // cabinet du dossier (`originaux_liberes`, un déclencheur de la suppression), et la lecture et la suppression du seau les
+  // ouvrent à son chef (`original_libere`) — tout chef retire donc le dossier entier d'un seul geste, ce code inchangé.
+  // Un second passage qui échoue (le réseau) laisse la libération en base : le bilan le compte, comme tout reste.
   const bilans = await Promise.all(
     premiers.map(async ({ restants, ...premier }, i) => {
       if (restants.length === 0) return premier

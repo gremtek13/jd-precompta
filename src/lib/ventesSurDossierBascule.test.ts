@@ -331,6 +331,7 @@ describe('les essais qui cochent « Ventes »', () => {
     // numerotationContinue.sql (10/11/2026, étape A9a) : le client porte « Ventes » sur D, un dossier jetable inséré basculé.
     // encaissementsDesReprises.sql (10/11/2026, étape A8b) : le client « Ventes » d'un dossier jetable inséré basculé.
     // pieceDUneFactureReprise.sql (10/11/2026, A8-Q5) : le client « Ventes » d'un dossier jetable inséré basculé.
+    // originalDUnImport.sql (11/11/2026, A8D2A-Q1) : le client porte « Ventes » sur A, un dossier jetable inséré basculé.
     // originauxDesImports.sql (11/11/2026, A8d2a) : le client porte « Ventes » sur A, un dossier jetable inséré basculé.
     // reprisesAuClient.sql (11/11/2026, A8C-Q1) : le client « Ventes » d'un dossier jetable inséré basculé ; le bloc RC de
     // rls.sql aussi.
@@ -338,7 +339,7 @@ describe('les essais qui cochent « Ventes »', () => {
       'acomptesDesDevis.sql', 'adresseDuClientExigee.sql', 'apercuFactureElectronique.sql', 'articles.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'caisse.sql', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
       'devisCitentUnContact.sql', 'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'encaissementsDesReprises.sql', 'envoiDesDevis.sql', 'etatFactureElectronique.sql',
       'exemplairesDesFactures.sql', 'factureInternationale.sql', 'factures.sql', 'facturesImportees.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
-      'mentionsFigees.sql', 'numerotationContinue.sql', 'originauxDesImports.sql', 'parametresFacturation.sql', 'pieceDUneFactureReprise.sql', 'piecesJointesEcartees.sql', 'relancesDesFactures.sql', 'reprisesAuClient.sql', 'rls.sql',
+      'mentionsFigees.sql', 'numerotationContinue.sql', 'originalDUnImport.sql', 'originauxDesImports.sql', 'parametresFacturation.sql', 'pieceDUneFactureReprise.sql', 'piecesJointesEcartees.sql', 'relancesDesFactures.sql', 'reprisesAuClient.sql', 'rls.sql',
       'simulationDesVentesFacturees.sql', 'traceDesDroits.sql',
       'ventesClient.sql', 'ventesFacturees.sql',
     ])

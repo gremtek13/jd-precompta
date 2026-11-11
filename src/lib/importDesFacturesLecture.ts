@@ -123,6 +123,9 @@ export type IssueDUnGeste = { ok: true; message: string } | { ok: false; erreur:
 /**
  * Importe le lot par `importer_factures` seule (tout ou rien). Originaux prévus : chaque original se dépose d'abord sous
  * `<dossier>/imports/<lot>/<empreinte>.<ext>` (jamais écrasé), et ce qui a été déposé se retire si l'import échoue.
+ * Un import qui a réussi en base sans que sa réponse revienne (le réseau) garde ses originaux : depuis A8D2A-Q1 (la
+ * migration `originaux_retenus_par_leur_import`, préparée), le seau refuse le retrait de l'original d'un import qui
+ * existe, et `retirerFichiers` le consigne sans lever — l'écran dit de relire la liste, qui montre le lot.
  */
 export async function importerLeLot(dossierId: string, pret: LotPret, fichiers: readonly FichierLu[], originauxPrevus: boolean): Promise<IssueDUnGeste> {
   const deposes: string[] = []
@@ -164,7 +167,8 @@ export async function importerLeLot(dossierId: string, pret: LotPret, fichiers: 
 /**
  * Retire un lot par `retirer_import` seule (les LIGNES), puis, retrait réussi, ses originaux du stockage par
  * `retirerFichiers` (qui journalise et ne lève jamais) — ceux seulement que `sortDesOriginaux` dit à retirer. Le message
- * dit ce que deviennent les originaux.
+ * dit ce que deviennent les originaux. Cet ordre est le seul que la base admet depuis A8D2A-Q1 (la migration
+ * `originaux_retenus_par_leur_import`, préparée) : tant que l'import existe, son original ne se retire pas.
  */
 export async function retirerLImport(dossierId: string, lot: LotLu, originauxPrevus: boolean, chefDuCabinet: boolean): Promise<IssueDUnGeste> {
   try {

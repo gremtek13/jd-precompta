@@ -26,6 +26,7 @@ import { ADRESSES_DES_ACCES_RETIRES_PREVUES, TABLES_DES_ADRESSES_DES_ACCES_RETIR
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
+import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
@@ -302,6 +303,18 @@ export function auPlanDesLettresDeMission(table: string, prevues: boolean): bool
   return prevues || !TABLES_DES_LETTRES_DE_MISSION.includes(table)
 }
 
+// LES ORIGINAUX LIBÉRÉS PAR LA SUPPRESSION DE LEUR DOSSIER (ligne 51.5, A8D2A-Q1 ; migration
+// `originaux_retenus_par_leur_import`, PRÉPARÉE le 11/11/2026) : les chemins des originaux de factures reprises d'un dossier
+// supprimé, rendus au cabinet du dossier pour qu'il les retire du seau (`originaux_liberes`). Une table de NIVEAU CABINET —
+// elle ne décrit aucun dossier vivant —, hors de l'export d'un dossier, comme `cabinet_admins` : sa relation vers `cabinets`
+// (en cascade), son rang (après `cabinet_admins`, avec les tables du cabinet), sa clé (`chemin`). Sous le drapeau de la
+// migration (`ORIGINAUX_RETENUS_PREVUS`, src/lib/originauxRetenus.ts), baissé : la production n'a pas la table.
+// sauvegardeOriginauxLiberes.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+/** Une table au plan, côté originaux libérés : toutes, sauf la leur tant que leur migration n'est pas exportée. */
+export function auPlanDesOriginauxLiberes(table: string, prevus: boolean): boolean {
+  return prevus || !TABLES_DES_ORIGINAUX_LIBERES.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -321,6 +334,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
     && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS)
     && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
+    && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -473,6 +487,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'lignes_bancaires', parent: 'emprunts', colonne: 'emprunt_id', aLaSuppression: 'bloque' },
   { enfant: 'lignes_bancaires', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'memberships', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'originaux_liberes', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'cascade' },
   { enfant: 'trace_des_droits', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'adresses_des_acces_retires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -785,6 +800,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'taux_change_bce',
   'roles_comptables',
   'cabinet_admins',
+  'originaux_liberes',
   'dossiers',
   'plan_comptable_dossier',
   'a_nouveaux',
@@ -1140,6 +1156,7 @@ export const CLES_PRIMAIRES_PREVUES: Readonly<Record<string, readonly string[]>>
   exercices_valides: ['dossier_id', 'annee'],
   facture_numerotation: ['dossier_id', 'annee', 'type'],
   factures_importees: ['facture_id'],
+  originaux_liberes: ['chemin'],
   pieces_hors_de_france_taux: ['fiche_id', 'code_tva', 'taux'],
   plan_comptable_dossier: ['dossier_id', 'role'],
   previsionnels_bancaires: ['dossier_id'],
@@ -1306,6 +1323,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   dossiers: { acces: 'le_dossier' },
   cabinet_admins: { acces: 'cabinet' },
   tiers_categories_cabinet: { acces: 'cabinet' },
+  originaux_liberes: { acces: 'cabinet' },
 
   categories: { acces: 'partage' },
   natures_immobilisation: { acces: 'partage' },

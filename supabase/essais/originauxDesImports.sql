@@ -124,11 +124,16 @@ begin
               and (coalesce(pg_get_expr(p.polqual, p.polrelid), '') || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')) like '%''ventes''%'$q$,
         'OK', 'ventes_depot_d_un_logo/a/true/authenticated,ventes_depot_d_un_original/a/true/authenticated,ventes_lecture/r/true/authenticated,ventes_suppression_par_le_chef/d/true/authenticated', null),
       ('0c', 'valeur', 'la lecture et le dépôt d''un original, mot pour mot : la forme du chemin d''abord, le cabinet du dossier pour un original', 'proprietaire', null,
-        $q$select string_agg(p.polname || '=' || regexp_replace(coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), '\s+', ' ', 'g'), ' ; ' order by p.polname)
+        $q$select string_agg(p.polname || '=' || replace(regexp_replace(coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), '\s+', ' ', 'g'),
+               -- A8D2A-Q1 (`originaux_retenus_par_leur_import`, préparée) : la libération suit le cas `imports/`.
+               'THEN (admin_du_dossier(((storage.foldername(name))[1])::uuid) OR original_libere(name)) WHEN', 'THEN admin_du_dossier(((storage.foldername(name))[1])::uuid) WHEN'), ' ; ' order by p.polname)
              from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname in ('ventes_lecture', 'ventes_depot_d_un_original')$q$,
         'OK', 'ventes_depot_d_un_original=|((bucket_id = ''ventes''::text) AND CASE WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/imports/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}\\.(pdf|xml|csv)$''::text) THEN admin_du_dossier(((storage.foldername(name))[1])::uuid) ELSE false END) ; ventes_lecture=((bucket_id = ''ventes''::text) AND CASE WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/imports/''::text) THEN admin_du_dossier(((storage.foldername(name))[1])::uuid) WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/''::text) THEN gere_les_ventes(((storage.foldername(name))[1])::uuid) ELSE false END)|', null),
       ('0d', 'valeur', 'le dépôt d''un logo et la suppression, inchangés : leurs prédicats à l''empreinte d''avant', 'proprietaire', null,
-        $q$select string_agg(md5(coalesce(pg_get_expr(p.polqual, p.polrelid), '') || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')), ',' order by p.polname)
+        $q$select string_agg(md5(regexp_replace(coalesce(pg_get_expr(p.polqual, p.polrelid), ''),
+               -- A8D2A-Q1 (`originaux_retenus_par_leur_import`, préparée) : le cas `imports/` de la suppression, retiré.
+               '\n\s+WHEN \(name ~ ''\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}/imports/''::text\) THEN \(\(\(EXISTS .*?OR original_libere\(name\)\)', '')
+               || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')), ',' order by p.polname)
              from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname in ('ventes_depot_d_un_logo', 'ventes_suppression_par_le_chef')$q$,
         'OK', '9a5e3e9e053c8bb2b488263129f69de3,597459152cb7f38b77cf309d8b0e53aa', null),
       ('0e', 'valeur', 'aucune policy de mise à jour, ni « pour tout », n''atteint le seau : un original ne se modifie ni ne s''écrase', 'proprietaire', null,
