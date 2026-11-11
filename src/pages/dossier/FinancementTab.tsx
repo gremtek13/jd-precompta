@@ -1,3 +1,4 @@
+import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
@@ -54,6 +55,8 @@ interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number;
 export default function FinancementTab({ dossierId, assujettiTva, modeComptable, plan, ventesParLesFactures }: {
   dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable; plan: PlanComptable; ventesParLesFactures: boolean
 }) {
+  // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
+  const { banques } = useBanquesDuDossier(dossierId, plan)
   const [emprunts, setEmprunts] = useState<Emprunt[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
@@ -241,7 +244,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   // `ecrituresDesVentesPourLa2035`). Un dossier basculé dont les sources ne sont pas revenues entières n'a pas de situation,
   // comme sans ses ventes facturées.
   const pourLaSituation = ventesLues === null ? null : ecrituresDesVentesPourLa2035({
-    dossierId, ventesParLesFactures, facturesSources: ventesLues.sources, lecture: lectureSourcesVentes, mode: modeComptable, plan,
+    dossierId, ventesParLesFactures, facturesSources: ventesLues.sources, lecture: lectureSourcesVentes, mode: modeComptable, plan, banques,
   })
   const ecrituresDesVentes = pourLaSituation?.etat === 'pret' ? pourLaSituation.ecritures : null
   const ventesFacturees = ecrituresDesVentes === null ? null : ventesLues

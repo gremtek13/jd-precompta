@@ -69,7 +69,7 @@ function entrees(o: { mode?: ModeComptable; factures?: FactureDesVentesEcrites[]
       dossierId: D, factures: o.factures ?? [facture(), AVOIR_REPRIS], lignes: LIGNES, encaissements: [encaissement()], parts: PARTS,
       reprises: 'reprises' in o ? o.reprises : REPRISES,
     },
-    mouvements: [MOUVEMENT], comptesDeContrepartie: new Map(), exemplaires: [], mode: o.mode ?? 'tresorerie', plan: P,
+    mouvements: [MOUVEMENT], comptesDeContrepartie: new Map(), exemplaires: [], mode: o.mode ?? 'tresorerie', plan: P, banques: { cas: 'role', compte: P.banque },
   }
 }
 
@@ -193,7 +193,7 @@ function contexte(composition: ReturnType<typeof ecrituresDesVentesFacturees>): 
     encaissements_de_factures: true,
   }
   return {
-    dossierId: D, ventesParLesFactures: true, anneesValidees: [], composition, plan: P, mouvements: [mouvement],
+    dossierId: D, ventesParLesFactures: true, anneesValidees: [], composition, plan: P, banques: { cas: 'role', compte: P.banque }, mouvements: [mouvement],
     factures: [facture(), AVOIR_REPRIS].map((f) => ({
       id: f.id, dossier_id: f.dossier_id, type: f.type, numero: f.numero, source_de_la_vente: f.source_de_la_vente,
       facture_origine_id: f.facture_origine_id, statut: f.statut,

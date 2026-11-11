@@ -66,7 +66,7 @@ function contexte(numero: 1 | 2, o: Partial<ContexteEcritureVente> = {}): Contex
       reglement_groupe: false, prelevement_personnel: false, encaissements_de_factures: m.encaissements_de_factures,
     })),
     composition: compositionDuJeu(numero),
-    plan: PLAN_PAR_DEFAUT,
+    plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
     ...o,
   }
 }
@@ -148,8 +148,8 @@ describe('chaque liste redit sa fonction, dans son ordre, sous ses mots et ses c
   it('les refus d’un compte de contrepartie : ceux de `refusCompteDeContrepartie`, dans son ordre', () => {
     const sql = derniereDefinitionSql('refus_compte_de_contrepartie')
     const retours = [...sql.matchAll(/return '((?:[^']|'')*)'/g)].map((m) => m[1].replace(/''/g, "'"))
-    expect(retours).toEqual(['46', '411000', '512000', '445660'].map((c) => refusCompteDeContrepartie(c, PLAN_PAR_DEFAUT)))
-    for (const c of ['511000', '530000']) expect(refusCompteDeContrepartie(c, PLAN_PAR_DEFAUT)).toBe(retours[2])
+    expect(retours).toEqual(['46', '411000', '512000', '445660'].map((c) => refusCompteDeContrepartie(c, PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque })))
+    for (const c of ['511000', '530000']) expect(refusCompteDeContrepartie(c, PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque })).toBe(retours[2])
     expect(sql).toContain("coalesce(p_compte, '') !~ '^[1-5][0-9]{5,9}$'")
     expect(TEXTE_MIGRATION).toContain("check (compte_contrepartie ~ '^[1-5][0-9]{5,9}$')")
   })
@@ -273,12 +273,12 @@ describe('les refus d’écrire, sur le jeu de l’essai', () => {
   it('le compte de contrepartie, à choisir puis refusé sous les mots de la règle', () => {
     expect(cle('encaissement', 518)).toBe('compte_a_choisir')
     expect(refus('encaissement', 519)?.message).toBe(
-      `Le compte de contrepartie de cet encaissement, 411000, est refusé : ${refusCompteDeContrepartie('411000', PLAN_PAR_DEFAUT)}`)
+      `Le compte de contrepartie de cet encaissement, 411000, est refusé : ${refusCompteDeContrepartie('411000', PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque })}`)
     // Le compte choisi, la composition le lit : l'encaissement s'écrit sur lui.
     const j = jeuDuDossier(1)
     const composition = ecrituresDesVentesFacturees({
       sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements: j.encaissements, parts: j.parts },
-      mouvements: j.mouvements, comptesDeContrepartie: new Map([...j.comptes, [u(518), '467100']]), exemplaires: j.exemplaires, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+      mouvements: j.mouvements, comptesDeContrepartie: new Map([...j.comptes, [u(518), '467100']]), exemplaires: j.exemplaires, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
     })
     const choisi = contexte(1, {
       composition, encaissements: c1.encaissements.map((e) => (e.id === u(518) ? { ...e, compte_contrepartie: '467100' } : e)),
@@ -338,7 +338,7 @@ describe('les refus de retirer', () => {
     const mouvements = j.mouvements.map((m) => (m.id === u(402) ? { ...m, encaissements_de_factures: false } : m))
     const composition = ecrituresDesVentesFacturees({
       sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements: j.encaissements, parts: j.parts },
-      mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+      mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
     })
     const declasse = contexte(1, {
       composition,
@@ -381,7 +381,7 @@ describe('les refus d’un compte de contrepartie', () => {
     expect(cle(518, null)).toBe('compte_absent')
     for (const compte of ['601000', '46710', '411000', '512000', '511000', '530000', '445660']) {
       const r = refusChoixCompteContrepartie(u(518), compte, c1)
-      expect(r, compte).toEqual({ cle: 'compte_refuse', message: refusCompteDeContrepartie(compte, PLAN_PAR_DEFAUT) })
+      expect(r, compte).toEqual({ cle: 'compte_refuse', message: refusCompteDeContrepartie(compte, PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }) })
     }
     expect(cle(518, '467100')).toBeNull()
     expect(cle(519, '467100')).toBeNull()
@@ -399,7 +399,7 @@ describe('les bornes du module', () => {
   const composer = (o: Partial<Parameters<typeof ecrituresDesVentesFacturees>[0]> = {}, encaissements = j.encaissements, parts = j.parts) =>
     ecrituresDesVentesFacturees({
       sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements, parts },
-      mouvements: j.mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, ...o,
+      mouvements: j.mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, ...o,
     })
   const ligne = (o: Partial<LigneDuBrouillon>): LigneDuBrouillon => ({
     dossier_id: D1, statut: 'proposee', facture_id: null, encaissement_id: null, ligne_bancaire_id: null, piece_id: null,
@@ -456,7 +456,7 @@ describe('les bornes du module', () => {
         compte_contrepartie: null }],
     })
     expect(refusEcritureVenteFacturee(source('encaissement', 'c519'), contexte519)?.message).toBe(
-      `Le compte de contrepartie de cet encaissement, 411000, est refusé : ${refusCompteDeContrepartie('411000', PLAN_PAR_DEFAUT)}`)
+      `Le compte de contrepartie de cet encaissement, 411000, est refusé : ${refusCompteDeContrepartie('411000', PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque })}`)
   })
 
   it('le choix du compte : l’exercice qui fige est celui de l’encaissement ; une compensation qui cite un mouvement ; un compte vide', () => {
@@ -464,7 +464,7 @@ describe('les bornes du module', () => {
       .toBe("L'exercice 2025 est validé : le compte de contrepartie de cet encaissement ne change plus.")
     const cite = contexte(1, { encaissements: c1.encaissements.map((e) => (e.id === u(518) ? { ...e, ligne_bancaire_id: u(401) } : e)) })
     expect(refusChoixCompteContrepartie(u(518), '467100', cite)?.cle).toBe('cite_un_mouvement')
-    expect(refusChoixCompteContrepartie(u(518), '', c1)).toEqual({ cle: 'compte_refuse', message: refusCompteDeContrepartie('', PLAN_PAR_DEFAUT) })
+    expect(refusChoixCompteContrepartie(u(518), '', c1)).toEqual({ cle: 'compte_refuse', message: refusCompteDeContrepartie('', PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }) })
   })
 
   it('une source se reconnaît à son genre ET à son identifiant', () => {
@@ -512,7 +512,7 @@ describe('l’essai des écritures d’une vente facturée, confronté au module
     const credit = uuidEssai(430)
     const composer = (encaissements: typeof j.encaissements, mouvements: typeof j.mouvements) => ecrituresDesVentesFacturees({
       sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements, parts: j.parts },
-      mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: j.mode, plan: PLAN_PAR_DEFAUT,
+      mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: j.mode, plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
     })
     const lignes = (r: ReturnType<typeof composer>, genre: 'encaissement' | 'mouvement', id: string) => r.ecritures
       .filter((e) => (e.source.genre === 'encaissement' && genre === 'encaissement' && e.source.encaissementId === id)

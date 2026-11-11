@@ -73,7 +73,7 @@ function auBrouillon(ecritures: readonly EcritureVenteFacturee[], statut: 'propo
 
 function etats(jeu: Jeu, o: Partial<EntreesEcrituresDeVente> = {}): Extract<EtatsDesVentes, { etat: 'lus' }> {
   const r = etatsDesVentesFacturees({
-    sources: sources(jeu), brouillon: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true, ...o,
+    sources: sources(jeu), brouillon: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, anneesValidees: [], ventesParLesFactures: true, ...o,
   })
   if (r.etat !== 'lus') throw new Error(`incohérent : ${r.motif}`)
   return r
@@ -458,7 +458,7 @@ describe('la lecture qui ne se tient pas, l’ordre, les mots', () => {
       piece_id: null, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
       date: '2025-11-10', compte: '411000', montant: 120, sens: 'debit',
     }
-    const entrees = { sources: sources(VIREMENT), mode: 'tresorerie' as const, plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true }
+    const entrees = { sources: sources(VIREMENT), mode: 'tresorerie' as const, plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque } as const, anneesValidees: [], ventesParLesFactures: true }
     expect(etatsDesVentesFacturees({ ...entrees, brouillon: [ligne] }).etat).toBe('incoherent')
     expect(etatsDesVentesFacturees({ ...entrees, brouillon: [{ ...ligne, facture_id: null, encaissement_id: 'e-inconnu' }] }).etat).toBe('incoherent')
     // Une ligne d'un autre dossier ne compte pas.
@@ -555,7 +555,7 @@ describe('ecrituresDesVentesPourLa2035', () => {
   }
   const lue = (s = sources(), dossierId = D) => ({ dossierId, etat: 'lue' as const, sources: s })
   const juger = (o: Partial<Parameters<typeof ecrituresDesVentesPourLa2035>[0]> = {}) => ecrituresDesVentesPourLa2035({
-    dossierId: D, ventesParLesFactures: true, facturesSources: new Set(['f1']), lecture: lue(), mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, ...o,
+    dossierId: D, ventesParLesFactures: true, facturesSources: new Set(['f1']), lecture: lue(), mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, ...o,
   })
 
   it('un dossier qui n’a pas basculé : sans bascule, sans rien lire', () => {
@@ -574,7 +574,7 @@ describe('ecrituresDesVentesPourLa2035', () => {
     expect(r.etat).toBe('pret')
     const attendue = ecrituresDesVentesFacturees({
       sources: { dossierId: D, factures: sources().factures, lignes: sources().lignes, encaissements: sources().encaissements, parts: sources().parts },
-      mouvements: sources().mouvements, comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+      mouvements: sources().mouvements, comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
     })
     expect(r).toEqual({ etat: 'pret', ecritures: { etat: 'composees', composition: attendue } })
     // Au plan et au modèle donnés.
@@ -595,14 +595,14 @@ describe('ecrituresDesVentesPourLa2035', () => {
     // Des lectures qui ne se tiennent pas (ici, des lignes de facture illisibles) : la composition lève, la 2035 ne se
     // calcule pas.
     const sansEncaissement = { ...sources(), lignes: null as unknown as LigneDeFacture[] }
-    expect(compositionDesSources(sansEncaissement, 'tresorerie', PLAN_PAR_DEFAUT)).toEqual({ etat: 'incoherent', motif: MOTIF_NE_SE_COMPOSENT_PAS })
+    expect(compositionDesSources(sansEncaissement, 'tresorerie', PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque })).toEqual({ etat: 'incoherent', motif: MOTIF_NE_SE_COMPOSENT_PAS })
     expect(juger({ lecture: lue(sansEncaissement) })).toEqual({ etat: 'incomplete', motif: MOTIF_NE_SE_COMPOSENT_PAS })
   })
 
   it('le compte de contrepartie d’une compensation entre dans la composition, comme pour la section', () => {
     const e = encaissement({ id: 'e2', facture_id: 'f1', date_encaissement: '2025-11-21', montant: 120, moyen: 'compensation', compte_contrepartie: '467200' })
     const s = { ...sources(), encaissements: [e.encaissement], parts: [e.part], mouvements: [] }
-    const r = compositionDesSources(s, 'tresorerie', PLAN_PAR_DEFAUT)
+    const r = compositionDesSources(s, 'tresorerie', PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque })
     expect(r.etat === 'composee' && r.composition.ecritures.some((x) => x.lignes.some((l) => l.compte === '467200'))).toBe(true)
   })
 })

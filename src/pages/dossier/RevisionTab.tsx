@@ -1,3 +1,4 @@
+import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
@@ -315,6 +316,8 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   ventesParLesFactures: boolean
   onNavigate: (tab: DossierTab) => void
 }) {
+  // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
+  const { banques } = useBanquesDuDossier(dossierId, modele.plan)
   const { annee } = useAnnee()
   const { exercices, frontiere } = useExercicesValides()
   const { session, estChef } = useAuth()
@@ -822,7 +825,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   // lectures de CE dossier, comme Clôture le calcule ; une lecture qui manque se dit parmi celles de la revue.
   const pourLa2035 = ventesDeLaRevue === null ? null : ecrituresDesVentesPourLa2035({
     dossierId, ventesParLesFactures, facturesSources: ventesDeLaRevue.sources, lecture: lecture.sourcesDesVentes, mode: modele.mode,
-    plan: modele.plan,
+    plan: modele.plan, banques,
   })
   // LES RECETTES DE CAISSE de CE dossier (étape C3a), résolues sur ses catégories : la 2035 de la revue les compte, comme
   // celle de Clôture ; lues en partie, la revue n'a pas de 2035 (son motif est déjà parmi ceux de la revue).

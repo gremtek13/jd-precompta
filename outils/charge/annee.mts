@@ -56,6 +56,8 @@ const D = 'd-charge'
 const ANNEE = 2026
 const MODELE = modeleDeTest('tresorerie')
 const PLAN = MODELE.plan
+// Un seul compte bancaire, la banque du rôle (MCB5) : l'écriture d'hier.
+const BANQUES = { cas: 'role', compte: PLAN.banque } as const
 
 // ── Le tirage, d'une graine fixe ─────────────────────────────────────────────────────────────────────────────────────
 function mulberry32(graine: number): () => number {
@@ -296,7 +298,7 @@ function mesurer(k: number): Map<string, number | string> {
     }
     const pourLa2035 = ecrituresDesVentesPourLa2035({
       dossierId: D, ventesParLesFactures: true, facturesSources: ventes.sources, lecture: { dossierId: D, etat: 'lue', sources: sourcesEcritures },
-      mode: MODELE.mode, plan: PLAN,
+      mode: MODELE.mode, plan: PLAN, banques: BANQUES,
     })
     if (pourLa2035.etat !== 'pret') throw new Error(`Les écritures des ventes ne sont pas prêtes : ${pourLa2035.etat}`)
 
@@ -318,7 +320,7 @@ function mesurer(k: number): Map<string, number | string> {
     }
     const composition = ecrituresDesVentesFacturees({
       sources: { dossierId: D, factures: a.factures, lignes: a.lignesDeFacture, encaissements: a.encaissements, parts: a.parts },
-      mouvements: mouvementsDesEncaissements, comptesDeContrepartie: new Map(), exemplaires: [], mode: MODELE.mode, plan: PLAN,
+      mouvements: mouvementsDesEncaissements, comptesDeContrepartie: new Map(), exemplaires: [], mode: MODELE.mode, plan: PLAN, banques: BANQUES,
     })
     for (const v of composition.ecritures) for (const l of lignesAuBrouillon(D, v)) brouillon.push(ecriture(l))
     resultats.set(`brouillon (${assujetti ? 'assujetti' : 'exonéré'})`, `${brouillon.length} lignes`)
@@ -375,7 +377,7 @@ function mesurer(k: number): Map<string, number | string> {
         natures: [], ecritures: brouillon, lignes: a.lignes, ventilations: [], reglements: [], encaissees: [], cotisations: a.cotisations,
         vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'mensuelle',
         controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
-        etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, anneesValidees: [], ventesParLesFactures: true }),
+        etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, banques: BANQUES, anneesValidees: [], ventesParLesFactures: true }),
         ventesDeLaChecklist: ventesDeLaChecklist(lectureDesSources, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
         declaration, saisies2035: AUCUNE_SAISIE_2035, concordance,
       }), (r) => JSON.stringify(r).slice(0, 200))

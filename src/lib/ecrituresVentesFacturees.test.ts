@@ -68,7 +68,7 @@ function composer(jeu: Jeu, mode: ModeComptable, plan: PlanComptable): Ecritures
       dossierId: D, factures: jeu.factures ?? [facture()], lignes: jeu.lignes ?? [ligneVendue('f1', 100, 20)],
       encaissements: encs.map((e) => e.encaissement), parts: encs.map((e) => e.part),
     },
-    mouvements: jeu.mouvements ?? [], comptesDeContrepartie: jeu.comptes ?? new Map(), exemplaires: jeu.exemplaires ?? [], mode, plan,
+    mouvements: jeu.mouvements ?? [], comptesDeContrepartie: jeu.comptes ?? new Map(), exemplaires: jeu.exemplaires ?? [], mode, plan, banques: { cas: 'role', compte: plan.banque },
   })
   verifier(r)
   return r
@@ -468,7 +468,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
       expect(r.ecritures.map((e) => e.source.genre)).toEqual(['facture'])
       expect(r.nonEcrites).toEqual([{
         source: { genre: 'encaissement', encaissementId: 'e1', factureId: 'f1' }, motif: 'compte_refuse',
-        detail: `${LIBELLE_MOTIF_NON_ECRITE.compte_refuse} (${plan.clients} : ${refusCompteDeContrepartie(plan.clients, plan)})`,
+        detail: `${LIBELLE_MOTIF_NON_ECRITE.compte_refuse} (${plan.clients} : ${refusCompteDeContrepartie(plan.clients, plan, { cas: 'role', compte: plan.banque })})`,
       }])
     })
   })
@@ -501,7 +501,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
           encaissements: [enc('e1', '2025-11-20', 172.75, { ligne_bancaire_id: 'm1' }).encaissement],
           parts: [{ encaissement_id: 'e1', dossier_id: D, taux: 20, montant: 120 }, { encaissement_id: 'e1', dossier_id: D, taux: 5.5, montant: 52.75 }],
         },
-        mouvements: [mvt({ id: 'm1', date: '2025-11-20', montant: 172.75 })], comptesDeContrepartie: new Map(), exemplaires: [], mode, plan,
+        mouvements: [mvt({ id: 'm1', date: '2025-11-20', montant: 172.75 })], comptesDeContrepartie: new Map(), exemplaires: [], mode, plan, banques: { cas: 'role', compte: plan.banque },
       })
       verifier(deux)
       expect(ecriture(deux, cleFecEncaissement('e1', '2025-11-20')).lignes).toEqual(lignes(plan, mode === 'tresorerie'
@@ -723,16 +723,16 @@ describe('ce qui ne s’écrit pas se dit, avec sa raison', () => {
 
 describe('refusCompteDeContrepartie — l’hypothèse de VF4a', () => {
   it.each(PLANS)('%s : un compte de bilan, ni le 411, ni la trésorerie du plan, ni la TVA', (_nom, plan) => {
-    expect(refusCompteDeContrepartie(plan.fournisseurs, plan)).toBeNull()
-    expect(refusCompteDeContrepartie('4672000', plan)).toBeNull()
+    expect(refusCompteDeContrepartie(plan.fournisseurs, plan, { cas: 'role', compte: plan.banque })).toBeNull()
+    expect(refusCompteDeContrepartie('4672000', plan, { cas: 'role', compte: plan.banque })).toBeNull()
     for (const compte of ['606100', '706200', '61', 'abc123', '12345678901', '0123456']) {
-      expect(refusCompteDeContrepartie(compte, plan), compte).toBe('Un compte de contrepartie est un compte de bilan, de classe 1 à 5, de six à dix chiffres.')
+      expect(refusCompteDeContrepartie(compte, plan, { cas: 'role', compte: plan.banque }), compte).toBe('Un compte de contrepartie est un compte de bilan, de classe 1 à 5, de six à dix chiffres.')
     }
-    expect(refusCompteDeContrepartie(plan.clients, plan)).toMatch(/^Le compte des clients/)
+    expect(refusCompteDeContrepartie(plan.clients, plan, { cas: 'role', compte: plan.banque })).toMatch(/^Le compte des clients/)
     for (const compte of [plan.banque, plan.valeurs_a_l_encaissement, plan.caisse]) {
-      expect(refusCompteDeContrepartie(compte, plan), compte).toMatch(/^Un encaissement par la banque/)
+      expect(refusCompteDeContrepartie(compte, plan, { cas: 'role', compte: plan.banque }), compte).toMatch(/^Un encaissement par la banque/)
     }
-    expect(refusCompteDeContrepartie(plan.tva_deductible, plan)).toMatch(/^Un compte de TVA/)
+    expect(refusCompteDeContrepartie(plan.tva_deductible, plan, { cas: 'role', compte: plan.banque })).toMatch(/^Un compte de TVA/)
   })
 })
 
@@ -836,7 +836,7 @@ describe('chaque écriture porte sa source, et se recompose à l’identique dep
         encaissements: [autreDossier.encaissement, ...encs.map((e) => e.encaissement)], parts: [autreDossier.part, ...encs.map((e) => e.part)],
       },
       mouvements: [mvt({ id: 'm9', dossier_id: 'd2', date: '2025-11-20', montant: 3 }), mvt({ id: 'm1', date: '2025-11-20', montant: 95.5 })],
-      comptesDeContrepartie: new Map(), exemplaires: [], mode: 'engagement', plan: PLAN_PAR_DEFAUT,
+      comptesDeContrepartie: new Map(), exemplaires: [], mode: 'engagement', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
     })
     expect(JSON.stringify(r2.ecritures)).toBe(JSON.stringify(r.ecritures))
     expect(r2.nonEcrites).toEqual(r.nonEcrites)
@@ -1073,7 +1073,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
     calcules = Array.from({ length: 1500 }, (_, i) => tirerUnDossier(suivant, i)).map((t) => ({
       t,
       parMode: Object.fromEntries(MODES.map((mode) => [mode, ecrituresDesVentesFacturees({
-        sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode, plan: PLAN_PAR_DEFAUT,
+        sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode, plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
       })])) as Record<ModeComptable, EcrituresDesVentesFacturees>,
     }))
     fautesDuTirage = calcules.flatMap(({ parMode }, i) => MODES.flatMap((mode) => [
@@ -1206,7 +1206,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
     const defauts = new Set(Object.values(PLAN_PAR_DEFAUT))
     for (const { t, parMode } of calcules.slice(0, 300)) {
       for (const mode of MODES) {
-        const decale = ecrituresDesVentesFacturees({ sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode, plan: PLAN_DECALE })
+        const decale = ecrituresDesVentesFacturees({ sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode, plan: PLAN_DECALE, banques: { cas: 'role', compte: PLAN_DECALE.banque } })
         for (const e of decale.ecritures) for (const l of e.lignes) expect(defauts.has(l.compte), l.compte).toBe(false)
         const ramene = decale.ecritures.map((e) => ({
           ...e, lignes: e.lignes.map((l) => ({ ...l, compte: versLeDefaut.get(l.compte) ?? l.compte })).sort(ordreDesLignes),
@@ -1223,7 +1223,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
     for (const { t, parMode } of calcules.slice(0, 300)) {
       const r = ecrituresDesVentesFacturees({
         sources: { ...t.sources, factures: melange(t.sources.factures), lignes: melange(t.sources.lignes), encaissements: melange(t.sources.encaissements), parts: melange(t.sources.parts) },
-        mouvements: melange(t.mouvements), comptesDeContrepartie: t.comptes, exemplaires: [], mode: 'engagement', plan: PLAN_PAR_DEFAUT,
+        mouvements: melange(t.mouvements), comptesDeContrepartie: t.comptes, exemplaires: [], mode: 'engagement', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
       })
       expect(JSON.stringify(r.ecritures)).toBe(JSON.stringify(parMode.engagement.ecritures))
     }
@@ -1238,7 +1238,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
     for (const [index, { t, parMode }] of calcules.entries()) {
       for (const plan of index < 300 ? [PLAN_PAR_DEFAUT, PLAN_DECALE] : [PLAN_PAR_DEFAUT]) {
         const r = plan === PLAN_PAR_DEFAUT ? parMode.tresorerie
-          : ecrituresDesVentesFacturees({ sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode: 'tresorerie', plan })
+          : ecrituresDesVentesFacturees({ sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode: 'tresorerie', plan, banques: { cas: 'role', compte: plan.banque } })
         const ecrit = new Map<string, number>()
         for (const e of r.ecritures) {
           for (const l of e.lignes) {

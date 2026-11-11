@@ -567,7 +567,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const motifVentesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : brouillonIncomplet
   const etatsVentes = ventesParLesFactures && brouillonIncomplet === null && lectureVentesDuDossier?.etat === 'lue'
     ? etatsDesVentesFacturees({
-      sources: lectureVentesDuDossier.sources, brouillon: ecritures, mode: modele.mode, plan: modele.plan,
+      sources: lectureVentesDuDossier.sources, brouillon: ecritures, mode: modele.mode, plan: modele.plan, banques,
       anneesValidees: exercicesValides.map((e) => e.annee), ventesParLesFactures,
     })
     : null

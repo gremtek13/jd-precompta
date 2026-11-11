@@ -310,6 +310,7 @@ export function compositionDuJeu(numero: number): EcrituresDesVentesFacturees {
   return ecrituresDesVentesFacturees({
     sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements: j.encaissements, parts: j.parts },
     mouvements: j.mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: j.mode, plan: PLAN_PAR_DEFAUT,
+    banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
   })
 }
 

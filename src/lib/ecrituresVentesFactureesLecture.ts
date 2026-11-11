@@ -7,6 +7,7 @@ import type {
 } from './ecrituresVentesFactureesEcran'
 import { lireTout, type LectureComplete } from './lectureComplete'
 import { messageErreur } from './messageErreur'
+import { COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
 import type { EcritureBrouillon } from './types'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import type { PartVendue, RepriseVendue } from './ventesFacturees'
@@ -44,6 +45,11 @@ export const COLONNES_ENCAISSEMENTS_ECRITURES =
   'id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie, cree_par'
 export const COLONNES_MOUVEMENTS_ECRITURES =
   'id, dossier_id, date, montant, libelle, source_fichier, encaissements_de_factures, statut, piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, ventilee, reglement_groupe, prelevement_personnel'
+// Les mêmes, et le compte bancaire de chaque mouvement (MCB5) : la composition écrit la jambe de banque d'un mouvement au
+// 512 de SON compte (lib/banqueDuMouvement.ts). Demandées le drapeau `COMPTES_BANCAIRES_PREVUS` levé seulement : avant la
+// migration `comptes_bancaires`, la colonne n'existe pas, et la nommer ferait échouer toute la lecture.
+export const COLONNES_MOUVEMENTS_ECRITURES_PAR_COMPTE = `${COLONNES_MOUVEMENTS_ECRITURES}, compte_bancaire_id` as const
+
 export const COLONNES_EXEMPLAIRES_ECRITURES = 'id, dossier_id, facture_id, statut, type_piece'
 
 type LigneLue = LigneDeFacture & { id: string }
@@ -84,8 +90,11 @@ export async function lireLesSourcesDesEcrituresDeVente(dossierId: string): Prom
           .eq('dossier_id', dossierId).order('encaissement_id').order('taux').range(debut, fin),
       ),
       lireTout<MouvementDesEcritures>((debut, fin) =>
-        supabase.from('lignes_bancaires').select(COLONNES_MOUVEMENTS_ECRITURES, { count: 'exact' })
-          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+        (COMPTES_BANCAIRES_PREVUS
+          ? supabase.from('lignes_bancaires').select(COLONNES_MOUVEMENTS_ECRITURES_PAR_COMPTE, { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin)
+          : supabase.from('lignes_bancaires').select(COLONNES_MOUVEMENTS_ECRITURES, { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin)),
       ),
       lireTout<ExemplaireLu>((debut, fin) =>
         supabase.from('pieces').select(COLONNES_EXEMPLAIRES_ECRITURES, { count: 'exact' })

@@ -1,3 +1,4 @@
+import type { BanquesDuDossier } from './banqueDuMouvement'
 import { justifieSonMouvement, mouvementLibre, remplirModele, type RefusEncaissement } from './encaissementsFactures'
 import {
   refusCompteDeContrepartie, type EcrituresDesVentesFacturees, type EcritureVenteFacturee, type SourceEcritureVente,
@@ -225,8 +226,24 @@ export const REFUS_REPRISE_NON_LUE_ECRITURE = {
   modele: "Ce que la facture reprise % portait encaissé avant la reprise n'est pas lu : ses écritures ne se composent pas d'ici.",
 } as const
 
-/** Un refus d'`ecrire_vente_facturee`, ou celui de l'écran qui ne lit pas la reprise d'une facture reprise. */
+// LE REFUS DE L'ÉCRAN QUI NE SAIT PAS LA BANQUE D'UN MOUVEMENT (MCB5) : la composition ne compose pas l'écriture dont la
+// jambe de banque est celle d'un mouvement que les comptes bancaires lus ne rendent pas (`banque_inconnue`, un motif du
+// module seul), ni ne juge un compte de contrepartie sans eux (le 512 propre d'un compte ne s'y reconnaîtrait pas). La
+// base lit le compte bancaire du mouvement elle-même et ne dit jamais ce refus : il ne se confronte à aucun texte SQL.
+export const REFUS_BANQUE_INCONNUE = {
+  cle: 'banque_inconnue',
+  modele: 'Les comptes bancaires du dossier ne sont pas lus en entier, ou ne rendent pas le compte de ce mouvement : l’écriture ne sait pas sur quel compte de banque elle s’écrit. Recharge la page.',
+} as const
+
+/** Un refus d'`ecrire_vente_facturee`, ou celui de l'écran qui ne lit pas la reprise d'une facture reprise, ou qui ne sait
+ *  pas la banque d'un mouvement. */
 export type CleRefusEcritureVenteOuEcran = CleRefusEcritureVente | typeof REFUS_REPRISE_NON_LUE_ECRITURE.cle
+  | typeof REFUS_BANQUE_INCONNUE.cle
+
+/** Un refus de `choisir_compte_contrepartie`, ou celui de l'écran qui ne sait pas les comptes bancaires du dossier. */
+export type CleRefusCompteContrepartieOuEcran = CleRefusCompteContrepartie | typeof REFUS_BANQUE_INCONNUE.cle
+
+const banqueInconnue = () => ({ cle: REFUS_BANQUE_INCONNUE.cle, message: REFUS_BANQUE_INCONNUE.modele })
 
 type Liste = readonly { readonly cle: string; readonly modele: string }[]
 
@@ -277,6 +294,9 @@ export interface ContexteEcritureVente {
   composition: EcrituresDesVentesFacturees
   /** Le plan du dossier, celui de la composition. */
   plan: PlanComptable
+  /** Les banques du dossier, celles de la composition (MCB5) : un 512 propre d'un compte bancaire n'est jamais une
+   *  contrepartie, et sans elles un compte ne se juge pas. */
+  banques: BanquesDuDossier
 }
 
 // ── La source ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -421,8 +441,10 @@ export function refusEcritureVenteFacturee(
   const nonEcrite = c.composition.nonEcrites.find((n) => memeSource(n.source, source))
   if (nonEcrite?.motif === 'compte_refuse' && source.genre === 'encaissement') {
     const compte = compteDeTresorerie(source.encaissementId, c) ?? ''
-    return non('compte_refuse', compte, refusCompteDeContrepartie(compte, c.plan) ?? '')
+    return non('compte_refuse', compte, refusCompteDeContrepartie(compte, c.plan, c.banques) ?? '')
   }
+  // La banque d'un mouvement que les comptes lus ne rendent pas (MCB5) : le refus de l'écran, jamais celui de la base.
+  if (nonEcrite?.motif === 'banque_inconnue') return banqueInconnue()
   // Le virement mixte (étape VF5h) : la facture d'avant que la composition nomme, comme la base la nomme.
   if (nonEcrite?.motif === 'mouvement_facture_non_source') return non('mouvement_facture_non_source', nonEcrite.facture ?? '<NULL>')
   // Un mouvement que la composition ne dit « écarté » que par des factures reprises dont la reprise n'est pas lue (étape
@@ -536,8 +558,9 @@ export function refusRetraitEcritureVenteFacturee(
  * compensation ou « autre », aucun compte, puis un compte que `refusCompteDeContrepartie` refuse, sous ses mots.
  */
 export function refusChoixCompteContrepartie(
-  encaissementId: string, compte: string | null, c: Pick<ContexteEcritureVente, 'dossierId' | 'anneesValidees' | 'factures' | 'encaissements' | 'plan'>,
-): RefusEncaissement<CleRefusCompteContrepartie> | null {
+  encaissementId: string, compte: string | null,
+  c: Pick<ContexteEcritureVente, 'dossierId' | 'anneesValidees' | 'factures' | 'encaissements' | 'plan' | 'banques'>,
+): RefusEncaissement<CleRefusCompteContrepartieOuEcran> | null {
   const non = (cle: CleRefusCompteContrepartie, ...valeurs: string[]) => refusDe(REFUS_COMPTE_CONTREPARTIE, cle, ...valeurs)
   const e = c.encaissements.find((x) => x.id === encaissementId && x.dossier_id === c.dossierId)
   if (!e) return non('encaissement_introuvable')
@@ -552,6 +575,8 @@ export function refusChoixCompteContrepartie(
   if (e.ligne_bancaire_id != null) return non('cite_un_mouvement')
   if (e.moyen !== 'compensation' && e.moyen !== 'autre') return non('moyen')
   if (compte == null) return non('compte_absent')
-  const refus = refusCompteDeContrepartie(compte, c.plan)
+  // Sans les comptes bancaires lus (MCB5), le 512 propre d'un compte ne se reconnaît pas : le refus de l'écran.
+  if (c.banques.cas === 'retenu') return banqueInconnue()
+  const refus = refusCompteDeContrepartie(compte, c.plan, c.banques)
   return refus == null ? null : non('compte_refuse', refus)
 }

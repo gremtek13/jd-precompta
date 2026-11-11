@@ -1,3 +1,4 @@
+import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, aujourdHuiAParis, aujourdHuiSql, formatMoney, formatDate } from '../../lib/format'
@@ -109,6 +110,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   ventesParLesFactures: boolean
   onNavigate?: (tab: DossierTab) => void
 }) {
+  // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
+  const { banques } = useBanquesDuDossier(dossierId, modele.plan)
   const modeComptable = modele.mode
   // Seul le chef du cabinet valide un exercice (décision du 04/10/2026) — la base le refuse aux autres, et la
   // carte ne leur propose pas le geste.
@@ -511,7 +514,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // les sources ne sont pas revenues entières n'a pas de 2035, comme sans ses ventes facturées.
   const pourLa2035 = ventesLues === null ? null : ecrituresDesVentesPourLa2035({
     dossierId, ventesParLesFactures, facturesSources: ventesLues.sources, lecture: lectureSourcesVentes, mode: modeComptable,
-    plan: modele.plan,
+    plan: modele.plan, banques,
   })
   const ecrituresDesVentes = pourLa2035?.etat === 'pret' ? pourLa2035.ecritures : null
   const ventesFacturees = ecrituresDesVentes === null ? null : ventesLues
@@ -557,7 +560,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     : sourcesDesVentesDuDossier === null ? null
       : sourcesDesVentesDuDossier.etat === 'incomplete' ? { etat: 'incomplete', motif: sourcesDesVentesDuDossier.motif }
         : etatsDesVentesFacturees({
-          sources: sourcesDesVentesDuDossier.sources, brouillon: ecritures, mode: modeComptable, plan: modele.plan, anneesValidees,
+          sources: sourcesDesVentesDuDossier.sources, brouillon: ecritures, mode: modeComptable, plan: modele.plan, banques, anneesValidees,
           ventesParLesFactures,
         })
   const ventesDeLaVueDEnsemble = !ventesParLesFactures ? ventesDeLaChecklist(null, null)

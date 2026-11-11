@@ -976,7 +976,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
   const ecrit = (s: SourcesDesEcrituresDeVente, mode: ModeComptable = 'tresorerie') => brouillonDesVentes(composition(s, mode, PLAN_PAR_DEFAUT))
   const lues = (s: SourcesDesEcrituresDeVente, brouillon: EcritureBrouillon[], mode: ModeComptable = 'tresorerie'): ContexteDeDeclaration['ventesFacturees'] => ({
     etat: 'lue',
-    etats: etatsDesVentesFacturees({ sources: s, brouillon, mode, plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true }),
+    etats: etatsDesVentesFacturees({ sources: s, brouillon, mode, plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, anneesValidees: [], ventesParLesFactures: true }),
   })
   // La TVA que le brouillon porte au 445710 dans une période, en centimes : celle que la liquidation retire.
   const au445710 = (brouillon: readonly EcritureBrouillon[], periode: { debut: string; fin: string }) => brouillon
@@ -1178,7 +1178,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     expect(versLEcran(versLaLiquidation('a_jour'))).toBe('a_jour')
     const s = sourcesDe(1200)
     const etats: EtatsDesVentes = etatsDesVentesFacturees({
-      sources: s, brouillon: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true,
+      sources: s, brouillon: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, anneesValidees: [], ventesParLesFactures: true,
     })
     const lue: EcrituresDesVentesDeLaCa3 = { etat: 'lue', etats }
     expect(lue.etat).toBe('lue')

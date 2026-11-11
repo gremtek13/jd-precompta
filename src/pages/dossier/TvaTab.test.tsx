@@ -1090,7 +1090,7 @@ describe('TvaTab — les ventes facturées', () => {
   function ecrituresDeLaVente(mode: ModeComptable = 'tresorerie') {
     const c = ecrituresDesVentesFacturees({
       sources: { dossierId: 'd', factures: [FACTURE_SOURCE], lignes: [LIGNE_FS], encaissements: [ENCAISSEMENT.encaissement], parts: [ENCAISSEMENT.part] },
-      mouvements: [], comptesDeContrepartie: new Map(), exemplaires: [], mode, plan: PLAN_PAR_DEFAUT,
+      mouvements: [], comptesDeContrepartie: new Map(), exemplaires: [], mode, plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
     })
     let i = 0
     return c.ecritures.flatMap((e) => lignesAuBrouillon('d', e).map((l) => ({
