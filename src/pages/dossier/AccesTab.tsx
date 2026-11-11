@@ -13,7 +13,7 @@ import {
   questionDuLienEnvoye, refusDeLaRegle,
 } from '../../lib/recuperationMotDePasse'
 import {
-  CASES_SANS_EFFET, ceQueDitLaCaseDocuments, ceQueDitLaCaseSansEffet,
+  casesSansEffetSelon, ceQueDitLaCaseDocuments, ceQueDitLaCaseSansEffet,
   CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCasesDuDossier, ceQueDitLaCaseCaisse, ceQueDitLaCaseComptes, changementApplique,
   confirmationDeLaCaseCaisse, demandeDeChangement, droitsDeLaLigne, enumeration, gesteDeLaCase, libelleDeLaCase, messageDuRefus,
   refusDeLaCase, type Domaine,
@@ -35,6 +35,7 @@ import type { Membership } from '../../lib/types'
 import { accesDeLaLecture } from '../../lib/auteursVentes'
 import TraceDesDroitsDesAcces from './TraceDesDroitsDesAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from '../../lib/situationsPubliees'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from '../../lib/documentsEtDemandes'
 import { TROIS_CASES_EXPORTEES } from '../../lib/troisCasesDeLAcces'
 import { DOSSIER_DU_CABINET_PREVU, etatDuFormulaireDAcces, type EtatDuFormulaireDAcces } from '../../lib/dossierDuCabinet'
 import { useDesignationDuDossier } from '../../lib/dossierDuCabinetLecture'
@@ -531,11 +532,11 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       {SITUATIONS_PUBLIEES_EXPORTEES && (
         <p className="muted" id="ce-que-dit-la-case-comptes">{ceQueDitLaCaseComptes()}</p>
       )}
-      {TROIS_CASES_EXPORTEES && CASES_SANS_EFFET.map((d) => (
+      {TROIS_CASES_EXPORTEES && casesSansEffetSelon(DOCUMENTS_ET_DEMANDES_PREVUS).map((d) => (
         <p className="muted" id={`ce-que-dit-la-case-${d}`} key={d}>{ceQueDitLaCaseSansEffet(d)}</p>
       ))}
       {/* « Documents », avec sa migration (étape B3a) : ce que la base ouvre au client qui la porte. */}
-      {TROIS_CASES_EXPORTEES && !CASES_SANS_EFFET.includes('documents') && (
+      {TROIS_CASES_EXPORTEES && !casesSansEffetSelon(DOCUMENTS_ET_DEMANDES_PREVUS).includes('documents') && (
         <p className="muted" id="ce-que-dit-la-case-documents">{ceQueDitLaCaseDocuments()}</p>
       )}
       {rows.length > 0 && (

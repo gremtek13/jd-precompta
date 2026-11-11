@@ -254,6 +254,9 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     // « Mes demandes » ne lit aucune case : tout accès du dossier lit ses demandes (MEG2-Q9).
     expect(app).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
     expect(app).toContain('mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />')
+    const coque = readFileSync(resolve(process.cwd(), 'src/components/Layout.tsx'), 'utf8')
+    expect(coque).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
+    expect(coque).toContain("const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)")
     // DEPUIS L'ÉTAPE C4b, « Mes comptes » lit la case « Comptes », derrière `SITUATIONS_PUBLIEES_EXPORTEES`
     // (lib/situationsPubliees.ts, `mesComptesOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     expect(app).toContain('mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)')
