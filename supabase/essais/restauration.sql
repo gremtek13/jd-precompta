@@ -589,6 +589,23 @@ begin
   end if;
 end $$;
 
+-- ══ L'adresse d'un accès retiré (P1T-E2) ══ Au plan du code quand `ADRESSES_DES_ACCES_RETIRES_PREVUES` est levé — sa
+-- migration (`adresse_des_acces_retires`) en base : sa table, juste après la trace des droits, que sa migration exige ; les
+-- tables qui suivent reculent d'un rang ; son chemin. Aucune vague. Absente de la base, rien n'entre : le plan est celui
+-- d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.adresses_des_acces_retires') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'trace_des_droits';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'adresses_des_acces_retires');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('adresses_des_acces_retires','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les situations publiées (espace client, étape C4a) ══ Au plan du code quand `SITUATIONS_PUBLIEES_EXPORTEES` est levé —
 -- c'est-à-dire quand sa migration est en base : le script l'y met dès que sa table existe, juste après `memberships` —
 -- joué après le bloc de la trace des droits, il la précède donc (ORDRE_RESTAURATION_PREVU) ; les tables qui suivent

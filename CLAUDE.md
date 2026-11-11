@@ -607,7 +607,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   électronique, vue de la banque ; onze étapes P0 à P10) → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT :
   LA CONCEPTION ». Restent :
   - P1-trace : garder qui a changé les droits d'un accès, et quand — en production depuis le 07/11/2026
-    (`TRACE_DES_DROITS_PREVUE` levé, la table au plan de sauvegarde) ; reste son écran, un lot à part ;
+    (`TRACE_DES_DROITS_PREVUE` levé, la table au plan de sauvegarde), à l'écran depuis le 10/11/2026 ; l'adresse d'un accès
+    retiré (P1T-E2), préparée le 11/11/2026 derrière `ADRESSES_DES_ACCES_RETIRES_PREVUES` → « P1T-E2 : L'ADRESSE D'UN ACCÈS RETIRÉ » ;
   - P4, la mention du mandataire : imprimée sous l'identité de l'émetteur et nommée à la confirmation depuis le
     06/11/2026, le nom du cabinet lu comme la base le lit → « LE MANDAT DE FACTURATION IMPRIMÉ ET NOMMÉ À LA
     CONFIRMATION (P4, LIGNE 51.5) » ;

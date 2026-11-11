@@ -50723,3 +50723,19 @@ clic. `professions_cipav` collée par le cabinet (20261111130000) et `originaux_
 libellés raccourcis dans l'envoi, ses contrôles intacts). `rls.sql` (500 Ko) n'a pas été rejoué entier en production : son
 bloc OI l'a été sur la réplique d'A8d2a ; l'inventaire de l'export, égal à la production, dit le même catalogue. Les trois
 contrôles de l'export égaux (197 migrations).
+
+### 11/11/2026 — P1T-E2 : L'ADRESSE D'UN ACCÈS RETIRÉ, GARDÉE AVEC LA TRACE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) Décision du cabinet, contre la recommandation : l'historique des droits nomme un
+accès retiré par son adresse. `supabase/preparees/20261111173000_adresse_des_acces_retires.sql` (`f50aa438…`, par l'OUTIL),
+retour en 20261111173100 (`64ca74a9…`, destructif, refusé sous une ligne). Le plus sobre : `adresses_des_acces_retires`
+reçoit `memberships.email` AU DÉPART d'un accès (retrait, autre dossier, autre identifiant), une ligne par départ, seulement
+si la trace le nomme dans ce dossier et que le dossier reste ; `memberships_trace_des_droits_adresse`, rangé après le
+déclencheur de la trace, sans toucher `tracer_les_droits` (que B1 remplace à son empreinte). Écartés : l'adresse à chaque
+geste (jusqu'à sept copies), une colonne de la trace, `auth.users` lu à l'affichage. Garde immuable (42501, 23514), lecture
+`admin_du_dossier`, restauration au super-administrateur ; durée celle du dossier (RGPD.md, une ligne au registre, et
+« Gestion des accès » corrigée : la trace garde l'auteur et la date depuis le 07/11/2026). Réplique (195 migrations,
+`signature.sql` égal à la production) : `adresseDesAccesRetires.sql` 33/33, `…Suppression.sql` 14/14, six mutations
+mordent ; `rls.sql` 237 lignes, 0 en faute, M-AR1 et M-AR2 mordent ; tous les essais avant et après identiques, hors
+`traceDesDroits.sql` (39), `validationExercice.sql` (141) et `restauration.sql`, suivis selon l'état ; le retour rend la
+signature d'avant. Écran et plan de sauvegarde derrière `ADRESSES_DES_ACCES_RETIRES_PREVUES`, baissé.

@@ -22,6 +22,7 @@ import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
+import { ADRESSES_DES_ACCES_RETIRES_PREVUES, TABLES_DES_ADRESSES_DES_ACCES_RETIRES } from './adressesDesAccesRetires'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
@@ -151,6 +152,19 @@ export const TABLES_DE_LA_TRACE_DES_DROITS: readonly string[] = ['trace_des_droi
 /** Une table au plan, côté trace des droits : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
 export function auPlanDeLaTraceDesDroits(table: string, tracePrevue: boolean): boolean {
   return tracePrevue || !TABLES_DE_LA_TRACE_DES_DROITS.includes(table)
+}
+
+// L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2 ; migration `adresse_des_acces_retires`, PRÉPARÉE, pas appliquée) : l'adresse qu'un accès
+// que la trace nomme portait à son départ. Sous le drapeau de la migration (`ADRESSES_DES_ACCES_RETIRES_PREVUES`,
+// src/lib/adressesDesAccesRetires.ts), baissé : la lire avant sa migration ferait échouer toute sauvegarde. Le patron de la
+// trace : sa relation (le dossier en cascade ; l'accès sans clé), son rang (juste après la trace), son chemin ; aucune vague ;
+// sa clé est la commune, `id`. La restauration la réinsère par la porte que sa garde et sa policy ouvrent au
+// super-administrateur ; la réinsertion des accès n'en écrit aucune (seul un DÉPART en écrit une), l'adresse restaurée est
+// celle de la sauvegarde. sauvegardeAdressesDesAccesRetires.test.ts éprouve le plan prévu et le plan du jour, sous chaque
+// état du drapeau.
+/** Une table au plan, côté adresses des accès retirés : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
+export function auPlanDesAdressesDesAccesRetires(table: string, prevues: boolean): boolean {
+  return prevues || !TABLES_DES_ADRESSES_DES_ACCES_RETIRES.includes(table)
 }
 
 // LES SITUATIONS PUBLIÉES (espace client, étape C4a ; migration `situations_publiees`, en production depuis le 07/11/2026 :
@@ -298,6 +312,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE)
     && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
     && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
+    && auPlanDesAdressesDesAccesRetires(table, ADRESSES_DES_ACCES_RETIRES_PREVUES)
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
     && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
@@ -459,6 +474,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'lignes_bancaires', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'memberships', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'trace_des_droits', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'adresses_des_acces_retires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'situations_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'saisies_2035', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -797,6 +813,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   // la trace des droits les suit, toujours après les accès.
   'situations_publiees',
   'trace_des_droits',
+  // L'adresse d'un accès retiré (P1T-E2) : juste après la trace, qu'elle nomme.
+  'adresses_des_acces_retires',
   'natures_immobilisation',
   'packs',
   'previsionnels_bancaires',
@@ -1331,6 +1349,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   lignes_bancaires: { acces: 'direct' },
   memberships: { acces: 'direct' },
   trace_des_droits: { acces: 'direct' },
+  adresses_des_acces_retires: { acces: 'direct' },
   situations_publiees: { acces: 'direct' },
   saisies_2035: { acces: 'direct' },
   imports_factures: { acces: 'direct' },

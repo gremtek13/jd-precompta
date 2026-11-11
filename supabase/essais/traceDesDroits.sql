@@ -85,6 +85,10 @@ declare
     else '0ef7ead57a5829ec8fed54fd7e561371' end;
   colonnes_tracees constant text := case etat when 'b1' then 'droit_ventes, droit_banque, droit_caisse, droit_comptes, droit_achats, droit_frais, droit_documents'
     when 'c4a' then 'droit_ventes, droit_banque, droit_caisse, droit_comptes' else 'droit_ventes, droit_banque, droit_caisse' end;
+  -- Les déclencheurs de memberships : les deux gardes, la trace, et, la migration `adresse_des_acces_retires` (P1T-E2) en
+  -- base, le sien, rangé après celui de la trace.
+  declencheurs_memberships constant text := 'memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits'
+    || case when to_regclass('public.adresses_des_acces_retires') is null then '' else ', memberships_trace_des_droits_adresse' end;
   cases_lues constant text := case etat when 'b1' then 'droit_achats, droit_banque, droit_caisse, droit_comptes, droit_documents, droit_frais, droit_ventes'
     when 'c4a' then 'droit_banque, droit_caisse, droit_comptes, droit_ventes' else 'droit_banque, droit_caisse, droit_ventes' end;
 begin
@@ -219,7 +223,7 @@ begin
         $q$select string_agg(pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text, ' ; ' order by t.tgname) || ' | '
   || (select string_agg(m.tgname, ', ' order by m.tgname) from pg_trigger m where m.tgrelid = 'public.memberships'::regclass and not m.tgisinternal)
   from pg_trigger t where t.tgname in ('memberships_trace_des_droits', 'trace_des_droits_garde') and not t.tgisinternal$q$, null, 'OK',
-        'CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF ' || colonnes_tracees || ', dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O ; CREATE TRIGGER trace_des_droits_garde BEFORE INSERT OR DELETE OR UPDATE ON public.trace_des_droits FOR EACH ROW EXECUTE FUNCTION garder_trace_des_droits() O | memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits | -'),
+        'CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF ' || colonnes_tracees || ', dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O ; CREATE TRIGGER trace_des_droits_garde BEFORE INSERT OR DELETE OR UPDATE ON public.trace_des_droits FOR EACH ROW EXECUTE FUNCTION garder_trace_des_droits() O | ' || declencheurs_memberships || ' | -'),
       (40, 'proprietaire', '40. … toute case droit_… de memberships est tracée : nommée par le déclencheur, admise par la contrainte, lue par la fonction (sinon, en faute)', null,
         $q$select string_agg(a.attname, ', ' order by a.attname) || ' | non tracée : ' || coalesce(string_agg(a.attname, ', ' order by a.attname) filter (where not (
     a.attnum = any ((select t.tgattr from pg_trigger t where t.tgname = 'memberships_trace_des_droits' and not t.tgisinternal)::int2[])
