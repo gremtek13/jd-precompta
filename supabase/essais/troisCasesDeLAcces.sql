@@ -47,6 +47,10 @@ declare
       ', ' order by t.acces_id, t.droit, t.geste, t.coche desc), 'rien') from trace_des_droits t where t.dossier_id in ($4, $5)$t$;
   obs text; obs2 text; code text; rendu public.memberships; vues_sans jsonb := '{}'::jsonb; vues_avec jsonb := '{}'::jsonb;
   t record; n bigint;
+  -- B2 (`documents_et_demandes`, préparée) se sert de « Documents » : en base, les rangs 12 et 13 ne jugent plus que
+  -- « Achats » et « Notes de frais », et documentsCabinet.sql juge ce que « Documents » ouvre.
+  b2 constant boolean := to_regclass('public.documents_cabinet') is not null;
+  mots constant text := case when to_regclass('public.documents_cabinet') is not null then 'achats|frais' else 'achats|frais|documents' end;
 begin
   if not exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_documents'
                   and not a.attisdropped) then
@@ -169,12 +173,12 @@ begin
     --     quatre de la migration ne lit les trois colonnes, ni ne porte les trois mots en appelant client_du_dossier ou
     --     droits_sur_le_dossier (la garde du retour, au mot près : le mot seul ne suffit pas, l'e-reporting porte 'achats').
     select coalesce((select string_agg(p.schemaname || '.' || p.tablename || '.' || p.policyname, ', ') from pg_policies p
-              where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ '''(achats|frais|documents)'''), 'aucune policy')
+              where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ ('''(' || mots || ')''')), 'aucune policy')
         || ' | ' || coalesce((select string_agg(p.proname, ', ' order by p.proname) from pg_proc p
               where p.pronamespace = 'public'::regnamespace
                 and p.proname not in ('client_du_dossier', 'droits_sur_le_dossier', 'changer_droits_acces', 'tracer_les_droits')
-                and (p.prosrc ~ 'droit_(achats|frais|documents)'
-                     or (p.prosrc ~ '''(achats|frais|documents)''' and p.prosrc ~ '(client_du_dossier|droits_sur_le_dossier)'))), 'aucune autre fonction')
+                and (p.prosrc ~ ('droit_(' || mots || ')')
+                     or (p.prosrc ~ ('''(' || mots || ')''') and p.prosrc ~ '(client_du_dossier|droits_sur_le_dossier)'))), 'aucune autre fonction')
       into obs;
     verdicts := verdicts || jsonb_build_object('rang', 12, 'etape', '12. B1 n''ouvre rien, au catalogue : ni policy ni autre fonction ne lit les trois cases', 'observe', obs,
       'ok', obs = 'aucune policy | aucune autre fonction');
@@ -182,7 +186,7 @@ begin
     -- 13. … et par le geste : le client, ses trois cases cochées sur son dossier, voit table par table et dans le stockage
     --     exactement ce qu'il voit sans elles (seul l'écart est rendu).
     for n in 1 .. 2 loop
-      update memberships set droit_achats = (n = 2), droit_frais = (n = 2), droit_documents = (n = 2)
+      update memberships set droit_achats = (n = 2), droit_frais = (n = 2), droit_documents = case when b2 then droit_documents else (n = 2) end
        where user_id = client and dossier_id = dossier_du_client;
       for t in select c.relname as nom from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
                 where ns.nspname = 'public' and c.relkind = 'r' order by c.relname loop
