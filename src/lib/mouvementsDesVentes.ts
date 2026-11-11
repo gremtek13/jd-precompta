@@ -1,4 +1,5 @@
 import { RAISON_VERSEMENT_D_ESPECES } from './controlesDeLaCaisse'
+import { RAISON_VIREMENT_INTERNE } from './virementsInternes'
 import type { PiecesCitees } from './facturesSources'
 import { libelleExploitable, motsDuLibelle, motsIdentifiants, motsSeConfirment, tiersConfirmeParBanque } from './appariementBanque'
 import { ACCES_SANS_OBJET, estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
@@ -282,6 +283,19 @@ export function ecartDuLot<L extends { id: string }>(ecartes: readonly L[], hors
   if (mouvements.length === 0) return null
   const plusieurs = mouvements.length > 1
   const debut = `${mouvements.length} mouvement${plusieurs ? 's' : ''} écarté${plusieurs ? 's' : ''} : `
+  // Ceux qu'un mouvement du montant opposé, sur un autre compte bancaire du dossier, fait peut-être un virement entre comptes
+  // (lot MCB3 ; lib/virementsInternes.ts) : à confirmer depuis leur fiche. Aucun le drapeau des comptes baissé : la phrase est
+  // celle d'hier, au caractère près.
+  const virements = mouvements.filter((m) => m.raison === RAISON_VIREMENT_INTERNE).length
+  if (virements > 0) {
+    const autres = mouvements.length - virements
+    return {
+      resume: `${debut}${virements} ${virements > 1 ? 'ont' : 'a'} en face un mouvement du montant opposé sur un autre compte `
+        + `bancaire — peut-être un virement entre comptes, à confirmer depuis ${virements > 1 ? 'leur' : 'sa'} fiche`
+        + `${autres === 0 ? '' : ` ; ${autres} autre${autres > 1 ? 's' : ''} pour la raison que dit ${autres > 1 ? 'chaque' : 'sa'} ligne`}.`,
+      mouvements,
+    }
+  }
   // Ceux dont le libellé dit un versement d'espèces, dans un dossier qui tient une caisse (étape C3b ; lib/controlesDeLaCaisse.ts)
   // : ni des encaissements de factures, ni une vente facturée — leur fiche les classe sur la caisse. Sans eux, la phrase est
   // celle d'hier, au caractère près.

@@ -85,7 +85,7 @@ function piecesParId(pieces: readonly Piece[]): ReadonlyMap<string, Piece> {
 
 /** Les candidates, sans tri : pour chaque pièce, le plus récent de ses paiements que ce mouvement peut défaire. */
 function candidatesDuRejet(
-  ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant'>,
+  ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'compte_bancaire_id'>,
   pieces: readonly Piece[],
   paiements: PaiementsDesPieces,
   exclues: ReadonlySet<string>,
@@ -95,6 +95,11 @@ function candidatesDuRejet(
   const plusRecent = new Map<string, PaiementParLeReleve>()
   for (const { pieceId, paiement } of entrees) {
     if (paiement.id === ligne.id || paiement.date > ligne.date || exclues.has(pieceId)) continue
+    // UN MOUVEMENT SE RAPPROCHE DANS SON COMPTE (lot MCB3) : la banque rejette un prélèvement sur le compte qui l'a payé. Le
+    // paiement d'un autre compte du dossier n'est pas celui que ce mouvement défait. Sans compte d'un côté ou de l'autre (la
+    // migration pas appliquée), rien ne change.
+    if (ligne.compte_bancaire_id !== undefined && paiement.compte_bancaire_id !== undefined
+      && paiement.compte_bancaire_id !== ligne.compte_bancaire_id) continue
     const autre = plusRecent.get(pieceId)
     if (!autre || paiement.date > autre.date) plusRecent.set(pieceId, paiement)
   }
@@ -115,7 +120,7 @@ function candidatesDuRejet(
  * figées) et les exemplaires des factures sources, que l'appelant connaît.
  */
 export function piecesDuRejet(
-  ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant'>,
+  ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'compte_bancaire_id'>,
   pieces: readonly Piece[],
   paiements: PaiementsDesPieces,
   exclues: ReadonlySet<string>,
@@ -135,7 +140,7 @@ export function rejetPropose(candidates: readonly PieceDuRejet[]): PieceDuRejet 
 
 /** Ce mouvement défait-il peut-être un paiement déjà rapproché d'une pièce, dans la fenêtre ? Ce qui retient un mouvement
  *  hors du lot des règles : l'index seul, sans tri, appelé pour chaque mouvement du lot. */
-export function rejetPossible(ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant'>, pieces: readonly Piece[], paiements: PaiementsDesPieces): boolean {
+export function rejetPossible(ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'compte_bancaire_id'>, pieces: readonly Piece[], paiements: PaiementsDesPieces): boolean {
   return candidatesDuRejet(ligne, pieces, paiements, new Set()).some((c) => c.signal)
 }
 

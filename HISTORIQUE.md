@@ -50754,3 +50754,22 @@ un mouvement du relevé, `refus_compte_de_bilan`), une autre migration. Côté a
 donne la racine de plus à `ROLES_COMPTABLES` ; `planComptable.sql` (empreinte du catalogue, 26b) et
 `reglerLePlanDuDossier.sql` (32) choisissent leur attendu par la ligne d'historique de la migration. Réplique : les deux
 essais verts avant, après et avec P1T-E2 ; le retour rend l'empreinte d'avant (`c0f5fc67…`).
+
+### 11/11/2026 — LE RAPPROCHEMENT PAR COMPTE BANCAIRE ET LE VIREMENT ENTRE COMPTES (MCB3)
+
+(Agent architecte, sur MCB1 et MCB2, derrière `COMPTES_BANCAIRES_PREVUS`, baissé : rien ne change avant la bascule ; aucune
+migration.) **Le virement entre deux comptes du praticien** (MCB-Q3) se reconnaît au relevé SEUL (`lib/virementsInternes.ts`) :
+un mouvement libre a pour candidats les mouvements d'un AUTRE compte, du montant opposé au centime, à trois jours au plus
+(`JOURS_DU_VIREMENT_INTERNE`, le vendredi-lundi), libres eux aussi ou déjà écrits au 580 sans leur pendant ; la paire se
+PROPOSE quand chacun est le seul de l'autre, sinon la fiche les montre tous, aucun en tête. Aucun lot ne prend un mouvement
+qui a un candidat (`virementsInternesHorsDesLots`, la carte du lot le dit, `ecartDuLot`). La confirmation écrit chaque moitié
+libre au compte des virements internes du plan par `ecrire_mouvement_compte_bilan`, l'un après l'autre : la fonction accepte
+déjà ce compte (son refus du 512 y renvoie « un second compte bancaire »), d'où aucune migration ; un échec entre les deux
+laisse la première écrite, ce qui est juste, l'alerte dit le virement « inachevé » et la fiche du second propose de le
+compléter (écarté : une fonction SQL qui écrirait les deux d'un bloc, une migration de plus pour un état que le relevé
+redit). **La jambe de banque reste celle d'aujourd'hui**, le compte du rôle `banque` : les deux s'y annulent comme au 580 ;
+le 512 propre d'un compte (`compte_propre_depuis`) arrive avec MCB5. **Un mouvement se rapproche dans son compte** : le
+rejet d'un paiement ne défait qu'un paiement de son compte (`rejetDuPaiement.ts`, le paiement porte `compte_bancaire_id`
+quand la ligne le porte) ; une pièce, elle, se paie de tout compte. **La fiche** dit le compte du mouvement dès deux comptes
+lus, une ligne discrète s'ils sont illisibles. Tests : 17 du module, 2 du rejet, 4 d'écran (deux états, double clic, inachevé,
+le lot des règles) ; une mutation du câblage des lots mord. MCB1-Q1 et MCB2-Q1 suivies telles que construites.

@@ -73,6 +73,10 @@ export interface PaiementParLeReleve {
    *  les paiements d'une pièce — un filtre sur `piece_id` oublierait toutes les pièces réglées par un virement
    *  groupé, et celles qu'un virement mixte paie. */
   origine: 'rapprochement' | 'groupe' | 'encaissements'
+  /** Le compte bancaire du mouvement (lot MCB3), pour un rapprochement seulement, et seulement quand la ligne le porte : la
+   *  colonne n'existe qu'après la migration `comptes_bancaires` (lib/comptesBancaires.ts). Absent, rien ne change. Ce qui
+   *  le lit : le rejet d'un paiement, qui ne défait qu'un paiement de son compte (lib/rejetDuPaiement.ts). */
+  compte_bancaire_id?: string
 }
 
 /** Les paiements de chaque pièce, par identifiant de pièce. Ne se construit que par `paiementsDesPieces`,
@@ -81,7 +85,7 @@ export type PaiementsDesPieces = ReadonlyMap<string, readonly PaiementDePiece[]>
 
 /** Ce que `paiementsDesPieces` lit d'une ligne du relevé. */
 export type LignePayante = Pick<LigneBancaire,
-  'id' | 'piece_id' | 'date' | 'montant' | 'statut' | 'reglement_groupe' | 'encaissements_de_factures'>
+  'id' | 'piece_id' | 'date' | 'montant' | 'statut' | 'reglement_groupe' | 'encaissements_de_factures' | 'compte_bancaire_id'>
 
 /** Ce qu'il lit d'une part de règlement groupé. */
 export type PartReglee = Pick<ReglementGroupe, 'ligne_bancaire_id' | 'piece_id' | 'montant'>
@@ -167,7 +171,10 @@ export function paiementsDesPieces(
   }
   for (const ligne of lignes) {
     if (ligne.statut !== 'rapprochee' || !ligne.piece_id) continue
-    ajouter(ligne.piece_id, { id: ligne.id, date: ligne.date, montant: ligne.montant, origine: 'rapprochement' })
+    ajouter(ligne.piece_id, {
+      id: ligne.id, date: ligne.date, montant: ligne.montant, origine: 'rapprochement',
+      ...(ligne.compte_bancaire_id === undefined ? {} : { compte_bancaire_id: ligne.compte_bancaire_id }),
+    })
   }
   for (const part of reglements) {
     if (!part.piece_id) continue

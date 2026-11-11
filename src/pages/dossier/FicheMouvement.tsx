@@ -20,6 +20,7 @@ import {
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
 import { euros, type CaisseDeLaFiche } from '../../lib/caisseEcran'
+import { JOURS_DU_VIREMENT_INTERNE as JOURS_EN_FACE, type CompteDeLaFiche } from '../../lib/virementsInternes'
 import { libelleDitUnVersementDEspeces } from '../../lib/controlesDeLaCaisse'
 import type { PlanComptable } from '../../lib/planComptable'
 import type { PaiementsDesPieces } from '../../lib/rattachement'
@@ -274,6 +275,12 @@ interface FicheMouvementProps {
   caisse: CaisseDeLaFiche
   onEcrireCompteBilan: (compte: string) => void
   onRetirerCompteBilan: () => void
+  // PLUSIEURS COMPTES BANCAIRES (lot MCB3 ; lib/virementsInternes.ts, calculé par l'onglet) : le compte de ce mouvement, dit
+  // quand le dossier en tient deux ou plus, et les mouvements d'un autre compte qui en font peut-être un virement entre comptes
+  // — le proposé en tête quand chacun est le seul de l'autre. `absent` (le drapeau baissé, ou un seul compte) : la fiche d'hier.
+  // Confirmer écrit chaque mouvement libre de la paire au compte des virements internes, par la base.
+  compteBancaire: CompteDeLaFiche
+  onConfirmerVirementInterne: (autreId: string) => void
   // Les déclarations de TVA du dossier, chacune avec ce que le relevé lui a déjà payé ou remboursé (`suiviDesDeclarations`,
   // calculé une fois par l'onglet) : de quoi rapprocher un prélèvement de la déclaration qu'il paie, ou le virement du
   // Trésor du crédit qu'il rembourse. `declarationsTvaIncompletes` : la liste n'a pas pu être lue en entier — une
@@ -636,7 +643,7 @@ export default function FicheMouvement({
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
   reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe, restesAPayer, payeesEnTrop,
-  restesARegler, paiementsDeLaCaisseIncomplets, caisse, onEcrireCompteBilan, onRetirerCompteBilan,
+  restesARegler, paiementsDeLaCaisseIncomplets, caisse, onEcrireCompteBilan, onRetirerCompteBilan, compteBancaire, onConfirmerVirementInterne,
   suivisTva, declarationsTvaIncompletes, releveIncomplet, onRapprocherDeclarationTva, onRetirerDeclarationTva,
   dossierId, envoisDuClient, accesDuReleve, piecesIncompletes, onDemanderAuClient,
   onEcarterProposition, onSupprimerMessage,
@@ -1399,7 +1406,16 @@ export default function FicheMouvement({
         <div className="fiche-mouvement-tuiles">
           <div className="fiche-mouvement-tuile"><span>Date</span><strong>{formatDate(ligne.date)}</strong></div>
           <div className="fiche-mouvement-tuile"><span>Montant</span><strong>{formatMoney(ligne.montant)}</strong></div>
+          {compteBancaire.etat === 'compte' && (
+            <div className="fiche-mouvement-tuile"><span>Compte bancaire</span><strong>{compteBancaire.libelle}</strong></div>
+          )}
         </div>
+        {compteBancaire.etat === 'illisible' && (
+          <p className="fiche-mouvement-note" role="status">
+            Les comptes bancaires du dossier n’ont pas été lus en entier ({compteBancaire.motif}) : le compte de ce mouvement ne se
+            dit pas, et aucun virement entre comptes ne se propose.
+          </p>
+        )}
 
         <div className="fiche-mouvement-etat">
           {ligne.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
@@ -1458,6 +1474,41 @@ export default function FicheMouvement({
         {/* EN TÊTE (étape C6) : l'encaissement d'une facture d'avant la bascule qui cite ce crédit propose l'exemplaire de
             sa facture, sous ce qui a été saisi et quand ; « Associer » est le rapprochement d'hier, sous le verrou de
             l'onglet. Rien sur des ventes facturées qui ne sont pas lues en entier (le module rend null). */}
+        {/* LE VIREMENT ENTRE COMPTES (lot MCB3, MCB-Q3) : en tête, sur un mouvement encore à traiter et que rien ne fige. */}
+        {compteBancaire.etat === 'compte' && compteBancaire.candidats.length > 0 && aTraiter && !fige && (
+          <section className="fiche-mouvement-section">
+            <h3>
+              {compteBancaire.candidats.some((c) => c.propose) ? 'Virement entre comptes proposé'
+                : `${compteBancaire.candidats.length} mouvements en face, sur un autre compte`}
+            </h3>
+            <p className="fiche-mouvement-note">
+              Un mouvement du montant opposé, sur un autre compte bancaire du dossier, à {JOURS_EN_FACE} jours au plus : ce
+              mouvement est peut-être un virement entre deux comptes du professionnel. Confirmé, chacun s’écrit au compte des
+              virements internes ({plan.virements_internes}) face à la banque, qui revient à zéro — ni charge ni recette, la 2035
+              ne le voit pas. Aucun lot ne le prend tant qu’il n’est pas confirmé.
+              {compteBancaire.candidats.length > 1 && !compteBancaire.candidats.some((c) => c.propose)
+                && ' Plusieurs conviennent : aucun n’est proposé, choisis celui qui est l’autre moitié du virement.'}
+            </p>
+            {compteBancaire.candidats.map((c) => (
+              <div key={c.ligneId} className="fiche-mouvement-boutons">
+                <p className="fiche-mouvement-note">
+                  {formatDate(c.date)} — {formatMoney(c.montant)} — « {c.compte} »
+                  {c.dejaAuCompte && ' — déjà écrit au compte des virements internes : il ne reste que ce mouvement-ci'}
+                </p>
+                <button
+                  type="button"
+                  className={c.propose ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
+                  disabled={occupe}
+                  aria-label={`Virement entre comptes avec le mouvement du ${formatDate(c.date)}`}
+                  onClick={() => onConfirmerVirementInterne(c.ligneId)}
+                >
+                  {c.dejaAuCompte ? `Écrire ce mouvement au ${plan.virements_internes}` : `Écrire les deux au ${plan.virements_internes}`}
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
+
         {rapprochementPropose && (
           <RapprochementProposeVue
             ligne={ligne}
