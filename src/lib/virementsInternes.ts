@@ -49,7 +49,7 @@ export const JOURS_DU_VIREMENT_INTERNE = 3
 
 /** Ce que le lot écarte, et pourquoi : la raison que `ecartDuLot` (lib/mouvementsDesVentes.ts) et la fiche disent. */
 export const RAISON_VIREMENT_INTERNE = 'un mouvement du montant opposé, sur un autre compte bancaire du dossier, en fait '
-  + 'peut-être un virement entre comptes, à confirmer depuis sa fiche — classé autrement, il manquerait au 580000'
+  + 'peut-être un virement entre comptes, à confirmer depuis sa fiche — classé autrement, il manquerait au compte des virements internes'
 
 /** Ce que l'analyse lit d'un mouvement. */
 export type MouvementDuVirement = MouvementBancaire & Pick<LigneBancaire, 'compte_bancaire_id'>
