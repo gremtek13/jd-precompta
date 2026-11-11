@@ -13,7 +13,7 @@ import {
 import { refusDesChampsBnc, type LigneAJuger } from './champsBncFiges'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { confronterLOuverture, ouvertureEnEcart } from './ouvertureConfrontee'
-import { eclatementDeLExercice, phraseDeLEclatement } from './ouvertureEclatee'
+import { eclatementDeLExercice, refusALaValidation } from './ouvertureEclatee'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import {
   immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec,
@@ -826,16 +826,19 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // de l'autre compte de zéro, et la validation figerait les deux. À écrire, à réécrire, à retirer, ou retenue par un relevé
   // qui manque ou qui contredit l'autre — les mots de la base, que la carte de l'onglet Écritures dit aussi. DERRIÈRE
   // `COMPTES_BANCAIRES_PREVUS` : drapeau baissé, la lecture des comptes est `sans_objet`, une part sans compte, rien à éclater —
-  // et rien ne se dit. Sur des contrôles de relevés illisibles, rien non plus : `releves-inconnus` le dit plus bas.
+  // et rien ne se dit. Sur des contrôles de relevés illisibles, rien non plus : `releves-inconnus` le dit plus bas. La base le
+  // refuse aussi, aux mêmes mots (`refusALaValidation`), une fois sa migration en base : le filet de MCB5G-Q2, un déclencheur sur
+  // `exercices_valides` (supabase/preparees/20261111235500_ouverture_eclatee_a_la_validation.sql, préparée, pas appliquée).
   if (d.comptesBancaires.etat === 'lus' && d.controlesReleves !== null) {
     const eclatement = eclatementDeLExercice({
       annee: d.annee, role: d.modele.plan.banque, parts: partsDuReleve, reprise: d.aNouveaux, reportes: d.soldesReportes,
       anneesValidees: d.anneesValidees, datesDesEcritures: d.ecritures.map((e) => e.date), datesDesMouvements: d.lignes.map((l) => l.date),
     }, d.ecritures)
-    if (eclatement.etat !== 'sans_objet' && eclatement.etat !== 'a_jour') {
+    const refus = refusALaValidation(eclatement, d.annee)
+    if (refus !== null) {
       bloque({
         id: 'ouverture-a-eclater', nb: null, cible: 'ecritures',
-        message: phraseDeLEclatement(eclatement, d.annee) as string,
+        message: refus.message,
         detail: 'Dans Écritures, la carte « Ouverture de la banque par compte » l’écrit, la réécrit ou la retire d’un clic.',
       })
     }

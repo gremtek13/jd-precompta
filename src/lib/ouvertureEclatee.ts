@@ -39,6 +39,20 @@ export const REFUS_DU_CLIC: readonly RefusDeLaBase[] = [
   { cle: 'non_conforme', code: '22023', modele: "L'éclatement proposé n'est pas celui que les relevés du % commandent : le recomposer." },
 ]
 
+/** Les refus du filet de la validation (MCB5G-Q2) : `garder_ouverture_eclatee_a_la_validation`, le déclencheur que la migration
+ *  `ouverture_eclatee_a_la_validation` (supabase/preparees/20261111235500_…, préparée, pas appliquée) pose sur `exercices_valides`,
+ *  dans l'ordre de son corps. La validation d'un exercice s'y refuse quand l'écriture qui éclate son ouverture manque, n'est plus
+ *  à jour ou n'a plus rien à éclater ; les refus de la recomposition (`REFUS_DE_L_ECLATEMENT`) y passent tels quels. Ce sont
+ *  aussi les mots de la carte de l'onglet Écritures et du préalable `ouverture-a-eclater` (`phraseDeLEclatement`). */
+export const REFUS_DE_LA_VALIDATION: readonly RefusDeLaBase[] = [
+  { cle: 'a_retirer', code: '23514',
+    modele: 'Une écriture éclate l’ouverture de la banque au %, alors que plus rien n’est à éclater : la retirer.' },
+  { cle: 'a_ecrire', code: '23514',
+    modele: 'L’ouverture du % porte au compte de banque du rôle l’argent de tous les comptes bancaires : l’écriture qui passe le solde de chaque compte à son 512, d’après ses relevés du %, n’est pas écrite.' },
+  { cle: 'a_reecrire', code: '23514',
+    modele: 'L’écriture qui éclate l’ouverture de la banque au % n’est plus celle que les relevés du % commandent : la réécrire.' },
+]
+
 /** Le libellé des deux lignes d'une paire : le 512 du compte qui s'ouvre et le jour du relevé (jamais le libellé du compte,
  *  texte libre). Celui de la migration (`format('Ouverture du %s au relevé du %s', …)`). */
 export function libelleDeLEclatement(compte: string, veille: string): string {
@@ -224,22 +238,31 @@ export type EclatementAFaire = { etat: 'a_ecrire' | 'a_reecrire'; lignes: LigneD
 export const eclatementAFaire = (e: EtatDeLEclatement): e is EclatementAFaire =>
   e.etat === 'a_ecrire' || e.etat === 'a_reecrire' || e.etat === 'a_retirer'
 
-/** Ce que l'état dit, en une phrase qui se lit seule ; rien pour un éclatement sans objet. */
-export function phraseDeLEclatement(etat: EtatDeLEclatement, annee: number): string | null {
+/** Le refus que la validation de l'exercice opposerait — le filet de MCB5G-Q2, ou la recomposition qu'il appelle —, aux mots
+ *  de la base ; rien pour un éclatement à jour ou sans objet. Le préalable `ouverture-a-eclater` le dit avant le clic. */
+export function refusALaValidation(etat: EtatDeLEclatement, annee: number): RefusDit | null {
   const jour = `01/01/${annee}`
   const veille = `31/12/${annee - 1}`
+  const dit = (cle: string, ...valeurs: string[]) =>
+    formuler(REFUS_DE_LA_VALIDATION.find((r) => r.cle === cle) as RefusDeLaBase, ...valeurs)
   switch (etat.etat) {
-    case 'sans_objet': return null
-    case 'a_ecrire':
-      return `L’ouverture du ${jour} porte au compte de banque du rôle l’argent de tous les comptes bancaires : l’écriture qui passe `
-        + `le solde de chaque compte à son 512, d’après ses relevés du ${veille}, n’est pas écrite.`
-    case 'a_jour': return `L’ouverture de la banque au ${jour} est éclatée entre les comptes bancaires, d’après leurs relevés du ${veille}.`
-    case 'a_reecrire':
-      return `L’écriture qui éclate l’ouverture de la banque au ${jour} n’est plus celle que les relevés du ${veille} commandent : la réécrire.`
-    case 'a_retirer':
-      return `Une écriture éclate l’ouverture de la banque au ${jour}, alors que plus rien n’est à éclater : la retirer.`
-    case 'retenu': return etat.refus.message
+    case 'sans_objet':
+    case 'a_jour': return null
+    case 'a_retirer': return dit('a_retirer', jour)
+    case 'a_ecrire': return dit('a_ecrire', jour, veille)
+    case 'a_reecrire': return dit('a_reecrire', jour, veille)
+    case 'retenu': return etat.refus
   }
+}
+
+/** Ce que l'état dit, en une phrase qui se lit seule ; rien pour un éclatement sans objet. Hors de « à jour », le refus que la
+ *  validation opposerait, mot pour mot (`refusALaValidation`). */
+export function phraseDeLEclatement(etat: EtatDeLEclatement, annee: number): string | null {
+  if (etat.etat === 'sans_objet') return null
+  if (etat.etat === 'a_jour') {
+    return `L’ouverture de la banque au 01/01/${annee} est éclatée entre les comptes bancaires, d’après leurs relevés du 31/12/${annee - 1}.`
+  }
+  return (refusALaValidation(etat, annee) as RefusDit).message
 }
 
 /** La confirmation du clic : chaque compte ouvert et son montant, et ce que l'écriture remplace ; ou le retrait. */
