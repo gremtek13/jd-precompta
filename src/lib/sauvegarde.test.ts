@@ -35,6 +35,7 @@ import {
 } from './sauvegarde'
 import { TABLES_DES_DOCUMENTS_ET_DEMANDES } from './documentsEtDemandes'
 import { TABLES_DES_ACHATS_DU_CLIENT } from './achatsClient'
+import { TABLES_DES_NOTES_DE_FRAIS } from './notesDeFrais'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { CAISSE_EXPORTEE } from './caisse'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
@@ -275,7 +276,8 @@ describe('ordre de restauration', () => {
     // tables des achats du client (sauvegardeAchatsDuClient.test.ts).
     expect(ORDRE_RESTAURATION_PREVU.slice(ORDRE_RESTAURATION_PREVU.indexOf('dossier_permanent') + 1)
       .find((t) => !(TABLES_DES_DOCUMENTS_ET_DEMANDES as readonly string[]).includes(t)
-        && !(TABLES_DES_ACHATS_DU_CLIENT as readonly string[]).includes(t))).toBe('pieces_jointes_ecartees')
+        && !(TABLES_DES_ACHATS_DU_CLIENT as readonly string[]).includes(t)
+        && !(TABLES_DES_NOTES_DE_FRAIS as readonly string[]).includes(t))).toBe('pieces_jointes_ecartees')
     expect(violationsOrdre(ORDRE_RESTAURATION, TOUS_LES_LIENS)).toEqual([])
     expect(RELATIONS.filter((r) => r.enfant === 'dossier_permanent')
       .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())

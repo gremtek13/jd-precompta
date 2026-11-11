@@ -404,7 +404,9 @@ describe('les essais de la base, rejoués en production', () => {
     // migration préparée et celle qu'elle suppose (B1) : un seul modèle « apres » porte les deux ; SÛR au banc.
     // Vingt et un le 11/11/2026 : `achatsClient` (B4, `achats_du_client`) entré dans la famille « apres », après sa migration
     // préparée et celle qu'elle suppose (B1) : un seul modèle « apres » porte les deux.
-    expect(cas.length).toBe(21)
+    // Vingt-deux le 11/11/2026 : `notesDeFrais` (B7, `notes_de_frais`) entré dans la famille « apres », après sa migration
+    // préparée et celle qu'elle suppose (B1) : un seul modèle « apres » porte les deux.
+    expect(cas.length).toBe(22)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
