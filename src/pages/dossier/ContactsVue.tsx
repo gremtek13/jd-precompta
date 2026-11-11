@@ -14,7 +14,9 @@ import {
   ficheDuContactCsv, messageDeLExportDeLaFiche, nomFichierDeLaFiche, phraseDeLExportDeLaFiche,
 } from '../../lib/contactsExport'
 import { lireLesContacts, type LectureDesContacts } from '../../lib/contactsLecture'
-import { effacerContact, enregistrerContact, importerContacts, reprendreContact, retirerContact } from '../../lib/contactsEcriture'
+import {
+  effacerContact, enregistrerContact, enregistrerFicheLiee, importerContacts, reprendreContact, retirerContact,
+} from '../../lib/contactsEcriture'
 import {
   LIBELLES_TYPE_CONTACT, champsDeRechercheContact, confirmationDeLEffacement, contactsAffichables, contactsAffiches, delaiAffiche,
   gestesDuContact, identifiantAffiche, infoDesSoins, mentionContactParLeClient, refusDeLaSaisieContact, signalementDesSoins,
@@ -25,6 +27,8 @@ import { contactsSansActivite, phraseDuContactSansActivite } from '../../lib/con
 import { lireLesActivitesDesContacts, type LectureDesActivites } from '../../lib/contactsInactifsLecture'
 import ContactSaisieModal from './ContactSaisieModal'
 import ContactsImportModal from './ContactsImportModal'
+import FichesLieesSection from './FichesLieesSection'
+import { FICHES_LIEES_PREVUES, type FicheLiee } from '../../lib/fichesLiees'
 
 // « CLIENTS » (espace client, étape A4b1 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT : LE
 // PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », §A.4) : le fichier des clients du client — la liste et ses gestes (nouveau client,
@@ -80,6 +84,8 @@ export default function ContactsVue(props: Props) {
   const [aEffacer, setAEffacer] = useState<Contact | null>(null)
   // La fenêtre « Importer des clients » est ouverte.
   const [importOuvert, setImportOuvert] = useState(false)
+  // Une fenêtre des fiches reliées (LM3) est ouverte : l'erreur s'y dit, pas ici.
+  const [ficheOuverte, setFicheOuverte] = useState(false)
   const [occupe, setOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -226,6 +232,34 @@ export default function ContactsVue(props: Props) {
     if (fait) setImportOuvert(false)
   }
 
+  // LM3 : les gestes d'une fiche reliée au dossier d'un client, sous le MÊME verrou que ceux des clients. La section a jugé la
+  // saisie avant le clic (`refusDeLaSaisieDeFicheLiee`) ; la base juge encore, et son refus se dit sous ses mots.
+  async function enregistrerFiche(fiche: FicheLiee | null, envoi: Record<string, string | number | null>, nom: string) {
+    return sousVerrou(fiche == null ? 'Le dossier n’a pas pu être relié.' : 'La fiche n’a pas pu être enregistrée.', async () => {
+      await enregistrerFicheLiee(dossierId, fiche?.id ?? null, envoi)
+      return fiche == null ? `Dossier « ${nomDansUnRefus(nom)} » relié.` : `Fiche de « ${nomDansUnRefus(nom)} » enregistrée.`
+    })
+  }
+
+  async function basculerFiche(fiche: FicheLiee, nom: string) {
+    if (fiche.retire_le == null) {
+      return sousVerrou('La fiche n’a pas pu être retirée.', async () => {
+        await retirerContact(dossierId, fiche.id)
+        return `Fiche de « ${nomDansUnRefus(nom)} » retirée.`
+      })
+    }
+    return sousVerrou('La fiche n’a pas pu être reprise.', async () => {
+      await reprendreContact(dossierId, fiche.id)
+      return `Fiche de « ${nomDansUnRefus(nom)} » reprise.`
+    })
+  }
+
+  // LM3 : une fenêtre des fiches reliées s'ouvre (l'erreur précédente part) ou se ferme. Stable : la section l'appelle d'un effet.
+  function quandUneFicheSOuvre(ouverte: boolean) {
+    setFicheOuverte(ouverte)
+    if (ouverte) { setErreur(null); setMessage(null) }
+  }
+
   function ouvrirLImport() {
     setErreur(null)
     setMessage(null)
@@ -319,7 +353,7 @@ export default function ContactsVue(props: Props) {
         </p>
       )}
 
-      {!fenetre && !aEffacer && !importOuvert && erreur && <p className="error-text" role="alert">{erreur}</p>}
+      {!fenetre && !aEffacer && !importOuvert && !ficheOuverte && erreur && <p className="error-text" role="alert">{erreur}</p>}
       {message && <p role="status">{message}</p>}
 
       <div className="card table-scroll" style={{ padding: 0 }}>
@@ -454,6 +488,15 @@ export default function ContactsVue(props: Props) {
               </ul>
             ))}
         </section>
+      )}
+
+      {/* LM3 : les fiches reliées aux dossiers des clients, dans le dossier du cabinet seul (la section se tait ailleurs), au
+          cabinet seul, sous le drapeau de leur migration ; leurs gestes passent le verrou de la vue. */}
+      {FICHES_LIEES_PREVUES && espace === 'cabinet' && (
+        <FichesLieesSection
+          dossierId={dossierId} contacts={contacts} complete={complete} occupe={occupe} erreur={erreur}
+          onEnregistrer={enregistrerFiche} onBasculer={basculerFiche} onFenetre={quandUneFicheSOuvre}
+        />
       )}
 
       {fenetre && peutEcrire && (

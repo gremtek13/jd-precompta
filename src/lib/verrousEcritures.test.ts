@@ -55,6 +55,11 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     nature: 'lecture',
     raison: 'Lit le rôle de la session (fonction `security definer` sans écriture), au montage d’AuthContext.',
   },
+  'rpc:identites_des_fiches_liees': {
+    nature: 'lecture',
+    raison: 'L’identité que chaque dossier lié donne (fonction `security definer` sans écriture ; migration préparée '
+      + '`fiche_liee_au_dossier_du_client`, LM3) : la vue « Clients » du dossier du cabinet et le choix d’un client la lisent.',
+  },
   'rpc:couverture_du_releve': {
     nature: 'lecture',
     raison: 'Les mois du relevé d’un dossier (fonction `stable`, `security definer`, sans écriture ; migration '

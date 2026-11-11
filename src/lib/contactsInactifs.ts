@@ -1,3 +1,4 @@
+import { estFicheLiee } from './fichesLiees'
 import { dateAParis } from './format'
 import type { Contact } from './types'
 
@@ -66,7 +67,8 @@ export function contactsSansActivite(
   }
   const proposes: ContactSansActivite[] = []
   for (const contact of contacts) {
-    if (contact.efface_le != null) continue
+    // Une fiche liée au dossier d'un client (LM3) n'a pas de nom à proposer : son dossier est la source, pas ce fichier.
+    if (contact.efface_le != null || estFicheLiee(contact)) continue
     const activite = derniere.get(contact.id)
     const depuis = activite ?? dateAParis(contact.cree_le)
     const proposeLe = ajouterAnnees(depuis, ANNEES_SANS_ACTIVITE)

@@ -2254,6 +2254,10 @@ export interface Contact {
   delai_paiement_jours: number | null
   // Mille caractères au plus, que le client « Ventes » lit comme le cabinet (le nom `notes` est réservé).
   observations: string | null
+  // LM3 (`FICHES_LIEES_PREVUES`, lib/fichesLiees.ts) : le dossier du client qu'une fiche du dossier du cabinet désigne.
+  // ABSENTE tant que sa migration n'est pas en base (une colonne absente n'est pas un lien) ; liée, la fiche n'a ni nom ni
+  // identité, qui se lisent du dossier — `nom` deviendra facultatif au collage, et `estFicheLiee` écarte déjà ces lignes.
+  dossier_client_id?: string | null
   // Le retrait et l'effacement, chacun entier ou absent, et jamais les deux.
   retire_le: string | null
   retire_par: string | null

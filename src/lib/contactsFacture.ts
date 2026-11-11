@@ -1,3 +1,4 @@
+import { estFicheLiee } from './fichesLiees'
 import { nomDansUnRefus, sansBlancsAuxBords } from './articles'
 import { enumeration } from './articlesFacture'
 import { REFUS_ENREGISTREMENT_CONTACT, regleDesSoins, saisieQuiPart, type RefusContact, type SaisieContact } from './contacts'
@@ -210,7 +211,8 @@ export function phraseDeLEcheanceARecalculer(r: EcheanceARecalculer): string {
 export function contactDeLaProvenance(contactId: string | null, contacts: readonly Contact[] | null): Contact | null {
   if (contactId == null || contacts == null) return null
   const contact = contacts.find((c) => c.id === contactId)
-  return contact != null && contact.efface_le == null ? contact : null
+  // Une fiche liée (LM3) n'a pas de nom à dire : le formulaire de la facture la nomme par l'identité lue de son dossier.
+  return contact != null && contact.efface_le == null && !estFicheLiee(contact) ? contact : null
 }
 
 // ── « Enregistrer ce client » ───────────────────────────────────────────────────────────────────────────────────────────

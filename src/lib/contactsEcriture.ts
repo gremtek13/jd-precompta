@@ -64,3 +64,22 @@ export async function effacerContact(dossierId: string, contactId: string): Prom
   if (error) throw new Error(error.message)
   return ecrit(data, { id: contactId, retire: false, efface: true })
 }
+
+/**
+ * Crée ou modifie une fiche liée au dossier d'un client (LM3, `FICHES_LIEES_PREVUES`) : le lien et les quatre champs propres à la
+ * facturation (`saisieDeLaFicheLiee`), par `enregistrer_contact` seule. Rend la ligne écrite, qui porte le lien envoyé — sinon
+ * la base ne l'a pas gardé, et on le dit ; lève le refus de la base.
+ */
+export async function enregistrerFicheLiee(
+  dossierId: string, contactId: string | null, envoi: Record<string, string | number | null>,
+): Promise<Contact> {
+  const { data, error } = await supabase.rpc('enregistrer_contact', {
+    p_dossier_id: dossierId, p_contact_id: contactId, p_contact: envoi,
+  })
+  if (error) throw new Error(error.message)
+  const ligne = ecrit(data, { id: contactId, retire: false, efface: false })
+  if (typeof ligne.dossier_client_id !== 'string' || ligne.dossier_client_id !== envoi.dossier_client_id) {
+    throw new Error('La base n’a pas rendu la fiche liée au dossier choisi : relis la liste avant de recommencer.')
+  }
+  return ligne
+}
