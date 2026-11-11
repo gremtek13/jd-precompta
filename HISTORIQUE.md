@@ -51244,3 +51244,16 @@ les factures perdues ; LM3-Q1 (B), une fiche liée au dossier d'un client peut �
 main ; LM5Q2-Q1 (B), le collaborateur qui suit un client voit aussi les lettres en brouillon, sans honoraires ; LM7-Q4
 (C), le premier et le dernier mois d'une lettre se facturent au prorata, au jour près. MVP-BANQUES-Q1 reste « à vérifier
 avec le praticien ».
+
+### 11/11/2026 — LA LECTURE DE LA CASCADE (141) COMPTE LES SEPT GARDES DE B2 ET B4
+
+Signalé par B7 : le contrôle 141 de `validationExercice.sql` lit tous les déclencheurs posés avant une suppression et
+compare leur liste à une attente écrite par couches, une par migration préparée ; B2 (`documents_et_demandes`, cinq gardes,
+une par table) et B4 (`achats_du_client`, `paiements_declares_garde` et `pieces_vues_garde`) n'en avaient pas. Établi sur une
+copie de la réplique mère mise au niveau de la production (197 migrations, historique et lecture de la cascade égaux à la
+production) : le 141 passe sans elles (58), avec B1 (58) et avec B1+B7 (60), TOMBE avec B2 (63 lus), B2+B4 (65), B2+B4+B7
+(67). Les sept gardes sont de la forme `dossier` : aucun défaut de migration. Deux couches de même forme que les voisines,
+conditionnées sur `documents_cabinet` et `paiements_declares` : 245 lignes justes dans les six états ; chaque couche
+retirée fait tomber le 141 sur les seules bases qui portent sa migration. `ventesFacturees.sql` et `rls.sql` justes avec
+B2+B4+B7, `restauration.sql` rend les mêmes quatorze « rien n'est prouvé » (le semis de la réplique) avec ou sans elles.
+Reste : le 141 ne connaît pas encore les gardes de suppression de LM1, LM4, LM7, LM8 et `originaux_retenus_par_leur_import`.
