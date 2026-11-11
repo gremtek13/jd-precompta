@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
 import type { CompteDuReleve } from './importParCompte'
 import {
-  REFUS_DE_L_ECLATEMENT, REFUS_DU_CLIC, etatDeLEclatement, eurosDeLaBase, libelleDeLEclatement, ouvertureEclateeAttendue,
-  type EntreesDeLEclatement,
+  REFUS_DE_LA_VALIDATION, REFUS_DE_L_ECLATEMENT, REFUS_DU_CLIC, etatDeLEclatement, eurosDeLaBase, libelleDeLEclatement,
+  ouvertureEclateeAttendue, phraseDeLEclatement, refusALaValidation, type EntreesDeLEclatement,
 } from './ouvertureEclatee'
 import { releveParCompte } from './releveParCompte'
 import type { ControleReleveBancaire } from './types'
@@ -123,5 +123,80 @@ describe("l'état de l'éclatement dans le brouillon", () => {
     expect(etatDeLEclatement({ etat: 'rien' }, BONNE.map(ecrite), 2026).etat).toBe('a_retirer')
     expect(etatDeLEclatement({ etat: 'rien' }, [{ ...ecrite(BONNE[0]), ouverture_compte_bancaire_id: null }], 2026).etat).toBe('sans_objet')
     expect(etatDeLEclatement(ouvertureEclateeAttendue(entrees({ reportes: report(1300) })), [], 2026).etat).toBe('retenu')
+  })
+})
+
+// ── Le filet de la validation (MCB5G-Q2) ─────────────────────────────────────────────────────────────────────────────────
+// La migration `ouverture_eclatee_a_la_validation` (préparée) : un déclencheur sur `exercices_valides` qui refuse la validation
+// d'un exercice dont l'écriture qui éclate l'ouverture manque, n'est plus à jour ou n'a plus rien à éclater — aux mots du
+// préalable `ouverture-a-eclater`. Son essai : les contrôles 40 à 51 de supabase/essais/ouvertureEclatee.sql.
+describe('le filet de la validation, au texte de sa migration', () => {
+  const FILET = readFileSync('supabase/preparees/20261111235500_ouverture_eclatee_a_la_validation.sql', 'utf8')
+  const RETOUR_FILET = readFileSync('supabase/preparees/retour/20261111235600_retour_ouverture_eclatee_a_la_validation.sql', 'utf8')
+  const RETOUR_OUVERTURE = readFileSync('supabase/preparees/retour/20261111235100_retour_ouverture_eclatee_par_compte.sql', 'utf8')
+  const ESSAI = readFileSync('supabase/essais/ouvertureEclatee.sql', 'utf8')
+  const DEPART = readFileSync('supabase/preparees/20261111191000_depart_du_client.sql', 'utf8')
+  const attendu = ouvertureEclateeAttendue(entrees())
+  const ecrite = (l: (typeof BONNE)[number]) => ({ date: '2026-01-01', compte: l.compte, sens: l.sens as 'debit' | 'credit',
+    montant: l.montant, libelle: l.libelle, ouverture_compte_bancaire_id: l.compte_bancaire_id })
+  const ETATS = {
+    a_ecrire: etatDeLEclatement(attendu, [], 2026),
+    a_reecrire: etatDeLEclatement(attendu, [ecrite({ ...BONNE[0], montant: 200 }), ecrite({ ...BONNE[1], montant: 200 })], 2026),
+    a_retirer: etatDeLEclatement({ etat: 'rien' }, BONNE.map(ecrite), 2026),
+  }
+
+  it('chaque refus, son code et ses mots, dans l’ordre du corps du déclencheur', () => {
+    let position = 0
+    for (const r of REFUS_DE_LA_VALIDATION) {
+      const morceaux = r.modele.split('%')
+      const debut = FILET.indexOf(`raise exception '${morceaux[0]}`, position)
+      expect(debut, r.cle).toBeGreaterThan(position)
+      const raise = FILET.slice(debut, FILET.indexOf(';', debut))
+      for (const m of morceaux) expect(raise, r.cle).toContain(m)
+      expect(raise).toContain(`errcode = '${r.code}'`)
+      expect(raise.match(/to_char\(v_(debut|veille), 'DD\/MM\/YYYY'\)/g)?.length, r.cle).toBe(morceaux.length - 1)
+      position = debut
+    }
+  })
+
+  it('le préalable, la carte et la base disent les mêmes mots ; à jour et sans objet, rien', () => {
+    for (const [cle, etat] of Object.entries(ETATS)) {
+      expect(etat.etat).toBe(cle)
+      const refus = refusALaValidation(etat, 2026)
+      expect(refus?.code).toBe('23514')
+      expect(phraseDeLEclatement(etat, 2026)).toBe(refus?.message)
+    }
+    const retenu = etatDeLEclatement(ouvertureEclateeAttendue(entrees({ reportes: report(1300) })), [], 2026)
+    expect(refusALaValidation(retenu, 2026)).toEqual(retenu.etat === 'retenu' ? retenu.refus : null)
+    expect(refusALaValidation(etatDeLEclatement(attendu, BONNE.map(ecrite), 2026), 2026)).toBeNull()
+    expect(refusALaValidation({ etat: 'sans_objet' }, 2026)).toBeNull()
+  })
+
+  it('l’essai attend ces mots, de 2026 et de 2025 (valider_exercice, de bout en bout)', () => {
+    for (const etat of Object.values(ETATS)) expect(ESSAI).toContain(`'23514|${refusALaValidation(etat, 2026)?.message}'`)
+    expect(ESSAI).toContain(`'23514|${refusALaValidation(ETATS.a_ecrire, 2025)?.message}'`)
+    expect(refusALaValidation(ETATS.a_ecrire, 2025)?.message).toContain('relevés du 31/12/2024')
+  })
+
+  it('jugée sous le propriétaire, jamais sous le rôle de l’API ; ni definer, ni exemption du super-administrateur', () => {
+    const corps = FILET.slice(FILET.search(/create function public\.garder_ouverture_eclatee_a_la_validation\(\)/i), FILET.indexOf('$$;'))
+    expect(corps).toContain("if current_user = 'authenticated' then\n    return new;")
+    expect(corps).not.toMatch(/security definer|is_super_admin/i)
+    expect(FILET).toContain("'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure\n                  and prosecdef")
+    expect(FILET).not.toMatch(/\b(drop|delete|truncate)\b/i)
+  })
+
+  it('le déclencheur suit celui de la conservation d’un dossier qui part (l’ordre des noms)', () => {
+    const noms = [...FILET.matchAll(/create trigger (\w+)\n  before insert on public\.exercices_valides/gi),
+      ...DEPART.matchAll(/create trigger (\w+)\n  before insert on public\.exercices_valides/gi)].map((m) => m[1])
+    expect(noms).toEqual(['exercices_valides_ouverture_eclatee', 'exercices_valides_dossier_conserve'])
+    expect([...noms].sort()).toEqual(['exercices_valides_dossier_conserve', 'exercices_valides_ouverture_eclatee'])
+  })
+
+  it('les retours : le sien retire le déclencheur et sa fonction ; celui de l’ouverture éclatée l’attend', () => {
+    expect(RETOUR_FILET).toMatch(/drop trigger exercices_valides_ouverture_eclatee on public\.exercices_valides;/i)
+    expect(RETOUR_FILET).toMatch(/drop function public\.garder_ouverture_eclatee_a_la_validation\(\);/i)
+    expect(RETOUR_OUVERTURE).toContain("if to_regprocedure('public.garder_ouverture_eclatee_a_la_validation()') is not null then")
+    expect(RETOUR_OUVERTURE.indexOf('garder_ouverture_eclatee_a_la_validation')).toBeLessThan(RETOUR_OUVERTURE.search(/^drop /im))
   })
 })

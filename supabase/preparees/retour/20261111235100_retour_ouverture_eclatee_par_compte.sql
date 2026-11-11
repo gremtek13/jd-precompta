@@ -9,6 +9,10 @@ begin
   if to_regprocedure('public.ecrire_ouverture_eclatee(uuid, integer, jsonb)') is null then
     raise exception 'La migration ouverture_eclatee_par_compte n''est pas en base : rien à retirer.';
   end if;
+  -- Le filet de la validation (MCB5G-Q2) appelle `ouverture_eclatee_attendue` : retirée sous lui, toute validation tomberait.
+  if to_regprocedure('public.garder_ouverture_eclatee_a_la_validation()') is not null then
+    raise exception 'Le filet de la validation (ouverture_eclatee_a_la_validation, MCB5G-Q2) est en base : son retour se colle d''abord.';
+  end if;
   if exists (select 1 from public.ecritures_brouillon where ouverture_compte_bancaire_id is not null) then
     raise exception 'Des écritures éclatent l''ouverture de la banque : le retour se refuse tant qu''elles existent (une validation les aurait figées, ou les recomposer à vide les retire).';
   end if;
