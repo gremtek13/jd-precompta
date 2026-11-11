@@ -2,15 +2,20 @@ import { formatDate, formatMoney } from '../../lib/format'
 import { formaterMontant } from '../../lib/gabarit2035'
 import { LIGNES_2035E, SEUIL_ANNEXE_2035E, SEUIL_CVAE_A_PAYER, cadreMonoEtablissement } from '../../lib/declaration2035E'
 import type { Annexe2035E } from '../../lib/declaration2035E'
+import type { Annexe2035ESaisie } from '../../lib/saisies2035E'
 
 // L'ANNEXE 2035-E SOUS LA 2035 DE CHAQUE EXERCICE (ligne 48 de la feuille de route) : si elle est due, ce qu'elle porte,
 // et ce que l'application ne sait pas et suppose — dit, avec son montant, plutôt que tu. Le calcul vit dans
 // lib/declaration2035E.ts ; cette carte ne fait que le montrer, et le PDF porte les mêmes lignes à l'euro.
 //
 // AUCUN GESTE ICI : l'annexe se remplit avec la liasse, par « Remplir le formulaire officiel ». Ce que le cabinet aurait à
-// saisir (la part des loyers qui se déduit, le cadre des mono-établissements) n'a pas encore de table où vivre.
-export default function Annexe2035ECard({ annexe, lectureIncomplete }: {
+// saisir (la part des loyers qui se déduit, le cadre des mono-établissements) vit dans `saisies_2035e` (préparée), saisi
+// par Saisies2035ECard derrière `SAISIES_2035E_EXPORTEES` ; drapeau baissé, `saisie` est nul et la carte dit ce qu'elle suppose.
+export default function Annexe2035ECard({ annexe, saisie, lectureIncomplete }: {
   annexe: Annexe2035E
+  // La saisie du cabinet pour l'exercice (lib/saisies2035E.ts, derrière `SAISIES_2035E_EXPORTEES`) : ses lignes, `null`
+  // pour « à saisir », et le cadre des mono-établissements. Nul : aucune saisie n'existe, l'annexe suppose et le dit.
+  saisie: Annexe2035ESaisie | null
   // Non nul quand l'annexe se calcule depuis une lecture partielle d'une des entrées de la 2035 (jamais pour un exercice
   // validé, tiré de ce que la base garde) : le motif.
   lectureIncomplete: string | null
@@ -21,7 +26,8 @@ export default function Annexe2035ECard({ annexe, lectureIncomplete }: {
   const euros = (n: number) => `${formaterMontant(n).replace(/ /g, '\u202f')}\u00a0€`
   const ligne = (code: string) => annexe.lignes.get(code) ?? 0
   // Comme le tableau de la 2035 : les lignes qui portent un montant, et les totaux, toujours.
-  const visibles = LIGNES_2035E.filter((l) => l.calculee || ligne(l.code) !== 0)
+  const valeur = (code: string): number | null => saisie ? saisie.lignes.get(code) ?? 0 : ligne(code)
+  const visibles = LIGNES_2035E.filter((l) => l.calculee || (saisie !== null && l.saisieCabinet) || ligne(l.code) !== 0)
   const cadre = cadreMonoEtablissement(annexe)
   // SUR UNE LECTURE PARTIELLE, L'OBLIGATION NE SE JUGE PAS, dans un sens comme dans l'autre : une recette non lue
   // ferait dire « non due » à une annexe due, une redevance de collaboration non lue « due » à une annexe qui ne l'est
@@ -82,19 +88,27 @@ export default function Annexe2035ECard({ annexe, lectureIncomplete }: {
                       {l.libelle}
                       <span className="muted" style={{ marginLeft: 8, fontSize: '0.85em' }}>{l.origine}</span>
                     </td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{euros(ligne(l.code))}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {valeur(l.code) === null ? <span className="muted">à saisir</span> : euros(valeur(l.code) ?? 0)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <ul style={{ margin: '8px 0', paddingLeft: 20 }}>
-            <li>
+            {saisie !== null && saisie.aSaisir.length > 0 && (
+              <li>
+                Reste à saisir pour cet exercice : {saisie.aSaisir.join(', ')}. Les totaux qui en dépendent ne se disent pas
+                tant que le cabinet ne les a pas portés.
+              </li>
+            )}
+            {saisie === null && <li>
               Loyers et locations non déduits : {euros(annexe.loyersNonDeduits)} (BF + BG − BW). Le loyer d’un bien pris en
               location pour plus de six mois, en crédit-bail ou en location-gérance ne se déduit pas de la valeur ajoutée — le
               cas du cabinet sous bail. Une location de six mois au plus se déduit en EM : à porter à la main tant que
               l’application ne la saisit pas.
-            </li>
+            </li>}
             {annexe.redevancesDeCollaboration === 0 && (
               <li>
                 Aucune redevance de collaboration versée en BW : l’application ne remplit pas cette case « dont » de la
@@ -114,24 +128,31 @@ export default function Annexe2035ECard({ annexe, lectureIncomplete }: {
                 d’affaires au-delà de laquelle elle ne s’impose pas — JU porte le plafond.
               </li>
             )}
-            <li>
+            {saisie !== null && saisie.cadre.etat !== 'a_dire' && (
+              <li>
+                {saisie.cadre.etat === 'non'
+                  ? 'Cadre réservé aux mono-établissements : non coché, la déclaration 1330-CVAE est à déposer.'
+                  : `Cadre réservé aux mono-établissements : coché, AJ = ${euros(saisie.cadre.chiffreDeReference)}, BK = ${saisie.cadre.effectif === null ? 'à saisir' : saisie.cadre.effectif}, la période du ${formatDate(saisie.cadre.du)} au ${formatDate(saisie.cadre.au)} ; la 1330-CVAE n’est pas à déposer.`}
+              </li>
+            )}
+            {(saisie === null || saisie.cadre.etat === 'a_dire') && <li>
               Cadre réservé aux mono-établissements, non rempli : l’application ne sait pas si le dossier n’a qu’un
               établissement au sens de la CFE, ni combien de salariés il emploie. S’il n’en a qu’un, sans salarié travaillant
               plus de trois mois hors de l’entreprise, cocher AH et porter AJ = {euros(cadre.chiffreDeReference)}, BK =
               l’effectif salarié, la période du {formatDate(cadre.du)} au {formatDate(cadre.au)} : la déclaration 1330-CVAE
               n’est alors pas à déposer. Sinon, la déposer avec JU = {euros(ligne('JU'))}.
-            </li>
+            </li>}
             <li>
               {annexe.cvae === 'nulle'
                 ? `Aucune CVAE à payer : sous ${euros(SEUIL_CVAE_A_PAYER)} de chiffre d’affaires, son taux est nul — la déclaration reste due.`
                 : `Chiffre d’affaires supérieur à ${euros(SEUIL_CVAE_A_PAYER)} : une CVAE peut être due, à liquider sur la déclaration 1329-DEF.`}
             </li>
-            <li>
+            {saisie === null && <li>
               Lignes laissées à zéro, faute de saisie : plus-values et moins-values de cession d’une activité normale et
               courante (EN, EV), variation de stock (EK), taxes sur le chiffre d’affaires (ER), amortissements de biens
               donnés en location (EU). Une sage-femme ou un garde-malade (hors maternité, maison de repos ou de soins) est
               exonéré de CFE et de CVAE de plein droit.
-            </li>
+            </li>}
           </ul>
           {annexe.incoherences.map((i) => (
             <p key={i.code} className="error-text" style={{ margin: '4px 0 0' }}>{i.raison}</p>

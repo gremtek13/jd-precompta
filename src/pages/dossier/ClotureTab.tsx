@@ -77,6 +77,10 @@ import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
 import { AUCUNE_SAISIE_2035, motifDesSaisies2035, SAISIES_2035_EXPORTEES, saisiesDeLExercice } from '../../lib/saisies2035'
 import type { LectureDesSaisies2035 } from '../../lib/saisies2035'
 import { lireLesSaisies2035 } from '../../lib/saisies2035Lecture'
+import { annexe2035EAvecSaisie, SAISIES_2035E_EXPORTEES, saisie2035EDeLExercice } from '../../lib/saisies2035E'
+import type { Annexe2035ESaisie, LectureDesSaisies2035E } from '../../lib/saisies2035E'
+import { lireLesSaisies2035E } from '../../lib/saisies2035ELecture'
+import Saisies2035ECard from './Saisies2035ECard'
 import SaisiesDuCabinet2035Card from './SaisiesDuCabinet2035Card'
 import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
 import { operationsDeCaisseDuDossier, operationsPourLesControles } from '../../lib/controlesDeLaCaisse'
@@ -142,6 +146,21 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     if (!SAISIES_2035_EXPORTEES) return
     let annule = false
     void lireLesSaisies2035(dossierId).then((lecture) => { if (!annule) setSaisiesLues(lecture) })
+    return () => { annule = true }
+  }, [dossierId])
+  // LES SAISIES DE L'ANNEXE 2035-E (ligne 48), gardées AVEC le dossier lu. Drapeau baissé, absentes, sans lecture :
+  // l'annexe suppose ce qu'elle supposait hier, et le dit. Levé, l'annexe d'un exercice reçoit sa saisie, lue en entier.
+  const [saisies2035ELues, setSaisies2035ELues] = useState<LectureDesSaisies2035E | null>(null)
+  const lectureDesSaisies2035E: LectureDesSaisies2035E | null = !SAISIES_2035E_EXPORTEES ? { dossierId, etat: 'absentes' }
+    : saisies2035ELues?.dossierId === dossierId ? saisies2035ELues : null
+  const relireLesSaisies2035E = useCallback(async () => {
+    if (!SAISIES_2035E_EXPORTEES) return
+    setSaisies2035ELues(await lireLesSaisies2035E(dossierId))
+  }, [dossierId])
+  useEffect(() => {
+    if (!SAISIES_2035E_EXPORTEES) return
+    let annule = false
+    void lireLesSaisies2035E(dossierId).then((lecture) => { if (!annule) setSaisies2035ELues(lecture) })
     return () => { annule = true }
   }, [dossierId])
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
@@ -1897,13 +1916,17 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           // exercice validé — ses cases et ses postes —, sinon celle du calcul. Les saisies du cabinet n'ont pas de table :
           // l'annexe dit ce qu'elle suppose (Annexe2035ECard).
           const postes = instantane ? instantane.postes : [...f.declaration.recettes, ...f.declaration.depenses]
-          const annexe = calculer2035E({
+          const entreeAnnexe = {
             annee,
             cases: instantane ? casesDeLInstantane(instantane.cases) : f.valeurs,
             formulaire: instantane ? casesDeLInstantane(instantane.formulaire) : arrondirPourFormulaire(f.valeurs, annee),
             forfaitKilometrique: forfaitKilometriqueDesPostes(postes),
-            saisies: SAISIES_2035E_ABSENTES,
-          })
+          }
+          // Drapeau levé et la saisie de l'exercice lue en entier : l'annexe la reçoit, muette sur ce qui reste à saisir.
+          const saisieAnnexe = saisie2035EDeLExercice(lectureDesSaisies2035E, annee)
+          const annexeSaisie: Annexe2035ESaisie | null = SAISIES_2035E_EXPORTEES && saisieAnnexe
+            ? annexe2035EAvecSaisie(entreeAnnexe, saisieAnnexe) : null
+          const annexe = annexeSaisie ? annexeSaisie.annexe : calculer2035E({ ...entreeAnnexe, saisies: SAISIES_2035E_ABSENTES })
           return (
             <Fragment key={annee}>
               {validation.valide && !instantane ? (
@@ -1929,6 +1952,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                   genere={genere === annee}
                   onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe)}
                   annexe2035E={annexe}
+                  annexeSaisie={annexeSaisie}
                   lectureAnnexe={instantane ? null : lectureIncomplete ?? saisiesIncompletes}
                   blocage={lectureIncomplete ?? saisiesIncompletes}
                   cotisations={cotisations}
@@ -1943,6 +1967,12 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                   key={`${annee}:${JSON.stringify(saisiesDeLExercice(lectureDesSaisies, annee))}`}
                   dossierId={dossierId} annee={annee} lecture={lectureDesSaisies}
                   fige={exerciceQuiFige(annee, anneesValidees) !== null} onRelire={relireLesSaisies} />
+              )}
+              {SAISIES_2035E_EXPORTEES && (
+                <Saisies2035ECard
+                  key={`${annee}:${JSON.stringify(saisieAnnexe)}`}
+                  dossierId={dossierId} annee={annee} lecture={lectureDesSaisies2035E}
+                  fige={exerciceQuiFige(annee, anneesValidees) !== null} onRelire={relireLesSaisies2035E} />
               )}
               <ConcordanceCard
                 concordance={concordances.get(annee)!.concordance}
@@ -1987,7 +2017,7 @@ function BoutonCloture({ cloture, onCloturer }: { cloture: boolean; onCloturer: 
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
 function FormulaireAnnuel({
-  dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, lectureAnnexe, blocage, cotisations, exerciceValide,
+  dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, annexeSaisie, lectureAnnexe, blocage, cotisations, exerciceValide,
   avertissement, cloture, onCloturer,
 }: {
   dossierId: string
@@ -2002,6 +2032,8 @@ function FormulaireAnnuel({
   onTelecharger: () => void
   // L'annexe 2035-E de l'exercice (lib/declaration2035E.ts) : due ou non, le formulaire la porte quand elle l'est.
   annexe2035E: Annexe2035E
+  // La même avec la saisie de l'exercice (ligne 48), drapeau levé ; nul, l'annexe d'hier.
+  annexeSaisie: Annexe2035ESaisie | null
   // Non nul quand l'annexe se calcule depuis une lecture partielle : son obligation ne se juge pas (Annexe2035ECard). Nul
   // pour un exercice validé, dont l'annexe se tire de la 2035 que la base garde.
   lectureAnnexe: string | null
@@ -2101,7 +2133,7 @@ function FormulaireAnnuel({
         </tbody>
       </table>
       </div>
-      <Annexe2035ECard annexe={annexe2035E} lectureIncomplete={lectureAnnexe} />
+      <Annexe2035ECard annexe={annexe2035E} saisie={annexeSaisie} lectureIncomplete={lectureAnnexe} />
       {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && <ReportDeclarationRevenus annee={annee} valeurs={valeurs} formulaire={formulaire} />}
       {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && (
         <VoletSocialCard dossierId={dossierId} annee={annee} valeurs={valeurs} blocage={blocage}

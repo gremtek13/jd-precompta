@@ -96,9 +96,10 @@ describe('le plan prévu, journal compris', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(ORDRE_RESTAURATION_PREVU[rang(TABLE) - 1]).toBe('parametres_facturation')
     // Depuis les étapes 2035S3 à S5, les saisies de la 2035 s'intercalent entre lui et les exercices validés ; depuis
-    // TNS-Q1 et TNS-Q4 (07/11/2026), le début d'activité et les paramètres des cotisations avant elles.
+    // TNS-Q1 et TNS-Q4 (07/11/2026), le début d'activité et les paramètres des cotisations avant elles ; depuis la ligne 48
+    // (11/11/2026), les saisies de l'annexe 2035-E après elles.
     expect(ORDRE_RESTAURATION_PREVU.slice(rang(TABLE) + 1, rang('exercices_valides')))
-      .toEqual(['debuts_d_activite', 'parametres_des_cotisations', 'saisies_2035'])
+      .toEqual(['debuts_d_activite', 'parametres_des_cotisations', 'saisies_2035', 'saisies_2035e'])
     for (const parent of ['dossiers', 'factures_emises', 'pieces']) expect(rang(TABLE), parent).toBeGreaterThan(rang(parent))
     expect(rang(TABLE)).toBeLessThan(rang('exercices_valides'))
   })

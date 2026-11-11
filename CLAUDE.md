@@ -476,10 +476,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   COTISATIONS : CE QUE LE MOTEUR DE L'URSSAF PERMET D'ESTIMER EN PLUS (LIGNE 27) », « LA RÉGULARISATION DES
   COTISATIONS (LIGNE 27, TNS-Q2) », « LE BANC DE CHARGE D'UNE ANNÉE », « LA RÉGULARISATION ET LES PARAMÈTRES DES
   COTISATIONS EN PRODUCTION (LIGNE 27) ».
-- **CFE et CVAE** (ligne 48) : restent la saisie par exercice de la part déductible des loyers, du cadre des
-  mono-établissements et de l'effectif (une table à créer), celle de BW, les dates d'activité d'un dossier qui cesse en
-  cours d'année, le millésime 2027, le plafonnement de la CET (plus tard, 48-Q9) → « L'ANNEXE 2035-E SE TIRE DE LA 2035
-  DÉPOSÉE ».
+- **CFE et CVAE** (ligne 48) : la saisie par exercice de l'annexe (EM, EN, EK, ER, EU, EV, AH, BK ; nul « à saisir »)
+  préparée le 11/11/2026 (`saisies_2035e`, `SAISIES_2035E_PREVUES` et `SAISIES_2035E_EXPORTEES` baissés) ; les dates
+  d'activité jugées à la main (48-Q6) ; restent le millésime 2027, le plafonnement de la CET (plus tard, 48-Q9) → « L'ANNEXE
+  2035-E SE TIRE DE LA 2035 DÉPOSÉE », « LA SAISIE DE L'ANNEXE 2035-E PAR EXERCICE, EN BASE ».
 - **Télédéclaration de la TVA** (ligne 28) : étape 2, la transmission par un partenaire EDI — Teledec choisi, qui veut
   voir l'application fonctionner avant d'ouvrir son API ; ASPOne.fr l'autre voie. Rien n'est écrit.
 - **Comptabilité d'engagement** (ligne 31) : restent les écarts de change et les frais bancaires (le rapprochement règle

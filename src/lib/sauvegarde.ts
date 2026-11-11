@@ -30,6 +30,7 @@ import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { ADRESSES_DES_ACCES_RETIRES_PREVUES, TABLES_DES_ADRESSES_DES_ACCES_RETIRES } from './adressesDesAccesRetires'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
+import { SAISIES_2035E_PREVUES, TABLES_DES_SAISIES_2035E } from './saisies2035E'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
@@ -416,6 +417,18 @@ export function auPlanDesNotesDeFrais(table: string, prevues: boolean): boolean 
   return prevues || !(TABLES_DES_NOTES_DE_FRAIS as readonly string[]).includes(table)
 }
 
+// LES SAISIES DE L'ANNEXE 2035-E (ligne 48 ; migration `saisies_2035e`, PRÉPARÉE le 11/11/2026) : une ligne par dossier et
+// par exercice, ce que seul le cabinet sait de l'annexe. Sous le drapeau de la migration (`SAISIES_2035E_PREVUES`,
+// src/lib/saisies2035E.ts), baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde. Sa
+// relation au dossier (cascade) ; son rang, juste après les saisies de la 2035, donc juste avant les exercices validés,
+// dont le gel refuserait une saisie réinsérée après eux ; son chemin, direct ; sa clé, la commune ; aucune vague.
+// sauvegardeSaisies2035E.test.ts éprouve le plan prévu et le plan du jour.
+
+/** Une table au plan, côté saisies de l'annexe 2035-E : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDesSaisies2035E(table: string, prevues: boolean): boolean {
+  return prevues || !(TABLES_DES_SAISIES_2035E as readonly string[]).includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -442,6 +455,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesDocumentsEtDemandes(table, DOCUMENTS_ET_DEMANDES_PREVUS)
     && auPlanDesAchatsDuClient(table, ACHATS_DU_CLIENT_PREVUS)
     && auPlanDesNotesDeFrais(table, NOTES_DE_FRAIS_PREVUES)
+    && auPlanDesSaisies2035E(table, SAISIES_2035E_PREVUES)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -606,6 +620,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'situations_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'situations_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'saisies_2035', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'saisies_2035e', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'imports_factures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'factures_importees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
@@ -1057,6 +1072,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'debuts_d_activite',
   'parametres_des_cotisations',
   'saisies_2035',
+  // L'annexe 2035-E (ligne 48) : juste après les saisies de la 2035, avant les exercices validés que leur gel exige.
+  'saisies_2035e',
   'exercices_valides',
   // Le départ d'un client (INAL5) : la conservation EN DERNIER — en cours, elle refuserait la restauration des pièces, des
   // écritures, des accès et des exercices validés (voir `TABLES_DU_DEPART`).
@@ -1544,6 +1561,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   adresses_des_acces_retires: { acces: 'direct' },
   situations_publiees: { acces: 'direct' },
   saisies_2035: { acces: 'direct' },
+  saisies_2035e: { acces: 'direct' },
   imports_factures: { acces: 'direct' },
   factures_importees: { acces: 'direct' },
   modeles_numerotation: { acces: 'direct' },
