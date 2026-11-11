@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
+import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { aujourdHuiAParis, formatDate } from '../../lib/format'
 import { ouvrirApercu } from '../../lib/apercu'
 import {
-  CE_QU_ATTEND_UNE_DEMANDE, LIBELLE_DETAIL_DE_LA_DEMANDE, LIBELLE_OBJET_DE_LA_DEMANDE, MOTIFS_DE_CLOTURE, MOTS_DE_L_ETAT,
-  refusDeLaCloture, refusDeLaDemande, type EtatDUneDemande,
+  CE_QU_ATTEND_UNE_DEMANDE, DOCUMENTS_ET_DEMANDES_PREVUS, LIBELLE_DETAIL_DE_LA_DEMANDE, LIBELLE_OBJET_DE_LA_DEMANDE,
+  MOTIFS_DE_CLOTURE, MOTS_DE_L_ETAT, RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE, refusDeLaCloture, refusDeLaDemande,
+  type EtatDUneDemande,
 } from '../../lib/documentsEtDemandes'
 import {
-  attenduDit, confirmationDeLaCloture, demandesDites, fichierDeLaReponseDit, motifDit, type DemandeDuCabinet,
+  accesProposables, accesProposeDOffice, attenduDit, CHOISIS_L_ACCES, confirmationDeLaCloture,
+  confirmationDeLaRelanceParEmail, demandesDites, fichierDeLaReponseDit, issueDeLaRelanceParEmail, motifDit,
+  relancesDitesAuCabinet, type DemandeDuCabinet,
 } from '../../lib/documentsEtDemandesVue'
-import { lireLesDemandesDuCabinet, type DemandesDuCabinetLues } from '../../lib/documentsEtDemandesLecture'
+import {
+  lireLesAccesARelancer, lireLesDemandesDuCabinet, type AccesARelancerLus, type DemandesDuCabinetLues,
+} from '../../lib/documentsEtDemandesLecture'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import ConfirmationArticle from './ConfirmationArticle'
 
@@ -21,7 +27,14 @@ import ConfirmationArticle from './ConfirmationArticle'
 //
 // L'ÉTAT D'UNE DEMANDE SE DÉDUIT, et seulement de listes lues en entier (demandes, réponses, relances) : sinon aucune n'est
 // montrée et aucun geste n'est offert. Les refus se disent avant le clic, aux mots de la base. Un seul verrou `useRef` pour
-// les trois gestes, relâché après la relecture.
+// les quatre gestes, relâché après la relecture.
+//
+// LA RELANCE PAR E-MAIL (étape B3b), sous `RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE` avec `DOCUMENTS_ET_DEMANDES_PREVUS`
+// (baissés : rien ne se lit ni ne s'offre de plus). Elle part de `send-email` (le modèle « relance_demande »), au cabinet
+// seul, vers l'adresse d'UN accès choisi à chaque relance (B3B-Q1), proposé d'office s'il est seul, parmi les accès lus EN
+// ENTIER : une lecture partielle ou refusée n'offre aucun bouton, et le dit ; un accès sans adresse lisible ne se propose
+// pas, et se compte. La confirmation nomme l'adresse et ce qui part — l'objet et l'échéance, jamais le détail (B3B-Q2) —, et
+// la signature du cabinet (B3B-Q3). L'adresse n'est jamais dans la requête : la fonction la relit sur l'accès.
 
 const BADGE: Readonly<Record<EtatDUneDemande, string>> = {
   ouverte: 'badge-ok', repondue: 'badge-neutral', en_retard: 'badge-warning', close: 'badge-neutral',
@@ -39,6 +52,10 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
   const gesteEnCours = useRef(false)
   const [occupe, setOccupe] = useState(false)
   const derniereLecture = useRef(0)
+  // Lu au rendu, jamais au chargement du module : les tests jouent les deux états des drapeaux.
+  const relanceParEmailOfferte = DOCUMENTS_ET_DEMANDES_PREVUS && RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE
+  const [accesLus, setAccesLus] = useState<AccesARelancerLus | null>(null)
+  const [aRelancer, setARelancer] = useState<{ demande: DemandeDuCabinet; accesId: string | null } | null>(null)
 
   async function relire() {
     const numero = ++derniereLecture.current
@@ -55,6 +72,14 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
     return () => { annule = true }
   }, [dossierId])
 
+  // Les accès, une fois par dossier, sous les drapeaux seulement ; la réponse se garde AVEC le dossier lu.
+  useEffect(() => {
+    if (!relanceParEmailOfferte) return
+    let annule = false
+    lireLesAccesARelancer(dossierId).then((l) => { if (!annule) setAccesLus(l) })
+    return () => { annule = true }
+  }, [dossierId, relanceParEmailOfferte])
+
   const lue = lecture !== null && lecture.dossierId === dossierId ? lecture : null
   const entiere = lue !== null && lue.demandes.complete && lue.reponses.complete && lue.relances.complete
   const aujourdhui = aujourdHuiAParis()
@@ -63,6 +88,8 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
     : !entiere ? 'Les demandes du dossier ne sont pas lues en entier : rien ne s’ouvre, ne se relance ni ne se clôt.'
       : refusDeLaDemande(saisie, aujourdhui)
   const dites = entiere ? demandesDites(lue.demandes.lignes, lue.reponses.lignes, lue.relances.lignes, aujourdhui) : []
+  const accesDuDossier = relanceParEmailOfferte && accesLus !== null && accesLus.dossierId === dossierId ? accesLus : null
+  const proposables = accesDuDossier !== null && accesDuDossier.acces.complete ? accesProposables(accesDuDossier.acces.lignes) : null
   const nomDuDepot = (genre: 'piece' | 'document', id: string | null) => {
     if (id === null || lue === null) return null
     const lus = genre === 'piece' ? lue.pieces : lue.documentsDivers
@@ -77,6 +104,7 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
   async function terminer() {
     await relire()
     setAClore(null)
+    setARelancer(null)
     setOccupe(false)
   }
   const dire = (error: unknown, reussi: string, rate: string) => setMessage(error
@@ -112,6 +140,29 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
     }
   }
 
+  // La relance par e-mail : l'identifiant de la demande et celui de l'accès, rien d'autre — l'adresse se relit en base.
+  async function relancerParEmail(demande: DemandeDuCabinet, acces: { user_id: string; email: string }) {
+    if (gesteEnCours.current) return
+    gesteEnCours.current = true
+    commencer()
+    try {
+      const { data, error } = await supabase.functions.invoke<{ ok?: boolean; relanceInscrite?: boolean; error?: string }>('send-email', {
+        body: { dossierId, type: 'relance_demande', demandeId: demande.id, accesId: acces.user_id },
+      })
+      if (error || data?.error || data?.ok !== true) {
+        const raison = data?.error ?? (error ? await extraireErreurFonction(error, 'Échec de l’envoi.') : 'réponse illisible de la fonction.')
+        setMessage({ genre: 'erreur', texte: `La relance par e-mail n’est pas partie : ${raison}` })
+      } else {
+        setMessage(issueDeLaRelanceParEmail(demande.objet, acces.email, data.relanceInscrite))
+      }
+    } catch (erreur) {
+      setMessage({ genre: 'erreur', texte: `La relance par e-mail n’a pas abouti : ${messageErreur(erreur, 'échec de l’envoi.')}` })
+    } finally {
+      await terminer()
+      gesteEnCours.current = false
+    }
+  }
+
   async function clore(demande: DemandeDuCabinet, motif: string) {
     if (gesteEnCours.current) return
     gesteEnCours.current = true
@@ -132,6 +183,9 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
   }
 
   const fenetre = aClore === null ? null : confirmationDeLaCloture(aClore.demande, aClore.motif)
+  const accesARelancer = aRelancer === null || proposables === null ? null
+    : proposables.proposables.find((a) => a.user_id === aRelancer.accesId) ?? null
+  const fenetreDeRelance = aRelancer === null ? null : confirmationDeLaRelanceParEmail(aRelancer.demande, accesARelancer?.email ?? null)
 
   return (
     <section style={{ marginTop: 24 }} aria-labelledby="demandes-au-client-titre">
@@ -139,7 +193,9 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
       <p className="muted" style={{ marginTop: 0 }}>
         Tous les accès du dossier lisent les demandes, avec ou sans la case « Documents », et y répondent depuis leur espace :
         un texte, un fichier qu’ils ont déposé, ou les deux. Une demande ne se modifie pas : pour la changer, clos-la
-        « remplacée » et ouvre-en une autre. La relance se lit dans l’espace du client, sans e-mail.
+        « remplacée » et ouvre-en une autre. {relanceParEmailOfferte
+          ? 'La relance à l’écran se lit dans l’espace du client ; la relance par e-mail part en plus à l’adresse d’un accès que tu choisis.'
+          : 'La relance se lit dans l’espace du client, sans e-mail.'}
       </p>
       {lue === null ? (
         <p className="muted">Chargement…</p>
@@ -151,6 +207,18 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
             consequence="L’état des demandes ne se déduit pas, et rien ne s’ouvre ni ne se clôt : recharge la page." />
           <BandeauLecturePartielle quoi="Les relances" accord="lues" motif={lue.relances.motif}
             consequence="Aucune demande ne s’affiche : recharge la page." />
+          {accesDuDossier !== null && (
+            <BandeauLecturePartielle quoi="Les accès du dossier" accord="lus" motif={accesDuDossier.acces.motif}
+              consequence="Aucune relance par e-mail ne s’offre : recharge la page." />
+          )}
+          {proposables !== null && (proposables.proposables.length === 0
+            ? <p className="muted">Aucun accès de ce dossier ne porte d’adresse électronique lisible : la relance par e-mail ne s’offre pas.</p>
+            : proposables.sansAdresse > 0 && (
+              <p className="muted">
+                {proposables.sansAdresse === 1 ? 'Un accès' : `${proposables.sansAdresse} accès`} sans adresse électronique
+                lisible ne {proposables.sansAdresse === 1 ? 'se propose' : 'se proposent'} pas à la relance par e-mail.
+              </p>
+            ))}
           {lue.reponses.complete && (
             <>
               <BandeauLecturePartielle quoi="Les pièces jointes aux réponses" accord="lues" motif={lue.pieces.motif}
@@ -205,7 +273,7 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
                     <p className="muted" style={{ margin: '4px 0' }}>
                       Ouverte le {formatDate(demande.ouverte_le)} · {attenduDit(demande.attendu)}
                       {demande.echeance !== null && ` · échéance le ${formatDate(demande.echeance)}`}
-                      {relances.length > 0 && ` · relancée ${relances.length} fois, la dernière le ${formatDate(relances[relances.length - 1].relancee_le)}`}
+                      {relances.length > 0 && ` · ${relancesDitesAuCabinet(relances)}`}
                       {demande.close_le !== null && ` · close le ${formatDate(demande.close_le)} (${motifDit(demande.motif_de_cloture)})`}
                     </p>
                     {demande.detail !== null && <p style={{ margin: '4px 0', whiteSpace: 'pre-wrap' }}>{demande.detail}</p>}
@@ -235,6 +303,12 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
                           onClick={() => { void relancer(demande) }}>
                           Relancer à l’écran
                         </button>
+                        {proposables !== null && proposables.proposables.length > 0 && (
+                          <button type="button" className="btn btn-outline btn-sm" disabled={occupe}
+                            onClick={() => setARelancer({ demande, accesId: accesProposeDOffice(proposables.proposables) })}>
+                            Relancer par e-mail
+                          </button>
+                        )}
                         <label>
                           Motif de clôture
                           <select value={motif} disabled={occupe}
@@ -262,6 +336,26 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
           onAnnuler={() => setAClore(null)}
         >
           {fenetre.paragraphes.map((p) => <p key={p}>{p}</p>)}
+        </ConfirmationArticle>
+      )}
+      {aRelancer && fenetreDeRelance && proposables !== null && (
+        <ConfirmationArticle
+          titre={fenetreDeRelance.titre} boutonLabel={fenetreDeRelance.bouton} occupe={occupe}
+          refus={accesARelancer === null ? CHOISIS_L_ACCES : null} erreur={null}
+          onConfirmer={() => { if (accesARelancer !== null) void relancerParEmail(aRelancer.demande, accesARelancer) }}
+          onAnnuler={() => setARelancer(null)}
+        >
+          {proposables.proposables.length > 1 && (
+            <label style={{ display: 'block', marginBottom: 8 }}>
+              Accès à relancer
+              <select value={aRelancer.accesId ?? ''} disabled={occupe}
+                onChange={(e) => setARelancer({ ...aRelancer, accesId: e.target.value === '' ? null : e.target.value })}>
+                <option value="">— choisis un accès —</option>
+                {proposables.proposables.map((a) => <option key={a.user_id} value={a.user_id}>{a.email}</option>)}
+              </select>
+            </label>
+          )}
+          {fenetreDeRelance.paragraphes.map((p) => <p key={p}>{p}</p>)}
         </ConfirmationArticle>
       )}
     </section>

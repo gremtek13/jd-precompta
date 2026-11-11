@@ -24,7 +24,8 @@
 // - "relance_demande" (espace client, étape B3b de la ligne 51.5) : le rappel d'une demande du cabinet encore OUVERTE —
 //   son objet et son échéance, que l'accès lit déjà dans « Mes demandes », jamais son détail, ni un message libre —, envoyé
 //   à l'adresse que porte l'ACCÈS choisi (`memberships.email`), jamais à une adresse du corps de la requête. Le journal et
-//   la relance au canal « email » s'inscrivent d'un seul tenant, après l'envoi (`journaliser_relance_de_demande`). Admis
+//   la relance au canal « email » s'inscrivent d'un seul tenant, après l'envoi (`journaliser_relance_de_demande`). Signée
+//   du nom du cabinet du dossier, lu en base (B3B-Q3), « Votre cabinet comptable » s'il ne se lit pas. Admis
 //   seulement sous `RELANCES_DE_DEMANDES_EN_BASE` (plus bas), que la migration `relance_des_demandes_par_email` lève.
 //
 // Chaque envoi est journalisé (table emails_envoyes) : un cabinet doit toujours pouvoir retrouver qui
@@ -528,16 +529,45 @@ function construireEmailDevis(
 // sous sa session), ni ses réponses, ni son auteur.
 interface DemandeRelancee { id: string; objet: string; echeance: string | null; close_le: string | null }
 
+// La signature d'une relance de demande dont le nom du cabinet ne se lit pas : celle d'hier, jamais un refus.
+const SIGNATURE_DU_CABINET_PAR_DEFAUT = "Votre cabinet comptable"
+
+// LE NOM DU CABINET QUI SIGNE LA RELANCE D'UNE DEMANDE (B3B-Q3, réponse (B)) : `cabinets.nom` du `cabinet_id` du dossier de
+// la requête, lu ici par le client admin comme `enregistrer_facture` lit le mandataire — jamais un nom du corps de la
+// requête, que l'appelant choisirait. Un nom illisible (une lecture en erreur ou qui lève, un dossier ou un cabinet
+// introuvable, un nom absent ou vide) retombe sur la signature d'hier : l'e-mail part quand même, la demande étant juste.
+// Le journal ne dit que la retombée, jamais un nom.
+async function nomDuCabinetQuiSigne(admin: ReturnType<typeof createClient>, dossierId: string): Promise<string> {
+  try {
+    const { data: dossier, error: erreurDossier } = await admin.from("dossiers").select("cabinet_id").eq("id", dossierId).maybeSingle()
+    const cabinetId = (dossier as { cabinet_id?: unknown } | null)?.cabinet_id
+    if (erreurDossier || typeof cabinetId !== "string" || cabinetId === "") {
+      console.warn("[send-email] relance de demande : le cabinet du dossier ne se lit pas, signature par défaut")
+      return SIGNATURE_DU_CABINET_PAR_DEFAUT
+    }
+    const { data: cabinet, error: erreurCabinet } = await admin.from("cabinets").select("nom").eq("id", cabinetId).maybeSingle()
+    const nom = (cabinet as { nom?: unknown } | null)?.nom
+    if (erreurCabinet || typeof nom !== "string" || nom.trim() === "") {
+      console.warn("[send-email] relance de demande : le nom du cabinet ne se lit pas, signature par défaut")
+      return SIGNATURE_DU_CABINET_PAR_DEFAUT
+    }
+    return nom.trim()
+  } catch {
+    console.warn("[send-email] relance de demande : la lecture du nom du cabinet a levé, signature par défaut")
+    return SIGNATURE_DU_CABINET_PAR_DEFAUT
+  }
+}
+
 // L'e-mail d'une relance de demande : un texte fixe, l'objet et l'échéance de la demande, et le chemin habituel — aucun
-// lien porteur d'un jeton, aucun message libre. L'objet ne paraît que dans le corps, jamais dans le sujet (que l'aperçu
-// d'une messagerie montre sans l'ouvrir).
-function construireEmailRelanceDemande(demande: DemandeRelancee): { objet: string; html: string } {
+// lien porteur d'un jeton, aucun message libre —, signé du nom du cabinet (B3B-Q3). L'objet ne paraît que dans le corps,
+// jamais dans le sujet (que l'aperçu d'une messagerie montre sans l'ouvrir).
+function construireEmailRelanceDemande(demande: DemandeRelancee, signature: string): { objet: string; html: string } {
   const html = `
     <div style="font-family:sans-serif;color:#222;max-width:560px;">
       <p>Bonjour,</p>
       <p>Votre cabinet attend encore votre réponse à sa demande « <strong>${echapper(demande.objet)}</strong> »${demande.echeance ? `, attendue pour le ${formaterDate(demande.echeance)}` : ""}.</p>
       <p>Merci de vous connecter à votre espace habituel, rubrique « Mes demandes », pour y répondre ou y déposer ce qui est demandé.</p>
-      <p style="margin-top:24px;">Cordialement,<br>Votre cabinet comptable</p>
+      <p style="margin-top:24px;">Cordialement,<br>${echapper(signature)}</p>
     </div>`
   return { objet: "Une demande de votre cabinet attend votre réponse", html }
 }
@@ -901,10 +931,12 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Cet accès ne porte pas d'adresse électronique lisible : la relance n'est pas partie." }, 400)
     }
     adresse = adresseDeLAcces
-    const construit = construireEmailRelanceDemande(demande)
+    // Signée du nom du cabinet tel que la base le porte (B3B-Q3), qui est aussi le nom de l'expéditeur.
+    const signature = await nomDuCabinetQuiSigne(admin, dossierId)
+    const construit = construireEmailRelanceDemande(demande, signature)
     objet = construit.objet
     html = construit.html
-    nomExpediteur = "Votre cabinet comptable"
+    nomExpediteur = signature
   } else {
     const construit = construireEmailRelance(dossierRow.nom, messagePerso)
     objet = construit.objet

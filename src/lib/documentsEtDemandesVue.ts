@@ -10,6 +10,7 @@
 import {
   CE_QU_ATTEND_UNE_DEMANDE, etatDUneDemande, MOTIFS_DE_CLOTURE, NATURES_DES_DOCUMENTS, type EtatDUneDemande,
 } from './documentsEtDemandes'
+import { formatDate } from './format'
 
 // ── Les lignes, telles que la migration les pose ──────────────────────────────────────────────────────────────────────
 export interface DocumentDuCabinet {
@@ -174,6 +175,78 @@ export function confirmationDuRetrait(document: DocumentDuCabinet, nombreDOuvert
     ],
     bouton: 'Retirer le document',
   }
+}
+
+// ── La relance d'une demande par e-mail (étape B3b) ───────────────────────────────────────────────────────────────────
+/** Un accès du dossier tel que la relance par e-mail le lit (`memberships`) : le compte, et son adresse. */
+export interface AccesARelancer {
+  user_id: string
+  email: string | null
+}
+
+// La forme d'adresse que `send-email` exige de l'accès (son `EMAIL_REGEX`) : un accès qui ne la porte pas serait refusé
+// après le clic, il ne se propose donc pas.
+const ADRESSE_LISIBLE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * Les accès que la relance par e-mail peut viser (B3B-Q1 : un accès choisi à chaque relance), sur des accès LUS EN ENTIER :
+ * ceux dont l'adresse est lisible, par ordre d'adresse, et le nombre de ceux qui n'en ont pas, que l'écran dit.
+ */
+export function accesProposables(acces: readonly AccesARelancer[]): { proposables: { user_id: string; email: string }[]; sansAdresse: number } {
+  const proposables = acces
+    .map((a) => ({ user_id: a.user_id, email: (a.email ?? '').trim() }))
+    .filter((a) => ADRESSE_LISIBLE.test(a.email))
+    .sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : a.user_id < b.user_id ? -1 : 1))
+  return { proposables, sansAdresse: acces.length - proposables.length }
+}
+
+/** Le choix d'office : l'accès s'il est seul, sinon aucun — le cabinet choisit (B3B-Q1). */
+export function accesProposeDOffice(proposables: readonly { user_id: string }[]): string | null {
+  return proposables.length === 1 ? proposables[0].user_id : null
+}
+
+/** Pourquoi la relance ne part pas encore : aucun accès choisi. */
+export const CHOISIS_L_ACCES = 'Choisis l’accès à qui l’e-mail part.'
+
+/**
+ * Relancer par e-mail : l'adresse où l'e-mail part, ce qu'il dit (l'objet et l'échéance, jamais le détail — B3B-Q2), la
+ * signature du cabinet (B3B-Q3), et qu'un e-mail parti ne se rattrape pas.
+ */
+export function confirmationDeLaRelanceParEmail(
+  demande: Pick<DemandeDuCabinet, 'objet' | 'echeance'>, adresse: string | null,
+): Confirmation {
+  return {
+    titre: `Relancer par e-mail la demande « ${demande.objet} »`,
+    paragraphes: [
+      adresse === null ? CHOISIS_L_ACCES : `L’e-mail part à ${adresse}, l’adresse de cet accès.`,
+      `Il dit l’objet de la demande, « ${demande.objet} »${demande.echeance === null ? ', sans échéance' : `, et son échéance, le ${formatDate(demande.echeance)}`}, et invite à y répondre depuis « Mes demandes ». Le détail de la demande ne part pas, ni aucun message libre.`,
+      'Il est signé du nom de ton cabinet, tel que la base le porte.',
+      'Un e-mail parti ne se rattrape pas. La relance s’inscrit ensuite, datée, dans l’espace du client.',
+    ],
+    bouton: 'Envoyer la relance',
+  }
+}
+
+/**
+ * Ce que l'écran dit d'une relance partie (`send-email` a répondu `ok`) : inscrite, ou partie sans s'inscrire — la demande ne
+ * la dira pas, et la renvoyer enverrait un second e-mail.
+ */
+export function issueDeLaRelanceParEmail(objet: string, adresse: string, relanceInscrite: unknown): { genre: 'ok' | 'erreur'; texte: string } {
+  return relanceInscrite === true
+    ? { genre: 'ok', texte: `La demande « ${objet} » est relancée par e-mail à ${adresse} ; la relance s’inscrit dans l’espace du client.` }
+    : { genre: 'erreur', texte: `L’e-mail est parti à ${adresse}, mais la relance n’a pas pu être inscrite : la demande ne la dira pas. Ne la renvoie pas, le client a reçu l’e-mail.` }
+}
+
+/** Les relances d'une demande, dites au cabinet : leur nombre et la dernière, « par e-mail » quand elle l'était. */
+export function relancesDitesAuCabinet(relances: readonly RelanceDeLaDemande[]): string | null {
+  if (relances.length === 0) return null
+  const derniere = relances[relances.length - 1]
+  return `relancée ${relances.length} fois, la dernière le ${formatDate(derniere.relancee_le)}${derniere.canal === 'email' ? ' par e-mail' : ''}`
+}
+
+/** La dernière relance, dite au client dans « Mes demandes » : « par e-mail » quand elle l'était. */
+export function derniereRelanceDiteAuClient(derniere: RelanceDeLaDemande): string {
+  return `ton cabinet t’a relancé${derniere.canal === 'email' ? ' par e-mail' : ''} le ${formatDate(derniere.relancee_le)}`
 }
 
 /** Clore : la demande, le motif, et ce que la clôture change (plus de réponse, plus de relance). */

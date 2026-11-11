@@ -119,4 +119,13 @@ describe('« Mes demandes »', () => {
     fireEvent.change(within(ouverte).getByLabelText(/^Ta réponse/), { target: { value: 'Je te l’envoie demain.' } })
     expect((within(ouverte).getByRole('button', { name: 'Envoyer ma réponse' }) as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('une relance partie par e-mail se dit « par e-mail » (B3b)', async () => {
+    faux.lecture = lecture([demande({})], [], {
+      relances: lue([{ id: 'x2', dossier_id: 'd1', demande_id: 'dm1', canal: 'email', email_id: 'e1', relancee_par: 'u0', relancee_le: '2026-11-10T09:00:00Z' }]),
+    })
+    render(<ClientDemandes />)
+    const carte = await screen.findByRole('listitem', { name: 'Demande « Ton relevé de décembre »' })
+    expect(within(carte).getByText(/ton cabinet t’a relancé par e-mail le 10\/11\/2026/)).toBeTruthy()
+  })
 })

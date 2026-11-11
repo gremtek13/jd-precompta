@@ -6,7 +6,8 @@ import { aujourdHuiAParis, formatDate } from '../lib/format'
 import { pourLEspace } from '../lib/espaceVentes'
 import { LIBELLE_TEXTE_DE_LA_REPONSE, MOTS_DE_L_ETAT, refusDeLaReponse, type EtatDUneDemande } from '../lib/documentsEtDemandes'
 import {
-  attenduDit, auteurDitAuClient, demandesDites, depotsCitables, fichierDeLaReponseDit, PRESENTATION_DE_MES_DEMANDES,
+  attenduDit, auteurDitAuClient, demandesDites, depotsCitables, derniereRelanceDiteAuClient, fichierDeLaReponseDit,
+  PRESENTATION_DE_MES_DEMANDES,
 } from '../lib/documentsEtDemandesVue'
 import { lireMesDemandes, type MesDemandesLues } from '../lib/documentsEtDemandesLecture'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
@@ -127,7 +128,7 @@ export default function ClientDemandes() {
                   <p className="muted" style={{ margin: '4px 0' }}>
                     Le {formatDate(demande.ouverte_le)} · ton cabinet attend : {attenduDit(demande.attendu).toLowerCase()}
                     {demande.echeance !== null && ` · avant le ${formatDate(demande.echeance)}`}
-                    {derniere !== null && ` · ton cabinet t’a relancé le ${formatDate(derniere.relancee_le)}`}
+                    {derniere !== null && ` · ${derniereRelanceDiteAuClient(derniere)}`}
                   </p>
                   {demande.detail !== null && <p style={{ margin: '4px 0', whiteSpace: 'pre-wrap' }}>{demande.detail}</p>}
                   {reponses.length > 0 && (

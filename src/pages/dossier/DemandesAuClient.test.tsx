@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import DemandesAuClient from './DemandesAuClient'
 import { REFUS } from '../../lib/documentsEtDemandes'
-import type { DemandesDuCabinetLues } from '../../lib/documentsEtDemandesLecture'
+import type { AccesARelancerLus, DemandesDuCabinetLues } from '../../lib/documentsEtDemandesLecture'
 import type { DemandeDuCabinet, ReponseALaDemande } from '../../lib/documentsEtDemandesVue'
 
 // « Demandes au client », côté cabinet (étape B3a). La lecture est mockée ; la base, par `rpc`. L'écran garde : rien avant le
@@ -15,6 +15,11 @@ const faux = vi.hoisted(() => ({
   lectures: 0,
   appels: [] as { nom: string; args: Record<string, unknown> }[],
   retenir: [] as (() => void)[],
+  // La relance par e-mail (B3b) : les deux drapeaux, les accès lus, la réponse de `send-email`.
+  drapeaux: { documents: true, relance: false },
+  acces: null as AccesARelancerLus | null,
+  accesLus: 0,
+  reponse: { data: { ok: true, relanceInscrite: true } as unknown, error: null as unknown },
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -23,15 +28,34 @@ vi.mock('../../lib/supabase', () => ({
       faux.appels.push({ nom, args })
       return new Promise((r) => { faux.retenir.push(() => r({ data: {}, error: null })) })
     },
+    functions: {
+      invoke: (nom: string, options: { body: Record<string, unknown> }) => {
+        faux.appels.push({ nom, args: options.body })
+        return new Promise((r) => { faux.retenir.push(() => r(faux.reponse)) })
+      },
+    },
   },
 }))
 vi.mock('../../lib/documentsEtDemandesLecture', () => ({
   lireLesDemandesDuCabinet: () => { faux.lectures++; return faux.lecture ? Promise.resolve(faux.lecture) : new Promise(() => {}) },
+  lireLesAccesARelancer: () => { faux.accesLus++; return faux.acces ? Promise.resolve(faux.acces) : new Promise(() => {}) },
 }))
+vi.mock('../../lib/documentsEtDemandes', async (original) => {
+  const vrai = await original<typeof import('../../lib/documentsEtDemandes')>()
+  return {
+    ...vrai,
+    get DOCUMENTS_ET_DEMANDES_PREVUS() { return faux.drapeaux.documents },
+    get RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE() { return faux.drapeaux.relance },
+  }
+})
 
 beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-11T10:00:00Z')) })
 afterAll(() => { vi.useRealTimers() })
-afterEach(() => { faux.lecture = null; faux.lectures = 0; faux.appels = []; faux.retenir = [] })
+afterEach(() => {
+  faux.lecture = null; faux.lectures = 0; faux.appels = []; faux.retenir = []
+  faux.drapeaux = { documents: true, relance: false }; faux.acces = null; faux.accesLus = 0
+  faux.reponse = { data: { ok: true, relanceInscrite: true }, error: null }
+})
 
 const demande = (p: Partial<DemandeDuCabinet>): DemandeDuCabinet => ({
   id: 'dm1', dossier_id: 'd1', objet: 'Relevé de décembre', detail: null, echeance: null, attendu: 'fichier', auteur: 'u0',
@@ -120,5 +144,107 @@ describe('les demandes au client (cabinet)', () => {
     expect(screen.queryByText(/Aucune demande/)).toBeNull()
     fireEvent.change(screen.getByLabelText(/^Objet/), { target: { value: 'Attestation' } })
     expect((screen.getByRole('button', { name: 'Ouvrir la demande' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('la relance d’une demande par e-mail (B3b)', () => {
+  const accesLus = (lignes: { user_id: string; email: string | null }[], complete = true): AccesARelancerLus => ({
+    dossierId: 'd1',
+    acces: { lignes, complete, motif: complete ? null : 'lecture interrompue' },
+  })
+  const leve = () => { faux.drapeaux = { documents: true, relance: true } }
+
+  it('drapeaux baissés : aucun accès lu, aucun bouton, la relance se dit sans e-mail', async () => {
+    for (const drapeaux of [{ documents: true, relance: false }, { documents: false, relance: true }]) {
+      faux.drapeaux = drapeaux
+      faux.lecture = lecture([demande({})])
+      faux.acces = accesLus([{ user_id: 'u1', email: 'client@exemple.invalid' }])
+      const rendu = render(<DemandesAuClient dossierId="d1" />)
+      await screen.findByRole('listitem', { name: 'Demande « Relevé de décembre »' })
+      expect(screen.queryByRole('button', { name: 'Relancer par e-mail' })).toBeNull()
+      expect(screen.getByText(/La relance se lit dans l’espace du client, sans e-mail/)).toBeTruthy()
+      expect(faux.accesLus).toBe(0)
+      rendu.unmount()
+    }
+  })
+
+  it('un seul accès, proposé d’office : la confirmation nomme l’adresse et ce qui part ; un envoi pour deux clics, puis la relecture', async () => {
+    leve()
+    faux.lecture = lecture([demande({ echeance: '2026-11-20' })])
+    faux.acces = accesLus([{ user_id: 'u1', email: 'client@exemple.invalid' }, { user_id: 'u2', email: null }])
+    render(<DemandesAuClient dossierId="d1" />)
+    const carte = await screen.findByRole('listitem', { name: 'Demande « Relevé de décembre »' })
+    expect(await screen.findByText(/Un accès sans adresse électronique lisible ne se propose pas/)).toBeTruthy()
+    fireEvent.click(within(carte).getByRole('button', { name: 'Relancer par e-mail' }))
+    const fenetre = screen.getByRole('alertdialog')
+    expect(fenetre.textContent).toContain('Relancer par e-mail la demande « Relevé de décembre »')
+    expect(fenetre.textContent).toContain('L’e-mail part à client@exemple.invalid')
+    expect(fenetre.textContent).toContain('et son échéance, le 20/11/2026')
+    expect(fenetre.textContent).toContain('signé du nom de ton cabinet')
+    expect(within(fenetre).queryByRole('combobox')).toBeNull()
+    const envoyer = screen.getByRole('button', { name: 'Envoyer la relance' })
+    act(() => { fireEvent.click(envoyer); fireEvent.click(envoyer) })
+    expect(faux.appels).toEqual([{ nom: 'send-email', args: { dossierId: 'd1', type: 'relance_demande', demandeId: 'dm1', accesId: 'u1' } }])
+    const avant = faux.lectures
+    await relacher()
+    await waitFor(() => expect(faux.lectures).toBe(avant + 1))
+    expect(await screen.findByText(/est relancée par e-mail à client@exemple\.invalid/)).toBeTruthy()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('plusieurs accès : aucun choisi d’office, le bouton retenu jusqu’au choix ; l’e-mail parti sans s’inscrire se dit', async () => {
+    leve()
+    faux.lecture = lecture([demande({})])
+    faux.acces = accesLus([{ user_id: 'u2', email: 'zoe@exemple.invalid' }, { user_id: 'u1', email: 'anne@exemple.invalid' }])
+    faux.reponse = { data: { ok: true, relanceInscrite: false }, error: null }
+    render(<DemandesAuClient dossierId="d1" />)
+    const carte = await screen.findByRole('listitem', { name: 'Demande « Relevé de décembre »' })
+    fireEvent.click(within(carte).getByRole('button', { name: 'Relancer par e-mail' }))
+    const fenetre = screen.getByRole('alertdialog')
+    expect(fenetre.textContent).toContain('sans échéance')
+    expect((screen.getByRole('button', { name: 'Envoyer la relance' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(within(fenetre).getByLabelText('Accès à relancer'), { target: { value: 'u2' } })
+    expect(fenetre.textContent).toContain('L’e-mail part à zoe@exemple.invalid')
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la relance' }))
+    expect(faux.appels).toEqual([{ nom: 'send-email', args: { dossierId: 'd1', type: 'relance_demande', demandeId: 'dm1', accesId: 'u2' } }])
+    await relacher()
+    expect(await screen.findByText(/L’e-mail est parti à zoe@exemple\.invalid, mais la relance n’a pas pu être inscrite/)).toBeTruthy()
+  })
+
+  it('un refus de la fonction se dit ; rien ne se croit parti', async () => {
+    leve()
+    faux.lecture = lecture([demande({})])
+    faux.acces = accesLus([{ user_id: 'u1', email: 'client@exemple.invalid' }])
+    faux.reponse = { data: { error: 'Cette demande est close : elle ne se relance plus.' }, error: null }
+    render(<DemandesAuClient dossierId="d1" />)
+    const carte = await screen.findByRole('listitem', { name: 'Demande « Relevé de décembre »' })
+    fireEvent.click(within(carte).getByRole('button', { name: 'Relancer par e-mail' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la relance' }))
+    await relacher()
+    expect(await screen.findByText('La relance par e-mail n’est pas partie : Cette demande est close : elle ne se relance plus.')).toBeTruthy()
+  })
+
+  it('des accès lus en partie, ou sans adresse, n’offrent aucun bouton, et le disent', async () => {
+    leve()
+    faux.lecture = lecture([demande({})])
+    faux.acces = accesLus([{ user_id: 'u1', email: 'client@exemple.invalid' }], false)
+    const premier = render(<DemandesAuClient dossierId="d1" />)
+    expect(await screen.findByText(/Les accès du dossier n'ont pas pu être lus en entier/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Relancer par e-mail' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Relancer à l’écran' })).toBeTruthy()
+    premier.unmount()
+    faux.acces = accesLus([{ user_id: 'u1', email: null }])
+    render(<DemandesAuClient dossierId="d1" />)
+    expect(await screen.findByText(/Aucun accès de ce dossier ne porte d’adresse électronique lisible/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Relancer par e-mail' })).toBeNull()
+  })
+
+  it('avant le retour des accès, aucun bouton', async () => {
+    leve()
+    faux.lecture = lecture([demande({})])
+    render(<DemandesAuClient dossierId="d1" />)
+    await screen.findByRole('listitem', { name: 'Demande « Relevé de décembre »' })
+    expect(faux.accesLus).toBe(1)
+    expect(screen.queryByRole('button', { name: 'Relancer par e-mail' })).toBeNull()
   })
 })

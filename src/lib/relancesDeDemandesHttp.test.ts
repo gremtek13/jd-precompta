@@ -89,4 +89,28 @@ describe('les juges voient ce qu’ils gardent', () => {
     const mutee = muter(levee(), [['.select("email").eq("dossier_id", dossierId).eq("user_id", accesId)', '.select("email").eq("user_id", accesId)']])
     expect(await jugerScenario(contrat, scenario(/un compte sans accès/), contexte, mutee)).not.toEqual([])
   })
+
+  // B3B-Q3 : la signature est le nom du cabinet lu en base, et un nom illisible ne refuse rien.
+  it('la signature d’hier remise en dur : le chef admis tombe', async () => {
+    const mutee = muter(levee(), [['    nomExpediteur = signature\n', '    nomExpediteur = "Votre cabinet comptable"\n'],
+      ['Cordialement,<br>${echapper(signature)}</p>', 'Cordialement,<br>Votre cabinet comptable</p>']])
+    expect(await jugerScenario(contrat, scenario(admis), contexte, mutee)).not.toEqual([])
+  })
+
+  it('une lecture en panne qui refuserait la relance : la retombée tombe', async () => {
+    const mutee = muter(levee(), [['    const signature = await nomDuCabinetQuiSigne(admin, dossierId)\n',
+      '    const signature = await nomDuCabinetQuiSigne(admin, dossierId)\n    if (signature === SIGNATURE_DU_CABINET_PAR_DEFAUT) return json({ error: "Le cabinet ne se lit pas." }, 503)\n']])
+    expect(await jugerScenario(contrat, scenario(/la lecture du cabinet en panne/), contexte, mutee)).not.toEqual([])
+  })
+
+  it('la panne de la lecture du dossier atteint bien la retombée : une autre signature y tombe', async () => {
+    const mutee = muter(levee(), [['le cabinet du dossier ne se lit pas, signature par défaut")\n      return SIGNATURE_DU_CABINET_PAR_DEFAUT',
+      'le cabinet du dossier ne se lit pas, signature par défaut")\n      return "Une signature fautive"']])
+    expect(await jugerScenario(contrat, scenario(/le dossier sans cabinet rendu/), contexte, mutee)).not.toEqual([])
+  })
+
+  it('un nom vide gardé tel quel : la retombée tombe', async () => {
+    const mutee = muter(levee(), [['typeof nom !== "string" || nom.trim() === ""', 'typeof nom !== "string"']])
+    expect(await jugerScenario(contrat, scenario(/le nom du cabinet vide/), contexte, mutee)).not.toEqual([])
+  })
 })
