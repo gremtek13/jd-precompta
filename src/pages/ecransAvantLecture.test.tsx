@@ -26,6 +26,8 @@ import ClientCaisse from './ClientCaisse'
 import ClientComptes from './ClientComptes'
 import ClientDocuments from './ClientDocuments'
 import ClientDemandes from './ClientDemandes'
+import ClientAchats from './ClientAchats'
+import AchatDeLaPiece from './dossier/AchatDeLaPiece'
 import DocumentsMisADisposition from './dossier/DocumentsMisADisposition'
 import DemandesAuClient from './dossier/DemandesAuClient'
 import SituationsPubliees from './dossier/SituationsPubliees'
@@ -133,6 +135,13 @@ vi.mock('../lib/caisse', async (original) => {
 // LE DRAPEAU DES DEVIS QUI CITENT UN CONTACT (`DEVIS_CITENT_UN_CONTACT`, lib/devis.ts), baissé : le formulaire d'un devis ne lit
 // les contacts, et la vue « Clients » l'activité des contacts, que levé. Même patron que la caisse : levé le temps du montage
 // des deux entrées qui le supposent, baissé par `afterEach`.
+// LE DRAPEAU DES ACHATS DU CLIENT (`ACHATS_DU_CLIENT_PREVUS`, lib/achatsClient.ts), baissé : ses lectures ne lisent rien sans
+// lui. Même patron : levé le temps du montage de « Mes achats » et de la section de la fiche (étape B5), baissé par `afterEach`.
+const achatsGarde = vi.hoisted(() => ({ leve: false }))
+vi.mock('../lib/achatsClient', async (original) => {
+  const vrai = await original<typeof import('../lib/achatsClient')>()
+  return { ...vrai, get ACHATS_DU_CLIENT_PREVUS() { return achatsGarde.leve } }
+})
 const devisContactGarde = vi.hoisted(() => ({ leve: false }))
 vi.mock('../lib/devis', async (original) => {
   const vrai = await original<typeof import('../lib/devis')>()
@@ -280,6 +289,10 @@ const ECRANS: Ecran[] = [
   // les demandes, leurs réponses, leurs relances et les dépôts du client, lus en entier.
   { nom: 'ClientDocuments', fichier: 'pages/ClientDocuments.tsx', rendre: () => <MemoryRouter><ClientDocuments /></MemoryRouter> },
   { nom: 'ClientDemandes', fichier: 'pages/ClientDemandes.tsx', rendre: () => <MemoryRouter><ClientDemandes /></MemoryRouter> },
+  // « Mes achats » (ligne 51.5, étape B5) : la case « Achats » relue à la base avec les factures d'achat, leurs déclarations et
+  // les vues du compte ; et, côté cabinet, la section de la fiche d'une pièce d'achat : son échéance, ses déclarations, les accès.
+  { nom: 'ClientAchats', fichier: 'pages/ClientAchats.tsx', rendre: () => { achatsGarde.leve = true; return <MemoryRouter><ClientAchats /></MemoryRouter> } },
+  { nom: 'AchatDeLaPiece', fichier: 'pages/dossier/AchatDeLaPiece.tsx', rendre: () => { achatsGarde.leve = true; return <AchatDeLaPiece dossierId="d1" pieceId="p1" nomFichier="facture.pdf" /> } },
   // Les sections du cabinet (étape B3a), sous l'onglet des documents administratifs : documents, ouvertures et accès ; demandes,
   // réponses, relances et dépôts cités.
   { nom: 'DocumentsMisADisposition', fichier: 'pages/dossier/DocumentsMisADisposition.tsx', rendre: () => <DocumentsMisADisposition dossierId="d1" /> },
@@ -824,7 +837,7 @@ beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-09T10:00:00Z'))
 })
-afterEach(() => { cleanup(); caisseDuGarde.levee = false; devisContactGarde.leve = false })
+afterEach(() => { cleanup(); caisseDuGarde.levee = false; devisContactGarde.leve = false; achatsGarde.leve = false })
 afterAll(() => { vi.useRealTimers() })
 
 // LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : la page d'un dossier le lit avec lui (`plan_du_dossier`) et ne monte

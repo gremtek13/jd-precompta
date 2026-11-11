@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
-import { CASES_SANS_EFFET, ceQueDitLaCaseDocuments, ceQueDitLaCaseSansEffet } from '../../lib/droitsAcces'
+import { CASES_SANS_EFFET, ceQueDitLaCaseAchats, ceQueDitLaCaseDocuments, ceQueDitLaCaseSansEffet } from '../../lib/droitsAcces'
 
 // LES TROIS CASES DE B1 DANS L'ONGLET ACCÈS (« Achats », « Notes de frais », « Documents »), LE DRAPEAU LEVÉ — avec celui
 // de C4a, qu'il suppose : leurs colonnes lues, leurs cases, leurs phrases (« ne change encore rien »), et l'écriture par la
@@ -16,10 +16,15 @@ vi.mock('../../lib/situationsPubliees', async (importOriginal) => ({
 vi.mock('../../lib/troisCasesDeLAcces', () => ({ TROIS_CASES_EXPORTEES: true }))
 // La migration des documents (B2) : ses deux états joués par un accesseur — baissé, l'état réel ; levé, la case « Documents »
 // dit ce qu'elle ouvre (étape B3a).
-const drapeau = vi.hoisted(() => ({ documents: false }))
+const drapeau = vi.hoisted(() => ({ documents: false, achats: false }))
 vi.mock('../../lib/documentsEtDemandes', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../lib/documentsEtDemandes')>()
   return { ...original, get DOCUMENTS_ET_DEMANDES_PREVUS() { return drapeau.documents } }
+})
+// La migration des achats (B4) : de même ; levé, la case « Achats » dit ce qu'elle ouvre (étape B5).
+vi.mock('../../lib/achatsClient', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../lib/achatsClient')>()
+  return { ...original, get ACHATS_DU_CLIENT_PREVUS() { return drapeau.achats } }
 })
 vi.mock('../../lib/reglageDuDossierLecture', () => ({
   lireLeReglageDuDossier: async (dossierId: string) => ({
@@ -84,7 +89,7 @@ vi.mock('../../lib/supabase', async () => {
   }
 })
 
-afterEach(() => { faux.lignes = []; faux.colonnes = []; faux.appels = []; faux.liberer = []; drapeau.documents = false })
+afterEach(() => { faux.lignes = []; faux.colonnes = []; faux.appels = []; faux.liberer = []; drapeau.documents = false; drapeau.achats = false })
 
 const acces = (id: string, email: string): LigneAcces => ({
   id, dossier_id: 'd1', user_id: `u-${id}`, email, created_at: '2026-10-01T08:00:00Z',
@@ -138,6 +143,21 @@ describe('AccesTab — les trois cases de B1', () => {
     expect(screen.getByText(ceQueDitLaCaseDocuments())).toBeTruthy()
     expect(screen.queryByText(ceQueDitLaCaseSansEffet('documents'))).toBeNull()
     expect(screen.getByText(ceQueDitLaCaseSansEffet('achats'))).toBeTruthy()
+    expect(screen.getByText(ceQueDitLaCaseSansEffet('frais'))).toBeTruthy()
+  })
+
+  it('la case « Achats » sous les deux états de sa migration : « ne change encore rien », puis ce qu’elle ouvre', async () => {
+    faux.lignes = [acces('m1', 'client@exemple.fr')]
+    const baisse = render(<AccesTab dossierId="d1" dossierNom="Cabinet Martin" codeEmail="abc123" />)
+    await screen.findByText('client@exemple.fr')
+    expect(screen.getByText(ceQueDitLaCaseSansEffet('achats'))).toBeTruthy()
+    expect(screen.queryByText(ceQueDitLaCaseAchats())).toBeNull()
+    baisse.unmount()
+    drapeau.achats = true
+    render(<AccesTab dossierId="d1" dossierNom="Cabinet Martin" codeEmail="abc123" />)
+    await screen.findByText('client@exemple.fr')
+    expect(screen.getByText(ceQueDitLaCaseAchats())).toBeTruthy()
+    expect(screen.queryByText(ceQueDitLaCaseSansEffet('achats'))).toBeNull()
     expect(screen.getByText(ceQueDitLaCaseSansEffet('frais'))).toBeTruthy()
   })
 })
