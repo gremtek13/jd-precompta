@@ -1,7 +1,7 @@
 -- LES FACTURES REPRISES, AU CLIENT (ligne 51.5 ; A8C-Q1 et A8Q5-Q2, tranchées par le cabinet le 11/11/2026). PRÉPARÉE le
 -- 11/11/2026, PAS APPLIQUÉE. Le récit : HISTORIQUE.md, « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT (PRÉPARÉE,
 -- PAS APPLIQUÉE) ». Son essai : supabase/essais/reprisesAuClient.sql ; son retour : supabase/preparees/retour/
--- 20261111150100_retour_reprises_au_client.sql. Les deux valeurs qu'elle rend, src/lib/reprisesAuClient.ts les lit derrière
+-- 20261111151100_retour_reprises_au_client.sql. Les deux valeurs qu'elle rend, src/lib/reprisesAuClient.ts les lit derrière
 -- `REPRISES_AU_CLIENT_PREVUES` (baissé), confrontées à ce texte.
 --
 -- Elle ouvre au client deux LECTURES qu'il n'a pas : elle se présente au cabinet avant d'être appliquée (CLAUDE.md, « une

@@ -2,7 +2,7 @@
 -- 11/11/2026). PRÉPARÉE le 11/11/2026, pas appliquée. Le récit : HISTORIQUE.md, « 09/11/2026 — PLUSIEURS COMPTES BANCAIRES
 -- D'UN DOSSIER : LA CONCEPTION » et « 11/11/2026 — PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : D'EMBLÉE, LES LOTS, ET LA
 -- BASE (MCB1) ». Son essai : supabase/essais/comptesBancaires.sql ; son retour (DESTRUCTIF) :
--- supabase/preparees/retour/20261111150100_retour_comptes_bancaires.sql ; son module : src/lib/comptesBancaires.ts.
+-- supabase/preparees/retour/20261111152100_retour_comptes_bancaires.sql ; son module : src/lib/comptesBancaires.ts.
 --
 -- Aujourd'hui tout le relevé d'un dossier est UN compte, au 512 du rôle `banque`. Ce que la migration pose :
 --   1. `comptes_bancaires` : les comptes bancaires professionnels d'un dossier (un livret d'épargne reste hors de
