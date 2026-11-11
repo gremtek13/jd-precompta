@@ -22,7 +22,7 @@ import {
 
 const TABLE = 'originaux_liberes'
 const MIGRATION = readFileSync(
-  new URL('../../supabase/preparees/20261111173000_originaux_retenus_par_leur_import.sql', import.meta.url), 'utf8')
+  new URL('../../supabase/preparees/20261111180000_originaux_retenus_par_leur_import.sql', import.meta.url), 'utf8')
 
 describe('le filtre du plan, côté originaux libérés', () => {
   it('la table n’est au plan que le drapeau levé ; toute autre l’est toujours', () => {
