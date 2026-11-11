@@ -50593,3 +50593,22 @@ empreinte illisible ou un original altéré refusent toujours tout. L'onglet Éc
 préalable `pieces-sans-empreinte` (pièces validées de l'exercice, jamais bloquant) et le point de la Checklist (en
 attention, hors de ce qu'un exercice validé fige), rangés au cycle des dépenses. Les fixtures par défaut de
 `prealablesValidation.test.ts` et `ChecklistTab.test.tsx` portent désormais une empreinte.
+
+### 11/11/2026 — LA CIPAV DANS L'ESTIMATION DES COTISATIONS (LIGNE 27.1, RET-Q1) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; en production, des SELECT seulement : 195 migrations, `volet_social_pamc` vide.) RET-Q1 tranchée
+contre la recommandation : la CIPAV maintenant. **La profession** vit dans `volet_social_pamc.profession`, sous une liste
+fermée : une sixième valeur, `liberal_cipav`, demande la migration `professions_cipav` (20261111130000, md5
+`2d45a47c6a8663a2e3993a9854e4d5ce`), qui élargit le CHECK (son texte porte `drop constraint` : à coller) et commente la
+table et la colonne ; une garde de tête refuse une contrainte changée ailleurs. Une seule valeur, comme
+`auxiliaire_medical` : le moteur (`modele-ti` 0.1.0, « métier . rattaché Cipav ») calcule de même les vingt et un métiers
+qu'il nomme (`METIERS_CIPAV`). **Le volet de l'Urssaf** : ni SNIR, ni prise en charge, ni contribution de 3,25 %, ni CURPS.
+**La retraite**, recouvrée par l'Urssaf (« CNAVPL . hors Urssaf ») : la base de la CNAVPL ; le complémentaire, 11 % puis
+21 % jusqu'à quatre plafonds ANNUELS ; l'invalidité-décès, 0,5 % entre 37 % du plafond proratisé et 1,85 plafond ; ni PCV ;
+l'ACRE n'exonère que la base et l'invalidité-décès ; l'exonération à 68 ans comptée due, dite en hypothèse. L'oracle porte
+94 cas du volet et 88 de la retraite (création, ACRE, bornes ±1 €), chacun réconcilié avec le total « Urssaf » du moteur ;
+les cas d'avant inchangés ; égalité au centime ; six mutations mordent. **L'écran** (`PROFESSIONS_CIPAV_PREVUES` baissé) tait
+SNIR, remplaçant, prise en charge, contribution et CURPS, écrit nulles ces rubriques (dit avant le clic), dit « Total hors
+retraite », la retraite « recouvrée par l'Urssaf » et le total appelé, que la régularisation confronte aux échéances
+(`definitivesDeLUrssaf`). Réplique (copie de la mère 17 rattrapée à 195) : essai 10 sur 10, garde, retour égal à la
+production, retour refusé sur une ligne CIPAV. Hors champ : la profession non réglementée encore à la CIPAV.

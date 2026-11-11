@@ -453,7 +453,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   début d'activité, l'ACRE et le taux dentiste en production depuis le 07/11/2026 (`parametres_des_cotisations`, deux
   tables hors de `dossiers`, que le client lit ; l'estimation les reçoit en entrée obligatoire, sans début d'activité
   elle se tait ; `PARAMETRES_DES_COTISATIONS_EXPORTES` levé ; TNS-Q1, TNS-Q4) → « LES PARAMÈTRES DES COTISATIONS : LE
-  DÉBUT D'ACTIVITÉ, L'ACRE ET LE TAUX DENTISTE » ; restent hors de l'estimation — retraite, revenus de remplacement,
+  DÉBUT D'ACTIVITÉ, L'ACRE ET LE TAUX DENTISTE » ; la retraite des quatre caisses estimée (ligne 27.1), la CIPAV derrière
+  `PROFESSIONS_CIPAV_PREVUES`, sa migration préparée → « LA CIPAV DANS L'ESTIMATION DES COTISATIONS » ; restent hors de l'estimation — revenus de remplacement,
   exonérations, outre-mer (une entrée en base chacun, que le moteur couvre sauf les DROM) ; la régularisation en
   production depuis le 07/11/2026 (`regularisation_des_cotisations` : l'organisme, l'année payée et la nature d'une
   échéance, et la part d'un prélèvement mixte qui régularise l'année d'avant, signée (TNS-Q2-B (B)) ;

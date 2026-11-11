@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CE_QUE_L_ESTIMATION_NE_FAIT_PAS, PHRASE_DE_LA_CAISSE, caisseDe, cumulDeLEntree, demandeLeCumul, estimerLaRetraiteAffichee,
+  CE_QUE_L_ESTIMATION_NE_FAIT_PAS, PHRASE_DE_LA_CAISSE, PHRASE_DE_L_URSSAF_POUR_LA_CIPAV, caisseDe, ceQueLEstimationNeFaitPas,
+  definitivesDeLUrssaf, phraseDeLaCaisse, cumulDeLEntree, demandeLeCumul, estimerLaRetraiteAffichee,
   hypothesesDeLaRetraite, lignesDeLaRetraite, titreDeLaRetraite,
 } from './retraiteAffichee'
 import type { EstimationRetraite } from './retraiteDesLiberaux'
-import type { EntreeEstimation } from './voletSocialPamc'
-import type { ProfessionPamc } from './types'
+import { estimerCotisationsUrssaf, type EntreeEstimation } from './voletSocialPamc'
+import type { ProfessionLiberale } from './types'
 
-const entree = (profession: ProfessionPamc | null, o: Partial<EntreeEstimation> = {}): EntreeEstimation => ({
+const entree = (profession: ProfessionLiberale | null, o: Partial<EntreeEstimation> = {}): EntreeEstimation => ({
   annee: 2026, profession, remplacant: false, revenuBrutSocial: 60_000, revenuProfessionnelPositif: true, recettesBrutes: 80_000,
   honorairesConventionnes: 80_000, depassements: 0, parametres: { tenus: true, debutActivite: '2010-01-01', acre: false, tauxDentiste: 0.5 },
   ...o,
@@ -24,8 +25,11 @@ describe('la retraite affichée', () => {
     expect(caisseDe('auxiliaire_medical')).toBe('carpimko')
     expect(caisseDe('medecin_secteur_2')).toBe('carmf')
     expect(caisseDe('sage_femme')).toBe('carcdsf')
-    expect(titreDeLaRetraite(null)).toBe('Retraite (caisse : CARPIMKO, CARMF ou CARCDSF selon la profession)')
-    expect(titreDeLaRetraite('chirurgien_dentiste')).toBe('Retraite (caisse : CARCDSF)')
+    expect(titreDeLaRetraite(null, false)).toBe('Retraite (caisse : CARPIMKO, CARMF ou CARCDSF selon la profession)')
+    expect(titreDeLaRetraite(null, true)).toBe('Retraite (caisse : CARPIMKO, CARMF, CARCDSF ou CIPAV selon la profession)')
+    expect(titreDeLaRetraite('chirurgien_dentiste', true)).toBe('Retraite (caisse : CARCDSF)')
+    expect(caisseDe('liberal_cipav')).toBe('cipav')
+    expect(titreDeLaRetraite('liberal_cipav', false)).toBe('Retraite (CIPAV, recouvrée par l’Urssaf)')
   })
 
   it('ne demande le cumul qu’à un médecin, et ne le devine jamais', () => {
@@ -98,5 +102,39 @@ describe('la retraite affichée', () => {
   it('garde ses deux phrases fixes', () => {
     expect(PHRASE_DE_LA_CAISSE).toBe('La caisse appelle ces cotisations sur un revenu antérieur, puis régularise : ce n’est pas l’échéancier de l’année.')
     expect(CE_QUE_L_ESTIMATION_NE_FAIT_PAS).toMatch(/CIPAV/)
+  })
+})
+
+describe('la retraite de la CIPAV affichée (RET-Q1)', () => {
+  it('dit que l’Urssaf l’appelle, sans ligne de PCV, son total nommé ainsi', () => {
+    const e = estimation({ caisse: 'cipav', pcv: 0, priseEnChargePcv: 0, total: 1_002_200, hypotheses: ['cipav-invalidite-deces-avant-68-ans-supposee'] })
+    const lignes = lignesDeLaRetraite(e, formater)
+    expect(lignes.map((l) => l.cle)).toEqual(['base', 'complementaire', 'invalidite-deces', 'total'])
+    expect(lignes.at(-1)?.libelle).toBe('Total de la retraite, appelé par l’Urssaf')
+    expect(hypothesesDeLaRetraite(e, null)).toEqual([expect.stringMatching(/^CIPAV : à partir de l’année de ses 68 ans/)])
+    expect(phraseDeLaCaisse('liberal_cipav')).toBe(PHRASE_DE_L_URSSAF_POUR_LA_CIPAV)
+    expect(phraseDeLaCaisse('auxiliaire_medical')).toBe(PHRASE_DE_LA_CAISSE)
+    expect(phraseDeLaCaisse(null)).toBe(PHRASE_DE_LA_CAISSE)
+  })
+
+  it('ne se dit hors du champ de l’estimation que tant que l’écran ne l’offre pas', () => {
+    expect(ceQueLEstimationNeFaitPas(false)).toBe(CE_QUE_L_ESTIMATION_NE_FAIT_PAS)
+    expect(ceQueLEstimationNeFaitPas(true)).not.toMatch(/Hors CIPAV/)
+    expect(ceQueLEstimationNeFaitPas(true)).toMatch(/non réglementées encore affiliées à la CIPAV/)
+  })
+
+  it('ajoute la retraite aux cotisations que l’Urssaf appelle, et se tait plutôt que de rendre le volet seul', () => {
+    const urssaf = estimerCotisationsUrssaf(entree('liberal_cipav'))
+    const retraite = estimerLaRetraiteAffichee(entree('liberal_cipav'), 'non_renseigne')
+    if (!urssaf.disponible || !retraite.disponible) throw new Error('estimation attendue')
+    const d = definitivesDeLUrssaf(urssaf, retraite, 'liberal_cipav')
+    expect(d.disponible && d.estimation.total).toBe(urssaf.estimation.total + retraite.estimation.total / 100)
+    expect(definitivesDeLUrssaf(urssaf, null, 'liberal_cipav').disponible).toBe(false)
+    expect(definitivesDeLUrssaf(urssaf, { disponible: false, motif: 'm' }, 'liberal_cipav')).toEqual({
+      disponible: false, motif: 'la retraite de la CIPAV, que l’Urssaf appelle aussi, ne s’estime pas (m).',
+    })
+    // Un praticien conventionné : sa caisse appelle sa retraite, le volet de l'Urssaf reste tel quel.
+    const infirmiere = estimerCotisationsUrssaf(entree('auxiliaire_medical'))
+    expect(definitivesDeLUrssaf(infirmiere, null, 'auxiliaire_medical')).toBe(infirmiere)
   })
 })

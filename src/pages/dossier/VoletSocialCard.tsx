@@ -3,10 +3,10 @@ import { supabase } from '../../lib/supabase'
 import { arrondirPourFormulaire } from '../../lib/cases2035'
 import { formaterMontant } from '../../lib/gabarit2035'
 import {
-  AUXILIAIRES_MEDICAUX, LIBELLES_PROFESSION, estimerCotisationsUrssaf, natureAbattement, ratioConventionne,
-  recettesBrutesRetenues,
+  AUXILIAIRES_MEDICAUX, LIBELLES_PROFESSION, METIERS_CIPAV, PROFESSIONS_CIPAV_PREVUES, estimerCotisationsUrssaf, natureAbattement,
+  professionsOffertes, ratioConventionne, recettesBrutesRetenues,
 } from '../../lib/voletSocialPamc'
-import type { CotisationDeclaree, ProfessionPamc, VoletSocialPamc } from '../../lib/types'
+import type { CotisationDeclaree, ProfessionLiberale, VoletSocialPamc } from '../../lib/types'
 import {
   REGULARISATION_DES_COTISATIONS_EXPORTEE, estimerLaRegularisation, type RegularisationEstimee,
 } from '../../lib/regularisationDesCotisations'
@@ -17,9 +17,10 @@ import {
 import { lireLesParametresDesCotisations } from '../../lib/parametresDesCotisationsLecture'
 import type { EntreeEstimation, ParametresEstimation } from '../../lib/voletSocialPamc'
 import {
-  CE_QUE_L_ESTIMATION_NE_FAIT_PAS, PHRASE_DE_LA_CAISSE, cumulDeLEntree, demandeLeCumul, estimerLaRetraiteAffichee,
-  hypothesesDeLaRetraite, lignesDeLaRetraite, titreDeLaRetraite, type CumulChoisi,
+  ceQueLEstimationNeFaitPas, cumulDeLEntree, definitivesDeLUrssaf, demandeLeCumul, estimerLaRetraiteAffichee,
+  hypothesesDeLaRetraite, lignesDeLaRetraite, phraseDeLaCaisse, titreDeLaRetraite, type CumulChoisi,
 } from '../../lib/retraiteAffichee'
+import type { ResultatRetraite } from '../../lib/retraiteDesLiberaux'
 import ParametresDesCotisationsCard from './ParametresDesCotisationsCard'
 import { messageErreur } from '../../lib/messageErreur'
 
@@ -35,6 +36,11 @@ import { messageErreur } from '../../lib/messageErreur'
 // l'application existe pour éviter. D'où la règle déjà payée trois fois ailleurs : une lecture
 // ratée ne laisse JAMAIS un formulaire vide qu'« Enregistrer » écrirait par-dessus ce qui existe —
 // le formulaire ne s'affiche que sur une lecture réussie.
+//
+// LA CIPAV (ligne 27.1, RET-Q1 ; la profession `liberal_cipav`, offerte sous `PROFESSIONS_CIPAV_PREVUES`) : ni rubrique du
+// SNIR, ni remplaçant, ni prise en charge, ni CURPS — la carte les tait ; enregistrée, la ligne les écrit NULLES (un champ
+// devenu sans objet se remet à zéro dans la même écriture), et la carte le dit avant le clic. Sa retraite est recouvrée
+// par l'Urssaf : la régularisation confronte aux échéances de l'Urssaf le volet ET la retraite.
 
 // Une lecture garde l'exercice pour lequel elle a été faite : voir `lu` plus bas.
 type Lecture =
@@ -43,15 +49,13 @@ type Lecture =
   | { etat: 'erreur'; annee: number; message: string }
 
 interface Champs {
-  profession: ProfessionPamc | ''
+  profession: ProfessionLiberale | ''
   remplacant: boolean
   recettesBrutes: string
   honoraires: string
   depassements: string
   structures: string
 }
-
-const PROFESSIONS = Object.keys(LIBELLES_PROFESSION) as ProfessionPamc[]
 
 function champsDe(ligne: VoletSocialPamc | null): Champs {
   const texte = (n: number | null | undefined) => (n == null ? '' : String(n))
@@ -150,7 +154,9 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
     depassements: montant(champs.depassements),
     structures: montant(champs.structures),
   }
-  const invalide = Object.values(saisis).some((v) => v === 'invalide')
+  const cipav = champs.profession === 'liberal_cipav'
+  // Pour la CIPAV, les rubriques du SNIR sont sans objet : elles ne se jugent pas, et s'écriront nulles.
+  const invalide = !cipav && Object.values(saisis).some((v) => v === 'invalide')
   const nombre = (v: number | null | 'invalide') => (v === 'invalide' ? null : v)
   const recettes = recettesBrutesRetenues({ recettes_brutes: nombre(saisis.recettesBrutes) }, recettesNettes)
   const ratio = ratioConventionne(nombre(saisis.honoraires), recettes.montant)
@@ -183,6 +189,9 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
   const cleDuCumul = `${dossierId}:${annee}`
   const [cumulDit, setCumulDit] = useState<{ cle: string; choix: CumulChoisi }>({ cle: '', choix: 'non_renseigne' })
   const cumul: CumulChoisi = cumulDit.cle === cleDuCumul ? cumulDit.choix : 'non_renseigne'
+  // La retraite, sur la MÊME entrée ; et ce que l'Urssaf appelle en tout — pour la CIPAV, la retraite comprise.
+  const retraite: ResultatRetraite | null = entree === null ? null : estimerLaRetraiteAffichee(entree, cumul)
+  const definitives = definitivesDeLUrssaf(estimation, retraite, entree?.profession ?? null)
 
   // UN AUTRE EXERCICE EST UNE AUTRE LIGNE. La carte reste montée quand l'exercice change dans l'en-tête : sans ceci elle
   // montrait sous « Volet social 2026 » les chiffres de 2025 jusqu'au retour de la lecture — et « Enregistrer » les écrivait
@@ -206,11 +215,11 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
           dossier_id: dossierId,
           annee,
           profession: champs.profession === '' ? null : champs.profession,
-          remplacant: champs.remplacant,
-          recettes_brutes: nombre(saisis.recettesBrutes),
-          honoraires_conventionnes: nombre(saisis.honoraires),
-          depassements: nombre(saisis.depassements),
-          recettes_structures: nombre(saisis.structures),
+          remplacant: cipav ? false : champs.remplacant,
+          recettes_brutes: cipav ? null : nombre(saisis.recettesBrutes),
+          honoraires_conventionnes: cipav ? null : nombre(saisis.honoraires),
+          depassements: cipav ? null : nombre(saisis.depassements),
+          recettes_structures: cipav ? null : nombre(saisis.structures),
         }, { onConflict: 'dossier_id,annee' })
         .select()
         .single()
@@ -236,17 +245,27 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
     setMessage(null)
   }
 
-  const medecinOuDentiste = champs.profession !== '' && !['auxiliaire_medical', 'sage_femme'].includes(champs.profession)
+  const medecinOuDentiste = champs.profession !== '' && !['auxiliaire_medical', 'sage_femme', 'liberal_cipav'].includes(champs.profession)
+  // Des chiffres du SNIR (ou la case du remplaçant) que l'enregistrement d'une profession de la CIPAV videra.
+  const snirAVider = cipav && enregistre !== null &&
+    (enregistre.remplacant || [enregistre.recettesBrutes, enregistre.honoraires, enregistre.depassements, enregistre.structures].some((t) => t !== ''))
 
   return (
     <div style={{ padding: '12px 16px 16px', borderTop: '1px solid var(--color-border)', fontSize: '0.9rem' }}>
-      <strong>Volet social {annee} — praticien ou auxiliaire médical conventionné</strong>
-      <p className="muted" style={{ margin: '4px 0 10px' }}>
-        Les rubriques propres aux praticiens conventionnés (notice 2041-DRI). Les chiffres du relevé
-        SNIR se saisissent ici et restent enregistrés pour cet exercice. DSCS, DSAV, DSAW et DSAU sont
-        obligatoires : sans l'une d'elles, l'Urssaf calcule les cotisations sans la prise en charge de
-        l'Assurance maladie.
-      </p>
+      <strong>Volet social {annee} — {cipav ? 'profession libérale relevant de la CIPAV' : 'praticien ou auxiliaire médical conventionné'}</strong>
+      {cipav ? (
+        <p className="muted" style={{ margin: '4px 0 10px' }}>
+          Une profession relevant de la CIPAV ne déclare aucune des rubriques des praticiens conventionnés (DSCS à DSAT) :
+          l'Urssaf calcule ses cotisations sur le revenu brut social, et recouvre aussi sa retraite.
+        </p>
+      ) : (
+        <p className="muted" style={{ margin: '4px 0 10px' }}>
+          Les rubriques propres aux praticiens conventionnés (notice 2041-DRI). Les chiffres du relevé
+          SNIR se saisissent ici et restent enregistrés pour cet exercice. DSCS, DSAV, DSAW et DSAU sont
+          obligatoires : sans l'une d'elles, l'Urssaf calcule les cotisations sans la prise en charge de
+          l'Assurance maladie.
+        </p>
+      )}
 
       {lu.etat === 'chargement' && <p className="muted">Chargement…</p>}
       {lu.etat === 'erreur' && (
@@ -263,11 +282,13 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
               <label htmlFor={`profession-${annee}`}>Profession</label>
               <select id={`profession-${annee}`} value={champs.profession} onChange={changer('profession')} style={{ maxWidth: '100%' }}>
                 <option value="">— à choisir —</option>
-                {PROFESSIONS.map((p) => <option key={p} value={p}>{LIBELLES_PROFESSION[p]}</option>)}
+                {professionsOffertes(PROFESSIONS_CIPAV_PREVUES, champs.profession).map((p) => <option key={p} value={p}>{LIBELLES_PROFESSION[p]}</option>)}
               </select>
-              <span className="muted" style={{ fontSize: '0.8rem' }}>Auxiliaire médical : {AUXILIAIRES_MEDICAUX}.</span>
+              <span className="muted" style={{ fontSize: '0.8rem' }}>
+                {cipav ? `CIPAV : ${METIERS_CIPAV}.` : `Auxiliaire médical : ${AUXILIAIRES_MEDICAUX}.`}
+              </span>
             </div>
-            <div className="field">
+            {!cipav && <div className="field">
               <label>
                 <input type="checkbox" checked={champs.remplacant} onChange={changer('remplacant')} style={{ marginRight: 6 }} />
                 Remplaçant exclusif au 1er janvier
@@ -278,8 +299,9 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
                   et DSAW vaut zéro.
                 </span>
               )}
-            </div>
+            </div>}
           </div>
+          {!cipav && <>
           <div className="field-row">
             <div className="field">
               <label htmlFor={`dscs-${annee}`}>Recettes brutes totales (DSCS)</label>
@@ -310,6 +332,13 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
             SSIAD, HAD, CMPP… — prise en charge seulement si le cabinet de ville fait au moins 15 % de
             l'activité.
           </p>
+          </>}
+          {snirAVider && (
+            <p className="muted">
+              Enregistrer videra les chiffres du relevé SNIR et la case « remplaçant » de cet exercice : ils sont sans objet
+              pour une profession relevant de la CIPAV.
+            </p>
+          )}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <button className="btn btn-primary btn-sm" onClick={enregistrer} disabled={enregistrement || !modifie || invalide}>
               {enregistrement ? 'Enregistrement…' : 'Enregistrer'}
@@ -326,6 +355,7 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
             </p>
           ) : (
             <>
+              {!cipav && <>
               <div className="table-scroll" style={{ marginTop: 12 }}>
                 <table>
                   <thead>
@@ -381,19 +411,22 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
                 les autres revenus de remplacement (DSCZ) ni les chèques-vacances (DSCN) : à vérifier sur
                 la déclaration.
               </p>
+              </>}
 
               {PARAMETRES_DES_COTISATIONS_EXPORTES && (
                 <ParametresDesCotisationsCard dossierId={dossierId} annee={annee} lecture={parametresDuDossier}
                   profession={champs.profession === '' ? null : champs.profession} exerciceValide={exerciceValide}
                   onRelire={relireLesParametres} />
               )}
-              <EstimationCotisations annee={annee} revenuBrutSocial={revenuBrutSocial} resultat={estimation}
-                avecStructures={(nombre(saisis.structures) ?? 0) > 0} parametresTenus={parametres?.tenus === true} />
-              <EstimationRetraite entree={entree} motifSansEntree={estimation.disponible ? null : estimation.motif}
+              <EstimationCotisations annee={annee} revenuBrutSocial={revenuBrutSocial} resultat={estimation} cipav={cipav}
+                avecStructures={!cipav && (nombre(saisis.structures) ?? 0) > 0} parametresTenus={parametres?.tenus === true} />
+              <EstimationRetraite profession={entree?.profession ?? null} resultat={retraite} annee={annee}
+                totalUrssaf={cipav && definitives.disponible ? definitives.estimation.total : null}
+                motifSansEntree={estimation.disponible ? null : estimation.motif}
                 cumul={cumul} onCumul={(choix) => setCumulDit({ cle: cleDuCumul, choix })} />
               {REGULARISATION_DES_COTISATIONS_EXPORTEE && cotisations !== null && (
                 <Regularisation resultat={estimerLaRegularisation({
-                  annee, definitives: estimation, echeances: cotisations, exerciceValide, aujourdhui: aujourdHuiAParis(),
+                  annee, definitives, echeances: cotisations, exerciceValide, aujourdhui: aujourdHuiAParis(),
                 })} />
               )}
             </>
@@ -404,8 +437,11 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
   )
 }
 
-function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructures, parametresTenus }: {
+function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructures, parametresTenus, cipav }: {
   annee: number
+  // Une profession de la CIPAV : ni prise en charge, ni contribution de 3,25 %, ni CURPS — des lignes qu'elle n'a pas, et
+  // que la carte tait plutôt que de les montrer à zéro ; sa retraite, recouvrée aussi par l'Urssaf, suit.
+  cipav: boolean
   revenuBrutSocial: number
   // Les paramètres des cotisations sont tenus (TNS-Q1, TNS-Q4) : l'année de la création et l'ACRE sont estimées, et se disent.
   parametresTenus: boolean
@@ -438,18 +474,19 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
                   </td>
                 </tr>
                 <tr>
+                  {cipav ? <td>Maladie-maternité</td> : (
                   <td>
                     Maladie-maternité {euros(resultat.estimation.maladie)}, moins la prise en charge par
                     l'Assurance maladie ({euros(resultat.estimation.priseEnChargeMaladie)})
-                  </td>
+                  </td>)}
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                     {euros(resultat.estimation.maladie - resultat.estimation.priseEnChargeMaladie)}
                   </td>
                 </tr>
-                <tr>
+                {!cipav && <tr>
                   <td>Contribution de 3,25 % (dépassements et activité non conventionnée)</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{euros(resultat.estimation.contributionAdditionnelle)}</td>
-                </tr>
+                </tr>}
                 <tr>
                   <td>Indemnités journalières</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{euros(resultat.estimation.indemnitesJournalieres)}</td>
@@ -469,16 +506,16 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
                     {euros(resultat.estimation.allocationsFamiliales - resultat.estimation.priseEnChargeAllocationsFamiliales)}
                   </td>
                 </tr>
-                <tr>
+                {!cipav && <tr>
                   <td>CURPS (unions régionales des professionnels de santé)</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{euros(resultat.estimation.curps)}</td>
-                </tr>
+                </tr>}
                 <tr>
                   <td>Formation professionnelle</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{euros(resultat.estimation.formationProfessionnelle)}</td>
                 </tr>
                 <tr style={{ fontWeight: 600 }}>
-                  <td>Total à la charge du praticien</td>
+                  <td>{cipav ? 'Total hors retraite' : 'Total à la charge du praticien'}</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{euros(resultat.estimation.total)}</td>
                 </tr>
               </tbody>
@@ -486,11 +523,13 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
           </div>
           <p className="muted" style={{ margin: '6px 0 0' }}>
             Cotisations définitives estimées comme le fait le simulateur de l'Urssaf, d'après les chiffres
-            ci-dessus. Hors retraite (appelée par la caisse, pas par l'Urssaf), hors indemnités
+            ci-dessus. {cipav
+              ? 'Hors retraite, que l’Urssaf recouvre aussi pour la CIPAV et que la section suivante estime ; hors indemnités'
+              : "Hors retraite (appelée par la caisse, pas par l'Urssaf), hors indemnités"}
             journalières perçues, {parametresTenus ? 'exonérations d’invalidité' : 'ACRE, exonérations'} et outre-mer
             {parametresTenus ? '' : `, activité supposée commencée avant ${annee}`}.
             {parametresTenus && resultat.estimation.plafondProratise < resultat.estimation.plafond && (
-              ` Activité commencée en ${annee} : le plafond est proratisé à ${euros(resultat.estimation.plafondProratise)} pour la maladie et les allocations familiales, et la CURPS n’est pas due.`
+              ` Activité commencée en ${annee} : le plafond est proratisé à ${euros(resultat.estimation.plafondProratise)} pour la maladie et les allocations familiales${cipav ? '.' : ', et la CURPS n’est pas due.'}`
             )}
             {parametresTenus && resultat.estimation.acreAppliquee && (
               ' ACRE : l’exonération de début d’activité est déduite de la maladie, des indemnités journalières et des allocations familiales.'
@@ -514,20 +553,23 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
 // LA RETRAITE DES PROFESSIONS LIBÉRALES (ligne 27.1, RET-Q5 ; lib/retraiteAffichee.ts, lib/retraiteDesLiberaux.ts) : sous les
 // cotisations de l'Urssaf, les quatre cotisations de la caisse de la profession, sur la MÊME entrée. Un refus du module
 // (exercice sans barème, médecin qui n'a pas dit son cumul…) se dit à la place des chiffres, jamais zéro.
-function EstimationRetraite({ entree, motifSansEntree, cumul, onCumul }: {
-  entree: EntreeEstimation | null
+function EstimationRetraite({ profession, resultat, annee, totalUrssaf, motifSansEntree, cumul, onCumul }: {
+  profession: ProfessionLiberale | null
+  // La retraite estimée par la carte, sur l'entrée de l'Urssaf ; nulle sans entrée.
+  resultat: ResultatRetraite | null
+  annee: number
+  // Pour la CIPAV, ce que l'Urssaf appelle en tout, retraite comprise (en euros) ; nul sinon.
+  totalUrssaf: number | null
   // Pas d'entrée (paramètres pas lus) : la retraite attend pour la même raison que l'Urssaf.
   motifSansEntree: string | null
   cumul: CumulChoisi
   onCumul: (choix: CumulChoisi) => void
 }) {
-  const profession = entree?.profession ?? null
-  const resultat = entree === null ? null : estimerLaRetraiteAffichee(entree, cumul)
   const droite = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } as const
   const enEuros = (centimes: number) => formatMoney(centimes / 100)
   return (
     <section aria-label="Retraite" style={{ marginTop: 14 }}>
-      <strong>{titreDeLaRetraite(profession)}</strong>
+      <strong>{titreDeLaRetraite(profession, PROFESSIONS_CIPAV_PREVUES)}</strong>
       {demandeLeCumul(profession) && (
         <div className="field" style={{ marginTop: 8, maxWidth: 360 }}>
           <label htmlFor="cumul-emploi-retraite">Le médecin cumule-t-il sa retraite et son activité ?</label>
@@ -558,10 +600,15 @@ function EstimationRetraite({ entree, motifSansEntree, cumul, onCumul }: {
           {hypothesesDeLaRetraite(resultat.estimation, cumulDeLEntree(profession, cumul)).map((h) => (
             <p key={h} className="muted" style={{ margin: '6px 0 0' }}>{h}</p>
           ))}
-          <p className="muted" style={{ margin: '6px 0 0' }}>{CE_QUE_L_ESTIMATION_NE_FAIT_PAS}</p>
+          {totalUrssaf !== null && (
+            <p style={{ margin: '6px 0 0' }}>
+              Avec les cotisations ci-dessus, l’Urssaf appelle {euros(totalUrssaf)} sur les revenus {annee}.
+            </p>
+          )}
+          <p className="muted" style={{ margin: '6px 0 0' }}>{ceQueLEstimationNeFaitPas(PROFESSIONS_CIPAV_PREVUES)}</p>
         </>
       )}
-      <p className="muted" style={{ margin: '6px 0 0' }}>{PHRASE_DE_LA_CAISSE}</p>
+      <p className="muted" style={{ margin: '6px 0 0' }}>{phraseDeLaCaisse(profession)}</p>
     </section>
   )
 }

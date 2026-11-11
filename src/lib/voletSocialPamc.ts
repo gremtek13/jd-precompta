@@ -10,7 +10,8 @@
 //  - Les cotisations recouvrées par l'Urssaf sur ces revenus : CSG-CRDS, maladie-maternité avec la
 //    prise en charge par l'Assurance maladie, contribution de 3,25 %, indemnités journalières,
 //    allocations familiales, CURPS, formation professionnelle. Pas la retraite, appelée par la
-//    CARPIMKO (ou la CARCDSF) et non par l'Urssaf.
+//    CARPIMKO (ou la CARCDSF) et non par l'Urssaf — ni celle de la CIPAV (ligne 27.1, RET-Q1), que l'Urssaf
+//    recouvre pourtant : `retraiteDesLiberaux.ts` l'estime, et `retraiteAffichee.ts` l'ajoute au total appelé.
 //
 // LA RÉFÉRENCE EST LE MOTEUR DE L'URSSAF, PAS NOUS. `voletSocialPamcReference.ts` porte des cas
 // calculés par `modele-ti`, le jeu de règles des simulateurs de l'Urssaf pour les indépendants (voir
@@ -47,7 +48,7 @@
 // la précédente.
 
 import { PREMIER_EXERCICE_REVENU_BRUT_SOCIAL } from './cases2035'
-import type { ProfessionPamc, VoletSocialPamc } from './types'
+import type { ProfessionLiberale, ProfessionPamc, VoletSocialPamc } from './types'
 
 /**
  * Plafond annuel de la sécurité sociale, par année. SAISI, jamais deviné : une année absente fait
@@ -62,12 +63,13 @@ export const PLAFONDS_SECURITE_SOCIALE: Readonly<Record<number, number>> = {
 }
 
 
-export const LIBELLES_PROFESSION: Readonly<Record<ProfessionPamc, string>> = {
+export const LIBELLES_PROFESSION: Readonly<Record<ProfessionLiberale, string>> = {
   auxiliaire_medical: 'Auxiliaire médical',
   sage_femme: 'Sage-femme',
   medecin_secteur_1: 'Médecin, secteur 1',
   medecin_secteur_2: 'Médecin, secteur 2',
   chirurgien_dentiste: 'Chirurgien-dentiste',
+  liberal_cipav: 'Profession relevant de la CIPAV',
 }
 
 /**
@@ -76,6 +78,32 @@ export const LIBELLES_PROFESSION: Readonly<Record<ProfessionPamc, string>> = {
  * central de 188 pixels, panneau de droite ouvert (outils/captures/debordements.mjs).
  */
 export const AUXILIAIRES_MEDICAUX = 'infirmier, masseur-kinésithérapeute, orthophoniste, orthoptiste, pédicure-podologue'
+
+/**
+ * LA CIPAV (ligne 27.1, RET-Q1, décision du cabinet du 11/11/2026) : les professions libérales réglementées que le moteur
+ * public de l'Urssaf rattache à la CIPAV (modele-ti 0.1.0, « profession libérale . réglementée . métier . rattaché
+ * Cipav », qui cite la loi n° 2017-1836, art. 15), toutes calculées de même — d'où une seule valeur, `liberal_cipav`.
+ * Dit sous la liste déroulante, comme les auxiliaires médicaux. Une profession libérale NON réglementée encore affiliée à
+ * la CIPAV (installée avant 2019, sans avoir opté pour le régime général) n'y est pas : l'application ne la porte pas.
+ */
+export const METIERS_CIPAV =
+  'architecte, architecte d’intérieur, économiste de la construction, maître d’œuvre, géomètre-expert, moniteur de ski, ' +
+  'guide de haute montagne, accompagnateur de moyenne montagne, ostéopathe, psychologue, psychothérapeute, ' +
+  'psychomotricien, ergothérapeute, diététicien, chiropracteur, ingénieur-conseil, guide-conférencier, artiste autre ' +
+  'qu’artiste-auteur, expert devant les tribunaux, expert en automobile, mandataire judiciaire à la protection des majeurs'
+
+/**
+ * La migration `professions_cipav` (supabase/preparees/20261111130000_professions_cipav.sql) élargit la liste fermée de
+ * `volet_social_pamc.profession`. Baissé tant qu'elle n'est pas appliquée : l'écran n'offre pas la CIPAV (la base la
+ * refuserait, 23514). Le calcul, lui, la connaît déjà, contrôlé contre le moteur de l'Urssaf.
+ */
+export const PROFESSIONS_CIPAV_PREVUES = false
+
+/** Les professions que la liste déroulante offre : la CIPAV sous son drapeau, ou si la ligne lue la porte déjà. */
+export function professionsOffertes(cipavPrevues: boolean, actuelle: ProfessionLiberale | ''): ProfessionLiberale[] {
+  const toutes = Object.keys(LIBELLES_PROFESSION) as ProfessionLiberale[]
+  return toutes.filter((p) => p !== 'liberal_cipav' || cipavPrevues || actuelle === 'liberal_cipav')
+}
 
 // ── Les rubriques ──────────────────────────────────────────────────────────────────────────────
 
@@ -206,7 +234,7 @@ const INDEMNITES_JOURNALIERES = 0.3
 
 export interface EntreeEstimation {
   annee: number
-  profession: ProfessionPamc | null
+  profession: ProfessionLiberale | null
   remplacant: boolean
   /** Le revenu brut social à l'euro, tel que le formulaire le porte : DD, ou −DC s'il est négatif. */
   revenuBrutSocial: number
@@ -412,10 +440,16 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
     }
   }
 
-  const ratio = ratioConventionne(e.honorairesConventionnes, e.recettesBrutes)
-  if (ratio.ratio === null) return { disponible: false, motif: ratio.motif }
-  const honoraires = e.honorairesConventionnes ?? 0
-  const depassements = e.depassements ?? 0
+  // Une profession de la CIPAV n'a ni SNIR ni prise en charge : ses honoraires conventionnés ne se lisent pas, et valent
+  // zéro, ce qui annule la prise en charge ; la contribution de 3,25 % et la CURPS, propres aux praticiens conventionnés
+  // (modele-ti, « PAMC . contribution maladie additionnelle », « PAMC . CURPS »), ne la touchent pas non plus.
+  const cipav = profession === 'liberal_cipav'
+  if (!cipav) {
+    const ratio = ratioConventionne(e.honorairesConventionnes, e.recettesBrutes)
+    if (ratio.ratio === null) return { disponible: false, motif: ratio.motif }
+  }
+  const honoraires = cipav ? 0 : (e.honorairesConventionnes ?? 0)
+  const depassements = cipav ? 0 : (e.depassements ?? 0)
   if (depassements > honoraires) {
     return { disponible: false, motif: 'Les dépassements (DSAW) ne peuvent pas dépasser les honoraires conventionnés (DSAV).' }
   }
@@ -480,7 +514,7 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
     profession === 'medecin_secteur_2'
       ? 0
       : arrondiUrssaf(appliquer(assietteParticipation, Math.max(0, tauxEffectif - MALADIE_RESTE_AU_PRATICIEN)))
-  const contributionAdditionnelle = arrondiUrssaf(appliquer(assiette - assietteParticipation, CONTRIBUTION_ADDITIONNELLE))
+  const contributionAdditionnelle = cipav ? 0 : arrondiUrssaf(appliquer(assiette - assietteParticipation, CONTRIBUTION_ADDITIONNELLE))
 
   const assietteIndemnites = Math.min(Math.max(assiette, arrondiUrssaf(appliquer(plafond, 40))), plafond * 3)
   const exonerationIndemnites = acre
@@ -502,7 +536,7 @@ export function estimerCotisationsUrssaf(e: EntreeEstimation): ResultatEstimatio
 
   // CURPS : pas pour un remplaçant, ni sans revenu professionnel, ni l'année d'une création après le 1er janvier.
   const curps =
-    !e.remplacant && e.revenuProfessionnelPositif && !activite.creeeApresLePremierJanvier
+    !cipav && !e.remplacant && e.revenuProfessionnelPositif && !activite.creeeApresLePremierJanvier
       ? arrondiUrssaf(Math.min(appliquer(assiette, TAUX_CURPS[profession]), appliquer(plafond, 0.5)))
       : 0
 
