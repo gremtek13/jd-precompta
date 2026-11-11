@@ -51149,6 +51149,6 @@ son auteur ou le cabinet) ; `pieces_vues` (`marquer_vues`, « Achats » seul, la
 lit les déclarations de son dossier et ses vues. Preuves : `achatsClient.sql` 54 contrôles, 0 en faute, 9 mutations sur 9 ;
 la suppression jouée à la main sur la réplique ; `rls.sql` bloc AC, TC rendu conscient de B4 (M-TC1 sous « Notes de
 frais ») : 160 invariants, 0 en faute, 109 sur 109 (sans B4 : 156, 105) ; `restauration.sql` IDENTIQUE (89, puis 91
-tables) ; aller, retour (destructif), aller : `signature.sql` égale. Derrière `ACHATS_DU_CLIENT_PREVUS` : le module, le
-plan de sauvegarde. NON FAIT : la réception ouverte à « Achats » (B4-Q1 à Q3 : la pièce écrite par le navigateur du client,
-`lister` qui rend aussi les ventes, le point de reprise commun) — ni `QUI_PEUT_QUOI` ni les Edge Functions ; le banc du leurre.
+tables) ; aller, retour (destructif), aller : `signature.sql` égale ; banc du leurre SÛR (`achatsClient`, `rls`, sur la
+production puis sur B1 et B4). Derrière `ACHATS_DU_CLIENT_PREVUS` : le module, le plan de sauvegarde. NON FAIT : la réception ouverte à « Achats » (B4-Q1 à Q3 : la pièce écrite par le navigateur du client,
+`lister` qui rend aussi les ventes, le point de reprise commun) — ni `QUI_PEUT_QUOI` ni les Edge Functions.
