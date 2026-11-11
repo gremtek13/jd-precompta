@@ -404,3 +404,58 @@ export function bilanDesRefus(seau: Seau, refus: readonly RefusDuDepot[]): strin
   }
   return `${refus.length} ignoré(s) : ${parts.join(' ; ')}`
 }
+
+// ── LE SEAU `documents-cabinet` : LES DOCUMENTS QUE LE CABINET MET À DISPOSITION (B2, ligne 51.5) ──────────────────────
+// La migration `documents_et_demandes` (supabase/preparees/20261111234000, PRÉPARÉE, pas appliquée) crée un cinquième
+// seau, PRIVÉ : la 2035, la liasse, les comptes annuels, une attestation, la lettre de mission, un courrier — en PDF, JPEG
+// ou PNG, 20 Mio au plus (B2-Q2), sous `<dossier>/<document>/<empreinte>.<pdf|jpg|png>` : le nom d'origine, qui peut nommer
+// le client, ne va pas au stockage. Le seau n'entre pas dans `Seau` tant que sa migration n'est pas en base
+// (`DOCUMENTS_ET_DEMANDES_PREVUS`, src/lib/documentsEtDemandes.ts) : aucun dépôt de la source n'y écrit avant l'étape B3.
+// bornesStockage.test.ts confronte ces bornes et la forme du chemin à la migration et à supabase/essais/bornesStockage.sql.
+
+/** Le seau des documents du cabinet. */
+export const SEAU_DES_DOCUMENTS_DU_CABINET = 'documents-cabinet' as const
+
+/** Ce que `preparerDocumentDuCabinet` peut envoyer : PDF, JPEG ou PNG — ni SVG, ni HTML, ni bureautique. */
+export const TYPES_DES_DOCUMENTS_DU_CABINET = ['application/pdf', 'image/jpeg', 'image/png'] as const
+export type TypeDUnDocumentDuCabinet = (typeof TYPES_DES_DOCUMENTS_DU_CABINET)[number]
+
+/** Le poids d'un document du cabinet : 20 Mio, la borne des pièces (S226-Q1) — une liasse en pèse quelques centaines de Ko. */
+export const TAILLE_MAX_DOCUMENT_DU_CABINET = TAILLE_MAX_PIECE
+
+/** La forme du chemin d'un document : celle de la policy `documents_cabinet_storage_depot` et de la fonction de publication. */
+export const FORME_CHEMIN_D_UN_DOCUMENT_DU_CABINET =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{64}[.](pdf|jpg|png)$/
+
+const DOCUMENT_DU_CABINET: Genre = {
+  borne: TAILLE_MAX_DOCUMENT_DU_CABINET,
+  ceQueCest: 'un document mis à disposition',
+  formats: 'un document mis à disposition se dépose en PDF, JPEG ou PNG',
+}
+
+/** Le type d'un document du cabinet, lu à sa SIGNATURE, jamais à son nom ni au type du navigateur : PDF, JPEG ou PNG. */
+export function typeDUnDocumentDuCabinet(o: Uint8Array): TypeDUnDocumentDuCabinet | null {
+  if (o[0] === 0x25 && o[1] === 0x50 && o[2] === 0x44 && o[3] === 0x46) return 'application/pdf'
+  return typeDUnLogoDeFacture(o)
+}
+
+/** L'extension du chemin d'un document, tirée de son type — jamais du nom que portait le fichier. */
+export function extensionDUnDocumentDuCabinet(type: TypeDUnDocumentDuCabinet): 'pdf' | 'jpg' | 'png' {
+  return type === 'application/pdf' ? 'pdf' : type === 'image/jpeg' ? 'jpg' : 'png'
+}
+
+/** Le chemin d'un document : `<dossier>/<document>/<empreinte>.<extension>`, ou null si l'un d'eux n'a pas sa forme. */
+export function cheminDUnDocumentDuCabinet(dossierId: string, documentId: string, sha256: string, type: TypeDUnDocumentDuCabinet): string | null {
+  const chemin = `${dossierId}/${documentId}/${sha256}.${extensionDUnDocumentDuCabinet(type)}`
+  return FORME_CHEMIN_D_UN_DOCUMENT_DU_CABINET.test(chemin) ? chemin : null
+}
+
+/**
+ * Un document que le cabinet met à disposition (seau `documents-cabinet`, privé, B2) : PDF, JPEG ou PNG, 20 Mio au plus,
+ * rendu dans un Blob RÉÉTIQUETÉ du type que dit sa signature — celui que le stockage jugera, et que le chemin dira.
+ */
+export async function preparerDocumentDuCabinet(fichier: Blob): Promise<IssueDuDepot> {
+  const type = typeDUnDocumentDuCabinet(await premiersOctets(fichier))
+  if (type === null) return { refus: refusDeFormat(DOCUMENT_DU_CABINET, fichier.size) }
+  return borner(DOCUMENT_DU_CABINET, fichier, type)
+}

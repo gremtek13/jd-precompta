@@ -861,6 +861,30 @@ begin
   end if;
 end $$;
 
+-- ══ Les documents et les demandes du cabinet (ligne 51.5, B2) ══ Au plan du code quand `DOCUMENTS_ET_DEMANDES_PREVUS` est
+-- levé — c'est-à-dire quand sa migration est en base : le script met ses cinq tables dès qu'elles existent, juste après
+-- `dossier_permanent` (ORDRE_RESTAURATION_PREVU : bien après les pièces, les documents divers et les e-mails qu'elles citent ;
+-- le document avant sa lecture, la demande avant ses réponses et ses relances) ; les tables qui suivent reculent de cinq
+-- rangs — le geste des articles ; leurs chemins. Aucune vague : aucune ne se cite elle-même. Joué en dernier. Absentes de la
+-- base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.documents_cabinet') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'dossier_permanent';
+    update essai_restauration._ordre set rang = -(rang + 5) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'documents_cabinet');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 2, 'lectures_documents');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 3, 'demandes_cabinet');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 4, 'demandes_reponses');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 5, 'relances_demandes');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('documents_cabinet','direct',null,null),('lectures_documents','direct',null,null),('demandes_cabinet','direct',null,null),
+     ('demandes_reponses','direct',null,null),('relances_demandes','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

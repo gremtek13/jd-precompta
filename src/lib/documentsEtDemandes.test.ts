@@ -4,6 +4,7 @@ import {
   CE_QU_ATTEND_UNE_DEMANDE, DOCUMENTS_ET_DEMANDES_PREVUS, etatDUneDemande, MOTIFS_DE_CLOTURE, NATURES_DES_DOCUMENTS, REFUS,
   refusDeLaCloture, refusDeLaDemande, refusDeLaPublication, refusDeLaReponse, TABLES_DES_DOCUMENTS_ET_DEMANDES,
 } from './documentsEtDemandes'
+import { CASES_SANS_EFFET } from './droitsAcces'
 
 // LES DOCUMENTS ET LES DEMANDES DU CABINET (ligne 51.5, étape B2) : le module redit la migration PRÉPARÉE
 // `documents_et_demandes` — chaque refus à la lettre et dans son ordre, chaque liste fermée — et son essai la rejoue.
@@ -18,7 +19,7 @@ const ESSAI_SUPPRESSION = readFileSync(new URL('../../supabase/essais/documentsC
 
 /** Le texte d'une fonction de la migration, de sa création à la fin de son corps. */
 function corps(nom: string): string {
-  const debut = MIGRATION.indexOf(`create function public.${nom}(`)
+  const debut = MIGRATION.search(new RegExp(`create function public\\.${nom}\\(`, 'i'))
   if (debut < 0) throw new Error(`${nom} absente de la migration`)
   return MIGRATION.slice(debut, MIGRATION.indexOf('\n$$;', debut))
 }
@@ -46,9 +47,9 @@ describe('la migration, préparée et pas appliquée', () => {
   })
 
   it('elle crée les cinq tables du module, et le retour les retire toutes', () => {
-    const creees = [...MIGRATION.matchAll(/^create table public\.(\w+) \(/gm)].map((m) => m[1])
+    const creees = [...MIGRATION.matchAll(/^create table public\.(\w+) \(/gim)].map((m) => m[1])
     expect(creees).toEqual([...TABLES_DES_DOCUMENTS_ET_DEMANDES])
-    const retirees = [...RETOUR.matchAll(/^drop table public\.(\w+);/gm)].map((m) => m[1]).sort()
+    const retirees = [...RETOUR.matchAll(/^drop table public\.(\w+);/gim)].map((m) => m[1]).sort()
     expect(retirees).toEqual([...TABLES_DES_DOCUMENTS_ET_DEMANDES].sort())
   })
 
@@ -159,5 +160,13 @@ describe('l’état d’une demande se déduit', () => {
     [{ ...ouverte, close_le: '2026-11-12T10:00:00+00:00' }, 3, '2026-11-11', 'close'],
   ] as const)('%j, %i réponse(s), le %s : %s', (demande, reponses, jour, etat) => {
     expect(etatDUneDemande(demande, reponses, jour)).toBe(etat)
+  })
+})
+
+describe('le jour où le drapeau se lève', () => {
+  // L'onglet Accès dit, sous la case « Documents », qu'elle ne change encore rien (B1) : faux dès que la migration est en
+  // base. Ce garde tombe le jour où le drapeau se lève, tant que la phrase de la case n'a pas été réécrite (étape B3).
+  it('« Documents » ne se dit sans effet que tant que la migration n’est pas en base', () => {
+    expect((CASES_SANS_EFFET as readonly string[]).includes('documents')).toBe(!DOCUMENTS_ET_DEMANDES_PREVUS)
   })
 })

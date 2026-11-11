@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { refusDeLaSuppression } from './dossierDuCabinet'
 import { estDesigneCommeDossierDuCabinet } from './dossierDuCabinetLecture'
 import { refusDeLaSuppressionAuDepart } from './departDuClient'
@@ -71,7 +72,16 @@ function fusionner(a: NettoyageStockage, b: NettoyageStockage): NettoyageStockag
 // que sa migration en base (`LOGO_DES_FACTURES_EXPORTE`) : avant, le lister rendrait une erreur — un seau absent —, et
 // chaque suppression dirait un inventaire incomplet. Seul le chef du cabinet du dossier y supprime un fichier — celui qui
 // seul supprime un dossier (`dossiers_delete`) : c'est ce geste-ci qui le vide.
-type SeauDuDossier = 'pieces' | 'packs' | 'ventes'
+// Le seau `documents-cabinet` (B2 : les documents que le cabinet met à disposition, `<dossier>/<document>/<fichier>`) n'en
+// est que sa migration en base (`DOCUMENTS_ET_DEMANDES_PREVUS`), pour la même raison ; sa suppression est au même chef.
+type SeauDuDossier = 'pieces' | 'packs' | 'ventes' | 'documents-cabinet'
+
+/** Les seaux qu'une suppression de dossier vide, selon les migrations en base : celle du logo, celle des documents (B2). */
+export function seauxDuDossier(logoEnBase: boolean, documentsEnBase: boolean): SeauDuDossier[] {
+  return [
+    'pieces', 'packs', ...(logoEnBase ? ['ventes' as const] : []), ...(documentsEnBase ? ['documents-cabinet' as const] : []),
+  ]
+}
 
 async function listerTout(
   bucket: SeauDuDossier,
@@ -213,7 +223,7 @@ export async function supprimerDossierDefinitivement(
     })
     if (refusDuDepart !== null) throw new Error(refusDuDepart)
   }
-  const seaux: SeauDuDossier[] = LOGO_DES_FACTURES_EXPORTE ? ['pieces', 'packs', 'ventes'] : ['pieces', 'packs']
+  const seaux = seauxDuDossier(LOGO_DES_FACTURES_EXPORTE, DOCUMENTS_ET_DEMANDES_PREVUS)
   const premiers = await Promise.all(seaux.map((seau) => viderDossierDuStockage(seau, dossierId)))
   const { error } = await supabase.from('dossiers').delete().eq('id', dossierId)
   if (error) throw error

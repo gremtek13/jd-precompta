@@ -6,7 +6,10 @@ import {
   refusDUnLogo, TAILLE_MAX, TAILLE_MAX_LOGO_DE_FACTURE, TAILLE_MAX_ORIGINAL_D_IMPORT, TAILLE_MAX_PIECE, TYPES_ADMIS,
   TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, TYPES_DES_LOGOS_DE_FACTURE, typeDUnePiece, typeDUnLogo, typeDUnLogoDeFacture,
   typeDUnOriginal, typeSansParametres, type IssueDuDepot, type Seau,
+  cheminDUnDocumentDuCabinet, FORME_CHEMIN_D_UN_DOCUMENT_DU_CABINET, preparerDocumentDuCabinet, SEAU_DES_DOCUMENTS_DU_CABINET,
+  TAILLE_MAX_DOCUMENT_DU_CABINET, TYPES_DES_DOCUMENTS_DU_CABINET, typeDUnDocumentDuCabinet,
 } from './bornesStockage'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import {
   bornesDeLaMigration, bornesDeLEssai, fichierDeLaMigrationDuLogo, sansCommentairesSql, seauDeLaMigrationDuLogo, texteDeLaMigration,
@@ -223,9 +226,9 @@ describe('la borne écrite ici est celle de la migration et de l’essai', () =>
     expect(new Set(lue.types).size).toBe(lue.types.length)
   })
 
-  it('l’essai garde le seau des logos public, les trois autres privés — celui des ventes compris (étape A5c1)', () => {
+  it('l’essai garde le seau des logos public, les autres privés — celui des ventes (A5c1) et celui des documents (B2) compris', () => {
     expect(Object.fromEntries(essai.map((b) => [b.seau, b.publique])))
-      .toEqual({ pieces: false, packs: false, 'cabinet-logos': true, ventes: false })
+      .toEqual({ pieces: false, packs: false, 'cabinet-logos': true, ventes: false, 'documents-cabinet': false })
   })
 
   it('la migration ne fait rien d’autre : ni suppression, ni policy, ni accès public, et elle exige les trois seaux', () => {
@@ -411,5 +414,54 @@ describe('A8d2a : l’original d’une facture reprise, dans le seau des ventes'
     expect(cheminDUnOriginal(d.toUpperCase(), l, h, 'text/csv')).toBeNull()
     expect(cheminDUnOriginal(d, 'lot-1', h, 'text/csv')).toBeNull()
     expect(cheminDUnOriginal(d, l, 'B'.repeat(64), 'text/csv')).toBeNull()
+  })
+})
+
+// ── Le cinquième seau, `documents-cabinet` : les documents que le cabinet met à disposition (B2) ────────────────────────
+// Sa migration, `documents_et_demandes`, est PRÉPARÉE : la borne se confronte à son texte (supabase/preparees/) et à
+// l'essai (qui l'attend « EN ATTENTE ») ; le jour où l'export la porte, `DOCUMENTS_ET_DEMANDES_PREVUS` se lève.
+describe('B2 : le seau des documents du cabinet', () => {
+  const preparees = new URL('../../supabase/preparees/', import.meta.url).pathname
+  const migration = readFileSync(preparees + readdirSync(preparees).find((n) => /^\d{14}_documents_et_demandes\.sql$/.test(n))!, 'utf8')
+  const essai = bornesDeLEssai(texteDeLEssai())
+
+  it('même seau, même taille, mêmes types, dans le module, la migration et l’essai : privé', () => {
+    const attendu = { seau: SEAU_DES_DOCUMENTS_DU_CABINET, publique: false, taille: TAILLE_MAX_DOCUMENT_DU_CABINET, types: [...TYPES_DES_DOCUMENTS_DU_CABINET] }
+    expect(seauDeLaMigrationDuLogo(migration)).toEqual(attendu)
+    expect(essai.find((b) => b.seau === SEAU_DES_DOCUMENTS_DU_CABINET)).toEqual(attendu)
+    expect(TAILLE_MAX_DOCUMENT_DU_CABINET).toBe(20 * 1024 * 1024)
+    expect(DOCUMENTS_ET_DEMANDES_PREVUS).toBe(false)
+  })
+
+  it('la forme du chemin est celle de la policy de dépôt et de la fonction de publication', () => {
+    const forme = FORME_CHEMIN_D_UN_DOCUMENT_DU_CABINET.source.replace(/\\\//g, '/')
+    const code = sansCommentairesSql(migration)
+    expect(code.split(`name ~ '${forme}'`)).toHaveLength(2)
+    expect(code.split(`p_chemin !~ '${forme}'`)).toHaveLength(2)
+  })
+
+  it('le type se décide à la signature : PDF, JPEG, PNG ; ni WebP, ni GIF, ni SVG, ni HEIC', () => {
+    expect(typeDUnDocumentDuCabinet(new Uint8Array(PDF))).toBe('application/pdf')
+    expect(typeDUnDocumentDuCabinet(new Uint8Array(JPEG))).toBe('image/jpeg')
+    expect(typeDUnDocumentDuCabinet(new Uint8Array(PNG))).toBe('image/png')
+    for (const autre of [WEBP, GIF, SVG, HEIC, TIFF]) expect(typeDUnDocumentDuCabinet(new Uint8Array(autre))).toBeNull()
+  })
+
+  it('préparé : réétiqueté du type de sa signature, borné à 20 Mio — un octet de plus, refusé ; le nom ne compte pas', async () => {
+    const pret = corpsDe(await preparerDocumentDuCabinet(pesant(fichier('liasse.png', PDF, 'image/png'), TAILLE_MAX_DOCUMENT_DU_CABINET)))
+    expect(pret.type).toBe('application/pdf')
+    expect(pret.corps.type).toBe('application/pdf')
+    const lourd = await preparerDocumentDuCabinet(pesant(fichier('liasse.pdf', PDF), TAILLE_MAX_DOCUMENT_DU_CABINET + 1))
+    expect('refus' in lourd && lourd.refus.raison).toBe('taille')
+    const svg = await preparerDocumentDuCabinet(fichier('liasse.pdf', SVG, 'application/pdf'))
+    expect('refus' in svg && svg.refus.message).toBe('format non pris en charge (un document mis à disposition se dépose en PDF, JPEG ou PNG)')
+  })
+
+  it('le chemin : le dossier, le document, l’empreinte et l’extension du type — jamais le nom d’origine', () => {
+    const dossier = '11111111-2222-4333-8444-555555555555'
+    const document = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    expect(cheminDUnDocumentDuCabinet(dossier, document, 'c'.repeat(64), 'image/jpeg')).toBe(`${dossier}/${document}/${'c'.repeat(64)}.jpg`)
+    expect(cheminDUnDocumentDuCabinet(dossier, document, 'C'.repeat(64), 'application/pdf')).toBeNull()
+    expect(cheminDUnDocumentDuCabinet(dossier, 'liasse', 'c'.repeat(64), 'application/pdf')).toBeNull()
   })
 })

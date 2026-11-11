@@ -51053,3 +51053,22 @@ factures de l'onglet) ; partielles, refusées ou pas revenues, aucun geste. Test
 états du drapeau, deux clics du même `act` — la mutation du verrou mord) ; garde `ecransAvantLecture`. Reste : les tâches d'une autre
 période que l'exercice (une déclaration de TVA mensuelle) ne se proposent pas ; l'échéance, l'e-mail et les mentions (`p_facture`)
 se règlent dans le brouillon.
+
+### 11/11/2026 — B2 : LES DOCUMENTS ET LES DEMANDES DU CABINET, EN BASE (LIGNE 51.5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, sur une copie de la mère 17 rattrapée à la production (197 migrations, `07779d7b…`) plus B1 ; rien en
+production. `documents_et_demandes` (20261111234000, par l'OUTIL : ni `drop` ni `truncate`, « delete » dans les clés, la
+policy du seau et les gardes seulement) : `documents_cabinet` (le fichier dans un seau NEUF privé `documents-cabinet`, 20 Mio,
+PDF, JPEG, PNG, sous `<dossier>/<document>/<empreinte>.<ext>`, son poids et son type lus du stockage), `lectures_documents`
+(la première ouverture de chaque accès « Documents »), `demandes_cabinet` (l'état se déduit ; clôture d'une liste fermée),
+`demandes_reponses` (un dépôt du chemin d'aujourd'hui ; supprimé par le cabinet, le lien se défait, ce qui a été joint reste
+dit), `relances_demandes` (l'écran ; l'e-mail à B3). Cinq gardes, huit fonctions `security definer` (l'accès d'abord) ; le
+cabinet lit tout, « Documents » les documents publiés, tout accès les demandes — policies À PRÉSENTER. Preuves :
+`documentsCabinet.sql` 81 lignes, 0 en faute, 8 mutations sur 8 ; `documentsCabinetSuppression.sql` (réplique) 17, 0, 3 sur 3 ;
+`rls.sql` bloc DM, TC1 et TC3 conscients de B2 (sans eux TC3 tombe) : 158 invariants, 0 en faute, 109 sur 109 (sans B2 :
+154, 105) ; `troisCasesDeLAcces.sql` 0 en faute des deux côtés ; `restauration.sql` IDENTIQUE (94 tables, les cinq semées) ;
+aller, retour (destructif), aller : `signature.sql` égale ; banc du leurre SÛR sur les quatre essais touchés (son complément
+garnit désormais `pieces_des_factures_reprises`, que rien ne remplissait depuis A8-Q5, et les deux tables de B2 que le
+remplisseur ne sait pas écrire). Application derrière `DOCUMENTS_ET_DEMANDES_PREVUS` : le module,
+les bornes du seau, le plan de sauvegarde, le seau vidé avec le dossier. B2-Q1 à Q4 posées ; MEG2-Q10 ouverte, rien ne se
+purge seul. Reste B3 (écrans, relance par e-mail, la phrase de la case « Documents »).

@@ -284,9 +284,12 @@ describe('les essais de la base, rejoués en production', () => {
     // Le vingtième, fichesLieesAuxDossiers, le 11/11/2026 (LM3, migration `fiche_liee_au_dossier_du_client`) : il désigne
     // le dossier du cabinet, crée un cabinet et retire un dossier, sous la même garde. Son catalogue se rejoue partout : le
     // bloc FL de rls.sql.
+    // Le vingt et unième, documentsCabinetSuppression, le 11/11/2026 (B2, migration `documents_et_demandes`) : il supprime
+    // des fichiers du seau, des pièces, des lignes et un dossier jetable, sous la même garde. documentsCabinet.sql, lui, se
+    // joue en production (aucune suppression), et son catalogue aussi : le bloc DM de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
-      'devisSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
+      'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
@@ -394,7 +397,9 @@ describe('les essais de la base, rejoués en production', () => {
     // `facturesImportees`, `reglerLePlanDuDossier`, `numerotationContinue`, `encaissementsDesReprises` et
     // `pieceDUneFactureReprise` sortis (ils ne cherchent aucun semis et se jouent comme des essais de la production) ;
     // `empreinteDesExercices` quitte la famille « apres » et reste un cas particulier, joué par le super-utilisateur.
-    expect(cas.length).toBe(19)
+    // Vingt le 11/11/2026 : `documentsCabinet` (B2, `documents_et_demandes`) entré dans la famille « apres », après sa
+    // migration préparée et celle qu'elle suppose (B1) : un seul modèle « apres » porte les deux ; SÛR au banc.
+    expect(cas.length).toBe(20)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
