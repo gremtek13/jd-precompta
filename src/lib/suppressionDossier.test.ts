@@ -446,3 +446,15 @@ describe('ce qu’on montre au cabinet', () => {
     expect(texte.match(/refusé/g)).toHaveLength(1)
   })
 })
+
+// B2 (ligne 51.5) : le seau `documents-cabinet` n'est vidé qu'une fois sa migration en base (`DOCUMENTS_ET_DEMANDES_PREVUS`) —
+// avant, le lister rendrait une erreur (un seau absent) et chaque suppression dirait un inventaire incomplet ; après, ses
+// fichiers partent avec le dossier, comme ceux des trois autres.
+describe('les seaux qu’une suppression de dossier vide', () => {
+  it('le seau des documents du cabinet, sa migration en base seulement ; celui des ventes, la sienne', async () => {
+    const { seauxDuDossier } = await import('./suppressionDossier')
+    expect(seauxDuDossier(false, false)).toEqual(['pieces', 'packs'])
+    expect(seauxDuDossier(true, false)).toEqual(['pieces', 'packs', 'ventes'])
+    expect(seauxDuDossier(true, true)).toEqual(['pieces', 'packs', 'ventes', 'documents-cabinet'])
+  })
+})

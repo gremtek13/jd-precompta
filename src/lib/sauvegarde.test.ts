@@ -33,6 +33,7 @@ import {
   vaguesParLien,
   type Relation,
 } from './sauvegarde'
+import { TABLES_DES_DOCUMENTS_ET_DEMANDES } from './documentsEtDemandes'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { CAISSE_EXPORTEE } from './caisse'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
@@ -268,8 +269,10 @@ describe('ordre de restauration', () => {
     for (const lue of ['pieces', 'documents_divers']) expect(rang(lue), lue).toBeLessThan(rang('dossier_permanent'))
     expect(ORDRE_RESTAURATION[rang('dossier_permanent') - 1]).toBe('declarations_ereporting_sources')
     expect(rang('dossier_permanent')).toBeLessThan(rang('exercices_valides'))
-    // Suivi, depuis la ligne 22.7, des pièces jointes écartées, puis des devis (le test qui suit).
-    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('dossier_permanent') + 1]).toBe('pieces_jointes_ecartees')
+    // Suivi, depuis la ligne 22.7, des pièces jointes écartées, puis des devis (le test qui suit) ; depuis B2, les cinq tables
+    // des documents et des demandes du cabinet s'intercalent (sauvegardeDocumentsEtDemandes.test.ts).
+    expect(ORDRE_RESTAURATION_PREVU.slice(ORDRE_RESTAURATION_PREVU.indexOf('dossier_permanent') + 1)
+      .find((t) => !(TABLES_DES_DOCUMENTS_ET_DEMANDES as readonly string[]).includes(t))).toBe('pieces_jointes_ecartees')
     expect(violationsOrdre(ORDRE_RESTAURATION, TOUS_LES_LIENS)).toEqual([])
     expect(RELATIONS.filter((r) => r.enfant === 'dossier_permanent')
       .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())

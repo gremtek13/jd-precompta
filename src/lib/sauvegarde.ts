@@ -21,6 +21,7 @@ import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
 import { DEPOT_DES_HONORAIRES_PREVU } from './depotDesHonoraires'
 import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
+import { DOCUMENTS_ET_DEMANDES_PREVUS, TABLES_DES_DOCUMENTS_ET_DEMANDES } from './documentsEtDemandes'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
@@ -367,6 +368,23 @@ export function auPlanDuDepart(table: string, prevu: boolean): boolean {
   return prevu || !TABLES_DU_DEPART.includes(table)
 }
 
+// LES DOCUMENTS ET LES DEMANDES DU CABINET (ligne 51.5, étape B2 ; migration `documents_et_demandes`, PRÉPARÉE le
+// 11/11/2026) : les documents que le cabinet met à disposition, la preuve de leur lecture, ses demandes, leurs réponses et
+// leurs relances. Sous le drapeau de la migration (`DOCUMENTS_ET_DEMANDES_PREVUS`, src/lib/documentsEtDemandes.ts), baissé :
+// la production n'a pas les tables, et les lire ferait échouer toute sauvegarde. Leurs relations : le dossier en cascade
+// partout ; le document d'une lecture et la demande d'une réponse ou d'une relance en cascade (ils ne partent qu'avec leur
+// dossier) ; le dépôt qu'une réponse cite, MIS À NUL (la réponse reste, `fichier` et `fichier_sha256` disent ce qu'elle a
+// joint, B2-Q3) ; l'e-mail d'une relance, sans action. Leur rang : après le dossier permanent, bien après les pièces, les
+// documents divers et les e-mails qu'elles citent. Leurs chemins, directs ; leur clé, la commune ; aucune vague. La
+// restauration les réinsère par la porte que leurs policies ouvrent au super-administrateur, et leurs gardes acceptent
+// l'histoire telle qu'écrite. Les FICHIERS du seau `documents-cabinet` ne sont pas des lignes : la sauvegarde ne les porte
+// pas (comme ceux des pièces). sauvegardeDocumentsEtDemandes.test.ts éprouve le plan prévu et le plan du jour.
+
+/** Une table au plan, côté documents et demandes : toutes, sauf les leurs tant que leur migration n'est pas exportée. */
+export function auPlanDesDocumentsEtDemandes(table: string, prevus: boolean): boolean {
+  return prevus || !(TABLES_DES_DOCUMENTS_ET_DEMANDES as readonly string[]).includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -390,6 +408,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS)
     && auPlanDesHonorairesDeposes(table, DEPOT_DES_HONORAIRES_PREVU)
     && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU)
+    && auPlanDesDocumentsEtDemandes(table, DOCUMENTS_ET_DEMANDES_PREVUS)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -674,6 +693,19 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   // Le dépôt des factures d'honoraires (LM8) : le dossier du cabinet, en cascade ; la facture, sans action.
   { enfant: 'honoraires_deposes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'honoraires_deposes', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
+  // Les documents et les demandes du cabinet (B2) : le dossier en cascade ; le document d'une lecture et la demande d'une
+  // réponse ou d'une relance en cascade ; le dépôt qu'une réponse cite, mis à nul ; l'e-mail d'une relance, sans action.
+  { enfant: 'documents_cabinet', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'lectures_documents', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'lectures_documents', parent: 'documents_cabinet', colonne: 'document_id', aLaSuppression: 'cascade' },
+  { enfant: 'demandes_cabinet', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'demandes_reponses', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'demandes_reponses', parent: 'demandes_cabinet', colonne: 'demande_id', aLaSuppression: 'cascade' },
+  { enfant: 'demandes_reponses', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
+  { enfant: 'demandes_reponses', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'met_a_null' },
+  { enfant: 'relances_demandes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'relances_demandes', parent: 'demandes_cabinet', colonne: 'demande_id', aLaSuppression: 'cascade' },
+  { enfant: 'relances_demandes', parent: 'emails_envoyes', colonne: 'email_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -958,6 +990,13 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'declarations_ereporting',
   'declarations_ereporting_sources',
   'dossier_permanent',
+  // Les documents et les demandes du cabinet (B2) : après le dossier permanent, bien après les pièces, les documents divers
+  // et les e-mails qu'elles citent ; le document avant sa lecture, la demande avant ses réponses et ses relances.
+  'documents_cabinet',
+  'lectures_documents',
+  'demandes_cabinet',
+  'demandes_reponses',
+  'relances_demandes',
   'pieces_jointes_ecartees',
   'adresses_reception',
   'contacts',
@@ -1419,6 +1458,11 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   documents_divers: { acces: 'direct' },
   dossier_assignations: { acces: 'direct' },
   dossier_permanent: { acces: 'direct' },
+  documents_cabinet: { acces: 'direct' },
+  lectures_documents: { acces: 'direct' },
+  demandes_cabinet: { acces: 'direct' },
+  demandes_reponses: { acces: 'direct' },
+  relances_demandes: { acces: 'direct' },
   modeles_lettre_de_mission: { acces: 'direct' },
   lettres_de_mission: { acces: 'direct' },
   honoraires_factures: { acces: 'direct' },

@@ -18,6 +18,7 @@ import { ORIGINAUX_RETENUS_PREVUS } from './originauxRetenus'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
 import { DEPOT_DES_HONORAIRES_PREVU } from './depotDesHonoraires'
 import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
@@ -56,7 +57,7 @@ import {
   TABLES_DES_DEVIS,
   tablesSansChemin,
   violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures, auPlanDesHonorairesDeposes,
-  auPlanDuDepart, TABLES_DU_DEPART,
+  auPlanDesDocumentsEtDemandes, auPlanDuDepart, TABLES_DU_DEPART,
 } from './sauvegarde'
 
 // LES DEVIS AU PLAN DE SAUVEGARDE (espace client, étape P5). Leurs migrations attendent l'accord du cabinet : tant que
@@ -92,7 +93,8 @@ describe('le filtre du plan', () => {
     // celui des comptes bancaires, et le graphe retire les clés des mouvements et des contrôles vers leur compte
     // (sauvegardeComptesBancaires.test.ts) ; depuis P1T-E2, celui de l'adresse des accès retirés
     // (sauvegardeAdressesDesAccesRetires.test.ts) ; depuis LM7, celui des factures d'honoraires
-    // (sauvegardeHonorairesFactures.test.ts) ; depuis INAL5, celui du départ d'un client (sauvegardeDepartDuClient.test.ts).
+    // (sauvegardeHonorairesFactures.test.ts) ; depuis INAL5, celui du départ d'un client (sauvegardeDepartDuClient.test.ts) ;
+    // depuis B2, celui des documents et des demandes du cabinet (sauvegardeDocumentsEtDemandes.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -110,7 +112,8 @@ describe('le filtre du plan', () => {
         && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS)
         && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS)
         && auPlanDesHonorairesDeposes(table, DEPOT_DES_HONORAIRES_PREVU)
-        && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU))
+        && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU)
+        && auPlanDesDocumentsEtDemandes(table, DOCUMENTS_ET_DEMANDES_PREVUS))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)

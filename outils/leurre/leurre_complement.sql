@@ -1,7 +1,8 @@
 -- LES TABLES QUE LE REMPLISSEUR DU BANC NE SAIT PAS REMPLIR, POUR LE LEURRE (outils/leurre/banc.py ; SUR UNE RÉPLIQUE
 -- SEULEMENT) : une ligne marquée par dossier de leurre, écrite à la main selon les CHECK de la table, déclencheurs coupés
 -- — dix tables de dossier, et deux sans `dossier_id` qui porteront des données réelles ; sur la réplique qui porte une
--- migration préparée, ses tables aussi (la caisse hier, les devis, les factures reprises, la numérotation qui continue),
+-- migration préparée, ses tables aussi (la caisse hier, les devis, les factures reprises, la numérotation qui continue,
+-- la pièce d'une facture reprise, les documents du cabinet et leurs lectures),
 -- chacune sous `to_regclass`.
 \set ON_ERROR_STOP on
 begin;
@@ -124,5 +125,31 @@ begin
              m || ' motif de la fin confirmée', chef from lc$i$;
   end if;
 end $numerotation$;
+-- La pièce d'une facture reprise (migration `piece_d_une_facture_reprise`, A8-Q5, en production depuis le 10/11/2026) : le
+-- remplisseur ne la sait pas remplir (sa facture, une facture reprise du même leurre, n'existe qu'après la section des
+-- factures reprises) ; une citation par leurre, de la facture reprise vers une pièce du leurre.
+do $piece_reprise$
+begin
+  if to_regclass('public.pieces_des_factures_reprises') is not null and to_regclass('public.factures_importees') is not null then
+    execute $i$insert into public.pieces_des_factures_reprises (dossier_id, facture_id, piece_id, cite_par)
+      select d, (pfx || '-0000-4000-8000-0000000007' || h || '1')::uuid, (pfx || '-0000-4000-8000-0000000001' || h || '1')::uuid, chef
+        from lc$i$;
+  end if;
+end $piece_reprise$;
+-- Les documents mis à disposition et la preuve de leur lecture (migration `documents_et_demandes`, B2, sur la réplique qui la
+-- porte) : un document par leurre — son chemin composé de la ligne elle-même (`documents_cabinet_chemin`), son titre et le
+-- nom de son fichier marqués — et sa lecture ; les demandes, leurs réponses et leurs relances, le remplisseur les garnit.
+do $documents$
+begin
+  if to_regclass('public.documents_cabinet') is not null then
+    execute $i$insert into public.documents_cabinet (id, dossier_id, titre, nature, exercice, chemin, nom_fichier, sha256, taille,
+        type_mime, publie_par)
+      select (pfx || '-0000-4000-8000-0000000009' || h || '1')::uuid, d, m || ' titre du document', '2035', 2025,
+             d::text || '/' || pfx || '-0000-4000-8000-0000000009' || h || '1/' || repeat(h, 64) || '.pdf',
+             m || ' nom du fichier du document', repeat(h, 64), 1000, 'application/pdf', chef from lc$i$;
+    execute $i$insert into public.lectures_documents (dossier_id, document_id, lecteur)
+      select d, (pfx || '-0000-4000-8000-0000000009' || h || '1')::uuid, chef from lc$i$;
+  end if;
+end $documents$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;

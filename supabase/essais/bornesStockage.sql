@@ -21,6 +21,9 @@
 -- factures reprises. Ses bornes attendues sont celles d'avant tant que sa policy de dépôt d'un original n'est pas en base,
 -- celles d'`attendu_depuis_a8d2a` ensuite : 20 Mio, et le PDF, le texte brut (un XML) et le CSV en plus.
 --
+-- Depuis B2 (migration `documents_et_demandes`, PRÉPARÉE le 11/11/2026) : le seau `documents-cabinet`, privé, 20 Mio, PDF,
+-- JPEG et PNG, « EN ATTENTE » tant que l'historique ne porte pas la migration (ou qu'un retour plus récent l'a ôtée).
+--
 -- Joué le 17/10/2026 sur une réplique égale à la production (étape A5c1) : sans `logo_des_factures`, les trois seaux
 -- « ok », `ventes` « EN ATTENTE », aucun seau sans borne attendue, aucun fichier hors des bornes ; avec elle, les quatre
 -- « ok ».
@@ -33,6 +36,11 @@ with attendu_d_avant(seau, publique, taille, types) as (
 attendu_depuis_a8d2a(seau, publique, taille, types) as (
   values ('ventes', false, 20971520::bigint, array['image/png', 'image/jpeg', 'application/pdf', 'text/plain', 'text/csv'])
 ),
+-- Le cinquième seau, celui des documents que le cabinet met à disposition (B2, migration `documents_et_demandes`,
+-- PRÉPARÉE) : attendu dès que l'historique porte la migration, « EN ATTENTE » avant.
+attendu_depuis_b2(seau, publique, taille, types) as (
+  values ('documents-cabinet', false, 20971520::bigint, array['application/pdf', 'image/jpeg', 'image/png'])
+),
 a8d2a as (
   select exists (select 1 from pg_policy o where o.polrelid = 'storage.objects'::regclass and o.polname = 'ventes_depot_d_un_original') as posee
 ),
@@ -40,10 +48,14 @@ attendu as (
   select a.* from attendu_d_avant a where not (a.seau = 'ventes' and (select posee from a8d2a))
   union all
   select d.* from attendu_depuis_a8d2a d where (select posee from a8d2a)
+  union all
+  select d.* from attendu_depuis_b2 d
 ),
 historique as (
   select max(version) filter (where name = 'logo_des_factures') as applique,
-         max(version) filter (where name = 'retour_logo_des_factures') as retour
+         max(version) filter (where name = 'retour_logo_des_factures') as retour,
+         max(version) filter (where name = 'documents_et_demandes') as b2,
+         max(version) filter (where name = 'retour_documents_et_demandes') as retour_b2
     from supabase_migrations.schema_migrations
 ),
 seaux as (
@@ -74,6 +86,9 @@ select seau as quoi,
          when not present and seau = 'ventes'
               and ((select applique from historique) is null or (select retour > applique from historique))
            then 'EN ATTENTE : la migration logo_des_factures n''est pas en base'
+         when not present and seau = 'documents-cabinet'
+              and ((select b2 from historique) is null or (select retour_b2 > b2 from historique))
+           then 'EN ATTENTE : la migration documents_et_demandes n''est pas en base'
          when not present then 'EN FAUTE : seau absent'
          when public is distinct from publique then 'EN FAUTE : public = ' || public
          when file_size_limit is distinct from taille then 'EN FAUTE : taille ' || coalesce(file_size_limit::text, 'aucune')
