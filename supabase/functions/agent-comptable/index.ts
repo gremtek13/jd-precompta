@@ -3521,7 +3521,9 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "lister_ecritures",
-    description: "Liste les lignes du brouillon d'écritures (date, compte, libellé, sens, montant), triées par date décroissante, plafonnées à 200 lignes. Le libellé d'une ligne d'une pièce de vente se recompose de la date et du montant TTC de cette pièce (« Pièce de vente du JJ/MM/AAAA, 0,00 € ») : son client n'est pas transmis. Celui d'une ligne d'un crédit du relevé se recompose de la date et du montant du mouvement (« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé n'est pas transmis ; de même celui d'une ligne d'un débit qui rend ou défait l'argent d'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — (« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui l'argent est rendu n'est pas transmis ; celui d'un autre débit reste. Une ligne rattachée à rien (l'écriture restée d'une pièce supprimée) n'a pas de libellé. Celui d'une ligne d'une opération de caisse se recompose de sa nature, de sa date et de son montant (« Recettes en espèces du JJ/MM/AAAA, 0,00 € » ; de même « Espèces rendues », « Apport en caisse », « Prélèvement en caisse », « Paiement par la caisse ») : la caisse ne nomme personne. Sert à comprendre en détail pourquoi un compte a bougé. Renvoie { ecritures, total_disponible, nombre_renvoye, tronque } : si tronque vaut true, la liste est incomplète — n'en tire ni total ni comptage, resserre le filtre ou passe par lister_comptes, qui agrège sans plafond.",
+    description: "Liste les lignes du brouillon d'écritures (date, compte, libellé, sens, montant), triées par date décroissante, plafonnées à 200 lignes. Le libellé d'une ligne d'une pièce de vente se recompose de la date et du montant TTC de cette pièce (« Pièce de vente du JJ/MM/AAAA, 0,00 € ») : son client n'est pas transmis. Celui d'une ligne d'un crédit du relevé se recompose de la date et du montant du mouvement (« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé n'est pas transmis ; de même celui d'une ligne d'un débit qui rend ou défait l'argent d'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — (« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui l'argent est rendu n'est pas transmis ; celui d'un autre débit reste. Une ligne rattachée à rien (l'écriture restée d'une pièce supprimée) n'a pas de libellé. Celui d'une ligne d'une opération de caisse se recompose de sa nature, de sa date et de son montant (« Recettes en espèces du JJ/MM/AAAA, 0,00 € » ; de même « Espèces rendues », « Apport en caisse », « Prélèvement en caisse », « Paiement par la caisse ») : la caisse ne nomme personne. Sert à comprendre en détail pourquoi un compte a bougé. Renvoie { ecritures, total_disponible, nombre_renvoye, tronque } : si tronque vaut true, la liste est incomplète — n'en tire ni total ni comptage, resserre le filtre ou passe par lister_comptes, qui agrège sans plafond."
+      // MCB5g : la phrase de l'ouverture éclatée, le drapeau des comptes bancaires levé seulement ; baissé, la description d'hier.
+      + (COMPTES_BANCAIRES_PREVUS ? " Celui d'une ligne qui éclate au 1er janvier l'ouverture de la banque entre les comptes bancaires se recompose du 512 du compte qu'elle ouvre et du jour du relevé (« Ouverture du 512100 au relevé du 31/12/AAAA ») : le nom du compte bancaire n'est pas transmis." : ""),
     input_schema: {
       type: "object",
       properties: {
@@ -3843,10 +3845,23 @@ function avertissementDesVentes(enDefaut: { lues: SourceEnDefautRow[] } | { moti
 // opération que la lecture n'a pas rendue, d'un genre que la base n'a pas, ou dont le montant ne dit pas le sens, n'en donne
 // aucun. La ligne qui cite aussi une pièce — la contrepartie du paiement de cette pièce par la caisse — se nomme comme sa pièce.
 //
+// L'OUVERTURE ÉCLATÉE NE NOMME PAS SON COMPTE BANCAIRE (MCB5g ; ligne 26.6). L'écriture du 1er janvier qui passe au 512 de
+// chaque compte bancaire son solde au relevé de la veille, la contrepartie au 512 du rôle (`ecrire_ouverture_eclatee`,
+// migration `ouverture_eclatee_par_compte`), porte une source à elle : `ouverture_compte_bancaire_id`, sans aucune autre
+// (`ecritures_brouillon_ouverture_eclatee`). La base compose son libellé du 512 du compte et du jour du relevé, jamais du
+// libellé du compte — un texte libre que le client « Banque » lit —, mais une ligne restaurée porte celui qu'on lui a donné :
+// il ne part pas. La ligne se nomme comme la base l'écrit (`libelleDeLEclatement`, src/lib/ouvertureEclatee.ts : « Ouverture
+// du 512100 au relevé du 31/12/2025 »), recomposée du 512 de son compte, lu par la clé étrangère (`comptes_bancaires(compte)` :
+// rien d'autre du compte), et de sa date, un 1er janvier. Le côté fermé : un compte non lu, un 512 qui n'en a pas la forme, ou
+// une date qui n'est pas un 1er janvier, aucun libellé. LE DRAPEAU : la colonne n'existe pas avant la migration, et
+// `lister_ecritures` ne la lit que `COMPTES_BANCAIRES_PREVUS` levé (bloc BANQUES DU DOSSIER) ; baissé, la clé est absente de
+// la ligne lue, qui se juge comme hier — une telle ligne, si la restauration en écrivait une, serait rattachée à rien, et se
+// tairait. C'est pourquoi elle n'est pas parmi les RATTACHEMENTS, que toute ligne doit porter.
+//
 // LA SOURCE D'UNE LIGNE se lit dans ses RATTACHEMENTS (`RATTACHEMENTS_D_UNE_LIGNE` : chaque clé étrangère de
 // `ecritures_brouillon` vers ce qui l'a produite, le dossier excepté), dans l'ordre de VF9c : la facture ou l'avoir,
 // l'encaissement, la pièce, le mouvement (une ligne de pièce ou de vente facturée ne recopie jamais le libellé de la banque),
-// l'opération de caisse (étape C5), puis une écriture que l'application compose sans eux (une dotation, un forfait
+// l'opération de caisse (étape C5), l'ouverture éclatée (MCB5g), puis une écriture que l'application compose sans eux (une dotation, un forfait
 // kilométrique, une liquidation de TVA, une cotisation payée depuis le compte personnel), qui garde le sien. Le côté fermé : une ligne lue sans l'un de ses
 // rattachements, ou sans sa pièce, son mouvement et son opération de caisse embarqués, n'a aucun libellé ; un mouvement que la lecture n'a pas rendu,
 // ou dont le montant ne dit pas le sens, n'en donne aucun ; ni la ligne d'une vente facturée d'un dossier qui ne lit pas ses
@@ -3892,6 +3907,9 @@ const RATTACHEMENTS_D_UNE_LIGNE: readonly string[] = [
   "piece_id", "ligne_bancaire_id", "facture_id", "encaissement_id", "immobilisation_id", "vehicule_id", "declaration_tva_id",
   "cotisation_id", "operation_caisse_id",
 ]
+
+// La source d'une écriture qui éclate l'ouverture de la banque (MCB5g) : lue le drapeau des comptes bancaires levé seulement.
+const RATTACHEMENT_DE_L_OUVERTURE = "ouverture_compte_bancaire_id"
 
 // Les mots d'une opération de caisse, par son genre — ceux de la contrainte `operations_caisse_genre` (étape C5). Un genre que
 // la base gagnerait n'a pas de mots : sa ligne se tait jusqu'à ce qu'on l'ait jugé. Une table, pas un objet : un genre
@@ -3942,6 +3960,15 @@ function nomDUneOperationDeCaisse(operation: Partial<Record<keyof OperationDeCai
     : "sans date"
   const nom = operation.genre === "recette" && montant < 0 ? "Espèces rendues" : mots
   return `${nom} ${date}, ${Math.abs(montant).toFixed(2).replace(".", ",")} €`
+}
+
+// Le nom d'une ligne de l'ouverture éclatée (MCB5g) : le 512 du compte bancaire qu'elle ouvre et le jour du relevé, la veille
+// de sa date — le libellé que la base compose. Aucun d'un 512 qui n'en a pas la forme, ni d'une date qui n'est pas un 1er
+// janvier.
+function nomDeLOuvertureEclatee(compte: unknown, date: unknown): string | null {
+  if (typeof compte !== "string" || !/^512\d{3}$/.test(compte)) return null
+  if (typeof date !== "string" || !/^\d{4}-01-01$/.test(date)) return null
+  return `Ouverture du ${compte} au relevé du 31/12/${String(Number(date.slice(0, 4)) - 1).padStart(4, "0")}`
 }
 
 // Ce débit rend-il ou défait-il l'argent d'un client, tel que la base l'a écrit (VF9CQ1B) — le mouvement lu avec son
@@ -4010,10 +4037,20 @@ function libelleDUneLigneDeCaisse(ligne: Record<string, unknown>): string | null
   return nomDUneOperationDeCaisse(operation as Partial<Record<keyof OperationDeCaisseNommee, unknown>>)
 }
 
+// Le libellé d'une ligne de l'OUVERTURE ÉCLATÉE (MCB5g), lue avec son compte bancaire (`comptes_bancaires`, par la clé
+// étrangère de `ouverture_compte_bancaire_id`) : son nom, jamais le libellé du brouillon ; aucun d'un compte que la lecture n'a
+// pas rendu.
+function libelleDUneLigneDOuverture(ligne: Record<string, unknown>): string | null {
+  const compte = ligne.comptes_bancaires
+  if (compte === null || typeof compte !== "object") return null
+  return nomDeLOuvertureEclatee((compte as { compte?: unknown }).compte, ligne.date)
+}
+
 // Le libellé et la SOURCE d'une ligne, dans l'ordre de ses rattachements (VF9c) : la facture ou l'avoir, l'encaissement — leur
 // libellé se RECOMPOSE de leur numéro, comme l'application l'écrit moins son client, et ne se dit pas quand la lecture ne les
 // a pas rendus, ou d'un dossier qui ne lit pas ses ventes —, la pièce, le mouvement — ses encaissements le classent, ou non —,
-// l'opération de caisse (étape C5), une écriture que l'application compose sans pièce ni mouvement ; puis rien : une ligne
+// l'opération de caisse (étape C5), l'ouverture éclatée (MCB5g), une écriture que l'application compose sans pièce ni
+// mouvement ; puis rien : une ligne
 // rattachée à rien (VF9CQ1-Q2).
 function libelleEtSource(ligne: Record<string, unknown>, ventes: VentesNommees | null): { libelle: string | null; source: string | null } {
   if (!RATTACHEMENTS_D_UNE_LIGNE.every((c) => c in ligne) || !("pieces" in ligne) || !("lignes_bancaires" in ligne)
@@ -4037,6 +4074,7 @@ function libelleEtSource(ligne: Record<string, unknown>, ventes: VentesNommees |
     return { libelle: libelleDUneLigneDuReleve(ligne), source: classe ? "mouvement_d_encaissements" : null }
   }
   if (ligne.operation_caisse_id != null) return { libelle: libelleDUneLigneDeCaisse(ligne), source: "caisse" }
+  if (ligne[RATTACHEMENT_DE_L_OUVERTURE] != null) return { libelle: libelleDUneLigneDOuverture(ligne), source: "ouverture_eclatee" }
   if (ligne.immobilisation_id != null || ligne.vehicule_id != null || ligne.declaration_tva_id != null || ligne.cotisation_id != null) {
     return { libelle: libelleDuBrouillon(ligne), source: null }
   }
@@ -4045,9 +4083,10 @@ function libelleEtSource(ligne: Record<string, unknown>, ventes: VentesNommees |
 
 // Ce que le modèle reçoit d'une ligne du brouillon, ÉCRIT ici : ses colonnes d'hier — la date, le compte, le libellé, le sens,
 // le montant, la pièce — et, d'un dossier qui lit ses ventes facturées (`ventes`, VF9c), sa source : la pièce, la facture,
-// l'avoir, l'encaissement, le mouvement que ses encaissements classent, l'opération de caisse (étape C5), ou rien (`null`)
+// l'avoir, l'encaissement, le mouvement que ses encaissements classent, l'opération de caisse (étape C5), l'ouverture éclatée
+// (MCB5g), ou rien (`null`)
 // pour une autre écriture sans pièce que la consigne décrit. Rien de ce qui n'a été lu que pour décider ne part : ni la pièce,
-// ni le mouvement, ni l'opération de caisse embarqués, ni les rattachements.
+// ni le mouvement, ni l'opération de caisse, ni le compte bancaire embarqués, ni les rattachements.
 function ecritureVueParLeModele(ligne: Record<string, unknown>, ventes: VentesNommees | null): Record<string, unknown> {
   const { libelle, source } = libelleEtSource(ligne, ventes)
   const vue = { date: ligne.date, compte: ligne.compte, libelle, sens: ligne.sens, montant: ligne.montant, piece_id: ligne.piece_id }
@@ -4228,7 +4267,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // recompose aussi. ÉTAPE C5 : et son opération de caisse — son genre, sa date, son montant — par la clé étrangère de
     // `operation_caisse_id` : le libellé d'une ligne de la caisse se recompose de ces trois-là, jamais celui du brouillon.
     const lireLesVentes = ventes !== null
-    let q = admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))", { count: "exact" }).eq("dossier_id", dossierId)
+    // MCB5g : et, le drapeau levé seulement — la colonne n'existe pas avant la migration `ouverture_eclatee_par_compte` —, la
+    // source d'une écriture qui éclate l'ouverture de la banque, avec le 512 de son compte bancaire, par la clé étrangère de
+    // `ouverture_compte_bancaire_id` : rien d'autre du compte, ni son libellé ni la fin de son identifiant. Baissé, la
+    // sélection d'hier, à l'octet près.
+    let q = admin.from("ecritures_brouillon").select(COMPTES_BANCAIRES_PREVUS ? "date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id)), ouverture_compte_bancaire_id, comptes_bancaires(compte)" : "date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))", { count: "exact" }).eq("dossier_id", dossierId)
     if (typeof input.compte === "string" && input.compte) q = q.eq("compte", input.compte)
     if (date_debut) q = q.gte("date", date_debut).lte("date", date_fin!)
     const { data, error, count } = await q.order("date", { ascending: false }).limit(limite)
