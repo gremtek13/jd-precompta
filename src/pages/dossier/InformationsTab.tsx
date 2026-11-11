@@ -380,8 +380,8 @@ export default function InformationsTab({
     <SourceDesVentesCard dossierId={dossierId} onReglageRendu={onReglageUpdated} />
 
     {/* La numérotation des factures (ligne 51.5, A9b) : le modèle de chaque série, sa suite reprise, ses trous ; derrière
-        `CARTE_DE_LA_NUMEROTATION_OFFERTE`, baissé jusqu'à la décision du cabinet (la migration d'A9a est en base depuis le
-        10/11/2026). La carte lit et écrit seule. */}
+        `CARTE_DE_LA_NUMEROTATION_OFFERTE`, levé le 11/11/2026 sur la décision du cabinet (A9B-Q0 ; la migration d'A9a est en
+        base depuis le 10/11/2026). La carte lit et écrit seule. */}
     <NumerotationDesFacturesCard dossierId={dossierId} />
 
     <div className="card" style={{ maxWidth: 640 }}>
