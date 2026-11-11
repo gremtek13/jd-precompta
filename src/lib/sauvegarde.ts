@@ -22,6 +22,7 @@ import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
 import { DEPOT_DES_HONORAIRES_PREVU } from './depotDesHonoraires'
 import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
 import { DOCUMENTS_ET_DEMANDES_PREVUS, TABLES_DES_DOCUMENTS_ET_DEMANDES } from './documentsEtDemandes'
+import { ACHATS_DU_CLIENT_PREVUS, TABLES_DES_ACHATS_DU_CLIENT } from './achatsClient'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
@@ -385,6 +386,21 @@ export function auPlanDesDocumentsEtDemandes(table: string, prevus: boolean): bo
   return prevus || !(TABLES_DES_DOCUMENTS_ET_DEMANDES as readonly string[]).includes(table)
 }
 
+// LES ACHATS DU CLIENT (ligne 51.5, étape B4 ; migration `achats_du_client`, PRÉPARÉE le 11/11/2026) : les paiements qu'un
+// accès « Achats » déclare et les pièces qu'il a vues. Sous le drapeau de la migration (`ACHATS_DU_CLIENT_PREVUS`,
+// src/lib/achatsClient.ts), baissé : la production n'a pas les tables, et les lire ferait échouer toute sauvegarde. Leurs
+// relations : la pièce et le dossier en cascade (une déclaration ne survit pas à ce qu'elle cite). Leur rang : après les
+// documents et les demandes, bien après les pièces. Leurs chemins, directs ; leur clé, la commune ; aucune vague. La
+// restauration les réinsère par la porte que leurs policies ouvrent au super-administrateur, et leurs gardes acceptent
+// l'histoire telle qu'écrite ; les trois colonnes de l'échéance de `pieces` suivent la pièce (lignes entières), par la porte
+// que la garde de l'échéance ouvre au super-administrateur. sauvegardeAchatsDuClient.test.ts éprouve le plan prévu et le
+// plan du jour.
+
+/** Une table au plan, côté achats du client : toutes, sauf les leurs tant que leur migration n'est pas exportée. */
+export function auPlanDesAchatsDuClient(table: string, prevus: boolean): boolean {
+  return prevus || !(TABLES_DES_ACHATS_DU_CLIENT as readonly string[]).includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -409,6 +425,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesHonorairesDeposes(table, DEPOT_DES_HONORAIRES_PREVU)
     && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU)
     && auPlanDesDocumentsEtDemandes(table, DOCUMENTS_ET_DEMANDES_PREVUS)
+    && auPlanDesAchatsDuClient(table, ACHATS_DU_CLIENT_PREVUS)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -706,6 +723,11 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'relances_demandes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'relances_demandes', parent: 'demandes_cabinet', colonne: 'demande_id', aLaSuppression: 'cascade' },
   { enfant: 'relances_demandes', parent: 'emails_envoyes', colonne: 'email_id', aLaSuppression: 'bloque' },
+  // Les achats du client (B4) : la pièce et le dossier en cascade.
+  { enfant: 'paiements_declares', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'paiements_declares', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
+  { enfant: 'pieces_vues', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'pieces_vues', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -997,6 +1019,9 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'demandes_cabinet',
   'demandes_reponses',
   'relances_demandes',
+  // Les achats du client (B4) : bien après les pièces qu'ils citent.
+  'paiements_declares',
+  'pieces_vues',
   'pieces_jointes_ecartees',
   'adresses_reception',
   'contacts',
@@ -1463,6 +1488,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   demandes_cabinet: { acces: 'direct' },
   demandes_reponses: { acces: 'direct' },
   relances_demandes: { acces: 'direct' },
+  paiements_declares: { acces: 'direct' },
+  pieces_vues: { acces: 'direct' },
   modeles_lettre_de_mission: { acces: 'direct' },
   lettres_de_mission: { acces: 'direct' },
   honoraires_factures: { acces: 'direct' },

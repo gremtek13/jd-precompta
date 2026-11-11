@@ -402,7 +402,9 @@ describe('les essais de la base, rejoués en production', () => {
     // `empreinteDesExercices` quitte la famille « apres » et reste un cas particulier, joué par le super-utilisateur.
     // Vingt le 11/11/2026 : `documentsCabinet` (B2, `documents_et_demandes`) entré dans la famille « apres », après sa
     // migration préparée et celle qu'elle suppose (B1) : un seul modèle « apres » porte les deux ; SÛR au banc.
-    expect(cas.length).toBe(20)
+    // Vingt et un le 11/11/2026 : `achatsClient` (B4, `achats_du_client`) entré dans la famille « apres », après sa migration
+    // préparée et celle qu'elle suppose (B1) : un seul modèle « apres » porte les deux.
+    expect(cas.length).toBe(21)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

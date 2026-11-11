@@ -95,6 +95,11 @@
 --      l'autre ; tout accès lit la demande ; l'anonyme et un compte rattaché à rien, rien ; le client n'écrit aucune des
 --      cinq tables en direct ni ne dépose dans le seau ; le catalogue — et quatre mutations ; avant la migration
 --      `documents_et_demandes`, une ligne « EN ATTENTE ». TC1 et TC3 ne jugent alors plus que « Achats » et « Notes de frais ».
+--   6octies. Les ACHATS DU CLIENT (B4, ligne 51.5 ; bloc AC, en fin de fichier) : AC1 à AC4 — le client « Achats » lit les
+--      paiements déclarés de son dossier et ses propres pièces vues (contrôle positif), sans la case rien ; l'anonyme et un
+--      compte rattaché à rien, rien ; le client n'écrit aucune des deux tables en direct, ni l'échéance d'une pièce, que le
+--      cabinet ne change que par sa fonction ; le catalogue — et quatre mutations ; avant la migration `achats_du_client`,
+--      une ligne « EN ATTENTE ». TC1 et TC3 ne jugent alors plus « Achats », et M-TC1 lit sous « Notes de frais ».
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -6020,6 +6025,9 @@ declare
   -- B2 (`documents_et_demandes`, préparée) se sert de « Documents » : en base, TC1 et TC3 ne jugent plus que « Achats » et
   -- « Notes de frais », et le bloc DM juge ce que « Documents » ouvre.
   b2 constant boolean := to_regclass('public.documents_cabinet') is not null;
+  -- B4 (`achats_du_client`, préparée) se sert de « Achats » : en base, TC1 et TC3 ne la jugent plus, et le bloc AC juge ce
+  -- qu'elle ouvre ; M-TC1 lit donc la trace sous « Notes de frais », que ni B2 ni B4 n'ouvrent.
+  b4 constant boolean := to_regclass('public.paiements_declares') is not null;
 begin
   if not exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_documents'
                   and not a.attisdropped) then
@@ -6033,12 +6041,13 @@ begin
     begin
       if scenario = 1 then
         create policy essai_tc_achats on public.trace_des_droits for select to authenticated
-          using (client_du_dossier(dossier_id, 'achats'));
+          using (client_du_dossier(dossier_id, 'frais'));
       end if;
       sans := '{}'::jsonb; avec := '{}'::jsonb;
       for n in 1 .. 2 loop
         perform set_config('request.jwt.claims', '', true);
-        update memberships set droit_achats = (n = 2), droit_frais = (n = 2), droit_documents = case when b2 then droit_documents else (n = 2) end where id = acces;
+        update memberships set droit_achats = case when b4 then droit_achats else (n = 2) end, droit_frais = (n = 2),
+          droit_documents = case when b2 then droit_documents else (n = 2) end where id = acces;
         for t in select c.relname as nom from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
                   where ns.nspname = 'public' and c.relkind = 'r' order by c.relname loop
           set local role authenticated;
@@ -6068,7 +6077,7 @@ begin
           'cible', 'memberships', 'observe', 'écarts : ' || ecarts || ' (' || comparees || ' relations comparées)',
           'ok', ecarts = 'aucun' and comparees > 50);
       else
-        mutations := mutations || jsonb_build_object('mutation', 'M-TC1 — la trace des droits lue sous « Achats »',
+        mutations := mutations || jsonb_build_object('mutation', 'M-TC1 — la trace des droits lue sous « Notes de frais »',
           'attendu', 'un écart sur trace_des_droits', 'observe', 'écarts : ' || ecarts, 'mord', ecarts like '%trace_des_droits%');
       end if;
       raise exception 'ANNULATION_ESSAI';
@@ -6114,7 +6123,8 @@ begin
 
   -- TC3 : le catalogue.
   select coalesce(string_agg(p.schemaname || '.' || p.tablename || '.' || p.policyname, ', '), 'aucune') into obs from pg_policies p
-   where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ case when b2 then '''(achats|frais)''' else '''(achats|frais|documents)''' end;
+   where coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '') ~ ('''(' || array_to_string(array_remove(array_remove(
+           array['achats', 'frais', 'documents'], case when b4 then 'achats' end), case when b2 then 'documents' end), '|') || ')''');
   verdicts := verdicts || jsonb_build_object('controle', 'TC3. aucune policy, de tous les schémas, ne nomme « achats », « frais » ni « documents » (lecture du catalogue)',
     'cible', 'pg_policies', 'observe', obs, 'ok', obs = 'aucune');
   verdicts := verdicts || jsonb_build_object('controle', 'TC. le jeu d''essai des trois cases s''est construit', 'cible', 'le dossier du client',
@@ -8212,6 +8222,174 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $dm$;
+
+-- ══ AC. Les achats du client (espace client, étape B4 ; migration `achats_du_client`, PRÉPARÉE) ══
+-- Deux tables : les paiements qu'un accès « Achats » déclare, lus par le cabinet et par « Achats » ; les pièces vues, lues
+-- par le cabinet et par leur compte ; rien d'écrit en direct, tout par les fonctions ; l'échéance d'une pièce par la sienne.
+--   AC1. Le client « Achats » déclare un paiement sur une facture d'achat de son dossier et la marque vue : il lit la
+--        déclaration et sa vue (le contrôle POSITIF) ; sa case décochée, ni l'une ni l'autre ; l'anonyme et un compte
+--        rattaché à rien, rien.
+--   AC2. Le client n'écrit directement aucune des deux tables (42501, leurs gardes, avant la RLS), ni l'échéance d'une pièce
+--        (aucune policy de mise à jour : zéro ligne).
+--   AC3. Le cabinet (le super-administrateur) ne change pas l'échéance d'une pièce en direct (42501, la garde).
+--   AC4. Le catalogue : la RLS des deux tables, six policies à authenticated (hors la restrictive `deux_facteurs`), de
+--        lecture ou de restauration ; la garde de l'échéance sur `pieces`.
+-- Quatre mutations, qui doivent mordre : M-AC1 (la lecture des déclarations passée à « membre » : sans la case, il la lit),
+-- M-AC2 (la lecture des vues passée à « membre » : sans la case, il lit sa vue), M-AC3 (la lecture des déclarations fermée :
+-- avec la case, il ne la lit plus), M-AC4 (la garde de l'échéance qui laisse tout passer : le cabinet la change en direct).
+-- Avant la migration, une ligne dit que le bloc attend.
+do $ac$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  piece uuid := gen_random_uuid();
+  acces uuid; obs text; avec text; sans text; anon_vu text; inconnu_vu text; echeance text; ecritures text; erreur text;
+  construit boolean := false; n bigint;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.paiements_declares') is null then
+    insert into rls_verdict values ('AC. les achats du client : EN ATTENTE de la migration achats_du_client',
+      'paiements_declares', 'absente : ils se jugent dès que la migration y est', true);
+    return;
+  end if;
+  select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
+  for scenario in 0 .. 4 loop
+    begin
+      avec := null; sans := null; anon_vu := null; inconnu_vu := null; echeance := null; ecritures := null;
+      if scenario = 1 then
+        alter policy paiements_declares_lecture_achats on public.paiements_declares using (client_du_dossier(dossier_id, 'membre'));
+      elsif scenario = 2 then
+        alter policy pieces_vues_lecture_du_compte on public.pieces_vues
+          using (utilisateur = (select auth.uid()) and client_du_dossier(dossier_id, 'membre'));
+      elsif scenario = 3 then
+        alter policy paiements_declares_lecture_achats on public.paiements_declares using (false);
+      elsif scenario = 4 then
+        create or replace function public.garder_echeance_piece() returns trigger language plpgsql set search_path = public
+          as $f$ begin return new; end $f$;
+      end if;
+      -- Le jeu : le chef dépose une facture d'achat au dossier du client, sous sa session ; le client, la case cochée,
+      -- déclare un paiement et la marque vue.
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into pieces (id, dossier_id, uploaded_by, storage_path, nom_fichier, type_piece)
+        values (piece, dossier_du_client, chef, dossier_du_client::text || '/essai-rls-achat.pdf', 'essai.pdf', 'achat');
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      update memberships set droit_achats = true where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform declarer_paiement_piece(piece, date '2026-11-01', 'virement', 10);
+      perform marquer_vues(dossier_du_client, array[piece]);
+      reset role;
+      construit := construit or scenario = 0;
+      -- Le client, avec puis sans la case : la déclaration, sa vue.
+      for n in 1 .. 2 loop
+        perform set_config('request.jwt.claims', '', true);
+        update memberships set droit_achats = (n = 1) where id = acces;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        obs := (select count(*) from paiements_declares where piece_id = piece) || ' '
+          || (select count(*) from pieces_vues where piece_id = piece);
+        reset role;
+        if n = 1 then avec := obs; else sans := obs; end if;
+      end loop;
+      -- L'anonyme, puis un compte rattaché à rien.
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      anon_vu := ((select count(*) from paiements_declares) + (select count(*) from pieces_vues))::text;
+      reset role;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      inconnu_vu := ((select count(*) from paiements_declares) + (select count(*) from pieces_vues))::text;
+      reset role;
+      -- Le client, la case cochée : une écriture directe dans chacune des deux tables, puis l'échéance de la pièce.
+      perform set_config('request.jwt.claims', '', true);
+      update memberships set droit_achats = true where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      ecritures := '';
+      begin
+        insert into paiements_declares (dossier_id, piece_id, date_paiement, moyen, montant, declare_par)
+          values (dossier_du_client, piece, date '2026-11-01', 'carte', 1, client);
+        ecritures := ecritures || 'ACCEPTÉ ';
+      exception when others then ecritures := ecritures || sqlstate || ' ';
+      end;
+      begin
+        insert into pieces_vues (dossier_id, piece_id, utilisateur) values (dossier_du_client, piece, inconnu);
+        ecritures := ecritures || 'ACCEPTÉ ';
+      exception when others then ecritures := ecritures || sqlstate || ' ';
+      end;
+      with x as (update pieces set date_echeance = date '2026-12-31' where id = piece returning 1) select count(*) into n from x;
+      ecritures := ecritures || n;
+      reset role;
+      -- Le chef (super-administrateur), en direct, sur l'échéance de la pièce.
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      begin
+        update pieces set date_echeance = date '2026-12-31' where id = piece;
+        echeance := 'ACCEPTÉ';
+      exception when others then echeance := sqlstate;
+      end;
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      if scenario = 0 then
+        verdicts := verdicts || jsonb_build_object('controle', 'AC1. le client « Achats » lit la déclaration et la vue de sa facture d''achat (le contrôle positif) ; sans la case, ni l''une ni l''autre ; l''anonyme et un compte rattaché à rien, rien',
+          'cible', 'paiements_declares, pieces_vues',
+          'observe', 'avec la case : ' || avec || ' | sans : ' || sans || ' | l''anonyme : ' || anon_vu || ' | un inconnu : ' || inconnu_vu,
+          'ok', avec = '1 1' and sans = '0 0' and anon_vu = '0' and inconnu_vu = '0');
+        verdicts := verdicts || jsonb_build_object('controle', 'AC2. le client n''écrit directement ni une déclaration ni une vue (42501, les gardes), ni l''échéance d''une pièce (zéro ligne)',
+          'cible', 'paiements_declares, pieces_vues, pieces', 'observe', ecritures, 'ok', ecritures = '42501 42501 0');
+        verdicts := verdicts || jsonb_build_object('controle', 'AC3. le cabinet ne change pas l''échéance d''une pièce en direct (42501, la garde)',
+          'cible', 'pieces.date_echeance', 'observe', echeance, 'ok', echeance = '42501');
+      elsif scenario = 1 then
+        mutations := mutations || jsonb_build_object('mutation', 'M-AC1 — la lecture des déclarations passée à « membre »',
+          'attendu', 'sans la case, il lit la déclaration', 'observe', sans, 'mord', sans like '1 %');
+      elsif scenario = 2 then
+        mutations := mutations || jsonb_build_object('mutation', 'M-AC2 — la lecture des vues passée à « membre »',
+          'attendu', 'sans la case, il lit sa vue', 'observe', sans, 'mord', split_part(sans, ' ', 2) = '1');
+      elsif scenario = 3 then
+        mutations := mutations || jsonb_build_object('mutation', 'M-AC3 — la lecture des déclarations fermée au client',
+          'attendu', 'il ne lit plus la déclaration', 'observe', avec, 'mord', split_part(avec, ' ', 1) = '0');
+      else
+        mutations := mutations || jsonb_build_object('mutation', 'M-AC4 — la garde de l''échéance laisse tout passer',
+          'attendu', 'le cabinet change l''échéance en direct', 'observe', echeance, 'mord', echeance = 'ACCEPTÉ');
+      end if;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, 'scénario ' || scenario || ' : ' || sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+  end loop;
+
+  -- AC4 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename in ('paiements_declares', 'pieces_vues')
+     and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')
+     and p.roles = array['authenticated']::name[] and p.cmd in ('SELECT', 'INSERT')
+     and (p.cmd = 'SELECT' or p.with_check = 'is_super_admin()');
+  verdicts := verdicts || jsonb_build_object('controle', 'AC4. la RLS des deux tables ; six policies à authenticated, de lecture ou de restauration ; la garde de l''échéance sur pieces (lecture du catalogue)',
+    'cible', 'paiements_declares, pieces_vues, pieces',
+    'observe', n || ' sur 6, ' || (select count(*) from pg_policies p where p.schemaname = 'public'
+        and p.tablename in ('paiements_declares', 'pieces_vues')
+        and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout',
+    'ok', n = 6
+      and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename in ('paiements_declares', 'pieces_vues')
+             and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 6
+      and (select count(*) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relrowsecurity
+             and c.relname in ('paiements_declares', 'pieces_vues')) = 2
+      and exists (select 1 from pg_trigger t where t.tgrelid = 'public.pieces'::regclass and t.tgname = 'pieces_echeance_gardee'
+                   and t.tgenabled = 'O'));
+  verdicts := verdicts || jsonb_build_object('controle', 'AC. le jeu d''essai des achats du client s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null and acces is not null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and acces is not null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $ac$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
