@@ -50843,3 +50843,19 @@ près) : un mois est couvert si chaque compte qui l'attend y bouge — le princi
 premier mouvement, jusqu'à sa clôture. Le rappel de janvier (Clôture) nomme chaque compte ; « le mois en double » juge des
 pièces : inchangé. Réplique (197 + MCB1 + MCB2) : l'essai 13/13, EN ATTENTE sans elle, deux mutations mordent,
 `banqueClient.sql` identique. Restent la preuve de la Révision (MCB6), « Ma banque » (MCB7), les échéances d'emprunt, l'à-nouveau de 2026 (MCB5).
+
+### 11/11/2026 — LM2 : L'ONGLET ACCÈS DIT LE REFUS DU DOSSIER DU CABINET AVANT LE CLIC (LIGNE 47) (DERRIÈRE SON DRAPEAU)
+
+(Agent dev ; aucune migration, rien en production.) Le dossier du cabinet ne reçoit aucun accès client : la base et
+`create-client-access` refusaient déjà (409), l'onglet Accès offrait pourtant le formulaire. `lib/dossierDuCabinet.ts` gagne
+`etatDuFormulaireDAcces(designation, dossierId)` (pur) : `refuse` sur le dossier désigné, aux mots de `REFUS_ACCES_CLIENT` ;
+`attend` tant que la désignation n'est pas revenue ou si elle a été lue pour un autre dossier ; `illisible` (la phrase nomme
+le motif) ; `offert` sinon — jamais « offert » sur une lecture absente. `AccesTab` réutilise la lecture de l'onglet
+Informations (`useDesignationDuDossier`, qui ne rejette jamais et se garde avec l'identifiant) et applique le DRAPEAU :
+`DOSSIER_DU_CABINET_PREVU` baissé, rien ne se lit et le formulaire reste offert comme hier ; levé, un refus, une attente ou une
+lecture illisible remplace le formulaire par sa phrase (aucun champ, aucun bouton), et sur le dossier désigné le bouton
+« Envoyer un lien de réinitialisation » disparaît (le geste revérifie aussi l'état). Le gestionnaire de la création refuse de
+partir hors de l'état `offert` : garde de seconde ligne, que l'écran ne laisse pas atteindre (non éprouvée par un test d'écran,
+le formulaire n'étant pas rendu). Un accès déjà lu sur un dossier désigné reste listé et se retire. Tests : 1 de logique
+(`dossierDuCabinet.test.ts`), 5 d'écran (`AccesTab.dossierDuCabinet.test.tsx` : les deux états du drapeau par accesseur,
+attente, désignation d'un autre dossier, illisible) ; la mutation du lien de réinitialisation rougit le premier.
