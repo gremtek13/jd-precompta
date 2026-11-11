@@ -369,10 +369,23 @@ function estFigee(date: string, frontiere: string | null): boolean {
 // n'a pas basculé (la base y refuse toute facture source, `fixer_source_de_la_vente`) ; ailleurs, elle ne se dit que
 // d'une lecture faite en entier.
 //
+// LES FACTURES REPRISES (étapes A8c3 et A8c4 ; copiées dans l'assistant le 11/11/2026). Une facture reprise de l'ancien
+// logiciel (l'état « importee »), qu'`importer_factures` marque source dans un dossier basculé, est une facture source : ses
+// encaissements d'après la date de reprise la comptent, par son registre (`estUneVente`, src/lib/facturesReprises.ts, le
+// drapeau `FACTURES_IMPORTEES_PREVUES` levé ; l'assistant n'a pas de drapeau, et son garde rougit si celui-là se baisse).
+// Elle n'a jamais d'exemplaire. La pièce déjà au dossier qu'elle cite pour ORIGINAL par un lien ACTIF
+// (`pieces_des_factures_reprises`, A8-Q5) garde ce qu'elle a payé avant la reprise, et rien de plus : en TRÉSORERIE, son
+// reste que rien ne paie (`sans_paiement`) ne s'écrit pas — l'encaissement d'après la reprise, c'est le registre de la
+// facture qui l'écrit (`resteRegleParSaReprise`, `marquerLesPiecesCitees`, src/lib/facturesSources.ts). Sans elles,
+// l'assistant tenait pour juste un brouillon qui compte la vente deux fois — la pièce à sa date ET l'encaissement —, et
+// disait « à régénérer » l'écriture juste d'une pièce payée en partie avant la reprise. En engagement, rien ne change. Les
+// liens se lisent au jeton de l'APPELANT (le cabinet du dossier seul), dans `points_a_traiter` ; illisibles, ses contrôles
+// se ferment — jamais un ensemble vide deviné.
+//
 // Gardé par src/lib/agentComptableFacturesSources.test.ts, qui extrait ce bloc et l'exécute contre src/lib, et par
 // src/lib/agentComptableAnalyse.test.ts, qui l'extrait avec le générateur.
 
-// Les identifiants des factures et avoirs validés SOURCES de leur vente, lus en entier.
+// Les identifiants des factures et avoirs validés — ou repris — SOURCES de leur vente, lus en entier.
 type FacturesSources = ReadonlySet<string>
 
 // Une facture ou un avoir du dossier, tel que l'assistant le lit (`factures_emises`) : jamais son client (`tiers_nom`), qui
@@ -397,11 +410,31 @@ function exemplairesDesSources(pieces: readonly Pick<PieceRow, "id" | "facture_i
   return new Set(pieces.filter((p) => exemplaireDUneSource(p, sources)).map((p) => p.id))
 }
 
-// Les factures sources parmi des factures émises lues EN ENTIER : validées, et source de leur vente. Le filtre est celui de
-// la base (`factures_emises_source_d_une_facture_validee` : un brouillon n'est jamais source), refait ici pour qu'une
-// lecture plus large que l'appelant ne l'a voulu ne compte pas une facture qui ne l'est pas.
+// La facture compte-t-elle pour la vente : validée, ou reprise de l'ancien logiciel (`estUneVente`, le drapeau levé) ?
+function estUneVente(f: Pick<FactureRow, "statut">): boolean {
+  return f.statut === "validee" || f.statut === "importee"
+}
+
+// Les factures sources parmi des factures émises lues EN ENTIER : validées ou reprises, et source de leur vente. Le filtre
+// est celui de la base (`factures_emises_source_d_une_facture_validee` : un brouillon n'est jamais source), refait ici pour
+// qu'une lecture plus large que l'appelant ne l'a voulu ne compte pas une facture qui ne l'est pas.
 function facturesSourcesDe(factures: readonly Pick<FactureRow, "id" | "statut" | "source_de_la_vente">[]): FacturesSources {
-  return new Set(factures.filter((f) => f.statut === "validee" && f.source_de_la_vente === true).map((f) => f.id))
+  return new Set(factures.filter((f) => estUneVente(f) && f.source_de_la_vente === true).map((f) => f.id))
+}
+
+// Les pièces citées pour ORIGINAL par une facture reprise, par un lien ACTIF, lues EN ENTIER. Un ensemble vide est une
+// affirmation : aucune reprise lue, ou aucun lien actif.
+type PiecesCitees = ReadonlySet<string>
+
+// LA RÈGLE (A8c4) : en trésorerie, la pièce citée ne compte que ses paiements ; en engagement, jamais.
+function resteRegleParSaReprise(piece: Pick<PieceRow, "id">, citees: PiecesCitees, mode: ModeComptable): boolean {
+  return mode === "tresorerie" && citees.has(piece.id)
+}
+
+// Ce que le brouillon doit écrire de chaque pièce, la pièce citée marquée : elle ne s'écrit qu'à ses paiements
+// (`paiementsSeuls`, que le générateur lit). Sans effet en engagement : la marque n'y est lue par personne.
+function marquerLesPiecesCitees<P extends PieceAComptabiliser>(aComptabiliser: readonly P[], citees: PiecesCitees): P[] {
+  return aComptabiliser.map((a) => (resteRegleParSaReprise(a.piece, citees, "tresorerie") ? { ...a, paiementsSeuls: true } : a))
 }
 // ── FIN FACTURES SOURCES ─────────────────────────────────────────────────────────────────────────
 
@@ -668,6 +701,9 @@ function ventesDeLaChecklist(lecture: LectureDesVentesDuReleve | null, frontiere
 interface CibleComptable {
   compte: string
   immobilisation: boolean
+  // En trésorerie, la pièce ne s'écrit qu'à ses paiements (étape A8c4) : la pièce citée par une facture reprise. Posé par
+  // `marquerLesPiecesCitees` (bloc FACTURES SOURCES) seulement ; absent, la pièce s'écrit comme hier.
+  paiementsSeuls?: true
 }
 
 interface PieceAComptabiliser extends CibleComptable {
@@ -951,20 +987,27 @@ function montantRetenu(piece: Pick<PieceRow, "montant_ht" | "montant_tva" | "mon
 
 // Une pièce au centime, date par date, telle que son écriture la porte : ses rattachements réunis par date — la part
 // que rien ne date reportée au dépôt —, le montant réparti selon leurs parts, le dernier morceau prenant l'arrondi.
+// `paiementsSeuls` (la pièce citée par une facture reprise, étape A8c4 ; `centimesParDateSelon`, src/lib/rattachement.ts) :
+// ses seuls paiements, sans la part que rien ne paie — le total est alors la part payée, arrondie au centime ; aucun
+// paiement, rien. Faux, le calcul d'hier, au bit près.
 function centimesParDate(
   piece: Pick<PieceRow, "date_piece" | "montant_ttc" | "type_piece" | "created_at">,
   montant: number,
   paiements: readonly Pick<PaiementDePiece, "date" | "montant">[],
+  paiementsSeuls: boolean,
 ): { date: string; centimes: number }[] {
+  const fractions = rattachementsTresorerie(piece, paiements).filter((r) => !paiementsSeuls || r.source !== "sans_paiement")
+  if (fractions.length === 0) return []
   const reunies: { date: string; part: number }[] = []
-  for (const r of rattachementsTresorerie(piece, paiements)) {
+  for (const r of fractions) {
     const date = r.date ?? dateDuDepot(piece.created_at)
     const meme = reunies.find((x) => x.date === date)
     if (meme) meme.part += r.part
     else reunies.push({ date, part: r.part })
   }
-  const total = Math.round(montant * 100)
-  const morceaux = reunies.map((f) => Math.round(total * f.part))
+  const totalDeLaPiece = Math.round(montant * 100)
+  const total = paiementsSeuls ? Math.round(totalDeLaPiece * reunies.reduce((s, f) => s + f.part, 0)) : totalDeLaPiece
+  const morceaux = reunies.map((f) => Math.round(totalDeLaPiece * f.part))
   morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
   return reunies.map((f, i) => ({ date: f.date, centimes: morceaux[i] }))
 }
@@ -1087,9 +1130,10 @@ function lignesChargeProduitPourPiece(
   // date tombe juste face à sa banque, et la TVA de la pièce reste entière.
   const tva = tvaVentilee(piece, assujettiTva)
   const charge = tva ? montantRetenu(piece, assujettiTva)! : piece.montant_ttc!
-  const charges = centimesParDate(piece, charge, paiements)
+  const paiementsSeuls = cible.paiementsSeuls === true
+  const charges = centimesParDate(piece, charge, paiements, paiementsSeuls)
   const tvas = tva
-    ? centimesParDate(piece, charge + tva, paiements).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
+    ? centimesParDate(piece, charge + tva, paiements, paiementsSeuls).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
     : []
   const compteTva = compteTvaDe(piece, cible.immobilisation, plan)
   const parReglement = ecritureParReglement()
@@ -1232,8 +1276,12 @@ function lignesPourPiece(
 }
 
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
-function datesAttendues(piece: PieceRow, paiements: readonly PaiementDePiece[]): Set<string> | null {
+function datesAttendues(
+  piece: PieceRow, cible: Pick<CibleComptable, "paiementsSeuls">, paiements: readonly PaiementDePiece[],
+): Set<string> | null {
+  // La pièce citée par une facture reprise (A8c4) : les dates de ses seuls paiements.
   const rattachements = rattachementsTresorerie(piece, paiements)
+    .filter((r) => cible.paiementsSeuls !== true || r.source !== "sans_paiement")
   if (rattachements.some((r) => r.date === null)) return null
   return new Set(rattachements.map((r) => r.date!))
 }
@@ -1290,6 +1338,20 @@ function estContrepartieDirigeant(
   return p.type_piece === "note_frais" && e.compte === plan.exploitant && cible.compte !== plan.exploitant
 }
 
+// Le TTC et la TVA que l'écriture d'une pièce doit porter, signés par rapport à son sens (`attenduDeLaPiece`,
+// src/lib/ecritures.ts) : ceux de la pièce, sauf la pièce citée par une facture reprise (A8c4, `paiementsSeuls`), qui ne
+// s'écrit qu'à ses paiements — les siens sont ceux que la génération écrit.
+function attenduDeLaPiece(
+  p: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiementsPiece: readonly PaiementDePiece[], plan: PlanComptable,
+): { ttc: number; tva: number } {
+  if (cible.paiementsSeuls !== true) return { ttc: p.montant_ttc ?? 0, tva: tvaVentilee(p, assujettiTva) }
+  const sensPiece: Sens = p.type_piece === "vente" ? "credit" : "debit"
+  const compteTva = compteTvaDe(p, cible.immobilisation, plan)
+  const generees = lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece, plan)
+  const somme = (ls: readonly LigneAttendue[]) => ls.reduce((s, l) => s + (l.sens === sensPiece ? l.montant : -l.montant), 0)
+  return { ttc: somme(generees), tva: somme(generees.filter((l) => l.compte === compteTva)) }
+}
+
 // QUATRE COMPARAISONS, PAS UNE. Cette copie n'en portait qu'une — le TOTAL — pendant que
 // src/lib/ecritures.ts en avait gagné trois de plus. L'assistant répondait donc « aucune écriture à
 // régénérer » là où la Checklist du même dossier en comptait, sur l'outil dont toute la raison d'être
@@ -1317,7 +1379,8 @@ function tresorerieDesynchronisee(
   const tvaEnregistree = lignes
     .filter((e) => e.compte === compteTva)
     .reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-  if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
+  const attendu = attenduDeLaPiece(p, cible, assujettiTva, paiementsPiece, plan)
+  if (Math.abs(tvaEnregistree - attendu.tva) > EPSILON_EQUILIBRE) return true
   // LA DATE, et elle coûte plus cher que le compte : une pièce validée sans date reçoit une
   // écriture datée de son DÉPÔT, et « Retrouver les dates manquantes » écrit ensuite `date_piece`
   // sans toucher à l'écriture. On ne compare que si la pièce porte une date — sans date elle ne
@@ -1329,7 +1392,7 @@ function tresorerieDesynchronisee(
   // TVA d'une date complète sa charge était juste au total et déséquilibrée dans chacun des exercices qu'elle traverse.
   // Le SOLDE de chaque compte à chaque date, pas le découpage en lignes — un solde nul ne compte pas ; la date seulement
   // si chaque part en a une.
-  const dateComparee = datesAttendues(p, paiementsPiece) !== null
+  const dateComparee = datesAttendues(p, cible, paiementsPiece) !== null
   const soldesParDate = (ls: readonly { date: string; compte: string; sens: string; montant: number }[]) => {
     const soldes = new Map<string, number>()
     for (const l of ls) {
@@ -1348,7 +1411,7 @@ function tresorerieDesynchronisee(
   // fige pas : « Régénérer » doit se proposer. Le drapeau baissé, rien de plus que les soldes.
   if (dateComparee && decoupageDiffere(lignes, chargesGenerees)) return true
   const total = lignes.reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-  if (Math.abs(total - (p.montant_ttc ?? 0)) > EPSILON_EQUILIBRE) return true
+  if (Math.abs(total - attendu.ttc) > EPSILON_EQUILIBRE) return true
   // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT : une pièce payée en deux fois, ou réglée en partie par un
   // virement groupé, n'en recevait qu'une au rapprochement — une écriture déséquilibrée que « Régénérer »
   // réécrit désormais depuis les paiements.
@@ -3192,6 +3255,9 @@ async function verifierPlafondCabinet(admin: ReturnType<typeof createClient>, ca
 
 interface OutilContexte {
   admin: ReturnType<typeof createClient>
+  // Le client au jeton de l'APPELANT (son JWT, la clé publique) : ce qui ne se lit qu'aux droits du cabinet du dossier —
+  // les pièces citées par les factures reprises (étape A8c4), dont la RLS est celle de `admin_du_dossier`.
+  appelant: ReturnType<typeof createClient>
   dossierId: string
   dossier: {
     nom: string; assujetti_tva: boolean; mode_comptable: ModeComptable; compte_notes_de_frais: string
@@ -3415,6 +3481,25 @@ async function sourcesEnDefaut(
     admin.rpc("ventes_facturees_de_l_exercice", { p_dossier_id: dossierId, p_annee: annee }, { count: "exact" })
       .order("jour").order("source").order("source_id").range(debut, fin))
   return lecture.complete ? { lues: lecture.lignes } : { motif: lecture.motif ?? "lecture incomplète" }
+}
+
+// LES PIÈCES CITÉES PAR LES FACTURES REPRISES (étape A8c4 ; bloc FACTURES SOURCES), lues comme l'application les lit
+// (`lireLesPiecesCitees`, src/lib/ventesFactureesLecture.ts) : les liens ACTIFS de `pieces_des_factures_reprises`, au jeton
+// de l'APPELANT — la table ne se lit que par le cabinet du dossier (`admin_du_dossier`), et la clé du service ne se prête pas
+// à ce que la RLS refuse —, en entier, chacun de ce dossier et portant sa pièce. Sinon, le motif : jamais un ensemble vide
+// deviné, qui écrirait la pièce citée à sa date à côté de l'encaissement de sa facture.
+interface LienDePieceCiteeRow { id: string; dossier_id: string; piece_id: string | null }
+
+async function piecesCiteesDuDossier(
+  appelant: ReturnType<typeof createClient>, dossierId: string,
+): Promise<{ citees: PiecesCitees } | { motif: string }> {
+  const lus = await lireTout<LienDePieceCiteeRow>((debut, fin) =>
+    appelant.from("pieces_des_factures_reprises").select("id, dossier_id, piece_id", { count: "exact" })
+      .eq("dossier_id", dossierId).is("retire_le", null).order("id").range(debut, fin))
+  if (!lus.complete) return { motif: lus.motif ?? "lecture incomplète" }
+  if (lus.lignes.some((l) => l.dossier_id !== dossierId)) return { motif: "une ligne rendue n'est pas de ce dossier" }
+  if (lus.lignes.some((l) => typeof l.piece_id !== "string")) return { motif: "la pièce d'un lien n'est pas lue" }
+  return { citees: new Set(lus.lignes.map((l) => l.piece_id as string)) }
 }
 
 // L'ordre de la base : le jour, le genre — la facture, l'avoir, l'encaissement, puis le mouvement —, l'identifiant. Les
@@ -4118,7 +4203,22 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       .filter((p) => p.facture_id != null)
       .map((p) => ({ id: p.id, dossier_id: dossierId, facture_id: p.facture_id, statut: "validee", type_piece: p.type_piece }))
     const encaissees = partsEncaissees(dossierId, rEncaissements.lignes, { factures: rFactures.lignes }, designees)
-    const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)
+    // LA PIÈCE CITÉE PAR UNE FACTURE REPRISE (étape A8c4), comme la Checklist : en trésorerie, elle ne s'écrit qu'à ses
+    // paiements — la cible de la génération, que les contrôles du brouillon jugent. Les liens ne se lisent que d'un dossier
+    // dont une facture reprise est lue (un dossier basculé : `importer_factures` l'exige) ; un autre ne lit rien de plus, et
+    // aucune pièce n'y est citée. Illisibles, ces contrôles se ferment, comme devant une source des ventes illisible (VF9a).
+    const repriseLue = rFactures.lignes.some((f) => f.statut === "importee")
+    let citees: PiecesCitees = new Set()
+    if (repriseLue) {
+      const liens = await piecesCiteesDuDossier(ctx.appelant, dossierId)
+      if ("motif" in liens) {
+        return { erreur: `Les pièces que citent les factures reprises de ce dossier n'ont pas pu être lues (${liens.motif}) : en trésorerie, une pièce citée ne compte que ses paiements d'avant la reprise, et ces contrôles la jugeraient à sa date, à côté de l'encaissement de sa facture. Ses contrôles ne sont pas disponibles pour ce dossier — ne tire aucune conclusion sur son état, et renvoie l'utilisateur à la Vue d'ensemble et à l'onglet Écritures, qui les disent.` }
+      }
+      citees = liens.citees
+    }
+    const aComptabiliser = marquerLesPiecesCitees(piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources), citees)
+    // Le point de la Checklist (`reglee-par-sa-facture-reprise`), dit seulement d'un dossier dont une reprise est lue.
+    const regleesParLeurFactureReprise = piecesTyped.filter((p) => resteRegleParSaReprise(p, citees, ctx.modele.mode)).length
     const modele = ctx.modele
     // LES PAIEMENTS PAR LA CAISSE (étape C13), comme la Checklist (src/lib/pointsDeLaChecklist.ts) : tirés des opérations lues
     // — aucun tant que la migration `paiement_par_la_caisse` n'est pas en base, et chaque contrôle rend alors ce qu'il rendait.
@@ -4298,6 +4398,8 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // VF9c : les deux points de la Checklist d'un dossier qui a basculé, sous leurs libellés, et ce que la validation de
       // l'exercice refuserait — que l'onglet Écritures dit, et que la base juge.
       ...(releve && enDefaut ? clesDesVentesFacturees(releve, enDefaut) : {}),
+      // A8c4 : le libellé de la Checklist, d'un dossier dont une facture reprise est lue — un autre n'a pas la clé.
+      ...(repriseLue ? { pieces_de_vente_reglees_par_le_registre_de_leur_facture_reprise: regleesParLeurFactureReprise } : {}),
     }
   }
 
@@ -4581,6 +4683,7 @@ Règles impératives :
 
   const ctx: OutilContexte = {
     admin,
+    appelant: supabaseAsCaller,
     dossierId,
     dossier: {
       nom: dossierRow.nom,

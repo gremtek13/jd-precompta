@@ -407,7 +407,9 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
       'const exemplaires = exemplairesDesSources(piecesTyped, sources)',
       'const piecesQuiComptent = horsDesExemplairesDesSources(piecesTyped, sources)',
       'const designees: ExemplaireRow[] = piecesTyped',
-      'const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)',
+      'const aComptabiliser = marquerLesPiecesCitees(piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources), citees)',
+      // A8c4 (11/11/2026) : le point de la Checklist compte, comme elle, les pièces validées citées — aucun montant n'y entre.
+      'const regleesParLeurFactureReprise = piecesTyped.filter((p) => resteRegleParSaReprise(p, citees, ctx.modele.mode)).length',
       'const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele)',
       '...piecesTyped.flatMap((p) => (p.date_piece ? [Number(p.date_piece.slice(0, 4))] : [])),',
     ])

@@ -438,6 +438,8 @@ const POLITIQUES_LECTURE: Record<string, Politique> = {
   pieces: (l, u, m) => adminDuDossier(m, u, l.dossier_id) || membreDuDossier(m, u, l.dossier_id),
   piece_textes_ocr: (l, u, m) => adminDuDossier(m, u, l.dossier_id) || membreDuDossier(m, u, l.dossier_id),
   categories: (l, u, m) => !!u && (l.dossier_id == null || adminDuDossier(m, u, l.dossier_id) || membreDuDossier(m, u, l.dossier_id)),
+  // `pieces_des_factures_reprises_lecture` (migration `piece_d_une_facture_reprise`, A8-Q5) : le cabinet du dossier seul.
+  pieces_des_factures_reprises: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
 }
 
 /** Qui appelle une fonction SQL : le compte de la session (nul sous une clé seule), et le rôle sous lequel PostgREST la sert. */

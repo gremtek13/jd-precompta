@@ -50433,3 +50433,22 @@ la transmission, l'encaissé avant la reprise, et la nature et l'option quand BT
 CHOIX sans défaut (`formeDImport`). Le test confronte les clés, taux, formats, listes et bornes au texte d'`importer_factures`
 (quatre clés laissées, chacune avec sa raison) ; 23 tests ; trois mutations mordent. Restent A8d2 (l'écran, le dépôt sous
 `<dossier>/imports/`, la policy du seau à présenter, `encaisse_par_taux`), le CSV (A4B3-Q6).
+
+### 11/11/2026 — A8C5 : L'ASSISTANT DEVANT UNE FACTURE REPRISE ET LA PIÈCE QU'ELLE CITE (LIGNE 51.5)
+
+(Agent architecte ; aucune migration, aucune écriture en production, aucun déploiement.) **Établi** : l'assistant ne
+calcule ni l'encaissé avant la reprise ni la date de reprise (la base les juge, `ventes_facturees_de_l_exercice`) ; ses
+blocs VIREMENT MIXTE et VENTES DU RELEVÉ lisent déjà une reprise comme source (`source_de_la_vente`) ; mais
+`facturesSourcesDe` ne prenait que « validee », et le générateur de `points_a_traiter` ignorait les liens de
+`pieces_des_factures_reprises` : sur le cas fictif d'A8c4, un brouillon portant la pièce citée à sa date ET l'encaissement
+(200 € au 706000) se disait juste (0 « à régénérer ») ; après, 1 — la vente compte 100 €. **Corrigé** : `estUneVente`,
+`resteRegleParSaReprise`, `marquerLesPiecesCitees` copiés dans le bloc FACTURES SOURCES ; `centimesParDate`, `datesAttendues`
+et la cible portent `paiementsSeuls` ; les liens actifs lus au jeton de l'APPELANT (`ctx.appelant`), seulement quand une
+reprise est lue — illisibles, `points_a_traiter` se ferme comme devant une source des ventes illisible (VF9a) ; la clé du
+point de la Checklist (`pieces_de_vente_reglees_par_le_registre_de_leur_facture_reprise`) d'un dossier à reprise seulement.
+**Défaut de src/lib trouvé en route, corrigé** : `tresorerieDesynchronisee` comparait le total et la TVA de l'écriture à
+la pièce ENTIÈRE, et disait « à régénérer » pour toujours l'écriture juste d'une pièce citée payée en partie avant la
+reprise (Checklist, onglet Écritures) ; `attenduDeLaPiece` compare à ce que la génération écrit, une pièce non citée comme
+hier. Gardes : un cinquième régime dans `agentComptableAnalyse.test.ts` (chaque pièce citée), la batterie et trois dérives
+de plus dans `agentComptableFacturesSources.test.ts`, sept cas HTTP. Un dossier sans reprise ne lit rien de plus et rend la
+même sortie. Restent : le déploiement (sur un commit de main), `resume_dossier` (ne compte pas les reprises), « Ma simulation ».

@@ -7,7 +7,13 @@ import { chargerFonction, ID, mondeDeReference, muter, prechauffer, requeteDe, s
 import {
   exemplaireUnique, justifieSonMouvement, partsEncaissees, type EncaissementLu, type ExemplaireLu, type FactureDuDossier,
 } from './encaissementsFactures'
-import { exemplaireDUneSource, exemplairesDesSources, facturesSourcesDe, horsDesExemplairesDesSources } from './facturesSources'
+import {
+  exemplaireDUneSource, exemplairesDesSources, facturesSourcesDe, horsDesExemplairesDesSources, marquerLesPiecesCitees,
+  resteRegleParSaReprise,
+} from './facturesSources'
+import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
+import { estUneVente } from './facturesReprises'
+import type { CibleComptable } from './ecritures'
 import type { PartEncaissee } from './rattachement'
 import type { FactureEmise, Piece } from './types'
 
@@ -53,11 +59,16 @@ function executer<T>(code: string, noms: readonly string[]): T {
   return new Function(`"use strict";\n${js}\nreturn { ${noms.join(', ')} }`)() as T
 }
 
+// Depuis le 11/11/2026, les factures reprises (A8c3 : `estUneVente`, de src/lib/facturesReprises.ts, le drapeau levé) et la
+// pièce qu'une reprise cite (A8c4 : `resteRegleParSaReprise`, `marquerLesPiecesCitees`).
 interface CopieSources {
   exemplaireDUneSource: typeof exemplaireDUneSource
   horsDesExemplairesDesSources: typeof horsDesExemplairesDesSources
   exemplairesDesSources: typeof exemplairesDesSources
   facturesSourcesDe: typeof facturesSourcesDe
+  estUneVente: typeof estUneVente
+  resteRegleParSaReprise: typeof resteRegleParSaReprise
+  marquerLesPiecesCitees: typeof marquerLesPiecesCitees
 }
 
 // `compte`, `factureSource` et `ordreC` sont privées dans src/lib : elles se jugent par leurs effets sur les trois autres,
@@ -68,7 +79,10 @@ interface CopieMixte {
   partsEncaissees: typeof partsEncaissees
 }
 
-const NOMS_SOURCES = ['exemplaireDUneSource', 'horsDesExemplairesDesSources', 'exemplairesDesSources', 'facturesSourcesDe']
+const NOMS_SOURCES = [
+  'exemplaireDUneSource', 'horsDesExemplairesDesSources', 'exemplairesDesSources', 'facturesSourcesDe', 'estUneVente',
+  'resteRegleParSaReprise', 'marquerLesPiecesCitees',
+]
 const NOMS_MIXTE = ['justifieSonMouvement', 'exemplaireUnique', 'partsEncaissees']
 
 const copieSources = (source: string) => executer<CopieSources>(bloc(source, FACTURES_SOURCES), NOMS_SOURCES)
@@ -118,9 +132,14 @@ const CAS_SOURCES: [string, FactureLue[], PieceLue[]][] = [
 ]
 
 /** Ce que les quatre fonctions disent d'un cas, sous une forme comparable — l'ordre compris : ce sont des filtres. */
-function ditSources(copie: CopieSources, factures: readonly FactureLue[], pieces: readonly PieceLue[]): string[] {
+function ditSources(
+  copie: CopieSources, factures: readonly FactureLue[], pieces: readonly PieceLue[], citees: ReadonlySet<string> = new Set(['p1']),
+): string[] {
   const sources = copie.facturesSourcesDe(factures)
   const gardees = copie.horsDesExemplairesDesSources(pieces, sources)
+  // La cible de la génération, telle que `piecesAComptabiliser` la rend, marquée : les mêmes objets quand rien n'est cité.
+  const cibles = pieces.map((p): { piece: Piece } & CibleComptable => ({ piece: p as Piece, compte: '706000', immobilisation: false }))
+  const marquees = copie.marquerLesPiecesCitees(cibles, citees)
   return [
     `sources ${[...sources].join(',')}`,
     `exemplaire ${pieces.map((p) => copie.exemplaireDUneSource(p, sources)).join(',')}`,
@@ -128,36 +147,51 @@ function ditSources(copie: CopieSources, factures: readonly FactureLue[], pieces
     // Un filtre rend les MÊMES objets : l'appelant y relit tout ce que la pièce porte.
     `mêmes objets ${gardees.every((p) => pieces.includes(p))}`,
     `exemplaires ${[...copie.exemplairesDesSources(pieces, sources)].join(',')}`,
+    `ventes ${factures.map((f) => copie.estUneVente(f)).join(',')}`,
+    `réglées par leur reprise ${(['tresorerie', 'engagement'] as const).map((mode) => pieces.map((p) => copie.resteRegleParSaReprise(p, citees, mode)).join(',')).join(' | ')}`,
+    // Une pièce que rien ne cite garde son objet ; la citée reçoit sa marque, sur une copie.
+    `marquées ${marquees.map((a, k) => `${a.piece.id}:${a.paiementsSeuls ?? '-'}:${a === cibles[k]}`).join(',')}`,
   ]
 }
 
-const ICI_SOURCES: CopieSources = { exemplaireDUneSource, horsDesExemplairesDesSources, exemplairesDesSources, facturesSourcesDe }
+const ICI_SOURCES: CopieSources = {
+  exemplaireDUneSource, horsDesExemplairesDesSources, exemplairesDesSources, facturesSourcesDe, estUneVente,
+  resteRegleParSaReprise, marquerLesPiecesCitees,
+}
 
 // ── LES FACTURES SOURCES : UNE BATTERIE TIRÉE D'UNE GRAINE FIXE ──────────────────────────────────────────────────────
 
 const POOL_FACTURES = ['fa', 'fb', 'fc', 'fs', 'ft'] as const
 
-interface CasSourcesTire { factures: FactureLue[]; pieces: PieceLue[] }
+interface CasSourcesTire { factures: FactureLue[]; pieces: PieceLue[]; citees: ReadonlySet<string> }
 
 function batterieSources(nombre: number, graine: number): CasSourcesTire[] {
   const suivant = tirage(graine)
   const parmi = <T,>(liste: readonly T[]): T => liste[entierTire(suivant, liste.length)]
   const souvent = (p: number) => suivant() < p
-  return Array.from({ length: nombre }, () => ({
-    factures: POOL_FACTURES.filter(() => souvent(0.7)).map((id) => factureLue({
+  // Les reprises et les pièces citées (11/11/2026) se tirent d'une SECONDE suite : la première, et ce qu'elle exerçait,
+  // restent ceux d'hier. Une facture validée devient reprise ; l'ensemble des sources n'en change pas.
+  const second = tirage(graine + 1)
+  return Array.from({ length: nombre }, () => {
+    const factures = POOL_FACTURES.filter(() => souvent(0.7)).map((id) => factureLue({
       id, statut: souvent(0.8) ? 'validee' : 'brouillon', source_de_la_vente: souvent(0.5),
-    })),
-    pieces: ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'].filter(() => souvent(0.7)).map((id) => pieceLue({
+    }))
+    const pieces = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'].filter(() => souvent(0.7)).map((id) => pieceLue({
       id, facture_id: souvent(0.3) ? null : parmi([...POOL_FACTURES, 'inconnue']),
-    })),
-  }))
+    }))
+    return {
+      factures: factures.map((f) => (f.statut === 'validee' && second() < 0.3 ? { ...f, statut: 'importee' as FactureLue['statut'] } : f)),
+      pieces,
+      citees: new Set(pieces.filter(() => second() < 0.25).map((p) => p.id)),
+    }
+  })
 }
 
 const BATTERIE_SOURCES = batterieSources(600, 20261027)
 
 const ecartsSources = (copie: CopieSources) => BATTERIE_SOURCES.flatMap((c, i) => {
-  const la = ditSources(copie, c.factures, c.pieces)
-  const ici = ditSources(ICI_SOURCES, c.factures, c.pieces)
+  const la = ditSources(copie, c.factures, c.pieces, c.citees)
+  const ici = ditSources(ICI_SOURCES, c.factures, c.pieces, c.citees)
   return la.some((x, k) => x !== ici[k]) ? [`cas ${i}`] : []
 })
 
@@ -335,6 +369,18 @@ describe('agent-comptable / bloc FACTURES SOURCES (copie déployée, étape VF9b
     expect(designeesQuiComptent).toBeGreaterThan(400)
     expect(brouillonsMarques).toBeGreaterThan(50)
     expect(sansSource).toBeGreaterThan(30)
+    // Les reprises sources, et les pièces citées (A8c3, A8c4).
+    const reprisesSources = BATTERIE_SOURCES.reduce((n, c) => n + c.factures.filter((f) => (f.statut as string) === 'importee' && f.source_de_la_vente).length, 0)
+    const citees = BATTERIE_SOURCES.reduce((n, c) => n + c.citees.size, 0)
+    expect(reprisesSources).toBeGreaterThan(150)
+    expect(citees).toBeGreaterThan(300)
+  })
+
+  it('l’assistant n’a pas de drapeau des factures reprises : il les lit comme l’application, le drapeau levé', () => {
+    // Le jour où `FACTURES_IMPORTEES_PREVUES` se baisserait, la copie (qui compte une reprise) ne dirait plus la même chose.
+    expect(FACTURES_IMPORTEES_PREVUES).toBe(true)
+    expect(deployeeSources.estUneVente({ statut: 'importee' })).toBe(true)
+    expect(deployeeSources.estUneVente({ statut: 'brouillon' })).toBe(false)
   })
 })
 
@@ -421,7 +467,12 @@ describe('les gardes des blocs FACTURES SOURCES et VIREMENT MIXTE savent encore 
       '  return new Set(pieces.filter((p) => exemplaireDUneSource(p, sources)).map((p) => p.id))\n',
       '  return new Set(pieces.filter((p) => p.facture_id != null).map((p) => p.id))\n'],
     ['facturesSourcesDe : un brouillon marqué source l’est',
-      'factures.filter((f) => f.statut === "validee" && f.source_de_la_vente === true)', 'factures.filter((f) => f.source_de_la_vente === true)'],
+      'factures.filter((f) => estUneVente(f) && f.source_de_la_vente === true)', 'factures.filter((f) => f.source_de_la_vente === true)'],
+    ['estUneVente : une facture reprise n’est pas une vente', '  return f.statut === "validee" || f.statut === "importee"\n',
+      '  return f.statut === "validee"\n'],
+    ['resteRegleParSaReprise : en engagement aussi', '  return mode === "tresorerie" && citees.has(piece.id)\n', '  return citees.has(piece.id)\n'],
+    ['marquerLesPiecesCitees : ne marque rien',
+      '(resteRegleParSaReprise(a.piece, citees, "tresorerie") ? { ...a, paiementsSeuls: true } : a)', '(a)'],
   ]
   for (const [quoi, avant, apres] of DERIVES_SOURCES) {
     it(`attrape ${quoi}`, () => {
@@ -690,4 +741,152 @@ describe('points_a_traiter, les ventes d’un dossier basculé lues (étapes VF9
       expect(String(points.erreur)).toMatch(/^Lecture partielle : lecture interrompue après 0 ligne\(s\) : panne fictive — ne tire aucune conclusion/)
     })
   }
+})
+
+// ── LA FACTURE REPRISE ET LA PIÈCE QU'ELLE CITE, DANS `points_a_traiter` (étapes A8c3 et A8c4, copiées le 11/11/2026) ──────
+// Le cas fictif d'A8c4 (src/lib/pieceCiteeParUneReprise.test.ts) : une facture reprise de 100 € (l'état « importee »),
+// source de sa vente, dont la pièce de vente du 20/11/2026 est l'ORIGINAL (un lien actif de `pieces_des_factures_reprises`),
+// jamais réglée ; 100 € encaissés le 15/12/2026, après la reprise, sur un crédit classé par ses encaissements — les
+// écritures de l'encaissement au brouillon, sans pièce. En trésorerie, la pièce citée ne compte que ses paiements : la vente
+// compte 100 €, par le registre. Un brouillon qui porte AUSSI la pièce à sa date la compte deux fois (200 € au 706000) :
+// l'assistant doit le dire « à régénérer », comme la Checklist ; et l'écriture juste d'une pièce payée en partie avant la
+// reprise ne l'est pas.
+
+const R = {
+  citee: 'c1000000-0000-4000-8000-000000000001',
+  reprise: 'f8000000-0000-4000-8000-000000000001',
+  lien: '1e000000-0000-4000-8000-000000000001',
+  credit: 'ab000000-0000-4000-8000-000000000011',
+  acompte: 'ab000000-0000-4000-8000-000000000012',
+} as const
+
+type Brouillon = 'tel-que-l-application-l-ecrit' | 'la-piece-aussi-a-sa-date' | 'payee-en-partie-avant-la-reprise'
+
+function mondeDeLaReprise(brouillon: Brouillon, lien = true): Monde {
+  const m = mondeDesVentes(true)
+  const D_ = ID.dossier
+  const dossier = (m.base.dossiers ?? []).find((d) => d.id === D_)
+  if (!dossier) throw new Error('le dossier du monde de référence a disparu')
+  Object.assign(dossier, { assujetti_tva: false, statut_tva: 'exonere', article_exoneration: 'CGI, art. 261, 4, 1°' })
+  const partielle = brouillon === 'payee-en-partie-avant-la-reprise'
+  m.base.pieces = [{
+    id: R.citee, dossier_id: D_, statut: 'validee', type_piece: 'vente', tiers: 'Client fictif', nom_fichier: 'original.pdf',
+    date_piece: '2026-11-20', montant_ht: 100, montant_tva: null, montant_ttc: 100, categorie_id: N.ventes, facture_id: null,
+    created_at: '2026-11-20T08:00:00Z',
+  }]
+  const mouvement = (id: string, date: string, montant: number, o: Record<string, unknown>) => ({
+    id, dossier_id: D_, date, libelle: 'VIR CLIENT FICTIF', montant, statut: 'rapprochee', piece_id: null, reglement_groupe: false,
+    cotisation_id: null, categorie_id: null, compte_bilan: null, prelevement_personnel: false, emprunt_id: null, ventilee: false,
+    encaissements_de_factures: false, declaration_tva_id: null, ...o,
+  })
+  const encaisse = partielle ? 60 : 100
+  m.base.lignes_bancaires = [
+    mouvement(R.credit, '2026-12-15', encaisse, { encaissements_de_factures: true }),
+    ...(partielle ? [mouvement(R.acompte, '2026-11-25', 40, { piece_id: R.citee })] : []),
+  ]
+  m.base.factures_emises = [{
+    id: R.reprise, dossier_id: D_, statut: 'importee', type: 'facture', numero: 'FA-2026-118', source_de_la_vente: true,
+    facture_origine_id: null, tiers_nom: MARQUEUR_CLIENT,
+  }]
+  m.base.encaissements_factures = [{
+    id: 'ef000000-0000-4000-8000-000000000011', dossier_id: D_, facture_id: R.reprise, montant: encaisse, moyen: 'virement',
+    date_encaissement: '2026-12-15', ligne_bancaire_id: R.credit, annule_id: null, retire_le: null, cree_le: '2026-12-16T09:00:00Z',
+  }]
+  m.base.pieces_des_factures_reprises = lien
+    ? [{ id: R.lien, dossier_id: D_, facture_id: R.reprise, piece_id: R.citee, retire_le: null }]
+    : []
+  const ligne = (n: number, pieceId: string | null, date: string, compte: string, sens: 'debit' | 'credit', montant: number, mvt: string | null = null) => ({
+    id: `ec000000-0000-4000-8000-${String(n).padStart(12, '0')}`, dossier_id: D_, date, compte, libelle: 'Vente fictive', sens, montant,
+    piece_id: pieceId, ligne_bancaire_id: mvt,
+  })
+  // Les écritures de l'encaissement d'après la reprise (`ecrire_vente_facturee`) : sans pièce.
+  m.base.ecritures_brouillon = [
+    ligne(1, null, '2026-12-15', '706000', 'credit', encaisse),
+    ligne(2, null, '2026-12-15', '512000', 'debit', encaisse, R.credit),
+    ...(brouillon === 'la-piece-aussi-a-sa-date' ? [ligne(3, R.citee, '2026-11-20', '706000', 'credit', 100)] : []),
+    ...(partielle
+      ? [ligne(3, R.citee, '2026-11-25', '706000', 'credit', 40), ligne(4, R.citee, '2026-11-25', '512000', 'debit', 40, R.acompte)]
+      : []),
+  ]
+  return m
+}
+
+/** Le produit que le brouillon porte au 706000, en euros : la vente comptée. */
+const produitAuBrouillon = (m: Monde) => (m.base.ecritures_brouillon ?? [])
+  .filter((e) => e.compte === '706000').reduce((s, e) => s + (e.sens === 'credit' ? Number(e.montant) : -Number(e.montant)), 0)
+
+describe('points_a_traiter devant une facture reprise et la pièce qu’elle cite (A8c3, A8c4, par le harnais HTTP)', () => {
+  const sourceReelle = sourceDe('agent-comptable')
+  beforeAll(() => {
+    prechauffer(sourceReelle)
+  }, 60_000)
+
+  it('un brouillon qui compte la vente deux fois (la pièce citée à sa date ET l’encaissement) se dit « à régénérer »', async () => {
+    const monde = mondeDeLaReprise('la-piece-aussi-a-sa-date')
+    expect(produitAuBrouillon(monde)).toBe(200)
+    const { points } = await jouer(monde, sourceReelle)
+    expect(points.ecritures_a_regenerer_pieces_modifiees).toBe(1)
+    expect(points.ecritures_en_attente_de_rapprochement_bancaire).toBe(1)
+    expect(points.pieces_de_vente_reglees_par_le_registre_de_leur_facture_reprise).toBe(1)
+  })
+
+  it('le brouillon tel que l’application l’écrit (100 €, par le registre) est juste', async () => {
+    const monde = mondeDeLaReprise('tel-que-l-application-l-ecrit')
+    expect(produitAuBrouillon(monde)).toBe(100)
+    const { points } = await jouer(monde, sourceReelle)
+    expect(clesDesVentes(points)).toEqual({
+      ecritures_en_attente_de_rapprochement_bancaire: 0,
+      ecritures_desequilibrees: 0,
+      ecritures_a_regenerer_pieces_modifiees: 0,
+      categories_sans_compte_comptable: [],
+      categories_sans_poste_2035: [],
+      pieces_validees_sans_tva_renseignee: 0,
+      pieces_payees_plus_que_leur_montant: 0,
+    })
+  })
+
+  it('la pièce payée en partie avant la reprise : son écriture, à ses seuls paiements, est juste', async () => {
+    const { points } = await jouer(mondeDeLaReprise('payee-en-partie-avant-la-reprise'), sourceReelle)
+    expect(points.ecritures_a_regenerer_pieces_modifiees).toBe(0)
+    expect(points.ecritures_en_attente_de_rapprochement_bancaire).toBe(0)
+    expect(points.ecritures_desequilibrees).toBe(0)
+  })
+
+  it('la reprise est une facture source : son encaissement ne paie aucun exemplaire, et le relevé ne réserve rien', async () => {
+    const { points } = await jouer(mondeDeLaReprise('tel-que-l-application-l-ecrit'), sourceReelle)
+    expect(points.mouvements_reserves_a_des_encaissements_de_factures_a_classer).toBe(0)
+    expect(points.encaissements_de_factures_par_un_moyen_du_releve_sans_mouvement).toBe(0)
+  })
+
+  it('les liens se lisent au jeton de l’appelant, actifs, de ce dossier — et seulement quand une reprise est lue', async () => {
+    const monde = mondeDeLaReprise('tel-que-l-application-l-ecrit')
+    await jouer(monde, sourceReelle)
+    const liens = monde.journal.filter((e) => e.genre === 'lecture' && e.table === 'pieces_des_factures_reprises')
+    expect(liens).toEqual([{
+      genre: 'lecture', table: 'pieces_des_factures_reprises', role: 'authentifie',
+      filtres: [`eq dossier_id ${ID.dossier}`, 'is retire_le null'],
+    }])
+    // Un dossier basculé sans reprise, et un dossier qui n'a pas basculé, ne les lisent pas : leur sortie est celle d'hier.
+    for (const bascule of [true, false]) {
+      const sansReprise = mondeDesVentes(bascule)
+      const { points } = await jouer(sansReprise, sourceReelle)
+      expect(sansReprise.journal.some((e) => e.genre === 'lecture' && e.table === 'pieces_des_factures_reprises')).toBe(false)
+      expect('pieces_de_vente_reglees_par_le_registre_de_leur_facture_reprise' in points).toBe(false)
+    }
+  })
+
+  it('un lien retiré, ou aucun lien : la pièce compte comme hier, à sa date', async () => {
+    const { points } = await jouer(mondeDeLaReprise('la-piece-aussi-a-sa-date', false), sourceReelle)
+    expect(points.ecritures_a_regenerer_pieces_modifiees).toBe(0)
+    expect(points.pieces_de_vente_reglees_par_le_registre_de_leur_facture_reprise).toBe(0)
+  })
+
+  it('des liens illisibles ferment les contrôles, comme une source des ventes illisible (VF9a) : jamais un calcul deviné', async () => {
+    const monde = mondeDeLaReprise('la-piece-aussi-a-sa-date')
+    monde.pannes.push({ table: 'pieces_des_factures_reprises', operation: 'select', erreur: { message: 'panne fictive' } })
+    const { points } = await jouer(monde, sourceReelle)
+    expect(Object.keys(points)).toEqual(['erreur'])
+    expect(String(points.erreur)).toMatch(/^Les pièces que citent les factures reprises de ce dossier n'ont pas pu être lues \(.*panne fictive\)/)
+    expect(String(points.erreur)).toContain('renvoie l\'utilisateur à la Vue d\'ensemble')
+  })
 })
