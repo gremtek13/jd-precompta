@@ -278,8 +278,11 @@ describe('les essais de la base, rejoués en production', () => {
     // partout : le bloc HF de rls.sql.
     // Le dix-huitième, departDuClient, le 11/11/2026 (INAL5, migration `depart_du_client`) : il supprime des dossiers
     // jetables, sous la même garde. Son catalogue et ses lectures se rejouent partout : le bloc DP de rls.sql.
+    // Le dix-neuvième, depotDesHonoraires, le 11/11/2026 (LM8, migration `depot_des_honoraires`) : il désigne le dossier du
+    // cabinet, y valide des factures, range des fichiers dans le seau des pièces, retire une pièce et supprime deux dossiers,
+    // sous la même garde. Son catalogue se rejoue partout : le bloc HD de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'deuxFacteurs (son en-tête)',
+      'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
