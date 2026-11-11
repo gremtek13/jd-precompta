@@ -629,6 +629,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
     + 'reçoit la désignation lue par InformationsTab (`useDesignationDuDossier`) ; son test (DossierDuCabinetCard.test.tsx) éprouve '
     + '« Chargement… » avant la lecture, aucun geste sur une lecture illisible ni pour un membre ; n’écrit que sur « Désigner… » '
     + 'et « Retirer la désignation »',
+  'pages/dossier/ComptesBancairesCard.tsx': 'drapeau `COMPTES_BANCAIRES_PREVUS` baissé : ne rend ni ne lit rien ; levé, son propre '
+    + 'test (ComptesBancairesCard.test.tsx) éprouve « Chargement… » avant la lecture et aucun geste sur une lecture illisible ; '
+    + 'n’écrit que sur « Créer le compte » et « Enregistrer la correction »',
   'pages/dossier/LettresDeMissionCard.tsx': 'drapeau `LETTRES_DE_MISSION_PREVUES` baissé : ne rend ni ne lit rien ; levé, montée '
     + 'dans le seul dossier du cabinet, son test (LettresDeMissionCard.test.tsx) éprouve « Chargement… » avant la lecture et aucun '
     + 'geste sur une lecture illisible ; n’écrit que sur ses gestes, chacun par sa fonction SQL',
