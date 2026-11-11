@@ -369,7 +369,7 @@ export default function BalanceCard({ dossierId, plan }: { dossierId: string; pl
                           + '.'}
                       </li>
                     )}
-                    {/* La reprise ne range que la banque et deux comptes de TVA (lib/aNouveaux.ts) : les autres comptes que
+                    {/* La reprise ne range que la banque, la caisse et deux comptes de TVA (lib/aNouveaux.ts ; PC6, derrière son drapeau : tout compte de rôle à des zéros près) : les autres comptes que
                         l'application écrit elle-même s'ouvrent sous le numéro de la balance, et ses écritures vont ailleurs.
                         Dit avant le clic, sans rien changer à ce qui s'écrit. */}
                     {preparation.nonRanges.length > 0 && (

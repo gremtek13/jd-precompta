@@ -1,7 +1,8 @@
 import { classeDuCompte, type LigneBalance } from './balanceImport'
 import { CAISSE_EXPORTEE, texteCaisseNegative } from './caisse'
 import { formatMoney } from './format'
-import type { CleRoleComptable, PlanComptable } from './planComptable'
+import { ROLES_COMPTABLES, memeCompteAuxZerosPres, sousUneRacineDuRole, type CleRoleComptable, type PlanComptable } from './planComptable'
+import { PLAN_DEPUIS_LA_BALANCE_PREVU } from './planDepuisLaBalance'
 import type { OuvertureBanque } from './planTresorerie'
 import type { ANouveau } from './types'
 
@@ -147,6 +148,58 @@ export function compteQueLApplicationEcritSelon(numero: string, plan: PlanCompta
   return ecrit != null && ecrit !== compte ? ecrit : null
 }
 
+// PC6 — LES À-NOUVEAUX RANGÉS SUR LE PLAN DU DOSSIER (ligne 43 ; conception, § 3.8.2), derrière
+// `PLAN_DEPUIS_LA_BALANCE_PREVU` (lib/planDepuisLaBalance.ts). TOUT compte de la balance égal à un compte de rôle « à des
+// zéros près » (PCG, art. 1131-2) prend le numéro du rôle — le 4455100 s'ouvre au 445510 que solde le paiement de la TVA,
+// le 1640000 au 164000 des échéances —, et non plus la banque et deux comptes de TVA seulement ; tout 512… va à la banque du
+// plan et tout 53… à sa caisse, réunis et dits, comme hier. Avec plusieurs comptes bancaires (MCB), la banque du plan est
+// celle du compte PRINCIPAL : un autre compte bancaire reçoit son ouverture de l'écriture qui l'éclate au relevé du 31
+// décembre (MCB5g, qui lit l'ouverture au 512 du rôle et l'exige entière). Un autre sous-compte sous la racine d'un rôle (un
+// second 401…, un 164200) s'ouvre tel quel, et la reprise dit que l'application n'y écrira pas. La migration
+// `plan_depuis_la_balance` fait refuser à `enregistrer_a_nouveaux` les trois cas que ce rangement ne laisse jamais passer
+// (`refusDUnANouveau`) : un 512… hors de la banque du plan, un 53… hors de sa caisse, l'équivalent non égal.
+
+/** Le compte sous lequel la reprise ouvre ce compte de la balance, rangé sur le plan du dossier (PC6). */
+export function compteRangeSurLePlan(numero: string, plan: PlanComptable): string {
+  const compte = numero.trim()
+  if (compte.startsWith('512')) return plan.banque
+  if (compte.startsWith('53')) return plan.caisse
+  return ROLES_COMPTABLES.map((r) => plan[r.role]).find((c) => memeCompteAuxZerosPres(c, compte)) ?? compte
+}
+
+/**
+ * Sous le rangement de PC6 : le compte de rôle sous la racine duquel ce compte de la balance s'ouvre sans être lui (un
+ * second 401…), ou la forme à six chiffres d'un compte de bien ; nul sinon. Les racines sont celles du catalogue.
+ */
+export function compteQueLApplicationEcritSurLePlan(numero: string, plan: PlanComptable): string | null {
+  const compte = numero.trim()
+  if (compteRangeSurLePlan(compte, plan) !== compte) return null
+  const role = ROLES_COMPTABLES.find((r) => sousUneRacineDuRole(r.role, compte))
+  const ecrit = role ? plan[role.role]
+    : FAMILLES_DES_BIENS.test(compte) ? significatif(compte).padEnd(6, '0')
+      : null
+  return ecrit != null && ecrit !== compte ? ecrit : null
+}
+
+/**
+ * Ce qu'`enregistrer_a_nouveaux` refuse d'un compte d'à-nouveau depuis la migration `plan_depuis_la_balance`, dans son
+ * ordre et à ses mots (planDepuisLaBalance.test.ts les confronte au texte de la migration) ; nul s'il passe. Le
+ * rangement de PC6 n'en produit aucun : c'est sa garde, que les tests rejouent sur des balances fictives.
+ */
+export function refusDUnANouveau(compte: string, plan: PlanComptable): string | null {
+  if (!/^[1-5][0-9]{2,}$/.test(compte)) return null
+  if (compte.startsWith('512') && compte !== plan.banque) {
+    return `Le compte « ${compte} » de ces à-nouveaux est une banque (512…) sans être celle du plan de ce dossier (« ${plan.banque} ») : toute banque de la balance s’ouvre sur la banque du plan, réunie.`
+  }
+  if (compte.startsWith('53') && compte !== plan.caisse) {
+    return `Le compte « ${compte} » de ces à-nouveaux est une caisse (53…) sans être celle du plan de ce dossier (« ${plan.caisse} ») : toute caisse de la balance s’ouvre sur la caisse du plan, réunie.`
+  }
+  const role = ROLES_COMPTABLES.find((r) => plan[r.role] !== compte && memeCompteAuxZerosPres(plan[r.role], compte))
+  return role
+    ? `Le compte « ${compte} » de ces à-nouveaux est, à des zéros près, le compte « ${plan[role.role]} » du rôle « ${role.role} » dans le plan de ce dossier : il s’ouvre sous ce numéro.`
+    : null
+}
+
 const enCentimes = (montant: number) => Math.round(montant * 100)
 
 /**
@@ -165,7 +218,22 @@ export function dateOuverture(exercice: number): string {
 
 // Le plan du dossier décide où la reprise range la banque et la TVA, et sur quels comptes elle ouvre le résultat d'avant.
 export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuvert: number, plan: PlanComptable): PreparationANouveaux {
-  return preparerANouveauxSelon(balance, exerciceOuvert, plan, CAISSE_EXPORTEE)
+  return preparerANouveauxSelonLesDrapeaux(balance, exerciceOuvert, plan, CAISSE_EXPORTEE, PLAN_DEPUIS_LA_BALANCE_PREVU)
+}
+
+/** La reprise selon les deux drapeaux : la caisse en base, et le rangement sur le plan (PC6). */
+export function preparerANouveauxSelonLesDrapeaux(balance: readonly LigneBalance[], exerciceOuvert: number, plan: PlanComptable,
+  caisseEnBase: boolean, surLePlan: boolean): PreparationANouveaux {
+  return surLePlan
+    ? preparerANouveauxSurLePlanSelon(balance, exerciceOuvert, plan, caisseEnBase)
+    : preparerANouveauxSelon(balance, exerciceOuvert, plan, caisseEnBase)
+}
+
+/** La reprise rangée sur le plan du dossier (PC6) : tout compte de rôle à des zéros près, tout 512… et tout 53…. */
+export function preparerANouveauxSurLePlanSelon(balance: readonly LigneBalance[], exerciceOuvert: number, plan: PlanComptable,
+  caisseEnBase: boolean): PreparationANouveaux {
+  return preparerAvec(balance, exerciceOuvert, plan, caisseEnBase,
+    (numero) => compteRangeSurLePlan(numero, plan), (numero) => compteQueLApplicationEcritSurLePlan(numero, plan))
 }
 
 // LA CAISSE N'OUVRE JAMAIS AU CRÉDIT (PCG, art. 1215-53 : « Son solde est soit débiteur soit nul. »). La caisse en base, la
@@ -175,6 +243,12 @@ export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuve
 // passe : la base juge le solde, à la fin de la transaction.
 export function preparerANouveauxSelon(balance: readonly LigneBalance[], exerciceOuvert: number, plan: PlanComptable,
   caisseEnBase: boolean): PreparationANouveaux {
+  return preparerAvec(balance, exerciceOuvert, plan, caisseEnBase,
+    (numero) => compteDeLApplicationSelon(numero, plan, caisseEnBase), (numero) => compteQueLApplicationEcritSelon(numero, plan, caisseEnBase))
+}
+
+function preparerAvec(balance: readonly LigneBalance[], exerciceOuvert: number, plan: PlanComptable, caisseEnBase: boolean,
+  ranger: (numero: string) => string, ecritAilleurs: (numero: string) => string | null): PreparationANouveaux {
   const lignes: LigneANouveau[] = []
   const rapproches: PreparationANouveaux['rapproches'] = []
   const nonRanges: PreparationANouveaux['nonRanges'] = []
@@ -204,9 +278,9 @@ export function preparerANouveauxSelon(balance: readonly LigneBalance[], exercic
       continue
     }
     const origine = l.compte.trim()
-    const compte = compteDeLApplicationSelon(origine, plan, caisseEnBase)
+    const compte = ranger(origine)
     if (compte !== origine) rapproches.push({ compteOrigine: origine, libelle: l.libelle, compte })
-    const ecrit = compteQueLApplicationEcritSelon(origine, plan, caisseEnBase)
+    const ecrit = ecritAilleurs(origine)
     if (ecrit) nonRanges.push({ compteOrigine: origine, libelle: l.libelle, compte: ecrit })
     lignes.push({
       compte,
