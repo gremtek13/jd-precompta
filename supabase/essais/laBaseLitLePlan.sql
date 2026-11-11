@@ -64,7 +64,7 @@ declare
   -- La jambe de banque par compte (MCB5, migration `jambe_de_banque_par_compte`, préparée) : les sept fonctions qui classent un
   -- mouvement lisent la banque du MOUVEMENT (`compte_de_banque_du_mouvement`), plus le rôle `banque` par son nom.
   banque_du_mouvement constant boolean := exists (select 1 from supabase_migrations.schema_migrations
-                                                   where version = '20261111200000' and name = 'jambe_de_banque_par_compte');
+                                                   where name = 'jambe_de_banque_par_compte'); -- par son nom : collée, sa version est l'heure du collage
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   -- Le dossier `test` ne prête que son cabinet aux dossiers jetables.
   dossier_test uuid := '001c7ed7-c23b-4590-901e-693489f8af24';

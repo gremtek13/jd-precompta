@@ -62,8 +62,9 @@ declare
   apres text;
   verdicts jsonb := '[]'::jsonb;
 begin
+  -- La migration se reconnaît à son NOM : collée, elle prend la version de l'heure du collage, pas celle du fichier préparé.
   if not exists (select 1 from supabase_migrations.schema_migrations
-                  where version = '20261111200000' and name = 'jambe_de_banque_par_compte') then
+                  where name = 'jambe_de_banque_par_compte') then
     perform set_config('essai.jambe_de_banque', jsonb_build_array(jsonb_build_object('controle',
       '0. EN ATTENTE de la migration jambe_de_banque_par_compte', 'ok', true,
       'observe', 'absente : l''essai se joue dès qu''elle est en base'))::text, true);

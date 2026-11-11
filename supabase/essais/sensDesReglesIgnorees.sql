@@ -114,7 +114,7 @@ begin
       (19, 'proprietaire', '14b. … son corps à son empreinte (retours chariot écartés)', $q$select md5(replace(p.prosrc, chr(13), '')) from pg_proc p
   where p.oid = to_regprocedure('public.rapprocher_cotisation(uuid, uuid, jsonb)')$q$, 'OK',
         -- La jambe de banque par compte (MCB5, `jambe_de_banque_par_compte`) remplace son corps : la banque du mouvement.
-        case when exists (select 1 from supabase_migrations.schema_migrations where version = '20261111200000')
+        case when exists (select 1 from supabase_migrations.schema_migrations where name = 'jambe_de_banque_par_compte')
              then '2559833009639c117795ad40d74dc31f' else 'bf920662bc500bc4fcf23aba0ce829e3' end),
       (20, 'proprietaire', '14c. … le refus dit par elle seule', $q$select string_agg(p.proname, ',' order by p.proname) from pg_proc p
   where p.pronamespace = 'public'::regnamespace and p.prosrc like '%Ce mouvement est ignoré : remets-le%'$q$, 'OK', 'rapprocher_cotisation')
