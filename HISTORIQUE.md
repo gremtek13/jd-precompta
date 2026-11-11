@@ -50970,7 +50970,7 @@ mots à lui (`REFUS_BANQUE_INCONNUE`, jamais prêté à la base), et la 2035 ne 
 clos compris, aux mots du rôle — confronté au corps de la migration (ni `compte_propre_depuis` ni `clos_le`) ; sans comptes lus, la
 compensation ne se juge pas. `compte_bancaire_id` lu le drapeau levé seulement (deux requêtes littérales). `banques` passe par
 `compositionDesSources`, `etatsDesVentesFacturees`, `ecrituresDesVentesPourLa2035` et leurs six onglets (`useBanquesDuDossier`).
-**Preuves** : `ecrituresVentesFactureesParCompte.test.ts` (11 cas, deux plans, deux modèles ; deux mutations mordent) ; 75 appels de
-tests mis à la banque du rôle, la suite touchée et les scanners verts. **Restent** : le paiement d'une pièce (`ligneContrepartieBanque`,
+**Preuves** : `ecrituresVentesFactureesParCompte.test.ts` (11 cas, deux plans, deux modèles ; deux mutations mordent) ;
+61 appels de tests et de bancs mis à la banque du rôle, la suite touchée et les scanners verts. **Restent** : le paiement d'une pièce (`ligneContrepartieBanque`,
 `lignesReglementEngagement`, `contrepartieBanque.ts`, la reconnaissance de la contrepartie dans `analyserEcritures` et les deux
 désynchronisations, les parts groupées et mixtes de `paiementsDesPieces` sans `compte_bancaire_id`), les lecteurs, l'assistant.
