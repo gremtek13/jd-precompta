@@ -8,6 +8,7 @@ import {
   rattachementAConfirmer, refusAConfirmerLEntree, refusARattacher,
 } from './creationDesComptes'
 import { CE_QUE_DONNE_UN_ACCES, DOMAINES } from './droitsAcces'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { extraireErreurFonction } from './invokeErreur'
 
@@ -251,7 +252,7 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
         + "souvient plus, « Mot de passe oublié », sur l'écran de connexion, lui envoie un lien pour en choisir un autre.",
     ])
     // Le drapeau baissé (l'état d'avant C4a), mot pour mot ; levé, « Mes comptes » s'y ajoute (le cas qui suit le vérifie).
-    expect(ceQuePerdLeClientSelon(false)).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
+    expect(ceQuePerdLeClientSelon(false, false)).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
       + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
       + "réponses à tes précisions), « Mes informations », « Ma simulation », « Mon échéancier » et, selon les cases de ses "
       + 'accès, « Mes ventes », « Ma banque », « Mon analyse » et « Ma caisse » —, pour chacune de ses sociétés.')
@@ -271,16 +272,25 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     const cheminsDuCabinet = new Set([...espaceCabinet.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]))
     expect(cheminsDuCabinet.has('/securite')).toBe(true)
     const chemins = [...espaceClient.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]).filter((c) => !cheminsDuCabinet.has(c)).sort()
-    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-comptes', '/mes-informations', '/mes-pieces', '/mes-ventes', '/mon-analyse', '/mon-echeancier'])
-    // « Mes comptes » (étape C4b) n'est montée qu'avec sa migration : la phrase la nomme dans cet état-là, et la tait avant.
+    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-comptes', '/mes-demandes', '/mes-documents',
+      '/mes-informations', '/mes-pieces', '/mes-ventes', '/mon-analyse', '/mon-echeancier'])
+    // « Mes comptes » (étape C4b), « Mes documents » et « Mes demandes » (étape B3a) ne sont montées qu'avec leur migration : la
+    // phrase les nomme dans cet état-là, et les tait avant.
+    const avecSaMigration: Record<string, [boolean, boolean]> = {
+      '/mes-comptes': [true, false], '/mes-documents': [false, true], '/mes-demandes': [false, true],
+    }
     for (const chemin of chemins) {
       const nom = layout.match(new RegExp(`<NavLink to="${chemin}" title="([^"]+)"`))?.[1]
       expect(nom, chemin).toBeDefined()
-      expect(ceQuePerdLeClientSelon(true), chemin).toContain(nom === 'Accueil' ? "l'accueil" : `« ${nom} »`)
-      if (chemin !== '/mes-comptes') expect(ceQuePerdLeClientSelon(false), chemin).toContain(nom === 'Accueil' ? "l'accueil" : `« ${nom} »`)
+      const dit = nom === 'Accueil' ? "l'accueil" : `« ${nom} »`
+      expect(ceQuePerdLeClientSelon(true, true), chemin).toContain(dit)
+      const [comptes, documents] = avecSaMigration[chemin] ?? [false, false]
+      expect(ceQuePerdLeClientSelon(comptes, documents), chemin).toContain(dit)
+      if (chemin in avecSaMigration) expect(ceQuePerdLeClientSelon(false, false), chemin).not.toContain(dit)
     }
-    expect(ceQuePerdLeClientSelon(false)).not.toContain('Mes comptes')
-    expect(CE_QUE_PERD_LE_CLIENT).toBe(ceQuePerdLeClientSelon(SITUATIONS_PUBLIEES_EXPORTEES))
+    expect(ceQuePerdLeClientSelon(true, true)).toContain('« Mon échéancier », « Mes demandes » et, selon les cases de ses accès, '
+      + '« Mes ventes », « Ma banque », « Mon analyse », « Ma caisse », « Mes comptes » et « Mes documents » —')
+    expect(CE_QUE_PERD_LE_CLIENT).toBe(ceQuePerdLeClientSelon(SITUATIONS_PUBLIEES_EXPORTEES, DOCUMENTS_ET_DEMANDES_PREVUS))
   })
 
   it('le champ et le marqueur sont ceux que la fonction lit et écrit', () => {
