@@ -510,7 +510,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`lib/importParCompte.ts` : aucun compte par défaut dès deux, dédoublonnage, recouvrement et suite des soldes par compte,
   un OFX confronté à la fin de son identifiant, une seconde migration préparée), derrière le même drapeau ; MCB3, le rapprochement
   par compte et le virement entre comptes ; MCB4, la suite des soldes, le 31 décembre par 512, les mois manquants et la
-  validation par compte (`lib/releveParCompte.ts`), `couverture_du_releve` par compte préparée → « LA SUITE DES SOLDES, LE 31
+  validation par compte (`lib/releveParCompte.ts`), `couverture_du_releve` par compte préparée ; MCB6, la carte « Comptes bancaires » (Informations) et la preuve du relevé par compte → « LES ÉCRANS DU CABINET POUR PLUSIEURS COMPTES BANCAIRES (MCB6) », « LA SUITE DES SOLDES, LE 31
   DÉCEMBRE, LA COUVERTURE ET LA VALIDATION PAR COMPTE BANCAIRE (MCB4) », « PLUSIEURS COMPTES
   BANCAIRES D'UN DOSSIER : LA CONCEPTION », « PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : D'EMBLÉE, LES LOTS, ET LA BASE
   (MCB1) », « L'IMPORT D'UN RELEVÉ PAR COMPTE BANCAIRE (MCB2) ». L'écriture d'un mouvement que ses encaissements classent porte un libellé composé (« Relevé du

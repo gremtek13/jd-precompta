@@ -1055,6 +1055,10 @@ const LE_CLIENT_BANQUE = `le client qui porte la case « ${definitionDe('banque'
 export const LIBELLE_QUESTION_MOUVEMENT =
   `Ta question sur ce mouvement (${LE_CLIENT_BANQUE} la lit et y répond ; envoyée, elle reste telle quelle)`
 
+// Le libellé d'un compte bancaire (ligne 26.6, MCB6 ; migration `comptes_bancaires`) : un texte libre que le cabinet saisit
+// dans la table que `comptes_bancaires_lecture_banque` ouvre au client « Banque » (MCB-Q8) — la même condition, le même mot.
+export const LIBELLE_NOM_COMPTE_BANCAIRE = `Nom du compte (${LE_CLIENT_BANQUE} le lit)`
+
 // Les cinq textes libres des PARAMÈTRES DE FACTURATION (étape A5b1) : les conditions d'escompte, les pénalités de retard, les
 // mentions complémentaires, le pied de page et le titulaire du compte, que le cabinet saisit dans la table que
 // `parametres_facturation_lecture_ventes` ouvre au client « Ventes » — la même condition, le même mot. Le délai, le moyen,
