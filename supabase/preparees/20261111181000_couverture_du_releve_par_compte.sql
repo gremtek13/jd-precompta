@@ -4,7 +4,7 @@
 -- (aucune suppression : la fonction se remplace à sa signature). Le récit : HISTORIQUE.md, « 11/11/2026 — LA SUITE DES SOLDES,
 -- LE 31 DÉCEMBRE, LA COUVERTURE ET LA VALIDATION PAR COMPTE BANCAIRE (MCB4) ». Son essai :
 -- supabase/essais/couvertureDuReleveParCompte.sql ; son retour :
--- supabase/preparees/retour/20261111180100_retour_couverture_du_releve_par_compte.sql ; la même règle, côté cabinet :
+-- supabase/preparees/retour/20261111181100_retour_couverture_du_releve_par_compte.sql ; la même règle, côté cabinet :
 -- `compteAttenduLeMois` et `moisManquantsParCompte` (src/lib/releveParCompte.ts), que releveParCompte.test.ts confronte à ce
 -- texte.
 --

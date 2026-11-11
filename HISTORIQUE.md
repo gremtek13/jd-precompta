@@ -50838,7 +50838,7 @@ banque)`. `banque-au-releve` confronte chaque 512 à la SOMME des soldes au 31/1
 512000, MCB-Q7), chacun par ses seuls relevés ; clos dans l'exercice, zéro ; ouvert après, absent. Avant MCB5, un compte qui
 tient son 512 depuis le 01/01/2026 n'y a aucune écriture : MCB5 précède la validation de 2026. Comptes illisibles :
 `lecture-partielle`. **Les mois manquants** se disent par compte, et **`couverture_du_releve`** suit la même règle, préparée
-(`20261111180000_couverture_du_releve_par_compte`, par l'outil ; retour 20261111180100, le corps de la production à l'md5
+(`20261111181000_couverture_du_releve_par_compte`, renumérotée à l'intégration, par l'outil ; retour 20261111181100, le corps de la production à l'md5
 près) : un mois est couvert si chaque compte qui l'attend y bouge — le principal toujours, un autre depuis son ouverture ou son
 premier mouvement, jusqu'à sa clôture. Le rappel de janvier (Clôture) nomme chaque compte ; « le mois en double » juge des
 pièces : inchangé. Réplique (197 + MCB1 + MCB2) : l'essai 13/13, EN ATTENTE sans elle, deux mutations mordent,
