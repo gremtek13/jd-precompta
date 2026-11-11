@@ -675,8 +675,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     06/11/2026, A8-Q1 à Q6 tranchées ; leur base — A8a, A9a, A8b, A8-Q5 — en production depuis le 10/11/2026, les
     lecteurs et le plan de sauvegarde ouverts (`FACTURES_IMPORTEES_PREVUES`, `NUMEROTATION_CONTINUE_PREVUE`,
     `PIECE_D_UNE_FACTURE_REPRISE_PREVUE` levés), la carte de la numérotation (A9b) offerte depuis
-    le 11/11/2026 (`CARTE_DE_LA_NUMEROTATION_OFFERTE` levé, A9B-Q0) ; restent l'écran d'import (A8d) et la
-    suite → « A8 ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE
+    le 11/11/2026 (`CARTE_DE_LA_NUMEROTATION_OFFERTE` levé, A9B-Q0) ; l'encaissement d'une reprise par le client
+    « Ventes » (A8C-Q1) et ses pièces citées dans « Ma simulation » (A8Q5-Q2), préparés le 11/11/2026 (`reprises_au_client`,
+    deux lectures `security definer`, à appliquer par l'outil ; `REPRISES_AU_CLIENT_PREVUES` baissé) ; restent l'écran
+    d'import (A8d) et la suite → « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT (PRÉPARÉE, PAS APPLIQUÉE) », « A8
+    ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE
     (PRÉPARÉE, PAS APPLIQUÉE) », « A8-Q5 : LA PIÈCE D'UNE FACTURE REPRISE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) », « LE JOUR J DU 10/11/2026 : SEPT MIGRATIONS EN PRODUCTION (INAL1, INAL2, PC4, A8A, A9A, A8B, A8-Q5) ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
