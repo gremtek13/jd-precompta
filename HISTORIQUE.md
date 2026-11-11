@@ -51009,3 +51009,22 @@ balance ; financement ; à-nouveaux de 2026 éclatés), l'assistant.
 - **Le cabinet** : la carte « Honoraires déposés chez les clients » (`DepotDesHonorairesCard`), dans l'onglet Factures du seul dossier du cabinet (la désignation relue), reçoit les factures de l'onglet ; elle lit en entier `depots_des_honoraires` (le compte confronté aux lignes), les liens de LM7, les lettres et les dossiers du cabinet ; chaque facture d'honoraires validée dit « À déposer », « Déposée le … », ou à déposer de nouveau quand sa pièce a été retirée (LM8-Q1) ; le refus du module se dit avant le clic (un dossier client que le compte ne lit pas rend « pas ouvert à ce compte », LM8-Q2) ; la confirmation nomme la facture, son montant, le fichier et le dossier du client ; le geste (`deposerChezLeClient`) relit les lignes en entier, tire le PDF, le dépose dans le seau des pièces sous le dossier du client (`preparerContenu`, `cheminDuDepot`), puis appelle la fonction seule ; un refus de la base retire le fichier. Verrou `useRef` relâché après la relecture. Le client d'une facture (`clientDeLaFacture`, `lib/depotDesHonorairesVue.ts`) redit `client_de_la_facture_d_honoraires`, confronté au texte de la migration.
 - **Le client** : « Mes pièces » lit `honoraires_deposes_au_dossier` et dit « Facture d'honoraires déposée par ton cabinet » ; lue en partie ou refusée, la pièce reste « Facture » et une ligne discrète le dit. **« Mes honoraires » n'est pas fait** : la case « Documents » (B1) n'est pas en production (`TROIS_CASES_EXPORTEES` baissé) et n'ouvre rien ; le module ne la prévoit pas ; la voie prudente est la pièce dans « Mes pièces », que tout accès client lit déjà.
 - Gardes : `depotsDansLesSeaux` (un dépôt de plus), `ecrituresVerifiees` (`lireUneFonction`, 2), `verrousEcritures` et `ecransAvantLecture` (les deux lectures, la carte). Tests : 7 (vue), 5 (PDF), 6 (lecture et geste), 9 (carte : les deux états du drapeau, deux clics du même `act` — la mutation du verrou mord), 3 (« Mes pièces »).
+
+### 11/11/2026 — LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES LECTEURS (MCB5, QUATRIÈME PARTIE)
+
+(Agent architecte, sans migration, sur MCB5d, derrière `COMPTES_BANCAIRES_PREVUS` baissé : la banque du rôle, la lecture d'hier.)
+**Inventaire** (`plan.banque` des lecteurs) : la piste d'audit (`rupturesPisteAudit`, la colonne « manque »), le pilotage
+(`soldesFinDeMois`, `calculerEvolutionMensuelle`), l'ouverture de la banque (`ouvertureBanque`), la trésorerie de Financement
+(sa requête), le FEC ; la révision l'était déjà (MCB6 : `preuveDuReleveParCompte`, un 512 par compte, jamais additionnés entre
+comptes) ; le lettrage (la banque ne se lettre pas), la balance et le bilan (compte par compte, préfixe 51) n'ont rien à changer.
+**Fait** : `banqueDesLecteurs` (sur `comptesDeBanqueDuDossier`, nul sur des comptes qui ne se savent pas) et `estUneBanque` (le
+rôle toujours, nul ailleurs : non jugé) ; `banques` obligatoire dans `rupturesPisteAudit` et `RegistreAudit` ; l'ensemble des
+comptes dans les deux séries du pilotage et l'ouverture ; Vue d'ensemble, Statistiques et Financement ne calculent rien sur des
+comptes illisibles (la raison dite, ou la lecture incomplète). **Le FEC, deux rendus** (MCB-Q4, `lib/banquesAuFec.ts`) choisis
+au RENDU, jamais à la numérotation (un exercice validé se relit de ses colonnes figées) : `un_512_par_compte`, retenu
+(`RENDU_DES_BANQUES_AU_FEC`), la numérotation telle quelle ; `un_seul_512`, si l'expert-comptable le demande (FEC22-E), chaque
+512 propre au rôle sous son CompteLib, refusé sur des comptes illisibles. **Preuves** : `banqueDesLecteurs.test.ts` (9 cas) ;
+quatre mutations mordent (la piste, le nul, le rendu des à-nouveaux, le pilotage). **Restent** : le CompteLib d'un 512 propre
+(aujourd'hui « Banques, établissements financiers et assimilés », le PCG ; le libellé du compte, texte libre, n'y passe pas) ;
+les à-nouveaux de 2026 éclatés d'après les relevés du 31/12 (MCB-Q7 : une écriture, la reprise les range tous au rôle,
+`compteDeLApplicationSelon`) ; l'assistant.
