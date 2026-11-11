@@ -544,6 +544,12 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'dossier_permanent', parent: 'dossier_permanent', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'dossier_permanent', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'dossiers', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
+  // L'ouverture éclatée (ligne 26.6, MCB5g ; migration `ouverture_eclatee_par_compte`, préparée, qui suit `comptes_bancaires`) :
+  // le compte bancaire dont une écriture du 1er janvier ouvre le 512, sans action à la suppression — un compte qui la porte ne
+  // se retire pas, et le lien n'est pas sacrifiable : sans lui, l'écriture perdrait sa source. Le parent est la table des
+  // comptes bancaires : la relation ne vit au graphe du jour que `COMPTES_BANCAIRES_PREVUS` levé (`auGrapheDesComptesBancaires`),
+  // les deux migrations se collant ensemble (MCB5-Q1). Les comptes précèdent déjà le brouillon dans l'ordre de restauration.
+  { enfant: 'ecritures_brouillon', parent: 'comptes_bancaires', colonne: 'ouverture_compte_bancaire_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'cotisations_declarees', colonne: 'cotisation_id', aLaSuppression: 'cascade' },
   { enfant: 'ecritures_brouillon', parent: 'declarations_tva', colonne: 'declaration_tva_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
