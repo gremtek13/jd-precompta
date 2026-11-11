@@ -628,6 +628,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/DepartDuClientCard.tsx': 'drapeau `DEPART_DU_CLIENT_PREVU` baissé : ne rend rien ; levé, elle ne lit pas — elle '
     + 'reçoit le départ lu par InformationsTab (`useDepartDuDossier`) ; son test (DepartDuClientCard.test.tsx) éprouve « Chargement… » '
     + 'avant la lecture et aucun geste sur une lecture illisible',
+  'pages/dossier/DepotDesHonorairesCard.tsx': 'drapeau `DEPOT_DES_HONORAIRES_PREVU` baissé : ne rend ni ne lit rien ; levé, montée '
+    + 'dans le seul dossier du cabinet, son test (DepotDesHonorairesCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun '
+    + 'geste sur une lecture illisible ni sur une liste de factures lue en partie ; n’écrit que sur « Déposer chez le client »',
   'pages/dossier/DossierDuCabinetCard.tsx': 'drapeau `DOSSIER_DU_CABINET_PREVU` baissé : ne rend rien ; levé, elle ne lit pas — elle '
     + 'reçoit la désignation lue par InformationsTab (`useDesignationDuDossier`) ; son test (DossierDuCabinetCard.test.tsx) éprouve '
     + '« Chargement… » avant la lecture, aucun geste sur une lecture illisible ni pour un membre ; n’écrit que sur « Désigner… » '
@@ -1007,10 +1010,13 @@ const LECTURES_PAR_FONCTION = new Set([
 // des dossiers (la coque, le tableau de bord) pour un dossier où le compte a un accès client : un prédicat (`stable`).
 // Et la caisse d'un dossier jour par jour (`caisse_du_client`, ligne 26.6, étape C10), que « Ma caisse » lit (C12a) : une
 // lecture (`stable`), qui n'écrit rien.
+// Et les dépôts des honoraires du cabinet (`depots_des_honoraires`, `honoraires_deposes_au_dossier`, ligne 47, LM8), derrière
+// `DEPOT_DES_HONORAIRES_PREVU` : des lectures (`stable`), qui n'écrivent rien.
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
   'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
   'rpc:ventes_facturees_de_la_simulation', 'rpc:admin_du_dossier', 'rpc:caisse_du_client',
+  'rpc:depots_des_honoraires', 'rpc:honoraires_deposes_au_dossier',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.

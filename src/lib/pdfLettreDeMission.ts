@@ -48,14 +48,22 @@ export function couperEnLignes(texte: string, largeur: number, mesure: (s: strin
 }
 
 /** Le PDF des blocs ; `empreinte` se répète au pied de chaque page, `instant` date le document (la proposition). */
-export async function pdfDeLaLettre(blocs: readonly BlocDuPdf[], p: { empreinte: string; instant: string }): Promise<Uint8Array> {
+export function pdfDeLaLettre(blocs: readonly BlocDuPdf[], p: { empreinte: string; instant: string }): Promise<Uint8Array> {
+  return pdfDesBlocs(blocs, { titre: 'Lettre de mission', pied: `Empreinte du contenu : ${p.empreinte}`, instant: p.instant })
+}
+
+/**
+ * La mise en page commune (la lettre de mission, LM5 ; la copie d'une facture d'honoraires déposée chez le client, LM8) : les
+ * blocs en A4, le `pied` répété sur chaque page (vide : aucun), le document daté de `instant`, jamais de l'heure du clic.
+ */
+export async function pdfDesBlocs(blocs: readonly BlocDuPdf[], p: { titre: string; pied: string; instant: string }): Promise<Uint8Array> {
   // pdf-lib n'est chargé qu'au clic : 300 Ko dont l'écran n'a pas besoin avant.
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
   const doc = await PDFDocument.create()
   const normale = await doc.embedFont(StandardFonts.Helvetica)
   const grasse = await doc.embedFont(StandardFonts.HelveticaBold)
   const date = new Date(p.instant)
-  doc.setTitle('Lettre de mission')
+  doc.setTitle(enWinAnsi(p.titre))
   doc.setProducer('jd-precompta')
   doc.setCreator('jd-precompta')
   doc.setCreationDate(date)
@@ -63,8 +71,8 @@ export async function pdfDeLaLettre(blocs: readonly BlocDuPdf[], p: { empreinte:
 
   let page = doc.addPage([LARGEUR, HAUTEUR])
   let y = HAUTEUR - MARGE
-  const pied = `Empreinte du contenu : ${p.empreinte}`
-  const poserLePied = () => page.drawText(pied, { x: MARGE, y: MARGE / 2, size: 7, font: normale, color: rgb(0.4, 0.4, 0.4) })
+  const pied = enWinAnsi(p.pied)
+  const poserLePied = () => { if (pied !== '') page.drawText(pied, { x: MARGE, y: MARGE / 2, size: 7, font: normale, color: rgb(0.4, 0.4, 0.4) }) }
   poserLePied()
   for (const bloc of blocs) {
     const taille = TAILLES[bloc.genre]

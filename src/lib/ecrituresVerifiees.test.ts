@@ -84,6 +84,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'l’Accueil et « Mes pièces » du client. `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus ' +
       'ou une réponse illisible rendent une lecture INCOMPLÈTE, que l’écran dit, jamais un relevé vide',
   },
+  lireUneFonction: {
+    nombre: 2,
+    raison:
+      'ce n’est pas une écriture : `depots_des_honoraires` et `honoraires_deposes_au_dossier` LISENT les dépôts des ' +
+      'honoraires du cabinet (ligne 47, LM8 ; fonctions `stable`, `security definer`, sans écriture). ' +
+      '`lib/depotDesHonorairesLecture.ts` attend la requête, lit son erreur et son compte : un refus, ou moins de lignes ' +
+      'que le compte annoncé, rendent une lecture ILLISIBLE, que l’écran dit, et qui n’offre aucun geste',
+  },
   lireLeDroitBanque: {
     // 2 depuis l'étape P9 : « Ma banque » relit aussi la case « Banque » à la base ; 1 depuis l'étape VF5g, où « Ma
     // banque » lit les deux cases par `lireLesDroitsVentes`.

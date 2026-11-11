@@ -300,11 +300,12 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
     expect(tout.filter((s) => s.cote === 'navigateur').length).toBeGreaterThan(250)
     expect(tout.filter((s) => s.cote === 'fonction').length).toBeGreaterThanOrEqual(16)
     expect(analyses.reduce((n, a) => n + a.lus, 0)).toBeGreaterThanOrEqual(20)
-    // Treize dépôts : les neuf chemins du navigateur (deux pour une facture reçue, deux pour un pack, l'original d'une facture
-    // reprise) et les deux fonctions.
+    // Quatorze dépôts : les dix chemins du navigateur (deux pour une facture reçue, deux pour un pack, l'original d'une facture
+    // reprise, la copie d'une facture d'honoraires déposée chez le client, LM8) et les deux fonctions.
     // Un dépôt de plus se juge ici comme les autres ; ce nombre dit seulement qu'on les voit tous.
     expect(depots().map((d) => `${d.chemin} → ${d.seau}`).sort()).toEqual([
       'src/lib/depot.ts → pieces',
+      'src/lib/depotDesHonorairesLecture.ts → pieces',
       'src/lib/importDesFacturesLecture.ts → ventes',
       'src/lib/importFichiers.ts → pieces',
       'src/lib/logoDesFacturesEcriture.ts → ventes',

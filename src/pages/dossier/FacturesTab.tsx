@@ -25,6 +25,8 @@ import TransmissionFactureModal from './TransmissionFactureModal'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
 import ImportDesFactures from './ImportDesFactures'
 import { IMPORT_DES_FACTURES_OFFERT } from '../../lib/importDesFacturesVue'
+import DepotDesHonorairesCard from './DepotDesHonorairesCard'
+import { DEPOT_DES_HONORAIRES_PREVU } from '../../lib/depotDesHonoraires'
 import ReglementsSection from './ReglementsSection'
 import ArticlesVue from './ArticlesVue'
 import ContactsVue from './ContactsVue'
@@ -784,6 +786,11 @@ export default function FacturesTab(props: Props) {
               baissé, rien n'est lu ni rendu. */}
           {espace === 'cabinet' && IMPORT_DES_FACTURES_OFFERT && (
             <ImportDesFactures dossierId={dossierId} onChange={() => { void load() }} />
+          )}
+          {/* Le dépôt des honoraires chez le client (ligne 47, LM8) : le dossier du cabinet seul, côté cabinet, derrière
+              `DEPOT_DES_HONORAIRES_PREVU` ; baissé, rien n'est lu ni rendu. Il reçoit les factures que l'onglet a lues. */}
+          {espace === 'cabinet' && DEPOT_DES_HONORAIRES_PREVU && (
+            <DepotDesHonorairesCard dossierId={dossierId} lues={loading ? null : { factures, motif: lectureIncomplete }} />
           )}
         </>
       )}
