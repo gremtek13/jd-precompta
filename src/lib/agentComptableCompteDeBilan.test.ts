@@ -10,7 +10,7 @@ import { formatMoney } from './format'
 import type { EcritureBrouillon, LigneBancaire } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlanEtLaBanqueDuRole, blocDesBanques, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS ÉCRITS SUR UN COMPTE DE BILAN ET DES MOUVEMENTS
@@ -51,9 +51,9 @@ function extraire(source: string, plan: PlanComptable): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('COMPTE DE BILAN')}`
+  const bloc = `${bornes('VALIDATION')}\n${blocDesBanques(source)}\n${bornes('AFFECTATION')}\n${bornes('COMPTE DE BILAN')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return avecLePlan(new Function(`${js}\nreturn { ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises, mouvementsIgnoresHorsFec, montantsDesMouvementsIgnores }`)(), plan) as Copie
+  return avecLePlanEtLaBanqueDuRole(new Function(`${js}\nreturn { ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises, mouvementsIgnoresHorsFec, montantsDesMouvementsIgnores }`)(), plan) as Copie
 }
 
 
@@ -211,14 +211,14 @@ describe('agent-comptable / points_a_traiter lit les comptes de bilan et les mou
   const corps = source.slice(source.indexOf('if (nom === "points_a_traiter")'), source.indexOf('return { erreur: `Outil inconnu'))
 
   it('lit le compte de bilan, le statut et le virement personnel sur le relevé entier, sous le même refus de lecture partielle', () => {
-    expect(corps).toMatch(/lireTout<[^>]*MouvementCompteBilanRow\b[^>]*>\(\(d, f\) =>\s*admin\.from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*\bcompte_bilan, prelevement_personnel\b[^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
+    expect(corps).toMatch(/lireTout<[^>]*MouvementCompteBilanRow\b[^>]*>\(\(d, f\) =>\s*COMPTES_BANCAIRES_PREVUS\s*\?\s*admin\.from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*\bcompte_bilan, prelevement_personnel\b[^"]*, compte_bancaire_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)[^\n]*\n\s*:\s*admin\.from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*\bcompte_bilan, prelevement_personnel\b[^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/rANouveaux, rVehicules, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
     expect(corps).toMatch(/\[rPieces, [^\]]*rReleve[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('rend les deux points de la Checklist, l’ouverture et la frontière comprises', () => {
     expect(corps).toContain('const ouverture = rANouveaux.lignes[0]?.date ?? null')
-    expect(corps).toContain('const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan)')
+    expect(corps).toContain('const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan, banques)')
     expect(corps).toContain('const ignoresHorsFec = mouvementsIgnoresHorsFec(rReleve.lignes, ouverture, frontiere)')
     expect(corps).toMatch(/mouvements_ecrits_sur_un_compte_de_bilan_dont_l_ecriture_ne_suit_plus_le_compte: bilanPerimes\.length/)
     expect(corps).toMatch(/mouvements_ignores_absents_du_fec: \{ nombre: ignoresHorsFec\.length, \.\.\.montantsDesMouvementsIgnores\(ignoresHorsFec\) \}/)
@@ -273,11 +273,11 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc COMPTE DE BILAN sait encor
   })
 
   it('attrape une copie qui réclame la réécriture d’un mouvement figé', () => {
-    echoue(() => memesDesynchronises(planter(['    && !estFigee(l.date, frontiere)\n    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(', '    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan('])))
+    echoue(() => memesDesynchronises(planter(['    && !estFigee(l.date, frontiere)\n    && nonConforme(l, l.compte_bilan))', '    && nonConforme(l, l.compte_bilan))'])))
   })
 
   it('attrape une copie qui compare l’écriture à un compte figé plutôt qu’au compte du mouvement', () => {
-    echoue(() => memesDesynchronises(planter(['ecritureDuCompteDeBilan(l, l.compte_bilan, plan), l.date))', 'ecritureDuCompteDeBilan(l, plan.virements_internes, plan), l.date))'])))
+    echoue(() => memesDesynchronises(planter(['ecritureDuCompteDeBilan(l, compte, duMouvement), l.date)', 'ecritureDuCompteDeBilan(l, duMouvement.virements_internes, duMouvement), l.date)'])))
   })
 
   it('attrape une écriture qui porterait de la TVA', () => {

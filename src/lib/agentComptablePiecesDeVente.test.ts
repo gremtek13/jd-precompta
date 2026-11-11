@@ -968,8 +968,12 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
     ...['ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id', 'operation_caisse_id'].map((c) => [
       `le rattachement ${c} non lu`, () => muter(source, [[SELECTION_DES_LIGNES, SELECTION_DES_LIGNES.replace(`, ${c}`, '')]]),
     ] as const),
+    // Le relevé se lit sous deux formes depuis MCB5 (la colonne `compte_bancaire_id`, le drapeau levé seulement) : chacune
+    // se mute à part.
     ['le libellé de la banque lu par points_a_traiter', () => muter(source, [[
-      'admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe,', 'admin.from("lignes_bancaires").select("id, date, libelle, montant, statut, piece_id, reglement_groupe,']])],
+      'ventilee, encaissements_de_factures, declaration_tva_id", {', 'ventilee, encaissements_de_factures, declaration_tva_id, libelle", {']])],
+    ['le libellé de la banque lu par points_a_traiter, les comptes bancaires prévus', () => muter(source, [[
+      'encaissements_de_factures, declaration_tva_id, compte_bancaire_id", {', 'encaissements_de_factures, declaration_tva_id, compte_bancaire_id, libelle", {']])],
     ['la référence de pièce que la validation fige, lue', () => muter(source, [[
       'select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut,', 'select("date, compte, libelle, sens, montant, piece_id, piece_ref, ligne_bancaire_id, statut,']])],
     ['le compte auxiliaire que la validation fige, lu', () => muter(source, [[

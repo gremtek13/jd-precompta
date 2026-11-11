@@ -24,7 +24,7 @@ import { dateAParis } from './format'
 import { estFigee, frontiereDeValidation } from './validationExercice'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
-import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlanEtLaBanqueDuRole, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 import { banquesDuDossier } from './banqueDuMouvement'
 
@@ -131,7 +131,7 @@ function extraire(source: string, plan: PlanComptable) {
   // compilateur du projet plutôt que d'en retirer les types à la main — une traduction écrite à la
   // main mentirait au premier cas tordu.
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return avecLePlan(new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, paiementsParLaCaisse, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu, facturesSourcesDe, exemplairesDesSources, partsEncaissees, marquerLesPiecesCitees }`)(), plan) as {
+  return avecLePlanEtLaBanqueDuRole(new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, paiementsParLaCaisse, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu, facturesSourcesDe, exemplairesDesSources, partsEncaissees, marquerLesPiecesCitees }`)(), plan) as {
     marquerLesPiecesCitees: typeof marquerLesPiecesCitees
     piecesAComptabiliser: (
       p: Piece[], c: Categorie[], biens: ReadonlyMap<string, AcquisitionDuBien>, sources: FacturesSources,
@@ -1379,7 +1379,7 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
   // nourrissent se disent indisponibles (`caisseIllisible`, jugé au contrat HTTP).
   it('appelle analyserEcritures avec dossier.assujetti_tva, les paiements des pièces — virements mixtes et caisse compris —, le modèle du dossier, la frontière de validation et les exemplaires des factures sources', () => {
     expect(sourceDeployee()).toMatch(
-      /const modele = ctx\.modele\n(?:\s*\/\/[^\n]*\n)*\s*const paiementsDeLaCaisse = rCaisse\.complete \? paiementsParLaCaisse\(rCaisse\.lignes\) : null\n\s*const paiements = paiementsDesPieces\(rReleve\.lignes, rReglements\.lignes, encaissees, paiementsDeLaCaisse \?\? \[\]\)\n(?:\s*\/\/[^\n]*\n)*\s*const frontiere = frontiereDeValidation\(rValides\.lignes\.map\(\(v\) => v\.annee\)\)\n\s*const \{ piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees \} = analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, paiements, modele, frontiere, exemplaires\)/,
+      /const modele = ctx\.modele\n(?:\s*\/\/[^\n]*\n)*\s*const paiementsDeLaCaisse = rCaisse\.complete \? paiementsParLaCaisse\(rCaisse\.lignes\) : null\n\s*const paiements = paiementsDesPieces\(rReleve\.lignes, rReglements\.lignes, encaissees, paiementsDeLaCaisse \?\? \[\]\)\n(?:\s*\/\/[^\n]*\n)*\s*const banques = banquesDuDossier\(await lireLesComptesDuDossier\(ctx\.appelant, dossierId\), plan\)\n\s*const banquesInconnues = phraseDesBanquesInconnues\(banques, mouvementsSansBanque\(rReleve\.lignes, banques\)\)\n(?:\s*\/\/[^\n]*\n)*\s*const frontiere = frontiereDeValidation\(rValides\.lignes\.map\(\(v\) => v\.annee\)\)\n\s*const \{ piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees \} = analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, paiements, modele, frontiere, exemplaires, banques\)/,
     )
   })
 
@@ -1627,8 +1627,8 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
   it('attrape une copie déployée qui ignore le modèle comptable du dossier', () => {
     const derivee = extraire(planter(
       sourceDeployee(),
-      ') {\n  const piecesParGroupe = new Map<string, EcritureRow[]>()\n',
-      ') {\n  modele = { ...modele, mode: "tresorerie" }\n  const piecesParGroupe = new Map<string, EcritureRow[]>()\n',
+      '  const comptesDeBanque = comptesDeBanqueDuDossier(modele.plan, banques)\n  const piecesParGroupe = new Map<string, EcritureRow[]>()\n',
+      '  const comptesDeBanque = comptesDeBanqueDuDossier(modele.plan, banques)\n  modele = { ...modele, mode: "tresorerie" }\n  const piecesParGroupe = new Map<string, EcritureRow[]>()\n',
       "le début d'analyserEcritures",
     ), plan)
     const p = piece({ id: 'p1' })
@@ -1708,7 +1708,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
   it('attrape une copie qui ne compare pas les contreparties aux paiements', () => {
     const derivee = extraire(planter(
       sourceDeployee(),
-      '  if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === plan.banque), paiementsPiece)) return true\n',
+      '  if (!banqueSuitLesPaiements(groupe.filter((e) => comptesDeBanque.has(e.compte)), paiementsPiece, plan, banques)) return true\n',
       '',
       'la comparaison de la banque en trésorerie',
     ), plan)
@@ -1768,7 +1768,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
   it('attrape une copie qui ne compare pas la banque des règlements aux paiements', () => {
     const derivee = extraire(planter(
       sourceDeployee(),
-      '  return !banqueSuitLesPaiements(reglements.filter((e) => e.compte === plan.banque), paiementsPiece)\n',
+      '  return !banqueSuitLesPaiements(reglements.filter((e) => comptesDeBanque.has(e.compte)), paiementsPiece, plan, banques)\n',
       '  return false\n',
       'la comparaison de la banque en engagement',
     ), plan)
@@ -1808,8 +1808,8 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
 
     it('attrape une copie qui compte la contrepartie parmi les lignes de charge', () => {
       const derivee = deriver(
-        '  const lignes = groupe.filter((e) => e.compte !== plan.banque && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e, plan))\n',
-        '  const lignes = groupe.filter((e) => e.compte !== plan.banque && !estContrepartieCaisse(e))\n', 'les lignes de charge',
+        '  const lignes = groupe.filter((e) => !comptesDeBanque.has(e.compte) && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e, plan))\n',
+        '  const lignes = groupe.filter((e) => !comptesDeBanque.has(e.compte) && !estContrepartieCaisse(e))\n', 'les lignes de charge',
       )
       echoue(() => memeResultat(brouillonTresorerie(p, []), [p], [], derivee))
     })
@@ -1829,8 +1829,8 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
 
     it('attrape une copie qui ne prend pas le 108000 pour une contrepartie', () => {
       const derivee = deriver(
-        '    r.compte === modele.plan.banque || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === modele.plan.exploitant)\n',
-        '    r.compte === modele.plan.banque || estContrepartieCaisse(r)\n', 'la contrepartie au 108000',
+        '    comptesDeBanque.has(r.compte) || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === modele.plan.exploitant)\n',
+        '    comptesDeBanque.has(r.compte) || estContrepartieCaisse(r)\n', 'la contrepartie au 108000',
       )
       const ecritures = brouillonTresorerie(p, []).map((e) => e.compte === COMPTE_EXPLOITANT ? { ...e, montant: 115 } : e)
       echoue(() => memeResultat(ecritures, [p], [], derivee))
@@ -2176,12 +2176,12 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du paiement par la caisse sait enc
   it('attrape une copie qui ne tient pas la contrepartie de caisse pour une contrepartie, ou qui la compte parmi les charges', () => {
     // Le paiement retiré, sa ligne restée : une contrepartie, jamais « sans contrepartie ».
     const pasContrepartie = deriver(
-      '    r.compte === modele.plan.banque || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === modele.plan.exploitant)\n',
-      '    r.compte === modele.plan.banque || (notesDeFrais.has(pieceId) && r.compte === modele.plan.exploitant)\n', 'la contrepartie de caisse')
+      '    comptesDeBanque.has(r.compte) || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === modele.plan.exploitant)\n',
+      '    comptesDeBanque.has(r.compte) || (notesDeFrais.has(pieceId) && r.compte === modele.plan.exploitant)\n', 'la contrepartie de caisse')
     echoue(() => memeResultat(brouillonGenere(p, [], caisse), [p], [], pasContrepartie, true, [], TRESORERIE, [], null, null, []))
     const parmiLesCharges = deriver(
-      '  const lignes = groupe.filter((e) => e.compte !== plan.banque && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e, plan))\n',
-      '  const lignes = groupe.filter((e) => e.compte !== plan.banque && !estContrepartieDirigeant(p, cible, e, plan))\n', 'les lignes de charge')
+      '  const lignes = groupe.filter((e) => !comptesDeBanque.has(e.compte) && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e, plan))\n',
+      '  const lignes = groupe.filter((e) => !comptesDeBanque.has(e.compte) && !estContrepartieDirigeant(p, cible, e, plan))\n', 'les lignes de charge')
     echoue(() => memeResultat(brouillonGenere(p, [], caisse), [p], [], parmiLesCharges, true, [], TRESORERIE, [], null, null, caisse))
   })
 
@@ -2196,8 +2196,8 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du paiement par la caisse sait enc
   })
 
   it('attrape une copie qui règle par la caisse en engagement, ou qui y attend un règlement de la caisse', () => {
-    const regle = deriver('lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve), modele.plan)',
-      'lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements as PaiementParLeReleve[], modele.plan)', 'le relevé seul en engagement')
+    const regle = deriver('lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve), modele.plan, banques)',
+      'lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements as PaiementParLeReleve[], modele.plan, banques)', 'le relevé seul en engagement')
     echoue(() => batterieDuGenerateur(regle, plan))
     const attend = deriver('  const attendus = new Set(paiementsPiece.filter(estParLeReleve).filter((m) => m.montant !== 0).map((m) => m.id))\n',
       '  const attendus = new Set(paiementsPiece.filter((m) => m.montant !== 0).map((m) => (m as PaiementParLeReleve).id))\n', 'les règlements attendus')

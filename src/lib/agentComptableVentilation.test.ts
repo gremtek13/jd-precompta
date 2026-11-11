@@ -13,7 +13,7 @@ import {
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
-import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlanEtLaBanqueDuRole, blocDesBanques, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS VENTILÉS (30/09/2026, ligne 26.6).
@@ -56,9 +56,9 @@ function extraire(source: string, plan: PlanComptable): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('VENTILATION')}`
+  const bloc = `${bornes('VALIDATION')}\n${blocDesBanques(source)}\n${bornes('AFFECTATION')}\n${bornes('VENTILATION')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return avecLePlan(new Function(`${js}\nreturn { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes, mouvementsVentilesDesynchronises }`)(), plan) as Copie
+  return avecLePlanEtLaBanqueDuRole(new Function(`${js}\nreturn { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes, mouvementsVentilesDesynchronises }`)(), plan) as Copie
 }
 
 
@@ -293,7 +293,7 @@ describe('agent-comptable / points_a_traiter lit les parts des mouvements ventil
     expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesQuiComptent, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
     expect(corps).toContain('recettesVentileesSansTaux(\n      partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped, dossier.assujetti_tva), dossier.assujetti_tva, frontiere)')
     expect(corps).toContain('ventilationsIncoherentes(rReleve.lignes, rParts.lignes)')
-    expect(corps).toContain('mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva, frontiere)')
+    expect(corps).toContain('mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva, frontiere, banques)')
     expect(corps).toMatch(/mouvements_ventiles_dont_l_ecriture_ne_suit_plus_les_parts: ventilesPerimes\.length/)
     expect(corps).toMatch(/mouvements_ventiles_dont_les_parts_ne_font_plus_le_mouvement: ventilationsFausses\.length/)
     expect(corps).toMatch(/encaissements_affectes_ou_ventiles_en_recette_sans_taux_de_tva_sur_dossier_assujetti: recettesAffecteesSansTva\.length \+ recettesVentileesSansTva\.length/)
@@ -385,7 +385,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc VENTILATION sait encore é
   })
 
   it('attrape un contrôle d’écriture qui juge une catégorie qu’il n’a pas lue', () => {
-    const derivee = planter(['    if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false\n    const attendue = ecritureDeLaVentilation', '    const attendue = ecritureDeLaVentilation'])
+    const derivee = planter(['    if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false\n    const duMouvement = modelePourJuger', '    const duMouvement = modelePourJuger'])
     const lignes = [ligne({ id: 'l' })]
     const parts = [part('l', 'inconnue', -84), part('l', null, -36)]
     echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false, null))).toEqual([]))
@@ -448,7 +448,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc VENTILATION sait encore é
   })
 
   it('attrape une copie dont l’écriture attendue ignore le statut du dossier', () => {
-    const derivee = planter(['    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)', '    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, false)'])
+    const derivee = planter(['    const attendue = ecritureDeLaVentilation(ligne, parts, categories, duMouvement, assujettiTva)', '    const attendue = ecritureDeLaVentilation(ligne, parts, categories, duMouvement, false)'])
     const lignes = [ligne({ id: 'l', montant: 4950 })]
     const ecritures = conforme(lignes[0], REMISE_TAXEE, TRESORERIE, lignes[0].date, true)
     echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises(ecritures, lignes, REMISE_TAXEE, CATEGORIES, TRESORERIE, true, null))).toEqual([]))

@@ -355,6 +355,142 @@ function estFigee(date: string, frontiere: string | null): boolean {
 }
 // ── FIN VALIDATION ───────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT BANQUES DU DOSSIER ─────────────────────────────────────────────────────────────────────
+// LA JAMBE DE BANQUE PAR COMPTE BANCAIRE (MCB5, cinquième partie ; ligne 26.6) — copiée de src/lib/banqueDuMouvement.ts et de
+// `compteDeBanqueDuMouvement` (src/lib/comptesBancaires.ts). Un dossier peut tenir plusieurs comptes bancaires
+// (`comptes_bancaires`, MCB1) : la jambe de banque d'un mouvement s'écrit au 512 du compte de CE mouvement — celui du rôle
+// `banque` pour le principal, et pour un autre compte avant le 1er janvier qu'il porte (`compte_propre_depuis`), le sien
+// ensuite. Les détecteurs recomposent l'écriture attendue sous le plan DU mouvement, et la contrepartie d'une pièce se
+// reconnaît sur l'ENSEMBLE des 512 du dossier : sans cela, l'assistant dirait « à régénérer » l'écriture juste d'un
+// mouvement du livret, et se tairait sur celle restée au compte courant.
+//
+// LE DRAPEAU. L'assistant n'importe rien de src/lib : `COMPTES_BANCAIRES_PREVUS` redit ici celui de
+// src/lib/comptesBancaires.ts (le garde `agentComptableBanques.test.ts` rougit s'ils divergent). Baissé, l'assistant ne lit
+// ni la table ni la colonne `compte_bancaire_id` — elles n'existent pas avant la migration — et juge sous la banque du rôle :
+// celui d'hier, à l'octet près. Levé, il lit les comptes du dossier AU JETON DE L'APPELANT (`lireLesComptesDuDossier`),
+// comme l'écran les lit, et seulement ce que la jambe de banque demande : l'identifiant opaque, le principal, le 512, la date
+// d'où il vaut — jamais le libellé, la fin de l'identifiant ni rien qui nomme un compte.
+//
+// UNE BANQUE QUI NE SE SAIT PAS (comptes illisibles, ou qui ne rendent pas le compte d'un mouvement) NE SE JUGE PAS : le
+// mouvement, ou la pièce qu'il paie, n'est dit ni conforme ni à réécrire, et le modèle l'apprend par une phrase neutre
+// (`phraseDesBanquesInconnues`), jamais par un nom de compte ni un identifiant. Les refus ci-dessous sont ceux de l'écran,
+// recopiés pour que la copie se compare à src/lib ; aucun ne part au modèle.
+const COMPTES_BANCAIRES_PREVUS = false
+
+interface CompteDeBanqueRow { id: string; principal: boolean; compte: string | null; compte_propre_depuis: string | null }
+type LectureDesComptes =
+  | { etat: "sans_objet" }
+  | { etat: "en_cours" }
+  | { etat: "illisible"; motif: string }
+  | { etat: "lus"; comptes: readonly CompteDeBanqueRow[] }
+
+type BanquesDuDossier =
+  | { cas: "role"; compte: string }
+  | { cas: "par_compte"; role: string; comptes: ReadonlyMap<string, Pick<CompteDeBanqueRow, "principal" | "compte" | "compte_propre_depuis">> }
+  | { cas: "retenu"; raison: string }
+
+function compteDeBanqueDuMouvement(
+  compte: Pick<CompteDeBanqueRow, "principal" | "compte" | "compte_propre_depuis">, date: string, compteDuRoleBanque: string,
+): string {
+  if (compte.principal || compte.compte === null || compte.compte_propre_depuis === null
+    || date.slice(0, 10) < compte.compte_propre_depuis) return compteDuRoleBanque
+  return compte.compte
+}
+
+function banquesDuDossier(lecture: LectureDesComptes, plan: PlanComptable): BanquesDuDossier {
+  if (lecture.etat === "sans_objet") return { cas: "role", compte: plan.banque }
+  if (lecture.etat === "en_cours") {
+    return { cas: "retenu", raison: "Les comptes bancaires du dossier sont en cours de lecture : l’écriture attend de savoir sur quel compte de banque elle s’écrit." }
+  }
+  if (lecture.etat === "illisible") {
+    return { cas: "retenu", raison: `Les comptes bancaires du dossier n’ont pas été lus en entier (${lecture.motif}) : l’écriture ne sait pas `
+      + "sur quel compte de banque elle s’écrit. Recharge la page." }
+  }
+  if (lecture.comptes.every((c) => c.compte === null)) return { cas: "role", compte: plan.banque }
+  return { cas: "par_compte", role: plan.banque, comptes: new Map(lecture.comptes.map((c) => [c.id, c])) }
+}
+
+interface MouvementDUnCompte { date: string; compte_bancaire_id?: string | null }
+type BanqueDuMouvement = { compte: string } | { refus: string }
+
+function banqueDuMouvement(ligne: MouvementDUnCompte, banques: BanquesDuDossier): BanqueDuMouvement {
+  if (banques.cas === "role") return { compte: banques.compte }
+  if (banques.cas === "retenu") return { refus: banques.raison }
+  const compte = ligne.compte_bancaire_id ? banques.comptes.get(ligne.compte_bancaire_id) : undefined
+  if (!compte) {
+    return { refus: "Le compte bancaire de ce mouvement n’est pas dans la lecture des comptes du dossier : son écriture ne sait pas sur "
+      + "quel compte de banque elle s’écrit. Recharge la page." }
+  }
+  return { compte: compteDeBanqueDuMouvement(compte, ligne.date, banques.role) }
+}
+
+type PlanDuMouvement = { plan: PlanComptable } | { refus: string }
+
+function planDuMouvement(plan: PlanComptable, ligne: MouvementDUnCompte, banques: BanquesDuDossier): PlanDuMouvement {
+  const banque = banqueDuMouvement(ligne, banques)
+  if ("refus" in banque) return banque
+  return { plan: banque.compte === plan.banque ? plan : Object.freeze({ ...plan, banque: banque.compte }) }
+}
+
+type ModeleDuMouvement = { modele: ModeleComptable } | { refus: string }
+
+function modeleDuMouvement(modele: ModeleComptable, ligne: MouvementDUnCompte, banques: BanquesDuDossier): ModeleDuMouvement {
+  const p = planDuMouvement(modele.plan, ligne, banques)
+  if ("refus" in p) return p
+  return { modele: p.plan === modele.plan ? modele : { ...modele, plan: p.plan } }
+}
+
+// Le plan (le modèle) sous lequel un DÉTECTEUR recompose l'écriture attendue d'un mouvement, ou nul : sa banque ne se sait
+// pas, il n'est pas jugé.
+function planPourJuger(plan: PlanComptable, ligne: MouvementDUnCompte, banques: BanquesDuDossier): PlanComptable | null {
+  const p = planDuMouvement(plan, ligne, banques)
+  return "refus" in p ? null : p.plan
+}
+
+function modelePourJuger(modele: ModeleComptable, ligne: MouvementDUnCompte, banques: BanquesDuDossier): ModeleComptable | null {
+  const m = modeleDuMouvement(modele, ligne, banques)
+  return "refus" in m ? null : m.modele
+}
+
+// Les comptes de banque du dossier : celui du rôle et le 512 propre de chacun de ses comptes, quelle que soit sa date.
+function comptesDeBanqueDuDossier(plan: PlanComptable, banques: BanquesDuDossier): ReadonlySet<string> {
+  if (banques.cas !== "par_compte") return new Set([plan.banque])
+  const comptes = new Set([plan.banque, banques.role])
+  for (const c of banques.comptes.values()) if (c.compte !== null) comptes.add(c.compte)
+  return comptes
+}
+
+interface PaiementDUnMouvement { id: string; date: string; compte_bancaire_id?: string | null }
+
+// Le premier paiement par le relevé dont la banque ne se sait pas, qui RETIENT la pièce ; nul drapeau baissé.
+function refusDesBanquesDesPaiements(
+  paiements: readonly ({ origine: string } & Partial<PaiementDUnMouvement>)[], banques: BanquesDuDossier,
+): string | null {
+  for (const p of paiements) {
+    if (p.origine === "caisse" || p.id === undefined || p.date === undefined) continue
+    const banque = banqueDuMouvement({ date: p.date, compte_bancaire_id: p.compte_bancaire_id }, banques)
+    if ("refus" in banque) return banque.refus
+  }
+  return null
+}
+
+// Combien de mouvements du relevé ont une banque qui ne se sait pas : ce que l'assistant ne juge pas, et dit (jamais lequel).
+function mouvementsSansBanque(lignes: readonly MouvementDUnCompte[], banques: BanquesDuDossier): number {
+  return lignes.filter((l) => "refus" in banqueDuMouvement(l, banques)).length
+}
+
+// La phrase neutre qui le dit au modèle : ni nom de compte, ni identifiant, ni IBAN. Nulle quand chaque banque se sait.
+function phraseDesBanquesInconnues(banques: BanquesDuDossier, sansBanque: number): string | null {
+  if (banques.cas === "retenu") {
+    return "indisponible : les comptes bancaires du dossier n'ont pas pu être lus en entier — les écritures des mouvements du relevé et "
+      + "des pièces qu'ils paient n'ont pas été jugées, faute de savoir sur quel compte de banque chacune s'écrit"
+  }
+  if (sansBanque === 0) return null
+  return `${sansBanque} mouvement(s) du relevé dont le compte bancaire n'a pas été rendu avec les comptes du dossier : leurs écritures, `
+    + "et celles des pièces qu'ils paient, n'ont pas été jugées"
+}
+// ── FIN BANQUES DU DOSSIER ───────────────────────────────────────────────────────────────────────
+
 // ── DÉBUT FACTURES SOURCES ───────────────────────────────────────────────────────────────────────
 // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE COMPTE NULLE PART — copié de src/lib/facturesSources.ts (chantier EC-Q3, étape
 // VF6a ; repris par l'assistant à l'étape VF9b, ligne 28.65). Désignée exemplaire d'une facture ou d'un avoir SOURCE de sa
@@ -764,6 +900,8 @@ interface LignePayanteRow {
   id: string; piece_id: string | null; date: string; montant: number; statut: string; reglement_groupe: boolean
   // Classé par ses encaissements de factures (étape VF2) : seul un tel mouvement paie l'exemplaire d'une facture d'avant.
   encaissements_de_factures: boolean
+  // Le compte bancaire du mouvement (MCB5), lu le drapeau levé seulement : absent, le paiement est celui d'hier.
+  compte_bancaire_id?: string | null
 }
 interface PartRegleeRow { ligne_bancaire_id: string; piece_id: string | null; montant: number }
 // Ce qu'un virement mixte paie : le mouvement, l'exemplaire unique et validé de la facture d'avant, et le montant de son
@@ -778,7 +916,9 @@ interface PartPayeeParLaCaisseRow { operation_caisse_id: string; piece_id: strin
 // relevé. `origine` : `groupe`, la part d'un virement groupé ; `encaissements`, celle d'un virement mixte ; `caisse`, un
 // paiement par la caisse.
 type PaiementDePiece = PaiementParLeReleve | PaiementParLaCaisse
-interface PaiementParLeReleve { id: string; date: string; montant: number; origine: "rapprochement" | "groupe" | "encaissements" }
+interface PaiementParLeReleve {
+  id: string; date: string; montant: number; origine: "rapprochement" | "groupe" | "encaissements"; compte_bancaire_id?: string | null
+}
 interface PaiementParLaCaisse { operation_caisse_id: string; date: string; montant: number; origine: "caisse" }
 
 // Le paiement est-il par le relevé ? Ce qu'un usage du paiement comme MOUVEMENT exige (la banque, l'engagement).
@@ -826,6 +966,11 @@ function seuilAlignement(montantPiece: number): number {
 // retomberait « sans paiement ». Chaque liste est triée par date, puis le relevé avant la caisse, puis par mouvement ou par
 // opération, pour que deux lectures rendent la même chose quel que soit l'ordre de la requête ; une liste sans paiement par
 // la caisse se trie comme avant (par date puis par mouvement).
+// Le compte bancaire d'un mouvement, recopié sur chacun de ses paiements seulement quand la ligne le porte (MCB5).
+function compteDuMouvement(ligne: Pick<LignePayanteRow, "compte_bancaire_id">): { compte_bancaire_id?: string | null } {
+  return ligne.compte_bancaire_id === undefined ? {} : { compte_bancaire_id: ligne.compte_bancaire_id }
+}
+
 function paiementsDesPieces(
   lignes: readonly LignePayanteRow[], reglements: readonly PartRegleeRow[], encaissees: readonly PartEncaisseeRow[],
   caisse: readonly PartPayeeParLaCaisseRow[],
@@ -839,18 +984,18 @@ function paiementsDesPieces(
   }
   for (const ligne of lignes) {
     if (ligne.statut !== "rapprochee" || !ligne.piece_id) continue
-    ajouter(ligne.piece_id, { id: ligne.id, date: ligne.date, montant: ligne.montant, origine: "rapprochement" })
+    ajouter(ligne.piece_id, { id: ligne.id, date: ligne.date, montant: ligne.montant, origine: "rapprochement", ...compteDuMouvement(ligne) })
   }
   for (const part of reglements) {
     if (!part.piece_id) continue
     const mouvement = mouvements.get(part.ligne_bancaire_id)
     if (!mouvement || mouvement.statut !== "rapprochee" || !mouvement.reglement_groupe) continue
-    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: "groupe" })
+    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: "groupe", ...compteDuMouvement(mouvement) })
   }
   for (const part of encaissees) {
     const mouvement = mouvements.get(part.ligne_bancaire_id)
     if (!mouvement || mouvement.statut !== "rapprochee" || !mouvement.encaissements_de_factures) continue
-    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: "encaissements" })
+    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: "encaissements", ...compteDuMouvement(mouvement) })
   }
   for (const part of caisse) {
     ajouter(part.piece_id, { operation_caisse_id: part.operation_caisse_id, date: part.date, montant: part.montant, origine: "caisse" })
@@ -1207,12 +1352,22 @@ function ligneContrepartieDirigeant(
 // En TRÉSORERIE : la charge ou le produit datés comme la 2035 compte la pièce, une contrepartie par paiement — la banque,
 // ou la caisse d'un paiement par la caisse (étape C13) —, et la part d'une note de frais que le dirigeant a payée face au
 // compte de l'exploitant.
+// Le plan sous lequel s'écrit la contrepartie d'un paiement : celui de son mouvement pour un paiement par le relevé, le plan
+// du dossier pour la caisse (MCB5, bloc BANQUES DU DOSSIER). Une banque inconnue ne se rend pas ici : `lignesPourPiece` a
+// retenu la pièce avant, et un détecteur ne juge pas la pièce.
+function planDuPaiement(plan: PlanComptable, paiement: PaiementDePiece, banques: BanquesDuDossier): PlanComptable {
+  if (!estParLeReleve(paiement)) return plan
+  const p = planDuMouvement(plan, paiement, banques)
+  return "refus" in p ? plan : p.plan
+}
+
 function lignesTresoreriePourPiece(
   piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[], plan: PlanComptable,
+  banques: BanquesDuDossier,
 ): LigneAttendue[] {
   const autres = [
     ...lignesChargeProduitPourPiece(piece, cible, assujettiTva, paiements, plan),
-    ...paiements.flatMap((p) => ligneContrepartieDuPaiement(p, plan) ?? []),
+    ...paiements.flatMap((p) => ligneContrepartieDuPaiement(p, planDuPaiement(plan, p, banques)) ?? []),
   ]
   const dirigeant = ligneContrepartieDirigeant(piece, autres, paiements, plan)
   return dirigeant && estContrepartieDirigeant(piece, cible, dirigeant, plan) ? [...autres, dirigeant] : autres
@@ -1253,26 +1408,36 @@ function lignesReglementEngagement(
 
 function lignesEngagementPourPiece(
   piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: string,
-  mouvements: readonly Pick<PaiementParLeReleve, "id" | "date" | "montant">[], plan: PlanComptable,
+  mouvements: readonly Pick<PaiementParLeReleve, "id" | "date" | "montant" | "compte_bancaire_id">[], plan: PlanComptable,
+  banques: BanquesDuDossier,
 ): LigneAttendue[] {
+  // Chaque règlement au 512 du compte de son mouvement (MCB5) ; une banque inconnue retient la pièce entière.
+  if (refusDesBanquesDesPaiements(mouvements.map((m) => ({ ...m, origine: "rapprochement" })), banques) !== null) return []
+  const planDe = (m: (typeof mouvements)[number]) => {
+    const p = planDuMouvement(plan, m, banques)
+    return "refus" in p ? plan : p.plan
+  }
   return [
     ...lignesFactureEngagement(piece, cible, assujettiTva, compteNotesDeFrais, plan),
     ...[...mouvements]
       .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
-      .flatMap((m) => lignesReglementEngagement(piece, m, compteNotesDeFrais, cible.immobilisation, plan)),
+      .flatMap((m) => lignesReglementEngagement(piece, m, compteNotesDeFrais, cible.immobilisation, planDe(m))),
   ]
 }
 
 // Ce qu'une pièce produit selon le MODÈLE COMPTABLE du dossier.
 function lignesPourPiece(
   piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[], modele: ModeleComptable,
+  banques: BanquesDuDossier,
 ): LigneAttendue[] {
+  // Une banque qui ne se sait pas RETIENT la pièce : rien ne s'attend d'elle (MCB5, bloc BANQUES DU DOSSIER).
+  if (refusDesBanquesDesPaiements(paiements, banques) !== null) return []
   // EN ENGAGEMENT, LE RELEVÉ SEUL RÈGLE (étape C13, comme src/lib/ecritures.ts) : la base refuse le paiement par la caisse
   // d'une pièce d'un dossier en engagement, et sa garde n'admettrait pas la ligne de tiers d'un règlement — un paiement par
   // la caisse n'y fait aucun règlement.
   return modele.mode === "engagement"
-    ? lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve), modele.plan)
-    : lignesTresoreriePourPiece(piece, cible, assujettiTva, paiements, modele.plan)
+    ? lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve), modele.plan, banques)
+    : lignesTresoreriePourPiece(piece, cible, assujettiTva, paiements, modele.plan, banques)
 }
 
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
@@ -1293,9 +1458,16 @@ function datesAttendues(
 // d'autres parts laisse le même mouvement en face de la même pièce.
 // ET LA CAISSE DE MÊME (étape C13, comme src/lib/ecritures.ts) : les lignes de caisse d'une pièce suivent ses paiements par la
 // caisse, une par opération, à sa date et à son montant — la même question sur l'autre clé.
-function banqueSuitLesPaiements(lignesBanque: readonly EcritureRow[], paiements: readonly PaiementDePiece[]): boolean {
+// Et chaque contrepartie au 512 du compte du mouvement qu'elle désigne (MCB5), jamais un autre 512 du dossier.
+function banqueSuitLesPaiements(
+  lignesBanque: readonly EcritureRow[], paiements: readonly PaiementDePiece[], plan: PlanComptable, banques: BanquesDuDossier,
+): boolean {
+  const releve = paiements.filter(estParLeReleve)
+  const banqueDe = new Map(releve.map((m) => [m.id, planDuPaiement(plan, m, banques).banque]))
+  if (lignesBanque.some((e) => e.ligne_bancaire_id != null && banqueDe.has(e.ligne_bancaire_id)
+    && banqueDe.get(e.ligne_bancaire_id) !== e.compte)) return false
   return contrepartiesSuiventLesPaiements(lignesBanque, (e) => e.ligne_bancaire_id ?? null,
-    paiements.filter(estParLeReleve).map((m) => ({ cle: m.id, date: m.date, montant: m.montant })))
+    releve.map((m) => ({ cle: m.id, date: m.date, montant: m.montant })))
 }
 
 function caisseSuitLesPaiements(lignesCaisse: readonly EcritureRow[], paiements: readonly PaiementDePiece[]): boolean {
@@ -1358,11 +1530,13 @@ function attenduDeLaPiece(
 // est de répondre « quelles sont les anomalies ? ». Deux livrables, deux réponses.
 function tresorerieDesynchronisee(
   p: PieceRow, cible: CibleComptable, groupe: readonly EcritureRow[], assujettiTva: boolean,
-  paiementsPiece: readonly PaiementDePiece[], plan: PlanComptable,
+  paiementsPiece: readonly PaiementDePiece[], plan: PlanComptable, banques: BanquesDuDossier,
 ): boolean {
   // La contrepartie d'une note de frais au compte de l'exploitant est une contrepartie, comme la banque : elle se
   // compare à part, à la fin. Celle d'un paiement par la caisse aussi (étape C13).
-  const lignes = groupe.filter((e) => e.compte !== plan.banque && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e, plan))
+  // Et la banque est l'un des 512 du dossier (MCB5) : la contrepartie d'un mouvement du livret n'est pas une charge.
+  const comptesDeBanque = comptesDeBanqueDuDossier(plan, banques)
+  const lignes = groupe.filter((e) => !comptesDeBanque.has(e.compte) && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e, plan))
   // Pas encore générée — pas une désynchronisation. Des contreparties SANS leur charge en sont une.
   if (lignes.length === 0) return groupe.length > 0
   const sensPiece: "debit" | "credit" = p.type_piece === "vente" ? "credit" : "debit"
@@ -1415,7 +1589,7 @@ function tresorerieDesynchronisee(
   // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT : une pièce payée en deux fois, ou réglée en partie par un
   // virement groupé, n'en recevait qu'une au rapprochement — une écriture déséquilibrée que « Régénérer »
   // réécrit désormais depuis les paiements.
-  if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === plan.banque), paiementsPiece)) return true
+  if (!banqueSuitLesPaiements(groupe.filter((e) => comptesDeBanque.has(e.compte)), paiementsPiece, plan, banques)) return true
   // ET UNE CONTREPARTIE CAISSE PAR PAIEMENT PAR LA CAISSE (étape C13), sur le compte de la caisse : une ligne qui ne suit plus
   // son opération — un paiement retiré, une ligne de moins, un autre compte — se régénère.
   const lignesCaisse = groupe.filter(estContrepartieCaisse)
@@ -1426,7 +1600,7 @@ function tresorerieDesynchronisee(
   const cle = (l: { date: string; sens: string; montant: number }) =>
     [p.date_piece ? l.date : "", l.sens, Math.round(l.montant * 100)].join("|")
   const dirigeantPresent = groupe.filter((e) => estContrepartieDirigeant(p, cible, e, plan)).map(cle).sort()
-  const dirigeantAttendu = lignesTresoreriePourPiece(p, cible, assujettiTva, paiementsPiece, plan)
+  const dirigeantAttendu = lignesTresoreriePourPiece(p, cible, assujettiTva, paiementsPiece, plan, banques)
     .filter((l) => estContrepartieDirigeant(p, cible, l, plan)).map(cle).sort()
   return dirigeantPresent.length !== dirigeantAttendu.length || dirigeantPresent.some((c, i) => c !== dirigeantAttendu[i])
 }
@@ -1462,9 +1636,10 @@ function decoupageDiffere(
 // une dette déjà payée, et un règlement que plus rien ne rapproche en solderait une qui court encore.
 function engagementDesynchronise(
   p: PieceRow, cible: CibleComptable, groupe: readonly EcritureRow[], assujettiTva: boolean,
-  paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: string, plan: PlanComptable,
+  paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: string, plan: PlanComptable, banques: BanquesDuDossier,
 ): boolean {
-  const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== plan.banque)
+  const comptesDeBanque = comptesDeBanqueDuDossier(plan, banques)
+  const facture = groupe.filter((e) => !e.ligne_bancaire_id && !comptesDeBanque.has(e.compte))
   const reglements = groupe.filter((e) => e.ligne_bancaire_id)
   // Pas encore générée — pas une désynchronisation. Des règlements SANS leur facture en sont une.
   if (facture.length === 0) return reglements.length > 0
@@ -1490,8 +1665,8 @@ function engagementDesynchronise(
   const attendus = new Set(paiementsPiece.filter(estParLeReleve).filter((m) => m.montant !== 0).map((m) => m.id))
   const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
   if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true
-  if (reglements.some((e) => e.compte !== plan.banque && e.compte !== tiers)) return true
-  return !banqueSuitLesPaiements(reglements.filter((e) => e.compte === plan.banque), paiementsPiece)
+  if (reglements.some((e) => !comptesDeBanque.has(e.compte) && e.compte !== tiers)) return true
+  return !banqueSuitLesPaiements(reglements.filter((e) => comptesDeBanque.has(e.compte)), paiementsPiece, plan, banques)
 }
 
 // En engagement, CHAQUE écriture s'équilibre seule — la facture comme chaque règlement — et chacune
@@ -1539,7 +1714,12 @@ function analyserEcritures(
   ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean,
   paiements: ReadonlyMap<string, readonly PaiementDePiece[]>, modele: ModeleComptable, frontiere: string | null,
   exemplaires: ReadonlySet<string>,
+  banques: BanquesDuDossier,
 ) {
+  // Les banques du dossier (MCB5, bloc BANQUES DU DOSSIER) : une contrepartie de banque se reconnaît sur l'ENSEMBLE des 512
+  // du dossier, chaque paiement attend la sienne au 512 du compte de son mouvement, et une pièce dont une banque ne se sait
+  // pas n'est pas jugée. Sans défaut.
+  const comptesDeBanque = comptesDeBanqueDuDossier(modele.plan, banques)
   const piecesParGroupe = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
     if (!e.piece_id || exemplaires.has(e.piece_id)) continue
@@ -1558,7 +1738,7 @@ function analyserEcritures(
   // La contrepartie d'un paiement par la CAISSE en est une aussi (étape C13) : une pièce payée en espèces a la sienne, au
   // compte de la caisse, et rien ne la retient.
   const contrepartie = (pieceId: string, r: EcritureRow) =>
-    r.compte === modele.plan.banque || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === modele.plan.exploitant)
+    comptesDeBanque.has(r.compte) || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === modele.plan.exploitant)
   // Par identifiant : en engagement, une facture qu'un lettrage fait à la main solde avec son avoir n'attend plus de
   // règlement, et `points_a_traiter` la retire comme la Checklist (bloc LETTRAGE MANUEL).
   const piecesSansContrepartie = [...piecesParGroupe.entries()]
@@ -1576,15 +1756,16 @@ function analyserEcritures(
   const piecesDesynchronisees = aComptabiliser.filter(({ piece, ...cible }) => {
     const groupe = piecesParGroupe.get(piece.id) ?? []
     const paiementsPiece = paiements.get(piece.id) ?? []
+    if (refusDesBanquesDesPaiements(paiementsPiece, banques) !== null) return false
     if (frontiere !== null) {
-      const attendues = lignesPourPiece(piece, cible, assujettiTva, paiementsPiece, modele)
+      const attendues = lignesPourPiece(piece, cible, assujettiTva, paiementsPiece, modele, banques)
       if ([...groupe, ...attendues].some((l) => estFigee(l.date, frontiere))) {
         return partieOuverteDesynchronisee(groupe, attendues, frontiere)
       }
     }
     return modele.mode === "engagement"
-      ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais, modele.plan)
-      : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece, modele.plan)
+      ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais, modele.plan, banques)
+      : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece, modele.plan, banques)
   }).map(({ piece }) => piece)
 
   return { nbSansContrepartie, piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
@@ -1775,14 +1956,19 @@ function ecritureConforme(
 // dont le compte a changé depuis, ou d'une recette taxée d'un dossier qui a cessé d'être assujetti.
 // « Réaffecter » (onglet Écritures) la réécrit. Pas un mouvement d'un exercice VALIDÉ (bloc VALIDATION) : son
 // écriture est validée, la base refuse de la réécrire.
+// `banques` (MCB5, bloc BANQUES DU DOSSIER) : l'écriture attendue d'un mouvement se recompose au 512 de SON compte bancaire ;
+// drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
 function mouvementsAffectesDesynchronises(
   ecritures: readonly EcritureRow[], affectes: readonly MouvementAffecte[], frontiere: string | null, plan: PlanComptable,
+  banques: BanquesDuDossier,
 ): MouvementAffecte[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return affectes.filter((m) => {
     if (estFigee(m.ligne.date, frontiere)) return false
     if (!m.nature || !m.categorie.compte_comptable) return true
-    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux, plan), m.ligne.date)
+    const duMouvement = planPourJuger(plan, m.ligne, banques)
+    if (!duMouvement) return false
+    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux, duMouvement), m.ligne.date)
   })
 }
 
@@ -1804,17 +1990,25 @@ function compteDuDirigeant(modele: ModeleComptable): string {
 // compte de bilan, ni rapprochés d'une déclaration de TVA, ni rapprochés, affectés ou ventilés, pas de zéro euro — et
 // pas d'un exercice validé, où la base n'écrit plus. Les contraintes de `lignes_bancaires` rendent ces mélanges impossibles avec un virement personnel ; la
 // copie les écarte quand même, pour dire de tout mouvement ce que src/lib en dit.
+// `banques` (MCB5, bloc BANQUES DU DOSSIER) : l'écriture attendue d'un mouvement se recompose au 512 de SON compte bancaire ;
+// drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
 function virementsPersonnelsAEcrire(
   ecritures: readonly EcritureRow[], lignes: readonly VirementPersonnelRow[], modele: ModeleComptable, frontiere: string | null,
+  banques: BanquesDuDossier,
 ): VirementPersonnelRow[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  // L'écriture sous le modèle DU mouvement ; une banque qui ne se sait pas : le mouvement n'est pas jugé.
+  const nonConforme = (l: VirementPersonnelRow): boolean => {
+    const duMouvement = modelePourJuger(modele, l, banques)
+    return !!duMouvement && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuMouvement(l, compteDuDirigeant(duMouvement), null, duMouvement.plan), l.date)
+  }
   return lignes.filter((l) =>
     l.prelevement_personnel
     && !l.reglement_groupe && !l.compte_bilan && !l.declaration_tva_id
     && !l.piece_id && !l.cotisation_id && !l.categorie_id && !l.emprunt_id && !l.ventilee
     && l.montant !== 0
     && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuMouvement(l, compteDuDirigeant(modele), null, modele.plan), l.date))
+    && nonConforme(l))
 }
 
 // Les recettes affectées SANS TAUX d'un dossier assujetti — affectées avant qu'il le devienne : écrites au
@@ -1871,15 +2065,23 @@ function ecritureDuCompteDeBilan(ligne: Pick<MouvementCompteBilanRow, "montant">
 // Le mouvement écrit sur un compte de bilan dont l'écriture n'est plus celle que son compte produirait : absente, sur un
 // autre compte, d'un autre montant, dans un autre sens ou à une autre date. « Réécrire » (onglet Écritures) rejoue la
 // fonction avec le même compte. Pas un mouvement d'un exercice validé : la base refuse de réécrire son écriture.
+// `banques` (MCB5, bloc BANQUES DU DOSSIER) : l'écriture attendue d'un mouvement se recompose au 512 de SON compte bancaire ;
+// drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
 function mouvementsSurUnCompteDeBilanDesynchronises(
   ecritures: readonly EcritureRow[], lignes: readonly MouvementCompteBilanRow[], frontiere: string | null, plan: PlanComptable,
+  banques: BanquesDuDossier,
 ): MouvementCompteBilanRow[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  // L'écriture sous le plan DU mouvement ; une banque qui ne se sait pas : le mouvement n'est pas jugé.
+  const nonConforme = (l: MouvementCompteBilanRow, compte: string): boolean => {
+    const duMouvement = planPourJuger(plan, l, banques)
+    return !!duMouvement && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(l, compte, duMouvement), l.date)
+  }
   return lignes.filter((l) =>
     !!l.compte_bilan
     && l.statut === "rapprochee"
     && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(l, l.compte_bilan, plan), l.date))
+    && nonConforme(l, l.compte_bilan))
 }
 
 // Les mouvements IGNORÉS, absents du FEC. Ni un virement personnel, classé « ignoré » lui aussi mais écrit sur le
@@ -2025,11 +2227,18 @@ function ecritureDeLEcheance(ligne: Pick<MouvementEmpruntRow, "montant">, intere
 }
 
 // Un mouvement rapproché d'un emprunt dont l'écriture n'est pas celle de son découpage.
-function echeancesDesynchronisees(ecritures: readonly EcritureRow[], lignes: readonly MouvementEmpruntRow[], plan: PlanComptable): MouvementEmpruntRow[] {
+// `banques` (MCB5, bloc BANQUES DU DOSSIER) : l'écriture attendue d'un mouvement se recompose au 512 de SON compte bancaire ;
+// drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
+function echeancesDesynchronisees(
+  ecritures: readonly EcritureRow[], lignes: readonly MouvementEmpruntRow[], plan: PlanComptable,
+  banques: BanquesDuDossier,
+): MouvementEmpruntRow[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((ligne) => {
     if (!ligne.emprunt_id) return false
-    const attendue = ecritureDeLEcheance(ligne, ligne.emprunt_interets ?? 0, ligne.emprunt_assurance ?? 0, plan)
+    const duMouvement = planPourJuger(plan, ligne, banques)
+    if (!duMouvement) return false
+    const attendue = ecritureDeLEcheance(ligne, ligne.emprunt_interets ?? 0, ligne.emprunt_assurance ?? 0, duMouvement)
     return !ecritureConforme(parLigne.get(ligne.id) ?? [], attendue, ligne.date)
   })
 }
@@ -2160,6 +2369,8 @@ function ventilationsIncoherentes(
 // la liste écarte le mouvement ; une catégorie sortie des comptes de résultat le rend périmé, comme une part
 // taxée d'un dossier qui a cessé d'être assujetti. Pas un mouvement d'un exercice validé : son écriture est
 // validée, la base refuse de la réécrire.
+// `banques` (MCB5, bloc BANQUES DU DOSSIER) : l'écriture attendue d'un mouvement se recompose au 512 de SON compte bancaire ;
+// drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
 function mouvementsVentilesDesynchronises(
   ecritures: readonly EcritureRow[],
   lignes: readonly MouvementVentileRow[],
@@ -2168,6 +2379,7 @@ function mouvementsVentilesDesynchronises(
   modele: ModeleComptable,
   assujettiTva: boolean,
   frontiere: string | null,
+  banques: BanquesDuDossier,
 ): MouvementVentileRow[] {
   const ecrituresParLigne = ecrituresSansPieceParMouvement(ecritures)
   const parLigne = partsParMouvement(ventilations)
@@ -2178,7 +2390,9 @@ function mouvementsVentilesDesynchronises(
     if (estFigee(ligne.date, frontiere)) return false
     const parts = parLigne.get(ligne.id) ?? []
     if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false
-    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)
+    const duMouvement = modelePourJuger(modele, ligne, banques)
+    if (!duMouvement) return false
+    const attendue = ecritureDeLaVentilation(ligne, parts, categories, duMouvement, assujettiTva)
     if (!attendue) return true
     return !ecritureConforme(ecrituresParLigne.get(ligne.id) ?? [], attendue, ligne.date)
   })
@@ -2274,15 +2488,23 @@ function rapprochementsDeCotisation(
 // absente, le cas réel, ou périmée par une CSG-CRDS saisie depuis. Un rapprochement qui ne peut pas
 // s'écrire n'y est pas : il est compté à part. Ni un paiement d'un exercice validé : la base n'y écrit plus — une
 // échéance compte à la date du mouvement qui la paie, et c'est elle qui dit l'exercice.
+// `banques` (MCB5, bloc BANQUES DU DOSSIER) : l'écriture attendue d'un mouvement se recompose au 512 de SON compte bancaire ;
+// drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
 function cotisationsAEcrire(
   ecritures: readonly EcritureRow[], lignes: readonly MouvementCotisationRow[], cotisations: readonly CotisationRow[], mode: ModeComptable,
   frontiere: string | null, plan: PlanComptable,
+  banques: BanquesDuDossier,
 ): { ligne: MouvementCotisationRow; cotisation: CotisationRow }[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  // L'écriture sous le plan DU mouvement ; une banque qui ne se sait pas : le mouvement n'est pas jugé.
+  const nonConforme = (ligne: MouvementCotisationRow, cotisation: CotisationRow): boolean => {
+    const duMouvement = planPourJuger(plan, ligne, banques)
+    return !!duMouvement && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode, duMouvement), ligne.date)
+  }
   return rapprochementsDeCotisation(lignes, cotisations).filter(({ ligne, cotisation }) =>
     !estFigee(ligne.date, frontiere)
     && !refusRapprochementCotisation(ligne, cotisation, mode)
-    && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode, plan), ligne.date))
+    && nonConforme(ligne, cotisation))
 }
 
 // Les rapprochements qui ne peuvent pas s'écrire, avec leur raison. Rien d'un exercice validé : ni le mouvement ni
@@ -2876,15 +3098,23 @@ function liquidationsDesynchronisees(
 
 // Les mouvements rapprochés d'une déclaration dont l'écriture n'est plus celle que leur montant commande. Pas un
 // mouvement d'un exercice validé.
+// `banques` (MCB5, bloc BANQUES DU DOSSIER) : l'écriture attendue d'un mouvement se recompose au 512 de SON compte bancaire ;
+// drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
 function paiementsTvaDesynchronises(
   ecritures: readonly EcritureRow[], lignes: readonly MouvementTvaRow[], frontiere: string | null, plan: PlanComptable,
+  banques: BanquesDuDossier,
 ): MouvementTvaRow[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  // L'écriture sous le plan DU mouvement ; une banque qui ne se sait pas : le mouvement n'est pas jugé.
+  const nonConforme = (l: MouvementTvaRow): boolean => {
+    const duMouvement = planPourJuger(plan, l, banques)
+    return !!duMouvement && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l, duMouvement), l.date)
+  }
   return lignes.filter((l) =>
     !!l.declaration_tva_id
     && l.statut === "rapprochee"
     && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l, plan), l.date))
+    && nonConforme(l))
 }
 
 const MOIS_TVA = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
@@ -3489,6 +3719,23 @@ async function sourcesEnDefaut(
 // à ce que la RLS refuse —, en entier, chacun de ce dossier et portant sa pièce. Sinon, le motif : jamais un ensemble vide
 // deviné, qui écrirait la pièce citée à sa date à côté de l'encaissement de sa facture.
 interface LienDePieceCiteeRow { id: string; dossier_id: string; piece_id: string | null }
+
+// LES COMPTES BANCAIRES DU DOSSIER (MCB5, bloc BANQUES DU DOSSIER), comme l'écran les lit (src/lib/comptesBancairesLecture.ts),
+// au jeton de l'APPELANT, le drapeau levé seulement — la table n'existe pas avant la migration. Ce que la jambe de banque
+// demande, rien de plus : l'identifiant opaque, le principal, le 512, la date d'où il vaut ; jamais le libellé ni la fin de
+// l'identifiant. Lue en partie, rendue d'un autre dossier, ou sans ses colonnes : illisible, et rien ne se juge sur elle.
+async function lireLesComptesDuDossier(appelant: ReturnType<typeof createClient>, dossierId: string): Promise<LectureDesComptes> {
+  if (!COMPTES_BANCAIRES_PREVUS) return { etat: "sans_objet" }
+  const lus = await lireTout<CompteDeBanqueRow & { dossier_id: string }>((debut, fin) =>
+    appelant.from("comptes_bancaires").select("id, dossier_id, principal, compte, compte_propre_depuis", { count: "exact" })
+      .eq("dossier_id", dossierId).order("id").range(debut, fin))
+  if (!lus.complete) return { etat: "illisible", motif: lus.motif ?? "lecture incomplète" }
+  if (lus.lignes.some((c) => c.dossier_id !== dossierId)) return { etat: "illisible", motif: "une ligne rendue n'est pas de ce dossier" }
+  if (lus.lignes.some((c) => typeof c.id !== "string" || typeof c.principal !== "boolean")) {
+    return { etat: "illisible", motif: "un compte rendu sans ses colonnes" }
+  }
+  return { etat: "lus", comptes: lus.lignes.map(({ id, principal, compte, compte_propre_depuis }) => ({ id, principal, compte, compte_propre_depuis })) }
+}
 
 async function piecesCiteesDuDossier(
   appelant: ReturnType<typeof createClient>, dossierId: string,
@@ -4127,11 +4374,15 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les mouvements AFFECTÉS à une catégorie sans justificatif (bloc AFFECTATION) : leurs catégories
       // comptent comme celles des pièces, et leur écriture doit suivre la catégorie.
       lireTout<MouvementAffecteRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, statut, categorie_id, taux_tva", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "rapprochee").not("categorie_id", "is", null).order("id").range(d, f)),
+        COMPTES_BANCAIRES_PREVUS
+          ? admin.from("lignes_bancaires").select("id, date, montant, statut, categorie_id, taux_tva, compte_bancaire_id", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "rapprochee").not("categorie_id", "is", null).order("id").range(d, f)
+          : admin.from("lignes_bancaires").select("id, date, montant, statut, categorie_id, taux_tva", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "rapprochee").not("categorie_id", "is", null).order("id").range(d, f)),
       // Les VIREMENTS PERSONNELS (bloc AFFECTATION) : ceux classés sans leur écriture manquent au FEC. Et tout autre
       // classement du mouvement, que `refusVirementPersonnel` regarde avant d'écrire.
       lireTout<VirementPersonnelRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
+        COMPTES_BANCAIRES_PREVUS
+          ? admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan, declaration_tva_id, compte_bancaire_id", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)
+          : admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
       // Les EMPRUNTS et le RELEVÉ ENTIER (bloc EMPRUNT) : le relevé dit ce qu'il couvre, et ses mouvements
       // rapprochés d'un emprunt, les échéances payées et leur découpage. Et lesquels sont VENTILÉS (bloc
       // VENTILATION) : le relevé entier, pour voir aussi des parts posées sur un mouvement qui ne l'est pas.
@@ -4147,7 +4398,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       lireTout<EmpruntRow>((d, f) =>
         admin.from("emprunts").select("id, nom, capital_initial, taux_annuel, date_debut, duree_mois", { count: "exact" }).eq("dossier_id", dossierId).order("date_debut").order("id").range(d, f)),
       lireTout<MouvementEmpruntRow & MouvementVentileRow & LignePayanteRow & MouvementCotisationRow & MouvementCompteBilanRow & MouvementTvaRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee, encaissements_de_factures, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+        COMPTES_BANCAIRES_PREVUS
+          ? admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee, encaissements_de_factures, declaration_tva_id, compte_bancaire_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)
+          : admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee, encaissements_de_factures, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les PARTS des mouvements ventilés (bloc VENTILATION) : leurs catégories comptent comme celles des
       // pièces, et l'écriture du mouvement doit les suivre.
       lireTout<PartVentilationRow>((d, f) =>
@@ -4252,9 +4505,14 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // paiements jugent se dit alors indisponible, sous sa clé (`caisseIllisible`) ; le reste ne dépend pas d'elles.
     const paiementsDeLaCaisse = rCaisse.complete ? paiementsParLaCaisse(rCaisse.lignes) : null
     const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes, encaissees, paiementsDeLaCaisse ?? [])
+    // LES COMPTES BANCAIRES DU DOSSIER (MCB5, bloc BANQUES DU DOSSIER), comme la Checklist : la jambe de banque de chaque
+    // mouvement au 512 de SON compte. Lus au jeton de l'appelant, le drapeau levé seulement ; baissé, la banque du rôle, sans
+    // lecture : chaque contrôle juge comme hier. Une banque qui ne se sait pas ne se juge pas, et se dit (`banques_des_mouvements`).
+    const banques = banquesDuDossier(await lireLesComptesDuDossier(ctx.appelant, dossierId), plan)
+    const banquesInconnues = phraseDesBanquesInconnues(banques, mouvementsSansBanque(rReleve.lignes, banques))
     // La frontière de validation : rien de ce qu'elle fige ne se réclame plus, comme dans la Checklist.
     const frontiere = frontiereDeValidation(rValides.lignes.map((v) => v.annee))
-    const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele, frontiere, exemplaires)
+    const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele, frontiere, exemplaires, banques)
     // Les lettrages faits à la main (bloc LETTRAGE MANUEL), revérifiés sur TOUTES les pièces du dossier, comme dans la
     // Checklist : une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de règlement. En trésorerie
     // rien ne se lettre, et la liste est vide.
@@ -4274,22 +4532,22 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const catSansPoste = categoriesSansPoste(categoriesTyped, piecesQuiComptent, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
     const sansTva = piecesSansTva(piecesQuiComptent, dossier.assujetti_tva)
     const affectes = mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)
-    const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere, plan)
+    const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere, plan, banques)
     const recettesAffecteesSansTva = recettesAffecteesSansTaux(affectes, dossier.assujetti_tva, frontiere)
-    const virementsAEcrire = virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele, frontiere)
+    const virementsAEcrire = virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele, frontiere, banques)
     const couverture = couvertureDuReleve(rReleve.lignes, frontiere)
     const echeancesManquantes = couverture ? echeancesNonRapprochees(rEmprunts.lignes, rReleve.lignes, couverture.debut, couverture.fin) : []
-    const echeancesPerimees = echeancesDesynchronisees(ecrituresTyped, rReleve.lignes, plan)
+    const echeancesPerimees = echeancesDesynchronisees(ecrituresTyped, rReleve.lignes, plan, banques)
     const recettesVentileesSansTva = recettesVentileesSansTaux(
       partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped, dossier.assujetti_tva), dossier.assujetti_tva, frontiere)
     const ventilationsFausses = ventilationsIncoherentes(rReleve.lignes, rParts.lignes)
-    const ventilesPerimes = mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva, frontiere)
+    const ventilesPerimes = mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva, frontiere, banques)
     // Comptés par MOUVEMENT, comme la Checklist : une part sans pièce et une somme qui ne tombe plus juste
     // sont deux raisons pour un seul virement à reprendre.
     const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))
     // Ni l'exemplaire d'une facture source (VF9b) : il ne se règle pas, sa facture s'encaisse.
     const payeesEnTrop = piecesPayeesEnTrop(piecesQuiComptent, paiements)
-    const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere, plan)
+    const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere, plan, banques)
     const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)
     // L'exercice en cours, dans le fuseau du cabinet : sa dotation ne manque pas encore.
     const anneeCourante = Number(aujourdHuiCabinet().slice(0, 4))
@@ -4301,14 +4559,14 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const forfaitsManquants = forfaitsEnDefaut(forfaitsDuCadre7(rVehicules.lignes, ecrituresTyped, modele, ouverture, frontiere), anneeCourante)
     // Les mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, et les mouvements ignorés,
     // absents du FEC (bloc COMPTE DE BILAN) — sauf avant l'ouverture d'un dossier repris, comme dans la Checklist.
-    const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan)
+    const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan, banques)
     const ignoresHorsFec = mouvementsIgnoresHorsFec(rReleve.lignes, ouverture, frontiere)
     // La TVA liquidée et payée (bloc LIQUIDATION TVA), comme la Checklist : une liquidation qui ne suit plus sa
     // déclaration, un paiement dont l'écriture ne suit plus son mouvement, et — sur un dossier assujetti — les périodes
     // dont la déclaration manque une fois son échéance passée, sur les exercices où le dossier a une activité : un
     // mouvement du relevé, une pièce validée datée. Le premier jour du mois, dans le fuseau du cabinet.
     const liquidationsPerimees = liquidationsDesynchronisees(ecrituresTyped, rDeclarations.lignes, frontiere, plan)
-    const paiementsTvaPerimes = paiementsTvaDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan)
+    const paiementsTvaPerimes = paiementsTvaDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan, banques)
     const anneesActives = [
       ...rReleve.lignes.map((l) => Number(l.date.slice(0, 4))),
       ...piecesTyped.flatMap((p) => (p.date_piece ? [Number(p.date_piece.slice(0, 4))] : [])),
@@ -4346,6 +4604,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // le dossier doit à la facturation électronique. Il se règle dans l'onglet TVA.
       statut_de_tva_a_preciser: dossier.statut_tva == null,
       ecritures_desequilibrees: groupesDesequilibres.length,
+      // LES COMPTES BANCAIRES (MCB5), d'un dossier qui en tient plusieurs seulement : les 512 où s'écrit sa banque — des
+      // numéros de compte, jamais un nom, un libellé ni un IBAN —, et la phrase neutre d'une banque qui ne se sait pas. Un
+      // dossier d'un seul compte, et tout dossier drapeau baissé, n'a ni l'une ni l'autre clé : la réponse d'hier.
+      ...(banques.cas === "par_compte" ? { comptes_de_banque_du_dossier: [...comptesDeBanqueDuDossier(plan, banques)].sort(ordreC) } : {}),
+      ...(banquesInconnues === null ? {} : { banques_des_mouvements: banquesInconnues }),
       ecritures_a_regenerer_pieces_modifiees: caisseIllisible ?? piecesDesynchronisees.length,
       // Le libellé de la Checklist : l'écriture d'un mouvement affecté ne suit plus sa catégorie.
       mouvements_affectes_a_reaffecter: affectesAReaffecter.length,

@@ -14,7 +14,7 @@ import { compteDuDirigeant } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
-import { PLANS_DES_GARDES, avecLePlan, entreesSous } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlanEtLaBanqueDuRole, blocDesBanques, entreesSous } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS AFFECTÉS (29/09/2026, ligne 26.6).
@@ -64,9 +64,9 @@ function extraire(source: string, plan: PlanComptable): Copie {
   expect(debutValidation, 'bornes du bloc VALIDATION introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
   expect(finValidation).toBeGreaterThan(debutValidation)
   const bloc = ``
-    + `${source.slice(debutValidation, finValidation)}\n${source.slice(debut, fin)}`
+    + `${source.slice(debutValidation, finValidation)}\n${blocDesBanques(source)}\n${source.slice(debut, fin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return avecLePlan(new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux, categoriesSansCompte, categoriesSansPoste, compteDuDirigeant, virementsPersonnelsAEcrire }`)(), plan) as Copie
+  return avecLePlanEtLaBanqueDuRole(new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux, categoriesSansCompte, categoriesSansPoste, compteDuDirigeant, virementsPersonnelsAEcrire }`)(), plan) as Copie
 }
 
 
@@ -388,7 +388,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
     expect(corps).toContain('const pieceIdsImmobilisees = new Set(acquisitions.keys())')
     expect(corps).toContain('piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)')
     expect(corps).toContain('mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)')
-    expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere, plan)')
+    expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere, plan, banques)')
     expect(corps).toContain('recettesAffecteesSansTaux(affectes, dossier.assujetti_tva, frontiere)')
     expect(corps).toMatch(/mouvements_affectes_a_reaffecter: affectesAReaffecter\.length/)
     expect(corps).toMatch(/encaissements_affectes_ou_ventiles_en_recette_sans_taux_de_tva_sur_dossier_assujetti: recettesAffecteesSansTva\.length \+ recettesVentileesSansTva\.length/)
@@ -427,7 +427,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
   it('lit les virements personnels sous le même refus de lecture partielle, et rend le point de la Checklist', () => {
     // Et tout autre classement du mouvement, que `refusVirementPersonnel` regarde avant d'écrire.
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan, declaration_tva_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("prelevement_personnel", true\)/)
-    expect(corps).toContain('virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele, frontiere)')
+    expect(corps).toContain('virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele, frontiere, banques)')
     expect(corps).toMatch(/virements_personnels_sans_ecriture: virementsAEcrire\.length/)
   })
 

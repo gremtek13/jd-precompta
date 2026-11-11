@@ -12,7 +12,7 @@ import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlanEtLaBanqueDuRole, blocDesBanques, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES ÉCHÉANCES DE COTISATION RAPPROCHÉES (01/10/2026, ligne 26.6,
@@ -55,9 +55,9 @@ function extraire(source: string, plan: PlanComptable): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('COTISATION')}`
+  const bloc = `${bornes('VALIDATION')}\n${blocDesBanques(source)}\n${bornes('AFFECTATION')}\n${bornes('COTISATION')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return avecLePlan(new Function(`${js}\nreturn { montantDeLEcheance, csgDeLEcriture, refusRapprochementCotisation, ecritureDeLaCotisation, cotisationsAEcrire, rapprochementsCotisationRefuses }`)(), plan) as Copie
+  return avecLePlanEtLaBanqueDuRole(new Function(`${js}\nreturn { montantDeLEcheance, csgDeLEcriture, refusRapprochementCotisation, ecritureDeLaCotisation, cotisationsAEcrire, rapprochementsCotisationRefuses }`)(), plan) as Copie
 }
 
 
@@ -290,7 +290,7 @@ describe('agent-comptable / points_a_traiter lit les échéances de cotisation',
   })
 
   it('rend les deux points de la Checklist, selon le modèle du dossier', () => {
-    expect(corps).toContain('const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere, plan)')
+    expect(corps).toContain('const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere, plan, banques)')
     expect(corps).toContain('const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)')
     expect(corps).toMatch(/echeances_de_cotisation_payees_dont_l_ecriture_manque_ou_n_est_plus_a_jour: cotisationsSansEcriture\.length/)
     expect(corps).toMatch(/rapprochements_d_une_echeance_de_cotisation_qui_ne_peuvent_pas_s_ecrire: cotisationsRefusees\.length/)
@@ -411,7 +411,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc COTISATION sait encore éc
   })
 
   it('attrape un rapprochement refusé compté parmi les échéances à écrire', () => {
-    const derivee = planter(['    && !refusRapprochementCotisation(ligne, cotisation, mode)\n    && !ecritureConforme(', '    && !ecritureConforme('])
+    const derivee = planter(['    && !refusRapprochementCotisation(ligne, cotisation, mode)\n    && nonConforme(', '    && nonConforme('])
     const lignes = [ligne({ id: 'l-refusee', cotisation_id: 'refusee', montant: 500 })]
     const cotisations = [cotisation({ id: 'refusee' })]
     echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null)))
@@ -419,7 +419,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc COTISATION sait encore éc
   })
 
   it('attrape une écriture jugée à la date de l’échéance plutôt qu’à celle du mouvement', () => {
-    const derivee = planter(['ecritureDeLaCotisation(ligne, cotisation, mode, plan), ligne.date))', 'ecritureDeLaCotisation(ligne, cotisation, mode, plan), cotisation.echeance))'])
+    const derivee = planter(['ecritureDeLaCotisation(ligne, cotisation, mode, duMouvement), ligne.date)', 'ecritureDeLaCotisation(ligne, cotisation, mode, duMouvement), cotisation.echeance)'])
     // Prélevée le 9 mars pour une échéance du 5 : l'écriture juste porte le 9.
     const lignes = [ligne({ id: 'l-tard', date: '2026-03-09' })]
     const cotisations = [cotisation({})]
