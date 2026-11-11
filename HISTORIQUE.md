@@ -50957,3 +50957,20 @@ ni mois, aucun geste (les boutons, et une garde de seconde ligne dans les quatre
 **« Ma simulation »** ne lit pas les comptes : un virement interne s'écrit au 580 des deux côtés sans catégorie, et n'y compte ni une
 fois ni deux ; aucun changement de code, un test le garde sous les deux états. Tests : 17 du module, 6 + 4 d'écran ; trois mutations
 du module et la mutation des gestes mordent ; une donnée qui classerait une moitié du virement fait rougir la simulation.
+
+### 11/11/2026 — LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES VENTES FACTURÉES (MCB5, TROISIÈME PARTIE)
+
+(Agent architecte, sans migration, derrière `COMPTES_BANCAIRES_PREVUS` baissé : la banque du rôle, l'écriture d'hier.) **Fait** :
+`EntreesEcrituresVentes.banques` (obligatoire) ; la composition écrit au 512 du MOUVEMENT la banque d'un mouvement que ses
+encaissements classent et celle d'un encaissement porté par un mouvement de son jour, comme `ecriture_attendue_vente_facturee` de
+`jambe_de_banque_par_compte`. Une banque qui ne se sait pas (comptes en cours de lecture, illisibles, ou qui ne rendent pas le
+compte du mouvement) : `banque_inconnue`, un motif du module SEUL, dit APRÈS ceux que la base dirait ; l'écran le refuse par ses
+mots à lui (`REFUS_BANQUE_INCONNUE`, jamais prêté à la base), et la 2035 ne se calcule pas (elle tairait les frais du mouvement).
+`refusCompteDeContrepartie(compte, plan, banques)` refuse le 512 propre de tout compte bancaire du dossier, quelle que soit sa date,
+clos compris, aux mots du rôle — confronté au corps de la migration (ni `compte_propre_depuis` ni `clos_le`) ; sans comptes lus, la
+compensation ne se juge pas. `compte_bancaire_id` lu le drapeau levé seulement (deux requêtes littérales). `banques` passe par
+`compositionDesSources`, `etatsDesVentesFacturees`, `ecrituresDesVentesPourLa2035` et leurs six onglets (`useBanquesDuDossier`).
+**Preuves** : `ecrituresVentesFactureesParCompte.test.ts` (11 cas, deux plans, deux modèles ; deux mutations mordent) ; 75 appels de
+tests mis à la banque du rôle, la suite touchée et les scanners verts. **Restent** : le paiement d'une pièce (`ligneContrepartieBanque`,
+`lignesReglementEngagement`, `contrepartieBanque.ts`, la reconnaissance de la contrepartie dans `analyserEcritures` et les deux
+désynchronisations, les parts groupées et mixtes de `paiementsDesPieces` sans `compte_bancaire_id`), les lecteurs, l'assistant.
