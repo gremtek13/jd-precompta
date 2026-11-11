@@ -46,6 +46,10 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
+/** Les mots de la garde de `memberships` (migration `dossier_du_cabinet`), que redit `REFUS_ACCES_CLIENT` (src/lib/dossierDuCabinet.ts). */
+const REFUS_ACCES_DOSSIER_DU_CABINET =
+  "Le dossier du cabinet ne reçoit aucun accès client : il porte les honoraires de tous les clients du cabinet."
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -347,6 +351,22 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Dossier introuvable." }, 404)
   }
   const cabinetId = dossierRow.cabinet_id as string
+  // LE DOSSIER DU CABINET (ligne 47, LM1 et LM2 ; migration `dossier_du_cabinet`) ne reçoit aucun accès client : il porte les
+  // honoraires de tous les clients du cabinet. La base le refuse (la garde de `memberships`, 23514) ; dit ICI, avant tout compte
+  // créé ou cherché — refusé seulement à l'insertion, un compte neuf resterait créé sans accès. La ligne se lit ENTIÈRE (`*`) :
+  // avant la migration, la colonne n'existe pas, et la nommer ferait échouer toute création d'accès ; absente, elle ne désigne
+  // rien. Une lecture en panne refuse : rien n'est écrit.
+  const { data: cabinetRow, error: cabinetError } = await supabaseAdmin
+    .from("cabinets")
+    .select("*")
+    .eq("id", cabinetId)
+    .maybeSingle()
+  if (cabinetError) {
+    return json({ error: "Le cabinet du dossier n'a pas pu être lu : rien n'a été écrit, et aucun accès n'a été donné. Réessaie dans un instant." }, 500)
+  }
+  if (cabinetRow && (cabinetRow as { dossier_du_cabinet?: unknown }).dossier_du_cabinet === dossierId) {
+    return json({ error: REFUS_ACCES_DOSSIER_DU_CABINET }, 409)
+  }
   // Le formulaire (AccesTab) a bien minLength={10}, mais un attribut HTML se contourne facilement —
   // seule cette vérification côté serveur est une vraie garantie, ici l'unique point d'entrée qui crée
   // un compte client avec un mot de passe choisi par le cabinet.
@@ -439,6 +459,10 @@ Deno.serve(async (req: Request) => {
     .from("memberships")
     .insert({ user_id: clientUserId, dossier_id: dossierId, role: "client", email })
   if (membershipError) {
+    // La garde de la base, si le dossier a été désigné entre la lecture ci-dessus et l'insertion : ses mots, en 409.
+    if (membershipError.code === "23514" && membershipError.message === REFUS_ACCES_DOSSIER_DU_CABINET) {
+      return json({ error: REFUS_ACCES_DOSSIER_DU_CABINET }, 409)
+    }
     if (/duplicate|unique/i.test(membershipError.message)) {
       return json({
         error: "Cet accès existe déjà pour ce dossier : rien n'a changé, le mot de passe du client non plus. S'il ne s'en souvient plus, envoie-lui un lien de réinitialisation depuis la liste des accès.",

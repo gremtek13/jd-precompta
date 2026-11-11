@@ -12,21 +12,33 @@
 // ELLE NE MONTRE QUE LES DOSSIERS QUE LE CABINET OUVRE AU COMPTE (23Q2Q2Q1-Q1, voir lib/dossiersOuverts.ts) : la base
 // rend aussi ceux où il a un accès client, que l'espace du cabinet n'ouvre pas. Ce qui n'a pas pu être vérifié manque, et
 // le motif le dit, comme une lecture incomplète.
+//
+// LE DOSSIER DU CABINET (ligne 47, LM2) se range à part, sous « Mon cabinet » : `designes` porte les dossiers que les cabinets
+// lus ont désignés (lib/dossierDuCabinetLecture.ts). `dossiers` reste la liste ENTIÈRE — la coque y cherche le dossier ouvert —,
+// et la barre la sépare. Une désignation illisible n'en fait pas « aucune » : `motifDesignation` le dit, et le dossier du
+// cabinet reste parmi les autres.
 import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { garderLesDossiersOuverts, lireLesAccesDuCompte } from './dossiersOuvertsLecture'
+import { lireLesDossiersDesCabinets } from './dossierDuCabinetLecture'
 
 export interface DossierDeBarre { id: string; nom: string }
 
 export interface ListeDossiers {
   dossiers: DossierDeBarre[]
+  // Les dossiers désignés comme ceux d'un cabinet (vide le drapeau baissé, ou sur une désignation illisible).
+  designes: ReadonlySet<string>
+  // La désignation illisible, avec son motif : la barre le dit, et le dossier du cabinet reste parmi les autres. Null sinon.
+  motifDesignation: string | null
   // Ce qui a manqué quand la lecture n'est pas complète (voir lib/lectureComplete.ts), null sinon.
   // Une liste plus courte ne doit jamais se présenter comme la liste entière : un dossier qui manque
   // ici n'existe plus pour qui navigue par la barre.
   motif: string | null
   chargement: boolean
 }
+
+const AUCUN: ReadonlySet<string> = new Set<string>()
 
 const EVENEMENT_MAJ = 'jd-precompta:dossiers-modifies'
 
@@ -39,7 +51,7 @@ export function signalerMajDossiers() {
  * garde AVEC le compte pour lequel elle a été lue : un autre compte repart en chargement, jamais sur la liste du précédent.
  */
 export function useListeDossiers(userId: string | null, relecture: number): ListeDossiers {
-  const [etat, setEtat] = useState<ListeDossiers & { pour: string | null }>({ dossiers: [], motif: null, chargement: true, pour: null })
+  const [etat, setEtat] = useState<ListeDossiers & { pour: string | null }>({ dossiers: [], designes: AUCUN, motif: null, motifDesignation: null, chargement: true, pour: null })
   const [signal, setSignal] = useState(0)
 
   useEffect(() => {
@@ -62,15 +74,23 @@ export function useListeDossiers(userId: string | null, relecture: number): List
           .eq('archive', false).order('nom').order('id').range(debut, fin),
       ),
       lireLesAccesDuCompte(userId),
-    ]).then(async ([lecture, acces]) => {
+      lireLesDossiersDesCabinets(),
+    ]).then(async ([lecture, acces, designation]) => {
       const ouverts = await garderLesDossiersOuverts(lecture.lignes, acces)
       if (annule) return
       const motifs = [lecture.complete ? null : lecture.motif, ouverts.motif].filter((m): m is string => m !== null)
-      setEtat({ dossiers: ouverts.dossiers, motif: motifs.length > 0 ? motifs.join(' ; ') : null, chargement: false, pour: userId })
+      setEtat({
+        dossiers: ouverts.dossiers, designes: designation.etat === 'lue' ? designation.designes : AUCUN,
+        motif: motifs.length > 0 ? motifs.join(' ; ') : null,
+        motifDesignation: designation.etat === 'illisible' ? designation.motif : null,
+        chargement: false, pour: userId,
+      })
     })
     return () => { annule = true }
   }, [userId, relecture, signal])
 
-  if (etat.pour !== userId) return { dossiers: [], motif: null, chargement: true }
-  return { dossiers: etat.dossiers, motif: etat.motif, chargement: etat.chargement }
+  if (etat.pour !== userId) return { dossiers: [], designes: AUCUN, motif: null, motifDesignation: null, chargement: true }
+  return {
+    dossiers: etat.dossiers, designes: etat.designes, motif: etat.motif, motifDesignation: etat.motifDesignation, chargement: etat.chargement,
+  }
 }

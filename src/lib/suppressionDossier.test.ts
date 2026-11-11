@@ -106,7 +106,7 @@ beforeEach(() => {
 describe('nettoyage du stockage à la suppression d’un dossier', () => {
   it('retire tout et ne dit rien quand tout s’est bien passé', async () => {
     etat.entrees[`pieces/${D}`] = fichiers(3)
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan).toEqual({ demandes: 3, retires: 3, echecs: [], inventaireIncomplet: false })
     expect(nettoyageAMontrer(bilan)).toBe(false)
     expect(messageNettoyage(bilan)).toBe('')
@@ -117,7 +117,7 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
     // Le défaut d'origine : `data: null` sur refus, traité comme « dossier vide ». Zéro fichier
     // retiré, et l'écran annonçait une suppression propre.
     etat.entrees[`pieces/${D}`] = null
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan.inventaireIncomplet).toBe(true)
     expect(nettoyageAMontrer(bilan)).toBe(true)
     expect(messageNettoyage(bilan)).toContain("on ne sait pas combien de fichiers y restent")
@@ -126,7 +126,7 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
   it('nomme ce que le stockage a refusé de retirer, avec la raison', async () => {
     etat.entrees[`pieces/${D}`] = fichiers(2)
     etat.removeError = new Error('objet verrouillé')
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan.demandes).toBe(2)
     expect(bilan.retires).toBe(0)
     expect(bilan.echecs.map((e) => e.chemin)).toEqual([`${D}/piece-0.pdf`, `${D}/piece-1.pdf`])
@@ -137,7 +137,7 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
   it('voit un retrait accepté mais incomplet, qui ne porte aucune erreur', async () => {
     etat.entrees[`pieces/${D}`] = fichiers(3)
     etat.removePartiel = true
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     // Le second passage (INAL1) reprend les deux restés et en retire un de plus : il en reste un.
     expect(bilan.retires).toBe(2)
     expect(bilan.echecs).toEqual([])
@@ -150,7 +150,7 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
     // Le plafond ne se signale pas : sans pagination explicite, tout ce qui dépasse restait en place
     // indéfiniment. 250 fichiers = 3 pages de lecture et 3 lots de retrait.
     etat.entrees[`pieces/${D}`] = fichiers(250)
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan.demandes).toBe(250)
     expect(bilan.retires).toBe(250)
     expect(journal.filter((j) => j.action === 'remove:pieces')).toHaveLength(3)
@@ -162,7 +162,7 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
       { name: 'pack.zip', id: 'z1' },
       { name: 'recap.xlsx', id: 'x1' },
     ]
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan.demandes).toBe(2)
     expect(journal.find((j) => j.action === 'remove:packs')?.cible).toBe(
       `${D}/2025-01-a-2025-12-1700000000/pack.zip,${D}/2025-01-a-2025-12-1700000000/recap.xlsx`,
@@ -171,7 +171,7 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
 
   it('ne se tait pas non plus quand le nettoyage lève', async () => {
     etat.listeLeve = true
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan.inventaireIncomplet).toBe(true)
     expect(bilan.echecs[0].raison).toBe('réseau coupé')
   })
@@ -179,7 +179,7 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
   it('supprime le dossier MALGRÉ un nettoyage raté — non bloquant reste non bloquant', async () => {
     etat.entrees[`pieces/${D}`] = fichiers(2)
     etat.removeError = new Error('objet verrouillé')
-    await supprimerDossierDefinitivement(D)
+    await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(journal.filter((j) => j.action === 'delete:dossiers')).toHaveLength(1)
   })
 
@@ -187,7 +187,7 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
     // Là c'est un vrai échec à réessayer, pas un reste à signaler : RLS refuse la suppression à qui
     // n'est pas chef du cabinet, et l'écran doit le dire comme une erreur.
     etat.deleteError = new Error('new row violates row-level security policy')
-    await expect(supprimerDossierDefinitivement(D)).rejects.toThrow('row-level security')
+    await expect(supprimerDossierDefinitivement(D, { superAdministrateur: false })).rejects.toThrow('row-level security')
   })
 })
 
@@ -204,7 +204,7 @@ describe('le seau des ventes, selon que sa migration est en base', () => {
     etat.logo = true
     etat.entrees[`pieces/${D}`] = fichiers(1)
     logos()
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan).toEqual({ demandes: 3, retires: 3, echecs: [], inventaireIncomplet: false })
     expect(journal.find((j) => j.action === 'remove:ventes')?.cible).toBe(`${D}/logos/${'1'.repeat(64)}.png,${D}/logos/${'2'.repeat(64)}.jpg`)
     expect(journal.map((j) => j.action).indexOf('delete:dossiers')).toBe(journal.length - 1)
@@ -214,7 +214,7 @@ describe('le seau des ventes, selon que sa migration est en base', () => {
   it('sa migration en base : une lecture refusée du seau des ventes se DIT, et le dossier part quand même', async () => {
     etat.logo = true
     etat.entrees[`ventes/${D}`] = null
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan.inventaireIncomplet).toBe(true)
     expect(messageNettoyage(bilan)).toContain('on ne sait pas combien de fichiers y restent')
     expect(journal.filter((j) => j.action === 'delete:dossiers')).toHaveLength(1)
@@ -223,7 +223,7 @@ describe('le seau des ventes, selon que sa migration est en base', () => {
   it('sans sa migration : le seau des ventes n’est ni lu ni vidé — un seau absent ne fait pas dire un inventaire incomplet', async () => {
     etat.logo = false
     logos()
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan).toEqual({ demandes: 0, retires: 0, echecs: [], inventaireIncomplet: false })
     expect(listes.filter((l) => l.startsWith('ventes/'))).toEqual([])
     expect(journal.map((j) => j.action)).toEqual(['delete:dossiers'])
@@ -250,7 +250,7 @@ describe('les originaux des factures reprises, sous imports/<lot>/ (A8d2c)', () 
     etat.entrees[`ventes/${D}/imports`] = [{ name: LOT, id: null }]
     etat.entrees[`ventes/${D}/imports/${LOT}`] = [{ name: original('a', 'pdf'), id: 'o1' }, { name: original('b', 'xml'), id: 'o2' }]
     etat.entrees[`ventes/${D}/logos`] = [{ name: original('1', 'png'), id: 'l1' }]
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan).toEqual({ demandes: 3, retires: 3, echecs: [], inventaireIncomplet: false })
     const retrait = journal.findIndex((j) => j.action === 'remove:ventes')
     expect(journal[retrait].cible).toBe(
@@ -265,7 +265,7 @@ describe('les originaux des factures reprises, sous imports/<lot>/ (A8d2c)', () 
     etat.entrees[`ventes/${D}`] = [{ name: 'imports', id: null }]
     etat.entrees[`ventes/${D}/imports`] = [{ name: LOT, id: null }]
     etat.entrees[`ventes/${D}/imports/${LOT}`] = null
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan.inventaireIncomplet).toBe(true)
     expect(nettoyageAMontrer(bilan)).toBe(true)
   })
@@ -278,7 +278,7 @@ describe('les originaux des factures reprises, sous imports/<lot>/ (A8d2c)', () 
       chemin = `${chemin}/n${niveau}`
     }
     etat.entrees[chemin] = [{ name: 'trop-bas.pdf', id: 'x' }]
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan).toEqual({ demandes: 0, retires: 0, echecs: [], inventaireIncomplet: true })
     expect(listes).not.toContain(chemin)
   })
@@ -291,7 +291,7 @@ describe('les originaux des factures reprises, sous imports/<lot>/ (A8d2c)', () 
       chemin = `${chemin}/n${niveau}`
     }
     etat.entrees[chemin] = [{ name: 'au-plus-bas.pdf', id: 'x' }]
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan).toEqual({ demandes: 1, retires: 1, echecs: [], inventaireIncomplet: false })
   })
 })
@@ -304,7 +304,7 @@ describe('le second passage, après la ligne du dossier (INAL1)', () => {
 
   it('le super-administrateur : les fichiers figés partent au second passage, APRÈS la ligne, et seulement eux', async () => {
     figes()
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan).toEqual({ demandes: 3, retires: 3, echecs: [], inventaireIncomplet: false })
     expect(nettoyageAMontrer(bilan)).toBe(false)
     expect(journal).toEqual([
@@ -317,7 +317,7 @@ describe('le second passage, après la ligne du dossier (INAL1)', () => {
   it('un chef qui n’est pas super-administrateur : le second passage ne retire rien, et le bilan le dit', async () => {
     figes()
     etat.apresLaLigne = 'rien'
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan).toEqual({ demandes: 3, retires: 1, echecs: [], inventaireIncomplet: false })
     expect(nettoyageAMontrer(bilan)).toBe(true)
     expect(messageNettoyage(bilan)).toContain('2 fichiers')
@@ -328,7 +328,7 @@ describe('le second passage, après la ligne du dossier (INAL1)', () => {
   it('aucun second passage dans un seau que le premier a vidé', async () => {
     figes()
     etat.entrees[`packs/${D}`] = [{ name: 'pack.zip', id: 'z1' }]
-    await supprimerDossierDefinitivement(D)
+    await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(journal.filter((j) => j.action === 'remove:packs')).toHaveLength(1)
     expect(journal.filter((j) => j.action === 'remove:pieces')).toHaveLength(2)
   })
@@ -336,14 +336,14 @@ describe('le second passage, après la ligne du dossier (INAL1)', () => {
   it('aucun second passage quand la ligne du dossier ne part pas : les fichiers d’un dossier qui reste restent', async () => {
     figes()
     etat.deleteError = new Error('new row violates row-level security policy')
-    await expect(supprimerDossierDefinitivement(D)).rejects.toThrow('row-level security')
+    await expect(supprimerDossierDefinitivement(D, { superAdministrateur: false })).rejects.toThrow('row-level security')
     expect(journal.map((j) => j.action)).toEqual(['remove:pieces', 'delete:dossiers'])
   })
 
   it('un second passage qui lève ne fait pas lever la suppression : le bilan dit l’inventaire douteux', async () => {
     figes()
     etat.secondLeve = true
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan.inventaireIncomplet).toBe(true)
     expect(bilan.retires).toBe(1)
     expect(bilan.echecs.map((e) => e.raison)).toEqual(['réseau coupé au second passage'])
@@ -353,7 +353,7 @@ describe('le second passage, après la ligne du dossier (INAL1)', () => {
   it('un chemin qui échoue aux deux passages ne compte qu’un échec, sous la raison du second', async () => {
     etat.entrees[`pieces/${D}`] = fichiers(2)
     etat.removeError = new Error('objet verrouillé')
-    const bilan = await supprimerDossierDefinitivement(D)
+    const bilan = await supprimerDossierDefinitivement(D, { superAdministrateur: false })
     expect(bilan.echecs).toEqual([
       { chemin: `${D}/piece-0.pdf`, raison: 'objet verrouillé' },
       { chemin: `${D}/piece-1.pdf`, raison: 'objet verrouillé' },

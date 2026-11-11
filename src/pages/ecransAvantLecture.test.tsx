@@ -625,6 +625,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/ImportDesFactures.tsx': 'drapeau `IMPORT_DES_FACTURES_OFFERT` baissé : ne rend ni ne lit rien ; levé, son propre '
     + 'test (ImportDesFactures.test.tsx) éprouve « Chargement… » avant la lecture et aucun geste sur une lecture illisible ; '
     + 'n’écrit que sur « Poser la date de reprise », « Importer » et « Retirer l’import »',
+  'pages/dossier/DossierDuCabinetCard.tsx': 'drapeau `DOSSIER_DU_CABINET_PREVU` baissé : ne rend rien ; levé, elle ne lit pas — elle '
+    + 'reçoit la désignation lue par InformationsTab (`useDesignationDuDossier`) ; son test (DossierDuCabinetCard.test.tsx) éprouve '
+    + '« Chargement… » avant la lecture, aucun geste sur une lecture illisible ni pour un membre ; n’écrit que sur « Désigner… » '
+    + 'et « Retirer la désignation »',
   'pages/dossier/NumerotationDesFacturesCard.tsx': 'drapeau `CARTE_DE_LA_NUMEROTATION_OFFERTE` baissé : ne rend ni ne lit rien ; levé, son propre '
     + 'test (NumerotationDesFacturesCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun geste sur une lecture illisible ou '
     + 'pour un membre de l’équipe ; n’écrit que sur « Poser le modèle », « Confirmer la fin » et « Lever ces trous »',

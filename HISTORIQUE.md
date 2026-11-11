@@ -50692,3 +50692,22 @@ et la première ligne de bornesStockage.sql (le logo jugé à `TAILLE_MAX_LOGO_D
 originaux). Le banc : `d12` porte une date de reprise et un volet social CIPAV ; six vues (`pc-volet-cipav*`,
 `pc-import-factures*`) et deux visites de `debordements.mjs`. Les essais `professionsCipav.sql`, `originauxDesImports.sql`,
 `bornesStockage.sql`, `logoDesFactures.sql` et le bloc OI de `rls.sql` se rejouent en production par la session.
+
+### 11/11/2026 — LM2 : LE DOSSIER DU CABINET, À L'ÉCRAN (LIGNE 47) (DERRIÈRE SON DRAPEAU)
+
+(Agent architecte ; aucune migration ; production lue en SELECT : `cabinets_select` ouvre la ligne à l'équipe du cabinet.)
+Tout derrière `DOSSIER_DU_CABINET_PREVU`, baissé : rien ne se lit tant que la colonne n'existe pas. `lib/dossierDuCabinetLecture.ts`
+lit les désignations (`lireTout` sur `cabinets`), la désignation d'un dossier et ce que `designer_dossier_du_cabinet` jugerait,
+et écrit par la fonction seule. **La barre latérale** range le dossier désigné sous « Mon cabinet » (`ListeDossiers.designes`,
+une désignation illisible dite à part, le dossier resté parmi les clients) ; **le tableau de bord** le sort des tuiles, des
+priorités et de la liste, et le montre dans une carte « Mon cabinet » menant à ses factures ; **les RIB à confirmer** marquent
+sa ligne « Mon cabinet ». L'échéancier n'est que celui du client, et ce dossier n'a aucun accès client : rien à y changer.
+**La carte « Dossier du cabinet »** (onglet Informations) : désigner, remplacer ou retirer, au chef seul, refus dits avant le clic
+(`refusDeLaDesignation`), confirmation qui nomme le dossier, celui qu'il remplace, et l'irréversibilité dès une facture validée.
+**La suppression** : `supprimerDossierDefinitivement(id, { superAdministrateur })` lit la désignation AVANT de vider le
+stockage et lève (`refusDeLaSuppression`, LM1-Q1 (A)) ; une lecture en panne lève aussi ; la zone dangereuse n'offre pas le bouton.
+**P4** : `LectureDuMandataire` gagne `sans_mandat`, la confirmation ne nomme plus de mandat et la date se juge dans la série du
+dossier (`serieDeQuiValide`). **Edge Functions** : `create-client-access` lit la ligne du cabinet ENTIÈRE (`*`, la colonne
+absente avant la migration) avant tout compte créé, 409 aux mots de la garde, 500 sur une lecture en panne, et dit la garde de la
+base si la désignation vient entre deux ; `delete-cabinet` nomme le dossier du cabinet dans son 409. Quatre scénarios HTTP neufs,
+trois défauts plantés qui mordent ; la garde de la suppression mutée, son test rougit. LM1-Q2 : rien.

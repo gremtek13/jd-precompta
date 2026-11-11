@@ -382,6 +382,8 @@ function Coque() {
         {role === 'cabinet' && (
           <BarreDossiers
             dossiers={liste.dossiers}
+            dossiersDuCabinet={liste.designes}
+            motifDesignation={liste.motifDesignation}
             chargement={liste.chargement}
             motif={liste.motif}
             recherche={recherche}

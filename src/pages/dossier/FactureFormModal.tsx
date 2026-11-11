@@ -38,7 +38,7 @@ import {
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue,
   provenanceQuiPart, refusSansPenalites, sansPhraseDeRetard,
-  type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
+  serieDeQuiValide, type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -385,7 +385,9 @@ export default function FactureFormModal(props: Props) {
   // une facture plus récente peut manquer, et la base le dira au clic — mais le rang 17 ne dépend d'aucune liste : on le dit encore.
   // Le jour de Paris se lit ici, à chaque rendu, jamais au chargement du module.
   const refusDeLaDate = refusDeLaDateDEmission({
-    type: 'facture', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [], espace, modeles: modelesDeNumerotation,
+    type: 'facture', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [],
+    // Le dossier du cabinet (LM2) numérote dans la série du dossier, même quand le cabinet valide (`serieDeQuiValide`).
+    espace: serieDeQuiValide(espace, props.espace === 'cabinet' ? props.mandataire : null), modeles: modelesDeNumerotation,
   })
 
   function ajouterMention(mention: string) {

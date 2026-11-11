@@ -15,6 +15,8 @@ import { useAuth } from '../context/AuthContext'
 import { useDossiersAuRibAConfirmer } from '../lib/dossiersAuRibAConfirmerLecture'
 import { garderLesDossiersOuverts, lireLesAccesDuCompte } from '../lib/dossiersOuvertsLecture'
 import RibsAConfirmer from '../components/RibsAConfirmer'
+import { TITRE_MON_CABINET, separerLeDossierDuCabinet } from '../lib/dossierDuCabinet'
+import { lireLesDossiersDesCabinets } from '../lib/dossierDuCabinetLecture'
 
 interface DossierRow extends Dossier {
   nbAValider: number
@@ -71,6 +73,12 @@ export default function DossiersList() {
   const compte = session?.user.id ?? null
   const ribsAConfirmer = useDossiersAuRibAConfirmer(compte)
   const [dossiers, setDossiers] = useState<DossierRow[]>([])
+  // LE DOSSIER DU CABINET (ligne 47, LM2) n'est pas un client : il se range à part (« Mon cabinet »), hors des tuiles, des
+  // priorités et de la liste des dossiers, qui ne comptent que des clients. `designes` : les dossiers désignés, lus avec la liste
+  // (vides le drapeau baissé : l'écran est celui d'hier). Une désignation illisible se dit, et le dossier reste compté.
+  const [duCabinet, setDuCabinet] = useState<DossierRow[]>([])
+  const [designes, setDesignes] = useState<ReadonlySet<string>>(() => new Set())
+  const [designationIllisible, setDesignationIllisible] = useState<string | null>(null)
   const [depotsRecents, setDepotsRecents] = useState<DepotRecent[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -107,7 +115,7 @@ export default function DossiersList() {
     const debutAnnee = `${annee}-01-01`
     const debutTendance = new Date(debutSemaine(new Date()).getTime() - (NB_SEMAINES_TENDANCE - 1) * 7 * 24 * 3600 * 1000).toISOString()
 
-    const [dossiersRes, piecesRes, lignesRes, cotisationsRes, depotsRes, accesRes] = await Promise.all([
+    const [dossiersRes, piecesRes, lignesRes, cotisationsRes, depotsRes, accesRes, designation] = await Promise.all([
       // LA LISTE ELLE-MÊME, qui manquait : les trois lectures satellites ci-dessous avaient été
       // portées, pas celle-ci — alors que c'est elle que CLAUDE.md désignait comme « la première
       // qui touchera le plafond ». Tri TOTAL : `nom` n'est unique que par hasard.
@@ -137,6 +145,7 @@ export default function DossiersList() {
           .gte('created_at', debutTendance).order('created_at', { ascending: false }).order('id').range(debut, fin),
       ),
       userId ? lireLesAccesDuCompte(userId) : Promise.resolve({ illisibles: 'aucun compte connecté' }),
+      lireLesDossiersDesCabinets(),
     ])
     // Les dossiers que le cabinet ouvre au compte, eux seuls : leurs lignes, leurs chiffres et leurs dépôts. Ce qui n'a pas
     // pu être vérifié manque — la panne se dit comme une liste incomplète, et rien ne s'affirme.
@@ -173,15 +182,19 @@ export default function DossiersList() {
 
     // Posée dans le même lot que les lignes : l'en-tête et les chiffres changent d'année ensemble.
     setAnneeChargee(annee)
-    setDossiers(
-      ouverts.dossiers.map((d) => ({
-        ...d,
-        nbAValider: aValider.get(d.id) ?? 0,
-        moisPresents: moisParDossier.get(d.id)?.size ?? 0,
-        moisEcoules,
-        cotisationsOk: cotisationsOk.has(d.id),
-      })),
-    )
+    const lignes = ouverts.dossiers.map((d) => ({
+      ...d,
+      nbAValider: aValider.get(d.id) ?? 0,
+      moisPresents: moisParDossier.get(d.id)?.size ?? 0,
+      moisEcoules,
+      cotisationsOk: cotisationsOk.has(d.id),
+    }))
+    const lus = designation.etat === 'lue' ? designation.designes : new Set<string>()
+    const { clients, duCabinet: duCabinetLus } = separerLeDossierDuCabinet(lignes, lus)
+    setDossiers(clients)
+    setDuCabinet(duCabinetLus)
+    setDesignes(lus)
+    setDesignationIllisible(designation.etat === 'illisible' ? designation.motif : null)
     setDepotsRecents(depotsRes.lignes.filter((p) => idsOuverts.has(p.dossier_id)))
     setLoading(false)
   }
@@ -220,7 +233,7 @@ export default function DossiersList() {
   const semaineCourante = tendanceDepots[tendanceDepots.length - 1] ?? 0
   const semainePrecedente = tendanceDepots[tendanceDepots.length - 2] ?? 0
   const deltaSemaine = semaineCourante - semainePrecedente
-  const nomDossier = new Map(dossiers.map((d) => [d.id, d.nom]))
+  const nomDossier = new Map([...duCabinet, ...dossiers].map((d) => [d.id, d.nom]))
   const activite = depotsRecents.slice(0, NB_ACTIVITES)
 
   const aujourdhui = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -239,7 +252,7 @@ export default function DossiersList() {
 
       {/* Hors de la grille, au-dessus d'elle et de toute sa largeur : elle ne dépend d'aucune des lectures du tableau de bord (ni
           chargement, ni panne ne la retardent ou ne la taisent), et ce qu'elle dit vaut pour tous les dossiers. */}
-      <RibsAConfirmer lecture={ribsAConfirmer} className="ribs-a-confirmer-tete" />
+      <RibsAConfirmer lecture={ribsAConfirmer} dossiersDuCabinet={designes} className="ribs-a-confirmer-tete" />
 
       {erreurChargement && (
         <div className="card">
@@ -295,6 +308,29 @@ export default function DossiersList() {
               />
             </div>
 
+            {duCabinet.length > 0 && (
+              <Widget
+                className="span-12" titre={TITRE_MON_CABINET}
+                sousTitre="Le dossier où le cabinet facture ses propres honoraires — il n’est pas compté parmi les clients" plein
+              >
+                <div className="liste-priorites">
+                  {duCabinet.map((d) => (
+                    <Link key={d.id} to={`/dossiers/${d.id}/factures`} className="ligne-priorite">
+                      <Avatar nom={d.nom} />
+                      <div className="ligne-priorite-corps">
+                        <div className="ligne-priorite-nom">{d.nom}</div>
+                        <div className="ligne-priorite-raisons">
+                          <span className="badge badge-neutral">ses factures</span>
+                          {d.nbAValider > 0 && <span className="badge badge-warning">{d.nbAValider} pièce(s) à valider</span>}
+                        </div>
+                      </div>
+                      <IconChevron width={18} height={18} className="ligne-chevron" />
+                    </Link>
+                  ))}
+                </div>
+              </Widget>
+            )}
+
             <Widget
               className="span-8"
               titre="À traiter en priorité"
@@ -349,6 +385,13 @@ export default function DossiersList() {
               )}
             </Widget>
           </div>
+
+          {designationIllisible && (
+            <p className="error-text" style={{ marginBottom: 14 }} title={designationIllisible}>
+              Le dossier du cabinet n’a pas pu être distingué des dossiers des clients : il peut être compté parmi eux ci-dessus.{' '}
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => load(compte)}>Réessayer</button>
+            </p>
+          )}
 
           {erreurIndicateurs && (
             <p className="error-text" style={{ marginBottom: 14 }}>

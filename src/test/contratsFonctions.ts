@@ -4,6 +4,7 @@ import {
   CHAMP_DE_LA_CONFIRMATION, CHAMP_DE_L_ENTREE, MARQUEUR_DE_L_ENTREE, MARQUEUR_DU_RATTACHEMENT, corpsDeLaCreation, corpsDuMembre,
 } from '../lib/creationDesComptes'
 import { refusDuMotDePasse } from '../lib/recuperationMotDePasse'
+import { REFUS_ACCES_CLIENT } from '../lib/dossierDuCabinet'
 import { SIRET_VENDEUR_RECU, messageRecu } from './cdarRecu'
 import { facture as factureEnBase, ligne as ligneDeFacture } from './facturesCii'
 import { QUI_PEUT_QUOI_ATTENDU, type DroitExigeAttendu } from './quiPeutQuoi'
@@ -185,6 +186,12 @@ export async function jugerScenario(
 // ── LES BRIQUES ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const D = ID.dossier
+/** Le cabinet désigne le dossier comme le sien (ligne 47, LM1 : `cabinets.dossier_du_cabinet`). */
+function designerLeDossierDuCabinet(m: Monde) {
+  const cabinet = m.base.cabinets.find((c) => c.id === ID.cabinet)
+  if (!cabinet) throw new Error('le cabinet du monde de référence manque')
+  cabinet.dossier_du_cabinet = D
+}
 const MOT_DE_PASSE = 'mot-de-passe-du-harnais'
 const NOUVEL_EMAIL = 'nouveau@exemple.invalid'
 const ADMIS_DU_DOSSIER: Personne[] = ['chef', 'comptableAssigne', 'superAdmin']
@@ -3285,6 +3292,29 @@ const DELETE_CABINET: ContratFonction = {
       },
     },
     {
+      // LM2 : le dossier du cabinet retient le cabinet comme tout dossier ; le refus le nomme, seul le super-administrateur le
+      // supprimant (LM1-Q1).
+      nom: 'un cabinet qui a désigné son dossier : 409, le refus nomme le dossier du cabinet, rien ne part',
+      preparer: designerLeDossierDuCabinet,
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { cabinetId: ID.cabinet } }),
+      attendu: {
+        statut: 409, refusEnFrancais: true, depenses: ['écriture delete cabinets'],
+        verifier: (r, m) => [
+          ...(String(messageDe(r)).includes('le dossier du cabinet « Dossier fictif » porte les factures du cabinet')
+            ? [] : [`le refus ne nomme pas le dossier du cabinet : ${String(messageDe(r)).slice(0, 200)}`]),
+          ...(lignes(m, 'dossiers').length === 3 ? [] : ['un dossier a disparu']),
+        ],
+      },
+    },
+    {
+      nom: 'un cabinet sans dossier désigné : le refus d’hier, sans rien nommer',
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { cabinetId: ID.cabinet } }),
+      attendu: {
+        statut: 409, refusEnFrancais: true, depenses: ['écriture delete cabinets'],
+        verifier: (r) => (String(messageDe(r)).includes('dossier du cabinet') ? ['le refus nomme un dossier du cabinet qui n’existe pas'] : []),
+      },
+    },
+    {
       nom: 'la suppression de la ligne tombe en panne : 500 en français, aucun fichier touché',
       preparer: (m) => {
         m.base.cabinets.push({ id: CABINET_VIDE, nom: 'Cabinet vide' })
@@ -4233,6 +4263,36 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
         verifier: (r, m) => [...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']), ...reponseDeCreation('cree')(r)],
       },
     })),
+    // LE DOSSIER DU CABINET (ligne 47, LM2) : aucun accès client. Dit avant tout compte créé ou cherché, aux mots de la garde
+    // de la base ; une lecture du cabinet en panne refuse sans rien écrire ; la garde de la base, si la désignation est venue
+    // entre les deux, se dit de même (le compte neuf, lui, reste créé).
+    {
+      nom: 'le dossier du cabinet : 409 aux mots de la garde, avant tout compte créé ou cherché, rien d’écrit',
+      preparer: (m) => { motDePasseSecret(m); designerLeDossierDuCabinet(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ACCES }),
+      attendu: {
+        statut: 409, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (r, m) => [...refusExact(REFUS_ACCES_CLIENT)(r), ...aucunAccesPour(NOUVEL_EMAIL)(m)],
+      },
+    },
+    {
+      nom: 'la lecture du cabinet en panne : 500, rien d’écrit, aucun compte créé',
+      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ table: 'cabinets', operation: 'select', erreur: { message: 'délai dépassé' } }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ACCES }),
+      attendu: { statut: 500, refusEnFrancais: true, aucuneDepense: true, verifier: (_r, m) => aucunAccesPour(NOUVEL_EMAIL)(m) },
+    },
+    {
+      nom: 'désigné entre la lecture et l’insertion : la garde de la base se dit en 409, à ses mots',
+      preparer: (m) => {
+        motDePasseSecret(m)
+        m.pannes.push({ table: 'memberships', operation: 'insert', erreur: { code: '23514', message: REFUS_ACCES_CLIENT } })
+      },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ACCES }),
+      attendu: {
+        statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'écriture insert memberships'],
+        verifier: (r) => refusExact(REFUS_ACCES_CLIENT)(r),
+      },
+    },
     ...premiersAppelsDesComptesDAilleurs(),
     ...rattachementsConfirmes(),
     ...liensIllisiblesDeLAcces(),

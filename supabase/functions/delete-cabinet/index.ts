@@ -16,6 +16,12 @@
 // retrait est un meilleur effort : la réponse reste 200 et dit ce qui a été retiré et ce qui ne l'a pas été. L'identifiant
 // est un UUID vérifié avant toute lecture ; le `list()` vise le seul préfixe `<cabinetId>/`, jamais la racine, et se
 // pagine ; chaque chemin retiré est rejugé sur ce préfixe. Le journal ne dit que des comptes.
+//
+// LE DOSSIER DU CABINET (ligne 47, LM1 et LM2 ; migration `dossier_du_cabinet`). Le cabinet qui facture ses honoraires dans
+// l'application les tient dans un dossier qu'il a désigné, et que seul le super-administrateur supprime (LM1-Q1) : il fait
+// partie des dossiers qui retiennent le cabinet. Le refus le NOMME, lu après le refus seulement (aucune lecture avant la
+// suppression) ; une lecture en panne, ou une base d'avant la migration (la ligne se lit entière : la colonne n'y est pas),
+// rendent le refus d'hier, sans rien de plus.
 
 import { createClient } from "npm:@supabase/supabase-js@2"
 
@@ -23,6 +29,24 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
+/**
+ * Ce que le refus ajoute quand le cabinet a désigné son dossier : une phrase qui le nomme, ou rien. Ne lève jamais.
+ */
+async function dossierDuCabinetANommer(admin: ReturnType<typeof createClient>, cabinetId: string): Promise<string> {
+  try {
+    const { data: cabinet, error: cabinetError } = await admin.from("cabinets").select("*").eq("id", cabinetId).maybeSingle()
+    if (cabinetError || !cabinet) return ""
+    const designe = (cabinet as { dossier_du_cabinet?: unknown }).dossier_du_cabinet
+    if (typeof designe !== "string") return ""
+    const { data: dossier, error: dossierError } = await admin.from("dossiers").select("nom").eq("id", designe).maybeSingle()
+    const nom = !dossierError && dossier ? (dossier as { nom?: unknown }).nom : null
+    const nomme = typeof nom === "string" && nom.trim() !== "" ? `« ${nom.trim()} »` : "désigné"
+    return ` Parmi eux, le dossier du cabinet ${nomme} porte les factures du cabinet : seul le super-administrateur le supprime, depuis l'onglet Informations du dossier.`
+  } catch {
+    return ""
+  }
 }
 
 function json(body: unknown, status = 200) {
@@ -232,7 +256,8 @@ Deno.serve(async (req: Request) => {
     // Code Postgres 23503 = violation de contrainte de clé étrangère (voir l'en-tête) : le cabinet a
     // encore au moins un dossier ou un membre d'équipe.
     if (deleteError.code === "23503") {
-      return json({ error: "Ce cabinet a encore des dossiers et/ou des membres d'équipe — retire-les d'abord (voir la fiche du dossier pour le supprimer, ou Équipe pour retirer un membre)." }, 409)
+      const reste = "Ce cabinet a encore des dossiers et/ou des membres d'équipe — retire-les d'abord (voir la fiche du dossier pour le supprimer, ou Équipe pour retirer un membre)."
+      return json({ error: `${reste}${await dossierDuCabinetANommer(admin, cabinetId)}` }, 409)
     }
     return json({ error: `La suppression du cabinet a échoué : ${deleteError.message}` }, 500)
   }

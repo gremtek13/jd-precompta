@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import RibsAConfirmer from './RibsAConfirmer'
@@ -9,6 +9,7 @@ import {
 } from '../lib/dossiersAuRibAConfirmer'
 import { avisDuChangement } from '../lib/changementDeRib'
 import { CONSEIL_VERIFICATION_RIB } from '../lib/parametresFacturationVue'
+import { TITRE_MON_CABINET } from '../lib/dossierDuCabinet'
 import { elementRendu, idDuDossierFictif, listeRendue } from '../test/dossiersAuRibAConfirmer'
 
 // LA LISTE DES RIB PROPOSÉS QUI ATTENDENT LE CABINET, SEULE (espace client, étape A5b3d) : le composant de présentation reçoit la LECTURE
@@ -21,8 +22,8 @@ function lu(...elements: Record<string, unknown>[]): DossiersAuRibAConfirmerLus 
   if (l === null) throw new Error('la liste fictive doit se lire')
   return l
 }
-const monter = (lecture: LectureDesDossiersAuRib | null) =>
-  render(<MemoryRouter><RibsAConfirmer lecture={lecture} /></MemoryRouter>)
+const monter = (lecture: LectureDesDossiersAuRib | null, dossiersDuCabinet: ReadonlySet<string> = new Set()) =>
+  render(<MemoryRouter><RibsAConfirmer lecture={lecture} dossiersDuCabinet={dossiersDuCabinet} /></MemoryRouter>)
 
 describe('RibsAConfirmer — rien à dire', () => {
   it('sans lecture (drapeau baissé, aucune clé) : rien', () => {
@@ -63,6 +64,16 @@ describe('RibsAConfirmer — la liste', () => {
     expect(within(lignes[0]).queryByText(MENTION_DOSSIER_ARCHIVE)).toBeNull()
     expect(within(lignes[1]).getByText(MENTION_DOSSIER_ARCHIVE)).toBeTruthy()
     expect(screen.getAllByText(MENTION_DOSSIER_ARCHIVE)).toHaveLength(1)
+  })
+
+  it('le dossier du cabinet (LM2) porte « Mon cabinet » sur SA ligne seule ; sans désignation, aucune ligne ne le porte', () => {
+    monter({ etat: 'lue', lu: deux }, new Set([idDuDossierFictif(1)]))
+    const lignes = screen.getAllByRole('listitem')
+    expect(within(lignes[0]).queryByText(TITRE_MON_CABINET)).toBeNull()
+    expect(within(lignes[1]).getByText(TITRE_MON_CABINET)).toBeTruthy()
+    cleanup()
+    monter({ etat: 'lue', lu: deux })
+    expect(screen.queryByText(TITRE_MON_CABINET)).toBeNull()
   })
 
   it('chaque ligne mène à l’onglet Factures de SON dossier, sous le libellé du module', () => {

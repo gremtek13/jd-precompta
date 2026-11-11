@@ -90,3 +90,53 @@ export function valideAuNomDuClient(p: { valideParLeCabinet: boolean; estLeDossi
 export function refusDeLaSuppression(p: { estLeDossierDuCabinet: boolean; superAdministrateur: boolean }): string | null {
   return p.estLeDossierDuCabinet && !p.superAdministrateur ? REFUS_SUPPRESSION : null
 }
+
+// ── L'ÉCRAN (LM2) ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// Ce que la liste des dossiers, le tableau de bord, les RIB à confirmer et la carte de l'onglet Informations disent du dossier
+// du cabinet (lib/dossierDuCabinetLecture.ts lit). Rien ne se lit tant que le drapeau est baissé : la colonne n'existe pas, et
+// la nommer ferait échouer la lecture.
+
+/** Le titre de sa place à part, dans la barre latérale et sur le tableau de bord ; la mention qui le nomme ailleurs. */
+export const TITRE_MON_CABINET = 'Mon cabinet'
+
+/**
+ * Les dossiers d'une liste, séparés : ceux des clients, et ceux qu'un cabinet a désignés comme le sien (un pour le chef ; le
+ * super-administrateur voit ceux de tous les cabinets). L'ordre de la liste est gardé dans chaque partie.
+ */
+export function separerLeDossierDuCabinet<T extends { id: string }>(
+  dossiers: readonly T[], designes: ReadonlySet<string>,
+): { clients: T[]; duCabinet: T[] } {
+  return { clients: dossiers.filter((d) => !designes.has(d.id)), duCabinet: dossiers.filter((d) => designes.has(d.id)) }
+}
+
+/** Ce que la carte de l'onglet Informations dit du dossier, selon la désignation lue. */
+export function ceQueDitLaDesignation(p: { estLeDossierDuCabinet: boolean; unAutreEstDesigne: boolean; nomDeLAutre: string | null }): string {
+  if (p.estLeDossierDuCabinet) {
+    return 'C’est le dossier du cabinet : le cabinet y facture ses honoraires en son propre nom — aucune mention de mandat, '
+      + 'la série de numérotation du dossier. Aucun accès client ne s’y pose, et il ne se supprime qu’avec le cabinet.'
+  }
+  if (p.unAutreEstDesigne) {
+    return p.nomDeLAutre !== null
+      ? `Le dossier du cabinet est « ${p.nomDeLAutre} ». Celui-ci est un dossier client.`
+      : 'Le cabinet a désigné un autre dossier comme le sien. Celui-ci est un dossier client.'
+  }
+  return 'Aucun dossier n’est désigné comme celui du cabinet. Le cabinet qui facture ses propres honoraires dans l’application '
+    + 'les tient dans un dossier à lui, désigné ici : ses factures n’y portent pas la mention d’un mandat.'
+}
+
+/**
+ * La confirmation de la désignation : elle NOMME le dossier (et celui qu'il remplace), dit ce que la désignation change, et
+ * qu'elle devient irréversible dès une facture validée. Celle du retrait nomme le dossier et ce qu'il redevient.
+ */
+export function confirmationDeLaDesignation(p: { nom: string; retrait: boolean; remplace: string | null }): string {
+  if (p.retrait) {
+    return `Retirer la désignation de « ${p.nom} » comme dossier du cabinet ?\n\n`
+      + 'Il redevient un dossier ordinaire : une facture qu’y validera le cabinet portera de nouveau la mention de son mandat, '
+      + 'dans la série du mandataire.'
+  }
+  return `Désigner « ${p.nom} » comme le dossier du cabinet ?\n\n`
+    + 'Le cabinet y facturera ses honoraires en son propre nom : aucune mention de mandat, la série de numérotation du dossier. '
+    + 'Aucun accès client ne pourra s’y poser, et il ne se supprimera qu’avec le cabinet.'
+    + (p.remplace !== null ? `\n\nIl remplace « ${p.remplace} », qui redevient un dossier ordinaire.` : '')
+    + '\n\nCette désignation devient irréversible dès que le dossier porte une facture validée.'
+}
