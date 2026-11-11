@@ -10,7 +10,7 @@ import {
 import type { DeclarationTva, EcritureBrouillon, LigneBancaire, PeriodiciteTva } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlanEtLaBanqueDuRole, blocDesBanques, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DE LA TVA LIQUIDÉE ET PAYÉE (06/10/2026, ligne 26.8).
@@ -57,9 +57,9 @@ function extraire(source: string, plan: PlanComptable): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('LIQUIDATION TVA')}`
+  const bloc = `${bornes('VALIDATION')}\n${blocDesBanques(source)}\n${bornes('AFFECTATION')}\n${bornes('LIQUIDATION TVA')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return avecLePlan(new Function(`${js}\nreturn { ecritureDeLaLiquidation, ecritureDuPaiementTva, liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesDeLAnnee, periodesEnRetard }`)(), plan) as Copie
+  return avecLePlanEtLaBanqueDuRole(new Function(`${js}\nreturn { ecritureDeLaLiquidation, ecritureDuPaiementTva, liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesDeLAnnee, periodesEnRetard }`)(), plan) as Copie
 }
 
 
@@ -308,7 +308,7 @@ describe('agent-comptable / points_a_traiter lit les déclarations de TVA', () =
   it('lit les déclarations, la liquidation des écritures et ce que le relevé paie, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/lireTout<DeclarationTvaRow>\(\(d, f\) =>\s*admin\.from\("declarations_tva"\)\.select\("id, periode_debut, periode_fin, cases, tva_collectee, tva_deductible, tva_deductible_immobilisations", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("periode_debut"\)\.order\("id"\)/)
     expect(corps).toMatch(/lireTout<[^>]*EcritureLiquidationRow>\(\(d, f\) =>\s*admin\.from\("ecritures_brouillon"\)\.select\("[^"]*\bdeclaration_tva_id"/)
-    expect(corps).toMatch(/lireTout<[^>]*MouvementTvaRow>\(\(d, f\) =>\s*admin\.from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*\bdeclaration_tva_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
+    expect(corps).toMatch(/lireTout<[^>]*MouvementTvaRow>\(\(d, f\) =>\s*COMPTES_BANCAIRES_PREVUS\s*\?\s*admin\.from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*\bdeclaration_tva_id, compte_bancaire_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)[^\n]*\n\s*:\s*admin\.from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*\bdeclaration_tva_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     // Depuis l'étape C13, les opérations de caisse se lisent après les déclarations, hors du refus général (`rCaisse`).
     expect(corps).toMatch(/rValides, rLettrages, rDeclarations, rCaisse\] = await Promise\.all/)
     expect(corps).toMatch(/rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
@@ -316,7 +316,7 @@ describe('agent-comptable / points_a_traiter lit les déclarations de TVA', () =
 
   it('rend les trois points de la Checklist, la frontière, l’ouverture et l’assujettissement compris', () => {
     expect(corps).toContain('const liquidationsPerimees = liquidationsDesynchronisees(ecrituresTyped, rDeclarations.lignes, frontiere, plan)')
-    expect(corps).toContain('const paiementsTvaPerimes = paiementsTvaDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan)')
+    expect(corps).toContain('const paiementsTvaPerimes = paiementsTvaDesynchronises(ecrituresTyped, rReleve.lignes, frontiere, plan, banques)')
     expect(corps).toMatch(/const anneesActives = \[\s*\.\.\.rReleve\.lignes\.map\(\(l\) => Number\(l\.date\.slice\(0, 4\)\)\),\s*\.\.\.piecesTyped\.flatMap\(\(p\) => \(p\.date_piece \? \[Number\(p\.date_piece\.slice\(0, 4\)\)\] : \[\]\)\),\s*\]/)
     expect(corps).toContain('const periodesTvaEnRetard = dossier.assujetti_tva\n      ? periodesEnRetard(rDeclarations.lignes, dossier.tva_periodicite, anneesActives, `${aujourdHuiCabinet().slice(0, 7)}-01`, ouverture, frontiere)\n      : []')
     expect(corps).toContain('declarations_de_tva_dont_l_ecriture_de_liquidation_manque_ou_ne_suit_plus_la_declaration: liquidationsPerimees.length,')
@@ -436,7 +436,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc LIQUIDATION TVA sait encor
   })
 
   it('attrape une copie qui réclame le paiement d’un exercice validé', () => {
-    echoue(() => memesPaiements(planter(['    && l.statut === "rapprochee"\n    && !estFigee(l.date, frontiere)\n    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l, plan), l.date))', '    && l.statut === "rapprochee"\n    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l, plan), l.date))'])))
+    echoue(() => memesPaiements(planter(['    && l.statut === "rapprochee"\n    && !estFigee(l.date, frontiere)\n    && nonConforme(l))', '    && l.statut === "rapprochee"\n    && nonConforme(l))'])))
   })
 
   it('attrape un trimestre mal nommé, ou mal borné', () => {

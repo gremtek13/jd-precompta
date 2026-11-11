@@ -32,6 +32,47 @@ export function parametresDe(f: (...args: never[]) => unknown): string[] {
   return noms.map((n) => n.split('=')[0].trim()).filter((n) => n !== '')
 }
 
+/** Le bloc BANQUES DU DOSSIER de l'assistant (MCB5, cinquième partie), que les copies des détecteurs et de la contrepartie
+ *  d'une pièce lisent : chaque garde l'extrait avec le sien, de la MÊME source, pour qu'une dérive de l'un morde ici aussi. */
+export function blocDesBanques(source: string): string {
+  const debut = source.indexOf('// ── DÉBUT BANQUES DU DOSSIER')
+  const fin = source.indexOf('// ── FIN BANQUES DU DOSSIER')
+  if (debut < 0 || fin < debut) throw new Error('bornes du bloc BANQUES DU DOSSIER introuvables — garde-fou à remettre à jour')
+  return source.slice(debut, fin)
+}
+
+/**
+ * La copie, chaque fonction liée au plan donné (`avecLePlan`) et, quand elle déclare `banques` et que l'appel ne le passe
+ * pas, à la banque du RÔLE — celle de son `modele` s'il en a un, du plan sinon : ce que src/lib reçoit de
+ * `banquesDuDossier({ etat: 'sans_objet' }, plan)`, le drapeau baissé. Les gardes d'avant MCB5 comparent ainsi la copie à
+ * src/lib sans réécrire leurs appels ; les cas par compte passent `banques` eux-mêmes (`avecLePlan`).
+ */
+export function avecLePlanEtLaBanqueDuRole<T extends object>(copie: T, plan: PlanComptable): T {
+  const liee: Record<string, unknown> = {}
+  for (const [nom, valeur] of Object.entries(copie)) {
+    if (typeof valeur !== 'function') { liee[nom] = valeur; continue }
+    const f = valeur as (...args: unknown[]) => unknown
+    const noms = parametresDe(f)
+    const rangPlan = noms.indexOf('plan')
+    const rangBanques = noms.indexOf('banques')
+    const rangModele = noms.indexOf('modele')
+    liee[nom] = (...args: unknown[]) => {
+      const complets = [...args]
+      if (rangPlan >= 0) {
+        while (complets.length < rangPlan) complets.push(undefined)
+        complets.splice(rangPlan, 0, plan)
+      }
+      if (rangBanques >= 0 && complets[rangBanques] === undefined) {
+        while (complets.length <= rangBanques) complets.push(undefined)
+        const modele = rangModele >= 0 ? (complets[rangModele] as { plan?: PlanComptable } | undefined) : undefined
+        complets[rangBanques] = { cas: 'role', compte: (modele?.plan ?? plan).banque }
+      }
+      return f(...complets)
+    }
+  }
+  return liee as T
+}
+
 /** La copie, chaque fonction qui déclare `plan` liée au plan donné, à sa place. */
 export function avecLePlan<T extends object>(copie: T, plan: PlanComptable): T {
   const liee: Record<string, unknown> = {}

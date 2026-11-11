@@ -12,7 +12,7 @@ import { ajouterJours, ajouterMois } from './format'
 import type { EcritureBrouillon, LigneBancaire } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import { PLANS_DES_GARDES, avecLePlan, entreesSous, traduire } from '../test/copieAuPlan'
+import { PLANS_DES_GARDES, avecLePlanEtLaBanqueDuRole, blocDesBanques, entreesSous, traduire } from '../test/copieAuPlan'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES ÉCHÉANCES D'EMPRUNT (29/09/2026, ligne 26.6).
@@ -55,9 +55,9 @@ function extraire(source: string, plan: PlanComptable): Copie {
     expect(fin).toBeGreaterThan(debut)
     return source.slice(debut, fin)
   }
-  const bloc = `${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('EMPRUNT')}`
+  const bloc = `${bornes('VALIDATION')}\n${blocDesBanques(source)}\n${bornes('AFFECTATION')}\n${bornes('EMPRUNT')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return avecLePlan(new Function(`${js}\nreturn { ajouterMois, ajouterJours, genererEcheancier, echeancesNonRapprochees, couvertureDuReleve, ecritureDeLEcheance, echeancesDesynchronisees }`)(), plan) as Copie
+  return avecLePlanEtLaBanqueDuRole(new Function(`${js}\nreturn { ajouterMois, ajouterJours, genererEcheancier, echeancesNonRapprochees, couvertureDuReleve, ecritureDeLEcheance, echeancesDesynchronisees }`)(), plan) as Copie
 }
 
 
@@ -204,7 +204,7 @@ describe('agent-comptable / points_a_traiter lit les emprunts et le relevé', ()
   it('borne la réclamation à la couverture du relevé, et rend les deux points de la Checklist', () => {
     expect(corps).toContain('const couverture = couvertureDuReleve(rReleve.lignes, frontiere)')
     expect(corps).toContain('echeancesNonRapprochees(rEmprunts.lignes, rReleve.lignes, couverture.debut, couverture.fin)')
-    expect(corps).toContain('echeancesDesynchronisees(ecrituresTyped, rReleve.lignes, plan)')
+    expect(corps).toContain('echeancesDesynchronisees(ecrituresTyped, rReleve.lignes, plan, banques)')
     expect(corps).toMatch(/echeances_emprunt_couvertes_par_le_releve_sans_mouvement_rapproche: echeancesManquantes\.length/)
     expect(corps).toMatch(/echeances_emprunt_dont_l_ecriture_ne_suit_plus_le_decoupage: echeancesPerimees\.length/)
   })
@@ -296,7 +296,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc EMPRUNT sait encore échou
   })
 
   it('attrape une copie qui prend tout mouvement pour une échéance', () => {
-    const derivee = planter(['    if (!ligne.emprunt_id) return false\n    const attendue', '    const attendue'])
+    const derivee = planter(['    if (!ligne.emprunt_id) return false\n    const duMouvement', '    const duMouvement'])
     const releve = [ligne({ id: 'pas-un-emprunt', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null })]
     echoue(() => expect(ids(derivee.echeancesDesynchronisees([], releve))).toEqual(ids(echeancesDesynchronisees([], releve, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))))
   })
