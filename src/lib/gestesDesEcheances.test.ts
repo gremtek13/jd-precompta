@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { banquesDuDossier } from './banqueDuMouvement'
 import {
   candidatesALaReunion, confirmationDeLaReunion, jugerLaModification, lireLaSaisie, raisonDeNePasReunir, refusDeLaReunion,
   refusDuPaiementPersonnel, reunionInacheveeDite, saisieDe, valeursReunies, type ContexteDesGestes, type SaisieDeLEcheance,
@@ -129,6 +130,20 @@ describe('« Modifier » — une échéance qu’aucun mouvement ne paie', () =>
 
 describe('« Modifier » — une échéance rapprochée : la règle la plus sûre que la base permet', () => {
   const mouvements = { k1: ligne() }
+
+  it('MCB5 : l’écriture réécrite au 512 du compte du mouvement ; des comptes illisibles refusent le geste', () => {
+    const c = cotisation()
+    const s = saisie(c, { appele: '2000', csg: '750' })
+    const parCompte = { mouvements: { k1: { ...ligne(), compte_bancaire_id: 'S' } } }
+    const deux = banquesDuDossier({ etat: 'lus', comptes: [
+      { id: 'P', libelle: 'Principal', principal: true, fin_d_identifiant: null, compte: null, compte_propre_depuis: null, ouvert_le: null, clos_le: null },
+      { id: 'S', libelle: 'Second', principal: false, fin_d_identifiant: null, compte: '512200', compte_propre_depuis: '2026-01-01', ouvert_le: null, clos_le: null },
+    ] }, PLAN_PAR_DEFAUT)
+    const j = jugerLaModification(c, s, contexte({ ...parCompte, banques: deux }))
+    expect('refus' in j ? null : j.reecriture?.ecritures.map((e) => e.compte)).toEqual(['512200', '646000', '108000'])
+    const illisibles = jugerLaModification(c, s, contexte({ ...parCompte, banques: banquesDuDossier({ etat: 'illisible', motif: 'coupée' }, PLAN_PAR_DEFAUT) }))
+    expect(refusDe(illisibles)?.message).toMatch(/comptes bancaires du dossier n’ont pas été lus en entier/)
+  })
 
   it('porter la mensualité à la somme prélevée réécrit son écriture dans le même geste, et le dit avant le clic', () => {
     // D1 après coup : un prélèvement de 2 000 € rapproché de la mensualité de 800 €, la régularisation (1 200 €, dont 450 €)

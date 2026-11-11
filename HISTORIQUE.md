@@ -50922,3 +50922,21 @@ catégories de la production : seul le décompte du contrôle 7 change) adaptés
 Banque et le virement entre comptes s'y écrivent. Restent : les autres compositions (Écritures, Virements, Cotisations, les
 lots des règles, les ventes facturées), leurs détecteurs, le paiement d'une pièce, les lecteurs (FEC en deux rendus, MCB-Q4),
 l'à-nouveau de 2026 éclaté, l'assistant.
+
+### 11/11/2026 — LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES GESTES HORS DE BANQUE ET LES DÉTECTEURS (MCB5, SECONDE PARTIE)
+
+(Agent architecte, sans migration, derrière `COMPTES_BANCAIRES_PREVUS` baissé.) **Fait** : `useBanquesDuDossier` (lib) lit
+les comptes d'un onglet hors de Banque — drapeau baissé, la banque du rôle d'emblée, sans attente ; « Réaffecter » et les
+trois « Réécrire » d'Écritures, « Écrire les N » de Virements et de Cotisations, la modification d'une échéance payée
+(`ContexteDesGestes.banques`) et le lot des règles (`envoisDuLot` rend `{ envois } | { refus }`) composent sous le plan DU
+mouvement ; une banque inconnue refuse le geste, tout le lot. Les sept détecteurs (`mouvementsAffectesDesynchronises`,
+`…VentilesDesynchronises`, `…SurUnCompteDeBilan…`, `paiementsTvaDesynchronises`, `echeancesDesynchronisees`,
+`virementsPersonnelsAEcrire`, `cotisationsAEcrire`) prennent `banques`, obligatoire, en dernier ; un mouvement dont la banque
+ne se sait pas n'est pas jugé (`planPourJuger`) : la Checklist et la validation se suspendent déjà sur des comptes lus en
+partie, Écritures le dit par un bandeau. Écarté : un paramètre `plan | (ligne) => plan` (un oubli passerait en silence).
+Les copies de l'assistant gardent leur signature ; leurs gardes comparent la source sous `sans_objet`. `FicheMouvement` (la
+cotisation montrée hors banque) n'a rien à changer. **Preuves** : 138 appels de tests mis à la banque d'hier, la suite
+touchée verte ; `banqueDuMouvementDetecteurs.test.ts` et deux tests neufs (le lot, l'échéance), une mutation mord.
+**Restent** : les ventes facturées (`banques` dans `EntreesEcrituresVentes`, un motif neuf, le miroir de
+`refus_compte_de_contrepartie` sur les 512 propres, `compte_bancaire_id` lu sous le drapeau, `ecrituresVentesFactureesEcran`
+et ses appelants), le paiement d'une pièce (`ecritures.ts`, `engagement.ts`, `contrepartieBanque.ts`), les lecteurs, l'assistant.
