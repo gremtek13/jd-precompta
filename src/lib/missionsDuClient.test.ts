@@ -101,17 +101,23 @@ describe('la migration, confrontée au module', () => {
     expect(CLES_D_UNE_LETTRE).toEqual(COLONNES_SANS_MONTANT.split(', '))
     // Aucune autre colonne de la lettre n'est lue : ni honoraires, ni répartition, ni identités, ni empreinte…
     const lues = new Set([...code.matchAll(/\bl\.([a-z_]+)/g)].map((m) => m[1]))
-    expect([...lues].filter((c) => !CLES_D_UNE_LETTRE.includes(c) && c !== 'dossier_id')).toEqual([])
+    // La date de création ne sert qu'à ranger les brouillons (LM5Q2-Q1 (B)) : lue dans le tri, jamais rendue.
+    expect([...lues].filter((c) => !CLES_D_UNE_LETTRE.includes(c) && c !== 'dossier_id' && c !== 'cree_le')).toEqual([])
+    expect(code.match(/\bl\.cree_le\b/g)).toEqual(['l.cree_le'])
+    expect(code).toContain('order by l.proposee_le nulls last, l.cree_le, l.id')
     expect(code).not.toMatch(/honoraires|repartition|empreinte|identite_|clauses|signataire|modele_id|document_signe/)
   })
 
-  it('ses deux clés ; les lettres proposées du client, dans le dossier que son cabinet a désigné', () => {
+  it('ses deux clés ; les lettres du client, brouillons compris, dans le dossier que son cabinet a désigné', () => {
     const code = sansCommentaires(laFonction())
     expect(code).toContain(`'${CLES_DE_LA_VALEUR[0]}', v_dossier_du_cabinet is not null,`)
     expect(code).toContain(`'${CLES_DE_LA_VALEUR[1]}', coalesce((`)
     expect(code).toContain('       where l.dossier_id = v_dossier_du_cabinet\n'
-      + `         and l.dossier_client_id = ${PARAMETRE_DES_MISSIONS_DU_CLIENT}\n         and l.proposee_le is not null), '[]'::jsonb));`)
-    expect(code).toContain('             order by l.proposee_le, l.id)')
+      + `         and l.dossier_client_id = ${PARAMETRE_DES_MISSIONS_DU_CLIENT}), '[]'::jsonb));`)
+    // Les brouillons compris (LM5Q2-Q1 (B)) : aucune condition sur la proposition ; les proposées d'abord, puis les
+    // brouillons par leur création.
+    expect(code).not.toContain('proposee_le is not null')
+    expect(code).toContain('             order by l.proposee_le nulls last, l.cree_le, l.id)')
   })
 
   it('les connectés seuls l’exécutent ; aucun mot de suppression : l’outil la prendra', () => {
@@ -152,10 +158,13 @@ describe('la valeur rendue, reconnue entière', () => {
     expect(missionsDuClientRendues({ ...valeur(), honoraires: [] }, C)).toBeNull()
   })
 
-  it('une mission hors du catalogue, la lettre d’un autre client, un brouillon, un doublon : illisible', () => {
+  it('une mission hors du catalogue, la lettre d’un autre client, un brouillon que la base n’écrit pas, un doublon : illisible', () => {
     expect(missionsDuClientRendues(valeur([lettre({ missions: ['audit'] })]), C)).toBeNull()
     expect(missionsDuClientRendues(valeur([lettre({ dossier_client_id: '1b500000-0000-4000-8000-0000000000c2' })]), C)).toBeNull()
-    expect(missionsDuClientRendues(valeur([lettre({ proposee_le: null, acceptee_le: null })]), C)).toBeNull()
+    // Un brouillon se lit (LM5Q2-Q1 (B)) ; un « brouillon » accepté, refusé ou résilié est une forme que la base n'écrit pas.
+    expect(missionsDuClientRendues(valeur([lettre({ proposee_le: null, acceptee_le: null })]), C)?.lettres[0].proposee_le).toBeNull()
+    expect(missionsDuClientRendues(valeur([lettre({ proposee_le: null })]), C)).toBeNull()
+    expect(missionsDuClientRendues(valeur([lettre({ proposee_le: null, acceptee_le: null, refusee_le: '2026-11-10T09:00:00+00:00' })]), C)).toBeNull()
     expect(missionsDuClientRendues(valeur([lettre(), lettre()]), C)).toBeNull()
     expect(missionsDuClientRendues(valeur([lettre({ date_effet: '01/01/2026' })]), C)).toBeNull()
   })

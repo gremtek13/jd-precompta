@@ -800,8 +800,9 @@
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM5-Q2, ligne 47 : migration `missions_du_client`, PRÉPARÉE, pas
 -- appliquée, après LM1 et LM4), qui ne crée ni ne change aucune policy, mais une fonction de lecture `security definer` :
--- les lettres proposées d'un client, sans leurs honoraires, à qui lit son dossier au titre du cabinet. Le bloc MV (MV1 à
--- MV7, M-MV3, M-MV5, M-MV6) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « LM5-Q2 ».
+-- les lettres d'un client, brouillons compris (LM5Q2-Q1 (B)), sans leurs honoraires, à qui lit son dossier au titre du
+-- cabinet. Le bloc MV (MV1 à MV7, M-MV3, M-MV5, M-MV6) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md,
+-- « LM5-Q2 », puis « LM5Q2-Q1 ET LM7-Q4 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (P1T-E2, ligne 51.5 : migration `adresse_des_acces_retires`, PRÉPARÉE,
 -- pas appliquée), qui garde l'adresse d'un accès retiré que la trace nomme — la lecture du cabinet du dossier, l'insertion
@@ -3591,7 +3592,8 @@ end $fl$;
 -- ═══ Les missions d'un client, sans ses honoraires (LM5-Q2, ligne 47) ══════════════════════════════════════════════════
 --
 -- La migration `missions_du_client` ne crée ni ne change aucune policy : une fonction de lecture `security definer` rend,
--- pour le dossier d'un client, ses lettres de mission proposées sans leurs honoraires — à qui lit ce dossier au titre du
+-- pour le dossier d'un client, ses lettres de mission, brouillons compris (LM5Q2-Q1 (B)), sans leurs honoraires — à qui
+-- lit ce dossier au titre du
 -- cabinet (`admin_du_dossier`), alors que la table des lettres reste fermée à qui n'est pas du dossier du cabinet. Ce
 -- qu'elle ouvre et ferme : l'anonyme ne l'exécute pas (MV1) ; un compte rattaché à rien et le client du dossier, par son
 -- accès, sont refusés en 42501, la raison exigée (MV2, MV3) ; un membre de l'équipe que le dossier du client n'a pas aussi
@@ -3613,8 +3615,8 @@ declare
   refus text := 'Accès refusé à ce dossier.';
   cles text[] := array['id', 'remplace_id', 'dossier_client_id', 'missions', 'date_effet', 'fin_initiale', 'reconduction_tacite',
                        'proposee_le', 'acceptee_le', 'refusee_le', 'retiree_le', 'fin_au'];
-  interdit text := '(montant|libell|periodicit|livrable|honorair|repartition|identite|empreinte|clause|signataire|modele|auteur|2468\.13)';
-  m uuid; l uuid; v jsonb; ligne jsonb;
+  interdit text := '(montant|libell|periodicit|livrable|honorair|repartition|identite|empreinte|clause|signataire|modele|auteur|2468\.13|1357\.91)';
+  m uuid; l uuid; l2 uuid; v jsonb; ligne jsonb;
   n bigint; etat text; message text; erreur text; construit boolean := false;
   verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
 begin
@@ -3640,6 +3642,11 @@ begin
       'fin_initiale', '2026-12-31', 'signataire_nom', 'Signataire RLS', 'signataire_qualite', 'Titulaire', 'repartition', '[{"tache": "Transmettre les pièces", "par": "client"}]'::jsonb,
       'honoraires', '[{"forme": "forfait", "libelle": "Tenue RLS", "montant_ht": 2468.13, "periodicite": "trimestre"}]'::jsonb), null)).id into l;
     perform public.proposer_lettre_de_mission(k, l, (select modifiee_le from lettres_de_mission where id = l));
+    -- Un brouillon pour C (LM5Q2-Q1 (B)) : rendu lui aussi, après la lettre proposée, sans ses honoraires (1357.91 €).
+    select (public.enregistrer_brouillon_de_lettre(k, null, jsonb_build_object('dossier_client_id', c, 'modele_id', m,
+      'missions', jsonb_build_array('tenue_comptable'), 'date_effet', '2027-01-01', 'premier_exercice', 2027,
+      'fin_initiale', '2027-12-31', 'signataire_nom', 'Signataire RLS', 'signataire_qualite', 'Titulaire', 'repartition', '[{"tache": "Transmettre les pièces", "par": "client"}]'::jsonb,
+      'honoraires', '[{"forme": "forfait", "libelle": "Brouillon RLS", "montant_ht": 1357.91, "periodicite": "mois"}]'::jsonb), null)).id into l2;
     reset role;
     construit := true;
 
@@ -3689,7 +3696,7 @@ begin
     end;
     reset role;
     mutations := mutations || jsonb_build_object('mutation', 'M-MV3 — MV3 rejoué sous le chef du cabinet', 'attendu', 'la lecture acceptée',
-      'observe', etat, 'mord', etat = 'acceptée' and jsonb_array_length(v -> 'lettres') = 1);
+      'observe', etat, 'mord', etat = 'acceptée' and jsonb_array_length(v -> 'lettres') = 2);
 
     -- MV4 : le membre de l'équipe, que le dossier du client n'a pas.
     message := null;
@@ -3714,14 +3721,15 @@ begin
     reset role;
     verdicts := verdicts || jsonb_build_object('controle', 'MV5. le membre assigné au seul dossier du client lit ses missions, la table des lettres fermée (contrôle positif)', 'cible', 'missions_du_client',
       'observe', coalesce(jsonb_array_length(v -> 'lettres'), -1) || ' lettre(s) rendue(s), ' || n || ' ligne(s) de la table',
-      'ok', jsonb_array_length(v -> 'lettres') = 1 and v -> 'lettres' -> 0 ->> 'id' = l::text and n = 0);
+      'ok', jsonb_array_length(v -> 'lettres') = 2 and v -> 'lettres' -> 0 ->> 'id' = l::text and v -> 'lettres' -> 1 ->> 'id' = l2::text
+        and v -> 'lettres' -> 1 ->> 'proposee_le' is null and n = 0);
     -- M-MV5 : la même lecture de la table sous le chef — il la lit.
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select count(*) into n from lettres_de_mission where dossier_id = k;
     reset role;
-    mutations := mutations || jsonb_build_object('mutation', 'M-MV5 — la table relue sous le chef', 'attendu', 'la lettre lue',
-      'observe', n || ' ligne(s)', 'mord', n = 1);
+    mutations := mutations || jsonb_build_object('mutation', 'M-MV5 — la table relue sous le chef', 'attendu', 'les deux lettres lues',
+      'observe', n || ' ligne(s)', 'mord', n = 2);
 
     -- MV6 : ses clés, et aucun mot ni montant des honoraires ; M-MV6 : le même contrôle sur la ligne de la table.
     select count(*) into n from jsonb_array_elements(v -> 'lettres') e

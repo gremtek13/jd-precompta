@@ -10,16 +10,17 @@
 -- du client lit (le contrôle positif), alors que la table des lettres lui reste fermée ; le chef lit la même valeur ; un
 -- dossier inconnu se refuse aussi au super-administrateur — ; CE QUI SORT — deux clés en tête, douze par lettre et elles
 -- seules ; aucun montant, aucune périodicité, aucun libellé, aucun taux, aucune répartition, identité, clause, empreinte ni
--- signataire, et ce contrôle VOIT un montant là où il y en a un (sur la ligne de la table) ; les lettres proposées de ce
--- client seules, dans l'ordre de leur proposition, ni son brouillon (LM5Q2-Q1) ni la lettre d'un autre client ; un
--- cabinet sans dossier désigné le dit ; — et le catalogue (security definer, chemin fixé, stable, jsonb, les connectés
--- seuls).
+-- signataire, et ce contrôle VOIT un montant là où il y en a un (sur la ligne de la table) ; les lettres de ce client
+-- seules, BROUILLONS COMPRIS (LM5Q2-Q1, réponse (B) du cabinet) — les proposées dans l'ordre de leur proposition, puis les
+-- brouillons, celui qui est retiré compris, chacun sans son taux horaire ni rien de ses honoraires —, jamais la lettre
+-- d'un autre client ; un cabinet sans dossier désigné le dit ; — et le catalogue (security definer, chemin fixé, stable,
+-- jsonb, les connectés seuls).
 --
 -- Le jeu, inséré par le propriétaire : au cabinet de la réplique, le dossier du cabinet K, deux dossiers clients C et C2
 -- (une adresse chacun ; l'accès du client d'essai sur C) et, à un second cabinet sans dossier désigné, le dossier O ; un
 -- document signé dans K. Les lettres de C : L1 proposée puis acceptée sur papier (un forfait de 4321.98 € par trimestre,
--- une tâche de 765.43 €), L3 proposée puis refusée, L2 un brouillon au temps passé (135.79 € de l'heure) ; L4, proposée,
--- est celle de C2. Le membre de l'équipe de la réplique n'est assigné à C qu'en cours d'essai, jamais à K. Sans la
+-- une tâche de 765.43 €), L3 proposée puis refusée, L2 un brouillon au temps passé (135.79 € de l'heure), L6 un brouillon
+-- retiré sans avoir été proposé ; L4, proposée, est celle de C2. Le membre de l'équipe de la réplique n'est assigné à C qu'en cours d'essai, jamais à K. Sans la
 -- migration, une ligne dit qu'il attend (EN ATTENTE) et rien ne s'écrit. Une garde de tête refuse de le jouer hors d'une
 -- réplique (ESSAI_HORS_REPLIQUE), avant toute écriture.
 begin;
@@ -75,7 +76,7 @@ declare
                                 'reconduction_tacite', 'proposee_le', 'acceptee_le', 'refusee_le', 'retiree_le', 'fin_au'];
   missions_m constant jsonb := '{"tenue_comptable": "Tenir la comptabilité de trésorerie.", "declaration_2035": "Établir la 2035.", "facturation_au_nom_du_client": "Établir les factures au nom et pour le compte du client."}';
   contenu jsonb;
-  m uuid; l1 uuid; l2 uuid; l3 uuid; l4 uuid;
+  m uuid; l1 uuid; l2 uuid; l3 uuid; l4 uuid; l6 uuid;
   r text;
   v jsonb;
   v_chef jsonb;
@@ -123,6 +124,11 @@ begin
   -- L2, pour C : un brouillon au temps passé, jamais proposé.
   r := pg_temp.essayer(super, format($q$select (enregistrer_brouillon_de_lettre(%L, null, %L::jsonb, null)).id$q$, k, contenu || jsonb_build_object('dossier_client_id', c, 'honoraires', '[{"forme": "temps", "libelle": "Heure", "montant_ht": 135.79}]'::jsonb)));
   l2 := substr(r, 4)::uuid;
+  -- L6, pour C : un brouillon, retiré sans avoir été proposé.
+  r := pg_temp.essayer(super, format($q$select (enregistrer_brouillon_de_lettre(%L, null, %L::jsonb, null)).id$q$, k, contenu || jsonb_build_object('dossier_client_id', c, 'missions', jsonb_build_array('facturation_au_nom_du_client'))));
+  l6 := substr(r, 4)::uuid;
+  r := pg_temp.essayer(super, format($q$select (retirer_lettre_de_mission(%L, %L, null)).id$q$, k, l6));
+  if r <> 'OK:' || l6 then raise exception 'le jeu : L6 n''est pas retirée (%)', r; end if;
   -- L4, pour C2 : proposée.
   r := pg_temp.essayer(super, format($q$select (enregistrer_brouillon_de_lettre(%L, null, %L::jsonb, null)).id$q$, k, contenu || jsonb_build_object('dossier_client_id', c2)));
   l4 := substr(r, 4)::uuid;
@@ -150,8 +156,8 @@ begin
     coalesce((select string_agg(x, ',' order by x collate "C") from jsonb_object_keys(v) x), '∅') || ' ' || coalesce(v ->> 'dossier_du_cabinet_designe', '∅'));
   -- L'ordre attendu : la proposition, puis l'identifiant (dans une transaction, `now()` ne bouge pas : L1 et L3 sont
   -- proposées au même instant, et l'identifiant les départage).
-  perform pg_temp.noter(8, 'les lettres proposées de ce client seules, dans l''ordre de leur proposition (ni le brouillon, ni l''autre client)',
-    (select string_agg(l.id::text, ',' order by l.proposee_le, l.id) from lettres_de_mission l where l.id in (l1, l3)) || '|',
+  perform pg_temp.noter(8, 'les lettres de ce client seules, brouillons compris : les proposées par leur proposition, puis les brouillons par leur création (ni l''autre client)',
+    (select string_agg(l.id::text, ',' order by l.proposee_le nulls last, l.cree_le, l.id) from lettres_de_mission l where l.id in (l1, l3, l2, l6)) || '|',
     coalesce((select string_agg(e ->> 'id', ',' order by i) from jsonb_array_elements(v -> 'lettres') with ordinality t(e, i)), '∅') || '|');
   select count(*) into n from jsonb_array_elements(v -> 'lettres') e
    where (select count(*) from jsonb_object_keys(e) x) <> 12 or exists (select 1 from jsonb_object_keys(e) x where x <> all (cles));
@@ -167,6 +173,15 @@ begin
   perform pg_temp.noter(13, 'L3 : refusée', 'refusée',
     coalesce((select case when e ->> 'refusee_le' is not null and e ->> 'acceptee_le' is null then 'refusée' else '?' end
                 from jsonb_array_elements(v -> 'lettres') e where e ->> 'id' = l3::text), '∅'));
+  perform pg_temp.noter(21, 'L2, le brouillon au temps passé : ses missions et ses dates, ni proposé, ni accepté, ni refusé, ni retiré (l''écran le dit brouillon)',
+    'brouillon ["tenue_comptable", "declaration_2035"] 2026-01-01 2026-12-31',
+    coalesce((select case when e ->> 'proposee_le' is null and e ->> 'acceptee_le' is null and e ->> 'refusee_le' is null
+                               and e ->> 'retiree_le' is null and e ->> 'fin_au' is null then 'brouillon' else '?' end
+                     || ' ' || (e -> 'missions')::text || ' ' || (e ->> 'date_effet') || ' ' || (e ->> 'fin_initiale')
+                from jsonb_array_elements(v -> 'lettres') e where e ->> 'id' = l2::text), '∅'));
+  perform pg_temp.noter(22, 'L6, le brouillon retiré sans avoir été proposé : rendu, son retrait dit', 'retiré',
+    coalesce((select case when e ->> 'proposee_le' is null and e ->> 'retiree_le' is not null and e ->> 'fin_au' is null then 'retiré' else '?' end
+                from jsonb_array_elements(v -> 'lettres') e where e ->> 'id' = l6::text), '∅'));
   r := pg_temp.essayer(super, format($q$select missions_du_client(%L)::text$q$, c));
   v_chef := case when r like 'OK:{%' then substr(r, 4)::jsonb end;
   perform pg_temp.noter(14, 'le chef lit la même valeur', 'égale', case when v_chef = v then 'égale' else 'DIFFÉRENTE : ' || r end);

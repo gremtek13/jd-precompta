@@ -7,8 +7,9 @@ import { messageErreur } from './messageErreur'
 // SANS SES HONORAIRES, EN BASE »). La policy des lettres de mission est celle du dossier du CABINET : un collaborateur
 // assigné au seul dossier d'un client n'en lit aucune ligne. La migration `missions_du_client`
 // (supabase/preparees/20261111236000_missions_du_client.sql, PRÉPARÉE) lui ouvre une lecture `security definer` :
-// `missions_du_client(dossier)` rend, à qui lit le dossier du client au titre du cabinet (`admin_du_dossier`), ses lettres
-// PROPOSÉES par les douze valeurs de `COLONNES_SANS_MONTANT` et elles seules — jamais un montant, une périodicité, un taux
+// `missions_du_client(dossier)` rend, à qui lit le dossier du client au titre du cabinet (`admin_du_dossier`), ses lettres,
+// BROUILLONS COMPRIS (LM5Q2-Q1, réponse (B) du cabinet du 11/11/2026), par les douze valeurs de `COLONNES_SANS_MONTANT` et
+// elles seules — jamais un montant, une périodicité, un taux
 // ni un texte d'honoraires —, et si le cabinet a désigné son dossier. Tout autre appelant, un accès client compris, reçoit
 // « Accès refusé à ce dossier. » (42501).
 //
@@ -68,8 +69,9 @@ function lettreRendue(e: unknown, dossierClientId: string): LettreSansMontant | 
   if (e.dossier_client_id !== dossierClientId) return null
   if (!Array.isArray(missions) || !missions.every((m) => MISSIONS_CONNUES.includes(m))) return null
   if (!dateOuNulle(effet) || !dateOuNulle(fin) || !dateOuNulle(finAu) || typeof reconduction !== 'boolean') return null
-  // Une lettre rendue est PROPOSÉE (un brouillon ne sort pas de la base).
-  if (proposee === null || !instantOuNul(proposee) || !instantOuNul(acceptee) || !instantOuNul(refusee) || !instantOuNul(retiree)) return null
+  // Un brouillon sort aussi (LM5Q2-Q1 (B)) : sans proposition, ni acceptation, ni refus, ni fin — la base l'exige.
+  if (!instantOuNul(proposee) || !instantOuNul(acceptee) || !instantOuNul(refusee) || !instantOuNul(retiree)) return null
+  if (proposee === null && (acceptee !== null || refusee !== null || finAu !== null)) return null
   return {
     id, remplace_id: remplace, dossier_client_id: dossierClientId, missions: missions as Mission[], date_effet: effet,
     fin_initiale: fin, reconduction_tacite: reconduction, proposee_le: proposee, acceptee_le: acceptee, refusee_le: refusee,
