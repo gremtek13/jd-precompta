@@ -5087,6 +5087,129 @@ export const SCENARIOS_RELANCES: readonly Scenario[] = [
   })),
 ]
 
+// LA RELANCE D'UNE DEMANDE DU CABINET PAR E-MAIL (étape B3b). `send-email` ne l'admet que sous
+// `RELANCES_DE_DEMANDES_EN_BASE`, baissée tant que la migration préparée `relance_des_demandes_par_email` n'est pas en
+// base : ces scénarios se jouent sur la source servie, la constante LEVÉE en mémoire (`relancesDeDemandesLevees`), dans un
+// monde qui porte les tables de B2 (`schemaPrepare`). Une demande ouverte du dossier, l'accès du client et son adresse ; le
+// détail de la demande porte un marqueur qu'on cherche ensuite dans le corps envoyé, l'adresse du corps de la requête une
+// autre, qu'on cherche dans l'envoi.
+const DEMANDE = 'de000000-0000-4000-8000-0000000000de'
+const DETAIL_DE_LA_DEMANDE = 'Detail-libre-de-la-demande-qui-ne-part-pas'
+const ADRESSE_DE_L_ACCES = 'adresse-de-l-acces@exemple.invalid'
+const RELANCE_DEMANDE = { dossierId: D, type: 'relance_demande', demandeId: DEMANDE, accesId: PERSONNES.client.id }
+const ENVOI_RELANCE_DEMANDE_INSCRITE = ['Resend envoyer', 'écriture insert emails_envoyes', 'écriture insert relances_demandes']
+
+function demandeOuverte(m: Monde, valeurs: Record<string, unknown> = {}) {
+  m.schemaPrepare = true
+  resendQuiGarde(m)
+  m.base.demandes_cabinet = [{
+    id: DEMANDE, dossier_id: D, objet: 'Relevé <fictif> de décembre', detail: DETAIL_DE_LA_DEMANDE, echeance: '2026-11-20',
+    attendu: 'fichier', auteur: PERSONNES.chef.id, ouverte_le: '2026-11-02T09:00:00.000Z', close_par: null, close_le: null,
+    motif_de_cloture: null, ...valeurs,
+  }]
+  const acces = lignes(m, 'memberships').find((a) => a.user_id === PERSONNES.client.id && a.dossier_id === D)
+  if (!acces) throw new Error('le monde de référence a perdu l’accès du client au dossier')
+  acces.email = ADRESSE_DE_L_ACCES
+}
+
+/** Ce qui est parti et ce qui s'est inscrit : l'adresse de l'accès, le texte fixe, l'objet ; ni le détail ; d'un tenant. */
+function relanceDeDemandeInscrite(r: Resultat, m: Monde): string[] {
+  const fautes: string[] = []
+  const corps = corpsDe(r)
+  if (corps.ok !== true || corps.relanceInscrite !== true) fautes.push(`réponse : ${r.texte.slice(0, 120)}`)
+  const envois = (m.notes.envois ?? []) as { subject?: unknown; html?: unknown; to?: unknown }[]
+  if (envois.length !== 1) return [...fautes, `${envois.length} envoi(s)`]
+  if (envois[0].to !== ADRESSE_DE_L_ACCES) fautes.push(`destinataire : ${String(envois[0].to)}`)
+  if (envois[0].subject !== 'Une demande de votre cabinet attend votre réponse') fautes.push(`sujet : ${String(envois[0].subject)}`)
+  const html = String(envois[0].html)
+  for (const attendu of ['« <strong>Relevé &lt;fictif&gt; de décembre</strong> »', 'attendue pour le 20/11/2026', 'rubrique « Mes demandes »']) {
+    if (!html.includes(attendu)) fautes.push(`le corps ne dit pas « ${attendu} »`)
+  }
+  if (html.includes(DETAIL_DE_LA_DEMANDE)) fautes.push('le corps recopie le détail de la demande')
+  const journal = lignes(m, 'emails_envoyes').filter((e) => e.type === 'relance_demande')
+  const relances = lignes(m, 'relances_demandes')
+  if (journal.length !== 1 || relances.length !== 1) return [...fautes, `${journal.length} ligne(s) au journal, ${relances.length} relance(s)`]
+  if (journal[0].destinataire !== ADRESSE_DE_L_ACCES || journal[0].envoye_par !== PERSONNES.chef.id || journal[0].dossier_id !== D) {
+    fautes.push(`journal : ${JSON.stringify(journal[0])}`)
+  }
+  if (relances[0].canal !== 'email' || relances[0].email_id !== journal[0].id || relances[0].demande_id !== DEMANDE) {
+    fautes.push(`relance : ${JSON.stringify(relances[0])}`)
+  }
+  return fautes
+}
+
+const relanceDeDemandeRefusee = (nom: string, statut: number, preparer: (m: Monde) => void, corps: unknown, mots?: string): Scenario => ({
+  nom, preparer, requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+  attendu: {
+    statut, refusEnFrancais: true, aucuneDepense: true,
+    verifier: (r, m) => [
+      ...jamais(m, 'resend', 'un envoi'), ...jamais(m, 'ecriture', 'une écriture'),
+      ...(mots === undefined || corpsDe(r).error === mots ? [] : [`refus : ${r.texte.slice(0, 160)}`]),
+    ],
+  },
+})
+
+export const SCENARIOS_RELANCES_DE_DEMANDES: readonly Scenario[] = [
+  ...matriceDesDroits({ relance_demande: QUI_PEUT_QUOI_ATTENDU['send-email'].relance_demande }, {
+    relance_demande: {
+      corps: RELANCE_DEMANDE, preparer: (m) => demandeOuverte(m),
+      admis: { statut: 200, depenses: ENVOI_RELANCE_DEMANDE_INSCRITE, verifier: relanceDeDemandeInscrite },
+    },
+  }),
+  droitsEnPanne(RELANCE_DEMANDE, (m) => demandeOuverte(m)),
+  relanceDeDemandeRefusee('relance de demande — une adresse dans le corps : 400, rien de lu ni d’envoyé', 400, (m) => demandeOuverte(m),
+    { ...RELANCE_DEMANDE, destinataire: 'adresse-du-corps@exemple.invalid' },
+    'L\'adresse d\'une relance de demande est celle de l\'accès choisi, lue en base : le corps de la requête ne la porte pas.'),
+  relanceDeDemandeRefusee('relance de demande — un message libre : 400', 400, (m) => demandeOuverte(m),
+    { ...RELANCE_DEMANDE, message: 'Un mot libre' }, 'Une relance de demande part sous son texte : elle ne porte pas de message libre.'),
+  relanceDeDemandeRefusee('relance de demande — sans l’accès : 400', 400, (m) => demandeOuverte(m),
+    { ...RELANCE_DEMANDE, accesId: undefined }),
+  relanceDeDemandeRefusee('relance de demande — une demande close : 400, rien d’envoyé', 400,
+    (m) => demandeOuverte(m, { close_par: PERSONNES.chef.id, close_le: '2026-11-05T09:00:00.000Z', motif_de_cloture: 'satisfaite' }),
+    RELANCE_DEMANDE, 'Cette demande est close : elle ne se relance plus.'),
+  relanceDeDemandeRefusee('relance de demande — une demande d’un autre dossier : 404', 404,
+    (m) => demandeOuverte(m, { dossier_id: ID.dossierVoisin }), RELANCE_DEMANDE, 'Demande introuvable.'),
+  // Le compte a un accès, et son adresse — mais à un AUTRE dossier : l'accès se lit sur le dossier de la requête.
+  relanceDeDemandeRefusee('relance de demande — un compte sans accès à ce dossier : 404', 404, (m) => {
+    demandeOuverte(m)
+    ;(m.base.memberships ??= []).push({
+      id: identifiantGenere(), user_id: PERSONNES.inscrit.id, dossier_id: ID.dossierVoisin, role: 'client',
+      email: 'acces-d-un-autre-dossier@exemple.invalid', droit_ventes: false, droit_banque: false,
+    })
+  }, { ...RELANCE_DEMANDE, accesId: PERSONNES.inscrit.id }, 'Cet accès n\'est pas un accès de ce dossier : la relance n\'est pas partie.'),
+  relanceDeDemandeRefusee('relance de demande — un accès sans adresse lisible : 400', 400, (m) => {
+    demandeOuverte(m)
+    const acces = lignes(m, 'memberships').find((a) => a.user_id === PERSONNES.client.id && a.dossier_id === D)
+    if (acces) acces.email = null
+  }, RELANCE_DEMANDE, 'Cet accès ne porte pas d\'adresse électronique lisible : la relance n\'est pas partie.'),
+  {
+    nom: 'relance de demande — l’inscription refusée après l’envoi : 200, relanceInscrite à faux, rien de recopié au journal',
+    preparer: (m) => {
+      demandeOuverte(m)
+      m.pannes.push({ rpc: 'journaliser_relance_de_demande', erreur: { message: 'délai dépassé' } })
+    },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_DEMANDE }),
+    attendu: {
+      statut: 200, depenses: ['Resend envoyer'],
+      verifier: (r) => (corpsDe(r).ok === true && corpsDe(r).relanceInscrite === false ? [] : [`réponse : ${r.texte.slice(0, 120)}`]),
+    },
+  },
+]
+
+/** Servie (constante baissée) : la relance d'une demande se refuse comme un type inconnu, mot pour mot, rien de lu. */
+export const SCENARIO_RELANCE_DE_DEMANDE_AVANT_SA_MIGRATION: Scenario = {
+  nom: 'la relance d’une demande, constante baissée (avant sa migration) : le refus d’un type inconnu, mot pour mot, rien de lu ni d’envoyé',
+  preparer: (m) => demandeOuverte(m),
+  requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_DEMANDE }),
+  attendu: {
+    statut: 400, refusEnFrancais: true, aucuneDepense: true,
+    verifier: (r, m) => [
+      ...jamais(m, 'lecture', 'une lecture'), ...jamais(m, 'rpc', 'un appel à la base'),
+      ...(corpsDe(r).error === "dossierId, type ('facture', 'devis', 'relance_pieces' ou 'relance_facture') et destinataire sont requis." ? [] : [r.texte]),
+    ],
+  },
+}
+
 /** L'état d'avant la migration `relances_des_factures` : la constante baissée, la relance refusée comme un type inconnu. */
 export const SCENARIO_RELANCE_AVANT_SA_MIGRATION: Scenario = {
   nom: 'la relance d’une facture, constante baissée (avant sa migration) : le refus d’un type inconnu, mot pour mot, rien de lu ni d’envoyé',
@@ -5143,7 +5266,8 @@ const SEND_EMAIL: ContratFonction = {
     },
     // La relance d'une facture (étape C5) a ses contrats à part (`SCENARIOS_RELANCES`, et l'état d'avant sa migration,
     // `SCENARIO_RELANCE_AVANT_SA_MIGRATION`), joués par relancesHttp.test.ts.
-    ...matriceDesDroits(Object.fromEntries(Object.entries(QUI_PEUT_QUOI_ATTENDU['send-email']).filter(([action]) => action !== 'relance_facture')), {
+    // La relance d'une demande (étape B3b), de même (`SCENARIOS_RELANCES_DE_DEMANDES`, relancesDeDemandesHttp.test.ts).
+    ...matriceDesDroits(Object.fromEntries(Object.entries(QUI_PEUT_QUOI_ATTENDU['send-email']).filter(([action]) => action !== 'relance_facture' && action !== 'relance_demande')), {
       facture: { corps: ENVOI_FACTURE, preparer: factureAEnvoyer, admis: { statut: 200, depenses: ENVOI_JOURNALISE } },
       devis: { corps: ENVOI_DEVIS, preparer: devisAEnvoyer, admis: { statut: 200, depenses: ENVOI_DEVIS_JOURNALISE, verifier: devisJournalise } },
       relance_pieces: { corps: RELANCE, preparer: resendQuiEnvoie, admis: { statut: 200, depenses: ['Resend envoyer', 'écriture insert emails_envoyes'] } },

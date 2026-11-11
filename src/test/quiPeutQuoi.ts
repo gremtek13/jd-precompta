@@ -18,5 +18,6 @@ export const QUI_PEUT_QUOI_ATTENDU = {
   'superpdp-credentials': { status: 'ventes', save: 'ventes', remove: 'ventes' },
   'superpdp-emit': { envoyer: 'ventes', actualiser: 'ventes' },
   // La relance d'une facture en retard (étape C5) : le client « Ventes » relance ses propres factures, comme il les envoie.
-  'send-email': { facture: 'ventes', devis: 'ventes', relance_pieces: 'cabinet', relance_facture: 'ventes' },
+  // La relance d'une demande du cabinet (étape B3b) : le cabinet seul, comme la demande.
+  'send-email': { facture: 'ventes', devis: 'ventes', relance_pieces: 'cabinet', relance_facture: 'ventes', relance_demande: 'cabinet' },
 } as const satisfies Record<string, Record<string, DroitExigeAttendu>>

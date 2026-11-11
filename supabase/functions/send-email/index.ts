@@ -21,6 +21,11 @@
 //   son montant TTC et son échéance —, jamais ses pénalités, que l'écran calcule et montre (src/lib/relances.ts). Admis
 //   seulement sous `RELANCES_EN_BASE` (plus bas) : la ligne de journal d'une relance demande la migration
 //   `relances_des_factures`, en production depuis le 07/11/2026.
+// - "relance_demande" (espace client, étape B3b de la ligne 51.5) : le rappel d'une demande du cabinet encore OUVERTE —
+//   son objet et son échéance, que l'accès lit déjà dans « Mes demandes », jamais son détail, ni un message libre —, envoyé
+//   à l'adresse que porte l'ACCÈS choisi (`memberships.email`), jamais à une adresse du corps de la requête. Le journal et
+//   la relance au canal « email » s'inscrivent d'un seul tenant, après l'envoi (`journaliser_relance_de_demande`). Admis
+//   seulement sous `RELANCES_DE_DEMANDES_EN_BASE` (plus bas), que la migration `relance_des_demandes_par_email` lève.
 //
 // Chaque envoi est journalisé (table emails_envoyes) : un cabinet doit toujours pouvoir retrouver qui
 // a reçu quoi et quand, jamais un envoi "silencieux" qu'on ne peut plus vérifier après coup.
@@ -66,6 +71,8 @@ const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
   devis: "ventes",
   relance_pieces: "cabinet",
   relance_facture: "ventes",
+  // La relance d'une demande du cabinet (étape B3b) : un geste du cabinet seul, comme la demande elle-même.
+  relance_demande: "cabinet",
 }
 
 // LA RELANCE D'UNE FACTURE EN RETARD (étape C5 ; MEG3-Q3, « oui » du cabinet) : la base n'admet sa ligne de journal,
@@ -76,9 +83,19 @@ const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
 // pas dans le plafond d'un accès client. L'ordre : la migration, puis la constante levée et la fonction redéployée, puis
 // `RELANCES_EXPORTEES` (src/lib/relances.ts) ; `relancesHttp.test.ts` refuse le drapeau levé sur une constante baissée.
 const RELANCES_EN_BASE = true
-const TYPES_ADMIS: readonly string[] = RELANCES_EN_BASE
-  ? ["facture", "devis", "relance_pieces", "relance_facture"]
-  : ["facture", "devis", "relance_pieces"]
+
+// LA RELANCE D'UNE DEMANDE DU CABINET PAR E-MAIL (étape B3b) : la base n'admet sa ligne de journal, `relance_demande`, et
+// n'inscrit la relance au canal « email » qu'avec la migration `relance_des_demandes_par_email` (supabase/preparees/
+// 20261111239000, PRÉPARÉE ; après B1 et B2). Baissée, la constante refuse ce type comme un type inconnu (400, mot pour mot
+// le refus d'hier), avant toute lecture et tout envoi : un e-mail parti dont l'inscription serait refusée APRÈS l'envoi
+// laisserait la demande muette. L'ordre : la migration, puis la constante levée et la fonction redéployée, puis
+// `RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE` (src/lib/documentsEtDemandes.ts) ; `relancesDeDemandesHttp.test.ts` refuse le
+// drapeau levé sur une constante baissée.
+const RELANCES_DE_DEMANDES_EN_BASE = false
+const TYPES_ADMIS: readonly string[] = [
+  ...(RELANCES_EN_BASE ? ["facture", "devis", "relance_pieces", "relance_facture"] : ["facture", "devis", "relance_pieces"]),
+  ...(RELANCES_DE_DEMANDES_EN_BASE ? ["relance_demande"] : []),
+]
 const TYPES_EN_MOTS = TYPES_ADMIS.slice(0, -1).map((t) => `'${t}'`).join(", ") + ` ou '${TYPES_ADMIS[TYPES_ADMIS.length - 1]}'`
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -507,6 +524,24 @@ function construireEmailDevis(
   return { objet: `Devis ${devis.numero} — ${devis.emetteur_nom}`, html }
 }
 
+// La demande que la relance lit, et elle seule : ni son détail (un texte libre, qui reste dans l'espace où l'accès le lit
+// sous sa session), ni ses réponses, ni son auteur.
+interface DemandeRelancee { id: string; objet: string; echeance: string | null; close_le: string | null }
+
+// L'e-mail d'une relance de demande : un texte fixe, l'objet et l'échéance de la demande, et le chemin habituel — aucun
+// lien porteur d'un jeton, aucun message libre. L'objet ne paraît que dans le corps, jamais dans le sujet (que l'aperçu
+// d'une messagerie montre sans l'ouvrir).
+function construireEmailRelanceDemande(demande: DemandeRelancee): { objet: string; html: string } {
+  const html = `
+    <div style="font-family:sans-serif;color:#222;max-width:560px;">
+      <p>Bonjour,</p>
+      <p>Votre cabinet attend encore votre réponse à sa demande « <strong>${echapper(demande.objet)}</strong> »${demande.echeance ? `, attendue pour le ${formaterDate(demande.echeance)}` : ""}.</p>
+      <p>Merci de vous connecter à votre espace habituel, rubrique « Mes demandes », pour y répondre ou y déposer ce qui est demandé.</p>
+      <p style="margin-top:24px;">Cordialement,<br>Votre cabinet comptable</p>
+    </div>`
+  return { objet: "Une demande de votre cabinet attend votre réponse", html }
+}
+
 function construireEmailRelance(dossierNom: string, messagePerso: string | null): { objet: string; html: string } {
   const html = `
     <div style="font-family:sans-serif;color:#222;max-width:560px;">
@@ -669,7 +704,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
   }
   const payload = corps as Record<string, unknown>
-  for (const champ of ["dossierId", "type", "destinataire", "message", "factureId", "devisId"]) {
+  for (const champ of ["dossierId", "type", "destinataire", "message", "factureId", "devisId", "demandeId", "accesId"]) {
     if (!texteOuAbsent(payload[champ])) {
       return json({ error: `Corps de requête invalide : « ${champ} » doit être un texte.` }, 400)
     }
@@ -679,10 +714,24 @@ Deno.serve(async (req: Request) => {
   const type = payload.type
   const destinataire = texte("destinataire")
   const messagePerso = texte("message") || null
-  if (!dossierId || typeof type !== "string" || !TYPES_ADMIS.includes(type) || !destinataire) {
+  // La relance d'une demande (étape B3b) n'a pas de destinataire dans le corps : son adresse est celle de l'accès choisi.
+  const relanceDeDemande = type === "relance_demande" && TYPES_ADMIS.includes(type)
+  if (!dossierId || typeof type !== "string" || !TYPES_ADMIS.includes(type) || (!destinataire && !relanceDeDemande)) {
     return json({ error: `dossierId, type (${TYPES_EN_MOTS}) et destinataire sont requis.` }, 400)
   }
-  if (!EMAIL_REGEX.test(destinataire)) {
+  const demandeId = relanceDeDemande ? texte("demandeId") ?? null : null
+  const accesId = relanceDeDemande ? texte("accesId") ?? null : null
+  if (relanceDeDemande) {
+    if (destinataire) {
+      return json({ error: "L'adresse d'une relance de demande est celle de l'accès choisi, lue en base : le corps de la requête ne la porte pas." }, 400)
+    }
+    if (messagePerso) {
+      return json({ error: "Une relance de demande part sous son texte : elle ne porte pas de message libre." }, 400)
+    }
+    if (!demandeId || !UUID_REGEX.test(demandeId) || !accesId || !UUID_REGEX.test(accesId)) {
+      return json({ error: "demandeId et accesId, les identifiants de la demande et de l'accès, sont requis pour le modèle 'relance_demande'." }, 400)
+    }
+  } else if (!destinataire || !EMAIL_REGEX.test(destinataire)) {
     return json({ error: "Adresse e-mail du destinataire invalide." }, 400)
   }
   // Le devis se désigne par son identifiant, de la forme d'un UUID, jugée ici avec le reste du corps : une demande mal
@@ -715,6 +764,8 @@ Deno.serve(async (req: Request) => {
 
   let objet: string, html: string
   let factureId: string | null = null
+  // L'adresse où part l'e-mail : celle du corps, sauf pour la relance d'une demande (l'accès choisi, lu en base).
+  let adresse: string = destinataire ?? ""
   // Nom affiché comme expéditeur — celui de la facture (recopié à l'émission, voir types.ts) quand il
   // y en a un, sinon celui du dossier (cas "relance_pieces", qui n'a pas de facture associée).
   let nomExpediteur = dossierRow.nom
@@ -822,6 +873,38 @@ Deno.serve(async (req: Request) => {
     // Le journal cite la facture relancée : « Relancée le … » s'en déduit, rien d'autre ne se stocke.
     factureId = factureRelanceeId
     nomExpediteur = facture.emetteur_nom ?? dossierRow.nom
+  } else if (relanceDeDemande && demandeId && accesId) {
+    // La demande, par son identifiant ET le dossier de la requête ; une lecture en erreur n'est pas une demande absente.
+    const { data: demandeLue, error: erreurDemande } = await admin.from("demandes_cabinet")
+      .select("id, objet, echeance, close_le").eq("id", demandeId).eq("dossier_id", dossierId).maybeSingle()
+    if (erreurDemande) {
+      return json({ error: `La demande n'a pas pu être lue (${erreurDemande.message}). La relance n'est pas partie. Réessaie dans un instant.` }, 503)
+    }
+    if (!demandeLue) {
+      return json({ error: "Demande introuvable." }, 404)
+    }
+    const demande = demandeLue as DemandeRelancee
+    if (demande.close_le !== null) {
+      return json({ error: "Cette demande est close : elle ne se relance plus." }, 400)
+    }
+    // L'adresse de l'accès, lue sur l'accès de CE dossier : jamais celle d'un compte qui n'y a pas d'accès.
+    const { data: accesLu, error: erreurAcces } = await admin.from("memberships")
+      .select("email").eq("dossier_id", dossierId).eq("user_id", accesId).maybeSingle()
+    if (erreurAcces) {
+      return json({ error: `L'accès n'a pas pu être lu (${erreurAcces.message}). La relance n'est pas partie. Réessaie dans un instant.` }, 503)
+    }
+    if (!accesLu) {
+      return json({ error: "Cet accès n'est pas un accès de ce dossier : la relance n'est pas partie." }, 404)
+    }
+    const adresseDeLAcces = typeof accesLu.email === "string" ? accesLu.email.trim() : ""
+    if (!EMAIL_REGEX.test(adresseDeLAcces)) {
+      return json({ error: "Cet accès ne porte pas d'adresse électronique lisible : la relance n'est pas partie." }, 400)
+    }
+    adresse = adresseDeLAcces
+    const construit = construireEmailRelanceDemande(demande)
+    objet = construit.objet
+    html = construit.html
+    nomExpediteur = "Votre cabinet comptable"
   } else {
     const construit = construireEmailRelance(dossierRow.nom, messagePerso)
     objet = construit.objet
@@ -855,7 +938,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: sent, error: sendError } = await resend.emails.send({
     from: `${nomExpediteur} <contact@${DOMAINE_ENVOI}>`,
-    to: destinataire,
+    to: adresse,
     replyTo: callerData.user.email ?? undefined,
     subject: objet,
     html,
@@ -871,6 +954,20 @@ Deno.serve(async (req: Request) => {
   // L'appelant, lui, reçoit `ok: true` et n'apprendrait rien.
   // La ligne d'un devis nomme son devis (`devis_id`), jamais une facture ; celle d'une facture ou d'une relance ne nomme
   // pas la colonne du tout — elle s'écrit ainsi même si la fonction partait avant la migration `envoi_des_devis`.
+  // La relance d'une demande s'inscrit d'un seul tenant — le journal et la relance au canal « email » —, par la fonction
+  // que le rôle du service est seul à exécuter ; ce qui a pu changer depuis le contrôle (une demande close) ne la refuse
+  // pas : ce qui est parti s'inscrit. Échouée, l'appelant l'apprend (`relanceInscrite`) : la demande ne la dira pas.
+  if (relanceDeDemande) {
+    const { error: erreurInscription } = await admin.rpc("journaliser_relance_de_demande", {
+      p_dossier_id: dossierId, p_demande_id: demandeId, p_destinataire: adresse, p_objet: objet,
+      p_resend_id: sent?.id ?? null, p_envoye_par: callerData.user.id,
+    })
+    if (erreurInscription) {
+      console.error(`[send-email] relance de demande ENVOYÉE (resend_id=${sent?.id ?? "?"}) mais ni journalisée ni inscrite : ${erreurInscription.message}`)
+    }
+    return json({ ok: true, relanceInscrite: !erreurInscription })
+  }
+
   const { error: erreurJournal } = await admin.from("emails_envoyes").insert({
     dossier_id: dossierId, type, destinataire, objet,
     facture_id: factureId, resend_id: sent?.id ?? null, envoye_par: callerData.user.id,

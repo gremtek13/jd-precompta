@@ -51257,3 +51257,22 @@ conditionnées sur `documents_cabinet` et `paiements_declares` : 245 lignes just
 retirée fait tomber le 141 sur les seules bases qui portent sa migration. `ventesFacturees.sql` et `rls.sql` justes avec
 B2+B4+B7, `restauration.sql` rend les mêmes quatorze « rien n'est prouvé » (le semis de la réplique) avec ou sans elles.
 Reste : le 141 ne connaît pas encore les gardes de suppression de LM1, LM4, LM7, LM8 et `originaux_retenus_par_leur_import`.
+
+### 11/11/2026 — B3B : LA RELANCE D'UNE DEMANDE PAR E-MAIL (LIGNE 51.5) (PRÉPARÉE)
+
+Agent architecte, sur une copie de la mère 17 rattrapée à la production (197 migrations, `32cc17e5…`) plus B1 et B2 ; rien en
+production, rien de déployé. `relance_des_demandes_par_email` (20261111239000, `2bd1655b…`, À COLLER : la contrainte du type
+d'`emails_envoyes` se remplace sous son nom, « drop constraint » dans la même instruction, aucune ligne touchée) : le type
+« relance_demande », et `journaliser_relance_de_demande`, le journal et la relance au canal « email » d'un seul tenant, au rôle
+du service SEUL, aux droits de l'appelant (la garde de B2 inchangée ; ce qui est parti s'inscrit, même sur une demande close
+entre-temps). Aucune policy élargie : le client lit la relance par `relances_demandes` (tout accès, B2), jamais la ligne du
+journal. Retour 20261111239100 (`cec5de3a…`, à coller), refusé tant qu'une ligne « relance_demande » est au journal.
+`send-email` sait « relance_demande » sous `RELANCES_DE_DEMANDES_EN_BASE` baissée (le refus d'hier, mot pour mot) : le cabinet
+seul (`QUI_PEUT_QUOI`), l'adresse de l'ACCÈS choisi (`memberships.email` de CE dossier ; une adresse dans le corps se refuse),
+un texte fixe — l'objet et l'échéance que l'accès lit déjà, jamais le détail ni un message libre, l'objet hors du sujet —, puis
+`relanceInscrite` dans la réponse. Preuves : `relanceDesDemandesParEmail.sql` 24 lignes justes (4 mutations mordent), EN ATTENTE
+sans elle ; quatre mutations de la migration mordent ; `rls.sql` entier 161 invariants, 0 en faute, 109 sur 109, identique sans
+elle ; aller, retour, aller : signature égale (le retour ne change que contraintes, fonctions et leurs droits) ; banc du leurre
+SÛR ; `relancesDeDemandesHttp.test.ts` 24 cas, cinq défauts plantés mordent. `RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE` baissé.
+Reste : le bouton de `DemandesAuClient` (l'accès choisi parmi ceux lus en entier, la confirmation qui nomme l'adresse et ce qui
+part) ; B3B-Q1 à Q3.
