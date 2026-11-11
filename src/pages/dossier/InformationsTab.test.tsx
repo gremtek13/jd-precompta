@@ -224,6 +224,7 @@ function monter(
       modele={modele}
       onIdentiteUpdated={(rendue) => { faux.identitesRendues.push(rendue) }}
       onReglageUpdated={(id, reglage) => { faux.reglagesRendus.push([id, reglage]) }}
+      onPlanRelu={() => {}}
       {...identite}
     />,
   )

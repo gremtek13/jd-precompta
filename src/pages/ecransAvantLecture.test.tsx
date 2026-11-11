@@ -151,6 +151,13 @@ vi.mock('../lib/notesDeFrais', async (original) => {
   const vrai = await original<typeof import('../lib/notesDeFrais')>()
   return { ...vrai, get NOTES_DE_FRAIS_PREVUES() { return notesDeFraisGarde.leve } }
 })
+// LE DRAPEAU DE LA REPRISE QUI PROPOSE LE PLAN (`PLAN_DEPUIS_LA_BALANCE_PREVU`, lib/planDepuisLaBalance.ts, PC6), baissé :
+// la carte de la balance ne lit les catégories du dossier que levé. Même patron : levé le temps du montage de son entrée.
+const planDepuisLaBalanceGarde = vi.hoisted(() => ({ leve: false }))
+vi.mock('../lib/planDepuisLaBalance', async (original) => {
+  const vrai = await original<typeof import('../lib/planDepuisLaBalance')>()
+  return { ...vrai, get PLAN_DEPUIS_LA_BALANCE_PREVU() { return planDepuisLaBalanceGarde.leve } }
+})
 const devisContactGarde = vi.hoisted(() => ({ leve: false }))
 vi.mock('../lib/devis', async (original) => {
   const vrai = await original<typeof import('../lib/devis')>()
@@ -353,7 +360,12 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'AccesTab', fichier: 'pages/dossier/AccesTab.tsx', rendre: () => <Dossier1><AccesTab dossierId="d1" dossierNom="Dossier fictif" codeEmail="abc123" /></Dossier1> },
   { nom: 'AssistantTab', fichier: 'pages/dossier/AssistantTab.tsx', rendre: () => <Dossier1><AssistantTab dossierId="d1" dossierNom="Dossier fictif" onFermer={rien} /></Dossier1> },
-  { nom: 'BalanceCard', fichier: 'pages/dossier/BalanceCard.tsx', rendre: () => <Dossier1><BalanceCard dossierId="d1" plan={PLAN_PAR_DEFAUT} /></Dossier1> },
+  { nom: 'BalanceCard', fichier: 'pages/dossier/BalanceCard.tsx', rendre: () => <Dossier1><BalanceCard dossierId="d1" planLu={TRESORERIE} onPlanRelu={rien} /></Dossier1> },
+  // La reprise qui propose le plan (PC6) : les catégories du dossier lues en entier avant toute proposition, donc tout geste.
+  { nom: 'BalanceCard (la reprise propose le plan)', fichier: 'pages/dossier/BalanceCard.tsx', rendre: () => {
+    planDepuisLaBalanceGarde.leve = true
+    return <Dossier1><BalanceCard dossierId="d1" planLu={TRESORERIE} onPlanRelu={rien} /></Dossier1>
+  } },
   // L'onglet Caisse (étape C4), la caisse en base : sa lecture entière (les opérations, la reprise, les mouvements classés, les
   // catégories) est retenue, il attend, et n'offre ni formulaire, ni total, ni geste ; revenue vide ou refusée, l'attente se lève.
   { nom: 'CaisseTab', fichier: 'pages/dossier/CaisseTab.tsx', rendre: () => {
@@ -516,7 +528,7 @@ const ECRANS: Ecran[] = [
   { nom: 'FinancementTab (basculé)', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'ImmobilisationsTab', fichier: 'pages/dossier/ImmobilisationsTab.tsx', rendre: () => <Dossier1><ImmobilisationsTab dossierId="d1" assujettiTva={false} plan={PLAN_PAR_DEFAUT} /></Dossier1> },
   { nom: 'InformationsTab', fichier: 'pages/dossier/InformationsTab.tsx', rendre: () => (
-    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} modele={TRESORERIE} onIdentiteUpdated={rien} onReglageUpdated={rien} /></Dossier1>
+    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} modele={TRESORERIE} onIdentiteUpdated={rien} onReglageUpdated={rien} onPlanRelu={rien} /></Dossier1>
   ) },
   { nom: 'PacksTab', fichier: 'pages/dossier/PacksTab.tsx', rendre: () => <Dossier1><PacksTab dossierId="d1" dossierNom="Dossier fictif" /></Dossier1> },
   { nom: 'PiecesTab', fichier: 'pages/dossier/PiecesTab.tsx', rendre: () => <Dossier1><PiecesTab dossierId="d1" ventesParLesFactures={false} /></Dossier1> },
@@ -853,7 +865,7 @@ beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-09T10:00:00Z'))
 })
-afterEach(() => { cleanup(); caisseDuGarde.levee = false; devisContactGarde.leve = false; achatsGarde.leve = false; notesDeFraisGarde.leve = false })
+afterEach(() => { cleanup(); caisseDuGarde.levee = false; planDepuisLaBalanceGarde.leve = false; devisContactGarde.leve = false; achatsGarde.leve = false; notesDeFraisGarde.leve = false })
 afterAll(() => { vi.useRealTimers() })
 
 // LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : la page d'un dossier le lit avec lui (`plan_du_dossier`) et ne monte
