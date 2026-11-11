@@ -2079,8 +2079,8 @@ describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
     await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
     const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
     expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual([
-      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250331'],
-      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250331'],
+      ['BQ', 'BQ00001', 'Relevé du 31/03/2025', '20250331'],
+      ['BQ', 'BQ00001', 'Relevé du 31/03/2025', '20250331'],
     ])
     expect(lignes.map((l) => l[4]).sort()).toEqual(['512000', '627000'])
   })
@@ -2102,7 +2102,9 @@ describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
     await screen.findByText(/2 écritures proposées/)
     await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
     const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
-    expect(csv).toMatch(/Relevé bancaire : releve-mars-2025\.pdf/)
+    // La référence neutre du relevé, jamais le nom du fichier importé (INAL4-Q1).
+    expect(csv).toMatch(/Relevé du 31\/03\/2025/)
+    expect(csv).not.toMatch(/releve-mars-2025/)
     expect(csv).not.toMatch(/;justificatif(\r\n|$)/)
   })
 
@@ -2323,8 +2325,8 @@ describe('EcrituresTab — les virements personnels', () => {
     await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
     const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
     expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual([
-      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250320'],
-      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250320'],
+      ['BQ', 'BQ00001', 'Relevé du 20/03/2025', '20250320'],
+      ['BQ', 'BQ00001', 'Relevé du 20/03/2025', '20250320'],
     ])
     expect(lignes.map((l) => `${l[4]} ${l[5]}`).sort()).toEqual(["108000 Compte de l'exploitant", '512000 Banque'])
   })
@@ -2369,7 +2371,7 @@ describe('EcrituresTab — les échéances d’emprunt', () => {
 
     await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
     const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
-    expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual(Array(4).fill(['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250306']))
+    expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual(Array(4).fill(['BQ', 'BQ00001', 'Relevé du 06/03/2025', '20250306']))
     expect(lignes.map((l) => l[4]).sort()).toEqual(['164000', '512000', '616800', '661100'])
   })
 
@@ -2430,9 +2432,9 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
     await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
     const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
     expect(lignes.map((l) => [l[0], l[2], l[8]])).toEqual([
-      ['BQ', 'BQ00001', 'releve-mars-2025.pdf'],
-      ['BQ', 'BQ00001', 'releve-mars-2025.pdf'],
-      ['BQ', 'BQ00001', 'releve-mars-2025.pdf'],
+      ['BQ', 'BQ00001', 'Relevé du 31/03/2025'],
+      ['BQ', 'BQ00001', 'Relevé du 31/03/2025'],
+      ['BQ', 'BQ00001', 'Relevé du 31/03/2025'],
     ])
   })
 
@@ -2668,8 +2670,8 @@ describe('EcrituresTab — les mouvements écrits sur un compte de bilan', () =>
     await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
     const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
     expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual([
-      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250315'],
-      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250315'],
+      ['BQ', 'BQ00001', 'Relevé du 15/03/2025', '20250315'],
+      ['BQ', 'BQ00001', 'Relevé du 15/03/2025', '20250315'],
     ])
     expect(lignes.map((l) => `${l[4]} ${l[5]}`).sort()).toEqual(['512000 Banque', '580000 Virements internes'])
   })

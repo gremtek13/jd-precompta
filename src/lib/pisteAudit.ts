@@ -1,6 +1,6 @@
 import { libelleEcritureANouveau } from './aNouveaux'
 import { resteRegleParSaReprise, type PiecesCitees } from './facturesSources'
-import { mouvementJustifieParLeReleve } from './affectationBanque'
+import { mouvementJustifieParLeReleve, referenceDuReleve } from './affectationBanque'
 import { nomDuVehicule } from './forfaitKilometrique'
 import { LONGUEUR_DE_L_EMPREINTE_COURTE, referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
 import { justificatifDeLaCaisse, operationsDe, type OperationsDeCaisse } from './controlesDeLaCaisse'
@@ -102,11 +102,11 @@ export function rupturesPisteAudit(
   return ruptures
 }
 
-// Ce que la colonne « Fichier justificatif » dit d'un mouvement justifié par le relevé : le relevé, et
-// son nom quand l'import l'a gardé — un export CSV nommé « export.csv » ne dirait pas seul ce qu'il est.
-function justificatifDuReleve(ligne: Pick<LigneBancaire, 'source_fichier'>): string {
-  const nom = ligne.source_fichier?.trim()
-  return nom ? `Relevé bancaire : ${nom}` : 'Relevé bancaire'
+// Ce que la colonne « Fichier justificatif » dit d'un mouvement justifié par le relevé : le relevé, sous la référence que le
+// FEC lui donne (`referenceDuReleve`, « Relevé du JJ/MM/AAAA »), jamais le nom du fichier importé, qui peut nommer un patient
+// (INAL4-Q1, 11/11/2026 ; la colonne d'une pièce ne le dit plus depuis JJ1Q1-Q1).
+function justificatifDuReleve(ligne: Pick<LigneBancaire, 'date'>): string {
+  return referenceDuReleve(ligne)
 }
 
 // L'écriture d'un mouvement justifié par le relevé : sans pièce, et sur un mouvement qui l'est.

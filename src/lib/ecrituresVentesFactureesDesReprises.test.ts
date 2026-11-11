@@ -144,7 +144,7 @@ describe('drapeau levé : les écritures d’une reprise, celles que la base rec
         lignes: [`${P.valeurs_a_l_encaissement} debit 2003`, `${P.tva_collectee} credit 334`, `${P.prestations_de_services} credit 1669`].sort(),
       },
       {
-        genre: 'mouvement', date: '2027-02-12', journal: 'BQ', pieceRef: 'Relevé bancaire', pieceDate: '2027-02-12',
+        genre: 'mouvement', date: '2027-02-12', journal: 'BQ', pieceRef: 'Relevé du 12/02/2027', pieceDate: '2027-02-12',
         // Jamais le libellé de la banque, qui nomme qui a payé (JJ1).
         libelle: 'Relevé du 12/02/2027 — FA-2026-118',
         lignes: [`${P.valeurs_a_l_encaissement} credit 2003@m1`, `${P.banque} debit 2003@m1`],

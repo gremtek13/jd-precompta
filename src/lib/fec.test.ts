@@ -746,10 +746,10 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
   it('les porte au journal de banque, un numéro par mouvement, le relevé pour pièce', () => {
     const rows = colonnes(genererFec(brouillon, [], [], [], modeleDeTest('tresorerie'), [cpam, frais], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(rows.map((r) => [r[0], r[1], r[2], r[3], r[4], r[8], r[9]])).toEqual([
-      ['BQ', 'Banque', 'BQ00001', '20260228', '627000', 'Relevé bancaire', '20260228'],
-      ['BQ', 'Banque', 'BQ00001', '20260228', COMPTE_BANQUE, 'Relevé bancaire', '20260228'],
-      ['BQ', 'Banque', 'BQ00002', '20260312', COMPTE_BANQUE, 'releve-mars-2026.pdf', '20260312'],
-      ['BQ', 'Banque', 'BQ00002', '20260312', '706000', 'releve-mars-2026.pdf', '20260312'],
+      ['BQ', 'Banque', 'BQ00001', '20260228', '627000', 'Relevé du 28/02/2026', '20260228'],
+      ['BQ', 'Banque', 'BQ00001', '20260228', COMPTE_BANQUE, 'Relevé du 28/02/2026', '20260228'],
+      ['BQ', 'Banque', 'BQ00002', '20260312', COMPTE_BANQUE, 'Relevé du 12/03/2026', '20260312'],
+      ['BQ', 'Banque', 'BQ00002', '20260312', '706000', 'Relevé du 12/03/2026', '20260312'],
     ])
     // Aucun compte auxiliaire : l'écriture va de la catégorie à la banque, sans tiers.
     expect(rows.every((r) => r[6] === '' && r[7] === '')).toBe(true)
@@ -788,8 +788,8 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ]
     const rows = colonnes(genererFec(ecritures, [], [], [], modeleDeTest('tresorerie'), [prelevement], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[8], r[11], r[12]])).toEqual([
-      ['BQ', 'BQ00001', '20260320', '108000', "Compte de l'exploitant", 'releve-mars-2026.pdf', '500,00', '0,00'],
-      ['BQ', 'BQ00001', '20260320', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '500,00'],
+      ['BQ', 'BQ00001', '20260320', '108000', "Compte de l'exploitant", 'Relevé du 20/03/2026', '500,00', '0,00'],
+      ['BQ', 'BQ00001', '20260320', COMPTE_BANQUE, 'Banque', 'Relevé du 20/03/2026', '0,00', '500,00'],
     ])
     // Le garde symétrique : remis à traiter, le même mouvement n'est plus justifié par le relevé.
     const remis = { ...prelevement, statut: 'non_rapprochee' as const, prelevement_personnel: false }
@@ -812,10 +812,10 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ]
     const rows = colonnes(genererFec(ecritures, [], [], [], modeleDeTest('tresorerie'), [pret], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[4], r[5], r[8], r[11], r[12]])).toEqual([
-      ['BQ', 'BQ00001', '164000', 'Emprunts auprès des établissements de crédit', 'releve-mars-2026.pdf', '482,97', '0,00'],
-      ['BQ', 'BQ00001', '616800', 'Assurance des emprunts', 'releve-mars-2026.pdf', '21,03', '0,00'],
-      ['BQ', 'BQ00001', '661100', 'Intérêts des emprunts et dettes', 'releve-mars-2026.pdf', '36,00', '0,00'],
-      ['BQ', 'BQ00001', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '540,00'],
+      ['BQ', 'BQ00001', '164000', 'Emprunts auprès des établissements de crédit', 'Relevé du 06/03/2026', '482,97', '0,00'],
+      ['BQ', 'BQ00001', '616800', 'Assurance des emprunts', 'Relevé du 06/03/2026', '21,03', '0,00'],
+      ['BQ', 'BQ00001', '661100', 'Intérêts des emprunts et dettes', 'Relevé du 06/03/2026', '36,00', '0,00'],
+      ['BQ', 'BQ00001', COMPTE_BANQUE, 'Banque', 'Relevé du 06/03/2026', '0,00', '540,00'],
     ])
     // Le garde symétrique : une fois le rapprochement retiré, la même écriture n'a plus de justificatif.
     const retire = { ...pret, statut: 'non_rapprochee' as const, emprunt_id: null }
@@ -835,9 +835,9 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ]
     const rows = colonnes(genererFec(ecritures, [], [], [], modeleDeTest('tresorerie'), [urssaf], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[4], r[5], r[8], r[11], r[12]])).toEqual([
-      ['BQ', 'BQ00001', '108000', "Compte de l'exploitant", 'releve-mars-2026.pdf', '48,50', '0,00'],
-      ['BQ', 'BQ00001', '646000', "Cotisations sociales personnelles de l'exploitant", 'releve-mars-2026.pdf', '451,50', '0,00'],
-      ['BQ', 'BQ00001', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '500,00'],
+      ['BQ', 'BQ00001', '108000', "Compte de l'exploitant", 'Relevé du 05/03/2026', '48,50', '0,00'],
+      ['BQ', 'BQ00001', '646000', "Cotisations sociales personnelles de l'exploitant", 'Relevé du 05/03/2026', '451,50', '0,00'],
+      ['BQ', 'BQ00001', COMPTE_BANQUE, 'Banque', 'Relevé du 05/03/2026', '0,00', '500,00'],
     ])
     // Le garde symétrique : le rapprochement annulé, la même écriture n'a plus de justificatif.
     const annule = { ...urssaf, statut: 'non_rapprochee' as const, cotisation_id: null }
@@ -857,9 +857,9 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ]
     const rows = colonnes(genererFec(ecritures, [], [], [], modeleDeTest('tresorerie'), [telephone], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[8], r[11], r[12]])).toEqual([
-      ['BQ', 'BQ00001', '20260315', '108000', 'releve-mars-2026.pdf', '36,00', '0,00'],
-      ['BQ', 'BQ00001', '20260315', '626000', 'releve-mars-2026.pdf', '84,00', '0,00'],
-      ['BQ', 'BQ00001', '20260315', COMPTE_BANQUE, 'releve-mars-2026.pdf', '0,00', '120,00'],
+      ['BQ', 'BQ00001', '20260315', '108000', 'Relevé du 15/03/2026', '36,00', '0,00'],
+      ['BQ', 'BQ00001', '20260315', '626000', 'Relevé du 15/03/2026', '84,00', '0,00'],
+      ['BQ', 'BQ00001', '20260315', COMPTE_BANQUE, 'Relevé du 15/03/2026', '0,00', '120,00'],
     ])
     // Le garde symétrique : la ventilation annulée, la même écriture n'a plus de justificatif.
     const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null }
@@ -883,10 +883,10 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ]
     const rows = colonnes(genererFec(ecritures, [], [], [], modeleDeTest('tresorerie'), [depot, pret], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[8], r[11], r[12]])).toEqual([
-      ['BQ', 'BQ00001', '20260302', '275000', 'Dépôts et cautionnements versés', 'releve-mars-2026.pdf', '1500,00', '0,00'],
-      ['BQ', 'BQ00001', '20260302', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '1500,00'],
-      ['BQ', 'BQ00002', '20260309', '274100', 'Prêts', 'releve-mars-2026.pdf', '800,00', '0,00'],
-      ['BQ', 'BQ00002', '20260309', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '800,00'],
+      ['BQ', 'BQ00001', '20260302', '275000', 'Dépôts et cautionnements versés', 'Relevé du 02/03/2026', '1500,00', '0,00'],
+      ['BQ', 'BQ00001', '20260302', COMPTE_BANQUE, 'Banque', 'Relevé du 02/03/2026', '0,00', '1500,00'],
+      ['BQ', 'BQ00002', '20260309', '274100', 'Prêts', 'Relevé du 09/03/2026', '800,00', '0,00'],
+      ['BQ', 'BQ00002', '20260309', COMPTE_BANQUE, 'Banque', 'Relevé du 09/03/2026', '0,00', '800,00'],
     ])
     // Le garde symétrique : remis à traiter, le même mouvement n'a plus de justificatif.
     const remis = { ...depot, statut: 'non_rapprochee' as const, compte_bilan: null, declaration_tva_id: null }
@@ -1037,8 +1037,8 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
     const fec = genererFec([...liquidation, ...paiement], [], [], [], modeleDeTest('tresorerie'), [prelevement], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     const rows = colonnes(fec).slice(1)
     expect(rows.filter((r) => r[0] === 'BQ').map((r) => [r[2], r[3], r[4], r[8], r[11], r[12]])).toEqual([
-      ['BQ00001', '20260420', '445510', 'releve-avril-2026.pdf', '79,00', '0,00'],
-      ['BQ00001', '20260420', COMPTE_BANQUE, 'releve-avril-2026.pdf', '0,00', '79,00'],
+      ['BQ00001', '20260420', '445510', 'Relevé du 20/04/2026', '79,00', '0,00'],
+      ['BQ00001', '20260420', COMPTE_BANQUE, 'Relevé du 20/04/2026', '0,00', '79,00'],
     ])
     expect(anomaliesDgfip(fec)).toEqual([])
     expect(desequilibresDgfip(fec)).toEqual([])

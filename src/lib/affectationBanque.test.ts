@@ -367,10 +367,12 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
 })
 
 describe('referenceDuReleve — la pièce d’un mouvement affecté', () => {
-  it('nomme le fichier du relevé quand l’import l’a gardé, sinon dit ce qu’il est', () => {
-    expect(referenceDuReleve({ source_fichier: 'releve-mars-2025.pdf' })).toBe('releve-mars-2025.pdf')
-    expect(referenceDuReleve({ source_fichier: null })).toBe('Relevé bancaire')
-    expect(referenceDuReleve({ source_fichier: '   ' })).toBe('Relevé bancaire')
+  it('une référence neutre, la date du mouvement, jamais le nom du fichier importé (INAL4-Q1)', () => {
+    expect(referenceDuReleve({ date: '2025-03-07' })).toBe('Relevé du 07/03/2025')
+    expect(referenceDuReleve({ date: '2025-12-31' })).toBe('Relevé du 31/12/2025')
+    // Le type le tient : la fonction ne reçoit pas le nom du fichier. Un mouvement entier ne le fait pas passer non plus.
+    const mouvement = { date: '2026-01-02', source_fichier: 'releve-patient-fictif.pdf' }
+    expect(referenceDuReleve(mouvement)).toBe('Relevé du 02/01/2026')
   })
 })
 

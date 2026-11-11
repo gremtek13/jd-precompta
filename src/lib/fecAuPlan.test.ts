@@ -23,6 +23,11 @@ import { colonnes } from '../test/fecDgfip'
 // son empreinte courte, ici sans empreinte : le début de son identifiant). Les deux empreintes des dossiers qui portent des
 // pièces ont été relevées de nouveau, après avoir confronté colonne par colonne le fichier d'avant au fichier neuf : seule
 // la colonne PieceRef diffère (« achat.pdf » devenu « 20260310-achat », …). Les dossiers basculés n'en ont pas : inchangés.
+//
+// INAL4-Q1 (11/11/2026) : la PieceRef d'un mouvement du relevé n'est plus le nom du fichier importé mais `referenceDuReleve`
+// (« Relevé du JJ/MM/AAAA »). Les deux empreintes des dossiers basculés ont été relevées de nouveau, après avoir ramené cette
+// seule colonne à l'ancien nom dans le fichier neuf : il redonnait, à l'octet près, les deux empreintes d'avant (deux lignes
+// changées dans chaque modèle). Les dossiers sans mouvement : inchangés.
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', nom_fichier: `${id}.pdf`, chemin_stockage: '', statut: 'validee',
@@ -136,12 +141,12 @@ describe('le FEC sous le plan par défaut, à l’octet près', () => {
   })
   it('le dossier basculé en trésorerie, ses ventes facturées', () => {
     expect(empreinte(fecDuDossierBascule('tresorerie'))).toEqual({
-      sha256: 'cadf8491bf9f3d8aabb032da5180291171b2258be7429c39ab6575abcba3d3d3', octets: 1373, lignes: 9,
+      sha256: '7e5fe8e0dbeb987f77c472a8b6b09047bd8659aea0fbb1c92e8c7fee030ced47', octets: 1381, lignes: 9,
     })
   })
   it('le dossier basculé en engagement, ses ventes facturées et leur lettrage', () => {
     expect(empreinte(fecDuDossierBascule('engagement'))).toEqual({
-      sha256: '7f2339a80dca9544a4e3878bac44ac6c213fe0f48cd1a9ecd12455d002555889', octets: 3522, lignes: 23,
+      sha256: '53c34dd6279e30f9644c026aec574d752c346eba91972cbcbf6510d5dcee6851', octets: 3530, lignes: 23,
     })
   })
 })
