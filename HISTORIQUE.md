@@ -50811,3 +50811,14 @@ Tout derrière `LETTRES_DE_MISSION_PREVUES`, baissé. **La carte « Lettres de m
 **Le papier signé** : `DocumentsTab` lit les lettres qui le citent (`lireLesPapiersSignes`) et refuse avant le clic suppression et « C'est une facture » ; un 23503 de cette clé se dit en clair.
 **Les missions en vigueur** (onglet Informations d'un dossier client) : colonnes sans montant (`COLONNES_SANS_MONTANT`). La policy lit sur le dossier du CABINET : un membre qui n'y est pas assigné lirait zéro ligne sans erreur — la carte lit d'abord la ligne de ce dossier et dit « pas ouvert » plutôt que « aucune ». Pour les membres du seul dossier client : une fonction à créer (LM5-Q2). La RLS ne masque pas une colonne : seul un `select` choisi, ou une fonction, tait les honoraires.
 LM4-Q1 et LM4-Q2 suivies à la recommandation (A) : la sous-traitance exigée de toute lettre (la base le fait), le numéro d'inscription dans les conditions générales, que la carte rappelle sans rien refuser.
+
+### 11/11/2026 — CREATE-CLIENT-ACCESS ET DELETE-CABINET REDÉPLOYÉES (LM2), CELLE-CI PAR UNE LIGNE QUI IMPORTE LE DÉPÔT
+
+Après la n° 336 (73e6883), les deux fonctions que LM2 change sont en ligne, chacune par une ligne qui importe son fichier
+du dépôt public au commit 73e68833… : `delete-cabinet` v6 (elle importait déjà, à 6c8d4ca) et `create-client-access` v20,
+qui se recopiait jusque-là (v19, la copie de 23Q2-Q2) et ne se recopie plus. `verify_jwt` à `false` pour les deux, comme
+`supabase/config.toml`. Les deux versions portent aussi le bloc DEUX FACTEURS de C7, inerte tant que son drapeau
+(`DEUX_FACTEURS_EXIGES_EN_BASE`) est baissé ; et la garde du dossier du cabinet lit la ligne du cabinet ENTIÈRE (`*`), si
+bien qu'avant la migration `dossier_du_cabinet` la colonne absente ne désigne rien et rien ne change. `allerretour.py` :
+les deux copies importent le fichier de 73e6883, identique au dépôt (475 et 268 lignes). Un appel `OPTIONS` rend 200 et
+un `POST` sans session 401 sur chacune : le module importé se charge et refuse avant toute lecture.

@@ -834,7 +834,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   décode les `\uXXXX` → « Déployer une Edge Function via l'outil MCP décode les échappements » ; les bordures `─`
   répétées d'abord par `bordures.py`, le texte ENVOYÉ relu dans le journal → « LES BORDURES SE RECOPIENT ».
   `agent-comptable`, `extract-piece`, depuis le 02/11/2026 `send-email`, `plateforme-agreee` et `superpdp-emit`, depuis
-  le 04/11/2026 `receive-email` et `delete-cabinet` ne se recopient plus (de 10 à 300 Ko ; la recopie de l'assistant
+  le 04/11/2026 `receive-email` et `delete-cabinet`, depuis le 11/11/2026 `create-client-access` ne se recopient plus (de 10 à 300 Ko ; la recopie de l'assistant
   est refusée ou coupée, celle des autres coûtait le fichier entier à chaque fois) : une ligne IMPORTE leur fichier du
   dépôt public à un commit écrit en entier, `allerretour.py` compare le fichier de ce commit au dépôt, et revenir en
   arrière ne change que le commit → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT », « L'ASSISTANT ET EXTRACT-PIECE REDÉPLOYÉS
