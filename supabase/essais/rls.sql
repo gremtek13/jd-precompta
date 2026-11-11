@@ -54,6 +54,10 @@
 --      seul avec lui (contrôle positif), aucun dépôt ailleurs que sous `<son dossier>/logos/`, aucune mise à jour, la suppression
 --      au chef du cabinet du dossier (lue au catalogue) — et quatre mutations à lui ; avant sa migration, une ligne « EN
 --      ATTENTE ».
+--   6ter. Les ORIGINAUX des factures reprises dans ce seau (A8d2a ; bloc « Les originaux des factures reprises », en fin de
+--      fichier) : OI1 à OI7 — sous `<dossier>/imports/`, rien au client, même « Ventes », le cabinet du dossier seul en
+--      lecture et en dépôt, sous la forme exacte du chemin, aucune mise à jour — et six mutations ; avant la migration
+--      `originaux_des_imports`, une ligne « EN ATTENTE ».
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -710,6 +714,14 @@
 -- texte transmis, le bloc tel qu'il est ici, exécuté depuis une table d'un seul tenant, rend sa longueur et son
 -- empreinte (18 946 caractères, f5c5bed8f977ae99fdc09a6319a2a0c9) ; les deux tables de résultats `on commit drop`. HR
 -- jugé : huit lignes d'invariants, 0 en faute, six mutations sur six qui mordent, sous postgres.
+--
+-- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (A8d2c, ligne 51.5 : migration `originaux_des_imports`, A8d2a,
+-- PRÉPARÉE, pas appliquée), qui réserve la lecture de `<dossier>/imports/` du seau `ventes` au cabinet du dossier et y
+-- ouvre le dépôt d'un original sous la forme exacte du chemin. Le bloc OI (OI1 à OI7, M-OI1 à M-OI6) ; EN ATTENTE sans la
+-- migration. Joué ENTIER, en une transaction, sur une copie de la réplique d'A8d2a : avec la migration, 142 lignes
+-- d'invariants, 0 en faute, 103 mutations sur 103 ; les deux policies rendues à la forme large (le sous-arbre lu et déposé
+-- sous `gere_les_ventes`), OI3, OI4, OI5 et les deux OI7 en faute ; après son retour, 133 lignes, 0 en faute, 97 sur 97,
+-- OI EN ATTENTE. Ce qu'il rend : HISTORIQUE.md, « A8D2C ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -2337,6 +2349,233 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', 'SV6. aucune policy de mise à jour n''atteint le seau des ventes (lecture du catalogue)',
     'cible', 'storage.objects', 'observe', n || ' policy(s)', 'ok', n = 0);
   verdicts := verdicts || jsonb_build_object('controle', 'SV. le jeu d''essai du seau des ventes s''est construit', 'cible', 'ventes',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ═══ Les originaux des factures reprises dans le seau des ventes (A8d2a, ligne 51.5) ═════════════════════════════════
+--
+-- La migration `originaux_des_imports` range l'ORIGINAL d'une facture reprise de l'ancien logiciel sous
+-- `<dossier>/imports/<lot>/<empreinte>.<pdf|xml|csv>` du seau `ventes`. Elle RESSERRE la lecture de ce sous-arbre au cabinet
+-- du dossier (`ventes_lecture`, `admin_du_dossier`) — le client « Ventes », qui lit le logo de son dossier, n'y lit rien —
+-- et ouvre le dépôt d'un original au cabinet du dossier seul, sous la forme EXACTE du chemin (`ventes_depot_d_un_original`).
+-- Les questions, aux quatre profils : l'anonyme et un compte rattaché à rien ne voient aucun original (OI1, OI2) ; le client
+-- qui porte « Ventes » et « Banque » ne voit aucun original, même de son dossier, et voit toujours le logo de son dossier —
+-- le reste du seau comme hier (OI3, son contrôle POSITIF) ; le chef du cabinet voit les originaux des dossiers de son
+-- cabinet (OI3bis) ; ni le client, même sous la forme exacte et dans son dossier, ni un inconnu ne déposent un original
+-- (OI4) ; le cabinet ne dépose que sous la forme exacte — ni une autre extension, ni un nom qui n'est pas une empreinte, ni
+-- hors d'un lot, ni en majuscules, ni un segment de plus (OI5) ; personne ne modifie un original (OI6) ; au catalogue, la
+-- policy de dépôt est permissive, d'insertion, `to authenticated`, sur `admin_du_dossier`, et la lecture garde son cas
+-- `imports/` (OI7). Le jeu : deux originaux et un logo rangés par le propriétaire, dans une sous-transaction annulée.
+-- Six mutations, qui doivent mordre. EN ATTENTE tant que ni la policy de dépôt ni le cas `imports/` de la lecture ne
+-- sont en base ; l'un sans l'autre est un état partiel, que OI7 dit en faute. Ce que la migration refuse et accepte de
+-- plus (les bornes du seau, la fonction des paramètres) est éprouvé par `originauxDesImports.sql`.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client text := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  autre_dossier     text := '001c7ed7-c23b-4590-901e-693489f8af24';
+  lot text := '5b0f3c1e-8a2d-4c6b-9e7f-1a2b3c4d5e6f';
+  original_sien  text := 'ac538d93-7da3-4403-bca6-2d7836810a6f/imports/5b0f3c1e-8a2d-4c6b-9e7f-1a2b3c4d5e6f/' || repeat('a', 64) || '.pdf';
+  original_autre text := '001c7ed7-c23b-4590-901e-693489f8af24/imports/5b0f3c1e-8a2d-4c6b-9e7f-1a2b3c4d5e6f/' || repeat('b', 64) || '.xml';
+  logo_sien      text := 'ac538d93-7da3-4403-bca6-2d7836810a6f/logos/' || repeat('c', 64) || '.png';
+  depot_exact    text := 'ac538d93-7da3-4403-bca6-2d7836810a6f/imports/5b0f3c1e-8a2d-4c6b-9e7f-1a2b3c4d5e6f/' || repeat('d', 64) || '.csv';
+  formes text[];
+  forme text;
+  qui uuid;
+  depot int; lecture int;
+  n bigint; originaux bigint; logos bigint; touchees int; accepte boolean; motif text; erreur text; construit boolean := false;
+  refusees int; acceptees text[];
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  select count(*) filter (where p.polname = 'ventes_depot_d_un_original'),
+         count(*) filter (where p.polname = 'ventes_lecture' and pg_get_expr(p.polqual, p.polrelid) like '%/imports/%')
+    into depot, lecture
+    from pg_policy p where p.polrelid = 'storage.objects'::regclass;
+  if depot = 0 and lecture = 0 then
+    insert into rls_verdict values ('OI. les originaux des factures reprises : EN ATTENTE de la migration originaux_des_imports',
+      'storage.objects (ventes, imports/)', 'absente : le sous-arbre se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    insert into storage.objects (bucket_id, name, metadata) values
+      ('ventes', original_sien, '{"size": 10, "mimetype": "application/pdf"}'),
+      ('ventes', original_autre, '{"size": 10, "mimetype": "text/plain"}'),
+      ('ventes', logo_sien, '{"size": 10, "mimetype": "image/png"}');
+    construit := true;
+    -- « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : les dossiers du
+    -- client basculent, par le propriétaire sans session, le temps de la sous-transaction ; puis ses deux droits.
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true
+     where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
+    update memberships set droit_ventes = true, droit_banque = true where user_id = client;
+
+    -- OI1 et OI2 : l'anonyme, puis un compte rattaché à rien.
+    set local role anon;
+    perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (original_sien, original_autre);
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'OI1. anonyme ne voit aucun original d''une facture reprise', 'cible', 'ventes (imports/)',
+      'observe', n::text, 'ok', n = 0);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (original_sien, original_autre);
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'OI2. inconnu authentifié ne voit aucun original d''une facture reprise', 'cible', 'ventes (imports/)',
+      'observe', n::text, 'ok', n = 0);
+    -- M-OI1 : OI1 rejoué par le propriétaire, qui voit les deux.
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (original_sien, original_autre);
+    mutations := mutations || jsonb_build_object('mutation', 'M-OI1 — OI1 rejoué par le propriétaire', 'attendu', 'les deux originaux vus',
+      'observe', n || ' vu(s)', 'mord', n = 2);
+
+    -- OI3 : le client « Ventes » et « Banque » — aucun original, même de son dossier ; le logo de son dossier, toujours.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) filter (where name in (original_sien, original_autre)), count(*) filter (where name = logo_sien)
+      into originaux, logos from storage.objects where bucket_id = 'ventes' and name in (original_sien, original_autre, logo_sien);
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'OI3. client « Ventes » ne voit aucun original, même de son dossier, et voit le logo de son dossier (contrôle positif)',
+      'cible', 'ventes (imports/, logos/)', 'observe', originaux || ' original(aux), ' || logos || ' logo(s)', 'ok', originaux = 0 and logos = 1);
+    -- M-OI3 : OI3 rejoué sous le chef, qui voit les deux originaux.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (original_sien, original_autre);
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-OI3 — OI3 rejoué sous le chef du cabinet', 'attendu', 'les deux originaux vus',
+      'observe', n || ' vu(s)', 'mord', n = 2);
+    -- OI3bis : le chef voit les originaux des dossiers de son cabinet — le contrôle positif de la lecture resserrée.
+    verdicts := verdicts || jsonb_build_object('controle', 'OI3bis. le chef du cabinet voit les originaux des dossiers de son cabinet (contrôle positif)',
+      'cible', 'ventes (imports/)', 'observe', n::text, 'ok', n = 2);
+
+    -- OI4 : ni le client, sous la forme exacte et dans son dossier, ni un inconnu ne déposent un original.
+    foreach qui in array array[client, inconnu] loop
+      accepte := false; motif := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', qui, 'role', 'authenticated')::text, true);
+        insert into storage.objects (bucket_id, name, metadata) values ('ventes', depot_exact, '{"size": 10, "mimetype": "text/csv"}');
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'OI4. ni le client « Ventes » ni un inconnu ne déposent un original, même sous la forme exacte',
+        'cible', 'ventes (insert, ' || case when qui = client then 'client' else 'inconnu' end || ')',
+        'observe', case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif, '?') end, 'ok', (not accepte) and motif = '42501');
+    end loop;
+    -- M-OI4 : OI4 rejoué par le chef — il dépose.
+    accepte := false; motif := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into storage.objects (bucket_id, name, metadata) values ('ventes', depot_exact, '{"size": 10, "mimetype": "text/csv"}');
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-OI4 — OI4 rejoué par le chef du cabinet', 'attendu', 'le dépôt accepté',
+      'observe', case when accepte then 'accepté' else 'refusé par ' || coalesce(motif, '?') end, 'mord', accepte);
+
+    -- OI5 : le chef ne dépose que sous la forme exacte.
+    formes := array[
+      dossier_du_client || '/imports/' || lot || '/' || repeat('d', 64) || '.exe',
+      dossier_du_client || '/imports/' || lot || '/facture.pdf',
+      dossier_du_client || '/imports/' || repeat('d', 64) || '.pdf',
+      dossier_du_client || '/imports/' || upper(lot) || '/' || repeat('d', 64) || '.pdf',
+      dossier_du_client || '/imports/' || lot || '/' || repeat('D', 64) || '.pdf',
+      dossier_du_client || '/imports/' || lot || '/' || repeat('d', 64) || '.pdf/x',
+      dossier_du_client || '/imports/' || lot || '/' || repeat('d', 63) || '.pdf',
+      'pas-un-dossier/imports/' || lot || '/' || repeat('d', 64) || '.pdf'];
+    refusees := 0; acceptees := '{}';
+    foreach forme in array formes loop
+      accepte := false; motif := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        insert into storage.objects (bucket_id, name, metadata) values ('ventes', forme, '{"size": 10, "mimetype": "application/pdf"}');
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate;
+      end;
+      reset role;
+      if (not accepte) and motif = '42501' then refusees := refusees + 1; else acceptees := acceptees || (coalesce(motif, 'accepté') || ' : ' || forme); end if;
+    end loop;
+    verdicts := verdicts || jsonb_build_object('controle', 'OI5. le cabinet ne dépose un original que sous la forme exacte du chemin',
+      'cible', 'ventes (insert, chef, huit formes)', 'observe', refusees || ' refusée(s) en 42501' ||
+        case when cardinality(acceptees) > 0 then ' ; ' || array_to_string(acceptees, ' ; ') else '' end,
+      'ok', refusees = cardinality(formes));
+    -- M-OI5 : la forme exacte, une autre empreinte et le xml, par le chef — acceptée.
+    accepte := false; motif := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into storage.objects (bucket_id, name, metadata)
+        values ('ventes', dossier_du_client || '/imports/' || lot || '/' || repeat('e', 64) || '.xml', '{"size": 10, "mimetype": "text/plain"}');
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-OI5 — OI5 rejoué sous la forme exacte', 'attendu', 'le dépôt accepté',
+      'observe', case when accepte then 'accepté' else 'refusé par ' || coalesce(motif, '?') end, 'mord', accepte);
+
+    -- OI6 : personne ne modifie un original — le client, puis le chef.
+    foreach qui in array array[client, chef] loop
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', qui, 'role', 'authenticated')::text, true);
+      update storage.objects set metadata = '{"size": 20, "mimetype": "application/pdf"}'
+       where bucket_id = 'ventes' and name in (original_sien, original_autre);
+      get diagnostics touchees = row_count;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'OI6. personne ne modifie un original d''une facture reprise',
+        'cible', 'ventes (imports/, ' || case when qui = client then 'client « Ventes »' else 'chef' end || ')',
+        'observe', touchees || ' ligne(s) touchée(s)', 'ok', touchees = 0);
+    end loop;
+    -- M-OI6 : OI6 rejoué par le propriétaire, qui touche les deux lignes.
+    update storage.objects set metadata = '{"size": 20, "mimetype": "application/pdf"}'
+     where bucket_id = 'ventes' and name in (original_sien, original_autre);
+    get diagnostics touchees = row_count;
+    mutations := mutations || jsonb_build_object('mutation', 'M-OI6 — OI6 rejoué par le propriétaire', 'attendu', 'les deux lignes touchées',
+      'observe', touchees || ' ligne(s)', 'mord', touchees = 2);
+
+    -- M-OI3b : OI3 rejoué sur le logo seul — le client « Ventes » le voit : la lecture du client n'est pas aveugle.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name = logo_sien;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-OI3b — OI3 rejoué sur le logo de son dossier', 'attendu', 'le logo vu',
+      'observe', n || ' vu(s)', 'mord', n = 1);
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+
+  -- OI7 : au catalogue, la policy de dépôt — permissive, d'insertion, au seul rôle authenticated, sur admin_du_dossier et
+  -- la forme exacte — et le cas `imports/` de la lecture, sur admin_du_dossier.
+  select count(*) into n from pg_policy p
+   where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_depot_d_un_original' and p.polcmd = 'a' and p.polpermissive
+     and p.polroles = array['authenticated'::regrole]::oid[]
+     and pg_get_expr(p.polwithcheck, p.polrelid) like '%admin\_du\_dossier%'
+     and pg_get_expr(p.polwithcheck, p.polrelid) like '%/imports/%{64}\\.(pdf|xml|csv)$%';
+  verdicts := verdicts || jsonb_build_object('controle', 'OI7. la policy de dépôt d''un original : permissive, d''insertion, to authenticated, sur admin_du_dossier et la forme exacte (lecture du catalogue)',
+    'cible', 'ventes_depot_d_un_original', 'observe', case when n = 1 then 'présente, telle quelle' else 'ABSENTE OU ÉLARGIE' end, 'ok', n = 1);
+  select count(*) into n from pg_policy p
+   where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_lecture' and p.polcmd = 'r'
+     and pg_get_expr(p.polqual, p.polrelid) ~ '/imports/''::text\) THEN (public\.)?admin_du_dossier\(';
+  verdicts := verdicts || jsonb_build_object('controle', 'OI7. la lecture du seau des ventes réserve imports/ au cabinet du dossier (lecture du catalogue)',
+    'cible', 'ventes_lecture', 'observe', case when n = 1 then 'cas imports/ sur admin_du_dossier' else 'ABSENT OU ÉLARGI' end, 'ok', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'OI. le jeu d''essai des originaux s''est construit', 'cible', 'ventes (imports/)',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

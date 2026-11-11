@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { nomUnique, slugify } from './format'
 import type { Categorie, Piece } from './types'
-import { preparerContenu } from './bornesStockage'
+import { ORIGINAUX_DES_IMPORTS_PREVUS, preparerContenu } from './bornesStockage'
 
 const FOLDER_BY_TYPE: Record<string, string> = {
   achat: '01_Achats',
@@ -64,12 +64,77 @@ function ajouterFeuille<T extends Record<string, unknown>>(wb: ExcelJS.Workbook,
   for (const row of rows) feuille.addRow(entetes.map((e) => row[e]))
 }
 
+// LES ORIGINAUX DES FACTURES REPRISES (A8d2c, ligne 51.5). « Une sauvegarde n'est pas un pack » (PLAN_DE_REPRISE.md §4,
+// point 6) : la sauvegarde porte les lignes `imports_factures` et `factures_importees`, avec le chemin et l'empreinte
+// SHA-256 de leur fichier ; le pack porte les FICHIERS, que la migration `originaux_des_imports` range dans le seau
+// `ventes` sous `<dossier>/imports/<lot>/<empreinte>.<pdf|xml|csv>`. Un pack porte l'original d'un lot dont une facture est
+// datée dans sa période (`date_emission`, comme une pièce l'est par `date_piece`), et celui d'une facture de la période
+// qui a le sien, sous `Factures_reprises/<lot>/<fichier>` — le chemin du seau sans le dossier, pour qu'une reprise le
+// reverse là où ses lignes le désignent. Les lectures se font en entier ou refusent le pack, comme celles des pièces ; un
+// fichier qui ne se télécharge pas se dit dans le récapitulatif et à l'appelant. `ORIGINAUX_DES_IMPORTS_PREVUS` baissé :
+// le pack d'hier, sans une lecture de plus.
+export const DOSSIER_DES_ORIGINAUX = 'Factures_reprises'
+
+/** Un lot de factures reprises, tel que le pack le lit. */
+export interface LotDuPack { id: string; fichier_chemin: string | null }
+/** Une facture reprise, telle que le pack la lit. */
+export interface RepriseDuPack { facture_id: string; import_id: string; fichier_chemin: string | null }
+
+/**
+ * Les chemins (seau `ventes`) des originaux qu'un pack porte : celui d'un lot dont une facture est de la période, puis
+ * celui d'une facture de la période qui a le sien — dans l'ordre des lots, puis des factures, chacun une fois.
+ */
+export function originauxDeLaPeriode(
+  lots: readonly LotDuPack[],
+  reprises: readonly RepriseDuPack[],
+  facturesDeLaPeriode: ReadonlySet<string>,
+): string[] {
+  const dansLaPeriode = reprises.filter((r) => facturesDeLaPeriode.has(r.facture_id))
+  const lotsDeLaPeriode = new Set(dansLaPeriode.map((r) => r.import_id))
+  const chemins: string[] = []
+  for (const lot of lots) if (lot.fichier_chemin !== null && lotsDeLaPeriode.has(lot.id)) chemins.push(lot.fichier_chemin)
+  for (const r of dansLaPeriode) if (r.fichier_chemin !== null) chemins.push(r.fichier_chemin)
+  return [...new Set(chemins)]
+}
+
+/** Le nom d'un original dans le pack : son chemin du seau, sans `<dossier>/imports/`. */
+export function nomDeLOriginalDansLePack(dossierId: string, chemin: string): string {
+  const prefixe = `${dossierId}/imports/`
+  return `${DOSSIER_DES_ORIGINAUX}/${chemin.startsWith(prefixe) ? chemin.slice(prefixe.length) : chemin}`
+}
+
+// Les originaux de la période, lus en entier ou refusés. Aucun lot : aucune autre lecture.
+async function lireLesOriginaux(dossierId: string, periodeDebut: string, periodeFin: string): Promise<string[]> {
+  const lectureLots = await lireTout<LotDuPack>((debut, fin) =>
+    supabase.from('imports_factures').select('id, fichier_chemin', { count: 'exact' })
+      .eq('dossier_id', dossierId)
+      .order('id').range(debut, fin),
+  )
+  if (!lectureLots.complete) throw new Error(refusLecture('les factures reprises (leurs lots)', lectureLots.motif))
+  if (lectureLots.lignes.length === 0) return []
+  const lectureReprises = await lireTout<RepriseDuPack>((debut, fin) =>
+    supabase.from('factures_importees').select('facture_id, import_id, fichier_chemin', { count: 'exact' })
+      .eq('dossier_id', dossierId)
+      .order('facture_id').range(debut, fin),
+  )
+  if (!lectureReprises.complete) throw new Error(refusLecture('les factures reprises', lectureReprises.motif))
+  const lectureDates = await lireTout<{ id: string }>((debut, fin) =>
+    supabase.from('factures_emises').select('id', { count: 'exact' })
+      .eq('dossier_id', dossierId)
+      .gte('date_emission', periodeDebut)
+      .lte('date_emission', periodeFin)
+      .order('id').range(debut, fin),
+  )
+  if (!lectureDates.complete) throw new Error(refusLecture('les factures de la période', lectureDates.motif))
+  return originauxDeLaPeriode(lectureLots.lignes, lectureReprises.lignes, new Set(lectureDates.lignes.map((f) => f.id)))
+}
+
 interface RemplissageResult {
   nbPieces: number
   totalTtc: number
   excelBlob: Blob
   // Pièces listées dans l'Excel mais dont le fichier n'a pas pu être téléchargé, donc absentes du
-  // ZIP. Remontée jusqu'à l'écran : sans elle, le comptable recevait un récapitulatif annonçant
+  // ZIP — et, depuis A8d2c, les originaux des factures reprises dans le même cas, sous leur nom dans le pack. Remontée jusqu'à l'écran : sans elle, le comptable recevait un récapitulatif annonçant
   // N pièces pour X € avec moins de fichiers dans l'archive, sans que rien ne le signale.
   manquantes: string[]
   // Pièces validées sans date : elles n'entrent dans aucune période, donc dans aucun pack. Remontée
@@ -138,6 +203,8 @@ async function remplirZipDossier(
   if (!lectureSansDate.complete) throw new Error(refusLecture('les pièces sans date', lectureSansDate.motif))
   const sansDate = lectureSansDate.lignes
 
+  const originaux = ORIGINAUX_DES_IMPORTS_PREVUS ? await lireLesOriginaux(dossierId, periodeDebut, periodeFin) : []
+
   const allPieces = lecturePieces.lignes
   const included = allPieces.filter((p) => p.statut === 'validee')
   const pending = allPieces.filter((p) => p.statut === 'a_valider')
@@ -161,6 +228,21 @@ async function remplirZipDossier(
       }
       folder.file(nom, blob)
     }
+  }
+
+  // --- ZIP : les originaux des factures reprises de la période (A8d2c) ---
+  const originauxPortes: { Fichier: string; Statut: string }[] = []
+  const originauxManquants: string[] = []
+  for (const chemin of originaux) {
+    const nom = nomDeLOriginalDansLePack(dossierId, chemin)
+    const { data: blob, error } = await supabase.storage.from('ventes').download(chemin)
+    if (error || !blob) {
+      originauxManquants.push(nom)
+      originauxPortes.push({ Fichier: nom, Statut: "Absent de l'archive — fichier introuvable au moment de la génération" })
+      continue
+    }
+    destination.file(nom, blob)
+    originauxPortes.push({ Fichier: nom, Statut: "Dans l'archive" })
   }
 
   // --- Excel récapitulatif ---
@@ -211,6 +293,9 @@ async function remplirZipDossier(
     })))
   }
 
+  // L'original d'une facture reprise n'est pas une pièce : il a sa feuille, ce qui est dans l'archive et ce qui y manque.
+  if (originauxPortes.length > 0) ajouterFeuille(wb, 'Factures reprises', originauxPortes)
+
   // Même principe que la feuille ci-dessus : ce qui manque au livrable est écrit dans le livrable.
   // Ces pièces-là ne manquent pas à cette période en particulier, elles manquent à toutes.
   if (sansDate.length > 0) {
@@ -228,7 +313,7 @@ async function remplirZipDossier(
   destination.file('Recap.xlsx', excelBuffer)
 
   return {
-    nbPieces: included.length, totalTtc, excelBlob, manquantes,
+    nbPieces: included.length, totalTtc, excelBlob, manquantes: [...manquantes, ...originauxManquants],
     sansDate: sansDate.map((p) => `${p.tiers ?? 'Tiers inconnu'} — ${p.nom_fichier}`),
   }
 }

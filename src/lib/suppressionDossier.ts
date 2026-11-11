@@ -3,7 +3,8 @@ import { messageErreur } from './messageErreur'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 
 // Retire tous les fichiers de stockage d'un dossier (pièces + packs, et le logo de ses factures dans le seau `ventes` dès
-// que sa migration est en base, étape A5c1) avant de supprimer sa ligne —
+// que sa migration est en base, étape A5c1, comme l'original d'une facture reprise, sous `imports/<lot>/`, A8d2c) avant
+// de supprimer sa ligne —
 // la suppression de `dossiers` fait cascader toutes les autres tables (voir migration
 // informations_dossier_cascade_suppression, la seule qui manquait), mais Storage n'est pas lié par une
 // contrainte de base : sans ce nettoyage explicite, les fichiers resteraient orphelins indéfiniment.
@@ -110,6 +111,41 @@ async function retirerParLots(
   return { retires, restants, echecs }
 }
 
+// Un chemin compte au plus `PROFONDEUR_MAX` segments sous `<dossier>/`, le fichier compris : une pièce en a un, un pack
+// deux (`<période>/<fichier>`), un logo deux (`logos/<fichier>`), l'original d'une facture reprise trois
+// (`imports/<lot>/<fichier>`, A8d2a). Elle suit tout sous-dossier que le stockage
+// rend, jusqu'au fichier, quel que soit le seau et quel que soit le drapeau d'une migration : jusqu'au 11/11/2026 elle ne
+// descendait que d'un niveau, et `imports/<lot>/<fichier>` serait resté en place, le lot compté pour un fichier (A8d2c).
+// Plus bas que cette borne, rien de ce que l'application range : un sous-dossier plus profond ne se suit pas, il se DIT
+// (inventaire incomplet), comme une lecture refusée.
+export const PROFONDEUR_MAX = 6
+
+// Les fichiers sous `chemin`, en profondeur et dans l'ordre que le stockage rend. Un id null signale un sous-dossier
+// (convention Supabase Storage) — un pack range son ZIP/Excel sous `dossierId/période-timestamp/` (packGenerator.ts), un
+// logo de facture sous `dossierId/logos/` (logoDesFactures.ts), l'original d'une facture reprise sous
+// `dossierId/imports/<lot>/` (bornesStockage.ts, `cheminDUnOriginal`) ; une pièce, elle, est un fichier direct.
+async function recenser(
+  bucket: SeauDuDossier,
+  chemin: string,
+  profondeur: number,
+  resultat: NettoyageStockage,
+): Promise<string[]> {
+  const { entrees, complete } = await listerTout(bucket, chemin)
+  if (!complete) resultat.inventaireIncomplet = true
+  const chemins: string[] = []
+  for (const entree of entrees) {
+    const complet = `${chemin}/${entree.name}`
+    if (entree.id !== null) {
+      chemins.push(complet)
+    } else if (profondeur + 1 >= PROFONDEUR_MAX) {
+      resultat.inventaireIncomplet = true
+    } else {
+      chemins.push(...(await recenser(bucket, complet, profondeur + 1, resultat)))
+    }
+  }
+  return chemins
+}
+
 // Le premier passage, avant la ligne du dossier : il rend aussi ce qui est resté, que le second passage reprend.
 async function viderDossierDuStockage(
   bucket: SeauDuDossier,
@@ -117,24 +153,8 @@ async function viderDossierDuStockage(
 ): Promise<NettoyageStockage & { restants: string[] }> {
   const resultat = { ...vide(), restants: [] as string[] }
   try {
-    const { entrees, complete } = await listerTout(bucket, dossierId)
-    if (!complete) resultat.inventaireIncomplet = true
-    if (entrees.length === 0) return resultat
-
-    const chemins: string[] = []
-    for (const entree of entrees) {
-      // Un id null signale un sous-dossier (convention Supabase Storage) — un pack range son
-      // ZIP/Excel sous `dossierId/période-timestamp/`, jamais directement sous `dossierId/` (voir
-      // packGenerator.ts), un logo de facture sous `dossierId/logos/` (logoDesFactures.ts) ; une
-      // pièce, elle, est toujours un fichier direct.
-      if (entree.id === null) {
-        const sous = await listerTout(bucket, `${dossierId}/${entree.name}`)
-        if (!sous.complete) resultat.inventaireIncomplet = true
-        for (const sousEntree of sous.entrees) chemins.push(`${dossierId}/${entree.name}/${sousEntree.name}`)
-      } else {
-        chemins.push(`${dossierId}/${entree.name}`)
-      }
-    }
+    const chemins = await recenser(bucket, dossierId, 0, resultat)
+    if (chemins.length === 0) return resultat
     resultat.demandes = chemins.length
 
     const { retires, restants, echecs } = await retirerParLots(bucket, chemins)

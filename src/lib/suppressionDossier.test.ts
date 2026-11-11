@@ -80,7 +80,7 @@ vi.mock('./supabase', () => ({
   },
 }))
 
-const { supprimerDossierDefinitivement, nettoyageAMontrer, messageNettoyage } =
+const { supprimerDossierDefinitivement, nettoyageAMontrer, messageNettoyage, PROFONDEUR_MAX } =
   await import('./suppressionDossier')
 const { LOGO_DES_FACTURES_EXPORTE: LOGO_REEL } = await vi.importActual<typeof import('./logoDesFactures')>('./logoDesFactures')
 
@@ -236,6 +236,66 @@ describe('le seau des ventes, selon que sa migration est en base', () => {
 
 // INAL1 (ligne 44, la migration `piece_figee_dans_le_stockage`) : le stockage garde le fichier d'une pièce figée tant que
 // sa ligne existe. Le premier passage le laisse, sans erreur ; la ligne du dossier partie, un second passage le reprend.
+// L'original d'une facture reprise (A8d2a, migration `originaux_des_imports`) se range DEUX niveaux sous le dossier :
+// `<dossier>/imports/<lot>/<empreinte>.<pdf|xml|csv>`. Jusqu'au 11/11/2026, la descente s'arrêtait au premier : le lot
+// passait pour un fichier, et l'original — qui peut nommer un patient — restait dans le seau, le dossier parti (A8d2c).
+// Le module ne lit pas `ORIGINAUX_DES_IMPORTS_PREVUS` : la descente vaut dans les deux états du drapeau.
+describe('les originaux des factures reprises, sous imports/<lot>/ (A8d2c)', () => {
+  const LOT = '5b0f3c1e-8a2d-4c6b-9e7f-1a2b3c4d5e6f'
+  const original = (c: string, ext: string) => `${c.repeat(64)}.${ext}`
+
+  it('partent avec le dossier, jusqu’au fichier du lot, avec le logo, AVANT la ligne du dossier', async () => {
+    etat.logo = true
+    etat.entrees[`ventes/${D}`] = [{ name: 'imports', id: null }, { name: 'logos', id: null }]
+    etat.entrees[`ventes/${D}/imports`] = [{ name: LOT, id: null }]
+    etat.entrees[`ventes/${D}/imports/${LOT}`] = [{ name: original('a', 'pdf'), id: 'o1' }, { name: original('b', 'xml'), id: 'o2' }]
+    etat.entrees[`ventes/${D}/logos`] = [{ name: original('1', 'png'), id: 'l1' }]
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan).toEqual({ demandes: 3, retires: 3, echecs: [], inventaireIncomplet: false })
+    const retrait = journal.findIndex((j) => j.action === 'remove:ventes')
+    expect(journal[retrait].cible).toBe(
+      `${D}/imports/${LOT}/${original('a', 'pdf')},${D}/imports/${LOT}/${original('b', 'xml')},${D}/logos/${original('1', 'png')}`,
+    )
+    expect(retrait).toBeLessThan(journal.findIndex((j) => j.action === 'delete:dossiers'))
+    expect(listes).toEqual(expect.arrayContaining([`ventes/${D}/imports`, `ventes/${D}/imports/${LOT}`]))
+  })
+
+  it('un lot dont la lecture est refusée se DIT : l’inventaire est incomplet, le reste part', async () => {
+    etat.logo = true
+    etat.entrees[`ventes/${D}`] = [{ name: 'imports', id: null }]
+    etat.entrees[`ventes/${D}/imports`] = [{ name: LOT, id: null }]
+    etat.entrees[`ventes/${D}/imports/${LOT}`] = null
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan.inventaireIncomplet).toBe(true)
+    expect(nettoyageAMontrer(bilan)).toBe(true)
+  })
+
+  it('plus bas que la borne, un sous-dossier ne se suit pas : il se dit, sans être compté pour un fichier', async () => {
+    etat.logo = true
+    let chemin = `ventes/${D}`
+    for (let niveau = 1; niveau <= PROFONDEUR_MAX; niveau += 1) {
+      etat.entrees[chemin] = [{ name: `n${niveau}`, id: null }]
+      chemin = `${chemin}/n${niveau}`
+    }
+    etat.entrees[chemin] = [{ name: 'trop-bas.pdf', id: 'x' }]
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan).toEqual({ demandes: 0, retires: 0, echecs: [], inventaireIncomplet: true })
+    expect(listes).not.toContain(chemin)
+  })
+
+  it('à la borne même, le fichier part', async () => {
+    etat.logo = true
+    let chemin = `ventes/${D}`
+    for (let niveau = 1; niveau < PROFONDEUR_MAX; niveau += 1) {
+      etat.entrees[chemin] = [{ name: `n${niveau}`, id: null }]
+      chemin = `${chemin}/n${niveau}`
+    }
+    etat.entrees[chemin] = [{ name: 'au-plus-bas.pdf', id: 'x' }]
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan).toEqual({ demandes: 1, retires: 1, echecs: [], inventaireIncomplet: false })
+  })
+})
+
 describe('le second passage, après la ligne du dossier (INAL1)', () => {
   const figes = () => {
     etat.entrees[`pieces/${D}`] = fichiers(3)
