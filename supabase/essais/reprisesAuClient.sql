@@ -1,5 +1,5 @@
--- LES FACTURES REPRISES, AU CLIENT (ligne 51.5, A8C-Q1 et A8Q5-Q2 ; la migration `reprises_au_client`, PRÉPARÉE le
--- 11/11/2026, supabase/preparees/, après A8a, A8b et A8-Q5). Le récit : HISTORIQUE.md, « A8C-Q1 ET A8Q5-Q2 : LES FACTURES
+-- LES FACTURES REPRISES, AU CLIENT (ligne 51.5, A8C-Q1 et A8Q5-Q2 ; la migration `reprises_au_client`, en production depuis
+-- le 11/11/2026, supabase/schema/20261111204440_reprises_au_client.sql, après A8a, A8b et A8-Q5). Le récit : HISTORIQUE.md, « A8C-Q1 ET A8Q5-Q2 : LES FACTURES
 -- REPRISES, AU CLIENT (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer après toute migration qui touche `reprise_de_la_facture`,
 -- `pieces_citees_de_la_simulation`, `enregistrer_encaissement`, `montants_par_taux_du_document`, les factures reprises
 -- (`factures_importees`, `importer_factures`), `pieces_des_factures_reprises` ou les prédicats `gere_les_ventes` et

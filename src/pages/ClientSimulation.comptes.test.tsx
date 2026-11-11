@@ -48,10 +48,13 @@ vi.mock('../lib/supabase', () => ({
       return chaine
     },
     rpc: (nom: string) => {
-      // Un dossier qui n'a pas basculé : aucune vente facturée à compter ; la case « Banque » confirmée par la base.
+      // Un dossier qui n'a pas basculé : aucune vente facturée à compter, aucune pièce citée par une facture reprise ; la case
+      // « Banque » confirmée par la base.
       const donnees = nom === 'ventes_facturees_de_la_simulation'
         ? { data: { par_mois: {}, sources: [] }, error: null }
-        : { data: { cabinet: false, membre: true, ventes: false, banque: true }, error: null }
+        : nom === 'pieces_citees_de_la_simulation'
+          ? { data: [], error: null }
+          : { data: { cabinet: false, membre: true, ventes: false, banque: true }, error: null }
       return { then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) =>
         Promise.resolve({ ...donnees, count: null, status: 200, statusText: '' }).then(suite, echec) }
     },

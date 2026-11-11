@@ -19,10 +19,11 @@ import {
   violationsOrdre,
 } from './sauvegarde'
 
-// L'ADRESSE D'UN ACCÈS RETIRÉ AU PLAN DE SAUVEGARDE (P1T-E2). Sa migration, `adresse_des_acces_retires`, est PRÉPARÉE :
-// le drapeau baissé, le plan effectif ne doit RIEN dire de la table — une sauvegarde lirait une table absente et échouerait.
-// Le plan prévu la porte déjà, à sa place, juste après la trace des droits qu'elle nomme ; ce fichier juge les deux, et le
-// plan du jour sous le drapeau levé (`vi.doMock`), l'état qui suivra l'application.
+// L'ADRESSE D'UN ACCÈS RETIRÉ AU PLAN DE SAUVEGARDE (P1T-E2). Sa migration, `adresse_des_acces_retires`, est en production
+// depuis le 11/11/2026, le drapeau levé : la table entre au plan effectif. Baissé — l'état d'avant, éprouvé tant que son code
+// existe —, le plan effectif ne doit RIEN dire de la table : une sauvegarde lirait une table absente et échouerait. Le plan
+// prévu la porte, à sa place, juste après la trace des droits qu'elle nomme ; ce fichier juge les deux, et le plan du jour
+// sous chaque état du drapeau (`vi.doMock`).
 
 const TABLE = 'adresses_des_acces_retires'
 
@@ -65,13 +66,31 @@ describe('le plan prévu, l’adresse des accès retirés comprise', () => {
   })
 })
 
-describe('le plan du jour, le drapeau levé (l’état qui suivra l’application)', () => {
+describe('le plan du jour, sous chaque état du drapeau', () => {
   afterEach(() => {
     vi.doUnmock('./adressesDesAccesRetires')
     vi.resetModules()
   })
 
-  it('la table entre au plan effectif, à sa place, et l’ordre reste juste', async () => {
+  it('le drapeau levé depuis le 11/11/2026 : la table est au plan du jour', () => {
+    expect(ADRESSES_DES_ACCES_RETIRES_PREVUES).toBe(true)
+    expect(auPlanAujourdHui(TABLE)).toBe(true)
+  })
+
+  it('baissé (l’état d’avant) : le plan effectif ne nomme pas la table, et l’ordre reste juste', async () => {
+    vi.resetModules()
+    vi.doMock('./adressesDesAccesRetires', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('./adressesDesAccesRetires')>()), ADRESSES_DES_ACCES_RETIRES_PREVUES: false,
+    }))
+    const baisse = await import('./sauvegarde')
+    expect(baisse.auPlanAujourdHui(TABLE)).toBe(false)
+    expect(baisse.ORDRE_RESTAURATION).not.toContain(TABLE)
+    expect(baisse.CHEMINS_DOSSIER[TABLE]).toBeUndefined()
+    expect(baisse.RELATIONS.filter((r) => r.enfant === TABLE || r.parent === TABLE)).toEqual([])
+    expect(baisse.violationsOrdre(baisse.ORDRE_RESTAURATION, [...baisse.RELATIONS, ...baisse.LIENS_GARDES])).toEqual([])
+  })
+
+  it('levé : la table entre au plan effectif, à sa place, et l’ordre reste juste', async () => {
     vi.resetModules()
     vi.doMock('./adressesDesAccesRetires', async (importOriginal) => ({
       ...(await importOriginal<typeof import('./adressesDesAccesRetires')>()), ADRESSES_DES_ACCES_RETIRES_PREVUES: true,

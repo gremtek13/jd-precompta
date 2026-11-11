@@ -2805,6 +2805,9 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
     const assigne = (TABLES.dossier_assignations ?? []).some((a) => a.dossier_id === dossierId && a.user_id === session.user.id)
     return { data: equipe !== undefined && (equipe.role === 'comptable_en_chef' || assigne), error: null }
   }
+  // `pieces_citees_de_la_simulation` (A8Q5-Q2, migration `reprises_au_client`, en production depuis le 11/11/2026), que « Ma
+  // simulation » lit : les pièces citées par un lien actif d'une facture reprise — le banc n'en porte aucune.
+  if (nom === 'pieces_citees_de_la_simulation') return { data: [], error: null }
   return { data: nom === 'verifier_exercice_valide', error: null }
 }
 

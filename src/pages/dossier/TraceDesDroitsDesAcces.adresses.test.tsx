@@ -2,10 +2,10 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import TraceDesDroitsDesAcces from './TraceDesDroitsDesAcces'
 
-// L'ÉTAT QUI SUIVRA LA MIGRATION `adresse_des_acces_retires` (P1T-E2), le drapeau levé : la trace et les adresses lues
-// ensemble, rien avant que les deux reviennent, un accès retiré nommé par l'adresse retenue à son départ, et une lecture
-// partielle des adresses dite à part. Le drapeau est baissé tant que la migration n'est pas en base : AccesTab.trace.test.tsx
-// joue l'état réel, ce fichier l'état d'après.
+// L'ÉTAT DEPUIS LA MIGRATION `adresse_des_acces_retires` (P1T-E2, en production le 11/11/2026), le drapeau levé : la trace et
+// les adresses lues ensemble, rien avant que les deux reviennent, un accès retiré nommé par l'adresse retenue à son départ, et
+// une lecture partielle des adresses dite à part. AccesTab.trace.test.tsx joue aussi l'état réel dans l'onglet ;
+// TraceDesDroitsDesAcces.sansAdresses.test.tsx garde l'état d'avant éprouvé tant que son code existe.
 const lectures = vi.hoisted(() => ({
   adresses: null as null | ((d: string) => Promise<unknown>),
 }))

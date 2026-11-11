@@ -161,9 +161,9 @@ export function auPlanDeLaTraceDesDroits(table: string, tracePrevue: boolean): b
   return tracePrevue || !TABLES_DE_LA_TRACE_DES_DROITS.includes(table)
 }
 
-// L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2 ; migration `adresse_des_acces_retires`, PRÉPARÉE, pas appliquée) : l'adresse qu'un accès
-// que la trace nomme portait à son départ. Sous le drapeau de la migration (`ADRESSES_DES_ACCES_RETIRES_PREVUES`,
-// src/lib/adressesDesAccesRetires.ts), baissé : la lire avant sa migration ferait échouer toute sauvegarde. Le patron de la
+// L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2 ; migration `adresse_des_acces_retires`, en production depuis le 11/11/2026) : l'adresse
+// qu'un accès que la trace nomme portait à son départ. Sous le drapeau de la migration (`ADRESSES_DES_ACCES_RETIRES_PREVUES`,
+// src/lib/adressesDesAccesRetires.ts), levé ; baissé, la lire avant sa migration aurait fait échouer toute sauvegarde. Le patron de la
 // trace : sa relation (le dossier en cascade ; l'accès sans clé), son rang (juste après la trace), son chemin ; aucune vague ;
 // sa clé est la commune, `id`. La restauration la réinsère par la porte que sa garde et sa policy ouvrent au
 // super-administrateur ; la réinsertion des accès n'en écrit aucune (seul un DÉPART en écrit une), l'adresse restaurée est

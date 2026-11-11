@@ -3,7 +3,7 @@ import type { AdresseDUnAccesRetire } from './types'
 
 // L'ADRESSE D'UN ACCÈS RETIRÉ, GARDÉE AVEC LA TRACE DES DROITS (espace client, ligne 51.5 ; décision du cabinet du 11/11/2026,
 // P1T-E2, contre la recommandation : « Garder l'adresse dans l'historique »). La migration `adresse_des_acces_retires`
-// (PRÉPARÉE, pas appliquée : supabase/preparees/20261111173000_adresse_des_acces_retires.sql) pose la table
+// (en production depuis le 11/11/2026 : supabase/schema/20261111204532_adresse_des_acces_retires.sql) pose la table
 // `adresses_des_acces_retires` — le dossier, l'accès parti, l'adresse qu'il portait et l'instant du départ —, écrite par un
 // déclencheur sur `memberships` au départ d'un accès que la trace nomme, immuable, partie avec son dossier, lue par le cabinet
 // du dossier seul. Le récit : HISTORIQUE.md, « 11/11/2026 — P1T-E2 » ; les essais : supabase/essais/adresseDesAccesRetires.sql
@@ -12,11 +12,12 @@ import type { AdresseDUnAccesRetire } from './types'
 // Ce module est PUR : le drapeau, la table au plan de sauvegarde, et la règle qui juge une lecture. La lecture est dans
 // traceDesDroitsLecture.ts, l'écran dans pages/dossier/TraceDesDroitsDesAcces.tsx (lib/traceDesDroitsVue.ts, `groupesDeLaTrace`).
 //
-// LE DRAPEAU, baissé tant que la migration n'est pas dans l'export (adressesDesAccesRetires.test.ts le lie au fichier) : ni
+// LE DRAPEAU, levé depuis le 11/11/2026 (adressesDesAccesRetires.test.ts le lie au fichier de l'export). Baissé, son état
+// d'avant, que TraceDesDroitsDesAcces.drapeau.test.tsx et sauvegardeAdressesDesAccesRetires.test.ts jouent encore : ni
 // lecture ni table au plan de sauvegarde — la lire avant sa migration ferait échouer toute sauvegarde, et l'onglet Accès
 // dirait « lue en partie » d'une table qui n'existe pas. Levé, l'onglet nomme un accès retiré par l'adresse qu'il portait à
 // son départ, et la sauvegarde l'emporte.
-export const ADRESSES_DES_ACCES_RETIRES_PREVUES = false
+export const ADRESSES_DES_ACCES_RETIRES_PREVUES = true
 
 /** La table, au plan de sauvegarde derrière le drapeau (src/lib/sauvegarde.ts, `auPlanDesAdressesDesAccesRetires`). */
 export const TABLES_DES_ADRESSES_DES_ACCES_RETIRES: readonly string[] = ['adresses_des_acces_retires']

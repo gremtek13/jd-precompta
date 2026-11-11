@@ -1060,11 +1060,13 @@ const LECTURES_PAR_FONCTION = new Set([
 // lecture (`stable`), qui n'écrit rien.
 // Et les dépôts des honoraires du cabinet (`depots_des_honoraires`, `honoraires_deposes_au_dossier`, ligne 47, LM8), derrière
 // `DEPOT_DES_HONORAIRES_PREVU` : des lectures (`stable`), qui n'écrivent rien.
+// Et les pièces qu'une facture reprise cite, que « Ma simulation » lit (`pieces_citees_de_la_simulation`, A8Q5-Q2, migration
+// `reprises_au_client`, en base depuis le 11/11/2026) : une lecture (`stable`), qui n'écrit rien.
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
   'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
   'rpc:ventes_facturees_de_la_simulation', 'rpc:admin_du_dossier', 'rpc:caisse_du_client',
-  'rpc:depots_des_honoraires', 'rpc:honoraires_deposes_au_dossier',
+  'rpc:depots_des_honoraires', 'rpc:honoraires_deposes_au_dossier', 'rpc:pieces_citees_de_la_simulation',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.

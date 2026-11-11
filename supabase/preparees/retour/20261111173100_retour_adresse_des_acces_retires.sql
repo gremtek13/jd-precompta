@@ -1,6 +1,7 @@
 -- RETOUR ARRIÈRE DE `adresse_des_acces_retires` (P1T-E2) — DESTRUCTIF, À ACCORDER PAR LE CABINET, À COLLER dans l'éditeur
 -- SQL de Supabase, dans une transaction, avec sa ligne d'historique (le texte retire une table, un déclencheur et deux
--- fonctions). La migration : supabase/preparees/20261111173000_adresse_des_acces_retires.sql ; le récit : HISTORIQUE.md,
+-- fonctions). La migration, en production depuis le 11/11/2026 (version 20261111204532) :
+-- supabase/schema/20261111204532_adresse_des_acces_retires.sql ; le récit : HISTORIQUE.md,
 -- « 11/11/2026 — P1T-E2 : L'ADRESSE D'UN ACCÈS RETIRÉ, GARDÉE AVEC LA TRACE (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
 -- L'ORDRE : D'ABORD l'application, son drapeau baissé (`ADRESSES_DES_ACCES_RETIRES_PREVUES`, le fichier de la migration

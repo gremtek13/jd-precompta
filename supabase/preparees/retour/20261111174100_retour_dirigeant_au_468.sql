@@ -2,7 +2,7 @@
 -- 467. Il ne supprime rien, mais il se REFUSE tant qu'un dossier tient ce rôle sous 468, qu'un dirigeant y est, qu'une
 -- ligne d'écriture, un à-nouveau, un mouvement du relevé ou un lettrage fait à la main y porte un compte : le plan de ce
 -- dossier deviendrait illisible pour l'application et refusé par sa garde. La migration :
--- supabase/preparees/20261111174000_dirigeant_au_468.sql ; le récit : HISTORIQUE.md, « 11/11/2026 — PC4-Q2 ».
+-- supabase/schema/20261111204559_dirigeant_au_468.sql (en production depuis le 11/11/2026, version 20261111204559) ; le récit : HISTORIQUE.md, « 11/11/2026 — PC4-Q2 ».
 --
 -- L'ORDRE : D'ABORD l'application, son drapeau baissé (`DIRIGEANT_AU_468_PREVU`, le fichier de la migration sorti de
 -- l'export) et remise en ligne, PUIS ce texte, avec la ligne d'historique de la migration retirée (sans elle, les essais
