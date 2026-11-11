@@ -683,7 +683,14 @@ appeler : c'est un essai manuel, depuis un client authentifié. À faire une foi
 où les policies du stockage changent. Depuis A8d2c (11/11/2026), la suppression d'un dossier descend
 jusqu'aux fichiers des lots du seau `ventes` (`<dossier>/imports/<lot>/`) ; la policy de suppression
 de ce seau, au chef du cabinet du dossier, vaut pour eux : le même essai manuel, depuis le 11/11/2026,
-où la migration `originaux_des_imports` a été appliquée.
+où la migration `originaux_des_imports` a été appliquée. Depuis A8D2A-Q1 (migration
+`originaux_retenus_par_leur_import`, préparée le 11/11/2026, NON APPLIQUÉE), l'original d'un import qui existe
+ne se supprime plus ; la suppression du dossier reste complète d'un seul geste : un déclencheur range, à la
+suppression de la ligne du dossier, les chemins de ses originaux sous son cabinet (`originaux_liberes` : un
+chemin, le cabinet, l'instant — ni nom, ni contenu), que le second passage retire ; la ligne s'efface à la
+suppression de dossier suivante, une fois le fichier parti. L'essai manuel, le jour où elle est appliquée :
+supprimer un dossier qui porte un original, par un chef qui n'est pas super-administrateur, et constater le
+seau vide sous `<dossier>/`.
 
 ### 8.7 — Hébergement de données de santé (HDS) *(tranché le 24/09/2026 : non requis, sous condition)*
 
