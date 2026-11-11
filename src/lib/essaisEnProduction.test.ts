@@ -281,9 +281,12 @@ describe('les essais de la base, rejoués en production', () => {
     // Le dix-neuvième, depotDesHonoraires, le 11/11/2026 (LM8, migration `depot_des_honoraires`) : il désigne le dossier du
     // cabinet, y valide des factures, range des fichiers dans le seau des pièces, retire une pièce et supprime deux dossiers,
     // sous la même garde. Son catalogue se rejoue partout : le bloc HD de rls.sql.
+    // Le vingtième, fichesLieesAuxDossiers, le 11/11/2026 (LM3, migration `fiche_liee_au_dossier_du_client`) : il désigne
+    // le dossier du cabinet, crée un cabinet et retire un dossier, sous la même garde. Son catalogue se rejoue partout : le
+    // bloc FL de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
-      'devisSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)',
+      'devisSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
