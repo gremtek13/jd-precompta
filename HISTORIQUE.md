@@ -50711,3 +50711,15 @@ dossier (`serieDeQuiValide`). **Edge Functions** : `create-client-access` lit la
 absente avant la migration) avant tout compte créé, 409 aux mots de la garde, 500 sur une lecture en panne, et dit la garde de la
 base si la désignation vient entre deux ; `delete-cabinet` nomme le dossier du cabinet dans son 409. Quatre scénarios HTTP neufs,
 trois défauts plantés qui mordent ; la garde de la suppression mutée, son test rougit. LM1-Q2 : rien.
+
+### 11/11/2026 — HUIT RÉPONSES DE PLUS, DEUX MIGRATIONS EN PRODUCTION, LEURS ESSAIS REJOUÉS
+
+Lues l'après-midi : A8C6-Q1 (l'avoir d'une facture reprise offert au client), A8C6-Q2, A8D2A-migration, A8D2B-Q1, A8D2B-Q3
+et A8D2C-Q1 à la recommandation ; contre elle, A8D2A-Q1 (B) — protéger en base, dès maintenant, l'original d'une facture
+reprise tant que son import existe — et A8D2B-Q2 — un dépôt de formats mêlés coupé en un import par format, dit avant le
+clic. `professions_cipav` collée par le cabinet (20261111130000) et `originaux_des_imports` appliquée par l'outil
+(20261111131855), les deux lignes d'historique à l'empreinte du dépôt (2d45a47c…, 25ca5c0b…). Rejoués en production :
+`professionsCipav.sql` 10/10 ; `originauxDesImports.sql` 61/61, les sept mutations mordent, aucun écart après (ses
+libellés raccourcis dans l'envoi, ses contrôles intacts). `rls.sql` (500 Ko) n'a pas été rejoué entier en production : son
+bloc OI l'a été sur la réplique d'A8d2a ; l'inventaire de l'export, égal à la production, dit le même catalogue. Les trois
+contrôles de l'export égaux (197 migrations).
