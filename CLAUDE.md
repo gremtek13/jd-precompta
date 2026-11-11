@@ -517,7 +517,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   de banque au 512 du compte du mouvement : les dix fonctions du relevé préparées, à coller (`jambe_de_banque_par_compte`), la
   composition par `lib/banqueDuMouvement.ts` dans la fiche Banque, puis (seconde partie) dans Écritures, Virements,
   Cotisations, le lot des règles et les sept détecteurs (`banques`, paramètre obligatoire ; une banque inconnue ne se juge pas) ; MCB6, la carte « Comptes bancaires » (Informations) et la
-  preuve du relevé par compte → « LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES DIX FONCTIONS DU RELEVÉ (MCB5) », « LA JAMBE DE BANQUE PAR COMPTE
+  preuve du relevé par compte ; MCB7, « Ma banque » compte par compte (`lib/banqueClientParCompte.ts`, sans nouvelle fonction)
+  → « « MA BANQUE » ET « MA SIMULATION » POUR PLUSIEURS COMPTES BANCAIRES (MCB7) », « LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES DIX FONCTIONS DU RELEVÉ (MCB5) », « LA JAMBE DE BANQUE PAR COMPTE
   BANCAIRE : LES GESTES HORS DE BANQUE ET LES DÉTECTEURS (MCB5, SECONDE PARTIE) », « LES ÉCRANS
   DU CABINET POUR PLUSIEURS COMPTES BANCAIRES (MCB6) », « LA SUITE DES SOLDES, LE 31
   DÉCEMBRE, LA COUVERTURE ET LA VALIDATION PAR COMPTE BANCAIRE (MCB4) », « PLUSIEURS COMPTES

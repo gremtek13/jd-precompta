@@ -50940,3 +50940,20 @@ touchée verte ; `banqueDuMouvementDetecteurs.test.ts` et deux tests neufs (le l
 **Restent** : les ventes facturées (`banques` dans `EntreesEcrituresVentes`, un motif neuf, le miroir de
 `refus_compte_de_contrepartie` sur les 512 propres, `compte_bancaire_id` lu sous le drapeau, `ecrituresVentesFactureesEcran`
 et ses appelants), le paiement d'une pièce (`ecritures.ts`, `engagement.ts`, `contrepartieBanque.ts`), les lecteurs, l'assistant.
+
+### 11/11/2026 — « MA BANQUE » ET « MA SIMULATION » POUR PLUSIEURS COMPTES BANCAIRES (MCB7)
+
+(Agent architecte, sur MCB1 à MCB4 et MCB6, derrière `COMPTES_BANCAIRES_PREVUS` baissé : rien ne se lit de plus, l'écran d'hier ;
+aucune migration.) **« Ma banque »**, le drapeau levé, lit aussi les comptes du dossier (MCB-Q8) — leur nom, leur rang, la fin de
+l'identifiant, l'ouverture, la clôture ; jamais leur 512 ni `compte_propre_depuis`, que la policy ouvrirait — et le compte de chaque
+mouvement et de chaque relevé contrôlé (deux requêtes littérales : la colonne n'existe pas avant la migration). Dès deux comptes
+(`lib/banqueClientParCompte.ts`, pur), la carte « Tes comptes » dit pour chacun son solde LU au dernier relevé contrôlé de CE compte
+(`soldeAuReleve` sur sa part : hier, tous comptes mêlés, le dernier relevé du livret passait pour le solde du dossier), ses
+premier et dernier mouvements, et ses mois sans mouvement nommés sous lui ; les mouvements se filtrent par compte (colonne, filtre,
+résumé qui le dit). Un compte : l'écran d'hier, son nom tu. **Les mois manquants se nomment SANS nouvelle fonction** : le client
+« Banque » lit tout ce que `couverture_du_releve` regarde ; la règle se rejoue par `compteAttenduLeMois` (signature élargie à ce
+qu'elle lit), déjà confrontée au texte de la migration. Comptes illisibles, ou une ligne d'un compte non rendu : le bandeau, ni solde
+ni mois, aucun geste (les boutons, et une garde de seconde ligne dans les quatre gestionnaires, que l'écran ne laisse pas atteindre).
+**« Ma simulation »** ne lit pas les comptes : un virement interne s'écrit au 580 des deux côtés sans catégorie, et n'y compte ni une
+fois ni deux ; aucun changement de code, un test le garde sous les deux états. Tests : 17 du module, 6 + 4 d'écran ; trois mutations
+du module et la mutation des gestes mordent ; une donnée qui classerait une moitié du virement fait rougir la simulation.
