@@ -3,6 +3,7 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { muter } from '../test/fonctionsEdge'
 import { fichiersDuSchema, fichiersPrepares, relationsDuSchema } from '../test/schema'
+import { libelleDeLEclatement } from './ouvertureEclatee'
 
 // LE CLIENT D'UNE PIÈCE DE VENTE NE PART PAS AU MODÈLE (VF9C-Q1 : la réponse (A) du cabinet du 28/10/2026 ; chantier EC-Q3,
 // ligne 28.65). NI QUI A PAYÉ UN CRÉDIT DU RELEVÉ, NI LE LIBELLÉ D'UNE LIGNE RATTACHÉE À RIEN (VF9CQ1 : les réponses (A) du
@@ -79,6 +80,9 @@ interface Bloc {
   MOTS_D_UNE_OPERATION_DE_CAISSE: ReadonlyMap<string, string>
   nomDUneOperationDeCaisse: (operation: Record<string, unknown>) => string | null
   libelleDUneLigneDeCaisse: (ligne: Record<string, unknown>) => string | null
+  RATTACHEMENT_DE_L_OUVERTURE: string
+  nomDeLOuvertureEclatee: (compte: unknown, date: unknown) => string | null
+  libelleDUneLigneDOuverture: (ligne: Record<string, unknown>) => string | null
 }
 
 const NOMS = [
@@ -86,6 +90,7 @@ const NOMS = [
   'libelleDuBrouillon', 'libelleDUneLigneDePiece', 'libelleDUneLigneDuReleve', 'libelleEtSource', 'ecritureVueParLeModele',
   'RACINES_DES_COMPTES_D_UN_CLIENT', 'nomDUnDebitDuReleve', 'debitQuiRendLArgentDUnClient',
   'MOTS_D_UNE_OPERATION_DE_CAISSE', 'nomDUneOperationDeCaisse', 'libelleDUneLigneDeCaisse',
+  'RATTACHEMENT_DE_L_OUVERTURE', 'nomDeLOuvertureEclatee', 'libelleDUneLigneDOuverture',
 ] as const
 /** Les types que le bloc déclare : ce qu'il nomme d'une pièce, d'un mouvement, des factures, des encaissements et d'une opération de caisse ; ce qu'il lit d'une ligne d'un mouvement. */
 const TYPES_DU_BLOC = ['PieceNommee', 'MouvementNomme', 'LigneDuMouvementLue', 'OperationDeCaisseNommee', 'FactureNommeeRow', 'EncaissementNommeRow', 'VentesNommees']
@@ -233,6 +238,48 @@ const CAS_DE_LA_CAISSE: readonly (readonly [nom: string, rendu: (b: Bloc) => unk
 ]
 
 /** Chaque cas : ce que le bloc rend, mis en texte (l'ordre des clés compte : c'est ce qui part au modèle), et l'attendu. */
+/**
+ * La ligne de l'ouverture éclatée (MCB5g), lue le drapeau des comptes bancaires levé : sa source, le 512 de son compte bancaire
+ * embarqué, sous un libellé qu'une ligne restaurée pourrait porter, qui nomme le compte (un texte libre du cabinet).
+ */
+const dOuverture = (compte: unknown, o: Record<string, unknown> = {}) => sansPiece({
+  ouverture_compte_bancaire_id: 'cb1', comptes_bancaires: compte, date: '2026-01-01', compte: '512100', sens: 'debit', montant: 1250,
+  libelle: 'Ouverture du livret de Patient fictif Orvelan', ...o,
+})
+const NOM_DE_L_OUVERTURE = 'Ouverture du 512100 au relevé du 31/12/2025'
+const CAS_DE_L_OUVERTURE: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu: unknown])[] = [
+  ['la ligne au 512 du compte : le 512 du compte et le jour du relevé, jamais le libellé du brouillon',
+    (b) => b.ecritureVueParLeModele(dOuverture({ compte: '512100' }), null), vue(dOuverture({}), NOM_DE_L_OUVERTURE)],
+  ['la contrepartie au 512 du rôle : le 512 du compte qu’elle ouvre, pas le sien',
+    (b) => b.ecritureVueParLeModele(dOuverture({ compte: '512100' }, { compte: '512000', sens: 'credit' }), null),
+    vue(dOuverture({}, { compte: '512000', sens: 'credit' }), NOM_DE_L_OUVERTURE)],
+  ['d’un dossier qui lit ses ventes : sa source', (b) => b.ecritureVueParLeModele(dOuverture({ compte: '512100' }), VENTES),
+    vue(dOuverture({}), NOM_DE_L_OUVERTURE, 'ouverture_eclatee')],
+  ['le compte bancaire lu avec son libellé : il ne part pas',
+    (b) => b.ecritureVueParLeModele(dOuverture({ compte: '512100', libelle: 'Livret de Patient fictif Orvelan' }), null), vue(dOuverture({}), NOM_DE_L_OUVERTURE)],
+  ['l’ouverture de 2000 : le relevé de 1999', (b) => b.nomDeLOuvertureEclatee('512300', '2000-01-01'), 'Ouverture du 512300 au relevé du 31/12/1999'],
+  // Le côté fermé : aucun libellé, sa source dite.
+  ...([
+    ['un compte non lu', null],
+    ['un compte que la lecture n’a pas embarqué', undefined],
+    ['un compte sans son 512', {}],
+    ['un 512 qui n’est pas un texte', { compte: 512100 }],
+    ['un compte qui n’est pas un 512', { compte: '411000' }],
+    ['un 512 à sept chiffres', { compte: '5121000' }],
+  ] as const).map(([quoi, compte]) => [`la ligne de l’ouverture, ${quoi} : aucun libellé`,
+    (b: Bloc) => b.ecritureVueParLeModele(compte === undefined ? sans(dOuverture(null), 'comptes_bancaires') : dOuverture(compte), VENTES),
+    vue(dOuverture({}), null, 'ouverture_eclatee')] as const),
+  ...(['2026-01-02', '2026-12-31', '2026-01-01T00:00:00Z', '', 20260101] as const).map((date) => [
+    `la ligne de l’ouverture datée ${String(date) || 'de rien'} : aucun libellé`,
+    (b: Bloc) => b.ecritureVueParLeModele(dOuverture({ compte: '512100' }, { date }), null), vue(dOuverture({}, { date }), null)] as const),
+  // Le drapeau baissé : la clé n'est pas lue, la ligne est rattachée à rien, et se tait — sans source.
+  ['le drapeau baissé : la ligne lue sans sa source ni son compte, rattachée à rien',
+    (b) => b.ecritureVueParLeModele(sans(sans(dOuverture({ compte: '512100' }), 'ouverture_compte_bancaire_id'), 'comptes_bancaires'), VENTES),
+    vue(dOuverture({}), null, null)],
+  ['une ligne d’une autre source, la clé de l’ouverture nulle : jugée comme hier',
+    (b) => b.ecritureVueParLeModele({ ...dotation(), ouverture_compte_bancaire_id: null, comptes_bancaires: null }, null), vue(dotation(), 'Dotation 2026 — Bien fictif')],
+]
+
 const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu: unknown])[] = [
   // Le nom d'une pièce de vente : sa date, son montant TTC.
   ['le nom : une date et un montant', (b) => b.nomDUnePieceDeVente({ date_piece: '2026-01-15', montant_ttc: 120 }), 'Pièce de vente du 15/01/2026, 120,00 €'],
@@ -436,6 +483,7 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
   ['la reconnaissance, seule : la racine commence le compte (607 et 401700 portent un 7, 104100 un 41)',
     (b) => b.debitQuiRendLArgentDUnClient(surLesLignes(...lignesDuMouvement('607000', '401700', '104100', '512000'))), false],
   ['la reconnaissance, seule : une ligne propre sur un produit suffit, quel que soit son rang', (b) => b.debitQuiRendLArgentDUnClient(surLesLignes(...lignesDuMouvement('512000', '627000', '708000'))), true],
+  ...CAS_DE_L_OUVERTURE,
   // Ce qui est rendu tel quel l'est vraiment : ni copie ni clé ajoutée.
   ['une pièce d’achat : le même objet', (b) => {
     const p = piece({ type_piece: 'achat' })
@@ -504,8 +552,28 @@ describe('agent-comptable / bloc PIÈCES DE VENTE (le seul passage vers le modè
     const cles = relations.filter((r) => r.parent !== 'dossiers').map((r) => r.colonne).sort()
     expect(cles.length, 'le plancher : les neuf sources d’aujourd’hui, la caisse comprise').toBeGreaterThanOrEqual(9)
     const enAttente = EN_ATTENTE_DE_L_ASSISTANT.map(([colonne]) => colonne).filter((c) => cles.includes(c))
-    expect([...deployee.RATTACHEMENTS_D_UNE_LIGNE, ...enAttente].sort()).toEqual(cles)
+    // MCB5g : la clé de l'ouverture éclatée, quand sa migration entrera dans l'export, est jugée à part (le drapeau).
+    const ouverture = cles.includes(deployee.RATTACHEMENT_DE_L_OUVERTURE) ? [deployee.RATTACHEMENT_DE_L_OUVERTURE] : []
+    expect([...deployee.RATTACHEMENTS_D_UNE_LIGNE, ...ouverture, ...enAttente].sort()).toEqual(cles)
     expect(new Set(deployee.RATTACHEMENTS_D_UNE_LIGNE).size).toBe(deployee.RATTACHEMENTS_D_UNE_LIGNE.length)
+  })
+
+  // MCB5g : la clé de l'ouverture éclatée, déclarée par sa migration (préparée, puis appliquée) vers les comptes bancaires ;
+  // jugée par le bloc, mais hors des rattachements que toute ligne doit porter — elle n'est lue que le drapeau levé.
+  it('la clé de l’ouverture éclatée : déclarée par une migration vers comptes_bancaires, hors des rattachements', () => {
+    const declarees = relationsDuSchema([...fichiersDuSchema(), ...fichiersPrepares()]).filter((r) => r.enfant === 'ecritures_brouillon')
+    expect(deployee.RATTACHEMENT_DE_L_OUVERTURE).toBe('ouverture_compte_bancaire_id')
+    expect(declarees.some((r) => r.colonne === deployee.RATTACHEMENT_DE_L_OUVERTURE && r.parent === 'comptes_bancaires')).toBe(true)
+    expect(deployee.RATTACHEMENTS_D_UNE_LIGNE).not.toContain(deployee.RATTACHEMENT_DE_L_OUVERTURE)
+    // Une seule clé du brouillon vers les comptes bancaires : `comptes_bancaires(compte)` ne s'embarque que par elle.
+    expect(declarees.filter((r) => r.parent === 'comptes_bancaires').map((r) => r.colonne)).toEqual([deployee.RATTACHEMENT_DE_L_OUVERTURE])
+  })
+
+  // Le nom d'une ligne de l'ouverture est le libellé que la base compose, tel que l'application le redit.
+  it('le nom de l’ouverture éclatée : celui de libelleDeLEclatement (src/lib/ouvertureEclatee.ts)', () => {
+    for (const [compte, annee] of [['512100', 2026], ['512999', 2027], ['512001', 2000]] as const) {
+      expect(deployee.nomDeLOuvertureEclatee(compte, `${annee}-01-01`)).toBe(libelleDeLEclatement(compte, `${annee - 1}-12-31`))
+    }
   })
 
   // Une clé en attente n'est pas une raison morte : une migration la déclare — appliquée (l'export) ou préparée
@@ -636,6 +704,21 @@ describe('le bloc PIÈCES DE VENTE sait encore échouer', () => {
     ['libelleEtSource : la caisse tue, comme une ligne rattachée à rien', '  if (ligne.operation_caisse_id != null) return { libelle: libelleDUneLigneDeCaisse(ligne), source: "caisse" }\n', ''],
     ['libelleEtSource : une ligne lue sans son opération embarquée jugée quand même', '\n    || !("operations_caisse" in ligne)', ''],
     ['libelleEtSource : la caisse jugée avant la pièce (la contrepartie d’un paiement)', '  if (ligne.piece_id != null) return {', '  if (ligne.piece_id != null && ligne.operation_caisse_id == null) return {'],
+    // MCB5g : l'ouverture éclatée.
+    ['RATTACHEMENT_DE_L_OUVERTURE : une autre clé', 'const RATTACHEMENT_DE_L_OUVERTURE = "ouverture_compte_bancaire_id"', 'const RATTACHEMENT_DE_L_OUVERTURE = "compte_bancaire_id"'],
+    ['nomDeLOuvertureEclatee : le jour de la ligne pris pour celui du relevé', '- 1).padStart(4, "0")}`', ').padStart(4, "0")}`'],
+    ['nomDeLOuvertureEclatee : tout compte accepté', '  if (typeof compte !== "string" || !/^512\\d{3}$/.test(compte)) return null\n', '  if (typeof compte !== "string") return null\n'],
+    ['nomDeLOuvertureEclatee : toute date acceptée', '  if (typeof date !== "string" || !/^\\d{4}-01-01$/.test(date)) return null\n', '  if (typeof date !== "string") return null\n'],
+    ['nomDeLOuvertureEclatee : un instant pris pour une date', '/^\\d{4}-01-01$/.test(date)', '/^\\d{4}-01-01/.test(date)'],
+    ['libelleDUneLigneDOuverture : le libellé du brouillon, faute de compte lu',
+      '  if (compte === null || typeof compte !== "object") return null\n  return nomDeLOuvertureEclatee', '  if (compte === null || typeof compte !== "object") return libelleDuBrouillon(ligne)\n  return nomDeLOuvertureEclatee'],
+    ['libelleDUneLigneDOuverture : le libellé du brouillon avant le nom', '  return nomDeLOuvertureEclatee((compte', '  return libelleDuBrouillon(ligne) ?? nomDeLOuvertureEclatee((compte'],
+    ['libelleDUneLigneDOuverture : le libellé du compte bancaire', '  return nomDeLOuvertureEclatee((compte as { compte?: unknown }).compte, ligne.date)', '  return (compte as { libelle?: string }).libelle ?? nomDeLOuvertureEclatee((compte as { compte?: unknown }).compte, ligne.date)'],
+    ['libelleEtSource : l’ouverture sous le libellé du brouillon', '{ libelle: libelleDUneLigneDOuverture(ligne), source: "ouverture_eclatee" }', '{ libelle: libelleDuBrouillon(ligne), source: "ouverture_eclatee" }'],
+    ['libelleEtSource : la source de l’ouverture perdue', '{ libelle: libelleDUneLigneDOuverture(ligne), source: "ouverture_eclatee" }', '{ libelle: libelleDUneLigneDOuverture(ligne), source: null }'],
+    ['libelleEtSource : l’ouverture parmi les rattachements que toute ligne doit porter (le drapeau baissé tairait tout)',
+      '!RATTACHEMENTS_D_UNE_LIGNE.every((c) => c in ligne)', '![...RATTACHEMENTS_D_UNE_LIGNE, RATTACHEMENT_DE_L_OUVERTURE].every((c) => c in ligne)'],
+    ['libelleEtSource : l’ouverture jugée sur la présence de sa clé, nulle comprise', '  if (ligne[RATTACHEMENT_DE_L_OUVERTURE] != null) return', '  if (RATTACHEMENT_DE_L_OUVERTURE in ligne) return'],
   ]
   for (const [quoi, avant, apres] of DERIVES) {
     it(`attrape ${quoi}`, () => {
@@ -671,6 +754,8 @@ const QUI_NOMMENT: Readonly<Record<string, readonly string[]>> = {
   ecritures_brouillon: ['libelle', 'piece_ref', 'comp_aux_num', 'comp_aux_lib'],
   lignes_bancaires: ['libelle', 'libelle_brut'],
   factures_emises: ['tiers_nom'],
+  // MCB5g : le libellé d'un compte bancaire et la fin de son identifiant, des textes du cabinet que le client « Banque » lit.
+  comptes_bancaires: ['libelle', 'fin_d_identifiant'],
 }
 /**
  * Ce qui ne se lit jamais, ni déclaré ni passé : le client d'une facture (VF9c) ; le libellé de la banque (VF9CQ1 : il ne
@@ -679,6 +764,7 @@ const QUI_NOMMENT: Readonly<Record<string, readonly string[]>> = {
 const JAMAIS = [
   'factures_emises.tiers_nom', 'lignes_bancaires.libelle', 'lignes_bancaires.libelle_brut',
   'ecritures_brouillon.piece_ref', 'ecritures_brouillon.comp_aux_num', 'ecritures_brouillon.comp_aux_lib',
+  'comptes_bancaires.libelle', 'comptes_bancaires.fin_d_identifiant',
 ]
 
 type Passage = 'pieceVueParLeModele' | 'ecritureVueParLeModele'
@@ -706,6 +792,8 @@ const MOUVEMENT_EMBARQUE = 'lignes_bancaires(date, montant, encaissements_de_fac
  */
 const OPERATION_EMBARQUEE = 'operations_caisse(genre, date, montant)'
 const EMBARQUES = ['pieces(type_piece, date_piece, montant_ttc)', MOUVEMENT_EMBARQUE, OPERATION_EMBARQUEE]
+/** MCB5g : la source de l'ouverture éclatée et le 512 de son compte bancaire, à gauche et rien d'autre, le drapeau levé seulement. */
+const OUVERTURE_EMBARQUEE = ['ouverture_compte_bancaire_id', 'comptes_bancaires(compte)'] as const
 /** L'appel du passage, tel que l'outil le fait sur ses lignes lues : une fois, et lui seul. */
 const APPEL_DU_PASSAGE: Readonly<Record<Passage, string>> = {
   pieceVueParLeModele: '((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)',
@@ -748,7 +836,7 @@ const LECTURES_QUI_NOMMENT: readonly LectureDeclaree[] = [
   },
 ]
 
-interface Lecture { zone: string; table: string; selections: string[]; nomme: string[]; lues: string[]; position: number }
+interface Lecture { zone: string; table: string; selections: string[]; drapeau: string | null; nomme: string[]; lues: string[]; position: number }
 
 /** Découpe sur les virgules de premier niveau : `pieces(type_piece, date_piece)` est UNE entrée. */
 function entrees(texte: string): string[] {
@@ -826,7 +914,7 @@ function lecturesDe(source: string): { lectures: Lecture[]; fautes: string[] } {
       const [t, colonne] = c.split('.')
       return (QUI_NOMMENT[t] ?? []).includes(colonne)
     })
-    lectures.push({ zone, table, selections, nomme, lues, position: depart.position })
+    lectures.push({ zone, table, selections, drapeau: choix ? choix[1] : null, nomme, lues, position: depart.position })
   }
   return { lectures, fautes }
 }
@@ -858,6 +946,21 @@ function fautesDe(source: string): string[] {
         if (d.passage === 'ecritureVueParLeModele') {
           for (const forme of EMBARQUES) {
             if (!entrees(t).includes(forme)) fautes.push(`${d.zone} : la sélection ne porte pas ${forme} (à gauche, et rien d’autre)`)
+          }
+        }
+      }
+      // MCB5g : les lignes se lisent sous le drapeau des comptes bancaires — levé, la source de l'ouverture éclatée et le 512
+      // de son compte, à gauche, rien d'autre du compte ; baissé, ni l'une ni l'autre : la colonne n'existe pas avant la migration.
+      if (d.passage === 'ecritureVueParLeModele') {
+        const [levee, baissee] = l.selections
+        if (l.drapeau !== 'COMPTES_BANCAIRES_PREVUS' || l.selections.length !== 2) {
+          fautes.push(`${d.zone} : les lignes ne se lisent pas sous le drapeau des comptes bancaires`)
+        } else {
+          for (const forme of OUVERTURE_EMBARQUEE) {
+            if (!entrees(levee).includes(forme)) fautes.push(`${d.zone} : le drapeau levé, la sélection ne porte pas ${forme}`)
+          }
+          if (entrees(baissee).some((e) => e === OUVERTURE_EMBARQUEE[0] || e.startsWith('comptes_bancaires'))) {
+            fautes.push(`${d.zone} : le drapeau baissé, la sélection lit l’ouverture éclatée, que la base n’a pas encore`)
           }
         }
       }
@@ -916,89 +1019,112 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
   // défaut ci-dessous est posé dans la vraie source, en mémoire.
   const source = sourceDeployee()
   const SELECTION_DES_LIGNES = 'piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"'
-  const DEFAUTS: readonly (readonly [quoi: string, mutee: () => string])[] = [
-    ['une lecture de plus du tiers, dans resume_dossier', () => muter(source, [[
+  /**
+   * Depuis MCB5g, `lister_ecritures` lit ses lignes sous deux sélections (le drapeau des comptes bancaires : levé, la source de
+   * l'ouverture éclatée et le 512 de son compte) : une ancre qui paraît dans les deux se plante dans CHACUNE, à part — le
+   * scanner juge chaque sélection. Une ancre unique, comme avant.
+   */
+  const chacune = (texte: string, [[avant, apres]]: readonly (readonly [string, string])[]): string[] => {
+    const morceaux = texte.split(avant)
+    if (morceaux.length - 1 === 1) return [muter(texte, [[avant, apres]])]
+    if (morceaux.length - 1 !== 2) throw new Error(`ancre trouvée ${morceaux.length - 1} fois : ${avant.slice(0, 80)}`)
+    return [0, 1].map((i) => morceaux.slice(0, i + 1).join(avant) + apres + morceaux.slice(i + 1).join(avant))
+  }
+  const LEVEE = 'encaissement_id)), ouverture_compte_bancaire_id, comptes_bancaires(compte)" : "'
+  const DEFAUTS: readonly (readonly [quoi: string, mutee: () => string | string[]])[] = [
+    ['une lecture de plus du tiers, dans resume_dossier', () => chacune(source, [[
       'admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),',
       'admin.from("pieces").select("id, tiers", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),']])],
-    ['lister_pieces rend ses pièces sans le passage', () => muter(source, [[
+    ['lister_pieces rend ses pièces sans le passage', () => chacune(source, [[
       '    const lues = ((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)\n', '    const lues = ((data ?? []) as Record<string, unknown>[])\n']])],
     // Réancré à VF9CQ1 : l'outil n'a plus qu'un retour, après le passage.
-    ['lister_ecritures rend aussi les lignes lues, sans le passage', () => muter(source, [[
+    ['lister_ecritures rend aussi les lignes lues, sans le passage', () => chacune(source, [[
       '    return resultatListe(lignes, count, "ecritures")\n', '    return resultatListe(nommees ? lignes : data, count, "ecritures")\n']])],
     // Les trois défauts de la pièce embarquée, réancrés à VF9CQ1 : une seule sélection, la pièce et le mouvement embarqués.
-    ['la pièce embarquée qui rapporte son tiers', () => muter(source, [[
+    ['la pièce embarquée qui rapporte son tiers', () => chacune(source, [[
       'pieces(type_piece, date_piece, montant_ttc), lignes_bancaires', 'pieces(type_piece, date_piece, montant_ttc, tiers), lignes_bancaires']])],
-    ['la pièce embarquée oubliée d’une des deux sélections', () => muter(source, [[
+    ['la pièce embarquée oubliée d’une des deux sélections', () => chacune(source, [[
       `, pieces(type_piece, date_piece, montant_ttc), ${MOUVEMENT_EMBARQUE}"`, `, ${MOUVEMENT_EMBARQUE}"`]])],
-    ['la pièce embarquée en jointure interne : une ligne sans pièce disparaîtrait', () => muter(source, [[
+    ['la pièce embarquée en jointure interne : une ligne sans pièce disparaîtrait', () => chacune(source, [[
       'pieces(type_piece, date_piece, montant_ttc), lignes_bancaires', 'pieces!inner(type_piece, date_piece, montant_ttc), lignes_bancaires']])],
-    ['une sélection par une variable', () => muter(source, [[
+    ['une sélection par une variable', () => chacune(source, [[
       'admin.from("categories").select("id, libelle", { count: "exact" })', 'admin.from("categories").select(colonnes, { count: "exact" })']])],
-    ['une pièce lue en entier (*)', () => muter(source, [[
+    ['une pièce lue en entier (*)', () => chacune(source, [[
       'admin.from("pieces").select("id, tiers, confiance", { count: "exact" })', 'admin.from("pieces").select("*", { count: "exact" })']])],
-    ['une troisième lecture du tiers dans points_a_traiter', () => muter(source, [[
+    ['une troisième lecture du tiers dans points_a_traiter', () => chacune(source, [[
       'admin.from("lettrages_manuels").select("id, groupe, piece_id, compte", { count: "exact" })', 'admin.from("pieces").select("id, groupe, tiers, compte", { count: "exact" })']])],
-    ['le client d’une facture lu', () => muter(source, [[
+    ['le client d’une facture lu', () => chacune(source, [[
       'admin.from("factures_emises").select("id, type, numero", { count: "exact" })', 'admin.from("factures_emises").select("id, type, numero, tiers_nom", { count: "exact" })']])],
-    ['un outil que le scanner ne connaît pas', () => muter(source, [[
+    ['un outil que le scanner ne connaît pas', () => chacune(source, [[
       '  if (nom === "points_a_traiter") {\n', '  if (nom === "lister_clients") {\n    return {}\n  }\n\n  if (nom === "points_a_traiter") {\n']])],
-    ['une table nommée par une variable', () => muter(source, [[
+    ['une table nommée par une variable', () => chacune(source, [[
       'admin.from("soldes_reportes").select(', 'admin.from(tableDesSoldes).select(']])],
     ['le scanner aveugle : plus aucune lecture reconnue', () => source.replaceAll('.from(', '.de(')],
     // VF9CQ1 : le mouvement de chaque ligne, ses rattachements, le libellé de la banque, ce que la validation fige au brouillon.
     // Réancrés à VF9CQ1B : le mouvement embarqué porte aussi son classement et ses lignes.
-    ['le mouvement embarqué qui rapporte son libellé', () => muter(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires(date, montant, libelle, ']])],
-    ['le mouvement embarqué qui rapporte son libellé brut', () => muter(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires(date, montant, libelle_brut, ']])],
-    ['le mouvement de chaque ligne oublié', () => muter(source, [[`, ${MOUVEMENT_EMBARQUE}"`, '"']])],
-    ['le mouvement de chaque ligne lu sans son montant', () => muter(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires(date, ']])],
-    ['le mouvement de chaque ligne en jointure interne : une ligne sans mouvement disparaîtrait', () => muter(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires!inner(date, montant, ']])],
+    ['le mouvement embarqué qui rapporte son libellé', () => chacune(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires(date, montant, libelle, ']])],
+    ['le mouvement embarqué qui rapporte son libellé brut', () => chacune(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires(date, montant, libelle_brut, ']])],
+    ['le mouvement de chaque ligne oublié', () => chacune(source, [[`, ${MOUVEMENT_EMBARQUE}"`, '"']])],
+    ['le mouvement de chaque ligne lu sans son montant', () => chacune(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires(date, ']])],
+    ['le mouvement de chaque ligne en jointure interne : une ligne sans mouvement disparaîtrait', () => chacune(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires!inner(date, montant, ']])],
     // VF9CQ1B : le classement du mouvement et ses lignes, lus avec lui ; jamais leur libellé ni ce que la validation y fige.
-    ['le classement du mouvement non lu', () => muter(source, [['lignes_bancaires(date, montant, encaissements_de_factures, ', 'lignes_bancaires(date, montant, ']])],
-    ['les lignes du mouvement non lues', () => muter(source, [['encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"', 'encaissements_de_factures)"']])],
-    ['les lignes du mouvement lues sans leur compte', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(facture_id, encaissement_id))"']])],
-    ['les lignes du mouvement lues sans leur facture', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, encaissement_id))"']])],
-    ['les lignes du mouvement lues sans leur encaissement', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, facture_id))"']])],
-    ['les lignes du mouvement lues avec leur libellé', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, libelle, facture_id, encaissement_id))"']])],
-    ['les lignes du mouvement lues avec leur référence de pièce figée', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, piece_ref, facture_id, encaissement_id))"']])],
-    ['les lignes du mouvement lues avec leur compte auxiliaire figé', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, comp_aux_lib, facture_id, encaissement_id))"']])],
-    ['les lignes du mouvement en jointure interne', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon!inner(compte, facture_id, encaissement_id))"']])],
-    ['les lignes du mouvement désignées sous une forme que le scanner ne sait pas lire', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon!ligne_bancaire_id(compte, facture_id, encaissement_id))"']])],
-    ['les lignes du mouvement lues en entier (*)', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(*))"']])],
-    ['le mouvement de chaque ligne embarquant aussi ses encaissements', () => muter(source, [['encaissement_id))"', 'encaissement_id), encaissements_factures(id))"']])],
+    ['le classement du mouvement non lu', () => chacune(source, [['lignes_bancaires(date, montant, encaissements_de_factures, ', 'lignes_bancaires(date, montant, ']])],
+    ['les lignes du mouvement non lues', () => chacune(source, [['encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"', 'encaissements_de_factures)"']])],
+    ['les lignes du mouvement lues sans leur compte', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement lues sans leur facture', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, encaissement_id))"']])],
+    ['les lignes du mouvement lues sans leur encaissement', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, facture_id))"']])],
+    ['les lignes du mouvement lues avec leur libellé', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, libelle, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement lues avec leur référence de pièce figée', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, piece_ref, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement lues avec leur compte auxiliaire figé', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, comp_aux_lib, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement en jointure interne', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon!inner(compte, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement désignées sous une forme que le scanner ne sait pas lire', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon!ligne_bancaire_id(compte, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement lues en entier (*)', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(*))"']])],
+    ['le mouvement de chaque ligne embarquant aussi ses encaissements', () => chacune(source, [['encaissement_id))"', 'encaissement_id), encaissements_factures(id))"']])],
     ...['ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id', 'operation_caisse_id'].map((c) => [
-      `le rattachement ${c} non lu`, () => muter(source, [[SELECTION_DES_LIGNES, SELECTION_DES_LIGNES.replace(`, ${c}`, '')]]),
+      `le rattachement ${c} non lu`, () => chacune(source, [[SELECTION_DES_LIGNES, SELECTION_DES_LIGNES.replace(`, ${c}`, '')]]),
     ] as const),
     // Le relevé se lit sous deux formes depuis MCB5 (la colonne `compte_bancaire_id`, le drapeau levé seulement) : chacune
     // se mute à part.
-    ['le libellé de la banque lu par points_a_traiter', () => muter(source, [[
+    ['le libellé de la banque lu par points_a_traiter', () => chacune(source, [[
       'ventilee, encaissements_de_factures, declaration_tva_id", {', 'ventilee, encaissements_de_factures, declaration_tva_id, libelle", {']])],
-    ['le libellé de la banque lu par points_a_traiter, les comptes bancaires prévus', () => muter(source, [[
+    ['le libellé de la banque lu par points_a_traiter, les comptes bancaires prévus', () => chacune(source, [[
       'encaissements_de_factures, declaration_tva_id, compte_bancaire_id", {', 'encaissements_de_factures, declaration_tva_id, compte_bancaire_id, libelle", {']])],
-    ['la référence de pièce que la validation fige, lue', () => muter(source, [[
+    ['la référence de pièce que la validation fige, lue', () => chacune(source, [[
       'select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut,', 'select("date, compte, libelle, sens, montant, piece_id, piece_ref, ligne_bancaire_id, statut,']])],
-    ['le compte auxiliaire que la validation fige, lu', () => muter(source, [[
+    ['le compte auxiliaire que la validation fige, lu', () => chacune(source, [[
       'select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut,', 'select("date, compte, libelle, sens, montant, piece_id, comp_aux_lib, ligne_bancaire_id, statut,']])],
-    ['lister_ecritures passe ses lignes sans ce que le dossier sait de ses ventes', () => muter(source, [[
+    ['lister_ecritures passe ses lignes sans ce que le dossier sait de ses ventes', () => chacune(source, [[
       '.map((ligne) => ecritureVueParLeModele(ligne, nommees))', '.map((ligne) => ecritureVueParLeModele(ligne, null))']])],
     // Étape C5 : l'opération de caisse de chaque ligne — son genre, sa date, son montant, rien d'autre, à gauche.
-    ['l’opération de caisse de chaque ligne oubliée', () => muter(source, [[`, ${OPERATION_EMBARQUEE}, pieces(`, ', pieces(']])],
-    ['l’opération de caisse lue sans son genre', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(date, montant)']])],
-    ['l’opération de caisse lue sans son montant', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date)']])],
-    ['l’opération de caisse lue avec sa catégorie', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, categorie_id)']])],
-    ['l’opération de caisse lue avec le libellé de sa catégorie', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, categories(libelle))']])],
-    ['l’opération de caisse lue avec la pièce qu’elle paie', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, pieces(tiers))']])],
-    ['l’opération de caisse en jointure interne : une ligne sans opération disparaîtrait', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse!inner(genre, date, montant)']])],
-    ['l’opération de caisse lue en entier (*)', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(*)']])],
+    ['l’opération de caisse de chaque ligne oubliée', () => chacune(source, [[`, ${OPERATION_EMBARQUEE}, pieces(`, ', pieces(']])],
+    ['l’opération de caisse lue sans son genre', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse(date, montant)']])],
+    ['l’opération de caisse lue sans son montant', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date)']])],
+    ['l’opération de caisse lue avec sa catégorie', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, categorie_id)']])],
+    ['l’opération de caisse lue avec le libellé de sa catégorie', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, categories(libelle))']])],
+    ['l’opération de caisse lue avec la pièce qu’elle paie', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, pieces(tiers))']])],
+    ['l’opération de caisse en jointure interne : une ligne sans opération disparaîtrait', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse!inner(genre, date, montant)']])],
+    ['l’opération de caisse lue en entier (*)', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse(*)']])],
     // Étape C13 : les opérations de caisse que lit points_a_traiter, sans rien qui nomme.
-    ['les paiements par la caisse lus avec le tiers de leur pièce', () => muter(source, [[
+    ['les paiements par la caisse lus avec le tiers de leur pièce', () => chacune(source, [[
       'admin.from("operations_caisse").select("id, genre, piece_id, date, montant, retire_le, remplace_id",',
       'admin.from("operations_caisse").select("id, genre, piece_id, date, montant, retire_le, remplace_id, pieces(tiers)",']])],
-    ['les paiements par la caisse lus en entier (*)', () => muter(source, [[
+    ['les paiements par la caisse lus en entier (*)', () => chacune(source, [[
       'admin.from("operations_caisse").select("id, genre, piece_id, date, montant, retire_le, remplace_id",', 'admin.from("operations_caisse").select("*",']])],
+    // MCB5g : la sélection du drapeau levé — le compte bancaire de l'ouverture, son 512 et rien d'autre.
+    ['le compte bancaire de l’ouverture lu avec son libellé', () => muter(source, [[LEVEE, LEVEE.replace('(compte)', '(compte, libelle)')]])],
+    ['le compte bancaire de l’ouverture lu avec la fin de son identifiant', () => muter(source, [[LEVEE, LEVEE.replace('(compte)', '(compte, fin_d_identifiant)')]])],
+    ['le compte bancaire de l’ouverture lu en entier (*)', () => muter(source, [[LEVEE, LEVEE.replace('(compte)', '(*)')]])],
+    ['la source de l’ouverture non lue, le drapeau levé', () => chacune(source, [[LEVEE, 'encaissement_id)), comptes_bancaires(compte)" : "']])],
+    ['le compte de l’ouverture non lu, le drapeau levé', () => chacune(source, [[LEVEE, 'encaissement_id)), ouverture_compte_bancaire_id" : "']])],
+    ['le compte de l’ouverture en jointure interne : une ligne sans compte disparaîtrait', () => muter(source, [[LEVEE, LEVEE.replace('comptes_bancaires(', 'comptes_bancaires!inner(')]])],
+    ['la source de l’ouverture lue le drapeau baissé : la colonne n’existe pas avant la migration', () => chacune(source, [[
+      'encaissement_id))", { count: "exact" }).eq("dossier_id", dossierId)', 'encaissement_id)), ouverture_compte_bancaire_id, comptes_bancaires(compte)", { count: "exact" }).eq("dossier_id", dossierId)']])],
   ]
   for (const [quoi, mutee] of DEFAUTS) {
     it(`voit ${quoi}`, () => {
-      expect(fautesDe(mutee()).length).toBeGreaterThan(0)
+      const mutees = [mutee()].flat()
+      expect(mutees.length).toBeGreaterThan(0)
+      for (const m of mutees) expect(fautesDe(m).length).toBeGreaterThan(0)
     })
   }
 })
