@@ -5,6 +5,7 @@ import type { Predicat } from '../../test/filtresPostgrest'
 import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import EcrituresTab from './EcrituresTab'
+import OuvertureEclateeCarte from './OuvertureEclateeCarte'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // L'OUVERTURE DE LA BANQUE ÉCLATÉE ENTRE LES COMPTES BANCAIRES, DANS L'ONGLET ÉCRITURES (ligne 26.6, MCB5, sixième partie,
@@ -220,6 +221,28 @@ describe('Écrire : la fonction seule, sur un clic confirmé, sous un verrou rel
     fireEvent.click(within(carte()).getByRole('button', { name: 'Réécrire' }))
     await waitFor(() => expect(faux.rpcs).toHaveLength(1))
     expect(String(confirmation.mock.calls[0][0])).toContain('Elle remplace celle qui est au brouillon.')
+  })
+})
+
+describe('la carte seule : le verrou tient jusqu’au retour de la relecture, même quand l’onglet ne dit pas encore qu’il relit', () => {
+  it('un second clic pendant la relecture ne part pas ; il repart une fois la relecture revenue', async () => {
+    let finir: () => void = () => {}
+    const relire = vi.fn(() => new Promise<void>((r) => { finir = r }))
+    const lignes = [
+      { compte_bancaire_id: 's', compte: '512200', sens: 'debit' as const, montant: 250, libelle: LIBELLE },
+      { compte_bancaire_id: 's', compte: '512000', sens: 'credit' as const, montant: 250, libelle: LIBELLE },
+    ]
+    render(<OuvertureEclateeCarte dossierId={D} annee={2026} relecture={false} relire={relire}
+      carte={{ etat: 'lue', fige: false, eclatement: { etat: 'a_ecrire', lignes } }} />)
+    const bouton = screen.getByRole('button', { name: 'Écrire' })
+    fireEvent.click(bouton)
+    await waitFor(() => expect(relire).toHaveBeenCalledTimes(1))
+    fireEvent.click(bouton)
+    expect(faux.rpcs).toHaveLength(1)
+    await act(async () => { finir() })
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Écrire' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: 'Écrire' }))
+    await waitFor(() => expect(faux.rpcs).toHaveLength(2))
   })
 })
 
