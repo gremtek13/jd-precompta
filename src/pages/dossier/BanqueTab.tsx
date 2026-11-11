@@ -36,6 +36,7 @@ import {
   type LectureDesComptes,
 } from '../../lib/importParCompte'
 import { lireLesComptesDuDossier } from '../../lib/comptesBancairesLecture'
+import { banquesDuDossier, modeleDuMouvement } from '../../lib/banqueDuMouvement'
 import { jonctionsParCompte, releveParCompte } from '../../lib/releveParCompte'
 import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
 import {
@@ -484,6 +485,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const lectureDesComptesDuReleve = useMemo<LectureDesComptes>(() => (!COMPTES_BANCAIRES_PREVUS ? { etat: 'sans_objet' }
     : comptesDuDossierLus && comptesDuDossierLus.dossierId === dossierId ? comptesDuDossierLus.lecture : { etat: 'en_cours' }),
   [comptesDuDossierLus, dossierId])
+  // La jambe de banque d'un mouvement (MCB5, lib/banqueDuMouvement.ts) : celle de son compte bancaire quand il tient son
+  // propre 512 à sa date, celle du rôle sinon. Drapeau baissé, ou aucun compte qui tienne le sien : le modèle lui-même,
+  // l'écriture d'hier. Des comptes illisibles retiennent l'écriture, dite avant l'appel.
+  const banquesDesMouvements = useMemo(() => banquesDuDossier(lectureDesComptesDuReleve, modele.plan), [lectureDesComptesDuReleve, modele.plan])
+  function modeleDe(ligne: LigneBancaire): ModeleComptable | null {
+    const m = modeleDuMouvement(modele, ligne, banquesDesMouvements)
+    if ('refus' in m) { window.alert(m.refus); return null }
+    return m.modele
+  }
   // Les ruptures de la suite des soldes, sur un relevé lu en entier seulement : un mouvement non lu ferait dire une rupture.
   // Compte après compte (MCB4, lib/releveParCompte.ts) : deux relevés de deux comptes ne se suivent jamais, et la rupture dit
   // son compte dès deux. Muettes tant que les comptes ne sont pas lus en entier ; drapeau baissé, une part, comme hier.
@@ -942,10 +952,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     if (!ligne || !cotisation) return false
     const refus = refusRapprochementCotisation(ligne, cotisation, modele.mode)
     if (refus) { window.alert(refus); return false }
+    const duMouvement = modeleDe(ligne)
+    if (!duMouvement) return false
     const { error } = await supabase.rpc('rapprocher_cotisation', {
       p_ligne_bancaire_id: ligne.id,
       p_cotisation_id: cotisation.id,
-      p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode, modele.plan),
+      p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode, duMouvement.plan),
     })
     if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
@@ -1017,10 +1029,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       window.alert(refus ?? `La catégorie « ${categorie.libelle} » n’a pas de compte.`)
       return false
     }
+    const duMouvement = modeleDe(ligne)
+    if (!duMouvement) return false
     const { error } = await supabase.rpc('affecter_mouvement_bancaire', {
       p_ligne_bancaire_id: ligne.id,
       p_categorie_id: categorie.id,
-      p_ecritures: ecritureDuMouvement(ligne, categorie.compte_comptable, taux, modele.plan),
+      p_ecritures: ecritureDuMouvement(ligne, categorie.compte_comptable, taux, duMouvement.plan),
       p_taux_tva: taux,
     })
     if (error) { window.alert(`L'affectation n'a pas pu être enregistrée : ${messageErreur(error, 'raison inconnue')}`); return false }
@@ -1070,10 +1084,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   async function ecrireCompteBilan(ligne: LigneBancaire, compte: string): Promise<boolean> {
     const refus = refusCompteDeBilanDuMouvement(ligne, compte, modele)
     if (refus) { window.alert(refus); return false }
+    const duMouvement = modeleDe(ligne)
+    if (!duMouvement) return false
     const { error } = await supabase.rpc('ecrire_mouvement_compte_bilan', {
       p_ligne_bancaire_id: ligne.id,
       p_compte: compte,
-      p_ecritures: ecritureDuCompteDeBilan(ligne, compte, modele.plan),
+      p_ecritures: ecritureDuCompteDeBilan(ligne, compte, duMouvement.plan),
     })
     if (error) { window.alert(`Le mouvement n'a pas pu être écrit au compte ${compte} : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
@@ -1086,7 +1102,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   async function ecrireVirementInterne(ligne: LigneBancaire, autreId: string): Promise<boolean> {
     const candidat = (virements.candidats.get(ligne.id) ?? []).find((c) => c.autre.id === autreId)
     if (!candidat) { window.alert('Ce mouvement n’est plus en face de celui-ci : la fiche a changé depuis l’affichage.'); return false }
-    const plan = ecritureDuVirementInterne(ligne, candidat, modele)
+    const plan = ecritureDuVirementInterne(ligne, candidat, modele, banquesDesMouvements)
     if (plan.cas === 'refus') { window.alert(plan.refus); return false }
     let ecrit: Pick<LigneBancaire, 'date' | 'montant'> | null = null
     for (const { ligne: m, ecriture } of plan.mouvements) {
@@ -1122,10 +1138,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     if (!declaration) return false
     const refus = refusPaiementTva(ligne, declaration)
     if (refus) { window.alert(refus); return false }
+    const duMouvement = modeleDe(ligne)
+    if (!duMouvement) return false
     const { error } = await supabase.rpc('rapprocher_declaration_tva', {
       p_ligne_bancaire_id: ligne.id,
       p_declaration_id: declaration.id,
-      p_ecriture: ecritureDuPaiementTva(ligne, modele.plan),
+      p_ecriture: ecritureDuPaiementTva(ligne, duMouvement.plan),
     })
     if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
@@ -1148,13 +1166,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     if (!emprunt) return false
     const refus = refusEcheanceEmprunt(ligne) ?? refusDecoupage(ligne, emprunt, d, echeancesOccupees(lignes, emprunt.id, ligne.id))
     if (refus) { window.alert(refus); return false }
+    const duMouvement = modeleDe(ligne)
+    if (!duMouvement) return false
     const { error } = await supabase.rpc('rapprocher_echeance_emprunt', {
       p_ligne_bancaire_id: ligne.id,
       p_emprunt_id: emprunt.id,
       p_echeance: d.echeance,
       p_interets: d.interets,
       p_assurance: d.assurance,
-      p_ecritures: ecritureDeLEcheance(ligne, d, modele.plan),
+      p_ecritures: ecritureDeLEcheance(ligne, d, duMouvement.plan),
     })
     if (error) { window.alert(`Le rapprochement de l'emprunt n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
@@ -1173,7 +1193,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // nouveau un mouvement ventilé remplace ses parts et son écriture. Les refus de la base sont refaits ici.
   async function ventiler(ligne: LigneBancaire, parts: PartSaisie[]): Promise<boolean> {
     const refus = refusVentilation(ligne, parts, categories, assujettiTva)
-    const ecriture = refus ? null : ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)
+    const duMouvement = refus ? null : modeleDe(ligne)
+    if (!refus && !duMouvement) return false
+    const ecriture = refus || !duMouvement ? null : ecritureDeLaVentilation(ligne, parts, categories, duMouvement, assujettiTva)
     if (!ecriture) {
       window.alert(refus ?? 'Une part n’a pas de compte de charge ou de produit : la ventilation ne peut pas s’écrire.')
       return false
@@ -1302,9 +1324,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     if (!ligne) return false
     const refus = refusVirementPersonnel(ligne)
     if (refus) { window.alert(refus); return false }
+    const duMouvement = modeleDe(ligne)
+    if (!duMouvement) return false
     const { error } = await supabase.rpc('classer_virement_personnel', {
       p_ligne_bancaire_id: ligne.id,
-      p_ecritures: ecritureDuVirementPersonnel(ligne, modele),
+      p_ecritures: ecritureDuVirementPersonnel(ligne, duMouvement),
     })
     if (error) { window.alert(`Le mouvement n'a pas pu être classé en virement personnel : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
@@ -1686,10 +1710,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             const ligne = lignes.find((l) => l.id === m.ligneId)
             const cotisation = cotisations.find((c) => c.id === m.cotisationId)
             if (!ligne || !cotisation) return { error: { message: 'mouvement ou échéance introuvable' } }
+            const duMouvement = modeleDuMouvement(modele, ligne, banquesDesMouvements)
+            if ('refus' in duMouvement) return { error: { message: duMouvement.refus } }
             const { error } = await supabase.rpc('rapprocher_cotisation', {
               p_ligne_bancaire_id: ligne.id,
               p_cotisation_id: cotisation.id,
-              p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode, modele.plan),
+              p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode, duMouvement.modele.plan),
             })
             return { error: error ? { message: messageErreur(error, 'raison inconnue') } : null }
           }

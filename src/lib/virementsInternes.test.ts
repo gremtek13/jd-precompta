@@ -1,3 +1,4 @@
+import { banquesDuDossier } from './banqueDuMouvement'
 import { describe, expect, it } from 'vitest'
 import type { MouvementBancaire } from './affectationBanque'
 import type { LectureDesComptes } from './importParCompte'
@@ -32,6 +33,8 @@ const LUS: LectureDesComptes = {
 const BAISSE: LectureDesComptes = { etat: 'sans_objet' }
 const AUCUN: MouvementsHorsDesLots = new Map()
 const T = modeleDeTest('tresorerie')
+// Les banques d'hier : le drapeau des comptes bancaires baissé, la jambe de banque au compte du rôle.
+const HIER = banquesDuDossier({ etat: 'sans_objet' }, T.plan)
 
 const DEBIT = mouvement({ id: 'deb', date: '2026-03-12', montant: -1500, compte_bancaire_id: 'A' })
 const CREDIT = mouvement({ id: 'cre', date: '2026-03-14', montant: 1500, libelle: 'VIR DE COMPTE A', compte_bancaire_id: 'B' })
@@ -114,26 +117,41 @@ describe('les virements entre deux comptes du dossier se reconnaissent au relev�
 describe('la confirmation écrit chaque moitié au 580, face à la banque d’aujourd’hui', () => {
   it('les deux mouvements, ce mouvement-ci d’abord, et le 580 revient à zéro', () => {
     const analyse = analyser([DEBIT, CREDIT])
-    const plan = ecritureDuVirementInterne(DEBIT, virementPropose(analyse, 'deb')!, T)
+    const plan = ecritureDuVirementInterne(DEBIT, virementPropose(analyse, 'deb')!, T, HIER)
     if (plan.cas !== 'ecrire') throw new Error(plan.refus)
     expect(plan.mouvements.map((m) => m.ligne.id)).toEqual(['deb', 'cre'])
     const lignes = plan.mouvements.flatMap((m) => m.ecriture)
     const solde = (compte: string) => lignes.filter((l) => l.compte === compte)
       .reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0)
     expect(solde(T.plan.virements_internes)).toBe(0)
-    // La jambe de banque reste le compte du rôle `banque` (MCB5 la changera) : les deux s'y annulent.
+    // Drapeau baissé (les banques « d'hier ») : la jambe de banque est le compte du rôle `banque`, les deux s'y annulent.
     expect(solde(T.plan.banque)).toBe(0)
     expect(new Set(lignes.map((l) => l.compte))).toEqual(new Set([T.plan.virements_internes, T.plan.banque]))
   })
 
+  it('MCB5 : chaque moitié s’écrit face à la banque de SON compte — le principal au rôle, le second à son 512 propre', () => {
+    const plan = ecritureDuVirementInterne(DEBIT, virementPropose(analyser([DEBIT, CREDIT]), 'deb')!, T, banquesDuDossier(LUS, T.plan))
+    if (plan.cas !== 'ecrire') throw new Error(plan.refus)
+    expect(plan.mouvements.map((m) => m.ecriture.map((l) => `${l.compte} ${l.sens} ${l.montant}`).sort())).toEqual([
+      ['512000 credit 1500', `${T.plan.virements_internes} debit 1500`],
+      ['512100 debit 1500', `${T.plan.virements_internes} credit 1500`],
+    ])
+  })
+
+  it('MCB5 : des comptes illisibles retiennent l’écriture des deux moitiés, le mouvement nommé', () => {
+    const plan = ecritureDuVirementInterne(DEBIT, virementPropose(analyser([DEBIT, CREDIT]), 'deb')!, T,
+      banquesDuDossier({ etat: 'illisible', motif: 'coupure' }, T.plan))
+    expect(plan.cas === 'refus' && plan.refus).toMatch(/^Le mouvement du 12\/03\/2026 .* lus en entier \(coupure\)/)
+  })
+
   it('la moitié qui reste : ce mouvement seul', () => {
     const ecrit = { ...DEBIT, statut: 'rapprochee' as const, compte_bilan: '580000' }
-    const plan = ecritureDuVirementInterne(CREDIT, { autre: ecrit, dejaAuCompte: true }, T)
+    const plan = ecritureDuVirementInterne(CREDIT, { autre: ecrit, dejaAuCompte: true }, T, HIER)
     expect(plan.cas === 'ecrire' && plan.mouvements.map((m) => m.ligne.id)).toEqual(['cre'])
   })
 
   it('un refus de la base, dit avant tout appel, nomme le mouvement', () => {
-    const plan = ecritureDuVirementInterne(DEBIT, { autre: { ...CREDIT, reglement_groupe: true }, dejaAuCompte: false }, T)
+    const plan = ecritureDuVirementInterne(DEBIT, { autre: { ...CREDIT, reglement_groupe: true }, dejaAuCompte: false }, T, HIER)
     expect(plan.cas).toBe('refus')
     expect(plan.cas === 'refus' && plan.refus).toMatch(/^Le mouvement du 14\/03\/2026 \(1\s500,00\s€\) : /)
   })

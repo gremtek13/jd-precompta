@@ -50902,3 +50902,23 @@ se suivent ; `rls.sql` 259 lignes, 0 en faute (bloc DP) ; `validationExercice.sq
 `DEPART_DU_CLIENT_PREVU` baissé : la carte « Le départ du client » (onglet Informations), la zone dangereuse qui dit et nomme les
 paquets manquants, la suppression qui les relit avant le stockage, le paquet qui s'enregistre après son téléchargement. Questions
 INAL5-Q1 à Q3.
+
+### 11/11/2026 — LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES DIX FONCTIONS DU RELEVÉ (MCB5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, sur MCB1 à MCB4, derrière `COMPTES_BANCAIRES_PREVUS` baissé.) **La migration** `jambe_de_banque_par_compte`
+(20261111200000, À COLLER : sept corps nomment la suppression des lignes propres au mouvement, comme hier ; retour 20261111200100) :
+les sept fonctions qui classent un mouvement lisent sa banque par `compte_de_banque_du_mouvement(v_ligne.id)` (MCB1) au lieu du
+rôle, au même endroit, sous le verrou du plan ; `ecriture_attendue_vente_facturee` et `ecritures_attendues_de_la_periode`, pour
+le mouvement classé par ses encaissements et l'encaissement du même jour ; `refus_compte_de_contrepartie` refuse aussi le 512
+propre d'un compte bancaire, aux mots d'hier. Sa garde exige MCB1 et les dix corps de la production (empreintes relues en SELECT).
+Écarté : la jointure en ligne dans la requête de la période (la règle écrite deux fois) ; l'appel coûte 12 µs par mouvement
+(35 ms pour 3 000). **Preuves** (réplique 197 + MCB1 + MCB2, port 54731) : l'essai neuf `jambeDeBanqueParCompte.sql` 18/18, EN
+ATTENTE sans elle, neuf mutations mordent ; treize essais voisins identiques avant et après, dont `rls.sql` (`caisse.sql` et
+`recompositionDesVentes.sql` gardent leurs fautes d'avant, des deux côtés) ; `sensDesReglesIgnorees.sql` (l'empreinte du corps de
+`rapprocher_cotisation`, rendue conditionnelle) et `laBaseLitLePlan.sql` (contrôles 3 et 4 adaptés, joué sur une copie munie des
+catégories de la production : seul le décompte du contrôle 7 change) adaptés ; huit essais restent impossibles sur la réplique
+(leur jeu de départ est en production : à rejouer après le collage). **L'application** :
+`lib/banqueDuMouvement.ts` rend le plan DU MOUVEMENT (le même objet au rôle, l'écriture d'hier) ; les huit gestes de la fiche
+Banque et le virement entre comptes s'y écrivent. Restent : les autres compositions (Écritures, Virements, Cotisations, les
+lots des règles, les ventes facturées), leurs détecteurs, le paiement d'une pièce, les lecteurs (FEC en deux rendus, MCB-Q4),
+l'à-nouveau de 2026 éclaté, l'assistant.
