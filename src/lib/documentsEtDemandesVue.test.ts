@@ -5,6 +5,8 @@ import {
   depotsCitables, documentDit, fichierDeLaReponseDit, lecteursDesDocuments, mesDemandesOuvertes, mesDocumentsOuverts,
   motifDit, natureDite, ouverturesDuDocument, PRESENTATION_DE_MES_DEMANDES, PRESENTATION_DE_MES_DOCUMENTS,
   SANS_LA_CASE_DOCUMENTS, type DemandeDuCabinet, type DocumentDuCabinet, type ReponseALaDemande,
+  accesProposables, accesProposeDOffice, CHOISIS_L_ACCES, confirmationDeLaRelanceParEmail, derniereRelanceDiteAuClient,
+  issueDeLaRelanceParEmail, relancesDitesAuCabinet, type RelanceDeLaDemande,
 } from './documentsEtDemandesVue'
 import { motsDuCabinet } from './espaceVentes'
 import { TROIS_CASES_EXPORTEES } from './troisCasesDeLAcces'
@@ -85,6 +87,57 @@ describe('ce que nomment les confirmations', () => {
     expect(c.paragraphes).toContain('Motif : Remplacée par une autre demande.')
     expect(c.paragraphes.join(' ')).toContain('Ouvre ensuite la demande qui la remplace')
     expect(confirmationDeLaCloture({ objet: 'Relevé' }, 'satisfaite').paragraphes.join(' ')).not.toContain('remplace')
+  })
+})
+
+describe('la relance d’une demande par e-mail (B3b)', () => {
+  const relance = (p: Partial<RelanceDeLaDemande>): RelanceDeLaDemande => ({
+    id: 'rl1', dossier_id: 'd1', demande_id: 'dm1', canal: 'ecran', email_id: null, relancee_par: 'u0',
+    relancee_le: '2026-11-05T09:00:00Z', ...p,
+  })
+
+  it('ne se proposent que les accès d’adresse lisible, par ordre d’adresse ; les autres se comptent', () => {
+    const lus = accesProposables([
+      { user_id: 'u2', email: ' zoe@exemple.invalid ' }, { user_id: 'u3', email: null }, { user_id: 'u4', email: 'sans-arobase' },
+      { user_id: 'u1', email: 'anne@exemple.invalid' },
+    ])
+    expect(lus).toEqual({
+      proposables: [{ user_id: 'u1', email: 'anne@exemple.invalid' }, { user_id: 'u2', email: 'zoe@exemple.invalid' }], sansAdresse: 2,
+    })
+    expect(accesProposeDOffice(lus.proposables)).toBeNull()
+    expect(accesProposeDOffice(lus.proposables.slice(0, 1))).toBe('u1')
+    expect(accesProposeDOffice([])).toBeNull()
+  })
+
+  it('la confirmation nomme l’adresse, l’objet et l’échéance, la signature ; jamais le détail', () => {
+    const c = confirmationDeLaRelanceParEmail({ objet: 'Relevé', echeance: '2026-11-20' }, 'anne@exemple.invalid')
+    expect(c.titre).toBe('Relancer par e-mail la demande « Relevé »')
+    const texte = c.paragraphes.join(' ')
+    expect(texte).toContain('L’e-mail part à anne@exemple.invalid')
+    expect(texte).toContain('« Relevé », et son échéance, le 20/11/2026')
+    expect(texte).toContain('signé du nom de ton cabinet')
+    expect(texte).toContain('Le détail de la demande ne part pas')
+    const sansEcheance = confirmationDeLaRelanceParEmail({ objet: 'Relevé', echeance: null }, null).paragraphes
+    expect(sansEcheance[0]).toBe(CHOISIS_L_ACCES)
+    expect(sansEcheance.join(' ')).toContain('« Relevé », sans échéance')
+  })
+
+  it('une relance partie sans s’inscrire se dit en erreur, et dit de ne pas la renvoyer', () => {
+    expect(issueDeLaRelanceParEmail('Relevé', 'a@b.fr', true).genre).toBe('ok')
+    const ratee = issueDeLaRelanceParEmail('Relevé', 'a@b.fr', false)
+    expect(ratee.genre).toBe('erreur')
+    expect(ratee.texte).toContain('L’e-mail est parti à a@b.fr, mais la relance n’a pas pu être inscrite')
+    expect(issueDeLaRelanceParEmail('Relevé', 'a@b.fr', undefined).genre).toBe('erreur')
+  })
+
+  it('la dernière relance dit son canal, au cabinet comme au client', () => {
+    expect(relancesDitesAuCabinet([])).toBeNull()
+    expect(relancesDitesAuCabinet([relance({}), relance({ id: 'rl2', canal: 'email', email_id: 'e1', relancee_le: '2026-11-07T09:00:00Z' })]))
+      .toBe('relancée 2 fois, la dernière le 07/11/2026 par e-mail')
+    expect(relancesDitesAuCabinet([relance({})])).toBe('relancée 1 fois, la dernière le 05/11/2026')
+    expect(derniereRelanceDiteAuClient(relance({ canal: 'email', email_id: 'e1' }))).toBe('ton cabinet t’a relancé par e-mail le 05/11/2026')
+    expect(derniereRelanceDiteAuClient(relance({}))).toBe('ton cabinet t’a relancé le 05/11/2026')
+    expect(motsDuCabinet(derniereRelanceDiteAuClient(relance({ canal: 'email' })))).toEqual([])
   })
 })
 

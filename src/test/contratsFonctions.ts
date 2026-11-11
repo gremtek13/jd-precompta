@@ -5112,14 +5112,20 @@ function demandeOuverte(m: Monde, valeurs: Record<string, unknown> = {}) {
   acces.email = ADRESSE_DE_L_ACCES
 }
 
-/** Ce qui est parti et ce qui s'est inscrit : l'adresse de l'accès, le texte fixe, l'objet ; ni le détail ; d'un tenant. */
-function relanceDeDemandeInscrite(r: Resultat, m: Monde): string[] {
+// La signature (B3B-Q3) : le nom du cabinet du dossier dans le monde de référence, et celle d'hier quand il ne se lit pas.
+const NOM_DU_CABINET_QUI_SIGNE = 'Cabinet fictif un'
+const SIGNATURE_PAR_DEFAUT = 'Votre cabinet comptable'
+
+/** Ce qui est parti et ce qui s'est inscrit : l'adresse de l'accès, le texte fixe, l'objet, la signature ; ni le détail ; d'un tenant. */
+const relanceDeDemandeInscriteSignee = (signature: string) => (r: Resultat, m: Monde): string[] => {
   const fautes: string[] = []
   const corps = corpsDe(r)
   if (corps.ok !== true || corps.relanceInscrite !== true) fautes.push(`réponse : ${r.texte.slice(0, 120)}`)
-  const envois = (m.notes.envois ?? []) as { subject?: unknown; html?: unknown; to?: unknown }[]
+  const envois = (m.notes.envois ?? []) as { subject?: unknown; html?: unknown; to?: unknown; from?: unknown }[]
   if (envois.length !== 1) return [...fautes, `${envois.length} envoi(s)`]
   if (envois[0].to !== ADRESSE_DE_L_ACCES) fautes.push(`destinataire : ${String(envois[0].to)}`)
+  if (!String(envois[0].html).includes(`Cordialement,<br>${signature}</p>`)) fautes.push(`le corps n’est pas signé « ${signature} »`)
+  if (typeof envois[0].from !== 'string' || !envois[0].from.startsWith(`${signature} <`)) fautes.push(`expéditeur : ${String(envois[0].from)}`)
   if (envois[0].subject !== 'Une demande de votre cabinet attend votre réponse') fautes.push(`sujet : ${String(envois[0].subject)}`)
   const html = String(envois[0].html)
   for (const attendu of ['« <strong>Relevé &lt;fictif&gt; de décembre</strong> »', 'attendue pour le 20/11/2026', 'rubrique « Mes demandes »']) {
@@ -5137,6 +5143,7 @@ function relanceDeDemandeInscrite(r: Resultat, m: Monde): string[] {
   }
   return fautes
 }
+const relanceDeDemandeInscrite = relanceDeDemandeInscriteSignee(NOM_DU_CABINET_QUI_SIGNE)
 
 const relanceDeDemandeRefusee = (nom: string, statut: number, preparer: (m: Monde) => void, corps: unknown, mots?: string): Scenario => ({
   nom, preparer, requete: (s) => requeteDe(s, { personne: 'chef', corps }),
@@ -5182,6 +5189,21 @@ export const SCENARIOS_RELANCES_DE_DEMANDES: readonly Scenario[] = [
     const acces = lignes(m, 'memberships').find((a) => a.user_id === PERSONNES.client.id && a.dossier_id === D)
     if (acces) acces.email = null
   }, RELANCE_DEMANDE, 'Cet accès ne porte pas d\'adresse électronique lisible : la relance n\'est pas partie.'),
+  // B3B-Q3 : un nom de cabinet illisible ne refuse pas la relance, il la signe comme hier.
+  ...([
+    ['le nom du cabinet vide', (m: Monde) => { const c = lignes(m, 'cabinets').find((x) => x.id === ID.cabinet); if (c) c.nom = '  ' }],
+    ['le nom du cabinet absent', (m: Monde) => { const c = lignes(m, 'cabinets').find((x) => x.id === ID.cabinet); if (c) c.nom = null }],
+    ['la lecture du cabinet en panne', (m: Monde) => { m.pannes.push({ table: 'cabinets', operation: 'select', erreur: { message: 'délai dépassé' } }) }],
+    ['le dossier sans cabinet rendu', (m: Monde) => { m.pannes.push({ table: 'dossiers', operation: 'select', erreur: { message: 'délai dépassé' }, sauter: 1 }) }],
+  ] as const).map(([cas, panne]): Scenario => ({
+    nom: `relance de demande — ${cas} : 200, signée « ${SIGNATURE_PAR_DEFAUT} »`,
+    preparer: (m) => { demandeOuverte(m); panne(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_DEMANDE }),
+    attendu: {
+      statut: 200, depenses: ENVOI_RELANCE_DEMANDE_INSCRITE,
+      verifier: relanceDeDemandeInscriteSignee(SIGNATURE_PAR_DEFAUT),
+    },
+  })),
   {
     nom: 'relance de demande — l’inscription refusée après l’envoi : 200, relanceInscrite à faux, rien de recopié au journal',
     preparer: (m) => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { lireLesDemandesDuCabinet, lireMesDocuments } from './documentsEtDemandesLecture'
+import { lireLesAccesARelancer, lireLesDemandesDuCabinet, lireMesDocuments } from './documentsEtDemandesLecture'
 
 // Ce que les écrans des documents et des demandes lisent (étape B3a) : la case « Documents » relue à la base, seul `true`
 // accorde ; une ligne d'un autre dossier rend la lecture incomplète ; des réponses lues en partie ne lisent pas leurs dépôts ;
@@ -63,5 +63,20 @@ describe('les demandes du cabinet', () => {
     const lu = await lireLesDemandesDuCabinet('d1')
     expect(lu.pieces.complete && lu.pieces.lignes.map((p) => p.nom_fichier)).toEqual(['releve.pdf'])
     expect(lu.documentsDivers.complete).toBe(true)
+  })
+})
+
+describe('les accès que la relance par e-mail peut viser (B3b)', () => {
+  it('lus en entier avec le dossier ; un refus est un échec dit ; une ligne d’un autre dossier rend la lecture incomplète', async () => {
+    faux.tables.memberships = [{ id: 'm1', dossier_id: 'd1', user_id: 'u1', email: 'client@exemple.invalid' }]
+    const lue = await lireLesAccesARelancer('d1')
+    expect(lue.dossierId).toBe('d1')
+    expect(lue.acces.complete && lue.acces.lignes.map((a) => a.email)).toEqual(['client@exemple.invalid'])
+    faux.tables.memberships = [{ id: 'm1', dossier_id: 'd2', user_id: 'u1', email: 'client@exemple.invalid' }]
+    expect((await lireLesAccesARelancer('d1')).acces.complete).toBe(false)
+    faux.refusees.add('memberships')
+    const refusee = await lireLesAccesARelancer('d1')
+    expect(refusee.acces.complete).toBe(false)
+    expect(refusee.acces.lignes).toEqual([])
   })
 })

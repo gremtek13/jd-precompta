@@ -19,7 +19,8 @@ export const DOCUMENTS_ET_DEMANDES_PREVUS: boolean = false
  * (supabase/preparees/20261111239000, après B1 et B2) est préparée, pas appliquée, et `send-email` la refuse tant que sa
  * constante `RELANCES_DE_DEMANDES_EN_BASE` est baissée. L'ordre : la migration, la fonction redéployée sa constante levée,
  * puis ce drapeau, avec `DOCUMENTS_ET_DEMANDES_PREVUS` ; relancesDeDemandesHttp.test.ts refuse ce drapeau levé sur une
- * fonction qui refuserait la relance. Le bouton qu'il ouvrira reste à écrire (B3b, seconde partie).
+ * fonction qui refuserait la relance. Le bouton qu'il ouvre, « Relancer par e-mail », vit dans DemandesAuClient (B3b,
+ * seconde partie), qui le lit au rendu.
  */
 export const RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE: boolean = false
 

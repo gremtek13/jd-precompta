@@ -2,7 +2,7 @@ import { lireTout, type LectureComplete } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { supabase } from './supabase'
 import type {
-  AccesDuDossier, DemandeDuCabinet, DocumentDuCabinet, LectureDUnDocument, RelanceDeLaDemande, ReponseALaDemande,
+  AccesARelancer, AccesDuDossier, DemandeDuCabinet, DocumentDuCabinet, LectureDUnDocument, RelanceDeLaDemande, ReponseALaDemande,
 } from './documentsEtDemandesVue'
 
 // LES DOCUMENTS ET LES DEMANDES DU CABINET, CE QUE LES ÉCRANS LISENT (espace client, ligne 51.5, étape B3a ; le patron :
@@ -121,6 +121,27 @@ export async function lireLesDemandesDuCabinet(dossierId: string): Promise<Deman
     return {
       dossierId, demandes: echec(motif), reponses: echec(motif), relances: echec(motif), pieces: echec(motif), documentsDivers: echec(motif),
     }
+  }
+}
+
+/** Les accès du dossier que la relance par e-mail peut viser (étape B3b), lus EN ENTIER, avec le dossier lu. */
+export interface AccesARelancerLus {
+  dossierId: string
+  acces: LectureComplete<AccesARelancer>
+}
+
+/**
+ * Les accès du dossier (`memberships`), leur compte et leur adresse — rien d'autre : la relance par e-mail ne s'offre que
+ * sur cette liste lue en entier, et `send-email` relit l'adresse en base (le corps de la requête ne la porte jamais).
+ */
+export async function lireLesAccesARelancer(dossierId: string): Promise<AccesARelancerLus> {
+  try {
+    const acces = await lireTout<AccesARelancer & { id: string; dossier_id: string }>((debut, fin) =>
+      supabase.from('memberships').select('id, dossier_id, user_id, email', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin))
+    return { dossierId, acces: acces.complete ? duDossier(acces, dossierId) : acces }
+  } catch (erreur) {
+    return { dossierId, acces: echec(messageErreur(erreur, 'lecture refusée')) }
   }
 }
 
