@@ -1747,7 +1747,7 @@ describe('prealablesDeValidation — les ventes facturées d’un dossier bascul
     const base = donnees({
       modele, assujettiTva: true, piecesValidees: [], categories, ecritures: brouillon, lignes: sources.mouvements.map(ligneBancaire),
       anneesValidees, facturesSources: ventes.sources,
-      etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode: modele.mode, plan: modele.plan, anneesValidees, ventesParLesFactures: true }),
+      etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode: modele.mode, plan: modele.plan, banques: { cas: 'role', compte: modele.plan.banque }, anneesValidees, ventesParLesFactures: true }),
       ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation(anneesValidees)),
       ...o.autres,
     })

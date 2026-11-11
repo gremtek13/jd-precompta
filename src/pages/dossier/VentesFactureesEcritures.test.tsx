@@ -25,7 +25,7 @@ function etats(): Extract<EtatsDesVentes, { etat: 'lus' }> {
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
       encaissements: [], parts: [], mouvements: [], exemplaires: [], reprises: [],
     },
-    brouillon: [], mode: 'engagement', plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true,
+    brouillon: [], mode: 'engagement', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, anneesValidees: [], ventesParLesFactures: true,
   })
   if (r.etat !== 'lus') throw new Error(r.motif)
   return r
@@ -64,7 +64,7 @@ describe('la section des ventes facturées, seule', () => {
         }],
         parts: [{ encaissement_id: 'e1', dossier_id: 'd1', taux: 20, montant: 120 }], mouvements: [], exemplaires: [], reprises: [],
       },
-      brouillon: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true,
+      brouillon: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, anneesValidees: [], ventesParLesFactures: true,
     })
     const vue = render(<VentesFactureesEcritures etats={r} motifIncomplet={null} relecture relire={async () => {}} lettrageDesFactures={new Map()} />)
     const changer = screen.getByRole('button', { name: 'Changer le compte' })

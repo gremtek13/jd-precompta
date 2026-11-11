@@ -1,4 +1,5 @@
 import { referenceDuReleve } from './affectationBanque'
+import { banqueDuMouvement, type BanquesDuDossier } from './banqueDuMouvement'
 import { auxiliaireDuTiers, type CompteAuxiliaire, type ModeleComptable } from './engagement'
 import {
   centimesExacts, ecartDeFrais, factureSansExemplaire, justifieSonMouvement, type ExemplaireLu,
@@ -111,6 +112,7 @@ import {
 /** Un mouvement du relevé, tel que l'écriture d'un encaissement et celle du mouvement le lisent. */
 export type MouvementDesEncaissements = Pick<
   LigneBancaire, 'id' | 'dossier_id' | 'date' | 'montant' | 'libelle' | 'source_fichier' | 'encaissements_de_factures'
+  | 'compte_bancaire_id'
 >
 
 /**
@@ -136,6 +138,12 @@ export interface EntreesEcrituresVentes {
   mode: ModeComptable
   /** Le plan du dossier (lib/planComptable.ts) : chaque compte y est pris. */
   plan: PlanComptable
+  /** Les banques du dossier (lib/banqueDuMouvement.ts, MCB5), sans valeur par défaut : la jambe de banque d'un mouvement
+   *  que ses encaissements classent, et celle d'un encaissement porté par un mouvement de son jour, est la banque de CE
+   *  mouvement (`compte_de_banque_du_mouvement`, comme `ecriture_attendue_vente_facturee` de la migration
+   *  `jambe_de_banque_par_compte`) ; un 512 propre d'un compte bancaire n'est jamais la contrepartie d'une compensation.
+   *  Drapeau `COMPTES_BANCAIRES_PREVUS` baissé, ou aucun compte qui tienne son 512 : la banque du rôle, l'écriture d'hier. */
+  banques: BanquesDuDossier
 }
 
 // ── Ce que le module rend ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -174,7 +182,7 @@ export interface EcritureVenteFacturee {
 
 export type MotifNonEcrite =
   | 'vente_ecartee' | 'mouvement_inconnu' | 'compte_a_choisir' | 'compte_refuse' | 'mouvement_non_classe'
-  | 'mouvement_facture_non_source' | 'mouvement_vente_ecartee' | 'mouvement_ecart'
+  | 'mouvement_facture_non_source' | 'mouvement_vente_ecartee' | 'mouvement_ecart' | 'banque_inconnue'
 
 export const LIBELLE_MOTIF_NON_ECRITE: Readonly<Record<MotifNonEcrite, string>> = {
   vente_ecartee: 'le module des ventes facturées écarte la facture : elle ne se compte pas, elle ne s’écrit pas',
@@ -185,6 +193,10 @@ export const LIBELLE_MOTIF_NON_ECRITE: Readonly<Record<MotifNonEcrite, string>> 
   mouvement_facture_non_source: 'le mouvement porte aussi l’encaissement d’une facture qui n’est pas source de sa vente, sans son exemplaire unique et validé : désignez d’abord cet exemplaire',
   mouvement_vente_ecartee: 'le mouvement porte l’encaissement d’une facture que le module écarte',
   mouvement_ecart: 'les encaissements qu’il porte ne font pas le mouvement à l’écart des frais près',
+  // Un motif du module SEUL (MCB5), comme `reprise_illisible` : la base lit le compte bancaire du mouvement elle-même et
+  // ne le dit jamais ; l'écran, lui, ne sait pas sur quel 512 l'écriture porte sa banque tant que les comptes bancaires du
+  // dossier ne sont pas lus en entier, ou qu'ils ne rendent pas le compte de ce mouvement.
+  banque_inconnue: 'les comptes bancaires du dossier ne sont pas lus en entier, ou ne rendent pas le compte de ce mouvement : on ne sait pas sur quel compte de banque l’écriture s’écrit',
 }
 
 /** Une source qui ne s'écrit pas (encore), et pourquoi : comme `ecrituresSansObjet` le dit d'une pièce. */
@@ -218,16 +230,27 @@ export const cleFecMouvementEncaissements = (ligneBancaireId: string) => `mouvem
  * Pourquoi ce compte ne peut pas être la contrepartie d'un encaissement par compensation, nul quand il le peut. Une
  * HYPOTHÈSE de VF4a, à reprendre avec l'écran qui le fera choisir (VF5) et la base qui le gardera (VF4b) : un compte de
  * bilan (classe 1 à 5) sous la forme des comptes de l'application ; ni le compte des clients, que l'encaissement solde ;
- * ni un compte de trésorerie du plan, qu'un moyen de paiement choisit déjà ; ni un compte de TVA.
+ * ni un compte de trésorerie du plan, qu'un moyen de paiement choisit déjà ; ni un compte de TVA. Le miroir de
+ * `refus_compte_de_contrepartie`, que la migration `jambe_de_banque_par_compte` (MCB5) étend au 512 PROPRE d'un compte
+ * bancaire du dossier — QUELLE QUE SOIT SA DATE (`compte_propre_depuis` n'y entre pas : un compte de banque l'est avant
+ * comme après le jour où il tient le sien), aux mots du rôle `banque`. Comptes bancaires lus en partie (`retenu`) : la
+ * règle ne se juge pas, et leur raison est le refus — les appelants la disent avant, sous le motif `banque_inconnue`.
  */
-export function refusCompteDeContrepartie(compte: string, plan: PlanComptable): string | null {
+export function refusCompteDeContrepartie(compte: string, plan: PlanComptable, banques: BanquesDuDossier): string | null {
   if (!/^[1-5][0-9]{5,9}$/.test(compte)) return 'Un compte de contrepartie est un compte de bilan, de classe 1 à 5, de six à dix chiffres.'
   if (compte === plan.clients) return 'Le compte des clients est celui que l’encaissement solde : il n’en est pas la contrepartie.'
-  if ([plan.banque, plan.valeurs_a_l_encaissement, plan.caisse].includes(compte)) {
+  if ([plan.banque, plan.valeurs_a_l_encaissement, plan.caisse].includes(compte) || estUnCompteDeBanquePropre(compte, banques)) {
     return 'Un encaissement par la banque, par chèque ou en espèces se dit par son moyen de paiement, qui choisit son compte.'
   }
+  if (banques.cas === 'retenu') return banques.raison
   if (compte.startsWith('445')) return 'Un compte de TVA ne reçoit pas un encaissement : la TVA d’une vente s’écrit avec elle.'
   return null
+}
+
+/** Ce compte est-il le 512 propre d'un compte bancaire du dossier ? Toute date, tout compte, clos compris : la base lit
+ *  `comptes_bancaires` entière (`c.dossier_id = p_dossier_id and c.compte = p_compte`). */
+export function estUnCompteDeBanquePropre(compte: string, banques: BanquesDuDossier): boolean {
+  return banques.cas === 'par_compte' && [...banques.comptes.values()].some((c) => c.compte === compte)
 }
 
 // ── Le compte du produit ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -287,7 +310,7 @@ const nommer = (f: Pick<FactureVendue, 'numero' | 'id'>) => f.numero ?? f.id.sli
  * rendent les mêmes écritures, dans le même ordre, quel que soit l'ordre de leur lecture.
  */
 export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): EcrituresDesVentesFacturees {
-  const { sources, mode, plan } = entrees
+  const { sources, mode, plan, banques } = entrees
   const dossierId = sources.dossierId
   // L'acompte d'un devis (étape P5b3) n'entre pas ici : les écritures se recomposent en base, en entiers
   // (`ecrire_vente_facturee`, la recomposition de `valider_exercice`), et la base ne connaît pas encore la marque. En
@@ -345,14 +368,21 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
     if (e.ligne_bancaire_id != null) {
       const m = mouvements.get(e.ligne_bancaire_id)
       if (!m) return { refus: 'mouvement_inconnu', detail: `encaissement du ${formatDate(e.date_encaissement)}` }
-      if (m.date === e.date_encaissement) return { compte: plan.banque, ligneBancaireId: m.id }
+      if (m.date === e.date_encaissement) {
+        // La banque de CE mouvement (MCB5) ; drapeau baissé, celle du rôle.
+        const banque = banqueDuMouvement(m, banques)
+        if ('refus' in banque) return { refus: 'banque_inconnue', detail: `mouvement du ${formatDate(m.date)}` }
+        return { compte: banque.compte, ligneBancaireId: m.id }
+      }
       return { compte: e.moyen === 'especes' ? plan.caisse : plan.valeurs_a_l_encaissement, ligneBancaireId: null }
     }
     if (e.moyen === 'especes') return { compte: plan.caisse, ligneBancaireId: null }
     if (e.moyen === 'compensation' || e.moyen === 'autre') {
       const choisi = entrees.comptesDeContrepartie.get(e.id)
       if (choisi == null) return { refus: 'compte_a_choisir', detail: `encaissement du ${formatDate(e.date_encaissement)}` }
-      const refus = refusCompteDeContrepartie(choisi, plan)
+      // Sans les comptes bancaires lus, le 512 propre d'un compte ne se reconnaît pas : le compte ne se juge pas.
+      if (banques.cas === 'retenu') return { refus: 'banque_inconnue', detail: `encaissement du ${formatDate(e.date_encaissement)}` }
+      const refus = refusCompteDeContrepartie(choisi, plan, banques)
       if (refus) return { refus: 'compte_refuse', detail: `${choisi} : ${refus}` }
       return { compte: choisi, ligneBancaireId: null }
     }
@@ -452,7 +482,10 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
       else solde.ajouter(e.moyen === 'especes' ? plan.caisse : plan.valeurs_a_l_encaissement, -c, m.id)
     }
     const frais = total - montant
-    solde.ajouter(plan.banque, montant - memeJour, m.id).ajouter(plan.services_bancaires, frais, m.id)
+    // La banque de CE mouvement (MCB5). Inconnue, l'écriture ne se compose pas ; le motif se dit après ceux que la base
+    // dirait (la base, elle, la sait) : le rôle tient la place, le temps de savoir si l'écriture a des lignes.
+    const banque = banqueDuMouvement(m, banques)
+    solde.ajouter('refus' in banque ? plan.banque : banque.compte, montant - memeJour, m.id).ajouter(plan.services_bancaires, frais, m.id)
     const lignes = solde.lignes()
     if (lignes.length === 0) continue
     if (!m.encaissements_de_factures) {
@@ -461,6 +494,10 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
     }
     if (frais < 0 || !ecartDeFrais(frais, Math.abs(total))) {
       nonEcrite(source, 'mouvement_ecart', `mouvement du ${formatDate(m.date)}`)
+      continue
+    }
+    if ('refus' in banque) {
+      nonEcrite(source, 'banque_inconnue', `mouvement du ${formatDate(m.date)}`)
       continue
     }
     enCours.set(cleFecMouvementEncaissements(m.id), {

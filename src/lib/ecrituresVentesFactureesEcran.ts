@@ -1,7 +1,8 @@
+import type { BanquesDuDossier } from './banqueDuMouvement'
 import {
   argumentsChoisirCompteContrepartie, argumentsEcrireVenteFacturee, argumentsRetirerEcritureVenteFacturee,
   ecrituresDeLaSource, identifiantDeLaSource, lignesDesSources, refusChoixCompteContrepartie, refusEcritureVenteFacturee,
-  refusRetraitEcritureVenteFacturee, type ArgumentsEcrireVenteFacturee, type CleRefusCompteContrepartie, type ContexteEcritureVente,
+  refusRetraitEcritureVenteFacturee, type ArgumentsEcrireVenteFacturee, type CleRefusCompteContrepartieOuEcran, type ContexteEcritureVente,
   type LigneDuBrouillon, type MouvementPourEcriture,
 } from './ecritureVenteFacturee'
 import type { PiecesCitees } from './facturesSources'
@@ -113,6 +114,8 @@ export interface EntreesEcrituresDeVente {
   /** Le modèle comptable du dossier, sans valeur par défaut. */
   mode: ModeComptable
   plan: PlanComptable
+  /** Les banques du dossier (lib/banqueDuMouvement.ts, MCB5), sans valeur par défaut : celles de la composition. */
+  banques: BanquesDuDossier
   anneesValidees: readonly number[]
   /** Le réglage du dossier (`dossiers.ventes_par_les_factures`). */
   ventesParLesFactures: boolean
@@ -277,7 +280,7 @@ export const MOTIF_NE_SE_COMPOSENT_PAS =
  * « incohérente » quand les lectures ne se tiennent pas — la composition suppose qu'une part a son encaissement.
  */
 export function compositionDesSources(
-  sources: SourcesDesEcrituresDeVente, mode: ModeComptable, plan: PlanComptable,
+  sources: SourcesDesEcrituresDeVente, mode: ModeComptable, plan: PlanComptable, banques: BanquesDuDossier,
 ): { etat: 'composee'; composition: EcrituresDesVentesFacturees } | { etat: 'incoherent'; motif: string } {
   try {
     return {
@@ -291,7 +294,7 @@ export function compositionDesSources(
         comptesDeContrepartie: new Map(sources.encaissements
           .filter((e) => e.compte_contrepartie != null).map((e) => [e.id, e.compte_contrepartie as string])),
         exemplaires: sources.exemplaires,
-        mode, plan,
+        mode, plan, banques,
       }),
     }
   } catch {
@@ -317,6 +320,8 @@ export function ecrituresDesVentesPourLa2035(entrees: {
   lecture: { dossierId: string; etat: 'lue'; sources: SourcesDesEcrituresDeVente } | { dossierId: string; etat: 'incomplete'; motif: string } | null
   mode: ModeComptable
   plan: PlanComptable
+  /** Les banques du dossier (MCB5), sans valeur par défaut. */
+  banques: BanquesDuDossier
 }):
   | { etat: 'pret'; ecritures: EcrituresDesVentesDeLa2035 }
   | { etat: 'en_attente' }
@@ -330,8 +335,12 @@ export function ecrituresDesVentesPourLa2035(entrees: {
   if (lecture === null || lecture.dossierId !== entrees.dossierId) return { etat: 'en_attente' }
   if (lecture.etat === 'incomplete') return { etat: 'incomplete', motif: lecture.motif }
   if (lecture.sources.dossierId !== entrees.dossierId) return { etat: 'incomplete', motif: 'la lecture rendue est celle d’un autre dossier' }
-  const composee = compositionDesSources(lecture.sources, entrees.mode, entrees.plan)
+  const composee = compositionDesSources(lecture.sources, entrees.mode, entrees.plan, entrees.banques)
   if (composee.etat === 'incoherent') return { etat: 'incomplete', motif: composee.motif }
+  // Un mouvement dont la banque ne se sait pas (MCB5) n'a pas d'écriture composée, donc pas de frais : la 2035 qui les
+  // lirait (`fraisDesMouvements`) les tairait. Elle ne se calcule pas, et le dit.
+  const sansBanque = composee.composition.nonEcrites.find((n) => n.motif === 'banque_inconnue')
+  if (sansBanque) return { etat: 'incomplete', motif: sansBanque.detail }
   return { etat: 'pret', ecritures: { etat: 'composees', composition: composee.composition } }
 }
 
@@ -381,7 +390,7 @@ const DETAIL: Record<Exclude<EtatSourceDeVente, 'ne_s_ecrit_pas' | 'validee' | '
  * rendrait. Les lectures doivent être toutes faites EN ENTIER : l'appelant qui n'a pas tout lu n'appelle pas ce module.
  */
 export function etatsDesVentesFacturees(entrees: EntreesEcrituresDeVente): EtatsDesVentes {
-  const { sources, mode, plan, anneesValidees } = entrees
+  const { sources, mode, plan, banques, anneesValidees } = entrees
   const dossierId = sources.dossierId
   const factures = new Map(sources.factures.filter((f) => f.dossier_id === dossierId).map((f) => [f.id, f]))
   const encaissements = new Map(sources.encaissements.filter((e) => e.dossier_id === dossierId).map((e) => [e.id, e]))
@@ -398,13 +407,13 @@ export function etatsDesVentesFacturees(entrees: EntreesEcrituresDeVente): Etats
     }
   }
 
-  const composee = compositionDesSources(sources, mode, plan)
+  const composee = compositionDesSources(sources, mode, plan, banques)
   if (composee.etat === 'incoherent') return { etat: 'incoherent', dossierId, motif: composee.motif }
   const composition = composee.composition
   const contexte: ContexteEcritureVente = {
     dossierId, ventesParLesFactures: entrees.ventesParLesFactures, anneesValidees,
     factures: [...factures.values()], encaissements: [...encaissements.values()], mouvements: [...mouvements.values()],
-    composition, plan,
+    composition, plan, banques,
   }
   const frontiere = frontiereDeValidation(anneesValidees)
   // Une facture validée source, ou, le drapeau levé, une facture reprise (A8c3), qu'`importer_factures` marque source.
@@ -533,7 +542,7 @@ export function compteSaisi(saisie: string): string | null {
 /** Ce que `choisir_compte_contrepartie` refuserait de la saisie telle qu'elle part, sous ses mots ; nul sinon. */
 export function refusDuChoix(
   encaissementId: string, saisie: string, contexte: ContexteEcritureVente,
-): RefusEncaissement<CleRefusCompteContrepartie> | null {
+): RefusEncaissement<CleRefusCompteContrepartieOuEcran> | null {
   return refusChoixCompteContrepartie(encaissementId, compteSaisi(saisie), contexte)
 }
 

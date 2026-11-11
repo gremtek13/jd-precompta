@@ -37,7 +37,7 @@ function leDossier(mode: ModeComptable, plan: PlanComptable) {
   const ventes = ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE,
     acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
   })
-  const etats = etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true })
+  const etats = etatsDesVentesFacturees({ sources, brouillon, mode, plan, banques: { cas: 'role', compte: plan.banque }, anneesValidees: [], ventesParLesFactures: true })
   const ca3 = calculerCa3({ pieces: [], paiements: paiementsDesPieces([], [], [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventes, caisse: CAISSE_ABSENTE }, Q4, false, 0, 0)
   return { sources, brouillon, ventes, etats, ca3 }
 }
@@ -95,7 +95,7 @@ describe.each(PLANS)('un dossier basculé, de bout en bout — %s', (_, plan) =>
   it('une écriture retirée du brouillon : la concordance la dit à écrire, la liquidation l’attend', () => {
     const { sources, brouillon, ventes } = leDossier('tresorerie', plan)
     const sansE2 = brouillon.filter((l) => l.encaissement_id !== 'e2')
-    const etats = etatsDesVentesFacturees({ sources, brouillon: sansE2, mode: 'tresorerie', plan, anneesValidees: [], ventesParLesFactures: true })
+    const etats = etatsDesVentesFacturees({ sources, brouillon: sansE2, mode: 'tresorerie', plan, banques: { cas: 'role', compte: plan.banque }, anneesValidees: [], ventesParLesFactures: true })
     const declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], [], [], []), [], [], plan, ventes, { etat: 'composees', composition: composition(sources, 'tresorerie', plan) }, CAISSE_ABSENTE)
     const c = concordance2035(declaration, sansE2, {
       piecesValidees: new Set(), piecesImmobilisees: new Set(), mouvementsDesVentesFacturees: mouvementsClassesParEncaissements(sources.mouvements),
@@ -228,7 +228,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       ecritures: brouillon, lignes, ventilations: [], reglements: [], encaissees: [], cotisations: [], vehicules: [], emprunts: [],
       aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', comptesBancaires: { etat: 'sans_objet' }, controlesReleves: [], doublonsTexte: [],
       facturesEmises: [], transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
-      etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true }),
+      etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode, plan, banques: { cas: 'role', compte: plan.banque }, anneesValidees: [], ventesParLesFactures: true }),
       ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation([])),
       operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035,
       declaration: null, concordance: null, ...o,

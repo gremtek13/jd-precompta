@@ -34,7 +34,7 @@ function composer(dateEncaissement: string, montantDuMouvement: number, mode: Mo
   return ecrituresDesVentesFacturees({
     sources: { dossierId: D, factures: [f], lignes: [ligneVendue('f1', 60, 0)], encaissements: [encaissement], parts: [part] },
     mouvements: [mvt({ id: 'm1', date: '2026-12-16', montant: montantDuMouvement })],
-    comptesDeContrepartie: new Map(), exemplaires: [], mode, plan: PLAN_PAR_DEFAUT,
+    comptesDeContrepartie: new Map(), exemplaires: [], mode, plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
   })
 }
 

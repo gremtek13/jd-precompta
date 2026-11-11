@@ -1,3 +1,4 @@
+import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
@@ -257,6 +258,8 @@ export default function TvaTab({
   onRegimeUpdated, modeComptable, ventesParLesFactures,
 }: Props) {
   // Les exercices validés : une déclaration dont la période y tombe est figée avec eux, et ne s'y enregistre plus.
+  // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
+  const { banques } = useBanquesDuDossier(dossierId, plan)
   const { anneesValidees, frontiere } = useExercicesValides()
   // Nul tant que la première lecture n'est pas revenue : l'écran montre alors ses squelettes.
   const [lu, setLu] = useState<Lu | null>(null)
@@ -483,7 +486,7 @@ export default function TvaTab({
         : {
           etat: 'lue',
           etats: etatsDesVentesFacturees({
-            sources: lectureEcrituresDuDossier.sources, brouillon: lectureEcrituresDuDossier.brouillon, mode: modeComptable, plan,
+            sources: lectureEcrituresDuDossier.sources, brouillon: lectureEcrituresDuDossier.brouillon, mode: modeComptable, plan, banques,
             anneesValidees, ventesParLesFactures,
           }),
         }

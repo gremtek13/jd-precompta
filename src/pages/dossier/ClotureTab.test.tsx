@@ -3054,7 +3054,7 @@ describe('ClotureTab — les ventes facturées', () => {
         dossierId: 'dossier-de-test', factures: [FACTURE_SOURCE as FactureDesVentesEcrites], lignes: [LIGNE_FS],
         encaissements: [(o.encaissement ?? ENCAISSEMENT) as unknown as EncaissementVendu], parts: [PART],
       },
-      mouvements: o.mouvements ?? [], comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+      mouvements: o.mouvements ?? [], comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
     })
     let i = 0
     return c.ecritures.flatMap((e) => lignesAuBrouillon('dossier-de-test', e).map((l) => ({

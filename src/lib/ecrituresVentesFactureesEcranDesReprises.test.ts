@@ -59,7 +59,7 @@ const sources = (reprises: readonly RepriseVendue[] = REPRISES): SourcesDesEcrit
 
 const etats = (s: SourcesDesEcrituresDeVente) => {
   const r = etatsDesVentesFacturees({
-    sources: s, brouillon: [], mode: 'tresorerie', plan: P, anneesValidees: [], ventesParLesFactures: true,
+    sources: s, brouillon: [], mode: 'tresorerie', plan: P, banques: { cas: 'role', compte: P.banque }, anneesValidees: [], ventesParLesFactures: true,
   })
   if (r.etat !== 'lus') throw new Error(r.motif)
   return r.sources
@@ -67,11 +67,11 @@ const etats = (s: SourcesDesEcrituresDeVente) => {
 
 describe('le drapeau levé, la composition de l’écran passe les reprises lues', () => {
   it('compositionDesSources : celle du module des écritures AVEC les reprises — jamais une reprise écartée', () => {
-    const c = compositionDesSources(sources(), 'tresorerie', P)
+    const c = compositionDesSources(sources(), 'tresorerie', P, { cas: 'role', compte: P.banque })
     if (c.etat !== 'composee') throw new Error(c.motif)
     const directe = ecrituresDesVentesFacturees({
       sources: { dossierId: D, factures: [facture()], lignes: LIGNES, encaissements: [ENCAISSEMENT], parts: PARTS, reprises: REPRISES },
-      mouvements: [MOUVEMENT], comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan: P,
+      mouvements: [MOUVEMENT], comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan: P, banques: { cas: 'role', compte: P.banque },
     })
     expect(c.composition.ventes.ecartees).toEqual([])
     expect(c.composition.ecritures).toEqual(directe.ecritures)
@@ -103,7 +103,7 @@ describe('le drapeau levé, la composition de l’écran passe les reprises lues
   it('la 2035 reçoit la même composition : la reprise y compte, rien d’écarté', () => {
     const r = ecrituresDesVentesPourLa2035({
       dossierId: D, ventesParLesFactures: true, facturesSources: new Set(['r1']), lecture: { dossierId: D, etat: 'lue', sources: sources() },
-      mode: 'tresorerie', plan: P,
+      mode: 'tresorerie', plan: P, banques: { cas: 'role', compte: P.banque },
     })
     if (r.etat !== 'pret' || r.ecritures.etat !== 'composees') throw new Error('la 2035 ne reçoit pas la composition')
     expect(r.ecritures.composition.ecritures.map((e) => e.source.genre)).toEqual(['encaissement', 'mouvement'])
@@ -119,7 +119,7 @@ describe('le drapeau baissé, rien ne change', () => {
   it('une facture reprise ne se liste pas, ne compte pas, et se nomme « facture »', () => {
     drapeau.leve = false
     expect(etats(sources())).toEqual(etats(sources([])))
-    const c = compositionDesSources(sources(), 'tresorerie', P)
+    const c = compositionDesSources(sources(), 'tresorerie', P, { cas: 'role', compte: P.banque })
     if (c.etat !== 'composee') throw new Error(c.motif)
     expect(c.composition.ecritures.filter((e) => e.source.genre === 'encaissement')).toEqual([])
     expect([...facturesSourcesDe([facture()])]).toEqual([])

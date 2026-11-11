@@ -1,3 +1,4 @@
+import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
@@ -43,6 +44,8 @@ function anneePrecedente(): string {
 export default function EstimationTab({ dossierId, assujettiTva, modeComptable, plan, ventesParLesFactures }: {
   dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable; plan: PlanComptable; ventesParLesFactures: boolean
 }) {
+  // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
+  const { banques } = useBanquesDuDossier(dossierId, plan)
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Deux jeux, deux filtres, et les noms le disent désormais. `recettesValidees` est restreint aux
   // pièces de VENTE validées, `piecesValidees` à toutes les validées. Le second s'appelait
@@ -261,7 +264,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   // revenues, le détail attend ; partielles, refusées ou qui ne se composent pas, il est suspendu, avec le motif.
   const pourLeDetail = ecrituresDesVentesPourLa2035({
     dossierId, ventesParLesFactures, facturesSources: ventesFacturees?.sources ?? new Set<string>(), lecture: lectureSourcesVentes,
-    mode: modeComptable, plan,
+    mode: modeComptable, plan, banques,
   })
   const ecrituresDuDetail = pourLeDetail.etat === 'pret' ? pourLeDetail.ecritures : null
   const ecrituresIncompletes = pourLeDetail.etat === 'incomplete' ? pourLeDetail.motif : null

@@ -154,7 +154,7 @@ beforeAll(() => {
   }
   const pourLa2035 = ecrituresDesVentesPourLa2035({
     dossierId: D, ventesParLesFactures: true, facturesSources: ventes.sources, lecture: { dossierId: D, etat: 'lue', sources: sourcesEcritures },
-    mode: MODELE.mode, plan: PLAN,
+    mode: MODELE.mode, plan: PLAN, banques: { cas: 'role', compte: PLAN.banque },
   })
   if (pourLa2035.etat !== 'pret') throw new Error(`Les écritures des ventes ne sont pas prêtes : ${pourLa2035.etat}`)
 
@@ -188,7 +188,7 @@ beforeAll(() => {
   }
   const composition = ecrituresDesVentesFacturees({
     sources: { dossierId: D, factures, lignes: lignesDeFacture, encaissements, parts },
-    mouvements: mouvementsDesEncaissements, comptesDeContrepartie: new Map(), exemplaires: [], mode: MODELE.mode, plan: PLAN,
+    mouvements: mouvementsDesEncaissements, comptesDeContrepartie: new Map(), exemplaires: [], mode: MODELE.mode, plan: PLAN, banques: { cas: 'role', compte: PLAN.banque },
   })
   for (const v of composition.ecritures) for (const k of lignesAuBrouillon(D, v)) brouillon.push(ecriture(k))
   for (const bien of IMMOBILISATIONS) {
@@ -229,7 +229,7 @@ beforeAll(() => {
     natures: [NATURE_MATERIEL], ecritures: brouillon, lignes, ventilations: [], reglements, encaissees: [], cotisations: COTISATIONS,
     vehicules: VEHICULES, emprunts: [], aNouveaux: A_NOUVEAUX, soldesReportes: [], declarationsTva: [], periodiciteTva: 'mensuelle',
     comptesBancaires: { etat: 'sans_objet' }, controlesReleves, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
-    etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, anneesValidees: [], ventesParLesFactures: true }),
+    etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, banques: { cas: 'role', compte: PLAN.banque }, anneesValidees: [], ventesParLesFactures: true }),
     ventesDeLaChecklist: ventesDeLaChecklist(lectureDesSources, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
     declaration, saisies2035: AUCUNE_SAISIE_2035, concordance,
   })
