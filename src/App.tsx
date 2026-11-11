@@ -24,6 +24,7 @@ import ClientComptes from './pages/ClientComptes'
 import ClientDocuments from './pages/ClientDocuments'
 import ClientDemandes from './pages/ClientDemandes'
 import ClientAchats from './pages/ClientAchats'
+import ClientNotesDeFrais from './pages/ClientNotesDeFrais'
 import ClientEcheancier from './pages/ClientEcheancier'
 import ClientAnalyse from './pages/ClientAnalyse'
 import { droitsSur } from './lib/droitsAcces'
@@ -36,6 +37,8 @@ import { DOCUMENTS_ET_DEMANDES_PREVUS } from './lib/documentsEtDemandes'
 import { mesDemandesOuvertes, mesDocumentsOuverts } from './lib/documentsEtDemandesVue'
 import { ACHATS_DU_CLIENT_PREVUS } from './lib/achatsClient'
 import { mesAchatsOuverts } from './lib/achatsClientVue'
+import { NOTES_DE_FRAIS_PREVUES } from './lib/notesDeFrais'
+import { mesNotesDeFraisOuvertes } from './lib/notesDeFraisVue'
 import { COUVERTURE_EXPORTEE } from './lib/couvertureReleve'
 import { monAnalyseOuverte } from './lib/analyseClient'
 import SuperAdminPage from './pages/SuperAdminPage'
@@ -187,6 +190,8 @@ function Gate() {
             {mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />}
             {/* « Mes achats » (ligne 51.5, étape B5) : avec sa migration (B4), et la case « Achats » sur la société AFFICHÉE. */}
             {mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats) && <Route path="/mes-achats" element={<ClientAchats />} />}
+            {/* « Mes notes de frais » (ligne 51.5, étape B8) : avec sa migration (B7), et la case « Notes de frais » sur la société AFFICHÉE. */}
+            {mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />}
             {monAnalyseOuverte(mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes), maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}
             <Route path="/securite" element={<SecuriteDuCompte espace="client" />} />
             <Route path="*" element={<Navigate to="/accueil" replace />} />

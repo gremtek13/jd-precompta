@@ -17,9 +17,11 @@ import { DOCUMENTS_ET_DEMANDES_PREVUS } from '../lib/documentsEtDemandes'
 import { mesDemandesOuvertes, mesDocumentsOuverts } from '../lib/documentsEtDemandesVue'
 import { ACHATS_DU_CLIENT_PREVUS } from '../lib/achatsClient'
 import { mesAchatsOuverts } from '../lib/achatsClientVue'
+import { NOTES_DE_FRAIS_PREVUES } from '../lib/notesDeFrais'
+import { mesNotesDeFraisOuvertes } from '../lib/notesDeFraisVue'
 import {
   IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconChecklist, IconComptesMaster, IconDocuments, IconDossiers, IconEcheancier,
-  IconEquipe, IconEstimation, IconFactures, IconStatistiques,
+  IconEcritures, IconEquipe, IconEstimation, IconFactures, IconStatistiques,
   IconInformations, IconCadenas, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun, IconVirements,
 } from './icons'
@@ -115,6 +117,10 @@ function Coque() {
   // « Mes achats » (ligne 51.5, étape B5) : de même, avec la case « Achats » sur la société affichée, comme sa route.
   const mesAchats = role === 'client'
     && mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)
+  // « Mes notes de frais » (ligne 51.5, étape B8) : de même, avec la case « Notes de frais » sur la société affichée, comme sa
+  // route.
+  const mesNotesDeFrais = role === 'client'
+    && mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
@@ -374,6 +380,13 @@ function Coque() {
                   <IconVirements width={18} height={18} />
                   <span className="nav-label-full">Mes achats</span>
                   <span className="nav-label-court">Achats</span>
+                </NavLink>
+              )}
+              {mesNotesDeFrais && (
+                <NavLink to="/mes-notes-de-frais" title="Mes notes de frais" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconEcritures width={18} height={18} />
+                  <span className="nav-label-full">Mes notes de frais</span>
+                  <span className="nav-label-court">Frais</span>
                 </NavLink>
               )}
               {mesDemandes && (

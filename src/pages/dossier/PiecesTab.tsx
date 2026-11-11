@@ -47,6 +47,8 @@ import { pieceDeclaree } from '../../lib/ereportingEcran'
 import type { LectureComplete } from '../../lib/lectureComplete'
 import { fichesEmporteesParLaSuppression, type LectureFichesHorsDeFrance } from '../../lib/propositionsHorsDeFrance'
 import PiecesJointesEcartees from './PiecesJointesEcartees'
+import NotesDeFraisDuClient from './NotesDeFraisDuClient'
+import { NOTES_DE_FRAIS_PREVUES } from '../../lib/notesDeFrais'
 import type { FacturesSources } from '../../lib/facturesSources'
 import { jugeDeLaValidation, resumeDeLaSelection } from '../../lib/lotsDeLaJumelleInversee'
 import { confirmationDeLaSelection, selectionDeLaValidation } from '../../lib/validationDeLaSelection'
@@ -1016,6 +1018,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
 
       {/* Les pièces jointes que la réception par e-mail a écartées (ligne 22.7) : elle les lit et les dit elle-même. */}
       <PiecesJointesEcartees dossierId={dossierId} />
+
+      {/* Les notes de frais du client (ligne 51.5, étape B8) : avec leur migration (B7) seulement — avant, leur table n'existe
+          pas. Ici, où le cabinet valide les pièces qu'elles citent. */}
+      {NOTES_DE_FRAIS_PREVUES && <NotesDeFraisDuClient dossierId={dossierId} />}
 
       <div style={{ marginBottom: 14 }}>
         <BarreRecherche

@@ -9,6 +9,7 @@ import {
 } from './creationDesComptes'
 import { CE_QUE_DONNE_UN_ACCES, DOMAINES } from './droitsAcces'
 import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
+import { NOTES_DE_FRAIS_PREVUES } from './notesDeFrais'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { extraireErreurFonction } from './invokeErreur'
@@ -253,7 +254,7 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
         + "souvient plus, « Mot de passe oublié », sur l'écran de connexion, lui envoie un lien pour en choisir un autre.",
     ])
     // Le drapeau baissé (l'état d'avant C4a), mot pour mot ; levé, « Mes comptes » s'y ajoute (le cas qui suit le vérifie).
-    expect(ceQuePerdLeClientSelon(false, false, false)).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
+    expect(ceQuePerdLeClientSelon(false, false, false, false)).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
       + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
       + "réponses à tes précisions), « Mes informations », « Ma simulation », « Mon échéancier » et, selon les cases de ses "
       + 'accès, « Mes ventes », « Ma banque », « Mon analyse » et « Ma caisse » —, pour chacune de ses sociétés.')
@@ -274,26 +275,29 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     expect(cheminsDuCabinet.has('/securite')).toBe(true)
     const chemins = [...espaceClient.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]).filter((c) => !cheminsDuCabinet.has(c)).sort()
     expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-achats', '/mes-comptes', '/mes-demandes', '/mes-documents',
-      '/mes-informations', '/mes-pieces', '/mes-ventes', '/mon-analyse', '/mon-echeancier'])
+      '/mes-informations', '/mes-notes-de-frais', '/mes-pieces', '/mes-ventes', '/mon-analyse', '/mon-echeancier'])
     // « Mes comptes » (étape C4b), « Mes documents » et « Mes demandes » (étape B3a) ne sont montées qu'avec leur migration : la
     // phrase les nomme dans cet état-là, et les tait avant.
-    // « Mes achats » (étape B5) de même, avec la sienne.
-    const avecSaMigration: Record<string, [boolean, boolean, boolean]> = {
-      '/mes-comptes': [true, false, false], '/mes-documents': [false, true, false], '/mes-demandes': [false, true, false],
-      '/mes-achats': [false, false, true],
+    // « Mes achats » (étape B5) de même, avec la sienne ; « Mes notes de frais » (étape B8), avec la sienne.
+    const avecSaMigration: Record<string, [boolean, boolean, boolean, boolean]> = {
+      '/mes-comptes': [true, false, false, false], '/mes-documents': [false, true, false, false],
+      '/mes-demandes': [false, true, false, false], '/mes-achats': [false, false, true, false],
+      '/mes-notes-de-frais': [false, false, false, true],
     }
     for (const chemin of chemins) {
       const nom = layout.match(new RegExp(`<NavLink to="${chemin}" title="([^"]+)"`))?.[1]
       expect(nom, chemin).toBeDefined()
       const dit = nom === 'Accueil' ? "l'accueil" : `« ${nom} »`
-      expect(ceQuePerdLeClientSelon(true, true, true), chemin).toContain(dit)
-      const [comptes, documents, achats] = avecSaMigration[chemin] ?? [false, false, false]
-      expect(ceQuePerdLeClientSelon(comptes, documents, achats), chemin).toContain(dit)
-      if (chemin in avecSaMigration) expect(ceQuePerdLeClientSelon(false, false, false), chemin).not.toContain(dit)
+      expect(ceQuePerdLeClientSelon(true, true, true, true), chemin).toContain(dit)
+      const [comptes, documents, achats, frais] = avecSaMigration[chemin] ?? [false, false, false, false]
+      expect(ceQuePerdLeClientSelon(comptes, documents, achats, frais), chemin).toContain(dit)
+      if (chemin in avecSaMigration) expect(ceQuePerdLeClientSelon(false, false, false, false), chemin).not.toContain(dit)
     }
-    expect(ceQuePerdLeClientSelon(true, true, true)).toContain('« Mon échéancier », « Mes demandes » et, selon les cases de ses accès, '
-      + '« Mes ventes », « Ma banque », « Mon analyse », « Ma caisse », « Mes comptes », « Mes documents » et « Mes achats » —')
-    expect(CE_QUE_PERD_LE_CLIENT).toBe(ceQuePerdLeClientSelon(SITUATIONS_PUBLIEES_EXPORTEES, DOCUMENTS_ET_DEMANDES_PREVUS, ACHATS_DU_CLIENT_PREVUS))
+    expect(ceQuePerdLeClientSelon(true, true, true, true)).toContain('« Mon échéancier », « Mes demandes » et, selon les cases de ses accès, '
+      + '« Mes ventes », « Ma banque », « Mon analyse », « Ma caisse », « Mes comptes », « Mes documents », « Mes achats » et '
+      + '« Mes notes de frais » —')
+    expect(CE_QUE_PERD_LE_CLIENT).toBe(ceQuePerdLeClientSelon(
+      SITUATIONS_PUBLIEES_EXPORTEES, DOCUMENTS_ET_DEMANDES_PREVUS, ACHATS_DU_CLIENT_PREVUS, NOTES_DE_FRAIS_PREVUES))
   })
 
   it('le champ et le marqueur sont ceux que la fonction lit et écrit', () => {

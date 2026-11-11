@@ -1116,6 +1116,15 @@ export const LIBELLE_QUESTION_MOUVEMENT =
 // dans la table que `comptes_bancaires_lecture_banque` ouvre au client « Banque » (MCB-Q8) — la même condition, le même mot.
 export const LIBELLE_NOM_COMPTE_BANCAIRE = `Nom du compte (${LE_CLIENT_BANQUE} le lit)`
 
+// Le motif du refus d'une note de frais (ligne 51.5, étapes B7 et B8 ; migration `notes_de_frais`) : un texte libre que le
+// cabinet — ou l'accès « Achats » — saisit dans la table que `notes_de_frais_lecture_auteur` ouvre à l'auteur de la note, un
+// accès « Notes de frais » : la même condition, le même mot.
+const L_AUTEUR_DE_LA_NOTE = `l’auteur de la note, un accès « ${definitionDe('frais').libelle} » du client,`
+
+export const LIBELLE_MOTIF_REFUS_NOTE_DE_FRAIS = `Motif du refus (${L_AUTEUR_DE_LA_NOTE} le lit)`
+
+export const LIBELLE_MOTIF_REFUS_NOTE_DE_FRAIS_CLIENT = 'Motif du refus (l’auteur de la note le lit, et ton cabinet aussi)'
+
 // Les cinq textes libres des PARAMÈTRES DE FACTURATION (étape A5b1) : les conditions d'escompte, les pénalités de retard, les
 // mentions complémentaires, le pied de page et le titulaire du compte, que le cabinet saisit dans la table que
 // `parametres_facturation_lecture_ventes` ouvre au client « Ventes » — la même condition, le même mot. Le délai, le moyen,

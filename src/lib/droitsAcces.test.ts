@@ -248,8 +248,11 @@ describe('le module, la migration et les écrans disent la même chose', () => {
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
       '/mon-echeancier ClientEcheancier', '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
       '/mes-comptes ClientComptes', '/mes-documents ClientDocuments', '/mes-demandes ClientDemandes', '/mes-achats ClientAchats',
-      '/mon-analyse ClientAnalyse',
+      '/mes-notes-de-frais ClientNotesDeFrais', '/mon-analyse ClientAnalyse',
     ])
+    // DEPUIS L'ÉTAPE B8, « Mes notes de frais » lit la case « Notes de frais », derrière `NOTES_DE_FRAIS_PREVUES`
+    // (lib/notesDeFraisVue.ts, `mesNotesDeFraisOuvertes`), sa route et son entrée ; l'écran relit ses cases à la base.
+    expect(app).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />')
     // DEPUIS L'ÉTAPE B5, « Mes achats » lit la case « Achats », derrière `ACHATS_DU_CLIENT_PREVUS` (lib/achatsClientVue.ts,
     // `mesAchatsOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     expect(app).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats) && <Route path="/mes-achats" element={<ClientAchats />} />')
@@ -262,13 +265,14 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(coque).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
     expect(coque).toContain("const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)")
     expect(coque).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)')
+    expect(coque).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais)')
     // DEPUIS L'ÉTAPE C4b, « Mes comptes » lit la case « Comptes », derrière `SITUATIONS_PUBLIEES_EXPORTEES`
     // (lib/situationsPubliees.ts, `mesComptesOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     expect(app).toContain('mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)')
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual([
       'ClientAchats.tsx', 'ClientAnalyse.tsx', 'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientDemandes.tsx', 'ClientDocuments.tsx',
-      'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx',
+      'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx', 'ClientNotesDeFrais.tsx',
       'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
     ])
     // DEPUIS L'ÉTAPE C1, « Mon échéancier » et sa carte de l'accueil lisent la case « Banque » de la société affichée pour les
