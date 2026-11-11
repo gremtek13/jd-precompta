@@ -678,7 +678,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     l'exemplaire de la facture, `rapprochementProposeParLEncaissement`, associé au clic du cabinet, et ce crédit sort
     des lots ; C6R-Q1 et Q2) ; B1 préparée (`trois_cases_de_l_acces`, après P1-trace et C4a : `droit_achats`,
     `droit_frais`, `droit_documents`, qui n'ouvrent encore rien, `changer_droits_acces` à huit paramètres ;
-    `TROIS_CASES_EXPORTEES` baissé ; B1-Q1 et Q2) ; B2 préparée le 11/11/2026 (`documents_et_demandes` : cinq tables, le seau
+    `TROIS_CASES_EXPORTEES` baissé ; B1-Q1 et Q2) ; B4 préparée le 11/11/2026
+    (`achats_du_client`, `ACHATS_DU_CLIENT_PREVUS` baissé ; la réception par « Achats » attend B4-Q1 à Q3)
+    ; B2 préparée le 11/11/2026 (`documents_et_demandes` : cinq tables, le seau
     `documents-cabinet`, `DOCUMENTS_ET_DEMANDES_PREVUS` baissé ; B2-Q1 à Q4) → « B2 : LES DOCUMENTS ET LES DEMANDES DU
     CABINET, EN BASE » ; « LE RAPPROCHEMENT PROPOSÉ PAR L'ENCAISSEMENT (C6, LIGNE 51.5) »,
     « TROIS CASES DE PLUS : « ACHATS », « NOTES DE FRAIS », « DOCUMENTS » (B1, LIGNE 51.5) ».

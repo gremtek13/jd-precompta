@@ -51136,3 +51136,19 @@ d'audit, `types.ts` ; MCB5G-Q1 (le journal), MCB5G-Q2 (un filet en base à la va
 **Fait.** MCB1 : la garde se nomme `lignes_bancaires_garde_du_compte_bancaire`, juste après le gel et avant les gardes d'hier (le corps de `poser_compte_bancaire` inchangé), `f5392ecb…` (23 243 octets) au lieu de `ce2aba9d…` ; son retour la nomme, `1735c2ed…` ; `comptesBancaires.sql` relit l'ordre au catalogue (90). `validationExercice.sql` : 75 et 77 inchangés (le gel refuse, aux mêmes mots, avec ou sans MCB1) ; 76 conditionné (accepté sans MCB1 ; avec elle, refusé par son compte, 23503 — un mouvement ne change plus de dossier) ; 141 compte `comptes_bancaires_garde` quand sa table existe. Aucune ancienne empreinte n'était citée dans le dépôt.
 
 **Preuves** (port 54851) : `validationExercice.sql` 245 sur 245 sans MCB1, avec MCB1, et avec MCB1, MCB2, MCB4 et MCB5. Six mutations plantées, sans et avec MCB1 : le côté nouveau du gel jugé sur l'ancien dossier (75 tombe), le côté ancien sur le nouveau (77 et 75), un changement de dossier refusé comme un déplacement (76), le gel qui retient la cascade d'un dossier supprimé (141, et quatre autres dont 75 et 77) — chacune mord des deux côtés ; la garde d'un compte qui retient la cascade (141, avec MCB1) et l'ancien ordre des gardes (75 et 77, et le 90 de `comptesBancaires.sql`) mordent aussi. `comptesBancaires.sql` 38/38 (EN ATTENTE sans elle), `comptesBancairesSuppression.sql` 7/7, `finDIdentifiantDesComptes.sql` 12/12, `couvertureDuReleveParCompte.sql` 13/13, `jambeDeBanqueParCompte.sql` 18/18 (sa ligne d'historique posée) ; `rls.sql` entier 151 invariants, 0 en faute, 103 mutations sur 103, avec et sans MCB1 ; le retour rend `signature.sql` d'avant (neuf familles).
+
+### 11/11/2026 — B4 : LES ACHATS DU CLIENT, EN BASE (LIGNE 51.5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, sur une copie de la mère 17 rattrapée à la production (197 migrations, `32cc17e5…`) plus B1 ; rien en
+production. `achats_du_client` (20261111237000, `e06d078d…`, par l'OUTIL : ni `drop` ni `truncate`, « delete » dans les
+clés et les gardes seulement) : `pieces.date_echeance` et qui l'a fixée (`garder_echeance_piece` : à l'insertion, une
+échéance ne vient que d'une facture électronique reçue, jamais devinée ; ensuite `fixer_echeance_piece` seule, signée, à la
+version lue ; lue sur la facture, le cabinet seul la corrige ; figée par la validation, elle ne change plus) ;
+`paiements_declares` (MEG2-Q5 : `declarer_paiement_piece` à l'accès « Achats » seul, une proposition ; retirée une fois par
+son auteur ou le cabinet) ; `pieces_vues` (`marquer_vues`, « Achats » seul, la première vue). Lectures À PRÉSENTER : « Achats »
+lit les déclarations de son dossier et ses vues. Preuves : `achatsClient.sql` 54 contrôles, 0 en faute, 9 mutations sur 9 ;
+la suppression jouée à la main sur la réplique ; `rls.sql` bloc AC, TC rendu conscient de B4 (M-TC1 sous « Notes de
+frais ») : 160 invariants, 0 en faute, 109 sur 109 (sans B4 : 156, 105) ; `restauration.sql` IDENTIQUE (89, puis 91
+tables) ; aller, retour (destructif), aller : `signature.sql` égale. Derrière `ACHATS_DU_CLIENT_PREVUS` : le module, le
+plan de sauvegarde. NON FAIT : la réception ouverte à « Achats » (B4-Q1 à Q3 : la pièce écrite par le navigateur du client,
+`lister` qui rend aussi les ventes, le point de reprise commun) — ni `QUI_PEUT_QUOI` ni les Edge Functions ; le banc du leurre.
