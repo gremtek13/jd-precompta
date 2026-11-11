@@ -7287,6 +7287,152 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $or$;
 
+-- ═══ Le départ d'un client : les paquets téléchargés et la conservation (INAL5, ligne 44) ═══════════════════════════
+--
+-- Depuis la migration `depart_du_client` (préparée le 11/11/2026), deux tables du cabinet : `paquets_d_archive_telecharges`
+-- (une ligne par paquet d'archive téléchargé) et `conservations_des_dossiers` (la conservation d'un dossier, posée et levée).
+-- Elles ne s'écrivent que par trois fonctions `security definer` ; la restauration y insère au super-administrateur.
+-- Quatre profils : l'anonyme n'exécute pas les fonctions (DP1) ; un compte rattaché à rien se les voit refuser en 42501, à
+-- leurs mots (DP2) ; le client ne lit ni le téléchargement ni la conservation de son dossier, que le chef lit (DP3, la
+-- mutation M-DP3 rejoue la lecture sous le chef) ; un compte rattaché à rien n'insère dans aucune des deux (DP4) ; au
+-- catalogue, les fonctions sont exécutables par `authenticated` seul, les gardes par aucun rôle de session, et les deux
+-- tables n'ont que quatre policies `to authenticated`, de lecture et de restauration (DP5). Le jeu : une ligne de chaque
+-- table dans le dossier du client, la conservation déjà LEVÉE (une conservation en cours ne cohabite pas avec son accès),
+-- dans une sous-transaction annulée. Ce que les fonctions refusent encore, et la suppression : `departDuClient.sql`.
+-- EN ATTENTE tant que la migration n'est pas en base.
+do $dp$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  n bigint; etat text; message text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.conservations_des_dossiers') is null then
+    insert into rls_verdict values ('DP. le départ d''un client : EN ATTENTE de la migration depart_du_client',
+      'conservations_des_dossiers', 'absente : le départ se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    perform set_config('request.jwt.claims', '', true);
+    execute format('insert into paquets_d_archive_telecharges (dossier_id, annee, empreinte_exercice, empreinte_du_manifeste, '
+      || 'nb_fichiers, nb_non_verifiees, telecharge_par) values (%L, 2025, repeat(''a'', 64), repeat(''b'', 64), 3, 0, %L)', dossier_du_client, chef);
+    execute format('insert into conservations_des_dossiers (dossier_id, dernier_exercice, jusqu_au, posee_le, posee_par, levee_le, levee_par) '
+      || 'values (%L, 2025, ''2035-12-31'', now() - interval ''1 day'', %L, now(), %L)', dossier_du_client, chef, chef);
+    construit := true;
+
+    -- DP1 : l'anonyme n'exécute pas les fonctions.
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+      execute format('select conserver_le_dossier(%L)', dossier_du_client);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DP1. anonyme n''exécute pas les fonctions du départ', 'cible', 'conserver_le_dossier',
+      'observe', etat, 'ok', etat = '42501');
+
+    -- DP2 : un compte rattaché à rien.
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      execute format('select enregistrer_paquet_telecharge(%L, 2025, repeat(''a'', 64), repeat(''b'', 64), 3, 0)', dossier_du_client);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DP2. inconnu authentifié n''enregistre pas de paquet', 'cible', 'enregistrer_paquet_telecharge',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce dossier.');
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      execute format('select lever_la_conservation(%L)', dossier_du_client);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DP2. inconnu authentifié ne lève pas de conservation', 'cible', 'lever_la_conservation',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Seul le chef du cabinet conserve un dossier ou lève sa conservation.');
+
+    -- DP3 : le client ne lit rien de son dossier ; M-DP3 : la même lecture sous le chef.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    execute format('select (select count(*) from paquets_d_archive_telecharges where dossier_id = %L) '
+      || '+ (select count(*) from conservations_des_dossiers where dossier_id = %L)', dossier_du_client, dossier_du_client) into n;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DP3. client ne lit ni les paquets téléchargés ni la conservation de son dossier', 'cible', 'paquets_d_archive_telecharges, conservations_des_dossiers',
+      'observe', n || ' ligne(s)', 'ok', n = 0);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    execute format('select (select count(*) from paquets_d_archive_telecharges where dossier_id = %L) '
+      || '+ (select count(*) from conservations_des_dossiers where dossier_id = %L)', dossier_du_client, dossier_du_client) into n;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-DP3 — DP3 rejoué sous le chef', 'attendu', 'les deux lignes lues',
+      'observe', n || ' ligne(s)', 'mord', n = 2);
+
+    -- DP4 : un compte rattaché à rien n'insère dans aucune des deux tables.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      execute format('insert into paquets_d_archive_telecharges (dossier_id, annee, empreinte_exercice, empreinte_du_manifeste, '
+        || 'nb_fichiers, nb_non_verifiees, telecharge_par) values (%L, 2024, repeat(''a'', 64), repeat(''b'', 64), 3, 0, %L)', dossier_du_client, inconnu);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      execute format('insert into conservations_des_dossiers (dossier_id, dernier_exercice, jusqu_au, posee_par, levee_le, levee_par) '
+        || 'values (%L, 2024, ''2034-12-31'', %L, now(), %L)', dossier_du_client, inconnu, inconnu);
+      etat := etat || '/acceptée';
+    exception when others then etat := etat || '/' || sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'DP4. inconnu authentifié n''insère ni téléchargement ni conservation (la restauration est au super-administrateur)', 'cible', 'paquets_d_archive_telecharges_restauration, conservations_des_dossiers_restauration',
+      'observe', etat, 'ok', etat = '42501/42501');
+    raise exception 'annuler le jeu' using errcode = 'P0001';
+  exception
+    when sqlstate 'P0001' then null;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- DP5 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.prosecdef
+     and p.proname in ('enregistrer_paquet_telecharge', 'conserver_le_dossier', 'lever_la_conservation')
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE'), false);
+  verdicts := verdicts || jsonb_build_object('controle', 'DP5. les trois fonctions du départ : security definer, exécutables par authenticated seul (lecture du catalogue)',
+    'cible', 'les trois fonctions', 'observe', n || ' telle(s) quelle(s)', 'ok', n = 3);
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace
+     and p.proname in ('garder_conservation_du_dossier', 'garder_dossier_conserve', 'garder_depart_du_dossier')
+     and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
+  verdicts := verdicts || jsonb_build_object('controle', 'DP5. les trois gardes du départ : aucun rôle de session ne les exécute (lecture du catalogue)',
+    'cible', 'les trois gardes', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  select count(*) into n from pg_policies
+   where schemaname = 'public' and tablename in ('paquets_d_archive_telecharges', 'conservations_des_dossiers')
+     and not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'));
+  verdicts := verdicts || jsonb_build_object('controle', 'DP5. les deux tables : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
+    'cible', 'paquets_d_archive_telecharges, conservations_des_dossiers', 'observe', n || ' autre(s)', 'ok', n = 0
+      and (select count(*) from pg_policies where schemaname = 'public' and tablename in ('paquets_d_archive_telecharges', 'conservations_des_dossiers')) = 4);
+  verdicts := verdicts || jsonb_build_object('controle', 'DP. le jeu d''essai du départ s''est construit, et rien n''en est resté', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $dp$;
+
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
 -- invariants — le principal — ne s'afficherait jamais. Un harnais dont on ne voit pas la réponse est

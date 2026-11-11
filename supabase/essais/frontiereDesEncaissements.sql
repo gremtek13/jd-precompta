@@ -150,6 +150,14 @@ begin
     -- Les gardes d'hier remises : la suppression du dossier passe, son encaissement figé et sa part avec lui.
     alter table encaissements_factures enable trigger encaissements_factures_gardes;
     alter table encaissements_factures_taux enable trigger encaissements_factures_taux_gardes;
+    -- La migration `depart_du_client` (INAL5) appliquée, un dossier qui porte un exercice validé ne se supprime qu'après le
+    -- téléchargement de son paquet d'archive : on l'enregistre d'abord, à l'empreinte de l'exercice (EXECUTE : la table
+    -- n'existe pas avant la migration).
+    if to_regclass('public.paquets_d_archive_telecharges') is not null then
+      execute format('insert into paquets_d_archive_telecharges (dossier_id, annee, empreinte_exercice, empreinte_du_manifeste, nb_fichiers, '
+        || 'nb_non_verifiees, telecharge_par) select dossier_id, annee, empreinte, repeat(''0'', 64), 2, 0, %L::uuid from exercices_valides '
+        || 'where dossier_id = %L', chef, d);
+    end if;
     begin delete from dossiers where id = d; code := 'OK'; msg := null;
     exception when others then code := sqlstate; msg := sqlerrm; end;
     verdicts := verdicts || jsonb_build_object('controle', 'S11. la suppression d''un dossier qui porte un encaissement figé passe', 'ok', code = 'OK'
