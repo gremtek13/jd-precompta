@@ -9,7 +9,7 @@ import {
   QUOI_DES_VENTES_DE_LA_SIMULATION, SANS_PROJECTION, SIMULATION_VENTES_FACTUREES_EXPORTEE, lectureDeLaSimulation,
   avecLesPiecesCitees, lireLesVentesDeLaSimulation, ventesDeLaSimulation, type LectureDeLaSimulation,
 } from '../lib/simulationVentesFacturees'
-import { FONCTION_DES_PIECES_CITEES, lireLesPiecesCiteesDeLaSimulation, reprisesAuClientPrevues } from '../lib/reprisesAuClient'
+import { lireLesPiecesCiteesDeLaSimulation, reprisesAuClientPrevues } from '../lib/reprisesAuClient'
 import { partsDuReleve } from '../lib/partsDuReleve'
 import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from '../lib/rattachement'
 import { cotisationsComptees } from '../lib/cotisationRapprochee'
@@ -154,7 +154,7 @@ export default function ClientSimulation() {
         // Les pièces qui sont l'original d'une facture reprise (A8Q5-Q2), sous la même case, le drapeau de la migration
         // `reprises_au_client` levé : en trésorerie, elles ne comptent que leurs paiements. Baissé, rien n'est demandé.
         SIMULATION_VENTES_FACTUREES_EXPORTEE && reprisesAuClientPrevues()
-          ? lireLesPiecesCiteesDeLaSimulation(supabase.rpc(FONCTION_DES_PIECES_CITEES, { p_dossier_id: dossierLu }))
+          ? lireLesPiecesCiteesDeLaSimulation(supabase.rpc('pieces_citees_de_la_simulation', { p_dossier_id: dossierLu }))
           : Promise.resolve(null),
       ])
       if (annule) return
