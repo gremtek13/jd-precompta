@@ -11,9 +11,10 @@
 -- AUCUNE ligne, sans erreur : la carte « Missions confiées au cabinet » de l'onglet Informations du client le lui dit
 -- (« pas ouvert »), sans pouvoir lui dire ce que la lettre confie au cabinet.
 --
--- CE QU'ELLE FAIT (LM5-Q2, recommandation (A)). Une fonction de lecture, `missions_du_client(dossier)`, `security
--- definer`, son chemin fixé, `stable` (elle n'écrit rien), exécutable par les connectés seuls. Elle rend, pour le dossier
--- d'un client, ses lettres de mission PROPOSÉES, chacune par les douze valeurs que la carte lisait déjà
+-- CE QU'ELLE FAIT (LM5-Q2, recommandation (A) ; LM5Q2-Q1, réponse (B)). Une fonction de lecture,
+-- `missions_du_client(dossier)`, `security definer`, son chemin fixé, `stable` (elle n'écrit rien), exécutable par les
+-- connectés seuls. Elle rend, pour le dossier d'un client, TOUTES ses lettres de mission, brouillons compris, chacune par
+-- les douze valeurs que la carte lisait déjà
 -- (`COLONNES_SANS_MONTANT`, src/lib/lettresDeMissionVue.ts) et elles seules :
 --   - la lettre : son identifiant (sa référence), la lettre qu'elle remplace (sa version, dans la chaîne des versions),
 --     le dossier du client ;
@@ -36,8 +37,11 @@
 --
 -- QUELLES LETTRES : celles du dossier que le cabinet du client a désigné (LM4 n'en écrit nulle part ailleurs, et ce
 -- dossier ne change plus de désignation dès qu'il en porte une, `garder_designation_des_lettres`), qui nomment ce client,
--- et qui sont PROPOSÉES : un brouillon, que le cabinet réécrit tant qu'il ne l'a pas proposé, ne se montre pas
--- (LM5Q2-Q1, la voie prudente). Dans l'ordre de leur proposition.
+-- BROUILLONS COMPRIS (LM5Q2-Q1, réponse (B) du cabinet du 11/11/2026, contre la recommandation (A), qui les taisait) : un
+-- brouillon, que le cabinet réécrit tant qu'il ne l'a pas proposé, se rend par les mêmes douze valeurs — ses missions et
+-- ses dates telles qu'elles sont à cette heure, jamais ses honoraires —, et l'écran le dit « brouillon » (sa proposition
+-- est nulle). Les lettres proposées d'abord, dans l'ordre de leur proposition, puis les brouillons, dans l'ordre de leur
+-- création.
 --
 -- POURQUOI UNE FONCTION. La RLS ne masque pas une colonne : une seconde policy de lecture sur `lettres_de_mission`, ouverte
 -- aux membres du dossier du client, leur ouvrirait aussi les honoraires. Écartés : (B) une vue aux droits de son
@@ -68,7 +72,8 @@ begin
      or (select count(*) from pg_attribute a
           where a.attrelid = to_regclass('public.lettres_de_mission') and a.attnum > 0
             and a.attname in ('id', 'dossier_id', 'remplace_id', 'dossier_client_id', 'missions', 'date_effet', 'fin_initiale',
-                              'reconduction_tacite', 'proposee_le', 'acceptee_le', 'refusee_le', 'retiree_le', 'fin_au')) <> 13
+                              'reconduction_tacite', 'proposee_le', 'acceptee_le', 'refusee_le', 'retiree_le', 'fin_au',
+                              'cree_le')) <> 14
      or (select count(*) from pg_attribute a
           where a.attrelid = to_regclass('public.cabinets') and a.attname = 'dossier_du_cabinet') <> 1 then
     raise exception 'Les colonnes des lettres de mission ou la désignation du dossier du cabinet ne sont plus celles que cette migration suppose : la relire contre la base avant de l''appliquer.';
@@ -102,8 +107,9 @@ begin
   if not found then
     raise exception 'Accès refusé à ce dossier.' using errcode = '42501';
   end if;
-  -- 3. Les lettres PROPOSÉES de ce client, chacune par ses douze valeurs et elles seules : ni honoraires, ni répartition,
-  --    ni identités, ni clauses, ni modèle, ni signataire, ni papier signé, ni empreinte, ni auteurs.
+  -- 3. Les lettres de ce client, brouillons compris (LM5Q2-Q1 (B)), chacune par ses douze valeurs et elles seules : ni
+  --    honoraires, ni répartition, ni identités, ni clauses, ni modèle, ni signataire, ni papier signé, ni empreinte, ni
+  --    auteurs. Les proposées d'abord, par leur proposition ; puis les brouillons, par leur création.
   return jsonb_build_object(
     'dossier_du_cabinet_designe', v_dossier_du_cabinet is not null,
     'lettres', coalesce((
@@ -120,11 +126,10 @@ begin
                'refusee_le', l.refusee_le,
                'retiree_le', l.retiree_le,
                'fin_au', l.fin_au)
-             order by l.proposee_le, l.id)
+             order by l.proposee_le nulls last, l.cree_le, l.id)
         from public.lettres_de_mission l
        where l.dossier_id = v_dossier_du_cabinet
-         and l.dossier_client_id = p_dossier_id
-         and l.proposee_le is not null), '[]'::jsonb));
+         and l.dossier_client_id = p_dossier_id), '[]'::jsonb));
 end
 $$;
 
@@ -132,4 +137,4 @@ revoke execute on function public.missions_du_client(uuid) from public, anon;
 grant execute on function public.missions_du_client(uuid) to authenticated;
 
 comment on function public.missions_du_client(uuid) is
-  'Les lettres de mission proposées d''un client (LM5-Q2, ligne 47) : leur référence, leur version, leurs missions et leurs dates, jamais leurs honoraires ni aucun autre contenu ; avec la désignation du dossier du cabinet. À qui lit le dossier du client au titre du cabinet (admin_du_dossier) ; un accès client est refusé.';
+  'Les lettres de mission d''un client, brouillons compris (LM5-Q2, LM5Q2-Q1, ligne 47) : leur référence, leur version, leurs missions et leurs dates, jamais leurs honoraires ni aucun autre contenu ; avec la désignation du dossier du cabinet. À qui lit le dossier du client au titre du cabinet (admin_du_dossier) ; un accès client est refusé.';

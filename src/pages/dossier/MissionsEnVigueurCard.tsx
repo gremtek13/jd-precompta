@@ -1,6 +1,6 @@
 import { LETTRES_DE_MISSION_PREVUES } from '../../lib/lettresDeMission'
 import { useMissionsDuClient } from '../../lib/lettresDeMissionLecture'
-import { LIBELLE_MISSION, missionsEnVigueur } from '../../lib/lettresDeMissionVue'
+import { LIBELLE_ETAT, LIBELLE_MISSION, lettresEnPreparation, missionsEnVigueur } from '../../lib/lettresDeMissionVue'
 import { aujourdHuiAParis, formatDate } from '../../lib/format'
 
 // LES MISSIONS EN VIGUEUR D'UN CLIENT, DANS SON DOSSIER (ligne 47, LM5), derrière `LETTRES_DE_MISSION_PREVUES` : baissé, rien
@@ -10,7 +10,9 @@ import { aujourdHuiAParis, formatDate } from '../../lib/format'
 // erreur — la carte le dit alors, sans jamais affirmer « aucune lettre ». LM5-Q2 (`MISSIONS_DU_CLIENT_PREVUES`, baissé tant
 // que la migration `missions_du_client` n'est pas en production) : levé, la carte lit par cette fonction, qui s'ouvre à qui
 // lit le dossier du CLIENT au titre du cabinet et ne rend aucun montant ; un refus de la base se dit refusé, tel quel. Baissé,
-// la carte d'hier. Rien ne s'affiche dans le dossier du cabinet.
+// la carte d'hier. Rien ne s'affiche dans le dossier du cabinet. Sous les missions en vigueur, les lettres EN PRÉPARATION —
+// un brouillon (LM5Q2-Q1, réponse (B) du cabinet : la fonction les rend aussi, sans honoraires), une proposition sans
+// réponse —, chacune dite par son état : « Brouillon », qui peut encore changer, ou « Proposée ».
 
 export default function MissionsEnVigueurCard({ dossierId, estLeDossierDuCabinet }: { dossierId: string; estLeDossierDuCabinet: boolean }) {
   if (!LETTRES_DE_MISSION_PREVUES || estLeDossierDuCabinet) return null
@@ -33,7 +35,9 @@ function Carte({ dossierId }: { dossierId: string }) {
   if (lecture.etat === 'refusee') {
     return <section className="card">{titre}<p className="muted" role="status">La base a refusé la lecture des lettres de mission de ce client ({lecture.motif}) : ce qu’elles confient au cabinet ne se dit pas ici.</p></section>
   }
-  const enVigueur = missionsEnVigueur(lecture.lettres, dossierId, aujourdHuiAParis())
+  const aujourdhui = aujourdHuiAParis()
+  const enVigueur = missionsEnVigueur(lecture.lettres, dossierId, aujourdhui)
+  const enPreparation = lettresEnPreparation(lecture.lettres, dossierId, aujourdhui)
   return (
     <section className="card">
       {titre}
@@ -47,6 +51,21 @@ function Carte({ dossierId }: { dossierId: string }) {
             </li>
           ))}
         </ul>
+      )}
+      {enPreparation.length > 0 && (
+        <>
+          <h4>En préparation</h4>
+          <ul className="liste-simple">
+            {enPreparation.map((p) => (
+              <li key={p.lettreId}>
+                <span className="badge">{LIBELLE_ETAT[p.etat]}</span>{' '}
+                {p.missions.length > 0 ? p.missions.map((x) => LIBELLE_MISSION[x]).join(', ') : 'missions à préciser'}
+                <span className="muted">{p.dateEffet ? ` — effet prévu le ${formatDate(p.dateEffet)}` : ''}
+                  {p.etat === 'brouillon' ? ' — le cabinet la rédige : elle peut encore changer' : ' — proposée au client, en attente de sa réponse'}</span>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </section>
   )

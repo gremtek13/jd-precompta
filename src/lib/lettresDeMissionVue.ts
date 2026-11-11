@@ -10,7 +10,7 @@
 
 import {
   CLAUSES, MISSIONS, REFUS_DE_LA_PROPOSITION, REFUS_DE_LA_REPONSE, REFUS_DU_BROUILLON, REFUS_DU_MODELE, REFUS_DU_RETRAIT,
-  REFUS_DU_RETRAIT_DU_MODELE, clausesRequises, lettresEnVigueur, motsDuRefus,
+  REFUS_DU_RETRAIT_DU_MODELE, clausesRequises, etatDeLaLettre, lettresEnVigueur, motsDuRefus,
   type Clause, type EtatDeLaLettre, type LettreLue, type Mission,
 } from './lettresDeMission'
 import { dateAParis } from './format'
@@ -589,6 +589,19 @@ export const COLONNES_SANS_MONTANT =
   'id, remplace_id, dossier_client_id, missions, date_effet, fin_initiale, reconduction_tacite, proposee_le, acceptee_le, refusee_le, retiree_le, fin_au'
 
 export interface MissionEnVigueur { lettreId: string; missions: Mission[]; dateEffet: string; finInitiale: string | null; reconduction: boolean }
+
+/** Une lettre en préparation : un brouillon (LM5Q2-Q1 (B)), ou une proposition qui attend la réponse du client. */
+export interface LettreEnPreparation { lettreId: string; etat: 'brouillon' | 'proposee'; missions: Mission[]; dateEffet: string | null }
+
+/** Les lettres d'un client qui ne sont pas encore en vigueur et peuvent le devenir — ses brouillons et ses propositions sans
+ *  réponse —, dans l'ordre où la base les rend ; chacune dite par son état, jamais un montant. */
+export function lettresEnPreparation(lettres: readonly LettreSansMontant[], dossierClientId: string, aujourdhui: string): LettreEnPreparation[] {
+  return lettres.flatMap((l) => {
+    if (l.dossier_client_id !== dossierClientId) return []
+    const etat = etatDeLaLettre(l, aujourdhui)
+    return etat === 'brouillon' || etat === 'proposee' ? [{ lettreId: l.id, etat, missions: l.missions, dateEffet: l.date_effet }] : []
+  })
+}
 
 export function missionsEnVigueur(lettres: readonly LettreSansMontant[], dossierClientId: string, date: string): MissionEnVigueur[] {
   return lettresEnVigueur(lettres, dossierClientId, date).map((l) => {

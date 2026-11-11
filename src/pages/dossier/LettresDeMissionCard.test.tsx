@@ -169,5 +169,25 @@ describe('les missions en vigueur, dans le dossier d’un client', () => {
     const { container } = render(<MissionsEnVigueurCard dossierId={C} estLeDossierDuCabinet={false} />)
     expect(container.textContent).toContain('Tenue de la comptabilité')
     expect(container.textContent).not.toContain('€')
+    expect(container.textContent).not.toContain('En préparation')
+  })
+
+  it('un brouillon (LM5Q2-Q1 (B)) et une proposition sans réponse se disent en préparation, chacun par son état', () => {
+    etat.missions = {
+      etat: 'lue', dossierClientId: C, lettres: [
+        { ...lettre({ id: 'b1', proposee_le: null, acceptee_le: null, date_effet: '2027-01-01' }) },
+        { ...lettre({ id: 'p1', proposee_le: '2026-11-10T09:00:00Z', acceptee_le: null, date_effet: '2026-12-01' }) },
+        { ...lettre({ id: 'r1', proposee_le: null, acceptee_le: null, retiree_le: '2026-11-10T09:00:00Z' }) },
+      ],
+    }
+    const { container } = render(<MissionsEnVigueurCard dossierId={C} estLeDossierDuCabinet={false} />)
+    expect(screen.getByText('Aucune lettre de mission en vigueur aujourd’hui.')).toBeTruthy()
+    const items = [...container.querySelectorAll('h4 + ul li')].map((li) => li.textContent)
+    expect(items).toHaveLength(2)
+    expect(items[0]).toContain('Brouillon')
+    expect(items[0]).toContain('effet prévu le 01/01/2027 — le cabinet la rédige : elle peut encore changer')
+    expect(items[1]).toContain('Proposée')
+    expect(items[1]).toContain('en attente de sa réponse')
+    expect(container.textContent).not.toContain('€')
   })
 })
