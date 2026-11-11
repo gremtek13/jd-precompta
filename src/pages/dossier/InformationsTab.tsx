@@ -14,6 +14,8 @@ import BalanceCard from './BalanceCard'
 import SourceDesVentesCard, { type ReglageRendu } from './SourceDesVentesCard'
 import NumerotationDesFacturesCard from './NumerotationDesFacturesCard'
 import DossierDuCabinetCard from './DossierDuCabinetCard'
+import LettresDeMissionCard from './LettresDeMissionCard'
+import MissionsEnVigueurCard from './MissionsEnVigueurCard'
 import { useDesignationDuDossier } from '../../lib/dossierDuCabinetLecture'
 import { refusDeLaSuppression } from '../../lib/dossierDuCabinet'
 import { messageErreur } from '../../lib/messageErreur'
@@ -401,6 +403,15 @@ export default function InformationsTab({
       dossierId={dossierId} dossierNom={dossierNom} lecture={designation}
       onDesignationEcrite={() => setRelectureDesignation((n) => n + 1)}
     />
+
+    {/* Les lettres de mission (ligne 47, LM5), derrière `LETTRES_DE_MISSION_PREVUES` : rédigées dans le dossier du cabinet
+        seul ; dans le dossier d'un client, ses missions en vigueur, sans montant. Rien tant que la désignation n'est pas lue. */}
+    {designation?.etat === 'lue' && (
+      <>
+        <LettresDeMissionCard dossierId={dossierId} estLeDossierDuCabinet={designation.dossierActuel === dossierId} />
+        <MissionsEnVigueurCard dossierId={dossierId} estLeDossierDuCabinet={designation.dossierActuel === dossierId} />
+      </>
+    )}
 
     <div className="card" style={{ maxWidth: 640 }}>
       <h3 style={{ marginTop: 0 }}>Informations du client</h3>
