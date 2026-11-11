@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { DOSSIER_DU_CABINET_PREVU } from './dossierDuCabinet'
+import { DOSSIER_DU_CABINET_PREVU, type FactureQuiPart } from './dossierDuCabinet'
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { supabase } from './supabase'
@@ -128,6 +128,44 @@ export function useDesignationDuDossier(dossierId: string, relecture: number): L
     return () => { annule = true }
   }, [dossierId, relecture])
   if (!DOSSIER_DU_CABINET_PREVU) return null
+  return lue !== null && lue.cle === cle ? lue.lecture : null
+}
+
+/** Les factures du dossier du cabinet qui partiraient avec lui (LM1-Q1 (B)), lues pour un dossier. */
+export type LectureDesFacturesQuiPartent =
+  | { etat: 'lue'; dossierId: string; factures: FactureQuiPart[] }
+  | { etat: 'illisible'; dossierId: string; motif: string }
+
+/**
+ * Les factures du dossier qui ne sont pas des brouillons (validées, reprises, avoirs), lues en ENTIER (`lireTout`, tri total
+ * sur la clé) : une lecture partielle est illisible — la confirmation de la suppression ne nommerait pas tout. Ne rejette
+ * jamais.
+ */
+export async function lireLesFacturesQuiPartent(dossierId: string): Promise<LectureDesFacturesQuiPartent> {
+  try {
+    const lu = await lireTout<FactureQuiPart>((debut, fin) =>
+      supabase.from('factures_emises').select('id, numero', { count: 'exact' }).eq('dossier_id', dossierId)
+        .neq('statut', 'brouillon').order('id').range(debut, fin),
+    )
+    if (!lu.complete) return { etat: 'illisible', dossierId, motif: lu.motif ?? 'la lecture des factures est incomplète' }
+    return { etat: 'lue', dossierId, factures: lu.lignes.map((f) => ({ id: f.id, numero: f.numero })) }
+  } catch (e) {
+    return { etat: 'illisible', dossierId, motif: messageErreur(e, 'les factures n’ont pas pu être lues') }
+  }
+}
+
+/** Les factures qui partiraient, lues quand `actif` (le dossier est celui du cabinet), gardées avec leur dossier ; `null`
+ *  avant le retour, et toujours le drapeau baissé. */
+export function useFacturesQuiPartent(dossierId: string, actif: boolean, relecture: number): LectureDesFacturesQuiPartent | null {
+  const [lue, setLue] = useState<{ cle: string; lecture: LectureDesFacturesQuiPartent } | null>(null)
+  const cle = `${dossierId}#${relecture}`
+  useEffect(() => {
+    if (!DOSSIER_DU_CABINET_PREVU || !actif) return
+    let annule = false
+    void lireLesFacturesQuiPartent(dossierId).then((lecture) => { if (!annule) setLue({ cle: `${dossierId}#${relecture}`, lecture }) })
+    return () => { annule = true }
+  }, [dossierId, actif, relecture])
+  if (!DOSSIER_DU_CABINET_PREVU || !actif) return null
   return lue !== null && lue.cle === cle ? lue.lecture : null
 }
 

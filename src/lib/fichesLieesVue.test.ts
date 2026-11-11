@@ -56,11 +56,11 @@ describe('les lecteurs d’hier écartent une fiche liée (LM3)', () => {
 })
 
 describe('la vue des fiches liées (LM3)', () => {
-  it('les fiches du dossier : liées, non effacées, ce qui est propre à la facturation', () => {
+  it('les fiches du dossier : liées, non effacées, ce qui est propre à la facturation, et la version lue (LM3-Q1 (B))', () => {
     const fiches = fichesLieesDuDossier([ordinaire, liee(), liee({ id: 'f2', efface_le: '2027-01-01T00:00:00Z', dossier_client_id: C2 })])
     expect(fiches).toEqual([{
       id: 'f1', dossier_client_id: C, adresse_electronique: null, email: 'compta@essai.invalid', delai_paiement_jours: 30,
-      observations: null, retire_le: null, efface_le: null,
+      observations: null, retire_le: null, efface_le: null, modifie_le: null,
     }])
   })
 

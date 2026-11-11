@@ -30,6 +30,7 @@ export function fichesLieesDuDossier(contacts: readonly Contact[]): FicheLiee[] 
     .map((c) => ({
       id: c.id, dossier_client_id: c.dossier_client_id as string, adresse_electronique: c.adresse_electronique, email: c.email,
       delai_paiement_jours: c.delai_paiement_jours, observations: c.observations, retire_le: c.retire_le, efface_le: c.efface_le,
+      modifie_le: c.modifie_le,
     }))
 }
 

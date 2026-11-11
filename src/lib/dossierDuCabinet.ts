@@ -1,6 +1,7 @@
 // LE DOSSIER DU CABINET (ligne 47, lot LM1 ; LM-Q1 et LM-Q2 du 11/11/2026). Un cabinet DÉSIGNE l'un de ses dossiers comme
 // le sien (`cabinets.dossier_du_cabinet`) : il y facture ses honoraires en son propre nom — aucun mandataire figé, la série
-// du dossier, jamais celle du mandataire —, aucun accès client ne s'y pose, et il ne se supprime qu'avec le cabinet. La base
+// du dossier, jamais celle du mandataire —, aucun accès client ne s'y pose, et il ne se supprime que par le chef de son
+// cabinet, ses factures avec lui (LM1-Q1 (B)). La base
 // tient la règle (la migration `dossier_du_cabinet`, PRÉPARÉE le 11/11/2026, supabase/preparees/) ; ce module la redit,
 // pur, pour la dire avant le clic à l'écran de LM2 : les refus de `designer_dossier_du_cabinet` dans son ordre et à ses
 // mots, ceux des deux gardes, et le prédicat du mandataire. Rien ne s'en lit tant que le drapeau est baissé.
@@ -32,7 +33,7 @@ export const REFUS_ACCES_CLIENT =
   'Le dossier du cabinet ne reçoit aucun accès client : il porte les honoraires de tous les clients du cabinet.'
 export const REFUS_CHANGEMENT_DE_CABINET = 'Le dossier du cabinet ne change pas de cabinet.'
 export const REFUS_SUPPRESSION =
-  'Le dossier du cabinet ne se supprime pas : il porte les factures du cabinet. Seul le super-administrateur le retire, avec le cabinet.'
+  'Le dossier du cabinet ne se supprime que par le chef du cabinet : il porte les factures du cabinet, qui partent avec lui.'
 
 /** Ce que l'écran sait avant le clic, lu en entier ; `null` : pas lu (le refus de la lecture se dit à part). */
 export interface EtatDeLaDesignation {
@@ -86,9 +87,52 @@ export function valideAuNomDuClient(p: { valideParLeCabinet: boolean; estLeDossi
   return p.valideParLeCabinet && !p.estLeDossierDuCabinet
 }
 
-/** Le refus de la suppression d'un dossier, à dire AVANT de vider son stockage (la base ne refuse la ligne qu'après). */
-export function refusDeLaSuppression(p: { estLeDossierDuCabinet: boolean; superAdministrateur: boolean }): string | null {
-  return p.estLeDossierDuCabinet && !p.superAdministrateur ? REFUS_SUPPRESSION : null
+/**
+ * Le refus de la suppression d'un dossier, à dire AVANT de vider son stockage (la base ne refuse la ligne qu'après). Le
+ * dossier du cabinet se supprime par le chef de son cabinet, le super-administrateur compris (`est_chef_du_cabinet`) :
+ * réponse du cabinet LM1-Q1 (B) du 11/11/2026, la confirmation nommant les factures qui partent avec lui.
+ */
+export function refusDeLaSuppression(p: { estLeDossierDuCabinet: boolean; chefDuCabinet: boolean }): string | null {
+  return p.estLeDossierDuCabinet && !p.chefDuCabinet ? REFUS_SUPPRESSION : null
+}
+
+/** Une facture du dossier du cabinet qui partirait avec lui : tout statut sauf « brouillon » (validée, reprise, avoir). */
+export interface FactureQuiPart {
+  id: string
+  numero: string | null
+}
+
+/** Leurs numéros, dans l'ordre (les chiffres comptés comme des nombres) ; un numéro absent se dit « sans numéro ». */
+export function numerosQuiPartent(factures: readonly FactureQuiPart[]): string[] {
+  return factures.map((f) => (f.numero == null || f.numero.trim() === '' ? 'sans numéro' : f.numero))
+    .sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }))
+}
+
+/**
+ * Ce que la confirmation de la suppression du dossier du cabinet ajoute (LM1-Q1 (B)) : le NOMBRE des factures qui partent
+ * avec lui et leurs NUMÉROS, tous, sur une liste lue en entier — la base ne confirme rien, l'écran nomme avant le clic.
+ */
+export function ceQuePerdLeDossierDuCabinet(factures: readonly FactureQuiPart[]): string {
+  const n = factures.length
+  if (n === 0) return ' C’est le dossier du cabinet : il ne porte aucune facture validée.'
+  const numeros = numerosQuiPartent(factures).join(', ')
+  return n === 1
+    ? ` C’est le dossier du cabinet : sa facture validée part avec lui, la facture ${numeros}.`
+    : ` C’est le dossier du cabinet : ses ${n} factures validées partent avec lui, les factures ${numeros}.`
+}
+
+/**
+ * La suppression relit les factures du dossier du cabinet AVANT de vider le stockage : celles que la confirmation a nommées
+ * (leurs identifiants) doivent être exactement celles que la base porte encore — une facture validée entre-temps n'aurait
+ * pas été nommée. `nommees` nul : la confirmation n'a rien nommé.
+ */
+export function refusDesFacturesNommees(nommees: readonly string[] | null, lues: readonly FactureQuiPart[]): string | null {
+  if (nommees === null) return 'La confirmation n’a pas nommé les factures du dossier du cabinet : rien n’a été supprimé.'
+  const ensemble = new Set(nommees)
+  if (ensemble.size !== lues.length || lues.some((f) => !ensemble.has(f.id))) {
+    return 'Les factures du dossier du cabinet ont changé depuis la confirmation : rien n’a été supprimé. Relire avant de supprimer.'
+  }
+  return null
 }
 
 // ── L'ÉCRAN (LM2) ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -113,7 +157,8 @@ export function separerLeDossierDuCabinet<T extends { id: string }>(
 export function ceQueDitLaDesignation(p: { estLeDossierDuCabinet: boolean; unAutreEstDesigne: boolean; nomDeLAutre: string | null }): string {
   if (p.estLeDossierDuCabinet) {
     return 'C’est le dossier du cabinet : le cabinet y facture ses honoraires en son propre nom — aucune mention de mandat, '
-      + 'la série de numérotation du dossier. Aucun accès client ne s’y pose, et il ne se supprime qu’avec le cabinet.'
+      + 'la série de numérotation du dossier. Aucun accès client ne s’y pose, et il ne se supprime que par le chef du cabinet, '
+      + 'ses factures avec lui.'
   }
   if (p.unAutreEstDesigne) {
     return p.nomDeLAutre !== null
@@ -136,7 +181,7 @@ export function confirmationDeLaDesignation(p: { nom: string; retrait: boolean; 
   }
   return `Désigner « ${p.nom} » comme le dossier du cabinet ?\n\n`
     + 'Le cabinet y facturera ses honoraires en son propre nom : aucune mention de mandat, la série de numérotation du dossier. '
-    + 'Aucun accès client ne pourra s’y poser, et il ne se supprimera qu’avec le cabinet.'
+    + 'Aucun accès client ne pourra s’y poser, et il ne se supprimera que par le chef du cabinet, ses factures avec lui.'
     + (p.remplace !== null ? `\n\nIl remplace « ${p.remplace} », qui redevient un dossier ordinaire.` : '')
     + '\n\nCette désignation devient irréversible dès que le dossier porte une facture validée.'
 }

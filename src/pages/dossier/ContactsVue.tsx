@@ -15,7 +15,7 @@ import {
 } from '../../lib/contactsExport'
 import { lireLesContacts, type LectureDesContacts } from '../../lib/contactsLecture'
 import {
-  effacerContact, enregistrerContact, enregistrerFicheLiee, importerContacts, reprendreContact, retirerContact,
+  delierFicheLiee, effacerContact, enregistrerContact, enregistrerFicheLiee, importerContacts, reprendreContact, retirerContact,
 } from '../../lib/contactsEcriture'
 import {
   LIBELLES_TYPE_CONTACT, champsDeRechercheContact, confirmationDeLEffacement, contactsAffichables, contactsAffiches, delaiAffiche,
@@ -251,6 +251,14 @@ export default function ContactsVue(props: Props) {
     return sousVerrou('La fiche n’a pas pu être reprise.', async () => {
       await reprendreContact(dossierId, fiche.id)
       return `Fiche de « ${nomDansUnRefus(nom)} » reprise.`
+    })
+  }
+
+  // LM3-Q1 (B) : délier une fiche, à la version lue ; la base y recopie l'identité du dossier à ce jour.
+  async function delierFiche(fiche: FicheLiee, nom: string) {
+    return sousVerrou('La fiche n’a pas pu être déliée.', async () => {
+      await delierFicheLiee(dossierId, fiche.id, fiche.modifie_le ?? null)
+      return `Fiche de « ${nomDansUnRefus(nom)} » déliée : elle est désormais saisie à la main.`
     })
   }
 
@@ -495,7 +503,7 @@ export default function ContactsVue(props: Props) {
       {FICHES_LIEES_PREVUES && espace === 'cabinet' && (
         <FichesLieesSection
           dossierId={dossierId} contacts={contacts} complete={complete} occupe={occupe} erreur={erreur}
-          onEnregistrer={enregistrerFiche} onBasculer={basculerFiche} onFenetre={quandUneFicheSOuvre}
+          onEnregistrer={enregistrerFiche} onBasculer={basculerFiche} onDelier={delierFiche} onFenetre={quandUneFicheSOuvre}
         />
       )}
 

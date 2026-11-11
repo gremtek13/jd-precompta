@@ -17,8 +17,8 @@ import ComptesBancairesCard from './ComptesBancairesCard'
 import DossierDuCabinetCard from './DossierDuCabinetCard'
 import LettresDeMissionCard from './LettresDeMissionCard'
 import MissionsEnVigueurCard from './MissionsEnVigueurCard'
-import { useDesignationDuDossier } from '../../lib/dossierDuCabinetLecture'
-import { refusDeLaSuppression } from '../../lib/dossierDuCabinet'
+import { useDesignationDuDossier, useFacturesQuiPartent } from '../../lib/dossierDuCabinetLecture'
+import { DOSSIER_DU_CABINET_PREVU, ceQuePerdLeDossierDuCabinet, refusDeLaSuppression } from '../../lib/dossierDuCabinet'
 import DepartDuClientCard from './DepartDuClientCard'
 import { useDepartDuDossier } from '../../lib/departDuClientLecture'
 import { DEPART_DU_CLIENT_PREVU, ceQueLaSuppressionPerd, exercicesSansPaquet, refusDeLaSuppressionAuDepart } from '../../lib/departDuClient'
@@ -92,9 +92,28 @@ export default function InformationsTab({
   const [relectureDepart, setRelectureDepart] = useState(0)
   const depart = useDepartDuDossier(dossierId, relectureDepart)
   const departLu = depart?.etat === 'lue' && depart.dossierId === dossierId ? depart : null
-  const suppressionRefusee = (designation?.etat === 'lue'
-    ? refusDeLaSuppression({ estLeDossierDuCabinet: designation.dossierActuel === dossierId, superAdministrateur: isSuperAdmin })
-    : null)
+  // LM1-Q1 (B) : le chef du cabinet supprime aussi le dossier du cabinet, ses factures avec lui ; la confirmation NOMME ces
+  // factures (leur nombre et leurs numéros), lues en entier — sinon la suppression ne s'offre pas. Avant que la désignation
+  // soit lue, rien ne s'offre non plus : la confirmation ne saurait pas s'il faut les nommer.
+  const designationLue = designation?.etat === 'lue' && designation.dossierId === dossierId ? designation : null
+  const estLeDossierDuCabinet = designationLue !== null && designationLue.dossierActuel === dossierId
+  const facturesQuiPartent = useFacturesQuiPartent(dossierId, estLeDossierDuCabinet, relectureDesignation)
+  const facturesLues = facturesQuiPartent?.etat === 'lue' && facturesQuiPartent.dossierId === dossierId
+    ? facturesQuiPartent.factures : null
+  const refusDuDossierDuCabinet = !DOSSIER_DU_CABINET_PREVU
+    ? null
+    : designationLue === null
+      ? designation?.etat === 'illisible'
+        ? `La désignation du dossier du cabinet n’a pas pu être lue (${designation.motif}) : la suppression attend sa lecture.`
+        : 'La désignation du dossier du cabinet se lit : la suppression attend sa lecture.'
+      : refusDeLaSuppression({ estLeDossierDuCabinet, chefDuCabinet: estChef || isSuperAdmin })
+        ?? (estLeDossierDuCabinet && facturesLues === null
+          ? facturesQuiPartent?.etat === 'illisible'
+            ? `Les factures du dossier du cabinet n’ont pas pu être lues (${facturesQuiPartent.motif}) : la suppression attend `
+              + 'leur lecture, sa confirmation les nomme.'
+            : 'Les factures du dossier du cabinet se lisent : la suppression attend leur lecture, sa confirmation les nomme.'
+          : null)
+  const suppressionRefusee = refusDuDossierDuCabinet
     ?? (departLu !== null
       ? refusDeLaSuppressionAuDepart({
         superAdministrateur: isSuperAdmin, conservation: departLu.conservation, exercices: departLu.exercices,
@@ -106,6 +125,7 @@ export default function InformationsTab({
           ? `Les paquets d’archive et la conservation du dossier n’ont pas pu être lus (${depart.motif}) : la suppression attend leur lecture.`
           : 'Les paquets d’archive et la conservation du dossier se lisent : la suppression attend leur lecture.'
         : null)
+  const ceQuePerdLeDossier = estLeDossierDuCabinet && facturesLues !== null ? ceQuePerdLeDossierDuCabinet(facturesLues) : ''
   const ceQuePerdLaSuppression = departLu !== null
     ? ceQueLaSuppressionPerd({
       exercices: departLu.exercices, conservation: departLu.conservation, jour: aujourdHuiAParis(),
@@ -313,7 +333,11 @@ export default function InformationsTab({
     setSuppressionErreur(null)
     try {
       // La désignation se relit dans la fonction, avant tout retrait du stockage : ce que la carte a lu peut avoir changé.
-      const bilan = await supprimerDossierDefinitivement(dossierId, { superAdministrateur: isSuperAdmin })
+      // Les factures que la confirmation a nommées partent avec elle : la fonction les relit et refuse sur un écart.
+      const bilan = await supprimerDossierDefinitivement(dossierId, {
+        superAdministrateur: isSuperAdmin,
+        facturesNommees: estLeDossierDuCabinet && facturesLues !== null ? facturesLues.map((f) => f.id) : undefined,
+      })
       // Le dossier est parti ; il ne reste qu'à DIRE ce que le stockage a gardé. Naviguer tout de
       // suite emporterait le message avec l'écran, donc on attend un acquittement — c'est la seule
       // occasion de le lire, plus aucun écran ne pouvant retrouver ces fichiers ensuite.
@@ -562,7 +586,7 @@ export default function InformationsTab({
     {confirmerSuppression && (
       <ConfirmationSuppression
         titre="Supprimer ce dossier"
-        description={`Cette action supprime définitivement "${dossierNom}" et tout ce qui lui est rattaché (pièces, écritures, immobilisations, factures, accès client...). Elle est irréversible.${ceQuePerdLaSuppression}`}
+        description={`Cette action supprime définitivement "${dossierNom}" et tout ce qui lui est rattaché (pièces, écritures, immobilisations, factures, accès client...). Elle est irréversible.${ceQuePerdLeDossier}${ceQuePerdLaSuppression}`}
         nomAttendu={dossierNom}
         boutonLabel="Supprimer définitivement"
         enCours={suppressionEnCours}

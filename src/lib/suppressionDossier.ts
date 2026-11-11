@@ -2,8 +2,8 @@ import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
-import { refusDeLaSuppression } from './dossierDuCabinet'
-import { estDesigneCommeDossierDuCabinet } from './dossierDuCabinetLecture'
+import { refusDesFacturesNommees } from './dossierDuCabinet'
+import { estDesigneCommeDossierDuCabinet, lireLesFacturesQuiPartent } from './dossierDuCabinetLecture'
 import { refusDeLaSuppressionAuDepart } from './departDuClient'
 import { lireLeDepartAvantLaSuppression } from './departDuClientLecture'
 import { aujourdHuiAParis } from './format'
@@ -198,19 +198,24 @@ async function viderDossierDuStockage(
  * REND le bilan du nettoyage de stockage. L'appelant doit le montrer quand il n'est pas propre — voir
  * `nettoyageAMontrer`.
  *
- * LE DOSSIER DU CABINET (ligne 47, LM2) ne se supprime que par le super-administrateur (la garde de la migration
- * `dossier_du_cabinet`, LM1-Q1). La base ne refuse que la LIGNE, et le stockage se vide AVANT elle : sans ce contrôle, un chef
- * qui le supprimerait perdrait les fichiers de ses pièces, puis se verrait refuser la ligne. La désignation se lit donc
- * D'ABORD, et un refus — ou une lecture qui échoue — lève avant tout retrait. `qui` est obligatoire : un appelant qui
+ * LE DOSSIER DU CABINET (ligne 47, LM2) se supprime par le chef de son cabinet, ses factures avec lui (la garde de la
+ * migration `dossier_du_cabinet`, LM1-Q1 (B)), après une confirmation qui NOMME ces factures (`facturesNommees`, leurs
+ * identifiants). La base ne confirme rien, et le stockage se vide AVANT la ligne : la désignation se lit donc D'ABORD, puis
+ * les factures, relues en entier, doivent être exactement celles que la confirmation a nommées ; un écart — ou une lecture
+ * qui échoue — lève avant tout retrait. `qui` est obligatoire : un appelant qui
  * l'oublierait ne compile pas.
  */
 export async function supprimerDossierDefinitivement(
-  dossierId: string, qui: { superAdministrateur: boolean },
+  dossierId: string, qui: { superAdministrateur: boolean; facturesNommees?: readonly string[] },
 ): Promise<NettoyageStockage> {
-  const refus = refusDeLaSuppression({
-    estLeDossierDuCabinet: await estDesigneCommeDossierDuCabinet(dossierId), superAdministrateur: qui.superAdministrateur,
-  })
-  if (refus !== null) throw new Error(refus)
+  if (await estDesigneCommeDossierDuCabinet(dossierId)) {
+    const lues = await lireLesFacturesQuiPartent(dossierId)
+    if (lues.etat !== 'lue') {
+      throw new Error(`Les factures du dossier du cabinet n’ont pas pu être relues : rien n’a été supprimé (${lues.motif}).`)
+    }
+    const refus = refusDesFacturesNommees(qui.facturesNommees ?? null, lues.factures)
+    if (refus !== null) throw new Error(refus)
+  }
   // LE DÉPART D'UN CLIENT (ligne 44, INAL5 : la migration `depart_du_client`). La base refuse la ligne d'un dossier conservé
   // avant son terme, ou qui porte un exercice validé dont le paquet d'archive n'a pas été téléchargé — sauf au
   // super-administrateur. Elle ne refuse que la LIGNE : la condition se lit donc ici, AVANT de vider le stockage, et une

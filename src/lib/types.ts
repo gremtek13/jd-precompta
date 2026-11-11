@@ -2264,6 +2264,9 @@ export interface Contact {
   // ABSENTE tant que sa migration n'est pas en base (une colonne absente n'est pas un lien) ; liée, la fiche n'a ni nom ni
   // identité, qui se lisent du dossier — `nom` deviendra facultatif au collage, et `estFicheLiee` écarte déjà ces lignes.
   dossier_client_id?: string | null
+  /** LM3-Q1 (B) : quand la fiche a été déliée du dossier de son client, et par qui (facultatifs jusqu'à la migration). */
+  delie_le?: string | null
+  delie_par?: string | null
   // Le retrait et l'effacement, chacun entier ou absent, et jamais les deux.
   retire_le: string | null
   retire_par: string | null
