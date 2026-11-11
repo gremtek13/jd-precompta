@@ -16,8 +16,11 @@ import type { CompteBancaire } from './comptesBancaires'
 // Drapeau baissé (`COMPTES_BANCAIRES_PREVUS`), l'écran passe `{ etat: 'sans_objet' }` et rien ne change : tout le relevé
 // du dossier est un seul compte, comme avant MCB.
 
-/** Ce que l'import lit d'un compte bancaire. */
-export type CompteDuReleve = Pick<CompteBancaire, 'id' | 'libelle' | 'principal' | 'fin_d_identifiant'>
+/** Ce que les écrans du relevé lisent d'un compte bancaire : l'import (son libellé, la fin de son identifiant), et, depuis
+ *  MCB4, la suite des soldes, le 31 décembre et la couverture par compte (lib/releveParCompte.ts) — son 512 et sa date
+ *  (`compte`, `compte_propre_depuis`), son ouverture et sa clôture. Une lecture, écrite une fois (lib/comptesBancairesLecture.ts). */
+export type CompteDuReleve = Pick<CompteBancaire,
+  'id' | 'libelle' | 'principal' | 'fin_d_identifiant' | 'compte' | 'compte_propre_depuis' | 'ouvert_le' | 'clos_le'>
 
 /** La lecture des comptes du dossier, telle que l'écran la tient. `sans_objet` : le drapeau est baissé, la table n'existe
  *  pas encore. */

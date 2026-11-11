@@ -25,8 +25,8 @@ function mouvement(o: Partial<MouvementDuVirement> = {}): MouvementDuVirement {
 const LUS: LectureDesComptes = {
   etat: 'lus',
   comptes: [
-    { id: 'A', libelle: 'Compte principal', principal: true, fin_d_identifiant: null },
-    { id: 'B', libelle: 'Compte pro bis', principal: false, fin_d_identifiant: null },
+    { id: 'A', libelle: 'Compte principal', principal: true, fin_d_identifiant: null, compte: null, compte_propre_depuis: null, ouvert_le: null, clos_le: null },
+    { id: 'B', libelle: 'Compte pro bis', principal: false, fin_d_identifiant: null, compte: '512100', compte_propre_depuis: '2026-01-01', ouvert_le: null, clos_le: null },
   ],
 }
 const BAISSE: LectureDesComptes = { etat: 'sans_objet' }

@@ -10,7 +10,8 @@ import type { ControleReleveBancaire, LigneBancaire } from './types'
 // LES CONVENTIONS, celles de lib/releveAuTrenteEtUn.ts : un contrôle porte les dates de ses deux lignes de solde ; son solde
 // initial est celui d'AVANT ses mouvements (le matin de `periode_debut`), son solde final celui d'APRÈS (le soir de
 // `periode_fin`). Les montants se comparent en CENTIMES ENTIERS, au centime : aucune tolérance au-delà de l'arrondi.
-// La base ne distingue pas les comptes d'un dossier : ses relevés sont ceux d'un seul compte.
+// Ce module juge les relevés d'UN compte : depuis MCB4, l'appelant d'un dossier qui en tient plusieurs le rejoue compte par
+// compte (lib/releveParCompte.ts, `jonctionsParCompte`), et la jonction porte alors le nom du compte, que les phrases disent.
 //
 // LA RÈGLE. Les relevés contrôlés se rangent par début de période, puis fin, puis identifiant. Le PRÉCÉDENT d'un relevé est,
 // parmi ceux rangés avant lui, celui qui va le plus loin (la fin la plus tardive) : un relevé contenu dans un autre ne devient
@@ -130,9 +131,13 @@ const periode = (r: ReleveControle) => `du ${formatDate(r.periode_debut)} au ${f
 const nomme = (r: ReleveControle) => `le relevé ${periode(r)}${r.source_fichier ? ` (« ${r.source_fichier} »)` : ''}`
 const euros = (c: number) => formatMoney(c / 100)
 
-/** Une rupture, en une phrase qui nomme les deux périodes, les deux soldes et l'écart. */
-export function phraseDeLaRupture(j: Extract<JonctionDesReleves, { etat: 'rupture' }>): string {
-  const premier = nomme(j.precedent)
+/** Le nom du compte d'une jonction (lib/releveParCompte.ts), nul ou absent pour un dossier à un compte. */
+type NomDuCompte = { nomDuCompte?: string | null }
+const surLeCompte = (j: NomDuCompte) => (j.nomDuCompte == null ? '' : `Sur le compte « ${j.nomDuCompte} », `)
+
+/** Une rupture, en une phrase qui nomme les deux périodes, les deux soldes et l'écart — et le compte, dès deux comptes. */
+export function phraseDeLaRupture(j: Extract<JonctionDesReleves, { etat: 'rupture' }> & NomDuCompte): string {
+  const premier = surLeCompte(j) === '' ? nomme(j.precedent) : `${surLeCompte(j)}${nomme(j.precedent)}`
   const debut = j.recouvrement
     ? `${premier.charAt(0).toUpperCase()}${premier.slice(1)} porte ${euros(j.attendu)} au matin du ${formatDate(j.suivant.periode_debut)}`
     : `${premier.charAt(0).toUpperCase()}${premier.slice(1)} finit à ${euros(j.attendu)}`
@@ -142,9 +147,10 @@ export function phraseDeLaRupture(j: Extract<JonctionDesReleves, { etat: 'ruptur
 }
 
 /** Le détail du point de la Vue d'ensemble : les deux périodes de chaque rupture et son écart, trois au plus. */
-export function detailDesRuptures(ruptures: readonly Extract<JonctionDesReleves, { etat: 'rupture' }>[]): string | undefined {
+export function detailDesRuptures(ruptures: readonly (Extract<JonctionDesReleves, { etat: 'rupture' }> & NomDuCompte)[]): string | undefined {
   if (ruptures.length === 0) return undefined
-  const dites = ruptures.slice(0, 3).map((j) => `${periode(j.precedent)}, puis ${periode(j.suivant)} : un écart de ${euros(Math.abs(j.ecart))}`)
+  const dites = ruptures.slice(0, 3).map((j) => `${j.nomDuCompte == null ? '' : `compte « ${j.nomDuCompte} », `}`
+    + `${periode(j.precedent)}, puis ${periode(j.suivant)} : un écart de ${euros(Math.abs(j.ecart))}`)
   return dites.join(' ; ') + (ruptures.length > 3 ? ` ; et ${ruptures.length - 3} autre(s)` : '') + '.'
 }
 

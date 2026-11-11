@@ -45,7 +45,9 @@ import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { anneeDe, formatDate, formatMoney } from './format'
 import { detailDesDoublonsProbables, doublonsProbables, piecesRegleesPourLesDoublons } from './doublonsProbables'
 import { MESSAGE_PIECES_SANS_EMPREINTE, sansEmpreinteDeDepot } from './empreinteDeDepot'
-import { premierReleveDeLaTenue, relevesAuTrenteEtUn, type SoldeDuReleve } from './releveAuTrenteEtUn'
+import type { RelevesAuTrenteEtUn, SoldeDuReleve } from './releveAuTrenteEtUn'
+import type { LectureDesComptes } from './importParCompte'
+import { banquesAuTrenteEtUn, duCompte, premiersRelevesParCompte, releveParCompte, type BanqueDUnCompteDuPlan, type PartDuReleve } from './releveParCompte'
 import { soldeEnMots } from './revisionPreuves'
 import type { VentesDeLaChecklist } from './ventesDeLaChecklist'
 import {
@@ -159,6 +161,12 @@ export interface DonneesDeValidation {
   // compte de banque (`banque-au-releve`), et le premier dit d'où part la banque du dossier (`ouverture-sans-reprise`) —
   // MVPD7-Q2. Lus EN ENTIER, ou nuls.
   controlesReleves: readonly ControleReleveBancaire[] | null
+  // LES COMPTES BANCAIRES DU DOSSIER (ligne 26.6, MCB4 ; lib/comptesBancairesLecture.ts) : `sans_objet` tant que le drapeau
+  // `COMPTES_BANCAIRES_PREVUS` est baissé — le relevé est un seul compte, et tout se juge comme avant MCB. Lus, la banque se
+  // juge compte par compte (lib/releveParCompte.ts) : le premier relevé de chaque compte (`ouverture-sans-reprise`), et le
+  // solde de chaque 512 contre les relevés au 31 décembre des comptes qui s'y écrivent (`banque-au-releve`). En cours ou
+  // illisibles, la validation se suspend, comme sur toute lecture partielle. Sans valeur par défaut.
+  comptesBancaires: LectureDesComptes
   doublonsTexte: readonly DoublonDeTexte[] | null
   // Les factures émises VALIDÉES du dossier et leurs transmissions (ligne 28.6, lib/ventesJumelles.ts) : une vente que
   // plusieurs pièces portent compte deux fois dans la 2035, la CA3 et les écritures. Lues en partie, elles suspendent la
@@ -511,6 +519,8 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // dehors, et les trois préalables qui les disent se tairaient.
   // La caisse pas encore revenue entière aussi (étape C3b) : sans ses opérations, ses écritures seraient « que rien ne
   // rattache », et ses préalables se tairaient.
+  // Le relevé partagé entre les comptes bancaires du dossier (MCB4) : une part, sans nom, drapeau baissé ou à un compte.
+  const releve = releveParCompte(d.comptesBancaires, d.lignes, d.controlesReleves ?? [])
   const lectureIncomplete = d.lectureIncomplete
     ?? (d.facturesSources === null ? 'les factures sources de leurs ventes ne sont pas lues en entier' : null)
     ?? (d.piecesCitees === null ? 'les pièces citées par les factures reprises ne sont pas lues en entier' : null)
@@ -518,8 +528,9 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     ?? (d.operationsDeCaisse === null ? 'la caisse du dossier n’est pas lue en entier' : null)
     ?? (d.champsBnc === null ? 'les factures et les cotisations que le FEC d’un BNC en trésorerie lit ne sont pas lues en entier' : null)
     ?? (d.saisies2035 === null ? 'les saisies du cabinet de la 2035 ne sont pas lues en entier' : null)
+    ?? (releve.etat === 'retenu' ? releve.raison : null)
   if (lectureIncomplete !== null || d.facturesSources === null || d.piecesCitees === null || d.etatsDesVentes === null || d.ventesDeLaChecklist === null
-    || d.operationsDeCaisse === null || d.champsBnc === null || d.saisies2035 === null) {
+    || d.operationsDeCaisse === null || d.champsBnc === null || d.saisies2035 === null || releve.etat === 'retenu') {
     prealables.push({
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
       message: `La lecture du dossier est restée partielle (${lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
@@ -527,6 +538,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     return { prealables, numerotation: null, report: null, validable: false, fecSansChampsBnc: false }
   }
   const sources = d.facturesSources
+  const partsDuReleve = releve.parts
   const piecesCitees = d.piecesCitees
   // Les états de la section « Ventes facturées » et ce que la Vue d'ensemble en dit, lus pour un dossier basculé ; rien
   // pour un autre (`ventesIllisibles` a écarté tout le reste).
@@ -770,15 +782,21 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // qui part de zéro (un compte ouvert avec l'activité) ne retient rien, ni un premier relevé qui commence après l'exercice :
   // il ne dit rien de son début — la confrontation au 31 décembre, plus bas, dit alors l'écart. Les contrôles illisibles se
   // disent plus bas (`releves-inconnus`).
+  // COMPTE PAR COMPTE (MCB4) : le premier relevé de chaque compte bancaire, nommé dès deux comptes ; drapeau baissé ou à un
+  // compte, le premier relevé du dossier, comme hier au caractère près.
   if (d.controlesReleves !== null && d.aNouveaux.length === 0 && d.anneesValidees.length === 0) {
-    const premier = premierReleveDeLaTenue(d.controlesReleves, null)
-    if (premier && (premier.periode_debut as string) <= fin && Math.round(premier.solde_initial * 100) !== 0) {
+    const premiers = premiersRelevesParCompte(partsDuReleve, null)
+      .filter(({ premier }) => (premier.periode_debut as string) <= fin && Math.round(premier.solde_initial * 100) !== 0)
+    if (premiers.length > 0) {
+      const dits = premiers.map(({ part, premier }, i) =>
+        `${i > 0 ? 'celui' : part.nom === null ? 'son premier relevé' : 'le premier relevé'}${duCompte(part.nom)}, du `
+        + `${formatDate(premier.periode_debut)} au ${formatDate(premier.periode_fin)}, part d'un solde de ${formatMoney(premier.solde_initial)} au `
+        + formatDate(premier.periode_debut))
       bloque({
         id: 'ouverture-sans-reprise', nb: null, cible: 'informations',
-        message: `Le dossier s'ouvre sans balance reprise, alors que son premier relevé, du ${formatDate(premier.periode_debut)} au `
-          + `${formatDate(premier.periode_fin)}, part d'un solde de ${formatMoney(premier.solde_initial)} au ${formatDate(premier.periode_debut)} : `
+        message: `Le dossier s'ouvre sans balance reprise, alors que ${dits.length > 1 ? `${dits.slice(0, -1).join(', ')} et ${dits[dits.length - 1]}` : dits[0]} : `
           + `le ${d.modele.plan.banque} part de zéro, et l'exercice ${d.annee + 1} s'ouvrirait sur une banque fausse. Reprendre la `
-          + "balance d'ouverture du dossier, la banque au solde de ce relevé, avant la validation.",
+          + `balance d'ouverture du dossier, la banque au solde de ${premiers.length > 1 ? 'ces relevés' : 'ce relevé'}, avant la validation.`,
         detail: 'Dans Informations du dossier, la carte « Balance d’un autre logiciel » : la banque, avec les autres comptes de bilan du dossier '
           + 'à la date de l’ouverture — la caisse, les biens et leurs amortissements, l’emprunt — et leur contrepartie au capital.',
       })
@@ -1198,7 +1216,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // incomplet), et la Révision les compte. Mais validé, l'exercice reporte ce 512 sur le suivant. Rien quand l'ouverture
   // sans reprise retient déjà la validation : son écart est ce solde initial.
   if (d.controlesReleves !== null && !prealables.some((p) => p.id === 'ouverture-sans-reprise')) {
-    const banque = confrontationDeLaBanque(d, numerotation, d.controlesReleves, mouvementDeLExercice)
+    const banque = confrontationDeLaBanque(d, numerotation, partsDuReleve, mouvementDeLExercice)
     if (banque !== null) prealables.push({ id: 'banque-au-releve', nb: null, cible: 'banque', bloquant: false, ...banque })
   }
   const couverture = couvertureDuReleve(d.lignes, frontiere)
@@ -1291,17 +1309,34 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
 
 // CE QUE LE RELEVÉ DIT DU 31 DÉCEMBRE, ET LE COMPTE DE BANQUE EN FACE (MVPD7-Q2). En centimes entiers : le compte de banque du
 // plan du dossier, débit moins crédit, sur les lignes que la validation figera (l'ouverture, puis les écritures numérotées) ;
-// le relevé, son solde au 31 décembre (positif : un compte créditeur à la banque, un 512 débiteur). L'application ne tient
-// qu'un compte bancaire par dossier : plusieurs relevés qui disent le même solde ne font qu'un (le mensuel et l'annuel) ;
-// des soldes différents se nomment, sans que rien ne soit confronté. Nul quand le compte concorde, ou quand il n'y a rien à
-// confronter — aucun relevé, un 512 nul et aucun mouvement de l'exercice.
+// le relevé, son solde au 31 décembre (positif : un compte créditeur à la banque, un 512 débiteur). Plusieurs relevés d'un
+// même compte qui disent le même solde ne font qu'un (le mensuel et l'annuel) ; des soldes différents se nomment, sans que
+// rien ne soit confronté. Nul quand le compte concorde, ou quand il n'y a rien à confronter — aucun relevé, un 512 nul et
+// aucun mouvement de l'exercice.
+//
+// COMPTE BANCAIRE PAR COMPTE BANCAIRE (MCB4, MCB-Q7 ; lib/releveParCompte.ts, `banquesAuTrenteEtUn`) : chaque 512 se confronte
+// à la somme des soldes au 31 décembre des comptes bancaires dont la banque s'y écrit dans l'exercice — tant qu'un compte autre
+// que le principal ne tient pas son propre 512, celui du principal les réunit tous (2025 se valide à un seul 512) ; depuis son
+// 1er janvier, il tient le sien, confronté à lui seul. Drapeau baissé, ou un seul compte : la règle d'hier, au caractère près.
 function confrontationDeLaBanque(
   d: Pick<DonneesDeValidation, 'annee' | 'modele' | 'lignes'>,
   numerotation: NumerotationFec,
-  controles: readonly ControleReleveBancaire[],
+  parts: readonly PartDuReleve<LigneBancaire, ControleReleveBancaire>[],
   mouvementDeLExercice: (l: { date: string }) => boolean,
 ): { message: string; detail: string } | null {
-  const compte = d.modele.plan.banque
+  const dites = banquesAuTrenteEtUn(parts, d.annee, d.modele.plan.banque)
+    .flatMap((g) => confrontationDUnCompteDuPlan(d, numerotation, g, mouvementDeLExercice) ?? [])
+  if (dites.length === 0) return null
+  return { message: dites.map((x) => x.message).join(' '), detail: [...new Set(dites.map((x) => x.detail))].join(' ') }
+}
+
+function confrontationDUnCompteDuPlan(
+  d: Pick<DonneesDeValidation, 'annee' | 'modele' | 'lignes'>,
+  numerotation: NumerotationFec,
+  g: BanqueDUnCompteDuPlan<LigneBancaire, ControleReleveBancaire>,
+  mouvementDeLExercice: (l: { date: string }) => boolean,
+): { message: string; detail: string } | null {
+  const { compte } = g
   const signe = (sens: 'debit' | 'credit') => (sens === 'debit' ? 1 : -1)
   const ouverture = numerotation.aNouveaux.filter((a) => a.aNouveau.compte === compte)
     .reduce((s, a) => s + signe(a.aNouveau.sens) * Math.round(a.aNouveau.montant * 100), 0)
@@ -1318,43 +1353,92 @@ function confrontationDeLaBanque(
       : l.lu === 'solde_initial' ? `le relevé ${periodeDe(l.controle)}, de solde initial ${montant}`
         : `le relevé ${periodeDe(l.controle)}, ${montant} au ${fin} (son solde initial et ses mouvements jusqu’à ce jour)`
   }
+  // Le compte bancaire qui tient ce 512 en propre (MCB-Q1) le dit : ses écritures et son ouverture s'y portent depuis son
+  // 1er janvier, et non plus au 512 du principal.
+  const enPropre = g.soldes.find((s) => s.part.compte !== null && !s.part.compte.principal && s.part.compte.compte === compte)
   const CAUSES = 'Le relevé fait foi : une ouverture fausse (la balance reprise, ou l’exercice précédent), un mouvement ignoré ou '
     + 'encore à traiter, une écriture de banque sans mouvement, ou un relevé incomplet en sont les causes possibles — dans Révision, '
     + `la preuve du ${compte} les compte. Validé, l’exercice ${d.annee} reporterait ce ${compte} sur l’exercice ${d.annee + 1}.`
+    + (enPropre?.part.compte?.compte_propre_depuis
+      ? ` Le ${compte} est celui du compte « ${enPropre.part.nom ?? enPropre.part.compte.libelle} » depuis le `
+        + `${formatDate(enPropre.part.compte.compte_propre_depuis)} : ses écritures et son ouverture s’y portent.`
+      : '')
 
-  const { regardes, soldes } = relevesAuTrenteEtUn(controles, d.lignes, d.annee)
-  const lus = soldes.filter((l): l is Extract<SoldeDuReleve, { centimes: number }> => l.lu !== null)
-  const distincts = [...new Set(lus.map((l) => l.centimes))]
-  if (distincts.length === 1) {
-    const releve = distincts[0]
-    if (releve === solde) return null
+  // UN SEUL COMPTE (le drapeau baissé, ou le dossier n'en tient qu'un) : la règle d'hier.
+  if (g.soldes.length === 1 && g.soldes[0].part.nom === null) {
+    const seul = g.soldes[0]
+    if (seul.etat === 'connu' || seul.etat === 'clos') {
+      if (seul.centimes === solde) return null
+      return {
+        message: `${leCompte} — ne concorde pas avec ${seul.etat === 'connu' ? ceQuIlDit(seul.lu)
+          : `la clôture du compte bancaire le ${formatDate(seul.closLe)}, un solde nul`} : un écart de ${formatMoney(Math.abs(solde - seul.centimes) / 100)}.`,
+        detail: CAUSES,
+      }
+    }
+    if (seul.etat === 'plusieurs') {
+      return {
+        message: `${leCompte} — n’est confronté à aucun relevé : ${seul.lus.length} relevés disent des soldes différents au ${fin}, `
+          + `${seul.lus.map(ceQuIlDit).join(' ; ')}. `
+          + (seul.part.compte === null
+            ? 'L’application ne tient qu’un compte bancaire par dossier : l’un d’eux est d’un autre compte, ou ne dit pas le bon solde.'
+            : 'Le dossier ne tient qu’un compte bancaire : l’un d’eux est d’un autre compte, à créer et sous lequel le réimporter, '
+              + 'ou ne dit pas le bon solde.'),
+        detail: CAUSES,
+      }
+    }
+    // Rien à comparer : se dit seulement quand la banque porte quelque chose dans l'exercice.
+    if (solde === 0 && ouverture === 0 && !seul.part.lignes.some(mouvementDeLExercice)) return null
     return {
-      message: `${leCompte} — ne concorde pas avec ${ceQuIlDit(lus[0])} : un écart de ${formatMoney(Math.abs(solde - releve) / 100)}.`,
-      detail: CAUSES,
+      message: `${leCompte} — n’est confronté à aucun relevé : ${pourquoiAucunSolde(seul.releves, '', fin, periodeDe)}.`,
+      detail: `Importer le relevé de décembre ${d.annee} avec ses soldes, ou celui de janvier ${d.annee + 1} : l’import contrôle son `
+        + `solde, et la validation confronte alors le ${compte} au relevé. ${CAUSES}`,
     }
   }
-  if (distincts.length > 1) {
-    return {
-      message: `${leCompte} — n’est confronté à aucun relevé : ${lus.length} relevés disent des soldes différents au ${fin}, `
-        + `${lus.map(ceQuIlDit).join(' ; ')}. L’application ne tient qu’un compte bancaire par dossier : l’un d’eux est d’un autre `
-        + 'compte, ou ne dit pas le bon solde.',
-      detail: CAUSES,
-    }
+
+  // PLUSIEURS COMPTES : chaque compte bancaire dit son solde, nommé ; le 512 se confronte à leur somme.
+  const dit = (s: (typeof g.soldes)[number]) => {
+    const nom = `le compte « ${s.part.nom ?? s.part.compte?.libelle ?? ''} »`
+    return s.etat === 'connu' ? `${nom}, ${ceQuIlDit(s.lu)}` : s.etat === 'clos' ? `${nom}, clos le ${formatDate(s.closLe)} (un solde nul)` : nom
   }
-  // Rien à comparer : se dit seulement quand la banque porte quelque chose dans l'exercice.
-  if (solde === 0 && ouverture === 0 && !d.lignes.some(mouvementDeLExercice)) return null
-  const pourquoi = soldes.length > 0
-    ? soldes.map((l) => `le relevé ${periodeDe(l.controle)} couvre le ${fin}, mais ${l.lu === null && l.raison === 'sans_fichier'
+  if (g.centimes !== null) {
+    if (g.centimes === solde) return null
+    const ceQuIlsDisent = g.soldes.length > 1
+      ? `les ${g.soldes.length} comptes bancaires dont la banque s’y écrit, ${soldeEnMots(g.centimes)} à eux tous au ${fin} — ${g.soldes.map(dit).join(' ; ')}`
+      : dit(g.soldes[0])
+    return { message: `${leCompte} — ne concorde pas avec ${ceQuIlsDisent} : un écart de ${formatMoney(Math.abs(solde - g.centimes) / 100)}.`, detail: CAUSES }
+  }
+  if (solde === 0 && ouverture === 0 && !g.soldes.some((s) => s.part.lignes.some(mouvementDeLExercice))) return null
+  const pourquoi = g.soldes.flatMap((s) => {
+    const du = duCompte(s.part.nom ?? s.part.compte?.libelle ?? null)
+    if (s.etat === 'plusieurs') {
+      return [`les relevés${du} disent des soldes différents au ${fin}, ${s.lus.map(ceQuIlDit).join(' ; ')} — l’un d’eux ne dit pas le bon solde, ou est d’un autre compte`]
+    }
+    return s.etat === 'inconnu' ? [pourquoiAucunSolde(s.releves, du, fin, periodeDe)] : []
+  })
+  return {
+    message: `${leCompte} — n’est confronté à aucun relevé : la somme des soldes au ${fin} des comptes bancaires dont la banque s’y `
+      + `écrit (${g.soldes.map((s) => `« ${s.part.nom ?? s.part.compte?.libelle ?? ''} »`).join(', ')}) ne se calcule pas — ${pourquoi.join(' ; ')}.`,
+    detail: `Importer, pour chaque compte bancaire, le relevé de décembre ${d.annee} avec ses soldes, ou celui de janvier ${d.annee + 1} : `
+      + `l’import contrôle son solde, et la validation confronte alors le ${compte} aux relevés. ${CAUSES}`,
+  }
+}
+
+// Pourquoi aucun relevé d'un compte (`du`, « du compte « … » », vide pour un dossier à un compte) ne dit son solde au 31 décembre :
+// les mots d'hier.
+function pourquoiAucunSolde(
+  releves: RelevesAuTrenteEtUn,
+  du: string,
+  fin: string,
+  periodeDe: (c: ControleReleveBancaire) => string,
+): string {
+  const { regardes, soldes } = releves
+  return soldes.length > 0
+    ? soldes.map((l) => `le relevé${du} ${periodeDe(l.controle)} couvre le ${fin}, mais ${l.lu === null && l.raison === 'sans_fichier'
       ? 'son import n’a pas gardé de nom de fichier : ses mouvements ne se retrouvent pas'
       : 'ses mouvements ne font plus en base la somme contrôlée à son import'}`).join(' ; ')
     : regardes.length > 0
-      ? `${regardes.map((c) => `le relevé ${periodeDe(c)}`).join(', ')} ne ${regardes.length > 1 ? 'bouclent' : 'boucle'} pas`
-      : `aucun relevé contrôlé ne finit le ${fin} ni ne couvre la fin de ce jour`
-  return {
-    message: `${leCompte} — n’est confronté à aucun relevé : ${pourquoi}.`,
-    detail: `Importer le relevé de décembre ${d.annee} avec ses soldes, ou celui de janvier ${d.annee + 1} : l’import contrôle son `
-      + `solde, et la validation confronte alors le ${compte} au relevé. ${CAUSES}`,
-  }
+      ? `${regardes.map((c) => `le relevé${du} ${periodeDe(c)}`).join(', ')} ne ${regardes.length > 1 ? 'bouclent' : 'boucle'} pas`
+      : `aucun relevé contrôlé${du} ne finit le ${fin} ni ne couvre la fin de ce jour`
 }
 
 // LES POINTS EN ERREUR DE LA CHECKLIST, et ce que la validation en fait. Chacun est repris ici (son

@@ -35,6 +35,10 @@ import type { Emprunt } from '../../lib/emprunts'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { DossierTab } from '../../lib/ongletsDossier'
 import { chargerControlesReleves } from '../../lib/controlesReleves'
+import { lireLesComptesDuDossier } from '../../lib/comptesBancairesLecture'
+import { nomsDesComptes, rappelDuReleveSuivant } from '../../lib/releveParCompte'
+import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
+import type { LectureDesComptes } from '../../lib/importParCompte'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import {
   prealablesDeValidation, prochainExerciceAValider, type ChampsBncDeLaValidation, type EtatsDesVentesDeLaValidation,
@@ -184,6 +188,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const [piecesAValider, setPiecesAValider] = useState<Piece[]>([])
   const [exercicesValides, setExercicesValides] = useState<ExerciceValide[]>([])
   const [controlesReleves, setControlesReleves] = useState<ControleReleveBancaire[] | null>(null)
+  // Les comptes bancaires du dossier (ligne 26.6, MCB4) : la validation juge la banque compte par compte, et le rappel du relevé
+  // de janvier nomme chaque compte dès deux. Drapeau baissé, `sans_objet` d'emblée : rien ne change, à aucun instant.
+  const [lectureDesComptes, setLectureDesComptes] = useState<LectureDesComptes>(
+    COMPTES_BANCAIRES_PREVUS ? { etat: 'en_cours' } : { etat: 'sans_objet' })
   const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[] | null>(null)
   // Les factures émises validées et leurs transmissions (ligne 28.6, lib/ventesJumelles.ts) : la validation refuse une
   // vente que plusieurs pièces portent. Lues en partie, elles suspendent la validation, pas la 2035, qui ne les lit pas.
@@ -373,9 +381,12 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     // Les contrôles des relevés — tous : ceux qui ne bouclent pas, et ceux qui disent la banque au 31 décembre et d'où elle part
     // (MVPD7-Q2) — et les doublons de contenu, comme la Checklist les lit ; mais une lecture ratée n'y vaut jamais « rien à
     // signaler » : elle devient un préalable de la validation.
-    const [releves, doublons] = await Promise.all([
+    // Et les comptes bancaires du dossier (MCB4), qui partagent le relevé : ne rejette jamais ; le drapeau
+    // `COMPTES_BANCAIRES_PREVUS` baissé, ne touche pas au réseau (`sans_objet`).
+    const [releves, doublons, comptes] = await Promise.all([
       chargerControlesReleves(dossierId).catch((err) => { console.error(err); return null }),
       chargerDoublonsDeTexte(dossierId).catch((err) => { console.error(err); return null }),
+      lireLesComptesDuDossier(dossierId),
     ])
     if (demande !== derniereLecture.current) return
     setLectureVentes(lectureVentesFacturees)
@@ -383,6 +394,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     setLectureCaisse(lectureDeLaCaisse)
     setLectureChampsBnc(lectureDesChampsBnc)
     setControlesReleves(releves)
+    setLectureDesComptes(comptes)
     setDoublonsTexte(doublons)
     setPiecesAValider(lectureAValider.lignes)
     setExercicesValides(lectureValides.lignes)
@@ -784,7 +796,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       annee, anneeCourante, aujourdHui: aujourdHuiAParis(), modele, assujettiTva, anneesValidees,
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
       lignes: toutesLesLignes, ventilations, reglements, encaissees, cotisations, vehicules, emprunts, aNouveaux, soldesReportes, declarationsTva,
-      periodiciteTva, controlesReleves, doublonsTexte, facturesEmises, transmissions,
+      periodiciteTva, controlesReleves, comptesBancaires: lectureDesComptes, doublonsTexte, facturesEmises, transmissions,
       // Les factures sources lues en entier pour CE dossier, ou rien : la validation se suspend alors (étape VF6a).
       facturesSources: ventesLues?.sources ?? null,
       // Et les pièces citées par une facture reprise (A8c4), lues avec elles.
@@ -1300,7 +1312,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             paiement — si l'une a été réglée une autre année, la rapprocher de son mouvement dans
             l'onglet Banque la fera changer d'exercice.
           </p>
-          <p className="muted">{rappelDuReleveSuivant(sansPaiement.map((s) => s.annee))}</p>
+          <p className="muted">{rappelDuReleveSuivant(sansPaiement.map((s) => s.annee), nomsDesComptes(lectureDesComptes))}</p>
           {nbSansPaiementEnDoublon > 0 && (
             <p style={{ marginTop: 0 }}>
               <span className="badge badge-warning">Doublon probable</span>{' '}
@@ -2200,20 +2212,4 @@ function ReportDeclarationRevenus({ annee, valeurs, formulaire: fige }: {
       </p>
     </div>
   )
-}
-
-// LE RELEVÉ SUIVANT, AVANT LA VALIDATION (MVPD7-Q4, D4 de la relecture du 03/11/2026, sur la recommandation). En trésorerie,
-// une pièce payée après le 31 décembre compte à la date de son paiement : tant que ce paiement n'est pas rapproché, la 2035
-// de l'exercice la compte à sa date de facture, et la validation se retient (son écriture attend sa banque). Le relevé de
-// janvier suivant s'importe et se rapproche donc AVANT la validation. Et une échéance de cotisation qu'aucun paiement ne date se
-// fige, à la validation, à son échéance (`garder_cotisation_valide`) : son paiement depuis le compte personnel se déclare avant.
-// Les exercices de la carte, nommés un à un.
-function rappelDuReleveSuivant(annees: readonly number[]): string {
-  const exercices = [...new Set(annees)].sort((a, b) => a - b)
-  const releves = exercices.map((a, i) => `${i === 0 ? 'le relevé' : 'celui'} de janvier ${a + 1} avant de valider ${a}`)
-  const liste = releves.length > 1 ? `${releves.slice(0, -1).join(', ')} et ${releves[releves.length - 1]}` : releves[0]
-  return `Une pièce payée après le 31 décembre compte à la date de son paiement, dans l'exercice suivant : importer et rapprocher ${liste}. `
-    + "Tant que son paiement n'est pas rapproché, elle compte ici à sa date de facture, et retient la validation. De même, déclarer "
-    + `dans l'onglet Cotisations le paiement depuis le compte personnel d'une échéance de ${exercices.join(' ou ')} avant la `
-    + 'validation, qui fige ensuite l’échéance à sa date.'
 }
