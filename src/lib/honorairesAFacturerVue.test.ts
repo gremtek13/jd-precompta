@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { FactureDuCabinet, LettreAFacturer, LienDHonoraires, LigneDHonoraires } from './honorairesAFacturer'
 import {
-  aFacturerParClient, confirmationDeLaFacturation, libelleDuTaux, motsDeLaFacturee, refusDeLaSelection, type ElementPropose,
+  aFacturerParClient, confirmationDeLaFacturation, libelleDuTaux, motsDeLaFacturee, motsDuProrata, refusDeLaSelection, type ElementPropose,
 } from './honorairesAFacturerVue'
 
 // « À FACTURER », CE QUE LA CARTE MONTRE (ligne 47, LM7) : par client puis par lettre acceptée, les forfaits échus et les
@@ -97,6 +97,18 @@ describe('avant le clic', () => {
     expect(refusDeLaSelection([aout], lettres, [lien('F1', 'L', 1, '2026-08-01', '2026-08-31')], [facture('F1', 180)], [], 20, AUJOURDHUI))
       .toBe('Tenue mensuelle — août 2026 : Cette période est déjà facturée : une facture qui n’est pas créditée en entier la couvre.')
     expect(refusDeLaSelection([aout], lettres, [], [], [], 8.5, AUJOURDHUI)).toBeNull()
+  })
+
+  it('une lettre d’effet au 15 janvier : janvier au prorata de ses jours, dit « 17 jours sur 31 » (LM7-Q4 (C))', () => {
+    const [c] = voir([lettre('L', { date_effet: '2026-01-15' })])
+    const janvier = c.lettres[0].elements.find((e) => e.periode_debut === '2026-01-15') as ElementPropose
+    expect(janvier).toMatchObject({ forme: 'forfait', periode_fin: '2026-01-31', montant_ht: 82.26, prorata: { jours: 17, sur: 31, prixDeLaPeriode: 150 } })
+    expect(motsDuProrata(janvier).replace(/[\u00a0\u202f]/g, ' ')).toBe('17 jours sur 31 du forfait de 150,00 € HT')
+    expect(motsDuProrata(c.lettres[0].elements.find((e) => e.periode_debut === '2026-02-01') as ElementPropose)).toBe('')
+    expect(c.lettres[0].elements.find((e) => e.forme === 'tache')?.prorata).toBeNull()
+    const texte = confirmationDeLaFacturation('Client fictif', [janvier], 20).replace(/[\u00a0\u202f]/g, ' ')
+    expect(texte).toContain('Tenue mensuelle — janvier 2026, du 15/01/2026 au 31/01/2026 (17 jours sur 31) : 82,26 € HT (au prorata du forfait de 150,00 € HT)')
+    expect(texte).toContain('Un forfait que sa lettre commence ou finit en cours de période se facture au prorata de ses jours, arrondi au centime.')
   })
 
   it('la confirmation nomme le client, chaque période et le hors taxes, et dit qu’une tâche cochée est faite', () => {

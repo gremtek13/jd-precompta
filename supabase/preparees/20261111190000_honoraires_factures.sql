@@ -18,26 +18,49 @@
 -- CE QU'ELLE FAIT.
 --   1. `honoraires_factures` : le LIEN d'une facture du dossier du cabinet à ce qu'elle facture — une ligne d'honoraires
 --      d'une lettre ACCEPTÉE (la lettre et son rang, 1 pour la première, figés avec la lettre) et sa PÉRIODE : pour un
---      forfait, le mois, le trimestre ou l'année civils de sa périodicité ; pour une tâche, la période qu'elle concerne
---      (l'exercice d'une 2035, le mois d'une CA3), un an au plus. Plusieurs liens par facture, d'un seul client.
+--      forfait, les jours de la lettre dans un mois, un trimestre ou une année civils de sa périodicité — la période
+--      entière, ou sa part quand la lettre commence ou finit en cours de période (LM7-Q4 (C), le prorata, plus bas) ; pour
+--      une tâche, la période qu'elle concerne (l'exercice d'une 2035, le mois d'une CA3), un an au plus. Plusieurs liens
+--      par facture, d'un seul client.
 --   2. UNE PÉRIODE NE SE FACTURE QU'UNE FOIS, en base, pour tout auteur et sous deux sessions : la garde, sous un verrou
---      par client, refuse un lien ACTIF (sa facture n'est pas créditée en entier) quand un autre lien actif couvre déjà la
---      même période de la même ligne — ou, d'une autre version de la même lettre (un avenant), d'une ligne de même forme,
---      de même périodicité (forfait) ou de même livrable (tâche, sauf « autre ») ; et une contrainte TOTALE
+--      par client, refuse un lien ACTIF (sa facture n'est pas créditée en entier) quand un autre lien actif couvre déjà un
+--      jour de sa période (un forfait : un jour ne se facture qu'une fois) ou la même période (une tâche) de la même ligne
+--      — ou, d'une autre version de la même lettre (un avenant), d'une ligne de même forme, de même périodicité (forfait)
+--      ou de même livrable (tâche, sauf « autre ») ; et une contrainte TOTALE
 --      (`honoraires_factures_une_fois`) numérote les facturations successives d'une même période (`facturation`).
 --   3. CE QU'UN AVOIR REND À FACTURER : rien ne s'écrit à sa création. Un lien dont la facture est CRÉDITÉE EN ENTIER
 --      (ses avoirs, ceux de l'application et ceux qu'une reprise cite, atteignent son TTC : `facture_creditee_en_entier`)
 --      ne couvre plus sa période, qui se facture de nouveau (la facturation suivante) ; un avoir partiel la laisse
 --      facturée. Un brouillon supprimé emporte ses liens (la clé, en cascade) : sa période redevient à facturer.
 --   4. `facturer_honoraires(dossier, éléments, taux, facture)` : le clic de « À facturer ». Sous le même verrou, elle
---      juge chaque élément — la lettre du dossier, acceptée, EN VIGUEUR pour la période (un forfait : au dernier jour de sa
---      période ; une tâche : au dernier jour de sa période ou au jour de sa facturation, et pas avant son premier
---      exercice), la ligne, la forme de la période, une période commencée, pas déjà facturée —, compose le BROUILLON
---      (une ligne par élément, au montant hors taxes que la lettre a figé, au taux donné ; le client lu de SON dossier,
+--      juge chaque élément — la lettre du dossier, acceptée, EN VIGUEUR pour la période (un forfait : à chacun de ses
+--      jours, qui sont TOUS les jours de la lettre dans sa période civile ; une tâche : au dernier jour de sa période ou
+--      au jour de sa facturation, et pas avant son premier exercice), la ligne, la forme de la période, une période
+--      commencée, pas déjà facturée —, compose le BROUILLON (une ligne par élément, au montant hors taxes que la lettre a
+--      figé, au prorata de ses jours pour la part d'une période d'un forfait, au taux donné ; le client lu de SON dossier,
 --      LM-Q3 ; l'émetteur, du dossier du cabinet) et le crée par `enregistrer_facture`, sans la redéfinir (LM1 et e7a la
 --      redéfinissent déjà), puis pose les liens. Tout ou rien. La validation reste celle de toute facture, une par une.
 -- Les refus de la fonction, dans leur ordre et à leurs mots, sont redits par src/lib/honorairesAFacturer.ts, qui calcule
 -- aussi ce qui est « à facturer » (rien de cela ne se stocke) ; derrière `HONORAIRES_FACTURES_PREVUS`, baissé.
+--
+-- LE PRORATA AU JOUR PRÈS (LM7-Q4, réponse (C) du cabinet du 11/11/2026, contre la recommandation (A), qui facturait la
+-- période entière sous la lettre en vigueur à son dernier jour). Un forfait se facture pour les jours où sa lettre est EN
+-- VIGUEUR dans chaque période civile de sa périodicité : la période entière quand elle l'est d'un bout à l'autre ; sinon,
+-- la lettre qui commence ou finit en cours de période — par sa date d'effet, sa résiliation, la fin de sa première période
+-- sans reconduction, ou l'avenant qui la remplace — facture ses seuls jours, et l'avenant les siens, chacun au prix de sa
+-- lettre. Le trimestre et l'année suivent la même règle sur leur période (90 à 92 jours, 365 ou 366). Le montant, en
+-- centimes entiers (`honoraires_au_prorata`) : P le prix de la période, n ses jours, a les jours de la période d'avant la
+-- part, b ceux jusqu'à sa fin comprise ; la part vaut arrondi(P × b / n) − arrondi(P × a / n), chaque arrondi au centime,
+-- le demi loin de zéro (`prorata_arrondi`, la règle du cumul de la vente facturée). La période entière vaut P ; des parts
+-- qui se suivent s'additionnent sans écart (la somme se télescope) : deux parts d'un même mois au même prix font ce prix,
+-- jamais un centime de plus, et à deux prix jamais plus que le plus élevé. src/lib/honorairesAFacturer.ts refait le même
+-- calcul (`centimesAuProrata`), confronté à celui-ci par une batterie (supabase/essais/batterieDesProrata.mjs). Écartés :
+-- arrondir chaque part seule (un mois de 100,01 € coupé en deux moitiés de quinze jours ferait 50,01 + 50,01 = 100,02 €) ;
+-- l'arrondir par défaut (un centime perdu quand les deux parts font le mois) ; calculer la seconde part par différence avec
+-- la première (elle dépendrait des factures et des avoirs déjà passés, et de leur ordre). Une tâche ne se proratise pas :
+-- elle se facture entière. La fonction juge que la période demandée est EXACTEMENT celle des jours de la lettre dans sa
+-- période civile, ni plus ni moins ; la garde, qu'un jour d'un forfait ne se facture qu'une fois. La ligne de la facture
+-- dit la part : « janvier 2026, du 15/01/2026 au 31/01/2026 (17 jours sur 31) ».
 --
 -- CE QUI A ÉTÉ CHOISI, ET POURQUOI :
 --   - une fonction qui APPELLE `enregistrer_facture` plutôt que de la redéfinir : deux migrations préparées (LM1, e7a) la
@@ -59,7 +82,7 @@
 -- réception et l'e-mail de facturation — ici, l'appelant peut donner l'e-mail et l'échéance.
 --
 -- À COLLER : les clés étrangères (en cascade) et la garde nomment l'action de suppression. Rien ne se détruit : une table,
--- six fonctions, un déclencheur et deux policies s'ajoutent, rien ne se remplace. Son retour :
+-- neuf fonctions, un déclencheur et deux policies s'ajoutent, rien ne se remplace. Son retour :
 -- supabase/preparees/retour/20261111190100_retour_honoraires_factures.sql (à coller AVANT celui de LM4, dont la table est
 -- citée par la clé de la lettre). Son essai : supabase/essais/honorairesFactures.sql (sur une réplique : il désigne le
 -- dossier du cabinet et supprime un brouillon) ; puis rls.sql (le bloc HF).
@@ -86,15 +109,44 @@ $garde$;
 -- Aux droits de l'appelant (la garde les appelle ; la restauration du super-administrateur insère sous `authenticated`),
 -- jamais par l'anonyme.
 
--- Un mois, un trimestre ou une année CIVILS, selon la périodicité du forfait : du premier au dernier jour. En arithmétique
--- de dates seulement (une date plus un intervalle est un horodatage sans fuseau) : immuable, indépendante du fuseau.
+-- Le premier et le dernier jour du mois, du trimestre ou de l'année CIVILS qui contient un jour, selon la périodicité du
+-- forfait (nuls pour une autre). En arithmétique de dates seulement (une date plus un intervalle est un horodatage sans
+-- fuseau) : immuables, indépendantes du fuseau.
+create function public.periode_civile_debut(p_periodicite text, p_jour date) returns date
+language sql immutable set search_path = public
+as $$ select case p_periodicite
+         when 'mois' then make_date(extract(year from p_jour)::integer, extract(month from p_jour)::integer, 1)
+         when 'trimestre' then make_date(extract(year from p_jour)::integer, ((extract(month from p_jour)::integer - 1) / 3) * 3 + 1, 1)
+         when 'annee' then make_date(extract(year from p_jour)::integer, 1, 1)
+       end $$;
+
+create function public.periode_civile_fin(p_periodicite text, p_jour date) returns date
+language sql immutable set search_path = public
+as $$ select (public.periode_civile_debut(p_periodicite, p_jour)
+              + case p_periodicite when 'mois' then interval '1 month' when 'trimestre' then interval '3 months'
+                                   when 'annee' then interval '1 year' end)::date - 1 $$;
+
+-- La période d'un forfait (LM7-Q4 (C)) : des jours qui se suivent et tiennent dans UN mois, trimestre ou année civils,
+-- selon sa périodicité — la période entière, ou la part de la lettre au prorata.
 create function public.periode_de_forfait_valide(p_periodicite text, p_debut date, p_fin date) returns boolean
 language sql immutable set search_path = public
-as $$ select coalesce(p_debut is not null and p_fin is not null and extract(day from p_debut) = 1 and case p_periodicite
-         when 'mois' then p_fin = (p_debut + interval '1 month')::date - 1
-         when 'trimestre' then extract(month from p_debut) in (1, 4, 7, 10) and p_fin = (p_debut + interval '3 months')::date - 1
-         when 'annee' then extract(month from p_debut) = 1 and p_fin = (p_debut + interval '1 year')::date - 1
-         else false end, false) $$;
+as $$ select coalesce(p_debut <= p_fin
+                      and public.periode_civile_debut(p_periodicite, p_debut) = public.periode_civile_debut(p_periodicite, p_fin), false) $$;
+
+-- LE PRORATA (LM7-Q4 (C), l'en-tête) : la part d'un forfait de p_montant_ht pour les jours [p_debut, p_fin] de sa période
+-- civile, en CENTIMES : arrondi(P × b / n) − arrondi(P × a / n), P le prix en centimes, n les jours de la période, a ceux
+-- d'avant la part, b ceux jusqu'à sa fin comprise. La période entière rend P. Nul pour des jours qui ne tiennent pas dans
+-- une période civile, ou un prix qui n'est pas au centime. En entiers : `prorata_arrondi` divise exactement.
+create function public.honoraires_au_prorata(p_montant_ht numeric, p_periodicite text, p_debut date, p_fin date) returns bigint
+language sql immutable set search_path = public
+as $$ select case when public.periode_de_forfait_valide(p_periodicite, p_debut, p_fin) and p_montant_ht = round(p_montant_ht, 2)
+         then public.prorata_arrondi((p_montant_ht * 100)::bigint,
+                                     (p_fin - public.periode_civile_debut(p_periodicite, p_debut) + 1)::bigint,
+                                     (public.periode_civile_fin(p_periodicite, p_debut) - public.periode_civile_debut(p_periodicite, p_debut) + 1)::bigint)
+              - public.prorata_arrondi((p_montant_ht * 100)::bigint,
+                                     (p_debut - public.periode_civile_debut(p_periodicite, p_debut))::bigint,
+                                     (public.periode_civile_fin(p_periodicite, p_debut) - public.periode_civile_debut(p_periodicite, p_debut) + 1)::bigint)
+       end $$;
 
 -- La lettre EN VIGUEUR un jour donné (src/lib/lettresDeMission.ts, `lettresEnVigueur`, le redit) : acceptée, d'effet
 -- atteint, ni résiliée avant ce jour, ni échue (sans reconduction, passé la fin de sa première période), ni remplacée par
@@ -162,8 +214,8 @@ comment on table public.honoraires_factures is
 -- propriétaire. Un lien ne se modifie pas ; il ne se supprime qu'avec son brouillon ou son dossier. À l'insertion, sous un
 -- verrou par client du dossier du cabinet : le dossier du cabinet ; une lettre de ce dossier, acceptée ; sa ligne, un
 -- forfait ou une tâche, et la forme de la période ; une facture du dossier, ni avoir ni acompte ; un seul client par
--- facture ; aucun autre lien ACTIF sur la même période (la même ligne, ou la ligne de même nature d'une autre version de
--- la lettre) quand celui-ci l'est. Ce que la fonction juge de plus — la lettre en vigueur, une période commencée, le
+-- facture ; aucun autre lien ACTIF sur la même période — pour un forfait, sur aucun de ses jours (LM7-Q4 (C)) — (la même
+-- ligne, ou la ligne de même nature d'une autre version de la lettre) quand celui-ci l'est. Ce que la fonction juge de plus — la lettre en vigueur, une période commencée, le
 -- premier exercice — dépend du jour : une restauration réinsère l'histoire telle qu'elle a été écrite.
 create function public.garder_honoraires_factures() returns trigger
 language plpgsql
@@ -204,7 +256,7 @@ begin
   end if;
   if v_ligne ->> 'forme' = 'forfait'
      and not public.periode_de_forfait_valide(v_ligne ->> 'periodicite', new.periode_debut, new.periode_fin) then
-    raise exception 'Une période de forfait est un mois, un trimestre ou une année civils, selon sa périodicité.' using errcode = '23514';
+    raise exception 'Une période de forfait tient dans un mois, un trimestre ou une année civils, selon sa périodicité.' using errcode = '23514';
   end if;
   select f.* into v_facture from public.factures_emises f where f.id = new.facture_id for share;
   if not found or v_facture.dossier_id <> new.dossier_id or v_facture.type <> 'facture' or v_facture.acompte
@@ -220,7 +272,10 @@ begin
     if exists (select 1 from public.honoraires_factures h
                  join public.lettres_de_mission l on l.id = h.lettre_id
                 where h.dossier_id = new.dossier_id and h.id is distinct from new.id
-                  and h.periode_debut = new.periode_debut and h.periode_fin = new.periode_fin
+                  -- Un forfait : un jour ne se facture qu'une fois (deux périodes qui se recouvrent) ; une tâche : sa période.
+                  and case when v_ligne ->> 'forme' = 'forfait'
+                           then h.periode_debut <= new.periode_fin and new.periode_debut <= h.periode_fin
+                           else h.periode_debut = new.periode_debut and h.periode_fin = new.periode_fin end
                   and l.dossier_client_id is not distinct from v_lettre.dossier_client_id
                   and ((h.lettre_id = new.lettre_id and h.ligne = new.ligne)
                        or (h.lettre_id <> new.lettre_id and public.racine_de_la_lettre(h.lettre_id) = v_racine
@@ -259,7 +314,8 @@ create policy honoraires_factures_restauration on public.honoraires_factures
 -- l'accès (42501) ; le dossier du cabinet (23514) ; le nombre d'éléments ; leur forme ; le taux ; les clés de la facture ;
 -- un élément en double (22023) ; puis, élément par élément, dans l'ordre de la demande : la lettre introuvable (P0002) ;
 -- pas acceptée ; d'un autre client ; la ligne introuvable ; le temps passé ; la forme de la période ; une période pas
--- commencée ; la lettre hors de vigueur (22023) ; puis le dossier du client disparu (22023) ; enfin, quand les liens se
+-- commencée ; la lettre hors de vigueur ; la part d'un forfait qui n'est pas celle des jours de la lettre (22023) ; puis le
+-- dossier du client disparu (22023) ; enfin, quand les liens se
 -- posent, la garde : une période déjà facturée (23514), et tout se défait, le brouillon compris.
 create function public.facturer_honoraires(p_dossier_id uuid, p_elements jsonb, p_taux_tva numeric, p_facture jsonb)
 returns uuid
@@ -280,6 +336,10 @@ declare
   v_client uuid;
   v_premier boolean := true;
   v_libelle_periode text;
+  v_civil_debut date;
+  v_civil_fin date;
+  v_centimes bigint;
+  v_jours integer;
   v_lignes jsonb := '[]'::jsonb;
   v_ht bigint := 0;
   v_tva bigint := 0;
@@ -362,7 +422,7 @@ begin
     v_debut := (v_element ->> 'periode_debut')::date;
     v_fin := (v_element ->> 'periode_fin')::date;
     if v_ligne ->> 'forme' = 'forfait' and not public.periode_de_forfait_valide(v_ligne ->> 'periodicite', v_debut, v_fin) then
-      raise exception 'Une période de forfait est un mois, un trimestre ou une année civils, selon sa périodicité.' using errcode = '22023';
+      raise exception 'Une période de forfait tient dans un mois, un trimestre ou une année civils, selon sa périodicité.' using errcode = '22023';
     end if;
     if v_ligne ->> 'forme' = 'tache' and (v_fin < v_debut or v_fin >= (v_debut + interval '1 year')::date
                                          or v_debut < date '2000-01-01' or v_fin > date '2100-12-31') then
@@ -371,35 +431,61 @@ begin
     if v_debut > v_aujourd_hui then
       raise exception 'Une période ne se facture pas avant d''avoir commencé.' using errcode = '22023';
     end if;
-    if (v_ligne ->> 'forme' = 'forfait' and not public.lettre_en_vigueur_le(v_lettre.id, v_fin))
+    if (v_ligne ->> 'forme' = 'forfait'
+        and not (public.lettre_en_vigueur_le(v_lettre.id, v_debut) and public.lettre_en_vigueur_le(v_lettre.id, v_fin)))
        or (v_ligne ->> 'forme' = 'tache'
            and (not (public.lettre_en_vigueur_le(v_lettre.id, v_fin) or public.lettre_en_vigueur_le(v_lettre.id, v_aujourd_hui))
                 or extract(year from v_debut) < coalesce(v_lettre.premier_exercice, 0))) then
       raise exception 'La lettre n''est pas en vigueur pour cette période.' using errcode = '22023';
     end if;
-    -- La ligne de la facture : le libellé figé par la lettre et sa période, au montant hors taxes figé, une unité.
+    -- LM7-Q4 (C) : la part d'un forfait est celle de TOUS les jours de la lettre dans sa période civile, et d'eux seuls (la
+    -- lettre en vigueur à chacun d'eux, juste au-dessus, et ni la veille ni le lendemain dans la période) : jamais une part
+    -- choisie à la main.
+    v_civil_debut := public.periode_civile_debut(v_ligne ->> 'periodicite', v_debut);
+    v_civil_fin := public.periode_civile_fin(v_ligne ->> 'periodicite', v_debut);
+    if v_ligne ->> 'forme' = 'forfait'
+       and ((v_debut > v_civil_debut and public.lettre_en_vigueur_le(v_lettre.id, v_debut - 1))
+            or (v_fin < v_civil_fin and public.lettre_en_vigueur_le(v_lettre.id, v_fin + 1))) then
+      raise exception 'La période d''un forfait suit la lettre au jour près : tous ses jours dans le mois, le trimestre ou l''année, et eux seuls.'
+        using errcode = '22023';
+    end if;
+    -- La ligne de la facture : le libellé figé par la lettre et sa période — la période civile d'un forfait, et sa part
+    -- au prorata —, au montant hors taxes figé (au prorata de ses jours pour la part d'une période), une unité.
     v_libelle_periode := case
       when v_ligne ->> 'forme' = 'forfait' and v_ligne ->> 'periodicite' = 'mois'
-        then c_mois[extract(month from v_debut)::integer] || ' ' || extract(year from v_debut)::integer
+        then c_mois[extract(month from v_civil_debut)::integer] || ' ' || extract(year from v_civil_debut)::integer
       when v_ligne ->> 'forme' = 'forfait' and v_ligne ->> 'periodicite' = 'trimestre'
-        then case when extract(month from v_debut) = 1 then '1er' else ((extract(month from v_debut)::integer + 2) / 3)::text || 'e' end
-             || ' trimestre ' || extract(year from v_debut)::integer
-      when v_ligne ->> 'forme' = 'forfait' then 'année ' || extract(year from v_debut)::integer
+        then case when extract(month from v_civil_debut) = 1 then '1er' else ((extract(month from v_civil_debut)::integer + 2) / 3)::text || 'e' end
+             || ' trimestre ' || extract(year from v_civil_debut)::integer
+      when v_ligne ->> 'forme' = 'forfait' then 'année ' || extract(year from v_civil_debut)::integer
       when extract(month from v_debut) = 1 and extract(day from v_debut) = 1 and v_fin = (v_debut + interval '1 year')::date - 1
         then 'exercice ' || extract(year from v_debut)::integer
-      when public.periode_de_forfait_valide('mois', v_debut, v_fin)
+      -- Une tâche dont la période est un mois ou un trimestre civils ENTIERS (la part d'un mois se dit par ses dates).
+      when v_debut = public.periode_civile_debut('mois', v_debut) and v_fin = public.periode_civile_fin('mois', v_debut)
         then c_mois[extract(month from v_debut)::integer] || ' ' || extract(year from v_debut)::integer
-      when public.periode_de_forfait_valide('trimestre', v_debut, v_fin)
+      when v_debut = public.periode_civile_debut('trimestre', v_debut) and v_fin = public.periode_civile_fin('trimestre', v_debut)
         then case when extract(month from v_debut) = 1 then '1er' else ((extract(month from v_debut)::integer + 2) / 3)::text || 'e' end
              || ' trimestre ' || extract(year from v_debut)::integer
       when v_debut = v_fin then 'le ' || to_char(v_debut, 'DD/MM/YYYY')
       else 'du ' || to_char(v_debut, 'DD/MM/YYYY') || ' au ' || to_char(v_fin, 'DD/MM/YYYY')
     end;
+    -- La part d'une période : ses dates et ses jours dans la ligne, son montant au prorata ; la période entière garde le
+    -- montant figé tel quel (que le prorata rend aussi).
+    v_centimes := null;
+    if v_ligne ->> 'forme' = 'forfait' and (v_debut <> v_civil_debut or v_fin <> v_civil_fin) then
+      v_jours := v_fin - v_debut + 1;
+      v_libelle_periode := v_libelle_periode || ', '
+        || case when v_debut = v_fin then 'le ' || to_char(v_debut, 'DD/MM/YYYY')
+                else 'du ' || to_char(v_debut, 'DD/MM/YYYY') || ' au ' || to_char(v_fin, 'DD/MM/YYYY') end
+        || ' (' || v_jours || case when v_jours = 1 then ' jour' else ' jours' end || ' sur ' || (v_civil_fin - v_civil_debut + 1) || ')';
+      v_centimes := public.honoraires_au_prorata((v_ligne ->> 'montant_ht')::numeric, v_ligne ->> 'periodicite', v_debut, v_fin);
+    end if;
     v_lignes := v_lignes || jsonb_build_array(jsonb_build_object(
       'designation', (v_ligne ->> 'libelle') || ' — ' || v_libelle_periode,
-      'quantite', 1, 'prix_unitaire_ht', (v_ligne ->> 'montant_ht')::numeric, 'taux_tva', p_taux_tva,
-      'unite', 'C62', 'nature', 'services'));
-    select * into v_c from public.centimes_ligne_facture(1, (v_ligne ->> 'montant_ht')::numeric, p_taux_tva, false);
+      'quantite', 1, 'prix_unitaire_ht', coalesce(round(v_centimes::numeric / 100, 2), (v_ligne ->> 'montant_ht')::numeric),
+      'taux_tva', p_taux_tva, 'unite', 'C62', 'nature', 'services'));
+    select * into v_c
+      from public.centimes_ligne_facture(1, coalesce(round(v_centimes::numeric / 100, 2), (v_ligne ->> 'montant_ht')::numeric), p_taux_tva, false);
     v_ht := v_ht + v_c.ht_centimes;
     v_tva := v_tva + v_c.tva_centimes;
     v_min := least(v_min, v_debut);
@@ -441,6 +527,10 @@ $$;
 -- restauration du super-administrateur traverse sous `authenticated`) ; la garde ne sert qu'à la base.
 revoke execute on function public.facturer_honoraires(uuid, jsonb, numeric, jsonb) from public, anon;
 grant execute on function public.facturer_honoraires(uuid, jsonb, numeric, jsonb) to authenticated;
+revoke execute on function public.periode_civile_debut(text, date) from public, anon;
+grant execute on function public.periode_civile_debut(text, date) to authenticated;
+revoke execute on function public.periode_civile_fin(text, date) from public, anon;
+grant execute on function public.periode_civile_fin(text, date) to authenticated;
 revoke execute on function public.periode_de_forfait_valide(text, date, date) from public, anon;
 grant execute on function public.periode_de_forfait_valide(text, date, date) to authenticated;
 revoke execute on function public.lettre_en_vigueur_le(uuid, date) from public, anon;
@@ -450,3 +540,5 @@ grant execute on function public.facture_creditee_en_entier(uuid) to authenticat
 revoke execute on function public.racine_de_la_lettre(uuid) from public, anon;
 grant execute on function public.racine_de_la_lettre(uuid) to authenticated;
 revoke execute on function public.garder_honoraires_factures() from public, anon, authenticated;
+-- Le prorata ne sert que la fonction, à ses droits : aucun rôle de session (comme `prorata_arrondi`).
+revoke execute on function public.honoraires_au_prorata(numeric, text, date, date) from public, anon, authenticated;

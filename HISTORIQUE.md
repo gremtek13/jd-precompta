@@ -51317,3 +51317,20 @@ soumises et leur suite, un brouillon compté seulement ; approuver, refuser (`LI
 le lit), rembourser. La règle et les mots dans lib/notesDeFraisVue.ts (les paramètres confrontés à la migration) ; chaque
 geste par sa fonction seule, à la version lue, sous un verrou `useRef`, refus redits avant le clic, confirmation qui nomme
 la note. Restent l'écriture d'une note au 421 et B8-Q1 (un accès « Achats » sans « Notes de frais »).
+
+### 11/11/2026 — LM5Q2-Q1 ET LM7-Q4 : LES BROUILLONS DITS AU COLLABORATEUR, LE PRORATA AU JOUR PRÈS (LIGNE 47) (PRÉPARÉES, PAS APPLIQUÉES)
+
+(Agent architecte ; réponses du cabinet, contre la recommandation.) **LM5Q2-Q1 (B)** : `missions_du_client` (`11225a72…`
+→ `ef5d756d…`, retour inchangé) rend aussi les brouillons, sans honoraires, après les proposées (tri par `cree_le`) ; la
+carte dit « En préparation » chaque brouillon et chaque proposition sans réponse. **LM7-Q4 (C)** : `honoraires_factures`
+(`2f90ac9a…` → `f250dcee…`, retour `d54b3d5e…` → `ce24294f…`, neuf fonctions) facture un forfait pour les seuls jours où
+sa lettre est en vigueur dans chaque mois, trimestre ou année civils ; l'avenant, les siens, à son prix ; une tâche
+entière. La part, en centimes : arrondi(P × b / n) − arrondi(P × a / n) (`honoraires_au_prorata`, `centimesAuProrata`) —
+deux parts d'un mois au même prix font ce prix (l'arrondi de chaque part ferait 50,01 + 50,01 = 100,02 € pour 100,01 €).
+Écartés : l'arrondi de chaque part, l'arrondi par défaut, la seconde part par différence. La fonction exige exactement
+les jours de la lettre (`joursDeLaLettre`), la garde un jour facturé une fois ; la ligne dit « (17 jours sur 31) ».
+
+**Preuves** (mère 17 rattrapée à 197 migrations, `32cc17e5…` égal — la production en compte 197, pas 199 —, plus LM1 et
+LM4) : `honorairesFactures.sql` 75 étapes, 12 mutations sur 12 ; `missionsDuClient.sql` 22, 5 sur 5 ; `rls.sql` entier
+(MV muni d'un brouillon) 189 invariants, 0 en faute, 115 sur 115, sans elles 173 et 109 sur 109 ; retours :
+`signature.sql` d'avant. Batterie de 6 000 parts (`batterieDesProrata.mjs`) : base et module égaux (`6a10280c…`).

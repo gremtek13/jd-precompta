@@ -129,6 +129,22 @@ describe('drapeau levé', () => {
     expect(bouton()).toBeNull()
   })
 
+  it('une lettre d’effet au 15 octobre : octobre au prorata, « 17 jours sur 31 », dit à l’écran et dans la confirmation (LM7-Q4 (C))', async () => {
+    etat.lecture = { ...lue(), lettres: [{ ...lettre, date_effet: '2026-10-15' }] } as LectureDesHonoraires
+    render(carte())
+    expect(texte()).toContain('Tenue mensuelle — octobre 2026, du 15/10/2026 au 31/10/2026 (17 jours sur 31)')
+    expect(texte().replace(/[\u00a0\u202f]/g, ' ')).toContain('82,26 € HT — au prorata : 17 jours sur 31 du forfait de 150,00 € HT')
+    choisirLeTaux('20')
+    await act(async () => {
+      fireEvent.click(bouton()!)
+      await new Promise((r) => setTimeout(r, 5))
+    })
+    expect(etat.appels[0].elements).toMatchObject([{ lettre_id: 'l1', ligne: 1, periode_debut: '2026-10-15', periode_fin: '2026-10-31' }])
+    const question = String(confirmer.mock.calls[0][0]).replace(/[\u00a0\u202f]/g, ' ')
+    expect(question).toContain('(17 jours sur 31) : 82,26 € HT (au prorata du forfait de 150,00 € HT)')
+    expect(question).toContain('se facture au prorata de ses jours, arrondi au centime')
+  })
+
   it('range par client et par lettre ; le forfait échu coché, la tâche à cocher ; le refus dit avant le clic', () => {
     render(carte())
     expect(texte()).toContain('Client fictif')
