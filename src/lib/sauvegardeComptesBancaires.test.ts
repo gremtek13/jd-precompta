@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
+import { fichiersPrepares, relationsDuSchema } from '../test/schema'
 import {
   auGrapheDesComptesBancaires,
   auPlanAujourdHui,
@@ -84,15 +85,20 @@ describe('le plan prévu, comptes bancaires compris', () => {
     expect(Object.keys(CLES_PRIMAIRES_PREVUES)).not.toContain(TABLE)
   })
 
-  it('ses relations, telles que la migration les déclare : le dossier en cascade, les mouvements et les contrôles sans action', () => {
+  it('ses relations, telles que les migrations les déclarent : le dossier en cascade, les mouvements, les contrôles et l’ouverture éclatée sans action', () => {
     const desComptes = RELATIONS_PREVUES
       .filter((r) => r.enfant === TABLE || r.parent === TABLE)
       .map((r) => `${r.enfant}.${r.colonne} → ${r.parent} (${r.aLaSuppression})`)
     expect(desComptes).toEqual([
       'comptes_bancaires.dossier_id → dossiers (cascade)',
       'controles_releves_bancaires.compte_bancaire_id → comptes_bancaires (bloque)',
+      // MCB5g : la source d'une écriture qui éclate l'ouverture (migration `ouverture_eclatee_par_compte`).
+      'ecritures_brouillon.ouverture_compte_bancaire_id → comptes_bancaires (bloque)',
       'lignes_bancaires.compte_bancaire_id → comptes_bancaires (bloque)',
     ])
+    // Chacune est une clé que la migration préparée déclare, vers cette table.
+    const declarees = relationsDuSchema(fichiersPrepares()).filter((r) => r.parent === TABLE).map((r) => `${r.enfant}.${r.colonne}`)
+    expect(declarees).toContain('ecritures_brouillon.ouverture_compte_bancaire_id')
     expect(LIENS_GARDES.some((r) => r.enfant === TABLE || r.parent === TABLE)).toBe(false)
   })
 
@@ -160,10 +166,30 @@ describe('les comptes bancaires dans les deux états du drapeau : la réinsertio
     expect(s.liensPerdus(sansSecond).map((l) => `${l.table}.${l.colonne}`)).toContain('lignes_bancaires.compte_bancaire_id')
   })
 
+  // MCB5g : l'écriture qui éclate l'ouverture cite le compte bancaire dont elle ouvre le 512.
+  const avecLOuverture = () => ({
+    ...contenu(),
+    ecritures_brouillon: [
+      { id: 'o1', dossier_id: 'd1', date: '2026-01-01', compte: '512100', sens: 'debit', montant: 250, ouverture_compte_bancaire_id: 's1' },
+      { id: 'o2', dossier_id: 'd1', date: '2026-01-01', compte: '512000', sens: 'credit', montant: 250, ouverture_compte_bancaire_id: 's1' },
+    ],
+  })
+
+  it('levé : l’écriture de l’ouverture éclatée après son compte ; sans lui, un lien perdu qui ne s’efface pas', async () => {
+    const s = await sauvegardeSous(true)
+    const tables = s.planReinsertion(avecLOuverture()).etapes.map((e) => e.table)
+    expect(tables.indexOf(TABLE)).toBeLessThan(tables.indexOf('ecritures_brouillon'))
+    expect(s.liensPerdus(avecLOuverture())).toEqual([])
+    const sansSecond = { ...avecLOuverture(), comptes_bancaires: contenu().comptes_bancaires.filter((c) => c.id !== 's1'), lignes_bancaires: [], controles_releves_bancaires: [] }
+    expect(s.liensPerdus(sansSecond).map((l) => [`${l.table}.${l.colonne}`, l.effacable]))
+      .toEqual([['ecritures_brouillon.ouverture_compte_bancaire_id', false], ['ecritures_brouillon.ouverture_compte_bancaire_id', false]])
+  })
+
   it('baissé : la table n’entre pas au plan, même présente dans une sauvegarde, et aucun lien vers elle ne se juge', async () => {
     const s = await sauvegardeSous(false)
     const plan = s.planReinsertion(contenu())
     expect(plan.etapes.map((e) => e.table)).not.toContain(TABLE)
     expect(s.liensPerdus({ ...contenu(), comptes_bancaires: [] })).toEqual([])
+    expect(s.liensPerdus({ ...avecLOuverture(), comptes_bancaires: [] })).toEqual([])
   })
 })
