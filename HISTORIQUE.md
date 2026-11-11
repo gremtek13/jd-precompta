@@ -50627,3 +50627,24 @@ refuse), 8 mutations sur 8 ; `rls.sql` bloc RC : 139 lignes, 0 en faute, 100 sur
 essais voisins identiques ; retour (à coller) : signature égale. **L'application**, `REPRISES_AU_CLIENT_PREVUES` baissé :
 `RepriseDeLaFacture` sommée par la base ; la fenêtre des encaissements (deux espaces) lit la reprise et son reste ;
 « Encaissements » sur une reprise ; `avecLesPiecesCitees`. Deux états joués ; cinq mutations mordent. Reste : l'appliquer.
+
+### 11/11/2026 — PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : D'EMBLÉE, LES LOTS, ET LA BASE (MCB1) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte. MCB-Q1 à Q8 tranchées le 11/11/2026 : un 512 par compte d'emblée, contre la recommandation ; le reste à
+la recommandation.) **LA CONCEPTION RÉVISÉE.** Les deux temps n'en font qu'un, mais MCB-Q7 garde 2025 à un seul 512 : un
+compte autre que le principal tient son 512 DEPUIS un 1er janvier (`compte_propre_depuis`), et ses mouvements d'avant
+s'écrivent au 512 du principal, qui suit le rôle `banque`. Lots : MCB1 la base (fait) ; MCB2 l'import par compte (le
+compte choisi, le dédoublonnage et le recouvrement par compte, `types.ts` basculé ; 1,5 j) ; MCB3 le rapprochement par
+compte et le virement interne au 580 des deux côtés, la paire proposée (1,5 j) ; MCB4 la suite des soldes, le relevé du 31/12
+et `couverture_du_releve` par compte, les préalables de la validation (2 j) ; MCB5 le plan et le FEC — la jambe de banque
+par `compte_de_banque_du_mouvement`, les dix fonctions du relevé (à coller), les 17 fichiers de `plan.banque`, deux rendus
+du FEC (MCB-Q4), les à-nouveaux de 2026 éclatés d'après les relevés du 31/12, un seul journal BQ, l'assistant (4,5 j) ;
+MCB6 les écrans du cabinet (1,5 j) ; MCB7 « Ma banque » et « Ma simulation » (1 j) ; MCB8 la connexion par compte, après le
+MVP (1 j). **MCB1.** `comptes_bancaires` (cabinet `to authenticated`, lecture « Banque », MCB-Q8), `compte_bancaire_id`
+NOT NULL sur les mouvements et les contrôles (une clé simple : le lecteur de schéma des tests refuse une clé composite,
+la garde tient le compte dans son dossier), rempli du principal ; un arrivant sans compte prend le seul
+compte (le principal créé au premier mouvement), refusé dès deux ; compte et date figés au premier mouvement, période,
+fichier d'un seul compte (MCB-Q6), plan hors des comptes ; aucune fonction `security definer` (un inconnu ne crée ni
+n'apprend rien). Réplique à 195 migrations : `comptesBancaires.sql` 38/38, dix-sept mutations tuées ;
+`comptesBancairesSuppression.sql` (réplique) 7/7 — « le dossier qui part » ne mord pas, l'ordre des cascades retire les
+mouvements avant leur compte ; `rls.sql` 0 en faute, la banque à sept tables ; le retour (destructif) puis la réapplication.

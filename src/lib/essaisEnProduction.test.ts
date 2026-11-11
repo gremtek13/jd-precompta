@@ -257,7 +257,7 @@ describe('les essais de la base, rejoués en production', () => {
     // Le dixième, deuxFacteurs, le 07/11/2026 (C7, second temps, migration `deux_facteurs_exiges`) : il pose des facteurs
     // et des sessions dans auth, et `retirer_second_facteur` en supprime — tout se défait par sous-transaction, mais une
     // suppression jouée en production y serait retenue. Son catalogue se rejoue partout : le bloc DF de rls.sql.
-    // Le onzième, dossierDuCabinet, le 11/11/2026 (LM1, migration `dossier_du_cabinet`) : il supprime un dossier jetable (le
+    // Le douzième, dossierDuCabinet, le 11/11/2026 (LM1, migration `dossier_du_cabinet`) : il supprime un dossier jetable (le
     // geste du super-administrateur qui retire un cabinet), sous la garde ESSAI_HORS_REPLIQUE.
     // Le neuvième, droitsHorsRls, le 06/11/2026 (relecture de sécurité, migration `droits_hors_rls`) : il tente, sous chaque
     // profil, de vider chaque table, d'y poser un déclencheur, une clé étrangère et un REINDEX — des verrous forts —, sous
@@ -265,9 +265,11 @@ describe('les essais de la base, rejoués en production', () => {
     // Le onzième, pieceFigeeDansLeStockage, le 10/11/2026 (ligne 44, INAL1, migration `piece_figee_dans_le_stockage`) : il
     // supprime des lignes de `storage.objects` sous le réglage de l'API et altère la fonction de la policy, sous la même
     // garde. Son catalogue et son prédicat, jugé sans supprimer, se rejouent partout : le bloc PF de rls.sql.
+    // Le treizième, comptesBancairesSuppression, le 11/11/2026 (ligne 26.6, MCB1, migration `comptes_bancaires`) : il retire
+    // des comptes bancaires et un dossier, sous la même garde.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'caisseSuppression (son en-tête)', 'deuxFacteurs (son en-tête)', 'devisSuppression (son en-tête)',
-      'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)',
+      'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'deuxFacteurs (son en-tête)',
+      'devisSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)',
       'frontiereDesEncaissements (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',

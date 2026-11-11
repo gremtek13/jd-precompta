@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
+import { COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
 import { CONTACTS_EXPORTES } from './contacts'
 import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
@@ -27,6 +28,8 @@ import {
   auPlanDesSituationsPubliees,
   auPlanDesSaisies2035,
   auPlanDesParametresDesCotisations,
+  auPlanDesComptesBancaires,
+  auGrapheDesComptesBancaires,
   auPlanDesAdressesReception,
   auPlanDesArticles,
   auPlanDesContacts,
@@ -76,7 +79,9 @@ describe('le filtre du plan', () => {
     // (sauvegardeCaisse.test.ts) ; depuis l'étape P6c1, le graphe retire le devis envoyé tant que la migration de l'envoi
     // n'est pas exportée (sauvegardeEnvoiDesDevis.test.ts) ; depuis l'étape P1-trace, celui de la trace des droits
     // (sauvegardeTraceDesDroits.test.ts) ; depuis l'étape A8a, celui des factures reprises (sauvegardeFacturesImportees.test.ts) ;
-    // depuis l'étape A9a, celui de la numérotation qui continue (sauvegardeNumerotationContinue.test.ts).
+    // depuis l'étape A9a, celui de la numérotation qui continue (sauvegardeNumerotationContinue.test.ts) ; depuis le lot MCB1,
+    // celui des comptes bancaires, et le graphe retire les clés des mouvements et des contrôles vers leur compte
+    // (sauvegardeComptesBancaires.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -87,12 +92,13 @@ describe('le filtre du plan', () => {
         && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
         && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
         && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
-        && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES))
+        && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
+        && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
         && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
-        && auGrapheDesAcomptes(r, ACOMPTES_PREVUS)))
+        && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS)))
     expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlanAujourdHui(t)))

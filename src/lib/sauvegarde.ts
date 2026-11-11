@@ -23,6 +23,7 @@ import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
+import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
@@ -245,6 +246,30 @@ export function auPlanDesParametresDesCotisations(table: string, exportees: bool
   return exportees || !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(table)
 }
 
+// LES COMPTES BANCAIRES D'UN DOSSIER (ligne 26.6, lot MCB1 ; migration `comptes_bancaires`, PRÉPARÉE le 11/11/2026) : les
+// comptes bancaires professionnels d'un dossier (`comptes_bancaires`), et le compte de chaque mouvement et de chaque relevé
+// (`compte_bancaire_id`, NOT NULL, une clé vers le compte, que sa garde tient dans le dossier, sans action à la suppression : un
+// compte qui porte un mouvement ou un relevé ne se retire pas, il part avec son dossier). Sous le drapeau de la migration
+// (`COMPTES_BANCAIRES_PREVUS`, src/lib/comptesBancaires.ts), baissé : la production n'a pas la table, et la lire ferait
+// échouer toute sauvegarde ; ses deux relations vers les mouvements et les contrôles quittent aussi le graphe du jour
+// (`auGrapheDesComptesBancaires`). Son rang : après le plan du dossier, que sa garde lit, et avant les contrôles et les
+// mouvements, qui la citent. Sa clé est la commune, `id` ; aucune vague. La restauration la réinsère par la policy du
+// cabinet, que le super-administrateur passe ; ses comptes d'un dossier partent dans un seul lot (une même forme), et la
+// contrainte différée du principal se juge à la fin de ce lot. Une sauvegarde d'avant la migration (formats 1 et 2) ne la
+// porte pas : chaque mouvement réinséré sans compte reçoit le principal, que la base crée au premier. Le dossier qui part
+// avec ses comptes ne retient rien. sauvegardeComptesBancaires.test.ts éprouve le plan prévu et le plan du jour, sous
+// chaque état du drapeau.
+/** Une table au plan, côté comptes bancaires : toutes, sauf la leur tant que leur migration n'est pas exportée. */
+export function auPlanDesComptesBancaires(table: string, prevus: boolean): boolean {
+  return prevus || !TABLES_DES_COMPTES_BANCAIRES.includes(table)
+}
+
+/** Une relation au graphe, côté comptes bancaires : toutes, sauf celles qui nomment leur table, drapeau baissé — celles des
+ *  mouvements et des contrôles vers leur compte comprises, dont l'enfant est au plan depuis toujours. */
+export function auGrapheDesComptesBancaires(r: Relation, prevus: boolean): boolean {
+  return prevus || (!TABLES_DES_COMPTES_BANCAIRES.includes(r.enfant) && !TABLES_DES_COMPTES_BANCAIRES.includes(r.parent))
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -261,6 +286,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
     && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
     && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
+    && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -338,9 +364,11 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'agent_conversations', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'cabinet_admins', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
   { enfant: 'categories', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'comptes_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'comptes_courants_associes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'connexions_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'connexions_plateformes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'controles_releves_bancaires', parent: 'comptes_bancaires', colonne: 'compte_bancaire_id', aLaSuppression: 'bloque' },
   { enfant: 'controles_releves_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'cotisations_declarees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'declarations_ereporting', parent: 'declarations_ereporting', colonne: 'remplace_id', aLaSuppression: 'bloque' },
@@ -404,6 +432,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'lettrages_manuels', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'lettrages_manuels', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'lignes_bancaires', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
+  { enfant: 'lignes_bancaires', parent: 'comptes_bancaires', colonne: 'compte_bancaire_id', aLaSuppression: 'bloque' },
   { enfant: 'lignes_bancaires', parent: 'cotisations_declarees', colonne: 'cotisation_id', aLaSuppression: 'met_a_null' },
   { enfant: 'lignes_bancaires', parent: 'declarations_tva', colonne: 'declaration_tva_id', aLaSuppression: 'bloque' },
   { enfant: 'lignes_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -533,7 +562,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
   .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
     && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
-    && auGrapheDesAcomptes(r, ACOMPTES_PREVUS))
+    && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
@@ -720,6 +749,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'agent_conversations',
   'articles',
   'categories',
+  'comptes_bancaires',
   'comptes_courants_associes',
   'connexions_bancaires',
   'connexions_plateformes',
@@ -1233,6 +1263,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
 
   a_nouveaux: { acces: 'direct' },
   agent_conversations: { acces: 'direct' },
+  comptes_bancaires: { acces: 'direct' },
   comptes_courants_associes: { acces: 'direct' },
   connexions_bancaires: { acces: 'direct' },
   connexions_plateformes: { acces: 'direct' },

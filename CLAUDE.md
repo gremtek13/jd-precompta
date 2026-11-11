@@ -501,9 +501,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
   APRÈS COUP ». Un dossier ne tient qu'UN compte bancaire : le relevé d'un second ne s'importe pas (doublons écartés en
-  silence, ruptures fausses) tant que MCB n'est pas fait — conçu le 09/11/2026 en deux temps, MCB-Q1 à Q8 au cabinet,
-  rien d'écrit avant la réponse du praticien (MVP-BANQUES-Q1) → « PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : LA
-  CONCEPTION ». L'écriture d'un mouvement que ses encaissements classent porte un libellé composé (« Relevé du
+  silence, ruptures fausses) tant que MCB n'est pas fait — un 512 par compte d'emblée (MCB-Q1 à Q8, 11/11/2026), huit lots ; MCB1, la base
+  (`comptes_bancaires`, `compte_bancaire_id`), préparée derrière `COMPTES_BANCAIRES_PREVUS` → « PLUSIEURS COMPTES
+  BANCAIRES D'UN DOSSIER : LA CONCEPTION », « PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : D'EMBLÉE, LES LOTS, ET LA BASE
+  (MCB1) ». L'écriture d'un mouvement que ses encaissements classent porte un libellé composé (« Relevé du
   JJ/MM/AAAA — F… », `libelleDUnMouvementDesVentes`), jamais celui de la banque, qui nomme qui a payé ; un mouvement
   classé hors des ventes facturées porte « Crédit du relevé du JJ/MM/AAAA », ou « Débit du relevé du JJ/MM/AAAA » quand
   il rend ou défait l'argent d'un client (une ligne en classe 7 ou 41, la définition de VF9CQ1B), tout autre débit
