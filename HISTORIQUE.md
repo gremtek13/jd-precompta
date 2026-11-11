@@ -51072,3 +51072,22 @@ garnit désormais `pieces_des_factures_reprises`, que rien ne remplissait depuis
 remplisseur ne sait pas écrire). Application derrière `DOCUMENTS_ET_DEMANDES_PREVUS` : le module,
 les bornes du seau, le plan de sauvegarde, le seau vidé avec le dossier. B2-Q1 à Q4 posées ; MEG2-Q10 ouverte, rien ne se
 purge seul. Reste B3 (écrans, relance par e-mail, la phrase de la case « Documents »).
+
+### 11/11/2026 — LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : L'ASSISTANT (MCB5, CINQUIÈME PARTIE)
+
+(Agent architecte, sans migration ni déploiement, derrière `COMPTES_BANCAIRES_PREVUS` baissé : l'assistant d'hier, aucune lecture
+de plus, la réponse de `points_a_traiter` sans clé de plus.) **Inventaire** : les gardes passaient toutes, parce qu'elles comparaient
+les copies à src/lib sous `sans_objet` ; neuf copies étaient infidèles par compte — les sept détecteurs, `lignesPourPiece` (avec
+`lignesEngagementPourPiece`, `banqueSuitLesPaiements`) et `analyserEcritures`, et `paiementsDesPieces` sans `compte_bancaire_id`.
+**Fait** : le bloc `BANQUES DU DOSSIER` (copie de `banqueDuMouvement.ts` et de `compteDeBanqueDuMouvement`, et le drapeau, que son
+garde confronte à src/lib) ; chaque copie prend `banques` (obligatoire, en dernier) et compose ou juge sous le plan DU mouvement ;
+une banque inconnue ne se juge pas (le mouvement, ou la pièce, retenu), et se dit au modèle par une phrase neutre
+(`banques_des_mouvements`), jamais par un nom, un libellé, un identifiant ni un IBAN ; un dossier de plusieurs comptes reçoit ses
+512 (`comptes_de_banque_du_dossier`, des numéros). Levé, l'assistant lit les comptes AU JETON DE L'APPELANT (`lireLesComptesDuDossier` :
+l'identifiant opaque, le principal, le 512, sa date ; rien d'autre), et le relevé avec `compte_bancaire_id` (trois requêtes en deux
+formes littérales). **Preuves** : `agentComptableBanques.test.ts` (13 cas : le bloc sous sept lectures et sept mouvements, deux
+détecteurs et la contrepartie d'une pièce en trésorerie et en engagement sous quatre états des comptes) ; huit mutations mordent ;
+les vingt-quatre gardes d'avant passent par `avecLePlanEtLaBanqueDuRole` (src/test/copieAuPlan.ts), leurs motifs plantés suivis ;
+`tsc -p tsconfig.edge.json`, 25 erreurs, celles d'avant. **Restent** : les cas par compte des cinq autres détecteurs (affectation,
+virement personnel, emprunt, ventilation, cotisation : leurs copies suivent src/lib, gardées sous le rôle seulement) ; la consigne,
+inchangée (elle nomme le 512 du rôle) ; le déploiement, après la fusion.
