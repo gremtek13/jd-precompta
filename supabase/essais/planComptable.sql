@@ -81,6 +81,10 @@ declare
   -- lit ici. Trente-deux rôles depuis la migration `source_de_la_vente` (étape VF2) : les vingt-six de l'application, et
   -- les six de la vente facturée, que l'application ne lit pas avant l'étape VF4 et que la lecture du plan ignore.
   empreinte_catalogue constant text := 'c0f5fc674491da296f70afea19e09b0a';
+  -- La même, la migration `dirigeant_au_468` (PC4-Q2, préparée) appliquée : le dirigeant non associé sous 467 ou 468. Son
+  -- historique en base décide laquelle des deux le catalogue doit porter.
+  empreinte_catalogue_468 constant text := 'a568112079b85b82965e17c4de77614d';
+  au_468 constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'dirigeant_au_468');
   roles_du_catalogue constant int := 32;
   -- Le `case` que cinq fonctions recopiaient : le compte du dirigeant, 108000 en trésorerie. Depuis l'étape PC2
   -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
@@ -138,7 +142,7 @@ begin
            || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
     into n, texte from roles_comptables;
   verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte)',
-    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue and texte = empreinte_catalogue, false));
+    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue and texte = case when au_468 then empreinte_catalogue_468 else empreinte_catalogue end, false));
 
   select count(*) filter (where compte_defaut !~ '^[0-9]{6}$'
                             or not exists (select 1 from unnest(racines) x(r) where left(compte_defaut, length(x.r)) = x.r)),
@@ -525,8 +529,9 @@ begin
       ('25b. un compte de sept chiffres (hypothèse Q5)', 'banque', '5121000', null, null, '23514', 'Le compte du rôle « banque » s''écrit en six chiffres : « 5121000 » n''en est pas un.'),
       ('25c. un compte qui n''est pas fait de chiffres', 'banque', '512ABC', null, null, '23514', 'Le compte du rôle « banque » s''écrit en six chiffres : « 512ABC » n''en est pas un.'),
       ('26. la banque hors de sa racine', 'banque', '411000', null, null, '23514', 'Le compte du rôle « banque » commence par sa racine du plan comptable (512) : « 411000 » n''en est pas un.'),
-      ('26b. le dirigeant non associé au 468 (Q7 non tranchée)', 'autres_debiteurs_crediteurs', '468000', null, null, '23514',
-        'Le compte du rôle « autres_debiteurs_crediteurs » commence par sa racine du plan comptable (467) : « 468000 » n''en est pas un.'),
+      ('26b. le dirigeant non associé au 468 : refusé, puis admis la migration dirigeant_au_468 appliquée (43-Q7, PC4-Q2)',
+        'autres_debiteurs_crediteurs', '468000', null, null, case when au_468 then 'ACCEPTÉ' else '23514' end,
+        case when au_468 then null else 'Le compte du rôle « autres_debiteurs_crediteurs » commence par sa racine du plan comptable (467) : « 468000 » n''en est pas un.' end),
       ('27. un préfixe d''auxiliaires sur la banque', 'banque', '512100', 'BQ', null, '23514',
         'Seuls les comptes de tiers (fournisseurs, fournisseurs d''immobilisations, clients) portent un préfixe de comptes auxiliaires : pas le rôle « banque ».'),
       ('27b. un préfixe en minuscules', 'fournisseurs', '401100', 'fo', null, '23514',

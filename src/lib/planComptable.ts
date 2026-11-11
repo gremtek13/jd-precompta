@@ -17,6 +17,7 @@
 // comptes — par le modèle comptable du dossier (lib/engagement.ts), qui le porte, ou par un paramètre `plan` obligatoire.
 // Sous le plan vide d'aujourd'hui, chaque rôle s'y lit à son défaut : rien ne change pour personne.
 
+import { DIRIGEANT_AU_468_PREVU, racinesDuDirigeantNonAssocieSelon } from './dirigeantAu468'
 import { messageErreur } from './messageErreur'
 
 /** Un rôle du catalogue, tel que `roles_comptables` le porte. */
@@ -64,8 +65,8 @@ export const ROLES_DE_LA_VENTE_FACTUREE = [
   { role: 'services_bancaires', racines: ['627'], compteDefaut: '627000', libelleDefaut: 'Services bancaires et assimilés', prefixeAuxiliaireDefaut: null, ordre: 320 },
 ] as const satisfies readonly DefinitionRoleComptable[]
 
-// Dans l'ordre du catalogue. Le dirigeant non associé n'a que le 467 pour racine : permettre le 468 est la question Q7
-// au cabinet, que l'étape PC1 ne tranche pas.
+// Dans l'ordre du catalogue. Le dirigeant non associé se tient sous le 467, et aussi sous le 468 une fois la migration
+// `dirigeant_au_468` en base (43-Q7, PC4-Q2 : lib/dirigeantAu468.ts, sous son drapeau) ; son défaut reste 467000.
 export const ROLES_COMPTABLES = [
   { role: 'banque', racines: ['512'], compteDefaut: '512000', libelleDefaut: 'Banque', prefixeAuxiliaireDefaut: null, ordre: 10 },
   { role: 'tva_deductible', racines: ['44566'], compteDefaut: '445660', libelleDefaut: 'TVA déductible', prefixeAuxiliaireDefaut: null, ordre: 20 },
@@ -81,7 +82,7 @@ export const ROLES_COMPTABLES = [
   { role: 'clients', racines: ['411'], compteDefaut: '411000', libelleDefaut: 'Clients', prefixeAuxiliaireDefaut: 'C', ordre: 120 },
   { role: 'exploitant', racines: ['108'], compteDefaut: '108000', libelleDefaut: "Compte de l'exploitant", prefixeAuxiliaireDefaut: null, ordre: 130 },
   { role: 'associe', racines: ['455'], compteDefaut: '455000', libelleDefaut: 'Associés — comptes courants', prefixeAuxiliaireDefaut: null, ordre: 140 },
-  { role: 'autres_debiteurs_crediteurs', racines: ['467'], compteDefaut: '467000', libelleDefaut: 'Divers comptes débiteurs et produits à recevoir', prefixeAuxiliaireDefaut: null, ordre: 150 },
+  { role: 'autres_debiteurs_crediteurs', racines: racinesDuDirigeantNonAssocieSelon(DIRIGEANT_AU_468_PREVU), compteDefaut: '467000', libelleDefaut: 'Divers comptes débiteurs et produits à recevoir', prefixeAuxiliaireDefaut: null, ordre: 150 },
   { role: 'emprunt', racines: ['164'], compteDefaut: '164000', libelleDefaut: 'Emprunts auprès des établissements de crédit', prefixeAuxiliaireDefaut: null, ordre: 160 },
   { role: 'interets_emprunt', racines: ['6611'], compteDefaut: '661100', libelleDefaut: 'Intérêts des emprunts et dettes', prefixeAuxiliaireDefaut: null, ordre: 170 },
   { role: 'assurance_emprunt', racines: ['616'], compteDefaut: '616800', libelleDefaut: 'Assurance des emprunts', prefixeAuxiliaireDefaut: null, ordre: 180 },
