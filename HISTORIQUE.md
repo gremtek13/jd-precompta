@@ -51206,3 +51206,23 @@ deux paramètres, `ceQueDitLaCaseAchats`, confrontée aux policies), joué sous 
 l'équipe nomme « Mes achats » avec sa migration. Gardes mis à jour : `ecransAvantLecture` (deux écrans, le drapeau levé le temps
 de leur montage), `droitsAcces` (routes, entrée, écrans du client), `creationDesComptes`. Reste : les deux onglets « À régler »
 et « Réglées » et le règlement par le relevé, les filtres, les fournisseurs, la réception par le client (B4-Q1 à Q3).
+
+### 11/11/2026 — B7 : LES NOTES DE FRAIS, EN BASE (LIGNE 51.5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, sur une copie de la mère 17 rattrapée à la production (197 migrations, `32cc17e5…` ; neuf familles de
+`signature.sql` égales à la production, retours de B4, B2 et B1 joués) plus B1 ; rien en production. `notes_de_frais`
+(20261111238000, `8cd87200…`, par l'OUTIL : ni `drop`, ni `truncate`, ni suppression de ligne — un brouillon se RETIRE par
+son état ; « delete » dans les clés et les gardes) : la table (auteur, salarié sans accès, date, nature d'une liste fermée,
+motif, TTC et TVA déclarée ; pour des kilomètres la distance et le véhicule ; le justificatif, une pièce que l'auteur a
+déposée, encore à valider, qu'une seule note cite ; brouillon, soumise, approuvée, refusée sous motif, remboursée déclarée,
+retirée, chaque passage daté et signé, une version retenue) ; six fonctions (enregistrer, soumettre, retirer : l'auteur
+« Notes de frais », « Achats » en plus pour un salarié, B7-Q1 ; approuver, refuser, rembourser : « Achats » ou le cabinet) ;
+les kilomètres VÉRIFIÉS par `indemnite_kilometrique_centimes`, jamais recopiés, une année sans barème refusée (B7-Q3) ;
+deux gardes (la table ; le justificatif sur `pieces`, B7-Q2) ; le rôle `personnel` au catalogue (421000, racines 421 et
+4286, rang 330 ; B7-Q4). Retour 20261111238100 (`9df03939…`, destructif). Lectures À PRÉSENTER. Preuves : `notesDeFrais.sql`
+73 contrôles, 0 en faute, 11 mutations sur 11 ; la suppression à la main (pièce citée refusée, dossier parti entier) ;
+`rls.sql` bloc NF, TC conscient de B7 : 155/0/103 (production), 161/0/108 (B1, B7), 169/0/115 (B1, B2, B4, B7) ;
+`restauration.sql` IDENTIQUE (90 tables) ; aller, retour, aller égaux ; tous les essais rejoués : planComptable (33 rôles),
+troisCasesDeLAcces, validationExercice 141 et ventesFacturees 150 rendus conscients ; banc du leurre SÛR. Derrière
+`NOTES_DE_FRAIS_PREVUES` : le module, le plan de sauvegarde. Vu en passant : le 141 ignore les sept gardes de B2 et B4.
+Restent B8 (les écrans) et l'écriture d'une note d'un salarié au 421 (le rôle dans `ROLES_COMPTABLES`).

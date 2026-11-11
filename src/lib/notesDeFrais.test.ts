@@ -23,7 +23,7 @@ const ESSAI_DU_PLAN = readFileSync(new URL('supabase/essais/planComptable.sql', 
 
 /** Le corps d'une fonction de la migration, de son `create function` à la fin de son corps. */
 function corps(nom: string): string {
-  const debut = MIGRATION.indexOf(`create function public.${nom}(`)
+  const debut = new RegExp(`create function public\\.${nom}\\(`, 'i').exec(MIGRATION)?.index ?? -1
   expect(debut, nom).toBeGreaterThanOrEqual(0)
   return MIGRATION.slice(debut, MIGRATION.indexOf('\n$$;', debut))
 }
@@ -60,7 +60,7 @@ describe('le drapeau et la migration préparée', () => {
     expect(code).not.toMatch(/delete\s+from/i)
     expect(MIGRATION).not.toMatch(/[\\\r]/)
     // Le retour, lui, retire la table et le rôle : destructif, à coller.
-    expect(RETOUR).toMatch(/drop table public\.notes_de_frais;/)
+    expect(RETOUR).toMatch(/drop table public\.notes_de_frais;/i)
     expect(RETOUR).toMatch(/delete from public\.roles_comptables where role = 'personnel';/)
   })
 })
