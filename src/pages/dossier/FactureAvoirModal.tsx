@@ -10,7 +10,7 @@ import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceD
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLaLigneLue, provenanceQuiPart,
-  emetteurDeLAvoir, type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
+  emetteurDeLAvoir, serieDeQuiValide, type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import { lireLesContacts } from '../../lib/contactsLecture'
@@ -242,14 +242,16 @@ export default function FactureAvoirModal(props: Props) {
   // lue en partie, le rang 18 se tait — un avoir plus récent peut manquer, et la base le dira au clic — mais le rang 17 ne
   // dépend d'aucune liste : on le dit encore. Le jour de Paris se lit ici, à chaque rendu, jamais au chargement du module.
   const refusDeLaDate = refusDeLaDateDEmission({
-    type: 'avoir', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [], espace, modeles: modelesDeNumerotation,
+    type: 'avoir', dateEmission, aujourdhui: aujourdHuiAParis(), factures: facturesDeLaSerie ?? [],
+    // Le dossier du cabinet (LM2) numérote dans la série du dossier, même quand le cabinet valide (`serieDeQuiValide`).
+    espace: serieDeQuiValide(espace, props.espace === 'cabinet' ? props.mandataire : null), modeles: modelesDeNumerotation,
   })?.message ?? null
   const retenue = refusDeLAvoir == null && jugementMentions?.refusDeLEnregistrement == null
     ? retenueReprise ?? jugementMentions?.retenue ?? null : null
   // Ce que la fenêtre dit d'une facture reprise avant le clic : un document de l'application, sa série, ce qu'il fige.
   const anneeDeLAvoir = /^\d{4}-/.test(dateEmission) ? Number(dateEmission.slice(0, 4)) : Number(aujourdHuiAParis().slice(0, 4))
   const avisReprise = avisDeLAvoirDUneReprise(
-    factureOrigine, espace, serieDeLaValidation(espace, 'avoir', anneeDeLAvoir, modelesDeNumerotation), anneeDeLAvoir, lectureReprise,
+    factureOrigine, espace, serieDeLaValidation(serieDeQuiValide(espace, props.espace === 'cabinet' ? props.mandataire : null), 'avoir', anneeDeLAvoir, modelesDeNumerotation), anneeDeLAvoir, lectureReprise,
   )
   const refus = refusDeLAvoir ?? jugementMentions?.refusDeLEnregistrement
     ?? (retenue != null ? null : jugementMentions?.refusDeLaValidation ?? refusDeLaDate ?? jugementSource.refus)

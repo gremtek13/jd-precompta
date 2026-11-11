@@ -6,6 +6,7 @@ import { CAISSE_EXPORTEE } from '../lib/caisse'
 import { groupesDuParcours, type IdGroupeParcours } from '../lib/ongletsDossier'
 import { correspondALaRecherche } from '../lib/recherche'
 import type { DossierDeBarre } from '../lib/listeDossiers'
+import { TITRE_MON_CABINET, separerLeDossierDuCabinet } from '../lib/dossierDuCabinet'
 
 // Dossiers de la barre latérale (ordinateur) : le dossier ouvert avec TOUS ses écrans d'un coup, puis
 // les autres dossiers, à un clic chacun. Remplace, sur ordinateur, la barre d'onglets à menus
@@ -14,6 +15,10 @@ import type { DossierDeBarre } from '../lib/listeDossiers'
 //
 // Réduite, la barre ne garde que les pastilles des dossiers : l'arborescence n'y tient pas, et c'est
 // alors DossierParcours qui réapparaît en haut du dossier (voir index.css).
+//
+// LE DOSSIER DU CABINET (ligne 47, LM2) se range à part, sous « Mon cabinet », au-dessus des dossiers des clients : il n'en est
+// pas un. `dossiersDuCabinet` vient de la liste (lib/listeDossiers.ts) — vide tant que le drapeau est baissé, et la barre est
+// alors celle d'hier ; une désignation illisible se dit d'une ligne discrète, et ce dossier reste parmi les autres.
 
 // Groupes que l'opérateur a lui-même dépliés ou repliés — préférence d'affichage de ce navigateur,
 // comme le thème. Sans choix enregistré, un groupe s'ouvre s'il contient l'écran affiché, et
@@ -31,8 +36,12 @@ function lireGroupes(): Record<string, boolean> {
   }
 }
 
-export default function BarreDossiers({ dossiers, chargement, motif, recherche, dossierOuvertId, ongletActif, reduite }: {
+export default function BarreDossiers({
+  dossiers, dossiersDuCabinet, motifDesignation, chargement, motif, recherche, dossierOuvertId, ongletActif, reduite,
+}: {
   dossiers: DossierDeBarre[]
+  dossiersDuCabinet: ReadonlySet<string>
+  motifDesignation: string | null
   chargement: boolean
   motif: string | null
   recherche: string
@@ -91,7 +100,9 @@ export default function BarreDossiers({ dossiers, chargement, motif, recherche, 
   }
 
   const ouvert = dossierOuvertId ? dossiers.find((d) => d.id === dossierOuvertId) : undefined
-  const autres = dossiers.filter((d) => d.id !== dossierOuvertId && correspondALaRecherche([d.nom], recherche))
+  const { clients, duCabinet } = separerLeDossierDuCabinet(dossiers, dossiersDuCabinet)
+  const autres = clients.filter((d) => d.id !== dossierOuvertId && correspondALaRecherche([d.nom], recherche))
+  const cabinetAMontrer = duCabinet.filter((d) => d.id !== dossierOuvertId && correspondALaRecherche([d.nom], recherche))
 
   return (
     <div className="barre-dossiers">
@@ -134,8 +145,25 @@ export default function BarreDossiers({ dossiers, chargement, motif, recherche, 
         </section>
       )}
 
+      {!chargement && cabinetAMontrer.length > 0 && (
+        <section className="barre-section" aria-label={TITRE_MON_CABINET}>
+          <div className="barre-titre">{TITRE_MON_CABINET}</div>
+          {cabinetAMontrer.map((d) => (
+            <Link key={d.id} to={`/dossiers/${d.id}`} className="barre-dossier">
+              <Avatar nom={d.nom} taille={26} />
+              <span className="barre-nom">{d.nom}</span>
+            </Link>
+          ))}
+        </section>
+      )}
+
       <section className="barre-section" aria-label="Dossiers">
         <div className="barre-titre">Dossiers</div>
+        {motifDesignation && (
+          <p className="barre-alerte" title={motifDesignation}>
+            Le dossier du cabinet n’a pas pu être distingué : il peut figurer parmi les dossiers des clients.
+          </p>
+        )}
         {alerte}
         {chargement ? (
           <div className="barre-chargement" aria-busy="true" aria-label="Chargement des dossiers">
@@ -151,13 +179,13 @@ export default function BarreDossiers({ dossiers, chargement, motif, recherche, 
                 <span className="barre-nom">{d.nom}</span>
               </Link>
             ))}
-            {autres.length === 0 && recherche.trim() !== '' && (
+            {autres.length === 0 && cabinetAMontrer.length === 0 && recherche.trim() !== '' && (
               <p className="barre-vide">Aucun dossier ne correspond à « {recherche.trim()} ».</p>
             )}
             {/* Seulement sur une lecture COMPLÈTE : une lecture refusée rend aussi une liste vide, et
                 « aucun dossier » deviendrait alors une affirmation fausse au lieu d'une panne dite. */}
-            {dossiers.length === 0 && !motif && recherche.trim() === '' && (
-              <p className="barre-vide">Aucun dossier pour l’instant.</p>
+            {clients.length === 0 && !motif && recherche.trim() === '' && (
+              <p className="barre-vide">{duCabinet.length > 0 ? 'Aucun dossier client pour l’instant.' : 'Aucun dossier pour l’instant.'}</p>
             )}
           </>
         )}

@@ -502,6 +502,23 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     ]],
     scenario: 'la base refuse la trace : le refus est journalisé sans nom, et la pièce jointe suivante se dépose',
   },
+  // LM2 (ligne 47) : le dossier du cabinet refusé seulement à l'insertion — un compte neuf créé sans accès ; sa lecture en
+  // panne prise pour « aucun » ; le refus de delete-cabinet qui ne le nomme plus.
+  {
+    slug: 'create-client-access', quoi: 'le dossier du cabinet refusé à l’insertion seulement',
+    remplacements: [['  if (cabinetRow && (cabinetRow as { dossier_du_cabinet?: unknown }).dossier_du_cabinet === dossierId) {', '  if (false) {']],
+    scenario: 'le dossier du cabinet : 409 aux mots de la garde, avant tout compte créé ou cherché, rien d’écrit',
+  },
+  {
+    slug: 'create-client-access', quoi: 'la lecture du cabinet en panne prise pour un dossier ordinaire',
+    remplacements: [['  if (cabinetError) {\n', '  if (cabinetError && false) {\n']],
+    scenario: 'la lecture du cabinet en panne : 500, rien d’écrit, aucun compte créé',
+  },
+  {
+    slug: 'delete-cabinet', quoi: 'le refus qui ne nomme plus le dossier du cabinet',
+    remplacements: [['${reste}${await dossierDuCabinetANommer(admin, cabinetId)}', '${reste}']],
+    scenario: 'un cabinet qui a désigné son dossier : 409, le refus nomme le dossier du cabinet, rien ne part',
+  },
   {
     slug: 'create-client-access', quoi: 'le contrôle d’accès demandé avec la clé de service (personne n’y passe plus)',
     remplacements: [['await supabaseAsCaller.rpc("admin_du_dossier"', 'await supabaseAdmin.rpc("admin_du_dossier"']],

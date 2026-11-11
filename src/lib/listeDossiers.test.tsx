@@ -81,7 +81,7 @@ describe('useListeDossiers — la liste se garde avec le compte lu', () => {
     rerender({ compte: 'u-b' })
     await laisserPasser()
     expect(faux.enAttente).toHaveLength(1)
-    expect(result.current).toEqual({ dossiers: [], motif: null, chargement: true })
+    expect(result.current).toEqual({ dossiers: [], designes: new Set(), motif: null, motifDesignation: null, chargement: true })
 
     await act(async () => { for (const relacher of faux.enAttente.splice(0)) relacher() })
     await waitFor(() => expect(result.current.chargement).toBe(false))
@@ -112,6 +112,6 @@ describe('useListeDossiers — la liste se garde avec le compte lu', () => {
     const { result } = renderHook(() => useListeDossiers(null, 0))
     await laisserPasser()
     expect(faux.tables).toEqual([])
-    expect(result.current).toEqual({ dossiers: [], motif: null, chargement: true })
+    expect(result.current).toEqual({ dossiers: [], designes: new Set(), motif: null, motifDesignation: null, chargement: true })
   })
 })

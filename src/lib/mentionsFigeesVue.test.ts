@@ -3,7 +3,7 @@ import {
   AUCUN_RIB_CONFIRME, AVIS_SANS_FORME, FACTURE_D_AVANT, INDEMNITE_DE_RECOUVREMENT, PROVENANCE_VIDE, RETENUE_CHAINE_ROMPUE,
   RETENUE_EN_LECTURE, RETENUE_MANDATAIRE_EN_LECTURE, RETENUE_MANDATAIRE_VIDE, avisSansDenomination, mentionDuMandat, retenueMandataireIllisible, ceQueLaFactureImprime, ceQueLaValidationFigera, confirmationDesMentions, formeEtCapital,
   jugementDesMentions, logoNonImprime, parametresEnVigueur, provenanceDeLArticle, provenanceDeLaLigneLue, provenanceQuiPart, retenueIllisible,
-  REFUS_SANS_PENALITES, refusSansPenalites, sansPhraseDeRetard, uniteImprimee, type LectureDeLaValidation, type LectureDuMandataire, type SaisieAJuger,
+  REFUS_SANS_PENALITES, refusSansPenalites, sansPhraseDeRetard, serieDeQuiValide, uniteImprimee, type LectureDeLaValidation, type LectureDuMandataire, type SaisieAJuger,
 } from './mentionsFigeesVue'
 import { REFUS_DE_LA_PROVENANCE, REFUS_DE_LA_VALIDATION_FIGEE, mentionsAFiger } from './mentionsFigees'
 import { MODELE_IBAN_DANS_UN_TEXTE } from './parametresFacturation'
@@ -193,6 +193,26 @@ describe('le mandat de facturation (P4) : le nom du cabinet, lu comme la base le
     const j = jugementDesMentions(saisie({ espace: 'client', mandataire: CABINET_LU }))
     expect(j.mentions?.mandataire_nom).toBeNull()
     expect(jugementDesMentions(saisie({ espace: 'client', mandataire: null })).retenue).toBeNull()
+  })
+
+  it('le dossier du cabinet (LM2) : aucun mandataire, aucune retenue, la confirmation ne parle pas de mandat', () => {
+    const j = sansLecture({ etat: 'sans_mandat' })
+    expect(j).toMatchObject({ retenue: null, refusDeLaValidation: null })
+    expect(j.mentions?.mandataire_nom).toBeNull()
+    expect(confirmationDesMentions(j.mentions!, 'Cabinet Fictif EI', false)).not.toMatch(/pour le compte|mention « /)
+    const avoir = jugementDesMentions(saisie({
+      espace: 'cabinet', mandataire: { etat: 'sans_mandat' }, origine: factureFigee({ mandataire_nom: null }),
+      facture: { type: 'avoir', mentions_legales: null },
+    }))
+    expect(avoir.mentions?.mandataire_nom).toBeNull()
+  })
+
+  it('la série de qui valide : celle du mandataire au cabinet, sauf sur le dossier du cabinet ; celle du client sinon', () => {
+    expect(serieDeQuiValide('cabinet', CABINET_LU)).toBe('cabinet')
+    expect(serieDeQuiValide('cabinet', null)).toBe('cabinet')
+    expect(serieDeQuiValide('cabinet', { etat: 'illisible', motif: 'x' })).toBe('cabinet')
+    expect(serieDeQuiValide('cabinet', { etat: 'sans_mandat' })).toBe('client')
+    expect(serieDeQuiValide('client', CABINET_LU)).toBe('client')
   })
 
   it('un avoir du cabinet : le nom du cabinet se fige aussi, quelle que soit la facture corrigée', () => {

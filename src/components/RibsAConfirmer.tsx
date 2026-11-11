@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { LIBELLE_ALLER_AUX_FACTURES } from '../lib/changementDeRib'
 import { MENTION_DOSSIER_ARCHIVE, ceQueDitLaListe, type LectureDesDossiersAuRib } from '../lib/dossiersAuRibAConfirmer'
 import { CONSEIL_VERIFICATION_RIB } from '../lib/parametresFacturationVue'
+import { TITRE_MON_CABINET } from '../lib/dossierDuCabinet'
 
 // LES DOSSIERS DONT UN RIB PROPOSÉ ATTEND LA CONFIRMATION DU CABINET, sur son tableau de bord (espace client, étape A5b3d ; le
 // pendant, pour tous les dossiers, de l'avis en tête de la Vue d'ensemble : `AvisChangementDeRib`). L'écran LIT
@@ -19,8 +20,16 @@ import { CONSEIL_VERIFICATION_RIB } from '../lib/parametresFacturationVue'
 // Rien ne s'écrit d'ici (aucune marque « vu ») et aucune fenêtre ne s'ouvre : le tableau de bord est une grille. Chaque ligne MÈNE
 // à l'onglet Factures de SON dossier ; la vue « Paramètres » est un état local de l'onglet, que le lien n'ouvre pas : son libellé
 // ne le promet pas. Le nom du dossier est un simple texte : le lien de la ligne est le seul geste.
+//
+// Le dossier du cabinet (ligne 47, LM2) n'est pas celui d'un client : sa ligne porte la mention « Mon cabinet », comme un
+// dossier archivé porte la sienne. Il ne reçoit aucun accès client, donc aucun RIB proposé de lui-même ; s'il en porte un, venu
+// d'avant sa désignation, la ligne le dit tel quel. `dossiersDuCabinet` est obligatoire (vide le drapeau baissé).
 
-export default function RibsAConfirmer({ lecture, className }: { lecture: LectureDesDossiersAuRib | null; className?: string }) {
+export default function RibsAConfirmer({ lecture, dossiersDuCabinet, className }: {
+  lecture: LectureDesDossiersAuRib | null
+  dossiersDuCabinet: ReadonlySet<string>
+  className?: string
+}) {
   const dit = ceQueDitLaListe(lecture)
   // Les noms accessibles : le titre nomme la section, et le nom du dossier DÉCRIT son lien (le libellé du lien reste celui du module).
   const racine = useId()
@@ -46,6 +55,7 @@ export default function RibsAConfirmer({ lecture, className }: { lecture: Lectur
             <li key={l.dossierId} className="ribs-a-confirmer-ligne">
               <span className="ribs-a-confirmer-qui">
                 <span id={`${racine}-${l.dossierId}`} className="ribs-a-confirmer-nom">{l.nom}</span>
+                {dossiersDuCabinet.has(l.dossierId) && <span className="badge badge-neutral">{TITRE_MON_CABINET}</span>}
                 {l.archive && <span className="badge badge-neutral">{MENTION_DOSSIER_ARCHIVE}</span>}
               </span>
               <span className="ribs-a-confirmer-avis">{l.avis.phrase}</span>

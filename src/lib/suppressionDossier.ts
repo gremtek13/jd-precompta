@@ -1,6 +1,8 @@
 import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
+import { refusDeLaSuppression } from './dossierDuCabinet'
+import { estDesigneCommeDossierDuCabinet } from './dossierDuCabinetLecture'
 
 // Retire tous les fichiers de stockage d'un dossier (pièces + packs, et le logo de ses factures dans le seau `ventes` dès
 // que sa migration est en base, étape A5c1, comme l'original d'une facture reprise, sous `imports/<lot>/`, A8d2c) avant
@@ -182,8 +184,20 @@ async function viderDossierDuStockage(
  *
  * REND le bilan du nettoyage de stockage. L'appelant doit le montrer quand il n'est pas propre — voir
  * `nettoyageAMontrer`.
+ *
+ * LE DOSSIER DU CABINET (ligne 47, LM2) ne se supprime que par le super-administrateur (la garde de la migration
+ * `dossier_du_cabinet`, LM1-Q1). La base ne refuse que la LIGNE, et le stockage se vide AVANT elle : sans ce contrôle, un chef
+ * qui le supprimerait perdrait les fichiers de ses pièces, puis se verrait refuser la ligne. La désignation se lit donc
+ * D'ABORD, et un refus — ou une lecture qui échoue — lève avant tout retrait. `qui` est obligatoire : un appelant qui
+ * l'oublierait ne compile pas.
  */
-export async function supprimerDossierDefinitivement(dossierId: string): Promise<NettoyageStockage> {
+export async function supprimerDossierDefinitivement(
+  dossierId: string, qui: { superAdministrateur: boolean },
+): Promise<NettoyageStockage> {
+  const refus = refusDeLaSuppression({
+    estLeDossierDuCabinet: await estDesigneCommeDossierDuCabinet(dossierId), superAdministrateur: qui.superAdministrateur,
+  })
+  if (refus !== null) throw new Error(refus)
   const seaux: SeauDuDossier[] = LOGO_DES_FACTURES_EXPORTE ? ['pieces', 'packs', 'ventes'] : ['pieces', 'packs']
   const premiers = await Promise.all(seaux.map((seau) => viderDossierDuStockage(seau, dossierId)))
   const { error } = await supabase.from('dossiers').delete().eq('id', dossierId)

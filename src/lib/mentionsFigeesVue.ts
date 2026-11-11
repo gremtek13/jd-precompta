@@ -36,10 +36,26 @@ import type {
 // papier (`conditionsFigees`, lib/factureCii.ts).
 
 // ── Le mandataire, tel que l'écran l'a lu ─────────────────────────────────────────────────────────────────────────────────
-/** Le nom du cabinet du dossier, tel que la base le fige (lib/mandataireLecture.ts) : lu, ou illisible avec son motif. */
+/**
+ * Le nom du cabinet du dossier, tel que la base le fige (lib/mandataireLecture.ts) : lu, ou illisible avec son motif ; ou
+ * `sans_mandat` sur le DOSSIER DU CABINET (ligne 47, LM2) : le cabinet y facture en son propre nom, la base n'y fige aucun
+ * mandataire et y numérote dans la série du dossier (`enregistrer_facture`, `numerotation_suivante`, migration
+ * `dossier_du_cabinet`) — la confirmation ne parle pas de mandat.
+ */
 export type LectureDuMandataire =
   | { etat: 'lu'; nom: string }
   | { etat: 'illisible'; motif: string }
+  | { etat: 'sans_mandat' }
+
+/**
+ * La série où la base numérotera ce que le CABINET valide (A9a), dite comme l'« espace » que `serieDeLaValidation` et
+ * `refusDeLaDateDEmission` attendent : celle du mandataire, sauf sur le dossier du cabinet (`sans_mandat`), où elle est celle
+ * du dossier, comme pour le client (LM1 : `numerotation_suivante` n'y prend pas la série du mandataire). Tant que le
+ * mandataire n'est pas lu, celle du mandataire — la date se juge alors comme hier, et la validation est retenue de toute façon.
+ */
+export function serieDeQuiValide(espace: 'cabinet' | 'client', mandataire: LectureDuMandataire | null): 'cabinet' | 'client' {
+  return espace === 'cabinet' && mandataire?.etat !== 'sans_mandat' ? 'cabinet' : 'client'
+}
 
 /**
  * La mention du mandat, ou null sans mandataire (nul, ou fait de blancs : la base le fige tel quel, et « établie par  au nom… »
@@ -272,8 +288,11 @@ export function jugementDesMentions(s: SaisieAJuger): JugementDesMentions {
   if (s.espace === 'cabinet') {
     if (s.mandataire === null) { jugement.retenue = dire(RETENUE_MANDATAIRE_EN_LECTURE); return jugement }
     if (s.mandataire.etat === 'illisible') { jugement.retenue = dire(retenueMandataireIllisible(s.mandataire.motif)); return jugement }
-    if (sansBlancsAuxBords(s.mandataire.nom) === '') { jugement.retenue = dire(RETENUE_MANDATAIRE_VIDE); return jugement }
-    mandataire = s.mandataire.nom
+    // Le dossier du cabinet (LM2) : la base n'y fige aucun mandataire — la confirmation ne nomme aucun mandat.
+    if (s.mandataire.etat === 'lu') {
+      if (sansBlancsAuxBords(s.mandataire.nom) === '') { jugement.retenue = dire(RETENUE_MANDATAIRE_VIDE); return jugement }
+      mandataire = s.mandataire.nom
+    }
   }
   const courante = versionCourante(versions, s.dossierId)
   const origine: MentionsDeLOrigine | null = s.origine

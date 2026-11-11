@@ -13,6 +13,9 @@ import SauvegardeCard from './SauvegardeCard'
 import BalanceCard from './BalanceCard'
 import SourceDesVentesCard, { type ReglageRendu } from './SourceDesVentesCard'
 import NumerotationDesFacturesCard from './NumerotationDesFacturesCard'
+import DossierDuCabinetCard from './DossierDuCabinetCard'
+import { useDesignationDuDossier } from '../../lib/dossierDuCabinetLecture'
+import { refusDeLaSuppression } from '../../lib/dossierDuCabinet'
 import { messageErreur } from '../../lib/messageErreur'
 import { ouvrirApercu } from '../../lib/apercu'
 import { chargerInformationsDossier, enregistrerInformationsDossier } from '../../lib/informationsDossier'
@@ -68,8 +71,16 @@ export default function InformationsTab({
   dossierId, dossierNom, dossierSiret, dossierAdresse, dossierDenomination, dossierRcsVille, dossierFormeJuridique, dossierCapital,
   modele, onIdentiteUpdated, onReglageUpdated,
 }: Props) {
-  const { estChef } = useAuth()
+  const { estChef, isSuperAdmin } = useAuth()
   const navigate = useNavigate()
+  // LE DOSSIER DU CABINET (ligne 47, LM2) : lu ici, une fois, pour la carte qui le désigne et pour la zone dangereuse, qui ne
+  // l'offre pas à la suppression (lib/dossierDuCabinetLecture.ts ; `null` tant que la lecture n'est pas revenue, et toujours
+  // le drapeau baissé). La carte relit après un geste par le compteur.
+  const [relectureDesignation, setRelectureDesignation] = useState(0)
+  const designation = useDesignationDuDossier(dossierId, relectureDesignation)
+  const suppressionRefusee = designation?.etat === 'lue'
+    ? refusDeLaSuppression({ estLeDossierDuCabinet: designation.dossierActuel === dossierId, superAdministrateur: isSuperAdmin })
+    : null
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -270,7 +281,8 @@ export default function InformationsTab({
     setSuppressionEnCours(true)
     setSuppressionErreur(null)
     try {
-      const bilan = await supprimerDossierDefinitivement(dossierId)
+      // La désignation se relit dans la fonction, avant tout retrait du stockage : ce que la carte a lu peut avoir changé.
+      const bilan = await supprimerDossierDefinitivement(dossierId, { superAdministrateur: isSuperAdmin })
       // Le dossier est parti ; il ne reste qu'à DIRE ce que le stockage a gardé. Naviguer tout de
       // suite emporterait le message avec l'écran, donc on attend un acquittement — c'est la seule
       // occasion de le lire, plus aucun écran ne pouvant retrouver ces fichiers ensuite.
@@ -384,6 +396,12 @@ export default function InformationsTab({
         base depuis le 10/11/2026). La carte lit et écrit seule. */}
     <NumerotationDesFacturesCard dossierId={dossierId} />
 
+    {/* Le dossier du cabinet (ligne 47, LM2) : le chef désigne le dossier où le cabinet facture ses propres honoraires. */}
+    <DossierDuCabinetCard
+      dossierId={dossierId} dossierNom={dossierNom} lecture={designation}
+      onDesignationEcrite={() => setRelectureDesignation((n) => n + 1)}
+    />
+
     <div className="card" style={{ maxWidth: 640 }}>
       <h3 style={{ marginTop: 0 }}>Informations du client</h3>
       <p className="muted" style={{ marginTop: -8 }}>
@@ -476,7 +494,7 @@ export default function InformationsTab({
         <button type="button" className="btn btn-outline" onClick={exporterAvantSuppression} disabled={exportEnCours}>
           {exportEnCours ? 'Export…' : 'Exporter avant suppression'}
         </button>
-        {estChef && (
+        {estChef && suppressionRefusee === null && (
           <button type="button" className="btn btn-danger" onClick={() => setConfirmerSuppression(true)}>
             Supprimer ce dossier définitivement
           </button>
@@ -486,6 +504,9 @@ export default function InformationsTab({
         <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>
           Seul un comptable en chef peut supprimer un dossier.
         </p>
+      )}
+      {estChef && suppressionRefusee !== null && (
+        <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>{suppressionRefusee}</p>
       )}
     </div>
 

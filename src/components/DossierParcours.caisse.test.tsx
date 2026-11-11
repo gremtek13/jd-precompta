@@ -22,7 +22,7 @@ function barre() {
   return render(
     <MemoryRouter>
       <BarreDossiers
-        dossiers={[{ id: 'd1', nom: 'Dossier fictif' }]} chargement={false} motif={null} recherche=""
+        dossiers={[{ id: 'd1', nom: 'Dossier fictif' }]} dossiersDuCabinet={new Set()} motifDesignation={null} chargement={false} motif={null} recherche=""
         dossierOuvertId="d1" ongletActif="checklist" reduite={false}
       />
     </MemoryRouter>,

@@ -4,6 +4,7 @@ import { definitionsSql } from '../test/schema'
 import {
   DOSSIER_DU_CABINET_PREVU, REFUS_ACCES_CLIENT, REFUS_CHANGEMENT_DE_CABINET, REFUS_DE_LA_DESIGNATION, REFUS_SUPPRESSION, estLeDossierDuCabinet,
   motsDuRefus, refusDeLaDesignation, refusDeLaSuppression, valideAuNomDuClient, type EtatDeLaDesignation,
+  ceQueDitLaDesignation, confirmationDeLaDesignation, separerLeDossierDuCabinet,
 } from './dossierDuCabinet'
 
 // LE DOSSIER DU CABINET (ligne 47, LM1) : le module redit les refus de la migration `dossier_du_cabinet` — préparée le
@@ -126,5 +127,29 @@ describe('les refus dits avant le clic', () => {
     expect(refusDeLaSuppression({ estLeDossierDuCabinet: true, superAdministrateur: false })).toBe(REFUS_SUPPRESSION)
     expect(refusDeLaSuppression({ estLeDossierDuCabinet: true, superAdministrateur: true })).toBeNull()
     expect(refusDeLaSuppression({ estLeDossierDuCabinet: false, superAdministrateur: false })).toBeNull()
+  })
+})
+
+describe('l’écran (LM2)', () => {
+  it('la liste se sépare : les clients, puis le dossier du cabinet, chacun dans l’ordre reçu ; sans désignation, rien ne bouge', () => {
+    const liste = [{ id: 'b' }, { id: 'a' }, { id: 'c' }]
+    expect(separerLeDossierDuCabinet(liste, new Set(['a']))).toEqual({ clients: [{ id: 'b' }, { id: 'c' }], duCabinet: [{ id: 'a' }] })
+    expect(separerLeDossierDuCabinet(liste, new Set())).toEqual({ clients: liste, duCabinet: [] })
+  })
+  it('la confirmation nomme le dossier, celui qu’il remplace, et dit l’irréversibilité dès une facture validée', () => {
+    const c = confirmationDeLaDesignation({ nom: 'Cabinet fictif', retrait: false, remplace: 'Ancien dossier' })
+    expect(c).toContain('« Cabinet fictif »')
+    expect(c).toContain('Il remplace « Ancien dossier »')
+    expect(c).toContain('irréversible dès que le dossier porte une facture validée')
+    expect(confirmationDeLaDesignation({ nom: 'X', retrait: false, remplace: null })).not.toContain('Il remplace')
+    const r = confirmationDeLaDesignation({ nom: 'Cabinet fictif', retrait: true, remplace: null })
+    expect(r).toContain('Retirer la désignation de « Cabinet fictif »')
+    expect(r).toContain('mention de son mandat')
+  })
+  it('ce que la carte dit : le dossier du cabinet, un autre (nommé ou non), aucun', () => {
+    expect(ceQueDitLaDesignation({ estLeDossierDuCabinet: true, unAutreEstDesigne: false, nomDeLAutre: null })).toMatch(/^C’est le dossier du cabinet/)
+    expect(ceQueDitLaDesignation({ estLeDossierDuCabinet: false, unAutreEstDesigne: true, nomDeLAutre: 'Y' })).toContain('« Y »')
+    expect(ceQueDitLaDesignation({ estLeDossierDuCabinet: false, unAutreEstDesigne: true, nomDeLAutre: null })).toContain('un autre dossier')
+    expect(ceQueDitLaDesignation({ estLeDossierDuCabinet: false, unAutreEstDesigne: false, nomDeLAutre: null })).toMatch(/^Aucun dossier/)
   })
 })
