@@ -37,7 +37,7 @@ vi.mock('./supabase', () => ({
 afterEach(() => { faux.depots = []; faux.appels = []; faux.erreurDuDepot = null; faux.erreurDeLaBase = null })
 
 const PDF = new TextEncoder().encode('%PDF-1.7\nun contenu fictif')
-const fichier = (nom: string, octets: Uint8Array = PDF, type = 'application/pdf') => new File([octets], nom, { type })
+const fichier = (nom: string, octets: Uint8Array<ArrayBuffer> = PDF, type = 'application/pdf') => new File([octets], nom, { type })
 const saisie = { titre: 'Liasse 2025', nature: 'liasse', exercice: 2025 }
 const DOSSIER = '11111111-2222-4333-8444-555555555555'
 
