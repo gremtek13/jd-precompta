@@ -53,10 +53,13 @@ const consigneDe = (x: Rendu) => {
   return demandes.length > 0 ? String(demandes[0].system ?? '') : null
 }
 
-// Relevées sur dd14890 (l'assistant d'avant PC3b), sous l'horloge figée ci-dessous.
+// Relevées sur dd14890 (l'assistant d'avant PC3b), sous l'horloge figée ci-dessous. Les deux premières relevées de nouveau
+// le 11/11/2026 (A8C5B) : chaque scénario rejoué avant et après, et la seule différence est voulue — la description de
+// resume_dossier, la phrase des factures reprises dans la consigne d'un dossier basculé, trois clés de resume_dossier à zéro
+// sur un dossier basculé sans reprise, et trois scénarios neufs ; les deux consignes du plan par défaut sont inchangées.
 const EMPREINTES = {
-  bnc: '86912b386ba471dfa9187dec541ba1daf8d0dc26d68c16745b1fec754c8db796',
-  societe: '111482241c38fa562876e2f7a7af290d72a5f5524ab55f9148102c1448912c66',
+  bnc: 'e3e8b07974156bf13cedcc5183b80393ec0b98603c7a5275c6887c75f2bcc324',
+  societe: 'ed9be8d6ed41f9abcd1e7fa13abe96864df732a0fe5767471cab1b50413b7bd6',
   consigneBnc: 'aa004c37bbb6ecea970855c4ca615b16b17a58802be034b710e7469957938aa4',
   consigneSociete: '5ace09aeda941eb3de32fe2dbc30f79b62f080460eb70f71c68094a3722f6fb6',
 }
