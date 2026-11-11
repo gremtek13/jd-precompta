@@ -76,7 +76,8 @@ describe('le plan prévu, paramètres compris', () => {
     }
     // Le début d'activité, puis les paramètres d'un exercice, puis les saisies de la 2035, puis les exercices validés.
     const fin = ORDRE_RESTAURATION_PREVU.indexOf('exercices_valides')
-    expect(ORDRE_RESTAURATION_PREVU.slice(fin - 3, fin)).toEqual([DEBUT, TABLE, 'saisies_2035'])
+    // Les saisies de l'annexe 2035-E (ligne 48) suivent celles de la 2035.
+    expect(ORDRE_RESTAURATION_PREVU.slice(fin - 4, fin)).toEqual([DEBUT, TABLE, 'saisies_2035', 'saisies_2035e'])
     expect(RELATIONS_PREVUES.filter((r) => [DEBUT, TABLE].includes(r.enfant) || [DEBUT, TABLE].includes(r.parent))
       .map((r) => `${r.enfant}.${r.colonne} → ${r.parent} (${r.aLaSuppression})`)).toEqual([
       'debuts_d_activite.dossier_id → dossiers (cascade)', 'parametres_des_cotisations.dossier_id → dossiers (cascade)',

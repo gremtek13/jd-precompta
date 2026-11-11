@@ -925,6 +925,24 @@ begin
   end if;
 end $$;
 
+-- ══ Les saisies de l'annexe 2035-E (ligne 48) ══ Au plan du code quand `SAISIES_2035E_PREVUES` est levé — c'est-à-dire quand
+-- sa migration est en base : le script met sa table juste après `saisies_2035` (le bloc des saisies de la 2035 l'a mise
+-- là, juste avant `exercices_valides`, dont le gel refuserait une saisie réinsérée après eux), qui reculent d'un rang ; son
+-- chemin. Aucune vague. Joué après tous les autres blocs, pour que son ancre y soit. Absente de la base, rien n'entre : le
+-- plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.saisies_2035e') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'saisies_2035';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'saisies_2035e');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('saisies_2035e','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

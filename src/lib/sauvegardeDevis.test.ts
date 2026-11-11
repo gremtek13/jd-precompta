@@ -22,6 +22,7 @@ import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
 import { NOTES_DE_FRAIS_PREVUES } from './notesDeFrais'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
+import { SAISIES_2035E_PREVUES } from './saisies2035E'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
@@ -59,7 +60,7 @@ import {
   TABLES_DES_DEVIS,
   tablesSansChemin,
   violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures, auPlanDesHonorairesDeposes,
-  auPlanDesDocumentsEtDemandes, auPlanDesAchatsDuClient, auPlanDesNotesDeFrais, auPlanDuDepart, TABLES_DU_DEPART,
+  auPlanDesDocumentsEtDemandes, auPlanDesAchatsDuClient, auPlanDesNotesDeFrais, auPlanDesSaisies2035E, auPlanDuDepart, TABLES_DU_DEPART,
 } from './sauvegarde'
 
 // LES DEVIS AU PLAN DE SAUVEGARDE (espace client, étape P5). Leurs migrations attendent l'accord du cabinet : tant que
@@ -118,7 +119,8 @@ describe('le filtre du plan', () => {
         && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU)
         && auPlanDesDocumentsEtDemandes(table, DOCUMENTS_ET_DEMANDES_PREVUS)
         && auPlanDesAchatsDuClient(table, ACHATS_DU_CLIENT_PREVUS)
-        && auPlanDesNotesDeFrais(table, NOTES_DE_FRAIS_PREVUES))
+        && auPlanDesNotesDeFrais(table, NOTES_DE_FRAIS_PREVUES)
+        && auPlanDesSaisies2035E(table, SAISIES_2035E_PREVUES))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)

@@ -51367,3 +51367,22 @@ Deux restes, sans faute d'essai : sur la base munie des six, le banc du leurre N
 **Trouvé en route** : la copie du catalogue dans `agent-comptable` (`ROLES_DU_PLAN`) gardait le 467 seul ; `agentComptablePlan.test.ts` l'a dit dès le drapeau levé. Elle porte désormais 467 et 468 ; tant qu'elle n'est pas redéployée, un dossier dont le plan tiendrait ce rôle au 468 (aucun aujourd'hui) ferait taire l'assistant pour lui, côté fermé.
 
 **Preuves** : dérive 200 / 3b0ca6ba…, socle 82 / 8a0e4907…, inventaire 2 767 / 6cd5551e…, égaux en production ; `reprisesAuClient.sql` (30 étapes) et `adresseDesAccesRetires.sql` (33) rejoués en production, 0 en faute. `rejouer.py` n'a besoin d'aucun geste : les trois textes se rejouent dans l'ordre des versions, le catalogue compris. **Reste** : redéployer `agent-comptable` (le commit de la ligne qui importe le dépôt) ; `rls.sql` entier (la session).
+
+### 11/11/2026 — LA SAISIE DE L'ANNEXE 2035-E PAR EXERCICE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, ligne 48, sur 48-Q1, Q2 et Q6 tranchées le 17/10/2026.) `supabase/preparees/20261111240000_saisies_2035e.sql`
+(md5 `85142efb…`, additive, par l'outil) et son retour (`533e0fc1…`, refusé tant qu'une valeur vit) : `saisies_2035e`, une ligne
+par dossier et par exercice — EN, EK (signée), EM, ER, EU, EV en euros entiers, AH et BK (l'effectif, AH coché seulement),
+chacune NULLE tant que le cabinet ne l'a pas dite : « à saisir », jamais zéro ; la policy du cabinet du dossier, aucune
+branche client ; le gel du patron de `saisies_2035` ; `enregistrer_saisies_2035e`, aux droits de l'appelant (RLS, gel et
+double authentification jugent ; `security definer` écarté), la ligne entière contre la valeur lue (40001). Écartés : AJ,
+KA, LA (calculés), BO (l'article 223 A ne vise que l'IS), MA et les dates d'activité (48-Q6 : à la main, au premier cas
+réel), BW (2035S1). L'instantané validé ne porte pas l'annexe : le gel la tient (48S-Q1). `lib/saisies2035E.ts` :
+`annexe2035EAvecSaisie`, la saisie en paramètre obligatoire, rend `null` sur une ligne non dite et les totaux qui en
+dépendent ; `Saisies2035ECard` dans Clôture et l'annexe qui la reçoit, derrière `SAISIES_2035E_EXPORTEES` baissé ; la table
+au plan derrière `SAISIES_2035E_PREVUES` baissé, entre `saisies_2035` et `exercices_valides`. Éprouvé sur une copie de la
+réplique mère 17 rattrapée à 200 migrations (versions et noms `39ff532f…`, égaux à la production) : `saisies2035e.sql`
+(réplique seulement : le membre d'équipe fictif) 32/32, EN ATTENTE sans elle, huit mutations de la migration qui mordent ;
+`rls.sql` entier, bloc SE : 164 invariants, 0 en faute, 108/108 sans elle ; 167, 0, 111/111 avec ; `restauration.sql`
+IDENTIQUE, 90 puis 91 tables ; le retour refuse sous une valeur, puis défait tout. Restent : le PDF quand une ligne est « à
+saisir », les tests de Clôture à éprouver drapeau levé, la levée elle-même.

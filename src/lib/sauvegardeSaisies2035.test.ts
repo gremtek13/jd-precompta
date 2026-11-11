@@ -67,7 +67,9 @@ describe('le filtre du plan, côté saisies de la 2035', () => {
 describe('le plan prévu, saisies comprises', () => {
   it('l’ordre — juste avant les exercices validés, que leur gel exige —, le chemin, aucune vague, la relation de la migration', () => {
     expect(ORDRE_RESTAURATION_PREVU.filter((t) => t === TABLE)).toHaveLength(1)
-    expect(ORDRE_RESTAURATION_PREVU.indexOf(TABLE)).toBe(ORDRE_RESTAURATION_PREVU.indexOf('exercices_valides') - 1)
+    // Les saisies de l'annexe 2035-E (ligne 48) se glissent entre elles et les exercices validés.
+    expect(ORDRE_RESTAURATION_PREVU.indexOf(TABLE)).toBe(ORDRE_RESTAURATION_PREVU.indexOf('exercices_valides') - 2)
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(TABLE) + 1]).toBe('saisies_2035e')
     expect(CHEMINS_DOSSIER_PREVUS[TABLE]).toEqual({ acces: 'direct' })
     expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => a.table === TABLE)).toEqual([])
     expect(RELATIONS_PREVUES.filter((r) => r.enfant === TABLE || r.parent === TABLE)

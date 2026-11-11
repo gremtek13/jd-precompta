@@ -6619,6 +6619,178 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $$;
 
+-- ══ SE. Les saisies de l'annexe 2035-E (ligne 48 ; migration `saisies_2035e`, PRÉPARÉE) ══════════════════════════════
+-- Une table du cabinet que le client ne lit pas, pas même pour son dossier : une seule policy, `for all to authenticated`
+-- sur `admin_du_dossier(dossier_id)`, aucune branche client ; l'écriture par `enregistrer_saisies_2035e`, aux droits de
+-- l'appelant. Le gel d'un exercice validé, et le membre d'équipe non
+-- assigné, se rejouent dans `saisies2035e.sql` (réplique seulement).
+--   SE1. Le chef écrit EM de 2099 dans le dossier du client et la lit (le contrôle POSITIF) ; le client, qui a un accès à
+--        ce dossier, n'en lit rien ; l'anonyme non plus.
+--   SE2. Le client n'écrit pas par la fonction (42501, sous ses mots), ni en direct (42501, la RLS), et ne réécrit rien.
+--   SE3. Le catalogue : la RLS active, une seule policy permissive, à authenticated, `admin_du_dossier` des deux côtés.
+-- Trois mutations, qui doivent mordre : M-SE1 (la lecture élargie au client « membre » : il lit la ligne de son dossier),
+-- M-SE2 (la policy fermée : le chef ne lit plus la ligne), M-SE3 (l'écriture élargie au client « membre » : son insertion
+-- directe passe). Avant la migration, une ligne dit que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  lue jsonb; chef_apres bigint; du_client bigint; de_l_anon text; par_la_fonction text; en_direct text;
+  reecrites bigint; elargie bigint; fermee bigint; ecrite_elargie text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.saisies_2035e') is null then
+    insert into rls_verdict values ('SE. les saisies de l''annexe 2035-E : EN ATTENTE de la migration saisies_2035e',
+      'saisies_2035e', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef saisit EM de 2099 (un exercice qu'aucune validation ne fige) dans le dossier du client, contre la
+    --    valeur qu'il en lit ──
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select coalesce((select jsonb_build_object('loyers_deductibles', s.loyers_deductibles, 'plus_values', s.plus_values,
+        'variation_de_stock', s.variation_de_stock, 'taxes_sur_le_chiffre_d_affaires', s.taxes_sur_le_chiffre_d_affaires,
+        'dotations_biens_mis_a_disposition', s.dotations_biens_mis_a_disposition, 'moins_values', s.moins_values,
+        'mono_etablissement', s.mono_etablissement, 'effectif', s.effectif)
+      from saisies_2035e s where s.dossier_id = dossier_du_client and s.annee = 2099), '{"loyers_deductibles": null, "plus_values": null, "variation_de_stock": null, "taxes_sur_le_chiffre_d_affaires": null, "dotations_biens_mis_a_disposition": null, "moins_values": null, "mono_etablissement": null, "effectif": null}'::jsonb) into lue;
+    perform enregistrer_saisies_2035e(dossier_du_client, 2099, lue, '{"loyers_deductibles": 1234, "plus_values": null, "variation_de_stock": null, "taxes_sur_le_chiffre_d_affaires": null, "dotations_biens_mis_a_disposition": null, "moins_values": null, "mono_etablissement": null, "effectif": null}'::jsonb);
+    select count(*) into chef_apres from saisies_2035e
+     where dossier_id = dossier_du_client and annee = 2099 and loyers_deductibles = 1234;
+    reset role;
+    construit := true;
+
+    -- SE1 : le client, puis l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from saisies_2035e where dossier_id = dossier_du_client;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from saisies_2035e;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'SE1. le chef lit la saisie de l''annexe 2035-E qu''il a écrite dans le dossier du client (le contrôle positif) ; le client n''en lit rien, ni l''anonyme',
+      'cible', 'saisies_2035e',
+      'observe', 'le chef : ' || chef_apres || ' | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_apres = 1 and du_client = 0 and de_l_anon = '0');
+
+    -- SE2 : le client n'écrit ni ne réécrit les saisies.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_saisies_2035e(dossier_du_client, 2098, '{"loyers_deductibles": null, "plus_values": null, "variation_de_stock": null, "taxes_sur_le_chiffre_d_affaires": null, "dotations_biens_mis_a_disposition": null, "moins_values": null, "mono_etablissement": null, "effectif": null}'::jsonb,
+        '{"loyers_deductibles": 1234, "plus_values": null, "variation_de_stock": null, "taxes_sur_le_chiffre_d_affaires": null, "dotations_biens_mis_a_disposition": null, "moins_values": null, "mono_etablissement": null, "effectif": null}'::jsonb);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into saisies_2035e (dossier_id, annee, loyers_deductibles) values (dossier_du_client, 2098, 100);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update saisies_2035e set loyers_deductibles = 1 where dossier_id = dossier_du_client returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'SE2. le client n''écrit pas les saisies de l''annexe 2035-E (la fonction, puis la RLS) et ne les réécrit pas',
+      'cible', 'saisies_2035e',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites,
+      'ok', par_la_fonction = '42501 Les saisies de l''annexe 2035-E ne s''écrivent que par le cabinet du dossier.'
+        and en_direct like '42501 new row violates row-level security policy%' and reecrites = 0);
+
+    -- M-SE1 : la lecture élargie au client « membre ».
+    begin
+      alter policy saisies_2035e_cabinet on public.saisies_2035e
+        using (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from saisies_2035e where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-SE1 — la lecture des saisies de l''annexe 2035-E élargie au client « membre »',
+      'attendu', 'le client lit la ligne de son dossier', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-SE2 : la policy fermée.
+    begin
+      alter policy saisies_2035e_cabinet on public.saisies_2035e using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from saisies_2035e where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-SE2 — la policy des saisies de l''annexe 2035-E fermée',
+      'attendu', 'le chef ne lit plus la ligne', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-SE3 : l'écriture élargie au client « membre ».
+    begin
+      alter policy saisies_2035e_cabinet on public.saisies_2035e
+        with check (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into saisies_2035e (dossier_id, annee, loyers_deductibles) values (dossier_du_client, 2098, 100);
+        ecrite_elargie := 'ACCEPTÉ';
+      exception when others then ecrite_elargie := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-SE3 — l''écriture des saisies de l''annexe 2035-E élargie au client « membre »',
+      'attendu', 'son insertion directe passe', 'observe', coalesce(ecrite_elargie, '?'), 'mord', coalesce(ecrite_elargie = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- SE3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'saisies_2035e' and p.roles = array['authenticated']::name[]
+     and p.policyname = 'saisies_2035e_cabinet' and p.permissive = 'PERMISSIVE' and p.cmd = 'ALL'
+     and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check = 'admin_du_dossier(dossier_id)';
+  verdicts := verdicts || jsonb_build_object('controle', 'SE3. la RLS active ; une seule policy, à authenticated, le cabinet du dossier des deux côtés (lecture du catalogue)',
+    'cible', 'saisies_2035e',
+    'observe', n || ' sur 1, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'saisies_2035e' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.saisies_2035e'::regclass),
+    'ok', n = 1 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'saisies_2035e' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 1
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.saisies_2035e'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'SE. le jeu d''essai des saisies de l''annexe 2035-E s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
 -- ══ PC. Les paramètres des cotisations (ligne 27, TNS-Q1 et TNS-Q4 ; migration `parametres_des_cotisations`, PRÉPARÉE) ════
 -- Deux tables du cabinet que le client ne lit pas, pas même pour son dossier : le début d'activité (`debuts_d_activite`,
 -- hors de `dossiers`, que le client lit), l'ACRE et le taux dentiste d'un exercice (`parametres_des_cotisations`) ; une
