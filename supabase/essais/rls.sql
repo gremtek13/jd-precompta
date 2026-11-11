@@ -3349,7 +3349,9 @@ begin
       'observe', n || ' ligne(s), dépôts du cabinet ' || etat || ', sa pièce ' || coalesce(message, 'non dite'), 'ok', n = 0 and etat = '42501' and message = 'facture');
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    select count(*) into n from honoraires_deposes;
+    -- Les deux dossiers du bloc seuls : sous le chef, la table entière compterait aussi les dépôts des dossiers réels
+    -- (le banc du leurre, le 11/11/2026).
+    select count(*) into n from honoraires_deposes where dossier_id in (k, c);
     reset role;
     mutations := mutations || jsonb_build_object('mutation', 'M-HD5 — HD5 rejoué sous le chef', 'attendu', 'le dépôt lu',
       'observe', n || ' ligne(s)', 'mord', n >= 1);
