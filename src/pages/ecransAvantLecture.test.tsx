@@ -629,6 +629,11 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
     + 'reçoit la désignation lue par InformationsTab (`useDesignationDuDossier`) ; son test (DossierDuCabinetCard.test.tsx) éprouve '
     + '« Chargement… » avant la lecture, aucun geste sur une lecture illisible ni pour un membre ; n’écrit que sur « Désigner… » '
     + 'et « Retirer la désignation »',
+  'pages/dossier/LettresDeMissionCard.tsx': 'drapeau `LETTRES_DE_MISSION_PREVUES` baissé : ne rend ni ne lit rien ; levé, montée '
+    + 'dans le seul dossier du cabinet, son test (LettresDeMissionCard.test.tsx) éprouve « Chargement… » avant la lecture et aucun '
+    + 'geste sur une lecture illisible ; n’écrit que sur ses gestes, chacun par sa fonction SQL',
+  'pages/dossier/MissionsEnVigueurCard.tsx': 'drapeau `LETTRES_DE_MISSION_PREVUES` baissé : ne rend ni ne lit rien ; levé, son test '
+    + '(LettresDeMissionCard.test.tsx) éprouve qu’un dossier du cabinet fermé ne se dit jamais « aucune lettre » ; n’écrit rien',
   'pages/dossier/NumerotationDesFacturesCard.tsx': 'drapeau `CARTE_DE_LA_NUMEROTATION_OFFERTE` baissé : ne rend ni ne lit rien ; levé, son propre '
     + 'test (NumerotationDesFacturesCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun geste sur une lecture illisible ou '
     + 'pour un membre de l’équipe ; n’écrit que sur « Poser le modèle », « Confirmer la fin » et « Lever ces trous »',

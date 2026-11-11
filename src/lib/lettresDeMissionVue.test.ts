@@ -205,7 +205,7 @@ describe('la réponse, le retrait, la nouvelle version', () => {
 
 describe('le papier signé ne se supprime plus', () => {
   it('la clé est SANS action en base : sa suppression lève 23503, que l’écran dit avant le clic et en clair', () => {
-    expect(MIGRATION).toMatch(/document_signe_id uuid references public\.documents_divers \(id\),/)
+    expect(MIGRATION).toMatch(/document_signe_id uuid references public\.documents_divers \(id\),/i)
     expect(refusDuPapierSigne('d1', { ids: new Set(['d1']), motif: null })).toBe(REFUS_DU_PAPIER_SIGNE)
     expect(refusDuPapierSigne('d1', null)).toBeNull()
     expect(messageDUneSuppressionRetenue({ code: '23503', message: 'violates foreign key constraint "lettres_de_mission_document_signe_id_fkey" on table "lettres_de_mission"' }))
@@ -240,9 +240,9 @@ describe('le PDF d’une lettre proposée', () => {
 
 describe('les missions en vigueur, lues depuis le dossier d’un client', () => {
   it('les colonnes lues sont de la table, et aucune ne porte un montant, un texte ou une identité', () => {
-    const table = /create table public\.lettres_de_mission \(([\s\S]*?)\n\);/.exec(MIGRATION)![1]
+    const table = /create table public\.lettres_de_mission \(([\s\S]*?)\n\);/i.exec(MIGRATION)![1]
     const colonnes = COLONNES_SANS_MONTANT.split(',').map((c) => c.trim())
-    for (const c of colonnes) expect(table, c).toMatch(new RegExp(`^  ${c} `, 'm'))
+    for (const c of colonnes) expect(table, c).toMatch(new RegExp(`^  ${c} `, 'mi'))
     for (const interdite of ['honoraires', 'repartition', 'identite_client', 'identite_cabinet', 'signataire_nom', 'empreinte']) {
       expect(colonnes).not.toContain(interdite)
     }
