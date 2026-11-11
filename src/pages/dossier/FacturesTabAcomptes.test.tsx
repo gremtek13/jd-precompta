@@ -34,6 +34,8 @@ const faux = vi.hoisted(() => ({
   // Le drapeau des relances (C5, levé le 08/11/2026), baissé ICI : les empreintes d'hier ont été relevées avant la relance,
   // et ce fichier ne juge pas la relance (FacturesTab.relances.test.tsx la joue dans ses deux états).
   relances: false,
+  // Ce que `reprise_de_la_facture` rend (A8C6-Q1) : une valeur, ou un refus.
+  reprise: null as { data: unknown; error: { message: string } | null } | null,
 }))
 
 vi.mock('../../lib/relances', async (original) => ({
@@ -54,6 +56,7 @@ vi.mock('../../lib/supabase', async () => {
       rpc: async (nom: string, args: Record<string, unknown>) => {
         faux.appels.push({ nom, args })
         await Promise.resolve()
+        if (nom === 'reprise_de_la_facture' && faux.reprise) return faux.reprise
         if (nom === 'enregistrer_facture') return { data: [{ facture_id: args.p_facture_id ?? 'f-neuve', numero: args.p_valider ? 'F2026-0099' : null }], error: null }
         return { data: null, error: { message: `Appel non attendu : ${nom}` } }
       },
@@ -134,6 +137,7 @@ beforeEach(() => {
   faux.lectures = []
   faux.appels = []
   faux.refusee = null
+  faux.reprise = null
   faux.tables = {
     dossiers: [{
       id: 'd1', cabinet_id: 'c1', nom: 'Atelier fictif', siret: SIRET_VENDEUR, adresse: '1 rue Fictive', statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false,
@@ -438,6 +442,79 @@ describe.each(['cabinet', 'client'] as const)('L’avoir d’une facture reprise
     fireEvent.change(screen.getByLabelText('Date d\'émission'), { target: { value: '2026-10-31' } })
     expect(screen.getByText(/son avoir se date du jour de la reprise des factures, le 01\/11\/2026, ou d'après/)).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Valider l\'avoir' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+  // A8C6-Q1 (« L'offrir au client aussi ») : le drapeau de la migration `reprises_au_client` levé, le client lit ce que les
+  // avoirs repris ont crédité par `reprise_de_la_facture` — le plafond se dit avant le clic, comme au cabinet par le registre.
+  // Baissé, le client ne lit que la date, et la fenêtre dit que la base jugera le plafond.
+  it('le plafond net des avoirs repris, dit avant le clic : au client par la fonction le drapeau levé', async () => {
+    faux.tables.dossiers[0].reprise_des_factures_le = '2026-11-01'
+    // 30 € déjà crédités par un avoir repris de l'ancien logiciel, sur une facture de 120 € TTC.
+    faux.tables.factures_importees = [{ facture_id: 'ar1', dossier_id: 'd1', origine_id: 'r1' }]
+    faux.tables.factures_emises.push(base('ar1', [{ quantite: -1, prix_unitaire_ht: 25 }], {
+      numero: 'ANC-A-0007', type: 'avoir', statut: 'importee', date_emission: '2026-07-01', validated_at: null, montant_ttc: -30,
+      // Un avoir repris cite sa facture par le registre (`factures_importees.origine_id`), jamais par `facture_origine_id`.
+      facture_origine_id: null,
+    }))
+    faux.reprise = {
+      data: {
+        reprise_le: '2026-11-01', nature_operation: 'services', encaisse_avant_reprise_centimes: 0, encaisse_par_taux: [],
+        credite_par_les_repris_centimes: 3000, credite_par_les_repris_par_taux: [{ taux: 20, ttc_centimes: 3000 }],
+      },
+      error: null,
+    }
+    for (const leve of [false, true]) {
+      DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = leve
+      faux.appels = []
+      try {
+        const { unmount } = await monter(espace)
+        fireEvent.click(within(ligneDe('ANC-0042')).getByRole('button', { name: 'Avoir' }))
+        await screen.findByRole('button', { name: 'Valider l\'avoir' })
+        fireEvent.change(screen.getByLabelText('Date d\'émission'), { target: { value: '2026-11-02' } })
+        const appelee = faux.appels.some((a) => a.nom === 'reprise_de_la_facture')
+        if (espace === 'cabinet' || leve) {
+          const dit = await screen.findByText(/D'autres avoirs ont déjà crédité/)
+          expect(texte(dit)).toMatch(/crédité 30,00 € de cette facture : il en reste 90,00 € à créditer/)
+          // L'avoir total (120 €) dépasse ce qui reste : refusé avant le clic, aux mots de la base.
+          expect(screen.getByText(/Cet avoir créditerait 120,00 € : la facture ANC-0042 n'a plus que 90,00 € à créditer/)).toBeTruthy()
+          expect((screen.getByRole('button', { name: 'Valider l\'avoir' }) as HTMLButtonElement).disabled).toBe(true)
+          fireEvent.change(screen.getByDisplayValue('100'), { target: { value: '75' } })
+          await vi.waitFor(() => expect((screen.getByRole('button', { name: 'Valider l\'avoir' }) as HTMLButtonElement).disabled).toBe(false))
+          expect(appelee).toBe(espace === 'client')
+        } else {
+          // Le drapeau baissé, au client : la date seule, et la base jugera du plafond — ce que la fenêtre dit.
+          const dit = await screen.findByText(/ne se lit pas ici : la base refusera un avoir/)
+          sansMotsDuCabinet(espace, texte(dit))
+          expect(screen.queryByText(/D'autres avoirs ont déjà crédité/)).toBeNull()
+          expect(appelee).toBe(false)
+        }
+        unmount()
+      } finally {
+        DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false
+      }
+    }
+  })
+
+  it('la reprise refusée par la fonction (drapeau levé) : rien n’est offert, et la fenêtre le dit', async () => {
+    faux.reprise = { data: null, error: { message: 'Accès refusé à ce dossier.' } }
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+    try {
+      await monter(espace)
+      fireEvent.click(within(ligneDe('ANC-0042')).getByRole('button', { name: 'Avoir' }))
+      await screen.findByRole('button', { name: 'Valider l\'avoir' })
+      if (espace === 'client') {
+        const dit = await screen.findByText(/ce que son avoir demande n’a pas pu être lu \(Accès refusé à ce dossier\.\)/)
+        sansMotsDuCabinet(espace, texte(dit))
+        expect((screen.getByRole('button', { name: 'Valider l\'avoir' }) as HTMLButtonElement).disabled).toBe(true)
+        fireEvent.click(screen.getByRole('button', { name: 'Valider l\'avoir' }))
+        expect(faux.appels.some((a) => a.nom === 'enregistrer_facture')).toBe(false)
+      } else {
+        // Le cabinet lit le registre, jamais la fonction : rien de retenu.
+        await vi.waitFor(() => expect((screen.getByRole('button', { name: 'Valider l\'avoir' }) as HTMLButtonElement).disabled).toBe(false))
+        expect(faux.appels.some((a) => a.nom === 'reprise_de_la_facture')).toBe(false)
+      }
+    } finally {
+      DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false
+    }
   })
   // L'ENCAISSEMENT D'UNE FACTURE REPRISE (A8C-Q1 ; migration `reprises_au_client`) : « Encaissements » ne s'offre sur une reprise
   // que le drapeau levé — la fenêtre lit alors ce que sa reprise porte, au cabinet comme au client « Ventes ».

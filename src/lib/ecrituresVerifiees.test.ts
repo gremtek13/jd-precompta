@@ -119,10 +119,11 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       + 'jamais un ensemble vide deviné',
   },
   lireLaRepriseDeLaFacture: {
-    nombre: 1,
+    nombre: 2,
     raison:
       'ce n’est pas une écriture : `reprise_de_la_facture` LIT ce que l’encaissement d’une facture reprise demande (A8C-Q1), '
-      + 'pour la fenêtre des encaissements des deux espaces. `lib/reprisesAuClient.ts` attend la requête et lit son erreur : un '
+      + 'pour la fenêtre des encaissements des deux espaces, et ce que l’avoir d’une facture reprise demande au client « Ventes » '
+      + '(A8C6-Q1, lib/avoirDUneFactureRepriseLecture.ts). `lib/reprisesAuClient.ts` attend la requête et lit son erreur : un '
       + 'refus, une valeur illisible ou une requête qui lève rendent une lecture ILLISIBLE, que la fenêtre dit sans rien proposer',
   },
   lireLesDroitsVentes: {

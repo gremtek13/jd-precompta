@@ -50773,3 +50773,17 @@ rejet d'un paiement ne défait qu'un paiement de son compte (`rejetDuPaiement.ts
 quand la ligne le porte) ; une pièce, elle, se paie de tout compte. **La fiche** dit le compte du mouvement dès deux comptes
 lus, une ligne discrète s'ils sont illisibles. Tests : 17 du module, 2 du rejet, 4 d'écran (deux états, double clic, inachevé,
 le lot des règles) ; une mutation du câblage des lots mord. MCB1-Q1 et MCB2-Q1 suivies telles que construites.
+
+### 11/11/2026 — A8C6-Q1 : L'AVOIR D'UNE FACTURE REPRISE, AU CLIENT « VENTES », SON PLAFOND DIT AVANT LE CLIC (LIGNE 51.5)
+
+(Agent dev ; aucune migration, aucune écriture en production.) Réponse du cabinet du 11/11/2026 : « L'offrir au client
+aussi ». **Établi** : A8c6 offrait déjà « Avoir » sur une facture reprise dans les deux espaces (`FacturesTab`), mais le
+client ne lisait que la date de reprise (`dossiers`) : ce que les avoirs repris avaient crédité lui restait inconnu
+(`factures_importees` ne s'ouvre qu'au cabinet), et la fenêtre disait que la base jugerait le plafond. **Le changement** :
+le drapeau `REPRISES_AU_CLIENT_PREVUES` levé, `lireCeQueLAvoirDUneRepriseDemande` lit, pour le client, la reprise par
+`reprise_de_la_facture` (lib/reprisesAuClient.ts) — la date et `credite_par_les_repris_centimes` — et la fenêtre dit le
+reste à créditer et refuse un avoir qui le dépasse, avant le clic, comme au cabinet. Refusée, levée, d'une autre forme, ou
+un crédit négatif : illisible, l'avoir retenu, la fenêtre le dit aux mots du client (la retenue passe `pourLEspace`).
+Baissé : le chemin d'hier, au caractère près. Le cabinet garde sa lecture du registre (aucun appel de la fonction).
+Tests : trois dans `avoirDUneFactureRepriseLecture.test.ts`, deux (× deux espaces, deux états du drapeau) dans
+`FacturesTabAcomptes.test.tsx` ; la mutation « le client ne lit plus la fonction » fait tomber quatre tests.
