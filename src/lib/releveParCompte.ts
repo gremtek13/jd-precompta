@@ -94,7 +94,12 @@ const moisDe = (date: string) => date.slice(0, 7)
  * principal, de leur ouverture (toujours, sans date) à leur clôture ; un autre compte, de son ouverture — ou, sans date, de son
  * premier mouvement — à sa clôture. Un compte qu'on n'a jamais vu bouger et qui ne dit pas son ouverture n'attend rien.
  */
-export function compteAttenduLeMois(part: PartDuReleve<Pick<LigneBancaire, 'date'> & AvecCompte, AvecCompte>, mois: string): boolean {
+export function compteAttenduLeMois(
+  // Ce que la règle lit d'une part, et rien de plus : « Ma banque » (MCB7) la rejoue sur les comptes que le client « Banque »
+  // lit, sans leur compte du plan (lib/banqueClientParCompte.ts).
+  part: { compte: Pick<CompteDuReleve, 'principal' | 'ouvert_le' | 'clos_le'> | null; lignes: readonly Pick<LigneBancaire, 'date'>[] },
+  mois: string,
+): boolean {
   const c = part.compte
   if (c === null) return true
   if (c.clos_le !== null && moisDe(c.clos_le) < mois) return false
