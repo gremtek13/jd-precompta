@@ -36,9 +36,10 @@ import {
   type LectureDesComptes,
 } from '../../lib/importParCompte'
 import { lireLesComptesDuDossier } from '../../lib/comptesBancairesLecture'
+import { jonctionsParCompte, releveParCompte } from '../../lib/releveParCompte'
 import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
 import {
-  controleDuFichier, jonctionsDesReleves, phraseDeLaRupture, phraseDeLaSuiteDuFichier, relevesIncoherentsDe, rupturesDesReleves,
+  controleDuFichier, phraseDeLaRupture, phraseDeLaSuiteDuFichier, relevesIncoherentsDe, rupturesDesReleves,
 } from '../../lib/suiteDesReleves'
 import {
   analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE,
@@ -261,11 +262,6 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // l'autre aussi. `null` : illisibles — l'import le dit, et aucune rupture ne s'affirme.
   const [controlesReleves, setControlesReleves] = useState<ControleReleveBancaire[] | null>(null)
   const relevesIncoherents = useMemo(() => relevesIncoherentsDe(controlesReleves ?? []), [controlesReleves])
-  // Les ruptures de la suite des soldes, sur un relevé lu en entier seulement : un mouvement non lu ferait dire une rupture.
-  const rupturesDuReleve = useMemo(
-    () => (controlesReleves === null || lignesIncompletes ? [] : rupturesDesReleves(jonctionsDesReleves(controlesReleves, lignes))),
-    [controlesReleves, lignes, lignesIncompletes],
-  )
   // « MA BANQUE », CÔTÉ CABINET (espace client, étape P9b ; lib/banqueCabinet.ts) : les pièces que le client a proposées et
   // le fil des mouvements, lus ENSEMBLE, et les accès du dossier. Remis « en cours » à CHAQUE lecture, la première comme
   // une relecture : pendant qu'ils reviennent, la fiche n'en dit rien et n'offre ni « Associer » ni « Demander ».
@@ -488,6 +484,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const lectureDesComptesDuReleve = useMemo<LectureDesComptes>(() => (!COMPTES_BANCAIRES_PREVUS ? { etat: 'sans_objet' }
     : comptesDuDossierLus && comptesDuDossierLus.dossierId === dossierId ? comptesDuDossierLus.lecture : { etat: 'en_cours' }),
   [comptesDuDossierLus, dossierId])
+  // Les ruptures de la suite des soldes, sur un relevé lu en entier seulement : un mouvement non lu ferait dire une rupture.
+  // Compte après compte (MCB4, lib/releveParCompte.ts) : deux relevés de deux comptes ne se suivent jamais, et la rupture dit
+  // son compte dès deux. Muettes tant que les comptes ne sont pas lus en entier ; drapeau baissé, une part, comme hier.
+  const rupturesDuReleve = useMemo(() => {
+    if (controlesReleves === null || lignesIncompletes) return []
+    const releve = releveParCompte(lectureDesComptesDuReleve, lignes, controlesReleves)
+    return releve.etat === 'parts' ? rupturesDesReleves(jonctionsParCompte(releve.parts)) : []
+  }, [controlesReleves, lignes, lignesIncompletes, lectureDesComptesDuReleve])
   const virements = useMemo(
     () => virementsInternes(lignes, lectureDesComptesDuReleve, modele.plan.virements_internes, mouvementsHorsDesLots(ventes), anneesValidees),
     [lignes, lectureDesComptesDuReleve, modele.plan.virements_internes, ventes, anneesValidees],

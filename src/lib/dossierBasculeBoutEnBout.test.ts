@@ -226,7 +226,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode, compteNotesDeFrais: plan.associe, ...planLuDe(plan) }, assujettiTva: true,
       anneesValidees: [], lectureIncomplete: null, piecesValidees: [], piecesAValider: [], categories: [], immobilisations: [], natures: [],
       ecritures: brouillon, lignes, ventilations: [], reglements: [], encaissees: [], cotisations: [], vehicules: [], emprunts: [],
-      aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [], doublonsTexte: [],
+      aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', comptesBancaires: { etat: 'sans_objet' }, controlesReleves: [], doublonsTexte: [],
       facturesEmises: [], transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
       etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true }),
       ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation([])),

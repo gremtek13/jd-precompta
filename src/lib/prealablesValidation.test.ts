@@ -1,3 +1,4 @@
+import type { CompteDuReleve, LectureDesComptes } from './importParCompte'
 import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { createHash } from 'node:crypto'
@@ -172,7 +173,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, assujettiTva: false,
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
-    vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', controlesReleves: [],
+    vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', comptesBancaires: { etat: 'sans_objet' }, controlesReleves: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE, piecesCitees: AUCUNE_PIECE_CITEE,
     etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
     champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, ...o,
@@ -2501,5 +2502,72 @@ describe('prealablesDeValidation — la pièce sans empreinte de fichier (INAL12
     expect(ids(donnees({ piecesValidees: [{ ...P1, storage_hash: 'pas-un-sha256' }] }))).not.toContain('pieces-sans-empreinte')
     const suivante = piece('p9', { date_piece: '2026-02-01', storage_hash: null })
     expect(ids(donnees({ piecesValidees: [P1, suivante] }))).not.toContain('pieces-sans-empreinte')
+  })
+})
+
+// MCB4 : LA BANQUE JUGÉE COMPTE PAR COMPTE. Drapeau baissé (`sans_objet`, la fabrique), tout ce qui précède : la règle d'hier.
+// Lus, chaque compte bancaire dit son premier relevé et son solde au 31 décembre, et le 512 se confronte à la somme des comptes
+// qui s'y écrivent (MCB-Q7 : en 2025, tous au 512 du principal).
+describe('prealablesDeValidation — la banque par compte bancaire (MCB4)', () => {
+  const compteLu = (id: string, extra: Partial<CompteDuReleve> = {}): CompteDuReleve => ({
+    id, libelle: id === 'P' ? 'Principal' : 'Livret pro', principal: id === 'P', fin_d_identifiant: null,
+    compte: id === 'P' ? null : '512100', compte_propre_depuis: id === 'P' ? null : '2026-01-01', ouvert_le: null, clos_le: null, ...extra,
+  })
+  const deux: LectureDesComptes = { etat: 'lus', comptes: [compteLu('P'), compteLu('B')] }
+  // La fabrique, ses mouvements au principal, et un mouvement du second compte en 2025 (un virement nul de la banque à elle-même
+  // ne s'écrit pas : un mouvement ignoré, qui ne touche ni le 512 ni la 2035).
+  const parCompte = (lecture: LectureDesComptes, controles: ControleReleveBancaire[], o: Surcharges = {}): DonneesDeValidation => {
+    const d = donnees({ controlesReleves: controles, ...o })
+    const lignes = d.lignes.map((l) => ({ ...l, compte_bancaire_id: 'P' }))
+    const duSecond = lecture.etat === 'lus' && lecture.comptes.length > 1
+      ? [{ ...lignes[0], id: 'l-b', compte_bancaire_id: 'B', date: '2025-12-02', montant: 0, statut: 'ignoree' as const, piece_id: null }] : []
+    return { ...d, comptesBancaires: lecture, lignes: [...lignes, ...duSecond] }
+  }
+  const au31 = (compteId: string, solde: number, o: Partial<ControleReleveBancaire> = {}) =>
+    ({ ...controle({ id: `r-${compteId}-${solde}`, solde_final: solde, ...o }), compte_bancaire_id: compteId })
+  const banque = (d: DonneesDeValidation) => prealable(d, 'banque-au-releve')
+
+  it('un seul compte lu : les mots d’hier, au caractère près', () => {
+    const un: LectureDesComptes = { etat: 'lus', comptes: [compteLu('P')] }
+    expect(banque(parCompte(un, [au31('P', 100)]))?.message).toBe(banque(donnees({ controlesReleves: [controle({ solde_final: 100 })] }))?.message)
+  })
+
+  it('deux comptes au 512 du principal : leurs soldes au 31 décembre s’additionnent, et concordent', () => {
+    expect(banque(parCompte(deux, [au31('P', -100), au31('B', -20)]))).toBeUndefined()
+    // Mêlés (drapeau baissé), les deux relevés diraient « des soldes différents » sans rien confronter.
+    expect(banque(donnees({ controlesReleves: [controle({ id: 'a', solde_final: -100 }), controle({ id: 'b', solde_final: -20 })] }))?.message)
+      .toMatch(/2 relevés disent des soldes différents/)
+  })
+
+  it('un écart nomme chaque compte, son relevé et la somme', () => {
+    const p = banque(parCompte(deux, [au31('P', -100), au31('B', -30)]))
+    expect(p?.bloquant).toBe(false)
+    expect(p?.message).toMatch(/^Le 512000 au 31\/12\/2025 — .* — ne concorde pas avec les 2 comptes bancaires dont la banque s’y écrit, /)
+    expect(p?.message).toMatch(/le compte « Principal », le relevé du 01\/12\/2025 au 31\/12\/2025, de solde final -100,00\s€ ; le compte « Livret pro », le relevé du 01\/12\/2025 au 31\/12\/2025, de solde final -30,00\s€ : un écart de 10,00\s€\.$/)
+  })
+
+  it('un compte sans relevé au 31 décembre rend la somme incalculable, et se nomme', () => {
+    expect(banque(parCompte(deux, [au31('P', -120)]))?.message)
+      .toMatch(/n’est confronté à aucun relevé : .*\(« Principal », « Livret pro »\) ne se calcule pas — aucun relevé contrôlé du compte « Livret pro » ne finit le 31\/12\/2025/)
+  })
+
+  it('le premier relevé de chaque compte, nommé, retient la validation d’un dossier ouvert sans reprise', () => {
+    const premierP = au31('P', 5000, { id: 'r-jan', periode_debut: '2025-01-01', periode_fin: '2025-01-31', solde_initial: 5000 })
+    const premierB = au31('B', 200, { id: 'r-mars', periode_debut: '2025-03-01', periode_fin: '2025-03-31', solde_initial: 200 })
+    const etat = prealablesDeValidation(parCompte(deux, [premierP, premierB, au31('P', 4880), au31('B', 200)]))
+    expect(etat.validable).toBe(false)
+    expect(etat.prealables.find((p) => p.id === 'ouverture-sans-reprise')?.message).toBe(
+      `Le dossier s'ouvre sans balance reprise, alors que le premier relevé du compte « Principal », du 01/01/2025 au 31/01/2025, part `
+        + `d'un solde de ${formatMoney(5000)} au 01/01/2025 et celui du compte « Livret pro », du 01/03/2025 au 31/03/2025, part d'un solde `
+        + `de ${formatMoney(200)} au 01/03/2025 : le 512000 part de zéro, et l'exercice 2026 s'ouvrirait sur une banque fausse. Reprendre `
+        + "la balance d'ouverture du dossier, la banque au solde de ces relevés, avant la validation.")
+  })
+
+  it('les comptes en cours de lecture ou illisibles suspendent la validation', () => {
+    for (const lecture of [{ etat: 'en_cours' }, { etat: 'illisible', motif: 'refus' }] as LectureDesComptes[]) {
+      const etat = prealablesDeValidation({ ...donnees(), comptesBancaires: lecture })
+      expect(etat.validable).toBe(false)
+      expect(etat.prealables.map((p) => p.id)).toEqual(['lecture-partielle'])
+    }
   })
 })

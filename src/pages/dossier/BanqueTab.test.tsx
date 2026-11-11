@@ -114,7 +114,8 @@ const faux = vi.hoisted(() => ({
   operationsCaisse: [] as OperationCaisse[],
   // Les contrôles des relevés déjà importés (lib/controlesReleves.ts) : aucun par défaut ; `null` : leur lecture refusée.
   controlesReleves: [] as ControleReleveBancaire[] | null,
-  comptesBancaires: [] as { id: string; libelle: string; principal: boolean; fin_d_identifiant: string | null }[],
+  comptesBancaires: [] as { id: string; libelle: string; principal: boolean; fin_d_identifiant: string | null; compte: string | null;
+    compte_propre_depuis: string | null; ouvert_le: string | null; clos_le: string | null }[],
   updatesComptes: [] as { valeur: Record<string, unknown>; filtres: string[] }[],
 }))
 
@@ -1565,8 +1566,8 @@ describe('BanqueTab — l’import d’un relevé par compte bancaire (MCB2)', (
     vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
   })
   const CSV = 'Date;Libellé;Montant\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n05/06/2025;VIR CLIENT DUPONT;250,00\n'
-  const PRINCIPAL = { id: 'cb-p', libelle: 'Compte principal', principal: true, fin_d_identifiant: null }
-  const SECOND = { id: 'cb-s', libelle: 'Compte pro bis', principal: false, fin_d_identifiant: null }
+  const PRINCIPAL = { id: 'cb-p', libelle: 'Compte principal', principal: true, fin_d_identifiant: null, compte: null, compte_propre_depuis: null, ouvert_le: null, clos_le: null }
+  const SECOND = { id: 'cb-s', libelle: 'Compte pro bis', principal: false, fin_d_identifiant: null, compte: '512100', compte_propre_depuis: '2026-01-01', ouvert_le: null, clos_le: null }
   const lot = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires')
   // Le relevé déjà en base est celui du compte principal.
   function avecComptes(...comptes: typeof faux.comptesBancaires) {
@@ -6908,8 +6909,8 @@ describe('RELEVE-Q1 — la rupture de solde entre deux relevés', () => {
 // `COMPTES_BANCAIRES_PREVUS` joué dans ses deux états. Deux comptes, un débit sur le principal, le crédit du même montant sur
 // l'autre deux jours plus tard. Mouvements FICTIFS.
 describe('BanqueTab — le virement entre deux comptes du dossier (MCB3)', () => {
-  const PRINCIPAL = { id: 'cb-p', libelle: 'Compte principal', principal: true, fin_d_identifiant: null }
-  const SECOND = { id: 'cb-s', libelle: 'Compte pro bis', principal: false, fin_d_identifiant: null }
+  const PRINCIPAL = { id: 'cb-p', libelle: 'Compte principal', principal: true, fin_d_identifiant: null, compte: null, compte_propre_depuis: null, ouvert_le: null, clos_le: null }
+  const SECOND = { id: 'cb-s', libelle: 'Compte pro bis', principal: false, fin_d_identifiant: null, compte: '512100', compte_propre_depuis: '2026-01-01', ouvert_le: null, clos_le: null }
   const alertes: string[] = []
   function preparer(leve: boolean) {
     reinitialiser()

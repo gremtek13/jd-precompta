@@ -12,7 +12,8 @@ import { finDeLIdentifiant, lireReleveOfxQif } from './releveOfxQif'
 // le nom d'un fichier unique dans le dossier, l'OFX confronté au compte, et la migration de la fin d'identifiant.
 
 const compte = (id: string, extra: Partial<CompteDuReleve> = {}): CompteDuReleve =>
-  ({ id, libelle: `Compte ${id}`, principal: false, fin_d_identifiant: null, ...extra })
+  ({ id, libelle: `Compte ${id}`, principal: false, fin_d_identifiant: null, compte: null, compte_propre_depuis: null, ouvert_le: null,
+    clos_le: null, ...extra })
 const PRINCIPAL = compte('p', { libelle: 'Compte principal', principal: true })
 const SECOND = compte('s', { libelle: 'Compte épargne pro' })
 const lus = (...comptes: CompteDuReleve[]): LectureDesComptes => ({ etat: 'lus', comptes })

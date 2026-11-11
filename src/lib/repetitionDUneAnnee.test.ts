@@ -211,7 +211,7 @@ beforeAll(() => {
   }] : []
 
   const checklist = pointsDeLaChecklist({
-    piecesValidees: PIECES, piecesAValider: [], cotisations: COTISATIONS, lignes, relevesIncoherents: controlesReleves.filter((k) => !k.coherent), controlesReleves, doublonsTexte: [],
+    piecesValidees: PIECES, piecesAValider: [], cotisations: COTISATIONS, lignes, relevesIncoherents: controlesReleves.filter((k) => !k.coherent), controlesReleves, comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [],
     immobilisations: IMMOBILISATIONS, natures: [NATURE_MATERIEL], categories: CATEGORIES, ecritures: brouillon, emprunts: [], ventilations: [],
     ventilationsPartielles: false, reglements, reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: VEHICULES,
     declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,
@@ -228,7 +228,7 @@ beforeAll(() => {
     lectureIncomplete: null, piecesValidees: PIECES, piecesAValider: [], categories: CATEGORIES, immobilisations: IMMOBILISATIONS,
     natures: [NATURE_MATERIEL], ecritures: brouillon, lignes, ventilations: [], reglements, encaissees: [], cotisations: COTISATIONS,
     vehicules: VEHICULES, emprunts: [], aNouveaux: A_NOUVEAUX, soldesReportes: [], declarationsTva: [], periodiciteTva: 'mensuelle',
-    controlesReleves, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
+    comptesBancaires: { etat: 'sans_objet' }, controlesReleves, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
     etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, anneesValidees: [], ventesParLesFactures: true }),
     ventesDeLaChecklist: ventesDeLaChecklist(lectureDesSources, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
     declaration, saisies2035: AUCUNE_SAISIE_2035, concordance,

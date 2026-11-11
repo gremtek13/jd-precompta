@@ -32,7 +32,7 @@ afterEach(() => { drapeau.leve = null })
 
 function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
   return {
-    piecesValidees: [], piecesAValider: [], cotisations: [], lignes: [], relevesIncoherents: [], controlesReleves: [], doublonsTexte: [], immobilisations: [],
+    piecesValidees: [], piecesAValider: [], cotisations: [], lignes: [], relevesIncoherents: [], controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [], immobilisations: [],
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
@@ -994,5 +994,38 @@ describe('le point « releves-en-rupture »', () => {
 
   it('se tait sur une lecture partielle', () => {
     expect(point(null)?.nb).toBe(0)
+  })
+})
+
+// MCB4 : la suite des soldes et les mois manquants, compte par compte, dès deux comptes lus ; drapeau baissé (la fabrique,
+// `sans_objet`), les deux points d'hier, que les blocs qui précèdent éprouvent.
+describe('les points du relevé, compte par compte (MCB4)', () => {
+  const compteLu = (id: string, libelle: string, principal: boolean) => ({
+    id, libelle, principal, fin_d_identifiant: null, compte: principal ? null : '512100', compte_propre_depuis: principal ? null : '2027-01-01',
+    ouvert_le: null, clos_le: null,
+  })
+  const deux = { etat: 'lus' as const, comptes: [compteLu('P', 'Principal', true), compteLu('B', 'Livret pro', false)] }
+  const k = (id: string, compte: string, debut: string, fin: string, initial: number, final: number): ControleReleveBancaire => ({
+    id, dossier_id: 'd1', compte_bancaire_id: compte, source_fichier: `${id}.csv`, solde_initial: initial, solde_final: final,
+    somme_mouvements: final - initial, ecart: 0, coherent: true, periode_debut: debut, periode_fin: fin, created_at: '2025-10-01T10:00:00Z',
+  })
+  // Août du principal, septembre du second : mêlés, une rupture inventée ; par compte, aucune.
+  const controlesReleves = [k('aout', 'P', '2025-08-01', '2025-08-31', 1200, 1000), k('sept', 'B', '2025-09-01', '2025-09-30', 750, 800)]
+  const rupture = (d: Partial<DonneesDeLaChecklist>) =>
+    pointsDeLaChecklist(donnees(d), CONTEXTE).tousLesPointsATraiter.find((p) => p.id === 'releves-en-rupture')?.nb
+
+  it('deux relevés de deux comptes ne se suivent pas', () => {
+    expect(rupture({ controlesReleves })).toBe(1)
+    expect(rupture({ controlesReleves, comptesBancaires: deux })).toBe(0)
+    expect(rupture({ controlesReleves, comptesBancaires: { etat: 'illisible', motif: 'refus' } })).toBe(0)
+  })
+
+  it('le mois manquant d’un compte se dit sous son nom', () => {
+    const lignes = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((m) => ligne({ id: `p${m}`, compte_bancaire_id: 'P', date: `2026-0${m}-05` }))
+      .concat([2, 3, 5, 6, 7, 8, 9].map((m) => ligne({ id: `b${m}`, compte_bancaire_id: 'B', date: `2026-0${m}-06` })))
+    const releves = (d: Partial<DonneesDeLaChecklist>) =>
+      pointsDeLaChecklist(donnees(d), CONTEXTE).documentsAttendus.find((x) => x.id === 'banque-2026')
+    expect(releves({ lignes })).toMatchObject({ ok: true })
+    expect(releves({ lignes, comptesBancaires: deux })).toMatchObject({ ok: false, detail: 'Mois manquants : avril (compte « Livret pro »)' })
   })
 })

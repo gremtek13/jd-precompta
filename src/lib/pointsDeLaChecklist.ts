@@ -17,7 +17,9 @@ import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesEnReta
 import type { Emprunt } from './emprunts'
 import type { DoublonDeTexte } from './doublonsTexte'
 import { anneeDe } from './format'
-import { detailDesRuptures, jonctionsDesReleves, rupturesDesReleves } from './suiteDesReleves'
+import { detailDesRuptures, rupturesDesReleves } from './suiteDesReleves'
+import type { LectureDesComptes } from './importParCompte'
+import { jonctionsParCompte, moisManquantsParCompte, releveParCompte, type MoisManquantsDuReleve } from './releveParCompte'
 import { detailDesDoublonsProbables, doublonsProbables, piecesRegleesPourLesDoublons } from './doublonsProbables'
 import { estFigee } from './validationExercice'
 import { MESSAGE_PIECES_SANS_EMPREINTE, sansEmpreinteDeDepot } from './empreinteDeDepot'
@@ -105,6 +107,11 @@ export interface DonneesDeLaChecklist {
   // TOUS les contrôles des relevés, pour la suite des soldes d'un relevé à l'autre (RELEVE-Q1, lib/suiteDesReleves.ts). Nul
   // quand eux, ou le relevé (`lignes`), n'ont pas été lus en entier : une rupture se calcule sur les deux, et le point se tait.
   controlesReleves: ControleReleveBancaire[] | null
+  // LES COMPTES BANCAIRES DU DOSSIER (ligne 26.6, MCB4 ; lib/comptesBancairesLecture.ts), qui partagent le relevé : la suite des
+  // soldes et les mois manquants se jugent compte par compte (lib/releveParCompte.ts), et se disent sous le nom de chaque
+  // compte dès deux. `sans_objet` le drapeau `COMPTES_BANCAIRES_PREVUS` baissé : tout comme avant MCB. Illisibles, la lecture
+  // le dit (`lectureIncomplete`), les ruptures se taisent, et les mois manquants suivent la règle d'hier, celle du dossier.
+  comptesBancaires: LectureDesComptes
   doublonsTexte: DoublonDeTexte[]
   immobilisations: Immobilisation[]
   natures: NatureImmobilisation[]
@@ -200,7 +207,7 @@ export interface PointsDeLaChecklist {
 
 export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChecklist): PointsDeLaChecklist {
   const {
-    piecesValidees, piecesAValider, cotisations, lignes, relevesIncoherents, controlesReleves, doublonsTexte, immobilisations, natures,
+    piecesValidees, piecesAValider, cotisations, lignes, relevesIncoherents, controlesReleves, comptesBancaires, doublonsTexte, immobilisations, natures,
     categories, ecritures, emprunts, ventilations, ventilationsPartielles, reglements, reglementsPartiels, paiementsPartiels,
     lettragesManuels, vehicules, declarationsTva, declarationsPartielles, facturesEmises, transmissions, jumellesPartielles,
     info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete, ventesFacturees, facturesSources, aNouveaux, soldesReportes,
@@ -215,7 +222,13 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // L'exercice en cours est toujours le dernier rendu (le révolu vient avant, dans l'ordre
   // chronologique) — et il est toujours rendu, même marqué clos.
   const exerciceCourant = exercices[exercices.length - 1]
-  const moisManquants = moisManquantsDe(exerciceCourant, lignes)
+  // Les mois manquants, compte par compte dès deux comptes (MCB4) : un mois que l'un couvre ne couvre plus le trou de l'autre.
+  // Une part (drapeau baissé, un compte) : `moisManquantsDe`, au mois près. Les comptes illisibles : la règle d'hier.
+  const releveDesComptes = releveParCompte(comptesBancaires, lignes, controlesReleves ?? [])
+  const manquantsDe = (ex: ExerciceAReclamer): MoisManquantsDuReleve => (releveDesComptes.etat === 'parts'
+    ? moisManquantsParCompte(ex, releveDesComptes.parts) : { mois: moisManquantsDe(ex, lignes), comptes: new Map() })
+  const manquantsCourants = manquantsDe(exerciceCourant)
+  const moisManquants = manquantsCourants.mois
   // Reçus PARMI LES MOIS RÉVOLUS, et non « mois présents » : un relevé daté d'un mois à venir
   // gonflait le numérateur et affichait « 13/8 ».
   const moisRecus = exerciceCourant.moisAttendus.length - moisManquants.length
@@ -604,7 +617,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const piecesAValiderPayees = caisseJugee === null || !PAIEMENT_PAR_LA_CAISSE_EXPORTE ? []
     : paiementsDePiecesAValider(caisseJugee, piecesAValider, frontiere)
 
-  const rupturesDuReleve = controlesReleves === null ? [] : rupturesDesReleves(jonctionsDesReleves(controlesReleves, lignes))
+  // La suite des soldes, compte après compte (MCB4) : deux relevés de deux comptes ne se suivent jamais. Muette quand les
+  // contrôles, le relevé ou les comptes ne sont pas lus en entier.
+  const rupturesDuReleve = controlesReleves === null || releveDesComptes.etat !== 'parts' ? []
+    : rupturesDesReleves(jonctionsParCompte(releveDesComptes.parts))
   const tousLesPointsATraiter: PointATraiter[] = [
     // En tête, et en « erreur » : c'est le seul point de cette liste qui ne se voit nulle part
     // ailleurs. Une pièce validée sans catégorie a l'air traitée — elle ne produit pourtant ni
@@ -940,7 +956,13 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // tant que sa clôture n'est pas cochée — c'est le moment précis où le cabinet court après ses
   // pièces, et où cette liste repartait à zéro en annonçant qu'il ne restait rien.
   const pointsParExercice = exercices.flatMap((ex): (DocumentAttendu & { annee: number })[] => {
-    const manquants = ex.annee === anneeCourante ? moisManquants : moisManquantsDe(ex, lignes)
+    const manquantsDuReleve = ex.annee === anneeCourante ? manquantsCourants : manquantsDe(ex)
+    const manquants = manquantsDuReleve.mois
+    // Dès deux comptes, chaque mois dit les comptes qui l'attendent sans mouvement (MCB4).
+    const nomme = (m: number) => {
+      const comptes = manquantsDuReleve.comptes.get(m) ?? []
+      return comptes.length === 0 ? '' : ` (${comptes.length > 1 ? 'comptes' : 'compte'} ${comptes.map((c) => `« ${c} »`).join(', ')})`
+    }
     const cotisationsEx = cotisations.filter((c) => anneeDe(c.echeance) === ex.annee)
     const piecesEx = toutesPieces.filter((p) => p.date_piece && anneeDe(p.date_piece) === ex.annee)
     const recus = ex.moisAttendus.length - manquants.length
@@ -955,7 +977,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
         detail: ex.moisAttendus.length === 0
           ? "Aucun mois encore révolu cette année"
           : manquants.length > 0
-            ? `Mois manquants : ${manquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
+            ? `Mois manquants : ${manquants.map((m) => `${NOMS_MOIS[m - 1]}${nomme(m)}`).join(', ')}`
             : `${recus}/${ex.moisAttendus.length} mois reçus`,
         cible: 'banque',
         action: 'Importer le relevé manquant',

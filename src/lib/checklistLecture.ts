@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { chargerControlesReleves } from './controlesReleves'
+import { lireLesComptesDuDossier } from './comptesBancairesLecture'
 import { relevesIncoherentsDe } from './suiteDesReleves'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from './doublonsTexte'
 import { lireAnneesCloturees } from './clotureExercice'
@@ -184,6 +185,8 @@ export async function lireLaChecklist(
     return null
   })
   const relevesIncoherents = controlesReleves === null ? null : relevesIncoherentsDe(controlesReleves)
+  // Les comptes bancaires du dossier (MCB4) : ne rejette jamais ; le drapeau baissé, `sans_objet`, sans toucher au réseau.
+  const comptesBancaires = await lireLesComptesDuDossier(dossierId)
   // Même posture : journalisé, rendu nul.
   const doublonsTexte = await chargerDoublonsDeTexte(dossierId).catch((err) => {
     console.error(err)
@@ -197,6 +200,7 @@ export async function lireLaChecklist(
     relevesIncoherents,
     // Une rupture se calcule sur les contrôles ET le relevé : l'un des deux lu en partie, le point se tait.
     controlesReleves: lectureLignes.complete ? controlesReleves : null,
+    comptesBancaires,
     doublonsTexte,
     // TOUTES les collections dont dépend un point de cette liste, pas seulement les quatre grosses.
     // `categoriesSansCompte` et `categoriesSansPoste` partent des CATÉGORIES, `ecrituresSansObjet` des
@@ -207,7 +211,9 @@ export async function lireLaChecklist(
       lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
       lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts, lectureVentilations, lectureReglements,
       lectureVehicules, lectureLettrages, lectureDeclarations, lectureFacturesEmises, lectureTransmissions,
-    ].find((l) => !l.complete)?.motif ?? null,
+    ].find((l) => !l.complete)?.motif
+      // Les comptes bancaires illisibles (MCB4) : les mois manquants suivent la règle du dossier, les ruptures se taisent.
+      ?? (comptesBancaires.etat === 'illisible' ? `les comptes bancaires du dossier : ${comptesBancaires.motif}` : null),
     piecesIncompletes: (() => {
       const partielle = [lectureValidees, lectureAValider].find((l) => !l.complete)
       return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'
