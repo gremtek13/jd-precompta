@@ -1,4 +1,5 @@
 import { libelleEcritureANouveau } from './aNouveaux'
+import { estUneBanque, type BanquesDuDossier } from './banqueDuMouvement'
 import { resteRegleParSaReprise, type PiecesCitees } from './facturesSources'
 import { mouvementJustifieParLeReleve, referenceDuReleve } from './affectationBanque'
 import { nomDuVehicule } from './forfaitKilometrique'
@@ -83,11 +84,14 @@ export interface RuptureAudit {
 // qu'un paiement par la caisse règle (étape C9a) : elle est alors jugée par sa pièce, comme la contrepartie de banque.
 //
 // Une ligne de banque se reconnaît au compte de la banque du PLAN du dossier (ligne 43, conception § 2.4), paramètre
-// obligatoire : au compte par défaut, sous un plan qui la tient au 512100, une ligne sans mouvement se tairait.
+// obligatoire : au compte par défaut, sous un plan qui la tient au 512100, une ligne sans mouvement se tairait. ET AU 512
+// PROPRE DE CHAQUE COMPTE BANCAIRE (MCB5, quatrième partie ; `banques`, obligatoire) : la ligne d'un second compte sans
+// mouvement rompt la piste comme celle du principal. Des comptes qui ne se savent pas : seule la banque du rôle se juge.
 export function rupturesPisteAudit(
   ecritures: EcritureBrouillon[],
   idsJustifies: ReadonlySet<string>,
   plan: PlanComptable,
+  banques: BanquesDuDossier,
 ): RuptureAudit[] {
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
@@ -95,7 +99,7 @@ export function rupturesPisteAudit(
       && !ecriture.declaration_tva_id && !ecriture.cotisation_id && !ecriture.operation_caisse_id) {
       ruptures.push({ ecriture, motif: 'sans_justificatif' })
     }
-    if (ecriture.compte === plan.banque && !ecriture.ligne_bancaire_id) {
+    if (estUneBanque(ecriture.compte, plan, banques) === true && !ecriture.ligne_bancaire_id) {
       ruptures.push({ ecriture, motif: 'sans_mouvement' })
     }
   }
@@ -267,6 +271,9 @@ export interface RegistreAudit {
   // Le plan du dossier (ligne 43, conception § 2.4) : une ligne de banque sans mouvement se reconnaît au compte de SA
   // banque. Obligatoire, sans valeur par défaut : au compte par défaut, sous un autre plan, elle ne manquerait de rien.
   plan: PlanComptable
+  // Les banques du dossier (MCB5, quatrième partie ; lib/banqueDuMouvement.ts) : la ligne du 512 propre d'un compte bancaire
+  // sans mouvement manque aussi du sien. Obligatoire : oubliées, celles d'un second compte ne manqueraient de rien.
+  banques: BanquesDuDossier
 }
 
 // LA PISTE D'AUDIT NE NOMME PAS UN PATIENT (JJ1Q1-Q1, tranchée par le cabinet le 07/11/2026 sur la recommandation ;
@@ -360,7 +367,7 @@ export function pisteAudit(
     // seconde n'est pas une rupture, c'est un filtre de l'appelant. Le dire autrement ferait passer
     // un artefact de chargement pour un défaut comptable.
     else if (!piece) manque.push('justificatif hors du jeu chargé')
-    if (e.compte === registre.plan.banque && !e.ligne_bancaire_id) manque.push('mouvement bancaire')
+    if (estUneBanque(e.compte, registre.plan, registre.banques) === true && !e.ligne_bancaire_id) manque.push('mouvement bancaire')
     // Même distinction côté banque. Avec `ON DELETE SET NULL` sur les deux clés, un mouvement
     // supprimé met le lien à NULL et tombe dans la branche précédente : ce cas-ci ne peut donc venir
     // que d'un jeu de lignes restreint par l'appelant. Le dire plutôt que de laisser trois colonnes

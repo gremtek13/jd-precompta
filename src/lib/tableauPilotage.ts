@@ -1,5 +1,4 @@
 import type { EcritureBrouillon } from './types'
-import type { PlanComptable } from './planComptable'
 import type { OuvertureBanque } from './planTresorerie'
 
 export interface MoisPilotage {
@@ -28,18 +27,22 @@ export interface MoisPilotage {
 // l'oublierait retomberait sur l'ancien calcul sans que rien ne le dise.
 //
 // La banque est celle du PLAN du dossier (ligne 43, conception § 2.4), paramètre obligatoire, comme dans
-// `calculerEvolutionMensuelle` : sous un plan qui la tient ailleurs qu'au compte par défaut, la série serait vide.
+// `calculerEvolutionMensuelle` : sous un plan qui la tient ailleurs qu'au compte par défaut, la série serait vide. ET LE
+// 512 PROPRE DE CHAQUE COMPTE BANCAIRE (MCB5, quatrième partie) : `banque` est l'ensemble des comptes de la banque du
+// dossier (`banqueDesLecteurs`, lib/banqueDuMouvement.ts), le rôle seul drapeau baissé — la série d'hier. La trésorerie du
+// dossier est la somme de ses comptes ; un virement interne y passe au 580 des deux côtés, et ne la change pas. Des comptes
+// qui ne se savent pas n'ont pas de série : l'appelant ne la calcule pas (il la dirait fausse en taisant un compte).
 export function soldesFinDeMois(
   ecritures: EcritureBrouillon[],
   nbMois: number,
   ouverture: OuvertureBanque | null,
-  plan: PlanComptable,
+  banque: ReadonlySet<string>,
 ): { mois: string; solde: number }[] {
   // En centimes : un cumul de flottants dérive sur une longue série.
   const parMois = new Map<string, number>()
   const ajouter = (mois: string, centimes: number) => parMois.set(mois, (parMois.get(mois) ?? 0) + centimes)
   for (const e of ecritures) {
-    if (e.compte !== plan.banque) continue
+    if (!banque.has(e.compte)) continue
     if (ouverture && e.date < ouverture.date) continue
     ajouter(e.date.slice(0, 7), (e.sens === 'debit' ? 1 : -1) * Math.round(e.montant * 100))
   }
@@ -53,8 +56,10 @@ export function soldesFinDeMois(
   return cumules.slice(-nbMois)
 }
 
-export function calculerEvolutionMensuelle(ecritures: EcritureBrouillon[], nbMois: number, plan: PlanComptable): MoisPilotage[] {
-  const lignesBanque = ecritures.filter((e) => e.compte === plan.banque)
+// La banque, l'ensemble de ses comptes, comme pour `soldesFinDeMois`. Un virement interne entre deux comptes y paraît une
+// fois en encaissement, une fois en décaissement (chaque jambe passe par le 580) : la tendance reste juste en solde.
+export function calculerEvolutionMensuelle(ecritures: EcritureBrouillon[], nbMois: number, banque: ReadonlySet<string>): MoisPilotage[] {
+  const lignesBanque = ecritures.filter((e) => banque.has(e.compte))
   const parMois = new Map<string, { encaissements: number; decaissements: number }>()
   for (const l of lignesBanque) {
     const mois = l.date.slice(0, 7)

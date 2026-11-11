@@ -4,6 +4,8 @@ import { anneeDe, aujourdHuiAParis, formatDate, formatMoney } from '../../lib/fo
 import { correspondALaRecherche } from '../../lib/recherche'
 import { calculerBalance } from '../../lib/ecritures'
 import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
+import { banqueDesLecteurs } from '../../lib/banqueDuMouvement'
+import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
 import type { ModeleComptable } from '../../lib/engagement'
 import { messageErreur } from '../../lib/messageErreur'
 import type { ANouveau, Categorie, EcritureBrouillon, LettrageManuel, Piece, SoldeReporte } from '../../lib/types'
@@ -205,7 +207,13 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
   // trésorerie de Financement) et un avancement grossier du dossier en cours. Le détail complet de
   // l'avancement (points à traiter, documents attendus) reste dans Vue d'ensemble — pas dupliqué ici,
   // juste un chiffre de synthèse avec un renvoi.
-  const evolutionMensuelle = useMemo(() => calculerEvolutionMensuelle(ecritures, NB_MOIS_EVOLUTION, plan), [ecritures, plan])
+  // Toute la banque du dossier (MCB5, quatrième partie) : le rôle et le 512 propre de chaque compte bancaire. Des comptes
+  // qui ne se savent pas : aucune tendance (elle tairait un compte), et l'écran dit pourquoi.
+  const { banques } = useBanquesDuDossier(dossierId, plan)
+  const evolutionMensuelle = useMemo(() => {
+    const banque = banqueDesLecteurs(plan, banques)
+    return banque === null ? null : calculerEvolutionMensuelle(ecritures, NB_MOIS_EVOLUTION, banque)
+  }, [ecritures, plan, banques])
   const anneeCourante = new Date().getFullYear()
   const piecesAnnee = pieces.filter((p) => p.date_piece && anneeDe(p.date_piece) === anneeCourante)
   const piecesValideesAnnee = piecesAnnee.filter((p) => p.statut === 'validee')
@@ -382,6 +390,8 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
 
         {loading ? (
           <div className="skeleton skeleton-widget" style={{ height: 180 }} />
+        ) : evolutionMensuelle === null ? (
+          <p className="muted">{banques.cas === 'retenu' ? banques.raison : ''}</p>
         ) : evolutionMensuelle.length === 0 ? (
           <p className="muted">
             Aucune écriture bancaire générée pour l'instant — ce tableau se remplira au fil des

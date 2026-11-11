@@ -344,7 +344,7 @@ function mesurer(k: number): Map<string, number | string> {
       t('analyserAppariements (le lot)', () => analyserAppariements(validees.filter((p) => !rapprochees.has(p.id)), a.lignes, ventes.sources))
       t('FEC (numérotation et format)', () => formaterFec(numeroterFec(brouillon, a.pieces, CATEGORIES, [], MODELE, a.lignes, composition.ecritures, operationsDeCaisse, CHAMPS_BNC_NON_EXPORTES), new Map(), MODELE.mode))
       t('piste d\'audit', () => pisteAudit(brouillon, a.pieces, a.lignes, [], {
-        immobilisations: a.immobilisations, factures: a.pieces, vehicules: [], caisse: operationsDeCaisse, plan: PLAN,
+        immobilisations: a.immobilisations, factures: a.pieces, vehicules: [], caisse: operationsDeCaisse, plan: PLAN, banques: BANQUES,
         ventes: { ecritures: composition.ecritures, factures: a.factures, encaissements: a.encaissements, exemplaires: [], transmissions: [], piecesCitees: AUCUNE_PIECE_CITEE },
       }))
       t('balance', () => calculerBalance(brouillon, CATEGORIES, []))

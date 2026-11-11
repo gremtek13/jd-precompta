@@ -5,6 +5,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import { ajouterJours, anneeEtMoisEcoules, aujourdHuiAParis, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
 import { prochainesEcheances } from '../../lib/echeancesFiscales'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
+import { banquesDuDossier, banqueDesLecteurs } from '../../lib/banqueDuMouvement'
 import type { PeriodiciteTva, StatutTva } from '../../lib/types'
 import type { DossierTab } from '../../components/DossierParcours'
 import KpiTile from '../../components/widgets/KpiTile'
@@ -135,11 +136,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // Tendances de trésorerie (compte 512 du brouillon d'écritures, voir lib/tableauPilotage) —
   // indépendantes de l'exercice sélectionné dans l'en-tête : une pente récente reste utile même en
   // consultant une année passée.
-  const soldes = soldesFinDeMois(ecritures, NB_MOIS_TRESORERIE, ouverture, modele.plan)
+  // Toute la banque du dossier (MCB5, quatrième partie) : le rôle et le 512 propre de chaque compte bancaire ; des comptes
+  // illisibles, aucune série (elle tairait un compte) — la lecture le dit déjà par son bandeau.
+  const banqueDuDossier = banqueDesLecteurs(modele.plan, banquesDuDossier(lecture.comptesBancaires, modele.plan))
+  const soldes = banqueDuDossier === null ? [] : soldesFinDeMois(ecritures, NB_MOIS_TRESORERIE, ouverture, banqueDuDossier)
   const soldeActuel = soldes.length > 0 ? soldes[soldes.length - 1].solde : null
   const soldePrecedent = soldes.length > 1 ? soldes[soldes.length - 2].solde : null
   const variationSolde = soldeActuel !== null && soldePrecedent !== null ? soldeActuel - soldePrecedent : null
-  const evolutionMensuelle = calculerEvolutionMensuelle(ecritures, NB_MOIS_COLONNES, modele.plan)
+  const evolutionMensuelle = banqueDuDossier === null ? [] : calculerEvolutionMensuelle(ecritures, NB_MOIS_COLONNES, banqueDuDossier)
   const nbErreurs = pointsTravail.filter((p) => p.severite === 'erreur').length
 
   // Les saisies du client dans sa caisse que ce navigateur n'a pas vues (étape C11) : sur la caisse en base, lue en entier,

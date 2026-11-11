@@ -483,16 +483,16 @@ describe('le FEC et la piste d’audit : le paiement par la caisse au journal de
     const ops = [operation({ id: 'oc-1', date: '2026-01-05', montant: -120 })]
     const brouillon = enBase(lignesPourPiece(D, achat, cible, true, paiements([], ops).get('p-achat')!, TRESORERIE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)))
     const registre = { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE }
-    const [ligneCaisse] = pisteAudit(brouillon, [achat], [], [], { ...registre, caisse: caisseLue(ops), plan: PLAN_PAR_DEFAUT }).filter((l) => l.compte === '530000')
+    const [ligneCaisse] = pisteAudit(brouillon, [achat], [], [], { ...registre, caisse: caisseLue(ops), plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque } }).filter((l) => l.compte === '530000')
     expect(ligneCaisse).toMatchObject({
       pieceId: 'p-achat', pieceFichier: 'Pièce déposée le 21/12/2025, sans empreinte', mouvementDate: '2026-01-05', mouvementMontant: -120, manque: [],
       mouvementLibelle: 'Paiement en espèces par la caisse, saisi par le cabinet — Brouillard de caisse du 05/01/2026, tenu hors de l’application',
     })
-    const parLeClient = pisteAudit(brouillon, [achat], [], [], { ...registre, caisse: caisseLue([{ ...ops[0], origine: 'client' }]), plan: PLAN_PAR_DEFAUT })
+    const parLeClient = pisteAudit(brouillon, [achat], [], [], { ...registre, caisse: caisseLue([{ ...ops[0], origine: 'client' }]), plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque } })
     expect(parLeClient.find((l) => l.compte === '530000')?.mouvementLibelle).toMatch(/^Paiement en espèces par la caisse, saisi par le client — /)
-    const horsDuJeu = pisteAudit(brouillon, [achat], [], [], { ...registre, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT }).find((l) => l.compte === '530000')
+    const horsDuJeu = pisteAudit(brouillon, [achat], [], [], { ...registre, caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque } }).find((l) => l.compte === '530000')
     expect(horsDuJeu?.manque).toEqual(['opération de caisse hors du jeu chargé'])
-    expect(rupturesPisteAudit(brouillon, new Set(), PLAN_PAR_DEFAUT)).toEqual([])
+    expect(rupturesPisteAudit(brouillon, new Set(), PLAN_PAR_DEFAUT, { cas: 'role', compte: PLAN_PAR_DEFAUT.banque })).toEqual([])
     expect(absenceFec(brouillon, new Set()).nb).toBe(0)
   })
 })

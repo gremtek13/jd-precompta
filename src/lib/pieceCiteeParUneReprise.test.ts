@@ -182,7 +182,7 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
   it('la piste d’audit ne dit pas « écriture manquante » de la pièce citée et jamais payée ; non citée, si', () => {
     const piste = (piecesCitees: ReadonlySet<string>) => pisteAudit([], [PIECE_CITEE], [], [], {
       immobilisations: [], factures: [], vehicules: [], ventes: { ...SANS_VENTE_FACTUREE, piecesCitees },
-      caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT,
+      caisse: OPERATIONS_DE_CAISSE_ABSENTES, plan: PLAN_PAR_DEFAUT, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque },
     }).filter((l) => l.pieceId === 'p1').map((l) => l.manque)
     expect(piste(ventes.piecesCitees)).toEqual([[]])
     expect(piste(AUCUNE_PIECE_CITEE)).toEqual([['écriture']])
