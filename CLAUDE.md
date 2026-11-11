@@ -502,9 +502,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
   APRÈS COUP ». Un dossier ne tient qu'UN compte bancaire : le relevé d'un second ne s'importe pas (doublons écartés en
   silence, ruptures fausses) tant que MCB n'est pas fait — un 512 par compte d'emblée (MCB-Q1 à Q8, 11/11/2026), huit lots ; MCB1, la base
-  (`comptes_bancaires`, `compte_bancaire_id`), préparée derrière `COMPTES_BANCAIRES_PREVUS` → « PLUSIEURS COMPTES
+  (`comptes_bancaires`, `compte_bancaire_id`), préparée derrière `COMPTES_BANCAIRES_PREVUS` ; MCB2, l'import par compte
+  (`lib/importParCompte.ts` : aucun compte par défaut dès deux, dédoublonnage, recouvrement et suite des soldes par compte,
+  un OFX confronté à la fin de son identifiant, une seconde migration préparée), derrière le même drapeau → « PLUSIEURS COMPTES
   BANCAIRES D'UN DOSSIER : LA CONCEPTION », « PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : D'EMBLÉE, LES LOTS, ET LA BASE
-  (MCB1) ». L'écriture d'un mouvement que ses encaissements classent porte un libellé composé (« Relevé du
+  (MCB1) », « L'IMPORT D'UN RELEVÉ PAR COMPTE BANCAIRE (MCB2) ». L'écriture d'un mouvement que ses encaissements classent porte un libellé composé (« Relevé du
   JJ/MM/AAAA — F… », `libelleDUnMouvementDesVentes`), jamais celui de la banque, qui nomme qui a payé ; un mouvement
   classé hors des ventes facturées porte « Crédit du relevé du JJ/MM/AAAA », ou « Débit du relevé du JJ/MM/AAAA » quand
   il rend ou défait l'argent d'un client (une ligne en classe 7 ou 41, la définition de VF9CQ1B), tout autre débit

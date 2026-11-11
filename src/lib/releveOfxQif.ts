@@ -14,7 +14,10 @@ import { natureDuLibelle } from './soldeReleve'
 // Chaque règle tombe du côté sûr — refuser, ou dire, plutôt que deviner : aucun écran ne retire un mouvement importé.
 //
 // Les identifiants bancaires (ACCTID, BANKID, BRANCHID, le nom d'un compte QIF) ne sont jamais lus dans ce que le module
-// rend : ni dans les lignes, ni dans la ligne brute gardée (`libelle_brut`), ni dans un message, ni dans un journal.
+// rend : ni dans les lignes, ni dans la ligne brute gardée (`libelle_brut`), ni dans un message, ni dans un journal. Seule
+// exception (MCB2, l'import par compte) : les QUATRE DERNIERS caractères de l'ACCTID d'un OFX (`finDIdentifiant`), ce qu'un
+// relevé de banque montre déjà, pour confronter le fichier au compte choisi (`lib/importParCompte.ts`) — jamais le numéro
+// entier, jamais dans une ligne ni un message.
 
 export type FormatOfxQif = 'ofx-sgml' | 'ofx-xml' | 'qif'
 
@@ -50,6 +53,9 @@ export type LectureOfxQif =
     soldeAnnonce: { nature: 'comptable' | 'ouverture'; date: string; montant: number } | null
     sensDouteux: SensDouteux[]
     doutes: string[]
+    // Les quatre derniers caractères (chiffres et capitales) de l'identifiant du compte (ACCTID de BANKACCTFROM) ; nul en
+    // QIF, ou quand l'OFX ne le dit pas, ou en dit moins de quatre.
+    finDIdentifiant: string | null
   }
 export type ReleveOfxQifLu = Extract<LectureOfxQif, { refus: null }>
 
@@ -153,7 +159,16 @@ const TYPES_AU_DEBIT = new Set(['DEBIT', 'DIRECTDEBIT', 'CHECK', 'CASH', 'FEE', 
 const TYPES_AU_CREDIT = new Set(['CREDIT', 'DEP', 'DIRECTDEP'])
 
 interface OperationOfx { champs: Map<string, string>; devise: string | null }
-interface CompteOfx { curdef: string | null; operations: OperationOfx[]; balamt: string | null; dtasof: string | null }
+interface CompteOfx {
+  curdef: string | null; operations: OperationOfx[]; balamt: string | null; dtasof: string | null; acctid: string | null
+}
+
+/** Les quatre derniers caractères d'un identifiant de compte, en chiffres et capitales (les espaces, tirets et autres
+ *  signes retirés) ; nul s'il en reste moins de quatre. Ce que retient `comptes_bancaires.fin_d_identifiant`. */
+export function finDeLIdentifiant(identifiant: string): string | null {
+  const net = identifiant.toUpperCase().replace(/[^0-9A-Z]/g, '')
+  return net.length < 4 ? null : net.slice(-4)
+}
 
 function natureDUnAutreReleve(nom: string): string {
   if (nom === 'CCSTMTRS' || nom === 'CCSTMTENDRS') return 'un relevé de carte bancaire'
@@ -191,7 +206,7 @@ function lireOfx(texte: string, format: FormatOfxQif): LectureOfxQif {
         return { format, refus: `Ce fichier est ${natureDUnAutreReleve(nom)}, pas le relevé d’un compte bancaire : il ne s’importe pas ici.` }
       }
       pile.push(nom)
-      if (nom === 'STMTRS') { compte = { curdef: null, operations: [], balamt: null, dtasof: null }; comptes.push(compte) }
+      if (nom === 'STMTRS') { compte = { curdef: null, operations: [], balamt: null, dtasof: null, acctid: null }; comptes.push(compte) }
       else if (nom === 'STMTTRN' && compte) { operation = { champs: new Map(), devise: null }; compte.operations.push(operation) }
       else if (nom === 'LEDGERBAL') dansLedger = true
       continue
@@ -204,6 +219,7 @@ function lireOfx(texte: string, format: FormatOfxQif): LectureOfxQif {
       if (nom === 'BALAMT') compte.balamt = texteDuJeton
       else if (nom === 'DTASOF') compte.dtasof = texteDuJeton
     } else if (compte && nom === 'CURDEF') compte.curdef = texteDuJeton.toUpperCase()
+    else if (compte && nom === 'ACCTID' && pile[pile.length - 1] === 'BANKACCTFROM' && compte.acctid === null) compte.acctid = texteDuJeton
   }
 
   if (comptes.length === 0) return { format, refus: 'Le fichier ne porte le relevé d’aucun compte bancaire (aucun STMTRS).' }
@@ -250,7 +266,7 @@ function lireOfx(texte: string, format: FormatOfxQif): LectureOfxQif {
       doutes.push('Le solde comptable du fichier (LEDGERBAL) ne se lit pas : il n’est pas repris, et rien ne confronte le relevé.')
     }
   }
-  return { format, refus: null, lignes, soldeAnnonce, sensDouteux, doutes }
+  return { format, refus: null, lignes, soldeAnnonce, sensDouteux, doutes, finDIdentifiant: seul.acctid === null ? null : finDeLIdentifiant(seul.acctid) }
 }
 
 // ── Le QIF ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -353,7 +369,7 @@ function lireQif(texte: string): LectureOfxQif {
     if (refus) return { format, refus }
     lignes.push([date, libelle, montant])
   }
-  return { format, refus: null, lignes, soldeAnnonce, sensDouteux: [], doutes: [] }
+  return { format, refus: null, lignes, soldeAnnonce, sensDouteux: [], doutes: [], finDIdentifiant: null }
 }
 
 // ── L'entrée ─────────────────────────────────────────────────────────────────────────────────────────────────────────────

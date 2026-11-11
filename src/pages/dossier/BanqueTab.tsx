@@ -32,6 +32,12 @@ import {
 } from '../../lib/releveOfxQif'
 import { chargerControlesReleves, enregistrerControleReleve } from '../../lib/controlesReleves'
 import {
+  compteAEcrire, compteDeLImport, finAPoser, partDuCompte, refusDeLIdentifiant, refusDuCompte, refusDuNomDuFichier,
+  type LectureDesComptes,
+} from '../../lib/importParCompte'
+import { lireLesComptesDuDossier } from '../../lib/comptesBancairesLecture'
+import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
+import {
   controleDuFichier, jonctionsDesReleves, phraseDeLaRupture, phraseDeLaSuiteDuFichier, relevesIncoherentsDe, rupturesDesReleves,
 } from '../../lib/suiteDesReleves'
 import {
@@ -2748,6 +2754,25 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   // (source_fichier) pour pouvoir retrouver le relevé d'origine plus tard, notamment quand le libellé
   // est retombé sur le générique "Mouvement bancaire".
   const [sourceFileName, setSourceFileName] = useState<string | null>(null)
+  // PLUSIEURS COMPTES BANCAIRES (MCB2, `lib/importParCompte.ts`) : le relevé entre sous un compte, jamais deviné quand le
+  // dossier en tient deux ou plus ; le dédoublonnage, le recouvrement et la suite des soldes se jugent sur la part du relevé
+  // de CE compte. Drapeau baissé : `sans_objet`, rien ne se lit, tout le relevé est un compte comme avant. La lecture est
+  // gardée avec le dossier qu'elle lit, et se refait après chaque import (le principal créé, la fin d'identifiant posée).
+  const [comptesLus, setComptesLus] = useState<{ dossierId: string; lecture: LectureDesComptes } | null>(null)
+  const [relectureDesComptes, setRelectureDesComptes] = useState(0)
+  const [compteChoisi, setCompteChoisi] = useState<string | null>(null)
+  useEffect(() => {
+    let annule = false
+    lireLesComptesDuDossier(dossierId).then((lecture) => { if (!annule) setComptesLus({ dossierId, lecture }) })
+    return () => { annule = true }
+  }, [dossierId, relectureDesComptes])
+  const lectureDesComptes = useMemo<LectureDesComptes>(() => (!COMPTES_BANCAIRES_PREVUS ? { etat: 'sans_objet' }
+    : comptesLus && comptesLus.dossierId === dossierId ? comptesLus.lecture : { etat: 'en_cours' }), [comptesLus, dossierId])
+  const compteImport = useMemo(() => compteDeLImport(lectureDesComptes, compteChoisi), [lectureDesComptes, compteChoisi])
+  const compteEcrit = compteAEcrire(compteImport)
+  // La part du relevé et des contrôles du compte : ce contre quoi le fichier se juge.
+  const lignesDuCompte = useMemo(() => partDuCompte(lignesExistantes, compteImport), [lignesExistantes, compteImport])
+  const controlesDuCompte = useMemo(() => (controlesReleves ? partDuCompte(controlesReleves, compteImport) : null), [controlesReleves, compteImport])
 
   useEffect(() => {
     // Lue par tranches (voir lib/lectureComplete.ts) : un dossier accumule un relevé par mois et
@@ -2857,9 +2882,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   // importés dont la période le recouvre.
   const recouvrementsCsv = useMemo(() => {
     if (!interpretation) return []
-    const { nouvelles } = partagerParMultiplicite(interpretation.operations, lignesExistantes)
-    return recouvrements(nouvelles.map((o) => o.date), lignesExistantes)
-  }, [interpretation, lignesExistantes])
+    const { nouvelles } = partagerParMultiplicite(interpretation.operations, lignesDuCompte)
+    return recouvrements(nouvelles.map((o) => o.date), lignesDuCompte)
+  }, [interpretation, lignesDuCompte])
   // La suite des soldes, avant l'import (RELEVE-Q1) : le contrôle du fichier, confronté aux relevés déjà importés, le relevé
   // en base augmenté des opérations du fichier sous son nom (le dédoublonnage n'en écarte que celles déjà en base). Un fichier
   // sans ses deux soldes : la phrase des soldes le dit déjà, rien de plus.
@@ -2867,14 +2892,20 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
     if (!interpretation) return null
     const controle = controlerSolde(interpretation.soldes, interpretation.operations)
     if (!controle) return null
-    const { nouvelles } = partagerParMultiplicite(interpretation.operations, lignesExistantes)
-    return phraseDeLaSuiteDuFichier(controlesReleves, [...lignesExistantes, ...nouvelles.map((o) => ({ ...o, source_fichier: sourceFileName }))], controleDuFichier(sourceFileName, controle))
-  }, [interpretation, lignesExistantes, controlesReleves, sourceFileName])
+    const { nouvelles } = partagerParMultiplicite(interpretation.operations, lignesDuCompte)
+    return phraseDeLaSuiteDuFichier(controlesDuCompte, [...lignesDuCompte, ...nouvelles.map((o) => ({ ...o, source_fichier: sourceFileName }))], controleDuFichier(sourceFileName, controle))
+  }, [interpretation, lignesDuCompte, controlesDuCompte, sourceFileName])
+  // Le compte du relevé (MCB2) : à choisir dès deux comptes, un fichier au nom d'un relevé d'un autre compte, un OFX dont
+  // l'identifiant contredit le compte choisi — dits avant le clic, le bouton grisé, pour le CSV comme pour le PDF.
+  const finDuFichier = ofxQif?.finDIdentifiant ?? null
+  const refusCompte = refusDuCompte(compteImport)
+    ?? refusDuNomDuFichier(sourceFileName, compteImport, lignesExistantes, controlesReleves ?? [], lectureDesComptes)
+    ?? (source === 'csv' ? refusDeLIdentifiant(finDuFichier, compteImport, lectureDesComptes) : null)
   const recouvrementsPdf = useMemo(() => {
     if (!pdfRows) return []
-    const { nouvelles } = partagerParMultiplicite(operationsDuPdf(pdfRows).operations, lignesExistantes)
-    return recouvrements(nouvelles.map((r) => r.date), lignesExistantes)
-  }, [pdfRows, lignesExistantes])
+    const { nouvelles } = partagerParMultiplicite(operationsDuPdf(pdfRows).operations, lignesDuCompte)
+    return recouvrements(nouvelles.map((r) => r.date), lignesDuCompte)
+  }, [pdfRows, lignesDuCompte])
   // Les lignes peuvent avoir des longueurs différentes selon les banques (ex. ligne de solde plus
   // courte que les lignes d'opérations) — on prend le plus grand nombre de colonnes observé.
   const nbColonnes = rows ? rows.reduce((max, r) => Math.max(max, r.length), 0) : 0
@@ -2949,7 +2980,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
 
   async function handleImportPdfRows() {
     if (!pdfRows || pdfRows.length === 0 || importEnCours.current) return
-    if (lectureIncomplete || lectureEnCours) return
+    if (lectureIncomplete || lectureEnCours || refusCompte) return
     importEnCours.current = true
     setImporting(true)
     setError(null)
@@ -2964,7 +2995,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const { operations, soldes: soldesDesignes, nulles, sansDate } = operationsDuPdf(pdfRows)
 
       // Par multiplicité (`partagerParMultiplicite`) : deux opérations identiques du même relevé s'importent toutes deux.
-      const { nouvelles, dejaPresentes: doublons } = partagerParMultiplicite(operations, lignesExistantes)
+      const { nouvelles, dejaPresentes: doublons } = partagerParMultiplicite(operations, lignesDuCompte)
       const aInserer = nouvelles.filter((r) => !estFigee(r.date, frontiere))
       const figees = nouvelles.length - aInserer.length
       if (aInserer.length === 0) {
@@ -2972,12 +3003,13 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
           ? phraseLignesFigees(figees, frontiere, true, doublons)
           : doublons > 0 ? "Ce relevé semble déjà importé (mêmes date, libellé et montant)." : 'Aucune opération à importer : leurs montants sont nuls ou leurs dates vides.')
       }
-      if (!confirmerRecouvrement(recouvrements(aInserer.map((r) => r.date), lignesExistantes))) return
+      if (!confirmerRecouvrement(recouvrements(aInserer.map((r) => r.date), lignesDuCompte))) return
 
       const { error } = await supabase.from('lignes_bancaires').insert(
         aInserer.map((r) => ({
           dossier_id: dossierId, date: r.date, libelle: r.libelle, montant: r.montant,
           statut: statutPourMouvement(r, regles), source_fichier: sourceFileName,
+          ...(compteEcrit === null ? {} : { compte_bancaire_id: compteEcrit }),
         })),
       )
       if (error) throw error
@@ -2991,11 +3023,11 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       // lignes écartées comme déjà présentes en base en font partie — les retirer ferait apparaître
       // un écart qui n'existe pas dès qu'un relevé chevauche un import précédent (comme côté CSV).
       const controlePdf = controlerSolde(soldesDesignes, operations)
-      if (controlePdf) await enregistrerControleReleve(dossierId, sourceFileName, controlePdf)
+      if (controlePdf) await enregistrerControleReleve(dossierId, sourceFileName, controlePdf, compteEcrit)
       // La suite des soldes (RELEVE-Q1), comme pour un CSV : le contrôle du relevé, confronté aux relevés déjà importés.
       const insereesPdf = aInserer.map((r) => ({ date: r.date, montant: r.montant, source_fichier: sourceFileName }))
-      const suitePdf = controlePdf ? phraseDeLaSuiteDuFichier(controlesReleves, [...lignesExistantes, ...insereesPdf], controleDuFichier(sourceFileName, controlePdf))
-        : soldesDesignes.length > 0 ? phraseDeLaSuiteDuFichier(controlesReleves, lignesExistantes, null) : null
+      const suitePdf = controlePdf ? phraseDeLaSuiteDuFichier(controlesDuCompte, [...lignesDuCompte, ...insereesPdf], controleDuFichier(sourceFileName, controlePdf))
+        : soldesDesignes.length > 0 ? phraseDeLaSuiteDuFichier(controlesDuCompte, lignesDuCompte, null) : null
       const alertePdf = controlePdf && !controlePdf.coherent
         ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controlePdf.soldeInitial.toFixed(2)} € + mouvements ${controlePdf.sommeMouvements.toFixed(2)} € = ${controlePdf.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controlePdf.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controlePdf.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
         : ''
@@ -3003,6 +3035,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       setPdfRows(null)
       setPdfLignes(null)
       setSourceFileName(null)
+      setRelectureDesComptes((n) => n + 1)
       onImported()
       const ignoresDites = phraseDesIgnores(aInserer, regles)
       if (doublons > 0 || figees > 0 || alertePdf || nulles > 0 || sansDate > 0 || ignoresDites || suitePdf) {
@@ -3021,7 +3054,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
 
   async function handleImport() {
     if (!rows || importEnCours.current) return
-    if (lectureIncomplete || lectureEnCours) return
+    if (lectureIncomplete || lectureEnCours || refusCompte) return
     importEnCours.current = true
     setImporting(true)
     setError(null)
@@ -3044,13 +3077,14 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const toInsert = operations.map((o) => ({
         dossier_id: dossierId, date: o.date, libelle: o.libelle, montant: o.montant, statut: statutPourMouvement(o, regles),
         source_fichier: sourceFileName, libelle_brut: o.brut,
+        ...(compteEcrit === null ? {} : { compte_bancaire_id: compteEcrit }),
       }))
 
       // Un relevé déposé deux fois (nouvelle tentative après un doute, mauvais fichier repris par
       // erreur...) dupliquerait sinon silencieusement chaque mouvement — même signature (date,
       // libellé, montant) qu'une ligne déjà en base. Par MULTIPLICITÉ, jamais à l'intérieur du fichier :
       // deux opérations identiques du même relevé (deux passages à la pharmacie le même jour) s'importent toutes deux.
-      const { nouvelles, dejaPresentes: doublons } = partagerParMultiplicite(toInsert, lignesExistantes)
+      const { nouvelles, dejaPresentes: doublons } = partagerParMultiplicite(toInsert, lignesDuCompte)
       const aInserer = nouvelles.filter((l) => !estFigee(l.date, frontiere))
       const figees = nouvelles.length - aInserer.length
       if (aInserer.length === 0) {
@@ -3058,14 +3092,24 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
           ? phraseLignesFigees(figees, frontiere, true, doublons)
           : doublons > 0 ? "Ce relevé semble déjà importé (mêmes date, libellé et montant)." : "Aucune ligne exploitable — vérifie le mapping des colonnes.")
       }
-      if (!confirmerRecouvrement(recouvrements(aInserer.map((l) => l.date), lignesExistantes))) return
+      if (!confirmerRecouvrement(recouvrements(aInserer.map((l) => l.date), lignesDuCompte))) return
 
       const { error } = await supabase.from('lignes_bancaires').insert(aInserer)
       if (error) throw error
 
+      // Un OFX importé sous un compte qui n'en retient encore aucune fin d'identifiant la lui donne (`finAPoser`) : les relevés
+      // OFX suivants s'y confrontent. Une écriture vérifiée : son échec se dit, le relevé reste importé.
+      const fin = finAPoser(finDuFichier, compteImport)
+      let finNonPosee: string | null = null
+      if (fin !== null && compteEcrit !== null) {
+        const { error: errFin } = await supabase.from('comptes_bancaires').update({ fin_d_identifiant: fin })
+          .eq('id', compteEcrit).is('fin_d_identifiant', null)
+        if (errFin) finNonPosee = messageErreur(errFin, 'écriture refusée')
+      }
       setRows(null)
       setOfxQif(null)
       setSourceFileName(null)
+      setRelectureDesComptes((n) => n + 1)
       onImported()
       const messages = [`${aInserer.length} ligne(s) importée(s)`]
       if (doublons > 0) messages.push(`${doublons} déjà présente(s), ignorée(s)`)
@@ -3085,18 +3129,20 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const controle = controlerSolde(soldes, toInsert)
       // Conservé en base, et pas seulement annoncé : l'alerte ci-dessous disparaît au premier clic,
       // alors qu'un relevé qui ne boucle pas reste un problème tant qu'il n'est pas traité.
-      if (controle) await enregistrerControleReleve(dossierId, sourceFileName, controle)
+      if (controle) await enregistrerControleReleve(dossierId, sourceFileName, controle, compteEcrit)
       // La suite des soldes avec les relevés déjà importés (RELEVE-Q1), dite après l'import : le relevé en base tel qu'il est
       // devenu. Un fichier sans ses deux soldes a sa phrase des soldes ; sans aucune ligne de solde, l'aperçu l'a dit.
-      const suite = controle ? phraseDeLaSuiteDuFichier(controlesReleves, [...lignesExistantes, ...aInserer], controleDuFichier(sourceFileName, controle))
-        : soldes.length > 0 ? phraseDeLaSuiteDuFichier(controlesReleves, lignesExistantes, null) : null
+      const suite = controle ? phraseDeLaSuiteDuFichier(controlesDuCompte, [...lignesDuCompte, ...aInserer], controleDuFichier(sourceFileName, controle))
+        : soldes.length > 0 ? phraseDeLaSuiteDuFichier(controlesDuCompte, lignesDuCompte, null) : null
       const alerte = controle && !controle.coherent
         ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controle.soldeInitial.toFixed(2)} € + mouvements ${controle.sommeMouvements.toFixed(2)} € = ${controle.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controle.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controle.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
         : ''
       const ignoresDites = phraseDesIgnores(aInserer, regles)
-      if (doublons > 0 || phraseEcartees || soldes.length > 0 || figees > 0 || alerte || ignoresDites || suite) {
+      const finDite = finNonPosee === null ? '' : `\n\nLa fin de l’identifiant de ce relevé OFX n’a pas pu être retenue sur son compte `
+        + `(${finNonPosee}) : le prochain relevé OFX de ce compte ne s’y confrontera pas.`
+      if (doublons > 0 || phraseEcartees || soldes.length > 0 || figees > 0 || alerte || ignoresDites || suite || finDite) {
         window.alert(messages.join(', ') + '.' + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '')
-          + (phraseSoldes ? `\n\n${phraseSoldes}` : '') + alerte + (suite ? `\n\n${suite}` : '') + ignoresDites)
+          + (phraseSoldes ? `\n\n${phraseSoldes}` : '') + alerte + (suite ? `\n\n${suite}` : '') + ignoresDites + finDite)
       }
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))
@@ -3134,6 +3180,25 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
         motif={motifReleves}
         consequence="Un relevé peut donc manquer à la liste ci-dessous sans être absent de Documents : s’il n’y apparaît pas, dépose le fichier directement."
       />
+
+      {/* Le compte du relevé (MCB2) : offert dès deux comptes, sans aucun choix par défaut ; un seul, il est pris sans rien
+          demander. */}
+      {lectureDesComptes.etat === 'lus' && lectureDesComptes.comptes.length > 1 && (
+        <div className="field">
+          <label htmlFor="compteDuReleve">Compte bancaire dont ce relevé est l’extrait</label>
+          <select
+            id="compteDuReleve"
+            value={compteImport.cas === 'compte' ? compteImport.compte.id : ''}
+            onChange={(e) => setCompteChoisi(e.target.value === '' ? null : e.target.value)}
+          >
+            <option value="">À choisir</option>
+            {lectureDesComptes.comptes.map((c) => (
+              <option key={c.id} value={c.id}>{c.principal ? `${c.libelle} (compte principal)` : c.libelle}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {refusCompte && (rows || pdfRows) && <p className="error-text">{refusCompte}</p>}
 
       {source === 'csv' && (
         <>
@@ -3273,7 +3338,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
           )}
           {refusReglage && <p className="error-text">{refusReglage}</p>}
 
-          <button className="btn btn-primary" onClick={handleImport} disabled={importing || lectureIncomplete !== null || lectureEnCours || refusReglage !== null}>
+          <button className="btn btn-primary" onClick={handleImport} disabled={importing || lectureIncomplete !== null || lectureEnCours || refusReglage !== null || refusCompte !== null}>
             {importing ? 'Import…' : `Importer ${interpretation?.operations.length ?? 0} ligne(s)`}
           </button>
         </>
@@ -3374,7 +3439,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
               <button
                 className="btn btn-primary"
                 onClick={handleImportPdfRows}
-                disabled={importing || lectureIncomplete !== null || lectureEnCours || operationsDuPdf(pdfRows).operations.length === 0}
+                disabled={importing || lectureIncomplete !== null || lectureEnCours || refusCompte !== null || operationsDuPdf(pdfRows).operations.length === 0}
               >
                 {importing ? 'Import…' : `Importer ${operationsDuPdf(pdfRows).operations.length} ligne(s)`}
               </button>

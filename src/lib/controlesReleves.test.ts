@@ -65,7 +65,7 @@ describe('enregistrerControleReleve', () => {
   it('écrit le contrôle avec sa période et son écart', () => {
     // Les chiffres sont ceux du relevé réel du dossier de test : c'est cet écart de 5 359,00 € que
     // l'ancienne alerte annonçait puis détruisait au premier clic.
-    return enregistrerControleReleve('d1', 'releve-2025.csv', controle()).then(() => {
+    return enregistrerControleReleve('d1', 'releve-2025.csv', controle(), null).then(() => {
       expect(etat.appels[0].ligne).toMatchObject({
         dossier_id: 'd1', source_fichier: 'releve-2025.csv',
         solde_initial: 8270.84, solde_final: 20023.55, ecart: 5359, coherent: false,
@@ -74,10 +74,20 @@ describe('enregistrerControleReleve', () => {
     })
   })
 
+  it('sans compte connu, ne nomme pas la colonne du compte (MCB2 : drapeau baissé, elle n’existe pas encore)', async () => {
+    await enregistrerControleReleve('d1', 'releve-2025.csv', controle(), null)
+    expect(Object.keys(etat.appels[0].ligne as object)).not.toContain('compte_bancaire_id')
+  })
+
+  it('avec le compte du relevé, l’écrit sur le contrôle (MCB2)', async () => {
+    await enregistrerControleReleve('d1', 'releve-2025.csv', controle(), 'cb-2')
+    expect(etat.appels[0].ligne).toMatchObject({ dossier_id: 'd1', source_fichier: 'releve-2025.csv', compte_bancaire_id: 'cb-2' })
+  })
+
   it('remplace le contrôle quand le même fichier est réimporté', async () => {
     // Sans `onConflict`, réimporter un relevé empilerait un second contrôle et l'écran annoncerait
     // deux relevés en écart là où il n'y en a qu'un.
-    await enregistrerControleReleve('d1', 'releve-2025.csv', controle())
+    await enregistrerControleReleve('d1', 'releve-2025.csv', controle(), null)
     expect(etat.appels[0].methode).toBe('upsert')
     expect(etat.appels[0].onConflict).toBe('dossier_id,source_fichier')
   })
@@ -86,7 +96,7 @@ describe('enregistrerControleReleve', () => {
     // Pas de branche séparée : la contrainte unique est TOTALE, et deux NULL n'étant jamais égaux en
     // SQL, un relevé sans nom ne conflictue avec rien et s'insère. Une branche `insert` dédiée aurait
     // été du code mort à maintenir.
-    await enregistrerControleReleve('d1', null, controle())
+    await enregistrerControleReleve('d1', null, controle(), null)
     expect(etat.appels[0].methode).toBe('upsert')
     expect(etat.appels[0].ligne).toMatchObject({ source_fichier: null })
   })
@@ -96,7 +106,7 @@ describe('enregistrerControleReleve', () => {
     // jamais avalé en silence.
     const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
     etat.erreurEcriture = { message: 'permission denied' }
-    await expect(enregistrerControleReleve('d1', 'x.csv', controle())).resolves.toBeUndefined()
+    await expect(enregistrerControleReleve('d1', 'x.csv', controle(), null)).resolves.toBeUndefined()
     expect(journal).toHaveBeenCalled()
     journal.mockRestore()
   })

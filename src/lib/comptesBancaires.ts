@@ -41,6 +41,9 @@ export interface CompteBancaire {
   compte_propre_depuis: string | null
   ouvert_le: string | null
   clos_le: string | null
+  /** Les quatre derniers caractères de l'identifiant (ACCTID) du premier relevé OFX importé sous ce compte, nuls avant —
+   *  la migration `fin_d_identifiant_des_comptes_bancaires` (MCB2), préparée, qui suit celle-ci sous le même drapeau. */
+  fin_d_identifiant: string | null
   created_by: string | null
   created_at: string
 }
