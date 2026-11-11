@@ -335,11 +335,12 @@ describe('les essais qui cochent « Ventes »', () => {
     // originauxDesImports.sql (11/11/2026, A8d2a) : le client porte « Ventes » sur A, un dossier jetable inséré basculé.
     // reprisesAuClient.sql (11/11/2026, A8C-Q1) : le client « Ventes » d'un dossier jetable inséré basculé ; le bloc RC de
     // rls.sql aussi.
+    // relanceDesDemandesParEmail.sql (11/11/2026, B3b) : le client porte « Ventes » sur A, un dossier jetable inséré basculé.
     expect(ecrivent).toEqual([
       'acomptesDesDevis.sql', 'adresseDuClientExigee.sql', 'apercuFactureElectronique.sql', 'articles.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'caisse.sql', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
       'devisCitentUnContact.sql', 'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'encaissementsDesReprises.sql', 'envoiDesDevis.sql', 'etatFactureElectronique.sql',
       'exemplairesDesFactures.sql', 'factureInternationale.sql', 'factures.sql', 'facturesImportees.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
-      'mentionsFigees.sql', 'numerotationContinue.sql', 'originalDUnImport.sql', 'originauxDesImports.sql', 'parametresFacturation.sql', 'pieceDUneFactureReprise.sql', 'piecesJointesEcartees.sql', 'relancesDesFactures.sql', 'reprisesAuClient.sql', 'rls.sql',
+      'mentionsFigees.sql', 'numerotationContinue.sql', 'originalDUnImport.sql', 'originauxDesImports.sql', 'parametresFacturation.sql', 'pieceDUneFactureReprise.sql', 'piecesJointesEcartees.sql', 'relanceDesDemandesParEmail.sql', 'relancesDesFactures.sql', 'reprisesAuClient.sql', 'rls.sql',
       'simulationDesVentesFacturees.sql', 'traceDesDroits.sql',
       'ventesClient.sql', 'ventesFacturees.sql',
     ])
