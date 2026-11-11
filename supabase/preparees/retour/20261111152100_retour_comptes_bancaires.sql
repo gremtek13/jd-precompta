@@ -19,7 +19,7 @@ $garde$;
 drop function public.compte_de_banque_du_mouvement(uuid);
 drop trigger plan_comptable_dossier_hors_des_comptes_bancaires on public.plan_comptable_dossier;
 drop function public.garder_plan_hors_des_comptes_bancaires();
-drop trigger lignes_bancaires_compte_bancaire on public.lignes_bancaires;
+drop trigger lignes_bancaires_garde_du_compte_bancaire on public.lignes_bancaires;
 drop trigger controles_releves_bancaires_compte_bancaire on public.controles_releves_bancaires;
 drop function public.poser_compte_bancaire();
 drop index public.lignes_bancaires_compte_bancaire_id_idx;

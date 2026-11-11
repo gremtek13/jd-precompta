@@ -294,8 +294,15 @@ begin
             = 'comptes_bancaires:comptes_bancaires_garde:garder_comptes_bancaires '
               || 'comptes_bancaires:comptes_bancaires_principal_present:garder_compte_principal_present '
               || 'controles_releves_bancaires:controles_releves_bancaires_compte_bancaire:poser_compte_bancaire '
-              || 'lignes_bancaires:lignes_bancaires_compte_bancaire:poser_compte_bancaire '
-              || 'plan_comptable_dossier:plan_comptable_dossier_hors_des_comptes_bancaires:garder_plan_hors_des_comptes_bancaires',
+              || 'lignes_bancaires:lignes_bancaires_garde_du_compte_bancaire:poser_compte_bancaire '
+              || 'plan_comptable_dossier:plan_comptable_dossier_hors_des_comptes_bancaires:garder_plan_hors_des_comptes_bancaires'
+        -- La garde du compte d'un mouvement passe APRÈS le gel d'un exercice validé (l'ordre des noms, celui de PostgreSQL) :
+        -- un mouvement figé se refuse d'abord parce que son exercice est validé (validationExercice.sql, 75 et 77).
+        and (select string_agg(t.tgname::text, ' ' order by t.tgname collate "C")
+               from pg_trigger t
+              where t.tgrelid = 'public.lignes_bancaires'::regclass and not t.tgisinternal and (t.tgtype & 2) <> 0
+                and t.tgname collate "C" <= 'lignes_bancaires_garde_du_compte_bancaire')
+            = 'lignes_bancaires_figees_par_la_validation lignes_bancaires_garde_du_compte_bancaire',
       'observe', 'relu au catalogue');
     raise exception 'ANNULATION_ESSAI_GLOBALE';
   exception when others then

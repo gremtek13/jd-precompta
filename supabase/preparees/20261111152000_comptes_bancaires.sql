@@ -311,7 +311,12 @@ begin
 end
 $$;
 revoke all on function public.poser_compte_bancaire() from public, anon, authenticated;
-create trigger lignes_bancaires_compte_bancaire
+-- PostgreSQL déclenche les gardes d'une même table dans l'ordre de leur NOM : celle-ci se nomme pour passer juste APRÈS
+-- le gel d'un exercice validé (`lignes_bancaires_figees_par_la_validation`) et avant les autres gardes d'hier. Un
+-- mouvement d'un exercice validé se refuse d'abord parce que l'exercice est validé, aux mots d'hier — la raison qui ne se
+-- lève jamais —, et non par son compte ; un mouvement libre qui changerait de dossier se refuse ensuite ici (son compte
+-- est de son dossier). Essais : supabase/essais/validationExercice.sql, contrôles 75 à 77, et comptesBancaires.sql.
+create trigger lignes_bancaires_garde_du_compte_bancaire
   before insert or update of compte_bancaire_id, dossier_id, date, source_fichier on public.lignes_bancaires
   for each row execute function public.poser_compte_bancaire();
 create trigger controles_releves_bancaires_compte_bancaire
