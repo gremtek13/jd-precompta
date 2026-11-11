@@ -51,6 +51,9 @@ import ArticleChoixModal from './ArticleChoixModal'
 import ArticleSaisieModal from './ArticleSaisieModal'
 import ConfirmationArticle from './ConfirmationArticle'
 import ContactChoixModal from './ContactChoixModal'
+import { FICHES_LIEES_PREVUES, estFicheLiee } from '../../lib/fichesLiees'
+import { lireLesIdentitesDesFichesLiees, type LectureDesIdentites } from '../../lib/fichesLieesLecture'
+import { fichesLieesAChoisir, ligneDesFichesTues, type FicheLieeAChoisir } from '../../lib/fichesLieesVue'
 import ContactSaisieModal from './ContactSaisieModal'
 import {
   apercuDeTransmission, bonDeCommandeOuvert, livraisonOuverte, mentionsAEnregistrer, refusDesMentions, saisieDesMentions,
@@ -95,7 +98,11 @@ type LectureContacts = { cle: string; lu: LectureDesContacts } | { cle: string; 
 type FenetreContact =
   | { genre: 'choix' }
   | { genre: 'saisie'; depart: SaisieContact }
-  | { genre: 'remplacer'; contact: Contact; choix: ChoixDeContact; remplace: string[] }
+  // La source du choix : un contact du fichier, ou une fiche liée au dossier d'un client (LM3), nommée par l'identité lue.
+  | { genre: 'remplacer'; contact: SourceDuChoix; choix: ChoixDeContact; remplace: string[] }
+
+// Ce dont le choix garde la trace : l'identifiant qui part en provenance (`contact_id`) et le nom qui se dit.
+type SourceDuChoix = { id: string; nom: string }
 
 const CONSEQUENCE_CONTACTS_PARTIELS = 'Aucun client ne peut donc être choisi ni enregistré d’ici : une liste tronquée dirait « libre » '
   + 'un SIRET déjà pris.'
@@ -290,6 +297,18 @@ export default function FactureFormModal(props: Props) {
     lireCeQueLaValidationFige(dossierId).then((lu) => { if (!annule) setLectureValidation({ cle: dossierId, lu }) })
     return () => { annule = true }
   }, [dossierId])
+
+  // Les identités des fiches liées (LM3) : lues quand la liste lue en entier en porte une, gardées AVEC cette liste — une relecture
+  // des contacts les relit, et une réponse tardive ne s'inscrit pas.
+  const [lectureIdentites, setLectureIdentites] = useState<{ cle: readonly Contact[]; lu: LectureDesIdentites } | null>(null)
+  const contactsLusEnEntier = lectureContacts?.cle === dossierId && 'lu' in lectureContacts && lectureContacts.lu.complete
+    ? lectureContacts.lu.lignes : null
+  useEffect(() => {
+    if (!FICHES_LIEES_PREVUES || contactsLusEnEntier == null || !contactsLusEnEntier.some(estFicheLiee)) return
+    let annule = false
+    void lireLesIdentitesDesFichesLiees(dossierId).then((lu) => { if (!annule) setLectureIdentites({ cle: contactsLusEnEntier, lu }) })
+    return () => { annule = true }
+  }, [dossierId, contactsLusEnEntier])
 
   // Les contacts : lus à l'ouverture, jamais avant que l'espace les ouvre (`CONTACTS_EXPORTES`). Même garde que les articles.
   useEffect(() => {
@@ -694,6 +713,17 @@ export default function FactureFormModal(props: Props) {
   const nombreDeContactsEnCours = contactsEntiers == null ? 0 : contactsEnCours(contactsEntiers).length
   const clientSaisi = clientEnSaisie({ tiersNom, tiersAdresse, tiersSiret }, mentions)
   const contactDeLaSaisie = contactDeLaProvenance(contactChoisi, contactsEntiers)
+  // LM3 (`FICHES_LIEES_PREVUES`) : les fiches liées aux dossiers des clients, dans le dossier du cabinet. Leur identité se lit
+  // de leur dossier (`identites_des_fiches_liees`) quand la liste en porte une, et jamais d'une copie ; sans lecture entière,
+  // aucune ne se propose. Drapeau baissé, ou aucune fiche liée : rien ne se lit, le choix d'hier.
+  const portedesFichesLiees = FICHES_LIEES_PREVUES && contactsEntiers != null && contactsEntiers.some(estFicheLiee)
+  const identitesCourantes = portedesFichesLiees && lectureIdentites != null && lectureIdentites.cle === contactsEntiers
+    ? lectureIdentites.lu : null
+  const fichesAChoisir = contactsEntiers != null && identitesCourantes?.etat === 'lue'
+    ? fichesLieesAChoisir(contactsEntiers, identitesCourantes.identites, dateEmission)
+    : { offertes: [] as FicheLieeAChoisir[], parties: 0, illisibles: 0 }
+  // La fiche liée d'où vient le client saisi : nommée par son identité LUE, jamais par la fiche (qui n'a pas de nom).
+  const ficheDeLaSaisie = contactChoisi == null ? null : fichesAChoisir.offertes.find((f) => f.fiche.id === contactChoisi) ?? null
   const refusDesSoins = CONTACTS_EXPORTES ? refusDesSoinsDuClient(articleExoneration, clientSaisi) : null
   const echeanceDuContact = echeanceARecalculer(suiviEcheance, dateEmission, dateEcheance)
 
@@ -765,7 +795,7 @@ export default function FactureFormModal(props: Props) {
     setFenetreContact(fenetre)
   }
 
-  function appliquerChoixContact(contact: Contact, choix: ChoixDeContact) {
+  function appliquerChoixContact(contact: SourceDuChoix, choix: ChoixDeContact) {
     const { client } = choix
     setTiersNom(client.tiersNom)
     setTiersAdresse(client.tiersAdresse)
@@ -783,6 +813,17 @@ export default function FactureFormModal(props: Props) {
     const remplace = ceQueLeChoixDeContactRemplace(clientSaisi, dateEcheance, choix)
     if (remplace.length > 0) { setFenetreContact({ genre: 'remplacer', contact, choix, remplace }); return }
     appliquerChoixContact(contact, choix)
+    setFenetreContact(null)
+  }
+
+  // LM3 : le choix d'une fiche liée remplit le client par l'identité que son dossier donne (`choixDeFicheLiee`), et suit le
+  // même chemin qu'un contact : la confirmation qui nomme ce qui part, puis la provenance (`contact_id`, la fiche).
+  function choisirFicheLiee(f: FicheLieeAChoisir) {
+    const choix: ChoixDeContact = { client: f.choix.client, echeance: f.choix.echeance }
+    const source = { id: f.fiche.id, nom: f.nom }
+    const remplace = ceQueLeChoixDeContactRemplace(clientSaisi, dateEcheance, choix)
+    if (remplace.length > 0) { setFenetreContact({ genre: 'remplacer', contact: source, choix, remplace }); return }
+    appliquerChoixContact(source, choix)
     setFenetreContact(null)
   }
 
@@ -816,14 +857,17 @@ export default function FactureFormModal(props: Props) {
   // Ce que le client offre sous son champ : ses deux gestes, et le contact d'où il vient.
   function gestesDuClient() {
     if (!CONTACTS_EXPORTES || contactsEntiers == null) return null
-    const peutEnregistrer = contactDeLaSaisie == null && peutEnregistrerCommeContact(clientSaisi)
+    const peutEnregistrer = contactDeLaSaisie == null && ficheDeLaSaisie == null && peutEnregistrerCommeContact(clientSaisi)
     return (
       <>
         {contactDeLaSaisie && (
           <span className="muted" style={{ fontSize: '0.78rem' }}>Client du fichier : {nomDansUnRefus(contactDeLaSaisie.nom)}</span>
         )}
+        {ficheDeLaSaisie && (
+          <span className="muted" style={{ fontSize: '0.78rem' }}>Client relié à son dossier : {nomDansUnRefus(ficheDeLaSaisie.nom)}</span>
+        )}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {nombreDeContactsEnCours > 0 && (
+          {nombreDeContactsEnCours + fichesAChoisir.offertes.length > 0 && (
             <button
               type="button" className="btn btn-outline btn-sm" disabled={gesteBloque} aria-label="Choisir un client"
               onClick={() => ouvrirFenetreContact({ genre: 'choix' })}
@@ -1504,6 +1548,13 @@ export default function FactureFormModal(props: Props) {
         <ContactChoixModal
           espace={espace} articleExoneration={articleExoneration} contacts={contactsEntiers} dateEmission={dateEmission}
           echeanceAffichee
+          fichesLiees={portedesFichesLiees ? {
+            offertes: fichesAChoisir.offertes, onChoisir: choisirFicheLiee,
+            ligne: identitesCourantes == null ? 'Les clients reliés à leur dossier se lisent…'
+              : identitesCourantes.etat === 'illisible'
+                ? `Les clients reliés à leur dossier ne se proposent pas : leur identité ne s’est pas lue (${identitesCourantes.motif}).`
+                : ligneDesFichesTues(fichesAChoisir.parties, fichesAChoisir.illisibles),
+          } : null}
           onChoisir={choisirContact} onClose={() => setFenetreContact(null)}
         />
       )}

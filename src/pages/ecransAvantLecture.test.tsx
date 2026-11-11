@@ -631,6 +631,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/DepotDesHonorairesCard.tsx': 'drapeau `DEPOT_DES_HONORAIRES_PREVU` baissé : ne rend ni ne lit rien ; levé, montée '
     + 'dans le seul dossier du cabinet, son test (DepotDesHonorairesCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun '
     + 'geste sur une lecture illisible ni sur une liste de factures lue en partie ; n’écrit que sur « Déposer chez le client »',
+  'pages/dossier/FichesLieesSection.tsx': 'drapeau `FICHES_LIEES_PREVUES` baissé : ContactsVue ne la monte pas, rien ne se lit ; '
+    + 'levée, montée au cabinet seul, elle se tait hors du dossier du cabinet ; son test (FichesLieesSection.test.tsx) éprouve '
+    + '« Chargement… » avant la lecture, aucun geste sur une liste de contacts partielle ni sur une lecture illisible ; n’écrit que '
+    + 'sur « Relier ce dossier », « Enregistrer », « Retirer » et « Reprendre », par les fonctions SQL des contacts',
   'pages/dossier/HonorairesAFacturerCard.tsx': 'drapeau `HONORAIRES_FACTURES_PREVUS` baissé : ne rend ni ne lit rien ; levé, montée '
     + 'dans le seul dossier du cabinet, son test (HonorairesAFacturerCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun '
     + 'geste sur une lecture illisible ni sur une liste de factures lue en partie, jamais « aucune lettre » avant d’avoir lu ; '

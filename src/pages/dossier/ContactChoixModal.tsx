@@ -5,6 +5,8 @@ import {
   contactsAChoisir, contactsEnCours, detailDUnContact, introDuChoixDeClient, ligneDesClientsEcartes,
 } from '../../lib/contactsFacture'
 import type { EspaceVentes } from '../../lib/espaceVentes'
+import type { FicheLieeAChoisir } from '../../lib/fichesLieesVue'
+import { correspondALaRecherche } from '../../lib/recherche'
 import type { ArticleExoneration, Contact } from '../../lib/types'
 
 // « CHOISIR UN CLIENT » (espace client, étape A4b2) : la liste des clients EN COURS du dossier, avec la recherche de l'application
@@ -22,16 +24,21 @@ interface Props {
   // L'échéance est une notion de FACTURE : la facture la passe à vrai, le devis à faux (le délai, lui, se dit toujours).
   echeanceAffichee: boolean
   onChoisir: (contact: Contact) => void
+  // LM3 : les fiches liées aux dossiers des clients (le dossier du cabinet, sous `FICHES_LIEES_PREVUES`), chacune nommée par
+  // l'identité LUE de son dossier, et la ligne qui dit celles qui ne se proposent pas ; nul ailleurs (le devis, un autre dossier).
+  fichesLiees: { offertes: readonly FicheLieeAChoisir[]; onChoisir: (f: FicheLieeAChoisir) => void; ligne: string | null } | null
   onClose: () => void
 }
 
-export default function ContactChoixModal({ espace, articleExoneration, contacts, dateEmission, echeanceAffichee, onChoisir, onClose }: Props) {
+export default function ContactChoixModal({ espace, articleExoneration, contacts, dateEmission, echeanceAffichee, onChoisir, fichesLiees, onClose }: Props) {
   const [recherche, setRecherche] = useState('')
   const { offerts: proposes, ecartesParLesSoins } = contactsAChoisir(contacts, articleExoneration, '')
   const { offerts: affiches } = contactsAChoisir(contacts, articleExoneration, recherche)
   // Sans date, `detailDUnContact` ne calcule aucune échéance : c'est ainsi que le devis ne l'affiche pas.
   const dateDeLEcheance = echeanceAffichee ? dateEmission : ''
-  const aucunEnCours = contactsEnCours(contacts).length === 0
+  // Les fiches liées que la recherche garde (nom lu, SIRET) : la même recherche que les clients du fichier.
+  const fichesTrouvees = (fichesLiees?.offertes ?? []).filter((f) => correspondALaRecherche([f.nom, f.choix.client.tiersSiret, f.choix.client.siren], recherche))
+  const aucunEnCours = contactsEnCours(contacts).length === 0 && (fichesLiees == null || fichesLiees.offertes.length === 0)
 
   return (
     <div style={overlayStyle}>
@@ -46,11 +53,24 @@ export default function ContactChoixModal({ espace, articleExoneration, contacts
             valeur={recherche}
             onChange={setRecherche}
             placeholder="Rechercher un nom, un SIREN, un SIRET…"
-            affiches={affiches.length}
-            total={proposes.length}
+            affiches={affiches.length + fichesTrouvees.length}
+            total={proposes.length + (fichesLiees?.offertes.length ?? 0)}
           />
         </div>
-        {affiches.length === 0 ? (
+        {fichesLiees?.ligne != null && <p className="note-info" role="note">{fichesLiees.ligne}</p>}
+        {fichesLiees != null && fichesTrouvees.length > 0 && (
+          <ul aria-label="Clients reliés à leur dossier" style={{ listStyle: 'none', margin: '0 0 8px', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {fichesTrouvees.map((f) => (
+              <li key={f.fiche.id}>
+                <button type="button" className="btn btn-outline" style={choixStyle} onClick={() => fichesLiees.onChoisir(f)}>
+                  <span style={{ display: 'block' }}><strong>{nomDansUnRefus(f.nom)}</strong> — relié à son dossier</span>
+                  {f.detail !== '' && <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>{f.detail}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {affiches.length === 0 && fichesTrouvees.length > 0 ? null : affiches.length === 0 ? (
           <p className="muted">
             {recherche.trim() ? `Aucun client ne correspond à « ${recherche.trim()} ».` : aucunEnCours ? 'Aucun client en cours.' : 'Aucun client à proposer.'}
           </p>

@@ -1,3 +1,4 @@
+import { estFicheLiee } from './fichesLiees'
 import { nomDansUnRefus } from './articles'
 import { estLeClient, PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
@@ -77,9 +78,13 @@ export function champsDeRechercheContact(c: Pick<Contact, 'nom' | 'siren' | 'sir
   return [c.nom, c.siren, c.siret]
 }
 
-/** Les contacts qui peuvent se montrer un jour : JAMAIS un contact effacé, dont la ligne n'est plus qu'un nom et des dates. */
+/**
+ * Les contacts qui peuvent se montrer un jour dans le fichier : JAMAIS un contact effacé, dont la ligne n'est plus qu'un nom et
+ * des dates, ni une fiche liée au dossier d'un client (LM3), qui n'a pas de nom — elle se montre à part, son identité lue de son
+ * dossier (`FichesLieesSection`). Sans la migration, aucune ligne n'est liée : la liste d'hier.
+ */
 export function contactsAffichables<T extends Pick<Contact, 'retire_le' | 'efface_le'>>(contacts: readonly T[]): T[] {
-  return contacts.filter((c) => etatDuContact(c) !== 'efface')
+  return contacts.filter((c) => etatDuContact(c) !== 'efface' && !estFicheLiee(c))
 }
 
 const ordre = new Intl.Collator('fr', { sensitivity: 'base', numeric: true })

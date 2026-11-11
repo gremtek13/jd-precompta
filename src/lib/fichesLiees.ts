@@ -16,6 +16,15 @@ import type { TypeClient } from './types'
  *  et `types.ts` basculé avec elle (`contacts.nom` y devient facultatif, pour une fiche liée seulement). */
 export const FICHES_LIEES_PREVUES: boolean = false
 
+/**
+ * Une ligne de `contacts` est-elle une fiche liée au dossier d'un client ? Une telle fiche n'a ni nom ni identité : les lecteurs
+ * d'hier (la liste des clients, le choix dans une facture ou un devis, les clients sans activité, l'export) l'écartent par ce
+ * prédicat. La colonne ABSENTE — la migration pas en base, le drapeau baissé — n'est pas un lien : rien ne change d'hier.
+ */
+export function estFicheLiee(c: object): boolean {
+  return typeof (c as { dossier_client_id?: unknown }).dossier_client_id === 'string'
+}
+
 /** Les refus que le lien ajoute à `enregistrer_contact`, dans l'ordre de la fonction, à ses mots et à son code. Le rang 8
  *  (l'adresse de facturation électronique) garde ses mots d'hier, que `lib/contacts.ts` redit déjà. */
 export const REFUS_DE_LA_FICHE_LIEE = [

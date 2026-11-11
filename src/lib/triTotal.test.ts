@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { clesPrimairesDuSchema, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { clesPrimairesDuSchema, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, indiceSql } from '../test/schema'
 import { lireTout } from './lectureComplete'
 
 // UN TRI QUI N'EST PAS TOTAL REND UNE LECTURE DE LA BONNE LONGUEUR ET DU MAUVAIS CONTENU — ET
@@ -134,13 +134,22 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
 // Une fonction n'en a pas dans le schéma ; sa clé se DÉCLARE ici, avec la raison qui la fait unique, et chaque colonne
 // doit être une sortie de la dernière définition exportée (vérifié plus bas). Une fonction lue sans clé déclarée est une
 // faute, comme une table inconnue du schéma.
-export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: string }> = {
+// `preparee` : la migration PRÉPARÉE qui crée une fonction pas encore en base (son drapeau baissé) ; la clé se juge sur son
+// texte, et l'entrée perd ce champ au collage (le test exige alors que la fonction ne soit pas encore dans l'export).
+export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: string; preparee?: string }> = {
   ventes_facturees_de_l_exercice: {
     colonnes: ['source', 'source_id'],
     raison: 'une ligne par source : ses candidates (`ecritures_attendues_de_la_periode`) sont une UNION, sans doublon, de '
       + '(genre, id, date, facture), dont la date et la facture se tirent de la ligne source, et chaque jointure qui suit se '
       + 'fait sur une clé unique (supabase/schema/20261026000623_validation_des_ventes_facturees.sql) — l’assistant la lit '
       + 'depuis l’étape VF9c.',
+  },
+  identites_des_fiches_liees: {
+    colonnes: ['contact_id'],
+    raison: 'une ligne par fiche liée : `from contacts f` filtré sur le dossier, puis deux jointures GAUCHES sur la clé primaire '
+      + 'de `dossiers` (supabase/preparees/20261111233000_fiche_liee_au_dossier_du_client.sql) — la vue « Clients » du dossier '
+      + 'du cabinet et le choix d’un client dans la facture la lisent depuis LM3 (drapeau `FICHES_LIEES_PREVUES`).',
+    preparee: 'supabase/preparees/20261111233000_fiche_liee_au_dossier_du_client.sql',
   },
   caisse_du_client: {
     colonnes: ['jour'],
@@ -349,10 +358,14 @@ describe('tri total des lectures paginées', () => {
   // une colonne renommée ou retirée ferait trier sur un nom qui n'existe plus, ce que PostgREST refuserait en panne.
   it('déclare pour chaque fonction des colonnes qu’elle rend, et seulement pour une fonction lue', () => {
     const lues = new Set(sites.map((s) => s.fonction).filter((f) => f != null))
-    for (const [nom, { colonnes, raison }] of Object.entries(CLES_DES_FONCTIONS)) {
+    for (const [nom, { colonnes, raison, preparee }] of Object.entries(CLES_DES_FONCTIONS)) {
       expect(lues.has(nom), `${nom} : clé déclarée pour une fonction qu'aucune lecture paginée ne lit`).toBe(true)
       expect(raison.length).toBeGreaterThan(40)
-      const sortie = /\breturns table \(([^)]*)\)/.exec(derniereDefinitionSql(nom))?.[1] ?? ''
+      if (preparee != null) expect(() => derniereDefinitionSql(nom), `${nom} : en base, l'entrée perd \`preparee\``).toThrow()
+      const texte = preparee == null ? derniereDefinitionSql(nom) : readFileSync(join(RACINE, preparee), 'utf8')
+      const debut = preparee == null ? 0 : indiceSql(texte, `function public.${nom}(`)
+      if (preparee != null) expect(debut, `${nom} : absente de ${preparee}`).toBeGreaterThan(0)
+      const sortie = /\breturns table \(([^)]*)\)/.exec(texte.slice(debut))?.[1] ?? ''
       const rendues = sortie.split(',').map((c) => c.trim().split(/\s+/)[0])
       for (const c of colonnes) expect(rendues, `${nom}.${c}`).toContain(c)
     }
