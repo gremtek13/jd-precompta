@@ -50829,25 +50829,17 @@ un `POST` sans session 401 sur chacune : le module importé se charge et refuse 
 
 ### 11/11/2026 — LA SUITE DES SOLDES, LE 31 DÉCEMBRE, LA COUVERTURE ET LA VALIDATION PAR COMPTE BANCAIRE (MCB4)
 
-(Agent architecte, sur MCB1 à MCB3, derrière `COMPTES_BANCAIRES_PREVUS`, baissé : la lecture des comptes est `sans_objet`, le
-relevé une seule part, et tout se calcule comme hier, au caractère près — les suites d'hier le prouvent.) Un module pur,
-`lib/releveParCompte.ts`, partage le relevé (mouvements et contrôles) entre les comptes lus (`compte_bancaire_id`), une part
-par compte, nommée dès deux ; une ligne d'un compte que la lecture n'a pas rendu, ou sans compte dès deux, retient tout. Sur
-chaque part se rejouent les règles d'un compte : la suite des soldes (`jonctionsParCompte` ; Banque et la Vue d'ensemble, la
-rupture dite « Sur le compte « … » »), le premier relevé de la tenue (`ouverture-sans-reprise`, chaque compte nommé), le 31
-décembre (`banquesAuTrenteEtUn`). **Le 512 d'un compte** se lit comme `compte_de_banque_du_mouvement` : `compteDeBanqueDuMouvement
-(compte, '<année>-12-31', rôle banque)` — le principal, et un autre compte avant son 1er janvier, au 512 du rôle ; ensuite le
-sien. `banque-au-releve` confronte chaque 512 à la SOMME des soldes au 31/12 des comptes qui s'y écrivent (2025 : tous au
-512000, MCB-Q7), chaque compte disant le sien par ses seuls relevés (« plusieurs relevés au 31 décembre ne s'additionnent
-jamais » vaut DANS un compte) ; un compte clos dans l'exercice compte zéro, ouvert après n'y est pas. Avant MCB5, un compte
-qui tient son 512 depuis le 01/01/2026 n'y a aucune écriture : la confrontation de 2026 le dira, et MCB5 doit précéder la
-validation de 2026. Comptes en cours ou illisibles : `lecture-partielle`. **Les mois manquants** de la Vue d'ensemble se disent
-par compte (`moisManquantsParCompte`) ; **`couverture_du_releve`** suit la même règle : préparée,
-`20261111180000_couverture_du_releve_par_compte` (par l'outil, aucune suppression, la signature gardée), retour en 20261111180100
-(le corps d'hier, md5 de `prosrc` égal à la production). Un mois est couvert si chaque compte qui l'attend y a un mouvement :
-le principal toujours (son ouverture s'il la dit), un autre compte depuis son ouverture ou son premier mouvement, jusqu'à sa
-clôture. Le rappel du relevé de janvier (Clôture) nomme chaque compte. « Le mois en double » juge des pièces, pas le relevé :
-inchangé. Réplique (197 + MCB1 + MCB2) : l'essai neuf 13/13, EN ATTENTE sans la migration, deux mutations mordent,
-`banqueClient.sql` identique avant et après (86/86). Restent : la preuve du relevé de la Révision (MCB6), « Ma banque » (MCB7),
-la couverture des échéances d'emprunt (l'union des comptes), et l'à-nouveau par compte de 2026 (MCB5).
-
+(Agent architecte, sur MCB1 à MCB3, derrière `COMPTES_BANCAIRES_PREVUS` baissé : lecture `sans_objet`, une seule part, tout
+comme hier, au caractère près.) `lib/releveParCompte.ts` partage le relevé entre les comptes lus, une part nommée par compte
+dès deux (une ligne d'un compte non rendu, ou sans compte dès deux, retient tout), et y rejoue les règles d'un compte : la
+suite des soldes (Banque, Vue d'ensemble : « Sur le compte « … » »), le premier relevé (`ouverture-sans-reprise`), le 31/12.
+**Le 512 d'un compte** se lit comme `compte_de_banque_du_mouvement` : `compteDeBanqueDuMouvement(compte, '<année>-12-31', rôle
+banque)`. `banque-au-releve` confronte chaque 512 à la SOMME des soldes au 31/12 des comptes qui s'y écrivent (2025 : tous au
+512000, MCB-Q7), chacun par ses seuls relevés ; clos dans l'exercice, zéro ; ouvert après, absent. Avant MCB5, un compte qui
+tient son 512 depuis le 01/01/2026 n'y a aucune écriture : MCB5 précède la validation de 2026. Comptes illisibles :
+`lecture-partielle`. **Les mois manquants** se disent par compte, et **`couverture_du_releve`** suit la même règle, préparée
+(`20261111180000_couverture_du_releve_par_compte`, par l'outil ; retour 20261111180100, le corps de la production à l'md5
+près) : un mois est couvert si chaque compte qui l'attend y bouge — le principal toujours, un autre depuis son ouverture ou son
+premier mouvement, jusqu'à sa clôture. Le rappel de janvier (Clôture) nomme chaque compte ; « le mois en double » juge des
+pièces : inchangé. Réplique (197 + MCB1 + MCB2) : l'essai 13/13, EN ATTENTE sans elle, deux mutations mordent,
+`banqueClient.sql` identique. Restent la preuve de la Révision (MCB6), « Ma banque » (MCB7), les échéances d'emprunt, l'à-nouveau de 2026 (MCB5).
