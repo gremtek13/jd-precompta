@@ -1,5 +1,5 @@
 -- « À FACTURER » ET LES FACTURES D'HONORAIRES (ligne 47, lot LM7 ; la migration `honoraires_factures`, PRÉPARÉE le
--- 11/11/2026, supabase/preparees/20261111180000_honoraires_factures.sql, après `dossier_du_cabinet` (LM1) et
+-- 11/11/2026, supabase/preparees/20261111190000_honoraires_factures.sql, après `dossier_du_cabinet` (LM1) et
 -- `lettres_de_mission` (LM4)). Le récit : HISTORIQUE.md, « 11/11/2026 — LM7 ».
 -- SUR UNE RÉPLIQUE SEULEMENT : il désigne le dossier du cabinet de la réplique, y valide des factures et supprime un
 -- brouillon. À rejouer, par psql (`-f`, pas `-1` : le fichier ouvre et ANNULE sa propre transaction), après toute
