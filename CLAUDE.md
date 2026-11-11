@@ -732,8 +732,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   10/11/2026 : `regler_plan_du_dossier` règle le plan entier et déplace le dirigeant avec son rôle (PC3-Q1), les deux
   contraintes devenues des contrôles contre le plan → « PC4 : RÉGLER LE PLAN D'UN DOSSIER, EN BASE (PRÉPARÉE, PAS
   APPLIQUÉE) » ; le dirigeant non associé au 467 ou au 468 (PC4-Q2, `dirigeant_au_468`, en production depuis le 11/11/2026,
-  `DIRIGEANT_AU_468_PREVU` levé) ; restent PC6, qui range les comptes ouverts par une balance reprise, puis la suite jusqu'à PC9 → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
-  PLAN ».
+  `DIRIGEANT_AU_468_PREVU` levé) ; PC6, la reprise qui propose le plan et range ses à-nouveaux sur lui, préparée le 11/11/2026
+  (`plan_depuis_la_balance`, à coller APRÈS la levée de `PLAN_DEPUIS_LA_BALANCE_PREVU` ; tout 512… va à la banque du plan, MCB5g
+  l'éclate), son écran à faire → « PC6 : LA REPRISE PROPOSE LE PLAN (PRÉPARÉE, PAS APPLIQUÉE) » ; puis la suite jusqu'à PC9
+  → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE PLAN ».
 
 ## Feuille de route — page Notion à tenir à jour
 
