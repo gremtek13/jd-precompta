@@ -23,6 +23,7 @@ import { DEPOT_DES_HONORAIRES_PREVU } from './depotDesHonoraires'
 import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
 import { DOCUMENTS_ET_DEMANDES_PREVUS, TABLES_DES_DOCUMENTS_ET_DEMANDES } from './documentsEtDemandes'
 import { ACHATS_DU_CLIENT_PREVUS, TABLES_DES_ACHATS_DU_CLIENT } from './achatsClient'
+import { NOTES_DE_FRAIS_PREVUES, TABLES_DES_NOTES_DE_FRAIS } from './notesDeFrais'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
@@ -401,6 +402,20 @@ export function auPlanDesAchatsDuClient(table: string, prevus: boolean): boolean
   return prevus || !(TABLES_DES_ACHATS_DU_CLIENT as readonly string[]).includes(table)
 }
 
+// LES NOTES DE FRAIS (ligne 51.5, étape B7 ; migration `notes_de_frais`, PRÉPARÉE le 11/11/2026) : les notes que les accès
+// « Notes de frais » saisissent, et leurs passages. Sous le drapeau de la migration (`NOTES_DE_FRAIS_PREVUES`,
+// src/lib/notesDeFrais.ts), baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde. Ses
+// relations : le dossier en cascade ; le justificatif sans action (la pièce citée ne part pas seule : une garde le dit). Son
+// rang : après les achats du client, bien après les pièces. Son chemin, direct ; sa clé, la commune ; aucune vague. La
+// restauration la réinsère par la porte que sa policy ouvre au super-administrateur, et sa garde accepte l'histoire telle
+// qu'écrite (tous les états, sans recalculer le barème, que le millésime publié peut avoir corrigé depuis).
+// sauvegardeNotesDeFrais.test.ts éprouve le plan prévu et le plan du jour.
+
+/** Une table au plan, côté notes de frais : toutes, sauf la leur tant que leur migration n'est pas exportée. */
+export function auPlanDesNotesDeFrais(table: string, prevues: boolean): boolean {
+  return prevues || !(TABLES_DES_NOTES_DE_FRAIS as readonly string[]).includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -426,6 +441,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU)
     && auPlanDesDocumentsEtDemandes(table, DOCUMENTS_ET_DEMANDES_PREVUS)
     && auPlanDesAchatsDuClient(table, ACHATS_DU_CLIENT_PREVUS)
+    && auPlanDesNotesDeFrais(table, NOTES_DE_FRAIS_PREVUES)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -728,6 +744,9 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'paiements_declares', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
   { enfant: 'pieces_vues', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'pieces_vues', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
+  // Les notes de frais (B7) : le dossier en cascade, le justificatif sans action.
+  { enfant: 'notes_de_frais', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'notes_de_frais', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -1022,6 +1041,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   // Les achats du client (B4) : bien après les pièces qu'ils citent.
   'paiements_declares',
   'pieces_vues',
+  // Les notes de frais (B7) : bien après les pièces qu'elles citent.
+  'notes_de_frais',
   'pieces_jointes_ecartees',
   'adresses_reception',
   'contacts',
@@ -1490,6 +1511,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   relances_demandes: { acces: 'direct' },
   paiements_declares: { acces: 'direct' },
   pieces_vues: { acces: 'direct' },
+  notes_de_frais: { acces: 'direct' },
   modeles_lettre_de_mission: { acces: 'direct' },
   lettres_de_mission: { acces: 'direct' },
   honoraires_factures: { acces: 'direct' },
