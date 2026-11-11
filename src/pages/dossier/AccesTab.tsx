@@ -36,6 +36,8 @@ import { accesDeLaLecture } from '../../lib/auteursVentes'
 import TraceDesDroitsDesAcces from './TraceDesDroitsDesAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from '../../lib/situationsPubliees'
 import { TROIS_CASES_EXPORTEES } from '../../lib/troisCasesDeLAcces'
+import { DOSSIER_DU_CABINET_PREVU, etatDuFormulaireDAcces, type EtatDuFormulaireDAcces } from '../../lib/dossierDuCabinet'
+import { useDesignationDuDossier } from '../../lib/dossierDuCabinetLecture'
 
 // Les colonnes d'un accès. « Comptes » (étape C4b) n'est demandée qu'avec sa migration : avant, la colonne n'existe pas.
 // Typée comme la forme la plus longue : drapeau baissé, `droit_comptes` manque à la ligne, et `droitsDeLaLigne` n'en
@@ -54,6 +56,13 @@ type AccesLu = Pick<Membership, 'id' | 'user_id' | 'email' | 'droit_ventes' | 'd
 
 export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossierId: string; dossierNom: string; codeEmail: string | null }) {
   const [rows, setRows] = useState<AccesLu[]>([])
+  // Le dossier du cabinet ne reçoit aucun accès client (ligne 47, LM2) : la désignation, lue pour CE dossier (une lecture qui ne
+  // rejette jamais, gardée avec l'identifiant), juge le formulaire AVANT le clic. Drapeau baissé, rien ne se lit et le
+  // formulaire est offert comme hier ; levé, jamais « offert » sur une désignation pas encore revenue ou illisible.
+  const designation = useDesignationDuDossier(dossierId, 0)
+  const formulaire: EtatDuFormulaireDAcces = DOSSIER_DU_CABINET_PREVU
+    ? etatDuFormulaireDAcces(designation, dossierId)
+    : { etat: 'offert' }
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -178,6 +187,8 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   async function handleCreateAccess(e: FormEvent) {
     e.preventDefault()
     if (creationEnCours.current) return
+    // Ce que l'écran n'offre pas ne part pas non plus : la base et la fonction refuseraient (409), mais rien n'est tenté.
+    if (formulaire.etat !== 'offert') return
     // La règle des mots de passe du projet, dite sous le champ, jugée avant tout appel : le service la ferait respecter de
     // toute façon (lib/recuperationMotDePasse.ts, un reflet de son réglage). Rien ne part, ni compte ni accès.
     const refusRegle = refusDeLaRegle(password)
@@ -368,6 +379,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   async function envoyerLien(acces: AccesLu) {
     const adresse = acces.email
     if (!adresse) return
+    if (formulaire.etat === 'refuse') return
     if (envoiLienEnCours.current) return
     // `window.confirm` bloque : rien ne part avant la réponse, et un refus ne pose aucun verrou.
     if (!window.confirm(questionDuLienEnvoye(adresse))) return
@@ -468,30 +480,39 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Donner un accès client</h3>
         <p className="muted" style={{ marginTop: -8 }}>{CE_QUE_DONNE_UN_ACCES}</p>
-        <form onSubmit={handleCreateAccess}>
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="email">Email du client</label>
-              <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        {formulaire.etat !== 'offert' && (
+          // Le refus du dossier du cabinet se dit avant le clic, aux mots de la garde ; une désignation pas lue ou illisible
+          // retient le formulaire et le dit : aucun champ, aucun bouton.
+          <p role={formulaire.etat === 'attend' ? 'status' : 'alert'} className={formulaire.etat === 'attend' ? 'muted' : 'error-text'}>
+            {formulaire.phrase}
+          </p>
+        )}
+        {formulaire.etat === 'offert' && (
+          <form onSubmit={handleCreateAccess}>
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="email">Email du client</label>
+                <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="password">Mot de passe initial</label>
+                {/* `new-password` : un champ de mot de passe après un champ d'adresse a la forme d'une connexion, et le navigateur
+                    pouvait y remplir l'adresse et le mot de passe du cabinet, qu'il connaît pour ce site. */}
+                <input
+                  id="password" type="password" required minLength={LONGUEUR_MINIMALE_MOT_DE_PASSE} autoComplete="new-password"
+                  aria-describedby="password-regle" value={password} onChange={(e) => setPassword(e.target.value)}
+                />
+                <span className="muted" id="password-regle">{REGLE_DU_MOT_DE_PASSE}</span>
+                <span className="muted">C'est toi qui le choisis et le communiques au client, pas lui. Il ne sert qu'à un compte neuf : un client qui a déjà un compte garde le sien.</span>
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor="password">Mot de passe initial</label>
-              {/* `new-password` : un champ de mot de passe après un champ d'adresse a la forme d'une connexion, et le navigateur
-                  pouvait y remplir l'adresse et le mot de passe du cabinet, qu'il connaît pour ce site. */}
-              <input
-                id="password" type="password" required minLength={LONGUEUR_MINIMALE_MOT_DE_PASSE} autoComplete="new-password"
-                aria-describedby="password-regle" value={password} onChange={(e) => setPassword(e.target.value)}
-              />
-              <span className="muted" id="password-regle">{REGLE_DU_MOT_DE_PASSE}</span>
-              <span className="muted">C'est toi qui le choisis et le communiques au client, pas lui. Il ne sert qu'à un compte neuf : un client qui a déjà un compte garde le sien.</span>
-            </div>
-          </div>
-          {error && <p className="error-text">{error}</p>}
-          {avisCreation && <p role="status">{avisCreation}</p>}
-          <button className="btn btn-primary" type="submit" disabled={inviting || aRattacher !== null}>
-            {inviting ? 'Création…' : 'Créer l\'accès'}
-          </button>
-        </form>
+            {error && <p className="error-text">{error}</p>}
+            {avisCreation && <p role="status">{avisCreation}</p>}
+            <button className="btn btn-primary" type="submit" disabled={inviting || aRattacher !== null}>
+              {inviting ? 'Création…' : 'Créer l\'accès'}
+            </button>
+          </form>
+        )}
       </div>
 
       {/* Les cases de chaque accès, pour la recommandation de SEC-Q2 : d'une liste lue EN ENTIER seulement ; avant son retour,
@@ -575,7 +596,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
                       {r.email && (
                         <button className="btn btn-outline btn-sm" onClick={() => setRelanceDe(r)}>Relancer</button>
                       )}
-                      {r.email && casesOffertes && (
+                      {r.email && casesOffertes && formulaire.etat !== 'refuse' && (
                         <button
                           type="button"
                           className="btn btn-outline btn-sm"

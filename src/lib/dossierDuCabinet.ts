@@ -140,3 +140,46 @@ export function confirmationDeLaDesignation(p: { nom: string; retrait: boolean; 
     + (p.remplace !== null ? `\n\nIl remplace « ${p.remplace} », qui redevient un dossier ordinaire.` : '')
     + '\n\nCette désignation devient irréversible dès que le dossier porte une facture validée.'
 }
+
+// ── LE FORMULAIRE D'ACCÈS DE L'ONGLET ACCÈS (ligne 47, LM2) ───────────────────────────────────────────────────────────────
+// Le dossier du cabinet ne reçoit aucun accès client (la garde de `memberships`, et `create-client-access` en 409) : l'onglet
+// Accès le dit AVANT le clic, aux mots de la garde, et n'offre ni le formulaire ni le lien de réinitialisation d'un accès qui
+// n'existera pas. Ce module juge sur la désignation lue (la lecture de l'écran ne rejette jamais) ; l'écran applique le
+// drapeau : baissé, rien ne se lit et le formulaire reste offert comme hier.
+
+/** Ce que l'onglet sait de la désignation ; `null` : pas encore revenue. */
+export type DesignationPourLesAcces =
+  | { etat: 'lue'; dossierId: string; dossierActuel: string | null }
+  | { etat: 'illisible'; dossierId: string; motif: string }
+  | null
+
+export type EtatDuFormulaireDAcces =
+  | { etat: 'offert' }
+  /** Ce dossier est celui du cabinet : aucun accès client ne s'y pose. */
+  | { etat: 'refuse'; phrase: string }
+  /** La désignation n'est pas encore lue : rien ne s'affirme, rien ne s'offre. */
+  | { etat: 'attend'; phrase: string }
+  /** La désignation est illisible : on ne sait pas si ce dossier est celui du cabinet, rien ne s'offre. */
+  | { etat: 'illisible'; phrase: string }
+
+export const PHRASE_DESIGNATION_PAS_LUE =
+  'La désignation du dossier du cabinet n’est pas encore lue : on ne sait pas encore si ce dossier peut recevoir un accès client.'
+
+/** La phrase d'une désignation illisible, qui nomme son motif. */
+export function phraseDesignationIllisible(motif: string): string {
+  return `La désignation du dossier du cabinet n’a pas pu être lue (${motif}) : on ne sait pas si ce dossier peut recevoir un `
+    + 'accès client, aucun ne se crée d’ici. Recharge la page.'
+}
+
+/**
+ * Le formulaire « Donner un accès client », selon la désignation lue pour `dossierId` : refusé sur le dossier du cabinet
+ * (`REFUS_ACCES_CLIENT`) ; retenu tant que la désignation n'est pas lue pour CE dossier, ou si elle est illisible — jamais
+ * « offert » sur une lecture absente ; offert sinon.
+ */
+export function etatDuFormulaireDAcces(designation: DesignationPourLesAcces, dossierId: string): EtatDuFormulaireDAcces {
+  if (designation === null || designation.dossierId !== dossierId) return { etat: 'attend', phrase: PHRASE_DESIGNATION_PAS_LUE }
+  if (designation.etat === 'illisible') return { etat: 'illisible', phrase: phraseDesignationIllisible(designation.motif) }
+  return estLeDossierDuCabinet(designation.dossierActuel, dossierId)
+    ? { etat: 'refuse', phrase: REFUS_ACCES_CLIENT }
+    : { etat: 'offert' }
+}

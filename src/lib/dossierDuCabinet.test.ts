@@ -5,6 +5,7 @@ import {
   DOSSIER_DU_CABINET_PREVU, REFUS_ACCES_CLIENT, REFUS_CHANGEMENT_DE_CABINET, REFUS_DE_LA_DESIGNATION, REFUS_SUPPRESSION, estLeDossierDuCabinet,
   motsDuRefus, refusDeLaDesignation, refusDeLaSuppression, valideAuNomDuClient, type EtatDeLaDesignation,
   ceQueDitLaDesignation, confirmationDeLaDesignation, separerLeDossierDuCabinet,
+  PHRASE_DESIGNATION_PAS_LUE, etatDuFormulaireDAcces, phraseDesignationIllisible,
 } from './dossierDuCabinet'
 
 // LE DOSSIER DU CABINET (ligne 47, LM1) : le module redit les refus de la migration `dossier_du_cabinet` — préparée le
@@ -145,6 +146,19 @@ describe('l’écran (LM2)', () => {
     const r = confirmationDeLaDesignation({ nom: 'Cabinet fictif', retrait: true, remplace: null })
     expect(r).toContain('Retirer la désignation de « Cabinet fictif »')
     expect(r).toContain('mention de son mandat')
+  })
+  it('le formulaire d’accès : refusé sur le dossier du cabinet, retenu sur une lecture absente, offert sinon', () => {
+    const D = 'd1'
+    expect(etatDuFormulaireDAcces({ etat: 'lue', dossierId: D, dossierActuel: D }, D)).toEqual({ etat: 'refuse', phrase: REFUS_ACCES_CLIENT })
+    expect(etatDuFormulaireDAcces({ etat: 'lue', dossierId: D, dossierActuel: null }, D)).toEqual({ etat: 'offert' })
+    expect(etatDuFormulaireDAcces({ etat: 'lue', dossierId: D, dossierActuel: 'autre' }, D)).toEqual({ etat: 'offert' })
+    // Pas lue, ou lue pour un autre dossier : jamais « offert », ni « refusé » d'un dossier qui n'est pas le sien.
+    expect(etatDuFormulaireDAcces(null, D)).toEqual({ etat: 'attend', phrase: PHRASE_DESIGNATION_PAS_LUE })
+    expect(etatDuFormulaireDAcces({ etat: 'lue', dossierId: 'x', dossierActuel: 'x' }, D).etat).toBe('attend')
+    expect(etatDuFormulaireDAcces({ etat: 'illisible', dossierId: 'x', motif: 'm' }, D).etat).toBe('attend')
+    const illisible = etatDuFormulaireDAcces({ etat: 'illisible', dossierId: D, motif: 'accès refusé' }, D)
+    expect(illisible).toEqual({ etat: 'illisible', phrase: phraseDesignationIllisible('accès refusé') })
+    expect(phraseDesignationIllisible('accès refusé')).toContain('accès refusé')
   })
   it('ce que la carte dit : le dossier du cabinet, un autre (nommé ou non), aucun', () => {
     expect(ceQueDitLaDesignation({ estLeDossierDuCabinet: true, unAutreEstDesigne: false, nomDeLAutre: null })).toMatch(/^C’est le dossier du cabinet/)
