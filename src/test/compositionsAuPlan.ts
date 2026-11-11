@@ -1,4 +1,5 @@
 import { AUCUNE_PIECE_CITEE } from '../lib/facturesSources'
+import { banquesDuDossier } from '../lib/banqueDuMouvement'
 import { calculerDeclaration2035 } from '../lib/declaration2035'
 import { cotisationsComptees, cotisationsAEcrire, ecritureDeLaCotisation } from '../lib/cotisationRapprochee'
 import {
@@ -313,9 +314,9 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
         ...brouillon('a-r', ecritureDuMouvement(RECETTE, '706200', 20, plan), RECETTE.date, { ligne_bancaire_id: RECETTE.id }),
         ...brouillon('a-d', ecritureDuMouvement(DEPENSE, '626000', null, plan), DEPENSE.date, { ligne_bancaire_id: DEPENSE.id }),
       ]
-      return mouvementsAffectesDesynchronises(presentes, affectes, null, plan).map((m) => m.ligne.id)
+      return mouvementsAffectesDesynchronises(presentes, affectes, null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((m) => m.ligne.id)
     },
-    temoin: (plan) => mouvementsAffectesDesynchronises([], mouvementsAffectes([RECETTE, DEPENSE], CATEGORIES, true), null, plan).map((m) => m.ligne.id),
+    temoin: (plan) => mouvementsAffectesDesynchronises([], mouvementsAffectes([RECETTE, DEPENSE], CATEGORIES, true), null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((m) => m.ligne.id),
   },
   {
     nom: 'ecritureDeLaVentilation — une dépense en partie personnelle, et une recette taxée',
@@ -335,10 +336,10 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
     composer: (plan) => {
       const m = modele(plan, 'tresorerie', 'exploitant')
       const presentes = brouillon('v', ecritureDeLaVentilation(VENTILE, VENTILATIONS, CATEGORIES, m, true) ?? [], VENTILE.date, { ligne_bancaire_id: VENTILE.id })
-      return mouvementsVentilesDesynchronises(presentes, [VENTILE], VENTILATIONS, CATEGORIES, m, true, null).map((l) => l.id)
+      return mouvementsVentilesDesynchronises(presentes, [VENTILE], VENTILATIONS, CATEGORIES, m, true, null, banquesDuDossier({ etat: 'sans_objet' }, m.plan)).map((l) => l.id)
     },
     temoin: (plan) =>
-      mouvementsVentilesDesynchronises([], [VENTILE], VENTILATIONS, CATEGORIES, modele(plan, 'tresorerie', 'exploitant'), true, null).map((l) => l.id),
+      mouvementsVentilesDesynchronises([], [VENTILE], VENTILATIONS, CATEGORIES, modele(plan, 'tresorerie', 'exploitant'), true, null, banquesDuDossier({ etat: 'sans_objet' }, (modele(plan, 'tresorerie', 'exploitant')).plan)).map((l) => l.id),
   },
   {
     nom: 'ecritureDeLEcheance — une échéance d’emprunt et son déblocage',
@@ -356,9 +357,9 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
         ...brouillon('ech', ecritureDeLEcheance(ECHEANCE, { echeance: 3, interets: 120, assurance: 30 }, plan), ECHEANCE.date, { ligne_bancaire_id: ECHEANCE.id }),
         ...brouillon('deb', ecritureDeLEcheance(DEBLOCAGE, { echeance: null, interets: 0, assurance: 0 }, plan), DEBLOCAGE.date, { ligne_bancaire_id: DEBLOCAGE.id }),
       ]
-      return echeancesDesynchronisees(presentes, [ECHEANCE, DEBLOCAGE], plan).map((l) => l.id)
+      return echeancesDesynchronisees(presentes, [ECHEANCE, DEBLOCAGE], plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((l) => l.id)
     },
-    temoin: (plan) => echeancesDesynchronisees([], [ECHEANCE, DEBLOCAGE], plan).map((l) => l.id),
+    temoin: (plan) => echeancesDesynchronisees([], [ECHEANCE, DEBLOCAGE], plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((l) => l.id),
   },
   {
     nom: 'ecritureDeLaCotisation — en trésorerie (la CSG-CRDS au compte de l’exploitant) et en engagement',
@@ -370,9 +371,9 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
     roles: [],
     composer: (plan) => {
       const presentes = brouillon('cot', ecritureDeLaCotisation(PRELEVEMENT_COTISATION, COTISATION, 'tresorerie', plan), PRELEVEMENT_COTISATION.date, { ligne_bancaire_id: PRELEVEMENT_COTISATION.id })
-      return cotisationsAEcrire(presentes, [PRELEVEMENT_COTISATION], [COTISATION], 'tresorerie', null, plan).map((r) => r.ligne.id)
+      return cotisationsAEcrire(presentes, [PRELEVEMENT_COTISATION], [COTISATION], 'tresorerie', null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((r) => r.ligne.id)
     },
-    temoin: (plan) => cotisationsAEcrire([], [PRELEVEMENT_COTISATION], [COTISATION], 'tresorerie', null, plan).map((r) => r.ligne.id),
+    temoin: (plan) => cotisationsAEcrire([], [PRELEVEMENT_COTISATION], [COTISATION], 'tresorerie', null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((r) => r.ligne.id),
   },
   {
     nom: 'ecritureDuPaiementTva — un paiement et un remboursement',
@@ -387,9 +388,9 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
         ...brouillon('ptva', ecritureDuPaiementTva(PAIEMENT_TVA, plan), PAIEMENT_TVA.date, { ligne_bancaire_id: PAIEMENT_TVA.id }),
         ...brouillon('rtva', ecritureDuPaiementTva(REMBOURSEMENT_TVA, plan), REMBOURSEMENT_TVA.date, { ligne_bancaire_id: REMBOURSEMENT_TVA.id }),
       ]
-      return paiementsTvaDesynchronises(presentes, [PAIEMENT_TVA, REMBOURSEMENT_TVA], null, plan).map((l) => l.id)
+      return paiementsTvaDesynchronises(presentes, [PAIEMENT_TVA, REMBOURSEMENT_TVA], null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((l) => l.id)
     },
-    temoin: (plan) => paiementsTvaDesynchronises([], [PAIEMENT_TVA, REMBOURSEMENT_TVA], null, plan).map((l) => l.id),
+    temoin: (plan) => paiementsTvaDesynchronises([], [PAIEMENT_TVA, REMBOURSEMENT_TVA], null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((l) => l.id),
   },
   {
     nom: 'le virement personnel : le compte du dirigeant et son écriture, en trésorerie et en engagement',
@@ -403,9 +404,9 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
     composer: (plan) => {
       const m = modele(plan, 'engagement', 'associe')
       const presentes = brouillon('vp', ecritureDuVirementPersonnel(VIREMENT_PERSONNEL, m), VIREMENT_PERSONNEL.date, { ligne_bancaire_id: VIREMENT_PERSONNEL.id })
-      return virementsPersonnelsAEcrire(presentes, [VIREMENT_PERSONNEL], m, null).map((l) => l.id)
+      return virementsPersonnelsAEcrire(presentes, [VIREMENT_PERSONNEL], m, null, banquesDuDossier({ etat: 'sans_objet' }, m.plan)).map((l) => l.id)
     },
-    temoin: (plan) => virementsPersonnelsAEcrire([], [VIREMENT_PERSONNEL], modele(plan, 'engagement', 'associe'), null).map((l) => l.id),
+    temoin: (plan) => virementsPersonnelsAEcrire([], [VIREMENT_PERSONNEL], modele(plan, 'engagement', 'associe'), null, banquesDuDossier({ etat: 'sans_objet' }, (modele(plan, 'engagement', 'associe')).plan)).map((l) => l.id),
   },
   {
     nom: 'le compte de bilan d’un mouvement : les comptes proposés, l’écriture, le refus qui cite le dirigeant',
@@ -423,9 +424,9 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
     composer: (plan) => {
       const l = VERS_EPARGNE(plan)
       const presentes = brouillon('cb', ecritureDuCompteDeBilan(l, plan.virements_internes, plan), l.date, { ligne_bancaire_id: l.id })
-      return mouvementsSurUnCompteDeBilanDesynchronises(presentes, [l], null, plan).map((x) => x.id)
+      return mouvementsSurUnCompteDeBilanDesynchronises(presentes, [l], null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((x) => x.id)
     },
-    temoin: (plan) => mouvementsSurUnCompteDeBilanDesynchronises([], [VERS_EPARGNE(plan)], null, plan).map((x) => x.id),
+    temoin: (plan) => mouvementsSurUnCompteDeBilanDesynchronises([], [VERS_EPARGNE(plan)], null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan)).map((x) => x.id),
   },
   {
     nom: 'envoisDuLot — les écritures d’un lot de règles d’affectation',
@@ -435,7 +436,9 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
         id: 'r-1', dossier_id: D, motif: 'HONORAIRES', sens: 'encaissement', categorie_id: 'c-honoraires', taux_tva: 20,
         created_at: '2026-05-01T08:00:00Z',
       }
-      return envoisDuLot([{ ligne: mouvement({ id: 'l-lot', montant: 240, statut: 'non_rapprochee' }), regle, categorie: CATEGORIES[1], taux: 20 }], plan)
+      const lot = envoisDuLot([{ ligne: mouvement({ id: 'l-lot', montant: 240, statut: 'non_rapprochee' }), regle, categorie: CATEGORIES[1], taux: 20 }], plan,
+        banquesDuDossier({ etat: 'sans_objet' }, plan))
+      return 'refus' in lot ? lot : lot.envois
     },
   },
 ]

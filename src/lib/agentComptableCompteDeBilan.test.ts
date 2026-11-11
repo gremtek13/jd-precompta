@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { banquesDuDossier } from './banqueDuMouvement'
 import ts from 'typescript'
 import * as lib_controles from './controles'
 import * as lib_compteDeBilan from './compteDeBilan'
@@ -154,15 +155,15 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc COMPTE DE BILAN (copie d
   it('rend les mêmes mouvements dont l’écriture ne suit plus le compte, sous chaque frontière', () => {
     for (const f of FRONTIERES) {
       expect(ids(deployee.mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f)), `frontière ${f}`)
-        .toEqual(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f, plan)))
+        .toEqual(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
     }
     // La batterie exerce bien ce qui décide : l'écriture absente, un autre compte, un autre montant, un autre sens, une
     // autre date, une ligne de trop, celle d'une pièce qui ne compte pas — et ce qui n'est pas un mouvement écrit sur
     // un compte de bilan. Et la frontière : le jour même du mouvement le fige, le 9 mars reste ouvert sous une
     // frontière au 5.
-    expect(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, null, plan)))
+    expect(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, null, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
       .toEqual(['absente', 'autre-compte', 'autre-montant', 'autre-sens', 'autre-date', 'ligne-de-trop', 'apres', 'piece'])
-    expect(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, '2026-03-05', plan))).toEqual(['apres'])
+    expect(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, '2026-03-05', plan, banquesDuDossier({ etat: 'sans_objet' }, plan)))).toEqual(['apres'])
   })
 
   it('rend les mêmes mouvements ignorés, sous chaque ouverture et chaque frontière', () => {
@@ -252,7 +253,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc COMPTE DE BILAN sait encor
   const memesDesynchronises = (copie: Copie) => {
     for (const f of FRONTIERES) {
       expect(ids(copie.mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f)))
-        .toEqual(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f, plan)))
+        .toEqual(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f, plan, banquesDuDossier({ etat: 'sans_objet' }, plan))))
     }
   }
   const memesIgnores = (copie: Copie) => {

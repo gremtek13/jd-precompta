@@ -1,3 +1,4 @@
+import { modelePourJuger, type BanquesDuDossier } from './banqueDuMouvement'
 import {
   ecritureConforme, ecrituresSansPieceParMouvement, natureDuCompte,
   type LigneEcritureMouvement, type MouvementBancaire, type NatureCompte,
@@ -320,6 +321,9 @@ export function mouvementsVentilesDesynchronises<L extends MouvementBancaire>(
   modele: ModeleComptable,
   assujettiTva: boolean,
   frontiere: string | null,
+  // La banque de chaque mouvement (MCB5, lib/banqueDuMouvement.ts) : l'écriture attendue se recompose au 512 de SON
+  // compte bancaire ; drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
+  banques: BanquesDuDossier,
 ): L[] {
   const ecrituresParLigne = ecrituresSansPieceParMouvement(ecritures)
   const parLigne = partsParMouvement(ventilations)
@@ -330,7 +334,9 @@ export function mouvementsVentilesDesynchronises<L extends MouvementBancaire>(
     if (estFigee(ligne.date, frontiere)) return false
     const parts = parLigne.get(ligne.id) ?? []
     if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false
-    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)
+    const duMouvement = modelePourJuger(modele, ligne, banques)
+    if (!duMouvement) return false
+    const attendue = ecritureDeLaVentilation(ligne, parts, categories, duMouvement, assujettiTva)
     if (!attendue) return true
     return !ecritureConforme(ecrituresParLigne.get(ligne.id) ?? [], attendue, ligne.date)
   })

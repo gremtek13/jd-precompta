@@ -1,3 +1,4 @@
+import { planPourJuger, type BanquesDuDossier } from './banqueDuMouvement'
 import { libellerLEcritureDuReleve } from './libellesDuReleve'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import type { PlanComptable } from './planComptable'
@@ -269,12 +270,17 @@ export function mouvementsAffectesDesynchronises(
   frontiere: string | null,
   // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
   plan: PlanComptable,
+  // La banque de chaque mouvement (MCB5, lib/banqueDuMouvement.ts) : l'écriture attendue se recompose au 512 de SON
+  // compte bancaire ; drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
+  banques: BanquesDuDossier,
 ): MouvementAffecte[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return affectes.filter((m) => {
     if (estFigee(m.ligne.date, frontiere)) return false
     if (!m.nature || !m.categorie.compte_comptable) return true
-    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux, plan), m.ligne.date)
+    const duMouvement = planPourJuger(plan, m.ligne, banques)
+    if (!duMouvement) return false
+    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux, duMouvement), m.ligne.date)
   })
 }
 

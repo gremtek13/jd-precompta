@@ -77,3 +77,19 @@ export function modeleDuMouvement(modele: ModeleComptable, ligne: MouvementDUnCo
   if ('refus' in p) return p
   return { modele: p.plan === modele.plan ? modele : { ...modele, plan: p.plan } }
 }
+
+/** Le plan sous lequel un DÉTECTEUR recompose l'écriture attendue d'un mouvement (MCB5, seconde partie) : celui du
+ *  mouvement, ou nul quand sa banque ne se sait pas (comptes en cours de lecture ou illisibles). Un mouvement dont la banque
+ *  ne se sait pas ne se dit ni conforme ni à réécrire : il n'est pas jugé. Les appelants qui en comptent (la Checklist, les
+ *  préalables de la validation) se suspendent déjà sur des comptes lus en partie (`comptesBancaires` de leurs entrées), et
+ *  un écran le dit par son bandeau ; drapeau baissé, le plan lui-même, le jugement d'hier. */
+export function planPourJuger(plan: PlanComptable, ligne: MouvementDUnCompte, banques: BanquesDuDossier): PlanComptable | null {
+  const p = planDuMouvement(plan, ligne, banques)
+  return 'refus' in p ? null : p.plan
+}
+
+/** Le modèle sous lequel un détecteur recompose (le pendant de `planPourJuger` pour une composition qui prend le modèle). */
+export function modelePourJuger(modele: ModeleComptable, ligne: MouvementDUnCompte, banques: BanquesDuDossier): ModeleComptable | null {
+  const m = modeleDuMouvement(modele, ligne, banques)
+  return 'refus' in m ? null : m.modele
+}

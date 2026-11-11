@@ -1,4 +1,5 @@
 import type { Saisie2035 } from './saisies2035'
+import { banquesDuDossier } from './banqueDuMouvement'
 import type { ModeleComptable } from './engagement'
 import type { DossierTab } from './ongletsDossier'
 import type { Concordance2035 } from './concordance2035'
@@ -1018,9 +1019,12 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     })
   }
 
+  // La banque de chaque mouvement (MCB5) : les détecteurs recomposent l'écriture attendue au 512 de son compte bancaire ;
+  // des comptes lus en partie suspendent déjà la validation.
+  const banques = banquesDuDossier(d.comptesBancaires, d.modele.plan)
   const affectes = mouvementsAffectes(d.lignes, d.categories, d.assujettiTva)
   bloque({
-    id: 'affectes-perimes', nb: mouvementsAffectesDesynchronises(d.ecritures, affectes, frontiere, d.modele.plan).filter((a) => mouvementDeLExercice(a.ligne)).length, cible: 'ecritures',
+    id: 'affectes-perimes', nb: mouvementsAffectesDesynchronises(d.ecritures, affectes, frontiere, d.modele.plan, banques).filter((a) => mouvementDeLExercice(a.ligne)).length, cible: 'ecritures',
     message: "mouvement(s) affecté(s) dont l'écriture ne suit plus la catégorie : les réaffecter.",
   })
   bloque({
@@ -1032,7 +1036,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'ventiles-perimes', cible: 'ecritures',
-    nb: mouvementsVentilesDesynchronises(d.ecritures, d.lignes, d.ventilations, d.categories, d.modele, d.assujettiTva, frontiere).filter(mouvementDeLExercice).length,
+    nb: mouvementsVentilesDesynchronises(d.ecritures, d.lignes, d.ventilations, d.categories, d.modele, d.assujettiTva, frontiere, banques).filter(mouvementDeLExercice).length,
     message: "mouvement(s) ventilé(s) dont l'écriture ne suit plus les parts : les réécrire.",
   })
   bloque({
@@ -1040,7 +1044,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     message: "mouvement(s) ventilé(s) dont les parts ne font plus le mouvement : modifier ou annuler ces ventilations.",
   })
   bloque({
-    id: 'comptes-de-bilan-perimes', nb: mouvementsSurUnCompteDeBilanDesynchronises(d.ecritures, d.lignes, frontiere, d.modele.plan).filter(mouvementDeLExercice).length,
+    id: 'comptes-de-bilan-perimes', nb: mouvementsSurUnCompteDeBilanDesynchronises(d.ecritures, d.lignes, frontiere, d.modele.plan, banques).filter(mouvementDeLExercice).length,
     cible: 'ecritures',
     message: "mouvement(s) écrit(s) sur un compte de bilan dont l'écriture ne suit plus le compte : les réécrire.",
   })
@@ -1055,19 +1059,19 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'paiements-tva-perimes', cible: 'ecritures',
-    nb: paiementsTvaDesynchronises(d.ecritures, d.lignes, frontiere, d.modele.plan).filter(mouvementDeLExercice).length,
+    nb: paiementsTvaDesynchronises(d.ecritures, d.lignes, frontiere, d.modele.plan, banques).filter(mouvementDeLExercice).length,
     message: "paiement(s) ou remboursement(s) de TVA dont l'écriture ne suit plus le mouvement : les réécrire.",
   })
   bloque({
-    id: 'virements-sans-ecriture', nb: virementsPersonnelsAEcrire(d.ecritures, d.lignes, d.modele, frontiere).filter(mouvementDeLExercice).length, cible: 'virements',
+    id: 'virements-sans-ecriture', nb: virementsPersonnelsAEcrire(d.ecritures, d.lignes, d.modele, frontiere, banques).filter(mouvementDeLExercice).length, cible: 'virements',
     message: "virement(s) personnel(s) sans écriture — absents du FEC : les écrire.",
   })
   bloque({
-    id: 'echeances-emprunt-perimees', nb: echeancesDesynchronisees(d.ecritures, d.lignes, d.modele.plan).filter(mouvementDeLExercice).length, cible: 'banque',
+    id: 'echeances-emprunt-perimees', nb: echeancesDesynchronisees(d.ecritures, d.lignes, d.modele.plan, banques).filter(mouvementDeLExercice).length, cible: 'banque',
     message: "échéance(s) d'emprunt dont l'écriture ne suit plus le découpage : les rapprocher de nouveau.",
   })
   bloque({
-    id: 'cotisations-sans-ecriture', nb: cotisationsAEcrire(d.ecritures, d.lignes, d.cotisations, d.modele.mode, frontiere, d.modele.plan).filter((c) => mouvementDeLExercice(c.ligne)).length,
+    id: 'cotisations-sans-ecriture', nb: cotisationsAEcrire(d.ecritures, d.lignes, d.cotisations, d.modele.mode, frontiere, d.modele.plan, banques).filter((c) => mouvementDeLExercice(c.ligne)).length,
     cible: 'cotisations',
     message: "échéance(s) de cotisation payée(s) dont l'écriture manque ou n'est plus à jour : les écrire.",
   })

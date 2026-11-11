@@ -1,4 +1,5 @@
 import { AUCUNE_PIECE_CITEE } from './facturesSources'
+import { banquesDuDossier } from './banqueDuMouvement'
 import { describe, expect, it } from 'vitest'
 import { refusAffectation, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
 import { refusPaieUneDeclarationTva } from './classementsDuMouvement'
@@ -925,17 +926,17 @@ describe('paiementsTvaDesynchronises — défensif', () => {
   ]
 
   it('rien à redire d’un paiement juste', () => {
-    expect(paiementsTvaDesynchronises(juste, [paie], null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(paiementsTvaDesynchronises(juste, [paie], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
   })
 
   it('une écriture absente ou sur un autre compte', () => {
-    expect(paiementsTvaDesynchronises([], [paie], null, PLAN_PAR_DEFAUT)).toEqual([paie])
-    expect(paiementsTvaDesynchronises([juste[0], { ...juste[1], compte: '445660' }], [paie], null, PLAN_PAR_DEFAUT)).toEqual([paie])
+    expect(paiementsTvaDesynchronises([], [paie], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([paie])
+    expect(paiementsTvaDesynchronises([juste[0], { ...juste[1], compte: '445660' }], [paie], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([paie])
   })
 
   it('ni un mouvement d’un exercice validé, ni un mouvement qui ne paie aucune déclaration', () => {
-    expect(paiementsTvaDesynchronises([], [paie], '2026-12-31', PLAN_PAR_DEFAUT)).toEqual([])
-    expect(paiementsTvaDesynchronises([], [mouvement({ statut: 'rapprochee', categorie_id: 'k' })], null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(paiementsTvaDesynchronises([], [paie], '2026-12-31', PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
+    expect(paiementsTvaDesynchronises([], [mouvement({ statut: 'rapprochee', categorie_id: 'k' })], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
   })
 })
 

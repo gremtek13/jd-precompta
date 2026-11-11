@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
+import { modeleDuMouvement } from '../../lib/banqueDuMouvement'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import type { EcritureBrouillon, LigneBancaire } from '../../lib/types'
@@ -44,6 +46,9 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
   // Un virement daté d'un exercice validé ne se retire plus : la base refuse de le remettre à traiter comme de
   // retirer son écriture (lib/validationExercice.ts). Sa ligne le dit, au lieu d'un bouton que la base refuserait.
   const { frontiere, anneesValidees } = useExercicesValides()
+  // La banque de chaque virement (MCB5, lib/banqueDuMouvement.ts) : le 512 de son compte bancaire. Drapeau baissé, le plan
+  // lui-même, sans attente ; comptes en cours de lecture ou illisibles, le geste se suspend.
+  const { banques } = useBanquesDuDossier(dossierId, modele.plan)
 
   async function load() {
     setLoading(true)
@@ -78,13 +83,13 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
   // Ceux qu'on peut écrire : pas d'un exercice validé, où la base refuse d'écrire. La colonne dit pourtant ce
   // qu'il en est de CHAQUE virement, figé compris : un virement figé sans écriture manque au FEC de son exercice,
   // et le dire vaut mieux que de le taire — sans le compter dans un geste que la base refuserait.
-  const aEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele, frontiere)
-  const idsSansEcritureJuste = new Set(virementsPersonnelsAEcrire(ecritures, lignes, modele, null).map((l) => l.id))
+  const aEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele, frontiere, banques)
+  const idsSansEcritureJuste = new Set(virementsPersonnelsAEcrire(ecritures, lignes, modele, null, banques).map((l) => l.id))
   const idsAvecEcriture = new Set(ecritures.map((e) => e.ligne_bancaire_id))
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE (voir CLAUDE.md) : un virement dont l'écriture n'a
   // pas été lue paraîtrait sans écriture, et la liste de ceux à écrire serait fausse dans un sens ou
   // dans l'autre. Le geste se suspend et dit pourquoi.
-  const ecritureSuspendue = lectureIncomplete ?? lectureEcritures
+  const ecritureSuspendue = lectureIncomplete ?? lectureEcritures ?? (banques.cas === 'retenu' ? banques.raison : null)
 
   // Chaque virement par la même fonction de la base que le bouton de Banque : elle vérifie l'écriture
   // et l'écrit avec le classement, et remplace celle qui ne correspond plus. Un échec n'interrompt pas
@@ -97,9 +102,11 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
     try {
       const echecs: string[] = []
       for (const ligne of aEcrire) {
+        const duMouvement = modeleDuMouvement(modele, ligne, banques)
+        if ('refus' in duMouvement) { echecs.push(duMouvement.refus); continue }
         const { error } = await supabase.rpc('classer_virement_personnel', {
           p_ligne_bancaire_id: ligne.id,
-          p_ecritures: ecritureDuVirementPersonnel(ligne, modele),
+          p_ecritures: ecritureDuVirementPersonnel(ligne, duMouvement.modele),
         })
         if (error) echecs.push(messageErreur(error, 'raison inconnue'))
       }

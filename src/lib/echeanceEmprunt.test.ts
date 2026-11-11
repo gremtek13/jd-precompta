@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { banquesDuDossier } from './banqueDuMouvement'
 import type { MouvementBancaire } from './affectationBanque'
 import { caseDuPoste } from './cases2035'
 import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT, LIBELLES_COMPTES } from './comptes'
@@ -438,8 +439,8 @@ describe('echeancesDesynchronisees — l’écriture que le découpage produirai
   ]
 
   it('se tait quand l’écriture est celle attendue, et sur un mouvement sans emprunt', () => {
-    expect(echeancesDesynchronisees(justes, [rapproche()], PLAN_PAR_DEFAUT)).toEqual([])
-    expect(echeancesDesynchronisees([], [mouvement()], PLAN_PAR_DEFAUT)).toEqual([])
+    expect(echeancesDesynchronisees(justes, [rapproche()], PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
+    expect(echeancesDesynchronisees([], [mouvement()], PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
   })
 
   it('signale une écriture absente, amputée, d’un autre montant ou à une autre date', () => {
@@ -449,11 +450,11 @@ describe('echeancesDesynchronisees — l’écriture que le découpage produirai
       justes.map((e) => (e.compte === '661100' ? { ...e, montant: 30 } : e)),
       justes.map((e) => ({ ...e, date: '2025-02-07' })),
     ]
-    for (const ecritures of cas) expect(echeancesDesynchronisees(ecritures, [rapproche()], PLAN_PAR_DEFAUT).map((l) => l.id)).toEqual(['l1'])
+    for (const ecritures of cas) expect(echeancesDesynchronisees(ecritures, [rapproche()], PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT)).map((l) => l.id)).toEqual(['l1'])
   })
 
   it('les lignes d’une pièce qui désignent le même mouvement n’en sont pas', () => {
     const avecPiece = [...justes, ecriture({ id: 'e5', piece_id: 'p1', compte: '606100', sens: 'debit', montant: 10 })]
-    expect(echeancesDesynchronisees(avecPiece, [rapproche()], PLAN_PAR_DEFAUT)).toEqual([])
+    expect(echeancesDesynchronisees(avecPiece, [rapproche()], PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
   })
 })

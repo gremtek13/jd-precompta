@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { banquesDuDossier } from './banqueDuMouvement'
 import { mouvementJustifieParLeReleve, refusAffectation, type MouvementBancaire } from './affectationBanque'
 import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
 import {
@@ -395,31 +396,31 @@ describe('mouvementsSurUnCompteDeBilanDesynchronises — défensif : l’écritu
   ]
 
   it('se tait sur l’écriture que la base a écrite', () => {
-    expect(mouvementsSurUnCompteDeBilanDesynchronises(juste, [ecrit], null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises(juste, [ecrit], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
   })
 
   it('dit l’écriture absente, sur un autre compte, d’un autre montant, dans l’autre sens ou à une autre date', () => {
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], null, PLAN_PAR_DEFAUT)).toEqual([ecrit])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([ecrit])
     for (const o of [
       { compte: COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES }, { montant: 1999.9 }, { sens: 'credit' as const }, { date: '2026-03-13' },
     ]) {
       const fausse = [ecriture({ id: 'e1', ...o }), juste[1]]
-      expect(mouvementsSurUnCompteDeBilanDesynchronises(fausse, [ecrit], null, PLAN_PAR_DEFAUT), JSON.stringify(o)).toEqual([ecrit])
+      expect(mouvementsSurUnCompteDeBilanDesynchronises(fausse, [ecrit], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT)), JSON.stringify(o)).toEqual([ecrit])
     }
   })
 
   it('ne regarde que les mouvements écrits sur un compte de bilan, hors d’un exercice validé', () => {
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [mouvement()], null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [mouvement()], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
     // Rapprochés d'autre chose — une catégorie, une pièce —, ils ont leur propre contrôle : sans compte de bilan, il n'y
     // a pas d'écriture attendue ici, et les juger les dirait tous « à réécrire ».
     const affecte = mouvement({ id: 'l2', statut: 'rapprochee', categorie_id: 'cat' })
     const dUnePieceRapprochee = mouvement({ id: 'l3', statut: 'rapprochee', piece_id: 'p1' })
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [affecte, dUnePieceRapprochee], null, PLAN_PAR_DEFAUT)).toEqual([])
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-12-31', PLAN_PAR_DEFAUT)).toEqual([])
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-03-11', PLAN_PAR_DEFAUT)).toEqual([ecrit])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [affecte, dUnePieceRapprochee], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-12-31', PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-03-11', PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([ecrit])
     // L'écriture d'une pièce qui désigne le même mouvement n'est pas la sienne.
     const dUnePiece = juste.map((e) => ({ ...e, piece_id: 'p1' }))
-    expect(mouvementsSurUnCompteDeBilanDesynchronises(dUnePiece, [ecrit], null, PLAN_PAR_DEFAUT)).toEqual([ecrit])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises(dUnePiece, [ecrit], null, PLAN_PAR_DEFAUT, banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT))).toEqual([ecrit])
   })
 })
 

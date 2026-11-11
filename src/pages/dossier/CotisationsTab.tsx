@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
+import { planDuMouvement } from '../../lib/banqueDuMouvement'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, aujourdHuiAParis, formatDate, formatMoney, slugify } from '../../lib/format'
@@ -72,6 +74,9 @@ import ReunirEcheancesModal from './ReunirEcheancesModal'
 // des écritures du brouillon, et ne sont offerts que sur ce que l'onglet a lu en entier.
 export default function CotisationsTab({ dossierId, modele }: { dossierId: string; modele: ModeleComptable }) {
   const modeComptable = modele.mode
+  // La banque de chaque mouvement qui paie une échéance (MCB5, lib/banqueDuMouvement.ts) : le 512 de son compte bancaire.
+  // Drapeau baissé, le plan lui-même, sans attente ; comptes en cours de lecture ou illisibles, les gestes se suspendent.
+  const { banques } = useBanquesDuDossier(dossierId, modele.plan)
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Les mouvements rapprochés d'une échéance, et les écritures sans pièce du dossier : ce qui dit quelle
   // échéance est payée, et si son paiement est écrit. Chacune son drapeau : leurs conséquences diffèrent.
@@ -261,16 +266,18 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   // n'interrompt pas le lot, et se dit. Le verrou se relâche APRÈS la relecture : relâché avant, la liste
   // montrerait encore « Écrire les N » sur des échéances déjà écrites, le temps qu'elle revienne.
   async function ecrireLesEcheances() {
-    if (ecritureEnCours.current || ecritureSuspendue || aEcrire.length === 0) return
+    if (ecritureEnCours.current || echeancesSuspendues || aEcrire.length === 0) return
     ecritureEnCours.current = true
     setEnCours(true)
     try {
       const echecs: string[] = []
       for (const { ligne, cotisation } of aEcrire) {
+        const duMouvement = planDuMouvement(modele.plan, ligne, banques)
+        if ('refus' in duMouvement) { echecs.push(duMouvement.refus); continue }
         const { error: erreurEcriture } = await supabase.rpc('rapprocher_cotisation', {
           p_ligne_bancaire_id: ligne.id,
           p_cotisation_id: cotisation.id,
-          p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modeComptable, modele.plan),
+          p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modeComptable, duMouvement.plan),
         })
         if (erreurEcriture) echecs.push(messageErreur(erreurEcriture, 'raison inconnue'))
       }
@@ -653,8 +660,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   // Ceux qu'on peut écrire : pas d'un exercice validé, où la base refuse d'écrire. La colonne « Paiement » dit pourtant
   // ce qu'il en est de CHAQUE échéance, figée comprise (`idsSansEcritureJuste`) : une échéance figée sans écriture
   // manque au FEC de son exercice, et le dire vaut mieux que de le taire — sans la compter dans un geste refusé.
-  const aEcrire = cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, frontiere, modele.plan)
-  const idsSansEcritureJuste = new Set(cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, null, modele.plan).map((r) => r.cotisation.id))
+  const aEcrire = cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, frontiere, modele.plan, banques)
+  const idsSansEcritureJuste = new Set(cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, null, modele.plan, banques).map((r) => r.cotisation.id))
   const lignesEcrites = new Set(ecritures.map((e) => e.ligne_bancaire_id))
   // Un rapprochement qui ne PEUT pas s'écrire — un encaissement rapproché d'un appel : sa raison, montrée
   // sur la ligne. Le geste est d'annuler ce rapprochement dans l'onglet Banque. Lu sans la frontière : c'est un fait,
@@ -684,6 +691,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE (voir CLAUDE.md) : une échéance dont le paiement ou
   // l'écriture n'a pas été lu paraîtrait à écrire, ou écrite ; et un échéancier lu à moitié en cacherait.
   const ecritureSuspendue = cotisationsIncompletes ?? paiementsIncomplets ?? ecrituresIncompletes
+  // « Écrire les N » compose au 512 du compte de chaque mouvement (MCB5) : des comptes illisibles le suspendent aussi.
+  const echeancesSuspendues = ecritureSuspendue ?? (banques.cas === 'retenu' ? banques.raison : null)
 
   // LES PAIEMENTS DEPUIS LE COMPTE PERSONNEL. Ce que l'écran sait du dossier pour juger une déclaration, lu en entier.
   const contextePaiementPersonnel = (c: CotisationDeclaree) => ({
@@ -704,7 +713,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   // brouillon. Lu en partie, un paiement non lu ferait paraître une échéance libre, ou un avis non lu la confirmation fausse.
   const gestesSuspendus = lectureIncomplete ?? ecritureSuspendue
   const contexteDesGestes: ContexteDesGestes = {
-    mode: modeComptable, plan: modele.plan, mouvementDe: (c) => paiementDe.get(c.id) ?? null, figee: figeeDe,
+    mode: modeComptable, plan: modele.plan, banques, mouvementDe: (c) => paiementDe.get(c.id) ?? null, figee: figeeDe,
     dateFigee: (date) => dateFigee(date, anneesValidees), ecritures,
   }
   const echeanceAModifier = modificationDe === null ? null : cotisations.find((c) => c.id === modificationDe) ?? null
@@ -982,14 +991,14 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            disabled={enCours || !!ecritureSuspendue}
+            disabled={enCours || !!echeancesSuspendues}
             onClick={ecrireLesEcheances}
           >
             {enCours ? 'Écriture…' : aEcrire.length === 1 ? 'Écrire cette échéance' : `Écrire les ${aEcrire.length}`}
           </button>
-          {ecritureSuspendue && (
+          {echeancesSuspendues && (
             <p className="muted" style={{ margin: '8px 0 0' }}>
-              Suspendu : la lecture est partielle ({ecritureSuspendue}), et ce compte peut être faux. Recharge la page.
+              Suspendu : la lecture est partielle ({echeancesSuspendues}), et ce compte peut être faux. Recharge la page.
             </p>
           )}
         </div>

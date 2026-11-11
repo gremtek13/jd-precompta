@@ -1,3 +1,4 @@
+import { modelePourJuger, type BanquesDuDossier } from './banqueDuMouvement'
 import {
   ecritureConforme, ecritureDuMouvement, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire,
 } from './affectationBanque'
@@ -74,11 +75,14 @@ export function virementsPersonnelsAEcrire<L extends MouvementBancaire>(
   lignes: readonly L[],
   modele: ModeleComptable,
   frontiere: string | null,
+  // La banque de chaque mouvement (MCB5, lib/banqueDuMouvement.ts) : l'écriture attendue se recompose au 512 de SON
+  // compte bancaire ; drapeau baissé, le plan lui-même. Un mouvement dont la banque ne se sait pas n'est pas jugé.
+  banques: BanquesDuDossier,
 ): L[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
-  return lignes.filter((l) =>
-    l.prelevement_personnel
-    && !refusVirementPersonnel(l)
-    && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuVirementPersonnel(l, modele), l.date))
+  return lignes.filter((l) => {
+    if (!l.prelevement_personnel || refusVirementPersonnel(l) || estFigee(l.date, frontiere)) return false
+    const duMouvement = modelePourJuger(modele, l, banques)
+    return !!duMouvement && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuVirementPersonnel(l, duMouvement), l.date)
+  })
 }
