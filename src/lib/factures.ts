@@ -1,6 +1,8 @@
 import { supabase } from './supabase'
 import { formatDate, formatMoney } from './format'
 import { calculerTotaux, dejaCredite } from './montantsFacture'
+import { crediteDeLOrigine, refusDeLaReprise, type LectureDeLaRepriseDeLOrigine } from './avoirDUneFactureReprise'
+import { estUneVente } from './facturesReprises'
 
 export { dejaCredite }
 import { mentionTva } from './statutTva'
@@ -103,25 +105,34 @@ const oppose = (euros: number) => (euros === 0 ? 0 : -euros)
 // CRÉDITE, quantités positives : l'écran les saisit ainsi, `creerAvoir` les rend négatives. `credite` vaut null quand on
 // ne sait pas ce que les autres avoirs de la facture ont crédité — la liste des factures lue en partie : la base en juge
 // alors seule, plutôt qu'un plafond calculé sur une liste incomplète.
+//
+// L'AVOIR D'UNE FACTURE REPRISE (étape A8c6 ; lib/avoirDUneFactureReprise.ts) : la base l'accepte depuis A8b, et juge en plus,
+// au rang qui suit la date de la facture, la reprise mixte et la date de reprise ; son plafond déduit aussi ses avoirs repris.
+// `reprise` : ce que la fenêtre a lu pour CETTE facture, null pour toute autre (et tant qu'elle n'est pas revenue : l'avoir
+// d'une reprise est alors retenu). Sans valeur par défaut : un appelant qui l'oublierait ne compile pas.
 export function refusAvoir(
-  origine: Pick<FactureEmise, 'type' | 'statut' | 'numero' | 'date_emission' | 'montant_ttc'>,
+  origine: Pick<FactureEmise, 'id' | 'type' | 'statut' | 'numero' | 'date_emission' | 'montant_ttc' | 'nature_operation'>,
   dateEmission: string,
   lignes: LigneAEnregistrer[],
   credite: number | null,
+  reprise: LectureDeLaRepriseDeLOrigine | null,
 ): string | null {
   if (lignes.length === 0) return 'Au moins une ligne avec une quantité doit rester à créditer.'
-  if (origine.type !== 'facture' || origine.statut !== 'validee') {
+  if (origine.type !== 'facture' || !estUneVente(origine)) {
     return 'Un avoir corrige une facture validée, jamais un brouillon ni un autre avoir.'
   }
   if (!dateEmission) return "Indique la date d'émission de l'avoir."
   if (dateEmission < origine.date_emission) {
     return `Un avoir ne précède pas la facture qu'il corrige (émise le ${formatDate(origine.date_emission)}).`
   }
+  const refusDeLaFactureReprise = refusDeLaReprise(origine, dateEmission, reprise)
+  if (refusDeLaFactureReprise !== null) return refusDeLaFactureReprise
   if (lignes.some((l) => !(l.quantite > 0))) return 'Chaque ligne créditée porte une quantité positive.'
   const montant = centimes(calculerTotaux(lignes).montant_ttc)
   if (montant <= 0) return 'Un avoir crédite un montant : son total TTC doit être positif.'
-  if (credite !== null) {
-    const reste = centimes(origine.montant_ttc) - centimes(credite)
+  const dejaCrediteEnTout = crediteDeLOrigine(origine, credite, reprise)
+  if (dejaCrediteEnTout !== null) {
+    const reste = centimes(origine.montant_ttc) - centimes(dejaCrediteEnTout)
     if (montant > reste) {
       return `Cet avoir créditerait ${formatMoney(montant / 100)} : la facture ${origine.numero ?? ''} n'a plus que ` +
         `${formatMoney(Math.max(reste, 0) / 100)} à créditer.`

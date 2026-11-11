@@ -2,6 +2,7 @@ import { libelleUnite, sansBlancsAuxBords } from './articles'
 import { CATEGORIE_ENTREPRENEUR_INDIVIDUEL, categorieJuridique } from './categoriesJuridiques'
 import { pourLEspace, type EspaceVentes } from './espaceVentes'
 import { conditionsFigees, INDEMNITE_DE_RECOUVREMENT, mentionsImprimees, sirenDe, sirenValide, type MentionImprimee } from './factureCii'
+import { estUneFactureReprise } from './facturesReprises'
 import { formatMoney } from './format'
 import type { LogoLu } from './logoDesFactures'
 import {
@@ -87,11 +88,13 @@ export function provenanceQuiPart(p: ProvenanceDeLigne, articleId: string | null
 // ── Ce que la validation lit ─────────────────────────────────────────────────────────────────────────────────────────
 // La ligne du dossier que `enregistrer_facture` lit dans la transaction qui valide (`select d.*`), dans les colonnes que les
 // refus et ce qui se fige demandent. Une seule chaîne : le client de la base type la ligne d'après elle.
-export const COLONNES_DE_L_IDENTITE = 'siret, adresse, statut_tva, article_exoneration, numero_tva_attribue, denomination_imprimee, '
+export const COLONNES_DE_L_IDENTITE = 'nom, siret, adresse, statut_tva, article_exoneration, numero_tva_attribue, denomination_imprimee, '
   + 'forme_juridique, capital, rcs_ville, mentions_identite'
 
 // Chaque colonne LUE : une colonne absente d'une lecture n'est pas une colonne nulle, et la lecture la dit illisible.
 export interface IdentiteDuDossier {
+  // Le nom du dossier : l'émetteur que fige l'avoir d'une facture reprise (A8B-Q2), qui n'en porte aucun (étape A8c6).
+  nom: string | null
   siret: string | null
   adresse: string | null
   statut_tva: StatutTva | null
@@ -276,8 +279,9 @@ export function jugementDesMentions(s: SaisieAJuger): JugementDesMentions {
   const origine: MentionsDeLOrigine | null = s.origine
   const mentions = mentionsAFiger({
     dossierId: s.dossierId,
-    // Le SIRET que la facture portera : celui de la saisie ; pour un avoir, celui de sa facture, qu'il recopie.
-    emetteurSiret: avoir ? s.origine?.emetteur_siret ?? null : texteOuNul(s.facture.emetteur_siret),
+    // Le SIRET que la facture portera : celui de la saisie ; pour un avoir, celui de sa facture, qu'il recopie — d'une facture
+    // reprise, celui du dossier (`emetteurDeLAvoir`).
+    emetteurSiret: s.origine !== null ? emetteurDeLAvoir(s.origine, identite).siret : texteOuNul(s.facture.emetteur_siret),
     origine,
     dossier: identite,
     versions,
@@ -316,16 +320,30 @@ export function jugementDesMentions(s: SaisieAJuger): JugementDesMentions {
   // Ce que le cabinet valide encore, et qu'il ne validerait pas depuis l'espace du client (A7-Q1, A7Q-Q1) : dit avant le clic.
   if (s.espace === 'cabinet' && !reprise) {
     if (mentions.forme_juridique === null) jugement.avis.push(AVIS_SANS_FORME)
-    if (denominationAbsente(mentions.denomination_imprimee)) jugement.avis.push(avisSansDenomination(nomDeRepli(s)))
+    if (denominationAbsente(mentions.denomination_imprimee)) jugement.avis.push(avisSansDenomination(nomDeRepli(s, identite)))
   }
   return jugement
 }
 
 const texteOuNul = (v: unknown): string | null => (typeof v === 'string' ? v : null)
 
-// Le nom que la facture imprime faute de dénomination : celui qu'elle porte (`emetteur_nom`), pour un avoir celui de sa facture.
-function nomDeRepli(s: SaisieAJuger): string | null {
-  return s.origine !== null ? s.origine.emetteur_nom : texteOuNul(s.facture.emetteur_nom)
+// Le nom que la facture imprime faute de dénomination : celui qu'elle porte (`emetteur_nom`), pour un avoir celui qu'il fige.
+function nomDeRepli(s: SaisieAJuger, identite: IdentiteDuDossier): string | null {
+  return s.origine !== null ? emetteurDeLAvoir(s.origine, identite).nom : texteOuNul(s.facture.emetteur_nom)
+}
+
+/**
+ * L'ÉMETTEUR QUE L'AVOIR FIGE, comme `enregistrer_facture` le pose : celui de la facture qu'il corrige ; d'une facture REPRISE
+ * de l'ancien logiciel, qui n'en porte aucun (son original vit dans l'ancien logiciel), celui du dossier — son nom, son
+ * SIRET, son adresse —, lu dans la transaction qui valide (A8B-Q2, étape A8c6), jamais sur la reprise. L'avoir validé
+ * l'imprime ensuite de ses propres colonnes (`ceQueLaFactureImprime`).
+ */
+export function emetteurDeLAvoir(
+  origine: Pick<FactureEmise, 'statut' | 'emetteur_nom' | 'emetteur_siret' | 'emetteur_adresse'>,
+  identite: Pick<IdentiteDuDossier, 'nom' | 'siret' | 'adresse'>,
+): { nom: string | null; siret: string | null; adresse: string | null } {
+  if (estUneFactureReprise(origine)) return { nom: identite.nom, siret: identite.siret, adresse: identite.adresse }
+  return { nom: origine.emetteur_nom, siret: origine.emetteur_siret, adresse: origine.emetteur_adresse }
 }
 
 export const AVIS_SANS_FORME = 'La forme juridique du dossier n’est pas renseignée (onglet Informations, « Identité du dossier ») : la '

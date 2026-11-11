@@ -50464,3 +50464,20 @@ l'appelant, lus seulement si une reprise est comptée ; illisibles, l'outil se f
 ce que vaut la pièce citée. Gardes : trois scénarios HTTP, sept mutations ; l'empreinte de `agentComptableAuPlan.test.ts`
 relevée de nouveau après avoir rejoué chaque scénario avant et après : seules la description, la phrase de la consigne
 d'un dossier basculé, trois clés à zéro et les scénarios neufs diffèrent. Reste : le déploiement.
+
+### 11/11/2026 — A8C6 : L'AVOIR D'UNE FACTURE REPRISE, À L'ÉCRAN (LIGNE 51.5)
+
+(Agent architecte ; aucune migration, aucune écriture en production, aucun déploiement.) Les quatre derniers modules d'A8c
+s'ouvrent ; `facturesReprisesLecteurs.test.ts` passe à [13, 0]. **La règle**, tirée de la dernière `enregistrer_facture`
+exportée (A8b) : `lib/avoirDUneFactureReprise.ts`, pur, redit après « Un avoir ne précède pas » la reprise mixte, puis la date
+de reprise, aux mots de `REFUS_AVOIR_D_UNE_REPRISE`, et somme le déjà-crédité comme la base (avoirs de l'application ET
+avoirs repris) ; `refusAvoir` et sa copie `refusDeLAvoir` prennent un cinquième paramètre obligatoire, la lecture, et un
+test les confronte cas pour cas, drapeau levé puis baissé (aucun garde de copie n'existait : écart). **La lecture**
+(`lib/avoirDUneFactureRepriseLecture.ts`) : `reprise_des_factures_le`, et, au cabinet seul, les avoirs repris par
+`factures_importees.origine_id` — le client n'en lit rien (la RLS lui rendrait zéro ligne), la base juge alors le plafond ;
+pas revenue ou illisible, l'avoir est RETENU. **L'écran** : « Avoir » sur une reprise (`FacturesTab`), la fenêtre dit un
+document de l'application, sa série (MA côté cabinet, par `serieDeLaValidation`), ce qu'il fige, la date de reprise.
+**L'émetteur** : `emetteurDeLAvoir` (mentionsFigeesVue) prend le nom, le SIRET et l'adresse du DOSSIER pour une reprise —
+`nom` rejoint `COLONNES_DE_L_IDENTITE`. **Le CII** : le bloc copié ne change pas (un avoir et une facture d'avant à l'octet
+près) ; hors copie, `refusDuCii` dit qu'une reprise n'a pas de CII à elle ; BG-3 cite le numéro et la date de l'ancien
+logiciel, un numéro intransmissible se refuse (BT-25). Mutation : le plafond sans les avoirs repris, deux tests rouges.

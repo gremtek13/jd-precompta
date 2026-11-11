@@ -17,6 +17,8 @@ import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import FactureFormModal from './FactureFormModal'
 import FactureAvoirModal from './FactureAvoirModal'
+import { estUneFactureReprise } from '../../lib/facturesReprises'
+import { TITRE_AVOIR_D_UNE_REPRISE } from '../../lib/avoirDUneFactureReprise'
 import FactureApercu from './FactureApercu'
 import TransmissionFactureModal from './TransmissionFactureModal'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
@@ -742,6 +744,13 @@ export default function FacturesTab(props: Props) {
                               ) : (
                                 <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}>Avoir</button>
                               )
+                            )}
+                            {estUneFactureReprise(f) && f.type === 'facture' && (
+                              // Une facture reprise de l'ancien logiciel (étape A8c6) se corrige par un avoir de l'application ; la
+                              // fenêtre dit sa série, ce qu'il fige, et les refus de la base pour une reprise.
+                              <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)} title={TITRE_AVOIR_D_UNE_REPRISE}>
+                                Avoir
+                              </button>
                             )}
                             {f.statut === 'validee' && (
                               <button className="btn btn-outline btn-sm" onClick={() => setTransmissionDe(f.id)}>Transmettre</button>

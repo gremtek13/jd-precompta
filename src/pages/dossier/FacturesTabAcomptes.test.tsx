@@ -129,7 +129,7 @@ beforeEach(() => {
   faux.refusee = null
   faux.tables = {
     dossiers: [{
-      id: 'd1', cabinet_id: 'c1', siret: SIRET_VENDEUR, adresse: '1 rue Fictive', statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false,
+      id: 'd1', cabinet_id: 'c1', nom: 'Atelier fictif', siret: SIRET_VENDEUR, adresse: '1 rue Fictive', statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false,
       denomination_imprimee: 'Atelier fictif SAS', forme_juridique: '5710', capital: null, rcs_ville: null, mentions_identite: null,
       mode_comptable: 'tresorerie',
     }],
@@ -400,5 +400,36 @@ describe('le mandat de facturation dans l’onglet (P4)', () => {
     const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Valider la facture' })) })
     expect(confirmer.mock.calls[0][0]).not.toContain('Facture établie par')
+  })
+})
+
+// L'AVOIR D'UNE FACTURE REPRISE (étape A8c6) : la liste offre « Avoir » sur une facture de l'ancien logiciel, et la fenêtre dit,
+// avant le clic, un document de l'application, sa série et ce qu'il fige ; une date d'avant la reprise des factures se refuse
+// aux mots de la base, le bouton grisé.
+describe.each(['cabinet', 'client'] as const)('L’avoir d’une facture reprise, dans l’onglet — %s', (espace) => {
+  beforeEach(() => {
+    faux.tables.dossiers[0].reprise_des_factures_le = '2026-11-01'
+    faux.tables.factures_importees = []
+    faux.tables.factures_emises.push(base('r1', [{ quantite: 1, prix_unitaire_ht: 100 }], {
+      numero: 'ANC-0042', statut: 'importee', date_emission: '2026-06-15', validated_at: null, emetteur_nom: null,
+      emetteur_siret: null, emetteur_adresse: null, tiers_nom: 'Client Repris SARL',
+    }))
+    faux.tables.facture_lignes.push(ligne('lr', 'r1', 0, 'Conseil repris', 1, 100))
+  })
+
+  it('« Avoir » sur la reprise ; la fenêtre dit sa série et ce qu’il fige ; une date d’avant la reprise se refuse', async () => {
+    await monter(espace)
+    const bouton = within(ligneDe('ANC-0042')).getByRole('button', { name: 'Avoir' })
+    expect(bouton.getAttribute('title')).toMatch(/reprise de l’ancien logiciel/)
+    fireEvent.click(bouton)
+    await screen.findByRole('button', { name: 'Valider l\'avoir' })
+    const avis = await screen.findByText(/ANC-0042 est reprise de l’ancien logiciel : cet avoir est un document de l’application/)
+    await vi.waitFor(() => expect(texte(avis)).toMatch(/reprise des factures \(le 01\/11\/2026\)/))
+    expect(texte(avis)).toMatch(espace === 'cabinet' ? /série des avoirs du cabinet/ : /ta série d’avoirs/)
+    sansMotsDuCabinet(espace, texte(avis))
+    await vi.waitFor(() => expect((screen.getByRole('button', { name: 'Valider l\'avoir' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.change(screen.getByLabelText('Date d\'émission'), { target: { value: '2026-10-31' } })
+    expect(screen.getByText(/son avoir se date du jour de la reprise des factures, le 01\/11\/2026, ou d'après/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Valider l\'avoir' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
