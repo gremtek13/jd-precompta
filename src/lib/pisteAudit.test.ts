@@ -341,16 +341,20 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     const lignes = pisteAudit(ecritures, [], [affecte], [], SANS_REGISTRE)
     // Un crédit : sous sa date, jamais le texte de la banque (JJ1Q1-Q1).
     expect(lignes.map((l) => [l.ecritureId, l.pieceFichier, l.pieceDate, l.mouvementLibelle, l.manque])).toEqual([
-      ['e2', 'Relevé bancaire : releve-mars-2026.pdf', '2026-03-12', 'Crédit du relevé du 12/03/2026', []],
-      ['e1', 'Relevé bancaire : releve-mars-2026.pdf', '2026-03-12', 'Crédit du relevé du 12/03/2026', []],
+      ['e2', 'Relevé du 12/03/2026', '2026-03-12', 'Crédit du relevé du 12/03/2026', []],
+      ['e1', 'Relevé du 12/03/2026', '2026-03-12', 'Crédit du relevé du 12/03/2026', []],
     ])
-    // Pas d'empreinte : le mouvement n'est relié qu'au NOM du fichier importé.
+    // Pas d'empreinte : le mouvement est relié au relevé par sa date, la référence que le FEC lui donne (INAL4-Q1).
     expect(lignes.every((l) => l.pieceEmpreinte === null)).toBe(true)
   })
 
-  it('dit « Relevé bancaire » quand l’import n’a pas gardé le nom du fichier', () => {
-    const [ligne] = pisteAudit(ecritures.slice(0, 1), [], [{ ...affecte, source_fichier: null }], [], SANS_REGISTRE)
-    expect(ligne.pieceFichier).toBe('Relevé bancaire')
+  it('ne dit jamais le nom du fichier importé, qui peut nommer un patient : la même référence, qu’il soit gardé ou non (INAL4-Q1)', () => {
+    const piege = { ...affecte, source_fichier: 'releve-patient-fictif-dupont.pdf' }
+    const lignes = pisteAudit(ecritures, [], [piege], [], SANS_REGISTRE)
+    expect(lignes.map((l) => l.pieceFichier)).toEqual(['Relevé du 12/03/2026', 'Relevé du 12/03/2026'])
+    expect(genererPisteAuditCsv(lignes)).not.toMatch(/patient|dupont|\.pdf/i)
+    const [sansNom] = pisteAudit(ecritures.slice(0, 1), [], [{ ...affecte, source_fichier: null }], [], SANS_REGISTRE)
+    expect(sansNom.pieceFichier).toBe('Relevé du 12/03/2026')
   })
 
   it('déclare le justificatif manquant quand le mouvement n’est plus affecté', () => {
@@ -369,7 +373,7 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
       [ecriture({ id: 'v1', piece_id: null, ligne_bancaire_id: 'l-perso', compte: '108000', montant: 500, date: '2026-03-12' })],
       [], [perso], [], SANS_REGISTRE,
     )
-    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'VIR PERSO', []])
+    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé du 12/03/2026', 'VIR PERSO', []])
     // Remis à traiter, il n'a plus de justificatif.
     const [remis] = pisteAudit(
       [ecriture({ id: 'v1', piece_id: null, ligne_bancaire_id: 'l-perso', compte: '108000', montant: 500, date: '2026-03-12' })],
@@ -386,7 +390,7 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     })
     const interets = [ecriture({ id: 'i1', piece_id: null, ligne_bancaire_id: 'l-pret', compte: '661100', montant: 36, date: '2026-03-06' })]
     const [ligne] = pisteAudit(interets, [], [pret], [], SANS_REGISTRE)
-    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'ECHEANCE PRET', []])
+    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé du 12/03/2026', 'ECHEANCE PRET', []])
     // Le rapprochement retiré, elle n'a plus de justificatif.
     const [retire] = pisteAudit(interets, [], [{ ...pret, statut: 'non_rapprochee', emprunt_id: null }], [], SANS_REGISTRE)
     expect(retire.manque).toEqual(['justificatif'])
@@ -401,7 +405,7 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     const cotisation = [ecriture({ id: 'u1', piece_id: null, ligne_bancaire_id: 'l-urssaf', compte: '646000', montant: 500, date: '2026-03-05' })]
     const [ligne] = pisteAudit(cotisation, [], [urssaf], [], SANS_REGISTRE)
     expect([ligne.pieceFichier, ligne.pieceDate, ligne.mouvementLibelle, ligne.manque])
-      .toEqual(['Relevé bancaire : releve-mars-2026.pdf', urssaf.date, 'PRLV URSSAF', []])
+      .toEqual(['Relevé du 12/03/2026', urssaf.date, 'PRLV URSSAF', []])
     // Le rapprochement annulé, elle n'a plus de justificatif.
     const [annule] = pisteAudit(cotisation, [], [{ ...urssaf, statut: 'non_rapprochee', cotisation_id: null }], [], SANS_REGISTRE)
     expect(annule.manque).toEqual(['justificatif'])
@@ -415,7 +419,7 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     })
     const part = [ecriture({ id: 't1', piece_id: null, ligne_bancaire_id: 'l-tel', compte: '626000', montant: 84, date: '2026-03-15' })]
     const [ligne] = pisteAudit(part, [], [telephone], [], SANS_REGISTRE)
-    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'PRLV OPERATEUR', []])
+    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé du 12/03/2026', 'PRLV OPERATEUR', []])
     // La ventilation annulée, elle n'a plus de justificatif.
     const [annule] = pisteAudit(part, [], [{ ...telephone, statut: 'non_rapprochee', ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null }], [], SANS_REGISTRE)
     expect(annule.manque).toEqual(['justificatif'])
@@ -429,7 +433,7 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     })
     const virement = [ecriture({ id: 'b1', piece_id: null, ligne_bancaire_id: 'l-ep', compte: '580000', montant: 2000, date: '2026-03-12' })]
     const [ligne] = pisteAudit(virement, [], [epargne], [], SANS_REGISTRE)
-    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'VIR EPARGNE', []])
+    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé du 12/03/2026', 'VIR EPARGNE', []])
     // Remis à traiter, il n'a plus de justificatif.
     const [remis] = pisteAudit(virement, [], [{ ...epargne, statut: 'non_rapprochee', compte_bilan: null, declaration_tva_id: null }], [], SANS_REGISTRE)
     expect(remis.manque).toEqual(['justificatif'])
@@ -615,7 +619,7 @@ describe('pisteAudit — la liquidation de la TVA', () => {
     const paiement = ecriture({ id: 'p1', piece_id: null, ligne_bancaire_id: 'l-tva', date: '2026-04-20', compte: '445510', montant: 79 })
     expect(rupturesPisteAudit([paiement], new Set(['l-tva']), PLAN_PAR_DEFAUT)).toEqual([])
     const [ligne] = pisteAudit([paiement], [], [prelevement], [], SANS_REGISTRE)
-    expect([ligne.pieceFichier, ligne.mouvementDate, ligne.manque]).toEqual(['Relevé bancaire : releve-avril-2026.pdf', '2026-04-20', []])
+    expect([ligne.pieceFichier, ligne.mouvementDate, ligne.manque]).toEqual(['Relevé du 20/04/2026', '2026-04-20', []])
   })
 })
 

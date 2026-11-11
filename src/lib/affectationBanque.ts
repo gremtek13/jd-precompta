@@ -219,10 +219,13 @@ export function idsMouvementsJustifiesParLeReleve(
   return new Set(lignes.filter(mouvementJustifieParLeReleve).map((l) => l.id))
 }
 
-// La pièce d'un mouvement affecté est le RELEVÉ qui le porte : c'est ce qu'un vérificateur ouvrira
-// pour retrouver la ligne. Son nom quand l'import l'a gardé, sinon ce qu'il est.
-export function referenceDuReleve(ligne: Pick<LigneBancaire, 'source_fichier'>): string {
-  return ligne.source_fichier?.trim() || 'Relevé bancaire'
+// La pièce d'un mouvement affecté est le RELEVÉ qui le porte : c'est ce qu'un vérificateur ouvrira pour retrouver la ligne.
+// Une référence NEUTRE, la date du mouvement (« Relevé du JJ/MM/AAAA »), jamais le nom du fichier importé, que le praticien
+// nomme comme il veut — parfois d'un nom de patient (INAL4-Q1, 11/11/2026, sur le modèle de `referenceDUnePiece`, JJ1Q1-Q3) ;
+// la même que « Caisse du … » et « Compte personnel du … ». Le FEC (PieceRef), les écritures des ventes facturées et la piste
+// d'audit la lisent ici ; le FEC d'un exercice validé relit la sienne, figée (`piece_ref`), et n'en dépend pas.
+export function referenceDuReleve(ligne: Pick<LigneBancaire, 'date'>): string {
+  return `Relevé du ${ligne.date.slice(8, 10)}/${ligne.date.slice(5, 7)}/${ligne.date.slice(0, 4)}`
 }
 
 // LES RECETTES AFFECTÉES SANS TAUX D'UN DOSSIER ASSUJETTI. La base n'en affecte plus une sans son taux

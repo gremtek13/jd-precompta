@@ -369,7 +369,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
       expect(m.lignes).toEqual(lignes(plan, [
         ['D', 'banque', 5850, 'm1'], ['C', 'valeurs_a_l_encaissement', 6000, 'm1'], ['D', 'services_bancaires', 150, 'm1'],
       ]))
-      expect([m.journal, m.pieceRef, m.pieceDate, m.date, m.libelle, m.tiers]).toEqual(['BQ', 'releve-fictif.csv', '2025-11-20', '2025-11-20',
+      expect([m.journal, m.pieceRef, m.pieceDate, m.date, m.libelle, m.tiers]).toEqual(['BQ', 'Relevé du 20/11/2025', '2025-11-20', '2025-11-20',
         'Relevé du 20/11/2025 — F2025-0001, F2025-0002', null])
       expect(m.source).toEqual({ genre: 'mouvement', ligneBancaireId: 'm1' })
       // Le 512 du mouvement fait exactement son montant.

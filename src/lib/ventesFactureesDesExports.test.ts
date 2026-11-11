@@ -187,8 +187,8 @@ describe('le FEC d’un dossier qui a basculé', () => {
       ['BQ', 'BQ00002', '20251121', '511000', '', 'F2025-0002', '20251112'],
       ['BQ', 'BQ00002', '20251121', '411000', 'CCLINIQUE', 'F2025-0002', '20251112'],
       ['BQ', 'BQ00002', '20251121', '445710', '', 'F2025-0002', '20251112'],
-      ['BQ', 'BQ00003', '20251122', '512000', '', 'releve-fictif.csv', '20251122'],
-      ['BQ', 'BQ00003', '20251122', '511000', '', 'releve-fictif.csv', '20251122'],
+      ['BQ', 'BQ00003', '20251122', '512000', '', 'Relevé du 22/11/2025', '20251122'],
+      ['BQ', 'BQ00003', '20251122', '511000', '', 'Relevé du 22/11/2025', '20251122'],
     ])
     // EcritureLib : le libellé que la composition a donné à la ligne en l'écrivant.
     // Le particulier par le numéro, l'entreprise par son nom (FEC22-Q7).
@@ -201,7 +201,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
     const { brouillon } = jeu('tresorerie')
     const rows = colonnes(fec(brouillon, 'tresorerie')).slice(1)
     expect([...new Set(rows.map((r) => `${r[2]} ${r[8]} ${r[9]}`))]).toEqual([
-      'VE00001 F2025-0001 20251110', 'VE00002 F2025-0002 20251112', 'BQ00001 releve-fictif.csv 20251122',
+      'VE00001 F2025-0001 20251110', 'VE00002 F2025-0002 20251112', 'BQ00001 Relevé du 22/11/2025 20251122',
     ])
     // Rien au 411 en trésorerie pour des services : aucune ligne n'a d'auxiliaire.
     expect(rows.every((r) => r[6] === '')).toBe(true)
@@ -327,7 +327,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
       ...m2, libelle_brut: null, taux_tva: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
     }], c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(n.lignes.filter((l) => l.ecriture.ligne_bancaire_id === 'm2' && l.ecriture.encaissement_id == null).map((l) => l.pieceRef))
-      .toEqual(['releve-fictif.csv', 'releve-fictif.csv'])
+      .toEqual(['Relevé du 22/11/2025', 'Relevé du 22/11/2025'])
   })
 })
 
@@ -379,7 +379,7 @@ describe('la piste d’audit d’un dossier qui a basculé', () => {
     })
     // Le mouvement que ses encaissements classent : le relevé qui le porte.
     expect(premiere((b) => b.ligne_bancaire_id === 'm2' && b.encaissement_id == null)).toMatchObject({
-      pieceFichier: 'Relevé bancaire : releve-fictif.csv', pieceDate: '2025-11-22', mouvementMontant: 100,
+      pieceFichier: 'Relevé du 22/11/2025', pieceDate: '2025-11-22', mouvementMontant: 100,
     })
   })
 
