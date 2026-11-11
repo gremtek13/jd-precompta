@@ -51226,3 +51226,21 @@ deux gardes (la table ; le justificatif sur `pieces`, B7-Q2) ; le rôle `personn
 troisCasesDeLAcces, validationExercice 141 et ventesFacturees 150 rendus conscients ; banc du leurre SÛR. Derrière
 `NOTES_DE_FRAIS_PREVUES` : le module, le plan de sauvegarde. Vu en passant : le 141 ignore les sept gardes de B2 et B4.
 Restent B8 (les écrans) et l'écriture d'une note d'un salarié au 421 (le rôle dans `ROLES_COMPTABLES`).
+
+### 11/11/2026 — CINQUANTE-NEUF RÉPONSES DU CABINET, LE SOIR (PAGE DES ARBITRAGES)
+
+Relues en entier dans la collection `reponses` (575 documents) : 59 réponses données entre 19 h 44 et 19 h 54 (UTC).
+Cinquante-cinq suivent la recommandation : MCB1-Q1, MCB2-Q1, MCB4-Q1 et Q2, MCB5G-Q1 (journal OD, à confirmer par
+l'expert-comptable) et Q2 (l'écran et un filet en base), MCB6-Q1 et Q2, MCB7-Q1 ; B2-Q1 à Q4, B4-Q1 (B) à Q4 ; LM1-Q2,
+LM3-Q2 et Q3, LM4-Q1 et Q2, LM5-Q1 et Q2, LM7-Q1 à Q3, LM8-Q1 à Q3 ; P1TE2-Q1, PC4Q2-Q1 et Q2, A8Q5Q3-Q1 et Q2,
+A8D2AQ1-Q1 (A) et Q2, INAL5-Q4 ; et les accords d'application : par l'outil `reprises_au_client` (A8CQ1),
+`adresse_des_acces_retires` (P1T-E2), `dirigeant_au_468` (PC4-Q2) ; à coller en une séance (MCB5-Q1 (B)) les quatre
+migrations des comptes bancaires (MCB1, la seconde de MCB2, la couverture de MCB4, la jambe de banque de MCB5) et
+`originaux_retenus_par_leur_import` (A8D2AQ1) ; après leurs préalables, B2 et B4 (après B1, sans réponse), LM3, LM5-Q2,
+LM7 et LM8 (après LM1 et LM4, sans réponse), MCB5g (avec ses écrans), INAL5 (après INAL5-Q1 à Q3, sans réponse). La
+CIPAV (RET-Q1) était déjà en production. Quatre s'écartent de la recommandation, à reprendre dans les migrations
+préparées de la ligne 47 : LM1-Q1 (B), le chef supprime aussi le dossier du cabinet, après une confirmation qui nomme
+les factures perdues ; LM3-Q1 (B), une fiche liée au dossier d'un client peut être déliée et redevient saisie à la
+main ; LM5Q2-Q1 (B), le collaborateur qui suit un client voit aussi les lettres en brouillon, sans honoraires ; LM7-Q4
+(C), le premier et le dernier mois d'une lettre se facturent au prorata, au jour près. MVP-BANQUES-Q1 reste « à vérifier
+avec le praticien ».
