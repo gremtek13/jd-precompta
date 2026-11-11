@@ -58,7 +58,8 @@ function composer(plan: PlanComptable, banques: BanquesDuDossier, o: { compteDuS
     },
     mouvements: [
       mvt({ id: 'm1', date: '2025-11-20', montant: 60, compte_bancaire_id: 'P' }),
-      mvt({ id: 'm2', date: '2025-11-22', montant: 59.5, compte_bancaire_id: o.compteDuSecond === undefined ? 'S' : o.compteDuSecond }),
+      // `null` : un mouvement sans compte lu (la colonne absente, jamais nulle : lib/types.ts)
+      mvt({ id: 'm2', date: '2025-11-22', montant: 59.5, ...(o.compteDuSecond === null ? {} : { compte_bancaire_id: o.compteDuSecond ?? 'S' }) }),
     ],
     comptesDeContrepartie: new Map(), exemplaires: [], mode: o.mode ?? 'tresorerie', plan, banques,
   })
