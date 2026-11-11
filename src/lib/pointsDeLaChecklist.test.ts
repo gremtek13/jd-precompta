@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MESSAGE_PIECES_SANS_EMPREINTE } from './empreinteDeDepot'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
 import type {
@@ -943,6 +944,32 @@ describe('pointsDeLaChecklist — le doublon probable (D1)', () => {
   it('une paire qu’un exercice validé fige entière ne se dit plus', () => {
     expect(point({}, { frontiere: '2026-12-31', anneesValidees: [2026] })?.nb).toBe(0)
     expect(point({}, { frontiere: '2025-12-31', anneesValidees: [2025] })?.nb).toBe(1)
+  })
+})
+
+// LA PIÈCE VALIDÉE SANS EMPREINTE DE FICHIER (INAL12-Q2 ; lib/empreinteDeDepot.ts) : en attention, le message de la
+// validation ; une pièce à valider ne compte pas encore, une pièce qu'un exercice validé fige ne se dit plus. FICTIVES.
+describe('pointsDeLaChecklist — la pièce validée sans empreinte de fichier (INAL12-Q2)', () => {
+  const pieceDe = (id: string, statut: 'validee' | 'a_valider', storage_hash: string | null): Piece => ({
+    id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`, storage_hash,
+    date_piece: '2026-03-14', tiers: 'FOURNISSEUR', montant_ht: null, montant_tva: null, montant_ttc: 40, devise: 'EUR', montant_devise: null,
+    taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut,
+    confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
+    created_at: '2026-03-20T09:00:00Z', updated_at: '2026-03-20T09:00:00Z',
+  })
+  const point = (d: Partial<DonneesDeLaChecklist>, c: Partial<ContexteDeLaChecklist> = {}) =>
+    pointsDeLaChecklist(donnees(d), { ...CONTEXTE, ...c }).tousLesPointsATraiter.find((p) => p.id === 'pieces-sans-empreinte')
+
+  it('se dit en attention, une empreinte nulle, vide ou blanche, avec le message de la validation', () => {
+    const p = point({ piecesValidees: [pieceDe('a', 'validee', null), pieceDe('b', 'validee', ''), pieceDe('c', 'validee', ' '), pieceDe('d', 'validee', 'ab'.repeat(32))] })
+    expect(p).toMatchObject({ nb: 3, severite: 'attention', cible: 'pieces', label: MESSAGE_PIECES_SANS_EMPREINTE })
+  })
+
+  it('une pièce à valider ne compte pas encore ; une pièce qu’un exercice validé fige ne se dit plus', () => {
+    expect(point({ piecesAValider: [pieceDe('a', 'a_valider', null)] })?.nb ?? 0).toBe(0)
+    expect(point({ piecesValidees: [pieceDe('a', 'validee', null)] }, { frontiere: '2026-12-31', anneesValidees: [2026] })?.nb ?? 0).toBe(0)
+    expect(point({ piecesValidees: [pieceDe('a', 'validee', null)] }, { frontiere: '2025-12-31', anneesValidees: [2025] })?.nb).toBe(1)
   })
 })
 

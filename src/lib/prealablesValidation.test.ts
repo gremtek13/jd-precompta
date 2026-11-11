@@ -53,7 +53,7 @@ const ACHATS: Categorie = {
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`,
-  storage_hash: null, date_piece: '2025-03-10', tiers: 'Fournisseur', montant_ht: null, montant_tva: null, montant_ttc: 120,
+  storage_hash: 'a'.repeat(64), date_piece: '2025-03-10', tiers: 'Fournisseur', montant_ht: null, montant_tva: null, montant_ttc: 120,
   devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: 'c-achats',
   sous_dossier_id: null, type_piece: 'achat', statut: 'validee', confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
   identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
@@ -567,7 +567,7 @@ describe('prealablesDeValidation — la numérotation et la 2035', () => {
   // Le cas courant en trésorerie : une facture dont le paiement n'est pas rapproché a sa charge sans sa banque.
   it('nomme l’écriture déséquilibrée et son écart, et renvoie à Banque', () => {
     const p = prealable(donnees({ lignes: [ligne('l1', { statut: 'non_rapprochee', date: '2026-01-05' })], ecritures: [ecriture('e1', { date: '2025-03-10' })] }), 'ecritures-desequilibrees')
-    expect(p).toMatchObject({ nb: 1, cible: 'banque', bloquant: true, detail: '20250310-p1 (écart de 120,00 €)' })
+    expect(p).toMatchObject({ nb: 1, cible: 'banque', bloquant: true, detail: '20250310-aaaaaaaa (écart de 120,00 €)' })
   })
 
   it('refuse une écriture que rien ne rattache, et l’écart qu’elle fait avec la 2035', () => {
@@ -1035,6 +1035,8 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         'mois-en-double', 'banque-au-releve',
         // Un avertissement de la relecture du 04/11/2026 (D1, PIECES-Q2) : le doublon probable. Son cas est plus bas.
         'doublons-probables',
+        // Un avertissement d'INAL12-Q2 : la pièce validée sans empreinte de fichier. Son cas est plus bas.
+        'pieces-sans-empreinte',
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
@@ -2252,7 +2254,7 @@ describe('les quatre champs du FEC d’un BNC en trésorerie (FEC22c2)', () => {
   it('levé, le brouillon d’avant la répartition retient la validation, la pièce nommée — et non sous « défaut de numérotation »', () => {
     const etat = prealablesDeValidation(avec(brouillonDeLAchat(null), { champsBnc: exportes }))
     expect(etat.prealables.map((p) => p.id)).toEqual(['ecritures-a-repartir'])
-    expect(etat.prealables[0]).toMatchObject({ nb: 1, bloquant: true, cible: 'ecritures', detail: '20250601-p-a' })
+    expect(etat.prealables[0]).toMatchObject({ nb: 1, bloquant: true, cible: 'ecritures', detail: '20250601-aaaaaaaa' })
     expect(etat.validable).toBe(false)
   })
 
@@ -2473,5 +2475,31 @@ describe('prealablesDeValidation — le doublon probable (D1, PIECES-Q2)', () =>
     const p3 = piece('p3', { date_piece: '2026-02-01', statut: 'a_valider' })
     const p4 = piece('p4', { date_piece: '2026-02-03', statut: 'a_valider' })
     expect(ids(donnees({ piecesAValider: [p3, p4] }))).not.toContain('doublons-probables')
+  })
+})
+
+// LA PIÈCE SANS EMPREINTE DE FICHIER (INAL12-Q2, réponse du cabinet du 11/11/2026 : « la signaler » ; lib/empreinteDeDepot.ts) :
+// P1, déposée avant que l'application calcule l'empreinte de son fichier, avertit sans retenir la validation ; une pièce de
+// l'exercice suivant se tait. Données FICTIVES.
+describe('prealablesDeValidation — la pièce sans empreinte de fichier (INAL12-Q2)', () => {
+  it('avertit, sans retenir la validation, pour une empreinte nulle, vide ou blanche', () => {
+    const avant = prealablesDeValidation(donnees())
+    for (const storage_hash of [null, '', '  ']) {
+      const etat = prealablesDeValidation(donnees({ piecesValidees: [{ ...P1, storage_hash }] }))
+      const p = etat.prealables.find((x) => x.id === 'pieces-sans-empreinte')
+      expect(p).toMatchObject({ nb: 1, bloquant: false, cible: 'pieces' })
+      expect(p?.message).toMatch(/^pièce\(s\) validée\(s\) sans empreinte de fichier .*le paquet d’archive les marquera « non vérifiée »\. Rien ne bloque la validation\.$/)
+      // Rien d'autre ne change : les mêmes refus, l'exercice aussi validable (sa PieceRef, elle, prend le début de
+      // l'identifiant à la place de l'empreinte : `referenceDUnePiece`).
+      expect(etat.prealables.filter((x) => x.bloquant)).toEqual(avant.prealables.filter((x) => x.bloquant))
+      expect(etat.validable).toBe(avant.validable)
+    }
+  })
+
+  it('se tait quand la pièce a son empreinte, même d’une forme inattendue, et sur une pièce de l’exercice suivant', () => {
+    expect(ids(donnees())).not.toContain('pieces-sans-empreinte')
+    expect(ids(donnees({ piecesValidees: [{ ...P1, storage_hash: 'pas-un-sha256' }] }))).not.toContain('pieces-sans-empreinte')
+    const suivante = piece('p9', { date_piece: '2026-02-01', storage_hash: null })
+    expect(ids(donnees({ piecesValidees: [P1, suivante] }))).not.toContain('pieces-sans-empreinte')
   })
 })

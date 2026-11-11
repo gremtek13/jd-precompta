@@ -1,5 +1,6 @@
 import JSZip from 'jszip'
 import { referenceDUnePiece } from './fec'
+import { empreinteDeDepot, sansEmpreinteDeDepot } from './empreinteDeDepot'
 import { dateAParis } from './format'
 import type { ExerciceValide, Piece } from './types'
 
@@ -73,12 +74,8 @@ const SHA256_HEX = /^[0-9a-f]{64}$/
 /** Ce que le manifeste dit, à la place de l'empreinte de dépôt, d'une pièce qui n'en a pas (INAL3-Q1). */
 export const MARQUE_NON_VERIFIEE = 'non vérifiée (aucune empreinte de dépôt)'
 
-// L'empreinte de dépôt d'une pièce, en minuscules ; nulle quand la pièce n'en porte pas (nulle ou vide). Une valeur
-// présente mais d'une autre forme qu'un SHA-256 n'est PAS une absence : elle se refuse (`fabriquerLePaquet`).
-function empreinteDeDepot(piece: Pick<PieceDuPaquet, 'storage_hash'>): string | null {
-  const e = (piece.storage_hash ?? '').trim().toLowerCase()
-  return e === '' ? null : e
-}
+// L'empreinte de dépôt d'une pièce (lib/empreinteDeDepot.ts, la règle commune de l'absence) : une valeur présente mais
+// d'une autre forme qu'un SHA-256 n'est PAS une absence, elle se refuse (`fabriquerLePaquet`).
 
 /**
  * Les pièces citées par l'exercice qui n'ont pas d'empreinte de dépôt : elles entreront au paquet marquées « non
@@ -90,7 +87,7 @@ export function piecesSansEmpreinte(
   piecesCitees: readonly string[],
 ): string[] {
   const citees = new Set(piecesCitees)
-  return pieces.filter((p) => citees.has(p.id) && empreinteDeDepot(p) === null).map((p) => p.id).sort()
+  return pieces.filter((p) => citees.has(p.id) && sansEmpreinteDeDepot(p)).map((p) => p.id).sort()
 }
 
 // Les pièces que les écritures VALIDÉES de l'exercice citent, directement ou par leur bien : l'ensemble que

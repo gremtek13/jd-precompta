@@ -244,6 +244,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'doublon-texte': 'depenses',
   // Le même achat entré deux fois, probablement (D1 de la relecture du 04/11/2026) : la Vue d'ensemble et la validation.
   'doublons-probables': 'depenses',
+  // La pièce validée sans empreinte de fichier (INAL12-Q2) : la Vue d'ensemble et la validation, en attention.
+  'pieces-sans-empreinte': 'depenses',
   'doublons-inconnus': 'depenses',
   'ecritures-a-generer': 'depenses',
   desynchronisees: 'depenses',

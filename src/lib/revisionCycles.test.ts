@@ -315,6 +315,8 @@ describe('le rangement des contrôles existants', () => {
       'pieces-a-valider-payees-par-la-caisse',
       // La relecture du 04/11/2026 (D1) : le même achat entré deux fois, probablement.
       'doublons-probables',
+      // INAL12-Q2 (11/11/2026) : la pièce validée sans empreinte de fichier.
+      'pieces-sans-empreinte',
     ],
     immobilisations: [
       'immos-sans-justificatif', 'dotations-a-ecrire', 'vehicule-amorti-sous-bareme', 'amortissements-repris-en-ecart',

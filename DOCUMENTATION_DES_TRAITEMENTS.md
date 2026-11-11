@@ -108,8 +108,8 @@ propose, `valider_exercice()` les juge et les fige.
 
 Un mouvement importé (`lib/importReleve.ts`, contrôle des soldes `lib/controlesReleves.ts`) que ne règle aucune pièce
 s'écrit par une fonction qui RECOMPOSE l'écriture envoyée et la refuse si elle diffère ; elle ne touche que les lignes
-PROPRES au mouvement, jamais celles d'une facture ou d'un encaissement. Journal `BQ`, pièce : le relevé
-(`referenceDuReleve`, `lib/affectationBanque.ts`).
+PROPRES au mouvement, jamais celles d'une facture ou d'un encaissement. Journal `BQ`, pièce : le relevé, sous la date du
+mouvement (« Relevé du JJ/MM/AAAA », jamais le nom du fichier importé : `referenceDuReleve`, `lib/affectationBanque.ts`).
 
 | Geste | Fonction qui écrit et vérifie | Composition | Comptes |
 |---|---|---|---|

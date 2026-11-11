@@ -180,7 +180,7 @@ function piece(o: Partial<Piece> = {}): Piece {
   return {
     id: 'p1', dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload',
     storage_path: 'dossier-de-test/justificatif.pdf', nom_fichier: 'justificatif.pdf',
-    storage_hash: null, date_piece: null, tiers: null, montant_ht: null, montant_tva: null,
+    storage_hash: 'a'.repeat(64), date_piece: null, tiers: null, montant_ht: null, montant_tva: null,
     montant_ttc: null, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
     statut: 'a_valider', confiance: 'haute', superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,

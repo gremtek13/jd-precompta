@@ -44,6 +44,7 @@ import { LIBELLE_ETAT_SOURCE, type EtatsDesVentes, type SourceDeVenteEtat } from
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { anneeDe, formatDate, formatMoney } from './format'
 import { detailDesDoublonsProbables, doublonsProbables, piecesRegleesPourLesDoublons } from './doublonsProbables'
+import { MESSAGE_PIECES_SANS_EMPREINTE, sansEmpreinteDeDepot } from './empreinteDeDepot'
 import { premierReleveDeLaTenue, relevesAuTrenteEtUn, type SoldeDuReleve } from './releveAuTrenteEtUn'
 import { soldeEnMots } from './revisionPreuves'
 import type { VentesDeLaChecklist } from './ventesDeLaChecklist'
@@ -937,6 +938,17 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
         + 'deux fois ? Si c’est le cas, supprimer la pièce en trop avant de valider : après, elle ne se supprimera plus et sa '
         + 'charge restera comptée deux fois.',
       detail: detailDesDoublonsProbables(doublonsDeLExercice),
+    })
+  }
+  // LA PIÈCE SANS EMPREINTE DE FICHIER (INAL12-Q2, réponse du cabinet du 11/11/2026 : « la signaler » ; lib/empreinteDeDepot.ts) :
+  // déposée avant que l'application calcule l'empreinte de son fichier, elle se valide comme une autre, mais la forme 2 de
+  // l'empreinte de l'exercice ne scellera pas son fichier, et le paquet d'archive la marquera « non vérifiée » (INAL3-Q1). Un
+  // AVERTISSEMENT, jamais un refus : rien ne se corrige ici, le cabinet le sait avant le clic. Les pièces validées de
+  // l'exercice, celles que ses écritures citeront.
+  const sansEmpreinte = d.piecesValidees.filter((p) => sansEmpreinteDeDepot(p) && pieceDeLExercice(p))
+  if (sansEmpreinte.length > 0) {
+    prealables.push({
+      id: 'pieces-sans-empreinte', nb: sansEmpreinte.length, cible: 'pieces', bloquant: false, message: MESSAGE_PIECES_SANS_EMPREINTE,
     })
   }
   if (d.doublonsTexte === null) {
