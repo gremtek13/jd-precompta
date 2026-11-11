@@ -67,6 +67,9 @@
 --      et lit (contrôle positif) ; le client ne lit rien ; l'insertion directe au super-administrateur seul ; le catalogue,
 --      le drapeau de l'acceptation en ligne baissé — et trois mutations ; avant la migration `lettres_de_mission`, une
 --      ligne « EN ATTENTE ».
+--   6sexies. L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2, ligne 51.5 ; bloc AR, après le bloc TD) : AR1 à AR3 — le cabinet du
+--      dossier la lit (contrôle positif), ni le client ni l'anonyme ; le client ne l'écrit ni ne la réécrit ; le catalogue —
+--      et deux mutations ; avant la migration `adresse_des_acces_retires`, une ligne « EN ATTENTE ».
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -745,6 +748,12 @@
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM4, ligne 47 : migration `lettres_de_mission`, PRÉPARÉE, pas
 -- appliquée, après LM1), qui range les modèles et les lettres de mission dans le dossier du cabinet. Le bloc LM (LM1 à LM7,
 -- M-LM2, M-LM5, M-LM7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM4 ».
+--
+-- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (P1T-E2, ligne 51.5 : migration `adresse_des_acces_retires`, PRÉPARÉE,
+-- pas appliquée), qui garde l'adresse d'un accès retiré que la trace nomme — la lecture du cabinet du dossier, l'insertion
+-- de restauration du super-administrateur, aucune branche client — et son déclencheur sur `memberships`. Le bloc AR (AR1 à
+-- AR3, M-AR1, M-AR2) ; EN ATTENTE sans la migration ; la boucle des invariants y voit la table de plus. Ce qu'il rend :
+-- HISTORIQUE.md, « 11/11/2026 — P1T-E2 ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -4903,6 +4912,145 @@ begin
     'ok', n = 2 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'trace_des_droits' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 2
       and (select c.relrowsecurity from pg_class c where c.oid = 'public.trace_des_droits'::regclass));
   verdicts := verdicts || jsonb_build_object('controle', 'TD. le jeu d''essai de la trace s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ AR. L'adresse d'un accès retiré (espace client, P1T-E2 ; migration `adresse_des_acces_retires`) ═══════════════════
+-- Une table du cabinet que le client ne lit pas, pas même pour son dossier, et que personne n'écrit en direct : la lecture
+-- du cabinet du dossier (`admin_du_dossier`, à authenticated) et l'insertion de la restauration (le super-administrateur) ;
+-- aucune autre policy ; une garde, avant la RLS, qui refuse toute écriture hors du déclencheur et de la restauration.
+--   AR1. Une adresse réinsérée dans le dossier du client par la restauration (le chef, super-administrateur) : le chef la
+--        lit (le contrôle POSITIF, l'écart seul) ; le client n'en lit rien ; l'anonyme non plus.
+--   AR2. Le client ne l'écrit pas (42501, la garde) ; ne la réécrit pas (aucune policy : aucune ligne touchée, la ligne
+--        relue). Un retrait ne se joue pas ici (l'outil d'exécution de la production le retient) :
+--        `adresseDesAccesRetiresSuppression.sql`, sur une réplique.
+--   AR3. Le catalogue : la RLS active, deux policies à authenticated seul — la lecture `admin_du_dossier(dossier_id)`,
+--        l'insertion `is_super_admin()`.
+-- Deux mutations, qui doivent mordre : M-AR1 (la lecture élargie au client « membre » : il lit la ligne de son dossier),
+-- M-AR2 (la lecture fermée : le chef ne lit plus la ligne). Avant la migration, une ligne dit que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  ligne uuid := gen_random_uuid(); chef_avant bigint; chef_apres bigint; du_client bigint; de_l_anon text; ecrite text;
+  reecrites bigint; relue boolean; elargie bigint; fermee bigint; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.adresses_des_acces_retires') is null then
+    insert into rls_verdict values ('AR. l''adresse d''un accès retiré : EN ATTENTE de la migration adresse_des_acces_retires',
+      'adresses_des_acces_retires', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef, super-administrateur, réinsère une adresse dans le dossier du client (la porte de la restauration) ──
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into chef_avant from adresses_des_acces_retires where dossier_id = dossier_du_client;
+    insert into adresses_des_acces_retires (id, dossier_id, acces_id, adresse)
+      values (ligne, dossier_du_client, gen_random_uuid(), 'essai-rls-ar@example.test');
+    select count(*) into chef_apres from adresses_des_acces_retires where dossier_id = dossier_du_client;
+    reset role;
+    construit := true;
+
+    -- AR1 : le client, puis l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from adresses_des_acces_retires where dossier_id = dossier_du_client;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from adresses_des_acces_retires;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'AR1. le chef lit l''adresse retenue dans le dossier du client (le contrôle positif) ; le client n''en lit rien, ni l''anonyme',
+      'cible', 'adresses_des_acces_retires',
+      'observe', 'le chef : ' || (chef_apres - chef_avant) || ' de plus | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_apres - chef_avant = 1 and du_client = 0 and de_l_anon = '0');
+
+    -- AR2 : le client n'écrit ni ne réécrit la table.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into adresses_des_acces_retires (dossier_id, acces_id, adresse)
+        values (dossier_du_client, gen_random_uuid(), 'essai-rls-ar@example.test');
+      ecrite := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if ecrite is null then ecrite := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with r as (update adresses_des_acces_retires set adresse = 'autre@example.test' where dossier_id = dossier_du_client returning 1)
+      select count(*) into reecrites from r;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select exists (select 1 from adresses_des_acces_retires r where r.id = ligne and r.adresse = 'essai-rls-ar@example.test') into relue;
+    verdicts := verdicts || jsonb_build_object('controle', 'AR2. le client n''écrit pas l''adresse d''un accès retiré (la garde) et ne la réécrit pas (aucune policy, la ligne relue)',
+      'cible', 'adresses_des_acces_retires',
+      'observe', 'écrite : ' || coalesce(ecrite, '?') || ' | réécrites : ' || reecrites || ' | relue : ' || coalesce(relue::text, '?'),
+      'ok', ecrite = '42501 L''adresse d''un accès retiré ne s''écrit que par le retrait de l''accès.' and reecrites = 0 and relue);
+
+    -- M-AR1 : la lecture élargie au client « membre ».
+    begin
+      alter policy adresses_des_acces_retires_lecture on public.adresses_des_acces_retires
+        using (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from adresses_des_acces_retires where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-AR1 — la lecture de l''adresse d''un accès retiré élargie au client « membre »',
+      'attendu', 'le client lit la ligne de son dossier', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-AR2 : la lecture fermée.
+    begin
+      alter policy adresses_des_acces_retires_lecture on public.adresses_des_acces_retires using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from adresses_des_acces_retires where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-AR2 — la lecture de l''adresse d''un accès retiré fermée',
+      'attendu', 'le chef ne lit plus la ligne', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- AR3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'adresses_des_acces_retires' and p.roles = array['authenticated']::name[]
+     and ((p.policyname = 'adresses_des_acces_retires_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'adresses_des_acces_retires_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'AR3. la RLS active ; deux policies à authenticated seul, la lecture du cabinet et l''insertion du super-administrateur (lecture du catalogue)',
+    'cible', 'adresses_des_acces_retires',
+    'observe', n || ' sur 2, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'adresses_des_acces_retires' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.adresses_des_acces_retires'::regclass),
+    'ok', n = 2 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'adresses_des_acces_retires' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 2
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.adresses_des_acces_retires'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'AR. le jeu d''essai de l''adresse d''un accès retiré s''est construit', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

@@ -1087,6 +1087,17 @@ export interface TraceDesDroits {
   fait_le: string
 }
 
+// L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2 ; migration `adresse_des_acces_retires`, PRÉPARÉE, pas appliquée — voir
+// lib/adressesDesAccesRetires.ts) : l'adresse qu'un accès que la trace nomme portait au moment de son départ, écrite par le
+// déclencheur de `memberships` seul, immuable, partie avec son dossier, lue par le cabinet du dossier. L'accès n'a pas de clé.
+export interface AdresseDUnAccesRetire {
+  id: string
+  dossier_id: string
+  acces_id: string
+  adresse: string
+  retire_le: string
+}
+
 // LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, en production depuis le 07/11/2026,
 // relevée dans information_schema.columns — voir lib/saisies2035.ts) : une ligne par dossier, exercice et case, écrite par
 // `enregistrer_saisies_2035` seule. `code` est un texte, comme le générateur de Supabase le rend : sa contrainte

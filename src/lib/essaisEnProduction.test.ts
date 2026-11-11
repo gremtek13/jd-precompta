@@ -269,8 +269,10 @@ describe('les essais de la base, rejoués en production', () => {
     // des comptes bancaires et un dossier, sous la même garde.
     // Le quatorzième, lettresDeMission, le 11/11/2026 (LM4, migration `lettres_de_mission`) : il désigne le dossier du
     // cabinet et supprime en dernier un dossier jetable, sous la même garde. Son catalogue se rejoue partout : le bloc LM de rls.sql.
+    // Le quinzième, adresseDesAccesRetiresSuppression, le 11/11/2026 (P1T-E2, migration `adresse_des_acces_retires`) : il
+    // retire des accès et un dossier, sous la même garde ; son compagnon se joue en production.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'deuxFacteurs (son en-tête)',
+      'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'lettresDeMission (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',

@@ -1,3 +1,4 @@
+import type { AdresseRetenue } from './adressesDesAccesRetires'
 import { estLeClient, type AccesDuDossier } from './auteursVentes'
 import { definitionDe, type Domaine } from './droitsAcces'
 import type { LectureComplete } from './lectureComplete'
@@ -13,7 +14,8 @@ import type { TraceDesDroits } from './types'
 //  1. Nommer un droit ou un geste qu'il ne connaît pas : la ligne est écartée, comptée, et la lecture se dit PARTIELLE
 //     (une migration plus récente que l'écran). Il ne devine pas un libellé.
 //  2. Montrer un identifiant : ni celui de l'accès, ni celui d'un compte, ni celui de l'auteur. Un accès se nomme par son
-//     adresse ; un accès qui n'est plus dans la liste n'a plus de nom, et l'écran dit seulement qu'il est retiré.
+//     adresse ; un accès qui n'est plus dans la liste se nomme par l'adresse qu'il portait à son départ, que la base a
+//     retenue (P1T-E2, lib/adressesDesAccesRetires.ts) — sans elle, l'écran dit seulement qu'il est retiré.
 //  3. Dire un auteur qu'il ne prouve pas (voir `auteurDuGeste`).
 //  4. Affirmer le vide : « aucun changement » ne se dit que d'une trace lue EN ENTIER (`motif` nul).
 
@@ -153,7 +155,8 @@ export interface AccesNomme {
 }
 
 export interface GroupeDeLaTrace {
-  /** Le nom montré : l'adresse de l'accès, ou « Accès retiré » / « Accès absent de la liste lue » pour un accès sans ligne. */
+  /** Le nom montré : l'adresse de l'accès ; pour un accès parti, l'adresse retenue à son départ, ou, sans elle, « Accès
+   *  retiré » / « Accès absent de la liste lue ». */
   intitule: string
   /** `present` : un accès de la liste ; `retire` : absent d'une liste lue EN ENTIER ; `absent` : absent d'une liste qui ne l'est pas. */
   etat: 'present' | 'retire' | 'absent'
@@ -165,11 +168,14 @@ export const INTITULE_SANS_ADRESSE = 'Accès sans adresse lisible'
 /**
  * La trace rangée PAR ACCÈS : chaque accès de la liste (même sans ligne), puis chaque accès que la trace nomme et que la
  * liste ne porte plus. « Retiré » ne se dit que d'une liste lue en entier (`listeLue`) : lue en partie, l'accès peut
- * exister sans y figurer, et on ne le déclare pas parti. Les accès retirés se suivent du plus ancien geste au plus récent,
- * datés de leur premier geste — ils n'ont plus d'adresse, et l'identifiant ne se montre pas.
+ * exister sans y figurer, et on ne le déclare pas parti. Les accès retirés se suivent du plus ancien geste au plus récent.
+ * Un accès parti se nomme par l'adresse que la base a retenue à son départ (`adresses`, P1T-E2), datée de ce départ ; sans
+ * elle — la table pas encore en base (`null`), une adresse pas retenue, ou pas lue —, il se date de son premier geste, et
+ * l'identifiant ne se montre jamais.
  */
 export function groupesDeLaTrace(
   lignes: readonly LigneDeTrace[], acces: readonly AccesNomme[], listeLue: boolean,
+  adresses: ReadonlyMap<string, AdresseRetenue> | null,
 ): GroupeDeLaTrace[] {
   const ordonnees = ordreDeLaTrace(lignes)
   const connus = new Set(acces.map((a) => a.id))
@@ -186,12 +192,14 @@ export function groupesDeLaTrace(
   const premier = (ls: readonly LigneDeTrace[]) => Math.min(...ls.map((l) => Date.parse(l.instant)))
   const retires = [...orphelins.values()].sort((a, b) => premier(a) - premier(b))
   for (const ls of retires) {
+    const retenue = adresses?.get(ls[0].accesId)
     const depuis = quandADitLaTrace(new Date(premier(ls)).toISOString())
-    groupes.push({
-      intitule: listeLue ? `Accès retiré depuis (tracé dès le ${depuis})` : `Accès absent de la liste lue (tracé dès le ${depuis})`,
-      etat: listeLue ? 'retire' : 'absent',
-      lignes: ls,
-    })
+    const intitule = retenue !== undefined
+      ? (listeLue
+        ? `${retenue.adresse} — accès retiré le ${quandADitLaTrace(retenue.retireLe)}`
+        : `${retenue.adresse} — absent de la liste lue (parti le ${quandADitLaTrace(retenue.retireLe)})`)
+      : (listeLue ? `Accès retiré depuis (tracé dès le ${depuis})` : `Accès absent de la liste lue (tracé dès le ${depuis})`)
+    groupes.push({ intitule, etat: listeLue ? 'retire' : 'absent', lignes: ls })
   }
   return groupes
 }
@@ -204,6 +212,11 @@ export function nombreDeChangements(n: number): string {
 /** Ce que dit un groupe sans ligne, d'une trace lue en entier seulement. */
 export const AUCUN_CHANGEMENT_TRACE =
   'Aucun changement de droits tracé pour cet accès. Les cases posées avant le 07/11/2026 ne s’attribuent à personne : la trace ne commence qu’à sa mise en base.'
+
+/** Ce que l'onglet dit de l'adresse d'un accès retiré, la table en base (P1T-E2). */
+export const CE_QUE_DIT_L_ADRESSE_RETENUE =
+  'Un accès retiré se nomme par l’adresse qu’il portait à son départ : seul le cabinet la lit, et elle se garde avec la trace, '
+  + 'aussi longtemps que le dossier.'
 
 export const CE_QUE_DIT_LA_TRACE =
   'Chaque case cochée ou décochée sur un accès du dossier, à l’heure de Paris, et qui l’a fait : le cabinet, le client lui-même, '

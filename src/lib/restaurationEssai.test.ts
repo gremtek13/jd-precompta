@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { ADRESSES_DES_ACCES_RETIRES_PREVUES, TABLES_DES_ADRESSES_DES_ACCES_RETIRES } from './adressesDesAccesRetires'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
@@ -369,6 +370,30 @@ function blocDeLaTrace(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table de la trace existe : la sienne après sa table d'ancrage. */
 const avecLaTrace = avecLesArticles
 
+// L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2) : un bloc à part la met au plan quand sa table existe, juste après la trace des droits
+// (`trace_des_droits`, son ancre), les rangs qui suivent reculant d'autant — le geste des articles —, avec son chemin ; aucune
+// vague. Joué juste après la trace, avant les devis.
+const MARQUE_DES_ADRESSES_RETIREES = "-- ══ L'adresse d'un accès retiré (P1T-E2) ══"
+
+function blocDesAdressesRetirees(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_ADRESSES_RETIREES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.adresses_des_acces_retires') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des adresses existe : la sienne après la trace. */
+const avecLesAdressesRetirees = avecLesArticles
+
 // LES SITUATIONS PUBLIÉES (espace client, étape C4a) : un neuvième bloc à part les met au plan quand leur table existe,
 // juste après la table qu'il nomme (`memberships` : joué après la trace, il la précède), avec leur chemin et leur vague
 // (`remplace_id`) — le geste de la caisse. Joué en dernier : sa vague vient après celle de la caisse, comme dans la liste du code.
@@ -577,9 +602,9 @@ const avecLesLettresDeMission = avecLaCaisse
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
 const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesLettresDeMission(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
-  avecLesSituations(avecLesDevis(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
+  avecLesSituations(avecLesDevis(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
-  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
+  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
   blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesLettresDeMission(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
@@ -652,8 +677,11 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLeJournalDuJour = JUMELLE_INVERSEE_EXPORTEE ? avecLeJournal(avecLesParametresDuJour, journal) : avecLesParametresDuJour
   const avecLaCaisseDuJour = CAISSE_EXPORTEE ? avecLaCaisse(avecLeJournalDuJour, caisse) : avecLeJournalDuJour
   const avecLaTraceDuJour = TRACE_DES_DROITS_PREVUE ? avecLaTrace(avecLaCaisseDuJour, trace) : avecLaCaisseDuJour
+  const adressesRetirees = blocDesAdressesRetirees(texteDeLEssai)
+  const avecLesAdressesRetireesDuJour = ADRESSES_DES_ACCES_RETIRES_PREVUES
+    ? avecLesAdressesRetirees(avecLaTraceDuJour, adressesRetirees) : avecLaTraceDuJour
   const situations = blocDesSituations(texteDeLEssai)
-  const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLaTraceDuJour, devis) : avecLaTraceDuJour
+  const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLesAdressesRetireesDuJour, devis) : avecLesAdressesRetireesDuJour
   const avecLesSituationsDuJour = SITUATIONS_PUBLIEES_EXPORTEES ? avecLesSituations(avecLesDevisDuJour, situations) : avecLesDevisDuJour
   const saisies2035 = blocDesSaisies2035(texteDeLEssai)
   const avecLesSaisies2035DuJour = SAISIES_2035_EN_BASE ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
@@ -784,6 +812,16 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(texteDeLEssai.indexOf(MARQUE_DE_LA_CAISSE)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_DEVIS))
   })
 
+  it('le bloc de l’adresse d’un accès retiré a été lu : sa table, après la trace, conditionné, son chemin (P1T-E2)', () => {
+    expect(adressesRetirees).toEqual({
+      ancre: 'trace_des_droits', tables: [...TABLES_DES_ADRESSES_DES_ACCES_RETIRES], recule: true, conditionne: true,
+      chemins: { adresses_des_acces_retires: { acces: 'direct', parent: null, colonne: null } },
+    })
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(TABLES_DES_ADRESSES_DES_ACCES_RETIRES[0]) - 1]).toBe('trace_des_droits')
+    expect(texteDeLEssai.indexOf(MARQUE_DES_ADRESSES_RETIREES)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DE_LA_TRACE))
+    expect(texteDeLEssai.indexOf(MARQUE_DES_ADRESSES_RETIREES)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_DEVIS))
+  })
+
   it('le bloc de la trace des droits a été lu : sa table, son ancre, son chemin, les rangs qui suivent reculés', () => {
     expect(trace.tables).toEqual([...TABLES_DE_LA_TRACE_DES_DROITS])
     // Les situations publiées (étape C4a), jouées après elle sur la même ancre, s'intercalent : l'ancre se lit sans elles.
@@ -861,6 +899,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DES_ADRESSES_RECEPTION.includes(t) && !TABLES_DES_CONTACTS.includes(t)
       && !TABLES_DES_PARAMETRES_FACTURATION.includes(t) && !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(t)
       && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t) && !TABLES_DES_SITUATIONS_PUBLIEES.includes(t)
+      && !TABLES_DES_ADRESSES_DES_ACCES_RETIRES.includes(t)
       && !TABLES_DES_SAISIES_2035.includes(t) && !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(t)
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t) && !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(t)
       && !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(t) && !TABLES_DES_COMPTES_BANCAIRES.includes(t)

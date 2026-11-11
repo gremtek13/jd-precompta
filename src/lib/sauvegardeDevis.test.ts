@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ADRESSES_DES_ACCES_RETIRES_PREVUES } from './adressesDesAccesRetires'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
@@ -25,6 +26,7 @@ import {
   auPlanDeLaCaisse,
   auPlanDeLaNumerotationContinue, auPlanDeLaPieceDUneFactureReprise,
   auPlanDeLaTraceDesDroits,
+  auPlanDesAdressesDesAccesRetires,
   auPlanDesFacturesImportees,
   auPlanDesSituationsPubliees,
   auPlanDesSaisies2035,
@@ -82,13 +84,15 @@ describe('le filtre du plan', () => {
     // (sauvegardeTraceDesDroits.test.ts) ; depuis l'étape A8a, celui des factures reprises (sauvegardeFacturesImportees.test.ts) ;
     // depuis l'étape A9a, celui de la numérotation qui continue (sauvegardeNumerotationContinue.test.ts) ; depuis le lot MCB1,
     // celui des comptes bancaires, et le graphe retire les clés des mouvements et des contrôles vers leur compte
-    // (sauvegardeComptesBancaires.test.ts).
+    // (sauvegardeComptesBancaires.test.ts) ; depuis P1T-E2, celui de l'adresse des accès retirés
+    // (sauvegardeAdressesDesAccesRetires.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
         && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
         && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE) && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
         && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
+        && auPlanDesAdressesDesAccesRetires(table, ADRESSES_DES_ACCES_RETIRES_PREVUES)
         && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES) && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
         && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
         && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)

@@ -153,7 +153,7 @@ describe('la trace rangée par accès', () => {
   ]
 
   it('un groupe par accès lu — même sans ligne —, le plus récent d’abord, puis les accès retirés', () => {
-    const groupes = groupesDeLaTrace(lignes, [{ id: 'm1', email: 'client@exemple.fr' }, { id: 'm2', email: null }], true)
+    const groupes = groupesDeLaTrace(lignes, [{ id: 'm1', email: 'client@exemple.fr' }, { id: 'm2', email: null }], true, null)
     expect(groupes.map((g) => [g.intitule, g.etat, g.lignes.map((l) => l.id)])).toEqual([
       ['client@exemple.fr', 'present', ['t2', 't1']],
       [INTITULE_SANS_ADRESSE, 'present', []],
@@ -162,16 +162,43 @@ describe('la trace rangée par accès', () => {
   })
 
   it('lue en partie, la liste ne dit pas « retiré » : un accès absent est seulement absent de ce qui a été lu', () => {
-    const groupes = groupesDeLaTrace(lignes, [{ id: 'm1', email: 'client@exemple.fr' }], false)
+    const groupes = groupesDeLaTrace(lignes, [{ id: 'm1', email: 'client@exemple.fr' }], false, null)
     expect(groupes[1]).toMatchObject({ etat: 'absent' })
     expect(groupes[1].intitule).toContain('absent de la liste lue')
     expect(groupes[1].intitule).not.toContain('retiré')
   })
 
   it('ne montre jamais un identifiant', () => {
-    const groupes = groupesDeLaTrace(lignes, [{ id: 'm1', email: null }], true)
+    const groupes = groupesDeLaTrace(lignes, [{ id: 'm1', email: null }], true, null)
     const texte = JSON.stringify(groupes.map((g) => g.intitule)) + JSON.stringify(lignes.map((l) => [phraseDeLaTrace(l), quandADitLaTrace(l.instant)]))
     for (const id of ['m1', 'm-parti', 'u-client', 'u-cabinet']) expect(texte).not.toContain(id)
+  })
+
+  // P1T-E2 : l'adresse retenue au départ nomme l'accès parti, daté de son départ ; un accès PRÉSENT garde l'adresse de la
+  // liste, même si une adresse retenue existe (un accès revenu) ; sans adresse retenue, l'intitulé d'hier.
+  const retenues = new Map([
+    ['m-parti', { adresse: 'ancien@exemple.fr', retireLe: '2026-11-10T08:30:00Z' }],
+    ['m1', { adresse: 'perime@exemple.fr', retireLe: '2026-11-01T08:30:00Z' }],
+  ])
+
+  it('un accès retiré se nomme par l’adresse retenue à son départ, datée de ce départ', () => {
+    const groupes = groupesDeLaTrace(lignes, [{ id: 'm1', email: 'client@exemple.fr' }], true, retenues)
+    expect(groupes.map((g) => [g.intitule, g.etat])).toEqual([
+      ['client@exemple.fr', 'present'],
+      ['ancien@exemple.fr — accès retiré le 10/11/2026 à 09:30', 'retire'],
+    ])
+  })
+
+  it('lue en partie, la liste dit l’accès absent, sous son adresse retenue, sans le dire retiré', () => {
+    const groupes = groupesDeLaTrace(lignes, [{ id: 'm1', email: 'client@exemple.fr' }], false, retenues)
+    expect(groupes[1]).toMatchObject({ etat: 'absent', intitule: 'ancien@exemple.fr — absent de la liste lue (parti le 10/11/2026 à 09:30)' })
+  })
+
+  it('sans adresse retenue pour cet accès, ou sans la table (`null`), l’intitulé d’hier', () => {
+    for (const adresses of [null, new Map(), new Map([['autre', { adresse: 'x@exemple.fr', retireLe: '2026-11-10T08:30:00Z' }]])]) {
+      const groupes = groupesDeLaTrace(lignes, [{ id: 'm1', email: 'client@exemple.fr' }], true, adresses)
+      expect(groupes[1].intitule).toBe('Accès retiré depuis (tracé dès le 07/11/2026 à 19:00)')
+    }
   })
 
   it('compte au singulier et au pluriel, et le vide ne s’explique que par la date de mise en base', () => {
