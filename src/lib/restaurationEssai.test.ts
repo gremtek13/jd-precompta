@@ -10,6 +10,7 @@ import { JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
+import { DEPOT_DES_HONORAIRES_PREVU } from './depotDesHonoraires'
 import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
@@ -45,7 +46,7 @@ import {
   TABLES_DU_JOURNAL_DES_DESIGNATIONS,
   type CheminDossier,
   TABLES_DES_LETTRES_DE_MISSION,
-  TABLES_DES_HONORAIRES_FACTURES,
+  TABLES_DES_HONORAIRES_FACTURES, TABLES_DES_HONORAIRES_DEPOSES,
   TABLES_DU_DEPART,
 } from './sauvegarde'
 import { indiceSql } from '../test/schema'
@@ -676,14 +677,40 @@ function blocDesHonorairesFactures(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table des liens d'honoraires existe : la sienne après sa table d'ancrage. */
 const avecLesHonorairesFactures = avecLesArticles
 
+// LE DÉPÔT DES FACTURES D'HONORAIRES (ligne 47, LM8) : un bloc à part met sa table au plan quand elle existe, juste après
+// `honoraires_factures`, les rangs qui suivent reculant d'un — le geste des articles —, avec son chemin ; aucune vague.
+// Joué après le bloc des factures d'honoraires, qui pose son ancre.
+const MARQUE_DES_HONORAIRES_DEPOSES = "-- ══ Le dépôt des factures d'honoraires (ligne 47, LM8) ══"
+
+function blocDesHonorairesDeposes(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_HONORAIRES_DEPOSES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const tables = [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2])
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables,
+    chemins,
+    recule: tables.length > 0 && corps.includes(`set rang = -(rang + ${tables.length}) where rang > v_rang;`)
+      && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.honoraires_deposes') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des dépôts d'honoraires existe : la sienne après sa table d'ancrage. */
+const avecLesHonorairesDeposes = avecLesArticles
+
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLaCaisse(avecLesHonorairesFactures(avecLesLettresDeMission(avecLesOriginauxLiberes(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLesOriginauxLiberes(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
-  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesOriginauxLiberes(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDuDepart(texte))
+  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesOriginauxLiberes(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDesHonorairesDeposes(texte)), blocDuDepart(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -781,8 +808,20 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLesLettresDuJour = LETTRES_DE_MISSION_PREVUES ? avecLesLettresDeMission(avecLesOriginauxDuJour, lettresDeMission) : avecLesOriginauxDuJour
   const honorairesFactures = blocDesHonorairesFactures(texteDeLEssai)
   const avecLesHonorairesDuJour = HONORAIRES_FACTURES_PREVUS ? avecLesHonorairesFactures(avecLesLettresDuJour, honorairesFactures) : avecLesLettresDuJour
+  const honorairesDeposes = blocDesHonorairesDeposes(texteDeLEssai)
+  const avecLesDepotsDuJour = DEPOT_DES_HONORAIRES_PREVU ? avecLesHonorairesDeposes(avecLesHonorairesDuJour, honorairesDeposes) : avecLesHonorairesDuJour
   const depart = blocDuDepart(texteDeLEssai)
-  const courant = DEPART_DU_CLIENT_PREVU ? avecLaCaisse(avecLesHonorairesDuJour, depart) : avecLesHonorairesDuJour
+  const courant = DEPART_DU_CLIENT_PREVU ? avecLaCaisse(avecLesDepotsDuJour, depart) : avecLesDepotsDuJour
+
+  it('le bloc du dépôt des factures d’honoraires : sa table, après `honoraires_factures`, conditionnée, son chemin (LM8)', () => {
+    expect(honorairesDeposes).toEqual({
+      ancre: 'honoraires_factures', tables: ['honoraires_deposes'], recule: true, conditionne: true,
+      chemins: { honoraires_deposes: { acces: 'direct', parent: null, colonne: null } },
+    })
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('honoraires_deposes') - 1]).toBe('honoraires_factures')
+    expect(texteDeLEssai.indexOf(MARQUE_DES_HONORAIRES_DEPOSES)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_HONORAIRES_FACTURES))
+    expect(texteDeLEssai.indexOf(MARQUE_DU_DEPART)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_HONORAIRES_DEPOSES))
+  })
 
   it('le bloc du départ d’un client : ses deux tables, après `exercices_valides`, conditionné, leurs chemins, aucune vague (INAL5)', () => {
     expect(depart).toEqual({
@@ -1012,6 +1051,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t) && !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(t)
       && !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(t) && !TABLES_DES_COMPTES_BANCAIRES.includes(t)
       && !TABLES_DES_LETTRES_DE_MISSION.includes(t) && !TABLES_DES_ORIGINAUX_LIBERES.includes(t) && !TABLES_DES_HONORAIRES_FACTURES.includes(t)
+      && !TABLES_DES_HONORAIRES_DEPOSES.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

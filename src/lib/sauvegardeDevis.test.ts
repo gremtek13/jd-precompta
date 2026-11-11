@@ -16,6 +16,7 @@ import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { ORIGINAUX_RETENUS_PREVUS } from './originauxRetenus'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
+import { DEPOT_DES_HONORAIRES_PREVU } from './depotDesHonoraires'
 import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
@@ -54,7 +55,7 @@ import {
   RELATIONS_PREVUES,
   TABLES_DES_DEVIS,
   tablesSansChemin,
-  violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures,
+  violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures, auPlanDesHonorairesDeposes,
   auPlanDuDepart, TABLES_DU_DEPART,
 } from './sauvegarde'
 
@@ -108,6 +109,7 @@ describe('le filtre du plan', () => {
         && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
         && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS)
         && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS)
+        && auPlanDesHonorairesDeposes(table, DEPOT_DES_HONORAIRES_PREVU)
         && auPlanDuDepart(table, DEPART_DU_CLIENT_PREVU))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES

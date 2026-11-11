@@ -822,6 +822,25 @@ begin
   end if;
 end $$;
 
+-- ══ Le dépôt des factures d'honoraires (ligne 47, LM8) ══ Au plan du code quand `DEPOT_DES_HONORAIRES_PREVU` est levé —
+-- c'est-à-dire quand sa migration est en base, après LM7 : le script met sa table dès qu'elle existe, juste après
+-- `honoraires_factures` (ORDRE_RESTAURATION_PREVU : sa garde lit le client d'une facture dans ses honoraires) ; les tables
+-- qui suivent reculent d'un rang — le geste des articles ; son chemin. Aucune vague : un dépôt n'en cite aucun autre. Joué
+-- après le bloc des factures d'honoraires, qui pose son ancre. Absente de la base, rien n'entre : le plan est celui d'hier.
+-- restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.honoraires_deposes') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'honoraires_factures';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'honoraires_deposes');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('honoraires_deposes','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Le départ d'un client (ligne 44, INAL5) ══
 -- Les paquets d'archive téléchargés et les conservations d'un dossier (migration `depart_du_client`, préparée), au plan quand
 -- leurs tables existent : APRÈS `exercices_valides`, la dernière (ORDRE_RESTAURATION_PREVU : une conservation en cours
