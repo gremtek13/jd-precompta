@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import * as comptes from './comptes'
+import { DIRIGEANT_AU_468_PREVU, racinesDuDirigeantNonAssocieSelon } from './dirigeantAu468'
 import { auxiliaireDuTiers } from './engagement'
 import {
   definitionDuRole,
@@ -189,7 +190,11 @@ describe('le catalogue des rôles comptables', () => {
   it('est celui que la migration a inséré, rôle par rôle et colonne par colonne', () => {
     const migration = catalogueDeLaMigration(migrationDuPlan())
     expect(migration).toHaveLength(26)
-    expect(migration).toEqual(VINGT_SIX.map((r) => ({ ...r, racines: [...r.racines] })))
+    // L'insertion d'origine : le dirigeant non associé sous le 467 seul ; la racine 468 vient de la migration `dirigeant_au_468`
+    // (PC4-Q2), que la copie du module ne porte que son drapeau levé (le bloc « le 468 du dirigeant non associé », plus bas).
+    expect(migration).toEqual(VINGT_SIX.map((r) => ({
+      ...r, racines: r.role === 'autres_debiteurs_crediteurs' ? [...racinesDuDirigeantNonAssocieSelon(false)] : [...r.racines],
+    })))
     // Puis les six de la vente facturée, à la suite, tels que `source_de_la_vente` les insère (le dernier bloc du fichier).
     expect(ROLES_COMPTABLES.slice(26)).toEqual(ROLES_DE_LA_VENTE_FACTUREE)
   })
@@ -200,8 +205,17 @@ describe('le catalogue des rôles comptables', () => {
       [r.role, r.racines.join(','), r.compteDefaut, r.libelleDefaut ?? '', r.prefixeAuxiliaireDefaut ?? '', String(r.ordre)].join('|'),
     ).join('\n')
     const epinglee = /empreinte_catalogue constant text := '([0-9a-f]{32})'/.exec(ESSAI)?.[1]
+    const epingleeAu468 = /empreinte_catalogue_468 constant text := '([0-9a-f]{32})'/.exec(ESSAI)?.[1]
     expect(epinglee).toBeDefined()
-    expect(createHash('md5').update(canonique, 'utf8').digest('hex')).toBe(epinglee)
+    expect(epingleeAu468).toBeDefined()
+    expect(createHash('md5').update(canonique, 'utf8').digest('hex')).toBe(DIRIGEANT_AU_468_PREVU ? epingleeAu468 : epinglee)
+    // L'autre état, recalculé : le catalogue d'avant la migration `dirigeant_au_468`, et celui d'après.
+    for (const [prevu, attendue] of [[false, epinglee], [true, epingleeAu468]] as const) {
+      const ligne = (r: (typeof CATALOGUE_VIVANT)[number]) => [r.role,
+        (r.role === 'autres_debiteurs_crediteurs' ? racinesDuDirigeantNonAssocieSelon(prevu) : r.racines).join(','),
+        r.compteDefaut, r.libelleDefaut ?? '', r.prefixeAuxiliaireDefaut ?? '', String(r.ordre)].join('|')
+      expect(createHash('md5').update(CATALOGUE_VIVANT.map(ligne).join('\n'), 'utf8').digest('hex'), String(prevu)).toBe(attendue)
+    }
   })
 
   it('tient trente-deux rôles distincts, dans un ordre de dix en dix, chacun sous une racine du PCG', () => {
@@ -224,9 +238,12 @@ describe('le catalogue des rôles comptables', () => {
     }
   })
 
-  it('ne donne au dirigeant non associé que le 467 : permettre le 468 est la question Q7, que PC1 ne tranche pas', () => {
-    expect(definitionDuRole('autres_debiteurs_crediteurs')?.racines).toEqual(['467'])
-    expect(sousUneRacineDuRole('autres_debiteurs_crediteurs', '468000')).toBe(false)
+  it('donne au dirigeant non associé le 467, et le 468 son drapeau levé seulement (43-Q7, PC4-Q2)', () => {
+    expect(definitionDuRole('autres_debiteurs_crediteurs')?.racines).toEqual(racinesDuDirigeantNonAssocieSelon(DIRIGEANT_AU_468_PREVU))
+    expect(sousUneRacineDuRole('autres_debiteurs_crediteurs', '468000')).toBe(DIRIGEANT_AU_468_PREVU)
+    expect(sousUneRacineDuRole('autres_debiteurs_crediteurs', '467100')).toBe(true)
+    expect(racinesDuDirigeantNonAssocieSelon(false)).toEqual(['467'])
+    expect(racinesDuDirigeantNonAssocieSelon(true)).toEqual(['467', '468'])
   })
 })
 

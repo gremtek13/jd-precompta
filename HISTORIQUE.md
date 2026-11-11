@@ -50739,3 +50739,18 @@ geste (jusqu'à sept copies), une colonne de la trace, `auth.users` lu à l'affi
 mordent ; `rls.sql` 237 lignes, 0 en faute, M-AR1 et M-AR2 mordent ; tous les essais avant et après identiques, hors
 `traceDesDroits.sql` (39), `validationExercice.sql` (141) et `restauration.sql`, suivis selon l'état ; le retour rend la
 signature d'avant. Écran et plan de sauvegarde derrière `ADRESSES_DES_ACCES_RETIRES_PREVUES`, baissé.
+
+### 11/11/2026 — PC4-Q2 : LE 468 DU DIRIGEANT NON ASSOCIÉ, AU CATALOGUE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) 43-Q7 (« oui » le 17/10/2026) dans la migration à part que PC4-Q2 demande :
+`supabase/preparees/20261111174000_dirigeant_au_468.sql` (`ca6f0200…`, par l'OUTIL, aucune suppression), retour en
+20261111174100 (`50c84aa1…`, refusé tant qu'un dossier tient un 468). Une seule ligne change : le rôle
+`autres_debiteurs_crediteurs` du catalogue admet la racine 468 à côté de la 467 (PCG 2026, art. 1214-46), son défaut
+reste 467000 ; aucune fonction remplacée — `regler_plan_du_dossier`, la garde du plan, le contrôle du dirigeant et
+`garder_comptes_des_pieces` lisent déjà les racines. Production relevée : aucun 468 nulle part, aucun plan réglé. Le
+libellé d'un 468 réglé sans le sien reste celui du catalogue (§ 3.9) dans `plan_du_dossier` (le lettrage) : l'écran du
+plan le posera ; le FEC, la balance et la révision le nomment déjà par la nomenclature. Hors de ce lot, 43-Q12 (le 468 sur
+un mouvement du relevé, `refus_compte_de_bilan`), une autre migration. Côté application, `DIRIGEANT_AU_468_PREVU` (baissé)
+donne la racine de plus à `ROLES_COMPTABLES` ; `planComptable.sql` (empreinte du catalogue, 26b) et
+`reglerLePlanDuDossier.sql` (32) choisissent leur attendu par la ligne d'historique de la migration. Réplique : les deux
+essais verts avant, après et avec P1T-E2 ; le retour rend l'empreinte d'avant (`c0f5fc67…`).

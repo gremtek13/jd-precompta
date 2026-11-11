@@ -69,6 +69,8 @@ declare
   liste constant text := 'Le plan se règle par la liste des rôles que le dossier règle : [{"role": …, "compte": …, "libelle": …, "prefixe_auxiliaire": …}].';
   six constant text := 'Le compte du rôle « %s » s''écrit en six chiffres : « %s » n''en est pas un.';
   racine constant text := 'Le compte du rôle « %s » commence par sa racine du plan comptable (%s) : « %s » n''en est pas un.';
+  -- La migration `dirigeant_au_468` (PC4-Q2, préparée) appliquée, le dirigeant non associé se tient aussi sous 468 (l'étape 32).
+  au_468 constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'dirigeant_au_468');
   categorie constant text := 'Le compte « %s » du rôle « %s » est celui d''une catégorie que ce dossier emploie (« %s »), à des zéros près : un compte de bilan que l''application écrit ne se partage pas avec une catégorie.';
   libelle constant text := 'Le libellé du rôle « %s » tient sur une ligne, d''un à deux cents caractères ; nul, c''est celui du catalogue.';
   dirigeant constant text := 'Le compte du dirigeant (« %s ») n''est, dans le plan de ce dossier, le compte d''aucun des trois rôles du dirigeant : %s (associé), %s (exploitant), %s (autres débiteurs et créditeurs).';
@@ -169,8 +171,9 @@ begin
       (29, '29. un compte de sept chiffres (22023, Q5)', null, 'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "5121000"}]'), '22023', format(six, 'banque', '5121000')),
       (30, '30. un compte qui n''est pas fait de chiffres (22023)', null, 'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "512ABC"}]'), '22023', format(six, 'banque', '512ABC')),
       (31, '31. la banque hors de sa racine (22023)', null, 'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "411000"}]'), '22023', format(racine, 'banque', '512', '411000')),
-      (32, '32. le dirigeant non associé au 468 : hors de sa racine tant que le catalogue ne la porte pas (43-Q7, PC4-Q2)', null, 'chef',
-        replace(regler, '{L}', '[{"role": "autres_debiteurs_crediteurs", "compte": "468000"}]'), '22023', format(racine, 'autres_debiteurs_crediteurs', '467', '468000')),
+      (32, '32. le dirigeant non associé au 468 : hors de sa racine tant que le catalogue ne la porte pas, admis la migration dirigeant_au_468 appliquée (43-Q7, PC4-Q2)', null, 'chef',
+        replace(regler, '{L}', '[{"role": "autres_debiteurs_crediteurs", "compte": "468000"}]'), case when au_468 then 'OK' else '22023' end,
+        case when au_468 then '' else format(racine, 'autres_debiteurs_crediteurs', '467', '468000') end),
       (33, '33. un rôle à deux racines les dit toutes deux (22023)', null, 'chef',
         replace(regler, '{L}', '[{"role": "ventes_de_biens", "compte": "706100"}]'), '22023', format(racine, 'ventes_de_biens', '701 ou 707', '706100')),
       (34, '34. deux rôles du plan effectif sur le même compte (un rôle planté au catalogue le temps de l''étape) (22023)',
