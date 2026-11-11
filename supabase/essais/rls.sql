@@ -1411,8 +1411,8 @@ end $$;
 --
 --   3bis   sans la case « Banque » — et AVEC la case « Ventes », qui n'ouvre rien ici —, le client ne voit aucune ligne ;
 --   3bis+  avec la case « Banque », il voit TOUTES les lignes de ses dossiers, table par table (le contrôle positif) ;
---   4bis   avec la case, il n'écrit directement dans aucune des six : l'insertion refusée en 42501, la mise à jour sans
---          ligne touchée ;
+--   4bis   avec la case, il n'écrit directement dans aucune des six (sept avec les comptes bancaires d'un dossier, MCB1, dès
+--          leur migration) : l'insertion refusée en 42501, la mise à jour sans ligne touchée ;
 --   M3bis-a  le contrôle positif joué SANS la case : il doit tomber ;
 --   M3bis-b  le prédicat de chaque policy de la banque où « banque » devient « membre » (la mutation de la conception,
 --            §3.7) : 3bis doit voir des lignes ;
@@ -1424,8 +1424,11 @@ declare
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
   autre_dossier     uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
+  -- Les comptes bancaires d'un dossier (ligne 26.6, MCB1 ; migration `comptes_bancaires`, PRÉPARÉE) : le client « Banque »
+  -- les lit tous (MCB-Q8), dès que la migration est en base — avant, la table n'existe pas et rien ne l'attend.
   banque_attendues text[] := array['controles_releves_bancaires', 'justificatifs_proposes', 'lignes_bancaires',
-                                   'precisions_mouvements', 'reglements_groupes', 'ventilations_bancaires'];
+                                   'precisions_mouvements', 'reglements_groupes', 'ventilations_bancaires']
+    || case when to_regclass('public.comptes_bancaires') is not null then array['comptes_bancaires'] else '{}'::text[] end;
   banque_lues text[];
   mvt_client uuid; mvt_client_2 uuid; mvt_autre uuid; piece_client uuid; piece_autre uuid;
   t record; p record; n bigint; ses bigint; hors bigint; touchees int; motif text;
@@ -1516,6 +1519,12 @@ begin
       format('insert into controles_releves_bancaires (dossier_id, source_fichier, solde_initial, solde_final, somme_mouvements, ecart, coherent) values (%L, %L, 0, 1, 1, 0, true)', dossier_du_client, 'essai-4bis.csv'),
       format('insert into justificatifs_proposes (dossier_id, ligne_bancaire_id, piece_id, auteur_id, origine) values (%L, %L, %L, %L, %L)', dossier_du_client, mvt_client_2, piece_client, client, 'client'),
       format('insert into precisions_mouvements (dossier_id, ligne_bancaire_id, auteur_id, origine, texte) values (%L, %L, %L, %L, %L)', dossier_du_client, mvt_client_2, client, 'client', 'essai 4bis')];
+    -- Un second compte bancaire du dossier (MCB1), dès que sa migration est en base : la dernière écriture, chacune se jouant
+    -- dans sa sous-transaction, annulée.
+    if to_regclass('public.comptes_bancaires') is not null then
+      ecritures := ecritures || format('insert into comptes_bancaires (dossier_id, libelle, compte, compte_propre_depuis) values (%L, %L, %L, %L)',
+        dossier_du_client, 'essai 4bis', '512901', '2026-01-01');
+    end if;
     for t in select e as sql, split_part(split_part(e, 'insert into ', 2), ' ', 1) as nom from unnest(ecritures) e loop
       motif := null;
       begin

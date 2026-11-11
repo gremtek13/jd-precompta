@@ -14,6 +14,7 @@ import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
+import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
@@ -518,14 +519,38 @@ function blocDeLaPieceDUneReprise(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table des liens existe : la sienne après sa table d'ancrage. */
 const avecLaPieceDUneReprise = avecLesArticles
 
+// LES COMPTES BANCAIRES D'UN DOSSIER (ligne 26.6, lot MCB1) : un bloc à part met leur table au plan quand elle existe, juste
+// après `categories`, les rangs qui suivent reculant d'un — le geste des articles —, avec son chemin ; aucune vague. Joué
+// en dernier.
+const MARQUE_DES_COMPTES_BANCAIRES = "-- ══ Les comptes bancaires d'un dossier (ligne 26.6, lot MCB1) ══"
+
+function blocDesComptesBancaires(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_COMPTES_BANCAIRES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.comptes_bancaires') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des comptes bancaires existe : la sienne après sa table d'ancrage. */
+const avecLesComptesBancaires = avecLesArticles
+
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
-  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte))
+  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -610,8 +635,17 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const numerotation = blocDeLaNumerotation(texteDeLEssai)
   const avecLaNumerotationDuJour = NUMEROTATION_CONTINUE_PREVUE ? avecLaNumerotation(avecLesReprisesDuJour, numerotation) : avecLesReprisesDuJour
   const pieceDUneReprise = blocDeLaPieceDUneReprise(texteDeLEssai)
-  const courant = PIECE_D_UNE_FACTURE_REPRISE_PREVUE
+  const avecLaPieceDuJour = PIECE_D_UNE_FACTURE_REPRISE_PREVUE
     ? avecLaPieceDUneReprise(avecLaNumerotationDuJour, pieceDUneReprise) : avecLaNumerotationDuJour
+  const comptesBancaires = blocDesComptesBancaires(texteDeLEssai)
+  const courant = COMPTES_BANCAIRES_PREVUS ? avecLesComptesBancaires(avecLaPieceDuJour, comptesBancaires) : avecLaPieceDuJour
+
+  it('le bloc des comptes bancaires : sa table, après `categories`, conditionnée, son chemin (MCB1)', () => {
+    expect(comptesBancaires).toEqual({
+      ancre: 'categories', tables: [...TABLES_DES_COMPTES_BANCAIRES], recule: true, conditionne: true,
+      chemins: { comptes_bancaires: { acces: 'direct', parent: null, colonne: null } },
+    })
+  })
 
   it('le bloc de la pièce d’une facture reprise : sa table, après `ecritures_brouillon`, conditionné, son chemin (A8-Q5)', () => {
     expect(pieceDUneReprise).toEqual({
@@ -789,7 +823,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t) && !TABLES_DES_SITUATIONS_PUBLIEES.includes(t)
       && !TABLES_DES_SAISIES_2035.includes(t) && !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(t)
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t) && !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(t)
-      && !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(t)
+      && !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(t) && !TABLES_DES_COMPTES_BANCAIRES.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

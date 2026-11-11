@@ -728,6 +728,24 @@ begin
   end if;
 end $$;
 
+-- ══ Les comptes bancaires d'un dossier (ligne 26.6, lot MCB1) ══ Au plan du code quand `COMPTES_BANCAIRES_PREVUS` est levé
+-- — c'est-à-dire quand la migration `comptes_bancaires` est en base : le script met sa table juste après `categories`
+-- (ORDRE_RESTAURATION_PREVU : après le plan du dossier, que sa garde lit, avant les contrôles et les mouvements, qui la
+-- citent), les tables qui suivent reculant d'un rang ; son chemin ; aucune vague. Absente de la base, rien n'entre : le plan
+-- est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.comptes_bancaires') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'categories';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'comptes_bancaires');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('comptes_bancaires','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin
