@@ -197,10 +197,11 @@ vi.mock('./supabase', async () => ({
 }))
 
 const {
-  exporterDossier, horsPerimetre, lotsDEcriture, restaurerSauvegarde, retirerDossierPartiel, verifierRestauration, ETAPE_DES_LOGOS, LOGO_HORS_PERIMETRE,
+  exporterDossier, horsPerimetre, lotsDEcriture, restaurerSauvegarde, retirerDossierPartiel, verifierRestauration, ETAPE_DES_LOGOS, LOGO_HORS_PERIMETRE, ORIGINAUX_HORS_PERIMETRE,
   TAILLE_LOT_ECRITURE, TAILLE_PAGE, VERSION_SAUVEGARDE,
 } = await import('./sauvegardeDonnees')
 const { LOGO_DES_FACTURES_EXPORTE, cheminDuLogo } = await import('./logoDesFactures')
+const { ORIGINAUX_DES_IMPORTS_PREVUS } = await import('./bornesStockage')
 const { HORS_PERIMETRE_DES_SECRETS, RestaurationInterrompue, dossierPartielDe } = await import('./restaurationInterrompue')
 const { enBase64, explicationDuManque } = await import('./sauvegardeLogos')
 const { mondeDuSeau: seau } = await import('../test/stockageFactice')
@@ -237,8 +238,8 @@ describe('export d’un dossier', () => {
     // Ce qu'une sauvegarde de données ne remplace pas doit être écrit, pas sous-entendu : les
     // fichiers, les comptes, la ligne du cabinet et le catalogue des rôles comptables (ligne 43, PC1).
     // Le logo des factures (A5c1) s'y ajoute le jour où sa migration est en base : le manifeste suit le drapeau.
-    expect(manifeste.horsPerimetre).toEqual(horsPerimetre(LOGO_DES_FACTURES_EXPORTE))
-    expect(manifeste.horsPerimetre).toHaveLength(LOGO_DES_FACTURES_EXPORTE ? 9 : 8)
+    expect(manifeste.horsPerimetre).toEqual(horsPerimetre(LOGO_DES_FACTURES_EXPORTE, ORIGINAUX_DES_IMPORTS_PREVUS))
+    expect(manifeste.horsPerimetre).toHaveLength(8 + (LOGO_DES_FACTURES_EXPORTE ? 1 : 0) + (ORIGINAUX_DES_IMPORTS_PREVUS ? 1 : 0))
     expect(manifeste.horsPerimetre[3]).toMatch(/catalogue des rôles comptables/)
     // RESTAU-Q3 : les connexions et les compteurs de numérotation, que leurs tables sans policy rendent vides.
     expect(manifeste.horsPerimetre.slice(4, 8)).toEqual([...HORS_PERIMETRE_DES_SECRETS])
@@ -251,14 +252,24 @@ describe('export d’un dossier', () => {
   it('dit ce qu’elle ne porte pas du seau des ventes dès que la migration du logo est en base, et seulement alors', () => {
     // Le seau `ventes` (A5c1) n'est ni une pièce ni un pack : l'export de pack ne le porte pas. Depuis le format 2 (A5c2b),
     // la sauvegarde porte le logo que les versions désignent ; le manifeste dit ce qu'elle ne porte pas du seau.
-    expect(horsPerimetre(false)).toHaveLength(8)
-    expect(horsPerimetre(false).some((ligne) => /logo/i.test(ligne))).toBe(false)
-    expect(horsPerimetre(true)).toEqual([...horsPerimetre(false), LOGO_HORS_PERIMETRE])
+    expect(horsPerimetre(false, false)).toHaveLength(8)
+    expect(horsPerimetre(false, false).some((ligne) => /logo/i.test(ligne))).toBe(false)
+    expect(horsPerimetre(true, false)).toEqual([...horsPerimetre(false, false), LOGO_HORS_PERIMETRE])
     expect(LOGO_HORS_PERIMETRE).toMatch(/seau `ventes`/)
     expect(LOGO_HORS_PERIMETRE).toMatch(/aucune version ne désigne n’y est pas/)
     expect(LOGO_HORS_PERIMETRE).toMatch(/`logos\.manquants`, avec sa raison/)
     // Deux appels ne partagent pas le tableau : un manifeste qu'on retoucherait ne retoucherait pas l'autre.
-    expect(horsPerimetre(true)).not.toBe(horsPerimetre(true))
+    expect(horsPerimetre(true, true)).not.toBe(horsPerimetre(true, true))
+  })
+
+  it('dit que les originaux des factures reprises sont au pack, pas ici, dès que leur migration est en base (A8d2c)', () => {
+    // « Une sauvegarde n'est pas un pack » : elle porte les lignes des imports, le chemin et l'empreinte de chaque fichier ;
+    // le pack porte les fichiers. Baissé, `ORIGINAUX_DES_IMPORTS_PREVUS` laisse le manifeste d'hier.
+    expect(horsPerimetre(true, false).some((ligne) => /factures reprises/.test(ligne))).toBe(false)
+    expect(horsPerimetre(true, true)).toEqual([...horsPerimetre(true, false), ORIGINAUX_HORS_PERIMETRE])
+    expect(horsPerimetre(false, true)).toEqual([...horsPerimetre(false, false), ORIGINAUX_HORS_PERIMETRE])
+    expect(ORIGINAUX_HORS_PERIMETRE).toMatch(/`imports_factures`, `factures_importees`/)
+    expect(ORIGINAUX_HORS_PERIMETRE).toMatch(/l’export de pack \(dossier `Factures_reprises\/`\)/)
   })
 
   it('recolle une table plus grande qu’une tranche, sans doublon ni trou', async () => {

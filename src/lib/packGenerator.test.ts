@@ -22,13 +22,35 @@ const etat = {
   // Total annoncé par la base, quand le test veut le faire mentir : une base qui annonce plus que
   // ce qu'elle rend est exactement ce qui produisait un pack amputé en silence.
   compteAnnonce: null as number | null,
+  // A8d2c : les originaux des factures reprises, derrière `ORIGINAUX_DES_IMPORTS_PREVUS` (joué dans ses deux états).
+  originaux: false,
+  imports_factures: { data: [] as { id: string; fichier_chemin: string | null }[], error: null as { message: string } | null },
+  factures_importees: { data: [] as { facture_id: string; import_id: string; fichier_chemin: string | null }[], error: null as { message: string } | null },
+  // Le faux client APPLIQUE la période à cette table-ci : c'est elle qui décide de ce que le pack porte.
+  factures_emises: { data: [] as { id: string; date_emission: string }[], error: null as { message: string } | null },
+  // Les lectures faites, par table, et les téléchargements, par seau : un seau qu'on ne doit pas lire ne se lit pas.
+  tables: [] as string[],
+  telecharges: [] as string[],
 }
 
+vi.mock('./bornesStockage', async (importOriginal) => {
+  const reel = await importOriginal<typeof import('./bornesStockage')>()
+  return {
+    ...reel,
+    get ORIGINAUX_DES_IMPORTS_PREVUS() {
+      return etat.originaux
+    },
+  }
+})
+
 vi.mock('./supabase', () => {
-  const requete = (table: 'pieces' | 'categories') => {
+  type Table = 'pieces' | 'categories' | 'imports_factures' | 'factures_importees' | 'factures_emises'
+  const requete = (table: Table) => {
+    etat.tables.push(table)
     // `.is(...)` n'apparaît que dans la requête des pièces sans date : le faux client s'en sert pour
     // distinguer les deux lectures de `pieces`, faute de pouvoir inspecter les filtres accumulés.
-    let source: 'pieces' | 'categories' | 'sansDate' = table
+    let source: Table | 'sansDate' = table
+    const bornes: { gte?: string; lte?: string } = {}
     // Le faux client honore `range` et annonce un `count` : sans cela, la lecture par tranches
     // tournerait à vide ou boucherait — et surtout le test ne prouverait rien de ce qu'elle garde.
     let debut = 0
@@ -36,14 +58,17 @@ vi.mock('./supabase', () => {
     const chaine = {
       select: () => chaine,
       eq: () => chaine,
-      gte: () => chaine,
-      lte: () => chaine,
+      gte: (_col: string, v: string) => { bornes.gte = v; return chaine },
+      lte: (_col: string, v: string) => { bornes.lte = v; return chaine },
       or: () => chaine,
       order: () => chaine,
       range: (d: number, f: number) => { debut = d; fin = f; return chaine },
       is: () => { source = 'sansDate'; return chaine },
       then: (resoudre: (v: unknown) => unknown) => {
-        const src = etat[source]
+        const brut = etat[source]
+        const src = source === 'factures_emises'
+          ? { ...brut, data: etat.factures_emises.data.filter((f) => (!bornes.gte || f.date_emission >= bornes.gte) && (!bornes.lte || f.date_emission <= bornes.lte)) }
+          : brut
         if (src.error) return Promise.resolve(resoudre({ data: null, error: src.error, count: null }))
         const demande = fin - debut + 1
         const taille = etat.plafond == null ? demande : Math.min(demande, etat.plafond)
@@ -58,25 +83,28 @@ vi.mock('./supabase', () => {
   }
   return {
     supabase: {
-      from: (table: string) => requete(table as 'pieces' | 'categories'),
+      from: (table: string) => requete(table as Table),
       storage: {
-        from: () => ({
+        from: (seau: string) => ({
           // Un Uint8Array plutôt qu'un Blob : sous Node, JSZip ne sait pas relire un Blob qu'on lui a
           // confié. Le code de production ne fait que transmettre ce que rend `download` à JSZip,
           // sans jamais appeler de méthode dessus — le chemin exercé est donc bien le vrai.
-          download: (chemin: string) =>
-            Promise.resolve(
+          download: (chemin: string) => {
+            etat.telecharges.push(`${seau}/${chemin}`)
+            return Promise.resolve(
               etat.telechargementsEnEchec.has(chemin)
                 ? { data: null, error: { message: 'Object not found' } }
                 : { data: new TextEncoder().encode(`contenu de ${chemin}`) as unknown as Blob, error: null },
-            ),
+            )
+          },
         }),
       },
     },
   }
 })
 
-const { remplirZipDossier } = await import('./packGenerator')
+const { remplirZipDossier, originauxDeLaPeriode } = await import('./packGenerator')
+const { ORIGINAUX_DES_IMPORTS_PREVUS: ORIGINAUX_REEL } = await vi.importActual<typeof import('./bornesStockage')>('./bornesStockage')
 
 const piece = (o: Partial<Piece>): Piece => ({
   id: 'p', dossier_id: 'd1', nom_fichier: 'facture.pdf', storage_path: 'd1/facture.pdf',
@@ -110,6 +138,12 @@ beforeEach(() => {
   etat.telechargementsEnEchec = new Set()
   etat.plafond = null
   etat.compteAnnonce = null
+  etat.originaux = ORIGINAUX_REEL
+  etat.imports_factures = { data: [], error: null }
+  etat.factures_importees = { data: [], error: null }
+  etat.factures_emises = { data: [], error: null }
+  etat.tables = []
+  etat.telecharges = []
 })
 
 describe('remplirZipDossier', () => {
@@ -356,5 +390,93 @@ describe('pièces validées sans date', () => {
     etat.sansDate = { data: [], error: { message: 'permission denied' } }
     await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31'))
       .rejects.toThrow(/Pack non généré : les pièces sans date.*permission denied/s)
+  })
+})
+
+// A8d2c : le pack porte les originaux des factures reprises de la période, sous `Factures_reprises/<lot>/<fichier>` ;
+// la sauvegarde n'en porte que les lignes. Derrière `ORIGINAUX_DES_IMPORTS_PREVUS`, joué dans ses deux états.
+describe('les originaux des factures reprises (A8d2c)', () => {
+  const LOT = '5b0f3c1e-8a2d-4c6b-9e7f-1a2b3c4d5e6f'
+  const AUTRE_LOT = '6c1f4d2e-9b3e-4d7c-8f80-2b3c4d5e6f70'
+  const lot = (id: string, c: string, ext = 'pdf') => ({ id, fichier_chemin: `d1/imports/${id}/${c.repeat(64)}.${ext}` })
+  const jeu = () => {
+    etat.pieces.data = [piece({ id: 'a', storage_path: 'd1/a.pdf' })]
+    etat.imports_factures.data = [lot(LOT, 'a'), lot(AUTRE_LOT, 'b', 'csv')]
+    etat.factures_importees.data = [
+      { facture_id: 'f1', import_id: LOT, fichier_chemin: null },
+      { facture_id: 'f2', import_id: AUTRE_LOT, fichier_chemin: null },
+      { facture_id: 'f3', import_id: LOT, fichier_chemin: `d1/imports/${LOT}/${'c'.repeat(64)}.xml` },
+    ]
+    etat.factures_emises.data = [
+      { id: 'f1', date_emission: '2026-02-01' }, { id: 'f2', date_emission: '2024-06-30' }, { id: 'f3', date_emission: '2026-03-01' },
+    ]
+  }
+
+  it('drapeau baissé : le pack d’hier — aucune lecture des imports, rien du seau des ventes', async () => {
+    etat.originaux = false
+    jeu()
+    const zip = new JSZip()
+    const resultat = await remplirZipDossier(zip, 'd1', '2026-01-01', '2026-12-31')
+    expect(cheminsDuZip(zip).sort()).toEqual(['Pieces/01_Achats/2026-03-10_EDF_120.00€.pdf', 'Recap.xlsx'])
+    expect(etat.tables.filter((t) => t !== 'pieces' && t !== 'categories')).toEqual([])
+    expect(etat.telecharges.filter((c) => !c.startsWith('pieces/'))).toEqual([])
+    expect(Object.keys(await feuilles(resultat.excelBlob))).not.toContain('Factures reprises')
+  })
+
+  it('drapeau levé : les originaux de la période, du seau des ventes, sous Factures_reprises/<lot>/', async () => {
+    etat.originaux = true
+    jeu()
+    const zip = new JSZip()
+    const resultat = await remplirZipDossier(zip, 'd1', '2026-01-01', '2026-12-31')
+    expect(cheminsDuZip(zip).filter((c) => c.startsWith('Factures_reprises/')).sort()).toEqual([
+      `Factures_reprises/${LOT}/${'a'.repeat(64)}.pdf`, `Factures_reprises/${LOT}/${'c'.repeat(64)}.xml`,
+    ])
+    expect(etat.telecharges.filter((c) => !c.startsWith('pieces/')).sort()).toEqual([
+      `ventes/d1/imports/${LOT}/${'a'.repeat(64)}.pdf`, `ventes/d1/imports/${LOT}/${'c'.repeat(64)}.xml`,
+    ])
+    expect(resultat.manquantes).toEqual([])
+    expect((await feuilles(resultat.excelBlob))['Factures reprises']).toEqual([
+      ['Fichier', 'Statut'],
+      [`Factures_reprises/${LOT}/${'a'.repeat(64)}.pdf`, "Dans l'archive"],
+      [`Factures_reprises/${LOT}/${'c'.repeat(64)}.xml`, "Dans l'archive"],
+    ])
+  })
+
+  it('un original introuvable se dit dans le récapitulatif et à l’appelant', async () => {
+    etat.originaux = true
+    jeu()
+    etat.telechargementsEnEchec = new Set([`d1/imports/${LOT}/${'a'.repeat(64)}.pdf`])
+    const resultat = await remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')
+    expect(resultat.manquantes).toEqual([`Factures_reprises/${LOT}/${'a'.repeat(64)}.pdf`])
+    expect((await feuilles(resultat.excelBlob))['Factures reprises'][1]).toEqual([
+      `Factures_reprises/${LOT}/${'a'.repeat(64)}.pdf`, "Absent de l'archive — fichier introuvable au moment de la génération",
+    ])
+  })
+
+  it('une lecture des imports qui ne se dit pas complète refuse le pack', async () => {
+    etat.originaux = true
+    jeu()
+    etat.factures_importees.error = { message: 'lecture refusée' }
+    await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')).rejects.toThrow(/factures reprises/)
+  })
+
+  it('la période décide : un lot sans facture de la période n’est pas porté ; toute l’histoire les porte tous', () => {
+    const lots = [lot(LOT, 'a'), lot(AUTRE_LOT, 'b', 'csv'), { id: 'sans-fichier', fichier_chemin: null }]
+    const reprises = [
+      { facture_id: 'f1', import_id: LOT, fichier_chemin: null },
+      { facture_id: 'f2', import_id: AUTRE_LOT, fichier_chemin: null },
+      { facture_id: 'f4', import_id: 'sans-fichier', fichier_chemin: null },
+      { facture_id: 'f3', import_id: LOT, fichier_chemin: `d1/imports/${LOT}/${'a'.repeat(64)}.pdf` },
+    ]
+    expect(originauxDeLaPeriode(lots, reprises, new Set(['f1']))).toEqual([`d1/imports/${LOT}/${'a'.repeat(64)}.pdf`])
+    expect(originauxDeLaPeriode(lots, reprises, new Set(['f2', 'f4']))).toEqual([`d1/imports/${AUTRE_LOT}/${'b'.repeat(64)}.csv`])
+    expect(originauxDeLaPeriode(lots, reprises, new Set(['f1', 'f2', 'f3', 'f4']))).toEqual([
+      `d1/imports/${LOT}/${'a'.repeat(64)}.pdf`, `d1/imports/${AUTRE_LOT}/${'b'.repeat(64)}.csv`,
+    ])
+    expect(originauxDeLaPeriode(lots, reprises, new Set())).toEqual([])
+  })
+
+  it('l’état réel du drapeau est celui que ces cas jouent par défaut, et il est baissé tant que la migration attend', () => {
+    expect(ORIGINAUX_REEL).toBe(false)
   })
 })

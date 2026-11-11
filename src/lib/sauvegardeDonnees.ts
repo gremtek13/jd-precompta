@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
+import { ORIGINAUX_DES_IMPORTS_PREVUS } from './bornesStockage'
 import { lireLeLogo } from './logoDesFacturesLecture'
 import { deposerLeLogo } from './logoDesFacturesEcriture'
 import { messageErreur } from './messageErreur'
@@ -104,9 +105,14 @@ const HORS_PERIMETRE = [
 // dès que la migration est en base.
 export const LOGO_HORS_PERIMETRE = 'Du seau `ventes`, cette sauvegarde ne porte que le logo des factures que les versions des paramètres désignent (`fichiers`, leur empreinte SHA-256 vérifiée à la lecture) : un fichier du seau qu’aucune version ne désigne n’y est pas, et un logo désigné qui n’a pas pu être lu est nommé dans `logos.manquants`, avec sa raison.'
 
-/** Ce qu'une sauvegarde de données ne remplace pas, selon que la migration du logo est en base. */
-export function horsPerimetre(logo: boolean): string[] {
-  return logo ? [...HORS_PERIMETRE, LOGO_HORS_PERIMETRE] : [...HORS_PERIMETRE]
+// L'original d'une facture reprise (seau `ventes`, sous `<dossier>/imports/<lot>/`, migration `originaux_des_imports`,
+// A8d2a) est un FICHIER : « une sauvegarde n'est pas un pack ». Elle en porte les lignes, avec le chemin et l'empreinte de
+// chaque fichier ; l'export de pack porte les fichiers (A8d2c). Dit dès que la migration est en base, comme le logo.
+export const ORIGINAUX_HORS_PERIMETRE = 'Les originaux des factures reprises de l’ancien logiciel (seau `ventes`, sous `<dossier>/imports/<lot>/`) ne sont pas inclus : cette sauvegarde porte leurs lignes (`imports_factures`, `factures_importees`), avec le chemin et l’empreinte SHA-256 de chaque fichier ; les fichiers eux-mêmes sont portés par l’export de pack (dossier `Factures_reprises/`), et se reversent au seau à ces chemins.'
+
+/** Ce qu'une sauvegarde de données ne remplace pas, selon que les migrations du logo et des originaux sont en base. */
+export function horsPerimetre(logo: boolean, originaux: boolean): string[] {
+  return [...HORS_PERIMETRE, ...(logo ? [LOGO_HORS_PERIMETRE] : []), ...(originaux ? [ORIGINAUX_HORS_PERIMETRE] : [])]
 }
 
 // LES LOGOS D'UN DOSSIER, LUS POUR SA SAUVEGARDE (étape A5c2b). Un à un, par la session de qui sauvegarde : le seau ne rend
@@ -300,7 +306,7 @@ export async function exporterDossier(
       comptes: comptesRequis(contenu),
       referencesExternes: referencesExternes(contenu),
       liensPerdus: liensPerdus(contenu),
-      horsPerimetre: horsPerimetre(LOGO_DES_FACTURES_EXPORTE),
+      horsPerimetre: horsPerimetre(LOGO_DES_FACTURES_EXPORTE, ORIGINAUX_DES_IMPORTS_PREVUS),
       logos,
     },
     contenu,

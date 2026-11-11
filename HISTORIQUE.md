@@ -50499,3 +50499,21 @@ qu'un original vit. Copie du jour J (54581) : `originauxDesImports.sql` 62 verdi
 229 lignes identiques avant et après ; `logoDesFactures.sql` (0a à 0c rendus justes dans les deux états), `bornesStockage.sql`
 (deux lignes attendues), suppressions, paramètres : 0 en faute ; retour : signature égale (neuf familles). Code derrière
 `ORIGINAUX_DES_IMPORTS_PREVUS` (baissé) : `preparerOriginalDImport`, le logo sous ses propres bornes. Reste : A8D2A-Q1.
+
+### 11/11/2026 — A8D2C : LES ORIGINAUX DES IMPORTS DANS LA SUPPRESSION D'UN DOSSIER, LE PACK, RGPD.MD ET RLS.SQL (LIGNE 51.5)
+
+(Agent architecte ; en production, rien.) Ce qui devait être juste avant que les originaux entrent au seau `ventes`.
+**La suppression d'un dossier** ne descendait que d'un niveau : `imports/<lot>/<fichier>` serait resté, le lot compté pour
+un fichier. `recenser` (`suppressionDossier.ts`) suit tout sous-dossier jusqu'au fichier, dans tout seau et sans drapeau,
+au plus `PROFONDEUR_MAX` (6) segments sous le dossier ; plus bas, il le DIT (inventaire incomplet). Le retrait reste celui
+du module (l'exception de `retraitsStockage.test.ts`, qui rend le bilan). Quatre tests ; trois mutations mordent.
+`delete-cabinet` n'est pas concernée (elle refuse un cabinet qui a des dossiers ; elle ne vide que `cabinet-logos`).
+**Le pack** porte, derrière `ORIGINAUX_DES_IMPORTS_PREVUS`, l'original d'un lot dont une facture est datée dans la période
+et celui d'une facture de la période qui a le sien, sous `Factures_reprises/<lot>/<fichier>` ; lectures entières ou pack
+refusé ; un manquant dit (feuille « Factures reprises », et à l'appelant). Baissé : aucune lecture de plus (prouvé) ;
+quatre mutations mordent. **La sauvegarde** dit qu'elle ne les porte pas (`ORIGINAUX_HORS_PERIMETRE`, même drapeau).
+**RGPD.md** : §2, §4, §7, §8.6. **`rls.sql`**, bloc OI : copie de la réplique d'A8d2a (54591) — avec la migration 142
+lignes, 0 en faute, 103 mutations sur 103 ; policies élargies, cinq lignes OI en faute ; après le retour (un original laissé
+par A8d2a retiré d'abord), 133 lignes, 0 en faute, 97 sur 97, OI EN ATTENTE. Le banc du leurre ne conclut pas : son
+leurre ne couvre pas `pieces_des_factures_reprises` (A8-Q5), défaut d'avant. Reste : l'écran d'import retire le fichier
+après `retirer_import`.
