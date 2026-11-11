@@ -51386,3 +51386,30 @@ réplique mère 17 rattrapée à 200 migrations (versions et noms `39ff532f…`,
 `rls.sql` entier, bloc SE : 164 invariants, 0 en faute, 108/108 sans elle ; 167, 0, 111/111 avec ; `restauration.sql`
 IDENTIQUE, 90 puis 91 tables ; le retour refuse sous une valeur, puis défait tout. Restent : le PDF quand une ligne est « à
 saisir », les tests de Clôture à éprouver drapeau levé, la levée elle-même.
+
+### 11/11/2026 — PC6 : LA REPRISE PROPOSE LE PLAN (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, ligne 43 ; rien d'appliqué, des SELECT en production : 200 migrations, 0 à-nouveau, 0 ligne de plan.) **Le
+module** `lib/planDepuisLaBalance.ts` (pur, derrière `PLAN_DEPUIS_LA_BALANCE_PREVU`, baissé, qu'aucun écran n'appelle) : pour
+chaque rôle, les comptes de la balance sous ses racines ramenés à six chiffres à des zéros près — un seul proposé avec son
+libellé, plusieurs au choix, aucun le plan reste ; écartés et dits, un compte de plus de six chiffres significatifs et, pour un
+rôle du bilan ou le barème, le compte d'une catégorie (les refus 9 et 10 de `regler_plan_du_dossier` : le 625100 de « Carburant
+/ déplacements » d'une balance de BNC n'est pas le barème) ; `planRetenu` compose le plan ENTIER du clic. Le drapeau levé,
+`lib/aNouveaux.ts` range tout compte de rôle à des zéros près (4455100 → 445510, 1640000 → 164000), plus seulement la banque et
+deux TVA ; un second 401… s'ouvre tel quel et se dit. **Plusieurs comptes bancaires** : la mission proposait de ranger chaque
+512… sur le 512 propre de son compte ; écarté, parce que MCB5g (`ouverture_eclatee_par_compte`) lit l'ouverture au 512 du RÔLE et
+l'exige égale à la somme des relevés au 31/12 — un à-nouveau au 512 propre compterait deux fois, l'éclatement se refuserait et la
+validation avec lui (MCB5G-Q2). Tout 512… va donc à la banque du plan (le compte principal), comme la conception et MCB5g le
+disaient déjà ; le plan proposé fait choisir le 512 du principal. **La migration** `plan_depuis_la_balance` (20261111241000,
+`c61430de…`, 12126 octets ; À COLLER : le corps garde sa suppression ; retour 20261111241100, `3eda9865…`) :
+`enregistrer_a_nouveaux` refuse (23514), APRÈS l'insertion — le verrou partagé de la validation est alors pris par
+`garder_a_nouveaux_valides`, `cle_validation` n'étant pas ouverte à `authenticated` —, un 512… hors de la banque du plan, un
+53… hors de sa caisse, l'équivalent non égal, avant l'équilibre. Aucun prérequis parmi les préparées. **L'ordre** : lever le
+drapeau, déployer, puis coller. **Preuves** (copie de la répétition du jour J du soir : 200 + les cinq collées, port 54977) :
+`planDepuisLaBalance.sql` 26/26, EN ATTENTE sans elle ; dix mutations sur dix mordent (une onzième, équivalente, a fait retirer
+un filtre mort) ; la course de deux sessions (réglage du plan contre enregistrement) : la seconde se refuse, l'état reste juste,
+et le mutant qui lit le plan avant l'insertion laisse un à-nouveau au 512000 sous une banque au 512100 ; `validationExercice`,
+`reglerLePlanDuDossier`, `planComptable` et `caisse` identiques avant et après ; le retour rend le corps de la production à
+l'octet (`29f42ed5…`), la réapplication passe. Tests : 20 (`planDepuisLaBalance.test.ts`), trois mutations du module mordent.
+**Restent** : l'écran (la carte de la balance en deux temps, `regler_plan_du_dossier` puis les à-nouveaux) ; un appel direct
+d'une ligne dans `a_nouveaux` par le cabinet (policy `FOR ALL`) échappe à la fonction, comme son équilibre.
