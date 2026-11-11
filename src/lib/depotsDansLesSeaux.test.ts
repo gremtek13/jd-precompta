@@ -251,10 +251,27 @@ export function ecarts(depots: Depot[], bornes: BornesLues[]): string[] {
  * Les bornes de tous les seaux : les trois de `bornes_du_stockage` et, quand l'export porte la migration du logo (étape
  * A5c1), le seau des ventes qu'elle crée.
  */
+// Le seau des ventes tel que la migration des ORIGINAUX (A8d2a, `originaux_des_imports`) le rend : l'écran d'import (A8d2b)
+// y dépose l'original d'une facture reprise derrière `ORIGINAUX_DES_IMPORTS_PREVUS`, baissé tant qu'elle n'est pas appliquée.
+// Ses types sont lus de son `update storage.buckets … where id = 'ventes'`, dans l'export ou dans supabase/preparees/ ; sans
+// elle, le seau est celui de la migration du logo.
+function typesDesOriginaux(): string[] | null {
+  const dossiers = [new URL('../../supabase/schema/', import.meta.url), new URL('../../supabase/preparees/', import.meta.url)]
+  const fichiers = dossiers.flatMap((d) => readdirSync(d).filter((n) => /^\d{14}_originaux_des_imports\.sql$/.test(n)).map((n) => new URL(n, d)))
+  if (fichiers.length === 0) return null
+  const m = /update\s+storage\.buckets\s+set[^;]*?allowed_mime_types\s*=\s*array\[([^\]]*)\][^;]*where\s+id\s*=\s*'ventes'/i.exec(readFileSync(fichiers[0], 'utf8'))
+  if (!m) throw new Error('la migration des originaux ne dit plus les types du seau des ventes à la forme attendue')
+  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1])
+}
+
 function bornesDesSeaux(texteDesTroisSeaux: string = texteDeLaMigration()): BornesLues[] {
   const logo = fichierDeLaMigrationDuLogo()
   const ventes = logo === null ? [] : [seauDeLaMigrationDuLogo(readFileSync(logo, 'utf8'))]
-  return [...bornesDeLaMigration(texteDesTroisSeaux), ...ventes.map(({ seau, taille, types }) => ({ seau, taille, types }))]
+  const originaux = typesDesOriginaux()
+  return [
+    ...bornesDeLaMigration(texteDesTroisSeaux),
+    ...ventes.map(({ seau, taille, types }) => ({ seau, taille, types: originaux ?? types })),
+  ]
 }
 
 /** Les dépôts au type littéral (sans borne de taille), par fichier, avec leur raison ET leur nombre. */
@@ -282,10 +299,12 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
     expect(tout.filter((s) => s.cote === 'navigateur').length).toBeGreaterThan(250)
     expect(tout.filter((s) => s.cote === 'fonction').length).toBeGreaterThanOrEqual(16)
     expect(analyses.reduce((n, a) => n + a.lus, 0)).toBeGreaterThanOrEqual(20)
-    // Douze dépôts : les huit chemins du navigateur (deux pour une facture reçue, deux pour un pack) et les deux fonctions.
+    // Treize dépôts : les neuf chemins du navigateur (deux pour une facture reçue, deux pour un pack, l'original d'une facture
+    // reprise) et les deux fonctions.
     // Un dépôt de plus se juge ici comme les autres ; ce nombre dit seulement qu'on les voit tous.
     expect(depots().map((d) => `${d.chemin} → ${d.seau}`).sort()).toEqual([
       'src/lib/depot.ts → pieces',
+      'src/lib/importDesFacturesLecture.ts → ventes',
       'src/lib/importFichiers.ts → pieces',
       'src/lib/logoDesFacturesEcriture.ts → ventes',
       'src/lib/packGenerator.ts → packs',
