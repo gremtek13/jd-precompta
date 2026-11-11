@@ -68,7 +68,8 @@ export type RecettesFacturees =
       sources: ReadonlySet<string>
       /**
        * Les pièces citées par une facture reprise, lien actif (A8c4) : en trésorerie, leurs seuls paiements comptent. La
-       * simulation du client ne lit pas les liens (A8Q5-Q2) : elle passe `AUCUNE_PIECE_CITEE`, et le dit.
+       * simulation du client ne lit pas les liens : elle les reçoit de la base (A8Q5-Q2, `avecLesPiecesCitees`, le drapeau
+       * `REPRISES_AU_CLIENT_PREVUES` levé) ; baissé, `AUCUNE_PIECE_CITEE`, comme hier.
        */
       piecesCitees: PiecesCitees
     }

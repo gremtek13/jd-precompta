@@ -50612,3 +50612,22 @@ SNIR, remplaçant, prise en charge, contribution et CURPS, écrit nulles ces rub
 retraite », la retraite « recouvrée par l'Urssaf » et le total appelé, que la régularisation confronte aux échéances
 (`definitivesDeLUrssaf`). Réplique (copie de la mère 17 rattrapée à 195) : essai 10 sur 10, garde, retour égal à la
 production, retour refusé sur une ligne CIPAV. Hors champ : la profession non réglementée encore à la CIPAV.
+
+### 11/11/2026 — A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT (PRÉPARÉE, PAS APPLIQUÉE) (LIGNE 51.5)
+
+(Agent architecte ; en production, des SELECT : 195 migrations, les neuf familles de `signature.sql` égales à la copie du
+jour J, port 54621.) **Décisions du 11/11/2026** : A8C-Q1 (contre la recommandation), le client « Ventes » enregistre lui-même
+l'encaissement d'une facture reprise ; A8Q5-Q2 (à la recommandation), « Ma simulation » reçoit les identifiants des pièces
+qui sont l'original d'une facture reprise. **La migration** `reprises_au_client` (`supabase/preparees/20261111150000_…`, ni
+`drop` ni `delete` : par l'outil) pose deux lectures `security definer`, l'accès jugé avant toute lecture
+(`gere_les_ventes`, `gere_la_banque`, les clés de `droits_sur_le_dossier`) : `reprise_de_la_facture` rend six clés — date
+de reprise, nature, encaissé avant la reprise et avoirs repris sommés, au total et par taux, en centimes —, rien d'autre du
+registre ; `pieces_citees_de_la_simulation`, les liens actifs. ÉCART : une fonction à part plutôt qu'une troisième clé de
+`ventes_facturees_de_la_simulation`, dont l'application en ligne refuserait la forme. **Éprouvé** : `reprisesAuClient.sql` 30
+verdicts (le reste qu'elle rend s'encaisse au centime, un centime de plus se refuse au total et au taux), 8 mutations sur 8
+(une neuvième, équivalente : le filtre des avoirs) ; `rls.sql` bloc RC, 139 lignes, 0 en faute, 100 sur 100 (sans elle 134,
+97 sur 97, RC EN ATTENTE) ; trois essais voisins identiques avant et après ; retour (à coller) : signature égale. **L'application**
+derrière `REPRISES_AU_CLIENT_PREVUES` (baissé) : `RepriseDeLaFacture` prend la forme que la base somme ; la fenêtre des
+encaissements (deux espaces) lit la reprise, son reste (`resteAEncaisserDeLaReprise`) ; « Encaissements » sur une reprise ;
+`avecLesPiecesCitees`. Deux états joués à l'écran ; cinq mutations mordent. Reste : la présenter au cabinet, l'appliquer.
+
