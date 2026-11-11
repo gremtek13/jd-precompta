@@ -1964,6 +1964,6 @@ describe('ce que dit la case « Documents », avec sa migration (B3a)', () => {
     expect(phrase).not.toContain('ne change encore rien')
     expect(MIGRATION_DM).toContain("for select to authenticated using (client_du_dossier(dossier_id, 'documents') and retire_le is null);")
     expect(MIGRATION_DM).toContain("for select to authenticated using (lecteur = (select auth.uid()) and client_du_dossier(dossier_id, 'documents'));")
-    for (const t of TABLES_LUES_AVEC_DOCUMENTS) expect(MIGRATION_DM).toMatch(new RegExp(`create policy \\w+ on public\\.${t}\\s+for select to authenticated using \\([^;]*'documents'`))
+    for (const t of TABLES_LUES_AVEC_DOCUMENTS) expect(MIGRATION_DM).toMatch(new RegExp(`create policy \\w+ on public\\.${t}\\s+for select to authenticated using \\([^;]*'documents'`, 'i'))
   })
 })

@@ -38,7 +38,11 @@ async function lireLesDemandes(dossierId: string) {
       supabase.from('relances_demandes').select(COLONNES_RELANCE, { count: 'exact' })
         .eq('dossier_id', dossierId).order('relancee_le').order('id').range(debut, fin)),
   ])
-  return { demandes: duDossier(demandes, dossierId), reponses: duDossier(reponses, dossierId), relances: duDossier(relances, dossierId) }
+  return {
+    demandes: demandes.complete ? duDossier(demandes, dossierId) : demandes,
+    reponses: reponses.complete ? duDossier(reponses, dossierId) : reponses,
+    relances: relances.complete ? duDossier(relances, dossierId) : relances,
+  }
 }
 
 // ── Côté cabinet ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -66,9 +70,9 @@ export async function lireLesDocumentsDuCabinet(dossierId: string): Promise<Docu
     ])
     return {
       dossierId,
-      documents: duDossier(documents, dossierId),
-      lectures: duDossier(lectures, dossierId),
-      acces: duDossier(acces, dossierId),
+      documents: documents.complete ? duDossier(documents, dossierId) : documents,
+      lectures: lectures.complete ? duDossier(lectures, dossierId) : lectures,
+      acces: acces.complete ? duDossier(acces, dossierId) : acces,
     }
   } catch (erreur) {
     const motif = messageErreur(erreur, 'lecture refusée')
@@ -89,31 +93,28 @@ export interface DemandesDuCabinetLues {
   documentsDivers: LectureComplete<DepotCite>
 }
 
-/** Les dépôts d'une table que citent des réponses, lus par lots de cent identifiants. */
-async function lireLesDepotsCites(table: 'pieces' | 'documents_divers', ids: readonly string[], dossierId: string): Promise<LectureComplete<DepotCite>> {
-  const lignes: DepotCite[] = []
-  for (let i = 0; i < ids.length; i += 100) {
-    const lot = ids.slice(i, i + 100)
-    const lu = await lireTout<DepotCite>((debut, fin) =>
-      supabase.from(table).select('id, dossier_id, nom_fichier, storage_path', { count: 'exact' })
-        .eq('dossier_id', dossierId).in('id', lot).order('id').range(debut, fin))
-    if (!lu.complete) return lu
-    lignes.push(...lu.lignes)
-  }
-  return duDossier({ lignes, complete: true, motif: null }, dossierId)
-}
-
 export async function lireLesDemandesDuCabinet(dossierId: string): Promise<DemandesDuCabinetLues> {
   try {
     const { demandes, reponses, relances } = await lireLesDemandes(dossierId)
     const idsDe = (cle: 'piece_id' | 'document_id') =>
       [...new Set(reponses.lignes.map((r) => r[cle]).filter((x): x is string => x !== null))].sort()
-    const [pieces, documentsDivers] = reponses.complete
-      ? await Promise.all([
-        lireLesDepotsCites('pieces', idsDe('piece_id'), dossierId),
-        lireLesDepotsCites('documents_divers', idsDe('document_id'), dossierId),
-      ])
-      : [echec<DepotCite>('les réponses ne sont pas lues en entier'), echec<DepotCite>('les réponses ne sont pas lues en entier')]
+    const idsDesPieces = idsDe('piece_id')
+    const idsDesDocuments = idsDe('document_id')
+    if (!reponses.complete) {
+      const motif = 'les réponses ne sont pas lues en entier'
+      return { dossierId, demandes, reponses, relances, pieces: echec(motif), documentsDivers: echec(motif) }
+    }
+    // Une liste vide d'identifiants se lit vide (`in.()`), sans erreur.
+    const [piecesLues, documentsLus] = await Promise.all([
+      lireTout<DepotCite>((debut, fin) =>
+        supabase.from('pieces').select('id, dossier_id, nom_fichier, storage_path', { count: 'exact' })
+          .eq('dossier_id', dossierId).in('id', idsDesPieces).order('id').range(debut, fin)),
+      lireTout<DepotCite>((debut, fin) =>
+        supabase.from('documents_divers').select('id, dossier_id, nom_fichier, storage_path', { count: 'exact' })
+          .eq('dossier_id', dossierId).in('id', idsDesDocuments).order('id').range(debut, fin)),
+    ])
+    const pieces = piecesLues.complete ? duDossier(piecesLues, dossierId) : piecesLues
+    const documentsDivers = documentsLus.complete ? duDossier(documentsLus, dossierId) : documentsLus
     return { dossierId, demandes, reponses, relances, pieces, documentsDivers }
   } catch (erreur) {
     const motif = messageErreur(erreur, 'lecture refusée')
@@ -152,7 +153,11 @@ export async function lireMesDocuments(dossierId: string): Promise<MesDocumentsL
       return { dossierId, etat: 'echec', motif: 'ton accès à tes documents n’a pas pu être vérifié (droits illisibles)' }
     }
     if ((data as Record<string, unknown>).documents !== true) return { dossierId, etat: 'sans_documents' }
-    return { dossierId, etat: 'lus', documents: duDossier(documents, dossierId), lectures: duDossier(lectures, dossierId) }
+    return {
+      dossierId, etat: 'lus',
+      documents: documents.complete ? duDossier(documents, dossierId) : documents,
+      lectures: lectures.complete ? duDossier(lectures, dossierId) : lectures,
+    }
   } catch (erreur) {
     return { dossierId, etat: 'echec', motif: messageErreur(erreur, 'tes documents n’ont pas pu être lus') }
   }
@@ -186,8 +191,10 @@ export async function lireMesDemandes(dossierId: string, moi: string): Promise<M
     return {
       dossierId,
       ...lues,
-      pieces: duDossier(pieces, dossierId),
-      documentsDivers: duDossier({ ...documentsDivers, lignes: documentsDivers.lignes.map((d) => ({ ...d, uploaded_by: null })) }, dossierId),
+      pieces: pieces.complete ? duDossier(pieces, dossierId) : pieces,
+      documentsDivers: documentsDivers.complete
+        ? duDossier({ ...documentsDivers, lignes: documentsDivers.lignes.map((d) => ({ ...d, uploaded_by: null })) }, dossierId)
+        : { ...documentsDivers, lignes: [] },
     }
   } catch (erreur) {
     const motif = messageErreur(erreur, 'tes demandes n’ont pas pu être lues')
