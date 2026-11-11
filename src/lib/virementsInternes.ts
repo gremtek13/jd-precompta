@@ -1,3 +1,4 @@
+import { planDuMouvement, type BanquesDuDossier } from './banqueDuMouvement'
 import type { LigneEcritureMouvement, MouvementBancaire } from './affectationBanque'
 import { ecartEnJours } from './appariementBanque'
 import { ecritureDuCompteDeBilan, refusCompteDeBilanDuMouvement } from './compteDeBilan'
@@ -158,14 +159,20 @@ export function ecritureDuVirementInterne<L extends MouvementDuVirement>(
   ligne: L,
   candidat: CandidatDuVirement<L>,
   modele: ModeleComptable,
+  // La banque de chaque moitié (MCB5, lib/banqueDuMouvement.ts) : celle de SON compte bancaire, chacune la sienne.
+  banques: BanquesDuDossier,
 ): EcritureDuVirementInterne {
   const compte = modele.plan.virements_internes
   const aEcrire = candidat.dejaAuCompte ? [ligne] : [ligne, candidat.autre]
+  const mouvements: { ligne: MouvementBancaire; ecriture: LigneEcritureMouvement[] }[] = []
   for (const m of aEcrire) {
     const refus = refusCompteDeBilanDuMouvement(m, compte, modele)
     if (refus) return { cas: 'refus', refus: `Le mouvement du ${formatDate(m.date)} (${formatMoney(m.montant)}) : ${refus}` }
+    const plan = planDuMouvement(modele.plan, m, banques)
+    if ('refus' in plan) return { cas: 'refus', refus: `Le mouvement du ${formatDate(m.date)} (${formatMoney(m.montant)}) : ${plan.refus}` }
+    mouvements.push({ ligne: m, ecriture: ecritureDuCompteDeBilan(m, compte, plan.plan) })
   }
-  return { cas: 'ecrire', mouvements: aEcrire.map((m) => ({ ligne: m, ecriture: ecritureDuCompteDeBilan(m, compte, modele.plan) })) }
+  return { cas: 'ecrire', mouvements }
 }
 
 /** Le virement inachevé : le premier mouvement écrit, le second refusé par la base. */

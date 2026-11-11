@@ -123,7 +123,8 @@ describe('rapprocher_cotisation : le corps d’hier, au caractère près, plus l
 
   it('les empreintes : la garde exige le corps d’hier ; l’essai et le retour arrière épinglent le corps neuf', () => {
     expect(MIGRATION.texte).toContain(`v_empreinte is distinct from '${md5(HIER)}'`)
-    expect(ESSAI).toContain(`'OK', '${md5(NEUF)}'`)
+    // La jambe de banque par compte (MCB5) remplacera ce corps : l'essai attend celui-ci tant qu'elle n'est pas en base.
+    expect(ESSAI).toContain(`else '${md5(NEUF)}' end`)
     expect(RETOUR).toContain(`v_empreinte is distinct from '${md5(NEUF)}'`)
     // Et le retour rend le corps d'hier, au caractère près.
     expect(corps(RETOUR, 'rapprocher_cotisation')).toBe(HIER)

@@ -6945,8 +6945,12 @@ describe('BanqueTab — le virement entre deux comptes du dossier (MCB3)', () =>
     await act(async () => { bouton.click(); bouton.click() })
     await waitFor(() => expect(ecrits()).toHaveLength(2))
     expect(ecrits().map((r) => [r.args.p_ligne_bancaire_id, r.args.p_compte])).toEqual([['deb', '580000'], ['cre', '580000']])
+    // Chaque moitié face à la banque de SON compte (MCB5, lib/banqueDuMouvement.ts) : le principal au 512 du rôle, le
+    // « Compte pro bis », qui tient le 512100 depuis le 01/01/2026, au sien.
+    expect((ecrits()[0].args.p_ecritures as { compte: string; sens: string; montant: number }[])
+      .map((l) => [l.compte, l.sens, l.montant]).sort()).toEqual([['512000', 'credit', 1500], ['580000', 'debit', 1500]])
     expect((ecrits()[1].args.p_ecritures as { compte: string; sens: string; montant: number }[])
-      .map((l) => [l.compte, l.sens, l.montant]).sort()).toEqual([['512000', 'debit', 1500], ['580000', 'credit', 1500]])
+      .map((l) => [l.compte, l.sens, l.montant]).sort()).toEqual([['512100', 'debit', 1500], ['580000', 'credit', 1500]])
     expect(alertes).toEqual([])
   })
 

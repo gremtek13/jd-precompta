@@ -61,6 +61,10 @@ declare
   pc2_exigee constant boolean := true;
   -- La caisse du relevé (étape C1b) : sa migration en base, `ecrire_mouvement_compte_bilan` lit aussi le rôle `caisse`.
   caisse_du_releve constant boolean := to_regprocedure('public.retirer_operation_caisse(uuid, uuid)') is not null;
+  -- La jambe de banque par compte (MCB5, migration `jambe_de_banque_par_compte`, préparée) : les sept fonctions qui classent un
+  -- mouvement lisent la banque du MOUVEMENT (`compte_de_banque_du_mouvement`), plus le rôle `banque` par son nom.
+  banque_du_mouvement constant boolean := exists (select 1 from supabase_migrations.schema_migrations
+                                                   where version = '20261111200000' and name = 'jambe_de_banque_par_compte');
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   -- Le dossier `test` ne prête que son cabinet aux dossiers jetables.
   dossier_test uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
@@ -212,6 +216,14 @@ begin
     continue when not (f->>'f' = any (prets));
     select p.prosrc into corps from pg_proc p where p.oid = to_regprocedure('public.' || (f->>'f'));
     select string_agg(r.role, ',' order by r.role collate "C") into roles_vus from roles_comptables r where corps ~ ('''' || r.role || '''');
+    -- MCB5 en base : la banque d'un mouvement se lit par `compte_de_banque_du_mouvement(v_ligne.id)`, jamais par le rôle nommé.
+    if banque_du_mouvement and f->>'roles' ~ '(^|,)banque(,|$)' then
+      select string_agg(x.role, ',' order by x.role collate "C") into roles_vus
+        from (select r.role from roles_comptables r where corps ~ ('''' || r.role || '''') union select 'banque') x;
+      if corps !~ 'v_banque := public\.compte_de_banque_du_mouvement\(v_ligne\.id\);' or corps ~ '''banque''' then
+        roles_vus := roles_vus || ' (la banque du mouvement manque)';
+      end if;
+    end if;
     if roles_vus is distinct from (f->>'roles') || (case when caisse_du_releve and f->>'f' = 'ecrire_mouvement_compte_bilan(uuid, text, jsonb)'
                                                           then ',caisse' else '' end)
        or (corps ~ 'public\.compte_du_dirigeant\(') is distinct from (f->>'dirigeant')::boolean
@@ -230,7 +242,8 @@ begin
     continue when not (f->>'f' = any (prets)) or f->>'verrou' is null;
     k := k + 1;
     select p.prosrc into corps from pg_proc p where p.oid = to_regprocedure('public.' || (f->>'f'));
-    avant_lecture := least(nullif(strpos(corps, 'public.compte_du_role('), 0), nullif(strpos(corps, 'public.compte_du_dirigeant('), 0));
+    avant_lecture := least(nullif(strpos(corps, 'public.compte_du_role('), 0), nullif(strpos(corps, 'public.compte_du_dirigeant('), 0),
+                           nullif(strpos(corps, 'public.compte_de_banque_du_mouvement('), 0));
     position_verrou := nullif(strpos(corps, case when f->>'verrou' = 'cle_validation'
       then 'perform pg_advisory_xact_lock_shared(public.cle_validation(p_dossier_id));'
       else 'perform pg_advisory_xact_lock_shared(hashtextextended(' || cle_texte || ' || ' || (f->>'verrou') || '::text, 0));' end), 0);
