@@ -87,7 +87,8 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     nature: 'lecture',
     raison: 'Ce que l’encaissement d’une facture reprise demande — date de reprise, encaissé avant la reprise, avoirs repris, '
       + 'en centimes (fonction `stable`, `security definer`, sans écriture ; migration `reprises_au_client`, A8C-Q1, préparée), '
-      + 'lue par la fenêtre des encaissements avec le reste de sa lecture — derrière `REPRISES_AU_CLIENT_PREVUES`.',
+      + 'lue par la fenêtre des encaissements avec le reste de sa lecture, et par la fenêtre de l’avoir d’une facture reprise au '
+      + 'client « Ventes » (A8C6-Q1, lib/avoirDUneFactureRepriseLecture.ts) — derrière `REPRISES_AU_CLIENT_PREVUES`.',
   },
   'rpc:pieces_jointes_ecartees_du_client': {
     nature: 'lecture',

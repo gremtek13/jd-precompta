@@ -156,7 +156,9 @@ export default function FactureAvoirModal(props: Props) {
   }, [dossierId, contactDeLOrigine])
 
   // L'AVOIR D'UNE FACTURE REPRISE DE L'ANCIEN LOGICIEL (étape A8c6 ; lib/avoirDUneFactureReprise.ts) : la date de reprise des
-  // factures du dossier et, au cabinet, ce que ses avoirs repris ont crédité, lus pour CETTE facture. Tant qu'ils ne sont pas
+  // factures du dossier et ce que ses avoirs repris ont crédité, lus pour CETTE facture — au cabinet par le registre, au client
+  // « Ventes » par `reprise_de_la_facture` (A8C6-Q1, le drapeau de la migration `reprises_au_client` levé ; baissé, le client
+  // ne lit que la date, et la base juge seule du plafond). Tant qu'ils ne sont pas
   // revenus, ou lus de travers, l'avoir est retenu. Rien n'est lu pour une autre facture, ni le drapeau baissé.
   const repriseDOrigine = estUneFactureReprise(factureOrigine)
   const [lectureReprise, setLectureReprise] = useState<LectureDeLaRepriseDeLOrigine | null>(null)
@@ -418,7 +420,7 @@ export default function FactureAvoirModal(props: Props) {
             {avisAcompte && <p className="note-info" role="note">{pourLEspace(espace, avisAcompte)}</p>}
             {jugementSource.avis && <p className="note-info" role="note">{jugementSource.avis}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
-            {retenue && !error && <p className="muted" role="status">{retenue}</p>}
+            {retenue && !error && <p className="muted" role="status">{pourLEspace(espace, retenue)}</p>}
             {(error ?? refus) && <p className="error-text">{pourLEspaceSiTexte(espace, error ?? refus)}</p>}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>

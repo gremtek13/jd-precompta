@@ -24,7 +24,9 @@ import { messageErreur } from './messageErreur'
 // LE DRAPEAU, BAISSÉ tant que la migration n'est pas en production : la fenêtre des encaissements ne lit pas la reprise
 // d'une facture reprise (elle la refuse, `REFUS_REPRISE_NON_LUE`, et l'onglet Factures n'offre pas « Encaissements » sur
 // elle), et « Ma simulation » ne lit pas les pièces citées (`AUCUNE_PIECE_CITEE`, comme hier). Levé, l'une et l'autre
-// appellent leur fonction. Il se lit À CHAQUE APPEL, par `reprisesAuClientPrevues` : les tests jouent ses deux états par un
+// appellent leur fonction ; et la fenêtre de l'avoir d'une facture reprise, au client « Ventes », lit par
+// `reprise_de_la_facture` ce que les avoirs repris ont crédité, et dit le plafond avant le clic (A8C6-Q1,
+// lib/avoirDUneFactureRepriseLecture.ts) — baissé, elle ne lit que la date, et la base juge seule du plafond. Il se lit À CHAQUE APPEL, par `reprisesAuClientPrevues` : les tests jouent ses deux états par un
 // accesseur sur l'objet ci-dessous.
 export const DRAPEAU_DES_REPRISES_AU_CLIENT = {
   /** Faux tant que la migration `reprises_au_client` n'est pas en production (puis dans l'export). */
