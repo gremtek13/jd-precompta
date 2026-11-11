@@ -18,6 +18,7 @@ import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
+import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
@@ -315,6 +316,21 @@ export function auPlanDesOriginauxLiberes(table: string, prevus: boolean): boole
   return prevus || !TABLES_DES_ORIGINAUX_LIBERES.includes(table)
 }
 
+// LES FACTURES D'HONORAIRES (ligne 47, lot LM7 ; migration `honoraires_factures`, PRÉPARÉE le 11/11/2026, après LM1 et
+// LM4) : le lien d'une facture du dossier du cabinet à la période d'honoraires qu'elle facture. Sous le drapeau de la
+// migration (`HONORAIRES_FACTURES_PREVUS`, src/lib/honorairesAFacturer.ts), baissé : la production n'a pas la table, et la
+// lire ferait échouer toute sauvegarde. Ses relations : le dossier et la facture EN CASCADE (seul un brouillon se
+// supprime), la lettre SANS ACTION (elle ne part qu'avec le dossier) ; son rang, après les lettres de mission et les
+// factures qu'elle cite ; son chemin, direct ; sa clé, la commune. La restauration la réinsère par la porte que sa policy
+// ouvre au super-administrateur, et sa garde accepte l'histoire telle qu'écrite — un lien d'une facture créditée en entier
+// à côté de celui qui facture de nouveau sa période. sauvegardeHonorairesFactures.test.ts éprouve les deux plans.
+export const TABLES_DES_HONORAIRES_FACTURES: readonly string[] = ['honoraires_factures']
+
+/** Une table au plan, côté factures d'honoraires : toutes, sauf la leur tant que sa migration n'est pas exportée. */
+export function auPlanDesHonorairesFactures(table: string, prevus: boolean): boolean {
+  return prevus || !TABLES_DES_HONORAIRES_FACTURES.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -335,6 +351,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS)
     && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
     && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS)
+    && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -611,6 +628,9 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'lettres_de_mission', parent: 'modeles_lettre_de_mission', colonne: 'modele_id', aLaSuppression: 'bloque' },
   { enfant: 'lettres_de_mission', parent: 'lettres_de_mission', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'lettres_de_mission', parent: 'documents_divers', colonne: 'document_signe_id', aLaSuppression: 'bloque' },
+  { enfant: 'honoraires_factures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'honoraires_factures', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
+  { enfant: 'honoraires_factures', parent: 'lettres_de_mission', colonne: 'lettre_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -886,6 +906,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   // qu'aucun voisin ne fixe : l'essai de restauration les met après `precisions_mouvements`.
   'modeles_lettre_de_mission',
   'lettres_de_mission',
+  // Les factures d'honoraires (LM7) : après les lettres qu'elles citent, et les factures, bien avant.
+  'honoraires_factures',
   'regimes_ereporting',
   'pieces_ecartees_ereporting',
   'declarations_ereporting',
@@ -1350,6 +1372,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   dossier_permanent: { acces: 'direct' },
   modeles_lettre_de_mission: { acces: 'direct' },
   lettres_de_mission: { acces: 'direct' },
+  honoraires_factures: { acces: 'direct' },
   ecritures_brouillon: { acces: 'direct' },
   emails_envoyes: { acces: 'direct' },
   emprunts: { acces: 'direct' },

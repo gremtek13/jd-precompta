@@ -67,6 +67,10 @@
 --      et lit (contrôle positif) ; le client ne lit rien ; l'insertion directe au super-administrateur seul ; le catalogue,
 --      le drapeau de l'acceptation en ligne baissé — et trois mutations ; avant la migration `lettres_de_mission`, une
 --      ligne « EN ATTENTE ».
+--   6quinquies-bis. Les FACTURES D'HONORAIRES (LM7, ligne 47 ; bloc « Les factures d'honoraires », après les lettres de
+--      mission) : HF1 à HF7 — la fonction ni par l'anonyme, ni par un compte rattaché à rien, ni par le client ; le chef
+--      facture et lit (contrôle positif) ; le client ne lit rien ; l'insertion directe au super-administrateur seul ; le
+--      catalogue — et trois mutations ; avant la migration `honoraires_factures`, une ligne « EN ATTENTE ».
 --   6sexies. L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2, ligne 51.5 ; bloc AR, après le bloc TD) : AR1 à AR3 — le cabinet du
 --      dossier la lit (contrôle positif), ni le client ni l'anonyme ; le client ne l'écrit ni ne la réécrit ; le catalogue —
 --      et deux mutations ; avant la migration `adresse_des_acces_retires`, une ligne « EN ATTENTE ».
@@ -748,6 +752,11 @@
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM4, ligne 47 : migration `lettres_de_mission`, PRÉPARÉE, pas
 -- appliquée, après LM1), qui range les modèles et les lettres de mission dans le dossier du cabinet. Le bloc LM (LM1 à LM7,
 -- M-LM2, M-LM5, M-LM7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM4 ».
+--
+-- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM7, ligne 47 : migration `honoraires_factures`, PRÉPARÉE, pas
+-- appliquée, après LM1 et LM4), qui lie une facture du dossier du cabinet à la période d'honoraires qu'elle facture. Le
+-- bloc HF (HF1 à HF7, M-HF2, M-HF5, M-HF7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 —
+-- LM7 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (P1T-E2, ligne 51.5 : migration `adresse_des_acces_retires`, PRÉPARÉE,
 -- pas appliquée), qui garde l'adresse d'un accès retiré que la trace nomme — la lecture du cabinet du dossier, l'insertion
@@ -2967,6 +2976,189 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $lm$;
+
+-- ═══ Les factures d'honoraires (LM7, ligne 47) ═════════════════════════════════════════════════════════════════════════
+--
+-- La migration `honoraires_factures` lie une facture du dossier du cabinet à la période d'une ligne d'honoraires d'une
+-- lettre acceptée (LM4) ; `facturer_honoraires`, `security definer`, crée le brouillon et pose les liens ; la table est lue
+-- par `admin_du_dossier` seul. Ce qu'elle ouvre et ferme, aux quatre profils : la fonction ne s'exécute pas par l'anonyme
+-- (HF1), se refuse en 42501 à un compte rattaché à rien et au client, même le dossier désigné (HF2, HF3) ; le chef facture
+-- une période et lit son lien (HF4, le contrôle POSITIF) ; le client ne lit rien (HF5) ; un compte rattaché à rien n'insère
+-- pas directement — la porte de la restauration est au super-administrateur (HF6) ; au catalogue, la fonction est
+-- `security definer` et exécutable par `authenticated` seul, la garde par aucun rôle de session, et la table n'a que deux
+-- policies `to authenticated`, de lecture et de restauration (HF7). Le jeu : deux dossiers jetables du cabinet, un
+-- document et une lettre acceptée sur papier, dans une sous-transaction annulée. Trois mutations, qui doivent mordre. EN
+-- ATTENTE tant que la table n'est pas en base. Ce que la fonction refuse encore, l'avoir, l'avenant, la garde :
+-- `honorairesFactures.sql`.
+do $hf$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  k uuid := '1a100000-0000-4000-8000-0000000000e6';
+  c uuid := '1a100000-0000-4000-8000-0000000000e7';
+  d uuid := '1a100000-0000-4000-8000-0000000000e8';
+  l uuid := '1a100000-0000-4000-8000-0000000000e9';
+  elements jsonb := '[{"lettre_id": "1a100000-0000-4000-8000-0000000000e9", "ligne": 1, "periode_debut": "2026-01-01", "periode_fin": "2026-01-31"}]';
+  fac uuid;
+  n bigint; etat text; message text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.honoraires_factures') is null then
+    insert into rls_verdict values ('HF. les factures d''honoraires : EN ATTENTE de la migration honoraires_factures',
+      'honoraires_factures', 'absente : les liens se jugent dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, siret, adresse) values
+      (k, 'RLS DOSSIER DU CABINET HF', cabinet, 'tresorerie', '455000', '12345678200010', 'RLS ADRESSE'),
+      (c, 'RLS CLIENT HF', cabinet, 'tresorerie', '455000', '98765432100017', 'RLS ADRESSE');
+    insert into documents_divers (id, dossier_id, storage_path, nom_fichier, categorie, storage_hash) values
+      (d, k, k || '/divers/signee.pdf', 'signee.pdf', 'autre', repeat('ab', 32));
+    insert into memberships (user_id, dossier_id, role, email) values (client, c, 'client', 'rls-hf@example.test');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform public.designer_dossier_du_cabinet(cabinet, k);
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    insert into lettres_de_mission (id, dossier_id, dossier_client_id, missions, honoraires, date_effet, premier_exercice,
+        fin_initiale, signataire_nom, identite_client, identite_cabinet, clauses, empreinte, proposee_le, proposee_par,
+        acceptee_le, acceptee_par, mode_acceptation, empreinte_acceptee, document_signe_id, empreinte_papier, signee_le, auteur)
+    values (l, k, c, '{tenue_comptable}', '[{"forme": "forfait", "libelle": "Tenue", "montant_ht": 100, "periodicite": "mois"}]',
+      '2026-01-01', 2026, '2026-12-31', 'S', '{}', '{}', '{sous_traitance}', repeat('1', 64), '2025-12-01', chef, '2025-12-05',
+      chef, 'papier', repeat('1', 64), d, repeat('ab', 32), '2025-12-04', chef);
+    construit := true;
+
+    -- HF1 : l'anonyme n'exécute pas la fonction.
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+      perform public.facturer_honoraires(k, elements, 20, null);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'HF1. anonyme n''exécute pas facturer_honoraires', 'cible', 'facturer_honoraires',
+      'observe', etat, 'ok', etat = '42501');
+
+    -- HF2 et HF3 : un compte rattaché à rien, puis le client.
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      perform public.facturer_honoraires(k, elements, 20, null);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'HF2. inconnu authentifié ne facture pas d''honoraires', 'cible', 'facturer_honoraires',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce dossier.');
+    -- M-HF2 : HF2 rejoué sous le chef — il facture (annulé aussitôt).
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform public.facturer_honoraires(k, elements, 20, null);
+      raise exception 'annuler' using errcode = 'P0001';
+    exception when sqlstate 'P0001' then etat := 'acceptée'; when others then etat := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-HF2 — HF2 rejoué sous le chef du cabinet', 'attendu', 'le brouillon créé',
+      'observe', etat, 'mord', etat = 'acceptée');
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform public.facturer_honoraires(k, elements, 20, null);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'HF3. client ne facture pas d''honoraires', 'cible', 'facturer_honoraires',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce dossier.');
+
+    -- HF4 : le chef facture janvier et lit le lien (contrôle positif).
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    fac := public.facturer_honoraires(k, elements, 20, null);
+    select count(*) into n from honoraires_factures where dossier_id = k;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'HF4. le chef facture une période et lit son lien (contrôle positif)', 'cible', 'honoraires_factures',
+      'observe', n || ' ligne(s)', 'ok', n = 1);
+
+    -- HF5 : le client ne lit rien ; M-HF5 : la même lecture sous le chef.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into n from honoraires_factures where dossier_id = k;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'HF5. client ne lit pas les liens des factures d''honoraires', 'cible', 'honoraires_factures',
+      'observe', n || ' ligne(s)', 'ok', n = 0);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into n from honoraires_factures where dossier_id = k;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-HF5 — HF5 rejoué sous le chef', 'attendu', 'le lien lu',
+      'observe', n || ' ligne(s)', 'mord', n = 1);
+
+    -- HF6 : un compte rattaché à rien n'insère pas directement.
+    message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+      -- La facture du chef, nommée par son identifiant : l'inconnu ne la lit pas, une sélection n'insérerait rien.
+      insert into honoraires_factures (dossier_id, facture_id, lettre_id, ligne, periode_debut, periode_fin, auteur)
+        values (k, fac, l, 1, '2026-02-01', '2026-02-28', inconnu);
+      etat := 'acceptée';
+    exception when others then etat := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    -- Une insertion se juge par la garde AVANT la policy : la garde, à ses droits, ne lit pas la lettre et refuse (23514,
+    -- des mots qui ne disent pas si la lettre existe) ; sinon la policy refuserait (42501). Ni l'un ni l'autre n'écrit.
+    verdicts := verdicts || jsonb_build_object('controle', 'HF6. inconnu authentifié n''insère pas de lien directement (la restauration est au super-administrateur)', 'cible', 'honoraires_factures_restauration',
+      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501'
+        or (etat = '23514' and message = 'Une facture d''honoraires se lie, dans le dossier du cabinet, à une lettre de mission de ce dossier.'));
+    raise exception 'annuler le jeu' using errcode = 'P0001';
+  exception
+    when sqlstate 'P0001' then null;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- HF7 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.prosecdef and p.proname = 'facturer_honoraires'
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE'), false);
+  verdicts := verdicts || jsonb_build_object('controle', 'HF7. facturer_honoraires : security definer, exécutable par authenticated seul (lecture du catalogue)',
+    'cible', 'facturer_honoraires', 'observe', n || ' telle(s) quelle(s)', 'ok', n = 1);
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.proname = 'garder_honoraires_factures'
+     and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
+  verdicts := verdicts || jsonb_build_object('controle', 'HF7. la garde des liens : aucun rôle de session ne l''exécute (lecture du catalogue)',
+    'cible', 'garder_honoraires_factures', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  -- M-HF7 : la même lecture pour le propriétaire, qui l'exécute.
+  select count(*) into n from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.proname = 'garder_honoraires_factures'
+     and has_function_privilege('proprietaire', p.oid, 'execute');
+  mutations := mutations || jsonb_build_object('mutation', 'M-HF7 — HF7 rejoué pour le propriétaire', 'attendu', 'la garde exécutable',
+    'observe', n || ' exécutable(s)', 'mord', n = 1);
+  select count(*) into n from pg_policies
+   where schemaname = 'public' and tablename = 'honoraires_factures' and not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'));
+  verdicts := verdicts || jsonb_build_object('controle', 'HF7. la table des liens : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
+    'cible', 'honoraires_factures', 'observe', n || ' autre(s)', 'ok', n = 0
+      and (select count(*) from pg_policies where schemaname = 'public' and tablename = 'honoraires_factures') = 2);
+  verdicts := verdicts || jsonb_build_object('controle', 'HF. le jeu d''essai des factures d''honoraires s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
+      and not exists (select 1 from cabinets where dossier_du_cabinet = k));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $hf$;
 
 -- ═══ La frontière des encaissements (chantier EC-Q3, étape VF7a) ═══════════════════════════════════════════════
 --
