@@ -781,6 +781,24 @@ begin
   end if;
 end $$;
 
+-- ══ Le modèle de plan du cabinet (ligne 43, PC5) ══ Au plan du code quand `MODELE_DU_CABINET_PREVU` est levé — c'est-à-dire
+-- quand la migration `modele_de_plan_du_cabinet` est en base : le script met sa table juste après `roles_comptables`
+-- (ORDRE_RESTAURATION_PREVU : une table du cabinet, hors de l'export d'un dossier, après ses deux parents), les tables qui
+-- suivent reculant d'un rang ; son chemin (`cabinet`, que la restauration saute) ; aucune vague. Absente de la base, rien
+-- n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.plan_comptable_cabinet') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'roles_comptables';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'plan_comptable_cabinet');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('plan_comptable_cabinet','cabinet',null,null);
+  end if;
+end $$;
+
 -- ══ Les lettres de mission (ligne 47, LM4) ══ Au plan du code quand `LETTRES_DE_MISSION_PREVUES` est levé — c'est-à-dire
 -- quand sa migration est en base, après LM1 : le script les y met dès que leurs tables existent, juste après
 -- `precisions_mouvements` (ORDRE_RESTAURATION_PREVU : après les documents que le papier signé cite, le modèle avant la

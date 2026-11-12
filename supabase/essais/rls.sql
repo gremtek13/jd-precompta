@@ -107,6 +107,10 @@
 --      catalogue — et trois mutations ; avant la migration `notes_de_frais`, une ligne « EN ATTENTE ». B7 lisant « Notes de
 --      frais » et « Achats », TC1 et TC3 ne jugent alors plus ni l'une ni l'autre, et M-TC1 lit sous « Documents » ; B2 en
 --      base aussi, TC1 et TC3 sont sans objet, et M-TC1 ne se joue plus.
+--   6decies. Le MODÈLE DE PLAN DU CABINET (PC5, ligne 43 ; bloc MP, en fin de fichier) : MP1 à MP3 — le chef et un membre de
+--      l'équipe lisent le modèle (contrôles positifs), le client d'un dossier du cabinet et l'anonyme rien ; le client ne le
+--      règle ni ne l'écrit ; le catalogue — et trois mutations ; avant la migration `modele_de_plan_du_cabinet`, une ligne
+--      « EN ATTENTE ».
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -8764,6 +8768,186 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $nf$;
+
+-- ══ MP. Le modèle de plan du cabinet (ligne 43, étape PC5 ; migration `modele_de_plan_du_cabinet`, PRÉPARÉE) ══
+-- Une table du CABINET, sans dossier : lue par l'équipe du cabinet (`admin_du_cabinet`, chef ou non), écrite par
+-- `regler_modele_du_cabinet` seule, le chef du cabinet (aucune policy d'écriture, une garde). Le client ne la lit pas, même
+-- quand il a un accès à un dossier du cabinet. Le reste (les refus sous leurs mots, l'application à un dossier) :
+-- `modeleDuCabinet.sql`.
+--   MP1. Le chef règle le modèle et en lit les 32 lignes (le contrôle POSITIF) ; un membre de l'équipe qui n'est pas chef les
+--        lit aussi (un second contrôle positif) ; le client, qui a un accès au dossier du client, n'en lit rien ; l'anonyme
+--        non plus.
+--   MP2. Le client ne règle pas le modèle (42501, sous ses mots), n'y insère rien en direct (42501), ne réécrit rien.
+--   MP3. Le catalogue : la RLS active, une seule policy permissive, en lecture, à authenticated, `admin_du_cabinet`.
+-- Trois mutations, qui doivent mordre : M-MP1 (la lecture élargie au client d'un dossier du cabinet : il lit les lignes),
+-- M-MP2 (la policy fermée : le chef ne lit plus rien), M-MP3 (une policy d'insertion ouverte et la garde désactivée : son
+-- insertion directe passe). Avant la migration, une ligne dit que le bloc attend.
+do $mp$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  cabinet uuid; chef_lit bigint; membre_lit bigint; du_client bigint; de_l_anon text; par_la_fonction text; en_direct text;
+  reecrites bigint; elargie bigint; fermee bigint; ecrite_elargie text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.plan_comptable_cabinet') is null then
+    insert into rls_verdict values ('MP. le modèle de plan du cabinet : EN ATTENTE de la migration modele_de_plan_du_cabinet',
+      'plan_comptable_cabinet', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef règle le modèle du cabinet du dossier du client (la banque au 512100) ──
+    select d.cabinet_id into cabinet from dossiers d where d.id = dossier_du_client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform regler_modele_du_cabinet(cabinet, '[{"role": "banque", "compte": "512100"}]'::jsonb);
+    select count(*) into chef_lit from plan_comptable_cabinet where cabinet_id = cabinet;
+    reset role;
+    construit := true;
+
+    -- MP1 : le client, l'anonyme, puis le client rattaché à l'équipe comme comptable, le temps d'une sous-transaction.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from plan_comptable_cabinet;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from plan_comptable_cabinet;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    begin
+      insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into membre_lit from plan_comptable_cabinet where cabinet_id = cabinet;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'MP1. le chef lit le modèle qu''il a réglé, un membre de l''équipe aussi (les contrôles positifs) ; le client, qui a un accès à un dossier du cabinet, n''en lit rien, ni l''anonyme',
+      'cible', 'plan_comptable_cabinet',
+      'observe', 'le chef : ' || chef_lit || ' | le membre : ' || coalesce(membre_lit::text, '?') || ' | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_lit = 32 and membre_lit = 32 and du_client = 0 and de_l_anon = '0');
+
+    -- MP2 : le client ne règle ni n'écrit ni ne réécrit le modèle.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform regler_modele_du_cabinet(cabinet, '[{"role": "banque", "compte": "512200"}]'::jsonb);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into plan_comptable_cabinet (cabinet_id, role, compte) values (cabinet, 'caisse', '531000');
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update plan_comptable_cabinet set libelle = 'RLS' where cabinet_id = cabinet returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'MP2. le client ne règle pas le modèle du cabinet (la fonction), n''y écrit pas en direct et ne le réécrit pas',
+      'cible', 'plan_comptable_cabinet',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites,
+      'ok', par_la_fonction = '42501 Le modèle de plan de ce cabinet ne se règle que par son chef.'
+        and en_direct like '42501 %' and reecrites = 0);
+
+    -- M-MP1 : la lecture élargie au client d'un dossier du cabinet.
+    begin
+      alter policy plan_comptable_cabinet_lecture on public.plan_comptable_cabinet
+        using (admin_du_cabinet(cabinet_id) or exists (select 1 from dossiers d join memberships m on m.dossier_id = d.id
+                                                        where d.cabinet_id = plan_comptable_cabinet.cabinet_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from plan_comptable_cabinet where cabinet_id = cabinet;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-MP1 — la lecture du modèle du cabinet élargie au client d''un de ses dossiers',
+      'attendu', 'le client lit les lignes', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-MP2 : la policy fermée.
+    begin
+      alter policy plan_comptable_cabinet_lecture on public.plan_comptable_cabinet using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from plan_comptable_cabinet where cabinet_id = cabinet;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-MP2 — la policy du modèle du cabinet fermée',
+      'attendu', 'le chef ne lit plus rien', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-MP3 : une policy d'insertion ouverte au client, et la garde désactivée.
+    begin
+      execute 'create policy plan_comptable_cabinet_mutant on public.plan_comptable_cabinet for insert to authenticated with check (true)';
+      alter table public.plan_comptable_cabinet disable trigger plan_comptable_cabinet_gardes;
+      -- Un cabinet jetable, au modèle vide : l'insertion du client ne bute pas sur la clé d'une ligne du jeu.
+      insert into cabinets (id, nom) values ('f5c00000-0000-4000-8000-0000000000ce', 'RLS MP3');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into plan_comptable_cabinet (cabinet_id, role, compte) values ('f5c00000-0000-4000-8000-0000000000ce', 'caisse', '531000');
+        ecrite_elargie := 'ACCEPTÉ';
+      exception when others then ecrite_elargie := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-MP3 — une insertion ouverte au client, la garde du modèle désactivée',
+      'attendu', 'son insertion directe passe', 'observe', coalesce(ecrite_elargie, '?'), 'mord', coalesce(ecrite_elargie = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- MP3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'plan_comptable_cabinet' and p.roles = array['authenticated']::name[]
+     and p.policyname = 'plan_comptable_cabinet_lecture' and p.permissive = 'PERMISSIVE' and p.cmd = 'SELECT'
+     and p.qual = 'admin_du_cabinet(cabinet_id)' and p.with_check is null;
+  verdicts := verdicts || jsonb_build_object('controle', 'MP3. la RLS active ; une seule policy, en lecture, à authenticated, l''équipe du cabinet (lecture du catalogue)',
+    'cible', 'plan_comptable_cabinet',
+    'observe', n || ' sur 1, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'plan_comptable_cabinet' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.plan_comptable_cabinet'::regclass),
+    'ok', n = 1 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'plan_comptable_cabinet' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 1
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.plan_comptable_cabinet'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'MP. le jeu d''essai du modèle de plan du cabinet s''est construit', 'cible', 'le cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $mp$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
