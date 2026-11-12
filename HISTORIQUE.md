@@ -51865,3 +51865,19 @@ l'export) 72 contrôles, 0 en faute, 8 mutations sur 8 ; `rls.sql` entier, bloc 
 111, puis après le retour 168 lignes (IV EN ATTENTE), 0 en faute, 108 sur 108 ; la migration réappliquée, l'essai de nouveau
 juste ; `planComptable.sql` (les six rôles jugés à part, contrôle 1bis) juste avec et sans elle. Au plan de sauvegarde
 derrière `INVENTAIRE_PREVU` baissé, son bloc dans `restauration.sql` ; `types.ts` décrit la table.
+
+### 12/11/2026 — LIA2 : LES STOCKS DE CLÔTURE, EN MODULE ET EN BASE (LIGNE 36) (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, lot LIA2 de la conception 37, LIA-Q2 et LIA-Q3 suivies à leur recommandation. `lib/stocks.ts` compose
+l'écriture de clôture d'un compte de stock (l'annulation du stock initial lu dans les à-nouveaux et les soldes reportés, la
+constatation du stock final, au 603x ou au 713 du plan du dossier), dit ses refus aux mots de la migration, et porte le
+contrôle 2 de la liasse (`controleDesStocks`, branché dans `controlesDeLaLiasse` : les comptes 31 à 38 du bilan contre les
+stocks saisis, compte par compte). La migration `20261112200000_stocks_de_cloture` (supabase/preparees/, à COLLER : la
+réécriture retire d'abord les lignes) ajoute la table, la colonne `ecritures_brouillon.stock_de_cloture_id` et ses deux
+contraintes, dix rôles aux rangs 500 à 590, deux gardes (le réglage `jd.stock`, la restauration du super-administrateur) et
+deux fonctions `security definer` qui recomposent en entiers et comparent en multiensemble ; sa garde de tête refuse un
+brouillon dont une clé étrangère lui est inconnue (MCB5g, INV2). Aucune catégorie commune : elles se liraient dans les
+dossiers BNC (LIA2-Q1). Sur une copie de la réplique mère rattrapée à 200 migrations : `stocks.sql` 31 cas justes, 5
+mutations sur 5 ; `rls.sql` 171 lignes, 0 en faute, 111 mutations sur 111 ; le retour rend 168 lignes et 108 mutations,
+puis la migration de nouveau les mêmes chiffres. La garde passe avant le contrôle d'écriture de la RLS (le bloc ST le dit).
+Au plan de sauvegarde derrière `STOCKS_PREVUS`, après `notes_internes` ; le bloc de `restauration.sql` gardé par son test, pas rejoué.

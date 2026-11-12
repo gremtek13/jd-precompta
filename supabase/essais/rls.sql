@@ -127,6 +127,10 @@
 --      super-administrateur réinsère (la porte de la restauration, contrôle positif) ; le catalogue — et trois mutations ;
 --      avant la migration `operations_d_inventaire`, une ligne « EN ATTENTE ». Le reste (les refus sous leurs mots, la
 --      recomposition, le gel, les gardes) : `operationsDInventaire.sql`, sur une réplique.
+--   6terdecies. Les STOCKS DE CLÔTURE (LIA2, ligne 36 ; bloc ST, en fin de fichier) : ST1 à ST3 — le chef lit le stock
+--      qu'il a enregistré (contrôle positif), le client du dossier et l'anonyme rien ; le client n'écrit rien, ni par la
+--      fonction ni en direct ; le catalogue — et trois mutations ; avant la migration `stocks_de_cloture`, une ligne « EN
+--      ATTENTE ». Le reste : `stocks.sql`, sur une réplique.
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -9495,6 +9499,191 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $iv$;
+
+-- ══ ST. Les stocks de clôture (ligne 36, LIA2 ; migration `stocks_de_cloture`, PRÉPARÉE) ══════════════════════════════
+-- Une table du cabinet que le client ne lit pas, pas même pour son dossier : une seule policy, `for all to authenticated`
+-- sur `admin_du_dossier(dossier_id)`, aucune branche client ; l'écriture par `enregistrer_stock_de_cloture` et
+-- `retirer_stock_de_cloture` (`security definer`, l'accès d'abord), une garde refusant toute écriture directe que la
+-- policy laisserait passer. Les refus de la fonction, la recomposition, les gardes et le gel se rejouent dans `stocks.sql`
+-- (réplique seulement).
+--   ST1. Le chef enregistre un stock « néant » de 2026 dans le dossier du client, passé en engagement le temps du bloc, et
+--        le lit (le contrôle POSITIF) ; le client, qui a un accès à ce dossier, n'en lit rien ; l'anonyme non plus.
+--   ST2. Le client n'écrit pas par la fonction (42501, sous ses mots), ni en direct : la garde le refuse (42501, ses mots,
+--        elle passe AVANT le contrôle d'écriture de la RLS), et, la garde débranchée, la RLS seule (42501) ; il ne réécrit
+--        rien.
+--   ST3. Le catalogue : la RLS active, une seule policy permissive, à authenticated, `admin_du_dossier` des deux côtés.
+-- Trois mutations, qui doivent mordre : M-ST1 (la lecture élargie au client « membre » : il lit la ligne de son dossier),
+-- M-ST2 (la policy fermée : le chef ne lit plus la ligne), M-ST3 (la garde débranchée et l'écriture élargie au client
+-- « membre » : son insertion directe passe). Avant la migration, une ligne dit que le bloc attend.
+do $st$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  saisie jsonb := '{"exercice": 2026, "compte_stock": "370000", "montant_centimes": 0, "methode": "cmup", "objet": "Inventaire rls.sql", "piece_citee_id": null}';
+  chef_apres bigint; du_client bigint; de_l_anon text; par_la_fonction text; en_direct text; sans_garde text; reecrites bigint;
+  elargie bigint; fermee bigint; ecrite_elargie text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.stocks_de_cloture') is null then
+    insert into rls_verdict values ('ST. les stocks de clôture : EN ATTENTE de la migration stocks_de_cloture',
+      'stocks_de_cloture', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le dossier du client en engagement (annulé avec le bloc), le chef y enregistre un stock « néant » ──
+    update dossiers set mode_comptable = 'engagement' where id = dossier_du_client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform enregistrer_stock_de_cloture(dossier_du_client, saisie, '[]'::jsonb, null);
+    select count(*) into chef_apres from stocks_de_cloture where dossier_id = dossier_du_client and exercice = 2026;
+    reset role;
+    construit := true;
+
+    -- ST1 : le client, puis l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from stocks_de_cloture where dossier_id = dossier_du_client;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from stocks_de_cloture;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'ST1. le chef lit le stock de clôture qu''il a enregistré dans le dossier du client (le contrôle positif) ; le client n''en lit rien, ni l''anonyme',
+      'cible', 'stocks_de_cloture',
+      'observe', 'le chef : ' || chef_apres || ' | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_apres = 1 and du_client = 0 and de_l_anon = '0');
+
+    -- ST2 : le client n'écrit ni ne réécrit les stocks.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_stock_de_cloture(dossier_du_client, jsonb_set(saisie, '{compte_stock}', '"320000"'), '[]'::jsonb, null);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into stocks_de_cloture (dossier_id, exercice, compte_stock, montant_centimes, methode, objet, cree_par, modifie_par)
+      values (dossier_du_client, 2026, '320000', 1, 'cmup', 'x', client, client);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      alter table public.stocks_de_cloture disable trigger stocks_de_cloture_par_ses_fonctions;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into stocks_de_cloture (dossier_id, exercice, compte_stock, montant_centimes, methode, objet, cree_par, modifie_par)
+      values (dossier_du_client, 2026, '320000', 1, 'cmup', 'x', client, client);
+      sans_garde := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sans_garde is null then sans_garde := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update stocks_de_cloture set objet = 'y' where dossier_id = dossier_du_client returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'ST2. le client n''écrit pas les stocks de clôture (la fonction, puis la RLS) et ne les réécrit pas',
+      'cible', 'stocks_de_cloture',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?')
+        || ' | la garde débranchée : ' || coalesce(sans_garde, '?') || ' | réécrites : ' || reecrites,
+      'ok', par_la_fonction = '42501 Seul le cabinet du dossier enregistre un stock de clôture.'
+        and en_direct = '42501 Un stock de clôture ne s''écrit que par enregistrer_stock_de_cloture.'
+        and sans_garde like '42501 new row violates row-level security policy%' and reecrites = 0);
+
+    -- M-ST1 : la lecture élargie au client « membre ».
+    begin
+      alter policy stocks_de_cloture_cabinet on public.stocks_de_cloture
+        using (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from stocks_de_cloture where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-ST1 — la lecture des stocks de clôture élargie au client « membre »',
+      'attendu', 'le client lit la ligne de son dossier', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-ST2 : la policy fermée.
+    begin
+      alter policy stocks_de_cloture_cabinet on public.stocks_de_cloture using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from stocks_de_cloture where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-ST2 — la policy des stocks de clôture fermée',
+      'attendu', 'le chef ne lit plus la ligne', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-ST3 : la garde débranchée et l'écriture élargie au client « membre » — plus rien ne refuse.
+    begin
+      alter table public.stocks_de_cloture disable trigger stocks_de_cloture_par_ses_fonctions;
+      alter policy stocks_de_cloture_cabinet on public.stocks_de_cloture
+        with check (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into stocks_de_cloture (dossier_id, exercice, compte_stock, montant_centimes, methode, objet, cree_par, modifie_par)
+        values (dossier_du_client, 2026, '320000', 1, 'cmup', 'x', client, client);
+        ecrite_elargie := 'ACCEPTÉ';
+      exception when others then ecrite_elargie := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-ST3 — la garde débranchée, l''écriture des stocks de clôture élargie au client « membre »',
+      'attendu', 'son insertion directe passe', 'observe', coalesce(ecrite_elargie, '?'), 'mord', coalesce(ecrite_elargie = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- ST3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'stocks_de_cloture' and p.roles = array['authenticated']::name[]
+     and p.policyname = 'stocks_de_cloture_cabinet' and p.permissive = 'PERMISSIVE' and p.cmd = 'ALL'
+     and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check = 'admin_du_dossier(dossier_id)';
+  verdicts := verdicts || jsonb_build_object('controle', 'ST3. la RLS active ; une seule policy, à authenticated, le cabinet du dossier des deux côtés (lecture du catalogue)',
+    'cible', 'stocks_de_cloture',
+    'observe', n || ' sur 1, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'stocks_de_cloture' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.stocks_de_cloture'::regclass),
+    'ok', n = 1 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'stocks_de_cloture' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 1
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.stocks_de_cloture'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'ST. le jeu d''essai des stocks de clôture s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $st$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

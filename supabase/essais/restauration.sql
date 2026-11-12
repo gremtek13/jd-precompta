@@ -980,9 +980,29 @@ begin
   end if;
 end $$;
 
+-- ══ Les stocks de clôture (ligne 36) ══ Au plan du code quand `STOCKS_PREVUS` est levé — c'est-à-dire quand sa migration
+-- est en base : le script met sa table juste après `notes_internes` (après les pièces, dont une feuille d'inventaire est
+-- citée, et avant le brouillon, dont une ligne cite le stock, et les exercices validés, dont le gel refuserait un stock
+-- réinséré après eux), les suivantes reculant d'un rang ; son chemin. Aucune vague. Joué après les autres blocs, sauf celui
+-- des opérations d'inventaire, qui s'ancre aussi sur `notes_internes` et passe donc devant lui (ORDRE_RESTAURATION_PREVU).
+-- Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.stocks_de_cloture') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'notes_internes';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'stocks_de_cloture');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('stocks_de_cloture','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les opérations d'inventaire (ligne 35, INV2) ══ Au plan du code quand `INVENTAIRE_PREVU` est levé — c'est-à-dire quand
 -- sa migration est en base : le script met sa table juste après `notes_internes`, bien après les pièces qu'elle cite et
--- avant le brouillon qui la cite (ORDRE_RESTAURATION_PREVU) ; les tables qui suivent reculent d'un rang — le geste des
+-- avant le brouillon qui la cite, et devant les stocks de clôture, que le bloc précédent a mis au même endroit
+-- (ORDRE_RESTAURATION_PREVU) ; les tables qui suivent reculent d'un rang — le geste des
 -- articles ; son chemin. Aucune vague : elle ne se cite pas elle-même. Absente de la base, rien n'entre : le plan est celui
 -- d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
 do $$

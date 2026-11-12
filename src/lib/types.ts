@@ -552,6 +552,12 @@ export interface EcritureBrouillon {
   // FACULTATIVE, et c'est la vérité des deux côtés de la migration : avant elle, `select('*')` ne rend pas la colonne ; après,
   // il la rend, nulle sur toute autre écriture.
   operation_inventaire_id?: string | null
+  // LE STOCK DE CLÔTURE dont cette écriture est l'annulation du stock initial ou la constatation du stock final (ligne 36,
+  // LIA2 ; migration `stocks_de_cloture`, préparée, pas appliquée — lib/stocks.ts) : écrite par `enregistrer_stock_de_cloture`
+  // seule, datée du 31 décembre, sans autre source (`ecritures_brouillon_stock_sans_autre_source`). FACULTATIVE, et c'est la
+  // vérité des deux côtés de la migration : avant elle, `select('*')` ne rend pas la colonne ; après, nulle sur toute autre
+  // écriture.
+  stock_de_cloture_id?: string | null
   // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, FIGÉS À LA VALIDATION (ligne 26.6, étape e ; lot FEC22b ; migration
   // `champs_bnc_du_fec`, en base et dans l'export depuis le 02/11/2026 — voir lib/champsBncFiges.ts) : la date et le mode
   // du règlement, la nature de l'opération (une par écriture), le poste de la 2035 d'une ligne de charge ou de produit
@@ -2364,4 +2370,23 @@ export interface ParametresFacturation {
   // (src/lib/logoDesFactures.ts ne dit alors rien du logo).
   logo_chemin?: string | null
   logo_sha256?: string | null
+}
+
+// LE STOCK DE CLÔTURE D'UN COMPTE (ligne 36, LIA2 ; migration `stocks_de_cloture`, préparée, pas appliquée — lib/stocks.ts) :
+// la valeur HORS TAXES de l'inventaire physique au 31 décembre, par dossier d'engagement, exercice et compte de stock du plan.
+// Écrit par `enregistrer_stock_de_cloture` seule, retiré par `retirer_stock_de_cloture` ; figé par la validation.
+export interface StockDeCloture {
+  id: string
+  dossier_id: string
+  exercice: number
+  compte_stock: string
+  /** En centimes entiers ; zéro : la saisie « néant ». */
+  montant_centimes: number
+  methode: 'cmup' | 'peps' | 'cout_specifique'
+  objet: string
+  piece_citee_id: string | null
+  version: number
+  cree_par: string
+  modifie_par: string
+  modifie_le: string
 }

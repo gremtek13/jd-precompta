@@ -50,7 +50,7 @@ function liasse(o: { registre?: BienDuRegistre[]; provisions?: ProvisionDuReleve
   if (cr.etat !== 'etabli') throw new Error(cr.motif.texte)
   const tableauC = tableau2033C({ exercice: 2026, registre: o.registre ?? [ORDINATEUR, VEHICULE], natures: NATURES })
   const tableauD = tableau2033D(o.provisions ?? [LITIGE])
-  return { bilan, compteDeResultat: cr, tableauC, tableauD }
+  return { bilan, compteDeResultat: cr, tableauC, tableauD, stocks: [] }
 }
 
 const lire = (cases: Map<string, number | null>, codes: string[]) => codes.map((c) => cases.get(c))
@@ -188,6 +188,12 @@ describe('les contrôles de cohérence du § 3.6', () => {
     // provisions : 500 en 686 ; le bilan : 151100 500.
     expect(l.compteDeResultat.totaux['310']).toBe(430_000)
     expect(controlesDeLaLiasse(l)).toEqual([])
+  })
+
+  it('le contrôle 2 (LIA2) : un stock saisi que le bilan ne porte pas retient la validation', () => {
+    const l = liasse()
+    const echecs = controlesDeLaLiasse({ ...l, stocks: [{ compte_stock: '370000', montant_centimes: 100 }] })
+    expect(echecs.map((e) => [e.code, e.numero, e.ecart])).toEqual([['stocks-au-bilan', 2, -100]])
   })
 
   it('un bien absent du registre : le brut et les amortissements du 2033-C ne sont plus ceux du bilan', () => {

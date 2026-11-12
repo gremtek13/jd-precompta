@@ -4,6 +4,7 @@ import {
   appliquerLesFormules, arrondirALEuro, formulaireALEuro, type CompteDeResultatEtabli, type Formule,
 } from './compteDeResultat2033'
 import { formatMoney } from './format'
+import { controleDesStocks, type StockSaisi } from './stocks'
 import type { Immobilisation, NatureImmobilisation } from './types'
 
 // LA LIASSE 2033 HORS DU COMPTE DE RÉSULTAT — ligne 37 de la feuille de route, lot LIA1 (docs/conceptions/37-liasse-2033.md,
@@ -482,7 +483,7 @@ export function bilan2033AALEuro(bilan: BilanEtabli): Bilan2033AALEuro {
 
 export type CodeControle2033 =
   | 'resultat-au-bilan' | 'immobilisations-au-bilan' | 'amortissements-au-bilan' | 'provisions-au-bilan'
-  | 'provisions-incoherentes' | 'biens-hors-tableau' | 'comptes-a-classer'
+  | 'provisions-incoherentes' | 'biens-hors-tableau' | 'comptes-a-classer' | 'stocks-au-bilan'
 
 export interface Controle2033 {
   code: CodeControle2033
@@ -498,6 +499,8 @@ export interface EntreesDesControles {
   compteDeResultat: CompteDeResultatEtabli
   tableauC: Tableau2033C
   tableauD: Tableau2033D
+  /** Les stocks de clôture saisis de l'exercice (lib/stocks.ts, LIA2) : le contrôle 2 les confronte au bilan. */
+  stocks: readonly StockSaisi[]
 }
 
 // Les colonnes du 2033-A qu'un tableau doit retrouver : la rubrique du bilan d'une ligne du cadre I, et ses comptes 28
@@ -514,8 +517,9 @@ const LIBELLE_DU_BILAN = {
 
 /**
  * Les contrôles du § 3.6 que LIA1 sait faire, chacun au centime ; la liste ne porte que ceux qui ÉCHOUENT, et chacun
- * retient la validation. Restent à LIA2 le contrôle 2 (les stocks du 2033-A contre les stocks saisis) et à LIA3 les
- * contrôles 5 à 7 (le résultat fiscal, les déficits, l'impôt) ; 312 et 314 se tirent de 310 par construction.
+ * retient la validation. Le contrôle 2 (les stocks du 2033-A contre les stocks saisis) vient de LIA2
+ * (`controleDesStocks`, lib/stocks.ts) ; restent à LIA3 les contrôles 5 à 7 (le résultat fiscal, les déficits, l'impôt) ;
+ * 312 et 314 se tirent de 310 par construction.
  */
 export function controlesDeLaLiasse(e: EntreesDesControles): Controle2033[] {
   const echecs: Controle2033[] = []
@@ -530,6 +534,9 @@ export function controlesDeLaLiasse(e: EntreesDesControles): Controle2033[] {
         + `${euros(bilan.resultat)}) : ${euros(ecart310)} d’écart, que portent les comptes hors des cases du compte de résultat.`,
     })
   }
+
+  // 2. Les stocks bruts du 2033-A (050 et 060) contre les stocks de clôture saisis, compte par compte.
+  echecs.push(...controleDesStocks(bilan.soldes, e.stocks))
 
   // 3. Le cadre I (fin) et le cadre II (fin) du 2033-C contre les colonnes brute et amortissements du 2033-A.
   const brutC = new Map<string, number>()

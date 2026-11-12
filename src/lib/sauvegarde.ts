@@ -34,6 +34,7 @@ import { SAISIES_2035E_PREVUES, TABLES_DES_SAISIES_2035E } from './saisies2035E'
 import { MODELE_DU_CABINET_PREVU, TABLES_DU_MODELE_DU_CABINET } from './modeleDuCabinet'
 import { COPIE_DES_FICHIERS_PREVUE, TABLES_DES_COPIES_DES_FICHIERS } from './copieDesFichiers'
 import { INVENTAIRE_PREVU, TABLES_DE_L_INVENTAIRE } from './inventaire'
+import { STOCKS_PREVUS, TABLES_DES_STOCKS } from './stocks'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
@@ -473,6 +474,26 @@ export function auPlanDeLInventaire(table: string, prevu: boolean): boolean {
   return prevu || !(TABLES_DE_L_INVENTAIRE as readonly string[]).includes(table)
 }
 
+// LES STOCKS DE CLÔTURE (ligne 36, lot LIA2 ; migration `stocks_de_cloture`, PRÉPARÉE le 12/11/2026) : une ligne par dossier,
+// exercice et compte de stock, et une colonne du brouillon, `stock_de_cloture_id`, sans action à la suppression (la fonction
+// retire les lignes d'abord). Sous le drapeau de la migration (`STOCKS_PREVUS`, src/lib/stocks.ts), baissé : la production
+// n'a ni la table ni la colonne. Ses relations (le dossier en cascade, la feuille d'inventaire citée sans action) et celle du
+// brouillon ; son rang, juste après les notes internes (le bloc de la caisse tient les pièces hors de France, la caisse et le brouillon
+// d'un seul tenant), donc avant le brouillon et les exercices validés, dont le gel refuserait un
+// stock réinséré après eux ; son chemin, direct ; sa clé, la commune ; aucune vague. sauvegardeStocks.test.ts éprouve les
+// deux plans.
+
+/** Une table au plan, côté stocks de clôture : toutes, sauf la leur tant que leur migration n'est pas en base. */
+export function auPlanDesStocks(table: string, prevus: boolean): boolean {
+  return prevus || !(TABLES_DES_STOCKS as readonly string[]).includes(table)
+}
+
+/** Une relation au graphe du jour, côté stocks : celle du brouillon vers un stock attend la migration, comme la table. */
+export function auGrapheDesStocks(r: Pick<Relation, 'enfant' | 'parent'>, prevus: boolean): boolean {
+  const tables = TABLES_DES_STOCKS as readonly string[]
+  return prevus || (!tables.includes(r.enfant) && !tables.includes(r.parent))
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -503,6 +524,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDuModeleDuCabinet(table, MODELE_DU_CABINET_PREVU)
     && auPlanDesCopiesDesFichiers(table, COPIE_DES_FICHIERS_PREVUE)
     && auPlanDeLInventaire(table, INVENTAIRE_PREVU)
+    && auPlanDesStocks(table, STOCKS_PREVUS)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -835,6 +857,11 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   // Les notes de frais (B7) : le dossier en cascade, le justificatif sans action.
   { enfant: 'notes_de_frais', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'notes_de_frais', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'bloque' },
+  // Les stocks de clôture (ligne 36, LIA2 ; migration `stocks_de_cloture`, préparée) : la feuille citée sans action (une
+  // pièce citée ne se supprime pas), et la ligne du brouillon vers son stock, sans action non plus.
+  { enfant: 'stocks_de_cloture', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'stocks_de_cloture', parent: 'pieces', colonne: 'piece_citee_id', aLaSuppression: 'bloque' },
+  { enfant: 'ecritures_brouillon', parent: 'stocks_de_cloture', colonne: 'stock_de_cloture_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -844,7 +871,8 @@ export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
   .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
     && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
     && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS)
-    && auGrapheDeLInventaire(r, INVENTAIRE_PREVU))
+    && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)
+    && auGrapheDesStocks(r, STOCKS_PREVUS))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
@@ -1096,6 +1124,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'piece_textes_ocr',
   'notes_internes',
   'operations_inventaire',
+  'stocks_de_cloture',
   'pieces_hors_de_france',
   'pieces_hors_de_france_taux',
   'operations_caisse',
@@ -1636,6 +1665,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   situations_publiees: { acces: 'direct' },
   saisies_2035: { acces: 'direct' },
   saisies_2035e: { acces: 'direct' },
+  stocks_de_cloture: { acces: 'direct' },
   imports_factures: { acces: 'direct' },
   factures_importees: { acces: 'direct' },
   modeles_numerotation: { acces: 'direct' },
