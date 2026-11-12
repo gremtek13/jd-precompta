@@ -23,7 +23,8 @@ const FIN = '// ── FIN DEUX FACTEURS'
 const SANS_COMPTE: Record<string, string> = {
   'receive-email': 'webhook de Resend : un serveur, signé par Svix, aucun compte',
   'evaluer-extraction': 'harnais de mesure, appelé à la main derrière la clé publishable, aucun compte',
-  'taux-change-bce': 'aucun contrôle d’appelant (défaut connu, DEFAUTS_CONNUS) : elle ne lit ni n’écrit rien d’un dossier',
+  // `taux-change-bce` n'y est plus depuis le 12/11/2026 (ligne 23.4) : elle lit le compte de son appelant, comme
+  // extract-piece, et écrit à la clé secrète pour lui — le bloc s'y pose, après le contrôle de l'appelant.
 }
 
 /** Qui appelle chaque fonction dans le monde de référence : le chef, sauf les fonctions du super-administrateur. */
@@ -62,8 +63,8 @@ describe('le bloc DEUX FACTEURS part de TOUTES les fonctions', () => {
       if (slug in SANS_COMPTE) expect(source.includes(DEBUT), slug).toBe(false)
       else expect(blocDe(source), slug).not.toBe('')
     }
-    // Le plancher : les treize fonctions qui agissent pour un compte le 07/11/2026.
-    expect(AVEC_LE_BLOC.length).toBeGreaterThanOrEqual(13)
+    // Le plancher : les treize fonctions qui agissent pour un compte le 07/11/2026, et taux-change-bce le 12/11/2026.
+    expect(AVEC_LE_BLOC.length).toBeGreaterThanOrEqual(14)
   })
 
   it('une fonction qui lit un compte (`auth.getUser`) porte le bloc — un défaut planté le prouve', () => {

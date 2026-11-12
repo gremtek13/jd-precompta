@@ -29,11 +29,26 @@ import { describe, expect, it, vi } from 'vitest'
 // DEPUIS LE 30/09/2026 CETTE LANGUE A CHANGÉ : la clé secrète du projet n'est plus un jeton, elle
 // voyage dans l'en-tête `apikey` et la fonction est en `verify_jwt = false`. Le contrôle est donc la
 // seule barrière, et il compare lui-même la clé, à temps constant.
+//
+// DEPUIS LE 12/11/2026 LE BLOC A UNE COPIE (ligne 23.4) : `taux-change-bce`, qui ne contrôlait aucun appelant — la clé
+// `anon` historique, que sa passerelle admet, suffisait à lui faire interroger la BCE et écrire à la clé secrète. Son
+// bloc APPELANT porte son propre récit, puis le code d'extract-piece à l'octet près. Chaque garde ci-dessous se joue sur
+// les DEUX copies (chacune exécutée contre ces attentes, jamais l'une contre l'autre seulement), et une comparaison dit
+// qu'elles n'ont pas dérivé.
 
 const SOURCE = readFileSync(
   new URL('../../supabase/functions/extract-piece/index.ts', import.meta.url), 'utf8')
 const SOURCE_RECEPTION = readFileSync(
   new URL('../../supabase/functions/receive-email/index.ts', import.meta.url), 'utf8')
+const SOURCE_TAUX = readFileSync(
+  new URL('../../supabase/functions/taux-change-bce/index.ts', import.meta.url), 'utf8')
+
+/** Les deux fonctions qui portent le bloc APPELANT, et ce que chacune dépense une fois l'appelant admis. */
+const COPIES: [string, string][] = [['extract-piece', SOURCE], ['taux-change-bce', SOURCE_TAUX]]
+const DEPENSES: Record<string, string[]> = {
+  'extract-piece': ['req.arrayBuffer()', 'new TextractClient(', 'citerChamps('],
+  'taux-change-bce': ['req.json()', 'fetch(', '.upsert('],
+}
 
 type SessionRattachee = (jeton: string) => Promise<boolean>
 type Controle = (
@@ -61,8 +76,11 @@ function executer(bloc: string): { appelantAutorise: Controle; estRattache: Ratt
   return new Function(`${js}\nreturn { appelantAutorise, estRattache, egaliteConstante }`)()
 }
 
-const BLOC = blocAppelant(SOURCE)
-const { appelantAutorise, estRattache, egaliteConstante } = executer(BLOC)
+/** Ce que les copies partagent : du contrôle à la borne de fin. Le récit qui précède est propre à chaque fonction. */
+function codePartage(source: string): string {
+  const bloc = blocAppelant(source)
+  return bloc.slice(bloc.indexOf('async function appelantAutorise('))
+}
 
 const CLE_SECRETE = 'sb_secret_cle-du-projet'
 const CLE_PUBLIQUE = 'sb_publishable_servie-avec-le-site'
@@ -73,7 +91,9 @@ function authentification() {
   return vi.fn(async (jeton: string) => jeton === SESSION)
 }
 
-describe('extract-piece — qui peut faire lire un document', () => {
+describe.each(COPIES)('%s — qui passe le contrôle de l’appelant', (_slug, source) => {
+  const { appelantAutorise } = executer(blocAppelant(source))
+
   it('refuse un appel sans en-tête ni clé, sans même interroger le service d’authentification', async () => {
     const auth = authentification()
     expect(await appelantAutorise(null, null, CLE_SECRETE, auth)).toBe(false)
@@ -149,7 +169,10 @@ describe('extract-piece — qui peut faire lire un document', () => {
   })
 })
 
-describe('extract-piece — la clé secrète se compare à temps constant', () => {
+describe.each(COPIES)('%s — la clé secrète se compare à temps constant', (_slug, source) => {
+  const BLOC = blocAppelant(source)
+  const { egaliteConstante } = executer(BLOC)
+
   it('rend l’égalité, octet par octet', () => {
     expect(egaliteConstante(CLE_SECRETE, CLE_SECRETE)).toBe(true)
     expect(egaliteConstante(CLE_SECRETE, `${CLE_SECRETE.slice(0, -1)}x`)).toBe(false)
@@ -186,7 +209,9 @@ describe('extract-piece — la clé secrète se compare à temps constant', () =
 const lu = (count: number): Comptage => ({ count, error: null })
 const refuse = (message = 'lecture refusée'): Comptage => ({ count: null, error: { message } })
 
-describe('extract-piece — une session ne suffit pas, il faut un compte RATTACHÉ', () => {
+describe.each(COPIES)('%s — une session ne suffit pas, il faut un compte RATTACHÉ', (_slug, source) => {
+  const { estRattache } = executer(blocAppelant(source))
+
   it('refuse un compte rattaché à rien : c’est ce que donne l’inscription publique', () => {
     expect(estRattache([lu(0), lu(0), lu(0)])).toBe(false)
   })
@@ -216,8 +241,8 @@ describe('extract-piece — une session ne suffit pas, il faut un compte RATTACH
   })
 })
 
-describe('extract-piece — le contrôle est câblé AVANT toute dépense', () => {
-  const gestionnaire = SOURCE.slice(SOURCE.indexOf('Deno.serve('))
+describe.each(COPIES)('%s — le contrôle est câblé AVANT toute dépense', (slug, source) => {
+  const gestionnaire = source.slice(source.indexOf('Deno.serve('))
   // Ce que le gestionnaire passe au contrôle : entre l'appel et le refus en 401.
   const rappel = gestionnaire.slice(gestionnaire.indexOf('appelantAutorise('), gestionnaire.indexOf('if (!autorise)'))
 
@@ -226,10 +251,10 @@ describe('extract-piece — le contrôle est câblé AVANT toute dépense', () =
     expect(gestionnaire).toMatch(/if \(!autorise\) \{\s*return json\(\{[^}]*\}, 401\)/)
   })
 
-  it('avant de lire le corps, avant Textract, avant le modèle', () => {
+  it('avant de lire le corps, avant toute dépense (extract-piece : Textract, le modèle ; taux-change-bce : la BCE, l’écriture)', () => {
     const controle = gestionnaire.indexOf('appelantAutorise(')
     expect(controle).toBeGreaterThan(-1)
-    for (const depense of ['req.arrayBuffer()', 'new TextractClient(', 'citerChamps(']) {
+    for (const depense of DEPENSES[slug]) {
       const position = gestionnaire.indexOf(depense)
       expect(position, `${depense} introuvable dans le gestionnaire — garde-fou à remettre à jour`).toBeGreaterThan(-1)
       expect(controle, `${depense} précède le contrôle d’appelant`).toBeLessThan(position)
@@ -262,6 +287,25 @@ describe('extract-piece — le contrôle est câblé AVANT toute dépense', () =
     // Une seule sortie positive : celle du rattachement. Un `return true` ailleurs dans le rappel
     // ferait passer toute session, et c'est exactement le trou refermé ici.
     expect(rappel.match(/\breturn\b/g)).toHaveLength(2)
+  })
+})
+
+describe('taux-change-bce — le code du contrôle d’extract-piece, recopié à l’octet près', () => {
+  it('du contrôle à la borne de fin, les deux blocs sont le même texte ; seul le récit qui les ouvre diffère', () => {
+    expect(codePartage(SOURCE_TAUX)).toBe(codePartage(SOURCE))
+    expect(blocAppelant(SOURCE_TAUX)).not.toBe(blocAppelant(SOURCE))
+  })
+
+  it('la comparaison voit un défaut planté dans la copie — elle n’est pas aveugle', () => {
+    const plante = SOURCE_TAUX.replace('  if (!jeton) return false\n', '  if (!jeton) return true\n')
+    expect(plante).not.toBe(SOURCE_TAUX)
+    expect(codePartage(plante)).not.toBe(codePartage(SOURCE))
+  })
+
+  it('la passerelle reste à `verify_jwt = true` : le contrôle s’ajoute à elle, il ne la remplace pas', () => {
+    // Aucun appelant sans session ici (receive-email n'appelle qu'extract-piece) : rien ne justifierait de la lever.
+    const config = readFileSync(new URL('../../supabase/config.toml', import.meta.url), 'utf8')
+    expect(config).toMatch(/^\[functions\.taux-change-bce\]\nverify_jwt = true$/m)
   })
 })
 
