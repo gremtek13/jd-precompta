@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // LES RÔLES DU CHANGE DANS TOUS LES LECTEURS DU PLAN (ligne 31 ; HISTORIQUE.md, « 12/11/2026 — LES RÔLES DU CHANGE DANS
 // TOUS LES LECTEURS DU PLAN »). Depuis la migration `ecarts_de_reglement` (en production le 12/11/2026), la base porte
@@ -94,10 +94,16 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
 }
 
 describe('les lecteurs du plan voient les rôles du change', () => {
-  const sources = laSource()
+  // Lire et analyser toute la source se paie une fois, dans le beforeAll (CLAUDE.md, « Un calcul lourd se paie dans un
+  // beforeAll ») : dans le corps du test, il dépassait les 5 s de Vitest sous la charge de la CI (n° 355, 12/11/2026).
+  let sources: Source[] = []
+  let relevees: Record<string, number> = {}
+  beforeAll(() => {
+    sources = laSource()
+    relevees = Object.fromEntries(sources.map((s) => [s.chemin, emploisDuCatalogue(s)] as const).filter(([, n]) => n > 0))
+  }, 60_000)
 
   it('tout emploi du catalogue des trente-deux hors de lib/planComptable.ts est une exception motivée, au nombre près', () => {
-    const relevees = Object.fromEntries(sources.map((s) => [s.chemin, emploisDuCatalogue(s)]).filter(([, n]) => (n as number) > 0))
     expect(relevees).toEqual(Object.fromEntries(Object.entries(EXCEPTIONS).map(([chemin, e]) => [chemin, e.nombre])))
   })
 
