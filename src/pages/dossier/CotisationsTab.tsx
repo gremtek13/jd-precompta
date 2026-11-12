@@ -633,7 +633,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   }
 
   async function voirDocument(storagePath: string) {
-    const resultat = await ouvrirApercu('pieces', storagePath, 300)
+    const resultat = await ouvrirApercu('pieces', storagePath, 300, dossierId)
     if (!resultat.ok) window.alert(resultat.message)
   }
 

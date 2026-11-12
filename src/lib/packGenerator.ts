@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
+import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from './cheminDuDossier'
 import { nomUnique, slugify } from './format'
 import type { Categorie, Piece } from './types'
 import { ORIGINAUX_DES_IMPORTS_PREVUS, preparerContenu } from './bornesStockage'
@@ -219,6 +220,12 @@ async function remplirZipDossier(
     const fichiers: [string | null, string | null][] = [[p.storage_path, noms.original], [p.lisible_path, noms.lisible]]
     for (const [chemin, nom] of fichiers) {
       if (!chemin || !nom) continue
+      // Un chemin qu'un client a pu poser hors de ce dossier ne se demande pas aux droits du cabinet (CFCS-Q1) : le
+      // fichier est manquant, sous le nom que le pack lui donne, jamais sous son chemin.
+      if (!cheminDuDossier(chemin, dossierId)) {
+        manquantes.push(nom)
+        continue
+      }
       const { data: blob, error } = await supabase.storage.from('pieces').download(chemin)
       // Une pièce introuvable ne fait pas échouer tout le pack — mais elle n'est plus passée sous
       // silence : elle est recensée, écrite dans l'Excel et remontée à l'appelant.
@@ -234,6 +241,13 @@ async function remplirZipDossier(
   const originauxPortes: { Fichier: string; Statut: string }[] = []
   const originauxManquants: string[] = []
   for (const chemin of originaux) {
+    // Hors du dossier (CFCS-Q1) : ni demandé au stockage, ni nommé par son chemin, qui nommerait un autre dossier.
+    if (!cheminDuDossier(chemin, dossierId)) {
+      const nom = `${DOSSIER_DES_ORIGINAUX}/(original hors du dossier ${originauxManquants.length + 1})`
+      originauxManquants.push(nom)
+      originauxPortes.push({ Fichier: nom, Statut: `Absent de l'archive — ${MOTIF_CHEMIN_HORS_DU_DOSSIER}` })
+      continue
+    }
     const nom = nomDeLOriginalDansLePack(dossierId, chemin)
     const { data: blob, error } = await supabase.storage.from('ventes').download(chemin)
     if (error || !blob) {

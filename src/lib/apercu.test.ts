@@ -55,12 +55,22 @@ afterEach(() => { vi.unstubAllGlobals() })
 
 describe('ouvrirApercu', () => {
   it('signe puis ouvre, et coupe la référence vers la page ouvrante', async () => {
-    expect(await ouvrirApercu('pieces', 'd1/facture.pdf', 300)).toEqual({ ok: true })
+    expect(await ouvrirApercu('pieces', 'd1/facture.pdf', 300, 'd1')).toEqual({ ok: true })
     expect(faux.appels).toEqual([{ seau: 'pieces', chemin: 'd1/facture.pdf', secondes: 300 }])
     expect(ouvert.urls).toEqual(['https://exemple/fichier.pdf'])
     // `opener = null` plutôt que le mot-clé `noopener` : voir le test suivant, c'est lui qui
     // explique pourquoi les deux ne sont PAS interchangeables ici.
     expect(ouvert.opener).toBeNull()
+  })
+
+  it('ne signe jamais un chemin hors du dossier, et ne le recopie pas (CFCS-Q1)', async () => {
+    for (const chemin of ['d2/facture.pdf', 'd1/../d2/facture.pdf', 'd1', '/d1/facture.pdf']) {
+      const r = await ouvrirApercu('pieces', chemin, 300, 'd1')
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.message).not.toContain('facture.pdf')
+    }
+    expect(faux.appels).toEqual([])
+    expect(ouvert.urls).toEqual([])
   })
 
   it('DIT que le navigateur a bloqué, au lieu de rendre « ok »', async () => {
@@ -69,7 +79,7 @@ describe('ouvrirApercu', () => {
     // de la fenêtre d'activation transitoire du navigateur, rend `null`, et il ne se passe RIEN :
     // ni onglet, ni message. Un bouton cassé a exactement la même tête.
     ouvert.bloque = true
-    const r = await ouvrirApercu('pieces', 'd1/facture.pdf', 300)
+    const r = await ouvrirApercu('pieces', 'd1/facture.pdf', 300, 'd1')
     expect(r.ok).toBe(false)
     expect(r.ok === false && r.message).toMatch(/bloquée par le navigateur/)
     // Le message nomme la SORTIE, sinon il dit seulement qu'on a perdu.
@@ -80,7 +90,7 @@ describe('ouvrirApercu', () => {
     // Trois des cinq copies disaient « Aperçu indisponible. » sans passer par `messageErreur` :
     // l'opérateur ne pouvait pas savoir s'il devait corriger, réessayer ou appeler l'administrateur.
     faux.erreur = { message: 'Object not found' }
-    const r = await ouvrirApercu('packs', 'd1/p/pack.zip', 60)
+    const r = await ouvrirApercu('packs', 'd1/p/pack.zip', 60, 'd1')
     expect(r.ok).toBe(false)
     expect(r.ok === false && r.message).toMatch(/Object not found/)
     // Et surtout : on n'ouvre rien.
@@ -90,7 +100,7 @@ describe('ouvrirApercu', () => {
   it('passe la durée de validité telle qu’on la lui donne', async () => {
     // Exigée sans valeur par défaut : 300 s pour consulter un justificatif, 60 s pour un
     // téléchargement immédiat. Un paramètre par défaut est un angle mort des tests.
-    await ouvrirApercu('packs', 'd1/p/pack.zip', 60)
+    await ouvrirApercu('packs', 'd1/p/pack.zip', 60, 'd1')
     expect(faux.appels[0].secondes).toBe(60)
   })
 })

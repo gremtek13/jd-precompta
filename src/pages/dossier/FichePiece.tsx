@@ -12,6 +12,7 @@ import FilCommentaires from '../../components/FilCommentaires'
 import { EntetePanneau } from '../../components/PanneauDroit'
 import { IconChevron, IconPrecedent } from '../../components/icons'
 import { messageErreur } from '../../lib/messageErreur'
+import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
 import { retirerFichiers } from '../../lib/stockage'
 import { fichierAMontrer, fichiersDeLaPiece } from '../../lib/fichiersPiece'
 import { ouvrirJustificatif } from '../../lib/depot'
@@ -360,6 +361,12 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       return () => URL.revokeObjectURL(url)
     }
     if (cheminApercu) {
+      // Un chemin qu'un client a pu poser hors de ce dossier ne s'ouvre pas aux droits du cabinet (CFCS-Q1).
+      if (!cheminDuDossier(cheminApercu, dossierId)) {
+        setPreviewError(`Aperçu indisponible : ${MOTIF_CHEMIN_HORS_DU_DOSSIER}.`)
+        setPreviewUrl(null)
+        return
+      }
       let annule = false
       supabase.storage.from('pieces').createSignedUrl(cheminApercu, 300).then(({ data, error }) => {
         if (annule) return
@@ -374,7 +381,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       return () => { annule = true }
     }
     setPreviewUrl(null)
-  }, [file, cheminApercu])
+  }, [file, cheminApercu, dossierId])
 
   // Si ce tiers a déjà été catégorisé sur une pièce précédente — de ce dossier en priorité, sinon
   // partagée entre tous les dossiers (voir lib/tiersCategories.ts) — on reprend la même catégorie
@@ -437,6 +444,8 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         source = file
         name = file.name
       } else if (piece?.storage_path) {
+        // Le fichier d'un autre dossier ne se lit pas aux droits du cabinet (CFCS-Q1), et rien ne s'en remplit.
+        if (!cheminDuDossier(piece.storage_path, dossierId)) throw new Error(`Fichier non lu : ${MOTIF_CHEMIN_HORS_DU_DOSSIER}.`)
         const { data, error } = await supabase.storage.from('pieces').download(piece.storage_path)
         if (error || !data) throw new Error("Impossible de récupérer le fichier existant.")
         source = data
@@ -797,7 +806,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       // deux : la version lisible laissée seule ne serait plus désignée par rien.
       const fichiers = fichiersDeLaPiece(piece)
       if (fichiers.length > 0) {
-        await retirerFichiers('pieces', fichiers, 'FichePiece')
+        await retirerFichiers('pieces', fichiers, 'FichePiece', dossierId)
       }
 
       onModifiee?.(false)
@@ -931,7 +940,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               {!file && fichierMontre?.lisible && piece && (
                 <p className="muted" style={{ margin: 0 }}>
                   Version lisible rendue par la plateforme.{' '}
-                  <button type="button" className="lien-texte-lu" onClick={() => ouvrirJustificatif(piece.storage_path)}>
+                  <button type="button" className="lien-texte-lu" onClick={() => ouvrirJustificatif(piece.storage_path, dossierId)}>
                     Voir l’original transmis (XML) ↗
                   </button>
                 </p>

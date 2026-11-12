@@ -397,7 +397,7 @@ function CartePiece({ piece, signaux, action }: { piece: Piece; signaux?: Signal
       <div className="carte-rapprochement-actions">
         {/* Le justificatif s'ouvre à côté, sans quitter le mouvement : c'est ce qu'on regarde avant de
             confirmer (voir audit ergonomie comparatif). */}
-        <button type="button" className="carte-rapprochement-lien" onClick={() => ouvrirJustificatif(fichierAMontrer(piece).chemin)}>
+        <button type="button" className="carte-rapprochement-lien" onClick={() => ouvrirJustificatif(fichierAMontrer(piece).chemin, piece.dossier_id)}>
           Voir le justificatif
         </button>
         {action}

@@ -174,7 +174,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   // visiblement RIEN, sur le livrable qu'on envoie au comptable. Même défaut que l'export
   // d'InformationsTab, sur l'autre chemin de téléchargement du MÊME fichier.
   async function download(path: string) {
-    const resultat = await ouvrirApercu('packs', path, 60)
+    const resultat = await ouvrirApercu('packs', path, 60, dossierId)
     if (!resultat.ok) setError(resultat.message)
   }
 

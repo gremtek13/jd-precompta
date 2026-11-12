@@ -85,7 +85,7 @@ export function PropositionsDuClient({ ligne, envois, acces, contexte, aTraiter,
             )}
             <div className="carte-rapprochement-actions">
               {piece && (
-                <button type="button" className="carte-rapprochement-lien" onClick={() => ouvrirJustificatif(fichierAMontrer(piece).chemin)}>
+                <button type="button" className="carte-rapprochement-lien" onClick={() => ouvrirJustificatif(fichierAMontrer(piece).chemin, piece.dossier_id)}>
                   Voir le justificatif
                 </button>
               )}
@@ -252,7 +252,7 @@ export function RapprochementProposeVue({ ligne, propose, contexte, aTraiter, oc
           {phrase && <p className={associable(etat) || etat.etat === 'retenue' ? 'fiche-mouvement-note' : 'fiche-mouvement-alerte'}>{phrase}</p>}
           <div className="carte-rapprochement-actions">
             {piece && (
-              <button type="button" className="carte-rapprochement-lien" onClick={() => ouvrirJustificatif(fichierAMontrer(piece).chemin)}>
+              <button type="button" className="carte-rapprochement-lien" onClick={() => ouvrirJustificatif(fichierAMontrer(piece).chemin, piece.dossier_id)}>
                 Voir le justificatif
               </button>
             )}

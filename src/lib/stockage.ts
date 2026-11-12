@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
+import { cheminDuDossier } from './cheminDuDossier'
 
 // Retirer un fichier du stockage, sans jamais le faire en silence.
 //
@@ -24,19 +25,30 @@ export async function retirerFichiers(
   bucket: 'pieces' | 'packs' | 'cabinet-logos' | 'ventes',
   chemins: string[],
   contexte: string,
+  racine: string,
 ): Promise<void> {
-  if (chemins.length === 0) return
+  // LA RACINE EST EXIGÉE (CFCS-Q1, 12/11/2026) : le dossier — ou, pour `cabinet-logos`, le cabinet — que chaque chemin
+  // doit avoir pour premier segment. Un chemin lu d'une ligne que le client peut écrire (`pieces.storage_path`,
+  // `lisible_path`, `documents_divers.storage_path`) peut nommer un autre dossier, que la base ne refuse pas : aux droits
+  // du cabinet, le retrait supprimerait le fichier de cet autre dossier. Il n'est pas retiré, et le journal le compte sans
+  // le recopier.
+  const horsDeLaRacine = chemins.filter((c) => !cheminDuDossier(c, racine)).length
+  if (horsDeLaRacine > 0) {
+    console.error(`[${contexte}] ${horsDeLaRacine} chemin(s) hors du dossier, non retiré(s) de ${bucket} : à signaler`)
+  }
+  const aRetirer = chemins.filter((c) => cheminDuDossier(c, racine))
+  if (aRetirer.length === 0) return
   try {
-    const { error } = await supabase.storage.from(bucket).remove(chemins)
+    const { error } = await supabase.storage.from(bucket).remove(aRetirer)
     if (error) {
       console.error(
-        `[${contexte}] fichier(s) ORPHELIN(S) laissé(s) dans ${bucket} : ${chemins.join(', ')}`,
+        `[${contexte}] fichier(s) ORPHELIN(S) laissé(s) dans ${bucket} : ${aRetirer.join(', ')}`,
         messageErreur(error, 'retrait refusé par le stockage'),
       )
     }
   } catch (err) {
     console.error(
-      `[${contexte}] fichier(s) ORPHELIN(S) laissé(s) dans ${bucket} : ${chemins.join(', ')}`,
+      `[${contexte}] fichier(s) ORPHELIN(S) laissé(s) dans ${bucket} : ${aRetirer.join(', ')}`,
       messageErreur(err, 'retrait interrompu'),
     )
   }

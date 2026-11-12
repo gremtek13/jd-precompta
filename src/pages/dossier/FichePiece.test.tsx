@@ -421,6 +421,17 @@ function monterAvec(piece: Piece) {
   )
 }
 
+// CFCS-Q1 (12/11/2026) : une pièce que le client a posée dans d1 en nommant un fichier de d2 — la base ne le refuse pas.
+describe('FichePiece — un chemin hors du dossier n’est jamais demandé au stockage (CFCS-Q1)', () => {
+  it('l’aperçu ne signe ni l’original ni la version lisible d’un autre dossier, et ne recopie pas le chemin', async () => {
+    faux.urlSignee = true
+    monterAvec(factureRecue({ storage_path: 'd2/vol.xml', lisible_path: 'd2/vol-lisible.pdf' }))
+    expect(await screen.findByText(/Aperçu indisponible : son chemin de stockage n’est pas dans ce dossier/)).toBeTruthy()
+    expect(faux.cheminsSignes).toEqual([])
+    expect(document.body.textContent).not.toContain('vol-lisible')
+  })
+})
+
 describe('FichePiece — une facture reçue de la plateforme du client', () => {
   beforeEach(() => { faux.urlSignee = false })
 

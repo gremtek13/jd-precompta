@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
+import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from './cheminDuDossier'
 
 // POINT UNIQUE D'OUVERTURE D'UN FICHIER DU STOCKAGE, dans un nouvel onglet, via une URL signée
 // temporaire (aucun des trois seaux n'est public).
@@ -32,7 +33,16 @@ export type ResultatApercu = ApercuOuvert | ApercuRefuse
 // `validiteSecondes` est EXIGÉ, sans valeur par défaut : les appelants ne veulent pas la même chose
 // (300 s pour consulter un justificatif à l'écran, 60 s pour un téléchargement immédiat), et un
 // paramètre par défaut est un angle mort des tests que ce dépôt a déjà payé.
-export async function ouvrirApercu(seau: string, chemin: string, validiteSecondes: number): Promise<ResultatApercu> {
+//
+// `dossierId` est EXIGÉ aussi (CFCS-Q1, 12/11/2026) : le chemin vient souvent d'une ligne que le client peut écrire
+// (`pieces.storage_path`, `documents_divers.storage_path`), que la base ne lie pas à son dossier ; aux droits du cabinet,
+// il ouvrirait le fichier d'un autre dossier. Un chemin hors du dossier n'est pas demandé au stockage, et le refus ne le
+// recopie pas. Les quatre seaux qui passent ici (`pieces`, `packs`, `ventes`, `documents-cabinet`) ont tous le dossier
+// pour premier segment.
+export async function ouvrirApercu(seau: string, chemin: string, validiteSecondes: number, dossierId: string): Promise<ResultatApercu> {
+  if (!cheminDuDossier(chemin, dossierId)) {
+    return { ok: false, message: `Le fichier n'a pas été ouvert : ${MOTIF_CHEMIN_HORS_DU_DOSSIER}.` }
+  }
   const { data, error } = await supabase.storage.from(seau).createSignedUrl(chemin, validiteSecondes)
   if (error || !data) {
     return {

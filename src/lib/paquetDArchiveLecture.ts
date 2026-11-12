@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
+import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from './cheminDuDossier'
 import { piecesCiteesParLExercice, type ExerciceDuPaquet, type OriginalLu, type PieceDuPaquet } from './paquetDArchive'
 
 // LA LECTURE DU PAQUET D'ARCHIVE (ligne 44, INAL3a) : tout ce que `fabriquerLePaquet` (lib/paquetDArchive.ts, pur) reçoit,
@@ -60,6 +61,11 @@ export async function lireLePaquet(dossierId: string, annee: number): Promise<Le
     // Les originaux, l'un après l'autre : le premier qui ne se lit pas arrête tout.
     const originaux: OriginalLu[] = []
     for (const piece of aLire) {
+      // Un chemin qu'un client a pu poser hors de ce dossier ne se demande pas aux droits du cabinet (CFCS-Q1) : le paquet
+      // s'arrête comme sur un original illisible, sans recopier le chemin.
+      if (!cheminDuDossier(piece.storage_path, dossierId)) {
+        return refus(`l’original d’une pièce citée n’a pas été lu : ${MOTIF_CHEMIN_HORS_DU_DOSSIER} (${originaux.length} sur ${aLire.length} lus).`)
+      }
       const { data, error } = await supabase.storage.from('pieces').download(piece.storage_path)
       if (error || !data) {
         return refus(`l’original d’une pièce citée n’a pas pu être lu (${originaux.length} sur ${aLire.length} lus).`)

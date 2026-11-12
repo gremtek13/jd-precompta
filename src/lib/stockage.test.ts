@@ -44,13 +44,13 @@ async function dit(action: () => Promise<void>): Promise<string[]> {
 
 describe('retirerFichiers', () => {
   it('ne dit rien quand le retrait passe', async () => {
-    expect(await dit(() => retirerFichiers('pieces', ['d1/a.pdf'], 'Test'))).toEqual([])
+    expect(await dit(() => retirerFichiers('pieces', ['d1/a.pdf'], 'Test', 'd1'))).toEqual([])
     expect(journal).toEqual(['pieces:d1/a.pdf'])
   })
 
   it('journalise un refus du serveur, avec le chemin et la raison', async () => {
     etat.error = { message: 'objet verrouillé' }
-    const messages = await dit(() => retirerFichiers('pieces', ['d1/a.pdf'], 'PiecesTab'))
+    const messages = await dit(() => retirerFichiers('pieces', ['d1/a.pdf'], 'PiecesTab', 'd1'))
     expect(messages).toHaveLength(1)
     expect(messages[0]).toContain('ORPHELIN')
     expect(messages[0]).toContain('d1/a.pdf')
@@ -65,18 +65,34 @@ describe('retirerFichiers', () => {
     // traiter que le premier cas laisserait l'exception remonter dans un gestionnaire qui ne
     // l'attend pas, et couperait le `load()` qui suit.
     etat.leve = true
-    const messages = await dit(() => retirerFichiers('pieces', ['d1/a.pdf'], 'FichePiece'))
+    const messages = await dit(() => retirerFichiers('pieces', ['d1/a.pdf'], 'FichePiece', 'd1'))
     expect(messages).toHaveLength(1)
     expect(messages[0]).toContain('réseau coupé')
   })
 
   it('ne LÈVE jamais — un retrait raté ne doit pas casser le geste qui l’a demandé', async () => {
     etat.leve = true
-    await expect(retirerFichiers('pieces', ['d1/a.pdf'], 'Test')).resolves.toBeUndefined()
+    await expect(retirerFichiers('pieces', ['d1/a.pdf'], 'Test', 'd1')).resolves.toBeUndefined()
   })
 
   it('n’appelle pas le stockage pour une liste vide', async () => {
-    await retirerFichiers('pieces', [], 'Test')
+    await retirerFichiers('pieces', [], 'Test', 'd1')
+    expect(journal).toEqual([])
+  })
+
+  it('ne retire JAMAIS un chemin hors de sa racine, et le compte sans le recopier (CFCS-Q1)', async () => {
+    // Le chemin d'une pièce que le client a posée dans d1 en nommant le fichier de d2 : aux droits du cabinet, le retrait
+    // supprimerait le fichier de d2. Ni demandé, ni recopié au journal.
+    const messages = await dit(() => retirerFichiers('pieces', ['d1/a.pdf', 'd2/b.pdf', 'd1/../d2/c.pdf'], 'PiecesTab', 'd1'))
+    expect(journal).toEqual(['pieces:d1/a.pdf'])
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toContain('2 chemin(s) hors du dossier')
+    expect(messages[0]).not.toContain('d2')
+    expect(messages[0]).not.toContain('b.pdf')
+  })
+
+  it('n’appelle pas le stockage quand tous les chemins sont hors de la racine', async () => {
+    await dit(() => retirerFichiers('pieces', ['d2/b.pdf'], 'Test', 'd1'))
     expect(journal).toEqual([])
   })
 
@@ -84,7 +100,7 @@ describe('retirerFichiers', () => {
     // Un seul compte (« 3 fichiers ») ne désigne aucun fichier : le signalement doit pouvoir être
     // recopié tel quel par quelqu'un qui ira les retirer à la main.
     etat.error = { message: 'refusé' }
-    const messages = await dit(() => retirerFichiers('packs', ['d1/x.zip', 'd1/y.xlsx'], 'Test'))
+    const messages = await dit(() => retirerFichiers('packs', ['d1/x.zip', 'd1/y.xlsx'], 'Test', 'd1'))
     expect(messages[0]).toContain('d1/x.zip')
     expect(messages[0]).toContain('d1/y.xlsx')
   })

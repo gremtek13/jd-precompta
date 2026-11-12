@@ -202,6 +202,20 @@ describe('remplirZipDossier', () => {
     expect(JSON.stringify(f['Pièces manquantes'])).toContain('ORANGE')
   })
 
+  it('ne demande jamais au stockage le fichier d’un autre dossier : la pièce est manquante (CFCS-Q1)', async () => {
+    // Une pièce que le client a posée dans d1 en nommant le fichier de d2 — la base ne le refuse pas.
+    etat.pieces.data = [
+      piece({ id: 'ok', storage_path: 'd1/ok.pdf', tiers: 'EDF' }),
+      piece({ id: 'vol', storage_path: 'd2/vol.xml', nom_fichier: 'F.xml', lisible_path: 'd1/../d2/vol-lisible.pdf', tiers: 'ORANGE' }),
+    ]
+    const zip = new JSZip()
+    const resultat = await remplirZipDossier(zip, 'd1', '2026-01-01', '2026-12-31')
+    expect(etat.telecharges).toEqual(['pieces/d1/ok.pdf'])
+    expect(resultat.manquantes).toHaveLength(2)
+    expect(resultat.manquantes.every((m) => !m.includes('d2'))).toBe(true)
+    expect(cheminsDuZip(zip).filter((c) => c.includes('Pieces/')).length).toBe(1)
+  })
+
   it('n’ajoute pas la feuille des manquantes quand tout est là', async () => {
     etat.pieces.data = [piece({ id: 'ok', storage_path: 'd1/ok.pdf' })]
     const resultat = await remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')
@@ -451,6 +465,19 @@ describe('les originaux des factures reprises (A8d2c)', () => {
     expect((await feuilles(resultat.excelBlob))['Factures reprises'][1]).toEqual([
       `Factures_reprises/${LOT}/${'a'.repeat(64)}.pdf`, "Absent de l'archive — fichier introuvable au moment de la génération",
     ])
+  })
+
+  it('un original hors du dossier n’est ni demandé, ni nommé par son chemin (CFCS-Q1)', async () => {
+    etat.originaux = true
+    jeu()
+    etat.imports_factures.data = [{ id: LOT, fichier_chemin: `d2/imports/${LOT}/${'a'.repeat(64)}.pdf` }, lot(AUTRE_LOT, 'b', 'csv')]
+    etat.factures_importees.data = [{ facture_id: 'f1', import_id: LOT, fichier_chemin: null }]
+    const resultat = await remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')
+    expect(etat.telecharges.filter((c) => c.startsWith('ventes/'))).toEqual([])
+    expect(resultat.manquantes).toHaveLength(1)
+    const reprises = JSON.stringify((await feuilles(resultat.excelBlob))['Factures reprises'])
+    expect(reprises).not.toContain('d2')
+    expect(reprises).toContain('hors du dossier')
   })
 
   it('une lecture des imports qui ne se dit pas complète refuse le pack', async () => {

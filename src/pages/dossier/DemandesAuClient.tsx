@@ -178,7 +178,7 @@ export default function DemandesAuClient({ dossierId }: { dossierId: string }) {
 
   // Une pièce comme un document du dossier vivent dans le seau des pièces (l'onglet Documents les ouvre de même).
   async function ouvrirLeDepot(chemin: string) {
-    const resultat = await ouvrirApercu('pieces', chemin, 300)
+    const resultat = await ouvrirApercu('pieces', chemin, 300, dossierId)
     if (!resultat.ok) setMessage({ genre: 'erreur', texte: resultat.message })
   }
 

@@ -107,12 +107,12 @@ export async function deposerChezLeClient(p: {
       p_dossier_id: p.dossierId, p_facture_id: p.facture.id, p_chemin: chemin, p_empreinte: empreinte,
     })
     if (error || typeof data !== 'string') {
-      await retirerFichiers('pieces', [chemin], 'dépôt des honoraires refusé')
+      await retirerFichiers('pieces', [chemin], 'dépôt des honoraires refusé', p.dossierClientId)
       return { ok: false, message: messageErreur(error, 'la base n’a pas rendu la pièce déposée') }
     }
     return { ok: true, pieceId: data }
   } catch (e) {
-    if (chemin !== null) await retirerFichiers('pieces', [chemin], 'dépôt des honoraires interrompu')
+    if (chemin !== null) await retirerFichiers('pieces', [chemin], 'dépôt des honoraires interrompu', p.dossierClientId)
     return { ok: false, message: messageErreur(e, 'le dépôt chez le client a échoué') }
   }
 }

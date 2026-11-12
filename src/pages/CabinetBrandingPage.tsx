@@ -137,7 +137,7 @@ export default function CabinetBrandingPage() {
         // L'ancien logo n'est pas gardé — un seul logo actif à la fois, pas d'archive à faire le
         // ménage dessus plus tard. Best-effort : un échec de suppression ne bloque pas le nouveau.
         if (logoStoragePath) {
-          await retirerFichiers('cabinet-logos', [logoStoragePath], 'CabinetBranding')
+          await retirerFichiers('cabinet-logos', [logoStoragePath], 'CabinetBranding', monCabinetId)
         }
         logoStoragePath = chemin
       }
@@ -171,7 +171,7 @@ export default function CabinetBrandingPage() {
     setSaving(true)
     setError(null)
     try {
-      await retirerFichiers('cabinet-logos', [cabinet.logo_storage_path], 'CabinetBranding')
+      await retirerFichiers('cabinet-logos', [cabinet.logo_storage_path], 'CabinetBranding', monCabinetId)
       const { error: updateError } = await supabase.from('cabinets').update({ logo_storage_path: null }).eq('id', monCabinetId)
       if (updateError) throw updateError
       setLogoFile(null)
