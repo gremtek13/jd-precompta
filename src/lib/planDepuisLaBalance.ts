@@ -34,6 +34,7 @@ import {
   memeCompteAuxZerosPres,
   sousUneRacineDuRole,
   type CleRoleComptable,
+  type CleRoleDuPlan,
   type LibellesDuPlan,
   type PlanComptable,
   type PrefixesDuPlan,
@@ -152,7 +153,7 @@ export function planDepuisLaBalance(balance: readonly LigneBalance[], lu: PlanLu
 
 /** Une ligne de `p_comptes`, telle que `regler_plan_du_dossier` la lit. */
 export interface LigneDuPlanReglee {
-  role: CleRoleComptable
+  role: CleRoleDuPlan
   compte: string
   libelle: string | null
   prefixe_auxiliaire: string | null

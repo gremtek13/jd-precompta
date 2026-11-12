@@ -102,6 +102,15 @@ export type CleRoleComptable = (typeof ROLES_COMPTABLES)[number]['role']
 
 /** Un plan comptable : le compte de chaque rôle. Les deux rôles du change (lib/rolesDuChange.ts) n'y sont que lus, le
  *  drapeau de leur migration levé : jusque-là, aucun plan ne les porte, et rien ne les lit. */
+export type CleRoleDuPlan = CleRoleComptable | CleRoleDuChange
+
+/** Les rôles que la lecture du plan, et le modèle du cabinet, portent AUJOURD'HUI : ceux de l'application, plus les deux
+ *  du change (lib/rolesDuChange.ts) le drapeau de leur migration levé — l'ensemble que la base rend (`plan_du_dossier`,
+ *  `modele_du_cabinet`). Le drapeau se lit à l'appel, jamais au chargement du module. */
+export function rolesLusAuPlan(): readonly (DefinitionRoleComptable & { readonly role: CleRoleDuPlan })[] {
+  return ECARTS_DE_REGLEMENT_PREVUS ? [...ROLES_COMPTABLES, ...ROLES_DU_CHANGE] : ROLES_COMPTABLES
+}
+
 export type PlanComptable = Readonly<Record<CleRoleComptable, string>> & Readonly<Partial<Record<CleRoleDuChange, string>>>
 
 /** Les trois rôles de tiers, les seuls qui portent un préfixe de comptes auxiliaires. */
@@ -296,7 +305,7 @@ export function planDeLaReponse(reponse: ReponseDuPlan): LectureDuPlan {
       return { plan: null, motif: `plan comptable illisible : « ${prefixesLus.get(r.role)} » n’est pas un préfixe d’auxiliaire du rôle « ${r.role} »` }
     }
   }
-  const lusAuPlan = [...ROLES_COMPTABLES, ...duChange]
+  const lusAuPlan = rolesLusAuPlan()
   const plan = Object.fromEntries(lusAuPlan.map((r) => [r.role, lus.get(r.role)!])) as PlanComptable
   const libelles = Object.fromEntries(lusAuPlan.map((r) => [r.role, libellesLus.get(r.role)!])) as LibellesDuPlan
   return { plan: Object.freeze(plan), libelles: Object.freeze(libelles), prefixes: Object.freeze(prefixes), motif: null }

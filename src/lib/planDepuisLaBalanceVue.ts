@@ -1,6 +1,6 @@
 import type { LigneANouveau } from './aNouveaux'
 import { formatMoney } from './format'
-import { ROLES_COMPTABLES, type CleRoleComptable } from './planComptable'
+import { ROLES_COMPTABLES, rolesLusAuPlan, type CleRoleComptable, type CleRoleDuPlan } from './planComptable'
 import {
   planRetenu,
   type ChoixDuPlan,
@@ -23,9 +23,9 @@ const NOMS_SANS_LIBELLE: Partial<Record<CleRoleComptable, string>> = {
 }
 
 /** Le nom d'un rôle à l'écran : son libellé du catalogue. */
-export function nomDuRole(role: CleRoleComptable): string {
-  const definition = ROLES_COMPTABLES.find((r) => r.role === role)!
-  return definition.libelleDefaut ?? NOMS_SANS_LIBELLE[role] ?? role
+export function nomDuRole(role: CleRoleDuPlan): string {
+  const definition = rolesLusAuPlan().find((r) => r.role === role)
+  return definition?.libelleDefaut ?? NOMS_SANS_LIBELLE[role as CleRoleComptable] ?? role
 }
 
 /** Un compte et son libellé, tels qu'un rôle les tient. */
