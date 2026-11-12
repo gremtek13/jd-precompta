@@ -10,22 +10,23 @@ de reprise hébergé sur ce dont il faut se passer n'est pas un plan de reprise.
 
 ## 1. Le fait qui commande tout le reste
 
-**Le projet Supabase est sur le plan `free`, et le plan `free` ne fournit AUCUNE sauvegarde
-automatique.** Pas de sauvegarde quotidienne, pas de restauration à un instant donné (PITR) : ce sont
-des fonctions du plan Pro. Vérifié le 18/09/2026 (`get_organization` sur `dloewvpmposfbvdwtqfz`).
+**Le projet Supabase est au plan Pro depuis le 12/11/2026** (vérifié ce jour par `get_organization`
+sur `dloewvpmposfbvdwtqfz` : `plan: pro`). Jusque-là, au plan `free`, aucune sauvegarde automatique
+n'existait (constat du 18/09/2026).
 
-Conséquence à ne pas contourner : **la sauvegarde produite par l'application est la seule qui
-existe.** Elle n'est pas une ceinture en plus des bretelles de l'hébergeur ; il n'y a pas de
-bretelles. Et elle ne se déclenche pas toute seule — quelqu'un clique, ou il n'y a rien.
+Ce que le plan Pro apporte, et ce qu'il n'apporte pas :
 
-Les deux façons d'en sortir, par ordre de coût croissant :
-
-- Passer le projet en plan Pro, qui ajoute les sauvegardes quotidiennes côté hébergeur. C'est le seul
-  moyen d'avoir une sauvegarde qui ne dépend de personne. (Le même passage débloquerait au passage
-  `auth_leaked_password_protection`, aujourd'hui inaccessible — voir CLAUDE.md.)
-- À défaut, tenir un rythme écrit : une sauvegarde par dossier après chaque séance de saisie, et au
-  minimum une par mois. Sans rythme noté quelque part, l'intervalle réel est « depuis la dernière
-  fois qu'on y a pensé ».
+- **La base est sauvegardée chaque jour par l'hébergeur**, gardée sept jours, restaurable depuis le
+  tableau de bord (Database, Backups). C'est la sauvegarde qui ne dépend de personne. La restauration
+  à un instant donné (PITR) reste une option payante à part, non prise.
+- **Les fichiers du stockage n'y sont pas** : la sauvegarde de l'hébergeur porte les tables, pas les
+  pièces, les packs ni les logos rangés dans les seaux. Les fichiers se gardent par le pack de chaque
+  dossier et par la copie des fichiers sur un support du cabinet (INAL6).
+- **La sauvegarde produite par l'application garde son rôle** : elle restaure UN dossier, à un autre
+  instant que la sauvegarde quotidienne, et elle porte les logos des factures. Tenir un rythme écrit :
+  une par dossier après chaque séance de saisie, et au moins une par mois.
+- Le même passage ouvre `auth_leaked_password_protection` (voir CLAUDE.md) : un réglage du tableau de
+  bord, à faire par le cabinet.
 
 ---
 
