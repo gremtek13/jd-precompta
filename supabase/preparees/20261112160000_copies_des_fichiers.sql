@@ -23,6 +23,10 @@
 -- Son retour : supabase/preparees/retour/20261112160100_retour_copies_des_fichiers.sql. Son essai :
 -- supabase/essais/copiesDesFichiers.sql ; puis rls.sql (le bloc CF).
 --
+-- L'ORDRE. La double authentification exigée (`deux_facteurs_exiges`, préparée) pose sa policy restrictive sur chaque table
+-- de public : appliquée avant celle-ci, la table neuve la reçoit ici, à l'identique (la relecture de sécurité du 12/11/2026 :
+-- sans ce bloc, l'équipe la lisait sans second facteur).
+--
 -- SOURCES. LPF, art. L102 B (Légifrance) : les documents sur lesquels les contrôles peuvent s'exercer se conservent six ans,
 -- les livres et pièces justificatives dix ans (C. com., art. L123-22) ; CNIL, guide de la sécurité des données personnelles
 -- (2024), fiche « Sauvegarder » : des sauvegardes régulières, stockées dans un lieu distinct, dont la restauration s'éprouve.
@@ -127,3 +131,13 @@ end
 $fonction$;
 revoke execute on function public.enregistrer_copie_des_fichiers(uuid, integer, integer, integer, integer, integer, bigint, text[]) from public, anon;
 grant execute on function public.enregistrer_copie_des_fichiers(uuid, integer, integer, integer, integer, integer, bigint, text[]) to authenticated;
+
+-- La double authentification exigée : appliquée avant celle-ci, sa policy restrictive sur la table neuve, à l'identique.
+do $deux_facteurs$
+begin
+  if to_regprocedure('public.deux_facteurs_satisfaits()') is not null then
+    execute 'create policy deux_facteurs on public.copies_des_fichiers as restrictive for all to authenticated '
+            'using ((select public.deux_facteurs_satisfaits())) with check ((select public.deux_facteurs_satisfaits()))';
+  end if;
+end
+$deux_facteurs$;

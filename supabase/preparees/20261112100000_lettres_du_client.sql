@@ -18,9 +18,11 @@
 -- lettres PROPOSÉES de ce client (jamais un brouillon : le client ne lit que ce qui lui a été proposé, figé), prises dans le
 -- dossier que SON cabinet a désigné, dans l'ordre de leur proposition. De chacune, ce que la lettre FIGE et que le client
 -- signe — ses missions, la répartition des tâches, SES honoraires (le contrat est le sien ; LM-Q2 ne règle que ce que
--- l'équipe du cabinet en voit), sa durée, son signataire, les copies d'identité, les clauses et le texte du modèle —, son
--- histoire (proposée, acceptée et comment, signée sur papier le, refusée, retirée ou résiliée à sa date), l'empreinte que
--- la base a calculée à la proposition, et deux booléens : `empreinte_verifiee` (la base RECALCULE l'empreinte du contenu
+-- l'équipe du cabinet en voit), sa durée, son signataire, les copies d'identité, les clauses et le texte du modèle (son
+-- titre, ses conditions générales, et le texte de SES missions et de SES clauses seulement : celui d'une mission ou d'une
+-- clause que la lettre ne porte pas est celui d'autres lettres, relecture de sécurité du 12/11/2026) —, son histoire
+-- (proposée, acceptée et comment, signée sur papier le, refusée, retirée ou résiliée à sa date), l'empreinte que la base a
+-- calculée à la proposition, et deux booléens : `empreinte_verifiee` (la base RECALCULE l'empreinte du contenu
 -- tel qu'il est aujourd'hui, `empreinte_de_la_lettre`, et la compare à celle de la proposition : l'écran ne tire le PDF
 -- que d'une lettre qui y répond, comme il ne montre un logo que vérifié à son empreinte) et `signataire_designe` (le compte
 -- qui lit est-il celui que la lettre désigne pour signer). RIEN d'autre : ni le dossier du cabinet, ni le compte du
@@ -113,7 +115,10 @@ begin
                'identite_cabinet', l.identite_cabinet,
                'clauses', to_jsonb(l.clauses),
                'modele', (select jsonb_build_object('id', m.id, 'titre', m.titre, 'conditions_generales', m.conditions_generales,
-                                                    'missions', m.missions, 'clauses', m.clauses)
+                                                    'missions', (select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+                                                                   from jsonb_each(m.missions) e where e.key = any (l.missions)),
+                                                    'clauses', (select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+                                                                  from jsonb_each(m.clauses) e where e.key = any (l.clauses)))
                             from public.modeles_lettre_de_mission m where m.id = l.modele_id),
                'proposee_le', l.proposee_le,
                'empreinte', l.empreinte,
@@ -136,4 +141,4 @@ revoke execute on function public.lettres_de_mission_du_client(uuid) from public
 grant execute on function public.lettres_de_mission_du_client(uuid) to authenticated;
 
 comment on function public.lettres_de_mission_du_client(uuid) is
-  'Les lettres de mission PROPOSÉES d''un client, telles qu''elles se sont figées (LM6, ligne 47) : missions, répartition, honoraires, durée, signataire, identités, clauses, modèle, histoire, empreinte vérifiée ; jamais un brouillon, un auteur, le dossier du cabinet ni le papier signé. À un accès client de ce dossier qui porte la case « Documents » (B1) ; tout autre est refusé (42501).';
+  'Les lettres de mission PROPOSÉES d''un client, telles qu''elles se sont figées (LM6, ligne 47) : missions, répartition, honoraires, durée, signataire, identités, clauses, modèle (le texte de ses seules missions et clauses), histoire, empreinte vérifiée ; jamais un brouillon, un auteur, le dossier du cabinet ni le papier signé. À un accès client de ce dossier qui porte la case « Documents » (B1) ; tout autre est refusé (42501).';

@@ -200,6 +200,13 @@ begin
   perform pg_temp.noter(18, 'l''empreinte rendue est celle que la base a figée à la proposition', 'égale',
     coalesce((select case when e ->> 'empreinte' = (select empreinte from lettres_de_mission where id = l1) then 'égale' else 'DIFFÉRENTE' end
                 from jsonb_array_elements(v -> 'lettres') e where e ->> 'id' = l1::text), '∅'));
+  -- Du modèle, le texte de SES missions et de SES clauses seulement (la relecture de sécurité du 12/11/2026) : le modèle
+  -- décrit aussi la facturation au nom du client et le mandat, que L1 ne porte pas, et qu'une autre lettre signera.
+  perform pg_temp.noter(24, 'L1 : du modèle, les textes de ses missions et de ses clauses seuls (ni la facturation au nom du client ni le mandat, qu''elle ne porte pas)',
+    'declaration_2035,tenue_comptable sous_traitance',
+    coalesce((select (select string_agg(x, ',' order by x collate "C") from jsonb_object_keys(e -> 'modele' -> 'missions') x)
+                     || ' ' || (select string_agg(x, ',' order by x collate "C") from jsonb_object_keys(e -> 'modele' -> 'clauses') x)
+                from jsonb_array_elements(v -> 'lettres') e where e ->> 'id' = l1::text), '∅'));
 
   -- L'empreinte qui ne répond plus : la garde suspendue (le propriétaire, sur une réplique), le texte du modèle changé.
   alter table modeles_lettre_de_mission disable trigger user;

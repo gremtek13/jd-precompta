@@ -51568,8 +51568,8 @@ divers, les originaux des factures reprises, les documents du cabinet (B2, sous 
 déposé : il n'entre ni au ZIP ni au manifeste (PieceRef, date et identifiant, empreinte). **Le module**
 (`lib/copieDesFichiers.ts`, pur) : chaque fichier relu à son SHA-256, l'écart copié tel quel et dit, le manquant dit ; un
 `MANIFESTE.txt` par ZIP ; un ZIP au moins par dossier, fermé avant 100 Mio. **La lecture** : tous les inventaires lus en entier
-avant le premier téléchargement, sinon aucun ZIP. **La migration** `copies_des_fichiers` (20261112160000, `0772ea5d…` ; retour
-160100, `72ecf615…`, destructif) : la table du cabinet, lue par l'équipe, écrite par `enregistrer_copie_des_fichiers` au chef
+avant le premier téléchargement, sinon aucun ZIP. **La migration** `copies_des_fichiers` (20261112160000, `0772ea5d…`, `aa4a9cb6…` depuis la
+relecture de sécurité du même jour ; retour 160100, `72ecf615…`, destructif) : la table du cabinet, lue par l'équipe, écrite par `enregistrer_copie_des_fichiers` au chef
 seul, qui refuse une copie qui ne couvre pas tous les dossiers ; `COPIE_DES_FICHIERS_PREVUE` baissé (la carte et le rappel du
 tableau de bord, le plan de sauvegarde). **Vérifié** sur une copie de la mère rattrapée à 200 (la migration du stockage passée par
 postgres, `fichier_fige` réaligné à service_role) : l'essai `copiesDesFichiers.sql` EN ATTENTE puis sept lignes vraies ;
@@ -51801,3 +51801,19 @@ désormais les provisions de 2 à 7. Ajouts à LIA1 : `tableau2033DALEuro`, `bil
 classer ou un résultat en attente d'affectation), `liasseDepuisLia1`. Le cadre B du 2033-B, le 2033-D II à IV et les
 effectifs du 2033-E attendent LIA4 ; la 2065-SD et la 2031-SD ne sont pas faites. La conception (§ 3.1) est corrigée sur
 le formulaire : 210, 214, 218 et leurs « dont », les totaux du 2033-E, le fonds commercial en 206 et 207.
+
+### 12/11/2026 — LM6 ET INAL6 : LA RELECTURE DE SÉCURITÉ (LIGNES 47 ET 44)
+
+Agent architecte, relecture adverse avant collage (un client hostile ; un membre de l'équipe à qui le dossier est fermé) ;
+rien en production. **Trois défauts, corrigés.** (1) LM6, faible : la fonction rendait le modèle ENTIER, textes des missions
+et clauses d'autres lettres compris ; elle ne rend que ceux de la lettre, le module refuse un texte de plus (md5 `b36221c3…`
+→ `04698998…`, retour `fa9e191d…` inchangé). (2) INAL6, moyen : la base ne lie pas le premier segment de `pieces.storage_path`
+ni de `documents_divers.storage_path` au dossier, et le client en insère (sondé : une pièce et un document nommant un autre
+dossier du cabinet, acceptés) ; la copie les téléchargeait aux droits du chef, dans le ZIP du mauvais dossier. Un tel chemin
+n'est plus ni demandé ni copié (`cheminDuDossier`), il est manquant et le manifeste le dit sans le chemin, où le refus du
+stockage n'entre plus que par son statut (« Invalid key » recopie le nom déposé). (3) INAL6, faible : sans le bloc des autres
+préparées, la table neuve perdait la policy `deux_facteurs` si la double authentification la précède (md5 `0772ea5d…` →
+`aa4a9cb6…`, retour `72ecf615…` inchangé). **Rejoué** sur une copie de la mère 17 rattrapée à 200, puis LM1, B1, LM4, LM6,
+INAL6 : l'étape 24 neuve de `lettresDuClient.sql` fausse avant, 24 sur 24 après ; `copiesDesFichiers.sql` 7 sur 7 ; `rls.sql`
+198 invariants à 0, 122 mutations sur 122 ; sept tests neufs, six vus rouges avant. Hors des deux lots, le pack, le paquet
+d'archive et la relecture OCR font la même confiance au chemin : CFCS-Q1.

@@ -8,6 +8,8 @@ const monde = vi.hoisted(() => ({
   tables: {} as Record<string, unknown[]>,
   partielle: null as string | null,
   fichiers: {} as Record<string, string>,
+  telecharges: [] as string[],
+  erreurStockage: null as { message: string; status?: number } | null,
   rpc: [] as { nom: string; args: Record<string, unknown> }[],
   rpcErreur: null as { message: string } | null,
 }))
@@ -33,9 +35,12 @@ vi.mock('./supabase', () => {
       from: requete,
       storage: {
         from: () => ({
-          download: (chemin: string) => Promise.resolve(chemin in monde.fichiers
-            ? { data: new Blob([monde.fichiers[chemin]]), error: null }
-            : { data: null, error: { message: 'Object not found' } }),
+          download: (chemin: string) => {
+            monde.telecharges.push(chemin)
+            return Promise.resolve(chemin in monde.fichiers
+              ? { data: new Blob([monde.fichiers[chemin]]), error: null }
+              : { data: null, error: monde.erreurStockage ?? { message: 'Object not found' } })
+          },
         }),
       },
       rpc: (nom: string, args: Record<string, unknown>) => {
@@ -46,6 +51,8 @@ vi.mock('./supabase', () => {
   }
 })
 
+import JSZip from 'jszip'
+import { MOTIF_HORS_DU_DOSSIER, NOM_DU_MANIFESTE } from './copieDesFichiers'
 import { copierLesFichiersDuCabinet } from './copieDesFichiersLecture'
 
 const CAB = 'cab-1'
@@ -56,6 +63,8 @@ beforeEach(() => {
   monde.partielle = null
   monde.rpc = []
   monde.rpcErreur = null
+  monde.telecharges = []
+  monde.erreurStockage = null
   monde.fichiers = { [`${DA}/1-Dupont.pdf`]: 'pièce' }
   monde.tables = {
     dossiers: [{ id: DA, nom: 'A', siret: null, cabinet_id: CAB }, { id: DB, nom: 'B', siret: null, cabinet_id: CAB }],
@@ -69,7 +78,15 @@ beforeEach(() => {
 
 function dependances() {
   const zips: string[] = []
-  return { zips, dep: { telecharger: (nom: string) => { zips.push(nom) }, maintenant: () => new Date('2026-11-12T10:00:00Z') } }
+  const contenus: Uint8Array[] = []
+  return {
+    zips, contenus,
+    dep: { telecharger: (nom: string, octets: Uint8Array) => { zips.push(nom); contenus.push(octets) }, maintenant: () => new Date('2026-11-12T10:00:00Z') },
+  }
+}
+
+async function manifesteDe(zip: Uint8Array): Promise<string> {
+  return (await (await JSZip.loadAsync(zip)).file(NOM_DU_MANIFESTE)!.async('string'))
 }
 
 describe('la copie des fichiers d’un cabinet', () => {
@@ -106,6 +123,33 @@ describe('la copie des fichiers d’un cabinet', () => {
     const issue = await copierLesFichiersDuCabinet(CAB, dep)
     expect(zips).toHaveLength(2)
     expect(issue).toMatchObject({ ok: true, bilan: { enregistrementRefuse: expect.stringContaining('le cabinet en a 3') } })
+  })
+
+  // La relecture de sécurité du 12/11/2026 : le client de A insère une pièce dont le chemin désigne un fichier de B (la base
+  // le laisse faire) ; la copie le téléchargeait avec les droits du chef et le rangeait dans le ZIP de A.
+  it('un chemin qui désigne un autre dossier n’est pas téléchargé : manquant dans le ZIP de son dossier, dit sans son chemin', async () => {
+    monde.fichiers[`${DB}/9-Martin Paul.pdf`] = 'le fichier de B'
+    monde.tables.pieces.push({ id: 'p3', dossier_id: DA, date_piece: '2026-02-03', created_at: '2026-02-03T09:00:00Z', storage_path: `${DB}/9-Martin Paul.pdf`, storage_hash: null, lisible_path: null })
+    const { contenus, dep } = dependances()
+    const issue = await copierLesFichiersDuCabinet(CAB, dep)
+    expect(monde.telecharges).not.toContain(`${DB}/9-Martin Paul.pdf`)
+    expect(issue).toMatchObject({ ok: true, bilan: { fichiers: 3, manquants: 2 } })
+    const manifeste = await manifesteDe(contenus[0])
+    expect(manifeste).toContain(MOTIF_HORS_DU_DOSSIER)
+    expect(manifeste).not.toMatch(/Martin|bbbbbbbb/)
+    const zip = await JSZip.loadAsync(contenus[0])
+    // Le manifeste et la seule pièce que le stockage rend ; ni le fichier de B, ni la pièce perdue.
+    expect(Object.keys(zip.files).filter((n) => !zip.files[n].dir)).toHaveLength(2)
+  })
+
+  it('le refus du stockage n’entre pas tel quel au manifeste : il peut porter le chemin, donc le nom déposé', async () => {
+    monde.erreurStockage = { message: `Invalid key: ${DA}/2-perdu Dupont Jeanne.pdf`, status: 400 }
+    const { contenus, dep } = dependances()
+    await copierLesFichiersDuCabinet(CAB, dep)
+    const manifeste = await manifesteDe(contenus[0])
+    expect(manifeste).toContain('MANQUANTS (1)')
+    expect(manifeste).toContain('le stockage ne l’a pas rendu (400)')
+    expect(manifeste).not.toMatch(/Dupont|perdu|Invalid key/)
   })
 
   it('un cabinet sans dossier : aucune copie', async () => {
