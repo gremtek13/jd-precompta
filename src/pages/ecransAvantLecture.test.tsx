@@ -676,6 +676,8 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
     + 'un modèle refusé ou vide, et le verrou relâché après la relecture du plan',
   'pages/dossier/CategoriesDeLaBalance.tsx': 'montée par la seule carte de la balance, derrière `CATEGORIES_DU_DOSSIER_PREVUES` baissé ; '
     + 'levée, CategoriesDuDossierCard.test.tsx éprouve « Chargement… », puis rien de coché ni de deviné',
+  'components/CopieDesFichiers.tsx': 'drapeau `COPIE_DES_FICHIERS_PREVUE` baissé : ne rend ni ne lit rien ; levé, son propre test '
+    + '(CopieDesFichiers.test.tsx) éprouve la lecture avant le rappel, et le geste sur une lecture partielle (aucun ZIP)',
   'components/DeuxFacteursDesComptes.tsx': 'drapeau `DEUX_FACTEURS_EXIGES_EXPORTE` baissé : ne rend ni ne lit rien ; levé, '
     + 'son propre test (DeuxFacteursDesComptes.test.tsx) éprouve « Chargement… » avant la lecture et aucun geste illisible',
   'components/BarreDossiers.tsx': 'reçoit la liste des dossiers de la coque (Layout, montée ici) et son état de chargement',

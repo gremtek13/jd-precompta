@@ -26,6 +26,7 @@ import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
 import { MODELE_DU_CABINET_PREVU, TABLES_DU_MODELE_DU_CABINET } from './modeleDuCabinet'
+import { COPIE_DES_FICHIERS_PREVUE, TABLES_DES_COPIES_DES_FICHIERS } from './copieDesFichiers'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
@@ -605,6 +606,28 @@ function blocDesOriginauxLiberes(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table des originaux libérés existe : la sienne après sa table d'ancrage. */
 const avecLesOriginauxLiberes = avecLesArticles
 
+// LES COPIES DES FICHIERS (INAL6) : un bloc à part met leur table au plan quand elle existe, juste après `cabinet_admins`,
+// les rangs qui suivent reculant d'un ; joué AVANT le bloc des originaux libérés (même ancrage : il la repousse derrière lui).
+const MARQUE_DES_COPIES_DES_FICHIERS = '-- ══ Les copies des fichiers sur un support du cabinet (INAL6) ══'
+
+function blocDesCopiesDesFichiers(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_COPIES_DES_FICHIERS)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.copies_des_fichiers') is not null then"),
+  }
+}
+
+const avecLesCopiesDesFichiers = avecLesArticles
+
 // LE MODÈLE DE PLAN DU CABINET (ligne 43, PC5) : un bloc à part met sa table au plan quand elle existe, juste après
 // `roles_comptables`, les rangs qui suivent reculant d'un — le geste des originaux —, avec son chemin (`cabinet`) ; aucune
 // vague. Joué après le bloc des originaux libérés, avant celui des lettres de mission.
@@ -832,11 +855,11 @@ const avecLesAchatsDuClient = avecLesArticles
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesCopiesDesFichiers(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
-  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesOriginauxLiberes(texte)), blocDuModeleDuCabinet(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDesHonorairesDeposes(texte)), blocDuDepart(texte)), blocDesNotesDeFrais(texte)), blocDesAchatsDuClient(texte)), blocDesDocumentsEtDemandes(texte)), blocDesSaisies2035E(texte))
+  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesCopiesDesFichiers(texte)), blocDesOriginauxLiberes(texte)), blocDuModeleDuCabinet(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDesHonorairesDeposes(texte)), blocDuDepart(texte)), blocDesNotesDeFrais(texte)), blocDesAchatsDuClient(texte)), blocDesDocumentsEtDemandes(texte)), blocDesSaisies2035E(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -928,8 +951,10 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     ? avecLaPieceDUneReprise(avecLaNumerotationDuJour, pieceDUneReprise) : avecLaNumerotationDuJour
   const comptesBancaires = blocDesComptesBancaires(texteDeLEssai)
   const avecLesComptesDuJour = COMPTES_BANCAIRES_PREVUS ? avecLesComptesBancaires(avecLaPieceDuJour, comptesBancaires) : avecLaPieceDuJour
+  const copies = blocDesCopiesDesFichiers(texteDeLEssai)
+  const avecLesCopiesDuJour = COPIE_DES_FICHIERS_PREVUE ? avecLesCopiesDesFichiers(avecLesComptesDuJour, copies) : avecLesComptesDuJour
   const originaux = blocDesOriginauxLiberes(texteDeLEssai)
-  const avecLesOriginauxDuJour = ORIGINAUX_RETENUS_PREVUS ? avecLesOriginauxLiberes(avecLesComptesDuJour, originaux) : avecLesComptesDuJour
+  const avecLesOriginauxDuJour = ORIGINAUX_RETENUS_PREVUS ? avecLesOriginauxLiberes(avecLesCopiesDuJour, originaux) : avecLesCopiesDuJour
   const modeleDuCabinet = blocDuModeleDuCabinet(texteDeLEssai)
   const avecLeModeleDuJour = MODELE_DU_CABINET_PREVU ? avecLeModeleDuCabinet(avecLesOriginauxDuJour, modeleDuCabinet) : avecLesOriginauxDuJour
   const lettresDeMission = blocDesLettresDeMission(texteDeLEssai)
@@ -1032,6 +1057,14 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       chemins: { plan_comptable_cabinet: { acces: 'cabinet', parent: null, colonne: null } },
     })
     expect(texteDeLEssai.indexOf(MARQUE_DU_MODELE_DU_CABINET)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_ORIGINAUX_LIBERES))
+  })
+
+  it('le bloc des copies des fichiers : sa table, après `cabinet_admins`, conditionnée, son chemin de cabinet, joué avant les originaux (INAL6)', () => {
+    expect(copies).toEqual({
+      ancre: 'cabinet_admins', tables: [...TABLES_DES_COPIES_DES_FICHIERS], recule: true, conditionne: true,
+      chemins: { copies_des_fichiers: { acces: 'cabinet', parent: null, colonne: null } },
+    })
+    expect(texteDeLEssai.indexOf(MARQUE_DES_COPIES_DES_FICHIERS)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_ORIGINAUX_LIBERES))
   })
 
   it('le bloc des originaux libérés : sa table, après `cabinet_admins`, conditionnée, son chemin de cabinet (A8D2A-Q1)', () => {
@@ -1236,7 +1269,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DES_SAISIES_2035.includes(t) && !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(t)
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t) && !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(t)
       && !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(t) && !TABLES_DES_COMPTES_BANCAIRES.includes(t)
-      && !TABLES_DES_LETTRES_DE_MISSION.includes(t) && !TABLES_DES_ORIGINAUX_LIBERES.includes(t) && !TABLES_DES_HONORAIRES_FACTURES.includes(t)
+      && !TABLES_DES_LETTRES_DE_MISSION.includes(t) && !TABLES_DES_ORIGINAUX_LIBERES.includes(t) && !(TABLES_DES_COPIES_DES_FICHIERS as readonly string[]).includes(t) && !TABLES_DES_HONORAIRES_FACTURES.includes(t)
       && !TABLES_DES_HONORAIRES_DEPOSES.includes(t) && !(TABLES_DES_DOCUMENTS_ET_DEMANDES as readonly string[]).includes(t)
       && !(TABLES_DES_ACHATS_DU_CLIENT as readonly string[]).includes(t)
       && !(TABLES_DES_NOTES_DE_FRAIS as readonly string[]).includes(t)
