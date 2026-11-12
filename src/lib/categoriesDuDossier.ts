@@ -159,7 +159,7 @@ export function codeDUneCategorieDuDossier(compte: string, codesPris: ReadonlySe
 }
 
 // ── LA CLASSE DU COMPTE, EN BASE (PC7-Q2 ; la réponse du cabinet du 12/11/2026 : « Oui, en lot à part ») ────────────────
-// La migration PRÉPARÉE `classes_des_categories` (supabase/preparees/20261112233000_classes_des_categories.sql ; son essai,
+// La migration PRÉPARÉE `classes_des_categories` (supabase/preparees/20261112234000_classes_des_categories.sql ; son essai,
 // supabase/essais/categoriesDuDossier.sql, étapes 40 à 49 ; HISTORIQUE.md, « 12/11/2026 — PC7-Q2 : LA CLASSE DU COMPTE D'UNE
 // CATÉGORIE DU DOSSIER, EN BASE ») ajoute à la garde de `categories` le refus (e) : une catégorie DU DOSSIER dont le compte,
 // non nul, n'est pas de la classe 6 ou 7 suivie de deux chiffres — le prédicat des fonctions du relevé —, à l'insertion ou
