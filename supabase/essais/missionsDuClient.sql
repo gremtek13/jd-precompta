@@ -1,5 +1,5 @@
--- LES MISSIONS D'UN CLIENT, SANS SES HONORAIRES (ligne 47, LM5-Q2 ; la migration `missions_du_client`, PRÉPARÉE le
--- 11/11/2026, supabase/preparees/20261111236000_missions_du_client.sql, après LM1 et LM4). Le récit : HISTORIQUE.md,
+-- LES MISSIONS D'UN CLIENT, SANS SES HONORAIRES (ligne 47, LM5-Q2 ; la migration `missions_du_client`, en production
+-- depuis le 12/11/2026, supabase/schema/20261112141030_missions_du_client.sql, après LM1 et LM4). Le récit : HISTORIQUE.md,
 -- « LM5-Q2 : LES MISSIONS D'UN CLIENT SANS SES HONORAIRES, EN BASE (LIGNE 47) (PRÉPARÉE, PAS APPLIQUÉE) ».
 -- SUR UNE RÉPLIQUE SEULEMENT : il désigne le dossier du cabinet de la réplique. À rejouer, par psql (`-f`, pas `-1` : le
 -- fichier ouvre et ANNULE sa propre transaction), après toute migration qui touche `missions_du_client`,

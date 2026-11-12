@@ -745,7 +745,7 @@ begin
   end if;
 end $$;
 
--- ══ Les comptes bancaires d'un dossier (ligne 26.6, lot MCB1) ══ Au plan du code quand `COMPTES_BANCAIRES_PREVUS` est levé
+-- ══ Les comptes bancaires d'un dossier (ligne 26.6, lot MCB1) ══ Au plan du code quand `COMPTES_BANCAIRES_EN_BASE` est levé
 -- — c'est-à-dire quand la migration `comptes_bancaires` est en base : le script met sa table juste après `categories`
 -- (ORDRE_RESTAURATION_PREVU : après le plan du dossier, que sa garde lit, avant les contrôles et les mouvements, qui la
 -- citent), les tables qui suivent reculant d'un rang ; son chemin ; aucune vague. Absente de la base, rien n'entre : le plan

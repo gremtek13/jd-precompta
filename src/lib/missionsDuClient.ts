@@ -6,7 +6,8 @@ import { messageErreur } from './messageErreur'
 // LES MISSIONS D'UN CLIENT, SANS SES HONORAIRES (ligne 47, LM5-Q2 ; HISTORIQUE.md, « LM5-Q2 : LES MISSIONS D'UN CLIENT
 // SANS SES HONORAIRES, EN BASE »). La policy des lettres de mission est celle du dossier du CABINET : un collaborateur
 // assigné au seul dossier d'un client n'en lit aucune ligne. La migration `missions_du_client`
-// (supabase/preparees/20261111236000_missions_du_client.sql, PRÉPARÉE) lui ouvre une lecture `security definer` :
+// (supabase/schema/20261112141030_missions_du_client.sql, en production depuis le 12/11/2026) lui ouvre une lecture
+// `security definer` :
 // `missions_du_client(dossier)` rend, à qui lit le dossier du client au titre du cabinet (`admin_du_dossier`), ses lettres,
 // BROUILLONS COMPRIS (LM5Q2-Q1, réponse (B) du cabinet du 11/11/2026), par les douze valeurs de `COLONNES_SANS_MONTANT` et
 // elles seules — jamais un montant, une périodicité, un taux
@@ -19,12 +20,13 @@ import { messageErreur } from './messageErreur'
 // plus, même une clé d'honoraires, une clé qui manque, une mission hors du catalogue, la lettre d'un autre client — se dit
 // ILLISIBLE : l'écran n'affiche jamais une valeur qu'il ne reconnaît pas entière.
 //
-// LE DRAPEAU, BAISSÉ tant que la migration n'est pas en production : la carte « Missions confiées au cabinet » lit comme
-// hier, par la policy du dossier du cabinet (« pas ouvert » à qui n'y est pas assigné). Levé, elle appelle la fonction. Il
-// se lit À CHAQUE APPEL, par `missionsDuClientPrevues` : les tests jouent ses deux états sur l'objet ci-dessous.
+// LE DRAPEAU, LEVÉ depuis le 12/11/2026, la migration en production : la carte « Missions confiées au cabinet » appelle la
+// fonction. Baissé — l'état d'avant —, elle lit comme hier, par la policy du dossier du cabinet (« pas ouvert » à qui n'y est
+// pas assigné). Il se lit À CHAQUE APPEL, par `missionsDuClientPrevues` : les tests jouent ses deux états sur l'objet
+// ci-dessous.
 export const DRAPEAU_DES_MISSIONS_DU_CLIENT = {
-  /** Faux tant que la migration `missions_du_client` n'est pas en production (puis dans l'export) ; après LM4. */
-  MISSIONS_DU_CLIENT_PREVUES: false as boolean,
+  /** Vrai depuis le 12/11/2026 : la migration `missions_du_client` est en production (et dans l'export), après LM4. */
+  MISSIONS_DU_CLIENT_PREVUES: true as boolean,
 }
 
 /** Le drapeau, lu à l'appel. */

@@ -8,13 +8,13 @@ import {
   TABLES_DES_HONORAIRES_FACTURES, tablesSansChemin, violationsOrdre,
 } from './sauvegarde'
 
-// LE DÉPÔT DES FACTURES D'HONORAIRES AU PLAN DE SAUVEGARDE (ligne 47, LM8). Sa migration, `depot_des_honoraires`, est
-// préparée, pas appliquée : tant que l'export ne la porte pas, le plan effectif ne doit RIEN dire de sa table — une
-// sauvegarde lirait une table absente et échouerait —, et le plan PRÉVU doit déjà être juste, confronté aux clés de la
-// migration, pour que lever `DEPOT_DES_HONORAIRES_PREVU` suffise le jour venu.
+// LE DÉPÔT DES FACTURES D'HONORAIRES AU PLAN DE SAUVEGARDE (ligne 47, LM8). Sa migration, `depot_des_honoraires`, est en
+// production depuis le 12/11/2026, le drapeau levé. Baissé — l'état d'avant, joué plus bas —, le plan effectif ne doit RIEN
+// dire de sa table : une sauvegarde lirait une table absente et échouerait. Le plan PRÉVU est confronté aux clés de la
+// migration.
 
 const TABLE = 'honoraires_deposes'
-const dossier = new URL('../../supabase/preparees/', import.meta.url).pathname
+const dossier = new URL('../../supabase/schema/', import.meta.url).pathname
 const MIGRATION = readFileSync(dossier + readdirSync(dossier).find((n) => /^\d{14}_depot_des_honoraires\.sql$/.test(n))!, 'utf8')
 
 describe('le filtre du plan, côté dépôt des honoraires', () => {

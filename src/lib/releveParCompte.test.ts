@@ -98,7 +98,7 @@ describe('les mois manquants, compte par compte (la règle de couverture_du_rele
     expect(compteAttenduLeMois(part({ ...B, clos_le: '2026-02-20' }, ['2026-01-02']), '2026-03')).toBe(false)
   })
   it('la migration dit la même règle', () => {
-    const dossier = new URL('../../supabase/preparees/', import.meta.url)
+    const dossier = new URL('../../supabase/schema/', import.meta.url)
     const nom = readdirSync(dossier).find((f) => /^\d{14}_couverture_du_releve_par_compte\.sql$/.test(f))
     const sql = readFileSync(new URL(nom as string, dossier), 'utf8').replace(/\s+/g, ' ')
     expect(sql).toContain("and (c.clos_le is null or date_trunc('month', c.clos_le::timestamp)::date >= m.mois)")

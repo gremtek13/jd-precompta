@@ -1,5 +1,5 @@
--- PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER, LA BASE (ligne 26.6, lot MCB1 ; la migration `comptes_bancaires`, PRÉPARÉE le
--- 11/11/2026, supabase/preparees/). Le récit : HISTORIQUE.md, « 11/11/2026 — PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER :
+-- PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER, LA BASE (ligne 26.6, lot MCB1 ; la migration `comptes_bancaires`, en production
+-- depuis le 12/11/2026, supabase/schema/20261112140805_comptes_bancaires.sql). Le récit : HISTORIQUE.md, « 11/11/2026 — PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER :
 -- D'EMBLÉE, LES LOTS, ET LA BASE (MCB1) ». À rejouer après toute migration qui touche `comptes_bancaires`, ses quatre
 -- déclencheurs et leurs fonctions, `compte_de_banque_du_mouvement`, `compte_du_role`, `regler_plan_du_dossier`, ou les
 -- colonnes, contraintes et déclencheurs de `lignes_bancaires` et `controles_releves_bancaires`.

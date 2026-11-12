@@ -2359,8 +2359,9 @@ export interface Contact {
   // Mille caractères au plus, que le client « Ventes » lit comme le cabinet (le nom `notes` est réservé).
   observations: string | null
   // LM3 (`FICHES_LIEES_PREVUES`, lib/fichesLiees.ts) : le dossier du client qu'une fiche du dossier du cabinet désigne.
-  // ABSENTE tant que sa migration n'est pas en base (une colonne absente n'est pas un lien) ; liée, la fiche n'a ni nom ni
-  // identité, qui se lisent du dossier — `nom` deviendra facultatif au collage, et `estFicheLiee` écarte déjà ces lignes.
+  // En base depuis le 12/11/2026 ; liée, la fiche n'a ni nom ni identité, qui se lisent du dossier, et `estFicheLiee` écarte
+  // ces lignes des lecteurs d'hier avant qu'ils lisent `nom`. RESTE le basculement de ce type (`nom: string | null`,
+  // `dossier_client_id: string | null`), qui touche les lecteurs du nom d'un contact (vingt-cinq lieux au compilateur).
   dossier_client_id?: string | null
   /** LM3-Q1 (B) : quand la fiche a été déliée du dossier de son client, et par qui (facultatifs jusqu'à la migration). */
   delie_le?: string | null

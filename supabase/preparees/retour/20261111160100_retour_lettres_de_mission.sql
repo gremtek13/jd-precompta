@@ -1,7 +1,8 @@
--- RETOUR DE LM4 (la migration `lettres_de_mission`, supabase/preparees/20261111160000_lettres_de_mission.sql) : rend la
+-- RETOUR DE LM4 (la migration `lettres_de_mission`, supabase/schema/20261112140911_lettres_de_mission.sql) : rend la
 -- base d'avant, celle de LM1. DESTRUCTIF : il retire les deux tables, leurs lignes avec elles ; il se refuse donc tant
 -- qu'un modèle ou une lettre existe (une lettre proposée est un contrat, que le cabinet garde cinq ans — C. civ.,
 -- art. 2224) : les exporter d'abord, et ne le jouer qu'avec l'accord du cabinet. À COLLER (il supprime).
+-- La migration est en production depuis le 12/11/2026 (version 20261112140911) : supabase/schema/20261112140911_lettres_de_mission.sql.
 do $garde$
 begin
   if to_regclass('public.lettres_de_mission') is null then

@@ -1,4 +1,5 @@
--- RETOUR DE LM1 (20261111150000_dossier_du_cabinet) : LE DOSSIER DU CABINET RETIRÉ DE LA BASE. À COLLER.
+-- RETOUR DE LM1 (20261112140859_dossier_du_cabinet) : LE DOSSIER DU CABINET RETIRÉ DE LA BASE. À COLLER.
+-- La migration est en production depuis le 12/11/2026 (version 20261112140859) : supabase/schema/20261112140859_dossier_du_cabinet.sql.
 --
 -- Il DÉTRUIT la désignation (la colonne `cabinets.dossier_du_cabinet`) : le nom du dossier désigné, s'il y en a un, se dit
 -- d'abord (NOTICE) pour qu'on le note. Les factures validées sur ce dossier restent telles quelles — sans mandataire,

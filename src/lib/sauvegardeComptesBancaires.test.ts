@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
+import { COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { fichiersPrepares, relationsDuSchema } from '../test/schema'
 import {
   auGrapheDesComptesBancaires,
@@ -31,10 +31,11 @@ import {
   violationsOrdre,
 } from './sauvegarde'
 
-// LES COMPTES BANCAIRES D'UN DOSSIER AU PLAN DE SAUVEGARDE (ligne 26.6, lot MCB1). Leur migration, `comptes_bancaires`, est
-// préparée, pas appliquée : tant que l'export ne la porte pas, le plan effectif ne doit RIEN dire de la table — ni elle, ni
-// les clés des mouvements et des contrôles vers elle : une sauvegarde lirait une table absente et échouerait —, et le plan
-// PRÉVU doit déjà être juste, pour que lever `COMPTES_BANCAIRES_PREVUS` suffise le jour venu.
+// LES COMPTES BANCAIRES D'UN DOSSIER AU PLAN DE SAUVEGARDE (ligne 26.6, lot MCB1). Leur migration, `comptes_bancaires`, est en
+// production depuis le 12/11/2026 : la table et les clés des mouvements et des contrôles vers elle sont au plan effectif
+// (`COMPTES_BANCAIRES_EN_BASE`, levé) — un mouvement sauvegardé porte son compte, et une sauvegarde sans la table ne se
+// restaurerait plus —, alors que les écrans attendent l'ouverture éclatée (`COMPTES_BANCAIRES_PREVUS`, baissé), dont la clé
+// suit leur drapeau. Baissé, l'état d'avant le collage : le plan effectif ne dit RIEN de la table. Le plan PRÉVU porte tout.
 
 const TABLE = 'comptes_bancaires'
 const versLeCompte = (r: { enfant: string; parent: string; colonne: string }) =>
@@ -48,16 +49,21 @@ describe('le filtre du plan, côté comptes bancaires', () => {
     for (const table of ['dossiers', 'lignes_bancaires', 'controles_releves_bancaires', 'connexions_bancaires']) {
       expect(auPlanDesComptesBancaires(table, false), table).toBe(true)
     }
-    expect(auPlanAujourdHui(TABLE)).toBe(COMPTES_BANCAIRES_PREVUS)
+    expect(COMPTES_BANCAIRES_EN_BASE).toBe(true)
+    expect(auPlanAujourdHui(TABLE)).toBe(COMPTES_BANCAIRES_EN_BASE)
   })
 
-  it('le graphe : les relations qui la nomment, enfant ou parent, ne sont du jour que le drapeau levé', () => {
+  it('le graphe : les relations qui la nomment ne sont du jour que la table en base ; celle de l’ouverture éclatée, que le drapeau des écrans levé', () => {
     const lignes = RELATIONS_PREVUES.find((r) => r.enfant === 'lignes_bancaires' && versLeCompte(r))
     expect(lignes).toBeDefined()
-    expect(auGrapheDesComptesBancaires(lignes!, false)).toBe(false)
-    expect(auGrapheDesComptesBancaires(lignes!, true)).toBe(true)
+    expect(auGrapheDesComptesBancaires(lignes!, false, false)).toBe(false)
+    expect(auGrapheDesComptesBancaires(lignes!, true, false)).toBe(true)
     const autre = RELATIONS_PREVUES.find((r) => r.enfant === 'lignes_bancaires' && r.parent === 'dossiers')
-    expect(auGrapheDesComptesBancaires(autre!, false)).toBe(true)
+    expect(auGrapheDesComptesBancaires(autre!, false, false)).toBe(true)
+    const ouverture = RELATIONS_PREVUES.find((r) => r.colonne === 'ouverture_compte_bancaire_id')
+    expect(ouverture).toBeDefined()
+    expect(auGrapheDesComptesBancaires(ouverture!, true, false)).toBe(false)
+    expect(auGrapheDesComptesBancaires(ouverture!, true, true)).toBe(true)
   })
 
   it('aucune table n’est à la fois des comptes bancaires et d’un autre drapeau', () => {
@@ -67,13 +73,15 @@ describe('le filtre du plan, côté comptes bancaires', () => {
     expect(TABLES_DES_COMPTES_BANCAIRES.filter((t) => autres.includes(t))).toEqual([])
   })
 
-  it('drapeau baissé, le plan effectif ne nomme ni la table ni les clés vers elle — drapeau levé, partout', () => {
+  it('en base, le plan effectif nomme la table et les clés des mouvements et des contrôles ; l’ouverture éclatée suit les écrans', () => {
     const nommees = new Set([
       ...RELATIONS.flatMap((r) => [r.enfant, r.parent]), ...ORDRE_RESTAURATION, ...Object.keys(CHEMINS_DOSSIER),
       ...TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((a) => a.table), ...Object.keys(CLES_PRIMAIRES),
     ])
-    expect(nommees.has(TABLE)).toBe(COMPTES_BANCAIRES_PREVUS)
-    expect(RELATIONS.filter(versLeCompte).length > 0).toBe(COMPTES_BANCAIRES_PREVUS)
+    expect(nommees.has(TABLE)).toBe(COMPTES_BANCAIRES_EN_BASE)
+    expect(RELATIONS.filter(versLeCompte).map((r) => r.enfant).sort())
+      .toEqual(COMPTES_BANCAIRES_EN_BASE ? ['controles_releves_bancaires', 'lignes_bancaires'] : [])
+    expect(RELATIONS.some((r) => r.colonne === 'ouverture_compte_bancaire_id')).toBe(COMPTES_BANCAIRES_PREVUS)
   })
 })
 
@@ -123,17 +131,18 @@ describe('le plan prévu, comptes bancaires compris', () => {
   })
 })
 
-describe('les comptes bancaires dans les deux états du drapeau : la réinsertion et les liens perdus', () => {
+describe('les comptes bancaires sous chaque état des deux drapeaux : la réinsertion et les liens perdus', () => {
   afterEach(() => {
     vi.doUnmock('./comptesBancaires')
     vi.resetModules()
   })
 
-  // Le plan du jour est calculé au chargement du module : on le recharge sous l'état voulu.
-  async function sauvegardeSous(drapeau: boolean) {
+  // Le plan du jour est calculé au chargement du module : on le recharge sous l'état voulu — la table en base
+  // (`COMPTES_BANCAIRES_EN_BASE`) et les écrans, avec l'ouverture éclatée (`COMPTES_BANCAIRES_PREVUS`).
+  async function sauvegardeSous(enBase: boolean, prevus: boolean = enBase) {
     vi.resetModules()
     vi.doMock('./comptesBancaires', async (original) => ({
-      ...(await original<typeof import('./comptesBancaires')>()), COMPTES_BANCAIRES_PREVUS: drapeau }))
+      ...(await original<typeof import('./comptesBancaires')>()), COMPTES_BANCAIRES_EN_BASE: enBase, COMPTES_BANCAIRES_PREVUS: prevus }))
     return import('./sauvegarde')
   }
 
@@ -185,7 +194,20 @@ describe('les comptes bancaires dans les deux états du drapeau : la réinsertio
       .toEqual([['ecritures_brouillon.ouverture_compte_bancaire_id', false], ['ecritures_brouillon.ouverture_compte_bancaire_id', false]])
   })
 
-  it('baissé : la table n’entre pas au plan, même présente dans une sauvegarde, et aucun lien vers elle ne se juge', async () => {
+  it('aujourd’hui (en base, écrans baissés) : les comptes avant les contrôles et les mouvements ; l’ouverture éclatée ne se juge pas', async () => {
+    const s = await sauvegardeSous(true, false)
+    const tables = s.planReinsertion(contenu()).etapes.map((e) => e.table)
+    expect(tables.indexOf(TABLE)).toBeGreaterThanOrEqual(0)
+    expect(tables.indexOf(TABLE)).toBeLessThan(tables.indexOf('controles_releves_bancaires'))
+    expect(tables.indexOf(TABLE)).toBeLessThan(tables.indexOf('lignes_bancaires'))
+    expect(s.liensPerdus(contenu())).toEqual([])
+    const sansSecond = { ...contenu(), comptes_bancaires: contenu().comptes_bancaires.filter((c) => c.id !== 's1') }
+    expect(s.liensPerdus(sansSecond).map((l) => `${l.table}.${l.colonne}`)).toContain('lignes_bancaires.compte_bancaire_id')
+    const ouvertureSansSecond = { ...avecLOuverture(), comptes_bancaires: contenu().comptes_bancaires.filter((c) => c.id !== 's1'), lignes_bancaires: [], controles_releves_bancaires: [] }
+    expect(s.liensPerdus(ouvertureSansSecond)).toEqual([])
+  })
+
+  it('baissé (l’état d’avant le collage) : la table n’entre pas au plan, même présente dans une sauvegarde, et aucun lien vers elle ne se juge', async () => {
     const s = await sauvegardeSous(false)
     const plan = s.planReinsertion(contenu())
     expect(plan.etapes.map((e) => e.table)).not.toContain(TABLE)

@@ -54,7 +54,8 @@ describe('les comptes et les postes de l’échéance', () => {
   // DERNIÈRE définition de la fonction, celle que la base exécute, seule — une voisine du même fichier ne compte pas.
   it('sont ceux que la fonction SQL exportée attend', () => {
     const derniere = derniereDefinitionSql('rapprocher_echeance_emprunt')
-    expect(derniere).toContain("v_banque := public.compte_du_role(v_ligne.dossier_id, 'banque');")
+    // Depuis MCB5 (`jambe_de_banque_par_compte`, en production depuis le 12/11/2026), la banque du MOUVEMENT.
+    expect(derniere).toContain('v_banque := public.compte_de_banque_du_mouvement(v_ligne.id);')
     expect(derniere).toContain("v_compte_emprunt := public.compte_du_role(v_ligne.dossier_id, 'emprunt');")
     expect(derniere).toContain("v_compte_interets := public.compte_du_role(v_ligne.dossier_id, 'interets_emprunt');")
     expect(derniere).toContain("v_compte_assurance := public.compte_du_role(v_ligne.dossier_id, 'assurance_emprunt');")

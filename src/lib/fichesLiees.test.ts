@@ -9,9 +9,9 @@ import {
 
 // La migration, son retour, son essai et le bloc de rls.sql : ce module les redit, ces tests les confrontent.
 const lire = (chemin: string) => readFileSync(new URL(`../../${chemin}`, import.meta.url), 'utf8')
-const MIGRATION = lire('supabase/preparees/20261111233000_fiche_liee_au_dossier_du_client.sql')
+const MIGRATION = lire('supabase/schema/20261112140920_fiche_liee_au_dossier_du_client.sql')
 const RETOUR = lire('supabase/preparees/retour/20261111233100_retour_fiche_liee_au_dossier_du_client.sql')
-const LM7 = lire('supabase/preparees/20261111190000_honoraires_factures.sql')
+const LM7 = lire('supabase/schema/20261112141227_honoraires_factures.sql')
 const ESSAI = lire('supabase/essais/fichesLieesAuxDossiers.sql')
 const RLS = lire('supabase/essais/rls.sql')
 // Un mot du module, tel que le texte SQL l'écrit : l'apostrophe doublée.
@@ -79,8 +79,8 @@ describe('délier une fiche (LM3-Q1 (B))', () => {
 })
 
 describe('la fiche liée au dossier du client (LM3)', () => {
-  it('le drapeau est baissé tant que la migration n’est pas en production', () => {
-    expect(FICHES_LIEES_PREVUES).toBe(false)
+  it('le drapeau est levé : la migration est en production depuis le 12/11/2026 (dans l’export)', () => {
+    expect(FICHES_LIEES_PREVUES).toBe(true)
   })
 
   it('chaque refus est celui de la migration, à son code, dans l’ordre du rang 4 bis', () => {

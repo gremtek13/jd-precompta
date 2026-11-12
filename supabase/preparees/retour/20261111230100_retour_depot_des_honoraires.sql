@@ -1,6 +1,7 @@
--- RETOUR DE LM8 (`depot_des_honoraires`, 20261111230000) : rend la base d'avant, `signature.sql` égale à celle d'avant la
+-- RETOUR DE LM8 (`depot_des_honoraires`, 20261112141335) : rend la base d'avant, `signature.sql` égale à celle d'avant la
 -- migration (neuf familles). À COLLER (il supprime une table, ses fonctions et sa garde), AVANT le retour de LM7, dont la
 -- table `honoraires_factures` est lue par le contrôle d'ici.
+-- La migration est en production depuis le 12/11/2026 (version 20261112141335) : supabase/schema/20261112141335_depot_des_honoraires.sql.
 --
 -- CE QU'IL DÉTRUIT : la table `honoraires_deposes`, c'est-à-dire la trace de chaque dépôt — quelle facture d'honoraires a
 -- été déposée chez quel client, quand, par qui, sous quelle empreinte. Les PIÈCES déposées restent dans les dossiers des

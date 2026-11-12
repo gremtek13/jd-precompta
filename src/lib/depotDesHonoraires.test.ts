@@ -9,7 +9,7 @@ import {
 // le chemin qu'elle accepte et le nom qu'elle compose. Confronté au TEXTE de la migration, il ne peut pas en diverger sans
 // rougir ; l'essai de la base (supabase/essais/depotDesHonoraires.sql) éprouve la fonction elle-même.
 
-const dossier = new URL('../../supabase/preparees/', import.meta.url).pathname
+const dossier = new URL('../../supabase/schema/', import.meta.url).pathname
 const MIGRATION = readFileSync(dossier + readdirSync(dossier).find((n) => /^\d{14}_depot_des_honoraires\.sql$/.test(n))!, 'utf8')
 const FONCTION = /create function public\.deposer_honoraires_chez_le_client\([\s\S]*?\n\$\$;/i.exec(MIGRATION)![0]
 const enSql = (texte: string) => `'${texte.replaceAll("'", "''")}'`
@@ -27,9 +27,10 @@ const entree = (e: Partial<Parameters<typeof refusDuDepot>[0]> = {}) => ({
   depots: [] as DepotLu[], ...e,
 })
 
-describe('le dépôt des honoraires, drapeau baissé', () => {
-  it('rien ne l’appelle tant que la migration n’est pas en production', () => {
-    expect(DEPOT_DES_HONORAIRES_PREVU).toBe(false)
+describe('le dépôt des honoraires, son drapeau', () => {
+  it('levé avec la migration dans l’export (en production depuis le 12/11/2026)', () => {
+    const exportee = readdirSync(dossier).some((n) => /^\d{14}_depot_des_honoraires\.sql$/.test(n))
+    expect(DEPOT_DES_HONORAIRES_PREVU).toBe(exportee)
   })
 })
 

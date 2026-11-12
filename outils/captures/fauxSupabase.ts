@@ -2146,7 +2146,8 @@ const TABLES: Record<string, Ligne[]> = {
   // Les saisies du cabinet de la 2035 (étapes 2035S3 à S5), DERRIÈRE `SAISIES_2035_EXPORTEES` : celles du cabinet infirmier (d1), dont
   // une note annexe longue. Des centimes, des codes de la liste fermée de `lib/saisies2035.ts`.
   saisies_2035: SAISIES_2035_D1,
-  cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
+  // `dossier_du_cabinet` (LM1, en production depuis le 12/11/2026) : aucun dossier du banc n'est désigné.
+  cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null, dossier_du_cabinet: null }],
   // Pour le membre de l'équipe, ce que `dossiers_select` lui rend : ses dossiers assignés, et celui dont il est client.
   dossiers: MEMBRE_DU_BANC
     ? dossiers.filter((d) => [...DOSSIERS_ASSIGNES_AU_MEMBRE, DOSSIER_DONT_LE_MEMBRE_EST_CLIENT].includes(String(d.id)))

@@ -42,8 +42,9 @@ const refusSql = (sql: string) =>
 const attendus = (liste: readonly { code: string; modele: string }[]) => liste.map((r) => ({ code: r.code, modele: droit(r.modele) }))
 
 describe('la migration, redite', () => {
-  it('le drapeau est baissé : la production n’a pas la table', () => {
-    expect(HONORAIRES_FACTURES_PREVUS).toBe(false)
+  it('le drapeau est levé avec la migration dans l’export (en production depuis le 12/11/2026)', () => {
+    const exportee = readdirSync(new URL('../../supabase/schema/', import.meta.url)).some((n) => /^\d{14}_honoraires_factures\.sql$/.test(n))
+    expect(HONORAIRES_FACTURES_PREVUS).toBe(exportee)
   })
 
   it('les refus de facturer_honoraires, dans leur ordre, puis celui de la garde quand les liens se posent', () => {

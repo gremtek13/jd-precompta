@@ -4,7 +4,7 @@ import { GRAINE_DES_PRORATA, NOMBRE_DE_PRORATA, PARTS_NOMMEES, partEcrite, parts
 import { centimesAuProrata, periodeCivile } from './honorairesAFacturer'
 
 // LE PRORATA DES HONORAIRES, L'APPLICATION ET LA BASE SUR LES MÊMES SIX MILLE PARTS (ligne 47, LM7-Q4 (C), 11/11/2026 ;
-// migration `honoraires_factures`, PRÉPARÉE). La batterie de src/test/batterieDesProrata.ts — six mille parts tirées d'une
+// migration `honoraires_factures`, en production depuis le 12/11/2026). La batterie de src/test/batterieDesProrata.ts — six mille parts tirées d'une
 // graine fixe, dont les cinq que l'essai écrit en toutes lettres — a été jugée le 11/11/2026 par `honoraires_au_prorata`
 // ELLE-MÊME, sur une copie de la réplique mère 17 au niveau de la production (197 migrations) munie de LM1, LM4 et de la
 // migration, par supabase/essais/batterieDesProrata.mjs : chaque part sous l'écriture décimale que JSON donne à son prix,

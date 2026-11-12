@@ -1,4 +1,4 @@
--- RETOUR de la migration `jambe_de_banque_par_compte` (MCB5, 20261111200000) : les dix fonctions reprennent le corps
+-- RETOUR de la migration `jambe_de_banque_par_compte` (MCB5, 20261112140844) : les dix fonctions reprennent le corps
 -- qu'elles ont en production le 11/11/2026 (leurs empreintes, celles de la garde de tête de l'aller), la jambe de banque
 -- au compte du rôle `banque` du plan. Rien d'autre ne bouge. À jouer AVANT le retour de `comptes_bancaires` (MCB1), dont
 -- elles appellent la fonction. Non destructif pour les données : les écritures déjà écrites restent ; un mouvement d'un
@@ -6,6 +6,7 @@
 -- (la fonction refuserait l'écriture d'hier) — à vérifier avant de jouer ce retour :
 --   select count(*) from public.lignes_bancaires l where public.compte_de_banque_du_mouvement(l.id) <> public.compte_du_role(l.dossier_id, 'banque');
 -- Le corps de sept fonctions nomme la suppression des lignes propres au mouvement, comme en production : à coller.
+-- La migration est en production depuis le 12/11/2026 (version 20261112140844) : supabase/schema/20261112140844_jambe_de_banque_par_compte.sql.
 
 -- ══ 0. La garde de tête ══
 do $garde$

@@ -32,6 +32,7 @@ import {
   type SaisieContact,
 } from './contacts'
 import { FORME_ADRESSE_ELECTRONIQUE, LONGUEUR_CODE_SERVICE } from './mentionsFacture'
+import { REFUS_DE_LA_FICHE_LIEE } from './fichesLiees'
 import type { ArticleExoneration, Contact } from './types'
 import { contact } from '../test/contacts'
 import { decouper, lignesInserees } from '../test/essaiSql'
@@ -637,12 +638,25 @@ describe('CONTACTS_EXPORTES dit ce que porte l’export', () => {
     return readFileSync(new URL(noms[0], schema), 'utf8')
   }
 
+  // LM3 (`fiche_liee_au_dossier_du_client`, en production depuis le 12/11/2026) : `enregistrer_contact` dit aussi les refus
+  // d'une fiche liée, que fichesLiees.ts redit à leur rang et que fichesLiees.test.ts confronte à la migration ; ici, ceux
+  // d'un contact, dans leur ordre, les siens écartés — la base dit la fiche déjà liée d'un seul refus, retirée ou non (« % »).
+  const motsDeLaFicheLiee = new Set([...REFUS_DE_LA_FICHE_LIEE.map((r) => r.modele.replace(/’/g, "'")),
+    'Ce dossier a déjà sa fiche de facturation%.'])
+  const ficheLieeExportee = readdirSync(new URL('../../supabase/schema/', import.meta.url))
+    .some((nom) => /^\d{14}_fiche_liee_au_dossier_du_client\.sql$/.test(nom))
+
   it('exportée, les fonctions disent les refus du module, dans le même ordre et sous les mêmes codes', () => {
     if (!CONTACTS_EXPORTES) return
     for (const [fonction, liste] of [['enregistrer_contact', REFUS_ENREGISTREMENT_CONTACT], ['retirer_contact', REFUS_RETRAIT_CONTACT],
       ['reprendre_contact', REFUS_REPRISE_CONTACT], ['effacer_contact', REFUS_EFFACEMENT_CONTACT]] as const) {
-      expect(messagesSql(derniereDefinitionSql(fonction)), fonction).toEqual(liste.map((r) => r.modele))
-      expect(codesSql(derniereDefinitionSql(fonction)), fonction).toEqual(liste.map((r) => r.code))
+      const messages = messagesSql(derniereDefinitionSql(fonction))
+      const codes = codesSql(derniereDefinitionSql(fonction))
+      expect(codes.length, fonction).toBe(messages.length)
+      const duContact = messages.map((m) => fonction !== 'enregistrer_contact' || !motsDeLaFicheLiee.has(m))
+      expect(duContact.filter((x) => !x).length, fonction).toBe(fonction === 'enregistrer_contact' && ficheLieeExportee ? 6 : 0)
+      expect(messages.filter((_, i) => duContact[i]), fonction).toEqual(liste.map((r) => r.modele))
+      expect(codes.filter((_, i) => duContact[i]), fonction).toEqual(liste.map((r) => r.code))
     }
   })
 
@@ -681,8 +695,10 @@ describe('CONTACTS_EXPORTES dit ce que porte l’export', () => {
       .toContain(`set nom = '${PREFIXE_DU_NOM_EFFACE}' || to_char((now() at time zone 'Europe/Paris')::date, 'DD/MM/YYYY')`)
     expect(texte).toContain(`nom like '${PREFIXE_DU_NOM_EFFACE}%'`)
     // La règle des soins : l'article des soins, à l'écriture comme à la reprise.
+    // Depuis LM3, une fiche liée n'a pas d'identité à elle : la règle ne la range pas (`and v_lien is null`).
     for (const fonction of ['enregistrer_contact', 'reprendre_contact']) {
-      expect(derniereDefinitionSql(fonction), fonction).toContain(`select coalesce(d.article_exoneration = '${ARTICLE_DES_SOINS}', false) into v_soins`)
+      const lien = fonction === 'enregistrer_contact' && ficheLieeExportee ? ' and v_lien is null' : ''
+      expect(derniereDefinitionSql(fonction), fonction).toContain(`select coalesce(d.article_exoneration = '${ARTICLE_DES_SOINS}', false)${lien} into v_soins`)
     }
     // Un SIRET pris nomme le contact qui le porte, coupé comme le module le coupe.
     expect(enregistrer).toContain("case when char_length(v_autre.nom) > 80 then left(v_autre.nom, 79) || '…' else v_autre.nom end")

@@ -35,6 +35,12 @@ vi.mock('../lib/simulationVentesFacturees', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/simulationVentesFacturees')>(),
   SIMULATION_VENTES_FACTUREES_EXPORTEE: false,
 }))
+// Ni les honoraires que le cabinet dépose chez son client (ligne 47, LM8, `honoraires_deposes_au_dossier`, en production depuis
+// le 12/11/2026) : « Mes pièces » n'en lisait pas.
+vi.mock('../lib/depotDesHonoraires', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/depotDesHonoraires')>(),
+  DEPOT_DES_HONORAIRES_PREVU: false,
+}))
 
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,

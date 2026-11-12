@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
 import {
@@ -16,13 +16,14 @@ import {
 } from './sauvegarde'
 
 // LES ORIGINAUX LIBÉRÉS PAR LA SUPPRESSION DE LEUR DOSSIER AU PLAN DE SAUVEGARDE (ligne 51.5, A8D2A-Q1). Leur migration,
-// `originaux_retenus_par_leur_import`, est préparée, pas appliquée : tant que l'export ne la porte pas, le plan effectif ne
-// doit RIEN dire de la table — une sauvegarde lirait une table absente —, et le plan PRÉVU doit déjà être juste, pour que
-// lever `ORIGINAUX_RETENUS_PREVUS` suffise le jour venu. Une table de niveau cabinet : hors de l'export d'un dossier.
+// `originaux_retenus_par_leur_import`, est en production depuis le 12/11/2026, le drapeau levé : la table entre au plan
+// effectif. Baissé — l'état d'avant, éprouvé tant que son code existe —, le plan effectif ne doit RIEN dire de la table :
+// une sauvegarde lirait une table absente. Le plan PRÉVU la porte, à sa place. Une table de niveau cabinet : hors de
+// l'export d'un dossier.
 
 const TABLE = 'originaux_liberes'
 const MIGRATION = readFileSync(
-  new URL('../../supabase/preparees/20261111180000_originaux_retenus_par_leur_import.sql', import.meta.url), 'utf8')
+  new URL('../../supabase/schema/20261112140751_originaux_retenus_par_leur_import.sql', import.meta.url), 'utf8')
 
 describe('le filtre du plan, côté originaux libérés', () => {
   it('la table n’est au plan que le drapeau levé ; toute autre l’est toujours', () => {
@@ -63,5 +64,30 @@ describe('le plan prévu, originaux libérés compris', () => {
     expect(corps).toMatch(/^\s*chemin text primary key,/i)
     expect(corps).toMatch(/cabinet_id uuid not null references public\.cabinets\(id\) on delete cascade,/i)
     expect(corps).not.toMatch(/dossier_id/i)
+  })
+})
+
+describe('le plan du jour, sous chaque état du drapeau', () => {
+  afterEach(() => {
+    vi.doUnmock('./originauxRetenus')
+    vi.resetModules()
+  })
+
+  it('le drapeau levé depuis le 12/11/2026 : la table est au plan du jour', () => {
+    expect(ORIGINAUX_RETENUS_PREVUS).toBe(true)
+    expect(auPlanAujourdHui(TABLE)).toBe(true)
+  })
+
+  it('baissé (l’état d’avant) : le plan effectif ne nomme pas la table, et l’ordre reste juste', async () => {
+    vi.resetModules()
+    vi.doMock('./originauxRetenus', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('./originauxRetenus')>()), ORIGINAUX_RETENUS_PREVUS: false,
+    }))
+    const baisse = await import('./sauvegarde')
+    expect(baisse.auPlanAujourdHui(TABLE)).toBe(false)
+    expect(baisse.ORDRE_RESTAURATION).not.toContain(TABLE)
+    expect(baisse.CHEMINS_DOSSIER[TABLE]).toBeUndefined()
+    expect(baisse.RELATIONS.filter((r) => r.enfant === TABLE || r.parent === TABLE)).toEqual([])
+    expect(baisse.violationsOrdre(baisse.ORDRE_RESTAURATION, [...baisse.RELATIONS, ...baisse.LIENS_GARDES])).toEqual([])
   })
 })

@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientUpload from './ClientUpload'
 import { ECARTEES_DU_CLIENT_EXPORTEES } from '../lib/piecesJointesEcarteesClient'
+import { DEPOT_DES_HONORAIRES_PREVU } from '../lib/depotDesHonoraires'
 
 // « MES PIÈCES » QUAND LA COUVERTURE DU RELEVÉ EST EN BASE (espace client, étape P7) — le pendant de
 // ClientHome.couverture.test.tsx. Drapeau levé, l'écran ne lit plus aucun mouvement : il lit des mois par
@@ -54,6 +55,11 @@ vi.mock('../lib/supabase', () => ({
       if (nom === 'pieces_jointes_ecartees_du_client') {
         return { then: (suite: (r: unknown) => unknown) => Promise.resolve({ data: [], error: null, count: null, status: 200, statusText: '' }).then(suite) }
       }
+      // Les honoraires que le cabinet a déposés (ligne 47, LM8), lus depuis que leur fonction est en production (12/11/2026) :
+      // aucun ici — leur section a son propre test (ClientUpload.honoraires.test.tsx).
+      if (nom === 'honoraires_deposes_au_dossier') {
+        return { then: (suite: (r: unknown) => unknown) => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: '' }).then(suite) }
+      }
       const reponse = async () => {
         await faux.porteCouverture
         return { ...faux.couverture, count: null, status: faux.couverture.error ? 400 : 200, statusText: '' }
@@ -99,11 +105,14 @@ describe('ClientUpload — drapeau levé : la couverture du relevé, jamais les 
   it('lit la couverture par couverture_du_releve, sur le dossier affiché, et ne demande aucun mouvement', async () => {
     poser({ data: ['2026-01-01'] })
     await monter()
-    // Et aucune autre fonction — hors la lecture des pièces jointes écartées, une fois sa fonction en base (ligne 22.9).
-    expect(faux.rpcs.filter((r) => r.nom !== 'pieces_jointes_ecartees_du_client'))
+    // Et aucune autre fonction — hors la lecture des pièces jointes écartées, une fois sa fonction en base (ligne 22.9), et celle
+    // des honoraires déposés (ligne 47, LM8), de même.
+    expect(faux.rpcs.filter((r) => r.nom !== 'pieces_jointes_ecartees_du_client' && r.nom !== 'honoraires_deposes_au_dossier'))
       .toEqual([{ nom: 'couverture_du_releve', args: { p_dossier_id: 'dossier-de-test' } }])
     expect(faux.rpcs.filter((r) => r.nom === 'pieces_jointes_ecartees_du_client'))
       .toEqual(ECARTEES_DU_CLIENT_EXPORTEES ? [{ nom: 'pieces_jointes_ecartees_du_client', args: { p_dossier_id: 'dossier-de-test' } }] : [])
+    expect(faux.rpcs.filter((r) => r.nom === 'honoraires_deposes_au_dossier'))
+      .toEqual(DEPOT_DES_HONORAIRES_PREVU ? [{ nom: 'honoraires_deposes_au_dossier', args: { p_dossier_id: 'dossier-de-test' } }] : [])
     expect(faux.demandees).not.toContain('lignes_bancaires')
   })
 

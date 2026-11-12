@@ -1,5 +1,5 @@
--- LA COUVERTURE DU RELEVÉ, COMPTE PAR COMPTE (ligne 26.6, lot MCB4 ; la migration `couverture_du_releve_par_compte`, PRÉPARÉE
--- le 11/11/2026, qui suit `comptes_bancaires` et `fin_d_identifiant_des_comptes_bancaires`). Le récit : HISTORIQUE.md,
+-- LA COUVERTURE DU RELEVÉ, COMPTE PAR COMPTE (ligne 26.6, lot MCB4 ; la migration `couverture_du_releve_par_compte`, en
+-- production depuis le 12/11/2026, qui suit `comptes_bancaires` et `fin_d_identifiant_des_comptes_bancaires`). Le récit : HISTORIQUE.md,
 -- « 11/11/2026 — LA SUITE DES SOLDES, LE 31 DÉCEMBRE, LA COUVERTURE ET LA VALIDATION PAR COMPTE BANCAIRE (MCB4) ». À rejouer
 -- après toute migration qui touche `couverture_du_releve`, `comptes_bancaires` ou `lignes_bancaires`.
 --

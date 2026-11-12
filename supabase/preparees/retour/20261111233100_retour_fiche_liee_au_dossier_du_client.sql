@@ -1,6 +1,7 @@
--- RETOUR DE LM3 (`fiche_liee_au_dossier_du_client`, 20261111233000) : rend la base d'avant, `signature.sql` égale à
+-- RETOUR DE LM3 (`fiche_liee_au_dossier_du_client`, 20261112140920) : rend la base d'avant, `signature.sql` égale à
 -- celle d'avant la migration (neuf familles). À COLLER (il retire trois colonnes, deux gardes, une lecture, le
 -- déliement et six contraintes, et remet le `not null` de `contacts.nom`), AVANT le retour de LM1.
+-- La migration est en production depuis le 12/11/2026 (version 20261112140920) : supabase/schema/20261112140920_fiche_liee_au_dossier_du_client.sql.
 --
 -- CE QU'IL DÉTRUIT : la colonne `contacts.dossier_client_id`, c'est-à-dire le lien de chaque fiche du dossier du cabinet
 -- au dossier de son client. Une fiche liée n'a aucune identité à elle (ni nom, ni adresse) : sans son lien, elle ne

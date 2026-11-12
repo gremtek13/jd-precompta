@@ -147,9 +147,8 @@ export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: st
   identites_des_fiches_liees: {
     colonnes: ['contact_id'],
     raison: 'une ligne par fiche liée : `from contacts f` filtré sur le dossier, puis deux jointures GAUCHES sur la clé primaire '
-      + 'de `dossiers` (supabase/preparees/20261111233000_fiche_liee_au_dossier_du_client.sql) — la vue « Clients » du dossier '
+      + 'de `dossiers` (supabase/schema/20261112140920_fiche_liee_au_dossier_du_client.sql) — la vue « Clients » du dossier '
       + 'du cabinet et le choix d’un client dans la facture la lisent depuis LM3 (drapeau `FICHES_LIEES_PREVUES`).',
-    preparee: 'supabase/preparees/20261111233000_fiche_liee_au_dossier_du_client.sql',
   },
   caisse_du_client: {
     colonnes: ['jour'],

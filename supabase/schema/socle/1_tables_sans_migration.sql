@@ -227,11 +227,13 @@ create table public.lignes_bancaires (
   compte_bilan text,
   declaration_tva_id uuid,
   encaissements_de_factures boolean default false not null,
+  compte_bancaire_id uuid not null,
   constraint lignes_bancaires_cotisation_unique UNIQUE (cotisation_id),
   constraint lignes_bancaires_echeance_emprunt_unique UNIQUE (emprunt_id, emprunt_echeance),
   constraint lignes_bancaires_id_externe_unique UNIQUE (dossier_id, id_externe),
   constraint lignes_bancaires_pkey PRIMARY KEY (id),
   constraint lignes_bancaires_categorie_id_fkey FOREIGN KEY (categorie_id) REFERENCES categories(id),
+  constraint lignes_bancaires_compte_bancaire FOREIGN KEY (compte_bancaire_id) REFERENCES comptes_bancaires(id),
   constraint lignes_bancaires_cotisation_id_fkey FOREIGN KEY (cotisation_id) REFERENCES cotisations_declarees(id) ON DELETE SET NULL,
   constraint lignes_bancaires_declaration_tva_id_fkey FOREIGN KEY (declaration_tva_id) REFERENCES declarations_tva(id),
   constraint lignes_bancaires_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
@@ -388,6 +390,7 @@ CREATE INDEX lignes_bancaires_statut_idx ON public.lignes_bancaires USING btree 
 CREATE INDEX lignes_bancaires_categorie_id_idx ON public.lignes_bancaires USING btree (categorie_id);
 CREATE INDEX lignes_bancaires_emprunt_id_idx ON public.lignes_bancaires USING btree (emprunt_id);
 CREATE INDEX lignes_bancaires_declaration_tva_id_idx ON public.lignes_bancaires USING btree (declaration_tva_id);
+CREATE INDEX lignes_bancaires_compte_bancaire_id_idx ON public.lignes_bancaires USING btree (compte_bancaire_id);
 CREATE INDEX ecritures_brouillon_ligne_bancaire_id_idx ON public.ecritures_brouillon USING btree (ligne_bancaire_id);
 CREATE INDEX ecritures_brouillon_immobilisation_id_idx ON public.ecritures_brouillon USING btree (immobilisation_id);
 CREATE INDEX ecritures_brouillon_vehicule_id_idx ON public.ecritures_brouillon USING btree (vehicule_id);

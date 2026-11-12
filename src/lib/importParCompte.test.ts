@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
+import { COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
 import {
   compteAEcrire, compteDeLImport, finAPoser, partDuCompte, refusDeLIdentifiant, refusDuCompte, refusDuNomDuFichier,
   type CompteDuReleve, type LectureDesComptes,
@@ -176,8 +176,9 @@ describe('la migration de la fin d’identifiant', () => {
     expect(migration).not.toMatch(/create (policy|function|trigger)|security definer/i)
     expect(retour).toMatch(/alter table public\.comptes_bancaires drop column fin_d_identifiant;/i)
   })
-  it('elle suit MCB1 sous le même drapeau : levé, elle est dans l’export elle aussi', () => {
-    expect(COMPTES_BANCAIRES_PREVUS).toBe(chemin.includes('/supabase/schema/'))
+  it('elle suit MCB1 : dans l’export avec elle (en base depuis le 12/11/2026), et les écrans ne se lèvent pas sans elle', () => {
+    expect(COMPTES_BANCAIRES_EN_BASE).toBe(chemin.includes('/supabase/schema/'))
+    if (COMPTES_BANCAIRES_PREVUS) expect(chemin.includes('/supabase/schema/')).toBe(true)
   })
   it('son essai est rejoué par la liste des essais', () => {
     expect(existsSync(new URL('../../supabase/essais/finDIdentifiantDesComptes.sql', import.meta.url))).toBe(true)

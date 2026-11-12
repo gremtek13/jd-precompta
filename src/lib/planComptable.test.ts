@@ -467,6 +467,12 @@ function quatorzeDeLEssai(): FonctionQuiLitLePlan[] {
 // la définition exportée ne lit que la banque ; le jour de son application, elle y entre, et lit les deux.
 const CAISSE_DU_RELEVE_EXPORTEE = readdirSync(new URL('supabase/schema/', RACINE)).some((n) => /^\d{14}_caisse_retrait_et_versement\.sql$/.test(n))
 
+// LA JAMBE DE BANQUE PAR COMPTE (MCB5, migration `jambe_de_banque_par_compte`, en production depuis le 12/11/2026) : les sept
+// qui classent un mouvement lisent la banque du MOUVEMENT (`compte_de_banque_du_mouvement(v_ligne.id)`), et ne nomment plus le
+// rôle `banque` — comme le contrôle 3 de l'essai selon la base (`banque_du_mouvement`), ici selon l'export.
+const JAMBE_DE_BANQUE_EXPORTEE = readdirSync(new URL('supabase/schema/', RACINE)).some((n) => /^\d{14}_jambe_de_banque_par_compte\.sql$/.test(n))
+const BANQUE_DU_MOUVEMENT = 'v_banque := public.compte_de_banque_du_mouvement(v_ligne.id);'
+
 /** Les rôles qu'une des quatorze lit dans l'export : ceux de l'essai, et la caisse du relevé quand l'export la porte. */
 function rolesAttendus(q: FonctionQuiLitLePlan): string[] {
   const roles = q.roles.split(',')
@@ -565,8 +571,15 @@ describe('les quatorze fonctions de la base lisent le plan (étape PC2)', () => 
       expect(/\bstable\b/.test(entete) ? 's' : /\bimmutable\b/.test(entete) ? 'i' : 'v', `${nom} : volatilité`).toBe(volatilite)
       expect(/\blanguage\s+(\w+)/.exec(entete)?.[1], `${nom} : langage`).toBe(langage)
       expect(/\bset\s+search_path\s*(?:=|to)\s*'?public'?/.test(entete) ? 'search_path=public' : '', `${nom} : réglages`).toBe(reglages)
-      // Ses rôles, exactement, tous au catalogue ; le dirigeant par compte_du_dirigeant, jamais le case recopié.
-      expect(ROLES.filter((role) => corps.includes(`'${role}'`)).sort(), nom).toEqual(rolesAttendus(q))
+      // Ses rôles, exactement, tous au catalogue ; le dirigeant par compte_du_dirigeant, jamais le case recopié. MCB5 dans
+      // l'export : la banque se lit par le mouvement, jamais par le rôle nommé.
+      const banqueDuMouvement = JAMBE_DE_BANQUE_EXPORTEE && q.roles.split(',').includes('banque')
+      if (banqueDuMouvement) {
+        expect(corps.includes(BANQUE_DU_MOUVEMENT), `${nom} : la banque du mouvement`).toBe(true)
+        expect(corps.includes(`'banque'`), `${nom} : le rôle banque nommé`).toBe(false)
+      }
+      const nommes = ROLES.filter((role) => corps.includes(`'${role}'`))
+      expect([...new Set([...nommes, ...(banqueDuMouvement ? ['banque'] : [])])].sort(), nom).toEqual(rolesAttendus(q))
       expect(corps.includes('public.compte_du_dirigeant('), nom).toBe(q.dirigeant)
       expect(corps, nom).not.toMatch(/else '108000' end/)
       // Aucun compte du catalogue entre apostrophes.
@@ -577,12 +590,13 @@ describe('les quatorze fonctions de la base lisent le plan (étape PC2)', () => 
         ...[...corps.matchAll(/public\.compte_du_role\(\s*([^,]+?)\s*,/g)].map((m) => m[1]),
         ...[...corps.matchAll(/public\.compte_du_dirigeant\(\s*([^)]+?)\s*\)/g)].map((m) => m[1]),
       ]
-      expect(lus.length, nom).toBeGreaterThan(0)
+      expect(lus.length + (banqueDuMouvement ? 1 : 0), nom).toBeGreaterThan(0)
       for (const x of lus) expect(q.lus, `${nom} : ${x}`).toContain(x)
       // Le verrou partagé de son dossier, avant la première lecture du plan ; aucun dans une lectrice, qui se lit sous
       // celui de son appelante.
       const premiereLecture = Math.min(
-        ...[corps.indexOf('public.compte_du_role('), corps.indexOf('public.compte_du_dirigeant(')].filter((i) => i >= 0))
+        ...[corps.indexOf('public.compte_du_role('), corps.indexOf('public.compte_du_dirigeant('),
+          corps.indexOf('public.compte_de_banque_du_mouvement(')].filter((i) => i >= 0))
       if (q.verrou === null) {
         expect(corps, nom).not.toMatch(/advisory/)
       } else {

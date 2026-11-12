@@ -48,8 +48,9 @@ const lettre = (p: Partial<LettreLue>): LettreLue => ({
 })
 
 describe('les lettres de mission, confrontées à leur migration', () => {
-  it('le drapeau est baissé tant que la migration n’est pas dans l’export ; l’acceptation en ligne est fermée en base', () => {
-    expect(LETTRES_DE_MISSION_PREVUES).toBe(false)
+  it('le drapeau est levé avec la migration dans l’export ; l’acceptation en ligne est fermée en base', () => {
+    const exportee = readdirSync(new URL('../../supabase/schema/', import.meta.url)).some((n) => /^\d{14}_lettres_de_mission\.sql$/.test(n))
+    expect(LETTRES_DE_MISSION_PREVUES).toBe(exportee)
     expect(ACCEPTATION_EN_LIGNE_OUVERTE).toBe(false)
     expect(fonction('acceptation_en_ligne_ouverte')).toMatch(/select false/)
     expect(fonction('acceptation_en_ligne_ouverte')).not.toMatch(/select true/)

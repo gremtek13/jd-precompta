@@ -40,6 +40,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { CAISSE_EXPORTEE } from './caisse'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
+import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { derniereDefinitionSql } from '../test/schema'
 
 // Ces tests sont la RÉPÉTITION de la restauration. Une sauvegarde jamais restaurée n'est pas une
@@ -140,11 +141,13 @@ describe('ordre de restauration', () => {
       'revision_explications.remplace_id', 'declarations_ereporting.remplace_id', 'dossier_permanent.remplace_id',
       // Depuis l'étape A6a, les adresses de réception, le jour où leur migration est exportée ; depuis l'étape A5a, les
       // paramètres de facturation, de même ; depuis l'étape C2, les opérations de la caisse, de même ; depuis l'étape C4a
-      // (en production le 07/11/2026), les situations publiées, de même.
+      // (en production le 07/11/2026), les situations publiées, de même ; depuis LM4 (en production le 12/11/2026), les
+      // modèles et les lettres de mission, de même.
       ...(ADRESSES_RECEPTION_EXPORTEES ? ['adresses_reception.remplace_id'] : []),
       ...(PARAMETRES_FACTURATION_EXPORTES ? ['parametres_facturation.remplace_id'] : []),
       ...(CAISSE_EXPORTEE ? ['operations_caisse.remplace_id'] : []),
       ...(SITUATIONS_PUBLIEES_EXPORTEES ? ['situations_publiees.remplace_id'] : []),
+      ...(LETTRES_DE_MISSION_PREVUES ? ['modeles_lettre_de_mission.remplace_id', 'lettres_de_mission.remplace_id'] : []),
     ])
   })
 

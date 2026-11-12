@@ -71,6 +71,13 @@ vi.mock('../../lib/situationsPubliees', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../lib/situationsPubliees')>(),
   SITUATIONS_PUBLIEES_EXPORTEES: false,
 }))
+// La désignation du dossier du cabinet (LM1, en production depuis le 12/11/2026), lue pour CE dossier : elle n'est pas lui, et
+// le formulaire est offert. Sa lecture a son test (dossierDuCabinetLecture.test.ts), l'onglet sur le dossier du cabinet le sien
+// (AccesTab.dossierDuCabinet.test.tsx, qui joue aussi le drapeau baissé) ; ici, les lectures que ce fichier compte restent
+// celles des accès.
+vi.mock('../../lib/dossierDuCabinetLecture', () => ({
+  useDesignationDuDossier: (dossierId: string) => ({ etat: 'lue', dossierId, dossierActuel: null }),
+}))
 // La trace des droits (étape P1-trace) a sa lecture et son écran testés à part (traceDesDroitsLecture.test.ts, AccesTab.trace.test.tsx) :
 // ici, lue en entier et vide, pour que les lectures que ce fichier compte restent celles des accès.
 vi.mock('../../lib/traceDesDroitsLecture', () => ({

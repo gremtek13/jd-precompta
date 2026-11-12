@@ -610,7 +610,8 @@ function chaineDe(nom: string): string[] {
     if (vues.has(courante)) continue
     vues.add(courante)
     const corps = derniereDefinitionSql(courante)
-    const apresLaSignature = corps.slice(corps.indexOf('$$'))
+    // Le corps s'ouvre par `$$`, ou par `$function$` quand la migration recopie `pg_get_functiondef` (MCB5, 12/11/2026).
+    const apresLaSignature = corps.slice(/\$\w*\$/.exec(corps)?.index ?? 0)
     for (const m of apresLaSignature.matchAll(/(?<![\w.])(?:public\.)?(\w+)\s*\(/g)) if (exportees.has(m[1]) && !vues.has(m[1])) a.push(m[1])
   }
   return [...vues].sort()
@@ -629,7 +630,11 @@ describe('ventes_facturees_de_l_exercice : ce que l’assistant demande à la ba
 
   it('appelle une chaîne de fonctions que le relevé du catalogue a jugée, la sienne comprise', () => {
     expect(chaineDe(FONCTION)).toEqual([
-      'centimes_ligne_facture', 'compte_du_role', 'ecritures_attendues_de_la_periode', 'frontiere_validation',
+      'centimes_ligne_facture',
+      // MCB5 (`jambe_de_banque_par_compte`, en production depuis le 12/11/2026) : la banque du mouvement. Relevée au catalogue
+      // de la production le 12/11/2026 : `security invoker`, `stable`, `search_path=public`, exécutable par le rôle du service.
+      'compte_de_banque_du_mouvement',
+      'compte_du_role', 'ecritures_attendues_de_la_periode', 'frontiere_validation',
       // A8b (10/11/2026) : la règle du cumul lit les montants d'un document, repris ou non. Relevée au catalogue de la
       // production le 10/11/2026 : `security invoker`, `stable`, `search_path=public`, exécutable par le rôle du service.
       'montants_par_taux_du_document',

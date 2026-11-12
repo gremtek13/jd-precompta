@@ -67,7 +67,8 @@ describe('les comptes de l’écriture', () => {
   // (ligne 43), elle les lit dans le plan du dossier par la CLÉ de leur rôle, dont le défaut est la constante d'ici.
   it('sont ceux que la fonction SQL exportée attend, dans le sens du mouvement', () => {
     const sql = definitionSql()
-    expect(sql).toContain("v_banque := public.compte_du_role(v_ligne.dossier_id, 'banque');")
+    // Depuis MCB5 (`jambe_de_banque_par_compte`, en production depuis le 12/11/2026), la banque du MOUVEMENT.
+    expect(sql).toContain('v_banque := public.compte_de_banque_du_mouvement(v_ligne.id);')
     expect(sql).toContain("v_compte_cotisations := public.compte_du_role(v_ligne.dossier_id, 'cotisations_exploitant');")
     expect(sql).toContain("v_compte_exploitant := public.compte_du_role(v_ligne.dossier_id, 'exploitant');")
     expect([PLAN_PAR_DEFAUT.banque, PLAN_PAR_DEFAUT.cotisations_exploitant, PLAN_PAR_DEFAUT.exploitant])

@@ -20,7 +20,7 @@ import { couperEnLignes, enWinAnsi, pdfDeLaLettre } from './pdfLettreDeMission'
 // Données FICTIVES.
 
 const MIGRATION = (() => {
-  const dossier = new URL('../../supabase/preparees/', import.meta.url).pathname
+  const dossier = new URL('../../supabase/schema/', import.meta.url).pathname
   const nom = readdirSync(dossier).find((n) => /^\d{14}_lettres_de_mission\.sql$/.test(n))
   expect(nom).toBeDefined()
   return readFileSync(dossier + nom, 'utf8')

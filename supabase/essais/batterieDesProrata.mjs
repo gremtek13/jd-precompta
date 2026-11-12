@@ -1,5 +1,5 @@
 // LA BATTERIE DU PRORATA DES HONORAIRES, JUGÉE PAR LA BASE (ligne 47, LM7-Q4 (C), 11/11/2026 ; la migration
-// `honoraires_factures`, PRÉPARÉE, supabase/preparees/20261111190000_honoraires_factures.sql).
+// `honoraires_factures`, en production depuis le 12/11/2026, supabase/schema/20261112141227_honoraires_factures.sql).
 //
 // src/lib/honorairesAuProrataBatterie.test.ts fige l'empreinte des centimes que `honoraires_au_prorata` a rendus sur les
 // parts que tire src/test/batterieDesProrata.ts, et exige que `centimesAuProrata` (src/lib/honorairesAFacturer.ts) rende

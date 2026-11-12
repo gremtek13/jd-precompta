@@ -25,7 +25,7 @@ import type { ModeComptable } from './types'
 vi.mock('./supabase', () => ({ supabase: {} }))
 
 const RACINE = new URL('../../', import.meta.url)
-const MIGRATION = readFileSync(new URL('supabase/preparees/20261111200000_jambe_de_banque_par_compte.sql', RACINE), 'utf8')
+const MIGRATION = readFileSync(new URL('supabase/schema/20261112140844_jambe_de_banque_par_compte.sql', RACINE), 'utf8')
 
 const D = 'd1'
 const compte = (c: Partial<CompteDuReleve> & Pick<CompteDuReleve, 'id'>): CompteDuReleve => ({

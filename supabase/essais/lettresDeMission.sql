@@ -1,5 +1,5 @@
--- LES LETTRES DE MISSION (ligne 47, lot LM4 ; la migration `lettres_de_mission`, PRÉPARÉE le 11/11/2026,
--- supabase/preparees/20261111160000_lettres_de_mission.sql, après `dossier_du_cabinet`, LM1). Le récit : HISTORIQUE.md,
+-- LES LETTRES DE MISSION (ligne 47, lot LM4 ; la migration `lettres_de_mission`, en production depuis le 12/11/2026,
+-- supabase/schema/20261112140911_lettres_de_mission.sql, après `dossier_du_cabinet`, LM1). Le récit : HISTORIQUE.md,
 -- « 11/11/2026 — LM4 ».
 -- SUR UNE RÉPLIQUE SEULEMENT : il désigne le dossier du cabinet de la réplique et supprime, en dernier, un dossier jetable
 -- (le geste du super-administrateur qui retire un cabinet). À rejouer, par psql (`-f`, pas `-1` : le fichier ouvre et

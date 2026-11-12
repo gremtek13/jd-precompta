@@ -6,6 +6,7 @@ import { facture as factureCii, SIRET_VENDEUR } from '../../test/facturesCii'
 import { NON_BASCULE } from '../../test/factures'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 import { DRAPEAU_DES_REPRISES_AU_CLIENT } from '../../lib/reprisesAuClient'
+import { DOSSIER_DU_CABINET_PREVU } from '../../lib/dossierDuCabinet'
 import {
   REFUS_FINALE_ACOMPTE_EN_BROUILLON, refusAcompteRepris, refusCumulDesAcomptes,
 } from '../../lib/acomptesDesFactures'
@@ -15,6 +16,13 @@ import {
 // l'onglet, celui d'avant : la section ne rend rien ici, éprouvée seule par ImportDesFactures.test.tsx, et son câblage par
 // FacturesTab.test.tsx.
 vi.mock('./ImportDesFactures', () => ({ default: () => null }))
+// Les cartes des honoraires du dossier du cabinet (ligne 47, LM7 et LM8, en production depuis le 12/11/2026) lisent sa
+// désignation : ce dossier n'est pas celui du cabinet, et elles ne rendent rien. Leur lecture et leurs cartes ont leurs tests
+// (dossierDuCabinetLecture.test.ts, HonorairesAFacturerCard.test.tsx, DepotDesHonorairesCard.test.tsx).
+vi.mock('../../lib/dossierDuCabinetLecture', async (original) => ({
+  ...(await original<typeof import('../../lib/dossierDuCabinetLecture')>()),
+  useDesignationDuDossier: (dossierId: string) => ({ etat: 'lue', dossierId, dossierActuel: null }),
+}))
 
 // LA FACTURE D'ACOMPTE ET LA FINALE DANS L'ONGLET DES FACTURES (étape P5b5b), avec le VRAI onglet, son formulaire et sa
 // fenêtre d'avoir, et un faux client qui APPLIQUE les filtres, projette les colonnes demandées et annonce un compte. Ce que
@@ -144,8 +152,9 @@ beforeEach(() => {
       denomination_imprimee: 'Atelier fictif SAS', forme_juridique: '5710', capital: null, rcs_ville: null, mentions_identite: null,
       mode_comptable: 'tresorerie',
     }],
-    // Le nom du cabinet, que la validation du cabinet fige comme mandataire (P4) : lu avec le dossier.
-    cabinets: [{ id: 'c1', nom: 'Cabinet Fictif' }],
+    // Le nom du cabinet, que la validation du cabinet fige comme mandataire (P4) : lu avec le dossier ; et, depuis LM1 (en
+    // production le 12/11/2026), le dossier qu'il désigne comme le sien — aucun ici.
+    cabinets: [{ id: 'c1', nom: 'Cabinet Fictif', dossier_du_cabinet: null }],
     factures_emises: [ORDINAIRE(), ACOMPTE(), FINALE(), BROUILLON_D_ACOMPTE()],
     facture_lignes: [
       ligne('lo', 'f1', 0, 'Conseil fictif', 1, 500),
@@ -381,10 +390,11 @@ describe('le mandat de facturation dans l’onglet (P4)', () => {
   }
 
   it('le cabinet : le nom du cabinet DU dossier est lu, et la confirmation de validation nomme la mention', async () => {
-    faux.tables.cabinets.push({ id: 'c2', nom: 'Autre Cabinet' })
+    faux.tables.cabinets.push({ id: 'c2', nom: 'Autre Cabinet', dossier_du_cabinet: null })
     await monter('cabinet')
     await ouvrirLaFinale()
-    expect(faux.lectures.filter((l) => l.table === 'cabinets')).toEqual([{ table: 'cabinets', colonnes: 'nom' }])
+    expect(faux.lectures.filter((l) => l.table === 'cabinets'))
+      .toEqual([{ table: 'cabinets', colonnes: DOSSIER_DU_CABINET_PREVU ? 'nom, dossier_du_cabinet' : 'nom' }])
     const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Valider la facture' })) })
     expect(confirmer.mock.calls[0][0]).toContain('– la mention « Facture établie par Cabinet Fictif au nom et pour le compte de Atelier fictif SAS »')

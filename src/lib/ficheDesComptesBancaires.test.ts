@@ -60,7 +60,7 @@ describe('la création', () => {
   it('la fin de l’identifiant : quatre chiffres ou lettres, comme la contrainte de la migration', () => {
     expect(jugerLaCreation(saisie({ finDIdentifiant: '45' }), [PRINCIPAL], ROLES).refus).toBe(REFUS_FIN_D_IDENTIFIANT)
     expect(jugerLaCreation(saisie({ finDIdentifiant: '45-6' }), [PRINCIPAL], ROLES).refus).toBe(REFUS_FIN_D_IDENTIFIANT)
-    const migration = readFileSync('supabase/preparees/20261111153000_fin_d_identifiant_des_comptes_bancaires.sql', 'utf8')
+    const migration = readFileSync('supabase/schema/20261112140819_fin_d_identifiant_des_comptes_bancaires.sql', 'utf8')
     expect(migration).toContain("check (fin_d_identifiant ~ '^[0-9A-Z]{4}$')")
   })
 
