@@ -15,14 +15,16 @@ import {
   seRegleSansReecriture,
 } from './ecartsDeReglement'
 import { lignesEngagementPourPiece } from './engagement'
-import { analyserEcritures, lignesPourPiece, type CibleComptable, type LigneAGenerer } from './ecritures'
+import { analyserEcritures, calculerBalance, lignesPourPiece, type CibleComptable, type LigneAGenerer } from './ecritures'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { libelleCompteTenu } from './comptes'
+import { libelleCompte } from './fec'
 import { racinesDuDirigeantNonAssocieSelon } from './dirigeantAu468'
 import { ROLE_DU_PERSONNEL } from './notesDeFrais'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES, planDeLaReponse, type PlanComptable } from './planComptable'
 import { ROLES_DU_CHANGE } from './rolesDuChange'
 import { estParLeReleve, type PaiementDePiece } from './rattachement'
-import type { EcritureBrouillon } from './types'
+import type { Categorie, EcritureBrouillon } from './types'
 import type { ModeleComptable } from './engagement'
 import type { Piece } from './types'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
@@ -228,5 +230,36 @@ describe('l’essai du plan comptable, la migration du change appliquée', () =>
     expect(ESSAI_DU_PLAN).toContain("m.name = 'ecarts_de_reglement'")
     expect(ESSAI_DU_PLAN).toContain('roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end;')
     expect(ESSAI_DU_PLAN).toContain("values (dossier_libre, 'pertes_de_change', '656100', null), (dossier_libre, 'gains_de_change', '756100', null);")
+  })
+})
+
+// LE LIBELLÉ DES COMPTES DU CHANGE dans la balance, le FEC (CompteLib), la révision et le lettrage (`libelleCompteTenu`) : le
+// drapeau levé, tenus comme les comptes des autres rôles — l'intitulé du PCG ; baissé, rien ne change, et une catégorie qui
+// porterait l'un d'eux garde son nom. La piste d'audit ne nomme pas les comptes.
+describe('le libellé des comptes du change', () => {
+  const PERTES = 'Pertes de change sur créances et dettes commerciales'
+  const categorie = { id: 'c1', libelle: 'Écarts divers', compte_comptable: '656000', poste_2035: null } as Categorie
+  const ligne = (compte: string, sens: 'debit' | 'credit') =>
+    ({ id: `e-${compte}`, piece_id: 'p1', date: '2025-04-02', compte, libelle: 'x', sens, montant: 3.45, statut: 'proposee', ligne_bancaire_id: 'l1' }) as EcritureBrouillon
+  const libellesDeLaBalance = () => Object.fromEntries(calculerBalance([ligne('656000', 'debit'), ligne('512000', 'credit')], [categorie], [])
+    .map((l) => [l.compte, l.libelle]))
+
+  it('drapeau baissé : aucun libellé tenu, la catégorie nomme le 656000, comme hier', () => {
+    for (const compte of ['656000', '756000', '666000', '766000']) expect(libelleCompteTenu(compte), compte).toBeNull()
+    expect(libelleCompte('656000', [categorie])).toBe('Écarts divers')
+    expect(libelleCompte('756000', [])).toBe('756000')
+    expect(libellesDeLaBalance()['656000']).toBe('Écarts divers')
+  })
+  it('drapeau levé : l’intitulé du PCG, devant la catégorie, dans la balance et le FEC', () => {
+    etat.leve = true
+    expect(libelleCompteTenu('656000')).toBe(PERTES)
+    expect(libelleCompteTenu('756000')).toBe('Gains de change sur créances et dettes commerciales')
+    expect(libelleCompteTenu('666000')).toBe('Pertes de change financières')
+    expect(libelleCompteTenu('766000')).toBe('Gains de change financiers')
+    expect(libelleCompteTenu('656100')).toBeNull()
+    expect(libelleCompte('656000', [categorie])).toBe(PERTES)
+    expect(libellesDeLaBalance()['656000']).toBe(PERTES)
+    // Le libellé du catalogue, celui que la migration insère : un seul texte.
+    expect(ROLES_DU_CHANGE.map((r) => libelleCompteTenu(r.compteDefaut))).toEqual(ROLES_DU_CHANGE.map((r) => r.libelleDefaut))
   })
 })

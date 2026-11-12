@@ -1,3 +1,5 @@
+import { ECARTS_DE_REGLEMENT_PREVUS, ROLES_DU_CHANGE } from './rolesDuChange'
+
 // Comptes PCG standard, fixes — partagés entre Écritures (génération de la ligne charge/produit +
 // TVA), Banque (génération de la contrepartie), la balance et l'export FEC, pour n'avoir qu'un seul
 // endroit à changer si un jour ces comptes deviennent configurables par dossier.
@@ -205,8 +207,24 @@ const LIBELLES_IMMOBILISATIONS: Readonly<Record<string, string>> = {
 // écrirait 281830, et le libellé que lui donne une balance reprise reste le sien.
 const COMPTE_AMORTISSEMENT_ECRIT = /^28(\d{4}|\d{4}[1-9])$/
 
+// LES COMPTES DU CHANGE (ligne 31, 31-changeFrais ; lib/rolesDuChange.ts) : le défaut de leurs deux rôles, 656000 et
+// 756000, sous le libellé du catalogue (l'intitulé du PCG pour une créance ou une dette commerciale, règlement ANC
+// n° 2015-05), et le 666000 et le 766000 qu'un dossier peut choisir à leur place (CHG-Q1), sous l'intitulé du PCG pour les
+// opérations financières. Tenus, comme les comptes de tous les autres rôles (`LIBELLES_COMPTES`), le drapeau de leur
+// migration levé SEULEMENT : baissé, rien ne les écrit, et une catégorie qui porterait l'un d'eux garde son nom — rien ne
+// change, à l'octet près. La balance, le FEC, la révision, la revue analytique et le lettrage les lisent ici.
+const LIBELLES_DU_CHANGE: Readonly<Record<string, string>> = {
+  // Le libellé du catalogue, écrit une fois (lib/rolesDuChange.ts) ; ecartsDeReglement.test.ts confronte chaque clé au
+  // défaut de son rôle.
+  '656000': ROLES_DU_CHANGE[0].libelleDefaut,
+  '756000': ROLES_DU_CHANGE[1].libelleDefaut,
+  '666000': 'Pertes de change financières',
+  '766000': 'Gains de change financiers',
+}
+
 export function libelleCompteTenu(compte: string): string | null {
   if (LIBELLES_COMPTES[compte]) return LIBELLES_COMPTES[compte]
+  if (ECARTS_DE_REGLEMENT_PREVUS && LIBELLES_DU_CHANGE[compte]) return LIBELLES_DU_CHANGE[compte]
   if (COMPTE_AMORTISSEMENT_ECRIT.test(compte)) {
     return LIBELLES_AMORTISSEMENTS[compte]
       ?? (compte.startsWith('280') ? 'Amortissements des immobilisations incorporelles' : 'Amortissements des immobilisations corporelles')
