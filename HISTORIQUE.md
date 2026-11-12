@@ -51464,3 +51464,24 @@ réapplication, passent. **L'écran** (derrière `CATEGORIES_DU_DOSSIER_PREVUES`
 une catégorie employée garde son compte et son poste (PC7-Q1) et ne se supprime pas, dit avant le clic ; le troisième temps
 de la carte de la balance propose les comptes 6 et 7 (`lib/categoriesDepuisLaBalance.ts`), sans poste deviné, sans dotations,
 cotisations ni barème. Tests : 19 des modules, 5 d'écran.
+
+### 12/11/2026 — PC5 : LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS APPLIQUÉ)
+
+(Agent architecte, ligne 43 ; en production, des SELECT : 200 migrations, `3b0ca6ba…`, `signature.sql` égal à la copie.) **La
+migration** `modele_de_plan_du_cabinet` (20261112100000, `8c8fa20f…`, 34 337 octets, sans barre oblique inverse ni retrait :
+PAR L'OUTIL ; retour 20261112100100, `9896a271…`, destructif, à coller) : `plan_comptable_cabinet` (les colonnes et contrôles du
+plan d'un dossier, sans `origine` ; lue par l'équipe, `admin_du_cabinet`, aucune policy d'écriture, une garde à porte) ;
+`regler_modele_du_cabinet` (le chef, 43-Q3 ; les refus 3 à 12 de PC4 sous leurs mots, 9 et 10 contre les catégories COMMUNES ;
+un verrou du cabinet) ; `modele_du_cabinet`, à la forme de `plan_du_dossier` ; `appliquer_modele_du_cabinet`, qui APPELLE
+`regler_plan_du_dossier` (son accès, son verrou, ses refus), et un déclencheur après la garde du plan qui pose l'origine
+« modele_du_cabinet ». **Le choix** : le modèle se stocke ENTIER, un rôle rendu au catalogue gardant sa ligne aux valeurs du
+catalogue ; écarté, retirer puis insérer comme PC4, qui fait coller. **Trouvé** : `admin_du_cabinet` rend NUL pour un compte
+sans cabinet, qu'un `if not …` laisse passer (l'essai a vu le client lire par `modele_du_cabinet`) : `coalesce` ; aucune
+fonction en production ne l'emploie ainsi, une policy n'en souffre pas. **Preuves** (copie de la mère 17 au niveau 200) :
+`modeleDuCabinet.sql` 79/79, EN ATTENTE sans elle ; `modeleDuCabinetSuppression.sql` 3/3 ; 17 mutations sur 17 ; `rls.sql`
+entier, 279 lignes, 0 en faute, 111 mutations sur 111 (bloc MP) ; `planComptable.sql` et `reglerLePlanDuDossier.sql` identiques ;
+`restauration.sql`, ses 14 contrôles sans données, inchangés ; deux réglages concurrents : le second attend, l'emporte entier ;
+le retour rend les neuf familles, la réapplication passe. **L'écran**, derrière `MODELE_DU_CABINET_PREVU` baissé : la carte du
+chef (page du cabinet), « Nouveau dossier » qui dit le modèle avant le clic, crée puis l'applique (un refus dit, le dossier
+reste), l'export d'un cabinet, la table au plan (niveau cabinet). **Restent** : appliquer, rejouer, lever ; « Appliquer le
+modèle » sur la carte du plan d'un dossier, que PC4 n'a pas encore ; PC5-Q1.

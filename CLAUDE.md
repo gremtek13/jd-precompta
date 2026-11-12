@@ -736,10 +736,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`plan_depuis_la_balance`, à coller APRÈS la levée de `PLAN_DEPUIS_LA_BALANCE_PREVU` ; tout 512… va à la banque du plan, MCB5g
   l'éclate), son écran (la carte de la balance en deux temps) fait derrière le même drapeau ; restent la levée, le
   déploiement, puis le collage → « PC6 : LA REPRISE PROPOSE LE PLAN (PRÉPARÉE, PAS APPLIQUÉE) », « PC6 : L'ÉCRAN DE LA
-  REPRISE QUI PROPOSE LE PLAN (DERRIÈRE SON DRAPEAU) » ; PC7 préparée le 12/11/2026 (`categories_du_dossier`, la garde de
-  la table ; l'écran et le troisième temps de la balance derrière `CATEGORIES_DU_DOSSIER_PREVUES` baissé) → « PC7 : LES
-  CATÉGORIES DU DOSSIER, DONT CELLES DE SA BALANCE » ; puis la suite jusqu'à PC9 → « LE PLAN COMPTABLE PERSONNALISABLE : LA
-  CONCEPTION », « L'APPLICATION LIT LE PLAN ».
+  REPRISE QUI PROPOSE LE PLAN (DERRIÈRE SON DRAPEAU) » ; PC5, le modèle du cabinet, préparé le 12/11/2026, par l'outil
+  (`modele_de_plan_du_cabinet`, `MODELE_DU_CABINET_PREVU` baissé) → « PC5 : LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS
+  APPLIQUÉ) » ; PC7 préparée le même jour (`categories_du_dossier`, la garde de la table ; l'écran et le troisième temps de
+  la balance derrière `CATEGORIES_DU_DOSSIER_PREVUES` baissé) → « PC7 : LES CATÉGORIES DU DOSSIER, DONT CELLES DE SA
+  BALANCE » ; puis PC8 et PC9, sur décision → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
+  PLAN ».
 
 ## Feuille de route — page Notion à tenir à jour
 
