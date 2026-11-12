@@ -52076,3 +52076,20 @@ CFC-Q2 (B) « le manifeste rechargé » — la migration des copies des fichiers
 collées ensemble par le cabinet depuis un ordinateur. B1-Q1 reste sans réponse, et retient B2, B3b, B4, B7 et LM6.
 ESSPROD-Q1 : oui, rejouer en production les essais déclarés rejouables. INV-Q1, Q4, Q7, Q8, Q9 et Q10 : (A). PC7-Q2 (B) : un
 lot à part.
+
+### 12/11/2026 — PC7-Q2 : LA CLASSE DU COMPTE D'UNE CATÉGORIE DU DOSSIER, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, sur la réponse (B) ; en production, des SELECT : 205 migrations (`10d4a154…`), la garde de PC7 au corps
+`0e1ee2d3…`, dix catégories, toutes communes : aucune propre hors classe, ni contrainte NOT VALID ni reprise. **La migration**
+`classes_des_categories` (20261112233000, `d7baebd7…`, par l'outil ; retour 20261112233100, `9db942d2…`, le corps d'hier à
+l'octet près, par l'outil) : une garde de tête (l'empreinte, le déclencheur, un recompte qui arrête et dit), puis le même corps
+plus (e) — une catégorie du dossier dont le compte non nul ne suit pas `^[67][0-9]{2}` (le prédicat du relevé), à l'insertion
+ou quand il change, 23514 —, AVANT la porte de la restauration (la classe ne dépend que de la ligne, et le chef,
+super-administrateur, l'aurait contournée par l'API) et avant (b) et (c) ; les communes (PC7Q2-Q1) et un compte nul passent.
+**Les essais** : `affectation` (15), `ventilation` (23) et la C108 de `reglerLePlanDuDossier` passent communes ; ses étapes 35,
+36, 38 et 39, comme 39 et 72 de `modeleDuCabinet`, posent la leur déclencheurs coupés, comme avant la garde : sorties identiques à
+l'octet, avec et sans la migration. **Preuves** (mère 17 rattrapée à 205, `signature.sql` égal) : `categoriesDuDossier` 34 sur
+34 (40 à 49 ; EN ATTENTE sans elle), 15 mutations sur 15 ; `rls.sql` et 17 autres essais identiques avant et après ; le retour
+rend la signature et, rejoué, se refuse ; banc du leurre SÛR ; drapeau levé en simulation, 21 289 tests. Avant comme après,
+MP1 de `rls.sql` et sept étapes de `modeleDuCabinet` attendent 32 rôles (34 depuis `ecarts_de_reglement`). **L'écran** :
+`refusDeLaClasse`, que `compteDeCategorie` dit ; « Comptes manquants » le dit avant le clic sous `CLASSES_DES_CATEGORIES_PREVUES`.

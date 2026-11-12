@@ -58,6 +58,7 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { useAuth } from '../../context/AuthContext'
 import { messageErreur } from '../../lib/messageErreur'
 import { CATEGORIE_NON_MODIFIEE, categorieCommuneNonReglable, categorieReglableIci } from '../../lib/categoriesCommunes'
+import { CLASSES_DES_CATEGORIES_PREVUES, refusDuCompteDUneCategorie } from '../../lib/categoriesDuDossier'
 import {
   etatsDesVentesFacturees, ligneDUneVenteFacturee, mouvementsClassesParEncaissements,
 } from '../../lib/ecrituresVentesFactureesEcran'
@@ -411,6 +412,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     // Seconde ceinture : le champ d'une catégorie commune n'est pas rendu à qui ne peut pas la régler.
     if (categorie && !categorieReglableIci(categorie, isSuperAdmin)) {
       setError(categorieCommuneNonReglable('compte'))
+      return
+    }
+    // Le compte d'une catégorie DU DOSSIER est une charge ou un produit : la base le refuse sinon (PC7-Q2, la migration
+    // `classes_des_categories`), et la carte le dit avant le clic, à ses mots, sur le compte tel qu'il part — sous
+    // `CLASSES_DES_CATEGORIES_PREVUES`, levé avec la migration. Une catégorie commune n'en est pas jugée.
+    const refusDeLaClasse = CLASSES_DES_CATEGORIES_PREVUES && categorie ? refusDuCompteDUneCategorie(categorie, valeur) : null
+    if (refusDeLaClasse) {
+      setError(refusDeLaClasse)
       return
     }
     // Lue avec la ligne modifiée : une policy qui écarte la ligne ne lève rien, et PostgREST rend un succès sur zéro ligne.
