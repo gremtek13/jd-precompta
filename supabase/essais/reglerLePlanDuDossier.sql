@@ -523,10 +523,16 @@ begin
     -- L'ordre des déclencheurs BEFORE : la garde des lignes de pièce avant celle qui prenait seule le verrou partagé ; la
     -- garde du lettrage après celle de l'exemplaire d'une facture source. Depuis A8-Q5 (le jour J, 10/11/2026), la garde des
     -- règlements d'une pièce citée par une facture reprise (`ecritures_brouillon_piece_d_une_facture_reprise`), après elle.
+    -- Depuis la ligne 28.66 (`gardes_de_la_validation_allegees`), la garde des écritures validées et G5 portent leur
+    -- modification par un jumeau dont le nom prolonge le leur, à leur place : la liste les tait, le verdict les exige
+    -- ensemble ou absents ensemble.
     select string_agg(t.tgname, ',' order by t.tgname collate "C") into v_obs from pg_trigger t
-     where not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgrelid in ('public.ecritures_brouillon'::regclass, 'public.lettrages_manuels'::regclass);
+     where not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgrelid in ('public.ecritures_brouillon'::regclass, 'public.lettrages_manuels'::regclass)
+       and t.tgname not in ('ecritures_brouillon_intangibles_modification', 'ecritures_brouillon_vente_facturee_lignes_modification');
     verdicts := verdicts || jsonb_build_object('rang', 142, 'etape', '142. l''ordre des déclencheurs BEFORE du brouillon et des lettrages',
-      'ok', v_obs = 'ecritures_brouillon_caisse,ecritures_brouillon_comptes_des_pieces,ecritures_brouillon_intangibles,ecritures_brouillon_paiement_personnel,'
+      'ok', (select count(*) from pg_trigger t where t.tgrelid = 'public.ecritures_brouillon'::regclass and (t.tgtype & 2) = 2
+              and t.tgname in ('ecritures_brouillon_intangibles_modification', 'ecritures_brouillon_vente_facturee_lignes_modification')) in (0, 2)
+        and v_obs = 'ecritures_brouillon_caisse,ecritures_brouillon_comptes_des_pieces,ecritures_brouillon_intangibles,ecritures_brouillon_paiement_personnel,'
                  || 'ecritures_brouillon_piece_d_une_facture_reprise,'
                  || 'ecritures_brouillon_sans_exemplaire_d_une_source,ecritures_brouillon_vente_facturee,ecritures_brouillon_vente_facturee_lignes,'
                  || 'lettrages_manuels_sans_exemplaire_d_une_source,lettrages_manuels_un_compte_qui_se_lettre',
