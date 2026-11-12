@@ -218,25 +218,30 @@ describe('les dix rôles des stocks, jugés à part par planComptable.sql', () =
   })
 })
 
-// LES TROIS SOURCES NEUVES DU BROUILLON (INV2, LIA2, MCB5g) : chaque paire a UNE contrainte, au même nom et au même texte
-// dans les deux migrations de la paire, posée par la seconde à se coller ; chaque garde de tête accepte les deux autres
-// colonnes, présentes ou non, et rien d'autre. Les trois se collent ainsi dans n'importe quel ordre et laissent la même base.
+// LES QUATRE SOURCES NEUVES DU BROUILLON (INV2, LIA2, MCB5g, AFF2) : chaque paire a UNE contrainte, au même nom et au même texte
+// dans les deux migrations de la paire, posée par la seconde à se coller ; chaque garde de tête accepte les trois autres
+// colonnes, présentes ou non, et rien d'autre. Les quatre se collent ainsi dans n'importe quel ordre et laissent la même base.
 describe('les sources neuves du brouillon, dans n’importe quel ordre', () => {
   const lire = (chemin: string) => readFileSync(new URL(`../../${chemin}`, import.meta.url), 'utf8')
   const MIGRATIONS = {
     operation_inventaire_id: lire('supabase/preparees/20261112190000_operations_d_inventaire.sql'),
     stock_de_cloture_id: MIGRATION,
     ouverture_compte_bancaire_id: lire('supabase/preparees/20261111235000_ouverture_eclatee_par_compte.sql'),
+    affectation_id: lire('supabase/preparees/20261112233000_affectation_du_resultat.sql'),
   }
   const RETOURS = {
     operation_inventaire_id: lire('supabase/preparees/retour/20261112190100_retour_operations_d_inventaire.sql'),
     stock_de_cloture_id: lire('supabase/preparees/retour/20261112200100_retour_stocks_de_cloture.sql'),
     ouverture_compte_bancaire_id: lire('supabase/preparees/retour/20261111235100_retour_ouverture_eclatee_par_compte.sql'),
+    affectation_id: lire('supabase/preparees/retour/20261112233100_retour_affectation_du_resultat.sql'),
   }
   const PAIRES = [
     ['ecritures_brouillon_inventaire_hors_des_stocks', 'operation_inventaire_id', 'stock_de_cloture_id'],
     ['ecritures_brouillon_inventaire_hors_de_l_ouverture', 'operation_inventaire_id', 'ouverture_compte_bancaire_id'],
     ['ecritures_brouillon_stock_hors_de_l_ouverture', 'stock_de_cloture_id', 'ouverture_compte_bancaire_id'],
+    ['ecritures_brouillon_inventaire_hors_de_l_affectation', 'operation_inventaire_id', 'affectation_id'],
+    ['ecritures_brouillon_stock_hors_de_l_affectation', 'stock_de_cloture_id', 'affectation_id'],
+    ['ecritures_brouillon_affectation_hors_de_l_ouverture', 'affectation_id', 'ouverture_compte_bancaire_id'],
   ] as const
   const SOURCES_D_HIER =
     'cotisation_id,declaration_tva_id,dossier_id,encaissement_id,facture_id,immobilisation_id,ligne_bancaire_id,operation_caisse_id,piece_id,vehicule_id'
@@ -253,15 +258,16 @@ describe('les sources neuves du brouillon, dans n’importe quel ordre', () => {
           .toContain(`alter table public.ecritures_brouillon drop constraint if exists ${nom};`)
       }
     }
-    // Aucune autre contrainte d'exclusion entre elles : trois paires, six poses.
+    // Aucune autre contrainte d'exclusion entre elles : six paires (AFF2, la quatrième source, depuis le 12/11/2026), douze poses.
     const poses = Object.values(MIGRATIONS).join('\n').match(/add constraint ecritures_brouillon_\w+_hors_d\w+ '/g)
-    expect(poses).toHaveLength(6)
+    expect(poses).toHaveLength(12)
   })
 
-  it('chaque garde de tête accepte les deux autres colonnes, présentes ou non, et exige les sources d’hier, rien de plus', () => {
+  it('chaque garde de tête accepte les trois autres colonnes, présentes ou non, et exige les sources d’hier, rien de plus', () => {
     for (const [colonne, texte] of Object.entries(MIGRATIONS)) {
       const autres = Object.keys(MIGRATIONS).filter((c) => c !== colonne)
-      expect(texte, colonne).toMatch(new RegExp(`c\\.contype = 'f'\\n\\s+and a\\.attname not in \\('(${autres.join('|')})', '(${autres.join('|')})'\\);`))
+      const liste = [...autres].sort().map((c) => `'${c}'`).join(', ')
+      expect(texte, colonne).toMatch(new RegExp(`c\\.contype = 'f'\\n\\s+and a\\.attname not in \\(${liste}\\);`))
       expect(texte, colonne).toContain(`if v_sources is distinct from\n     '${SOURCES_D_HIER}' then`)
       expect(texte, colonne).not.toMatch(new RegExp(`not in \\([^)]*'${colonne}'`))
     }

@@ -29,5 +29,6 @@ alter table public.ecritures_brouillon drop constraint ecritures_brouillon_ouver
 -- des collages : la colonne retirée les emporterait, le retour les nomme.
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_inventaire_hors_de_l_ouverture;
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_stock_hors_de_l_ouverture;
+alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_affectation_hors_de_l_ouverture;
 drop index public.ecritures_brouillon_ouverture_compte_bancaire_id_idx;
 alter table public.ecritures_brouillon drop column ouverture_compte_bancaire_id;

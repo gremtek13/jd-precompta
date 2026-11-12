@@ -558,6 +558,9 @@ export interface EcritureBrouillon {
   // vérité des deux côtés de la migration : avant elle, `select('*')` ne rend pas la colonne ; après, nulle sur toute autre
   // écriture.
   stock_de_cloture_id?: string | null
+  // L'AFFECTATION DU RÉSULTAT (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`, préparée) : la décision dont
+  // cette ligne est l'écriture, écrite par `enregistrer_affectation` seule. Facultative : absente avant la migration.
+  affectation_id?: string | null
   // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, FIGÉS À LA VALIDATION (ligne 26.6, étape e ; lot FEC22b ; migration
   // `champs_bnc_du_fec`, en base et dans l'export depuis le 02/11/2026 — voir lib/champsBncFiges.ts) : la date et le mode
   // du règlement, la nature de l'opération (une par écriture), le poste de la 2035 d'une ligne de charge ou de produit
@@ -2437,4 +2440,43 @@ export interface StockDeCloture {
   cree_par: string
   modifie_par: string
   modifie_le: string
+}
+
+// L'AFFECTATION DU RÉSULTAT ET L'APPROBATION DES COMPTES (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`,
+// préparée). Une décision par version, immuable : elle se remplace ou se retire, jamais ne se supprime. Ce qu'elle a lu est
+// figé avec elle (`soldes_lus` aux noms de `SoldesAvantAffectation`, src/lib/affectationDuResultat.ts).
+export type EtatDeLAffectation = 'en_vigueur' | 'remplacee' | 'retiree'
+
+export interface AffectationDuResultat {
+  id: string
+  dossier_id: string
+  exercice_affecte: number
+  version: number
+  etat: EtatDeLAffectation
+  organe: 'assemblee' | 'consultation_ecrite' | 'acte_unanime' | 'associe_unique'
+  nombre_d_associes_declare: 'un' | 'plusieurs'
+  date_decision: string
+  comptes_approuves: boolean
+  date_mise_en_paiement: string | null
+  reserves_statutaires_distribuables: boolean
+  resultat_centimes: number
+  forme_juridique: string
+  capital_centimes: number
+  soldes_lus: Record<string, number>
+  document_chemin: string | null
+  document_empreinte: string | null
+  cree_par: string
+  cree_le: string
+  fin_par: string | null
+  fin_le: string | null
+}
+
+/** Une ligne de la répartition d'une décision (clé primaire : la décision et le rang). */
+export interface LigneDAffectationEnBase {
+  affectation_id: string
+  dossier_id: string
+  rang: number
+  origine: 'benefice' | 'perte' | 'report_crediteur' | 'autres_reserves' | 'reserves_statutaires'
+  destination: 'reserve_legale' | 'reserves_statutaires' | 'autres_reserves' | 'report_crediteur' | 'report_debiteur' | 'dividendes'
+  montant_centimes: number
 }

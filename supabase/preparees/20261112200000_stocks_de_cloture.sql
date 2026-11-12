@@ -81,7 +81,7 @@ begin
   select string_agg(a.attname, ',' order by a.attname collate "C") into v_sources
     from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
    where c.conrelid = 'public.ecritures_brouillon'::regclass and c.contype = 'f'
-     and a.attname not in ('ouverture_compte_bancaire_id', 'operation_inventaire_id');
+     and a.attname not in ('affectation_id', 'operation_inventaire_id', 'ouverture_compte_bancaire_id');
   if v_sources is distinct from
      'cotisation_id,declaration_tva_id,dossier_id,encaissement_id,facture_id,immobilisation_id,ligne_bancaire_id,operation_caisse_id,piece_id,vehicule_id' then
     raise exception 'Les sources du brouillon ne sont plus celles que cette migration nomme (%) : sa contrainte « sans autre source » doit recevoir la nouvelle — relire la migration avant de l''appliquer.', v_sources;
@@ -174,6 +174,12 @@ begin
                and a.attname = 'ouverture_compte_bancaire_id' and not a.attisdropped) then
     execute 'alter table public.ecritures_brouillon add constraint ecritures_brouillon_stock_hors_de_l_ouverture '
       || 'check (stock_de_cloture_id is null or ouverture_compte_bancaire_id is null)';
+  end if;
+  -- AFF2 (lignes 33 et 45, `affectation_id`), préparée le 12/11/2026 : la quatrième source neuve, sa paire.
+  if exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
+               and a.attname = 'affectation_id' and not a.attisdropped) then
+    execute 'alter table public.ecritures_brouillon add constraint ecritures_brouillon_stock_hors_de_l_affectation '
+      || 'check (stock_de_cloture_id is null or affectation_id is null)';
   end if;
 end
 $autres_sources$;

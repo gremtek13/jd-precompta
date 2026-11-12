@@ -51987,3 +51987,21 @@ multiensemble, aucune écriture s'il est nul ; seule la dernière évaluation ch
 INV2→INV4 puis INV2→LIA2→INV4 : `provisions.sql` 74 contrôles, 0 en faute, 8 mutations sur 8 ; `rls.sql` 176 (puis 179)
 lignes, 0 en faute, 114 (117) mutations sur 114 (117) ; `operationsDInventaire.sql` et `stocks.sql` justes ;
 `planComptable.sql` 62 justes (contrôle 1quater) ; le retour rend le catalogue d'avant à l'octet, la migration de nouveau juste.
+
+### 12/11/2026 — AFF2 : L'AFFECTATION DU RÉSULTAT, EN BASE (LIGNES 33 ET 45) (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, lot AFF2 de la conception 45, AFF-Q1 à Q12 à la recommandation, AFF-Q13 écartée (un exercice VALIDÉ
+seulement). `supabase/preparees/20261112233000_affectation_du_resultat.sql`, À COLLER (ses fonctions retirent des lignes du
+brouillon), retour `…233100`. Deux tables : la décision (approbation et affectation, AFF-Q1 (A)), une par version, immuable —
+en vigueur, puis remplacée ou retirée, jamais supprimée ; ce qu'elle a lu figé (résultat des lignes validées 6 et 7, forme,
+capital, onze soldes à sa date) — et sa répartition ; `ecritures_brouillon.affectation_id`, sa contrainte « sans autre
+source » et trois paires (INV2, LIA2, MCB5g reçoivent la leur, gardes de tête à trois colonnes) ; six rôles (600 à 650) : le
+1209 attend, sa racine commencerait celle du 120 (AFF2-Q1). `enregistrer_affectation` redit les vingt-sept refus d'AFF1 dans
+leur ordre, aux mots (`affectation_en_euros` écrit comme `formatMoney`), le premier seul, puis ceux de la base (saisie
+illisible, exercice non validé, version lue, décision figée, écriture comparée en multiensemble) ; AFF1-Q1 est un champ
+obligatoire de chaque décision, figé, pas une colonne du dossier. Policies : lecture et restauration, comme INV2 et LIA2.
+Adaptés : `planComptable.sql` (1quater, et le contrôle 8, que la fonction rejoint en lisant `compte_du_dirigeant`),
+`rls.sql` (bloc AF), `restauration.sql`, quatre tests. Sur des copies de la mère rattrapée à 200 : A, I→L→A, A→I→L — `rls.sql`
+0 en faute (111 et 117 mutations, toutes mordent), l'essai 49 cas et 9 mutations, INV2 et LIA2 à 0 ; catalogue égal entre
+les ordres ; retours rendant celui d'avant à l'octet. md5 : AFF2 `fea1e9e3…` (retour `808d9e29…`), INV2 `f374f3ba…`
+(`e1285d6a…`), LIA2 `bc1133c6…` (`28c71576…`), MCB5g `577bafc3…` (`ba223334…`).

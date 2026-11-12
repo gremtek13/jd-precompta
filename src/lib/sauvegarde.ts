@@ -36,6 +36,7 @@ import { COPIE_DES_FICHIERS_PREVUE, TABLES_DES_COPIES_DES_FICHIERS } from './cop
 import { INVENTAIRE_PREVU, TABLES_DE_L_INVENTAIRE } from './inventaire'
 import { STOCKS_PREVUS, TABLES_DES_STOCKS } from './stocks'
 import { EXERCICES_DECALES_PREVUS, TABLES_DES_EXERCICES } from './exercices'
+import { AFFECTATION_PREVUE, TABLES_DE_L_AFFECTATION } from './affectationDuResultat'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
@@ -512,6 +513,29 @@ export function auPlanDesExercices(table: string, prevus: boolean): boolean {
   return prevus || !(TABLES_DES_EXERCICES as readonly string[]).includes(table)
 }
 
+// L'AFFECTATION DU RÉSULTAT (lignes 33 et 45, lot AFF2 ; migration `affectation_du_resultat`, PRÉPARÉE le 12/11/2026) : la
+// décision, versionnée (`affectations_du_resultat`), sa répartition (`lignes_d_affectation`, clé primaire : la décision et le
+// rang), et une colonne du brouillon, `affectation_id`, sans action à la suppression (la fonction retire les lignes d'abord ;
+// une décision ne se supprime qu'avec son dossier). Sous le drapeau de la migration (`AFFECTATION_PREVUE`,
+// src/lib/affectationDuResultat.ts), baissé : la production n'a ni les tables ni la colonne. Leurs relations (le dossier en
+// cascade, la répartition vers sa décision en cascade) et celle du brouillon ; leur rang, juste après les stocks de clôture,
+// donc avant le brouillon qui cite la décision et avant les exercices validés, dont le gel refuserait une décision réinsérée
+// après eux ; leurs chemins, directs ; aucune vague. La restauration les réinsère par la porte que leurs policies ouvrent
+// au super-administrateur, et les lignes du brouillon par celle que leur garde lui ouvre. sauvegardeAffectation.test.ts
+// éprouve les deux plans.
+
+/** Une table au plan, côté affectation : toutes, sauf les siennes tant que sa migration n'est pas en base. */
+export function auPlanDeLAffectation(table: string, prevue: boolean): boolean {
+  return prevue || !(TABLES_DE_L_AFFECTATION as readonly string[]).includes(table)
+}
+
+/** Une relation au graphe du jour, côté affectation : celles de ses tables, et celle du brouillon vers une décision,
+ *  attendent la migration. */
+export function auGrapheDeLAffectation(r: Pick<Relation, 'enfant' | 'parent'>, prevue: boolean): boolean {
+  const tables = TABLES_DE_L_AFFECTATION as readonly string[]
+  return prevue || (!tables.includes(r.enfant) && !tables.includes(r.parent))
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -544,6 +568,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLInventaire(table, INVENTAIRE_PREVU)
     && auPlanDesStocks(table, STOCKS_PREVUS)
     && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS)
+    && auPlanDeLAffectation(table, AFFECTATION_PREVUE)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -888,6 +913,12 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'stocks_de_cloture', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'stocks_de_cloture', parent: 'pieces', colonne: 'piece_citee_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'stocks_de_cloture', colonne: 'stock_de_cloture_id', aLaSuppression: 'bloque' },
+  // L'affectation du résultat (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`, préparée) : la décision et sa
+  // répartition partent avec leur dossier ; la ligne du brouillon vers sa décision, sans action.
+  { enfant: 'affectations_du_resultat', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'lignes_d_affectation', parent: 'affectations_du_resultat', colonne: 'affectation_id', aLaSuppression: 'cascade' },
+  { enfant: 'lignes_d_affectation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'ecritures_brouillon', parent: 'affectations_du_resultat', colonne: 'affectation_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -898,7 +929,8 @@ export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
     && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
     && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS)
     && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)
-    && auGrapheDesStocks(r, STOCKS_PREVUS))
+    && auGrapheDesStocks(r, STOCKS_PREVUS)
+    && auGrapheDeLAffectation(r, AFFECTATION_PREVUE))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
@@ -1154,6 +1186,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'provisions',
   'operations_inventaire',
   'stocks_de_cloture',
+  'affectations_du_resultat',
+  'lignes_d_affectation',
   'pieces_hors_de_france',
   'pieces_hors_de_france_taux',
   'operations_caisse',
@@ -1462,6 +1496,7 @@ export const CLES_PRIMAIRES_PREVUES: Readonly<Record<string, readonly string[]>>
   devis_numerotation: ['dossier_id', 'annee'],
   encaissements_factures_taux: ['encaissement_id', 'taux'],
   exercices_valides: ['dossier_id', 'annee'],
+  lignes_d_affectation: ['affectation_id', 'rang'],
   facture_numerotation: ['dossier_id', 'annee', 'type'],
   factures_importees: ['facture_id'],
   originaux_liberes: ['chemin'],
@@ -1696,6 +1731,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   saisies_2035e: { acces: 'direct' },
   stocks_de_cloture: { acces: 'direct' },
   exercices: { acces: 'direct' },
+  affectations_du_resultat: { acces: 'direct' },
+  lignes_d_affectation: { acces: 'direct' },
   imports_factures: { acces: 'direct' },
   factures_importees: { acces: 'direct' },
   modeles_numerotation: { acces: 'direct' },
