@@ -1073,7 +1073,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   échéance de cotisation se fige à la date qui la compte ; préalables dits avant le clic (`prealablesValidation.ts`)
   → « UN EXERCICE VALIDÉ SE FIGE EN BASE » ; depuis le 10/11/2026, son empreinte en forme 2 scelle aussi les pièces
   citées et la 2035, et le stockage garde le fichier d'une pièce figée (`fichier_fige`) → « INAL1 ET INAL2 : LA PIÈCE
-  FIGÉE DANS LE STOCKAGE ET L'EMPREINTE EN FORME 2 (PRÉPARÉES, PAS APPLIQUÉES) ».
+  FIGÉE DANS LE STOCKAGE ET L'EMPREINTE EN FORME 2 (PRÉPARÉES, PAS APPLIQUÉES) » ; la numérotation n'appelle plus les
+  deux gardes par ligne là où elles ne refusent rien (deux jumeaux sous WHEN, préparés ; `jd.validation_exercice` ne se
+  pose qu'après le verrou exclusif de la validation) → « LA VALIDATION D'UN GROS EXERCICE : LES GARDES ALLÉGÉES ».
 
 ### Import, OCR, classification
 
