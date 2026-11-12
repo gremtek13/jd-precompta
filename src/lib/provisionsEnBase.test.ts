@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   composerEvaluation, MOTS_DES_REFUS, refusDuPlan, ROLES_D_INVENTAIRE, ROLES_DES_PROVISIONS, ROLES_DES_REGULARISATIONS,
-  TABLES_DE_L_INVENTAIRE, TABLES_DES_PROVISIONS, type ContexteDEvaluation, type RoleDInventaire, type SaisieDEvaluation,
+  TABLES_DE_L_INVENTAIRE, TABLES_DES_DECLARATIONS, TABLES_DES_PROVISIONS, type ContexteDEvaluation, type RoleDInventaire,
+  type SaisieDEvaluation,
 } from './inventaire'
 import { ROLES_COMPTABLES } from './planComptable'
 import { CHEMINS_DOSSIER_PREVUS, ORDRE_RESTAURATION_PREVU, RELATIONS_PREVUES } from './sauvegarde'
@@ -171,7 +172,7 @@ describe('la migration sous les règles de la base', () => {
     expect(RELATIONS_PREVUES.filter((r) => r.enfant === 'provisions').map((r) => `${r.colonne} → ${r.parent} (${r.aLaSuppression})`).sort())
       .toEqual(cles)
     expect(cles).toEqual(['dossier_id → dossiers (cascade)', 'facture_id → factures_emises (bloque)', 'piece_citee_id → pieces (bloque)'])
-    expect(TABLES_DE_L_INVENTAIRE).toEqual([...TABLES_DES_PROVISIONS, 'operations_inventaire'])
+    expect(TABLES_DE_L_INVENTAIRE).toEqual([...TABLES_DES_PROVISIONS, 'operations_inventaire', ...TABLES_DES_DECLARATIONS])
     expect(CHEMINS_DOSSIER_PREVUS.provisions).toEqual({ acces: 'direct' })
     expect(ORDRE_RESTAURATION_PREVU.indexOf('provisions') + 1).toBe(ORDRE_RESTAURATION_PREVU.indexOf('operations_inventaire'))
   })

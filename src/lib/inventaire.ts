@@ -551,17 +551,22 @@ export function prorataApresLaCloture(saisie: SaisieDuProrata, methode: MethodeD
 // figé (`valide`) quand il est au plus l'année de la frontière de la validation, et le premier exercice, l'année des
 // premiers à-nouveaux du dossier.
 
-/** Les migrations sont-elles en base — `operations_d_inventaire` (INV2) et `provisions` (INV4), qui la suit ? Baissé tant
- *  qu'elles ne sont que préparées : aucun écran n'appelle leurs fonctions, et leurs tables restent hors du plan de sauvegarde
- *  (sauvegarde.ts, `auPlanDeLInventaire`). */
+/** Les migrations sont-elles en base — `operations_d_inventaire` (INV2), puis `provisions` (INV4) et
+ *  `validation_de_l_inventaire` (INV3), qui la suivent ? Baissé tant qu'elles ne sont que préparées : aucun écran n'appelle
+ *  leurs fonctions, leurs tables restent hors du plan de sauvegarde (sauvegarde.ts, `auPlanDeLInventaire`), et la validation
+ *  ne lit pas l'inventaire (lib/inventaireDeLaValidation.ts). Il ne se lève qu'avec les trois en base. */
 export const INVENTAIRE_PREVU: boolean = false
 
 /** La table des provisions (INV4), sous le même drapeau : restaurée AVANT les opérations d'inventaire, dont les évaluations
  *  la citent (`provision_id`). */
 export const TABLES_DES_PROVISIONS = ['provisions'] as const
 
-/** Les tables des deux migrations, dans l'ordre de leur restauration. */
-export const TABLES_DE_L_INVENTAIRE = [...TABLES_DES_PROVISIONS, 'operations_inventaire'] as const
+/** La table des déclarations d'inventaire (INV3, INV-Q9 (A)), sous le même drapeau : restaurée juste APRÈS les opérations
+ *  d'inventaire (elle ne cite que son dossier), avant les exercices validés, dont le gel la refuserait ensuite. */
+export const TABLES_DES_DECLARATIONS = ['inventaires_declares'] as const
+
+/** Les tables des trois migrations, dans l'ordre de leur restauration. */
+export const TABLES_DE_L_INVENTAIRE = [...TABLES_DES_PROVISIONS, 'operations_inventaire', ...TABLES_DES_DECLARATIONS] as const
 
 /** Les six rôles des régularisations que la migration insère au catalogue (§ 4.4), rangs 360 à 410, leur libellé au plan
  *  comptable général. Ils n'entrent dans `ROLES_COMPTABLES` (lib/planComptable.ts) qu'avec l'écran (INV5) : la base les

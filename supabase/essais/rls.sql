@@ -147,6 +147,12 @@
 --      à qui le dossier n'est pas assigné et l'anonyme rien ; le client n'enregistre rien et n'écrit rien en direct, le
 --      super-administrateur réinsère (la porte de la restauration, contrôle positif) ; le catalogue — et trois mutations ;
 --      avant la migration `affectation_du_resultat`, une ligne « EN ATTENTE ». Le reste : `affectationDuResultat.sql`.
+--   6septdecies. L'INVENTAIRE DÉCLARÉ (INV3, ligne 35 ; bloc ID, en fin de fichier) : ID1 à ID3 — le chef lit la
+--      déclaration qu'il a faite dans un dossier jetable en engagement (contrôle positif), le client qui y a un accès, un
+--      membre de l'équipe à qui le dossier n'est pas assigné et l'anonyme rien ; le client ne déclare rien, n'écrit rien en
+--      direct et ne réécrit rien, le super-administrateur réinsère (la porte de la restauration, contrôle positif) ; le
+--      catalogue — et trois mutations ; avant la migration `validation_de_l_inventaire`, une ligne « EN ATTENTE ». Le reste
+--      (les refus sous leurs mots, la garde, le gel, la validation qui l'attend) : `validationDeLInventaire.sql`.
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -10292,6 +10298,188 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $af$;
+
+-- ══ ID. L'inventaire déclaré (ligne 35, INV3 ; migration `validation_de_l_inventaire`, PRÉPARÉE, après `operations_d_inventaire`) ══
+-- Une table d'un dossier, lue par son cabinet (`admin_du_dossier`), écrite par `declarer_inventaire` et
+-- `retirer_declaration_inventaire` seules (aucune policy d'écriture, une garde), réinsérée par le super-administrateur (la
+-- restauration). Aucun client, même celui du dossier. Le reste : `validationDeLInventaire.sql`, sur une réplique.
+--   ID1. Le chef déclare l'inventaire de 2025 d'un dossier en engagement et le lit (le contrôle POSITIF) ; le client, qui a
+--        un accès au dossier, n'en lit rien ; un membre de l'équipe à qui le dossier n'est pas assigné non plus ; l'anonyme
+--        non plus.
+--   ID2. Le client ne déclare rien (42501, sous ses mots), n'insère rien en direct (42501), ne réécrit rien ; le
+--        super-administrateur réinsère une déclaration en direct (la restauration, le contrôle POSITIF).
+--   ID3. Le catalogue : la RLS active, deux policies permissives à authenticated — la lecture sur `admin_du_dossier`, la
+--        réinsertion sur `is_super_admin` —, et rien d'autre que la restrictive `deux_facteurs`.
+-- Trois mutations, qui doivent mordre : M-ID1 (la lecture élargie au client du dossier : il lit la déclaration), M-ID2 (la
+-- lecture fermée : le chef ne lit plus rien), M-ID3 (la porte de la restauration fermée : le super-administrateur ne réinsère
+-- plus). Avant la migration, une ligne dit que le bloc attend.
+do $id$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  dossier uuid := 'a1300000-0000-4000-8000-0000000000d1';
+  chef_lit bigint; du_client bigint; du_membre bigint; de_l_anon text; par_la_fonction text; en_direct text; reecrites bigint;
+  reinsere text; elargie bigint; fermee bigint; porte_fermee text; n bigint; erreur text;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.inventaires_declares') is null then
+    insert into rls_verdict values ('ID. l''inventaire déclaré : EN ATTENTE de la migration validation_de_l_inventaire',
+      'inventaires_declares', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : un dossier en engagement du cabinet du dossier du client, que le client voit, que le membre ne suit pas ──
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva)
+      select dossier, 'Essai RLS de l''inventaire déclaré', d.cabinet_id, 'engagement', 'franchise' from dossiers d where d.id = dossier_du_client;
+    insert into memberships (user_id, dossier_id, role)
+      select client, dossier, m.role from memberships m where m.user_id = client and m.dossier_id = dossier_du_client limit 1;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform declarer_inventaire(dossier, 2025);
+    select count(*) into chef_lit from inventaires_declares where dossier_id = dossier;
+    reset role;
+    construit := true;
+
+    -- ID1 : le client du dossier, le membre à qui il n'est pas assigné, l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from inventaires_declares;
+    perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+    select count(*) into du_membre from inventaires_declares where dossier_id = dossier;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from inventaires_declares;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'ID1. le chef lit la déclaration qu''il a faite (le contrôle positif) ; le client du dossier, un membre de l''équipe à qui le dossier n''est pas assigné et l''anonyme n''en lisent rien',
+      'cible', 'inventaires_declares',
+      'observe', 'le chef : ' || chef_lit || ' | le client : ' || du_client || ' | le membre : ' || du_membre || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_lit = 1 and du_client = 0 and du_membre = 0 and de_l_anon = '0');
+
+    -- ID2 : le client ne déclare ni n'écrit ni ne réécrit ; le super-administrateur réinsère.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform declarer_inventaire(dossier, 2024);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into inventaires_declares (dossier_id, exercice, declare_par) values (dossier, 2024, client);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update inventaires_declares set exercice = 2024 where dossier_id = dossier returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into inventaires_declares (dossier_id, exercice, declare_par) values (dossier, 2024, chef);
+      reinsere := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if reinsere is null then reinsere := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'ID2. le client ne déclare pas d''inventaire (la fonction), n''en écrit pas en direct et n''en réécrit aucun ; le super-administrateur en réinsère un (la restauration, le contrôle positif)',
+      'cible', 'inventaires_declares',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites || ' | réinsérée : ' || coalesce(reinsere, '?'),
+      'ok', par_la_fonction = '42501 Accès refusé à ce dossier.' and en_direct like '42501 %' and reecrites = 0 and reinsere = 'ACCEPTÉ');
+
+    -- M-ID1 : la lecture élargie au client du dossier.
+    begin
+      alter policy inventaires_declares_lecture on public.inventaires_declares
+        using (admin_du_dossier(dossier_id) or exists (select 1 from memberships m where m.dossier_id = inventaires_declares.dossier_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from inventaires_declares where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-ID1 — la lecture des déclarations d''inventaire élargie au client du dossier',
+      'attendu', 'le client lit la déclaration', 'observe', coalesce((elargie >= 1)::text, '?'), 'mord', coalesce(elargie >= 1, false));
+
+    -- M-ID2 : la lecture fermée.
+    begin
+      alter policy inventaires_declares_lecture on public.inventaires_declares using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from inventaires_declares where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-ID2 — la lecture des déclarations d''inventaire fermée',
+      'attendu', 'le chef ne lit plus rien', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-ID3 : la porte de la restauration fermée.
+    begin
+      alter policy inventaires_declares_restauration on public.inventaires_declares with check (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      begin
+        insert into inventaires_declares (dossier_id, exercice, declare_par) values (dossier, 2024, chef);
+        porte_fermee := 'ACCEPTÉ';
+      exception when others then porte_fermee := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-ID3 — la porte de la restauration des déclarations fermée',
+      'attendu', 'le super-administrateur ne réinsère plus', 'observe', coalesce(porte_fermee, '?'), 'mord', coalesce(porte_fermee like '42501 %', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- ID3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'inventaires_declares' and p.roles = array['authenticated']::name[]
+     and p.permissive = 'PERMISSIVE'
+     and ((p.policyname = 'inventaires_declares_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'inventaires_declares_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'ID3. la RLS active ; deux policies à authenticated : la lecture du cabinet du dossier, la réinsertion du super-administrateur (lecture du catalogue)',
+    'cible', 'inventaires_declares',
+    'observe', n || ' sur 2, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'inventaires_declares' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.inventaires_declares'::regclass),
+    'ok', n = 2 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'inventaires_declares' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 2
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.inventaires_declares'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'ID. le jeu d''essai de l''inventaire déclaré s''est construit', 'cible', 'un dossier en engagement du cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $id$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

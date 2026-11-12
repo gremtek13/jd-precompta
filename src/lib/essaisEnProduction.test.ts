@@ -314,6 +314,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Le trente et unième, affectationDuResultat, le 12/11/2026 (AFF2, migration `affectation_du_resultat`) : il crée des
     // dossiers, écrit des à-nouveaux, des écritures et des exercices validés, mute des fonctions et un déclencheur. Son
     // catalogue et ses profils se rejouent partout : le bloc AF de rls.sql.
+    // Le trente-deuxième, validationDeLInventaire, le 12/11/2026 (ligne 35, INV3, migration `validation_de_l_inventaire`) : il
+    // crée des dossiers, des régularisations, des déclarations et des exercices validés, falsifie des écritures et mute des
+    // fonctions. Son catalogue et ses profils se rejouent partout : le bloc ID de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'exercicesDuDossier (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
@@ -322,6 +325,7 @@ describe('les essais de la base, rejoués en production', () => {
       'provisions (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
       'situationsPublieesMutations (une méta-commande de psql)', 'stocks (son en-tête)', 'traceDesDroitsSuppression (son en-tête)',
+      'validationDeLInventaire (son en-tête)',
     ])
     // Les outils ne se rejouent pas ; un outil de plus se lit avant d'entrer (l'audit du 29/10/2026 a lu ces cinq-là ; le
     // sixième, batterieDesLignes.mjs, est entré le 31/10/2026 avec la correction de la facture : il ne lit qu'une fonction

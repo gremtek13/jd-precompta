@@ -174,6 +174,23 @@ begin
     array['jeu', 'la reprise déséquilibrée de U', 'postgres', $q$insert into a_nouveaux (id, dossier_id, date, compte, libelle, sens, montant, source_nom, source_empreinte) values
       ('{UAN1}', '{U}', '2024-01-01', '512000', 'Banque', 'debit', 100, 'balance-essai-u.csv', repeat('b', 64)),
       ('{UAN2}', '{U}', '2024-01-01', '101000', 'Capital', 'credit', 90, 'balance-essai-u.csv', repeat('b', 64))$q$, '', ''],
+    -- La validation qui connaît l'inventaire (INV3, préparée) : un exercice d'engagement ne se valide que son inventaire
+    -- déclaré (INV-Q9 (A)). E, S et L déclarent les exercices que l'essai valide, par la porte que la garde ouvre à leur
+    -- dossier (la déclaration se juge dans validationDeLInventaire.sql). Sans la migration, rien.
+    array['jeu', 'INV3 : les inventaires de E, S et L déclarés', 'postgres', $q$do $inv3$
+      declare d record;
+      begin
+        if to_regclass('public.inventaires_declares') is null then
+          return;
+        end if;
+        for d in select * from (values ('{E}'::uuid, 2024), ('{S}'::uuid, 2024), ('{S}'::uuid, 2025), ('{L}'::uuid, 2024),
+                                       ('{L}'::uuid, 2025)) x(dossier, exercice) loop
+          perform set_config('jd.inventaire_declare', d.dossier::text, true);
+          insert into inventaires_declares (dossier_id, exercice, declare_par) values (d.dossier, d.exercice, '{CHEF}');
+        end loop;
+        perform set_config('jd.inventaire_declare', '', true);
+      end
+      $inv3$$q$, '', ''],
 
     -- ══ Une entreprise individuelle en trésorerie (I) ═══════════════════════════════════════════════════════════════
     -- Fin 2024 : la banque à 1 000 + 500 − 200 − 100 ; le capital repris (700), le bénéfice repris de 2023 (300), le 108

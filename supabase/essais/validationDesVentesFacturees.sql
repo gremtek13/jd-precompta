@@ -143,6 +143,20 @@ begin
       ('{V}', 'ESSAI VF7B V', '{CAB}', 'tresorerie', '455000', false), ('{W}', 'ESSAI VF7B W', '{CAB}', 'engagement', '455000', true),
       ('{P}', 'ESSAI VF7B P', '{CAB}', 'tresorerie', '455000', true), ('{Q}', 'ESSAI VF7B Q', '{CAB}', 'tresorerie', '455000', true),
       ('{N}', 'ESSAI VF7B N', '{CAB}', 'tresorerie', '455000', false), ('{PE}', 'ESSAI VF7B PE', '{CAB}', 'engagement', '455000', true)$q$, '', ''],
+    -- La validation qui connaît l'inventaire (INV3, préparée) : un exercice d'engagement ne se valide que son inventaire
+    -- déclaré (INV-Q9 (A)), et ce refus vient après ceux des ventes facturées. W déclare 2025, l'exercice que 43 valide, par
+    -- la porte que la garde ouvre à son dossier (la déclaration se juge dans validationDeLInventaire.sql). Sans la migration,
+    -- rien.
+    array['jeu', 'INV3 : l''inventaire de 2025 de W déclaré', 'postgres', $q$do $inv3$
+      begin
+        if to_regclass('public.inventaires_declares') is null then
+          return;
+        end if;
+        perform set_config('jd.inventaire_declare', '{W}', true);
+        insert into inventaires_declares (dossier_id, exercice, declare_par) values ('{W}', 2025, '{CHEF}');
+        perform set_config('jd.inventaire_declare', '', true);
+      end
+      $inv3$$q$, '', ''],
     -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
     -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il
     -- éprouve restent ceux d'hier (la série de qui valide s'éprouve dans numerotationContinue.sql). Sans la migration, rien.
