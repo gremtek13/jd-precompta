@@ -35,6 +35,7 @@ import { MODELE_DU_CABINET_PREVU, TABLES_DU_MODELE_DU_CABINET } from './modeleDu
 import { COPIE_DES_FICHIERS_PREVUE, TABLES_DES_COPIES_DES_FICHIERS } from './copieDesFichiers'
 import { INVENTAIRE_PREVU, TABLES_DE_L_INVENTAIRE } from './inventaire'
 import { STOCKS_PREVUS, TABLES_DES_STOCKS } from './stocks'
+import { EXERCICES_DECALES_PREVUS, TABLES_DES_EXERCICES } from './exercices'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
@@ -494,6 +495,20 @@ export function auGrapheDesStocks(r: Pick<Relation, 'enfant' | 'parent'>, prevus
   return prevus || (!tables.includes(r.enfant) && !tables.includes(r.parent))
 }
 
+// LES EXERCICES DÉCLARÉS D'UN DOSSIER EN ENGAGEMENT (ligne 42, lot EXD2 ; migration `exercices_du_dossier`, PRÉPARÉE le
+// 12/11/2026) : ses exercices, quand ils ne suivent pas l'année civile. Sous le drapeau de la migration
+// (`EXERCICES_DECALES_PREVUS`, src/lib/exercices.ts), baissé : la production n'a pas la table. Sa relation au dossier
+// (cascade) ; son rang, JUSTE APRÈS le dossier, avant tout ce qui porte une date — EXD3 refusera une ligne datée hors des
+// exercices déclarés, et les validations, restaurées en dernier, ne la figent pas encore ; son chemin, direct ; sa clé, la
+// commune ; aucune vague. La garde juge la suite à la fin de l'instruction : un lot réinsère les exercices d'un dossier
+// dans n'importe quel ordre, et la restauration garde leur auteur (le super-administrateur). sauvegardeExercices.test.ts
+// éprouve le plan prévu et le plan du jour.
+
+/** Une table au plan, côté exercices déclarés : toutes, sauf la leur tant que leur migration n'est pas en base. */
+export function auPlanDesExercices(table: string, prevus: boolean): boolean {
+  return prevus || !(TABLES_DES_EXERCICES as readonly string[]).includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -525,6 +540,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesCopiesDesFichiers(table, COPIE_DES_FICHIERS_PREVUE)
     && auPlanDeLInventaire(table, INVENTAIRE_PREVU)
     && auPlanDesStocks(table, STOCKS_PREVUS)
+    && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -707,6 +723,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'situations_publiees', parent: 'situations_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'saisies_2035', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'saisies_2035e', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'exercices', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'imports_factures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'factures_importees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'factures_importees', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
@@ -1057,6 +1074,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'originaux_liberes',
   'copies_des_fichiers',
   'dossiers',
+  // Les exercices déclarés (ligne 42, EXD2) : juste après le dossier, avant tout ce qui porte une date.
+  'exercices',
   'plan_comptable_dossier',
   'a_nouveaux',
   'agent_conversations',
@@ -1666,6 +1685,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   saisies_2035: { acces: 'direct' },
   saisies_2035e: { acces: 'direct' },
   stocks_de_cloture: { acces: 'direct' },
+  exercices: { acces: 'direct' },
   imports_factures: { acces: 'direct' },
   factures_importees: { acces: 'direct' },
   modeles_numerotation: { acces: 'direct' },

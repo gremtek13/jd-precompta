@@ -27,6 +27,7 @@ import { SAISIES_2035E_PREVUES } from './saisies2035E'
 import { MODELE_DU_CABINET_PREVU } from './modeleDuCabinet'
 import { COPIE_DES_FICHIERS_PREVUE } from './copieDesFichiers'
 import { STOCKS_PREVUS } from './stocks'
+import { EXERCICES_DECALES_PREVUS } from './exercices'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
@@ -68,7 +69,7 @@ import {
   TABLES_DES_DEVIS,
   tablesSansChemin,
   violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures, auPlanDesHonorairesDeposes,
-  auPlanDesDocumentsEtDemandes, auPlanDesAchatsDuClient, auPlanDesNotesDeFrais, auPlanDesSaisies2035E, auPlanDuModeleDuCabinet, auPlanDesCopiesDesFichiers, auPlanDuDepart, TABLES_DU_DEPART,
+  auPlanDesDocumentsEtDemandes, auPlanDesAchatsDuClient, auPlanDesNotesDeFrais, auPlanDesSaisies2035E, auPlanDuModeleDuCabinet, auPlanDesCopiesDesFichiers, auPlanDesExercices, auPlanDuDepart, TABLES_DU_DEPART,
 } from './sauvegarde'
 
 // LES DEVIS AU PLAN DE SAUVEGARDE (espace client, étape P5). Leurs migrations attendent l'accord du cabinet : tant que
@@ -131,7 +132,8 @@ describe('le filtre du plan', () => {
         && auPlanDesSaisies2035E(table, SAISIES_2035E_PREVUES)
         && auPlanDuModeleDuCabinet(table, MODELE_DU_CABINET_PREVU)
         && auPlanDesCopiesDesFichiers(table, COPIE_DES_FICHIERS_PREVUE) && auPlanDeLInventaire(table, INVENTAIRE_PREVU)
-        && auPlanDesStocks(table, STOCKS_PREVUS))
+        && auPlanDesStocks(table, STOCKS_PREVUS)
+        && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)

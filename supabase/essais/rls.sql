@@ -131,6 +131,11 @@
 --      qu'il a enregistré (contrôle positif), le client du dossier et l'anonyme rien ; le client n'écrit rien, ni par la
 --      fonction ni en direct ; le catalogue — et trois mutations ; avant la migration `stocks_de_cloture`, une ligne « EN
 --      ATTENTE ». Le reste : `stocks.sql`, sur une réplique.
+--   6quaterdecies. Les EXERCICES DÉCLARÉS D'UN DOSSIER (EXD2, ligne 42 ; bloc EX, en fin de fichier) : EX1 à EX3 — le chef
+--      lit l'exercice qu'il a déclaré dans un dossier jetable en engagement (contrôle positif), le client qui y a un accès
+--      rien, ni par la table ni par `bornes_de_l_exercice`, ni l'anonyme ; le client ne déclare rien, ni par la fonction ni
+--      en direct, et ne réécrit rien ; le catalogue — et trois mutations ; avant la migration `exercices_du_dossier`, une
+--      ligne « EN ATTENTE ». Le reste : `exercicesDuDossier.sql`, sur une réplique.
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -9684,6 +9689,175 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $st$;
+
+-- ══ EX. Les exercices déclarés d'un dossier (ligne 42, EXD2 ; migration `exercices_du_dossier`, PRÉPARÉE) ══
+-- Une table du cabinet que le client ne lit pas, pas même pour son dossier : une seule policy, `for all to authenticated`
+-- sur `admin_du_dossier(dossier_id)`, aucune branche client ; l'écriture par `declarer_exercice`, `security definer`, le
+-- contrôle d'accès d'abord. La garde, la suite, la période figée et la batterie civile se rejouent dans
+-- `exercicesDuDossier.sql` (réplique seulement).
+--   EX1. Le chef déclare un exercice dans un dossier jetable en engagement, auquel le client a un accès, et le lit (le
+--        contrôle POSITIF) ; le client n'en lit rien, ni par la table ni par `bornes_de_l_exercice` ; l'anonyme non plus.
+--   EX2. Le client ne déclare pas par la fonction (42501, sous ses mots), ni en direct (42501, la RLS), et ne réécrit rien.
+--   EX3. Le catalogue : la RLS active, une seule policy permissive, à authenticated, `admin_du_dossier` des deux côtés.
+-- Trois mutations, qui doivent mordre : M-EX1 (la lecture élargie au client « membre »), M-EX2 (la policy fermée : le chef
+-- ne lit plus la ligne), M-EX3 (l'écriture élargie au client « membre » : son insertion directe passe). Avant la
+-- migration, une ligne dit que le bloc attend.
+do $ex$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  jetable uuid := 'e0d20000-0000-4000-8000-0000000000a1';
+  cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
+  chef_lit bigint; du_client bigint; bornes_du_client bigint; de_l_anon text; par_la_fonction text; en_direct text;
+  reecrites bigint; elargie bigint; fermee bigint; ecrite_elargie text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.exercices') is null then
+    insert into rls_verdict values ('EX. les exercices déclarés : EN ATTENTE de la migration exercices_du_dossier',
+      'exercices', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : un dossier jetable en engagement, un accès du client, et le chef y déclare un premier exercice décalé ──
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais) values
+      (jetable, 'RLS EXERCICES', cabinet, 'engagement', '455000');
+    insert into memberships (user_id, dossier_id, role, email) values (client, jetable, 'client', 'rls-ex@example.test');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform declarer_exercice(jetable, '2026-03-15', '2027-06-30', 'premier', null, null);
+    select count(*) into chef_lit from exercices where dossier_id = jetable and fin = '2027-06-30';
+    reset role;
+    construit := true;
+
+    -- EX1 : le client, puis l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from exercices where dossier_id = jetable;
+    select count(*) into bornes_du_client from bornes_de_l_exercice(jetable, 2027);
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from exercices;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'EX1. le chef lit l''exercice qu''il a déclaré dans le dossier jetable (le contrôle positif) ; le client, qui y a un accès, n''en lit rien (ni la table, ni les bornes), ni l''anonyme',
+      'cible', 'exercices',
+      'observe', 'le chef : ' || chef_lit || ' | le client : ' || du_client || ' ligne(s), ' || bornes_du_client || ' borne(s) | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_lit = 1 and du_client = 0 and bornes_du_client = 0 and de_l_anon = '0');
+
+    -- EX2 : le client ne déclare ni ne réécrit.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform declarer_exercice(jetable, '2027-07-01', '2028-06-30', 'ordinaire', null, null);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into exercices (dossier_id, debut, fin, nature) values (jetable, '2027-07-01', '2028-06-30', 'ordinaire');
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update exercices set decision = null where dossier_id = jetable returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'EX2. le client ne déclare pas d''exercice (la fonction, puis la RLS) et n''en réécrit aucun',
+      'cible', 'exercices',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrits : ' || reecrites,
+      'ok', par_la_fonction = '42501 Les exercices d''un dossier ne se déclarent que par son cabinet.'
+        and en_direct like '42501 new row violates row-level security policy%' and reecrites = 0);
+
+    -- M-EX1 : la lecture élargie au client « membre ».
+    begin
+      alter policy exercices_cabinet on public.exercices
+        using (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from exercices where dossier_id = jetable;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-EX1 — la lecture des exercices déclarés élargie au client « membre »',
+      'attendu', 'le client lit l''exercice de son dossier', 'observe', coalesce(elargie::text, '?') || ' lu(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-EX2 : la policy fermée.
+    begin
+      alter policy exercices_cabinet on public.exercices using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from exercices where dossier_id = jetable;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-EX2 — la policy des exercices déclarés fermée',
+      'attendu', 'le chef ne lit plus l''exercice', 'observe', coalesce(fermee::text, '?') || ' lu(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-EX3 : l'écriture élargie au client « membre ».
+    begin
+      alter policy exercices_cabinet on public.exercices
+        with check (admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into exercices (dossier_id, debut, fin, nature) values (jetable, '2027-07-01', '2028-06-30', 'ordinaire');
+        ecrite_elargie := 'ACCEPTÉ';
+      exception when others then ecrite_elargie := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-EX3 — l''écriture des exercices déclarés élargie au client « membre »',
+      'attendu', 'son insertion directe passe', 'observe', coalesce(ecrite_elargie, '?'), 'mord', coalesce(ecrite_elargie = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- EX3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'exercices' and p.roles = array['authenticated']::name[]
+     and p.policyname = 'exercices_cabinet' and p.permissive = 'PERMISSIVE' and p.cmd = 'ALL'
+     and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check = 'admin_du_dossier(dossier_id)';
+  verdicts := verdicts || jsonb_build_object('controle', 'EX3. la RLS active ; une seule policy, à authenticated, le cabinet du dossier des deux côtés (lecture du catalogue)',
+    'cible', 'exercices',
+    'observe', n || ' sur 1, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'exercices' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.exercices'::regclass),
+    'ok', n = 1 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'exercices' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 1
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.exercices'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'EX. le jeu d''essai des exercices déclarés s''est construit', 'cible', 'le dossier jetable',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $ex$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

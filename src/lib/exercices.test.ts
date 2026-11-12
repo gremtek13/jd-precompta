@@ -22,7 +22,8 @@ const declare = (e: Partial<ExerciceDeclare> & Pick<ExerciceDeclare, 'debut' | '
 })
 const codes = (refus: { code: string }[]) => refus.map((r) => r.code)
 const TRESORERIE: RegimeDesExercices = { mode: 'tresorerie' }
-const engagement = (exercices: ExerciceDeclare[]): RegimeDesExercices => ({ mode: 'engagement', exercices })
+const engagement = (exercices: ExerciceDeclare[], finDuDernierValide: string | null = null): RegimeDesExercices =>
+  ({ mode: 'engagement', exercices, finDuDernierValide })
 
 // Ce que l'application suppose aujourd'hui partout : l'exercice EST l'année civile (`${annee}-01-01`,
 // `${annee}-12-31`, son nom l'année). Le module doit le rendre à l'identique pour un dossier en trésorerie.
@@ -117,7 +118,22 @@ describe('les bornes et la date en engagement', () => {
     expect(exerciceDuMillesime(engagement(liste), 2027)).toEqual({ debut: '2026-07-01', fin: '2027-06-30', nature: 'ordinaire' })
     expect(exerciceDuMillesime(engagement(liste), 2026)?.nature).toBe('premier')
     expect(exerciceDuMillesime(engagement(liste), 2025)).toBeNull()
-    expect(exerciceDuMillesime(engagement([]), 2026)).toBeNull()
+    // EXD2 : rien de déclaré, l'année civile, comme la base (`bornes_de_l_exercice`) — l'état de tout dossier d'aujourd'hui.
+    expect(exerciceDuMillesime(engagement([]), 2026)).toEqual(exerciceCivil(2026))
+    expect(exerciceDuMillesime(engagement([], '2024-12-31'), 2030)).toEqual(exerciceCivil(2030))
+  })
+
+  it('après une validation civile, les années figées restent civiles ; au-delà, seuls les exercices déclarés', () => {
+    const apres = [declare({ debut: '2025-01-01', fin: '2025-06-30', nature: 'transition', decision: 'AGE', decision_le: '2025-02-01' })]
+    const regime = engagement(apres, '2024-12-31')
+    expect(exerciceDuMillesime(regime, 2024)).toEqual(exerciceCivil(2024))
+    expect(exerciceDuMillesime(regime, 2023)).toEqual(exerciceCivil(2023))
+    expect(exerciceDuMillesime(regime, 2025)).toEqual({ debut: '2025-01-01', fin: '2025-06-30', nature: 'transition' })
+    expect(exerciceDuMillesime(regime, 2026)).toBeNull()
+    expect(exerciceDeLaDate(regime, '2024-12-31')).toEqual({ statut: 'dans', exercice: exerciceCivil(2024) })
+    expect(exerciceDeLaDate(regime, '2025-01-01')).toMatchObject({ statut: 'dans', exercice: { fin: '2025-06-30' } })
+    expect(exerciceDeLaDate(regime, '2025-07-01').statut).toBe('hors')
+    expect(exerciceDeLaDate(engagement(apres), '2024-12-31').statut).toBe('hors')
   })
 
   it("rend l'unique exercice qui contient la date, ou dit qu'elle est hors des exercices", () => {
@@ -128,7 +144,7 @@ describe('les bornes et la date en engagement', () => {
       statut: 'hors',
       motif: 'Le 01/07/2027 est hors des exercices déclarés : les exercices déclarés vont du 15/03/2025 au 30/06/2027.',
     })
-    expect(exerciceDeLaDate(engagement([]), '2026-01-01')).toMatchObject({ statut: 'hors', motif: expect.stringContaining('aucun exercice') })
+    expect(exerciceDeLaDate(engagement([]), '2026-01-01')).toEqual({ statut: 'dans', exercice: exerciceCivil(2026) })
     expect(exerciceDeLaDate(engagement(liste), '2026-02-30')).toMatchObject({ statut: 'hors', motif: expect.stringContaining("n'existe pas") })
     expect(exerciceDeLaDate(TRESORERIE, '2026-02-30').statut).toBe('hors')
   })
