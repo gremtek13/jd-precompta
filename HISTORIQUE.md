@@ -51817,3 +51817,19 @@ préparées, la table neuve perdait la policy `deux_facteurs` si la double authe
 INAL6 : l'étape 24 neuve de `lettresDuClient.sql` fausse avant, 24 sur 24 après ; `copiesDesFichiers.sql` 7 sur 7 ; `rls.sql`
 198 invariants à 0, 122 mutations sur 122 ; sept tests neufs, six vus rouges avant. Hors des deux lots, le pack, le paquet
 d'archive et la relecture OCR font la même confiance au chemin : CFCS-Q1.
+
+### 12/11/2026 — EXD1 : LES EXERCICES EN MODULE (LIGNE 42)
+
+`src/lib/exercices.ts`, pur, sans base, drapeau ni écran : le futur jumeau de `bornes_de_l_exercice` et
+`exercice_de_la_date` (conception 42, § 3 et § 4). Un régime en union (`RegimeDesExercices` : la trésorerie ne lit rien,
+l'engagement sa liste déclarée) ; `exerciceDuMillesime`, `exerciceDeLaDate` (l'unique exercice qui contient la date, ou
+« hors » avec un motif, deux contenants compris), `exerciceSuivantPropose` (même date de clôture, un 29 février devient le
+28), `millesimeDe` (EXD-Q1 (A)), `libelleDeLExercice` et `libelleDesBornes` (EXD-Q7 (A)), `joursEn360` (EXD-Q5 (A) : le
+`rang360` d'`amortissements.ts`, fin moins veille du début). `refusDesExercices` dit quatorze refus aux mots du cabinet :
+toute ligne en trésorerie (EXD-Q2 (A)), date inexistante, fin avant début, nature inconnue, premier trop long ou hors de
+tête, ordinaire qui ne dure pas douze mois (une fin de février au 28 ou au 29), transition trop longue ou sans décision
+datée, décision hors d'une transition, chevauchement, trou, deux clôtures la même année. EXD-Q3 et EXD-Q4 sont un
+paramètre obligatoire (`ChoixDesExercices`, options (A) et (B) écrites), `CHOIX_RECOMMANDES` un nom, pas un défaut. Le
+test rend l'année civile à l'identique sur dix années (2000, 2024, 2028, 2400 bissextiles ; 2100 non) ; dix mutations
+mordent. Deux écarts à la conception : la nature `ordinaire` du schéma (pas « courant »), et une transition d'un jour
+admise (le `debut < fin` du § 4.1 la refuserait : `debut <= fin` en EXD2).
