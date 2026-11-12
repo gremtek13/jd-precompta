@@ -1,5 +1,5 @@
 -- LA JAMBE DE BANQUE PAR COMPTE BANCAIRE (ligne 26.6, lot MCB5, première partie), ÉPROUVÉE EN BASE — l'essai de la
--- migration `jambe_de_banque_par_compte` (supabase/preparees/20261111200000_…, préparée le 11/11/2026), qui suit
+-- migration `jambe_de_banque_par_compte` (supabase/schema/20261112140844_…, en production depuis le 12/11/2026), qui suit
 -- `comptes_bancaires` (MCB1). À rejouer après toute migration qui touche l'une des dix fonctions qu'elle remplace,
 -- `compte_de_banque_du_mouvement` ou `comptes_bancaires`. Sans la migration : une seule ligne, EN ATTENTE.
 --

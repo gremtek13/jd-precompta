@@ -63,18 +63,21 @@ describe('la dernière définition d’une fonction, capitales comprises', () =>
     expect(() => finDuCorps('create function public.h() as $a$ select 1', 0, 'h')).toThrow(/ne se referme pas/)
   })
 
-  it('dans le schéma exporté, enregistrer_facture est celle de factures_reprises_encaissements (A8b), en entier', () => {
+  it('dans le schéma exporté, enregistrer_facture est celle de dossier_du_cabinet (LM1), en entier', () => {
     const definitions = definitionsSql('enregistrer_facture', fichiersDuSchema())
-    expect(definitions.at(-1)?.chemin).toMatch(/_factures_reprises_encaissements\.sql$/)
-    // Celle d'avant, en capitales (acomptes_des_devis, recopiée de `pg_get_functiondef`) : le motif la lit aussi.
-    expect(definitions.at(-2)?.chemin).toMatch(/_acomptes_des_devis\.sql$/)
-    expect(definitions.at(-2)?.definition).toMatch(/^CREATE OR REPLACE FUNCTION public\.enregistrer_facture\(/)
+    expect(definitions.at(-1)?.chemin).toMatch(/_dossier_du_cabinet\.sql$/)
+    expect(definitions.at(-2)?.chemin).toMatch(/_factures_reprises_encaissements\.sql$/)
+    // Celle d'avant encore, en capitales (acomptes_des_devis, recopiée de `pg_get_functiondef`) : le motif la lit aussi.
+    expect(definitions.at(-3)?.chemin).toMatch(/_acomptes_des_devis\.sql$/)
+    expect(definitions.at(-3)?.definition).toMatch(/^CREATE OR REPLACE FUNCTION public\.enregistrer_facture\(/)
     const derniere = derniereDefinitionSql('enregistrer_facture')
-    // Le corps, de `as $$` à son délimiteur fermant : 49 957 caractères, md5 38dda448… — ceux de `prosrc` en production,
-    // relevés le 10/11/2026 après le jour J par `select md5(prosrc), length(prosrc) from pg_proc`.
-    const corps = derniere.slice(derniere.indexOf('as $$') + 'as $$'.length)
-    expect(corps).toHaveLength(49957)
-    expect(createHash('md5').update(corps).digest('hex')).toBe('38dda448e60491760ef7f2cb7fce96cc')
+    // Le corps, de `as $$` à son délimiteur fermant : 50 190 caractères, md5 a5e2f40e… — ceux de `prosrc` en production,
+    // relevés le 12/11/2026 après la séance de collage par `select md5(prosrc), length(prosrc) from pg_proc` (49 957 et
+    // 38dda448… le 10/11/2026, avant LM1).
+    // LM1 la recopie de `pg_get_functiondef` : son corps s'ouvre par `AS $function$`.
+    const corps = derniere.slice(indiceSql(derniere, 'as $function$') + 'as $function$'.length)
+    expect(corps).toHaveLength(50190)
+    expect(createHash('md5').update(corps).digest('hex')).toBe('a5e2f40e4fe36453bd39aa46baa91f07')
   })
 
   describe('le schéma réel, fonction par fonction', () => {

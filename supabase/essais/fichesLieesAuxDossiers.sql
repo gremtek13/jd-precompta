@@ -1,5 +1,5 @@
 -- LA FICHE DE FACTURATION D'UN CLIENT DU CABINET, LIÉE À SON DOSSIER (ligne 47, lot LM3 ; la migration
--- `fiche_liee_au_dossier_du_client`, PRÉPARÉE le 11/11/2026, supabase/preparees/20261111233000_fiche_liee_au_dossier_du_client.sql,
+-- `fiche_liee_au_dossier_du_client`, en production depuis le 12/11/2026, supabase/schema/20261112140920_fiche_liee_au_dossier_du_client.sql,
 -- après `dossier_du_cabinet` (LM1)). Le récit : HISTORIQUE.md, « 11/11/2026 — LM3 ».
 -- SUR UNE RÉPLIQUE SEULEMENT : il désigne le dossier du cabinet de la réplique, crée un cabinet et retire un dossier. À
 -- rejouer, par psql (`-f`, pas `-1` : le fichier ouvre et ANNULE sa propre transaction), sous le super-utilisateur, après

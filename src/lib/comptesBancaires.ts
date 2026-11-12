@@ -1,6 +1,7 @@
 // PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER (ligne 26.6, lot MCB1 ; MCB-Q1 à Q8, tranchées par le cabinet le 11/11/2026) :
-// le module pur de la migration `comptes_bancaires`, PRÉPARÉE le 11/11/2026 (supabase/preparees/), pas appliquée. Le récit :
-// HISTORIQUE.md, « 11/11/2026 — PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : D'EMBLÉE, LES LOTS, ET LA BASE (MCB1) ».
+// le module pur de la migration `comptes_bancaires`, en production depuis le 12/11/2026
+// (supabase/schema/20261112140805_comptes_bancaires.sql). Le récit : HISTORIQUE.md, « 11/11/2026 — PLUSIEURS COMPTES
+// BANCAIRES D'UN DOSSIER : D'EMBLÉE, LES LOTS, ET LA BASE (MCB1) » et « 12/11/2026 — LA SÉANCE DE COLLAGE DU 12/11/2026 ».
 //
 // Ce que la base tient, et que ce module redit au mot et au code près (comptesBancaires.test.ts le confronte au texte de la
 // migration, refus par refus, dans l'ordre de chaque fonction) :
@@ -16,11 +17,24 @@
 // Les lots suivants s'en serviront : l'import (le compte choisi, le dédoublonnage par compte), le contrôle des soldes et la
 // validation par compte, les compositions et le FEC (`compteDeBanqueDuMouvement`), les écrans, l'espace client.
 
-/** La migration `comptes_bancaires` (supabase/preparees/), PRÉPARÉE le 11/11/2026, pas appliquée : baissé, aucune lecture
- *  ne nomme sa table ni sa colonne `compte_bancaire_id`, et le plan de sauvegarde tient la table dehors — la lire avant la
- *  migration ferait échouer toute sauvegarde. Il se lève le jour de l'application, quand la migration entre dans l'export
- *  (comptesBancaires.test.ts l'exige). */
+/** Les ÉCRANS des comptes bancaires (MCB2 à MCB7) : BAISSÉ. Les migrations `comptes_bancaires`,
+ *  `fin_d_identifiant_des_comptes_bancaires`, `couverture_du_releve_par_compte` et `jambe_de_banque_par_compte` sont en
+ *  production depuis le 12/11/2026, mais pas l'ouverture éclatée (MCB5g : `ouverture_eclatee_par_compte` et
+ *  `ouverture_eclatee_a_la_validation`, préparées) — le cabinet : « MCB5G : l'appliquer après MCB1, avec ses écrans ». Levé,
+ *  la carte « Comptes bancaires » ouvrirait un second compte dont l'ouverture de 2026 ne s'éclaterait pas, et l'onglet
+ *  Écritures, l'assistant et la sauvegarde liraient `ecritures_brouillon.ouverture_compte_bancaire_id`, absente. Baissé,
+ *  aucune lecture des écrans ne nomme la table ni `compte_bancaire_id` : un mouvement ou un relevé arrivé sans compte reçoit
+ *  le seul du dossier, le principal, que la base crée au premier. Il se lève avec MCB5g, quand ses deux migrations entrent
+ *  dans l'export (comptesBancaires.test.ts l'exige). */
 export const COMPTES_BANCAIRES_PREVUS = false
+
+/** La table au PLAN DE SAUVEGARDE, avec les clés des mouvements et des contrôles vers elle : LEVÉ depuis le 12/11/2026, la
+ *  migration `comptes_bancaires` dans l'export. En base, chaque mouvement et chaque relevé porte son compte (NOT NULL) : une
+ *  sauvegarde qui ne porterait pas la table ne se restaurerait plus — le compte d'un mouvement réinséré n'existerait pas
+ *  dans le dossier recréé, et la garde le refuserait (23503). La clé de l'ouverture éclatée, elle, suit
+ *  `COMPTES_BANCAIRES_PREVUS` : sa colonne n'est pas en base (lib/sauvegarde.ts, `auGrapheDesComptesBancaires`). Baissé,
+ *  l'état d'avant le collage, que sauvegardeComptesBancaires.test.ts joue encore. */
+export const COMPTES_BANCAIRES_EN_BASE = true
 
 /** Les tables de la migration, que le plan de sauvegarde tient derrière le drapeau. */
 export const TABLES_DES_COMPTES_BANCAIRES: readonly string[] = ['comptes_bancaires']
@@ -42,7 +56,7 @@ export interface CompteBancaire {
   ouvert_le: string | null
   clos_le: string | null
   /** Les quatre derniers caractères de l'identifiant (ACCTID) du premier relevé OFX importé sous ce compte, nuls avant —
-   *  la migration `fin_d_identifiant_des_comptes_bancaires` (MCB2), préparée, qui suit celle-ci sous le même drapeau. */
+   *  la migration `fin_d_identifiant_des_comptes_bancaires` (MCB2), en production depuis le 12/11/2026. */
   fin_d_identifiant: string | null
   created_by: string | null
   created_at: string

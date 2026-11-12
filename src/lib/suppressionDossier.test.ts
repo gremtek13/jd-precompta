@@ -55,7 +55,18 @@ vi.mock('./logoDesFactures', () => ({
 
 vi.mock('./supabase', () => ({
   supabase: {
-    from: () => ({
+    from: (table: string) => ({
+      // LE DOSSIER DU CABINET (ligne 47, LM1, en production depuis le 12/11/2026) : sa désignation se lit avant tout retrait
+      // (`estDesigneCommeDossierDuCabinet`), et aucun cabinet ne désigne les dossiers de ce fichier — ce chemin-là se joue dans
+      // dossierDuCabinetLecture.test.ts, sous les deux états du drapeau.
+      select: (colonnes: string) => ({
+        eq: (colonne: string) => ({
+          maybeSingle: () => {
+            if (table !== 'cabinets' || colonnes !== 'id' || colonne !== 'dossier_du_cabinet') throw new Error(`Lecture non attendue : ${table}`)
+            return Promise.resolve({ data: null, error: null })
+          },
+        }),
+      }),
       delete: () => ({
         eq: (_col: string, id: string) => {
           journal.push({ action: 'delete:dossiers', cible: id })

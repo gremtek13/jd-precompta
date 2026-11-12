@@ -3,6 +3,7 @@
 -- confondus. Rien ne se perd (aucune donnée, aucune colonne) ; il s'applique par l'outil, et AVANT le retour de
 -- `comptes_bancaires` s'il faut retirer les deux (sinon il reste ce qu'il est : la fonction ne nomme plus la table). Après lui,
 -- le mois d'un compte couvre de nouveau le trou d'un autre, côté client.
+-- La migration est en production depuis le 12/11/2026 (version 20261112140829) : supabase/schema/20261112140829_couverture_du_releve_par_compte.sql.
 create or replace function public.couverture_du_releve(p_dossier_id uuid) returns date[]
 language plpgsql
 stable

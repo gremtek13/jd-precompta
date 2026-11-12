@@ -1,5 +1,6 @@
 // L'ORIGINAL D'UNE FACTURE REPRISE RETENU PAR SON IMPORT (ligne 51.5, A8D2A-Q1 ; décision du cabinet du 11/11/2026, réponse
-// (B)). La migration `originaux_retenus_par_leur_import` (supabase/preparees/20261111180000_…, PRÉPARÉE, pas appliquée) :
+// (B)). La migration `originaux_retenus_par_leur_import` (en production depuis le 12/11/2026 :
+// supabase/schema/20261112140751_originaux_retenus_par_leur_import.sql) :
 //   - le seau `ventes` refuse la suppression de l'original d'un import qui existe — le fichier du lot ou celui d'une de ses
 //     factures (`original_d_un_import`), au super-administrateur aussi ; « Retirer l'import » (`retirer_import`) retire
 //     d'abord les lignes, et l'original redevient un fichier que le chef retire (l'ordre de `retirerLImport`) ;
@@ -13,8 +14,9 @@
 //
 // Côté application, rien ne se lit ni ne s'écrit de neuf : la table `originaux_liberes` n'a aucune policy (seules les
 // fonctions de la base la lisent). Le drapeau ne porte que sa place au plan de sauvegarde, où elle est une table de niveau
-// cabinet (hors de l'export d'un dossier) : baissé, la production n'a pas la table, et le plan ne doit pas la nommer
-// (sauvegardeOriginauxLiberes.test.ts). À lever le jour où la migration est collée et passe dans l'export.
-export const ORIGINAUX_RETENUS_PREVUS = false
+// cabinet (hors de l'export d'un dossier). Levé depuis le 12/11/2026, la migration collée et dans l'export ; baissé, son
+// état d'avant, que sauvegardeOriginauxLiberes.test.ts joue encore : la production n'avait pas la table, et le plan ne
+// devait pas la nommer.
+export const ORIGINAUX_RETENUS_PREVUS = true
 
 export const TABLES_DES_ORIGINAUX_LIBERES: readonly string[] = ['originaux_liberes']

@@ -4,7 +4,8 @@ import { ADRESSES_DES_ACCES_RETIRES_PREVUES } from './adressesDesAccesRetires'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
-import { COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
+import { COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
+import { DOSSIER_DU_CABINET_PREVU } from './dossierDuCabinet'
 import { CONTACTS_EXPORTES } from './contacts'
 import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
@@ -47,6 +48,7 @@ import {
   auPlanDesParametresDesCotisations,
   auPlanDesComptesBancaires,
   auGrapheDesComptesBancaires,
+  auGrapheDuDossierDuCabinet,
   auGrapheDeLInventaire,
   auPlanDeLInventaire,
   auGrapheDesStocks,
@@ -123,7 +125,7 @@ describe('le filtre du plan', () => {
         && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
         && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
         && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
-        && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS)
+        && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_EN_BASE)
         && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
         && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS)
         && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS)
@@ -142,7 +144,7 @@ describe('le filtre du plan', () => {
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
         && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
-        && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS)
+        && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS) && auGrapheDuDossierDuCabinet(r, DOSSIER_DU_CABINET_PREVU)
         && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)
         && auGrapheDesStocks(r, STOCKS_PREVUS)
         && auGrapheDeLAffectation(r, AFFECTATION_PREVUE)))

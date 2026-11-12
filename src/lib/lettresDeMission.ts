@@ -5,14 +5,15 @@
 // celle du cabinet, et l'empreinte que la BASE calcule de ce contenu —, puis reçoit une réponse (acceptée sur un papier
 // signé, ou refusée) et se retire ; une nouvelle version la remplace, jamais une réécriture. L'acceptation EN LIGNE est
 // prévue par le schéma et fermée par la base tant que le droit de rétractation n'est pas tranché (LM-Q10).
-// La base tient la règle (la migration `lettres_de_mission`, PRÉPARÉE le 11/11/2026, supabase/preparees/) ; ce module la
+// La base tient la règle (la migration `lettres_de_mission`, en production depuis le 12/11/2026, supabase/schema/) ; ce module la
 // redit, pur, pour l'écran de LM5 : le catalogue, les refus de chaque fonction dans leur ordre et à leurs mots, et ce qui
 // se DÉDUIT (l'état d'une lettre, les lettres en vigueur d'un client à une date). Rien ne s'en lit tant que le drapeau
 // est baissé. Récit : HISTORIQUE.md, « 11/11/2026 — LM4 ». Sources : décret n° 2012-432, art. 151 et 158 (Légifrance,
 // relus le 11/11/2026) ; CGI, art. 289, I-2 ; RGPD, art. 28 ; C. civ., art. 1366 et 1367.
 
-/** Levé le jour où la migration `lettres_de_mission` est en production (son fichier dans supabase/schema/). */
-export const LETTRES_DE_MISSION_PREVUES: boolean = false
+/** Levé depuis le 12/11/2026 : la migration `lettres_de_mission` est en production (son fichier dans supabase/schema/).
+ *  Baissé, l'état d'avant, que les tests jouent encore : rien ne se lit. */
+export const LETTRES_DE_MISSION_PREVUES: boolean = true
 
 /** Le drapeau de la base, `acceptation_en_ligne_ouverte()` : faux jusqu'à la réponse sur le droit de rétractation. */
 export const ACCEPTATION_EN_LIGNE_OUVERTE: boolean = false

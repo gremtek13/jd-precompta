@@ -380,7 +380,8 @@ describe('ecritureDuCompteDeBilan — le compte choisi face à la banque, dans l
     const sql = definitionSql('ecrire_mouvement_compte_bilan')
     // La banque, lue dans le plan du dossier par la CLÉ de son rôle (étape PC2), dont le défaut est la constante.
     expect(PLAN_PAR_DEFAUT.banque).toBe(COMPTE_BANQUE)
-    expect(sql).toContain("v_banque := public.compte_du_role(v_ligne.dossier_id, 'banque');")
+    // Depuis MCB5 (`jambe_de_banque_par_compte`, en production depuis le 12/11/2026), la banque du MOUVEMENT.
+    expect(sql).toContain('v_banque := public.compte_de_banque_du_mouvement(v_ligne.id);')
     expect(sql).toContain('select v_banque as compte, v_sens_banque as sens, abs(v_ligne.montant) as montant')
     expect(sql).toContain('select p_compte, v_sens_compte, abs(v_ligne.montant)')
     expect(sql).toContain("v_sens_banque := case when v_ligne.montant > 0 then 'debit' else 'credit' end;")

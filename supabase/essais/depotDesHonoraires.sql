@@ -1,5 +1,5 @@
--- LA FACTURE D'HONORAIRES DÉPOSÉE CHEZ LE CLIENT (ligne 47, lot LM8 ; la migration `depot_des_honoraires`, PRÉPARÉE le
--- 11/11/2026, supabase/preparees/20261111230000_depot_des_honoraires.sql, après `dossier_du_cabinet` (LM1),
+-- LA FACTURE D'HONORAIRES DÉPOSÉE CHEZ LE CLIENT (ligne 47, lot LM8 ; la migration `depot_des_honoraires`, en production
+-- depuis le 12/11/2026, supabase/schema/20261112141335_depot_des_honoraires.sql, après `dossier_du_cabinet` (LM1),
 -- `lettres_de_mission` (LM4) et `honoraires_factures` (LM7)). Le récit : HISTORIQUE.md, « 11/11/2026 — LM8 ».
 -- SUR UNE RÉPLIQUE SEULEMENT : il désigne le dossier du cabinet de la réplique, y valide des factures, range des fichiers
 -- dans le seau des pièces, retire une pièce et supprime deux dossiers. À rejouer, par psql (`-f`, pas `-1` : le fichier

@@ -47,6 +47,7 @@ import RetourBanque from './RetourBanque'
 import SecuriteDuCompte from './SecuriteDuCompte'
 import SuperAdminPage from './SuperAdminPage'
 import AccesTab from './dossier/AccesTab'
+import { DOSSIER_DU_CABINET_PREVU } from '../lib/dossierDuCabinet'
 import AssistantTab from './dossier/AssistantTab'
 import BalanceCard from './dossier/BalanceCard'
 import BanqueTab from './dossier/BanqueTab'
@@ -1030,10 +1031,12 @@ const ECRITURES_SANS_LISTE: { ecran: string; geste: string; ecritures: string[];
   ]),
   { ecran: 'SuperAdminPage', geste: 'form « Nom du cabinet', ecritures: ['fonction:create-cabinet'], raison: 'un cabinet neuf, saisi en entier' },
   { ecran: 'EquipePage', geste: 'form « Email', ecritures: ['fonction:create-team-member'], raison: 'la fonction reprend un compte existant' },
-  {
+  // AccesTab, « form « Email du client » : admise jusqu'au 12/11/2026. Depuis que `DOSSIER_DU_CABINET_PREVU` est levé (LM1, en
+  // production), le formulaire attend la désignation du dossier du cabinet, une lecture : avant elle, rien ne s'offre.
+  ...(DOSSIER_DU_CABINET_PREVU ? [] : [{
     ecran: 'AccesTab', geste: 'form « Email du client', ecritures: ['fonction:create-client-access'],
     raison: 'la fonction reprend un compte existant, et la base refuse un second accès (unique (user_id, dossier_id))',
-  },
+  }]),
   // CotisationsTab, « form « Échéance » (une échéance saisie à la main ne se dédoublonne pas) : admise jusqu'au 07/11/2026.
   // Depuis que `REGULARISATION_DES_COTISATIONS_EXPORTEE` est levé, le formulaire porte la description (TNS-Q2) ; l'année
   // payée et la part, remplies ici de « Valeur fictive », s'y refusent avant le clic, et rien ne part : aucune entrée.

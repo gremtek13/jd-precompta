@@ -8,14 +8,13 @@ import {
   TABLES_DES_FACTURES_IMPORTEES, TABLES_DES_LETTRES_DE_MISSION, tablesSansChemin, violationsOrdre,
 } from './sauvegarde'
 
-// LES LETTRES DE MISSION AU PLAN DE SAUVEGARDE (ligne 47, LM4). Leur migration, `lettres_de_mission`, est préparée, pas
-// appliquée : tant que l'export ne la porte pas, le plan effectif ne doit RIEN dire de ses deux tables — une sauvegarde
-// lirait une table absente et échouerait —, et le plan PRÉVU doit déjà être juste, confronté aux clés de la migration,
-// pour que lever `LETTRES_DE_MISSION_PREVUES` suffise le jour venu.
+// LES LETTRES DE MISSION AU PLAN DE SAUVEGARDE (ligne 47, LM4). Leur migration, `lettres_de_mission`, est en production
+// depuis le 12/11/2026, le drapeau levé. Baissé — l'état d'avant, joué plus bas —, le plan effectif ne doit RIEN dire de ses
+// deux tables : une sauvegarde lirait une table absente et échouerait. Le plan PRÉVU est confronté aux clés de la migration.
 
 const MODELES = 'modeles_lettre_de_mission'
 const LETTRES = 'lettres_de_mission'
-const dossier = new URL('../../supabase/preparees/', import.meta.url).pathname
+const dossier = new URL('../../supabase/schema/', import.meta.url).pathname
 const MIGRATION = readFileSync(dossier + readdirSync(dossier).find((n) => /^\d{14}_lettres_de_mission\.sql$/.test(n))!, 'utf8')
 
 describe('le filtre du plan, côté lettres de mission', () => {

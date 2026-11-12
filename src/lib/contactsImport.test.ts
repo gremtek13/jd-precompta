@@ -162,8 +162,10 @@ describe('les refus du module sont ceux que la base rend', () => {
     expect(juge).toBe('true')
     const enOctets = [...CHAMPS_D_UNE_LIGNE].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     expect(liste.split(',')).toEqual(enOctets)
-    // Et ceux qu'enregistrer_contact lit dans l'export, au caractère près.
+    // Et ceux qu'enregistrer_contact lit dans l'export, au caractère près — hors le lien d'une fiche au dossier de son client
+    // (LM3, en production depuis le 12/11/2026) : un import ne lie rien, comme l'essai le juge (0c).
     const lus = new Set([...derniereDefinitionSql('enregistrer_contact').matchAll(/p_contact->>?'(\w+)'/g)].map((m) => m[1]))
+    lus.delete('dossier_client_id')
     expect([...lus].sort()).toEqual([...CHAMPS_D_UNE_LIGNE].sort())
   })
 

@@ -1,5 +1,5 @@
 -- PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER : CE QU'UNE SUPPRESSION RENCONTRE (ligne 26.6, lot MCB1 ; la migration
--- `comptes_bancaires`, PRÉPARÉE le 11/11/2026). SUR UNE RÉPLIQUE SEULEMENT : l'outil d'exécution de la production soumet
+-- `comptes_bancaires`, en production depuis le 12/11/2026). SUR UNE RÉPLIQUE SEULEMENT : l'outil d'exécution de la production soumet
 -- toute suppression à une confirmation qui n'arrive pas. Le reste de la migration se prouve par
 -- supabase/essais/comptesBancaires.sql, dont ce fichier reprend le jeu, le moteur et les profils.
 --

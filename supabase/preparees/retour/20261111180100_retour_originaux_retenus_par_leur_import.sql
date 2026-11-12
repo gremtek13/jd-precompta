@@ -2,6 +2,7 @@
 -- transaction, avec sa ligne d'historique, sur l'accord du cabinet : il retire des objets (le déclencheur, trois fonctions,
 -- la table des originaux libérés, deux index). Il rend aux deux policies du seau `ventes` leur texte d'A8d2a — l'original
 -- d'une facture reprise se supprime de nouveau sous son import, au chef du cabinet — et ne touche à rien d'autre.
+-- La migration est en production depuis le 12/11/2026 (version 20261112140751) : supabase/schema/20261112140751_originaux_retenus_par_leur_import.sql.
 --
 -- IL SE REFUSE tant qu'un original libéré est encore dans le seau : retirer la libération le laisserait là, sans plus
 -- personne pour le retirer par l'API (la policy d'A8d2a cherche le cabinet dans la ligne du dossier, partie). Retirer

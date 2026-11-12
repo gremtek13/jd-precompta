@@ -6,15 +6,16 @@ import type { TypeClient } from './types'
 // (`dossier_client_id`) : elle ne garde que ce qui est propre à la facturation — l'adresse de facturation électronique,
 // l'e-mail, le délai de paiement, les observations — et AUCUNE identité ; le nom, l'adresse, le SIRET, le SIREN et le type
 // se LISENT du dossier (`identites_des_fiches_liees`), au choix du client dans la facture, qui en garde la copie, figée à
-// sa validation (A7a). La base tient la règle (la migration `fiche_liee_au_dossier_du_client`, PRÉPARÉE le 11/11/2026,
-// supabase/preparees/) ; ce module la redit, pur — rien lu, rien écrit, pas d'horloge — pour la dire avant le clic : les
+// sa validation (A7a). La base tient la règle (la migration `fiche_liee_au_dossier_du_client`, en production depuis le
+// 12/11/2026, supabase/schema/) ; ce module la redit, pur — rien lu, rien écrit, pas d'horloge — pour la dire avant le clic : les
 // refus du rang 4 bis d'`enregistrer_contact` dans leur ordre et à leurs mots, l'identité composée comme la base la
 // compose (celle de `facturer_honoraires`, LM7), ce que le choix d'une fiche liée met dans la facture, et la saisie qui
 // part. Rien ne s'en lit ni ne s'en écrit tant que le drapeau est baissé. Récit : HISTORIQUE.md, « 11/11/2026 — LM3 ».
 
-/** Levé le jour où la migration `fiche_liee_au_dossier_du_client` est en production (son fichier dans supabase/schema/),
- *  et `types.ts` basculé avec elle (`contacts.nom` y devient facultatif, pour une fiche liée seulement). */
-export const FICHES_LIEES_PREVUES: boolean = false
+/** Levé depuis le 12/11/2026 : la migration `fiche_liee_au_dossier_du_client` est en production (son fichier dans
+ *  supabase/schema/), et `types.ts` basculé avec elle (`contacts.nom` y devient nul pour une fiche liée seulement). Baissé,
+ *  l'état d'avant, que les tests jouent encore : rien ne se lit ni ne s'écrit. */
+export const FICHES_LIEES_PREVUES: boolean = true
 
 /**
  * Une ligne de `contacts` est-elle une fiche liée au dossier d'un client ? Une telle fiche n'a ni nom ni identité : les lecteurs

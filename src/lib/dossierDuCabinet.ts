@@ -2,13 +2,14 @@
 // le sien (`cabinets.dossier_du_cabinet`) : il y facture ses honoraires en son propre nom — aucun mandataire figé, la série
 // du dossier, jamais celle du mandataire —, aucun accès client ne s'y pose, et il ne se supprime que par le chef de son
 // cabinet, ses factures avec lui (LM1-Q1 (B)). La base
-// tient la règle (la migration `dossier_du_cabinet`, PRÉPARÉE le 11/11/2026, supabase/preparees/) ; ce module la redit,
-// pur, pour la dire avant le clic à l'écran de LM2 : les refus de `designer_dossier_du_cabinet` dans son ordre et à ses
-// mots, ceux des deux gardes, et le prédicat du mandataire. Rien ne s'en lit tant que le drapeau est baissé.
+// tient la règle (la migration `dossier_du_cabinet`, en production depuis le 12/11/2026 :
+// supabase/schema/20261112140859_dossier_du_cabinet.sql) ; ce module la redit, pur, pour la dire avant le clic à l'écran de
+// LM2 : les refus de `designer_dossier_du_cabinet` dans son ordre et à ses mots, ceux des deux gardes, et le prédicat du
+// mandataire. Rien ne s'en lit tant que le drapeau est baissé — l'état d'avant, que les tests jouent encore.
 // Récit : HISTORIQUE.md, « 11/11/2026 — LM1 ».
 
-/** Levé le jour où la migration `dossier_du_cabinet` est en production (son fichier dans supabase/schema/). */
-export const DOSSIER_DU_CABINET_PREVU: boolean = false
+/** Levé depuis le 12/11/2026 : la migration `dossier_du_cabinet` est en production (son fichier dans supabase/schema/). */
+export const DOSSIER_DU_CABINET_PREVU: boolean = true
 
 /** Les refus de `designer_dossier_du_cabinet`, dans l'ordre de la fonction, à ses mots et à son code. */
 export const REFUS_DE_LA_DESIGNATION = [

@@ -86,6 +86,10 @@ vi.mock('../../lib/supabase', async () => {
         const lignes = filtrer(table === 'revision_justifications' ? faux.decisions : faux.preuves, predicats)
         return Promise.resolve({ data: lignes.slice(debut, fin + 1), error: null, count: lignes.length })
       }
+      // Les papiers signés des lettres de mission (ligne 47, LM5), lus depuis que leur migration est en production (12/11/2026) :
+      // aucun ici, lus en entier — une lecture partielle retiendrait « C'est une facture » (le refus du papier signé lui-même :
+      // lettresDeMissionVue.test.ts).
+      if (table === 'lettres_de_mission') return Promise.resolve({ data: [], error: null, count: 0 })
       if (table === 'dossier_permanent') {
         if (faux.dossierPermanentRefuse) return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null })
         const lignes = filtrer(faux.entrees, predicats)

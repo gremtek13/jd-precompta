@@ -52,6 +52,13 @@ vi.mock('../../lib/fec', async (original) => ({
   telechargerTexte: (nom: string, contenu: string) => { faux.telecharges.push({ nom, contenu }) },
 }))
 
+// Les fiches liées (LM3, en production depuis le 12/11/2026) se lisent dans le dossier du cabinet seul : ce dossier ne l'est pas,
+// et la section se tait. Elle a ses tests (FichesLieesSection.test.tsx, ContactsVueFichesLiees.test.tsx, les deux états).
+vi.mock('../../lib/fichesLieesLecture', async (original) => ({
+  ...(await original<typeof import('../../lib/fichesLieesLecture')>()),
+  lireCeQueLesFichesLieesDemandent: async () => ({ etat: 'horsDuDossierDuCabinet' }),
+}))
+
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
   type Predicat = (ligne: Record<string, unknown>) => boolean

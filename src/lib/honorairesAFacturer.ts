@@ -5,7 +5,7 @@
 // à ce qu'elle facture (`honoraires_factures`) ; la facture se valide une par une, comme toute facture. Une facture
 // créditée EN ENTIER par ses avoirs rend sa période à facturer ; un avoir partiel la laisse facturée ; un brouillon
 // supprimé la rend aussi.
-// La base tient la règle (la migration `honoraires_factures`, PRÉPARÉE le 11/11/2026, supabase/preparees/) ; ce module la
+// La base tient la règle (la migration `honoraires_factures`, en production depuis le 12/11/2026, supabase/schema/) ; ce module la
 // redit, pur, pour l'écran : les refus de la fonction et de sa garde, dans leur ordre et à leurs mots ; la forme d'une
 // période ; la lettre en vigueur ; ce qu'un avoir rend ; le libellé de chaque ligne ; et ce qui se DÉDUIT — les périodes
 // « à facturer », rien de cela ne se stocke. Rien ne s'en lit tant que le drapeau est baissé. Récit : HISTORIQUE.md,
@@ -24,8 +24,9 @@ import { lettresEnVigueur, type LettreLue } from './lettresDeMission'
 import { calculerLigne } from './montantsFacture'
 import { prorataArrondi } from './ventesFacturees'
 
-/** Levé le jour où la migration `honoraires_factures` est en production (son fichier dans supabase/schema/). */
-export const HONORAIRES_FACTURES_PREVUS: boolean = false
+/** Levé depuis le 12/11/2026 : la migration `honoraires_factures` est en production (son fichier dans supabase/schema/).
+ *  Baissé, l'état d'avant, que les tests jouent encore : rien ne se lit. */
+export const HONORAIRES_FACTURES_PREVUS: boolean = true
 
 /** Les taux que `facturer_honoraires` accepte : 20 %, 8,5 % (Guadeloupe, Martinique, La Réunion), nul (franchise). */
 export const TAUX_DES_HONORAIRES: readonly number[] = [20, 8.5, 0]

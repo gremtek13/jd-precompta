@@ -78,6 +78,9 @@ vi.mock('../../lib/supabase', async () => {
     supabase: {
       from: (table: string) => chaine(table),
       rpc: (nom: string, args: Record<string, unknown>) => {
+        // Les missions du client (ligne 47, LM5-Q2, en production depuis le 12/11/2026), LUES pour la lettre de mission du dossier
+        // permanent : aucun dossier du cabinet désigné, donc aucune lettre. Une lecture, hors des appels que ce fichier compte.
+        if (nom === 'missions_du_client') return Promise.resolve({ data: { dossier_du_cabinet_designe: false, lettres: [] }, error: null })
         faux.appels.push({ nom, args })
         return faux.reponseRpc ? faux.reponseRpc(nom, args) : Promise.resolve({ data: null, error: null })
       },
@@ -413,7 +416,8 @@ describe('RevisionTab, dossier permanent — ce que la section montre', () => {
     rendre()
     await attendreLaSection()
     expect(within(section()).getByText('Aucune entrée n’est consignée au dossier permanent.')).toBeDefined()
-    expect(within(section()).getByText('Aucune lettre de mission n’est en vigueur en 2025.')).toBeDefined()
+    // La lettre de mission se dit une fois les missions du client lues (LM5-Q2) : une lecture à elle, attendue.
+    expect(await within(section()).findByText('Aucune lettre de mission n’est en vigueur en 2025.')).toBeDefined()
     expect(section().querySelector('.error-text')).toBeNull()
   })
 
@@ -422,7 +426,7 @@ describe('RevisionTab, dossier permanent — ce que la section montre', () => {
     const { unmount } = rendre({ annee: 2025, exercices: [exerciceValide(2024)] })
     await attendreLaSection()
     expect(texte(section())).toContain('Lettre pour 2026')
-    expect(within(section()).getByText('Aucune lettre de mission n’est en vigueur en 2025.')).toBeDefined()
+    expect(await within(section()).findByText('Aucune lettre de mission n’est en vigueur en 2025.')).toBeDefined()
     unmount()
     rendre({ annee: 2026, exercices: [exerciceValide(2025)] })
     await attendreLaSection()
@@ -1092,6 +1096,7 @@ describe('RevisionTab, dossier permanent — sans exercice choisi', () => {
       expect(texte(ligneDe('Un seul jour'))).not.toContain('ne couvre pas')
       expect(texte(ligneDe('Commence demain'))).toContain('— ne couvre pas aujourd’hui')
       expect(texte(ligneDe('Sans terme'))).not.toContain('ne couvre pas')
+      await within(section()).findByText('Aucune lettre de mission n’est en vigueur aujourd’hui.')
       const info = within(section()).getByText('À titre d’information').parentElement as HTMLElement
       expect(texte(info)).toContain('Aucune lettre de mission n’est en vigueur aujourd’hui.')
       expect(texte(info)).toContain('Aucune présentation de l’organisation comptable n’est en vigueur aujourd’hui.')

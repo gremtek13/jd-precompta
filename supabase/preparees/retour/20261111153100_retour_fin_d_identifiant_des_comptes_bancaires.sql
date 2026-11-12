@@ -2,6 +2,7 @@
 -- colonne `fin_d_identifiant` de `comptes_bancaires` (les quatre derniers caractères de l'identifiant OFX de chaque compte).
 -- Il demande l'accord explicite du cabinet, et se colle dans l'éditeur SQL de Supabase, dans une transaction, AVANT le
 -- retour de `comptes_bancaires` s'il faut retirer les deux. Après lui, un OFX ne se confronte plus au compte choisi.
+-- La migration est en production depuis le 12/11/2026 (version 20261112140819) : supabase/schema/20261112140819_fin_d_identifiant_des_comptes_bancaires.sql.
 do $garde$
 begin
   if not exists (select 1 from information_schema.columns

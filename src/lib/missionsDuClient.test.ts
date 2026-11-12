@@ -59,8 +59,8 @@ afterEach(() => {
 })
 
 describe('le drapeau', () => {
-  it('est baissé : la migration n’est pas en production', () => {
-    expect(missionsDuClientPrevues()).toBe(false)
+  it('est levé depuis le 12/11/2026 : la migration est en production, son texte inchangé dans l’export', () => {
+    expect(missionsDuClientPrevues()).toBe(true)
     expect(MIGRATION).toMatch(/PRÉPARÉE le\s+-- 11\/11\/2026, PAS APPLIQUÉE/)
   })
   it('ne se lève qu’avec la migration dans l’export, et après celui des lettres de mission', () => {

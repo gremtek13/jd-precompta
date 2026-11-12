@@ -238,10 +238,12 @@ describe('la série : celle que la base lit sous le verrou, celle que le module 
     const prise = enregistrer.indexOf('v_numero := attribuer_numero_facture(p_dossier_id, extract(year from v_date_emission)::integer, v_type);')
     expect(prise).toBeGreaterThan(0)
     expect(prise).toBeLessThan(enregistrer.indexOf("    set statut = 'validee', numero = v_numero, validated_at = now()"))
-    // Depuis A9a (`numerotation_continue`, jour J du 10/11/2026), le numéro vient de la série de QUI valide, sous son verrou.
+    // Depuis A9a (`numerotation_continue`, jour J du 10/11/2026), le numéro vient de la série de QUI valide, sous son verrou ;
+    // depuis LM1 (`dossier_du_cabinet`, 12/11/2026), le cabinet qui valide sur son propre dossier prend la série du dossier.
     expect(derniereDefinitionSql('attribuer_numero_facture')).toContain('return (public.numerotation_suivante(p_dossier_id, p_annee, p_type)).numero_attribue;')
     expect(derniereDefinitionSql('numerotation_suivante'))
-      .toContain("v_emetteur := case when public.admin_du_dossier(p_dossier_id) then 'mandataire' else 'client' end;")
+      .toContain("v_emetteur := case when public.admin_du_dossier(p_dossier_id) and not public.est_dossier_du_cabinet(p_dossier_id)\n"
+        + "                     then 'mandataire' else 'client' end;")
   })
 
   it('la base, depuis A9a : la série de qui valide, au modèle en vigueur ; ses factures validées et reprises ; la date, puis le compteur', () => {

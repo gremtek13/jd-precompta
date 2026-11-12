@@ -164,7 +164,8 @@ describe('la confirmation écrit chaque moitié au 580, face à la banque d’au
     const refus = derniereDefinitionSql('refus_compte_de_bilan')
     expect(refus).toContain('second compte bancaire) s\'\'écrit au 580000, virements internes')
     const ecrire = derniereDefinitionSql('ecrire_mouvement_compte_bilan')
-    expect(ecrire).toContain("v_banque := public.compte_du_role(v_ligne.dossier_id, 'banque');")
+    // Depuis MCB5 (`jambe_de_banque_par_compte`, en production depuis le 12/11/2026), la banque du MOUVEMENT.
+    expect(ecrire).toContain('v_banque := public.compte_de_banque_du_mouvement(v_ligne.id);')
     expect(ecrire).toContain('select v_banque as compte, v_sens_banque as sens, abs(v_ligne.montant) as montant')
   })
 })

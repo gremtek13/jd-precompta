@@ -71,6 +71,9 @@ vi.mock('../../lib/supabase', async () => {
     supabase: {
       from: (table: string) => chaine(table),
       rpc: (nom: string, args: Record<string, unknown>) => {
+        // Les missions du client (ligne 47, LM5-Q2, en production depuis le 12/11/2026), LUES pour la lettre de mission du dossier
+        // permanent : aucun dossier du cabinet désigné, donc aucune lettre. Une lecture, hors des appels que ce fichier compte.
+        if (nom === 'missions_du_client') return Promise.resolve({ data: { dossier_du_cabinet_designe: false, lettres: [] }, error: null })
         faux.appels.push({ nom, args })
         return faux.reponseRpc ? faux.reponseRpc(nom, args) : Promise.resolve({ data: null, error: null })
       },

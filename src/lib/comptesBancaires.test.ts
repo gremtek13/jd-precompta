@@ -2,13 +2,13 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { definitionsSql } from '../test/schema'
 import {
-  COMPTES_BANCAIRES_PREVUS, LIBELLE_DU_COMPTE_PRINCIPAL, REFUS_DE_LA_GARDE, REFUS_DU_MOUVEMENT, REFUS_DU_PLAN,
+  COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS, LIBELLE_DU_COMPTE_PRINCIPAL, REFUS_DE_LA_GARDE, REFUS_DU_MOUVEMENT, REFUS_DU_PLAN,
   REFUS_PRINCIPAL_ABSENT, TABLES_DES_COMPTES_BANCAIRES, compteDeBanqueDuMouvement, compteDUnArrivantSansLeSien, dateDite,
   estUnPremierJanvier, formuler, refusDuCompteBancaire, refusDuPlan, type ContexteDUnCompte, type SaisieDUnCompte,
 } from './comptesBancaires'
 
 // PLUSIEURS COMPTES BANCAIRES D'UN DOSSIER (ligne 26.6, lot MCB1) : le module redit les refus de la migration
-// `comptes_bancaires` — préparée le 11/11/2026, dans l'export le jour de son application — fonction par fonction, dans
+// `comptes_bancaires` — préparée le 11/11/2026, dans l'export depuis son collage du 12/11/2026 — fonction par fonction, dans
 // l'ordre, au code près ; la règle de la jambe de banque ; son retour retire tout ce qu'elle pose ; ses deux essais
 // exercent chaque refus. La migration se cherche où qu'elle soit, une fois.
 
@@ -90,8 +90,15 @@ describe('la migration et son retour', () => {
     expect(poses.length).toBeGreaterThanOrEqual(12)
     for (const nom of poses) expect(RETOUR, nom).toMatch(new RegExp(`drop (?:function|trigger|index|column|table) (?:public\\.)?${nom}\\b`, "i"))
   })
-  it('le drapeau se lève quand la migration entre dans l’export, et pas avant', () => {
-    expect(COMPTES_BANCAIRES_PREVUS).toBe(MIGRATION.chemin.includes('/supabase/schema/'))
+  it('la table entre au plan de sauvegarde avec la migration dans l’export ; les écrans, avec l’ouverture éclatée seulement', () => {
+    const exportee = MIGRATION.chemin.includes('/supabase/schema/')
+    expect(COMPTES_BANCAIRES_EN_BASE).toBe(exportee)
+    // « MCB5G : l'appliquer après MCB1, avec ses écrans » : levés, les écrans ouvriraient un second compte dont l'ouverture ne
+    // s'éclaterait pas, et liraient la colonne de l'ouverture éclatée — ses deux migrations doivent être dans l'export.
+    const schema = readdirSync(new URL('../../supabase/schema/', import.meta.url))
+    const ouverture = ['ouverture_eclatee_par_compte', 'ouverture_eclatee_a_la_validation']
+      .every((nom) => schema.some((f) => new RegExp(`^\\d{14}_${nom}\\.sql$`).test(f)))
+    expect(COMPTES_BANCAIRES_PREVUS).toBe(exportee && ouverture)
   })
   it('la jambe de banque de la base : le rôle pour le principal et avant le 1er janvier du compte, le sien ensuite', () => {
     const corps = fonction('compte_de_banque_du_mouvement')

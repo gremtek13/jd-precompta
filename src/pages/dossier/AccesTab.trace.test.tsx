@@ -19,6 +19,12 @@ vi.mock('../../lib/natureDesRecettesLecture', () => ({
   fixerLaNatureDesRecettes: async () => { throw new Error('non jouée ici') },
 }))
 vi.mock('../../components/EnvoyerEmailModal', () => ({ default: () => null }))
+// La désignation du dossier du cabinet (LM1, en production depuis le 12/11/2026), lue pour CE dossier : elle n'est pas lui, et
+// le formulaire est offert. Sa lecture a son test (dossierDuCabinetLecture.test.ts), l'onglet sur le dossier du cabinet le sien
+// (AccesTab.dossierDuCabinet.test.tsx, qui joue aussi le drapeau baissé).
+vi.mock('../../lib/dossierDuCabinetLecture', () => ({
+  useDesignationDuDossier: (dossierId: string) => ({ etat: 'lue', dossierId, dossierActuel: null }),
+}))
 
 type Ligne = Record<string, unknown>
 const faux = vi.hoisted(() => ({

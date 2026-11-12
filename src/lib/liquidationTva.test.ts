@@ -555,7 +555,8 @@ describe('la liquidation et le paiement de la base, rôle par rôle', () => {
 
   it('rapprocher_declaration_tva : un prélèvement à la TVA à décaisser, un remboursement au remboursement demandé, face à la banque', () => {
     const sql = sansApostrophes(derniereDefinitionSql('rapprocher_declaration_tva'))
-    expect(sql).toContain("v_banque := public.compte_du_role(v_ligne.dossier_id, 'banque');")
+    // Depuis MCB5 (`jambe_de_banque_par_compte`, en production depuis le 12/11/2026), la banque du MOUVEMENT.
+    expect(sql).toContain('v_banque := public.compte_de_banque_du_mouvement(v_ligne.id);')
     expect(sql).toContain("v_compte := public.compte_du_role(v_ligne.dossier_id,\n"
       + "    case when v_ligne.montant < 0 then 'tva_a_decaisser' else 'remboursement_tva_demande' end);")
     expect(sql).toContain("select v_banque as compte, case when v_ligne.montant > 0 then 'debit' else 'credit' end as sens,")

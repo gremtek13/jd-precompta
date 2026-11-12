@@ -5,7 +5,7 @@ import type { PlanComptable } from './planComptable'
 
 // LA JAMBE DE BANQUE PAR COMPTE BANCAIRE (ligne 26.6, lot MCB5, première partie ; MCB-Q1 et MCB-Q7, tranchées le
 // 11/11/2026). Le récit : HISTORIQUE.md, « 11/11/2026 — LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES DIX FONCTIONS DU
-// RELEVÉ (MCB5) ». La migration `jambe_de_banque_par_compte` (supabase/preparees/20261111200000_…, préparée, pas appliquée)
+// RELEVÉ (MCB5) ». La migration `jambe_de_banque_par_compte` (supabase/schema/20261112140844_…, en production le 12/11/2026)
 // fait vérifier par les fonctions du relevé une jambe de banque au compte du MOUVEMENT (`compte_de_banque_du_mouvement`,
 // MCB1) : le 512 propre de son compte bancaire quand ce compte en tient un à la date du mouvement, celui du rôle `banque`
 // du plan sinon. Ce module dit, côté application, la banque où la composition d'un mouvement écrit sa jambe :

@@ -5,6 +5,7 @@
 -- transaction. Il se refuse si un dossier tient plus d'un compte : ses mouvements se mêleraient de nouveau sous un seul
 -- compte, ce que la migration a été écrite pour empêcher ; les comptes en trop se retirent d'abord, avec leurs mouvements.
 -- Rien d'autre ne change : les mouvements, les relevés et le plan restent tels quels.
+-- La migration est en production depuis le 12/11/2026 (version 20261112140805) : supabase/schema/20261112140805_comptes_bancaires.sql.
 do $garde$
 begin
   if to_regclass('public.comptes_bancaires') is null then

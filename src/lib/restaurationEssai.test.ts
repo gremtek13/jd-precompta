@@ -26,7 +26,7 @@ import { SAISIES_2035E_PREVUES, TABLES_DES_SAISIES_2035E } from './saisies2035E'
 import { STOCKS_PREVUS, TABLES_DES_STOCKS } from './stocks'
 import { AFFECTATION_PREVUE, TABLES_DE_L_AFFECTATION } from './affectationDuResultat'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
-import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
+import { COMPTES_BANCAIRES_EN_BASE, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
 import { MODELE_DU_CABINET_PREVU, TABLES_DU_MODELE_DU_CABINET } from './modeleDuCabinet'
 import { COPIE_DES_FICHIERS_PREVUE, TABLES_DES_COPIES_DES_FICHIERS } from './copieDesFichiers'
@@ -1067,7 +1067,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLaPieceDuJour = PIECE_D_UNE_FACTURE_REPRISE_PREVUE
     ? avecLaPieceDUneReprise(avecLaNumerotationDuJour, pieceDUneReprise) : avecLaNumerotationDuJour
   const comptesBancaires = blocDesComptesBancaires(texteDeLEssai)
-  const avecLesComptesDuJour = COMPTES_BANCAIRES_PREVUS ? avecLesComptesBancaires(avecLaPieceDuJour, comptesBancaires) : avecLaPieceDuJour
+  const avecLesComptesDuJour = COMPTES_BANCAIRES_EN_BASE ? avecLesComptesBancaires(avecLaPieceDuJour, comptesBancaires) : avecLaPieceDuJour
   const copies = blocDesCopiesDesFichiers(texteDeLEssai)
   const avecLesCopiesDuJour = COPIE_DES_FICHIERS_PREVUE ? avecLesCopiesDesFichiers(avecLesComptesDuJour, copies) : avecLesComptesDuJour
   const originaux = blocDesOriginauxLiberes(texteDeLEssai)

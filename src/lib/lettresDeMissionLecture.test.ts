@@ -40,11 +40,16 @@ beforeEach(() => {
   etat.reponse = { data: null, error: null }
   etat.leve = false
 })
+// Levé depuis le 12/11/2026 (la migration en production) : chaque test le pose, et il y revient.
 afterEach(() => {
-  DRAPEAU_DES_MISSIONS_DU_CLIENT.MISSIONS_DU_CLIENT_PREVUES = false
+  DRAPEAU_DES_MISSIONS_DU_CLIENT.MISSIONS_DU_CLIENT_PREVUES = true
 })
 
-describe('drapeau baissé : la carte d’hier', () => {
+describe('drapeau baissé (l’état d’avant) : la carte d’hier', () => {
+  beforeEach(() => {
+    DRAPEAU_DES_MISSIONS_DU_CLIENT.MISSIONS_DU_CLIENT_PREVUES = false
+  })
+
   it('lit par les tables, jamais par la fonction', async () => {
     expect(await lireLesMissionsDuClient(C)).toEqual({ etat: 'illisible', dossierClientId: C, motif: 'lecture coupée' })
     expect(etat.tables).toEqual(['dossiers'])

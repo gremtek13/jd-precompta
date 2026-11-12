@@ -95,6 +95,9 @@ vi.mock('../lib/supabase', async () => {
         if (nom === 'caisse_du_client') return chaine('caisse_du_client', () => faux.jours[args.p_annee as number] ?? [])
         if (nom === 'couverture_du_releve') return Promise.resolve({ data: couvertureDe([]), error: null })
         if (nom === 'pieces_jointes_ecartees_du_client') return Promise.resolve({ data: [], error: null })
+        // Les honoraires que le cabinet a déposés (ligne 47, LM8, en production depuis le 12/11/2026) : une lecture, aucun ici
+        // (ClientUpload.honoraires.test.tsx les joue).
+        if (nom === 'honoraires_deposes_au_dossier') return Promise.resolve({ data: [], error: null, count: 0 })
         faux.ecritures.push({ nom, args })
         const repondre = () => (faux.refusRpc ? { data: null, error: { message: faux.refusRpc, code: '22023' } } : { data: { id: 'neuf' }, error: null })
         if (faux.retenirRpc) return new Promise((r) => { faux.rpcEnAttente.push(() => r(repondre())) })

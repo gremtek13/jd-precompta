@@ -38,7 +38,8 @@ import { STOCKS_PREVUS, TABLES_DES_STOCKS } from './stocks'
 import { EXERCICES_DECALES_PREVUS, TABLES_DES_EXERCICES } from './exercices'
 import { AFFECTATION_PREVUE, TABLES_DE_L_AFFECTATION } from './affectationDuResultat'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
-import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
+import { COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
+import { DOSSIER_DU_CABINET_PREVU } from './dossierDuCabinet'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 
@@ -275,14 +276,16 @@ export function auPlanDesParametresDesCotisations(table: string, exportees: bool
   return exportees || !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(table)
 }
 
-// LES COMPTES BANCAIRES D'UN DOSSIER (ligne 26.6, lot MCB1 ; migration `comptes_bancaires`, PRÉPARÉE le 11/11/2026) : les
-// comptes bancaires professionnels d'un dossier (`comptes_bancaires`), et le compte de chaque mouvement et de chaque relevé
-// (`compte_bancaire_id`, NOT NULL, une clé vers le compte, que sa garde tient dans le dossier, sans action à la suppression : un
-// compte qui porte un mouvement ou un relevé ne se retire pas, il part avec son dossier). Sous le drapeau de la migration
-// (`COMPTES_BANCAIRES_PREVUS`, src/lib/comptesBancaires.ts), baissé : la production n'a pas la table, et la lire ferait
-// échouer toute sauvegarde ; ses deux relations vers les mouvements et les contrôles quittent aussi le graphe du jour
-// (`auGrapheDesComptesBancaires`). Son rang : après le plan du dossier, que sa garde lit, et avant les contrôles et les
-// mouvements, qui la citent. Sa clé est la commune, `id` ; aucune vague. La restauration la réinsère par la policy du
+// LES COMPTES BANCAIRES D'UN DOSSIER (ligne 26.6, lot MCB1 ; migration `comptes_bancaires`, en production depuis le
+// 12/11/2026) : les comptes bancaires professionnels d'un dossier (`comptes_bancaires`), et le compte de chaque mouvement et
+// de chaque relevé (`compte_bancaire_id`, NOT NULL, une clé vers le compte, que sa garde tient dans le dossier, sans action à
+// la suppression : un compte qui porte un mouvement ou un relevé ne se retire pas, il part avec son dossier). Sous le drapeau
+// de la BASE (`COMPTES_BANCAIRES_EN_BASE`, src/lib/comptesBancaires.ts), levé depuis le 12/11/2026, et non sous celui des
+// écrans (`COMPTES_BANCAIRES_PREVUS`, baissé jusqu'à l'ouverture éclatée) : un mouvement sauvegardé porte son compte, et une
+// sauvegarde sans la table ne se restaurerait plus. Baissé — l'état d'avant —, la table et ses deux relations vers les
+// mouvements et les contrôles quittent le plan et le graphe du jour (`auGrapheDesComptesBancaires`) ; la relation de
+// l'ouverture éclatée suit le drapeau des écrans, sa colonne n'étant pas en base. Son rang : après le plan du dossier, que
+// sa garde lit, et avant les contrôles et les mouvements, qui la citent. Sa clé est la commune, `id` ; aucune vague. La restauration la réinsère par la policy du
 // cabinet, que le super-administrateur passe ; ses comptes d'un dossier partent dans un seul lot (une même forme), et la
 // contrainte différée du principal se juge à la fin de ce lot. Une sauvegarde d'avant la migration (formats 1 et 2) ne la
 // porte pas : chaque mouvement réinséré sans compte reçoit le principal, que la base crée au premier. Le dossier qui part
@@ -293,17 +296,19 @@ export function auPlanDesComptesBancaires(table: string, prevus: boolean): boole
   return prevus || !TABLES_DES_COMPTES_BANCAIRES.includes(table)
 }
 
-/** Une relation au graphe, côté comptes bancaires : toutes, sauf celles qui nomment leur table, drapeau baissé — celles des
- *  mouvements et des contrôles vers leur compte comprises, dont l'enfant est au plan depuis toujours. */
-export function auGrapheDesComptesBancaires(r: Relation, prevus: boolean): boolean {
-  return prevus || (!TABLES_DES_COMPTES_BANCAIRES.includes(r.enfant) && !TABLES_DES_COMPTES_BANCAIRES.includes(r.parent))
+/** Une relation au graphe, côté comptes bancaires : toutes, sauf celles qui nomment leur table, la table hors de la base —
+ *  celles des mouvements et des contrôles vers leur compte comprises, dont l'enfant est au plan depuis toujours —, et sauf
+ *  celle de l'ouverture éclatée (MCB5g), qui suit le drapeau des écrans : sa colonne n'entre en base qu'avec sa migration. */
+export function auGrapheDesComptesBancaires(r: Relation, enBase: boolean, prevus: boolean): boolean {
+  if (r.colonne === 'ouverture_compte_bancaire_id') return prevus
+  return enBase || (!TABLES_DES_COMPTES_BANCAIRES.includes(r.enfant) && !TABLES_DES_COMPTES_BANCAIRES.includes(r.parent))
 }
 
-// LES LETTRES DE MISSION (ligne 47, lot LM4 ; migration `lettres_de_mission`, PRÉPARÉE le 11/11/2026, après LM1) : les
+// LES LETTRES DE MISSION (ligne 47, lot LM4 ; migration `lettres_de_mission`, en production depuis le 12/11/2026) : les
 // modèles et les lettres de mission du cabinet, dans le dossier du cabinet. Sous le drapeau de la migration
-// (`LETTRES_DE_MISSION_PREVUES`, src/lib/lettresDeMission.ts), baissé : la production n'a pas les tables, et les lire ferait
-// échouer toute sauvegarde. Leurs relations (le dossier en cascade ; le modèle remplacé, le modèle d'une lettre, la lettre
-// remplacée et le papier signé SANS ACTION : rien ne se supprime qu'avec le dossier), leurs rangs (après les documents, que
+// (`LETTRES_DE_MISSION_PREVUES`, src/lib/lettresDeMission.ts), levé ; baissé, l'état d'avant : la production n'avait pas
+// les tables, et les lire aurait fait échouer toute sauvegarde. Leurs relations (le dossier en cascade ; le modèle
+// remplacé, le modèle d'une lettre, la lettre remplacée et le papier signé SANS ACTION : rien ne se supprime qu'avec le dossier), leurs rangs (après les documents, que
 // le papier signé cite, le modèle avant la lettre, après `precisions_mouvements`), leurs chemins, leurs vagues (`remplace_id`) ; leur clé est la commune,
 // `id`. Le dossier du client n'est pas une clé : une référence que la sauvegarde garde telle quelle, la lettre survivant à
 // son client (LM-Q4). La restauration les réinsère par la porte que leurs policies ouvrent au super-administrateur, et leur
@@ -317,22 +322,33 @@ export function auPlanDesLettresDeMission(table: string, prevues: boolean): bool
 }
 
 // LES ORIGINAUX LIBÉRÉS PAR LA SUPPRESSION DE LEUR DOSSIER (ligne 51.5, A8D2A-Q1 ; migration
-// `originaux_retenus_par_leur_import`, PRÉPARÉE le 11/11/2026) : les chemins des originaux de factures reprises d'un dossier
-// supprimé, rendus au cabinet du dossier pour qu'il les retire du seau (`originaux_liberes`). Une table de NIVEAU CABINET —
+// `originaux_retenus_par_leur_import`, en production depuis le 12/11/2026) : les chemins des originaux de factures
+// reprises d'un dossier supprimé, rendus au cabinet du dossier pour qu'il les retire du seau (`originaux_liberes`). Une table de NIVEAU CABINET —
 // elle ne décrit aucun dossier vivant —, hors de l'export d'un dossier, comme `cabinet_admins` : sa relation vers `cabinets`
 // (en cascade), son rang (après `cabinet_admins`, avec les tables du cabinet), sa clé (`chemin`). Sous le drapeau de la
-// migration (`ORIGINAUX_RETENUS_PREVUS`, src/lib/originauxRetenus.ts), baissé : la production n'a pas la table.
+// migration (`ORIGINAUX_RETENUS_PREVUS`, src/lib/originauxRetenus.ts), levé ; baissé, la production n'avait pas la table.
 // sauvegardeOriginauxLiberes.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
 /** Une table au plan, côté originaux libérés : toutes, sauf la leur tant que leur migration n'est pas exportée. */
 export function auPlanDesOriginauxLiberes(table: string, prevus: boolean): boolean {
   return prevus || !TABLES_DES_ORIGINAUX_LIBERES.includes(table)
 }
 
-// LES FACTURES D'HONORAIRES (ligne 47, lot LM7 ; migration `honoraires_factures`, PRÉPARÉE le 11/11/2026, après LM1 et
-// LM4) : le lien d'une facture du dossier du cabinet à la période d'honoraires qu'elle facture. Sous le drapeau de la
-// migration (`HONORAIRES_FACTURES_PREVUS`, src/lib/honorairesAFacturer.ts), baissé : la production n'a pas la table, et la
-// lire ferait échouer toute sauvegarde. Ses relations : le dossier et la facture EN CASCADE (seul un brouillon se
-// supprime), la lettre SANS ACTION (elle ne part qu'avec le dossier) ; son rang, après les lettres de mission et les
+// LA DÉSIGNATION DU DOSSIER DU CABINET (ligne 47, lot LM1 ; migration `dossier_du_cabinet`, en production depuis le
+// 12/11/2026) : `cabinets.dossier_du_cabinet`, une clé vers `dossiers`, mise à nul quand le dossier part. Le cabinet n'est
+// pas d'un dossier (`global`) : aucune sauvegarde d'un dossier ne le porte ni ne le réécrit, et la base d'arrivée le porte
+// déjà — un dossier du cabinet restauré revient sans sa désignation, que le chef pose de nouveau. La relation est au graphe
+// du jour, que le schéma exige entier, le drapeau levé (`DOSSIER_DU_CABINET_PREVU`, src/lib/dossierDuCabinet.ts) ; son
+// enfant précède tout dossier, et `violationsOrdre` ne demande aucun ordre à une table que la restauration n'écrit pas.
+// sauvegardeDossierDuCabinet.test.ts éprouve les deux états.
+/** Une relation au graphe, côté dossier du cabinet : toutes, sauf la désignation tant que sa migration n'est pas exportée. */
+export function auGrapheDuDossierDuCabinet(r: Relation, prevu: boolean): boolean {
+  return prevu || !(r.enfant === 'cabinets' && r.colonne === 'dossier_du_cabinet')
+}
+
+// LES FACTURES D'HONORAIRES (ligne 47, lot LM7 ; migration `honoraires_factures`, en production depuis le 12/11/2026) :
+// le lien d'une facture du dossier du cabinet à la période d'honoraires qu'elle facture. Sous le drapeau de la migration
+// (`HONORAIRES_FACTURES_PREVUS`, src/lib/honorairesAFacturer.ts), levé ; baissé, la production n'avait pas la table. Ses
+// relations : le dossier et la facture EN CASCADE (seul un brouillon se supprime), la lettre SANS ACTION (elle ne part qu'avec le dossier) ; son rang, après les lettres de mission et les
 // factures qu'elle cite ; son chemin, direct ; sa clé, la commune. La restauration la réinsère par la porte que sa policy
 // ouvre au super-administrateur, et sa garde accepte l'histoire telle qu'écrite — un lien d'une facture créditée en entier
 // à côté de celui qui facture de nouveau sa période. sauvegardeHonorairesFactures.test.ts éprouve les deux plans.
@@ -343,10 +359,10 @@ export function auPlanDesHonorairesFactures(table: string, prevus: boolean): boo
   return prevus || !TABLES_DES_HONORAIRES_FACTURES.includes(table)
 }
 
-// LE DÉPÔT DES FACTURES D'HONORAIRES CHEZ LE CLIENT (ligne 47, lot LM8 ; migration `depot_des_honoraires`, PRÉPARÉE le
-// 11/11/2026, après LM1, LM4 et LM7) : le dépôt d'une facture validée du dossier du cabinet dans le dossier de son client.
-// Sous le drapeau de la migration (`DEPOT_DES_HONORAIRES_PREVU`, src/lib/depotDesHonoraires.ts), baissé : la production n'a
-// pas la table, et la lire ferait échouer toute sauvegarde. Ses relations : le dossier du cabinet EN CASCADE, la facture
+// LE DÉPÔT DES FACTURES D'HONORAIRES CHEZ LE CLIENT (ligne 47, lot LM8 ; migration `depot_des_honoraires`, en production
+// depuis le 12/11/2026) : le dépôt d'une facture validée du dossier du cabinet dans le dossier de son client. Sous le
+// drapeau de la migration (`DEPOT_DES_HONORAIRES_PREVU`, src/lib/depotDesHonoraires.ts), levé ; baissé, la production
+// n'avait pas la table. Ses relations : le dossier du cabinet EN CASCADE, la facture
 // SANS ACTION (une facture validée ne part qu'avec son dossier) ; le dossier du client et la pièce sont des références SANS
 // clé (un autre dossier : la sauvegarde du dossier du cabinet ne les porte pas, et leur absence ne retient rien) ; son
 // rang, après les factures d'honoraires, dont sa garde lit le client ; son chemin, direct ; sa clé, la commune. La
@@ -553,7 +569,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
     && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
     && auPlanDesParametresDesCotisations(table, PARAMETRES_DES_COTISATIONS_EXPORTES)
-    && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_PREVUS)
+    && auPlanDesComptesBancaires(table, COMPTES_BANCAIRES_EN_BASE)
     && auPlanDesLettresDeMission(table, LETTRES_DE_MISSION_PREVUES)
     && auPlanDesOriginauxLiberes(table, ORIGINAUX_RETENUS_PREVUS)
     && auPlanDesHonorairesFactures(table, HONORAIRES_FACTURES_PREVUS)
@@ -659,6 +675,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'a_nouveaux', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'agent_conversations', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'cabinet_admins', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
+  // La désignation du dossier du cabinet (LM1) : `auGrapheDuDossierDuCabinet`, et aucun ordre (`violationsOrdre`).
+  { enfant: 'cabinets', parent: 'dossiers', colonne: 'dossier_du_cabinet', aLaSuppression: 'met_a_null' },
   { enfant: 'categories', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'comptes_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'comptes_courants_associes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -689,7 +707,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   // le compte bancaire dont une écriture du 1er janvier ouvre le 512, sans action à la suppression — un compte qui la porte ne
   // se retire pas, et le lien n'est pas sacrifiable : sans lui, l'écriture perdrait sa source. Le parent est la table des
   // comptes bancaires : la relation ne vit au graphe du jour que `COMPTES_BANCAIRES_PREVUS` levé (`auGrapheDesComptesBancaires`),
-  // les deux migrations se collant ensemble (MCB5-Q1). Les comptes précèdent déjà le brouillon dans l'ordre de restauration.
+  // avec la migration de l'ouverture éclatée — la table des comptes, elle, est au plan depuis le 12/11/2026
+  // (`COMPTES_BANCAIRES_EN_BASE`). Les comptes précèdent déjà le brouillon dans l'ordre de restauration.
   { enfant: 'ecritures_brouillon', parent: 'comptes_bancaires', colonne: 'ouverture_compte_bancaire_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'cotisations_declarees', colonne: 'cotisation_id', aLaSuppression: 'cascade' },
   { enfant: 'ecritures_brouillon', parent: 'declarations_tva', colonne: 'declaration_tva_id', aLaSuppression: 'bloque' },
@@ -927,7 +946,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
   .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
     && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
-    && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS)
+    && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDuDossierDuCabinet(r, DOSSIER_DU_CABINET_PREVU)
+    && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS)
     && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)
     && auGrapheDesStocks(r, STOCKS_PREVUS)
     && auGrapheDeLAffectation(r, AFFECTATION_PREVUE))
@@ -1585,6 +1605,10 @@ export function violationsOrdre(
 
   for (const relation of relations) {
     if (relation.enfant === relation.parent) continue
+    // Un enfant que la restauration d'un dossier n'écrit jamais — une table `global`, que la base d'arrivée porte déjà —
+    // n'attend aucun parent : `cabinets.dossier_du_cabinet` (LM1) pointe un dossier, alors que le cabinet précède tout
+    // dossier. Une table globale qui serait restaurée ne l'est pas : la règle ne vaut que pour elles.
+    if (CHEMINS_DOSSIER_PREVUS[relation.enfant]?.acces === 'global') continue
     const rangEnfant = rang.get(relation.enfant)
     const rangParent = rang.get(relation.parent)
     if (rangEnfant === undefined || rangParent === undefined) {

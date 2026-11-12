@@ -1,5 +1,5 @@
 -- L'ORIGINAL D'UNE FACTURE REPRISE NE SE SUPPRIME PLUS TANT QUE SON IMPORT EXISTE, ET LA SUPPRESSION D'UN DOSSIER RESTE
--- D'UN SEUL GESTE (ligne 51.5, A8D2A-Q1 ; migration `originaux_retenus_par_leur_import`, PRÉPARÉE) — SUR UNE RÉPLIQUE
+-- D'UN SEUL GESTE (ligne 51.5, A8D2A-Q1 ; migration `originaux_retenus_par_leur_import`, en production depuis le 12/11/2026) — SUR UNE RÉPLIQUE
 -- SEULEMENT, par psql, en UNE transaction (`psql -1`) : ce fichier porte des SUPPRESSIONS de lignes de `storage.objects` et
 -- de dossiers, et des mutations du schéma, qu'on ne joue pas sur la base du cabinet ; il ne laisse rien. La lecture du
 -- catalogue et le jugement des prédicats sans suppression se rejouent par le bloc OR de `rls.sql`, en production aussi. Le

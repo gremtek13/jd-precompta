@@ -1,5 +1,5 @@
 -- LA FIN DE L'IDENTIFIANT D'UN COMPTE BANCAIRE (ligne 26.6, lot MCB2 ; la migration `fin_d_identifiant_des_comptes_bancaires`,
--- PRÉPARÉE le 11/11/2026, qui suit `comptes_bancaires`). Le récit : HISTORIQUE.md, « 11/11/2026 — L'IMPORT D'UN RELEVÉ PAR
+-- en production depuis le 12/11/2026, qui suit `comptes_bancaires`). Le récit : HISTORIQUE.md, « 11/11/2026 — L'IMPORT D'UN RELEVÉ PAR
 -- COMPTE BANCAIRE (MCB2) ». À rejouer après toute migration qui touche `comptes_bancaires`.
 --
 -- Ce qui se prouve ici : la colonne naît nulle sur le compte que le premier mouvement crée ; le chef du cabinet la pose

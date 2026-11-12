@@ -1,5 +1,5 @@
--- LE DOSSIER DU CABINET (ligne 47, lot LM1 ; la migration `dossier_du_cabinet`, PRÉPARÉE le 11/11/2026,
--- supabase/preparees/20261111150000_dossier_du_cabinet.sql). Le récit : HISTORIQUE.md, « 11/11/2026 — LM1 ».
+-- LE DOSSIER DU CABINET (ligne 47, lot LM1 ; la migration `dossier_du_cabinet`, en production depuis le 12/11/2026,
+-- supabase/schema/20261112140859_dossier_du_cabinet.sql). Le récit : HISTORIQUE.md, « 11/11/2026 — LM1 ».
 -- SUR UNE RÉPLIQUE SEULEMENT : il supprime un dossier jetable (le geste du super-administrateur qui retire un cabinet),
 -- ce que l'outil d'exécution de la production retient. À rejouer, par psql (`-f`, pas `-1` : le fichier ouvre et ANNULE
 -- sa propre transaction), après toute migration qui touche `cabinets`, `memberships`, la suppression d'un dossier,

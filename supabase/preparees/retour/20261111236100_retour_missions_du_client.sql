@@ -1,6 +1,7 @@
 -- RETOUR ARRIÈRE de `missions_du_client` (LM5-Q2, ligne 47) — À COLLER dans l'éditeur SQL, dans une transaction, avec la
 -- ligne d'historique `retour_missions_du_client` : il retire la fonction de lecture (« drop function »), que l'outil
 -- retiendrait.
+-- La migration est en production depuis le 12/11/2026 (version 20261112141030) : supabase/schema/20261112141030_missions_du_client.sql.
 --
 -- Il ne retire qu'elle : aucune table, aucune ligne, aucun droit d'une table ne change, et rien de ce qu'elle a rendu ne
 -- s'est écrit. AVANT de le coller, baisser `MISSIONS_DU_CLIENT_PREVUES` (src/lib/missionsDuClient.ts) et attendre la mise

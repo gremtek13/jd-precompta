@@ -10,7 +10,7 @@ import {
 // (confronté au texte de la migration préparée), les lignes de la carte et leur refus avant le clic, l'état en mots, la
 // confirmation qui nomme ce qui part et chez qui, et les mots de « Mes pièces ». Données FICTIVES.
 
-const dossier = new URL('../../supabase/preparees/', import.meta.url).pathname
+const dossier = new URL('../../supabase/schema/', import.meta.url).pathname
 const MIGRATION = readFileSync(dossier + readdirSync(dossier).find((n) => /^\d{14}_depot_des_honoraires\.sql$/.test(n))!, 'utf8')
 const CLIENT_DE_LA_FACTURE = /create function public\.client_de_la_facture_d_honoraires\([\s\S]*?\$\$;/i.exec(MIGRATION)![0]
 

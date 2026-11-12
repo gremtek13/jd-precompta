@@ -196,7 +196,9 @@ describe('les refus neufs d’enregistrer_facture, confrontés à son texte', ()
     // avoir).
     expect(VALIDATION()).toContain('      v_denomination := v_dossier.denomination_imprimee;')
     expect(FONCTION).toContain('        denomination_imprimee = v_denomination, forme_juridique = v_forme_juridique, capital = v_capital,')
-    expect(FONCTION).toContain('    if v_cabinet then\n      select c.nom into v_mandataire from cabinets c where c.id = v_dossier.cabinet_id;')
+    // Depuis LM1 (`dossier_du_cabinet`, 12/11/2026) : aucun mandataire sur le dossier du cabinet, qui facture en son nom.
+    expect(FONCTION).toContain('    if v_cabinet and not public.est_dossier_du_cabinet(p_dossier_id) then\n'
+      + '      select c.nom into v_mandataire from cabinets c where c.id = v_dossier.cabinet_id;')
     // A7-Q2 : un accès « Ventes » et une facture seulement ; le SIRET, ses blancs retirés partout ; l'adresse, ses fins de ligne
     // ramenées et les blancs de ses bords retirés — `siretSansBlancs` et `adresseNette`, que les cas ci-dessous jugent.
     expect(VALIDATION()).toContain("    if not v_cabinet and v_type <> 'avoir' then\n"

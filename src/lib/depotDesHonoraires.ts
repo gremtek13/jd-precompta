@@ -1,6 +1,6 @@
-// LA FACTURE D'HONORAIRES DÉPOSÉE CHEZ LE CLIENT (ligne 47, lot LM8 ; la migration `depot_des_honoraires`, PRÉPARÉE le
-// 11/11/2026, supabase/preparees/20261111230000_depot_des_honoraires.sql, après LM1, LM4 et LM7). Le récit : HISTORIQUE.md,
-// « 11/11/2026 — LM8 ».
+// LA FACTURE D'HONORAIRES DÉPOSÉE CHEZ LE CLIENT (ligne 47, lot LM8 ; la migration `depot_des_honoraires`, en production
+// depuis le 12/11/2026, supabase/schema/20261112141335_depot_des_honoraires.sql, après LM1, LM4 et LM7). Le récit :
+// HISTORIQUE.md, « 11/11/2026 — LM8 ».
 //
 // Module PUR (aucun appel) : il redit, dans leur ordre et à leurs mots, les refus de `deposer_honoraires_chez_le_client`
 // que l'écran peut juger AVANT le clic — avant de tirer le PDF et de le déposer dans le seau des pièces, qu'un refus de la
@@ -8,11 +8,11 @@
 // d'une facture dans ce que rend `depots_des_honoraires`. La base juge seule ce que l'écran ne sait pas (le fichier rangé,
 // son type, une empreinte déjà au dossier du client) ; ses refus se disent tels qu'elle les rend.
 //
-// Derrière `DEPOT_DES_HONORAIRES_PREVU`, BAISSÉ : la production n'a ni la table ni les fonctions, et aucun écran ne les
-// appelle tant que la migration n'est pas collée et exportée. depotDesHonoraires.test.ts confronte chaque mot et l'ordre à
-// la migration.
+// Derrière `DEPOT_DES_HONORAIRES_PREVU`, LEVÉ depuis le 12/11/2026, la migration collée et exportée ; baissé, l'état
+// d'avant, que les tests jouent encore : aucun écran n'appelle la table ni les fonctions. depotDesHonoraires.test.ts
+// confronte chaque mot et l'ordre à la migration.
 
-export const DEPOT_DES_HONORAIRES_PREVU = false
+export const DEPOT_DES_HONORAIRES_PREVU = true
 
 /** Les refus de la fonction, à ses mots — dans l'ordre où elle les lève (la même liste, dans le même ordre, que la migration). */
 export const REFUS_DU_DEPOT = {

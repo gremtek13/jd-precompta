@@ -13,7 +13,7 @@ import { motifDeDefinition } from '../test/schema'
 // jambe, et la migration qui la fait vérifier par les dix fonctions du relevé.
 
 const RACINE = new URL('../../', import.meta.url)
-const MIGRATION = readFileSync(new URL('supabase/preparees/20261111200000_jambe_de_banque_par_compte.sql', RACINE), 'utf8')
+const MIGRATION = readFileSync(new URL('supabase/schema/20261112140844_jambe_de_banque_par_compte.sql', RACINE), 'utf8')
 const RETOUR = readFileSync(new URL('supabase/preparees/retour/20261111200100_retour_jambe_de_banque_par_compte.sql', RACINE), 'utf8')
 const EXPORT = readdirSync(new URL('supabase/schema/', RACINE)).filter((f) => f.endsWith('.sql'))
 
@@ -89,7 +89,7 @@ describe('un compte qui tient son 512 propre : la banque de chaque mouvement', (
   })
 })
 
-describe('la migration jambe_de_banque_par_compte (préparée), confrontée à son texte', () => {
+describe('la migration jambe_de_banque_par_compte (en production depuis le 12/11/2026), confrontée à son texte', () => {
   const debutDe = (nom: string): number => {
     const debut = [...MIGRATION.matchAll(motifDeDefinition(nom))].map((m) => m.index)
     expect(debut).toHaveLength(1)
