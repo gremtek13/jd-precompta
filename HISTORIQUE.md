@@ -51703,3 +51703,20 @@ la même année se refusent) ; le gel reste une date, la fin du dernier exercice
 `EXERCICES_DECALES_PREVUS` et `EXERCICES_DECALES_EXPORTES` ; premier risque, une régression de la frontière du gel (la
 nouvelle fonction doit rendre l'ancienne valeur pour tout dossier civil). Base lue le 12/11/2026 : quatre dossiers, tous
 en trésorerie, aucun exercice validé ; `btree_gist` disponible, non installée. Articles cités de mémoire, à relire avant EXD2.
+
+### 12/11/2026 — L'AFFECTATION DU RÉSULTAT ET L'APPROBATION DES COMPTES : LA CONCEPTION (LIGNES 33 ET 45)
+
+La conception entière vit dans `docs/conceptions/45-affectation-et-approbation.md` (constat, sources, principes, schéma,
+effets, lots, risques, treize questions AFF-Q1 à AFF-Q13). Le constat : une société en engagement garde le résultat d'un
+exercice validé au 120 ou au 129 du suivant (`soldes_a_reporter`, la reprise d'une balance), que le bilan présente à part,
+hors case (`resultats-en-attente`, `affectation-non-ecrite`), et que la liasse (conception 37, § 8) exige d'affecter. La
+réponse : une DÉCISION par exercice affecté, approbation et affectation ensemble, immuable, qui se remplace ou se retire
+tant que l'exercice de sa date n'est pas validé (`affectations_du_resultat`, `lignes_d_affectation`) ; son écriture au
+journal OD à la date de la décision, recomposée en base ; la base refuse la réserve légale sous le vingtième (C. com.,
+L232-10, nullité) et le dividende au-delà du distribuable (L232-11, délit des L241-3 et L242-6) ; le procès-verbal ou la
+décision de l'associé unique tirés des comptes figés, présences et votes en blanc, sans nom d'associé ; le dépôt au greffe
+(ligne 46) n'en garde que la date et le document. Sept lots, environ quatorze jours, derrière `AFFECTATION_PREVUE` et
+`AFFECTATION_EXPORTEE`. Relevé en concevant : la nomenclature de 2025-2026 ne renumérote ni le 108 ni aucun compte
+d'affectation (110, 119, 120, 129, 1061, 1063, 1068, 457) et CRÉE le 1209 « Acomptes sur dividendes » ; « le 108 passe au
+101 » de CLAUDE.md dit le virement de son solde (art. 1211-10), pas un numéro. Base lue le 12/11/2026 : quatre dossiers en
+trésorerie, ni forme ni capital posés, aucun exercice validé, aucun rôle d'affectation au catalogue.
