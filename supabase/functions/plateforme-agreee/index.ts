@@ -106,6 +106,11 @@ const ACTIONS = Object.keys(QUI_PEUT_QUOI)
 // exigent la case « Achats » (migration B1), lue à part ; le cabinet garde `lister`, `telecharger`, `retenir` et `repartir`.
 const RECEPTION_PAR_LE_CLIENT: Readonly<Record<string, "achats">> = { lister_achats: "achats", recevoir_achat: "achats" }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// L'identifiant d'un flux que le NAVIGATEUR demande (`telecharger`, `recevoir_achat`) : la forme d'un flux (bloc FLUX), et
+// jamais « . » ni « .. », que `encodeURIComponent` laisse tels quels et que l'adresse résout (RFC 3986, § 5.2.4) vers une
+// AUTRE route de la plateforme — `/v1/flows/..` devient `/v1/` —, appelée avec le jeton du cabinet (relecture de sécurité
+// de B4r, 12/11/2026).
+const FLUX_DEMANDE = /^(?!\.{1,2}$)[!-~]{1,200}$/
 const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret, organisation_id, portee, " +
   "recherche_depuis, derniere_recuperation, cycle_vie_depuis, cycle_vie_lu_le, created_at, updated_at"
 // Une facture à transmettre, telle que le générateur la lit, avec l'émetteur qu'elle a figé et la facture qu'un avoir
@@ -2774,6 +2779,23 @@ function decoderEntitesRecu(texte: string): string | null {
   }
 }
 
+// Une portée d'espaces de noms : les préfixes qu'un élément DÉCLARE, et la portée de son parent. Un préfixe se cherche en
+// remontant la chaîne — au plus un maillon par niveau, la profondeur étant bornée — au lieu de recopier la portée entière à
+// chaque élément qui déclare : une racine aux quarante mille préfixes, recopiée par dix-neuf mille enfants, coûtait deux
+// minutes à l'analyse d'un million de caractères (relecture de sécurité de B4r, 12/11/2026).
+interface PorteeRecu {
+  prefixes: Map<string, string>
+  parent: PorteeRecu | null
+}
+
+function prefixeRecu(portee: PorteeRecu, prefixe: string): string | undefined {
+  for (let p: PorteeRecu | null = portee; p !== null; p = p.parent) {
+    const ns = p.prefixes.get(prefixe)
+    if (ns !== undefined) return ns
+  }
+  return undefined
+}
+
 /**
  * Un document XML analysé, ou la raison de son refus. Strict : déclaration en tête et en UTF-8 seulement, aucune DTD ni
  * déclaration (`<!…`), une seule racine, des balises appariées, des attributs uniques, des entités prédéfinies ou
@@ -2791,7 +2813,7 @@ export function analyserXmlRecu(source: string): AnalyseXmlRecu {
     if (m[3] !== undefined && m[3].toLowerCase() !== 'utf-8') return { refus: `le message est encodé en ${m[3]}, et seul l’UTF-8 se lit` }
     i = m[0].length
   }
-  const pile: { el: ElementRecu; qualifie: string; portee: Map<string, string> }[] = []
+  const pile: { el: ElementRecu; qualifie: string; portee: PorteeRecu }[] = []
   let racine: ElementRecu | null = null
   let elements = 0
   const lireNom = (position: number): string | null => {
@@ -2842,6 +2864,9 @@ export function analyserXmlRecu(source: string): AnalyseXmlRecu {
       if (qualifie === null) return { refus: 'un nom de balise est illisible' }
       let p = i + 1 + qualifie.length
       const bruts: { qualifie: string; valeur: string }[] = []
+      // Les noms déjà lus de la balise, dans un ensemble : chercher chacun dans la liste coûtait le carré du nombre
+      // d'attributs (dix mille, une seconde et demie ; quatre-vingt-dix mille, une minute).
+      const nomsLus = new Set<string>()
       let fermee = false
       for (;;) {
         const apres = sauterBlancs(p)
@@ -2860,38 +2885,44 @@ export function analyserXmlRecu(source: string): AnalyseXmlRecu {
         const brute = s.slice(ouverture + 1, fin)
         const valeur = brute.includes('<') ? null : decoderEntitesRecu(brute)
         if (valeur === null) return { refus: 'une valeur d’attribut est mal formée' }
-        if (bruts.some((a) => a.qualifie === nom)) return { refus: 'un attribut est répété' }
+        if (nomsLus.has(nom)) return { refus: 'un attribut est répété' }
+        nomsLus.add(nom)
         // La normalisation d'une valeur d'attribut (§ 3.3.3) : chaque blanc devient une espace.
         bruts.push({ qualifie: nom, valeur: valeur.replace(/[\t\n]/g, ' ') })
         p = fin + 1
       }
-      const parent = pile.length > 0 ? pile[pile.length - 1].portee : new Map<string, string>([['xml', NS_XML_RECU]])
+      const parent: PorteeRecu = pile.length > 0
+        ? pile[pile.length - 1].portee
+        : { prefixes: new Map([['xml', NS_XML_RECU]]), parent: null }
       let portee = parent
       for (const a of bruts) {
         if (a.qualifie !== 'xmlns' && !a.qualifie.startsWith('xmlns:')) continue
-        if (portee === parent) portee = new Map(parent)
+        if (portee === parent) portee = { prefixes: new Map(), parent }
         const prefixe = a.qualifie === 'xmlns' ? '' : a.qualifie.slice(6)
         // Namespaces in XML 1.0, § 3 : « xmlns » ne se déclare pas, « xml » n'a qu'un espace et nul autre ne le prend,
         // un préfixe ne se « dé-déclare » pas ; l'espace par défaut, lui, peut revenir à aucun.
         if (prefixe === 'xmlns' || (prefixe !== '' && a.valeur === '') || (prefixe === 'xml') !== (a.valeur === NS_XML_RECU)) {
           return { refus: 'un espace de noms est mal déclaré' }
         }
-        portee.set(prefixe, a.valeur)
+        portee.prefixes.set(prefixe, a.valeur)
       }
       const resoudre = (nomQualifie: string, defaut: boolean): { ns: string; nom: string } | null => {
         const deux = nomQualifie.indexOf(':')
-        if (deux < 0) return { ns: defaut ? (portee.get('') ?? '') : '', nom: nomQualifie }
-        const ns = portee.get(nomQualifie.slice(0, deux))
+        if (deux < 0) return { ns: defaut ? (prefixeRecu(portee, '') ?? '') : '', nom: nomQualifie }
+        const ns = prefixeRecu(portee, nomQualifie.slice(0, deux))
         return ns === undefined || ns === '' ? null : { ns, nom: nomQualifie.slice(deux + 1) }
       }
       const nomResolu = resoudre(qualifie, true)
       if (nomResolu === null || qualifie.startsWith('xmlns:') || qualifie.startsWith('xml:')) return { refus: 'une balise emploie un préfixe non déclaré' }
       const attributs: ElementRecu['attributs'] = []
+      // Les noms résolus, de même : un nom local n'a pas d'espace, la première sépare le nom de son espace de noms.
+      const nomsResolus = new Set<string>()
       for (const a of bruts) {
         if (a.qualifie === 'xmlns' || a.qualifie.startsWith('xmlns:')) continue
         const r = resoudre(a.qualifie, false)
         if (r === null) return { refus: 'un attribut emploie un préfixe non déclaré' }
-        if (attributs.some((x) => x.ns === r.ns && x.nom === r.nom)) return { refus: 'un attribut est répété' }
+        if (nomsResolus.has(`${r.nom} ${r.ns}`)) return { refus: 'un attribut est répété' }
+        nomsResolus.add(`${r.nom} ${r.ns}`)
         attributs.push({ ...r, valeur: a.valeur })
       }
       const el: ElementRecu = { ...nomResolu, attributs, enfants: [], texte: '' }
@@ -3552,7 +3583,7 @@ async function receptionParLeClient(c: ContexteDeLaReception): Promise<Response>
     }
   } else {
     flowId = typeof payload.flowId === "string" ? payload.flowId : ""
-    if (!/^[!-~]{1,200}$/.test(flowId)) return json({ error: "Identifiant de flux illisible." }, 400)
+    if (!FLUX_DEMANDE.test(flowId)) return json({ error: "Identifiant de flux illisible." }, 400)
   }
 
   const { data: lue, error: erreurLecture } = await admin
@@ -3865,7 +3896,10 @@ Deno.serve(async (req: Request) => {
   if (!ACTIONS.includes(action) && !parLaReception) {
     return json({ error: `Action inconnue (attendu : ${[...ACTIONS, ...Object.keys(RECEPTION_PAR_LE_CLIENT)].join(", ")}).` }, 400)
   }
-  const dossierId = typeof payload.dossierId === "string" ? payload.dossierId.trim() : ""
+  // En minuscules : la base compare un uuid sans égard à la casse, mais un chemin du stockage est un TEXTE. Le premier segment
+  // d'un fichier déposé ici (`recevoir_achat`) doit être le dossier tel que la base l'écrit : sous « ABCD… », la suppression
+  // du dossier, qui liste « abcd…/ », le laisserait en place (relecture de sécurité de B4r, 12/11/2026).
+  const dossierId = typeof payload.dossierId === "string" ? payload.dossierId.trim().toLowerCase() : ""
   if (!UUID.test(dossierId)) return json({ error: "dossierId est requis." }, 400)
 
   // Les droits de l'appelant, avec SON jeton : rien n'est lu de la connexion, et rien ne part chez la plateforme, avant
@@ -4289,7 +4323,7 @@ Deno.serve(async (req: Request) => {
 
   // action === "telecharger"
   const flowId = typeof payload.flowId === "string" ? payload.flowId : ""
-  if (!/^[!-~]{1,200}$/.test(flowId)) return json({ error: "Identifiant de flux illisible." }, 400)
+  if (!FLUX_DEMANDE.test(flowId)) return json({ error: "Identifiant de flux illisible." }, 400)
   const document = payload.document === "original" || payload.document === "lisible" ? payload.document : null
   if (!document) return json({ error: "Document inconnu (attendu : original ou lisible)." }, 400)
   const chemin = `/v1/flows/${encodeURIComponent(flowId)}`

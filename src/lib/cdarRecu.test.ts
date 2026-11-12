@@ -117,6 +117,27 @@ describe('l’analyseur XML : strict, et il résout les espaces de noms', () => 
     expect(analyserXmlRecu(`<a>${'<b/>'.repeat(20_000)}</a>`)).toMatchObject({ refus: expect.stringMatching(/trop long/) })
     expect(analyserXmlRecu(`<a>${' '.repeat(1_000_001)}</a>`)).toMatchObject({ refus: expect.stringMatching(/taille/) })
   })
+
+  it('reste linéaire devant un XML hostile : les attributs d’une balise, la portée des préfixes (relecture de B4r)', () => {
+    // Avant le 12/11/2026, sous le million de caractères : quatre-vingt-dix mille attributs sur une balise, une minute ; une
+    // racine aux vingt-cinq mille préfixes recopiée par dix-neuf mille enfants, près d'une minute. Une facture reçue se lit
+    // par cet analyseur (recevoir_achat), et la fonction n'a que deux secondes de calcul.
+    const attributs = Array.from({ length: 90_000 }, (_, i) => ` a${i}=""`).join('')
+    const prefixes = Array.from({ length: 25_000 }, (_, i) => ` xmlns:p${i}="urn:x"`).join('')
+    for (const xml of [`<a${attributs}/>`, `<a${prefixes}>${'<b xmlns:q="urn:y"/>'.repeat(19_000)}</a>`]) {
+      expect(xml.length).toBeLessThan(1_000_000)
+      const debut = performance.now()
+      expect(analyserXmlRecu(xml)).toHaveProperty('racine')
+      expect(performance.now() - debut).toBeLessThan(2000)
+    }
+    // Les mêmes refus qu'avant : un attribut répété, sous son nom, ou sous deux préfixes du même espace de noms.
+    expect(analyserXmlRecu('<a x="1" x="2"/>')).toEqual({ refus: 'un attribut est répété' })
+    expect(analyserXmlRecu('<a xmlns:p="urn:x" xmlns:q="urn:x" p:x="1" q:x="2"/>')).toEqual({ refus: 'un attribut est répété' })
+    expect(analyserXmlRecu('<a xmlns:p="urn:x" p:x="1" x="2"/>')).toHaveProperty('racine')
+    // Une déclaration plus proche l'emporte, et ne déborde pas sur la sœur.
+    const lu = analyserXmlRecu('<a xmlns:p="urn:x"><b xmlns:p="urn:y"><p:c/></b><p:d/></a>')
+    expect('racine' in lu && lu.racine.enfants.map((e) => e.enfants[0]?.ns ?? e.ns)).toEqual(['urn:y', 'urn:x'])
+  })
 })
 
 describe('un message qu’on ne sait pas lire, ou qui dit deux choses, est dit tel', () => {
