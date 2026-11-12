@@ -1,13 +1,15 @@
 import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
 import {
-  FONCTION_DES_LETTRES_DU_CLIENT, REFUS_DES_LETTRES_DU_CLIENT, lettresDuClientRendues, type LettreDuClient,
+  REFUS_DES_LETTRES_DU_CLIENT, lettresDuClientRendues, type LettreDuClient,
 } from './lettresDuClient'
 
 // LA LECTURE de « Mes lettres de mission » (LM6, ligne 47) : par la fonction `lettres_de_mission_du_client` seule (le client
 // ne lit aucune des deux tables). Elle NE REJETTE JAMAIS : une réponse refusée se dit refusée (la case « Documents » relue
 // à la base), une valeur qu'on ne reconnaît pas ENTIÈRE se dit illisible, jamais « aucune lettre ». Gardée avec le dossier
-// lu : l'écran n'affiche une lecture que pour le dossier qu'il montre.
+// lu : l'écran n'affiche une lecture que pour le dossier qu'il montre. Le nom de la fonction s'écrit en toutes lettres dans
+// l'appel : les gardes du dépôt (verrousEcritures.test.ts, ecransAvantLecture.test.tsx) ne reconnaissent que lui ;
+// lettresDuClientLecture.test.ts le confronte à `FONCTION_DES_LETTRES_DU_CLIENT`, que la migration définit.
 
 export type LettresDuClientLues =
   | { etat: 'lue'; dossierId: string; dossierDuCabinetDesigne: boolean; lettres: LettreDuClient[] }
@@ -16,7 +18,7 @@ export type LettresDuClientLues =
 
 export async function lireLesLettresDuClient(dossierId: string): Promise<LettresDuClientLues> {
   try {
-    const { data, error } = await supabase.rpc(FONCTION_DES_LETTRES_DU_CLIENT, { p_dossier_id: dossierId })
+    const { data, error } = await supabase.rpc('lettres_de_mission_du_client', { p_dossier_id: dossierId })
     if (error) {
       const code = (error as { code?: unknown }).code
       return code === REFUS_DES_LETTRES_DU_CLIENT.code

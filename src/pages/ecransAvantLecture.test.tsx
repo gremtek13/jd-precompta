@@ -1095,12 +1095,15 @@ const LECTURES_PAR_FONCTION = new Set([
 // `reprises_au_client`, en base depuis le 11/11/2026) : une lecture (`stable`), qui n'écrit rien.
 // Et le modèle de plan du cabinet (`modele_du_cabinet`, ligne 43, PC5), que sa carte et « Nouveau dossier » lisent, derrière
 // `MODELE_DU_CABINET_PREVU` : une lecture (`stable`), qui n'écrit rien.
+// Et les lettres de mission proposées d'un client (`lettres_de_mission_du_client`, ligne 47, LM6, migration
+// `lettres_du_client`, préparée), que « Mes lettres de mission » lit : une lecture (`stable`), qui n'écrit rien.
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
   'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
   'rpc:ventes_facturees_de_la_simulation', 'rpc:admin_du_dossier', 'rpc:caisse_du_client',
   'rpc:depots_des_honoraires', 'rpc:honoraires_deposes_au_dossier', 'rpc:pieces_citees_de_la_simulation',
   'rpc:modele_du_cabinet',
+  'rpc:lettres_de_mission_du_client',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.

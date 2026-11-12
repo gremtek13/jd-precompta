@@ -3925,11 +3925,12 @@ begin
     mutations := mutations || jsonb_build_object('mutation', 'M-LC3 — LC3 rejoué avec la case « Documents »', 'attendu', 'la lecture acceptée',
       'observe', etat, 'mord', etat = 'acceptée');
 
-    -- LC5 : avec la case, il lit sa lettre ; les deux tables lui restent fermées.
+    -- LC5 : avec la case, il lit sa lettre ; les deux tables lui restent fermées — comptées dans le seul dossier du cabinet
+    -- de l'essai (k), comme M-LC5 : joué en production, l'essai ne rend rien qui dépende d'une ligne hors de ses dossiers.
     begin
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
-      select (select count(*) from lettres_de_mission) + (select count(*) from modeles_lettre_de_mission) into n;
+      select (select count(*) from lettres_de_mission where dossier_id = k) + (select count(*) from modeles_lettre_de_mission where dossier_id = k) into n;
     exception when others then n := -1;
     end;
     reset role;
