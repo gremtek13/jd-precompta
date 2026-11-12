@@ -51720,3 +51720,18 @@ décision de l'associé unique tirés des comptes figés, présences et votes en
 d'affectation (110, 119, 120, 129, 1061, 1063, 1068, 457) et CRÉE le 1209 « Acomptes sur dividendes » ; « le 108 passe au
 101 » de CLAUDE.md dit le virement de son solde (art. 1211-10), pas un numéro. Base lue le 12/11/2026 : quatre dossiers en
 trésorerie, ni forme ni capital posés, aucun exercice validé, aucun rôle d'affectation au catalogue.
+
+### 12/11/2026 — INV1 : LE MODULE DES ÉCRITURES D'INVENTAIRE (LIGNE 35)
+
+`src/lib/inventaire.ts`, pur, en centimes, importé par aucun écran (ni migration, ni drapeau ; conception 35, § 6). Il compose
+la constatation au 31 décembre (journal OD, une écriture équilibrée par régularisation, libellé « CCA 31/12/AAAA — compte —
+objet ») et son extourne au 1er janvier suivant, ensemble (INV-Q1 (A)) ; la FNP et la FAE toutes taxes comprises, la TVA au
+44586 ou au 44587 ; l'évaluation d'une provision (une dotation ou une reprise de l'écart, aucune écriture sans écart, jamais
+d'extourne) ; le prorata après la clôture, au demi-centime, en grands entiers ; la ventilation d'un solde repris (INV-Q11) ;
+les listes fermées et les refus, dans l'ordre de la future fonction, aux codes qu'elle lèvera (22023, 23514 l'exercice
+validé). La trésorerie se refuse seule. Les trois choix non tranchés sont des paramètres OBLIGATOIRES, les deux branches
+écrites et éprouvées : la TVA d'attente (INV-Q3), le réajustement (INV-Q4), le prorata en jours réels ou en mois de trente
+jours (`rang360`, INV-Q6). Aucun compte de rôle en dur : les douze rôles se passent en paramètre (`ComptesDInventaire`),
+seules les racines du PCG vivent ici. Écart à la conception : le 4084 et le 4098 sortent des listes fermées, leur contrepartie
+(une immobilisation, le 609 au crédit) sortant de la classe que le § 4.1 donne à leur nature (INV1-Q1). 57 tests avec
+`comptesEnDur.test.ts` ; quinze mutations, toutes mordent après un test de borne ajouté (le premier exercice lui-même admis).
