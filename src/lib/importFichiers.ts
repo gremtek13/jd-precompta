@@ -112,7 +112,7 @@ export async function importerFichierDossier(params: {
       // fichier de plus (le chemin porte un horodatage). `retirerFichiers` journalise et ne LÈVE
       // jamais — c'est ce qui garantit que l'erreur remontée reste celle de l'INSERTION, la seule
       // qui explique à l'utilisateur ce qui s'est passé, et non une coupure réseau survenue après.
-      await retirerFichiers('pieces', [path], 'importFichiers')
+      await retirerFichiers('pieces', [path], 'importFichiers', dossierId)
       throw error ?? new Error("l'enregistrement n'a rien rendu")
     }
     hashsConnus.add(hash)

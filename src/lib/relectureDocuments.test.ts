@@ -369,7 +369,7 @@ describe('texte lu — ce qui manquait à l’arbitrage', () => {
   it('archive le texte sous la pièce, dans son dossier', async () => {
     etat.extractions.set('boulanger.pdf', { date_piece: '2025-03-04', texte_ocr: 'BOULANGER\nFOUR MICRO-ONDES\n199,99' })
     const r = await relireDocuments(
-      [piece({ id: 'p9', dossier_id: 'd7', nom_fichier: 'boulanger.pdf', storage_path: 'd1/boulanger.pdf' })],
+      [piece({ id: 'p9', dossier_id: 'd7', nom_fichier: 'boulanger.pdf', storage_path: 'd7/boulanger.pdf' })],
       AUCUN_TEXTE,
     )
 
@@ -527,5 +527,31 @@ describe('relireTextesDocuments', () => {
       (fait, total) => vues.push([fait, total]),
     )
     expect(vues).toEqual([[0, 1], [1, 1]])
+  })
+})
+
+// CFCS-Q1 (12/11/2026) : la base ne lie pas le chemin d'une pièce ni d'un document à son dossier, et le client en insère.
+// La relecture télécharge aux droits du cabinet PUIS écrit sur la pièce ce qu'elle a lu, que le client voit : un chemin
+// d'un autre dossier n'est jamais demandé au stockage, ni lu, ni écrit, et l'échec ne le recopie pas.
+describe('un chemin hors du dossier de la ligne n’est jamais demandé au stockage (CFCS-Q1)', () => {
+  it('une pièce qui nomme le fichier d’un autre dossier : un échec, sans téléchargement ni écriture', async () => {
+    etat.extractions.set('vol.pdf', { date_piece: '2025-03-04', texte_ocr: 'SECRET\nDE D2' })
+    const r = await relireDocuments([
+      piece({ id: 'p1', dossier_id: 'd1', nom_fichier: 'vol.pdf', storage_path: 'd2/vol.pdf' }),
+      piece({ id: 'p2', dossier_id: 'd1', nom_fichier: 'vol.pdf', storage_path: 'd1/../d2/vol.pdf' }),
+    ], AUCUN_TEXTE)
+    expect(journal).toEqual([])
+    expect(r.echecs).toHaveLength(2)
+    expect(r.echecs.every((e) => !e.message.includes('d2'))).toBe(true)
+    expect(r.textesArchives).toEqual([])
+    expect(r.datees).toEqual([])
+  })
+
+  it('un document qui nomme le fichier d’un autre dossier : de même', async () => {
+    etat.extractions.set('snir.pdf', { texte_ocr: 'SECRET DE D2' })
+    const r = await relireTextesDocuments([document({ id: 'doc-x', storage_path: 'autre/snir.pdf' })], new Set())
+    expect(journal).toEqual([])
+    expect(r.echecs).toHaveLength(1)
+    expect(r.echecs[0].message).not.toContain('autre')
   })
 })

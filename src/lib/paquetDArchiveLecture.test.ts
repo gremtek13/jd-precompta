@@ -80,6 +80,14 @@ describe('la lecture du paquet d’archive', () => {
     expect(monde.telechargements).toEqual([])
   })
 
+  it('une pièce citée dont le chemin nomme un autre dossier refuse, sans jamais le demander au stockage (CFCS-Q1)', async () => {
+    monde.tables.pieces.lignes[1] = { id: 'p2', storage_path: 'd2/vol.pdf' }
+    const lecture = await lireLePaquet('d1', 2025)
+    expect(lecture).toMatchObject({ etat: 'refusee', motif: expect.stringContaining('pas dans ce dossier') })
+    if (lecture.etat === 'refusee') expect(lecture.motif).not.toContain('d2')
+    expect(monde.telechargements).toEqual(['d1/a.pdf'])
+  })
+
   it('une pièce citée introuvable refuse', async () => {
     monde.tables.pieces = { lignes: [{ id: 'p1', storage_path: 'd1/a.pdf' }], compte: 1 }
     expect(await lireLePaquet('d1', 2025)).toMatchObject({ etat: 'refusee', motif: expect.stringContaining('introuvables') })

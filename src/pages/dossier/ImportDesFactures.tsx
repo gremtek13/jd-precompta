@@ -167,7 +167,7 @@ export default function ImportDesFactures({ dossierId, onChange }: Props) {
   }
 
   const voir = async (chemin: string) => {
-    const r = await ouvrirApercu('ventes', chemin, 60)
+    const r = await ouvrirApercu('ventes', chemin, 60, dossierId)
     if (!r.ok) setAvis({ dossierId, erreur: r.message, fait: null })
   }
 

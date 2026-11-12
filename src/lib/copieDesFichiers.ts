@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import type { DocumentDivers, Piece } from './types'
 import { dateAParis } from './format'
 import { referenceDUnePiece } from './fec'
+import { cheminDuDossier } from './cheminDuDossier'
 
 // LA COPIE DES FICHIERS DES DOSSIERS SUR UN SUPPORT DU CABINET (lignes 20.65 et 44, INAL6 ; INAL-Q3 : « d'abord un support
 // du cabinet »). Le chef du cabinet rapatrie, d'un clic, sur son poste, une copie COMPLÈTE et VÉRIFIABLE des fichiers que
@@ -82,11 +83,9 @@ const SHA256_HEX = /^[0-9a-f]{64}$/
 
 export const MOTIF_HORS_DU_DOSSIER = 'son chemin de stockage n’est pas dans ce dossier : non copié, à signaler sans attendre'
 
-/** Le chemin est-il dans ce dossier : son premier segment est le dossier, et aucun segment n'est vide, « . » ni « .. ». */
-export function cheminDuDossier(chemin: string, dossierId: string): boolean {
-  const segments = chemin.split('/')
-  return segments.length >= 2 && segments[0] === dossierId && segments.every((x) => x !== '' && x !== '.' && x !== '..')
-}
+// La règle vit dans un module commun (`lib/cheminDuDossier.ts`), que chaque lecteur du cabinet appelle (CFCS-Q1) ;
+// réexportée ici pour la copie et son test.
+export { cheminDuDossier }
 
 // Les deux briques du paquet d'archive (lib/paquetDArchive.ts), recopiées plutôt qu'importées : son garde
 // (PaquetDArchiveBouton.test.tsx) tient la liste de ses importateurs, et la copie n'a pas à y entrer.

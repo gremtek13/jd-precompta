@@ -5,6 +5,7 @@ import { montantsPourPiece } from './tauxChange'
 import { enregistrerTexteOcr, texteOcrExploitable } from './texteOcr'
 import type { DocumentDivers, Piece } from './types'
 import { messageErreur } from './messageErreur'
+import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from './cheminDuDossier'
 
 // Rejoue l'extraction sur des pièces déjà enregistrées, pour combler ce qui leur manque : la date, et
 // le texte lu par l'OCR.
@@ -109,6 +110,12 @@ export async function relireDocuments(
   for (const piece of aTraiter) {
     onProgression?.(fait, aTraiter.length, piece.nom_fichier)
     try {
+      // Le fichier d'un autre dossier ne se lit pas aux droits du cabinet, et ce qu'il dirait ne s'écrit pas sur une pièce
+      // que le client voit (CFCS-Q1) : un échec, sans le chemin.
+      if (!cheminDuDossier(piece.storage_path, piece.dossier_id)) {
+        resultat.echecs.push({ nomFichier: piece.nom_fichier, message: MOTIF_CHEMIN_HORS_DU_DOSSIER })
+        continue
+      }
       const { data: fichier, error: erreurTelechargement } = await supabase.storage
         .from('pieces')
         .download(piece.storage_path)
@@ -237,6 +244,11 @@ export async function relireTextesDocuments(
   for (const document of aTraiter) {
     onProgression?.(fait, aTraiter.length, document.nom_fichier)
     try {
+      // Comme pour les pièces (CFCS-Q1) : un document du client qui nomme un autre dossier n'est pas lu.
+      if (!cheminDuDossier(document.storage_path, document.dossier_id)) {
+        resultat.echecs.push({ nomFichier: document.nom_fichier, message: MOTIF_CHEMIN_HORS_DU_DOSSIER })
+        continue
+      }
       const { data: fichier, error: erreurTelechargement } = await supabase.storage
         .from('pieces')
         .download(document.storage_path)

@@ -252,7 +252,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   }
 
   async function voir(storagePath: string) {
-    const resultat = await ouvrirApercu('pieces', storagePath, 300)
+    const resultat = await ouvrirApercu('pieces', storagePath, 300, dossierId)
     if (!resultat.ok) window.alert(resultat.message)
   }
 
@@ -269,7 +269,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     const { data, error } = await supabase.from('documents_divers').delete().eq('id', doc.id).select('id').maybeSingle()
     if (error) return messageDUneSuppressionRetenue(error) ?? messageErreur(error, 'suppression refusée par la base')
     if (!data) return AUCUNE_LIGNE_SUPPRIMEE
-    await retirerFichiers('pieces', [doc.storage_path], 'DocumentsTab')
+    await retirerFichiers('pieces', [doc.storage_path], 'DocumentsTab', dossierId)
     return null
   }
 

@@ -96,7 +96,7 @@ export async function deposerFichier(dossierId: string, file: File, hashsEnVol: 
         // fichier de plus (le chemin porte un horodatage). `retirerFichiers` journalise et ne LÈVE
         // jamais — c'est ce qui garantit que l'erreur remontée reste celle de l'INSERTION, la seule
         // qui explique à l'utilisateur ce qui s'est passé, et non une coupure réseau survenue après.
-        await retirerFichiers('pieces', [path], 'depot')
+        await retirerFichiers('pieces', [path], 'depot', dossierId)
         throw error ?? new Error("l'enregistrement n'a rien rendu")
       }
       return data.id as string
@@ -174,10 +174,10 @@ export async function deposerFichier(dossierId: string, file: File, hashsEnVol: 
 // "pieces" n'est pas public) — même mécanisme que l'aperçu de FichePiece, réutilisé pour
 // consulter un justificatif sans quitter l'écran de rapprochement bancaire (voir BanqueTab) : on n'y
 // affichait jusqu'ici que le tiers et le montant, jamais le document lui-même.
-export async function ouvrirJustificatif(storagePath: string): Promise<void> {
+export async function ouvrirJustificatif(storagePath: string, dossierId: string): Promise<void> {
   // Passe par le point unique (lib/apercu.ts) : la version locale disait « Aperçu indisponible »
   // sans la raison, et son `noopener` rendait par-dessus le marché un blocage de fenêtre
   // indiscernable d'une réussite.
-  const resultat = await ouvrirApercu('pieces', storagePath, 300)
+  const resultat = await ouvrirApercu('pieces', storagePath, 300, dossierId)
   if (!resultat.ok) window.alert(resultat.message)
 }

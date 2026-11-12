@@ -319,7 +319,7 @@ export default function InformationsTab({
       // pas de message, pas d'onglet qui s'ouvre. Et c'est le pire endroit pour ça, l'export étant
       // fait « juste avant une suppression définitive » (voir plus haut) : le réflexe est de croire
       // que rien n'a été produit et de tout relancer, alors que l'archive est bien en place.
-      const resultat = await ouvrirApercu('packs', storagePathZip, 60)
+      const resultat = await ouvrirApercu('packs', storagePathZip, 60, dossierId)
       if (!resultat.ok) {
         const dit = `L'archive est bien générée et enregistrée, mais elle n'a pas pu être ouverte. ${resultat.message} Récupère-la depuis l'onglet Packs — inutile de la régénérer.`
         // On AJOUTE au message des pièces manquantes plutôt que de l'écraser : les deux comptent, et

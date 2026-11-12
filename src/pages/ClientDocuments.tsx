@@ -51,7 +51,7 @@ export default function ClientDocuments() {
     setOccupe(true)
     setMessage(null)
     try {
-      const ouvert = await ouvrirApercu('documents-cabinet', document.chemin, 300)
+      const ouvert = await ouvrirApercu('documents-cabinet', document.chemin, 300, dossierId)
       if (!ouvert.ok) {
         setMessage(ouvert.message)
         return

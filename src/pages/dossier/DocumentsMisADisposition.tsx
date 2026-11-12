@@ -122,7 +122,7 @@ export default function DocumentsMisADisposition({ dossierId }: { dossierId: str
   }
 
   async function ouvrir(document: DocumentDuCabinet) {
-    const resultat = await ouvrirApercu('documents-cabinet', document.chemin, 300)
+    const resultat = await ouvrirApercu('documents-cabinet', document.chemin, 300, dossierId)
     if (!resultat.ok) setMessage({ genre: 'erreur', texte: resultat.message })
   }
 

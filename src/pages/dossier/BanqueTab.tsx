@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
 import { detectColumnMapping, lignesDeDonnees, parseCsv, type FormatDesMontants } from '../../lib/csv'
 import { type EncodageLu } from '../../lib/decodageTexte'
 import {
@@ -3027,6 +3028,11 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
 
   async function utiliserDocument(doc: DocumentDivers) {
     setError(null)
+    // Un document qu'un client a pu poser hors de ce dossier ne se lit pas aux droits du cabinet (CFCS-Q1).
+    if (!cheminDuDossier(doc.storage_path, dossierId)) {
+      setError(`Impossible de récupérer ce document : ${MOTIF_CHEMIN_HORS_DU_DOSSIER}.`)
+      return
+    }
     setPdfExtracting(true)
     const { data, error: downloadError } = await supabase.storage.from('pieces').download(doc.storage_path)
     if (downloadError || !data) {
@@ -3039,6 +3045,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
 
   async function utiliserDocumentCsv(doc: DocumentDivers) {
     setError(null)
+    if (!cheminDuDossier(doc.storage_path, dossierId)) {
+      setError(`Impossible de récupérer ce document : ${MOTIF_CHEMIN_HORS_DU_DOSSIER}.`)
+      return
+    }
     const { data, error: downloadError } = await supabase.storage.from('pieces').download(doc.storage_path)
     if (downloadError || !data) {
       setError("Impossible de récupérer ce document.")

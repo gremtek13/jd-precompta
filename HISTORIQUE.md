@@ -51833,3 +51833,19 @@ paramètre obligatoire (`ChoixDesExercices`, options (A) et (B) écrites), `CHOI
 test rend l'année civile à l'identique sur dix années (2000, 2024, 2028, 2400 bissextiles ; 2100 non) ; dix mutations
 mordent. Deux écarts à la conception : la nature `ordinaire` du schéma (pas « courant »), et une transition d'un jour
 admise (le `debut < fin` du § 4.1 la refuserait : `debut <= fin` en EXD2).
+
+### 12/11/2026 — LE CHEMIN D'UNE LIGNE VÉRIFIÉ PAR CHAQUE LECTEUR DU CABINET (CFCS-Q1, DÉFENSE)
+
+Agent architecte, sans migration ni déploiement. La relecture de LM6 et INAL6 avait établi que la base ne lie pas le premier
+segment de `pieces.storage_path`, `lisible_path` ni `documents_divers.storage_path` au dossier, et qu'un client en insère.
+`cheminDuDossier` passe dans `lib/cheminDuDossier.ts` (réexporté par la copie), avec `MOTIF_CHEMIN_HORS_DU_DOSSIER`, qui ne
+recopie jamais le chemin. Vérifient AVANT le stockage : la relecture OCR (pièces et documents : un échec, rien écrit sur la
+pièce), le pack (pièce et version lisible manquantes ; un original repris hors du dossier, ni demandé ni nommé par son
+chemin), le paquet d'archive (refusé), la fiche d'une pièce (aperçu, extraction), la banque (« Utiliser ce relevé »),
+`ouvrirApercu` et `retirerFichiers`, qui EXIGENT désormais leur racine (le dossier ; le cabinet pour son logo) : un retrait
+aux droits du cabinet aurait supprimé le fichier d'un autre dossier, le pire des cas, et le journal ne compte que ce qu'il
+écarte. Laissés, avec leur raison : les dépôts (chemin composé ici), la suppression d'un dossier (son préfixe), la copie
+(`horsDuDossier`, INAL6), le logo des factures (la contrainte `parametres_facturation_logo_chemin_forme`), le logo public du
+cabinet. Aucune Edge Function ne lit un chemin d'une ligne. Le scanner `cheminsDuStockage.test.ts` part de tout
+`….storage.from(…).méthode(…)` de `src/` dans l'arbre syntaxique (30 appels : 11 vérifiés, 19 en 17 exceptions comptées), dit toute
+autre forme, et a ses défauts plantés ; neuf tests de lecteurs, dont quatre vus rouges sous mutation de trois gardes.

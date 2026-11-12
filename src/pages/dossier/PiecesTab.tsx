@@ -760,7 +760,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     // Ses DEUX fichiers quand elle en a deux (voir lib/fichiersPiece.ts) : la version lisible d'une facture reçue en
     // XML, laissée seule, ne serait plus désignée par rien.
     const fichiers = fichiersDeLaPiece(piece)
-    if (fichiers.length > 0) await retirerFichiers('pieces', fichiers, 'PiecesTab')
+    if (fichiers.length > 0) await retirerFichiers('pieces', fichiers, 'PiecesTab', dossierId)
     return null
   }
 

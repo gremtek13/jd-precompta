@@ -149,7 +149,7 @@ vi.mock('../../lib/supabase', async () => {
 
 function documentDeTest(champs: Partial<DocumentDivers> = {}): DocumentDivers {
   return {
-    id: 'document-a-convertir', dossier_id: 'dossier-de-test', storage_path: 'dossier/facture.pdf',
+    id: 'document-a-convertir', dossier_id: 'dossier-de-test', storage_path: 'dossier-de-test/facture.pdf',
     storage_hash: null, nom_fichier: 'facture.pdf', categorie: 'autre', sous_dossier_id: null,
     attached_to_cotisation_id: null, created_at: '2025-03-10T09:00:00Z',
     ...champs,
@@ -221,7 +221,7 @@ describe('DocumentsTab — « C\'est une facture »', () => {
     })
 
     expect(faux.inserts).toHaveLength(1)
-    expect(faux.inserts[0]).toMatchObject({ storage_path: 'dossier/facture.pdf', statut: 'a_valider' })
+    expect(faux.inserts[0]).toMatchObject({ storage_path: 'dossier-de-test/facture.pdf', statut: 'a_valider' })
 
     await act(async () => { faux.resoudreInsert?.() })
     expect(faux.suppressions).toBe(1)
@@ -479,7 +479,7 @@ describe('DocumentsTab — « Supprimer » un document', () => {
     await act(async () => { bouton.click() })
 
     expect(await screen.findByText('Aucun document.')).toBeDefined()
-    expect(faux.retraits).toEqual([['dossier/facture.pdf']])
+    expect(faux.retraits).toEqual([['dossier-de-test/facture.pdf']])
     expect(screen.queryByText(/n’a pas pu/)).toBeNull()
   })
 })

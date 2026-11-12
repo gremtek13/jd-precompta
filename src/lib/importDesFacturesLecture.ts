@@ -130,7 +130,7 @@ export type IssueDUnGeste = { ok: true; message: string } | { ok: false; erreur:
 export async function importerLeLot(dossierId: string, pret: LotPret, fichiers: readonly FichierLu[], originauxPrevus: boolean): Promise<IssueDUnGeste> {
   const deposes: string[] = []
   const echec = async (erreur: string): Promise<IssueDUnGeste> => {
-    await retirerFichiers('ventes', deposes, 'import des factures')
+    await retirerFichiers('ventes', deposes, 'import des factures', dossierId)
     return { ok: false, erreur }
   }
   try {
@@ -176,7 +176,7 @@ export async function retirerLImport(dossierId: string, lot: LotLu, originauxPre
     if (error) return { ok: false, erreur: messageErreur(error, 'Le retrait de l’import a été refusé.') }
     if (typeof data !== 'number') return { ok: false, erreur: 'La base n’a pas rendu le retrait : relis la liste.' }
     const originaux = sortDesOriginaux(lot, originauxPrevus, chefDuCabinet)
-    await retirerFichiers('ventes', originaux.retirer, 'retrait d’un import de factures')
+    await retirerFichiers('ventes', originaux.retirer, 'retrait d’un import de factures', dossierId)
     const fait = `Import retiré : ${data} document${data > 1 ? 's' : ''} quitte${data > 1 ? 'nt' : ''} le dossier.`
     return { ok: true, message: originaux.phrase ? `${fait} ${originaux.phrase}` : fait }
   } catch (e) {

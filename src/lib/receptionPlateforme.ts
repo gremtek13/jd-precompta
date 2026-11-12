@@ -547,7 +547,7 @@ export async function importerFlux(ctx: ContexteImport, flux: FluxVu): Promise<I
   if (depotLisible && cheminLisible) {
     const { error: erreurLisible } = await supabase.storage.from('pieces').upload(cheminLisible, depotLisible.corps, { upsert: false })
     if (erreurLisible) {
-      await retirerFichiers('pieces', [chemin], 'receptionPlateforme')
+      await retirerFichiers('pieces', [chemin], 'receptionPlateforme', ctx.dossierId)
       return { statut: 'echec', flux, definitif: false, message: messageErreur(erreurLisible, 'Sa version lisible n’a pas pu être déposée.') }
     }
   }
@@ -574,7 +574,7 @@ export async function importerFlux(ctx: ContexteImport, flux: FluxVu): Promise<I
   if (error || !data) {
     // Rien ne pointe sur les fichiers déposés : ils repartent, sinon ils resteraient orphelins jusqu'à la suppression du
     // dossier entier.
-    await retirerFichiers('pieces', fichiers, 'receptionPlateforme')
+    await retirerFichiers('pieces', fichiers, 'receptionPlateforme', ctx.dossierId)
     const code = (error as { code?: unknown } | null)?.code
     if (code === '23505' && /pieces_flux_unique/.test(messageErreur(error, ''))) return { statut: 'deja_importee', flux }
     return { statut: 'echec', flux, definitif: false, message: messageErreur(error, 'La pièce n’a pas pu être enregistrée.') }
@@ -596,7 +596,7 @@ export async function importerFlux(ctx: ContexteImport, flux: FluxVu): Promise<I
       const raison = messageErreur(e, 'La note interne n’a pas pu être enregistrée.')
       const { data: retiree, error: erreurRetrait } = await supabase.from('pieces').delete().eq('id', pieceId).select('id').maybeSingle()
       if (!erreurRetrait && retiree) {
-        await retirerFichiers('pieces', fichiers, 'receptionPlateforme')
+        await retirerFichiers('pieces', fichiers, 'receptionPlateforme', ctx.dossierId)
         return {
           statut: 'echec', flux, definitif: false,
           message: `Ses remarques n’ont pas pu être gardées dans sa note interne (${raison}) : elle n’est pas importée.`,
