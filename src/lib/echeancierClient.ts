@@ -1,11 +1,11 @@
 import { SEUIL_ANNEXE_2035E, SEUIL_CVAE_A_PAYER } from './declaration2035E'
 import {
-  CALENDRIER_IS_EXPORTE, DELAI_TELEDECLARATION_JOURS, SEUIL_ACOMPTE_CFE, SEUIL_ACOMPTES_CVAE, estEcheanceDeLImpot, euros,
+  CALENDRIER_IS_EXPORTE, DELAI_TELEDECLARATION_JOURS, SEUIL_ACOMPTE_CFE, SEUIL_ACOMPTES_CVAE, echeanceDuModeComptable, estEcheanceDeLImpot, euros,
   prochainesEcheancesDuDossier, type EcheanceDeLImpot, type EcheanceFiscale, type ImpotDuDossier,
 } from './echeancesFiscales'
 import { ajouterJours } from './format'
 import { PREMIERE_CLOTURE_A_CONFIRMER } from './impotSurLesSocietes'
-import type { CotisationDeclaree, PeriodiciteTva, StatutTva } from './types'
+import type { CotisationDeclaree, ModeComptable, PeriodiciteTva, StatutTva } from './types'
 
 // L'ÉCHÉANCIER FISCAL ET SOCIAL DU CLIENT (ligne 51.5, partie C, étape C1 ; MEG3-Q1 : « oui, en premier »). Ce que le client
 // va devoir déclarer ou payer, et quand, sur les douze mois qui viennent (aujourd'hui compris) : le calendrier de la CFE, de
@@ -52,6 +52,8 @@ export interface EcheanceDuClient {
 export interface DossierDeLEcheancier {
   statut_tva: StatutTva | null
   tva_periodicite: PeriodiciteTva
+  // Le modèle comptable : en engagement (BIC, IS) il n'y a pas de 2035 (`echeanceDuModeComptable`, la règle de la Checklist).
+  mode_comptable: ModeComptable
 }
 
 // Ce que le module lit d'une échéance de cotisation : le montant appelé n'est lu qu'avec « Banque ».
@@ -187,10 +189,12 @@ function echeanceDeLImpotDuClient(e: EcheanceDeLImpot, avecMontants: boolean): E
 }
 
 function echeancesFiscalesDuClient(
-  aujourdHui: string, impot: ImpotDuDossier, avecMontants: boolean, exporte: boolean,
+  aujourdHui: string, impot: ImpotDuDossier, avecMontants: boolean, exporte: boolean, mode: ModeComptable | null,
 ): { echeances: EcheanceDuClient[]; avis: string[] } {
   const calendrier = prochainesEcheancesDuDossier(aujourdHui, impot, exporte)
-  const echeances = calendrier.echeances.map((e): EcheanceDuClient => {
+  // Dossier non lu : le modèle comptable est inconnu, la 2035 ne s'affirme pas (le bandeau dit la lecture partielle) ;
+  // les autres échéances du calendrier ne dépendent pas du modèle.
+  const echeances = calendrier.echeances.filter((e) => (mode === null ? e.impot !== 'Liasse' : echeanceDuModeComptable(e, mode))).map((e): EcheanceDuClient => {
     if (estEcheanceDeLImpot(e)) return echeanceDeLImpotDuClient(e, avecMontants)
     const mots = motsDuClientPour(e) ?? { libelle: e.libelle, precision: e.condition }
     return {
@@ -294,7 +298,8 @@ export function composerEcheancier(entree: {
   calendrierIsExporte?: boolean
 }): Echeancier {
   const { aujourdHui, dossier, cotisations, avecMontants, impot } = entree
-  const fiscal = echeancesFiscalesDuClient(aujourdHui, impot, avecMontants, entree.calendrierIsExporte ?? CALENDRIER_IS_EXPORTE)
+  const fiscal = echeancesFiscalesDuClient(aujourdHui, impot, avecMontants, entree.calendrierIsExporte ?? CALENDRIER_IS_EXPORTE,
+    dossier?.mode_comptable ?? null)
   const echeances = [
     ...fiscal.echeances,
     ...(dossier?.statut_tva === 'redevable' ? echeancesTva(aujourdHui, dossier.tva_periodicite) : []),

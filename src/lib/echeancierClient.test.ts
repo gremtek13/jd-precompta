@@ -8,7 +8,7 @@ import { SANS_IMPOT_SUR_LES_SOCIETES, echeancesFiscales } from './echeancesFisca
 import { motsDuCabinet } from './espaceVentes'
 import { aujourdHuiAParis } from './format'
 
-const SANS_TVA: DossierDeLEcheancier = { statut_tva: 'franchise', tva_periodicite: 'trimestrielle' }
+const SANS_TVA: DossierDeLEcheancier = { statut_tva: 'franchise', tva_periodicite: 'trimestrielle', mode_comptable: 'tresorerie' }
 
 function cotisation(champs: Partial<CotisationDeLEcheancier>): CotisationDeLEcheancier {
   return { id: 'c1', echeance: '2027-01-05', previsionnel: false, paiement_personnel_le: null, montant_appele: 812.5, ...champs }
@@ -76,7 +76,7 @@ describe('le fiscal, aux mots du client', () => {
   })
 
   it('aucun mot du cabinet, ni « Checklist », dans aucun texte que le client lit', () => {
-    const redevable: DossierDeLEcheancier = { statut_tva: 'redevable', tva_periodicite: 'trimestrielle' }
+    const redevable: DossierDeLEcheancier = { statut_tva: 'redevable', tva_periodicite: 'trimestrielle', mode_comptable: 'tresorerie' }
     const textes = [
       AVIS_TVA_A_PRECISER, ECHEANCIER_CONDITIONS, ECHEANCIER_ILLISIBLE, ECHEANCIER_INTRODUCTION, ECHEANCIER_LECTURE_PARTIELLE,
       ECHEANCIER_SANS_MONTANTS, ECHEANCIER_VIDE,
@@ -98,7 +98,7 @@ describe('le fiscal, aux mots du client', () => {
 
 describe('la TVA, pour un dossier redevable seulement', () => {
   it('mensuelle : une CA3 par mois de dépôt, au mois, sans jour, douze sur douze mois', () => {
-    const tva = composer({ dossier: { statut_tva: 'redevable', tva_periodicite: 'mensuelle' } }).echeances.filter((e) => e.nature === 'tva')
+    const tva = composer({ dossier: { statut_tva: 'redevable', tva_periodicite: 'mensuelle', mode_comptable: 'tresorerie' } }).echeances.filter((e) => e.nature === 'tva')
     expect(tva.map((e) => e.id)).toEqual([
       'ca3-2026-10', 'ca3-2026-11', 'ca3-2026-12', 'ca3-2027-01', 'ca3-2027-02', 'ca3-2027-03', 'ca3-2027-04', 'ca3-2027-05',
       'ca3-2027-06', 'ca3-2027-07', 'ca3-2027-08', 'ca3-2027-09',
@@ -109,7 +109,7 @@ describe('la TVA, pour un dossier redevable seulement', () => {
   })
 
   it('mensuelle, après le 24 : la CA3 du mois en cours est passée, celle du même mois l’an prochain entre', () => {
-    const ids = composer({ aujourdHui: '2026-11-25', dossier: { statut_tva: 'redevable', tva_periodicite: 'mensuelle' } })
+    const ids = composer({ aujourdHui: '2026-11-25', dossier: { statut_tva: 'redevable', tva_periodicite: 'mensuelle', mode_comptable: 'tresorerie' } })
       .echeances.filter((e) => e.nature === 'tva').map((e) => e.id)
     expect(ids[0]).toBe('ca3-2026-11')
     expect(ids[ids.length - 1]).toBe('ca3-2027-10')
@@ -117,7 +117,7 @@ describe('la TVA, pour un dossier redevable seulement', () => {
   })
 
   it('trimestrielle : janvier, avril, juillet, octobre, pour le trimestre qui vient de finir', () => {
-    const tva = composer({ dossier: { statut_tva: 'redevable', tva_periodicite: 'trimestrielle' } }).echeances.filter((e) => e.nature === 'tva')
+    const tva = composer({ dossier: { statut_tva: 'redevable', tva_periodicite: 'trimestrielle', mode_comptable: 'tresorerie' } }).echeances.filter((e) => e.nature === 'tva')
     expect(tva.map((e) => [e.id, e.date])).toEqual([
       ['ca3-2026-t4', '2027-01-01'], ['ca3-2027-t1', '2027-04-01'], ['ca3-2027-t2', '2027-07-01'], ['ca3-2027-t3', '2027-10-01'],
     ])
@@ -126,16 +126,42 @@ describe('la TVA, pour un dossier redevable seulement', () => {
 
   it('franchise ou exonéré : aucune CA3 ; statut à préciser : aucune, et l’avis le dit ; dossier illu : ni l’une ni l’avis', () => {
     for (const statut_tva of ['franchise', 'exonere'] as const) {
-      const r = composer({ dossier: { statut_tva, tva_periodicite: 'mensuelle' } })
+      const r = composer({ dossier: { statut_tva, tva_periodicite: 'mensuelle', mode_comptable: 'tresorerie' } })
       expect(r.echeances.filter((e) => e.nature === 'tva')).toEqual([])
       expect(r.avisTva).toBeNull()
     }
-    const aPreciser = composer({ dossier: { statut_tva: null, tva_periodicite: 'mensuelle' } })
+    const aPreciser = composer({ dossier: { statut_tva: null, tva_periodicite: 'mensuelle', mode_comptable: 'tresorerie' } })
     expect(aPreciser.echeances.filter((e) => e.nature === 'tva')).toEqual([])
     expect(aPreciser.avisTva).toBe(AVIS_TVA_A_PRECISER)
     const illu = composer({ dossier: null })
     expect(illu.echeances.filter((e) => e.nature === 'tva')).toEqual([])
     expect(illu.avisTva).toBeNull()
+  })
+})
+
+describe('la 2035 selon le modèle comptable (la règle de la Checklist)', () => {
+  const dates = ['2026-11-06', '2026-12-20', '2027-03-01', '2027-05-10']
+  const ENGAGEMENT: DossierDeLEcheancier = { ...SANS_TVA, mode_comptable: 'engagement' }
+
+  it('un dossier en engagement n’a pas de 2035, et garde la CFE et la CVAE', () => {
+    for (const aujourdHui of dates) {
+      const ids = composer({ aujourdHui, dossier: ENGAGEMENT }).echeances.map((e) => e.id)
+      expect(ids.filter((id) => id.startsWith('liasse-'))).toEqual([])
+      expect(ids.some((id) => id.startsWith('cfe-'))).toBe(true)
+    }
+  })
+
+  it('un dossier en trésorerie la garde, et rend le même échéancier que sans le filtre', () => {
+    const tresorerie = composer({ aujourdHui: '2026-12-20' }).echeances
+    expect(tresorerie.some((e) => e.id === 'liasse-2027')).toBe(true)
+    const sansLiasse = composer({ aujourdHui: '2026-12-20', dossier: ENGAGEMENT }).echeances
+    expect(tresorerie.filter((e) => !e.id.startsWith('liasse-'))).toEqual(sansLiasse)
+  })
+
+  it('un dossier non lu n’affirme pas la 2035, le reste du calendrier est inchangé', () => {
+    const nonLu = composer({ aujourdHui: '2026-12-20', dossier: null }).echeances
+    expect(nonLu.some((e) => e.id.startsWith('liasse-'))).toBe(false)
+    expect(nonLu).toEqual(composer({ aujourdHui: '2026-12-20', dossier: ENGAGEMENT }).echeances)
   })
 })
 
@@ -174,7 +200,7 @@ describe('les cotisations', () => {
 describe('le tri', () => {
   it('par date, puis impôts, TVA, cotisations le même jour', () => {
     const { echeances } = composer({
-      aujourdHui: '2026-12-01', dossier: { statut_tva: 'redevable', tva_periodicite: 'mensuelle' },
+      aujourdHui: '2026-12-01', dossier: { statut_tva: 'redevable', tva_periodicite: 'mensuelle', mode_comptable: 'tresorerie' },
       cotisations: [cotisation({ id: 'meme-jour', echeance: '2026-12-15' }), cotisation({ id: 'avant', echeance: '2026-12-02' })],
     })
     const dates = echeances.map((e) => e.date)

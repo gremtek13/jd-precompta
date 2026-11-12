@@ -51,9 +51,9 @@ vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({ dossierActifId: 'd1', droitsParDossier: faux.droits }),
 }))
 
-function poser(statut_tva: string | null = 'franchise', tva_periodicite = 'trimestrielle') {
+function poser(statut_tva: string | null = 'franchise', tva_periodicite = 'trimestrielle', mode: string = 'tresorerie') {
   faux.parTable = {
-    dossiers: [{ id: 'd1', statut_tva, tva_periodicite }, { id: 'd2', statut_tva: 'redevable', tva_periodicite: 'mensuelle' }],
+    dossiers: [{ id: 'd1', statut_tva, tva_periodicite, mode_comptable: mode }, { id: 'd2', statut_tva: 'redevable', tva_periodicite: 'mensuelle', mode_comptable: 'tresorerie' }],
     cotisations_declarees: [
       { id: 'c-passee', dossier_id: 'd1', echeance: '2026-10-05', previsionnel: false, paiement_personnel_le: null, montant_appele: 111 },
       { id: 'c-novembre', dossier_id: 'd1', echeance: '2026-11-20', previsionnel: false, paiement_personnel_le: null, montant_appele: 1234.5 },
@@ -115,6 +115,26 @@ describe('« Mon échéancier »', () => {
     const prevue = document.querySelector('[data-echeance="cotisation-c-prevue"] .echeance-montant')
     expect(prevue?.textContent).toBe(`≈ ${formatMoney(987)}estimation`)
     expect(screen.queryByText(ECHEANCIER_SANS_MONTANTS)).toBeNull()
+  })
+
+  it('la 2035 figure pour un BNC en trésorerie, pas pour un dossier en engagement', async () => {
+    const LIASSE = /Déclaration de tes revenus 2026 \(2035\)/
+    const { unmount } = page()
+    expect(await screen.findByText(LIASSE)).toBeTruthy()
+    unmount()
+    poser('franchise', 'trimestrielle', 'engagement')
+    page()
+    expect(await screen.findByText('20 novembre 2026')).toBeTruthy()
+    expect(screen.queryByText(LIASSE)).toBeNull()
+    expect(screen.getAllByText(/CFE/).length).toBeGreaterThan(0)
+  })
+
+  it('un modèle comptable illisible : lu en partie, la 2035 n’est pas affirmée', async () => {
+    poser('franchise', 'trimestrielle', 'inconnu')
+    page()
+    expect(await screen.findByText(/Ton échéancier n'a pas pu être affiché en entier/)).toBeTruthy()
+    expect(screen.queryByText(/Déclaration de tes revenus 2026 \(2035\)/)).toBeNull()
+    expect(screen.queryByText(ECHEANCIER_VIDE)).toBeNull()
   })
 
   it('un dossier redevable mensuel : la CA3 au mois, sans jour', async () => {
