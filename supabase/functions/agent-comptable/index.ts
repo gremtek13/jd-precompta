@@ -1956,6 +1956,22 @@ function piecesPayeesEnTrop<P extends Pick<PieceRow, "id" | "montant_ttc">>(
   }
   return resultat
 }
+
+// Dupliqué depuis src/lib/ecartsDeReglement.ts (`sansLesEcartsDeChange`) et src/lib/devises.ts (`ECART_CHANGE_TOLERE`).
+// LA PIÈCE « PAYÉE EN TROP » QUE LE CHANGE EXPLIQUE (ligne 31) : la constante `ECARTS_DE_REGLEMENT_PREVUS` levée, une
+// facture en devise d'un dossier en engagement garde le montant du jour de la facture (PCG, art. 420-5) et l'écart de change
+// s'écrit au 656 ou au 756 ; la dire « payée plus que son montant » quand la Checklist et les préalables se taisent
+// tromperait le modèle. Elle se retire tant que l'excédent tient dans 5 % de son montant ; au-delà, un vrai paiement en
+// double, elle reste dite. Baissée, en trésorerie, pour une pièce en euros ou une note de frais : la liste telle quelle.
+// `agentComptableReglementGroupe.test.ts` confronte la copie à src/lib dans les deux états de la constante.
+const ECART_CHANGE_TOLERE = 0.05
+function sansLesEcartsDeChange<T extends { piece: Pick<PieceRow, "type_piece" | "devise" | "montant_ttc">; enTrop: number }>(
+  liste: readonly T[], mode: ModeComptable,
+): T[] {
+  return liste.filter(({ piece, enTrop }) => !(ECARTS_DE_REGLEMENT_PREVUS && mode === "engagement" && estUneFactureDeLEcart(piece)
+    && piece.devise && piece.devise !== "EUR"
+    && piece.montant_ttc != null && Math.round(enTrop * 100) <= Math.round(Math.abs(piece.montant_ttc) * ECART_CHANGE_TOLERE * 100)))
+}
 // ── FIN RÈGLEMENT GROUPÉ ─────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT AFFECTATION ────────────────────────────────────────────────────────────────────────────
@@ -4716,7 +4732,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // sont deux raisons pour un seul virement à reprendre.
     const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))
     // Ni l'exemplaire d'une facture source (VF9b) : il ne se règle pas, sa facture s'encaisse.
-    const payeesEnTrop = piecesPayeesEnTrop(piecesQuiComptent, paiements)
+    // Ni la facture en devise que le change seul fait payer plus, en engagement, la constante du change levée (ligne 31) :
+    // la Checklist et les préalables de la validation la taisent (`sansLesEcartsDeChange`).
+    const payeesEnTrop = sansLesEcartsDeChange(piecesPayeesEnTrop(piecesQuiComptent, paiements), modele.mode)
     const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere, plan, banques)
     const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)
     // L'exercice en cours, dans le fuseau du cabinet : sa dotation ne manque pas encore.

@@ -1,9 +1,17 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { sansLesEcartsDeChange } from './ecartsDeReglement'
 import { paiementsDesPieces, type PaiementsDesPieces, type PartEncaissee, type PartPayeeParLaCaisse, type PartReglee } from './rattachement'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import type { LigneBancaire, Piece } from './types'
+
+// Le drapeau du change (ligne 31, lib/rolesDuChange.ts), joué par un accesseur : sans demande, l'état réel.
+const drapeauDuChange = vi.hoisted(() => ({ leve: undefined as boolean | undefined }))
+vi.mock('./rolesDuChange', async (original) => {
+  const vrai = await original<typeof import('./rolesDuChange')>()
+  return { ...vrai, get ECARTS_DE_REGLEMENT_PREVUS() { return drapeauDuChange.leve ?? vrai.ECARTS_DE_REGLEMENT_PREVUS } }
+})
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES VIREMENTS QUI RÈGLENT PLUSIEURS PIÈCES (30/09/2026,
 // ligne 26 de la feuille de route).
@@ -31,13 +39,21 @@ interface Copie {
   // Les quatre paramètres de src/lib : les parts des virements groupés ET des virements mixtes (étape VF9b), et, depuis
   // l'étape C13, les paiements par la caisse.
   paiementsDesPieces: typeof paiementsDesPieces
+  // Ligne 31 : la pièce en devise que le change seul fait payer plus, retirée en engagement, la constante levée.
+  sansLesEcartsDeChange: typeof sansLesEcartsDeChange
+  ECART_CHANGE_TOLERE: number
 }
 
 // Le bloc lit `seuilAlignement` et `paiementsDesPieces` du bloc copié de src/lib/rattachement.ts : on reprend
 // donc, de la MÊME source, tout ce que garde `agentComptableAnalyse.test.ts` — de la première copie de
 // src/lib/ecritures.ts à la fin d'`analyserEcritures` —, puis le bloc lui-même. Une dérive du seuil
 // d'alignement doit mordre ici aussi.
-function extraire(source: string): Copie {
+function extraire(source: string, change?: boolean): Copie {
+  if (change !== undefined) {
+    const LIGNE_DU_CHANGE = /^const ECARTS_DE_REGLEMENT_PREVUS = (true|false)$/gm
+    expect([...source.matchAll(LIGNE_DU_CHANGE)].length, 'la constante `ECARTS_DE_REGLEMENT_PREVUS` de l’assistant est introuvable ou ambiguë').toBe(1)
+    source = source.replace(LIGNE_DU_CHANGE, `const ECARTS_DE_REGLEMENT_PREVUS = ${change}`)
+  }
   const debut = source.indexOf('// ---- Dupliqué depuis src/lib/ecritures.ts')
   expect(debut, 'le bloc copié de src/lib/ecritures.ts est introuvable — garde-fou à remettre à jour').toBeGreaterThan(-1)
   const ancreFin = source.indexOf('function analyserEcritures(', debut)
@@ -50,7 +66,7 @@ function extraire(source: string): Copie {
   expect(blocFin).toBeGreaterThan(blocDebut)
   const bloc = `${source.slice(debut, fin + 2)}\n${source.slice(blocDebut, blocFin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { reglementsGroupesIncoherents, piecesPayeesEnTrop, paiementsDesPieces }`)() as Copie
+  return new Function(`${js}\nreturn { reglementsGroupesIncoherents, piecesPayeesEnTrop, paiementsDesPieces, sansLesEcartsDeChange, ECART_CHANGE_TOLERE }`)() as Copie
 }
 
 const deployee = extraire(sourceDeployee())
@@ -194,7 +210,7 @@ describe('agent-comptable / points_a_traiter lit les parts des virements groupé
     // l'exemplaire d'une facture source ne se règle pas, sa facture s'encaisse.
     expect(corps).toContain('const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes, encaissees, paiementsDeLaCaisse ?? [])')
     expect(corps).toContain('const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))')
-    expect(corps).toContain('const payeesEnTrop = piecesPayeesEnTrop(piecesQuiComptent, paiements)')
+    expect(corps).toContain('const payeesEnTrop = sansLesEcartsDeChange(piecesPayeesEnTrop(piecesQuiComptent, paiements), modele.mode)')
     expect(corps).toMatch(/virements_groupes_dont_une_part_ne_justifie_plus_rien_ou_dont_les_parts_ne_font_plus_le_mouvement: reglementsFaux\.size/)
     // Depuis l'étape C13, indisponible quand les paiements par la caisse ne se lisent pas (`caisseIllisible`).
     expect(corps).toMatch(/pieces_payees_plus_que_leur_montant: caisseIllisible \?\? payeesEnTrop\.length/)
@@ -313,5 +329,95 @@ describe('le garde-fou du bloc RÈGLEMENT GROUPÉ sait encore échouer', () => {
       const { la, ici } = enTropDerive(deployee, nom)
       expect(la, nom).toEqual(ici)
     }
+  })
+})
+
+// LA FACTURE EN DEVISE « PAYÉE EN TROP » PAR LE SEUL CHANGE (ligne 31, 31-changeFrais). src/lib/ecartsDeReglement.ts la retire
+// de la Checklist, des préalables de la validation et de Banque, en engagement, le drapeau levé, tant que l'excédent tient
+// dans `ECART_CHANGE_TOLERE` ; l'assistant recopie ce filtre derrière SA constante `ECARTS_DE_REGLEMENT_PREVUS`. La copie se
+// confronte à src/lib dans les DEUX états — l'application par l'accesseur, la copie par sa constante réécrite —, et la
+// constante de l'assistant suit celle de src/lib/rolesDuChange.ts.
+describe('agent-comptable / bloc RÈGLEMENT GROUPÉ : la pièce en devise que le change explique (ligne 31)', () => {
+  afterEach(() => { drapeauDuChange.leve = undefined })
+  type EnTrop = { piece: Pick<Piece, 'id' | 'type_piece' | 'devise' | 'montant_ttc'>; paye: number; enTrop: number }
+  const enTrop = (id: string, o: Partial<Pick<Piece, 'type_piece' | 'devise' | 'montant_ttc'>>, exces: number): EnTrop => {
+    const p = { id, type_piece: 'achat' as const, devise: 'USD', montant_ttc: 120, ...o }
+    return { piece: p, paye: Math.abs(p.montant_ttc ?? 0) + exces, enTrop: exces }
+  }
+  const LISTE: EnTrop[] = [
+    enTrop('usd-change', {}, 3),
+    enTrop('usd-borne', {}, 6),
+    enTrop('usd-au-dela', {}, 6.01),
+    enTrop('usd-double', {}, 120),
+    enTrop('vente-gbp', { type_piece: 'vente', devise: 'GBP', montant_ttc: 1000 }, 40),
+    enTrop('avoir-usd', { montant_ttc: -200 }, 9.99),
+    enTrop('eur', { devise: 'EUR' }, 3),
+    enTrop('sans-devise', { devise: null as unknown as string }, 3),
+    enTrop('note', { type_piece: 'note_frais' }, 3),
+    enTrop('sans-montant', { montant_ttc: null }, 3),
+  ]
+  const ids = (l: readonly EnTrop[]) => l.map((x) => x.piece.id)
+  const ATTENDU_LEVE_ENGAGEMENT = ['usd-au-dela', 'usd-double', 'eur', 'sans-devise', 'note', 'sans-montant']
+
+  it('la constante de l’assistant et celle de src/lib sont dans le même état', async () => {
+    const { ECARTS_DE_REGLEMENT_PREVUS } = await import('./rolesDuChange')
+    expect([...sourceDeployee().matchAll(/^const ECARTS_DE_REGLEMENT_PREVUS = (true|false)$/gm)].map((m) => m[1] === 'true'),
+      'la constante `ECARTS_DE_REGLEMENT_PREVUS` de l’assistant et celle de src/lib/rolesDuChange.ts ne sont pas dans le même état : les lever ensemble, puis redéployer l’assistant')
+      .toEqual([ECARTS_DE_REGLEMENT_PREVUS])
+  })
+
+  it('la tolérance du change de l’assistant est celle de src/lib/devises.ts', async () => {
+    const { ECART_CHANGE_TOLERE } = await import('./devises')
+    expect(deployee.ECART_CHANGE_TOLERE).toBe(ECART_CHANGE_TOLERE)
+  })
+
+  for (const leve of [false, true]) {
+    for (const mode of ['engagement', 'tresorerie'] as const) {
+      it(`retire les mêmes pièces que src/lib — drapeau ${leve ? 'levé' : 'baissé'}, ${mode}`, () => {
+        drapeauDuChange.leve = leve
+        const copie = extraire(sourceDeployee(), leve)
+        expect(ids(copie.sansLesEcartsDeChange(LISTE, mode))).toEqual(ids(sansLesEcartsDeChange(LISTE, mode)))
+      })
+    }
+  }
+
+  it('la batterie exerce bien ce qui décide : levé, en engagement, le change seul se tait ; sinon, la liste telle quelle', () => {
+    drapeauDuChange.leve = true
+    expect(ids(sansLesEcartsDeChange(LISTE, 'engagement'))).toEqual(ATTENDU_LEVE_ENGAGEMENT)
+    expect(ids(sansLesEcartsDeChange(LISTE, 'tresorerie'))).toEqual(ids(LISTE))
+    drapeauDuChange.leve = false
+    expect(ids(sansLesEcartsDeChange(LISTE, 'engagement'))).toEqual(ids(LISTE))
+  })
+
+  // Les mutations : chacune se plante dans la vraie source, la constante levée, et doit faire diverger la copie.
+  const muter = (avant: string, apres: string, quoi: string) => {
+    const source = sourceDeployee()
+    expect(source.split(avant).length - 1, `${quoi} introuvable ou ambiguë — la dérive plantée ne mord plus`).toBe(1)
+    drapeauDuChange.leve = true
+    return ids(extraire(source.replace(avant, apres), true).sansLesEcartsDeChange(LISTE, 'engagement'))
+  }
+
+  it('attrape une copie qui retire aussi la pièce en euros', () => {
+    expect(muter('    && piece.devise && piece.devise !== "EUR"\n', '    && piece.devise\n', 'la devise du filtre'))
+      .not.toEqual(ATTENDU_LEVE_ENGAGEMENT)
+  })
+
+  it('attrape une copie qui oublie la tolérance (un vrai paiement en double tu)', () => {
+    expect(muter('const ECART_CHANGE_TOLERE = 0.05\n', 'const ECART_CHANGE_TOLERE = 1\n', 'la tolérance du change'))
+      .not.toEqual(ATTENDU_LEVE_ENGAGEMENT)
+  })
+
+  it('attrape une copie qui filtre aussi en trésorerie', () => {
+    const source = sourceDeployee()
+    const avant = '!(ECARTS_DE_REGLEMENT_PREVUS && mode === "engagement" && estUneFactureDeLEcart(piece)'
+    expect(source.split(avant).length - 1).toBe(1)
+    drapeauDuChange.leve = true
+    const copie = extraire(source.replace(avant, '!(ECARTS_DE_REGLEMENT_PREVUS && estUneFactureDeLEcart(piece)'), true)
+    expect(ids(copie.sansLesEcartsDeChange(LISTE, 'tresorerie'))).not.toEqual(ids(sansLesEcartsDeChange(LISTE, 'tresorerie')))
+  })
+
+  it('attrape une copie qui retire la note de frais', () => {
+    expect(muter(' && estUneFactureDeLEcart(piece)\n    && piece.devise', '\n    && piece.devise', 'la nature de la pièce'))
+      .not.toEqual(ATTENDU_LEVE_ENGAGEMENT)
   })
 })
