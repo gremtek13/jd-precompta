@@ -1444,7 +1444,7 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
     // Et le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière doit encore porter, lit le hors taxe (qui prime
     // sur le TTC moins la TVA) et le dépôt (qui date ce que rien d'autre ne date). Et, depuis l'étape VF9b, la facture dont
     // une pièce validée est l'exemplaire, et le drapeau d'un mouvement classé par ses encaissements (le virement mixte).
-    expect(source).toMatch(/select\("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at, facture_id"/)
+    expect(source).toMatch(/select\("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at, facture_id, devise"/)
     expect(source).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id[,"]/)
     expect(source).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, [^"]*\bencaissements_de_factures\b[^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(source).toMatch(/from\("reglements_groupes"\)\.select\("ligne_bancaire_id, piece_id, montant", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
@@ -2674,6 +2674,104 @@ describe('agent-comptable / la génération répartie par règlement (copie dép
         const copies = copiesDesDeuxEtats(planterUne(sourceDeployee(), avant, apres, quoi))
         echoueSurUneAssertion(() => comparerLaGenerationRepartie(t, copies), attendue)
       })
+    }
+  })
+})
+
+// LE CHANGE ET LES FRAIS BANCAIRES À PART, EN ENGAGEMENT (ligne 31, 31-changeFrais ; HISTORIQUE.md, « LE CHANGE ET LES FRAIS
+// BANCAIRES À PART, EN ENGAGEMENT (LIGNE 31) »). Le drapeau de src/lib/rolesDuChange.ts levé, le règlement qui solde une
+// facture porte son écart à part (src/lib/ecartsDeReglement.ts) ; la copie de l'assistant porte la même composition et le
+// même jugement derrière sa constante `ECARTS_DE_REGLEMENT_PREVUS`. Ce que ces cas gardent : la constante dans l'état du
+// drapeau ; dans CHACUN des deux états — l'application par l'accesseur, la copie par sa constante réécrite avant la
+// transpilation —, les mêmes lignes et le même jugement, sur le brouillon de chaque état ; et le brouillon d'hier d'une
+// facture en devise dit « à régénérer » levé, pas baissé. Toutes les données sont FICTIVES.
+const drapeauDuChange = vi.hoisted(() => ({ leve: undefined as boolean | undefined }))
+vi.mock('./rolesDuChange', async (original) => {
+  const vrai = await original<typeof import('./rolesDuChange')>()
+  return { ...vrai, get ECARTS_DE_REGLEMENT_PREVUS() { return drapeauDuChange.leve ?? vrai.ECARTS_DE_REGLEMENT_PREVUS } }
+})
+
+describe('agent-comptable / le change et les frais bancaires à part, en engagement (copie déployée, ligne 31)', () => {
+  const LIGNE_DU_CHANGE = /^const ECARTS_DE_REGLEMENT_PREVUS = (true|false)$/gm
+  const copieDuChange = (leve: boolean, source: string = sourceDeployee()) => {
+    expect([...source.matchAll(LIGNE_DU_CHANGE)].length, 'la constante `ECARTS_DE_REGLEMENT_PREVUS` de l’assistant est introuvable ou ambiguë').toBe(1)
+    return extraire(source.replace(/^const ECARTS_DE_REGLEMENT_PREVUS = (true|false)$/m, `const ECARTS_DE_REGLEMENT_PREVUS = ${leve}`), PLAN_PAR_DEFAUT)
+  }
+  const sousLeDrapeau = <T>(leve: boolean, f: () => T): T => {
+    const avant = drapeauDuChange.leve
+    drapeauDuChange.leve = leve
+    try { return f() } finally { drapeauDuChange.leve = avant }
+  }
+  const PLAN_DU_CHANGE: PlanComptable = { ...PLAN_PAR_DEFAUT, pertes_de_change: '656000', gains_de_change: '756000' }
+  const ENGAGEMENT_DU_CHANGE: ModeleComptable = { ...ENGAGEMENT, plan: PLAN_DU_CHANGE }
+  const copies = { baissee: copieDuChange(false), levee: copieDuChange(true) }
+
+  interface CasDuChange { nom: string; piece: Piece; mouvements: LigneBancaire[]; modele?: ModeleComptable; ecart: boolean }
+  const usd = { devise: 'USD' } as Partial<Piece>
+  const CAS: CasDuChange[] = [
+    { nom: 'un achat en euros payé juste', piece: piece({}), mouvements: [paiement()], ecart: false },
+    { nom: 'un achat en dollars payé plus : une perte de change', piece: piece(usd), mouvements: [paiement({ montant: -123.45 })], ecart: true },
+    { nom: 'un achat en dollars payé moins : un gain de change', piece: piece(usd), mouvements: [paiement({ montant: -118 })], ecart: true },
+    { nom: 'une vente en dollars reçue moins : une perte de change', piece: piece({ ...usd, type_piece: 'vente' }), mouvements: [paiement({ montant: 117.5 })], ecart: true },
+    { nom: 'un achat en euros payé un euro de plus : un frais au 627', piece: piece({}), mouvements: [paiement({ montant: -121 })], ecart: true },
+    { nom: 'un achat en euros payé dix euros de plus : au tiers, comme hier', piece: piece({}), mouvements: [paiement({ montant: -130 })], ecart: false },
+    { nom: 'un achat en dollars payé en deux fois : l’écart sur le dernier', piece: piece(usd), mouvements: [paiement({ id: 'l1', montant: -60 }), paiement({ id: 'l2', date: '2025-04-20', montant: -62.3 })], ecart: true },
+    { nom: 'un achat en dollars sous un plan sans les rôles du change : retenu', piece: piece(usd), mouvements: [paiement({ montant: -123.45 })], modele: ENGAGEMENT, ecart: true },
+  ]
+  const paiementsDuCas = (c: CasDuChange, f: typeof paiementsDesPieces) => f(c.mouvements, [], SANS_VIREMENT_MIXTE, []).get(c.piece.id) ?? []
+  const lignesIci = (c: CasDuChange, leve: boolean) => sousLeDrapeau(leve, () => {
+    const modele = c.modele ?? ENGAGEMENT_DU_CHANGE
+    return lignesPourPiece('d1', c.piece, cible(COMPTE_ACHATS), true, paiementsDuCas(c, paiementsDesPieces), modele, banquesDuDossier({ etat: 'sans_objet' }, modele.plan))
+  })
+  const brouillon = (c: CasDuChange, leve: boolean): EcritureBrouillon[] => lignesIci(c, leve)
+    .map((l, i) => ecriture({ ...l, id: `${c.piece.id}-${leve ? 'c' : 'h'}${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+
+  it('la constante de l’assistant est dans l’état du drapeau de l’application', async () => {
+    const { ECARTS_DE_REGLEMENT_PREVUS } = await import('./rolesDuChange')
+    expect(drapeauDuChange.leve).toBeUndefined()
+    expect([...sourceDeployee().matchAll(LIGNE_DU_CHANGE)][0]?.[1] === 'true',
+      'la constante `ECARTS_DE_REGLEMENT_PREVUS` de l’assistant et celle de src/lib/rolesDuChange.ts ne sont pas dans le même état : les lever ensemble, puis redéployer l’assistant')
+      .toBe(ECARTS_DE_REGLEMENT_PREVUS)
+  })
+
+  for (const leve of [false, true]) {
+    it(`compose les mêmes lignes que src/lib, le drapeau ${leve ? 'levé' : 'baissé'}`, () => {
+      const copie = leve ? copies.levee : copies.baissee
+      for (const c of CAS) {
+        const la = projeter(copie.lignesPourPiece(c.piece, cible(COMPTE_ACHATS), true, paiementsDuCas(c, copie.paiementsDesPieces), c.modele ?? ENGAGEMENT_DU_CHANGE))
+        expect(la, c.nom).toEqual(projeter(lignesIci(c, leve)))
+      }
+    })
+    it(`juge chaque brouillon comme src/lib, le drapeau ${leve ? 'levé' : 'baissé'}`, () => {
+      const copie = leve ? copies.levee : copies.baissee
+      for (const c of CAS) for (const brouillonLeve of [false, true]) {
+        sousLeDrapeau(leve, () => memeResultat(brouillon(c, brouillonLeve), [c.piece], [], copie, true, c.mouvements, c.modele ?? ENGAGEMENT_DU_CHANGE))
+      }
+    })
+  }
+
+  it('le témoin : levé, le brouillon d’hier d’une facture qui porte un écart se dit « à régénérer », et pas baissé', () => {
+    for (const c of CAS.filter((x) => x.ecart && x.modele === undefined)) {
+      expect(lignesIci(c, true), c.nom).not.toEqual(lignesIci(c, false))
+      const hier = brouillon(c, false)
+      expect(sousLeDrapeau(true, () => memeResultat(hier, [c.piece], [], copies.levee, true, c.mouvements, ENGAGEMENT_DU_CHANGE)).piecesDesynchronisees, c.nom).toEqual(['p1'])
+      expect(sousLeDrapeau(false, () => memeResultat(hier, [c.piece], [], copies.baissee, true, c.mouvements, ENGAGEMENT_DU_CHANGE)).piecesDesynchronisees, c.nom).toEqual([])
+    }
+    // Sous un plan sans les rôles du change, levé, la facture en devise est retenue : rien ne s'attend d'elle.
+    expect(lignesIci(CAS.at(-1)!, true)).toEqual([])
+  })
+
+  it('attrape une copie qui écrit l’écart sur le premier paiement, ou qui le range au tiers', () => {
+    const source = sourceDeployee()
+    const plante = (avant: string, apres: string) => {
+      expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
+      return copieDuChange(true, source.replace(avant, apres))
+    }
+    const premier = plante('.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).at(-1)!.id', '.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).at(0)!.id')
+    const auTiers = plante('if (nature === "frais_bancaires") return plan.services_bancaires', 'if (nature === "frais_bancaires") return plan.fournisseurs')
+    for (const [derivee, c] of [[premier, CAS[6]], [auTiers, CAS[4]]] as const) {
+      const la = projeter(derivee.lignesPourPiece(c.piece, cible(COMPTE_ACHATS), true, paiementsDuCas(c, derivee.paiementsDesPieces), ENGAGEMENT_DU_CHANGE))
+      expect(la, c.nom).not.toEqual(projeter(lignesIci(c, true)))
     }
   })
 })

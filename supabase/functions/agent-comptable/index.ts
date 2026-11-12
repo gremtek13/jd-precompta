@@ -143,6 +143,9 @@ interface PieceRow {
   // compte nulle part (bloc FACTURES SOURCES), celui d'une facture d'avant se paie par un virement mixte (bloc VIREMENT
   // MIXTE). Nul pour une pièce que rien ne désigne.
   facture_id: string | null
+  // La devise de la pièce (ligne 31, `ecartDuReglement`) : la constante du change levée, une pièce en devise solde son
+  // tiers au montant de la facture, l'écart au change ; baissée, rien ne la lit.
+  devise?: string | null
 }
 interface CategorieRow { id: string; libelle: string; compte_comptable: string | null; poste_2035: string | null }
 
@@ -189,10 +192,20 @@ const ROLES_DU_PLAN = [
   { role: "services_bancaires", racines: ["627"], deTiers: false },
 ] as const
 
+// LES DEUX RÔLES DU CHANGE (ligne 31, 31-changeFrais), recopiés de src/lib/rolesDuChange.ts : la migration
+// `ecarts_de_reglement` (préparée) les ajoute au catalogue. La lecture du plan ne les exige et ne les lit que la constante
+// `ECARTS_DE_REGLEMENT_PREVUS` levée (déclarée en tête du bloc copié de src/lib/ecritures.ts, plus bas, que ses gardes
+// extraient) ; baissée, elle les ignore, comme tout rôle qu'elle ne connaît pas.
+const ROLES_DU_CHANGE = [
+  { role: "pertes_de_change", racines: ["656", "666"] },
+  { role: "gains_de_change", racines: ["756", "766"] },
+] as const
+type CleRoleDuChange = (typeof ROLES_DU_CHANGE)[number]["role"]
+
 type CleRoleComptable = (typeof ROLES_DU_PLAN)[number]["role"]
-type PlanComptable = Readonly<Record<CleRoleComptable, string>>
+type PlanComptable = Readonly<Record<CleRoleComptable, string>> & Readonly<Partial<Record<CleRoleDuChange, string>>>
 type RoleDeTiers = "fournisseurs" | "fournisseurs_immobilisations" | "clients"
-type LibellesDuPlan = Readonly<Record<CleRoleComptable, string | null>>
+type LibellesDuPlan = Readonly<Record<CleRoleComptable, string | null>> & Readonly<Partial<Record<CleRoleDuChange, string | null>>>
 type PrefixesDuPlan = Readonly<Record<RoleDeTiers, string>>
 interface PlanLu { plan: PlanComptable; libelles: LibellesDuPlan; prefixes: PrefixesDuPlan }
 type LectureDuPlan =
@@ -269,8 +282,25 @@ function planDeLaReponse(reponse: { data: unknown; error: unknown }): LectureDuP
   if (new Set(Object.values(prefixes)).size !== ROLES_DE_TIERS.length) {
     return { plan: null, motif: "plan comptable illisible : deux rôles de tiers y partagent un préfixe d’auxiliaire" }
   }
-  const plan = Object.fromEntries(ROLES_DU_PLAN.map((r) => [r.role, lus.get(r.role)!])) as PlanComptable
-  const libelles = Object.fromEntries(ROLES_DU_PLAN.map((r) => [r.role, libellesLus.get(r.role)!])) as LibellesDuPlan
+  // LES DEUX RÔLES DU CHANGE (ligne 31) : exigés la constante levée, sous une de leurs racines et sans préfixe ; ignorés
+  // sinon (src/lib/planComptable.ts).
+  const duChange = ECARTS_DE_REGLEMENT_PREVUS ? ROLES_DU_CHANGE : []
+  const changeAbsents = duChange.filter((r) => !lus.has(r.role)).map((r) => r.role)
+  if (changeAbsents.length > 0) {
+    return { plan: null, motif: `plan comptable incomplet : ${changeAbsents.length} rôle(s) du change absent(s) (${changeAbsents.join(", ")})` }
+  }
+  for (const r of duChange) {
+    const compte = lus.get(r.role)!
+    if (!FORME_COMPTE_DE_ROLE.test(compte) || !r.racines.some((racine) => compte.startsWith(racine))) {
+      return { plan: null, motif: `plan comptable illisible : « ${compte} » n’est pas un compte du rôle « ${r.role} »` }
+    }
+    if ((prefixesLus.get(r.role) ?? null) !== null) {
+      return { plan: null, motif: `plan comptable illisible : « ${prefixesLus.get(r.role)} » n’est pas un préfixe d’auxiliaire du rôle « ${r.role} »` }
+    }
+  }
+  const lusAuPlan = [...ROLES_DU_PLAN, ...duChange]
+  const plan = Object.fromEntries(lusAuPlan.map((r) => [r.role, lus.get(r.role)!])) as PlanComptable
+  const libelles = Object.fromEntries(lusAuPlan.map((r) => [r.role, libellesLus.get(r.role)!])) as LibellesDuPlan
   return { plan: Object.freeze(plan), libelles: Object.freeze(libelles), prefixes: Object.freeze(prefixes), motif: null }
 }
 
@@ -330,6 +360,13 @@ function modeleDuDossier(
 // ── FIN PLAN DU DOSSIER ──────────────────────────────────────────────────────────────────────────
 
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
+// LE DRAPEAU DU CHANGE ET DES FRAIS BANCAIRES À PART, EN ENGAGEMENT (ligne 31, 31-changeFrais). L'assistant n'importe rien
+// de src/lib : `ECARTS_DE_REGLEMENT_PREVUS` redit ici celui de src/lib/rolesDuChange.ts, et se lève avec lui, après la
+// migration `ecarts_de_reglement`, l'assistant redéployé — agentComptablePlan.test.ts et agentComptableAnalyse.test.ts les
+// veulent dans le même état, et confrontent la copie à src/lib dans les deux. Baissée, la lecture du plan ignore les deux
+// rôles du change (bloc PLAN DU DOSSIER) et un règlement en engagement s'attend comme hier ; levée, celui qui solde une
+// facture porte son écart à part (`lignesEngagementAvecEcarts`). Déclarée ici, en tête du bloc que les gardes extraient.
+const ECARTS_DE_REGLEMENT_PREVUS = false
 // La TVA déductible de la facture d'un BIEN immobilisé (ligne 19 de la CA3) — src/lib/comptes.ts.
 // La caisse du dossier (src/lib/comptes.ts, le rôle `caisse`) : la contrepartie d'un paiement de la pièce par la caisse
 // (étape C13, `ligneContrepartieCaisse`), et le compte que la consigne nomme pour une opération de caisse (étape C5).
@@ -1425,6 +1462,82 @@ function lignesEngagementPourPiece(
   ]
 }
 
+// ---- Dupliqué depuis src/lib/ecartsDeReglement.ts : LE CHANGE ET LES FRAIS BANCAIRES À PART, EN ENGAGEMENT (ligne 31) --
+// La constante levée, une facture d'achat ou de vente en engagement garde son montant, et le règlement qui la SOLDE (le
+// dernier de ses paiements par le relevé, par date puis identifiant) solde le compte de tiers au montant de la facture ;
+// l'écart avec la banque s'écrit à part, dans la même écriture : en devise, tout l'écart est de change (656 ou 756 par
+// défaut, sans seuil) ; en euros, l'écart qui coûte, sous le seuil des frais, au 627 ; tout autre écart reste au tiers.
+// Un compte de l'écart que le plan ne porte pas retient la pièce entière (une liste vide).
+type NatureDeLEcart = "frais_bancaires" | "perte_de_change" | "gain_de_change"
+interface EcartDuReglement { mouvementId: string; centimes: number; nature: NatureDeLEcart }
+type MouvementDuReglement = Pick<PaiementParLeReleve, "id" | "date" | "montant">
+
+function estUneFactureDeLEcart(piece: Pick<PieceRow, "type_piece">): boolean {
+  return piece.type_piece === "achat" || piece.type_piece === "vente"
+}
+
+function ecartDuReglement(
+  piece: Pick<PieceRow, "type_piece" | "devise" | "montant_ttc">, mouvements: readonly MouvementDuReglement[],
+): EcartDuReglement | null {
+  if (!estUneFactureDeLEcart(piece) || piece.montant_ttc == null) return null
+  const payes = mouvements.filter((m) => m.montant !== 0)
+  if (payes.length === 0 || Math.sign(payes.reduce((s, m) => s + Math.round(m.montant * 100), 0)) === 0) return null
+  const ttc = Math.round(piece.montant_ttc * 100)
+  const factureAuTiers = piece.type_piece === "vente" ? ttc : -ttc
+  const somme = payes.reduce((s, m) => s + Math.round(m.montant * 100), 0)
+  if (ttc === 0 || Math.sign(somme) !== Math.sign(factureAuTiers)) return null
+  const solde = factureAuTiers - somme
+  if (solde === 0) return null
+  const mouvementId = [...payes].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).at(-1)!.id
+  if (piece.devise && piece.devise !== "EUR") {
+    return { mouvementId, centimes: solde, nature: solde > 0 ? "perte_de_change" : "gain_de_change" }
+  }
+  if (solde < 0 || solde > Math.round(seuilAlignement(piece.montant_ttc) * 100)) return null
+  return { mouvementId, centimes: solde, nature: "frais_bancaires" }
+}
+
+function compteDeLEcart(nature: NatureDeLEcart, plan: PlanComptable): string | undefined {
+  if (nature === "frais_bancaires") return plan.services_bancaires
+  return nature === "perte_de_change" ? plan.pertes_de_change : plan.gains_de_change
+}
+
+function ajusterLeReglement(
+  reglement: readonly LigneAttendue[], ecart: EcartDuReglement, tiers: string, plan: PlanComptable,
+): LigneAttendue[] | null {
+  const compte = compteDeLEcart(ecart.nature, plan)
+  const ligneTiers = reglement.find((l) => l.compte === tiers)
+  if (compte === undefined || ligneTiers === undefined) return null
+  const tiersSigne = Math.round(ligneTiers.montant * 100) * (ligneTiers.sens === "debit" ? 1 : -1) - ecart.centimes
+  const { compte: _compte, sens: _sens, montant: _montant, ...base } = ligneTiers
+  const ligneDeLEcart: LigneAttendue = {
+    ...base, compte, sens: ecart.centimes > 0 ? "debit" : "credit", montant: Math.abs(ecart.centimes) / 100,
+  }
+  return [
+    ...reglement.flatMap((l): LigneAttendue[] => {
+      if (l !== ligneTiers) return [l]
+      if (tiersSigne === 0) return []
+      return [{ ...l, sens: tiersSigne > 0 ? "debit" : "credit", montant: Math.abs(tiersSigne) / 100 }]
+    }),
+    ligneDeLEcart,
+  ]
+}
+
+function lignesEngagementAvecEcarts(
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: string,
+  mouvements: readonly Pick<PaiementParLeReleve, "id" | "date" | "montant" | "compte_bancaire_id">[], plan: PlanComptable,
+  banques: BanquesDuDossier,
+): LigneAttendue[] {
+  const lignes = lignesEngagementPourPiece(piece, cible, assujettiTva, compteNotesDeFrais, mouvements, plan, banques)
+  const ecart = lignes.length === 0 ? null : ecartDuReglement(piece, mouvements)
+  if (ecart === null) return lignes
+  const tiers = compteDeTiers(piece, compteNotesDeFrais, cible.immobilisation, plan)
+  const ajuste = ajusterLeReglement(lignes.filter((l) => l.ligne_bancaire_id === ecart.mouvementId), ecart, tiers, plan)
+  if (ajuste === null) return []
+  const premiere = lignes.findIndex((l) => l.ligne_bancaire_id === ecart.mouvementId)
+  const autres = lignes.filter((l) => l.ligne_bancaire_id !== ecart.mouvementId)
+  return [...autres.slice(0, premiere), ...ajuste, ...autres.slice(premiere)]
+}
+
 // Ce qu'une pièce produit selon le MODÈLE COMPTABLE du dossier.
 function lignesPourPiece(
   piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[], modele: ModeleComptable,
@@ -1435,8 +1548,11 @@ function lignesPourPiece(
   // EN ENGAGEMENT, LE RELEVÉ SEUL RÈGLE (étape C13, comme src/lib/ecritures.ts) : la base refuse le paiement par la caisse
   // d'une pièce d'un dossier en engagement, et sa garde n'admettrait pas la ligne de tiers d'un règlement — un paiement par
   // la caisse n'y fait aucun règlement.
+  // La constante du change levée, le règlement qui solde une facture porte son écart à part (ligne 31).
   return modele.mode === "engagement"
-    ? lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve), modele.plan, banques)
+    ? (ECARTS_DE_REGLEMENT_PREVUS
+      ? lignesEngagementAvecEcarts(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve), modele.plan, banques)
+      : lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve), modele.plan, banques))
     : lignesTresoreriePourPiece(piece, cible, assujettiTva, paiements, modele.plan, banques)
 }
 
@@ -1662,6 +1778,17 @@ function engagementDesynchronise(
   // Exactement les paiements de la pièce — rapprochements et parts de virements groupés —, sur son compte
   // de tiers ACTUEL, et chacun à son montant : un paiement de zéro euro n'écrit aucun règlement. Le relevé seul règle en
   // engagement (`lignesPourPiece`) : un paiement par la caisse n'y attend aucun règlement.
+  // LA CONSTANTE DU CHANGE LEVÉE (ligne 31), les règlements sont EXACTEMENT ceux que la composition écrit, ligne pour
+  // ligne — mouvement, compte, sens, montant au centime, l'écart à part compris (src/lib/ecritures.ts).
+  if (ECARTS_DE_REGLEMENT_PREVUS) {
+    const composes = lignesEngagementAvecEcarts(p, cible, assujettiTva, compteNotesDeFrais,
+      paiementsPiece.filter(estParLeReleve), plan, banques).filter((l) => l.ligne_bancaire_id)
+    const cle = (l: { ligne_bancaire_id?: string | null; compte: string; sens: string; montant: number }) =>
+      `${l.ligne_bancaire_id}|${l.compte}|${l.sens}|${Math.round(l.montant * 100)}`
+    const attendues = composes.map(cle).sort()
+    const presentes = reglements.map(cle).sort()
+    return attendues.length !== presentes.length || attendues.some((c, i) => c !== presentes[i])
+  }
   const attendus = new Set(paiementsPiece.filter(estParLeReleve).filter((m) => m.montant !== 0).map((m) => m.id))
   const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
   if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true
@@ -4381,7 +4508,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // compte nulle part, celui d'une facture d'avant se paie par un virement mixte — nulle sans facture source, elle ne
       // décide de rien.
       lireTout<PieceRow>((d, f) =>
-        admin.from("pieces").select("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at, facture_id", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
+        admin.from("pieces").select("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at, facture_id, devise", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
       lireTout<{ id: string; tiers: string | null; confiance: string | null }>((d, f) =>
         admin.from("pieces").select("id, tiers, confiance", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "a_valider").order("id").range(d, f)),
       // LES VENTES FACTURÉES (VF9b), d'un dossier qui les lit seulement (`lireLesVentes`) ; un autre ne lit rien de plus
