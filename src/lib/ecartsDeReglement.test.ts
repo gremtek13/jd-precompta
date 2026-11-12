@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 // Le drapeau de la migration du change, joué dans ses deux états par un accesseur : baissé par défaut, levé dans les
@@ -16,6 +17,8 @@ import {
 import { lignesEngagementPourPiece } from './engagement'
 import { analyserEcritures, lignesPourPiece, type CibleComptable, type LigneAGenerer } from './ecritures'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { racinesDuDirigeantNonAssocieSelon } from './dirigeantAu468'
+import { ROLE_DU_PERSONNEL } from './notesDeFrais'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES, planDeLaReponse, type PlanComptable } from './planComptable'
 import { ROLES_DU_CHANGE } from './rolesDuChange'
 import { estParLeReleve, type PaiementDePiece } from './rattachement'
@@ -199,5 +202,31 @@ describe('la lecture du plan et les deux rôles du change', () => {
     for (const r of ROLES_DU_CHANGE) {
       expect(migration).toContain(`('${r.role}', array['${r.racines.join("', '")}'], '${r.compteDefaut}', '${r.libelleDefaut}', null, ${r.ordre})`)
     }
+  })
+})
+
+// supabase/essais/planComptable.sql compte les rôles du catalogue et en prend l'empreinte : la migration appliquée, deux rôles
+// de plus, et quatre empreintes de plus (avec ou sans le 468 de PC4-Q2, avec ou sans le personnel de B7), que l'essai épingle
+// et que ce test recalcule de `ROLES_COMPTABLES`, `ROLE_DU_PERSONNEL` et `ROLES_DU_CHANGE`, à la recette du contrôle 1.
+describe('l’essai du plan comptable, la migration du change appliquée', () => {
+  const ESSAI_DU_PLAN = readFileSync(new URL('../../supabase/essais/planComptable.sql', import.meta.url), 'utf8')
+  const ligne = (r: { role: string; racines: readonly string[]; compteDefaut: string; libelleDefaut: string | null; prefixeAuxiliaireDefaut: string | null; ordre: number }, au468: boolean) =>
+    [r.role, (r.role === 'autres_debiteurs_crediteurs' ? racinesDuDirigeantNonAssocieSelon(au468) : r.racines).join(','), r.compteDefaut,
+      r.libelleDefaut ?? '', r.prefixeAuxiliaireDefaut ?? '', String(r.ordre)].join('|')
+
+  it('épingle les quatre empreintes du catalogue qui porte les deux rôles du change', () => {
+    for (const [au468, personnel, nom] of [
+      [false, false, 'empreinte_catalogue_change'], [false, true, 'empreinte_catalogue_personnel_change'],
+      [true, false, 'empreinte_catalogue_468_change'], [true, true, 'empreinte_catalogue_468_personnel_change'],
+    ] as const) {
+      const epinglee = new RegExp(`${nom} constant text := '([0-9a-f]{32})'`).exec(ESSAI_DU_PLAN)?.[1]
+      const roles = [...ROLES_COMPTABLES, ...(personnel ? [ROLE_DU_PERSONNEL] : []), ...ROLES_DU_CHANGE]
+      expect(createHash('md5').update(roles.map((r) => ligne(r, au468)).join('\n'), 'utf8').digest('hex'), nom).toBe(epinglee)
+    }
+  })
+  it('lit l’historique de la migration, compte deux rôles de plus, et donne leurs comptes décalés au plan entier', () => {
+    expect(ESSAI_DU_PLAN).toContain("m.name = 'ecarts_de_reglement'")
+    expect(ESSAI_DU_PLAN).toContain('roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end;')
+    expect(ESSAI_DU_PLAN).toContain("values (dossier_libre, 'pertes_de_change', '656100', null), (dossier_libre, 'gains_de_change', '756100', null);")
   })
 })

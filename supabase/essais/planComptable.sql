@@ -72,6 +72,13 @@
 -- super-administrateur ACCEPTÉE — la RLS le laisse passer, et la garde accepte la restauration dans un dossier sans
 -- écriture ; sans elle, rien ne change. Les refus 20 à 22 portent la phrase neuve de la garde, que leur préfixe reconnaît.
 -- Ce que PC4 ajoute se prouve dans supabase/essais/reglerLePlanDuDossier.sql.
+--
+-- ADAPTÉ LE 12/11/2026 AU CHANGE (ligne 31, 31-changeFrais ; migration `ecarts_de_reglement`, PRÉPARÉE) : deux rôles de plus
+-- au catalogue (`roles_du_catalogue`), quatre empreintes de plus, et leurs comptes décalés au contrôle 32 ; rien d'autre.
+--
+-- SUR UNE RÉPLIQUE, EN UNE TRANSACTION (`psql -1 -f`) : le bloc range ses verdicts par `set_config(…, true)`, local à la
+-- transaction, comme l'appel unique d'`execute_sql` ; joué ligne à ligne par psql sans `-1`, la lecture finale trouve un
+-- réglage vide et lève « invalid input syntax for type json » — un défaut de la façon de le jouer, pas de l'essai.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -90,7 +97,15 @@ declare
   empreinte_catalogue_personnel constant text := 'c558802030c861d8da69077534f42a37';
   empreinte_catalogue_468_personnel constant text := '9f72319a30681dc8dd7645227e67a930';
   au_personnel constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'notes_de_frais');
-  roles_du_catalogue constant int := case when au_personnel then 33 else 32 end;
+  -- Les mêmes, la migration `ecarts_de_reglement` (ligne 31, 31-changeFrais, préparée) appliquée : les deux rôles du change
+  -- (656000 et 756000, racines 656 et 666, 756 et 766, rangs 340 et 350) s'y ajoutent — deux rôles de plus, avec ou sans le
+  -- personnel. src/lib/ecartsDeReglement.test.ts les recalcule. Son historique en base décide.
+  empreinte_catalogue_change constant text := '1b0e26c314c22f5dd664906237dc7d0d';
+  empreinte_catalogue_personnel_change constant text := '7af01696bc883e2dd3c553549840013e';
+  empreinte_catalogue_468_change constant text := '5e8a3670e6aa300ebefb151d8e25ddb0';
+  empreinte_catalogue_468_personnel_change constant text := '54f69309659746de27e3a9c82eb47173';
+  au_change constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'ecarts_de_reglement');
+  roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end;
   -- Le `case` que cinq fonctions recopiaient : le compte du dirigeant, 108000 en trésorerie. Depuis l'étape PC2
   -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
   -- l'export les portent toutes : `pc2_exigee` est vrai, et le `case` recopié est une faute.
@@ -146,8 +161,11 @@ begin
   select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
            || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
     into n, texte from roles_comptables;
-  verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte) — 33 avec le personnel (B7)',
+  verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte) — 33 avec le personnel (B7), deux de plus avec le change (31)',
     'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue and texte = case
+      when au_change then case
+        when au_468 and au_personnel then empreinte_catalogue_468_personnel_change when au_468 then empreinte_catalogue_468_change
+        when au_personnel then empreinte_catalogue_personnel_change else empreinte_catalogue_change end
       when au_468 and au_personnel then empreinte_catalogue_468_personnel when au_468 then empreinte_catalogue_468
       when au_personnel then empreinte_catalogue_personnel else empreinte_catalogue end, false));
 
@@ -623,6 +641,12 @@ begin
     if au_personnel then
       insert into plan_comptable_dossier (dossier_id, role, compte, prefixe_auxiliaire) values (dossier_libre, 'personnel', '421100', null);
       n := n + 1;
+    end if;
+    -- Le change (ligne 31, migration `ecarts_de_reglement`, préparée) : ses deux comptes décalés, sous le 656 et le 756.
+    if au_change then
+      insert into plan_comptable_dossier (dossier_id, role, compte, prefixe_auxiliaire)
+      values (dossier_libre, 'pertes_de_change', '656100', null), (dossier_libre, 'gains_de_change', '756100', null);
+      n := n + 2;
     end if;
     select count(*) filter (where public.compte_du_role(dossier_libre, p.role) is distinct from p.compte),
            count(*) filter (where public.compte_du_role(dossier_client, p.role) is distinct from r.compte_defaut)
