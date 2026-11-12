@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import JSZip from 'jszip'
 import {
-  cheminDuDossier, COPIE_DES_FICHIERS_PREVUE, fabriquerUnLot, fermerLeLotAvant, inventaireDuDossier, MOTIF_HORS_DU_DOSSIER,
-  NOM_DU_MANIFESTE, nomDuZip, PLAFOND_D_UN_LOT, rappelDeLaCopie, sha256Hex, unMoisApres, type FichierLu, type SourcesDuDossier,
+  cheminDuDossier, compterLesLignes, confronterLeManifeste, COPIE_DES_FICHIERS_PREVUE, copieAAttester, inventaireDuDossier,
+  manifesteDeLaCopie, MOTIF_HORS_DU_DOSSIER, nomDuZipDeLaCopie, rappelDeLaCopie, relireUnFichier, sha256Hex, unMoisApres,
+  type FichierLu, type SourcesDuDossier,
 } from './copieDesFichiers'
 
-// LA COPIE DES FICHIERS SUR UN SUPPORT DU CABINET (INAL6) : l'inventaire et ses noms (jamais le nom déposé), le lot et son
-// manifeste (chaque fichier relu à son empreinte, l'écart et le manquant dits et comptés), la découpe, le rappel.
+// LA COPIE DES FICHIERS SUR UN SUPPORT DU CABINET (INAL6) : l'inventaire et ses noms (jamais le nom déposé), la relecture
+// de chaque fichier et LE manifeste de la copie (CFC-Q1 (B), un seul ZIP), sa confrontation quand le chef le recharge
+// (CFC-Q2 (B)), le rappel, qui ne compte qu'une copie attestée.
 
 const octets = (texte: string) => new TextEncoder().encode(texte)
 const P1 = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -84,57 +85,85 @@ describe('un chemin hors du dossier', () => {
   it('n’entre jamais dans le ZIP, même téléchargé : manquant, et le manifeste le dit sans son chemin', async () => {
     const s = await sources()
     const [ailleurs, , ici] = inventaireDuDossier({ ...s, pieces: [{ ...s.pieces[0], storage_path: `${AUTRE}/1787-Dupont Jeanne.pdf` }, s.pieces[1]] })
-    const lot = await fabriquerUnLot({
-      dossier: { id: DOSSIER, nom: 'Essai', siret: null }, rang: 1, dernier: true, fabriqueLe: new Date('2026-11-12T10:00:00Z'),
-      fichiers: [{ fichier: ailleurs, octets: octets('le fichier d’un autre dossier') }, { fichier: ici, octets: octets('ticket') }],
-    })
-    expect(lot.comptes).toMatchObject({ fichiers: 2, manquants: 1, nonVerifies: 1, octets: octets('ticket').length })
-    expect(lot.manifeste).toContain(`MANQUANTS (1) — absents de ce ZIP\n${ailleurs.nom}\t${MOTIF_HORS_DU_DOSSIER}`)
-    expect(lot.manifeste).not.toMatch(/Dupont|1787|eeeeeeee/)
-    const zip = await JSZip.loadAsync(lot.zip)
-    expect(Object.keys(zip.files).filter((n) => !zip.files[n].dir).sort()).toEqual([NOM_DU_MANIFESTE, ici.nom].sort())
+    const relu = await relireUnFichier(ESSAI, { fichier: ailleurs, octets: octets('le fichier d’un autre dossier') })
+    expect(relu.octets).toBeNull()
+    expect(relu.ligne).toMatchObject({ etat: 'MANQUANT', motif: MOTIF_HORS_DU_DOSSIER, taille: null })
+    const autre = await relireUnFichier(ESSAI, { fichier: ici, octets: octets('ticket') })
+    const manifeste = manifesteDeLaCopie({ copieId: COPIE, fabriqueLe: new Date('2026-11-12T10:00:00Z'), dossiers: [{ dossier: ESSAI, lignes: [relu.ligne, autre.ligne] }] })
+    expect(manifeste).toContain(`MANQUANTS (1) — absents du ZIP\n${relu.ligne.nom}\t${MOTIF_HORS_DU_DOSSIER}`)
+    expect(manifeste).not.toMatch(/Dupont|1787|eeeeeeee/)
   })
 })
 
-describe('un lot et son manifeste', () => {
-  it('relit chaque fichier : vérifié, écart (copié et dit), sans empreinte, manquant (dit, absent du ZIP)', async () => {
-    const [piece, lisible, ticket, document] = inventaireDuDossier(await sources())
-    const lus: FichierLu[] = [
-      { fichier: piece, octets: octets('pièce 1') },
-      { fichier: lisible, octets: octets('lisible') },
-      { fichier: { ...ticket, attendue: 'c'.repeat(64) }, octets: octets('changé') },
-      { fichier: document, octets: null, motif: 'Object not found' },
-    ]
-    const fabriqueLe = new Date('2026-11-30T23:30:00Z')
-    const lot = await fabriquerUnLot({ dossier: { id: DOSSIER, nom: 'Cabinet du Dr Essai', siret: '123 456 789 00012' }, rang: 1, dernier: true, fichiers: lus, fabriqueLe })
-    expect(lot.comptes).toEqual({ fichiers: 4, verifies: 1, ecarts: 1, nonVerifies: 1, manquants: 1, octets: octets('pièce 1').length + octets('lisible').length + octets('changé').length })
-    expect(lot.nomDuZip).toBe('copie-2026-12-01-123456789-dddddddd-lot1.zip')
-    expect(lot.manifeste).toContain('Fabriqué le : 2026-12-01 (date de Paris)')
-    expect(lot.manifeste).toContain(`ÉCARTS (1)`)
-    expect(lot.manifeste).toContain(`pieces/20260402-bbbbbbbb.png\tattendue ${'c'.repeat(64)}\trelue ${await sha256Hex(octets('changé'))}`)
-    expect(lot.manifeste).toContain('MANQUANTS (1) — absents de ce ZIP\ndocuments/20260601-cccccccc.pdf\tObject not found')
-    expect(lot.manifeste).toContain(`${piece.nom}\t${octets('pièce 1').length}\t${await sha256Hex(octets('pièce 1'))}\tvérifié`)
-    expect(lot.manifeste).not.toMatch(/Dupont|Martin|1787/)
-    const zip = await JSZip.loadAsync(lot.zip)
-    expect(Object.keys(zip.files).filter((n) => !zip.files[n].dir).sort()).toEqual([
-      NOM_DU_MANIFESTE, piece.nom, lisible.nom, 'pieces/20260402-bbbbbbbb.png'].sort())
-    expect(await zip.file(NOM_DU_MANIFESTE)!.async('string')).toBe(lot.manifeste)
-    expect(lot.empreinteDuManifeste).toBe(await sha256Hex(octets(lot.manifeste)))
+const ESSAI = { id: DOSSIER, nom: 'Cabinet du Dr Essai', siret: '123 456 789 00012' }
+const VIDE = { id: 'ffffffff-0000-4000-8000-00000000000f', nom: 'Vide', siret: null }
+const COPIE = '0b0b0b0b-0000-4000-8000-0000000000aa'
+
+async function lignesDEssai() {
+  const [piece, lisible, ticket, document] = inventaireDuDossier(await sources())
+  const lus: FichierLu[] = [
+    { fichier: piece, octets: octets('pièce 1') },
+    { fichier: lisible, octets: octets('lisible') },
+    { fichier: { ...ticket, attendue: 'c'.repeat(64) }, octets: octets('changé') },
+    { fichier: document, octets: null, motif: 'le stockage ne l’a pas rendu (404)' },
+  ]
+  return Promise.all(lus.map(async (lu) => (await relireUnFichier(ESSAI, lu)).ligne))
+}
+
+describe('la relecture d’un fichier et LE manifeste de la copie (CFC-Q1 (B) : un seul ZIP)', () => {
+  it('chaque fichier relu : vérifié, écart (copié et dit), sans empreinte, manquant ; le chemin dans le ZIP sous son dossier', async () => {
+    const lignes = await lignesDEssai()
+    expect(lignes.map((l) => [l.nom.split('/')[0], l.etat])).toEqual([
+      ['123456789-dddddddd', 'vérifié'], ['123456789-dddddddd', 'non vérifié'], ['123456789-dddddddd', 'ÉCART'], ['123456789-dddddddd', 'MANQUANT'],
+    ])
+    expect(compterLesLignes(lignes)).toEqual({ fichiers: 4, verifies: 1, ecarts: 1, nonVerifies: 1, manquants: 1, octets: octets('pièce 1').length + octets('lisible').length + octets('changé').length })
   })
 
-  it('un dossier sans fichier a son ZIP, que son manifeste dit vide', async () => {
-    const lot = await fabriquerUnLot({ dossier: { id: DOSSIER, nom: 'Vide', siret: null }, rang: 1, dernier: true, fichiers: [], fabriqueLe: new Date('2026-11-12T10:00:00Z') })
-    expect(lot.manifeste).toContain('(aucun fichier : le dossier n’en porte pas)')
-    expect(nomDuZip({ id: DOSSIER, nom: 'Vide', siret: null }, 2, new Date('2026-11-12T10:00:00Z'))).toBe('copie-2026-11-12-SANS_SIREN-dddddddd-lot2.zip')
+  it('un manifeste pour tout le cabinet : l’identifiant, la date de Paris, les comptes, une section par dossier, la liste et la fin', async () => {
+    const lignes = await lignesDEssai()
+    const m = manifesteDeLaCopie({ copieId: COPIE, fabriqueLe: new Date('2026-11-30T23:30:00Z'), dossiers: [{ dossier: ESSAI, lignes }, { dossier: VIDE, lignes: [] }] })
+    expect(m.startsWith('COPIE DES FICHIERS DES DOSSIERS DU CABINET\n')).toBe(true)
+    expect(m).toContain(`Identifiant de la copie : ${COPIE}\nFabriquée le : 2026-12-01 (date de Paris)\nDossiers : 2 ; fichiers : 4 ;`)
+    expect(m).toContain('DOSSIER 123456789-dddddddd/ : Cabinet du Dr Essai')
+    expect(m).toContain('DOSSIER SANS_SIREN-ffffffff/ : Vide')
+    expect(m).toContain('(aucun fichier : le dossier n’en porte pas)')
+    expect(m).toContain(`123456789-dddddddd/pieces/20260402-bbbbbbbb.png\tattendue ${'c'.repeat(64)}\trelue ${await sha256Hex(octets('changé'))}`)
+    expect(m).toContain('MANQUANTS (1) — absents du ZIP\n123456789-dddddddd/documents/20260601-cccccccc.pdf\tle stockage ne l’a pas rendu (404)')
+    expect(m).toContain(`${lignes[0].nom}\t${octets('pièce 1').length}\t${await sha256Hex(octets('pièce 1'))}\tvérifié`)
+    expect(m.endsWith('FIN DU MANIFESTE — 4 fichier(s), dont 3 dans le ZIP\n')).toBe(true)
+    expect(m).not.toMatch(/Dupont|Martin|1787/)
+    expect(nomDuZipDeLaCopie(new Date('2026-11-30T23:30:00Z'))).toBe('copie-des-fichiers-2026-12-01.zip')
   })
 })
 
-describe('la découpe', () => {
-  it('ferme le lot avant un fichier qui passerait le plafond, jamais un lot vide', () => {
-    expect(fermerLeLotAvant(0, 0, PLAFOND_D_UN_LOT * 2)).toBe(false)
-    expect(fermerLeLotAvant(PLAFOND_D_UN_LOT - 10, 3, 10)).toBe(false)
-    expect(fermerLeLotAvant(PLAFOND_D_UN_LOT - 10, 3, 11)).toBe(true)
-    expect(PLAFOND_D_UN_LOT).toBe(100 * 1024 * 1024)
+describe('le manifeste rechargé (CFC-Q2 (B))', () => {
+  async function copieEtManifeste() {
+    const texte = manifesteDeLaCopie({ copieId: COPIE, fabriqueLe: new Date('2026-11-12T10:00:00Z'), dossiers: [{ dossier: ESSAI, lignes: await lignesDEssai() }] })
+    const copie = { id: COPIE, faite_le: '2026-11-12T10:05:00Z', nb_fichiers: 4, empreinte_du_manifeste: await sha256Hex(octets(texte)) }
+    return { texte, copie }
+  }
+
+  it('tel quel : reconnu', async () => {
+    const { texte, copie } = await copieEtManifeste()
+    expect(await confronterLeManifeste(texte, copie)).toEqual({ ok: true })
+    // Une copie qui passe minuit : le manifeste porte la veille de l'enregistrement.
+    expect(await confronterLeManifeste(texte, { ...copie, faite_le: '2026-11-12T23:10:00Z' })).toEqual({ ok: true })
+  })
+
+  it('d’une autre copie, retouché, tronqué, à une autre date, ou qui n’est pas un manifeste : refusé, et la raison dite', async () => {
+    const { texte, copie } = await copieEtManifeste()
+    const raison = async (t: string) => { const c = await confronterLeManifeste(t, copie); return c.ok ? 'ok' : c.raison }
+    expect(await raison(texte.replace(COPIE, '0c0c0c0c-0000-4000-8000-0000000000bb'))).toBe('autre_copie')
+    expect(await raison(texte.replace('\tvérifié', '\tVÉRIFIÉ'))).toBe('retouche')
+    expect(await raison(texte.replace('fichiers : 4 ;', 'fichiers : 5 ;'))).toBe('retouche')
+    expect(await raison(texte.replace('\r', '').replace(/\n/g, '\r\n'))).not.toBe('ok')
+    expect(await raison(texte.slice(0, texte.indexOf('FIN DU MANIFESTE')))).toBe('incomplet')
+    const sansDerniereLigne = texte.split('\n').filter((l) => !l.endsWith('\tnon vérifié')).join('\n')
+    expect(await raison(sansDerniereLigne)).toBe('incomplet')
+    expect(await raison(texte.replace('Fabriquée le : 2026-11-12', 'Fabriquée le : 2026-11-02'))).toBe('date')
+    expect(await raison('bonjour')).toBe('illisible')
+    const refus = await confronterLeManifeste(texte.replace(COPIE, '0c0c0c0c-0000-4000-8000-0000000000bb'), copie)
+    expect(refus).toMatchObject({ ok: false, phrase: expect.stringContaining('la copie du 12/11/2026') })
   })
 })
 
@@ -145,17 +174,30 @@ describe('le rappel', () => {
     expect(unMoisApres('2026-12-15')).toBe('2027-01-15')
   })
 
+  const copie = (faite_le: string, rangee: boolean, nb_ecarts = 0, nb_manquants = 0) => ({
+    id: COPIE, faite_le, nb_fichiers: 3, empreinte_du_manifeste: 'a'.repeat(64), nb_ecarts, nb_manquants, rangee_le: rangee ? faite_le : null,
+  })
+
   it('rien sans lecture ; jamais faite, ou plus d’un mois : un rappel ; illisible : dit ; sinon à jour', () => {
     expect(rappelDeLaCopie(null, '2026-11-12').genre).toBe('rien')
     expect(rappelDeLaCopie({ lue: false, motif: 'refus' }, '2026-11-12')).toMatchObject({ genre: 'illisible', motif: 'refus' })
     expect(rappelDeLaCopie({ lue: true, derniere: null, derniereComplete: null }, '2026-11-12').genre).toBe('rappel')
-    const complete = { faite_le: '2026-10-11T22:30:00Z', nb_ecarts: 0, nb_manquants: 0 } // le 12/10 à Paris
+    const complete = copie('2026-10-11T22:30:00Z', true) // le 12/10 à Paris
     expect(rappelDeLaCopie({ lue: true, derniere: complete, derniereComplete: complete }, '2026-11-12'))
       .toEqual({ genre: 'a_jour', phrase: 'Dernière copie complète des fichiers : le 12/10/2026.' })
     expect(rappelDeLaCopie({ lue: true, derniere: complete, derniereComplete: complete }, '2026-11-13').genre).toBe('rappel')
-    const ratee = { faite_le: '2026-11-01T10:00:00Z', nb_ecarts: 2, nb_manquants: 1 }
+    const ratee = copie('2026-11-01T10:00:00Z', true, 2, 1)
     expect(rappelDeLaCopie({ lue: true, derniere: ratee, derniereComplete: complete }, '2026-11-12'))
-      .toMatchObject({ genre: 'a_jour', phrase: expect.stringContaining('La dernière tentative, le 01/11/2026, avait 2 écart(s) et 1 fichier(s) manquant(s).') })
+      .toMatchObject({ genre: 'a_jour', phrase: expect.stringContaining('La dernière copie, le 01/11/2026, avait 2 écart(s) et 1 fichier(s) manquant(s).') })
+  })
+
+  it('une copie qui attend son manifeste ne compte pas, et le rappel le dit', () => {
+    const enAttente = copie('2026-11-10T10:00:00Z', false)
+    const lecture = { lue: true as const, derniere: enAttente, derniereComplete: null }
+    expect(rappelDeLaCopie(lecture, '2026-11-12')).toEqual({ genre: 'rappel', phrase:
+      'Aucune copie complète des fichiers des dossiers n’a encore été faite sur un support du cabinet. La copie du 10/11/2026 attend son manifeste : le recharger pour qu’elle compte.' })
+    expect(copieAAttester(lecture)).toBe(enAttente)
+    expect(copieAAttester({ lue: true, derniere: copie('2026-11-10T10:00:00Z', true), derniereComplete: null })).toBeNull()
   })
 
   it('le drapeau de la migration est baissé', () => {

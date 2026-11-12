@@ -450,7 +450,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   d'archive téléchargés, la conservation dix ans posée et levée par le chef, la suppression gardée ; `DEPART_DU_CLIENT_PREVU`
   baissé ; le paquet d'archive porte aussi la piste d'audit et le PDF de la 2035 (INAL3c, 12/11/2026) ; INAL6, la copie des
   fichiers des dossiers sur un support du cabinet, préparée le 12/11/2026 (`copies_des_fichiers`, `COPIE_DES_FICHIERS_PREVUE`
-  baissé) → « INAL5 : LE DÉPART D'UN CLIENT, LES PAQUETS TÉLÉCHARGÉS ET LA CONSERVATION DIX ANS », « INAL3C : LA PISTE
+  baissé), reprise le même jour : un seul ZIP écrit en flux (`lib/zipEnFlux.ts`, CFC-Q1), faite au seul manifeste rechargé
+  (`attester_copie_des_fichiers`, CFC-Q2) → « LA COPIE DES FICHIERS REPRISE : UN SEUL ZIP EN FLUX », « INAL5 : LE DÉPART D'UN CLIENT, LES PAQUETS TÉLÉCHARGÉS ET LA CONSERVATION DIX ANS », « INAL3C : LA PISTE
   D'AUDIT ET LE PDF DE LA 2035 DANS LE PAQUET D'ARCHIVE », « LA COPIE DES FICHIERS SUR UN SUPPORT DU CABINET ».
 - **Contre-calcul par l'expert-comptable** (ligne 23.3) : quatre dossiers de référence remis (2035, CA3, amortissements,
   bilan 2033-A) ; restent ses chiffres, l'analyse des écarts, puis ses chiffres en cas de référence → « LES DOSSIERS DE
