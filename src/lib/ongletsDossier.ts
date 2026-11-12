@@ -9,6 +9,7 @@
 // de dossier s'ajoute ici — et à TABS_VALIDES dans DossierDetail.tsx pour être routable.
 
 import { CAISSE_EXPORTEE } from './caisse'
+import { INVENTAIRE_EXPORTE } from './inventaire'
 
 export type DossierTab =
   | 'checklist'
@@ -24,6 +25,7 @@ export type DossierTab =
   | 'tva'
   | 'immobilisations'
   | 'cotisations'
+  | 'inventaire'
   | 'cloture'
   | 'estimation'
   | 'financement'
@@ -62,13 +64,16 @@ export interface GroupeParcours {
   enfants?: EnfantParcours[]
 }
 
-// LA LISTE DES ÉCRANS, SELON QUE LA CAISSE EST EN BASE (ligne 26.6, étape C4 ; `CAISSE_EXPORTEE`, lib/caisse.ts). Baissé, la
-// liste est celle d'hier, au caractère près : aucun onglet neuf. Levé, un onglet « Caisse » suit Banque, destination
-// directe comme elle — la saisie des espèces se fait chaque semaine, comme le relevé, et ne se cache pas derrière un menu.
-// Les deux états sont une fonction plutôt qu'une constante : les tests jouent chacun, et les navigations la lisent à chaque
-// rendu.
-export function groupesDuParcours(caisseEnBase: boolean): GroupeParcours[] {
-  const groupes = GROUPES_SANS_CAISSE
+// LA LISTE DES ÉCRANS, SELON QUE LA CAISSE EST EN BASE (ligne 26.6, étape C4 ; `CAISSE_EXPORTEE`, lib/caisse.ts) ET QUE
+// L'INVENTAIRE EST OFFERT (ligne 35, INV5 ; `INVENTAIRE_EXPORTE`, lib/inventaire.ts). Baissés, la liste est celle d'hier, au
+// caractère près : aucun onglet neuf. Caisse levée, un onglet « Caisse » suit Banque, destination directe comme elle — la saisie
+// des espèces se fait chaque semaine, comme le relevé, et ne se cache pas derrière un menu. Inventaire offert, un onglet
+// « Inventaire » précède Clôture dans Comptabilité : l'inventaire se passe avant que l'exercice se valide, et la barre ne
+// connaît pas le mode du dossier — l'onglet, lui, ne se monte qu'en engagement (DossierDetail).
+// Les états des drapeaux sont des paramètres OBLIGATOIRES plutôt que des constantes : les tests jouent chacun, et les
+// navigations lisent la liste à chaque rendu.
+export function groupesDuParcours(caisseEnBase: boolean, inventaireOffert: boolean): GroupeParcours[] {
+  const groupes = inventaireOffert ? avecLInventaire(GROUPES_SANS_CAISSE) : GROUPES_SANS_CAISSE
   if (!caisseEnBase) return groupes
   const apresBanque = groupes.findIndex((g) => g.id === 'banque') + 1
   return [
@@ -78,9 +83,21 @@ export function groupesDuParcours(caisseEnBase: boolean): GroupeParcours[] {
   ]
 }
 
-/** Les écrans qu'une adresse `/dossiers/:id/:tab` peut désigner, selon que la caisse est en base : tous ceux des groupes. */
-export function ongletsValides(caisseEnBase: boolean): DossierTab[] {
-  return groupesDuParcours(caisseEnBase).flatMap((g) => [...(g.cible ? [g.cible] : []), ...(g.enfants ?? []).map((e) => e.id)])
+// L'onglet Inventaire, juste avant Clôture, où l'exercice se valide.
+function avecLInventaire(groupes: readonly GroupeParcours[]): GroupeParcours[] {
+  return groupes.map((g) => {
+    if (g.id !== 'comptabilite' || !g.enfants) return g
+    const avantCloture = g.enfants.findIndex((e) => e.id === 'cloture')
+    return {
+      ...g,
+      enfants: [...g.enfants.slice(0, avantCloture), { id: 'inventaire', label: 'Inventaire' }, ...g.enfants.slice(avantCloture)],
+    }
+  })
+}
+
+/** Les écrans qu'une adresse `/dossiers/:id/:tab` peut désigner, selon que la caisse est en base et l'inventaire offert. */
+export function ongletsValides(caisseEnBase: boolean, inventaireOffert: boolean): DossierTab[] {
+  return groupesDuParcours(caisseEnBase, inventaireOffert).flatMap((g) => [...(g.cible ? [g.cible] : []), ...(g.enfants ?? []).map((e) => e.id)])
 }
 
 const GROUPES_SANS_CAISSE: GroupeParcours[] = [
@@ -128,13 +145,13 @@ const GROUPES_SANS_CAISSE: GroupeParcours[] = [
   },
 ]
 
-export const GROUPES_PARCOURS: GroupeParcours[] = groupesDuParcours(CAISSE_EXPORTEE)
+export const GROUPES_PARCOURS: GroupeParcours[] = groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE)
 
 // Le libellé d'un écran du dossier, tel que les deux navigations l'affichent : un bouton qui mène à un écran
 // le nomme comme la barre qu'on retrouvera en y arrivant.
 export function libelleDeLOnglet(tab: DossierTab): string {
   // Les deux états du drapeau : un écran se nomme de même qu'il soit offert ou non.
-  for (const groupe of groupesDuParcours(true)) {
+  for (const groupe of groupesDuParcours(true, true)) {
     if (groupe.cible === tab) return groupe.label
     const enfant = groupe.enfants?.find((e) => e.id === tab)
     if (enfant) return enfant.label

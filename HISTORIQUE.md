@@ -52218,3 +52218,22 @@ retiré si la fonction refuse. `echeancesDeLApprobation` (`echeancesFiscales.ts`
 décision, neuf mois pour les dividendes, au jour de Paris, sans report au jour ouvré. La carte AFF4 offre « Télécharger le
 procès-verbal », « Joindre le document signé » et le calendrier. Reste : les rappels dans « Mon échéancier » et la Checklist
 (le client ne lit pas les décisions), et AFF6.
+
+### 12/11/2026 — INV5 : L'ONGLET INVENTAIRE, DERRIÈRE SON DRAPEAU
+
+Agent `dev`, lot INV5 de la conception 35 (§ 5.7), derrière `INVENTAIRE_EXPORTE` (`lib/inventaire.ts`), BAISSÉ : rien en production, les trois
+migrations restent préparées, et le drapeau ne se lève qu'avec `INVENTAIRE_PREVU` (un test garde l'implication). Baissé, la navigation et
+la lecture sont celles d'hier : `groupesDuParcours(caisse, inventaire)` et `ongletsValides(…, …)` prennent les deux états en paramètres
+obligatoires, `lireLInventaireDuDossier` rend « absente » sans un appel. Levé, « Inventaire » précède Clôture sous Comptabilité (les deux
+navigations, `DossierTab`, `TABS_AVEC_EXERCICE`, `ICONES_PARCOURS`) ; `DossierDetail` ne monte `InventaireTab` qu'en ENGAGEMENT (en
+trésorerie, une carte dit pourquoi, sans rien lire) — la barre latérale ne connaît pas le mode, l'entrée s'y offre donc aux deux.
+L'onglet (`pages/dossier/InventaireTab.tsx`) : la déclaration de l'inventaire, la saisie d'une régularisation (le prorata PROPOSÉ, le compte du
+plan proposé, les refus de `lib/inventaire.ts` dits avant le clic, la confirmation qui nomme la paire d'écritures), la liste (« à jour » ou « à
+recomposer », par le juge de la validation), Remplacer et Retirer, l'ouverture et l'évaluation des provisions par différence, et l'état en PDF
+(`pdfDesBlocs`, daté du dernier geste de l'état) et en CSV (BOM, `champCsv`). La logique est pure (`lib/inventaireEcran.ts`,
+`lib/inventaireEtat.ts`) ; la lecture (`lib/inventaireDeLEcranLecture.ts`) lit les quatre collections en entier, le plan par `plan_du_dossier`
+et l'ouverture du dossier. **Choix** : les douze rôles n'entrent PAS dans `ROLES_COMPTABLES` — leurs comptes se lisent à l'écran, sans toucher à
+la lecture du plan de tous les onglets (à trancher avec INV8) ; ni la pièce citée, ni la facture d'une dépréciation ne se choisissent d'ici
+(une saisie qui remplace garde la pièce) ; l'état dit « saisie du cabinet » et sa date, jamais un nom. Trois choix à leur recommandation :
+INV-Q3 (A), INV-Q4 (A), INV-Q6 (A) (`CHOIX_DU_CABINET`). Tests : logique, état, lecture, écran (33 cas), navigations, `DossierDetail`, et l'onglet entré
+dans les deux gardes d'`ecransAvantLecture`.

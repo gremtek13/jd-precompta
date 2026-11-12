@@ -409,6 +409,19 @@ vi.mock('./dossier/CaisseTab', () => ({
     </>
   ),
 }))
+// L'ONGLET INVENTAIRE (ligne 35, INV5) : doublé pour montrer ce qu'il REÇOIT de la page — le dossier, son nom, son modèle comptable,
+// son statut de TVA. Et le drapeau (`INVENTAIRE_EXPORTE`) joué par un accesseur : baissé (par défaut), l'adresse /inventaire n'est pas
+// routable et la page tombe sur la Vue d'ensemble ; levé, il ne se monte qu'en engagement.
+const drapeauDeLInventaire = vi.hoisted(() => ({ leve: false }))
+vi.mock('../lib/inventaire', async (original) => {
+  const vrai = await original<typeof import('../lib/inventaire')>()
+  return { ...vrai, get INVENTAIRE_EXPORTE() { return drapeauDeLInventaire.leve } }
+})
+vi.mock('./dossier/InventaireTab', () => ({
+  default: ({ dossierId, dossierNom, modele, assujettiTva }: { dossierId: string; dossierNom: string; modele: { mode: string }; assujettiTva: boolean }) => (
+    <p>Inventaire — {dossierId} — {dossierNom} — {modele.mode} — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
+  ),
+}))
 // L'onglet TVA lit le régime du dossier (périodicité, option pour les débits) et peut le changer :
 // doublé pour montrer ce qu'il REÇOIT et rendre un changement à la page, qui doit le faire voir.
 // Le STATUT de TVA s'y règle aussi (StatutTvaCard) : le double rend à la page ce que la base aurait écrit, le
@@ -1356,5 +1369,42 @@ describe('Page d’un dossier — l’onglet Caisse', () => {
     cleanup()
     await afficher('/dossiers/d1/informations')
     expect(screen.queryByRole('tablist', { name: 'Exercice' })).toBeNull()
+  })
+})
+
+// L'ONGLET INVENTAIRE N'EXISTE QUE LE DRAPEAU `INVENTAIRE_EXPORTE` LEVÉ, ET QU'EN ENGAGEMENT (ligne 35, INV5) : baissé, l'adresse
+// /dossiers/:id/inventaire retombe sur la Vue d'ensemble, rien ne se monte, aucune navigation ne l'offre ; levé, un dossier en
+// engagement le monte avec son modèle, son nom et son statut de TVA, un dossier en trésorerie dit seulement pourquoi il n'en a pas.
+describe('Page d’un dossier — l’onglet Inventaire', () => {
+  afterEach(() => { drapeauDeLInventaire.leve = false })
+
+  it('baissé : l’adresse retombe sur la Vue d’ensemble, rien ne se monte, aucune navigation ne l’offre', async () => {
+    await afficher('/dossiers/d2/inventaire')
+    expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
+    expect(screen.queryByText(/^Inventaire — /)).toBeNull()
+    expect(screen.queryByText(/L’inventaire ne s’écrit qu’en comptabilité d’engagement/)).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Inventaire' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Inventaire/ })).toBeNull()
+  })
+
+  it('levé, en engagement : l’onglet se monte avec le dossier, son nom, son modèle et son statut de TVA ; la barre latérale y mène', async () => {
+    drapeauDeLInventaire.leve = true
+    await afficher('/dossiers/d2/inventaire')
+    expect(screen.getByText(`Inventaire — d2 — ${faux.dossiers.d2.nom} — engagement — TVA ${faux.dossiers.d2.assujetti_tva ? 'assujetti' : 'exonéré'}`)).toBeTruthy()
+    expect(screen.queryByText('Vue d’ensemble du dossier')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Inventaire' }).getAttribute('href')).toBe('/dossiers/d2/inventaire')
+  })
+
+  it('levé, en trésorerie : l’onglet ne se monte pas ; la page dit que l’inventaire ne s’écrit qu’en engagement', async () => {
+    drapeauDeLInventaire.leve = true
+    await afficher('/dossiers/d1/inventaire')
+    expect(screen.getByText('L’inventaire ne s’écrit qu’en comptabilité d’engagement.')).toBeTruthy()
+    expect(screen.queryByText(/^Inventaire — /)).toBeNull()
+  })
+
+  it('levé : l’exercice partagé s’affiche en tête de l’onglet', async () => {
+    drapeauDeLInventaire.leve = true
+    await afficher('/dossiers/d2/inventaire')
+    expect(screen.getByRole('tablist', { name: 'Exercice' })).toBeTruthy()
   })
 })
