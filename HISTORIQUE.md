@@ -52021,7 +52021,8 @@ obligatoire de chaque décision, figé, pas une colonne du dossier. Policies : l
 Adaptés : `planComptable.sql` (1quater, et le contrôle 8, que la fonction rejoint en lisant `compte_du_dirigeant`),
 `rls.sql` (bloc AF), `restauration.sql`, quatre tests. Sur des copies de la mère rattrapée à 200 : A, I→L→A, A→I→L — `rls.sql`
 0 en faute (111 et 117 mutations, toutes mordent), l'essai 49 cas et 9 mutations, INV2 et LIA2 à 0 ; catalogue égal entre
-les ordres ; retours rendant celui d'avant à l'octet. md5 : AFF2 `fea1e9e3…` (retour `808d9e29…`), INV2 `f374f3ba…`
+les ordres ; retours rendant celui d'avant à l'octet. md5 : AFF2 `f90cd848…` depuis AFF4-Q1, `fea1e9e3…` avant (retour
+`808d9e29…`, inchangé), INV2 `f374f3ba…`
 (`e1285d6a…`), LIA2 `bc1133c6…` (`28c71576…`), MCB5g `577bafc3…` (`ba223334…`).
 
 ### 12/11/2026 — INV4 ET AFF2 RÉUNIES À LA TÊTE DE LA SESSION, ÉPROUVÉES SUR LA PRODUCTION À 216 MIGRATIONS
@@ -52030,7 +52031,8 @@ Agent architecte. INV4 et AFF2, préparées hors branche depuis `a15b21e`, repri
 LIA8, chaque apport gardé : dans `rls.sql`, les blocs EX, PV puis AF (en-têtes 6quaterdecies, 6quindecies, 6sexdecies) ;
 dans `restauration.sql`, l'affectation, les stocks, l'inventaire, les provisions, puis les exercices joués en dernier ;
 `planComptable.sql` juge les provisions au 1quater et l'affectation au 1quinquies (renuméroté) ; les recherches de
-définition des tests neufs sans casse. Aucune migration n'a changé (md5 : INV4 `a532988a…`, AFF2 `fea1e9e3…`). Sur une
+définition des tests neufs sans casse. Aucune migration n'a changé (md5 : INV4 `a532988a…`, AFF2 `fea1e9e3…`, `f90cd848…`
+depuis AFF4-Q1). Sur une
 réplique rattrapée à 216 migrations (signature.sql égale à la production, neuf familles), les sept préparées dans les
 ordres MCB5g, INV2, LIA2, INV4, AFF2, EXD2, CFCS et AFF2, EXD2, LIA2, INV2, INV4, MCB5g, CFCS : les gardes de tête
 passent (62 rôles, rangs libres, aucune racine qui en commence une autre, aucune fonction à empreinte redéfinie) ;
@@ -52153,3 +52155,17 @@ rien à redéployer. **Le scanner** `rolesDuPlanLecteurs.test.ts` relève par l'
 hors de `planComptable.ts`, des tests et de src/test/, contre six exceptions motivées au nombre près ; un lecteur planté
 (fichier neuf, puis un emploi de plus dans une exception) le fait virer au rouge. Restent, hors application, les essais SQL
 qui comptent encore 32 rôles (MP1 de `rls.sql`, `planComptable.sql`, `modeleDuCabinet.sql`), déjà relevés sous PC7-Q2.
+
+### 12/11/2026 — AFF4-Q1 : LES SOLDES DE LA PREMIÈRE AFFECTATION LISENT LE BROUILLON
+
+Agent architecte. **Le défaut**, confirmé : `affectation_soldes` écartait le brouillon par `e.affectation_id is distinct from
+p_exclue` ; à la première décision d'un exercice, `p_exclue` est nul et `null is distinct from null` est faux : toute ligne
+ordinaire de l'année sortait des soldes (réserve légale, donc le minimum de L232-10, report, pertes antérieures, acomptes au
+1209 que la garde d'AFF-Q8 (B) ne voyait plus) ; aucun essai ne posait de classe 1 au brouillon. **La correction** : `(p_exclue
+is null or e.affectation_id is distinct from p_exclue)` ; écartée, `coalesce(e.affectation_id <> p_exclue, true)`, équivalente,
+moins lisible. Aucun autre filtre de ce motif dans les préparées : chaque `is distinct from p_…` y compare une clé primaire ou
+juge une valeur lue (un refus). **L'essai** : D_BR, une écriture ordinaire de 2026 (réserve légale 900,00, report 2 000,00),
+E37 à E39f, M10 à M13 ; une mutation sans son fragment ne mord plus. La carte comptait déjà ces lignes ; sur D_BR, le module
+propose ce que la base accepte. **Preuves** (mère 17 copiée, à 205) : 58 cas justes, 13 mutations sur 13 (M10, l'ancienne
+clause, exige 1 000,00 au lieu de 100,00) ; la migration d'avant, 9 en faute ; A, I→L→N→A→E, A→E→L→I→N : `rls.sql` 0 en faute,
+117 et 129 mutations mordent, essais sœurs et `planComptable.sql` justes, retours fidèles. md5 : AFF2 `f90cd848…`, essai `114a19c4…`.

@@ -279,7 +279,9 @@ $$;
 -- Les soldes des capitaux propres d'un dossier à une date, avant une décision (les lignes de la décision qu'on remplace
 -- écartées), en centimes, aux noms du module : l'ouverture de l'exercice de la date (soldes reportés, à-nouveaux), puis ce
 -- que son brouillon y a écrit jusqu'à elle. Créditeurs positifs, sauf les pertes antérieures (119) et les acomptes sur
--- dividendes (1209), leurs soldes DÉBITEURS.
+-- dividendes (1209), leurs soldes DÉBITEURS. Sans décision remplacée (`p_exclue` nul, la première d'un exercice), rien ne
+-- s'écarte : `affectation_id is distinct from p_exclue` seul y écarterait toute ligne ordinaire (`null is distinct from
+-- null` est faux), et la réserve légale, le report, les pertes antérieures et les acomptes se liraient faux (AFF4-Q1).
 create function public.affectation_soldes(p_dossier_id uuid, p_date date, p_exclue uuid) returns jsonb
 language sql stable set search_path = public as $$
   with mouvements as (
@@ -294,7 +296,7 @@ language sql stable set search_path = public as $$
     select e.compte, (case when e.sens = 'credit' then 1 else -1 end) * round(e.montant * 100)::bigint
       from public.ecritures_brouillon e
      where e.dossier_id = p_dossier_id and e.date between make_date(extract(year from p_date)::integer, 1, 1) and p_date
-       and e.affectation_id is distinct from p_exclue
+       and (p_exclue is null or e.affectation_id is distinct from p_exclue)
   )
   select jsonb_build_object(
     'capitalAuxComptes', coalesce(sum(m.c) filter (where starts_with(m.compte, '101') or starts_with(m.compte, '109')), 0),

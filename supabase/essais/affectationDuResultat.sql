@@ -83,6 +83,7 @@ declare
   d_hc text := 'af200000-0000-4000-8000-000000000006'; -- une association (9220)
   d_sc text := 'af200000-0000-4000-8000-000000000007'; -- SARL sans capital
   d_ac text := 'af200000-0000-4000-8000-000000000008'; -- SARL, des acomptes sur dividendes au 1209
+  d_br text := 'af200000-0000-4000-8000-000000000009'; -- SARL, capital 10 000 ; au brouillon de 2026, une écriture ordinaire (AFF4-Q1)
   empreinte text := repeat('a', 64);
   decision text := '{"organe":"assemblee","nombre_d_associes":"plusieurs","date_decision":"2026-05-15","comptes_approuves":true,"date_mise_en_paiement":"2026-06-30","reserves_statutaires_distribuables":true}';
   sans_paiement text := '{"organe":"assemblee","nombre_d_associes":"plusieurs","date_decision":"2026-05-15","comptes_approuves":true,"date_mise_en_paiement":null,"reserves_statutaires_distribuables":true}';
@@ -90,8 +91,13 @@ declare
   bonne_ecriture text := '{"journal":"OD","date":"2026-05-15","pieceRef":"Affectation du résultat 2025 — décision du 15/05/2026","pieceDate":"2026-05-15","libelle":"Affectation du résultat 2025","lignes":[{"compte":"120000","sens":"debit","centimes":3000000},{"compte":"106100","sens":"credit","centimes":20000},{"compte":"106800","sens":"credit","centimes":980000},{"compte":"457000","sens":"credit","centimes":2000000}]}';
   lignes_d2 text := '[{"origine":"benefice","destination":"reserve_legale","centimes":100000},{"origine":"benefice","destination":"report_debiteur","centimes":500000},{"origine":"benefice","destination":"report_crediteur","centimes":2400000}]';
   ecriture_d2 text := '{"journal":"OD","date":"2026-05-15","pieceRef":"Affectation du résultat 2025 — décision du 15/05/2026","pieceDate":"2026-05-15","libelle":"Affectation du résultat 2025","lignes":[{"compte":"120000","sens":"debit","centimes":3000000},{"compte":"106100","sens":"credit","centimes":100000},{"compte":"110000","sens":"credit","centimes":2400000},{"compte":"119000","sens":"credit","centimes":500000}]}';
+  lignes_br text := '[{"origine":"benefice","destination":"reserve_legale","centimes":10000},{"origine":"benefice","destination":"report_crediteur","centimes":2990000}]';
+  ecriture_br text := '{"journal":"OD","date":"2026-05-15","pieceRef":"Affectation du résultat 2025 — décision du 15/05/2026","pieceDate":"2026-05-15","libelle":"Affectation du résultat 2025","lignes":[{"compte":"120000","sens":"debit","centimes":3000000},{"compte":"106100","sens":"credit","centimes":10000},{"compte":"110000","sens":"credit","centimes":2990000}]}';
+  sous_le_minimum_br text := '[{"origine":"benefice","destination":"reserve_legale","centimes":9999},{"origine":"benefice","destination":"report_crediteur","centimes":2990001}]';
   enr constant text := 'select enregistrer_affectation(%L, %s, %s, %L, %L, %L)';
-  v1 text; v2 text; v3 text;
+  -- Les soldes que lit `affectation_soldes` à la date de la décision, la décision écartée en troisième paramètre (AFF4-Q1).
+  soldes_a constant text := 'select (x.s ->> ''reserveLegale'') || '':'' || (x.s ->> ''reportCrediteur'') from public.affectation_soldes(%L, date ''2026-05-15'', %s) as x(s)';
+  v1 text; v2 text; v3 text; v4 text; v5 text;
   o text;
   m text;
   cas_ text;
@@ -104,13 +110,14 @@ begin
     from (select cabinet_id from dossiers where id = dossier_du_client::uuid) c
     cross join (values (d, 1, '5499', 10000::numeric, '455000'), (d2, 2, '5499', 10000, '455000'), (d3, 3, '5499', 10000, '455000'),
                        (d_ei, 4, '5499', 10000, '108000'), (d_sf, 5, null, null, '455000'), (d_hc, 6, '9220', 1000, '455000'),
-                       (d_sc, 7, '5499', null, '455000'), (d_ac, 8, '5499', 10000, '455000')) as x(id, n, forme, capital, dirigeant);
+                       (d_sc, 7, '5499', null, '455000'), (d_ac, 8, '5499', 10000, '455000'),
+                       (d_br, 9, '5499', 10000, '455000')) as x(id, n, forme, capital, dirigeant);
   insert into dossier_assignations (dossier_id, user_id)
-  select x.id::uuid, membre::uuid from unnest(array[d, d2, d3, d_ei, d_sf, d_hc, d_sc, d_ac, dossier_du_client]) as x(id)
+  select x.id::uuid, membre::uuid from unnest(array[d, d2, d3, d_ei, d_sf, d_hc, d_sc, d_ac, d_br, dossier_du_client]) as x(id)
   on conflict do nothing;
-  -- L'exercice 2025 de D, D2 et D3 : un bénéfice de 30 000,00, écrit et validé ; 2024 validé aussi pour D.
+  -- L'exercice 2025 de D, D2, D3 et D_BR : un bénéfice de 30 000,00, écrit et validé ; 2024 validé aussi pour D.
   -- (une ligne ne naît validée que par la validation de son exercice : la porte que la garde lui ouvre, posée ici à la main)
-  foreach o in array array[d, d2, d3] loop
+  foreach o in array array[d, d2, d3, d_br] loop
     perform set_config('jd.validation_exercice', o, true);
     insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, statut, valide_le, journal_code, numero_ecriture,
                                      piece_ref, piece_date, compte_lib)
@@ -126,12 +133,21 @@ begin
                  (d2, '101000', 'credit', 10000), (d2, '119000', 'debit', 5000), (d2, '120000', 'credit', 30000), (d2, '512000', 'debit', 35000),
                  (d3, '101000', 'credit', 10000), (d3, '109000', 'debit', 5000), (d3, '106100', 'credit', 1000),
                  (d3, '120000', 'credit', 30000), (d3, '512000', 'debit', 36000),
-                 (d_ac, '120900', 'debit', 10), (d_ac, '512000', 'credit', 10)) as x(id, compte, sens, montant);
+                 (d_ac, '120900', 'debit', 10), (d_ac, '512000', 'credit', 10),
+                 (d_br, '101000', 'credit', 10000), (d_br, '106800', 'credit', 2900), (d_br, '120000', 'credit', 30000),
+                 (d_br, '512000', 'debit', 42900)) as x(id, compte, sens, montant);
 
   insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit,
                                  total_credit, empreinte, declaration)
   select x.id::uuid, x.annee, now(), membre::uuid, 'engagement', 0, 0, 0, 0, repeat('0', 64), null
-    from (values (d, 2024), (d, 2025), (d2, 2025), (d3, 2025)) as x(id, annee) order by x.annee;
+    from (values (d, 2024), (d, 2025), (d2, 2025), (d3, 2025), (d_br, 2025)) as x(id, annee) order by x.annee;
+  -- AFF4-Q1 : au brouillon de 2026 de D_BR, avant toute décision, une écriture ORDINAIRE (sans `affectation_id`) vire
+  -- 2 900,00 des autres réserves à la réserve légale (900,00) et au report à nouveau (2 000,00). La première décision la lit :
+  -- réserve légale 900,00 (au dixième du capital, il reste 100,00), report 2 000,00, autres réserves 0.
+  insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, statut)
+  values (d_br::uuid, date '2026-02-02', '106800', 'Virement de réserves', 2900, 'debit', 'proposee'),
+         (d_br::uuid, date '2026-02-02', '106100', 'Virement de réserves', 900, 'credit', 'proposee'),
+         (d_br::uuid, date '2026-02-02', '110000', 'Virement de réserves', 2000, 'credit', 'proposee');
   -- ── Les cas : (libellé, attendu, observé) ──
   for cas_, attendu, o in select * from (values
     ('E0. le BNC en trésorerie, refusé avant tout jugement de la décision',
@@ -216,7 +232,13 @@ begin
     ('E28. une mise en paiement avant la décision', '22023 La mise en paiement (01/05/2026) précède la décision (15/05/2026).',
      pg_temp.essayer(membre, format(enr, d, 2025, 'null', replace(decision, '2026-06-30', '2026-05-01'), bonnes, bonne_ecriture))),
     ('E29. une écriture proposée qui n''est pas celle de la décision', '22023 L’écriture proposée n’est pas celle de la décision : la recomposer.',
-     pg_temp.essayer(membre, format(enr, d, 2025, 'null', decision, bonnes, replace(bonne_ecriture, '"centimes":2000000', '"centimes":1999999'))))
+     pg_temp.essayer(membre, format(enr, d, 2025, 'null', decision, bonnes, replace(bonne_ecriture, '"centimes":2000000', '"centimes":1999999')))),
+    ('E37. D_BR, la première décision : la réserve légale lue au brouillon (900,00 ; il reste 100,00 au dixième, AFF4-Q1)',
+     '22023 La réserve légale doit recevoir au moins 100,00 € (un vingtième du bénéfice diminué des pertes antérieures, jusqu’au dixième du capital ; C. com., art. L232-10) : la décision lui affecte 99,99 €.',
+     pg_temp.essayer(membre, format(enr, d_br, 2025, 'null', sans_paiement, sous_le_minimum_br, null))),
+    ('E37c. D_BR, la première décision : le report à nouveau lu au brouillon (2 000,00, AFF4-Q1)',
+     '22023 La décision prélève 2 000,01 € sur le report à nouveau créditeur, dont le solde est de 2 000,00 € à la date de la décision.',
+     pg_temp.essayer(membre, format(enr, d_br, 2025, 'null', sans_paiement, '[{"origine":"benefice","destination":"reserve_legale","centimes":10000},{"origine":"benefice","destination":"report_crediteur","centimes":2990000},{"origine":"report_crediteur","destination":"dividendes","centimes":200001}]', null)))
   ) as c(cas, attendu, observe)
   loop
     insert into essai_affectation values (cas_, attendu, o, o = attendu);
@@ -329,6 +351,56 @@ begin
     '22023 Le procès-verbal de cette décision est déjà joint : une version nouvelle de la décision en produit un nouveau.', o,
     o = '22023 Le procès-verbal de cette décision est déjà joint : une version nouvelle de la décision en produit un nouveau.');
 
+  -- ── AFF4-Q1 : les soldes lus du brouillon. La première décision d'un exercice (aucune décision remplacée) compte les
+  --    lignes ordinaires ; un remplacement n'écarte que les lignes de la décision qu'il remplace. ──
+  o := pg_temp.muter(pg_temp.remplacer('public.affectation_soldes(uuid,date,uuid)',
+      '(p_exclue is null or e.affectation_id is distinct from p_exclue)', 'e.affectation_id is distinct from p_exclue'),
+    membre, format(enr, d_br, 2025, 'null', sans_paiement, sous_le_minimum_br, null));
+  insert into essai_mutations values ('M10 — la clause d''avant AFF4-Q1 (le brouillon écarté sans décision remplacée) : E37 change',
+    o, o not like '22023 La réserve légale doit recevoir au moins 100,00%');
+  o := pg_temp.essayer(membre, format(enr, d_br, 2025, 'null', sans_paiement, lignes_br, ecriture_br), true);
+  v4 := case when o ~ '^ACCEPTÉ [0-9a-f-]{36}$' then substr(o, 9) end;
+  insert into essai_affectation values ('E38. D_BR : la première décision, la réserve légale au minimum lu (100,00), s''enregistre',
+    'ACCEPTÉ <identifiant>', o, v4 is not null);
+  select (a.soldes_lus ->> 'reserveLegale') || ':' || (a.soldes_lus ->> 'reportCrediteur') || ':' || (a.soldes_lus ->> 'autresReserves')
+         || ':' || (a.soldes_lus ->> 'capitalAuxComptes')
+    into o from affectations_du_resultat a where a.id = v4::uuid;
+  insert into essai_affectation values ('E38b. ce qu''elle a lu, figé : la réserve légale, le report et les autres réserves du brouillon, le capital',
+    '90000:200000:0:1000000', o, coalesce(o = '90000:200000:0:1000000', false));
+  o := pg_temp.essayer(membre, format(enr, d_br, 2025, '1', sans_paiement, lignes_br, ecriture_br), true);
+  v5 := case when o ~ '^ACCEPTÉ [0-9a-f-]{36}$' then substr(o, 9) end;
+  select (select r.etat from affectations_du_resultat r where r.id = v4::uuid) || ':' || a.version || ':' || a.etat || ':'
+         || (a.soldes_lus ->> 'reserveLegale') || ':' || (a.soldes_lus ->> 'reportCrediteur') || ':' || (a.soldes_lus ->> 'autresReserves')
+    into o from affectations_du_resultat a where a.id = v5::uuid;
+  insert into essai_affectation values ('E39. son remplacement lit les mêmes soldes : les lignes de la version 1 écartées, l''écriture ordinaire gardée',
+    'remplacee:2:en_vigueur:90000:200000:0', o, coalesce(o = 'remplacee:2:en_vigueur:90000:200000:0', false));
+  o := pg_temp.essayer(null, format(soldes_a, d_br, quote_literal(v5)));
+  insert into essai_affectation values ('E39c. affectation_soldes, la décision en vigueur écartée : ses lignes seules s''en vont',
+    'ACCEPTÉ 90000:200000', o, coalesce(o = 'ACCEPTÉ 90000:200000', false));
+  o := pg_temp.essayer(null, format(soldes_a, d_br, 'null'));
+  insert into essai_affectation values ('E39d. affectation_soldes, aucune décision écartée : toutes les lignes, la décision en vigueur comprise',
+    'ACCEPTÉ 100000:3190000', o, coalesce(o = 'ACCEPTÉ 100000:3190000', false));
+  o := pg_temp.essayer(null, format(soldes_a, d_br, 'gen_random_uuid()'));
+  insert into essai_affectation values ('E39e. affectation_soldes, une autre décision écartée : rien de la décision en vigueur ne s''en va',
+    'ACCEPTÉ 100000:3190000', o, coalesce(o = 'ACCEPTÉ 100000:3190000', false));
+  o := pg_temp.essayer(membre, format(enr, d_br, 2025, '2', sans_paiement, sous_le_minimum_br, null));
+  insert into essai_affectation values ('E39f. D_BR, un remplacement sous le minimum : la version remplacée écartée, il reste 100,00 au dixième',
+    '22023 La réserve légale doit recevoir au moins 100,00 € (un vingtième du bénéfice diminué des pertes antérieures, jusqu’au dixième du capital ; C. com., art. L232-10) : la décision lui affecte 99,99 €.', o,
+    o = '22023 La réserve légale doit recevoir au moins 100,00 € (un vingtième du bénéfice diminué des pertes antérieures, jusqu’au dixième du capital ; C. com., art. L232-10) : la décision lui affecte 99,99 €.');
+  o := pg_temp.muter(pg_temp.remplacer('public.affectation_soldes(uuid,date,uuid)',
+      'and (p_exclue is null or e.affectation_id is distinct from p_exclue)', ''),
+    null, format(soldes_a, d_br, quote_literal(v5)));
+  insert into essai_mutations values ('M11 — la décision remplacée plus écartée : E39c change', o, o is distinct from 'ACCEPTÉ 90000:200000');
+  o := pg_temp.muter(pg_temp.remplacer('public.affectation_soldes(uuid,date,uuid)',
+      '(p_exclue is null or e.affectation_id is distinct from p_exclue)', '(e.affectation_id is null)'),
+    null, format(soldes_a, d_br, 'gen_random_uuid()'));
+  insert into essai_mutations values ('M12 — les lignes de toute décision écartées : E39e change', o, o is distinct from 'ACCEPTÉ 100000:3190000');
+  o := pg_temp.muter(pg_temp.remplacer('public.enregistrer_affectation(uuid,integer,integer,jsonb,jsonb,jsonb)',
+      'public.affectation_soldes(p_dossier_id, v_date, v_ancienne.id)', 'public.affectation_soldes(p_dossier_id, v_date, null)'),
+    membre, format(enr, d_br, 2025, '2', sans_paiement, sous_le_minimum_br, null));
+  insert into essai_mutations values ('M13 — le remplacement n''écarte plus sa version : E39f change', o,
+    o is distinct from '22023 La réserve légale doit recevoir au moins 100,00 € (un vingtième du bénéfice diminué des pertes antérieures, jusqu’au dixième du capital ; C. com., art. L232-10) : la décision lui affecte 99,99 €.');
+
   -- ── Le gel : l'exercice 2026, qui contient la décision, validé ──
   insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit,
                                  total_credit, empreinte, declaration)
@@ -347,6 +419,9 @@ begin
   insert into essai_mutations values ('M9 — le gel du retrait tu : E36 change', o, o <> '23514 L’exercice qui contient le 15/05/2026 est validé : une écriture n’y entre plus.');
 end
 $essai$;
+
+-- Une mutation dont le fragment n'est plus dans sa fonction n'a rien muté : elle ne mord pas, quoi que dise son test (AFF4-Q1).
+update essai_mutations set mord = false where observe = 'FRAGMENT ABSENT';
 
 select 'CAS' as tableau, cas as ligne, case when ok then 'juste' else '*** EN FAUTE ***' end as verdict,
        'attendu ' || attendu || ' | observé ' || coalesce(observe, '?') as detail
