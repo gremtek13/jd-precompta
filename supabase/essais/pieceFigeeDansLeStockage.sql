@@ -88,6 +88,14 @@ begin
     return 'mutée';
   end
   $m$;
+  -- La pièce croisée du jeu j3 ne se pose plus sous la contrainte de CFCS-Q1 : elle est retirée le temps de l'essai, que
+  -- l'annulation finale rend (une instruction qui rend une ligne, comme toute partie d'une étape).
+  create function pg_temp.sans_la_contrainte_des_chemins() returns text language plpgsql as $c$
+  begin
+    alter table public.pieces drop constraint if exists pieces_storage_path_dans_son_dossier;
+    return 'retirée';
+  end
+  $c$;
 
   ids := jsonb_build_object('CLIENT', client, 'CHEF', chef, 'CAB', cabinet,
     'DA', 'f19e0000-0000-4000-8000-0000000000a1', 'DB', 'f19e0000-0000-4000-8000-0000000000b1',
@@ -115,8 +123,11 @@ begin
           §§ insert into cabinets (id, nom) values ('{CC}', 'ESSAI INAL1 C')$q$, 'OK', null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A', 'proprietaire', null, null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-inal1@exemple.invalid')$q$, 'OK', null),
+      -- Depuis CFCS-Q1 (la migration chemin_dans_son_dossier), une pièce ne nomme plus le fichier d'un autre dossier : la
+      -- pièce croisée de B ne se pose qu'en retirant la contrainte, le temps de l'essai (annulé avec lui). Le cas garde la
+      -- preuve que fichier_fige ne se borne pas au dossier du chemin (M6), pour une ligne d'avant la contrainte.
       ('j3', 'jeu', 'les pièces et les documents de A (dont une version lisible), et la pièce de B qui désigne un fichier de A', 'proprietaire', null, null,
-        $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, lisible_path, storage_hash) values
+        $q$select pg_temp.sans_la_contrainte_des_chemins() §§ insert into pieces (id, dossier_id, storage_path, nom_fichier, lisible_path, storage_hash) values
             ('{PF}', '{DA}', '{DA}/fige.pdf', 'fige.pdf', '{DA}/fige-lisible.pdf', repeat('1', 64)),
             ('{PB}', '{DA}', '{DA}/bien.pdf', 'bien.pdf', null, repeat('2', 64)),
             ('{PL}', '{DA}', '{DA}/libre.pdf', 'libre.pdf', null, repeat('3', 64)),

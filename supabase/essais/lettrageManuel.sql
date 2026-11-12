@@ -69,34 +69,34 @@ begin
     insert into dossiers (nom, cabinet_id, mode_comptable) values ('ESSAI LETTRAGE', cabinet, 'engagement')
       returning id into dossier_e;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece, tiers)
-      values (dossier_e, 'essai/lettrage/f1.pdf', 'essai-f1.pdf', 'validee', 'achat', 500, '2025-03-01', 'Fournisseur Essai')
+      values (dossier_e, dossier_e::text || '/essai-lettrage-f1.pdf', 'essai-f1.pdf', 'validee', 'achat', 500, '2025-03-01', 'Fournisseur Essai')
       returning id into piece_f1;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece, tiers)
-      values (dossier_e, 'essai/lettrage/a1.pdf', 'essai-a1.pdf', 'validee', 'achat', -500, '2025-03-10', 'Fournisseur Essai')
+      values (dossier_e, dossier_e::text || '/essai-lettrage-a1.pdf', 'essai-a1.pdf', 'validee', 'achat', -500, '2025-03-10', 'Fournisseur Essai')
       returning id into piece_a1;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece, tiers)
-      values (dossier_e, 'essai/lettrage/f2.pdf', 'essai-f2.pdf', 'validee', 'achat', 1000, '2025-04-01', 'Fournisseur Essai')
+      values (dossier_e, dossier_e::text || '/essai-lettrage-f2.pdf', 'essai-f2.pdf', 'validee', 'achat', 1000, '2025-04-01', 'Fournisseur Essai')
       returning id into piece_f2;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece, tiers)
-      values (dossier_e, 'essai/lettrage/a2.pdf', 'essai-a2.pdf', 'validee', 'achat', -200, '2025-04-20', 'Fournisseur Essai')
+      values (dossier_e, dossier_e::text || '/essai-lettrage-a2.pdf', 'essai-a2.pdf', 'validee', 'achat', -200, '2025-04-20', 'Fournisseur Essai')
       returning id into piece_a2;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece, tiers)
-      values (dossier_e, 'essai/lettrage/s1.pdf', 'essai-s1.pdf', 'validee', 'achat', 300, '2025-05-01', 'Fournisseur Essai')
+      values (dossier_e, dossier_e::text || '/essai-lettrage-s1.pdf', 'essai-s1.pdf', 'validee', 'achat', 300, '2025-05-01', 'Fournisseur Essai')
       returning id into piece_s1;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece, tiers)
-      values (dossier_e, 'essai/lettrage/n1.pdf', 'essai-n1.pdf', 'validee', 'achat', 100, '2025-05-10', 'Fournisseur Essai')
+      values (dossier_e, dossier_e::text || '/essai-lettrage-n1.pdf', 'essai-n1.pdf', 'validee', 'achat', 100, '2025-05-10', 'Fournisseur Essai')
       returning id into piece_n1;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece, tiers)
-      values (dossier_e, 'essai/lettrage/v1.pdf', 'essai-v1.pdf', 'validee', 'vente', 100, '2025-06-01', 'Client Essai')
+      values (dossier_e, dossier_e::text || '/essai-lettrage-v1.pdf', 'essai-v1.pdf', 'validee', 'vente', 100, '2025-06-01', 'Client Essai')
       returning id into piece_v1;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece, tiers)
-      values (dossier_e, 'essai/lettrage/p3.pdf', 'essai-p3.pdf', 'validee', 'achat', 300, '2025-06-10', 'Fournisseur Essai')
+      values (dossier_e, dossier_e::text || '/essai-lettrage-p3.pdf', 'essai-p3.pdf', 'validee', 'achat', 300, '2025-06-10', 'Fournisseur Essai')
       returning id into piece_p3;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece)
-      values (dossier_test, 'essai/lettrage/t.pdf', 'essai-t.pdf', 'a_valider', 'achat', 100, '2025-06-10')
+      values (dossier_test, dossier_test::text || '/essai-lettrage-t.pdf', 'essai-t.pdf', 'a_valider', 'achat', 100, '2025-06-10')
       returning id into piece_test;
     insert into pieces (dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece)
-      values (dossier_client, 'essai/lettrage/c.pdf', 'essai-c.pdf', 'a_valider', 'achat', 100, '2025-06-10')
+      values (dossier_client, dossier_client::text || '/essai-lettrage-c.pdf', 'essai-c.pdf', 'a_valider', 'achat', 100, '2025-06-10')
       returning id into piece_client;
     -- F1 (facture de 500) et A1 (son avoir) se soldent ensemble ; F2 (1 000, payée 800) et A2 (avoir de 200) aussi ;
     -- S1 est soldée par son règlement ; N1 n'a rien sur le 401 ; V1 est une vente, au 411 ; P3 est une facture de 300.
