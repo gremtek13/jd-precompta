@@ -117,7 +117,8 @@ et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉE
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; le client « Ventes » relie et transmet, la
     réception reste au cabinet.
   - `proposer-categorie` (sur un clic, rien d'écrit) ; `evaluer-extraction` (harnais de MESURE, facturé dans une fenêtre
-    datée seulement) ; `taux-change-bce`.
+    datée seulement) ; `taux-change-bce`, réservée à un compte RATTACHÉ comme `extract-piece` (son bloc APPELANT
+    recopié, ligne 23.4) → « TAUX-CHANGE-BCE CONTRÔLE SON APPELANT (LIGNE 23.4) ».
   - `banque-connexion` (Enable Banking, bac à sable) et `plateforme-agreee` (la plateforme du CLIENT : rend les
     factures, dépose, relève les statuts) RENDENT, l'écran importe ; le secret d'une connexion ne revient jamais au
     navigateur, ni ne part vers une adresse changée sans être ressaisi.
@@ -380,7 +381,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   « Sécurité du compte » (`/securite`, monté dans les deux espaces), et un compte qui en a une vérifiée donne son code à
   la connexion (`CodeDeConnexion`) ; le second temps, préparé le 07/11/2026 derrière ses drapeaux, s'applique en DERNIER
   (`deux_facteurs_exiges` : l'exigence compte par compte, une policy RESTRICTIVE `deux_facteurs` sur chaque table et sur
-  le stockage, la pré-requête de PostgREST pour les fonctions `security definer`, le bloc DEUX FACTEURS de treize Edge
+  le stockage, la pré-requête de PostgREST pour les fonctions `security definer`, le bloc DEUX FACTEURS de quatorze Edge
   Functions ; SEC2-Q1 à Q3) ; une fois appliquée, toute table neuve porte la policy `deux_facteurs` (le bloc DF de
   `rls.sql`) → « LA DOUBLE AUTHENTIFICATION, PREMIER TEMPS », « LA DOUBLE AUTHENTIFICATION, SECOND TEMPS : EXIGÉE EN
   BASE ».
@@ -544,8 +545,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT, conçu (seul le
   titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération automatique ou au clic (RGPD.md
   §8.8).
-- **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet ; elle referme
-  aussi `taux-change-bce` (23-tauxBce).
+- **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet ;
+  `taux-change-bce` n'en dépend plus depuis qu'elle contrôle son appelant (ligne 23.4, à déployer).
 - **Les pièces jointes écartées** (ligne 22.7) : reste, sur les comptes réels, la décision sur les éléments de l'e-mail
   qui ne sont pas des pièces jointes — au premier client réel, la session les relève à chaque reprise pendant un mois
   (le journal ne vit qu'un jour), une table des comptes sans nom seulement s'il faut plus de recul (S229-Q3) ; « autre
@@ -581,10 +582,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   facture vendues à des particuliers — e7 et e8 se construiront après le MVP, 28.5e-Q1 ; e9 : `fluxEreporting` recopié
   dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING », « UNE
   RÉPONSE DU CABINET : 28.5E-Q8 ».
-- **Défauts connus des Edge Functions** (2, `DEFAUTS_CONNUS`) : `taux-change-bce` sans contrôle d'appelant : la
-  désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ». `receive-email`
-  ne journalise plus que des comptes, ni objet, ni expéditeur, ni adresse, ni code de collecte (le contrat exige zéro
-  recopie) → « RECEIVE-EMAIL NE JOURNALISE PLUS QUE DES COMPTES ».
+- **Défauts connus des Edge Functions** (0, `DEFAUTS_CONNUS` vide depuis le 12/11/2026, le décompte tenu au nombre
+  près) : `taux-change-bce` contrôle son appelant comme `extract-piece` — à déployer, puis à éprouver (ligne 23.4)
+  → « TAUX-CHANGE-BCE CONTRÔLE SON APPELANT (LIGNE 23.4) » ; `receive-email` ne journalise plus que des comptes, ni
+  objet, ni expéditeur, ni adresse, ni code de collecte (le contrat exige zéro recopie) → « RECEIVE-EMAIL NE JOURNALISE
+  PLUS QUE DES COMPTES ».
 - **Une vente entrée deux fois ; la facture validée, source de sa vente** (ligne 28.6 ; EC-Q3 a la sienne, la 28.65) :
   CONÇUE le 18/10/2026, LIVRÉE de VF1 à VF9c entre le 18 et le 28/10/2026, toutes ses questions tranchées à la
   recommandation ; aucun dossier n'a encore basculé ; reste VF9d (le pont dans l'assistant) après le MVP, et EC3-Q9 (la

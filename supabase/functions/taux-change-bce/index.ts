@@ -95,11 +95,138 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
 }
 // ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT APPELANT ──────────────────────────────────────────────────────────────────────────────
+// QUI APPELLE ? Jusqu'au 12/11/2026, rien ne le demandait ici : la passerelle (`verify_jwt = true`) ne refuse qu'un
+// appel sans jeton SIGNÉ du projet, et la clé `anon` historique en est un — servie à tout visiteur avec l'ancien code du
+// site, valable tant que le cabinet n'a pas désactivé les clés historiques. Elle suffisait à faire interroger la BCE et
+// écrire `taux_change_bce` à la clé secrète, sans être personne ; une session d'un compte inscrit seul aussi, tant que
+// l'inscription publique était ouverte (ligne 23.4, le défaut connu `tauxSansControle`, refermé ici).
+// Un seul appelant légitime : une SESSION de l'application — le dépôt d'une pièce, sa relecture, l'import d'un fichier,
+// la réception par la plateforme du client (`src/lib/tauxChange.ts`) —, d'un compte RATTACHÉ : chef ou membre d'une
+// équipe, client d'un dossier (le dépôt de « Mes pièces »), super-administrateur. Le contrôle est celui
+// d'`extract-piece` (« réservée à un compte RATTACHÉ »), posé de même avant de lire le corps, et le code qui suit est le
+// sien à l'octet près : `extractPieceAppelant.test.ts` exécute les deux copies, les compare, et y passe
+// `sessionRattachee` en paramètre pour les jouer sans réseau. La clé secrète en `apikey` y ouvre une porte que rien
+// n'emprunte ici — aucune fonction n'appelle celle-ci de serveur à serveur, et la passerelle exige de toute façon un
+// jeton — : qui la détient détient déjà toute la base. Refuser à tort ne coûte qu'une pièce non convertie, signalée
+// (`tauxBce` rend null) ; accepter à tort ouvre la BCE et une écriture à la clé secrète à qui n'est personne.
+async function appelantAutorise(
+  autorisation: string | null,
+  apikey: string | null,
+  cleSecrete: string,
+  sessionRattachee: (jeton: string) => Promise<boolean>,
+): Promise<boolean> {
+  if (apikey && cleSecrete && egaliteConstante(apikey, cleSecrete)) return true
+  const jeton = /^Bearer\s+(\S+)\s*$/i.exec(autorisation ?? "")?.[1]
+  if (!jeton) return false
+  return await sessionRattachee(jeton)
+}
+
+// Deux chaînes comparées sans s'arrêter à la première différence : le temps de réponse ne dit pas
+// combien de caractères d'une clé devinée sont justes. Leur longueur, elle, n'est pas un secret.
+function egaliteConstante(a: string, b: string): boolean {
+  const x = new TextEncoder().encode(a)
+  const y = new TextEncoder().encode(b)
+  if (x.length !== y.length) return false
+  let difference = 0
+  for (let i = 0; i < x.length; i++) difference |= x[i] ^ y[i]
+  return difference === 0
+}
+
+// UNE SESSION VALIDE NE PROUVE PAS QU'ON EST UN UTILISATEUR DE L'APPLICATION, et c'est mesuré :
+// l'inscription publique est OUVERTE sur ce projet (`disable_signup: false`, relu le 26/09/2026 sur
+// `/auth/v1/settings`), donc n'importe qui obtient une vraie session avec la clé publique et une
+// adresse jetable. Ce qui distingue un compte de l'application est d'être RATTACHÉ : une ligne
+// `cabinet_admins` (chef ou membre d'équipe), `memberships` (client d'un dossier) ou `super_admins`.
+// Un compte inscrit seul ne peut pas se la donner : `cabinet_admins` et `super_admins` n'ont aucune
+// policy d'insertion, et `memberships` exige `admin_du_dossier` (relu dans `pg_policies` le même jour).
+// Chaque entrée est le résultat d'un comptage `head: true`. Un rattachement LU suffit, même si une
+// autre lecture a échoué ; sans rattachement lu, une lecture en échec LÈVE plutôt que de refuser en
+// silence — ne pas savoir n'autorise pas une dépense, mais un refus muet ferait passer une panne pour
+// un compte inconnu.
+function estRattache(comptes: { count: number | null; error: { message: string } | null }[]): boolean {
+  if (comptes.some((c) => !c.error && (c.count ?? 0) > 0)) return true
+  const erreur = comptes.find((c) => c.error)?.error
+  if (erreur) throw new Error(`Rattachement de l'appelant invérifiable : ${erreur.message}`)
+  return false
+}
+// ── FIN APPELANT ────────────────────────────────────────────────────────────────────────────────
+
+// ── DÉBUT DEUX FACTEURS ──────────────────────────────────────────────────────────────────────────────────────────────
+// La double authentification exigée d'un compte (C7, second temps ; migration `deux_facteurs_exiges`, PRÉPARÉE). Une
+// fonction qui lit avec la clé secrète contourne la RLS et la pré-requête de PostgREST : elle refuse donc elle-même, en
+// 403 et avant toute dépense, un jeton `aal1` d'un compte que le cabinet a exigé, et tout jeton émis avant le retrait du
+// second facteur du compte (l'appareil perdu, `aal2` compris). La base le dit, lue au jeton de l'appelant
+// (`deux_facteurs_satisfaits`, que la pré-requête laisse passer) ; une réponse illisible rend 503 (le côté fermé). Le
+// drapeau reste baissé tant que la migration n'est pas en base : la fonction SQL n'existerait pas, et chaque appel
+// tomberait en 503. Bloc identique dans chaque fonction qui agit pour un compte (edgeFunctionsDeuxFacteurs.test.ts).
+const DEUX_FACTEURS_EXIGES_EN_BASE = false
+
+interface AppelantDesDeuxFacteurs {
+  rpc: (fonction: "deux_facteurs_satisfaits") => PromiseLike<{ data: unknown; error: unknown }>
+}
+
+async function refusDesDeuxFacteurs(appelant: AppelantDesDeuxFacteurs): Promise<Response | null> {
+  if (!DEUX_FACTEURS_EXIGES_EN_BASE) return null
+  let satisfaite: unknown = null
+  try {
+    const { data, error } = await appelant.rpc("deux_facteurs_satisfaits")
+    satisfaite = error ? null : data
+  } catch {
+    satisfaite = null
+  }
+  if (satisfaite === true) return null
+  if (satisfaite === false) {
+    return json({
+      error: "Cette session ne satisfait pas la double authentification de ce compte : donner le code de l'application d'authentification, ou se reconnecter si le second facteur a été retiré, avant de recommencer.",
+    }, 403)
+  }
+  return json({ error: "La double authentification de ce compte n'a pas pu être vérifiée : recommencer dans un instant." }, 503)
+}
+// ── FIN DEUX FACTEURS ────────────────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
   }
   try {
+    // AVANT de lire le corps : un appelant refusé ne coûte rien — ni la BCE, ni une écriture à la clé secrète. Voir
+    // `appelantAutorise`.
+    const cleSecrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))
+    const autorise = await appelantAutorise(
+      req.headers.get("Authorization"),
+      req.headers.get("apikey"),
+      cleSecrete,
+      async (jeton) => {
+        const url = Deno.env.get("SUPABASE_URL")!
+        const verificateur = createClient(url, cleSupabase("SUPABASE_PUBLISHABLE_KEYS", Deno.env.get("SUPABASE_PUBLISHABLE_KEYS")))
+        const { data, error } = await verificateur.auth.getUser(jeton)
+        if (error || !data.user) return false
+        // Le rattachement se lit à la clé secrète : la réponse ne doit pas dépendre de ce que le
+        // jeton de l'appelant a le droit de voir, et un compte inscrit seul n'en voit rien.
+        const admin = createClient(url, cleSecrete)
+        const id = data.user.id
+        const [chefs, clients, superAdmins] = await Promise.all([
+          admin.from("cabinet_admins").select("user_id", { count: "exact", head: true }).eq("user_id", id),
+          admin.from("memberships").select("user_id", { count: "exact", head: true }).eq("user_id", id),
+          admin.from("super_admins").select("user_id", { count: "exact", head: true }).eq("user_id", id),
+        ])
+        return estRattache([chefs, clients, superAdmins])
+      },
+    )
+    if (!autorise) {
+      return json({ erreur: "Le cours d'une devise demande d'être connecté à l'application." }, 401)
+    }
+
+    // La double authentification exigée (bloc DEUX FACTEURS) : pour un compte, jamais pour la clé secrète.
+    const jetonDeLAppelant = /^Bearer\s+(\S+)\s*$/i.exec(req.headers.get("Authorization") ?? "")?.[1]
+    if (DEUX_FACTEURS_EXIGES_EN_BASE && jetonDeLAppelant && !egaliteConstante(req.headers.get("apikey") ?? "", cleSecrete)) {
+      const refusDeuxFacteurs = await refusDesDeuxFacteurs(createClient(Deno.env.get("SUPABASE_URL")!,
+        cleSupabase("SUPABASE_PUBLISHABLE_KEYS", Deno.env.get("SUPABASE_PUBLISHABLE_KEYS")),
+        { global: { headers: { Authorization: `Bearer ${jetonDeLAppelant}` } } }))
+      if (refusDeuxFacteurs) return refusDeuxFacteurs
+    }
+
     // Un corps illisible, ou qui n'est pas un objet (`null`), se lit comme un corps vide : la devise manque, et le refus
     // le dit en français plutôt que par le message du moteur.
     const { devise, date } = (await req.json().catch(() => null)) ?? {}
@@ -136,10 +263,7 @@ Deno.serve(async (req: Request) => {
       return json({ erreur: "Réponse de la BCE illisible ou sans cotation", devise, date }, 502)
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS")),
-    )
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, cleSecrete)
     const { error } = await supabase.from("taux_change_bce").upsert(taux, { onConflict: "date,devise" })
     if (error) {
       return json({ erreur: `Enregistrement refusé : ${error.message}` }, 500)

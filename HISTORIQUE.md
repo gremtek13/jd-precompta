@@ -51508,3 +51508,21 @@ donc, INAL5, la suppression du dossier — sur un formulaire vierge serait dispr
 téléchargement. Le manifeste liste les deux fichiers, leur taille et leur SHA-256. **Vérifié** : `tsc -b`, lint sans erreur,
 15 fichiers touchés (583 tests), 300 qui relisent le dépôt (10 948) ; 10 tests neufs ; trois mutations mordent (la piste
 refusée qui ne refuse plus, le PDF rempli des cases calculées au lieu du formulaire figé, le motif tu au manifeste).
+
+### 12/11/2026 — TAUX-CHANGE-BCE CONTRÔLE SON APPELANT (LIGNE 23.4)
+
+(Agent architecte, sans migration ni déploiement ; à déployer par la session.) `taux-change-bce` ne contrôlait aucun appelant :
+sa passerelle (`verify_jwt = true`) admet tout jeton signé du projet, dont la clé `anon` historique encore active, et la
+fonction interrogeait alors la BCE puis écrivait `taux_change_bce` à la clé secrète — le défaut connu `tauxSansControle` (2),
+qu'on attendait de la désactivation des clés historiques (23-tauxBce). Elle se ferme elle-même désormais : le bloc APPELANT
+d'`extract-piece` recopié (son récit propre, puis son code à l'octet près), avant de lire le corps — session vérifiée par
+`auth.getUser`, puis un compte RATTACHÉ (`cabinet_admins`, `memberships`, `super_admins`, lus à la clé secrète), 401 « Le cours
+d'une devise demande d'être connecté à l'application. », un rattachement illisible en 500 ; le client d'un dossier, qui
+l'appelle en déposant une pièce en devise (`tauxBce`), passe par `memberships`. Le bloc DEUX FACTEURS s'y pose (quatorze
+fonctions). `verify_jwt` reste à `true`. Écartés : un contrôle propre à la fonction (une seconde règle à tenir) et la clé
+secrète retirée du bloc (une copie qui diverge ; la porte ne sert qu'à qui détient déjà la base). `DEFAUTS_CONNUS` est vide ;
+le contrat ajoute la clé anon historique (un jeton signé sans compte, que la passerelle admet), la clé publishable en porteur,
+le rattachement illisible ou partiel et les six comptes rattachés ; la source d'avant échoue ces cinq refus (200, la BCE et
+l'écriture), la nouvelle les tient ; cinq défauts plantés (contrôle court-circuité, rattachement oublié, corps lu avant, table
+des clients oubliée, rattachement illisible pris pour un refus) ; `extractPieceAppelant.test.ts` joue ses gardes sur les deux
+copies et les compare.

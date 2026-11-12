@@ -804,6 +804,43 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     remplacements: [['  if (req.method === "OPTIONS") {\n    return new Response("ok", { headers: corsHeaders })\n  }\n', '']],
     scenario: 'le préflight du navigateur passe, sans rien demander à personne',
   },
+  // TAUX-CHANGE-BCE CONTRÔLE SON APPELANT (ligne 23.4, 12/11/2026) : une régression de chaque sorte — le contrôle
+  // court-circuité (la clé anon historique repasse la passerelle et la fonction), le rattachement oublié (toute session
+  // suffit), le corps lu avant le contrôle, la table des clients oubliée (le client d'un dossier perd sa conversion), un
+  // rattachement illisible pris pour un refus.
+  {
+    slug: 'taux-change-bce', quoi: 'le contrôle de l’appelant court-circuité',
+    remplacements: [['    const autorise = await appelantAutorise(', '    const autorise = true || await appelantAutorise(']],
+    scenario: 'la clé anon historique, que la passerelle admet : 401, corps non lu, ni la BCE ni une écriture',
+  },
+  {
+    slug: 'taux-change-bce', quoi: 'le rattachement oublié : toute session admise',
+    remplacements: [['        return estRattache([chefs, clients, superAdmins])\n', '        return [chefs, clients, superAdmins].length > 0\n']],
+    scenario: 'un compte inscrit seul : refusé',
+  },
+  {
+    slug: 'taux-change-bce', quoi: 'le corps lu avant le contrôle',
+    remplacements: [
+      ['    const { devise, date } = (await req.json().catch(() => null)) ?? {}\n', ''],
+      ['    const cleSecrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))\n',
+        '    const { devise, date } = (await req.json().catch(() => null)) ?? {}\n    const cleSecrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))\n'],
+    ],
+    scenario: 'sans session, hors de la passerelle : la fonction refuse elle-même',
+  },
+  {
+    slug: 'taux-change-bce', quoi: 'la table des clients oubliée',
+    remplacements: [
+      ['          admin.from("memberships").select("user_id", { count: "exact", head: true }).eq("user_id", id),\n', ''],
+      ['        const [chefs, clients, superAdmins] = await Promise.all([', '        const [chefs, superAdmins] = await Promise.all(['],
+      ['        return estRattache([chefs, clients, superAdmins])', '        return estRattache([chefs, superAdmins])'],
+    ],
+    scenario: 'client : le cours de la BCE, enregistré puis rendu',
+  },
+  {
+    slug: 'taux-change-bce', quoi: 'un rattachement illisible pris pour un refus',
+    remplacements: [["  if (erreur) throw new Error(`Rattachement de l'appelant invérifiable : ${erreur.message}`)\n", '']],
+    scenario: 'un rattachement illisible : 500 qui le dit, jamais un passage — corps non lu',
+  },
   {
     slug: 'plateforme-agreee', quoi: 'le secret de la connexion rendu à l’écran',
     remplacements: [['    client_id: c.client_id,\n    organisation_id: c.organisation_id,', '    client_id: c.client_secret,\n    organisation_id: c.organisation_id,']],

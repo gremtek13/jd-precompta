@@ -83,18 +83,14 @@ export interface ContratFonction {
 
 // ── LES DÉFAUTS CONNUS : CONSTATÉS, NOMMÉS, COMPTÉS ──────────────────────────────────────────────────────────────────
 
-export const DEFAUTS_CONNUS = {
-  // `objetAuJournal` n'y est plus (23-journalEmail, décision du cabinet du 18/10/2026) : receive-email ne journalise que des
-  // comptes — ni l'objet, ni l'expéditeur, ni une adresse ni un code de collecte ; le contrat l'exige, au zéro.
-  tauxSansControle: {
-    nombre: 2,
-    raison: 'taux-change-bce ne contrôle aucun appelant : la passerelle (verify_jwt) seule refuse l’appel sans session, et ' +
-      'un compte inscrit seul est admis — il ne fait qu’écrire un cours de la BCE. L’inscription publique, fermée par le ' +
-      'cabinet le 10/10/2026, referme le second en production ; le code, lui, l’admet encore.',
-  },
-} as const
+// AUCUN DÉFAUT CONNU DEPUIS LE 12/11/2026. `objetAuJournal` n'y est plus (23-journalEmail, décision du cabinet du
+// 18/10/2026) : receive-email ne journalise que des comptes — ni l'objet, ni l'expéditeur, ni une adresse ni un code de
+// collecte ; le contrat l'exige, au zéro. `tauxSansControle` non plus (ligne 23.4) : taux-change-bce contrôle son appelant
+// comme extract-piece, un compte RATTACHÉ, avant de lire le corps ; son contrat exige les refus, sans défaut. Le mécanisme
+// reste : un défaut constaté ajoute son nom à `CleDefaut` et son entrée ici, et le décompte se tient au nombre près.
+export type CleDefaut = never
 
-export type CleDefaut = keyof typeof DEFAUTS_CONNUS
+export const DEFAUTS_CONNUS: Readonly<Record<string, { nombre: number; raison: string }>> = {}
 
 // ── LE JUGE ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -5803,10 +5799,20 @@ function bce(m: Monde, reponse: () => Response = () => new Response(
   m.hotes[HOTE_BCE] = () => reponse()
 }
 
+// La clé `anon` HISTORIQUE du projet : un JWT signé du projet, que la passerelle (`verify_jwt = true`) admet tant que le
+// cabinet n'a pas désactivé les clés historiques, et qu'un ancien code du site servait à tout visiteur — mais ce n'est la
+// session de personne : le service d'authentification n'y trouve aucun compte (en production, « missing sub claim »). Le
+// monde la tient pour un jeton signé sans compte. C'était le trou de cette fonction (ligne 23.4).
+const JETON_ANON_HISTORIQUE = 'jeton-anon-historique-du-projet'
+function anonHistorique(m: Monde) {
+  m.sessions[JETON_ANON_HISTORIQUE] = 'role-anon-sans-compte'
+}
+const COURS_ENREGISTRE = [`réseau GET ${HOTE_BCE}/service/data/EXR/D.USD.EUR.SP00.A`, 'écriture upsert taux_change_bce']
+
 const TAUX_CHANGE_BCE: ContratFonction = {
   slug: 'taux-change-bce',
   navigateur: true,
-  porte: 'la passerelle (verify_jwt) seule : un jeton signé du projet ; la fonction n’écrit que ce que publie la BCE',
+  porte: 'un compte RATTACHÉ, comme extract-piece (session vérifiée, puis cabinet_admins, memberships ou super_admins à la clé secrète), contrôlé avant de lire le corps, derrière la passerelle (verify_jwt) ; la fonction n’écrit que ce que publie la BCE',
   scenarios: [
     preflight(),
     {
@@ -5820,23 +5826,56 @@ const TAUX_CHANGE_BCE: ContratFonction = {
       preparer: (m) => bce(m),
       requete: (s) => requeteDe(s, { corps: COURS }),
       passerelle: false,
-      attendu: { statut: 401, refusEnFrancais: true, aucuneDepense: true },
-      defautConnu: 'tauxSansControle',
+      attendu: { statut: 401, refusEnFrancais: true, aucuneDepense: true, corpsNonLu: true, verifier: sansSessionDemandee },
+    },
+    {
+      nom: 'la clé anon historique, que la passerelle admet : 401, corps non lu, ni la BCE ni une écriture',
+      preparer: (m) => { bce(m); anonHistorique(m) },
+      requete: (s) => requeteDe(s, { corps: COURS, apikey: JETON_ANON_HISTORIQUE, entetes: { Authorization: `Bearer ${JETON_ANON_HISTORIQUE}` } }),
+      attendu: {
+        statut: 401, refusEnFrancais: true, aucuneDepense: true, corpsNonLu: true,
+        // C'est le service d'authentification qui dit non, pas l'absence d'en-tête : la question lui a été posée.
+        verifier: (_r, m) => (m.journal.some((e) => e.genre === 'session') ? [] : ['le service d’authentification n’a pas été interrogé']),
+      },
+    },
+    {
+      nom: 'la clé publishable en porteur n’est pas une session, hors de la passerelle : 401, corps non lu',
+      preparer: (m) => bce(m),
+      requete: (s) => requeteDe(s, { corps: COURS, entetes: { Authorization: `Bearer ${CLE_PUBLIABLE}` } }),
+      passerelle: false,
+      attendu: { statut: 401, refusEnFrancais: true, aucuneDepense: true, corpsNonLu: true },
     },
     {
       nom: 'un compte inscrit seul : refusé',
       preparer: (m) => bce(m),
       requete: (s) => requeteDe(s, { personne: 'inscrit', corps: COURS }),
-      attendu: { statut: 401, refusEnFrancais: true, aucuneDepense: true },
-      defautConnu: 'tauxSansControle',
+      attendu: { statut: 401, refusEnFrancais: true, aucuneDepense: true, corpsNonLu: true },
     },
-    ...(['chef', 'client'] as const).map((personne): Scenario => ({
+    {
+      nom: 'un rattachement illisible : 500 qui le dit, jamais un passage — corps non lu',
+      preparer: (m) => { bce(m); m.pannes.push({ table: 'cabinet_admins', operation: 'select', erreur: { message: 'délai dépassé' } }) },
+      requete: (s) => requeteDe(s, { personne: 'inscrit', corps: COURS }),
+      attendu: {
+        statut: 500, refusEnFrancais: true, aucuneDepense: true, corpsNonLu: true,
+        verifier: (r) => (/invérifiable/.test(String(corpsDe(r).erreur)) ? [] : [`refus muet : ${r.texte.slice(0, 120)}`]),
+      },
+    },
+    {
+      nom: 'un rattachement lu suffit, même quand une autre lecture tombe',
+      preparer: (m) => { bce(m); m.pannes.push({ table: 'super_admins', operation: 'select', erreur: { message: 'délai dépassé' } }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: COURS }),
+      attendu: { statut: 200, depenses: COURS_ENREGISTRE },
+    },
+    // Chaque compte RATTACHÉ passe, le client d'un dossier compris : il appelle cette fonction en déposant une pièce en
+    // devise dans « Mes pièces » (`depot.ts`, `tauxBce`). Le garde symétrique — sans lui, un contrôle qui refuse tout
+    // passerait, et chaque pièce en devise partirait sans conversion.
+    ...RATTACHES.map((personne): Scenario => ({
       nom: `${personne} : le cours de la BCE, enregistré puis rendu`,
       preparer: (m) => bce(m),
       requete: (s) => requeteDe(s, { personne, corps: COURS }),
       attendu: {
         statut: 200,
-        depenses: [`réseau GET ${HOTE_BCE}/service/data/EXR/D.USD.EUR.SP00.A`, 'écriture upsert taux_change_bce'],
+        depenses: COURS_ENREGISTRE,
         verifier: (r) => (corpsDe(r).taux === 1.1502 && corpsDe(r).date_du_taux === '2026-10-05' ? [] : [r.texte]),
       },
     })),
