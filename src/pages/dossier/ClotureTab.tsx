@@ -82,6 +82,8 @@ import type { Annexe2035ESaisie, LectureDesSaisies2035E } from '../../lib/saisie
 import { lireLesSaisies2035E } from '../../lib/saisies2035ELecture'
 import Saisies2035ECard from './Saisies2035ECard'
 import SaisiesDuCabinet2035Card from './SaisiesDuCabinet2035Card'
+import AffectationDuResultatCard from './AffectationDuResultatCard'
+import { AFFECTATION_EXPORTEE } from '../../lib/affectationDuResultat'
 import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
 import { operationsDeCaisseDuDossier, operationsPourLesControles } from '../../lib/controlesDeLaCaisse'
 import {
@@ -1118,6 +1120,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                 dossierId={dossierId} annee={annee} {...validationDe(annee)} plan={modele.plan} estChef={estChef} onValide={apresValidation} onNavigate={onNavigate}
                 onChoisirExercice={setAnnee}
               />
+              {/* L'approbation des comptes et l'affectation du résultat de l'exercice (ligne 45, AFF4) : une société en engagement,
+                  derrière son drapeau — la carte lit ses propres tables, jamais avant la migration. */}
+              {AFFECTATION_EXPORTEE && <AffectationDuResultatCard key={`${dossierId}:${annee}`} dossierId={dossierId} annee={annee} modele={modele} />}
             </Fragment>
           ))
         )}

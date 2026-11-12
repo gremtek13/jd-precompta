@@ -203,6 +203,15 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       '(`lib/changementDeRibLecture.ts`). Il attend la requête et lit son erreur : un refus, une valeur illisible ou une ' +
       'requête qui lève rendent une lecture ratée que l’avis DIRA, jamais « aucun changement »',
   },
+  lireLesComptesDeLAffectation: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `plan_du_dossier` LIT les huit comptes que l’affectation du résultat écrit (ligne 45, AFF4), '
+      + 'dont les six rôles que le catalogue de l’application ne porte pas encore, pour la carte de l’onglet Clôture '
+      + '(`lib/affectationLecture.ts`, drapeau `AFFECTATION_EXPORTEE` baissé). Il attend la requête et lit son erreur : un refus, '
+      + 'une réponse illisible, un rôle absent ou une requête qui lève rendent un MOTIF, la lecture se dit incomplète et la carte '
+      + 'n’offre aucun geste — jamais un compte par défaut supposé',
+  },
   lireLaReponseDesDossiersAuRib: {
     nombre: 1,
     raison:
