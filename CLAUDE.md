@@ -686,8 +686,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     `documents-cabinet`, `DOCUMENTS_ET_DEMANDES_PREVUS` baissé ; B2-Q1 à Q4), ses écrans le même jour derrière le même
     drapeau (B3a : deux sections de l'onglet Documents administratifs, « Mes documents » et « Mes demandes » ; B3b, la
     relance par e-mail, préparée derrière ses drapeaux (sa migration à coller après B1 et B2)) → « B2 : LES DOCUMENTS ET LES DEMANDES DU CABINET, EN BASE », « B3A : LES DOCUMENTS ET LES
-    DEMANDES, À L'ÉCRAN » ; B4 préparée le 11/11/2026 (`achats_du_client`, `ACHATS_DU_CLIENT_PREVUS` baissé ; la réception
-    par « Achats » attend B4-Q1 à Q3), ses écrans le même jour derrière le même drapeau (B5 : « Mes achats », la section de
+    DEMANDES, À L'ÉCRAN » ; B4 préparée le 11/11/2026 (`achats_du_client`, `ACHATS_DU_CLIENT_PREVUS` baissé ; la réception par « Achats » faite le 12/11/2026 dans `plateforme-agreee`, la pièce écrite par le serveur,
+    à déployer après B1 → « B4R : LA RÉCEPTION PAR L'ACCÈS « ACHATS » »), ses écrans le même jour derrière le même drapeau (B5 : « Mes achats », la section de
     la fiche d'une pièce d'achat) → « B5 : LES ACHATS DU CLIENT, À L'ÉCRAN » ; B7 préparée le 11/11/2026 (`notes_de_frais`,
     le rôle `personnel` au 421000, `NOTES_DE_FRAIS_PREVUES` baissé ; B7-Q1 à Q4), ses écrans (B8) derrière le même drapeau
     → « B7 : LES NOTES DE FRAIS, EN BASE » ;

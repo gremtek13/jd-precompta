@@ -223,6 +223,8 @@ export interface Monde {
   sessions: Record<string, string>
   /** Le réseau, hôte par hôte. Un hôte absent lève : le réseau du harnais est FERMÉ. */
   hotes: Record<string, Traitant>
+  /** La base de demain (migration B1, `trois_cases_de_l_acces`) : `droits_sur_le_dossier` rend la clé « achats » (étape B4r). */
+  troisCasesEnBase?: boolean
   textract: ((commande: string, entree: Record<string, unknown>) => unknown) | null
   s3: ((commande: string, entree: Record<string, unknown>) => unknown) | null
   // `options` : ce que la fonction passe en second argument de `messages.create` — le signal qui borne l'appel
@@ -407,8 +409,9 @@ export const CASES_DES_DROITS: Readonly<Record<string, string | true>> =
 
 /** `client_du_dossier(dossier, droit)` : un accès de l'appelant à CE dossier, qui porte ce droit. */
 export function clientDuDossier(monde: Monde, utilisateur: string | null, dossierId: unknown, droit: unknown): boolean {
-  if (!utilisateur || typeof droit !== 'string' || !Object.hasOwn(CASES_DES_DROITS, droit)) return false
-  const caseLue = CASES_DES_DROITS[droit]
+  const cases = monde.troisCasesEnBase ? casesDesDroitsSelon(CAISSE_DU_CLIENT_EXPORTEE, SITUATIONS_PUBLIEES_EXPORTEE, true) : CASES_DES_DROITS
+  if (!utilisateur || typeof droit !== 'string' || !Object.hasOwn(cases, droit)) return false
+  const caseLue = cases[droit]
   return (monde.base.memberships ?? []).some((m) =>
     m.dossier_id === dossierId && m.user_id === utilisateur && (caseLue === true || m[caseLue] === true))
 }
@@ -439,7 +442,9 @@ export const DROITS_DU_DOSSIER: TermesDesDroits = droitsDuDossierSelon(
 
 /** `droits_sur_le_dossier(dossier)` : l'objet que la fonction SQL rend, une case par clé. */
 export function droitsSurLeDossier(monde: Monde, utilisateur: string | null, dossierId: unknown): Record<string, boolean> {
-  return Object.fromEntries(Object.entries(DROITS_DU_DOSSIER).map(([cle, termes]) => [cle, termes.some((terme) =>
+  const termesDesDroits = monde.troisCasesEnBase
+    ? droitsDuDossierSelon(CAISSE_DU_CLIENT_EXPORTEE, SITUATIONS_PUBLIEES_EXPORTEE, true) : DROITS_DU_DOSSIER
+  return Object.fromEntries(Object.entries(termesDesDroits).map(([cle, termes]) => [cle, termes.some((terme) =>
     terme === 'admin_du_dossier'
       ? adminDuDossier(monde, utilisateur, dossierId)
       : clientDuDossier(monde, utilisateur, dossierId, terme.slice('client_du_dossier:'.length)))]))

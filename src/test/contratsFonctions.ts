@@ -5591,6 +5591,172 @@ const luPar = (personne: Personne) => (_r: Resultat, m: Monde) => {
     : [`statuts lus : ${JSON.stringify(lus.map((l) => ({ code: l.code, lu_par: l.lu_par })))}`]
 }
 
+// LA RÉCEPTION PAR LE CLIENT « ACHATS » (étape B4r ; B4-Q1 à B4-Q3) : deux actions hors de la table, qui exigent la case
+// « Achats » de la migration B1. Sur la base d'aujourd'hui (`droits_sur_le_dossier` sans la clé), personne n'y passe ; sur
+// celle de demain (`troisCasesEnBase`), l'accès « Achats » liste les achats seuls, sans toucher au point de reprise du cabinet,
+// et la fonction écrit elle-même la pièce d'une facture qui désigne le dossier comme acheteur.
+const SIRET_DES_ACHATS = '12345678900012'
+const xmlDUnAchat = (siren: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100">
+<rsm:ExchangedDocument><ram:ID>FA-1</ram:ID><ram:TypeCode>380</ram:TypeCode></rsm:ExchangedDocument>
+<rsm:SupplyChainTradeTransaction><ram:ApplicableHeaderTradeAgreement>
+<ram:SellerTradeParty><ram:Name>Fournisseur fictif</ram:Name></ram:SellerTradeParty>
+<ram:BuyerTradeParty><ram:Name>Acheteur fictif</ram:Name><ram:SpecifiedLegalOrganization><ram:ID schemeID="0002">${siren}</ram:ID></ram:SpecifiedLegalOrganization></ram:BuyerTradeParty>
+</ram:ApplicableHeaderTradeAgreement></rsm:SupplyChainTradeTransaction></rsm:CrossIndustryInvoice>`
+const FLUX_D_ACHAT = {
+  flowId: 'achat-1', flowType: 'SupplierInvoice', flowDirection: 'In', flowSyntax: 'CII', name: 'facture-fournisseur.xml',
+  acknowledgement: { status: 'Ok' }, submittedAt: '2026-10-20T08:00:00.000Z', updatedAt: '2026-10-20T08:01:00.000Z',
+}
+const FLUX_DE_VENTE = { ...FLUX_D_ACHAT, flowId: 'vente-1', flowType: 'CustomerInvoice', flowDirection: 'Out', name: 'facture-client.xml' }
+
+/**
+ * La plateforme du client, qui rend un achat — et une vente malgré la demande, que la fonction doit écarter —, le point de
+ * reprise du cabinet posé, le SIRET du dossier ; `recherches` reçoit le corps de chaque recherche.
+ */
+function plateformeDesAchats(options: { siren?: string; recherches?: unknown[] } = {}) {
+  return (m: Monde) => {
+    connexionPlateforme(m)
+    lignes(m, 'connexions_plateformes')[0].recherche_depuis = '2026-10-15T00:00:00.000Z'
+    const dossier = lignes(m, 'dossiers').find((d) => d.id === D)
+    if (!dossier) throw new Error('le monde de référence a perdu son dossier')
+    dossier.siret = SIRET_DES_ACHATS
+    m.defauts.pieces = () => ({ id: identifiantGenere() })
+    const plateforme = m.hotes[HOTE_PLATEFORME]
+    m.hotes[HOTE_PLATEFORME] = async (requete) => {
+      const adresse = new URL(requete.url)
+      const porteur = requete.headers.get('Authorization') === 'Bearer jeton-plateforme'
+      if (porteur && adresse.pathname === '/afnor/v1/flows/search') {
+        options.recherches?.push(await requete.json())
+        return Response.json({ results: [FLUX_D_ACHAT, FLUX_DE_VENTE] })
+      }
+      if (porteur && adresse.pathname === '/afnor/v1/flows/achat-1') {
+        const document = adresse.searchParams.get('docType')
+        if (document === 'Metadata') return Response.json(FLUX_D_ACHAT)
+        if (document === 'Original') return new Response(xmlDUnAchat(options.siren ?? SIRET_DES_ACHATS.slice(0, 9)))
+        if (document === 'ReadableView') return new Response('%PDF-1.4\n% facture fictive\n%%EOF\n')
+      }
+      return plateforme(requete)
+    }
+  }
+}
+
+/** L'accès du client, sa case « Achats » cochée ou non, sur la base d'aujourd'hui ou sur celle de demain (B1). */
+function accesAchats(demain: boolean, achats = true, ventes = false): (m: Monde) => void {
+  return (m) => {
+    accesDuClient({ ventes })(m)
+    const acces = lignes(m, 'memberships').find((a) => a.user_id === PERSONNES.client.id)
+    if (!acces) throw new Error('le monde de référence a perdu l’accès du client')
+    acces.droit_achats = achats
+    m.troisCasesEnBase = demain
+  }
+}
+
+const LISTE_DES_ACHATS = { action: 'lister_achats', dossierId: D }
+const RECEPTION_D_UN_ACHAT = { action: 'recevoir_achat', dossierId: D, version: VERSION_PLATEFORME, flowId: 'achat-1' }
+const TELECHARGEMENTS_D_UN_ACHAT = [
+  `réseau POST ${HOTE_PLATEFORME}/oauth/token`, `réseau GET ${HOTE_PLATEFORME}/afnor/v1/flows/achat-1`,
+  `réseau GET ${HOTE_PLATEFORME}/afnor/v1/flows/achat-1`,
+]
+
+const SCENARIOS_RECEPTION_PAR_LE_CLIENT: Scenario[] = [
+  ...[LISTE_DES_ACHATS, RECEPTION_D_UN_ACHAT].flatMap((corps): Scenario[] => [
+    {
+      nom: `${corps.action} — client « Achats » sur la base d’aujourd’hui (sans la case) : refusé (404) avant toute lecture, tout secret et toute dépense`,
+      preparer: (m) => { plateformeDesAchats()(m); accesAchats(false)(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps }),
+      attendu: { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAcces },
+    },
+    {
+      nom: `${corps.action} — le chef sur la base d’aujourd’hui : refusé (404), sa réception reste « lister »`,
+      preparer: plateformeDesAchats(),
+      requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+      attendu: { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAcces },
+    },
+    {
+      nom: `${corps.action} — client sans la case « Achats », sur la base de demain : refusé (404) avant toute lecture, tout secret et toute dépense`,
+      preparer: (m) => { plateformeDesAchats()(m); accesAchats(true, false)(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps }),
+      attendu: { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAcces },
+    },
+    {
+      nom: `${corps.action} — client « Ventes » sans « Achats », sur la base de demain : refusé (404) avant toute lecture, tout secret et toute dépense`,
+      preparer: (m) => { plateformeDesAchats()(m); accesAchats(true, false, true)(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps }),
+      attendu: { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAcces },
+    },
+  ]),
+  (() => {
+    const recherches: unknown[] = []
+    return {
+      nom: 'lister_achats — client « Achats » sur la base de demain : les achats seuls, le point de reprise du cabinet ni lu ni écrit',
+      preparer: (m: Monde) => { recherches.length = 0; plateformeDesAchats({ recherches })(m); accesAchats(true)(m) },
+      requete: (s: string) => requeteDe(s, { personne: 'client', corps: LISTE_DES_ACHATS }),
+      attendu: {
+        statut: 200,
+        depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`, `réseau POST ${HOTE_PLATEFORME}/afnor/v1/flows/search`],
+        verifier: (r: Resultat, m: Monde) => {
+          const c = corpsDe(r)
+          const fautes: string[] = []
+          const flux = (c.flux as { id: string; deja_recue: boolean }[] | undefined) ?? []
+          if (JSON.stringify(flux.map((f) => [f.id, f.deja_recue])) !== '[["achat-1",false]]') fautes.push(`flux rendus : ${r.texte.slice(0, 200)}`)
+          if (c.depuis !== null || 'autre_flux' in ((c.ecartes as object | undefined) ?? {})) fautes.push(`départ ou écarts : ${r.texte.slice(0, 200)}`)
+          const where = (recherches[0] as { where?: Record<string, unknown> } | undefined)?.where
+          if (JSON.stringify(where) !== '{"flowType":["SupplierInvoice"]}') fautes.push(`recherche demandée : ${JSON.stringify(recherches)}`)
+          if (lignes(m, 'connexions_plateformes')[0].recherche_depuis !== '2026-10-15T00:00:00.000Z') fautes.push('le point de reprise a bougé')
+          return fautes
+        },
+      },
+    }
+  })(),
+  {
+    nom: 'recevoir_achat — client « Achats » sur la base de demain : la fonction écrit la pièce, à valider, sans montants, à son compte',
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: RECEPTION_D_UN_ACHAT }),
+    attendu: {
+      statut: 200,
+      depenses: [
+        ...TELECHARGEMENTS_D_UN_ACHAT, `réseau GET ${HOTE_PLATEFORME}/afnor/v1/flows/achat-1`,
+        'stockage upload pieces', 'stockage upload pieces', 'écriture insert pieces',
+      ],
+      verifier: (r, m) => {
+        const pieces = lignes(m, 'pieces')
+        const p = pieces[0] ?? {}
+        const attendu = {
+          dossier_id: D, uploaded_by: PERSONNES.client.id, source: 'plateforme', flux_hote: HOTE_PLATEFORME, flux_id: 'achat-1',
+          type_piece: 'achat', statut: 'a_valider', confiance: 'basse', nom_fichier: 'facture-fournisseur.xml',
+        }
+        const fautes = Object.entries(attendu).filter(([k, v]) => p[k] !== v).map(([k]) => `pièce : ${k} = ${JSON.stringify(p[k])}`)
+        if (pieces.length !== 1 || p.categorie_id != null || p.montant_ttc != null || typeof p.storage_hash !== 'string') fautes.push(`pièces : ${JSON.stringify(pieces)}`)
+        if (!String(p.storage_path).startsWith(`${D}/`) || !String(p.lisible_path).startsWith(`${D}/`)) fautes.push('chemins hors du dossier')
+        const c = corpsDe(r)
+        if (c.issue !== 'recue' || c.piece_id !== p.id || c.sans_lisible !== false) fautes.push(r.texte.slice(0, 200))
+        return fautes
+      },
+    },
+  },
+  {
+    nom: 'recevoir_achat — une facture adressée à une autre entreprise : rien d’écrit, et la réponse ne la nomme pas',
+    preparer: (m) => { plateformeDesAchats({ siren: '987654321' })(m); accesAchats(true)(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: RECEPTION_D_UN_ACHAT }),
+    attendu: {
+      statut: 200,
+      depenses: TELECHARGEMENTS_D_UN_ACHAT,
+      verifier: (r, m) => (corpsDe(r).issue === 'autre_entreprise' && !r.texte.includes('987654321') && lignes(m, 'pieces').length === 0
+        ? [] : [r.texte.slice(0, 200)]),
+    },
+  },
+  {
+    nom: 'recevoir_achat — une facture déjà reçue : reconnue à son flux, sans aucun appel à la plateforme',
+    preparer: (m) => {
+      plateformeDesAchats()(m)
+      accesAchats(true)(m)
+      m.base.pieces = [{ id: identifiantGenere(), dossier_id: D, flux_hote: HOTE_PLATEFORME, flux_id: 'achat-1', storage_hash: null }]
+    },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: RECEPTION_D_UN_ACHAT }),
+    attendu: { statut: 200, aucuneDepense: true, verifier: (r) => (corpsDe(r).issue === 'deja_recue' ? [] : [r.texte.slice(0, 200)]) },
+  },
+]
+
 const PLATEFORME_AGREEE: ContratFonction = {
   slug: 'plateforme-agreee',
   navigateur: true,
@@ -5740,6 +5906,7 @@ const PLATEFORME_AGREEE: ContratFonction = {
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
     ...corpsMalFormes('chef', ['action', 'dossierId']),
+    ...SCENARIOS_RECEPTION_PAR_LE_CLIENT,
   ],
 }
 

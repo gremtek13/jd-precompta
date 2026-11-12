@@ -22,6 +22,7 @@ import { xmlDuFacturX } from './factureX'
 import { numeroAdmis } from './factureCii'
 import type { CodeStatutRecu, EcartStatutRecu } from './cdarRecu'
 import type { Piece } from './types'
+import type { AppelsDeLaReleve, ListeDesAchats, ReponseReception } from './receptionParLeClient'
 import { preparerContenu } from './bornesStockage'
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT, CÔTÉ APPLICATION (ligne 28.5 de la feuille de route,
@@ -226,6 +227,17 @@ export interface ReleveStatuts {
 export const releverStatutsDesFactures = (dossierId: string, depuisLeDebut: boolean) =>
   appelerPlateforme<ReleveStatuts>(
     { action: 'relever', dossierId, depuisLeDebut }, 'Les statuts de la plateforme n’ont pas pu être lus.')
+
+/**
+ * Les deux appels de « Relever ma plateforme » (étape B4r, lib/receptionParLeClient.ts) : la liste des achats seuls, puis la
+ * réception d'une facture, que le serveur écrit lui-même. Aucun n'écrit depuis le navigateur.
+ */
+export const appelsDeLaReleveDuClient = (dossierId: string): AppelsDeLaReleve => ({
+  lister: (depuis) => appelerPlateforme<ListeDesAchats>({ action: 'lister_achats', dossierId, depuis },
+    'Tes factures d’achat n’ont pas pu être listées.'),
+  recevoir: (version, flowId) => appelerPlateforme<ReponseReception>({ action: 'recevoir_achat', dossierId, version, flowId },
+    'Cette facture n’a pas pu être reçue.'),
+})
 
 export const repartirDuDebut = (dossierId: string, version: string) =>
   appelerPlateforme<{ recherche_depuis: null }>(

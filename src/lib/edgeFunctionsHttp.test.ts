@@ -867,6 +867,28 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     remplacements: [['  lister: "cabinet",', '  lister: "ventes",']],
     scenario: 'lister — client « Ventes » : refusé (404) avant toute lecture, tout secret et toute dépense',
   },
+  // LA RÉCEPTION PAR LE CLIENT « ACHATS » (étape B4r) : la case non exigée, les ventes demandées, le point de reprise du
+  // cabinet lu, l'acheteur non vérifié.
+  {
+    slug: 'plateforme-agreee', quoi: 'la case « Achats » non exigée',
+    remplacements: [['  if (!achats.achats) return json({ error: "Dossier introuvable." }, 404)\n', '']],
+    scenario: 'lister_achats — client « Achats » sur la base d’aujourd’hui (sans la case) : refusé (404) avant toute lecture, tout secret et toute dépense',
+  },
+  {
+    slug: 'plateforme-agreee', quoi: 'les ventes demandées à la plateforme pour le client',
+    remplacements: [['const TYPES_ACHATS = ["SupplierInvoice"]', 'const TYPES_ACHATS = ["SupplierInvoice", "CustomerInvoice"]']],
+    scenario: 'lister_achats — client « Achats » sur la base de demain : les achats seuls, le point de reprise du cabinet ni lu ni écrit',
+  },
+  {
+    slug: 'plateforme-agreee', quoi: 'le point de reprise du cabinet lu par la relève du client',
+    remplacements: [['  if (action === "lister_achats") return await listerLesAchats(c, connexion, hote, depuis)', '  if (action === "lister_achats") return await listerLesAchats(c, connexion, hote, connexion.recherche_depuis)']],
+    scenario: 'lister_achats — client « Achats » sur la base de demain : les achats seuls, le point de reprise du cabinet ni lu ni écrit',
+  },
+  {
+    slug: 'plateforme-agreee', quoi: 'l’acheteur de la facture non vérifié',
+    remplacements: [['  if (concordance === "autre") return json({ hote, flowId, issue: "autre_entreprise" })\n', '']],
+    scenario: 'recevoir_achat — une facture adressée à une autre entreprise : rien d’écrit, et la réponse ne la nomme pas',
+  },
   {
     slug: 'superpdp-credentials', quoi: 'une base en panne prise pour un accord',
     remplacements: [[

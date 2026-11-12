@@ -299,6 +299,13 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
       '`text/plain` (admis), et il pèse quelques Kio — aucune borne de taille à dire. La fonction n’a pas été touchée ' +
       'par la ligne 22.6 : la redéployer pour cela seul n’apporterait rien',
   },
+  'supabase/functions/plateforme-agreee/index.ts': {
+    nombre: 2,
+    raison:
+      'la facture d’achat reçue par l’accès « Achats » (étape B4r), que la fonction dépose elle-même : l’original XML sous le ' +
+      'littéral `text/plain; charset=utf-8`, sa version lisible sous `application/pdf` — admis tous deux ; la taille est ' +
+      'bornée avant par le téléchargement (MAX_FICHIER_OCTETS, 10 Mio, sous les 20 Mio du seau)',
+  },
 }
 
 describe('tout dépôt dans un seau envoie un type que la migration admet pour ce seau', () => {
@@ -315,9 +322,9 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
     expect(tout.filter((s) => s.cote === 'navigateur').length).toBeGreaterThan(250)
     expect(tout.filter((s) => s.cote === 'fonction').length).toBeGreaterThanOrEqual(16)
     expect(analyses.reduce((n, a) => n + a.lus, 0)).toBeGreaterThanOrEqual(20)
-    // Quinze dépôts : les onze chemins du navigateur (deux pour une facture reçue, deux pour un pack, l'original d'une facture
-    // reprise, la copie d'une facture d'honoraires déposée chez le client, LM8, un document mis à disposition, B3a) et les
-    // deux fonctions.
+    // Dix-sept dépôts : les onze chemins du navigateur (deux pour une facture reçue, deux pour un pack, l'original d'une facture
+    // reprise, la copie d'une facture d'honoraires déposée chez le client, LM8, un document mis à disposition, B3a), les
+    // deux fonctions d'hier, et les deux de la facture d'achat que plateforme-agreee reçoit pour l'accès « Achats » (B4r).
     // Un dépôt de plus se juge ici comme les autres ; ce nombre dit seulement qu'on les voit tous.
     expect(depots().map((d) => `${d.chemin} → ${d.seau}`).sort()).toEqual([
       'src/lib/depot.ts → pieces',
@@ -333,6 +340,8 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
       'src/pages/CabinetBrandingPage.tsx → cabinet-logos',
       'src/pages/dossier/CotisationsTab.tsx → pieces',
       'src/pages/dossier/FichePiece.tsx → pieces',
+      'supabase/functions/plateforme-agreee/index.ts → pieces',
+      'supabase/functions/plateforme-agreee/index.ts → pieces',
       'supabase/functions/receive-email/index.ts → pieces',
       'supabase/functions/superpdp-sync/index.ts → pieces',
     ])
