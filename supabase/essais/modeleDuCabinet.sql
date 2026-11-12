@@ -15,7 +15,9 @@
 --
 -- Le jeu : deux dossiers jetables du cabinet du dossier `test` (préfixe `f5c00000-0000-4000-8000`) — DT en trésorerie,
 -- dirigeant au 455000, avec un accès du client d'essai ; DE en engagement, dirigeant au 108000 — et, pour les étapes qui le
--- demandent, un cabinet jetable (AUTRE). Le client d'essai sert aussi de membre de l'équipe (rattaché comme comptable, le
+-- demandent, un cabinet jetable (AUTRE). Une catégorie du dossier ne se pose plus hors des classes 6 et 7
+-- (`classes_des_categories`, PC7-Q2) : les étapes 39 et 72, qui la veulent au compte de l'exploitant, la posent déclencheurs
+-- de `categories` coupés le temps de l'écrire, comme une catégorie posée avant la garde. Le client d'essai sert aussi de membre de l'équipe (rattaché comme comptable, le
 -- temps d'une étape), de chef du cabinet qui n'est pas super-administrateur, et de chef de l'autre cabinet. Chaque étape se
 -- joue dans sa sous-transaction et s'y ANNULE (`ANNULATION_ETAPE`) : ce que le propriétaire pose d'abord, sous la session
 -- du super-administrateur, puis la requête du profil ; le jeu s'annule à la fin (`ANNULATION_ESSAI_GLOBALE`), et « rien
@@ -188,7 +190,7 @@ begin
         'chef', replace(regler, '{L}', '[{"role": "indemnites_kilometriques", "compte": "625120"}]'), '22023',
         'Le compte des indemnités kilométriques (« 625120 ») est celui d''une catégorie commune à tous les dossiers (« 625120 »), à des zéros près : le barème et les frais réels restent séparés.'),
       (39, '39. la catégorie d''UN dossier ne retient pas le modèle : ce dossier la lui opposera',
-        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DT}', 'essai_pc5_dossier', 'Essai PC5 dossier', '108100')$q$,
+        $q$alter table categories disable trigger user; insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DT}', 'essai_pc5_dossier', 'Essai PC5 dossier', '108100'); alter table categories enable trigger user$q$,
         'chef', replace(regler, '{L}', '[{"role": "exploitant", "compte": "108100"}]'), 'OK', ''),
       (40, '40. un libellé blanc (22023)', null, 'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "512100", "libelle": "  "}]'), '22023',
         format(libelle, 'banque')),
@@ -259,7 +261,7 @@ begin
         || $q$; insert into a_nouveaux (dossier_id, date, compte, libelle, sens, montant, source_nom, source_empreinte) values ('{DT}', '2026-01-01', '512000', 'Banque', 'debit', 1, 'essai pc5', repeat('0', 64))$q$,
         'chef', appliquer, '23514', format(verrou, '1 à-nouveau(x)')),
       (72, '72. une catégorie du dossier sur un compte du modèle : le refus de regler_plan_du_dossier, au dossier (22023)',
-        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DT}', 'essai_pc5_dossier', 'Essai PC5 dossier', '108100'); select regler_modele_du_cabinet('{CAB}', '[{"role": "exploitant", "compte": "108100"}]'::jsonb)$q$,
+        $q$alter table categories disable trigger user; insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DT}', 'essai_pc5_dossier', 'Essai PC5 dossier', '108100'); alter table categories enable trigger user; select regler_modele_du_cabinet('{CAB}', '[{"role": "exploitant", "compte": "108100"}]'::jsonb)$q$,
         'chef', appliquer, '22023',
         'Le compte « 108100 » du rôle « exploitant » est celui d''une catégorie que ce dossier emploie (« 108100 »), à des zéros près : un compte de bilan que l''application écrit ne se partage pas avec une catégorie.'),
       (73, '73. le client du dossier n''applique pas le modèle (42501)', pose_decale, 'client', appliquer, '42501', pas_dossier),

@@ -11,6 +11,16 @@
 --
 -- Mutations qui doivent virer au rouge (jouées sur la réplique, le 12/11/2026) : retirer le refus (a), (b), (c) ou (d) ;
 -- comparer le compte sans `rtrim` ; garder la porte du super-administrateur à la mise à jour aussi.
+--
+-- LA CLASSE DU COMPTE (PC7-Q2 ; la migration PRÉPARÉE supabase/preparees/20261112233000_classes_des_categories.sql) : le
+-- refus (e) — une catégorie du dossier dont le compte, non nul, n'est pas de la classe 6 ou 7 suivie de deux chiffres, à
+-- l'insertion ou quand il change, pour tout auteur, la restauration comprise — se joue aux étapes 40 à 49, quand la
+-- dernière des deux lignes d'historique `classes_des_categories` et `retour_classes_des_categories` est la première ; sinon
+-- une ligne dit qu'elles attendent (EN ATTENTE), et les étapes 1 à 30 se jouent comme hier. L'étape 46 pose une catégorie
+-- au compte de bilan déclencheurs de `categories` coupés le temps de l'écrire (`disable trigger user`, le propriétaire),
+-- comme une catégorie posée avant la garde. Mutations de la migration qui doivent virer au rouge (jouées sur la réplique,
+-- le 12/11/2026) : retirer (e) ; le mettre après la porte de la restauration ; après (b) ; avant (a) ; juger toute mise à
+-- jour ; juger les communes ; `^[67]` seul ; refuser un compte nul ; un autre code que 23514.
 
 do $essai$
 declare
@@ -22,6 +32,11 @@ declare
   k2 constant text := 'c7000000-0000-4000-8000-0000000000c2';
   p1 constant text := 'c7000000-0000-4000-8000-0000000000e1';
   cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
+  -- La migration de la classe (PC7-Q2) en base : la dernière de ses deux lignes d'historique est la sienne, pas son retour.
+  classes constant boolean := coalesce((select m.name = 'classes_des_categories' from supabase_migrations.schema_migrations m
+    where m.name in ('classes_des_categories', 'retour_classes_des_categories') order by m.version desc limit 1), false);
+  -- Une catégorie posée comme avant la garde de la classe : déclencheurs de `categories` coupés le temps de l'écrire.
+  avant_la_classe constant text := $p$alter table categories disable trigger user; insert into categories (id, dossier_id, code, libelle, compte_comptable) values ('{K1}', '{DA}', 'essai_pc7_k1', 'Essai PC7 posée avant', '108000'); alter table categories enable trigger user$p$;
   -- Deux catégories du dossier DA : K1 au 606400, libre ; K2 au 706000, citée selon l'étape.
   jeu constant text := $j$insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
       ('{K1}', '{DA}', 'essai_pc7_k1', 'Essai PC7 fournitures', '606400', 'Fournitures de bureau'),
@@ -116,9 +131,43 @@ begin
         'OK', '606110'),
       (22, '22. le chef ne modifie toujours aucune catégorie commune (la policy, sans erreur)', 'chef', null,
         $q$update categories set compte_comptable = '606110' where code = 'achats_fournisseurs' and dossier_id is null returning compte_comptable$q$,
-        'OK', '')
+        'OK', ''),
+      -- ══ 40 à 49. (e) La classe du compte (PC7-Q2), quand sa migration est en base ══
+      (40, '40. (e) le chef ne crée pas une catégorie de son dossier sur un compte de tiers (401000)', 'chef', null,
+        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DA}', 'essai_pc7_e', 'Essai PC7 E', '401000') returning code$q$,
+        '23514', '~Le compte « 401000 » n''est pas un compte de charge ou de produit (classe 6 ou 7, trois chiffres en tête) : une catégorie du dossier ne range qu''une charge ou un produit.'),
+      (41, '41. (e) ni ne porte son compte sur la banque (512000)', 'chef', '{JEU}',
+        $q$update categories set compte_comptable = '512000' where id = '{K1}' returning compte_comptable$q$,
+        '23514', '~Le compte « 512000 » n''est pas un compte de charge ou de produit'),
+      (42, '42. (e) ni sur un compte qui ne commence pas par trois chiffres (6A1000)', 'chef', null,
+        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DA}', 'essai_pc7_e', 'Essai PC7 E', '6A1000') returning code$q$,
+        '23514', '~Le compte « 6A1000 » n''est pas un compte de charge ou de produit'),
+      (43, '43. sans compte, la catégorie attend le sien : rien ne se juge', 'chef', null,
+        $q$insert into categories (dossier_id, code, libelle) values ('{DA}', 'essai_pc7_e', 'Essai PC7 E') returning code$q$,
+        'OK', 'essai_pc7_e'),
+      (44, '44. (e) la restauration non plus : le super-administrateur n''insère pas une catégorie du dossier au 401000', 'super', null,
+        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DA}', 'essai_pc7_e', 'Restaurée', '401000') returning code$q$,
+        '23514', '~Le compte « 401000 » n''est pas un compte de charge ou de produit'),
+      (45, '45. une catégorie COMMUNE au 401000, par le super-administrateur : la classe ne la juge pas (PC7Q2-Q1)', 'super', null,
+        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc7_commune', 'Essai PC7 commune', '401000') returning compte_comptable$q$,
+        'OK', '401000'),
+      (46, '46. une catégorie posée avant la garde au 108000 : son libellé change, son compte ne se rejuge pas', 'chef', avant_la_classe,
+        $q$update categories set libelle = 'Essai PC7 renommée' where id = '{K1}' returning libelle || ' / ' || compte_comptable$q$,
+        'OK', 'Essai PC7 renommée / 108000'),
+      (47, '47. … et son compte rendu à une charge passe', 'chef', avant_la_classe,
+        $q$update categories set compte_comptable = '606400' where id = '{K1}' returning compte_comptable$q$,
+        'OK', '606400'),
+      (48, '48. l''ordre : le code d''une commune et un compte hors classe, la classe d''abord (e avant b)', 'chef', null,
+        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DA}', 'loyer', 'Loyer du cabinet', '401000') returning code$q$,
+        '23514', '~Le compte « 401000 » n''est pas un compte de charge ou de produit'),
+      (49, '49. l''ordre : un dossier changé et un compte hors classe, le dossier d''abord (a avant e)', 'chef', '{JEU}',
+        $q$update categories set dossier_id = '{DB}', compte_comptable = '401000' where id = '{K1}' returning code$q$,
+        '23514', '~Une catégorie ne change pas de dossier')
     ) as t(rang, etape, profil, preparation, requete, attendu, rend)
     loop
+      if e.rang between 40 and 49 and not classes then
+        continue;
+      end if;
       v_code := 'OK'; v_obs := null;
       begin
         if e.preparation is not null then
@@ -150,6 +199,11 @@ begin
                                           else coalesce(v_obs, '') = e.rend end,
         'observe', v_code || ' ' || coalesce(v_obs, ''));
     end loop;
+    if not classes then
+      verdicts := verdicts || jsonb_build_object('rang', 40,
+        'etape', '40. EN ATTENTE de la migration classes_des_categories (PC7-Q2) : les étapes 40 à 49 se jouent dès qu''elle y est',
+        'ok', true, 'observe', 'absente, ou rendue par son retour');
+    end if;
 
     verdicts := verdicts || jsonb_build_object('rang', 30, 'etape', '30. le catalogue : security definer, chemin vide, exécutable par aucun rôle ; un déclencheur BEFORE INSERT OR UPDATE OR DELETE FOR EACH ROW',
       'ok', (select p.prosecdef and p.proconfig = array['search_path=""']
