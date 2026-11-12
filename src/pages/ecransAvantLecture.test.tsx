@@ -531,7 +531,7 @@ const ECRANS: Ecran[] = [
   { nom: 'FinancementTab (basculé)', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'ImmobilisationsTab', fichier: 'pages/dossier/ImmobilisationsTab.tsx', rendre: () => <Dossier1><ImmobilisationsTab dossierId="d1" assujettiTva={false} plan={PLAN_PAR_DEFAUT} /></Dossier1> },
   { nom: 'InformationsTab', fichier: 'pages/dossier/InformationsTab.tsx', rendre: () => (
-    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} modele={TRESORERIE} onIdentiteUpdated={rien} onReglageUpdated={rien} onPlanRelu={rien} /></Dossier1>
+    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierCabinetId={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} modele={TRESORERIE} onIdentiteUpdated={rien} onReglageUpdated={rien} onPlanRelu={rien} /></Dossier1>
   ) },
   { nom: 'PacksTab', fichier: 'pages/dossier/PacksTab.tsx', rendre: () => <Dossier1><PacksTab dossierId="d1" dossierNom="Dossier fictif" /></Dossier1> },
   { nom: 'PiecesTab', fichier: 'pages/dossier/PiecesTab.tsx', rendre: () => <Dossier1><PiecesTab dossierId="d1" ventesParLesFactures={false} /></Dossier1> },
@@ -669,6 +669,9 @@ const ECRANS: Ecran[] = [
 const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/CategoriesDuDossierCard.tsx': 'drapeau `CATEGORIES_DU_DOSSIER_PREVUES` baissé : ne rend ni ne lit rien ; levé, '
     + 'son propre test (CategoriesDuDossierCard.test.tsx) éprouve « Chargement… » avant la lecture et aucun geste sur une lecture partielle',
+  'pages/dossier/ModeleDuCabinetDossierCarte.tsx': 'drapeau `MODELE_DU_CABINET_PREVU` baissé : ne rend ni ne lit rien ; levé, '
+    + 'son propre test (ModeleDuCabinetDossierCarte.test.tsx) éprouve « Lecture du modèle… » avant la lecture, aucun bouton sur '
+    + 'un modèle refusé ou vide, et le verrou relâché après la relecture du plan',
   'pages/dossier/CategoriesDeLaBalance.tsx': 'montée par la seule carte de la balance, derrière `CATEGORIES_DU_DOSSIER_PREVUES` baissé ; '
     + 'levée, CategoriesDuDossierCard.test.tsx éprouve « Chargement… », puis rien de coché ni de deviné',
   'components/DeuxFacteursDesComptes.tsx': 'drapeau `DEUX_FACTEURS_EXIGES_EXPORTE` baissé : ne rend ni ne lit rien ; levé, '

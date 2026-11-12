@@ -10,8 +10,8 @@
 // clic et sur la saisie TELLE QU'ELLE PART, les refus de `regler_modele_du_cabinet` dans leur ordre et sous leurs mots,
 // que modeleDuCabinet.test.ts confronte au texte de la migration ; la base reste juge.
 //
-// DERRIÈRE `MODELE_DU_CABINET_PREVU`, baissé : la page du cabinet ne montre pas la carte, « Nouveau dossier » crée comme
-// hier, l'export d'un cabinet ne lit pas le modèle, et la sauvegarde ne nomme pas la table. Le lever APRÈS l'application
+// DERRIÈRE `MODELE_DU_CABINET_PREVU`, baissé : la page du cabinet ne montre pas la carte, la carte du plan d'un dossier
+// n'offre pas « Appliquer le modèle du cabinet » (PC5b), « Nouveau dossier » crée comme hier, l'export d'un cabinet ne lit pas le modèle, et la sauvegarde ne nomme pas la table. Le lever APRÈS l'application
 // de la migration (ce qui s'ajoute, puis la bascule de l'application).
 import {
   FORME_COMPTE_DE_ROLE,
@@ -283,6 +283,49 @@ export function modeleALaCreation(lecture: LectureDuModele | null): ModeleALaCre
 /** Ce que dit la fenêtre quand le dossier est créé mais que le modèle ne s'est pas appliqué. */
 export function phraseDuModeleNonApplique(refus: string): string {
   return `Le dossier est créé, mais le modèle de plan du cabinet ne lui a pas été appliqué : ${refus} Son plan reste celui de l’application.`
+}
+
+// ── « Appliquer le modèle du cabinet » sur un dossier existant (PC5b) : ce que la carte du plan dit AVANT le clic ─────────
+
+/** Ce que la carte du plan d'un dossier offre du modèle : la lecture qui n'est pas revenue, un refus dit en clair, ou le
+ *  geste, avec ce qu'il change. */
+export type ModeleAUnDossier =
+  | { etat: 'lecture'; phrase: string }
+  | { etat: 'refus'; phrase: string }
+  | { etat: 'a_appliquer'; regles: number; changements: ChangementDuModele[] }
+
+/**
+ * Le geste que le modèle offre à CE dossier, selon ce qui en a été lu (`null` : la lecture n'est pas revenue) et le plan
+ * lu du dossier. Le modèle copié est celui que `appliquer_modele_du_cabinet` copie : les rôles qui s'écartent du catalogue
+ * (`comptesDuModele` du modèle lu, le même calcul que la carte du modèle), et ce que l'application en change se juge sur
+ * le plan lu — jamais une règle recopiée. Sont dits avant le clic : le modèle illisible (l'accès refusé s'y lit, la base
+ * le refusant à qui n'est pas du cabinet), le modèle vide, un exercice validé (le plan se fige avec les écritures) et un
+ * plan qui tient déjà le modèle. Ce que la base seule voit — une écriture au brouillon, un à-nouveau — se dit à son refus.
+ */
+export function modeleAUnDossier(lecture: LectureDuModele | null, lu: PlanLu, exerciceValide: boolean): ModeleAUnDossier {
+  if (lecture === null) return { etat: 'lecture', phrase: 'Lecture du modèle de plan du cabinet…' }
+  if (lecture.modele === null) {
+    return { etat: 'refus', phrase: `Le modèle de plan du cabinet n’a pas pu être lu (${lecture.motif}) : il ne s’applique pas à ce dossier.` }
+  }
+  if (lecture.regles.length === 0) {
+    return { etat: 'refus', phrase: 'Le cabinet n’a pas de modèle de plan : il n’y a rien à appliquer à ce dossier.' }
+  }
+  if (exerciceValide) {
+    return { etat: 'refus', phrase: 'Un exercice de ce dossier est validé : son plan ne change plus, le modèle ne peut pas lui être appliqué.' }
+  }
+  const changements = changementsDuModele(comptesDuModele(saisieDuModele(lecture.modele)), lu)
+  if (changements.length === 0) {
+    return { etat: 'refus', phrase: 'Le plan de ce dossier tient déjà le modèle du cabinet : il n’y a rien à appliquer.' }
+  }
+  return { etat: 'a_appliquer', regles: lecture.regles.length, changements }
+}
+
+/** La confirmation du clic : le nombre de rôles que le modèle règle, et chaque compte qui change dans CE dossier. */
+export function confirmationDeLApplication(regles: number, changements: readonly ChangementDuModele[]): string {
+  return `Appliquer le modèle de plan du cabinet à ce dossier ? ${regles > 1 ? `${regles} rôles s’écartent` : 'Un rôle s’écarte'} du plan de l’application ; `
+    + `${changements.length > 1 ? `ces ${changements.length} comptes changent` : 'ce compte change'} dans ce dossier :\n`
+    + changements.map((c) => `– ${texteDUnChangementDuModele(c)}`).join('\n')
+    + '\nLe plan ne se change plus dès que le dossier porte une écriture ou un à-nouveau.'
 }
 
 // ── L'export d'un cabinet (conception, § 3.10 : « L'export d'un cabinet porte son modèle ») ──────────────────────────

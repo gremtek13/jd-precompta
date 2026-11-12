@@ -178,11 +178,12 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'illisible ou une requête qui lève rendent une lecture ratée que la carte DIT, jamais un état',
   },
   lireLePlanDuDossier: {
-    nombre: 2,
+    nombre: 3,
     raison:
       'ce n’est pas une écriture : `plan_du_dossier` LIT le plan comptable effectif d’un dossier (ligne 43, étape PC3), ' +
       'avec le dossier, dans `DossierDetail`, et de nouveau après son réglage par la reprise d’une balance (PC6, ' +
-      '`lib/planDepuisLaBalanceLecture.ts`). `lib/planComptable.ts` attend la requête et lit son erreur : un refus, une ' +
+      '`lib/planDepuisLaBalanceLecture.ts`), puis après l’application du modèle du cabinet à un dossier (PC5b, ' +
+      '`appliquerPuisRelireLePlan`). `lib/planComptable.ts` attend la requête et lit son erreur : un refus, une ' +
       'réponse illisible ou incomplète ne rendent AUCUN plan, et la page ne monte alors aucun onglet — donc ne compose ' +
       'aucune écriture —, la carte de la balance aucun à-nouveau, avec son motif',
   },

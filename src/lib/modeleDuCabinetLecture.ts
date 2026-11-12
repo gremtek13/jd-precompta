@@ -1,6 +1,7 @@
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { modeleDeLaReponse, type LectureDuModele } from './modeleDuCabinet'
+import { lireLePlanDuDossier, type LectureDuPlan } from './planComptable'
 import type { LigneDuPlanReglee } from './planDepuisLaBalance'
 import { supabase } from './supabase'
 
@@ -71,4 +72,20 @@ export async function appliquerLeModeleAuDossier(dossierId: string): Promise<App
   } catch (e) {
     return { applique: false, refus: messageErreur(e, 'La base a refusé d’appliquer le modèle.') }
   }
+}
+
+/** Ce que l'application du modèle à un dossier existant a donné : le plan RELU après elle, ou le refus de la base en clair. */
+export type ApplicationRelue =
+  | { applique: true; nombre: number; lecture: LectureDuPlan }
+  | { applique: false; refus: string }
+
+/**
+ * « Appliquer le modèle du cabinet » sur la carte du plan d'un dossier (PC5b) : le même chemin que « Nouveau dossier »
+ * (`appliquerLeModeleAuDossier`), puis la RELECTURE du plan par `plan_du_dossier` — l'écran montre le plan que la base a
+ * gardé, jamais celui qu'on croit avoir copié. Ne rejette jamais.
+ */
+export async function appliquerPuisRelireLePlan(dossierId: string): Promise<ApplicationRelue> {
+  const issue = await appliquerLeModeleAuDossier(dossierId)
+  if (!issue.applique) return issue
+  return { applique: true, nombre: issue.nombre, lecture: await lireLePlanDuDossier(supabase.rpc('plan_du_dossier', { p_dossier_id: dossierId })) }
 }

@@ -51485,3 +51485,9 @@ le retour rend les neuf familles, la réapplication passe. **L'écran**, derriè
 chef (page du cabinet), « Nouveau dossier » qui dit le modèle avant le clic, crée puis l'applique (un refus dit, le dossier
 reste), l'export d'un cabinet, la table au plan (niveau cabinet). **Restent** : appliquer, rejouer, lever ; « Appliquer le
 modèle » sur la carte du plan d'un dossier, que PC4 n'a pas encore ; PC5-Q1.
+
+### 12/11/2026 — PC5B : APPLIQUER LE MODÈLE DU CABINET À UN DOSSIER, À L'ÉCRAN (LIGNE 43)
+
+(Agent dev ; aucune base touchée.) La carte du plan d'un dossier n'existant pas, `pages/dossier/ModeleDuCabinetDossierCarte.tsx` (Informations, avant la balance ; `dossierCabinetId` lu par `DossierDetail`) lit le modèle derrière `MODELE_DU_CABINET_PREVU` baissé (ni rendu ni lecture) ; `modeleAUnDossier` dit AVANT le clic modèle illisible (l'accès), vide, exercice validé, plan qui le tient déjà, et sinon ce qui change.
+La confirmation nomme le nombre de rôles qui s'écartent du défaut et chaque compte ; le clic suit le chemin de « Nouveau dossier » (`appliquerLeModeleAuDossier`) puis relit le plan (`appliquerPuisRelireLePlan`), sous un verrou `useRef` relâché après la relecture.
+**Reste** : une écriture au brouillon ou un à-nouveau ne se disent qu'au refus de la base (les dire avant le clic demande une fonction de lecture : l'architecte) ; lever le drapeau avec PC5.

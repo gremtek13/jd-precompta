@@ -546,6 +546,7 @@ export default function DossierDetail() {
                 dossierNom={dossier?.nom ?? ''}
                 dossierSiret={dossier?.siret ?? null}
                 dossierAdresse={dossier?.adresse ?? null}
+                dossierCabinetId={dossier?.cabinet_id ?? null}
                 // Sans `?? null` : une colonne que la lecture du dossier n'a pas portée reste ABSENTE (`undefined`), et
                 // l'onglet n'offre pas de l'écrire — nulle, il l'écraserait d'une valeur qu'il ignore.
                 dossierDenomination={dossier?.denomination_imprimee}
