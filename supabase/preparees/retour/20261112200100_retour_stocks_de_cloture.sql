@@ -34,6 +34,7 @@ delete from public.ecritures_brouillon b where b.stock_de_cloture_id is not null
 -- des collages : la colonne retirée les emporterait, le retour les nomme.
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_inventaire_hors_des_stocks;
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_stock_hors_de_l_ouverture;
+alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_stock_hors_de_l_affectation;
 alter table public.ecritures_brouillon drop constraint ecritures_brouillon_stock_au_31_decembre;
 alter table public.ecritures_brouillon drop constraint ecritures_brouillon_stock_sans_autre_source;
 drop index public.ecritures_brouillon_stock_de_cloture;

@@ -135,16 +135,26 @@ declare
     'dotations_depreciations_actif_circulant', 'reprises_provisions_exploitation', 'reprises_depreciations_actif_circulant'];
   empreinte_roles_provisions constant text := '15135d96ebdca260c366e7a6b85810c0';
   aux_provisions constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'provisions');
+  -- La migration `affectation_du_resultat` (lignes 33 et 45, AFF2, préparée) appliquée : les six rôles de l'affectation
+  -- (rangs 600 à 650) s'y ajoutent, jugés À PART (contrôle 1quinquies, leur empreinte, que
+  -- src/lib/affectationDuResultatEnBase.test.ts recalcule). Son historique en base décide.
+  roles_de_l_affectation constant text[] := array['reserve_legale', 'reserves_statutaires', 'autres_reserves',
+    'report_a_nouveau_crediteur', 'report_a_nouveau_debiteur', 'dividendes_a_payer'];
+  empreinte_roles_affectation constant text := '647bc1625c4fcd6a849e57094e577b3b';
+  a_l_affectation constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'affectation_du_resultat');
   roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end
     + case when au_inventaire then 6 else 0 end + case when aux_stocks then 10 else 0 end
-    + case when aux_provisions then 6 else 0 end;
+    + case when aux_provisions then 6 else 0 end + case when a_l_affectation then 6 else 0 end;
   -- Le `case` que cinq fonctions recopiaient : le compte du dirigeant, 108000 en trésorerie. Depuis l'étape PC2
   -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
   -- l'export les portent toutes : `pc2_exigee` est vrai, et le `case` recopié est une faute.
   pc2_exigee constant boolean := true;
   -- La caisse (ligne 26.6, étape C1 ; migration `caisse`, préparée) en ajoute une sixième, qui lit le compte de
   -- l'exploitant pour un apport ou un prélèvement : attendue avec elle seulement.
+  -- L'affectation du résultat (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`, préparée le 12/11/2026) en
+  -- ajoute une, qui refuse une entreprise individuelle (le dirigeant au compte de l'exploitant) : attendue avec elle seulement.
   cinq constant text := 'classer_virement_personnel,ecrire_forfait_kilometrique,ecrire_mouvement_compte_bilan,'
+                        || case when to_regclass('public.affectations_du_resultat') is null then '' else 'enregistrer_affectation,' end
                         || case when to_regclass('public.operations_caisse') is null then '' else 'enregistrer_operation_caisse,' end
                         || 'enregistrer_paiement_personnel_cotisation,ventiler_mouvement_bancaire';
   forme_du_case constant text :=
@@ -193,10 +203,10 @@ begin
   select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
            || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
     into n, texte from roles_comptables where not (role = any (roles_de_l_inventaire)) and not (role = any (roles_des_stocks))
-      and not (role = any (roles_des_provisions));
+      and not (role = any (roles_des_provisions)) and not (role = any (roles_de_l_affectation));
   verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte) — 33 avec le personnel (B7), deux de plus avec le change (31)',
     'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue - case when au_inventaire then 6 else 0 end - case when aux_stocks then 10 else 0 end
-      - case when aux_provisions then 6 else 0 end
+      - case when aux_provisions then 6 else 0 end - case when a_l_affectation then 6 else 0 end
       and texte = case
       when au_change then case
         when au_468 and au_personnel then empreinte_catalogue_468_personnel_change when au_468 then empreinte_catalogue_468_change
@@ -221,6 +231,12 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '1quater. les six rôles des provisions (INV4) : à leur empreinte si la migration provisions est en base, absents sinon',
     'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '—'),
     'ok', coalesce(case when aux_provisions then n = 6 and texte = empreinte_roles_provisions else n = 0 end, false));
+  select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
+           || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
+    into n, texte from roles_comptables where role = any (roles_de_l_affectation);
+  verdicts := verdicts || jsonb_build_object('controle', '1quinquies. les six rôles de l''affectation du résultat (AFF2) : à leur empreinte si la migration affectation_du_resultat est en base, absents sinon',
+    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '—'),
+    'ok', coalesce(case when a_l_affectation then n = 6 and texte = empreinte_roles_affectation else n = 0 end, false));
 
   select count(*) filter (where compte_defaut !~ '^[0-9]{6}$'
                             or not exists (select 1 from unnest(racines) x(r) where left(compte_defaut, length(x.r)) = x.r)),
@@ -727,6 +743,14 @@ begin
              (dossier_libre, 'dotations_depreciations_actif_circulant', '681710', null),
              (dossier_libre, 'reprises_provisions_exploitation', '781510', null),
              (dossier_libre, 'reprises_depreciations_actif_circulant', '781710', null);
+      n := n + 6;
+    end if;
+    -- L'affectation du résultat (lignes 33 et 45, migration `affectation_du_resultat`, préparée) : ses six comptes décalés.
+    if a_l_affectation then
+      insert into plan_comptable_dossier (dossier_id, role, compte, prefixe_auxiliaire)
+      values (dossier_libre, 'reserve_legale', '106110', null), (dossier_libre, 'reserves_statutaires', '106310', null),
+             (dossier_libre, 'autres_reserves', '106810', null), (dossier_libre, 'report_a_nouveau_crediteur', '110100', null),
+             (dossier_libre, 'report_a_nouveau_debiteur', '119100', null), (dossier_libre, 'dividendes_a_payer', '457100', null);
       n := n + 6;
     end if;
     select count(*) filter (where public.compte_du_role(dossier_libre, p.role) is distinct from p.compte),

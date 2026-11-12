@@ -30,6 +30,7 @@ drop function public.garder_ecriture_d_inventaire();
 -- des collages : la colonne retirée les emporterait, le retour les nomme.
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_inventaire_hors_de_l_ouverture;
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_inventaire_hors_des_stocks;
+alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_inventaire_hors_de_l_affectation;
 alter table public.ecritures_brouillon drop constraint ecritures_brouillon_inventaire_sans_autre_source;
 drop index public.ecritures_brouillon_operation_inventaire;
 alter table public.ecritures_brouillon drop column operation_inventaire_id;

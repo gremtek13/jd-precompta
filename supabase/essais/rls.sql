@@ -142,6 +142,11 @@
 --      super-administrateur réinsère (la restauration) ; le catalogue — et trois mutations ; avant la migration
 --      `provisions`, une ligne « EN ATTENTE ». Le reste (les refus, l'évaluation par différence, la ventilation, le
 --      gel) : `provisions.sql`, sur une réplique.
+--   6sexdecies. L'AFFECTATION DU RÉSULTAT (AFF2, lignes 33 et 45 ; bloc AF, en fin de fichier) : AF1 à AF3 — le chef
+--      lit la décision qu'il a enregistrée et sa répartition (contrôle positif), le client du dossier, un membre de l'équipe
+--      à qui le dossier n'est pas assigné et l'anonyme rien ; le client n'enregistre rien et n'écrit rien en direct, le
+--      super-administrateur réinsère (la porte de la restauration, contrôle positif) ; le catalogue — et trois mutations ;
+--      avant la migration `affectation_du_resultat`, une ligne « EN ATTENTE ». Le reste : `affectationDuResultat.sql`.
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -10067,6 +10072,213 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $pv$;
+
+-- ══ AF. L'affectation du résultat (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`, PRÉPARÉE) ════════════════
+--   AF1. Le chef lit la décision qu'il a enregistrée et sa répartition (contrôle positif) ; le client du dossier, un membre
+--        de l'équipe à qui le dossier n'est pas assigné et l'anonyme n'en lisent rien.
+--   AF2. Le client n'enregistre pas de décision (la fonction : 42501), n'en écrit pas en direct, n'en réécrit aucune ; le
+--        super-administrateur en réinsère une (la restauration, contrôle positif).
+--   AF3. Le catalogue : la RLS active sur les deux tables, deux policies permissives à authenticated sur chacune — la
+--        lecture sur `admin_du_dossier`, la réinsertion sur `is_super_admin` —, et rien d'autre que la restrictive
+--        `deux_facteurs`.
+-- Trois mutations, qui doivent mordre : M-AF1 (la lecture élargie au client du dossier), M-AF2 (la lecture fermée), M-AF3
+-- (la porte de la restauration fermée). Avant la migration, une ligne dit que le bloc attend.
+do $af$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  dossier uuid := 'a1100000-0000-4000-8000-0000000000af';
+  decision jsonb := '{"organe": "assemblee", "nombre_d_associes": "plusieurs", "date_decision": "2026-05-15", "comptes_approuves": true, "date_mise_en_paiement": null, "reserves_statutaires_distribuables": true}';
+  lignes jsonb := '[{"origine": "benefice", "destination": "reserve_legale", "centimes": 5000}, {"origine": "benefice", "destination": "report_crediteur", "centimes": 95000}]';
+  ecriture jsonb := '{"journal": "OD", "date": "2026-05-15", "pieceRef": "Affectation du résultat 2025 — décision du 15/05/2026", "pieceDate": "2026-05-15", "libelle": "Affectation du résultat 2025", "lignes": [{"compte": "120000", "sens": "debit", "centimes": 100000}, {"compte": "106100", "sens": "credit", "centimes": 5000}, {"compte": "110000", "sens": "credit", "centimes": 95000}]}';
+  chef_lit bigint; du_client bigint; du_membre bigint; de_l_anon text; par_la_fonction text; en_direct text; reecrites bigint;
+  reinsere text; elargie bigint; fermee bigint; porte_fermee text; n bigint; erreur text;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+  reinsertion constant text := 'insert into affectations_du_resultat (dossier_id, exercice_affecte, version, etat, organe, nombre_d_associes_declare, '
+    || 'date_decision, comptes_approuves, reserves_statutaires_distribuables, resultat_centimes, forme_juridique, capital_centimes, soldes_lus, '
+    || 'cree_par, fin_par, fin_le) select dossier_id, exercice_affecte, 2, ''remplacee'', organe, nombre_d_associes_declare, date_decision, '
+    || 'comptes_approuves, reserves_statutaires_distribuables, resultat_centimes, forme_juridique, capital_centimes, soldes_lus, cree_par, cree_par, now() '
+    || 'from affectations_du_resultat where dossier_id = ''a1100000-0000-4000-8000-0000000000af''';
+  -- En direct, le client ne lit pas ce qu'il recopierait : ses valeurs sont écrites ici (une insertion de zéro ligne ne
+  -- prouverait rien).
+  en_direct_sql constant text := 'insert into affectations_du_resultat (dossier_id, exercice_affecte, version, etat, organe, '
+    || 'nombre_d_associes_declare, date_decision, comptes_approuves, reserves_statutaires_distribuables, resultat_centimes, '
+    || 'forme_juridique, capital_centimes, soldes_lus, cree_par, fin_par, fin_le) values (''a1100000-0000-4000-8000-0000000000af'', '
+    || '2025, 3, ''remplacee'', ''assemblee'', ''plusieurs'', ''2026-05-15'', false, true, 100000, ''5499'', 1000000, '
+    || '''{"capitalAuxComptes": 0, "primes": 0, "ecartsDeReevaluation": 0, "reserveLegale": 0, "reservesIndisponibles": 0, '
+    || '"reservesStatutaires": 0, "reservesReglementees": 0, "autresReserves": 0, "reportCrediteur": 0, "pertesAnterieures": 0, '
+    || '"acomptesSurDividendes": 0}'', ''797fe440-df8d-4b8e-828b-d148927bfd60'', ''797fe440-df8d-4b8e-828b-d148927bfd60'', now())';
+begin
+  if to_regclass('public.affectations_du_resultat') is null then
+    insert into rls_verdict values ('AF. l''affectation du résultat : EN ATTENTE de la migration affectation_du_resultat',
+      'affectations_du_resultat', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : une SARL en engagement du cabinet du dossier du client, que le client voit, que le membre ne suit pas,
+    --    son exercice 2025 validé (un bénéfice de 1 000,00) ──
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva, forme_juridique, capital, compte_notes_de_frais)
+      select dossier, 'Essai RLS de l''affectation', d.cabinet_id, 'engagement', 'franchise', '5499', 10000, '455000'
+        from dossiers d where d.id = dossier_du_client;
+    insert into memberships (user_id, dossier_id, role)
+      select client, dossier, m.role from memberships m where m.user_id = client and m.dossier_id = dossier_du_client limit 1;
+    perform set_config('jd.validation_exercice', dossier::text, true);
+    insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, statut, valide_le, journal_code, numero_ecriture, piece_ref, piece_date, compte_lib)
+      values (dossier, '2025-06-30', '706000', 'Essai', 1000, 'credit', 'validee', now(), 'OD', 1, 'Essai', '2025-06-30', 'Essai'),
+             (dossier, '2025-06-30', '512000', 'Essai', 1000, 'debit', 'validee', now(), 'OD', 1, 'Essai', '2025-06-30', 'Essai');
+    perform set_config('jd.validation_exercice', '', true);
+    insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration)
+      values (dossier, 2025, now(), chef, 'engagement', 0, 0, 0, 0, repeat('0', 64), null);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform enregistrer_affectation(dossier, 2025, null, decision, lignes, ecriture);
+    select count(*) + (select count(*) from lignes_d_affectation where dossier_id = dossier) into chef_lit
+      from affectations_du_resultat where dossier_id = dossier;
+    reset role;
+    construit := true;
+
+    -- AF1 : le client du dossier, le membre à qui il n'est pas assigné, l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) + (select count(*) from lignes_d_affectation) into du_client from affectations_du_resultat;
+    perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+    select count(*) + (select count(*) from lignes_d_affectation where dossier_id = dossier) into du_membre
+      from affectations_du_resultat where dossier_id = dossier;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select (count(*) + (select count(*) from lignes_d_affectation))::text into de_l_anon from affectations_du_resultat;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'AF1. le chef lit la décision qu''il a enregistrée et ses deux lignes (le contrôle positif) ; le client du dossier, un membre de l''équipe à qui le dossier n''est pas assigné et l''anonyme n''en lisent rien',
+      'cible', 'affectations_du_resultat, lignes_d_affectation',
+      'observe', 'le chef : ' || chef_lit || ' | le client : ' || du_client || ' | le membre : ' || du_membre || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_lit = 3 and du_client = 0 and du_membre = 0 and de_l_anon = '0');
+
+    -- AF2 : le client n'enregistre ni n'écrit ni ne réécrit ; le super-administrateur réinsère.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_affectation(dossier, 2025, null, decision, lignes, ecriture);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      execute en_direct_sql;
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update affectations_du_resultat set organe = 'consultation_ecrite' where dossier_id = dossier returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      execute reinsertion;
+      reinsere := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if reinsere is null then reinsere := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'AF2. le client n''enregistre pas de décision (la fonction), n''en écrit pas en direct et n''en réécrit aucune ; le super-administrateur en réinsère une (la restauration, le contrôle positif)',
+      'cible', 'affectations_du_resultat',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites || ' | réinsérée : ' || coalesce(reinsere, '?'),
+      'ok', par_la_fonction = '42501 Accès refusé à ce dossier.' and en_direct like '42501 %' and reecrites = 0 and reinsere = 'ACCEPTÉ');
+
+    -- M-AF1 : la lecture élargie au client du dossier.
+    begin
+      alter policy affectations_du_resultat_lecture on public.affectations_du_resultat
+        using (admin_du_dossier(dossier_id) or exists (select 1 from memberships m where m.dossier_id = affectations_du_resultat.dossier_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from affectations_du_resultat where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-AF1 — la lecture des décisions d''affectation élargie au client du dossier',
+      'attendu', 'le client lit la décision', 'observe', coalesce((elargie >= 1)::text, '?'), 'mord', coalesce(elargie >= 1, false));
+
+    -- M-AF2 : la lecture fermée.
+    begin
+      alter policy lignes_d_affectation_lecture on public.lignes_d_affectation using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from lignes_d_affectation where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-AF2 — la lecture des lignes d''affectation fermée',
+      'attendu', 'le chef ne lit plus rien', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-AF3 : la porte de la restauration fermée.
+    begin
+      alter policy affectations_du_resultat_restauration on public.affectations_du_resultat with check (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      begin
+        execute reinsertion;
+        porte_fermee := 'ACCEPTÉ';
+      exception when others then porte_fermee := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-AF3 — la porte de la restauration des décisions fermée',
+      'attendu', 'le super-administrateur ne réinsère plus', 'observe', coalesce(porte_fermee, '?'), 'mord', coalesce(porte_fermee like '42501 %', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- AF3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.roles = array['authenticated']::name[] and p.permissive = 'PERMISSIVE'
+     and ((p.tablename = 'affectations_du_resultat' and p.policyname = 'affectations_du_resultat_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.tablename = 'affectations_du_resultat' and p.policyname = 'affectations_du_resultat_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()')
+       or (p.tablename = 'lignes_d_affectation' and p.policyname = 'lignes_d_affectation_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.tablename = 'lignes_d_affectation' and p.policyname = 'lignes_d_affectation_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'AF3. la RLS active sur les deux tables ; deux policies à authenticated sur chacune : la lecture du cabinet du dossier, la réinsertion du super-administrateur (lecture du catalogue)',
+    'cible', 'affectations_du_resultat, lignes_d_affectation',
+    'observe', n || ' sur 4, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename in ('affectations_du_resultat', 'lignes_d_affectation') and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select string_agg(c.relrowsecurity::text, ',' order by c.relname) from pg_class c where c.oid in ('public.affectations_du_resultat'::regclass, 'public.lignes_d_affectation'::regclass)),
+    'ok', n = 4 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename in ('affectations_du_resultat', 'lignes_d_affectation') and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 4
+      and (select bool_and(c.relrowsecurity) from pg_class c where c.oid in ('public.affectations_du_resultat'::regclass, 'public.lignes_d_affectation'::regclass)));
+  verdicts := verdicts || jsonb_build_object('controle', 'AF. le jeu d''essai de l''affectation du résultat s''est construit', 'cible', 'une SARL en engagement du cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $af$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

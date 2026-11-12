@@ -980,6 +980,28 @@ begin
   end if;
 end $$;
 
+-- ══ L'affectation du résultat (lignes 33 et 45, AFF2) ══ Au plan du code quand `AFFECTATION_PREVUE` est levé — c'est-à-dire
+-- quand sa migration est en base : le script met ses deux tables juste après `notes_internes` (la décision, puis sa
+-- répartition ; avant le brouillon, dont une ligne cite la décision, et les exercices validés, dont le gel refuserait une
+-- décision réinsérée après eux), les suivantes reculant de deux rangs ; leurs chemins. Aucune vague. Joué AVANT les blocs
+-- des stocks de clôture et des opérations d'inventaire, qui s'ancrent aussi sur `notes_internes` et passent donc devant lui
+-- (ORDRE_RESTAURATION_PREVU). Absentes de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts
+-- confronte ce bloc au plan prévu.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.affectations_du_resultat') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'notes_internes';
+    update essai_restauration._ordre set rang = -(rang + 2) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'affectations_du_resultat');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 2, 'lignes_d_affectation');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('affectations_du_resultat','direct',null,null),
+     ('lignes_d_affectation','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les stocks de clôture (ligne 36) ══ Au plan du code quand `STOCKS_PREVUS` est levé — c'est-à-dire quand sa migration
 -- est en base : le script met sa table juste après `notes_internes` (après les pièces, dont une feuille d'inventaire est
 -- citée, et avant le brouillon, dont une ligne cite le stock, et les exercices validés, dont le gel refuserait un stock

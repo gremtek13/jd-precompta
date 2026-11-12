@@ -1,6 +1,6 @@
 import { categorieJuridique } from './categoriesJuridiques'
 import { ajouterJours, ajouterMois, formatDate, formatMoney } from './format'
-import { FORME_COMPTE_DE_ROLE } from './planComptable'
+import { FORME_COMPTE_DE_ROLE, type DefinitionRoleComptable } from './planComptable'
 import type { ModeComptable, SensEcriture } from './types'
 
 // L'AFFECTATION DU RÉSULTAT ET L'APPROBATION DES COMPTES, EN MODULE (lignes 33 et 45, lot AFF1 ; conception
@@ -587,3 +587,31 @@ export function composerLEcritureDAffectation(c: ContexteDeLAffectation, decisio
     lignes,
   }
 }
+
+// ── La base (AFF2) ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * LE DRAPEAU, BAISSÉ : `AFFECTATION_PREVUE` (la migration `affectation_du_resultat`, préparée le 12/11/2026, pas appliquée :
+ * supabase/preparees/20261112233000_affectation_du_resultat.sql). Baissé, ses deux tables et la colonne
+ * `ecritures_brouillon.affectation_id` restent hors du plan de sauvegarde (sauvegarde.ts, `auPlanDeLAffectation`) : les lire
+ * avant la migration ferait échouer toute sauvegarde. Il se lève dans le déploiement qui suit le collage (AFF7).
+ */
+export const AFFECTATION_PREVUE: boolean = false
+
+/** Les tables de la migration. */
+export const TABLES_DE_L_AFFECTATION = ['affectations_du_resultat', 'lignes_d_affectation'] as const
+
+/**
+ * Les six rôles que la migration insère au catalogue (conception § 4.4), rangs 600 à 650, leur libellé au plan comptable
+ * général. Ils n'entrent dans `ROLES_COMPTABLES` (lib/planComptable.ts) qu'avec l'écran (AFF4) : la base les porte, la lecture
+ * du plan ignore sans conséquence un rôle qu'elle ne connaît pas. Le septième de la conception, les acomptes sur dividendes
+ * (1209), attend : sa racine commencerait celle du résultat (120), et AFF-Q8 (B) ne l'écrit pas (le rang 660 lui reste).
+ */
+export const ROLES_DE_L_AFFECTATION: readonly DefinitionRoleComptable[] = [
+  { role: 'reserve_legale', racines: ['1061'], compteDefaut: '106100', libelleDefaut: 'Réserve légale', prefixeAuxiliaireDefaut: null, ordre: 600 },
+  { role: 'reserves_statutaires', racines: ['1063'], compteDefaut: '106300', libelleDefaut: 'Réserves statutaires ou contractuelles', prefixeAuxiliaireDefaut: null, ordre: 610 },
+  { role: 'autres_reserves', racines: ['1068'], compteDefaut: '106800', libelleDefaut: 'Autres réserves', prefixeAuxiliaireDefaut: null, ordre: 620 },
+  { role: 'report_a_nouveau_crediteur', racines: ['110'], compteDefaut: '110000', libelleDefaut: 'Report à nouveau (solde créditeur)', prefixeAuxiliaireDefaut: null, ordre: 630 },
+  { role: 'report_a_nouveau_debiteur', racines: ['119'], compteDefaut: '119000', libelleDefaut: 'Report à nouveau (solde débiteur)', prefixeAuxiliaireDefaut: null, ordre: 640 },
+  { role: 'dividendes_a_payer', racines: ['457'], compteDefaut: '457000', libelleDefaut: 'Associés - Dividendes à payer', prefixeAuxiliaireDefaut: null, ordre: 650 },
+]

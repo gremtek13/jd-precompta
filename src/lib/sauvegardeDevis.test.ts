@@ -28,6 +28,7 @@ import { MODELE_DU_CABINET_PREVU } from './modeleDuCabinet'
 import { COPIE_DES_FICHIERS_PREVUE } from './copieDesFichiers'
 import { STOCKS_PREVUS } from './stocks'
 import { EXERCICES_DECALES_PREVUS } from './exercices'
+import { AFFECTATION_PREVUE } from './affectationDuResultat'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
@@ -50,6 +51,8 @@ import {
   auPlanDeLInventaire,
   auGrapheDesStocks,
   auPlanDesStocks,
+  auGrapheDeLAffectation,
+  auPlanDeLAffectation,
   auPlanDesOriginauxLiberes,
   auPlanDesAdressesReception,
   auPlanDesArticles,
@@ -133,14 +136,16 @@ describe('le filtre du plan', () => {
         && auPlanDuModeleDuCabinet(table, MODELE_DU_CABINET_PREVU)
         && auPlanDesCopiesDesFichiers(table, COPIE_DES_FICHIERS_PREVUE) && auPlanDeLInventaire(table, INVENTAIRE_PREVU)
         && auPlanDesStocks(table, STOCKS_PREVUS)
-        && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS))
+        && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS)
+        && auPlanDeLAffectation(table, AFFECTATION_PREVUE))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
         && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
         && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS)
         && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)
-        && auGrapheDesStocks(r, STOCKS_PREVUS)))
+        && auGrapheDesStocks(r, STOCKS_PREVUS)
+        && auGrapheDeLAffectation(r, AFFECTATION_PREVUE)))
     expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlanAujourdHui(t)))
