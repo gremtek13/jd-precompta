@@ -51915,3 +51915,21 @@ EN ATTENTE sans elle ; 12 mutations sur 12, la lecture préalable dite (sans ell
 167 invariants, 0 en faute, 108 sur 108, avec et sans ; contraintes 847 → 850, le retour rend celles de la production.
 `validationExercice.sql` (245) et `lettrageManuel.sql` posaient des chemins hors du dossier : corrigés ;
 `pieceFigeeDansLeStockage.sql` retire la contrainte le temps de son jeu croisé (annulée avec lui), 0 en faute.
+
+### 12/11/2026 — LIA8 : LES ACOMPTES ET LE SOLDE DE L'IS AU CALENDRIER (LIGNE 38) (DERRIÈRE SON DRAPEAU)
+
+`lib/echeancesFiscales.ts` reçoit l'IS derrière `CALENDRIER_IS_EXPORTE` baissé (conception 37, § 6.3, LIA-Q8 (A)) : les quatre
+acomptes (2571-SD) aux 15 mars, juin, septembre et décembre de l'exercice, le solde (2572-SD) au 15 mai suivant, pour un
+exercice civil seulement — un exercice décalé, ou ouvert en cours d'année hors du premier, se DIT (ligne 42) ; un exercice à
+l'IR n'a rien ; un exercice dont le régime n'est pas dit se dit aussi, si l'échéance qu'il tait tombe dans la fenêtre. Les
+montants viennent de `acomptesDeLExercice` et `calculerImpotSurLesSocietes` (LIA3) sur des entrées lues EN ENTIER ; sinon
+« sans montant », jamais 0 ; dispense, premier exercice, deuxième acompte couvert, solde excédentaire : « rien à payer » ; une
+contribution sociale non calculée tait le solde. Jours non ouvrés : BOI-IS-DECLA-20-10-20200610 (§ 40 à 70) et
+BOI-IS-DECLA-20-30-20260121 n'écrivent aucun report ; BOI-REC-PART-10-40-20200630 § 110 le réserve aux impôts sur rôle des
+particuliers. La date rendue est donc la date légale, et un 15 qui tombe un samedi, un dimanche ou un férié le dit (LIA8-Q1).
+« Mon échéancier » (`composerEcheancier`, `impot` obligatoire) les dit aux mots du client, le montant sous « Banque », en
+estimation sur un barème à confirmer (LIA3-Q1) ; la Checklist les montre avec leur montant ; tous les écrans passent
+`SANS_IMPOT_SUR_LES_SOCIETES` jusqu'à LIA4. `lib/rapprochementDesAcomptesIs.ts` PROPOSE l'échéance d'un débit au même montant,
+à quinze jours, seule candidate (aucun écran). Le BNC ne change pas d'un octet : chaque jour de 2025 à 2028, le calendrier et
+l'échéancier (quatre profils) gardent l'empreinte SHA-256 calculée sur le code d'avant. Onze mutations, dix tuées (la
+onzième, équivalente, n'est vue que du compilateur).

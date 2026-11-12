@@ -7,6 +7,7 @@ import {
   ECHEANCIER_VIDE, composerEcheancier,
 } from '../lib/echeancierClient'
 import { useEcheancierDuClient } from '../lib/echeancierClientLecture'
+import { SANS_IMPOT_SUR_LES_SOCIETES } from '../lib/echeancesFiscales'
 import { aujourdHuiAParis } from '../lib/format'
 
 // « MON ÉCHÉANCIER » (ligne 51.5, partie C, étape C1) : ouvert à TOUT accès client. Les dates de ce que le client va devoir
@@ -27,7 +28,11 @@ export default function ClientEcheancier() {
   }
 
   const echeancier = lecture && lecture.etat !== 'illisible'
-    ? composerEcheancier({ aujourdHui: aujourdHuiAParis(), dossier: lecture.dossier, cotisations: lecture.cotisations, avecMontants })
+    ? composerEcheancier({
+      aujourdHui: aujourdHuiAParis(), dossier: lecture.dossier, cotisations: lecture.cotisations, avecMontants,
+      // Le régime d'imposition ne se lit pas encore en base (LIA4) : aucun dossier n'a d'IS au calendrier (LIA8).
+      impot: SANS_IMPOT_SUR_LES_SOCIETES,
+    })
     : null
 
   return (
@@ -53,6 +58,7 @@ export default function ClientEcheancier() {
         {echeancier && (
           <>
             {echeancier.avisTva && <p className="echeancier-note">{echeancier.avisTva}</p>}
+            {echeancier.avisImpot && <p className="echeancier-note">{echeancier.avisImpot}</p>}
             <p className="echeancier-note">{ECHEANCIER_CONDITIONS}</p>
             {!avecMontants && <p className="echeancier-note">{ECHEANCIER_SANS_MONTANTS}</p>}
           </>

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { droitsSur } from '../lib/droitsAcces'
 import { ECHEANCIER_ILLISIBLE, ECHEANCIER_SANS_MONTANTS, ECHEANCIER_VIDE, composerEcheancier } from '../lib/echeancierClient'
 import { useEcheancierDuClient } from '../lib/echeancierClientLecture'
+import { SANS_IMPOT_SUR_LES_SOCIETES } from '../lib/echeancesFiscales'
 import { aujourdHuiAParis } from '../lib/format'
 
 // LA CARTE « MES PROCHAINES ÉCHÉANCES » DE L'ACCUEIL DU CLIENT (ligne 51.5, étape C1) : les premières échéances de « Mon
@@ -19,7 +20,11 @@ export default function EcheancierAccueil({ dossierId }: { dossierId: string }) 
   const avecMontants = droitsSur(droitsParDossier ?? {}, dossierId).banque === true
   const lecture = useEcheancierDuClient(dossierId, avecMontants)
   const echeancier = lecture && lecture.etat !== 'illisible'
-    ? composerEcheancier({ aujourdHui: aujourdHuiAParis(), dossier: lecture.dossier, cotisations: lecture.cotisations, avecMontants })
+    ? composerEcheancier({
+      aujourdHui: aujourdHuiAParis(), dossier: lecture.dossier, cotisations: lecture.cotisations, avecMontants,
+      // Le régime d'imposition ne se lit pas encore en base (LIA4) : aucun dossier n'a d'IS au calendrier (LIA8).
+      impot: SANS_IMPOT_SUR_LES_SOCIETES,
+    })
     : null
 
   return (

@@ -4,7 +4,7 @@ import {
   ECHEANCIER_SANS_MONTANTS, ECHEANCIER_VIDE, composerEcheancier, dateEnLettres, finDeLaFenetre, motsDuClientPour,
   type CotisationDeLEcheancier, type DossierDeLEcheancier,
 } from './echeancierClient'
-import { echeancesFiscales } from './echeancesFiscales'
+import { SANS_IMPOT_SUR_LES_SOCIETES, echeancesFiscales } from './echeancesFiscales'
 import { motsDuCabinet } from './espaceVentes'
 import { aujourdHuiAParis } from './format'
 
@@ -15,7 +15,7 @@ function cotisation(champs: Partial<CotisationDeLEcheancier>): CotisationDeLEche
 }
 
 function composer(entree: Partial<Parameters<typeof composerEcheancier>[0]>) {
-  return composerEcheancier({ aujourdHui: '2026-11-06', dossier: SANS_TVA, cotisations: [], avecMontants: false, ...entree })
+  return composerEcheancier({ aujourdHui: '2026-11-06', dossier: SANS_TVA, cotisations: [], avecMontants: false, impot: SANS_IMPOT_SUR_LES_SOCIETES, ...entree })
 }
 
 afterEach(() => { vi.useRealTimers() })
