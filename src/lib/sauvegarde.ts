@@ -468,7 +468,10 @@ export function auPlanDesCopiesDesFichiers(table: string, prevue: boolean): bool
 // avant les exercices validés, que la garde refuserait de rouvrir. Son chemin,
 // direct ; sa clé, la commune ; aucune vague. La restauration la réinsère par la porte que sa policy ouvre au
 // super-administrateur, et ses lignes par celle que la garde des lignes lui ouvre. sauvegardeOperationsInventaire.test.ts
-// éprouve le plan prévu et le plan du jour.
+// éprouve le plan prévu et le plan du jour. Les PROVISIONS (INV4, migration `provisions`, sous le même drapeau) la
+// précèdent : une évaluation cite sa provision (`provision_id`, sans action) ; leurs relations — le dossier en cascade, la
+// facture émise dépréciée et la pièce citée sans action —, leur chemin direct, la clé commune ; la restauration les
+// réinsère par la porte que leur garde ouvre au super-administrateur (provisionsEnBase.test.ts).
 
 /** Une table au plan, côté inventaire : toutes, sauf la sienne tant que sa migration n'est pas en base. */
 export function auPlanDeLInventaire(table: string, prevu: boolean): boolean {
@@ -838,6 +841,12 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'operations_inventaire', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'operations_inventaire', parent: 'pieces', colonne: 'piece_citee_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'operations_inventaire', colonne: 'operation_inventaire_id', aLaSuppression: 'bloque' },
+  // Les provisions (ligne 35, INV4) : le dossier en cascade ; la facture émise dépréciée et la pièce citée, sans action ; et
+  // l'évaluation d'une provision, une opération d'inventaire qui la cite sans action (la provision évaluée ne part plus).
+  { enfant: 'provisions', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'provisions', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
+  { enfant: 'provisions', parent: 'pieces', colonne: 'piece_citee_id', aLaSuppression: 'bloque' },
+  { enfant: 'operations_inventaire', parent: 'provisions', colonne: 'provision_id', aLaSuppression: 'bloque' },
   // Les lettres de mission (ligne 47, LM4) : le dossier du cabinet, en cascade ; le reste sans action.
   { enfant: 'modeles_lettre_de_mission', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'modeles_lettre_de_mission', parent: 'modeles_lettre_de_mission', colonne: 'remplace_id', aLaSuppression: 'bloque' },
@@ -1142,6 +1151,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'piece_commentaires',
   'piece_textes_ocr',
   'notes_internes',
+  'provisions',
   'operations_inventaire',
   'stocks_de_cloture',
   'pieces_hors_de_france',
@@ -1735,6 +1745,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   parametres_facturation: { acces: 'direct' },
   designations_des_pieces: { acces: 'direct' },
   operations_caisse: { acces: 'direct' },
+  provisions: { acces: 'direct' },
   operations_inventaire: { acces: 'direct' },
 }
 

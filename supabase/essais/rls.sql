@@ -136,6 +136,12 @@
 --      rien, ni par la table ni par `bornes_de_l_exercice`, ni l'anonyme ; le client ne déclare rien, ni par la fonction ni
 --      en direct, et ne réécrit rien ; le catalogue — et trois mutations ; avant la migration `exercices_du_dossier`, une
 --      ligne « EN ATTENTE ». Le reste : `exercicesDuDossier.sql`, sur une réplique.
+--   6quindecies. Les PROVISIONS (INV4, ligne 35 ; bloc PV, en fin de fichier) : PV1 à PV3 — le chef lit la provision
+--      qu'il a enregistrée (contrôle positif), le client du dossier, un membre de l'équipe à qui le dossier n'est pas
+--      assigné et l'anonyme rien ; le client n'écrit rien, ni par la fonction ni en direct (la garde, puis la RLS), le
+--      super-administrateur réinsère (la restauration) ; le catalogue — et trois mutations ; avant la migration
+--      `provisions`, une ligne « EN ATTENTE ». Le reste (les refus, l'évaluation par différence, la ventilation, le
+--      gel) : `provisions.sql`, sur une réplique.
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -9858,6 +9864,209 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $ex$;
+
+-- ══ PV. Les provisions (ligne 35, INV4 ; migration `provisions`, PRÉPARÉE, après `operations_d_inventaire`) ══════════════
+-- Une table du cabinet que le client ne lit pas, pas même pour son dossier : une seule policy, `for all to authenticated`
+-- sur `admin_du_dossier(dossier_id)`, aucune branche client ; l'écriture par `enregistrer_provision` et `retirer_provision`
+-- (`security definer`, l'accès d'abord), une garde refusant toute écriture directe que la policy laisserait passer, sauf la
+-- réinsertion du super-administrateur (la restauration). Les refus, l'évaluation, la ventilation et le gel se rejouent dans
+-- `provisions.sql` (réplique seulement).
+--   PV1. Le chef enregistre une provision dans un dossier en engagement du cabinet du dossier du client, que le client voit,
+--        et la lit (le contrôle POSITIF) ; le client n'en lit rien, ni un membre à qui le dossier n'est pas assigné, ni
+--        l'anonyme.
+--   PV2. Le client n'écrit pas par la fonction (42501, sous ses mots), ni en direct : la garde le refuse (42501, ses mots,
+--        AVANT le contrôle d'écriture de la RLS), et, la garde débranchée, la RLS seule (42501) ; il ne réécrit rien ; le
+--        super-administrateur réinsère en direct (la restauration, le contrôle POSITIF).
+--   PV3. Le catalogue : la RLS active, une seule policy permissive, à authenticated, `admin_du_dossier` des deux côtés.
+-- Trois mutations, qui doivent mordre : M-PV1 (la lecture élargie au client du dossier : il lit la provision), M-PV2 (la
+-- policy fermée : le chef ne lit plus rien), M-PV3 (la garde débranchée et l'écriture élargie au client du dossier : son
+-- insertion directe passe). Avant la migration, une ligne dit que le bloc attend.
+do $pv$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  dossier uuid := 'a1400000-0000-4000-8000-0000000000c1';
+  saisie jsonb := '{"genre": "risque", "compte_provision": "151100", "objet": "Essai de la RLS", "ouverte_en": 2025}';
+  chef_lit bigint; du_client bigint; du_membre bigint; de_l_anon text; par_la_fonction text; en_direct text; sans_garde text;
+  reecrites bigint; reinsere text; elargie bigint; fermee bigint; ecrite_elargie text; n bigint; erreur text;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.provisions') is null then
+    insert into rls_verdict values ('PV. les provisions : EN ATTENTE de la migration provisions',
+      'provisions', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : un dossier en engagement du cabinet du dossier du client, que le client voit, que le membre ne suit pas ──
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva)
+      select dossier, 'Essai RLS des provisions', d.cabinet_id, 'engagement', 'franchise' from dossiers d where d.id = dossier_du_client;
+    insert into memberships (user_id, dossier_id, role)
+      select client, dossier, m.role from memberships m where m.user_id = client and m.dossier_id = dossier_du_client limit 1;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform enregistrer_provision(dossier, saisie, null);
+    select count(*) into chef_lit from provisions where dossier_id = dossier;
+    reset role;
+    construit := true;
+
+    -- PV1 : le client du dossier, le membre à qui il n'est pas assigné, l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from provisions;
+    perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+    select count(*) into du_membre from provisions where dossier_id = dossier;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from provisions;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'PV1. le chef lit la provision qu''il a enregistrée (le contrôle positif) ; le client du dossier, un membre de l''équipe à qui le dossier n''est pas assigné et l''anonyme n''en lisent rien',
+      'cible', 'provisions',
+      'observe', 'le chef : ' || chef_lit || ' | le client : ' || du_client || ' | le membre : ' || du_membre || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_lit = 1 and du_client = 0 and du_membre = 0 and de_l_anon = '0');
+
+    -- PV2 : le client n'écrit ni ne réécrit ; le super-administrateur réinsère.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_provision(dossier, saisie, null);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into provisions (dossier_id, genre, compte_provision, objet, ouverte_en, cree_par)
+        values (dossier, 'risque', '151100', 'en direct', 2025, client);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      alter table public.provisions disable trigger provisions_par_ses_fonctions;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into provisions (dossier_id, genre, compte_provision, objet, ouverte_en, cree_par)
+        values (dossier, 'risque', '151100', 'en direct', 2025, client);
+      sans_garde := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sans_garde is null then sans_garde := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update provisions set objet = 'réécrit' where dossier_id = dossier returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into provisions (dossier_id, genre, compte_provision, objet, ouverte_en, cree_par)
+        values (dossier, 'risque', '151100', 'réinsérée', 2025, chef);
+      reinsere := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if reinsere is null then reinsere := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'PV2. le client n''écrit pas de provision (la fonction, la garde, puis la RLS) et n''en réécrit aucune ; le super-administrateur en réinsère une (la restauration, le contrôle positif)',
+      'cible', 'provisions',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?')
+        || ' | la garde débranchée : ' || coalesce(sans_garde, '?') || ' | réécrites : ' || reecrites || ' | réinsérée : ' || coalesce(reinsere, '?'),
+      'ok', par_la_fonction = '42501 Accès refusé à ce dossier.'
+        and en_direct = '42501 Une provision ne s’écrit que par enregistrer_provision et retirer_provision.'
+        and sans_garde like '42501 new row violates row-level security policy%' and reecrites = 0 and reinsere = 'ACCEPTÉ');
+
+    -- M-PV1 : la lecture élargie au client du dossier.
+    begin
+      alter policy provisions_cabinet on public.provisions
+        using (admin_du_dossier(dossier_id) or exists (select 1 from memberships m where m.dossier_id = provisions.dossier_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from provisions where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PV1 — la lecture des provisions élargie au client du dossier',
+      'attendu', 'le client lit la provision de son dossier', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 1, false));
+
+    -- M-PV2 : la policy fermée.
+    begin
+      alter policy provisions_cabinet on public.provisions using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from provisions where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PV2 — la policy des provisions fermée',
+      'attendu', 'le chef ne lit plus la provision', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-PV3 : la garde débranchée et l'écriture élargie au client du dossier — plus rien ne refuse.
+    begin
+      alter table public.provisions disable trigger provisions_par_ses_fonctions;
+      alter policy provisions_cabinet on public.provisions
+        with check (admin_du_dossier(dossier_id) or exists (select 1 from memberships m where m.dossier_id = provisions.dossier_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into provisions (dossier_id, genre, compte_provision, objet, ouverte_en, cree_par)
+          values (dossier, 'risque', '151100', 'en direct', 2025, client);
+        ecrite_elargie := 'ACCEPTÉ';
+      exception when others then ecrite_elargie := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PV3 — la garde débranchée, l''écriture des provisions élargie au client du dossier',
+      'attendu', 'son insertion directe passe', 'observe', coalesce(ecrite_elargie, '?'), 'mord', coalesce(ecrite_elargie = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- PV3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'provisions' and p.roles = array['authenticated']::name[]
+     and p.policyname = 'provisions_cabinet' and p.permissive = 'PERMISSIVE' and p.cmd = 'ALL'
+     and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check = 'admin_du_dossier(dossier_id)';
+  verdicts := verdicts || jsonb_build_object('controle', 'PV3. la RLS active ; une seule policy, à authenticated, le cabinet du dossier des deux côtés (lecture du catalogue)',
+    'cible', 'provisions',
+    'observe', n || ' sur 1, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'provisions' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.provisions'::regclass),
+    'ok', n = 1 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'provisions' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 1
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.provisions'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'PV. le jeu d''essai des provisions s''est construit', 'cible', 'un dossier en engagement du cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $pv$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

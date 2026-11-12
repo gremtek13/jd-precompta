@@ -1550,7 +1550,39 @@ export interface OperationInventaire {
   objet: string
   // La pièce du dossier qui fonde la régularisation, quand elle existe.
   piece_citee_id: string | null
+  // La provision dont l'opération est l'évaluation au 31 décembre (nature `provision`, `montant_centimes` sa cible ; INV4,
+  // migration `provisions`, préparée) : FACULTATIVE, la vérité des deux côtés de la migration, nulle sur une régularisation.
+  provision_id?: string | null
   // Incrémentée à chaque remplacement ; une saisie retient la version qu'elle remplace.
+  version: number
+  cree_par: string
+  cree_le: string
+  modifie_par: string | null
+  modifie_le: string | null
+}
+
+// UNE PROVISION (`provisions`, ligne 35, INV4 ; migration `provisions`, préparée, pas appliquée — lib/inventaire.ts,
+// `INVENTAIRE_PREVU`) : une provision pour risques (151) ou la dépréciation d'une créance (491) d'un dossier en ENGAGEMENT,
+// saisie par le cabinet ; ses évaluations au 31 décembre sont des `OperationInventaire` de nature `provision`. Lue et
+// écrite par le cabinet du dossier seul, par `enregistrer_provision` et `retirer_provision` ; figée avec son exercice
+// d'ouverture, ou dès sa première évaluation. Soldée : sa dernière évaluation a une cible nulle (déduit, jamais stocké).
+export type GenreProvision = 'risque' | 'depreciation_creance'
+export interface Provision {
+  id: string
+  dossier_id: string
+  genre: GenreProvision
+  // Sous le 151 (risque) ou le 491 (dépréciation d'une créance), du plan du dossier.
+  compte_provision: string
+  // 1 à 200 caractères, sur une ligne : le litige, la créance ; il part au FEC dans le libellé de ses évaluations.
+  objet: string
+  // La facture émise dépréciée (une dépréciation seulement), ou la pièce citée — jamais les deux.
+  facture_id: string | null
+  piece_citee_id: string | null
+  // L'exercice de son ouverture ; elle ne s'évalue pas avant.
+  ouverte_en: number
+  // INV-Q11 : sa part du solde repris de son compte (en centimes), au premier exercice du dossier ; nulle si elle est née
+  // dans l'application.
+  reprise_centimes: number | null
   version: number
   cree_par: string
   cree_le: string

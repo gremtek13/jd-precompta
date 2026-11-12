@@ -51968,3 +51968,22 @@ restaurés. Non vu : une restauration de lignes d'inventaire et de stocks (le do
 
 Défaut relevé en passant : « Mon échéancier » (`composerEcheancier`) montrait l'échéance de la 2035 à un dossier en engagement (BIC, IS), que la Checklist du cabinet filtrait en ligne (`modele.mode !== 'engagement' || e.impot !== 'Liasse'`). La règle vit maintenant une fois, `echeanceDuModeComptable` (`lib/echeancesFiscales.ts`), que la Checklist et l'échéancier appellent. La lecture du client lit `mode_comptable` avec le statut de TVA ; une valeur hors de la liste fermée rend le dossier illisible (lecture « partielle », bandeau), et un dossier non lu n'affirme pas la 2035 (le reste du calendrier inchangé). Aucune migration, `CALENDRIER_IS_EXPORTE` intact.
 Un BNC en trésorerie ne change pas : l'empreinte des échéanciers « d'avant LIA8 » (`echeancesDeLImpot.test.ts`), recalculée sur trois profils — le quatrième, le dossier non lu, a désormais sa règle propre —, est la même sur le code d'avant (vérifié en rejouant le test avec les anciennes sources) ; son ancienne valeur à quatre profils (`70a7842f…`) n'est plus calculable telle quelle.
+
+### 12/11/2026 — INV4 : LES PROVISIONS, EN BASE (LIGNE 35) (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, lot INV4 de la conception 35 ; INV-Q4 et INV-Q11 suivies à leur recommandation (A). La migration
+`supabase/preparees/20261112230000_provisions.sql` (md5 `a532988a…`, retour `061b537b…`), À COLLER (l'évaluation retire les
+lignes qu'elle remplace), dépend d'INV2 : sa garde de tête l'exige et épingle six de ses fonctions à leur empreinte. Elle pose
+six rôles (151, 491, 6815, 6817, 7815, 7817 ; rangs 420 à 470 ; le 151100 au libellé du 1511, « Provisions pour litiges »), la
+table `provisions` (une policy `for all` sur `admin_du_dossier`, une garde, la réinsertion du super-administrateur),
+l'évaluation au 31 décembre comme opération d'inventaire de nature `provision` (`operations_inventaire.provision_id`, une
+évaluation par provision et par exercice, contrainte TOTALE) : aucune colonne neuve au brouillon, les lignes citent
+`operation_inventaire_id`. Par différence, l'écart recomposé en entiers depuis la provision précédente lue en base, comparé en
+multiensemble, aucune écriture s'il est nul ; seule la dernière évaluation change ou se retire (la garde, aussi sous
+`retirer_operation_inventaire`) ; « soldée » se déduit d'une cible nulle, jamais stockée. INV-Q11 : une part reprise
+(`reprise_centimes`) au premier exercice, la somme d'un compte jamais au-delà du solde repris, exacte à la première
+évaluation ; un compte repris sans provision reste au filet d'INV3. Écartée : l'évaluation par `enregistrer_operation_inventaire`
+(la remplacer pour y ouvrir la nature `provision` qu'elle refuse). Sur des copies de la mère rattrapées à 200 migrations,
+INV2→INV4 puis INV2→LIA2→INV4 : `provisions.sql` 74 contrôles, 0 en faute, 8 mutations sur 8 ; `rls.sql` 176 (puis 179)
+lignes, 0 en faute, 114 (117) mutations sur 114 (117) ; `operationsDInventaire.sql` et `stocks.sql` justes ;
+`planComptable.sql` 62 justes (contrôle 1quater) ; le retour rend le catalogue d'avant à l'octet, la migration de nouveau juste.
