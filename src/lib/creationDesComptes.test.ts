@@ -275,7 +275,7 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     expect(cheminsDuCabinet.has('/securite')).toBe(true)
     const chemins = [...espaceClient.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]).filter((c) => !cheminsDuCabinet.has(c)).sort()
     expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-achats', '/mes-comptes', '/mes-demandes', '/mes-documents',
-      '/mes-informations', '/mes-notes-de-frais', '/mes-pieces', '/mes-ventes', '/mon-analyse', '/mon-echeancier'])
+      '/mes-informations', '/mes-lettres-de-mission', '/mes-notes-de-frais', '/mes-pieces', '/mes-ventes', '/mon-analyse', '/mon-echeancier'])
     // « Mes comptes » (étape C4b), « Mes documents » et « Mes demandes » (étape B3a) ne sont montées qu'avec leur migration : la
     // phrase les nomme dans cet état-là, et les tait avant.
     // « Mes achats » (étape B5) de même, avec la sienne ; « Mes notes de frais » (étape B8), avec la sienne.

@@ -22,6 +22,7 @@ import ClientBanque from './pages/ClientBanque'
 import ClientCaisse from './pages/ClientCaisse'
 import ClientComptes from './pages/ClientComptes'
 import ClientDocuments from './pages/ClientDocuments'
+import ClientLettresDeMission from './pages/ClientLettresDeMission'
 import ClientDemandes from './pages/ClientDemandes'
 import ClientAchats from './pages/ClientAchats'
 import ClientNotesDeFrais from './pages/ClientNotesDeFrais'
@@ -34,6 +35,7 @@ import { maBanqueOuverte } from './lib/banqueClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from './lib/caisseClient'
 import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from './lib/situationsPubliees'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from './lib/documentsEtDemandes'
+import { lettresDuClientOuvertes, lettresDuClientPrevues } from './lib/lettresDuClient'
 import { mesDemandesOuvertes, mesDocumentsOuverts } from './lib/documentsEtDemandesVue'
 import { ACHATS_DU_CLIENT_PREVUS } from './lib/achatsClient'
 import { mesAchatsOuverts } from './lib/achatsClientVue'
@@ -187,6 +189,8 @@ function Gate() {
             {/* « Mes documents » (ligne 51.5, étape B3a) : avec sa migration, et la case « Documents » sur la société AFFICHÉE ;
                 « Mes demandes », à tout accès client, avec sa migration seulement. */}
             {mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents) && <Route path="/mes-documents" element={<ClientDocuments />} />}
+            {/* « Mes lettres de mission » (ligne 47, étape LM6) : avec sa migration, et la case « Documents » sur la société AFFICHÉE. */}
+            {lettresDuClientOuvertes(lettresDuClientPrevues(), droitsSur(droitsParDossier ?? {}, dossierActifId).documents) && <Route path="/mes-lettres-de-mission" element={<ClientLettresDeMission />} />}
             {mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />}
             {/* « Mes achats » (ligne 51.5, étape B5) : avec sa migration (B4), et la case « Achats » sur la société AFFICHÉE. */}
             {mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats) && <Route path="/mes-achats" element={<ClientAchats />} />}

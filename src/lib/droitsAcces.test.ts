@@ -247,7 +247,7 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(routesClient).toEqual([
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
       '/mon-echeancier ClientEcheancier', '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
-      '/mes-comptes ClientComptes', '/mes-documents ClientDocuments', '/mes-demandes ClientDemandes', '/mes-achats ClientAchats',
+      '/mes-comptes ClientComptes', '/mes-documents ClientDocuments', '/mes-lettres-de-mission ClientLettresDeMission', '/mes-demandes ClientDemandes', '/mes-achats ClientAchats',
       '/mes-notes-de-frais ClientNotesDeFrais', '/mon-analyse ClientAnalyse',
     ])
     // DEPUIS L'ÉTAPE B8, « Mes notes de frais » lit la case « Notes de frais », derrière `NOTES_DE_FRAIS_PREVUES`

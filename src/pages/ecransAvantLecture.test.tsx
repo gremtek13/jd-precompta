@@ -26,6 +26,7 @@ import ClientBanque from './ClientBanque'
 import ClientCaisse from './ClientCaisse'
 import ClientComptes from './ClientComptes'
 import ClientDocuments from './ClientDocuments'
+import ClientLettresDeMission from './ClientLettresDeMission'
 import ClientDemandes from './ClientDemandes'
 import ClientAchats from './ClientAchats'
 import AchatDeLaPiece from './dossier/AchatDeLaPiece'
@@ -305,6 +306,7 @@ const ECRANS: Ecran[] = [
   // « Mes documents » et « Mes demandes » (ligne 51.5, étape B3a) : la case « Documents » relue à la base avec les documents ;
   // les demandes, leurs réponses, leurs relances et les dépôts du client, lus en entier.
   { nom: 'ClientDocuments', fichier: 'pages/ClientDocuments.tsx', rendre: () => <MemoryRouter><ClientDocuments /></MemoryRouter> },
+  { nom: 'ClientLettresDeMission', fichier: 'pages/ClientLettresDeMission.tsx', rendre: () => <MemoryRouter><ClientLettresDeMission /></MemoryRouter> },
   { nom: 'ClientDemandes', fichier: 'pages/ClientDemandes.tsx', rendre: () => <MemoryRouter><ClientDemandes /></MemoryRouter> },
   // « Mes achats » (ligne 51.5, étape B5) : la case « Achats » relue à la base avec les factures d'achat, leurs déclarations et
   // les vues du compte ; et, côté cabinet, la section de la fiche d'une pièce d'achat : son échéance, ses déclarations, les accès.
@@ -712,6 +714,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/LettresDeMissionCard.tsx': 'drapeau `LETTRES_DE_MISSION_PREVUES` baissé : ne rend ni ne lit rien ; levé, montée '
     + 'dans le seul dossier du cabinet, son test (LettresDeMissionCard.test.tsx) éprouve « Chargement… » avant la lecture et aucun '
     + 'geste sur une lecture illisible ; n’écrit que sur ses gestes, chacun par sa fonction SQL',
+  'pages/dossier/DossierPermanentSection.tsx': 'reçoit les entrées du dossier permanent de l’onglet Révision (monté ici) ; '
+    + 'les lettres de mission ne se lisent que drapeau `LETTRES_DE_MISSION_PREVUES` levé, et tant qu’elles ne sont pas '
+    + 'revenues la lettre de mission ne se dit ni en vigueur ni absente (`sansEntreeNiLettre`, lettresDuClient.test.ts) ; '
+    + 'n’écrit rien par elles',
   'pages/dossier/MissionsEnVigueurCard.tsx': 'drapeau `LETTRES_DE_MISSION_PREVUES` baissé : ne rend ni ne lit rien ; levé, son test '
     + '(LettresDeMissionCard.test.tsx) éprouve qu’un dossier du cabinet fermé, ou une lecture que la base refuse (LM5-Q2, '
     + '`MISSIONS_DU_CLIENT_PREVUES`), ne se dit jamais « aucune lettre » ; n’écrit rien',
