@@ -51687,3 +51687,19 @@ scellée par une forme 3 de l'empreinte ; le PDF se remplit comme la 2035, un mi
 dépôt restant à l'EDI-TDFC (LIA-Q11). Base lue le 12/11/2026 : quatre dossiers en trésorerie, aucun exercice validé, aucun
 rôle de stock ni d'IS, aucune colonne d'imposition (LIA-Q1). Relevé en concevant : `immobilisations` n'a aucune sortie, le
 2033-C III attend un chantier des cessions (LIA-Q12) ; le 2033-A d'une société attend l'affectation du résultat (ligne 33).
+
+### 12/11/2026 — LES EXERCICES DÉCALÉS : LA CONCEPTION (LIGNE 42)
+
+La conception entière vit dans `docs/conceptions/42-exercices-decales.md` (constat, sources, principes, schéma, effets,
+lots, risques, huit questions EXD-Q1 à EXD-Q8). Le constat, mesuré en lecture seule : l'exercice EST l'année civile — 51
+des 300 fonctions de `public` lisent `extract(year …)`, 65 portent une borne civile, 32 passent par `frontiere_validation`
+(`make_date(max(annee), 12, 31)`), 31 déclencheurs gardent le gel sur 16 tables, 20 tables portent une année (dont neuf
+d'exercice), 162 fichiers de `src` et 4 Edge Functions un marqueur civil (borne haute). La proposition : une table
+`exercices` (début, fin, nature) pour les seuls dossiers en ENGAGEMENT, déclarés et jamais déduits ; en trésorerie
+l'exercice reste civil PAR LA LOI (CGI art. 12 et 93 : la 2035), la table le refuse ; deux fonctions seules disent les
+bornes et l'exercice d'une date ; l'exercice garde son nom entier, le millésime de sa clôture (EXD-Q1 (A) : deux clôtures
+la même année se refusent) ; le gel reste une date, la fin du dernier exercice validé ; l'empreinte civile reste en forme
+2 ; le passage d'un dossier existant par un exercice de transition motivé. Huit lots, environ vingt-deux jours, derrière
+`EXERCICES_DECALES_PREVUS` et `EXERCICES_DECALES_EXPORTES` ; premier risque, une régression de la frontière du gel (la
+nouvelle fonction doit rendre l'ancienne valeur pour tout dossier civil). Base lue le 12/11/2026 : quatre dossiers, tous
+en trésorerie, aucun exercice validé ; `btree_gist` disponible, non installée. Articles cités de mémoire, à relire avant EXD2.
