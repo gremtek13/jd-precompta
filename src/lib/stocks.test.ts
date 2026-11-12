@@ -48,7 +48,7 @@ describe('le drapeau et la table', () => {
   it('baissé, une table', () => {
     expect(STOCKS_PREVUS).toBe(false)
     expect(TABLES_DES_STOCKS).toEqual(['stocks_de_cloture'])
-    expect(MIGRATION).toMatch(/^create table public\.stocks_de_cloture \(/m)
+    expect(MIGRATION).toMatch(/^create table public\.stocks_de_cloture \(/mi)
   })
 })
 

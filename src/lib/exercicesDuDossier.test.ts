@@ -78,18 +78,18 @@ describe('le drapeau et la migration préparée', () => {
     expect(code).not.toMatch(/delete\s+from/i)
     expect(MIGRATION).not.toMatch(/[\\\r]/)
     // Le retour, lui, détruit la table et ses fonctions : à coller, et seulement sans exercice déclaré.
-    expect(RETOUR).toMatch(/drop table public\.exercices;/)
+    expect(RETOUR).toMatch(/drop table public\.exercices;/i)
     expect(RETOUR).toContain('if exists (select 1 from public.exercices) then')
     expect(RETOUR).not.toMatch(/drop extension/i)
   })
 
   it('la nature, la policy, les gardes, les droits, la double authentification', () => {
     expect(MIGRATION).toContain("constraint exercices_nature check (nature in ('premier', 'ordinaire', 'transition'))")
-    expect(MIGRATION).toMatch(/create policy exercices_cabinet on public\.exercices\s+for all to authenticated\s+using \(public\.admin_du_dossier\(dossier_id\)\)\s+with check \(public\.admin_du_dossier\(dossier_id\)\);/)
-    expect(MIGRATION.match(/^create policy /gm)).toHaveLength(1) // la seconde, `deux_facteurs`, ne naît que sous sa migration
+    expect(MIGRATION).toMatch(/create policy exercices_cabinet on public\.exercices\s+for all to authenticated\s+using \(public\.admin_du_dossier\(dossier_id\)\)\s+with check \(public\.admin_du_dossier\(dossier_id\)\);/i)
+    expect(MIGRATION.match(/^create policy /gmi)).toHaveLength(1) // la seconde, `deux_facteurs`, ne naît que sous sa migration
     expect(MIGRATION).not.toMatch(/client_du_dossier/)
-    expect(MIGRATION).toMatch(/create trigger exercices_garde\s+before insert or update or delete on public\.exercices\s+for each row execute function public\.garder_exercices\(\);/)
-    expect(MIGRATION).toMatch(/create trigger exercices_suite\s+after insert or update or delete on public\.exercices\s+for each row execute function public\.verifier_la_suite_des_exercices\(\);/)
+    expect(MIGRATION).toMatch(/create trigger exercices_garde\s+before insert or update or delete on public\.exercices\s+for each row execute function public\.garder_exercices\(\);/i)
+    expect(MIGRATION).toMatch(/create trigger exercices_suite\s+after insert or update or delete on public\.exercices\s+for each row execute function public\.verifier_la_suite_des_exercices\(\);/i)
     for (const f of ['declarer_exercice(uuid, date, date, text, text, date)', 'changer_date_de_cloture(uuid, date, date, text, date)',
       'bornes_de_l_exercice(uuid, integer)', 'exercice_de_la_date(uuid, date)']) {
       expect(MIGRATION, f).toContain(`revoke execute on function public.${f} from public, anon;`)

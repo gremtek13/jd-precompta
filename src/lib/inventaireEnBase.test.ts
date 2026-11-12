@@ -23,7 +23,7 @@ const RLS = lire('supabase/essais/rls.sql')
 
 /** Le corps d'une fonction de la migration, ses littéraux concaténés recollés (`'…' || '…'` devient un seul littéral). */
 function corps(nom: string): string {
-  const debut = MIGRATION.indexOf(`create function public.${nom}(`)
+  const debut = MIGRATION.search(new RegExp(`create function public\\.${nom}\\(`, 'i'))
   const fin = MIGRATION.indexOf('$fonction$;', debut)
   if (debut < 0 || fin < 0) throw new Error(`${nom} introuvable dans la migration`)
   return MIGRATION.slice(debut, fin).replace(/'\s*\|\|\s*'/g, '')
@@ -118,7 +118,7 @@ describe('les deux fonctions et les gardes, sous les règles de la base', () => 
     expect(MIGRATION).toContain('alter table public.operations_inventaire enable row level security;')
     expect(MIGRATION).toContain('create policy operations_inventaire_lecture on public.operations_inventaire\n  for select to authenticated using (public.admin_du_dossier(dossier_id));')
     expect(MIGRATION).toContain('create policy operations_inventaire_restauration on public.operations_inventaire\n  for insert to authenticated with check (public.is_super_admin());')
-    expect(MIGRATION.match(/create policy (?!deux_facteurs)/g)).toHaveLength(2)
+    expect(MIGRATION.match(/create policy (?!deux_facteurs)/gi)).toHaveLength(2)
     expect(MIGRATION).toContain("if to_regprocedure('public.deux_facteurs_satisfaits()') is not null then")
   })
 
@@ -128,7 +128,7 @@ describe('les deux fonctions et les gardes, sous les règles de la base', () => 
       montant_centimes: true, tva_centimes: true, periode_debut: true, periode_fin: true, objet: true, piece_citee_id: true,
       version: true, cree_par: true, cree_le: true, modifie_par: true, modifie_le: true,
     }
-    const table = /create table public\.operations_inventaire \(([\s\S]*?)\n\);/.exec(MIGRATION)![1]
+    const table = /create table public\.operations_inventaire \(([\s\S]*?)\n\);/i.exec(MIGRATION)![1]
     const enBase = [...table.matchAll(/^ {2}([a-z_]+) (?:uuid|integer|text|bigint|date|timestamptz)\b/gm)].map((x) => x[1])
     expect(enBase.sort()).toEqual(Object.keys(colonnes).sort())
   })

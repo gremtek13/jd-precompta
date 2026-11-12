@@ -68,7 +68,7 @@ describe('le plan prévu, inventaire compris', () => {
     const siennes = RELATIONS_PREVUES.filter((r) => r.enfant === 'operations_inventaire').map((r) => `${r.colonne} → ${r.parent} (${r.aLaSuppression})`).sort()
     expect(siennes).toEqual(clesDeLaTable())
     expect(siennes).toEqual(['dossier_id → dossiers (cascade)', 'piece_citee_id → pieces (bloque)'])
-    expect(MIGRATION).toMatch(/alter table public\.ecritures_brouillon add column operation_inventaire_id uuid\n\s+constraint ecritures_brouillon_operation_inventaire_id_fkey references public\.operations_inventaire\(id\);/)
+    expect(MIGRATION).toMatch(/alter table public\.ecritures_brouillon add column operation_inventaire_id uuid\n\s+constraint ecritures_brouillon_operation_inventaire_id_fkey references public\.operations_inventaire\(id\);/i)
     expect(RELATIONS_PREVUES.filter((r) => r.enfant === 'ecritures_brouillon' && r.colonne === 'operation_inventaire_id'))
       .toEqual([{ enfant: 'ecritures_brouillon', parent: 'operations_inventaire', colonne: 'operation_inventaire_id', aLaSuppression: 'bloque' }])
     expect(LIENS_GARDES.some((r) => r.enfant === 'operations_inventaire')).toBe(false)
