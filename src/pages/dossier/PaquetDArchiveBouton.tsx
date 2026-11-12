@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import documentation from '../../../DOCUMENTATION_DES_TRAITEMENTS.md?raw'
-import { fabriquerLePaquet, nomDuPaquet } from '../../lib/paquetDArchive'
+import { fabriquerLePaquet, nomDuPaquet, type PisteDuPaquet } from '../../lib/paquetDArchive'
+import { la2035DuPaquet } from '../../lib/paquetDArchive2035'
 import { lireLePaquet } from '../../lib/paquetDArchiveLecture'
 import { messageErreur } from '../../lib/messageErreur'
 import { enregistrerLePaquetTelecharge } from '../../lib/departDuClientLecture'
@@ -16,13 +17,19 @@ import { enregistrerLePaquetTelecharge } from '../../lib/departDuClientLecture'
 // Une pièce citée sans empreinte de dépôt entre au paquet marquée « non vérifiée » (INAL3-Q1) : le bouton le dit AVANT le
 // clic (`sansEmpreinte`, compté par l'onglet sur les pièces qu'il a lues, `piecesSansEmpreinte`), et le message qui suit le
 // téléchargement redit le nombre que la fabrication a compté.
+//
+// La piste d'audit (INAL3c) est celle de l'onglet, produite au clic (`pisteAudit`) : refusée, aucun paquet. Le PDF de la 2035
+// se remplit depuis l'instantané relu par la lecture du paquet (lib/paquetDArchive2035.ts) : s'il ne se fait pas, le paquet
+// part sans lui, le manifeste le dit, et le message qui suit le téléchargement aussi.
 
-export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, fec, indisponible, sansEmpreinte }: {
+export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, fec, pisteAudit, indisponible, sansEmpreinte }: {
   dossierId: string
   dossierSiret: string | null
   annee: number
   // Le FEC de l'exercice validé, tel que « Exporter FEC (validé) » le télécharge ; nul s'il ne peut pas se calculer.
   fec: () => { nom: string; contenu: string } | null
+  // La piste d'audit de l'exercice, telle que « Exporter la piste d'audit » la télécharge ; ne lève pas (un refus est un état).
+  pisteAudit: () => Promise<PisteDuPaquet>
   // Pourquoi le FEC ne peut pas encore se calculer (une lecture partielle de l'onglet), ou nul.
   indisponible: string | null
   // Le nombre de pièces citées par l'exercice qui n'ont pas d'empreinte de dépôt, sans valeur par défaut.
@@ -31,7 +38,7 @@ export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, f
   const fabricationEnCours = useRef(false)
   const [enCours, setEnCours] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
-  const [fait, setFait] = useState<{ fichiers: number; nonVerifiees: number; empreinte: string } | null>(null)
+  const [fait, setFait] = useState<{ fichiers: number; nonVerifiees: number; empreinte: string; avis2035: string | null } | null>(null)
 
   async function fabriquer() {
     if (fabricationEnCours.current || indisponible !== null) return
@@ -50,16 +57,21 @@ export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, f
         setErreur(`Aucun paquet d’archive : ${lecture.motif}`)
         return
       }
+      const piste = await pisteAudit()
+      const pdf2035 = await la2035DuPaquet(lecture.exercice.declaration, annee)
       const paquet = await fabriquerLePaquet({
         exercice: lecture.exercice, piecesCitees: lecture.piecesCitees, originaux: lecture.originaux,
-        fec: leFec, documentation, fabriqueLe: new Date(),
+        fec: leFec, pisteAudit: piste, pdf2035, documentation, fabriqueLe: new Date(),
       })
       if (!paquet.ok) {
         setErreur(paquet.message)
         return
       }
       telechargerOctets(nomDuPaquet(dossierSiret, annee), paquet.zip)
-      setFait({ fichiers: paquet.fichiers.length, nonVerifiees: paquet.nonVerifiees, empreinte: paquet.empreinteDuManifeste })
+      setFait({
+        fichiers: paquet.fichiers.length, nonVerifiees: paquet.nonVerifiees, empreinte: paquet.empreinteDuManifeste,
+        avis2035: paquet.avisDuPdf2035,
+      })
       // Le téléchargement s'enregistre APRÈS la remise au navigateur (ligne 44, INAL5) : la suppression du dossier l'exige,
       // exercice par exercice, à l'empreinte que le paquet scelle. Un enregistrement refusé se dit : le fichier est là, mais
       // la base ne le sait pas. Rien ne s'écrit le drapeau `DEPART_DU_CLIENT_PREVU` baissé.
@@ -85,7 +97,7 @@ export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, f
       <button
         className="btn btn-outline btn-sm"
         disabled={enCours || indisponible !== null}
-        title={indisponible ?? 'Le FEC, la 2035 validée, les originaux des pièces citées (chacun relu à son empreinte), la documentation des traitements et un manifeste, dans un ZIP à garder hors de l’application.'}
+        title={indisponible ?? 'Le FEC, la piste d’audit, la 2035 validée (en JSON et en PDF), les originaux des pièces citées (chacun relu à son empreinte), la documentation des traitements et un manifeste, dans un ZIP à garder hors de l’application.'}
         onClick={fabriquer}
       >
         {enCours ? 'Paquet en cours…' : `Paquet d’archive ${annee}`}
@@ -104,6 +116,9 @@ export default function PaquetDArchiveBouton({ dossierId, dossierSiret, annee, f
           manifeste d’empreinte
           {' '}<span style={{ fontFamily: 'monospace' }}>{fait.empreinte.slice(0, 16)}…</span>
         </p>
+      )}
+      {fait?.avis2035 && (
+        <p role="status" style={{ flexBasis: '100%', color: 'var(--color-warning)' }}>Attention : {fait.avis2035}</p>
       )}
     </>
   )
