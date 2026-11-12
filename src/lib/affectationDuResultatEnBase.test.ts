@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  composerLEcritureDAffectation, jugerLAffectation, ROLES_DE_L_AFFECTATION, type ContexteDeLAffectation, type DecisionSaisie,
+  composerLEcritureDAffectation, jugerLAffectation, proposerLAffectation, ROLES_DE_L_AFFECTATION, type ContexteDeLAffectation,
+  type DecisionSaisie,
   type LigneDAffectation, type SoldesAvantAffectation,
 } from './affectationDuResultat'
 import { ROLES_COMPTABLES } from './planComptable'
@@ -38,7 +39,7 @@ const COMPTES = {
   resultat_benefice: '120000', resultat_perte: '129000', reserve_legale: '106100', reserves_statutaires: '106300',
   autres_reserves: '106800', report_a_nouveau_crediteur: '110000', report_a_nouveau_debiteur: '119000', dividendes_a_payer: '457000',
 }
-type Dossier = 'd' | 'd2' | 'd3' | 'tresorerie' | 'ei' | 'sans_forme' | 'hors_champ' | 'sans_capital' | 'acomptes'
+type Dossier = 'd' | 'd2' | 'd3' | 'd_br' | 'tresorerie' | 'ei' | 'sans_forme' | 'hors_champ' | 'sans_capital' | 'acomptes'
 function contexte(dossier: Dossier, statuts = true, exerciceDeLaDecisionValide = false): ContexteDeLAffectation {
   const base = { modeComptable: 'engagement' as const, exploitantIndividuel: false, formeJuridique: '5499' as string | null,
     capitalCentimes: 1000000 as number | null, reservesStatutairesDistribuables: statuts }
@@ -46,16 +47,19 @@ function contexte(dossier: Dossier, statuts = true, exerciceDeLaDecisionValide =
     d: { ...SOLDES_NULS, capitalAuxComptes: 1000000, reserveLegale: 80000, autresReserves: 500000 },
     d2: { ...SOLDES_NULS, capitalAuxComptes: 1000000, pertesAnterieures: 500000 },
     d3: { ...SOLDES_NULS, capitalAuxComptes: 500000, reserveLegale: 100000 },
+    // AFF4-Q1 : la réserve légale et le report viennent d'une écriture ORDINAIRE du brouillon, que la base compte désormais
+    // à la première décision comme au remplacement (la version remplacée écartée).
+    d_br: { ...SOLDES_NULS, capitalAuxComptes: 1000000, reserveLegale: 90000, reportCrediteur: 200000 },
     tresorerie: SOLDES_NULS, ei: SOLDES_NULS, sans_forme: SOLDES_NULS, hors_champ: SOLDES_NULS, sans_capital: SOLDES_NULS,
     acomptes: { ...SOLDES_NULS, acomptesSurDividendes: 1000 },
   }
   const dossiers: Record<Dossier, ContexteDeLAffectation['dossier']> = {
-    d: base, d2: base, d3: base, acomptes: base,
+    d: base, d2: base, d3: base, d_br: base, acomptes: base,
     tresorerie: { ...base, modeComptable: 'tresorerie' }, ei: { ...base, exploitantIndividuel: true },
     sans_forme: { ...base, formeJuridique: null, capitalCentimes: null }, hors_champ: { ...base, formeJuridique: '9220', capitalCentimes: 100000 },
     sans_capital: { ...base, capitalCentimes: null },
   }
-  return { dossier: dossiers[dossier], resultatCentimes: ['d', 'd2', 'd3'].includes(dossier) ? 3000000 : 0, soldes: soldes[dossier],
+  return { dossier: dossiers[dossier], resultatCentimes: ['d', 'd2', 'd3', 'd_br'].includes(dossier) ? 3000000 : 0, soldes: soldes[dossier],
     comptes: COMPTES, aujourdHui: '2026-11-12', exerciceDeLaDecisionValide }
 }
 const L = (origine: LigneDAffectation['origine'], destination: LigneDAffectation['destination'], centimes: number): LigneDAffectation =>
@@ -97,6 +101,9 @@ const CAS: readonly [string, string, ContexteDeLAffectation, DecisionSaisie][] =
   ['E26', '22023', contexte('d3'), decision({ lignes: [L('benefice', 'dividendes', 3000000)] })],
   ['E27', '22023', contexte('d'), decision({ ...PAYE, lignes: RL_REPORT })],
   ['E28', '22023', contexte('d'), decision({ dateMiseEnPaiement: '2026-05-01' })],
+  ['E37', '22023', contexte('d_br'), decision({ lignes: [L('benefice', 'reserve_legale', 9999), L('benefice', 'report_crediteur', 2990001)] })],
+  ['E37c', '22023', contexte('d_br'), decision({ lignes: [L('benefice', 'reserve_legale', 10000), L('benefice', 'report_crediteur', 2990000), L('report_crediteur', 'dividendes', 200001)] })],
+  ['E39f', '22023', contexte('d_br'), decision({ lignes: [L('benefice', 'reserve_legale', 9999), L('benefice', 'report_crediteur', 2990001)] })],
 ]
 
 /** Une chaîne SQL telle que l'essai l'écrit : les apostrophes doublées. */
@@ -152,6 +159,21 @@ describe('l’écriture, le catalogue, le retour', () => {
     const rls = composerLEcritureDAffectation({ ...contexte('d'), soldes: SOLDES_NULS, resultatCentimes: 100000 },
       decision({ lignes: [L('benefice', 'reserve_legale', 5000), L('benefice', 'report_crediteur', 95000)] }))
     expect(RLS).toContain(`ecriture jsonb := '${JSON.stringify(rls).replace(/,"/g, ', "').replace(/":/g, '": ').replace(/\},\{/g, '}, {')}';`)
+  })
+
+  it('D_BR (AFF4-Q1) : sur les soldes que la base lit au brouillon, le module propose la décision que l’essai enregistre', () => {
+    const proposition = proposerLAffectation(contexte('d_br'))
+    expect(proposition?.reserveLegaleMinimale).toBe(10000)
+    expect(proposition?.lignes).toEqual(bonne('lignes_br'))
+    expect(jugerLAffectation(contexte('d_br'), decision({ lignes: bonne('lignes_br') })).refus).toEqual([])
+    expect(bonne('ecriture_br')).toEqual(composerLEcritureDAffectation(contexte('d_br'), decision({ lignes: bonne('lignes_br') })))
+    expect(bonne('sous_le_minimum_br')).toEqual([L('benefice', 'reserve_legale', 9999), L('benefice', 'report_crediteur', 2990001)])
+  })
+
+  it('AFF4-Q1 : les soldes n’écartent du brouillon que la décision remplacée, et rien sans elle (la CI ne joue pas l’essai)', () => {
+    expect(MIGRATION).toContain('       and (p_exclue is null or e.affectation_id is distinct from p_exclue)\n')
+    expect(MIGRATION).not.toMatch(/^\s*and e\.affectation_id is distinct from p_exclue\s*$/m)
+    expect(ENREGISTRER).toContain('v_soldes := public.affectation_soldes(p_dossier_id, v_date, v_ancienne.id);')
   })
 
   it('la fonction recompose avec les comptes des huit rôles de l’affectation, ceux que le module reçoit', () => {

@@ -94,7 +94,7 @@ describe('les soldes à la date de la décision (ce que la base lit aussi)', () 
       autresReserves: 1300, pertesAnterieures: 800, acomptesSurDividendes: 900, capitalAuxComptes: 1000,
     })
   })
-  it('écarte la décision qu’on remplace, et jamais une ligne que nulle décision ne cite (AFF4-Q1 : la base, elle, les écarte sans décision remplacée)', () => {
+  it('écarte la décision qu’on remplace, et jamais une ligne que nulle décision ne cite (AFF4-Q1 : comme `affectation_soldes`)', () => {
     const brouillonDesSoldes = [
       brouillon('2027-03-01', '110000', 'credit', 100, 'proposee', 'a1'),
       brouillon('2027-03-02', '110000', 'credit', 7, 'validee', null),

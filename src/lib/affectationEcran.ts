@@ -100,10 +100,10 @@ export function resultatDeLExercice(brouillon: readonly LigneDuBrouillonLue[], a
  * de cette date (soldes reportés, à-nouveaux), puis ce que son brouillon y a écrit jusqu'à elle, la décision qu'on remplace
  * écartée. Créditeurs positifs, sauf les pertes antérieures (119) et les acomptes sur dividendes (1209), leurs soldes débiteurs.
  *
- * Ce que redit `affectation_soldes` (AFF2), à UN écart : la fonction écarte les lignes du brouillon par `affectation_id is
- * distinct from p_exclue`, ce qui, quand aucune décision n'est remplacée (`p_exclue` nul), écarte aussi toute ligne ordinaire
- * (`null is distinct from null` est faux). Ici, une ligne que ne cite aucune décision est toujours comptée — AFF4-Q1, à
- * l'architecte, avant le collage.
+ * Ce que redit `affectation_soldes` (AFF2) : une ligne que ne cite aucune décision est toujours comptée, et seules les lignes
+ * de la décision remplacée s'écartent. La fonction l'écrit `(p_exclue is null or e.affectation_id is distinct from p_exclue)`
+ * depuis AFF4-Q1 (12/11/2026) : la clause seule écartait toute ligne ordinaire à la première décision d'un exercice
+ * (`null is distinct from null` est faux) ; `affectationDuResultat.sql` le rejoue (E37 à E39f, M10 à M13).
  */
 export function soldesALaDate(
   sources: { reportes: readonly LigneDOuvertureLue[]; aNouveaux: readonly LigneDOuvertureLue[]; brouillon: readonly LigneDuBrouillonLue[] },
