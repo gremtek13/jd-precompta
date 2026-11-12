@@ -51491,3 +51491,20 @@ modèle » sur la carte du plan d'un dossier, que PC4 n'a pas encore ; PC5-Q1.
 (Agent dev ; aucune base touchée.) La carte du plan d'un dossier n'existant pas, `pages/dossier/ModeleDuCabinetDossierCarte.tsx` (Informations, avant la balance ; `dossierCabinetId` lu par `DossierDetail`) lit le modèle derrière `MODELE_DU_CABINET_PREVU` baissé (ni rendu ni lecture) ; `modeleAUnDossier` dit AVANT le clic modèle illisible (l'accès), vide, exercice validé, plan qui le tient déjà, et sinon ce qui change.
 La confirmation nomme le nombre de rôles qui s'écartent du défaut et chaque compte ; le clic suit le chemin de « Nouveau dossier » (`appliquerLeModeleAuDossier`) puis relit le plan (`appliquerPuisRelireLePlan`), sous un verrou `useRef` relâché après la relecture.
 **Reste** : une écriture au brouillon ou un à-nouveau ne se disent qu'au refus de la base (les dire avant le clic demande une fonction de lecture : l'architecte) ; lever le drapeau avec PC5.
+
+### 12/11/2026 — INAL3C : LA PISTE D'AUDIT ET LE PDF DE LA 2035 DANS LE PAQUET D'ARCHIVE (LIGNE 44)
+
+(Agent architecte ; aucune migration, rien en base ni en production.) L'enregistrement de chaque téléchargement (INAL3b) était
+déjà câblé derrière `DEPART_DU_CLIENT_PREVU` baissé (INAL5) : rien à ajouter. **La piste d'audit** : le corps de « Exporter la
+piste d'audit » devient `contenuDeLaPisteAudit` (onglet Écritures), le même générateur pour l'export et pour le paquet, ses
+règles comprises (JJ1Q1-Q1, JJ1Q1-Q2, BOM et `champCsv`) ; le paquet la reçoit en état (`PisteDuPaquet`) : refusée — une lecture
+partielle des mouvements, des véhicules, des preuves des ventes ou de la caisse — ou vide, AUCUN paquet. Elle s'appelle
+`piste-audit-AAAA.csv`, jamais par le nom du dossier. **Le PDF de la 2035** (`lib/paquetDArchive2035.ts`) : le remplissage de
+Clôture pour un exercice validé (le `formulaire` figé et le déclarant de l'instantané, le modèle de `modeles2035.ts`), pdf.js
+chargé au clic seulement ; l'annexe 2035-E n'y est pas portée, la validation ne la figeant pas (INAL3C-Q1). Un PDF qui ne se
+fait pas (instantané illisible, modèle introuvable) ne retient pas le paquet : le JSON scellé fait foi, et retenir l'archive —
+donc, INAL5, la suppression du dossier — sur un formulaire vierge serait disproportionné ; le manifeste le dit (« LE PDF DE LA
+2035 : NON PRODUIT — motif »), comme un millésime substitué (2035S-Q5) ou des cases non placées, et l'écran le redit après le
+téléchargement. Le manifeste liste les deux fichiers, leur taille et leur SHA-256. **Vérifié** : `tsc -b`, lint sans erreur,
+15 fichiers touchés (583 tests), 300 qui relisent le dépôt (10 948) ; 10 tests neufs ; trois mutations mordent (la piste
+refusée qui ne refuse plus, le PDF rempli des cases calculées au lieu du formulaire figé, le motif tu au manifeste).

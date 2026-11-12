@@ -441,7 +441,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   FICHE DE FACTURATION D'UN CLIENT DU CABINET, LIÉE À SON DOSSIER ».
 - **Le départ d'un client** (ligne 44, INAL5, INAL-Q6) : `depart_du_client` préparée le 11/11/2026, à coller — les paquets
   d'archive téléchargés, la conservation dix ans posée et levée par le chef, la suppression gardée ; `DEPART_DU_CLIENT_PREVU`
-  baissé → « INAL5 : LE DÉPART D'UN CLIENT, LES PAQUETS TÉLÉCHARGÉS ET LA CONSERVATION DIX ANS ».
+  baissé ; le paquet d'archive porte aussi la piste d'audit et le PDF de la 2035 (INAL3c, 12/11/2026) → « INAL5 : LE DÉPART
+  D'UN CLIENT, LES PAQUETS TÉLÉCHARGÉS ET LA CONSERVATION DIX ANS », « INAL3C : LA PISTE D'AUDIT ET LE PDF DE LA 2035 DANS LE
+  PAQUET D'ARCHIVE ».
 - **Contre-calcul par l'expert-comptable** (ligne 23.3) : quatre dossiers de référence remis (2035, CA3, amortissements,
   bilan 2033-A) ; restent ses chiffres, l'analyse des écarts, puis ses chiffres en cas de référence → « LES DOSSIERS DE
   RÉFÉRENCE ».

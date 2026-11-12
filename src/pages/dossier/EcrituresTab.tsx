@@ -7,7 +7,7 @@ import OuvertureEclateeCarte from './OuvertureEclateeCarte'
 import { RENDU_DES_BANQUES_AU_FEC, rendreLesBanquesAuFec } from '../../lib/banquesAuFec'
 import { modeleDuMouvement, planDuMouvement, refusDesBanquesDesPaiements } from '../../lib/banqueDuMouvement'
 import PaquetDArchiveBouton from './PaquetDArchiveBouton'
-import { piecesCiteesParLExercice, piecesSansEmpreinte } from '../../lib/paquetDArchive'
+import { piecesCiteesParLExercice, piecesSansEmpreinte, type PisteDuPaquet } from '../../lib/paquetDArchive'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import {
@@ -725,82 +725,100 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // ci-dessus est volontairement restreint aux lignes rapprochées (c'est ce dont la génération et les
   // mouvements affectés ont besoin), et une piste d'audit bâtie sur un jeu restreint annoncerait des
   // mouvements manquants qui existent.
+  //
+  // Le même contenu entre au paquet d'archive d'un exercice validé (ligne 44, INAL3c) : `contenuDeLaPisteAudit` le produit
+  // pour les deux, et lève sur toute lecture partielle — l'export s'annule, le paquet ne se fabrique pas.
+  async function contenuDeLaPisteAudit(annee: number, ventes: VentesFactureesDesExports): Promise<string> {
+    // Une lecture dont l'échec ressemble à un résultat vide se vérifie comme une écriture : sans
+    // ce contrôle, un refus RLS produirait un export où CHAQUE contrepartie annonce un mouvement
+    // absent — un fichier faux, et qui a l'air complet.
+    const mouvements = await lireTout<LigneBancaire>((debut, fin) =>
+      supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
+    )
+    if (!mouvements.complete) {
+      throw new Error(
+        `Les mouvements bancaires n'ont pas pu être lus en entier (${mouvements.motif}). ` +
+        "L'export est annulé : une piste d'audit bâtie sur une lecture partielle annoncerait " +
+        'manquants des mouvements qui existent.',
+      )
+    }
+    // Les lignes du cadre 7, lues sur ce clic comme les mouvements : elles nomment le véhicule et le
+    // kilométrage de chaque forfait kilométrique (lib/forfaitKilometrique.ts), et rien d'autre sur cet
+    // écran n'en a besoin. Lues en partie, un forfait se dirait « véhicule hors du jeu chargé » — l'export
+    // se refuse plutôt.
+    const vehicules = await lireTout<VehiculeDossier>((debut, fin) =>
+      supabase.from('vehicules').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('annee').order('id').range(debut, fin),
+    )
+    if (!vehicules.complete) {
+      throw new Error(
+        `Les véhicules du cadre 7 n'ont pas pu être lus en entier (${vehicules.motif}). ` +
+        "L'export est annulé : un forfait kilométrique y perdrait le véhicule et le kilométrage qui le justifient.",
+      )
+    }
+    // L'exercice d'une pièce est celui de son paiement, sa date de facture à défaut — celui où ses
+    // écritures sont datées (lib/rattachement.ts) ; sans quoi une facture de décembre réglée en
+    // janvier figurerait dans la piste de décembre comme un justificatif que rien ne comptabilise.
+    // En engagement, celui de sa facture, où son écriture de facture est datée.
+    // Une pièce que rien ne date n'appartient à aucun exercice : elle est jointe à chacun, et la
+    // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de la taire.
+    const piecesExercice = piecesValidees.filter((p) => {
+      const parts = rattachements(p, paiements.get(p.id) ?? [], modele.mode)
+      return parts.some((r) => r.date === null) || anneesDesRattachements(parts).includes(annee)
+    })
+    // Les factures d'acquisition se cherchent parmi TOUTES les pièces validées : un bien acheté un autre
+    // exercice s'amortit dans celui-ci, et sa facture est la preuve de sa dotation.
+    // Les preuves des factures d'un dossier qui a basculé (étape VF4c2) : l'empreinte de l'exemplaire désigné, ou du CII
+    // transmis, que la piste cite pour chaque ligne d'une facture. Lues sur ce clic, comme le relevé ; lues en partie,
+    // l'export se refuse — une empreinte non lue passerait pour absente.
+    const preuves = ventesParLesFactures
+      ? await lireLesJustificatifsDesVentes(dossierId)
+      : { etat: 'lue' as const, exemplaires: [], transmissions: [] }
+    if (preuves.etat !== 'lue') {
+      throw new Error(
+        `Les preuves des factures n'ont pas pu être lues en entier (${preuves.motif}). ` +
+        "L'export est annulé : une piste d'audit dirait absente l'empreinte d'un exemplaire qu'elle n'a pas lu.",
+      )
+    }
+    // Les opérations de la caisse (étape C9a) : la ligne de caisse d'une pièce payée en espèces cite son paiement. Pas encore
+    // revenues ou lues en partie, l'export se refuse — un paiement se dirait « hors du jeu chargé » —, mais seulement quand
+    // un tel paiement peut exister (`paiementsDeLaCaisse` nuls) : tant que la migration n'est pas en base, la piste est
+    // celle d'hier, et ne cite aucune opération.
+    if (paiementsDeLaCaisse === null) {
+      throw new Error(
+        `La caisse du dossier n'a pas pu être lue en entier (${caisseNonLue}). ` +
+        "L'export est annulé : une piste d'audit dirait introuvable le paiement en espèces d'une pièce.",
+      )
+    }
+    return genererPisteAuditCsv(pisteAudit(
+      ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice,
+      {
+        immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
+        ventes: { ...ventes, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions, piecesCitees },
+        caisse: operationsDuFec ?? OPERATIONS_DE_CAISSE_ABSENTES,
+        plan: modele.plan, banques,
+      },
+    ))
+  }
+
+  // La piste d'audit du paquet d'archive : son refus est un état, jamais une exception (le bouton du paquet le dit).
+  async function pisteAuditDuPaquet(annee: number): Promise<PisteDuPaquet> {
+    if (anneeFilter !== annee) return { etat: 'refusee', motif: 'l’exercice affiché a changé' }
+    if (ventesDesExports === null) return { etat: 'refusee', motif: 'les ventes facturées ne sont pas encore lues' }
+    try {
+      return { etat: 'produite', contenu: await contenuDeLaPisteAudit(annee, ventesDesExports) }
+    } catch (err) {
+      return { etat: 'refusee', motif: messageErreur(err, 'la piste d’audit n’a pas pu se produire.') }
+    }
+  }
+
   async function exporterPisteAudit() {
     if (typeof anneeFilter !== 'number' || ventesDesExports === null) return
     setExportPiste(true)
     setError(null)
     try {
-      // Une lecture dont l'échec ressemble à un résultat vide se vérifie comme une écriture : sans
-      // ce contrôle, un refus RLS produirait un export où CHAQUE contrepartie annonce un mouvement
-      // absent — un fichier faux, et qui a l'air complet.
-      const mouvements = await lireTout<LigneBancaire>((debut, fin) =>
-        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
-      )
-      if (!mouvements.complete) {
-        throw new Error(
-          `Les mouvements bancaires n'ont pas pu être lus en entier (${mouvements.motif}). ` +
-          "L'export est annulé : une piste d'audit bâtie sur une lecture partielle annoncerait " +
-          'manquants des mouvements qui existent.',
-        )
-      }
-      // Les lignes du cadre 7, lues sur ce clic comme les mouvements : elles nomment le véhicule et le
-      // kilométrage de chaque forfait kilométrique (lib/forfaitKilometrique.ts), et rien d'autre sur cet
-      // écran n'en a besoin. Lues en partie, un forfait se dirait « véhicule hors du jeu chargé » — l'export
-      // se refuse plutôt.
-      const vehicules = await lireTout<VehiculeDossier>((debut, fin) =>
-        supabase.from('vehicules').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('annee').order('id').range(debut, fin),
-      )
-      if (!vehicules.complete) {
-        throw new Error(
-          `Les véhicules du cadre 7 n'ont pas pu être lus en entier (${vehicules.motif}). ` +
-          "L'export est annulé : un forfait kilométrique y perdrait le véhicule et le kilométrage qui le justifient.",
-        )
-      }
-      // L'exercice d'une pièce est celui de son paiement, sa date de facture à défaut — celui où ses
-      // écritures sont datées (lib/rattachement.ts) ; sans quoi une facture de décembre réglée en
-      // janvier figurerait dans la piste de décembre comme un justificatif que rien ne comptabilise.
-      // En engagement, celui de sa facture, où son écriture de facture est datée.
-      // Une pièce que rien ne date n'appartient à aucun exercice : elle est jointe à chacun, et la
-      // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de la taire.
-      const piecesExercice = piecesValidees.filter((p) => {
-        const parts = rattachements(p, paiements.get(p.id) ?? [], modele.mode)
-        return parts.some((r) => r.date === null) || anneesDesRattachements(parts).includes(anneeFilter)
-      })
-      // Les factures d'acquisition se cherchent parmi TOUTES les pièces validées : un bien acheté un autre
-      // exercice s'amortit dans celui-ci, et sa facture est la preuve de sa dotation.
-      // Les preuves des factures d'un dossier qui a basculé (étape VF4c2) : l'empreinte de l'exemplaire désigné, ou du CII
-      // transmis, que la piste cite pour chaque ligne d'une facture. Lues sur ce clic, comme le relevé ; lues en partie,
-      // l'export se refuse — une empreinte non lue passerait pour absente.
-      const preuves = ventesParLesFactures
-        ? await lireLesJustificatifsDesVentes(dossierId)
-        : { etat: 'lue' as const, exemplaires: [], transmissions: [] }
-      if (preuves.etat !== 'lue') {
-        throw new Error(
-          `Les preuves des factures n'ont pas pu être lues en entier (${preuves.motif}). ` +
-          "L'export est annulé : une piste d'audit dirait absente l'empreinte d'un exemplaire qu'elle n'a pas lu.",
-        )
-      }
-      // Les opérations de la caisse (étape C9a) : la ligne de caisse d'une pièce payée en espèces cite son paiement. Pas encore
-      // revenues ou lues en partie, l'export se refuse — un paiement se dirait « hors du jeu chargé » —, mais seulement quand
-      // un tel paiement peut exister (`paiementsDeLaCaisse` nuls) : tant que la migration n'est pas en base, la piste est
-      // celle d'hier, et ne cite aucune opération.
-      if (paiementsDeLaCaisse === null) {
-        throw new Error(
-          `La caisse du dossier n'a pas pu être lue en entier (${caisseNonLue}). ` +
-          "L'export est annulé : une piste d'audit dirait introuvable le paiement en espèces d'une pièce.",
-        )
-      }
-      const contenu = genererPisteAuditCsv(pisteAudit(
-        ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice,
-        {
-          immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
-          ventes: { ...ventesDesExports, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions, piecesCitees },
-          caisse: operationsDuFec ?? OPERATIONS_DE_CAISSE_ABSENTES,
-          plan: modele.plan, banques,
-        },
-      ))
+      const contenu = await contenuDeLaPisteAudit(anneeFilter, ventesDesExports)
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
     } catch (err) {
       setError(messageErreur(err, "L'export de la piste d'audit a échoué."))
@@ -2044,6 +2062,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               return contenu === null ? null : { nom: nomFichierFec(dossierSiret, anneeFilter), contenu }
             }}
             sansEmpreinte={sansEmpreinteAuPaquet}
+            pisteAudit={() => pisteAuditDuPaquet(anneeFilter)}
           />
         )}
         <button

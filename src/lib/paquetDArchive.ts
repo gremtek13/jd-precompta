@@ -25,6 +25,18 @@ import type { ExerciceValide, Piece } from './types'
 // AUCUN NOM DE FICHIER D'ORIGINE (le praticien nomme parfois un fichier d'après un patient) : un original s'appelle par la
 // référence que le FEC lui donne en PieceRef (`referenceDUnePiece`, JJ1Q1-Q3 : « AAAAMMJJ-xxxxxxxx », la date et le début
 // de l'empreinte), suivie de l'extension de son chemin ; le FEC par son nom imposé (SIREN), la 2035 par son exercice.
+//
+// LA PISTE D'AUDIT ET LE PDF DE LA 2035 (lot INAL3c, 12/11/2026). La piste d'audit de l'exercice est celle que l'onglet
+// Écritures exporte (`genererPisteAuditCsv(pisteAudit(…))`, ses règles comprises : ni le nom d'un patient, ni le tiers d'une
+// pièce de vente, ni le nom d'un fichier — JJ1Q1-Q1, JJ1Q1-Q2 ; un CSV avec BOM), produite au clic sur les écritures validées ;
+// elle s'appelle par son exercice, jamais par le nom du dossier. PRODUITE EN PARTIE OU REFUSÉE, AUCUN PAQUET : c'est une
+// pièce de l'archive au même titre que le FEC (`PisteDuPaquet`).
+// Le PDF de la 2035 est REMPLI depuis les cases que la validation a figées (`formulaire` de l'instantané), par le code de
+// l'onglet Clôture (lib/paquetDArchive2035.ts). Il n'est qu'une REPRÉSENTATION : ce qui fait foi est `2035-AAAA.json`, la
+// valeur que l'empreinte de forme 2 scelle. S'il ne peut pas se faire (modèle introuvable ou illisible, instantané illisible),
+// le paquet part SANS lui et LE DIT dans le manifeste et à l'écran : refuser tout le paquet pour un formulaire vierge qui ne
+// se charge pas retiendrait l'archive (et, INAL5, la suppression du dossier) sur ce qui n'en est pas la preuve. Les cases
+// qu'il n'a pas pu placer, et l'avertissement d'un millésime substitué (2035S-Q5), se disent de même.
 
 // Ce que la lecture rend d'une pièce citée : jamais son nom de fichier.
 export type PieceDuPaquet = Pick<Piece, 'id' | 'date_piece' | 'created_at' | 'storage_path' | 'storage_hash'>
@@ -46,12 +58,30 @@ export interface EntreesDuPaquet {
   originaux: readonly OriginalLu[]
   // Le FEC de l'exercice validé, tel que l'onglet Écritures l'exporte (`numerotationValidee` puis `formaterFec`).
   fec: { nom: string; contenu: string }
+  // La piste d'audit de l'exercice, telle que l'onglet Écritures l'exporte, ou pourquoi elle n'a pas pu se produire.
+  pisteAudit: PisteDuPaquet
+  // Le PDF de la 2035 validée, ou pourquoi il n'a pas pu se remplir. Sans valeur par défaut : un appelant qui l'oublierait
+  // ferait partir un paquet sans PDF que rien ne dirait.
+  pdf2035: Pdf2035DuPaquet
   // La documentation des traitements que l'application porte (DOCUMENTATION_DES_TRAITEMENTS.md).
   documentation: string
   // L'instant de la fabrication : le manifeste en dit la date de Paris. Sans valeur par défaut (« maintenant » ne se lit
   // pas ici : un test le fixe).
   fabriqueLe: Date
 }
+
+export type PisteDuPaquet = { etat: 'produite'; contenu: string } | { etat: 'refusee'; motif: string }
+
+export type Pdf2035DuPaquet =
+  | {
+    etat: 'rempli'
+    octets: Uint8Array
+    // Les cases dont le montant n'a pas pu se placer sur le formulaire (`codesSansAncrage`) : vide en temps normal.
+    casesNonPlacees: readonly string[]
+    // L'avertissement d'un millésime substitué (`avertissementDuFormulaire`, 2035S-Q5), ou nul.
+    avertissement: string | null
+  }
+  | { etat: 'impossible'; motif: string }
 
 export interface FichierDuManifeste { chemin: string; taille: number; sha256: string }
 
@@ -64,12 +94,17 @@ export type PaquetFabrique = {
   // Le SHA-256 du manifeste : l'empreinte du paquet, celle qu'un horodatage scellera (INAL7, plus tard).
   empreinteDuManifeste: string
   fichiers: readonly FichierDuManifeste[]
+  // Ce que l'écran dit du PDF de la 2035 quand il n'est pas entré, ou entré incomplet ; nul sinon.
+  avisDuPdf2035: string | null
 }
 export type PaquetRefuse = { ok: false; message: string }
 
 export const NOM_DU_MANIFESTE = 'MANIFESTE.txt'
 export const NOM_DE_LA_DOCUMENTATION = 'DOCUMENTATION_DES_TRAITEMENTS.md'
 export const DOSSIER_DES_ORIGINAUX = 'pieces'
+export const ENTETE_DU_PDF_2035 = 'LE PDF DE LA 2035'
+export function nomDeLaPisteAudit(annee: number): string { return `piste-audit-${annee}.csv` }
+export function nomDuPdf2035(annee: number): string { return `2035-${annee}.pdf` }
 const SHA256_HEX = /^[0-9a-f]{64}$/
 /** Ce que le manifeste dit, à la place de l'empreinte de dépôt, d'une pièce qui n'en a pas (INAL3-Q1). */
 export const MARQUE_NON_VERIFIEE = 'non vérifiée (aucune empreinte de dépôt)'
@@ -146,6 +181,10 @@ export async function fabriquerLePaquet(e: EntreesDuPaquet): Promise<PaquetFabri
   const refus = (message: string): PaquetRefuse => ({ ok: false, message: `Aucun paquet d’archive : ${message}` })
   if (fec.contenu.trim() === '') return refus(`le FEC de l’exercice ${exercice.annee} est vide.`)
   if (e.documentation.trim() === '') return refus('la documentation des traitements est absente.')
+  if (e.pisteAudit.etat === 'refusee') return refus(`la piste d’audit de l’exercice n’a pas pu se produire (${e.pisteAudit.motif}).`)
+  // Le PDF se remplit depuis la 2035 validée : sans elle, il ne peut venir que d'ailleurs.
+  if (exercice.declaration === null && e.pdf2035.etat === 'rempli') return refus('un PDF de la 2035 sans 2035 validée.')
+  if (e.pisteAudit.contenu.replace(/^\uFEFF/, '').trim() === '') return refus(`la piste d’audit de l’exercice ${exercice.annee} est vide.`)
 
   // Chaque pièce citée a son original, et seulement elles.
   const parId = new Map(e.originaux.map((o) => [o.piece.id, o]))
@@ -186,6 +225,8 @@ export async function fabriquerLePaquet(e: EntreesDuPaquet): Promise<PaquetFabri
     ...(exercice.declaration !== null
       ? [{ chemin: `2035-${exercice.annee}.json`, octets: encodeur.encode(JSON.stringify(exercice.declaration, null, 2)) }]
       : []),
+    ...(e.pdf2035.etat === 'rempli' ? [{ chemin: nomDuPdf2035(exercice.annee), octets: e.pdf2035.octets }] : []),
+    { chemin: nomDeLaPisteAudit(exercice.annee), octets: encodeur.encode(e.pisteAudit.contenu) },
     { chemin: NOM_DE_LA_DOCUMENTATION, octets: encodeur.encode(e.documentation) },
     ...[...e.originaux]
       .sort((a, b) => noms.get(a.piece.id)!.localeCompare(noms.get(b.piece.id)!))
@@ -202,7 +243,37 @@ export async function fabriquerLePaquet(e: EntreesDuPaquet): Promise<PaquetFabri
   for (const c of contenus) zip.file(c.chemin, new Uint8Array(c.octets), { date: e.fabriqueLe, binary: true })
   zip.file(NOM_DU_MANIFESTE, manifeste, { date: e.fabriqueLe })
   const octets = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
-  return { ok: true, zip: octets, manifeste, nonVerifiees, empreinteDuManifeste: await sha256Hex(encodeur.encode(manifeste)), fichiers }
+  return {
+    ok: true, zip: octets, manifeste, nonVerifiees, empreinteDuManifeste: await sha256Hex(encodeur.encode(manifeste)), fichiers,
+    avisDuPdf2035: exercice.declaration === null ? null : avisDuPdf2035(e.pdf2035),
+  }
+}
+
+function avisDuPdf2035(pdf: Pdf2035DuPaquet): string | null {
+  if (pdf.etat === 'impossible') return `le PDF de la 2035 n’est pas dans le paquet (${pdf.motif}) ; la 2035 validée y est en JSON.`
+  if (pdf.casesNonPlacees.length > 0) {
+    return `le PDF de la 2035 n’a pas pu placer les cases ${pdf.casesNonPlacees.join(', ')} : leur montant y manque (le JSON les porte).`
+  }
+  return null
+}
+
+// Ce que le manifeste dit du PDF de la 2035 : ce qu'il est, ce qui y manque, ou pourquoi il n'est pas là.
+function sectionDuPdf2035(annee: number, pdf: Pdf2035DuPaquet): string[] {
+  if (pdf.etat === 'impossible') {
+    return [
+      `${ENTETE_DU_PDF_2035} : NON PRODUIT — ${pdf.motif}`,
+      `La 2035 validée est dans 2035-${annee}.json, qui fait foi ; le PDF se refait depuis l’onglet Clôture.`,
+    ]
+  }
+  return [
+    `${ENTETE_DU_PDF_2035} : ${nomDuPdf2035(annee)}, les pages 2035-A et 2035-B remplies depuis les cases que la validation a`,
+    `figées (2035-${annee}.json, qui fait foi), par le même code que l’onglet Clôture. L’annexe 2035-E n’y est pas portée : la`,
+    'validation ne la fige pas (ses lignes se tirent de saisies et du forfait kilométrique tels qu’ils sont au jour du calcul).',
+    ...(pdf.avertissement ? [`AVERTISSEMENT : ${pdf.avertissement}`] : []),
+    ...(pdf.casesNonPlacees.length > 0
+      ? [`CASES NON PLACÉES SUR LE PDF (leur montant y manque) : ${pdf.casesNonPlacees.join(', ')}`]
+      : []),
+  ]
 }
 
 export const ENTETE_DES_FICHIERS = 'FICHIERS (chemin, taille en octets, SHA-256)'
@@ -231,7 +302,8 @@ function manifesteDuPaquet(e: EntreesDuPaquet, fichiers: readonly FichierDuManif
     'Avant d’entrer dans ce paquet, l’empreinte de l’exercice a été vérifiée en base (verifier_exercice_valide) et chaque',
     'original relu à son empreinte de dépôt. La 2035 est celle que la validation a figée ; le FEC, celui que l’application',
     'relit des écritures validées (son lettrage dit l’état des comptes de tiers au jour de la fabrication). La documentation',
-    'des traitements est celle que l’application portait au jour de la fabrication.',
+    'des traitements est celle que l’application portait au jour de la fabrication. La piste d’audit est celle que l’onglet',
+    'Écritures produit des écritures validées (les justificatifs et les mouvements y sont désignés sans nom de fichier).',
     ...(nonVerifiees > 0
       ? [
         '',
@@ -240,6 +312,10 @@ function manifesteDuPaquet(e: EntreesDuPaquet, fichiers: readonly FichierDuManif
         `« ${MARQUE_NON_VERIFIEE} » dans la liste des pièces citées.`,
       ]
       : []),
+    '',
+    ...(x.declaration !== null
+      ? sectionDuPdf2035(x.annee, e.pdf2035)
+      : [`${ENTETE_DU_PDF_2035} : aucun — la validation de cet exercice n’a figé aucune 2035.`]),
     '',
     ENTETE_DES_FICHIERS,
     ...fichiers.map((f) => `${f.chemin}\t${f.taille}\t${f.sha256}`),

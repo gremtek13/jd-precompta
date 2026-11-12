@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import {
-  ENTETE_DES_FICHIERS, MARQUE_NON_VERIFIEE, NOM_DE_LA_DOCUMENTATION, NOM_DU_MANIFESTE, fabriquerLePaquet, nomDuPaquet,
+  ENTETE_DES_FICHIERS, ENTETE_DU_PDF_2035, MARQUE_NON_VERIFIEE, NOM_DE_LA_DOCUMENTATION, NOM_DU_MANIFESTE, fabriquerLePaquet, nomDuPaquet,
   nomsDesOriginaux, piecesCiteesParLExercice, piecesSansEmpreinte, sha256Hex, type EntreesDuPaquet, type OriginalLu, type PieceDuPaquet,
 } from './paquetDArchive'
+import { genererPisteAuditCsv } from './pisteAudit'
 
 const encodeur = new TextEncoder()
 
@@ -29,6 +30,9 @@ async function entrees(): Promise<EntreesDuPaquet> {
     piecesCitees: originaux.map((o) => o.piece.id),
     originaux,
     fec: { nom: '123456789FEC20251231.txt', contenu: 'JournalCode\tJournalLib\r\nAC\tAchats' },
+    // La piste d'audit telle que le générateur de l'onglet Écritures la produit (BOM, en-tête), plus une ligne.
+    pisteAudit: { etat: 'produite', contenu: `${genererPisteAuditCsv([])}\r\n2025-02-03;606100;Pièce du 03/02/2025;12,00` },
+    pdf2035: { etat: 'rempli', octets: encodeur.encode('%PDF-1.7 2035 remplie'), casesNonPlacees: [], avertissement: null },
     documentation: '# Documentation des traitements\n',
     fabriqueLe: new Date('2026-11-10T23:30:00Z'),
   }
@@ -54,7 +58,7 @@ describe('le paquet d’archive d’un exercice validé', () => {
       expect(await sha256Hex(octets)).toBe(sha)
     }
     expect(noms.filter((n) => !n.startsWith('pieces/'))).toEqual(
-      ['123456789FEC20251231.txt', '2035-2025.json', NOM_DE_LA_DOCUMENTATION, NOM_DU_MANIFESTE])
+      ['123456789FEC20251231.txt', '2035-2025.json', '2035-2025.pdf', NOM_DE_LA_DOCUMENTATION, NOM_DU_MANIFESTE, 'piste-audit-2025.csv'])
     const originaux = noms.filter((n) => n.startsWith('pieces/'))
     expect(originaux).toHaveLength(2)
     expect(originaux[0]).toMatch(/^pieces\/20250203-[0-9a-f]{8}\.pdf$/)
@@ -64,6 +68,55 @@ describe('le paquet d’archive d’un exercice validé', () => {
     // La date de Paris de la fabrication : 23 h 30 UTC le 10, minuit et demi le 11 à Paris.
     expect(manifeste).toContain('Fabriqué le : 2026-11-11 (date de Paris)')
     expect(JSON.parse(await zip.file('2035-2025.json')!.async('string'))).toEqual({ AG: 1200, BR: 300 })
+    // La piste d'audit et le PDF de la 2035 (INAL3c) : leurs octets tels que reçus, le BOM de la piste compris.
+    const piste = await zip.file('piste-audit-2025.csv')!.async('uint8array')
+    expect([...piste.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+    expect(new TextDecoder().decode(piste)).toContain('Pièce du 03/02/2025')
+    expect(await zip.file('2035-2025.pdf')!.async('string')).toBe('%PDF-1.7 2035 remplie')
+    expect(manifeste).toContain(`${ENTETE_DU_PDF_2035} : 2035-2025.pdf, les pages 2035-A et 2035-B`)
+    expect(manifeste).not.toMatch(/AVERTISSEMENT|NON PLACÉES|NON PRODUIT/)
+    expect(paquet.avisDuPdf2035).toBeNull()
+  })
+
+  it('une piste d’audit refusée (lue en partie) ou vide refuse TOUT le paquet (INAL3c)', async () => {
+    const e = await entrees()
+    const motif = 'Les mouvements bancaires n’ont pas pu être lus en entier (3 ligne(s) lue(s) sur 4 annoncée(s)).'
+    const refuse = await fabriquerLePaquet({ ...e, pisteAudit: { etat: 'refusee', motif } })
+    expect(refuse).toEqual({ ok: false, message: `Aucun paquet d’archive : la piste d’audit de l’exercice n’a pas pu se produire (${motif}).` })
+    expect(await fabriquerLePaquet({ ...e, pisteAudit: { etat: 'produite', contenu: '\uFEFF ' } }))
+      .toMatchObject({ ok: false, message: expect.stringContaining('la piste d’audit de l’exercice 2025 est vide') })
+  })
+
+  it('un PDF de la 2035 qui ne se remplit pas : le paquet part sans lui, et le manifeste le dit (INAL3c)', async () => {
+    const e = await entrees()
+    const paquet = await fabriquerLePaquet({ ...e, pdf2035: { etat: 'impossible', motif: 'Formulaire 2035 introuvable (404)' } })
+    if (!paquet.ok) throw new Error(paquet.message)
+    expect(paquet.fichiers.map((f) => f.chemin)).not.toContain('2035-2025.pdf')
+    expect(paquet.fichiers.map((f) => f.chemin)).toContain('2035-2025.json')
+    expect(paquet.manifeste).toContain(`${ENTETE_DU_PDF_2035} : NON PRODUIT — Formulaire 2035 introuvable (404)`)
+    expect(paquet.avisDuPdf2035).toContain('le PDF de la 2035 n’est pas dans le paquet (Formulaire 2035 introuvable (404))')
+  })
+
+  it('un PDF rempli sur un millésime substitué, ou à cases non placées, le dit au manifeste (2035S-Q5)', async () => {
+    const e = await entrees()
+    const paquet = await fabriquerLePaquet({
+      ...e, pdf2035: { etat: 'rempli', octets: encodeur.encode('%PDF'), casesNonPlacees: ['BT', 'CC'], avertissement: 'millésime absent' },
+    })
+    if (!paquet.ok) throw new Error(paquet.message)
+    expect(paquet.manifeste).toContain('AVERTISSEMENT : millésime absent')
+    expect(paquet.manifeste).toContain('CASES NON PLACÉES SUR LE PDF (leur montant y manque) : BT, CC')
+    expect(paquet.avisDuPdf2035).toContain('BT, CC')
+  })
+
+  it('sans 2035 validée : aucun PDF, et le manifeste le dit ; un PDF venu d’ailleurs se refuse', async () => {
+    const e = await entrees()
+    const sans = { ...e, exercice: { ...e.exercice, declaration: null } }
+    const paquet = await fabriquerLePaquet({ ...sans, pdf2035: { etat: 'impossible', motif: 'aucune' } })
+    if (!paquet.ok) throw new Error(paquet.message)
+    expect(paquet.fichiers.map((f) => f.chemin).filter((c) => c.startsWith('2035-'))).toEqual([])
+    expect(paquet.manifeste).toContain(`${ENTETE_DU_PDF_2035} : aucun — la validation de cet exercice n’a figé aucune 2035.`)
+    expect(paquet.avisDuPdf2035).toBeNull()
+    expect(await fabriquerLePaquet(sans)).toMatchObject({ ok: false, message: expect.stringContaining('sans 2035 validée') })
   })
 
   it('aucun nom de fichier d’origine n’entre dans le paquet', async () => {

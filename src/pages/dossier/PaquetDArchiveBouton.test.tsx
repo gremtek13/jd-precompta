@@ -13,7 +13,14 @@ const faux = vi.hoisted(() => ({
   telechargements: 0,
   enregistrements: [] as Record<string, unknown>[],
   enregistrement: { ok: true } as { ok: true } | { ok: false; message: string },
+  piste: { etat: 'produite', contenu: '\uFEFFDate;Compte\r\n2025-02-03;606100' } as { etat: 'produite'; contenu: string } | { etat: 'refusee'; motif: string },
+  pistes: 0,
+  pdf: { etat: 'rempli', octets: new Uint8Array([37, 80, 68, 70]), casesNonPlacees: [], avertissement: null } as
+    { etat: 'rempli'; octets: Uint8Array; casesNonPlacees: string[]; avertissement: string | null } | { etat: 'impossible'; motif: string },
 }))
+
+// Le PDF de la 2035 (INAL3c) : remplir2035.ts charge pdf.js ; son module est gardé par paquetDArchive2035.test.ts.
+vi.mock('../../lib/paquetDArchive2035', () => ({ la2035DuPaquet: async () => faux.pdf }))
 
 // L'enregistrement du téléchargement (ligne 44, INAL5) : la lecture du départ simulée — le vrai module lit le drapeau, et
 // n'écrit rien tant qu'il est baissé ; ici on voit ce que le bouton lui passe, et ce qu'il dit d'un refus.
@@ -29,7 +36,7 @@ vi.mock('../../lib/paquetDArchiveLecture', () => ({
         etat: 'lue', piecesCitees: [], originaux: [],
         exercice: {
           dossier_id: 'd1', annee: 2025, valide_le: '2026-01-15T09:30:00Z', empreinte: 'e'.repeat(64),
-          empreinte_precedente: null, forme_empreinte: 2, nb_ecritures: 1, nb_lignes: 2, declaration: null,
+          empreinte_precedente: null, forme_empreinte: 2, nb_ecritures: 1, nb_lignes: 2, declaration: { AG: 1200 },
         },
       })
     })
@@ -45,6 +52,9 @@ beforeEach(() => {
   faux.telechargements = 0
   faux.enregistrements = []
   faux.enregistrement = { ok: true }
+  faux.piste = { etat: 'produite', contenu: '\uFEFFDate;Compte\r\n2025-02-03;606100' }
+  faux.pistes = 0
+  faux.pdf = { etat: 'rempli', octets: new Uint8Array([37, 80, 68, 70]), casesNonPlacees: [], avertissement: null }
   URL.createObjectURL = () => 'blob:paquet'
   URL.revokeObjectURL = () => {}
   HTMLAnchorElement.prototype.click = () => { faux.telechargements++ }
@@ -55,6 +65,7 @@ function monter(indisponible: string | null = null, sansEmpreinte = 0) {
     <PaquetDArchiveBouton
       dossierId="d1" dossierSiret="12345678900012" annee={2025} indisponible={indisponible} sansEmpreinte={sansEmpreinte}
       fec={() => ({ nom: '123456789FEC20251231.txt', contenu: 'JournalCode\r\nAC' })}
+      pisteAudit={async () => { faux.pistes++; return faux.piste }}
     />,
   )
   return screen.getByRole('button', { name: /Paquet d’archive 2025/ })
@@ -69,8 +80,10 @@ describe('le bouton du paquet d’archive', () => {
     })
     expect(faux.lectures).toBe(1)
     await act(async () => { faux.liberer!() })
-    expect(await screen.findByText(/Paquet d’archive téléchargé : 2 fichier\(s\) vérifié\(s\)/)).toBeTruthy()
+    expect(await screen.findByText(/Paquet d’archive téléchargé : 5 fichier\(s\) vérifié\(s\)/)).toBeTruthy()
     expect(faux.telechargements).toBe(1)
+    expect(faux.pistes).toBe(1)
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('un refus de la lecture se dit, et rien ne se télécharge', async () => {
@@ -120,7 +133,7 @@ describe('le bouton du paquet d’archive', () => {
     // Aucun écran de l'espace client n'importe la lecture ni la fabrication ; l'onglet Écritures compte, avant le clic, les
     // pièces citées sans empreinte de dépôt (INAL3-Q1).
     expect(importent(/paquetDArchive(Lecture)?'/)).toEqual([
-      'src/lib/paquetDArchiveLecture.ts', 'src/pages/dossier/EcrituresTab.tsx', 'src/pages/dossier/PaquetDArchiveBouton.tsx',
+      'src/lib/paquetDArchive2035.ts', 'src/lib/paquetDArchiveLecture.ts', 'src/pages/dossier/EcrituresTab.tsx', 'src/pages/dossier/PaquetDArchiveBouton.tsx',
     ])
   })
   it('le téléchargement s’enregistre APRÈS la remise au navigateur, à l’empreinte de l’exercice ; un refus se dit (INAL5)', async () => {
@@ -133,6 +146,26 @@ describe('le bouton du paquet d’archive', () => {
     expect(faux.enregistrements[0]).toMatchObject({ dossierId: 'd1', annee: 2025, empreinteExercice: 'e'.repeat(64), nonVerifiees: 0 })
     expect(String(faux.enregistrements[0].empreinteDuManifeste)).toMatch(/^[0-9a-f]{64}$/)
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('la base ne l’a pas enregistré (refus fictif)'))
+  })
+
+  it('une piste d’audit refusée (lue en partie) : aucun paquet, rien ne se télécharge ni ne s’enregistre (INAL3c)', async () => {
+    faux.piste = { etat: 'refusee', motif: 'Les mouvements bancaires n’ont pas pu être lus en entier (2 sur 3).' }
+    fireEvent.click(monter())
+    await act(async () => { faux.liberer!() })
+    expect((await screen.findByRole('alert')).textContent)
+      .toContain('Aucun paquet d’archive : la piste d’audit de l’exercice n’a pas pu se produire (Les mouvements bancaires')
+    expect(faux.telechargements).toBe(0)
+    expect(faux.enregistrements).toHaveLength(0)
+  })
+
+  it('un PDF de la 2035 impossible : le paquet part sans lui, et l’écran le dit après le téléchargement (INAL3c)', async () => {
+    faux.pdf = { etat: 'impossible', motif: 'Formulaire 2035 introuvable (404)' }
+    fireEvent.click(monter())
+    await act(async () => { faux.liberer!() })
+    expect(await screen.findByText(/Paquet d’archive téléchargé : 4 fichier\(s\)/)).toBeTruthy()
+    expect(faux.telechargements).toBe(1)
+    expect((await screen.findByRole('status')).textContent)
+      .toContain('Attention : le PDF de la 2035 n’est pas dans le paquet (Formulaire 2035 introuvable (404))')
   })
 
 })
