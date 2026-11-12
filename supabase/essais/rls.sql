@@ -119,7 +119,7 @@
 --      « EN ATTENTE ».
 --   6undecies. La COPIE DES FICHIERS SUR UN SUPPORT DU CABINET (INAL6, lignes 20.65 et 44 ; bloc CF, en fin de fichier) :
 --      CF1 à CF3 — le chef et un membre de l'équipe lisent la copie (contrôles positifs), le client d'un dossier du cabinet
---      et l'anonyme rien ; le client ne l'enregistre ni ne l'écrit ; le catalogue — et trois mutations ; avant la migration
+--      et l'anonyme rien ; le client ne l'enregistre, ne l'écrit ni ne l'atteste ; le catalogue — et trois mutations ; avant la migration
 --      `copies_des_fichiers`, une ligne « EN ATTENTE ».
 --   6duodecies. Les OPÉRATIONS D'INVENTAIRE (INV2, ligne 35 ; bloc IV, en fin de fichier) : IV1 à IV3 — le chef lit la
 --      régularisation qu'il a enregistrée (contrôle positif), le client qui a un accès au dossier, un membre de l'équipe à
@@ -9161,7 +9161,8 @@ end $mp$;
 -- `copiesDesFichiers.sql`.
 --   CF1. Le chef enregistre une copie et la lit (le contrôle POSITIF) ; un membre de l'équipe qui n'est pas chef la lit
 --        aussi ; le client, qui a un accès au dossier du client, n'en lit rien ; l'anonyme non plus.
---   CF2. Le client n'enregistre pas de copie (42501, sous ses mots), n'y insère rien en direct (42501), ne réécrit rien.
+--   CF2. Le client n'enregistre pas de copie (42501, sous ses mots), n'y insère rien en direct (42501), ne réécrit rien (ni
+--        l'attestation), n'atteste aucune copie par `attester_copie_des_fichiers` (42501, sous ses mots).
 --   CF3. Le catalogue : la RLS active, une seule policy permissive, en lecture, à authenticated, `admin_du_cabinet`.
 -- Trois mutations, qui doivent mordre : M-CF1 (la lecture élargie au client d'un dossier du cabinet : il lit la copie),
 -- M-CF2 (la policy fermée : le chef ne lit plus rien), M-CF3 (une policy d'insertion ouverte : l'insertion directe du client
@@ -9173,6 +9174,7 @@ declare
   dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
   cabinet uuid; n_dossiers integer; chef_lit bigint; membre_lit bigint; du_client bigint; de_l_anon text; par_la_fonction text;
   en_direct text; reecrites bigint; elargie bigint; fermee bigint; ecrite_elargie text; n bigint; erreur text;
+  la_copie uuid; attestee text;
   construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
 begin
   if to_regclass('public.copies_des_fichiers') is null then
@@ -9186,7 +9188,7 @@ begin
     select count(*) into n_dossiers from dossiers d where d.cabinet_id = cabinet;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    perform enregistrer_copie_des_fichiers(cabinet, n_dossiers, 0, 0, 0, 0, 0, array_fill(repeat('c', 64), array[n_dossiers]));
+    la_copie := enregistrer_copie_des_fichiers(gen_random_uuid(), cabinet, n_dossiers, 0, 0, 0, 0, 0, repeat('c', 64));
     select count(*) into chef_lit from copies_des_fichiers where cabinet_id = cabinet;
     reset role;
     construit := true;
@@ -9224,7 +9226,7 @@ begin
     begin
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
-      perform enregistrer_copie_des_fichiers(cabinet, n_dossiers, 0, 0, 0, 0, 0, array_fill(repeat('c', 64), array[n_dossiers]));
+      perform enregistrer_copie_des_fichiers(gen_random_uuid(), cabinet, n_dossiers, 0, 0, 0, 0, 0, repeat('c', 64));
       par_la_fonction := 'ACCEPTÉ';
       raise exception 'ANNULATION_ESSAI';
     exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
@@ -9233,8 +9235,8 @@ begin
     begin
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
-      insert into copies_des_fichiers (cabinet_id, faite_par, nb_dossiers, nb_fichiers, nb_verifies, nb_ecarts, nb_manquants, octets, empreintes_des_manifestes)
-        values (cabinet, client, 1, 0, 0, 0, 0, 0, array[repeat('c', 64)]);
+      insert into copies_des_fichiers (id, cabinet_id, faite_par, nb_dossiers, nb_fichiers, nb_verifies, nb_ecarts, nb_manquants, octets, empreinte_du_manifeste)
+        values (gen_random_uuid(), cabinet, client, 1, 0, 0, 0, 0, 0, repeat('c', 64));
       en_direct := 'ACCEPTÉ';
       raise exception 'ANNULATION_ESSAI';
     exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
@@ -9242,15 +9244,22 @@ begin
     reset role;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
-    with t as (update copies_des_fichiers set nb_ecarts = 0 where cabinet_id = cabinet returning 1)
+    with t as (update copies_des_fichiers set nb_ecarts = 0, rangee_le = now(), rangee_par = client where cabinet_id = cabinet returning 1)
       select count(*) into reecrites from t;
+    begin
+      perform attester_copie_des_fichiers(cabinet, la_copie, 'manifeste');
+      attestee := 'ACCEPTÉ';
+    exception when others then attestee := sqlstate || ' ' || sqlerrm;
+    end;
     reset role;
     perform set_config('request.jwt.claims', '', true);
-    verdicts := verdicts || jsonb_build_object('controle', 'CF2. le client n''enregistre pas de copie des fichiers (la fonction), n''en écrit pas en direct et n''en réécrit aucune',
+    verdicts := verdicts || jsonb_build_object('controle', 'CF2. le client n''enregistre pas de copie des fichiers (la fonction), n''en écrit pas en direct, n''en réécrit aucune et n''en atteste aucune',
       'cible', 'copies_des_fichiers',
-      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites,
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites
+        || ' | attestation : ' || coalesce(attestee, '?'),
       'ok', par_la_fonction = '42501 Seul le chef du cabinet enregistre une copie des fichiers.'
-        and en_direct like '42501 %' and reecrites = 0);
+        and en_direct like '42501 %' and reecrites = 0
+        and attestee = '42501 Seul le chef du cabinet atteste une copie des fichiers.');
 
     -- M-CF1 : la lecture élargie au client d'un dossier du cabinet.
     begin
@@ -9290,8 +9299,8 @@ begin
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
       begin
-        insert into copies_des_fichiers (cabinet_id, faite_par, nb_dossiers, nb_fichiers, nb_verifies, nb_ecarts, nb_manquants, octets, empreintes_des_manifestes)
-          values (cabinet, client, 1, 0, 0, 0, 0, 0, array[repeat('c', 64)]);
+        insert into copies_des_fichiers (id, cabinet_id, faite_par, nb_dossiers, nb_fichiers, nb_verifies, nb_ecarts, nb_manquants, octets, empreinte_du_manifeste)
+          values (gen_random_uuid(), cabinet, client, 1, 0, 0, 0, 0, 0, repeat('c', 64));
         ecrite_elargie := 'ACCEPTÉ';
       exception when others then ecrite_elargie := sqlstate || ' ' || sqlerrm;
       end;

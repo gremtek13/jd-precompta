@@ -54,7 +54,7 @@ describe('le plan prévu, copies des fichiers comprises', () => {
 
   it('le plan redit la migration : la clé `id`, le cabinet en cascade, aucun dossier', () => {
     const corps = /create table public\.copies_des_fichiers \(([\s\S]*?)\n\);/i.exec(MIGRATION)?.[1] ?? ''
-    expect(corps).toMatch(/id uuid primary key default gen_random_uuid\(\),/)
+    expect(corps).toMatch(/\n  id uuid primary key,/)
     expect(corps).toMatch(/cabinet_id uuid not null references public\.cabinets\(id\) on delete cascade,/)
     expect(corps).not.toMatch(/dossier_id|references public\.dossiers/)
   })
