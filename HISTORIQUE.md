@@ -51602,3 +51602,18 @@ retour rend l'avant, la réapplication l'après ; `gardesDeLaValidationAllegees.
 **Restent** : l'outil ou le collage (le texte porte « insert or delete », comme `categories_du_dossier`) ; un rôle qui
 poserait lui-même le réglage n'attendrait plus le verrou partagé (aucun rôle de l'API ne le peut) ; ce qui coûte encore :
 `valider_exercice` elle-même et la recomposition des ventes.
+
+### 12/11/2026 — LES ÉCRITURES D'INVENTAIRE : LA CONCEPTION (LIGNE 35)
+
+La conception entière vit dans `docs/conceptions/35-inventaire.md` (constat, sources, principes, schéma, effets, lots,
+risques, douze questions INV-Q1 à INV-Q12). En bref : un dossier en ENGAGEMENT reçoit ses régularisations de clôture — 486,
+487, 408 et 418 (TTC, TVA d'attente 44586 et 44587), charges à payer et produits à recevoir des comptes rattachés, provisions
+(151, 491) — SAISIES par le cabinet, jamais devinées, dans une table à elles (`operations_inventaire`) que les lignes du
+brouillon citent, au journal OD, au 31 décembre, recomposées en entiers par une fonction `security definer` ; l'extourne du
+1er janvier naît dans le même geste (INV-Q1, PCG art. 1214-40, 1214-41, 1214-48) ; une provision se réajuste par différence,
+sans extourne (art. 1211-15, 1214-49) ; la validation de N fige la paire, celle de N+1 refuse une extourne absente ; la
+trésorerie et la 2035 ne bougent pas. Huit lots, environ quinze jours, derrière `INVENTAIRE_PREVU` et `INVENTAIRE_EXPORTE`.
+Relevé en concevant, sur le PCG consolidé au 1er janvier 2026 : `COMPTE_D_INVENTAIRE` (`lib/bilan.ts`) cherche des comptes
+supprimés en 2026 (4486, 4487, 4686, 4687, 4287, 4387) et ignore 4481, 4482 et 439 ; le 468 « Divers comptes créditeurs et
+charges à payer » est aussi celui du dirigeant non associé (PC4-Q2), d'où INV-Q2. Base lue le 12/11/2026 : quatre dossiers,
+tous en trésorerie, aucun rôle d'inventaire au catalogue.
