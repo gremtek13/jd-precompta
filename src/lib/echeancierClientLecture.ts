@@ -7,7 +7,7 @@ import { supabase } from './supabase'
 // CE QUE « MON ÉCHÉANCIER » ET LA CARTE DE L'ACCUEIL LISENT (ligne 51.5, étape C1) : une lecture, écrite une fois — la page et
 // la carte disent la même chose au même moment (le patron de `lib/piecesJointesEcarteesClientLecture.ts`).
 //
-// Deux lectures : le statut de TVA et la périodicité du dossier (une ligne), et les échéances de cotisation du dossier, EN
+// Deux lectures : le statut de TVA, la périodicité et le modèle comptable du dossier (une ligne), et les échéances de cotisation du dossier, EN
 // ENTIER (`lireTout`, tri total terminé par la clé primaire). Le montant appelé ne se DEMANDE qu'avec « Banque » : sans elle,
 // la colonne ne quitte pas la base, et l'écran ne peut pas la montrer par mégarde. Rien ne s'écrit.
 //
@@ -27,19 +27,22 @@ export const COLONNES_SANS_MONTANT = 'id, echeance, previsionnel, paiement_perso
 export const COLONNES_AVEC_MONTANT = 'id, echeance, previsionnel, paiement_personnel_le, montant_appele'
 
 const PERIODICITES = new Set(['mensuelle', 'trimestrielle'])
+const MODES = new Set(['tresorerie', 'engagement'])
 const STATUTS = new Set(['redevable', 'franchise', 'exonere'])
 
 // La ligne du dossier, ou le motif de son absence. Une forme inattendue (un statut hors de la liste fermée) ne se devine pas.
 async function lireLeDossier(dossierId: string): Promise<{ dossier: DossierDeLEcheancier } | { motif: string }> {
-  const { data, error } = await supabase.from('dossiers').select('id, statut_tva, tva_periodicite').eq('id', dossierId).maybeSingle()
+  const { data, error } = await supabase.from('dossiers').select('id, statut_tva, tva_periodicite, mode_comptable').eq('id', dossierId).maybeSingle()
   if (error) return { motif: messageErreur(error, 'le dossier n’a pas pu être lu') }
-  const ligne = data as { id?: unknown; statut_tva?: unknown; tva_periodicite?: unknown } | null
+  const ligne = data as { id?: unknown; statut_tva?: unknown; tva_periodicite?: unknown; mode_comptable?: unknown } | null
   if (!ligne || ligne.id !== dossierId) return { motif: 'le dossier n’a pas été rendu' }
   const statut = ligne.statut_tva ?? null
-  if ((statut !== null && !STATUTS.has(String(statut))) || !PERIODICITES.has(String(ligne.tva_periodicite))) {
+  if ((statut !== null && !STATUTS.has(String(statut))) || !PERIODICITES.has(String(ligne.tva_periodicite))
+    || !MODES.has(String(ligne.mode_comptable))) {
     return { motif: 'le dossier a été rendu sous une forme inattendue' }
   }
-  return { dossier: { statut_tva: statut as DossierDeLEcheancier['statut_tva'], tva_periodicite: ligne.tva_periodicite as DossierDeLEcheancier['tva_periodicite'] } }
+  return { dossier: { statut_tva: statut as DossierDeLEcheancier['statut_tva'], tva_periodicite: ligne.tva_periodicite as DossierDeLEcheancier['tva_periodicite'],
+    mode_comptable: ligne.mode_comptable as DossierDeLEcheancier['mode_comptable'] } }
 }
 
 /** Lit ce que l'échéancier compose. Ne rejette jamais. */

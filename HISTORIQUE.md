@@ -51963,3 +51963,8 @@ copies de la mère rattrapées à 200, INV2→LIA2→EXD2 et EXD2→LIA2→INV2 
 exercicesDuDossier 63 sur 63 ; operationsDInventaire 0 en faute sur 72, 8 sur 8 ; stocks 0 en faute sur 31, 5 sur 5 ; `restauration.sql`
 IDENTIQUE, 93 tables (90 avant), dans l'ordre du code ; sur un dossier semé de deux exercices déclarés, IDENTIQUE, les deux
 restaurés. Non vu : une restauration de lignes d'inventaire et de stocks (le dossier `test` n'en porte pas).
+
+### 12/11/2026 — « MON ÉCHÉANCIER » NE DIT PLUS LA 2035 À UN DOSSIER EN ENGAGEMENT
+
+Défaut relevé en passant : « Mon échéancier » (`composerEcheancier`) montrait l'échéance de la 2035 à un dossier en engagement (BIC, IS), que la Checklist du cabinet filtrait en ligne (`modele.mode !== 'engagement' || e.impot !== 'Liasse'`). La règle vit maintenant une fois, `echeanceDuModeComptable` (`lib/echeancesFiscales.ts`), que la Checklist et l'échéancier appellent. La lecture du client lit `mode_comptable` avec le statut de TVA ; une valeur hors de la liste fermée rend le dossier illisible (lecture « partielle », bandeau), et un dossier non lu n'affirme pas la 2035 (le reste du calendrier inchangé). Aucune migration, `CALENDRIER_IS_EXPORTE` intact.
+Un BNC en trésorerie ne change pas : l'empreinte des échéanciers « d'avant LIA8 » (`echeancesDeLImpot.test.ts`), recalculée sur trois profils — le quatrième, le dossier non lu, a désormais sa règle propre —, est la même sur le code d'avant (vérifié en rejouant le test avec les anciennes sources) ; son ancienne valeur à quatre profils (`70a7842f…`) n'est plus calculable telle quelle.

@@ -1,3 +1,4 @@
+import type { ModeComptable } from './types'
 import { SEUIL_ANNEXE_2035E, SEUIL_CVAE_A_PAYER } from './declaration2035E'
 import { ajouterJours } from './format'
 import {
@@ -414,4 +415,13 @@ export function prochainesEcheancesDuDossier(
     echeances: [...communes, ...echeances].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)),
     avis,
   }
+}
+
+/**
+ * La règle que la Checklist du cabinet et « Mon échéancier » du client se partagent : la 2035 n'est pas la liasse d'un
+ * dossier tenu en engagement (BIC, IS), son échéance n'y figure pas ; celles de la CFE, de la CVAE et de l'IS si. Le mode
+ * est obligatoire : un mode qu'on n'a pas lu ne passe pas par ici (voir `echeancierClient.ts`).
+ */
+export function echeanceDuModeComptable(e: Pick<EcheanceFiscale, 'impot'>, mode: ModeComptable): boolean {
+  return mode !== 'engagement' || e.impot !== 'Liasse'
 }

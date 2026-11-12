@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
 import type { ModeleComptable } from '../../lib/engagement'
 import { ajouterJours, anneeEtMoisEcoules, aujourdHuiAParis, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
-import { SANS_IMPOT_SUR_LES_SOCIETES, estEcheanceDeLImpot, prochainesEcheancesDuDossier } from '../../lib/echeancesFiscales'
+import { SANS_IMPOT_SUR_LES_SOCIETES, echeanceDuModeComptable, estEcheanceDeLImpot, prochainesEcheancesDuDossier } from '../../lib/echeancesFiscales'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import { banquesDuDossier, banqueDesLecteurs } from '../../lib/banqueDuMouvement'
 import type { PeriodiciteTva, StatutTva } from '../../lib/types'
@@ -110,7 +110,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // dossier ne l'a donc au calendrier ; le module rend alors le calendrier d'hier, à l'octet.
   const { echeances: echeancesDuDossier, avis: avisDuCalendrier } = prochainesEcheancesDuDossier(aujourdHuiFiscal, SANS_IMPOT_SUR_LES_SOCIETES)
   const calendrierFiscal = echeancesDuDossier
-    .filter((e) => modele.mode !== 'engagement' || e.impot !== 'Liasse')
+    .filter((e) => echeanceDuModeComptable(e, modele.mode))
   const imminente = (date: string) => date <= ajouterJours(aujourdHuiFiscal, 30)
 
   const {

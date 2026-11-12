@@ -68,10 +68,9 @@ describe('le BNC en trésorerie ne change pas d’un octet', () => {
       }
     }
     const profils: { dossier: DossierDeLEcheancier | null; avecMontants: boolean }[] = [
-      { dossier: { statut_tva: 'franchise', tva_periodicite: 'trimestrielle' }, avecMontants: false },
-      { dossier: { statut_tva: 'redevable', tva_periodicite: 'mensuelle' }, avecMontants: true },
-      { dossier: { statut_tva: null, tva_periodicite: 'trimestrielle' }, avecMontants: true },
-      { dossier: null, avecMontants: false },
+      { dossier: { statut_tva: 'franchise', tva_periodicite: 'trimestrielle', mode_comptable: 'tresorerie' }, avecMontants: false },
+      { dossier: { statut_tva: 'redevable', tva_periodicite: 'mensuelle', mode_comptable: 'tresorerie' }, avecMontants: true },
+      { dossier: { statut_tva: null, tva_periodicite: 'trimestrielle', mode_comptable: 'tresorerie' }, avecMontants: true },
     ]
     const cotisations = [
       { id: 'a', echeance: '2026-03-05', previsionnel: false, paiement_personnel_le: null, montant_appele: 812.5 },
@@ -98,7 +97,7 @@ describe('le BNC en trésorerie ne change pas d’un octet', () => {
   })
 
   // L'empreinte des échéanciers d'un BNC, calculée sur le code d'AVANT LIA8 (commit 99596a0) pour chaque jour de 2025 à 2028,
-  // sous quatre profils : le même texte, au caractère près, sort aujourd'hui — drapeau baissé, levé, ou par défaut.
+  // sous trois profils (le dossier non lu a sa règle, dans echeancierClient.test.ts) : le même texte, au caractère près, sort aujourd'hui — drapeau baissé, levé, ou par défaut.
   it('« Mon échéancier » rend l’échéancier d’avant LIA8, à l’empreinte près', () => {
     expect(empreintesDesEcheanciers).toEqual([EMPREINTE_DES_ECHEANCIERS_AVANT_LIA8, EMPREINTE_DES_ECHEANCIERS_AVANT_LIA8, EMPREINTE_DES_ECHEANCIERS_AVANT_LIA8])
     expect(avisImpotsDits).toBe(0)
@@ -239,7 +238,7 @@ describe('« Mon échéancier », drapeau levé', () => {
     exercice(2026, { acomptes: { lecture: 'entiere', entrees: ACOMPTES_2026 } }),
   )
   const composer = (avecMontants: boolean) => composerEcheancier({
-    aujourdHui: '2026-04-01', dossier: { statut_tva: 'franchise', tva_periodicite: 'trimestrielle' }, cotisations: [], avecMontants,
+    aujourdHui: '2026-04-01', dossier: { statut_tva: 'franchise', tva_periodicite: 'trimestrielle', mode_comptable: 'tresorerie' }, cotisations: [], avecMontants,
     impot: dossier, calendrierIsExporte: true,
   })
   it('montre les montants sous « Banque » seulement, et dit le régime qui manque', () => {
@@ -293,5 +292,5 @@ describe('la proposition de rapprocher un débit d’une échéance d’IS', () 
 })
 
 // Calculées sur le code d'avant LIA8 (voir le test qui les lit).
-const EMPREINTE_DES_ECHEANCIERS_AVANT_LIA8 = '70a7842fcd196110c7824ccdeb8b34cee4451fe2e90a2b1a0e6a1d0db5f20f52'
+const EMPREINTE_DES_ECHEANCIERS_AVANT_LIA8 = '13960e28c434cfbbfaa72f64a843b5c10cc57cf580a8d773624c4a89e47d07b5'
 const EMPREINTE_DU_CALENDRIER_AVANT_LIA8 = '79af4c241362d962899a22fb0db0af7183f81318f93779e4ef8b0bff6d47175b'
