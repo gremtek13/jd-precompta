@@ -18,7 +18,7 @@ import {
   reglerPuisRelireLeModele,
   type LectureDesCategoriesCommunes,
 } from '../lib/modeleDuCabinetLecture'
-import { ROLES_COMPTABLES } from '../lib/planComptable'
+import { rolesLusAuPlan } from '../lib/planComptable'
 
 // LE MODÈLE DE PLAN DU CABINET, À L'ÉCRAN (ligne 43, étape PC5 ; la page du cabinet, que seul le chef ouvre — App.tsx).
 // Le tableau des rôles : la racine du plan comptable, fixe et montrée ; le compte, le libellé et, pour les trois tiers, le
@@ -114,26 +114,30 @@ export default function ModeleDuCabinetCarte({ cabinetId }: { cabinetId: string 
             <tr><th>Rôle</th><th>Racine</th><th>Compte</th><th>Libellé</th><th>Préfixe des auxiliaires</th></tr>
           </thead>
           <tbody>
-            {ROLES_COMPTABLES.map((d) => (
+            {rolesLusAuPlan().map((d) => {
+              const s = saisie[d.role]
+              if (s === undefined) return null
+              return (
               <tr key={d.role}>
                 <td data-libelle="Rôle">{nomDuRole(d.role)}</td>
                 <td data-libelle="Racine">{d.racines.join(' ou ')}</td>
                 <td data-libelle="Compte">
-                  <input aria-label={`Compte — ${nomDuRole(d.role)}`} inputMode="numeric" value={saisie[d.role].compte}
+                  <input aria-label={`Compte — ${nomDuRole(d.role)}`} inputMode="numeric" value={s.compte}
                     onChange={(e) => changer(d.role, 'compte', e.target.value)} disabled={enCours} />
                 </td>
                 <td data-libelle="Libellé">
-                  <input aria-label={`Libellé — ${nomDuRole(d.role)}`} value={saisie[d.role].libelle}
+                  <input aria-label={`Libellé — ${nomDuRole(d.role)}`} value={s.libelle}
                     onChange={(e) => changer(d.role, 'libelle', e.target.value)} disabled={enCours} />
                 </td>
                 <td data-libelle="Préfixe des auxiliaires">
                   {d.prefixeAuxiliaireDefaut === null ? '—' : (
-                    <input aria-label={`Préfixe — ${nomDuRole(d.role)}`} value={saisie[d.role].prefixe}
+                    <input aria-label={`Préfixe — ${nomDuRole(d.role)}`} value={s.prefixe}
                       onChange={(e) => changer(d.role, 'prefixe', e.target.value)} disabled={enCours} />
                   )}
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

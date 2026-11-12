@@ -18,11 +18,13 @@ import {
   FORME_PREFIXE_AUXILIAIRE,
   ROLES_COMPTABLES,
   planDeLaReponse,
-  sousUneRacineDuRole,
+  rolesLusAuPlan,
   type CleRoleComptable,
+  type CleRoleDuPlan,
   type ReponseDuPlan,
   type RoleDeTiers,
 } from './planComptable'
+import { ROLES_DU_CHANGE, type CleRoleDuChange } from './rolesDuChange'
 import type { LigneDuPlanReglee, PlanLu } from './planDepuisLaBalance'
 import { nomDuRole } from './planDepuisLaBalanceVue'
 
@@ -38,10 +40,11 @@ export const TABLES_DU_MODELE_DU_CABINET = ['plan_comptable_cabinet'] as const
 
 // ── La lecture ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Le modèle tel que `modele_du_cabinet` le rend : entier (les 32 rôles, comme un plan), et les rôles qu'il RÈGLE — ceux
- *  qu'« appliquer » copiera dans un dossier —, ou rien, avec le motif. */
+/** Le modèle tel que `modele_du_cabinet` le rend : entier (un rôle du catalogue de la base chacun, les deux du change
+ *  compris le drapeau de leur migration levé : `rolesLusAuPlan`), et les rôles qu'il RÈGLE — ceux qu'« appliquer » copiera
+ *  dans un dossier —, ou rien, avec le motif. */
 export type LectureDuModele =
-  | { modele: PlanLu; regles: readonly CleRoleComptable[]; motif: null }
+  | { modele: PlanLu; regles: readonly CleRoleDuPlan[]; motif: null }
   | { modele: null; motif: string }
 
 const ORIGINES_DU_MODELE = new Set(['modele_du_cabinet', 'application'])
@@ -63,7 +66,7 @@ export function modeleDeLaReponse(reponse: ReponseDuPlan): LectureDuModele {
   }
   return {
     modele: { plan: lu.plan, libelles: lu.libelles, prefixes: lu.prefixes },
-    regles: ROLES_COMPTABLES.filter((r) => regles.has(r.role)).map((r) => r.role),
+    regles: rolesLusAuPlan().filter((r) => regles.has(r.role)).map((r) => r.role),
     motif: null,
   }
 }
@@ -77,18 +80,27 @@ export interface SaisieDUnRole {
   prefixe: string
 }
 
-export type SaisieDuModele = Readonly<Record<CleRoleComptable, SaisieDUnRole>>
+/** Un rôle par rôle lu au plan : les deux du change n'y sont que le drapeau de leur migration levé (`rolesLusAuPlan`). */
+export type SaisieDuModele = Readonly<Record<CleRoleComptable, SaisieDUnRole>> & Readonly<Partial<Record<CleRoleDuChange, SaisieDUnRole>>>
 
-const estDeTiers = (role: CleRoleComptable): role is RoleDeTiers =>
+const estDeTiers = (role: CleRoleDuPlan): role is RoleDeTiers =>
   ROLES_COMPTABLES.some((r) => r.role === role && r.prefixeAuxiliaireDefaut !== null)
 
-/** La saisie de départ : le modèle lu, rôle par rôle. */
+/** La définition d'un rôle du catalogue de la base, le drapeau du change levé ou non : un refus redit les mots de la base,
+ *  qui connaît les deux rôles du change dans tous les cas. */
+const definitionDuRole = (role: CleRoleDuPlan) => [...ROLES_COMPTABLES, ...ROLES_DU_CHANGE].find((r) => r.role === role)!
+
+/** La saisie de départ : le modèle lu, rôle par rôle. Un compte que le plan lu ne porte pas reste vide : le refus des six
+ *  chiffres le dit, jamais un défaut deviné. */
 export function saisieDuModele(lu: PlanLu): SaisieDuModele {
-  return Object.fromEntries(ROLES_COMPTABLES.map(({ role }) => [role, {
-    compte: lu.plan[role],
-    libelle: lu.libelles[role] ?? '',
-    prefixe: estDeTiers(role) ? lu.prefixes[role] : '',
-  }])) as Record<CleRoleComptable, SaisieDUnRole>
+  return Object.fromEntries(rolesLusAuPlan().map(({ role }) => {
+    const cle = role
+    return [role, {
+      compte: lu.plan[cle] ?? '',
+      libelle: lu.libelles[cle] ?? '',
+      prefixe: estDeTiers(cle) ? lu.prefixes[cle] : '',
+    }]
+  })) as SaisieDuModele
 }
 
 /**
@@ -97,9 +109,10 @@ export function saisieDuModele(lu: PlanLu): SaisieDuModele {
  * blancs de bord, un libellé vide ou égal au catalogue nul, un préfixe égal au catalogue nul, aucun préfixe hors des tiers.
  */
 export function comptesDuModele(saisie: SaisieDuModele): LigneDuPlanReglee[] {
-  return ROLES_COMPTABLES.flatMap((definition) => {
-    const { role } = definition
+  return rolesLusAuPlan().flatMap((definition) => {
+    const role = definition.role
     const s = saisie[role]
+    if (s === undefined) return []
     const compte = s.compte.trim()
     const libelle = s.libelle.trim()
     const libelleRegle = libelle === '' || libelle === definition.libelleDefaut ? null : libelle
@@ -136,19 +149,19 @@ const parOctets = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
  * les comptes des catégories communes à tous les dossiers (`dossier_id` nul), lus EN ENTIER (refus 9 et 10).
  */
 export function refusDuModele(comptes: readonly LigneDuPlanReglee[], comptesDesCategoriesCommunes: readonly string[]): string | null {
-  const definition = (role: CleRoleComptable) => ROLES_COMPTABLES.find((r) => r.role === role)!
+  const definition = definitionDuRole
   // 6. Six chiffres.
   for (const l of comptes) {
     if (!FORME_COMPTE_DE_ROLE.test(l.compte)) return `Le compte du rôle « ${l.role} » s'écrit en six chiffres : « ${l.compte} » n'en est pas un.`
   }
   // 7. La racine du rôle.
   for (const l of comptes) {
-    if (!sousUneRacineDuRole(l.role, l.compte)) {
+    if (!definition(l.role).racines.some((racine) => l.compte.startsWith(racine))) {
       return `Le compte du rôle « ${l.role} » commence par sa racine du plan comptable (${definition(l.role).racines.join(' ou ')}) : « ${l.compte} » n'en est pas un.`
     }
   }
   // 8. Deux rôles du modèle effectif sur le même compte, à des zéros près (dans l'ordre du catalogue).
-  const effectif = [...ROLES_COMPTABLES].sort((a, b) => a.ordre - b.ordre)
+  const effectif = [...rolesLusAuPlan()].sort((a, b) => a.ordre - b.ordre)
     .map((r) => ({ role: r.role, compte: comptes.find((l) => l.role === r.role)?.compte ?? r.compteDefaut }))
   for (let i = 0; i < effectif.length; i++) {
     for (let j = i + 1; j < effectif.length; j++) {
@@ -216,24 +229,27 @@ export interface RoleTenu {
 }
 
 export interface ChangementDuModele {
-  role: CleRoleComptable
+  role: CleRoleDuPlan
   avant: RoleTenu
   apres: RoleTenu
 }
 
 /** Ce que le modèle ENTIER du clic change au modèle lu, rôle par rôle : compte, libellé et préfixe des tiers. */
 export function changementsDuModele(comptes: readonly LigneDuPlanReglee[], lu: PlanLu): ChangementDuModele[] {
-  return ROLES_COMPTABLES.flatMap((d) => {
-    const ligne = comptes.find((c) => c.role === d.role)
-    const tiers = estDeTiers(d.role)
+  return rolesLusAuPlan().flatMap((d) => {
+    const role = d.role
+    // Un plan lu qui ne porte pas le rôle (un plan d'avant le drapeau) n'a rien à comparer : le rôle ne change pas.
+    if (lu.plan[role] === undefined) return []
+    const ligne = comptes.find((c) => c.role === role)
+    const tiers = estDeTiers(role)
     const apres: RoleTenu = {
       compte: ligne?.compte ?? d.compteDefaut,
       libelle: ligne?.libelle ?? d.libelleDefaut,
       prefixe: tiers ? ligne?.prefixe_auxiliaire ?? d.prefixeAuxiliaireDefaut : null,
     }
-    const avant: RoleTenu = { compte: lu.plan[d.role], libelle: lu.libelles[d.role], prefixe: tiers ? lu.prefixes[d.role as RoleDeTiers] : null }
+    const avant: RoleTenu = { compte: lu.plan[role]!, libelle: lu.libelles[role] ?? null, prefixe: tiers ? lu.prefixes[role] : null }
     return apres.compte === avant.compte && apres.libelle === avant.libelle && apres.prefixe === avant.prefixe
-      ? [] : [{ role: d.role, avant, apres }]
+      ? [] : [{ role, avant, apres }]
   })
 }
 
@@ -338,10 +354,11 @@ const champ = (valeur: string) => {
 }
 
 /** Le modèle effectif en CSV : une ligne par rôle, et s'il est réglé par le modèle ou tenu du catalogue. */
-export function csvDuModele(lecture: { modele: PlanLu; regles: readonly CleRoleComptable[] }): string {
+export function csvDuModele(lecture: { modele: PlanLu; regles: readonly CleRoleDuPlan[] }): string {
   const lignes = [['Rôle', 'Code du rôle', 'Compte', 'Libellé', 'Préfixe des auxiliaires', 'Origine']]
-  for (const { role } of ROLES_COMPTABLES) {
-    lignes.push([nomDuRole(role), role, lecture.modele.plan[role], lecture.modele.libelles[role] ?? '',
+  for (const definition of rolesLusAuPlan()) {
+    const role = definition.role
+    lignes.push([nomDuRole(role), role, lecture.modele.plan[role] ?? '', lecture.modele.libelles[role] ?? '',
       estDeTiers(role) ? lecture.modele.prefixes[role] : '', lecture.regles.includes(role) ? 'modèle du cabinet' : 'application'])
   }
   return '﻿' + lignes.map((l) => l.map(champ).join(';')).join('\r\n') + '\r\n'

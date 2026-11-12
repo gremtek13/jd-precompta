@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   MODELE_DU_CABINET_PREVU,
   TABLES_DU_MODELE_DU_CABINET,
@@ -20,6 +20,14 @@ import { ROLES_COMPTABLES } from './planComptable'
 import { ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
 import type { LigneDuPlanReglee } from './planDepuisLaBalance'
 import { PLAN_LU_PAR_DEFAUT } from '../test/modeles'
+
+// Le drapeau du change (ligne 31, lib/rolesDuChange.ts), joué par un accesseur : sans demande, l'état réel (levé).
+const drapeauDuChange = vi.hoisted(() => ({ leve: undefined as boolean | undefined }))
+vi.mock('./rolesDuChange', async (original) => {
+  const vrai = await original<typeof import('./rolesDuChange')>()
+  return { ...vrai, get ECARTS_DE_REGLEMENT_PREVUS() { return drapeauDuChange.leve ?? vrai.ECARTS_DE_REGLEMENT_PREVUS } }
+})
+afterEach(() => { drapeauDuChange.leve = undefined })
 
 // PC5 — LE MODÈLE DE PLAN DU CABINET (ligne 43 ; la migration `modele_de_plan_du_cabinet`, préparée le 12/11/2026). Le module
 // redit avant le clic les refus de `regler_modele_du_cabinet` : ce test confronte chacun de ses mots au texte de la migration
@@ -135,9 +143,9 @@ describe('la lecture du modèle', () => {
 
 describe('la saisie telle qu’elle part', () => {
   const lu = modeleDeLaReponse(reponse()) as Extract<LectureDuModele, { motif: null }>
-  const saisie = (changements: Partial<Record<keyof SaisieDuModele, Partial<SaisieDuModele[keyof SaisieDuModele]>>>): SaisieDuModele => {
-    const depart = saisieDuModele(lu.modele) as Record<string, SaisieDuModele[keyof SaisieDuModele]>
-    for (const [role, c] of Object.entries(changements)) depart[role] = { ...depart[role], ...c }
+  const saisie = (changements: Partial<Record<keyof SaisieDuModele, Partial<NonNullable<SaisieDuModele[keyof SaisieDuModele]>>>>): SaisieDuModele => {
+    const depart = saisieDuModele(lu.modele) as Record<string, NonNullable<SaisieDuModele[keyof SaisieDuModele]>>
+    for (const [role, c] of Object.entries(changements)) depart[role] = { ...depart[role], ...c } as NonNullable<SaisieDuModele[keyof SaisieDuModele]>
     return depart as SaisieDuModele
   }
 
@@ -185,7 +193,7 @@ describe('l’export d’un cabinet porte son modèle', () => {
     const csv = csvDuModele(lu)
     expect(csv.startsWith('﻿Rôle;Code du rôle;Compte;Libellé;Préfixe des auxiliaires;Origine\r\n')).toBe(true)
     const lignes = csv.trimEnd().split('\r\n')
-    expect(lignes).toHaveLength(ROLES_COMPTABLES.length + 1)
+    expect(lignes).toHaveLength(ROLES_DE_LA_BASE.length + 1)
     expect(lignes).toContain('Banque;banque;512100;"Banque; principale";;modèle du cabinet')
     expect(lignes).toContain('Clients;clients;411000;Clients;C;application')
   })
@@ -226,5 +234,69 @@ describe('« Appliquer le modèle du cabinet » sur un dossier existant (PC5b)',
       + 'Le plan ne se change plus dès que le dossier porte une écriture ou un à-nouveau.',
     )
     expect(confirmationDeLApplication(2, [offre.changements[0], offre.changements[0]])).toContain('2 rôles s’écartent')
+  })
+})
+
+describe('les deux rôles du change dans le modèle du cabinet (ligne 31 ; drapeau ECARTS_DE_REGLEMENT_PREVUS)', () => {
+  const DU_CHANGE = ['pertes_de_change', 'gains_de_change']
+  const lire = () => modeleDeLaReponse(reponse()) as Extract<LectureDuModele, { motif: null }>
+
+  it('drapeau levé : la saisie et le CSV portent les 34 rôles de la base, les deux du change compris', () => {
+    expect(ROLES_DE_LA_BASE).toHaveLength(34)
+    const lu = lire()
+    const saisie = saisieDuModele(lu.modele)
+    expect(Object.keys(saisie)).toHaveLength(34)
+    expect(saisie.pertes_de_change).toEqual({ compte: '656000', libelle: 'Pertes de change sur créances et dettes commerciales', prefixe: '' })
+    expect(saisie.gains_de_change?.compte).toBe('756000')
+    const lignes = csvDuModele(lu).trimEnd().split('\r\n')
+    expect(lignes).toHaveLength(35)
+    expect(lignes).toContain('Pertes de change sur créances et dettes commerciales;pertes_de_change;656000;Pertes de change sur créances et dettes commerciales;;application')
+    expect(lignes).toContain('Gains de change sur créances et dettes commerciales;gains_de_change;756000;Gains de change sur créances et dettes commerciales;;application')
+    expect(comptesDuModele(saisie)).toEqual([])
+  })
+
+  it('drapeau levé : un compte du change choisi sous l’autre racine part, et se lit comme réglé par le modèle', () => {
+    const lu = modeleDeLaReponse(reponse({ pertes_de_change: { compte: '666000', libelle: 'Pertes de change' } }))
+    expect(lu.motif).toBeNull()
+    expect(lu.modele === null ? null : lu.regles).toEqual(['pertes_de_change'])
+    const saisie = saisieDuModele(lu.modele!)
+    expect(comptesDuModele(saisie)).toEqual([ligne('pertes_de_change', '666000', { libelle: 'Pertes de change' })])
+    expect(csvDuModele(lu as Extract<LectureDuModele, { motif: null }>)).toContain('pertes_de_change;666000;Pertes de change;;modèle du cabinet')
+    const changements = changementsDuModele(comptesDuModele(saisie), lire().modele)
+    expect(changements.map((c) => c.role)).toEqual(['pertes_de_change'])
+  })
+
+  const cas: [string, string, string, string[]][] = [
+    ['pertes_de_change', '600000', '656 ou 666', ['pertes_de_change', '656 ou 666', '600000']],
+    ['gains_de_change', '706000', '756 ou 766', ['gains_de_change', '756 ou 766', '706000']],
+    ['pertes_de_change', '756000', '656 ou 666', ['pertes_de_change', '656 ou 666', '756000']],
+  ]
+  for (const [role, compte, racines, valeurs] of cas) {
+    it(`drapeau levé : « ${compte} » pour « ${role} » se refuse avant le clic, aux mots de la base`, () => {
+      const refus = refusDuModele([ligne(role as LigneDuPlanReglee['role'], compte)], [])
+      expect(refus).toBe(`Le compte du rôle « ${role} » commence par sa racine du plan comptable (${racines}) : « ${compte} » n'en est pas un.`)
+      expect(PHRASES).toContain(gabarit(refus!, valeurs))
+    })
+  }
+
+  it('drapeau levé : les quatre racines du change passent, et deux rôles du change ne se tiennent pas sur un même compte', () => {
+    for (const [role, compte] of [['pertes_de_change', '656000'], ['pertes_de_change', '666000'], ['gains_de_change', '756000'], ['gains_de_change', '766000']] as const) {
+      expect(refusDuModele([ligne(role, compte)], [])).toBeNull()
+    }
+    expect(refusDuModele([ligne('pertes_de_change', '656100'), ligne('gains_de_change', '756100')], [])).toBeNull()
+  })
+
+  it('drapeau baissé : rien ne change — 32 rôles, un CSV de 33 lignes, aucun rôle du change lu ni réglé', () => {
+    drapeauDuChange.leve = false
+    const lu = lire()
+    const saisie = saisieDuModele(lu.modele)
+    expect(Object.keys(saisie)).toHaveLength(ROLES_COMPTABLES.length)
+    for (const role of DU_CHANGE) expect(role in saisie).toBe(false)
+    expect(csvDuModele(lu).trimEnd().split('\r\n')).toHaveLength(ROLES_COMPTABLES.length + 1)
+    expect(csvDuModele(lu)).not.toContain('_de_change')
+    expect(comptesDuModele(saisie)).toEqual([])
+    const lire2 = () => modeleDeLaReponse(reponse({ pertes_de_change: { compte: '666000' } })) as Extract<LectureDuModele, { motif: null }>
+    expect(lire2().regles).toEqual([])
+    expect(changementsDuModele([], PLAN_LU_PAR_DEFAUT)).toEqual([])
   })
 })
