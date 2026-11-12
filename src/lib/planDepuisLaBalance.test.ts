@@ -219,7 +219,10 @@ describe('les à-nouveaux rangés sur le plan (PC6)', () => {
     const ecrans = ['src/pages', 'src/pages/dossier', 'src/components'].flatMap((d) =>
       readdirSync(new URL(d, RACINE)).filter((n) => n.endsWith('.tsx') && !n.endsWith('.test.tsx'))
         .map((n) => ({ chemin: `${d}/${n}`, texte: lire(`${d}/${n}`) })))
-    const appelants = ecrans.filter((e) => e.texte.includes('planDepuisLaBalance'))
+    // Un import de type seul (`import type … from '…/planDepuisLaBalance'`) n'appelle rien : la carte du modèle du
+    // cabinet (PC5b) emprunte ainsi `PlanLu` sans jamais préparer d'à-nouveaux.
+    const sansImportsDeType = (texte: string) => texte.split('\n').filter((l) => !/^import type /.test(l)).join('\n')
+    const appelants = ecrans.filter((e) => sansImportsDeType(e.texte).includes('planDepuisLaBalance'))
     expect(appelants.map((e) => e.chemin)).toEqual(['src/pages/dossier/BalanceCard.tsx'])
     expect(appelants[0].texte).toMatch(/if \(!PLAN_DEPUIS_LA_BALANCE_PREVU\) return/)
   })
