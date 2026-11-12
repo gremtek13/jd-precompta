@@ -228,7 +228,7 @@ describe('l’essai du plan comptable, la migration du change appliquée', () =>
   })
   it('lit l’historique de la migration, compte deux rôles de plus, et donne leurs comptes décalés au plan entier', () => {
     expect(ESSAI_DU_PLAN).toContain("m.name = 'ecarts_de_reglement'")
-    expect(ESSAI_DU_PLAN).toContain('roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end;')
+    expect(ESSAI_DU_PLAN).toContain('roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end\n    + case when au_inventaire then 6 else 0 end;')
     expect(ESSAI_DU_PLAN).toContain("values (dossier_libre, 'pertes_de_change', '656100', null), (dossier_libre, 'gains_de_change', '756100', null);")
   })
 })

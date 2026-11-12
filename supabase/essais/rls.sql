@@ -121,6 +121,12 @@
 --      CF1 à CF3 — le chef et un membre de l'équipe lisent la copie (contrôles positifs), le client d'un dossier du cabinet
 --      et l'anonyme rien ; le client ne l'enregistre ni ne l'écrit ; le catalogue — et trois mutations ; avant la migration
 --      `copies_des_fichiers`, une ligne « EN ATTENTE ».
+--   6duodecies. Les OPÉRATIONS D'INVENTAIRE (INV2, ligne 35 ; bloc IV, en fin de fichier) : IV1 à IV3 — le chef lit la
+--      régularisation qu'il a enregistrée (contrôle positif), le client qui a un accès au dossier, un membre de l'équipe à
+--      qui le dossier n'est pas assigné et l'anonyme rien ; le client n'enregistre rien et n'écrit rien en direct, le
+--      super-administrateur réinsère (la porte de la restauration, contrôle positif) ; le catalogue — et trois mutations ;
+--      avant la migration `operations_d_inventaire`, une ligne « EN ATTENTE ». Le reste (les refus sous leurs mots, la
+--      recomposition, le gel, les gardes) : `operationsDInventaire.sql`, sur une réplique.
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -9302,6 +9308,193 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $cf$;
+
+-- ══ IV. Les opérations d'inventaire (ligne 35, INV2 ; migration `operations_d_inventaire`, PRÉPARÉE) ══
+-- Une table d'un dossier, lue par son cabinet (`admin_du_dossier`), écrite par `enregistrer_operation_inventaire` et
+-- `retirer_operation_inventaire` seules (aucune policy d'écriture, une garde), réinsérée par le super-administrateur (la
+-- restauration). Aucun client, même celui du dossier. Le reste : `operationsDInventaire.sql`, sur une réplique.
+--   IV1. Le chef enregistre une régularisation d'un dossier en engagement et la lit (le contrôle POSITIF) ; le client, qui a
+--        un accès au dossier, n'en lit rien ; un membre de l'équipe à qui le dossier n'est pas assigné non plus ; l'anonyme
+--        non plus.
+--   IV2. Le client n'enregistre rien (42501, sous ses mots), n'insère rien en direct (42501), ne réécrit rien ; le
+--        super-administrateur réinsère une régularisation en direct (la restauration, le contrôle POSITIF).
+--   IV3. Le catalogue : la RLS active, deux policies permissives à authenticated — la lecture sur `admin_du_dossier`, la
+--        réinsertion sur `is_super_admin` —, et rien d'autre que la restrictive `deux_facteurs`.
+-- Trois mutations, qui doivent mordre : M-IV1 (la lecture élargie au client du dossier : il lit la régularisation), M-IV2
+-- (la lecture fermée : le chef ne lit plus rien), M-IV3 (la porte de la restauration fermée : le super-administrateur ne
+-- réinsère plus). Avant la migration, une ligne dit que le bloc attend.
+do $iv$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  dossier uuid := 'a1100000-0000-4000-8000-0000000000c1';
+  ecritures jsonb := '[{"date": "2025-12-31", "journal": "OD", "libelle": "CCA 31/12/2025 — Essai de la RLS", "lignes": [{"compte": "486000", "sens": "debit", "centimes": 100}, {"compte": "616000", "sens": "credit", "centimes": 100}]}, {"date": "2026-01-01", "journal": "OD", "libelle": "Extourne — CCA 31/12/2025 — Essai de la RLS", "lignes": [{"compte": "616000", "sens": "debit", "centimes": 100}, {"compte": "486000", "sens": "credit", "centimes": 100}]}]';
+  operation jsonb := '{"exercice": 2025, "nature": "cca", "compte_resultat": "616000", "compte_regularisation": "486000", "montant_centimes": 100, "tva_centimes": 0, "objet": "Essai de la RLS"}';
+  chef_lit bigint; du_client bigint; du_membre bigint; de_l_anon text; par_la_fonction text; en_direct text; reecrites bigint;
+  reinsere text; elargie bigint; fermee bigint; porte_fermee text; n bigint; erreur text;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.operations_inventaire') is null then
+    insert into rls_verdict values ('IV. les opérations d''inventaire : EN ATTENTE de la migration operations_d_inventaire',
+      'operations_inventaire', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : un dossier en engagement du cabinet du dossier du client, que le client voit, que le membre ne suit pas ──
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva)
+      select dossier, 'Essai RLS de l''inventaire', d.cabinet_id, 'engagement', 'franchise' from dossiers d where d.id = dossier_du_client;
+    insert into memberships (user_id, dossier_id, role)
+      select client, dossier, m.role from memberships m where m.user_id = client and m.dossier_id = dossier_du_client limit 1;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform enregistrer_operation_inventaire(dossier, operation, ecritures, null);
+    select count(*) into chef_lit from operations_inventaire where dossier_id = dossier;
+    reset role;
+    construit := true;
+
+    -- IV1 : le client du dossier, le membre à qui il n'est pas assigné, l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from operations_inventaire;
+    perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+    select count(*) into du_membre from operations_inventaire where dossier_id = dossier;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from operations_inventaire;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'IV1. le chef lit la régularisation qu''il a enregistrée (le contrôle positif) ; le client du dossier, un membre de l''équipe à qui le dossier n''est pas assigné et l''anonyme n''en lisent rien',
+      'cible', 'operations_inventaire',
+      'observe', 'le chef : ' || chef_lit || ' | le client : ' || du_client || ' | le membre : ' || du_membre || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_lit = 1 and du_client = 0 and du_membre = 0 and de_l_anon = '0');
+
+    -- IV2 : le client n'enregistre ni n'écrit ni ne réécrit ; le super-administrateur réinsère.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_operation_inventaire(dossier, operation, ecritures, null);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into operations_inventaire (dossier_id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, objet, cree_par)
+        values (dossier, 2025, 'cca', '616000', '486000', 100, 'en direct', client);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update operations_inventaire set objet = 'réécrit' where dossier_id = dossier returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into operations_inventaire (dossier_id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, objet, cree_par)
+        values (dossier, 2025, 'cca', '616000', '486000', 100, 'réinsérée', chef);
+      reinsere := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if reinsere is null then reinsere := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'IV2. le client n''enregistre pas de régularisation (la fonction), n''en écrit pas en direct et n''en réécrit aucune ; le super-administrateur en réinsère une (la restauration, le contrôle positif)',
+      'cible', 'operations_inventaire',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites || ' | réinsérée : ' || coalesce(reinsere, '?'),
+      'ok', par_la_fonction = '42501 Accès refusé à ce dossier.' and en_direct like '42501 %' and reecrites = 0 and reinsere = 'ACCEPTÉ');
+
+    -- M-IV1 : la lecture élargie au client du dossier.
+    begin
+      alter policy operations_inventaire_lecture on public.operations_inventaire
+        using (admin_du_dossier(dossier_id) or exists (select 1 from memberships m where m.dossier_id = operations_inventaire.dossier_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from operations_inventaire where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-IV1 — la lecture des régularisations d''inventaire élargie au client du dossier',
+      'attendu', 'le client lit la régularisation', 'observe', coalesce((elargie >= 1)::text, '?'), 'mord', coalesce(elargie >= 1, false));
+
+    -- M-IV2 : la lecture fermée.
+    begin
+      alter policy operations_inventaire_lecture on public.operations_inventaire using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from operations_inventaire where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-IV2 — la lecture des régularisations d''inventaire fermée',
+      'attendu', 'le chef ne lit plus rien', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-IV3 : la porte de la restauration fermée.
+    begin
+      alter policy operations_inventaire_restauration on public.operations_inventaire with check (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      begin
+        insert into operations_inventaire (dossier_id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, objet, cree_par)
+          values (dossier, 2025, 'cca', '616000', '486000', 100, 'réinsérée', chef);
+        porte_fermee := 'ACCEPTÉ';
+      exception when others then porte_fermee := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-IV3 — la porte de la restauration fermée',
+      'attendu', 'le super-administrateur ne réinsère plus', 'observe', coalesce(porte_fermee, '?'), 'mord', coalesce(porte_fermee like '42501 %', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- IV3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'operations_inventaire' and p.roles = array['authenticated']::name[]
+     and p.permissive = 'PERMISSIVE'
+     and ((p.policyname = 'operations_inventaire_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'operations_inventaire_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'IV3. la RLS active ; deux policies à authenticated : la lecture du cabinet du dossier, la réinsertion du super-administrateur (lecture du catalogue)',
+    'cible', 'operations_inventaire',
+    'observe', n || ' sur 2, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'operations_inventaire' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.operations_inventaire'::regclass),
+    'ok', n = 2 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'operations_inventaire' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 2
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.operations_inventaire'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'IV. le jeu d''essai des opérations d''inventaire s''est construit', 'cible', 'un dossier en engagement du cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $iv$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

@@ -1,3 +1,4 @@
+import { INVENTAIRE_PREVU } from './inventaire'
 import { describe, expect, it } from 'vitest'
 import { ADRESSES_DES_ACCES_RETIRES_PREVUES } from './adressesDesAccesRetires'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
@@ -43,6 +44,8 @@ import {
   auPlanDesParametresDesCotisations,
   auPlanDesComptesBancaires,
   auGrapheDesComptesBancaires,
+  auGrapheDeLInventaire,
+  auPlanDeLInventaire,
   auPlanDesOriginauxLiberes,
   auPlanDesAdressesReception,
   auPlanDesArticles,
@@ -124,12 +127,13 @@ describe('le filtre du plan', () => {
         && auPlanDesNotesDeFrais(table, NOTES_DE_FRAIS_PREVUES)
         && auPlanDesSaisies2035E(table, SAISIES_2035E_PREVUES)
         && auPlanDuModeleDuCabinet(table, MODELE_DU_CABINET_PREVU)
-        && auPlanDesCopiesDesFichiers(table, COPIE_DES_FICHIERS_PREVUE))
+        && auPlanDesCopiesDesFichiers(table, COPIE_DES_FICHIERS_PREVUE) && auPlanDeLInventaire(table, INVENTAIRE_PREVU))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
         && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
-        && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS)))
+        && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS)
+        && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)))
     expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlanAujourdHui(t)))

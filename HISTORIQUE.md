@@ -51849,3 +51849,19 @@ aux droits du cabinet aurait supprimé le fichier d'un autre dossier, le pire de
 cabinet. Aucune Edge Function ne lit un chemin d'une ligne. Le scanner `cheminsDuStockage.test.ts` part de tout
 `….storage.from(…).méthode(…)` de `src/` dans l'arbre syntaxique (30 appels : 11 vérifiés, 19 en 17 exceptions comptées), dit toute
 autre forme, et a ses défauts plantés ; neuf tests de lecteurs, dont quatre vus rouges sous mutation de trois gardes.
+
+### 12/11/2026 — INV2 : LES OPÉRATIONS D'INVENTAIRE, EN BASE (LIGNE 35) (PRÉPARÉE, PAS APPLIQUÉE)
+
+`supabase/preparees/20261112190000_operations_d_inventaire.sql` (md5 `30c15490…`), À COLLER : ses deux fonctions retirent les
+lignes qu'elles remplacent. Elle pose six rôles au catalogue (486, 487, 408, 418, 44586, 44587 ; rangs 360 à 410), la table
+`operations_inventaire` (lue par le cabinet du dossier, aucune policy d'écriture, la porte de la restauration au
+super-administrateur), la colonne `ecritures_brouillon.operation_inventaire_id` et sa contrainte (aucune autre source, un
+31 décembre ou un 1er janvier : l'exclusion est symétrique, aucune contrainte d'hier ne change), deux gardes, et
+`enregistrer_operation_inventaire` / `retirer_operation_inventaire`, qui redisent les refus d'INV1 sous ses mots, codes et
+ordre (`inventaireEnBase.test.ts`), recomposent en entiers la constatation et son extourne et les comparent en multiensemble,
+libellé composé compris. Les choix ouverts tenus à leur recommandation (INV-Q1, Q2, Q3 (A)). Sur une réplique PostgreSQL 17
+rattrapée à la production (200 migrations) : `operationsDInventaire.sql` (le nom `inventaire.sql` est celui du contrôle de
+l'export) 72 contrôles, 0 en faute, 8 mutations sur 8 ; `rls.sql` entier, bloc IV, 171 lignes, 0 en faute, 111 mutations sur
+111, puis après le retour 168 lignes (IV EN ATTENTE), 0 en faute, 108 sur 108 ; la migration réappliquée, l'essai de nouveau
+juste ; `planComptable.sql` (les six rôles jugés à part, contrôle 1bis) juste avec et sans elle. Au plan de sauvegarde
+derrière `INVENTAIRE_PREVU` baissé, son bloc dans `restauration.sql` ; `types.ts` décrit la table.

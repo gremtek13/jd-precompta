@@ -14,6 +14,7 @@ import { DEPOT_DES_HONORAIRES_PREVU } from './depotDesHonoraires'
 import { DOCUMENTS_ET_DEMANDES_PREVUS, TABLES_DES_DOCUMENTS_ET_DEMANDES } from './documentsEtDemandes'
 import { ACHATS_DU_CLIENT_PREVUS, TABLES_DES_ACHATS_DU_CLIENT } from './achatsClient'
 import { NOTES_DE_FRAIS_PREVUES, TABLES_DES_NOTES_DE_FRAIS } from './notesDeFrais'
+import { INVENTAIRE_PREVU, TABLES_DE_L_INVENTAIRE } from './inventaire'
 import { DEPART_DU_CLIENT_PREVU } from './departDuClient'
 import { NUMEROTATION_CONTINUE_PREVUE } from './numerotationContinue'
 import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE } from './pieceDUneFactureReprise'
@@ -844,6 +845,29 @@ function blocDesSaisies2035E(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table des saisies de l'annexe existe : la sienne après sa table d'ancrage. */
 const avecLesSaisies2035E = avecLesArticles
 
+// LES OPÉRATIONS D'INVENTAIRE (ligne 35, INV2) : un bloc à part, joué en dernier, met leur table juste après
+// `notes_internes`, avant les pièces hors de France ; son chemin ; aucune vague.
+const MARQUE_DE_L_INVENTAIRE = "-- ══ Les opérations d'inventaire (ligne 35, INV2) ══"
+
+function blocDeLInventaire(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DE_L_INVENTAIRE)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.operations_inventaire') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des opérations d'inventaire existe : la sienne après sa table d'ancrage. */
+const avecLInventaire = avecLesArticles
+
 /** Le plan que le script joue quand la table des notes de frais existe : la sienne après son ancre — jouée AVANT les achats du
  *  client et les documents et les demandes, qui passent devant. */
 const avecLesNotesDeFrais = avecLesArticles
@@ -855,11 +879,11 @@ const avecLesAchatsDuClient = avecLesArticles
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesCopiesDesFichiers(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLInventaire(avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesCopiesDesFichiers(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesSituations(avecLesDevis(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
-  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesCopiesDesFichiers(texte)), blocDesOriginauxLiberes(texte)), blocDuModeleDuCabinet(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDesHonorairesDeposes(texte)), blocDuDepart(texte)), blocDesNotesDeFrais(texte)), blocDesAchatsDuClient(texte)), blocDesDocumentsEtDemandes(texte)), blocDesSaisies2035E(texte))
+  blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesCopiesDesFichiers(texte)), blocDesOriginauxLiberes(texte)), blocDuModeleDuCabinet(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDesHonorairesDeposes(texte)), blocDuDepart(texte)), blocDesNotesDeFrais(texte)), blocDesAchatsDuClient(texte)), blocDesDocumentsEtDemandes(texte)), blocDesSaisies2035E(texte)), blocDeLInventaire(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -972,7 +996,19 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const documentsEtDemandes = blocDesDocumentsEtDemandes(texteDeLEssai)
   const avecLesDocumentsDuJour = DOCUMENTS_ET_DEMANDES_PREVUS ? avecLesDocumentsEtDemandes(avecLesAchatsDuJour, documentsEtDemandes) : avecLesAchatsDuJour
   const saisies2035E = blocDesSaisies2035E(texteDeLEssai)
-  const courant = SAISIES_2035E_PREVUES ? avecLesSaisies2035E(avecLesDocumentsDuJour, saisies2035E) : avecLesDocumentsDuJour
+  const avecLesSaisies2035EDuJour = SAISIES_2035E_PREVUES ? avecLesSaisies2035E(avecLesDocumentsDuJour, saisies2035E) : avecLesDocumentsDuJour
+  const inventaire = blocDeLInventaire(texteDeLEssai)
+  const courant = INVENTAIRE_PREVU ? avecLInventaire(avecLesSaisies2035EDuJour, inventaire) : avecLesSaisies2035EDuJour
+
+  it('le bloc des opérations d’inventaire : sa table, après `notes_internes`, joué en dernier, conditionné, son chemin (INV2)', () => {
+    expect(inventaire).toEqual({
+      ancre: 'notes_internes', tables: [...TABLES_DE_L_INVENTAIRE], recule: true, conditionne: true,
+      chemins: Object.fromEntries(TABLES_DE_L_INVENTAIRE.map((t) => [t, { acces: 'direct', parent: null, colonne: null }])),
+    })
+    const rang = ORDRE_RESTAURATION_PREVU.indexOf('notes_internes')
+    expect(ORDRE_RESTAURATION_PREVU.slice(rang + 1, rang + 3)).toEqual([...TABLES_DE_L_INVENTAIRE, 'pieces_hors_de_france'])
+    expect(texteDeLEssai.indexOf(MARQUE_DE_L_INVENTAIRE)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_SAISIES_2035E))
+  })
 
   it('le bloc des saisies de l’annexe 2035-E : sa table, après `saisies_2035`, joué en dernier, conditionné, son chemin (ligne 48)', () => {
     expect(saisies2035E).toEqual({
@@ -1275,6 +1311,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !(TABLES_DES_NOTES_DE_FRAIS as readonly string[]).includes(t)
       && !(TABLES_DES_SAISIES_2035E as readonly string[]).includes(t)
       && !(TABLES_DU_MODELE_DU_CABINET as readonly string[]).includes(t)
+      && !(TABLES_DE_L_INVENTAIRE as readonly string[]).includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

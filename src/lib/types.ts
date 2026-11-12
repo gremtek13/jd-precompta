@@ -546,6 +546,12 @@ export interface EcritureBrouillon {
   // des deux côtés de la migration : avant elle, `select('*')` ne rend pas la colonne ; après, il la rend, nulle sur toute
   // autre écriture. Une écriture qui ne la porte pas se lit comme hier, au caractère près.
   ouverture_compte_bancaire_id?: string | null
+  // LA RÉGULARISATION D'INVENTAIRE dont cette écriture est la constatation (31 décembre) ou l'extourne (1er janvier suivant)
+  // (ligne 35, INV2 ; migration `operations_d_inventaire`, préparée, pas appliquée — lib/inventaire.ts, `INVENTAIRE_PREVU`) :
+  // écrite par `enregistrer_operation_inventaire` seule, sans autre source (`ecritures_brouillon_inventaire_sans_autre_source`).
+  // FACULTATIVE, et c'est la vérité des deux côtés de la migration : avant elle, `select('*')` ne rend pas la colonne ; après,
+  // il la rend, nulle sur toute autre écriture.
+  operation_inventaire_id?: string | null
   // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, FIGÉS À LA VALIDATION (ligne 26.6, étape e ; lot FEC22b ; migration
   // `champs_bnc_du_fec`, en base et dans l'export depuis le 02/11/2026 — voir lib/champsBncFiges.ts) : la date et le mode
   // du règlement, la nature de l'opération (une par écriture), le poste de la 2035 d'une ligne de charge ou de produit
@@ -1493,6 +1499,41 @@ export interface OperationCaisse {
   // Son retrait, d'un instant et d'un auteur ; une opération remplacée est retirée.
   retire_le: string | null
   retire_par: string | null
+}
+
+// UNE RÉGULARISATION D'INVENTAIRE (`operations_inventaire`, ligne 35, INV2 ; migration `operations_d_inventaire`, préparée,
+// pas appliquée — lib/inventaire.ts, `INVENTAIRE_PREVU`) : une charge ou un produit constaté d'avance, une facture non
+// parvenue ou à établir, une charge à payer ou un produit à recevoir d'un dossier en ENGAGEMENT, saisi par le cabinet ; la
+// provision (INV4) y entrera par sa table à elle. Lue par le cabinet du dossier seul ; écrite par
+// `enregistrer_operation_inventaire` et `retirer_operation_inventaire`, réinsérée par la restauration ; figée avec son exercice.
+export type NatureOperationInventaire = 'cca' | 'pca' | 'fnp' | 'fae' | 'charge_a_payer' | 'produit_a_recevoir' | 'provision'
+export interface OperationInventaire {
+  id: string
+  dossier_id: string
+  // L'année civile de la constatation (le 31 décembre) ; l'extourne se date du 1er janvier suivant.
+  exercice: number
+  nature: NatureOperationInventaire
+  // La charge (classe 6) ou le produit (classe 7) régularisé.
+  compte_resultat: string
+  // Le compte de régularisation, dans la liste fermée de sa nature.
+  compte_regularisation: string
+  // En centimes : hors taxes pour un assujetti, toutes taxes comprises pour un exonéré ; la TVA d'attente à part, d'une FNP
+  // ou d'une FAE seulement (0 ailleurs).
+  montant_centimes: number
+  tva_centimes: number
+  // La période couverte (AAAA-MM-JJ), facultative, les deux ou aucune : le prorata proposé, gardé pour l'état d'inventaire.
+  periode_debut: string | null
+  periode_fin: string | null
+  // 1 à 200 caractères, sur une ligne ; il part au FEC dans le libellé composé.
+  objet: string
+  // La pièce du dossier qui fonde la régularisation, quand elle existe.
+  piece_citee_id: string | null
+  // Incrémentée à chaque remplacement ; une saisie retient la version qu'elle remplace.
+  version: number
+  cree_par: string
+  cree_le: string
+  modifie_par: string | null
+  modifie_le: string | null
 }
 
 export type MoyenEncaissement =
