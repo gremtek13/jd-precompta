@@ -51657,3 +51657,17 @@ constantes égales, et quatre dérives plantées mordent. `COMPTE_D_INVENTAIRE` 
 (conception 35, § 1.3 : 4282, 4382, 4481, 4482, 439, 4098, 1688, 518 en plus) et garde les six numéros d'avant 2026 qu'une
 balance reprise porte encore, le PCG de 2026 ne leur donnant aucun autre sens ; ni 467 ni 468. Le point
 `inventaire-non-revu` vit dans l'onglet Bilan, pas dans la Checklist ; trois mutations mordent.
+
+### 12/11/2026 — B4R : LA RELECTURE DE SÉCURITÉ (LIGNE 51.5)
+
+Agent architecte, relecture adverse de `lister_achats`, `recevoir_achat` et `acheteurRecu`, un client hostile maître du corps de la
+requête ; sans migration, rien déployé. Trois défauts corrigés. (1) Un `flowId` « . » ou « .. » passait la forme d'un flux, et
+`encodeURIComponent` le laisse : l'adresse le résolvait vers `/v1/` ou `/v1/flows/` de la plateforme, appelés avec le jeton du
+cabinet, leur statut rendu au client ; `FLUX_DEMANDE` le refuse en 400 avant toute dépense, aussi dans `telecharger`, qui avait le
+même défaut. (2) Un `dossierId` en majuscules passait (la base compare un uuid sans casse) et devenait le premier segment des
+fichiers déposés, que la suppression du dossier n'aurait pas retirés : il passe en minuscules à la porte. (3) L'analyseur de cdarRecu
+était quadratique (l'unicité des attributs cherchée dans une liste, la portée des préfixes recopiée par chaque élément qui déclare) :
+sous le million de caractères, 63 s pour 90 000 attributs, 117 s pour 40 000 préfixes recopiés par 19 000 enfants, quand la fonction
+a 2 s de calcul ; deux ensembles et une chaîne de portées, 0,1 s. Quatre scénarios HTTP et un test, rouges sur le code d'avant.
+Questions B4RS-Q1 à Q3 : la provenance « plateforme » d'un client « Ventes » qui réécrit la connexion (EC-Q4), les noms des flux d'une
+autre entreprise dans la liste, aucun plafond d'appels.

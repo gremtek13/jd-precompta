@@ -5755,6 +5755,38 @@ const SCENARIOS_RECEPTION_PAR_LE_CLIENT: Scenario[] = [
     requete: (s) => requeteDe(s, { personne: 'client', corps: RECEPTION_D_UN_ACHAT }),
     attendu: { statut: 200, aucuneDepense: true, verifier: (r) => (corpsDe(r).issue === 'deja_recue' ? [] : [r.texte.slice(0, 200)]) },
   },
+  // La relecture de sécurité du 12/11/2026 : un corps hostile. Un flux « . » ou « .. » passait la forme d'un flux, et
+  // `encodeURIComponent` le laisse tel quel : l'adresse le résolvait vers une autre route de la plateforme (`/afnor/v1/`),
+  // appelée avec le jeton du cabinet.
+  ...['..', '.'].map((flowId): Scenario => ({
+    nom: `recevoir_achat — un flux « ${flowId} », qu’une adresse résout vers une autre route : refusé (400) avant toute dépense`,
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: { ...RECEPTION_D_UN_ACHAT, flowId } }),
+    attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+  })),
+  {
+    nom: 'telecharger — le cabinet et un flux « .. » : refusé (400), sans autre appel que son jeton',
+    preparer: connexionPlateforme,
+    requete: (s) => requeteDe(s, {
+      personne: 'chef', corps: { action: 'telecharger', dossierId: D, version: VERSION_PLATEFORME, flowId: '..', document: 'original' },
+    }),
+    attendu: { statut: 400, refusEnFrancais: true, depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`] },
+  },
+  {
+    // La base compare un uuid sans égard à la casse ; un chemin du stockage est un texte, et la suppression du dossier liste
+    // « <dossier>/ » tel que la base l'écrit.
+    nom: 'recevoir_achat — le dossier écrit en majuscules : la pièce et ses fichiers rangés sous le dossier tel que la base l’écrit',
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: { ...RECEPTION_D_UN_ACHAT, dossierId: D.toUpperCase() } }),
+    attendu: {
+      statut: 200,
+      verifier: (r, m) => {
+        const p = lignes(m, 'pieces')[0] ?? {}
+        const range = String(p.storage_path).startsWith(`${D}/`) && String(p.lisible_path).startsWith(`${D}/`) && p.dossier_id === D
+        return corpsDe(r).issue === 'recue' && range ? [] : [`${r.texte.slice(0, 200)} ; ${JSON.stringify(p).slice(0, 300)}`]
+      },
+    },
+  },
 ]
 
 const PLATEFORME_AGREEE: ContratFonction = {
