@@ -283,11 +283,11 @@ function calculer(c: ContexteDeLAffectation, regime: RegimeDeLaForme, capital: n
 const estUneDateCivile = (d: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(d) && ajouterJours(d, 0) === d
 const centimesLisibles = (n: number): boolean => Number.isSafeInteger(n)
 
-const NOMS_DES_ORIGINES: Readonly<Record<OrigineDAffectation, string>> = {
+export const NOMS_DES_ORIGINES: Readonly<Record<OrigineDAffectation, string>> = {
   benefice: 'le bénéfice', perte: 'la perte', report_crediteur: 'le report à nouveau créditeur',
   autres_reserves: 'les autres réserves', reserves_statutaires: 'les réserves statutaires',
 }
-const NOMS_DES_DESTINATIONS: Readonly<Record<DestinationDAffectation, string>> = {
+export const NOMS_DES_DESTINATIONS: Readonly<Record<DestinationDAffectation, string>> = {
   reserve_legale: 'la réserve légale', reserves_statutaires: 'les réserves statutaires', autres_reserves: 'les autres réserves',
   report_crediteur: 'le report à nouveau créditeur', report_debiteur: 'le report à nouveau débiteur', dividendes: 'les dividendes',
 }
@@ -597,6 +597,15 @@ export function composerLEcritureDAffectation(c: ContexteDeLAffectation, decisio
  * avant la migration ferait échouer toute sauvegarde. Il se lève dans le déploiement qui suit le collage (AFF7).
  */
 export const AFFECTATION_PREVUE: boolean = false
+
+/**
+ * LE DRAPEAU DE L'ÉCRAN, BAISSÉ : `AFFECTATION_EXPORTEE` (AFF4). Baissé, la carte « Approbation et affectation du résultat »
+ * de l'onglet Clôture ne se monte pas et ne lit aucune des deux tables. Il ne se lève qu'APRÈS la migration
+ * `affectation_du_resultat` en production — avec `AFFECTATION_PREVUE`, dans le déploiement qui suit le collage (AFF7) : la
+ * carte lit `affectations_du_resultat`, `lignes_d_affectation` et `ecritures_brouillon.affectation_id`, que la base n'a pas
+ * avant elle, et une lecture refusée y dirait « lecture incomplète » à chaque ouverture de l'onglet.
+ */
+export const AFFECTATION_EXPORTEE: boolean = false
 
 /** Les tables de la migration. */
 export const TABLES_DE_L_AFFECTATION = ['affectations_du_resultat', 'lignes_d_affectation'] as const

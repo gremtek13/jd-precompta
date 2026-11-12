@@ -691,6 +691,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/Saisies2035ECard.tsx': 'reçoit la lecture des saisies de l’annexe 2035-E de la Clôture (drapeau '
     + '`SAISIES_2035E_EXPORTEES` baissé : non montée) ; son test (Saisies2035ECard.test.tsx) éprouve « chargement… » et aucun '
     + 'geste sur une lecture incomplète ; n’écrit que sur « Enregistrer les saisies de l’annexe »',
+  'pages/dossier/AffectationDuResultatCard.tsx': 'drapeau `AFFECTATION_EXPORTEE` baissé : ne se monte pas (ClotureTab) et ne lit '
+    + 'rien ; levé, son propre test (AffectationDuResultatCard.test.tsx) éprouve « Chargement… » avant la lecture, aucun geste sur une '
+    + 'lecture incomplète ou un exercice non validé ; n’écrit que sur « Enregistrer / Remplacer la décision » et « Retirer la décision »',
   'pages/dossier/ImportDesFactures.tsx': 'drapeau `IMPORT_DES_FACTURES_OFFERT` baissé : ne rend ni ne lit rien ; levé, son propre '
     + 'test (ImportDesFactures.test.tsx) éprouve « Chargement… » avant la lecture et aucun geste sur une lecture illisible ; '
     + 'n’écrit que sur « Poser la date de reprise », « Importer » et « Retirer l’import »',

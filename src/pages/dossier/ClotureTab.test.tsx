@@ -41,6 +41,21 @@ vi.mock('../../lib/champsBncDuFec', async (original) => {
   return { ...vrai, get CHAMPS_BNC_EXPORTES() { return drapeauDesChamps.choix === undefined ? vrai.CHAMPS_BNC_EXPORTES : drapeauDesChamps.choix } }
 })
 afterEach(() => { drapeauDesChamps.choix = undefined })
+// L'AFFECTATION DU RÉSULTAT (ligne 45, lot AFF4) : le drapeau `AFFECTATION_EXPORTEE` joué par un accesseur — baissé, celui du
+// module, tant qu'un cas ne le lève pas — et sa lecture, que la carte fait toute seule, programmée par le cas (jamais un appel
+// au réseau). Levé, la carte se monte sous la validation d'un exercice d'un dossier en engagement, et là seulement.
+const affectationDuTest = vi.hoisted(() => ({ leve: undefined as undefined | boolean, appels: [] as [string, number][] }))
+vi.mock('../../lib/affectationDuResultat', async (original) => {
+  const vrai = await original<typeof import('../../lib/affectationDuResultat')>()
+  return { ...vrai, get AFFECTATION_EXPORTEE() { return affectationDuTest.leve === undefined ? vrai.AFFECTATION_EXPORTEE : affectationDuTest.leve } }
+})
+vi.mock('../../lib/affectationLecture', () => ({
+  lireLAffectation: (dossierId: string, annee: number) => {
+    affectationDuTest.appels.push([dossierId, annee])
+    return Promise.resolve({ dossierId, annee, etat: 'incomplete', motif: 'lecture non programmée par ce test' })
+  },
+}))
+afterEach(() => { affectationDuTest.leve = undefined; affectationDuTest.appels = [] })
 
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
@@ -1348,6 +1363,35 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
     expect(screen.queryByRole('button', { name: /Remplir le formulaire officiel/ })).toBeNull()
     expect(screen.queryByText(/Report sur la déclaration des revenus/)).toBeNull()
     expect(screen.queryByText(/Volet social/)).toBeNull()
+  })
+
+  it('l’affectation du résultat : le drapeau baissé, aucune carte et aucune lecture (l’état d’avant, éprouvé)', async () => {
+    poser()
+    monterEngagement()
+    await screen.findByText('Exercice 2025')
+    expect(screen.queryByText(/Approbation et affectation du résultat/)).toBeNull()
+    expect(affectationDuTest.appels).toEqual([])
+    expect(faux.appels.map((a) => a.nom)).not.toContain('enregistrer_affectation')
+  })
+
+  it('l’affectation du résultat : le drapeau levé, la carte se monte sous la validation de l’exercice et lit son exercice', async () => {
+    affectationDuTest.leve = true
+    poser()
+    monterEngagement()
+    await screen.findByText('Approbation et affectation du résultat 2025')
+    expect(await screen.findByText(/Lecture incomplète : lecture non programmée par ce test/)).toBeTruthy()
+    expect(affectationDuTest.appels).toEqual([['dossier-de-test', 2025]])
+    // Sur une lecture incomplète, aucun geste : seuls ceux de la clôture et de la validation, jamais ceux de l’affectation.
+    expect(screen.queryByRole('button', { name: /Enregistrer la décision|Remplacer la décision|Retirer la décision/ })).toBeNull()
+  })
+
+  it('l’affectation du résultat : un dossier en trésorerie n’a pas la carte, même levé (la 2035 ne la connaît pas)', async () => {
+    affectationDuTest.leve = true
+    poser()
+    monter(2025)
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryByText(/Approbation et affectation du résultat/)).toBeNull()
+    expect(affectationDuTest.appels).toEqual([])
   })
 
   it('garde la clôture de l’exercice, qui ne dépend pas de la déclaration', async () => {

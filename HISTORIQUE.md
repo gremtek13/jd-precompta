@@ -52093,3 +52093,27 @@ l'octet, avec et sans la migration. **Preuves** (mère 17 rattrapée à 205, `si
 rend la signature et, rejoué, se refuse ; banc du leurre SÛR ; drapeau levé en simulation, 21 289 tests. Avant comme après,
 MP1 de `rls.sql` et sept étapes de `modeleDuCabinet` attendent 32 rôles (34 depuis `ecarts_de_reglement`). **L'écran** :
 `refusDeLaClasse`, que `compteDeCategorie` dit ; « Comptes manquants » le dit avant le clic sous `CLASSES_DES_CATEGORIES_PREVUES`.
+
+### 12/11/2026 — AFF4 : LA CARTE DE L'AFFECTATION DU RÉSULTAT, DERRIÈRE SON DRAPEAU
+
+Agent dev, lot AFF4 de la conception 45 (§ 5.8, AFF-Q11 (A) : l'onglet Clôture), sur la tête qui porte AFF1 et AFF2 ; rien en
+production, rien de poussé, aucune migration. **Le drapeau** : `AFFECTATION_EXPORTEE`, baissé, à côté d'`AFFECTATION_PREVUE` (il ne
+se lève qu'après la migration, dans le même déploiement qu'AFF7) ; baissé, la carte ne se monte pas et ne lit rien (éprouvé dans
+`ClotureTab.test.tsx`, comme son état levé et la trésorerie). **La logique** (`lib/affectationEcran.ts`, pur) : le résultat lu
+(crédit moins débit des classes 6 et 7 validées de l'année), les soldes à la date de la décision (l'ouverture de l'année puis le
+brouillon jusqu'à elle, la décision remplacée écartée), la proposition du module à la date saisie ou au 1er janvier suivant, le
+jugement de la saisie TELLE QU'ELLE PART — un montant illisible part en `NaN`, que le module refuse à ses mots, jamais en zéro —, les
+paramètres de `enregistrer_affectation`, le refus du retrait aux mots de la base, les confirmations qui nomment l'exercice, la
+répartition, l'écriture et la version remplacée. **La lecture** (`lib/affectationLecture.ts`) : le dossier, les exercices validés,
+les ouvertures, le brouillon depuis le 1er janvier, les versions et leurs lignes, `plan_du_dossier` — chacun lu en entier par
+`lireTout`, sinon « incomplète » avec son motif ; les six rôles de l'affectation, que le catalogue de l'application ne porte pas
+(`affectationDuResultatEnBase.test.ts` l'exige), se lisent dans la réponse du plan par leur nom, sans défaut. **La carte**
+(`AffectationDuResultatCard.tsx`) : résultat, proposition (reprise au clic seul), saisie, refus et avertissements avant le clic,
+remplacement contre la version lue, retrait, versions précédentes lisibles ; un verrou `useRef` posé avant le `try`, relâché après la
+relecture ; une décision figée avec son exercice, ou dont l'écriture n'est plus proposée, ne montre aucun geste ; rien côté client.
+**Choix** : exercice validé exigé (les mots de la base) ; choix des statuts sans défaut (AFF1-Q1) ; types déjà dans `types.ts`.
+**Question à l'architecte (AFF4-Q1)** : `affectation_soldes` écarte les lignes du brouillon par `affectation_id is distinct from
+p_exclue` ; sans décision à remplacer, `p_exclue` est nul et `null is distinct from null` est faux — toute ligne ordinaire est écartée
+des soldes (aucun essai ne pose de ligne de classe 1 au brouillon). La carte compte ces lignes ; la correction, avant le collage :
+`(p_exclue is null or e.affectation_id is distinct from p_exclue)`, avec un essai. **Preuves** : 19 tests d'écran, 27 de logique, 23
+de lecture ; mutations (verrou, drapeau) mordent ; scanners de lecture, d'écriture et d'écrans verts.
