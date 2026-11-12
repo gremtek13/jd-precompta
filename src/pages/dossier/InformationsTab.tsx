@@ -12,6 +12,7 @@ import type { LectureDuPlan } from '../../lib/planComptable'
 import VehiculesCard from './VehiculesCard'
 import SauvegardeCard from './SauvegardeCard'
 import BalanceCard from './BalanceCard'
+import CategoriesDuDossierCard from './CategoriesDuDossierCard'
 import SourceDesVentesCard, { type ReglageRendu } from './SourceDesVentesCard'
 import NumerotationDesFacturesCard from './NumerotationDesFacturesCard'
 import ComptesBancairesCard from './ComptesBancairesCard'
@@ -550,6 +551,9 @@ export default function InformationsTab({
     {/* La reprise d'un dossier venu d'un autre logiciel commence ici, à côté de la sauvegarde : ce
         sont les deux moments où des données ENTRENT et SORTENT de la plateforme en bloc. */}
     <BalanceCard dossierId={dossierId} planLu={modele} onPlanRelu={onPlanRelu} />
+
+    {/* Les catégories propres au dossier (ligne 43, PC7), derrière CATEGORIES_DU_DOSSIER_PREVUES. */}
+    <CategoriesDuDossierCard dossierId={dossierId} plan={modele.plan} />
 
     {/* Le départ d'un client (ligne 44, INAL5) : les deux voies, juste avant la zone dangereuse qui porte la suppression. */}
     <DepartDuClientCard
