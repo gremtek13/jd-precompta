@@ -4,6 +4,7 @@ import { resteRegleParSaReprise, type PiecesCitees } from './facturesSources'
 import { mouvementJustifieParLeReleve, referenceDuReleve } from './affectationBanque'
 import { nomDuVehicule } from './forfaitKilometrique'
 import { LONGUEUR_DE_L_EMPREINTE_COURTE, referenceDeLaLiquidation, referenceDeLOuvertureEclatee, referenceDuPaiementPersonnel } from './fec'
+import { exerciceDeLaLigneDInventaire, referenceDeLInventaire } from './pieceDeLInventaire'
 import { justificatifDeLaCaisse, operationsDe, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
@@ -92,6 +93,10 @@ export interface RuptureAudit {
 // compte bancaire est sans action — un compte qui l'ouvre ne se supprime pas sous elle, et la base ne l'écrit, ne la change
 // ni ne la retire que par `ecrire_ouverture_eclatee` : `ouverture_compte_bancaire_id` ne tombe jamais à nul sous elle. Ses
 // deux lignes sont de la banque, sans mouvement par nature : ni l'une ni l'autre ne rompt la piste.
+// NI UNE RÉGULARISATION D'INVENTAIRE (ligne 35, INV3 ; lib/inventaireDeLaValidation.ts) : son justificatif est l'ÉTAT
+// D'INVENTAIRE de l'exercice de sa régularisation (PCG, art. 1214-40 et 1214-41), et sa clé vers elle est sans action — une
+// régularisation ne se retire qu'après ses lignes (`retirer_operation_inventaire`), et la base ne les écrit qu'avec elle :
+// `operation_inventaire_id` ne tombe jamais à nul sous elles.
 export function rupturesPisteAudit(
   ecritures: EcritureBrouillon[],
   idsJustifies: ReadonlySet<string>,
@@ -102,7 +107,7 @@ export function rupturesPisteAudit(
   for (const ecriture of ecritures) {
     if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id && !ecriture.vehicule_id
       && !ecriture.declaration_tva_id && !ecriture.cotisation_id && !ecriture.operation_caisse_id
-      && !ecriture.ouverture_compte_bancaire_id) {
+      && !ecriture.ouverture_compte_bancaire_id && !ecriture.operation_inventaire_id) {
       ruptures.push({ ecriture, motif: 'sans_justificatif' })
     }
     // L'éclatement de l'ouverture n'a de mouvement par nature : il reporte des soldes de relevés, pas une opération.
@@ -149,11 +154,12 @@ export interface AbsenceFec {
 // CA3 pour pièce, et le paiement d'une échéance depuis le compte personnel, avec le relevé de ce compte — et une opération de
 // la caisse (étape C3b), au journal des ventes ou des opérations diverses, avec le récapitulatif de son jour : l'écran ne
 // l'exporte que sur une caisse lue en entier, qui rend chaque opération qu'une ligne cite. Et l'éclatement de l'ouverture
-// de la banque (MCB5), au journal des opérations diverses, les relevés au 31 décembre pour pièce.
+// de la banque (MCB5), au journal des opérations diverses, les relevés au 31 décembre pour pièce. Et une régularisation
+// d'inventaire (INV3), au même journal, l'état d'inventaire de son exercice pour pièce.
 export function absenceFec(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): AbsenceFec {
   const horsFec = ecritures.filter((e) =>
     !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id && !e.vehicule_id && !e.declaration_tva_id
-    && !e.cotisation_id && !e.operation_caisse_id && !e.ouverture_compte_bancaire_id)
+    && !e.cotisation_id && !e.operation_caisse_id && !e.ouverture_compte_bancaire_id && !e.operation_inventaire_id)
   return {
     nb: horsFec.length,
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
@@ -370,6 +376,7 @@ export function pisteAudit(
     if (!e.piece_id && !e.ligne_bancaire_id && e.declaration_tva_id) return ligneDeLiquidation(e)
     if (!e.piece_id && !e.ligne_bancaire_id && e.cotisation_id) return ligneDuPaiementPersonnel(e)
     if (!e.piece_id && !e.ligne_bancaire_id && e.operation_caisse_id) return ligneDeLaCaisse(e)
+    if (!e.piece_id && !e.ligne_bancaire_id && e.operation_inventaire_id) return ligneDUneRegularisation(e)
     if (!e.piece_id && !e.ligne_bancaire_id && e.ouverture_compte_bancaire_id) {
       return ligneDeLOuvertureEclatee(e, comptesDesOuvertures.get(`${e.date}|${e.ouverture_compte_bancaire_id}`) ?? null)
     }
@@ -651,6 +658,33 @@ function ligneDeLiquidation(e: EcritureBrouillon): LignePisteAudit {
     pieceDate: e.date,
     pieceMontantTtc: null,
     pieceFichier: `Déclaration de TVA : ${referenceDeLaLiquidation(e.date)}`,
+    pieceEmpreinte: null,
+    mouvementDate: null,
+    mouvementLibelle: null,
+    mouvementMontant: null,
+    manque: [],
+  }
+}
+
+// La ligne d'une régularisation d'inventaire (ligne 35, INV3) : pour justificatif, l'ÉTAT D'INVENTAIRE de l'exercice de sa
+// régularisation, daté du 31 décembre de cet exercice — la pièce que le FEC lui donne (« Inventaire AAAA »), pour l'extourne
+// du 1er janvier suivant aussi ; la régularisation elle-même, par le libellé que la base a composé (« CCA 31/12/AAAA — … »).
+// Sans empreinte : l'état d'inventaire n'est pas un fichier de l'application. Rien ne lui manque. La pièce que la
+// régularisation cite, quand elle en cite une, se dira avec l'écran de l'inventaire (INV5), qui en lit les régularisations.
+function ligneDUneRegularisation(e: EcritureBrouillon): LignePisteAudit {
+  const exercice = exerciceDeLaLigneDInventaire(e.date)
+  return {
+    ecritureId: e.id,
+    date: e.date,
+    compte: e.compte,
+    libelle: e.libelle,
+    debit: e.sens === 'debit' ? e.montant : 0,
+    credit: e.sens === 'credit' ? e.montant : 0,
+    pieceId: null,
+    pieceTiers: null,
+    pieceDate: `${exercice}-12-31`,
+    pieceMontantTtc: null,
+    pieceFichier: `État d'inventaire au 31/12/${exercice} (${referenceDeLInventaire(exercice)})`,
     pieceEmpreinte: null,
     mouvementDate: null,
     mouvementLibelle: null,

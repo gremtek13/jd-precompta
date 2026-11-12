@@ -309,6 +309,14 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   // Les quatre champs du FEC d'un BNC en trésorerie (lot FEC22c2) : la numérotation que la validation fige, comme celle d'hier.
   'ecritures-a-repartir': 'ensemble',
   'champs-bnc': 'ensemble',
+  // L'inventaire de l'exercice (ligne 35, INV3 ; lib/inventaireDeLaValidation.ts) : la numérotation de ses écritures, sa
+  // déclaration, ses régularisations à jour, l'extourne de celles de l'exercice précédent, les provisions reprises ventilées —
+  // la clôture de l'exercice entier ; leurs comptes (486, 487, 408, 418, 15, 491) se révisent dans leurs cycles (INV6).
+  'inventaire-mal-numerote': 'ensemble',
+  'inventaire-non-declare': 'ensemble',
+  'inventaire-a-recomposer': 'ensemble',
+  'extourne-manquante': 'ensemble',
+  'provisions-a-ventiler': 'ensemble',
   'report-hors-classes': 'ensemble',
   'report-desequilibre': 'ensemble',
   // L'ouverture de l'exercice qui ne reprend pas la clôture du précédent (O33-Q1) : l'enchaînement des exercices.

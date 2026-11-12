@@ -14,6 +14,7 @@ import { refusDesChampsBnc, type LigneAJuger } from './champsBncFiges'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { confronterLOuverture, ouvertureEnEcart } from './ouvertureConfrontee'
 import { eclatementDeLExercice, refusALaValidation } from './ouvertureEclatee'
+import { MODELES_DE_LA_VALIDATION, prealablesDeLInventaire, type InventaireDeLaValidation } from './inventaireDeLaValidation'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import {
   immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec,
@@ -215,6 +216,12 @@ export interface DonneesDeValidation {
   // toute lecture partielle : la 2035 figée les porterait, ou les tairait.
   saisies2035: readonly Saisie2035[] | null
   concordance: Concordance2035 | null
+  // L'INVENTAIRE DU DOSSIER (ligne 35, INV3 ; lib/inventaireDeLaValidation.ts) : `INVENTAIRE_SANS_OBJET` tant que le drapeau
+  // `INVENTAIRE_PREVU` est baissé — les migrations ne sont pas en base, la validation d'hier au caractère près —, ou ses
+  // régularisations, ses déclarations et ses provisions, lues en entier (lib/inventaireLecture.ts). NUL tant qu'il n'est pas
+  // revenu entier : la validation se suspend, comme sur toute lecture partielle — un exercice d'engagement se figerait sans
+  // son inventaire. Sans valeur par défaut.
+  inventaire: InventaireDeLaValidation | null
 }
 
 /** Ce que la validation reçoit pour les quatre champs d'un BNC en trésorerie : rien, ou les entrées de l'export sans les paiements. */
@@ -531,9 +538,10 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     ?? (d.operationsDeCaisse === null ? 'la caisse du dossier n’est pas lue en entier' : null)
     ?? (d.champsBnc === null ? 'les factures et les cotisations que le FEC d’un BNC en trésorerie lit ne sont pas lues en entier' : null)
     ?? (d.saisies2035 === null ? 'les saisies du cabinet de la 2035 ne sont pas lues en entier' : null)
+    ?? (d.inventaire === null ? 'l’inventaire du dossier n’est pas lu en entier' : null)
     ?? (releve.etat === 'retenu' ? releve.raison : null)
   if (lectureIncomplete !== null || d.facturesSources === null || d.piecesCitees === null || d.etatsDesVentes === null || d.ventesDeLaChecklist === null
-    || d.operationsDeCaisse === null || d.champsBnc === null || d.saisies2035 === null || releve.etat === 'retenu') {
+    || d.operationsDeCaisse === null || d.champsBnc === null || d.saisies2035 === null || d.inventaire === null || releve.etat === 'retenu') {
     prealables.push({
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
       message: `La lecture du dossier est restée partielle (${lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
@@ -744,8 +752,14 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     message: "pièce(s) payée(s) le même jour par deux modes dont l'écriture n'a qu'une ligne de charge pour deux règlements : la validation fige un mode de règlement par ligne. Les régénérer (onglet Écritures, « Régénérer ») avant la validation.",
     detail: [...new Set(lignesEnDeux.map((x) => x.type === 'ligne_numerotee_deux_fois' ? x.pieceRef : ''))].slice(0, 5).join(' ; ') || undefined,
   })
+  // UNE ÉCRITURE D'INVENTAIRE HORS DE SA FORME (ligne 35, INV3) : la base la refuse sous ses mots, le premier refus de
+  // l'inventaire. `numeroterFec` la numérote dans sa forme par construction : ce préalable ne devrait jamais se dire.
+  const inventaireMalNumerote = defauts.filter((x) => x.type === 'inventaire')
+  if (inventaireMalNumerote.length > 0) {
+    bloque({ id: 'inventaire-mal-numerote', nb: null, cible: 'ecritures', message: MODELES_DE_LA_VALIDATION.numerotation })
+  }
   bloque({
-    id: 'numerotation', nb: defauts.length - desequilibres.length - lignesEnDeux.length, cible: 'ecritures',
+    id: 'numerotation', nb: defauts.length - desequilibres.length - lignesEnDeux.length - inventaireMalNumerote.length, cible: 'ecritures',
     message: "défaut(s) de numérotation que la base refuserait : un compte qui porte deux libellés, des numéros qui ne se suivent pas, ou une écriture à deux pièces ou à deux dates. Signaler ce cas : il ne devrait pas se produire.",
   })
   // LES QUATRE CHAMPS, JUGÉS COMME LA BASE LES JUGE (lot FEC22c2 ; `refusDesChampsBnc`, lib/champsBncFiges.ts) : sur la demande
@@ -754,6 +768,18 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   if (numerotation.champsBnc === 'calcules' && d.champsBnc.etat === 'exportes' && lignesEnDeux.length === 0) {
     const refus = refusDesChampsBnc(lignesAJugerDe(numerotation), d.champsBnc.entrees.factures, d.aujourdHui)
     if (refus !== null) bloque({ id: 'champs-bnc', nb: null, cible: 'ecritures', message: refus.message })
+  }
+
+  // ── L'inventaire (ligne 35, INV3 ; lib/inventaireDeLaValidation.ts). ──────────────────────────────────────────────────────
+  // Ce que `valider_exercice` refuse de l'inventaire après tous ses refus d'hier, ses mots dans son ordre : l'inventaire non
+  // déclaré d'un exercice d'engagement (INV-Q9 (A)), une régularisation de l'exercice qui n'est plus à jour, une de l'exercice
+  // précédent sans son extourne entière, des provisions reprises non ventilées (INV-Q11 (A)). La base ne dit que le premier ;
+  // l'écran les dit tous. Sans objet le drapeau `INVENTAIRE_PREVU` baissé, et en trésorerie, où rien ne s'écrit : rien ne se
+  // dit. L'écran de l'inventaire (INV5) les écrit ; jusque-là, ils mènent aux écritures.
+  for (const p of prealablesDeLInventaire({
+    annee: d.annee, mode: d.modele.mode, aNouveaux: d.aNouveaux, ecritures: d.ecritures, inventaire: d.inventaire,
+  })) {
+    bloque({ id: p.id, nb: null, cible: 'ecritures', message: p.message })
   }
 
   // ── L'ouverture de l'exercice suivant, que la validation écrit dans le même clic (ligne 34). ────────────────────

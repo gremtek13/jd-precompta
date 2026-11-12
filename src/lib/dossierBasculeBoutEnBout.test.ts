@@ -22,6 +22,7 @@ import { ventesDeLaChecklist } from './ventesDeLaChecklist'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 import { planLuDe } from '../test/modeles'
+import { INVENTAIRE_SANS_OBJET } from './inventaireDeLaValidation'
 
 // UN DOSSIER QUI A BASCULÉ, DE BOUT EN BOUT (chantier EC-Q3, étape VF4c3) : les lignes de la base (src/test/dossierBascule.ts
 // — trois factures de services, un avoir, un virement du même jour, un chèque remis la veille de son crédit), la composition
@@ -230,7 +231,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       facturesEmises: [], transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
       etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode, plan, banques: { cas: 'role', compte: plan.banque }, anneesValidees: [], ventesParLesFactures: true }),
       ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation([])),
-      operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035,
+      operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, inventaire: INVENTAIRE_SANS_OBJET,
       declaration: null, concordance: null, ...o,
     })
     let declaration = null

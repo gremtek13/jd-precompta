@@ -2,6 +2,7 @@ import type {
   ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, JournalCode, ModeComptable, Piece, VentilationBancaire,
 } from './types'
 import { idsMouvementsJustifiesParLeReleve, referenceDuReleve, type MouvementBancaire } from './affectationBanque'
+import { exerciceDeLaLigneDInventaire, referenceDeLInventaire } from './pieceDeLInventaire'
 import { libelleEcritureANouveau } from './aNouveaux'
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { auxiliaireDuTiers, type ModeleComptable } from './engagement'
@@ -13,7 +14,7 @@ import { porteUneSourceDeVente, rattachementDesVentes } from './ventesFactureesD
 import { journalDeLOperation, operationsDe, referenceDeLaCaisse, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { AcquisitionDuBien } from './amortissements'
 import {
-  champsDeLaTvaDUneFacture, champsDeLOuvertureEclatee, champsDesANouveaux, champsDUneDotation, champsDUneLiquidation, champsDUneOperationDeCaisse,
+  champsDeLaTvaDUneFacture, champsDeLOuvertureEclatee, champsDesANouveaux, champsDUneRegularisation, champsDUneDotation, champsDUneLiquidation, champsDUneOperationDeCaisse,
   champsDUnEncaissement, champsDUnePiece, champsDUneSourceNonLue, champsDUnForfait, champsDUnMouvementDesEncaissements,
   champsDUnMouvementDuReleve, champsDUnPaiementPersonnel, partsDesReglementsALaDate, type ChampsBnc, type ChoixChampsBnc,
   type EncaissementDuRegistre, type FactureDuClient, type LigneACaracteriser, type ModeRglt, type NatureOperation,
@@ -500,6 +501,7 @@ function posteDeLaLigne(
     case 'paiement-personnel': return l.compte === plan.cotisations_exploitant ? posteDuMoteur(POSTE_COTISATIONS) : AUCUN_POSTE
     case 'facture': return AUCUN_POSTE
     case 'ouverture-eclatee': return AUCUN_POSTE
+    case 'inventaire': return AUCUN_POSTE
     case 'encaissement':
       return l.compte === plan.prestations_de_services || l.compte === plan.ventes_de_biens ? posteDuMoteur(POSTE_VENTES_FACTUREES) : AUCUN_POSTE
     case 'mouvement-encaissements':
@@ -549,6 +551,7 @@ function champsDeLEcriture(e: EcritureANumeroter, x: ContexteDesChamps): ChampsB
     case 'forfait': return champsDUnForfait(date, lignes, choix)
     case 'liquidation': return champsDUneLiquidation(date, lignes, choix)
     case 'ouverture-eclatee': return champsDeLOuvertureEclatee(date, lignes, choix)
+    case 'inventaire': return champsDUneRegularisation(date, lignes, choix)
     case 'paiement-personnel': {
       const id = premiere.cotisation_id ?? ''
       return champsDUnPaiementPersonnel(cotisations.find((c) => c.id === id) ?? { id, paiement_personnel_le: null }, lignes)
@@ -615,6 +618,12 @@ const champsDeLaLigne = (c: ChampsBnc, id: string): ChampsBncDeLaLigne => ({
 // brouillon la porte, à jour ou non : l'onglet Écritures dit son état, et la validation la retient tant qu'elle n'est pas à
 // jour (`ouverture-a-eclater`). Le rendu `un_seul_512` (lib/banquesAuFec.ts) en met les deux lignes au compte du rôle :
 // l'écriture y reste, équilibrée, sous son numéro.
+// UNE RÉGULARISATION D'INVENTAIRE (ligne 35, INV3 ; lib/inventaireDeLaValidation.ts) de même, une écriture par régularisation et
+// par date — sa constatation au 31 décembre, son extourne au 1er janvier suivant —, au journal des opérations diverses : sa
+// pièce est l'ÉTAT D'INVENTAIRE de l'exercice de la régularisation (PCG, art. 1214-40 et 1214-41 ; INV-Q7 (A)), « Inventaire
+// AAAA » du 31 décembre de cet exercice, pour l'extourne aussi ; la clé `inventaire|régularisation|date`. EcritureLib reste le
+// libellé que la base a composé (« CCA 31/12/AAAA — … », jamais le nom d'un tiers). C'est la forme que `valider_exercice`
+// exige (le défaut `inventaire` de lib/validationExercice.ts la redit). Un BNC en trésorerie n'en a jamais : la base le refuse.
 // Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
 //
 // UNE OPÉRATION DE LA CAISSE (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts) fait UNE écriture : les lignes qui la
@@ -725,6 +734,11 @@ export function numeroterFec(
       // L'éclatement de l'ouverture de la banque (MCB5, sixième partie) : une écriture par 1er janvier, toutes ses paires —
       // la base n'en écrit que là, sans autre source (`ecritures_brouillon_ouverture_eclatee`).
       cle = `ouverture-eclatee|${e.date}`
+    } else if (e.operation_inventaire_id) {
+      // Une régularisation d'inventaire (ligne 35, INV3) : une écriture par régularisation et par date — sa constatation au
+      // 31 décembre, son extourne au 1er janvier suivant ; la base n'en écrit que là, sans autre source
+      // (`ecritures_brouillon_inventaire_sans_autre_source`), et la validation l'exige ainsi.
+      cle = `inventaire|${e.operation_inventaire_id}|${e.date}`
     } else {
       horsFec.push(e)
       continue
@@ -779,6 +793,13 @@ export function numeroterFec(
         // Au journal des opérations diverses (MCB5G-Q1) ; sa pièce, les relevés du 31 décembre, à leur date.
         return { cle, sorte: 'ouverture-eclatee', pieceId: null, rows, ordre, journal: 'OD' as const,
           pieceDate: `${Number(rows[0].date.slice(0, 4)) - 1}-12-31`, pieceRef: referenceDeLOuvertureEclatee(rows[0].date), reglement: null }
+      }
+      if (!pieceId && rows[0].operation_inventaire_id) {
+        // Au journal des opérations diverses ; sa pièce, l'état d'inventaire de l'exercice de la régularisation, au 31
+        // décembre de cet exercice — pour l'extourne du 1er janvier suivant aussi (INV-Q7 (A)).
+        const exercice = exerciceDeLaLigneDInventaire(rows[0].date)
+        return { cle, sorte: 'inventaire', pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: `${exercice}-12-31`,
+          pieceRef: referenceDeLInventaire(exercice), reglement: null }
       }
       if (!pieceId) {
         const mouvement = mouvementById.get(rows[0].ligne_bancaire_id!)!

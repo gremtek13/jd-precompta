@@ -52182,3 +52182,22 @@ false)`. **Contrôles**, production et dépôt égaux : dérive 217 `edea63cd…
 1 195, fonctions 362, policies 203, rls 105). **Essais** : `copiesDesFichiers.sql` en production, 8 verdicts sur 8 justes (l'écart
 seul relu) ; sur la copie, `rls.sql` 238 invariants, 0 en faute, le bloc CF joué (plus EN ATTENTE), 139 mutations sur 139 (M-CF1 à
 M-CF3 mordent) ; `restauration.sql` IDENTIQUE, 96 tables ; le banc du leurre : `copiesDesFichiers` SÛR (0 écart, 0 motif, 0 écriture).
+
+### 12/11/2026 — INV3 : LA VALIDATION CONNAÎT L'INVENTAIRE (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, lot INV3 de la conception 35 ; INV-Q9 (A) et INV-Q11 (A), les autres à leur recommandation. La migration
+`supabase/preparees/20261112235000_validation_de_l_inventaire.sql` (md5 `adf5658e…`, PAR L'OUTIL : aucune suppression hors des
+événements d'un déclencheur ; retour `20261112235100_…`, md5 `2768a26b…`, À COLLER) dépend d'INV2 : sa garde de tête l'exige et
+épingle `valider_exercice` au corps de production (`923cfa1b…`) et neuf fonctions à leur empreinte. Elle pose
+`inventaires_declares` (une en vigueur par exercice, retirée jamais effacée, figée avec l'exercice), `declarer_inventaire` (un
+exercice clos d'un dossier en engagement), `retirer_declaration_inventaire` et deux juges privés (en multiensemble, la TVA
+d'attente sous sa racine) ; `valider_exercice` garde le corps de production au caractère près et refuse, après ses refus
+d'hier, une ligne d'inventaire hors de sa pièce (OD, « Inventaire AAAA » du 31/12), l'inventaire non déclaré, une régularisation
+qui n'est plus à jour, une extourne qui manque, des provisions reprises non ventilées. Côté application, derrière
+`INVENTAIRE_PREVU` : `lib/inventaireDeLaValidation.ts` (les mots, les juges, les préalables), `lib/inventaireLecture.ts`
+(Clôture), la sorte `inventaire` du FEC et de la numérotation (`lib/pieceDeLInventaire.ts`, sans import : `validationExercice`
+l'importait par une boucle), la piste d'audit et le lettrage (408, 418) ; « à régénérer » ne lit que les pièces ; la concordance
+de la 2035, qui ne tourne qu'en trésorerie, garde une telle ligne en écart (le côté fermé). Preuves, sur des copies de la mère
+rattrapée à 216 migrations : son essai 49 contrôles, 12 mutations sur 12, EN ATTENTE sans elle ; quatre ordres de collage avec
+INV4, LIA2, AFF2, EXD2 et MCB5g, une signature ; `validationExercice` (245) et onze autres essais justes ; `rls.sql` 254, 154
+mutations sur 154 ; restauration identique ; le retour rend la signature ; banc du leurre SÛR. Ouvertes : INV3-Q1, INV3-Q2.

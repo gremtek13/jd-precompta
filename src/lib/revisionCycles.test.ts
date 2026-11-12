@@ -188,8 +188,11 @@ describe('le rangement des contrôles existants', () => {
   // qu'un point qu'on y écrirait de nouveau en dur ne passe pas inaperçu.
   const checklist = [new URL('../pages/dossier/ChecklistTab.tsx', import.meta.url), new URL('./pointsDeLaChecklist.ts', import.meta.url)]
     .map((chemin) => readFileSync(chemin, 'utf8')).join('\n')
-  const prealables = readFileSync(new URL('./prealablesValidation.ts', import.meta.url), 'utf8')
-    .split('export const POINTS_DE_LA_CHECKLIST_ECARTES')[0]
+  // Les préalables de la validation, et ceux de l'inventaire qu'elle reprend (ligne 35, INV3 ; lib/inventaireDeLaValidation.ts,
+  // `prealablesDeLInventaire`), écrits là-bas.
+  const prealables = [readFileSync(new URL('./prealablesValidation.ts', import.meta.url), 'utf8')
+    .split('export const POINTS_DE_LA_CHECKLIST_ECARTES')[0], readFileSync(new URL('./inventaireDeLaValidation.ts', import.meta.url), 'utf8')]
+    .join('\n')
 
   // Les points de la Checklist : tout objet qui commence par `id: '…'` — points à traiter et documents attendus —, et
   // les familles dont l'identifiant porte l'année (`id: \`banque-${…}\``).
@@ -337,6 +340,7 @@ describe('le rangement des contrôles existants', () => {
       'exercice-en-cours', 'deja-valide', 'ordre', 'avant-ouverture', 'ouverture-d-abord', 'ecritures-anterieures',
       'exercice-anterieur-d-abord', 'ecritures-orphelines', 'ecritures-desequilibrees', 'desequilibrees', 'numerotation',
       'ecritures-a-repartir', 'champs-bnc',
+      'inventaire-mal-numerote', 'inventaire-non-declare', 'inventaire-a-recomposer', 'extourne-manquante', 'provisions-a-ventiler',
       'report-hors-classes', 'report-desequilibre', 'ouverture-en-ecart', 'concordance', 'exclusions-2035', 'piste-rompue', 'informations',
     ],
   }

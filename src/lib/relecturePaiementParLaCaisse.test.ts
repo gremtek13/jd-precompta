@@ -24,6 +24,7 @@ import { NON_VALIDEE } from '../test/ecritures'
 import { SANS_FACTURE_SOURCE, SANS_EXEMPLAIRE, SANS_ECRITURE_DE_VENTE, ventesFactureesVides } from '../test/ventesFacturees'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { INVENTAIRE_SANS_OBJET } from './inventaireDeLaValidation'
 
 // RELECTURE INDÉPENDANTE DU PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6, lots C8, C9a et C9b ; CAISSE-Q4, (B)), AVANT QUE
 // LE DRAPEAU NE SE LÈVE. Chaque défaut confirmé y était prouvé par un `it.fails`, le drapeau `PAIEMENT_PAR_LA_CAISSE_EXPORTE`
@@ -103,7 +104,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', comptesBancaires: { etat: 'sans_objet' }, controlesReleves: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE, piecesCitees: AUCUNE_PIECE_CITEE,
     etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
-    champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, ...o,
+    champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, inventaire: INVENTAIRE_SANS_OBJET, ...o,
   }
   // La 2035 comme Clôture la calcule, la caisse comprise : ses paiements datent les pièces qu'ils règlent.
   const operations = base.operationsDeCaisse?.etat === 'lue' ? base.operationsDeCaisse.operations : []

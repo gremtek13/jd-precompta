@@ -62,6 +62,7 @@ import {
   type MouvementDeLAnnee,
 } from '../test/repetitionDUneAnnee'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { INVENTAIRE_SANS_OBJET } from './inventaireDeLaValidation'
 
 const MODELE = modeleDeTest('tresorerie')
 const PLAN = MODELE.plan
@@ -342,7 +343,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
     comptesBancaires: { etat: 'sans_objet' }, controlesReleves: controles, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
     etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, banques: { cas: 'role', compte: PLAN.banque }, anneesValidees: v.anneesValidees, ventesParLesFactures: true }),
     ventesDeLaChecklist: ventesDeLaChecklist(lectureDesSources, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
-    declaration, saisies2035: AUCUNE_SAISIE_2035, concordance,
+    declaration, saisies2035: AUCUNE_SAISIE_2035, inventaire: INVENTAIRE_SANS_OBJET, concordance,
   })
   return { lignes, brouillon, checklist, validation }
 }

@@ -77,6 +77,8 @@ import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
 import { AUCUNE_SAISIE_2035, motifDesSaisies2035, SAISIES_2035_EXPORTEES, saisiesDeLExercice } from '../../lib/saisies2035'
 import type { LectureDesSaisies2035 } from '../../lib/saisies2035'
 import { lireLesSaisies2035 } from '../../lib/saisies2035Lecture'
+import { inventaireDeLaLecture, lireLInventaireDeLaValidation, motifDeLInventaire, type LectureDeLInventaire } from '../../lib/inventaireLecture'
+import { INVENTAIRE_PREVU } from '../../lib/inventaire'
 import { annexe2035EAvecSaisie, lignesDuPdfASaisir, SAISIES_2035E_EXPORTEES, saisie2035EDeLExercice } from '../../lib/saisies2035E'
 import type { Annexe2035ESaisie, LectureDesSaisies2035E } from '../../lib/saisies2035E'
 import { lireLesSaisies2035E } from '../../lib/saisies2035ELecture'
@@ -148,6 +150,19 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     if (!SAISIES_2035_EXPORTEES) return
     let annule = false
     void lireLesSaisies2035(dossierId).then((lecture) => { if (!annule) setSaisiesLues(lecture) })
+    return () => { annule = true }
+  }, [dossierId])
+  // L'INVENTAIRE DU DOSSIER (ligne 35, INV3 ; lib/inventaireLecture.ts), gardé AVEC le dossier lu, pour la validation seule.
+  // Drapeau baissé, sans objet d'emblée, sans lecture : la validation d'hier. Levé, elle attend qu'il soit revenu entier
+  // (`inventaireIncomplet` la suspend), et un exercice d'engagement se dit retenu par son inventaire avant le clic.
+  const [inventaireLu, setInventaireLu] = useState<LectureDeLInventaire | null>(null)
+  const lectureDeLInventaire: LectureDeLInventaire | null = !INVENTAIRE_PREVU ? { dossierId, etat: 'sans_objet' }
+    : inventaireLu?.dossierId === dossierId ? inventaireLu : null
+  const inventaireIncomplet = motifDeLInventaire(lectureDeLInventaire)
+  useEffect(() => {
+    if (!INVENTAIRE_PREVU) return
+    let annule = false
+    void lireLInventaireDeLaValidation(dossierId).then((lecture) => { if (!annule) setInventaireLu(lecture) })
     return () => { annule = true }
   }, [dossierId])
   // LES SAISIES DE L'ANNEXE 2035-E (ligne 48), gardées AVEC le dossier lu. Drapeau baissé, absentes, sans lecture :
@@ -807,6 +822,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     ?? (lectureVentesDuDossier?.etat === 'incomplete' ? `les ventes facturées : ${lectureVentesDuDossier.motif}` : null)
     ?? (caisseIncomplete !== null ? `la caisse : ${caisseIncomplete}` : null)
     ?? champsBncIncomplets
+    ?? inventaireIncomplet
   const entete = { nom: dossier?.nom ?? null, activite: dossier?.libelle_naf ?? null, siret: dossier?.siret ?? null }
   const validationDe = (annee: number, formulaire?: { declaration: Declaration2035; valeurs: Map<string, number> }) => {
     const valide = exercicesValides.find((e) => e.annee === annee) ?? null
@@ -829,6 +845,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       declaration: formulaire?.declaration ?? null,
       saisies2035: formulaire ? saisiesDeLExercice(lectureDesSaisies, annee) : AUCUNE_SAISIE_2035,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
+      inventaire: inventaireDeLaLecture(lectureDeLInventaire),
     })
     const demande = etat.validable && etat.numerotation
       ? demandeDeValidation(etat.numerotation, formulaire

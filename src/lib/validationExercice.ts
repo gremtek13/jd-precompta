@@ -4,6 +4,7 @@ import type { NumerotationFec } from './fec'
 import { champsDeLaLigneDemandee, type ChampsBncDUneLigne } from './champsBncDesLignes'
 import type { EcritureBrouillon, Immobilisation, JournalCode } from './types'
 import { anneeDe } from './format'
+import { exerciceDeLaLigneDInventaire, referenceDeLInventaire } from './pieceDeLInventaire'
 
 // VALIDER UN EXERCICE (ligne 26.6 de la feuille de route, étape d). « Le caractère définitif des
 // enregistrements du livre-journal est assuré, pour les comptabilités tenues au moyen de systèmes
@@ -123,6 +124,11 @@ export type DefautDeNumerotation =
   // écritures de l'exercice A. ») : ici, la pièce est nommée, et « Régénérer » la répare. Une fois par ligne, à sa
   // première écriture.
   | { type: 'ligne_numerotee_deux_fois'; journal: JournalCode; numero: number; pieceRef: string; ligneId: string }
+  // UNE ÉCRITURE D'INVENTAIRE HORS DE SA FORME (ligne 35, INV3 ; `valider_exercice`, le premier refus de l'inventaire) : une
+  // ligne qui cite une régularisation se numérote au journal des opérations diverses, sous la pièce « Inventaire AAAA » du 31
+  // décembre de l'exercice de sa régularisation, dans l'écriture de sa régularisation à sa date, qu'elle ne partage avec aucune
+  // autre ligne. `numeroterFec` la numérote ainsi par construction (la sorte `inventaire`) ; la base le vérifie, ceci le redit.
+  | { type: 'inventaire'; journal: JournalCode; numero: number }
 
 export function defautsDeNumerotation(n: NumerotationFec): DefautDeNumerotation[] {
   const defauts: DefautDeNumerotation[] = []
@@ -179,6 +185,30 @@ export function defautsDeNumerotation(n: NumerotationFec): DefautDeNumerotation[
     libellesParAuxiliaire.set(l.compAuxNum, (libellesParAuxiliaire.get(l.compAuxNum) ?? new Set()).add(l.compAuxLib ?? ''))
   }
   for (const [compAuxNum, libelles] of libellesParAuxiliaire) if (libelles.size > 1) defauts.push({ type: 'auxiliaire', compAuxNum })
+  // L'inventaire : chaque écriture qui porte une ligne d'inventaire, une fois, si une de ses lignes est hors de sa forme, si
+  // elle mêle deux régularisations, deux dates ou une autre ligne, ou si une régularisation à une date se partage entre deux
+  // écritures (lib/inventaireDeLaValidation.ts, `exerciceDeLaLigneDInventaire` : l'exercice lu sur la date, comme la base le tient).
+  const sourcesParEcriture = new Map<string, { journal: JournalCode; numero: number; sources: Set<string>; autres: boolean; horsForme: boolean }>()
+  const ecrituresParSource = new Map<string, Set<string>>()
+  for (const l of n.lignes) {
+    const cle = `${l.journal}|${l.numero}`
+    const operation = l.ecriture.operation_inventaire_id ?? null
+    const s = sourcesParEcriture.get(cle) ?? { journal: l.journal, numero: l.numero, sources: new Set(), autres: false, horsForme: false }
+    if (operation === null) s.autres = true
+    else {
+      const exercice = exerciceDeLaLigneDInventaire(l.ecriture.date)
+      const source = `${operation}|${l.ecriture.date}`
+      s.sources.add(source)
+      if (l.journal !== 'OD' || l.pieceRef !== referenceDeLInventaire(exercice) || l.pieceDate !== `${exercice}-12-31`) s.horsForme = true
+      ecrituresParSource.set(source, (ecrituresParSource.get(source) ?? new Set()).add(cle))
+    }
+    sourcesParEcriture.set(cle, s)
+  }
+  const partagees = new Set([...ecrituresParSource.values()].filter((e) => e.size > 1).flatMap((e) => [...e]))
+  for (const [cle, s] of sourcesParEcriture) {
+    if (s.sources.size === 0) continue
+    if (s.horsForme || s.sources.size !== 1 || s.autres || partagees.has(cle)) defauts.push({ type: 'inventaire', journal: s.journal, numero: s.numero })
+  }
   const vues = new Set<string>()
   const signalees = new Set<string>()
   for (const l of n.lignes) {
