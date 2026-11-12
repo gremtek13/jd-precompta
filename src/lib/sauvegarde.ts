@@ -489,6 +489,10 @@ export function auPlanDesCopiesDesFichiers(table: string, prevue: boolean): bool
 // précèdent : une évaluation cite sa provision (`provision_id`, sans action) ; leurs relations — le dossier en cascade, la
 // facture émise dépréciée et la pièce citée sans action —, leur chemin direct, la clé commune ; la restauration les
 // réinsère par la porte que leur garde ouvre au super-administrateur (provisionsEnBase.test.ts).
+// Les DÉCLARATIONS D'INVENTAIRE (INV3, migration `validation_de_l_inventaire`, sous le même drapeau) la suivent : elles ne
+// citent que leur dossier (en cascade) ; leur chemin direct, la clé commune ; la restauration les réinsère par la porte que
+// leur garde ouvre au super-administrateur, avant les exercices validés, dont le gel les refuserait ensuite
+// (inventaireDeLaValidation.test.ts).
 
 /** Une table au plan, côté inventaire : toutes, sauf la sienne tant que sa migration n'est pas en base. */
 export function auPlanDeLInventaire(table: string, prevu: boolean): boolean {
@@ -891,6 +895,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'provisions', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
   { enfant: 'provisions', parent: 'pieces', colonne: 'piece_citee_id', aLaSuppression: 'bloque' },
   { enfant: 'operations_inventaire', parent: 'provisions', colonne: 'provision_id', aLaSuppression: 'bloque' },
+  // Les déclarations d'inventaire (ligne 35, INV3) : le dossier en cascade, et rien d'autre.
+  { enfant: 'inventaires_declares', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   // Les lettres de mission (ligne 47, LM4) : le dossier du cabinet, en cascade ; le reste sans action.
   { enfant: 'modeles_lettre_de_mission', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'modeles_lettre_de_mission', parent: 'modeles_lettre_de_mission', colonne: 'remplace_id', aLaSuppression: 'bloque' },
@@ -1205,6 +1211,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'notes_internes',
   'provisions',
   'operations_inventaire',
+  'inventaires_declares',
   'stocks_de_cloture',
   'affectations_du_resultat',
   'lignes_d_affectation',
@@ -1808,6 +1815,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   operations_caisse: { acces: 'direct' },
   provisions: { acces: 'direct' },
   operations_inventaire: { acces: 'direct' },
+  inventaires_declares: { acces: 'direct' },
 }
 
 // Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception, des
