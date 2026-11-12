@@ -42,8 +42,8 @@ factures (MVP-D1) ; la caisse entre (MVP-D2), terminée le 04/11/2026 de C1 à C
 écrans du cabinet et du praticien, l'assistant —, ses règles sous « La caisse d'un BNC » (Comptabilité, plus bas) → « LA
 CAISSE D'UN DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE », « LA
 CAISSE EN PRODUCTION : LES DEUX MIGRATIONS ET LE DRAPEAU LEVÉ », « LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES
-QUATRE MIGRATIONS DU 02/11/2026 » ; le plan Pro de Supabase sauvegardera la base (MVP-D3 ; un geste du cabinet, encore à
-faire le 06/11/2026). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie,
+QUATRE MIGRATIONS DU 02/11/2026 » ; le plan Pro de Supabase sauvegarde la base chaque jour depuis le 12/11/2026 (MVP-D3,
+le geste du cabinet fait ; les fichiers du stockage n'y sont pas : le pack et la copie des fichiers les portent). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie,
 et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
@@ -799,14 +799,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ### Advisors Supabase — ne pas repartir en chasse à chaque audit → « Les advisors de sécurité Supabase »
 
-- `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
-  gratuitement : longueur minimale et classes de caractères des mots de passe.
+- `auth_leaked_password_protection` : l'organisation `dloewvpmposfbvdwtqfz` est au plan Pro depuis le 12/11/2026 ; le
+  réglage est un geste du cabinet au tableau de bord (Authentication, protection contre les mots de passe divulgués),
+  avec la longueur minimale et les classes de caractères.
 - `anon_/authenticated_security_definer_function_executable` : vérifiés bénins par impersonation. Chaque fonction
   `SECURITY DEFINER` qui écrit contrôle l'accès avant toute lecture ; `garder_*`, `prochain_numero_facture` et
   `attribuer_numero_facture` ne sont exécutées par aucun rôle ; une lecture ne rend que ce que son essai vérifie. À
   revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
-- `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
-  `connexions_plateformes` : volontaire. `function_search_path_mutable` sur `retour_declencheur` : bénin (`immutable`,
+- `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `devis_numerotation`,
+  `connexions_bancaires`, `connexions_plateformes`, `originaux_liberes` : volontaire. `function_search_path_mutable` sur `retour_declencheur` : bénin (`immutable`,
   ne nomme aucun objet).
 
 ### Base de données et schéma
@@ -833,7 +834,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   TOUS LES CABINETS, écrite par le super-administrateur seul (sinon écartée SANS LEVER) ; jamais `WHERE dossier_id = ?`
   seul (`lib/categoriesCommunes.ts`) → « CINQ DÉFAUTS RELEVÉS EN CONCEVANT LE PLAN COMPTABLE PERSONNALISABLE ».
 - **`id` n'est pas la clé primaire partout** (`CLES_PRIMAIRES`) ; une table auto-référencée se restaure en deux passes
-  ou par vagues ; le plan free n'a AUCUNE sauvegarde automatique.
+  ou par vagues ; le plan Pro (depuis le 12/11/2026) sauvegarde la base chaque jour, jamais les fichiers du stockage.
 - **Une table préparée et non appliquée se déclare au plan de sauvegarde derrière son drapeau** (`*_PREVU(E)S`,
   `auPlanAujourdHui`) : la lire avant sa migration ferait échouer toute sauvegarde → « LES DEVIS, EN BASE ».
 - **Un type de `types.ts` décrit la table**, NOT NULL compris — et les déclencheurs comptent (`dossiers` remplit

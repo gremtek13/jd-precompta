@@ -39,9 +39,9 @@ describe('budget mural d’extract-piece', () => {
     const marge = constante('MARGE_REPONSE_MS')
     const citation = constante('BUDGET_CITATION_MS')
 
-    // 150 s est le mur du plan free, celui sur lequel tourne ce projet (voir « Problèmes connus » :
-    // l'organisation est sur le plan free, et c'est ce qui décide aussi des sauvegardes). Au-delà,
-    // la requête est coupée sans message et le texte OCR déjà facturé est perdu.
+    // 150 s est le mur du plan free. Le projet est au plan Pro depuis le 12/11/2026 (400 s), mais la
+    // fonction garde le budget du plan free, plus prudent, tant qu'on ne décide pas de le relever. Au-delà
+    // du mur, la requête est coupée sans message et le texte OCR déjà facturé est perdu.
     expect(mur).toBeLessThanOrEqual(150_000)
 
     // Ce qui reste pour la lecture doit rester la part principale : c'est l'étage qui n'est pas
