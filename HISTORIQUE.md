@@ -51440,3 +51440,27 @@ qui change ; « Régler le plan » passe `regler_plan_du_dossier` seule puis REL
 balance réunies et dites, le renvoi à la carte « Comptes bancaires » dès deux. Les catégories (du dossier et communes) lues en
 entier, sinon aucun geste. Baissé : la carte d'hier, sans lecture des catégories. Tests : 7 d'écran (`BalanceCardPlan.test.tsx`,
 la mutation du verrou mord), 5 du module de vue, une entrée drapeau levé dans `ecransAvantLecture`.
+
+### 12/11/2026 — PC7 : LES CATÉGORIES DU DOSSIER, DONT CELLES DE SA BALANCE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, ligne 43 ; en production, des SELECT seulement : 200 migrations, dix catégories, toutes communes.) **Le
+silence** (§ 9, point 2) était déjà corrigé depuis le 09/10/2026 aux trois seules écritures de `categories` (« Comptes
+manquants », « Postes manquants », « Postes sans case », `lib/categoriesCommunes.ts`) ; relu, aucun autre chemin ; les écrans
+neufs ne modifient pas une commune, ils la montrent et disent qui la règle. **Les policies suffisent au droit** (le cabinet
+qui administre le dossier écrit ses catégories, le client aucune), pas au contenu : rien ne refusait une catégorie posée sur
+le compte du barème (le refus 10 de `regler_plan_du_dossier` ne part que du plan), un déplacement d'un dossier à l'autre, le
+code d'une commune, ni la suppression de la nature des recettes en espèces du client, citée sans clé. **La migration**
+`categories_du_dossier` (20261112151000, `11207b83…`, 8456 octets ; retour 20261112151100, `e84c3976…`, deux `drop`, il se
+colle) : un déclencheur BEFORE sur `categories` refuse ces quatre cas (23514, 23503), sous le verrou partagé de la validation
+pour le barème ; l'insertion du super-administrateur (la restauration) et la cascade de la suppression d'un dossier passent.
+Une première version refusait aussi en français toute catégorie employée : `caisseSuppression.sql` épingle le message de la
+clé, elle a été réduite à la seule citation sans clé. Ni forme du compte (trois essais posent exprès une catégorie sur un
+compte de bilan : PC7-Q2) ni poste (la validation les juge). **Preuves** (copie de la répétition du 11/11, au niveau de la
+production, port 54987) : `categoriesDuDossier.sql` 24/24, EN ATTENTE sans elle ; six mutations sur six mordent ; cinq essais
+identiques avant et après (`caisseSuppression`, `restaurationEtSuppressionDUnDossier`, `caisse`, `categoriesCommunes`,
+`reglerLePlanDuDossier`), et `rls.sql` (0 en faute) avec la première version ; réappliquée, refusée ; le retour, puis la
+réapplication, passent. **L'écran** (derrière `CATEGORIES_DU_DOSSIER_PREVUES`, baissé) : la carte « Catégories du dossier »
+(Informations) crée, modifie, supprime — compte à six chiffres de classe 6 ou 7, poste dans la liste fermée de sa classe ;
+une catégorie employée garde son compte et son poste (PC7-Q1) et ne se supprime pas, dit avant le clic ; le troisième temps
+de la carte de la balance propose les comptes 6 et 7 (`lib/categoriesDepuisLaBalance.ts`), sans poste deviné, sans dotations,
+cotisations ni barème. Tests : 19 des modules, 5 d'écran.
