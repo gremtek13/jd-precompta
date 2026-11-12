@@ -52005,3 +52005,22 @@ Adaptés : `planComptable.sql` (1quater, et le contrôle 8, que la fonction rejo
 0 en faute (111 et 117 mutations, toutes mordent), l'essai 49 cas et 9 mutations, INV2 et LIA2 à 0 ; catalogue égal entre
 les ordres ; retours rendant celui d'avant à l'octet. md5 : AFF2 `fea1e9e3…` (retour `808d9e29…`), INV2 `f374f3ba…`
 (`e1285d6a…`), LIA2 `bc1133c6…` (`28c71576…`), MCB5g `577bafc3…` (`ba223334…`).
+
+### 12/11/2026 — INV4 ET AFF2 RÉUNIES À LA TÊTE DE LA SESSION, ÉPROUVÉES SUR LA PRODUCTION À 216 MIGRATIONS
+
+Agent architecte. INV4 et AFF2, préparées hors branche depuis `a15b21e`, reprises sur la tête qui porte EXD2, CFCS-Q1 et
+LIA8, chaque apport gardé : dans `rls.sql`, les blocs EX, PV puis AF (en-têtes 6quaterdecies, 6quindecies, 6sexdecies) ;
+dans `restauration.sql`, l'affectation, les stocks, l'inventaire, les provisions, puis les exercices joués en dernier ;
+`planComptable.sql` juge les provisions au 1quater et l'affectation au 1quinquies (renuméroté) ; les recherches de
+définition des tests neufs sans casse. Aucune migration n'a changé (md5 : INV4 `a532988a…`, AFF2 `fea1e9e3…`). Sur une
+réplique rattrapée à 216 migrations (signature.sql égale à la production, neuf familles), les sept préparées dans les
+ordres MCB5g, INV2, LIA2, INV4, AFF2, EXD2, CFCS et AFF2, EXD2, LIA2, INV2, INV4, MCB5g, CFCS : les gardes de tête
+passent (62 rôles, rangs libres, aucune racine qui en commence une autre, aucune fonction à empreinte redéfinie) ;
+`rls.sql` 250 invariants, 0 en faute, 151 mutations sur 151 ; les six essais de mécanisme et `planComptable.sql` (63)
+justes, toutes leurs mutations mordent ; `restauration.sql` IDENTIQUE sur 102 tables, ses quatorze « rien n'est prouvé »
+ceux de la production sans elles ; le catalogue égal entre les ordres ; les retours rendent celui d'avant, `btree_gist`
+excepté (le retour d'EXD2 le laisse) ; le banc du leurre SÛR pour `rls.sql` et `planComptable.sql` au modèle de la
+production. En passant : MP1 de `rls.sql` attendait 32 lignes du modèle du cabinet, la production en a 34 depuis
+`ecarts_de_reglement` — en faute sans rien de préparé, il compte désormais au catalogue ; `modeleDuCabinet.sql`, rejoué
+sur la production, tombe de même : le 32 en dur (contrôles 14, 15, 50 à 52, 55, 66) et l'ordre des déclencheurs du plan
+d'un dossier, qui en compte un troisième depuis MCB1 (contrôle 92) ; laissé à son lot.
