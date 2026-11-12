@@ -22,7 +22,7 @@ const RLS = lire('supabase/essais/rls.sql')
 
 /** Le corps d'une fonction de la migration. */
 function corps(nom: string): string {
-  const debut = MIGRATION.indexOf(`create function public.${nom}(`)
+  const debut = MIGRATION.search(new RegExp(`create function public\\.${nom}\\(`, 'i'))
   const fin = MIGRATION.indexOf('$fonction$;', debut)
   if (debut < 0 || fin < 0) throw new Error(`${nom} introuvable dans la migration`)
   return MIGRATION.slice(debut, fin)

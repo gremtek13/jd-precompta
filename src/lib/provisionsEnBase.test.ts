@@ -23,7 +23,7 @@ const RLS = lire('supabase/essais/rls.sql')
 
 /** Le corps d'une fonction de la migration, ses littéraux concaténés recollés (`'…' || '…'` devient un seul littéral). */
 function corps(nom: string): string {
-  const debut = MIGRATION.indexOf(`create function public.${nom}(`)
+  const debut = MIGRATION.search(new RegExp(`create function public\\.${nom}\\(`, 'i'))
   const fin = MIGRATION.indexOf('$fonction$;', debut)
   if (debut < 0 || fin < 0) throw new Error(`${nom} introuvable dans la migration`)
   return MIGRATION.slice(debut, fin).replace(/'\s*\|\|\s*'/g, '')
@@ -154,18 +154,18 @@ describe('la migration sous les règles de la base', () => {
   it('la table : RLS, une seule policy à authenticated sur le cabinet du dossier, la garde ; le type la décrit', () => {
     expect(MIGRATION).toContain('alter table public.provisions enable row level security;')
     expect(MIGRATION).toContain('create policy provisions_cabinet on public.provisions\n  for all to authenticated using (public.admin_du_dossier(dossier_id)) with check (public.admin_du_dossier(dossier_id));')
-    expect([...MIGRATION.matchAll(/create policy (\w+) on public\.provisions/g)].map((m) => m[1])).toEqual(['provisions_cabinet', 'deux_facteurs'])
+    expect([...MIGRATION.matchAll(/create policy (\w+) on public\.provisions/gi)].map((m) => m[1])).toEqual(['provisions_cabinet', 'deux_facteurs'])
     const colonnes: Record<keyof Provision, true> = {
       id: true, dossier_id: true, genre: true, compte_provision: true, objet: true, facture_id: true, piece_citee_id: true,
       ouverte_en: true, reprise_centimes: true, version: true, cree_par: true, cree_le: true, modifie_par: true, modifie_le: true,
     }
-    const table = /create table public\.provisions \(([\s\S]*?)\n\);/.exec(MIGRATION)![1]
+    const table = /create table public\.provisions \(([\s\S]*?)\n\);/i.exec(MIGRATION)![1]
     const enBase = [...table.matchAll(/^ {2}([a-z_]+) (?:uuid|integer|text|bigint|date|timestamptz)\b/gm)].map((x) => x[1])
     expect(enBase.sort()).toEqual(Object.keys(colonnes).sort())
   })
 
   it('le plan de sauvegarde : ses relations sont les clés de la migration, sa table avant les opérations qui la citent', () => {
-    const table = /create table public\.provisions \(([\s\S]*?)\n\);/.exec(MIGRATION)![1]
+    const table = /create table public\.provisions \(([\s\S]*?)\n\);/i.exec(MIGRATION)![1]
     const cles = [...table.matchAll(/^\s+([a-z_]+) uuid[^,\n]* references public\.([a-z_]+)\(id\)( on delete (cascade|set null))?/gm)]
       .map(([, colonne, parent, , action]) => `${colonne} → ${parent} (${action === 'cascade' ? 'cascade' : 'bloque'})`).sort()
     expect(RELATIONS_PREVUES.filter((r) => r.enfant === 'provisions').map((r) => `${r.colonne} → ${r.parent} (${r.aLaSuppression})`).sort())

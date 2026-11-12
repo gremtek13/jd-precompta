@@ -1146,14 +1146,17 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     })
     const rang = ORDRE_RESTAURATION_PREVU.indexOf('dossiers')
     expect(ORDRE_RESTAURATION_PREVU.slice(rang, rang + 2)).toEqual(['dossiers', 'exercices'])
-    // Les trois blocs ensemble (ligne 42, lignes 35 et 36) : les exercices juste après le dossier, puis, après les notes
-    // internes, l'inventaire devant les stocks, et le plan que le script joue avec eux est le plan prévu du code.
+    // Les blocs ensemble (ligne 42 ; lignes 35, 36, 33 et 45) : les exercices juste après le dossier, puis, après les notes
+    // internes, les provisions devant les opérations d'inventaire qui les citent, l'inventaire devant les stocks, les stocks
+    // devant l'affectation, et le plan que le script joue avec eux est le plan prévu du code.
     const notes = ORDRE_RESTAURATION_PREVU.indexOf('notes_internes')
-    expect(ORDRE_RESTAURATION_PREVU.slice(notes, notes + 4))
-      .toEqual(['notes_internes', 'operations_inventaire', 'stocks_de_cloture', 'pieces_hors_de_france'])
+    expect(ORDRE_RESTAURATION_PREVU.slice(notes, notes + 7)).toEqual(['notes_internes', 'provisions', 'operations_inventaire',
+      'stocks_de_cloture', 'affectations_du_resultat', 'lignes_d_affectation', 'pieces_hors_de_france'])
     expect(avecLesBlocs(texteDeLEssai).ordre.map((o) => o.table)
-      .filter((t) => ['dossiers', 'exercices', 'notes_internes', ...TABLES_DE_L_INVENTAIRE, ...TABLES_DES_STOCKS].includes(t)))
-      .toEqual(['dossiers', 'exercices', 'notes_internes', 'operations_inventaire', 'stocks_de_cloture'])
+      .filter((t) => ['dossiers', 'exercices', 'notes_internes', ...TABLES_DE_L_INVENTAIRE, ...TABLES_DES_STOCKS,
+        ...TABLES_DE_L_AFFECTATION].includes(t)))
+      .toEqual(['dossiers', 'exercices', 'notes_internes', 'provisions', 'operations_inventaire', 'stocks_de_cloture',
+        'affectations_du_resultat', 'lignes_d_affectation'])
     expect(texteDeLEssai.indexOf(MARQUE_DES_EXERCICES)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DE_L_INVENTAIRE))
   })
 

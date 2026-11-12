@@ -132,7 +132,7 @@ describe('les deux fonctions et les gardes, sous les règles de la base', () => 
     const enBase = [...table.matchAll(/^ {2}([a-z_]+) (?:uuid|integer|text|bigint|date|timestamptz)\b/gm)].map((x) => x[1])
     // La colonne qu'INV4 (`provisions`) ajoute à la table : l'évaluation d'une provision.
     const ajoutees = [...lire('supabase/preparees/20261112230000_provisions.sql')
-      .matchAll(/alter table public\.operations_inventaire add column ([a-z_]+) (?:uuid|integer|text|bigint)\b/g)].map((x) => x[1])
+      .matchAll(/alter table public\.operations_inventaire add column ([a-z_]+) (?:uuid|integer|text|bigint)\b/gi)].map((x) => x[1])
     expect(ajoutees).toEqual(['provision_id'])
     expect([...enBase, ...ajoutees].sort()).toEqual(Object.keys(colonnes).sort())
   })

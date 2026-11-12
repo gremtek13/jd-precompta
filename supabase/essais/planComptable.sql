@@ -84,6 +84,12 @@
 -- jugés À PART (contrôle 1quater, leur empreinte, que src/lib/provisionsEnBase.test.ts recalcule), au compte du catalogue
 -- (`roles_du_catalogue`), et leurs comptes décalés au contrôle 32 ; rien d'autre.
 --
+-- ADAPTÉ LE 12/11/2026 À L'AFFECTATION DU RÉSULTAT (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`,
+-- PRÉPARÉE) : ses six rôles (rangs 600 à 650) jugés À PART (contrôle 1quinquies — 1quater à sa préparation, renuméroté en
+-- la réunissant à INV4 —, leur empreinte, que src/lib/affectationDuResultatEnBase.test.ts recalcule), au compte du
+-- catalogue (`roles_du_catalogue`), leurs comptes décalés au contrôle 32, et `enregistrer_affectation` parmi les fonctions
+-- qui lisent le compte du dirigeant (contrôle 8) ; rien d'autre.
+--
 -- SUR UNE RÉPLIQUE, EN UNE TRANSACTION (`psql -1 -f`) : le bloc range ses verdicts par `set_config(…, true)`, local à la
 -- transaction, comme l'appel unique d'`execute_sql` ; joué ligne à ligne par psql sans `-1`, la lecture finale trouve un
 -- réglage vide et lève « invalid input syntax for type json » — un défaut de la façon de le jouer, pas de l'essai.
