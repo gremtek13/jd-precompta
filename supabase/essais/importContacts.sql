@@ -135,14 +135,14 @@ begin
         $q$select (prosrc ~ '^\s*declare\s(?:(?!\mbegin\M).)*\mbegin\M\s+(?:--[^\n]*\n\s*)*if not public\.gere_les_ventes\(p_dossier_id\) or not exists \(select 1 from public\.dossiers d where d\.id = p_dossier_id\) then\s+raise exception ''Accès refusé à ce dossier\.'' using errcode = ''42501'';')::text
              from pg_proc where oid = 'public.importer_contacts(uuid, jsonb)'::regprocedure$q$,
         'OK', 'true', null),
-      ('0c', 'valeur', 'les champs d''une ligne sont exactement ceux qu''enregistrer_contact lit', 'proprietaire', null,
+      ('0c', 'valeur', 'les champs d''une ligne sont exactement ceux qu''enregistrer_contact lit (hors le lien d''une fiche au dossier de son client, LM3 : un import ne lie rien)', 'proprietaire', null,
         $q$select (i.champs = e.champs)::text || ' ' || i.champs from
              (select string_agg(x, ',' order by x collate "C") as champs from (select m[1] as x
                 from regexp_matches((regexp_match((select prosrc from pg_proc where oid = 'public.importer_contacts(uuid, jsonb)'::regprocedure),
                                                   'k not in \(([^)]*)\)'))[1], '''(\w+)''', 'g') as m) l) i,
              (select string_agg(x, ',' order by x collate "C") as champs from (select distinct m[1] as x
                 from regexp_matches((select prosrc from pg_proc where oid = 'public.enregistrer_contact(uuid, uuid, jsonb)'::regprocedure),
-                                    'p_contact->>?''(\w+)''', 'g') as m) l) e$q$,
+                                    'p_contact->>?''(\w+)''', 'g') as m where m[1] <> 'dossier_client_id') l) e$q$,
         'OK', 'true adresse,adresse_electronique,code_service,delai_paiement_jours,email,nom,observations,siren,siret,type_client', null),
       ('0d', 'valeur', 'elle n''écrit rien elle-même et ne nomme que le prédicat, les dossiers et enregistrer_contact', 'proprietaire', null,
         $q$select (c !~* '\m(insert|update|delete|truncate|copy)\M')::text || ' ' || (select string_agg(x, ',' order by x collate "C") from (select distinct m[1] as x from regexp_matches(c, 'public\.(\w+)', 'g') as m) l)

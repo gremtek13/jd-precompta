@@ -200,7 +200,7 @@ describe('la lecture du plan et les deux rôles du change', () => {
       .toBe('plan comptable illisible : « PC » n’est pas un préfixe d’auxiliaire du rôle « pertes_de_change »')
   })
   it('la migration préparée porte les deux rôles tels que l’application les lit', () => {
-    const migration = readFileSync(new URL('../../supabase/preparees/20261112170000_ecarts_de_reglement.sql', import.meta.url), 'utf8')
+    const migration = readFileSync(new URL('../../supabase/schema/20261112134552_ecarts_de_reglement.sql', import.meta.url), 'utf8')
     for (const r of ROLES_DU_CHANGE) {
       expect(migration).toContain(`('${r.role}', array['${r.racines.join("', '")}'], '${r.compteDefaut}', '${r.libelleDefaut}', null, ${r.ordre})`)
     }

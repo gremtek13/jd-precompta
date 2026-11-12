@@ -1,4 +1,5 @@
--- RETOUR DE `gardes_de_la_validation_allegees` (ligne 28.66 ; PRÉPARÉ le 12/11/2026). Rend les deux gardes du brouillon
+-- RETOUR DE `gardes_de_la_validation_allegees` (ligne 28.66 ; PRÉPARÉ le 12/11/2026 ; la migration en production depuis le 12/11/2026,
+-- version 20261112134639 : supabase/schema/20261112134639_gardes_de_la_validation_allegees.sql). Rend les deux gardes du brouillon
 -- d'hier — chacune sur l'insertion, la suppression ET la modification, sans condition — et retire leurs deux jumeaux de la
 -- modification. Aucune donnée ne se perd, aucune fonction ne change : la validation reprend son coût d'hier. Deux `drop
 -- trigger` : JAMAIS SANS L'ACCORD DU CABINET ; le texte se colle s'il le faut. Il se refuse si la migration n'est pas là

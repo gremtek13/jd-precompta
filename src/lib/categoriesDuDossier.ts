@@ -6,7 +6,7 @@ import type { Categorie } from './types'
 // LES CATÉGORIES PROPRES À UN DOSSIER (ligne 43, étape PC7 ; Q9 « a oui, b ligne à part »). Les policies de `categories`
 // laissent déjà le cabinet qui administre le dossier créer, modifier et supprimer SES catégories (relevé en production le
 // 12/11/2026) ; aucun écran ne le faisait. La migration PRÉPARÉE `categories_du_dossier`
-// (supabase/preparees/20261112151000_categories_du_dossier.sql, essai supabase/essais/categoriesDuDossier.sql) pose la
+// (supabase/schema/20261112134532_categories_du_dossier.sql, essai supabase/essais/categoriesDuDossier.sql) pose la
 // garde que la relation demande de ce côté-ci : le compte du barème kilométrique du plan refusé à des zéros près (le
 // refus 10 de `regler_plan_du_dossier`, vu de la catégorie), une catégorie qui ne change pas de dossier, un code qui n'est
 // pas celui d'une commune, la nature des recettes en espèces du client qui ne se supprime pas. Ce module redit ses refus
@@ -19,9 +19,9 @@ import type { Categorie } from './types'
 // dit qui les règle. Le défaut du « silence » (§ 9, point 2) est corrigé depuis le 09/10/2026 aux trois cartes qui les
 // écrivaient ; cet écran n'en ajoute pas une quatrième.
 
-/** Baissé jusqu'à l'application de `categories_du_dossier` : l'écran des catégories du dossier et le troisième temps de la
- *  carte de la balance n'apparaissent pas. Le lever demande la migration en base (son essai), puis le déploiement. */
-export const CATEGORIES_DU_DOSSIER_PREVUES = false
+/** Levé le 12/11/2026, `categories_du_dossier` en production : l'écran des catégories du dossier. Le troisième temps de la
+ *  carte de la balance attend en plus `PLAN_DEPUIS_LA_BALANCE_PREVU` (PC6, préparée, pas appliquée). */
+export const CATEGORIES_DU_DOSSIER_PREVUES: boolean = true
 
 export type ClasseDeCategorie = 6 | 7
 

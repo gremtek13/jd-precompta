@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ModeleDuCabinetCarte from './ModeleDuCabinetCarte'
 import { modeleDeLaReponse, type LectureDuModele } from '../lib/modeleDuCabinet'
-import { ROLES_COMPTABLES } from '../lib/planComptable'
+import { ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
 
 // LE MODÈLE DE PLAN DU CABINET, À L'ÉCRAN (ligne 43, PC5) : ce qu'aucun calcul pur ne voit — aucun geste avant que le modèle
 // ET les catégories communes soient lus en entier, le refus dit avant le clic, la confirmation qui nomme, le réglage sous
@@ -28,7 +28,7 @@ vi.mock('../lib/modeleDuCabinetLecture', () => ({
 
 function lecture(regles: Record<string, string> = {}): LectureDuModele {
   return modeleDeLaReponse({
-    data: ROLES_COMPTABLES.map((r) => ({
+    data: ROLES_DE_LA_BASE.map((r) => ({
       role: r.role, compte: regles[r.role] ?? r.compteDefaut, libelle: r.libelleDefaut,
       prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: r.role in regles ? 'modele_du_cabinet' : 'application',
     })),

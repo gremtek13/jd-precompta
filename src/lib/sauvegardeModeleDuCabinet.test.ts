@@ -22,7 +22,7 @@ import {
 
 const TABLE = 'plan_comptable_cabinet'
 const MIGRATION = readFileSync(
-  new URL('../../supabase/preparees/20261112100000_modele_de_plan_du_cabinet.sql', import.meta.url), 'utf8')
+  new URL('../../supabase/schema/20261112134459_modele_de_plan_du_cabinet.sql', import.meta.url), 'utf8')
 
 describe('le filtre du plan, côté modèle du cabinet', () => {
   it('la table n’est au plan que le drapeau levé ; toute autre l’est toujours', () => {

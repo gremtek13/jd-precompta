@@ -1,18 +1,18 @@
 import { calculer2035E, cadreMonoEtablissement } from './declaration2035E'
 import type { Annexe2035E, Entree2035E, Saisies2035E } from './declaration2035E'
 
-// L'ANNEXE 2035-E : CE QUE SEUL LE CABINET SAIT, SAISI PAR EXERCICE (ligne 48 ; migration `saisies_2035e`, PRÉPARÉE le
-// 11/11/2026, supabase/preparees/20261111240000_saisies_2035e.sql ; 48-Q1 et 48-Q2 tranchées le 17/10/2026). Une ligne par
-// dossier et par exercice : EM (la part des loyers qui se déduit), EN, EK, ER, EU, EV en euros entiers, le cadre des
+// L'ANNEXE 2035-E : CE QUE SEUL LE CABINET SAIT, SAISI PAR EXERCICE (ligne 48 ; migration `saisies_2035e`, en production
+// depuis le 12/11/2026, supabase/schema/20261112134300_saisies_2035e.sql ; 48-Q1 et 48-Q2 tranchées le 17/10/2026). Une
+// ligne par dossier et par exercice : EM (la part des loyers qui se déduit), EN, EK, ER, EU, EV en euros entiers, le cadre des
 // mono-établissements (AH) et l'effectif (BK). Chaque valeur NULLE tant que le cabinet ne l'a pas dite — « à saisir »,
 // jamais un zéro inventé. Ni la date de cessation (MA : 48-Q6, jugée à la main) ni BW (une saisie de la 2035 elle-même).
 //
-// Deux drapeaux, baissés : `SAISIES_2035E_PREVUES` (la table en base : le plan de sauvegarde la lit) et
-// `SAISIES_2035E_EXPORTEES` (l'écran de Clôture la lit et l'écrit, et l'annexe la reçoit). Le second ne se lève qu'avec le
-// premier.
+// Deux drapeaux : `SAISIES_2035E_PREVUES` (la table en base : le plan de sauvegarde la lit), levé le 12/11/2026, et
+// `SAISIES_2035E_EXPORTEES` (l'écran de Clôture la lit et l'écrit, et l'annexe la reçoit), baissé tant que le PDF de
+// l'annexe ne sait pas dire « à saisir » (48S-Q2). Le second ne se lève qu'avec le premier.
 
-/** La migration `saisies_2035e` est en base : la table entre au plan de sauvegarde. Baissé : préparée, pas appliquée. */
-export const SAISIES_2035E_PREVUES: boolean = false
+/** La migration `saisies_2035e` est en base (12/11/2026) : la table entre au plan de sauvegarde. */
+export const SAISIES_2035E_PREVUES: boolean = true
 /** L'écran de saisie et l'annexe qui la reçoit. Baissé : l'annexe suppose ce qu'elle supposait hier, et le dit. */
 export const SAISIES_2035E_EXPORTEES: boolean = false
 

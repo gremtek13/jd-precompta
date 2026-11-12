@@ -156,17 +156,22 @@ begin
              from pg_proc p where p.pronamespace = 'public'::regnamespace
               and p.proname in ('enregistrer_contact', 'retirer_contact', 'reprendre_contact', 'effacer_contact')$q$,
         'OK', 'effacer_contact=true,enregistrer_contact=true,reprendre_contact=true,retirer_contact=true', null),
-      ('0e', 'valeur', 'le SIRET unique par une contrainte TOTALE ; aucun index partiel ; aucun déclencheur', 'proprietaire', null,
+      ('0e', 'valeur', 'le SIRET unique par une contrainte TOTALE ; aucun index partiel ; aucun déclencheur (hors la garde des fiches liées, LM3)', 'proprietaire', null,
         $q$select pg_get_constraintdef(co.oid) || ' ; index partiels ' || (select count(*) from pg_index i where i.indrelid = 'public.contacts'::regclass and i.indpred is not null)
-               || ' ; déclencheurs ' || (select count(*) from pg_trigger t where t.tgrelid = 'public.contacts'::regclass and not t.tgisinternal)
+               || ' ; déclencheurs ' || (select count(*) from pg_trigger t where t.tgrelid = 'public.contacts'::regclass and not t.tgisinternal
+                                         and t.tgname <> 'contacts_fiche_liee')
              from pg_constraint co where co.conrelid = 'public.contacts'::regclass and co.conname = 'contacts_siret_unique'$q$,
         'OK', 'UNIQUE (dossier_id, siret) ; index partiels 0 ; déclencheurs 0', null),
-      ('0f', 'valeur', 'les colonnes que le client « Ventes » lit, dans leur ordre (« ! » : non nulle) — aucun téléphone, aucune date de naissance', 'proprietaire', null,
-        $q$select string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then '!' else '' end, ',' order by a.attnum)
-             from pg_attribute a where a.attrelid = 'public.contacts'::regclass and a.attnum > 0 and not a.attisdropped$q$,
+      ('0f', 'valeur', 'les colonnes que le client « Ventes » lit, dans leur ordre (« ! » : non nulle) — aucun téléphone, aucune date de naissance ; après LM3 (fiche_liee_au_dossier_du_client), exactement les mêmes, `nom` facultatif, puis les trois du lien', 'proprietaire', null,
+        $q$select case s when 'id:uuid!,dossier_id:uuid!,genre:text!,type_client:text,nom:text,adresse:text,siren:text,siret:text,adresse_electronique:text,code_service:text,email:text,delai_paiement_jours:integer,observations:text,retire_le:timestamp with time zone,retire_par:uuid,efface_le:timestamp with time zone,efface_par:uuid,cree_par:uuid,cree_le:timestamp with time zone!,modifie_par:uuid,modifie_le:timestamp with time zone,dossier_client_id:uuid,delie_le:timestamp with time zone,delie_par:uuid'
+                 then 'id:uuid!,dossier_id:uuid!,genre:text!,type_client:text,nom:text!,adresse:text,siren:text,siret:text,adresse_electronique:text,code_service:text,email:text,delai_paiement_jours:integer,observations:text,retire_le:timestamp with time zone,retire_par:uuid,efface_le:timestamp with time zone,efface_par:uuid,cree_par:uuid,cree_le:timestamp with time zone!,modifie_par:uuid,modifie_le:timestamp with time zone'
+                 else s end
+             from (select string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then '!' else '' end, ',' order by a.attnum) as s
+                     from pg_attribute a where a.attrelid = 'public.contacts'::regclass and a.attnum > 0 and not a.attisdropped) t$q$,
         'OK', 'id:uuid!,dossier_id:uuid!,genre:text!,type_client:text,nom:text!,adresse:text,siren:text,siret:text,adresse_electronique:text,code_service:text,email:text,delai_paiement_jours:integer,observations:text,retire_le:timestamp with time zone,retire_par:uuid,efface_le:timestamp with time zone,efface_par:uuid,cree_par:uuid,cree_le:timestamp with time zone!,modifie_par:uuid,modifie_le:timestamp with time zone', null),
-      ('0g', 'valeur', 'les contraintes de la facture, recopiées TELLES QUELLES : un contact range ce qu''une facture accepte', 'proprietaire', null,
-        $q$select string_agg(f.suffixe || '=' || (replace(pg_get_constraintdef(fe.oid), 'tiers_', '') = pg_get_constraintdef(co.oid))::text, ',' order by f.suffixe)
+      ('0g', 'valeur', 'les contraintes de la facture, recopiées TELLES QUELLES : un contact range ce qu''une facture accepte (après LM3, la fiche liée, sans identité, en plus)', 'proprietaire', null,
+        $q$select string_agg(f.suffixe || '=' || (replace(pg_get_constraintdef(fe.oid), 'tiers_', '')
+                                                   = replace(pg_get_constraintdef(co.oid), '(dossier_client_id IS NOT NULL) OR ', ''))::text, ',' order by f.suffixe)
              from (values ('type_client_check', 'type_client_check'), ('tiers_siren_check', 'siren_check'), ('siret_du_siren', 'siret_du_siren'),
                           ('adresse_electronique_check', 'adresse_electronique_check'), ('adresse_electronique_routee', 'adresse_electronique_routee'),
                           ('code_service_check', 'code_service_check')) as f(suffixe, contact)

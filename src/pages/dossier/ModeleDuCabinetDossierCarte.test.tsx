@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ModeleDuCabinetDossierCarte from './ModeleDuCabinetDossierCarte'
 import { AvecExercicesValides } from '../../test/exercicesValides'
 import { PLAN_LU_PAR_DEFAUT } from '../../test/modeles'
-import { ROLES_COMPTABLES, type LectureDuPlan } from '../../lib/planComptable'
+import { type LectureDuPlan } from '../../lib/planComptable'
+import { ROLES_DE_LA_BASE } from '../../test/rolesDeLaBase'
 import type { PlanLu } from '../../lib/planDepuisLaBalance'
 
 // « APPLIQUER LE MODÈLE DU CABINET » SUR LE PLAN D'UN DOSSIER (ligne 43, PC5b), sous les deux états du drapeau
@@ -41,7 +42,7 @@ vi.mock('../../lib/supabase', () => ({
         if (faux.retenueModele) await faux.retenueModele
         if (faux.refusModele) return { data: null, error: { message: faux.refusModele } }
         return {
-          data: ROLES_COMPTABLES.map((r) => {
+          data: ROLES_DE_LA_BASE.map((r) => {
             const regle = faux.modele[r.role]
             return {
               role: r.role,
@@ -63,7 +64,7 @@ vi.mock('../../lib/supabase', () => ({
         if (faux.retenueRelecture) await faux.retenueRelecture
         if (faux.planIllisibleApresApplication) return { data: null, error: { message: 'connexion perdue' } }
         return {
-          data: ROLES_COMPTABLES.map((r) => {
+          data: ROLES_DE_LA_BASE.map((r) => {
             const regle = faux.planEnBase.find((l) => l.role === r.role)
             return {
               role: r.role,

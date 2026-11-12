@@ -17,6 +17,7 @@ import {
   type SaisieDuModele,
 } from './modeleDuCabinet'
 import { ROLES_COMPTABLES } from './planComptable'
+import { ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
 import type { LigneDuPlanReglee } from './planDepuisLaBalance'
 import { PLAN_LU_PAR_DEFAUT } from '../test/modeles'
 
@@ -26,7 +27,7 @@ import { PLAN_LU_PAR_DEFAUT } from '../test/modeles'
 // que « Nouveau dossier » dit avant le clic. Les refus, l'ordre et l'application se rejouent en base :
 // supabase/essais/modeleDuCabinet.sql.
 
-const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261112100000_modele_de_plan_du_cabinet.sql', import.meta.url), 'utf8')
+const MIGRATION = readFileSync(new URL('../../supabase/schema/20261112134459_modele_de_plan_du_cabinet.sql', import.meta.url), 'utf8')
 const CORPS = (() => {
   const debut = MIGRATION.indexOf('function public.regler_modele_du_cabinet(')
   const ouvre = MIGRATION.indexOf('$$', debut) + 2
@@ -51,9 +52,11 @@ function gabarit(phrase: string, valeurs: string[]): string {
 const ligne = (role: LigneDuPlanReglee['role'], compte: string, autres: Partial<LigneDuPlanReglee> = {}): LigneDuPlanReglee =>
   ({ role, compte, libelle: null, prefixe_auxiliaire: null, ...autres })
 
+// La réponse de `modele_du_cabinet` : une ligne par rôle du catalogue de la base, les deux du change compris depuis leur
+// migration (12/11/2026, src/test/rolesDeLaBase.ts).
 function reponse(regles: Record<string, { compte: string; libelle?: string; prefixe?: string }> = {}, origine?: string) {
   return {
-    data: ROLES_COMPTABLES.map((r) => ({
+    data: ROLES_DE_LA_BASE.map((r) => ({
       role: r.role,
       compte: regles[r.role]?.compte ?? r.compteDefaut,
       libelle: regles[r.role]?.libelle ?? r.libelleDefaut,
@@ -65,8 +68,8 @@ function reponse(regles: Record<string, { compte: string; libelle?: string; pref
 }
 
 describe('le drapeau et la table', () => {
-  it('le drapeau est baissé tant que la migration n’est pas en base ; la table est celle que la migration crée', () => {
-    expect(MODELE_DU_CABINET_PREVU).toBe(false)
+  it('le drapeau est levé depuis la migration en production (12/11/2026) ; la table est celle que la migration crée', () => {
+    expect(MODELE_DU_CABINET_PREVU).toBe(true)
     expect(TABLES_DU_MODELE_DU_CABINET).toEqual(['plan_comptable_cabinet'])
     expect(MIGRATION).toMatch(/create table public\.plan_comptable_cabinet \(/i)
   })

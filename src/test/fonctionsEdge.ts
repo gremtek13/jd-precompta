@@ -5,7 +5,7 @@ import { AuthApiError, AuthWeakPasswordError } from '@supabase/supabase-js'
 import ts from 'typescript'
 import { predicatEq, predicatIn, predicatIs, predicatNot, predicatOr, type Ligne, type Predicat } from './filtresPostgrest'
 import { REGLE_D_UN_PROJET_NEUF, jugementDuService, type RegleDuService } from './regleDuService'
-import { ROLES_COMPTABLES } from '../lib/planComptable'
+import { ROLES_DE_LA_BASE } from './rolesDeLaBase'
 import { clesPrimairesDuSchema, fichiersDuSchema, fichiersPrepares, relationsDuSchema, type RelationDuSchema } from './schema'
 
 // LES EDGE FUNCTIONS APPELÉES EN HTTP, DANS LA SUITE — DEPUIS LEUR VRAIE SOURCE, SANS RÉSEAU, SANS SECRET, SANS APPEL
@@ -483,7 +483,7 @@ const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Rec
       throw new ErreurPostgrest({ code: '42501', message: 'Accès refusé à ce dossier.', status: 403 })
     }
     const regles = (monde.base.plan_comptable_dossier ?? []).filter((p) => p.dossier_id === dossierId)
-    return [...ROLES_COMPTABLES].sort((a, b) => a.ordre - b.ordre).map((r) => {
+    return [...ROLES_DE_LA_BASE].sort((a, b) => a.ordre - b.ordre).map((r) => {
       const p = regles.find((x) => x.role === r.role)
       return {
         role: r.role, compte: p?.compte ?? r.compteDefaut, libelle: p?.libelle ?? r.libelleDefaut,

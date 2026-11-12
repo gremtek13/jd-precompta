@@ -1,6 +1,6 @@
--- LE MODÈLE DE PLAN DU CABINET (ligne 43, étape PC5 ; la migration `modele_de_plan_du_cabinet`, PRÉPARÉE le 12/11/2026,
--- supabase/preparees/). Le récit : HISTORIQUE.md, « 12/11/2026 — PC5 : LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS
--- APPLIQUÉ) ». À rejouer par `execute_sql` après toute migration qui touche `plan_comptable_cabinet`, ses fonctions
+-- LE MODÈLE DE PLAN DU CABINET (ligne 43, étape PC5 ; la migration `modele_de_plan_du_cabinet`, en production depuis le
+-- 12/11/2026, supabase/schema/20261112134459_modele_de_plan_du_cabinet.sql). Le récit : HISTORIQUE.md, « 12/11/2026 — PC5 :
+-- LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS APPLIQUÉ) ». À rejouer par `execute_sql` après toute migration qui touche `plan_comptable_cabinet`, ses fonctions
 -- (`regler_modele_du_cabinet`, `modele_du_cabinet`, `appliquer_modele_du_cabinet`) ou ses déclencheurs, et après toute
 -- migration qui touche ce que `appliquer_modele_du_cabinet` appelle : `regler_plan_du_dossier`, la garde du plan,
 -- `plan_comptable_dossier`, `roles_comptables`, `admin_du_cabinet`, `est_chef_du_cabinet`, `admin_du_dossier`.
@@ -37,8 +37,10 @@ declare
   autre constant text := 'f5c00000-0000-4000-8000-0000000000ca';
   cx constant text := 'f5c00000-0000-4000-8000-0000000000cf';
   cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
-  -- Le modèle fictif décalé (`PLAN_DECALE` et `PREFIXES_DECALES`, src/lib/planComptable.ts) : les 32 rôles du catalogue,
-  -- chacun sur un autre compte que son défaut, les trois tiers sous un autre préfixe.
+  -- Le modèle fictif décalé (`PLAN_DECALE` et `PREFIXES_DECALES`, src/lib/planComptable.ts) : les 32 rôles du catalogue de
+  -- PC1 et VF2, chacun sur un autre compte que son défaut, les trois tiers sous un autre préfixe. Le catalogue en porte plus
+  -- depuis `ecarts_de_reglement` (les deux du change, 12/11/2026), et en portera d'autres : les nombres attendus se LISENT —
+  -- `nr`, les rôles du catalogue (le modèle se stocke entier), `nd`, ceux que le modèle décalé règle —, jamais en dur.
   decale constant text := '[{"role": "banque", "compte": "512100"}, {"role": "tva_deductible", "compte": "445661"},
     {"role": "tva_immobilisations", "compte": "445621"}, {"role": "tva_collectee", "compte": "445711"},
     {"role": "tva_a_decaisser", "compte": "445511"}, {"role": "credit_tva_a_reporter", "compte": "445671"},
@@ -56,6 +58,8 @@ declare
     {"role": "ventes_de_biens", "compte": "707100"}, {"role": "tva_collectee_en_attente", "compte": "445801"},
     {"role": "valeurs_a_l_encaissement", "compte": "511100"}, {"role": "caisse", "compte": "531000"},
     {"role": "services_bancaires", "compte": "627100"}]';
+  nr constant text := (select count(*)::text from roles_comptables);
+  nd constant text := jsonb_array_length(decale::jsonb)::text;
   -- Les phrases des refus, telles que les fonctions et les déclencheurs les disent.
   pas_chef constant text := 'Le modèle de plan de ce cabinet ne se règle que par son chef.';
   pas_lu constant text := 'Accès refusé à ce cabinet.';
@@ -125,8 +129,8 @@ begin
       (11, '11. un compte rattaché à rien ne lit pas le modèle (42501)', null, 'inconnu', lire, '42501', pas_lu),
       (12, '12. le client ne lit pas le modèle (42501)', null, 'client', lire, '42501', pas_lu),
       (13, '13. le chef d''un autre cabinet ne lit pas le modèle (42501)', null, 'chef_autre', lire, '42501', pas_lu),
-      (14, '14. un membre de l''équipe qui n''est pas chef lit le modèle effectif : 32 rôles (le contrôle positif)', null, 'membre', lire, 'OK', '32'),
-      (15, '15. … et ses lignes, une fois le modèle réglé', pose_decale, 'membre', lignes, 'OK', '32'),
+      (14, '14. un membre de l''équipe qui n''est pas chef lit le modèle effectif : tous les rôles du catalogue (le contrôle positif)', null, 'membre', lire, 'OK', nr),
+      (15, '15. … et ses lignes, une fois le modèle réglé', pose_decale, 'membre', lignes, 'OK', nr),
       (16, '16. le client n''en lit aucune ligne', pose_decale, 'client', lignes, 'OK', '0'),
       (17, '17. le chef d''un autre cabinet n''en lit aucune ligne', pose_decale, 'chef_autre', lignes, 'OK', '0'),
       (18, '18. un compte rattaché à rien n''en lit aucune ligne', pose_decale, 'inconnu', lignes, 'OK', '0'),
@@ -210,14 +214,14 @@ begin
         replace(regler, '{L}', '[{"role": "banque", "compte": "5121"}, {"role": "caisse", "compte": "5300"}]'), '22023',
         format(six, 'banque', '5121')),
       -- ══ Ce qu'elle écrit ══
-      (50, '50. le modèle décalé s''écrit tout entier : 32 lignes, réglées par le chef', pose_decale, 'proprio',
-        $q$select count(*) || ' ' || bool_and(regle_par = '{CHEF}') from plan_comptable_cabinet where cabinet_id = '{CAB}'$q$, 'OK', '32 true'),
-      (51, '51. … et se lit : 32 rôles du modèle, la banque au 512100, les fournisseurs sous FO', pose_decale, 'proprio_chef',
-        $q$select count(*) || ' ' || bool_and(origine = 'modele_du_cabinet') || ' ' || max(compte) filter (where role = 'banque') || ' ' || max(prefixe_auxiliaire) filter (where role = 'fournisseurs') from modele_du_cabinet('{CAB}')$q$,
-        'OK', '32 true 512100 FO'),
-      (52, '52. une liste vide rend le modèle au catalogue : ses 32 lignes restent, aux valeurs du catalogue', pose_decale || $q$; select regler_modele_du_cabinet('{CAB}', '[]'::jsonb)$q$, 'proprio_chef',
+      (50, '50. le modèle décalé s''écrit tout entier : une ligne par rôle du catalogue, réglées par le chef', pose_decale, 'proprio',
+        $q$select count(*) || ' ' || bool_and(regle_par = '{CHEF}') from plan_comptable_cabinet where cabinet_id = '{CAB}'$q$, 'OK', nr || ' true'),
+      (51, '51. … et se lit : les rôles décalés du modèle parmi tous ceux du catalogue, la banque au 512100, les fournisseurs sous FO', pose_decale, 'proprio_chef',
+        $q$select count(*) filter (where origine = 'modele_du_cabinet') || ' ' || count(*) || ' ' || max(compte) filter (where role = 'banque') || ' ' || max(prefixe_auxiliaire) filter (where role = 'fournisseurs') from modele_du_cabinet('{CAB}')$q$,
+        'OK', nd || ' ' || nr || ' 512100 FO'),
+      (52, '52. une liste vide rend le modèle au catalogue : ses lignes restent, une par rôle, aux valeurs du catalogue', pose_decale || $q$; select regler_modele_du_cabinet('{CAB}', '[]'::jsonb)$q$, 'proprio_chef',
         $q$select count(*) || ' ' || bool_and(origine = 'application') || ' ' || (select count(*) from plan_comptable_cabinet where cabinet_id = '{CAB}') || ' ' || bool_and(compte = (select r.compte_defaut from roles_comptables r where r.role = m.role)) from modele_du_cabinet('{CAB}') m$q$,
-        'OK', '32 true 32 true'),
+        'OK', nr || ' true ' || nr || ' true'),
       (53, '53. un rôle réglé seul : un rôle du modèle, son libellé', $q$select regler_modele_du_cabinet('{CAB}', '[{"role": "banque", "compte": "512100", "libelle": "Banque principale"}]'::jsonb)$q$, 'proprio_chef',
         $q$select count(*) filter (where origine = 'modele_du_cabinet') || ' ' || max(compte || ' ' || libelle) filter (where origine = 'modele_du_cabinet') from modele_du_cabinet('{CAB}')$q$,
         'OK', '1 512100 Banque principale'),
@@ -226,12 +230,12 @@ begin
       (55, '55. une ligne inchangée garde son auteur : le chef, puis un autre chef qui ne change que la banque', pose_decale
         || $q$; insert into cabinet_admins (user_id, cabinet_id, role) values ('{CLIENT}', '{CAB}', 'comptable_en_chef'); select set_config('request.jwt.claims', json_build_object('sub', '{CLIENT}', 'role', 'authenticated')::text, true); select regler_modele_du_cabinet('{CAB}', replace('{PD}', '"512100"', '"512200"')::jsonb)$q$,
         'proprio', $q$select count(*) filter (where regle_par = '{CHEF}') || ' ' || count(*) filter (where regle_par = '{CLIENT}') || ' ' || max(compte) filter (where role = 'banque') from plan_comptable_cabinet where cabinet_id = '{CAB}'$q$,
-        'OK', '31 1 512200'),
+        'OK', (nr::int - 1) || ' 1 512200'),
       -- ══ Appliquer le modèle à un dossier ══
-      (60, '60. le chef applique le modèle décalé à un dossier vide : 32 rôles copiés', pose_decale, 'chef', appliquer, 'OK', '32'),
+      (60, '60. le chef applique le modèle décalé à un dossier vide : ses rôles réglés copiés', pose_decale, 'chef', appliquer, 'OK', nd),
       (61, '61. … d''origine « modele_du_cabinet », réglés par lui', pose_decale || $q$; select appliquer_modele_du_cabinet('{DT}')$q$, 'proprio',
         $q$select count(*) || ' ' || bool_and(origine = 'modele_du_cabinet') || ' ' || bool_and(regle_par = '{CHEF}') from plan_comptable_dossier where dossier_id = '{DT}'$q$,
-        'OK', '32 true true'),
+        'OK', nd || ' true true'),
       (62, '62. … le dirigeant suit son rôle (PC3-Q1) : 455000 → 455100', pose_decale || $q$; select appliquer_modele_du_cabinet('{DT}')$q$, 'proprio',
         $q$select compte_notes_de_frais from dossiers where id = '{DT}'$q$, 'OK', '455100'),
       (63, '63. … et le plan du dossier le dit : la banque au 512100, du modèle du cabinet', pose_decale || $q$; select appliquer_modele_du_cabinet('{DT}')$q$, 'proprio_chef',
@@ -241,7 +245,7 @@ begin
       (65, '65. un modèle jamais réglé ne copie rien', null, 'chef', appliquer, 'OK', '0'),
       (66, '66. un modèle rendu au catalogue ne copie rien, et le plan du dossier reste vide', pose_decale || $q$; select regler_modele_du_cabinet('{CAB}', '[]'::jsonb); select appliquer_modele_du_cabinet('{DT}')$q$, 'proprio',
         $q$select (select count(*) from plan_comptable_dossier where dossier_id = '{DT}') || ' ' || (select count(*) from plan_comptable_cabinet where cabinet_id = '{CAB}')$q$,
-        'OK', '0 32'),
+        'OK', '0 ' || nr),
       (67, '67. un seul rôle réglé : un seul rôle copié', $q$select regler_modele_du_cabinet('{CAB}', '[{"role": "banque", "compte": "512100", "libelle": "Banque principale"}]'::jsonb)$q$, 'chef', appliquer, 'OK', '1'),
       (68, '68. les deux portes sont refermées après l''application', pose_decale || $q$; select appliquer_modele_du_cabinet('{DT}')$q$, 'proprio',
         $q$select '[' || coalesce(current_setting('jd.appliquer_modele_du_cabinet', true), '') || '|' || coalesce(current_setting('jd.regler_plan_du_dossier', true), '') || ']'$q$, 'OK', '[|]'),
@@ -260,7 +264,7 @@ begin
         'Le compte « 108100 » du rôle « exploitant » est celui d''une catégorie que ce dossier emploie (« 108100 »), à des zéros près : un compte de bilan que l''application écrit ne se partage pas avec une catégorie.'),
       (73, '73. le client du dossier n''applique pas le modèle (42501)', pose_decale, 'client', appliquer, '42501', pas_dossier),
       (74, '74. un membre de l''équipe à qui le dossier n''est pas ouvert non plus (42501)', pose_decale, 'membre', appliquer, '42501', pas_dossier),
-      (75, '75. le membre à qui le dossier est ouvert l''applique (43-Q3, comme le modèle comptable)', pose_decale, 'membre_affecte', appliquer, 'OK', '32'),
+      (75, '75. le membre à qui le dossier est ouvert l''applique (43-Q3, comme le modèle comptable)', pose_decale, 'membre_affecte', appliquer, 'OK', nd),
       (76, '76. un compte rattaché à rien : refusé (42501)', pose_decale, 'inconnu', appliquer, '42501', pas_dossier),
       (77, '77. l''anonyme n''exécute pas la fonction (42501)', pose_decale, 'anon', appliquer, '42501', 'permission denied for function appliquer_modele_du_cabinet'),
       (78, '78. un dossier qui n''existe pas : refusé (42501)', pose_decale, 'chef', replace(appliquer, '{DT}', '{DX}'), '42501', pas_dossier),
@@ -354,7 +358,11 @@ begin
     select string_agg(t.tgname, ',' order by t.tgname collate "C") into v_obs from pg_trigger t
      where not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgrelid = 'public.plan_comptable_dossier'::regclass;
     verdicts := verdicts || jsonb_build_object('rang', 92, 'etape', '92. l''ordre des déclencheurs BEFORE du plan d''un dossier : la garde, puis l''origine',
-      'ok', v_obs = 'plan_comptable_dossier_gardes,plan_comptable_dossier_origine', 'observe', v_obs);
+      -- Après MCB1 (comptes_bancaires), sa garde d'un compte bancaire se range entre les deux : elle ne lit que le compte,
+      -- que l'origine ne touche pas.
+      'ok', v_obs in ('plan_comptable_dossier_gardes,plan_comptable_dossier_origine',
+                      'plan_comptable_dossier_gardes,plan_comptable_dossier_hors_des_comptes_bancaires,plan_comptable_dossier_origine'),
+      'observe', v_obs);
     select string_agg(p.policyname || ':' || p.permissive || ':' || array_to_string(p.roles, ',') || ':' || p.cmd || ':' || coalesce(p.qual, '')
              || ':' || coalesce(p.with_check, ''), ' ; ' order by p.policyname collate "C") into v_obs
       from pg_policies p where p.schemaname = 'public' and p.tablename = 'plan_comptable_cabinet'

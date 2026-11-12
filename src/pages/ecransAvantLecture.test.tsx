@@ -17,6 +17,7 @@ import { ExercicesValidesProvider } from '../context/ExercicesValidesContext'
 import Layout from '../components/Layout'
 import CabinetBrandingPage from './CabinetBrandingPage'
 import ModeleDuCabinetCarte from './ModeleDuCabinetCarte'
+import { MODELE_DU_CABINET_PREVU } from '../lib/modeleDuCabinet'
 import ClientHome from './ClientHome'
 import ClientInformations from './ClientInformations'
 import ClientSimulation from './ClientSimulation'
@@ -99,7 +100,8 @@ import PiecesJointesEcartees from './dossier/PiecesJointesEcartees'
 import { ACCES_EN_COURS } from '../lib/auteursVentes'
 import { ceQueDitLaCaseComptes } from '../lib/droitsAcces'
 import { ECARTS_ET_DECLARATIONS_VIDES } from '../test/ereportingDeLaPiece'
-import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES } from '../lib/planComptable'
+import { PLAN_PAR_DEFAUT } from '../lib/planComptable'
+import { ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 
 // LE VIDE EST UNE AFFIRMATION, ET AUCUN ÉCRAN NE LA FAIT AVANT D'AVOIR LU (CLAUDE.md, « Lectures et écritures »).
@@ -890,7 +892,7 @@ afterAll(() => { vi.useRealTimers() })
 // aucun onglet sans lui. Lu « vide », il serait incomplet, et la page dirait sa lecture ratée au lieu de monter ses onglets :
 // le faux client rend le plan par défaut, un rôle par ligne, comme la base pour un dossier qui n'en règle aucun.
 beforeAll(() => {
-  etat.rendusRpc['rpc:plan_du_dossier'] = ROLES_COMPTABLES.map((r) => ({
+  etat.rendusRpc['rpc:plan_du_dossier'] = ROLES_DE_LA_BASE.map((r) => ({
     role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
   }))
   // L'OUVERTURE DU DOSSIER AU COMPTE (23Q2Q2Q1-Q1) : un booléen ou rien. Lue « vide » — une liste —, elle serait illisible, et la
@@ -1018,7 +1020,11 @@ describe('le dossier permanent n’offre aucun geste avant que sa lecture soit r
 // lue ou d'une réponse d'un service (la carte de connexion bancaire, l'échéancier lu sur un avis d'appel), un geste qui
 // lit lui-même puis s'appuie AUSSI sur une liste du montage, et la fenêtre d'une relecture.
 const ECRITURES_SANS_LISTE: { ecran: string; geste: string; ecritures: string[]; raison: string }[] = [
-  { ecran: 'DossiersList', geste: 'form « Nom du client', ecritures: ['dossiers insert'], raison: 'un dossier neuf, saisi en entier ; rien ne se dédoublonne' },
+  // Le drapeau du modèle de plan du cabinet levé (PC5, 12/11/2026), « Créer » attend la lecture du modèle : elle n'écrit plus
+  // avant elle. Baissé, l'état d'avant : un dossier neuf, saisi en entier.
+  ...(MODELE_DU_CABINET_PREVU ? [] : [
+    { ecran: 'DossiersList', geste: 'form « Nom du client', ecritures: ['dossiers insert'], raison: 'un dossier neuf, saisi en entier ; rien ne se dédoublonne' },
+  ]),
   { ecran: 'SuperAdminPage', geste: 'form « Nom du cabinet', ecritures: ['fonction:create-cabinet'], raison: 'un cabinet neuf, saisi en entier' },
   { ecran: 'EquipePage', geste: 'form « Email', ecritures: ['fonction:create-team-member'], raison: 'la fonction reprend un compte existant' },
   {

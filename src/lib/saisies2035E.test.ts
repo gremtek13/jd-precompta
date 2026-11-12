@@ -10,7 +10,7 @@ import type { Saisie2035E } from './saisies2035E'
 // LES SAISIES DE L'ANNEXE 2035-E (ligne 48). Le module redit la migration préparée : ses huit clés, ses bornes, l'effectif
 // sous le cadre coché ; et l'annexe reçoit la saisie en paramètre obligatoire, muette (`null`) sur ce qui reste à saisir.
 
-const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261111240000_saisies_2035e.sql', import.meta.url), 'utf8')
+const MIGRATION = readFileSync(new URL('../../supabase/schema/20261112134300_saisies_2035e.sql', import.meta.url), 'utf8')
 
 // Une infirmière à 179 200 € d'honoraires (le cas de declaration2035E.test.ts) : 12 000 € de loyers et locations.
 const cases = new Map([['AD', 179_200], ['BA', 3_000], ['BF', 9_000], ['BG', 3_000], ['BH', 2_500], ['BJ', 4_000], ['BM', 1_200]])
@@ -21,8 +21,8 @@ const PLEINE: Saisie2035E = {
 }
 
 describe('les drapeaux', () => {
-  it('baissés tous deux : la table n’est pas en base, l’écran ne la lit pas', () => {
-    expect(SAISIES_2035E_PREVUES).toBe(false)
+  it('la table en base (12/11/2026), l’écran fermé tant que le PDF ne dit pas « à saisir » (48S-Q2)', () => {
+    expect(SAISIES_2035E_PREVUES).toBe(true)
     expect(SAISIES_2035E_EXPORTEES).toBe(false)
   })
 })

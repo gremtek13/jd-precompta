@@ -23,6 +23,10 @@ const faux = vi.hoisted(() => ({
   retraits: [] as string[][],
 }))
 
+// LE MODÈLE DE PLAN DU CABINET (ligne 43, PC5 ; drapeau levé le 12/11/2026, la migration en production) : ce fichier
+// garde l'état d'avant, le drapeau baissé — la levée a ses propres tests (ModeleDuCabinetCarte.test.tsx).
+vi.mock('../lib/modeleDuCabinet', async (original) => ({ ...(await original<typeof import('../lib/modeleDuCabinet')>()), MODELE_DU_CABINET_PREVU: false }))
+
 vi.mock('../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {

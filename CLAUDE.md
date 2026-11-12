@@ -488,13 +488,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   COTISATIONS (LIGNE 27, TNS-Q2) », « LE BANC DE CHARGE D'UNE ANNÉE », « LA RÉGULARISATION ET LES PARAMÈTRES DES
   COTISATIONS EN PRODUCTION (LIGNE 27) ».
 - **CFE et CVAE** (ligne 48) : la saisie par exercice de l'annexe (EM, EN, EK, ER, EU, EV, AH, BK ; nul « à saisir »)
-  préparée le 11/11/2026 (`saisies_2035e`, `SAISIES_2035E_PREVUES` et `SAISIES_2035E_EXPORTEES` baissés) ; les dates
+  en production depuis le 12/11/2026 (`saisies_2035e`, `SAISIES_2035E_PREVUES` levé, `SAISIES_2035E_EXPORTEES` baissé
+  tant que le PDF de l'annexe ne dit pas « à saisir », 48S-Q2) ; les dates
   d'activité jugées à la main (48-Q6) ; restent le millésime 2027, le plafonnement de la CET (plus tard, 48-Q9) → « L'ANNEXE
   2035-E SE TIRE DE LA 2035 DÉPOSÉE », « LA SAISIE DE L'ANNEXE 2035-E PAR EXERCICE, EN BASE ».
 - **Télédéclaration de la TVA** (ligne 28) : étape 2, la transmission par un partenaire EDI — Teledec choisi, qui veut
   voir l'application fonctionner avant d'ouvrir son API ; ASPOne.fr l'autre voie. Rien n'est écrit.
-- **Comptabilité d'engagement** (ligne 31) : le change et les frais bancaires à part, préparés le 12/11/2026 derrière
-  `ECARTS_DE_REGLEMENT_PREVUS` baissé (`ecarts_de_reglement`, à coller ; CHG-Q1 à Q3) → « LE CHANGE ET LES FRAIS BANCAIRES
+- **Comptabilité d'engagement** (ligne 31) : le change et les frais bancaires à part, en production depuis le 12/11/2026
+  (`ecarts_de_reglement`, `ECARTS_DE_REGLEMENT_PREVUS` levé, l'assistant à redéployer ; CHG-Q1 à Q3) → « LE CHANGE ET LES FRAIS BANCAIRES
   À PART, EN ENGAGEMENT (LIGNE 31) » ; restent les auxiliaires des
   à-nouveaux et des soldes reportés, l'affectation du résultat d'une société, la TVA des livraisons de biens, la liasse
   (2033 ou 2050), les exercices décalés — conçus le 12/11/2026 (`docs/conceptions/42-exercices-decales.md`, EXD-Q1 à
@@ -761,11 +762,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`plan_depuis_la_balance`, à coller APRÈS la levée de `PLAN_DEPUIS_LA_BALANCE_PREVU` ; tout 512… va à la banque du plan, MCB5g
   l'éclate), son écran (la carte de la balance en deux temps) fait derrière le même drapeau ; restent la levée, le
   déploiement, puis le collage → « PC6 : LA REPRISE PROPOSE LE PLAN (PRÉPARÉE, PAS APPLIQUÉE) », « PC6 : L'ÉCRAN DE LA
-  REPRISE QUI PROPOSE LE PLAN (DERRIÈRE SON DRAPEAU) » ; PC5, le modèle du cabinet, préparé le 12/11/2026, par l'outil
-  (`modele_de_plan_du_cabinet`, `MODELE_DU_CABINET_PREVU` baissé ; sa carte, « Nouveau dossier » et le bouton d'un dossier
-  existant derrière le même drapeau) → « PC5 : LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS APPLIQUÉ) », « PC5B : APPLIQUER LE
-  MODÈLE DU CABINET À UN DOSSIER, À L'ÉCRAN (LIGNE 43) » ; PC7 préparée le même jour (`categories_du_dossier`, la garde de la table ; l'écran et le troisième temps de
-  la balance derrière `CATEGORIES_DU_DOSSIER_PREVUES` baissé) → « PC7 : LES CATÉGORIES DU DOSSIER, DONT CELLES DE SA
+  REPRISE QUI PROPOSE LE PLAN (DERRIÈRE SON DRAPEAU) » ; PC5, le modèle du cabinet, en production depuis le 12/11/2026
+  (`modele_de_plan_du_cabinet`, `MODELE_DU_CABINET_PREVU` levé : sa carte, « Nouveau dossier » et le bouton d'un dossier
+  existant) → « PC5 : LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS APPLIQUÉ) », « PC5B : APPLIQUER LE
+  MODÈLE DU CABINET À UN DOSSIER, À L'ÉCRAN (LIGNE 43) » ; PC7 en production depuis le 12/11/2026 (`categories_du_dossier`, la garde de la table ; l'écran sous
+  `CATEGORIES_DU_DOSSIER_PREVUES` levé, le troisième temps de la balance attendant aussi PC6) → « PC7 : LES CATÉGORIES DU DOSSIER, DONT CELLES DE SA
   BALANCE » ; puis PC8 et PC9, sur décision → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
   PLAN ».
 
@@ -1095,7 +1096,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   → « UN EXERCICE VALIDÉ SE FIGE EN BASE » ; depuis le 10/11/2026, son empreinte en forme 2 scelle aussi les pièces
   citées et la 2035, et le stockage garde le fichier d'une pièce figée (`fichier_fige`) → « INAL1 ET INAL2 : LA PIÈCE
   FIGÉE DANS LE STOCKAGE ET L'EMPREINTE EN FORME 2 (PRÉPARÉES, PAS APPLIQUÉES) » ; la numérotation n'appelle plus les
-  deux gardes par ligne là où elles ne refusent rien (deux jumeaux sous WHEN, préparés ; `jd.validation_exercice` ne se
+  deux gardes par ligne là où elles ne refusent rien (deux jumeaux sous WHEN, en production depuis le 12/11/2026 ; `jd.validation_exercice` ne se
   pose qu'après le verrou exclusif de la validation) → « LA VALIDATION D'UN GROS EXERCICE : LES GARDES ALLÉGÉES ».
   **Cinq chantiers préparés remplacent `valider_exercice`** (les gardes allégées, INV3, LIA5, AFF3, EXD3) : chacun part
   du corps EN PRODUCTION le jour de son collage et reprend les filets des précédents, jamais d'une copie d'avant ; de

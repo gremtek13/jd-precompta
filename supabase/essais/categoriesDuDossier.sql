@@ -1,5 +1,5 @@
--- ESSAI DE LA GARDE DES CATÉGORIES DU DOSSIER (PC7, ligne 43 ; migration PRÉPARÉE
--- supabase/preparees/20261112151000_categories_du_dossier.sql). À rejouer après toute migration qui touche `categories`,
+-- ESSAI DE LA GARDE DES CATÉGORIES DU DOSSIER (PC7, ligne 43 ; migration en production depuis le
+-- 12/11/2026, supabase/schema/20261112134532_categories_du_dossier.sql). À rejouer après toute migration qui touche `categories`,
 -- ses policies, `regler_plan_du_dossier`, `compte_du_role`, `cle_validation`, `is_super_admin`, ou une table qui cite une
 -- catégorie (pièces, relevé, ventilations, caisse, règles, `dossiers.categorie_recettes_client`).
 --

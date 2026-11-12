@@ -366,7 +366,8 @@ function modeleDuDossier(
 // veulent dans le même état, et confrontent la copie à src/lib dans les deux. Baissée, la lecture du plan ignore les deux
 // rôles du change (bloc PLAN DU DOSSIER) et un règlement en engagement s'attend comme hier ; levée, celui qui solde une
 // facture porte son écart à part (`lignesEngagementAvecEcarts`). Déclarée ici, en tête du bloc que les gardes extraient.
-const ECARTS_DE_REGLEMENT_PREVUS = false
+// Levée le 12/11/2026, la migration en production : l'assistant se redéploie.
+const ECARTS_DE_REGLEMENT_PREVUS = true
 // La TVA déductible de la facture d'un BIEN immobilisé (ligne 19 de la CA3) — src/lib/comptes.ts.
 // La caisse du dossier (src/lib/comptes.ts, le rôle `caisse`) : la contrepartie d'un paiement de la pièce par la caisse
 // (étape C13, `ligneContrepartieCaisse`), et le compte que la consigne nomme pour une opération de caisse (étape C5).
