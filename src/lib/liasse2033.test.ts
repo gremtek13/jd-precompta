@@ -130,9 +130,11 @@ describe('2033-D, cadre I, depuis les provisions passées en paramètre', () => 
     expect(() => tableau2033D([{ ...LITIGE, debut: -1 }])).toThrow(/centimes entiers positifs/)
   })
 
-  it('au-delà de sept lignes au cadre C, la septième porte le reste', () => {
+  it('la première ligne du cadre C est imprimée (les congés à payer) ; au-delà des six lignes libres, la septième porte le reste', () => {
+    // LIA6 : la ligne 1 du formulaire 2026 porte « Indemnités pour congés à payer… » ; les provisions vont de 2 à 7.
     const huit = Array.from({ length: 8 }, (_, i): ProvisionDuReleve => ({ ...LITIGE, id: `p${i}`, libelle: `P${i}`, dotations: 100, fin: 100, dotationsNonDeductibles: 100 }))
-    expect(lire(tableau2033D(huit).cases, ['C6', 'C7', '780'])).toEqual([100, 200, 800])
+    expect(lire(tableau2033D(huit).cases, ['C1', 'C2', 'C6', 'C7', '780'])).toEqual([0, 100, 100, 300, 800])
+    expect(lire(tableau2033D([{ ...LITIGE, dotationsNonDeductibles: 700 }]).cases, ['C1', 'C2', '780'])).toEqual([0, 700, 700])
   })
 })
 

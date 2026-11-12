@@ -39,8 +39,9 @@ interface ItemTexte {
 }
 
 // Extrait d'une page ce dont la géométrie a besoin : les fragments de texte (qui portent les codes
-// de case) et les filets verticaux (qui délimitent les cases).
-async function lirePage(doc: pdfjsLib.PDFDocumentProxy, numero: number): Promise<PageFormulaire> {
+// de case) et les filets verticaux (qui délimitent les cases). Exportée pour la liasse 2033 (remplir2033.ts), qui lit ses
+// pages de la même façon.
+export async function lirePage(doc: pdfjsLib.PDFDocumentProxy, numero: number): Promise<PageFormulaire> {
   const page = await doc.getPage(numero)
 
   const fragments: FragmentTexte[] = (await page.getTextContent()).items

@@ -51785,3 +51785,19 @@ Légifrance ce jour : L232-10 a été réécrit par l'ordonnance n° 2025-229 du
 conception : la réserve légale s'impose aux formes 54 à 57, 5800 et aux commandites par actions (5308, 5309, 5370, 5385),
 pas à toute la famille 53 (la SCS et la SLP affectent librement, ce que le § 3.4 dit aussi) ; hors champ, la famille 51,
 les GIE, caisses, mutuelles et coopératives agricoles (61 à 64, 69). Huit mutations, toutes tuées.
+
+### 12/11/2026 — LIA6 : LE PDF DE LA LIASSE 2033 (LIGNE 37) (DERRIÈRE SON DRAPEAU)
+
+Agent architecte, lot LIA6 de la conception 37 (§ 3.3), sur le patron de la 2035, sans écran : `LIASSE_EXPORTEE` baissé
+(`lib/modeles2033.ts`), lu par personne. Le formulaire 2033-SD 2026 (cerfa 15948*08, `2033-sd_5394.pdf`, 219 975 octets,
+SHA-256 ce4c5190…b6cb vérifiée au téléchargement) est livré dans `public/formulaires/2033-sd-2026.pdf` ; son empreinte est
+écrite dans `MODELES_2033`, confrontée au fichier par `modeles2033.test.ts` et revérifiée par `remplir2033.ts` avant tout
+usage. Aucun champ de formulaire (zéro annotation sur sept pages) : `gabarit2033.ts` reprend la règle des deux filets de
+`gabarit2035.ts`, un jeu de codes PAR PAGE (310, 154 et 016 sont deux cases chacun ; « art. 217 octies » n'est pas la case
+217), le code accolé à son libellé (« TOTAL 490 ») et les sept lignes sans code du cadre C du 2033-D ; tous les codes des
+modules se placent, et un vrai PDF écrit par pdf-lib se relit dans ses cases. Relevé en remplissant : la ligne 1 du cadre C
+est imprimée (« Indemnités pour congés à payer… ») — `tableau2033D` mettait la première provision sur elle ; elle range
+désormais les provisions de 2 à 7. Ajouts à LIA1 : `tableau2033DALEuro`, `bilan2033AALEuro` (refusé sur un compte à
+classer ou un résultat en attente d'affectation), `liasseDepuisLia1`. Le cadre B du 2033-B, le 2033-D II à IV et les
+effectifs du 2033-E attendent LIA4 ; la 2065-SD et la 2031-SD ne sont pas faites. La conception (§ 3.1) est corrigée sur
+le formulaire : 210, 214, 218 et leurs « dont », les totaux du 2033-E, le fonds commercial en 206 et 207.
