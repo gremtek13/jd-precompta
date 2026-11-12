@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import {
   AVIS_JOUR_NON_OUVRE_IS, CALENDRIER_IS_EXPORTE, SANS_IMPOT_SUR_LES_SOCIETES, echeancesDeLImpotSurLesSocietes, estOuvre,
   jourDit, prochainesEcheances, prochainesEcheancesDuDossier, type EcheanceDeLImpot, type EntreesDesAcomptes,
@@ -51,25 +51,22 @@ describe('le BNC en trésorerie ne change pas d’un octet', () => {
     expect(CALENDRIER_IS_EXPORTE).toBe(false)
   })
 
-  it('rend, chaque jour, exactement le calendrier d’hier — drapeau baissé ou levé, sans IS ou à l’IR', () => {
+  // Le calcul lourd (chaque jour de quatre années, sous plusieurs profils) se paie UNE fois, avant les tests qui le lisent ;
+  // le crochet a son propre délai, comme celui de `changementDeRib.test.ts`, la suite entière le faisant attendre.
+  const ecartsDuCalendrier: string[] = []
+  const empreintesDesEcheanciers: string[] = []
+  let avisImpotsDits = 0
+  let empreinteDuCalendrier = ''
+  beforeAll(() => {
     const ir: ImpotDuDossier = { regime: 'par-exercice', exercices: [2024, 2025, 2026, 2027, 2028, 2029].map((annee) => ({ annee, imposition: 'ir' as const })) }
+    const cas = [[SANS_IMPOT_SUR_LES_SOCIETES, false], [SANS_IMPOT_SUR_LES_SOCIETES, true], [ir, true], [societe(exercice(2026)), false]] as const
     for (const jour of JOURS) {
       const hier = JSON.stringify(prochainesEcheances(jour))
-      for (const [impot, exporte] of [[SANS_IMPOT_SUR_LES_SOCIETES, false], [SANS_IMPOT_SUR_LES_SOCIETES, true], [ir, true], [societe(exercice(2026)), false]] as const) {
+      for (const [impot, exporte] of cas) {
         const c = prochainesEcheancesDuDossier(jour, impot, exporte)
-        expect(JSON.stringify(c.echeances), jour).toBe(hier)
-        expect(c.avis).toEqual([])
+        if (JSON.stringify(c.echeances) !== hier || c.avis.length > 0) ecartsDuCalendrier.push(`${jour} ${impot.regime} ${exporte}`)
       }
     }
-  })
-
-  it('le chemin par défaut est le drapeau baissé', () => {
-    expect(prochainesEcheancesDuDossier('2026-02-01', societe(exercice(2026)))).toEqual(prochainesEcheancesDuDossier('2026-02-01', societe(exercice(2026)), false))
-  })
-
-  // L'empreinte des échéanciers d'un BNC, calculée sur le code d'AVANT LIA8 (commit 99596a0) pour chaque jour de 2025 à 2028,
-  // sous quatre profils : le même texte, au caractère près, sort aujourd'hui.
-  it('« Mon échéancier » rend l’échéancier d’avant LIA8, à l’empreinte près', () => {
     const profils: { dossier: DossierDeLEcheancier | null; avecMontants: boolean }[] = [
       { dossier: { statut_tva: 'franchise', tva_periodicite: 'trimestrielle' }, avecMontants: false },
       { dossier: { statut_tva: 'redevable', tva_periodicite: 'mensuelle' }, avecMontants: true },
@@ -83,12 +80,29 @@ describe('le BNC en trésorerie ne change pas d’un octet', () => {
     for (const calendrierIsExporte of [false, true, undefined]) {
       const sortie = JOURS.flatMap((aujourdHui) => profils.map(({ dossier, avecMontants }) => {
         const r = composerEcheancier({ aujourdHui, dossier, cotisations, avecMontants, impot: SANS_IMPOT_SUR_LES_SOCIETES, calendrierIsExporte })
-        expect(r.avisImpot).toBeNull()
+        if (r.avisImpot !== null) avisImpotsDits += 1
         return { echeances: r.echeances, avisTva: r.avisTva }
       }))
-      expect(empreinte(sortie)).toBe(EMPREINTE_DES_ECHEANCIERS_AVANT_LIA8)
+      empreintesDesEcheanciers.push(empreinte(sortie))
     }
-    expect(empreinte(JOURS.map((j) => prochainesEcheances(j)))).toBe(EMPREINTE_DU_CALENDRIER_AVANT_LIA8)
+    empreinteDuCalendrier = empreinte(JOURS.map((j) => prochainesEcheances(j)))
+  }, 60_000)
+
+  it('rend, chaque jour, exactement le calendrier d’hier — drapeau baissé ou levé, sans IS ou à l’IR', () => {
+    expect(JOURS).toHaveLength(1_461)
+    expect(ecartsDuCalendrier).toEqual([])
+  })
+
+  it('le chemin par défaut est le drapeau baissé', () => {
+    expect(prochainesEcheancesDuDossier('2026-02-01', societe(exercice(2026)))).toEqual(prochainesEcheancesDuDossier('2026-02-01', societe(exercice(2026)), false))
+  })
+
+  // L'empreinte des échéanciers d'un BNC, calculée sur le code d'AVANT LIA8 (commit 99596a0) pour chaque jour de 2025 à 2028,
+  // sous quatre profils : le même texte, au caractère près, sort aujourd'hui — drapeau baissé, levé, ou par défaut.
+  it('« Mon échéancier » rend l’échéancier d’avant LIA8, à l’empreinte près', () => {
+    expect(empreintesDesEcheanciers).toEqual([EMPREINTE_DES_ECHEANCIERS_AVANT_LIA8, EMPREINTE_DES_ECHEANCIERS_AVANT_LIA8, EMPREINTE_DES_ECHEANCIERS_AVANT_LIA8])
+    expect(avisImpotsDits).toBe(0)
+    expect(empreinteDuCalendrier).toBe(EMPREINTE_DU_CALENDRIER_AVANT_LIA8)
   })
 })
 
