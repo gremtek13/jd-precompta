@@ -230,8 +230,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   non-UUID fait lever le cast pour tout le monde ; le seau `ventes` juge d'abord la FORME du chemin dans un `case`. Une
   suppression de fichier ne se teste pas en SQL : gardée par une lecture du catalogue (RGPD.md §8.6). La base ne
   vérifie pas encore que le chemin d'une LIGNE (`pieces.storage_path`, `documents_divers.storage_path`) commence par
-  son dossier, et le client en insère (CFCS-Q1) : tout lecteur qui télécharge avec les droits du cabinet le vérifie
-  lui-même (`cheminDuDossier`) → « LM6 ET INAL6 : LA RELECTURE DE SÉCURITÉ ».
+  son dossier, et le client en insère (CFCS-Q1) : tout lecteur qui télécharge ou retire avec les droits du cabinet le
+  vérifie lui-même (`lib/cheminDuDossier.ts`, dans `ouvrirApercu` et `retirerFichiers` ; ni barre oblique inversée, ni `%`,
+  ni segment `.`/`..`), gardé par le scanner `cheminsDuStockage.test.ts` ; la contrainte en base est préparée
+  (`chemin_dans_son_dossier`, par l'outil, zéro ligne fautive le 12/11/2026) → « LE CHEMIN D'UNE LIGNE VÉRIFIÉ PAR CHAQUE
+  LECTEUR DU CABINET », « CFCS-Q1 : LE CHEMIN D'UN FICHIER DANS SON DOSSIER, EN BASE ».
 - **Une table que le CLIENT écrit** liste ses droits un par un (`piece_commentaires`) ; une parole datée ne se réécrit
   pas (aucune policy `UPDATE`).
 - **Edge Functions auto-porteuses** : aucun import de `src/` ; une logique partagée est COPIÉE entre des bornes
@@ -494,8 +497,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   À PART, EN ENGAGEMENT (LIGNE 31) » ; restent les auxiliaires des
   à-nouveaux et des soldes reportés, l'affectation du résultat d'une société, la TVA des livraisons de biens, la liasse
   (2033 ou 2050), les exercices décalés — conçus le 12/11/2026 (`docs/conceptions/42-exercices-decales.md`, EXD-Q1 à
-  Q8 ; EXD1, `lib/exercices.ts`, en module : un BNC en trésorerie reste civil) → « LES EXERCICES DÉCALÉS : LA
-  CONCEPTION (LIGNE 42) ».
+  Q8 ; EXD1, `lib/exercices.ts`, en module : un BNC en trésorerie reste civil ; EXD2, la migration
+  `exercices_du_dossier`, préparée, à coller avec EXD3) → « LES EXERCICES DÉCALÉS : LA CONCEPTION (LIGNE 42) »,
+  « EXD2 : LES EXERCICES DU DOSSIER, EN BASE ».
 - **FEC** (lignes 26.5 et 26.6, étape (e) ; MVP-D5) : les vingt-deux champs d'un BNC en trésorerie et les montants en
   devise, CONÇUS le 31/10/2026 — quatre valeurs lues, jamais devinées, jamais un nom de patient ; six lots, FEC22a à
   FEC22f, dont une migration (FEC22b), préalable à toute validation d'un exercice en trésorerie ; six questions au
@@ -736,7 +740,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE », « UN ÉCART D'OUVERTURE RETIENT LA VALIDATION ». Conçus
   le 12/11/2026, hors BNC, chacun avec ses questions : l'inventaire (`docs/conceptions/35-inventaire.md`, INV1 en module,
   `lib/inventaire.ts`), la liasse, les stocks et l'IS (`37-liasse-2033.md` ; LIA1, LIA3 en module, LIA6 le PDF 2033-SD
-  derrière `LIASSE_EXPORTEE` baissé), l'affectation et l'approbation (`45-affectation-et-approbation.md`, AFF1 en module,
+  derrière `LIASSE_EXPORTEE` baissé, LIA8 les acomptes et le solde de l'IS au calendrier derrière `CALENDRIER_IS_EXPORTE`
+  baissé, la date légale gardée faute de texte qui la reporte, LIA8-Q1), l'affectation et l'approbation (`45-affectation-et-approbation.md`, AFF1 en module,
   `lib/affectationDuResultat.ts`) ; rien n'est à l'écran, et deux migrations sont préparées, à coller dans n'importe
   quel ordre avec MCB5g (INV2 `operations_d_inventaire`, LIA2 `stocks_de_cloture`) → « LES ÉCRITURES D'INVENTAIRE : LA
   CONCEPTION », « INV2 ET LIA2 : DEUX MIGRATIONS QUI SE COLLENT DANS LES DEUX ORDRES (LIGNES 35 ET 36) »,
