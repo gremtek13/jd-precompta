@@ -2,6 +2,8 @@ import { supabase } from './supabase'
 import { comptesDeBanqueDuDossier, planDuMouvement, type BanquesDuDossier } from './banqueDuMouvement'
 import { estContrepartieCaisse, ligneContrepartieBanque } from './ecritures'
 import { lignesReglementEngagement, type ModeleComptable } from './engagement'
+import { autresPaiementsDesReglements, reglementDuMouvementAvecEcart } from './ecartsDeReglement'
+import { ECARTS_DE_REGLEMENT_PREVUS } from './rolesDuChange'
 import { dateLocaleDe } from './format'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from './paiementParLaCaisse'
 import type { PlanComptable } from './planComptable'
@@ -97,7 +99,19 @@ export async function synchroniserContrepartieBanque(
     // immobilisé, que l'écriture générée porte déjà — le lire là évite de relire le registre ici, et un
     // règlement au 401 laisserait au 404 une dette payée.
     const immobilisation = existantes.some((e) => !e.ligne_bancaire_id && e.compte === plan.fournisseurs_immobilisations)
-    const reglement = lignesReglementEngagement(dossierId, piece, paiement, modele.compteNotesDeFrais, immobilisation, plan)
+    // LE DRAPEAU DU CHANGE LEVÉ (ligne 31, lib/ecartsDeReglement.ts), le règlement qui solde une facture porte son écart à
+    // part : il se juge sur le total des paiements de la pièce, que disent les banques de ses autres règlements, relues
+    // avec leur sens, leur montant et leur date. Drapeau baissé, rien de plus n'est lu : la requête d'hier, seule.
+    let reglement = lignesReglementEngagement(dossierId, piece, paiement, modele.compteNotesDeFrais, immobilisation, plan)
+    if (ECARTS_DE_REGLEMENT_PREVUS) {
+      const { data: banques, error: banquesError } = await supabase
+        .from('ecritures_brouillon')
+        .select('compte, ligne_bancaire_id, sens, montant, date')
+        .eq('piece_id', piece.id)
+      if (banquesError) throw banquesError
+      reglement = reglementDuMouvementAvecEcart(dossierId, piece, paiement,
+        autresPaiementsDesReglements(banques ?? [], comptesDeBanque, paiement.id), modele.compteNotesDeFrais, immobilisation, plan)
+    }
     if (reglement.length === 0) return
     const { error } = await supabase.from('ecritures_brouillon').insert(reglement)
     if (error) throw error

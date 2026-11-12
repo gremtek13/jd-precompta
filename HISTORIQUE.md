@@ -51617,3 +51617,22 @@ Relevé en concevant, sur le PCG consolidé au 1er janvier 2026 : `COMPTE_D_INVE
 supprimés en 2026 (4486, 4487, 4686, 4687, 4287, 4387) et ignore 4481, 4482 et 439 ; le 468 « Divers comptes créditeurs et
 charges à payer » est aussi celui du dirigeant non associé (PC4-Q2), d'où INV-Q2. Base lue le 12/11/2026 : quatre dossiers,
 tous en trésorerie, aucun rôle d'inventaire au catalogue.
+
+### 12/11/2026 — LE CHANGE ET LES FRAIS BANCAIRES À PART, EN ENGAGEMENT (LIGNE 31)
+
+(Agent architecte, 31-changeFrais ; rien d'appliqué, des SELECT en production : 200 migrations.) **Le défaut** : en
+engagement, le rapprochement réglait la pièce sur la banque (`reglerPieceSurBanque` : toujours en devise, sous min(2 %, 5 €)
+en euros), donc réécrivait la FACTURE, que le PCG fixe au cours du jour de l'opération (art. 420-5). **Drapeau levé**
+(`ECARTS_DE_REGLEMENT_PREVUS`, `lib/rolesDuChange.ts`, baissé) : une facture d'achat ou de vente garde son montant ; le
+règlement qui la SOLDE (le dernier paiement par le relevé, sur la somme signée de `paiementNet`) solde le 401, 404 ou 411
+au montant de la facture, l'écart à part dans la même écriture (`lib/ecartsDeReglement.ts`). Le signal lu est la DEVISE de
+la pièce : en devise, tout l'écart est de change, sans seuil (la règle du 23/09/2026) ; en euros, l'écart qui coûte sous le
+seuil va au 627, au-delà ou en faveur de l'entreprise il reste au tiers (CHG-Q2, CHG-Q3). Note de frais et pièce « autre »
+inchangées ; « à régénérer » compare les règlements ligne pour ligne à la composition ; la lecture du plan exige les deux
+rôles drapeau levé. **La base** : `ecarts_de_reglement` (préparée, rangs 340 et 350) ajoute `pertes_de_change` (656, 666 ;
+656000) et `gains_de_change` (756, 766 ; 756000) — le règlement ANC 2015-05 range au 656 et au 756 les écarts sur
+créances et dettes commerciales (CHG-Q1) ; aucune fonction ne change. **Preuves** (copie de la mère 17 rattrapée à 200
+migrations, port 55623) : `ecartsDeReglement.sql` EN ATTENTE sans elle, 5/5 avec, trois mutations sur quatre mordent (la
+quatrième refusée par la base) ; `rls.sql` entier, 165 invariants, 0 en faute ; 15 tests neufs, 1 322 tests des modules
+touchés verts ; `planComptable.sql` ne se rejoue pas tel quel sur cette copie (erreur JSON, avant comme après).
+

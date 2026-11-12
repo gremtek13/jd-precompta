@@ -59,6 +59,7 @@ import {
   envoisDuLot, justificatifPossible, motifPropose, normaliserPourRegle, planAffectationParRegles, refusMotif, sensDuMouvement, totauxParCategorie,
 } from '../../lib/reglesAffectation'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
+import { seRegleSansReecriture } from '../../lib/ecartsDeReglement'
 import { lirePiecesFigees, type LecturePiecesFigees } from '../../lib/piecesFigeesLecture'
 import { AUCUN_LETTRAGE_MANUEL, lireLettragesManuels, type LectureLettragesManuels } from '../../lib/lettragesLecture'
 import { etatsDesLettragesManuels, piecesLettreesALaMain } from '../../lib/lettrage'
@@ -888,6 +889,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // Un paiement par la caisse en est toujours un autre (étape C9a) : il n'a pas de mouvement.
     const autres = (paiements.get(piece.id) ?? []).filter((paiement) => paiement.origine === 'caisse' || paiement.id !== ligneId)
     if (rejetAccepte(piece, autres, montant)) return Promise.resolve(piece)
+    // EN ENGAGEMENT, le drapeau du change levé (ligne 31) : une facture garde son montant, et le règlement qui la solde
+    // écrit l'écart à part (lib/ecartsDeReglement.ts). Toujours faux en trésorerie.
+    if (seRegleSansReecriture(piece, modele.mode)) return Promise.resolve(piece)
     return reglerPieceSurBanque(piece, [...autres, { montant }])
   }
 
