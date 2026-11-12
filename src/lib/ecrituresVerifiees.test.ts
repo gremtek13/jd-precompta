@@ -186,6 +186,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'réponse illisible ou incomplète ne rendent AUCUN plan, et la page ne monte alors aucun onglet — donc ne compose ' +
       'aucune écriture —, la carte de la balance aucun à-nouveau, avec son motif',
   },
+  modeleDeLaReponse: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `modele_du_cabinet` LIT le modèle de plan du cabinet (ligne 43, PC5), '
+      + 'par `lib/modeleDuCabinetLecture.ts`. `lib/modeleDuCabinet.ts` lit la réponse par l’examen du plan '
+      + '(`planDeLaReponse`), son erreur comprise : un refus, une réponse illisible ou incomplète ne rendent AUCUN modèle, '
+      + 'et la carte comme « Nouveau dossier » le disent, sans geste ni application',
+  },
   lireLaReponseDuChangement: {
     nombre: 1,
     raison:

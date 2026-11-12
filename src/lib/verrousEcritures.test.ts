@@ -192,6 +192,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: '`ma_double_authentification` (C7, second temps) : la porte lit ce que la base exige du compte connecté, '
       + 'une fois par compte et par niveau ; rien n’est écrit.',
   },
+  'lib:lireLeModeleDuCabinet': {
+    nature: 'lecture',
+    raison: '`modele_du_cabinet` (ligne 43, PC5, `stable`) : le modèle de plan du cabinet, lu par sa carte, par « Nouveau dossier » '
+      + 'et par l’export d’un cabinet, derrière `MODELE_DU_CABINET_PREVU` ; rien n’est écrit (le réglage passe '
+      + '`reglerPuisRelireLeModele` sous le verrou de la carte, l’application `appliquerLeModeleAuDossier` sous celui de la création).',
+  },
   'lib:lireConnexionPlateforme': {
     nature: 'lecture',
     raison: 'Action « statut » de `plateforme-agreee` : elle ne lit que la base, sans appeler la plateforme.',

@@ -17,6 +17,9 @@ import { garderLesDossiersOuverts, lireLesAccesDuCompte } from '../lib/dossiersO
 import RibsAConfirmer from '../components/RibsAConfirmer'
 import { TITRE_MON_CABINET, separerLeDossierDuCabinet } from '../lib/dossierDuCabinet'
 import { lireLesDossiersDesCabinets } from '../lib/dossierDuCabinetLecture'
+import { MODELE_DU_CABINET_PREVU, modeleALaCreation, phraseDuModeleNonApplique, type LectureDuModele } from '../lib/modeleDuCabinet'
+import { appliquerLeModeleAuDossier, lireLeModeleDuCabinet } from '../lib/modeleDuCabinetLecture'
+import { messageErreur } from '../lib/messageErreur'
 
 interface DossierRow extends Dossier {
   nbAValider: number
@@ -493,6 +496,7 @@ export default function DossiersList() {
 }
 
 function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const { monCabinetId } = useAuth()
   const [nom, setNom] = useState('')
   const [siret, setSiret] = useState('')
   const [contactNom, setContactNom] = useState('')
@@ -513,6 +517,22 @@ function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreate
   // Le verrou se relâche dans le `finally` sans attendre la relecture de la liste : le formulaire se referme sur un succès, et la
   // liste relue (`onCreated`) est celle du tableau de bord derrière lui, pas la sienne.
   const creationEnCours = useRef(false)
+  // Le modèle de plan du cabinet (ligne 43, PC5), sous le drapeau de sa migration : lu à l'ouverture, pour DIRE avant le
+  // clic ce que « Créer » en fera — l'appliquer s'il règle au moins un rôle, sinon rien. Lu en partie ou refusé, le
+  // dossier se crée sans lui, et la fenêtre l'a dit ; tant qu'il n'est pas revenu, « Créer » attend.
+  const [modele, setModele] = useState<{ cabinetId: string; lecture: LectureDuModele } | null>(null)
+  const [modeleNonApplique, setModeleNonApplique] = useState<string | null>(null)
+  useEffect(() => {
+    if (!MODELE_DU_CABINET_PREVU || !monCabinetId) return
+    let annule = false
+    void lireLeModeleDuCabinet(monCabinetId).then((lu) => { if (!annule) setModele(lu) })
+    return () => { annule = true }
+  }, [monCabinetId])
+  const modeleLu = modele !== null && modele.cabinetId === monCabinetId ? modele.lecture : null
+  const modeleEnLecture = MODELE_DU_CABINET_PREVU && monCabinetId !== null && modeleLu === null
+  const aLaCreation = MODELE_DU_CABINET_PREVU
+    ? modeleALaCreation(monCabinetId ? modeleLu : { modele: null, motif: 'le cabinet du compte n’est pas connu' })
+    : null
 
   // Détection best-effort de la profession dès que le SIRET est complet (14 chiffres) — voir
   // lib/sirene.ts. Jamais bloquant : un échec laisse juste le champ vide, à compléter plus tard.
@@ -531,11 +551,38 @@ function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (creationEnCours.current) return
+    if (creationEnCours.current || modeleEnLecture || modeleNonApplique !== null) return
     creationEnCours.current = true
     setSaving(true)
     setError(null)
     try {
+      if (aLaCreation !== null) {
+        // Le dossier, puis le modèle : la base rend l'identifiant du dossier créé, et un refus du modèle laisse le
+        // dossier tel qu'il est (le plan de l'application), dit dans la fenêtre restée ouverte.
+        const { data, error } = await supabase.from('dossiers').insert({
+          nom,
+          siret: siret || null,
+          contact_nom: contactNom || null,
+          contact_email: contactEmail || null,
+          code_naf: codeNaf,
+          libelle_naf: libelleNaf,
+        }).select('id').single()
+        if (error || !data) {
+          setError(error ? messageErreur(error, 'Le dossier n’a pas pu être créé.') : 'Le dossier n’a pas pu être créé.')
+          return
+        }
+        if (aLaCreation.applique) {
+          const issue = await appliquerLeModeleAuDossier(data.id)
+          if (!issue.applique) {
+            setModeleNonApplique(phraseDuModeleNonApplique(issue.refus))
+            onCreated()
+            return
+          }
+        }
+        onCreated()
+        onClose()
+        return
+      }
       const { error } = await supabase.from('dossiers').insert({
         nom,
         siret: siret || null,
@@ -585,10 +632,15 @@ function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreate
               <input id="contactEmail" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
             </div>
           </div>
+          {aLaCreation && <p className="muted" style={{ fontSize: '0.85rem' }}>{aLaCreation.phrase}</p>}
           {error && <p className="error-text">{error}</p>}
+          {modeleNonApplique && <p className="error-text">{modeleNonApplique}</p>}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
-            <button type="button" className="btn btn-outline" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Création…' : 'Créer'}</button>
+            <button type="button" className="btn btn-outline" onClick={onClose}>{modeleNonApplique ? 'Fermer' : 'Annuler'}</button>
+            {!modeleNonApplique && (
+              <button type="submit" className="btn btn-primary"
+                disabled={saving || modeleEnLecture}>{saving ? 'Création…' : 'Créer'}</button>
+            )}
           </div>
         </form>
       </div>

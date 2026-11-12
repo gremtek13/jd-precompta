@@ -8,6 +8,8 @@ import { messageErreur } from '../lib/messageErreur'
 import { retirerFichiers } from '../lib/stockage'
 import { POLICES_CABINET } from '../lib/polices'
 import { extensionDuLogo, poids, preparerLogo, refusDUnLogo, TAILLE_MAX } from '../lib/bornesStockage'
+import { MODELE_DU_CABINET_PREVU } from '../lib/modeleDuCabinet'
+import ModeleDuCabinetCarte from './ModeleDuCabinetCarte'
 
 // Polices proposées, pas de champ libre : chacune est servie par l'application elle-même
 // (lib/polices.ts), donc un nom hors de la liste ne se chargerait pas. La police par défaut est
@@ -261,6 +263,11 @@ export default function CabinetBrandingPage() {
           </button>
         </form>
       </div>
+
+      {/* Le modèle de plan du cabinet (ligne 43, PC5), sous le drapeau de sa migration ; la page n'est montée que pour le chef. */}
+      {MODELE_DU_CABINET_PREVU && monCabinetId && (
+        <div style={{ marginTop: 20 }}><ModeleDuCabinetCarte cabinetId={monCabinetId} /></div>
+      )}
     </>
   )
 }
