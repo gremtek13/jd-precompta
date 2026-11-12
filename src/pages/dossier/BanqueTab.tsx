@@ -59,7 +59,7 @@ import {
   envoisDuLot, justificatifPossible, motifPropose, normaliserPourRegle, planAffectationParRegles, refusMotif, sensDuMouvement, totauxParCategorie,
 } from '../../lib/reglesAffectation'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
-import { seRegleSansReecriture } from '../../lib/ecartsDeReglement'
+import { sansLesEcartsDeChange, seRegleSansReecriture } from '../../lib/ecartsDeReglement'
 import { lirePiecesFigees, type LecturePiecesFigees } from '../../lib/piecesFigeesLecture'
 import { AUCUN_LETTRAGE_MANUEL, lireLettragesManuels, type LectureLettragesManuels } from '../../lib/lettragesLecture'
 import { etatsDesLettragesManuels, piecesLettreesALaMain } from '../../lib/lettrage'
@@ -1488,8 +1488,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     [pieces, paiements, modele.mode, lignesIncompletes, reglementsIncomplets, paiementsDeLaCaisseIncomplets],
   )
   const payeesEnTrop = useMemo(
-    () => new Map(piecesPayeesEnTrop(pieces, paiements).map((x) => [x.piece.id, x.enTrop])),
-    [pieces, paiements],
+    () => new Map(sansLesEcartsDeChange(piecesPayeesEnTrop(pieces, paiements), modele.mode).map((x) => [x.piece.id, x.enTrop])),
+    [pieces, paiements, modele.mode],
   )
   // CE QU'UN SECOND PAIEMENT PEUT ENCORE RÉGLER, DANS LES DEUX MODÈLES (lib/controles.ts) : la fiche d'un mouvement
   // propose au choix une pièce payée en partie pour son reste, et une règle d'affectation n'affecte pas en lot le

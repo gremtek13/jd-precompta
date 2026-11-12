@@ -51636,3 +51636,13 @@ migrations, port 55623) : `ecartsDeReglement.sql` EN ATTENTE sans elle, 5/5 avec
 quatrième refusée par la base) ; `rls.sql` entier, 165 invariants, 0 en faute ; 15 tests neufs, 1 322 tests des modules
 touchés verts ; `planComptable.sql` ne se rejoue pas tel quel sur cette copie (erreur JSON, avant comme après).
 
+**La suite, avant la levée** (12/11/2026, agent architecte, rien en production). `planComptable.sql` : l'erreur JSON
+venait de la façon de le jouer (psql sans `-1` : `set_config(…, true)` meurt avec la transaction du bloc), pas de l'essai,
+qui le dit en tête ; il compte deux rôles de plus et épingle quatre empreintes avec le change (`ecartsDeReglement.test.ts`
+les recalcule) — 59/59 justes avec et sans la migration, avec et sans le personnel simulé, quatre mutations mordent ;
+`reglerLePlanDuDossier.sql` 106/106 des deux côtés. L'assistant suit la composition et la lecture du plan derrière sa
+constante `ECARTS_DE_REGLEMENT_PREVUS` (lit `devise`), ses gardes confrontant les deux états. Le 656, le 756, le 666 et le
+766 prennent l'intitulé du PCG dans la balance et le FEC, levé seulement ; les comptes de rôle d'un plan décalé n'y prennent
+pas le libellé du plan (constat, comme hier). Faux levé et corrigé : une facture en devise que le change seul fait payer plus
+se disait « payée en trop » en erreur et retenait la validation (`sansLesEcartsDeChange`, 5 %) ; la copie de l'assistant
+(`points_a_traiter`) le dit encore.

@@ -45,6 +45,7 @@ import {
   type FacturePourJumelle, type TransmissionPourJumelle,
 } from './ventesJumelles'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
+import { sansLesEcartsDeChange } from './ecartsDeReglement'
 import type { DossierTab } from './ongletsDossier'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, type ExerciceAReclamer } from './resteAEnvoyer'
 import type { LectureDesVentesDuReleve } from './mouvementsDesVentes'
@@ -543,7 +544,9 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const reglementsFaux = reglementsPartiels ? [] : [...new Set(reglementsGroupesIncoherents(lignes, reglements).map((r) => r.ligne.id))]
   // Ni l'exemplaire d'une facture source (étape VF6e) : il ne se règle pas, sa facture s'encaisse (G4 refuse son
   // rapprochement, la part d'un virement groupé et son écriture).
-  const payeesEnTrop = piecesPayeesEnTrop(validesQuiComptent, paiements)
+  // Le drapeau du change levé, ni la facture en devise que le change seul fait payer plus (lib/ecartsDeReglement.ts) : son
+  // écart va au 656 ou au 756, elle garde le montant du jour de la facture.
+  const payeesEnTrop = sansLesEcartsDeChange(piecesPayeesEnTrop(validesQuiComptent, paiements), modele.mode)
   const lettragesQuiNeTiennentPlus = etatsLettrages.filter((e) => e.motif !== null)
   // `piecesValidees` et non `pieces` : ce contrôle ne vise que les pièces VALIDÉES, et son libellé le
   // dit. L'état s'appelait `pieces` quand ce point a été écrit, alors qu'il ne portait déjà que les

@@ -11,7 +11,7 @@ vi.mock('./rolesDuChange', async (original) => ({
 }))
 
 import {
-  autresPaiementsDesReglements, ecartDuReglement, lignesEngagementAvecEcarts, reglementDuMouvementAvecEcart,
+  autresPaiementsDesReglements, sansLesEcartsDeChange, ecartDuReglement, lignesEngagementAvecEcarts, reglementDuMouvementAvecEcart,
   seRegleSansReecriture,
 } from './ecartsDeReglement'
 import { lignesEngagementPourPiece } from './engagement'
@@ -261,5 +261,29 @@ describe('le libellé des comptes du change', () => {
     expect(libellesDeLaBalance()['656000']).toBe(PERTES)
     // Le libellé du catalogue, celui que la migration insère : un seul texte.
     expect(ROLES_DU_CHANGE.map((r) => libelleCompteTenu(r.compteDefaut))).toEqual(ROLES_DU_CHANGE.map((r) => r.libelleDefaut))
+  })
+})
+
+// LA CHECKLIST, LES PRÉALABLES ET BANQUE (« pièce payée plus que son montant ») : le drapeau levé, une facture en devise
+// d'un dossier en engagement garde son montant, et l'excédent que le change explique n'est pas un paiement en double.
+describe('sansLesEcartsDeChange — la pièce « payée en trop » que le change explique', () => {
+  const enTrop = (o: Partial<Piece>, montant: number) => ({ piece: piece(o), paye: 0, enTrop: montant })
+  const liste = [
+    enTrop({ id: 'usd', devise: 'USD', montant_ttc: 120 }, 5),
+    enTrop({ id: 'usd-double', devise: 'USD', montant_ttc: 120 }, 120),
+    enTrop({ id: 'eur', montant_ttc: 120 }, 5),
+    enTrop({ id: 'note', devise: 'USD', type_piece: 'note_frais', montant_ttc: 120 }, 5),
+  ]
+  it('drapeau baissé : la liste telle quelle, dans les deux modèles', () => {
+    expect(sansLesEcartsDeChange(liste, 'engagement')).toEqual(liste)
+    expect(sansLesEcartsDeChange(liste, 'tresorerie')).toEqual(liste)
+  })
+  it('drapeau levé : en engagement, la facture en devise sous 5 % se retire ; le double, l’euro, la note restent ; la trésorerie ne change pas', () => {
+    etat.leve = true
+    expect(sansLesEcartsDeChange(liste, 'engagement').map((x) => x.piece.id)).toEqual(['usd-double', 'eur', 'note'])
+    expect(sansLesEcartsDeChange([enTrop({ id: 'borne', devise: 'USD', montant_ttc: 120 }, 6)], 'engagement')).toHaveLength(0)
+    expect(sansLesEcartsDeChange([enTrop({ id: 'borne', devise: 'USD', montant_ttc: 120 }, 6.01)], 'engagement')).toHaveLength(1)
+    expect(sansLesEcartsDeChange([enTrop({ id: 'borne', devise: 'USD', montant_ttc: 120 }, 5.99)], 'engagement')).toHaveLength(0)
+    expect(sansLesEcartsDeChange(liste, 'tresorerie')).toEqual(liste)
   })
 })

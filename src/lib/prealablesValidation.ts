@@ -31,6 +31,7 @@ import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees }
 import { acquisitionsDesBiens, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut } from './amortissements'
 import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
+import { sansLesEcartsDeChange } from './ecartsDeReglement'
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces, type PartEncaissee } from './rattachement'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisse } from './paiementParLaCaisse'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from './correctionDuPaiement'
@@ -1204,7 +1205,8 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // Ni l'exemplaire d'une facture source (étape VF6e) : il ne se règle pas, sa facture s'encaisse.
   bloque({
     id: 'pieces-payees-en-trop', cible: 'banque',
-    nb: piecesPayeesEnTrop(validesQuiComptent, paiements).filter((p) => pieceDeLExercice(p.piece)).length,
+    // Le drapeau du change levé, ni la facture en devise que le change seul fait payer plus (lib/ecartsDeReglement.ts).
+    nb: sansLesEcartsDeChange(piecesPayeesEnTrop(validesQuiComptent, paiements), d.modele.mode).filter((p) => pieceDeLExercice(p.piece)).length,
     message: "pièce(s) payée(s) plus que leur montant — un paiement en double ? Annuler le paiement en trop.",
   })
   // Jugé sur le TOTAL payé de chaque pièce, jamais mouvement par mouvement (lib/controles.ts) : une facture réglée

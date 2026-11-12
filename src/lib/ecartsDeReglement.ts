@@ -1,5 +1,5 @@
 import { paiementNet, seuilAlignement } from './alignementBanque'
-import { DEVISE_PIVOT } from './devises'
+import { DEVISE_PIVOT, ECART_CHANGE_TOLERE } from './devises'
 import { compteDeTiers, lignesEngagementPourPiece, lignesReglementEngagement } from './engagement'
 import { ECARTS_DE_REGLEMENT_PREVUS } from './rolesDuChange'
 import type { BanquesDuDossier } from './banqueDuMouvement'
@@ -161,4 +161,20 @@ export function autresPaiementsDesReglements(
     && (l.sens === 'debit' || l.sens === 'credit') && typeof l.montant === 'number' && typeof l.date === 'string'
     ? [{ id: l.ligne_bancaire_id, date: l.date, montant: l.sens === 'debit' ? l.montant : -l.montant }]
     : []))
+}
+
+/**
+ * LA PIÈCE « PAYÉE EN TROP » QUE LE CHANGE EXPLIQUE (Checklist, préalables de la validation, Banque). Hier, le rapprochement
+ * réalignait une pièce en devise sur son débit réel : payée une fois, elle ne l'était jamais plus que son montant. Le
+ * drapeau levé, une facture en engagement garde le montant du jour de la facture (PCG, art. 420-5) et l'écart de change
+ * s'écrit au 656 ou au 756 : la dire « payée plus que son montant — un paiement en double ? », en erreur, retiendrait la
+ * validation d'un exercice juste. Elle se retire donc tant que l'excédent tient dans l'écart de change vraisemblable
+ * (`ECART_CHANGE_TOLERE`, 5 %) ; au-delà — un vrai paiement en double —, elle reste dite. Baissé, en trésorerie, pour une
+ * pièce en euros ou une note de frais : la liste telle quelle.
+ */
+export function sansLesEcartsDeChange<T extends { piece: Pick<Piece, 'type_piece' | 'devise' | 'montant_ttc'>; enTrop: number }>(
+  liste: readonly T[], mode: ModeComptable,
+): T[] {
+  return liste.filter(({ piece, enTrop }) => !(seRegleSansReecriture(piece, mode) && piece.devise && piece.devise !== DEVISE_PIVOT
+    && piece.montant_ttc != null && Math.round(enTrop * 100) <= Math.round(Math.abs(piece.montant_ttc) * ECART_CHANGE_TOLERE * 100)))
 }
