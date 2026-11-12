@@ -66,8 +66,12 @@ describe('le plan prévu, inventaire compris', () => {
 
   it('ses relations sont les clés étrangères de la migration, à leur action ; la colonne du brouillon sans action', () => {
     const siennes = RELATIONS_PREVUES.filter((r) => r.enfant === 'operations_inventaire').map((r) => `${r.colonne} → ${r.parent} (${r.aLaSuppression})`).sort()
-    expect(siennes).toEqual(clesDeLaTable())
-    expect(siennes).toEqual(['dossier_id → dossiers (cascade)', 'piece_citee_id → pieces (bloque)'])
+    // INV4 (`provisions`) ajoute à la table la provision qu'une évaluation cite, sans action.
+    const provisions = readFileSync(dossier + readdirSync(dossier).find((n) => /^\d{14}_provisions\.sql$/.test(n))!, 'utf8')
+    const ajoutees = [...provisions.matchAll(/alter table public\.operations_inventaire add column ([a-z_]+) uuid\n\s+constraint \w+ references public\.([a-z_]+)\(id\);/gi)]
+      .map(([, colonne, parent]) => `${colonne} → ${parent} (bloque)`)
+    expect(siennes).toEqual([...clesDeLaTable(), ...ajoutees].sort())
+    expect(siennes).toEqual(['dossier_id → dossiers (cascade)', 'piece_citee_id → pieces (bloque)', 'provision_id → provisions (bloque)'])
     expect(MIGRATION).toMatch(/alter table public\.ecritures_brouillon add column operation_inventaire_id uuid\n\s+constraint ecritures_brouillon_operation_inventaire_id_fkey references public\.operations_inventaire\(id\);/i)
     expect(RELATIONS_PREVUES.filter((r) => r.enfant === 'ecritures_brouillon' && r.colonne === 'operation_inventaire_id'))
       .toEqual([{ enfant: 'ecritures_brouillon', parent: 'operations_inventaire', colonne: 'operation_inventaire_id', aLaSuppression: 'bloque' }])
@@ -78,6 +82,8 @@ describe('le plan prévu, inventaire compris', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(rang('pieces')).toBeLessThan(rang('operations_inventaire'))
     expect(rang('operations_inventaire')).toBeLessThan(rang('ecritures_brouillon'))
+    expect(rang('factures_emises')).toBeLessThan(rang('provisions'))
+    expect(rang('provisions')).toBeLessThan(rang('operations_inventaire'))
     expect(rang('operations_inventaire')).toBeLessThan(rang('exercices_valides'))
     expect(violationsOrdre(ORDRE_RESTAURATION_PREVU, [...RELATIONS_PREVUES, ...LIENS_GARDES])).toEqual([])
     expect(tablesSansChemin(ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS)).toEqual([])

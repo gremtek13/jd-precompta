@@ -1018,6 +1018,24 @@ begin
   end if;
 end $$;
 
+-- ══ Les provisions (ligne 35, INV4) ══ Au plan du code quand `INVENTAIRE_PREVU` est levé — sa migration suit celle des
+-- opérations d'inventaire : le script met sa table juste après `notes_internes`, DEVANT les opérations d'inventaire que le bloc
+-- précédent y a mises (une évaluation cite sa provision), après les pièces et les factures qu'elle cite ; les tables qui
+-- suivent reculent d'un rang ; son chemin. Aucune vague. Absente de la base, rien n'entre. restaurationEssai.test.ts confronte
+-- ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.provisions') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'notes_internes';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'provisions');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('provisions','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les exercices déclarés (ligne 42, EXD2) ══ Au plan du code quand `EXERCICES_DECALES_PREVUS` est levé — c'est-à-dire
 -- quand sa migration est en base : le script met sa table juste après `dossiers`, avant tout ce qui porte une date, les rangs
 -- qui suivent reculant d'un ; son chemin. Aucune vague. Joué après tous les autres blocs (ceux des stocks et de

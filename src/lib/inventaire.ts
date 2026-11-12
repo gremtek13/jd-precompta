@@ -551,17 +551,22 @@ export function prorataApresLaCloture(saisie: SaisieDuProrata, methode: MethodeD
 // figé (`valide`) quand il est au plus l'année de la frontière de la validation, et le premier exercice, l'année des
 // premiers à-nouveaux du dossier.
 
-/** La migration est-elle en base ? Baissé tant qu'elle n'est que préparée : aucun écran n'appelle ses fonctions, et sa table
- *  reste hors du plan de sauvegarde (sauvegarde.ts, `auPlanDeLInventaire`). */
+/** Les migrations sont-elles en base — `operations_d_inventaire` (INV2) et `provisions` (INV4), qui la suit ? Baissé tant
+ *  qu'elles ne sont que préparées : aucun écran n'appelle leurs fonctions, et leurs tables restent hors du plan de sauvegarde
+ *  (sauvegarde.ts, `auPlanDeLInventaire`). */
 export const INVENTAIRE_PREVU: boolean = false
 
-/** La table de la migration. */
-export const TABLES_DE_L_INVENTAIRE = ['operations_inventaire'] as const
+/** La table des provisions (INV4), sous le même drapeau : restaurée AVANT les opérations d'inventaire, dont les évaluations
+ *  la citent (`provision_id`). */
+export const TABLES_DES_PROVISIONS = ['provisions'] as const
+
+/** Les tables des deux migrations, dans l'ordre de leur restauration. */
+export const TABLES_DE_L_INVENTAIRE = [...TABLES_DES_PROVISIONS, 'operations_inventaire'] as const
 
 /** Les six rôles des régularisations que la migration insère au catalogue (§ 4.4), rangs 360 à 410, leur libellé au plan
  *  comptable général. Ils n'entrent dans `ROLES_COMPTABLES` (lib/planComptable.ts) qu'avec l'écran (INV5) : la base les
  *  porte, la lecture du plan ignore sans conséquence un rôle qu'elle ne connaît pas (`planDeLaReponse`). Les six des
- *  provisions viendront avec INV4. */
+ *  provisions : `ROLES_DES_PROVISIONS` (INV4). */
 export const ROLES_DES_REGULARISATIONS: readonly DefinitionRoleComptable[] = [
   { role: 'charges_constatees_avance', racines: ['486'], compteDefaut: '486000', libelleDefaut: "Charges constatées d'avance", prefixeAuxiliaireDefaut: null, ordre: 360 },
   { role: 'produits_constates_avance', racines: ['487'], compteDefaut: '487000', libelleDefaut: "Produits constatés d'avance", prefixeAuxiliaireDefaut: null, ordre: 370 },
@@ -569,4 +574,17 @@ export const ROLES_DES_REGULARISATIONS: readonly DefinitionRoleComptable[] = [
   { role: 'factures_a_etablir', racines: ['418'], compteDefaut: '418100', libelleDefaut: 'Clients - Factures à établir', prefixeAuxiliaireDefaut: null, ordre: 390 },
   { role: 'tva_factures_non_parvenues', racines: ['44586'], compteDefaut: '445860', libelleDefaut: "Taxes sur le chiffre d'affaires sur factures non parvenues", prefixeAuxiliaireDefaut: null, ordre: 400 },
   { role: 'tva_factures_a_etablir', racines: ['44587'], compteDefaut: '445870', libelleDefaut: "Taxes sur le chiffre d'affaires sur factures à établir", prefixeAuxiliaireDefaut: null, ordre: 410 },
+]
+
+/** Les six rôles des provisions que la migration `provisions` (INV4) insère au catalogue (§ 4.4), rangs 420 à 470, leur
+ *  libellé au plan comptable général — le 151100 sous le 1511, « Provisions pour litiges ». Comme ceux des régularisations,
+ *  ils n'entrent dans `ROLES_COMPTABLES` qu'avec l'écran (INV5). Seuls ceux des dotations et des reprises se lisent pour
+ *  écrire une évaluation : le compte d'une provision est le sien, sous la racine de son genre. */
+export const ROLES_DES_PROVISIONS: readonly DefinitionRoleComptable[] = [
+  { role: 'provisions_risques', racines: ['151'], compteDefaut: '151100', libelleDefaut: 'Provisions pour litiges', prefixeAuxiliaireDefaut: null, ordre: 420 },
+  { role: 'depreciation_clients', racines: ['491'], compteDefaut: '491000', libelleDefaut: 'Dépréciations des comptes de clients', prefixeAuxiliaireDefaut: null, ordre: 430 },
+  { role: 'dotations_provisions_exploitation', racines: ['6815'], compteDefaut: '681500', libelleDefaut: "Dotations aux provisions d'exploitation", prefixeAuxiliaireDefaut: null, ordre: 440 },
+  { role: 'dotations_depreciations_actif_circulant', racines: ['6817'], compteDefaut: '681700', libelleDefaut: 'Dotations aux dépréciations des actifs circulants', prefixeAuxiliaireDefaut: null, ordre: 450 },
+  { role: 'reprises_provisions_exploitation', racines: ['7815'], compteDefaut: '781500', libelleDefaut: "Reprises sur provisions d'exploitation", prefixeAuxiliaireDefaut: null, ordre: 460 },
+  { role: 'reprises_depreciations_actif_circulant', racines: ['7817'], compteDefaut: '781700', libelleDefaut: 'Reprises sur dépréciations des actifs circulants', prefixeAuxiliaireDefaut: null, ordre: 470 },
 ]

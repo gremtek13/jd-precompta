@@ -308,11 +308,15 @@ describe('les essais de la base, rejoués en production', () => {
     // Le vingt-neuvième, cheminsDansLeurDossier, le 12/11/2026 (CFCS-Q1, migration `chemin_dans_son_dossier`) : il insère
     // des pièces et des documents sous des chemins fautifs, qu'il annule. Ses trois contraintes se relisent au catalogue
     // partout (signature.sql, famille des contraintes).
+    // Le trentième, provisions, le 12/11/2026 (INV4, migration `provisions`) : il écrit des à-nouveaux et un exercice validé,
+    // supprime un dossier et mute des fonctions et une policy. Son catalogue et ses profils se rejouent partout : le bloc PV
+    // de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'exercicesDuDossier (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
+      'provisions (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
       'situationsPublieesMutations (une méta-commande de psql)', 'stocks (son en-tête)', 'traceDesDroitsSuppression (son en-tête)',
     ])

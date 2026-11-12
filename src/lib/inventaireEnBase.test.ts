@@ -126,11 +126,15 @@ describe('les deux fonctions et les gardes, sous les règles de la base', () => 
     const colonnes: Record<keyof OperationInventaire, true> = {
       id: true, dossier_id: true, exercice: true, nature: true, compte_resultat: true, compte_regularisation: true,
       montant_centimes: true, tva_centimes: true, periode_debut: true, periode_fin: true, objet: true, piece_citee_id: true,
-      version: true, cree_par: true, cree_le: true, modifie_par: true, modifie_le: true,
+      version: true, cree_par: true, cree_le: true, modifie_par: true, modifie_le: true, provision_id: true,
     }
     const table = /create table public\.operations_inventaire \(([\s\S]*?)\n\);/i.exec(MIGRATION)![1]
     const enBase = [...table.matchAll(/^ {2}([a-z_]+) (?:uuid|integer|text|bigint|date|timestamptz)\b/gm)].map((x) => x[1])
-    expect(enBase.sort()).toEqual(Object.keys(colonnes).sort())
+    // La colonne qu'INV4 (`provisions`) ajoute à la table : l'évaluation d'une provision.
+    const ajoutees = [...lire('supabase/preparees/20261112230000_provisions.sql')
+      .matchAll(/alter table public\.operations_inventaire add column ([a-z_]+) (?:uuid|integer|text|bigint)\b/g)].map((x) => x[1])
+    expect(ajoutees).toEqual(['provision_id'])
+    expect([...enBase, ...ajoutees].sort()).toEqual(Object.keys(colonnes).sort())
   })
 
   it('le retour défait tout ce que la migration pose', () => {
