@@ -16,6 +16,7 @@ import { AnneeProvider } from '../context/AnneeContext'
 import { ExercicesValidesProvider } from '../context/ExercicesValidesContext'
 import Layout from '../components/Layout'
 import CabinetBrandingPage from './CabinetBrandingPage'
+import ModeleDuCabinetCarte from './ModeleDuCabinetCarte'
 import ClientHome from './ClientHome'
 import ClientInformations from './ClientInformations'
 import ClientSimulation from './ClientSimulation'
@@ -355,6 +356,8 @@ const ECRANS: Ecran[] = [
   { nom: 'SuperAdminPage', fichier: 'pages/SuperAdminPage.tsx', rendre: () => <MemoryRouter><SuperAdminPage /></MemoryRouter> },
   { nom: 'EquipePage', fichier: 'pages/EquipePage.tsx', rendre: () => <MemoryRouter><EquipePage /></MemoryRouter> },
   { nom: 'CabinetBrandingPage', fichier: 'pages/CabinetBrandingPage.tsx', rendre: () => <MemoryRouter><CabinetBrandingPage /></MemoryRouter> },
+  // Le modèle de plan du cabinet (PC5) : le modèle et les catégories communes lus en entier avant tout champ, donc tout geste.
+  { nom: 'ModeleDuCabinetCarte', fichier: 'pages/ModeleDuCabinetCarte.tsx', rendre: () => <MemoryRouter><ModeleDuCabinetCarte cabinetId="c1" /></MemoryRouter> },
   { nom: 'RetourBanque', fichier: 'pages/RetourBanque.tsx', rendre: () => (
     <MemoryRouter initialEntries={['/retour-banque?code=code-fictif&state=etat-fictif']}><RetourBanque /></MemoryRouter>
   ) },
@@ -1081,11 +1084,14 @@ const LECTURES_PAR_FONCTION = new Set([
 // `DEPOT_DES_HONORAIRES_PREVU` : des lectures (`stable`), qui n'écrivent rien.
 // Et les pièces qu'une facture reprise cite, que « Ma simulation » lit (`pieces_citees_de_la_simulation`, A8Q5-Q2, migration
 // `reprises_au_client`, en base depuis le 11/11/2026) : une lecture (`stable`), qui n'écrit rien.
+// Et le modèle de plan du cabinet (`modele_du_cabinet`, ligne 43, PC5), que sa carte et « Nouveau dossier » lisent, derrière
+// `MODELE_DU_CABINET_PREVU` : une lecture (`stable`), qui n'écrit rien.
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
   'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
   'rpc:ventes_facturees_de_la_simulation', 'rpc:admin_du_dossier', 'rpc:caisse_du_client',
   'rpc:depots_des_honoraires', 'rpc:honoraires_deposes_au_dossier', 'rpc:pieces_citees_de_la_simulation',
+  'rpc:modele_du_cabinet',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.

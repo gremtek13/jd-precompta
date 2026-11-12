@@ -3,6 +3,8 @@ import { supabase } from './supabase'
 import { aujourdHuiSql, nomUnique, slugify } from './format'
 import { remplirZipDossier } from './packGenerator'
 import { lireTout } from './lectureComplete'
+import { MODELE_DU_CABINET_PREVU, csvDuModele } from './modeleDuCabinet'
+import { lireLeModeleDuCabinet } from './modeleDuCabinetLecture'
 
 function telechargerBlob(nomFichier: string, blob: Blob) {
   const url = URL.createObjectURL(blob)
@@ -48,6 +50,15 @@ export async function genererExportCabinet(
   const dossiers = lectureDossiers.lignes
 
   const zip = new JSZip()
+  // Le modèle de plan du cabinet (ligne 43, PC5 ; conception, § 3.10 : « L'export d'un cabinet porte son modèle »), sous
+  // le drapeau de sa migration : lu en entier, ou l'export s'annule — comme la liste des dossiers.
+  if (MODELE_DU_CABINET_PREVU) {
+    const { lecture } = await lireLeModeleDuCabinet(cabinetId)
+    if (lecture.modele === null) {
+      throw new Error(`Le modèle de plan du cabinet n'a pas pu être lu (${lecture.motif}). L'export est annulé : une archive amputée est indiscernable d'une archive complète.`)
+    }
+    zip.file('Modele_de_plan_du_cabinet.csv', csvDuModele(lecture))
+  }
   const periodeDebut = '2000-01-01'
   // Calendrier civil et non UTC : un export lancé peu après minuit s'arrêterait sinon la veille,
   // excluant les pièces du jour et datant le fichier d'hier.

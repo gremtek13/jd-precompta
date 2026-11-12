@@ -168,6 +168,13 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
       + 'pour `regler_plan_du_dossier` ne porte que les rôles qui s’en écartent, et les refus 9 et 10 de la fonction, qu’elle '
       + 'redit avant le clic, exceptent le compte du catalogue d’un rôle du bilan ou des indemnités kilométriques.',
   },
+  'src/lib/modeleDuCabinet.ts': {
+    nombre: 6,
+    raison: 'LE MODÈLE DE PLAN DU CABINET (PC5) se mesure au DÉFAUT du catalogue, sans jamais l’écrire dans un dossier : il '
+      + 'n’envoie à `regler_modele_du_cabinet` que les rôles qui s’en écartent, redit avant le clic les refus de la fonction '
+      + '(le modèle effectif, un rôle absent valant son défaut ; les refus 9 et 10 exceptant le compte du catalogue), et nomme '
+      + 'dans la confirmation le défaut auquel revient un rôle retiré du modèle.',
+  },
   'src/lib/planDepuisLaBalanceVue.ts': {
     nombre: 1,
     raison: 'LA CARTE DE LA REPRISE QUI PROPOSE LE PLAN (PC6) dit ce que le réglage change : un rôle absent du plan envoyé '

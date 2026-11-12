@@ -31,6 +31,7 @@ import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { ADRESSES_DES_ACCES_RETIRES_PREVUES, TABLES_DES_ADRESSES_DES_ACCES_RETIRES } from './adressesDesAccesRetires'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { SAISIES_2035E_PREVUES, TABLES_DES_SAISIES_2035E } from './saisies2035E'
+import { MODELE_DU_CABINET_PREVU, TABLES_DU_MODELE_DU_CABINET } from './modeleDuCabinet'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
@@ -429,6 +430,19 @@ export function auPlanDesSaisies2035E(table: string, prevues: boolean): boolean 
   return prevues || !(TABLES_DES_SAISIES_2035E as readonly string[]).includes(table)
 }
 
+// LE MODÈLE DE PLAN DU CABINET (ligne 43, étape PC5 ; migration `modele_de_plan_du_cabinet`, PRÉPARÉE le 12/11/2026) : une
+// table de NIVEAU CABINET — elle décrit le cabinet, pas un dossier —, hors de l'export d'un dossier ; l'export d'un cabinet
+// la porte (lib/exportCabinet.ts). Sous le drapeau de la migration (`MODELE_DU_CABINET_PREVU`, src/lib/modeleDuCabinet.ts),
+// baissé : la production n'a pas la table. Ses relations (le cabinet en cascade, le rôle du catalogue sans action) ; son
+// rang, juste après le catalogue des rôles (ses deux parents le précèdent), avant les équipes ; sa clé (cabinet, rôle) ;
+// aucune vague.
+// sauvegardeModeleDuCabinet.test.ts éprouve le plan prévu et le plan du jour.
+
+/** Une table au plan, côté modèle de plan du cabinet : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDuModeleDuCabinet(table: string, prevu: boolean): boolean {
+  return prevu || !(TABLES_DU_MODELE_DU_CABINET as readonly string[]).includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -456,6 +470,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesAchatsDuClient(table, ACHATS_DU_CLIENT_PREVUS)
     && auPlanDesNotesDeFrais(table, NOTES_DE_FRAIS_PREVUES)
     && auPlanDesSaisies2035E(table, SAISIES_2035E_PREVUES)
+    && auPlanDuModeleDuCabinet(table, MODELE_DU_CABINET_PREVU)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -615,6 +630,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'lignes_bancaires', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'memberships', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'originaux_liberes', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'cascade' },
+  { enfant: 'plan_comptable_cabinet', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'cascade' },
+  { enfant: 'plan_comptable_cabinet', parent: 'roles_comptables', colonne: 'role', aLaSuppression: 'bloque' },
   { enfant: 'trace_des_droits', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'adresses_des_acces_retires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -956,6 +973,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'super_admins',
   'taux_change_bce',
   'roles_comptables',
+  'plan_comptable_cabinet',
   'cabinet_admins',
   'originaux_liberes',
   'dossiers',
@@ -1336,6 +1354,7 @@ export const CLES_PRIMAIRES_PREVUES: Readonly<Record<string, readonly string[]>>
   facture_numerotation: ['dossier_id', 'annee', 'type'],
   factures_importees: ['facture_id'],
   originaux_liberes: ['chemin'],
+  plan_comptable_cabinet: ['cabinet_id', 'role'],
   pieces_hors_de_france_taux: ['fiche_id', 'code_tva', 'taux'],
   plan_comptable_dossier: ['dossier_id', 'role'],
   previsionnels_bancaires: ['dossier_id'],
@@ -1503,6 +1522,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   cabinet_admins: { acces: 'cabinet' },
   tiers_categories_cabinet: { acces: 'cabinet' },
   originaux_liberes: { acces: 'cabinet' },
+  plan_comptable_cabinet: { acces: 'cabinet' },
 
   categories: { acces: 'partage' },
   natures_immobilisation: { acces: 'partage' },
