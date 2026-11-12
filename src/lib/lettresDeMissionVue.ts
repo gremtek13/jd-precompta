@@ -584,6 +584,17 @@ export function nomDuPdf(l: Pick<LettreComplete, 'proposee_le' | 'empreinte'>): 
 /** Ce qu'un membre assigné au dossier du client lit d'une lettre : jamais un montant, jamais un texte du cabinet. */
 export interface LettreSansMontant extends LettreLue { missions: Mission[] }
 
+/** Ce que la carte du dossier d'un client sait des missions de ce client. */
+export type LectureDesMissions =
+  | { etat: 'lue'; dossierClientId: string; lettres: LettreSansMontant[] }
+  /** Aucun dossier du cabinet désigné : aucune lettre n'existe. */
+  | { etat: 'sansDossierDuCabinet'; dossierClientId: string }
+  /** Le dossier du cabinet ne s'ouvre pas à ce compte : la RLS rendrait ZÉRO ligne sans erreur, jamais prise pour « aucune ». */
+  | { etat: 'fermee'; dossierClientId: string }
+  /** La fonction `missions_du_client` a refusé ce compte (42501) : dit tel quel, rien n'est deviné. Drapeau levé seulement. */
+  | { etat: 'refusee'; dossierClientId: string; motif: string }
+  | { etat: 'illisible'; dossierClientId: string; motif: string }
+
 /** Les colonnes qu'on lit d'une lettre depuis le dossier d'un client : ni honoraires, ni textes, ni identités. */
 export const COLONNES_SANS_MONTANT =
   'id, remplace_id, dossier_client_id, missions, date_effet, fin_initiale, reconduction_tacite, proposee_le, acceptee_le, refusee_le, retiree_le, fin_au'

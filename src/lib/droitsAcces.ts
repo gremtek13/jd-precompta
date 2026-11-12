@@ -51,6 +51,7 @@ import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { TROIS_CASES_EXPORTEES } from './troisCasesDeLAcces'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
+import { lettresDuClientPrevues } from './lettresDuClient'
 import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
 import type { StatutTva } from './types'
 
@@ -935,11 +936,26 @@ export const CE_QUE_MONTRE_MES_DOCUMENTS = 'Son espace les lui montre dans « Me
 
 export const TABLES_LUES_AVEC_DOCUMENTS = ['documents_cabinet', 'lectures_documents'] as const
 
-/** Ce que dit la case « Documents » une fois sa migration en base : ce que la base ouvre au client qui la porte. */
-export function ceQueDitLaCaseDocuments(): string {
+// « Documents », avec la migration `lettres_du_client` (LM6) : la base ouvre aussi au client qui la porte, par la fonction
+// `lettres_de_mission_du_client` (`client_du_dossier(dossier, 'documents')`), les lettres de mission que son cabinet lui a
+// PROPOSÉES, figées, honoraires compris ; l'acceptation en ligne reste fermée (LM-Q10). Le drapeau des lettres ne se lève
+// qu'après celui des documents (B2) : la phrase s'ajoute à la leur (droitsAcces.test.ts tient cet ordre et confronte ces
+// termes à la migration).
+export const CE_QUE_MONTRE_MES_LETTRES = 'Elle lui ouvre aussi, par la base, les lettres de mission que tu lui as proposées, '
+  + 'telles qu’elles se sont figées — missions, honoraires, durée — : son espace les lui montre dans « Mes lettres de '
+  + 'mission », avec leur PDF ; il ne les accepte pas en ligne.'
+
+/** Ce que dit la case « Documents » une fois sa migration en base, les lettres de mission selon la leur. */
+export function ceQueDitLaCaseDocumentsSelon(lettresEnBase: boolean): string {
   const { libelle, ouvrira } = definitionDe('documents')
   return `« ${libelle} » (${ouvrira}) : une case cochée ouvre au client, par la base, les documents que tu mets à sa `
     + `disposition — ${CE_QUE_LA_CASE_DOCUMENTS_OUVRE} ${CE_QUE_MONTRE_MES_DOCUMENTS}`
+    + (lettresEnBase ? ` ${CE_QUE_MONTRE_MES_LETTRES}` : '')
+}
+
+/** Ce que dit la case « Documents » une fois sa migration en base : ce que la base ouvre au client qui la porte. */
+export function ceQueDitLaCaseDocuments(): string {
+  return ceQueDitLaCaseDocumentsSelon(lettresDuClientPrevues())
 }
 
 // « Achats », avec sa migration (B4) : CE QU'ELLE OUVRE À LA SESSION DU CLIENT, PAR LA BASE — les paiements déclarés sur

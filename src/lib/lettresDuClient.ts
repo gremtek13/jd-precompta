@@ -14,6 +14,8 @@ import { formatDate } from './format'
 /**
  * La migration `lettres_du_client` (LM6) : préparée, PAS appliquée ; elle suit LM1, B1 (la case « Documents ») et LM4.
  * Baissé, aucun écran ne s'offre ni ne lit. Le lever suit l'application de la migration (et de B1, dont la case l'ouvre).
+ * Il se lève après celui des documents (B2, `DOCUMENTS_ET_DEMANDES_PREVUS`) : la case « Documents » dit les lettres à la
+ * suite des documents, jamais seule (droitsAcces.test.ts tient cet ordre).
  * Un objet, pour que les tests jouent ses deux états sans recharger le module.
  */
 export const DRAPEAU_DES_LETTRES_DU_CLIENT = { prevues: false }

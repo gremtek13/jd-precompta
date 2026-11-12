@@ -7,7 +7,7 @@ import { anneeDe, formatDate } from './format'
 import type { NatureDossierPermanent } from './types'
 import type { Pastille } from './revisionLibelles'
 import { lettresEnVigueur } from './lettresDeMission'
-import type { LectureDesMissions } from './lettresDeMissionLecture'
+import type { LectureDesMissions } from './lettresDeMissionVue'
 
 // LES MOTS ET LE RANGEMENT DE L'ÉCRAN DU DOSSIER PERMANENT (ligne 41, étape R7, phase C ; pur). Le module
 // (lib/dossierPermanent.ts) lit les chaînes de versions, dit les refus et ce qu'une citation prouve encore ; ce fichier ne

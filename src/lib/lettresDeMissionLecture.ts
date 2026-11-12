@@ -6,7 +6,7 @@ import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { lireLesMissionsParLaFonction, missionsDuClientPrevues } from './missionsDuClient'
 import {
   COLONNES_SANS_MONTANT, type ClientDuCabinet, type DocumentDuCabinet, type LectureDesPapiersSignes, type LettreComplete,
-  type LettreSansMontant, type ModeleLu, type Reponse,
+  type LectureDesMissions, type LettreSansMontant, type ModeleLu, type Reponse,
 } from './lettresDeMissionVue'
 
 // LES LETTRES DE MISSION, LUES ET ÉCRITES POUR L'ÉCRAN (ligne 47, LM5). Rien ne se lit tant que `LETTRES_DE_MISSION_PREVUES`
@@ -142,16 +142,9 @@ export async function lireLesPapiersSignes(dossierId: string): Promise<LectureDe
   }
 }
 
-/** Ce que la carte du dossier d'un client sait des missions de ce client. */
-export type LectureDesMissions =
-  | { etat: 'lue'; dossierClientId: string; lettres: LettreSansMontant[] }
-  /** Aucun dossier du cabinet désigné : aucune lettre n'existe. */
-  | { etat: 'sansDossierDuCabinet'; dossierClientId: string }
-  /** Le dossier du cabinet ne s'ouvre pas à ce compte : la RLS rendrait ZÉRO ligne sans erreur, jamais prise pour « aucune ». */
-  | { etat: 'fermee'; dossierClientId: string }
-  /** La fonction `missions_du_client` a refusé ce compte (42501) : dit tel quel, rien n'est deviné. Drapeau levé seulement. */
-  | { etat: 'refusee'; dossierClientId: string; motif: string }
-  | { etat: 'illisible'; dossierClientId: string; motif: string }
+// `LectureDesMissions` vit dans lib/lettresDeMissionVue.ts (pur) : l'écran du dossier permanent (lib/dossierPermanentEcran.ts)
+// la reçoit sans importer ce module, qui lit la base (ecransAvantLecture.test.tsx suit ces imports).
+export type { LectureDesMissions }
 
 /**
  * Les missions d'un client, pour la carte de son dossier. `MISSIONS_DU_CLIENT_PREVUES` levé (LM5-Q2) : par la fonction

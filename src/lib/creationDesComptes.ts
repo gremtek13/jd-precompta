@@ -13,6 +13,7 @@ import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
 import { NOTES_DE_FRAIS_PREVUES } from './notesDeFrais'
+import { lettresDuClientPrevues } from './lettresDuClient'
 import type { RoleCabinetAdmin } from './types'
 
 /** Ce que la réponse dit du compte : créé (le mot de passe saisi est le sien), existant (il n'a pas servi), ou rien de sûr. */
@@ -211,12 +212,14 @@ const CE_QUE_DONNE_LE_ROLE: Readonly<Record<RoleCabinetAdmin, string>> = {
 // monte pas l'écran, et la phrase reste celle d'hier. De même « Mes demandes » (à tout accès) et « Mes documents » (selon la
 // case « Documents ») avec la leur (`DOCUMENTS_ET_DEMANDES_PREVUS`, étape B3a) ; « Mes achats » (selon la case « Achats »)
 // avec la sienne (`ACHATS_DU_CLIENT_PREVUS`, étape B5) ; « Mes notes de frais » (selon la case « Notes de frais ») avec la
-// sienne (`NOTES_DE_FRAIS_PREVUES`, étape B8).
+// sienne (`NOTES_DE_FRAIS_PREVUES`, étape B8) ; « Mes lettres de mission » (selon la case « Documents ») avec la sienne
+// (`lettres_du_client`, `DRAPEAU_DES_LETTRES_DU_CLIENT`, étape LM6).
 export function ceQuePerdLeClientSelon(
-  comptesEnBase: boolean, documentsEnBase: boolean, achatsEnBase: boolean, fraisEnBase: boolean,
+  comptesEnBase: boolean, documentsEnBase: boolean, achatsEnBase: boolean, fraisEnBase: boolean, lettresEnBase: boolean,
 ): string {
   const selonLesCases = ['« Mes ventes »', '« Ma banque »', '« Mon analyse »', '« Ma caisse »',
     ...(comptesEnBase ? ['« Mes comptes »'] : []), ...(documentsEnBase ? ['« Mes documents »'] : []),
+    ...(lettresEnBase ? ['« Mes lettres de mission »'] : []),
     ...(achatsEnBase ? ['« Mes achats »'] : []), ...(fraisEnBase ? ['« Mes notes de frais »'] : [])]
   return "Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
     + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
@@ -227,7 +230,8 @@ export function ceQuePerdLeClientSelon(
 }
 
 export const CE_QUE_PERD_LE_CLIENT = ceQuePerdLeClientSelon(
-  SITUATIONS_PUBLIEES_EXPORTEES, DOCUMENTS_ET_DEMANDES_PREVUS, ACHATS_DU_CLIENT_PREVUS, NOTES_DE_FRAIS_PREVUES)
+  SITUATIONS_PUBLIEES_EXPORTEES, DOCUMENTS_ET_DEMANDES_PREVUS, ACHATS_DU_CLIENT_PREVUS, NOTES_DE_FRAIS_PREVUES,
+  lettresDuClientPrevues())
 
 /** Ce qui reste : ses accès, en base, que l'application lui rouvre dès qu'il n'a plus de ligne d'équipe. */
 export const CE_QUI_RESTE_AU_CLIENT = "Ses accès restent dans l'onglet Accès de ses dossiers : la retirer de l'équipe "

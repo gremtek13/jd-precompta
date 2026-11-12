@@ -156,7 +156,8 @@ begin
   r := pg_temp.essayer(client, format($q$select lettres_de_mission_du_client(%L)::text$q$, c));
   perform pg_temp.noter(6, 'le client qui porte la case « Documents » lit (contrôle positif)', 'OK:{', r);
   v := case when r like 'OK:{%' then substr(r, 4)::jsonb end;
-  r := pg_temp.essayer(client, format($q$select (select count(*) from lettres_de_mission)::text || '/' || (select count(*) from modeles_lettre_de_mission)::text$q$));
+  -- Comptées dans le seul dossier du cabinet de l'essai (k), où vivent sa lettre et son modèle : rien hors de ses dossiers.
+  r := pg_temp.essayer(client, format($q$select (select count(*) from lettres_de_mission where dossier_id = %L)::text || '/' || (select count(*) from modeles_lettre_de_mission where dossier_id = %L)::text$q$, k, k));
   perform pg_temp.noter(7, 'les deux tables lui restent fermées (la fonction est le seul chemin)', 'OK:0/0', r);
   r := pg_temp.essayer(client, format($q$select lettres_de_mission_du_client(%L)::text$q$, gen_random_uuid()));
   perform pg_temp.noter(8, 'un dossier inconnu est refusé de même', '42501:' || refus, r);

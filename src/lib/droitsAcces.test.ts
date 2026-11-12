@@ -16,9 +16,11 @@ import {
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE, ceQueMontreMaCaisseSelon,
   CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, CE_QUE_LA_CASE_DOCUMENTS_OUVRE,
-  TABLES_LUES_AVEC_DOCUMENTS, ceQueDitLaCaseDocuments, CE_QUE_LA_CASE_ACHATS_OUVRE, TABLES_LUES_AVEC_ACHATS, ceQueDitLaCaseAchats, demandeDeChangementSelon, domainesSelon, phraseDesRelancesSelon, type Domaine,
+  TABLES_LUES_AVEC_DOCUMENTS, ceQueDitLaCaseDocuments, ceQueDitLaCaseDocumentsSelon, CE_QUE_MONTRE_MES_LETTRES, CE_QUE_LA_CASE_ACHATS_OUVRE, TABLES_LUES_AVEC_ACHATS, ceQueDitLaCaseAchats, demandeDeChangementSelon, domainesSelon, phraseDesRelancesSelon, type Domaine,
 } from './droitsAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
+import { DRAPEAU_DES_LETTRES_DU_CLIENT, lettresDuClientPrevues } from './lettresDuClient'
+import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
 import { BASCULE_OFFERTE } from './basculeDesVentes'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
@@ -266,13 +268,17 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(coque).toContain("const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)")
     expect(coque).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)')
     expect(coque).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais)')
+    // DEPUIS L'ÉTAPE LM6, « Mes lettres de mission » lit la case « Documents », derrière `DRAPEAU_DES_LETTRES_DU_CLIENT`
+    // (lib/lettresDuClient.ts, `lettresDuClientOuvertes`), sa route et son entrée ; l'écran ne lit que par la fonction de la base.
+    expect(app).toContain('lettresDuClientOuvertes(lettresDuClientPrevues(), droitsSur(droitsParDossier ?? {}, dossierActifId).documents) && <Route path="/mes-lettres-de-mission" element={<ClientLettresDeMission />} />')
+    expect(coque).toContain('lettresDuClientOuvertes(lettresDuClientPrevues(), droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
     // DEPUIS L'ÉTAPE C4b, « Mes comptes » lit la case « Comptes », derrière `SITUATIONS_PUBLIEES_EXPORTEES`
     // (lib/situationsPubliees.ts, `mesComptesOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     expect(app).toContain('mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)')
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual([
       'ClientAchats.tsx', 'ClientAnalyse.tsx', 'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientDemandes.tsx', 'ClientDocuments.tsx',
-      'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx', 'ClientNotesDeFrais.tsx',
+      'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx', 'ClientLettresDeMission.tsx', 'ClientNotesDeFrais.tsx',
       'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
     ])
     // DEPUIS L'ÉTAPE C1, « Mon échéancier » et sa carte de l'accueil lisent la case « Banque » de la société affichée pour les
@@ -1983,6 +1989,41 @@ describe('ce que dit la case « Achats », avec sa migration (B5)', () => {
 // LA CASE « DOCUMENTS », AVEC SA MIGRATION (étape B3a) : la phrase de l'onglet Accès dit ce que la migration
 // `documents_et_demandes` (préparée) ouvre au client qui la porte — les documents publiés et non retirés, ses ouvertures —, et
 // que les demandes ne lui demandent aucune case.
+// LA CASE « DOCUMENTS », AVEC LES LETTRES DE MISSION (étape LM6) : la migration `lettres_du_client` (préparée) ouvre au
+// client qui porte la case, par `lettres_de_mission_du_client`, les lettres que son cabinet lui a proposées, figées, sans
+// rien lui faire écrire ; la phrase de l'onglet le dit, sous les deux états du drapeau. Le drapeau des lettres ne se lève
+// qu'après celui des documents (B2) : la phrase des lettres s'ajoute à la leur, et la case n'est jamais « sans effet » quand
+// la base ouvre les lettres.
+describe('ce que dit la case « Documents », avec les lettres de mission (LM6)', () => {
+  const MIGRATION_LC = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261112100000_lettres_du_client.sql'), 'utf8')
+
+  it('la phrase nomme « Mes lettres de mission » avec leur migration, et seulement avec elle', () => {
+    expect(ceQueDitLaCaseDocumentsSelon(false)).not.toContain('« Mes lettres de mission »')
+    expect(ceQueDitLaCaseDocumentsSelon(true)).toBe(`${ceQueDitLaCaseDocumentsSelon(false)} ${CE_QUE_MONTRE_MES_LETTRES}`)
+    expect(CE_QUE_MONTRE_MES_LETTRES).toContain('« Mes lettres de mission »')
+    expect(CE_QUE_MONTRE_MES_LETTRES).toContain('il ne les accepte pas en ligne')
+    const avant = DRAPEAU_DES_LETTRES_DU_CLIENT.prevues
+    try {
+      for (const leve of [false, true]) {
+        DRAPEAU_DES_LETTRES_DU_CLIENT.prevues = leve
+        expect(ceQueDitLaCaseDocuments()).toBe(ceQueDitLaCaseDocumentsSelon(leve))
+      }
+    } finally {
+      DRAPEAU_DES_LETTRES_DU_CLIENT.prevues = avant
+    }
+  })
+
+  it('la migration ouvre les lettres à la case « Documents » seule, et n’y écrit rien', () => {
+    expect(MIGRATION_LC).toContain('create function public.lettres_de_mission_du_client(p_dossier_id uuid)')
+    expect(MIGRATION_LC).toContain("if not public.client_du_dossier(p_dossier_id, 'documents') then")
+    expect(MIGRATION_LC).not.toMatch(/\b(insert\s+into|update|delete\s+from)\s+public\.lettres_de_mission\b/i)
+  })
+
+  it('le drapeau des lettres ne se lève qu’après celui des documents (B2)', () => {
+    expect(!lettresDuClientPrevues() || DOCUMENTS_ET_DEMANDES_PREVUS).toBe(true)
+  })
+})
+
 describe('ce que dit la case « Documents », avec sa migration (B3a)', () => {
   const preparees = resolve(process.cwd(), 'supabase/preparees')
   const MIGRATION_DM = readFileSync(resolve(preparees, readdirSync(preparees).find((n) => /^\d{14}_documents_et_demandes\.sql$/.test(n))!), 'utf8')
