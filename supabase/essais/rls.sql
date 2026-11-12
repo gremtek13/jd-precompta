@@ -8975,9 +8975,10 @@ end $nf$;
 -- `regler_modele_du_cabinet` seule, le chef du cabinet (aucune policy d'écriture, une garde). Le client ne la lit pas, même
 -- quand il a un accès à un dossier du cabinet. Le reste (les refus sous leurs mots, l'application à un dossier) :
 -- `modeleDuCabinet.sql`.
---   MP1. Le chef règle le modèle et en lit les 32 lignes (le contrôle POSITIF) ; un membre de l'équipe qui n'est pas chef les
---        lit aussi (un second contrôle positif) ; le client, qui a un accès au dossier du client, n'en lit rien ; l'anonyme
---        non plus.
+--   MP1. Le chef règle le modèle et en lit une ligne par rôle du catalogue (le contrôle POSITIF : 32 à la préparation de
+--        PC5, 34 depuis `ecarts_de_reglement`, en production le 12/11/2026, davantage avec les rôles des migrations
+--        préparées — le compte se lit au catalogue, jamais en dur) ; un membre de l'équipe qui n'est pas chef les lit aussi
+--        (un second contrôle positif) ; le client, qui a un accès au dossier du client, n'en lit rien ; l'anonyme non plus.
 --   MP2. Le client ne règle pas le modèle (42501, sous ses mots), n'y insère rien en direct (42501), ne réécrit rien.
 --   MP3. Le catalogue : la RLS active, une seule policy permissive, en lecture, à authenticated, `admin_du_cabinet`.
 -- Trois mutations, qui doivent mordre : M-MP1 (la lecture élargie au client d'un dossier du cabinet : il lit les lignes),
@@ -8990,6 +8991,7 @@ declare
   dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
   cabinet uuid; chef_lit bigint; membre_lit bigint; du_client bigint; de_l_anon text; par_la_fonction text; en_direct text;
   reecrites bigint; elargie bigint; fermee bigint; ecrite_elargie text; n bigint; erreur text; construit boolean := false;
+  roles_du_catalogue bigint := (select count(*) from roles_comptables);
   verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
 begin
   if to_regclass('public.plan_comptable_cabinet') is null then
@@ -9033,8 +9035,10 @@ begin
     perform set_config('request.jwt.claims', '', true);
     verdicts := verdicts || jsonb_build_object('controle', 'MP1. le chef lit le modèle qu''il a réglé, un membre de l''équipe aussi (les contrôles positifs) ; le client, qui a un accès à un dossier du cabinet, n''en lit rien, ni l''anonyme',
       'cible', 'plan_comptable_cabinet',
-      'observe', 'le chef : ' || chef_lit || ' | le membre : ' || coalesce(membre_lit::text, '?') || ' | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
-      'ok', chef_lit = 32 and membre_lit = 32 and du_client = 0 and de_l_anon = '0');
+      'observe', 'le chef : ' || chef_lit || ' | le membre : ' || coalesce(membre_lit::text, '?') || ' | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?')
+        || ' (le catalogue : ' || roles_du_catalogue || ' rôles)',
+      'ok', roles_du_catalogue >= 32 and chef_lit = roles_du_catalogue and membre_lit = roles_du_catalogue and du_client = 0
+        and de_l_anon = '0');
 
     -- MP2 : le client ne règle ni n'écrit ni ne réécrit le modèle.
     begin
