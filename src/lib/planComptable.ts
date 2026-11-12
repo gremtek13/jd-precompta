@@ -18,6 +18,7 @@
 // Sous le plan vide d'aujourd'hui, chaque rôle s'y lit à son défaut : rien ne change pour personne.
 
 import { DIRIGEANT_AU_468_PREVU, racinesDuDirigeantNonAssocieSelon } from './dirigeantAu468'
+import { ECARTS_DE_REGLEMENT_PREVUS, ROLES_DU_CHANGE, type CleRoleDuChange } from './rolesDuChange'
 import { messageErreur } from './messageErreur'
 
 /** Un rôle du catalogue, tel que `roles_comptables` le porte. */
@@ -99,8 +100,9 @@ export const ROLES_COMPTABLES = [
 
 export type CleRoleComptable = (typeof ROLES_COMPTABLES)[number]['role']
 
-/** Un plan comptable : le compte de chaque rôle. */
-export type PlanComptable = Readonly<Record<CleRoleComptable, string>>
+/** Un plan comptable : le compte de chaque rôle. Les deux rôles du change (lib/rolesDuChange.ts) n'y sont que lus, le
+ *  drapeau de leur migration levé : jusque-là, aucun plan ne les porte, et rien ne les lit. */
+export type PlanComptable = Readonly<Record<CleRoleComptable, string>> & Readonly<Partial<Record<CleRoleDuChange, string>>>
 
 /** Les trois rôles de tiers, les seuls qui portent un préfixe de comptes auxiliaires. */
 export type RoleDeTiers = Extract<(typeof ROLES_COMPTABLES)[number], { prefixeAuxiliaireDefaut: string }>['role']
@@ -193,7 +195,7 @@ export interface ReponseDuPlan {
 
 /** Le libellé de chaque rôle dans le plan du dossier, sinon celui du catalogue ; nul quand ni l'un ni l'autre n'en
  *  donne (le capital et les deux comptes du résultat, que le report des soldes nomme lui-même). */
-export type LibellesDuPlan = Readonly<Record<CleRoleComptable, string | null>>
+export type LibellesDuPlan = Readonly<Record<CleRoleComptable, string | null>> & Readonly<Partial<Record<CleRoleDuChange, string | null>>>
 
 /** Le préfixe des comptes auxiliaires de chaque rôle de tiers dans le plan du dossier, sinon celui du catalogue. */
 export type PrefixesDuPlan = Readonly<Record<RoleDeTiers, string>>
@@ -278,8 +280,25 @@ export function planDeLaReponse(reponse: ReponseDuPlan): LectureDuPlan {
   if (new Set(Object.values(prefixes)).size !== ROLES_DE_TIERS.length) {
     return { plan: null, motif: 'plan comptable illisible : deux rôles de tiers y partagent un préfixe d’auxiliaire' }
   }
-  const plan = Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, lus.get(r.role)!])) as PlanComptable
-  const libelles = Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, libellesLus.get(r.role)!])) as LibellesDuPlan
+  // LES DEUX RÔLES DU CHANGE (ligne 31, lib/rolesDuChange.ts) : exigés le drapeau de leur migration levé, sous une de
+  // leurs racines et sans préfixe ; ignorés sinon, comme tout rôle que la lecture ne connaît pas.
+  const duChange = ECARTS_DE_REGLEMENT_PREVUS ? ROLES_DU_CHANGE : []
+  const changeAbsents = duChange.filter((r) => !lus.has(r.role)).map((r) => r.role)
+  if (changeAbsents.length > 0) {
+    return { plan: null, motif: `plan comptable incomplet : ${changeAbsents.length} rôle(s) du change absent(s) (${changeAbsents.join(', ')})` }
+  }
+  for (const r of duChange) {
+    const compte = lus.get(r.role)!
+    if (!FORME_COMPTE_DE_ROLE.test(compte) || !r.racines.some((racine) => compte.startsWith(racine))) {
+      return { plan: null, motif: `plan comptable illisible : « ${compte} » n’est pas un compte du rôle « ${r.role} »` }
+    }
+    if ((prefixesLus.get(r.role) ?? null) !== null) {
+      return { plan: null, motif: `plan comptable illisible : « ${prefixesLus.get(r.role)} » n’est pas un préfixe d’auxiliaire du rôle « ${r.role} »` }
+    }
+  }
+  const lusAuPlan = [...ROLES_COMPTABLES, ...duChange]
+  const plan = Object.fromEntries(lusAuPlan.map((r) => [r.role, lus.get(r.role)!])) as PlanComptable
+  const libelles = Object.fromEntries(lusAuPlan.map((r) => [r.role, libellesLus.get(r.role)!])) as LibellesDuPlan
   return { plan: Object.freeze(plan), libelles: Object.freeze(libelles), prefixes: Object.freeze(prefixes), motif: null }
 }
 

@@ -1,5 +1,7 @@
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { comptesDeTiers, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
+import { lignesEngagementAvecEcarts } from './ecartsDeReglement'
+import { ECARTS_DE_REGLEMENT_PREVUS } from './rolesDuChange'
 import type { PlanComptable } from './planComptable'
 import { comptesDeBanqueDuDossier, planDuMouvement, refusDesBanquesDesPaiements, type BanquesDuDossier } from './banqueDuMouvement'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
@@ -293,8 +295,9 @@ export function lignesPourPiece(
     // (`regler_piece_par_la_caisse`, le refus de la trésorerie), dont le règlement viendrait au compte de tiers — et sa garde
     // n'admet, pour une contrepartie de caisse, que la ligne de la caisse, jamais la ligne de tiers d'un règlement.
     // Un paiement par la caisse ne fait donc ici aucun règlement : la facture reste à sa date, comme toujours en engagement.
-    return lignesEngagementPourPiece(dossierId, piece, cible, assujettiTva, modele.compteNotesDeFrais,
-      paiements.filter(estParLeReleve), modele.plan, banques)
+    // Le drapeau levé, le règlement qui solde une facture porte son écart à part (lib/ecartsDeReglement.ts, ligne 31).
+    return (ECARTS_DE_REGLEMENT_PREVUS ? lignesEngagementAvecEcarts : lignesEngagementPourPiece)(dossierId, piece, cible,
+      assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve), modele.plan, banques)
   }
   return lignesTresoreriePourPiece(dossierId, piece, cible, assujettiTva, paiements, modele.plan, banques)
 }
@@ -1004,6 +1007,18 @@ function engagementDesynchronise(
   // Exactement les paiements de la pièce — ni un de moins, ni un de plus —, sur son compte de tiers
   // ACTUEL, et chacun à son montant : un paiement de zéro euro n'écrit aucun règlement.
   // Le relevé seul règle en engagement (`lignesPourPiece`) : un paiement par la caisse n'y attend aucun règlement.
+  // LE DRAPEAU LEVÉ (ligne 31, lib/ecartsDeReglement.ts), les règlements sont EXACTEMENT ceux que la composition écrit,
+  // ligne pour ligne — leurs mouvements, leurs comptes, leurs sens et leurs montants au centime, l'écart à part compris :
+  // un règlement écrit avant un paiement plus récent, qui porte encore l'écart, se dit « à régénérer ».
+  if (ECARTS_DE_REGLEMENT_PREVUS) {
+    const composes = lignesEngagementAvecEcarts(p.dossier_id, p, cible, assujettiTva, compteNotesDeFrais,
+      paiementsPiece.filter(estParLeReleve), plan, banques).filter((l) => l.ligne_bancaire_id)
+    const cle = (l: { ligne_bancaire_id?: string | null; compte: string; sens: string; montant: number }) =>
+      `${l.ligne_bancaire_id}|${l.compte}|${l.sens}|${Math.round(l.montant * 100)}`
+    const attendues = composes.map(cle).sort()
+    const presentes = reglements.map(cle).sort()
+    return attendues.length !== presentes.length || attendues.some((c, i) => c !== presentes[i])
+  }
   const attendus = new Set(paiementsPiece.filter(estParLeReleve).filter((m) => m.montant !== 0).map((m) => m.id))
   const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
   if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true

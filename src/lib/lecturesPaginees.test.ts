@@ -45,9 +45,9 @@ import { describe, expect, it } from 'vitest'
 // tomber JUSTE : une de plus est une rechute, une de moins est une raison morte.
 const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
   "src/lib/contrepartieBanque.ts [ecritures_brouillon]": {
-    nombre: 1,
+    nombre: 2,
     raison:
-      "les écritures d'UNE pièce — la partie double en produit deux ou trois, jamais mille",
+      "les écritures d'UNE pièce — la partie double en produit deux ou trois, jamais mille ; la seconde, les mêmes, relues avec leurs montants sous le drapeau du change (ligne 31)",
   },
   "src/pages/dossier/FactureApercu.tsx [facture_lignes]": {
     nombre: 1,

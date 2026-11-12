@@ -486,8 +486,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   2035-E SE TIRE DE LA 2035 DÉPOSÉE », « LA SAISIE DE L'ANNEXE 2035-E PAR EXERCICE, EN BASE ».
 - **Télédéclaration de la TVA** (ligne 28) : étape 2, la transmission par un partenaire EDI — Teledec choisi, qui veut
   voir l'application fonctionner avant d'ouvrir son API ; ASPOne.fr l'autre voie. Rien n'est écrit.
-- **Comptabilité d'engagement** (ligne 31) : restent les écarts de change et les frais bancaires (le rapprochement règle
-  encore la pièce sur la banque ; à écrire à part, aux comptes 666, 766 et 627 : 31-changeFrais), les auxiliaires des
+- **Comptabilité d'engagement** (ligne 31) : le change et les frais bancaires à part, préparés le 12/11/2026 derrière
+  `ECARTS_DE_REGLEMENT_PREVUS` baissé (`ecarts_de_reglement`, à coller ; CHG-Q1 à Q3) → « LE CHANGE ET LES FRAIS BANCAIRES
+  À PART, EN ENGAGEMENT (LIGNE 31) » ; restent les auxiliaires des
   à-nouveaux et des soldes reportés, l'affectation du résultat d'une société, la TVA des livraisons de biens, la liasse
   (2033 ou 2050), les exercices décalés.
 - **FEC** (lignes 26.5 et 26.6, étape (e) ; MVP-D5) : les vingt-deux champs d'un BNC en trésorerie et les montants en
