@@ -51964,6 +51964,24 @@ exercicesDuDossier 63 sur 63 ; operationsDInventaire 0 en faute sur 72, 8 sur 8 
 IDENTIQUE, 93 tables (90 avant), dans l'ordre du code ; sur un dossier semé de deux exercices déclarés, IDENTIQUE, les deux
 restaurés. Non vu : une restauration de lignes d'inventaire et de stocks (le dossier `test` n'en porte pas).
 
+### 12/11/2026 — LA SÉANCE DE COLLAGE DU 12/11/2026 : ONZE MIGRATIONS EN PRODUCTION (A8D2AQ1, MCB1, MCB2, MCB4, MCB5, LM1, LM4, LM3, LM5Q2, LM7, LM8)
+
+(Agent architecte ; en production, des SELECT et les essais rejouables, ESSPROD-Q1.) De 205 à 216 migrations : huit collées par le
+cabinet (A8D2AQ1, MCB1, MCB2, MCB4, MCB5, LM1, LM4, LM3), trois par l'outil (LM5Q2, LM7, LM8), chacune à l'empreinte de son fichier
+préparé, passé à l'export sous sa version, texte inchangé ; les retours restent préparés, leur en-tête au nouveau chemin. **Levés** :
+`ORIGINAUX_RETENUS_PREVUS` et les six de la ligne 47 — aucun ne lit LM6 ni B1 ; `types.ts` garde `contacts.nom` non nul (vingt-cinq
+lieux à basculer ; les lecteurs d'hier écartent la fiche liée par `estFicheLiee`). **Baissé** : `COMPTES_BANCAIRES_PREVUS`, MCB5g
+n'étant pas en base (un second compte s'ouvrirait sans l'ouverture éclatée, que ses lecteurs nommeraient). **Trouvé** : MCB1 en base,
+une sauvegarde sans `comptes_bancaires` ne se restaurait plus (23503) — `COMPTES_BANCAIRES_EN_BASE`, levé, met au plan la table et les
+clés des mouvements et des contrôles ; la désignation du dossier du cabinet manquait au graphe, et `violationsOrdre` aurait refusé toute
+sauvegarde (un enfant global n'attend plus de parent) ; les faux clients des écrans servent les lectures neuves. **Contrôles**,
+production et dépôt égaux : dérive 216 `aea00e64…` (avec les cinq du midi, l'autre lot ; 211 `4db72017…` sans) ; socle 83 `d02e468d…`
+(MCB1 sur `lignes_bancaires`) ; inventaire 3 072 `e78e0353…` (3 023 sans) ; `signature.sql` égal à la réplique à 216. **Essais** :
+en production, comptesBancaires 38, finDIdentifiantDesComptes 12, couvertureDuReleveParCompte 13, jambeDeBanqueParCompte 18, justes ;
+sur une copie de la mère à 216, les onze, contacts (225) et importContacts (74) — corrigés pour LM3 et MCB1 — à 0 en faute ; `rls.sql`
+136 mutations sur 136, une faute de l'autre lot (MP1 : 34 rôles depuis `ecarts_de_reglement`, 32 attendus) ; `restauration.sql`
+IDENTIQUE, 96 tables ; le banc du leurre : les six essais changés, joués en production, SÛRS.
+
 ### 12/11/2026 — « MON ÉCHÉANCIER » NE DIT PLUS LA 2035 À UN DOSSIER EN ENGAGEMENT
 
 Défaut relevé en passant : « Mon échéancier » (`composerEcheancier`) montrait l'échéance de la 2035 à un dossier en engagement (BIC, IS), que la Checklist du cabinet filtrait en ligne (`modele.mode !== 'engagement' || e.impot !== 'Liasse'`). La règle vit maintenant une fois, `echeanceDuModeComptable` (`lib/echeancesFiscales.ts`), que la Checklist et l'échéancier appellent. La lecture du client lit `mode_comptable` avec le statut de TVA ; une valeur hors de la liste fermée rend le dossier illisible (lecture « partielle », bandeau), et un dossier non lu n'affirme pas la 2035 (le reste du calendrier inchangé). Aucune migration, `CALENDRIER_IS_EXPORTE` intact.

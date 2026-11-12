@@ -436,14 +436,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 ## Fonctionnalités actuellement en cours
 
 - **Proposition de catégorie** : à éprouver par un premier clic réel du cabinet.
-- **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : LM1, le dossier du cabinet, préparée le 11/11/2026, à
-  coller (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU` baissé) ; LM4, les lettres de mission et leurs versions figées,
-  préparée le même jour, à coller APRÈS LM1 (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` baissé ; l'acceptation en
-  ligne prévue et fermée par la base jusqu'à LM-Q10) ; LM8, le dépôt de la facture validée chez le client, préparé à coller
-  APRÈS LM7 (`depot_des_honoraires`, `DEPOT_DES_HONORAIRES_PREVU` baissé ; son PDF et son écran restent) ; LM3, la fiche d'un
-  client liée à son dossier, sans identité à elle, préparée à coller APRÈS LM1 (`fiche_liee_au_dossier_du_client`,
-  `FICHES_LIEES_PREVUES` baissé ; son écran reste) ; LM5-Q2, les missions d'un client lues sans ses honoraires par qui suit son
-  dossier, préparée APRÈS LM4 (`missions_du_client`, `MISSIONS_DU_CLIENT_PREVUES` baissé) ; LM6, les lettres au client et R7 déduite, préparée le 12/11/2026 APRÈS B1 et LM4 (`lettres_du_client`, son drapeau baissé) → « LM6 : LES LETTRES DE MISSION DANS L'ESPACE CLIENT (LIGNE 47) », « LM1 : LE DOSSIER DU CABINET, EN BASE », « LM4 : LES LETTRES
+- **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
+  levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
+  leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la
+  base jusqu'à LM-Q10) ; LM7, « À facturer » (`honoraires_factures`, `HONORAIRES_FACTURES_PREVUS`) ; LM8, le dépôt de la
+  facture validée chez le client (`depot_des_honoraires`, `DEPOT_DES_HONORAIRES_PREVU`) ; LM3, la fiche d'un client liée à
+  son dossier, sans identité à elle (`fiche_liee_au_dossier_du_client`, `FICHES_LIEES_PREVUES` ; reste `types.ts`, où
+  `contacts.nom` est encore non nul) ; LM5-Q2, les missions d'un client lues sans ses honoraires par qui suit son dossier
+  (`missions_du_client`, `MISSIONS_DU_CLIENT_PREVUES`) → « LA SÉANCE DE COLLAGE DU 12/11/2026 » ; LM6, les lettres au client et R7 déduite, préparée le 12/11/2026 APRÈS B1 et LM4 (`lettres_du_client`, son drapeau baissé) → « LM6 : LES LETTRES DE MISSION DANS L'ESPACE CLIENT (LIGNE 47) », « LM1 : LE DOSSIER DU CABINET, EN BASE », « LM4 : LES LETTRES
   DE MISSION ET LEURS VERSIONS FIGÉES, EN BASE », « LM8 : LA FACTURE D'HONORAIRES DÉPOSÉE CHEZ LE CLIENT, EN BASE », « LM3 : LA
   FICHE DE FACTURATION D'UN CLIENT DU CABINET, LIÉE À SON DOSSIER ».
 - **Le départ d'un client** (ligne 44, INAL5, INAL-Q6) : `depart_du_client` préparée le 11/11/2026, à coller — les paquets
@@ -530,12 +530,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
   APRÈS COUP ». Un dossier ne tient qu'UN compte bancaire : le relevé d'un second ne s'importe pas (doublons écartés en
   silence, ruptures fausses) tant que MCB n'est pas fait — un 512 par compte d'emblée (MCB-Q1 à Q8, 11/11/2026), huit lots ; MCB1, la base
-  (`comptes_bancaires`, `compte_bancaire_id`), préparée derrière `COMPTES_BANCAIRES_PREVUS` ; MCB2, l'import par compte
+  (`comptes_bancaires`, `compte_bancaire_id`), en production depuis le 12/11/2026 avec MCB2, MCB4 et MCB5 (les dix
+  fonctions), la table au plan de sauvegarde (`COMPTES_BANCAIRES_EN_BASE`), les écrans derrière `COMPTES_BANCAIRES_PREVUS`
+  baissé jusqu'à l'ouverture éclatée (MCB5g, préparée) → « LA SÉANCE DE COLLAGE DU 12/11/2026 » ; MCB2, l'import par compte
   (`lib/importParCompte.ts` : aucun compte par défaut dès deux, dédoublonnage, recouvrement et suite des soldes par compte,
-  un OFX confronté à la fin de son identifiant, une seconde migration préparée), derrière le même drapeau ; MCB3, le rapprochement
+  un OFX confronté à la fin de son identifiant, une seconde migration), derrière le même drapeau ; MCB3, le rapprochement
   par compte et le virement entre comptes ; MCB4, la suite des soldes, le 31 décembre par 512, les mois manquants et la
-  validation par compte (`lib/releveParCompte.ts`), `couverture_du_releve` par compte préparée ; MCB5 (première partie), la jambe
-  de banque au 512 du compte du mouvement : les dix fonctions du relevé préparées, à coller (`jambe_de_banque_par_compte`), la
+  validation par compte (`lib/releveParCompte.ts`), `couverture_du_releve` par compte ; MCB5 (première partie), la jambe
+  de banque au 512 du compte du mouvement : les dix fonctions du relevé (`jambe_de_banque_par_compte`), la
   composition par `lib/banqueDuMouvement.ts` dans la fiche Banque, puis (seconde partie) dans Écritures, Virements,
   Cotisations, le lot des règles et les sept détecteurs (`banques`, paramètre obligatoire ; une banque inconnue ne se juge pas) ; MCB6, la carte « Comptes bancaires » (Informations) et la
   preuve du relevé par compte ; MCB7, « Ma banque » compte par compte (`lib/banqueClientParCompte.ts`, sans nouvelle fonction)
@@ -731,7 +733,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     « Ventes » (A8C-Q1) et ses pièces citées dans « Ma simulation » (A8Q5-Q2), en production depuis le 11/11/2026 (`reprises_au_client`,
     deux lectures `security definer` ; `REPRISES_AU_CLIENT_PREVUES` levé) ; l'écran d'import
     (A8d2b) et les originaux dans le seau des ventes (A8d2a, `originaux_des_imports`) en production depuis le 11/11/2026
-    (`ORIGINAUX_DES_IMPORTS_PREVUS` et `IMPORT_DES_FACTURES_OFFERT` levés, A8D2B-Q3) ; reste la suite → « A8D2A : LES
+    (`ORIGINAUX_DES_IMPORTS_PREVUS` et `IMPORT_DES_FACTURES_OFFERT` levés, A8D2B-Q3), l'original retenu par son import
+    (A8D2A-Q1, `originaux_retenus_par_leur_import`) depuis le 12/11/2026 (`ORIGINAUX_RETENUS_PREVUS` levé) ; reste la suite → « A8D2A : LES
     ORIGINAUX DES FACTURES REPRISES DANS LE SEAU DES VENTES, EN BASE », « A8D2B : L'ÉCRAN D'IMPORT DES FACTURES
     REPRISES », « LE JOUR J DU 11/11/2026 », « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT (PRÉPARÉE, PAS APPLIQUÉE) », « A8
     ET A9, LES FACTURES REPRISES ET LA NUMÉROTATION QUI CONTINUE », « A8A : LES FACTURES REPRISES, EN BASE
