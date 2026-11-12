@@ -51671,3 +51671,19 @@ sous le million de caractères, 63 s pour 90 000 attributs, 117 s pour 40 000 pr
 a 2 s de calcul ; deux ensembles et une chaîne de portées, 0,1 s. Quatre scénarios HTTP et un test, rouges sur le code d'avant.
 Questions B4RS-Q1 à Q3 : la provenance « plateforme » d'un client « Ventes » qui réécrit la connexion (EC-Q4), les noms des flux d'une
 autre entreprise dans la liste, aucun plafond d'appels.
+
+### 12/11/2026 — LA LIASSE 2033, LES STOCKS ET L'IMPÔT SUR LES SOCIÉTÉS : LA CONCEPTION (LIGNES 36 À 38)
+
+La conception entière vit dans `docs/conceptions/37-liasse-2033.md` (constat tableau par tableau, sources, principes, schéma,
+stocks, IS, effets, dix lots, risques, quatorze questions LIA-Q1 à LIA-Q14). En bref : en ENGAGEMENT, la liasse 2033-A à G
+se TIRE des soldes de l'exercice par une table de passage compte → case relevée sur la notice 2033-NOT-SD 2026 (un compte
+qu'aucune case ne nomme est « à classer » et retient la validation) ; ce qui ne se tire d'aucun compte est SAISI dans
+`saisies_2033`, sur le patron de `saisies_2035`, l'application proposant seulement où un compte nomme la case (l'IS du 695
+en 324) ; le stock de clôture est saisi par compte, son écriture annule le stock initial et constate le final au 603x ou
+au 713x (LIA-Q2) ; l'IS se calcule dans un module pur (art. 209 I, 219 I, 220 quinquies), s'écrit 695/444 au 31 décembre,
+et ses acomptes (2571) et son solde (2572) se disent au calendrier, rien transmis ; la liasse se fige dans une colonne à
+elle de `exercices_valides` (LIA-Q9 : la contrainte `exercices_valides_declaration` réserve `declaration` à la 2035),
+scellée par une forme 3 de l'empreinte ; le PDF se remplit comme la 2035, un millésime par année, document de contrôle, le
+dépôt restant à l'EDI-TDFC (LIA-Q11). Base lue le 12/11/2026 : quatre dossiers en trésorerie, aucun exercice validé, aucun
+rôle de stock ni d'IS, aucune colonne d'imposition (LIA-Q1). Relevé en concevant : `immobilisations` n'a aucune sortie, le
+2033-C III attend un chantier des cessions (LIA-Q12) ; le 2033-A d'une société attend l'affectation du résultat (ligne 33).
