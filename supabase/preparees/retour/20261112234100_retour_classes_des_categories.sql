@@ -1,4 +1,4 @@
--- RETOUR de la migration `classes_des_categories` (PC7-Q2, ligne 43 ; supabase/preparees/20261112233000_classes_des_categories.sql).
+-- RETOUR de la migration `classes_des_categories` (PC7-Q2, ligne 43 ; supabase/preparees/20261112234000_classes_des_categories.sql).
 -- Rend à `garder_categorie_du_dossier` le corps de `categories_du_dossier` (PC7, version 20261112134532), à l'octet près
 -- (empreinte 0e1ee2d3f53ba1dca8adecd31843edeb) : une catégorie du dossier hors des classes 6 et 7 repasse, comme avant.
 -- Aucune donnée n'est touchée : les catégories posées sous le refus restent telles quelles. Baisser

@@ -2,7 +2,7 @@
 -- 12/11/2026, PAS APPLIQUÉE). La réponse du cabinet : PC7-Q2 (B), « Oui, en lot à part » (12/11/2026). Le récit :
 -- HISTORIQUE.md, « 12/11/2026 — PC7-Q2 : LA CLASSE DU COMPTE D'UNE CATÉGORIE DU DOSSIER, EN BASE (PRÉPARÉE, PAS
 -- APPLIQUÉE) » ; l'essai : supabase/essais/categoriesDuDossier.sql (étapes 40 à 49) ; le retour :
--- supabase/preparees/retour/20261112233100_retour_classes_des_categories.sql ; le module qui redit le refus avant le clic :
+-- supabase/preparees/retour/20261112234100_retour_classes_des_categories.sql ; le module qui redit le refus avant le clic :
 -- src/lib/categoriesDuDossier.ts (`refusDeLaClasse` ; `CLASSES_DES_CATEGORIES_PREVUES`, baissé jusqu'à l'application,
 -- porte le refus dit par la carte « Comptes manquants » de l'onglet Écritures).
 --

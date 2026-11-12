@@ -52081,7 +52081,7 @@ lot à part.
 
 Agent architecte, sur la réponse (B) ; en production, des SELECT : 205 migrations (`10d4a154…`), la garde de PC7 au corps
 `0e1ee2d3…`, dix catégories, toutes communes : aucune propre hors classe, ni contrainte NOT VALID ni reprise. **La migration**
-`classes_des_categories` (20261112233000, `d7baebd7…`, par l'outil ; retour 20261112233100, `9db942d2…`, le corps d'hier à
+`classes_des_categories` (20261112234000, `2c1080a6…`, par l'outil ; retour 20261112234100, `eed88fe2…`, le corps d'hier à
 l'octet près, par l'outil) : une garde de tête (l'empreinte, le déclencheur, un recompte qui arrête et dit), puis le même corps
 plus (e) — une catégorie du dossier dont le compte non nul ne suit pas `^[67][0-9]{2}` (le prédicat du relevé), à l'insertion
 ou quand il change, 23514 —, AVANT la porte de la restauration (la classe ne dépend que de la ligne, et le chef,

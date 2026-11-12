@@ -129,7 +129,7 @@ const texteDe = (nom: string) => {
   expect(exportee ?? preparee, nom).toBeDefined()
   return readFileSync(exportee ? join(EXPORT, exportee) : join(PREPAREES, preparee!), 'utf8')
 }
-const RETOUR_DE_LA_CLASSE = join(PREPAREES, 'retour/20261112233100_retour_classes_des_categories.sql')
+const RETOUR_DE_LA_CLASSE = join(PREPAREES, 'retour/20261112234100_retour_classes_des_categories.sql')
 /** Le corps de la garde entre ses dollars : ce que `prosrc` garde, et que l'empreinte de la garde de tête lit. */
 const corpsDeLaGarde = (sql: string) => {
   const m = sql.match(/as \$fonction\$([\s\S]*?)\$fonction\$;/)
