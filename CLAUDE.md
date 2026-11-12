@@ -228,7 +228,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   rejoue aussi, et un refus plpgsql (P0001) exige sa RAISON → « CE QUI CONTOURNE LA RLS ».
 - **Stockage** : le premier segment du chemin EST le dossier (`(storage.foldername(name))[1]::uuid`) — un chemin
   non-UUID fait lever le cast pour tout le monde ; le seau `ventes` juge d'abord la FORME du chemin dans un `case`. Une
-  suppression de fichier ne se teste pas en SQL : gardée par une lecture du catalogue (RGPD.md §8.6).
+  suppression de fichier ne se teste pas en SQL : gardée par une lecture du catalogue (RGPD.md §8.6). La base ne
+  vérifie pas encore que le chemin d'une LIGNE (`pieces.storage_path`, `documents_divers.storage_path`) commence par
+  son dossier, et le client en insère (CFCS-Q1) : tout lecteur qui télécharge avec les droits du cabinet le vérifie
+  lui-même (`cheminDuDossier`) → « LM6 ET INAL6 : LA RELECTURE DE SÉCURITÉ ».
 - **Une table que le CLIENT écrit** liste ses droits un par un (`piece_commentaires`) ; une parole datée ne se réécrit
   pas (aucune policy `UPDATE`).
 - **Edge Functions auto-porteuses** : aucun import de `src/` ; une logique partagée est COPIÉE entre des bornes
@@ -490,7 +493,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `ECARTS_DE_REGLEMENT_PREVUS` baissé (`ecarts_de_reglement`, à coller ; CHG-Q1 à Q3) → « LE CHANGE ET LES FRAIS BANCAIRES
   À PART, EN ENGAGEMENT (LIGNE 31) » ; restent les auxiliaires des
   à-nouveaux et des soldes reportés, l'affectation du résultat d'une société, la TVA des livraisons de biens, la liasse
-  (2033 ou 2050), les exercices décalés.
+  (2033 ou 2050), les exercices décalés — conçus le 12/11/2026 (`docs/conceptions/42-exercices-decales.md`, EXD-Q1 à
+  Q8 ; EXD1, `lib/exercices.ts`, en module : un BNC en trésorerie reste civil) → « LES EXERCICES DÉCALÉS : LA
+  CONCEPTION (LIGNE 42) ».
 - **FEC** (lignes 26.5 et 26.6, étape (e) ; MVP-D5) : les vingt-deux champs d'un BNC en trésorerie et les montants en
   devise, CONÇUS le 31/10/2026 — quatre valeurs lues, jamais devinées, jamais un nom de patient ; six lots, FEC22a à
   FEC22f, dont une migration (FEC22b), préalable à toute validation d'un exercice en trésorerie ; six questions au
@@ -728,7 +733,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
   sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU
-  2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE », « UN ÉCART D'OUVERTURE RETIENT LA VALIDATION ».
+  2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE », « UN ÉCART D'OUVERTURE RETIENT LA VALIDATION ». Conçus
+  le 12/11/2026, hors BNC, chacun avec ses questions : l'inventaire (`docs/conceptions/35-inventaire.md`, INV1 en module,
+  `lib/inventaire.ts`), la liasse, les stocks et l'IS (`37-liasse-2033.md` ; LIA1, LIA3 en module, LIA6 le PDF 2033-SD
+  derrière `LIASSE_EXPORTEE` baissé), l'affectation et l'approbation (`45-affectation-et-approbation.md`, AFF1 en module,
+  `lib/affectationDuResultat.ts`) ; rien n'est en base ni à l'écran → « LES ÉCRITURES D'INVENTAIRE : LA CONCEPTION »,
+  « LA LIASSE 2033, LES STOCKS ET L'IMPÔT SUR LES SOCIÉTÉS : LA CONCEPTION », « L'AFFECTATION DU RÉSULTAT ET
+  L'APPROBATION DES COMPTES : LA CONCEPTION ».
 - **Plan comptable personnalisable** (ligne 43, étapes PC1 à PC9) : PC1, PC2 et PC3a en ligne, NEUTRES (le plan de
   chaque dossier est vide) ; le reste de PC3 le 06/11/2026 — la banque, le report et les tiers du bilan, la révision, le
   libellé et le préfixe de chaque rôle (§ 3.9), le lettrage, l'auxiliaire du FEC et le sens des comptes de tiers, le FEC
@@ -1077,6 +1088,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   FIGÉE DANS LE STOCKAGE ET L'EMPREINTE EN FORME 2 (PRÉPARÉES, PAS APPLIQUÉES) » ; la numérotation n'appelle plus les
   deux gardes par ligne là où elles ne refusent rien (deux jumeaux sous WHEN, préparés ; `jd.validation_exercice` ne se
   pose qu'après le verrou exclusif de la validation) → « LA VALIDATION D'UN GROS EXERCICE : LES GARDES ALLÉGÉES ».
+  **Cinq chantiers préparés remplacent `valider_exercice`** (les gardes allégées, INV3, LIA5, AFF3, EXD3) : chacun part
+  du corps EN PRODUCTION le jour de son collage et reprend les filets des précédents, jamais d'une copie d'avant ; de
+  même, chaque colonne de source du brouillon (MCB5g, INV2, LIA2) nomme celles des autres dans sa contrainte « sans
+  autre source ».
 
 ### Import, OCR, classification
 
