@@ -1,5 +1,6 @@
 -- LA COPIE DES FICHIERS SUR UN SUPPORT DU CABINET (lignes 20.65 et 44, INAL6 ; la migration `copies_des_fichiers`,
--- PRÉPARÉE le 12/11/2026, reprise le même jour sur CFC-Q1 et CFC-Q2, supabase/preparees/). Le récit : HISTORIQUE.md,
+-- préparée le 12/11/2026, reprise le même jour sur CFC-Q1 et CFC-Q2, en production depuis le 12/11/2026 :
+-- supabase/schema/20261112155830_copies_des_fichiers.sql). Le récit : HISTORIQUE.md,
 -- « 12/11/2026 — LA COPIE DES FICHIERS SUR UN SUPPORT DU CABINET (LIGNES 20.65 ET 44, INAL6) » et « LA COPIE DES FICHIERS
 -- REPRISE : UN SEUL ZIP EN FLUX ET LE MANIFESTE RECHARGÉ (CFC-Q1, CFC-Q2) ». À rejouer par `execute_sql` après toute
 -- migration qui touche `copies_des_fichiers`, `enregistrer_copie_des_fichiers`, `attester_copie_des_fichiers`,

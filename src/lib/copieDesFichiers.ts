@@ -43,8 +43,9 @@ import { cheminDuDossier } from './cheminDuDossier'
 // celui-ci. Un tel chemin n'est donc jamais téléchargé ni copié : le fichier se compte manquant, et le manifeste le dit
 // (`MOTIF_HORS_DU_DOSSIER`), sans son chemin. La même règle vaut pour chaque nature, celles que la base tient déjà.
 
-/** Le drapeau de la migration `copies_des_fichiers` (PRÉPARÉE le 12/11/2026) : baissé, ni carte ni rappel, rien ne se lit. */
-export const COPIE_DES_FICHIERS_PREVUE: boolean = false
+/** Le drapeau de la migration `copies_des_fichiers`, en production depuis le 12/11/2026 (20261112155830) : levé, la carte et
+ * son rappel s'offrent ; baissé (le retour de la migration), ni carte ni rappel, rien ne se lit. */
+export const COPIE_DES_FICHIERS_PREVUE: boolean = true
 
 export const TABLES_DES_COPIES_DES_FICHIERS = ['copies_des_fichiers'] as const
 

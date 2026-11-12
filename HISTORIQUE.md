@@ -52169,3 +52169,16 @@ E37 à E39f, M10 à M13 ; une mutation sans son fragment ne mord plus. La carte 
 propose ce que la base accepte. **Preuves** (mère 17 copiée, à 205) : 58 cas justes, 13 mutations sur 13 (M10, l'ancienne
 clause, exige 1 000,00 au lieu de 100,00) ; la migration d'avant, 9 en faute ; A, I→L→N→A→E, A→E→L→I→N : `rls.sql` 0 en faute,
 117 et 129 mutations mordent, essais sœurs et `planComptable.sql` justes, retours fidèles. md5 : AFF2 `f90cd848…`, essai `114a19c4…`.
+
+### 12/11/2026 — LA COPIE DES FICHIERS EN PRODUCTION (INAL6)
+
+(Agent architecte ; en production, des SELECT et l'essai qui annule.) `copies_des_fichiers` appliquée par l'outil sur l'accord du
+cabinet, version 20261112155830 : le texte d'historique (`57e377e9…`) est le fichier préparé sans son saut de ligne final, passé à
+l'export à l'octet sous sa version (217 migrations) ; le retour reste préparé, son en-tête au nouveau chemin. **Levé** :
+`COPIE_DES_FICHIERS_PREVUE` — la carte du tableau de bord s'offre, la table entre au plan de sauvegarde (niveau cabinet, hors de
+l'export d'un dossier) ; l'état d'avant reste éprouvé par l'accesseur de `CopieDesFichiers.test.tsx` et `auPlanDesCopiesDesFichiers(…,
+false)`. **Contrôles**, production et dépôt égaux : dérive 217 `edea63cd…` ; socle 83 `d02e468d…`, inchangé ; inventaire 3 095
+`d18a46cf…` ; `signature.sql` de la production égal, neuf familles sur neuf, à une copie de la mère rattrapée sur l'export (colonnes
+1 195, fonctions 362, policies 203, rls 105). **Essais** : `copiesDesFichiers.sql` en production, 8 verdicts sur 8 justes (l'écart
+seul relu) ; sur la copie, `rls.sql` 238 invariants, 0 en faute, le bloc CF joué (plus EN ATTENTE), 139 mutations sur 139 (M-CF1 à
+M-CF3 mordent) ; `restauration.sql` IDENTIQUE, 96 tables ; le banc du leurre : `copiesDesFichiers` SÛR (0 écart, 0 motif, 0 écriture).

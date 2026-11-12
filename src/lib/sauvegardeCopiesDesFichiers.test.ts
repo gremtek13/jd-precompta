@@ -15,12 +15,12 @@ import {
   TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES,
 } from './sauvegarde'
 
-// LES COPIES DES FICHIERS AU PLAN DE SAUVEGARDE (INAL6). Leur migration, `copies_des_fichiers`, est préparée, pas
-// appliquée : tant que l'export ne la porte pas, le plan effectif ne dit RIEN de la table, et le plan PRÉVU est déjà juste.
+// LES COPIES DES FICHIERS AU PLAN DE SAUVEGARDE (INAL6). Leur migration, `copies_des_fichiers`, est en production depuis
+// le 12/11/2026 (20261112155830) : drapeau levé, la table est au plan ; baissé (le retour), le plan effectif n'en dit RIEN.
 // Une table de niveau cabinet : hors de l'export d'un dossier.
 
 const TABLE = 'copies_des_fichiers'
-const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261112160000_copies_des_fichiers.sql', import.meta.url), 'utf8')
+const MIGRATION = readFileSync(new URL('../../supabase/schema/20261112155830_copies_des_fichiers.sql', import.meta.url), 'utf8')
 
 describe('le filtre du plan, côté copies des fichiers', () => {
   it('la table n’est au plan que le drapeau levé ; toute autre l’est toujours', () => {
