@@ -51735,3 +51735,21 @@ jours (`rang360`, INV-Q6). Aucun compte de rôle en dur : les douze rôles se pa
 seules les racines du PCG vivent ici. Écart à la conception : le 4084 et le 4098 sortent des listes fermées, leur contrepartie
 (une immobilisation, le 609 au crédit) sortant de la classe que le § 4.1 donne à leur nature (INV1-Q1). 57 tests avec
 `comptesEnDur.test.ts` ; quinze mutations, toutes mordent après un test de borne ajouté (le premier exercice lui-même admis).
+
+### 12/11/2026 — LIA1 : LE COMPTE DE RÉSULTAT 2033-B ET LA LIASSE EN MODULE (LIGNE 37)
+
+Premier lot de la conception 37 (§ 8), deux modules PURS, sans base, sans écran ni drapeau. `lib/compteDeResultat2033.ts`
+range les soldes des classes 6 et 7 du bilan établi (`bilan.soldes`) dans les cases du cadre A, au préfixe le plus long ;
+un compte qui ne dit pas sa case (603, 609, 709 sans subdivision, 6098, 7098, 608, 691, un 79 que le PCG de 2026 a
+supprimé) est « à classer », et l'impôt (695 à 699) l'est aussi à l'IR. L'imposition (LIA-Q1) et deux rattachements que ni
+la notice ni le PCG ne tranchent (6815 en 256 ou 262, 781 en 230 : LIA1-Q1) sont des paramètres obligatoires sans défaut.
+`lib/liasse2033.ts` tire le 2033-C (I, II) du registre, le 2033-D (I et 780) de provisions passées en paramètre, le 2033-E
+des soldes et de huit saisies (nulles « à saisir », leurs totaux nuls, jamais zéro), et cinq contrôles du § 3.6 (310 = 136,
+le registre et ses 28 contre le 2033-A, 686 contre les 14, 15, 29, 39, 49 et 59, les comptes à classer) ; les contrôles 2, 5
+à 7 attendent LIA2 et LIA3. L'arrondi à l'euro à la case seulement, les totaux recalculés par les mêmes formules (notice, «
+Les arrondis fiscaux »). Relevés sur le formulaire 2033-SD 2026 (empreintes de la conception), deux erreurs de la table du §
+3.1 : 210 est la vente de marchandises (209 son « dont » export), 214 les biens (215), et le 2033-E n'a plus de 106 = 209 +
+210 + 218 (108, 118, 119, puis 144, 152, 137) ; la ligne des loyers y porte 310 au formulaire, 146 dans la notice (point non
+vérifié). Les numéros des comptes sont une LECTURE du PCG face aux libellés de la notice, qui ne donne aucune table de
+passage : seul le contre-calcul (LIA-Q14) l'éprouvera. Douze mutations mordent, après deux cas ajoutés (le 1er janvier, une
+dépréciation 29 hors du cadre II).
