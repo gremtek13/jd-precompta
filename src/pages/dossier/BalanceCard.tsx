@@ -9,6 +9,8 @@ import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import { supabase } from '../../lib/supabase'
 import type { LectureDuPlan } from '../../lib/planComptable'
+import { CATEGORIES_DU_DOSSIER_PREVUES } from '../../lib/categoriesDuDossier'
+import CategoriesDeLaBalance from './CategoriesDeLaBalance'
 import { PLAN_DEPUIS_LA_BALANCE_PREVU, planDepuisLaBalance, type ChoixDuPlan, type PlanLu } from '../../lib/planDepuisLaBalance'
 import {
   lireLesComptesDesCategories,
@@ -543,6 +545,11 @@ export default function BalanceCard({ dossierId, planLu, onPlanRelu }: {
               {erreurReglage && <p className="error-text">{erreurReglage}</p>}
               {confirmationReglage && <p className="muted">{confirmationReglage}</p>}
             </div>
+          )}
+
+          {/* PC7 : les catégories que la balance propose, sur le plan prêt (troisième temps). */}
+          {CATEGORIES_DU_DOSSIER_PREVUES && balanceEquilibree && planPret && (
+            <CategoriesDeLaBalance dossierId={dossierId} lignes={balanceEquilibree} plan={lu.plan} />
           )}
 
           {preparation && (
