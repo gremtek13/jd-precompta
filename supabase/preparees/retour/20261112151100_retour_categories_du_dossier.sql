@@ -1,4 +1,5 @@
--- RETOUR de la migration `categories_du_dossier` (PC7, ligne 43 ; supabase/preparees/20261112151000_categories_du_dossier.sql).
+-- RETOUR de la migration `categories_du_dossier` (PC7, ligne 43 ; en production depuis le 12/11/2026, version
+-- 20261112134532 : supabase/schema/20261112134532_categories_du_dossier.sql).
 -- Retire le déclencheur et sa fonction : `categories` redevient ce qu'elle était au 11/11/2026 (quatre policies, aucun
 -- déclencheur). Aucune donnée n'est touchée : les catégories créées sous la garde restent telles quelles. Abaisser
 -- `CATEGORIES_DU_DOSSIER_PREVUES` D'ABORD (src/lib/categoriesDuDossier.ts), puis déployer, puis ce retour : l'écran des

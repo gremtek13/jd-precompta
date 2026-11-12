@@ -1,5 +1,5 @@
--- Le retour de la migration `saisies_2035e` (supabase/preparees/20261111240000_saisies_2035e.sql, préparée le 11/11/2026 ;
--- ligne 48). Il DÉTRUIT la table des saisies de l'annexe 2035-E, sa garde et sa fonction d'écriture : il refuse tant
+-- Le retour de la migration `saisies_2035e` (supabase/schema/20261112134300_saisies_2035e.sql, préparée le 11/11/2026 ;
+-- en production depuis le 12/11/2026, version 20261112134300 ; ligne 48). Il DÉTRUIT la table des saisies de l'annexe 2035-E, sa garde et sa fonction d'écriture : il refuse tant
 -- qu'une saisie y porte une valeur (la perdre changerait l'annexe d'un exercice), et se colle dans l'éditeur SQL (le mot
 -- `drop` le fait coller). Avant lui : baisser `SAISIES_2035E_EXPORTEES` et `SAISIES_2035E_PREVUES`
 -- (src/lib/saisies2035E.ts) et le publier, sans quoi l'écran et la sauvegarde liraient une table absente ; après lui,

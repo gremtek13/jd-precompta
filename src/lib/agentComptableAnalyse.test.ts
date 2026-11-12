@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { paiementsDesPieces as paiementsDesPiecesDeSrcLib } from './rattachement'
 import * as lib_ecritures from './ecritures'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { SANS_VIREMENT_MIXTE } from '../test/ventesFacturees'
 import type { AcquisitionDuBien } from './amortissements'
@@ -86,6 +86,17 @@ vi.mock('./champsBncExportes', async (original) => {
 // signature le casse bruyamment, ce qui vaut mieux qu'une copie qui dérive en silence.
 function sourceDeployee(): string {
   return readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
+}
+
+// LA SOURCE DÉPLOYÉE, SA CONSTANTE DU CHANGE BAISSÉE (ligne 31, levée le 12/11/2026) : les dérives des deux garde-fous qui
+// suivent se plantent dans la composition d'un règlement d'avant le change (`lignesEngagementPourPiece`, la comparaison
+// des règlements), que le drapeau levé n'emprunte plus. Elles s'y jouent drapeau baissé des deux côtés — la copie par sa
+// constante, l'application par l'accesseur (`drapeauDuChange`) —, l'état d'avant éprouvé tant que son code existe ; la
+// composition levée a ses propres gardes (« le change et les frais bancaires à part », plus bas).
+function sourceBaissee(): string {
+  const source = sourceDeployee()
+  expect([...source.matchAll(/^const ECARTS_DE_REGLEMENT_PREVUS = (true|false)$/gm)].length, 'la constante du change de l’assistant').toBe(1)
+  return source.replace(/^const ECARTS_DE_REGLEMENT_PREVUS = (true|false)$/m, 'const ECARTS_DE_REGLEMENT_PREVUS = false')
 }
 
 // Prend la SOURCE en paramètre plutôt que de la lire elle-même : c'est ce qui permet de lui donner
@@ -1472,6 +1483,10 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
 })
 
 describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s', (_plan, plan) => {
+  // Drapeau du change baissé des deux côtés (`sourceBaissee`, plus haut).
+  const sourceDeployee = sourceBaissee
+  beforeEach(() => { drapeauDuChange.leve = false })
+  afterEach(() => { drapeauDuChange.leve = undefined })
   // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
   const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
   const { lignesPourPiece } = entreesSous(lib_ecritures, plan)
@@ -2136,6 +2151,10 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / le paiement d’une pièce pa
 })
 
 describe.each(PLANS_DES_GARDES)('le garde-fou du paiement par la caisse sait encore échouer (étape C13), sous le %s', (_plan, plan) => {
+  // Drapeau du change baissé des deux côtés (`sourceBaissee`, plus haut).
+  const sourceDeployee = sourceBaissee
+  beforeEach(() => { drapeauDuChange.leve = false })
+  afterEach(() => { drapeauDuChange.leve = undefined })
   // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
   const memeResultat = memeResultatSous(plan, entreesSous(extraire(sourceDeployee(), plan), plan))
   function planter(source: string, avant: string, apres: string, quoi: string): string {

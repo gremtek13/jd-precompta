@@ -7,13 +7,13 @@ import {
   TABLES_AUTO_REFERENCEES_PAR_VAGUES, TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES, tablesSansChemin, violationsOrdre,
 } from './sauvegarde'
 
-// LES SAISIES DE L'ANNEXE 2035-E AU PLAN DE SAUVEGARDE (ligne 48). Leur migration, `saisies_2035e`, est préparée, pas
-// appliquée : tant que l'export ne la porte pas, le plan effectif ne doit RIEN dire de sa table — une sauvegarde lirait une
-// table absente et échouerait —, et le plan PRÉVU doit déjà être juste, confronté aux clés de la migration, pour que lever
-// `SAISIES_2035E_PREVUES` suffise le jour venu.
+// LES SAISIES DE L'ANNEXE 2035-E AU PLAN DE SAUVEGARDE (ligne 48). Leur migration, `saisies_2035e`, est en production
+// depuis le 12/11/2026 et `SAISIES_2035E_PREVUES` levé ; l'état d'avant reste éprouvé par le filtre (`false`) : le plan
+// effectif ne disait RIEN de sa table — une sauvegarde aurait lu une table absente —, et le plan PRÉVU, confronté aux clés
+// de la migration, est celui qui sert.
 
 const TABLES: readonly string[] = TABLES_DES_SAISIES_2035E
-const dossier = new URL('../../supabase/preparees/', import.meta.url).pathname
+const dossier = new URL('../../supabase/schema/', import.meta.url).pathname
 const MIGRATION = readFileSync(dossier + readdirSync(dossier).find((n) => /^\d{14}_saisies_2035e\.sql$/.test(n))!, 'utf8')
 
 /** Les clés étrangères d'une table de la migration, à leur action : `colonne → parent (action)`. */

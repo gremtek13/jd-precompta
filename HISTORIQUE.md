@@ -52045,3 +52045,34 @@ refus des mots de passe divulgués et relevé la longueur minimale à 10 (l'advi
 paraît plus ; la longueur ne se lit pas par l'outil, consignée sur la parole du cabinet). Les advisors du 12/11 comptent aussi
 `devis_numerotation` et `originaux_liberes` parmi les tables sans policy, volontaires : CLAUDE.md les nomme désormais.
 PLAN_DE_REPRISE.md (§ 1) et CLAUDE.md suivent.
+
+### 12/11/2026 — LE JOUR J DU 12/11/2026 : CINQ MIGRATIONS EN PRODUCTION (48S, PC5, PC7, CHG, GVA)
+
+(Agent architecte ; en production, des SELECT et des essais qui annulent.) Appliquées par l'outil sur l'accord du cabinet
+(48S-Q2, PC5-, PC7-, CHG- et GVA-migration, le 12/11 à midi), chaque texte d'historique égal au fichier préparé, passé à
+l'export sous sa version, texte inchangé : `saisies_2035e` 20261112134300 (`2ca58da3…`), `modele_de_plan_du_cabinet`
+20261112134459 (`14b8ac80…`), `categories_du_dossier` 20261112134532 (`2b2cbec0…`), `ecarts_de_reglement` 20261112134552
+(`d2cbb18c…`), `gardes_de_la_validation_allegees` 20261112134639 (`df35ff53…`) ; les retours restent préparés, leur en-tête
+au nouveau chemin. **Levés** : `SAISIES_2035E_PREVUES` (la table au plan de sauvegarde ; `SAISIES_2035E_EXPORTEES` reste
+baissé, 48S-Q2), `MODELE_DU_CABINET_PREVU` (la carte, la création, l'export d'un cabinet), `CATEGORIES_DU_DOSSIER_PREVUES`
+(la carte des catégories ; le troisième temps de la balance attend aussi `PLAN_DEPUIS_LA_BALANCE_PREVU`, PC6 n'étant pas
+appliquée), `ECARTS_DE_REGLEMENT_PREVUS` et sa copie dans `agent-comptable` (à redéployer). La base rend désormais 34 rôles :
+les faux `plan_du_dossier` et `modele_du_cabinet` partent de `src/test/rolesDeLaBase.ts` ; les dérives plantées dans la
+composition d'avant le change, et trois écrans de l'état d'avant du modèle, se jouent drapeau baissé. **Contrôles**, export et
+production à 205 égaux : dérive `10d4a154…`, socle 82 `8a0e4907…`, inventaire 2 816 `0d2b1b99…`. La production a reçu onze
+migrations de plus dans l'après-midi (216, `aea00e64…`) : une réplique à 205 plus les onze fichiers préparés lui est égale
+(inventaire 3 072 `e78e0353…`, socle 83 `d02e468d…` — le 83ᵉ, l'index `lignes_bancaires_compte_bancaire_id_idx` de MCB1 sur
+une table du socle, au lot qui exportera MCB1). **Essais** : quatre FAUX en production depuis midi, corrigés — `modeleDuCabinet`,
+`modeleDuCabinetSuppression` et le MP1 de `rls.sql` lisent le nombre de rôles au catalogue (34), le 141 de
+`validationExercice` compte les trois gardes neuves, celle de `categories_du_dossier` ADMISE sous la forme `?` (elle ne refuse
+que la catégorie qu'un dossier encore là cite) ; `factures.sql` était juste (trois « f » de données, pas de verdict). Sur la
+réplique, à 205 puis à 216 : les essais du jour, `planComptable`, `reglerLePlanDuDossier`, `validationExercice`, `factures`,
+`contacts` et `importContacts` (le correctif de LM3 et MCB1) à 0 en faute ; `rls.sql` 176 puis 233 invariants, 0 en faute,
+114/114 puis 136/136 mutations ; deux mutations des corrections mordent. En production : `ecartsDeReglement` 5/5 ;
+`gardesDeLaValidation` ne s'y joue pas (`session_replication_role`, réservé au super-utilisateur).
+
+**Les 46 réponses du cabinet** (12/11, de 12 h 22 à 12 h 33) : toutes à la recommandation, sauf CFC-Q1 (B) « un seul ZIP » et
+CFC-Q2 (B) « le manifeste rechargé » — la migration des copies des fichiers est à revoir avant application. LM1 et LM4 seront
+collées ensemble par le cabinet depuis un ordinateur. B1-Q1 reste sans réponse, et retient B2, B3b, B4, B7 et LM6.
+ESSPROD-Q1 : oui, rejouer en production les essais déclarés rejouables. INV-Q1, Q4, Q7, Q8, Q9 et Q10 : (A). PC7-Q2 (B) : un
+lot à part.

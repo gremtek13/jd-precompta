@@ -1,4 +1,5 @@
--- RETOUR DE `ecarts_de_reglement` (ligne 31, 31-changeFrais ; préparé le 12/11/2026). Baisser `ECARTS_DE_REGLEMENT_PREVUS`
+-- RETOUR DE `ecarts_de_reglement` (ligne 31, 31-changeFrais ; préparé le 12/11/2026 ; en production depuis le 12/11/2026,
+-- version 20261112134552 : supabase/schema/20261112134552_ecarts_de_reglement.sql). Baisser `ECARTS_DE_REGLEMENT_PREVUS`
 -- D'ABORD (src/lib/rolesDuChange.ts), puis déployer, puis ce retour : drapeau levé, la lecture du plan exige les deux
 -- rôles, et chaque plan lu sans eux serait incomplet.
 --

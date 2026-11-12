@@ -11,6 +11,8 @@ declare
   chef constant text := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   autre constant uuid := 'f5c00000-0000-4000-8000-0000000000cb';
   cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
+  -- Le modèle se stocke entier : une ligne par rôle du catalogue, que l'essai LIT (34 depuis `ecarts_de_reglement`).
+  nr constant text := (select count(*)::text from roles_comptables);
   n bigint; v_obs text;
   verdicts jsonb := '[]'::jsonb;
 begin
@@ -33,7 +35,7 @@ begin
     if sqlerrm <> 'ANNULATION_ETAPE' then v_obs := sqlstate || ' ' || sqlerrm; end if;
   end;
   verdicts := verdicts || jsonb_build_object('rang', 1, 'etape', 'S1. le retrait d''un cabinet emporte son modèle',
-    'ok', v_obs = '32 ligne(s) avant, 0 après', 'observe', v_obs);
+    'ok', v_obs = nr || ' ligne(s) avant, 0 après', 'observe', v_obs);
   -- S2.
   begin
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
@@ -64,7 +66,7 @@ begin
   reset role;
   perform set_config('request.jwt.claims', '', true);
   verdicts := verdicts || jsonb_build_object('rang', 3, 'etape', 'S3. le chef, en session, n''en retire aucune ligne : aucune policy de retrait',
-    'ok', v_obs = '0 retirée(s), 32 restante(s)', 'observe', v_obs);
+    'ok', v_obs = '0 retirée(s), ' || nr || ' restante(s)', 'observe', v_obs);
   perform set_config('essai.modele_du_cabinet_suppression', verdicts::text, true);
 end
 $essai$;

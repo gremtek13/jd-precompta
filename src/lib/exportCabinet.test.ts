@@ -13,6 +13,10 @@ const etat = {
 let blobTelecharge: Blob | null = null
 let nomTelecharge = ''
 
+// LE MODÈLE DE PLAN DU CABINET (ligne 43, PC5 ; drapeau levé le 12/11/2026, la migration en production) : ce fichier
+// garde l'état d'avant, le drapeau baissé — la levée a ses propres tests (exportCabinetModele.test.ts).
+vi.mock('./modeleDuCabinet', async (original) => ({ ...(await original<typeof import('./modeleDuCabinet')>()), MODELE_DU_CABINET_PREVU: false }))
+
 vi.mock('./supabase', () => {
   // `range` et le `count` annoncé sont requis depuis que la liste des dossiers est lue par tranches
   // (voir lib/lectureComplete.ts) : sans compte annoncé, la lecture se déclarerait incomplète et

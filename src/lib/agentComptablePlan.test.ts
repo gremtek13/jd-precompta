@@ -8,6 +8,7 @@ import {
 import type { ModeComptable } from './types'
 import { LIBELLES_PAR_DEFAUT, planLuDe } from '../test/modeles'
 import { ROLES_DU_CHANGE } from './rolesDuChange'
+import { changeAuDefaut } from '../test/rolesDeLaBase'
 
 // Le drapeau du change (ligne 31, lib/rolesDuChange.ts), joué par un accesseur : sans demande, l'état réel.
 const drapeauDuChange = vi.hoisted(() => ({ leve: undefined as boolean | undefined }))
@@ -70,8 +71,17 @@ function reponse(plan: PlanComptable, prefixes: Readonly<Record<string, string>>
   }
 }
 const PREFIXES_DU_CATALOGUE = Object.fromEntries(ROLES_COMPTABLES.flatMap((r) => (r.prefixeAuxiliaireDefaut ? [[r.role, r.prefixeAuxiliaireDefaut]] : [])))
-const JUSTE = reponse(PLAN_PAR_DEFAUT, PREFIXES_DU_CATALOGUE)
-const DECALEE = reponse(PLAN_DECALE, PREFIXES_DECALES)
+/** La même, avec les deux rôles du change à leur défaut : ce que la base rend depuis `ecarts_de_reglement` (12/11/2026). */
+function reponseDeLaBase(plan: PlanComptable, prefixes: Readonly<Record<string, string>>): { data: unknown; error: unknown } {
+  return { data: [...(reponse(plan, prefixes).data as unknown[]), ...ROLES_DU_CHANGE.map((r) => ({
+    role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: null, origine: 'application',
+  }))], error: null }
+}
+/** Le plan que la lecture rend : le drapeau du change levé, ses deux comptes en plus. */
+const avecLeChange = (plan: PlanComptable): PlanComptable => ({ ...plan, ...changeAuDefaut() })
+const SANS_CHANGE = reponse(PLAN_PAR_DEFAUT, PREFIXES_DU_CATALOGUE)
+const JUSTE = reponseDeLaBase(PLAN_PAR_DEFAUT, PREFIXES_DU_CATALOGUE)
+const DECALEE = reponseDeLaBase(PLAN_DECALE, PREFIXES_DECALES)
 const lignes = (r: { data: unknown }) => r.data as Record<string, unknown>[]
 const avec = (r: { data: unknown }, f: (l: Record<string, unknown>[]) => unknown[]) => ({ data: f(lignes(r).map((l) => ({ ...l }))), error: null })
 const changer = (role: string, champs: Record<string, unknown>) => (ls: Record<string, unknown>[]) =>
@@ -120,7 +130,7 @@ describe('agent-comptable / bloc PLAN DU DOSSIER (copie déployée)', () => {
   it('la batterie exerce bien ce qui décide : deux plans lus, et un motif par réponse fautive', () => {
     const lus = REPONSES.map(([, r]) => planDeLaReponse(r))
     expect(lus.filter((l) => l.plan !== null).length).toBe(5)
-    expect(planDeLaReponse(DECALEE).plan).toEqual(PLAN_DECALE)
+    expect(planDeLaReponse(DECALEE).plan).toEqual(avecLeChange(PLAN_DECALE))
     expect(lus.filter((l) => l.motif !== null).length).toBe(REPONSES.length - 5)
     // Treize motifs distincts : « illisible » nu en couvre plusieurs (une liste qui n'en est pas une, une ligne nulle…).
     expect(new Set(lus.flatMap((l) => (l.motif === null ? [] : [l.motif]))).size).toBe(13)
@@ -129,7 +139,7 @@ describe('agent-comptable / bloc PLAN DU DOSSIER (copie déployée)', () => {
   it('juge le compte du dirigeant comme src/lib, sous chaque plan, dans chaque modèle', () => {
     for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
       const lu = plan === PLAN_PAR_DEFAUT ? planDeLaReponse(JUSTE) : planDeLaReponse(DECALEE)
-      expect(lu.plan).toEqual(plan)
+      expect(lu.plan).toEqual(avecLeChange(plan))
       for (const mode of ['tresorerie', 'engagement'] as const) {
         for (const compte of [plan.associe, plan.exploitant, plan.autres_debiteurs_crediteurs, plan.banque, '455000', '108000', '467000']) {
           const dossier = { mode_comptable: mode, compte_notes_de_frais: compte }
@@ -210,17 +220,17 @@ describe('le garde-fou du bloc PLAN DU DOSSIER sait encore échouer', () => {
 // src/lib/rolesDuChange.ts, et dans CHACUN des deux états — l'application par l'accesseur, la copie par sa constante
 // réécrite —, chaque réponse se lit de même, celles qui portent les deux rôles comprises.
 describe('agent-comptable / bloc PLAN DU DOSSIER et les deux rôles du change (ligne 31)', () => {
-  const avecChange = (pertes: Record<string, unknown> = {}, gains: Record<string, unknown> = {}) => avec(JUSTE, (ls) => [...ls,
+  const avecChange = (pertes: Record<string, unknown> = {}, gains: Record<string, unknown> = {}) => avec(SANS_CHANGE, (ls) => [...ls,
     { role: 'pertes_de_change', compte: '656000', libelle: 'Pertes de change', prefixe_auxiliaire: null, origine: 'application', ...pertes },
     { role: 'gains_de_change', compte: '756000', libelle: 'Gains de change', prefixe_auxiliaire: null, origine: 'application', ...gains }])
   const REPONSES_DU_CHANGE: [string, { data: unknown; error: unknown }][] = [
-    ['sans les deux rôles', JUSTE],
+    ['sans les deux rôles', SANS_CHANGE],
     ['avec les deux rôles, à leur défaut', avecChange()],
     ['sous leurs secondes racines', avecChange({ compte: '666100' }, { compte: '766100' })],
     ['une perte hors de ses racines', avecChange({ compte: '657000' })],
     ['un gain de cinq chiffres', avecChange({}, { compte: '75600' })],
     ['un préfixe sur une perte', avecChange({ prefixe_auxiliaire: 'PC' })],
-    ['le gain seul', avec(JUSTE, (ls) => [...ls, { role: 'gains_de_change', compte: '756000', libelle: null, prefixe_auxiliaire: null, origine: 'application' }])],
+    ['le gain seul', avec(SANS_CHANGE, (ls) => [...ls, { role: 'gains_de_change', compte: '756000', libelle: null, prefixe_auxiliaire: null, origine: 'application' }])],
     ...REPONSES,
   ]
 
@@ -244,7 +254,7 @@ describe('agent-comptable / bloc PLAN DU DOSSIER et les deux rôles du change (l
       // Le témoin : levé, les deux rôles se lisent au plan, et leur absence est un motif ; baissé, ils sont ignorés.
       const lu = planDeLaReponse(avecChange({ compte: '666100' }))
       expect(lu.plan?.pertes_de_change).toBe(leve ? '666100' : undefined)
-      expect(planDeLaReponse(JUSTE).motif === null).toBe(!leve)
+      expect(planDeLaReponse(SANS_CHANGE).motif === null).toBe(!leve)
     })
   }
 
@@ -258,6 +268,6 @@ describe('agent-comptable / bloc PLAN DU DOSSIER et les deux rôles du change (l
     const oubli = 'const duChange = ECARTS_DE_REGLEMENT_PREVUS ? ROLES_DU_CHANGE : []'
     expect(source.split(oubli).length - 1).toBe(1)
     const sansExigence = extraire(source.replace(oubli, 'const duChange = ECARTS_DE_REGLEMENT_PREVUS ? [] : []'), true)
-    expect(sansExigence.planDeLaReponse(JUSTE)).not.toEqual(planDeLaReponse(JUSTE))
+    expect(sansExigence.planDeLaReponse(SANS_CHANGE)).not.toEqual(planDeLaReponse(SANS_CHANGE))
   })
 })

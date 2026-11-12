@@ -1,6 +1,6 @@
 // PC5 — LE MODÈLE DE PLAN DU CABINET (ligne 43 ; conception, HISTORIQUE.md, « LE PLAN COMPTABLE PERSONNALISABLE : LA
 // CONCEPTION », § 3.1, § 3.10, § 4.2 ; le récit : « 12/11/2026 — PC5 : LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS
-// APPLIQUÉ) » ; la migration : supabase/preparees/20261112100000_modele_de_plan_du_cabinet.sql).
+// APPLIQUÉ) » ; la migration : supabase/schema/20261112134459_modele_de_plan_du_cabinet.sql).
 //
 // Le plan est celui du dossier ; le modèle est l'habitude du cabinet, qu'il COPIE dans un dossier neuf (43-Q1 : « le
 // modèle ne fait que semer ») — il ne s'hérite jamais, et un changement du modèle ne touche aucun dossier existant. Le chef
@@ -30,8 +30,8 @@ import { nomDuRole } from './planDepuisLaBalanceVue'
 // de la balance appelle, derrière son drapeau (planDepuisLaBalance.test.ts).
 export { nomDuRole }
 
-/** La migration `modele_de_plan_du_cabinet` est en base : la carte, l'application à la création, l'export. */
-export const MODELE_DU_CABINET_PREVU = false
+/** La migration `modele_de_plan_du_cabinet` est en base (12/11/2026) : la carte, l'application à la création, l'export. */
+export const MODELE_DU_CABINET_PREVU: boolean = true
 
 /** La table que la migration crée : une table du CABINET, hors de l'export d'un dossier (lib/sauvegarde.ts). */
 export const TABLES_DU_MODELE_DU_CABINET = ['plan_comptable_cabinet'] as const

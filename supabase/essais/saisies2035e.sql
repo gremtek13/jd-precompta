@@ -1,5 +1,5 @@
 -- L'ANNEXE 2035-E : LES SAISIES DU CABINET PAR EXERCICE (ligne 48 ; la migration `saisies_2035e`, PRÉPARÉE le 11/11/2026,
--- supabase/preparees/20261111240000_saisies_2035e.sql). Le récit : HISTORIQUE.md, « 11/11/2026 — LA SAISIE DE L'ANNEXE
+-- supabase/schema/20261112134300_saisies_2035e.sql). Le récit : HISTORIQUE.md, « 11/11/2026 — LA SAISIE DE L'ANNEXE
 -- 2035-E PAR EXERCICE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ».
 -- SUR UNE RÉPLIQUE SEULEMENT : il prend le membre d'équipe fictif de la réplique (un comptable du cabinet de `test`, qu'aucun
 -- dossier jetable n'assigne), que la production n'a pas. À rejouer par psql (`-f`), sous le propriétaire, après toute

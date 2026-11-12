@@ -3,6 +3,7 @@ import {
   PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES, ROLES_COMPTABLES, type LibellesDuPlan, type PlanComptable, type PrefixesDuPlan,
   type RoleDeTiers,
 } from '../lib/planComptable'
+import { libellesDuChange } from './rolesDeLaBase'
 import type { ModeComptable } from '../lib/types'
 
 // LE PLAN LU, TEL QUE LES TESTS LE DONNENT AU MODÈLE (ligne 43, étape PC3) : les comptes, les libellés et les préfixes
@@ -10,9 +11,9 @@ import type { ModeComptable } from '../lib/types'
 // Une fabrique de test, hors de la source que comptesEnDur.test.ts relève : l'application ne prend jamais ces valeurs
 // par défaut, elle les lit avec le plan du dossier.
 
-/** Les libellés du catalogue, ceux que la base rend pour un rôle sans réglage. */
+/** Les libellés du catalogue, ceux que la base rend pour un rôle sans réglage — ceux du change, le drapeau levé. */
 export const LIBELLES_PAR_DEFAUT: LibellesDuPlan = Object.freeze(
-  Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, r.libelleDefaut])) as LibellesDuPlan,
+  { ...Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, r.libelleDefaut])), ...libellesDuChange() } as LibellesDuPlan,
 )
 
 /** Les préfixes du catalogue : F, FI et C. */

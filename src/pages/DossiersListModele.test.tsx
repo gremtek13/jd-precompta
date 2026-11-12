@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DossiersList from './DossiersList'
 import { modeleDeLaReponse, type LectureDuModele } from '../lib/modeleDuCabinet'
-import { ROLES_COMPTABLES } from '../lib/planComptable'
+import { ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
 
 // « NOUVEAU DOSSIER » APPLIQUE LE MODÈLE DE PLAN DU CABINET (ligne 43, PC5), sous les deux états du drapeau
 // (`MODELE_DU_CABINET_PREVU`, joué par un accesseur) : levé, la fenêtre dit avant le clic ce qu'elle fera du modèle, attend
@@ -65,7 +65,7 @@ vi.mock('../lib/supabase', () => ({
 
 function lecture(regles: Record<string, string> = {}): LectureDuModele {
   return modeleDeLaReponse({
-    data: ROLES_COMPTABLES.map((r) => ({
+    data: ROLES_DE_LA_BASE.map((r) => ({
       role: r.role, compte: regles[r.role] ?? r.compteDefaut, libelle: r.libelleDefaut,
       prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: r.role in regles ? 'modele_du_cabinet' : 'application',
     })),

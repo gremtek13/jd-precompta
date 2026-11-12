@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import BalanceCard from './BalanceCard'
 import { AvecExercicesValides } from '../../test/exercicesValides'
 import { PLAN_LU_PAR_DEFAUT } from '../../test/modeles'
-import { ROLES_COMPTABLES, type LectureDuPlan } from '../../lib/planComptable'
+import { type LectureDuPlan } from '../../lib/planComptable'
+import { ROLES_DE_LA_BASE } from '../../test/rolesDeLaBase'
 
 // LA REPRISE PROPOSE LE PLAN (ligne 43, étape PC6), À L'ÉCRAN : le câblage de la carte de la balance en deux temps, sous
 // ses deux états du drapeau (`PLAN_DEPUIS_LA_BALANCE_PREVU`, joué par un accesseur). Le calcul est gardé à part
@@ -64,7 +65,7 @@ vi.mock('../../lib/supabase', () => ({
       if (nom === 'plan_du_dossier') {
         if (faux.retenueRelecture) await faux.retenueRelecture
         return {
-          data: ROLES_COMPTABLES.map((r) => {
+          data: ROLES_DE_LA_BASE.map((r) => {
             const regle = faux.planEnBase.find((l) => l.role === r.role)
             return {
               role: r.role,

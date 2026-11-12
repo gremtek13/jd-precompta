@@ -35,6 +35,10 @@ vi.mock('../lib/listeDossiers', () => ({ signalerMajDossiers: () => { faux.signa
 // ne juge pas cette liste (DossiersList.ribsAConfirmer.test.tsx) ; sa fonction lui répond « aucun », qui ne se dit pas.
 vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: 'u-chef' } } }) }))
 
+// LE MODÈLE DE PLAN DU CABINET (ligne 43, PC5 ; drapeau levé le 12/11/2026, la migration en production) : ce fichier
+// garde l'état d'avant, le drapeau baissé — la levée a ses propres tests (DossiersListModele.test.tsx).
+vi.mock('../lib/modeleDuCabinet', async (original) => ({ ...(await original<typeof import('../lib/modeleDuCabinet')>()), MODELE_DU_CABINET_PREVU: false }))
+
 vi.mock('../lib/supabase', () => ({
   supabase: {
     rpc: () => Promise.resolve({ data: { dossiers: [] }, error: null }),

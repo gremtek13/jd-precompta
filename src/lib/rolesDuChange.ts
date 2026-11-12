@@ -5,7 +5,8 @@ import type { DefinitionRoleComptable } from './planComptable'
 // En ENGAGEMENT, le règlement d'une facture solde le compte de tiers au montant de la facture, et l'écart avec la banque
 // s'écrit À PART (décision du cabinet du 18/10/2026, « à part (666, 766, 627) ») : le frais bancaire au 627
 // (`services_bancaires`, au catalogue depuis VF2), la perte ou le gain de change sur ces deux rôles, que la migration
-// `ecarts_de_reglement` (supabase/preparees/) ajoute au catalogue, aux rangs 340 et 350 (le 330 est au `personnel` de B7).
+// `ecarts_de_reglement` (supabase/schema/20261112134552_ecarts_de_reglement.sql, en production depuis le 12/11/2026)
+// ajoute au catalogue, aux rangs 340 et 350 (le 330 est au `personnel` de B7).
 //
 // LEUR COMPTE PAR DÉFAUT EST CELUI DU PCG POUR UNE CRÉANCE OU UNE DETTE COMMERCIALE, ET C'EST UNE QUESTION (CHG-Q1) : le
 // règlement ANC n° 2015-05 (exercices ouverts depuis le 1er janvier 2017) a complété l'article 946-65 du PCG — « Les pertes
@@ -16,8 +17,8 @@ import type { DefinitionRoleComptable } from './planComptable'
 // LE DRAPEAU BAISSÉ, RIEN NE CHANGE, À L'OCTET PRÈS : la lecture du plan ignore ces deux rôles (`planDeLaReponse`, comme
 // le `personnel` de B7), la composition d'un règlement est celle d'hier, et le rapprochement règle encore la pièce sur la
 // banque. Il ne se lève qu'APRÈS la migration : levé avant, chaque plan lu serait incomplet et aucun onglet ne se
-// monterait. La trésorerie (BNC, 2035) ne lit ni ces rôles ni ce drapeau.
-export const ECARTS_DE_REGLEMENT_PREVUS = false
+// monterait. La trésorerie (BNC, 2035) ne lit ni ces rôles ni ce drapeau. Levé le 12/11/2026, la migration en production.
+export const ECARTS_DE_REGLEMENT_PREVUS: boolean = true
 
 export const ROLES_DU_CHANGE = [
   { role: 'pertes_de_change', racines: ['656', '666'], compteDefaut: '656000', libelleDefaut: 'Pertes de change sur créances et dettes commerciales', prefixeAuxiliaireDefaut: null, ordre: 340 },

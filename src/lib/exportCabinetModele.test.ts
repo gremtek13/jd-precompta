@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { modeleDeLaReponse, type LectureDuModele } from './modeleDuCabinet'
-import { ROLES_COMPTABLES } from './planComptable'
+import { ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
 
 // L'EXPORT D'UN CABINET PORTE SON MODÈLE DE PLAN (ligne 43, PC5 ; conception, § 3.10), sous les deux états du drapeau
 // (`MODELE_DU_CABINET_PREVU`, joué par un accesseur) : levé, le modèle lu en entier part à la racine de l'archive, et une
@@ -38,7 +38,7 @@ beforeEach(() => {
   drapeau.leve = true
   etat.lectures = []
   etat.modele = modeleDeLaReponse({
-    data: ROLES_COMPTABLES.map((r) => ({
+    data: ROLES_DE_LA_BASE.map((r) => ({
       role: r.role, compte: r.role === 'banque' ? '512100' : r.compteDefaut, libelle: r.libelleDefaut,
       prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: r.role === 'banque' ? 'modele_du_cabinet' : 'application',
     })),

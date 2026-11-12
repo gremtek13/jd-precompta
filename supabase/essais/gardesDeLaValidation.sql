@@ -1,5 +1,5 @@
--- ESSAI DES DEUX GARDES PAR LIGNE DU BROUILLON, À LEURS FRONTIÈRES (ligne 28.66 ; migration PRÉPARÉE
--- supabase/preparees/20261112170000_gardes_de_la_validation_allegees.sql). La garde des écritures validées
+-- ESSAI DES DEUX GARDES PAR LIGNE DU BROUILLON, À LEURS FRONTIÈRES (ligne 28.66 ; migration en production depuis le
+-- 12/11/2026, supabase/schema/20261112134639_gardes_de_la_validation_allegees.sql). La garde des écritures validées
 -- (`garder_ecritures_validees`) et G5 (`garder_lignes_de_la_vente_facturee`), sur l'insertion, la suppression et la
 -- modification, là où la migration écarte leur fonction (la ligne que la validation numérote ; une ligne qui ne change que
 -- dans les quatorze colonnes que la validation pose) et tout autour. L'essai rend LA MÊME SORTIE avec et sans la migration :

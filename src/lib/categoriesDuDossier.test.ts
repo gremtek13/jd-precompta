@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -9,9 +9,8 @@ import {
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import type { Categorie } from './types'
 
-const MIGRATION = join(__dirname, '../../supabase/preparees/20261112151000_categories_du_dossier.sql')
-const APPLIQUEE = join(__dirname, '../../supabase/schema/20261112151000_categories_du_dossier.sql')
-const texteDeLaMigration = () => readFileSync(existsSync(MIGRATION) ? MIGRATION : APPLIQUEE, 'utf8')
+const MIGRATION = join(__dirname, '../../supabase/schema/20261112134532_categories_du_dossier.sql')
+const texteDeLaMigration = () => readFileSync(MIGRATION, 'utf8')
 
 const categorie = (c: Partial<Categorie>): Categorie => ({
   id: 'k', dossier_id: 'd1', code: 'dossier_606400', libelle: 'Fournitures', ordre: 0, compte_comptable: '606400', poste_2035: 'Achats', ...c,
@@ -111,7 +110,7 @@ describe('la garde de la base, confrontée à son texte', () => {
     expect(sql).toContain('perform pg_advisory_xact_lock_shared(public.cle_validation(new.dossier_id));')
     expect(sql).toContain("if tg_op = 'INSERT' and public.is_super_admin() then")
   })
-  it('le drapeau reste baissé tant que la migration est préparée', () => {
-    if (existsSync(MIGRATION)) expect(CATEGORIES_DU_DOSSIER_PREVUES).toBe(false)
+  it('le drapeau est levé depuis la migration en production (12/11/2026)', () => {
+    expect(CATEGORIES_DU_DOSSIER_PREVUES).toBe(true)
   })
 })

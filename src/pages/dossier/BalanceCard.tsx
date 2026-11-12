@@ -548,7 +548,7 @@ export default function BalanceCard({ dossierId, planLu, onPlanRelu }: {
           )}
 
           {/* PC7 : les catégories que la balance propose, sur le plan prêt (troisième temps). */}
-          {CATEGORIES_DU_DOSSIER_PREVUES && balanceEquilibree && planPret && (
+          {CATEGORIES_DU_DOSSIER_PREVUES && PLAN_DEPUIS_LA_BALANCE_PREVU && balanceEquilibree && planPret && (
             <CategoriesDeLaBalance dossierId={dossierId} lignes={balanceEquilibree} plan={lu.plan} />
           )}
 

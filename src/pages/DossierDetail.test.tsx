@@ -89,14 +89,14 @@ vi.mock('../lib/supabase', () => ({
       }
       faux.lecturesPlan++
       return (faux.retenuesPlan[identifiant] ?? Promise.resolve())
-        .then(() => import('../lib/planComptable'))
-        .then(({ ROLES_COMPTABLES }) => {
+        .then(() => import('../test/rolesDeLaBase'))
+        .then(({ ROLES_DE_LA_BASE }) => {
           if (nom !== 'plan_du_dossier') return { data: null, error: { message: `fonction inconnue du faux client : ${nom}` } }
           if (faux.ouvertures[identifiant] === false) return { data: null, error: { message: 'Accès refusé à ce dossier.', code: '42501' } }
           if (faux.erreurPlan) return { data: null, error: { message: faux.erreurPlan } }
           const plan = faux.plans[identifiant]
           return {
-            data: ROLES_COMPTABLES.filter((r) => !faux.rolesAbsents.includes(r.role)).map((r) => ({
+            data: ROLES_DE_LA_BASE.filter((r) => !faux.rolesAbsents.includes(r.role)).map((r) => ({
               role: r.role, compte: plan?.[r.role] ?? r.compteDefaut, libelle: r.libelleDefaut,
               prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: plan ? 'dossier' : 'application',
             })),

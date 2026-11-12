@@ -4,8 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { contientSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, indiceSql } from '../test/schema'
 
 // LA LIGNE 28.66 : les deux gardes par ligne du brouillon, écartées de la seule modification où elles ne refusent rien
-// (`supabase/preparees/20261112170000_gardes_de_la_validation_allegees.sql`, préparée ; dans l'export le jour de son
-// application). La migration ne touche aucune fonction : ce garde-ci tient sa preuve d'équivalence au texte exporté —
+// (`supabase/schema/20261112134639_gardes_de_la_validation_allegees.sql`, en production depuis le 12/11/2026). La migration ne touche aucune fonction : ce garde-ci tient sa preuve d'équivalence au texte exporté —
 // la condition du jumeau de G5 est la négation, au caractère près, de la comparaison de la DERNIÈRE définition de G5 ;
 // les deux fonctions sont celles dont la garde de la migration exige l'empreinte ; seule `valider_exercice` pose le
 // réglage de la validation, après son verrou exclusif ; les jumeaux prennent la place de leur garde dans l'ordre des

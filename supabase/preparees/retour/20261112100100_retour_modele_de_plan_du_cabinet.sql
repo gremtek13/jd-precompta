@@ -1,4 +1,5 @@
--- RETOUR de la migration `modele_de_plan_du_cabinet` (PC5, ligne 43 ; supabase/preparees/20261112100000_modele_de_plan_du_cabinet.sql).
+-- RETOUR de la migration `modele_de_plan_du_cabinet` (PC5, ligne 43 ; en production depuis le 12/11/2026, version
+-- 20261112134459 : supabase/schema/20261112134459_modele_de_plan_du_cabinet.sql).
 -- DESTRUCTIF au sens des règles du dépôt : il retire la table du modèle — LE MODÈLE DE CHAQUE CABINET EST PERDU (ses
 -- lignes, leur auteur, leur instant) —, ses quatre fonctions et ses deux déclencheurs. Rien d'autre n'est touché : le plan
 -- d'un dossier où un modèle a été appliqué RESTE tel qu'il est, ses lignes gardant l'origine « modele_du_cabinet » (la

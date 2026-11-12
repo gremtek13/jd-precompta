@@ -28,6 +28,7 @@ import { repartitionProposee, ttcParTaux } from '../../src/lib/encaissementsFact
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from '../../src/lib/rattachement'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES, type LibellesDuPlan } from '../../src/lib/planComptable'
+import { ROLES_DU_CHANGE } from '../../src/lib/rolesDuChange'
 import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
 import { mentionTva } from '../../src/lib/statutTva'
 import { instantane2035 } from '../../src/lib/validationExercice'
@@ -2761,10 +2762,11 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
     return { data: { dossiers: elements.map((e) => ({ dossier_id: e.dossier_id, nom: e.nom, archive: e.archive, changement: e.changement })) }, error: null }
   }
   // `plan_du_dossier` (ligne 43, étape PC3) : le plan effectif d'un dossier, un rôle par ligne dans l'ordre du catalogue ;
-  // aucun dossier du banc n'en règle un, chacun lit donc le défaut de chaque rôle, comme en base.
+  // aucun dossier du banc n'en règle un, chacun lit donc le défaut de chaque rôle, comme en base — les deux du change compris
+  // depuis leur migration (12/11/2026), que la lecture exige le drapeau levé.
   if (nom === 'plan_du_dossier') {
     return {
-      data: ROLES_COMPTABLES.map((r) => ({
+      data: [...ROLES_COMPTABLES, ...ROLES_DU_CHANGE].map((r) => ({
         role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
       })),
       error: null,
