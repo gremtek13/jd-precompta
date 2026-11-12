@@ -200,7 +200,7 @@ describe('le rappel', () => {
     expect(copieAAttester({ lue: true, derniere: copie('2026-11-10T10:00:00Z', true), derniereComplete: null })).toBeNull()
   })
 
-  it('le drapeau de la migration est baissé', () => {
-    expect(COPIE_DES_FICHIERS_PREVUE).toBe(false)
+  it('le drapeau de la migration est levé (en production depuis le 12/11/2026)', () => {
+    expect(COPIE_DES_FICHIERS_PREVUE).toBe(true)
   })
 })

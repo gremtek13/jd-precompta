@@ -464,10 +464,10 @@ export function auPlanDuModeleDuCabinet(table: string, prevu: boolean): boolean 
   return prevu || !(TABLES_DU_MODELE_DU_CABINET as readonly string[]).includes(table)
 }
 
-// LES COPIES DES FICHIERS SUR UN SUPPORT DU CABINET (lignes 20.65 et 44, INAL6 ; migration `copies_des_fichiers`, PRÉPARÉE
-// le 12/11/2026) : une table de NIVEAU CABINET — elle décrit ce que le chef a rapatrié, pas un dossier —, hors de l'export
-// d'un dossier, comme `cabinet_admins`. Sous le drapeau de la migration (`COPIE_DES_FICHIERS_PREVUE`,
-// src/lib/copieDesFichiers.ts), baissé : la production n'a pas la table. Sa relation (le cabinet, en cascade) ; son rang,
+// LES COPIES DES FICHIERS SUR UN SUPPORT DU CABINET (lignes 20.65 et 44, INAL6 ; migration `copies_des_fichiers`, en
+// production depuis le 12/11/2026) : une table de NIVEAU CABINET — elle décrit ce que le chef a rapatrié, pas un dossier —,
+// hors de l'export d'un dossier, comme `cabinet_admins`. Sous le drapeau de la migration (`COPIE_DES_FICHIERS_PREVUE`,
+// src/lib/copieDesFichiers.ts), levé ; baissé (le retour de la migration), le plan ne nomme plus la table. Sa relation (le cabinet, en cascade) ; son rang,
 // après `cabinet_admins` et les originaux libérés ; sa clé, la commune ; aucune vague. sauvegardeCopiesDesFichiers.test.ts éprouve les deux plans.
 
 /** Une table au plan, côté copies des fichiers : toutes, sauf la sienne tant que sa migration n'est pas en base. */
