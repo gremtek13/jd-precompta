@@ -56,3 +56,20 @@ export async function ouvrirApercu(seau: string, chemin: string, validiteSeconde
   onglet.opener = null
   return { ok: true }
 }
+
+// UN PDF TIRÉ PAR L'APPLICATION (la lettre de mission du client, LM6) : il n'est dans aucun seau, il se TÉLÉCHARGE. Un lien
+// `download` cliqué, jamais `window.open` (qu'un `await` — le tirage du PDF — placerait hors de l'activation transitoire, et
+// que le navigateur bloquerait sans rien dire) ; l'adresse locale se libère après une minute. Une erreur se dit.
+export function telechargerUnPdf(octets: Uint8Array, nom: string): ResultatApercu {
+  try {
+    const url = URL.createObjectURL(new Blob([octets as BlobPart], { type: 'application/pdf' }))
+    const lien = document.createElement('a')
+    lien.href = url
+    lien.download = nom
+    lien.click()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: messageErreur(e, 'le PDF n’a pas pu être téléchargé') }
+  }
+}

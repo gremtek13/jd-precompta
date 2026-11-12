@@ -8,7 +8,10 @@ import {
 import {
   EXPLICATION_DE_LA_CITATION, PASTILLE_DE_LA_CITATION, elementsSansEntreeAuRegard, entreesParNature, entreesRetirees, horsDuRegard,
   informationSurUnElementSansEntree, libelleDeLaNature, motNeCouvrePas, validiteEnMots, versionsDuPlusRecentAuPlusAncien,
+  lettreDeMissionAuRegard, phraseDeLaLettreDeduite, sansEntreeNiLettre,
 } from '../../lib/dossierPermanentEcran'
+import { LETTRES_DE_MISSION_PREVUES } from '../../lib/lettresDeMission'
+import { useMissionsDuClient } from '../../lib/lettresDeMissionLecture'
 import { parQui } from '../../lib/revueAnalytiqueEcran'
 import type { DocumentPourRevision } from '../../lib/revisionPreuves'
 import type { EntreeDossierPermanent, Piece } from '../../lib/types'
@@ -78,7 +81,13 @@ export default function DossierPermanentSection(p: PropsDossierPermanent) {
   const piecesParId = useMemo(() => new Map(p.pieces.map((x) => [minuscules(x.id), x])), [p.pieces])
   const documentsParId = useMemo(() => new Map(p.documents.map((x) => [minuscules(x.id), x])), [p.documents])
   const affichable = sourcesLues && lues !== null && lues.lisible
-  const sansEntree = !affichable || lues === null ? null : elementsSansEntreeAuRegard(lues, p.lecture.complete, p.annee, p.jour)
+  // La lettre de mission se DÉDUIT des lettres du cabinet (LM6, LM-Q6), lues en entier ; LM4 absente, la section d'hier.
+  const missions = useMissionsDuClient(p.dossierId)
+  const deduction = missions === null ? null : lettreDeMissionAuRegard(missions, p.dossierId, p.annee, p.jour)
+  const sansEntree = sansEntreeNiLettre(
+    !affichable || lues === null ? null : elementsSansEntreeAuRegard(lues, p.lecture.complete, p.annee, p.jour),
+    deduction, LETTRES_DE_MISSION_PREVUES)
+  const lettreDeduite = affichable ? phraseDeLaLettreDeduite(deduction, p.annee) : null
   const courantes = affichable ? entreesParNature(lues.entrees) : []
   const retirees = affichable ? entreesRetirees(lues.entrees) : []
 
@@ -159,6 +168,8 @@ export default function DossierPermanentSection(p: PropsDossierPermanent) {
               ))}
             </div>
           ))}
+
+          {lettreDeduite !== null && <p className="muted" style={{ marginTop: 12 }}>{lettreDeduite}</p>}
 
           {sansEntree !== null && sansEntree.length > 0 && (
             <div style={{ marginTop: 12 }}>

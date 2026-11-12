@@ -15,6 +15,7 @@ import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from '../lib/situati
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from '../lib/documentsEtDemandes'
 import { mesDemandesOuvertes, mesDocumentsOuverts } from '../lib/documentsEtDemandesVue'
+import { lettresDuClientOuvertes, lettresDuClientPrevues } from '../lib/lettresDuClient'
 import { ACHATS_DU_CLIENT_PREVUS } from '../lib/achatsClient'
 import { mesAchatsOuverts } from '../lib/achatsClientVue'
 import { NOTES_DE_FRAIS_PREVUES } from '../lib/notesDeFrais'
@@ -114,6 +115,9 @@ function Coque() {
   const mesDocuments = role === 'client'
     && mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)
   const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)
+  // « Mes lettres de mission » (ligne 47, étape LM6) : avec sa migration et la case « Documents ».
+  const mesLettres = role === 'client'
+    && lettresDuClientOuvertes(lettresDuClientPrevues(), droitsSur(droitsParDossier ?? {}, dossierActifId).documents)
   // « Mes achats » (ligne 51.5, étape B5) : de même, avec la case « Achats » sur la société affichée, comme sa route.
   const mesAchats = role === 'client'
     && mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)
@@ -373,6 +377,13 @@ function Coque() {
                   <IconDocuments width={18} height={18} />
                   <span className="nav-label-full">Mes documents</span>
                   <span className="nav-label-court">Docs</span>
+                </NavLink>
+              )}
+              {mesLettres && (
+                <NavLink to="/mes-lettres-de-mission" title="Mes lettres de mission" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconDocuments width={18} height={18} />
+                  <span className="nav-label-full">Mes lettres de mission</span>
+                  <span className="nav-label-court">Lettres</span>
                 </NavLink>
               )}
               {mesAchats && (

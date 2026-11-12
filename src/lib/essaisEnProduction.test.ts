@@ -292,10 +292,13 @@ describe('les essais de la base, rejoués en production', () => {
     // rejouent partout : le bloc MV de rls.sql.
     // Le vingt-troisième, saisies2035e, le 11/11/2026 (ligne 48, migration `saisies_2035e`) : il prend le membre d'équipe
     // fictif de la réplique, que la production n'a pas. Son catalogue et ses profils se rejouent partout : le bloc SE de rls.sql.
+    // Le vingt-quatrième, lettresDuClient, le 12/11/2026 (LM6, migration `lettres_du_client`) : il désigne le dossier du
+    // cabinet, suspend la garde des modèles et change le cabinet d'un dossier, sous la même garde. Son catalogue et ses
+    // profils se rejouent partout : le bloc LC de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
-      'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)',
+      'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
       'situationsPublieesMutations (une méta-commande de psql)', 'traceDesDroitsSuppression (son en-tête)',

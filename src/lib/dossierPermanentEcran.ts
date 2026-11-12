@@ -6,6 +6,8 @@ import {
 import { anneeDe, formatDate } from './format'
 import type { NatureDossierPermanent } from './types'
 import type { Pastille } from './revisionLibelles'
+import { lettresEnVigueur } from './lettresDeMission'
+import type { LectureDesMissions } from './lettresDeMissionLecture'
 
 // LES MOTS ET LE RANGEMENT DE L'ÉCRAN DU DOSSIER PERMANENT (ligne 41, étape R7, phase C ; pur). Le module
 // (lib/dossierPermanent.ts) lit les chaînes de versions, dit les refus et ce qu'une citation prouve encore ; ce fichier ne
@@ -147,4 +149,63 @@ export function anneesDActivite(sources: {
   for (const l of sources.lignes) annees.add(anneeDe(l.date))
   for (const e of sources.ecritures) annees.add(anneeDe(e.date))
   return [...annees].sort((a, b) => b - a)
+}
+
+// ── La lettre de mission, DÉDUITE des lettres du cabinet (LM6 ; conception de la ligne 47, point 3 ; LM-Q6) ──────────────
+// Une lettre ACCEPTÉE, en vigueur pour ce que la section regarde, satisfait l'élément « lettre de mission » ; rien ne
+// s'écrit au dossier permanent. La règle d'une lettre en vigueur est celle du cabinet (`lettresEnVigueur`) ; pour un
+// exercice, comme une entrée (`vautPourLExercice`), il suffit qu'elle le touche : en vigueur un jour de l'année — et, son
+// temps de vigueur commençant à sa date d'effet sans trou, au plus tard le jour où elle entre dans l'année. Sur des lettres
+// lues EN ENTIER seulement : une lecture fermée, refusée ou illisible ne dit rien, ni « en vigueur » ni « aucune ».
+
+export type LettreDeMissionDeduite =
+  | { etat: 'en_vigueur'; accepteeLe: string }
+  | { etat: 'aucune' }
+  | { etat: 'illisible'; motif: string }
+
+export function lettreDeMissionAuRegard(
+  lecture: LectureDesMissions,
+  dossierId: string,
+  annee: number | null,
+  jour: string,
+): LettreDeMissionDeduite {
+  if (lecture.etat === 'sansDossierDuCabinet') return { etat: 'aucune' }
+  if (lecture.etat === 'fermee') return { etat: 'illisible', motif: 'le dossier du cabinet, où vivent les lettres, n’est pas ouvert à ce compte' }
+  if (lecture.etat !== 'lue') return { etat: 'illisible', motif: lecture.motif }
+  const lettres = lecture.lettres
+  const an = annee === null ? null : String(annee).padStart(4, '0')
+  const enVigueur = lettres.filter((l) => {
+    if (l.dossier_client_id !== dossierId || l.acceptee_le === null || l.date_effet === null) return false
+    if (an === null) return lettresEnVigueur(lettres, dossierId, jour).some((x) => x.id === l.id)
+    if (l.date_effet > `${an}-12-31`) return false
+    const date = l.date_effet > `${an}-01-01` ? l.date_effet : `${an}-01-01`
+    return lettresEnVigueur(lettres, dossierId, date).some((x) => x.id === l.id)
+  })
+  if (enVigueur.length === 0) return { etat: 'aucune' }
+  const plusRecente = enVigueur.reduce((a, b) => ((b.acceptee_le ?? '') > (a.acceptee_le ?? '') ? b : a))
+  return { etat: 'en_vigueur', accepteeLe: plusRecente.acceptee_le ?? '' }
+}
+
+/**
+ * Ce que la section dit « à titre d'information », la déduction comprise : `lettre_mission` n'y est que si aucune lettre
+ * n'est en vigueur ET que les lettres ont été lues ; tant qu'elles ne sont pas revenues (`deduction` nulle, lettres prévues)
+ * ou qu'elles ne se lisent pas, rien ne s'affirme. Lettres non prévues (LM4 absente) : la section d'hier, à l'identique.
+ */
+export function sansEntreeNiLettre(
+  sansEntree: NatureDossierPermanent[] | null,
+  deduction: LettreDeMissionDeduite | null,
+  lettresPrevues: boolean,
+): NatureDossierPermanent[] | null {
+  if (sansEntree === null || !lettresPrevues) return sansEntree
+  if (deduction !== null && deduction.etat === 'aucune') return sansEntree
+  return sansEntree.filter((n) => n !== 'lettre_mission')
+}
+
+/** La phrase de la déduction ; nulle quand il n'y a rien à dire de plus que la liste. */
+export function phraseDeLaLettreDeduite(d: LettreDeMissionDeduite | null, annee: number | null): string | null {
+  if (d === null || d.etat === 'aucune') return null
+  const quand = annee === null ? 'aujourd’hui' : `en ${annee}`
+  return d.etat === 'en_vigueur'
+    ? `Lettre de mission : une lettre acceptée le ${formatDate(d.accepteeLe)} est en vigueur ${quand} (lettres de mission du cabinet) ; l’élément se déduit, aucune entrée n’est écrite.`
+    : `Les lettres de mission du cabinet n’ont pas pu être lues (${d.motif}) : rien ne se dit ici de la lettre de mission.`
 }

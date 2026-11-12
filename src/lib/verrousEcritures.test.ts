@@ -100,6 +100,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
       + '`security definer`, sans écriture ; migration `reprises_au_client`, A8Q5-Q2, préparée), au montage de « Ma '
       + 'simulation » — derrière `REPRISES_AU_CLIENT_PREVUES`.',
   },
+  'rpc:lettres_de_mission_du_client': {
+    nature: 'lecture',
+    raison: 'Les lettres de mission proposées d’un client, figées, à son accès « Documents » (fonction `stable`, `security '
+      + 'definer`, sans écriture ; migration `lettres_du_client`, LM6, préparée), au montage de « Mes lettres de mission » — '
+      + 'derrière `DRAPEAU_DES_LETTRES_DU_CLIENT`.',
+  },
   'rpc:missions_du_client': {
     nature: 'lecture',
     raison: 'Les lettres de mission proposées d’un client, sans leurs honoraires (fonction `stable`, `security definer`, sans '
