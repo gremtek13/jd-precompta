@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // LES CLÉS D'API DE SUPABASE : les nouvelles partout, les historiques nulle part.
 //
@@ -220,6 +220,14 @@ const CLE_SECRETE_REELLE = /sb_secret_[A-Za-z0-9_-]{20,}/
 
 describe('aucune clé dans le dépôt, qui est public', () => {
   const fichiers = fichiersSuivis()
+  // Lire chaque fichier suivi se paie une fois, dans le beforeAll (CLAUDE.md, « Un calcul lourd se paie dans un
+  // beforeAll ») : dans le corps des deux tests, la lecture dépassait les 5 s de Vitest sous charge (12/11/2026).
+  let contenus: { fichier: string; texte: string }[] = []
+  beforeAll(() => {
+    contenus = fichiers
+      .filter((f) => statSync(racine(f)).size < 5_000_000)
+      .map((f) => ({ fichier: f, texte: readFileSync(racine(f), 'utf8') }))
+  }, 60_000)
 
   it('voit bien les fichiers du dépôt', () => {
     expect(fichiers.length).toBeGreaterThan(400)
@@ -227,16 +235,14 @@ describe('aucune clé dans le dépôt, qui est public', () => {
   })
 
   it('ne porte aucune clé historique — elles cessent de fonctionner, et la secrète ouvrait tout', () => {
-    const fautes = fichiers
-      .filter((f) => statSync(racine(f)).size < 5_000_000)
-      .flatMap((f) => clesHistoriques(readFileSync(racine(f), 'utf8')).map((c) => `${f} : ${c}`))
+    expect(contenus.length).toBeGreaterThan(400)
+    const fautes = contenus.flatMap(({ fichier, texte }) => clesHistoriques(texte).map((c) => `${fichier} : ${c}`))
     expect(fautes).toEqual([])
   })
 
   it('ne porte aucune clé secrète', () => {
-    const fautes = fichiers
-      .filter((f) => statSync(racine(f)).size < 5_000_000)
-      .filter((f) => CLE_SECRETE_REELLE.test(readFileSync(racine(f), 'utf8')))
+    expect(contenus.length).toBeGreaterThan(400)
+    const fautes = contenus.filter(({ texte }) => CLE_SECRETE_REELLE.test(texte)).map(({ fichier }) => fichier)
     expect(fautes).toEqual([])
   })
 
