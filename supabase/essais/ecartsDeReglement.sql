@@ -37,7 +37,8 @@ begin
   insert into verdicts values (2, 'aucune autre racine du catalogue ne recouvre 656, 666, 756, 766', v_n || ' recouvrement(s)', v_n = 0);
 
   -- 3. Un dossier qui ne les règle pas les lit à leur défaut ; plan_du_dossier les rend avec les autres.
-  select d.id into v_dossier from public.dossiers d order by d.id limit 1;
+  -- Le dossier `test`, nommément : un essai joué en production ne prend pas « le premier » d'une table.
+  select d.id into v_dossier from public.dossiers d where d.id = '001c7ed7-c23b-4590-901e-693489f8af24';
   insert into verdicts values (3, 'compte_du_role : le défaut pour un dossier qui ne règle rien',
     public.compte_du_role(v_dossier, 'pertes_de_change') || ', ' || public.compte_du_role(v_dossier, 'gains_de_change'),
     public.compte_du_role(v_dossier, 'pertes_de_change') = '656000' and public.compte_du_role(v_dossier, 'gains_de_change') = '756000');
@@ -51,7 +52,8 @@ begin
 
   -- 6. Le règlement d'une pièce, son écart à part : les gardes du brouillon laissent passer une ligne au 656 et une au 627
   --    (`garder_comptes_des_pieces` ne nomme ni l'un ni l'autre).
-  select p.id, p.dossier_id into v_piece, v_dossier from public.pieces p order by p.id limit 1;
+  select p.id, p.dossier_id into v_piece, v_dossier from public.pieces p
+   where p.dossier_id = '001c7ed7-c23b-4590-901e-693489f8af24' order by p.id limit 1;
   v_erreur := 'acceptées';
   begin
     insert into public.ecritures_brouillon (dossier_id, piece_id, date, compte, libelle, montant, sens, statut) values
