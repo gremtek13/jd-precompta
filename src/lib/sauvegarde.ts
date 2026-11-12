@@ -32,6 +32,7 @@ import { ADRESSES_DES_ACCES_RETIRES_PREVUES, TABLES_DES_ADRESSES_DES_ACCES_RETIR
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { SAISIES_2035E_PREVUES, TABLES_DES_SAISIES_2035E } from './saisies2035E'
 import { MODELE_DU_CABINET_PREVU, TABLES_DU_MODELE_DU_CABINET } from './modeleDuCabinet'
+import { COPIE_DES_FICHIERS_PREVUE, TABLES_DES_COPIES_DES_FICHIERS } from './copieDesFichiers'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
@@ -443,6 +444,17 @@ export function auPlanDuModeleDuCabinet(table: string, prevu: boolean): boolean 
   return prevu || !(TABLES_DU_MODELE_DU_CABINET as readonly string[]).includes(table)
 }
 
+// LES COPIES DES FICHIERS SUR UN SUPPORT DU CABINET (lignes 20.65 et 44, INAL6 ; migration `copies_des_fichiers`, PRÉPARÉE
+// le 12/11/2026) : une table de NIVEAU CABINET — elle décrit ce que le chef a rapatrié, pas un dossier —, hors de l'export
+// d'un dossier, comme `cabinet_admins`. Sous le drapeau de la migration (`COPIE_DES_FICHIERS_PREVUE`,
+// src/lib/copieDesFichiers.ts), baissé : la production n'a pas la table. Sa relation (le cabinet, en cascade) ; son rang,
+// après `cabinet_admins` et les originaux libérés ; sa clé, la commune ; aucune vague. sauvegardeCopiesDesFichiers.test.ts éprouve les deux plans.
+
+/** Une table au plan, côté copies des fichiers : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDesCopiesDesFichiers(table: string, prevue: boolean): boolean {
+  return prevue || !(TABLES_DES_COPIES_DES_FICHIERS as readonly string[]).includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -471,6 +483,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesNotesDeFrais(table, NOTES_DE_FRAIS_PREVUES)
     && auPlanDesSaisies2035E(table, SAISIES_2035E_PREVUES)
     && auPlanDuModeleDuCabinet(table, MODELE_DU_CABINET_PREVU)
+    && auPlanDesCopiesDesFichiers(table, COPIE_DES_FICHIERS_PREVUE)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -630,6 +643,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'lignes_bancaires', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'memberships', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'originaux_liberes', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'cascade' },
+  { enfant: 'copies_des_fichiers', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'cascade' },
   { enfant: 'plan_comptable_cabinet', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'cascade' },
   { enfant: 'plan_comptable_cabinet', parent: 'roles_comptables', colonne: 'role', aLaSuppression: 'bloque' },
   { enfant: 'trace_des_droits', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -976,6 +990,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'plan_comptable_cabinet',
   'cabinet_admins',
   'originaux_liberes',
+  'copies_des_fichiers',
   'dossiers',
   'plan_comptable_dossier',
   'a_nouveaux',
@@ -1522,6 +1537,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   cabinet_admins: { acces: 'cabinet' },
   tiers_categories_cabinet: { acces: 'cabinet' },
   originaux_liberes: { acces: 'cabinet' },
+  copies_des_fichiers: { acces: 'cabinet' },
   plan_comptable_cabinet: { acces: 'cabinet' },
 
   categories: { acces: 'partage' },

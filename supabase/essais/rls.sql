@@ -117,6 +117,10 @@
 --      l'équipe lisent le modèle (contrôles positifs), le client d'un dossier du cabinet et l'anonyme rien ; le client ne le
 --      règle ni ne l'écrit ; le catalogue — et trois mutations ; avant la migration `modele_de_plan_du_cabinet`, une ligne
 --      « EN ATTENTE ».
+--   6undecies. La COPIE DES FICHIERS SUR UN SUPPORT DU CABINET (INAL6, lignes 20.65 et 44 ; bloc CF, en fin de fichier) :
+--      CF1 à CF3 — le chef et un membre de l'équipe lisent la copie (contrôles positifs), le client d'un dossier du cabinet
+--      et l'anonyme rien ; le client ne l'enregistre ni ne l'écrit ; le catalogue — et trois mutations ; avant la migration
+--      `copies_des_fichiers`, une ligne « EN ATTENTE ».
 --   7. Les droits qui ne passent pas par la RLS (bloc HR, migration `droits_hors_rls`) : anon, authenticated et PUBLIC ne
 --      portent, sur aucune relation du schéma, aucune de ses colonnes ni dans aucun défaut d'un propriétaire, que le DML —
 --      lu au catalogue, la boucle sur `pg_class` attrapant une table créée demain —, et un contrôle POSITIF : le DML
@@ -9119,6 +9123,185 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $mp$;
+
+-- ══ CF. La copie des fichiers sur un support du cabinet (lignes 20.65 et 44, INAL6 ; migration `copies_des_fichiers`, PRÉPARÉE) ══
+-- Une table du CABINET, sans dossier : lue par l'équipe du cabinet (`admin_du_cabinet`, chef ou non), écrite par
+-- `enregistrer_copie_des_fichiers` seule, le chef du cabinet (aucune policy d'écriture). Le client ne la lit pas, même quand
+-- il a un accès à un dossier du cabinet. Le reste (les refus sous leurs mots, la couverture de tous les dossiers) :
+-- `copiesDesFichiers.sql`.
+--   CF1. Le chef enregistre une copie et la lit (le contrôle POSITIF) ; un membre de l'équipe qui n'est pas chef la lit
+--        aussi ; le client, qui a un accès au dossier du client, n'en lit rien ; l'anonyme non plus.
+--   CF2. Le client n'enregistre pas de copie (42501, sous ses mots), n'y insère rien en direct (42501), ne réécrit rien.
+--   CF3. Le catalogue : la RLS active, une seule policy permissive, en lecture, à authenticated, `admin_du_cabinet`.
+-- Trois mutations, qui doivent mordre : M-CF1 (la lecture élargie au client d'un dossier du cabinet : il lit la copie),
+-- M-CF2 (la policy fermée : le chef ne lit plus rien), M-CF3 (une policy d'insertion ouverte : l'insertion directe du client
+-- passe). Avant la migration, une ligne dit que le bloc attend.
+do $cf$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  cabinet uuid; n_dossiers integer; chef_lit bigint; membre_lit bigint; du_client bigint; de_l_anon text; par_la_fonction text;
+  en_direct text; reecrites bigint; elargie bigint; fermee bigint; ecrite_elargie text; n bigint; erreur text;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.copies_des_fichiers') is null then
+    insert into rls_verdict values ('CF. la copie des fichiers : EN ATTENTE de la migration copies_des_fichiers',
+      'copies_des_fichiers', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le chef enregistre une copie de tous les dossiers du cabinet du dossier du client ──
+    select d.cabinet_id into cabinet from dossiers d where d.id = dossier_du_client;
+    select count(*) into n_dossiers from dossiers d where d.cabinet_id = cabinet;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform enregistrer_copie_des_fichiers(cabinet, n_dossiers, 0, 0, 0, 0, 0, array_fill(repeat('c', 64), array[n_dossiers]));
+    select count(*) into chef_lit from copies_des_fichiers where cabinet_id = cabinet;
+    reset role;
+    construit := true;
+
+    -- CF1 : le client, l'anonyme, puis le client rattaché à l'équipe comme comptable, le temps d'une sous-transaction.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from copies_des_fichiers;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from copies_des_fichiers;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    begin
+      insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into membre_lit from copies_des_fichiers where cabinet_id = cabinet;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'CF1. le chef lit la copie qu''il a enregistrée, un membre de l''équipe aussi (les contrôles positifs) ; le client, qui a un accès à un dossier du cabinet, n''en lit rien, ni l''anonyme',
+      'cible', 'copies_des_fichiers',
+      'observe', 'le chef : ' || (chef_lit >= 1)::text || ' | le membre : ' || coalesce((membre_lit = chef_lit)::text, '?') || ' | le client : ' || du_client || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_lit >= 1 and membre_lit = chef_lit and du_client = 0 and de_l_anon = '0');
+
+    -- CF2 : le client n'enregistre ni n'écrit ni ne réécrit une copie.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_copie_des_fichiers(cabinet, n_dossiers, 0, 0, 0, 0, 0, array_fill(repeat('c', 64), array[n_dossiers]));
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into copies_des_fichiers (cabinet_id, faite_par, nb_dossiers, nb_fichiers, nb_verifies, nb_ecarts, nb_manquants, octets, empreintes_des_manifestes)
+        values (cabinet, client, 1, 0, 0, 0, 0, 0, array[repeat('c', 64)]);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update copies_des_fichiers set nb_ecarts = 0 where cabinet_id = cabinet returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'CF2. le client n''enregistre pas de copie des fichiers (la fonction), n''en écrit pas en direct et n''en réécrit aucune',
+      'cible', 'copies_des_fichiers',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites,
+      'ok', par_la_fonction = '42501 Seul le chef du cabinet enregistre une copie des fichiers.'
+        and en_direct like '42501 %' and reecrites = 0);
+
+    -- M-CF1 : la lecture élargie au client d'un dossier du cabinet.
+    begin
+      alter policy copies_des_fichiers_lecture on public.copies_des_fichiers
+        using (admin_du_cabinet(cabinet_id) or exists (select 1 from dossiers d join memberships m on m.dossier_id = d.id
+                                                        where d.cabinet_id = copies_des_fichiers.cabinet_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from copies_des_fichiers where cabinet_id = cabinet;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CF1 — la lecture des copies des fichiers élargie au client d''un dossier du cabinet',
+      'attendu', 'le client lit la copie', 'observe', coalesce((elargie >= 1)::text, '?'), 'mord', coalesce(elargie >= 1, false));
+
+    -- M-CF2 : la policy fermée.
+    begin
+      alter policy copies_des_fichiers_lecture on public.copies_des_fichiers using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from copies_des_fichiers where cabinet_id = cabinet;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CF2 — la policy des copies des fichiers fermée',
+      'attendu', 'le chef ne lit plus rien', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-CF3 : une policy d'insertion ouverte au client.
+    begin
+      execute 'create policy copies_des_fichiers_mutant on public.copies_des_fichiers for insert to authenticated with check (true)';
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        insert into copies_des_fichiers (cabinet_id, faite_par, nb_dossiers, nb_fichiers, nb_verifies, nb_ecarts, nb_manquants, octets, empreintes_des_manifestes)
+          values (cabinet, client, 1, 0, 0, 0, 0, 0, array[repeat('c', 64)]);
+        ecrite_elargie := 'ACCEPTÉ';
+      exception when others then ecrite_elargie := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CF3 — une insertion directe ouverte au client',
+      'attendu', 'son insertion directe passe', 'observe', coalesce(ecrite_elargie, '?'), 'mord', coalesce(ecrite_elargie = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- CF3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'copies_des_fichiers' and p.roles = array['authenticated']::name[]
+     and p.policyname = 'copies_des_fichiers_lecture' and p.permissive = 'PERMISSIVE' and p.cmd = 'SELECT'
+     and p.qual = 'admin_du_cabinet(cabinet_id)' and p.with_check is null;
+  verdicts := verdicts || jsonb_build_object('controle', 'CF3. la RLS active ; une seule policy, en lecture, à authenticated, l''équipe du cabinet (lecture du catalogue)',
+    'cible', 'copies_des_fichiers',
+    'observe', n || ' sur 1, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'copies_des_fichiers' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.copies_des_fichiers'::regclass),
+    'ok', n = 1 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'copies_des_fichiers' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 1
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.copies_des_fichiers'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'CF. le jeu d''essai de la copie des fichiers s''est construit', 'cible', 'le cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $cf$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

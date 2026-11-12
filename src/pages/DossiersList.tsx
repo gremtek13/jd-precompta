@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext'
 import { useDossiersAuRibAConfirmer } from '../lib/dossiersAuRibAConfirmerLecture'
 import { garderLesDossiersOuverts, lireLesAccesDuCompte } from '../lib/dossiersOuvertsLecture'
 import RibsAConfirmer from '../components/RibsAConfirmer'
+import CopieDesFichiers from '../components/CopieDesFichiers'
 import { TITRE_MON_CABINET, separerLeDossierDuCabinet } from '../lib/dossierDuCabinet'
 import { lireLesDossiersDesCabinets } from '../lib/dossierDuCabinetLecture'
 import { MODELE_DU_CABINET_PREVU, modeleALaCreation, phraseDuModeleNonApplique, type LectureDuModele } from '../lib/modeleDuCabinet'
@@ -256,6 +257,9 @@ export default function DossiersList() {
       {/* Hors de la grille, au-dessus d'elle et de toute sa largeur : elle ne dépend d'aucune des lectures du tableau de bord (ni
           chargement, ni panne ne la retardent ou ne la taisent), et ce qu'elle dit vaut pour tous les dossiers. */}
       <RibsAConfirmer lecture={ribsAConfirmer} dossiersDuCabinet={designes} className="ribs-a-confirmer-tete" />
+
+      {/* La copie des fichiers sur un support du cabinet (INAL6) : hors de la grille aussi, sous le drapeau de sa migration. */}
+      <CopieDesFichiers className="ribs-a-confirmer-tete" />
 
       {erreurChargement && (
         <div className="card">
