@@ -1,5 +1,5 @@
 import { rang360 } from './amortissements'
-import { FORME_COMPTE_DE_ROLE } from './planComptable'
+import { FORME_COMPTE_DE_ROLE, type DefinitionRoleComptable } from './planComptable'
 import type { ModeComptable } from './types'
 
 // LES ÉCRITURES D'INVENTAIRE, EN MODULE (ligne 35, lot INV1 ; docs/conceptions/35-inventaire.md, § 3, § 4.4 et § 6).
@@ -540,3 +540,33 @@ export function prorataApresLaCloture(saisie: SaisieDuProrata, methode: MethodeD
   const centimes = Number((2n * m * BigInt(joursApres) + BigInt(joursDeLaPeriode)) / (2n * BigInt(joursDeLaPeriode)))
   return { ok: true, centimes, joursApres, joursDeLaPeriode, methode }
 }
+
+// ── La base (INV2 ; migration `operations_d_inventaire`, PRÉPARÉE le 12/11/2026, pas appliquée) ──────────────────────────────
+// supabase/preparees/20261112190000_operations_d_inventaire.sql : la table `operations_inventaire`, la colonne
+// `ecritures_brouillon.operation_inventaire_id`, `enregistrer_operation_inventaire` et `retirer_operation_inventaire`, qui
+// redisent les refus de ce module sous les mêmes mots, aux mêmes codes, dans le même ordre (inventaireEnBase.test.ts les
+// confronte au texte de la migration), et recomposent en entiers ce que `composerRegularisation` propose. La base tient
+// les trois choix ouverts à leur recommandation : la TVA d'attente (INV-Q3 (A) : elle ne dit jamais `tvaHorsTaxes`),
+// l'extourne avec la constatation (INV-Q1 (A)), le 467 et le 468 exclus (INV-Q2 (A)). L'appelant lui passe l'exercice
+// figé (`valide`) quand il est au plus l'année de la frontière de la validation, et le premier exercice, l'année des
+// premiers à-nouveaux du dossier.
+
+/** La migration est-elle en base ? Baissé tant qu'elle n'est que préparée : aucun écran n'appelle ses fonctions, et sa table
+ *  reste hors du plan de sauvegarde (sauvegarde.ts, `auPlanDeLInventaire`). */
+export const INVENTAIRE_PREVU: boolean = false
+
+/** La table de la migration. */
+export const TABLES_DE_L_INVENTAIRE = ['operations_inventaire'] as const
+
+/** Les six rôles des régularisations que la migration insère au catalogue (§ 4.4), rangs 360 à 410, leur libellé au plan
+ *  comptable général. Ils n'entrent dans `ROLES_COMPTABLES` (lib/planComptable.ts) qu'avec l'écran (INV5) : la base les
+ *  porte, la lecture du plan ignore sans conséquence un rôle qu'elle ne connaît pas (`planDeLaReponse`). Les six des
+ *  provisions viendront avec INV4. */
+export const ROLES_DES_REGULARISATIONS: readonly DefinitionRoleComptable[] = [
+  { role: 'charges_constatees_avance', racines: ['486'], compteDefaut: '486000', libelleDefaut: "Charges constatées d'avance", prefixeAuxiliaireDefaut: null, ordre: 360 },
+  { role: 'produits_constates_avance', racines: ['487'], compteDefaut: '487000', libelleDefaut: "Produits constatés d'avance", prefixeAuxiliaireDefaut: null, ordre: 370 },
+  { role: 'factures_non_parvenues', racines: ['408'], compteDefaut: '408100', libelleDefaut: 'Fournisseurs - Factures non parvenues', prefixeAuxiliaireDefaut: null, ordre: 380 },
+  { role: 'factures_a_etablir', racines: ['418'], compteDefaut: '418100', libelleDefaut: 'Clients - Factures à établir', prefixeAuxiliaireDefaut: null, ordre: 390 },
+  { role: 'tva_factures_non_parvenues', racines: ['44586'], compteDefaut: '445860', libelleDefaut: "Taxes sur le chiffre d'affaires sur factures non parvenues", prefixeAuxiliaireDefaut: null, ordre: 400 },
+  { role: 'tva_factures_a_etablir', racines: ['44587'], compteDefaut: '445870', libelleDefaut: "Taxes sur le chiffre d'affaires sur factures à établir", prefixeAuxiliaireDefaut: null, ordre: 410 },
+]

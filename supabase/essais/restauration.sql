@@ -980,6 +980,24 @@ begin
   end if;
 end $$;
 
+-- ══ Les opérations d'inventaire (ligne 35, INV2) ══ Au plan du code quand `INVENTAIRE_PREVU` est levé — c'est-à-dire quand
+-- sa migration est en base : le script met sa table juste après `notes_internes`, bien après les pièces qu'elle cite et
+-- avant le brouillon qui la cite (ORDRE_RESTAURATION_PREVU) ; les tables qui suivent reculent d'un rang — le geste des
+-- articles ; son chemin. Aucune vague : elle ne se cite pas elle-même. Absente de la base, rien n'entre : le plan est celui
+-- d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.operations_inventaire') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'notes_internes';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'operations_inventaire');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('operations_inventaire','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

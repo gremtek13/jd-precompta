@@ -105,7 +105,16 @@ declare
   empreinte_catalogue_468_change constant text := '5e8a3670e6aa300ebefb151d8e25ddb0';
   empreinte_catalogue_468_personnel_change constant text := '54f69309659746de27e3a9c82eb47173';
   au_change constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'ecarts_de_reglement');
-  roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end;
+  -- La migration `operations_d_inventaire` (ligne 35, INV2, préparée) appliquée : les six rôles des régularisations (486000,
+  -- 487000, 408100, 418100, 445860, 445870, rangs 360 à 410) s'y ajoutent, jugés À PART (contrôle 1bis, leur empreinte, que
+  -- src/lib/inventaireEnBase.test.ts recalcule) : l'empreinte du contrôle 1 se prend sans eux, et les combinaisons d'hier ne
+  -- doublent pas. Son historique en base décide.
+  roles_de_l_inventaire constant text[] := array['charges_constatees_avance', 'produits_constates_avance', 'factures_non_parvenues',
+    'factures_a_etablir', 'tva_factures_non_parvenues', 'tva_factures_a_etablir'];
+  empreinte_roles_inventaire constant text := 'e349db8bcded829117de19cc9eb86d67';
+  au_inventaire constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'operations_d_inventaire');
+  roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end
+    + case when au_inventaire then 6 else 0 end;
   -- Le `case` que cinq fonctions recopiaient : le compte du dirigeant, 108000 en trésorerie. Depuis l'étape PC2
   -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
   -- l'export les portent toutes : `pc2_exigee` est vrai, et le `case` recopié est une faute.
@@ -160,14 +169,20 @@ begin
   -- ══ 1 à 5. Le catalogue, le plan vide, les policies, les droits ══
   select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
            || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
-    into n, texte from roles_comptables;
+    into n, texte from roles_comptables where not (role = any (roles_de_l_inventaire));
   verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte) — 33 avec le personnel (B7), deux de plus avec le change (31)',
-    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue and texte = case
+    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue - case when au_inventaire then 6 else 0 end and texte = case
       when au_change then case
         when au_468 and au_personnel then empreinte_catalogue_468_personnel_change when au_468 then empreinte_catalogue_468_change
         when au_personnel then empreinte_catalogue_personnel_change else empreinte_catalogue_change end
       when au_468 and au_personnel then empreinte_catalogue_468_personnel when au_468 then empreinte_catalogue_468
       when au_personnel then empreinte_catalogue_personnel else empreinte_catalogue end, false));
+  select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
+           || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
+    into n, texte from roles_comptables where role = any (roles_de_l_inventaire);
+  verdicts := verdicts || jsonb_build_object('controle', '1bis. les six rôles des régularisations d''inventaire (INV2) : à leur empreinte si la migration operations_d_inventaire est en base, absents sinon',
+    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '—'),
+    'ok', coalesce(case when au_inventaire then n = 6 and texte = empreinte_roles_inventaire else n = 0 end, false));
 
   select count(*) filter (where compte_defaut !~ '^[0-9]{6}$'
                             or not exists (select 1 from unnest(racines) x(r) where left(compte_defaut, length(x.r)) = x.r)),
@@ -647,6 +662,14 @@ begin
       insert into plan_comptable_dossier (dossier_id, role, compte, prefixe_auxiliaire)
       values (dossier_libre, 'pertes_de_change', '656100', null), (dossier_libre, 'gains_de_change', '756100', null);
       n := n + 2;
+    end if;
+    -- L'inventaire (ligne 35, migration `operations_d_inventaire`, préparée) : ses six comptes décalés.
+    if au_inventaire then
+      insert into plan_comptable_dossier (dossier_id, role, compte, prefixe_auxiliaire)
+      values (dossier_libre, 'charges_constatees_avance', '486100', null), (dossier_libre, 'produits_constates_avance', '487100', null),
+             (dossier_libre, 'factures_non_parvenues', '408110', null), (dossier_libre, 'factures_a_etablir', '418110', null),
+             (dossier_libre, 'tva_factures_non_parvenues', '445861', null), (dossier_libre, 'tva_factures_a_etablir', '445871', null);
+      n := n + 6;
     end if;
     select count(*) filter (where public.compte_du_role(dossier_libre, p.role) is distinct from p.compte),
            count(*) filter (where public.compte_du_role(dossier_client, p.role) is distinct from r.compte_defaut)

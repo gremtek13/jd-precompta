@@ -33,6 +33,7 @@ import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { SAISIES_2035E_PREVUES, TABLES_DES_SAISIES_2035E } from './saisies2035E'
 import { MODELE_DU_CABINET_PREVU, TABLES_DU_MODELE_DU_CABINET } from './modeleDuCabinet'
 import { COPIE_DES_FICHIERS_PREVUE, TABLES_DES_COPIES_DES_FICHIERS } from './copieDesFichiers'
+import { INVENTAIRE_PREVU, TABLES_DE_L_INVENTAIRE } from './inventaire'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import { COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
@@ -455,6 +456,23 @@ export function auPlanDesCopiesDesFichiers(table: string, prevue: boolean): bool
   return prevue || !(TABLES_DES_COPIES_DES_FICHIERS as readonly string[]).includes(table)
 }
 
+// LES OPÉRATIONS D'INVENTAIRE (ligne 35, INV2 ; migration `operations_d_inventaire`, PRÉPARÉE le 12/11/2026) : les
+// régularisations de clôture d'un dossier en engagement. Sous le drapeau de la migration (`INVENTAIRE_PREVU`,
+// src/lib/inventaire.ts), baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde. Ses relations :
+// le dossier en cascade ; la pièce citée sans action (une pièce qu'une régularisation cite ne part pas seule) ; et, côté
+// brouillon, `ecritures_brouillon.operation_inventaire_id`, sans action (la fonction retire les lignes avant la
+// régularisation), qui ne vit au graphe du jour que le drapeau levé (`auGrapheDeLInventaire`). Son rang : après les pièces,
+// juste après les notes internes (la caisse reste juste avant le brouillon), donc avant le brouillon qui la cite, et bien
+// avant les exercices validés, que la garde refuserait de rouvrir. Son chemin,
+// direct ; sa clé, la commune ; aucune vague. La restauration la réinsère par la porte que sa policy ouvre au
+// super-administrateur, et ses lignes par celle que la garde des lignes lui ouvre. sauvegardeOperationsInventaire.test.ts
+// éprouve le plan prévu et le plan du jour.
+
+/** Une table au plan, côté inventaire : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDeLInventaire(table: string, prevu: boolean): boolean {
+  return prevu || !(TABLES_DE_L_INVENTAIRE as readonly string[]).includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -484,6 +502,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesSaisies2035E(table, SAISIES_2035E_PREVUES)
     && auPlanDuModeleDuCabinet(table, MODELE_DU_CABINET_PREVU)
     && auPlanDesCopiesDesFichiers(table, COPIE_DES_FICHIERS_PREVUE)
+    && auPlanDeLInventaire(table, INVENTAIRE_PREVU)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -516,6 +535,20 @@ export const RELATIONS_DE_LA_CAISSE: readonly Pick<Relation, 'enfant' | 'colonne
 export function auGrapheDeLaCaisse(relation: Pick<Relation, 'enfant' | 'colonne'>, caisseExportee: boolean): boolean {
   return caisseExportee
     || !RELATIONS_DE_LA_CAISSE.some((r) => r.enfant === relation.enfant && r.colonne === relation.colonne)
+}
+
+// LA SOURCE D'UNE ÉCRITURE D'INVENTAIRE (ligne 35, INV2) : `ecritures_brouillon.operation_inventaire_id`, une colonne de la
+// migration `operations_d_inventaire` sur une table au plan. Sa relation ne vit au graphe que le drapeau levé
+// (`INVENTAIRE_PREVU`) : avant, ni la colonne ni la table qu'elle pointe ne sont en base.
+export const RELATIONS_DE_L_INVENTAIRE: readonly Pick<Relation, 'enfant' | 'colonne'>[] = [
+  { enfant: 'ecritures_brouillon', colonne: 'operation_inventaire_id' },
+]
+
+/** Une relation au graphe, côté inventaire : toutes, sauf la source d'une écriture d'inventaire tant que sa migration n'est
+ *  pas en base. */
+export function auGrapheDeLInventaire(relation: Pick<Relation, 'enfant' | 'colonne'>, inventairePrevu: boolean): boolean {
+  return inventairePrevu
+    || !RELATIONS_DE_L_INVENTAIRE.some((r) => r.enfant === relation.enfant && r.colonne === relation.colonne)
 }
 
 // L'ENVOI D'UN DEVIS PAR E-MAIL (espace client, étape P6c1 ; migration `envoi_des_devis`, préparée, PAS APPLIQUÉE) : ni
@@ -763,6 +796,9 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'operations_caisse', parent: 'operations_caisse', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'operations_caisse', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'operations_caisse', colonne: 'operation_caisse_id', aLaSuppression: 'cascade' },
+  { enfant: 'operations_inventaire', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'operations_inventaire', parent: 'pieces', colonne: 'piece_citee_id', aLaSuppression: 'bloque' },
+  { enfant: 'ecritures_brouillon', parent: 'operations_inventaire', colonne: 'operation_inventaire_id', aLaSuppression: 'bloque' },
   // Les lettres de mission (ligne 47, LM4) : le dossier du cabinet, en cascade ; le reste sans action.
   { enfant: 'modeles_lettre_de_mission', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'modeles_lettre_de_mission', parent: 'modeles_lettre_de_mission', colonne: 'remplace_id', aLaSuppression: 'bloque' },
@@ -807,7 +843,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
   .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
     && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)
-    && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS))
+    && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_PREVUS)
+    && auGrapheDeLInventaire(r, INVENTAIRE_PREVU))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
@@ -1058,6 +1095,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'piece_commentaires',
   'piece_textes_ocr',
   'notes_internes',
+  'operations_inventaire',
   'pieces_hors_de_france',
   'pieces_hors_de_france_taux',
   'operations_caisse',
@@ -1647,6 +1685,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   parametres_facturation: { acces: 'direct' },
   designations_des_pieces: { acces: 'direct' },
   operations_caisse: { acces: 'direct' },
+  operations_inventaire: { acces: 'direct' },
 }
 
 // Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception, des
