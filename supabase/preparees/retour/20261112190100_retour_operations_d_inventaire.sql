@@ -26,7 +26,10 @@ drop function public.retirer_operation_inventaire(uuid, integer);
 drop function public.enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer);
 drop trigger ecritures_brouillon_inventaire on public.ecritures_brouillon;
 drop function public.garder_ecriture_d_inventaire();
+-- Les contraintes de ses paires avec les sources sœurs (MCB5g, LIA2), si l'une d'elles est en base, quel que soit l'ordre
+-- des collages : la colonne retirée les emporterait, le retour les nomme.
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_inventaire_hors_de_l_ouverture;
+alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_inventaire_hors_des_stocks;
 alter table public.ecritures_brouillon drop constraint ecritures_brouillon_inventaire_sans_autre_source;
 drop index public.ecritures_brouillon_operation_inventaire;
 alter table public.ecritures_brouillon drop column operation_inventaire_id;

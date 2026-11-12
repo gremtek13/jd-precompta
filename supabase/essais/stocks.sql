@@ -207,7 +207,7 @@ begin
   o := pg_temp.essayer(chef, format('select retirer_stock_de_cloture(%L, %L, 1)', dossier, stock));
   insert into essai_stocks values ('E27. un retrait contre une version périmée', '40001', o,
     o = '40001 Ce stock de clôture a changé depuis sa lecture : le relire avant de le retirer.');
-  o := pg_temp.essayer(chef, format('select retirer_stock_de_cloture(%L, %L, 2)', '00000000-0000-4000-8000-000000000000', stock));
+  o := pg_temp.essayer(chef, format('select retirer_stock_de_cloture(%L, %L, 2)', 'e5f0c2a7-3b1d-4c8e-9f60-7a2d4b6c8e10', stock));
   insert into essai_stocks values ('E28. un retrait sous un autre dossier', '42501', o, o = '42501 Seul le cabinet du dossier retire un stock de clôture.');
   o := pg_temp.essayer(chef, format('select retirer_stock_de_cloture(%L, %L, 2)', dossier, stock), true);
   insert into essai_stocks values ('E29. le chef retire le stock : la ligne et ses écritures partent', 'ACCEPTÉ, 0 et 0',

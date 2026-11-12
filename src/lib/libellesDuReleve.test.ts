@@ -250,6 +250,7 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
   'src/lib/caisse.ts': { nombre: 1, raison: `${AUTRE_SOURCE} : l’écriture d’une opération de caisse reçue, relue pour être jugée (la base compose son libellé)` },
   'src/lib/ecritureVenteFacturee.ts': { nombre: 1, raison: `${AUTRE_SOURCE} : l’écriture d’une vente facturée déjà composée, sous le libellé de lib/libellesDesVentes.ts` },
   'src/lib/ecrituresVentesFacturees.ts': { nombre: 1, raison: `${AUTRE_SOURCE} : l’écriture d’une vente facturée déjà composée, sous le libellé de lib/libellesDesVentes.ts` },
+  'src/lib/stocks.ts': { nombre: 1, raison: `${AUTRE_SOURCE} : l’écriture d’un stock de clôture déjà composée (« Stock final au 31/12/AAAA (compte) »), relayée à \`enregistrer_stock_de_cloture\`` },
 }
 
 describe('aucun libellé de la banque hors de la règle, dans une écriture composée', () => {

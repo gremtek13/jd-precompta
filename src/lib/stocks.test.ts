@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ROLES_COMPTABLES } from './planComptable'
@@ -202,5 +203,67 @@ describe('le contrôle 2 de la liasse : les stocks du 2033-A contre les stocks s
       ['stocks-au-bilan', 2, 20_000], ['stocks-au-bilan', 2, -40], ['stocks-au-bilan', 2, -200], ['stocks-au-bilan', 2, 5],
     ])
     expect(echecs[0].texte).toMatch(/^Le compte 310000 porte .* au bilan, et aucun stock de clôture n’y est saisi\.$/)
+  })
+})
+
+describe('les dix rôles des stocks, jugés à part par planComptable.sql', () => {
+  it('leur empreinte est celle que l’essai exige quand la migration est en base', () => {
+    const ESSAI_DU_PLAN = readFileSync(new URL('../../supabase/essais/planComptable.sql', import.meta.url), 'utf8')
+    const texte = ROLES_DES_STOCKS.map((r) => [r.role, r.racines.join(','), r.compteDefaut, r.libelleDefaut ?? '',
+      r.prefixeAuxiliaireDefaut ?? '', String(r.ordre)].join('|')).join('\n')
+    const epinglee = /empreinte_roles_stocks constant text := '([0-9a-f]{32})'/.exec(ESSAI_DU_PLAN)?.[1]
+    expect(createHash('md5').update(texte, 'utf8').digest('hex')).toBe(epinglee)
+    expect(ESSAI_DU_PLAN).toContain("m.name = 'stocks_de_cloture'")
+    for (const r of ROLES_DES_STOCKS) expect(ESSAI_DU_PLAN, r.role).toContain(`'${r.role}'`)
+  })
+})
+
+// LES TROIS SOURCES NEUVES DU BROUILLON (INV2, LIA2, MCB5g) : chaque paire a UNE contrainte, au même nom et au même texte
+// dans les deux migrations de la paire, posée par la seconde à se coller ; chaque garde de tête accepte les deux autres
+// colonnes, présentes ou non, et rien d'autre. Les trois se collent ainsi dans n'importe quel ordre et laissent la même base.
+describe('les sources neuves du brouillon, dans n’importe quel ordre', () => {
+  const lire = (chemin: string) => readFileSync(new URL(`../../${chemin}`, import.meta.url), 'utf8')
+  const MIGRATIONS = {
+    operation_inventaire_id: lire('supabase/preparees/20261112190000_operations_d_inventaire.sql'),
+    stock_de_cloture_id: MIGRATION,
+    ouverture_compte_bancaire_id: lire('supabase/preparees/20261111235000_ouverture_eclatee_par_compte.sql'),
+  }
+  const RETOURS = {
+    operation_inventaire_id: lire('supabase/preparees/retour/20261112190100_retour_operations_d_inventaire.sql'),
+    stock_de_cloture_id: lire('supabase/preparees/retour/20261112200100_retour_stocks_de_cloture.sql'),
+    ouverture_compte_bancaire_id: lire('supabase/preparees/retour/20261111235100_retour_ouverture_eclatee_par_compte.sql'),
+  }
+  const PAIRES = [
+    ['ecritures_brouillon_inventaire_hors_des_stocks', 'operation_inventaire_id', 'stock_de_cloture_id'],
+    ['ecritures_brouillon_inventaire_hors_de_l_ouverture', 'operation_inventaire_id', 'ouverture_compte_bancaire_id'],
+    ['ecritures_brouillon_stock_hors_de_l_ouverture', 'stock_de_cloture_id', 'ouverture_compte_bancaire_id'],
+  ] as const
+  const SOURCES_D_HIER =
+    'cotisation_id,declaration_tva_id,dossier_id,encaissement_id,facture_id,immobilisation_id,ligne_bancaire_id,operation_caisse_id,piece_id,vehicule_id'
+
+  it('chaque paire : la même contrainte dans ses deux migrations, posée si l’autre colonne est en base, nommée par les deux retours', () => {
+    for (const [nom, a, b] of PAIRES) {
+      const pose = `execute 'alter table public.ecritures_brouillon add constraint ${nom} '\n      || 'check (${a} is null or ${b} is null)';`
+      for (const [colonne, autre] of [[a, b], [b, a]] as const) {
+        const texte = MIGRATIONS[colonne]
+        expect(texte.split(pose).length - 1, `${nom} dans la migration de ${colonne}`).toBe(1)
+        const garde = `and a.attname = '${autre}' and not a.attisdropped) then\n    ${pose}`
+        expect(texte, `${nom} : posée si ${autre} est en base`).toContain(garde)
+        expect(RETOURS[colonne], `${nom} au retour de ${colonne}`)
+          .toContain(`alter table public.ecritures_brouillon drop constraint if exists ${nom};`)
+      }
+    }
+    // Aucune autre contrainte d'exclusion entre elles : trois paires, six poses.
+    const poses = Object.values(MIGRATIONS).join('\n').match(/add constraint ecritures_brouillon_\w+_hors_d\w+ '/g)
+    expect(poses).toHaveLength(6)
+  })
+
+  it('chaque garde de tête accepte les deux autres colonnes, présentes ou non, et exige les sources d’hier, rien de plus', () => {
+    for (const [colonne, texte] of Object.entries(MIGRATIONS)) {
+      const autres = Object.keys(MIGRATIONS).filter((c) => c !== colonne)
+      expect(texte, colonne).toMatch(new RegExp(`c\\.contype = 'f'\\n\\s+and a\\.attname not in \\('(${autres.join('|')})', '(${autres.join('|')})'\\);`))
+      expect(texte, colonne).toContain(`if v_sources is distinct from\n     '${SOURCES_D_HIER}' then`)
+      expect(texte, colonne).not.toMatch(new RegExp(`not in \\([^)]*'${colonne}'`))
+    }
   })
 })

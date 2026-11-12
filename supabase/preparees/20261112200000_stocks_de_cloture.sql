@@ -34,11 +34,14 @@
 -- change pas : sa numérotation reçue ne connaît pas encore la sorte « stock » (LIA5) ; d'ici là, aucun écran n'écrit de
 -- stock (`STOCKS_PREVUS` baissé, l'onglet de LIA7 à venir).
 --
--- L'ORDRE. Après les migrations appliquées au 11/11/2026 ; indépendante des migrations préparées, SAUF celles qui ajoutent
--- une source au brouillon (MCB5g, `ouverture_compte_bancaire_id` ; INV2, la colonne de l'opération d'inventaire) : sa
--- garde de tête REFUSE de s'appliquer si le brouillon porte une clé étrangère qu'elle ne nomme pas — sa contrainte « sans
--- autre source » doit alors la recevoir, le texte relu. Ses rangs au catalogue, 500 à 590, laissent 330 à 490 aux rôles
--- préparés ailleurs (le personnel de B7, le change, l'inventaire de la ligne 35).
+-- L'ORDRE. Après les migrations appliquées au 11/11/2026 ; indépendante des migrations préparées, SAUF les deux sœurs qui
+-- ajoutent une source au brouillon (MCB5g, `ouverture_compte_bancaire_id` ; INV2, `operation_inventaire_id`) : les trois
+-- se collent dans n'importe quel ordre et laissent la même base (l'ordre des colonnes excepté). La contrainte d'une paire de
+-- sources neuves porte le même nom et le même texte dans les deux migrations de la paire, et la seconde à se coller la pose
+-- (§ 3) ; sa garde de tête accepte ces deux colonnes, présentes ou non, et REFUSE toute autre clé étrangère du brouillon
+-- qu'elle ne nomme pas — sa contrainte « sans autre source » devrait alors la recevoir, le texte relu. Ses rangs au
+-- catalogue, 500 à 590, laissent 330 à 490 aux rôles préparés ailleurs (le personnel de B7, le change, l'inventaire de la
+-- ligne 35).
 --
 -- SOURCES. PCG (règlement ANC n° 2014-03 modifié, numérotation du 1er janvier 2026), art. 213-31 et suivants (coût
 -- d'entrée des stocks), art. 946-60 et 947-71 (fonctionnement du 603 et du 713) ; CGI, art. 38, 3 (évaluation au prix de
@@ -73,10 +76,12 @@ begin
   loop
     raise exception 'La fonction % n''est plus celle que cette migration appelle : relire la migration contre la base avant de l''appliquer.', v_corps;
   end loop;
-  -- Les sources du brouillon : sa contrainte « sans autre source » les nomme toutes.
+  -- Les sources du brouillon : sa contrainte « sans autre source » nomme les neuf d'hier, et les deux sources neuves des
+  -- migrations sœurs (MCB5g, INV2), présentes ou non, reçoivent leur exclusion au § 3.
   select string_agg(a.attname, ',' order by a.attname collate "C") into v_sources
     from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
-   where c.conrelid = 'public.ecritures_brouillon'::regclass and c.contype = 'f';
+   where c.conrelid = 'public.ecritures_brouillon'::regclass and c.contype = 'f'
+     and a.attname not in ('ouverture_compte_bancaire_id', 'operation_inventaire_id');
   if v_sources is distinct from
      'cotisation_id,declaration_tva_id,dossier_id,encaissement_id,facture_id,immobilisation_id,ligne_bancaire_id,operation_caisse_id,piece_id,vehicule_id' then
     raise exception 'Les sources du brouillon ne sont plus celles que cette migration nomme (%) : sa contrainte « sans autre source » doit recevoir la nouvelle — relire la migration avant de l''appliquer.', v_sources;
@@ -154,6 +159,24 @@ alter table public.ecritures_brouillon add constraint ecritures_brouillon_stock_
     and facture_id is null and operation_caisse_id is null));
 alter table public.ecritures_brouillon add constraint ecritures_brouillon_stock_au_31_decembre check (
   stock_de_cloture_id is null or (extract(month from date) = 12 and extract(day from date) = 31));
+-- L'exclusion envers une source neuve sœur déjà en base : la contrainte de la paire, au nom et au texte que l'autre
+-- migration poserait si elle venait après (INV2 et MCB5g portent ce même bloc, pour leurs paires). Une ligne de stock et une
+-- ligne d'inventaire tombent toutes deux un 31 décembre : leur paire n'a que cette contrainte pour la refuser ; celle de
+-- l'ouverture éclatée, un 1er janvier, que les dates refusent déjà, a la sienne aussi, pour ne pas dépendre d'elles.
+do $autres_sources$
+begin
+  if exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
+               and a.attname = 'operation_inventaire_id' and not a.attisdropped) then
+    execute 'alter table public.ecritures_brouillon add constraint ecritures_brouillon_inventaire_hors_des_stocks '
+      || 'check (operation_inventaire_id is null or stock_de_cloture_id is null)';
+  end if;
+  if exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
+               and a.attname = 'ouverture_compte_bancaire_id' and not a.attisdropped) then
+    execute 'alter table public.ecritures_brouillon add constraint ecritures_brouillon_stock_hors_de_l_ouverture '
+      || 'check (stock_de_cloture_id is null or ouverture_compte_bancaire_id is null)';
+  end if;
+end
+$autres_sources$;
 comment on column public.ecritures_brouillon.stock_de_cloture_id is
   'LIA2 : le stock de clôture dont cette ligne est l''écriture (l''annulation du stock initial ou la constatation du stock final), écrite par enregistrer_stock_de_cloture seule, datée du 31 décembre, sans autre source.';
 

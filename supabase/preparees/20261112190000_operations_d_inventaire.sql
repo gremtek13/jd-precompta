@@ -35,8 +35,13 @@
 --      change ni ne se retire plus (23514) ; ses lignes, figées par la garde des écritures validées. Le verrou PARTAGÉ de la
 --      validation (`cle_validation`) se prend avant toute lecture du gel.
 --   6. Si la double authentification exigée (`deux_facteurs_exiges`) est déjà en base, la policy restrictive `deux_facteurs`
---      sur la table neuve ; si l'ouverture éclatée par compte (MCB5g) l'est, la contrainte qui tient ses lignes hors de
---      l'inventaire.
+--      sur la table neuve.
+--   7. L'exclusion envers les deux autres sources neuves du brouillon, préparées le même mois — l'ouverture éclatée par
+--      compte (MCB5g, `ouverture_compte_bancaire_id`) et le stock de clôture (LIA2, `stock_de_cloture_id`) : une contrainte
+--      PAR PAIRE, au même nom et au même texte dans les trois migrations, posée par la seconde de la paire à se coller. Les
+--      trois se collent ainsi dans n'importe quel ordre et laissent la même base (l'ordre des colonnes excepté), chaque
+--      colonne refusant une ligne qui en cite une autre. La garde de tête accepte ces deux colonnes, présentes ou non, et
+--      refuse toute autre clé étrangère du brouillon qu'elle ne connaît pas.
 --
 -- CE QU'ELLE NE FAIT PAS : la validation (la sorte `inventaire`, ses filets, l'état déclaré : INV3), les provisions (INV4),
 -- l'écran (INV5). Aucun dossier n'est en engagement en production (12/11/2026) : rien ne s'y écrit avant INV5.
@@ -44,6 +49,7 @@
 do $garde$
 declare
   v_f text;
+  v_sources text;
 begin
   if to_regclass('public.operations_inventaire') is not null
      or exists (select 1 from public.roles_comptables r where r.role in ('charges_constatees_avance', 'produits_constates_avance',
@@ -59,6 +65,17 @@ begin
                 where not exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
                                     and a.attname = c.n and not a.attisdropped)) then
     raise exception 'operations_d_inventaire : une table ou une colonne dont elle dépend manque : relire la base.';
+  end if;
+  -- Les sources du brouillon : sa contrainte « sans autre source » nomme les neuf d'hier, et les deux sources neuves des
+  -- migrations sœurs (MCB5g, LIA2), présentes ou non, reçoivent leur exclusion au § 3. Toute autre clé étrangère du
+  -- brouillon, que cette migration ne nomme pas, la refuse : la relire.
+  select string_agg(a.attname, ',' order by a.attname collate "C") into v_sources
+    from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
+   where c.conrelid = 'public.ecritures_brouillon'::regclass and c.contype = 'f'
+     and a.attname not in ('ouverture_compte_bancaire_id', 'stock_de_cloture_id');
+  if v_sources is distinct from
+     'cotisation_id,declaration_tva_id,dossier_id,encaissement_id,facture_id,immobilisation_id,ligne_bancaire_id,operation_caisse_id,piece_id,vehicule_id' then
+    raise exception 'Les sources du brouillon ne sont plus celles que cette migration nomme (%) : sa contrainte « sans autre source » doit recevoir la nouvelle — relire la migration avant de l''appliquer.', v_sources;
   end if;
   -- Les fonctions qu'elle appelle, à l'empreinte de leur corps (les retours chariot écartés), relevées en production le
   -- 12/11/2026.
@@ -152,8 +169,8 @@ create policy operations_inventaire_restauration on public.operations_inventaire
 alter table public.ecritures_brouillon add column operation_inventaire_id uuid
   constraint ecritures_brouillon_operation_inventaire_id_fkey references public.operations_inventaire(id);
 -- Une ligne d'inventaire ne cite aucune autre source, et se date au 31 décembre ou au 1er janvier : la garde la tient au
--- 31 décembre de l'exercice de son opération, ou au lendemain. L'exclusion est symétrique : les contraintes des autres
--- sources n'ont pas à nommer la colonne neuve.
+-- 31 décembre de l'exercice de son opération, ou au lendemain. L'exclusion est symétrique : les contraintes des sources
+-- d'hier n'ont pas à nommer la colonne neuve ; celles des sources neuves sœurs, le bloc qui suit.
 alter table public.ecritures_brouillon add constraint ecritures_brouillon_inventaire_sans_autre_source check (
   operation_inventaire_id is null
   or (num_nonnulls(piece_id, ligne_bancaire_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id,
@@ -165,15 +182,23 @@ create index ecritures_brouillon_operation_inventaire on public.ecritures_brouil
 comment on column public.ecritures_brouillon.operation_inventaire_id is
   'INV2 (ligne 35) : la régularisation d''inventaire dont cette ligne est la constatation (31 décembre) ou l''extourne (1er janvier suivant) ; écrite par enregistrer_operation_inventaire seule.';
 
-do $ouverture_eclatee$
+-- L'exclusion envers une source neuve sœur déjà en base : la contrainte de la paire, au nom et au texte que l'autre
+-- migration poserait si elle venait après (MCB5g et LIA2 portent ce même bloc, pour leurs paires). Une ligne d'inventaire
+-- tombe un 31 décembre, comme celle d'un stock : leur paire n'a que cette contrainte pour la refuser.
+do $autres_sources$
 begin
   if exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
                and a.attname = 'ouverture_compte_bancaire_id' and not a.attisdropped) then
     execute 'alter table public.ecritures_brouillon add constraint ecritures_brouillon_inventaire_hors_de_l_ouverture '
       || 'check (operation_inventaire_id is null or ouverture_compte_bancaire_id is null)';
   end if;
+  if exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
+               and a.attname = 'stock_de_cloture_id' and not a.attisdropped) then
+    execute 'alter table public.ecritures_brouillon add constraint ecritures_brouillon_inventaire_hors_des_stocks '
+      || 'check (operation_inventaire_id is null or stock_de_cloture_id is null)';
+  end if;
 end
-$ouverture_eclatee$;
+$autres_sources$;
 
 -- ══ 4. Deux aides, privées ══
 -- Un nombre de centimes que l'application relit sans perte : un nombre JSON entier, de valeur absolue au plus 2^53 - 1
