@@ -76,6 +76,10 @@
 -- ADAPTÉ LE 12/11/2026 AU CHANGE (ligne 31, 31-changeFrais ; migration `ecarts_de_reglement`, PRÉPARÉE) : deux rôles de plus
 -- au catalogue (`roles_du_catalogue`), quatre empreintes de plus, et leurs comptes décalés au contrôle 32 ; rien d'autre.
 --
+-- ADAPTÉ LE 12/11/2026 AUX STOCKS DE CLÔTURE (ligne 36, LIA2 ; migration `stocks_de_cloture`, PRÉPARÉE) : ses dix rôles
+-- (rangs 500 à 590) jugés À PART, comme les six de l'inventaire (contrôle 1ter, leur empreinte, que src/lib/stocks.test.ts
+-- recalcule), au compte du catalogue (`roles_du_catalogue`), et leurs comptes décalés au contrôle 32 ; rien d'autre.
+--
 -- SUR UNE RÉPLIQUE, EN UNE TRANSACTION (`psql -1 -f`) : le bloc range ses verdicts par `set_config(…, true)`, local à la
 -- transaction, comme l'appel unique d'`execute_sql` ; joué ligne à ligne par psql sans `-1`, la lecture finale trouve un
 -- réglage vide et lève « invalid input syntax for type json » — un défaut de la façon de le jouer, pas de l'essai.
@@ -113,8 +117,15 @@ declare
     'factures_a_etablir', 'tva_factures_non_parvenues', 'tva_factures_a_etablir'];
   empreinte_roles_inventaire constant text := 'e349db8bcded829117de19cc9eb86d67';
   au_inventaire constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'operations_d_inventaire');
+  -- La migration `stocks_de_cloture` (ligne 36, LIA2, préparée) appliquée : les dix rôles des stocks (rangs 500 à 590) s'y
+  -- ajoutent, jugés À PART (contrôle 1ter) comme ceux de l'inventaire. Son historique en base décide.
+  roles_des_stocks constant text[] := array['stocks_matieres', 'stocks_autres_approvisionnements', 'en_cours_biens',
+    'en_cours_services', 'stocks_produits', 'stocks_marchandises', 'variation_stocks_matieres',
+    'variation_stocks_approvisionnements', 'variation_stocks_marchandises', 'production_stockee'];
+  empreinte_roles_stocks constant text := 'd4122c5bbaad869765706cb6a71ec9b4';
+  aux_stocks constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'stocks_de_cloture');
   roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end
-    + case when au_inventaire then 6 else 0 end;
+    + case when au_inventaire then 6 else 0 end + case when aux_stocks then 10 else 0 end;
   -- Le `case` que cinq fonctions recopiaient : le compte du dirigeant, 108000 en trésorerie. Depuis l'étape PC2
   -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
   -- l'export les portent toutes : `pc2_exigee` est vrai, et le `case` recopié est une faute.
@@ -169,9 +180,10 @@ begin
   -- ══ 1 à 5. Le catalogue, le plan vide, les policies, les droits ══
   select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
            || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
-    into n, texte from roles_comptables where not (role = any (roles_de_l_inventaire));
+    into n, texte from roles_comptables where not (role = any (roles_de_l_inventaire)) and not (role = any (roles_des_stocks));
   verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte) — 33 avec le personnel (B7), deux de plus avec le change (31)',
-    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue - case when au_inventaire then 6 else 0 end and texte = case
+    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue - case when au_inventaire then 6 else 0 end - case when aux_stocks then 10 else 0 end
+      and texte = case
       when au_change then case
         when au_468 and au_personnel then empreinte_catalogue_468_personnel_change when au_468 then empreinte_catalogue_468_change
         when au_personnel then empreinte_catalogue_personnel_change else empreinte_catalogue_change end
@@ -183,6 +195,12 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '1bis. les six rôles des régularisations d''inventaire (INV2) : à leur empreinte si la migration operations_d_inventaire est en base, absents sinon',
     'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '—'),
     'ok', coalesce(case when au_inventaire then n = 6 and texte = empreinte_roles_inventaire else n = 0 end, false));
+  select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
+           || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
+    into n, texte from roles_comptables where role = any (roles_des_stocks);
+  verdicts := verdicts || jsonb_build_object('controle', '1ter. les dix rôles des stocks de clôture (LIA2) : à leur empreinte si la migration stocks_de_cloture est en base, absents sinon',
+    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '—'),
+    'ok', coalesce(case when aux_stocks then n = 10 and texte = empreinte_roles_stocks else n = 0 end, false));
 
   select count(*) filter (where compte_defaut !~ '^[0-9]{6}$'
                             or not exists (select 1 from unnest(racines) x(r) where left(compte_defaut, length(x.r)) = x.r)),
@@ -670,6 +688,16 @@ begin
              (dossier_libre, 'factures_non_parvenues', '408110', null), (dossier_libre, 'factures_a_etablir', '418110', null),
              (dossier_libre, 'tva_factures_non_parvenues', '445861', null), (dossier_libre, 'tva_factures_a_etablir', '445871', null);
       n := n + 6;
+    end if;
+    -- Les stocks de clôture (ligne 36, migration `stocks_de_cloture`, préparée) : leurs dix comptes décalés.
+    if aux_stocks then
+      insert into plan_comptable_dossier (dossier_id, role, compte, prefixe_auxiliaire)
+      values (dossier_libre, 'stocks_matieres', '311000', null), (dossier_libre, 'stocks_autres_approvisionnements', '321000', null),
+             (dossier_libre, 'en_cours_biens', '331000', null), (dossier_libre, 'en_cours_services', '341000', null),
+             (dossier_libre, 'stocks_produits', '355100', null), (dossier_libre, 'stocks_marchandises', '371000', null),
+             (dossier_libre, 'variation_stocks_matieres', '603110', null), (dossier_libre, 'variation_stocks_approvisionnements', '603210', null),
+             (dossier_libre, 'variation_stocks_marchandises', '603710', null), (dossier_libre, 'production_stockee', '713500', null);
+      n := n + 10;
     end if;
     select count(*) filter (where public.compte_du_role(dossier_libre, p.role) is distinct from p.compte),
            count(*) filter (where public.compte_du_role(dossier_client, p.role) is distinct from r.compte_defaut)

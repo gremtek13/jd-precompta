@@ -40,11 +40,18 @@
 --      tenant à la place de la précédente (une composition vide retire) ;
 --   5. `garder_ecriture_ouverture_eclatee` : une ligne qui porte cette source ne s'écrit, ne se modifie ni ne se retire que
 --      par cette fonction, la restauration d'une sauvegarde exceptée (le super-administrateur, avant tout exercice validé).
+--   6. L'exclusion envers les deux autres sources neuves du brouillon, préparées le 12/11/2026 — l'opération d'inventaire
+--      (INV2, `operation_inventaire_id`) et le stock de clôture (LIA2, `stock_de_cloture_id`) : une contrainte PAR PAIRE, au
+--      même nom et au même texte dans les trois migrations, posée par la seconde de la paire à se coller. Les trois se
+--      collent ainsi dans n'importe quel ordre et laissent la même base (l'ordre des colonnes excepté). La garde de tête
+--      accepte ces deux colonnes, présentes ou non, et refuse toute autre clé étrangère du brouillon qu'elle ne nomme pas.
 -- Ni table, ni policy : la colonne vit sous la policy du brouillon (le cabinet) ; aucune lecture n'est ouverte au client.
 -- La fonction du clic nomme la suppression des lignes qu'elle remplace : la migration se COLLE (l'outil la retient).
 
 -- ══ 0. La garde de tête ══
 do $garde$
+declare
+  v_sources text;
 begin
   if to_regclass('public.comptes_bancaires') is null
      or to_regprocedure('public.compte_de_banque_du_mouvement(uuid)') is null
@@ -55,6 +62,17 @@ begin
   if exists (select 1 from information_schema.columns where table_schema = 'public'
               and table_name = 'ecritures_brouillon' and column_name = 'ouverture_compte_bancaire_id') then
     raise exception 'La migration ouverture_eclatee_par_compte est déjà en base : elle ne s''applique pas deux fois.';
+  end if;
+  -- Les sources du brouillon : sa contrainte « sans autre source » nomme les neuf d'hier, et les deux sources neuves des
+  -- migrations sœurs (INV2, LIA2), présentes ou non, reçoivent leur exclusion au § 1. Toute autre clé étrangère du
+  -- brouillon, que cette migration ne nomme pas, la refuse : la relire.
+  select string_agg(a.attname, ',' order by a.attname collate "C") into v_sources
+    from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
+   where c.conrelid = 'public.ecritures_brouillon'::regclass and c.contype = 'f'
+     and a.attname not in ('operation_inventaire_id', 'stock_de_cloture_id');
+  if v_sources is distinct from
+     'cotisation_id,declaration_tva_id,dossier_id,encaissement_id,facture_id,immobilisation_id,ligne_bancaire_id,operation_caisse_id,piece_id,vehicule_id' then
+    raise exception 'Les sources du brouillon ne sont plus celles que cette migration nomme (%) : sa contrainte « sans autre source » doit recevoir la nouvelle — relire la migration avant de l''appliquer.', v_sources;
   end if;
 end
 $garde$;
@@ -68,6 +86,24 @@ alter table public.ecritures_brouillon add constraint ecritures_brouillon_ouvert
                    encaissement_id, facture_id, operation_caisse_id) = 0
       and extract(month from date) = 1 and extract(day from date) = 1));
 create index ecritures_brouillon_ouverture_compte_bancaire_id_idx on public.ecritures_brouillon (ouverture_compte_bancaire_id);
+-- L'exclusion envers une source neuve sœur déjà en base : la contrainte de la paire, au nom et au texte que l'autre
+-- migration poserait si elle venait après (INV2 et LIA2 portent ce même bloc, pour leurs paires). Une ligne d'inventaire
+-- peut tomber un 1er janvier (une extourne), comme celle-ci : leur paire n'a que cette contrainte pour la refuser ; celle
+-- d'un stock, un 31 décembre, que les dates refusent déjà, a la sienne aussi, pour ne pas dépendre d'elles.
+do $autres_sources$
+begin
+  if exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
+               and a.attname = 'operation_inventaire_id' and not a.attisdropped) then
+    execute 'alter table public.ecritures_brouillon add constraint ecritures_brouillon_inventaire_hors_de_l_ouverture '
+      || 'check (operation_inventaire_id is null or ouverture_compte_bancaire_id is null)';
+  end if;
+  if exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
+               and a.attname = 'stock_de_cloture_id' and not a.attisdropped) then
+    execute 'alter table public.ecritures_brouillon add constraint ecritures_brouillon_stock_hors_de_l_ouverture '
+      || 'check (stock_de_cloture_id is null or ouverture_compte_bancaire_id is null)';
+  end if;
+end
+$autres_sources$;
 comment on column public.ecritures_brouillon.ouverture_compte_bancaire_id is
   'Le compte bancaire dont cette écriture ouvre le 512 propre, au 1er janvier, d''après son relevé de la veille (MCB5, MCB-Q7) ; écrite par ecrire_ouverture_eclatee seule.';
 
