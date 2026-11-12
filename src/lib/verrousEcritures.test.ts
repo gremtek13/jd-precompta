@@ -294,6 +294,7 @@ const EXCEPTIONS: Record<string, { categorie: CategorieNommee; raison: string }>
 const FETCH_ADMIS: Record<string, { nombre: number; raison: string }> = {
   'src/lib/sirene.ts': { nombre: 1, raison: 'Recherche publique d’un SIRET (lecture, sur un clic).' },
   'src/lib/remplir2035.ts': { nombre: 1, raison: 'Le formulaire vierge de la 2035, servi par l’application.' },
+  'src/lib/remplir2033.ts': { nombre: 1, raison: 'Le formulaire vierge de la liasse 2033, servi par l’application.' },
 }
 
 // Les méthodes qu'une chaîne du client peut porter, en dehors des portes : un nom absent des deux listes est une forme
