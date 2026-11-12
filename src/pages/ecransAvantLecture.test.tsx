@@ -52,6 +52,7 @@ import AssistantTab from './dossier/AssistantTab'
 import BalanceCard from './dossier/BalanceCard'
 import BanqueTab from './dossier/BanqueTab'
 import CaisseTab from './dossier/CaisseTab'
+import InventaireTab from './dossier/InventaireTab'
 import BilanTab from './dossier/BilanTab'
 import ChecklistTab from './dossier/ChecklistTab'
 import ClotureTab from './dossier/ClotureTab'
@@ -138,6 +139,13 @@ const caisseDuGarde = vi.hoisted(() => ({ levee: false }))
 vi.mock('../lib/caisse', async (original) => {
   const vrai = await original<typeof import('../lib/caisse')>()
   return { ...vrai, get CAISSE_EXPORTEE() { return caisseDuGarde.levee } }
+})
+// LE DRAPEAU DE L'ONGLET INVENTAIRE (`INVENTAIRE_EXPORTE`, lib/inventaire.ts, ligne 35, INV5), baissé : l'onglet ne lit rien
+// sans lui. Même patron que la caisse : levé le temps du montage de l'onglet Inventaire seulement, baissé par `afterEach`.
+const inventaireGarde = vi.hoisted(() => ({ leve: false }))
+vi.mock('../lib/inventaire', async (original) => {
+  const vrai = await original<typeof import('../lib/inventaire')>()
+  return { ...vrai, get INVENTAIRE_EXPORTE() { return inventaireGarde.leve } }
 })
 // LE DRAPEAU DES DEVIS QUI CITENT UN CONTACT (`DEVIS_CITENT_UN_CONTACT`, lib/devis.ts), baissé : le formulaire d'un devis ne lit
 // les contacts, et la vue « Clients » l'activité des contacts, que levé. Même patron que la caisse : levé le temps du montage
@@ -384,6 +392,13 @@ const ECRANS: Ecran[] = [
   { nom: 'CaisseTab (basculé)', fichier: 'pages/dossier/CaisseTab.tsx', rendre: () => {
     caisseDuGarde.levee = true
     return <Dossier1><CaisseTab dossierId="d1" modele={TRESORERIE} assujettiTva ventesParLesFactures onNavigate={rien} /></Dossier1>
+  } },
+  // L'onglet Inventaire (ligne 35, INV5), en engagement : ses quatre lectures entières (régularisations, provisions, déclarations,
+  // écritures citées), le plan et l'ouverture du dossier sont retenus, il attend, et n'offre ni formulaire, ni total, ni geste ;
+  // revenues vides ou refusées, l'attente se lève.
+  { nom: 'InventaireTab', fichier: 'pages/dossier/InventaireTab.tsx', rendre: () => {
+    inventaireGarde.leve = true
+    return <Dossier1><InventaireTab dossierId="d1" dossierNom="Dossier fictif" modele={{ mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }} assujettiTva /></Dossier1>
   } },
   { nom: 'BanqueTab', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} statutTva="redevable" /></Dossier1> },
   // Basculé (ligne 28.65, étape VF5a1) : l'onglet lit aussi les ventes facturées, et ne dit ni n'offre rien avant elles.
@@ -889,7 +904,7 @@ beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-09T10:00:00Z'))
 })
-afterEach(() => { cleanup(); caisseDuGarde.levee = false; planDepuisLaBalanceGarde.leve = false; devisContactGarde.leve = false; achatsGarde.leve = false; notesDeFraisGarde.leve = false })
+afterEach(() => { cleanup(); caisseDuGarde.levee = false; inventaireGarde.leve = false; planDepuisLaBalanceGarde.leve = false; devisContactGarde.leve = false; achatsGarde.leve = false; notesDeFraisGarde.leve = false })
 afterAll(() => { vi.useRealTimers() })
 
 // LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : la page d'un dossier le lit avec lui (`plan_du_dossier`) et ne monte

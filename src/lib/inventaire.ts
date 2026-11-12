@@ -557,6 +557,13 @@ export function prorataApresLaCloture(saisie: SaisieDuProrata, methode: MethodeD
  *  ne lit pas l'inventaire (lib/inventaireDeLaValidation.ts). Il ne se lève qu'avec les trois en base. */
 export const INVENTAIRE_PREVU: boolean = false
 
+/** L'ONGLET « INVENTAIRE » EST-IL OFFERT (ligne 35, INV5 ; src/pages/dossier/InventaireTab.tsx) ? Baissé, aucun onglet ne se monte
+ *  ni ne paraît dans les deux navigations, et rien ne se lit : la liste des écrans est celle d'hier, au caractère près. Il ne se
+ *  lève qu'avec `INVENTAIRE_PREVU` (l'onglet lit les trois tables et n'appelle que les fonctions des trois migrations) et la
+ *  barrière de la mise en production (INV8) : levé seul, chaque lecture échouerait faute de table (`inventaireDeLEcranLecture.test.ts`
+ *  garde l'implication). */
+export const INVENTAIRE_EXPORTE: boolean = false
+
 /** La table des provisions (INV4), sous le même drapeau : restaurée AVANT les opérations d'inventaire, dont les évaluations
  *  la citent (`provision_id`). */
 export const TABLES_DES_PROVISIONS = ['provisions'] as const

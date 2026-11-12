@@ -3,6 +3,7 @@ import { Link, NavLink } from 'react-router-dom'
 import { IconChevron } from './icons'
 import Avatar from './widgets/Avatar'
 import { CAISSE_EXPORTEE } from '../lib/caisse'
+import { INVENTAIRE_EXPORTE } from '../lib/inventaire'
 import { groupesDuParcours, type IdGroupeParcours } from '../lib/ongletsDossier'
 import { correspondALaRecherche } from '../lib/recherche'
 import type { DossierDeBarre } from '../lib/listeDossiers'
@@ -50,8 +51,8 @@ export default function BarreDossiers({
   reduite: boolean
 }) {
   const [groupes, setGroupes] = useState<Record<string, boolean>>(lireGroupes)
-  // Les écrans, lus à chaque rendu : l'onglet Caisse n'y est que la caisse en base (lib/ongletsDossier.ts).
-  const tousLesGroupes = groupesDuParcours(CAISSE_EXPORTEE)
+  // Les écrans, lus à chaque rendu : l'onglet Caisse n'y est que la caisse en base, l'onglet Inventaire que l'inventaire offert (lib/ongletsDossier.ts).
+  const tousLesGroupes = groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE)
   const DESTINATIONS = tousLesGroupes.filter((g) => g.cible)
   const REGROUPEMENTS = tousLesGroupes.filter((g) => g.enfants)
 

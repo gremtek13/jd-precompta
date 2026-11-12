@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ICONES_PARCOURS, IconChecklist, IconDocuments, IconEcritures, IconInformations, type IconComponent } from './icons'
 import { CAISSE_EXPORTEE } from '../lib/caisse'
+import { INVENTAIRE_EXPORTE } from '../lib/inventaire'
 import { groupesDuParcours, type DossierTab, type GroupeParcours, type IdGroupeParcours } from '../lib/ongletsDossier'
 
 export type { DossierTab } from '../lib/ongletsDossier'
@@ -50,7 +51,7 @@ export default function DossierParcours({ tab, onChange }: { tab: DossierTab; on
 
   return (
     <div className="nav-groupes" ref={racineRef}>
-      {groupesDuParcours(CAISSE_EXPORTEE).map((groupe) => {
+      {groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE).map((groupe) => {
         const Icone = ICONES_GROUPES[groupe.id]
         const actif = estGroupeActif(groupe)
         return (

@@ -78,6 +78,13 @@ export const IconCloture = (p: IconProps) => base(<>
   <path d="M6 4h11l-3 4 3 4H6" />
 </>, p)
 
+// L'inventaire : un presse-papiers dont la liste se coche.
+export const IconInventaire = (p: IconProps) => base(<>
+  <rect x="5" y="4" width="14" height="17" rx="1.5" />
+  <path d="M9 4V3.5A1.5 1.5 0 0 1 10.5 2h3A1.5 1.5 0 0 1 15 3.5V4" />
+  <path d="M8.5 11l1.5 1.5L13 9.5M8.5 17l1.5 1.5 3-3" />
+</>, p)
+
 export const IconInformations = (p: IconProps) => base(<>
   <rect x="6" y="4" width="12" height="17" rx="1.5" />
   <path d="M9 4V3.5A1.5 1.5 0 0 1 10.5 2h3A1.5 1.5 0 0 1 15 3.5V4" />
@@ -326,6 +333,7 @@ export const ICONES_PARCOURS: Record<DossierTab, IconComponent> = {
   tva: IconTva,
   immobilisations: IconImmobilisations,
   cotisations: IconCotisations,
+  inventaire: IconInventaire,
   cloture: IconCloture,
   informations: IconInformations,
   estimation: IconEstimation,
