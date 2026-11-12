@@ -1,7 +1,7 @@
 import { amortissementCumuleCentimes, rang360 } from './amortissements'
-import type { BilanEtabli } from './bilan'
+import { CASES_DES_TOTAUX, RUBRIQUES_ACTIF, RUBRIQUES_PASSIF, type BilanEtabli } from './bilan'
 import {
-  appliquerLesFormules, formulaireALEuro, type CompteDeResultatEtabli, type Formule,
+  appliquerLesFormules, arrondirALEuro, formulaireALEuro, type CompteDeResultatEtabli, type Formule,
 } from './compteDeResultat2033'
 import { formatMoney } from './format'
 import type { Immobilisation, NatureImmobilisation } from './types'
@@ -289,14 +289,27 @@ export function tableau2033D(provisions: readonly ProvisionDuReleve[]): Tableau2
     }
     if (p.dotationsNonDeductibles > 0) nonDeductibles.push({ libelle: p.libelle, centimes: p.dotationsNonDeductibles })
   }
-  // Le cadre C a sept lignes [F] ; au-delà, « joindre un état du même modèle » : la huitième et les suivantes vont en
-  // septième ligne, que l'état détaille.
-  for (let i = 0; i < 7; i++) {
-    const montant = i < 6 ? (nonDeductibles[i]?.centimes ?? 0) : nonDeductibles.slice(6).reduce((t, n) => t + n.centimes, 0)
+  // Le cadre C a sept lignes [F], dont la PREMIÈRE est imprimée : « Indemnités pour congés à payer, charges sociales et
+  // fiscales correspondantes » (relevé en remplissant le PDF, LIA6). Elles ne sont pas une provision de la ligne 35 (le
+  // PCG les range en dettes, 4282) : C1 reste nul. Les six lignes libres, 2 à 7, reçoivent les provisions ; au-delà,
+  // « joindre un état du même modèle » : la septième porte les suivantes, que l'état détaille.
+  alimentees.set('C1', 0)
+  for (let i = 1; i < 7; i++) {
+    const montant = i < 6 ? (nonDeductibles[i - 1]?.centimes ?? 0) : nonDeductibles.slice(5).reduce((t, n) => t + n.centimes, 0)
     alimentees.set(`C${i + 1}`, montant)
   }
   const cases = appliquerLesFormules(alimentees, FORMULES_2033D) as Map<string, number>
   return { cases, nonDeductibles, incoherences }
+}
+
+/**
+ * Le cadre I A, le cadre C (`C1` à `C7`, les sept lignes numérotées du formulaire, qui n'ont pas de code) et 780 tels que
+ * le formulaire les porte, en euros (LIA6) : chaque case arrondie seule, les totaux recalculés.
+ */
+export function tableau2033DALEuro(t: Tableau2033D): Map<string, number> {
+  const calculees = new Set(FORMULES_2033D.map(([code]) => code))
+  const alimentees = new Map<string, number | null>([...t.cases].filter(([code]) => !calculees.has(code)))
+  return formulaireALEuro(alimentees, FORMULES_2033D) as Map<string, number>
 }
 
 // ── 2033-E : la valeur ajoutée ───────────────────────────────────────────────────────────────────────────────────
@@ -403,6 +416,66 @@ export function tableau2033EALEuro(t: Tableau2033E): Map<string, number | null> 
   const calculees = new Set(FORMULES_2033E.map(([code]) => code))
   const alimentees = new Map([...t.cases].filter(([code]) => !calculees.has(code)))
   return formulaireALEuro(alimentees, FORMULES_2033E)
+}
+
+// ── 2033-A : le bilan simplifié, à l'euro (LIA6) ────────────────────────────────────────────────────────────────
+
+const casesDActif = (masse: 'immobilise' | 'circulant', colonne: 'brut' | 'amortissements') =>
+  RUBRIQUES_ACTIF.filter((r) => r.masse === masse && r.cases !== null).map((r) => r.cases![colonne])
+const casesDuPassif = (masse: 'capitaux-propres' | 'dettes') =>
+  RUBRIQUES_PASSIF.filter((r) => r.masse === masse && r.case !== null).map((r) => r.case!)
+const somme2033A = (code: string, codes: readonly string[]): Formule => [code, codes.map((c) => [1, c] as const)]
+
+// Les totaux que le 2033-A imprime [F, page 1] : l'actif immobilisé (044, 048), l'actif circulant (096, 098), le total
+// (110, 112) ; les capitaux propres (142), les dettes (176) et le total du passif (180), qui compte la case 154 des
+// provisions pour risques et charges (une rubrique à elle seule, son propre total). La colonne « net » n'a pas de code :
+// elle ne se remplit pas.
+export const FORMULES_2033A: readonly Formule[] = [
+  somme2033A(CASES_DES_TOTAUX.actifImmobilise.brut, casesDActif('immobilise', 'brut')),
+  somme2033A(CASES_DES_TOTAUX.actifImmobilise.amortissements, casesDActif('immobilise', 'amortissements')),
+  somme2033A(CASES_DES_TOTAUX.actifCirculant.brut, casesDActif('circulant', 'brut')),
+  somme2033A(CASES_DES_TOTAUX.actifCirculant.amortissements, casesDActif('circulant', 'amortissements')),
+  somme2033A(CASES_DES_TOTAUX.totalActif.brut, [CASES_DES_TOTAUX.actifImmobilise.brut, CASES_DES_TOTAUX.actifCirculant.brut]),
+  somme2033A(CASES_DES_TOTAUX.totalActif.amortissements,
+    [CASES_DES_TOTAUX.actifImmobilise.amortissements, CASES_DES_TOTAUX.actifCirculant.amortissements]),
+  somme2033A(CASES_DES_TOTAUX.capitauxPropres, casesDuPassif('capitaux-propres')),
+  somme2033A(CASES_DES_TOTAUX.dettes, casesDuPassif('dettes')),
+  somme2033A(CASES_DES_TOTAUX.totalPassif, [CASES_DES_TOTAUX.capitauxPropres, CASES_DES_TOTAUX.provisions, CASES_DES_TOTAUX.dettes]),
+]
+
+export type Bilan2033AALEuro =
+  | { etat: 'rempli'; cases: Map<string, number> }
+  | { etat: 'refuse'; texte: string }
+
+/**
+ * Le 2033-A tel que le formulaire le porte, en euros (LIA6) : chaque rubrique arrondie seule, les totaux recalculés, les
+ * deux renvois que le bilan sait (169, la TVA des dettes fiscales ; 199, les comptes courants débiteurs). Refusé quand un
+ * montant n'a pas de case : un compte « à classer », ou le résultat d'avant qu'une société n'a pas affecté — un total
+ * écrit sans eux serait faux sur le papier.
+ */
+export function bilan2033AALEuro(bilan: BilanEtabli): Bilan2033AALEuro {
+  if (bilan.totauxActif.aClasser !== 0 || bilan.totauxPassif.aClasser !== 0) {
+    return { etat: 'refuse', texte: 'Des comptes sont à classer : le 2033-A ne se remplit pas tant qu’aucune case ne les porte.' }
+  }
+  const enAttente = bilan.passif.find((r) => r.id === 'resultats-en-attente')
+  if (enAttente && enAttente.montant !== 0) {
+    return {
+      etat: 'refuse',
+      texte: `Le résultat d’un exercice précédent (${euros(enAttente.montant)}) attend son affectation : aucune case du 2033-A ne le porte.`,
+    }
+  }
+  const alimentees = new Map<string, number | null>()
+  for (const r of bilan.actif) {
+    if (!r.cases) continue
+    alimentees.set(r.cases.brut, r.brut)
+    alimentees.set(r.cases.amortissements, r.amortissements)
+  }
+  // La case 154 est la rubrique et le total des provisions : elle s'arrondit comme rubrique, aucune formule ne la refait.
+  for (const r of bilan.passif) if (r.case !== null) alimentees.set(r.case, r.montant)
+  const cases = formulaireALEuro(alimentees, FORMULES_2033A) as Map<string, number>
+  cases.set(CASES_DES_TOTAUX.dontTva, arrondirALEuro(bilan.renvois.dontTva))
+  cases.set(CASES_DES_TOTAUX.dontComptesCourantsDebiteurs, arrondirALEuro(bilan.renvois.dontComptesCourantsDebiteurs))
+  return { etat: 'rempli', cases }
 }
 
 // ── Les contrôles de cohérence (§ 3.6) ───────────────────────────────────────────────────────────────────────────
