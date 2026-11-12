@@ -297,8 +297,11 @@ describe('les essais de la base, rejoués en production', () => {
     // profils se rejouent partout : le bloc LC de rls.sql.
     // Les stocks, le 12/11/2026 (LIA2, migration `stocks_de_cloture`) : il change le modèle comptable d'un dossier, écrit des
     // à-nouveaux et mute des fonctions. Son catalogue et ses profils se rejouent partout : le bloc ST de rls.sql.
+    // Et cheminsDansLeurDossier, le 12/11/2026 (CFCS-Q1, migration `chemin_dans_son_dossier`) : il insère
+    // des pièces et des documents sous des chemins fautifs, qu'il annule. Ses trois contraintes se relisent au catalogue
+    // partout (signature.sql, famille des contraintes).
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
+      'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',

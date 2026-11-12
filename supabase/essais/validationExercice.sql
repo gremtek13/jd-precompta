@@ -400,10 +400,10 @@ begin
         perform set_config('request.jwt.claims', '', true);
       end $a9a$$q$, '', ''],
     array['jeu', 'pièces de A', 'postgres', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece) values
-      ('{P1}', '{A}', 'essai/validation/p1.pdf', 'essai-p1.pdf', 'validee', 'achat', 100, '2024-03-01'),
-      ('{P2}', '{A}', 'essai/validation/p2.pdf', 'essai-p2.pdf', 'validee', 'achat', 30, '2025-02-01'),
-      ('{P3}', '{A}', 'essai/validation/p3.pdf', 'essai-p3.pdf', 'validee', 'achat', 40, '2024-05-01'),
-      ('{P4}', '{A}', 'essai/validation/p4.pdf', 'essai-p4.pdf', 'validee', 'achat', 1200, '2023-06-01')$q$, '', ''],
+      ('{P1}', '{A}', '{A}/essai-validation-p1.pdf', 'essai-p1.pdf', 'validee', 'achat', 100, '2024-03-01'),
+      ('{P2}', '{A}', '{A}/essai-validation-p2.pdf', 'essai-p2.pdf', 'validee', 'achat', 30, '2025-02-01'),
+      ('{P3}', '{A}', '{A}/essai-validation-p3.pdf', 'essai-p3.pdf', 'validee', 'achat', 40, '2024-05-01'),
+      ('{P4}', '{A}', '{A}/essai-validation-p4.pdf', 'essai-p4.pdf', 'validee', 'achat', 1200, '2023-06-01')$q$, '', ''],
     array['jeu', 'échéances de A', 'postgres', $q$insert into cotisations_declarees (id, dossier_id, echeance, montant_appele) values
       ('{C1}', '{A}', '2024-03-01', 80), ('{C2}', '{A}', '2024-12-15', 80)$q$, '', ''],
     array['jeu', 'mouvements de A', 'postgres', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, piece_id, categorie_id, ventilee, reglement_groupe, cotisation_id, id_externe) values
@@ -570,7 +570,7 @@ begin
     array['controle', '61. la facture d''un bien amorti en 2024', 'chef', $q$update pieces set montant_ttc = 1100 where id = '{P4}'$q$, '23514', 'Cette pièce porte une écriture validée de l''exercice 2024 : ses montants, sa date et sa catégorie ne changent plus.'],
     array['controle', '62. une pièce figée ne change pas de dossier', 'chef', $q$update pieces set dossier_id = '{X}' where id = '{P1}'$q$, '23514', 'Cette pièce porte une écriture validée de l''exercice 2024 : ses montants, sa date et sa catégorie ne changent plus.'],
     array['controle', '63. une pièce de 2025 reste modifiable', 'chef', $q$update pieces set montant_ttc = 31 where id = '{P2}'$q$, 'OK', ''],
-    array['controle', '64. une pièce de 2024 déposée après coup', 'chef', $q$insert into pieces (dossier_id, storage_path, nom_fichier, date_piece) values ('{A}', 'essai/validation/tard.pdf', 'essai-tard.pdf', '2024-06-01')$q$, 'OK', ''],
+    array['controle', '64. une pièce de 2024 déposée après coup', 'chef', $q$insert into pieces (dossier_id, storage_path, nom_fichier, date_piece) values ('{A}', '{A}/essai-validation-tard.pdf', 'essai-tard.pdf', '2024-06-01')$q$, 'OK', ''],
 
     -- ══ Les mouvements et leurs parts ══════════════════════════════════════════════════════════════════════════════
     array['controle', '65. le statut d''un mouvement de 2024', 'chef', $q$update lignes_bancaires set statut = 'non_rapprochee', piece_id = null where id = '{M1}'$q$, '23514', 'L''exercice 2024 est validé : ce mouvement ne change plus.'],
@@ -856,8 +856,8 @@ begin
         perform set_config('request.jwt.claims', '', true);
       end $a9a$$q$, '', ''],
     array['jeuf', 'pièces de K', 'postgres', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece) values
-      ('{PK1}', '{K}', 'essai/validation/k1.pdf', 'essai-k1.pdf', 'validee', 'achat', 120, '2024-03-01'),
-      ('{PK2}', '{K}', 'essai/validation/k2.pdf', 'essai-k2.pdf', 'validee', 'vente', 200, '2024-05-01')$q$, '', ''],
+      ('{PK1}', '{K}', '{K}/essai-validation-k1.pdf', 'essai-k1.pdf', 'validee', 'achat', 120, '2024-03-01'),
+      ('{PK2}', '{K}', '{K}/essai-validation-k2.pdf', 'essai-k2.pdf', 'validee', 'vente', 200, '2024-05-01')$q$, '', ''],
     array['jeuf', 'mouvements de K', 'postgres', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, piece_id, categorie_id) values
       ('{MK1}', '{K}', '2024-03-05', 'ESSAI K PRLV', -120, 'rapprochee', '{PK1}', null),
       ('{MK2}', '{K}', '2024-05-10', 'ESSAI K VIR', 200, 'rapprochee', '{PK2}', null),

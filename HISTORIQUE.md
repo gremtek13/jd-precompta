@@ -51898,3 +51898,20 @@ LIA2→MCB5g→INV2, INV2→LIA2→MCB5g — `rls.sql` 175 lignes, 0 en faute, 1
 refusée (23514) ; le catalogue égal entre les ordres, l'ordre des colonnes excepté ; les retours inverses rendent le catalogue
 d'avant à l'octet (169, 108 sur 108) ; une seule migration : 172, 111 sur 111 ; chaque garde refuse une clé intruse. md5 :
 INV2 `9707d409…` (retour `0b56e7c5…`), LIA2 `1471d921…` (`c8c58a1a…`), MCB5g `62996c58…` (`b62b33dd…`).
+
+### 12/11/2026 — CFCS-Q1 : LE CHEMIN D'UN FICHIER DANS SON DOSSIER, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, sur la réponse (A) ; rien en production. `chemin_dans_son_dossier` (préparée, par l'outil : aucun mot de
+suppression ni barre oblique inverse, `chr(92)`) pose trois CHECK — `pieces.storage_path`, `pieces.lisible_path` (nulle
+permise), `documents_divers.storage_path` — NOT VALID, puis une lecture qui rejoue leur propre texte (`pg_get_expr`) et lève
+avec les comptes, puis la validation. La règle : premier segment = `dossier_id::text` au caractère près, au moins un segment
+après, aucun vide, « . » ni « .. », et ni barre oblique inverse, « % », « ? », « # » ni contrôle : `storage-js` 2.112.4 met le
+chemin tel quel dans l'adresse, que l'analyseur WHATWG résout (« ..<barre inverse> », « %2e%2e », tabulation retirée) —
+`cheminDuDossier` laissait passer ces formes ; il tient désormais la même règle (huit tests rouges sur l'ancienne). Production,
+en lecture agrégée : 77 pièces, 0 version lisible, 68 documents, 0 fautive. Laissés : les imports (cabinet seul, déjà bornés au
+lot, la barre inverse admise au dernier segment : CFCS2-Q1), les packs, les logos, `documents_cabinet` et `originaux_liberes`.
+**Rejoué** sur une copie de la mère 17 rattrapée à 200 (`3b0ca6ba…`) : `cheminsDansLeurDossier.sql` 9 sur 9 (34 refus sur 34),
+EN ATTENTE sans elle ; 12 mutations sur 12, la lecture préalable dite (sans elle, la validation refuse sans raison) ; `rls.sql`
+167 invariants, 0 en faute, 108 sur 108, avec et sans ; contraintes 847 → 850, le retour rend celles de la production.
+`validationExercice.sql` (245) et `lettrageManuel.sql` posaient des chemins hors du dossier : corrigés ;
+`pieceFigeeDansLeStockage.sql` retire la contrainte le temps de son jeu croisé (annulée avec lui), 0 en faute.
