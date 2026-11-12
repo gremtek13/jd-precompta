@@ -40,10 +40,22 @@ export interface ExerciceDeclare {
   decision_le: string | null
 }
 
-/** Le régime d'un dossier : en trésorerie rien ne se lit, en engagement la liste déclarée. */
+// LA MIGRATION `exercices_du_dossier` (lot EXD2, PRÉPARÉE le 12/11/2026, supabase/preparees/) : la table `exercices`, sa
+// garde, ses fonctions de déclaration et les deux lectures dont ce module est le jumeau. Baissé tant qu'elle n'est pas dans
+// l'export : le plan de sauvegarde ne lit pas une table absente (exercicesDuDossier.test.ts, sauvegardeExercices.test.ts).
+export const EXERCICES_DECALES_PREVUS: boolean = false
+export const TABLES_DES_EXERCICES = ['exercices'] as const
+
+/**
+ * Le régime d'un dossier, tel que la base le lit (`bornes_de_l_exercice`, `exercice_de_la_date`) : en trésorerie rien ne
+ * se lit ; en engagement la liste déclarée, et la fin du dernier exercice validé (`frontiere_validation`, nulle sans
+ * validation). Un dossier en engagement qui n'a RIEN déclaré suit l'année civile, exactement comme aujourd'hui ; dès qu'il
+ * déclare, ses exercices sont les déclarés, précédés des années civiles que ses validations ont figées (la garde fait
+ * commencer le premier déclaré le lendemain de la dernière d'entre elles).
+ */
 export type RegimeDesExercices =
   | { mode: 'tresorerie' }
-  | { mode: 'engagement'; exercices: readonly ExerciceDeclare[] }
+  | { mode: 'engagement'; exercices: readonly ExerciceDeclare[]; finDuDernierValide: string | null }
 
 /**
  * Les choix que le cabinet n'a pas encore tranchés. Aucun défaut : l'appelant les nomme.
@@ -174,9 +186,13 @@ const enExercice = (d: ExerciceDeclare): Exercice => ({ debut: d.debut, fin: d.f
  * dans la liste déclarée en engagement ; `null` si aucun exercice déclaré ne se clôt cette année-là.
  */
 export function exerciceDuMillesime(regime: RegimeDesExercices, annee: number): Exercice | null {
-  if (regime.mode === 'tresorerie') return exerciceCivil(annee)
+  // L'année civile : la trésorerie, ou l'engagement qui n'a rien déclaré.
+  if (regime.mode === 'tresorerie' || regime.exercices.length === 0) return exerciceCivil(annee)
   const trouves = regime.exercices.filter((e) => millesimeDe(e) === annee)
-  return trouves.length === 1 ? enExercice(trouves[0]) : null
+  if (trouves.length === 1) return enExercice(trouves[0])
+  // Une année civile que les validations ont figée, quand aucun exercice déclaré ne s'y clôt.
+  const fige = trouves.length === 0 && regime.finDuDernierValide !== null && annee <= anneeDe(regime.finDuDernierValide)
+  return fige ? exerciceCivil(annee) : null
 }
 
 export type ExerciceDUneDate =
@@ -189,7 +205,9 @@ export type ExerciceDUneDate =
  */
 export function exerciceDeLaDate(regime: RegimeDesExercices, date: string): ExerciceDUneDate {
   if (!estDateCivile(date)) return { statut: 'hors', motif: `La date « ${date} » n'existe pas au calendrier.` }
-  if (regime.mode === 'tresorerie') return { statut: 'dans', exercice: exerciceCivil(anneeDe(date)) }
+  if (regime.mode === 'tresorerie' || regime.exercices.length === 0) {
+    return { statut: 'dans', exercice: exerciceCivil(anneeDe(date)) }
+  }
   const contenants = regime.exercices.filter((e) => e.debut <= date && date <= e.fin)
   if (contenants.length === 1) return { statut: 'dans', exercice: enExercice(contenants[0]) }
   if (contenants.length > 1) {
@@ -198,10 +216,12 @@ export function exerciceDeLaDate(regime: RegimeDesExercices, date: string): Exer
       motif: `Le ${formatDate(date)} appartient à plusieurs exercices déclarés, qui se chevauchent : la liste est à corriger.`,
     }
   }
+  // Une date que les validations ont figée, hors des exercices déclarés : son année civile.
+  if (regime.finDuDernierValide !== null && date <= regime.finDuDernierValide) {
+    return { statut: 'dans', exercice: exerciceCivil(anneeDe(date)) }
+  }
   const connus = [...regime.exercices].sort((a, b) => (a.debut < b.debut ? -1 : a.debut > b.debut ? 1 : 0))
-  const etendue = connus.length === 0
-    ? 'aucun exercice n\'est déclaré'
-    : `les exercices déclarés vont du ${formatDate(connus[0].debut)} au ${formatDate(connus[connus.length - 1].fin)}`
+  const etendue = `les exercices déclarés vont du ${formatDate(connus[0].debut)} au ${formatDate(connus[connus.length - 1].fin)}`
   return { statut: 'hors', motif: `Le ${formatDate(date)} est hors des exercices déclarés : ${etendue}.` }
 }
 

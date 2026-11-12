@@ -295,14 +295,22 @@ describe('les essais de la base, rejoués en production', () => {
     // Le vingt-quatrième, lettresDuClient, le 12/11/2026 (LM6, migration `lettres_du_client`) : il désigne le dossier du
     // cabinet, suspend la garde des modèles et change le cabinet d'un dossier, sous la même garde. Son catalogue et ses
     // profils se rejouent partout : le bloc LC de rls.sql.
-    // Les stocks, le 12/11/2026 (LIA2, migration `stocks_de_cloture`) : il change le modèle comptable d'un dossier, écrit des
-    // à-nouveaux et mute des fonctions. Son catalogue et ses profils se rejouent partout : le bloc ST de rls.sql.
-    // Et cheminsDansLeurDossier, le 12/11/2026 (CFCS-Q1, migration `chemin_dans_son_dossier`) : il insère
+    // Le vingt-cinquième, modeleDuCabinetSuppression, le 12/11/2026 (PC5, migration `modele_de_plan_du_cabinet`) : il porte
+    // des instructions de retrait, que l'outil de la production retient.
+    // Le vingt-sixième, operationsDInventaire, le 12/11/2026 (INV2, migration `operations_d_inventaire`) : il crée des
+    // dossiers, des pièces, des à-nouveaux et un exercice validé fictifs, et retire ce qu'il a écrit. Son catalogue et ses
+    // profils se rejouent partout : le bloc IV de rls.sql.
+    // Le vingt-septième, stocks, le 12/11/2026 (LIA2, migration `stocks_de_cloture`) : il change le modèle comptable d'un
+    // dossier, écrit des à-nouveaux et mute des fonctions. Son catalogue et ses profils se rejouent partout : le bloc ST de rls.sql.
+    // Le vingt-huitième, exercicesDuDossier, le 12/11/2026 (ligne 42, EXD2, migration `exercices_du_dossier`) : il prend le
+    // membre d'équipe fictif de la réplique, pose une validation, et sa batterie appelle les lectures dix-huit mille fois. Son
+    // catalogue et ses profils se rejouent partout : le bloc EX de rls.sql.
+    // Le vingt-neuvième, cheminsDansLeurDossier, le 12/11/2026 (CFCS-Q1, migration `chemin_dans_son_dossier`) : il insère
     // des pièces et des documents sous des chemins fautifs, qu'il annule. Ses trois contraintes se relisent au catalogue
     // partout (signature.sql, famille des contraintes).
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
-      'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
+      'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'exercicesDuDossier (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',

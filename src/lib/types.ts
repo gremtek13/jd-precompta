@@ -1024,6 +1024,22 @@ export interface ExerciceValide {
   declaration: Record<string, unknown> | null
 }
 
+// Un exercice DÉCLARÉ d'un dossier en engagement (`exercices`, ligne 42, lot EXD2 ; migration `exercices_du_dossier`,
+// PRÉPARÉE le 12/11/2026, lue sous `EXERCICES_DECALES_PREVUS`). Un dossier en trésorerie n'y a aucune ligne : son exercice
+// est l'année civile. `decision` et `decision_le`, ensemble, pour une transition seulement ; `declare_par` et `declare_le`
+// posés par la garde (l'appelant, maintenant ; la restauration garde ceux de la sauvegarde).
+export interface ExerciceDuDossier {
+  id: string
+  dossier_id: string
+  debut: string
+  fin: string
+  nature: 'premier' | 'ordinaire' | 'transition'
+  decision: string | null
+  decision_le: string | null
+  declare_le: string
+  declare_par: string
+}
+
 // Historique de l'agent comptable (voir AssistantTab, supabase/functions/agent-comptable) —
 // partagé entre tous les admins du cabinet pour un dossier donné, comme le reste de l'appli
 // (le cabinet est traité comme un seul acteur). created_by n'est qu'un repère d'audit.

@@ -51933,3 +51933,33 @@ estimation sur un barème à confirmer (LIA3-Q1) ; la Checklist les montre avec 
 à quinze jours, seule candidate (aucun écran). Le BNC ne change pas d'un octet : chaque jour de 2025 à 2028, le calendrier et
 l'échéancier (quatre profils) gardent l'empreinte SHA-256 calculée sur le code d'avant. Onze mutations, dix tuées (la
 onzième, équivalente, n'est vue que du compilateur).
+
+### 12/11/2026 — EXD2 : LES EXERCICES DU DOSSIER, EN BASE (LIGNE 42) (PRÉPARÉE, PAS APPLIQUÉE)
+
+`supabase/preparees/20261112210000_exercices_du_dossier.sql` (retour en +100, à coller) : `btree_gist` (schéma
+`extensions`), la table `exercices` d'un dossier en engagement, une policy `for all to authenticated` sur
+`admin_du_dossier`, deux gardes — `garder_exercices` AVANT chaque ligne (la trésorerie, puis la ligne seule, puis la
+période figée), `verifier_la_suite_des_exercices` APRÈS (premier en tête, chevauchement, trou, millésime), aux mots et dans
+l'ordre de `refusDesExercices` (`exercicesDuDossier.test.ts` confronte les gabarits, leur ordre, et les messages exacts de
+l'essai recalculés par le module) —, deux exclusions DIFFÉRÉES en filet, `declarer_exercice`, `changer_date_de_cloture` (le
+dernier déclaré devient une transition, contre sa clôture lue), `bornes_de_l_exercice` et `exercice_de_la_date` (rien pour
+un dossier que l'appelant ne suit pas), un dossier qui a déclaré ne repasse pas en trésorerie. Trois choix : un dossier en
+engagement qui n'a RIEN déclaré reste civil, et ses validations d'avant EXD3 (civiles) précèdent la liste déclarée, qui
+commence le lendemain (le module suit : `finDuDernierValide` dans le régime) ; la suite se juge à la fin de l'instruction,
+pour qu'une restauration d'un seul lot passe dans le désordre sans exception au super-administrateur, qui est aussi le chef
+du cabinet ; la table juste après `dossiers` au plan prévu (et au bloc de `restauration.sql`). Sur la réplique : `rls.sql`
+171 invariants à zéro en faute, 111 mutations qui mordent (bloc EX) ; l'essai 63 sur 63, la batterie civile 18 270 dates
+sans écart ; 19 mutations sur 19 mordent ; le retour puis la migration de nouveau, l'essai encore juste.
+
+### 12/11/2026 — EXD2 RÉUNIE À INV2 ET LIA2 : LA RESTAURATION ET RLS.SQL AVEC LES TROIS MIGRATIONS
+
+Agent architecte. EXD2 cherry-pickée sur INV2 et LIA2 ; sept conflits, chaque apport gardé : les trois drapeaux et leurs
+`auPlan…` dans `auPlanAujourdHui` et `sauvegardeDevis.test.ts`, les chemins `stocks_de_cloture` et `exercices`, les blocs IV,
+ST puis EX de `rls.sql` (EX reçoit son entrée d'en-tête, 6quaterdecies), et dans `restauration.sql` les stocks, l'inventaire,
+puis les exercices joués en dernier (ancre `dossiers`). `restaurationEssai.test.ts` enchaîne les trois dans `avecLesBlocs`
+et dit ensemble `dossiers, exercices` et `notes_internes, operations_inventaire, stocks_de_cloture, pieces_hors_de_france`.
+`essaisEnProduction.test.ts` recompte les essais de réplique : 28 (modeleDuCabinetSuppression n'avait pas de rang). Sur deux
+copies de la mère rattrapées à 200, INV2→LIA2→EXD2 et EXD2→LIA2→INV2 : `rls.sql` 179 lignes, 0 en faute, 117 sur 117 ;
+exercicesDuDossier 63 sur 63 ; operationsDInventaire 0 en faute sur 72, 8 sur 8 ; stocks 0 en faute sur 31, 5 sur 5 ; `restauration.sql`
+IDENTIQUE, 93 tables (90 avant), dans l'ordre du code ; sur un dossier semé de deux exercices déclarés, IDENTIQUE, les deux
+restaurés. Non vu : une restauration de lignes d'inventaire et de stocks (le dossier `test` n'en porte pas).
