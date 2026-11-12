@@ -245,6 +245,7 @@ export const REGLES_DES_SORTES = {
   'mouvement-encaissements': 'champsDUnMouvementDesEncaissements',
   'a-nouveaux': 'champsDesANouveaux',
   'ouverture-eclatee': 'champsDeLOuvertureEclatee',
+  inventaire: 'champsDUneRegularisation',
 } as const
 
 // ── Une pièce ──
@@ -529,6 +530,16 @@ export function champsDUneLiquidation(dateDeLEcriture: string, lignes: readonly 
  */
 export function champsDeLOuvertureEclatee(dateDeLEcriture: string, lignes: readonly LigneACaracteriser[], choix: ChoixChampsBnc): ChampsBnc {
   return sansReglementDe('Opération de bilan', dateDeLEcriture, lignes, choix)
+}
+
+/**
+ * Une régularisation d'inventaire (clé `inventaire|régularisation|date`, au 31 décembre ou au 1er janvier suivant ; ligne 35,
+ * INV3, lib/inventaireDeLaValidation.ts) : rien n'est payé ce jour-là, sans règlement comme les autres opérations diverses
+ * (FEC22-Q1) ; la nature, celle de ses lignes de résultat (`natureDesLignes`), jamais un objet que le cabinet a tapé. Un BNC
+ * en trésorerie n'en a aucune — la base la refuse (INV-Q10) — : la règle tient la liste des sortes entière.
+ */
+export function champsDUneRegularisation(dateDeLEcriture: string, lignes: readonly LigneACaracteriser[], choix: ChoixChampsBnc): ChampsBnc {
+  return sansReglementDe(natureDesLignes(lignes), dateDeLEcriture, lignes, choix)
 }
 
 /**

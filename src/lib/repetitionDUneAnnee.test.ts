@@ -48,6 +48,7 @@ import {
   VEHICULES, encaissementsEtParts, reglementsDuMouvement, texteDuReleveCsv, texteDuReleveOfx,
 } from '../test/repetitionDUneAnnee'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { INVENTAIRE_SANS_OBJET } from './inventaireDeLaValidation'
 
 const MODELE = modeleDeTest('tresorerie')
 const PLAN = MODELE.plan
@@ -232,7 +233,7 @@ beforeAll(() => {
     comptesBancaires: { etat: 'sans_objet' }, controlesReleves, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
     etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, banques: { cas: 'role', compte: PLAN.banque }, anneesValidees: [], ventesParLesFactures: true }),
     ventesDeLaChecklist: ventesDeLaChecklist(lectureDesSources, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
-    declaration, saisies2035: AUCUNE_SAISIE_2035, concordance,
+    declaration, saisies2035: AUCUNE_SAISIE_2035, inventaire: INVENTAIRE_SANS_OBJET, concordance,
   })
 
   const fec = formaterFec(numeroterFec(brouillon, PIECES, CATEGORIES, A_NOUVEAUX, MODELE, lignes, composition.ecritures, operationsDeCaisse, CHAMPS_BNC_NON_EXPORTES), new Map(), MODELE.mode)

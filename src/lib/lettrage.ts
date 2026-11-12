@@ -1,6 +1,7 @@
 import { libelleCompteTenu } from './comptes'
 import { auxiliaireDuTiers, type ModeleComptable } from './engagement'
 import { dateAParis, formatDate, formatMoney } from './format'
+import { RACINES_LETTREES_PAR_REGULARISATION } from './inventaireDeLaValidation'
 import type { PlanComptable } from './planComptable'
 import type { ANouveau, EcritureBrouillon, LettrageManuel, Piece } from './types'
 import {
@@ -168,6 +169,8 @@ export function lettrages(
   // Les ventes facturées, facture par facture : la même règle qu'une pièce — une facture dont deux comptes se solderaient
   // n'est lettrée sur aucun —, et chaque ligne rattachée à son écriture composée.
   for (const v of facturesSoldees(ecritures, ventes, modele.plan)) naissances.push(naissance(`vente|${v.factureId}`, v.lignes, null))
+  // Les régularisations d'inventaire, régularisation par régularisation (INV3) : la constatation contre son extourne.
+  for (const r of regularisationsSoldees(ecritures)) naissances.push(naissance(`inventaire|${r.cle}`, r.lignes, null))
 
   const parCompte = new Map<string, Naissance[]>()
   for (const n of naissances) parCompte.set(n.compte, [...(parCompte.get(n.compte) ?? []), n])
@@ -179,6 +182,22 @@ export function lettrages(
     })
   }
   return resultat
+}
+
+// LES RÉGULARISATIONS D'INVENTAIRE SE LETTRENT PAR RÉGULARISATION (ligne 35, INV3 ; conception, § 5.3). Au compte des factures
+// non parvenues (408) ou à établir (418), la constatation du 31 décembre et son extourne du 1er janvier suivant, que la base
+// écrit ensemble (`enregistrer_operation_inventaire`), se soldent : elles reçoivent le même code, dans la suite des lettrages
+// du compte. Jamais contre le 401 ni le 411 : c'est la méthode de l'extourne (PCG, art. 1214-40 et 1214-41), la variante qui
+// débite le 408 par le crédit du 401 écartée. Les autres comptes de régularisation (486, 487, 428…) ne sont pas des comptes de
+// tiers et ne se lettrent pas ; une régularisation dont les lignes ne se soldent pas sur son compte ne se lettre pas.
+function regularisationsSoldees(ecritures: readonly EcritureBrouillon[]): { cle: string; lignes: EcritureBrouillon[] }[] {
+  const groupes = new Map<string, EcritureBrouillon[]>()
+  for (const e of ecritures) {
+    if (!e.operation_inventaire_id || !RACINES_LETTREES_PAR_REGULARISATION.some((r) => e.compte.startsWith(r))) continue
+    const cle = `${e.operation_inventaire_id}|${e.compte}`
+    groupes.set(cle, [...(groupes.get(cle) ?? []), e])
+  }
+  return [...groupes].filter(([, lignes]) => somme(lignes) === 0).map(([cle, lignes]) => ({ cle, lignes }))
 }
 
 // Un lettrage né : ses lignes, son compte, sa date, et de quoi le ranger parmi les autres.

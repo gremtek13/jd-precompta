@@ -45,6 +45,7 @@ import { recetteDeCaisse } from './recettesDeCaisse'
 import type { OperationsDeCaisse } from './controlesDeLaCaisse'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { INVENTAIRE_SANS_OBJET } from './inventaireDeLaValidation'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -177,7 +178,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', comptesBancaires: { etat: 'sans_objet' }, controlesReleves: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE, piecesCitees: AUCUNE_PIECE_CITEE,
     etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
-    champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, ...o,
+    champsBnc: { etat: 'non_exportes' }, saisies2035: AUCUNE_SAISIE_2035, inventaire: INVENTAIRE_SANS_OBJET, ...o,
   }
   if (o.controlesReleves === undefined) base.controlesReleves = [releveQuiConcorde(base)]
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
@@ -2623,5 +2624,30 @@ describe('prealablesDeValidation — l’ouverture de la banque à éclater (MCB
   it('drapeau baissé (sans objet), ou des contrôles illisibles : rien ne se dit ici', () => {
     expect(prealable(base({ comptesBancaires: { etat: 'sans_objet' }, lignes: [] }), 'ouverture-a-eclater')).toBeUndefined()
     expect(prealable(base({ controlesReleves: null }), 'ouverture-a-eclater')).toBeUndefined()
+  })
+})
+
+// ── L'INVENTAIRE (ligne 35, INV3 ; lib/inventaireDeLaValidation.ts) ────────────────────────────────────────────────────────
+// Ce que `valider_exercice` refuse de l'inventaire, dit avant le clic, sous ses mots : sans objet le drapeau baissé (la
+// validation d'hier), nul tant qu'il n'est pas lu en entier (la validation se suspend), lu, un exercice d'engagement non
+// déclaré se retient. Données FICTIVES.
+describe('prealablesDeValidation — l’inventaire (INV3)', () => {
+  const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+  const lu = (declarations: { id: string; exercice: number; retire_le: string | null }[]) =>
+    ({ etat: 'lu' as const, operations: [], declarations, provisions: [] })
+
+  it('nul : la validation se suspend sur une lecture partielle ; sans objet : aucun préalable de l’inventaire', () => {
+    expect(ids(donnees({ inventaire: null }))).toEqual(['lecture-partielle'])
+    expect(ids(donnees({ modele: ENGAGEMENT })).filter((id) => id.startsWith('inventaire') || id === 'extourne-manquante')).toEqual([])
+  })
+
+  it('lu, un exercice d’engagement non déclaré se retient sous les mots de la base ; déclaré, ou en trésorerie, rien', () => {
+    expect(prealable(donnees({ modele: ENGAGEMENT, inventaire: lu([]) }), 'inventaire-non-declare')).toMatchObject({
+      bloquant: true, cible: 'ecritures',
+      message: "L'inventaire de l'exercice 2025 n'est pas déclaré : le déclarer fait, même sans régularisation, avant la validation.",
+    })
+    expect(ids(donnees({ modele: ENGAGEMENT, inventaire: lu([{ id: 'i', exercice: 2025, retire_le: null }]) })))
+      .not.toContain('inventaire-non-declare')
+    expect(ids(donnees({ inventaire: lu([]) }))).not.toContain('inventaire-non-declare')
   })
 })

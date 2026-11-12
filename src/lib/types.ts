@@ -1564,6 +1564,21 @@ export interface OperationInventaire {
   modifie_le: string | null
 }
 
+// L'INVENTAIRE D'UN EXERCICE DÉCLARÉ FAIT (`inventaires_declares`, ligne 35, INV3, INV-Q9 (A) ; migration
+// `validation_de_l_inventaire`, préparée, pas appliquée — lib/inventaire.ts, `INVENTAIRE_PREVU`) : par le cabinet du dossier,
+// même sans régularisation ; la validation d'un exercice en engagement l'attend. Une en vigueur par exercice (`retire_le`
+// nul) ; écrite par `declarer_inventaire` et `retirer_declaration_inventaire` seules, jamais effacée (sa ligne garde qui l'a
+// retirée et quand), réinsérée par la restauration ; figée avec son exercice. Lue par le cabinet du dossier seul.
+export interface InventaireDeclare {
+  id: string
+  dossier_id: string
+  exercice: number
+  declare_par: string
+  declare_le: string
+  retire_par: string | null
+  retire_le: string | null
+}
+
 // UNE PROVISION (`provisions`, ligne 35, INV4 ; migration `provisions`, préparée, pas appliquée — lib/inventaire.ts,
 // `INVENTAIRE_PREVU`) : une provision pour risques (151) ou la dépréciation d'une créance (491) d'un dossier en ENGAGEMENT,
 // saisie par le cabinet ; ses évaluations au 31 décembre sont des `OperationInventaire` de nature `provision`. Lue et
