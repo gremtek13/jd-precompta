@@ -35,6 +35,9 @@
 //                  réserve sa transmission (une seule active par facture) et la dépose ;
 //   - suivre       relit chez la plateforme l'accusé d'un dépôt — ou le retrouve par son identifiant de suivi quand la
 //                  réponse au dépôt s'est perdue — et l'enregistre ;
+//   - lister_achats, recevoir_achat  la réception des factures d'ACHAT par l'accès « Achats » (étape B4r, bloc RÉCEPTION
+//                  PAR LE CLIENT) : la case « Achats » exigée, les achats seuls, le point de reprise ni lu ni écrit, et la
+//                  pièce écrite ici, à la clé secrète, après la vérification de son acheteur ;
 //   - relever      lit les statuts du cycle de vie des factures ÉMISES (un refus, un rejet, un litige, un paiement…),
 //                  les rattache à une facture validée du dossier et les écrit, une fois par flux (bloc CYCLE DE VIE) :
 //                  un refus lu fait refuser, en base, l'encaissement, la déclaration et la transmission de la facture.
@@ -99,6 +102,9 @@ const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
   relever: "ventes",
 }
 const ACTIONS = Object.keys(QUI_PEUT_QUOI)
+// LA RÉCEPTION PAR LE CLIENT « ACHATS » (étape B4r, bloc RÉCEPTION PAR LE CLIENT) : deux actions hors de la table, qui
+// exigent la case « Achats » (migration B1), lue à part ; le cabinet garde `lister`, `telecharger`, `retenir` et `repartir`.
+const RECEPTION_PAR_LE_CLIENT: Readonly<Record<string, "achats">> = { lister_achats: "achats", recevoir_achat: "achats" }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret, organisation_id, portee, " +
   "recherche_depuis, derniere_recuperation, cycle_vie_depuis, cycle_vie_lu_le, created_at, updated_at"
@@ -3275,6 +3281,102 @@ export function rattacherStatutRecu(
 }
 // ── FIN COPIE cdarRecu ───────────────────────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT COPIE acheteurRecu ─────────────────────────────────────────────────────────────────────────────────────────
+// Ce bloc est recopié AU CARACTÈRE PRÈS dans plateforme-agreee, après le bloc cdarRecu dont il emprunte
+// `analyserXmlRecu` et `ElementRecu`, et rien d'autre. acheteurRecuCopie.test.ts compare la copie à ce bloc, l'exécute seule
+// avec le bloc cdarRecu de la fonction, et confronte ce qu'elle lit à `lireFactureXml`.
+
+// Les espaces de noms des deux syntaxes : ceux de `NS` (lib/factureElectronique.ts), que le test confronte.
+const NS_ACHETEUR = {
+  rsm: 'urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100',
+  ram: 'urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100',
+  facture: 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
+  avoir: 'urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2',
+  cac: 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2',
+  cbc: 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
+} as const
+
+/** Ce que la facture dit de son acheteur : sa syntaxe et le SIREN lu (nul quand elle ne le dit pas), ou pourquoi elle ne se lit pas. */
+export type AcheteurLu = { syntaxe: 'CII' | 'UBL'; siren: string | null } | { refus: string }
+
+/** La facture désigne-t-elle le dossier comme acheteur ? « inconnue » quand rien ne permet de le dire. */
+export type ConcordanceAcheteur = 'concorde' | 'autre' | 'inconnue'
+
+function enfantsAcheteur(el: ElementRecu | null, ns: string, nom: string): ElementRecu[] {
+  return el === null ? [] : el.enfants.filter((e) => e.ns === ns && e.nom === nom)
+}
+
+function enfantAcheteur(el: ElementRecu | null, ns: string, nom: string): ElementRecu | null {
+  return enfantsAcheteur(el, ns, nom)[0] ?? null
+}
+
+// Le texte d'un champ, sans ses blancs de bord ; nul quand il est vide — ou quand l'élément porte des éléments : l'analyseur ne
+// garde pas l'ordre de leurs textes, et un identifiant ainsi fait ne se lit pas (le côté fermé).
+function texteAcheteur(el: ElementRecu | null): string | null {
+  if (el === null || el.enfants.length > 0) return null
+  const t = el.texte.trim()
+  return t === '' ? null : t
+}
+
+function attributAcheteur(el: ElementRecu | null, nom: string): string | null {
+  const v = el?.attributs.find((a) => a.ns === '' && a.nom === nom)?.valeur.trim() ?? ''
+  return v === '' ? null : v
+}
+
+// La règle de `sirenDe` (lib/factureElectronique.ts), sur l'arbre de l'analyseur.
+function sirenAcheteur(idLegal: ElementRecu | null, tva: string | null): string | null {
+  const v = (texteAcheteur(idLegal) ?? '').replace(/\s/g, '')
+  const schema = attributAcheteur(idLegal, 'schemeID')
+  if ((schema === null || schema === '0002') && /^\d{9}$/.test(v)) return v
+  if ((schema === null || schema === '0009') && /^\d{14}$/.test(v)) return v.slice(0, 9)
+  const m = /^FR[0-9A-Z]{2}(\d{9})$/.exec((tva ?? '').replace(/\s/g, '').toUpperCase())
+  return m ? m[1] : null
+}
+
+/** Le SIREN de l'acheteur d'une facture CII, ou d'une facture ou d'un avoir UBL. */
+export function acheteurDeLaFacture(xml: string): AcheteurLu {
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) return { refus: 'le XML déclare une DTD ou des entités' }
+  const analyse = analyserXmlRecu(xml)
+  if ('refus' in analyse) return { refus: analyse.refus }
+  const racine = analyse.racine
+  const N = NS_ACHETEUR
+  if (racine.ns === N.rsm && racine.nom === 'CrossIndustryInvoice') {
+    const accord = enfantAcheteur(enfantAcheteur(racine, N.rsm, 'SupplyChainTradeTransaction'), N.ram, 'ApplicableHeaderTradeAgreement')
+    const partie = enfantAcheteur(accord, N.ram, 'BuyerTradeParty')
+    const organisation = enfantAcheteur(partie, N.ram, 'SpecifiedLegalOrganization')
+    const tva = enfantsAcheteur(partie, N.ram, 'SpecifiedTaxRegistration')
+      .map((r) => enfantAcheteur(r, N.ram, 'ID'))
+      .find((id) => attributAcheteur(id, 'schemeID') === 'VA') ?? null
+    return { syntaxe: 'CII', siren: sirenAcheteur(enfantAcheteur(organisation, N.ram, 'ID'), texteAcheteur(tva)) }
+  }
+  if ((racine.ns === N.facture && racine.nom === 'Invoice') || (racine.ns === N.avoir && racine.nom === 'CreditNote')) {
+    const partie = enfantAcheteur(enfantAcheteur(racine, N.cac, 'AccountingCustomerParty'), N.cac, 'Party')
+    const legal = enfantAcheteur(partie, N.cac, 'PartyLegalEntity')
+    const schemaTva = enfantsAcheteur(partie, N.cac, 'PartyTaxScheme')
+      .find((s) => texteAcheteur(enfantAcheteur(enfantAcheteur(s, N.cac, 'TaxScheme'), N.cbc, 'ID')) === 'VAT') ?? null
+    return {
+      syntaxe: 'UBL',
+      siren: sirenAcheteur(enfantAcheteur(legal, N.cbc, 'CompanyID'), texteAcheteur(enfantAcheteur(schemaTva, N.cbc, 'CompanyID'))),
+    }
+  }
+  return { refus: 'ce XML n’est ni une facture CII ni une facture UBL' }
+}
+
+/** Le SIREN d'un dossier, tiré de son SIRET (ou d'un SIREN saisi seul) : la règle de `sirenDuDossier`. */
+export function sirenDuDossierRecu(siret: unknown): string | null {
+  const v = (typeof siret === 'string' ? siret : '').replace(/\s/g, '')
+  if (/^\d{14}$/.test(v)) return v.slice(0, 9)
+  if (/^\d{9}$/.test(v)) return v
+  return null
+}
+
+/** Un achat doit avoir le dossier pour acheteur ; ce qui ne se lit pas, ou ne dit pas son acheteur, est « inconnue ». */
+export function concordanceDeLAcheteur(lu: AcheteurLu, sirenDossier: string | null): ConcordanceAcheteur {
+  if ('refus' in lu || lu.siren === null || sirenDossier === null) return 'inconnue'
+  return lu.siren === sirenDossier ? 'concorde' : 'autre'
+}
+// ── FIN COPIE acheteurRecu ───────────────────────────────────────────────────────────────────────────────────────────
+
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
 // Les clés d'API de Supabase, lues dans les variables que la plateforme pose elle-même. Les clés
 // historiques (`anon`, `service_role`) étaient des jetons signés du projet, et Supabase les coupe à la
@@ -3344,6 +3446,348 @@ function actionPermise(table: Readonly<Record<string, DroitExige>>, action: stri
   return exige === "cabinet" ? droits.cabinet : exige === "ventes" ? droits.ventes : false
 }
 // ── FIN COPIE droitsDeLAppelant ──────────────────────────────────────────────────────────────────────────────────────
+
+// ── DÉBUT RÉCEPTION PAR LE CLIENT ────────────────────────────────────────────────────────────────────────────────────
+// La réception des factures d'ACHAT par l'accès « Achats » (espace client, ligne 51.5, étape B4r ; B4-Q1 à B4-Q3, tranchées
+// par le cabinet le 11/11/2026 à la recommandation). Deux actions hors de `QUI_PEUT_QUOI` (`RECEPTION_PAR_LE_CLIENT`) : elles
+// exigent la case « Achats » de la migration B1 (`trois_cases_de_l_acces`), que `droits_sur_le_dossier` ne rend pas avant
+// elle — sur une base d'avant B1, la case est absente et personne n'y passe (404), le cabinet compris, qui garde `lister`.
+//   - lister_achats   les factures d'ACHAT seules (B4-Q2) : la recherche ne demande que `SupplierInvoice`, et une vente qu'une
+//                     plateforme rendrait malgré tout s'écarte comme un autre flux, que la réponse ne compte pas. Elle part
+//                     du début, ou du point que l'écran lui repasse au cours d'une même relève (`depuis`, le `jusqua` de
+//                     l'appel d'avant), et ne lit ni n'écrit le point de reprise du cabinet (B4-Q3). Chaque facture dit si
+//                     elle est déjà au dossier (son flux, lu en base) ;
+//   - recevoir_achat  UNE facture : la fonction la relit chez la plateforme (un achat, prêt, en CII ou en UBL), télécharge
+//                     son original, vérifie que son acheteur EST le dossier (bloc acheteurRecu, au SIREN du dossier), écarte
+//                     un fichier déjà au dossier par son empreinte, dépose ses fichiers et ÉCRIT LA PIÈCE elle-même, à la
+//                     clé secrète, après le contrôle (B4-Q1) : « à valider », sans catégorie, sans montants, confiance basse
+//                     — le cabinet la lit et la complète. Jamais validée, jamais rangée.
+// CE QUI EMPÊCHE UNE FACTURE D'ENTRER DEUX FOIS, sans point de reprise : son flux, cherché en base AVANT tout appel à la
+// plateforme, puis la contrainte `pieces_flux_unique` à l'écriture (deux relèves en même temps : la seconde se dit « déjà
+// reçue » et retire ses fichiers) ; et l'empreinte de l'original, contre les pièces et les documents du dossier.
+// DU CÔTÉ FERMÉ : ce que le serveur ne sait pas vérifier n'entre pas par le client et attend le cabinet (`au_cabinet`) — une
+// facture Factur-X (son XML est dans un PDF), un original illisible, une facture qui ne dit pas son acheteur, une syntaxe
+// autre que l'annonce ; une facture adressée à une autre entreprise ne s'écrit pas, et la réponse ne dit pas laquelle ; un
+// dossier dont la synchronisation Super PDP est configurée ne se relève pas par le client (la même facture entrerait deux
+// fois, par les deux chemins qui ne se reconnaissent pas).
+const TYPES_ACHATS = ["SupplierInvoice"]
+
+const LECTURE_ACHATS: LectureDesFlux<FluxVu> = {
+  lire: (brut) => {
+    const lu = fluxDeLaListe(brut)
+    return "flux" in lu && lu.flux.sens !== "achat" ? { ecarte: "autre_flux", misAJour: instantMs(lu.flux.mis_a_jour) } : lu
+  },
+  objets: "factures d'achat",
+  apresPlafond: "recevez celles-ci, puis relevez de nouveau pour la suite",
+  relance: "relevez de nouveau",
+}
+
+interface ContexteDeLaReception {
+  action: string
+  payload: Record<string, unknown>
+  dossierId: string
+  utilisateur: string
+  appelant: { rpc: (nom: string, args: { p_dossier_id: string }) => PromiseLike<{ data: unknown; error: unknown }> }
+  admin: ReturnType<typeof createClient>
+  debut: number
+  /** La plateforme d'une connexion, ouverte par le gestionnaire : le seul accès au réseau. */
+  ouvrir: (connexion: ConnexionLue) => ReturnType<typeof clientPlateforme>
+}
+
+/**
+ * La case « Achats » de l'appelant, lue par `droits_sur_le_dossier` avec SON jeton, comme le bloc droitsDeLAppelant : une
+ * erreur, une exception ou une réponse qui n'est pas un objet rendent `illisible` (503) ; seule la case à `true` accorde —
+ * absente (une base d'avant B1) ou d'une autre forme, elle n'accorde rien.
+ */
+async function achatsDeLAppelant(
+  appelant: ContexteDeLaReception["appelant"],
+  dossierId: string,
+): Promise<{ achats: boolean } | { illisible: string }> {
+  let lu: unknown
+  try {
+    const reponse = await appelant.rpc("droits_sur_le_dossier", { p_dossier_id: dossierId })
+    if (reponse.error != null) {
+      const message = (reponse.error as { message?: unknown }).message
+      return { illisible: typeof message === "string" && message !== "" ? message : "erreur de la base" }
+    }
+    lu = reponse.data
+  } catch {
+    return { illisible: "la base n'a pas répondu" }
+  }
+  if (lu === null || typeof lu !== "object" || Array.isArray(lu)) return { illisible: "réponse d'une autre forme" }
+  return { achats: (lu as Record<string, unknown>).achats === true }
+}
+
+// Un nom de fichier rendu chemin du seau, à la manière de `slugify` (src/lib/format.ts) : lisible, jamais une clé.
+function nomDeStockage(nom: string): string {
+  const net = nom.normalize("NFD").replace(/\p{M}/gu, "").replace(/[^a-zA-Z0-9.]+/g, "_").replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+  return net === "" ? "facture" : net.slice(0, 120)
+}
+
+async function empreinteDe(octets: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(octets))
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+async function retirerDeposes(admin: ReturnType<typeof createClient>, chemins: string[]): Promise<void> {
+  const { error } = await admin.storage.from("pieces").remove(chemins)
+  if (error) console.error(`[plateforme-agreee] recevoir_achat : ${chemins.length} fichier(s) déposé(s) non retiré(s)`)
+}
+
+async function receptionParLeClient(c: ContexteDeLaReception): Promise<Response> {
+  const { action, payload, dossierId, admin } = c
+  const achats = await achatsDeLAppelant(c.appelant, dossierId)
+  if ("illisible" in achats) return json({ error: `L'accès à ce dossier n'a pas pu être vérifié (${achats.illisible}).` }, 503)
+  if (!achats.achats) return json({ error: "Dossier introuvable." }, 404)
+
+  // La demande se juge avant toute lecture : un corps mal formé ne coûte rien.
+  let depuis: string | null = null
+  let flowId = ""
+  if (action === "lister_achats") {
+    if (payload.depuis !== undefined && payload.depuis !== null) {
+      const ms = instantMs(payload.depuis)
+      if (ms === null) return json({ error: "Le point de départ demandé n'est pas une date lisible." }, 400)
+      depuis = isoMs(ms)
+    }
+  } else {
+    flowId = typeof payload.flowId === "string" ? payload.flowId : ""
+    if (!/^[!-~]{1,200}$/.test(flowId)) return json({ error: "Identifiant de flux illisible." }, 400)
+  }
+
+  const { data: lue, error: erreurLecture } = await admin
+    .from("connexions_plateformes").select(COLONNES).eq("dossier_id", dossierId).maybeSingle()
+  if (erreurLecture) {
+    return json({ error: `La connexion à la plateforme n'a pas pu être lue (${erreurLecture.message}).` }, 503)
+  }
+  const connexion = (lue ?? null) as ConnexionLue | null
+  if (!connexion) return json({ error: "Aucune plateforme n'est configurée pour ce dossier.", raison: "sans_plateforme" }, 409)
+  const hote = new URL(connexion.url_flux).hostname
+  if (action === "recevoir_achat" && payload.version !== connexion.updated_at) {
+    return json({ error: "La connexion à la plateforme a changé entre-temps : relancez la récupération.", perimee: true }, 409)
+  }
+  const { data: superpdp, error: erreurSuperpdp } = await admin
+    .from("superpdp_credentials").select("dossier_id").eq("dossier_id", dossierId).maybeSingle()
+  if (erreurSuperpdp) {
+    return json({ error: `La synchronisation Super PDP du dossier n'a pas pu être lue (${erreurSuperpdp.message}).` }, 503)
+  }
+  if (superpdp) {
+    return json({
+      error: "La synchronisation Super PDP de ce dossier est configurée : une relève de la plateforme ferait entrer ses factures deux fois.",
+      raison: "superpdp",
+    }, 409)
+  }
+
+  if (action === "lister_achats") return await listerLesAchats(c, connexion, hote, depuis)
+
+  const { data: dossier, error: erreurDossier } = await admin.from("dossiers").select("siret").eq("id", dossierId).maybeSingle()
+  if (erreurDossier) return json({ error: `Le dossier n'a pas pu être lu (${erreurDossier.message}).` }, 503)
+  const sirenDossier = sirenDuDossierRecu((dossier as { siret?: unknown } | null)?.siret)
+  if (sirenDossier === null) {
+    return json({
+      error: "Le dossier n'a pas de SIRET lisible : rien ne vérifierait qu'une facture lui est adressée.", raison: "sans_siret",
+    }, 409)
+  }
+  const { data: deja, error: erreurDeja } = await admin.from("pieces").select("id")
+    .eq("dossier_id", dossierId).eq("flux_hote", hote).eq("flux_id", flowId).limit(1)
+  if (erreurDeja) return json({ error: `Les factures déjà reçues n'ont pas pu être lues (${erreurDeja.message}).` }, 503)
+  if (Array.isArray(deja) && deja.length > 0) return json({ hote, flowId, issue: "deja_recue" })
+  return await recevoirUnAchat(c, connexion, hote, flowId, sirenDossier)
+}
+
+function refusDuJetonDeLaReception(action: string, refus: { refus: string; identifiants: boolean; statut: number }): Response {
+  console.error(`[plateforme-agreee] ${action} : jeton refusé (${refus.statut})`)
+  return json({ error: refus.refus, identifiants_refuses: refus.identifiants }, refus.statut === 0 ? 504 : 502)
+}
+
+async function listerLesAchats(c: ContexteDeLaReception, connexion: ConnexionLue, hote: string, depuis: string | null): Promise<Response> {
+  const plateforme = c.ouvrir(connexion)
+  const acces = await plateforme.jeton()
+  if ("refus" in acces) return refusDuJetonDeLaReception(c.action, acces)
+  let recherche: Recherche
+  try {
+    recherche = await rechercherFlux(async (demande) => {
+      const corps = {
+        where: { flowType: TYPES_ACHATS, ...(demande.updatedAfter ? { updatedAfter: demande.updatedAfter } : {}) },
+        limit: TAILLE_PAGE,
+        ...(demande.cursor ? { cursor: demande.cursor } : {}),
+      }
+      const r = await plateforme.appelJson("POST", "/v1/flows/search", corps)
+      if (r.statut < 200 || r.statut >= 300 || r.redirection) throw new ErreurDePage(r)
+      return (r.donnees ?? {}) as PageFlux
+    }, depuis, {
+      taillePage: TAILLE_PAGE, maxFlux: MAX_FLUX, maxPages: MAX_PAGES, echeance: c.debut + BUDGET_RECHERCHE_MS,
+      maintenant: () => Date.now(),
+    }, LECTURE_ACHATS)
+  } catch (e) {
+    if (e instanceof ErreurDePage) {
+      const erreur = erreurPlateforme("recherche des flux", e.reponse)
+      console.error(`[plateforme-agreee] lister_achats : la plateforme a répondu ${e.reponse.statut}`)
+      return json({ error: erreur.message, acces_refuse: erreur.acces }, erreur.statut)
+    }
+    console.error(`[plateforme-agreee] lister_achats : lecture interrompue (${(e as { name?: unknown })?.name ?? "?"})`)
+    return json({ error: "La recherche des factures s'est interrompue : réessayez." }, 500)
+  }
+  // Ce qui est déjà au dossier, lu par lots d'identifiants : une lecture refusée ne laisse rien proposer.
+  const recus = new Set<string>()
+  const ids = recherche.flux.map((f) => f.id)
+  for (let i = 0; i < ids.length; i += 50) {
+    const { data, error } = await c.admin.from("pieces").select("flux_id")
+      .eq("dossier_id", c.dossierId).eq("flux_hote", hote).in("flux_id", ids.slice(i, i + 50)).limit(50)
+    if (error) return json({ error: `Les factures déjà reçues n'ont pas pu être lues (${error.message}).` }, 503)
+    for (const p of (data ?? []) as { flux_id: string | null }[]) if (p.flux_id) recus.add(p.flux_id)
+  }
+  console.log(`[plateforme-agreee] lister_achats : ${recherche.pages} page(s), ${recherche.flux.length} facture(s), ` +
+    `${recherche.complete ? "complet" : "incomplet"}`)
+  const e = recherche.ecartes
+  return json({
+    hote,
+    version: connexion.updated_at,
+    depuis,
+    flux: recherche.flux.map((f) => ({ ...f, deja_recue: recus.has(f.id) })),
+    ecartes: { illisible: e.illisible, format: e.format, statut_inconnu: e.statut_inconnu, doublons: e.doublons },
+    complete: recherche.complete,
+    motif: recherche.motif,
+    jusqua: recherche.jusqua,
+  })
+}
+
+async function recevoirUnAchat(
+  c: ContexteDeLaReception, connexion: ConnexionLue, hote: string, flowId: string, sirenDossier: string,
+): Promise<Response> {
+  const plateforme = c.ouvrir(connexion)
+  const acces = await plateforme.jeton()
+  if ("refus" in acces) return refusDuJetonDeLaReception(c.action, acces)
+  const chemin = `/v1/flows/${encodeURIComponent(flowId)}`
+
+  // Ce que la facture EST se relit chez la plateforme, jamais dans ce que le navigateur annonce. Un flux qui n'est pas une
+  // facture d'ACHAT lisible se refuse sous les mêmes mots, qu'il soit une vente ou autre chose (B4-Q2).
+  const meta = await plateforme.appelJson("GET", `${chemin}?docType=Metadata`)
+  if (meta.statut === 404 && !meta.redirection) {
+    return json({ error: "Cette facture n'existe plus chez la plateforme.", definitif: true, raison: "introuvable" }, 404)
+  }
+  if (meta.statut < 200 || meta.statut >= 300 || meta.redirection) {
+    const e = erreurPlateforme("description du flux", meta)
+    console.error(`[plateforme-agreee] recevoir_achat : description ${meta.statut}`)
+    return json({ error: e.message, acces_refuse: e.acces }, e.statut)
+  }
+  const lu = fluxDeLaListe(meta.donnees)
+  if ("ecarte" in lu || lu.flux.id !== flowId || lu.flux.sens !== "achat") {
+    return json({ error: "La plateforme ne décrit pas ce flux comme une facture d'achat qu'on sait lire.", definitif: true, raison: "pas_un_achat" }, 422)
+  }
+  if (lu.flux.etat !== "pret") {
+    return json({
+      error: lu.flux.etat === "en_attente"
+        ? "La plateforme n'a pas fini de traiter cette facture : elle reviendra à une prochaine relève."
+        : "La plateforme a rejeté cette facture : elle ne se reçoit pas.",
+      definitif: lu.flux.etat === "en_erreur",
+      raison: lu.flux.etat,
+    }, 409)
+  }
+  if (lu.flux.syntaxe === "Factur-X") return json({ hote, flowId, issue: "au_cabinet", raison: "factur_x" })
+
+  const original = await plateforme.fichier(`${chemin}?docType=Original`)
+  if (original.redirectionRefusee) {
+    console.error(`[plateforme-agreee] recevoir_achat : redirection refusée (${original.statut})`)
+    return json({ error: "La plateforme renvoie ce document vers une adresse que la fonction ne suit pas.", raison: "redirection" }, 502)
+  }
+  if (original.tropLourd) {
+    return json({
+      error: `Ce document dépasse ${MAX_FICHIER_OCTETS / (1024 * 1024)} Mo : récupérez-le sur la plateforme.`,
+      definitif: true, raison: "trop_lourd",
+    }, 413)
+  }
+  if (!original.octets) {
+    if (original.statut === 404) {
+      return json({ error: "La plateforme ne rend pas l'original de cette facture.", definitif: true, raison: "introuvable" }, 404)
+    }
+    const e = erreurPlateforme("original", { statut: original.statut, donnees: null, redirection: false })
+    console.error(`[plateforme-agreee] recevoir_achat : document ${original.statut}`)
+    return json({ error: e.message, acces_refuse: e.acces }, e.statut)
+  }
+  if (natureFichier(original.octets) !== "xml") {
+    return json({ error: "L'original rendu n'est pas un XML comme son format l'annonce.", definitif: true, raison: "format_inattendu" }, 422)
+  }
+  let xml: string
+  try {
+    xml = new TextDecoder("utf-8", { fatal: true }).decode(original.octets)
+  } catch {
+    return json({ hote, flowId, issue: "au_cabinet", raison: "illisible" })
+  }
+  // L'acheteur DOIT être le dossier : une autre entreprise ne s'écrit pas, et la réponse ne la nomme pas.
+  const acheteur = acheteurDeLaFacture(xml)
+  const concordance = concordanceDeLAcheteur(acheteur, sirenDossier)
+  if (concordance === "autre") return json({ hote, flowId, issue: "autre_entreprise" })
+  if ("refus" in acheteur) return json({ hote, flowId, issue: "au_cabinet", raison: "illisible" })
+  if (concordance === "inconnue") return json({ hote, flowId, issue: "au_cabinet", raison: "sans_acheteur" })
+  if (acheteur.syntaxe !== lu.flux.syntaxe) return json({ hote, flowId, issue: "au_cabinet", raison: "syntaxe" })
+
+  const empreinte = await empreinteDe(original.octets)
+  for (const table of ["pieces", "documents_divers"]) {
+    const { data, error } = await c.admin.from(table).select("id").eq("dossier_id", c.dossierId).eq("storage_hash", empreinte).limit(1)
+    if (error) return json({ error: `Les fichiers déjà au dossier n'ont pas pu être lus (${error.message}).` }, 503)
+    if (Array.isArray(data) && data.length > 0) return json({ hote, flowId, issue: "doublon" })
+  }
+
+  // La version lisible : indisponible pour de bon (introuvable, trop lourde, pas un PDF), la pièce entre sans elle, comme à
+  // l'import du cabinet ; indisponible pour l'instant, la facture attend la relève suivante.
+  let lisible: Uint8Array | null = null
+  const versionLisible = await plateforme.fichier(`${chemin}?docType=ReadableView`)
+  if (versionLisible.octets) {
+    if (natureFichier(versionLisible.octets) === "pdf") lisible = versionLisible.octets
+  } else if (versionLisible.redirectionRefusee) {
+    console.error(`[plateforme-agreee] recevoir_achat : redirection refusée (${versionLisible.statut})`)
+    return json({ error: "La plateforme renvoie ce document vers une adresse que la fonction ne suit pas.", raison: "redirection" }, 502)
+  } else if (!versionLisible.tropLourd && versionLisible.statut !== 404) {
+    const e = erreurPlateforme("version lisible", { statut: versionLisible.statut, donnees: null, redirection: false })
+    console.error(`[plateforme-agreee] recevoir_achat : version lisible ${versionLisible.statut}`)
+    return json({ error: e.message, acces_refuse: e.acces }, e.statut)
+  }
+
+  // Les fichiers, puis la pièce, à la clé secrète. Un original XML se dépose en TEXTE (servi sous un type XML, il pourrait
+  // porter du script) ; le type est porté par le Blob, que le SDK lit.
+  const base = (lu.flux.nom ?? `facture ${flowId}`).trim()
+  const nomFichier = base.toLowerCase().endsWith(".xml") ? base : `${base}.xml`
+  const horodatage = Date.now()
+  const cheminOriginal = `${c.dossierId}/${horodatage}-${nomDeStockage(nomFichier)}`
+  const cheminLisible = lisible ? `${c.dossierId}/${horodatage}-${nomDeStockage(nomFichier.replace(/\.xml$/i, ""))}-lisible.pdf` : null
+  const { error: erreurOriginal } = await c.admin.storage.from("pieces").upload(cheminOriginal, new Blob([new Uint8Array(original.octets)], { type: "text/plain; charset=utf-8" }), { upsert: false })
+  if (erreurOriginal) return json({ error: `La facture n'a pas pu être déposée (${erreurOriginal.message}).` }, 500)
+  if (lisible && cheminLisible) {
+    const { error } = await c.admin.storage.from("pieces").upload(cheminLisible, new Blob([new Uint8Array(lisible)], { type: "application/pdf" }), { upsert: false })
+    if (error) {
+      await retirerDeposes(c.admin, [cheminOriginal])
+      return json({ error: `Sa version lisible n'a pas pu être déposée (${error.message}).` }, 500)
+    }
+  }
+  const fichiers = cheminLisible ? [cheminOriginal, cheminLisible] : [cheminOriginal]
+  const { data: piece, error: erreurPiece } = await c.admin.from("pieces").insert({
+    dossier_id: c.dossierId,
+    uploaded_by: c.utilisateur,
+    source: "plateforme",
+    storage_path: cheminOriginal,
+    storage_hash: empreinte,
+    nom_fichier: nomFichier,
+    lisible_path: cheminLisible,
+    flux_hote: hote,
+    flux_id: flowId,
+    type_piece: "achat",
+    statut: "a_valider",
+    confiance: "basse",
+  }).select("id").single()
+  if (erreurPiece || !piece) {
+    // Rien ne pointe sur les fichiers déposés : ils repartent.
+    await retirerDeposes(c.admin, fichiers)
+    if (erreurPiece?.code === "23505" && /pieces_flux_unique/.test(erreurPiece.message ?? "")) {
+      return json({ hote, flowId, issue: "deja_recue" })
+    }
+    return json({ error: `La pièce n'a pas pu être enregistrée (${erreurPiece?.message ?? "rien de rendu"}).` }, 500)
+  }
+  if (lisible) console.log("[plateforme-agreee] recevoir_achat : reçue")
+  else console.log("[plateforme-agreee] recevoir_achat : reçue, sans version lisible")
+  return json({ hote, flowId, issue: "recue", piece_id: (piece as { id: string }).id, sans_lisible: lisible === null })
+}
+// ── FIN RÉCEPTION PAR LE CLIENT ──────────────────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT DEUX FACTEURS ──────────────────────────────────────────────────────────────────────────────────────────────
 // La double authentification exigée d'un compte (C7, second temps ; migration `deux_facteurs_exiges`, PRÉPARÉE). Une
@@ -3417,8 +3861,9 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Corps de requête invalide." }, 400)
   }
   const action = typeof payload?.action === "string" ? payload.action : ""
-  if (!ACTIONS.includes(action)) {
-    return json({ error: `Action inconnue (attendu : ${ACTIONS.join(", ")}).` }, 400)
+  const parLaReception = Object.hasOwn(RECEPTION_PAR_LE_CLIENT, action)
+  if (!ACTIONS.includes(action) && !parLaReception) {
+    return json({ error: `Action inconnue (attendu : ${[...ACTIONS, ...Object.keys(RECEPTION_PAR_LE_CLIENT)].join(", ")}).` }, 400)
   }
   const dossierId = typeof payload.dossierId === "string" ? payload.dossierId.trim() : ""
   if (!UUID.test(dossierId)) return json({ error: "dossierId est requis." }, 400)
@@ -3429,6 +3874,15 @@ Deno.serve(async (req: Request) => {
   const lus = await droitsDeLAppelant(supabaseAsCaller, dossierId)
   if ("illisible" in lus) {
     return json({ error: `L'accès à ce dossier n'a pas pu être vérifié (${lus.illisible}).` }, 503)
+  }
+  // La plateforme d'une connexion lue, ouverte pour la durée de l'appel : le SEUL accès au réseau de la fonction, que la
+  // réception par le client emprunte. Rien ne s'ouvre ici.
+  const plateformeDe = (connexion: ConnexionLue) => clientPlateforme(connexion, (url, init) => fetch(url, init), {
+    delaiMs: DELAI_APPEL_MS, maxJson: MAX_JSON_OCTETS, maxFichier: MAX_FICHIER_OCTETS, maxRedirections: MAX_REDIRECTIONS,
+  })
+  // La réception par l'accès « Achats » (bloc RÉCEPTION PAR LE CLIENT) a sa porte, la case « Achats », lue avant tout le reste.
+  if (parLaReception) {
+    return await receptionParLeClient({ action, payload, dossierId, utilisateur, appelant: supabaseAsCaller, admin, debut, ouvrir: plateformeDe })
   }
   if (!actionPermise(QUI_PEUT_QUOI, action, lus.droits)) return json({ error: "Dossier introuvable." }, 404)
 
@@ -3514,9 +3968,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // La plateforme, ouverte pour la durée de l'appel : tout le réseau passe par ce client, et le jeton s'obtient une fois.
-  const ouvrirPlateforme = () => clientPlateforme(connexion, (url, init) => fetch(url, init), {
-    delaiMs: DELAI_APPEL_MS, maxJson: MAX_JSON_OCTETS, maxFichier: MAX_FICHIER_OCTETS, maxRedirections: MAX_REDIRECTIONS,
-  })
+  const ouvrirPlateforme = () => plateformeDe(connexion)
   const refusDuJeton = (refus: { refus: string; identifiants: boolean; statut: number }) => {
     console.error(`[plateforme-agreee] ${action} : jeton refusé (${refus.statut})`)
     return json({ error: refus.refus, identifiants_refuses: refus.identifiants }, refus.statut === 0 ? 504 : 502)

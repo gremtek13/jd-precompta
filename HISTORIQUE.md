@@ -51526,3 +51526,23 @@ le rattachement illisible ou partiel et les six comptes rattachés ; la source d
 l'écriture), la nouvelle les tient ; cinq défauts plantés (contrôle court-circuité, rattachement oublié, corps lu avant, table
 des clients oubliée, rattachement illisible pris pour un refus) ; `extractPieceAppelant.test.ts` joue ses gardes sur les deux
 copies et les compare.
+
+### 12/11/2026 — B4R : LA RÉCEPTION PAR L'ACCÈS « ACHATS » (LIGNE 51.5)
+
+Agent architecte, sans migration, rien en production ni déployé. B4-Q1 à Q3, tranchées à la recommandation : la fonction
+`plateforme-agreee` gagne deux actions hors de `QUI_PEUT_QUOI` (`RECEPTION_PAR_LE_CLIENT`, bloc RÉCEPTION PAR LE CLIENT), qui
+exigent la case « Achats » de B1, relue par `droits_sur_le_dossier` au jeton de l'appelant APRÈS la porte commune — absente
+(la production d'aujourd'hui) ou d'une autre forme, personne n'y passe (404), le cabinet compris, qui garde `lister` ;
+illisible, 503. `lister_achats` ne demande que `SupplierInvoice`, écarte une vente sans la compter, part du début ou du `jusqua`
+que l'écran repasse au cours d'une relève, et ne lit ni n'écrit `recherche_depuis` (B4-Q3). `recevoir_achat` relit le flux,
+télécharge l'original, vérifie que l'ACHETEUR est le dossier (bloc `acheteurRecu`, `src/lib/acheteurRecu.ts`, sur l'analyseur de
+cdarRecu, confronté à `lireFactureXml` sous jsdom), puis dépose et ÉCRIT la pièce « à valider », sans montants, confiance basse
+(B4-Q1). Une facture n'entre pas deux fois : son flux cherché en base avant tout appel, `pieces_flux_unique`, l'empreinte contre
+les pièces et les documents. Du côté fermé : Factur-X, un original illisible, un acheteur non dit, une syntaxe autre attendent le
+cabinet ; une autre entreprise ne s'écrit pas et ne se nomme pas ; la synchronisation Super PDP configurée ferme la relève. Le
+seul `fetch` reste au gestionnaire (`plateformeDe`). L'écran : « Relever ma plateforme » dans « Mes achats », derrière
+`ACHATS_DU_CLIENT_PREVUS` (`lib/receptionParLeClient.ts`). Preuves : 12 scénarios HTTP neufs (aujourd'hui, demain via
+`troisCasesEnBase` du harnais, sans la case, « Ventes » seul, l'autre entreprise, le flux déjà là) et 4 défauts plantés, tous
+attrapés ; 27 confrontations de l'acheteur ; deux gardes ajustés (deux dépôts de plus, l'ouverture définie avant les branches).
+Reste : déployer après B1 ; la lecture des montants d'une facture reçue par le client (B4R-Q1).
+

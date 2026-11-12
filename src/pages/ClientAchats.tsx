@@ -14,6 +14,10 @@ import {
 import { lireMesAchats, type MesAchatsLus } from '../lib/achatsClientLecture'
 import type { EtatDeLEcheance } from '../lib/achatsClient'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
+import { appelsDeLaReleveDuClient } from '../lib/receptionPlateforme'
+import {
+  phrasesDuBilan, releverMaPlateforme, type BilanDeLaReleve,
+} from '../lib/receptionParLeClient'
 
 // « MES ACHATS » (espace client, ligne 51.5, étape B5 ; la base : B4, `achats_du_client`). L'écran du client qui porte la case
 // « Achats » sur la société AFFICHÉE : les factures d'achat du dossier, leur échéance (au jour de Paris), ce qu'il a déclaré
@@ -55,6 +59,9 @@ export default function ClientAchats() {
   const marquageEnCours = useRef(false)
   const [occupe, setOccupe] = useState(false)
   const derniereLecture = useRef(0)
+  // « Relever ma plateforme » (étape B4r) : le serveur reçoit chaque facture d'achat et écrit sa pièce ; l'écran n'écrit rien.
+  const releveEnCours = useRef(false)
+  const [releve, setReleve] = useState<{ dossierId: string; faites: number; bilan: BilanDeLaReleve | null } | null>(null)
 
   useEffect(() => {
     if (!dossierId || !moi) return
@@ -159,10 +166,50 @@ export default function ClientAchats() {
     }
   }
 
+  async function relever() {
+    if (releveEnCours.current || !dossierId || !moi) return
+    releveEnCours.current = true
+    const id = dossierId
+    setReleve({ dossierId: id, faites: 0, bilan: null })
+    try {
+      const bilan = await releverMaPlateforme(appelsDeLaReleveDuClient(id), (faites) => setReleve({ dossierId: id, faites, bilan: null }))
+      setReleve({ dossierId: id, faites: 0, bilan })
+    } catch (e) {
+      setReleve({ dossierId: id, faites: 0, bilan: {
+        recues: 0, sansLisible: 0, dejaLa: 0, doublons: 0, auCabinet: 0, autreEntreprise: 0, enAttente: 0, rejetees: 0, ecartees: 0,
+        echecs: [], complete: false, motif: null,
+        interruption: `Ta plateforme n’a pas pu être relevée : ${messageErreur(e, 'la relève s’est interrompue.')}`,
+      } })
+    } finally {
+      await relire(id, moi)
+      releveEnCours.current = false
+    }
+  }
+
+  const releveDuDossier = releve !== null && releve.dossierId === dossierId ? releve : null
+
   return (
     <>
       <div className="topbar"><h1>Mes achats</h1></div>
       <p className="muted" style={{ marginTop: 0 }}>{PRESENTATION_DE_MES_ACHATS}</p>
+      {entiere !== null && (
+        <section className="card" aria-label="Ma plateforme" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button type="button" className="btn btn-outline" disabled={releveDuDossier !== null && releveDuDossier.bilan === null}
+              onClick={() => { void relever() }}>Relever ma plateforme</button>
+            <span className="muted">Tes factures d’achat reçues sur ta plateforme arrivent chez ton cabinet, à valider ; rien n’est payé ni rangé pour toi.</span>
+          </div>
+          {releveDuDossier !== null && releveDuDossier.bilan === null && (
+            <p className="muted" role="status">Relève en cours{releveDuDossier.faites > 0 ? ` : ${releveDuDossier.faites} facture${releveDuDossier.faites === 1 ? '' : 's'} traitée${releveDuDossier.faites === 1 ? '' : 's'}` : ''}…</p>
+          )}
+          {releveDuDossier?.bilan != null && (
+            <div role="status">
+              {releveDuDossier.bilan.interruption !== null && <p className="error-text">{releveDuDossier.bilan.interruption}</p>}
+              {phrasesDuBilan(releveDuDossier.bilan).map((phrase) => <p key={phrase} style={{ margin: '4px 0' }}>{phrase}</p>)}
+            </div>
+          )}
+        </section>
+      )}
       {lue === null ? (
         <p className="muted">Chargement…</p>
       ) : lue.etat === 'echec' ? (

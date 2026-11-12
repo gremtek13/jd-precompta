@@ -1292,7 +1292,13 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
   })
 
   it('« statut », « retirer », « enregistrer », « retenir » et « repartir » ne parlent pas à la plateforme ; « statut » ne rend que la vue publique', () => {
-    const premierAppel = GESTIONNAIRE.indexOf('clientPlateforme(')
+    // L'ouverture de la plateforme est DÉFINIE avant ces branches, sans rien ouvrir (`plateformeDe`, que la réception par
+    // l'accès « Achats » emprunte, étape B4r) ; sa première UTILISATION par le gestionnaire vient après elles, et la réception
+    // rend avant elles, pour ses deux seules actions.
+    const premierAppel = GESTIONNAIRE.indexOf('ouvrirPlateforme()')
+    expect(premierAppel).toBeGreaterThan(GESTIONNAIRE.indexOf('const ouvrirPlateforme = () => plateformeDe(connexion)\n'))
+    expect(GESTIONNAIRE.split('plateformeDe(').length - 1).toBe(1)
+    expect(GESTIONNAIRE).toContain('  if (parLaReception) {\n    return await receptionParLeClient(')
     for (const action of ['statut', 'retirer', 'enregistrer', 'retenir', 'repartir']) {
       const branche = brancheDe(action)
       expect(branche, action).not.toMatch(/plateforme\.|clientPlateforme\(|fetch\(/)
