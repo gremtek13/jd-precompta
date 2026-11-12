@@ -51769,3 +51769,19 @@ centimes, le reste se refuse. Un exercice clos le 31/12/2026 ou après a un bar�
 2027 est en discussion), dit dans le rendu (LIA3-Q1). Hors du module, et dit : la contribution sociale au-delà de
 l'abattement, les plus-values à long terme, les crédits restituables, les exercices décalés, le report au jour ouvré
 (LIA8). Quarante cas ; quatorze mutations mordent. Légifrance lu par ses pages datées.
+
+### 12/11/2026 — AFF1 : L'AFFECTATION DU RÉSULTAT EN MODULE (LIGNES 33 ET 45)
+
+`src/lib/affectationDuResultat.ts`, pur, en centimes, sans drapeau ni base : la réserve légale minimale (L232-10 : un
+vingtième du bénéfice diminué des pertes antérieures, jusqu'au dixième du capital, l'un et l'autre arrondis au centime
+SUPÉRIEUR, « au moins » étant un plancher), le bénéfice distribuable (L232-11, al. 1 : les réserves légale et statutaires
+DOTÉES par la décision s'en retranchent), la priorité du bénéfice sur les réserves (al. 2), le plancher des capitaux
+propres (al. 3 : capital du dossier, réserve légale après dotation, 1062, 1064, l'écart de réévaluation de l'al. 4, et le
+1063 quand les statuts le rendent indisponible — un paramètre sans défaut, AFF1-Q1), la perte imputée (AFF-Q7), une
+proposition qui ne distribue rien, vingt-sept refus et cinq avertissements aux mots français, l'écriture au journal OD à
+la date de la décision, une ligne par compte et par sens, les comptes passés par l'appelant. L232-10 à L232-13 relus sur
+Légifrance ce jour : L232-10 a été réécrit par l'ordonnance n° 2025-229 du 12 mars 2025 (en vigueur le 01/10/2025) —
+« Toute décision contraire est nulle » remplace « à peine de nullité », le vingtième et le dixième demeurent. Écarts à la
+conception : la réserve légale s'impose aux formes 54 à 57, 5800 et aux commandites par actions (5308, 5309, 5370, 5385),
+pas à toute la famille 53 (la SCS et la SLP affectent librement, ce que le § 3.4 dit aussi) ; hors champ, la famille 51,
+les GIE, caisses, mutuelles et coopératives agricoles (61 à 64, 69). Huit mutations, toutes tuées.
