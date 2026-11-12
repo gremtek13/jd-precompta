@@ -566,7 +566,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   d'extensions seulement si ces fichiers font du bruit et si le cabinet la choisit (S227-Q5) → « UNE PIÈCE JOINTE
   ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ; au
-  tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français. Un compte dont le dernier
+  tableau de bord, le modèle d'e-mail en français (la longueur minimale à 10, posée par le cabinet le 12/11/2026). Un compte dont le dernier
   accès au cabinet a été retiré se rattache de nouveau après une confirmation (23-Q2, écrit le 23/10/2026 ; 23Q2-Q1 et
   23Q2-Q2, écrites sur la recommandation, confirmées par le cabinet le 26/10/2026, avec 23Q2Q2-Q2 ; 23Q2Q2-Q1, écrit le
   26/10/2026 : le client d'un dossier du cabinet n'entre dans l'équipe qu'après une confirmation qui nomme l'adresse, le
@@ -799,9 +799,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ### Advisors Supabase — ne pas repartir en chasse à chaque audit → « Les advisors de sécurité Supabase »
 
-- `auth_leaked_password_protection` : l'organisation `dloewvpmposfbvdwtqfz` est au plan Pro depuis le 12/11/2026 ; le
-  réglage est un geste du cabinet au tableau de bord (Authentication, protection contre les mots de passe divulgués),
-  avec la longueur minimale et les classes de caractères.
+- `auth_leaked_password_protection` : levé le 12/11/2026 — l'organisation `dloewvpmposfbvdwtqfz` au plan Pro, le cabinet
+  a activé au tableau de bord le refus des mots de passe divulgués et la longueur minimale à 10 (l'advisor ne le signale
+  plus).
 - `anon_/authenticated_security_definer_function_executable` : vérifiés bénins par impersonation. Chaque fonction
   `SECURITY DEFINER` qui écrit contrôle l'accès avant toute lecture ; `garder_*`, `prochain_numero_facture` et
   `attribuer_numero_facture` ne sont exécutées par aucun rôle ; une lecture ne rend que ce que son essai vérifie. À

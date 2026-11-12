@@ -52040,6 +52040,8 @@ du stockage n'entrent pas dans cette sauvegarde : le pack de chaque dossier et l
 cabinet (INAL6) les portent ; la sauvegarde de l'application garde son rôle (un dossier, à un autre instant, les logos
 des factures). L'advisor `auth_leaked_password_protection` devient réglable : un geste du cabinet au tableau de bord,
 avec la longueur minimale des mots de passe (G-longueurMotDePasse). Le mur des Edge Functions passe de 150 s à 400 s ;
-`extract-piece` garde son budget de 150 s, plus prudent, jusqu'à une décision. Les advisors du 12/11 comptent aussi
+`extract-piece` garde son budget de 150 s, plus prudent, jusqu'à une décision. Le même après-midi, le cabinet a activé le
+refus des mots de passe divulgués et relevé la longueur minimale à 10 (l'advisor `auth_leaked_password_protection` ne
+paraît plus ; la longueur ne se lit pas par l'outil, consignée sur la parole du cabinet). Les advisors du 12/11 comptent aussi
 `devis_numerotation` et `originaux_liberes` parmi les tables sans policy, volontaires : CLAUDE.md les nomme désormais.
 PLAN_DE_REPRISE.md (§ 1) et CLAUDE.md suivent.
