@@ -25,8 +25,9 @@ Ce que le plan Pro apporte, et ce qu'il n'apporte pas :
 - **La sauvegarde produite par l'application garde son rôle** : elle restaure UN dossier, à un autre
   instant que la sauvegarde quotidienne, et elle porte les logos des factures. Tenir un rythme écrit :
   une par dossier après chaque séance de saisie, et au moins une par mois.
-- Le même passage ouvre `auth_leaked_password_protection` (voir CLAUDE.md) : un réglage du tableau de
-  bord, à faire par le cabinet.
+- Le même passage ouvre `auth_leaked_password_protection` (voir CLAUDE.md) : le cabinet a activé le
+  refus des mots de passe divulgués le 12/11/2026 (Authentication, au tableau de bord), et relevé la
+  longueur minimale à 10 le même jour. Un projet remonté ailleurs reprend ces deux réglages.
 
 ---
 
