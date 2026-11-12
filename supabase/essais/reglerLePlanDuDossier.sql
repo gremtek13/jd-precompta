@@ -17,8 +17,11 @@
 -- ordre, les policies, les contraintes retirées).
 --
 -- Trois dossiers jetables du cabinet du dossier `test` (préfixe `f4c00000-0000-4000-8000`) : DT, en trésorerie, dirigeant au
--- 455000, avec un accès du client d'essai, deux catégories propres et deux pièces ; DE, en engagement, dirigeant au 108000 ;
--- DR, un dossier que des étapes restaurent. Chaque étape se joue dans sa sous-transaction et s'y ANNULE (`ANNULATION_ETAPE`) :
+-- 455000, avec un accès du client d'essai, une catégorie propre (CT), une catégorie COMMUNE au compte de l'exploitant (C108)
+-- et deux pièces ; DE, en engagement, dirigeant au 108000 ; DR, un dossier que des étapes restaurent. Une catégorie du
+-- dossier ne se pose plus hors des classes 6 et 7 (`classes_des_categories`, PC7-Q2) : C108 est commune, le chemin qui
+-- reste, et les étapes 35, 36, 38 et 39, qui jugent le refus 9 contre une catégorie du dossier sur un compte de bilan, la
+-- posent déclencheurs de `categories` coupés le temps de l'écrire, comme une catégorie posée avant la garde. Chaque étape se joue dans sa sous-transaction et s'y ANNULE (`ANNULATION_ETAPE`) :
 -- ce que le propriétaire pose d'abord, sous la session du super-administrateur, puis la requête du profil ; le jeu s'annule à
 -- la fin (`ANNULATION_ESSAI_GLOBALE`), et « rien n'est resté » le relit. Les verdicts voyagent dans un réglage LOCAL à la
 -- transaction (`essai.regler_le_plan`), que la requête finale lit : le fichier se joue d'un seul appel, ne crée ni table ni
@@ -107,7 +110,7 @@ begin
       (acces::uuid, client::uuid, dt::uuid, 'client', 'essai-pc4@example.test');
     insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
       (ct::uuid, dt::uuid, 'essai_pc4_achats', 'Essai PC4 achats', '606100', 'Achats'),
-      (c108::uuid, dt::uuid, 'essai_pc4_exploitant', 'Essai PC4 exploitant', '108000', null);
+      (c108::uuid, null, 'essai_pc4_exploitant', 'Essai PC4 exploitant', '108000', null);
     insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, categorie_id, montant_ttc, date_piece) values
       (p1::uuid, dt::uuid, dt || '/essai-pc4-1.pdf', 'essai-pc4-1.pdf', 'achat', 'validee', ct::uuid, 12, '2026-03-01'),
       (p2::uuid, dt::uuid, dt || '/essai-pc4-2.pdf', 'essai-pc4-2.pdf', 'note_frais', 'validee', c108::uuid, 12, '2026-03-01');
@@ -181,19 +184,19 @@ begin
         'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "512100"}]'), '22023',
         'Les rôles « banque » et « essai_chevauche » se tiendraient sur le même compte (« 512100 »), à des zéros près : un compte ne tient qu''un rôle.'),
       (35, '35. la banque changée vers le compte d''une catégorie du dossier (22023)',
-        $q$update categories set compte_comptable = '512100' where id = '{CT}'$q$,
+        $q$alter table categories disable trigger user; update categories set compte_comptable = '512100' where id = '{CT}'; alter table categories enable trigger user$q$,
         'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "512100"}]'), '22023', format(categorie, '512100', 'banque', '512100')),
       (36, '36. … à des zéros près (22023)',
-        $q$update categories set compte_comptable = '5121' where id = '{CT}'$q$,
+        $q$alter table categories disable trigger user; update categories set compte_comptable = '5121' where id = '{CT}'; alter table categories enable trigger user$q$,
         'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "512100"}]'), '22023', format(categorie, '512100', 'banque', '5121')),
       (37, '37. les fournisseurs changés vers le compte d''une catégorie commune (22023)',
         $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc4_commune', 'Essai PC4 commune', '401100')$q$,
         'chef', replace(regler, '{L}', '[{"role": "fournisseurs", "compte": "401100"}]'), '22023', format(categorie, '401100', 'fournisseurs', '401100')),
       (38, '38. la catégorie d''un AUTRE dossier ne retient rien',
-        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DE}', 'essai_pc4_autre', 'Essai PC4 autre', '512100')$q$,
+        $q$alter table categories disable trigger user; insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DE}', 'essai_pc4_autre', 'Essai PC4 autre', '512100'); alter table categories enable trigger user$q$,
         'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "512100"}]'), 'OK', ''),
       (39, '39. le compte du catalogue, inchangé, ne se refuse pas, même sur une catégorie',
-        $q$update categories set compte_comptable = '512000' where id = '{CT}'$q$,
+        $q$alter table categories disable trigger user; update categories set compte_comptable = '512000' where id = '{CT}'; alter table categories enable trigger user$q$,
         'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "512000"}]'), 'OK', ''),
       (40, '40. un rôle de gestion (classe 6) sur le compte d''une catégorie passe : le refus vise les rôles du bilan',
         $q$update categories set compte_comptable = '616810' where id = '{CT}'$q$,

@@ -280,7 +280,9 @@ begin
 
   -- ══ 14 à 17. Les catégories et les mouvements que la base refuse ═══════════════════════════════
   -- Catégorie sans compte, catégorie de bilan, catégorie d'un autre dossier : créées DANS la
-  -- sous-transaction, donc défaites avec elle.
+  -- sous-transaction, donc défaites avec elle. La catégorie de bilan est COMMUNE : une catégorie du
+  -- dossier ne se pose plus hors des classes 6 et 7 (`classes_des_categories`, PC7-Q2), une commune
+  -- si, et la fonction la refuse à l'emploi par le même contrôle.
   for obs, message in
     select * from (values
       ('14. catégorie sans compte', 'La catégorie « %» n''a pas de compte de charge ou de produit (classe 6 ou 7).'),
@@ -298,7 +300,7 @@ begin
             values (dossier_test, 'essai_sans_compte', 'Essai sans compte', 999, null, 'Divers') returning id into cat;
         elsif obs like '15.%' then
           insert into categories (dossier_id, code, libelle, ordre, compte_comptable, poste_2035)
-            values (dossier_test, 'essai_bilan', 'Essai bilan', 999, '108000', null) returning id into cat;
+            values (null, 'essai_bilan', 'Essai bilan', 999, '108000', null) returning id into cat;
         elsif obs like '16.%' then
           insert into categories (dossier_id, code, libelle, ordre, compte_comptable, poste_2035)
             values (dossier_du_client, 'essai_autre_dossier', 'Essai autre dossier', 999, '627000', 'Frais financiers') returning id into cat;

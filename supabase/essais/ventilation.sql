@@ -384,7 +384,9 @@ begin
   end loop;
 
   -- 22. Une catégorie d'un autre dossier ; 23. une catégorie sans compte de résultat ; 24. une part de
-  -- recette sans son taux, sur un dossier assujetti. Chacune se crée ou se règle DANS la sous-transaction.
+  -- recette sans son taux, sur un dossier assujetti. Chacune se crée ou se règle DANS la sous-transaction. La
+  -- catégorie sans compte de résultat est COMMUNE : une catégorie du dossier ne se pose plus hors des classes 6 et 7
+  -- (`classes_des_categories`, PC7-Q2), une commune si, et la fonction la refuse à l'emploi par le même contrôle.
   for obs in select unnest(array['22. une catégorie d''un autre dossier', '23. une catégorie sans compte de résultat',
                                  '24. une part de recette sans taux, dossier assujetti']) loop
     accepte := false; code_recu := null; message := null;
@@ -394,7 +396,7 @@ begin
         values ('essai_ventilation', 'Essai (autre dossier)', du_client.dossier_id, '606400', 'Achats') returning id into cat_autre;
       elsif obs like '23.%' then
         insert into categories (code, libelle, dossier_id, compte_comptable, poste_2035)
-        values ('essai_ventilation', 'Essai sans résultat', dossier_test, '471000', null) returning id into cat_autre;
+        values ('essai_ventilation', 'Essai sans résultat', null, '471000', null) returning id into cat_autre;
       else
         update dossiers set assujetti_tva = true where id = dossier_test;
       end if;
