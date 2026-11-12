@@ -737,7 +737,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   le 12/11/2026, hors BNC, chacun avec ses questions : l'inventaire (`docs/conceptions/35-inventaire.md`, INV1 en module,
   `lib/inventaire.ts`), la liasse, les stocks et l'IS (`37-liasse-2033.md` ; LIA1, LIA3 en module, LIA6 le PDF 2033-SD
   derrière `LIASSE_EXPORTEE` baissé), l'affectation et l'approbation (`45-affectation-et-approbation.md`, AFF1 en module,
-  `lib/affectationDuResultat.ts`) ; rien n'est en base ni à l'écran → « LES ÉCRITURES D'INVENTAIRE : LA CONCEPTION »,
+  `lib/affectationDuResultat.ts`) ; rien n'est à l'écran, et deux migrations sont préparées, à coller dans n'importe
+  quel ordre avec MCB5g (INV2 `operations_d_inventaire`, LIA2 `stocks_de_cloture`) → « LES ÉCRITURES D'INVENTAIRE : LA
+  CONCEPTION », « INV2 ET LIA2 : DEUX MIGRATIONS QUI SE COLLENT DANS LES DEUX ORDRES (LIGNES 35 ET 36) »,
   « LA LIASSE 2033, LES STOCKS ET L'IMPÔT SUR LES SOCIÉTÉS : LA CONCEPTION », « L'AFFECTATION DU RÉSULTAT ET
   L'APPROBATION DES COMPTES : LA CONCEPTION ».
 - **Plan comptable personnalisable** (ligne 43, étapes PC1 à PC9) : PC1, PC2 et PC3a en ligne, NEUTRES (le plan de
@@ -1090,8 +1092,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   pose qu'après le verrou exclusif de la validation) → « LA VALIDATION D'UN GROS EXERCICE : LES GARDES ALLÉGÉES ».
   **Cinq chantiers préparés remplacent `valider_exercice`** (les gardes allégées, INV3, LIA5, AFF3, EXD3) : chacun part
   du corps EN PRODUCTION le jour de son collage et reprend les filets des précédents, jamais d'une copie d'avant ; de
-  même, chaque colonne de source du brouillon (MCB5g, INV2, LIA2) nomme celles des autres dans sa contrainte « sans
-  autre source ».
+  même, une colonne de source neuve du brouillon (MCB5g, INV2, LIA2, demain AFF2) laisse intacte la contrainte « sans
+  autre source » d'hier et pose, si l'autre colonne est déjà là, une contrainte par PAIRE au même nom des deux côtés
+  (`ecritures_brouillon_inventaire_hors_des_stocks`…), sa garde de tête acceptant les colonnes neuves des autres.
 
 ### Import, OCR, classification
 
