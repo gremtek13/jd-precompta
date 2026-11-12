@@ -52117,3 +52117,21 @@ p_exclue` ; sans décision à remplacer, `p_exclue` est nul et `null is distinct
 des soldes (aucun essai ne pose de ligne de classe 1 au brouillon). La carte compte ces lignes ; la correction, avant le collage :
 `(p_exclue is null or e.affectation_id is distinct from p_exclue)`, avec un essai. **Preuves** : 19 tests d'écran, 27 de logique, 23
 de lecture ; mutations (verrou, drapeau) mordent ; scanners de lecture, d'écriture et d'écrans verts.
+
+### 12/11/2026 — LES RÔLES DU CHANGE DANS TOUS LES LECTEURS DU PLAN
+
+Agent architecte, depuis 646e33f (`rolesLusAuPlan()`, le modèle du cabinet). La base porte 34 rôles depuis
+`ecarts_de_reglement` ; treize emplois, dans sept fichiers de l'application, ne parcouraient que les 32 de `ROLES_COMPTABLES`. **Le défaut** : la
+reprise qui propose le plan (PC6, derrière `PLAN_DEPUIS_LA_BALANCE_PREVU` baissé, donc jamais atteint en production) envoyait
+à `regler_plan_du_dossier` — qui efface le plan puis insère la liste — un plan sans les deux rôles du change : un 666000
+choisi pour les pertes de change repartait au 656000, et la confirmation (`changementsDuPlan`) ne le disait pas ; un 666…
+de la balance ne se proposait pas, et `refuseSurUneCategorie` aurait levé sur son `find(...)!`. **Corrigé** :
+`planDepuisLaBalance`, `planRetenu` et `changementsDuPlan` parcourent `rolesDuPlanLu(lu)` (les rôles lus au plan que le plan
+lu porte : un plan d'avant le drapeau n'invente rien, comme `changementsDuModele`) ; `planDepuisLaBalanceChange.test.ts`
+joue le drapeau levé et baissé par un accesseur, trois mutations y mordent. **Gardés aux 32, et pourquoi** : les
+à-nouveaux (bilan seul), le plan que le client ne lit pas, deux racines nommées des catégories de la balance, la fiche d'un
+compte bancaire (un 512…), `estDeTiers` du modèle ; la copie de l'assistant (`ROLES_DU_PLAN`) suit déjà `planDeLaReponse`,
+rien à redéployer. **Le scanner** `rolesDuPlanLecteurs.test.ts` relève par l'arbre syntaxique tout identifiant du catalogue
+hors de `planComptable.ts`, des tests et de src/test/, contre six exceptions motivées au nombre près ; un lecteur planté
+(fichier neuf, puis un emploi de plus dans une exception) le fait virer au rouge. Restent, hors application, les essais SQL
+qui comptent encore 32 rôles (MP1 de `rls.sql`, `planComptable.sql`, `modeleDuCabinet.sql`), déjà relevés sous PC7-Q2.

@@ -30,11 +30,10 @@
 
 import type { LigneBalance } from './balanceImport'
 import {
-  ROLES_COMPTABLES,
   memeCompteAuxZerosPres,
-  sousUneRacineDuRole,
-  type CleRoleComptable,
+  rolesLusAuPlan,
   type CleRoleDuPlan,
+  type DefinitionRoleComptable,
   type LibellesDuPlan,
   type PlanComptable,
   type PrefixesDuPlan,
@@ -78,9 +77,9 @@ export interface EcarteDuRole {
 }
 
 export type PropositionDuRole =
-  | { role: CleRoleComptable; etat: 'propose'; candidat: CandidatDuRole; change: boolean; ecartes: EcarteDuRole[] }
-  | { role: CleRoleComptable; etat: 'au_choix'; candidats: CandidatDuRole[]; ecartes: EcarteDuRole[] }
-  | { role: CleRoleComptable; etat: 'reste'; ecartes: EcarteDuRole[] }
+  | { role: CleRoleDuPlan; etat: 'propose'; candidat: CandidatDuRole; change: boolean; ecartes: EcarteDuRole[] }
+  | { role: CleRoleDuPlan; etat: 'au_choix'; candidats: CandidatDuRole[]; ecartes: EcarteDuRole[] }
+  | { role: CleRoleDuPlan; etat: 'reste'; ecartes: EcarteDuRole[] }
 
 /** Le plan du dossier tel que la page le lit (`LectureDuPlan` sans son motif). */
 export interface PlanLu {
@@ -103,10 +102,22 @@ function libelleAccepte(libelle: string): string | null {
 
 // Un rôle du bilan (son compte du catalogue en classe 1 à 5) ou les indemnités kilométriques, changés vers le compte d'une
 // catégorie que le dossier emploie : `regler_plan_du_dossier` le refuse (refus 9 et 10), sauf au compte du catalogue.
-function refuseSurUneCategorie(role: CleRoleComptable, compte: string): boolean {
-  const definition = ROLES_COMPTABLES.find((r) => r.role === role)!
+// Les deux rôles du change (656/666, 756/766) sont des comptes de résultat : jamais refusés sur une catégorie.
+function refuseSurUneCategorie(definition: DefinitionRoleComptable, compte: string): boolean {
   if (compte === definition.compteDefaut) return false
-  return /^[1-5]/.test(definition.compteDefaut) || role === 'indemnites_kilometriques'
+  return /^[1-5]/.test(definition.compteDefaut) || definition.role === 'indemnites_kilometriques'
+}
+
+/**
+ * LES RÔLES QUE LA REPRISE PROPOSE, RETIENT ET COMPARE : ceux que la lecture du plan porte aujourd'hui (`rolesLusAuPlan` :
+ * les deux du change le drapeau de leur migration levé — ligne 31), et que le plan lu porte. `regler_plan_du_dossier`
+ * REMET AU CATALOGUE tout rôle absent de sa liste : un rôle de la base que la reprise oublierait (un 666000 choisi pour les
+ * pertes de change) repartirait à son défaut sans que la confirmation le dise. Un rôle que le plan lu ne porte pas (un
+ * plan d'avant le drapeau) n'a ni compte connu ni rien à comparer : il n'est ni proposé ni envoyé, comme dans
+ * `changementsDuModele` (lib/modeleDuCabinet.ts) ; la lecture du plan les exige, le drapeau levé.
+ */
+export function rolesDuPlanLu(lu: PlanLu): readonly (DefinitionRoleComptable & { readonly role: CleRoleDuPlan })[] {
+  return rolesLusAuPlan().filter((r) => lu.plan[r.role] !== undefined)
 }
 
 /**
@@ -115,18 +126,19 @@ function refuseSurUneCategorie(role: CleRoleComptable, compte: string): boolean 
  */
 export function planDepuisLaBalance(balance: readonly LigneBalance[], lu: PlanLu,
   comptesDesCategories: readonly string[]): PropositionDuRole[] {
-  return ROLES_COMPTABLES.map(({ role, libelleDefaut }) => {
+  return rolesDuPlanLu(lu).map((definition) => {
+    const { role, libelleDefaut } = definition
     const candidats: CandidatDuRole[] = []
     const ecartes: EcarteDuRole[] = []
     for (const ligne of balance) {
       const origine = ligne.compte.trim()
-      if (!sousUneRacineDuRole(role, origine)) continue
+      if (!definition.racines.some((racine) => origine.startsWith(racine))) continue
       const compte = formeDUnCompteDeRole(origine)
       if (compte === null) {
         ecartes.push({ compteOrigine: origine, libelle: ligne.libelle, motif: 'hors_forme', categorie: null })
         continue
       }
-      const categorie = refuseSurUneCategorie(role, compte)
+      const categorie = refuseSurUneCategorie(definition, compte)
         ? comptesDesCategories.find((c) => memeCompteAuxZerosPres(c, compte)) ?? null
         : null
       if (categorie !== null) {
@@ -146,7 +158,7 @@ export function planDepuisLaBalance(balance: readonly LigneBalance[], lu: PlanLu
     if (candidats.length === 0) return { role, etat: 'reste', ecartes }
     if (candidats.length > 1) return { role, etat: 'au_choix', candidats, ecartes }
     const [candidat] = candidats
-    const change = candidat.compte !== lu.plan[role] || (candidat.libelle !== null && candidat.libelle !== lu.libelles[role])
+    const change = candidat.compte !== lu.plan[role] || (candidat.libelle !== null && candidat.libelle !== (lu.libelles[role] ?? null))
     return { role, etat: 'propose', candidat, change, ecartes }
   })
 }
@@ -163,7 +175,7 @@ export interface LigneDuPlanReglee {
  * Ce que le cabinet a retenu, rôle par rôle : le compte choisi parmi les candidats d'un rôle « au choix » ; `null` refuse la
  * proposition d'un rôle « proposé ». Un rôle absent : la proposition s'applique, un rôle au choix reste.
  */
-export type ChoixDuPlan = Readonly<Partial<Record<CleRoleComptable, string | null>>>
+export type ChoixDuPlan = Readonly<Partial<Record<CleRoleDuPlan, string | null>>>
 
 /**
  * Le plan ENTIER que le clic enverra à `regler_plan_du_dossier` (qui remet au catalogue tout rôle absent) : pour chaque
@@ -173,11 +185,11 @@ export type ChoixDuPlan = Readonly<Partial<Record<CleRoleComptable, string | nul
 export function planRetenu(propositions: readonly PropositionDuRole[], choix: ChoixDuPlan, lu: PlanLu):
   { comptes: LigneDuPlanReglee[]; refus: null } | { comptes: null; refus: string } {
   const comptes: LigneDuPlanReglee[] = []
-  for (const definition of ROLES_COMPTABLES) {
+  for (const definition of rolesDuPlanLu(lu)) {
     const { role } = definition
     const proposition = propositions.find((p) => p.role === role)
-    let compte = lu.plan[role]
-    let libelle: string | null = lu.libelles[role]
+    let compte = lu.plan[role]!
+    let libelle: string | null = lu.libelles[role] ?? null
     const voulu = choix[role]
     if (proposition?.etat === 'propose' && voulu !== null) {
       if (voulu !== undefined && voulu !== proposition.candidat.compte) {

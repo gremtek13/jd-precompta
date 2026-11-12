@@ -1,8 +1,9 @@
 import type { LigneANouveau } from './aNouveaux'
 import { formatMoney } from './format'
-import { ROLES_COMPTABLES, rolesLusAuPlan, type CleRoleComptable, type CleRoleDuPlan } from './planComptable'
+import { rolesLusAuPlan, type CleRoleComptable, type CleRoleDuPlan } from './planComptable'
 import {
   planRetenu,
+  rolesDuPlanLu,
   type ChoixDuPlan,
   type EcarteDuRole,
   type LigneDuPlanReglee,
@@ -35,7 +36,7 @@ export interface CompteTenu {
 }
 
 export interface ChangementDuPlan {
-  role: CleRoleComptable
+  role: CleRoleDuPlan
   avant: CompteTenu
   apres: CompteTenu
 }
@@ -43,13 +44,15 @@ export interface ChangementDuPlan {
 /**
  * Ce que le plan ENTIER du clic change au plan lu, rôle par rôle : un rôle absent de `comptes` revient au catalogue (c'est
  * ce que fait `regler_plan_du_dossier`), un libellé nul est celui du catalogue. Le préfixe des auxiliaires, que
- * `planRetenu` garde tel qu'il est lu, ne change pas.
+ * `planRetenu` garde tel qu'il est lu, ne change pas. Les rôles comparés sont ceux que `planRetenu` envoie
+ * (`rolesDuPlanLu` : les deux du change compris, le drapeau de leur migration levé) : la confirmation nomme tout ce que le
+ * clic change, un compte du change remis au catalogue compris.
  */
 export function changementsDuPlan(comptes: readonly LigneDuPlanReglee[], lu: PlanLu): ChangementDuPlan[] {
-  return ROLES_COMPTABLES.flatMap((definition) => {
+  return rolesDuPlanLu(lu).flatMap((definition) => {
     const ligne = comptes.find((c) => c.role === definition.role)
     const apres: CompteTenu = { compte: ligne?.compte ?? definition.compteDefaut, libelle: ligne?.libelle ?? definition.libelleDefaut }
-    const avant: CompteTenu = { compte: lu.plan[definition.role], libelle: lu.libelles[definition.role] }
+    const avant: CompteTenu = { compte: lu.plan[definition.role]!, libelle: lu.libelles[definition.role] ?? null }
     return apres.compte === avant.compte && apres.libelle === avant.libelle ? [] : [{ role: definition.role, avant, apres }]
   })
 }
@@ -58,7 +61,7 @@ export type EtatDuPlanPropose =
   /** Un choix que le module refuse : sa phrase, dite avant le clic. */
   | { etat: 'refus'; refus: string }
   /** Des rôles où la balance porte plusieurs comptes et où le cabinet n'a pas encore choisi. */
-  | { etat: 'a_choisir'; roles: CleRoleComptable[] }
+  | { etat: 'a_choisir'; roles: CleRoleDuPlan[] }
   /** Le plan retenu diffère du plan lu : le clic l'envoie. */
   | { etat: 'a_regler'; comptes: LigneDuPlanReglee[]; changements: ChangementDuPlan[] }
   /** Le plan lu tient déjà ce que le cabinet retient : les à-nouveaux se rangent sur lui. */
