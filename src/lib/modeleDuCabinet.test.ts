@@ -5,9 +5,11 @@ import {
   TABLES_DU_MODELE_DU_CABINET,
   changementsDuModele,
   comptesDuModele,
+  confirmationDeLApplication,
   confirmationDuModele,
   csvDuModele,
   modeleALaCreation,
+  modeleAUnDossier,
   modeleDeLaReponse,
   refusDuModele,
   saisieDuModele,
@@ -16,6 +18,7 @@ import {
 } from './modeleDuCabinet'
 import { ROLES_COMPTABLES } from './planComptable'
 import type { LigneDuPlanReglee } from './planDepuisLaBalance'
+import { PLAN_LU_PAR_DEFAUT } from '../test/modeles'
 
 // PC5 — LE MODÈLE DE PLAN DU CABINET (ligne 43 ; la migration `modele_de_plan_du_cabinet`, préparée le 12/11/2026). Le module
 // redit avant le clic les refus de `regler_modele_du_cabinet` : ce test confronte chacun de ses mots au texte de la migration
@@ -182,5 +185,43 @@ describe('l’export d’un cabinet porte son modèle', () => {
     expect(lignes).toHaveLength(ROLES_COMPTABLES.length + 1)
     expect(lignes).toContain('Banque;banque;512100;"Banque; principale";;modèle du cabinet')
     expect(lignes).toContain('Clients;clients;411000;Clients;C;application')
+  })
+})
+
+describe('« Appliquer le modèle du cabinet » sur un dossier existant (PC5b)', () => {
+  const lecture = (regles: Record<string, { compte: string; libelle?: string; prefixe?: string }> = {}) => modeleDeLaReponse(reponse(regles))
+
+  it('copie les rôles que la migration copie : ceux qui s’écartent du catalogue, jamais les autres', () => {
+    expect(MIGRATION).toContain('not (m.compte = r.compte_defaut and m.libelle is null and m.prefixe_auxiliaire is null)')
+    const lu = lecture({ banque: { compte: '512100', libelle: 'Banque principale' }, clients: { compte: '411000', prefixe: 'X' } })
+    const offre = modeleAUnDossier(lu, PLAN_LU_PAR_DEFAUT, false)
+    expect(offre.etat).toBe('a_appliquer')
+    if (offre.etat !== 'a_appliquer') return
+    expect(offre.regles).toBe(2)
+    expect(offre.changements.map((c) => c.role)).toEqual(['banque', 'clients'])
+  })
+
+  it('dit avant le clic la lecture qui n’est pas revenue, le modèle illisible, le modèle vide, l’exercice validé et le plan à jour', () => {
+    expect(modeleAUnDossier(null, PLAN_LU_PAR_DEFAUT, false)).toEqual({ etat: 'lecture', phrase: 'Lecture du modèle de plan du cabinet…' })
+    expect(modeleAUnDossier({ modele: null, motif: 'modèle de plan refusé : X' }, PLAN_LU_PAR_DEFAUT, false))
+      .toEqual({ etat: 'refus', phrase: 'Le modèle de plan du cabinet n’a pas pu être lu (modèle de plan refusé : X) : il ne s’applique pas à ce dossier.' })
+    expect(modeleAUnDossier(lecture(), PLAN_LU_PAR_DEFAUT, false).etat).toBe('refus')
+    expect(modeleAUnDossier(lecture({ banque: { compte: '512100' } }), PLAN_LU_PAR_DEFAUT, true))
+      .toEqual({ etat: 'refus', phrase: 'Un exercice de ce dossier est validé : son plan ne change plus, le modèle ne peut pas lui être appliqué.' })
+    const tenu = { ...PLAN_LU_PAR_DEFAUT, plan: { ...PLAN_LU_PAR_DEFAUT.plan, banque: '512100' } }
+    expect(modeleAUnDossier(lecture({ banque: { compte: '512100' } }), tenu, false))
+      .toEqual({ etat: 'refus', phrase: 'Le plan de ce dossier tient déjà le modèle du cabinet : il n’y a rien à appliquer.' })
+  })
+
+  it('la confirmation nomme le nombre de rôles et chaque compte qui change', () => {
+    const lu = lecture({ banque: { compte: '512100', libelle: 'Banque principale' } })
+    const offre = modeleAUnDossier(lu, PLAN_LU_PAR_DEFAUT, false)
+    if (offre.etat !== 'a_appliquer') throw new Error('le geste devait s’offrir')
+    expect(confirmationDeLApplication(offre.regles, offre.changements)).toBe(
+      'Appliquer le modèle de plan du cabinet à ce dossier ? Un rôle s’écarte du plan de l’application ; ce compte change dans ce dossier :\n'
+      + '– Banque : 512000 « Banque » → 512100 « Banque principale »\n'
+      + 'Le plan ne se change plus dès que le dossier porte une écriture ou un à-nouveau.',
+    )
+    expect(confirmationDeLApplication(2, [offre.changements[0], offre.changements[0]])).toContain('2 rôles s’écartent')
   })
 })

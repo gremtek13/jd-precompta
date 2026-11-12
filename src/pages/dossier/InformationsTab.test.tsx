@@ -132,6 +132,7 @@ vi.mock('./SourceDesVentesCard', () => ({
   ),
 }))
 vi.mock('./BalanceCard', () => ({ default: () => null }))
+vi.mock('./ModeleDuCabinetDossierCarte', () => ({ default: () => null }))
 // La carte « Numérotation des factures » (A9b), offerte depuis A9B-Q0, lit et écrit seule sous l'exercice partagé, et a ses
 // propres tests (NumerotationDesFacturesCard.test.tsx) : doublée pour montrer le dossier que l'onglet lui passe.
 vi.mock('./NumerotationDesFacturesCard', () => ({
@@ -217,6 +218,7 @@ function monter(
       dossierNom="Cabinet Martin"
       dossierSiret={null}
       dossierAdresse={null}
+      dossierCabinetId={null}
       dossierDenomination={null}
       dossierRcsVille={null}
       dossierFormeJuridique={null}

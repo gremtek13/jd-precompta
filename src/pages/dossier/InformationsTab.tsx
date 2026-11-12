@@ -26,6 +26,7 @@ import { useDepartDuDossier } from '../../lib/departDuClientLecture'
 import { DEPART_DU_CLIENT_PREVU, ceQueLaSuppressionPerd, exercicesSansPaquet, refusDeLaSuppressionAuDepart } from '../../lib/departDuClient'
 import { aujourdHuiAParis } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
+import ModeleDuCabinetDossierCarte from './ModeleDuCabinetDossierCarte'
 import { ouvrirApercu } from '../../lib/apercu'
 import { chargerInformationsDossier, enregistrerInformationsDossier } from '../../lib/informationsDossier'
 import {
@@ -61,6 +62,8 @@ interface Props {
   dossierNom: string
   dossierSiret: string | null
   dossierAdresse: string | null
+  // Le cabinet du dossier, tel que la page l'a lu (`null` : pas encore lu) : la carte « Modèle de plan du cabinet » lit son modèle.
+  dossierCabinetId: string | null
   // L'identité légale, telle que `DossierDetail` l'a lue : `undefined` quand la lecture ne portait pas la colonne.
   dossierDenomination: string | null | undefined
   dossierRcsVille: string | null | undefined
@@ -80,7 +83,7 @@ interface Props {
 }
 
 export default function InformationsTab({
-  dossierId, dossierNom, dossierSiret, dossierAdresse, dossierDenomination, dossierRcsVille, dossierFormeJuridique, dossierCapital,
+  dossierId, dossierNom, dossierSiret, dossierAdresse, dossierCabinetId, dossierDenomination, dossierRcsVille, dossierFormeJuridique, dossierCapital,
   modele, onIdentiteUpdated, onReglageUpdated, onPlanRelu,
 }: Props) {
   const { estChef, isSuperAdmin } = useAuth()
@@ -550,6 +553,9 @@ export default function InformationsTab({
 
     {/* La reprise d'un dossier venu d'un autre logiciel commence ici, à côté de la sauvegarde : ce
         sont les deux moments où des données ENTRENT et SORTENT de la plateforme en bloc. */}
+    {/* Le modèle de plan du cabinet, copié dans le plan de ce dossier (ligne 43, PC5b), derrière MODELE_DU_CABINET_PREVU. */}
+    <ModeleDuCabinetDossierCarte key={dossierId} dossierId={dossierId} cabinetId={dossierCabinetId} planLu={modele} onPlanRelu={onPlanRelu} />
+
     <BalanceCard dossierId={dossierId} planLu={modele} onPlanRelu={onPlanRelu} />
 
     {/* Les catégories propres au dossier (ligne 43, PC7), derrière CATEGORIES_DU_DOSSIER_PREVUES. */}

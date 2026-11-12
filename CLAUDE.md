@@ -737,8 +737,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   l'éclate), son écran (la carte de la balance en deux temps) fait derrière le même drapeau ; restent la levée, le
   déploiement, puis le collage → « PC6 : LA REPRISE PROPOSE LE PLAN (PRÉPARÉE, PAS APPLIQUÉE) », « PC6 : L'ÉCRAN DE LA
   REPRISE QUI PROPOSE LE PLAN (DERRIÈRE SON DRAPEAU) » ; PC5, le modèle du cabinet, préparé le 12/11/2026, par l'outil
-  (`modele_de_plan_du_cabinet`, `MODELE_DU_CABINET_PREVU` baissé) → « PC5 : LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS
-  APPLIQUÉ) » ; PC7 préparée le même jour (`categories_du_dossier`, la garde de la table ; l'écran et le troisième temps de
+  (`modele_de_plan_du_cabinet`, `MODELE_DU_CABINET_PREVU` baissé ; sa carte, « Nouveau dossier » et le bouton d'un dossier
+  existant derrière le même drapeau) → « PC5 : LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS APPLIQUÉ) », « PC5B : APPLIQUER LE
+  MODÈLE DU CABINET À UN DOSSIER, À L'ÉCRAN (LIGNE 43) » ; PC7 préparée le même jour (`categories_du_dossier`, la garde de la table ; l'écran et le troisième temps de
   la balance derrière `CATEGORIES_DU_DOSSIER_PREVUES` baissé) → « PC7 : LES CATÉGORIES DU DOSSIER, DONT CELLES DE SA
   BALANCE » ; puis PC8 et PC9, sur décision → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
   PLAN ».

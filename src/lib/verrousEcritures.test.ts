@@ -196,7 +196,8 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     nature: 'lecture',
     raison: '`modele_du_cabinet` (ligne 43, PC5, `stable`) : le modèle de plan du cabinet, lu par sa carte, par « Nouveau dossier » '
       + 'et par l’export d’un cabinet, derrière `MODELE_DU_CABINET_PREVU` ; rien n’est écrit (le réglage passe '
-      + '`reglerPuisRelireLeModele` sous le verrou de la carte, l’application `appliquerLeModeleAuDossier` sous celui de la création).',
+      + '`reglerPuisRelireLeModele` sous le verrou de la carte, l’application `appliquerLeModeleAuDossier` sous celui de la création, ou — `appliquerPuisRelireLePlan`, PC5b — '
+      + 'sous celui de la carte du plan d’un dossier).',
   },
   'lib:lireConnexionPlateforme': {
     nature: 'lecture',
