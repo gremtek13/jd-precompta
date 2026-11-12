@@ -51575,3 +51575,30 @@ tableau de bord, le plan de sauvegarde). **Vérifié** sur une copie de la mère
 postgres, `fichier_fige` réaligné à service_role) : l'essai `copiesDesFichiers.sql` EN ATTENTE puis sept lignes vraies ;
 `rls.sql` 169 invariants à 0, 111 mutations sur 111 (bloc CF), 166 et 108 après le retour, `signature.sql` égale à la
 production ; 17 tests neufs, trois mutations mordent. **Reste** : CFC-Q1 à Q3, appliquer, lever.
+
+### 12/11/2026 — LA VALIDATION D'UN GROS EXERCICE : LES GARDES ALLÉGÉES (LIGNE 28.66) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; en production, des SELECT du catalogue : 200 migrations, `35d3e185…`, les huit déclencheurs du brouillon
+et `valider_exercice` égaux à la copie de la mère 17 rattrapée.) **La mesure** (sous `authenticated`, jit off, work_mem
+2 184 kB, transaction annulée ; le semis de VF7b, 1 000 et 3 334 factures sources encaissées trois fois) : la numérotation
+déclenche pour chaque ligne deux gardes PL/pgSQL, les six autres ne visant pas ses colonnes — `garder_ecritures_validees`
+(le dossier relu, deux `cle_validation`, fonction SQL au chemin fixé que le planificateur n'incorpore pas, 9,5 µs l'appel :
+la mesure de VF7b, « elle ne coûte rien », l'avait pliée en constante ; deux verrous partagés) et G5 (le dossier, le
+mouvement deux fois, deux `to_jsonb`). Avant → après : 9 000 lignes 1,40–1,69 s → 0,81–0,90 ; 15 000, 2,24–3,22 →
+1,20–1,31 ; 30 006, 4,67–5,09 → 2,92–3,13 ; 50 010, 8,02–8,03 (la limite) → 4,21–4,47 ; sans les gardes 0,71–0,79,
+1,14–1,56, 2,74–2,91, 3,71–3,84. **Le remède** (`gardes_de_la_validation_allegees`, `9773e4a5…` ; retour `56311048…`, deux
+`drop trigger`) : chaque garde garde son déclencheur pour l'insertion et la suppression ; la modification passe par un
+jumeau, la même fonction sous WHEN, écartée là seulement où elle ne refuse rien — la ligne que la validation numérote (le
+réglage ne se pose qu'après le verrou exclusif : les verrous partagés sont superflus) ; pour G5, la négation au caractère
+près de sa propre comparaison. Le nom du jumeau prolonge celui de sa garde : même rang. Écartés : une garde par instruction
+(AFTER : l'ordre face aux contraintes change, le verrou vient après la ligne) ; un raccourci dans les fonctions (0,86–1,06 s,
+et la lignée de G5 que trois tests suivent) ; les dix-sept colonnes nommées (3,5 s à 50 010 lignes, mais une colonne
+ajoutée échapperait à G5) ; `jsonb_populate_record` comparé par image (3,8 s, un retour de type à prouver total).
+**Les preuves** : `gardesDeLaValidation.sql` (neuf, 21 lignes, la fenêtre imitée) et `validationExercice` (245),
+`validationDesVentesFacturees` (77), `ecrituresVentesFacturees` (209, 151d neuf), `ventesFacturees` (339),
+`reglerLePlanDuDossier` (106) IDENTIQUES avec et sans elle, 0 en faute ; huit mutations mordent ; `rls.sql` 273 lignes,
+0 en faute, 15 en attente, 108 mutations, sorties identiques ; `signature.sql` : les déclencheurs seuls (117 → 119), le
+retour rend l'avant, la réapplication l'après ; `gardesDeLaValidationAllegees.test.ts` tient la preuve au texte exporté.
+**Restent** : l'outil ou le collage (le texte porte « insert or delete », comme `categories_du_dossier`) ; un rôle qui
+poserait lui-même le réglage n'attendrait plus le verrou partagé (aucun rôle de l'API ne le peut) ; ce qui coûte encore :
+`valider_exercice` elle-même et la recomposition des ventes.
