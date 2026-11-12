@@ -1,8 +1,10 @@
 import { SEUIL_ANNEXE_2035E, SEUIL_CVAE_A_PAYER } from './declaration2035E'
 import {
-  DELAI_TELEDECLARATION_JOURS, SEUIL_ACOMPTE_CFE, SEUIL_ACOMPTES_CVAE, euros, prochainesEcheances, type EcheanceFiscale,
+  CALENDRIER_IS_EXPORTE, DELAI_TELEDECLARATION_JOURS, SEUIL_ACOMPTE_CFE, SEUIL_ACOMPTES_CVAE, estEcheanceDeLImpot, euros,
+  prochainesEcheancesDuDossier, type EcheanceDeLImpot, type EcheanceFiscale, type ImpotDuDossier,
 } from './echeancesFiscales'
 import { ajouterJours } from './format'
+import { PREMIERE_CLOTURE_A_CONFIRMER } from './impotSurLesSocietes'
 import type { CotisationDeclaree, PeriodiciteTva, StatutTva } from './types'
 
 // L'ÉCHÉANCIER FISCAL ET SOCIAL DU CLIENT (ligne 51.5, partie C, étape C1 ; MEG3-Q1 : « oui, en premier »). Ce que le client
@@ -60,6 +62,9 @@ export interface Echeancier {
   echeances: EcheanceDuClient[]
   // Dit quand le dossier est lu mais que son statut de TVA n'est pas encore posé : la TVA n'y figure pas, et l'écran le dit.
   avisTva: string | null
+  // Dit quand une échéance d'impôt sur les sociétés ne peut pas figurer (régime d'un exercice pas encore dit, exercice
+  // décalé) ; toujours nul tant que `CALENDRIER_IS_EXPORTE` est baissé.
+  avisImpot: string | null
 }
 
 export const AVIS_TVA_A_PRECISER =
@@ -139,14 +144,61 @@ export function motsDuClientPour(echeance: EcheanceFiscale): { libelle: string; 
   return MOTS_FISCAUX[m[1] as NatureFiscale](Number(m[2]))
 }
 
-function echeancesFiscalesDuClient(aujourdHui: string): EcheanceDuClient[] {
-  return prochainesEcheances(aujourdHui).map((e) => {
+// ── L'impôt sur les sociétés (ligne 38, LIA8, derrière `CALENDRIER_IS_EXPORTE`) ────────────────────────────────────────
+// Les acomptes (2571) et le solde (2572) du calendrier (`lib/echeancesFiscales.ts`), aux mots du client. Le montant ne sort
+// qu'avec « Banque », et seulement quand le calendrier en a un ; une raison du cabinet (une saisie qui manque, un calcul
+// refusé) ne se recopie pas : le client lit que son cabinet le lui dira. Un barème que la loi de finances pour 2027 peut
+// changer (LIA3-Q1) fait du montant une estimation, dite comme telle.
+export const AVIS_IMPOT_A_PRECISER =
+  'Ton cabinet n’a pas encore précisé l’impôt sur les sociétés de chaque exercice : certaines de ses échéances ne figurent pas encore ici.'
+
+const ORDINAUX_DES_ACOMPTES = ['premier', 'deuxième', 'troisième', 'quatrième']
+
+export function motsDuClientPourLImpot(e: EcheanceDeLImpot): { libelle: string; precision: string } {
+  const libelle = e.numero === null
+    ? `Impôt sur les sociétés ${e.exercice} : solde (relevé 2572)`
+    : `Impôt sur les sociétés ${e.exercice} : ${ORDINAUX_DES_ACOMPTES[e.numero - 1]} acompte (relevé 2571)`
+  const aPayer = `À payer dans ton espace professionnel sur impots.gouv.fr.`
+  const precision = e.montant.etat === 'du'
+    ? `${aPayer}${baremeAConfirmer(e) ? ' Montant calculé sur le barème connu aujourd’hui, que la loi de finances pour 2027 peut changer.' : ''}`
+    : e.montant.etat === 'rien-a-payer'
+      ? e.montant.excedent > 0
+        ? 'Rien à payer : tes acomptes dépassent ton impôt, l’excédent te sera remboursé.'
+        : 'Rien à payer à cette échéance, d’après les chiffres de ton cabinet.'
+      : `Le montant n’est pas encore connu ici : ton cabinet te le dira. ${aPayer}`
+  const jour = e.jourNonOuvre
+    ? ' Cette date tombe un jour non ouvré : c’est pourtant la date légale, ton cabinet te dira s’il faut payer avant.'
+    : ''
+  return { libelle, precision: `${precision}${jour}` }
+}
+
+function baremeAConfirmer(e: EcheanceDeLImpot): boolean {
+  return `${e.exercice}-12-31` >= PREMIERE_CLOTURE_A_CONFIRMER
+}
+
+function echeanceDeLImpotDuClient(e: EcheanceDeLImpot, avecMontants: boolean): EcheanceDuClient {
+  const mots = motsDuClientPourLImpot(e)
+  return {
+    id: e.id, nature: 'impots', date: e.date, auMois: false, libelle: mots.libelle, precision: mots.precision,
+    // Sans « Banque », aucun montant ; un montant inconnu ou nul n'en est pas un.
+    montant: avecMontants && e.montant.etat === 'du' ? { valeur: e.montant.centimes / 100, estimation: baremeAConfirmer(e) } : null,
+    prevision: false,
+  }
+}
+
+function echeancesFiscalesDuClient(
+  aujourdHui: string, impot: ImpotDuDossier, avecMontants: boolean, exporte: boolean,
+): { echeances: EcheanceDuClient[]; avis: string[] } {
+  const calendrier = prochainesEcheancesDuDossier(aujourdHui, impot, exporte)
+  const echeances = calendrier.echeances.map((e): EcheanceDuClient => {
+    if (estEcheanceDeLImpot(e)) return echeanceDeLImpotDuClient(e, avecMontants)
     const mots = motsDuClientPour(e) ?? { libelle: e.libelle, precision: e.condition }
     return {
       id: e.id, nature: 'impots', date: e.date, auMois: false, libelle: mots.libelle, precision: mots.precision,
       montant: null, prevision: false,
     }
   })
+  return { echeances, avis: calendrier.avis }
 }
 
 // ── La TVA d'un dossier redevable ──────────────────────────────────────────────────────────────────────────────────────
@@ -230,21 +282,28 @@ const RANG: Record<NatureEcheance, number> = { impots: 0, tva: 1, cotisations: 2
 
 /**
  * L'échéancier des douze mois qui viennent. `dossier` nul (pas lu) : ni la TVA ni son avis. `avecMontants` faux : aucun
- * montant. `aujourdHui` : le jour de Paris, AAAA-MM-JJ.
+ * montant. `aujourdHui` : le jour de Paris, AAAA-MM-JJ. `impot` : obligatoire, `SANS_IMPOT_SUR_LES_SOCIETES` tant que le
+ * régime ne se lit pas en base (LIA4) ; `calendrierIsExporte` ne sert qu'aux tests, qui jouent les deux états du drapeau.
  */
 export function composerEcheancier(entree: {
   aujourdHui: string
   dossier: DossierDeLEcheancier | null
   cotisations: readonly CotisationDeLEcheancier[]
   avecMontants: boolean
+  impot: ImpotDuDossier
+  calendrierIsExporte?: boolean
 }): Echeancier {
-  const { aujourdHui, dossier, cotisations, avecMontants } = entree
+  const { aujourdHui, dossier, cotisations, avecMontants, impot } = entree
+  const fiscal = echeancesFiscalesDuClient(aujourdHui, impot, avecMontants, entree.calendrierIsExporte ?? CALENDRIER_IS_EXPORTE)
   const echeances = [
-    ...echeancesFiscalesDuClient(aujourdHui),
+    ...fiscal.echeances,
     ...(dossier?.statut_tva === 'redevable' ? echeancesTva(aujourdHui, dossier.tva_periodicite) : []),
     ...echeancesCotisations(aujourdHui, cotisations, avecMontants),
   ].sort((a, b) => a.date.localeCompare(b.date) || RANG[a.nature] - RANG[b.nature] || a.id.localeCompare(b.id))
-  return { echeances, avisTva: dossier !== null && dossier.statut_tva === null ? AVIS_TVA_A_PRECISER : null }
+  return {
+    echeances, avisTva: dossier !== null && dossier.statut_tva === null ? AVIS_TVA_A_PRECISER : null,
+    avisImpot: fiscal.avis.length > 0 ? AVIS_IMPOT_A_PRECISER : null,
+  }
 }
 
 /** La date telle que le client la lit : « 15 juin 2027 », ou « courant novembre 2026 » quand seul le mois est sûr. */

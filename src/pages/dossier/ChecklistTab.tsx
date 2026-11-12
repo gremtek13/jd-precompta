@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
 import type { ModeleComptable } from '../../lib/engagement'
 import { ajouterJours, anneeEtMoisEcoules, aujourdHuiAParis, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
-import { prochainesEcheances } from '../../lib/echeancesFiscales'
+import { SANS_IMPOT_SUR_LES_SOCIETES, estEcheanceDeLImpot, prochainesEcheancesDuDossier } from '../../lib/echeancesFiscales'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import { banquesDuDossier, banqueDesLecteurs } from '../../lib/banqueDuMouvement'
 import type { PeriodiciteTva, StatutTva } from '../../lib/types'
@@ -106,7 +106,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // de l'an dernier, ni la CVAE, ni si un établissement a été créé, et elle ne les devine pas. La 2035 n'est pas la
   // liasse d'un dossier tenu en engagement : son échéance n'y figure pas, celles de la CFE et de la CVAE si.
   const aujourdHuiFiscal = aujourdHuiAParis()
-  const calendrierFiscal = prochainesEcheances(aujourdHuiFiscal)
+  // L'IS (LIA8, derrière CALENDRIER_IS_EXPORTE) : le régime d'un exercice ne se lit pas encore en base (LIA4), aucun
+  // dossier ne l'a donc au calendrier ; le module rend alors le calendrier d'hier, à l'octet.
+  const { echeances: echeancesDuDossier, avis: avisDuCalendrier } = prochainesEcheancesDuDossier(aujourdHuiFiscal, SANS_IMPOT_SUR_LES_SOCIETES)
+  const calendrierFiscal = echeancesDuDossier
     .filter((e) => modele.mode !== 'engagement' || e.impot !== 'Liasse')
   const imminente = (date: string) => date <= ajouterJours(aujourdHuiFiscal, 30)
 
@@ -385,11 +388,15 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
               <div key={e.id} className="check-ligne">
                 <span className={`check-dot ${imminente(e.date) ? 'check-attention' : ''}`} aria-label={imminente(e.date) ? 'Dans les trente jours' : 'À venir'} />
                 <div className="check-ligne-corps">
-                  <div className="check-ligne-libelle">{formatDate(e.date)} — {e.libelle}</div>
+                  <div className="check-ligne-libelle">
+                    {formatDate(e.date)} — {e.libelle}
+                    {estEcheanceDeLImpot(e) && e.montant.etat === 'du' && <> : {formatMoney(e.montant.centimes / 100)}</>}
+                  </div>
                   <div className="check-ligne-detail">{e.condition}</div>
                 </div>
               </div>
             ))}
+            {avisDuCalendrier.map((texte) => <p key={texte} className="check-ligne-detail">{texte}</p>)}
           </div>
         </Widget>
       </div>
