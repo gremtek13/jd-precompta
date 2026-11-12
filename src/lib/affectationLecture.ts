@@ -1,4 +1,4 @@
-import type { ComptesDeLAffectation, DestinationDAffectation, OrganeDeLaDecision, OrigineDAffectation } from './affectationDuResultat'
+import type { ComptesDeLAffectation, DestinationDAffectation, OrganeDeLaDecision, OrigineDAffectation, SoldesAvantAffectation } from './affectationDuResultat'
 import { COUPLES_ADMIS } from './affectationDuResultat'
 import type { DecisionLue, LectureDeLAffectation, LigneDOuvertureLue, LigneDuBrouillonLue } from './affectationEcran'
 import { dateAParis } from './format'
@@ -57,6 +57,17 @@ const estDate = (v: unknown): v is string => estTexte(v) && /^\d{4}-\d{2}-\d{2}$
 const estEntier = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v)
 const ORGANES: readonly OrganeDeLaDecision[] = ['assemblee', 'consultation_ecrite', 'acte_unanime', 'associe_unique']
 const ETATS = ['en_vigueur', 'remplacee', 'retiree'] as const
+const CLES_DES_SOLDES: readonly (keyof SoldesAvantAffectation)[] = [
+  'capitalAuxComptes', 'primes', 'ecartsDeReevaluation', 'reserveLegale', 'reservesIndisponibles', 'reservesStatutaires',
+  'reservesReglementees', 'autresReserves', 'reportCrediteur', 'pertesAnterieures', 'acomptesSurDividendes',
+]
+/** Les soldes figés d'une version (`soldes_lus`), aux noms du module, en centimes entiers ; nuls s'ils ne se croient pas. */
+function soldesFiges(v: unknown): SoldesAvantAffectation | null {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return null
+  const o = v as Record<string, unknown>
+  if (CLES_DES_SOLDES.some((k) => !estEntier(o[k]))) return null
+  return Object.fromEntries(CLES_DES_SOLDES.map((k) => [k, o[k] as number])) as unknown as SoldesAvantAffectation
+}
 
 function ouverture(l: Ligne): LigneDOuvertureLue | null {
   if (!estDate(l.date) || !estTexte(l.compte) || (l.sens !== 'debit' && l.sens !== 'credit') || typeof l.montant !== 'number' || !Number.isFinite(l.montant)) return null
@@ -91,7 +102,7 @@ export async function lireLAffectation(dossierId: string, annee: number): Promis
   try {
     const [dossier, validations, aNouveaux, ecritures, decisions, repartition, reportes, plan] = await Promise.all([
       lireTout<Ligne>((a, b) =>
-        supabase.from('dossiers').select('id, forme_juridique, capital', { count: 'exact' }).eq('id', dossierId).order('id').range(a, b)),
+        supabase.from('dossiers').select('id, nom, denomination_imprimee, siret, adresse, rcs_ville, forme_juridique, capital', { count: 'exact' }).eq('id', dossierId).order('id').range(a, b)),
       lireTout<Ligne>((a, b) =>
         supabase.from('exercices_valides').select('dossier_id, annee', { count: 'exact' })
           .eq('dossier_id', dossierId).order('dossier_id').order('annee').range(a, b)),
@@ -103,7 +114,7 @@ export async function lireLAffectation(dossierId: string, annee: number): Promis
           .eq('dossier_id', dossierId).gte('date', debut).order('date').order('id').range(a, b)),
       lireTout<Ligne>((a, b) =>
         supabase.from('affectations_du_resultat')
-          .select('id, version, etat, organe, nombre_d_associes_declare, date_decision, comptes_approuves, date_mise_en_paiement, reserves_statutaires_distribuables, fin_le', { count: 'exact' })
+          .select('id, version, etat, organe, nombre_d_associes_declare, date_decision, comptes_approuves, date_mise_en_paiement, reserves_statutaires_distribuables, fin_le, resultat_centimes, forme_juridique, capital_centimes, soldes_lus, document_chemin, document_empreinte', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('exercice_affecte', annee).order('version').order('id').range(a, b)),
       lireTout<Ligne>((a, b) =>
         supabase.from('lignes_d_affectation').select('affectation_id, rang, origine, destination, montant_centimes', { count: 'exact' })
@@ -134,6 +145,12 @@ export async function lireLAffectation(dossierId: string, annee: number): Promis
     if (!(forme === null || estTexte(forme))) return incomplete('le dossier : la forme juridique ne se croit pas')
     const capital = d.capital
     if (!(capital === null || (typeof capital === 'number' && Number.isFinite(capital)))) return incomplete('le dossier : le capital ne se croit pas')
+    // L'identité que le document imprime (AFF5) : une colonne absente n'est pas nulle, elle ne se croit pas.
+    const texteOuNul = (v: unknown): v is string | null => v === null || estTexte(v)
+    if (!estTexte(d.nom) || !texteOuNul(d.denomination_imprimee) || !texteOuNul(d.siret) || !texteOuNul(d.adresse) || !texteOuNul(d.rcs_ville)) {
+      return incomplete('le dossier : son identité ne se croit pas')
+    }
+    const denomination = (d.denomination_imprimee ?? '').trim() !== '' ? (d.denomination_imprimee as string).trim() : d.nom
 
     const lignesParDecision = new Map<string, { rang: number; ligne: { origine: OrigineDAffectation; destination: DestinationDAffectation; centimes: number } }[]>()
     for (const l of repartition.lignes) {
@@ -156,6 +173,14 @@ export async function lireLAffectation(dossierId: string, annee: number): Promis
         || typeof a.reserves_statutaires_distribuables !== 'boolean' || !(fin === null || (estTexte(fin) && !Number.isNaN(Date.parse(fin))))) {
         return incomplete('les décisions : une ligne lue ne se croit pas')
       }
+      // Ce que la base a figé avec la version : le procès-verbal (AFF5) ne lit que cela.
+      const soldes = soldesFiges(a.soldes_lus)
+      const document = a.document_chemin === null && a.document_empreinte === null ? null
+        : estTexte(a.document_chemin) && estTexte(a.document_empreinte) && /^[0-9a-f]{64}$/.test(a.document_empreinte)
+          ? { chemin: a.document_chemin, empreinte: a.document_empreinte } : undefined
+      if (!estEntier(a.resultat_centimes) || !estTexte(a.forme_juridique) || !estEntier(a.capital_centimes) || soldes === null || document === undefined) {
+        return incomplete('les décisions : ce qu’une version a figé ne se croit pas')
+      }
       if (versions.some((v) => v.version === a.version)) return incomplete(`les décisions : deux fois la version ${a.version}`)
       versions.push({
         id: a.id, version: a.version, etat: a.etat as DecisionLue['etat'], organe: a.organe as OrganeDeLaDecision,
@@ -163,6 +188,8 @@ export async function lireLAffectation(dossierId: string, annee: number): Promis
         dateMiseEnPaiement: a.date_mise_en_paiement as string | null, reservesStatutairesDistribuables: a.reserves_statutaires_distribuables,
         lignes: (lignesParDecision.get(a.id) ?? []).sort((x, y) => x.rang - y.rang).map((x) => x.ligne),
         finLe: fin === null ? null : dateAParis(fin as string),
+        figee: { resultatCentimes: a.resultat_centimes, formeJuridique: a.forme_juridique, capitalCentimes: a.capital_centimes, soldes },
+        document,
       })
     }
     versions.sort((x, y) => x.version - y.version)
@@ -172,6 +199,7 @@ export async function lireLAffectation(dossierId: string, annee: number): Promis
       dossierId, annee, etat: 'lue',
       formeJuridique: forme as string | null,
       capitalCentimes: capital === null ? null : Math.round((capital as number) * 100),
+      identite: { denomination, siret: d.siret as string | null, adresse: d.adresse as string | null, rcsVille: d.rcs_ville as string | null },
       comptes: plan.comptes,
       anneesValidees: anneesLues.lignes,
       brouillon: ecrituresLues.lignes,

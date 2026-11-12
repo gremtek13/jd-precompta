@@ -7,6 +7,14 @@ import {
   type DecisionLue, type LueDeLAffectation, type LectureDeLAffectation, type SaisieDeLaCarte,
 } from '../../lib/affectationEcran'
 import { lireLAffectation } from '../../lib/affectationLecture'
+import { telechargerUnPdf } from '../../lib/apercu'
+import { poids, preparerProcesVerbal } from '../../lib/bornesStockage'
+import { echeancesDeLApprobation } from '../../lib/echeancesFiscales'
+import { empreinteSha256 } from '../../lib/logoDesFactures'
+import {
+  chiffresDuDocument, confirmationDuDepot, nomDuFichierDuDocument, pdfDuProcesVerbal, refusDeJoindre, titreDuDocument,
+} from '../../lib/procesVerbalDAffectation'
+import { joindreLeProcesVerbal } from '../../lib/procesVerbalEcriture'
 import type { ModeleComptable } from '../../lib/engagement'
 import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
@@ -19,7 +27,11 @@ import { supabase } from '../../lib/supabase'
 // le remplacement d'une décision et son retrait. La lecture d'abord, EN ENTIER (`lireLAffectation`), ou rien n'est offert ;
 // l'écriture par `enregistrer_affectation` et `retirer_affectation` seules, contre la version lue, sous un verrou relâché
 // APRÈS la relecture ; la confirmation nomme l'exercice, la répartition, l'écriture et la version remplacée. Rien côté client :
-// la carte n'écrit aucun texte libre. Le document (AFF5), le calendrier et le bilan (AFF6) viennent après.
+// la carte n'écrit aucun texte libre. Depuis AFF5, sous le même drapeau : le document de la décision en vigueur (procès-verbal,
+// acte unanime ou décision de l'associé unique), tiré des seules valeurs que la base a figées avec elle et téléchargé ; le
+// document SIGNÉ joint par `joindre_document_affectation` seule (`lib/procesVerbalEcriture.ts`), son type, sa taille et son
+// empreinte jugés au choix du fichier, les refus de la base dits avant le clic, sous le même verrou que les deux autres
+// gestes ; les rappels de l'approbation (six mois, greffe, neuf mois) au jour de Paris. Le bilan (AFF6) vient après.
 
 export default function AffectationDuResultatCard({ dossierId, annee, modele }: {
   dossierId: string
@@ -84,8 +96,14 @@ function FormulaireDeLAffectation({ lue, modele, dossierId, annee, onRelire, tit
   const [saisie, setSaisie] = useState<SaisieDeLaCarte>(() => (enVigueur ? saisieDeLaDecision(enVigueur) : SAISIE_VIERGE))
   const [erreur, setErreur] = useState<string | null>(null)
   const [enCours, setEnCours] = useState(false)
-  // Un seul verrou pour les deux gestes d'écriture : enregistrer ou remplacer, retirer.
+  // Un seul verrou pour les trois gestes d'écriture : enregistrer ou remplacer, retirer, joindre le document signé.
   const ecritureEnCours = useRef(false)
+  // Le tirage du PDF n'écrit rien ; son verrou évite seulement deux téléchargements d'un double clic.
+  const telechargementEnCours = useRef(false)
+  // Le document signé choisi, jugé et son empreinte calculée AVANT le clic ; un choix plus lent n'écrit pas le dernier.
+  const [fichier, setFichier] = useState<{ corps: File; nom: string; poids: string; empreinte: string } | null>(null)
+  const [refusDuFichier, setRefusDuFichier] = useState<string | null>(null)
+  const choix = useRef(0)
 
   const aujourdHui = aujourdHuiAParis()
   const j = jugerLaSaisie(lue, modele, saisie, aujourdHui)
@@ -145,6 +163,61 @@ function FormulaireDeLAffectation({ lue, modele, dossierId, annee, onRelire, tit
     }
   }
 
+  async function choisirLeDocument(f: File | null) {
+    const numero = ++choix.current
+    setFichier(null)
+    setRefusDuFichier(null)
+    if (f === null) return
+    try {
+      const pret = await preparerProcesVerbal(f)
+      if (numero !== choix.current) return
+      if ('refus' in pret) { setRefusDuFichier(`Ce document n’est pas pris : ${pret.refus.message}.`); return }
+      const empreinte = await empreinteSha256(pret.corps)
+      if (numero === choix.current) setFichier({ corps: f, nom: f.name, poids: poids(pret.taille), empreinte })
+    } catch (e) {
+      if (numero === choix.current) setRefusDuFichier(messageErreur(e, 'Le fichier n’a pas pu être lu.'))
+    }
+  }
+
+  async function telecharger() {
+    if (telechargementEnCours.current || enVigueur === null) return
+    telechargementEnCours.current = true
+    setErreur(null)
+    try {
+      const octets = await pdfDuProcesVerbal({ annee, identite: lue.identite, decision: enVigueur })
+      const issue = telechargerUnPdf(octets, nomDuFichierDuDocument(annee, enVigueur))
+      if (!issue.ok) setErreur(issue.message)
+    } catch (e) {
+      setErreur(messageErreur(e, 'Le document n’a pas pu être préparé.'))
+    } finally {
+      telechargementEnCours.current = false
+    }
+  }
+
+  async function joindre() {
+    if (ecritureEnCours.current || enVigueur === null || refusDuDocument !== null || fichier === null) return
+    if (!window.confirm(confirmationDuDepot(annee, enVigueur, fichier))) return
+    ecritureEnCours.current = true
+    setEnCours(true)
+    setErreur(null)
+    try {
+      const issue = await joindreLeProcesVerbal(dossierId, enVigueur.id, fichier.corps, fichier.empreinte)
+      if (issue.ok) setFichier(null)
+      else setErreur(issue.message)
+      await onRelire()
+    } catch (e) {
+      setErreur(messageErreur(e, 'Le document n’a pas pu être joint à la décision.'))
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  const refusDuDocument = enVigueur ? refusDeJoindre(lue, enVigueur) : null
+  const rappels = echeancesDeLApprobation(annee, enVigueur === null ? null : {
+    dateDecision: enVigueur.dateDecision, comptesApprouves: enVigueur.comptesApprouves,
+    dividendesCentimes: chiffresDuDocument(enVigueur).dividendes, dateMiseEnPaiement: enVigueur.dateMiseEnPaiement,
+  }, aujourdHui)
   const id = (nom: string) => `affectation-${annee}-${nom}`
   const nature = resultat > 0 ? 'bénéfice' : resultat < 0 ? 'perte' : null
 
@@ -287,6 +360,54 @@ function FormulaireDeLAffectation({ lue, modele, dossierId, annee, onRelire, tit
             )}
           </div>
         </>
+      )}
+
+      {enVigueur && (
+        <div style={{ marginTop: 16 }}>
+          <strong>{titreDuDocument(enVigueur.organe)}</strong>
+          <p className="muted" style={{ marginTop: 4 }}>
+            Un projet tiré des comptes figés avec la version {enVigueur.version} : le lieu, les associés, les votes et les signatures
+            restent à compléter. La régularité de la décision relève des associés et de leurs statuts.
+          </p>
+          <div className="field-row aligne-bas" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <button className="btn btn-outline btn-sm" onClick={() => void telecharger()}>Télécharger le procès-verbal</button>
+          </div>
+          {enVigueur.document ? (
+            <p className="muted">Document signé joint — empreinte SHA-256 <span className="nom-fichier">{enVigueur.document.empreinte}</span>.</p>
+          ) : refusDuDocument ? (
+            <p className="muted">{refusDuDocument}</p>
+          ) : (
+            <div className="field-row aligne-bas" style={{ flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+              <div className="field">
+                <label htmlFor={id('document')}>Document signé (PDF)</label>
+                <input id={id('document')} type="file" accept="application/pdf" disabled={enCours}
+                  onChange={(e) => void choisirLeDocument(e.target.files?.[0] ?? null)} />
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={() => void joindre()} disabled={enCours || fichier === null}>
+                {enCours ? 'Dépôt…' : 'Joindre le document signé'}
+              </button>
+            </div>
+          )}
+          {refusDuFichier && <p className="muted">{refusDuFichier}</p>}
+          {fichier && !enVigueur.document && (
+            <p className="muted">
+              <span className="nom-fichier">{fichier.nom}</span> ({fichier.poids}), empreinte SHA-256 <span className="nom-fichier">{fichier.empreinte}</span>.
+            </p>
+          )}
+        </div>
+      )}
+
+      {rappels.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <strong>Le calendrier de l’approbation</strong>
+          <ul style={{ marginTop: 4 }}>
+            {rappels.map((r) => (
+              <li key={r.id}>
+                {formatDate(r.date)} — {r.libelle} : {r.etat === 'tenu' ? 'tenu' : r.etat === 'passe' ? 'date passée' : 'à venir'}. <span className="muted">{r.dit}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {precedentes.length > 0 && (

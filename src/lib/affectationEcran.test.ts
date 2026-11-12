@@ -9,6 +9,7 @@ import { centimesDeLaSaisie } from './saisies2035'
 import type { ComptesDeLAffectation } from './affectationDuResultat'
 import { COUPLES_ADMIS } from './affectationDuResultat'
 import { modeleDeTest } from '../test/modeles'
+import { FIGEE_DE_TEST, IDENTITE_DE_TEST } from '../test/affectation'
 
 // L'ÉCRAN DE L'AFFECTATION, SA LOGIQUE (AFF4) : ce que la carte lit (le résultat, les soldes), la proposition, le jugement de la
 // saisie TELLE QU'ELLE PART — aux mots du module, jamais recopiés —, les paramètres de la base et les mots des confirmations.
@@ -27,7 +28,7 @@ const brouillon = (date: string, compte: string, sens: 'debit' | 'credit', monta
   ({ ...ouv(date, compte, sens, montant), statut, affectationId })
 
 const lue = (l: Partial<LueDeLAffectation> = {}): LueDeLAffectation => ({
-  dossierId: 'd1', annee: 2026, etat: 'lue', formeJuridique: '5499', capitalCentimes: 1_000_000, comptes: COMPTES, anneesValidees: [2026],
+  dossierId: 'd1', annee: 2026, etat: 'lue', formeJuridique: '5499', capitalCentimes: 1_000_000, identite: IDENTITE_DE_TEST, comptes: COMPTES, anneesValidees: [2026],
   brouillon: [brouillon('2026-06-30', '706000', 'credit', 30_000), brouillon('2026-07-01', '613000', 'debit', 0.5)],
   reportes: [ouv('2027-01-01', '101000', 'credit', 10_000), ouv('2027-01-01', '106100', 'credit', 800)],
   aNouveaux: [], decisions: [], ...l,
@@ -46,7 +47,7 @@ const saisie = (s: Partial<SaisieDeLaCarte> = {}): SaisieDeLaCarte => ({
 
 const decisionLue = (d: Partial<DecisionLue> = {}): DecisionLue => ({
   id: 'a1', version: 1, etat: 'en_vigueur', organe: 'assemblee', nombreDAssocies: 'plusieurs', dateDecision: '2027-05-15', comptesApprouves: true,
-  dateMiseEnPaiement: null, reservesStatutairesDistribuables: true, finLe: null,
+  dateMiseEnPaiement: null, reservesStatutairesDistribuables: true, finLe: null, figee: FIGEE_DE_TEST, document: null,
   lignes: [{ origine: 'benefice', destination: 'reserve_legale', centimes: 20_000 }, { origine: 'benefice', destination: 'report_crediteur', centimes: 2_970_000 }],
   ...d,
 })

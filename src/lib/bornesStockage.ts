@@ -254,6 +254,24 @@ export async function preparerPiece(fichier: File): Promise<IssueDuDepot> {
   return borner(genreDuSeau('pieces'), fichier, type)
 }
 
+const PROCES_VERBAL: Genre = {
+  borne: TAILLE_MAX_PIECE,
+  ceQueCest: 'un procès-verbal signé',
+  formats: 'un procès-verbal signé se dépose en PDF',
+}
+
+/**
+ * Le procès-verbal d'affectation SIGNÉ (ligne 45, AFF5) : seau `pieces` (celui des dossiers), sous
+ * `<dossier>/affectations/<décision>.pdf` — un PDF seulement, puisque le chemin que la base exige finit en `.pdf`, lu à sa
+ * SIGNATURE (jamais au nom ni au type du navigateur), 20 Mio au plus, comme une pièce.
+ */
+export async function preparerProcesVerbal(fichier: Blob): Promise<IssueDuDepot> {
+  const o = await premiersOctets(fichier)
+  const pdf = o[0] === 0x25 && o[1] === 0x50 && o[2] === 0x44 && o[3] === 0x46
+  if (!pdf) return { refus: refusDeFormat(PROCES_VERBAL, fichier.size) }
+  return borner(PROCES_VERBAL, fichier, 'application/pdf')
+}
+
 /** Le refus d'une pièce, ou null si elle peut partir : ce qu'un écran dit dès le choix du fichier. */
 export async function refusDUnePiece(fichier: File): Promise<RefusDuDepot | null> {
   const issue = await preparerPiece(fichier)

@@ -1,6 +1,6 @@
 import type { ModeComptable } from './types'
 import { SEUIL_ANNEXE_2035E, SEUIL_CVAE_A_PAYER } from './declaration2035E'
-import { ajouterJours } from './format'
+import { ajouterJours, ajouterMois } from './format'
 import {
   PREMIERE_CLOTURE_A_CONFIRMER, acomptesDeLExercice, calculerImpotSurLesSocietes, echeanceDuSolde, type EntreesImpot,
 } from './impotSurLesSocietes'
@@ -424,4 +424,99 @@ export function prochainesEcheancesDuDossier(
  */
 export function echeanceDuModeComptable(e: Pick<EcheanceFiscale, 'impot'>, mode: ModeComptable): boolean {
   return mode !== 'engagement' || e.impot !== 'Liasse'
+}
+
+// ── L'APPROBATION DES COMPTES D'UNE SOCIÉTÉ (ligne 45, lot AFF5 ; conception 45, § 3.8) ──────────────────────────────────
+// Trois RAPPELS datés pour l'exercice N d'une société tenue en engagement, clos le 31 décembre (les exercices décalés
+// viendront avec la ligne 42) : l'approbation des comptes et l'affectation du résultat dans les six mois de la clôture
+// (C. com., L223-26, L225-100, L227-9 ; une prorogation judiciaire reste possible) ; le dépôt au greffe dans le mois de
+// l'approbation, deux mois par voie électronique (L232-21 à L232-23 ; ligne 46) ; la mise en paiement des dividendes dans les
+// neuf mois de la clôture (L232-13). Un délai passé se DIT, il ne bloque rien. Les dates sont celles des textes, jamais
+// reportées au jour ouvré : aucun texte ne les reporte (le même choix que l'impôt sur les sociétés, LIA8-Q1). « Aujourd'hui »
+// est le jour de PARIS que l'appelant passe (`aujourdHuiAParis`), jamais lu ici.
+
+/** Ce que le calendrier lit de la décision en vigueur de l'exercice, ou rien s'il n'y en a pas. */
+export interface DecisionDuCalendrier {
+  dateDecision: string
+  comptesApprouves: boolean
+  /** Le total des dividendes décidés, en centimes (0 : aucun). */
+  dividendesCentimes: number
+  dateMiseEnPaiement: string | null
+}
+
+/** `tenu` : fait dans l'application et dans le délai ; `a_venir` ; `passe` : la date est passée sans que l'application le sache tenu. */
+export type EtatDuRappel = 'tenu' | 'a_venir' | 'passe'
+
+export interface RappelDeLApprobation {
+  id: 'approbation' | 'greffe' | 'dividendes'
+  /** AAAA-MM-JJ, le terme du délai. */
+  date: string
+  libelle: string
+  etat: EtatDuRappel
+  /** Ce que le rappel dit de son état, en une phrase. */
+  dit: string
+}
+
+const dateCivileValide = (d: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(d) && ajouterJours(d, 0) === d
+const jjmmaaaa = (d: string): string => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
+
+/** Les rappels de l'approbation de l'exercice `annee`, au jour de Paris `aujourdHui`. Rend une liste vide sur une date illisible. */
+export function echeancesDeLApprobation(annee: number, decision: DecisionDuCalendrier | null, aujourdHui: string): RappelDeLApprobation[] {
+  if (!Number.isInteger(annee) || !dateCivileValide(aujourdHui)) return []
+  if (decision !== null && (!dateCivileValide(decision.dateDecision)
+    || (decision.dateMiseEnPaiement !== null && !dateCivileValide(decision.dateMiseEnPaiement)))) return []
+  const passee = (date: string) => aujourdHui > date
+  const rappels: RappelDeLApprobation[] = []
+
+  // « Dans les six mois de la clôture » : le 31 décembre plus six mois, le 30 juin ; plus neuf mois, le 30 septembre.
+  const sixMois = dateCivile(annee + 1, 6, 30)
+  let approbation: Pick<RappelDeLApprobation, 'etat' | 'dit'>
+  if (decision !== null && decision.dateDecision <= sixMois) {
+    approbation = { etat: 'tenu', dit: `Décision du ${jjmmaaaa(decision.dateDecision)}${decision.comptesApprouves ? '' : ' : comptes non approuvés'}.` }
+  } else if (decision !== null) {
+    approbation = { etat: 'passe', dit: `Décision du ${jjmmaaaa(decision.dateDecision)}, après le délai de six mois (une prorogation judiciaire a pu être demandée).` }
+  } else if (passee(sixMois)) {
+    approbation = { etat: 'passe', dit: 'Délai passé sans décision enregistrée (une prorogation judiciaire a pu être demandée).' }
+  } else {
+    approbation = { etat: 'a_venir', dit: `Au plus tard le ${jjmmaaaa(sixMois)}, sauf prorogation judiciaire.` }
+  }
+  rappels.push({ id: 'approbation', date: sixMois, libelle: `Approbation des comptes ${annee} et affectation du résultat (six mois de la clôture)`, ...approbation })
+
+  // Le greffe : un mois de la décision (deux par voie électronique) ; sans décision, un mois du terme des six mois. Le dépôt
+  // lui-même se fait hors de l'application (ligne 46) : sa date passée se dit « à vérifier », jamais « manqué ».
+  const greffe = ajouterMois(decision !== null ? decision.dateDecision : sixMois, 1)
+  const objet = decision !== null && !decision.comptesApprouves ? 'des comptes et de la délibération de refus' : 'des comptes annuels et de la décision d’affectation'
+  rappels.push({
+    id: 'greffe', date: greffe,
+    libelle: `Dépôt au greffe ${objet} (un mois de la décision, deux par voie électronique)`,
+    etat: passee(greffe) ? 'passe' : 'a_venir',
+    dit: passee(greffe)
+      ? 'Date passée : le dépôt se fait hors de l’application, à vérifier.'
+      : decision !== null
+        ? `Au plus tard le ${jjmmaaaa(greffe)} (deux mois par voie électronique).`
+        : `Le ${jjmmaaaa(greffe)} si les comptes sont approuvés le ${jjmmaaaa(sixMois)} ; un mois de la décision en tout cas.`,
+  })
+
+  // Les dividendes : seulement ceux qu'une décision approuvée a décidés.
+  if (decision !== null && decision.comptesApprouves && decision.dividendesCentimes > 0) {
+    const neufMois = dateCivile(annee + 1, 9, 30)
+    const prevue = decision.dateMiseEnPaiement
+    let etat: EtatDuRappel
+    let dit: string
+    if (prevue !== null && prevue <= neufMois) {
+      etat = 'tenu'
+      dit = `Mise en paiement décidée le ${jjmmaaaa(prevue)}.`
+    } else if (prevue !== null) {
+      etat = 'passe'
+      dit = `Mise en paiement décidée le ${jjmmaaaa(prevue)}, au-delà des neuf mois (une prolongation judiciaire a pu être demandée).`
+    } else if (passee(neufMois)) {
+      etat = 'passe'
+      dit = 'Délai passé sans date de mise en paiement enregistrée.'
+    } else {
+      etat = 'a_venir'
+      dit = `Au plus tard le ${jjmmaaaa(neufMois)}.`
+    }
+    rappels.push({ id: 'dividendes', date: neufMois, libelle: `Mise en paiement des dividendes ${annee} (neuf mois de la clôture)`, etat, dit })
+  }
+  return rappels
 }
