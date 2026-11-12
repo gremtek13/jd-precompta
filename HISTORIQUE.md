@@ -51646,3 +51646,14 @@ constante `ECARTS_DE_REGLEMENT_PREVUS` (lit `devise`), ses gardes confrontant le
 pas le libellé du plan (constat, comme hier). Faux levé et corrigé : une facture en devise que le change seul fait payer plus
 se disait « payée en trop » en erreur et retenait la validation (`sansLesEcartsDeChange`, 5 %) ; la copie de l'assistant
 (`points_a_traiter`) le dit encore.
+
+### 12/11/2026 — DEUX CORRECTIONS : L'ASSISTANT ET LE CHANGE, LES COMPTES D'INVENTAIRE DU BILAN (LIGNES 31 ET 33)
+
+L'assistant recopie `sansLesEcartsDeChange` (et `ECART_CHANGE_TOLERE`, 5 %) dans son bloc RÈGLEMENT GROUPÉ, derrière sa
+constante `ECARTS_DE_REGLEMENT_PREVUS` : `points_a_traiter` tait, comme la Checklist et les préalables, la facture en devise
+que le change seul fait payer plus, en engagement, la constante levée ; `devise` était déjà lue. Le garde
+(`agentComptableReglementGroupe.test.ts`) confronte la copie à src/lib dans les deux états et les deux modes, exige les deux
+constantes égales, et quatre dérives plantées mordent. `COMPTE_D_INVENTAIRE` (`lib/bilan.ts`) passe à la numérotation de 2026
+(conception 35, § 1.3 : 4282, 4382, 4481, 4482, 439, 4098, 1688, 518 en plus) et garde les six numéros d'avant 2026 qu'une
+balance reprise porte encore, le PCG de 2026 ne leur donnant aucun autre sens ; ni 467 ni 468. Le point
+`inventaire-non-revu` vit dans l'onglet Bilan, pas dans la Checklist ; trois mutations mordent.

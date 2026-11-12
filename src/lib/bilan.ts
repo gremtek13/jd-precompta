@@ -441,7 +441,20 @@ const comptesDetaillesParTiers = (plan: PlanComptable): readonly string[] =>
 // Les comptes que l'inventaire revoit à chaque clôture et que l'application n'écrit pas encore : stocks, factures à
 // recevoir et à établir, charges à payer et produits à recevoir, charges et produits constatés d'avance, provisions et
 // dépréciations (PCG, art. 1214-40, 1214-41 et 1214-48). Repris de l'ouverture et laissés tels quels, ils sont faux.
-const COMPTE_D_INVENTAIRE = /^(3|15|29|408|418|4286|4287|4386|4387|4486|4487|4686|4687|486|487|49|59)/
+//
+// Dans la numérotation du PCG consolidé au 1er janvier 2026 (art. 1121-1 et sa liste ; docs/conceptions/35-inventaire.md,
+// § 1.3) : les charges à payer et produits à recevoir rattachés au personnel (4282, 4286), aux organismes sociaux (4382,
+// 4386, et leurs produits à recevoir au 439), à l'État (4481, dont 44812, et 4482), les avoirs à obtenir (4098), les intérêts
+// courus sur emprunts (1688) et bancaires (518). Le 467 et le 468 n'y entrent pas : ils portent aussi le dirigeant non
+// associé (PC4-Q2) et le rôle `autres_debiteurs_crediteurs`, qui se mouvementent sans être des comptes d'inventaire.
+const COMPTES_D_INVENTAIRE_2026 = ['3', '15', '29', '408', '418', '4282', '4286', '4382', '4386', '4481', '4482', '439', '4098',
+  '486', '487', '49', '59', '1688', '518']
+// Les numéros d'AVANT 2026 que le plan de 2026 n'a plus (4287, 4387, 4486, 4487, 4686, 4687) restent reconnus : une balance
+// reprise d'un logiciel ou d'un exercice tenu dans l'ancienne numérotation les porte encore — comme une migration appliquée
+// garde l'ancien numéro qu'elle cite (HISTORIQUE.md, « LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION ») —, et le plan de 2026
+// ne leur donnant aucun autre sens, les garder ne fait signaler aucun compte à tort.
+const COMPTES_D_INVENTAIRE_AVANT_2026 = ['4287', '4387', '4486', '4487', '4686', '4687']
+const COMPTE_D_INVENTAIRE = new RegExp(`^(${[...COMPTES_D_INVENTAIRE_2026, ...COMPTES_D_INVENTAIRE_AVANT_2026].join('|')})`)
 
 const LIBELLE_SANS_DETAIL = 'Sans détail par tiers'
 

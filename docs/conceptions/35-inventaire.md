@@ -86,6 +86,9 @@ dirigeant non associé (PC4-Q2, `dirigeant_au_468`) et le rôle `autres_debiteur
 de 2026 (`3|15|29|408|418|4282|4286|4382|4386|4481|4482|439|4098|486|487|49|59|1688|518`), et les sous-comptes que le plan du
 dossier déclare pour l'inventaire (rôles du § 4.4). Aucune donnée réelle n'est touchée (aucun dossier en engagement).
 
+Corrigé le 12/11/2026, à part d'INV6 : la liste de 2026, les six anciens numéros gardés pour une balance reprise ; les
+sous-comptes déclarés par le plan attendent les rôles du § 4.4.
+
 ### 1.4 L'état réel de la base (lu le 12/11/2026, en lecture seule)
 
 - `dossiers` : quatre lignes, `mode_comptable = 'tresorerie'` pour les quatre.

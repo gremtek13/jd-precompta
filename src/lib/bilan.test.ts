@@ -414,6 +414,21 @@ describe('bilanDeLExercice — des bilans calculés à la main', () => {
     expect(revu.points.find((p) => p.code === 'inventaire-non-revu')!.comptes).toEqual(['371000'])
   })
 
+  // LIGNE 33 (12/11/2026) : la liste suivait la numérotation d'avant 2026, aveugle au 4481, au 4482 et au 439
+  // (docs/conceptions/35-inventaire.md, § 1.3). Les comptes de 2026 se signalent ; ceux d'avant 2026, qu'une balance
+  // reprise porte encore, aussi ; le 467, le 468, la banque et le capital, jamais.
+  it('les comptes d’inventaire se lisent dans la numérotation de 2026, et les anciens numéros restent reconnus', () => {
+    const DE_2026 = ['428200', '428600', '438200', '438600', '439000', '448100', '448120', '448200', '409800', '168800', '518100',
+      '151000', '408100', '418100', '486000', '487000', '491000', '291000', '591000', '371000']
+    const D_AVANT_2026 = ['428700', '438700', '448600', '448700', '468600', '468700']
+    const JAMAIS = ['467000', '468000', '409100', '445660', '512000', '401000', '411000']
+    const comptes = [...DE_2026, ...D_AVANT_2026, ...JAMAIS]
+    const ouverture = reprise('2026-01-01', [...comptes.map((c): Ligne => [c, 'D', 10]), ['101000', 'C', 10 * comptes.length]])
+    const b = etabli(bilanDeLExercice(entrees({ reprise: ouverture })))
+    expect(b.points.find((p) => p.code === 'inventaire-non-revu')!.comptes)
+      .toEqual([...DE_2026, ...D_AVANT_2026].sort((a, c) => (a < c ? -1 : a > c ? 1 : 0)))
+  })
+
   it('un exercice en cours est provisoire, un exercice clos ne l’est pas', () => {
     const ecritures = ecrire('2026-01-02', [['512000', 'D', 100], ['101000', 'C', 100]])
     expect(etabli(bilanDeLExercice(entrees({ ecritures, aujourdHui: '2026-10-09' }))).provisoire).toBe(true)
