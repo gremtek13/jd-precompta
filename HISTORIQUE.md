@@ -51753,3 +51753,19 @@ Les arrondis fiscaux »). Relevés sur le formulaire 2033-SD 2026 (empreintes de
 vérifié). Les numéros des comptes sont une LECTURE du PCG face aux libellés de la notice, qui ne donne aucune table de
 passage : seul le contre-calcul (LIA-Q14) l'éprouvera. Douze mutations mordent, après deux cas ajoutés (le 1er janvier, une
 dépréciation 29 hors du cadre II).
+
+### 12/11/2026 — LIA3 : L'IMPÔT SUR LES SOCIÉTÉS EN MODULE (LIGNE 38)
+
+`lib/impotSurLesSocietes.ts`, pur, en centimes, sans base ni drapeau ni écran (conception 37, § 6) : le résultat fiscal
+depuis le résultat comptable et les réintégrations et déductions SAISIES (LIA-Q4), les lignes 352 à 372 et le cadre
+2033-D II ; le report en avant (art. 209 I, version du 31/12/2023), la limite arrondie à l'euro inférieur sur un nombre
+impair d'euros ; le report en arrière sur option (art. 220 quinquies, version du 21/02/2026), la créance comptée sur le
+bénéfice au taux normal d'abord (BOI-IS-DEF-20-10-20260812, son exemple de 247 812 € rejoué) ; les taux (art. 219, version
+du 21/02/2026 : 25 %, 15 % jusqu'à 42 500 € proratisés en trentièmes de mois, 10 M€ ramenés à douze mois), la règle de
+LIA-Q5 en paramètre OBLIGATOIRE ; l'arrondi de la notice 2033 (0,50 compté pour 1) ; les quatre acomptes (art. 1668, ann.
+III art. 359 : le quart, le deuxième qui régularise sans jamais tomber sous zéro, la dispense à 3 000 € compris, aucun au
+premier exercice, une référence inconnue « non calculable ») et le solde au 15 mai. Les cases de la liasse s'écrivent sans
+centimes, le reste se refuse. Un exercice clos le 31/12/2026 ou après a un barème « à confirmer » (la loi de finances pour
+2027 est en discussion), dit dans le rendu (LIA3-Q1). Hors du module, et dit : la contribution sociale au-delà de
+l'abattement, les plus-values à long terme, les crédits restituables, les exercices décalés, le report au jour ouvré
+(LIA8). Quarante cas ; quatorze mutations mordent. Légifrance lu par ses pages datées.
