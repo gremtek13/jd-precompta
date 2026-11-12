@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import {
-  COPIE_DES_FICHIERS_PREVUE, fabriquerUnLot, fermerLeLotAvant, inventaireDuDossier, NOM_DU_MANIFESTE, nomDuZip,
-  PLAFOND_D_UN_LOT, rappelDeLaCopie, sha256Hex, unMoisApres, type FichierLu, type SourcesDuDossier,
+  cheminDuDossier, COPIE_DES_FICHIERS_PREVUE, fabriquerUnLot, fermerLeLotAvant, inventaireDuDossier, MOTIF_HORS_DU_DOSSIER,
+  NOM_DU_MANIFESTE, nomDuZip, PLAFOND_D_UN_LOT, rappelDeLaCopie, sha256Hex, unMoisApres, type FichierLu, type SourcesDuDossier,
 } from './copieDesFichiers'
 
 // LA COPIE DES FICHIERS SUR UN SUPPORT DU CABINET (INAL6) : l'inventaire et ses noms (jamais le nom déposé), le lot et son
@@ -16,6 +16,7 @@ const DOSSIER = 'dddddddd-0000-4000-8000-000000000004'
 
 async function sources(): Promise<SourcesDuDossier> {
   return {
+    dossierId: DOSSIER,
     pieces: [
       { id: P1, date_piece: '2026-03-14', created_at: '2026-03-15T10:00:00Z', storage_path: `${DOSSIER}/1787769218050-Dupont Jeanne bordereau.PDF`,
         storage_hash: await sha256Hex(octets('pièce 1')), lisible_path: `${DOSSIER}/1787769218051-Dupont Jeanne bordereau.jpg` },
@@ -49,8 +50,49 @@ describe('l’inventaire d’un dossier', () => {
 
   it('deux pièces de même référence se distinguent par un rang', () => {
     const p = { date_piece: '2026-01-02', created_at: '2026-01-02T08:00:00Z', storage_path: 'x/a.pdf', storage_hash: 'a'.repeat(64), lisible_path: null }
-    const f = inventaireDuDossier({ pieces: [{ ...p, id: P1 }, { ...p, id: P2 }], documents: [], originaux: [], documentsDuCabinet: [] })
+    const f = inventaireDuDossier({ dossierId: 'x', pieces: [{ ...p, id: P1 }, { ...p, id: P2 }], documents: [], originaux: [], documentsDuCabinet: [] })
     expect(f.map((x) => x.nom)).toEqual(['pieces/20260102-aaaaaaaa.pdf', 'pieces/20260102-aaaaaaaa-2.pdf'])
+  })
+})
+
+// La relecture de sécurité du 12/11/2026 : la base laisse le client d'un dossier insérer une pièce ou un document dont le
+// chemin désigne un AUTRE dossier (aucune contrainte ne lie le premier segment au dossier) ; la copie téléchargeait ce
+// chemin avec les droits du chef, et le fichier d'un autre dossier entrait dans le ZIP de celui-ci, sous son nom.
+describe('un chemin hors du dossier', () => {
+  const AUTRE = 'eeeeeeee-0000-4000-8000-00000000000e'
+  it('se reconnaît : le premier segment est le dossier, aucun segment vide, « . » ni « .. »', () => {
+    expect(cheminDuDossier(`${DOSSIER}/1-a.pdf`, DOSSIER)).toBe(true)
+    expect(cheminDuDossier(`${DOSSIER}/imports/lot/a.xml`, DOSSIER)).toBe(true)
+    expect(cheminDuDossier(`${AUTRE}/1-a.pdf`, DOSSIER)).toBe(false)
+    expect(cheminDuDossier(`${DOSSIER}/../${AUTRE}/1-a.pdf`, DOSSIER)).toBe(false)
+    expect(cheminDuDossier(`${DOSSIER}//1-a.pdf`, DOSSIER)).toBe(false)
+    expect(cheminDuDossier(`${DOSSIER}/./1-a.pdf`, DOSSIER)).toBe(false)
+    expect(cheminDuDossier(DOSSIER, DOSSIER)).toBe(false)
+    expect(cheminDuDossier(`/${DOSSIER}/1-a.pdf`, DOSSIER)).toBe(false)
+  })
+  it('est marqué à l’inventaire, la pièce, sa version lisible et le document', async () => {
+    const s = await sources()
+    const f = inventaireDuDossier({
+      ...s,
+      pieces: [{ ...s.pieces[0], storage_path: `${AUTRE}/1787-ailleurs.pdf`, lisible_path: `${AUTRE}/1788-ailleurs.jpg` }, s.pieces[1]],
+      documents: [{ ...s.documents[0], storage_path: `${DOSSIER}/../${AUTRE}/1789-ailleurs.pdf` }],
+    })
+    expect(f.map((x) => [x.nature, x.horsDuDossier])).toEqual([
+      ['piece', true], ['version_lisible', true], ['piece', false], ['document', true], ['original_repris', false], ['document_du_cabinet', false],
+    ])
+  })
+  it('n’entre jamais dans le ZIP, même téléchargé : manquant, et le manifeste le dit sans son chemin', async () => {
+    const s = await sources()
+    const [ailleurs, , ici] = inventaireDuDossier({ ...s, pieces: [{ ...s.pieces[0], storage_path: `${AUTRE}/1787-Dupont Jeanne.pdf` }, s.pieces[1]] })
+    const lot = await fabriquerUnLot({
+      dossier: { id: DOSSIER, nom: 'Essai', siret: null }, rang: 1, dernier: true, fabriqueLe: new Date('2026-11-12T10:00:00Z'),
+      fichiers: [{ fichier: ailleurs, octets: octets('le fichier d’un autre dossier') }, { fichier: ici, octets: octets('ticket') }],
+    })
+    expect(lot.comptes).toMatchObject({ fichiers: 2, manquants: 1, nonVerifies: 1, octets: octets('ticket').length })
+    expect(lot.manifeste).toContain(`MANQUANTS (1) — absents de ce ZIP\n${ailleurs.nom}\t${MOTIF_HORS_DU_DOSSIER}`)
+    expect(lot.manifeste).not.toMatch(/Dupont|1787|eeeeeeee/)
+    const zip = await JSZip.loadAsync(lot.zip)
+    expect(Object.keys(zip.files).filter((n) => !zip.files[n].dir).sort()).toEqual([NOM_DU_MANIFESTE, ici.nom].sort())
   })
 })
 

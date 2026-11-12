@@ -1,7 +1,7 @@
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { ORIGINAUX_DES_IMPORTS_PREVUS } from './bornesStockage'
 import {
-  fabriquerUnLot, fermerLeLotAvant, inventaireDuDossier, PLAFOND_D_UN_LOT,
+  fabriquerUnLot, fermerLeLotAvant, inventaireDuDossier, MOTIF_HORS_DU_DOSSIER, PLAFOND_D_UN_LOT,
   type CopieEnregistree, type DocumentDeLaCopie, type DocumentDuCabinetDeLaCopie, type DossierDeLaCopie, type FichierACopier,
   type FichierLu, type LectureDesCopies, type OriginalDeLaCopie, type PieceDeLaCopie,
 } from './copieDesFichiers'
@@ -82,16 +82,26 @@ async function lireLesSources(dossierId: string) {
     if (!lectureDuCabinet.complete) throw partielle('les documents du cabinet', lectureDuCabinet.motif)
     documentsDuCabinet.push(...lectureDuCabinet.lignes)
   }
-  return inventaireDuDossier({ pieces: lecturePieces.lignes, documents: lectureDocuments.lignes, originaux, documentsDuCabinet })
+  return inventaireDuDossier({ dossierId, pieces: lecturePieces.lignes, documents: lectureDocuments.lignes, originaux, documentsDuCabinet })
+}
+
+// Le motif d'un fichier que le stockage ne rend pas, au manifeste : jamais le message du stockage, qui peut recopier le
+// chemin demandé (« Invalid key: … »), donc le nom déposé ; son statut seul (relecture de sécurité du 12/11/2026).
+function motifDuStockage(error: unknown): string {
+  const e = error !== null && typeof error === 'object' ? (error as { status?: unknown; statusCode?: unknown }) : null
+  const statut = String(e?.status ?? e?.statusCode ?? '')
+  return /^\d{3}$/.test(statut) ? `le stockage ne l’a pas rendu (${statut})` : 'le stockage ne l’a pas rendu'
 }
 
 async function telechargerUnFichier(f: FichierACopier): Promise<FichierLu> {
+  // Un chemin hors du dossier ne se demande pas au stockage : le chef lirait le fichier d'un autre dossier.
+  if (f.horsDuDossier) return { fichier: f, octets: null, motif: MOTIF_HORS_DU_DOSSIER }
   try {
     const { data, error } = await supabase.storage.from(f.seau).download(f.chemin)
-    if (error || !data) return { fichier: f, octets: null, motif: messageErreur(error, 'le stockage ne l’a pas rendu') }
+    if (error || !data) return { fichier: f, octets: null, motif: motifDuStockage(error) }
     return { fichier: f, octets: new Uint8Array(await data.arrayBuffer()) }
-  } catch (e) {
-    return { fichier: f, octets: null, motif: messageErreur(e, 'le téléchargement a échoué') }
+  } catch {
+    return { fichier: f, octets: null, motif: 'le téléchargement a échoué' }
   }
 }
 

@@ -120,10 +120,19 @@ function lettreRendue(v: unknown): LettreDuClient | null {
     || !instant(v.proposee_le) || !texte(v.empreinte) || !/^[0-9a-f]{64}$/.test(v.empreinte) || typeof v.empreinte_verifiee !== 'boolean'
     || !instantOuNul(v.acceptee_le) || !(v.mode_acceptation === null || v.mode_acceptation === 'papier' || v.mode_acceptation === 'en_ligne')
     || !jourOuNul(v.signee_le) || !instantOuNul(v.refusee_le) || !instantOuNul(v.retiree_le) || !jourOuNul(v.fin_au)) return null
+  // Du modèle, la fonction ne rend que le texte des missions et des clauses de CETTE lettre (relecture de sécurité du
+  // 12/11/2026) : un texte de plus est celui d'une autre lettre, et la valeur ne se lit pas.
+  const missions: readonly unknown[] = v.missions
+  const clauses: readonly unknown[] = v.clauses
+  if (!Object.keys(modele.missions).every((m) => missions.includes(m))
+    || !Object.keys(modele.clauses).every((c) => clauses.includes(c))) return null
   return { ...(v as unknown as LettreDuClient), modele }
 }
 
-/** La valeur ENTIÈRE, ou null : une clé de plus (d'honoraires d'un autre, d'un auteur…) ou de moins ne se lit pas. */
+/**
+ * La valeur ENTIÈRE, ou null : une clé de plus (d'honoraires d'un autre, d'un auteur, du texte d'une mission ou d'une clause
+ * que la lettre ne porte pas…) ou de moins ne se lit pas.
+ */
 export function lettresDuClientRendues(rendu: unknown): LettresDuClient | null {
   if (!estObjet(rendu) || !memesCles(rendu, CLES_DE_LA_VALEUR)) return null
   if (typeof rendu.dossier_du_cabinet_designe !== 'boolean' || !Array.isArray(rendu.lettres)) return null

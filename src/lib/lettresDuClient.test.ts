@@ -74,6 +74,19 @@ describe('la valeur, reconnue entière', () => {
     expect(lettresDuClientRendues(valeur([brute({ modele: { ...modele, auteur: 'x' } })]))).toBeNull()
     expect(lettresDuClientRendues(valeur([brute({ missions: ['inconnue'] })]))).toBeNull()
   })
+  it('du modèle, le texte de SES missions et de SES clauses seulement : celui d’une autre mission ou clause la rend illisible', () => {
+    // La relecture de sécurité du 12/11/2026 : la fonction rendait le modèle entier, les textes d'autres lettres compris.
+    expect(lettresDuClientRendues(valeur([brute({ modele: { ...modele, missions: { ...modele.missions, declaration_2035: 'Établir.' } } })]))).toBeNull()
+    expect(lettresDuClientRendues(valeur([brute({ modele: { ...modele, clauses: { ...modele.clauses, mandat_de_facturation: 'Mandat.' } } })]))).toBeNull()
+    // Une mission de la lettre que le modèle ne décrit pas reste lisible (le PDF l'imprime sans texte, comme au cabinet).
+    expect(lettresDuClientRendues(valeur([brute({ missions: ['tenue_comptable', 'declaration_2035'] })]))).not.toBeNull()
+  })
+  it('la fonction ne rend du modèle que les textes des missions et des clauses de la lettre', () => {
+    const corps = MIGRATION.slice(MIGRATION.indexOf("'modele', (select"), MIGRATION.indexOf("'proposee_le', l.proposee_le"))
+    expect(corps).toContain('from jsonb_each(m.missions) e where e.key = any (l.missions)')
+    expect(corps).toContain('from jsonb_each(m.clauses) e where e.key = any (l.clauses)')
+    expect(corps).not.toMatch(/'missions', m\.missions|'clauses', m\.clauses/)
+  })
 })
 
 describe('l’état dit au client', () => {

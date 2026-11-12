@@ -28,6 +28,12 @@ import { referenceDUnePiece } from './fec'
 // LES NOMS. Le chemin du stockage porte le nom du fichier déposé (« 1787769218050-<nom d'origine>.pdf ») : il n'entre ni dans
 // un nom du ZIP, ni dans le manifeste. Une pièce s'appelle par sa PieceRef (`referenceDUnePiece`), un document par sa date et
 // le début de son identifiant, un original repris par son empreinte, que son chemin porte déjà.
+//
+// UN CHEMIN HORS DU DOSSIER (relecture de sécurité du 12/11/2026). La base ne lie pas le premier segment de
+// `pieces.storage_path` ni de `documents_divers.storage_path` au dossier de la ligne, et le client d'un dossier insère l'une
+// et l'autre : il peut nommer le fichier d'un AUTRE dossier, que le chef, qui les lit tous, téléchargerait dans le ZIP de
+// celui-ci. Un tel chemin n'est donc jamais téléchargé ni copié : le fichier se compte manquant, et le manifeste le dit
+// (`MOTIF_HORS_DU_DOSSIER`), sans son chemin. La même règle vaut pour chaque nature, celles que la base tient déjà.
 
 /** Le drapeau de la migration `copies_des_fichiers` (PRÉPARÉE le 12/11/2026) : baissé, ni carte ni rappel, rien ne se lit. */
 export const COPIE_DES_FICHIERS_PREVUE: boolean = false
@@ -53,6 +59,8 @@ export interface FichierACopier {
   attendue: string | null
   /** L'identifiant de la ligne qui le cite (la pièce, le document, l'import). */
   ligne: string
+  /** Son chemin n'est pas dans le dossier de la ligne (`cheminDuDossier`) : ni téléchargé, ni copié, compté manquant. */
+  horsDuDossier: boolean
 }
 
 export type PieceDeLaCopie = Pick<Piece, 'id' | 'date_piece' | 'created_at' | 'storage_path' | 'storage_hash' | 'lisible_path'>
@@ -61,6 +69,8 @@ export interface OriginalDeLaCopie { id: string; fichier_chemin: string | null; 
 export interface DocumentDuCabinetDeLaCopie { id: string; chemin: string; sha256: string; type_mime: string | null }
 
 export interface SourcesDuDossier {
+  /** Le dossier que les lignes disent : un chemin dont le premier segment n'est pas lui ne se copie pas. */
+  dossierId: string
   pieces: readonly PieceDeLaCopie[]
   documents: readonly DocumentDeLaCopie[]
   /** Les lignes d'`imports_factures` et de `factures_importees` : un même original peut être cité par les deux. */
@@ -69,6 +79,14 @@ export interface SourcesDuDossier {
 }
 
 const SHA256_HEX = /^[0-9a-f]{64}$/
+
+export const MOTIF_HORS_DU_DOSSIER = 'son chemin de stockage n’est pas dans ce dossier : non copié, à signaler sans attendre'
+
+/** Le chemin est-il dans ce dossier : son premier segment est le dossier, et aucun segment n'est vide, « . » ni « .. ». */
+export function cheminDuDossier(chemin: string, dossierId: string): boolean {
+  const segments = chemin.split('/')
+  return segments.length >= 2 && segments[0] === dossierId && segments.every((x) => x !== '' && x !== '.' && x !== '..')
+}
 
 // Les deux briques du paquet d'archive (lib/paquetDArchive.ts), recopiées plutôt qu'importées : son garde
 // (PaquetDArchiveBouton.test.tsx) tient la liste de ses importateurs, et la copie n'a pas à y entrer.
@@ -98,6 +116,7 @@ function jourCompact(instant: string): string {
 /** L'inventaire d'un dossier : chaque fichier que ses lignes citent, nommé, avec l'empreinte que la base garde. */
 export function inventaireDuDossier(s: SourcesDuDossier): FichierACopier[] {
   const fichiers: FichierACopier[] = []
+  const hors = (chemin: string) => !cheminDuDossier(chemin, s.dossierId)
   const pris = new Set<string>()
   const nommer = (souhaite: string): string => {
     const point = souhaite.lastIndexOf('.')
@@ -113,11 +132,15 @@ export function inventaireDuDossier(s: SourcesDuDossier): FichierACopier[] {
   // identifiants).
   for (const p of [...s.pieces].sort((a, b) => a.id.localeCompare(b.id))) {
     const nom = nommer(`pieces/${referenceDUnePiece(p)}.${extension(p.storage_path)}`)
-    fichiers.push({ nature: 'piece', seau: 'pieces', chemin: p.storage_path, nom, attendue: empreinteLisible(p.storage_hash), ligne: p.id })
+    fichiers.push({
+      nature: 'piece', seau: 'pieces', chemin: p.storage_path, nom, attendue: empreinteLisible(p.storage_hash), ligne: p.id,
+      horsDuDossier: hors(p.storage_path),
+    })
     if (p.lisible_path) {
       fichiers.push({
         nature: 'version_lisible', seau: 'pieces', chemin: p.lisible_path,
         nom: nommer(`${nom.slice(0, nom.lastIndexOf('.'))}-lisible.${extension(p.lisible_path)}`), attendue: null, ligne: p.id,
+        horsDuDossier: hors(p.lisible_path),
       })
     }
   }
@@ -125,7 +148,7 @@ export function inventaireDuDossier(s: SourcesDuDossier): FichierACopier[] {
     fichiers.push({
       nature: 'document', seau: 'pieces', chemin: d.storage_path,
       nom: nommer(`documents/${jourCompact(d.created_at)}-${d.id.slice(0, 8)}.${extension(d.storage_path)}`),
-      attendue: empreinteLisible(d.storage_hash), ligne: d.id,
+      attendue: empreinteLisible(d.storage_hash), ligne: d.id, horsDuDossier: hors(d.storage_path),
     })
   }
   // Un original cité deux fois (par son import et par sa facture) n'entre qu'une fois, sous la première empreinte lisible.
@@ -142,7 +165,7 @@ export function inventaireDuDossier(s: SourcesDuDossier): FichierACopier[] {
     fichiers.push({
       nature: 'original_repris', seau: 'ventes', chemin: o.fichier_chemin,
       nom: nommer(`factures_reprises/${attendue ? attendue.slice(0, 16) : o.id.slice(0, 8)}.${extension(o.fichier_chemin)}`),
-      attendue, ligne: o.id,
+      attendue, ligne: o.id, horsDuDossier: hors(o.fichier_chemin),
     })
   }
   for (const d of [...s.documentsDuCabinet].sort((a, b) => a.id.localeCompare(b.id))) {
@@ -150,7 +173,7 @@ export function inventaireDuDossier(s: SourcesDuDossier): FichierACopier[] {
     fichiers.push({
       nature: 'document_du_cabinet', seau: 'documents-cabinet', chemin: d.chemin,
       nom: nommer(`documents_du_cabinet/${d.id.slice(0, 8)}.${EXTENSION_DU_TYPE[d.type_mime ?? ''] ?? 'bin'}`),
-      attendue, ligne: d.id,
+      attendue, ligne: d.id, horsDuDossier: hors(d.chemin),
     })
   }
   return fichiers
@@ -211,9 +234,11 @@ export async function fabriquerUnLot(e: EntreesDUnLot): Promise<LotFabrique> {
   for (const lu of [...e.fichiers].sort((a, b) => a.fichier.nom.localeCompare(b.fichier.nom))) {
     comptes.fichiers++
     const { fichier } = lu
-    if (lu.octets === null) {
+    // Un chemin hors du dossier n'entre jamais dans le ZIP, même si on l'a téléchargé : son fichier est d'un autre dossier.
+    if (fichier.horsDuDossier || lu.octets === null) {
       comptes.manquants++
-      lignes.push({ nom: fichier.nom, taille: null, sha256: null, etat: 'MANQUANT', attendue: fichier.attendue, motif: lu.motif })
+      const motif = fichier.horsDuDossier ? MOTIF_HORS_DU_DOSSIER : lu.octets === null ? lu.motif : null
+      lignes.push({ nom: fichier.nom, taille: null, sha256: null, etat: 'MANQUANT', attendue: fichier.attendue, motif })
       continue
     }
     const relue = await sha256Hex(lu.octets)
