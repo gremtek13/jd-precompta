@@ -15,15 +15,34 @@ const rpc = vi.fn()
 const lire = vi.fn<(dossierId: string, annee: number) => Promise<LectureDeLAffectation>>()
 vi.mock('../../lib/supabase', () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a) } }))
 vi.mock('../../lib/affectationLecture', () => ({ lireLAffectation: (d: string, a: number) => lire(d, a) }))
+// Le document (AFF5) : le dépôt, le tirage du PDF et le téléchargement simulés ; le jugement du fichier aussi (le type lu à la
+// signature, l'empreinte), que procesVerbalEcriture.test.ts éprouve contre les vrais octets.
+const joindre = vi.fn()
+const telecharger = vi.fn()
+const pdf = vi.fn()
+vi.mock('../../lib/procesVerbalEcriture', () => ({ joindreLeProcesVerbal: (...a: unknown[]) => joindre(...a) }))
+vi.mock('../../lib/apercu', () => ({ telechargerUnPdf: (...a: unknown[]) => telecharger(...a) }))
+vi.mock('../../lib/procesVerbalDAffectation', async (original) => ({
+  ...(await original<typeof import('../../lib/procesVerbalDAffectation')>()),
+  pdfDuProcesVerbal: (...a: unknown[]) => pdf(...a),
+}))
+vi.mock('../../lib/bornesStockage', async (original) => ({
+  ...(await original<typeof import('../../lib/bornesStockage')>()),
+  preparerProcesVerbal: async (f: File) => (f.name.endsWith('.pdf')
+    ? { corps: f, type: 'application/pdf', taille: 2048 }
+    : { refus: { raison: 'format', taille: 4, message: 'format non pris en charge (un procès-verbal signé se dépose en PDF)' } }),
+}))
+vi.mock('../../lib/logoDesFactures', () => ({ empreinteSha256: async () => 'e'.repeat(64) }))
 
 import AffectationDuResultatCard from './AffectationDuResultatCard'
+import { FIGEE_DE_TEST, IDENTITE_DE_TEST } from '../../test/affectation'
 
 const COMPTES: ComptesDeLAffectation = {
   resultat_benefice: '120000', resultat_perte: '129000', reserve_legale: '106100', reserves_statutaires: '106300',
   autres_reserves: '106800', report_a_nouveau_crediteur: '110000', report_a_nouveau_debiteur: '119000', dividendes_a_payer: '457000',
 }
 const lue = (l: Partial<LueDeLAffectation> = {}): LueDeLAffectation => ({
-  dossierId: 'd1', annee: 2026, etat: 'lue', formeJuridique: '5499', capitalCentimes: 1_000_000, comptes: COMPTES, anneesValidees: [2026],
+  dossierId: 'd1', annee: 2026, etat: 'lue', formeJuridique: '5499', capitalCentimes: 1_000_000, identite: IDENTITE_DE_TEST, comptes: COMPTES, anneesValidees: [2026],
   brouillon: [{ date: '2026-06-30', compte: '706000', sens: 'credit', montant: 30_000, statut: 'validee', affectationId: null }],
   reportes: [
     { date: '2027-01-01', compte: '101000', sens: 'credit', montant: 10_000 }, { date: '2027-01-01', compte: '106100', sens: 'credit', montant: 800 },
@@ -32,7 +51,7 @@ const lue = (l: Partial<LueDeLAffectation> = {}): LueDeLAffectation => ({
 })
 const enVigueur = (d: Partial<DecisionLue> = {}): DecisionLue => ({
   id: 'a1', version: 3, etat: 'en_vigueur', organe: 'assemblee', nombreDAssocies: 'plusieurs', dateDecision: '2027-05-15', comptesApprouves: true,
-  dateMiseEnPaiement: null, reservesStatutairesDistribuables: true, finLe: null,
+  dateMiseEnPaiement: null, reservesStatutairesDistribuables: true, finLe: null, figee: FIGEE_DE_TEST, document: null,
   lignes: [{ origine: 'benefice', destination: 'reserve_legale', centimes: 20_000 }, { origine: 'benefice', destination: 'report_crediteur', centimes: 2_980_000 }],
   ...d,
 })
@@ -54,6 +73,9 @@ async function remplirLaDecision() {
 beforeEach(() => {
   rpc.mockReset()
   lire.mockReset()
+  joindre.mockReset()
+  telecharger.mockReset().mockReturnValue({ ok: true })
+  pdf.mockReset().mockResolvedValue(new Uint8Array([1, 2, 3]))
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2027-11-12T10:00:00Z'))
@@ -266,7 +288,8 @@ describe('la carte de l’affectation du résultat', () => {
     await attendre()
     expect(screen.getByText(/L’exercice qui contient le 15\/05\/2027 est validé : une écriture n’y entre plus\. La décision et son écriture sont figées/)).toBeTruthy()
     expect(screen.getByText(/Décision en vigueur : version 3/)).toBeTruthy()
-    expect(screen.queryByRole('button')).toBeNull()
+    // Le seul geste : télécharger le document de la décision (AFF5), qui n'écrit rien.
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Télécharger le procès-verbal'])
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
   })
@@ -314,5 +337,93 @@ describe('la carte de l’affectation du résultat', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('comptes non approuvés : aucune affectation, aucune écriture'))
     expect(rpc.mock.calls[0][1]).toMatchObject({ p_lignes: [], p_ecriture: null, p_decision: { comptes_approuves: false, reserves_statutaires_distribuables: false } })
+  })
+
+  describe('le document de la décision (AFF5)', () => {
+    const decisionSansDocument = () => lue({ anneesValidees: [2026], decisions: [enVigueur()], brouillon: [...lue().brouillon, ...PROPOSEE()] })
+    const choisir = async (nom: string) => {
+      await act(async () => { fireEvent.change(libelle('Document signé (PDF)'), { target: { files: [new File(['%PDF'], nom)] } }) })
+    }
+
+    it('télécharge le document tiré des valeurs figées de la version en vigueur, sous son nom', async () => {
+      lire.mockResolvedValue(decisionSansDocument())
+      rendre()
+      await attendre()
+      expect(screen.getByText('Procès-verbal de l’assemblée générale ordinaire')).toBeTruthy()
+      await act(async () => { fireEvent.click(bouton('Télécharger le procès-verbal')); fireEvent.click(bouton('Télécharger le procès-verbal')) })
+      await waitFor(() => expect(telecharger).toHaveBeenCalledTimes(1))
+      expect(pdf).toHaveBeenCalledTimes(1)
+      expect(pdf.mock.calls[0][0]).toMatchObject({ annee: 2026, identite: { denomination: 'Société Fictive' }, decision: { id: 'a1', version: 3 } })
+      expect(telecharger.mock.calls[0][1]).toBe('proces-verbal-affectation-2026-version-3.pdf')
+    })
+
+    it('le refus du fichier se dit au choix, avant le clic, et le bouton reste fermé', async () => {
+      lire.mockResolvedValue(decisionSansDocument())
+      rendre()
+      await attendre()
+      expect((bouton('Joindre le document signé') as HTMLButtonElement).disabled).toBe(true)
+      await choisir('scan.png')
+      expect(await screen.findByText('Ce document n’est pas pris : format non pris en charge (un procès-verbal signé se dépose en PDF).')).toBeTruthy()
+      expect((bouton('Joindre le document signé') as HTMLButtonElement).disabled).toBe(true)
+    })
+
+    it('joint le document signé : la confirmation nomme le fichier et son empreinte, une fois sous deux clics, la lecture refaite', async () => {
+      lire.mockResolvedValue(decisionSansDocument())
+      let rendreLaMain: (v: { ok: true }) => void = () => {}
+      joindre.mockReturnValue(new Promise((r) => { rendreLaMain = r }))
+      rendre()
+      await attendre()
+      await choisir('pv-signe.pdf')
+      await screen.findByText('pv-signe.pdf')
+      await act(async () => { fireEvent.click(bouton('Joindre le document signé')); fireEvent.click(bouton('Joindre le document signé')) })
+      expect(joindre).toHaveBeenCalledTimes(1)
+      expect(joindre.mock.calls[0].slice(0, 2)).toEqual(['d1', 'a1'])
+      expect(joindre.mock.calls[0][3]).toBe('e'.repeat(64))
+      expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/« pv-signe\.pdf » \(2\sKo, empreinte SHA-256 e{64}\) comme document signé de la décision version 3/))
+      await act(async () => { rendreLaMain({ ok: true }) })
+      await waitFor(() => expect(lire).toHaveBeenCalledTimes(2))
+    })
+
+    it('le refus du dépôt se dit sous ses mots', async () => {
+      lire.mockResolvedValue(decisionSansDocument())
+      joindre.mockResolvedValue({ ok: false, message: 'Un autre fichier est déjà au chemin de cette décision (son empreinte diffère) : rien n’est joint.' })
+      rendre()
+      await attendre()
+      await choisir('pv.pdf')
+      await screen.findByText('pv.pdf')
+      await act(async () => { fireEvent.click(bouton('Joindre le document signé')) })
+      expect(await screen.findByText('Un autre fichier est déjà au chemin de cette décision (son empreinte diffère) : rien n’est joint.')).toBeTruthy()
+    })
+
+    it('un document déjà joint, ou un exercice de la décision validé : dit, aucun dépôt offert', async () => {
+      lire.mockResolvedValue(lue({ decisions: [enVigueur({ document: { chemin: 'd1/affectations/a1.pdf', empreinte: 'c'.repeat(64) } })], brouillon: [...lue().brouillon, ...PROPOSEE()] }))
+      rendre()
+      await attendre()
+      expect(screen.getByText('c'.repeat(64))).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Joindre le document signé' })).toBeNull()
+      cleanup()
+      lire.mockResolvedValue(lue({ anneesValidees: [2026, 2027], decisions: [enVigueur()] }))
+      rendre()
+      await attendre()
+      expect(screen.getAllByText('L’exercice qui contient le 15/05/2027 est validé : une écriture n’y entre plus.').length).toBeGreaterThan(0)
+      expect(screen.queryByRole('button', { name: 'Joindre le document signé' })).toBeNull()
+      expect(screen.queryByLabelText('Document signé (PDF)')).toBeNull()
+    })
+
+    it('une lecture incomplète n’offre ni le téléchargement ni le dépôt', async () => {
+      lire.mockResolvedValue({ dossierId: 'd1', annee: 2026, etat: 'incomplete', motif: 'les décisions : ce qu’une version a figé ne se croit pas' })
+      rendre()
+      await attendre()
+      expect(screen.queryByRole('button', { name: 'Télécharger le procès-verbal' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Joindre le document signé' })).toBeNull()
+    })
+
+    it('le calendrier de l’approbation, au jour de Paris : sans décision au 12/11/2027, le délai de six mois est passé', async () => {
+      lire.mockResolvedValue(lue())
+      rendre()
+      await attendre()
+      expect(screen.getByText('Le calendrier de l’approbation')).toBeTruthy()
+      expect(screen.getByText('Délai passé sans décision enregistrée (une prorogation judiciaire a pu être demandée).')).toBeTruthy()
+    })
   })
 })

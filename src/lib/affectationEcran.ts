@@ -49,6 +49,26 @@ export interface DecisionLue {
   lignes: LigneDAffectation[]
   /** Le jour de Paris où la version a pris fin (remplacée ou retirée), sinon nul. */
   finLe: string | null
+  /** Ce que la base a FIGÉ avec la version (AFF2) : le résultat, la forme, le capital et les soldes lus à la décision. Le
+   *  procès-verbal (AFF5) ne lit que ces valeurs-là, jamais une saisie. */
+  figee: ValeursFigeesDeLaDecision
+  /** Le document signé joint par `joindre_document_affectation` (AFF5), ou nul. */
+  document: { chemin: string; empreinte: string } | null
+}
+
+export interface ValeursFigeesDeLaDecision {
+  resultatCentimes: number
+  formeJuridique: string
+  capitalCentimes: number
+  soldes: SoldesAvantAffectation
+}
+
+/** L'identité de la société telle que le dossier la porte (A5a), que le document imprime en tête ; nulle si non posée. */
+export interface IdentiteDeLaSociete {
+  denomination: string
+  siret: string | null
+  adresse: string | null
+  rcsVille: string | null
 }
 
 /** Tout ce que la carte juge, lu EN ENTIER pour un dossier et un exercice affecté. */
@@ -58,6 +78,8 @@ export interface LueDeLAffectation {
   etat: 'lue'
   formeJuridique: string | null
   capitalCentimes: number | null
+  /** La dénomination imprimée (le nom du dossier à défaut), le SIRET, l'adresse et la ville du greffe (AFF5). */
+  identite: IdentiteDeLaSociete
   /** Les huit comptes du plan du dossier que l'affectation écrit (`plan_du_dossier`). */
   comptes: ComptesDeLAffectation
   /** Les exercices validés du dossier, tous. */

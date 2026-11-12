@@ -86,6 +86,8 @@ const PREPARATEURS_A_SEAU_FIXE: Record<string, { seau: string; types: readonly s
   preparerOriginalDImport: { seau: 'ventes', types: TYPES_DES_ORIGINAUX_D_IMPORT },
   // Un document que le cabinet met à disposition (B3a) : le seau privé `documents-cabinet` — PDF, JPEG, PNG.
   preparerDocumentDuCabinet: { seau: 'documents-cabinet', types: TYPES_DES_DOCUMENTS_DU_CABINET },
+  // Le procès-verbal d'affectation signé (AFF5) : le seau des dossiers, sous `<dossier>/affectations/` — un PDF seulement.
+  preparerProcesVerbal: { seau: 'pieces', types: ['application/pdf'] },
 }
 
 function litteral(n: ts.Node | undefined): string | null {
@@ -335,6 +337,7 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
       'src/lib/logoDesFacturesEcriture.ts → ventes',
       'src/lib/packGenerator.ts → packs',
       'src/lib/packGenerator.ts → packs',
+      'src/lib/procesVerbalEcriture.ts → pieces',
       'src/lib/receptionPlateforme.ts → pieces',
       'src/lib/receptionPlateforme.ts → pieces',
       'src/pages/CabinetBrandingPage.tsx → cabinet-logos',

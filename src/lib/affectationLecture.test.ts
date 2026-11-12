@@ -49,9 +49,16 @@ const COMPTES = ['120000', '129000', '106100', '106300', '106800', '110000', '11
 const planComplet = () => ({ data: [...ROLES.map((role, i) => ({ role, compte: COMPTES[i], libelle: null, prefixe_auxiliaire: null, origine: 'application' })),
   { role: 'banque', compte: '512000', libelle: 'Banque', prefixe_auxiliaire: null, origine: 'application' }], error: null })
 
+const SOLDES_FIGES = {
+  capitalAuxComptes: 1_000_050, primes: 0, ecartsDeReevaluation: 0, reserveLegale: 0, reservesIndisponibles: 0, reservesStatutaires: 0,
+  reservesReglementees: 0, autresReserves: 0, reportCrediteur: 0, pertesAnterieures: 0, acomptesSurDividendes: 0,
+}
+const FIGEE = { resultat_centimes: 10_000, forme_juridique: '5499', capital_centimes: 1_000_050, soldes_lus: SOLDES_FIGES }
+
 function poser() {
   monde.tables = {
-    dossiers: [{ id: 'd1', forme_juridique: '5499', capital: 10000.5 }, { id: 'd2', forme_juridique: '1000', capital: null }],
+    dossiers: [{ id: 'd1', nom: 'Dossier fictif', denomination_imprimee: 'Société Fictive SARL', siret: '12345678900011', adresse: '1 rue Fictive, 75001 Paris', rcs_ville: 'Paris', forme_juridique: '5499', capital: 10000.5 },
+      { id: 'd2', nom: 'Autre', denomination_imprimee: null, siret: null, adresse: null, rcs_ville: null, forme_juridique: '1000', capital: null }],
     exercices_valides: [{ dossier_id: 'd1', annee: 2026 }, { dossier_id: 'd2', annee: 2020 }],
     soldes_reportes: [{ id: 's1', dossier_id: 'd1', date: '2027-01-01', compte: '101000', sens: 'credit', montant: 10000, libelle: 'x', source_nom: 'x', source_empreinte: 'x' }],
     a_nouveaux: [{ id: 'n0', dossier_id: 'd1', date: '2025-01-01', compte: '110000', sens: 'credit', montant: 5 },
@@ -63,11 +70,12 @@ function poser() {
     ],
     affectations_du_resultat: [
       { id: 'a2', dossier_id: 'd1', exercice_affecte: 2026, version: 2, etat: 'en_vigueur', organe: 'assemblee', nombre_d_associes_declare: 'plusieurs',
-        date_decision: '2027-05-15', comptes_approuves: true, date_mise_en_paiement: null, reserves_statutaires_distribuables: false, fin_le: null },
+        date_decision: '2027-05-15', comptes_approuves: true, date_mise_en_paiement: null, reserves_statutaires_distribuables: false, fin_le: null, ...FIGEE,
+        document_chemin: 'd1/affectations/a2.pdf', document_empreinte: 'ab'.repeat(32) },
       { id: 'a1', dossier_id: 'd1', exercice_affecte: 2026, version: 1, etat: 'remplacee', organe: 'associe_unique', nombre_d_associes_declare: 'un',
-        date_decision: '2027-04-01', comptes_approuves: false, date_mise_en_paiement: null, reserves_statutaires_distribuables: true, fin_le: '2027-05-15T22:30:00Z' },
+        date_decision: '2027-04-01', comptes_approuves: false, date_mise_en_paiement: null, reserves_statutaires_distribuables: true, fin_le: '2027-05-15T22:30:00Z', ...FIGEE, document_chemin: null, document_empreinte: null },
       { id: 'x1', dossier_id: 'd1', exercice_affecte: 2025, version: 1, etat: 'en_vigueur', organe: 'assemblee', nombre_d_associes_declare: 'plusieurs',
-        date_decision: '2026-05-15', comptes_approuves: false, date_mise_en_paiement: null, reserves_statutaires_distribuables: true, fin_le: null },
+        date_decision: '2026-05-15', comptes_approuves: false, date_mise_en_paiement: null, reserves_statutaires_distribuables: true, fin_le: null, ...FIGEE, document_chemin: null, document_empreinte: null },
     ],
     lignes_d_affectation: [
       { affectation_id: 'a2', dossier_id: 'd1', rang: 2, origine: 'benefice', destination: 'report_crediteur', montant_centimes: 900 },
@@ -98,6 +106,30 @@ describe('lireLAffectation', () => {
     // La version remplacée a pris fin le jour de Paris de l'instant (22h30 UTC en mai : déjà le lendemain à Paris).
     expect(l.decisions[0].finLe).toBe('2027-05-16')
     expect(l.decisions[1].reservesStatutairesDistribuables).toBe(false)
+    // Ce que la base a figé avec chaque version, et le document joint (AFF5) : le procès-verbal ne lit que cela.
+    expect(l.decisions[1].figee).toEqual({ resultatCentimes: 10_000, formeJuridique: '5499', capitalCentimes: 1_000_050, soldes: SOLDES_FIGES })
+    expect(l.decisions[1].document).toEqual({ chemin: 'd1/affectations/a2.pdf', empreinte: 'ab'.repeat(32) })
+    expect(l.decisions[0].document).toBeNull()
+    expect(l.identite).toEqual({ denomination: 'Société Fictive SARL', siret: '12345678900011', adresse: '1 rue Fictive, 75001 Paris', rcsVille: 'Paris' })
+  })
+
+  it('sans dénomination imprimée, le nom du dossier ; une colonne d’identité absente ne se croit pas (jamais nulle)', async () => {
+    const l = await lireLAffectation('d2', 2020)
+    expect(l.etat === 'lue' && l.identite).toEqual({ denomination: 'Autre', siret: null, adresse: null, rcsVille: null })
+    delete (monde.tables.dossiers[0] as Record<string, unknown>).rcs_ville
+    const absente = await lireLAffectation('d1', 2026)
+    expect(absente.etat === 'incomplete' && absente.motif).toBe('le dossier : son identité ne se croit pas')
+  })
+
+  it.each([
+    ['des soldes figés incomplets', { soldes_lus: { capitalAuxComptes: 1 } }],
+    ['un résultat figé décimal', { resultat_centimes: 10.5 }],
+    ['un chemin sans empreinte', { document_empreinte: null }],
+    ['une empreinte qui n’en a pas la forme', { document_empreinte: 'ABC' }],
+  ])('%s : la version ne se croit pas, rien n’est jugé', async (_cas, ecart) => {
+    Object.assign(monde.tables.affectations_du_resultat[0], ecart)
+    const l = await lireLAffectation('d1', 2026)
+    expect(l.etat === 'incomplete' && l.motif).toBe('les décisions : ce qu’une version a figé ne se croit pas')
   })
 
   it('un dossier sans décision : aucune version, et un capital nul reste nul (jamais zéro)', async () => {

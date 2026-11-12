@@ -52201,3 +52201,20 @@ de la 2035, qui ne tourne qu'en trésorerie, garde une telle ligne en écart (le
 rattrapée à 216 migrations : son essai 49 contrôles, 12 mutations sur 12, EN ATTENTE sans elle ; quatre ordres de collage avec
 INV4, LIA2, AFF2, EXD2 et MCB5g, une signature ; `validationExercice` (245) et onze autres essais justes ; `rls.sql` 254, 154
 mutations sur 154 ; restauration identique ; le retour rend la signature ; banc du leurre SÛR. Ouvertes : INV3-Q1, INV3-Q2.
+
+### 12/11/2026 — AFF5 : LE PROCÈS-VERBAL D'AFFECTATION, DERRIÈRE SON DRAPEAU
+
+Ligne 45, conception 45 (§ 3.7, § 3.8, AFF-Q6 (A), AFF-Q12 (A)), sous `AFFECTATION_EXPORTEE` baissé, sans migration.
+`lib/procesVerbalDAffectation.ts`, pur : le document des quatre organes (procès-verbal d'assemblée, de consultation écrite,
+acte unanime, décision de l'associé unique), sur R223-24 et R223-26, tiré des SEULES valeurs que la base a figées avec la
+version (résultat, forme, capital, soldes — `capitauxPropresAvant` d'AFF1, exportée) et de sa répartition ; le lieu, les
+associés, les votes, les dividendes des trois exercices (CGI 243 bis) et les signatures en blanc ; « projet préparé par le
+cabinet » en pied ; le PDF par `pdfDesBlocs`, les montants en entiers sans `Intl`, daté du jour de la décision (mêmes octets à
+chaque tirage). La lecture de l'écran rend désormais ces valeurs figées, le document joint et l'identité du dossier (une
+colonne absente ne se croit pas). Le dépôt (`lib/procesVerbalEcriture.ts`) : `preparerProcesVerbal` (un PDF lu à sa
+signature, 20 Mio, seau `pieces`, le chemin que la base exige), l'empreinte recalculée contre celle que la confirmation a
+nommée, le fichier puis `joindre_document_affectation` seule ; un chemin déjà pris relu à son empreinte, le fichier de l'appel
+retiré si la fonction refuse. `echeancesDeLApprobation` (`echeancesFiscales.ts`) : six mois, greffe un mois après la
+décision, neuf mois pour les dividendes, au jour de Paris, sans report au jour ouvré. La carte AFF4 offre « Télécharger le
+procès-verbal », « Joindre le document signé » et le calendrier. Reste : les rappels dans « Mon échéancier » et la Checklist
+(le client ne lit pas les décisions), et AFF6.

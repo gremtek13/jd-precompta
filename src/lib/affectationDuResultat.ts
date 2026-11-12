@@ -242,7 +242,8 @@ export interface CalculDeLAffectation {
 const somme = (lignes: readonly LigneDAffectation[], filtre: (l: LigneDAffectation) => boolean): number =>
   lignes.filter(filtre).reduce((s, l) => s + l.centimes, 0)
 
-function capitauxPropresAvant(s: SoldesAvantAffectation, resultat: number): number {
+/** Les capitaux propres avant l'affectation (classes 10, 11 et 12), le résultat compris ; le procès-verbal (AFF5) les lit. */
+export function capitauxPropresAvant(s: SoldesAvantAffectation, resultat: number): number {
   // Classes 10, 11 et 12 seulement (conception § 3.4 : hors 13 et 14 — AFF1-Q2).
   return s.capitalAuxComptes + s.primes + s.ecartsDeReevaluation + s.reserveLegale + s.reservesIndisponibles
     + s.reservesStatutaires + s.reservesReglementees + s.autresReserves + s.reportCrediteur - s.pertesAnterieures
