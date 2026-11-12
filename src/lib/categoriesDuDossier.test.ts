@@ -1,9 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  CATEGORIES_DU_DOSSIER_PREVUES, COMPTE_ET_POSTE_FIGES, codeDUneCategorieDuDossier, compteDeCategorie, estEmployee,
-  jugerLaCategorie, memeCompteQue, phraseDesEmplois, postesDeLaClasse, refusDeLaNatureDesRecettes, refusDuBareme,
+  CATEGORIES_DU_DOSSIER_PREVUES, CLASSES_DES_CATEGORIES_PREVUES, COMPTE_ET_POSTE_FIGES, codeDUneCategorieDuDossier,
+  compteDeCategorie, estEmployee, estUnCompteDeChargeOuDeProduit, jugerLaCategorie, memeCompteQue, phraseDesEmplois,
+  postesDeLaClasse, refusDeLaClasse, refusDeLaNatureDesRecettes, refusDuBareme, refusDuCompteDUneCategorie,
   type EmploisDUneCategorie,
 } from './categoriesDuDossier'
 import { PLAN_PAR_DEFAUT } from './planComptable'
@@ -112,5 +114,112 @@ describe('la garde de la base, confrontée à son texte', () => {
   })
   it('le drapeau est levé depuis la migration en production (12/11/2026)', () => {
     expect(CATEGORIES_DU_DOSSIER_PREVUES).toBe(true)
+  })
+})
+
+// ── PC7-Q2 : LA CLASSE DU COMPTE, EN BASE (la migration PRÉPARÉE `classes_des_categories`) ─────────────────────────────────
+// Elle remplace le corps de la garde de PC7 (`categories_du_dossier`) par le même, plus le refus (e). Chaque migration se lit
+// dans l'export sous la version que la production lui a donnée, sinon dans supabase/preparees/.
+const EXPORT = join(__dirname, '../../supabase/schema')
+const PREPAREES = join(__dirname, '../../supabase/preparees')
+const versionExportee = (nom: string) => readdirSync(EXPORT).find((f) => new RegExp(`^\\d{14}_${nom}\\.sql$`).test(f))
+const texteDe = (nom: string) => {
+  const exportee = versionExportee(nom)
+  const preparee = readdirSync(PREPAREES).find((f) => new RegExp(`^\\d{14}_${nom}\\.sql$`).test(f))
+  expect(exportee ?? preparee, nom).toBeDefined()
+  return readFileSync(exportee ? join(EXPORT, exportee) : join(PREPAREES, preparee!), 'utf8')
+}
+const RETOUR_DE_LA_CLASSE = join(PREPAREES, 'retour/20261112233100_retour_classes_des_categories.sql')
+/** Le corps de la garde entre ses dollars : ce que `prosrc` garde, et que l'empreinte de la garde de tête lit. */
+const corpsDeLaGarde = (sql: string) => {
+  const m = sql.match(/as \$fonction\$([\s\S]*?)\$fonction\$;/)
+  expect(m).not.toBeNull()
+  return m![1]
+}
+const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
+const lignesDeCode = (corps: string) => corps.split('\n').filter((l) => l.trim() !== '' && !l.trim().startsWith('--'))
+
+describe('PC7-Q2 : la classe du compte d’une catégorie du dossier, en base', () => {
+  const sql = texteDe('classes_des_categories')
+  const retour = readFileSync(RETOUR_DE_LA_CLASSE, 'utf8')
+  const corps = corpsDeLaGarde(sql)
+  const corpsDHier = corpsDeLaGarde(texteDe('categories_du_dossier'))
+
+  it('le refus (e) est celui que l’écran redit, sous son code', () => {
+    const m = corps.match(/raise exception '(Le compte « % » n''est pas un compte de charge[^\n]*?)', new\.compte_comptable\n\s+using errcode = '23514';/)
+    expect(m).not.toBeNull()
+    expect(m![1].replace(/''/g, "'").replace('%', '401000')).toBe(refusDeLaClasse('401000'))
+  })
+
+  it('le prédicat est celui des fonctions du relevé, en base comme dans le module', () => {
+    expect(corps).toContain("and new.compte_comptable !~ '^[67][0-9]{2}' then")
+    for (const compte of ['606400', '706000', '699', '7060000', '6064ab']) expect(estUnCompteDeChargeOuDeProduit(compte), compte).toBe(true)
+    for (const compte of ['401000', '512000', '108000', '471000', '6A1000', '60', '7', '', ' 606400']) {
+      expect(estUnCompteDeChargeOuDeProduit(compte), compte).toBe(false)
+    }
+  })
+
+  it('(e) vient après (a) et le retour des communes, avant la porte de la restauration, (b) et (c) ; un compte qui ne change pas ne se rejuge pas', () => {
+    const rang = (repere: string) => {
+      const i = corps.indexOf(repere)
+      expect(i, repere).toBeGreaterThan(-1)
+      return i
+    }
+    const reperes = ['-- a. Une catégorie ne change pas de dossier.', 'if new.dossier_id is null then\n    return new;', '-- e. Le compte',
+      "if tg_op = 'INSERT' and public.is_super_admin() then", '-- b. Le code', '-- c. Le compte du barème'].map(rang)
+    expect(reperes).toEqual([...reperes].sort((x, y) => x - y))
+    const e = corps.slice(rang('-- e. Le compte'), rang('-- La restauration'))
+    expect(e).toContain("if new.compte_comptable is not null\n     and (tg_op = 'INSERT' or new.compte_comptable is distinct from old.compte_comptable)")
+  })
+
+  it('les refus d’hier gardent leurs mots et leur ordre : le corps d’hier, plus les six lignes de (e)', () => {
+    const hier = lignesDeCode(corpsDHier)
+    const neuf = lignesDeCode(corps)
+    let k = 0
+    for (const ligne of neuf) if (k < hier.length && ligne === hier[k]) k++
+    expect(k).toBe(hier.length)
+    expect(neuf.length - hier.length).toBe(6)
+  })
+
+  it('la garde de tête : le corps d’hier à son empreinte, son déclencheur, aucune catégorie du dossier hors des classes 6 et 7', () => {
+    expect(md5(corpsDHier)).toBe('0e1ee2d3f53ba1dca8adecd31843edeb')
+    expect(sql).toContain(`if v_empreinte is distinct from '${md5(corpsDHier)}' then`)
+    expect(sql).toContain("t.tgname = 'categories_du_dossier'")
+    expect(sql).toContain("where c.dossier_id is not null and c.compte_comptable is not null and c.compte_comptable !~ '^[67][0-9]{2}';")
+    expect(sql.indexOf('do $garde$')).toBeLessThan(sql.search(/create\s+or\s+replace\s+function\s+public\.garder_categorie_du_dossier\(\)/i))
+    expect(sql).toContain("security definer\nset search_path = ''\nas $fonction$")
+    expect(sql).toContain('revoke all on function public.garder_categorie_du_dossier() from public, anon, authenticated;')
+  })
+
+  it('le retour rend le corps d’hier à l’octet près, sous la garde du corps posé', () => {
+    expect(corpsDeLaGarde(retour)).toBe(corpsDHier)
+    expect(retour).toContain(`if v_empreinte is distinct from '${md5(corps)}' then`)
+    expect(retour.indexOf('do $garde$')).toBeLessThan(retour.search(/create\s+or\s+replace\s+function\s+public\.garder_categorie_du_dossier\(\)/i))
+  })
+
+  it('les deux passent par l’outil : ni barre oblique inverse, ni mot de suppression hors de tg_op', () => {
+    for (const texte of [sql, retour]) {
+      expect(texte).not.toContain('\\')
+      expect(texte.replace(/tg_op = 'DELETE'/g, '')).not.toMatch(/\b(delete|drop|truncate)\b/i)
+    }
+  })
+
+  it('le module dit le refus de la base pour une catégorie du dossier, rien pour une commune ni pour une charge', () => {
+    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '401000')).toBe(refusDeLaClasse('401000'))
+    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '6A1000')).toBe(refusDeLaClasse('6A1000'))
+    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '606400')).toBeNull()
+    expect(refusDuCompteDUneCategorie({ dossier_id: null }, '401000')).toBeNull()
+  })
+
+  it('l’écran des catégories du dossier dit la classe aux mots de la base, et l’essai attend les mêmes', () => {
+    expect(compteDeCategorie('512000')).toEqual({ refus: refusDeLaClasse('512000') })
+    expect(jugerLaCategorie({ libelle: 'Tiers', compte: '401000', poste: 'Achats' }, { plan: PLAN_PAR_DEFAUT, categories: COMMUNES, modifiee: null }))
+      .toEqual({ refus: refusDeLaClasse('401000') })
+    const essai = readFileSync(join(__dirname, '../../supabase/essais/categoriesDuDossier.sql'), 'utf8')
+    expect(essai).toContain(refusDeLaClasse('401000').replace(/'/g, "''"))
+  })
+
+  it('le drapeau suit la migration : baissé tant qu’elle n’est que préparée, levé quand elle entre dans l’export', () => {
+    expect(CLASSES_DES_CATEGORIES_PREVUES).toBe(versionExportee('classes_des_categories') !== undefined)
   })
 })

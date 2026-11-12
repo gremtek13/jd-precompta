@@ -7,6 +7,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import type { Predicat } from '../../test/filtresPostgrest'
 import EcrituresTab from './EcrituresTab'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from '../../lib/planComptable'
+import { refusDeLaClasse } from '../../lib/categoriesDuDossier'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // L'ONGLET QUI PRODUIT LES DEUX FICHIERS OFFICIELS du projet — le FEC et la piste d'audit. Un défaut
@@ -258,6 +259,15 @@ vi.mock('../../lib/champsBncDuFec', async (original) => {
   return { ...vrai, get CHAMPS_BNC_EXPORTES() { return drapeauBnc.choix === undefined ? vrai.CHAMPS_BNC_EXPORTES : drapeauBnc.choix } }
 })
 afterEach(() => { drapeauBnc.choix = undefined })
+
+// LA CLASSE DU COMPTE D'UNE CATÉGORIE DU DOSSIER (PC7-Q2) : le drapeau `CLASSES_DES_CATEGORIES_PREVUES` joué par un
+// accesseur — le vrai (baissé) tant qu'un cas ne le lève pas.
+const drapeauClasses = vi.hoisted(() => ({ leve: undefined as undefined | boolean }))
+vi.mock('../../lib/categoriesDuDossier', async (original) => {
+  const vrai = await original<typeof import('../../lib/categoriesDuDossier')>()
+  return { ...vrai, get CLASSES_DES_CATEGORIES_PREVUES() { return drapeauClasses.leve ?? vrai.CLASSES_DES_CATEGORIES_PREVUES } }
+})
+afterEach(() => { drapeauClasses.leve = undefined })
 
 const CATEGORIE_ACHATS = {
   id: 'cat-achats', dossier_id: null, code: 'achats_fournisseurs', libelle: 'Achats',
@@ -2061,6 +2071,58 @@ describe('EcrituresTab — le compte d’une catégorie commune à tous les cabi
     expect(faux.misesAJour).toHaveLength(1)
     expect(await screen.findByText(/Rien n’a été enregistré : la base n’a modifié aucune catégorie/)).toBeTruthy()
     expect((faux.parTable.categories[0] as { compte_comptable: string | null }).compte_comptable).toBeNull()
+  })
+})
+
+// LE COMPTE D'UNE CATÉGORIE DU DOSSIER EST UNE CHARGE OU UN PRODUIT (PC7-Q2) : la base le refuse sinon, la migration
+// `classes_des_categories` appliquée, et la carte « Comptes manquants » le dit avant le clic, aux mots de la base
+// (lib/categoriesDuDossier.ts, que categoriesDuDossier.test.ts confronte à la migration), sous
+// `CLASSES_DES_CATEGORIES_PREVUES`. Baissé — l'état d'aujourd'hui —, la carte écrit comme hier.
+describe('EcrituresTab — la classe du compte d’une catégorie du dossier (PC7-Q2)', () => {
+  const DU_DOSSIER = {
+    id: 'cat-dossier', dossier_id: 'dossier-de-test', code: 'dossier_sans_compte', libelle: 'Catégorie du dossier',
+    ordre: 2, compte_comptable: null, poste_2035: 'Achats',
+  }
+  const COMMUNE = { ...DU_DOSSIER, id: 'cat-commune', dossier_id: null, code: 'sans_suggestion', libelle: 'Catégorie commune' }
+  const saisir = async (libelle: string, valeur: string) => {
+    const ligne = within((await screen.findByText(libelle)).closest('tr') as HTMLElement)
+    await act(async () => { fireEvent.change(ligne.getByPlaceholderText('ex. 606100'), { target: { value: valeur } }) })
+    await act(async () => { ligne.getByRole('button', { name: 'Enregistrer' }).click() })
+  }
+
+  it('levé, refuse avant le clic un compte de tiers pour une catégorie du dossier, aux mots de la base', async () => {
+    drapeauClasses.leve = true
+    poser({ categories: [DU_DOSSIER], pieces: [piece({ categorie_id: 'cat-dossier' })] })
+    monter()
+    await saisir('Catégorie du dossier', ' 401 000 ')
+    expect(screen.getByText(refusDeLaClasse('401000'))).toBeTruthy()
+    expect(faux.misesAJour).toEqual([])
+  })
+
+  // Les gardes symétriques : une charge passe, une commune n'est pas jugée, et le drapeau baissé écrit comme hier.
+  it('levé, enregistre une charge pour une catégorie du dossier', async () => {
+    drapeauClasses.leve = true
+    poser({ categories: [DU_DOSSIER], pieces: [piece({ categorie_id: 'cat-dossier' })] })
+    monter()
+    await saisir('Catégorie du dossier', '606300')
+    expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { compte_comptable: '606300' } }])
+  })
+
+  it('levé, ne juge pas la classe d’une catégorie commune (PC7Q2-Q1)', async () => {
+    drapeauClasses.leve = true
+    poser({ categories: [COMMUNE], pieces: [piece({ categorie_id: 'cat-commune' })] })
+    monter()
+    await saisir('Catégorie commune', '401000')
+    expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { compte_comptable: '401000' } }])
+  })
+
+  it('baissé, écrit le compte de tiers comme hier : la base l’accepte encore', async () => {
+    drapeauClasses.leve = false
+    poser({ categories: [DU_DOSSIER], pieces: [piece({ categorie_id: 'cat-dossier' })] })
+    monter()
+    await saisir('Catégorie du dossier', '401000')
+    expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { compte_comptable: '401000' } }])
+    expect(screen.queryByText(refusDeLaClasse('401000'))).toBeNull()
   })
 })
 
