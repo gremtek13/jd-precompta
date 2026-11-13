@@ -52589,3 +52589,19 @@ celle-ci pose la restrictive ; après, le bloc la pose ; même signature des deu
 240/0/139 sur la mère, 248/0/141 sans la double authentification, 252/4/148 avec — FL6, HD7, HF7 et LM7 comptent la restrictive
 (244/4/146 sans INAL5 : le reste connu du 07/11/2026, « les essais qui comptent les policies ») ; banc du leurre SÛR, `rls` et
 `departDuClient` (une copie hors du dépôt, sans sa phrase « réplique seulement », que le banc refuse), 95 tables couvertes.
+
+### 13/11/2026 — SECU3-Q1 ET SECU3-Q2 : LE STOCKAGE SANS MISE À JOUR, LE TEXTE LU RELU À SA RÉÉCRITURE (PRÉPARÉES, PAS APPLIQUÉES)
+
+(Agent architecte ; les deux questions restent au cabinet.) **SECU3-Q1** (`stockage_sans_mise_a_jour`, à coller) : aucun seau
+n'ouvre la mise à jour d'un objet — lecture, dépôt et suppression des packs à `authenticated`, au prédicat d'hier, les deux
+policies qui l'ouvraient retirées ; rien dans `src/` ni les Edge Functions ne réécrit ni ne déplace un fichier de ces seaux.
+**SECU3-Q2** (`texte_ocr_coherent_a_la_mise_a_jour`, par l'outil) : la mise à jour relit la cible comme l'insertion, à
+`authenticated` ; zéro texte incohérent exigé, compté avant par `select count(*) from public.piece_textes_ocr t where not
+((t.piece_id is not null and exists (select 1 from public.pieces p where p.id = t.piece_id and p.dossier_id = t.dossier_id))
+or (t.document_id is not null and exists (select 1 from public.documents_divers d where d.id = t.document_id and
+d.dossier_id = t.dossier_id)))`. Réplique : les deux ordres, même état ; `rls.sql` 242 lignes, 0 en faute, 139 mutations sur
+139 avant, 253, 0, 144 sur 144 après (blocs SM et TO), SÛR au banc dans les deux états ; cinquante gestes par état, la
+suppression comprise : seuls la mise à jour et le déplacement changent ; chaque retour rend l'état d'avant. Le retour
+préparé d'INAL1 refusait déjà (sa garde de fin attendait la suppression du seau des ventes d'avant A8D2A-Q1) : il admet
+ses deux états, et les packs avant et après SECU3-Q1. Deux scanners sur un lecteur commun des policies,
+`stockageSansMiseAJour.test.ts` et `policiesDeMiseAJour.test.ts`, leurs exceptions nommées et comptées (2 et 1).
