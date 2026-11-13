@@ -163,14 +163,17 @@ begin
       -- (« Accès refusé à ce dossier. ») qui ne gère pas les ventes du dossier annoncé, security definer, search_path
       -- fixé, ni anon ni PUBLIC ne l'exécutent. Les quatre fonctions des devis (étape P5) s'y ajoutent dès que leur
       -- migration est en base : le contrôle part du catalogue, et une fonction de plus sous ce droit doit avoir été
-      -- présentée au cabinet.
-      ('0c', 'valeur', 'les fonctions de la vente contrôlent l''accès par gere_les_ventes : les huit des factures, les onze de l''espace client (A1 à A6), et les quatre des devis dès leur migration', 'proprietaire', null,
+      -- présentée au cabinet. Alignée sur l'export le 13/11/2026 (217 migrations), chaque changement relu dans sa dernière
+      -- définition, sa première instruction le refus en 42501 : `facturer_acompte_devis`, l'acompte d'un devis (P5b,
+      -- `acomptes_des_devis`, redéfinie par `devis_citent_un_contact`) ; `numerotation_suivante`, qui porte désormais le
+      -- contrôle de `prochain_numero_facture`, réduite à l'appeler, et qu'aucun rôle n'exécute, comme elle (A9a,
+      -- `numerotation_continue`) ; `reprise_de_la_facture`, la reprise lue par l'accès « Ventes » (A8C-Q1,
+      -- `reprises_au_client`), security definer, search_path fixé, ni anon ni PUBLIC.
+      ('0c', 'valeur', 'les fonctions de la vente contrôlent l''accès par gere_les_ventes : les huit des factures (la numérotation par numerotation_suivante), les onze de l''espace client (A1 à A6), les cinq des devis et de leur acompte, et la reprise d''une facture', 'proprietaire', null,
         $q$select string_agg(p.proname, ',' order by p.proname) from pg_proc p
             where p.pronamespace = 'public'::regnamespace and p.prosrc ~ 'if not public\.gere_les_ventes\('
               and p.prosrc !~ 'if not admin_du_dossier\('$q$,
-        'OK', case when to_regclass('public.devis') is null
-          then 'abandonner_transmission,annuler_encaissement,declarer_adresse_reception,declarer_encaissement_hors_application,effacer_contact,enregistrer_article,enregistrer_contact,enregistrer_encaissement,enregistrer_facture,enregistrer_parametres_facturation,etat_facture_electronique,importer_contacts,prochain_numero_facture,reprendre_article,reprendre_contact,retirer_article,retirer_contact,retirer_encaissement,supprimer_brouillon_facture'
-          else 'abandonner_transmission,annuler_encaissement,decider_devis,declarer_adresse_reception,declarer_encaissement_hors_application,effacer_contact,enregistrer_article,enregistrer_contact,enregistrer_devis,enregistrer_encaissement,enregistrer_facture,enregistrer_parametres_facturation,etat_facture_electronique,facturer_devis,importer_contacts,prochain_numero_facture,reprendre_article,reprendre_contact,retirer_article,retirer_contact,retirer_encaissement,supprimer_brouillon_devis,supprimer_brouillon_facture' end, null),
+        'OK', 'abandonner_transmission,annuler_encaissement,decider_devis,declarer_adresse_reception,declarer_encaissement_hors_application,effacer_contact,enregistrer_article,enregistrer_contact,enregistrer_devis,enregistrer_encaissement,enregistrer_facture,enregistrer_parametres_facturation,etat_facture_electronique,facturer_acompte_devis,facturer_devis,importer_contacts,numerotation_suivante,reprendre_article,reprendre_contact,reprise_de_la_facture,retirer_article,retirer_contact,retirer_encaissement,supprimer_brouillon_devis,supprimer_brouillon_facture', null),
 
       -- ══ 1 à 6. Qui enregistre une facture ══════════
       ('1', 'controle', 'l''anonyme n''exécute pas enregistrer_facture', 'anon', null,
