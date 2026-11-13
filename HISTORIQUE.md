@@ -52521,3 +52521,20 @@ lecture lit `piece_citee_id`) ; le programme (R4) ajoute la séparation des exer
 l'inventaire mènent à l'onglet Inventaire, le drapeau levé. **Reste** : la carte de la Clôture (`carteDeLInventaire`, écrite
 en module, pas montée), les contrats du dossier permanent proposés dans l'onglet (`propositionsDuDossierPermanent`, écrite,
 pas montée), les tests du module et des trois points de la Vue d'ensemble, et INV7, INV8.
+
+### 13/11/2026 — LA CLÔTURE DE LA SESSION DU SOIR : CE QUI EST PARTI, CE QUI RESTE INACHEVÉ
+
+La session du soir a tourné sur l'environnement « Default » (réseau restreint, PostgreSQL 16 seul) : la réplique mère
+(PostgreSQL 17, ICU en-US) n'a pas pu être remontée, et rien ne s'y est éprouvé sur une base. Une session qui doit
+éprouver une migration se lance sur l'environnement au réseau ouvert, comme celles d'avant.
+
+- En production : `classes_des_categories` (PC7-Q2), l'entrée ci-dessus. Notion tenu (la ligne 23.45 créée pour la
+  relecture de sécurité, la ligne 47 « En cours », les trois barres recomptées).
+- Commités sur la branche de la session, hors de `main` : FEC22f (complet), le garde-fou de MVP-D9 (complet, pas
+  branché), MCB6-Q1 et Q2 et INV6, tous deux INACHEVÉS — arrêtés à la clôture, leur barrière locale verte, sans relecture
+  ni suite entière. La session suivante les relit, joue la suite ENTIÈRE, puis ouvre leur demande de fusion.
+- La relecture de sécurité des trois points du 13/11 est faite en lecture, sans rien écrire : ses constats et ses
+  corrections proposées restent hors du dépôt (public). Deux questions posées (SECU3-Q1, SECU3-Q2) ; deux migrations et
+  un bloc d'INAL5 restent à écrire, puis à éprouver sur une réplique, avant d'être présentés au cabinet.
+- Questions nouvelles : MVPD9-Q1, FEC22F-Q1, INV6-Q1, SECU3-Q1, SECU3-Q2.
+- Relevé par FEC22f, à corriger ou à poser : NatOp donne deux libellés de poste à la case AA de la 2035.
