@@ -9,7 +9,7 @@ import type { PlanComptable } from '../../lib/planComptable'
 import { lireLaChecklist } from '../../lib/checklistLecture'
 import { pointsDeLaChecklist, type DonneesDeLaChecklist } from '../../lib/pointsDeLaChecklist'
 import { controlesPourLaRevision, type ControleExistant } from '../../lib/controlesDeLaRevision'
-import { inventaireDesControles } from '../../lib/inventaireDesControles'
+import { inventaireDeLaRevision, inventaireDesControles } from '../../lib/inventaireDesControles'
 import {
   argumentsDeJustifierSolde, revisionDeLExercice, type CompteEnRevision, type ContexteDeJustification, type DecisionComposee,
   type DonneesDeLaRevision, type EtatDuSolde, type RevisionDeLExercice,
@@ -144,6 +144,9 @@ interface LectureDeLaRevision {
   // quand l'une des deux lectures n'est pas entière. Elle seule se tait alors : les relevés, la revue analytique ou les cycles
   // lus en partie ne la regardent pas.
   motifsDuPermanent: MotifDeLecture[]
+  // Le motif de la seule lecture de l'inventaire (ligne 35, INV6), quand elle n'est pas entière : la section ne rapproche alors
+  // pas ses contrats des régularisations (R7), et le dit.
+  inventaireIncomplet: string | null
 }
 
 // Le dossier permanent, lu EN ENTIER ; une lecture qui lève tombe du côté signalé — la section se tait et le dit.
@@ -284,6 +287,7 @@ async function lireLaRevision(dossierId: string, bascule: boolean, plan: PlanCom
     ventesIncompletes: checklist.ventesIncompletes,
     permanent,
     motifsDuPermanent,
+    inventaireIncomplet: checklist.inventaireIncomplet,
   }
 }
 
@@ -684,6 +688,8 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       annee={anneeChoisie}
       jour={aujourdHuiAParis()}
       dossierId={dossierId}
+      // L'inventaire (ligne 35, INV6, R7) : sans objet le drapeau baissé ou en trésorerie ; nul lu en partie — la section le dit.
+      inventaire={inventaireDeLaRevision(lecture.checklist.inventaire, lecture.inventaireIncomplet, modele.mode)}
       lecture={lecture.permanent}
       motifsDesSources={lecture.motifsDuPermanent}
       pieces={pieces}

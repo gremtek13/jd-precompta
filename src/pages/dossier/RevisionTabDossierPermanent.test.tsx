@@ -90,8 +90,20 @@ vi.mock('../../lib/supabase', async () => {
 vi.mock('../../lib/controlesReleves', () => ({ chargerControlesReleves: async () => [] }))
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: AUTEUR } }, estChef: false }) }))
+// L'INVENTAIRE (ligne 35, INV6, R7) : les drapeaux `INVENTAIRE_PREVU` et `INVENTAIRE_EXPORTE` joués par des accesseurs — ceux du
+// module tant qu'un cas ne les lève pas (l'état d'avant, éprouvé).
+const inventaireDuTest = vi.hoisted(() => ({ leve: undefined as undefined | boolean }))
+vi.mock('../../lib/inventaire', async (original) => {
+  const vrai = await original<typeof import('../../lib/inventaire')>()
+  return {
+    ...vrai,
+    get INVENTAIRE_PREVU() { return inventaireDuTest.leve ?? vrai.INVENTAIRE_PREVU },
+    get INVENTAIRE_EXPORTE() { return inventaireDuTest.leve ?? vrai.INVENTAIRE_EXPORTE },
+  }
+})
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const AUTRE_HASH = 'f'.repeat(64)
 
 function piece(o: Partial<Piece>): Piece {
@@ -169,13 +181,13 @@ function AutreContenu() {
   )
 }
 
-function rendre(o: { annee?: ValeurAnnee; exercices?: ExerciceValide[] } = {}) {
+function rendre(o: { annee?: ValeurAnnee; exercices?: ExerciceValide[]; modele?: ModeleComptable } = {}) {
   return render(
     <FournisseurPanneauDroit>
       <ExercicesValidesProvider exercices={o.exercices ?? [exerciceValide(2024)]} relire={async () => {}}>
         <AnneeProvider defaut={o.annee ?? 2025}>
           <RevisionTab
-            dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false}
+            dossierId={DOSSIER} modele={o.modele ?? TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false}
             onNavigate={() => {}}
           />
         </AnneeProvider>
@@ -208,6 +220,8 @@ function saisir(nature: string, titre: string, contenu: string) {
 }
 
 const bontonDeLaSaisie = () => bouton(volet(), /^(Consigner l’entrée|Enregistrer la nouvelle version)$/)
+
+afterEach(() => { inventaireDuTest.leve = undefined })
 
 beforeEach(() => {
   faux.tables = {}
@@ -1477,5 +1491,69 @@ describe('RevisionTab, dossier permanent — les garde-fous d’une nouvelle ver
       expect(confirmation).not.toHaveBeenCalled()
       expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
     })
+  })
+})
+
+// R7 (ligne 35, INV6 ; conception 35, § 5.5) : un bail ou un contrat en vigueur dont aucune régularisation de l'exercice ne reprend
+// le titre se dit, à titre d'information, sous l'exercice regardé — un dossier en engagement, l'inventaire offert. Aucun geste ni
+// montant (INV-Q12 ouverte). Drapeau baissé ou en trésorerie, la section d'hier ; l'inventaire lu en partie, elle le dit.
+describe('RevisionTab, dossier permanent — les contrats que l’inventaire ne reprend pas (R7, INV6)', () => {
+  const BAIL = entree({ id: idDEntree(11), nature: 'bail', titre: 'Bail du cabinet fictif', texte: null, valable_du: '2024-01-01' })
+  const ASSURANCE = entree({ id: idDEntree(12), nature: 'contrat', titre: 'Assurance fictive', texte: null, valable_du: '2024-01-01' })
+  const STATUTS = entree({ id: idDEntree(13), nature: 'statuts', titre: 'Statuts fictifs', texte: null, valable_du: '2024-01-01' })
+  const ECHU = entree({ id: idDEntree(14), nature: 'contrat', titre: 'Abonnement échu', texte: null, valable_du: '2022-01-01', valable_jusqu_au: '2024-12-31' })
+  const REPRISE = {
+    id: 'o1', dossier_id: DOSSIER, exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486000',
+    montant_centimes: 12000, tva_centimes: 0, objet: 'Assurance fictive', provision_id: null, reprise: false, piece_citee_id: null,
+  }
+  const poserLInventaire = () => {
+    dossier2025([BAIL, ASSURANCE, STATUTS, ECHU])
+    faux.tables.operations_inventaire = [REPRISE]
+    faux.tables.inventaires_declares = []
+    faux.tables.provisions = []
+  }
+  const bloc = () => within(section()).queryByLabelText('Pour l’inventaire 2025')
+
+  it('le drapeau baissé, rien ne se dit, et l’inventaire ne se lit pas (l’état d’avant, éprouvé)', async () => {
+    poserLInventaire()
+    rendre({ modele: ENGAGEMENT })
+    await attendreLaSection()
+    await within(section()).findByText('Bail du cabinet fictif')
+    expect(bloc()).toBeNull()
+    expect(faux.lectures.operations_inventaire).toBeUndefined()
+  })
+
+  it('le drapeau levé, en engagement : le bail en vigueur se dit, ni l’assurance reprise, ni les statuts, ni le contrat échu', async () => {
+    inventaireDuTest.leve = true
+    poserLInventaire()
+    rendre({ modele: ENGAGEMENT })
+    await attendreLaSection()
+    const zone = await within(section()).findByLabelText('Pour l’inventaire 2025')
+    expect(texte(zone)).toContain('Bail du cabinet fictif — bail')
+    expect(texte(zone)).not.toContain('Assurance fictive')
+    expect(texte(zone)).not.toContain('Statuts fictifs')
+    expect(texte(zone)).not.toContain('Abonnement échu')
+    expect(texte(zone)).toContain('rien ne s’écrit d’ici, et aucun montant ne se propose')
+    expect(within(zone).queryByRole('button')).toBeNull()
+  })
+
+  it('l’inventaire lu en partie : la section le dit et ne propose rien', async () => {
+    inventaireDuTest.leve = true
+    poserLInventaire()
+    faux.refusees.add('operations_inventaire')
+    rendre({ modele: ENGAGEMENT })
+    await attendreLaSection()
+    await within(section()).findByText(/L’inventaire du dossier n’est pas lu en entier/)
+    expect(bloc()).toBeNull()
+  })
+
+  it('en trésorerie, même levé, rien ne se dit', async () => {
+    inventaireDuTest.leve = true
+    poserLInventaire()
+    rendre({ modele: TRESORERIE })
+    await attendreLaSection()
+    await within(section()).findByText('Bail du cabinet fictif')
+    expect(bloc()).toBeNull()
+    expect(within(section()).queryByText(/n’est pas lu en entier/)).toBeNull()
   })
 })

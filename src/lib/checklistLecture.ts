@@ -38,6 +38,9 @@ export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'releve
   // Le motif des seules PIÈCES (validées et à valider) quand leur lecture n'est pas entière : la section « Dossier permanent » de la
   // révision ne dépend que d'elles, des documents et de ses entrées — une autre collection tronquée ne doit pas la taire.
   piecesIncompletes: string | null
+  // Le motif de la seule lecture de l'INVENTAIRE (ligne 35, INV6) quand elle n'est pas entière : la section « Dossier permanent »
+  // de la révision ne rapproche ses contrats de l'inventaire (R7) que sur lui — et le dit, sans se taire pour une autre collection.
+  inventaireIncomplet: string | null
   // Exercices que le cabinet a marqués clos : une lecture refusée laisse la liste VIDE, donc on continue de réclamer.
   clotureInconnue: string | null
   // Le motif des seuls SOLDES REPORTÉS quand leur lecture n'est pas entière (O33-Q3) : À PART de `lectureIncomplete`, car seul le
@@ -225,6 +228,7 @@ export async function lireLaChecklist(
       ?? (lectureInventaire.etat === 'incomplete' ? `l’inventaire du dossier : ${lectureInventaire.motif}` : null),
     // L'inventaire lu en entier, ou sans objet (le drapeau baissé, ou lu en partie : le motif est dit au-dessus).
     inventaire: lectureInventaire.etat === 'lu' ? lectureInventaire.inventaire : { etat: 'sans_objet' },
+    inventaireIncomplet: lectureInventaire.etat === 'incomplete' ? lectureInventaire.motif : null,
     piecesIncompletes: (() => {
       const partielle = [lectureValidees, lectureAValider].find((l) => !l.complete)
       return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'

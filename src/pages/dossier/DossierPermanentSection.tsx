@@ -14,6 +14,7 @@ import { LETTRES_DE_MISSION_PREVUES } from '../../lib/lettresDeMission'
 import { useMissionsDuClient } from '../../lib/lettresDeMissionLecture'
 import { parQui } from '../../lib/revueAnalytiqueEcran'
 import type { DocumentPourRevision } from '../../lib/revisionPreuves'
+import { contratsDuDossierPermanent, propositionsDuDossierPermanent, type InventaireDesControles } from '../../lib/inventaireDesControles'
 import type { EntreeDossierPermanent, Piece } from '../../lib/types'
 
 // LA SECTION « DOSSIER PERMANENT » DE L'ONGLET RÉVISION (ligne 41, étape R7, phase C ; conception, § 1.2, 3.3 et 3.7). Le
@@ -52,6 +53,11 @@ export interface PropsDossierPermanent {
   // Aujourd'hui à Paris (AAAA-MM-JJ), lu au RENDU par l'onglet.
   jour: string
   lecture: LectureDuDossierPermanent
+  // L'INVENTAIRE DU DOSSIER (ligne 35, INV6 ; conception 35, § 5.5, R7), sans défaut : sans objet le drapeau `INVENTAIRE_EXPORTE`
+  // baissé ou en trésorerie — la section d'hier —, nul quand sa lecture n'est pas entière, ou lu. Lu, un bail ou un contrat en
+  // vigueur dont aucune régularisation de l'exercice ne reprend le titre se dit, À TITRE D'INFORMATION : rien ne s'écrit d'ici,
+  // aucun montant ne se propose (INV-Q12, ouverte : la voie qui n'affirme et ne retient rien de plus).
+  inventaire: InventaireDesControles | null
   // Les lectures des pièces et des documents qui ne sont pas entières : vide, la section a tout lu.
   motifsDesSources: readonly MotifDeSource[]
   // Les pièces et les documents du dossier, lus en entier : de quoi nommer ce qu'une entrée cite et dire si son empreinte tient.
@@ -90,6 +96,10 @@ export default function DossierPermanentSection(p: PropsDossierPermanent) {
   const lettreDeduite = affichable ? phraseDeLaLettreDeduite(deduction, p.annee) : null
   const courantes = affichable ? entreesParNature(lues.entrees) : []
   const retirees = affichable ? entreesRetirees(lues.entrees) : []
+  // R7 : les contrats que l'inventaire de l'exercice regardé ne reprend pas. Rien sans exercice choisi, rien sans la section lue.
+  const propositions = !affichable || p.annee === null ? []
+    : p.inventaire === null ? null
+      : propositionsDuDossierPermanent(contratsDuDossierPermanent(lues.entrees), p.inventaire, p.annee)
 
   async function retirer(e: EntreeDuDossierPermanent) {
     const cite = e.courante.piece_id !== null || e.courante.document_id !== null
@@ -180,6 +190,27 @@ export default function DossierPermanentSection(p: PropsDossierPermanent) {
               <p className="muted" style={{ marginBottom: 0 }}>
                 La norme propose ces éléments au dossier permanent (il « peut contenir » …) ; elle ne les impose pas, et rien n’est
                 refusé faute de les consigner.
+              </p>
+            </div>
+          )}
+
+          {propositions === null && (
+            <p className="muted" style={{ marginTop: 12 }}>
+              L’inventaire du dossier n’est pas lu en entier : les baux et les contrats ne se rapprochent pas de ses régularisations.
+            </p>
+          )}
+          {propositions !== null && propositions.length > 0 && (
+            <div style={{ marginTop: 12 }} aria-label={`Pour l’inventaire ${p.annee}`}>
+              <h4 style={{ marginBottom: 4 }}>{`Pour l’inventaire ${p.annee}`}</h4>
+              <ul className="muted" style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 4 }}>
+                {propositions.map((x) => (
+                  <li key={x.contrat.id}>{`${x.contrat.titre} — ${LIBELLES_DES_NATURES[x.contrat.nature]}, ${validiteEnMots(x.contrat)}`}</li>
+                ))}
+              </ul>
+              <p className="muted" style={{ marginBottom: 0 }}>
+                {`En vigueur en ${p.annee}, et aucune régularisation de l’exercice n’a leur titre pour objet : une charge constatée `
+                  + 'd’avance est peut-être à examiner dans l’onglet Inventaire. Ce n’est qu’une information : rien ne s’écrit d’ici, '
+                  + 'et aucun montant ne se propose.'}
               </p>
             </div>
           )}
