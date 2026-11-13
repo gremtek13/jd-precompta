@@ -259,7 +259,7 @@ export default function DossiersList() {
       <RibsAConfirmer lecture={ribsAConfirmer} dossiersDuCabinet={designes} className="ribs-a-confirmer-tete" />
 
       {/* La copie des fichiers sur un support du cabinet (INAL6) : hors de la grille aussi, sous le drapeau de sa migration. */}
-      <CopieDesFichiers className="ribs-a-confirmer-tete" />
+      <CopieDesFichiers className="copie-des-fichiers-tete" />
 
       {erreurChargement && (
         <div className="card">
