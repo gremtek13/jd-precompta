@@ -15,11 +15,25 @@ import {
 // Justificatifs : les notes soumises et la suite, à approuver, refuser sous un motif que l'auteur LIT, déclarer remboursées.
 // Jamais une catégorie, un compte ni une écriture : la note d'un salarié au 421 vient après (B7-Q4).
 
-/** « Mes notes de frais » existe-t-il ? Avec la migration, et la case « Notes de frais » de la société affichée (relue ensuite
- *  à la base). */
-export function mesNotesDeFraisOuvertes(migrationEnBase: boolean, droitFrais: boolean): boolean {
-  return migrationEnBase && droitFrais
+/** « Mes notes de frais » existe-t-il ? Avec la migration, et la case « Notes de frais » OU « Achats » de la société affichée
+ *  (relues ensuite à la base). B8-Q1, tranchée par le cabinet le 12/11/2026 : le dirigeant qui n'a que « Achats » approuve,
+ *  refuse et rembourse les notes de ses salariés (MEG2-Q6 ; la base de B7 le lui permet déjà) ; la SAISIE d'une note reste à
+ *  « Notes de frais » (`saisieOuverte`). */
+export function mesNotesDeFraisOuvertes(migrationEnBase: boolean, droits: { frais: boolean; achats: boolean }): boolean {
+  return migrationEnBase && (droits.frais || droits.achats)
 }
+
+/** La saisie d'une note (« Nouvelle note », un brouillon à soi) : la case « Notes de frais » seule l'ouvre (B8-Q1). */
+export function saisieOuverte(droits: { frais: boolean }): boolean {
+  return droits.frais
+}
+
+/** Dit au dirigeant qui n'a que « Achats » : il décide des notes soumises, il n'en saisit pas. */
+export const SANS_LA_SAISIE = 'Ton accès « Achats » te fait approuver, refuser et rembourser les notes soumises à ta société ; '
+  + 'pour saisir une note à toi, demande la case « Notes de frais » à ton cabinet.'
+
+/** La liste vide du dirigeant « Achats » seul : la base ne lui rend que les notes SOUMISES par les autres. */
+export const AUCUNE_NOTE_A_DECIDER = 'Aucune note de frais ne t’a encore été soumise.'
 
 export const PRESENTATION_DE_MES_NOTES_DE_FRAIS = 'Les dépenses que tu as avancées pour ta société : saisis-les avec leur '
   + 'justificatif, puis soumets-les. Une note soumise ne se modifie plus ; elle est approuvée, puis son remboursement se déclare. '

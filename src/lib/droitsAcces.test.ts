@@ -252,9 +252,9 @@ describe('le module, la migration et les écrans disent la même chose', () => {
       '/mes-comptes ClientComptes', '/mes-documents ClientDocuments', '/mes-lettres-de-mission ClientLettresDeMission', '/mes-demandes ClientDemandes', '/mes-achats ClientAchats',
       '/mes-notes-de-frais ClientNotesDeFrais', '/mon-analyse ClientAnalyse', '/ma-tresorerie ClientTresorerie',
     ])
-    // DEPUIS L'ÉTAPE B8, « Mes notes de frais » lit la case « Notes de frais », derrière `NOTES_DE_FRAIS_PREVUES`
+    // DEPUIS L'ÉTAPE B8, « Mes notes de frais » lit la case « Notes de frais » — ou « Achats » (B8-Q1) —, derrière `NOTES_DE_FRAIS_PREVUES`
     // (lib/notesDeFraisVue.ts, `mesNotesDeFraisOuvertes`), sa route et son entrée ; l'écran relit ses cases à la base.
-    expect(app).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />')
+    expect(app).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId)) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />')
     // DEPUIS L'ÉTAPE B5, « Mes achats » lit la case « Achats », derrière `ACHATS_DU_CLIENT_PREVUS` (lib/achatsClientVue.ts,
     // `mesAchatsOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     expect(app).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats) && <Route path="/mes-achats" element={<ClientAchats />} />')
@@ -267,7 +267,7 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(coque).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
     expect(coque).toContain("const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)")
     expect(coque).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)')
-    expect(coque).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais)')
+    expect(coque).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId))')
     // DEPUIS L'ÉTAPE LM6, « Mes lettres de mission » lit la case « Documents », derrière `DRAPEAU_DES_LETTRES_DU_CLIENT`
     // (lib/lettresDuClient.ts, `lettresDuClientOuvertes`), sa route et son entrée ; l'écran ne lit que par la fonction de la base.
     expect(app).toContain('lettresDuClientOuvertes(lettresDuClientPrevues(), droitsSur(droitsParDossier ?? {}, dossierActifId).documents) && <Route path="/mes-lettres-de-mission" element={<ClientLettresDeMission />} />')

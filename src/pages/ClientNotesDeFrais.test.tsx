@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import ClientNotesDeFrais from './ClientNotesDeFrais'
 import { motsDuCabinet } from '../lib/espaceVentes'
 import { REFUS_DES_NOTES } from '../lib/notesDeFrais'
-import { SANS_LA_CASE_FRAIS, type NoteDeFrais, type PieceDeLAuteur } from '../lib/notesDeFraisVue'
+import { AUCUNE_NOTE_A_DECIDER, SANS_LA_CASE_FRAIS, SANS_LA_SAISIE, type NoteDeFrais, type PieceDeLAuteur } from '../lib/notesDeFraisVue'
 import type { MesNotesDeFraisLues } from '../lib/notesDeFraisLecture'
 
 // « Mes notes de frais » (étape B8), sous la case « Notes de frais » : la lecture est mockée ; la base, par `rpc` ; le drapeau
@@ -59,7 +59,7 @@ const piece = (p: Partial<PieceDeLAuteur>): PieceDeLAuteur => ({
 })
 const lue = <T,>(lignes: T[], complete = true) => ({ lignes, complete, motif: complete ? null : 'lecture interrompue' })
 const lecture = (notes: NoteDeFrais[], pieces: PieceDeLAuteur[] = [], achats = false, p: Partial<Extract<MesNotesDeFraisLues, { etat: 'lues' }>> = {}): MesNotesDeFraisLues => ({
-  dossierId: 'd1', etat: 'lues', achats, lesNotes: lue(notes), pieces: lue(pieces), ...p,
+  dossierId: 'd1', etat: 'lues', frais: true, achats, lesNotes: lue(notes), pieces: lue(pieces), ...p,
 })
 const carte = (nom: string) => screen.findByRole('listitem', { name: `Note « ${nom} »` })
 
@@ -207,6 +207,32 @@ describe('« Mes notes de frais »', () => {
     fireEvent.click(within(f).getByLabelText('Pour un salarié sans accès'))
     expect(within(f).getByLabelText('Nom du salarié')).toBeTruthy()
     expect(within(f).getByText(REFUS_DES_NOTES.nomDuSalarie)).toBeTruthy()
+    expect(motsDuCabinet(globalThis.document.body.textContent ?? '')).toEqual([])
+  })
+  it('B8-Q1 : avec « Achats » seul, les décisions sans la saisie — ni « Nouvelle note », ni son brouillon ; approuver une fois pour deux clics', async () => {
+    faux.lecture = lecture([], [], true, { frais: false })
+    const vide = render(<ClientNotesDeFrais />)
+    expect(await screen.findByText(AUCUNE_NOTE_A_DECIDER)).toBeTruthy()
+    expect(screen.getByText(SANS_LA_SAISIE)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Nouvelle note' })).toBeNull()
+    vide.unmount()
+    faux.lecture = lecture([
+      note({ id: 's1', auteur: 'u2', etat: 'soumise', soumise_le: '2026-11-03T10:00:00Z' }),
+      // Un brouillon à soi, d'avant la case retirée : ni modifiable, ni soumis, ni retiré d'ici.
+      note({ id: 'b1', auteur: 'u1', etat: 'brouillon', date_depense: '2026-11-01', nature: 'transport' }),
+    ], [piece({})], true, { frais: false })
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<ClientNotesDeFrais />)
+    const b = await carte('Transport du 01/11/2026')
+    for (const nom of ['Modifier', 'Soumettre', 'Retirer']) expect(within(b).queryByRole('button', { name: nom })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Nouvelle note' })).toBeNull()
+    const s = await carte('Repas du 02/11/2026')
+    const approuver = within(s).getByRole('button', { name: 'Approuver' })
+    act(() => { fireEvent.click(approuver); fireEvent.click(approuver) })
+    expect(confirmer).toHaveBeenCalledTimes(1)
+    expect(faux.appels).toEqual([{ nom: 'approuver_note_de_frais', args: { p_note_id: 's1', p_version_lue: 3 } }])
+    await act(async () => { faux.retenir.forEach((r) => r()) })
+    expect(await screen.findByText('La note est approuvée.')).toBeTruthy()
     expect(motsDuCabinet(globalThis.document.body.textContent ?? '')).toEqual([])
   })
 })

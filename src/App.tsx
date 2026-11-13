@@ -196,8 +196,8 @@ function Gate() {
             {mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />}
             {/* « Mes achats » (ligne 51.5, étape B5) : avec sa migration (B4), et la case « Achats » sur la société AFFICHÉE. */}
             {mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats) && <Route path="/mes-achats" element={<ClientAchats />} />}
-            {/* « Mes notes de frais » (ligne 51.5, étape B8) : avec sa migration (B7), et la case « Notes de frais » sur la société AFFICHÉE. */}
-            {mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />}
+            {/* « Mes notes de frais » (ligne 51.5, étape B8) : avec sa migration (B7), et la case « Notes de frais » ou « Achats » (B8-Q1) sur la société AFFICHÉE. */}
+            {mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId)) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />}
             {monAnalyseOuverte(mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes), maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}
             {/* « Ma trésorerie » (ligne 51.5, étape C8) : derrière son drapeau, quand « Ma banque » s'offre sur la société AFFICHÉE. */}
             {maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/ma-tresorerie" element={<ClientTresorerie />} />}

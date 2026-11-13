@@ -24,13 +24,14 @@ function duDossier<T extends { dossier_id: string }>(lecture: LectureComplete<T>
 // « MES NOTES DE FRAIS » : LA CASE SE LIT DEUX FOIS — à la connexion (AuthContext), pour la route et l'entrée ; puis à la BASE,
 // dans la même vague que les notes (`droits_sur_le_dossier`) : une case retirée entre-temps rendrait les notes VIDES, sans
 // erreur, et l'écran dirait « aucune note » d'un dossier qui en a. La case « Achats » se relit de même : elle ouvre la saisie
-// pour un salarié et les décisions. Les notes, la base les filtre (les siennes ; avec « Achats », celles des autres dès leur
-// soumission) ; les pièces, celles que le compte a déposées — les seules qu'une note cite.
+// pour un salarié et les décisions — et, seule, l'écran des décisions (B8-Q1) : sans l'une ni l'autre, `sans_frais`. Les
+// notes, la base les filtre (les siennes ; avec « Achats », celles des autres dès leur soumission) ; les pièces, celles que
+// le compte a déposées — les seules qu'une note cite.
 export type MesNotesDeFraisLues =
   | { dossierId: string; etat: 'echec'; motif: string }
   | { dossierId: string; etat: 'sans_frais' }
   | {
-    dossierId: string; etat: 'lues'; achats: boolean
+    dossierId: string; etat: 'lues'; frais: boolean; achats: boolean
     lesNotes: LectureComplete<NoteDeFrais>; pieces: LectureComplete<PieceDeLAuteur>
   }
 
@@ -55,9 +56,11 @@ export async function lireMesNotesDeFrais(dossierId: string, moi: string): Promi
       return { dossierId, etat: 'echec', motif: 'ton accès à tes notes de frais n’a pas pu être vérifié (droits illisibles)' }
     }
     const lus = data as Record<string, unknown>
-    if (lus.frais !== true) return { dossierId, etat: 'sans_frais' }
+    const frais = lus.frais === true
+    const achats = lus.achats === true
+    if (!frais && !achats) return { dossierId, etat: 'sans_frais' }
     return {
-      dossierId, etat: 'lues', achats: lus.achats === true,
+      dossierId, etat: 'lues', frais, achats,
       lesNotes: lesNotes.complete ? duDossier(lesNotes, dossierId) : lesNotes,
       pieces: pieces.complete ? duDossier(pieces, dossierId) : pieces,
     }
