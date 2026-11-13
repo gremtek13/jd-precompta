@@ -304,7 +304,12 @@ describe('PC7Q2-Q1 : la classe du compte d’une catégorie commune, en base', (
   })
 
   it('elle suit PC7-Q2 : sa version vient après la sienne, et après la dernière préparée du 12/11/2026', () => {
-    expect(versionDe('classes_des_categories_communes') > versionDe('classes_des_categories')).toBe(true)
+    // PC7-Q2 en production (13/11/2026, version 20261113182305, donnée par l'outil) : la version d'un fichier préparé « par
+    // l'outil » n'est qu'un rang d'attente, l'outil donnera la sienne, postérieure, le jour de l'application. L'ordre des
+    // deux noms de fichier ne se compare donc que tant que les deux migrations sont du même côté.
+    const memeCote = (versionExportee('classes_des_categories_communes') !== undefined) === (versionExportee('classes_des_categories') !== undefined)
+    if (memeCote) expect(versionDe('classes_des_categories_communes') > versionDe('classes_des_categories')).toBe(true)
+    else expect(versionExportee('classes_des_categories')).toBeDefined()
     expect(versionDe('classes_des_categories_communes') > '20261112235100').toBe(true)
   })
 

@@ -52449,3 +52449,20 @@ le bloc RT de `rls.sql` (RT1, le relevé, qui part de tout, plancher 100 ; RT2 �
 139/139 avant (RT EN ATTENTE), 246/0 et 144/144 après, de même avec la porte d'accès dans les deux ordres ; la restauration, la suppression
 d'un dossier, le dossier du cabinet, les fiches liées, les missions, le départ d'un client (INAL5 avant ou après) et la porte d'accès : mêmes
 verdicts ; les retours, dans les deux ordres, rendent la signature de l'export ; banc du leurre SÛR. **Reste** : RATT-Q1, l'accord du cabinet.
+
+### 13/11/2026 — PC7-Q2 EN PRODUCTION : LA CLASSE DU COMPTE D'UNE CATÉGORIE DU DOSSIER, ET LA REPRISE DE LA SESSION
+
+Reprise dans un conteneur neuf (la session, sans agent). **La page des arbitrages** relue (version publiée, 734 questions) et la
+collection `reponses` relue en entier : 628 réponses, aucune depuis le 13/11 à 13 h 28 — les six du 13/11 sont déjà consignées.
+Supabase et Notion répondent de nouveau. **`classes_des_categories`** (PC7-Q2, accordée « par l'outil », PC7Q2-migration) : en
+production avant, des SELECT — 217 migrations, `edea63cd…`, égales à l'export ; dix catégories, aucune propre ni commune hors des
+classes 6 et 7 ; appliquée par l'outil, version `20261113182305`, le texte d'historique égal au fichier (`2c1080a6…`), le corps de
+la garde `dadd05a4…`, celui que la réplique a éprouvé le 12/11 et que la garde de tête de PC7Q2-Q1 attend. Le fichier passe de
+`supabase/preparees/` à l'export sous sa version, texte inchangé ; son retour reste préparé, son en-tête au nouveau chemin ;
+`CLASSES_DES_CATEGORIES_PREVUES` levé (la carte « Comptes manquants » dit le refus avant le clic ; l'état d'avant reste joué par
+l'accesseur d'`EcrituresTab.test.tsx`). Le test d'ordre des deux migrations ne compare plus deux noms de fichier dont l'un est
+dans l'export : la version d'une préparée « par l'outil » n'est qu'un rang d'attente. **Contrôles**, production et dépôt égaux :
+dérive 218 `2b57ccdb…`, socle 83 `d02e468d…`, inventaire 3 095 `d18a46cf…` (une fonction remplacée : aucun objet de plus).
+`categoriesDuDossier.sql` n'a pas été rejoué en production ce jour-là (27 Ko à transcrire par l'outil) : le corps en base est, à
+l'empreinte, celui que l'essai a jugé sur la réplique (34 sur 34, quinze mutations). **La réplique mère** n'existe plus (conteneur
+neuf) et ce conteneur ne porte que PostgreSQL 16 : sa remontée en 17 attend une source de binaires que l'environnement autorise.
