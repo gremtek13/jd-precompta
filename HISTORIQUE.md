@@ -52538,3 +52538,21 @@ La session du soir a tourné sur l'environnement « Default » (réseau restrein
   un bloc d'INAL5 restent à écrire, puis à éprouver sur une réplique, avant d'être présentés au cabinet.
 - Questions nouvelles : MVPD9-Q1, FEC22F-Q1, INV6-Q1, SECU3-Q1, SECU3-Q2.
 - Relevé par FEC22f, à corriger ou à poser : NatOp donne deux libellés de poste à la case AA de la 2035.
+
+### 13/11/2026 — MCB6-Q1 ET MCB6-Q2 : RETIRER UN COMPTE, ET LE COMPTE PROPRE HORS D'UN EXERCICE VALIDÉ
+
+(Agent architecte, relecture et fin du lot 22b5347, derrière `COMPTES_BANCAIRES_PREVUS` baissé ; aucune migration.) Sur les
+réponses (A) et (A) du 11/11/2026. **MCB6-Q1** : la carte « Comptes bancaires » offre « Retirer » au seul compte que la base
+laisserait partir — ni mouvement ni relevé (la garde, à ses mots), aucune écriture d'ouverture éclatée qui le cite (la clé de
+MCB5g, dite aux mots de l'application), jamais le principal d'un dossier qui tient un autre compte (la contrainte différée, à
+ses mots) — ; sinon la raison se dit sous sa ligne. Aucune fonction ne porte ce geste : une suppression directe sous la
+policy du cabinet, qui lit la ligne rendue (une suppression qui ne touche rien n'est pas un retrait), sous le verrou de la
+carte, après une confirmation qui nomme le compte, ce qui disparaît et le 512 qui redevient libre, puis relue. **MCB6-Q2** :
+la date d'un 512 propre ne se pose ni sur un exercice validé ni avant lui ; la saisie neuve part de l'année qui suit le
+dernier validé ; des exercices validés lus en partie retiennent la date seule (côté fermé) ; une date déjà posée se garde.
+La base ne le refuse pas (aucune garde des comptes ne lit `exercices_valides`) : règle de l'application, filet posé au
+cabinet (MCB6Q2-Q1). La relecture n'a trouvé aucun défaut ; elle a ajouté la preuve que la base n'oppose rien d'autre : les
+DERNIÈRES définitions des deux gardes (aucune préparée ne les redéfinit) et un scanner de TOUTES les clés étrangères vers
+`comptes_bancaires`, export et préparées, qui n'en admet que les trois que l'usage compte, sans cascade (une clé plantée le
+fait tomber). Neuf mutations sur neuf mordent (refus retirés, condition inversée, verrou, erreur avalée, drapeau, relecture,
+confirmation, exercices partiels crus, année validée exclue).
