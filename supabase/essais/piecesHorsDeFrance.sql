@@ -404,7 +404,10 @@ begin
     array['controle', '124. une pièce qui a une fiche ne change pas de dossier', 'postgres', $q$update pieces set dossier_id = '{A}' where id = '{P1}'$q$,
       '23514', 'Cette pièce a une fiche « hors de France » : elle ne change plus de dossier.'],
     array['controle', '124b. une pièce sans fiche, si', 'postgres', $q$update pieces set dossier_id = '{A}' where id = '{P5}'$q$, 'OK', ''],
-    array['controle', '124c. une écriture de la pièce qui reprend son dossier sans le changer passe', 'postgres', $q$update pieces set dossier_id = dossier_id, notes = 'essai' where id = '{P1}'$q$, 'OK', ''],
+    -- 124c écrivait `notes`, colonne retirée par P0 (`anciennes_notes_supprimees`, 06/11/2026 : les notes vivent dans
+    -- `notes_internes`) ; l'intention n'est pas une note, mais une écriture ordinaire de la pièce qui nomme son dossier
+    -- sans le changer : elle écrit désormais le fournisseur (13/11/2026).
+    array['controle', '124c. une écriture de la pièce qui reprend son dossier sans le changer passe', 'postgres', $q$update pieces set dossier_id = dossier_id, tiers = 'ESSAI E2' where id = '{P1}'$q$, 'OK', ''],
     array['controle', '125. le numéro suit G1.05, sans la fonction', 'postgres', $q$insert into pieces_hors_de_france (dossier_id, piece_id, numero, date_facture, type_document, devise, pays, schema_identifiant, identifiant, nature, autoliquidation) values ('{T}', '{P9}', 'INV.9', '2026-03-18', '380', 'EUR', 'DE', '0223', 'DE123456789', 'services', true)$q$,
       '23514', '%"pieces_hors_de_france_numero"'],
     array['controle', '126. jamais la France, sans la fonction', 'postgres', $q$insert into pieces_hors_de_france (dossier_id, piece_id, numero, date_facture, type_document, devise, pays, schema_identifiant, identifiant, nature, autoliquidation) values ('{T}', '{P9}', 'INV-9', '2026-03-18', '380', 'EUR', 'FR', '0223', 'FR12345678901', 'services', true)$q$,

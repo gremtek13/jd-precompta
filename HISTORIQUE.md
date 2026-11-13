@@ -52328,3 +52328,6 @@ lit pas ; C12B-Q1 pose celui-ci et rien ne le réécrit : munie de ce seul comme
 **`recompositionDesVentes.sql`, périmé depuis MCB1** : son semis suspend les déclencheurs, donc la pose du compte ; chaque
 dossier reçoit son principal avant lui ; les nombres du 25/10 reviennent, et `compte_de_banque_du_mouvement` muté fait
 tomber le 5. Pour un BNC à un seul compte : rien d'atteignable, aucune migration à préparer.
+**Suite** : `piecesHorsDeFrance.sql` 124c écrit le fournisseur, non plus `notes` (retirée par P0 : ce n'était pas une note) ;
+`ventesClient.sql` 0c suit l'export (+ `facturer_acompte_devis`, P5b ; `numerotation_suivante`, A9a, au lieu de
+`prochain_numero_facture` ; + `reprise_de_la_facture`, A8C-Q1) ; 0 en faute, une mutation mord chacun, banc du leurre SÛR.
