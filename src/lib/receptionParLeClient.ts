@@ -1,3 +1,4 @@
+import { dateAParis, formatDate } from './format'
 import type { FluxVu, ReponsePlateforme } from './receptionPlateforme'
 
 // « RELEVER MA PLATEFORME » : LA RÉCEPTION DES FACTURES D'ACHAT PAR L'ACCÈS « ACHATS » (espace client, ligne 51.5, étape B4r ;
@@ -55,7 +56,8 @@ export interface BilanDeLaReleve {
   enAttente: number
   rejetees: number
   ecartees: number
-  /** Une phrase par facture qui n'a pas pu être reçue cette fois : elle reviendra à la relève suivante. */
+  /** Une phrase par facture qui n'a pas pu être reçue cette fois, sous sa date de réception et jamais son nom (B4RS-Q2) :
+   *  elle reviendra à la relève suivante. */
   echecs: string[]
   /** Pourquoi la relève s'est arrêtée avant la fin (une liste refusée, la connexion changée, l'accès refusé). */
   interruption: string | null
@@ -83,6 +85,17 @@ export function refusDitAuClient(erreur: string, raison: string | null): string 
   }
   if (erreur === 'Dossier introuvable.') return 'Ta case « Achats » ne t’ouvre pas la relève de ta plateforme : parles-en à ton cabinet.'
   return `Ta plateforme n’a pas pu être relevée : ${erreur}`
+}
+
+/**
+ * Une facture de la liste, dite au client : « Facture reçue le JJ/MM/AAAA » (le jour de Paris de sa réception chez la
+ * plateforme), JAMAIS son nom. B4RS-Q2, tranchée par le cabinet le 12/11/2026 (« Taire le nom ») : la liste vient de la
+ * plateforme AVANT que le serveur ait vérifié l'acheteur, et son nom est souvent celui du fichier ; une identité de
+ * plateforme partagée par plusieurs entreprises et mal réglée y montrerait les fichiers d'un autre client du cabinet.
+ */
+export function factureDiteAuClient(flux: Pick<FluxVu, 'recu_le'>): string {
+  if (flux.recu_le === null || Number.isNaN(Date.parse(flux.recu_le))) return 'Facture sans date de réception'
+  return `Facture reçue le ${formatDate(dateAParis(flux.recu_le))}`
 }
 
 /** La réponse du serveur est-elle celle de la facture demandée, chez la plateforme qui l'a listée ? */
@@ -129,11 +142,11 @@ export async function releverMaPlateforme(
         }
         if (r.drapeaux.raison === 'en_attente') bilan.enAttente++
         else if (r.drapeaux.raison === 'en_erreur') bilan.rejetees++
-        else bilan.echecs.push(`« ${flux.nom ?? 'Facture sans nom'} » : ${r.erreur}`)
+        else bilan.echecs.push(`${factureDiteAuClient(flux)} : ${r.erreur}`)
         continue
       }
       if (!reponseDeLaFacture(r.donnees, hote, flux)) {
-        bilan.echecs.push(`« ${flux.nom ?? 'Facture sans nom'} » : la réponse ne correspond pas à la facture demandée.`)
+        bilan.echecs.push(`${factureDiteAuClient(flux)} : la réponse ne correspond pas à la facture demandée.`)
         continue
       }
       const issue = r.donnees.issue

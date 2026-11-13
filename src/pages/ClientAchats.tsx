@@ -206,6 +206,12 @@ export default function ClientAchats() {
             <div role="status">
               {releveDuDossier.bilan.interruption !== null && <p className="error-text">{releveDuDossier.bilan.interruption}</p>}
               {phrasesDuBilan(releveDuDossier.bilan).map((phrase) => <p key={phrase} style={{ margin: '4px 0' }}>{phrase}</p>)}
+              {/* Chaque facture restée, sous sa date de réception, jamais son nom (B4RS-Q2, lib/receptionParLeClient.ts). */}
+              {releveDuDossier.bilan.echecs.length > 0 && (
+                <ul aria-label="Factures non reçues cette fois" style={{ margin: '4px 0' }}>
+                  {releveDuDossier.bilan.echecs.map((echec, i) => <li key={`${i}-${echec}`}>{echec}</li>)}
+                </ul>
+              )}
             </div>
           )}
         </section>

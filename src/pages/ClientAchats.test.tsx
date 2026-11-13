@@ -5,6 +5,7 @@ import { motsDuCabinet } from '../lib/espaceVentes'
 import { REFUS_DES_ACHATS, type PaiementDeclare } from '../lib/achatsClient'
 import { SANS_LA_CASE_ACHATS, type AchatDuClient } from '../lib/achatsClientVue'
 import type { MesAchatsLus } from '../lib/achatsClientLecture'
+import type { AppelsDeLaReleve } from '../lib/receptionParLeClient'
 
 // « Mes achats » (étape B5), sous la case « Achats » : la lecture est mockée ; la base, par `rpc`. L'écran garde : rien avant
 // le retour ; aucune facture sur une lecture partielle ; la case retirée en base ; le vide d'une liste entière seulement ; les
@@ -18,6 +19,8 @@ const faux = vi.hoisted(() => ({
   appels: [] as { nom: string; args: Record<string, unknown> }[],
   retenir: [] as (() => void)[],
   erreur: null as unknown,
+  // « Relever ma plateforme » (B4r) : les appels que l'écran reçoit ; nuls, la relève n'est pas jouée.
+  releve: null as AppelsDeLaReleve | null,
 }))
 
 vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ dossierActifId: 'd1', session: { user: { id: 'u1' } } }) }))
@@ -29,13 +32,19 @@ vi.mock('../lib/supabase', () => ({
     },
   },
 }))
+vi.mock('../lib/receptionPlateforme', () => ({
+  appelsDeLaReleveDuClient: () => {
+    if (!faux.releve) throw new Error('relève non attendue dans ce test')
+    return faux.releve
+  },
+}))
 vi.mock('../lib/achatsClientLecture', () => ({
   lireMesAchats: () => { faux.lectures++; return faux.lecture ? Promise.resolve(faux.lecture) : new Promise(() => {}) },
 }))
 
 beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-11T10:00:00Z')) })
 afterAll(() => { vi.useRealTimers() })
-afterEach(() => { faux.lecture = null; faux.lectures = 0; faux.appels = []; faux.retenir = []; faux.erreur = null; vi.restoreAllMocks() })
+afterEach(() => { faux.lecture = null; faux.lectures = 0; faux.appels = []; faux.retenir = []; faux.erreur = null; faux.releve = null; vi.restoreAllMocks() })
 
 const piece = (p: Partial<AchatDuClient>): AchatDuClient => ({
   id: 'p1', dossier_id: 'd1', type_piece: 'achat', source: 'upload', nom_fichier: 'facture-octobre.pdf', tiers: 'Fournisseur fictif',
@@ -152,5 +161,25 @@ describe('« Mes achats »', () => {
     expect(confirmer).toHaveBeenCalledTimes(1)
     expect(confirmer.mock.calls[0][0]).toContain('« facture-octobre.pdf »')
     expect(faux.appels).toEqual([{ nom: 'retirer_paiement_declare', args: { p_paiement_id: 'x1' } }])
+  })
+
+  it('B4RS-Q2 : une facture que la relève n’a pas reçue se dit sous sa date de réception, jamais sous son nom', async () => {
+    const sansErreur = { definitif: false, raison: null, perimee: false, acces_refuse: false, identifiants_refuses: false }
+    faux.releve = {
+      lister: async () => ({ erreur: null, drapeaux: sansErreur, donnees: {
+        hote: 'pa.exemple.fr', version: 'v1', depuis: null, complete: true, motif: null, jusqua: null,
+        ecartes: { illisible: 0, format: 0, statut_inconnu: 0, doublons: 0 },
+        flux: [{ id: 'f1', sens: 'achat', syntaxe: 'CII', direction: 'In', nom: 'Client-Voisin-Facture.xml',
+          recu_le: '2026-11-03T09:00:00.000Z', mis_a_jour: '2026-11-03T09:00:00.000Z', etat: 'pret', deja_recue: false }],
+      } }),
+      recevoir: async () => ({ erreur: 'La plateforme ne répond pas.', drapeaux: sansErreur, donnees: null }),
+    }
+    faux.lecture = lecture([])
+    render(<ClientAchats />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Relever ma plateforme' }))
+    const liste = await screen.findByRole('list', { name: 'Factures non reçues cette fois' })
+    expect(within(liste).getByText('Facture reçue le 03/11/2026 : La plateforme ne répond pas.')).toBeTruthy()
+    expect(globalThis.document.body.textContent).not.toContain('Client-Voisin')
+    expect(motsDuCabinet(globalThis.document.body.textContent ?? '')).toEqual([])
   })
 })
