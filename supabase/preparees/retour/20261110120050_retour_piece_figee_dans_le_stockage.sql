@@ -41,16 +41,27 @@ drop index public.pieces_storage_path_idx;
 drop index public.pieces_lisible_path_idx;
 drop index public.documents_divers_storage_path_idx;
 
--- La garde de fin : la surface de suppression de storage.objects est celle d'hier, à l'empreinte de chaque prédicat.
+-- La garde de fin : la surface de suppression de storage.objects est celle d'hier, à l'empreinte de chaque prédicat. Deux
+-- de ses policies ont changé depuis INAL1 sans que ce retour les rende, et chacune s'admet dans ses deux états (relevé du
+-- 13/11/2026 sur la réplique) : la suppression par le chef du seau des ventes, `f4be98cf…` avant
+-- `originaux_retenus_par_leur_import` (A8D2A-Q1, en production depuis le 12/11/2026), `d0d6134d…` depuis ; la
+-- suppression des packs, `packs_storage_all` (pour tout) avant `stockage_sans_mise_a_jour` (SECU3-Q1, préparée),
+-- `packs_storage_suppression` (suppression) après, au même prédicat (`a8ac8b3e…`).
 do $fin$
 declare
   v_chemin constant text := current_setting('search_path');
+  v_surface text;
 begin
   perform set_config('search_path', '', true);
-  if (select string_agg(p.polname || ':' || p.polcmd::text || ':' || md5(coalesce(pg_get_expr(p.polqual, p.polrelid), '')),
-                        ',' order by p.polname collate "C")
-        from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polcmd in ('d', '*') and p.polpermissive)
-     is distinct from 'cabinet_logos_suppression_chef:d:fc46cee26a76edcb9a6f03a0d3cd7b1e,packs_storage_all:*:a8ac8b3ed86beb70e800f88abb083b3b,pieces_storage_delete:d:b5d0298fe469d6ccb5b73a7520156ec3,ventes_suppression_par_le_chef:d:f4be98cf500b3037eba40f0f8e3ea94c'
+  select string_agg(p.polname || ':' || p.polcmd::text || ':' || md5(coalesce(pg_get_expr(p.polqual, p.polrelid), '')),
+                    ',' order by p.polname collate "C") into v_surface
+    from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polcmd in ('d', '*') and p.polpermissive;
+  if v_surface is null
+     or v_surface not in (
+          'cabinet_logos_suppression_chef:d:fc46cee26a76edcb9a6f03a0d3cd7b1e,packs_storage_all:*:a8ac8b3ed86beb70e800f88abb083b3b,pieces_storage_delete:d:b5d0298fe469d6ccb5b73a7520156ec3,ventes_suppression_par_le_chef:d:f4be98cf500b3037eba40f0f8e3ea94c',
+          'cabinet_logos_suppression_chef:d:fc46cee26a76edcb9a6f03a0d3cd7b1e,packs_storage_all:*:a8ac8b3ed86beb70e800f88abb083b3b,pieces_storage_delete:d:b5d0298fe469d6ccb5b73a7520156ec3,ventes_suppression_par_le_chef:d:d0d6134d6d7bbcfb8ab50b6ea50d44c9',
+          'cabinet_logos_suppression_chef:d:fc46cee26a76edcb9a6f03a0d3cd7b1e,packs_storage_suppression:d:a8ac8b3ed86beb70e800f88abb083b3b,pieces_storage_delete:d:b5d0298fe469d6ccb5b73a7520156ec3,ventes_suppression_par_le_chef:d:f4be98cf500b3037eba40f0f8e3ea94c',
+          'cabinet_logos_suppression_chef:d:fc46cee26a76edcb9a6f03a0d3cd7b1e,packs_storage_suppression:d:a8ac8b3ed86beb70e800f88abb083b3b,pieces_storage_delete:d:b5d0298fe469d6ccb5b73a7520156ec3,ventes_suppression_par_le_chef:d:d0d6134d6d7bbcfb8ab50b6ea50d44c9')
      or not exists (select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass
                      and p.polname = 'pieces_storage_delete' and p.polroles = array[0]::oid[]) then
     raise exception 'Garde de fin : les policies de suppression de storage.objects ne sont pas celles d''hier.';

@@ -174,6 +174,10 @@
 --      chemin d'un objet du stockage — et exige que la mise à jour la juge sur sa nouvelle valeur, la laisse hors de
 --      portée, ou la garde par un déclencheur nommé ; RT2 à RT4 jouent la règle profil par profil, ce que l'application
 --      fait encore, et le catalogue de la garde. Cinq mutations ; avant la migration, une ligne « EN ATTENTE ».
+--  12. Aucun seau n'ouvre la mise à jour d'un objet (bloc SM, en fin de fichier ; migration `stockage_sans_mise_a_jour`,
+--      SECU3-Q1, préparée) : aucune policy permissive de mise à jour, ni « pour tout », sur storage.objects ; personne ne
+--      réécrit ni ne déplace un pack ou un logo ; la lecture, le dépôt et le prédicat de suppression comme avant. Trois
+--      mutations ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -10812,6 +10816,222 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $rt$;
+
+-- ══ SM. Aucun seau n'ouvre la mise à jour d'un objet (relecture de sécurité du 13/11/2026, SECU3-Q1 ; migration
+--    `stockage_sans_mise_a_jour`, PRÉPARÉE) ═══════════════════════════════════════════════════════════════════════════
+-- Un fichier déposé ne se réécrit, ne s'écrase ni ne se déplace : aucune policy permissive de storage.objects n'ouvre la
+-- mise à jour, ni « pour tout ». Les packs se lisent, se déposent et se retirent sous trois policies, à authenticated
+-- seul, au prédicat d'hier ; les logos sous les leurs, comme avant.
+--   SM1. Le catalogue, lu sous un chemin vide : aucune policy permissive de mise à jour ni « pour tout » ; les trois
+--        policies des packs et les trois des logos, mot pour mot.
+--   SM2. La mise à jour d'un pack et d'un logo d'essai (leur contenu et leur nom) : l'anonyme, un compte rattaché à rien,
+--        le client, le membre de l'équipe affecté au dossier, le chef du cabinet (super-administrateur) — aucune ligne.
+--   SM3. Comme avant (contrôles POSITIFS) : le membre affecté et le chef lisent le pack, le client et un compte rattaché
+--        à rien non ; le membre affecté dépose un pack, le client non (42501) ; le chef dépose un logo, le membre non ;
+--        l'anonyme lit le logo ; le prédicat de suppression de chaque seau, jugé sans supprimer (S5) : le pack au membre
+--        affecté et au chef, le logo au chef, rien au client ni à un compte rattaché à rien.
+-- Trois mutations, qui doivent mordre : M-SM1 (la policy « pour tout » des packs remise : le membre affecté touche le
+-- pack), M-SM2 (la policy de mise à jour des logos remise : le chef touche le logo), M-SM3 (SM1 rejoué avec une policy
+-- de mise à jour plantée : il la nomme). Le jeu : un dossier jetable du cabinet du chef, affecté au membre, un pack sous
+-- lui et un logo sous le cabinet, dans une sous-transaction annulée. Avant la migration, une ligne dit que le bloc attend.
+do $sm$
+declare
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  inconnu uuid := gen_random_uuid();
+  jetable uuid := '5e130000-0000-4000-8113-0000000000a1';
+  chemin_avant text := current_setting('search_path');
+  packs constant text := '((bucket_id = ''packs''::text) AND public.admin_du_dossier(((storage.foldername(name))[1])::uuid))';
+  logos constant text := '((bucket_id = ''cabinet-logos''::text) AND public.est_chef_du_cabinet(((storage.foldername(name))[1])::uuid))';
+  q_ouvertes constant text := $q$select string_agg(p.polname, ',' order by p.polname collate "C") from pg_policy p
+     where p.polrelid = 'storage.objects'::regclass and p.polpermissive and p.polcmd in ('w', '*')$q$;
+  q_familles constant text := $q$select string_agg(p.polname || ':' || p.polcmd::text || ':' || p.polroles::regrole[]::text || ':'
+       || coalesce(pg_get_expr(p.polqual, p.polrelid), '-') || ':' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '-'),
+       ' ; ' order by p.polname collate "C")
+     from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polpermissive
+      and (left(p.polname, 6) = 'packs_' or left(p.polname, 14) = 'cabinet_logos_')$q$;
+  cabinet uuid; chemin_pack text; chemin_logo text; attendu text;
+  ouvertes text; familles text; profil text; sub uuid; touchees bigint; n bigint; obs text; accepte boolean; motif text;
+  pred_pack text; pred_logo text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if exists (select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname = 'packs_storage_all') then
+    insert into rls_verdict values ('SM. aucun seau n''ouvre la mise à jour d''un objet : EN ATTENTE de la migration stockage_sans_mise_a_jour',
+      'storage.objects', 'la policy « pour tout » des packs est là : la règle se juge dès que la migration y est', true);
+    return;
+  end if;
+  select ca.cabinet_id into cabinet from cabinet_admins ca where ca.user_id = chef and ca.role = 'comptable_en_chef'
+   order by ca.cabinet_id limit 1;
+  chemin_pack := jetable::text || '/essai-rls-sm/Recap.xlsx';
+  chemin_logo := cabinet::text || '/logo-essai-rls-sm.png';
+  attendu := 'cabinet_logos_ecriture_chef:a:{-}:-:' || logos
+    || ' ; cabinet_logos_lecture_publique:r:{-}:(bucket_id = ''cabinet-logos''::text):-'
+    || ' ; cabinet_logos_suppression_chef:d:{-}:' || logos || ':-'
+    || ' ; packs_storage_depot:a:{authenticated}:-:' || packs
+    || ' ; packs_storage_lecture:r:{authenticated}:' || packs || ':-'
+    || ' ; packs_storage_suppression:d:{authenticated}:' || packs || ':-';
+
+  -- SM1 : le catalogue.
+  perform set_config('search_path', '', true);
+  execute q_ouvertes into ouvertes;
+  execute q_familles into familles;
+  perform set_config('search_path', chemin_avant, true);
+  verdicts := verdicts || jsonb_build_object('controle', 'SM1. aucune policy permissive de mise à jour, ni « pour tout », sur storage.objects (lecture du catalogue)',
+    'cible', 'storage.objects', 'observe', coalesce(ouvertes, 'aucune'), 'ok', ouvertes is null);
+  verdicts := verdicts || jsonb_build_object('controle', 'SM1. les packs : lecture, dépôt et suppression à authenticated seul, au prédicat d''hier ; les logos : lecture publique, dépôt et suppression du chef (lecture du catalogue, mot pour mot)',
+    'cible', 'storage.objects (packs, cabinet-logos)', 'observe', case when familles = attendu then 'mot pour mot' else 'DIFFÉRENTES' end,
+    'ok', familles is not distinct from attendu);
+  -- M-SM3 : SM1 rejoué avec une policy de mise à jour plantée.
+  obs := null;
+  begin
+    create policy rls_sm_plantee on storage.objects as permissive for update to authenticated using (false);
+    perform set_config('search_path', '', true);
+    execute q_ouvertes into obs;
+    perform set_config('search_path', chemin_avant, true);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+  end;
+  perform set_config('search_path', chemin_avant, true);
+  mutations := mutations || jsonb_build_object('mutation', 'M-SM3 — SM1 rejoué avec une policy de mise à jour plantée', 'attendu', 'rls_sm_plantee nommée, seule',
+    'observe', coalesce(obs, 'aucune'), 'mord', obs is not distinct from 'rls_sm_plantee');
+
+  begin
+    -- ── Le jeu : un dossier jetable du cabinet du chef, affecté au membre ; un pack sous lui, un logo sous le cabinet ──
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id) values (jetable, 'ESSAI RLS SM', cabinet);
+    insert into dossier_assignations (dossier_id, user_id) values (jetable, membre);
+    insert into storage.objects (bucket_id, name, metadata) values
+      ('packs', chemin_pack, '{"size": 10, "mimetype": "application/zip"}'), ('cabinet-logos', chemin_logo, '{"size": 10, "mimetype": "image/png"}');
+    construit := true;
+
+    -- SM2 : la mise à jour, profil par profil — le contenu et le nom.
+    foreach profil in array array['anon', 'inconnu', 'client', 'membre affecté au dossier', 'chef (super-administrateur)'] loop
+      if profil = 'anon' then
+        set local role anon;
+        perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+      else
+        sub := case profil when 'inconnu' then inconnu when 'client' then client when 'membre affecté au dossier' then membre else chef end;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', sub, 'role', 'authenticated')::text, true);
+      end if;
+      update storage.objects set name = chemin_pack || '.deplace', metadata = '{"size": 20, "mimetype": "application/zip"}'
+       where bucket_id = 'packs' and name = chemin_pack;
+      get diagnostics touchees = row_count;
+      update storage.objects set name = chemin_logo || '.deplace', metadata = '{"size": 20, "mimetype": "image/png"}'
+       where bucket_id = 'cabinet-logos' and name = chemin_logo;
+      get diagnostics n = row_count;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'SM2. personne ne réécrit ni ne déplace un pack ou un logo (aucune ligne touchée)',
+        'cible', profil, 'observe', touchees || ' pack, ' || n || ' logo', 'ok', touchees = 0 and n = 0);
+    end loop;
+
+    -- M-SM1 : la policy « pour tout » des packs remise — le membre affecté touche le pack.
+    obs := null;
+    begin
+      create policy packs_storage_all on storage.objects for all
+        using (bucket_id = 'packs' and public.admin_du_dossier(((storage.foldername(name))[1])::uuid))
+        with check (bucket_id = 'packs' and public.admin_du_dossier(((storage.foldername(name))[1])::uuid));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      update storage.objects set metadata = '{"size": 20, "mimetype": "application/zip"}' where bucket_id = 'packs' and name = chemin_pack;
+      get diagnostics touchees = row_count;
+      obs := touchees || ' ligne(s)';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-SM1 — la policy « pour tout » des packs remise', 'attendu', 'le membre affecté touche le pack (1 ligne)',
+      'observe', coalesce(obs, '?'), 'mord', obs is not distinct from '1 ligne(s)');
+    -- M-SM2 : la policy de mise à jour des logos remise — le chef touche le logo.
+    obs := null;
+    begin
+      create policy cabinet_logos_maj_chef on storage.objects for update
+        using (bucket_id = 'cabinet-logos' and public.est_chef_du_cabinet(((storage.foldername(name))[1])::uuid));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      update storage.objects set metadata = '{"size": 20, "mimetype": "image/png"}' where bucket_id = 'cabinet-logos' and name = chemin_logo;
+      get diagnostics touchees = row_count;
+      obs := touchees || ' ligne(s)';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-SM2 — la policy de mise à jour des logos remise', 'attendu', 'le chef touche le logo (1 ligne)',
+      'observe', coalesce(obs, '?'), 'mord', obs is not distinct from '1 ligne(s)');
+
+    -- SM3 : la lecture du pack, comme avant.
+    foreach profil in array array['membre affecté au dossier', 'chef (super-administrateur)', 'client', 'inconnu'] loop
+      sub := case profil when 'inconnu' then inconnu when 'client' then client when 'membre affecté au dossier' then membre else chef end;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', sub, 'role', 'authenticated')::text, true);
+      select count(*) into n from storage.objects where bucket_id = 'packs' and name = chemin_pack;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'SM3. le pack se lit comme avant : le membre affecté et le chef, ni le client ni un compte rattaché à rien',
+        'cible', profil, 'observe', n || ' vu', 'ok', n = case when profil in ('client', 'inconnu') then 0 else 1 end);
+    end loop;
+    -- SM3 : le dépôt d'un pack et d'un logo, comme avant.
+    foreach profil in array array['pack : membre affecté au dossier', 'pack : client', 'logo : chef (super-administrateur)', 'logo : membre affecté au dossier'] loop
+      sub := case when profil like '%client' then client when profil like '%membre affecté au dossier' then membre else chef end;
+      accepte := false; motif := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', sub, 'role', 'authenticated')::text, true);
+        if profil like 'pack%' then
+          insert into storage.objects (bucket_id, name, metadata) values ('packs', jetable::text || '/essai-rls-sm/Pack.zip', '{"size": 10, "mimetype": "application/zip"}');
+        else
+          insert into storage.objects (bucket_id, name, metadata) values ('cabinet-logos', cabinet::text || '/logo-essai-rls-sm-2.png', '{"size": 10, "mimetype": "image/png"}');
+        end if;
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'SM3. un pack et un logo se déposent comme avant : le pack par le membre affecté, pas par le client ; le logo par le chef, pas par le membre',
+        'cible', profil, 'observe', case when accepte then 'accepté' else 'refusé par ' || coalesce(motif, '?') end,
+        'ok', case when profil in ('pack : membre affecté au dossier', 'logo : chef (super-administrateur)') then accepte else not accepte and motif = '42501' end);
+    end loop;
+    -- SM3 : l'anonyme lit le logo, public.
+    set local role anon;
+    perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'cabinet-logos' and name = chemin_logo;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SM3. le logo reste public : l''anonyme le lit', 'cible', 'cabinet-logos', 'observe', n || ' vu', 'ok', n = 1);
+    -- SM3 : le prédicat de suppression de chaque seau, lu au catalogue et jugé sous chaque session, sans supprimer.
+    perform set_config('search_path', '', true);
+    select pg_get_expr(p.polqual, p.polrelid) into pred_pack from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname = 'packs_storage_suppression';
+    select pg_get_expr(p.polqual, p.polrelid) into pred_logo from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname = 'cabinet_logos_suppression_chef';
+    perform set_config('search_path', chemin_avant, true);
+    foreach profil in array array['membre affecté au dossier', 'chef (super-administrateur)', 'client', 'inconnu'] loop
+      sub := case profil when 'inconnu' then inconnu when 'client' then client when 'membre affecté au dossier' then membre else chef end;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', sub, 'role', 'authenticated')::text, true);
+      execute format('select count(*) from storage.objects o where o.bucket_id = ''packs'' and o.name = %L and (%s)', chemin_pack, pred_pack) into touchees;
+      execute format('select count(*) from storage.objects o where o.bucket_id = ''cabinet-logos'' and o.name = %L and (%s)', chemin_logo, pred_logo) into n;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'SM3. le prédicat de suppression, jugé sans supprimer : le pack au membre affecté et au chef, le logo au chef, rien au client ni à un compte rattaché à rien',
+        'cible', profil, 'observe', touchees || ' pack, ' || n || ' logo',
+        'ok', touchees = case when profil in ('client', 'inconnu') then 0 else 1 end and n = case when profil like 'chef%' then 1 else 0 end);
+    end loop;
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlerrm); end if;
+    when others then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm);
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('search_path', chemin_avant, true);
+  verdicts := verdicts || jsonb_build_object('controle', 'SM. le jeu d''essai du stockage sans mise à jour s''est construit, et rien n''en est resté', 'cible', 'le dossier jetable, le pack et le logo',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id = jetable)
+      and not exists (select 1 from storage.objects where bucket_id in ('packs', 'cabinet-logos') and name like '%essai-rls-sm%'));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $sm$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
