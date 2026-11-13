@@ -5,7 +5,9 @@ import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extract
 import { suggererCategorie } from '../../lib/tiersCategories'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT, LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
 import { convertirMontants, deviseDuTexte, DEVISE_PIVOT, libelleConversion } from '../../lib/devises'
-import { tauxBce } from '../../lib/tauxChange'
+import { montantsPourPiece, tauxBce } from '../../lib/tauxChange'
+import { EXPLICATION_DE_LA_LECTURE, lectureDeLaFactureOfferte, lireLaFactureRecue } from '../../lib/factureRecueVue'
+import { lireLOriginalRecu } from '../../lib/factureRecueLecture'
 import { useAuth } from '../../context/AuthContext'
 import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
 import FilCommentaires from '../../components/FilCommentaires'
@@ -184,6 +186,12 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   // `disabled={extracting}` laissait passer deux clics du même rendu — deux lectures FACTURÉES du même fichier (OCR puis
   // citation), dont la plus lente réécrivait les champs déjà corrigés d'après la première.
   const extractionEnCours = useRef(false)
+  // « Lire la facture électronique » (B4R-Q1) : la facture d'achat reçue d'une plateforme relue par le lecteur du navigateur.
+  // Son verrou à elle, en `useRef` posé avant le `try` : deux clics du même rendu téléchargeraient deux fois l'original et
+  // rempliraient deux fois la fiche, la seconde réponse écrasant peut-être une correction faite entre-temps.
+  const lectureDeLaFactureEnCours = useRef(false)
+  const [lisantLaFacture, setLisantLaFacture] = useState(false)
+  const [lectureDeLaFactureDite, setLectureDeLaFactureDite] = useState<{ genre: 'ok' | 'erreur'; textes: string[] } | null>(null)
   const [extractionError, setExtractionError] = useState<string | null>(null)
   // Initialisé depuis la pièce (pas null) : sans ça, rouvrir une pièce déjà extraite sans relancer
   // l'extraction écraserait sa confiance enregistrée à la sauvegarde suivante.
@@ -511,6 +519,63 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     } finally {
       extractionEnCours.current = false
       setExtracting(false)
+    }
+  }
+
+  // B4R-Q1 : l'original d'une facture d'achat reçue d'une plateforme, relu par le lecteur des factures électroniques
+  // (lib/factureRecueVue.ts). La fiche se REMPLIT ; rien ne s'écrit — la pièce reste « à valider », et c'est l'enregistrement
+  // du cabinet qui part. Une facture refusée (illisible, une autre entreprise comme acheteur) ne remplit rien.
+  async function lireLaFactureElectronique() {
+    if (lectureDeLaFactureEnCours.current || !piece?.storage_path) return
+    lectureDeLaFactureEnCours.current = true
+    setLisantLaFacture(true)
+    setLectureDeLaFactureDite(null)
+    try {
+      const original = await lireLOriginalRecu(dossierId, piece.storage_path)
+      if ('refus' in original) {
+        setLectureDeLaFactureDite({ genre: 'erreur', textes: [original.refus] })
+        return
+      }
+      const lue = lireLaFactureRecue(original.octets, original.sirenDossier)
+      if ('refus' in lue) {
+        setLectureDeLaFactureDite({ genre: 'erreur', textes: [lue.refus] })
+        return
+      }
+      const { champs } = lue
+      const avertissements = [...lue.avertissements]
+      // Une facture en devise passe par le change, comme à l'import (lib/tauxChange.ts) : sans taux, ses montants en euros
+      // restent vides et seul le montant d'origine est gardé.
+      const montants = champs.montants.montant_ttc !== null && champs.montants.devise !== null
+        ? await montantsPourPiece({ ...champs.montants }, champs.date)
+        : null
+      if (champs.date) setDatePiece(champs.date)
+      if (champs.tiers) {
+        setTiers(champs.tiers)
+        suggestCategorieFromTiers(champs.tiers)
+      }
+      if (montants) {
+        setMontantHt(montants.montant_ht?.toString() ?? '')
+        setMontantTva(montants.montant_tva?.toString() ?? '')
+        setMontantTtc(montants.montant_ttc?.toString() ?? '')
+        setDevise(montants.devise)
+        setMontantDevise(montants.montant_devise)
+        setTauxChange(montants.taux_change)
+        setConversionSource(montants.conversion_source)
+        setDateTaux(null)
+        if (montants.montant_ttc === null) {
+          avertissements.push(`Facture en ${montants.devise}, mais aucun taux BCE n’a pu être obtenu : les montants restent à convertir.`)
+        }
+      }
+      setConfiance(lue.confiance)
+      setLectureDeLaFactureDite({
+        genre: 'ok',
+        textes: ['La fiche est remplie depuis la facture électronique : vérifie-la, puis enregistre ou valide.', ...avertissements],
+      })
+    } catch (e) {
+      setLectureDeLaFactureDite({ genre: 'erreur', textes: [messageErreur(e, 'La facture électronique n’a pas pu être lue.')] })
+    } finally {
+      lectureDeLaFactureEnCours.current = false
+      setLisantLaFacture(false)
     }
   }
 
@@ -948,7 +1013,32 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             </div>
           )}
 
-          {recuePlateforme ? (
+          {recuePlateforme && lectureDeLaFactureOfferte(ACHATS_DU_CLIENT_PREVUS, piece, fige) ? (
+            <>
+              <p className="muted fiche-piece-plateforme">
+                Facture reçue de la plateforme du client{piece?.flux_hote ? ` (${piece.flux_hote})` : ''} : {piece?.nom_fichier}.
+                Son fichier est l’original transmis, il ne se remplace pas. {EXPLICATION_DE_LA_LECTURE}
+              </p>
+              <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-outline btn-sm" disabled={lisantLaFacture || occupee}
+                  onClick={() => { void lireLaFactureElectronique() }}>
+                  {lisantLaFacture ? 'Lecture…' : 'Lire la facture électronique'}
+                </button>
+                {confiance && (
+                  <span className={`badge ${confiance === 'haute' ? 'badge-ok' : confiance === 'moyenne' ? 'badge-warning' : 'badge-neutral'}`}>
+                    Confiance {confiance} — vérifie les champs
+                  </span>
+                )}
+              </div>
+              {lectureDeLaFactureDite !== null && (
+                <div role={lectureDeLaFactureDite.genre === 'erreur' ? 'alert' : 'status'} style={{ marginTop: -8 }}>
+                  {lectureDeLaFactureDite.textes.map((t) => (
+                    <p key={t} className={lectureDeLaFactureDite.genre === 'erreur' ? 'error-text' : 'muted'} style={{ margin: '2px 0' }}>{t}</p>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : recuePlateforme ? (
             <p className="muted fiche-piece-plateforme">
               Facture reçue de la plateforme du client{piece?.flux_hote ? ` (${piece.flux_hote})` : ''} : {piece?.nom_fichier}.
               Son fichier est l’original transmis, il ne se remplace pas ; et ses champs viennent de la facture
