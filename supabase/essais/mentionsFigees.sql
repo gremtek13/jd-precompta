@@ -189,13 +189,16 @@ begin
            values ('{LH0}', '{FH0}', 0, 'ESSAI A7 LIGNE H', 1, 100, 20)$q$, 'OK', null, null),
 
       -- ══ 0. Le catalogue ══════════
-      ('0a', 'valeur', 'factures_emises : les colonnes de l''étape, après la source de la vente', 'proprietaire', null,
+      -- La liste reste FERMÉE : toute colonne venue après l'étape s'y ajoute, nommée ici. `acompte` et
+      -- `date_versement_acompte` : l'acompte d'un devis (P5b, migration `acomptes_des_devis`, en production le 06/11/2026),
+      -- que la garde des factures validées fige comme le reste (0g) — rien de l'étape ne change.
+      ('0a', 'valeur', 'factures_emises : les colonnes de l''étape, après la source de la vente, et celles venues depuis (l''acompte d''un devis)', 'proprietaire', null,
         $q$select string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then ' non nulle' else '' end
                || coalesce(' défaut ' || pg_get_expr(d.adbin, d.adrelid), ''), ', ' order by a.attnum)
              from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
             where a.attrelid = 'public.factures_emises'::regclass and not a.attisdropped
               and a.attnum > (select b.attnum from pg_attribute b where b.attrelid = 'public.factures_emises'::regclass and b.attname = 'source_de_la_vente')$q$,
-        'OK', 'mentions_figees boolean non nulle défaut false, statut_tva text, article_exoneration text, numero_tva_attribue boolean, numero_tva_imprime text, denomination_imprimee text, forme_juridique text, capital numeric, rcs_ville text, mentions_identite text, moyen_prefere text, escompte text, penalites text, mentions_complementaires text, pied_de_page text, iban_imprime text, bic_imprime text, titulaire_imprime text, logo_chemin text, logo_sha256 text, parametres_id uuid, rib_parametres_id uuid, mandataire_nom text, contact_id uuid', null),
+        'OK', 'mentions_figees boolean non nulle défaut false, statut_tva text, article_exoneration text, numero_tva_attribue boolean, numero_tva_imprime text, denomination_imprimee text, forme_juridique text, capital numeric, rcs_ville text, mentions_identite text, moyen_prefere text, escompte text, penalites text, mentions_complementaires text, pied_de_page text, iban_imprime text, bic_imprime text, titulaire_imprime text, logo_chemin text, logo_sha256 text, parametres_id uuid, rib_parametres_id uuid, mandataire_nom text, contact_id uuid, acompte boolean non nulle défaut false, date_versement_acompte date', null),
       ('0b', 'valeur', 'facture_lignes et dossiers : leurs colonnes de l''étape', 'proprietaire', null,
         $q$select string_agg(c.relname || '.' || a.attname || ' ' || format_type(a.atttypid, a.atttypmod), ', ' order by c.relname, a.attnum)
              from pg_attribute a join pg_class c on c.oid = a.attrelid

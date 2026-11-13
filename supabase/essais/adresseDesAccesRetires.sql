@@ -79,8 +79,12 @@ declare
   ligne_lue constant text := 'DT A essai-adresse-a@example.test le 2026-10-01';
   refus_garde constant text := 'L''adresse d''un accès retiré ne s''écrit que par le retrait de l''accès.';
   refus_reecriture constant text := 'L''adresse d''un accès retiré ne se réécrit pas : elle ne part qu''avec son dossier.';
-  -- Les déclencheurs de memberships : ceux de P1-trace et de la caisse, et celui-ci, rangé après celui de la trace.
-  declencheurs constant text := 'memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits, memberships_trace_des_droits_adresse';
+  -- Les déclencheurs de memberships, une liste FERMÉE : ceux de P1-trace et de la caisse, et celui-ci, rangé après celui
+  -- de la trace — et, depuis LM1 (migration `dossier_du_cabinet`, en production le 12/11/2026), celui qui refuse tout accès
+  -- client sur le dossier du cabinet, rangé en tête (l'ordre des noms), présent avec sa fonction.
+  declencheurs constant text := case when to_regprocedure('public.garder_acces_au_dossier_du_cabinet()') is not null
+                                     then 'memberships_dossier_du_cabinet, ' else '' end
+    || 'memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits, memberships_trace_des_droits_adresse';
 begin
   if to_regclass('public.adresses_des_acces_retires') is null then
     perform set_config('essai.adresse_des_acces_retires', jsonb_build_array(jsonb_build_object('rang', 0,

@@ -442,8 +442,11 @@ begin
       || ' | CREATE TRIGGER regimes_ereporting_gardes BEFORE DELETE OR UPDATE ON public.regimes_ereporting FOR EACH ROW EXECUTE FUNCTION garder_regime_ereporting() O'],
     array['valeur', '155. les clés : le régime part avec son dossier, l''écart avec sa pièce et son dossier', 'postgres', $q$select string_agg(c.conrelid::regclass::text || '.' || a.attname || '>' || c.confrelid::regclass::text || ':' || c.confdeltype::text, ',' order by c.conrelid::regclass::text collate "C", a.attname collate "C") from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1] where c.contype = 'f' and c.conrelid in ('public.regimes_ereporting'::regclass, 'public.pieces_ecartees_ereporting'::regclass)$q$, '',
       'pieces_ecartees_ereporting.dossier_id>dossiers:c,pieces_ecartees_ereporting.piece_id>pieces:c,regimes_ereporting.dossier_id>dossiers:c'],
-    array['valeur', '156. les fonctions qui nomment les deux tables : celles de la migration, celles de la déclaration hors application (e5b1), et elles seules', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc ~ '(regimes_ereporting|pieces_ecartees_ereporting)'$q$, '',
-      'confirmer_regime_ereporting,declarer_ereporting_hors_application,ecarter_piece_ereporting,garder_declaration_ereporting,garder_piece_ecartee,reprendre_piece_ereporting,retirer_regime_ereporting']
+    -- La liste reste FERMÉE, chaque nom avec sa raison : `etat_facture_electronique` les LIT depuis C3 (migration
+    -- `apercu_facture_electronique`, en production le 07/11/2026) pour en rendre au client « Ventes » des phases, jamais
+    -- un identifiant, une note ni un contenu ; elle n'en écrit rien (apercuFactureElectronique.sql l'éprouve).
+    array['valeur', '156. les fonctions qui nomment les deux tables : celles de la migration, celles de la déclaration hors application (e5b1), l''état de la facture électronique (C3, en lecture), et elles seules', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc ~ '(regimes_ereporting|pieces_ecartees_ereporting)'$q$, '',
+      'confirmer_regime_ereporting,declarer_ereporting_hors_application,ecarter_piece_ereporting,etat_facture_electronique,garder_declaration_ereporting,garder_piece_ecartee,reprendre_piece_ereporting,retirer_regime_ereporting']
   ];
 
   begin
