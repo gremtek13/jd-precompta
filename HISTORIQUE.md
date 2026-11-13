@@ -52399,3 +52399,8 @@ de le reporter (`mentionDeLAnnexe2035E(aSaisir, cadreCoche)`). Clôture dit avan
 (`motifDesSaisies2035E` : sinon des zéros supposés). Éprouvé sur le vrai formulaire relu par pdf.js (les mots à la hauteur de
 chaque code, finis au bord 562,3) ; drapeau baissé, le PDF reste celui d'avant au haché près ; ClotureTab.test joue les deux
 états par l'accesseur. `SAISIES_2035E_EXPORTEES` levé. Question posée : remplir le cadre coché (48S-Q3).
+
+### 13/11/2026 — LA CARTE DE LA COPIE DES FICHIERS A SA CLASSE (BANC DES DÉBORDEMENTS)
+
+La carte de la copie des fichiers empruntait `ribs-a-confirmer-tete` (celle des RIB) pour sa marge, d'où deux éléments pour le sélecteur du banc : elle porte `copie-des-fichiers-tete`, même règle dans `src/index.css`, apparence inchangée.
+L'`<input>` d'Informations à 390 px (3 px hors de sa carte) ne s'est pas reproduit : 0 à toutes les passes du banc et à une mesure de tous les champs des douze dossiers (drapeaux levés ou non) ; rien corrigé, à rouvrir avec son dossier ou son état.

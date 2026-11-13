@@ -2338,7 +2338,7 @@ a.btn { text-decoration: none; }
    la phrase de l'avis, le lien vers ses factures — qui passe à la ligne plutôt que de déborder. Un nom long se coupe
    (`overflow-wrap`), il ne pousse pas la ligne hors de sa carte. Sur téléphone la rangée devient une colonne : la phrase, puis
    le lien dessous. */
-.ribs-a-confirmer-tete { margin-bottom: 20px; }
+.ribs-a-confirmer-tete, .copie-des-fichiers-tete { margin-bottom: 20px; }
 .ribs-a-confirmer-lignes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .ribs-a-confirmer-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; min-width: 0; }
 /* Les trois colonnes d'une rangée ont les mêmes bases et les mêmes parts dans chaque rangée : les phrases et les liens s'alignent d'une
