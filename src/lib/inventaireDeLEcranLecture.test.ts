@@ -69,7 +69,7 @@ vi.mock('./supabase', async () => {
 
 const operation = (id: string, dossier: string, o: Record<string, unknown> = {}) => ({
   id, dossier_id: dossier, exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486100', montant_centimes: 60000,
-  tva_centimes: 0, periode_debut: null, periode_fin: null, objet: 'Assurance', piece_citee_id: null, provision_id: null, version: 1,
+  tva_centimes: 0, periode_debut: null, periode_fin: null, objet: 'Assurance', piece_citee_id: null, reprise: false, provision_id: null, version: 1,
   cree_par: 'u', cree_le: '2026-11-10T09:00:00Z', modifie_par: null, modifie_le: null, ...o,
 })
 const provision = (id: string, dossier: string, o: Record<string, unknown> = {}) => ({

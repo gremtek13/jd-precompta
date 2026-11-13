@@ -341,6 +341,7 @@ describe('le rangement des contrôles existants', () => {
       'exercice-anterieur-d-abord', 'ecritures-orphelines', 'ecritures-desequilibrees', 'desequilibrees', 'numerotation',
       'ecritures-a-repartir', 'champs-bnc',
       'inventaire-mal-numerote', 'inventaire-non-declare', 'inventaire-a-recomposer', 'extourne-manquante', 'provisions-a-ventiler',
+      'reprise-a-recomposer', 'reprise-hors-de-l-ouverture', 'reprise-non-extournee',
       'report-hors-classes', 'report-desequilibre', 'ouverture-en-ecart', 'concordance', 'exclusions-2035', 'piste-rompue', 'informations',
     ],
   }

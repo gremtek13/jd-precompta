@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  ciblePrecedente, compteRepriseNonVentile, extourneEntiere, INVENTAIRE_SANS_OBJET, lignesCommandees, MODELES_DE_LA_VALIDATION,
+  ciblePrecedente, compteRepriseNonExtourne, compteRepriseNonVentile, extourneEntiere, INVENTAIRE_SANS_OBJET, lignesCommandees,
+  MODELES_DE_LA_VALIDATION, RACINES_CONFRONTEES_A_LA_REPRISE,
   MOTS_DE_LA_DECLARATION, MOTS_DE_LA_GARDE_DES_DECLARATIONS, motsDeLaValidation, prealablesDeLInventaire, RACINES_LETTREES_PAR_REGULARISATION,
   refusDeLaDeclaration, refusDuRetrait, regularisationAJour, type ContexteDeLaDeclaration, type EntreesDeLInventaire,
   type InventaireDeLaValidation, type OperationDeLaValidation,
@@ -41,7 +42,8 @@ function codeApres(texte: string, message: string): string | undefined {
 
 describe('les mots de valider_exercice sont ceux du module, dans son ordre, après tous ses refus d’hier', () => {
   const M = MODELES_DE_LA_VALIDATION
-  const ordre = [M.numerotation, M.nonDeclare, M.aRecomposer, M.extourneManquante, M.provisionsAVentiler]
+  const ordre = [M.numerotation, M.nonDeclare, M.aRecomposer, M.extourneManquante, M.provisionsAVentiler, M.repriseARecomposer,
+    M.repriseHorsDeLOuverture, M.repriseNonExtournee]
 
   it('chaque modèle est dans la fonction, au caractère près, dans l’ordre des contrôles, après la numérotation d’hier', () => {
     const positions = ordre.map((m) => VALIDER.indexOf(enSql(m)))
@@ -49,10 +51,10 @@ describe('les mots de valider_exercice sont ceux du module, dans son ordre, apr�
     for (let i = 1; i < positions.length; i++) expect(positions[i], ordre[i]).toBeGreaterThan(positions[i - 1])
     // Après le dernier refus d'hier (les quatre champs d'un BNC) et avant le réglage de la validation.
     expect(positions[0]).toBeGreaterThan(VALIDER.indexOf('porte un poste de la 2035 sur un compte qui n'))
-    expect(positions[4]).toBeLessThan(VALIDER.indexOf("perform set_config('jd.validation_exercice'"))
+    expect(positions.at(-1)).toBeLessThan(VALIDER.indexOf("perform set_config('jd.validation_exercice'"))
   })
 
-  it('aux codes de la base : 22023 la numérotation, 23514 les quatre autres', () => {
+  it('aux codes de la base : 22023 la numérotation, 23514 les autres', () => {
     expect(codeApres(VALIDER, enSql(M.numerotation))).toBe('22023')
     for (const m of ordre.slice(1)) expect(codeApres(VALIDER, enSql(m)), m).toBe('23514')
   })
@@ -121,7 +123,7 @@ describe('les refus de la déclaration et de son retrait sont ceux du module', (
 
 const op = (o: Partial<OperationDeLaValidation> = {}): OperationDeLaValidation => ({
   id: 'o1', exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486000', montant_centimes: 120000,
-  tva_centimes: 0, objet: 'Assurance 2026', provision_id: null, ...o,
+  tva_centimes: 0, objet: 'Assurance 2026', provision_id: null, reprise: false, ...o,
 })
 const ligne = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date: '2025-12-31', libelle: 'Régularisation', sens: 'debit',
@@ -280,5 +282,82 @@ describe('la migration, son retour et son essai', () => {
     expect(MIGRATION).not.toMatch(/\bdelete\s+from\b|\bdrop\s|\btruncate\b/i)
     expect(MIGRATION).not.toContain('\\')
     expect(MIGRATION).not.toContain('\r')
+  })
+})
+
+// ── Les régularisations reprises d'une balance (INV3-Q2 (A)) ──
+
+describe('les régularisations reprises, à la validation du premier exercice', () => {
+  const repriseCca = op({ id: 'r-1', exercice: 2024, reprise: true, compte_regularisation: '486000', montant_centimes: 30000, objet: 'Assurance reprise' })
+  const repriseFnp = op({ id: 'r-2', exercice: 2024, reprise: true, nature: 'fnp', compte_resultat: '622600', compte_regularisation: '408100',
+    montant_centimes: 10000, tva_centimes: 2000, objet: 'Honoraires repris' })
+  // Les lignes que la base écrit : la TVA d'attente au compte du rôle (445860), sous sa racine.
+  const ecritesAuPlan = (o: OperationDeLaValidation) => ecrites(o).map((l) => (l.compte === '44586' ? { ...l, compte: '445860' } : l))
+  const balance = [
+    { date: '2025-01-01', compte: '512000', sens: 'debit' as const, montant: 1000 }, { date: '2025-01-01', compte: '486000', sens: 'debit' as const, montant: 300 },
+    { date: '2025-01-01', compte: '445860', sens: 'debit' as const, montant: 20 }, { date: '2025-01-01', compte: '408100', sens: 'credit' as const, montant: 120 },
+    { date: '2025-01-01', compte: '408400', sens: 'credit' as const, montant: 50 }, { date: '2025-01-01', compte: '101000', sens: 'credit' as const, montant: 1150 },
+  ]
+
+  it('une reprise commande son extourne seule, au 1er janvier : la base l’écrit ainsi, elle est à jour', () => {
+    expect(lignesCommandees(repriseCca, null)).toEqual([
+      { date: '2025-01-01', compte: '486000', sens: 'credit', centimes: 30000 }, { date: '2025-01-01', compte: '616000', sens: 'debit', centimes: 30000 },
+    ])
+    expect(regularisationAJour(repriseCca, ecrites(repriseCca), null)).toBe(true)
+    // Sa constatation au 31 décembre, que la balance porte déjà, la rend fausse.
+    expect(regularisationAJour(repriseCca, [...ecrites(repriseCca), ...ecrites({ ...repriseCca, reprise: false }).filter((l) => l.date === '2024-12-31')], null)).toBe(false)
+  })
+
+  it('confrontées au solde repris : chaque compte de régularisation soldé au 1er janvier, le 4084 laissé, la TVA d’attente comprise', () => {
+    const brouillon = [...ecrites(repriseCca), ...ecritesAuPlan(repriseFnp)]
+    expect(compteRepriseNonExtourne(balance, [repriseCca, repriseFnp], brouillon, 2025)).toBeNull()
+    expect(compteRepriseNonExtourne(balance, [], [], 2025)).toBe('408100')
+    expect(compteRepriseNonExtourne(balance, [repriseCca], ecrites(repriseCca), 2025)).toBe('408100')
+    const sansTva = { ...repriseFnp, montant_centimes: 12000, tva_centimes: 0 }
+    expect(compteRepriseNonExtourne(balance, [repriseCca, sansTva], [...ecrites(repriseCca), ...ecritesAuPlan(sansTva)], 2025)).toBe('445860')
+    const moindre = { ...repriseCca, montant_centimes: 25000 }
+    expect(compteRepriseNonExtourne(balance, [moindre, repriseFnp], [...ecrites(moindre), ...ecritesAuPlan(repriseFnp)], 2025)).toBe('486000')
+    // Une reprise sur un compte que la balance ne porte pas le laisse en écart ; l'extourne d'une autre année ne compte pas.
+    const ailleurs = { ...repriseCca, compte_regularisation: '486100' }
+    expect(compteRepriseNonExtourne(balance, [ailleurs, repriseFnp], [...ecrites(ailleurs), ...ecritesAuPlan(repriseFnp)], 2025)).toBe('486000')
+    expect(compteRepriseNonExtourne(balance, [repriseCca, repriseFnp], brouillon, 2026)).toBe('408100')
+  })
+
+  it('les racines confrontées, lues au catalogue, sont celles de la migration, et le 4084 en est écarté des deux côtés', () => {
+    expect(RACINES_CONFRONTEES_A_LA_REPRISE).toEqual(['486', '487', '408', '418', '44586', '44587'])
+    const bloc = VALIDER.slice(VALIDER.indexOf('--   f. Les régularisations reprises'), VALIDER.indexOf("perform set_config('jd.validation_exercice'"))
+    expect(bloc).toContain(RACINES_CONFRONTEES_A_LA_REPRISE.map((r, i) => `${i === 0 ? '' : 'or '}starts_with(s.compte, '${r}')`).join(' ')
+      .replace(" or starts_with(s.compte, '418')", "\n            or starts_with(s.compte, '418')"))
+    expect(bloc).toContain("and not starts_with(s.compte, '4084')")
+  })
+
+  const lu = (o: Partial<Extract<InventaireDeLaValidation, { etat: 'lu' }>> = {}): InventaireDeLaValidation => ({
+    etat: 'lu', operations: [], declarations: [{ id: 'd', exercice: 2025, retire_le: null }], provisions: [], ...o,
+  })
+  const entrees = (o: Partial<EntreesDeLInventaire> = {}): EntreesDeLInventaire => ({
+    annee: 2025, mode: 'engagement', aNouveaux: balance, ecritures: [...ecrites(repriseCca), ...ecritesAuPlan(repriseFnp)],
+    inventaire: lu({ operations: [repriseCca, repriseFnp] }), ...o,
+  })
+  const ids = (e: EntreesDeLInventaire) => prealablesDeLInventaire(e).map((p) => p.id)
+
+  it('avant le clic, sous les mots de la base : rien quand tout est juste ; une reprise n’attend jamais d’extourne entière', () => {
+    expect(ids(entrees())).toEqual([])
+    expect(prealablesDeLInventaire(entrees({ ecritures: ecrites(repriseCca), inventaire: lu({ operations: [repriseCca] }) }))).toEqual([{
+      id: 'reprise-non-extournee', message: motsDeLaValidation(MODELES_DE_LA_VALIDATION.repriseNonExtournee, 2025, '408100'),
+    }])
+  })
+
+  it('la reprise à recomposer, puis sa place, puis la confrontation', () => {
+    const falsifiee = [...ecrites(repriseCca).map((l) => (l.compte === '616000' ? { ...l, compte: '618000' } : l)), ...ecritesAuPlan(repriseFnp)]
+    expect(prealablesDeLInventaire(entrees({ ecritures: falsifiee }))).toEqual([{
+      id: 'reprise-a-recomposer', message: motsDeLaValidation(MODELES_DE_LA_VALIDATION.repriseARecomposer, 2025, 'Assurance reprise'),
+    }])
+    expect(prealablesDeLInventaire(entrees({ aNouveaux: [] }))).toEqual([{
+      id: 'reprise-hors-de-l-ouverture', message: motsDeLaValidation(MODELES_DE_LA_VALIDATION.repriseHorsDeLOuverture, 2025, 'Assurance reprise'),
+    }])
+    expect(ids(entrees({ ecritures: falsifiee, aNouveaux: [] }))).toEqual(['reprise-a-recomposer', 'reprise-hors-de-l-ouverture'])
+    // En trésorerie, rien ne se confronte ; un autre exercice que le premier n'en porte aucune.
+    expect(ids(entrees({ mode: 'tresorerie', ecritures: ecrites(repriseCca), inventaire: lu({ operations: [repriseCca] }) }))).toEqual([])
+    expect(ids(entrees({ annee: 2026, inventaire: lu({ operations: [repriseCca, repriseFnp], declarations: [{ id: 'd', exercice: 2026, retire_le: null }] }) }))).toEqual([])
   })
 })

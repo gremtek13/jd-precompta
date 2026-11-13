@@ -153,6 +153,15 @@ export const MOTS_DES_REFUS = {
   periode: 'La période couverte se lit en deux dates civiles, son début au plus tard à sa fin.',
   periodeAvantLaCloture: 'La période couverte finit au plus tard le 31 décembre : rien n’est constaté d’avance.',
   ventilation: 'Les provisions ventilées doivent faire exactement le solde repris du compte.',
+  // La régularisation reprise d'une balance (INV3-Q2 (A)). Le premier, la base seule le dit : ici, la reprise est un booléen.
+  repriseIllisible: 'Une régularisation est reprise d’une balance, ou ne l’est pas : vrai ou faux.',
+  repriseHorsDeLOuverture: 'Une régularisation reprise appartient à l’exercice que clôt la balance reprise : l’année qui précède '
+    + 'l’ouverture du dossier au 1er janvier.',
+  natureReprise: 'Une régularisation reprise est une charge ou un produit constaté d’avance, une facture non parvenue ou à '
+    + 'établir : les comptes 486, 487, 408 et 418 de la balance reprise.',
+  compteDeLaReprise: 'Une régularisation reprise s’écrit sur le compte de la balance qu’elle extourne : sous le 486 pour une charge '
+    + 'constatée d’avance, le 487 pour un produit constaté d’avance, le 408 (hors du 4084) pour une facture non parvenue, le 418 '
+    + 'pour une facture à établir.',
 } as const
 
 /** Le refus d'un plan qui ne porte pas, ou porte mal, un compte de rôle d'inventaire. */
@@ -292,37 +301,65 @@ function regularisationAdmise(nature: NatureAExtourner, compte: string, comptes:
   }
 }
 
-// Les rôles du plan dont la nature a besoin : sans eux, rien ne s'écrit.
-function rolesRequis(nature: NatureAExtourner, avecTva: boolean): RoleDInventaire[] {
-  switch (nature) {
-    case 'cca': return ['charges_constatees_avance']
-    case 'pca': return ['produits_constates_avance']
-    case 'fnp': return avecTva ? ['tva_factures_non_parvenues'] : []
-    case 'fae': return ['factures_a_etablir', ...(avecTva ? ['tva_factures_a_etablir' as const] : [])]
-    default: return []
-  }
+// Les rôles du plan dont la nature a besoin : sans eux, rien ne s'écrit. Une régularisation reprise ne lit au plan que la
+// TVA d'attente : son compte de régularisation vient de la balance.
+function rolesRequis(nature: NatureAExtourner, avecTva: boolean, reprise: boolean): RoleDInventaire[] {
+  const roles = ((): RoleDInventaire[] => {
+    switch (nature) {
+      case 'cca': return ['charges_constatees_avance']
+      case 'pca': return ['produits_constates_avance']
+      case 'fnp': return avecTva ? ['tva_factures_non_parvenues'] : []
+      case 'fae': return ['factures_a_etablir', ...(avecTva ? ['tva_factures_a_etablir' as const] : [])]
+      default: return []
+    }
+  })()
+  return reprise ? roles.filter((r) => r === 'tva_factures_non_parvenues' || r === 'tva_factures_a_etablir') : roles
 }
 
-/**
- * Les refus d'une régularisation, dans l'ordre des contrôles de la future `enregistrer_operation_inventaire` : le mode du
- * dossier, l'exercice, la nature, le plan, les comptes, les montants, l'objet. Une liste vide : elle s'écrit.
- */
-export function refusDeLaRegularisation(saisie: SaisieDeRegularisation, contexte: ContexteDeRegularisation): RefusDInventaire[] {
-  if (contexte.modeComptable !== 'engagement') return [refus('tresorerie', MOTS_DES_REFUS.tresorerie)]
-  const exercice = refusDeLExercice(contexte.exercice)
-  if (exercice.length > 0) return exercice
-  if (saisie.nature === 'provision') return [refus('provisionParSonEvaluation', MOTS_DES_REFUS.provisionParSonEvaluation)]
-  if (!estANextourner(saisie.nature)) return [refus('nature', MOTS_DES_REFUS.nature)]
-  const nature = saisie.nature
+// ── La régularisation reprise d'une balance (INV3-Q2 (A)) ─────────────────────────────────────────────────────────────
+
+/** Les natures d'une régularisation reprise : celles des comptes 486, 487, 408 et 418 qu'une balance reprise porte. Les
+ *  charges à payer et produits à recevoir repris n'en ont pas (INV3Q2-Q1, posée au cabinet). */
+export const NATURES_REPRISES = ['cca', 'pca', 'fnp', 'fae'] as const
+export type NatureReprise = (typeof NATURES_REPRISES)[number]
+
+/** La racine sous laquelle le compte d'une régularisation reprise se prend dans la balance, par nature, lue au catalogue. */
+const ROLE_DE_LA_REPRISE: Record<NatureReprise, RoleDInventaire> = {
+  cca: 'charges_constatees_avance', pca: 'produits_constates_avance', fnp: 'factures_non_parvenues', fae: 'factures_a_etablir',
+}
+
+/** Les comptes de la balance que l'inventaire ne range pas : le 4084, les factures non parvenues d'immobilisations, dont la
+ *  contrepartie est une immobilisation (INV1-Q1). Ni une régularisation reprise ni la confrontation au solde repris. */
+export const RACINES_HORS_DE_L_INVENTAIRE = ['4084'] as const
+
+const estReprise = (n: NatureDInventaire): n is NatureReprise => (NATURES_REPRISES as readonly string[]).includes(n)
+
+/** Le compte d'une régularisation reprise est-il à sa place : celui de la balance qu'elle extourne, sous la racine de sa
+ *  nature, hors du 4084 ? La validation du premier exercice le confronte au solde repris. */
+export function compteDeLaRepriseAdmis(nature: NatureReprise, compte: string): boolean {
+  return FORME_D_UN_COMPTE.test(compte) && sousLaRacine(compte, racinesDuRole(ROLE_DE_LA_REPRISE[nature]))
+    && !sousLaRacine(compte, RACINES_HORS_DE_L_INVENTAIRE)
+}
+
+// Les refus communs aux deux saisies, dans l'ordre de la base : le plan, le compte de résultat, le compte de régularisation,
+// les montants, l'objet.
+function refusDesComptesEtDesMontants(
+  saisie: SaisieDeRegularisation, nature: NatureAExtourner,
+  contexte: Pick<ContexteDeRegularisation, 'assujettiTva' | 'comptes' | 'tvaDesFacturesAttendues'>, reprise: boolean,
+): RefusDInventaire[] {
   const liste: RefusDInventaire[] = []
   const tvaLisible = centimesPositifsOuNuls(saisie.tvaCentimes)
-  const plan = rolesRequis(nature, tvaLisible && saisie.tvaCentimes > 0).filter((r) => compteDuRole(contexte.comptes, r) === null)
+  const plan = rolesRequis(nature, tvaLisible && saisie.tvaCentimes > 0, reprise).filter((r) => compteDuRole(contexte.comptes, r) === null)
   liste.push(...plan.map(refusDuPlan))
   const charge = DU_COTE_DES_CHARGES.has(nature)
   if (!FORME_D_UN_COMPTE.test(saisie.compteResultat) || !saisie.compteResultat.startsWith(charge ? '6' : '7')) {
     liste.push(refus('compteResultat', charge ? MOTS_DES_REFUS.compteDeCharge : MOTS_DES_REFUS.compteDeProduit))
   }
-  if (!regularisationAdmise(nature, saisie.compteRegularisation, contexte.comptes)) {
+  if (reprise) {
+    if (!estReprise(nature) || !compteDeLaRepriseAdmis(nature, saisie.compteRegularisation)) {
+      liste.push(refus('compteRegularisation', MOTS_DES_REFUS.compteDeLaReprise))
+    }
+  } else if (!regularisationAdmise(nature, saisie.compteRegularisation, contexte.comptes)) {
     liste.push(refus('compteRegularisation', MOTS_DES_REFUS.compteDeRegularisation[nature]))
   }
   if (!centimesPositifs(saisie.montantCentimes)) liste.push(refus('montant', MOTS_DES_REFUS.montant))
@@ -340,6 +377,51 @@ export function refusDeLaRegularisation(saisie: SaisieDeRegularisation, contexte
 }
 
 /**
+ * Les refus d'une régularisation, dans l'ordre des contrôles de la future `enregistrer_operation_inventaire` : le mode du
+ * dossier, l'exercice, la nature, le plan, les comptes, les montants, l'objet. Une liste vide : elle s'écrit.
+ */
+export function refusDeLaRegularisation(saisie: SaisieDeRegularisation, contexte: ContexteDeRegularisation): RefusDInventaire[] {
+  if (contexte.modeComptable !== 'engagement') return [refus('tresorerie', MOTS_DES_REFUS.tresorerie)]
+  const exercice = refusDeLExercice(contexte.exercice)
+  if (exercice.length > 0) return exercice
+  if (saisie.nature === 'provision') return [refus('provisionParSonEvaluation', MOTS_DES_REFUS.provisionParSonEvaluation)]
+  if (!estANextourner(saisie.nature)) return [refus('nature', MOTS_DES_REFUS.nature)]
+  return refusDesComptesEtDesMontants(saisie, saisie.nature, contexte, false)
+}
+
+// La constatation au 31 décembre d'une saisie que ses refus ont laissée passer : ses lignes, au journal OD, sous son libellé
+// composé.
+function constatationDe(saisie: SaisieDeRegularisation, comptes: ComptesDInventaire, exercice: number): EcritureDInventaire {
+  const nature = saisie.nature as NatureAExtourner
+  const ht = saisie.montantCentimes
+  const tva = saisie.tvaCentimes
+  const resultat = saisie.compteResultat
+  const regul = saisie.compteRegularisation
+  let lignes: LigneDInventaire[]
+  switch (nature) {
+    case 'cca': lignes = [debit(regul, ht), credit(resultat, ht)]; break
+    case 'pca': lignes = [debit(resultat, ht), credit(regul, ht)]; break
+    case 'charge_a_payer': lignes = [debit(resultat, ht), credit(regul, ht)]; break
+    case 'produit_a_recevoir': lignes = [debit(regul, ht), credit(resultat, ht)]; break
+    case 'fnp': {
+      const compteTva = tva > 0 ? compteDuRole(comptes, 'tva_factures_non_parvenues')! : ''
+      lignes = nonNulles([debit(resultat, ht), debit(compteTva, tva), credit(regul, ht + tva)])
+      break
+    }
+    case 'fae': {
+      const compteTva = tva > 0 ? compteDuRole(comptes, 'tva_factures_a_etablir')! : ''
+      lignes = nonNulles([debit(regul, ht + tva), credit(resultat, ht), credit(compteTva, tva)])
+      break
+    }
+  }
+  return {
+    date: cloture(exercice), journal: 'OD',
+    libelle: libelleCompose(SIGLES[nature], exercice, saisie.libelleCompteResultat, saisie.objet),
+    lignes,
+  }
+}
+
+/**
  * La régularisation d'une clôture : la constatation au 31 décembre, au journal OD, une écriture équilibrée, ET son extourne
  * au 1er janvier suivant, composées ensemble (INV-Q1, recommandation (A) : la paire naît, change et se retire ensemble ;
  * sous (B) ou (C), l'extourne serait la même écriture, écrite plus tard — `extourneDe`).
@@ -354,35 +436,68 @@ export function composerRegularisation(
 ): CompositionDeRegularisation {
   const liste = refusDeLaRegularisation(saisie, contexte)
   if (liste.length > 0) return { ok: false, refus: liste }
-  const nature = saisie.nature as NatureAExtourner
   const { exercice } = contexte.exercice
-  const ht = saisie.montantCentimes
-  const tva = saisie.tvaCentimes
-  const resultat = saisie.compteResultat
-  const regul = saisie.compteRegularisation
-  let lignes: LigneDInventaire[]
-  switch (nature) {
-    case 'cca': lignes = [debit(regul, ht), credit(resultat, ht)]; break
-    case 'pca': lignes = [debit(resultat, ht), credit(regul, ht)]; break
-    case 'charge_a_payer': lignes = [debit(resultat, ht), credit(regul, ht)]; break
-    case 'produit_a_recevoir': lignes = [debit(regul, ht), credit(resultat, ht)]; break
-    case 'fnp': {
-      const compteTva = tva > 0 ? compteDuRole(contexte.comptes, 'tva_factures_non_parvenues')! : ''
-      lignes = nonNulles([debit(resultat, ht), debit(compteTva, tva), credit(regul, ht + tva)])
-      break
-    }
-    case 'fae': {
-      const compteTva = tva > 0 ? compteDuRole(contexte.comptes, 'tva_factures_a_etablir')! : ''
-      lignes = nonNulles([debit(regul, ht + tva), credit(resultat, ht), credit(compteTva, tva)])
-      break
-    }
-  }
-  const constatation: EcritureDInventaire = {
-    date: cloture(exercice), journal: 'OD',
-    libelle: libelleCompose(SIGLES[nature], exercice, saisie.libelleCompteResultat, saisie.objet),
-    lignes,
-  }
+  const constatation = constatationDe(saisie, contexte.comptes, exercice)
   return { ok: true, constatation, extourne: extourneDe(constatation, exercice) }
+}
+
+/** Ce que l'appelant sait de l'exercice d'une régularisation reprise : celui que la balance reprise clôt. */
+export interface ExerciceDeLaReprise {
+  /** L'exercice de la régularisation reprise : l'année qui précède l'ouverture du dossier. */
+  exercice: number
+  /** Son exercice est validé, ou un suivant l'est : figée (23514) — l'extourne tombe dans l'exercice qui suit. */
+  valide: boolean
+  /** L'année en cours, lue à Paris par l'appelant (`aujourdHuiAParis`), comme la base la lira. */
+  anneeEnCours: number
+  /** La date des premiers à-nouveaux du dossier (AAAA-MM-JJ), lue en base ; `null` : aucune balance reprise. */
+  ouverture: string | null
+}
+
+export interface ContexteDeLaReprise extends Omit<ContexteDeRegularisation, 'exercice'> {
+  exercice: ExerciceDeLaReprise
+}
+
+export type CompositionDeLaReprise =
+  | { ok: true; extourne: EcritureDInventaire }
+  | { ok: false; refus: RefusDInventaire[] }
+
+/** La régularisation reprise est-elle à sa place : la balance reprise ouvre le dossier au 1er janvier de l'année qui suit
+ *  l'exercice de la régularisation ? */
+export function repriseALaPlace(e: Pick<ExerciceDeLaReprise, 'exercice' | 'ouverture'>): boolean {
+  return e.ouverture !== null && /^\d{4}-01-01$/.test(e.ouverture) && Number(e.ouverture.slice(0, 4)) - 1 === e.exercice
+}
+
+/**
+ * Les refus d'une régularisation reprise d'une balance (INV3-Q2 (A)), dans l'ordre des contrôles de
+ * `enregistrer_operation_inventaire` (migration `operations_d_inventaire`) : le mode du dossier, l'exercice (lisible, pas
+ * figé, commencé, puis celui que la balance clôt), la nature (celle d'un compte 486, 487, 408 ou 418), le plan (la seule
+ * TVA d'attente), les comptes (celui de la balance, sous la racine de sa nature), les montants, l'objet.
+ */
+export function refusDeLaRegularisationReprise(saisie: SaisieDeRegularisation, contexte: ContexteDeLaReprise): RefusDInventaire[] {
+  if (contexte.modeComptable !== 'engagement') return [refus('tresorerie', MOTS_DES_REFUS.tresorerie)]
+  const exercice = refusDeLExercice({ ...contexte.exercice, premierExercice: null })
+  if (exercice.length > 0) return exercice
+  if (!repriseALaPlace(contexte.exercice)) return [refus('repriseHorsDeLOuverture', MOTS_DES_REFUS.repriseHorsDeLOuverture)]
+  if (saisie.nature === 'provision') return [refus('provisionParSonEvaluation', MOTS_DES_REFUS.provisionParSonEvaluation)]
+  if (!estANextourner(saisie.nature)) return [refus('nature', MOTS_DES_REFUS.nature)]
+  if (!estReprise(saisie.nature)) return [refus('natureReprise', MOTS_DES_REFUS.natureReprise)]
+  return refusDesComptesEtDesMontants(saisie, saisie.nature, contexte, true)
+}
+
+/**
+ * LA RÉGULARISATION REPRISE D'UNE BALANCE (INV3-Q2 (A)) : une ancienne charge ou un ancien produit constaté d'avance, une
+ * facture non parvenue ou à établir que la balance reprise au 1er janvier porte. Sa constatation est dans la balance : seule
+ * son EXTOURNE s'écrit, au 1er janvier, au journal OD — la contre-passation de la constatation que la régularisation
+ * aurait écrite au 31 décembre de l'exercice que la balance clôt (les mêmes lignes en sens inverse, « Extourne — » devant le
+ * même libellé composé). La validation du premier exercice la confronte au solde repris (lib/inventaireDeLaValidation.ts).
+ */
+export function composerRegularisationReprise(
+  saisie: SaisieDeRegularisation, contexte: ContexteDeLaReprise,
+): CompositionDeLaReprise {
+  const liste = refusDeLaRegularisationReprise(saisie, contexte)
+  if (liste.length > 0) return { ok: false, refus: liste }
+  const { exercice } = contexte.exercice
+  return { ok: true, extourne: extourneDe(constatationDe(saisie, contexte.comptes, exercice), exercice) }
 }
 
 // ── L'évaluation d'une provision ────────────────────────────────────────────────────────────────────────────────────────

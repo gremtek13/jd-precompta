@@ -47,7 +47,7 @@ vi.mock('./supabase', async () => {
 
 const operation = (id: string, dossier: string, o: Record<string, unknown> = {}) => ({
   id, dossier_id: dossier, exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486000',
-  montant_centimes: 120000, tva_centimes: 0, objet: 'Assurance 2026', provision_id: null, ...o,
+  montant_centimes: 120000, tva_centimes: 0, objet: 'Assurance 2026', provision_id: null, reprise: false, ...o,
 })
 const declaration = (id: string, dossier: string, o: Record<string, unknown> = {}) =>
   ({ id, dossier_id: dossier, exercice: 2025, retire_le: null, ...o })
@@ -76,7 +76,7 @@ describe('lireLInventaireDeLaValidation', () => {
         etat: 'lu',
         operations: [{
           id: 'o1', exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486000', montant_centimes: 120000,
-          tva_centimes: 0, objet: 'Assurance 2026', provision_id: null,
+          tva_centimes: 0, objet: 'Assurance 2026', provision_id: null, reprise: false,
         }],
         declarations: [{ id: 'i1', exercice: 2025, retire_le: null }, { id: 'i2', exercice: 2024, retire_le: '2025-02-01T10:00:00Z' }],
         provisions: [{ id: 'p1', compte_provision: '151100', reprise_centimes: 50000 }],
@@ -102,6 +102,11 @@ describe('lireLInventaireDeLaValidation', () => {
     expect(await lireLInventaireDeLaValidationSelon('d1', true)).toMatchObject({ etat: 'incomplete' })
     faux.tables.operations_inventaire = [operation('o1', 'd1', { nature: 'stock' })]
     expect(await lireLInventaireDeLaValidationSelon('d1', true)).toMatchObject({ etat: 'incomplete' })
+    // La reprise (INV3-Q2) : un booléen, que la colonne non nulle garantit ; absente, la ligne ne se croit pas.
+    faux.tables.operations_inventaire = [operation('o1', 'd1', { reprise: undefined })]
+    expect(await lireLInventaireDeLaValidationSelon('d1', true)).toMatchObject({ etat: 'incomplete' })
+    faux.tables.operations_inventaire = [operation('o1', 'd1', { reprise: true, exercice: 2024 })]
+    expect(await lireLInventaireDeLaValidationSelon('d1', true)).toMatchObject({ etat: 'lu', inventaire: { operations: [{ reprise: true }] } })
   })
 
   it('ce que la validation reçoit : l’inventaire, sans objet, ou nul tant qu’il n’est pas lu entier — et le motif qui la suspend', async () => {
