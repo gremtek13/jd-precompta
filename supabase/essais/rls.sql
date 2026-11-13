@@ -4911,6 +4911,11 @@ begin
     begin
       create trigger rls_mutation_garde_avant before insert on public.memberships
         for each row execute function public.garder_droit_ventes();
+      -- La porte d'accès sur memberships (acces_avant_les_gardes, posée avec la garde de la conservation d'INAL5) se coupe
+      -- aussi : sans elle, la mutation montre ce que VS1 verrait.
+      if exists (select 1 from pg_trigger g where g.tgrelid = 'public.memberships'::regclass and g.tgname = '_acces_avant_les_gardes') then
+        alter table public.memberships disable trigger _acces_avant_les_gardes;
+      end if;
       foreach cible in array array[dk, dj] loop
         obs := null;
         begin
@@ -9650,7 +9655,10 @@ begin
       'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?')
         || ' | la garde débranchée : ' || coalesce(sans_garde, '?') || ' | réécrites : ' || reecrites,
       'ok', par_la_fonction = '42501 Seul le cabinet du dossier enregistre un stock de clôture.'
-        and en_direct = '42501 Un stock de clôture ne s''écrit que par enregistrer_stock_de_cloture.'
+        -- La porte d'accès en base (acces_avant_les_gardes) : la RLS refuse l'insertion directe avant la garde.
+        and en_direct = case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.stocks_de_cloture'::regclass and g.tgname = '_acces_avant_les_gardes')
+                             then '42501 new row violates row-level security policy for table "stocks_de_cloture"'
+                             else '42501 Un stock de clôture ne s''écrit que par enregistrer_stock_de_cloture.' end
         and sans_garde like '42501 new row violates row-level security policy%' and reecrites = 0);
 
     -- M-ST1 : la lecture élargie au client « membre ».
@@ -10022,7 +10030,10 @@ begin
       'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?')
         || ' | la garde débranchée : ' || coalesce(sans_garde, '?') || ' | réécrites : ' || reecrites || ' | réinsérée : ' || coalesce(reinsere, '?'),
       'ok', par_la_fonction = '42501 Accès refusé à ce dossier.'
-        and en_direct = '42501 Une provision ne s’écrit que par enregistrer_provision et retirer_provision.'
+        -- La porte d'accès en base (acces_avant_les_gardes) : la RLS refuse l'insertion directe avant la garde.
+        and en_direct = case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.provisions'::regclass and g.tgname = '_acces_avant_les_gardes')
+                             then '42501 new row violates row-level security policy for table "provisions"'
+                             else '42501 Une provision ne s’écrit que par enregistrer_provision et retirer_provision.' end
         and sans_garde like '42501 new row violates row-level security policy%' and reecrites = 0 and reinsere = 'ACCEPTÉ');
 
     -- M-PV1 : la lecture élargie au client du dossier.

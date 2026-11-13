@@ -2,7 +2,8 @@
 -- gardes, les policies et les données restent telles quelles. Après lui, les gardes parlent de nouveau avant la RLS (le
 -- défaut décrit en tête de la migration revient). DESTRUCTIF (des `drop`) : il se colle dans l'éditeur SQL de Supabase,
 -- dans une transaction, avec sa ligne d'historique. Il ne retire que ce que la migration a posé : la garde de tête vérifie
--- que la porte est bien la sienne (sa fonction, `security invoker`, et ses 32 déclencheurs).
+-- que la porte est bien la sienne (sa fonction, `security invoker`, ses 32 déclencheurs, et ceux que la migration ou les
+-- sept migrations préparées d'INAL5, INV2, LIA2, INV4, AFF2, INV3 et EXD2 ont posés sur leurs dix tables).
 
 do $garde$
 begin
@@ -13,7 +14,9 @@ begin
     raise exception 'retour_acces_avant_les_gardes : la fonction en base n''est pas la porte de la migration (security definer).';
   end if;
   if (select count(*) from pg_catalog.pg_trigger t where t.tgname = '_acces_avant_les_gardes'
-        and t.tgfoid = 'public.acces_avant_les_gardes()'::regprocedure) <> 32
+        and t.tgfoid = 'public.acces_avant_les_gardes()'::regprocedure
+        and (select c.relname from pg_catalog.pg_class c where c.oid = t.tgrelid) not in ('affectations_du_resultat', 'conservations_des_dossiers', 'exercices', 'exercices_valides',
+          'inventaires_declares', 'lignes_d_affectation', 'memberships', 'operations_inventaire', 'provisions', 'stocks_de_cloture')) <> 32
      or exists (select 1 from pg_catalog.pg_trigger t where t.tgfoid = 'public.acces_avant_les_gardes()'::regprocedure
                  and t.tgname <> '_acces_avant_les_gardes') then
     raise exception 'retour_acces_avant_les_gardes : la porte n''est pas sur les 32 tables de la migration, ou un autre déclencheur l''appelle : relire avant de retirer.';
@@ -53,4 +56,17 @@ drop trigger _acces_avant_les_gardes on public.saisies_2035e;
 drop trigger _acces_avant_les_gardes on public.soldes_reportes;
 drop trigger _acces_avant_les_gardes on public.vehicules;
 drop trigger _acces_avant_les_gardes on public.ventilations_bancaires;
+-- Les dix tables des sept migrations préparées, là où la porte y est.
+do $preparees$
+declare
+  v_table text;
+begin
+  foreach v_table in array array['affectations_du_resultat', 'conservations_des_dossiers', 'exercices', 'exercices_valides',
+    'inventaires_declares', 'lignes_d_affectation', 'memberships', 'operations_inventaire', 'provisions', 'stocks_de_cloture'] loop
+    if exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = to_regclass('public.' || v_table) and t.tgname = '_acces_avant_les_gardes') then
+      execute format('drop trigger _acces_avant_les_gardes on public.%I', v_table);
+    end if;
+  end loop;
+end
+$preparees$;
 drop function public.acces_avant_les_gardes();

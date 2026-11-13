@@ -1,7 +1,9 @@
 -- ESSAI DE LA PORTE D'ACCÈS DEVANT LES GARDES (ligne 43, vu en passant par PC7Q2-Q1 ; la migration PRÉPARÉE
 -- supabase/preparees/20261113120000_acces_avant_les_gardes.sql). À rejouer après toute migration qui pose ou change un
--- déclencheur BEFORE d'une table de public, une policy d'écriture d'une des 32 tables de la porte, `row_security_active`,
--- ou les droits de `pg_policy`.
+-- déclencheur BEFORE d'une table de public, une policy d'écriture d'une table de la porte, `row_security_active`, ou les
+-- droits de `pg_policy`. Les tables de la porte : ses 32, plus celles des dix tables d'INAL5, INV2, LIA2, INV4, AFF2,
+-- INV3 et EXD2 que leur migration a créées ou gardées (chacune pose la porte si elle la trouve en base, et la porte les couvre si
+-- elle vient après) ; l'essai en tire le compte du catalogue, jamais d'un nombre écrit, et se joue dans les deux ordres.
 --
 -- Sans la migration — la dernière des deux lignes d'historique `acces_avant_les_gardes` et `retour_acces_avant_les_gardes`
 -- n'est pas la première —, l'essai se dit EN ATTENTE et ne joue rien. Avec elle, chaque étape se joue dans un bloc annulé,
@@ -17,10 +19,11 @@
 -- dossier qu'il n'administre pas bute sur la porte (la mise à jour). 13 à 17 : ce que la policy admet passe comme hier —
 -- le dépôt d'une pièce par le client, la commune du super-administrateur — et ce qui contourne la RLS (le propriétaire, le
 -- rôle des Edge Functions, une fonction `security definer`) rencontre les gardes comme hier. 30 à 34 : le catalogue — la
--- porte, `security invoker` au chemin vide ; la première des déclencheurs BEFORE de chacune des 32 tables ; toute table qui
+-- porte, `security invoker` au chemin vide ; la première des déclencheurs BEFORE de chacune de ses tables (au moins 32, et
+-- autant que de tables à garde `security definer`, `dossiers` exceptée) ; toute table qui
 -- porte une garde `security definer` sur l'insertion ou la mise à jour la porte, `dossiers` seule exceptée, pour sa raison
 -- (un déclencheur y remplit `cabinet_id`, que sa policy lit) ; aucun déclencheur qui tire après elle ne modifie une colonne
--- que ses policies lisent ; et l'anonyme comme l'étranger reçoivent sur les 32 tables le refus de la porte, jamais celui
+-- que ses policies lisent ; et l'anonyme comme l'étranger reçoivent sur chacune le refus de la porte, jamais celui
 -- d'une garde. 35 : le relevé de l'étape 33, appliqué à des corps plantés, voit chaque forme d'affectation que PL/pgSQL
 -- accepte, et ne prend pas une comparaison pour une affectation.
 --
@@ -46,6 +49,7 @@ declare
   mouvement constant text := $p$insert into lignes_bancaires (id, dossier_id, date, libelle, montant) values ('{L1}', '{DA}', '2026-02-01', 'ESSAI PORTE', -1)$p$;
   refus_categories constant text := 'new row violates row-level security policy for table "categories"';
   e record; v_code text; v_obs text; v_requete text; v_table text; v_profil text; v_bons integer; v_vus integer; v_autres text; v_plantes text;
+  v_attendues integer;
   verdicts jsonb := '[]'::jsonb;
 begin
   if not porte then
@@ -152,14 +156,22 @@ begin
                        and not has_function_privilege('anon', p.oid, 'execute') and not has_function_privilege('authenticated', p.oid, 'execute')
                   from pg_proc p where p.oid = to_regprocedure('public.acces_avant_les_gardes()')), false),
       'observe', 'relu au catalogue');
-    -- 31. Sur chaque table qui la porte : BEFORE INSERT OR UPDATE FOR EACH ROW, active, et la première des BEFORE.
+    -- 31. Sur chaque table qui la porte : BEFORE INSERT OR UPDATE FOR EACH ROW, active, et la première des BEFORE ; autant de
+    --     tables que de tables à garde security definer (le relevé de l'étape 32), `dossiers` exceptée : les 32, et celles
+    --     des dix des migrations préparées qui sont en base (INAL5, INV2, LIA2, INV4, AFF2, INV3, EXD2).
+    select count(*) into v_attendues
+      from pg_class c where c.relnamespace = 'public'::regnamespace and c.relname <> 'dossiers'
+       and exists (select 1 from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+                    where t.tgrelid = c.oid and not t.tgisinternal and t.tgtype & 3 = 3 and t.tgtype & 20 <> 0
+                      and p.prosecdef and t.tgname <> '_acces_avant_les_gardes');
     select count(*), string_agg(c.relname, ', ' order by c.relname) filter (where not (t.tgtype = 23 and t.tgenabled = 'O'
              and t.tgname = (select min(u.tgname collate "C") from pg_trigger u where u.tgrelid = t.tgrelid and not u.tgisinternal and u.tgtype & 2 = 2)))
       into v_vus, v_autres
       from pg_trigger t join pg_class c on c.oid = t.tgrelid
      where t.tgname = '_acces_avant_les_gardes' and t.tgfoid = to_regprocedure('public.acces_avant_les_gardes()');
-    verdicts := verdicts || jsonb_build_object('rang', 31, 'etape', '31. la porte sur 32 tables, BEFORE INSERT OR UPDATE FOR EACH ROW, active, la première de chacune',
-      'ok', v_vus = 32 and v_autres is null, 'observe', v_vus || ' tables ; hors de la règle : ' || coalesce(v_autres, 'aucune'));
+    verdicts := verdicts || jsonb_build_object('rang', 31, 'etape', '31. la porte sur ses tables (au moins 32, autant que de tables à garde security definer hors dossiers), BEFORE INSERT OR UPDATE FOR EACH ROW, active, la première de chacune',
+      'ok', v_vus >= 32 and v_vus = v_attendues and v_autres is null,
+      'observe', v_vus || ' tables sur ' || v_attendues || ' attendues ; hors de la règle : ' || coalesce(v_autres, 'aucune'));
     -- 32. Le relevé part de TOUT : chaque table qui porte une garde security definer sur l'insertion ou la mise à jour porte la
     --     porte, `dossiers` seule exceptée ; un plancher distingue « aucune faute » d'« aveugle ».
     select count(*), string_agg(r.relname, ', ' order by r.relname) filter (where not r.porte and r.relname <> 'dossiers')
@@ -216,7 +228,7 @@ end$c$),
       'ok', v_autres is null and v_obs = 'cabinet_id', 'observe', 'tables de la porte : ' || coalesce(v_autres, 'aucune') || ' ; dossiers : ' || coalesce(v_obs, 'aucune'));
     verdicts := verdicts || jsonb_build_object('rang', 35, 'etape', '35. le relevé de l''étape 33 voit les quatre corps plantés qui modifient dossier_id (a à d), ni la comparaison (e) ni la colonne qu''aucune policy ne lit (f)',
       'ok', v_plantes = 'abcd', 'observe', 'corps vus : ' || coalesce(v_plantes, 'aucun'));
-    -- 34. L'anonyme et l'étranger, sur chacune des 32 tables : le refus de la porte, jamais celui d'une garde.
+    -- 34. L'anonyme et l'étranger, sur chacune des tables de la porte : le refus de la porte, jamais celui d'une garde.
     v_bons := 0; v_vus := 0; v_autres := null;
     for v_table in select c.relname from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = '_acces_avant_les_gardes' order by 1 loop
       foreach v_profil in array array['anon', 'etranger'] loop
@@ -249,8 +261,8 @@ end$c$),
         end if;
       end loop;
     end loop;
-    verdicts := verdicts || jsonb_build_object('rang', 34, 'etape', '34. l''anonyme et l''étranger reçoivent sur les 32 tables le refus de la porte, jamais celui d''une garde',
-      'ok', v_vus = 64 and v_bons = 64, 'observe', v_bons || ' sur ' || v_vus || coalesce(' ; autres : ' || v_autres, ''));
+    verdicts := verdicts || jsonb_build_object('rang', 34, 'etape', '34. l''anonyme et l''étranger reçoivent sur chaque table de la porte (au moins 32) le refus de la porte, jamais celui d''une garde',
+      'ok', v_vus >= 64 and v_vus = 2 * v_attendues and v_bons = v_vus, 'observe', v_bons || ' sur ' || v_vus || coalesce(' ; autres : ' || v_autres, ''));
     raise exception 'ANNULATION_ESSAI_GLOBALE';
   exception when others then
     if sqlerrm <> 'ANNULATION_ESSAI_GLOBALE' then

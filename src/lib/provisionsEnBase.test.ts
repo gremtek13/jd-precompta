@@ -228,7 +228,8 @@ describe('les essais attendent les mots du module', () => {
       expect(ESSAI, m).toContain(`'${m.replace(/'/g, "''")}'`)
     }
     expect(RLS).toContain('-- ══ PV. Les provisions (ligne 35, INV4')
-    expect(RLS).toContain("en_direct = '42501 Une provision ne s’écrit que par enregistrer_provision et retirer_provision.'")
+    // Sans la porte d'accès (acces_avant_les_gardes), la garde parle ; avec elle, la RLS d'abord (accesAvantLesGardes.sql).
+    expect(RLS).toContain("else '42501 Une provision ne s’écrit que par enregistrer_provision et retirer_provision.' end")
     expect(MIGRATION).toContain("'Une provision ne s’écrit que par enregistrer_provision et retirer_provision.' using errcode = '42501'")
   })
 })
