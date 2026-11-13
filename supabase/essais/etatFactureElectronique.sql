@@ -211,15 +211,30 @@ begin
              from (select public.etat_facture_electronique('{DB}') as e) x$q$, 'OK', 'false/true/true', null),
 
       -- ══ 22 à 27. Ce que l'état rend, et ce qu'il ne rend jamais ══════════
-      ('22', 'valeur', 'sa FORME : trois clés, chacune de son type ; l''adresse nulle avant toute déclaration', 'client', 'ventes',
-        $q$select (select string_agg(k || '=' || jsonb_typeof(e -> k), ',' order by k collate "C") from jsonb_object_keys(e) k)
+      -- Quatre clés depuis C3 (`apercu_facture_electronique`, en production le 07/11/2026) : la quatrième, `ereporting`, et
+      -- les siennes se disent dans les trois derniers segments ; le premier liste les clés de la racine HORS `ereporting`,
+      -- la liste fermée d'hier (src/lib/etatFactureElectronique.test.ts la confronte à CLES_DE_L_ETAT.racine) — une clé de
+      -- plus, à la racine ou sous `ereporting`, y paraît encore, et `ereporting` absente se dit « ereporting=- ».
+      -- Les régimes et les déclarations : des listes, vides ici (A n'en a aucun) ; leur contenu est éprouvé par
+      -- apercuFactureElectronique.sql.
+      ('22', 'valeur', 'sa FORME : quatre clés, chacune de son type ; l''adresse nulle avant toute déclaration ; l''e-reporting en trois clés, ses listes vides', 'client', 'ventes',
+        $q$select (select string_agg(k || '=' || jsonb_typeof(e -> k), ',' order by k collate "C") from jsonb_object_keys(e - 'ereporting') k)
                || ' | ' || (select string_agg(k || '=' || jsonb_typeof(e -> 'plateforme' -> k), ',' order by k collate "C") from jsonb_object_keys(e -> 'plateforme') k)
                || ' | ' || (select string_agg(k || '=' || jsonb_typeof(e -> 'superpdp' -> k), ',' order by k collate "C") from jsonb_object_keys(e -> 'superpdp') k)
                || ' | ' || case when jsonb_typeof(e -> 'adresse') = 'object'
                              then (select string_agg(k || '=' || jsonb_typeof(e -> 'adresse' -> k), ',' order by k collate "C") from jsonb_object_keys(e -> 'adresse') k)
                              else jsonb_typeof(e -> 'adresse') end
+               || ' | ereporting=' || coalesce(jsonb_typeof(e -> 'ereporting'), '-')
+               || ' | ' || case when jsonb_typeof(e -> 'ereporting') = 'object'
+                             then (select string_agg(k || '=' || jsonb_typeof(e -> 'ereporting' -> k)
+                                      || case when jsonb_typeof(e -> 'ereporting' -> k) = 'array' then '/' || jsonb_array_length(e -> 'ereporting' -> k) else '' end,
+                                    ',' order by k collate "C") from jsonb_object_keys(e -> 'ereporting') k)
+                             else '-' end
+               || ' | ' || case when jsonb_typeof(e -> 'ereporting' -> 'statut_du_dossier') = 'object'
+                             then (select string_agg(k || '=' || jsonb_typeof(e -> 'ereporting' -> 'statut_du_dossier' -> k), ',' order by k collate "C") from jsonb_object_keys(e -> 'ereporting' -> 'statut_du_dossier') k)
+                             else '-' end
              from (select public.etat_facture_electronique('{DA}') as e) x$q$,
-        'OK', 'adresse=null,plateforme=object,superpdp=object | creee_le=string,derniere_recuperation=string,nom=string,reliee=boolean,statuts_lus_le=string | depuis=string,relie=boolean | null', null),
+        'OK', 'adresse=null,plateforme=object,superpdp=object | creee_le=string,derniere_recuperation=string,nom=string,reliee=boolean,statuts_lus_le=string | depuis=string,relie=boolean | null | ereporting=object | declarations=array/0,regimes=array/0,statut_du_dossier=object | article_exoneration=null,statut_tva=string,tva_periodicite=string,tva_sur_debits=boolean', null),
       ('23', 'valeur', 'ses VALEURS : le nom et les dates de la plateforme, la date de Super PDP', 'client', 'ventes',
         $q$select (e -> 'plateforme' ->> 'reliee') || '/' || (e -> 'plateforme' ->> 'nom')
                || '/' || ((e -> 'plateforme' ->> 'creee_le')::timestamptz = '2026-09-01 08:00:00+00')
@@ -256,8 +271,14 @@ begin
                  ('2026-09-03'), ('2026-09-15'), ('2026-09-20')) as w(m), t where position(m in lower(t.x)) > 0
              union all select 'un nombre' from t where jsonb_path_exists(t.j, '$.** ? (@.type() == "number")')) z$q$,
         'OK', 'aucun', null),
-      ('26', 'valeur', 'un dossier où rien n''est relié ni déclaré : chaque clé là, à faux ou nulle — jamais absente', 'chef', null,
-        $q$select (public.etat_facture_electronique('{DD}') = '{"plateforme": {"reliee": false, "nom": null, "creee_le": null, "derniere_recuperation": null, "statuts_lus_le": null}, "superpdp": {"relie": false, "depuis": null}, "adresse": null}'::jsonb)::text$q$,
+      -- Depuis C3, l'état entier, en deux égalités : les trois clés d'hier (la première, que
+      -- src/lib/etatFactureElectronique.test.ts relit), puis `ereporting` — le statut de D (redevable, trimestriel, sans
+      -- option sur les débits, les défauts de `dossiers`), ses listes vides. Une clé de plus, n'importe où, rompt l'une ou
+      -- l'autre.
+      ('26', 'valeur', 'un dossier où rien n''est relié ni déclaré : chaque clé là, à faux, nulle ou vide — jamais absente', 'chef', null,
+        $q$select ((e - 'ereporting') = '{"plateforme": {"reliee": false, "nom": null, "creee_le": null, "derniere_recuperation": null, "statuts_lus_le": null}, "superpdp": {"relie": false, "depuis": null}, "adresse": null}'::jsonb
+                   and e -> 'ereporting' = '{"statut_du_dossier": {"statut_tva": "redevable", "article_exoneration": null, "tva_periodicite": "trimestrielle", "tva_sur_debits": false}, "regimes": [], "declarations": []}'::jsonb)::text
+             from (select public.etat_facture_electronique('{DD}') as e) x$q$,
         'OK', 'true', null),
       ('27', 'valeur', 'B : Super PDP relié, la plateforme agréée non', 'chef', null,
         $q$select (public.etat_facture_electronique('{DB}') -> 'plateforme')::text$q$,

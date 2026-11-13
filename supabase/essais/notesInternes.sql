@@ -151,8 +151,11 @@ begin
 
   select string_agg(p.proname, ', ' order by p.proname) into obs from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.prosrc ~ '\mnotes\M';
-  verdicts := verdicts || jsonb_build_object('controle', '6. aucune fonction SQL n''écrit les anciennes colonnes : seules nomment « notes » enregistrer_devis et enregistrer_facture (la note d''un devis, d''une facture) et garder_piece_validee (une clé ôtée de la ligne, sans effet sans la colonne)',
-    'observe', coalesce(obs, 'aucune'), 'ok', coalesce(obs = 'enregistrer_devis, enregistrer_facture, garder_piece_validee', false));
+  -- La liste reste FERMÉE, chaque nom avec sa raison. `facturer_honoraires` (LM7, migration `honoraires_factures`, en
+  -- production le 12/11/2026) nomme « notes » comme une clé de la facture qu'elle reçoit et passe à enregistrer_facture
+  -- (la note d'une facture d'honoraires), jamais une ancienne colonne.
+  verdicts := verdicts || jsonb_build_object('controle', '6. aucune fonction SQL n''écrit les anciennes colonnes : seules nomment « notes » enregistrer_devis et enregistrer_facture (la note d''un devis, d''une facture), facturer_honoraires (la note de la facture d''honoraires qu''elle passe à enregistrer_facture) et garder_piece_validee (une clé ôtée de la ligne, sans effet sans la colonne)',
+    'observe', coalesce(obs, 'aucune'), 'ok', coalesce(obs = 'enregistrer_devis, enregistrer_facture, facturer_honoraires, garder_piece_validee', false));
 
   -- ══ 7 et 8. L'anonyme et le compte rattaché à rien ════════════════════════════════════════════════════════
   select count(*) into total_notes from notes_internes where dossier_id = any (fictifs);
