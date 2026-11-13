@@ -195,7 +195,7 @@ begin
         '42501', 'La pièce d''une facture reprise ne se cite que par citer_piece_de_facture_reprise, qui la juge.'),
       (26, '26. un chef qui n''est pas super-administrateur ne l''insère pas : la garde, avant la policy (42501)', '{P}', 'chef_simple',
         $q$insert into pieces_des_factures_reprises (dossier_id, facture_id, piece_id) values ('{DR}', {F1}, '{PV1}') returning id::text$q$,
-        '42501', 'La pièce d''une facture reprise ne se cite que par citer_piece_de_facture_reprise, qui la juge.'),
+        '42501', case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.pieces_des_factures_reprises'::regclass and g.tgname = '_acces_avant_les_gardes') then 'new row violates row-level security policy for table "pieces_des_factures_reprises"' else 'La pièce d''une facture reprise ne se cite que par citer_piece_de_facture_reprise, qui la juge.' end),
       (27, '27. la restauration le réinsère', '{P}', 'chef',
         $q$insert into pieces_des_factures_reprises (dossier_id, facture_id, piece_id) values ('{DR}', {F1}, '{PV1}') returning (piece_id = '{PV1}')::text$q$,
         'OK', 'true'),

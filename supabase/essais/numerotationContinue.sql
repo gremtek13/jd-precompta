@@ -256,7 +256,7 @@ begin
       -- ── LA GARDE DES DEUX TABLES ──
       (60, '60. un chef qui n''est pas super-administrateur n''écrit pas un modèle en direct (42501)', null, 'chef_simple',
         $q$insert into modeles_numerotation (dossier_id, nature, emetteur, modele, annuel, depuis) values ('{D2}', 'facture', 'client', 'FA-{AAAA}-{N:5}', true, 2026) returning 1$q$, '42501',
-        'Un modèle de numéro ne se pose que par sa fonction, qui le juge.'),
+        case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.modeles_numerotation'::regclass and g.tgname = '_acces_avant_les_gardes') then 'new row violates row-level security policy for table "modeles_numerotation"' else 'Un modèle de numéro ne se pose que par sa fonction, qui le juge.' end),
       (61, '61. le super-administrateur non plus, une fois le dossier numéroté (42501)', $q${CLIENT} select {V:2026-07-20}$q$, 'chef',
         $q$insert into modeles_numerotation (dossier_id, nature, emetteur, modele, annuel, depuis) values ('{D}', 'facture', 'client', 'FA-{AAAA}-{N:5}', true, 2026) returning 1$q$, '42501',
         'Un modèle de numéro ne se pose que par sa fonction, qui le juge.'),
@@ -361,7 +361,7 @@ begin
                and ((p.policyname like '%\_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)')
                  or (p.policyname like '%\_restauration' and p.cmd = 'INSERT' and p.with_check = 'is_super_admin()'))) = 4
         and (select string_agg(t.tgname, ',' order by t.tgname collate "C") from pg_trigger t
-              where t.tgrelid = 'public.factures_emises'::regclass and not t.tgisinternal and (t.tgtype & 2) = 2)
+              where t.tgrelid = 'public.factures_emises'::regclass and not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgname <> '_acces_avant_les_gardes')
             = 'factures_emises_figees,factures_emises_figees_mentions,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_numerotation,factures_emises_source_de_la_vente'
         and (select count(*) from pg_trigger t where not t.tgisinternal and t.tgtype = 31
                and t.tgname in ('modeles_numerotation_garde', 'continuite_des_series_garde', 'factures_emises_numerotation')) = 3

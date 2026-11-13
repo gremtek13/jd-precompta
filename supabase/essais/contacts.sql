@@ -159,7 +159,7 @@ begin
       ('0e', 'valeur', 'le SIRET unique par une contrainte TOTALE ; aucun index partiel ; aucun déclencheur (hors la garde des fiches liées, LM3)', 'proprietaire', null,
         $q$select pg_get_constraintdef(co.oid) || ' ; index partiels ' || (select count(*) from pg_index i where i.indrelid = 'public.contacts'::regclass and i.indpred is not null)
                || ' ; déclencheurs ' || (select count(*) from pg_trigger t where t.tgrelid = 'public.contacts'::regclass and not t.tgisinternal
-                                         and t.tgname <> 'contacts_fiche_liee')
+                                         and t.tgname <> 'contacts_fiche_liee' and t.tgname <> '_acces_avant_les_gardes')
              from pg_constraint co where co.conrelid = 'public.contacts'::regclass and co.conname = 'contacts_siret_unique'$q$,
         'OK', 'UNIQUE (dossier_id, siret) ; index partiels 0 ; déclencheurs 0', null),
       ('0f', 'valeur', 'les colonnes que le client « Ventes » lit, dans leur ordre (« ! » : non nulle) — aucun téléphone, aucune date de naissance ; après LM3 (fiche_liee_au_dossier_du_client), exactement les mêmes, `nom` facultatif, puis les trois du lien', 'proprietaire', null,

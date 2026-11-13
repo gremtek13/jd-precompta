@@ -453,7 +453,7 @@ begin
     array['valeur', '4c. … que le chef y lit', 'chef', $q$select count(*)::text from operations_caisse where dossier_id = '{DC}'$q$, '', '1'],
     array['valeur', '4d. … ni les lignes de son écriture', 'client', $q$select count(*)::text from ecritures_brouillon where operation_caisse_id is not null$q$, '', '0'],
     array['controle', '5. le client n''écrit pas en direct : la garde', 'client', $q$insert into operations_caisse (dossier_id, genre, date, montant, origine) values ('{DC}', 'apport', '2026-03-03', 10, 'client')$q$,
-      '42501', 'Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.'],
+      '42501', case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.operations_caisse'::regclass and g.tgname = '_acces_avant_les_gardes') then 'new row violates row-level security policy for table "operations_caisse"' else 'Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.' end],
     array['controle', '5b. … ni sous le réglage d''une fonction : la policy', 'client', $q$select set_config('jd.caisse', '{X8}', true);
       insert into operations_caisse (id, dossier_id, genre, date, montant, origine) values ('{X8}', '{DC}', 'apport', '2026-03-03', 10, 'client')$q$,
       '42501', 'new row violates row-level security policy for table "operations_caisse"'],
@@ -469,7 +469,7 @@ begin
       'OK', ''],
     array['valeur', '6c. … et ne lit rien de la caisse du cabinet', 'autre', $q$select count(*)::text from operations_caisse where dossier_id in ('{T}', '{DC}')$q$, '', '0'],
     array['controle', '6d. … ni n''écrit en direct dans son dossier : la garde', 'autre', $q$insert into operations_caisse (dossier_id, genre, date, montant, origine) values ('{DA}', 'apport', '2026-03-04', 10, 'cabinet')$q$,
-      '42501', 'Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.'],
+      '42501', case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.operations_caisse'::regclass and g.tgname = '_acces_avant_les_gardes') then 'new row violates row-level security policy for table "operations_caisse"' else 'Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.' end],
     array['controle', '6e. … ni sous le réglage d''une fonction : la policy', 'autre', $q$select set_config('jd.caisse', '{X8}', true);
       insert into operations_caisse (id, dossier_id, genre, date, montant, origine) values ('{X8}', '{DA}', 'apport', '2026-03-04', 10, 'cabinet')$q$,
       '42501', 'new row violates row-level security policy for table "operations_caisse"'],
@@ -930,7 +930,7 @@ begin
       select e.dossier_id, e.facture_id, '2026-03-18', -e.montant, e.moyen, e.id, 'ESSAI CAISSE', '2026-01-15 10:00+01' from encaissements_factures e where e.dossier_id = '{B}' and e.date_encaissement = '2026-03-16'$q$,
       'OK', ''],
     array['controle', '89b. un compte qui n''est pas super-administrateur ne réinsère pas : la garde', 'autre', $q$insert into operations_caisse (dossier_id, genre, date, montant, origine, cree_le) values ('{DA}', 'prelevement', '2026-02-01', 1000, 'cabinet', '2026-01-15 10:00+01')$q$,
-      '42501', 'Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.'],
+      '42501', case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.operations_caisse'::regclass and g.tgname = '_acces_avant_les_gardes') then 'new row violates row-level security policy for table "operations_caisse"' else 'Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.' end],
 
     -- ══ 90 à 95. Les gardes et les contraintes, sans les fonctions ══════════
     array['controle', '90. une opération ne se modifie pas, même par le propriétaire', 'postgres', $q$update operations_caisse set montant = 1 where dossier_id = '{T}' and genre = 'apport'$q$,

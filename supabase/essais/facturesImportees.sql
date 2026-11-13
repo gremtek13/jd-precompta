@@ -327,7 +327,7 @@ begin
         -- Celle des mentions à la validation (JJ-Q4, en production depuis le 08/11/2026) entre la garde d'hier et celle des
         -- reprises ; avec la numérotation qui continue (A9a, préparée), son déclencheur après la marque d'acompte.
         and (select string_agg(t.tgname, ',' order by t.tgname collate "C") from pg_trigger t
-              where t.tgrelid = 'public.factures_emises'::regclass and not t.tgisinternal and (t.tgtype & 2) = 2)
+              where t.tgrelid = 'public.factures_emises'::regclass and not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgname <> '_acces_avant_les_gardes')
             in ('factures_emises_figees,factures_emises_figees_mentions,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_source_de_la_vente',
                 'factures_emises_figees,factures_emises_figees_mentions,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_numerotation,factures_emises_source_de_la_vente')
         and (select count(*) from pg_trigger t where not t.tgisinternal and t.tgtype = 31

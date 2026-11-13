@@ -141,7 +141,7 @@ begin
       ('03', 'controle', 'l''ordre des noms : la garde des factures, puis lui, puis la marque d''acompte et la source de la vente', 'proprietaire',
         $q$select string_agg(t.tgname::text, ',' order by t.tgname::text collate "C") from pg_trigger t
             where t.tgrelid = 'public.factures_emises'::regclass and not t.tgisinternal
-              and (t.tgtype & 1) <> 0 and (t.tgtype & 2) <> 0 and (t.tgtype & 16) <> 0$q$,
+              and (t.tgtype & 1) <> 0 and (t.tgtype & 2) <> 0 and (t.tgtype & 16) <> 0 and t.tgname <> '_acces_avant_les_gardes'$q$,
         'OK', 'factures_emises_figees,factures_emises_figees_mentions,factures_emises_figees_reprises,factures_emises_marque_d_acompte,factures_emises_numerotation,factures_emises_source_de_la_vente', null),
 
       -- ══ 1. Le refus ══════════

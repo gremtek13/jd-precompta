@@ -189,7 +189,7 @@ begin
       (32, '32. un compte sans accès ne crée pas le principal d''un dossier qu''il ne voit pas, et n''apprend rien de ses comptes (42501)',
         '{M1} {SEC}', 'inconnu',
         $q$insert into lignes_bancaires (dossier_id, date, libelle, montant) values ('{DA}', '2026-02-01', 'ESSAI MCB1', -1) returning id::text$q$,
-        '42501', 'new row violates row-level security policy for table "comptes_bancaires"'),
+        '42501', case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.lignes_bancaires'::regclass and g.tgname = '_acces_avant_les_gardes') then 'new row violates row-level security policy for table "lignes_bancaires"' else 'new row violates row-level security policy for table "comptes_bancaires"' end),
       (33, '33. un chef du cabinet qui n''est pas super-administrateur ouvre un compte aussi', '{M1}', 'chef_simple',
         $q$insert into comptes_bancaires (dossier_id, libelle, compte, compte_propre_depuis) values ('{DA}', 'ESSAI MCB1 SECOND', '512100', '2026-01-01')
              returning compte$q$,
@@ -301,7 +301,7 @@ begin
         and (select string_agg(t.tgname::text, ' ' order by t.tgname collate "C")
                from pg_trigger t
               where t.tgrelid = 'public.lignes_bancaires'::regclass and not t.tgisinternal and (t.tgtype & 2) <> 0
-                and t.tgname collate "C" <= 'lignes_bancaires_garde_du_compte_bancaire')
+                and t.tgname collate "C" <= 'lignes_bancaires_garde_du_compte_bancaire' and t.tgname <> '_acces_avant_les_gardes')
             = 'lignes_bancaires_figees_par_la_validation lignes_bancaires_garde_du_compte_bancaire',
       'observe', 'relu au catalogue');
     raise exception 'ANNULATION_ESSAI_GLOBALE';

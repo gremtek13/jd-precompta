@@ -439,7 +439,9 @@ describe('les essais de la base, rejoués en production', () => {
     // préparée et celle qu'elle suppose (B1) : un seul modèle « apres » porte les deux.
     // Vingt-trois le 11/11/2026 : `relanceDesDemandesParEmail` (B3b, `relance_des_demandes_par_email`) entré dans la famille
     // « apres », après sa migration préparée et les deux qu'elle suppose (B1, B2) : un seul modèle « apres » porte les trois.
-    expect(cas.length).toBe(23)
+    // Vingt-quatre le 13/11/2026 : `accesAvantLesGardes` (ligne 43, `acces_avant_les_gardes`) entré dans la famille « apres »,
+    // après sa migration préparée ; SÛR au banc, sur une copie de la réplique au niveau de l'export.
+    expect(cas.length).toBe(24)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

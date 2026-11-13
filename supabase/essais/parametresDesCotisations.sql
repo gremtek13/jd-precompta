@@ -60,7 +60,7 @@ begin
   from pg_class c where c.oid in ('public.debuts_d_activite'::regclass, 'public.parametres_des_cotisations'::regclass)$q$,
         'OK', 'debuts_d_activite:true,parametres_des_cotisations:true debuts_d_activite.debuts_d_activite_cabinet:ALL:{authenticated}:admin_du_dossier(dossier_id):admin_du_dossier(dossier_id) ; parametres_des_cotisations.parametres_des_cotisations_cabinet:ALL:{authenticated}:admin_du_dossier(dossier_id):admin_du_dossier(dossier_id)'),
       (5, 'proprietaire', '1e. … le gel des paramètres d''un exercice, avant toute insertion, mise à jour ou suppression, ligne par ligne ; aucun sur le début d''activité', $q$select coalesce(string_agg(t.tgrelid::regclass::text || '.' || t.tgname || ':' || t.tgtype || ':' || t.tgfoid::regprocedure::text, ','), '-')
-  from pg_trigger t where t.tgrelid in ('public.debuts_d_activite'::regclass, 'public.parametres_des_cotisations'::regclass) and not t.tgisinternal$q$,
+  from pg_trigger t where t.tgrelid in ('public.debuts_d_activite'::regclass, 'public.parametres_des_cotisations'::regclass) and not t.tgisinternal and t.tgname <> '_acces_avant_les_gardes'$q$,
         'OK', 'parametres_des_cotisations.parametres_des_cotisations_figes_par_la_validation:31:garder_parametres_des_cotisations_valides()'),
       (6, 'proprietaire', '1f. … les droits : la garde à personne, l''écriture à authenticated seul, aux droits de l''appelant', $q$select has_function_privilege('anon', 'public.enregistrer_parametres_des_cotisations(uuid, integer, jsonb, jsonb)', 'execute')
   || '|' || has_function_privilege('authenticated', 'public.enregistrer_parametres_des_cotisations(uuid, integer, jsonb, jsonb)', 'execute')
