@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  phrasesDuBilan, refusDitAuClient, releverMaPlateforme, type AppelsDeLaReleve, type FluxAchat, type ListeDesAchats,
+  factureDiteAuClient, phrasesDuBilan, refusDitAuClient, releverMaPlateforme, type AppelsDeLaReleve, type FluxAchat, type ListeDesAchats,
   type ReponseReception,
 } from './receptionParLeClient'
 import type { DrapeauxPlateforme, ReponsePlateforme } from './receptionPlateforme'
@@ -53,7 +53,7 @@ describe('releverMaPlateforme', () => {
       recues: 2, sansLisible: 1, dejaLa: 1, doublons: 1, autreEntreprise: 1, auCabinet: 1, enAttente: 2, rejetees: 1,
       ecartees: 2, complete: true, interruption: null,
     })
-    expect(b.echecs).toEqual(['« facture.xml » : La plateforme ne répond pas.'])
+    expect(b.echecs).toEqual(['Facture sans date de réception : La plateforme ne répond pas.'])
   })
 
   it('continue au cours de la même relève depuis le point que la page rend possible, et s’arrête quand il n’avance plus', async () => {
@@ -86,7 +86,7 @@ describe('releverMaPlateforme', () => {
     })
     const b = await releverMaPlateforme(a)
     expect(b.recues).toBe(0)
-    expect(b.echecs).toEqual(['« facture.xml » : la réponse ne correspond pas à la facture demandée.'])
+    expect(b.echecs).toEqual(['Facture sans date de réception : la réponse ne correspond pas à la facture demandée.'])
   })
 
   it('une liste refusée arrête tout, dite aux mots du client', async () => {
@@ -111,5 +111,24 @@ describe('les mots de la relève', () => {
     expect(phrasesDuBilan({ ...vide, recues: 2, sansLisible: 2 })[0])
       .toBe('2 factures reçues : elles arrivent chez ton cabinet, à valider. 2 n’ont pas de version lisible : ton cabinet lira l’original.')
     expect(phrasesDuBilan({ ...vide, autreEntreprise: 1 })[0]).toMatch(/^1 facture ne désigne pas ta société comme acheteur : elle n’est pas reçue/)
+  })
+})
+
+describe('B4RS-Q2 : une facture de la liste se dit sous sa date de réception, jamais sous son nom', () => {
+  it('le jour de Paris de sa réception ; sans date lisible, aucune ; le nom n’apparaît dans aucun échec', async () => {
+    // 23 h 30 UTC le 31 octobre : déjà le 1er novembre à Paris.
+    expect(factureDiteAuClient({ recu_le: '2026-10-31T23:30:00.000Z' })).toBe('Facture reçue le 01/11/2026')
+    expect(factureDiteAuClient({ recu_le: null })).toBe('Facture sans date de réception')
+    expect(factureDiteAuClient({ recu_le: 'pas une date' })).toBe('Facture sans date de réception')
+    const nom = 'Client-Voisin-Facture-2026-11.xml'
+    const { a } = appels([ok(page({ flux: [
+      flux({ id: 'panne', nom, recu_le: '2026-11-03T09:00:00.000Z' }), flux({ id: 'autre', nom }),
+    ] }))], { panne: ko('La plateforme ne répond pas.'), autre: recue('pas-elle', 'recue') })
+    const b = await releverMaPlateforme(a)
+    expect(b.echecs).toEqual([
+      'Facture reçue le 03/11/2026 : La plateforme ne répond pas.',
+      'Facture sans date de réception : la réponse ne correspond pas à la facture demandée.',
+    ])
+    expect([...b.echecs, ...phrasesDuBilan(b)].join(' ')).not.toContain('Client-Voisin')
   })
 })
