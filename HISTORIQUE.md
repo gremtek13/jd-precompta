@@ -52273,6 +52273,7 @@ date. Le relevé se lit désormais en entier (`lignes_bancaires.cotisation_id`, 
 n'entre pas ; après lui, dite « déjà prélevée le … » avec sa somme ; un `montant_verse` saisi sans mouvement, « peut-être déjà payée »,
 jamais comptée ; un encaissement daté après le solde (par son mouvement s'il en a un ; hors espèces) se dit avec sa somme. Reste non
 détectable : un paiement reçu ou prélevé mais pas encore enregistré ni rapproché (`reglementDeLaCotisation`, deux tests qui échouaient avant).
+Ce reste-là se dit désormais en clair, toujours, parmi ce qui n'est pas compté (`NON_COMPTE_PAS_ENCORE_ENREGISTRE`, gardé par un test).
 
 ### 13/11/2026 — INV5-Q1 : LA PIÈCE CITÉE SE CHOISIT DANS L'ONGLET INVENTAIRE (DERRIÈRE SON DRAPEAU)
 

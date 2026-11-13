@@ -3,7 +3,7 @@ import * as module from './tresorerieClient'
 import {
   HORIZON_EN_JOURS, NON_COMPTE_ACHATS, NON_COMPTE_PREVISIONNEL_DU_CABINET, NON_COMPTE_VENTES_FERMEES, TRESORERIE_A_90_JOURS_OFFERTE,
   composerTresorerie, departDesSoldes, dernierJourDeLHorizon, echeancesDeLEcheancier, finDeLHorizon, maTresorerieOuverte,
-  NON_COMPTE_PEUT_ETRE_PAYEE, reglementDeLaCotisation, soldesDeLaBanque, type CreancesDeLaTresorerie, type Depart,
+  NON_COMPTE_PAS_ENCORE_ENREGISTRE, NON_COMPTE_PEUT_ETRE_PAYEE, reglementDeLaCotisation, soldesDeLaBanque, type CreancesDeLaTresorerie, type Depart,
   type EcheancesDeLaTresorerie, type MouvementDuReleve,
 } from './tresorerieClient'
 import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
@@ -211,10 +211,11 @@ describe('la projection', () => {
       { cle: 'echeance-ca3-2026-10', phrase: 'TVA d’octobre 2026 (courant novembre 2026) : son montant n’est pas connu ici.', centimes: null },
       { cle: 'achats', phrase: NON_COMPTE_ACHATS, centimes: null },
       { cle: 'previsionnel-du-cabinet', phrase: NON_COMPTE_PREVISIONNEL_DU_CABINET, centimes: null },
+      { cle: 'pas-encore-enregistre', phrase: NON_COMPTE_PAS_ENCORE_ENREGISTRE, centimes: null },
       { cle: 'depuis-le-releve', phrase: 'Ce qui est entré ou sorti de ton compte depuis le 31 octobre 2026, date de ton dernier relevé contrôlé.', centimes: null },
     ])
     const fermees = composerTresorerie({ releve: RELEVE_VIDE, aujourdHui: AUJOURDHUI, depart: departLu(0), creances: { etat: 'fermees' }, echeances: echeances([]) })
-    expect(fermees.etat === 'projetee' && fermees.nonComptes.map((n) => n.phrase)).toEqual([NON_COMPTE_VENTES_FERMEES, NON_COMPTE_ACHATS, NON_COMPTE_PREVISIONNEL_DU_CABINET])
+    expect(fermees.etat === 'projetee' && fermees.nonComptes.map((n) => n.phrase)).toEqual([NON_COMPTE_VENTES_FERMEES, NON_COMPTE_ACHATS, NON_COMPTE_PREVISIONNEL_DU_CABINET, NON_COMPTE_PAS_ENCORE_ENREGISTRE])
   })
 
   it('une facture encaissée en partie compte son reste, un avoir déduit ; un avoir n’est pas une créance', () => {
@@ -316,6 +317,25 @@ describe('une échéance de cotisation déjà payée, un encaissement d’après
     })
     // Le reste dû compte tout le registre non retiré (espèces comprises), comme hier : 100 − 10 − 20 − 5,5 − 30 − 1.
     expect(t.mouvements.map((m) => m.centimes)).toEqual([3350])
+  })
+})
+
+describe('ce que rien ne permet de voir', () => {
+  it('un paiement pas encore enregistré ni rapproché se dit toujours, sans somme, dans toute projection', () => {
+    expect(NON_COMPTE_PAS_ENCORE_ENREGISTRE).toMatch(/pas encore enregistré ni rapproché/)
+    expect(NON_COMPTE_PAS_ENCORE_ENREGISTRE).toMatch(/dans ton solde et dans ce calcul/)
+    expect(motsDuCabinet(NON_COMPTE_PAS_ENCORE_ENREGISTRE)).toEqual([])
+    const cas: [CreancesDeLaTresorerie, EcheancesDeLaTresorerie][] = [
+      [{ etat: 'fermees' }, echeances([])],
+      [ventes([{ id: 'f', numero: 'F', echeance: '2026-12-01', ttc: 10 }]), echeances([echeance({ montant: { valeur: 1, estimation: false } })])],
+    ]
+    for (const [creances, ech] of cas) {
+      const t = composerTresorerie({ releve: RELEVE_VIDE, aujourdHui: AUJOURDHUI, depart: departLu(0), creances, echeances: ech })
+      if (t.etat !== 'projetee') throw new Error(t.etat)
+      expect(t.nonComptes.filter((n) => n.phrase === NON_COMPTE_PAS_ENCORE_ENREGISTRE)).toEqual([
+        { cle: 'pas-encore-enregistre', phrase: NON_COMPTE_PAS_ENCORE_ENREGISTRE, centimes: null },
+      ])
+    }
   })
 })
 
