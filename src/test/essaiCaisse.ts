@@ -3,7 +3,7 @@ import {
   refusDeLaNatureDesRecettesDuClient, STATUTS_DE_LA_SAISIE_DU_CLIENT, texteCaisseNegative,
   type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type RefusCaisse, type SaisieDeCaisse,
 } from '../lib/caisse'
-import { refusCompteDeBilanAuPlanSelon } from '../lib/compteDeBilan'
+import { LE_468_SUR_LE_RELEVE_PREVU, refusCompteDeBilanAuPlanSelon } from '../lib/compteDeBilan'
 import { formuler, REFUS_DU_MOUVEMENT } from '../lib/comptesBancaires'
 import { jugerLaCorrectionSelon } from '../lib/correctionDuPaiement'
 import {
@@ -656,7 +656,7 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
     if (quiEcrit(ligne.dossier_id) == null) return { code: '42501', message: 'Accès refusé à ce mouvement.' }
     const compte = texte(args[1])
     const plan = planDe(e, ligne.dossier_id)
-    const refus = refusCompteDeBilanAuPlanSelon(compte, d.mode, d.mode === 'engagement' ? d.notesDeFrais : plan.exploitant, plan, true)
+    const refus = refusCompteDeBilanAuPlanSelon(compte, d.mode, d.mode === 'engagement' ? d.notesDeFrais : plan.exploitant, plan, true, LE_468_SUR_LE_RELEVE_PREVU)
     if (refus) return { code: '22023', message: refus }
     // L'écriture attendue, comme la fonction la compare : la banque du plan au montant et dans le sens du mouvement, le
     // compte choisi en face, en multiensemble (lib/compteDeBilan.ts, `ecritureDuCompteDeBilan`, la compose ainsi).

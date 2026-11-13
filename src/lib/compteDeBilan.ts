@@ -125,15 +125,36 @@ export function lireCompteSaisi(saisie: string): SaisieDeCompte {
 // de banque : ils naissent d'une écriture d'inventaire ou de l'affectation du résultat. Un compte d'attente non plus —
 // un mouvement qu'on ne sait pas encore classer reste à traiter, sans quoi il échapperait à la validation.
 export function refusCompteDeBilan(compte: string | null, mode: ModeComptable, dirigeant: string): string | null {
-  return refusCompteDeBilanSelon(compte, mode, dirigeant, CAISSE_EXPORTEE)
+  return refusCompteDeBilanSelon(compte, mode, dirigeant, CAISSE_EXPORTEE, LE_468_SUR_LE_RELEVE_PREVU)
 }
+
+// LE 468 SUR UN MOUVEMENT DU RELEVÉ, COMME LE 467 (ligne 43 ; 43-Q12, le 17/10/2026, et PC4Q2-Q1, le 11/11/2026, « Tout de
+// suite, à part »). La migration PRÉPARÉE `le_468_sur_le_releve` (supabase/preparees/20261113210000_le_468_sur_le_releve.sql)
+// sort le 468 de la branche du 48 de `refus_compte_de_bilan` : dans le plan comptable de 2026, il est le pendant créditeur
+// du 467, « Divers comptes créditeurs et charges à payer » (PCG, art. 1214-46), que le relevé reçoit déjà — la branche
+// `^(468|48)` gardait le sens du plan de 2019, où le 468 rangeait les charges à payer et produits à recevoir « divers »
+// (4686, 4687). Et la phrase du 48 suit la liste de 2026 (481, 486, 487, 488 ; art. 1214-48) : les frais d'émission d'un
+// emprunt en charge — l'application ne tient pas l'étalement que l'art. 212-11 permet —, le reste à l'inventaire. BAISSÉ
+// jusqu'à l'application de la migration : l'écran redit la fonction en base. `compteDeBilan.test.ts` exécute la fonction
+// SQL de chaque état — celle de l'export, et celle de la migration préparée tant qu'elle n'y est pas — et compare.
+export const LE_468_SUR_LE_RELEVE_PREVU = false
+
+// La phrase du 48, celle d'hier (le plan de 2019, le 468 compris) et celle de la migration (le plan de 2026).
+const REFUS_REGULARISATION_2019 = 'Un compte de régularisation (charges à payer, produits à recevoir, charges ou produits '
+  + 'constatés d’avance) ne reçoit pas un mouvement de banque : il se passe à l’inventaire.'
+const REFUS_REGULARISATION_2026 = 'Un compte de régularisation (frais d’émission des emprunts, charges ou produits constatés '
+  + 'd’avance, répartition périodique des charges et des produits) ne reçoit pas un mouvement de banque : les frais '
+  + 'd’émission d’un emprunt se rangent en charge, par une catégorie — l’application ne les étale pas sur sa durée —, et '
+  + 'le reste se passe à l’inventaire.'
 
 // LE MÊME, SELON QUE LA CAISSE EST EN BASE (ligne 26.6, étape C1b) : la migration `caisse_retrait_et_versement` donne au
 // compte 53 d'un dossier en trésorerie une phrase à lui — seule la caisse du plan reçoit un mouvement, et
 // `refusCompteDeBilanAuPlan` l'accepte avant d'appeler celle-ci —, et laisse au 53 en engagement la phrase d'hier.
 // `compteDeBilan.test.ts` exécute la fonction SQL de chaque état — celle de l'export, et celle de la migration préparée
-// tant qu'elle n'y est pas — sur les mêmes comptes, et compare.
-export function refusCompteDeBilanSelon(compte: string | null, mode: ModeComptable, dirigeant: string, caisseEnBase: boolean): string | null {
+// tant qu'elle n'y est pas — sur les mêmes comptes, et compare. De même pour le 468 (`le468SurLeReleve`, la migration
+// `le_468_sur_le_releve`, PC4Q2-Q1) : sans valeur par défaut, l'appelant dit l'état qu'il juge.
+export function refusCompteDeBilanSelon(compte: string | null, mode: ModeComptable, dirigeant: string, caisseEnBase: boolean,
+  le468SurLeReleve: boolean): string | null {
   if (compte == null || !/^[0-9]{6,10}$/.test(compte)) {
     return 'Ce numéro de compte n’a pas la forme d’un compte de l’application : six à dix chiffres.'
   }
@@ -178,9 +199,10 @@ export function refusCompteDeBilanSelon(compte: string | null, mode: ModeComptab
     return 'Un compte transitoire ou d’attente ne garde pas un mouvement : un mouvement qu’on ne sait pas encore classer '
       + 'reste à traiter, et l’exercice ne se valide qu’une fois tout classé.'
   }
-  if (/^(468|48)/.test(compte)) {
-    return 'Un compte de régularisation (charges à payer, produits à recevoir, charges ou produits constatés d’avance) ne '
-      + 'reçoit pas un mouvement de banque : il se passe à l’inventaire.'
+  // Le 48 ; et le 468 tant que la migration `le_468_sur_le_releve` n'est pas en base. Avec elle, un 468 qui n'est pas le
+  // compte du dirigeant (jugé plus haut) n'est pris par aucune branche : reçu, comme le 467.
+  if (le468SurLeReleve ? /^48/.test(compte) : /^(468|48)/.test(compte)) {
+    return le468SurLeReleve ? REFUS_REGULARISATION_2026 : REFUS_REGULARISATION_2019
   }
   if (mode === 'tresorerie' && /^4[234]/.test(compte)) {
     return 'En comptabilité de trésorerie, un salaire, une cotisation ou un impôt payés sont des charges : range le '
@@ -198,13 +220,13 @@ export function refusCompteDeBilanSelon(compte: string | null, mode: ModeComptab
 // — et la caisse en engagement — se juge comme hier. La caisse jamais négative se juge ensuite, à la fin de la transaction
 // (lib/caisse.ts).
 export function refusCompteDeBilanAuPlan(compte: string | null, mode: ModeComptable, dirigeant: string, plan: PlanComptable): string | null {
-  return refusCompteDeBilanAuPlanSelon(compte, mode, dirigeant, plan, CAISSE_EXPORTEE)
+  return refusCompteDeBilanAuPlanSelon(compte, mode, dirigeant, plan, CAISSE_EXPORTEE, LE_468_SUR_LE_RELEVE_PREVU)
 }
 
 export function refusCompteDeBilanAuPlanSelon(compte: string | null, mode: ModeComptable, dirigeant: string, plan: PlanComptable,
-  caisseEnBase: boolean): string | null {
+  caisseEnBase: boolean, le468SurLeReleve: boolean): string | null {
   if (caisseEnBase && mode === 'tresorerie' && compte === plan.caisse) return null
-  return refusCompteDeBilanSelon(compte, mode, dirigeant, caisseEnBase)
+  return refusCompteDeBilanSelon(compte, mode, dirigeant, caisseEnBase, le468SurLeReleve)
 }
 
 // Le classement que la fonction d'écriture refuse AVANT de regarder le compte, dans son ordre : un règlement groupé,

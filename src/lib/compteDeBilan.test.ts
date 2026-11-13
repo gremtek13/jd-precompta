@@ -7,7 +7,8 @@ import {
 } from './comptes'
 import {
   comptesDeBilanProposes, comptesDeBilanProposesSelon, REFUS_COMPTE_DE_BILAN_CLASSE, ecritureDuCompteDeBilan,
-  idsMouvementsSurUnCompteDeBilan, libelleDuCompteDeBilan, lireCompteSaisi, mouvementsSurUnCompteDeBilanDesynchronises,
+  idsMouvementsSurUnCompteDeBilan, LE_468_SUR_LE_RELEVE_PREVU, libelleDuCompteDeBilan, lireCompteSaisi,
+  mouvementsSurUnCompteDeBilanDesynchronises,
   refusCompteDeBilan, refusCompteDeBilanAuPlan, refusCompteDeBilanAuPlanSelon, refusCompteDeBilanDuMouvement,
   refusCompteDeBilanSelon, refusMouvementCompteDeBilan,
 } from './compteDeBilan'
@@ -132,6 +133,13 @@ function definitionDans(fichiers: readonly { chemin: string; texte: string }[], 
 }
 const AVANT_LA_CAISSE = MIGRATIONS.slice(0, MIGRATIONS.findIndex((f) => CAISSE_DU_RELEVE.test(f.chemin)))
 const AVEC_LA_CAISSE = MIGRATIONS.filter((f) => CAISSE_DU_RELEVE.test(f.chemin))
+// LE 468 SUR LE RELEVÉ (PC4Q2-Q1) : la migration `le_468_sur_le_releve`, préparée, remplace `refus_compte_de_bilan` après la
+// caisse. Ses deux états : la définition d'avant elle (la dernière des fichiers qui la précèdent) contre le module sans elle,
+// et la sienne — préparée ou exportée — contre le module avec elle ; la caisse est en base dans l'un et l'autre.
+const LE_468 = /\d{14}_le_468_sur_le_releve\.sql$/
+const RANG_DU_468 = MIGRATIONS.findIndex((f) => LE_468.test(f.chemin))
+const AVANT_LE_468 = MIGRATIONS.slice(0, RANG_DU_468)
+const AVEC_LE_468 = MIGRATIONS.slice(0, RANG_DU_468 + 1)
 const DIRIGEANTS = ['108000', '455000', '467000']
 
 describe('lireCompteSaisi — la saisie d’un compte, sous la forme des comptes de l’application', () => {
@@ -253,7 +261,8 @@ describe('la caisse du relevé : les deux états de la migration `caisse_retrait
     expect(AVANT_LA_CAISSE.length).toBeGreaterThan(100)
   })
 
-  for (const [etat, fichiers, caisseEnBase] of [['sans la caisse', AVANT_LA_CAISSE, false], ['avec la caisse', MIGRATIONS, true]] as const) {
+  // L'état « avec la caisse » s'arrête avant la migration du 468, qui remplace la fonction après elle (son bloc, plus bas).
+  for (const [etat, fichiers, caisseEnBase] of [['sans la caisse', AVANT_LA_CAISSE, false], ['avec la caisse', AVANT_LE_468, true]] as const) {
     it(`${etat} : refusCompteDeBilanSelon rend, compte par compte, la phrase de la fonction SQL de cet état`, () => {
       const cas = casDuRefus(definitionDans(fichiers, 'refus_compte_de_bilan'))
       expect(cas.length).toBe(caisseEnBase ? 19 : 18)
@@ -262,7 +271,7 @@ describe('la caisse du relevé : les deux états de la migration `caisse_retrait
         for (const mode of MODES) {
           for (const dirigeant of DIRIGEANTS) {
             const sql = refusSql(cas, compte, mode, dirigeant)
-            const ici = refusCompteDeBilanSelon(compte, mode, dirigeant, caisseEnBase)
+            const ici = refusCompteDeBilanSelon(compte, mode, dirigeant, caisseEnBase, false)
             expect(ici === null ? null : sansApostrophes(ici), `${compte} ${mode} ${dirigeant}`)
               .toBe(sql.message === null ? null : sansApostrophes(sql.message))
             atteints.add(sql.rang)
@@ -277,19 +286,21 @@ describe('la caisse du relevé : les deux états de la migration `caisse_retrait
     const sql = definitionDans(MIGRATIONS, 'ecrire_mouvement_compte_bilan')
     expect(sql).toContain("v_caisse := public.compte_du_role(v_ligne.dossier_id, 'caisse');")
     expect(sql).toContain("if v_mode = 'tresorerie' and p_compte = v_caisse then\n    v_refus := null;\n  else\n    v_refus := public.refus_compte_de_bilan(p_compte, v_mode, v_dirigeant);")
-    for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
-      expect(refusCompteDeBilanAuPlanSelon(plan.caisse, 'tresorerie', '108000', plan, true)).toBeNull()
-      // Un autre compte 53, que la fonction ne reconnaît pas pour la caisse du plan, sous la phrase neuve.
-      expect(refusCompteDeBilanAuPlanSelon('532000', 'tresorerie', '108000', plan, true)).toContain('Seule la caisse du dossier')
-      // En engagement, la caisse attend sa conception : la phrase d'hier.
-      expect(refusCompteDeBilanAuPlanSelon(plan.caisse, 'engagement', '455000', plan, true)).toContain('s’écrit au 580000')
+    for (const le468 of [false, true]) {
+      for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
+        expect(refusCompteDeBilanAuPlanSelon(plan.caisse, 'tresorerie', '108000', plan, true, le468)).toBeNull()
+        // Un autre compte 53, que la fonction ne reconnaît pas pour la caisse du plan, sous la phrase neuve.
+        expect(refusCompteDeBilanAuPlanSelon('532000', 'tresorerie', '108000', plan, true, le468)).toContain('Seule la caisse du dossier')
+        // En engagement, la caisse attend sa conception : la phrase d'hier.
+        expect(refusCompteDeBilanAuPlanSelon(plan.caisse, 'engagement', '455000', plan, true, le468)).toContain('s’écrit au 580000')
+      }
+      // Le plan décalé : le 530000 du catalogue n'est pas sa caisse.
+      expect(refusCompteDeBilanAuPlanSelon(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000', PLAN_DECALE, true, le468)).toContain('Seule la caisse du dossier')
     }
-    // Le plan décalé : le 530000 du catalogue n'est pas sa caisse.
-    expect(refusCompteDeBilanAuPlanSelon(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000', PLAN_DECALE, true)).toContain('Seule la caisse du dossier')
   })
 
   it('sans la caisse : la caisse du plan se refuse comme hier, sous la phrase des autres comptes de trésorerie', () => {
-    expect(refusCompteDeBilanAuPlanSelon(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000', PLAN_PAR_DEFAUT, false)).toContain('s’écrit au 580000')
+    expect(refusCompteDeBilanAuPlanSelon(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000', PLAN_PAR_DEFAUT, false, false)).toContain('s’écrit au 580000')
     expect(definitionDans(AVANT_LA_CAISSE, 'ecrire_mouvement_compte_bilan')).not.toContain("'caisse'")
   })
 
@@ -305,7 +316,60 @@ describe('la caisse du relevé : les deux états de la migration `caisse_retrait
 
   it('le mouvement se juge avec le plan du dossier : la caisse du plan reçue, selon le drapeau', () => {
     expect(refusCompteDeBilanDuMouvement(mouvement({ montant: 200 }), PLAN_PAR_DEFAUT.caisse, TRESORERIE) === null).toBe(CAISSE_EXPORTEE)
-    expect(refusCompteDeBilan(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000')).toBe(refusCompteDeBilanSelon(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000', CAISSE_EXPORTEE))
+    expect(refusCompteDeBilan(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000')).toBe(refusCompteDeBilanSelon(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000', CAISSE_EXPORTEE, LE_468_SUR_LE_RELEVE_PREVU))
+  })
+})
+
+describe('le 468 sur le relevé : les deux états de la migration `le_468_sur_le_releve` (PC4Q2-Q1)', () => {
+  it('la migration est lue, préparée ou exportée, une seule fois, après la caisse', () => {
+    expect(MIGRATIONS.filter((f) => LE_468.test(f.chemin))).toHaveLength(1)
+    expect(RANG_DU_468).toBeGreaterThan(MIGRATIONS.findIndex((f) => CAISSE_DU_RELEVE.test(f.chemin)))
+  })
+
+  for (const [etat, fichiers, le468] of [['sans le 468', AVANT_LE_468, false], ['avec le 468', AVEC_LE_468, true]] as const) {
+    it(`${etat} : refusCompteDeBilanSelon rend, compte par compte, la phrase de la fonction SQL de cet état`, () => {
+      const cas = casDuRefus(definitionDans(fichiers, 'refus_compte_de_bilan'))
+      expect(cas.length).toBe(19)
+      const atteints = new Set<number>()
+      for (const compte of batterie()) {
+        for (const mode of MODES) {
+          for (const dirigeant of [...DIRIGEANTS, '468000']) {
+            const sql = refusSql(cas, compte, mode, dirigeant)
+            const ici = refusCompteDeBilanSelon(compte, mode, dirigeant, true, le468)
+            expect(ici === null ? null : sansApostrophes(ici), `${compte} ${mode} ${dirigeant}`)
+              .toBe(sql.message === null ? null : sansApostrophes(sql.message))
+            atteints.add(sql.rang)
+          }
+        }
+      }
+      expect([...atteints].sort((a, b) => a - b)).toEqual([-1, ...cas.map((_, i) => i)])
+    })
+  }
+
+  it('avec le 468 : un 468 se reçoit comme un 467, sauf le compte du dirigeant ; le 48 dit le plan de 2026', () => {
+    for (const mode of MODES) {
+      for (const compte of ['468000', '468100', '4681234567']) {
+        expect(refusCompteDeBilanSelon(compte, mode, '108000', true, true), `${compte} ${mode}`).toBeNull()
+        expect(refusCompteDeBilanSelon(compte, mode, '455000', true, true), `${compte} ${mode}`)
+          .toBe(refusCompteDeBilanSelon(compte.replace(/^468/, '467'), mode, '455000', true, true))
+        // Sans la migration, le 468 se refusait comme une régularisation du plan de 2019.
+        expect(refusCompteDeBilanSelon(compte, mode, '108000', true, false)).toContain('charges à payer, produits à recevoir')
+      }
+      // Le 468 du dirigeant se dit par « Virement personnel », dans les deux états : sa branche précède celle du 48.
+      for (const le468 of [false, true]) {
+        expect(refusCompteDeBilanSelon('468000', mode, '468000', true, le468)).toContain('« Virement personnel »')
+      }
+      for (const compte of ['481000', '486000', '487100', '488600']) {
+        expect(refusCompteDeBilanSelon(compte, mode, '108000', true, true)).toContain('frais d’émission des emprunts')
+        expect(refusCompteDeBilanSelon(compte, mode, '108000', true, true)).not.toContain('charges à payer')
+      }
+    }
+    // Au plan du dossier : l'état passe jusqu'au refus, et ce que le module dit suit le drapeau.
+    for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
+      expect(refusCompteDeBilanAuPlanSelon('468000', 'tresorerie', '108000', plan, true, true)).toBeNull()
+      expect(refusCompteDeBilanAuPlanSelon('468000', 'tresorerie', '108000', plan, true, false)).toContain('charges à payer, produits à recevoir')
+    }
+    expect(refusCompteDeBilanAuPlan('468000', 'tresorerie', '108000', PLAN_PAR_DEFAUT) === null).toBe(LE_468_SUR_LE_RELEVE_PREVU)
   })
 })
 

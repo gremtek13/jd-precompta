@@ -4,7 +4,7 @@ import { calculerDeclaration2035 } from '../lib/declaration2035'
 import { cotisationsComptees, cotisationsAEcrire, ecritureDeLaCotisation } from '../lib/cotisationRapprochee'
 import {
   comptesDeBilanProposes, comptesDeBilanProposesSelon, ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises,
-  refusCompteDeBilanAuPlanSelon, refusCompteDeBilanDuMouvement,
+  LE_468_SUR_LE_RELEVE_PREVU, refusCompteDeBilanAuPlanSelon, refusCompteDeBilanDuMouvement,
 } from '../lib/compteDeBilan'
 import { ecritureDeLOperation, jugerLaSaisie, premierJourNegatif, type DossierDeLaCaisse } from '../lib/caisse'
 import {
@@ -692,7 +692,7 @@ const CAS_DE_LA_CAISSE: CasDuPlan[] = [
         ecritureDeLOperation(recette, modele), ecritureDeLOperation(apport, modele), ecritureDeLOperation(prelevement, modele),
         jugee.refus ?? premierJourNegatif(jugee.caisse),
         comptesDeBilanProposesSelon(plan, 'tresorerie', true),
-        refusCompteDeBilanAuPlanSelon(plan.caisse, 'tresorerie', plan.exploitant, plan, true),
+        refusCompteDeBilanAuPlanSelon(plan.caisse, 'tresorerie', plan.exploitant, plan, true, LE_468_SUR_LE_RELEVE_PREVU),
         compteDeLApplicationSelon('531', plan, true),
         preparerANouveauxSelon([{ compte: '5310', libelle: 'Caisse fictive', debit: 0, credit: 40 }, { compte: '1010', libelle: 'Capital', debit: 40, credit: 0 }], 2026, plan, true).refus,
       ]
