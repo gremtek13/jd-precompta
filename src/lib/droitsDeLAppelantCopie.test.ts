@@ -240,8 +240,11 @@ describe('chaque fonction de la vente lit les droits par le bloc, avant tout, et
     expect(code.split('actionPermise(QUI_PEUT_QUOI, ').length - 1).toBe(1)
     // Plus rien de l'ancien contrôle, et aucune autre fonction SQL appelée.
     expect(code).not.toMatch(/admin_du_dossier/)
-    // Hors de l'inscription d'une relance de demande APRÈS l'envoi, par le service (send-email, étape B3b), qui ne juge rien.
-    expect(code.replace('await admin.rpc("journaliser_relance_de_demande", {', '')).not.toMatch(/\.rpc\(/)
+    // Hors de l'inscription d'une relance de demande APRÈS l'envoi, par le service (send-email, étape B3b), et de
+    // l'attestation de l'auteur d'une connexion APRÈS son écriture, sous la session (plateforme-agreee, B4RS-Q1) : ni l'une
+    // ni l'autre ne décide de l'action.
+    expect(code.replace('await admin.rpc("journaliser_relance_de_demande", {', '')
+      .replace('.rpc("attester_connexion_plateforme", {', '')).not.toMatch(/\.rpc\(/)
     // Sans le droit : les mots d'avant l'espace client ; illisible : 503, qui le dit.
     expect(code).toContain('return json({ error: "Dossier introuvable." }, 404)')
     expect(code).toContain('return json({ error: `L\'accès à ce dossier n\'a pas pu être vérifié (${lus.illisible}).` }, 503)')

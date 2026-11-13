@@ -5789,6 +5789,117 @@ const SCENARIOS_RECEPTION_PAR_LE_CLIENT: Scenario[] = [
   },
 ]
 
+// L'AUTEUR DE LA CONNEXION (B4RS-Q1, tranchée le 12/11/2026 : « (B) Garder EC-Q4, refuser sur une connexion écrite par un
+// client ») : joués sur la source dont `AUTEUR_DES_CONNEXIONS_EN_BASE` est levée en mémoire (auteurDesConnexionsHttp.test.ts),
+// sur le schéma des migrations préparées, où la connexion porte `ecrite_par` et `ecrite_le`. La base efface l'auteur à toute
+// écriture de la configuration (sa garde, éprouvée par supabase/essais/auteurDesConnexions.sql) ; le monde factice ne la
+// rejoue pas : chaque scénario pose l'auteur qu'il suppose.
+const ATTESTEE_LE = '2026-10-01T08:05:00.000Z'
+function auteurDeLaConnexion(ecritePar: string | null): (m: Monde) => void {
+  return (m) => {
+    m.schemaPrepare = true
+    const connexion = lignes(m, 'connexions_plateformes')[0]
+    if (!connexion) throw new Error('le monde de référence n’a pas de connexion')
+    connexion.ecrite_par = ecritePar
+    connexion.ecrite_le = ecritePar === null ? null : ATTESTEE_LE
+  }
+}
+const attestationsDe = (m: Monde) => m.journal.filter((e) => e.genre === 'rpc' && e.nom === 'attester_connexion_plateforme')
+const vueDe = (r: Resultat) => (corpsDe(r).connexion ?? {}) as Record<string, unknown>
+
+export const SCENARIOS_AUTEUR_DES_CONNEXIONS: readonly Scenario[] = [
+  ...[LISTE_DES_ACHATS, RECEPTION_D_UN_ACHAT].map((corps): Scenario => ({
+    nom: `${corps.action} — une connexion que le cabinet n’a pas écrite : refusée (409) avant tout appel à la plateforme`,
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m); auteurDeLaConnexion(null)(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps }),
+    attendu: {
+      statut: 409, refusEnFrancais: true, aucuneDepense: true,
+      verifier: (r) => (corpsDe(r).raison === 'connexion_hors_du_cabinet' ? [] : [r.texte.slice(0, 200)]),
+    },
+  })),
+  {
+    nom: 'lister_achats — une connexion que le cabinet a écrite : la relève part, comme hier',
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m); auteurDeLaConnexion(PERSONNES.chef.id)(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: LISTE_DES_ACHATS }),
+    attendu: { statut: 200, depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`, `réseau POST ${HOTE_PLATEFORME}/afnor/v1/flows/search`] },
+  },
+  {
+    nom: 'recevoir_achat — une connexion que le cabinet a écrite : la pièce s’écrit, comme hier',
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m); auteurDeLaConnexion(PERSONNES.chef.id)(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: RECEPTION_D_UN_ACHAT }),
+    attendu: {
+      statut: 200,
+      depenses: [
+        ...TELECHARGEMENTS_D_UN_ACHAT, `réseau GET ${HOTE_PLATEFORME}/afnor/v1/flows/achat-1`,
+        'stockage upload pieces', 'stockage upload pieces', 'écriture insert pieces',
+      ],
+      verifier: (r) => (corpsDe(r).issue === 'recue' ? [] : [r.texte.slice(0, 200)]),
+    },
+  },
+  {
+    nom: 'enregistrer — le chef : la configuration écrite, puis attestée sous SA session ; la vue la dit écrite par le cabinet',
+    preparer: (m) => { connexionPlateforme(m); auteurDeLaConnexion(null)(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ENREGISTREMENT }),
+    attendu: {
+      statut: 200,
+      depenses: ['écriture update connexions_plateformes', 'écriture update connexions_plateformes'],
+      verifier: (r, m) => {
+        const fautes: string[] = []
+        const attestations = attestationsDe(m)
+        const seule = attestations[0]
+        if (attestations.length !== 1 || seule?.genre !== 'rpc' || seule.role !== 'authentifie') {
+          fautes.push(`attestations : ${JSON.stringify(attestations)}`)
+        }
+        if (lignes(m, 'connexions_plateformes')[0]?.ecrite_par !== PERSONNES.chef.id) fautes.push('l’auteur n’est pas le chef')
+        const vue = vueDe(r)
+        if (vue.ecrite_par_le_cabinet !== true || typeof vue.ecrite_le !== 'string') fautes.push(`vue : ${r.texte.slice(0, 300)}`)
+        if (r.texte.includes(PERSONNES.chef.id) || 'ecrite_par' in vue) fautes.push('la réponse nomme le compte de l’auteur')
+        return fautes
+      },
+    },
+  },
+  {
+    nom: 'enregistrer — le client « Ventes » : la configuration écrite, rien d’attesté ; la vue la dit hors du cabinet',
+    preparer: (m) => { connexionPlateforme(m); accesDuClient({ ventes: true })(m); auteurDeLaConnexion(null)(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: ENREGISTREMENT }),
+    attendu: {
+      statut: 200,
+      depenses: ['écriture update connexions_plateformes'],
+      verifier: (r, m) => {
+        const fautes: string[] = []
+        if (attestationsDe(m).length !== 0) fautes.push('le client a fait attester la connexion')
+        if (vueDe(r).ecrite_par_le_cabinet !== false || 'avertissement' in corpsDe(r)) fautes.push(`vue : ${r.texte.slice(0, 300)}`)
+        return fautes
+      },
+    },
+  },
+  {
+    nom: 'enregistrer — le chef, l’attestation en panne : la connexion reste écrite, sans auteur, et la réponse le dit',
+    preparer: (m) => {
+      connexionPlateforme(m)
+      auteurDeLaConnexion(null)(m)
+      m.pannes.push({ rpc: 'attester_connexion_plateforme', erreur: { message: 'délai dépassé' } })
+    },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ENREGISTREMENT }),
+    attendu: {
+      statut: 200,
+      depenses: ['écriture update connexions_plateformes'],
+      verifier: (r) => (vueDe(r).ecrite_par_le_cabinet === false && typeof corpsDe(r).avertissement === 'string'
+        ? [] : [r.texte.slice(0, 300)]),
+    },
+  },
+  {
+    nom: 'statut — la vue dit que le cabinet a écrit la configuration, jamais le compte qui l’a écrite',
+    preparer: (m) => { connexionPlateforme(m); auteurDeLaConnexion(PERSONNES.chef.id)(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: STATUT_PLATEFORME }),
+    attendu: {
+      statut: 200, aucuneDepense: true,
+      verifier: (r) => (vueDe(r).ecrite_par_le_cabinet === true && vueDe(r).ecrite_le === ATTESTEE_LE && !r.texte.includes(PERSONNES.chef.id)
+        ? [] : [r.texte.slice(0, 300)]),
+    },
+  },
+]
+
 const PLATEFORME_AGREEE: ContratFonction = {
   slug: 'plateforme-agreee',
   navigateur: true,
