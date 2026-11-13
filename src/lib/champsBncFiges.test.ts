@@ -376,8 +376,8 @@ describe('composer la demande et recomposer NatOp', () => {
       }
     }
     expect(posteDeLaNatOp('Dépense', `Dépense${SEPARATEUR_DU_POSTE}Achats`)).toBe('Achats')
-    // Le poste sous l'orthographe du rattachement, jamais celle de la catégorie.
-    expect(posteDeLaNatOp('Recette', natOpDeLaLigne('Recette', VENTE))).toBe('Recettes')
+    // Le poste sous le libellé de sa ligne du formulaire, jamais celui de la catégorie (« Recettes » : la ligne 1, FEC22f).
+    expect(posteDeLaNatOp('Recette', natOpDeLaLigne('Recette', VENTE))).toBe('Recettes encaissées y compris les remboursements de frais')
     expect(posteDeLaNatOp('Recette', 'Recette')).toBeNull()
     expect(() => posteDeLaNatOp('Recette', 'Dépense — Achats')).toThrow(/ne commence pas par sa nature/)
     expect(() => posteDeLaNatOp('Recette', `Recette${SEPARATEUR_DU_POSTE}`)).toThrow(/ne commence pas par sa nature/)

@@ -15,7 +15,7 @@ import {
 import {
   POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_COTISATIONS, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
 } from './declaration2035'
-import { POSTE_INTERETS_EMPRUNT } from './echeanceEmprunt'
+import { POSTE_ASSURANCE_EMPRUNT, POSTE_INTERETS_EMPRUNT } from './echeanceEmprunt'
 import type { MoyenEncaissement, OperationCaisse } from './types'
 import type { PaiementDePiece, PaiementParLeReleve } from './rattachement'
 
@@ -92,7 +92,7 @@ describe('les listes fermées', () => {
 describe('NatOp : la nature, et le poste de la 2035 sur une ligne de charge ou de produit (FEC22-Q3, (C))', () => {
   it('écrit le poste de la catégorie, jamais son libellé', () => {
     // Le libellé de la catégorie est un poste connu : le lire écrirait « Dépense — Achats ».
-    expect(natOpDeLaLigne('Dépense', ligne('l', '606400', categorie('Fournitures de bureau', 'Achats')))).toBe('Dépense — Fournitures de bureau')
+    expect(natOpDeLaLigne('Dépense', ligne('l', '606400', categorie('Fournitures de bureau', 'Achats')))).toBe('Dépense — Fournitures de bureau, frais de documentation, de correspondance et de téléphone')
     expect(natOpDeLaLigne('Dépense', ligne('l', '606400', categorie(null, 'Achats')))).toBe('Dépense')
     expect(natOpDeLaLigne('Dépense', ligne('l', '606400', categorie(null, NOMS[4])))).toBe('Dépense')
   })
@@ -109,7 +109,7 @@ describe('NatOp : la nature, et le poste de la 2035 sur une ligne de charge ou d
     expect(natOpDeLaLigne('Dépense', ligne('l', '606400', categorie(NOMS[0], 'x')))).toBe('Dépense')
     // Une recette (classe 7) sous un poste de dépenses : aucun poste.
     expect(natOpDeLaLigne('Recette', ligne('l', '706000', categorie('Achats', 'x')))).toBe('Recette')
-    expect(natOpDeLaLigne('Recette', ligne('l', '706000', categorie('Recettes', 'x')))).toBe('Recette — Recettes')
+    expect(natOpDeLaLigne('Recette', ligne('l', '706000', categorie('Recettes', 'x')))).toBe('Recette — Recettes encaissées y compris les remboursements de frais')
     expect(natOpDeLaLigne('Recette', ligne('l', '706000', { de: 'categorie', categorie: null }))).toBe('Recette')
   })
 
@@ -134,9 +134,23 @@ describe('NatOp : la nature, et le poste de la 2035 sur une ligne de charge ou d
     }
   })
 
+  // FEC22f (13/11/2026) : la case AA se disait « Recettes » sous une catégorie et « Recettes encaissées y compris les
+  // remboursements de frais » sous une vente facturée. Les deux sources disent désormais le libellé de la ligne 1.
+  it('une catégorie à « Recettes » et une vente facturée disent la même ligne, sous le libellé du formulaire', () => {
+    const parCategorie = natOpDeLaLigne('Recette', ligne('l', '706000', categorie('Recettes', 'Honoraires')))
+    const parLeMoteur = natOpDeLaLigne('Recette', ligne('l', '706000', { de: 'moteur', poste: POSTE_VENTES_FACTUREES }))
+    expect(parCategorie).toBe(parLeMoteur)
+    expect(parCategorie).toBe('Recette — Recettes encaissées y compris les remboursements de frais')
+    // De même la ligne 22 (une catégorie « Assurance » et l'assurance d'un emprunt) et la ligne 25.
+    expect(natOpDeLaLigne('Dépense', ligne('l', '616100', categorie('Assurance', 'x'))))
+      .toBe(natOpDeLaLigne('Dépense', ligne('l', '616100', { de: 'moteur', poste: POSTE_ASSURANCE_EMPRUNT })))
+    expect(natOpDeLaLigne('Cotisation sociale', ligne('l', '646000', categorie('Charges sociales personnelles', 'x'))))
+      .toBe(natOpDeLaLigne('Cotisation sociale', ligne('l', '646000', { de: 'moteur', poste: POSTE_COTISATIONS })))
+  })
+
   it('un poste du moteur se lit comme celui d’une catégorie', () => {
     expect(natOpDeLaLigne('Dotation aux amortissements', ligne('l', '681100', { de: 'moteur', poste: POSTE_AMORTISSEMENTS })))
-      .toBe('Dotation aux amortissements — Amortissements')
+      .toBe('Dotation aux amortissements — Dotation aux amortissements')
     expect(natOpDeLaLigne('Recette', ligne('l', '706000', { de: 'moteur', poste: POSTE_VENTES_FACTUREES })))
       .toBe(`Recette — ${POSTE_VENTES_FACTUREES}`)
   })
@@ -178,7 +192,7 @@ describe('une pièce', () => {
     // L'opération découverte après coup (B9) : écrite au 1er janvier N+1, réglée en N.
     const c = base({ par: 'releve', date: '2026-12-18' }, piece({}), null)
     expect(c).toMatchObject({ dateRglt: '2026-12-18', modeRglt: 'Banque', nature: 'Dépense', idClient: '' })
-    expect(c.natOp).toEqual(new Map([['charge', 'Dépense — Fournitures de bureau'], ['banque', 'Dépense']]))
+    expect(c.natOp).toEqual(new Map([['charge', 'Dépense — Fournitures de bureau, frais de documentation, de correspondance et de téléphone'], ['banque', 'Dépense']]))
   })
 
   it('une pièce de vente est une recette ; un bien, une acquisition d’immobilisation', () => {
@@ -290,7 +304,7 @@ describe('un mouvement justifié par le relevé : « Banque », sa date, aucun c
   it('affecté à une catégorie : la nature de son compte, le poste de sa catégorie', () => {
     const recette = releve({ montant: 312.4, categorie_id: 'cat' }, [ligne('p', '706000', categorie('Recettes', NOMS[4])), ligne('b', '512000', AUCUN)])
     expect(recette).toMatchObject({ dateRglt: '2026-05-12', modeRglt: 'Banque', nature: 'Recette', idClient: '' })
-    expect(recette?.natOp).toEqual(new Map([['p', 'Recette — Recettes'], ['b', 'Recette']]))
+    expect(recette?.natOp).toEqual(new Map([['p', 'Recette — Recettes encaissées y compris les remboursements de frais'], ['b', 'Recette']]))
     expect(releve({ categorie_id: 'cat' }, [ligne('c', '627000', categorie('Divers', 'Frais bancaires')), ligne('b', '512000', AUCUN)])?.nature)
       .toBe('Dépense')
   })
@@ -302,7 +316,7 @@ describe('un mouvement justifié par le relevé : « Banque », sa date, aucun c
     ])
     expect(c?.nature).toBe('Recette et dépense')
     expect(c?.natOp).toEqual(new Map([
-      ['r', 'Recette et dépense — Recettes'], ['d', 'Recette et dépense — Divers'], ['p', 'Recette et dépense'], ['b', 'Recette et dépense'],
+      ['r', 'Recette et dépense — Recettes encaissées y compris les remboursements de frais'], ['d', 'Recette et dépense — Autres frais divers de gestion'], ['p', 'Recette et dépense'], ['b', 'Recette et dépense'],
     ]))
     // Sans ligne de résultat : une opération de bilan.
     expect(releve({ categorie_id: 'cat' }, [ligne('x', '108000', categorie(null, 'x')), ligne('b', '512000', AUCUN)])?.nature)
@@ -325,7 +339,7 @@ describe('un mouvement justifié par le relevé : « Banque », sa date, aucun c
 
   it('une échéance de cotisation, un compte de bilan, la caisse du plan, une déclaration de TVA', () => {
     expect(releve({ cotisation_id: 'c' }, [ligne('k', '646000', { de: 'moteur', poste: POSTE_COTISATIONS })])?.natOp.get('k'))
-      .toBe(`Cotisation sociale — ${POSTE_COTISATIONS}`)
+      .toBe('Cotisation sociale — Charges sociales personnelles')
     expect(releve({ compte_bilan: '580000' }, [])?.nature).toBe('Opération de bilan')
     expect(releve({ montant: 200, compte_bilan: '530000' }, [])?.nature).toBe("Versement d'espèces")
     // Un débit sur la caisse (des espèces retirées pour elle) n'est pas un versement : les mots de la fiche du mouvement.
@@ -356,7 +370,7 @@ describe('une opération de caisse : « Espèces », sa date, aucun client', () 
 
   it('une recette, et des espèces rendues : « Recette »', () => {
     expect(op({})).toMatchObject({ dateRglt: '2026-07-03', modeRglt: 'Espèces', nature: 'Recette', idClient: '' })
-    expect(op({})?.natOp.get('p')).toBe('Recette — Recettes')
+    expect(op({})?.natOp.get('p')).toBe('Recette — Recettes encaissées y compris les remboursements de frais')
     expect(op({ montant: -10 })?.nature).toBe('Recette')
   })
 
@@ -394,8 +408,8 @@ describe('les écritures qui ne sont pas un règlement : le choix de FEC22-Q1, d
 
   it('NatOp de chacune : la dotation, le forfait, l’arrondi portent leur poste ; les à-nouveaux jamais', () => {
     expect(champsDUneDotation('2026-12-31', dot, VIDES).natOp)
-      .toEqual(new Map([['d', 'Dotation aux amortissements — Amortissements'], ['a', 'Dotation aux amortissements']]))
-    expect(cas[1][1](VIDES).natOp.get('k')).toBe(`Frais de véhicule (barème) — ${POSTE_INDEMNITES_KM}`)
+      .toEqual(new Map([['d', 'Dotation aux amortissements — Dotation aux amortissements'], ['a', 'Dotation aux amortissements']]))
+    expect(cas[1][1](VIDES).natOp.get('k')).toBe('Frais de véhicule (barème) — Frais de véhicules')
     expect(cas[2][1](VIDES).natOp.get('r')).toBe(`Liquidation de TVA — ${POSTE_ARRONDIS_TVA_CHARGE}`)
     expect(cas[3][1](VIDES).natOp).toEqual(new Map([['an', 'À-nouveaux']]))
     expect(cas[5][1](VIDES).natOp).toEqual(new Map([['p', 'Opération de bilan'], ['r', 'Opération de bilan']]))

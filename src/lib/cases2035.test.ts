@@ -19,6 +19,8 @@ import {
   doublonFraisVehicules,
   estLePosteDesCotisations,
   incoherencesDesCases,
+  LIBELLE_DE_LA_LIGNE,
+  posteDuFormulaire,
   partDeBKSansNature,
   repartirEnCases,
   valeursDesCases,
@@ -29,6 +31,7 @@ import {
   calculerDeclaration2035, POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS,
   POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
 } from './declaration2035'
+import { POSTE_ASSURANCE_EMPRUNT, POSTE_INTERETS_EMPRUNT } from './echeanceEmprunt'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
 import { cotisationsComptees } from './cotisationRapprochee'
@@ -974,5 +977,105 @@ describe('carburantSousLeBareme — le carburant sous le barème kilométrique',
     )
     expect(doublonFraisVehicules(declaration)).toBeNull()
     expect(carburantSousLeBareme(declaration, categories, [], false)?.depenses).toHaveLength(1)
+  })
+})
+
+// UN POSTE, UNE ORTHOGRAPHE DANS LE FEC (relevé par FEC22f, 13/11/2026) : la NatOp d'une ligne dit le libellé de sa ligne du
+// formulaire, d'où qu'elle vienne — une catégorie (son poste lu par `posteRattache`, donc l'un de `POSTES_RATTACHES`) ou le
+// moteur (ses constantes, toutes dans la même liste). Le RELEVÉ porte sur la liste ENTIÈRE, sous les deux natures.
+describe('le libellé de la ligne : un poste se dit d’une seule façon dans le FEC', () => {
+  // Les libellés des lignes que BH, BJ et BM totalisent, recopiés du formulaire 2035-A-SD 2026 (public/formulaires/2035-sd-2026.pdf,
+  // lignes 17 à 22, 23 et 24, 26 à 30), chacun avec sa case porteuse.
+  const LIGNES_DES_TOTAUX: ReadonlyMap<string, string> = new Map([
+    ['Entretien et réparations', 'BH'], ['Personnel intérimaire', 'BH'], ['Petit outillage', 'BH'],
+    ['Chauffage, eau, gaz, électricité', 'BH'], ['Honoraires ne constituant pas les rétrocessions', 'BH'], ["Primes d'assurances", 'BH'],
+    ['Frais de véhicules', 'BJ'], ['Autres frais de déplacements', 'BJ'],
+    ['Frais de réception, de représentation et de congrès', 'BM'],
+    ['Fournitures de bureau, frais de documentation, de correspondance et de téléphone', 'BM'],
+    ["Frais d'actes et de contentieux", 'BM'], ['Cotisations syndicales et professionnelles', 'BM'], ['Autres frais divers de gestion', 'BM'],
+  ])
+  // Les libellés retenus qui ne sont pas l'imprimé, chacun avec sa raison — leur nombre est tenu au libellé près.
+  const ECARTS_A_L_IMPRIME: ReadonlyMap<string, string> = new Map([
+    ['Charges sociales sur salaires', 'ligne 10 sans « (parts patronale et ouvrière) » : la liste fermée de la base n’a que lui (FEC22F-Q2)'],
+    ['Honoraires ne constituant pas des rétrocessions', 'ligne 21, « des » quand le formulaire 2026 imprime « les » : la liste fermée de la base n’a que lui (FEC22F-Q2)'],
+    ['Frais de déplacements', 'le poste de « Carburant / déplacements », ligne 23 ou 24 selon la dépense : sans ligne sûre (FEC22F-Q2)'],
+  ])
+  const POSTES_DU_MOTEUR = [
+    POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
+    POSTE_ARRONDIS_TVA_PRODUIT, POSTE_ARRONDIS_TVA_CHARGE, POSTE_INTERETS_EMPRUNT, POSTE_ASSURANCE_EMPRUNT,
+  ]
+  const GROUPEES = new Set(['BH', 'BJ', 'BM'])
+  const seconde = (poste: string) => SECONDES_CASES.get(poste)?.aussi ?? ''
+
+  // Chaque libellé que la NatOp peut porter, avec les postes qui y mènent, rangé par ce qu'il vise : la case porteuse et la
+  // seconde case.
+  function releve(): Map<string, Map<string, string[]>> {
+    const parCible = new Map<string, Map<string, string[]>>()
+    for (const poste of POSTES_RATTACHES) {
+      for (const nature of ['recette', 'depense'] as const) {
+        const dit = posteDuFormulaire(poste, nature)
+        if (dit === null) continue
+        const cible = `${caseDuPoste(dit)?.code}${seconde(dit) ? `+${seconde(dit)}` : ''}`
+        const libelles = parCible.get(cible) ?? new Map<string, string[]>()
+        libelles.set(dit, [...(libelles.get(dit) ?? []), poste])
+        parCible.set(cible, libelles)
+      }
+    }
+    return parCible
+  }
+
+  it('le moteur passe par la même table : chacune de ses constantes est un poste rattaché', () => {
+    expect(POSTES_DU_MOTEUR.filter((p) => !POSTES_RATTACHES.includes(p))).toEqual([])
+  })
+
+  it('un synonyme mène à un libellé retenu, de la même case et de la même seconde case, que la base accepte', () => {
+    for (const [synonyme, libelle] of LIBELLE_DE_LA_LIGNE) {
+      expect(POSTES_RATTACHES, synonyme).toContain(synonyme)
+      expect(POSTES_RATTACHES, libelle).toContain(libelle)
+      expect(LIBELLE_DE_LA_LIGNE.has(libelle), libelle).toBe(false)
+      expect(caseDuPoste(libelle)?.code, synonyme).toBe(caseDuPoste(synonyme)?.code)
+      expect(seconde(libelle), synonyme).toBe(seconde(synonyme))
+    }
+  })
+
+  it('nul exactement quand le rattachement l’est, sous les deux natures, et la casse du cabinet ne compte pas', () => {
+    for (const poste of [...POSTES_RATTACHES, 'Honoraires', 'Inconnu']) {
+      for (const nature of ['recette', 'depense'] as const) {
+        expect(posteDuFormulaire(poste, nature) === null, `${poste} (${nature})`).toBe(posteRattache(poste, nature) === null)
+      }
+    }
+    expect(posteDuFormulaire('  RECETTES ', 'recette')).toBe(POSTE_VENTES_FACTUREES)
+    expect(posteDuFormulaire(POSTE_VENTES_FACTUREES, 'recette')).toBe(POSTE_VENTES_FACTUREES)
+    expect(posteDuFormulaire('Recettes', 'depense')).toBeNull()
+  })
+
+  it('une case à ligne propre ne se dit que d’un libellé, celui de l’imprimé ; une ligne de BH, BJ ou BM, du sien', () => {
+    const fautes: string[] = []
+    for (const [cible, libelles] of releve()) {
+      const porteuse = cible.split('+')[0]
+      if (!GROUPEES.has(porteuse) && libelles.size !== 1) {
+        fautes.push(`${cible} : ${[...libelles].map(([l, p]) => `« ${l} » (${p.join(', ')})`).join(' / ')}`)
+      }
+      for (const libelle of libelles.keys()) {
+        const imprime = GROUPEES.has(porteuse) ? LIGNES_DES_TOTAUX.get(libelle) === porteuse : CASE_PAR_CODE.get(porteuse)?.libelle === libelle
+        // Une ligne qui alimente une seconde case porte le libellé de son poste : la « dont » imprime le sien.
+        if (!imprime && !ECARTS_A_L_IMPRIME.has(libelle) && cible === porteuse) fautes.push(`${cible} : « ${libelle} » n’est pas l’imprimé`)
+      }
+    }
+    expect(fautes).toEqual([])
+  })
+
+  it('les écarts à l’imprimé sont ceux-là, et chacun est un libellé que la NatOp porte encore', () => {
+    const portes = new Set([...releve().values()].flatMap((l) => [...l.keys()]))
+    expect([...ECARTS_A_L_IMPRIME.keys()].filter((l) => !portes.has(l))).toEqual([])
+    const nonImprimes = [...portes].filter((l) => {
+      const code = caseDuPoste(l)?.code ?? ''
+      return seconde(l) === '' && (GROUPEES.has(code) ? LIGNES_DES_TOTAUX.get(l) !== code : CASE_PAR_CODE.get(code)?.libelle !== l)
+    })
+    expect(nonImprimes.sort()).toEqual([...ECARTS_A_L_IMPRIME.keys()].sort())
+  })
+
+  it('la case AA ne se dit plus que du libellé de la ligne 1, pour une catégorie comme pour une vente facturée', () => {
+    expect(releve().get('AA')).toEqual(new Map([[POSTE_VENTES_FACTUREES, ['Recettes', POSTE_VENTES_FACTUREES]]]))
   })
 })

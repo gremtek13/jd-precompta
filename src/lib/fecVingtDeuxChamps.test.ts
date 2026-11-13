@@ -13,7 +13,7 @@ import {
 } from './champsBncDuFec'
 import { OPERATIONS_DE_CAISSE_ABSENTES, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import { ecritureDuPaiementPersonnel } from './cotisationPersonnelle'
-import { POSTE_COTISATIONS, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES } from './declaration2035'
+import { POSTE_VENTES_FACTUREES } from './declaration2035'
 import { lignesPourPiece } from './ecritures'
 import type { ModeleComptable } from './engagement'
 import {
@@ -278,30 +278,30 @@ describe('en trésorerie, le drapeau levé : vingt-deux champs, chaque sorte ave
     expect(de('AC', '606100', '20260320')).toEqual([['AC', '606100', '20260320', 'Banque', 'Dépense — Achats', '']])
     expect(de('AC', '512000', '20260320')).toEqual([['AC', '512000', '20260320', 'Banque', 'Dépense', '']])
     // L'exemplaire désigné d'une facture qui n'est pas source : le SIREN de son client, jamais son nom.
-    expect(de('VE', '706000', '20260402')).toEqual([['VE', '706000', '20260402', 'Banque', 'Recette — Recettes', SIREN_VALIDE]])
+    expect(de('VE', '706000', '20260402')).toEqual([['VE', '706000', '20260402', 'Banque', 'Recette — Recettes encaissées y compris les remboursements de frais', SIREN_VALIDE]])
     expect(de('AC', '218300', '20260505')).toEqual([['AC', '218300', '20260505', 'Banque', "Acquisition d'immobilisation", '']])
     // La note de frais : la poche de l'exploitant, à la date que la 2035 compte.
-    expect(de('AC', '625100', '20260601')).toEqual([['AC', '625100', '20260601', 'Compte personnel', 'Dépense — Divers', '']])
-    expect(de('BQ', '706000', '20260312')).toEqual([['BQ', '706000', '20260312', 'Banque', 'Recette — Recettes', '']])
+    expect(de('AC', '625100', '20260601')).toEqual([['AC', '625100', '20260601', 'Compte personnel', 'Dépense — Autres frais divers de gestion', '']])
+    expect(de('BQ', '706000', '20260312')).toEqual([['BQ', '706000', '20260312', 'Banque', 'Recette — Recettes encaissées y compris les remboursements de frais', '']])
     expect(de('BQ', '108000', '20260325')).toEqual([['BQ', '108000', '20260325', 'Banque', "Prélèvement de l'exploitant", '']])
     // Ventilé : une nature, un poste par ligne — celui de la part dont la catégorie porte le compte de la ligne.
     expect(lignes.filter((l) => l[2] === '20260415').map((l) => [l[1], l[4]])).toEqual([
-      ['512000', 'Recette et dépense'], ['606400', 'Recette et dépense — Fournitures de bureau'], ['706000', 'Recette et dépense — Recettes'],
+      ['512000', 'Recette et dépense'], ['606400', 'Recette et dépense — Fournitures de bureau, frais de documentation, de correspondance et de téléphone'], ['706000', 'Recette et dépense — Recettes encaissées y compris les remboursements de frais'],
     ])
     // Une échéance d'emprunt : le poste que le moteur de la 2035 donne aux intérêts et à l'assurance, par le rôle du plan.
     expect(lignes.filter((l) => l[2] === '20260405').map((l) => [l[1], l[4]])).toEqual([
-      ['164000', "Échéance d'emprunt"], ['616800', "Échéance d'emprunt — Primes d'assurance"],
+      ['164000', "Échéance d'emprunt"], ['616800', "Échéance d'emprunt — Primes d'assurances"],
       ['661100', "Échéance d'emprunt — Frais financiers"], ['512000', "Échéance d'emprunt"],
     ])
     // La liquidation : aucun règlement, l'arrondi sous son poste.
     expect(lignes.filter((l) => l[0] === 'OD' && l[1].startsWith('4') || l[1] === '758000').map((l) => [l[1], l[2], l[3], l[4]])).toEqual([
       ['445710', '', '', 'Liquidation de TVA'], ['445510', '', '', 'Liquidation de TVA'], ['758000', '', '', 'Liquidation de TVA — Gains divers'],
     ])
-    expect(lignes.filter((l) => l[1] === '681100')).toEqual([['OD', '681100', '', '', 'Dotation aux amortissements — Amortissements', '']])
-    expect(lignes.filter((l) => l[1] === '625110')).toEqual([['OD', '625110', '', '', `Frais de véhicule (barème) — ${POSTE_INDEMNITES_KM}`, '']])
+    expect(lignes.filter((l) => l[1] === '681100')).toEqual([['OD', '681100', '', '', 'Dotation aux amortissements — Dotation aux amortissements', '']])
+    expect(lignes.filter((l) => l[1] === '625110')).toEqual([['OD', '625110', '', '', 'Frais de véhicule (barème) — Frais de véhicules', '']])
     // Le paiement depuis le compte personnel : la date saisie de ce paiement.
-    expect(lignes.filter((l) => l[1] === '646000')).toEqual([['OD', '646000', '20260310', 'Compte personnel', `Cotisation sociale — ${POSTE_COTISATIONS}`, '']])
-    expect(de('VE', '706000', '20260703')).toEqual([['VE', '706000', '20260703', 'Espèces', 'Recette — Recettes', '']])
+    expect(lignes.filter((l) => l[1] === '646000')).toEqual([['OD', '646000', '20260310', 'Compte personnel', 'Cotisation sociale — Charges sociales personnelles', '']])
+    expect(de('VE', '706000', '20260703')).toEqual([['VE', '706000', '20260703', 'Espèces', 'Recette — Recettes encaissées y compris les remboursements de frais', '']])
     expect(lignes.filter((l) => l[0] === 'OD' && l[2] === '20260704').map((l) => l[4])).toEqual(["Apport de l'exploitant", "Apport de l'exploitant"])
   })
 
@@ -421,9 +421,9 @@ describe('la scission d’une pièce payée le même jour par deux modes', () =>
     expect(j.brouillon.map((l) => [l.compte, l.sens, l.montant])).toEqual([['625100', 'debit', 120], ['512000', 'credit', 50], ['108000', 'credit', 70]])
     const f = fec(j, 'tresorerie', exportes(j.entrees))
     expect(colonnes(f).slice(1).map((r) => [r[2], r[4], r[11], r[12], r[18], r[19], r[20]])).toEqual([
-      ['AC00001', '625100', '50,00', '0,00', '20260601', 'Banque', 'Dépense — Divers'],
+      ['AC00001', '625100', '50,00', '0,00', '20260601', 'Banque', 'Dépense — Autres frais divers de gestion'],
       ['AC00001', '512000', '0,00', '50,00', '20260601', 'Banque', 'Dépense'],
-      ['AC00002', '625100', '70,00', '0,00', '20260601', 'Compte personnel', 'Dépense — Divers'],
+      ['AC00002', '625100', '70,00', '0,00', '20260601', 'Compte personnel', 'Dépense — Autres frais divers de gestion'],
       ['AC00002', '108000', '0,00', '70,00', '20260601', 'Compte personnel', 'Dépense'],
     ])
     expect(desequilibresDgfip(f)).toEqual([])
@@ -821,7 +821,7 @@ describe('les contrôles du fichier à vingt-deux champs voient chacun son défa
     expect(anomaliesBnc(plante(achat, 1, 18, '20260321'), ids)).toContain(`${achat} : différentes dates de règlement`)
     expect(anomaliesBnc(plante(achat, 1, 19, 'Chèque'), ids)).toEqual([`${achat} : différents modes de règlement`])
     // Deux postes ne sont pas deux natures ; deux natures, si.
-    expect(anomaliesBnc(plante(achat, 1, 20, 'Dépense — Fournitures de bureau'), ids)).toEqual([])
+    expect(anomaliesBnc(plante(achat, 1, 20, 'Dépense — Fournitures de bureau, frais de documentation, de correspondance et de téléphone'), ids)).toEqual([])
     expect(anomaliesBnc(plante(achat, 1, 20, 'Recette'), ids)).toEqual([`${achat} : différentes natures`])
     expect(anomaliesBnc(plante(achat, 1, 21, SIREN_VALIDE), ids)).toEqual([`${achat} : différents clients`])
     const sansDate = juste.split('\r\n').map((l) => (l.split('\t')[2] === achat ? l.replace('\t20260320\tBanque\t', '\t\t\t') : l)).join('\r\n')
