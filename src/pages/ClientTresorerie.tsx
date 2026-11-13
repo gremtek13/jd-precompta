@@ -54,7 +54,7 @@ function composer(lecture: Extract<LectureDeLaTresorerie, { etat: 'lue' }>, aujo
   const soldes = soldesDeLaBanque(lecture.comptes, lecture.controles)
   const depart: Depart = soldes.etat === 'retenus' ? { etat: 'muet', motif: soldes.raison } : departDesSoldes(soldes.soldes)
   return composerTresorerie({
-    aujourdHui, depart, creances: lecture.creances,
+    aujourdHui, depart, creances: lecture.creances, releve: lecture.releve,
     // Le régime d'imposition ne se lit pas encore en base (LIA4) : aucun dossier n'a d'IS au calendrier (LIA8), comme
     // « Mon échéancier ».
     echeances: echeancesDeLEcheancier(lecture.echeancier, aujourdHui, SANS_IMPOT_SUR_LES_SOCIETES),

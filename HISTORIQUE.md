@@ -52268,6 +52268,11 @@ migration — C8-Q2) restent « non comptés », dits ; `tresorerieClient.test.t
 ne sont pas comptés ici. `TRESORERIE_A_90_JOURS_OFFERTE` baissé (C8-Q1) ; la phrase de l'entrée dans l'équipe nomme la page
 avec lui (`ceQuePerdLeClientSelon`, sixième paramètre). Tests : module (horizon, départ, muette, ordre, centimes, mots), écran
 (9 cas), la coque dans les deux états du drapeau, `ecransAvantLecture`.
+**Suite, le même jour (le double compte)** : une échéance prélevée d'avance est dans le solde lu ; la page la retirait une seconde fois à sa
+date. Le relevé se lit désormais en entier (`lignes_bancaires.cotisation_id`, lu sous « Banque ») : payée au jour du solde ou avant, elle
+n'entre pas ; après lui, dite « déjà prélevée le … » avec sa somme ; un `montant_verse` saisi sans mouvement, « peut-être déjà payée »,
+jamais comptée ; un encaissement daté après le solde (par son mouvement s'il en a un ; hors espèces) se dit avec sa somme. Reste non
+détectable : un paiement reçu ou prélevé mais pas encore enregistré ni rapproché (`reglementDeLaCotisation`, deux tests qui échouaient avant).
 
 ### 13/11/2026 — INV5-Q1 : LA PIÈCE CITÉE SE CHOISIT DANS L'ONGLET INVENTAIRE (DERRIÈRE SON DRAPEAU)
 

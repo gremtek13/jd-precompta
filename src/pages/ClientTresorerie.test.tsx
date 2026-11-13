@@ -91,6 +91,7 @@ function poser() {
     facture_lignes: [ligne('l1', 'f1', 800), ligne('l2', 'f2', 300), ligne('lx', 'fx', 5000, 'd2')],
     encaissements_factures: [],
     encaissements_factures_taux: [],
+    lignes_bancaires: [],
   }
   faux.comptesGonfles = {}
   faux.demandes = []
@@ -195,6 +196,27 @@ describe('« Ma trésorerie à 90 jours »', () => {
     await rendre()
     expect(screen.getByText(TRESORERIE_MUETTE)).toBeTruthy()
     expect(screen.queryByText(/€/)).toBeNull()
+  })
+
+  it('une échéance déjà prélevée avant la date du solde ne se compte pas deux fois (suite de C8)', async () => {
+    // Le prélèvement du 30 octobre a payé d'avance l'échéance du 5 décembre : il est dans le solde du 31 octobre.
+    faux.parTable.lignes_bancaires = [
+      { id: 'm1', dossier_id: 'd1', date: '2026-10-30', montant: -1500, cotisation_id: 'k1' },
+      { id: 'mx', dossier_id: 'd2', date: '2026-10-30', montant: -1, cotisation_id: 'k2' },
+    ]
+    await rendre()
+    const quoi = within(tableau()).getAllByRole('row').slice(1).map((r) => r.querySelectorAll('td')[1].textContent)
+    expect(quoi).toEqual(['Facture F2026-001 : ce que ton client te doit encore', 'Cotisations sociales : échéance prévisionnelleprévision'])
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(faux.demandes).toContain('lignes_bancaires')
+  })
+
+  it('un relevé lu en partie : muette', async () => {
+    faux.parTable.lignes_bancaires = [{ id: 'm1', dossier_id: 'd1', date: '2026-10-30', montant: -1, cotisation_id: null }]
+    faux.comptesGonfles = { lignes_bancaires: 1 }
+    await rendre()
+    expect(screen.getByText(TRESORERIE_MUETTE)).toBeTruthy()
+    expect(screen.queryByRole('table')).toBeNull()
   })
 
   it('aucun relevé contrôlé : la page le dit, et ne projette rien', async () => {

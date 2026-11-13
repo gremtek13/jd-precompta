@@ -6,7 +6,7 @@ import { lireLEcheancier, type LectureEcheancier } from './echeancierClientLectu
 import { lireTout, type LectureComplete } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { supabase } from './supabase'
-import type { ControleDeLaTresorerie, CreancesDeLaTresorerie } from './tresorerieClient'
+import { COLONNES_DU_RELEVE, type ControleDeLaTresorerie, type CreancesDeLaTresorerie, type MouvementDuReleve } from './tresorerieClient'
 import { lireLesVentesDuDossier } from './ventesLecture'
 
 // CE QUE « MA TRÉSORERIE À 90 JOURS » LIT (ligne 51.5, étape C8) : rien de neuf pour la base, chaque table par la policy qui
@@ -21,6 +21,8 @@ import { lireLesVentesDuDossier } from './ventesLecture'
 //    montants (`lireLEcheancier`, les montants appelés sous « Banque », comme « Mon échéancier »).
 // 3. « Ventes », si la base ET l'écran l'ouvrent : les ventes du dossier (`lireLesVentesDuDossier`, la lecture de l'accueil
 //    et de « Mon analyse »).
+// 4. « Banque » encore : le relevé (date, montant, échéance de cotisation payée), qui empêche de compter deux fois une
+//    échéance déjà prélevée, et dit une facture encaissée depuis le dernier relevé contrôlé.
 //
 // La lecture ne rejette jamais : une requête qui lève tombe du côté signalé. Le crochet la GARDE avec la société, la case
 // « Ventes » demandée et le jour pour lesquels elle a été faite, et reste nul tant qu'elle n'est pas revenue.
@@ -34,6 +36,7 @@ export type LectureDeLaTresorerie =
     controles: LectureComplete<ControleDeLaTresorerie>
     echeancier: LectureEcheancier
     creances: CreancesDeLaTresorerie
+    releve: LectureComplete<MouvementDuReleve>
   }
 
 async function lireLesComptes(dossierId: string): Promise<ComptesDuClient> {
@@ -64,6 +67,19 @@ async function lireLesControles(dossierId: string): Promise<LectureComplete<Cont
   }
 }
 
+// Le relevé EN ENTIER (`lignes_bancaires_lecture_banque`) : sa date, son montant, l'échéance de cotisation que chaque
+// mouvement paie. Il dit quelle échéance est déjà dans le solde, et quel encaissement date d'après lui.
+async function lireLeReleve(dossierId: string): Promise<LectureComplete<MouvementDuReleve>> {
+  try {
+    const releve = await lireTout<MouvementDuReleve>((debut, fin) =>
+      supabase.from('lignes_bancaires').select(COLONNES_DU_RELEVE, { count: 'exact' })
+        .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin))
+    return releve.complete ? releve : { ...releve, lignes: [] }
+  } catch (e) {
+    return { lignes: [], complete: false, motif: messageErreur(e, 'ton relevé n’a pas pu être lu') }
+  }
+}
+
 async function lireLesCreances(dossierId: string): Promise<CreancesDeLaTresorerie> {
   try {
     return { etat: 'lues', listes: await lireLesVentesDuDossier(dossierId) }
@@ -84,14 +100,15 @@ export async function lireLaTresorerie(dossierId: string, ventesDemandees: boole
   } catch (e) {
     return { etat: 'droits_illisibles', motif: messageErreur(e, 'droits illisibles') }
   }
-  const [comptes, controles, echeancier, creances] = await Promise.all([
+  const [comptes, controles, echeancier, creances, releve] = await Promise.all([
     lireLesComptes(dossierId),
     lireLesControles(dossierId),
     // Ne rejette jamais (lib/echeancierClientLecture.ts) ; les montants, la case « Banque » relue juste au-dessus.
     lireLEcheancier(dossierId, true),
     ventes ? lireLesCreances(dossierId) : Promise.resolve<CreancesDeLaTresorerie>({ etat: 'fermees' }),
+    lireLeReleve(dossierId),
   ])
-  return { etat: 'lue', comptes, controles, echeancier, creances }
+  return { etat: 'lue', comptes, controles, echeancier, creances, releve }
 }
 
 /**

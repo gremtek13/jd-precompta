@@ -24,7 +24,9 @@ export type LectureEcheancier =
 
 // Chaîne pour chaîne : le compilateur confronte chaque colonne à son type.
 export const COLONNES_SANS_MONTANT = 'id, echeance, previsionnel, paiement_personnel_le'
-export const COLONNES_AVEC_MONTANT = 'id, echeance, previsionnel, paiement_personnel_le, montant_appele'
+// Le montant versé aussi : « Ma trésorerie » (étape C8) y lit une échéance saisie comme payée sans mouvement du relevé, qu'elle
+// dit « peut-être déjà payée » au lieu de la compter ; l'échéancier ne le montre pas.
+export const COLONNES_AVEC_MONTANT = 'id, echeance, previsionnel, paiement_personnel_le, montant_appele, montant_verse'
 
 const PERIODICITES = new Set(['mensuelle', 'trimestrielle'])
 const MODES = new Set(['tresorerie', 'engagement'])

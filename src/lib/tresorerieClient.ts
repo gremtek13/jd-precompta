@@ -8,7 +8,7 @@ import type { ImpotDuDossier } from './echeancesFiscales'
 import { ajouterJours } from './format'
 import type { LectureComplete } from './lectureComplete'
 import type { ListesDesVentes } from './tuilesVentes'
-import type { ControleReleveBancaire } from './types'
+import type { ControleReleveBancaire, LigneBancaire } from './types'
 
 // « MA TRÉSORERIE À 90 JOURS » (ligne 51.5, partie C, étape C8 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE
 // GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », partie C, la proposition C8 et son étape). Voir venir un
@@ -131,7 +131,17 @@ export type CreancesDeLaTresorerie =
 /** Les échéances de l'échéancier (C1), composées AVEC leurs montants ; `partiel` dit une lecture incomplète. */
 export type EcheancesDeLaTresorerie =
   | { etat: 'illisibles'; motif: string }
-  | { etat: 'lues'; echeances: readonly EcheanceDuClient[]; partiel: string | null }
+  | {
+    etat: 'lues'
+    echeances: readonly EcheanceDuClient[]
+    /** Les échéances de cotisation lues, avec leur montant versé : ce qui dit si l'une est peut-être déjà payée. */
+    cotisations: readonly CotisationDeLEcheancier[]
+    partiel: string | null
+  }
+
+/** Ce que la trésorerie lit d'un mouvement du relevé : sa date, son montant, et l'échéance de cotisation qu'il paie. */
+export type MouvementDuReleve = Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'cotisation_id'>
+export const COLONNES_DU_RELEVE = 'id, date, montant, cotisation_id'
 
 /** La lecture de l'échéancier (lib/echeancierClientLecture.ts, `LectureEcheancier`), redite ici : un module de calcul ne
  *  dépend d'aucun module qui lit. */
@@ -147,7 +157,7 @@ export function echeancesDeLEcheancier(lecture: EcheancierLu, aujourdHui: string
   if (lecture.etat === 'illisible') return { etat: 'illisibles', motif: lecture.motif }
   const echeancier = composerEcheancier({ aujourdHui, dossier: lecture.dossier, cotisations: lecture.cotisations, avecMontants: true, impot })
   return {
-    etat: 'lues', echeances: echeancier.echeances,
+    etat: 'lues', echeances: echeancier.echeances, cotisations: lecture.cotisations,
     partiel: lecture.etat === 'partiel' ? (lecture.motif ?? 'ton échéancier n’a été lu qu’en partie') : null,
   }
 }
@@ -201,6 +211,38 @@ function libelleDeLaFacture(numero: string | null): string {
   return numero ? `Facture ${numero} : ce que ton client te doit encore` : 'Une facture : ce que ton client te doit encore'
 }
 
+/** Ce que la trésorerie sait du paiement d'une échéance de cotisation. */
+export type ReglementDeLaCotisation =
+  | { etat: 'a_payer' }
+  /** Payée par un mouvement du relevé daté du jour du solde ou avant : elle est DANS le solde lu. */
+  | { etat: 'dans_le_solde'; le: string }
+  /** Payée par un mouvement daté après le solde : ni dans le solde, ni à payer encore. */
+  | { etat: 'apres_le_solde'; le: string; centimes: number }
+  /** Un montant versé est saisi, sans mouvement du relevé qui la paie : peut-être déjà payée, on ne sait pas quand. */
+  | { etat: 'peut_etre_payee'; centimes: number | null }
+
+/**
+ * Une échéance de cotisation est-elle déjà payée ? Par un mouvement du relevé qui la cite (`lignes_bancaires.cotisation_id`,
+ * posé par `rapprocher_cotisation`, que le client « Banque » lit), daté au jour du solde ou avant (dans le solde) ou après ;
+ * sinon, un montant versé saisi sans mouvement la dit « peut-être déjà payée », jamais comptée en silence. Une échéance
+ * payée depuis le compte personnel ne vient jamais jusqu'ici : l'échéancier l'écarte déjà.
+ */
+export function reglementDeLaCotisation(
+  cotisation: CotisationDeLEcheancier, releve: readonly MouvementDuReleve[], au: string,
+): ReglementDeLaCotisation {
+  const mouvement = releve.find((m) => m.cotisation_id === cotisation.id)
+  if (mouvement) {
+    return mouvement.date <= au
+      ? { etat: 'dans_le_solde', le: mouvement.date }
+      : { etat: 'apres_le_solde', le: mouvement.date, centimes: Math.abs(Math.round(mouvement.montant * 100)) }
+  }
+  if (cotisation.montant_verse != null) {
+    const montant = cotisation.montant_verse
+    return { etat: 'peut_etre_payee', centimes: Number.isFinite(montant) ? Math.round(montant * 100) : null }
+  }
+  return { etat: 'a_payer' }
+}
+
 /**
  * La trésorerie des 90 jours qui suivent `aujourdHui` (jour de Paris, AAAA-MM-JJ). Sans solde lu, rien ne se projette ; une
  * source lue en partie rend la projection muette ; ce qui n'est pas compté se dit, ligne par ligne.
@@ -210,8 +252,10 @@ export function composerTresorerie(entree: {
   depart: Depart
   creances: CreancesDeLaTresorerie
   echeances: EcheancesDeLaTresorerie
+  /** Le relevé du dossier, EN ENTIER : il dit quelle échéance un mouvement a déjà payée, et quand. */
+  releve: LectureComplete<MouvementDuReleve>
 }): Tresorerie {
-  const { aujourdHui, depart, creances, echeances } = entree
+  const { aujourdHui, depart, creances, echeances, releve } = entree
   if (depart.etat !== 'lu') return { etat: 'sans_depart', depart }
   const motifs = [
     creances.etat === 'illisibles' ? `tes ventes : ${creances.motif}` : null,
@@ -219,6 +263,7 @@ export function composerTresorerie(entree: {
       ? `tes ventes : ${creances.listes.facturesIncompletes ?? creances.listes.encaissementsIncomplets}` : null,
     echeances.etat === 'illisibles' ? `tes échéances : ${echeances.motif}` : null,
     echeances.etat === 'lues' && echeances.partiel != null ? `tes échéances : ${echeances.partiel}` : null,
+    releve.complete ? null : `ton relevé : ${releve.motif ?? 'lu en partie'}`,
   ].filter((m): m is string => m !== null)
   if (motifs.length > 0) {
     return { etat: 'muette', depart, motif: motifs.join(' ; ') }
@@ -248,12 +293,41 @@ export function composerTresorerie(entree: {
     if (enRetard.nombre > 0) nonComptes.push({ cle: 'creances-en-retard', phrase: nonCompteEnRetard(enRetard.nombre), centimes: enRetard.centimes })
     if (sansEcheance.nombre > 0) nonComptes.push({ cle: 'creances-sans-echeance', phrase: nonCompteSansEcheance(sansEcheance.nombre), centimes: sansEcheance.centimes })
     if (apres.nombre > 0) nonComptes.push({ cle: 'creances-apres', phrase: nonCompteApres(apres.nombre), centimes: apres.centimes })
+    // Encaissé APRÈS la date du solde (le jour du mouvement qui le porte, sinon celui de l'encaissement) : ce n'est plus un
+    // reste dû, et ce n'est pas encore dans le solde lu — ni compté deux fois, ni perdu en silence : dit, avec sa somme.
+    // Les espèces vont à la caisse, jamais au solde bancaire : hors de ce compte.
+    const dateDuMouvement = new Map(releve.lignes.map((m) => [m.id, m.date]))
+    const facturesDuDossier = new Set(creances.listes.factures.filter((f) => f.type === 'facture').map((f) => f.id))
+    let depuisLeReleve = 0
+    for (const e of creances.listes.encaissements) {
+      if (e.retire_le != null || e.moyen === 'especes' || !facturesDuDossier.has(e.facture_id)) continue
+      const jour = (e.ligne_bancaire_id != null ? dateDuMouvement.get(e.ligne_bancaire_id) : undefined) ?? e.date_encaissement
+      if (jour > depart.au && jour <= aujourdHui) depuisLeReleve += Math.round(e.montant * 100)
+    }
+    if (depuisLeReleve !== 0) {
+      nonComptes.push({ cle: 'encaisse-depuis-le-releve', phrase: nonCompteEncaisseDepuisLeReleve(depart.au), centimes: depuisLeReleve })
+    }
   }
 
-  // Les échéances de l'échéancier : comptées avec un montant, nommées sans.
+  // Les échéances de l'échéancier : comptées avec un montant, nommées sans. Une échéance de cotisation déjà payée ne se
+  // compte pas deux fois (voir `reglementDeLaCotisation`).
   if (echeances.etat === 'lues') {
+    const cotisations = new Map(echeances.cotisations.map((c) => [`cotisation-${c.id}`, c]))
     for (const e of echeances.echeances) {
       if (!dansLHorizon(e.date) && !(e.auMois && e.date < aujourdHui)) continue
+      const cotisation = e.nature === 'cotisations' ? cotisations.get(e.id) : undefined
+      const reglement = cotisation ? reglementDeLaCotisation(cotisation, releve.lignes, depart.au) : { etat: 'a_payer' as const }
+      if (reglement.etat === 'dans_le_solde') continue
+      if (reglement.etat !== 'a_payer') {
+        nonComptes.push({
+          cle: `echeance-${e.id}`,
+          phrase: reglement.etat === 'apres_le_solde'
+            ? `${e.libelle} (${dateEnLettres(e)}) : ${nonComptePrelevee(reglement.le)}`
+            : `${e.libelle} (${dateEnLettres(e)}) : ${NON_COMPTE_PEUT_ETRE_PAYEE}`,
+          centimes: reglement.centimes,
+        })
+        continue
+      }
       if (e.montant && Number.isFinite(e.montant.valeur) && dansLHorizon(e.date)) {
         prevus.push({
           id: e.id, date: e.date, nature: e.nature, libelle: e.libelle,
@@ -319,6 +393,14 @@ export const NON_COMPTE_PREVISIONNEL_DU_CABINET = 'Le prévisionnel de ton cabin
 
 export function phraseDuDecouvert(date: string): string {
   return `Ton compte passerait à découvert le ${enLettres(date)} : parles-en à ton cabinet.`
+}
+export const NON_COMPTE_PEUT_ETRE_PAYEE = 'peut-être déjà payée : un versement est noté, sans le prélèvement qui la paie sur '
+  + 'ton relevé. Ton cabinet te le confirmera.'
+export function nonComptePrelevee(le: string): string {
+  return `déjà prélevée le ${enLettres(le)}, après ton dernier relevé contrôlé : ni dans ton solde, ni comptée ici.`
+}
+export function nonCompteEncaisseDepuisLeReleve(au: string): string {
+  return `Encaissé sur tes factures depuis le ${enLettres(au)}, date de ton dernier relevé contrôlé : ni dans ton solde, ni compté ici.`
 }
 export function nonCompteEnRetard(nombre: number): string {
   return `${nombre === 1 ? 'Une facture en retard' : `${nombre} factures en retard`} : leur encaissement n’a plus de date sûre.`
