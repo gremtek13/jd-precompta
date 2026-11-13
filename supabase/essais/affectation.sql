@@ -280,9 +280,11 @@ begin
 
   -- ══ 14 à 17. Les catégories et les mouvements que la base refuse ═══════════════════════════════
   -- Catégorie sans compte, catégorie de bilan, catégorie d'un autre dossier : créées DANS la
-  -- sous-transaction, donc défaites avec elle. La catégorie de bilan est COMMUNE : une catégorie du
-  -- dossier ne se pose plus hors des classes 6 et 7 (`classes_des_categories`, PC7-Q2), une commune
-  -- si, et la fonction la refuse à l'emploi par le même contrôle.
+  -- sous-transaction, donc défaites avec elle. Ni une catégorie du dossier (`classes_des_categories`,
+  -- PC7-Q2) ni une commune (`classes_des_categories_communes`, PC7Q2-Q1) ne se posent plus hors des
+  -- classes 6 et 7 : la catégorie de bilan se pose déclencheurs de `categories` coupés le temps de
+  -- l'écrire, comme une catégorie posée avant la garde, et la fonction la refuse à l'emploi par le
+  -- même contrôle.
   for obs, message in
     select * from (values
       ('14. catégorie sans compte', 'La catégorie « %» n''a pas de compte de charge ou de produit (classe 6 ou 7).'),
@@ -299,8 +301,10 @@ begin
           insert into categories (dossier_id, code, libelle, ordre, compte_comptable, poste_2035)
             values (dossier_test, 'essai_sans_compte', 'Essai sans compte', 999, null, 'Divers') returning id into cat;
         elsif obs like '15.%' then
+          alter table categories disable trigger user;
           insert into categories (dossier_id, code, libelle, ordre, compte_comptable, poste_2035)
-            values (null, 'essai_bilan', 'Essai bilan', 999, '108000', null) returning id into cat;
+            values (dossier_test, 'essai_bilan', 'Essai bilan', 999, '108000', null) returning id into cat;
+          alter table categories enable trigger user;
         elsif obs like '16.%' then
           insert into categories (dossier_id, code, libelle, ordre, compte_comptable, poste_2035)
             values (dossier_du_client, 'essai_autre_dossier', 'Essai autre dossier', 999, '627000', 'Frais financiers') returning id into cat;

@@ -3,9 +3,10 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  CATEGORIES_DU_DOSSIER_PREVUES, CLASSES_DES_CATEGORIES_PREVUES, COMPTE_ET_POSTE_FIGES, codeDUneCategorieDuDossier,
-  compteDeCategorie, estEmployee, estUnCompteDeChargeOuDeProduit, jugerLaCategorie, memeCompteQue, phraseDesEmplois,
-  postesDeLaClasse, refusDeLaClasse, refusDeLaNatureDesRecettes, refusDuBareme, refusDuCompteDUneCategorie,
+  CATEGORIES_DU_DOSSIER_PREVUES, CLASSES_DES_CATEGORIES_COMMUNES_PREVUES, CLASSES_DES_CATEGORIES_PREVUES, COMPTE_ET_POSTE_FIGES,
+  codeDUneCategorieDuDossier, compteDeCategorie, estEmployee, estUnCompteDeChargeOuDeProduit, jugerLaCategorie, memeCompteQue,
+  phraseDesEmplois, postesDeLaClasse, refusDeLaClasse, refusDeLaClasseCommune, refusDeLaNatureDesRecettes, refusDuBareme,
+  refusDuCompteDUneCategorie,
   type EmploisDUneCategorie,
 } from './categoriesDuDossier'
 import { PLAN_PAR_DEFAUT } from './planComptable'
@@ -205,10 +206,14 @@ describe('PC7-Q2 : la classe du compte d’une catégorie du dossier, en base', 
   })
 
   it('le module dit le refus de la base pour une catégorie du dossier, rien pour une commune ni pour une charge', () => {
-    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '401000')).toBe(refusDeLaClasse('401000'))
-    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '6A1000')).toBe(refusDeLaClasse('6A1000'))
-    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '606400')).toBeNull()
-    expect(refusDuCompteDUneCategorie({ dossier_id: null }, '401000')).toBeNull()
+    // PC7-Q2 en base, PC7Q2-Q1 pas encore.
+    const pc7q2 = { duDossier: true, communes: false }
+    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '401000', pc7q2)).toBe(refusDeLaClasse('401000'))
+    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '6A1000', pc7q2)).toBe(refusDeLaClasse('6A1000'))
+    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '606400', pc7q2)).toBeNull()
+    expect(refusDuCompteDUneCategorie({ dossier_id: null }, '401000', pc7q2)).toBeNull()
+    // Sans aucune garde en base, rien ne se dit : l'écran écrit comme hier.
+    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '401000', { duDossier: false, communes: false })).toBeNull()
   })
 
   it('l’écran des catégories du dossier dit la classe aux mots de la base, et l’essai attend les mêmes', () => {
@@ -221,5 +226,106 @@ describe('PC7-Q2 : la classe du compte d’une catégorie du dossier, en base', 
 
   it('le drapeau suit la migration : baissé tant qu’elle n’est que préparée, levé quand elle entre dans l’export', () => {
     expect(CLASSES_DES_CATEGORIES_PREVUES).toBe(versionExportee('classes_des_categories') !== undefined)
+  })
+})
+
+// ── PC7Q2-Q1 : LA CLASSE DU COMPTE D'UNE COMMUNE, EN BASE (la migration PRÉPARÉE `classes_des_categories_communes`) ─────────
+// Elle remplace le corps de PC7-Q2 (`classes_des_categories`) par le même, plus le refus (f), et s'applique APRÈS lui.
+const RETOUR_DES_COMMUNES = join(PREPAREES, 'retour/20261113110100_retour_classes_des_categories_communes.sql')
+const versionDe = (nom: string) => {
+  const fichier = versionExportee(nom) ?? readdirSync(PREPAREES).find((f) => new RegExp(`^\\d{14}_${nom}\\.sql$`).test(f))
+  expect(fichier, nom).toBeDefined()
+  return fichier!.slice(0, 14)
+}
+
+describe('PC7Q2-Q1 : la classe du compte d’une catégorie commune, en base', () => {
+  const sql = texteDe('classes_des_categories_communes')
+  const retour = readFileSync(RETOUR_DES_COMMUNES, 'utf8')
+  const corps = corpsDeLaGarde(sql)
+  const corpsDeLaClasse = corpsDeLaGarde(texteDe('classes_des_categories'))
+  const COMMUNES = 'if new.dossier_id is null then\n    return new;'
+
+  it('le refus (f) est celui que l’écran redit, sous son code, et se distingue de (e)', () => {
+    const m = corps.match(/raise exception '(Le compte « % » n''est pas un compte de charge[^\n]*?une catégorie commune[^\n]*?)', new\.compte_comptable\n\s+using errcode = '23514';/)
+    expect(m).not.toBeNull()
+    expect(m![1].replace(/''/g, "'").replace('%', '401000')).toBe(refusDeLaClasseCommune('401000'))
+    expect(refusDeLaClasseCommune('401000')).not.toBe(refusDeLaClasse('401000'))
+  })
+
+  it('(f) ne juge qu’une commune, sous le prédicat de (e), à l’insertion ou quand son compte change, un compte nul passant', () => {
+    const f = corps.slice(corps.indexOf('-- f. Le compte'), corps.indexOf(COMMUNES))
+    expect(f).toContain("if new.dossier_id is null\n     and new.compte_comptable is not null\n"
+      + "     and (tg_op = 'INSERT' or new.compte_comptable is distinct from old.compte_comptable)\n"
+      + "     and new.compte_comptable !~ '^[67][0-9]{2}' then")
+  })
+
+  it('(f) vient après (a) et avant le retour des communes ; (e), la porte de la restauration, (b) et (c) gardent leur ordre', () => {
+    const rang = (repere: string) => {
+      const i = corps.indexOf(repere)
+      expect(i, repere).toBeGreaterThan(-1)
+      return i
+    }
+    const reperes = ['-- a. Une catégorie ne change pas de dossier.', '-- f. Le compte', COMMUNES, '-- e. Le compte',
+      "if tg_op = 'INSERT' and public.is_super_admin() then", '-- b. Le code', '-- c. Le compte du barème'].map(rang)
+    expect(reperes).toEqual([...reperes].sort((x, y) => x - y))
+  })
+
+  it('les refus d’hier gardent leurs mots et leur ordre : le corps de PC7-Q2, plus les sept lignes de (f)', () => {
+    const hier = lignesDeCode(corpsDeLaClasse)
+    const neuf = lignesDeCode(corps)
+    let k = 0
+    for (const ligne of neuf) if (k < hier.length && ligne === hier[k]) k++
+    expect(k).toBe(hier.length)
+    expect(neuf.length - hier.length).toBe(7)
+  })
+
+  it('la garde de tête : le corps de PC7-Q2 à son empreinte, son déclencheur, aucune commune hors des classes 6 et 7', () => {
+    expect(md5(corpsDeLaClasse)).toBe('dadd05a400c277832ce0261c8eb15544')
+    expect(sql).toContain(`if v_empreinte is distinct from '${md5(corpsDeLaClasse)}' then`)
+    expect(sql).toContain("t.tgname = 'categories_du_dossier'")
+    expect(sql).toContain("where c.dossier_id is null and c.compte_comptable is not null and c.compte_comptable !~ '^[67][0-9]{2}';")
+    expect(sql.indexOf('do $garde$')).toBeLessThan(sql.search(/create\s+or\s+replace\s+function\s+public\.garder_categorie_du_dossier\(\)/i))
+    expect(sql).toContain("security definer\nset search_path = ''\nas $fonction$")
+    expect(sql).toContain('revoke all on function public.garder_categorie_du_dossier() from public, anon, authenticated;')
+  })
+
+  it('le retour rend le corps de PC7-Q2 à l’octet près, sous la garde du corps posé ; celui de PC7-Q2 le suit', () => {
+    expect(corpsDeLaGarde(retour)).toBe(corpsDeLaClasse)
+    expect(retour).toContain(`if v_empreinte is distinct from '${md5(corps)}' then`)
+    expect(retour.indexOf('do $garde$')).toBeLessThan(retour.search(/create\s+or\s+replace\s+function\s+public\.garder_categorie_du_dossier\(\)/i))
+    expect(readFileSync(RETOUR_DE_LA_CLASSE, 'utf8')).toContain(`if v_empreinte is distinct from '${md5(corpsDeLaClasse)}' then`)
+  })
+
+  it('les deux passent par l’outil : ni barre oblique inverse, ni mot de suppression hors de tg_op', () => {
+    for (const texte of [sql, retour]) {
+      expect(texte).not.toContain('\\')
+      expect(texte.replace(/tg_op = 'DELETE'/g, '')).not.toMatch(/\b(delete|drop|truncate)\b/i)
+    }
+  })
+
+  it('elle suit PC7-Q2 : sa version vient après la sienne, et après la dernière préparée du 12/11/2026', () => {
+    expect(versionDe('classes_des_categories_communes') > versionDe('classes_des_categories')).toBe(true)
+    expect(versionDe('classes_des_categories_communes') > '20261112235100').toBe(true)
+  })
+
+  it('le module dit (f) pour une commune, (e) pour une catégorie du dossier, chacun sous sa garde', () => {
+    const toutes = { duDossier: true, communes: true }
+    expect(refusDuCompteDUneCategorie({ dossier_id: null }, '401000', toutes)).toBe(refusDeLaClasseCommune('401000'))
+    expect(refusDuCompteDUneCategorie({ dossier_id: null }, '6A1000', toutes)).toBe(refusDeLaClasseCommune('6A1000'))
+    expect(refusDuCompteDUneCategorie({ dossier_id: null }, '706000', toutes)).toBeNull()
+    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '401000', toutes)).toBe(refusDeLaClasse('401000'))
+    // Chaque garde sous son drapeau : celle des communes seule ne dit rien d'une catégorie du dossier, ni l'inverse.
+    expect(refusDuCompteDUneCategorie({ dossier_id: 'd1' }, '401000', { duDossier: false, communes: true })).toBeNull()
+    expect(refusDuCompteDUneCategorie({ dossier_id: null }, '401000', { duDossier: true, communes: false })).toBeNull()
+  })
+
+  it('l’essai attend les mots de la base', () => {
+    const essai = readFileSync(join(__dirname, '../../supabase/essais/categoriesDuDossier.sql'), 'utf8')
+    expect(essai).toContain(refusDeLaClasseCommune('401000').replace(/'/g, "''"))
+    expect(essai).toContain(refusDeLaClasseCommune('512000').replace(/'/g, "''"))
+  })
+
+  it('le drapeau suit la migration : baissé tant qu’elle n’est que préparée, levé quand elle entre dans l’export', () => {
+    expect(CLASSES_DES_CATEGORIES_COMMUNES_PREVUES).toBe(versionExportee('classes_des_categories_communes') !== undefined)
   })
 })

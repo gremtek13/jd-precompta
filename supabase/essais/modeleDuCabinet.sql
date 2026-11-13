@@ -15,9 +15,10 @@
 --
 -- Le jeu : deux dossiers jetables du cabinet du dossier `test` (préfixe `f5c00000-0000-4000-8000`) — DT en trésorerie,
 -- dirigeant au 455000, avec un accès du client d'essai ; DE en engagement, dirigeant au 108000 — et, pour les étapes qui le
--- demandent, un cabinet jetable (AUTRE). Une catégorie du dossier ne se pose plus hors des classes 6 et 7
--- (`classes_des_categories`, PC7-Q2) : les étapes 39 et 72, qui la veulent au compte de l'exploitant, la posent déclencheurs
--- de `categories` coupés le temps de l'écrire, comme une catégorie posée avant la garde. Le client d'essai sert aussi de membre de l'équipe (rattaché comme comptable, le
+-- demandent, un cabinet jetable (AUTRE). Ni une catégorie du dossier (`classes_des_categories`, PC7-Q2) ni une commune
+-- (`classes_des_categories_communes`, PC7Q2-Q1) ne se posent plus hors des classes 6 et 7 : les étapes 37, 39 et 72, qui
+-- la veulent au compte de l'exploitant, la posent déclencheurs de `categories` coupés le temps de l'écrire, comme une
+-- catégorie posée avant la garde. Le client d'essai sert aussi de membre de l'équipe (rattaché comme comptable, le
 -- temps d'une étape), de chef du cabinet qui n'est pas super-administrateur, et de chef de l'autre cabinet. Chaque étape se
 -- joue dans sa sous-transaction et s'y ANNULE (`ANNULATION_ETAPE`) : ce que le propriétaire pose d'abord, sous la session
 -- du super-administrateur, puis la requête du profil ; le jeu s'annule à la fin (`ANNULATION_ESSAI_GLOBALE`), et « rien
@@ -182,7 +183,7 @@ begin
         'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "512100"}]'), '22023',
         'Les rôles « banque » et « essai_chevauche » se tiendraient sur le même compte (« 512100 »), à des zéros près : un compte ne tient qu''un rôle.'),
       (37, '37. un rôle du bilan sur le compte d''une catégorie COMMUNE, à des zéros près (22023)',
-        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc5_commune', 'Essai PC5 commune', '1081')$q$,
+        $q$alter table categories disable trigger user; insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc5_commune', 'Essai PC5 commune', '1081'); alter table categories enable trigger user$q$,
         'chef', replace(regler, '{L}', '[{"role": "exploitant", "compte": "108100"}]'), '22023',
         'Le compte « 108100 » du rôle « exploitant » est celui d''une catégorie commune à tous les dossiers (« 1081 »), à des zéros près : un compte de bilan que l''application écrit ne se partage pas avec une catégorie.'),
       (38, '38. les indemnités kilométriques sur le compte d''une catégorie commune (22023)',

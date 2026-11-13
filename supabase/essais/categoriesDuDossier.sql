@@ -21,6 +21,18 @@
 -- comme une catégorie posée avant la garde. Mutations de la migration qui doivent virer au rouge (jouées sur la réplique,
 -- le 12/11/2026) : retirer (e) ; le mettre après la porte de la restauration ; après (b) ; avant (a) ; juger toute mise à
 -- jour ; juger les communes ; `^[67]` seul ; refuser un compte nul ; un autre code que 23514.
+--
+-- LA CLASSE DU COMPTE D'UNE COMMUNE (PC7Q2-Q1 ; la migration PRÉPARÉE
+-- supabase/preparees/20261113110000_classes_des_categories_communes.sql, après celle de PC7-Q2) : le refus (f) — une
+-- catégorie COMMUNE dont le compte, non nul, n'est pas de la classe 6 ou 7 suivie de deux chiffres, à l'insertion ou quand
+-- il change, pour tout auteur, le super-administrateur compris — se joue aux étapes 50 à 59, quand la dernière des deux
+-- lignes d'historique `classes_des_categories_communes` et `retour_classes_des_categories_communes` est la première ; et
+-- l'étape 45, la commune au 401000 du super-administrateur, attend alors son refus. Sinon une ligne dit qu'elles attendent
+-- (EN ATTENTE), et l'étape 45 passe comme hier. Une commune jetable (K3) se pose au 606400 par le propriétaire ; les étapes
+-- 55 et 56 la posent au 401000 déclencheurs coupés, comme une commune posée avant la garde. Mutations de la migration qui
+-- doivent virer au rouge (jouées sur la réplique, le 13/11/2026) : retirer (f) ; le mettre avant (a) ; après le retour des
+-- communes ; juger toute mise à jour ; juger aussi les catégories du dossier ; `^[67]` seul ; refuser un compte nul ; un
+-- autre code que 23514.
 
 do $essai$
 declare
@@ -30,13 +42,20 @@ declare
   db constant text := 'c7000000-0000-4000-8000-0000000000d2';
   k1 constant text := 'c7000000-0000-4000-8000-0000000000c1';
   k2 constant text := 'c7000000-0000-4000-8000-0000000000c2';
+  k3 constant text := 'c7000000-0000-4000-8000-0000000000c3';
   p1 constant text := 'c7000000-0000-4000-8000-0000000000e1';
   cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
   -- La migration de la classe (PC7-Q2) en base : la dernière de ses deux lignes d'historique est la sienne, pas son retour.
   classes constant boolean := coalesce((select m.name = 'classes_des_categories' from supabase_migrations.schema_migrations m
     where m.name in ('classes_des_categories', 'retour_classes_des_categories') order by m.version desc limit 1), false);
+  -- Celle de la classe d'une commune (PC7Q2-Q1), de même.
+  communes constant boolean := coalesce((select m.name = 'classes_des_categories_communes' from supabase_migrations.schema_migrations m
+    where m.name in ('classes_des_categories_communes', 'retour_classes_des_categories_communes') order by m.version desc limit 1), false);
   -- Une catégorie posée comme avant la garde de la classe : déclencheurs de `categories` coupés le temps de l'écrire.
   avant_la_classe constant text := $p$alter table categories disable trigger user; insert into categories (id, dossier_id, code, libelle, compte_comptable) values ('{K1}', '{DA}', 'essai_pc7_k1', 'Essai PC7 posée avant', '108000'); alter table categories enable trigger user$p$;
+  -- Une commune jetable, K3 : au 606400, ou au 401000 comme avant la garde de la classe des communes.
+  commune constant text := $p$insert into categories (id, dossier_id, code, libelle, compte_comptable) values ('{K3}', null, 'essai_pc7_k3', 'Essai PC7 commune', '606400')$p$;
+  commune_avant constant text := $p$alter table categories disable trigger user; insert into categories (id, dossier_id, code, libelle, compte_comptable) values ('{K3}', null, 'essai_pc7_k3', 'Essai PC7 commune posée avant', '401000'); alter table categories enable trigger user$p$;
   -- Deux catégories du dossier DA : K1 au 606400, libre ; K2 au 706000, citée selon l'étape.
   jeu constant text := $j$insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
       ('{K1}', '{DA}', 'essai_pc7_k1', 'Essai PC7 fournitures', '606400', 'Fournitures de bureau'),
@@ -148,9 +167,13 @@ begin
       (44, '44. (e) la restauration non plus : le super-administrateur n''insère pas une catégorie du dossier au 401000', 'super', null,
         $q$insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DA}', 'essai_pc7_e', 'Restaurée', '401000') returning code$q$,
         '23514', '~Le compte « 401000 » n''est pas un compte de charge ou de produit'),
-      (45, '45. une catégorie COMMUNE au 401000, par le super-administrateur : la classe ne la juge pas (PC7Q2-Q1)', 'super', null,
+      -- La frontière de PC7Q2-Q1 : sans sa migration, la commune passe ; avec elle, (f) la refuse.
+      (45, case when communes then '45. (f) une catégorie COMMUNE au 401000, par le super-administrateur : la classe la juge aussi (PC7Q2-Q1)'
+                else '45. une catégorie COMMUNE au 401000, par le super-administrateur : la classe ne la juge pas (PC7Q2-Q1)' end, 'super', null,
         $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc7_commune', 'Essai PC7 commune', '401000') returning compte_comptable$q$,
-        'OK', '401000'),
+        case when communes then '23514' else 'OK' end,
+        case when communes then '~Le compte « 401000 » n''est pas un compte de charge ou de produit (classe 6 ou 7, trois chiffres en tête) : une catégorie commune à tous les cabinets ne range qu''une charge ou un produit.'
+             else '401000' end),
       (46, '46. une catégorie posée avant la garde au 108000 : son libellé change, son compte ne se rejuge pas', 'chef', avant_la_classe,
         $q$update categories set libelle = 'Essai PC7 renommée' where id = '{K1}' returning libelle || ' / ' || compte_comptable$q$,
         'OK', 'Essai PC7 renommée / 108000'),
@@ -162,17 +185,51 @@ begin
         '23514', '~Le compte « 401000 » n''est pas un compte de charge ou de produit'),
       (49, '49. l''ordre : un dossier changé et un compte hors classe, le dossier d''abord (a avant e)', 'chef', '{JEU}',
         $q$update categories set dossier_id = '{DB}', compte_comptable = '401000' where id = '{K1}' returning code$q$,
-        '23514', '~Une catégorie ne change pas de dossier')
+        '23514', '~Une catégorie ne change pas de dossier'),
+      -- ══ 50 à 59. (f) La classe du compte d'une catégorie COMMUNE (PC7Q2-Q1), quand sa migration est en base ══
+      (50, '50. (f) le super-administrateur ne porte pas le compte d''une commune sur la banque (512000)', 'super', commune,
+        $q$update categories set compte_comptable = '512000' where id = '{K3}' returning compte_comptable$q$,
+        '23514', '~Le compte « 512000 » n''est pas un compte de charge ou de produit (classe 6 ou 7, trois chiffres en tête) : une catégorie commune à tous les cabinets ne range qu''une charge ou un produit.'),
+      (51, '51. (f) ni sur un compte qui ne commence pas par trois chiffres (6A1000)', 'super', null,
+        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc7_commune', 'Essai PC7 commune', '6A1000') returning code$q$,
+        '23514', '~Le compte « 6A1000 » n''est pas un compte de charge ou de produit (classe 6 ou 7, trois chiffres en tête) : une catégorie commune'),
+      (52, '52. (f) pour tout auteur : le propriétaire, sans session, ne pose pas une commune au 445660', 'postgres', null,
+        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc7_commune', 'Essai PC7 commune', '445660') returning code$q$,
+        '23514', '~Le compte « 445660 » n''est pas un compte de charge ou de produit (classe 6 ou 7, trois chiffres en tête) : une catégorie commune'),
+      (53, '53. une commune sans compte attend le sien : rien ne se juge', 'super', null,
+        $q$insert into categories (dossier_id, code, libelle) values (null, 'essai_pc7_commune', 'Essai PC7 commune') returning code$q$,
+        'OK', 'essai_pc7_commune'),
+      (54, '54. le compte d''une commune passe d''une charge (606400) à un produit (706000)', 'super', commune,
+        $q$update categories set compte_comptable = '706000' where id = '{K3}' returning compte_comptable$q$,
+        'OK', '706000'),
+      (55, '55. une commune posée avant la garde au 401000 : son libellé change, son compte ne se rejuge pas', 'super', commune_avant,
+        $q$update categories set libelle = 'Essai PC7 commune renommée' where id = '{K3}' returning libelle || ' / ' || compte_comptable$q$,
+        'OK', 'Essai PC7 commune renommée / 401000'),
+      (56, '56. … et son compte rendu à une charge passe', 'super', commune_avant,
+        $q$update categories set compte_comptable = '606400' where id = '{K3}' returning compte_comptable$q$,
+        'OK', '606400'),
+      (57, '57. l''ordre : une catégorie du dossier rendue commune sur un compte hors classe, le dossier d''abord (a avant f)', 'super', '{JEU}',
+        $q$update categories set dossier_id = null, compte_comptable = '401000' where id = '{K1}' returning code$q$,
+        '23514', '~Une catégorie ne change pas de dossier'),
+      (58, '58. le chef qui n''est pas super-administrateur ne crée toujours pas de commune : sur une charge, la policy (42501)', 'chef', null,
+        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc7_commune', 'Essai PC7 commune', '606400') returning code$q$,
+        '42501', '~row-level security policy for table "categories"'),
+      (59, '59. … hors classe, (f) le refuse avant la policy, sans rien écrire', 'chef', null,
+        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc7_commune', 'Essai PC7 commune', '401000') returning code$q$,
+        '23514', '~: une catégorie commune à tous les cabinets ne range qu''une charge ou un produit.')
     ) as t(rang, etape, profil, preparation, requete, attendu, rend)
     loop
       if e.rang between 40 and 49 and not classes then
+        continue;
+      end if;
+      if e.rang between 50 and 59 and not communes then
         continue;
       end if;
       v_code := 'OK'; v_obs := null;
       begin
         if e.preparation is not null then
           v_requete := replace(e.preparation, '{JEU}', jeu);
-          execute replace(replace(replace(replace(replace(replace(v_requete, '{DA}', da), '{DB}', db), '{K1}', k1), '{K2}', k2), '{P1}', p1), '{SUPER}', super);
+          execute replace(replace(replace(replace(replace(replace(replace(v_requete, '{DA}', da), '{DB}', db), '{K1}', k1), '{K2}', k2), '{K3}', k3), '{P1}', p1), '{SUPER}', super);
         end if;
         if e.profil <> 'postgres' then
           execute 'set local role authenticated';
@@ -180,7 +237,7 @@ begin
             'role', 'authenticated')::text, true);
         end if;
         begin
-          execute replace(replace(replace(replace(replace(e.requete, '{DA}', da), '{DB}', db), '{K1}', k1), '{K2}', k2), '{P1}', p1) into v_obs;
+          execute replace(replace(replace(replace(replace(replace(e.requete, '{DA}', da), '{DB}', db), '{K1}', k1), '{K2}', k2), '{K3}', k3), '{P1}', p1) into v_obs;
         exception when others then
           v_code := sqlstate; v_obs := sqlerrm;
         end;
@@ -204,6 +261,11 @@ begin
         'etape', '40. EN ATTENTE de la migration classes_des_categories (PC7-Q2) : les étapes 40 à 49 se jouent dès qu''elle y est',
         'ok', true, 'observe', 'absente, ou rendue par son retour');
     end if;
+    if not communes then
+      verdicts := verdicts || jsonb_build_object('rang', 50,
+        'etape', '50. EN ATTENTE de la migration classes_des_categories_communes (PC7Q2-Q1) : les étapes 50 à 59 se jouent dès qu''elle y est, et l''étape 45 attend alors son refus',
+        'ok', true, 'observe', 'absente, ou rendue par son retour');
+    end if;
 
     verdicts := verdicts || jsonb_build_object('rang', 30, 'etape', '30. le catalogue : security definer, chemin vide, exécutable par aucun rôle ; un déclencheur BEFORE INSERT OR UPDATE OR DELETE FOR EACH ROW',
       'ok', (select p.prosecdef and p.proconfig = array['search_path=""']
@@ -222,7 +284,7 @@ begin
 
   verdicts := verdicts || jsonb_build_object('rang', 99, 'etape', '99. rien n''est resté : ni les dossiers jetables, ni leurs catégories, ni la pièce, ni l''accès de chef ; les communes intactes',
     'ok', not exists (select 1 from dossiers where id in (da::uuid, db::uuid))
-      and not exists (select 1 from categories where code like 'essai_pc7%' or id in (k1::uuid, k2::uuid))
+      and not exists (select 1 from categories where code like 'essai_pc7%' or id in (k1::uuid, k2::uuid, k3::uuid))
       and not exists (select 1 from pieces where id = p1::uuid)
       and not exists (select 1 from cabinet_admins where user_id = client::uuid)
       and (select count(*) from categories where dossier_id is null and code = 'loyer') = 1,

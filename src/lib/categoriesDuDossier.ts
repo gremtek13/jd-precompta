@@ -164,8 +164,9 @@ export function codeDUneCategorieDuDossier(compte: string, codesPris: ReadonlySe
 // CATÉGORIE DU DOSSIER, EN BASE ») ajoute à la garde de `categories` le refus (e) : une catégorie DU DOSSIER dont le compte,
 // non nul, n'est pas de la classe 6 ou 7 suivie de deux chiffres — le prédicat des fonctions du relevé —, à l'insertion ou
 // quand il change, pour tout auteur, la restauration du super-administrateur comprise. Une catégorie commune n'en est pas
-// jugée (PC7Q2-Q1), ni un compte nul, qui attend le sien (« Comptes manquants »). Sources : plan comptable général
-// (règlement ANC n° 2014-03), art. 1121-1 et sa liste (classe 6, charges ; classe 7, produits), art. 1131-1.
+// jugée — c'est le refus (f), plus bas (PC7Q2-Q1) —, ni un compte nul, qui attend le sien (« Comptes manquants »). Sources :
+// plan comptable général (règlement ANC n° 2014-03), art. 1121-1 et sa liste (classe 6, charges ; classe 7, produits), art.
+// 1131-1.
 
 /** Baissé jusqu'à l'application de `classes_des_categories` : la carte « Comptes manquants » (onglet Écritures) ne refuse
  *  pas encore avant le clic le compte d'une catégorie du dossier hors des classes 6 et 7, que la base accepterait. Il se
@@ -182,8 +183,39 @@ export function refusDeLaClasse(compte: string): string {
   return `Le compte « ${compte} » n'est pas un compte de charge ou de produit (classe 6 ou 7, trois chiffres en tête) : une catégorie du dossier ne range qu'une charge ou un produit.`
 }
 
-/** Ce que la base dit du compte d'une catégorie, tel qu'il part : le refus (e) pour une catégorie du dossier, rien pour une
- *  commune (PC7Q2-Q1). */
-export function refusDuCompteDUneCategorie(categorie: Pick<Categorie, 'dossier_id'>, compte: string): string | null {
-  return categorie.dossier_id !== null && !estUnCompteDeChargeOuDeProduit(compte) ? refusDeLaClasse(compte) : null
+// ── LA CLASSE DU COMPTE D'UNE CATÉGORIE COMMUNE, EN BASE (PC7Q2-Q1 ; la réponse du cabinet du 13/11/2026 : « Oui, dans un
+// lot à part ») ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+// La migration PRÉPARÉE `classes_des_categories_communes` (supabase/preparees/20261113110000_classes_des_categories_communes.sql,
+// à appliquer APRÈS `classes_des_categories` ; son essai, supabase/essais/categoriesDuDossier.sql, l'étape 45 et les étapes
+// 50 à 59 ; HISTORIQUE.md, « 13/11/2026 — PC7Q2-Q1 : LA CLASSE DU COMPTE D'UNE CATÉGORIE COMMUNE, EN BASE ») ajoute à la
+// garde de `categories` le refus (f) : une catégorie COMMUNE à tous les cabinets (`dossier_id` nul) dont le compte, non nul,
+// n'est pas de la classe 6 ou 7 suivie de deux chiffres — le prédicat de (e) —, à l'insertion ou quand il change, pour tout
+// auteur : seul le super-administrateur écrit une commune, et d'ici par la carte « Comptes manquants » (onglet Écritures),
+// qui le dit avant le clic sous `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES`. Un compte nul attend le sien. Mêmes sources que
+// (e) : plan comptable général, art. 1121-1 et sa liste, art. 1131-1.
+
+/** Baissé jusqu'à l'application de `classes_des_categories_communes` : la carte « Comptes manquants » ne refuse pas encore
+ *  avant le clic, au super-administrateur, le compte d'une catégorie commune hors des classes 6 et 7, que la base accepterait.
+ *  Il se lève la migration en base (son essai), puis le déploiement ; il se baisse AVANT tout retour de la migration. */
+export const CLASSES_DES_CATEGORIES_COMMUNES_PREVUES = false
+
+/** Le refus (f) de la garde de la base, à ses mots, pour le compte d'une catégorie commune tel qu'il part. */
+export function refusDeLaClasseCommune(compte: string): string {
+  return `Le compte « ${compte} » n'est pas un compte de charge ou de produit (classe 6 ou 7, trois chiffres en tête) : une catégorie commune à tous les cabinets ne range qu'une charge ou un produit.`
+}
+
+/** Ce que la base tient de la classe du compte d'une catégorie : celle d'une catégorie du dossier
+ *  (`classes_des_categories`, PC7-Q2), celle d'une commune (`classes_des_categories_communes`, PC7Q2-Q1). L'écran passe ses
+ *  deux drapeaux, lus à chaque clic : aucune valeur par défaut. */
+export interface GardesDeLaClasse {
+  readonly duDossier: boolean
+  readonly communes: boolean
+}
+
+/** Ce que la base dit du compte d'une catégorie, tel qu'il part : le refus (e) pour une catégorie du dossier, le refus (f)
+ *  pour une commune, chacun quand sa garde est en base ; rien pour une charge ou un produit. */
+export function refusDuCompteDUneCategorie(categorie: Pick<Categorie, 'dossier_id'>, compte: string, gardes: GardesDeLaClasse): string | null {
+  if (estUnCompteDeChargeOuDeProduit(compte)) return null
+  if (categorie.dossier_id !== null) return gardes.duDossier ? refusDeLaClasse(compte) : null
+  return gardes.communes ? refusDeLaClasseCommune(compte) : null
 }

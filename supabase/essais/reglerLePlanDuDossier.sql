@@ -18,10 +18,11 @@
 --
 -- Trois dossiers jetables du cabinet du dossier `test` (préfixe `f4c00000-0000-4000-8000`) : DT, en trésorerie, dirigeant au
 -- 455000, avec un accès du client d'essai, une catégorie propre (CT), une catégorie COMMUNE au compte de l'exploitant (C108)
--- et deux pièces ; DE, en engagement, dirigeant au 108000 ; DR, un dossier que des étapes restaurent. Une catégorie du
--- dossier ne se pose plus hors des classes 6 et 7 (`classes_des_categories`, PC7-Q2) : C108 est commune, le chemin qui
--- reste, et les étapes 35, 36, 38 et 39, qui jugent le refus 9 contre une catégorie du dossier sur un compte de bilan, la
--- posent déclencheurs de `categories` coupés le temps de l'écrire, comme une catégorie posée avant la garde. Chaque étape se joue dans sa sous-transaction et s'y ANNULE (`ANNULATION_ETAPE`) :
+-- et deux pièces ; DE, en engagement, dirigeant au 108000 ; DR, un dossier que des étapes restaurent. Ni une catégorie du
+-- dossier (`classes_des_categories`, PC7-Q2) ni une commune (`classes_des_categories_communes`, PC7Q2-Q1) ne se posent plus
+-- hors des classes 6 et 7 : C108, la commune de l'étape 37, le compte de C108 que l'étape 121 change, et les étapes 35, 36,
+-- 38 et 39, qui jugent le refus 9 contre une catégorie du dossier sur un compte de bilan, les posent déclencheurs de
+-- `categories` coupés le temps de l'écrire, comme une catégorie posée avant la garde. Chaque étape se joue dans sa sous-transaction et s'y ANNULE (`ANNULATION_ETAPE`) :
 -- ce que le propriétaire pose d'abord, sous la session du super-administrateur, puis la requête du profil ; le jeu s'annule à
 -- la fin (`ANNULATION_ESSAI_GLOBALE`), et « rien n'est resté » le relit. Les verdicts voyagent dans un réglage LOCAL à la
 -- transaction (`essai.regler_le_plan`), que la requête finale lit : le fichier se joue d'un seul appel, ne crée ni table ni
@@ -109,8 +110,11 @@ begin
     insert into memberships (id, user_id, dossier_id, role, email) values
       (acces::uuid, client::uuid, dt::uuid, 'client', 'essai-pc4@example.test');
     insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
-      (ct::uuid, dt::uuid, 'essai_pc4_achats', 'Essai PC4 achats', '606100', 'Achats'),
+      (ct::uuid, dt::uuid, 'essai_pc4_achats', 'Essai PC4 achats', '606100', 'Achats');
+    alter table categories disable trigger user;
+    insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
       (c108::uuid, null, 'essai_pc4_exploitant', 'Essai PC4 exploitant', '108000', null);
+    alter table categories enable trigger user;
     insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, categorie_id, montant_ttc, date_piece) values
       (p1::uuid, dt::uuid, dt || '/essai-pc4-1.pdf', 'essai-pc4-1.pdf', 'achat', 'validee', ct::uuid, 12, '2026-03-01'),
       (p2::uuid, dt::uuid, dt || '/essai-pc4-2.pdf', 'essai-pc4-2.pdf', 'note_frais', 'validee', c108::uuid, 12, '2026-03-01');
@@ -190,7 +194,7 @@ begin
         $q$alter table categories disable trigger user; update categories set compte_comptable = '5121' where id = '{CT}'; alter table categories enable trigger user$q$,
         'chef', replace(regler, '{L}', '[{"role": "banque", "compte": "512100"}]'), '22023', format(categorie, '512100', 'banque', '5121')),
       (37, '37. les fournisseurs changés vers le compte d''une catégorie commune (22023)',
-        $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc4_commune', 'Essai PC4 commune', '401100')$q$,
+        $q$alter table categories disable trigger user; insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc4_commune', 'Essai PC4 commune', '401100'); alter table categories enable trigger user$q$,
         'chef', replace(regler, '{L}', '[{"role": "fournisseurs", "compte": "401100"}]'), '22023', format(categorie, '401100', 'fournisseurs', '401100')),
       (38, '38. la catégorie d''un AUTRE dossier ne retient rien',
         $q$alter table categories disable trigger user; insert into categories (dossier_id, code, libelle, compte_comptable) values ('{DE}', 'essai_pc4_autre', 'Essai PC4 autre', '512100'); alter table categories enable trigger user$q$,
@@ -378,9 +382,9 @@ begin
         $q$select regler_plan_du_dossier('{DT}', '{PD}'::jsonb); insert into ecritures_brouillon (dossier_id, piece_id, date, compte, libelle, montant, sens) values ('{DT}', '{P1}', '2026-03-01', '512100', 'ESSAI PC4', 1, 'debit')$q$, 'proprio',
         $q$update ecritures_brouillon set compte = '512000' where dossier_id = '{DT}' and piece_id = '{P1}' returning compte$q$, '23514', format(ligne_piece, '512000', 'banque', '512100')),
       (121, '121. sa date changée (le rapprochement la redate) ne la rejuge pas',
-        $q$update categories set compte_comptable = '108100' where id = '{C108}';
+        $q$alter table categories disable trigger user; update categories set compte_comptable = '108100' where id = '{C108}'; alter table categories enable trigger user;
            insert into ecritures_brouillon (dossier_id, piece_id, date, compte, libelle, montant, sens) values ('{DT}', '{P2}', '2026-03-01', '108100', 'ESSAI PC4', 1, 'debit');
-           update categories set compte_comptable = '108000' where id = '{C108}'$q$, 'proprio',
+           alter table categories disable trigger user; update categories set compte_comptable = '108000' where id = '{C108}'; alter table categories enable trigger user$q$, 'proprio',
         $q$update ecritures_brouillon set date = '2026-03-02' where dossier_id = '{DT}' and piece_id = '{P2}' returning compte$q$, 'OK', '108100')
     ) as t(rang, etape, pose, profil, requete, code, attendu) loop
       v_code := 'OK'; v_msg := null; v_obs := null;
