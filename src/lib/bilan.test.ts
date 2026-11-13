@@ -940,3 +940,92 @@ describe('regleDuCompte — le passage des comptes aux rubriques du 2033-A', () 
     ])
   })
 })
+
+// LE POINT `inventaire-non-revu` ET L'INVENTAIRE (ligne 35, INV6). Sans objet — le drapeau `INVENTAIRE_EXPORTE` baissé, ou un
+// dossier en trésorerie (BilanTab passe `inventaireDesControles(…, mode)`) —, le point est celui d'HIER au caractère près :
+// `pointDHier` en est la copie fidèle, prise du code d'avant INV6 (commit 2867920, les lignes retirées), l'oracle de la
+// comparaison. L'inventaire lu, le point lit la DÉCLARATION, et les comptes qu'il ne range pas gardent la règle du mouvement.
+describe('le point inventaire-non-revu et l’inventaire (INV6)', () => {
+  // La liste de bilan.ts (COMPTE_D_INVENTAIRE), qu'INV6 n'a pas changée.
+  const COMPTE_D_HIER = /^(3|15|29|408|418|4282|4286|4382|4386|4481|4482|439|4098|486|487|49|59|1688|518|4287|4387|4486|4487|4686|4687)/
+  const parNum = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+  /** Le point d'hier, tel qu'il s'écrivait avant INV6 : un compte d'inventaire qui garde son solde sans mouvement dans l'exercice. */
+  function pointDHier(d: EntreesDuBilan) {
+    const soldes = new Map<string, number>()
+    const mouvementes = new Set<string>()
+    const debut = `${d.exercice}-01-01`
+    const fin = `${d.exercice}-12-31`
+    for (const l of [...d.reprise.filter((r) => r.date === debut), ...d.ecritures.filter((e) => e.date >= debut && e.date <= fin)]) {
+      soldes.set(l.compte, (soldes.get(l.compte) ?? 0) + (l.sens === 'debit' ? 1 : -1) * Math.round(l.montant * 100))
+    }
+    for (const e of d.ecritures.filter((x) => x.date >= debut && x.date <= fin)) mouvementes.add(e.compte)
+    const nonRevus = [...soldes.entries()].filter(([c, s]) => COMPTE_D_HIER.test(c) && s !== 0 && !mouvementes.has(c)).map(([c]) => c).sort(parNum)
+    if (nonRevus.length === 0) return undefined
+    const pluriel = (n: number, un: string, plusieurs: string) => (n > 1 ? plusieurs : un)
+    return {
+      code: 'inventaire-non-revu', gravite: 'attention',
+      texte: `${pluriel(nonRevus.length, 'Un compte d’inventaire garde', 'Des comptes d’inventaire gardent')} à la clôture le solde `
+        + `de l’ouverture, sans mouvement dans l’exercice : ${nonRevus.join(', ')}. Stocks, charges et produits constatés `
+        + 'd’avance, factures à recevoir ou à établir, provisions et dépréciations se revoient à chaque clôture, et cette '
+        + 'écriture ne se passe pas encore dans l’application.',
+      comptes: nonRevus,
+    }
+  }
+  const ouverture = reprise('2026-01-01', [['486000', 'D', 300], ['371000', 'D', 1_000], ['408400', 'D', 50], ['512000', 'D', 650], ['101000', 'C', 2_000]])
+  // L'extourne du 1er janvier mouvemente le 486, et la constatation du 31 décembre le reconstitue : hier, le point se taisait.
+  const extourne = [
+    ...ecrire('2026-01-01', [['616000', 'D', 300], ['486000', 'C', 300]]),
+    ...ecrire('2026-12-31', [['486000', 'D', 300], ['616000', 'C', 300]]),
+  ]
+  const CAS: Partial<EntreesDuBilan>[] = [
+    { reprise: ouverture }, { reprise: ouverture, ecritures: extourne },
+    { reprise: ouverture, ecritures: extourne, aujourdHui: '2026-10-09' }, { reprise: ouverture, anneesValidees: [2026] },
+    { reprise: reprise('2026-01-01', [['486000', 'D', 300], ['101000', 'C', 300]]) },
+    { reprise: reprise('2026-01-01', [['512000', 'D', 10], ['101000', 'C', 10]]) },
+  ]
+  const lu = (declarations: { id: string; exercice: number; retire_le: string | null }[] = []) =>
+    ({ etat: 'lu' as const, operations: [], declarations, provisions: [] })
+  const point = (b: ReturnType<typeof bilanDeLExercice>) => etabli(b).points.find((p) => p.code === 'inventaire-non-revu')
+
+  it('sans objet (drapeau baissé ou trésorerie), le point est celui d’hier, texte compris, et tout le reste du bilan aussi', () => {
+    for (const cas of CAS) {
+      const d = entrees(cas)
+      const b = etabli(bilanDeLExercice(d))
+      expect(point(b)).toEqual(pointDHier(d))
+    }
+    // Le bilan levé ne change que ce point : rubriques, totaux et autres points identiques.
+    for (const cas of CAS) {
+      const baisse = etabli(bilanDeLExercice(entrees(cas)))
+      const leve = etabli(bilanDeLExercice(entrees({ ...cas, inventaire: lu() })))
+      expect({ ...leve, points: leve.points.filter((p) => p.code !== 'inventaire-non-revu') })
+        .toEqual({ ...baisse, points: baisse.points.filter((p) => p.code !== 'inventaire-non-revu') })
+    }
+  })
+
+  it('lu et non déclaré, l’exercice clos : un compte qu’il écrit et qui porte un solde se dit, même mouvementé par l’extourne', () => {
+    const p = point(bilanDeLExercice(entrees({ reprise: ouverture, ecritures: extourne, inventaire: lu() })))
+    expect(p?.comptes).toEqual(['371000', '408400', '486000'])
+    expect(p?.texte).toContain('L’inventaire de 2026 n’est pas déclaré, et un compte qu’il écrit porte un solde à la clôture : 486000. '
+      + 'Il se revoit dans l’onglet Inventaire, qui le déclare fait, avec ou sans régularisation ; la validation l’attend.')
+    // Les comptes qu'il ne range pas — un stock, le 4084 — gardent la règle du mouvement, sous leurs mots.
+    expect(p?.texte).toContain('Des comptes d’inventaire gardent à la clôture le solde de l’ouverture, sans mouvement dans l’exercice : '
+      + '371000, 408400. L’inventaire de l’application ne les range pas')
+    // Validé, la validation n'attend plus rien.
+    expect(point(bilanDeLExercice(entrees({ reprise: ouverture, ecritures: extourne, anneesValidees: [2026], inventaire: lu() })))?.texte)
+      .toContain('avec ou sans régularisation. ')
+  })
+
+  it('déclaré, ou l’exercice pas encore clos : les comptes qu’il écrit se taisent ; une déclaration retirée ne compte pas', () => {
+    const declare = point(bilanDeLExercice(entrees({ reprise: ouverture, ecritures: extourne, inventaire: lu([{ id: 'i', exercice: 2026, retire_le: null }]) })))
+    expect(declare?.comptes).toEqual(['371000', '408400'])
+    expect(declare?.texte).not.toContain('n’est pas déclaré')
+    const enCours = point(bilanDeLExercice(entrees({ reprise: ouverture, ecritures: extourne, aujourdHui: '2026-10-09', inventaire: lu() })))
+    expect(enCours?.comptes).toEqual(['371000', '408400'])
+    const retiree = point(bilanDeLExercice(entrees({
+      reprise: ouverture, ecritures: extourne, inventaire: lu([{ id: 'i', exercice: 2026, retire_le: '2027-01-10T10:00:00Z' }]),
+    })))
+    expect(retiree?.comptes).toContain('486000')
+    const autreExercice = point(bilanDeLExercice(entrees({ reprise: ouverture, ecritures: extourne, inventaire: lu([{ id: 'i', exercice: 2025, retire_le: null }]) })))
+    expect(autreExercice?.comptes).toContain('486000')
+  })
+})

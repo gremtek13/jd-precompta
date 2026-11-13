@@ -1146,3 +1146,56 @@ describe('l’instantané d’une preuve, gardé avec la décision', () => {
     expect(lireInstantaneDePreuve({ ...bon, sources: [{ pieceId: null, documentId: 'd', raison: 'x' }], detail: [{ libelle: 'x', montantCentimes: null, reference: { type: 'releve', id: 'c' } }] })).not.toBeNull()
   })
 })
+
+// LA PREUVE DE L'INVENTAIRE (ligne 35, INV6 ; conception 35, § 5.5, R3) : un compte qu'il écrit (486, 487, 408, 418, 151, 491) se
+// prouve par lui, l'inventaire lu d'un dossier en engagement ; sans objet (le drapeau baissé) ou en trésorerie, la preuve d'hier,
+// à l'identique. Données FICTIVES.
+describe('la preuve de l’inventaire (INV6)', () => {
+  const ENGAGEMENT = { ...donnees({}).modele, mode: 'engagement' as const }
+  const CCA = {
+    id: 'o1', exercice: 2025, nature: 'cca' as const, compte_resultat: '616000', compte_regularisation: '486000', montant_centimes: 12000,
+    tva_centimes: 0, objet: 'Assurance fictive', provision_id: null, reprise: false, piece_citee_id: 'p9',
+  }
+  const CONSTATEE = [
+    ecriture({ id: 'c1', date: '2025-12-31', compte: '486000', sens: 'debit', montant: 120, operation_inventaire_id: 'o1' }),
+    ecriture({ id: 'c2', date: '2025-12-31', compte: '616000', sens: 'credit', montant: 120, operation_inventaire_id: 'o1' }),
+    // Et son extourne du 1er janvier suivant, que la régularisation commande aussi (hors de l'exercice prouvé).
+    ecriture({ id: 'x1', date: '2026-01-01', compte: '616000', sens: 'debit', montant: 120, operation_inventaire_id: 'o1' }),
+    ecriture({ id: 'x2', date: '2026-01-01', compte: '486000', sens: 'credit', montant: 120, operation_inventaire_id: 'o1' }),
+  ]
+  const DECLARE = [{ id: 'i1', exercice: 2025, retire_le: null }]
+  const lu = (o: { declarations?: typeof DECLARE } = {}) =>
+    ({ etat: 'lu' as const, operations: [CCA], provisions: [], declarations: o.declarations ?? DECLARE })
+
+  it('déclaré, la régularisation à jour : le solde du 486 concorde avec elle, et sa pièce se propose à la citation', () => {
+    const p = preuve('486000', 12000, { modele: ENGAGEMENT, ecritures: CONSTATEE, inventaire: lu() })
+    expect(p).toMatchObject({ type: 'inventaire', titre: 'Inventaire 2025', attenduCentimes: 12000, ecartCentimes: 0, verdict: 'concorde' })
+    expect(p.detail).toEqual([{ libelle: expect.stringContaining('au 31/12/2025'), montantCentimes: 12000, reference: null }])
+    expect(p.sourcesProposees.map((s) => s.pieceId)).toEqual(['p9'])
+    expect(cles(p)).toEqual([])
+    // Rien de ce que le cabinet a saisi n'entre dans le texte : ni l'objet de la régularisation.
+    expect(JSON.stringify(p)).not.toContain('Assurance fictive')
+    // Un solde qui n'est pas celui de l'inventaire : un écart.
+    expect(preuve('486000', 15000, { modele: ENGAGEMENT, ecritures: CONSTATEE, inventaire: lu() })).toMatchObject({ verdict: 'ecart', ecartCentimes: 3000 })
+  })
+
+  it('non déclaré, ou une régularisation à recomposer : elle ne conclut pas, et dit pourquoi', () => {
+    const nonDeclare = preuve('486000', 12000, { modele: ENGAGEMENT, ecritures: CONSTATEE, inventaire: lu({ declarations: [] }) })
+    expect(nonDeclare.verdict).toBe('incomplete')
+    expect(cles(nonDeclare)).toEqual(['inventaire-non-declare'])
+    const aRecomposer = preuve('486000', 0, { modele: ENGAGEMENT, ecritures: [], inventaire: lu() })
+    expect(aRecomposer.verdict).toBe('incomplete')
+    expect(faitDe(aRecomposer, 'regularisations-a-recomposer')?.texte).toContain('à recomposer dans l’onglet Inventaire')
+  })
+
+  it('sans objet, ou en trésorerie même lu, ou un compte qu’elle ne prouve pas : la preuve d’hier, à l’identique', () => {
+    for (const compte of ['486000', '487000', '408100', '151000', '491000', '428200']) {
+      const hier = preuve(compte, 12000, { modele: ENGAGEMENT, ecritures: CONSTATEE, inventaire: { etat: 'sans_objet' } })
+      expect(hier.type, compte).not.toBe('inventaire')
+      expect(preuve(compte, 12000, { ecritures: CONSTATEE, inventaire: lu() }), compte)
+        .toEqual(preuve(compte, 12000, { ecritures: CONSTATEE, inventaire: { etat: 'sans_objet' } }))
+    }
+    expect(preuve('428200', 12000, { modele: ENGAGEMENT, ecritures: CONSTATEE, inventaire: lu() }))
+      .toEqual(preuve('428200', 12000, { modele: ENGAGEMENT, ecritures: CONSTATEE, inventaire: { etat: 'sans_objet' } }))
+  })
+})
