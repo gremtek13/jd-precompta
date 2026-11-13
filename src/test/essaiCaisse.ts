@@ -4,6 +4,7 @@ import {
   type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type RefusCaisse, type SaisieDeCaisse,
 } from '../lib/caisse'
 import { refusCompteDeBilanAuPlanSelon } from '../lib/compteDeBilan'
+import { formuler, REFUS_DU_MOUVEMENT } from '../lib/comptesBancaires'
 import { jugerLaCorrectionSelon } from '../lib/correctionDuPaiement'
 import {
   jugerLeReglementSelon, refusDeLaContrepartie, refusDuChangementDeLaPiece, refusDuMouvementAvantLOuverture,
@@ -831,6 +832,12 @@ function inserer(e: Etat, table: string, l: Record<string, Valeur>, evenements: 
   return null
 }
 
+/** Un refus de la garde du compte bancaire d'un mouvement, sous les mots et le code que la base lève. */
+function refusDuCompteBancaire(cle: 'change_de_compte' | 'compte_d_un_autre_dossier'): RefusCaisse {
+  const refus = formuler(REFUS_DU_MOUVEMENT.find((r) => r.cle === cle)!)
+  return { code: refus.code as RefusCaisse['code'], message: refus.message }
+}
+
 function mettreAJour(e: Etat, table: 'lignes_bancaires' | 'a_nouveaux', id: string, affectations: readonly string[], evenements: Evenement[]): RefusCaisse | null {
   const changements = Object.fromEntries(affectations.map((a) => {
     const m = /^(\w+) = (.*)$/.exec(a.trim())
@@ -840,6 +847,11 @@ function mettreAJour(e: Etat, table: 'lignes_bancaires' | 'a_nouveaux', id: stri
   if (table === 'lignes_bancaires') {
     const l = e.mouvements.find((x) => x.id === id)
     if (!l) throw new NonRejouable('un mouvement inconnu')
+    // MCB1 (`comptes_bancaires`) : la garde du compte bancaire d'un mouvement (`poser_compte_bancaire`), nommée pour passer
+    // avant celles de la caisse, refuse qu'il change de compte, puis qu'il quitte son dossier — son compte est de son
+    // dossier. Les mots sont ceux du module de la migration (lib/comptesBancaires.ts), dans l'ordre de son corps.
+    if ('compte_bancaire_id' in changements) return refusDuCompteBancaire('change_de_compte')
+    if ('dossier_id' in changements && texte(changements.dossier_id) !== l.dossier_id) return refusDuCompteBancaire('compte_d_un_autre_dossier')
     const avant = { ...l }
     for (const [c, v] of Object.entries(changements)) {
       if (c === 'compte_bilan') l.compte_bilan = v as string | null

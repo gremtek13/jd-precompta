@@ -46,6 +46,12 @@
 -- exercices, 2 872 sources en défaut, 0 écart ; 7, les quatre états ; 9, rien n'est resté. Ses mutations (la règle du
 -- cumul et la composition d'un bloc, le jugement) : HISTORIQUE.md, « LA VALIDATION REFUSE LES MANQUES DES VENTES
 -- FACTURÉES ».
+--
+-- REVU LE 13/11/2026 (MCB1 et MCB5, en production depuis le 12/11/2026). Un mouvement porte son compte bancaire, NOT NULL,
+-- que la garde pose quand il arrive sans lui ; le semis la suspend : chaque dossier reçoit son compte principal avant lui,
+-- déclencheurs actifs, et chaque mouvement le nomme. Sur une copie de la réplique mère amenée au niveau de l'export (217
+-- migrations) : les mêmes nombres qu'au 25/10/2026, 0 écart ; `compte_de_banque_du_mouvement` muté (un autre 512 pour le
+-- principal) fait tomber le 5 : le bloc et la composition lisent tous deux la banque du compte du mouvement (MCB5).
 do $essai$
 declare
   cabinet uuid;
@@ -90,6 +96,10 @@ begin
       dossiers_essai := dossiers_essai || d;
       insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures)
       values (d, 'ESSAI RECOMPOSITION ' || i, cabinet, case when i % 2 = 0 then 'engagement' else 'tresorerie' end, '455000', true);
+      -- MCB1 (`comptes_bancaires`) : un mouvement porte son compte bancaire, que la garde pose quand il arrive sans lui —
+      -- suspendue pendant le semis. Le principal de chaque dossier se pose ici, déclencheurs actifs, et chaque mouvement le
+      -- nomme (sa jambe de banque reste au 512 du rôle `banque`, comme avant MCB1).
+      insert into comptes_bancaires (dossier_id, libelle, principal) values (d, 'Compte principal', true);
     end loop;
     perform set_config('session_replication_role', 'replica', true);
 
@@ -176,8 +186,8 @@ begin
               update encaissements_factures set ligne_bancaire_id = courant where id = e;
             else
               courant := md5(random()::text)::uuid;
-              insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, encaissements_de_factures)
-              values (courant, d, jour + case when random() < 0.6 then 0 else (1 + floor(random() * 5))::int end, 'ESSAI', 0,
+              insert into lignes_bancaires (id, dossier_id, compte_bancaire_id, date, libelle, montant, statut, encaissements_de_factures)
+              values (courant, d, (select c.id from comptes_bancaires c where c.dossier_id = d and c.principal), jour + case when random() < 0.6 then 0 else (1 + floor(random() * 5))::int end, 'ESSAI', 0,
                       'non_rapprochee', false);
               update encaissements_factures set ligne_bancaire_id = courant where id = e;
             end if;
@@ -227,8 +237,8 @@ begin
          order by x.taux;
         if random() < 0.4 then
           m := md5(random()::text)::uuid;
-          insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, encaissements_de_factures)
-          values (m, d, jour, 'ESSAI', -r.montant, case when random() < 0.7 then 'rapprochee' else 'non_rapprochee' end, false);
+          insert into lignes_bancaires (id, dossier_id, compte_bancaire_id, date, libelle, montant, statut, encaissements_de_factures)
+          values (m, d, (select c.id from comptes_bancaires c where c.dossier_id = d and c.principal), jour, 'ESSAI', -r.montant, case when random() < 0.7 then 'rapprochee' else 'non_rapprochee' end, false);
           update lignes_bancaires set encaissements_de_factures = (statut = 'rapprochee') where id = m;
           update encaissements_factures set ligne_bancaire_id = m where id = cp;
         end if;
@@ -258,8 +268,8 @@ begin
           order by x.id limit 1;
         if f is not null then
           e := md5(random()::text)::uuid; m := md5(random()::text)::uuid;
-          insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, encaissements_de_factures)
-          values (m, d, date '2026-01-04', 'ESSAI', 24, 'rapprochee', true);
+          insert into lignes_bancaires (id, dossier_id, compte_bancaire_id, date, libelle, montant, statut, encaissements_de_factures)
+          values (m, d, (select c.id from comptes_bancaires c where c.dossier_id = d and c.principal), date '2026-01-04', 'ESSAI', 24, 'rapprochee', true);
           insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, cree_le)
           values (e, d, f, date '2025-12-30', 24, 'cheque', m, now());
           insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant) values (e, d, 20, 24);
