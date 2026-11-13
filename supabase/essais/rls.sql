@@ -4172,13 +4172,20 @@ begin
       reset role;
       verdicts := verdicts || jsonb_build_object('controle', 'FE5. l''anonyme et un compte rattaché à rien : le refus de la garde d''hier, jamais la raison de la frontière',
         'cible', profil, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
-        'ok', not accepte and motif = '23514' and message like 'Seule une facture validée de son dossier reçoit un encaissement%');
+        -- La porte d'accès en base (acces_avant_les_gardes) : la RLS refuse avant toute garde, ni l'une ni l'autre ne parle.
+        'ok', not accepte and case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.encaissements_factures'::regclass and g.tgname = '_acces_avant_les_gardes')
+                                   then motif = '42501' and message = 'new row violates row-level security policy for table "encaissements_factures"'
+                                   else motif = '23514' and message like 'Seule une facture validée de son dossier reçoit un encaissement%' end);
     end loop;
 
     -- M-FE3 : la garde de la frontière renommée pour passer AVANT celle d'hier — l'anonyme lirait sa raison.
     obs := null;
     begin
       alter trigger encaissements_factures_gardes_frontiere on public.encaissements_factures rename to encaissements_factures_a_frontiere;
+      -- La porte d'accès en base, elle se coupe aussi : sans elle, la mutation montre ce que FE5 verrait.
+      if exists (select 1 from pg_trigger g where g.tgrelid = 'public.encaissements_factures'::regclass and g.tgname = '_acces_avant_les_gardes') then
+        alter table public.encaissements_factures disable trigger _acces_avant_les_gardes;
+      end if;
       begin
         set local role anon;
         perform set_config('request.jwt.claims', '{"role":"anon"}', true);
@@ -5056,7 +5063,10 @@ begin
     verdicts := verdicts || jsonb_build_object('controle', 'CA2. le client n''écrit pas la caisse de son dossier : ni par la fonction, ni en direct, ni sous le réglage',
       'cible', 'operations_caisse', 'observe', 'fonction : ' || fonction || ' | directe : ' || directe || ' | réglée : ' || reglee,
       'ok', fonction = '42501 Accès refusé à ce dossier.'
-        and directe = '42501 Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.'
+        -- La porte d'accès en base (acces_avant_les_gardes) : la RLS refuse l'insertion directe avant la garde.
+        and directe = case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.operations_caisse'::regclass and g.tgname = '_acces_avant_les_gardes')
+                           then '42501 new row violates row-level security policy for table "operations_caisse"'
+                           else '42501 Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.' end
         and reglee = '42501 new row violates row-level security policy for table "operations_caisse"');
 
     -- M-CA1 : CA1 lu par le chef — il voit l'opération (vues_chef, plus haut).
@@ -5574,7 +5584,10 @@ begin
       'cible', 'operations_caisse',
       'observe', 'fonction : ' || ecrite || ' | directe : ' || directe || ' | réglée : ' || reglee || ' | mise à jour : ' || coalesce(modifiees::text, '?') || ' ligne',
       'ok', ecrite = 'ACCEPTÉ'
-        and directe = '42501 Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.'
+        -- La porte d'accès en base (acces_avant_les_gardes) : la RLS refuse l'insertion directe avant la garde.
+        and directe = case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.operations_caisse'::regclass and g.tgname = '_acces_avant_les_gardes')
+                           then '42501 new row violates row-level security policy for table "operations_caisse"'
+                           else '42501 Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.' end
         and reglee = '42501 new row violates row-level security policy for table "operations_caisse"'
         and modifiees = 0);
 
@@ -7631,7 +7644,9 @@ begin
       'cible', 'modeles_numerotation',
       'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrits : ' || reecrits,
       'ok', par_la_fonction = '42501 Accès refusé à ce dossier.'
-        and en_direct = '42501 Un modèle de numéro ne se pose que par sa fonction, qui le juge.' and reecrits = 0);
+        and en_direct = case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.modeles_numerotation'::regclass and g.tgname = '_acces_avant_les_gardes')
+                             then '42501 new row violates row-level security policy for table "modeles_numerotation"'
+                             else '42501 Un modèle de numéro ne se pose que par sa fonction, qui le juge.' end and reecrits = 0);
 
     -- M-NC1 : la lecture élargie au client « membre ».
     begin

@@ -140,7 +140,7 @@ begin
       (19, '19. l''anonyme n''en lit aucune ligne', pose_decale, 'anon', lignes, 'OK', '0'),
       -- ══ Aucune écriture directe, et ce qu'une ligne EST ══
       (20, '20. le chef n''insère pas une ligne directement : la garde (42501)', null, 'chef',
-        $q$insert into plan_comptable_cabinet (cabinet_id, role, compte) values ('{CAB}', 'banque', '512100') returning role$q$, '42501', directe),
+        $q$insert into plan_comptable_cabinet (cabinet_id, role, compte) values ('{CAB}', 'banque', '512100') returning role$q$, '42501', case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.plan_comptable_cabinet'::regclass and g.tgname = '_acces_avant_les_gardes') then 'new row violates row-level security policy for table "plan_comptable_cabinet"' else directe end),
       (21, '21. le propriétaire non plus (42501)', null, 'proprio',
         $q$insert into plan_comptable_cabinet (cabinet_id, role, compte) values ('{CAB}', 'banque', '512100') returning role$q$, '42501', directe),
       (22, '22. le chef ne met à jour aucune ligne : aucune policy de mise à jour', pose_decale, 'chef',
@@ -359,7 +359,7 @@ begin
                  || 'CREATE TRIGGER plan_comptable_dossier_origine BEFORE INSERT ON public.plan_comptable_dossier FOR EACH ROW EXECUTE FUNCTION origine_du_modele_applique()',
       'observe', v_obs);
     select string_agg(t.tgname, ',' order by t.tgname collate "C") into v_obs from pg_trigger t
-     where not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgrelid = 'public.plan_comptable_dossier'::regclass;
+     where not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgrelid = 'public.plan_comptable_dossier'::regclass and t.tgname <> '_acces_avant_les_gardes';
     verdicts := verdicts || jsonb_build_object('rang', 92, 'etape', '92. l''ordre des déclencheurs BEFORE du plan d''un dossier : la garde, puis l''origine',
       -- Après MCB1 (comptes_bancaires), sa garde d'un compte bancaire se range entre les deux : elle ne lit que le compte,
       -- que l'origine ne touche pas.

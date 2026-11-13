@@ -52352,3 +52352,21 @@ Le garde des essais qui admettent `fichier_fige` à son empreinte (`pieceFigeeDa
 dépôt pose, la production et chaque préparée qui la remplace, et aucun autre (deux mutations mordent) ; `--changed` ne
 l'avait pas sélectionné : un test qui lit un fichier par son chemin échappe au graphe des imports, la suite entière l'a vu.
 Posée : INV3Q2-Q1 (les charges à payer reprises). Reste : l'écran de la reprise, le paquet d'archive (pièces de l'inventaire).
+
+### 13/11/2026 — LES GARDES PARLAIENT AVANT LA RLS : UNE PORTE D'ACCÈS DEVANT ELLES (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, ligne 43, sur le « vu en passant » de PC7Q2-Q1 ; rien lu en production (l'outil Supabase injoignable). **Le défaut** (mère 17
+copiée, amenée à 217, `edea63cd…`) : un déclencheur BEFORE … FOR EACH ROW tire avant le WITH CHECK de la policy, et l'anonyme garde INSERT
+(`droits_hors_rls`). La garde des catégories dit à l'anonyme les codes des communes, qu'il ne lit pas, et à tout compte — le client du dossier
+compris — le compte du barème du plan d'un dossier nommé (625150, cité par le message) ; celle des lignes d'une facture, le numéro d'une
+facture validée ; celles des exercices, qu'un dossier est figé, sous le verrou de la validation. **Le relevé** (catalogue : 119 gardes
+BEFORE, toutes par ligne, aucune par instruction) : 33 tables portent une garde `security definer` sur l'insertion ou la mise à jour qui lit
+la base avant de lever ; les 46 `security invoker` lisent sous la RLS de l'appelant et ne disent que la règle ; `dossiers` et `cabinets` ne
+disent rien à un appelant refusé. **La migration** `acces_avant_les_gardes` (20261113120000, `8793f235…`, par l'outil ; retour 20261113120100,
+`0c209fe8…`, à coller) : une porte `security invoker`, `_acces_avant_les_gardes`, la première des BEFORE INSERT OR UPDATE de 32 tables, juge
+la ligne par les policies elles-mêmes, lues au catalogue (la commande, le rôle, WITH CHECK ou USING), ne juge rien hors de la RLS, et lève
+sans accès le refus de la RLS (42501) ; `dossiers` écartée (`cabinet_id`, que sa policy lit, y est rempli par un déclencheur). Aucune garde
+réécrite : PC7-Q2 et PC7Q2-Q1 s'appliquent avant ou après. **Preuves** : `accesAvantLesGardes.sql` 23/23 (EN ATTENTE sans elle), sept
+mutations sur sept (la porte sans déclencheurs rend le défaut) ; dix-huit essais et `rls.sql` (CA2, CC3, FE5, NC2, M-FE3) ajustés là où ils
+attendaient le refus d'une garde avant la policy ou listaient les déclencheurs : verdicts identiques avant et après, `rls.sql` 239/0 et
+139/139 des deux côtés ; les deux ordres avec PC7-Q2 et PC7Q2-Q1 ; le retour rend la signature de l'export ; banc du leurre SÛR (18 et 17).

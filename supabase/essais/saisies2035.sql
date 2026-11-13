@@ -52,7 +52,7 @@ begin
   from pg_policies p where p.schemaname = 'public' and p.tablename = 'saisies_2035' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')$q$,
         'OK', 'true saisies_2035_cabinet:ALL:{authenticated}:admin_du_dossier(dossier_id):admin_du_dossier(dossier_id)'),
       (4, 'proprietaire', '1d. … le gel, avant toute insertion, mise à jour ou suppression, ligne par ligne', $q$select string_agg(t.tgname || ':' || t.tgtype || ':' || t.tgfoid::regprocedure::text, ',')
-  from pg_trigger t where t.tgrelid = 'public.saisies_2035'::regclass and not t.tgisinternal$q$,
+  from pg_trigger t where t.tgrelid = 'public.saisies_2035'::regclass and not t.tgisinternal and t.tgname <> '_acces_avant_les_gardes'$q$,
         'OK', 'saisies_2035_figees_par_la_validation:31:garder_saisie_2035_validee()'),
       (5, 'proprietaire', '1e. … les droits : la garde à personne, l''écriture à authenticated seul, aux droits de l''appelant', $q$select has_function_privilege('anon', 'public.enregistrer_saisies_2035(uuid, integer, jsonb, jsonb)', 'execute')
   || '|' || has_function_privilege('authenticated', 'public.enregistrer_saisies_2035(uuid, integer, jsonb, jsonb)', 'execute')

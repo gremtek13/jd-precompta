@@ -216,7 +216,11 @@ begin
         '42501', '~row-level security policy for table "categories"'),
       (59, '59. … hors classe, (f) le refuse avant la policy, sans rien écrire', 'chef', null,
         $q$insert into categories (dossier_id, code, libelle, compte_comptable) values (null, 'essai_pc7_commune', 'Essai PC7 commune', '401000') returning code$q$,
-        '23514', '~: une catégorie commune à tous les cabinets ne range qu''une charge ou un produit.')
+        -- La porte d'accès en base (acces_avant_les_gardes), la RLS refuse d'abord : le chef n'apprend plus rien des communes.
+        case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.categories'::regclass and g.tgname = '_acces_avant_les_gardes') then '42501' else '23514' end,
+        case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.categories'::regclass and g.tgname = '_acces_avant_les_gardes')
+             then 'new row violates row-level security policy for table "categories"'
+             else '~: une catégorie commune à tous les cabinets ne range qu''une charge ou un produit.' end)
     ) as t(rang, etape, profil, preparation, requete, attendu, rend)
     loop
       if e.rang between 40 and 49 and not classes then

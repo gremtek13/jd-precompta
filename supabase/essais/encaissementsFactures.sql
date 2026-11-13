@@ -887,7 +887,7 @@ begin
   -- Les déclencheurs de la caisse (étape C1) à part, au contrôle 95b.
   select string_agg(pg_get_triggerdef(t.oid), ' | ' order by t.tgname) into obs
     from pg_trigger t where t.tgrelid in ('public.encaissements_factures'::regclass, 'public.encaissements_factures_taux'::regclass) and not t.tgisinternal
-     and t.tgfoid is distinct from to_regprocedure('public.garder_la_caisse()')::oid;
+     and t.tgfoid is distinct from to_regprocedure('public.garder_la_caisse()')::oid and t.tgname <> '_acces_avant_les_gardes';
   verdicts := verdicts || jsonb_build_object('controle', '95. catalogue : les quatre gardes — les deux d''hier, puis celles de la frontière (étape VF7a) — veillent aussi sur la suppression (jouée sur la réplique)',
     'observe', obs, 'ok', obs = 'CREATE TRIGGER encaissements_factures_gardes BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures FOR EACH ROW EXECUTE FUNCTION garder_encaissement_facture()'
       || ' | CREATE TRIGGER encaissements_factures_gardes_frontiere BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures FOR EACH ROW EXECUTE FUNCTION garder_frontiere_des_encaissements()'

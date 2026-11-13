@@ -328,7 +328,7 @@ begin
         $q$insert into plan_comptable_dossier (dossier_id, role, compte) values ('{DT}', 'banque', '512100') returning compte$q$, 'OK', '512100'),
       (89, '89. … pas à un chef qui n''est pas super-administrateur : la garde le refuse d''abord (42501)', null, 'chef_simple',
         $q$insert into plan_comptable_dossier (dossier_id, role, compte) values ('{DT}', 'banque', '512100') returning compte$q$, '42501',
-        'Le plan comptable d''un dossier ne s''écrit pas directement : il se règle par regler_plan_du_dossier, et seule la restauration d''une sauvegarde, par l''administrateur de l''application, y insère une ligne.'),
+        case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.plan_comptable_dossier'::regclass and g.tgname = '_acces_avant_les_gardes') then 'new row violates row-level security policy for table "plan_comptable_dossier"' else 'Le plan comptable d''un dossier ne s''écrit pas directement : il se règle par regler_plan_du_dossier, et seule la restauration d''une sauvegarde, par l''administrateur de l''application, y insère une ligne.' end),
       (90, '90. … et, la garde ouverte (la porte de la fonction posée), la policy le refuse encore (42501)',
         $q$select set_config('jd.regler_plan_du_dossier', '{DT}', true)$q$, 'chef_simple',
         $q$insert into plan_comptable_dossier (dossier_id, role, compte) values ('{DT}', 'banque', '512100') returning compte$q$, '42501', rls_plan),
@@ -535,7 +535,7 @@ begin
     -- ensemble ou absents ensemble.
     select string_agg(t.tgname, ',' order by t.tgname collate "C") into v_obs from pg_trigger t
      where not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgrelid in ('public.ecritures_brouillon'::regclass, 'public.lettrages_manuels'::regclass)
-       and t.tgname not in ('ecritures_brouillon_intangibles_modification', 'ecritures_brouillon_vente_facturee_lignes_modification');
+       and t.tgname not in ('_acces_avant_les_gardes', 'ecritures_brouillon_intangibles_modification', 'ecritures_brouillon_vente_facturee_lignes_modification');
     verdicts := verdicts || jsonb_build_object('rang', 142, 'etape', '142. l''ordre des déclencheurs BEFORE du brouillon et des lettrages',
       'ok', (select count(*) from pg_trigger t where t.tgrelid = 'public.ecritures_brouillon'::regclass and (t.tgtype & 2) = 2
               and t.tgname in ('ecritures_brouillon_intangibles_modification', 'ecritures_brouillon_vente_facturee_lignes_modification')) in (0, 2)
