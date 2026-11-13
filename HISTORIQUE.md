@@ -52556,3 +52556,19 @@ DERNIÈRES définitions des deux gardes (aucune préparée ne les redéfinit) et
 `comptes_bancaires`, export et préparées, qui n'en admet que les trois que l'usage compte, sans cascade (une clé plantée le
 fait tomber). Neuf mutations sur neuf mordent (refus retirés, condition inversée, verrou, erreur avalée, drapeau, relecture,
 confirmation, exercices partiels crus, année validée exclue).
+
+### 13/11/2026 — B4R-Q1, B4RS-Q2 ET B8-Q1 : LA FACTURE REÇUE RELUE PAR LE CABINET, SON NOM TU AU CLIENT, LES NOTES DE FRAIS AVEC « ACHATS » (LIGNE 51.5)
+
+Agent dev, trois réponses du cabinet du 12/11/2026, toutes à la recommandation ; sans migration, rien déployé, les drapeaux
+`ACHATS_DU_CLIENT_PREVUS` et `NOTES_DE_FRAIS_PREVUES` baissés et leurs deux états joués. **B8-Q1** n'était pas écrit (la route,
+l'entrée et la lecture ne regardaient que « Notes de frais », l'écran passait `frais: true` en dur) : `mesNotesDeFraisOuvertes`
+prend les deux cases, la lecture rend `frais` et `achats` relues à la base (`sans_frais` sans l'une ni l'autre), et avec
+« Achats » seul l'écran n'offre ni « Nouvelle note » ni brouillon à soi (`saisieOuverte`, `SANS_LA_SAISIE`). **B4RS-Q2** : une
+facture de la relève se dit « Facture reçue le JJ/MM/AAAA » (le jour de Paris de `recu_le`), sinon « Facture sans date de
+réception », jamais son nom (`factureDiteAuClient`) ; les factures non reçues s'affichent ainsi sous le bilan. **B4R-Q1** :
+« Lire la facture électronique » dans la fiche d'une pièce d'achat reçue d'une plateforme, original XML, non figée
+(`lib/factureRecueVue.ts`) ; l'original lu au chemin vérifié avec le SIRET du dossier (`lib/factureRecueLecture.ts`), puis
+`lireFactureXml` tel quel ; la fiche se REMPLIT (date, fournisseur, montants, le change par `montantsPourPiece`), rien ne
+s'écrit ; une autre entreprise comme acheteur ne remplit rien. Le bouton s'offre aussi sur une facture que le cabinet a
+importée lui-même : la pièce ne dit pas qui l'a reçue. Preuves : quatre fichiers de test neufs, cinq complétés ; onze
+mutations (drapeau ignoré, nom montré, verrou ôté, case « Achats » oubliée, chemin non vérifié, acheteur ignoré) mordent.
