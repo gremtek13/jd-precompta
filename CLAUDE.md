@@ -751,8 +751,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   derrière `LIASSE_EXPORTEE` baissé, LIA8 les acomptes et le solde de l'IS au calendrier derrière `CALENDRIER_IS_EXPORTE`
   baissé, la date légale gardée faute de texte qui la reporte, LIA8-Q1), l'affectation et l'approbation (`45-affectation-et-approbation.md`, AFF1 en module,
   `lib/affectationDuResultat.ts`) ; rien n'est à l'écran, et deux migrations sont préparées, à coller dans n'importe
-  quel ordre avec MCB5g (INV2 `operations_d_inventaire`, LIA2 `stocks_de_cloture`) → « LES ÉCRITURES D'INVENTAIRE : LA
-  CONCEPTION », « INV2 ET LIA2 : DEUX MIGRATIONS QUI SE COLLENT DANS LES DEUX ORDRES (LIGNES 35 ET 36) »,
+  quel ordre avec MCB5g (INV2 `operations_d_inventaire`, LIA2 `stocks_de_cloture`) ; INV3-Q1 et INV3-Q2 (A) dans INV2 et
+  INV3 le 13/11/2026 : l'empreinte en forme 2 scelle l'inventaire sans changer le texte d'un exercice qui n'en porte pas
+  (la garde de fin le rejoue), la régularisation reprise d'une balance confrontée au solde repris (INV3Q2-Q1 posée)
+  → « LES ÉCRITURES D'INVENTAIRE : LA CONCEPTION », « INV2 ET LIA2 : DEUX MIGRATIONS QUI SE COLLENT DANS LES DEUX
+  ORDRES (LIGNES 35 ET 36) », « INV3-Q1 ET INV3-Q2 : L'EMPREINTE SCELLE L'INVENTAIRE, LA RÉGULARISATION REPRISE »,
   « LA LIASSE 2033, LES STOCKS ET L'IMPÔT SUR LES SOCIÉTÉS : LA CONCEPTION », « L'AFFECTATION DU RÉSULTAT ET
   L'APPROBATION DES COMPTES : LA CONCEPTION ».
 - **Plan comptable personnalisable** (ligne 43, étapes PC1 à PC9) : PC1, PC2 et PC3a en ligne, NEUTRES (le plan de

@@ -52331,3 +52331,24 @@ tomber le 5. Pour un BNC à un seul compte : rien d'atteignable, aucune migratio
 **Suite** : `piecesHorsDeFrance.sql` 124c écrit le fournisseur, non plus `notes` (retirée par P0 : ce n'était pas une note) ;
 `ventesClient.sql` 0c suit l'export (+ `facturer_acompte_devis`, P5b ; `numerotation_suivante`, A9a, au lieu de
 `prochain_numero_facture` ; + `reprise_de_la_facture`, A8C-Q1) ; 0 en faute, une mutation mord chacun, banc du leurre SÛR.
+
+### 13/11/2026 — INV3-Q1 ET INV3-Q2 : L'EMPREINTE SCELLE L'INVENTAIRE, LA RÉGULARISATION REPRISE (PRÉPARÉES, PAS APPLIQUÉES)
+
+Agent architecte, sur les réponses (A) du cabinet ; rien en production. **INV3-Q2** (INV2 et INV3 amendées) : une balance reprise au
+1er janvier qui porte des 486, 487, 408 ou 418 reçoit une régularisation REPRISE (`operations_inventaire.reprise`, CCA, PCA, FNP ou
+FAE) de l'exercice que la balance clôt, dont seule l'extourne au 1er janvier s'écrit ; son compte se prend dans la balance, sous la
+racine de sa nature (le 4084 excepté), pour qu'un sous-compte repris que le plan ne porte pas ne bloque rien ; la validation du
+premier exercice (point f) la veut à jour, à sa place, puis confronte : ses extournes soldent exactement chaque compte de
+régularisation repris, TVA d'attente comprise. Module : `composerRegularisationReprise`, `compteRepriseNonExtourne`, trois
+préalables. **INV3-Q1** : la forme 2 s'étend sans forme nouvelle — les pièces de l'inventaire rejoignent le bloc des pièces, un
+sixième bloc (jsonb canonique) porte les régularisations, présent seulement quand il y en a : un exercice sans régularisation (tout
+BNC, l'exercice 2025 de la répétition générale) garde son texte octet pour octet, ce que la garde de fin rejoue sur toute la base
+(sur une copie, un BNC validé avant elle se vérifie après ; une INV3 mutée qui l'oublie se refuse). Le fichier d'une pièce scellée
+ne change plus (une garde sur ses quatre colonnes) ni ne quitte le stockage (`fichier_fige`) ; le reste de la pièce reste libre.
+Preuves sur des copies de la mère rattrapée à 217 : INV2 88 contrôles, 13 mutations sur 13 ; INV3 72, 24 sur 24, dans les ordres
+I-P-V et I-V-P ; `provisions.sql`, `rls.sql` (248, 148 sur 148), `restauration.sql`, `gardesDeLaValidation` et 26 autres essais
+identiques, `validationExercice` vert au 141 ; retours : la signature d'avant, deux fois ; trois essais SÛRS au banc du leurre.
+Le garde des essais qui admettent `fichier_fige` à son empreinte (`pieceFigeeDansLeStockage.test.ts`) admet les corps que le
+dépôt pose, la production et chaque préparée qui la remplace, et aucun autre (deux mutations mordent) ; `--changed` ne
+l'avait pas sélectionné : un test qui lit un fichier par son chemin échappe au graphe des imports, la suite entière l'a vu.
+Posée : INV3Q2-Q1 (les charges à payer reprises). Reste : l'écran de la reprise, le paquet d'archive (pièces de l'inventaire).
