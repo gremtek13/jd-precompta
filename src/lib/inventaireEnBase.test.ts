@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  composerRegularisation, MOTS_DES_REFUS, RACINES_DES_CHARGES_A_PAYER, RACINES_DES_FNP_HORS_ROLE, RACINES_DES_PRODUITS_A_RECEVOIR,
-  refusDuPlan, ROLES_D_INVENTAIRE, ROLES_DES_REGULARISATIONS, type ComptesDInventaire, type ContexteDeRegularisation,
-  type RoleDInventaire, type SaisieDeRegularisation,
+  composerRegularisation, composerRegularisationReprise, MOTS_DES_REFUS, NATURES_REPRISES, RACINES_DES_CHARGES_A_PAYER,
+  RACINES_DES_FNP_HORS_ROLE, RACINES_DES_PRODUITS_A_RECEVOIR, RACINES_HORS_DE_L_INVENTAIRE, refusDuPlan, ROLES_D_INVENTAIRE,
+  ROLES_DES_REGULARISATIONS, type ComptesDInventaire, type ContexteDeRegularisation, type RoleDInventaire, type SaisieDeRegularisation,
 } from './inventaire'
 import { ROLES_COMPTABLES } from './planComptable'
 import type { OperationInventaire } from './types'
@@ -36,9 +36,11 @@ const R = M.compteDeRegularisation
 const MODELE_DU_PLAN = 'Le plan du dossier ne porte pas de compte « %s » sous le %s : le régler avant d’écrire l’inventaire.'
 
 // L'ordre des contrôles du module (`refusDeLaRegularisation`), puis ceux que la base dit seule.
+// La régularisation reprise (INV3-Q2 (A)) intercale ses quatre refus : la reprise lisible, sa place, sa nature, son compte.
 const ORDRE: readonly string[] = [
-  M.tresorerie, M.exercice, M.exerciceFige, M.exerciceAVenir, M.avantLOuverture, M.provisionParSonEvaluation, M.nature,
-  MODELE_DU_PLAN, M.compteDeCharge, M.compteDeProduit, R.cca, R.pca, R.fnp, R.fae, R.charge_a_payer, R.produit_a_recevoir,
+  M.tresorerie, M.repriseIllisible, M.exercice, M.exerciceFige, M.exerciceAVenir, M.repriseHorsDeLOuverture, M.avantLOuverture,
+  M.provisionParSonEvaluation, M.nature, M.natureReprise, MODELE_DU_PLAN, M.compteDeCharge, M.compteDeProduit, M.compteDeLaReprise,
+  R.cca, R.pca, R.fnp, R.fae, R.charge_a_payer, R.produit_a_recevoir,
   M.montant, M.tvaIllisible, M.tvaHorsFacture, M.tvaNonAssujetti, M.objet, M.periode,
 ]
 
@@ -126,10 +128,10 @@ describe('les deux fonctions et les gardes, sous les règles de la base', () => 
     const colonnes: Record<keyof OperationInventaire, true> = {
       id: true, dossier_id: true, exercice: true, nature: true, compte_resultat: true, compte_regularisation: true,
       montant_centimes: true, tva_centimes: true, periode_debut: true, periode_fin: true, objet: true, piece_citee_id: true,
-      version: true, cree_par: true, cree_le: true, modifie_par: true, modifie_le: true, provision_id: true,
+      version: true, cree_par: true, cree_le: true, modifie_par: true, modifie_le: true, provision_id: true, reprise: true,
     }
     const table = /create table public\.operations_inventaire \(([\s\S]*?)\n\);/i.exec(MIGRATION)![1]
-    const enBase = [...table.matchAll(/^ {2}([a-z_]+) (?:uuid|integer|text|bigint|date|timestamptz)\b/gm)].map((x) => x[1])
+    const enBase = [...table.matchAll(/^ {2}([a-z_]+) (?:uuid|integer|text|bigint|date|timestamptz|boolean)\b/gm)].map((x) => x[1])
     // La colonne qu'INV4 (`provisions`) ajoute à la table : l'évaluation d'une provision.
     const ajoutees = [...lire('supabase/preparees/20261112230000_provisions.sql')
       .matchAll(/alter table public\.operations_inventaire add column ([a-z_]+) (?:uuid|integer|text|bigint)\b/gi)].map((x) => x[1])
@@ -219,5 +221,45 @@ describe('l’essai écrit ce que le module compose', () => {
     for (const m of ORDRE.filter((x) => x !== MODELE_DU_PLAN && x !== R.pca && x !== R.fae)) expect(ESSAI, m).toContain(m)
     expect(RLS).toContain('do $iv$')
     expect(RLS).toContain("EN ATTENTE de la migration operations_d_inventaire")
+  })
+})
+
+describe('la régularisation reprise d’une balance (INV3-Q2 (A)), en base comme dans le module', () => {
+  const tableau = (racines: readonly string[]) => `array[${racines.map((x) => `'${x}'`).join(', ')}]`
+
+  it('ses natures, dans la contrainte de la table et dans la fonction : celles du module', () => {
+    expect(MIGRATION).toContain(`constraint operations_inventaire_reprise check (not reprise or nature = any (${tableau(NATURES_REPRISES)}))`)
+    expect(ENREGISTRER).toContain(`if v_reprise and not (v_nature = any (${tableau(NATURES_REPRISES)})) then`)
+  })
+
+  it('son compte : sous la racine de sa nature, lue au catalogue du module, hors du 4084', () => {
+    const racine = (role: RoleDInventaire) => ROLES_D_INVENTAIRE.find((r) => r.role === role)!.racines[0]
+    expect(ENREGISTRER).toContain(`case v_nature when 'cca' then '${racine('charges_constatees_avance')}' when 'pca' then '${racine('produits_constates_avance')}' `
+      + `when 'fnp' then '${racine('factures_non_parvenues')}' else '${racine('factures_a_etablir')}' end) then`)
+    expect(RACINES_HORS_DE_L_INVENTAIRE).toEqual(['4084'])
+    expect(ENREGISTRER).toContain(`or starts_with(v_regul, '${RACINES_HORS_DE_L_INVENTAIRE[0]}')`)
+    // Le plan d'une reprise ne fournit que la TVA d'attente.
+    expect(ENREGISTRER).toContain("where not (v_reprise and r.role = any (array['charges_constatees_avance', 'produits_constates_avance', 'factures_a_etablir']))")
+  })
+
+  it('sa seule extourne : la recomposition sans la constatation, et une seule écriture reçue', () => {
+    expect(ENREGISTRER).toContain('where (l.v ->> 2)::bigint > 0 and not v_reprise')
+    expect(ENREGISTRER).toContain("jsonb_array_length(p_ecritures) = case when v_reprise then 1 else 2 end")
+    expect(MIGRATION).toContain("and ((new.date = make_date(o.exercice, 12, 31) and not o.reprise)\n                           or new.date = make_date(o.exercice + 1, 1, 1))")
+  })
+
+  it('l’essai écrit la reprise que le module compose', () => {
+    const comptes: ComptesDInventaire = Object.fromEntries(ROLES_DES_REGULARISATIONS.map((r) => [r.role, r.compteDefaut]))
+    const c = composerRegularisationReprise({
+      nature: 'cca', compteResultat: '616000', libelleCompteResultat: null, compteRegularisation: '486000', montantCentimes: 30000,
+      tvaCentimes: 0, objet: 'Assurance 2025 reprise',
+    }, {
+      modeComptable: 'engagement', assujettiTva: true, comptes, tvaDesFacturesAttendues: 'ttc_avec_tva_d_attente',
+      exercice: { exercice: 2024, valide: false, anneeEnCours: 2026, ouverture: '2025-01-01' },
+    })
+    if (!c.ok) throw new Error('refusée')
+    expect(ESSAI).toContain(`lib_rep text := '${c.extourne.libelle.replace('Extourne — ', '')}';`)
+    expect(c.extourne.lignes).toEqual([{ compte: '486000', sens: 'credit', centimes: 30000 }, { compte: '616000', sens: 'debit', centimes: 30000 }])
+    expect(ESSAI).toContain("'[[\"486000\",\"debit\",30000],[\"616000\",\"credit\",30000]]'")
   })
 })

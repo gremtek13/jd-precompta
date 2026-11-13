@@ -14,7 +14,7 @@ const COMPTES: ComptesDInventaire = {}
 
 const operation = (p: Partial<OperationInventaire> & Pick<OperationInventaire, 'id'>): OperationInventaire => ({
   dossier_id: 'd1', exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486100', montant_centimes: 60_000,
-  tva_centimes: 0, periode_debut: null, periode_fin: null, objet: 'Assurance du local', piece_citee_id: null, provision_id: null, version: 1,
+  tva_centimes: 0, periode_debut: null, periode_fin: null, objet: 'Assurance du local', piece_citee_id: null, reprise: false, provision_id: null, version: 1,
   cree_par: 'u', cree_le: '2026-11-10T09:00:00Z', modifie_par: null, modifie_le: null, ...p,
 })
 

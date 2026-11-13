@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  GENRES_DE_PROVISION, MOTS_DES_REFUS, NATURES_A_EXTOURNER, NATURES_D_INVENTAIRE, RACINES_DES_CHARGES_A_PAYER,
+  GENRES_DE_PROVISION, MOTS_DES_REFUS, NATURES_A_EXTOURNER, NATURES_D_INVENTAIRE, NATURES_REPRISES, RACINES_DES_CHARGES_A_PAYER,
   RACINES_DES_FNP_HORS_ROLE, RACINES_DES_PRODUITS_A_RECEVOIR, ROLES_D_INVENTAIRE, composerEvaluation, composerRegularisation,
-  compteDuRole, estEquilibree, extourneDe, prorataApresLaCloture, refusDeLaRegularisation, refusDeLaVentilation, refusDuPlan,
-  type ComptesDInventaire, type ContexteDEvaluation, type ContexteDeRegularisation, type EcritureDInventaire,
+  composerRegularisationReprise, compteDeLaRepriseAdmis, compteDuRole, estEquilibree, extourneDe, prorataApresLaCloture,
+  refusDeLaRegularisation, refusDeLaRegularisationReprise, refusDeLaVentilation, refusDuPlan, repriseALaPlace,
+  type ComptesDInventaire, type ContexteDEvaluation, type ContexteDeLaReprise, type ContexteDeRegularisation, type EcritureDInventaire,
   type NatureDInventaire, type SaisieDEvaluation, type SaisieDeRegularisation,
 } from './inventaire'
 
@@ -413,5 +414,89 @@ describe('le prorata après la clôture (INV-Q6)', () => {
     expect(p({ debut: '2027-07-01' })).toEqual(['periode'])
     expect(p({ montantCentimes: 0, exercice: 2026.5 })).toEqual(['montant', 'exercice'])
     expect(p({ fin: '2028-02-29' })).toEqual([])
+  })
+})
+
+// ── La régularisation reprise d'une balance (INV3-Q2 (A)) ──
+
+describe('composerRegularisationReprise : la seule extourne d’une régularisation que la balance reprise porte', () => {
+  const ctx = (p: Partial<ContexteDeLaReprise> = {}): ContexteDeLaReprise => ({
+    modeComptable: 'engagement', assujettiTva: true, comptes: COMPTES, tvaDesFacturesAttendues: 'ttc_avec_tva_d_attente',
+    exercice: { exercice: 2024, valide: false, anneeEnCours: 2026, ouverture: '2025-01-01' },
+    ...p,
+  })
+  const reprise = (p: Partial<SaisieDeRegularisation> = {}) =>
+    saisie({ compteRegularisation: '486000', montantCentimes: 30_000, objet: 'Assurance 2025 reprise', ...p })
+  const refusDe = (s: SaisieDeRegularisation, c = ctx()) => refusDeLaRegularisationReprise(s, c).map((r) => r.cle)
+
+  it('une CCA reprise : son extourne seule, au 1er janvier de l’exercice que la balance ouvre, sous le libellé composé', () => {
+    const r = composerRegularisationReprise(reprise(), ctx())
+    expect(r).toEqual({
+      ok: true,
+      extourne: {
+        date: '2025-01-01', journal: 'OD', libelle: 'Extourne — CCA 31/12/2024 — Primes d’assurance — Assurance 2025 reprise',
+        lignes: [{ compte: '486000', sens: 'credit', centimes: 30_000 }, { compte: '616000', sens: 'debit', centimes: 30_000 }],
+      },
+    })
+    // La même extourne que celle de la régularisation que l'ancien logiciel aurait écrite au 31 décembre.
+    const ancienne = constatee(reprise(), contexte({ comptes: { ...COMPTES, charges_constatees_avance: '486000' },
+      exercice: { exercice: 2024, valide: false, anneeEnCours: 2026, premierExercice: null } }))
+    expect(r.ok && r.extourne).toEqual(ancienne.extourne)
+  })
+
+  it('une facture non parvenue reprise toutes taxes comprises : le 408 au débit, la charge et la TVA d’attente au crédit', () => {
+    const r = composerRegularisationReprise(
+      reprise({ nature: 'fnp', compteResultat: '622600', compteRegularisation: '408100', montantCentimes: 10_000, tvaCentimes: 2_000 }), ctx())
+    expect(r.ok && r.extourne.lignes).toEqual([
+      { compte: '622600', sens: 'credit', centimes: 10_000 }, { compte: '445861', sens: 'credit', centimes: 2_000 },
+      { compte: '408100', sens: 'debit', centimes: 12_000 },
+    ])
+  })
+
+  it('le compte de la balance, sous la racine de sa nature, plutôt que celui du plan ; jamais le 4084', () => {
+    expect(refusDe(reprise({ compteRegularisation: '486000' }))).toEqual([])
+    expect(refusDe(reprise({ compteRegularisation: '486999' }))).toEqual([])
+    expect(refusDe(reprise({ compteRegularisation: '487000' }))).toEqual(['compteRegularisation'])
+    expect(refusDe(reprise({ nature: 'fnp', compteResultat: '622600', compteRegularisation: '408800' }))).toEqual([])
+    expect(refusDe(reprise({ nature: 'fnp', compteResultat: '622600', compteRegularisation: '408400' }))).toEqual(['compteRegularisation'])
+    expect(refusDeLaRegularisationReprise(reprise({ compteRegularisation: '487000' }), ctx())[0].message).toBe(MOTS_DES_REFUS.compteDeLaReprise)
+    expect(compteDeLaRepriseAdmis('fae', '418800')).toBe(true)
+    expect(compteDeLaRepriseAdmis('pca', '487')).toBe(true)
+    expect(compteDeLaRepriseAdmis('pca', '48')).toBe(false)
+  })
+
+  it('le plan ne fournit que la TVA d’attente : un plan sans le 486 ni le 418 n’empêche pas la reprise, un plan sans TVA d’attente si', () => {
+    const sansRoles: ComptesDInventaire = Object.fromEntries(Object.entries(COMPTES)
+      .filter(([role]) => role !== 'charges_constatees_avance' && role !== 'factures_a_etablir'))
+    expect(refusDe(reprise(), ctx({ comptes: sansRoles }))).toEqual([])
+    expect(refusDe(reprise({ nature: 'fae', compteResultat: '706000', compteRegularisation: '418000' }), ctx({ comptes: sansRoles }))).toEqual([])
+    const sansTva: ComptesDInventaire = Object.fromEntries(Object.entries(COMPTES).filter(([role]) => role !== 'tva_factures_non_parvenues'))
+    expect(refusDe(reprise({ nature: 'fnp', compteResultat: '622600', compteRegularisation: '408100', tvaCentimes: 2_000 }), ctx({ comptes: sansTva })))
+      .toEqual(['plan:tva_factures_non_parvenues'])
+  })
+
+  it('l’exercice : celui que la balance reprise clôt, l’année qui précède son 1er janvier', () => {
+    expect(repriseALaPlace({ exercice: 2024, ouverture: '2025-01-01' })).toBe(true)
+    expect(repriseALaPlace({ exercice: 2025, ouverture: '2025-01-01' })).toBe(false)
+    expect(repriseALaPlace({ exercice: 2024, ouverture: '2025-03-01' })).toBe(false)
+    expect(repriseALaPlace({ exercice: 2024, ouverture: null })).toBe(false)
+    expect(refusDe(reprise(), ctx({ exercice: { exercice: 2024, valide: false, anneeEnCours: 2026, ouverture: null } }))).toEqual(['repriseHorsDeLOuverture'])
+    expect(refusDe(reprise(), ctx({ exercice: { exercice: 2024, valide: true, anneeEnCours: 2026, ouverture: '2025-01-01' } }))).toEqual(['exerciceFige'])
+    expect(refusDe(reprise(), ctx({ exercice: { exercice: 2027, valide: false, anneeEnCours: 2026, ouverture: '2028-01-01' } }))).toEqual(['exerciceAVenir'])
+  })
+
+  it('la nature : celle d’un compte 486, 487, 408 ou 418 ; ni une charge à payer, ni une provision', () => {
+    expect(NATURES_REPRISES).toEqual(['cca', 'pca', 'fnp', 'fae'])
+    expect(refusDe(reprise({ nature: 'charge_a_payer', compteResultat: '641200', compteRegularisation: '428200' }))).toEqual(['natureReprise'])
+    expect(refusDe(reprise({ nature: 'provision' }))).toEqual(['provisionParSonEvaluation'])
+    expect(refusDe(reprise({ nature: 'stock' as NatureDInventaire }))).toEqual(['nature'])
+  })
+
+  it('l’ordre de la base : le mode, l’exercice, sa place, la nature, puis les comptes et les montants', () => {
+    const hors = ctx({ exercice: { exercice: 2025, valide: false, anneeEnCours: 2026, ouverture: '2025-01-01' } })
+    expect(refusDe(reprise({ nature: 'charge_a_payer' }), hors)).toEqual(['repriseHorsDeLOuverture'])
+    expect(refusDe(reprise(), ctx({ modeComptable: 'tresorerie' }))).toEqual(['tresorerie'])
+    expect(refusDe(reprise({ compteResultat: '706000', compteRegularisation: '487000', montantCentimes: 0, objet: '' })))
+      .toEqual(['compteResultat', 'compteRegularisation', 'montant', 'objet'])
   })
 })

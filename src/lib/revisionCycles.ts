@@ -317,6 +317,10 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'inventaire-a-recomposer': 'ensemble',
   'extourne-manquante': 'ensemble',
   'provisions-a-ventiler': 'ensemble',
+  // Les régularisations reprises d'une balance (INV3-Q2 (A)) : l'ouverture du premier exercice, l'enchaînement des exercices.
+  'reprise-a-recomposer': 'ensemble',
+  'reprise-hors-de-l-ouverture': 'ensemble',
+  'reprise-non-extournee': 'ensemble',
   'report-hors-classes': 'ensemble',
   'report-desequilibre': 'ensemble',
   // L'ouverture de l'exercice qui ne reprend pas la clôture du précédent (O33-Q1) : l'enchaînement des exercices.

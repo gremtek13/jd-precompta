@@ -1,4 +1,4 @@
-import { MOTS_DES_REFUS, ROLES_D_INVENTAIRE, type RoleDInventaire } from './inventaire'
+import { MOTS_DES_REFUS, RACINES_HORS_DE_L_INVENTAIRE, ROLES_D_INVENTAIRE, type RoleDInventaire } from './inventaire'
 import type { ANouveau, EcritureBrouillon, InventaireDeclare, NatureOperationInventaire, OperationInventaire, Provision } from './types'
 
 // L'INVENTAIRE DANS LA VALIDATION (ligne 35, lot INV3 ; docs/conceptions/35-inventaire.md, § 3.5, § 4.5 et § 5.3). Le module
@@ -10,8 +10,10 @@ import type { ANouveau, EcritureBrouillon, InventaireDeclare, NatureOperationInv
 //   - apprend l'inventaire à `valider_exercice`, après TOUS ses refus d'hier : (a) la numérotation des écritures d'une
 //     régularisation (lib/fec.ts, la sorte `inventaire` ; lib/validationExercice.ts, le défaut `inventaire`), (b) l'inventaire
 //     déclaré, (c) les régularisations de l'exercice à jour, (d) l'extourne entière de celles de l'exercice précédent, (e) la
-//     ventilation des provisions reprises (INV-Q11 (A)) — ses mots (`MODELES_DE_LA_VALIDATION`) et ses deux juges, recomposés
-//     ici en entiers (`regularisationAJour`, `extourneEntiere`), que `prealablesDeLInventaire` dit avant le clic.
+//     ventilation des provisions reprises (INV-Q11 (A)), (f) les régularisations reprises d'une balance (INV3-Q2 (A)) : à
+//     jour, à leur place, puis confrontées au solde repris — ses mots (`MODELES_DE_LA_VALIDATION`) et ses juges, recomposés
+//     ici en entiers (`regularisationAJour`, `extourneEntiere`, `compteRepriseNonExtourne`), que `prealablesDeLInventaire`
+//     dit avant le clic.
 // inventaireDeLaValidation.test.ts confronte chaque mot au texte de la migration, et les juges aux cas de son essai
 // (supabase/essais/validationDeLInventaire.sql). DERRIÈRE `INVENTAIRE_PREVU` (lib/inventaire.ts) : baissé, la validation reçoit
 // `INVENTAIRE_SANS_OBJET`, ne lit rien de l'inventaire et n'en dit rien — la base, sans la migration, n'en sait rien non plus.
@@ -29,6 +31,12 @@ export const MODELES_DE_LA_VALIDATION = {
     + "avec son exercice, elle ne se réécrit plus, et l'exercice ne se valide pas sans elle.",
   provisionsAVentiler: "L'exercice % ouvre le solde repris du compte % sans le ventiler exactement en provisions : les provisions "
     + 'ventilées doivent faire exactement le solde repris du compte — les ventiler avant la validation.',
+  repriseARecomposer: "L'exercice % porte une régularisation reprise de la balance dont l'extourne n'est plus celle qu'elle "
+    + "commande : % — l'enregistrer de nouveau avant la validation.",
+  repriseHorsDeLOuverture: "L'exercice % porte une régularisation reprise que la balance reprise n'ouvre plus au 1er janvier : % — "
+    + "la retirer, ou reprendre la balance au 1er janvier de l'exercice, avant la validation.",
+  repriseNonExtournee: "L'exercice % ouvre le solde repris du compte % sans que ses régularisations reprises l'extournent "
+    + 'exactement : leurs extournes au 1er janvier doivent solder le compte repris — les saisir avant la validation.',
 } as const
 
 /** Un modèle rempli comme la base le remplit (`raise exception '…%…', v1, v2`) : chaque `%`, dans l'ordre, reçoit sa valeur. */
@@ -105,7 +113,7 @@ export function refusDuRetrait(declaration: DeclarationDeLaValidation, derniereV
 
 /** Une régularisation, telle que les juges la lisent ; `provision_id` sur une évaluation de provision (INV4) seulement. */
 export type OperationDeLaValidation = Pick<OperationInventaire,
-  'id' | 'exercice' | 'nature' | 'compte_resultat' | 'compte_regularisation' | 'montant_centimes' | 'tva_centimes' | 'objet'>
+  'id' | 'exercice' | 'nature' | 'compte_resultat' | 'compte_regularisation' | 'montant_centimes' | 'tva_centimes' | 'objet' | 'reprise'>
   & { provision_id: string | null }
 export type DeclarationDeLaValidation = Pick<InventaireDeclare, 'id' | 'exercice' | 'retire_le'>
 export type ProvisionDeLaValidation = Pick<Provision, 'id' | 'compte_provision' | 'reprise_centimes'>
@@ -178,8 +186,9 @@ export function ciblePrecedente(
 /**
  * Les lignes qu'une régularisation commande (`inventaire_a_jour`) : au 31 décembre de son exercice, ses comptes et son
  * montant, la TVA d'attente sous sa racine ; au 1er janvier suivant, les mêmes en sens inverse ; une évaluation de provision,
- * l'écart entre sa cible et la précédente, au 31 décembre seulement. Une ligne à zéro ne s'attend pas. Nul : une nature que la
- * règle ne connaît pas — rien ne peut être à jour.
+ * l'écart entre sa cible et la précédente, au 31 décembre seulement ; une régularisation reprise d'une balance (INV3-Q2 (A)),
+ * son extourne seule, au 1er janvier — sa constatation est dans la balance. Une ligne à zéro ne s'attend pas. Nul : une
+ * nature que la règle ne connaît pas — rien ne peut être à jour.
  */
 export function lignesCommandees(
   o: Omit<OperationDeLaValidation, 'id' | 'objet' | 'provision_id'>, cible: number | null,
@@ -205,7 +214,7 @@ export function lignesCommandees(
   }
   const constatees = lignes.filter(([, , c]) => c > 0)
   return [
-    ...constatees.map(([compte, sens, centimes]) => ({ date: cloture(o.exercice), compte, sens, centimes })),
+    ...(o.reprise ? [] : constatees.map(([compte, sens, centimes]) => ({ date: cloture(o.exercice), compte, sens, centimes }))),
     ...(o.nature === 'provision' ? []
       : constatees.map(([compte, sens, centimes]) => ({ date: lendemainDeLaCloture(o.exercice), compte, sens: inverse(sens), centimes }))),
   ]
@@ -267,9 +276,42 @@ export function compteRepriseNonVentile(
   return [...comptes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).find((c) => repris(c) !== ventile(c)) ?? null
 }
 
+/** Les racines des comptes de régularisation qu'une balance reprise porte et que les régularisations reprises extournent
+ *  (INV3-Q2 (A)) : 486, 487, 408 et 418, et la TVA d'attente des factures non parvenues et à établir (44586, 44587), lues au
+ *  catalogue des rôles ; le 4084 excepté (`RACINES_HORS_DE_L_INVENTAIRE`). */
+export const RACINES_CONFRONTEES_A_LA_REPRISE: readonly string[] = (['charges_constatees_avance', 'produits_constates_avance',
+  'factures_non_parvenues', 'factures_a_etablir', 'tva_factures_non_parvenues', 'tva_factures_a_etablir'] as const)
+  .flatMap((r) => racinesDuRole(r))
+
+/**
+ * LES RÉGULARISATIONS REPRISES, CONFRONTÉES AU SOLDE REPRIS (INV3-Q2 (A)) : au 1er janvier de l'exercice que la balance ouvre,
+ * les extournes des régularisations reprises (celles de l'exercice précédent) soldent exactement chaque compte de
+ * régularisation de la balance et chaque compte qu'elles touchent, sous `RACINES_CONFRONTEES_A_LA_REPRISE`. Le premier compte
+ * en écart, dans l'ordre des numéros (celui de la base, octet par octet) ; nul quand tout est soldé.
+ */
+export function compteRepriseNonExtourne(
+  aNouveaux: readonly Pick<ANouveau, 'compte' | 'sens' | 'montant'>[],
+  operations: readonly Pick<OperationDeLaValidation, 'id' | 'exercice' | 'reprise'>[],
+  brouillon: readonly LigneDuBrouillon[], annee: number,
+): string | null {
+  const reprises = new Set(operations.filter((o) => o.reprise && o.exercice === annee - 1).map((o) => o.id))
+  const soldes = new Map<string, number>()
+  const ajouter = (compte: string, sens: Sens, montant: number) =>
+    soldes.set(compte, (soldes.get(compte) ?? 0) + (sens === 'debit' ? 1 : -1) * centimesDe(montant))
+  for (const a of aNouveaux) ajouter(a.compte, a.sens, a.montant)
+  for (const l of brouillon) {
+    if (l.operation_inventaire_id && reprises.has(l.operation_inventaire_id) && l.date === `${annee}-01-01`) ajouter(l.compte, l.sens, l.montant)
+  }
+  const confronte = (c: string) => RACINES_CONFRONTEES_A_LA_REPRISE.some((r) => c.startsWith(r))
+    && !RACINES_HORS_DE_L_INVENTAIRE.some((r) => c.startsWith(r))
+  return [...soldes].filter(([c, s]) => confronte(c) && s !== 0).map(([c]) => c)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[0] ?? null
+}
+
 // ── Ce que la validation retient, dit avant le clic ─────────────────────────────────────────────────────────────────────
 
 export type IdDuPrealableDeLInventaire = 'inventaire-non-declare' | 'inventaire-a-recomposer' | 'extourne-manquante' | 'provisions-a-ventiler'
+  | 'reprise-a-recomposer' | 'reprise-hors-de-l-ouverture' | 'reprise-non-extournee'
 
 export interface PrealableDeLInventaire {
   id: IdDuPrealableDeLInventaire
@@ -294,7 +336,9 @@ const parIdentifiant = (a: { id: string }, b: { id: string }) => (a.id < b.id ? 
  * Ce que `valider_exercice` refuserait de l'inventaire, après la numérotation, dans son ordre et sous ses mots : l'inventaire
  * non déclaré (en engagement), la première régularisation de l'exercice qui n'est pas à jour, la première de l'exercice
  * précédent sans son extourne entière, le premier compte de provision repris non ventilé (au premier exercice d'un dossier en
- * engagement). La base ne dit que le premier ; l'écran les dit tous. Rien quand l'inventaire est sans objet.
+ * engagement), puis les régularisations reprises d'une balance (INV3-Q2 (A)) : la première qui n'est pas à jour, la première
+ * que la balance n'ouvre plus au 1er janvier, le premier compte de régularisation repris qu'elles n'extournent pas exactement.
+ * La base ne dit que le premier ; l'écran les dit tous. Rien quand l'inventaire est sans objet.
  */
 export function prealablesDeLInventaire(e: EntreesDeLInventaire): PrealableDeLInventaire[] {
   if (e.inventaire.etat === 'sans_objet') return []
@@ -310,7 +354,8 @@ export function prealablesDeLInventaire(e: EntreesDeLInventaire): PrealableDeLIn
   if (aRecomposer) {
     prealables.push({ id: 'inventaire-a-recomposer', message: motsDeLaValidation(M.aRecomposer, e.annee, aRecomposer.objet) })
   }
-  const sansExtourne = operations.filter((o) => o.exercice === e.annee - 1 && !extourneEntiere(o, e.ecritures)).sort(parIdentifiant)[0]
+  const sansExtourne = operations.filter((o) => o.exercice === e.annee - 1 && !o.reprise && !extourneEntiere(o, e.ecritures))
+    .sort(parIdentifiant)[0]
   if (sansExtourne) {
     prealables.push({
       id: 'extourne-manquante', message: motsDeLaValidation(M.extourneManquante, e.annee, e.annee - 1, sansExtourne.objet),
@@ -321,6 +366,21 @@ export function prealablesDeLInventaire(e: EntreesDeLInventaire): PrealableDeLIn
     const compte = compteRepriseNonVentile(e.aNouveaux, provisions)
     if (compte !== null) {
       prealables.push({ id: 'provisions-a-ventiler', message: motsDeLaValidation(M.provisionsAVentiler, e.annee, compte) })
+    }
+  }
+  const reprises = operations.filter((o) => o.reprise && o.exercice === e.annee - 1).sort(parIdentifiant)
+  const repriseARecomposer = reprises.find((o) => !regularisationAJour(o, e.ecritures, null))
+  if (repriseARecomposer) {
+    prealables.push({ id: 'reprise-a-recomposer', message: motsDeLaValidation(M.repriseARecomposer, e.annee, repriseARecomposer.objet) })
+  }
+  const ouvreLExercice = ouverture === `${e.annee}-01-01`
+  if (reprises.length > 0 && !ouvreLExercice) {
+    prealables.push({ id: 'reprise-hors-de-l-ouverture', message: motsDeLaValidation(M.repriseHorsDeLOuverture, e.annee, reprises[0].objet) })
+  }
+  if (e.mode === 'engagement' && ouvreLExercice) {
+    const compte = compteRepriseNonExtourne(e.aNouveaux, operations, e.ecritures, e.annee)
+    if (compte !== null) {
+      prealables.push({ id: 'reprise-non-extournee', message: motsDeLaValidation(M.repriseNonExtournee, e.annee, compte) })
     }
   }
   return prealables

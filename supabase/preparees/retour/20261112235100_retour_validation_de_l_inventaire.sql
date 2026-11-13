@@ -1,12 +1,14 @@
 -- RETOUR DE 20261112235000_validation_de_l_inventaire (INV3, ligne 35) — À COLLER, et seulement sur l'accord du cabinet : il
--- DÉTRUIT la table des déclarations d'inventaire (`inventaires_declares`), sa garde et les quatre fonctions de la migration,
--- et rend `valider_exercice` telle que la production la porte depuis `empreinte_des_exercices_forme_2` (md5 923cfa1b…,
--- recopiée au caractère près, son commentaire aussi). Ce qu'il rend : la base d'INV2 (et d'INV4, si elle y est) sans la
--- validation de l'inventaire.
--- Il se refuse tant qu'une déclaration existe (la relever par un SELECT, puis décider avec le cabinet), ou si
--- `valider_exercice` n'est plus celle que la migration a posée (une migration suivante l'a remplacée : son retour d'abord).
--- Un exercice validé sous INV3 le reste : sa ligne, ses écritures et son empreinte ne dépendent pas de la fonction. Garder
--- `INVENTAIRE_PREVU` (src/lib/inventaire.ts) baissé, ou le baisser dans le même déploiement.
+-- DÉTRUIT la table des déclarations d'inventaire (`inventaires_declares`), sa garde, la garde du fichier d'une pièce scellée
+-- par l'inventaire et les huit fonctions de la migration, et rend telles que la production les porte, au caractère près,
+-- leur commentaire aussi : `valider_exercice` et `empreinte_exercice_forme_2` depuis `empreinte_des_exercices_forme_2`
+-- (md5 923cfa1b… et a62b0761…), `fichier_fige` depuis `piece_figee_dans_le_stockage` (md5 5372f8d2…). Ce qu'il rend : la
+-- base d'INV2 (et d'INV4, si elle y est) sans la validation de l'inventaire.
+-- Il se refuse tant qu'une déclaration existe (la relever par un SELECT, puis décider avec le cabinet), si une fonction
+-- qu'il rend n'est plus celle que la migration a posée (une migration suivante l'a remplacée : son retour d'abord), ou si
+-- un exercice validé scelle une régularisation ou une pièce par l'inventaire (INV3-Q1) : l'empreinte d'hier ne la verrait
+-- plus, et l'exercice ne se vérifierait plus. Tout autre exercice validé sous INV3 le reste et se vérifie comme avant (sa
+-- garde de fin le rejoue). Garder `INVENTAIRE_PREVU` (src/lib/inventaire.ts) baissé, ou le baisser dans le même déploiement.
 
 do $garde$
 begin
@@ -17,9 +19,23 @@ begin
     raise exception 'retour_validation_de_l_inventaire : des déclarations d''inventaire existent ; les relever, et décider avec le cabinet, d''abord.';
   end if;
   if (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p
-       where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure) is distinct from '1e0c2f6bf200a5bee660c2f84cbb7738' then
-    raise exception 'retour_validation_de_l_inventaire : valider_exercice n''est plus celle que la migration a posée ; rien à défaire sans la relire.';
+       where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure) is distinct from '03732b43c1897163eaae83e23058e354'
+     or (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p
+          where p.oid = 'public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure)
+        is distinct from 'cb18f6063974972974a1aa92eb5b3e92'
+     or (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p
+          where p.oid = 'public.fichier_fige(text)'::regprocedure) is distinct from 'c0c78141ddb7ba3b6912fdb68ec87da1' then
+    raise exception 'retour_validation_de_l_inventaire : valider_exercice, l''empreinte ou fichier_fige n''est plus celle que la migration a posée ; rien à défaire sans la relire.';
   end if;
+  if exists (select 1 from public.exercices_valides ev
+              where public.regularisations_scellees(ev.dossier_id, ev.annee) is not null
+                 or exists (select 1 from public.pieces_scellees_par_l_inventaire(ev.dossier_id, ev.annee))) then
+    raise exception 'retour_validation_de_l_inventaire : un exercice validé scelle une régularisation ou une pièce par l''inventaire ; l''empreinte d''hier ne la verrait plus — décider avec le cabinet d''abord.';
+  end if;
+  -- Les exercices validés qui se vérifient avant le retour : sa garde de fin exige les mêmes (transaction locale).
+  perform set_config('jd.inventaire_exercices_verifies', (
+    select coalesce(string_agg(ev.dossier_id::text || ':' || ev.annee, ',' order by ev.dossier_id, ev.annee), '')
+      from public.exercices_valides ev where public.verifier_exercice_valide(ev.dossier_id, ev.annee)), true);
 end
 $garde$;
 
@@ -574,6 +590,94 @@ $$;
 comment on function public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb) is
   'Valide un exercice terminé : vérifie la numérotation proposée par l''application, fige ses écritures — et les quatre champs du FEC d''un BNC que la numérotation porte (date, mode, nature et poste, identification du client), chacun dans sa forme, les mêmes sur les lignes d''une écriture, le client identifié par une facture validée du dossier seulement —, enregistre l''exercice sous son empreinte en forme 2 (l''en-tête, les écritures, les à-nouveaux et les soldes reportés chaînés, les fichiers des pièces citées, la 2035 validée : INAL2) et écrit l''ouverture du suivant (soldes_reportes) ; pour un dossier basculé, refuse aussi un mouvement réservé à des encaissements de factures, un virement ou un prélèvement sans son mouvement, et une vente facturée qui n''est pas écrite à jour. Refuse aussi un paiement d''une pièce par la caisse de l''exercice dont la contrepartie entière au compte de la caisse n''est pas au brouillon (relecture du 01/11/2026). Chef du cabinet seul.';
 
+-- INV3-Q1 (A) : l'empreinte et fichier_fige d'hier, puis la garde du fichier d'une pièce scellée et les trois aides.
+-- fichier_fige : la définition de 20261110125435_piece_figee_dans_le_stockage.sql, son commentaire de 20261110125435_piece_figee_dans_le_stockage.sql.
+create or replace function public.fichier_fige(p_chemin text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  -- Le dossier que le chemin nomme se tire après la forme du chemin, dans cet ordre (`case` n'évalue une branche qu'à son
+  -- tour) : un chemin mal formé ne fait rien lever.
+  select case
+    when p_chemin is null then null
+    when p_chemin !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/' then null
+    when not public.admin_du_dossier(split_part(p_chemin, '/', 1)::uuid) then null
+    else exists (
+        select 1 from public.pieces p
+         where (p.storage_path = p_chemin or p.lisible_path = p_chemin)
+           and (public.exercice_figeant_la_piece(p.id) is not null
+                or exists (select 1 from public.revision_preuves r where r.piece_id = p.id)
+                or exists (select 1 from public.dossier_permanent d where d.piece_id = p.id)))
+      or exists (
+        select 1 from public.documents_divers dd
+         where dd.storage_path = p_chemin
+           and (exists (select 1 from public.revision_preuves r where r.document_id = dd.id)
+                or exists (select 1 from public.dossier_permanent d where d.document_id = dd.id)))
+  end
+$$;
+
+comment on function public.fichier_fige(text) is
+  'Vrai quand le chemin est le fichier (ou la version lisible) d''une pièce que la base fige — une écriture validée la cite, directement ou par son bien immobilisé, ou la révision la cite — ou le fichier d''un document divers que la révision cite ; nul pour qui n''administre pas le dossier du chemin, et pour un chemin qui ne commence pas par un dossier. La policy pieces_storage_delete refuse la suppression d''un tel fichier (INAL1, ligne 44).';
+
+-- empreinte_exercice_forme_2 : la définition de 20261110124917_empreinte_des_exercices_forme_2.sql, son commentaire de 20261110124917_empreinte_des_exercices_forme_2.sql.
+create or replace function public.empreinte_exercice_forme_2(
+  p_dossier_id uuid,
+  p_annee integer,
+  p_precedente text,
+  p_valide_le timestamp with time zone,
+  p_valide_par uuid,
+  p_mode text,
+  p_nb_lignes integer,
+  p_nb_ecritures integer,
+  p_total_debit numeric,
+  p_total_credit numeric,
+  p_declaration jsonb
+) returns text
+language sql
+stable
+set search_path = public
+as $$
+  select encode(sha256(convert_to(
+    'jd-precompta/exercice-valide/forme-2'
+    -- L'en-tête, tel que la ligne de l'exercice le garde : les totaux à deux décimales, comme la colonne les arrondit,
+    -- puis sans zéro de fin.
+    || chr(29) || concat_ws(chr(31),
+         p_dossier_id::text, p_annee::text,
+         to_char(make_date(p_annee, 1, 1), 'YYYY-MM-DD'), to_char(make_date(p_annee, 12, 31), 'YYYY-MM-DD'),
+         to_char(p_valide_le at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'), coalesce(p_valide_par::text, ''),
+         p_mode, p_nb_lignes::text, p_nb_ecritures::text,
+         trim_scale(p_total_debit::numeric(16,2))::text, trim_scale(p_total_credit::numeric(16,2))::text)
+    -- L'empreinte de forme 1, chaînée à la précédente.
+    || chr(29) || public.empreinte_exercice(p_dossier_id, p_annee, p_precedente)
+    -- Les fichiers des pièces que les écritures validées de l'exercice citent, directement ou par leur bien.
+    || chr(29) || coalesce((
+      select string_agg(concat_ws(chr(31), p.id::text, p.storage_path, coalesce(p.storage_hash, ''),
+                                  coalesce(p.lisible_path, '')), chr(30) order by p.id)
+        from public.pieces p
+       where p.id in (
+         select e.piece_id from public.ecritures_brouillon e
+          where e.dossier_id = p_dossier_id and e.statut = 'validee' and e.piece_id is not null
+            and e.date between make_date(p_annee, 1, 1) and make_date(p_annee, 12, 31)
+         union
+         select i.piece_id from public.ecritures_brouillon e join public.immobilisations i on i.id = e.immobilisation_id
+          where e.dossier_id = p_dossier_id and e.statut = 'validee' and i.piece_id is not null
+            and e.date between make_date(p_annee, 1, 1) and make_date(p_annee, 12, 31))), '')
+    -- La 2035 validée.
+    || chr(29) || coalesce(p_declaration::text, ''),
+    'UTF8')), 'hex')
+$$;
+
+comment on function public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb) is
+  'L''empreinte SHA-256 d''un exercice validé en forme 2 (INAL2, ligne 44) : une étiquette, l''en-tête de sa ligne, son empreinte de forme 1 (empreinte_exercice, chaînée), les fichiers des pièces que ses écritures validées citent (identifiant, chemin, SHA-256 au dépôt, version lisible) et la 2035 validée. Lue sous la RLS de l''appelant.';
+
+drop trigger pieces_fichier_scelle_par_l_inventaire on public.pieces;
+drop function public.garder_fichier_scelle_par_l_inventaire();
+drop function public.exercice_scellant_la_piece_citee(uuid);
+drop function public.pieces_scellees_par_l_inventaire(uuid, integer);
+drop function public.regularisations_scellees(uuid, integer);
 drop function public.retirer_declaration_inventaire(uuid);
 drop function public.declarer_inventaire(uuid, integer);
 drop function public.inventaire_extourne_entiere(uuid);
@@ -591,8 +695,36 @@ begin
      or not has_function_privilege('authenticated', 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', 'execute')
      or to_regclass('public.inventaires_declares') is not null
      or exists (select 1 from pg_proc p where p.proname in ('declarer_inventaire', 'retirer_declaration_inventaire', 'inventaire_a_jour',
-                  'inventaire_extourne_entiere', 'garder_inventaires_declares')) then
+                  'inventaire_extourne_entiere', 'garder_inventaires_declares', 'regularisations_scellees',
+                  'pieces_scellees_par_l_inventaire', 'exercice_scellant_la_piece_citee', 'garder_fichier_scelle_par_l_inventaire'))
+     or exists (select 1 from pg_trigger t where t.tgname = 'pieces_fichier_scelle_par_l_inventaire') then
     raise exception 'Garde de fin : valider_exercice n''est pas celle de la production, ou la migration a laissé quelque chose.';
   end if;
+  -- L'empreinte et fichier_fige de la production, sous leurs droits ; la policy du seau des pièces appelle la même fonction.
+  if (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p
+       where p.oid = 'public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure)
+       is distinct from 'a62b0761a132e53c218bdc5b3820299e'
+     or (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = 'public.fichier_fige(text)'::regprocedure)
+       is distinct from '5372f8d248432f0932598a6efca24ca2'
+     or not (select p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=public']
+               from pg_proc p where p.oid = 'public.fichier_fige(text)'::regprocedure)
+     or has_function_privilege('anon', 'public.fichier_fige(text)', 'execute')
+     or not has_function_privilege('authenticated', 'public.fichier_fige(text)', 'execute')
+     or has_function_privilege('anon', 'public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)', 'execute')
+     or not has_function_privilege('authenticated', 'public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)', 'execute')
+     or not exists (select 1 from pg_depend d join pg_policy p on p.oid = d.objid
+                     where d.classid = 'pg_policy'::regclass and p.polname = 'pieces_storage_delete'
+                       and p.polrelid = 'storage.objects'::regclass and d.refclassid = 'pg_proc'::regclass
+                       and d.refobjid = 'public.fichier_fige(text)'::regprocedure) then
+    raise exception 'Garde de fin : l''empreinte ou fichier_fige ne sont pas celles de la production.';
+  end if;
+  -- Les exercices validés que la garde de tête a vus se vérifier se vérifient encore, tous, et aucun autre.
+  if current_setting('jd.inventaire_exercices_verifies', true) is null
+     or current_setting('jd.inventaire_exercices_verifies', true) is distinct from (
+       select coalesce(string_agg(ev.dossier_id::text || ':' || ev.annee, ',' order by ev.dossier_id, ev.annee), '')
+         from public.exercices_valides ev where public.verifier_exercice_valide(ev.dossier_id, ev.annee)) then
+    raise exception 'Garde de fin : un exercice validé ne se vérifie plus comme avant le retour : rien ne se défait.';
+  end if;
+  perform set_config('jd.inventaire_exercices_verifies', '', true);
 end
 $fin$;

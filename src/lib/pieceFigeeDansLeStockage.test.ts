@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { contientSql, derniereDefinitionSql, dernierIndiceSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { contientSql, definitionsSql, derniereDefinitionSql, dernierIndiceSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // LE FICHIER D'UNE PIÈCE FIGÉE DANS LE STOCKAGE (ligne 44, INAL1, sur INAL-Q5). La migration `piece_figee_dans_le_stockage`
 // — préparée dans supabase/preparees/, dans l'export sous la version de sa ligne d'historique le jour de son application,
@@ -29,6 +29,16 @@ const MIGRATION = () => (lue ??= laMigration())
 const RETOUR = () => lire(`supabase/preparees/retour/20261110120050_retour_${NOM}.sql`)
 
 const corps = (definition: string) => definition.slice(definition.indexOf('as $$') + 'as $$'.length)
+// Les empreintes auxquelles un essai admet fichier_fige : `= '<md5>'` ou `in ('<md5>', …)`, en un seul endroit ; une autre
+// forme, ou une seconde admission, échoue.
+function empreintesAdmises(texte: string, essai: string): string[] {
+  const motif = /proname = 'fichier_fige' and md5\(replace\(prosrc, chr\(13\), ''\)\) (?:= '([0-9a-f]{32})'|in \(('[0-9a-f]{32}'(?:, '[0-9a-f]{32}')*)\))/g
+  const trouvees = [...texte.matchAll(motif)]
+  expect(trouvees, `${essai} : une admission de fichier_fige, sous une forme reconnue`).toHaveLength(1)
+  expect(texte.split(`proname = 'fichier_fige'`).length - 1, `${essai} : une seule mention`).toBe(1)
+  const [, une, liste] = trouvees[0]
+  return une ? [une] : [...liste.matchAll(/'([0-9a-f]{32})'/g)].map((m) => m[1])
+}
 const blocEntre = (texte: string, debut: string, fin: string) => texte.slice(texte.indexOf(debut), texte.indexOf(fin, texte.indexOf(debut)))
 const espaces = (texte: string) => texte.replace(/\s+/g, ' ').trim()
 
@@ -98,10 +108,20 @@ describe('la migration du fichier d’une pièce figée', () => {
     }
   })
 
-  it('les essais qui énumèrent le catalogue n’admettent fichier_fige qu’à l’empreinte de son corps', () => {
+  // Les essais admettent le corps en production (la dernière définition de l'export, celle d'INAL1 tant qu'aucune autre
+  // ne la remplace) ET celui de chaque migration préparée qui le remplace — INV3, `validation_de_l_inventaire` (ligne 35,
+  // INV3-Q1) : ils doivent passer aujourd'hui comme après son collage. Aucune autre empreinte : un corps que le dépôt ne
+  // pose nulle part tombe ici.
+  it('les essais qui énumèrent le catalogue n’admettent fichier_fige qu’aux empreintes des corps que le dépôt pose', () => {
     const corpsPose = corps(blocEntre(MIGRATION().texte, 'create function public.fichier_fige(', '$$;\n'))
+    const enProduction = md5(corps(derniereDefinitionSql('fichier_fige')))
+    const preparees = definitionsSql('fichier_fige', fichiersPrepares()).map((d) => md5(corps(d.definition)))
+    const posees = new Set(definitionsSql('fichier_fige', [...fichiersDuSchema(), ...fichiersPrepares()]).map((d) => md5(corps(d.definition))))
+    expect(posees.has(md5(corpsPose)), 'le corps d’INAL1, parmi les corps posés').toBe(true)
     for (const essai of ['dossierPermanent', 'exemplairesDesFactures']) {
-      expect(lire(`supabase/essais/${essai}.sql`), essai).toContain(`proname = 'fichier_fige' and md5(replace(prosrc, chr(13), '')) = '${md5(corpsPose)}'`)
+      const admises = empreintesAdmises(lire(`supabase/essais/${essai}.sql`), essai)
+      for (const attendue of [enProduction, ...preparees]) expect(admises, `${essai} admet ${attendue}`).toContain(attendue)
+      for (const admise of admises) expect(posees.has(admise), `${essai} : ${admise}, le corps d’aucune définition`).toBe(true)
     }
   })
 

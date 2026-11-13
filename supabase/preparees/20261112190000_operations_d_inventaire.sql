@@ -42,6 +42,14 @@
 --      trois se collent ainsi dans n'importe quel ordre et laissent la même base (l'ordre des colonnes excepté), chaque
 --      colonne refusant une ligne qui en cite une autre. La garde de tête accepte ces deux colonnes, présentes ou non, et
 --      refuse toute autre clé étrangère du brouillon qu'elle ne connaît pas.
+--   8. La régularisation REPRISE d'une balance (INV3-Q2 (A), tranchée par le cabinet le 13/11/2026 ; `reprise`) : une balance
+--      reprise au 1er janvier qui porte d'anciennes charges ou d'anciens produits constatés d'avance, factures non parvenues
+--      ou à établir (486, 487, 408, 418) en reçoit une par régularisation de l'ancien logiciel. Elle appartient à l'exercice
+--      que la balance clôt (l'année qui précède l'ouverture du dossier) ; sa constatation est dans la balance, et SEULE son
+--      extourne au 1er janvier s'écrit, recomposée et comparée comme celle de toute régularisation, sous les mêmes refus aux
+--      mêmes mots que src/lib/inventaire.ts (`composerRegularisationReprise`) — son compte de régularisation pris dans la
+--      balance, sous la racine de sa nature, plutôt qu'au plan. La validation du premier exercice la confronte au solde
+--      repris (INV3).
 --
 -- CE QU'ELLE NE FAIT PAS : la validation (la sorte `inventaire`, ses filets, l'état déclaré : INV3), les provisions (INV4),
 -- l'écran (INV5). Aucun dossier n'est en engagement en production (12/11/2026) : rien ne s'y écrit avant INV5.
@@ -124,6 +132,7 @@ create table public.operations_inventaire (
   periode_fin date,
   objet text not null,
   piece_citee_id uuid references public.pieces(id),
+  reprise boolean not null default false,
   version integer not null default 1,
   cree_par uuid not null,
   cree_le timestamptz not null default now(),
@@ -148,7 +157,10 @@ create table public.operations_inventaire (
     (periode_debut is null) = (periode_fin is null) and (periode_debut is null or periode_debut <= periode_fin)),
   constraint operations_inventaire_objet check (
     char_length(objet) >= 1 and char_length(objet) <= 200 and objet !~ '[\r\n]'),
-  constraint operations_inventaire_version check (version >= 1)
+  constraint operations_inventaire_version check (version >= 1),
+  -- Une régularisation reprise d'une balance (INV3-Q2 (A)) : une charge ou un produit constaté d'avance, une facture non
+  -- parvenue ou à établir — les comptes 486, 487, 408 et 418 de la balance reprise.
+  constraint operations_inventaire_reprise check (not reprise or nature = any (array['cca', 'pca', 'fnp', 'fae']))
 );
 create index operations_inventaire_dossier on public.operations_inventaire (dossier_id, exercice);
 create index operations_inventaire_piece_citee on public.operations_inventaire (piece_citee_id) where piece_citee_id is not null;
@@ -157,6 +169,8 @@ comment on table public.operations_inventaire is
   'INV2 (ligne 35) : une régularisation de clôture d''un dossier en engagement, saisie par le cabinet. Écrite par enregistrer_operation_inventaire et retirer_operation_inventaire seules ; ses écritures (la constatation au 31 décembre, l''extourne au 1er janvier suivant) citent operation_inventaire_id.';
 comment on column public.operations_inventaire.piece_citee_id is
   'La pièce du dossier qui fonde la régularisation, quand elle existe (§ 3.3, INV-Q7) : citée ici, jamais par ecritures_brouillon.piece_id.';
+comment on column public.operations_inventaire.reprise is
+  'INV3-Q2 (A) : une régularisation reprise d''une balance reprise au 1er janvier — de l''exercice que la balance clôt, sa constatation dans la balance, seule son extourne au 1er janvier s''écrit ; la validation du premier exercice la confronte au solde repris.';
 
 -- Le cabinet du dossier lit ; aucun client, aucun droit d'accès (l'inventaire est un travail du cabinet). Aucune policy
 -- d'écriture : les deux fonctions seules. La restauration réinsère par la porte du super-administrateur, que la garde ouvre.
@@ -269,7 +283,8 @@ create trigger operations_inventaire_garde before insert or update or delete on 
 
 -- Ses écritures : une ligne qui cite une régularisation (avant ou après) ne s'écrit, ne change ni ne part que par sa
 -- fonction, la réinsertion du super-administrateur et le départ du dossier exceptés ; elle appartient à une régularisation
--- de son dossier, en engagement, à sa date. La validation (INV3) ne touche à aucune des colonnes que le déclencheur garde.
+-- de son dossier, en engagement, à sa date — le 1er janvier seul pour une régularisation reprise, dont la constatation est
+-- dans la balance. La validation (INV3) ne touche à aucune des colonnes que le déclencheur garde.
 create function public.garder_ecriture_d_inventaire() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
@@ -288,8 +303,9 @@ begin
     if not exists (select 1 from public.operations_inventaire o join public.dossiers d on d.id = o.dossier_id
                     where o.id = new.operation_inventaire_id and o.dossier_id = new.dossier_id
                       and d.mode_comptable = 'engagement'
-                      and new.date in (make_date(o.exercice, 12, 31), make_date(o.exercice + 1, 1, 1))) then
-      raise exception 'Une écriture d’inventaire appartient à une régularisation de son dossier, en engagement, au 31 décembre de son exercice ou au 1er janvier suivant.'
+                      and ((new.date = make_date(o.exercice, 12, 31) and not o.reprise)
+                           or new.date = make_date(o.exercice + 1, 1, 1))) then
+      raise exception 'Une écriture d’inventaire appartient à une régularisation de son dossier, en engagement, au 31 décembre de son exercice ou au 1er janvier suivant ; celle d’une régularisation reprise, au 1er janvier seul.'
         using errcode = '23514';
     end if;
   end if;
@@ -304,11 +320,13 @@ revoke execute on function public.garder_ecriture_d_inventaire() from public, an
 
 -- ══ 6. Enregistrer une régularisation, et son extourne ══
 -- p_operation : { id (nul : une nouvelle), exercice, nature, compte_resultat, compte_regularisation, montant_centimes,
--- tva_centimes, objet, periode_debut, periode_fin, piece_citee_id } ; p_ecritures : les deux écritures que compose
--- `composerRegularisation` ({ date, journal, libelle, lignes: [{ compte, sens, centimes }] }) ; p_version_lue : la version
--- que la saisie remplace (nulle pour une nouvelle). Les refus, dans l'ordre du module : le mode du dossier, l'exercice, la
--- nature, le plan, les comptes, les montants, l'objet ; puis ceux que la base seule dit : la période, la pièce citée, la
--- version lue, les écritures proposées. Rend l'identifiant de la régularisation.
+-- tva_centimes, objet, periode_debut, periode_fin, piece_citee_id, reprise (facultatif : faux) } ; p_ecritures : les deux
+-- écritures que compose `composerRegularisation` ({ date, journal, libelle, lignes: [{ compte, sens, centimes }] }), ou la
+-- seule extourne que compose `composerRegularisationReprise` pour une régularisation reprise (INV3-Q2 (A)) ; p_version_lue :
+-- la version que la saisie remplace (nulle pour une nouvelle). Les refus, dans l'ordre du module : le mode du dossier, la
+-- reprise, l'exercice (celui que la balance clôt, pour une reprise), la nature, le plan, les comptes, les montants, l'objet ;
+-- puis ceux que la base seule dit : la période, la pièce citée, la version lue, les écritures proposées. Rend l'identifiant
+-- de la régularisation.
 create function public.enregistrer_operation_inventaire(p_dossier_id uuid, p_operation jsonb, p_ecritures jsonb, p_version_lue integer)
  returns uuid
  language plpgsql
@@ -322,6 +340,8 @@ declare
   v_exercice bigint;
   v_frontiere date;
   v_premier integer;
+  v_reprise boolean;
+  v_ouverture date;
   v_nature text;
   v_charge boolean;
   v_resultat text;
@@ -365,7 +385,15 @@ begin
       using errcode = '22023';
   end if;
 
-  -- 2. L'exercice : lisible, pas figé, commencé (l'année lue à Paris), pas avant l'ouverture du dossier (ses à-nouveaux).
+  -- 1 bis. La reprise (INV3-Q2 (A)) : vrai pour une régularisation reprise d'une balance, faux ou absent sinon.
+  v_reprise := case when p_operation -> 'reprise' is null or jsonb_typeof(p_operation -> 'reprise') = 'null' then false
+                    when jsonb_typeof(p_operation -> 'reprise') = 'boolean' then (p_operation ->> 'reprise')::boolean end;
+  if v_reprise is null then
+    raise exception '%', 'Une régularisation est reprise d’une balance, ou ne l’est pas : vrai ou faux.' using errcode = '22023';
+  end if;
+
+  -- 2. L'exercice : lisible, pas figé, commencé (l'année lue à Paris), pas avant l'ouverture du dossier (ses à-nouveaux) ;
+  --    celui que la balance reprise clôt pour une régularisation reprise — l'année qui précède l'ouverture, au 1er janvier.
   v_exercice := public.inventaire_entier(p_operation -> 'exercice');
   if v_exercice is null or v_exercice < 2000 or v_exercice > 2100 then
     raise exception '%', 'L’exercice de la régularisation est illisible : une année entre 2000 et 2100.' using errcode = '22023';
@@ -377,13 +405,19 @@ begin
   if v_exercice > extract(year from (now() at time zone 'Europe/Paris')) then
     raise exception '%', 'Cet exercice n’est pas encore commencé : son inventaire ne se passe pas avant lui.' using errcode = '22023';
   end if;
-  select extract(year from min(a.date))::integer into v_premier from public.a_nouveaux a where a.dossier_id = p_dossier_id;
-  if v_premier is not null and v_exercice < v_premier then
+  select min(a.date) into v_ouverture from public.a_nouveaux a where a.dossier_id = p_dossier_id;
+  v_premier := extract(year from v_ouverture)::integer;
+  if v_reprise then
+    if v_ouverture is null or to_char(v_ouverture, 'MM-DD') <> '01-01' or v_exercice <> v_premier - 1 then
+      raise exception '%', 'Une régularisation reprise appartient à l’exercice que clôt la balance reprise : l’année qui précède '
+        || 'l’ouverture du dossier au 1er janvier.' using errcode = '22023';
+    end if;
+  elsif v_premier is not null and v_exercice < v_premier then
     raise exception '%', 'Cet exercice précède l’ouverture du dossier dans l’application : son inventaire n’y a pas de place.'
       using errcode = '22023';
   end if;
 
-  -- 3. La nature.
+  -- 3. La nature ; celle d'une régularisation reprise, un compte que la balance porte (486, 487, 408, 418).
   v_nature := p_operation ->> 'nature';
   if v_nature = 'provision' then
     raise exception '%', 'Une provision s’écrit par son évaluation au 31 décembre, pas comme une régularisation.' using errcode = '22023';
@@ -392,9 +426,14 @@ begin
     raise exception '%', 'La nature de la régularisation est inconnue : une charge ou un produit constaté d’avance, une facture non '
       || 'parvenue ou à établir, une charge à payer ou un produit à recevoir.' using errcode = '22023';
   end if;
+  if v_reprise and not (v_nature = any (array['cca', 'pca', 'fnp', 'fae'])) then
+    raise exception '%', 'Une régularisation reprise est une charge ou un produit constaté d’avance, une facture non parvenue ou à '
+      || 'établir : les comptes 486, 487, 408 et 418 de la balance reprise.' using errcode = '22023';
+  end if;
   v_charge := v_nature = any (array['cca', 'fnp', 'charge_a_payer']);
 
-  -- 4. Le plan : les rôles dont la nature a besoin, chacun à un compte de six chiffres sous sa racine.
+  -- 4. Le plan : les rôles dont la nature a besoin, chacun à un compte de six chiffres sous sa racine ; ceux de la TVA
+  --    d'attente seuls pour une régularisation reprise, dont le compte de régularisation vient de la balance (6).
   v_tva := public.inventaire_entier(p_operation -> 'tva_centimes');
   v_tva_lisible := v_tva is not null and v_tva >= 0;
   for v_role in select r.role from unnest(case v_nature
@@ -403,7 +442,9 @@ begin
       when 'fnp' then case when v_tva_lisible and v_tva > 0 then array['tva_factures_non_parvenues'] else array[]::text[] end
       when 'fae' then case when v_tva_lisible and v_tva > 0 then array['factures_a_etablir', 'tva_factures_a_etablir']
                            else array['factures_a_etablir'] end
-      else array[]::text[] end) with ordinality as r(role, rang) order by r.rang
+      else array[]::text[] end) with ordinality as r(role, rang)
+    where not (v_reprise and r.role = any (array['charges_constatees_avance', 'produits_constates_avance', 'factures_a_etablir']))
+    order by r.rang
   loop
     v_compte_du_role := public.compte_du_role(p_dossier_id, v_role);
     if v_compte_du_role !~ '^[0-9]{6}$'
@@ -427,6 +468,8 @@ begin
   end if;
 
   -- 6. Le compte de régularisation, dans la liste fermée de sa nature (§ 4.4, INV1-Q1) ; jamais le 467 ni le 468 (INV-Q2).
+  --    Celui d'une régularisation reprise est le compte de la balance qu'elle extourne, sous la racine de sa nature (le 4084
+  --    excepté, que l'inventaire ne range pas : INV1-Q1) : la validation du premier exercice le confronte au solde repris.
   v_regul := p_operation ->> 'compte_regularisation';
   v_compte_du_role := case v_nature
     when 'cca' then public.compte_du_role(p_dossier_id, 'charges_constatees_avance')
@@ -437,7 +480,14 @@ begin
        or not starts_with(v_compte_du_role, case v_nature when 'cca' then '486' when 'pca' then '487' when 'fnp' then '408' else '418' end)) then
     v_compte_du_role := null;
   end if;
-  if v_regul is null or v_regul !~ '^[0-9]{3,}$' or not (case v_nature
+  if v_reprise then
+    if v_regul is null or v_regul !~ '^[0-9]{3,}$' or starts_with(v_regul, '4084')
+       or not starts_with(v_regul, case v_nature when 'cca' then '486' when 'pca' then '487' when 'fnp' then '408' else '418' end) then
+      raise exception '%', 'Une régularisation reprise s’écrit sur le compte de la balance qu’elle extourne : sous le 486 pour une charge '
+        || 'constatée d’avance, le 487 pour un produit constaté d’avance, le 408 (hors du 4084) pour une facture non parvenue, le 418 '
+        || 'pour une facture à établir.' using errcode = '22023';
+    end if;
+  elsif v_regul is null or v_regul !~ '^[0-9]{3,}$' or not (case v_nature
        when 'cca' then v_regul = v_compte_du_role
        when 'pca' then v_regul = v_compte_du_role
        when 'fae' then v_regul = v_compte_du_role
@@ -532,7 +582,7 @@ begin
   -- 12. Les écritures : la constatation au 31 décembre et son extourne au 1er janvier suivant, recomposées en entiers et
   --     comparées en MULTIENSEMBLE à ce que l'application propose (date, compte, sens, centimes) ; le journal OD ; le libellé
   --     composé — « <sigle> 31/12/AAAA — <libellé du compte> — <objet> », le libellé du compte facultatif, et l'extourne
-  --     « Extourne — » devant lui.
+  --     « Extourne — » devant lui. Une régularisation reprise n'a que son extourne : sa constatation est dans la balance.
   if v_tva > 0 then
     v_compte_tva := public.compte_du_role(p_dossier_id, case v_nature when 'fnp' then 'tva_factures_non_parvenues' else 'tva_factures_a_etablir' end);
   end if;
@@ -550,19 +600,19 @@ begin
   select coalesce(jsonb_agg(x.ligne order by x.rang), '[]'::jsonb) into v_attendues from (
     select l.rang, jsonb_build_object('date', to_char(v_cloture, 'YYYY-MM-DD'), 'compte', l.v ->> 0, 'sens', l.v ->> 1,
                                       'centimes', (l.v ->> 2)::bigint) as ligne
-      from jsonb_array_elements(v_lignes) with ordinality as l(v, rang) where (l.v ->> 2)::bigint > 0
+      from jsonb_array_elements(v_lignes) with ordinality as l(v, rang) where (l.v ->> 2)::bigint > 0 and not v_reprise
     union all
     select 100 + l.rang, jsonb_build_object('date', to_char(v_lendemain, 'YYYY-MM-DD'), 'compte', l.v ->> 0,
                                             'sens', case l.v ->> 1 when 'debit' then 'credit' else 'debit' end,
                                             'centimes', (l.v ->> 2)::bigint)
       from jsonb_array_elements(v_lignes) with ordinality as l(v, rang) where (l.v ->> 2)::bigint > 0) x;
 
-  v_conforme := jsonb_typeof(p_ecritures) = 'array' and jsonb_array_length(p_ecritures) = 2;
+  v_conforme := jsonb_typeof(p_ecritures) = 'array' and jsonb_array_length(p_ecritures) = case when v_reprise then 1 else 2 end;
   if v_conforme then
     select e.v into v_constatation from jsonb_array_elements(p_ecritures) e(v) where e.v ->> 'date' = to_char(v_cloture, 'YYYY-MM-DD');
     select e.v into v_extourne from jsonb_array_elements(p_ecritures) e(v) where e.v ->> 'date' = to_char(v_lendemain, 'YYYY-MM-DD');
-    v_conforme := v_constatation is not null and v_extourne is not null
-      and v_constatation ->> 'journal' = 'OD' and v_extourne ->> 'journal' = 'OD';
+    v_conforme := (v_constatation is not null) <> v_reprise and v_extourne is not null
+      and (v_reprise or v_constatation ->> 'journal' = 'OD') and v_extourne ->> 'journal' = 'OD';
   end if;
   if v_conforme then
     with recues as (
@@ -580,7 +630,10 @@ begin
   if v_conforme then
     v_entete := case v_nature when 'cca' then 'CCA' when 'pca' then 'PCA' when 'fnp' then 'FNP' when 'fae' then 'FAE'
                   when 'charge_a_payer' then 'Charge à payer' else 'Produit à recevoir' end || ' 31/12/' || v_exercice;
-    v_lib := v_constatation ->> 'libelle';
+    -- Le libellé de la constatation ; celui d'une reprise, que son extourne seule porte après « Extourne — ».
+    v_lib := case when not v_reprise then v_constatation ->> 'libelle'
+                  when starts_with(coalesce(v_extourne ->> 'libelle', ''), 'Extourne — ')
+                    then substr(v_extourne ->> 'libelle', char_length('Extourne — ') + 1) end;
     if v_lib is distinct from v_entete || ' — ' || v_objet then
       v_milieu := null;
       if starts_with(coalesce(v_lib, ''), v_entete || ' — ') and right(v_lib, char_length(' — ' || v_objet)) = ' — ' || v_objet
@@ -602,15 +655,16 @@ begin
   if v_id is null then
     insert into public.operations_inventaire (dossier_id, exercice, nature, compte_resultat, compte_regularisation,
                                               montant_centimes, tva_centimes, periode_debut, periode_fin, objet, piece_citee_id,
-                                              version, cree_par)
-    values (p_dossier_id, v_exercice, v_nature, v_resultat, v_regul, v_ht, v_tva, v_debut, v_fin, v_objet, v_piece, 1, auth.uid())
+                                              reprise, version, cree_par)
+    values (p_dossier_id, v_exercice, v_nature, v_resultat, v_regul, v_ht, v_tva, v_debut, v_fin, v_objet, v_piece, v_reprise, 1,
+            auth.uid())
     returning id into v_id;
   else
     delete from public.ecritures_brouillon e where e.operation_inventaire_id = v_id;
     update public.operations_inventaire o
        set exercice = v_exercice, nature = v_nature, compte_resultat = v_resultat, compte_regularisation = v_regul,
            montant_centimes = v_ht, tva_centimes = v_tva, periode_debut = v_debut, periode_fin = v_fin, objet = v_objet,
-           piece_citee_id = v_piece, version = o.version + 1, modifie_par = auth.uid(), modifie_le = now()
+           piece_citee_id = v_piece, reprise = v_reprise, version = o.version + 1, modifie_par = auth.uid(), modifie_le = now()
      where o.id = v_id;
   end if;
   insert into public.ecritures_brouillon (dossier_id, operation_inventaire_id, date, compte, libelle, montant, sens, statut)
@@ -631,7 +685,7 @@ $fonction$;
 revoke execute on function public.enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer) from public, anon;
 grant execute on function public.enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer) to authenticated;
 comment on function public.enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer) is
-  'INV2 (ligne 35) : enregistre ou remplace une régularisation d''inventaire d''un dossier en engagement, et ses deux écritures (la constatation au 31 décembre, l''extourne au 1er janvier suivant), recomposées en entiers et comparées à celles que l''application propose. Le cabinet du dossier.';
+  'INV2 (ligne 35) : enregistre ou remplace une régularisation d''inventaire d''un dossier en engagement, et ses deux écritures (la constatation au 31 décembre, l''extourne au 1er janvier suivant), recomposées en entiers et comparées à celles que l''application propose ; une régularisation reprise d''une balance au 1er janvier (INV3-Q2 (A)), son extourne seule. Le cabinet du dossier.';
 
 -- ══ 7. Retirer une régularisation, et son extourne ══
 -- Les refus : l'accès, le mode du dossier, le gel (une ligne validée compris), la version lue. Rend le nombre de lignes retirées.

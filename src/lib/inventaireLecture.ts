@@ -27,11 +27,11 @@ const texte = (v: unknown): v is string => typeof v === 'string'
 function operationLue(l: Record<string, unknown>): OperationDeLaValidation | null {
   if (!texte(l.id) || !entier(l.exercice) || !texte(l.nature) || !NATURES.has(l.nature) || !texte(l.compte_resultat)
     || !texte(l.compte_regularisation) || !entier(l.montant_centimes) || !entier(l.tva_centimes) || !texte(l.objet)
-    || !(l.provision_id === null || texte(l.provision_id))) return null
+    || !(l.provision_id === null || texte(l.provision_id)) || typeof l.reprise !== 'boolean') return null
   return {
     id: l.id, exercice: l.exercice, nature: l.nature as OperationDeLaValidation['nature'], compte_resultat: l.compte_resultat,
     compte_regularisation: l.compte_regularisation, montant_centimes: l.montant_centimes, tva_centimes: l.tva_centimes, objet: l.objet,
-    provision_id: l.provision_id,
+    provision_id: l.provision_id, reprise: l.reprise,
   }
 }
 
@@ -51,7 +51,7 @@ export async function lireLInventaireDeLaValidationSelon(dossierId: string, enBa
   try {
     const [operations, declarations, provisions] = await Promise.all([
       lireTout<Record<string, unknown>>((debut, fin) => supabase.from('operations_inventaire')
-        .select('id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, tva_centimes, objet, provision_id', { count: 'exact' })
+        .select('id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, tva_centimes, objet, provision_id, reprise', { count: 'exact' })
         .eq('dossier_id', dossierId).order('exercice').order('id').range(debut, fin)),
       lireTout<Record<string, unknown>>((debut, fin) => supabase.from('inventaires_declares')
         .select('id, exercice, retire_le', { count: 'exact' })

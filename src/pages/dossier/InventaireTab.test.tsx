@@ -100,7 +100,7 @@ vi.mock('../../lib/supabase', () => {
         compte_resultat: o.compte_resultat as string, compte_regularisation: o.compte_regularisation as string,
         montant_centimes: o.montant_centimes as number, tva_centimes: o.tva_centimes as number, periode_debut: (o.periode_debut as string | null) ?? null,
         periode_fin: (o.periode_fin as string | null) ?? null, objet: o.objet as string, piece_citee_id: (o.piece_citee_id as string | null) ?? null,
-        provision_id: null, version: ((args.p_version_lue as number | null) ?? 0) + 1, cree_par: 'u', cree_le: '2026-11-12T09:00:00Z', modifie_par: null, modifie_le: null,
+        reprise: o.reprise === true, provision_id: null, version: ((args.p_version_lue as number | null) ?? 0) + 1, cree_par: 'u', cree_le: '2026-11-12T09:00:00Z', modifie_par: null, modifie_le: null,
       }
       faux.donnees = { ...d, operations: [...d.operations.filter((x) => x.id !== nouvelle.id), nouvelle] }
     }
@@ -121,7 +121,7 @@ vi.mock('../../lib/supabase', () => {
       const nouvelle: OperationInventaire = {
         id: id(), dossier_id: D, exercice: e.exercice as number, nature: 'provision', compte_resultat: '681510', compte_regularisation: p.compte_provision,
         montant_centimes: e.cible_centimes as number, tva_centimes: 0, periode_debut: null, periode_fin: null, objet: p.objet, piece_citee_id: null,
-        provision_id: p.id, version: 1, cree_par: 'u', cree_le: '2026-11-12T09:00:00Z', modifie_par: null, modifie_le: null,
+        reprise: false, provision_id: p.id, version: 1, cree_par: 'u', cree_le: '2026-11-12T09:00:00Z', modifie_par: null, modifie_le: null,
       }
       faux.donnees = { ...d, operations: [...d.operations.filter((x) => !(x.provision_id === p.id && x.exercice === nouvelle.exercice)), nouvelle] }
     }
@@ -158,7 +158,7 @@ const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '4
 
 const operation = (p: Partial<OperationInventaire> & Pick<OperationInventaire, 'id'>): OperationInventaire => ({
   dossier_id: D, exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486100', montant_centimes: 60_000, tva_centimes: 0,
-  periode_debut: null, periode_fin: null, objet: 'Assurance du local', piece_citee_id: null, provision_id: null, version: 2,
+  periode_debut: null, periode_fin: null, objet: 'Assurance du local', piece_citee_id: null, reprise: false, provision_id: null, version: 2,
   cree_par: 'u', cree_le: '2026-11-10T09:00:00Z', modifie_par: null, modifie_le: null, ...p,
 })
 

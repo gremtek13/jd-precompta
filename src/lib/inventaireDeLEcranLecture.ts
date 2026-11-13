@@ -31,7 +31,7 @@ const NOMS = ['les régularisations', 'les provisions', 'les déclarations', 'le
 
 // Les colonnes que le module lit, chaîne pour chaîne.
 // Des littéraux d'un seul tenant : le client typé lit le type d'une colonne dans la chaîne, qu'une concaténation lui cacherait.
-export const COLONNES_DES_OPERATIONS = 'id, dossier_id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, tva_centimes, periode_debut, periode_fin, objet, piece_citee_id, provision_id, version, cree_par, cree_le, modifie_par, modifie_le'
+export const COLONNES_DES_OPERATIONS = 'id, dossier_id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, tva_centimes, periode_debut, periode_fin, objet, piece_citee_id, reprise, provision_id, version, cree_par, cree_le, modifie_par, modifie_le'
 export const COLONNES_DES_PROVISIONS = 'id, dossier_id, genre, compte_provision, objet, facture_id, piece_citee_id, ouverte_en, reprise_centimes, version, cree_par, cree_le, modifie_par, modifie_le'
 export const COLONNES_DES_DECLARATIONS = 'id, dossier_id, exercice, declare_par, declare_le, retire_par, retire_le'
 export const COLONNES_DES_ECRITURES = 'id, dossier_id, date, compte, sens, montant, operation_inventaire_id'
@@ -46,6 +46,7 @@ function operationCroyable(l: Record<string, unknown>): boolean {
   return texte(l.id) && texte(l.dossier_id) && entier(l.exercice) && texte(l.nature) && NATURES.has(l.nature) && texte(l.compte_resultat)
     && texte(l.compte_regularisation) && entier(l.montant_centimes) && entier(l.tva_centimes) && texte(l.objet) && entier(l.version)
     && texteOuNul(l.periode_debut) && texteOuNul(l.periode_fin) && texteOuNul(l.piece_citee_id) && texteOuNul(l.provision_id)
+    && typeof l.reprise === 'boolean'
 }
 
 function provisionCroyable(l: Record<string, unknown>): boolean {

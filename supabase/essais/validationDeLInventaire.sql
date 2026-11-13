@@ -16,7 +16,12 @@
 --   VI-C. les régularisations de l'exercice à jour, aux deux dates (la TVA d'attente sous sa racine) ;
 --   VI-E. l'extourne entière des régularisations de l'exercice précédent, figées avec lui ;
 --   VI-P. les provisions : l'évaluation à jour, sans extourne ; la ventilation du solde repris au premier exercice ;
---   VI-G. le gel : la déclaration d'un exercice validé ne se retire ni ne s'écrit plus ; l'ordre des refus.
+--   VI-G. le gel : la déclaration d'un exercice validé ne se retire ni ne s'écrit plus ; l'ordre des refus ;
+--   VI-R. les régularisations reprises d'une balance (INV3-Q2 (A)) : à jour, à leur place, confrontées au solde repris (le 4084
+--         excepté), avant que le premier exercice se valide ;
+--   VI-S. l'empreinte qui scelle l'inventaire (INV3-Q1 (A)) : la régularisation, sa pièce et sa provision dans l'empreinte, par
+--         une formule écrite ici ; un exercice sans régularisation au texte d'hier ; le fichier d'une pièce scellée, figé dans
+--         la base et dans le stockage (`fichier_fige`) ; le reste de la pièce libre.
 -- Puis des MUTATIONS de la migration, chacune dans une sous-transaction annulée, qui doivent faire virer un contrôle au rouge.
 -- Se lit : toute ligne « en faute » est une faute de la migration ; toute mutation qui « NE MORD PAS » est un contrôle qui ne
 -- prouve plus rien.
@@ -125,6 +130,24 @@ create function pg_temp.a_nouveaux(p_dossier uuid, p_annee integer) returns json
           select s.id, s.compte from soldes_reportes s where s.dossier_id = p_dossier and s.date = make_date(p_annee, 1, 1)) a
 $$;
 
+-- Le dossier neuf des mutations de la reprise (R) : repris au 01/01/2025 (un 486 de 300 €), sa CCA reprise du montant donné
+-- (300 € par défaut), l'inventaire de 2025 déclaré.
+create function pg_temp.reprise_mutante(p_cabinet uuid, p_membre uuid, p_centimes bigint default 30000) returns void language plpgsql as $$
+declare
+  r uuid := 'a1300000-0000-4000-8000-0000000000ea';
+begin
+  insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva, compte_notes_de_frais) values (r, 'INV3 essai R mutant', p_cabinet, 'engagement', 'redevable', '455000');
+  insert into dossier_assignations (dossier_id, user_id) values (r, p_membre);
+  insert into a_nouveaux (dossier_id, date, compte, sens, montant, source_nom, source_empreinte) values
+    (r, '2025-01-01', '486000', 'debit', 300, 'essai', repeat('e', 64)), (r, '2025-01-01', '101000', 'credit', 300, 'essai', repeat('e', 64));
+  perform pg_temp.fait(p_membre, format('select public.enregistrer_operation_inventaire(%L, %L::jsonb, %L::jsonb, null)::text', r,
+    jsonb_build_object('exercice', 2024, 'nature', 'cca', 'compte_resultat', '616000', 'compte_regularisation', '486000', 'montant_centimes', p_centimes,
+                       'tva_centimes', 0, 'objet', 'Assurance reprise', 'reprise', true),
+    pg_temp.extourne(2024, 'CCA 31/12/2024 — Assurance reprise', jsonb_build_array(jsonb_build_array('486000', 'debit', p_centimes), jsonb_build_array('616000', 'credit', p_centimes)))));
+  perform pg_temp.fait(p_membre, format('select public.declarer_inventaire(%L, 2025)::text', r));
+end
+$$;
+
 -- L'appel de la validation, en texte : la numérotation donnée, ou celle de l'application.
 create function pg_temp.valider(p_dossier uuid, p_annee integer, p_lignes jsonb, p_declaration jsonb) returns text language sql as $$
   select format('select (public.valider_exercice(%L::uuid, %s, %L::jsonb, %L::jsonb, %s) ->> ''lignes'')',
@@ -144,6 +167,39 @@ create function pg_temp.verdict(p_controle text, p_observe text, p_ok boolean) r
   insert into vi_verdict (controle, observe, ok) values (p_controle, p_observe, coalesce(p_ok, false))
 $$;
 
+-- La seule extourne d'une régularisation reprise (`composerRegularisationReprise`) : `lignes` est la constatation que la
+-- balance porte, [compte, sens, centimes].
+create function pg_temp.extourne(p_exercice integer, p_libelle text, p_lignes jsonb) returns jsonb language sql as $$
+  select jsonb_build_array(
+    jsonb_build_object('date', (p_exercice + 1) || '-01-01', 'journal', 'OD', 'libelle', 'Extourne — ' || p_libelle,
+      'lignes', (select jsonb_agg(jsonb_build_object('compte', l ->> 0, 'sens', case l ->> 1 when 'debit' then 'credit' else 'debit' end,
+                                                     'centimes', (l ->> 2)::bigint) order by r)
+                   from jsonb_array_elements(p_lignes) with ordinality x(l, r))))
+$$;
+
+-- L'empreinte en forme 2 d'un exercice validé, par une FORMULE ÉCRITE ICI (celle de l'essai d'INAL2, étendue à l'inventaire) :
+-- l'étiquette ; l'en-tête ; la forme 1 ; les pièces NOMMÉES par l'appelant ; la 2035 ; puis, quand il en nomme, le texte des
+-- régularisations qu'il donne, un bloc de plus. En PL/pgSQL : la table des exercices se lit à l'appel.
+create function pg_temp.empreinte_attendue(p_dossier uuid, p_annee integer, p_pieces uuid[], p_regularisations text) returns text
+language plpgsql as $$
+begin
+  return (select encode(sha256(convert_to(
+      'jd-precompta/exercice-valide/forme-2' || chr(29)
+      || x.dossier_id || chr(31) || x.annee || chr(31) || x.annee || '-01-01' || chr(31) || x.annee || '-12-31' || chr(31)
+      || to_char(x.valide_le at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || chr(31) || x.valide_par || chr(31)
+      || x.mode_comptable || chr(31) || x.nb_lignes || chr(31) || x.nb_ecritures || chr(31)
+      || trim_scale(x.total_debit) || chr(31) || trim_scale(x.total_credit)
+      || chr(29) || empreinte_exercice(x.dossier_id, x.annee, x.empreinte_precedente)
+      || chr(29) || coalesce((select string_agg(p.id || chr(31) || p.storage_path || chr(31) || coalesce(p.storage_hash, '') || chr(31)
+                                               || coalesce(p.lisible_path, ''), chr(30) order by p.id)
+                                from pieces p where p.id = any (p_pieces)), '')
+      || chr(29) || coalesce(x.declaration::text, '')
+      || case when p_regularisations is null then '' else chr(29) || p_regularisations end,
+      'UTF8')), 'hex')
+    from exercices_valides x where x.dossier_id = p_dossier and x.annee = p_annee);
+end
+$$;
+
 do $essai$
 declare
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -155,6 +211,17 @@ declare
   db uuid := 'a1300000-0000-4000-8000-0000000000e3';   -- engagement, NON assigné au membre
   dr uuid := 'a1300000-0000-4000-8000-0000000000e4';   -- engagement, repris au 1er janvier 2025 (un 151 et un 491)
   dp uuid := 'a1300000-0000-4000-8000-0000000000e5';   -- engagement, une provision évaluée en 2024
+  dq uuid := 'a1300000-0000-4000-8000-0000000000e6';   -- engagement, repris au 1er janvier 2025 (486, 408, 44586, et un 4084)
+  ds uuid := 'a1300000-0000-4000-8000-0000000000e7';   -- engagement, une CCA de 2024 qui cite une pièce, scellée en 2024
+  ps uuid := 'a1300000-0000-4000-8000-0000000000d1';   -- la pièce que la CCA de S cite
+  ps2 uuid := 'a1300000-0000-4000-8000-0000000000d2';  -- la pièce qu'une provision de S cite
+  ps3 uuid := 'a1300000-0000-4000-8000-0000000000d3';  -- la pièce qu'une régularisation de 2025 de S cite (exercice ouvert)
+  m_repris text := 'L''exercice 2025 ouvre le solde repris du compte %s sans que ses régularisations reprises l''extournent exactement : leurs extournes au 1er janvier doivent solder le compte repris — les saisir avant la validation.';
+  id_rcca uuid;
+  id_rfnp uuid;
+  id_scca uuid;
+  id_s25 uuid;
+  attendue text;
   -- Les mots du module (src/lib/inventaireDeLaValidation.ts), au caractère près.
   m_tresorerie text := 'L’inventaire ne s’écrit qu’en comptabilité d’engagement : un dossier en trésorerie (BNC, 2035) n’en reçoit aucun.';
   m_exercice text := 'L’exercice de l’inventaire est illisible : une année entre 2000 et 2100.';
@@ -196,14 +263,24 @@ begin
   insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva, compte_notes_de_frais) values
     (de, 'INV3 essai E', cabinet, 'engagement', 'redevable', '455000'), (dt, 'INV3 essai T', cabinet, 'tresorerie', 'franchise', '455000'),
     (db, 'INV3 essai B', cabinet, 'engagement', 'redevable', '455000'), (dr, 'INV3 essai R', cabinet, 'engagement', 'redevable', '455000'),
-    (dp, 'INV3 essai P', cabinet, 'engagement', 'redevable', '455000');
-  insert into dossier_assignations (dossier_id, user_id) values (de, membre), (dt, membre), (dr, membre), (dp, membre);
+    (dp, 'INV3 essai P', cabinet, 'engagement', 'redevable', '455000'), (dq, 'INV3 essai Q', cabinet, 'engagement', 'redevable', '455000'),
+    (ds, 'INV3 essai S', cabinet, 'engagement', 'redevable', '455000');
+  insert into dossier_assignations (dossier_id, user_id) values (de, membre), (dt, membre), (dr, membre), (dp, membre), (dq, membre), (ds, membre);
+  insert into pieces (id, dossier_id, storage_path, storage_hash, nom_fichier) values
+    (ps, ds, ds || '/assurance.pdf', repeat('1', 64), 'assurance.pdf'), (ps2, ds, ds || '/litige.pdf', repeat('2', 64), 'litige.pdf'),
+    (ps3, ds, ds || '/janvier.pdf', repeat('3', 64), 'janvier.pdf');
   insert into memberships (user_id, dossier_id, role)
     select client, de, m.role from memberships m where m.user_id = client limit 1;
   insert into a_nouveaux (dossier_id, date, compte, sens, montant, source_nom, source_empreinte) values
     (dr, '2025-01-01', '512000', 'debit', 1500, 'essai', repeat('b', 64)),
     (dr, '2025-01-01', '151100', 'credit', 1000, 'essai', repeat('b', 64)),
-    (dr, '2025-01-01', '491000', 'credit', 500, 'essai', repeat('b', 64));
+    (dr, '2025-01-01', '491000', 'credit', 500, 'essai', repeat('b', 64)),
+    (dq, '2025-01-01', '512000', 'debit', 1000, 'essai', repeat('d', 64)),
+    (dq, '2025-01-01', '486000', 'debit', 300, 'essai', repeat('d', 64)),
+    (dq, '2025-01-01', '445860', 'debit', 20, 'essai', repeat('d', 64)),
+    (dq, '2025-01-01', '408100', 'credit', 120, 'essai', repeat('d', 64)),
+    (dq, '2025-01-01', '408400', 'credit', 50, 'essai', repeat('d', 64)),
+    (dq, '2025-01-01', '101000', 'credit', 1150, 'essai', repeat('d', 64));
   issue := pg_temp.fait(membre, pg_temp.regularisation(de, op_cca, pg_temp.ecritures(2024, lib_cca, '[["486000","debit",120000],["616000","credit",120000]]')));
   id_cca := case when issue like 'OK %' then substr(issue, 4)::uuid end;
   issue := pg_temp.fait(membre, pg_temp.regularisation(de, op_fnp, pg_temp.ecritures(2024, lib_fnp, '[["622600","debit",50000],["445860","debit",10000],["408100","credit",60000]]')));
@@ -511,6 +588,183 @@ begin
     perform pg_temp.verdict('VI-P6. une provision ne s''extourne pas : une ligne au 1er janvier rend l''évaluation fausse aux deux juges', issue, issue = 'false false');
   end if;
 
+  -- ══ VI-R. Les régularisations reprises d'une balance (INV3-Q2 (A)), à la validation du premier exercice ══
+  issue := pg_temp.fait(membre, format('select public.declarer_inventaire(%L, 2025)::text', dq));
+  issue := pg_temp.tente(chef, pg_temp.valider(dq, 2025, null, null));
+  perform pg_temp.verdict('VI-R1. une balance qui porte un 486, un 408 et un 44586 sans régularisation reprise : le premier compte, par son numéro',
+    issue, issue = '23514 ' || format(m_repris, '408100'));
+  issue := pg_temp.fait(membre, format('select public.enregistrer_operation_inventaire(%L, %L::jsonb, %L::jsonb, null)::text', dq,
+    '{"exercice": 2024, "nature": "cca", "compte_resultat": "616000", "compte_regularisation": "486000", "montant_centimes": 30000, "tva_centimes": 0, "objet": "Assurance 2025 reprise", "reprise": true}',
+    pg_temp.extourne(2024, 'CCA 31/12/2024 — Assurance 2025 reprise', '[["486000","debit",30000],["616000","credit",30000]]')));
+  id_rcca := case when issue like 'OK %' then substr(issue, 4)::uuid end;
+  issue := pg_temp.tente(chef, pg_temp.valider(dq, 2025, null, null));
+  perform pg_temp.verdict('VI-R2. la CCA reprise, pas la facture non parvenue : toujours le 408', coalesce(id_rcca::text, '?') || ' | ' || issue,
+    id_rcca is not null and issue = '23514 ' || format(m_repris, '408100'));
+  issue := pg_temp.fait(membre, format('select public.enregistrer_operation_inventaire(%L, %L::jsonb, %L::jsonb, null)::text', dq,
+    '{"exercice": 2024, "nature": "fnp", "compte_resultat": "622600", "compte_regularisation": "408100", "montant_centimes": 10000, "tva_centimes": 2000, "objet": "Honoraires repris", "reprise": true}',
+    pg_temp.extourne(2024, 'FNP 31/12/2024 — Honoraires repris', '[["622600","debit",10000],["445860","debit",2000],["408100","credit",12000]]')));
+  id_rfnp := case when issue like 'OK %' then substr(issue, 4)::uuid end;
+  -- Une reprise d'un autre montant que le solde repris (250 € au lieu de 300 €), remplacée contre sa version.
+  begin
+    perform pg_temp.fait(membre, format('select public.enregistrer_operation_inventaire(%L, %L::jsonb, %L::jsonb, 1)::text', dq,
+      jsonb_build_object('id', id_rcca, 'exercice', 2024, 'nature', 'cca', 'compte_resultat', '616000', 'compte_regularisation', '486000',
+                         'montant_centimes', 25000, 'tva_centimes', 0, 'objet', 'Assurance 2025 reprise', 'reprise', true),
+      pg_temp.extourne(2024, 'CCA 31/12/2024 — Assurance 2025 reprise', '[["486000","debit",25000],["616000","credit",25000]]')));
+    issue := pg_temp.tente(chef, pg_temp.valider(dq, 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  perform pg_temp.verdict('VI-R3. une reprise qui n''extourne pas exactement le solde repris (250 € sur 300 €)', issue, issue = '23514 ' || format(m_repris, '486000'));
+  -- Son extourne falsifiée hors de la fonction (la charge sur un autre compte, l'écriture équilibrée, le 486 soldé).
+  begin
+    alter table public.ecritures_brouillon disable trigger user;
+    update ecritures_brouillon set compte = '618000' where operation_inventaire_id = id_rcca and compte = '616000';
+    alter table public.ecritures_brouillon enable trigger user;
+    issue := pg_temp.tente(chef, pg_temp.valider(dq, 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  perform pg_temp.verdict('VI-R4. une reprise dont l''extourne n''est plus celle qu''elle commande', issue,
+    issue = '23514 L''exercice 2025 porte une régularisation reprise de la balance dont l''extourne n''est plus celle qu''elle commande : Assurance 2025 reprise — l''enregistrer de nouveau avant la validation.');
+  -- La balance retirée : les reprises n'ont plus de solde à extourner.
+  begin
+    delete from a_nouveaux where dossier_id = dq;
+    issue := pg_temp.tente(chef, pg_temp.valider(dq, 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  perform pg_temp.verdict('VI-R5. des reprises que la balance n''ouvre plus au 1er janvier (la balance retirée)', issue,
+    issue like '23514 L''exercice 2025 porte une régularisation reprise que la balance reprise n''ouvre plus au 1er janvier : % — la retirer, ou reprendre la balance au 1er janvier de l''exercice, avant la validation.');
+  -- L'ordre : une reprise falsifiée ET la balance retirée — la reprise à recomposer se dit d'abord.
+  begin
+    alter table public.ecritures_brouillon disable trigger user;
+    update ecritures_brouillon set compte = '618000' where operation_inventaire_id = id_rcca and compte = '616000';
+    alter table public.ecritures_brouillon enable trigger user;
+    delete from a_nouveaux where dossier_id = dq;
+    issue := pg_temp.tente(chef, pg_temp.valider(dq, 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  perform pg_temp.verdict('VI-R6. l''ordre : la reprise à recomposer, puis sa place', issue,
+    issue like '23514 L''exercice 2025 porte une régularisation reprise de la balance dont l''extourne n''est plus celle qu''elle commande%');
+  issue := pg_temp.fait(chef, pg_temp.valider(dq, 2025, null, null));
+  select string_agg(distinct e.journal_code || ' ' || e.piece_ref || ' ' || to_char(e.piece_date, 'YYYY-MM-DD'), ', ') into texte
+    from ecritures_brouillon e where e.dossier_id = dq and e.statut = 'validee';
+  perform pg_temp.verdict('VI-R7. les deux reprises extournent exactement 486, 408 et 44586, le 4084 laissé : 2025 se valide, ses extournes sous « Inventaire 2024 » (le contrôle positif)',
+    coalesce(id_rfnp::text, '?') || ' | ' || issue || ' | ' || coalesce(texte, ''),
+    id_rfnp is not null and issue = 'OK 5' and texte = 'OD Inventaire 2024 2024-12-31');
+  select coalesce(public.regularisations_scellees(dq, 2025), 'nul') || ' | ' || public.verifier_exercice_valide(dq, 2025)::text into texte;
+  perform pg_temp.verdict('VI-R8. l''exercice qui porte leur extourne scelle les deux reprises, et se vérifie', texte,
+    texte like '%' || id_rcca || '%' and texte like '%' || id_rfnp || '%' and texte like '%, true, %' and texte like '% | true');
+
+  -- ══ VI-S. L'empreinte qui scelle l'inventaire (INV3-Q1 (A)) ══
+  issue := pg_temp.fait(membre, format('select public.enregistrer_operation_inventaire(%L, %L::jsonb, %L::jsonb, null)::text', ds,
+    jsonb_build_object('exercice', 2024, 'nature', 'cca', 'compte_resultat', '616000', 'compte_regularisation', '486000', 'montant_centimes', 120000,
+                       'tva_centimes', 0, 'objet', 'Assurance 2025', 'piece_citee_id', ps),
+    pg_temp.ecritures(2024, lib_cca, '[["486000","debit",120000],["616000","credit",120000]]')));
+  id_scca := case when issue like 'OK %' then substr(issue, 4)::uuid end;
+  issue := pg_temp.fait(membre, format('select public.enregistrer_operation_inventaire(%L, %L::jsonb, %L::jsonb, null)::text', ds,
+    jsonb_build_object('exercice', 2025, 'nature', 'pca', 'compte_resultat', '706000', 'compte_regularisation', '487000', 'montant_centimes', 30000,
+                       'tva_centimes', 0, 'objet', 'Abonnement 2026 facturé', 'piece_citee_id', ps3),
+    pg_temp.ecritures(2025, 'PCA 31/12/2025 — Abonnement 2026 facturé', '[["706000","debit",30000],["487000","credit",30000]]')));
+  id_s25 := case when issue like 'OK %' then substr(issue, 4)::uuid end;
+  -- Avant la validation : la pièce citée garde son fichier libre (aucun exercice validé ne la scelle), le stockage le retire.
+  issue := pg_temp.direct(format('update pieces set storage_hash = repeat(''9'', 64) where id = %L', ps));
+  perform pg_temp.verdict('VI-S0. avant la validation, le fichier d''une pièce citée change encore (le contrôle positif)', coalesce(id_scca::text, '?') || ' | ' || issue,
+    id_scca is not null and id_s25 is not null and issue = 'ACCEPTÉ');
+  issue := pg_temp.tente(chef, format('select public.fichier_fige(%L)::text', ds || '/assurance.pdf'));
+  perform pg_temp.verdict('VI-S0b. … et le stockage ne la retient pas', issue, issue = 'OK false');
+  if provisions then
+    issue := pg_temp.fait(membre, format('select public.enregistrer_provision(%L, %L::jsonb, null)::text', ds,
+      jsonb_build_object('genre', 'risque', 'compte_provision', '151100', 'objet', 'Litige avec un client', 'ouverte_en', 2024, 'piece_citee_id', ps2)));
+    prov := case when issue like 'OK %' then substr(issue, 4)::uuid end;
+    issue := pg_temp.fait(membre, format('select public.enregistrer_evaluation_provision(%L, %L::jsonb, %L::jsonb, null)::text', ds,
+      jsonb_build_object('provision_id', prov, 'exercice', 2024, 'cible_centimes', 50000),
+      jsonb_build_array(jsonb_build_object('date', '2024-12-31', 'journal', 'OD', 'libelle', 'Dotation 31/12/2024 — Provision pour risques — Litige avec un client',
+        'lignes', jsonb_build_array(jsonb_build_object('compte', '681500', 'sens', 'debit', 'centimes', 50000),
+                                    jsonb_build_object('compte', '151100', 'sens', 'credit', 'centimes', 50000))))));
+    id_eval := case when issue like 'OK %' then substr(issue, 4)::uuid end;
+  end if;
+  issue := pg_temp.fait(membre, format('select public.declarer_inventaire(%L, 2024)::text', ds));
+  issue := pg_temp.fait(chef, pg_temp.valider(ds, 2024, null, null));
+  -- La formule écrite ici : la CCA, et l'évaluation suivie de sa provision quand INV4 est en base, chacune un tableau jsonb
+  -- aux champs NOMMÉS, dans l'ordre de leurs identifiants ; leurs pièces nommées.
+  select string_agg(r.texte, chr(30) order by r.id) into texte from (
+    select id_scca as id, jsonb_build_array(id_scca, 2024, 'cca', false, '616000', '486000', 120000, 0, null, null, 'Assurance 2025', ps)::text as texte
+    union all
+    select id_eval, (jsonb_build_array(id_eval, 2024, 'provision', false, '681500', '151100', 50000, 0, null, null, 'Litige avec un client', null)
+                     || jsonb_build_array(prov, 'risque', '151100', 'Litige avec un client', null, ps2, 2024, null))::text
+     where provisions) r;
+  attendue := pg_temp.empreinte_attendue(ds, 2024, case when provisions then array[ps, ps2] else array[ps] end, texte);
+  select issue || ' | ' || verifier_exercice_valide(ds, 2024)::text || ' | ' || (x.empreinte = attendue)::text into texte
+    from exercices_valides x where x.dossier_id = ds and x.annee = 2024;
+  perform pg_temp.verdict('VI-S1. 2024 se valide ; son empreinte scelle la CCA, sa pièce, l''évaluation et sa provision, comme la formule écrite ici les compte, et se vérifie',
+    coalesce(texte, '?'), texte like 'OK % | true | true');
+  issue := pg_temp.fait(chef, pg_temp.valider(dt, 2025, '[]', '{}'));
+  attendue := pg_temp.empreinte_attendue(dt, 2025, array[]::uuid[], null);
+  select issue || ' | ' || verifier_exercice_valide(dt, 2025)::text || ' | ' || (x.empreinte = attendue)::text || ' | '
+         || coalesce(public.regularisations_scellees(dt, 2025), 'nul') into texte
+    from exercices_valides x where x.dossier_id = dt and x.annee = 2025;
+  perform pg_temp.verdict('VI-S2. un exercice sans régularisation (un BNC) garde le texte d''hier : la formule d''INAL2, sans bloc de plus',
+    coalesce(texte, '?'), texte = 'OK 0 | true | true | nul');
+  -- Les falsifications, chacune annulée : la régularisation, la pièce, la provision réécrites hors de leurs fonctions.
+  begin
+    alter table public.operations_inventaire disable trigger user;
+    update operations_inventaire set objet = 'Assurance 2025 réécrite' where id = id_scca;
+    texte := verifier_exercice_valide(ds, 2024)::text;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then texte := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  perform pg_temp.verdict('VI-S3. la régularisation réécrite hors de sa fonction : l''exercice ne se vérifie plus', texte, texte = 'false');
+  begin
+    alter table public.pieces disable trigger user;
+    update pieces set storage_hash = repeat('8', 64) where id = ps;
+    texte := verifier_exercice_valide(ds, 2024)::text;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then texte := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  perform pg_temp.verdict('VI-S4. l''empreinte de dépôt de sa pièce réécrite : non plus', texte, texte = 'false');
+  if provisions then
+    begin
+      alter table public.provisions disable trigger user;
+      update provisions set objet = 'Litige réécrit' where id = prov;
+      texte := verifier_exercice_valide(ds, 2024)::text;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then texte := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    perform pg_temp.verdict('VI-S5. la provision évaluée réécrite : non plus', texte, texte = 'false');
+  else
+    perform pg_temp.verdict('VI-S5. EN ATTENTE de la migration provisions (INV4)', 'la table des provisions est absente', true);
+  end if;
+  -- La garde du fichier : figé pour les pièces que 2024 scelle, libre pour celle d'une régularisation de 2025 (ouvert).
+  issue := pg_temp.direct(format('update pieces set storage_hash = repeat(''7'', 64) where id = %L', ps));
+  perform pg_temp.verdict('VI-S6. le fichier d''une pièce que l''inventaire de 2024 scelle ne change plus', issue,
+    issue = '23514 Cette pièce fonde une régularisation d''inventaire de l''exercice 2024 : son fichier ne change plus.');
+  issue := pg_temp.direct(format('update pieces set lisible_path = %L where id = %L', ds || '/assurance-lisible.pdf', ps));
+  perform pg_temp.verdict('VI-S7. ni sa version lisible', issue, issue like '23514 Cette pièce fonde une régularisation d''inventaire de l''exercice 2024%');
+  issue := pg_temp.direct(format('delete from pieces where id = %L', ps));
+  perform pg_temp.verdict('VI-S8. elle ne se supprime plus', issue,
+    issue = '23514 Cette pièce fonde une régularisation d''inventaire de l''exercice 2024 : elle ne se supprime plus.');
+  issue := pg_temp.direct(format('update pieces set montant_ttc = 1440, statut = ''validee'' where id = %L', ps));
+  perform pg_temp.verdict('VI-S9. le reste de la pièce se traite comme toute pièce (le contrôle positif)', issue, issue = 'ACCEPTÉ');
+  issue := pg_temp.direct(format('update pieces set storage_hash = repeat(''6'', 64) where id = %L', ps3));
+  perform pg_temp.verdict('VI-S10. la pièce d''une régularisation de 2025, exercice ouvert, garde son fichier libre (le contrôle positif)', issue, issue = 'ACCEPTÉ');
+  if provisions then
+    issue := pg_temp.direct(format('update pieces set storage_hash = repeat(''5'', 64) where id = %L', ps2));
+    perform pg_temp.verdict('VI-S11. la pièce que la provision évaluée en 2024 cite : figée aussi', issue,
+      issue = '23514 Cette pièce fonde une régularisation d''inventaire de l''exercice 2024 : son fichier ne change plus.');
+  end if;
+  select pg_temp.tente(chef, format('select public.fichier_fige(%L)::text', ds || '/assurance.pdf')) || ' | '
+         || pg_temp.tente(chef, format('select public.fichier_fige(%L)::text', ds || '/janvier.pdf')) || ' | '
+         || pg_temp.tente(client, format('select coalesce(public.fichier_fige(%L)::text, ''nul'')', ds || '/assurance.pdf')) into texte;
+  perform pg_temp.verdict('VI-S12. le stockage retient le fichier scellé (fichier_fige), pas celui de 2025 ; nul à qui n''administre pas le dossier', texte,
+    texte = 'OK true | OK false | OK nul');
+  issue := pg_temp.fait(membre, format('select public.declarer_inventaire(%L, 2025)::text', ds));
+  issue := pg_temp.fait(chef, pg_temp.valider(ds, 2025, null, null));
+  select issue || ' | ' || coalesce(public.regularisations_scellees(ds, 2025), 'nul') || ' | ' || verifier_exercice_valide(ds, 2025)::text into texte;
+  perform pg_temp.verdict('VI-S13. 2025 scelle sa régularisation, pas celle de 2024 qu''elle extourne (scellée une fois, par 2024)', texte,
+    texte like 'OK % | %' || id_s25 || '% | true' and texte not like '%' || id_scca || '%');
+
   -- ══ Les mutations de la migration : chacune doit faire virer un contrôle au rouge ══
   -- Les mutations qui valident rejouent leur jeu dans un dossier neuf (M), le temps de leur sous-transaction : E a déjà
   -- validé 2024 et 2025.
@@ -670,6 +924,129 @@ begin
   exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
   end;
   insert into vi_mutation (mutation, observe, mord) values ('M-VI12 — la lecture des déclarations ouverte au client du dossier', issue, issue like 'OK %' and issue <> 'OK 0');
+  -- M-VI13 à M-VI18 : les régularisations reprises (INV3-Q2 (A)), chacune rejouée sur un dossier neuf repris au 01/01/2025.
+  -- M-VI13 : une reprise plus jugée à jour ; son extourne falsifiée (la charge déplacée) se valide.
+  begin
+    execute replace(pg_get_functiondef('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure),
+      'o.reprise and not public.inventaire_a_jour(o.id)', 'false');
+    perform pg_temp.reprise_mutante(cabinet, membre);
+    alter table public.ecritures_brouillon disable trigger user;
+    update ecritures_brouillon set compte = '618000' where dossier_id = 'a1300000-0000-4000-8000-0000000000ea' and compte = '616000';
+    alter table public.ecritures_brouillon enable trigger user;
+    issue := pg_temp.tente(chef, pg_temp.valider('a1300000-0000-4000-8000-0000000000ea', 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI13 — une reprise plus jugée à jour : son extourne falsifiée', issue, issue like 'OK %');
+  -- M-VI14 : la place d'une reprise plus jugée ; la balance retirée, l'exercice se valide.
+  begin
+    execute replace(pg_get_functiondef('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure),
+      'and o.reprise and v_ouverture is distinct from v_debut', 'and false');
+    perform pg_temp.reprise_mutante(cabinet, membre);
+    delete from a_nouveaux where dossier_id = 'a1300000-0000-4000-8000-0000000000ea';
+    issue := pg_temp.tente(chef, pg_temp.valider('a1300000-0000-4000-8000-0000000000ea', 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI14 — la place d''une reprise plus jugée : la balance retirée', issue, issue like 'OK %');
+  -- M-VI15 : la confrontation au solde repris ôtée ; une reprise de 250 € sur un 486 repris de 300 € se valide.
+  begin
+    execute replace(pg_get_functiondef('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure),
+      'if v_mode = ''engagement'' and v_ouverture = v_debut then', 'if false then');
+    perform pg_temp.reprise_mutante(cabinet, membre, 25000);
+    issue := pg_temp.tente(chef, pg_temp.valider('a1300000-0000-4000-8000-0000000000ea', 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI15 — la confrontation au solde repris ôtée : 250 € extournés sur 300 €', issue, issue like 'OK %');
+  -- M-VI16 : le 4084 confronté ; la balance qui en porte un ne se valide plus (VI-R7 vire au rouge).
+  begin
+    execute replace(pg_get_functiondef('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure),
+      'and not starts_with(s.compte, ''4084'')', '');
+    perform pg_temp.reprise_mutante(cabinet, membre);
+    insert into a_nouveaux (dossier_id, date, compte, sens, montant, source_nom, source_empreinte) values
+      ('a1300000-0000-4000-8000-0000000000ea', '2025-01-01', '408400', 'credit', 50, 'essai', repeat('e', 64)),
+      ('a1300000-0000-4000-8000-0000000000ea', '2025-01-01', '512000', 'debit', 50, 'essai', repeat('e', 64));
+    issue := pg_temp.tente(chef, pg_temp.valider('a1300000-0000-4000-8000-0000000000ea', 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI16 — le 4084 confronté : une balance qui en porte un', issue, issue like '23514 %408400%');
+  -- M-VI17 : l'extourne entière exigée d'une reprise, qui n'a pas de constatation validée.
+  begin
+    execute replace(pg_get_functiondef('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure),
+      'and not o.reprise and not public.inventaire_extourne_entiere(o.id)', 'and not public.inventaire_extourne_entiere(o.id)');
+    perform pg_temp.reprise_mutante(cabinet, membre);
+    issue := pg_temp.tente(chef, pg_temp.valider('a1300000-0000-4000-8000-0000000000ea', 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI17 — l''extourne entière exigée d''une reprise', issue, issue like '23514 L''exercice 2025 ne porte pas l''extourne entière%');
+  -- M-VI18 : le juge attend la constatation d'une reprise, que la balance porte.
+  begin
+    execute replace(pg_get_functiondef('public.inventaire_a_jour(uuid)'::regprocedure),
+      'where (a.v ->> 2)::bigint > 0 and not o.reprise', 'where (a.v ->> 2)::bigint > 0');
+    perform pg_temp.reprise_mutante(cabinet, membre);
+    issue := pg_temp.tente(chef, pg_temp.valider('a1300000-0000-4000-8000-0000000000ea', 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI18 — le juge attend la constatation d''une reprise', issue, issue like '23514 L''exercice 2025 porte une régularisation reprise de la balance dont l''extourne%');
+  -- M-VI19 à M-VI24 : l'empreinte qui scelle l'inventaire (INV3-Q1 (A)).
+  -- M-VI19 : l'empreinte sans le bloc des régularisations ; 2024 de S ne se vérifie plus.
+  begin
+    execute replace(pg_get_functiondef('public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure),
+      '|| coalesce(chr(29) || public.regularisations_scellees(p_dossier_id, p_annee), '''')', '');
+    issue := verifier_exercice_valide(ds, 2024)::text;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI19 — l''empreinte sans les régularisations : 2024 de S', issue, issue = 'false');
+  -- M-VI20 : le bloc des régularisations toujours présent ; un exercice sans régularisation change de texte (VI-S2).
+  begin
+    execute replace(pg_get_functiondef('public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure),
+      '|| coalesce(chr(29) || public.regularisations_scellees(p_dossier_id, p_annee), '''')',
+      '|| chr(29) || coalesce(public.regularisations_scellees(p_dossier_id, p_annee), '''')');
+    issue := verifier_exercice_valide(dt, 2025)::text;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI20 — le bloc toujours présent : un BNC validé ne se vérifie plus', issue, issue = 'false');
+  -- M-VI21 : les pièces de l'inventaire hors de l'empreinte.
+  begin
+    execute replace(pg_get_functiondef('public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure),
+      'select s.piece_id from public.pieces_scellees_par_l_inventaire(p_dossier_id, p_annee) as s(piece_id)', 'select null::uuid where false');
+    issue := verifier_exercice_valide(ds, 2024)::text;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI21 — les pièces de l''inventaire hors de l''empreinte', issue, issue = 'false');
+  -- M-VI22 : la garde du fichier ouverte ; l'empreinte de dépôt d'une pièce scellée change.
+  begin
+    execute 'create or replace function public.garder_fichier_scelle_par_l_inventaire() returns trigger language plpgsql as $g$ begin return public.retour_declencheur(tg_op, old, new); end $g$';
+    issue := pg_temp.direct(format('update pieces set storage_hash = repeat(''7'', 64) where id = %L', ps));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI22 — la garde du fichier d''une pièce scellée ouverte', issue, issue = 'ACCEPTÉ');
+  -- M-VI23 : fichier_fige sans l'inventaire ; le stockage ne retient plus le fichier scellé.
+  begin
+    execute replace(pg_get_functiondef('public.fichier_fige(text)'::regprocedure),
+      'or public.exercice_scellant_la_piece_citee(p.id) is not null', '');
+    issue := pg_temp.tente(chef, format('select public.fichier_fige(%L)::text', ds || '/assurance.pdf'));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI23 — fichier_fige sans l''inventaire', issue, issue = 'OK false');
+  -- M-VI24 : le scellement sans la frontière de la validation ; la pièce d'une régularisation d'un exercice ouvert se fige.
+  begin
+    execute replace(pg_get_functiondef('public.exercice_scellant_la_piece_citee(uuid)'::regprocedure),
+      '(case when o.reprise then o.exercice + 1 else o.exercice end) <= extract(year from public.frontiere_validation(o.dossier_id))', 'true');
+    issue := pg_temp.direct(format('update pieces set storage_hash = repeat(''4'', 64) where id = %L', ps3));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI24 — le scellement sans la frontière : la pièce d''un exercice ouvert se fige', issue, issue like '23514 %');
 end
 $essai$;
 

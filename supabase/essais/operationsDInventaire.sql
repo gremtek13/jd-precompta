@@ -11,7 +11,10 @@
 --         trop, un centime de moins, un libellé recopié, une extourne absente refusés ; le remplacement contre la version lue ;
 --   IV-D. le retrait, et le gel : un exercice validé ou figé par la validation suivante ne reçoit, ne change ni ne perd rien ;
 --   IV-E. les gardes : aucune écriture directe, ni de la régularisation ni de ses lignes, sauf la réinsertion du
---         super-administrateur ; une ligne d'inventaire ne cite aucune autre source.
+--         super-administrateur ; une ligne d'inventaire ne cite aucune autre source ;
+--   IV-R. la régularisation reprise d'une balance (INV3-Q2 (A)) : de l'exercice que la balance reprise au 1er janvier clôt,
+--         sa seule extourne écrite ; ses refus (la reprise illisible, l'exercice, la nature, le compte de la balance, les
+--         écritures), dans l'ordre du module ; la garde de ses lignes, au 1er janvier seul.
 -- Puis des MUTATIONS de la migration, chacune dans une sous-transaction annulée, qui doivent faire virer un contrôle au rouge.
 -- Se lit : toute ligne « en faute » est une faute de la migration ; toute mutation qui « NE MORD PAS » est un contrôle qui ne
 -- prouve plus rien.
@@ -77,6 +80,16 @@ create function pg_temp.ecritures(p_exercice integer, p_libelle text, p_lignes j
                    from jsonb_array_elements(p_lignes) with ordinality x(l, r))))
 $$;
 
+-- La seule extourne d'une régularisation reprise (`composerRegularisationReprise`) : `lignes` est la constatation que la
+-- balance porte, [compte, sens, centimes] ; l'extourne la contre-passe au 1er janvier suivant.
+create function pg_temp.extourne(p_exercice integer, p_libelle text, p_lignes jsonb) returns jsonb language sql as $$
+  select jsonb_build_array(
+    jsonb_build_object('date', (p_exercice + 1) || '-01-01', 'journal', 'OD', 'libelle', 'Extourne — ' || p_libelle,
+      'lignes', (select jsonb_agg(jsonb_build_object('compte', l ->> 0, 'sens', case l ->> 1 when 'debit' then 'credit' else 'debit' end,
+                                                     'centimes', (l ->> 2)::bigint) order by r)
+                   from jsonb_array_elements(p_lignes) with ordinality x(l, r))))
+$$;
+
 -- L'appel de la fonction, en texte, pour `tente` et `fait`.
 create function pg_temp.appel(p_dossier uuid, p_operation jsonb, p_ecritures jsonb, p_version integer) returns text language sql as $$
   select format('select public.enregistrer_operation_inventaire(%L::uuid, %L::jsonb, %L::jsonb, %s)::text',
@@ -99,6 +112,9 @@ declare
   db uuid := 'a1100000-0000-4000-8000-0000000000a4';   -- engagement, NON assigné au membre
   dov uuid := 'a1100000-0000-4000-8000-0000000000a5';  -- engagement, ouvert le 1er janvier 2025 (ses à-nouveaux)
   dv uuid := 'a1100000-0000-4000-8000-0000000000a6';   -- engagement, 2024 validé ensuite
+  dre uuid := 'a1100000-0000-4000-8000-0000000000a7';  -- engagement, redevable, repris au 1er janvier 2025
+  dsb uuid := 'a1100000-0000-4000-8000-0000000000a8';  -- engagement, sans balance reprise
+  dmi uuid := 'a1100000-0000-4000-8000-0000000000a9';  -- engagement, une balance au 1er mars 2025
   pa uuid := 'a1100000-0000-4000-8000-0000000000b1';
   pb uuid := 'a1100000-0000-4000-8000-0000000000b2';
   -- Les mots du module (src/lib/inventaire.ts, MOTS_DES_REFUS), au caractère près.
@@ -126,6 +142,16 @@ declare
   m_nouvelle text := 'Une régularisation nouvelle ne porte pas de version lue.';
   m_ecritures text := 'Les écritures proposées ne sont pas celles de la régularisation : les recomposer.';
   m_garde text := 'Une écriture d’inventaire ne change que par sa régularisation.';
+  -- La régularisation reprise (INV3-Q2 (A)).
+  m_reprise text := 'Une régularisation est reprise d’une balance, ou ne l’est pas : vrai ou faux.';
+  m_reprise_ouverture text := 'Une régularisation reprise appartient à l’exercice que clôt la balance reprise : l’année qui précède l’ouverture du dossier au 1er janvier.';
+  m_reprise_nature text := 'Une régularisation reprise est une charge ou un produit constaté d’avance, une facture non parvenue ou à établir : les comptes 486, 487, 408 et 418 de la balance reprise.';
+  m_reprise_compte text := 'Une régularisation reprise s’écrit sur le compte de la balance qu’elle extourne : sous le 486 pour une charge constatée d’avance, le 487 pour un produit constaté d’avance, le 408 (hors du 4084) pour une facture non parvenue, le 418 pour une facture à établir.';
+  m_reprise_date text := 'Une écriture d’inventaire appartient à une régularisation de son dossier, en engagement, au 31 décembre de son exercice ou au 1er janvier suivant ; celle d’une régularisation reprise, au 1er janvier seul.';
+  lib_rep text := 'CCA 31/12/2024 — Assurance 2025 reprise';
+  op_rep jsonb := '{"exercice": 2024, "nature": "cca", "compte_resultat": "616000", "compte_regularisation": "486000", "montant_centimes": 30000, "tva_centimes": 0, "objet": "Assurance 2025 reprise", "reprise": true}';
+  ec_rep jsonb;
+  id_rep uuid;
   -- Une CCA de 2025 : l'assurance de 2026 payée d'avance.
   lib_cca text := 'CCA 31/12/2025 — Primes d''assurance — Assurance du local, 2026';
   op_cca jsonb := '{"exercice": 2025, "nature": "cca", "compte_resultat": "616000", "compte_regularisation": "486000", "montant_centimes": 120000, "tva_centimes": 0, "objet": "Assurance du local, 2026", "periode_debut": "2025-07-01", "periode_fin": "2026-06-30"}';
@@ -143,20 +169,28 @@ declare
 begin
   ec_cca := pg_temp.ecritures(2025, lib_cca, '[["486000","debit",120000],["616000","credit",120000]]');
   ec_fnp := pg_temp.ecritures(2025, lib_fnp, '[["622600","debit",50000],["445860","debit",10000],["408100","credit",60000]]');
+  ec_rep := pg_temp.extourne(2024, lib_rep, '[["486000","debit",30000],["616000","credit",30000]]');
 
   -- ── Le jeu, écrit par le propriétaire ──
   insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva) values
     (da, 'INV2 essai A', cabinet, 'engagement', 'redevable'), (dn, 'INV2 essai N', cabinet, 'engagement', 'franchise'),
     (dt, 'INV2 essai T', cabinet, 'tresorerie', 'franchise'), (db, 'INV2 essai B', cabinet, 'engagement', 'redevable'),
-    (dov, 'INV2 essai O', cabinet, 'engagement', 'redevable'), (dv, 'INV2 essai V', cabinet, 'engagement', 'redevable');
-  insert into dossier_assignations (dossier_id, user_id) values (da, membre), (dn, membre), (dt, membre), (dov, membre), (dv, membre);
+    (dov, 'INV2 essai O', cabinet, 'engagement', 'redevable'), (dv, 'INV2 essai V', cabinet, 'engagement', 'redevable'),
+    (dre, 'INV2 essai R', cabinet, 'engagement', 'redevable'), (dsb, 'INV2 essai S', cabinet, 'engagement', 'redevable'),
+    (dmi, 'INV2 essai M', cabinet, 'engagement', 'redevable');
+  insert into dossier_assignations (dossier_id, user_id) values (da, membre), (dn, membre), (dt, membre), (dov, membre), (dv, membre),
+    (dre, membre), (dsb, membre), (dmi, membre);
   insert into memberships (user_id, dossier_id, role)
     select client, da, m.role from memberships m where m.user_id = client limit 1;
   insert into pieces (id, dossier_id, storage_path, nom_fichier) values
     (pa, da, da || '/inv2.pdf', 'inv2.pdf'), (pb, db, db || '/inv2.pdf', 'inv2.pdf');
   insert into a_nouveaux (dossier_id, date, compte, sens, montant, source_nom, source_empreinte) values
     (dov, '2025-01-01', '512000', 'debit', 100, 'essai', repeat('a', 64)),
-    (dov, '2025-01-01', '101000', 'credit', 100, 'essai', repeat('a', 64));
+    (dov, '2025-01-01', '101000', 'credit', 100, 'essai', repeat('a', 64)),
+    (dre, '2025-01-01', '486000', 'debit', 300, 'essai', repeat('a', 64)),
+    (dre, '2025-01-01', '101000', 'credit', 300, 'essai', repeat('a', 64)),
+    (dmi, '2025-03-01', '486000', 'debit', 300, 'essai', repeat('a', 64)),
+    (dmi, '2025-03-01', '101000', 'credit', 300, 'essai', repeat('a', 64));
 
   -- ══ IV-A. L'accès ══
   issue := pg_temp.fait(chef, pg_temp.appel(da, op_cca, ec_cca, null));
@@ -334,7 +368,63 @@ begin
   end;
   perform set_config('jd.inventaire', '', true);
   perform pg_temp.verdict('IV-E10. une ligne d''inventaire se date au 31 décembre de son exercice ou au lendemain (la garde)', issue,
-    issue = '23514 Une écriture d’inventaire appartient à une régularisation de son dossier, en engagement, au 31 décembre de son exercice ou au 1er janvier suivant.');
+    issue = '23514 Une écriture d’inventaire appartient à une régularisation de son dossier, en engagement, au 31 décembre de son exercice ou au 1er janvier suivant ; celle d’une régularisation reprise, au 1er janvier seul.');
+
+  -- ══ IV-R. La régularisation reprise d'une balance (INV3-Q2 (A)) ══
+  issue := pg_temp.fait(membre, pg_temp.appel(dre, op_rep, ec_rep, null));
+  id_rep := case when issue like 'OK %' then substr(issue, 4)::uuid end;
+  select string_agg(to_char(e.date, 'YYYY-MM-DD') || ' ' || e.compte || ' ' || e.sens || ' ' || e.montant || ' ' || e.libelle, ' | '
+                    order by e.date, e.sens desc, e.compte)
+    into texte from ecritures_brouillon e where e.operation_inventaire_id = id_rep;
+  perform pg_temp.verdict('IV-R1. une CCA reprise de la balance au 01/01/2025 : de 2024, sa seule extourne au 01/01/2025 (le contrôle positif)',
+    coalesce(issue, '') || ' | ' || coalesce(texte, '') || ' | reprise ' || coalesce((select o.reprise::text from operations_inventaire o where o.id = id_rep), '?'),
+    id_rep is not null and texte = '2025-01-01 616000 debit 300.00 Extourne — ' || lib_rep || ' | 2025-01-01 486000 credit 300.00 Extourne — ' || lib_rep
+      and (select o.reprise and o.exercice = 2024 from operations_inventaire o where o.id = id_rep));
+  issue := pg_temp.tente(membre, pg_temp.appel(dre, op_rep || '{"exercice": 2025, "objet": "Assurance 2026"}',
+    pg_temp.extourne(2025, 'CCA 31/12/2025 — Assurance 2026', '[["486000","debit",30000],["616000","credit",30000]]'), null));
+  perform pg_temp.verdict('IV-R2. une reprise d''un autre exercice que celui que la balance clôt (2025)', issue, issue = '22023 ' || m_reprise_ouverture);
+  issue := pg_temp.tente(membre, pg_temp.appel(dsb, op_rep, ec_rep, null));
+  perform pg_temp.verdict('IV-R3. une reprise dans un dossier sans balance reprise', issue, issue = '22023 ' || m_reprise_ouverture);
+  issue := pg_temp.tente(membre, pg_temp.appel(dmi, op_rep, ec_rep, null));
+  perform pg_temp.verdict('IV-R4. une reprise quand la balance n''ouvre pas l''exercice au 1er janvier (au 01/03/2025)', issue, issue = '22023 ' || m_reprise_ouverture);
+  issue := pg_temp.tente(membre, pg_temp.appel(dre, '{"exercice": 2024, "nature": "charge_a_payer", "compte_resultat": "641200", "compte_regularisation": "428200", "montant_centimes": 30000, "tva_centimes": 0, "objet": "Congés repris", "reprise": true}',
+    pg_temp.extourne(2024, 'Charge à payer 31/12/2024 — Congés repris', '[["641200","debit",30000],["428200","credit",30000]]'), null));
+  perform pg_temp.verdict('IV-R5. une charge à payer reprise (hors des comptes 486, 487, 408 et 418)', issue, issue = '22023 ' || m_reprise_nature);
+  issue := pg_temp.tente(membre, pg_temp.appel(dre, '{"exercice": 2024, "nature": "fnp", "compte_resultat": "622600", "compte_regularisation": "408400", "montant_centimes": 30000, "tva_centimes": 0, "objet": "Immobilisation reprise", "reprise": true}',
+    pg_temp.extourne(2024, 'FNP 31/12/2024 — Immobilisation reprise', '[["622600","debit",30000],["408400","credit",30000]]'), null));
+  perform pg_temp.verdict('IV-R6. une facture non parvenue reprise sous le 4084, que l''inventaire ne range pas', issue, issue = '22023 ' || m_reprise_compte);
+  issue := pg_temp.tente(membre, pg_temp.appel(dre, op_rep || '{"compte_regularisation": "487000"}',
+    pg_temp.extourne(2024, lib_rep, '[["487000","debit",30000],["616000","credit",30000]]'), null));
+  perform pg_temp.verdict('IV-R7. une CCA reprise hors du 486', issue, issue = '22023 ' || m_reprise_compte);
+  issue := pg_temp.tente(membre, pg_temp.appel(dre, op_rep || '{"compte_regularisation": "486100"}',
+    pg_temp.extourne(2024, lib_rep, '[["486100","debit",30000],["616000","credit",30000]]'), null));
+  perform pg_temp.verdict('IV-R8. une CCA reprise sur un autre compte du 486 que celui du plan : le compte de la balance (le contrôle positif)', issue, issue like 'OK %');
+  issue := pg_temp.fait(membre, pg_temp.appel(dre, '{"exercice": 2024, "nature": "fnp", "compte_resultat": "622600", "compte_regularisation": "408100", "montant_centimes": 10000, "tva_centimes": 2000, "objet": "Honoraires repris", "reprise": true}',
+    pg_temp.extourne(2024, 'FNP 31/12/2024 — Honoraires repris', '[["622600","debit",10000],["445860","debit",2000],["408100","credit",12000]]'), null));
+  select string_agg(e.compte || ' ' || e.sens || ' ' || e.montant, ', ' order by e.compte) into texte
+    from ecritures_brouillon e join operations_inventaire o on o.id = e.operation_inventaire_id
+   where o.dossier_id = dre and o.objet = 'Honoraires repris';
+  perform pg_temp.verdict('IV-R9. une FNP reprise toutes taxes comprises : le 408 au débit, la charge et la TVA d''attente au crédit, au 01/01/2025 (le contrôle positif)',
+    coalesce(issue, '') || ' | ' || coalesce(texte, ''), texte = '408100 debit 120.00, 445860 credit 20.00, 622600 credit 100.00');
+  issue := pg_temp.tente(membre, pg_temp.appel(dre, op_rep, pg_temp.ecritures(2024, lib_rep, '[["486000","debit",30000],["616000","credit",30000]]'), null));
+  perform pg_temp.verdict('IV-R10. une reprise avec sa constatation au 31/12/2024 : la balance la porte déjà', issue, issue = '22023 ' || m_ecritures);
+  issue := pg_temp.tente(membre, pg_temp.appel(dre, op_rep, jsonb_set(ec_rep, '{0,libelle}', to_jsonb(lib_rep)), null));
+  perform pg_temp.verdict('IV-R11. une extourne reprise sans « Extourne — » devant son libellé', issue, issue = '22023 ' || m_ecritures);
+  issue := pg_temp.tente(membre, pg_temp.appel(dre, op_rep || '{"reprise": "oui"}', ec_rep, null));
+  perform pg_temp.verdict('IV-R12. une reprise qui n''est ni vrai ni faux', issue, issue = '22023 ' || m_reprise);
+  issue := pg_temp.tente(membre, pg_temp.appel(dre, '{"exercice": 2025, "nature": "charge_a_payer", "compte_resultat": "641200", "compte_regularisation": "428200", "montant_centimes": 30000, "tva_centimes": 0, "objet": "Congés repris", "reprise": true}',
+    pg_temp.extourne(2025, 'Charge à payer 31/12/2025 — Congés repris', '[["641200","debit",30000],["428200","credit",30000]]'), null));
+  perform pg_temp.verdict('IV-R13. l''ordre : l''exercice de la reprise se dit avant sa nature', issue, issue = '22023 ' || m_reprise_ouverture);
+  issue := pg_temp.tente(chef, format('insert into ecritures_brouillon (dossier_id, operation_inventaire_id, date, compte, libelle, montant, sens, statut) values (%L, %L, ''2024-12-31'', ''486000'', ''réinsérée'', 300, ''debit'', ''proposee'') returning id::text', dre, id_rep));
+  perform pg_temp.verdict('IV-R14. la garde : une ligne d''une reprise au 31/12/2024, même réinsérée par le super-administrateur', issue, issue = '23514 ' || m_reprise_date);
+  issue := pg_temp.tente(chef, format('insert into ecritures_brouillon (dossier_id, operation_inventaire_id, date, compte, libelle, montant, sens, statut) values (%L, %L, ''2025-01-01'', ''486000'', ''réinsérée'', 300, ''credit'', ''proposee'') returning id::text', dre, id_rep));
+  perform pg_temp.verdict('IV-R15. au 1er janvier, le super-administrateur la réinsère (la restauration, le contrôle positif)', issue, issue like 'OK %');
+  issue := pg_temp.fait(membre, pg_temp.appel(dre, op_rep || jsonb_build_object('id', id_rep, 'montant_centimes', 25000),
+    pg_temp.extourne(2024, lib_rep, '[["486000","debit",25000],["616000","credit",25000]]'), 1));
+  select string_agg(e.compte || ' ' || e.sens || ' ' || e.montant, ', ' order by e.compte) into texte
+    from ecritures_brouillon e where e.operation_inventaire_id = id_rep;
+  perform pg_temp.verdict('IV-R16. une reprise remplacée contre sa version : son extourne réécrite seule (le contrôle positif)', coalesce(issue, '') || ' | ' || coalesce(texte, ''),
+    issue like 'OK %' and texte = '486000 credit 250.00, 616000 debit 250.00');
 
   -- ══ IV-D. Le retrait, et le gel ══
   issue := pg_temp.tente(membre, format('select public.retirer_operation_inventaire(%L, 1)::text', id_cca));
@@ -448,6 +538,56 @@ begin
   exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
   end;
   insert into iv_mutation (mutation, observe, mord) values ('M-IV8 — la lecture ouverte au client du dossier', issue, issue not in ('OK 0') and issue like 'OK %');
+  -- M-IV9 : l'exercice d'une reprise plus jugé ; une reprise de 2025 dans un dossier repris au 01/01/2025 s'écrit.
+  begin
+    execute replace(pg_get_functiondef('public.enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)'::regprocedure),
+      'if v_ouverture is null or to_char(v_ouverture, ''MM-DD'') <> ''01-01'' or v_exercice <> v_premier - 1 then', 'if false then');
+    issue := pg_temp.tente(membre, pg_temp.appel(dre, op_rep || '{"exercice": 2025, "objet": "Assurance 2026"}',
+      pg_temp.extourne(2025, 'CCA 31/12/2025 — Assurance 2026', '[["486000","debit",30000],["616000","credit",30000]]'), null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into iv_mutation (mutation, observe, mord) values ('M-IV9 — l''exercice d''une reprise plus jugé : une reprise de 2025', issue, issue like 'OK %');
+  -- M-IV10 : la nature d'une reprise plus jugée par la fonction ; la contrainte de la table refuse seule, sans les mots.
+  begin
+    execute replace(pg_get_functiondef('public.enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)'::regprocedure),
+      'if v_reprise and not (v_nature = any (array[''cca'', ''pca'', ''fnp'', ''fae''])) then', 'if false then');
+    issue := pg_temp.tente(membre, pg_temp.appel(dre, '{"exercice": 2024, "nature": "charge_a_payer", "compte_resultat": "641200", "compte_regularisation": "428200", "montant_centimes": 30000, "tva_centimes": 0, "objet": "Congés repris", "reprise": true}',
+      pg_temp.extourne(2024, 'Charge à payer 31/12/2024 — Congés repris', '[["641200","debit",30000],["428200","credit",30000]]'), null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into iv_mutation (mutation, observe, mord) values ('M-IV10 — la nature d''une reprise plus jugée : une charge à payer reprise', issue,
+    issue is distinct from '22023 ' || m_reprise_nature);
+  -- M-IV11 : la reprise recomposée avec sa constatation ; sa seule extourne ne se reconnaît plus (IV-R1 vire au rouge).
+  begin
+    execute replace(pg_get_functiondef('public.enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)'::regprocedure),
+      'where (l.v ->> 2)::bigint > 0 and not v_reprise', 'where (l.v ->> 2)::bigint > 0');
+    issue := pg_temp.tente(membre, pg_temp.appel(dre, op_rep || '{"objet": "Seconde reprise"}',
+      pg_temp.extourne(2024, 'CCA 31/12/2024 — Seconde reprise', '[["486000","debit",30000],["616000","credit",30000]]'), null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into iv_mutation (mutation, observe, mord) values ('M-IV11 — la reprise recomposée avec sa constatation : sa seule extourne refusée', issue, issue = '22023 ' || m_ecritures);
+  -- M-IV12 : la garde admet une ligne d'une reprise au 31 décembre.
+  begin
+    execute replace(pg_get_functiondef('public.garder_ecriture_d_inventaire()'::regprocedure),
+      '(new.date = make_date(o.exercice, 12, 31) and not o.reprise)', 'new.date = make_date(o.exercice, 12, 31)');
+    issue := pg_temp.tente(chef, format('insert into ecritures_brouillon (dossier_id, operation_inventaire_id, date, compte, libelle, montant, sens, statut) values (%L, %L, ''2024-12-31'', ''486000'', ''réinsérée'', 300, ''debit'', ''proposee'') returning id::text', dre, id_rep));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into iv_mutation (mutation, observe, mord) values ('M-IV12 — la garde admet une ligne d''une reprise au 31 décembre', issue, issue like 'OK %');
+  -- M-IV13 : le 4084 admis pour une reprise.
+  begin
+    execute replace(pg_get_functiondef('public.enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)'::regprocedure),
+      'or starts_with(v_regul, ''4084'')', '');
+    issue := pg_temp.tente(membre, pg_temp.appel(dre, '{"exercice": 2024, "nature": "fnp", "compte_resultat": "622600", "compte_regularisation": "408400", "montant_centimes": 30000, "tva_centimes": 0, "objet": "Immobilisation reprise", "reprise": true}',
+      pg_temp.extourne(2024, 'FNP 31/12/2024 — Immobilisation reprise', '[["622600","debit",30000],["408400","credit",30000]]'), null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into iv_mutation (mutation, observe, mord) values ('M-IV13 — le 4084 admis pour une reprise', issue, issue like 'OK %');
 end
 $essai$;
 

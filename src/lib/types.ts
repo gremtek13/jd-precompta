@@ -1553,6 +1553,9 @@ export interface OperationInventaire {
   objet: string
   // La pièce du dossier qui fonde la régularisation, quand elle existe.
   piece_citee_id: string | null
+  // Une régularisation reprise d'une balance au 1er janvier (INV3-Q2 (A)) : de l'exercice que la balance clôt, sa
+  // constatation dans la balance, seule son extourne au 1er janvier s'écrit. Faux par défaut.
+  reprise: boolean
   // La provision dont l'opération est l'évaluation au 31 décembre (nature `provision`, `montant_centimes` sa cible ; INV4,
   // migration `provisions`, préparée) : FACULTATIVE, la vérité des deux côtés de la migration, nulle sur une régularisation.
   provision_id?: string | null

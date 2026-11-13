@@ -2,8 +2,8 @@
 -- (`apply_migration`) : aucune instruction ne retire une table, une colonne, une contrainte, une fonction ni une ligne ; le
 -- mot du retrait n'y paraît que dans `on delete cascade`, l'évènement d'un déclencheur et `tg_op = 'DELETE'`, les formes que
 -- `categories_du_dossier` et `modele_de_plan_du_cabinet` ont passées par l'outil. Aucune barre oblique inverse, aucun retour
--- chariot. Une table, un déclencheur et cinq fonctions s'ajoutent ; une seule fonction se remplace, `valider_exercice`, par
--- `create or replace` (son OID, son propriétaire et ses droits gardés).
+-- chariot. Une table, deux déclencheurs et neuf fonctions s'ajoutent ; trois fonctions se remplacent par `create or replace`
+-- (leur OID, leur propriétaire et leurs droits gardés) : `valider_exercice`, `empreinte_exercice_forme_2` et `fichier_fige`.
 --
 -- ELLE DÉPEND D'INV2 (`operations_d_inventaire`), qui doit être en base avant elle : sa garde de tête l'exige, aux empreintes
 -- des fonctions d'INV2 sur lesquelles la validation compte. Elle s'accommode d'INV4 (`provisions`), de LIA2, d'AFF2, d'EXD2 et
@@ -12,10 +12,12 @@
 -- l'exige) et pose son réglage après son verrou exclusif (les gardes allégées du 12/11/2026 l'exigent).
 --
 -- La conception : docs/conceptions/35-inventaire.md, § 3.5, § 4.5, § 5.3 et § 6 (le lot INV3), INV-Q1, Q7, Q9 et Q11 à leur
--- recommandation (A) — Q1, Q7 et Q9 tranchées par le cabinet le 12/11/2026, Q11 à la recommandation. Le module que la base
--- redit : src/lib/inventaireDeLaValidation.ts, ses mots, ses codes et leur ordre ; src/lib/inventaireDeLaValidation.test.ts
--- les confronte au texte de cette migration. Le récit : HISTORIQUE.md, « 12/11/2026 — INV3 : LA VALIDATION CONNAÎT
--- L'INVENTAIRE (PRÉPARÉE, PAS APPLIQUÉE) ». Son retour : supabase/preparees/retour/20261112235100_retour_validation_de_l_inventaire.sql.
+-- recommandation (A) — Q1, Q7 et Q9 tranchées par le cabinet le 12/11/2026, Q11 à la recommandation —, puis INV3-Q1 (A) et
+-- INV3-Q2 (A), tranchées le 13/11/2026. Le module que la base redit : src/lib/inventaireDeLaValidation.ts, ses mots, ses codes
+-- et leur ordre ; src/lib/inventaireDeLaValidation.test.ts les confronte au texte de cette migration. Le récit : HISTORIQUE.md,
+-- « 12/11/2026 — INV3 : LA VALIDATION CONNAÎT L'INVENTAIRE (PRÉPARÉE, PAS APPLIQUÉE) » et « 13/11/2026 — INV3-Q1 ET INV3-Q2 :
+-- L'EMPREINTE SCELLE L'INVENTAIRE, LA RÉGULARISATION REPRISE (PRÉPARÉES, PAS APPLIQUÉES) ». Son retour :
+-- supabase/preparees/retour/20261112235100_retour_validation_de_l_inventaire.sql.
 -- Son essai : supabase/essais/validationDeLInventaire.sql (une réplique seulement, une transaction) ; puis rls.sql (le bloc
 -- ID) et validationExercice.sql, qui la reconnaît.
 --
@@ -45,11 +47,28 @@
 --      Un dossier en trésorerie valide comme hier, au caractère près ; un dossier en engagement aussi, sa déclaration faite.
 --   4. Si la double authentification exigée (`deux_facteurs_exiges`) est déjà en base, la policy restrictive `deux_facteurs`
 --      sur la table neuve.
+--   5. LES RÉGULARISATIONS REPRISES D'UNE BALANCE (INV3-Q2 (A), tranchée par le cabinet le 13/11/2026 ; leur saisie est
+--      celle d'INV2, `reprise`) : la validation du premier exercice — celui que la balance reprise ouvre au 1er janvier —
+--      exige chacune à jour (son extourne seule, recomposée), à sa place (la balance ouvre toujours cet exercice au 1er
+--      janvier), puis la CONFRONTE au solde repris : au 1er janvier, les extournes des régularisations reprises soldent
+--      exactement chaque compte de régularisation de la balance — 486, 487, 408 (hors du 4084, que l'inventaire ne range pas :
+--      INV1-Q1), 418, et la TVA d'attente 44586 et 44587 qui suit les factures non parvenues et à établir.
+--   6. L'EMPREINTE EN FORME 2 ÉTENDUE (INV3-Q1 (A), tranchée par le cabinet le 13/11/2026), sans forme nouvelle : elle scelle
+--      AUSSI les régularisations de l'exercice — celles qu'il constate au 31 décembre, ses évaluations de provision (la
+--      provision évaluée avec elles, INV4), et les régularisations reprises dont il porte l'extourne — et les pièces qu'elles
+--      citent, directement ou par leur provision (`regularisations_scellees`, `pieces_scellees_par_l_inventaire`). Un exercice
+--      sans régularisation garde son texte d'hier OCTET POUR OCTET (un bloc de plus, présent seulement quand il y en a ; un
+--      ensemble de pièces inchangé) : tout exercice validé avant elle — un BNC en trésorerie n'en a jamais — se vérifie comme
+--      hier, ce que sa garde de fin rejoue sur toute la base.
+--   7. Le fichier d'une pièce que l'inventaire d'un exercice validé scelle ne change plus : ni son chemin, ni son empreinte de
+--      dépôt, ni sa version lisible (`garder_fichier_scelle_par_l_inventaire`), et le stockage ne le retire plus
+--      (`fichier_fige`, comme INAL1 le fait pour une pièce qu'une écriture validée cite). Le reste de la pièce se traite comme
+--      toute pièce : la facture de janvier qu'une facture non parvenue cite se valide et s'écrit dans l'exercice suivant.
 --
--- CE QU'ELLE NE FAIT PAS (INV3-Q1, posée au cabinet) : la pièce citée par une régularisation d'un exercice validé ne se fige
--- pas avec lui (`exercice_figeant_la_piece` ne la connaît pas), et l'empreinte en forme 2 ne la scelle pas ; ni la reprise
--- d'une balance qui porte des régularisations de l'ancien logiciel (486, 487, 408, 418 : INV3-Q2). L'écran (INV5) non plus :
--- aucun dossier n'est en engagement en production (12/11/2026), rien ne s'y déclare avant lui.
+-- CE QU'ELLE NE FAIT PAS : la déclaration de l'inventaire n'entre pas dans l'empreinte (elle est figée avec l'exercice, par sa
+-- garde) ; les charges à payer et les produits à recevoir d'une balance reprise (4282, 4286, 4382, 4386, 44812, 1688, 518,
+-- 4482, 439) n'ont pas de régularisation reprise (INV3Q2-Q1, posée au cabinet). L'écran (INV5) non plus : aucun dossier
+-- n'est en engagement en production (12/11/2026), rien ne s'y déclare avant lui.
 
 do $garde$
 declare
@@ -57,31 +76,44 @@ declare
 begin
   if to_regclass('public.inventaires_declares') is not null
      or to_regprocedure('public.declarer_inventaire(uuid, integer)') is not null
-     or to_regprocedure('public.inventaire_a_jour(uuid)') is not null then
+     or to_regprocedure('public.inventaire_a_jour(uuid)') is not null
+     or to_regprocedure('public.regularisations_scellees(uuid, integer)') is not null
+     or to_regprocedure('public.pieces_scellees_par_l_inventaire(uuid, integer)') is not null
+     or to_regprocedure('public.exercice_scellant_la_piece_citee(uuid)') is not null
+     or to_regprocedure('public.garder_fichier_scelle_par_l_inventaire()') is not null
+     or exists (select 1 from pg_trigger t where t.tgrelid = 'public.pieces'::regclass and t.tgname = 'pieces_fichier_scelle_par_l_inventaire') then
     raise exception 'La migration validation_de_l_inventaire est déjà en base : elle ne s''applique pas deux fois.';
   end if;
   if to_regclass('public.operations_inventaire') is null
      or not exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
-                      and a.attname = 'operation_inventaire_id' and not a.attisdropped) then
+                      and a.attname = 'operation_inventaire_id' and not a.attisdropped)
+     or not exists (select 1 from pg_attribute a where a.attrelid = 'public.operations_inventaire'::regclass
+                      and a.attname = 'reprise' and not a.attisdropped) then
     raise exception 'La migration validation_de_l_inventaire dépend de operations_d_inventaire (INV2), qui n''est pas en base : coller INV2 d''abord.';
   end if;
   if to_regclass('public.a_nouveaux') is null or to_regclass('public.exercices_valides') is null then
     raise exception 'validation_de_l_inventaire : une table dont elle dépend manque : relire la base.';
   end if;
-  -- La fonction qu'elle remplace, telle que la production la porte depuis `empreinte_des_exercices_forme_2` ; celles qu'elle
-  -- appelle ; celles d'INV2, telles que sa migration préparée les pose, dont la validation suppose la conduite (une ligne
-  -- d'inventaire n'est écrite que par sa régularisation, au 31 décembre ou au 1er janvier suivant ; une régularisation d'un
-  -- exercice figé ne change plus). À l'empreinte de leur corps, les retours chariot d'un collage écartés.
+  -- Les fonctions qu'elle remplace, telles que la production les porte : `valider_exercice` et `empreinte_exercice_forme_2`
+  -- depuis `empreinte_des_exercices_forme_2`, `fichier_fige` depuis `piece_figee_dans_le_stockage` ; celles qu'elle appelle ;
+  -- celles d'INV2, telles que sa migration préparée les pose, dont la validation suppose la conduite (une ligne d'inventaire
+  -- n'est écrite que par sa régularisation, au 31 décembre ou au 1er janvier suivant, au 1er janvier seul pour une reprise ;
+  -- une régularisation d'un exercice figé ne change plus). À l'empreinte de leur corps, les retours chariot d'un collage écartés.
   for v_f in select x.f from (values
       ('valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '923cfa1b57037146070ca1430f163495'),
+      ('empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)',
+       'a62b0761a132e53c218bdc5b3820299e'),
+      ('verifier_exercice_valide(uuid, integer)', '1478bda759c33e3912da7e0089ca9994'),
+      ('fichier_fige(text)', '5372f8d248432f0932598a6efca24ca2'),
+      ('exercice_figeant_la_piece(uuid)', '78624664a1794b06816acb2e70436802'),
       ('admin_du_dossier(uuid)', '30e9b7246cb939741fe58f4ffc27adf4'),
       ('is_super_admin()', 'a9159138778422a43ba8d8c21240c9bb'),
       ('cle_validation(uuid)', 'bcbb03363036aa6aa037c0b829e3382f'),
       ('frontiere_validation(uuid)', '24a04846471ec5e8cdbae6f3b9f4a2e8'),
       ('retour_declencheur(text, anyelement, anyelement)', 'bc80cac6efe46d15f86d1820eb56c47e'),
       ('garder_operations_inventaire()', '7c27098f1e1d57539aed192ec28bcb31'),
-      ('garder_ecriture_d_inventaire()', '521fe44ebccca4123ade10f546b5eeec'),
-      ('enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)', '5fea6e91a18b908bc5d4a6f64de82d94'),
+      ('garder_ecriture_d_inventaire()', 'c7791b98f0840428f26bafb31efd4590'),
+      ('enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)', '13dd1361e5470e35f9e7bc06dacd83af'),
       ('retirer_operation_inventaire(uuid, integer)', '9588e1104ce918565702d6db5ec137db')) as x(f, empreinte)
     where (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p where p.oid = to_regprocedure('public.' || x.f))
           is distinct from x.empreinte
@@ -104,6 +136,11 @@ begin
      or exists (select 1 from pg_proc p where strpos(p.prosrc, 'jd.inventaire_declare') > 0) then
     raise exception 'validation_de_l_inventaire : un réglage qu''elle suppose réservé est posé ailleurs : relire la migration.';
   end if;
+  -- INV3-Q1 (A) : rien ne change pour l'existant. Les exercices validés qui se vérifient avant elle, relevés ici sous
+  -- l'empreinte d'hier ; sa garde de fin exige les mêmes, sous l'empreinte étendue (transaction locale).
+  perform set_config('jd.inventaire_exercices_verifies', (
+    select coalesce(string_agg(ev.dossier_id::text || ':' || ev.annee, ',' order by ev.dossier_id, ev.annee), '')
+      from public.exercices_valides ev where public.verifier_exercice_valide(ev.dossier_id, ev.annee)), true);
 end
 $garde$;
 
@@ -276,9 +313,10 @@ comment on function public.retirer_declaration_inventaire(uuid) is
 -- 31 décembre de son exercice, ses comptes et son montant, la TVA d'attente d'une facture non parvenue ou à établir sous sa
 -- racine (44586, 44587 : le compte du rôle à l'écriture, que le plan a pu déplacer depuis sans que la régularisation mente) ;
 -- au 1er janvier suivant, les mêmes en sens inverse ; une évaluation de provision (INV4), l'écart entre sa cible et la
--- provision précédente lue en base (`provision_cible_precedente`), au 31 décembre seulement, aucune ligne sans écart. La
--- recomposition d'INV2 et d'INV4, en entiers, sur les colonnes que la régularisation garde. Un `record` : la colonne
--- `provision_id` d'INV4 ne se lit que sur une évaluation, qui n'existe qu'avec elle.
+-- provision précédente lue en base (`provision_cible_precedente`), au 31 décembre seulement, aucune ligne sans écart ; une
+-- régularisation reprise d'une balance (INV3-Q2 (A)), son extourne seule, au 1er janvier : sa constatation est dans la
+-- balance. La recomposition d'INV2 et d'INV4, en entiers, sur les colonnes que la régularisation garde. Un `record` : la
+-- colonne `provision_id` d'INV4 ne se lit que sur une évaluation, qui n'existe qu'avec elle.
 create function public.inventaire_a_jour(p_id uuid) returns boolean
 language plpgsql stable set search_path = public as $$
 declare
@@ -324,7 +362,7 @@ begin
   with attendues as (
     select to_char(make_date(o.exercice, 12, 31), 'YYYY-MM-DD') as jour, a.v ->> 0 as compte, a.v ->> 1 as sens,
            (a.v ->> 2)::bigint as centimes
-      from jsonb_array_elements(v_lignes) a(v) where (a.v ->> 2)::bigint > 0
+      from jsonb_array_elements(v_lignes) a(v) where (a.v ->> 2)::bigint > 0 and not o.reprise
     union all
     select to_char(make_date(o.exercice + 1, 1, 1), 'YYYY-MM-DD'), a.v ->> 0,
            case a.v ->> 1 when 'debit' then 'credit' else 'debit' end, (a.v ->> 2)::bigint
@@ -855,8 +893,9 @@ begin
   -- un exercice qu'ils refusaient l'est encore, sous les mêmes mots. Dans cet ordre, que src/lib/inventaireDeLaValidation.ts
   -- redit sous les mêmes mots : la numérotation des écritures d'une régularisation, l'inventaire déclaré (INV-Q9 (A)), les
   -- régularisations de l'exercice à jour, l'extourne entière de celles de l'exercice précédent, la ventilation des
-  -- provisions reprises (INV-Q11 (A), dès que la migration `provisions` est en base). Un dossier en trésorerie n'a ni
-  -- régularisation ni provision (leurs fonctions le refusent) et ne déclare rien : rien de ceci ne le retient.
+  -- provisions reprises (INV-Q11 (A), dès que la migration `provisions` est en base), les régularisations reprises d'une
+  -- balance (INV3-Q2 (A)). Un dossier en trésorerie n'a ni régularisation ni provision (leurs fonctions le refusent) et ne
+  -- déclare rien : rien de ceci ne le retient.
   --   a. Une ligne qui cite une régularisation se numérote au journal des opérations diverses, sous la pièce « Inventaire
   --      AAAA » datée du 31 décembre de l'exercice de sa régularisation (l'état d'inventaire, INV-Q7 (A) ; son extourne
   --      aussi), dans l'écriture de sa régularisation à sa date, qu'elle ne partage avec aucune autre ligne.
@@ -906,10 +945,11 @@ begin
   end if;
   --   d. L'extourne entière des régularisations de l'exercice précédent, figées avec lui : au 1er janvier, les lignes de
   --      leur constatation validée, ligne pour ligne, en sens inverse ; aucune pour une provision, qui ne s'extourne pas
-  --      (`inventaire_extourne_entiere`). La première, par son identifiant.
+  --      (`inventaire_extourne_entiere`). La première, par son identifiant. Une régularisation reprise n'a pas de
+  --      constatation validée : le point f la juge.
   select o.objet into v_regularisation
     from public.operations_inventaire o
-   where o.dossier_id = p_dossier_id and o.exercice = p_annee - 1 and not public.inventaire_extourne_entiere(o.id)
+   where o.dossier_id = p_dossier_id and o.exercice = p_annee - 1 and not o.reprise and not public.inventaire_extourne_entiere(o.id)
    order by o.id
    limit 1;
   if found then
@@ -936,6 +976,56 @@ begin
      limit 1;
     if found then
       raise exception 'L''exercice % ouvre le solde repris du compte % sans le ventiler exactement en provisions : les provisions ventilées doivent faire exactement le solde repris du compte — les ventiler avant la validation.',
+        p_annee, v_compte_repris using errcode = '23514';
+    end if;
+  end if;
+  --   f. Les régularisations reprises d'une balance (INV3-Q2 (A) ; leur saisie, `operations_d_inventaire`) : celles de
+  --      l'exercice précédent, que la balance clôt, dont l'extourne tombe le 1er janvier de celui-ci. Chacune à jour — son
+  --      extourne seule, recomposée (`inventaire_a_jour`) ; à sa place — la balance reprise ouvre cet exercice au 1er janvier
+  --      (retirée, ou reprise à une autre date, elle n'aurait plus de solde à extourner) ; puis, au premier exercice d'un
+  --      dossier en engagement ouvert au 1er janvier, la confrontation au solde repris : les extournes des régularisations
+  --      reprises soldent EXACTEMENT, au 1er janvier, chaque compte de régularisation de la balance et chaque compte qu'elles
+  --      touchent, sous le 486, le 487, le 408 (hors du 4084, que l'inventaire ne range pas : INV1-Q1), le 418, le 44586 et le
+  --      44587 — un compte repris sans régularisation reprise ne l'est pas. La première, par son identifiant ; le premier
+  --      compte en écart, par son numéro.
+  select o.objet into v_regularisation
+    from public.operations_inventaire o
+   where o.dossier_id = p_dossier_id and o.exercice = p_annee - 1 and o.reprise and not public.inventaire_a_jour(o.id)
+   order by o.id
+   limit 1;
+  if found then
+    raise exception 'L''exercice % porte une régularisation reprise de la balance dont l''extourne n''est plus celle qu''elle commande : % — l''enregistrer de nouveau avant la validation.',
+      p_annee, v_regularisation.objet using errcode = '23514';
+  end if;
+  select o.objet into v_regularisation
+    from public.operations_inventaire o
+   where o.dossier_id = p_dossier_id and o.exercice = p_annee - 1 and o.reprise and v_ouverture is distinct from v_debut
+   order by o.id
+   limit 1;
+  if found then
+    raise exception 'L''exercice % porte une régularisation reprise que la balance reprise n''ouvre plus au 1er janvier : % — la retirer, ou reprendre la balance au 1er janvier de l''exercice, avant la validation.',
+      p_annee, v_regularisation.objet using errcode = '23514';
+  end if;
+  if v_mode = 'engagement' and v_ouverture = v_debut then
+    with soldes as (
+      select a.compte, round(case a.sens when 'debit' then a.montant else -a.montant end * 100)::bigint as centimes
+        from public.a_nouveaux a where a.dossier_id = p_dossier_id
+      union all
+      select e.compte, round(case e.sens when 'debit' then e.montant else -e.montant end * 100)::bigint
+        from public.ecritures_brouillon e join public.operations_inventaire o on o.id = e.operation_inventaire_id
+       where e.dossier_id = p_dossier_id and o.reprise and o.exercice = p_annee - 1 and e.date = v_debut
+    )
+    select s.compte into v_compte_repris
+      from soldes s
+     where (starts_with(s.compte, '486') or starts_with(s.compte, '487') or starts_with(s.compte, '408')
+            or starts_with(s.compte, '418') or starts_with(s.compte, '44586') or starts_with(s.compte, '44587'))
+       and not starts_with(s.compte, '4084')
+     group by s.compte
+    having sum(s.centimes) <> 0
+     order by s.compte collate "C"
+     limit 1;
+    if found then
+      raise exception 'L''exercice % ouvre le solde repris du compte % sans que ses régularisations reprises l''extournent exactement : leurs extournes au 1er janvier doivent solder le compte repris — les saisir avant la validation.',
         p_annee, v_compte_repris using errcode = '23514';
     end if;
   end if;
@@ -1018,7 +1108,223 @@ end;
 $$;
 
 comment on function public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb) is
-  'Valide un exercice terminé : vérifie la numérotation proposée par l''application, fige ses écritures — et les quatre champs du FEC d''un BNC que la numérotation porte (date, mode, nature et poste, identification du client), chacun dans sa forme, les mêmes sur les lignes d''une écriture, le client identifié par une facture validée du dossier seulement —, enregistre l''exercice sous son empreinte en forme 2 (l''en-tête, les écritures, les à-nouveaux et les soldes reportés chaînés, les fichiers des pièces citées, la 2035 validée : INAL2) et écrit l''ouverture du suivant (soldes_reportes) ; pour un dossier basculé, refuse aussi un mouvement réservé à des encaissements de factures, un virement ou un prélèvement sans son mouvement, et une vente facturée qui n''est pas écrite à jour. Refuse aussi un paiement d''une pièce par la caisse de l''exercice dont la contrepartie entière au compte de la caisse n''est pas au brouillon (relecture du 01/11/2026). L''inventaire (INV3, ligne 35) : refuse une écriture d''inventaire numérotée hors de sa pièce, un exercice en engagement dont l''inventaire n''est pas déclaré (INV-Q9), une régularisation de l''exercice qui n''est pas à jour, l''extourne incomplète d''une régularisation de l''exercice précédent, et au premier exercice un compte de provision repris qui n''est pas ventilé exactement (INV-Q11). Chef du cabinet seul.';
+  'Valide un exercice terminé : vérifie la numérotation proposée par l''application, fige ses écritures — et les quatre champs du FEC d''un BNC que la numérotation porte (date, mode, nature et poste, identification du client), chacun dans sa forme, les mêmes sur les lignes d''une écriture, le client identifié par une facture validée du dossier seulement —, enregistre l''exercice sous son empreinte en forme 2 (l''en-tête, les écritures, les à-nouveaux et les soldes reportés chaînés, les fichiers des pièces citées, la 2035 validée : INAL2) et écrit l''ouverture du suivant (soldes_reportes) ; pour un dossier basculé, refuse aussi un mouvement réservé à des encaissements de factures, un virement ou un prélèvement sans son mouvement, et une vente facturée qui n''est pas écrite à jour. Refuse aussi un paiement d''une pièce par la caisse de l''exercice dont la contrepartie entière au compte de la caisse n''est pas au brouillon (relecture du 01/11/2026). L''inventaire (INV3, ligne 35) : refuse une écriture d''inventaire numérotée hors de sa pièce, un exercice en engagement dont l''inventaire n''est pas déclaré (INV-Q9), une régularisation de l''exercice qui n''est pas à jour, l''extourne incomplète d''une régularisation de l''exercice précédent, et au premier exercice un compte de provision repris qui n''est pas ventilé exactement (INV-Q11), une régularisation reprise d''une balance qui n''est pas à jour ou que la balance n''ouvre plus au 1er janvier, et un compte de régularisation repris que ses régularisations reprises n''extournent pas exactement (INV3-Q2) ; l''empreinte en forme 2 scelle aussi les régularisations de l''exercice et les pièces qu''elles citent (INV3-Q1). Chef du cabinet seul.';
+
+-- ══ 4 bis. L'empreinte scelle l'inventaire (INV3-Q1 (A)) ══
+-- Les régularisations qu'un exercice SCELLE : celles qu'il constate au 31 décembre (une évaluation de provision comprise,
+-- même sans écart), et les régularisations reprises d'une balance dont il porte l'extourne au 1er janvier — chacune scellée
+-- une fois, par l'exercice qui la porte. Une régularisation, son exercice validé, ne change plus (sa garde, INV2) ; une
+-- provision évaluée non plus (la sienne, INV4).
+--
+-- Leur texte : une régularisation par ligne (séparées par le caractère 30, dans l'ordre de leurs identifiants), chacune un
+-- tableau jsonb sous sa forme canonique — aucun séparateur ne s'y glisse depuis un objet saisi, aucun champ nul ne s'y perd,
+-- une date s'y écrit AAAA-MM-JJ quel que soit le réglage de la session : l'identifiant, l'exercice, la nature, la reprise,
+-- les deux comptes, le montant et la TVA en centimes, la période, l'objet et la pièce citée ; une évaluation, en plus, sa
+-- provision (son identifiant, son genre, son compte, son objet, sa facture, sa pièce, son exercice d'ouverture, sa part
+-- reprise). Nul quand l'exercice n'en scelle aucune. En PL/pgSQL : la provision ne se lit que quand sa table est en base
+-- (INV4, avant ou après cette migration), et le texte d'une régularisation est le même dans les deux cas. Sous la RLS de
+-- l'appelant, comme l'empreinte qui l'appelle.
+create function public.regularisations_scellees(p_dossier_id uuid, p_annee integer) returns text
+language plpgsql stable set search_path = public as $$
+declare
+  v text;
+begin
+  if to_regclass('public.provisions') is null then
+    select string_agg(jsonb_build_array(o.id, o.exercice, o.nature, o.reprise, o.compte_resultat, o.compte_regularisation,
+                        o.montant_centimes, o.tva_centimes, o.periode_debut, o.periode_fin, o.objet, o.piece_citee_id)::text,
+                      chr(30) order by o.id)
+      into v
+      from public.operations_inventaire o
+     where o.dossier_id = p_dossier_id and (case when o.reprise then o.exercice + 1 else o.exercice end) = p_annee;
+  else
+    select string_agg((jsonb_build_array(o.id, o.exercice, o.nature, o.reprise, o.compte_resultat, o.compte_regularisation,
+                         o.montant_centimes, o.tva_centimes, o.periode_debut, o.periode_fin, o.objet, o.piece_citee_id)
+                       || case when o.provision_id is null then '[]'::jsonb
+                               else jsonb_build_array(p.id, p.genre, p.compte_provision, p.objet, p.facture_id, p.piece_citee_id,
+                                                      p.ouverte_en, p.reprise_centimes) end)::text,
+                      chr(30) order by o.id)
+      into v
+      from public.operations_inventaire o left join public.provisions p on p.id = o.provision_id
+     where o.dossier_id = p_dossier_id and (case when o.reprise then o.exercice + 1 else o.exercice end) = p_annee;
+  end if;
+  return v;
+end
+$$;
+
+-- Les pièces qu'elles citent : la pièce citée d'une régularisation, celle de la provision qu'une évaluation évalue.
+create function public.pieces_scellees_par_l_inventaire(p_dossier_id uuid, p_annee integer) returns setof uuid
+language plpgsql stable set search_path = public as $$
+begin
+  return query
+    select o.piece_citee_id from public.operations_inventaire o
+     where o.dossier_id = p_dossier_id and (case when o.reprise then o.exercice + 1 else o.exercice end) = p_annee
+       and o.piece_citee_id is not null;
+  if to_regclass('public.provisions') is not null then
+    return query
+      select p.piece_citee_id from public.operations_inventaire o join public.provisions p on p.id = o.provision_id
+       where o.dossier_id = p_dossier_id and o.exercice = p_annee and p.piece_citee_id is not null;
+  end if;
+end
+$$;
+revoke execute on function public.regularisations_scellees(uuid, integer) from public, anon;
+grant execute on function public.regularisations_scellees(uuid, integer) to authenticated;
+revoke execute on function public.pieces_scellees_par_l_inventaire(uuid, integer) from public, anon;
+grant execute on function public.pieces_scellees_par_l_inventaire(uuid, integer) to authenticated;
+comment on function public.regularisations_scellees(uuid, integer) is
+  'INV3-Q1 (A) : le texte des régularisations d''inventaire qu''un exercice scelle (celles qu''il constate, ses évaluations de provision avec leur provision, les régularisations reprises dont il porte l''extourne), pour l''empreinte en forme 2 ; nul quand il n''en scelle aucune. Lue sous la RLS de l''appelant.';
+comment on function public.pieces_scellees_par_l_inventaire(uuid, integer) is
+  'INV3-Q1 (A) : les pièces que citent les régularisations d''inventaire qu''un exercice scelle, directement ou par leur provision, pour l''empreinte en forme 2. Lue sous la RLS de l''appelant.';
+
+-- Le premier exercice VALIDÉ qui scelle une pièce par l'inventaire : celui d'une régularisation qui la cite (l'exercice
+-- suivant pour une reprise), ou d'une évaluation de la provision qui la cite ; nul sinon. Privée : la garde des pièces et
+-- `fichier_fige` l'appellent sous leurs droits.
+create function public.exercice_scellant_la_piece_citee(p_piece_id uuid) returns integer
+language plpgsql stable set search_path = public as $$
+declare
+  v integer;
+  v_provision integer;
+begin
+  select min(case when o.reprise then o.exercice + 1 else o.exercice end) into v
+    from public.operations_inventaire o
+   where o.piece_citee_id = p_piece_id
+     and (case when o.reprise then o.exercice + 1 else o.exercice end) <= extract(year from public.frontiere_validation(o.dossier_id));
+  if to_regclass('public.provisions') is not null then
+    select min(o.exercice) into v_provision
+      from public.provisions p join public.operations_inventaire o on o.provision_id = p.id
+     where p.piece_citee_id = p_piece_id and o.exercice <= extract(year from public.frontiere_validation(o.dossier_id));
+    v := least(v, v_provision);
+  end if;
+  return v;
+end
+$$;
+revoke execute on function public.exercice_scellant_la_piece_citee(uuid) from public, anon, authenticated;
+
+-- La garde du fichier d'une pièce que l'inventaire d'un exercice validé scelle : ni son chemin, ni son empreinte de dépôt,
+-- ni sa version lisible, ni son dossier ne changent, et elle ne se supprime plus — l'empreinte de l'exercice les a
+-- scellés. Le reste de la pièce se traite comme toute pièce (sa catégorie, ses montants, sa validation dans l'exercice
+-- suivant : la facture de janvier qu'une facture non parvenue cite) ; le départ du dossier l'emporte ; la restauration
+-- réinsère.
+create function public.garder_fichier_scelle_par_l_inventaire() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  v_annee integer;
+begin
+  if not exists (select 1 from public.dossiers where id = old.dossier_id) then
+    return public.retour_declencheur(tg_op, old, new);
+  end if;
+  if tg_op = 'UPDATE' and new.storage_path is not distinct from old.storage_path
+     and new.storage_hash is not distinct from old.storage_hash and new.lisible_path is not distinct from old.lisible_path
+     and new.dossier_id is not distinct from old.dossier_id then
+    return new;
+  end if;
+  perform pg_advisory_xact_lock_shared(public.cle_validation(old.dossier_id));
+  v_annee := public.exercice_scellant_la_piece_citee(old.id);
+  if v_annee is null then
+    return public.retour_declencheur(tg_op, old, new);
+  end if;
+  if tg_op = 'DELETE' then
+    raise exception 'Cette pièce fonde une régularisation d''inventaire de l''exercice % : elle ne se supprime plus.', v_annee
+      using errcode = '23514';
+  end if;
+  raise exception 'Cette pièce fonde une régularisation d''inventaire de l''exercice % : son fichier ne change plus.', v_annee
+    using errcode = '23514';
+end;
+$$;
+create trigger pieces_fichier_scelle_par_l_inventaire
+  before update of storage_path, storage_hash, lisible_path, dossier_id or delete
+  on public.pieces for each row execute function public.garder_fichier_scelle_par_l_inventaire();
+revoke execute on function public.garder_fichier_scelle_par_l_inventaire() from public, anon, authenticated;
+
+-- `fichier_fige` (INAL1), au caractère près celle de la production, plus la pièce que l'inventaire d'un exercice validé
+-- scelle : son fichier et sa version lisible ne se retirent plus du stockage (la policy `pieces_storage_delete`).
+create or replace function public.fichier_fige(p_chemin text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  -- Le dossier que le chemin nomme se tire après la forme du chemin, dans cet ordre (`case` n'évalue une branche qu'à son
+  -- tour) : un chemin mal formé ne fait rien lever.
+  select case
+    when p_chemin is null then null
+    when p_chemin !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/' then null
+    when not public.admin_du_dossier(split_part(p_chemin, '/', 1)::uuid) then null
+    else exists (
+        select 1 from public.pieces p
+         where (p.storage_path = p_chemin or p.lisible_path = p_chemin)
+           and (public.exercice_figeant_la_piece(p.id) is not null
+                or exists (select 1 from public.revision_preuves r where r.piece_id = p.id)
+                or exists (select 1 from public.dossier_permanent d where d.piece_id = p.id)
+                or public.exercice_scellant_la_piece_citee(p.id) is not null))
+      or exists (
+        select 1 from public.documents_divers dd
+         where dd.storage_path = p_chemin
+           and (exists (select 1 from public.revision_preuves r where r.document_id = dd.id)
+                or exists (select 1 from public.dossier_permanent d where d.document_id = dd.id)))
+  end
+$$;
+
+comment on function public.fichier_fige(text) is
+  'Vrai quand le chemin est le fichier (ou la version lisible) d''une pièce que la base fige — une écriture validée la cite, directement ou par son bien immobilisé, ou la révision la cite, ou l''inventaire d''un exercice validé la scelle (INV3-Q1) — ou le fichier d''un document divers que la révision cite ; nul pour qui n''administre pas le dossier du chemin, et pour un chemin qui ne commence pas par un dossier. La policy pieces_storage_delete refuse la suppression d''un tel fichier (INAL1, ligne 44).';
+
+-- `empreinte_exercice_forme_2` (INAL2), au caractère près celle de la production hors de deux ajouts : les pièces que
+-- scelle l'inventaire rejoignent celles des écritures validées, et un SIXIÈME bloc porte les régularisations scellées,
+-- présent seulement quand il y en a. Un exercice sans régularisation garde son texte d'hier, octet pour octet.
+create or replace function public.empreinte_exercice_forme_2(
+  p_dossier_id uuid,
+  p_annee integer,
+  p_precedente text,
+  p_valide_le timestamp with time zone,
+  p_valide_par uuid,
+  p_mode text,
+  p_nb_lignes integer,
+  p_nb_ecritures integer,
+  p_total_debit numeric,
+  p_total_credit numeric,
+  p_declaration jsonb
+) returns text
+language sql
+stable
+set search_path = public
+as $$
+  select encode(sha256(convert_to(
+    'jd-precompta/exercice-valide/forme-2'
+    -- L'en-tête, tel que la ligne de l'exercice le garde : les totaux à deux décimales, comme la colonne les arrondit,
+    -- puis sans zéro de fin.
+    || chr(29) || concat_ws(chr(31),
+         p_dossier_id::text, p_annee::text,
+         to_char(make_date(p_annee, 1, 1), 'YYYY-MM-DD'), to_char(make_date(p_annee, 12, 31), 'YYYY-MM-DD'),
+         to_char(p_valide_le at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'), coalesce(p_valide_par::text, ''),
+         p_mode, p_nb_lignes::text, p_nb_ecritures::text,
+         trim_scale(p_total_debit::numeric(16,2))::text, trim_scale(p_total_credit::numeric(16,2))::text)
+    -- L'empreinte de forme 1, chaînée à la précédente.
+    || chr(29) || public.empreinte_exercice(p_dossier_id, p_annee, p_precedente)
+    -- Les fichiers des pièces que les écritures validées de l'exercice citent, directement ou par leur bien, et de celles
+    -- que ses régularisations d'inventaire citent (INV3-Q1).
+    || chr(29) || coalesce((
+      select string_agg(concat_ws(chr(31), p.id::text, p.storage_path, coalesce(p.storage_hash, ''),
+                                  coalesce(p.lisible_path, '')), chr(30) order by p.id)
+        from public.pieces p
+       where p.id in (
+         select e.piece_id from public.ecritures_brouillon e
+          where e.dossier_id = p_dossier_id and e.statut = 'validee' and e.piece_id is not null
+            and e.date between make_date(p_annee, 1, 1) and make_date(p_annee, 12, 31)
+         union
+         select i.piece_id from public.ecritures_brouillon e join public.immobilisations i on i.id = e.immobilisation_id
+          where e.dossier_id = p_dossier_id and e.statut = 'validee' and i.piece_id is not null
+            and e.date between make_date(p_annee, 1, 1) and make_date(p_annee, 12, 31)
+         union
+         select s.piece_id from public.pieces_scellees_par_l_inventaire(p_dossier_id, p_annee) as s(piece_id))), '')
+    -- La 2035 validée.
+    || chr(29) || coalesce(p_declaration::text, '')
+    -- Les régularisations d'inventaire que l'exercice scelle (INV3-Q1) : un bloc présent seulement quand il y en a.
+    || coalesce(chr(29) || public.regularisations_scellees(p_dossier_id, p_annee), ''),
+    'UTF8')), 'hex')
+$$;
+
+comment on function public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb) is
+  'L''empreinte SHA-256 d''un exercice validé en forme 2 (INAL2, ligne 44) : une étiquette, l''en-tête de sa ligne, son empreinte de forme 1 (empreinte_exercice, chaînée), les fichiers des pièces que ses écritures validées citent (identifiant, chemin, SHA-256 au dépôt, version lisible) et celles que ses régularisations d''inventaire citent, la 2035 validée, et — quand il en porte — ses régularisations d''inventaire (INV3-Q1, regularisations_scellees). Lue sous la RLS de l''appelant.';
 
 -- ══ 5. La double authentification exigée, si elle est déjà en base ══
 do $deux_facteurs$
@@ -1036,12 +1342,19 @@ declare
   v record;
 begin
   for v in select * from (values
-      ('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '1e0c2f6bf200a5bee660c2f84cbb7738', true),
+      ('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '03732b43c1897163eaae83e23058e354', true),
       ('public.declarer_inventaire(uuid, integer)', '4c4b03b22feeb1eb2e49532c8adc3761', true),
       ('public.retirer_declaration_inventaire(uuid)', '3ea40ecdcc812f8a87695ce8b11f164c', true),
-      ('public.inventaire_a_jour(uuid)', 'c5b10f2e99a2b86a834e3be3e9eb2ae3', false),
+      ('public.inventaire_a_jour(uuid)', 'c38104a194f1f0ef1f71598a2ae4ee4e', false),
       ('public.inventaire_extourne_entiere(uuid)', '4f4cf944a48200df2744bfca4b28578e', false),
-      ('public.garder_inventaires_declares()', '0f0cd2ae01048b134a7ff4329e3d0b84', false)) x(fonction, empreinte, connecte) loop
+      ('public.garder_inventaires_declares()', '0f0cd2ae01048b134a7ff4329e3d0b84', false),
+      ('public.regularisations_scellees(uuid, integer)', 'e19638d58d1e2f42e6496b7711882ede', true),
+      ('public.pieces_scellees_par_l_inventaire(uuid, integer)', '243a354273994d727f7e51405825e601', true),
+      ('public.exercice_scellant_la_piece_citee(uuid)', '33e20f9b621a76693354d9004b2ebc35', false),
+      ('public.garder_fichier_scelle_par_l_inventaire()', 'c647bc6100b23faf3364b93eae996f26', false),
+      ('public.fichier_fige(text)', 'c0c78141ddb7ba3b6912fdb68ec87da1', true),
+      ('public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)',
+       'cb18f6063974972974a1aa92eb5b3e92', true)) x(fonction, empreinte, connecte) loop
     if md5(replace((select p.prosrc from pg_proc p where p.oid = to_regprocedure(v.fonction)), chr(13), ''))
          is distinct from v.empreinte
        or has_function_privilege('anon', v.fonction, 'execute')
@@ -1049,6 +1362,34 @@ begin
       raise exception 'Garde de fin : la fonction % n''a pas le corps ou les droits attendus.', v.fonction;
     end if;
   end loop;
+  -- `fichier_fige` reste celle que la policy de suppression du seau des pièces appelle (security definer, stable, son
+  -- chemin de recherche, le même objet) ; l'empreinte reste sans droits propres (aux droits de l'appelant).
+  if not (select p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=public']
+            from pg_proc p where p.oid = 'public.fichier_fige(text)'::regprocedure)
+     or not exists (select 1 from pg_depend d join pg_policy p on p.oid = d.objid
+                     where d.classid = 'pg_policy'::regclass and p.polname = 'pieces_storage_delete'
+                       and p.polrelid = 'storage.objects'::regclass and d.refclassid = 'pg_proc'::regclass
+                       and d.refobjid = 'public.fichier_fige(text)'::regprocedure)
+     or (select p.prosecdef from pg_proc p
+          where p.oid = 'public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure)
+     or (select count(*) from pg_proc p where p.proname in ('regularisations_scellees', 'pieces_scellees_par_l_inventaire') and p.prosecdef) > 0 then
+    raise exception 'Garde de fin : fichier_fige ou l''empreinte n''ont plus la forme que la production leur donne.';
+  end if;
+  -- La garde du fichier d'une pièce scellée : avant la mise à jour de ses quatre colonnes, ou sa suppression, ligne par ligne.
+  if not exists (select 1 from pg_trigger t where t.tgrelid = 'public.pieces'::regclass and t.tgname = 'pieces_fichier_scelle_par_l_inventaire'
+                   and not t.tgisinternal and t.tgenabled = 'O'
+                   and pg_get_triggerdef(t.oid) = 'CREATE TRIGGER pieces_fichier_scelle_par_l_inventaire BEFORE DELETE OR UPDATE OF storage_path, storage_hash, lisible_path, dossier_id ON public.pieces FOR EACH ROW EXECUTE FUNCTION garder_fichier_scelle_par_l_inventaire()') then
+    raise exception 'Garde de fin : la garde du fichier d''une pièce scellée par l''inventaire n''est pas celle que la migration pose.';
+  end if;
+  -- INV3-Q1 (A), rien ne change pour l'existant : les exercices validés que la garde de tête a vus se vérifier sous
+  -- l'empreinte d'hier se vérifient sous l'empreinte étendue, tous, et aucun autre.
+  if current_setting('jd.inventaire_exercices_verifies', true) is null
+     or current_setting('jd.inventaire_exercices_verifies', true) is distinct from (
+       select coalesce(string_agg(ev.dossier_id::text || ':' || ev.annee, ',' order by ev.dossier_id, ev.annee), '')
+         from public.exercices_valides ev where public.verifier_exercice_valide(ev.dossier_id, ev.annee)) then
+    raise exception 'Garde de fin : un exercice validé ne se vérifie plus comme avant la migration (ou la garde de tête ne les a pas relevés) : rien ne s''applique.';
+  end if;
+  perform set_config('jd.inventaire_exercices_verifies', '', true);
   if not (select p.prosecdef from pg_proc p where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure)
      or (select strpos(p.prosrc, 'perform pg_advisory_xact_lock(public.cle_validation(p_dossier_id));') from pg_proc p
           where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure) not between 1
