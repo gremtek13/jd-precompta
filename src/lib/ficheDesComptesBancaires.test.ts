@@ -7,6 +7,7 @@ import {
   retraitDuCompte, saisieDuCompte, saisieNeuve, usageDesComptes, type ExercicesValidesLus, type SaisieDeLaFiche, type UsageDUnCompte,
 } from './ficheDesComptesBancaires'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, relationsDuSchema } from '../test/schema'
 import type { CompteDuReleve } from './importParCompte'
 
 // LA FICHE DES COMPTES BANCAIRES (ligne 26.6, MCB6) : ce que la saisie écrit, et le premier refus — de l'application, puis de
@@ -153,6 +154,14 @@ describe('MCB6-Q2 : le compte propre ne part ni d’un exercice validé ni d’a
     expect(jugerLaCreation(saisie({ libelle: 'Compte principal', ouvertLe: '2024-06-01' }), [], ROLES, illisibles).refus).toBeNull()
   })
 
+  it('la base ne le refuse pas elle-même : aucune garde des comptes ne lit les exercices validés (la règle est de l’application)', () => {
+    // Le jour où une garde le refuserait (un filet en base, MCB6Q2-Q1), ce test tombe : le module redira alors SES mots.
+    for (const nom of ['garder_comptes_bancaires', 'garder_compte_principal_present']) {
+      expect(derniereDefinitionSql(nom), nom).not.toMatch(/exercices_valides/i)
+      expect(definitionsSql(nom, fichiersPrepares()), nom).toEqual([])
+    }
+  })
+
   it('une correction : la date neuve se juge ; la date déjà posée se garde, même sur un exercice validé depuis', () => {
     // Renommer un compte qui tient son 512 depuis 2026, validé depuis : rien ne se refuse.
     expect(jugerLaModification(SECOND, { ...saisieDuCompte(SECOND), libelle: 'Compte pro B' }, [PRINCIPAL, SECOND], ROLES, VIDE, valide2026).refus).toBeNull()
@@ -168,13 +177,41 @@ describe('MCB6-Q2 : le compte propre ne part ni d’un exercice validé ni d’a
 })
 
 describe('MCB6-Q1 : retirer un compte créé par erreur, seulement quand la base l’accepterait', () => {
-  const MIGRATION = readFileSync('supabase/schema/20261112140805_comptes_bancaires.sql', 'utf8').replace(/''/g, "'")
+  // Les DERNIÈRES définitions que la base exécute (l'export), les apostrophes doublées rendues ; une migration préparée qui
+  // redéfinirait l'une d'elles changerait ce que la base accepte au collage : le module se relirait alors contre elle.
+  const GARDE = derniereDefinitionSql('garder_comptes_bancaires').replace(/''/g, "'")
+  const PRINCIPAL_PRESENT = derniereDefinitionSql('garder_compte_principal_present').replace(/''/g, "'")
+  const MIGRATION = GARDE + PRINCIPAL_PRESENT
+
+  it('aucune migration préparée ne redéfinit les deux gardes que le retrait redit', () => {
+    expect(definitionsSql('garder_comptes_bancaires', fichiersPrepares())).toEqual([])
+    expect(definitionsSql('garder_compte_principal_present', fichiersPrepares())).toEqual([])
+  })
 
   it('un compte qui porte un mouvement ou un relevé ne se retire pas, aux mots de la garde', () => {
     const r = retraitDuCompte(SECOND, [PRINCIPAL, SECOND], { ...VIDE, releves: 1 })
     expect(r).toEqual({ offert: false, raison: 'Le compte bancaire « Compte pro 2 » porte des mouvements ou des relevés : il ne se retire pas.' })
     expect(MIGRATION).toContain("'Le compte bancaire « % » porte des mouvements ou des relevés : il ne se retire pas.', old.libelle")
     expect(retraitDuCompte(SECOND, [PRINCIPAL, SECOND], { ...VIDE, mouvements: 1 }).offert).toBe(false)
+  })
+
+  // Le scanner : TOUTE clé étrangère vers `comptes_bancaires`, de l'export comme des migrations préparées, est l'une des trois
+  // que l'usage compte — sinon la fiche offrirait un retrait que la base refuserait (ou, en cascade, qui emporterait des
+  // lignes sans le dire). Une clé neuve fait tomber ce test : l'usage doit la compter, et `retraitDuCompte` la juger.
+  it('toute clé étrangère vers un compte bancaire est comptée par l’usage, et retient la suppression sans cascade', () => {
+    const relations = relationsDuSchema([...fichiersDuSchema(), ...fichiersPrepares()])
+      .filter((r) => r.parent === 'comptes_bancaires')
+      .map((r) => `${r.enfant}.${r.colonne} ${r.aLaSuppression}`)
+      .sort()
+    expect(relations).toEqual([
+      'controles_releves_bancaires.compte_bancaire_id bloque', // usage.releves
+      'ecritures_brouillon.ouverture_compte_bancaire_id bloque', // usage.ouvertures (MCB5g, préparée)
+      'lignes_bancaires.compte_bancaire_id bloque', // usage.mouvements
+    ])
+    // Chacune des trois retient le retrait, à elle seule.
+    for (const u of [{ mouvements: 1 }, { releves: 1 }, { ouvertures: 1 }]) {
+      expect(retraitDuCompte(SECOND, [PRINCIPAL, SECOND], { ...VIDE, ...u }).offert, JSON.stringify(u)).toBe(false)
+    }
   })
 
   it('une écriture qui éclate l’ouverture vers lui le retient : sa clé, sans cascade, et la sauvegarde la dit bloquante', () => {
@@ -199,7 +236,8 @@ describe('MCB6-Q1 : retirer un compte créé par erreur, seulement quand la base
     const r = retraitDuCompte(SECOND, [PRINCIPAL, SECOND], VIDE)
     expect(r.offert && r.confirmation).toMatch(/^Retirer le compte bancaire « Compte pro 2 » \? .* Son compte du plan, le 512100, redevient libre\.$/)
     // La garde ne juge, à la suppression, que les mouvements et les relevés : rien d'autre ne retient un compte vierge.
-    const corps = MIGRATION.slice(MIGRATION.indexOf("if tg_op = 'DELETE' then"), MIGRATION.indexOf('return old;\n  end if;'))
+    const corps = GARDE.slice(GARDE.indexOf("if tg_op = 'DELETE' then"), GARDE.indexOf('return old;\n  end if;'))
+    expect(corps.length).toBeGreaterThan(100)
     expect(corps.match(/exists \(select 1 from public\.\w+/g)).toEqual([
       'exists (select 1 from public.dossiers', 'exists (select 1 from public.lignes_bancaires', 'exists (select 1 from public.controles_releves_bancaires',
     ])
