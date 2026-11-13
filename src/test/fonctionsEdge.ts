@@ -92,6 +92,19 @@ export function acomptesBaisses(source: string): string {
   return muter(source, [[ACOMPTES_LEVES, ACOMPTES_BAISSES]])
 }
 
+/** La constante de plateforme-agreee qui lit l'auteur d'une connexion (B4RS-Q1), telle qu'elle est servie : baissée. */
+export const AUTEUR_DES_CONNEXIONS_BAISSE = 'const AUTEUR_DES_CONNEXIONS_EN_BASE = false'
+/** La même, levée : la source du jour où la migration `auteur_des_connexions_plateformes` sera en base. */
+export const AUTEUR_DES_CONNEXIONS_LEVE = 'const AUTEUR_DES_CONNEXIONS_EN_BASE = true'
+
+/**
+ * La source de plateforme-agreee telle qu'elle se servira APRÈS la migration `auteur_des_connexions_plateformes` : la
+ * constante levée, en mémoire, rien d'autre de changé. Une occurrence exactement de la constante baissée, sinon `muter` lève.
+ */
+export function auteurDesConnexionsLeve(source: string): string {
+  return muter(source, [[AUTEUR_DES_CONNEXIONS_BAISSE, AUTEUR_DES_CONNEXIONS_LEVE]])
+}
+
 /** La constante de send-email qui admet la relance d'une facture (étape C5), baissée : la source d'avant sa migration. */
 export const RELANCES_BAISSEES = 'const RELANCES_EN_BASE = false'
 /** La même, levée, telle qu'elle est servie depuis la migration `relances_des_factures` (en production le 07/11/2026). */
@@ -470,6 +483,34 @@ const RANG_DU_GENRE: Readonly<Record<string, number>> = { facture: 0, avoir: 1, 
 // `ErreurPostgrest` pour un refus de la base (un droit d'exécution qui manque), rendu en `{ error }` comme le vrai.
 const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Record<string, unknown>) => unknown> = {
   admin_du_dossier: (monde, { utilisateur }, args) => adminDuDossier(monde, utilisateur, args.p_dossier_id),
+  // `attester_connexion_plateforme(p_dossier_id, p_version)` (migration PRÉPARÉE `auteur_des_connexions_plateformes`,
+  // B4RS-Q1) : exécutable par authenticated, jamais par l'anonyme ; le cabinet du dossier seul (`admin_du_dossier`, sous la
+  // session), sinon 42501 avant toute lecture ; la connexion à CETTE version (`updated_at`), sinon 22023 ; elle pose
+  // l'auteur (le compte de la session, jamais un paramètre) et rend l'instant.
+  attester_connexion_plateforme: (monde, { utilisateur, role }, args) => {
+    if (Object.keys(args).sort().join() !== 'p_dossier_id,p_version') {
+      throw new Error(`Faux PostgREST : attester_connexion_plateforme(${JSON.stringify(args)}) n'est pas modélisé`)
+    }
+    if (role === 'anonyme') {
+      throw new ErreurPostgrest({ code: '42501', message: 'permission denied for function attester_connexion_plateforme', status: 403 })
+    }
+    if (!utilisateur || !adminDuDossier(monde, utilisateur, args.p_dossier_id)) {
+      throw new ErreurPostgrest({ code: '42501', message: 'Accès refusé à ce dossier.', status: 403 })
+    }
+    const connexion = (monde.base.connexions_plateformes ?? [])
+      .find((c) => c.dossier_id === args.p_dossier_id && c.updated_at === args.p_version)
+    if (!connexion) {
+      throw new ErreurPostgrest({
+        code: '22023', status: 400,
+        message: 'La connexion à la plateforme a changé entre-temps, ou a été retirée : l\'enregistrer de nouveau.',
+      })
+    }
+    const le = new Date().toISOString()
+    connexion.ecrite_par = utilisateur
+    connexion.ecrite_le = le
+    monde.journal.push({ genre: 'ecriture', table: 'connexions_plateformes', operation: 'update', role })
+    return le
+  },
   // `plan_du_dossier(p_dossier_id)` (migration `plan_comptable_des_dossiers`, ligne 43) : AUX DROITS DE L'APPELANT
   // (ni `security definer`, ni réservée au service), son corps refuse en 42501 qui n'est pas admis au dossier — le rôle du
   // service compris, sans session : `admin_du_dossier` lit `auth.uid()`. Puis une ligne par rôle du catalogue, dans son

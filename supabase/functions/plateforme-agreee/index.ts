@@ -113,6 +113,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const FLUX_DEMANDE = /^(?!\.{1,2}$)[!-~]{1,200}$/
 const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret, organisation_id, portee, " +
   "recherche_depuis, derniere_recuperation, cycle_vie_depuis, cycle_vie_lu_le, created_at, updated_at"
+// L'AUTEUR DE LA CONNEXION (B4RS-Q1, tranchée par le cabinet le 12/11/2026 : « (B) Garder EC-Q4, refuser sur une connexion
+// écrite par un client ») : la migration `auteur_des_connexions_plateformes` (PRÉPARÉE) pose `ecrite_par` et `ecrite_le`,
+// que la base efface à toute écriture de la configuration et que seule `attester_connexion_plateforme`, appelée sous la
+// session du cabinet, renseigne. Levée avec elle : la fonction les lit, l'action « enregistrer » du cabinet atteste ce
+// qu'elle vient d'écrire, la vue publique dit si le cabinet a écrit la configuration en vigueur, et la réception par le
+// client ne passe que par une connexion que le cabinet a écrite (bloc RÉCEPTION PAR LE CLIENT). Baissée : la fonction
+// d'hier, qui ne nomme pas ces colonnes.
+const AUTEUR_DES_CONNEXIONS_EN_BASE = false
+const COLONNES_DE_L_AUTEUR = ", ecrite_par, ecrite_le"
+const COLONNES_LUES = AUTEUR_DES_CONNEXIONS_EN_BASE ? COLONNES + COLONNES_DE_L_AUTEUR : COLONNES
 // Une facture à transmettre, telle que le générateur la lit, avec l'émetteur qu'elle a figé et la facture qu'un avoir
 // corrige.
 const COLONNES_FACTURE = "id, numero, statut, type, facture_origine_id, date_emission, date_echeance, tiers_nom, tiers_adresse, " +
@@ -293,6 +303,10 @@ interface ConnexionLue {
   cycle_vie_lu_le: string | null
   created_at: string
   updated_at: string
+  // Le compte du cabinet qui a écrit la configuration en vigueur, et quand (B4RS-Q1) : nuls quand le cabinet ne l'a pas
+  // écrite ; lus seulement sous `AUTEUR_DES_CONNEXIONS_EN_BASE`, absents sinon.
+  ecrite_par?: string | null
+  ecrite_le?: string | null
 }
 
 interface ValeursConnexion {
@@ -395,6 +409,9 @@ function vuePublique(c: ConnexionLue | null) {
     cycle_vie_lu_le: c.cycle_vie_lu_le,
     created_at: c.created_at,
     version: c.updated_at,
+    // Le cabinet a-t-il écrit la configuration en vigueur (B4RS-Q1) ? Dit seulement quand l'auteur a été lu ; jamais le
+    // compte qui l'a écrite.
+    ...(c.ecrite_par === undefined ? {} : { ecrite_par_le_cabinet: c.ecrite_par !== null, ecrite_le: c.ecrite_le ?? null }),
   }
 }
 // ── FIN CONNEXION ───────────────────────────────────────────────────────────────────────────────────
@@ -3587,12 +3604,21 @@ async function receptionParLeClient(c: ContexteDeLaReception): Promise<Response>
   }
 
   const { data: lue, error: erreurLecture } = await admin
-    .from("connexions_plateformes").select(COLONNES).eq("dossier_id", dossierId).maybeSingle()
+    .from("connexions_plateformes").select(COLONNES_LUES).eq("dossier_id", dossierId).maybeSingle()
   if (erreurLecture) {
     return json({ error: `La connexion à la plateforme n'a pas pu être lue (${erreurLecture.message}).` }, 503)
   }
   const connexion = (lue ?? null) as ConnexionLue | null
   if (!connexion) return json({ error: "Aucune plateforme n'est configurée pour ce dossier.", raison: "sans_plateforme" }, 409)
+  // La réception par le client ne passe que par une connexion dont le cabinet a écrit la configuration en vigueur (B4RS-Q1) :
+  // la base efface l'auteur à toute écriture et ne le pose que pour le cabinet. Une configuration écrite par un accès client,
+  // ou d'avant la migration, n'en porte pas — et un auteur non lu ne vaut pas mieux. Avant tout appel à la plateforme.
+  if (AUTEUR_DES_CONNEXIONS_EN_BASE && connexion.ecrite_par == null) {
+    return json({
+      error: "La connexion à la plateforme n'a pas été enregistrée par le cabinet : la relève depuis l'espace client attend qu'il l'enregistre.",
+      raison: "connexion_hors_du_cabinet",
+    }, 409)
+  }
   const hote = new URL(connexion.url_flux).hostname
   if (action === "recevoir_achat" && payload.version !== connexion.updated_at) {
     return json({ error: "La connexion à la plateforme a changé entre-temps : relancez la récupération.", perimee: true }, 409)
@@ -3921,7 +3947,7 @@ Deno.serve(async (req: Request) => {
   if (!actionPermise(QUI_PEUT_QUOI, action, lus.droits)) return json({ error: "Dossier introuvable." }, 404)
 
   const { data: lue, error: erreurLecture } = await admin
-    .from("connexions_plateformes").select(COLONNES).eq("dossier_id", dossierId).maybeSingle()
+    .from("connexions_plateformes").select(COLONNES_LUES).eq("dossier_id", dossierId).maybeSingle()
   // « Aucune plateforme configurée » est une AFFIRMATION : une lecture refusée ne doit pas la produire.
   if (erreurLecture) {
     return json({ error: `La connexion à la plateforme n'a pas pu être lue (${erreurLecture.message}).` }, 503)
@@ -3942,6 +3968,22 @@ Deno.serve(async (req: Request) => {
   if (action === "enregistrer") {
     const saisie = saisieDeConnexion(payload, connexion)
     if ("refus" in saisie) return json({ error: saisie.refus }, 400)
+    // L'auteur (B4RS-Q1) : le cabinet du dossier atteste, sous SA session, la configuration qu'il vient d'écrire — la base
+    // juge qui il est, et efface l'auteur à toute écriture. Un accès client n'atteste rien : sa configuration reste à personne,
+    // et la réception par le client y est refusée. Une attestation qui échoue laisse la connexion écrite, sans auteur : dit.
+    const enregistree = async (ecrite: ConnexionLue): Promise<Response> => {
+      if (!AUTEUR_DES_CONNEXIONS_EN_BASE || !lus.droits.cabinet) return json({ connexion: vuePublique(ecrite) })
+      const { data: attesteeLe, error: erreurAttestation } = await supabaseAsCaller
+        .rpc("attester_connexion_plateforme", { p_dossier_id: dossierId, p_version: ecrite.updated_at })
+      if (erreurAttestation || typeof attesteeLe !== "string") {
+        return json({
+          connexion: vuePublique(ecrite),
+          avertissement: "La connexion est enregistrée, mais la base ne l'a pas notée écrite par le cabinet : la relève " +
+            "depuis l'espace client y reste fermée. Enregistrez-la de nouveau.",
+        })
+      }
+      return json({ connexion: vuePublique({ ...ecrite, ecrite_par: utilisateur, ecrite_le: attesteeLe }) })
+    }
     if (connexion) {
       const { data, error } = await admin.from("connexions_plateformes")
         .update({
@@ -3951,19 +3993,20 @@ Deno.serve(async (req: Request) => {
             ? { recherche_depuis: null, derniere_recuperation: null, cycle_vie_depuis: null, cycle_vie_lu_le: null }
             : {}),
         })
-        .eq("dossier_id", dossierId).select(COLONNES).maybeSingle()
+        .eq("dossier_id", dossierId).select(COLONNES_LUES).maybeSingle()
       if (error) return json({ error: `La connexion n'a pas pu être enregistrée (${error.message}).` }, 500)
       if (!data) return json({ error: "La connexion a été retirée entre-temps : recharge la page." }, 409)
-      return json({ connexion: vuePublique(data as ConnexionLue) })
+      return await enregistree(data as ConnexionLue)
     }
     const { data, error } = await admin.from("connexions_plateformes")
       .insert({ dossier_id: dossierId, ...saisie.valeurs, created_by: utilisateur })
-      .select(COLONNES).maybeSingle()
+      .select(COLONNES_LUES).maybeSingle()
     if (error?.code === "23505") {
       return json({ error: "Une connexion vient d'être enregistrée pour ce dossier : recharge la page." }, 409)
     }
     if (error) return json({ error: `La connexion n'a pas pu être enregistrée (${error.message}).` }, 500)
-    return json({ connexion: vuePublique((data ?? null) as ConnexionLue | null) })
+    if (!data) return json({ connexion: vuePublique(null) })
+    return await enregistree(data as ConnexionLue)
   }
 
   // Les huit dernières actions supposent une connexion.

@@ -1,5 +1,6 @@
 import { dateAParis, formatDate } from './format'
 import type { FluxVu, ReponsePlateforme } from './receptionPlateforme'
+import { refusDeLAuteurDitAuClient } from './auteurDesConnexions'
 
 // « RELEVER MA PLATEFORME » : LA RÉCEPTION DES FACTURES D'ACHAT PAR L'ACCÈS « ACHATS » (espace client, ligne 51.5, étape B4r ;
 // B4-Q1 à B4-Q3, tranchées par le cabinet le 11/11/2026 à la recommandation). Le module pur de l'écran : ce que la fonction
@@ -76,6 +77,9 @@ const BILAN_VIDE = (): BilanDeLaReleve => ({
 
 /** Le refus d'un appel, dit au client : la raison que le serveur a nommée, sinon sa phrase. */
 export function refusDitAuClient(erreur: string, raison: string | null): string {
+  // B4RS-Q1 : la relève ne passe que par une connexion que le cabinet a écrite (sous AUTEUR_DES_CONNEXIONS_PREVU).
+  const refusDeLAuteur = refusDeLAuteurDitAuClient(raison)
+  if (refusDeLAuteur !== null) return refusDeLAuteur
   if (raison === 'sans_plateforme') return 'Ta société n’a pas de plateforme reliée chez ton cabinet : demande-lui de la relier.'
   if (raison === 'superpdp') {
     return 'Tes factures reçues arrivent déjà chez ton cabinet par Super PDP : relever ta plateforme les ferait entrer deux fois.'

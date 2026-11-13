@@ -95,6 +95,9 @@ export interface ConnexionPlateformeVue {
   cycle_vie_lu_le: string | null
   created_at: string
   version: string
+  /** Le cabinet a-t-il écrit la configuration en vigueur (B4RS-Q1) ? Absent tant que la fonction ne lit pas l'auteur. */
+  ecrite_par_le_cabinet?: boolean
+  ecrite_le?: string | null
 }
 
 export interface DocumentTelecharge {

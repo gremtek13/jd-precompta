@@ -38,6 +38,7 @@ import { jumellesImportees, phrasesJumellesImportees } from '../../lib/ventesJum
 import { lireJumellesDuDossier } from '../../lib/ventesJumellesLecture'
 import BilanReleveStatuts from './BilanReleveStatuts'
 import { pourLEspace } from '../../lib/espaceVentes'
+import { auteurDeLaConnexionDit } from '../../lib/auteurDesConnexions'
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT (ligne 28.5 de la feuille de route, étape b). Le
 // cabinet relie ici le dossier à la plateforme que son client a choisie — l'accès « client credentials » que le client
@@ -85,6 +86,8 @@ export default function PlateformeClientModal(props: Props) {
 
   // `undefined` tant que la base n'a pas répondu ; `null`, aucune connexion.
   const [connexion, setConnexion] = useState<ConnexionPlateformeVue | null | undefined>(undefined)
+  // Qui a écrit la configuration en vigueur (B4RS-Q1), sous AUTEUR_DES_CONNEXIONS_PREVU : une ligne de la fiche, ou rien.
+  const auteurDit = connexion ? auteurDeLaConnexionDit(connexion, espace) : null
   const [erreurLecture, setErreurLecture] = useState<string | null>(null)
   const [superPdp, setSuperPdp] = useState<{ configuree: boolean | null; erreur: string | null } | null>(null)
   const [formulaire, setFormulaire] = useState(false)
@@ -473,6 +476,12 @@ export default function PlateformeClientModal(props: Props) {
                   </dd>
                   <dt>Dernière récupération</dt>
                   <dd>{connexion.derniere_recuperation ? formatDate(connexion.derniere_recuperation) : 'jamais'}</dd>
+                </>
+              )}
+              {auteurDit !== null && (
+                <>
+                  <dt>Écrite par</dt>
+                  <dd>{auteurDit}</dd>
                 </>
               )}
               <dt>Statuts des factures émises</dt>

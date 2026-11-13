@@ -29,6 +29,17 @@ const m = vi.hoisted(() => ({
   releverStatutsDesFactures: vi.fn(),
 }))
 vi.mock('../../lib/receptionPlateforme', () => m)
+// L'auteur de la connexion (B4RS-Q1) : la fiche dit ce que le module en dit, sous AUTEUR_DES_CONNEXIONS_PREVU — baissé tel
+// qu'il est servi, levé le temps d'un test (le module seul est éprouvé dans auteurDesConnexions.test.ts).
+const drapeauAuteur = vi.hoisted(() => ({ leve: false }))
+vi.mock('../../lib/auteurDesConnexions', async (importOriginal) => {
+  const vrai = await importOriginal<typeof import('../../lib/auteurDesConnexions')>()
+  return {
+    ...vrai,
+    auteurDeLaConnexionDit: (vue: Parameters<typeof vrai.auteurDeLaConnexionDit>[0], espace: 'cabinet' | 'client') =>
+      vrai.auteurDeLaConnexionDit(vue, espace, drapeauAuteur.leve),
+  }
+})
 // Le bilan d'un relevé lit en base le numéro des factures qu'il a touchées (ReleveStatuts.tsx), et le bilan d'un import
 // relit les factures émises, leurs transmissions et les pièces du dossier (ligne 28.6) : les filtres s'appliquent, seules
 // les colonnes demandées reviennent, et une table peut se taire au-delà d'un rang en annonçant son vrai total.
@@ -112,6 +123,7 @@ const ouvrir = (siret: string | null = '12345678200010') =>
 
 beforeEach(() => {
   numero = 0
+  drapeauAuteur.leve = false
   bascule = false
   base.factures = []
   base.transmissions = []
@@ -659,5 +671,34 @@ describe('relire les statuts depuis le début', () => {
     expect(await screen.findByText(/^La plateforme refuse l’accès \(recherche des statuts, 403\)\. Demandez au client/)).toBeTruthy()
     expect(screen.queryByRole('heading', { name: /^Statuts lus/ })).toBeNull()
     expect((screen.getByText('Relire les statuts depuis le début') as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('l’auteur de la connexion (B4RS-Q1)', () => {
+  it('drapeau baissé : la fiche ne dit rien de l’auteur, même quand la fonction le lit', async () => {
+    m.lireConnexionPlateforme.mockResolvedValue(ok({ connexion: connexion({ ecrite_par_le_cabinet: false, ecrite_le: null }) }))
+    ouvrir()
+    expect(await screen.findByText('Plateforme fictive')).toBeTruthy()
+    expect(screen.queryByText('Écrite par')).toBeNull()
+  })
+
+  it('drapeau levé : une connexion que le cabinet n’a pas écrite le dit, et dit que la relève du client y est fermée', async () => {
+    drapeauAuteur.leve = true
+    m.lireConnexionPlateforme.mockResolvedValue(ok({ connexion: connexion({ ecrite_par_le_cabinet: false, ecrite_le: null }) }))
+    ouvrir()
+    expect(await screen.findByText('Écrite par')).toBeTruthy()
+    expect(screen.getByText(/^pas par le cabinet .* la relève depuis l’espace client y reste fermée/)).toBeTruthy()
+  })
+
+  it('drapeau levé : une connexion écrite par le cabinet dit son jour ; une vue sans l’auteur ne dit rien', async () => {
+    drapeauAuteur.leve = true
+    m.lireConnexionPlateforme.mockResolvedValue(ok({ connexion: connexion({ ecrite_par_le_cabinet: true, ecrite_le: '2026-11-13T09:00:00.000Z' }) }))
+    const { unmount } = ouvrir()
+    expect(await screen.findByText('le cabinet, le 13/11/2026')).toBeTruthy()
+    unmount()
+    m.lireConnexionPlateforme.mockResolvedValue(ok({ connexion: connexion() }))
+    ouvrir()
+    expect(await screen.findByText('Plateforme fictive')).toBeTruthy()
+    expect(screen.queryByText('Écrite par')).toBeNull()
   })
 })
