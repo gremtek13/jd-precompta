@@ -489,10 +489,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   COTISATIONS (LIGNE 27, TNS-Q2) », « LE BANC DE CHARGE D'UNE ANNÉE », « LA RÉGULARISATION ET LES PARAMÈTRES DES
   COTISATIONS EN PRODUCTION (LIGNE 27) ».
 - **CFE et CVAE** (ligne 48) : la saisie par exercice de l'annexe (EM, EN, EK, ER, EU, EV, AH, BK ; nul « à saisir »)
-  en production depuis le 12/11/2026 (`saisies_2035e`, `SAISIES_2035E_PREVUES` levé, `SAISIES_2035E_EXPORTEES` baissé
-  tant que le PDF de l'annexe ne dit pas « à saisir », 48S-Q2) ; les dates
-  d'activité jugées à la main (48-Q6) ; restent le millésime 2027, le plafonnement de la CET (plus tard, 48-Q9) → « L'ANNEXE
-  2035-E SE TIRE DE LA 2035 DÉPOSÉE », « LA SAISIE DE L'ANNEXE 2035-E PAR EXERCICE, EN BASE ».
+  en production depuis le 12/11/2026 (`saisies_2035e`, `SAISIES_2035E_PREVUES` levé), son écran depuis le 13/11/2026
+  (`SAISIES_2035E_EXPORTEES` levé, 48S-Q2) : le PDF porte « à saisir » en rouge dans la case d'une ligne non dite et des
+  totaux qui en dépendent, à côté de la case AH, dans celle de BK ; le cadre coché ne s'imprime pas, dit à reporter à la
+  main ; l'écran compte les lignes avant le clic et retient le PDF d'une annexe due tant que la saisie n'est pas lue en
+  entier ; les dates d'activité jugées à la main (48-Q6) ; restent le millésime 2027, le plafonnement de la CET (plus tard,
+  48-Q9) → « L'ANNEXE 2035-E SE TIRE DE LA 2035 DÉPOSÉE », « LA SAISIE DE L'ANNEXE 2035-E PAR EXERCICE, EN BASE », « LE PDF
+  DE L'ANNEXE 2035-E DIT « À SAISIR » ».
 - **Télédéclaration de la TVA** (ligne 28) : étape 2, la transmission par un partenaire EDI — Teledec choisi, qui veut
   voir l'application fonctionner avant d'ouvrir son API ; ASPOne.fr l'autre voie. Rien n'est écrit.
 - **Comptabilité d'engagement** (ligne 31) : le change et les frais bancaires à part, en production depuis le 12/11/2026
