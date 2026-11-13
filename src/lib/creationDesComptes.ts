@@ -14,6 +14,7 @@ import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
 import { NOTES_DE_FRAIS_PREVUES } from './notesDeFrais'
 import { lettresDuClientPrevues } from './lettresDuClient'
+import { TRESORERIE_A_90_JOURS_OFFERTE } from './tresorerieClient'
 import type { RoleCabinetAdmin } from './types'
 
 /** Ce que la réponse dit du compte : créé (le mot de passe saisi est le sien), existant (il n'a pas servi), ou rien de sûr. */
@@ -213,11 +214,13 @@ const CE_QUE_DONNE_LE_ROLE: Readonly<Record<RoleCabinetAdmin, string>> = {
 // case « Documents ») avec la leur (`DOCUMENTS_ET_DEMANDES_PREVUS`, étape B3a) ; « Mes achats » (selon la case « Achats »)
 // avec la sienne (`ACHATS_DU_CLIENT_PREVUS`, étape B5) ; « Mes notes de frais » (selon la case « Notes de frais ») avec la
 // sienne (`NOTES_DE_FRAIS_PREVUES`, étape B8) ; « Mes lettres de mission » (selon la case « Documents ») avec la sienne
-// (`lettres_du_client`, `DRAPEAU_DES_LETTRES_DU_CLIENT`, étape LM6).
+// (`lettres_du_client`, `DRAPEAU_DES_LETTRES_DU_CLIENT`, étape LM6) ; « Ma trésorerie » (selon la case « Banque ») avec son
+// drapeau (`TRESORERIE_A_90_JOURS_OFFERTE`, étape C8, sans migration).
 export function ceQuePerdLeClientSelon(
   comptesEnBase: boolean, documentsEnBase: boolean, achatsEnBase: boolean, fraisEnBase: boolean, lettresEnBase: boolean,
+  tresorerieOfferte: boolean,
 ): string {
-  const selonLesCases = ['« Mes ventes »', '« Ma banque »', '« Mon analyse »', '« Ma caisse »',
+  const selonLesCases = ['« Mes ventes »', '« Ma banque »', '« Mon analyse »', ...(tresorerieOfferte ? ['« Ma trésorerie »'] : []), '« Ma caisse »',
     ...(comptesEnBase ? ['« Mes comptes »'] : []), ...(documentsEnBase ? ['« Mes documents »'] : []),
     ...(lettresEnBase ? ['« Mes lettres de mission »'] : []),
     ...(achatsEnBase ? ['« Mes achats »'] : []), ...(fraisEnBase ? ['« Mes notes de frais »'] : [])]
@@ -231,7 +234,7 @@ export function ceQuePerdLeClientSelon(
 
 export const CE_QUE_PERD_LE_CLIENT = ceQuePerdLeClientSelon(
   SITUATIONS_PUBLIEES_EXPORTEES, DOCUMENTS_ET_DEMANDES_PREVUS, ACHATS_DU_CLIENT_PREVUS, NOTES_DE_FRAIS_PREVUES,
-  lettresDuClientPrevues())
+  lettresDuClientPrevues(), TRESORERIE_A_90_JOURS_OFFERTE)
 
 /** Ce qui reste : ses accès, en base, que l'application lui rouvre dès qu'il n'a plus de ligne d'équipe. */
 export const CE_QUI_RESTE_AU_CLIENT = "Ses accès restent dans l'onglet Accès de ses dossiers : la retirer de l'équipe "

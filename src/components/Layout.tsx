@@ -10,6 +10,7 @@ import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import { maBanqueOuverte } from '../lib/banqueClient'
 import { monAnalyseOuverte } from '../lib/analyseClient'
+import { maTresorerieOuverte, TRESORERIE_A_90_JOURS_OFFERTE } from '../lib/tresorerieClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { mesComptesOuverts, SITUATIONS_PUBLIEES_EXPORTEES } from '../lib/situationsPubliees'
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
@@ -22,7 +23,7 @@ import { NOTES_DE_FRAIS_PREVUES } from '../lib/notesDeFrais'
 import { mesNotesDeFraisOuvertes } from '../lib/notesDeFraisVue'
 import {
   IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconChecklist, IconComptesMaster, IconDocuments, IconDossiers, IconEcheancier,
-  IconEcritures, IconEquipe, IconEstimation, IconFactures, IconStatistiques,
+  IconEcritures, IconEquipe, IconEstimation, IconFactures, IconFinancement, IconStatistiques,
   IconInformations, IconCadenas, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun, IconVirements,
 } from './icons'
@@ -125,6 +126,8 @@ function Coque() {
   // route.
   const mesNotesDeFrais = role === 'client'
     && mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais)
+  // « Ma trésorerie » (ligne 51.5, étape C8) : derrière son drapeau, quand « Ma banque » s'offre, comme sa route.
+  const maTresorerie = role === 'client' && maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanque)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
@@ -413,6 +416,13 @@ function Coque() {
                   <IconStatistiques width={18} height={18} />
                   <span className="nav-label-full">Mon analyse</span>
                   <span className="nav-label-court">Analyse</span>
+                </NavLink>
+              )}
+              {maTresorerie && (
+                <NavLink to="/ma-tresorerie" title="Ma trésorerie" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconFinancement width={18} height={18} />
+                  <span className="nav-label-full">Ma trésorerie</span>
+                  <span className="nav-label-court">Trésorerie</span>
                 </NavLink>
               )}
               {/* « Mon échéancier » (ligne 51.5, étape C1) : ouvert à tout accès client. */}

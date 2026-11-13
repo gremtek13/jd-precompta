@@ -52250,3 +52250,21 @@ page des arbitrages classée par jour, la plus récente en haut, puis par chanti
 que cite la source de la question, jamais avant l'ouverture de la page (19/10/2026, « ou avant ») ; le bouton « Retenir » ne vaut
 plus que pour le groupe qu'il précède (v175). Le cabinet part en congé la semaine du 16/11 et répondra aux questions pendant ce temps :
 la session avance seule, par vagues d'agents, sur ce qui n'attend aucune réponse ; aucune migration n'est appliquée sans accord.
+
+### 13/11/2026 — « MA TRÉSORERIE À 90 JOURS » (C8), DERRIÈRE SON DRAPEAU
+
+Ligne 51.5, « aller plus loin », dernière étape de la partie C, sans migration. `lib/tresorerieClient.ts` (pur) part du solde
+LU (`soldeAuReleve`, compte par compte avec `banqueParCompte` si `COMPTES_BANCAIRES_PREVUS` se lève, la somme datée du relevé le
+plus ancien), ajoute le reste dû de chaque facture à son échéance (`facturesAEncaisser`, extrait de `creancesClients` pour être
+écrit une fois) et retire les échéances de C1 au montant connu (`composerEcheancier`, montants demandés), jour après jour ;
+`lib/tresorerieClientLecture.ts` relit les cases à la base d'abord. **Choix** : la page s'ouvre avec « Banque » (sans solde, rien
+ne se projette), « Ventes » ajoute les créances, sinon « non comptées », dit ; l'horizon va d'aujourd'hui (Paris, inclus) à
+aujourd'hui plus 90 jours (exclu), la convention de l'échéancier ; seule une créance À VENIR dans l'horizon entre, une facture
+en retard, sans échéance ou échue plus tard se dit à part avec sa somme ; le même jour, les sorties d'abord (le point bas jamais
+flatté) ; une échéance sans montant (impôts, TVA) se nomme, jamais 0 ; « prévision » = un montant que personne n'a appelé
+(prévisionnelle d'une caisse, impôt sur barème à confirmer) ; toute source lue en partie rend la projection muette. Les achats
+(B4 pas en base) et le prévisionnel du cabinet (tiré des écritures, que le client ne lit pas : il faudrait le publier, une
+migration — C8-Q2) restent « non comptés », dits ; `tresorerieClient.test.ts` refuse `ACHATS_DU_CLIENT_PREVUS` levé tant qu'ils
+ne sont pas comptés ici. `TRESORERIE_A_90_JOURS_OFFERTE` baissé (C8-Q1) ; la phrase de l'entrée dans l'équipe nomme la page
+avec lui (`ceQuePerdLeClientSelon`, sixième paramètre). Tests : module (horizon, départ, muette, ordre, centimes, mots), écran
+(9 cas), la coque dans les deux états du drapeau, `ecransAvantLecture`.

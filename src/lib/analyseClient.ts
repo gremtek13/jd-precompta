@@ -138,6 +138,28 @@ export type CreancesClients =
   | { etat: 'muet'; motif: string }
   | { etat: 'lu'; enRetard: Creance; aVenir: Creance; sansEcheance: Creance; total: Creance }
 
+/** Une facture dont il reste à encaisser, et ce reste, en centimes (strictement positif). */
+export interface FactureAEncaisser { facture: FactureEmise; resteCentimes: number }
+
+/**
+ * Les factures validées (pas un avoir) dont il reste à encaisser, et ce reste : `resteAEncaisser` (le registre, NET des
+ * retirés et des annulations), moins ce que les avoirs ont crédité (`dejaCredite`) — le calcul de l'onglet Factures. Écrit
+ * une fois : « Mon analyse » (`creancesClients`) et « Ma trésorerie » (lib/tresorerieClient.ts) le lisent. Ne juge pas
+ * l'entièreté des listes : l'appelant ne l'appelle que sur des listes lues en entier.
+ */
+export function facturesAEncaisser(
+  listes: Pick<ListesDesVentes, 'factures' | 'lignes' | 'encaissements' | 'parts'>,
+): FactureAEncaisser[] {
+  const resultat: FactureAEncaisser[] = []
+  for (const f of listes.factures) {
+    if (!compte(f) || f.type !== 'facture') continue
+    const reste = resteAEncaisser({ facture: f, lignes: listes.lignes, encaissements: listes.encaissements, parts: listes.parts })
+      .resteCentimes - centimes(dejaCredite(f.id, listes.factures))
+    if (reste > 0) resultat.push({ facture: f, resteCentimes: reste })
+  }
+  return resultat
+}
+
 /**
  * Le reste dû par tes clients, au jour de Paris `aujourdHui` : chaque facture validée (pas un avoir) dont il reste à
  * encaisser, rangée en retard (`retardDeLaFacture`), à venir ou sans échéance. Muet si les factures, leurs lignes, le
@@ -152,11 +174,7 @@ export function creancesClients(
   const vide = (): Creance => ({ nombre: 0, centimes: 0 })
   const r = { enRetard: vide(), aVenir: vide(), sansEcheance: vide(), total: vide() }
   const ajouter = (c: Creance, reste: number) => { c.nombre += 1; c.centimes += reste }
-  for (const f of listes.factures) {
-    if (!compte(f) || f.type !== 'facture') continue
-    const reste = resteAEncaisser({ facture: f, lignes: listes.lignes, encaissements: listes.encaissements, parts: listes.parts })
-      .resteCentimes - centimes(dejaCredite(f.id, listes.factures))
-    if (reste <= 0) continue
+  for (const { facture: f, resteCentimes: reste } of facturesAEncaisser(listes)) {
     ajouter(r.total, reste)
     if (f.date_echeance == null) ajouter(r.sansEcheance, reste)
     else if (retardDeLaFacture(f, reste, aujourdHui).etat === 'en_retard') ajouter(r.enRetard, reste)
