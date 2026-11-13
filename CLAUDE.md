@@ -58,7 +58,9 @@ et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉE
   session se resserrent alors (décision du cabinet du 18/10/2026). Ce jour avance vers le 20 novembre (MVP-D6) ; les
   trois dossiers dont 60 des 69 fichiers de `supabase/essais/` se servent restent, `test` compris, avec le compte client
   d'essai, et le quatrième se supprime ce jour-là (MVP-D8) → « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8,
-  CAISSE-Q1 À Q4, 28.5E-Q1 ».
+  CAISSE-Q1 À Q4, 28.5E-Q1 ». Le resserrement est préparé (MVP-D9, 13/11/2026), rien n'est branché avant l'accord du cabinet
+  (MVPD9-Q1) : `outils/gardefou/lectureSeule.mjs` juge chaque requête du côté fermé (`gardefouLectureSeule.test.ts`)
+  → « MVP-D9 : LE GARDE-FOU DES LECTURES SIMPLES, PRÉPARÉ, PAS BRANCHÉ ».
 
 ## Architecture actuelle
 
@@ -170,6 +172,10 @@ outils/captures/  banc VERSIONNÉ : l'application et un faux Supabase sous Playw
 outils/cotisations/  oracle.mjs : les cas de référence Urssaf (moteur installé à la demande, jamais en dépendance).
 outils/facturation/  valider.mjs, cdar/valider.mjs, ereporting/valider.mjs : les exemples fictifs jugés par les
                   instruments officiels (hors du dépôt, à leur empreinte), confrontés par leurs tests.
+outils/fec/      lancer.mjs : le FEC FICTIF d'une année (la répétition de 2025, par les vrais moteurs) à 18 et à 22
+                  champs, écrit hors du dépôt pour Test Compta Demat et l'import chez l'expert-comptable (FEC22f).
+outils/gardefou/ lectureSeule.mjs : le garde-fou de MVP-D9 (un hook qui ne laisse partir seule qu'une LECTURE SIMPLE
+                  par execute_sql) ; préparé, PAS branché — le bloc à poser et ce qu'il retire dans son README.
 outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `donnees.ts` seule source ; nos
                   chiffres jamais commités, seule leur empreinte → « LES DOSSIERS DE RÉFÉRENCE ».
 ```
@@ -525,7 +531,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   FEC22-Q7, écrite le 02/11/2026 : le libellé d'une vente porte le nom d'une entreprise (le prédicat d'IdClient), sinon le
   numéro de la facture, une pièce de vente « Recette » et sa date, son 411 au compte « Clients divers » ; la règle dans
   `lib/libellesDesVentes.ts`, que garde un relevé de toute la source ; ce qui est déjà au brouillon garde son libellé,
-  et rien ne le signale (FEC22Q7-Q1, le 03/11/2026) → « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE »,
+  et rien ne le signale (FEC22Q7-Q1, le 03/11/2026) → « FEC22F : LE FEC FICTIF DE L'ÉPREUVE DU FICHIER » (FEC22f, première partie, 13/11/2026 : `outils/fec/`, `fecFictif.test.ts` ;
+  FEC22F-Q1), « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE »,
   « UNE RÉPONSE DU CABINET : FEC22Q7-Q1 », « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU
   CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », « LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) »,
   « LE FEC D'UN BNC EN TRÉSORERIE À VINGT-DEUX CHAMPS, DERRIÈRE SON DRAPEAU (FEC22C1, LIGNE 26.6, ÉTAPE E) », « LES
@@ -547,7 +554,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   de banque au 512 du compte du mouvement : les dix fonctions du relevé (`jambe_de_banque_par_compte`), la
   composition par `lib/banqueDuMouvement.ts` dans la fiche Banque, puis (seconde partie) dans Écritures, Virements,
   Cotisations, le lot des règles et les sept détecteurs (`banques`, paramètre obligatoire ; une banque inconnue ne se juge pas) ; MCB6, la carte « Comptes bancaires » (Informations) et la
-  preuve du relevé par compte ; MCB7, « Ma banque » compte par compte (`lib/banqueClientParCompte.ts`, sans nouvelle fonction)
+  preuve du relevé par compte ; MCB6-Q1 et Q2 (« Retirer ce compte », le 512 propre refusé depuis une année validée),
+  commités INACHEVÉS le 13/11/2026, à relire (`lib/ficheDesComptesBancaires.ts`) ; MCB7, « Ma banque » compte par compte (`lib/banqueClientParCompte.ts`, sans nouvelle fonction)
   → « « MA BANQUE » ET « MA SIMULATION » POUR PLUSIEURS COMPTES BANCAIRES (MCB7) », « LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES DIX FONCTIONS DU RELEVÉ (MCB5) », « LA JAMBE DE BANQUE PAR COMPTE
   BANCAIRE : LES GESTES HORS DE BANQUE ET LES DÉTECTEURS (MCB5, SECONDE PARTIE) », « LES ÉCRANS
   DU CABINET POUR PLUSIEURS COMPTES BANCAIRES (MCB6) », « LA SUITE DES SOLDES, LE 31
@@ -759,8 +767,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `lib/affectationDuResultat.ts`) ; rien n'est à l'écran, et deux migrations sont préparées, à coller dans n'importe
   quel ordre avec MCB5g (INV2 `operations_d_inventaire`, LIA2 `stocks_de_cloture`) ; INV3-Q1 et INV3-Q2 (A) dans INV2 et
   INV3 le 13/11/2026 : l'empreinte en forme 2 scelle l'inventaire sans changer le texte d'un exercice qui n'en porte pas
-  (la garde de fin le rejoue), la régularisation reprise d'une balance confrontée au solde repris (INV3Q2-Q1 posée)
-  → « LES ÉCRITURES D'INVENTAIRE : LA CONCEPTION », « INV2 ET LIA2 : DEUX MIGRATIONS QUI SE COLLENT DANS LES DEUX
+  (la garde de fin le rejoue), la régularisation reprise d'une balance confrontée au solde repris (INV3Q2-Q1 posée) ;
+  INV6, INACHEVÉ, derrière `INVENTAIRE_EXPORTE` baissé (`lib/inventaireDesControles.ts` : le bilan, la Vue d'ensemble et la
+  révision lisent la déclaration de l'inventaire ; restent la carte de la Clôture, le dossier permanent, leurs tests ;
+  INV6-Q1) → « INV6 : L'INVENTAIRE DANS LE BILAN, LA VUE D'ENSEMBLE ET LA RÉVISION »,
+  « LES ÉCRITURES D'INVENTAIRE : LA CONCEPTION », « INV2 ET LIA2 : DEUX MIGRATIONS QUI SE COLLENT DANS LES DEUX
   ORDRES (LIGNES 35 ET 36) », « INV3-Q1 ET INV3-Q2 : L'EMPREINTE SCELLE L'INVENTAIRE, LA RÉGULARISATION REPRISE »,
   « LA LIASSE 2033, LES STOCKS ET L'IMPÔT SUR LES SOCIÉTÉS : LA CONCEPTION », « L'AFFECTATION DU RÉSULTAT ET
   L'APPROBATION DES COMPTES : LA CONCEPTION ».
