@@ -52484,3 +52484,22 @@ même fichier. Relu à la main : aucune écriture fausse ; NatOp porte deux post
 catégories, et « Recettes encaissées y compris les remboursements de frais », celui des ventes facturées) ; le 512 se répartit
 sur AC, BQ et VE (FEC22-E6) ; le fichier n'a pas de CRLF final et mêle l'apostrophe typographique (FEC22-E7). Reste : passer
 les fichiers dans Test Compta Demat et à l'import de l'expert-comptable (FEC22F-Q1), puis la seconde partie de FEC22f.
+
+### 13/11/2026 — MVP-D9 : LE GARDE-FOU DES LECTURES SIMPLES, PRÉPARÉ, PAS BRANCHÉ
+
+La recommandation de MVP-D9 (le bouton du cabinet pour les migrations, les déploiements et toute écriture ; les lectures partent
+seules) demande de séparer une lecture d'une écriture dans `execute_sql`, ce qu'une règle de permission ne fait pas : elle ne lit pas
+la requête. **Fait** : `outils/gardefou/lectureSeule.mjs`, pur, sans dépendance — `jugerLaRequete(sql)` rend `{ lectureSimple,
+raison }`, et le fichier lancé en ligne de commande est un hook PreToolUse de Claude Code (l'appel sur l'entrée standard, la décision
+en JSON, le format isolé dans `reponseDuHook`, lu dans la documentation publique). **La règle, du côté fermé** : une requête ne part
+seule que PROUVÉE lecture simple — lue en entier comme PostgreSQL la lit (chaînes, `E'…'`, corps entre dollars, identifiants entre
+guillemets, commentaires imbriqués), une seule instruction, qui commence par SELECT, WITH … SELECT, VALUES, TABLE, SHOW ou EXPLAIN
+sans ANALYZE, sans mot qui écrit ou verrouille hors d'un littéral, chaque fonction dans une liste fermée de fonctions sans effet ;
+tout le reste, et ce qui ne s'analyse pas, fait demander, avec sa raison. Un outil qu'il ne sait pas juger fait demander ; dans le
+mode où rien ne garantit le bouton, il refuse ; il ne lève jamais. Il arrête une erreur de la session, pas un adversaire. **Le test**
+(`src/lib/gardefouLectureSeule.test.ts`) lit depuis leurs fichiers la dérive du README de l'export, `socle.sql`, `inventaire.sql`,
+`signature.sql`, `bornesStockage.sql`, et exige qu'ils passent seuls ; tout essai qui ne commence pas par une lecture demande
+(plancher 100) ; le programme est joué de bout en bout ; éprouvé par mutation. **Le mode d'emploi** (`outils/gardefou/README.md`) :
+le bloc à poser dans `.claude/settings.json`, ce que le resserrement retire de « allow » (l'accord à tout le serveur Supabase,
+`execute_sql`, `apply_migration`, `deploy_edge_function`), l'épreuve avec le cabinet. **Reste** : rien n'est branché, `.claude/`
+intact ; MVPD9-Q1 repose la question pour le 20 novembre ; le bouton ne s'éprouve que dans la session, avec le cabinet.
