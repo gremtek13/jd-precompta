@@ -52309,3 +52309,22 @@ délai sous charge, un fichier suivi déplacé) vertes seules. **Au jour J**, en
 public.categories where dossier_id is null and compte_comptable is not null and compte_comptable !~ '^[67][0-9]{2}';` **Vu en passant** :
 avant la policy, la garde de PC7 répond (b) et (c) à tout compte, l'anonyme compris (les codes communs, un oracle sur le barème d'un
 dossier nommé) ; (e) et (f) n'y disent que la règle. `caisse.sql` garde ses fautes d'avant (72g, 72h, 218j depuis MCB1, et 289b).
+
+### 13/11/2026 — CAISSE.SQL APRÈS MCB1 : TROIS VERDICTS PÉRIMÉS, UN ARTEFACT DE LA RÉPLIQUE, AUCUN DÉFAUT EN PRODUCTION
+
+(Agent architecte, ligne 26.6, MVP-D2 ; rien d'appliqué.) Une copie de la réplique mère 17 amenée au niveau de l'export (217
+migrations, `edea63cd…`, signature égale) ; les 59 essais qui nomment `lignes_bancaires`, `ecritures_brouillon` ou
+`operations_caisse`, chacun sur une base fraîche, sous le rôle du banc, et `rls.sql` (239 invariants, 0 en faute, 139
+mutations sur 139). En faute : `caisse.sql` 72g, 72h, 218j et 289b ; `recompositionDesVentes.sql` (son semis) ; hors du
+relevé et de la caisse, `piecesHorsDeFrance.sql` 124c (`pieces.notes`, retirée par P0) et `ventesClient.sql` 0c (déjà dit).
+**72g, 72h, 218j : l'essai, périmé.** Ils déplaçaient un mouvement classé sur la caisse dans un autre dossier ; depuis MCB1,
+`poser_compte_bancaire`, nommée pour passer avant les gardes de la caisse, refuse qu'il quitte son dossier (23503) ou change
+de compte (23514), comme l'en-tête de la migration le dit. La seule vérification du dossier retirée de cette garde, les trois
+rendent les mots de la caisse d'avant : sa protection reste entière derrière, et l'application ne change jamais le dossier
+d'un mouvement. Ils attendent désormais ces refus (72h emporte le compte du dossier d'arrivée), que le banc du module
+(`src/test/essaiCaisse.ts`) redit aux mots de `lib/comptesBancaires.ts` ; les deux mutations de la garde et celle du banc
+mordent. **289b : la réplique.** La mère, tirée du catalogue, ne porte aucun commentaire d'avant elle, que `signature.sql` ne
+lit pas ; C12B-Q1 pose celui-ci et rien ne le réécrit : munie de ce seul commentaire, la copie rend 686 sur 686.
+**`recompositionDesVentes.sql`, périmé depuis MCB1** : son semis suspend les déclencheurs, donc la pose du compte ; chaque
+dossier reçoit son principal avant lui ; les nombres du 25/10 reviennent, et `compte_de_banque_du_mouvement` muté fait
+tomber le 5. Pour un BNC à un seul compte : rien d'atteignable, aucune migration à préparer.

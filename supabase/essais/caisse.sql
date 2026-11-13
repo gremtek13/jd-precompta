@@ -160,6 +160,15 @@
 -- que l'onglet Accès dit, C11-Q2). Genre « …5 » : la migration `caisse_du_client` en base. Joué sur une copie de la
 -- réplique de l'étape (la production du jour, 170 migrations), par le propriétaire, en une transaction : 614 verdicts
 -- justes, 0 en faute, la ligne EN ATTENTE de C12B-Q1 (90 étapes) ; le texte d'avant, 605 justes.
+--
+-- REVU LE 13/11/2026 (MCB1, `comptes_bancaires`, en production depuis le 12/11/2026 : un mouvement ne quitte plus son
+-- dossier). 72g, 72h et 218j déplaçaient un mouvement classé sur la caisse dans un autre dossier pour juger la caisse qu'il
+-- quitte ; la garde du compte bancaire le refuse désormais avant elle : 72g et 218j (le propriétaire compris) attendent
+-- son refus, 23503, et 72h, qui emporte le compte du dossier d'arrivée, celui d'un changement de compte, 23514. Joué sur une
+-- copie de la réplique mère amenée au niveau de l'export (217 migrations, la production du jour) : 686 justes, 0 en faute,
+-- la base munie du commentaire que C12B-Q1 pose (la réplique mère, tirée du catalogue, ne porte pas les commentaires
+-- d'avant elle, que la signature ne lit pas : sans lui, 289b seul en faute, sur la réplique seulement). Deux mutations de
+-- `poser_compte_bancaire` mordent : le dossier jugé à l'insertion seulement (72g, 218j) ; le changement de compte admis (72h).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -778,10 +787,15 @@ begin
       'OK', ''],
     array['controle', '72f. … un mouvement sans compte de bilan qui change ne se juge pas', 'chef', $q$update lignes_bancaires set libelle = 'ESSAI VERSEMENT ESPECES (bis)' where id = '{MV1}'$q$,
       'OK', ''],
-    array['controle', '72g. … le déplacer dans un autre dossier aussi : la caisse qu''il quitte se juge', 'chef', $q$update lignes_bancaires set dossier_id = '{G}' where id = '{MD1}'$q$,
-      '23514', 'Ce changement d''un mouvement classé sur la caisse la rendrait négative le 07/03/2026 (−134,50 €).'],
-    array['controle', '72h. … ou dans un dossier dont la caisse est un autre compte : pour la caisse qu''il quitte, il est retiré', 'chef', $q$update lignes_bancaires set dossier_id = '{P}' where id = '{MD1}'$q$,
-      '23514', 'Retirer ce retrait d''espèces de 200,00 € pour la caisse rendrait la caisse négative le 07/03/2026 (−134,50 €) : retire d''abord les sorties d''espèces qui le suivent.'],
+    -- Depuis MCB1 (`comptes_bancaires`, en production depuis le 12/11/2026), un mouvement ne quitte plus son dossier : son
+    -- compte bancaire est de son dossier, et il ne change pas de compte. La garde du compte (`poser_compte_bancaire`, nommée
+    -- pour passer avant celles de la caisse) le refuse AVANT que la caisse qu'il quitterait ne se juge ; 72g, 72h et 218j
+    -- tiennent ce refus et son ordre (rejouées sans le seul jugement du dossier par cette garde, elles rendent les mots
+    -- de la caisse d'avant MCB1 : HISTORIQUE.md, « 13/11/2026 — CAISSE.SQL APRÈS MCB1 »).
+    array['controle', '72g. … le déplacer dans un autre dossier ne se peut plus : son compte bancaire est de son dossier (MCB1), refusé avant que la caisse qu''il quitte ne se juge', 'chef', $q$update lignes_bancaires set dossier_id = '{G}' where id = '{MD1}'$q$,
+      '23503', 'Le compte bancaire d''un mouvement ou d''un relevé est un compte de son dossier.'],
+    array['controle', '72h. … ni avec le compte bancaire du dossier d''arrivée, dont la caisse est un autre compte : un mouvement ne change pas de compte (MCB1)', 'chef', $q$update lignes_bancaires set dossier_id = '{P}', compte_bancaire_id = (select c.id from comptes_bancaires c where c.dossier_id = '{P}' and c.principal) where id = '{MD1}'$q$,
+      '23514', 'Un mouvement ou un relevé ne change pas de compte bancaire : il se retire, et s''importe sous le sien.'],
     -- Une opération retirée : le retrait (la fonction de l'étape C1b), simulé sous son réglage, par le propriétaire.
     array['controle', '73. retirer l''apport qui couvre le prélèvement', 'postgres', $q$select set_config('jd.caisse', (select id::text from operations_caisse where dossier_id = '{T}' and genre = 'apport'), true);
       update operations_caisse set retire_le = now(), retire_par = '{CHEF}' where dossier_id = '{T}' and genre = 'apport'$q$,
@@ -1853,8 +1867,8 @@ begin
       'OK', ''],
     array['controle4', '218i. MUTATION : déjà sur la caisse, rien ne le déplace — il ne se juge pas', 'chef', $q$update lignes_bancaires set compte_bilan = '530000' where id = '{MO4}'$q$,
       'OK', ''],
-    array['controle4', '218j. … mais il ne passe pas dans un dossier dont il précède l''ouverture', 'postgres', $q$update lignes_bancaires set dossier_id = '{Z8}' where id = '{MO4}'$q$,
-      '23514', 'Ce mouvement précède l''ouverture du dossier, le 01/01/2026 : il est déjà dans les comptes repris, et ne se classe pas sur la caisse.'],
+    array['controle4', '218j. … ni ne passe dans un dossier dont il précède l''ouverture : un mouvement ne quitte plus son dossier (MCB1), même pour le propriétaire, et la garde du compte parle avant celle de la caisse', 'postgres', $q$update lignes_bancaires set dossier_id = '{Z8}' where id = '{MO4}'$q$,
+      '23503', 'Le compte bancaire d''un mouvement ou d''un relevé est un compte de son dossier.'],
     array['valeur4', '218f. la caisse lue de O8 : aucun jour négatif, rien d''avant l''ouverture', 'postgres', $q$select coalesce((select n.jour || ' ' || n.solde from premier_jour_negatif_de_la_caisse('{O8}') n), 'aucun')$q$, '', 'aucun'],
     array['fait4', '218g. ce qui reste : Z8, repris sans ligne de caisse, et un retrait d''avant la reprise que la restauration remet sur la caisse', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, compte_bilan, created_at) values ('{MZ2}', '{Z8}', '2025-12-21', 'ESSAI RETRAIT DAB', -100, 'rapprochee', '530000', '2026-01-15 10:00+01')$q$,
       'OK', ''],
