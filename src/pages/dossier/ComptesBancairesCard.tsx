@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { COMPTES_BANCAIRES_PREVUS, dateDite } from '../../lib/comptesBancaires'
 import {
   ceQuiResteModifiable, changements, compteDuPlanDit, comptesDesRolesDuPlan, confirmationDeLaCreation, confirmationDeLaModification,
-  jugerLaCreation, jugerLaModification, saisieDuCompte, saisieNeuve, usageDe, type SaisieDeLaFiche,
+  jugerLaCreation, jugerLaModification, retraitDuCompte, saisieDuCompte, saisieNeuve, usageDe, type SaisieDeLaFiche,
 } from '../../lib/ficheDesComptesBancaires'
-import { corrigerLeCompte, creerLeCompte, lireLaFiche, type Issue, type LectureDeLaFiche } from '../../lib/ficheDesComptesBancairesLecture'
+import {
+  corrigerLeCompte, creerLeCompte, lireLaFiche, retirerLeCompte, type Issue, type LectureDeLaFiche,
+} from '../../lib/ficheDesComptesBancairesLecture'
 import { LIBELLE_NOM_COMPTE_BANCAIRE } from '../../lib/droitsAcces'
 import type { PlanComptable } from '../../lib/planComptable'
 
@@ -14,7 +16,9 @@ import type { PlanComptable } from '../../lib/planComptable'
 // comme la source des ventes ou la numérotation, et l'import, dans Banque, le choisit seulement.
 // Elle dit chaque compte — son nom, que le client « Banque » lit (MCB-Q8), le compte du plan où s'écrit sa banque et depuis
 // quand (MCB-Q1, MCB-Q7), son ouverture et sa clôture, la fin de son identifiant (MCB2), ce que la base porte sous lui et ce
-// qu'elle permet encore d'en changer — et offre de créer un compte et d'en corriger un. Ce qu'elle juge vient de
+// qu'elle permet encore d'en changer — et offre de créer un compte, d'en corriger un, et d'en retirer un créé par erreur
+// (MCB6-Q1 : seulement quand la base l'accepterait, sinon la raison se dit sous sa ligne ; la confirmation le nomme). La date
+// d'un compte propre ne se pose ni sur un exercice validé ni avant lui (MCB6-Q2, dite avant le clic). Ce qu'elle juge vient de
 // lib/ficheDesComptesBancaires.ts (les refus de l'application, puis ceux de la base, dits avant le clic sur la saisie telle
 // qu'elle part), ce qu'elle lit et écrit de lib/ficheDesComptesBancairesLecture.ts (qui ne rejette jamais) ; lue en partie,
 // refusée ou rompue, elle le dit et n'offre AUCUN geste ; rien ne s'affirme avant le retour de la lecture. Chaque confirmation
@@ -49,25 +53,26 @@ function CarteDesComptes({ dossierId, plan }: { dossierId: string; plan: PlanCom
   const lecture = lu?.dossierId === dossierId ? lu : null
   const comptes = lecture?.etat === 'lue' ? lecture.comptes : null
   const usages = lecture?.etat === 'lue' ? lecture.usages : null
+  const exercices = lecture?.etat === 'lue' ? lecture.exercices : null
   const erreur = avis?.dossierId === dossierId ? avis.erreur : null
   const fait = avis?.dossierId === dossierId ? avis.fait : null
   const roles = comptesDesRolesDuPlan(plan)
-  const editeDansCeDossier = edition !== null && saisie !== null && comptes !== null && usages !== null
+  const editeDansCeDossier = edition !== null && saisie !== null && comptes !== null && usages !== null && exercices !== null
   const avant = editeDansCeDossier && edition.mode === 'correction' ? comptes.find((c) => c.id === edition.id) ?? null : null
   const usageAvant = avant && usages ? usageDe(usages, avant.id) : null
   const jugement = !editeDansCeDossier ? null
-    : edition.mode === 'creation' ? jugerLaCreation(saisie, comptes, roles)
-      : avant && usageAvant ? jugerLaModification(avant, saisie, comptes, roles, usageAvant) : null
+    : edition.mode === 'creation' ? jugerLaCreation(saisie, comptes, roles, exercices)
+      : avant && usageAvant ? jugerLaModification(avant, saisie, comptes, roles, usageAvant, exercices) : null
   const rienNeChange = jugement?.ligne != null && avant !== null && changements(avant, jugement.ligne).length === 0
   const principalAEcrire = edition?.mode === 'creation' ? comptes?.length === 0 : avant?.principal === true
   const fige = avant !== null && usageAvant !== null && !avant.principal && (usageAvant.mouvements > 0 || usageAvant.releves > 0)
 
   function ouvrir(e: Edition) {
-    if (comptes === null) return
+    if (comptes === null || exercices === null) return
     const compte = e.mode === 'correction' ? comptes.find((c) => c.id === e.id) : undefined
     if (e.mode === 'correction' && compte === undefined) return
     setEdition(e)
-    setSaisie(compte ? saisieDuCompte(compte) : saisieNeuve(comptes, roles))
+    setSaisie(compte ? saisieDuCompte(compte) : saisieNeuve(comptes, roles, exercices))
     setAvis(null)
   }
 
@@ -106,6 +111,34 @@ function CarteDesComptes({ dossierId, plan }: { dossierId: string; plan: PlanCom
     }
   }
 
+  // MCB6-Q1 : retirer un compte créé par erreur. Le jugement se refait sur la fiche telle qu'elle est lue au clic : un compte
+  // qui porte désormais un mouvement ne part plus, et la confirmation nomme celui qui part.
+  async function retirer(id: string) {
+    // Le même verrou que la création et la correction, posé avant le `try` : un seul geste de la carte à la fois.
+    if (gesteEnCours.current || comptes === null || usages === null || edition !== null) return
+    const compte = comptes.find((c) => c.id === id)
+    if (compte === undefined) return
+    const retrait = retraitDuCompte(compte, comptes, usageDe(usages, id))
+    if (!retrait.offert) return
+    gesteEnCours.current = true
+    const dossierEcrit = dossierId
+    try {
+      if (!window.confirm(retrait.confirmation)) return
+      setEnCours(true)
+      setAvis(null)
+      const issue = await retirerLeCompte(dossierEcrit, id)
+      setAvis(issue.ok
+        ? { dossierId: dossierEcrit, erreur: null, fait: `Le compte « ${compte.libelle} » est retiré ✓` }
+        : { dossierId: dossierEcrit, erreur: `Rien n’a changé : ${issue.message}`, fait: null })
+      // Relue, quoi qu'il arrive : les comptes tels que la base les tient maintenant.
+      const relue = await lireLaFiche(dossierEcrit)
+      if (affiche.current === dossierEcrit) setLu(relue)
+    } finally {
+      gesteEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
   const champ = (cle: keyof SaisieDeLaFiche) => (valeur: string) => setSaisie((s) => (s === null ? s : { ...s, [cle]: valeur }))
 
   return (
@@ -133,6 +166,7 @@ function CarteDesComptes({ dossierId, plan }: { dossierId: string; plan: PlanCom
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {comptes.map((c) => {
               const u = usageDe(usages, c.id)
+              const retrait = retraitDuCompte(c, comptes, u)
               return (
                 <li key={c.id} style={{ marginBottom: 12 }} data-testid={`compte-bancaire-${c.id}`}>
                   <strong>{c.libelle}</strong>{c.principal && <span className="muted"> — compte principal</span>}
@@ -144,10 +178,19 @@ function CarteDesComptes({ dossierId, plan }: { dossierId: string; plan: PlanCom
                     {` ${u.mouvements} mouvement${u.mouvements > 1 ? 's' : ''}, ${u.releves} relevé${u.releves > 1 ? 's' : ''} contrôlé${u.releves > 1 ? 's' : ''}.`}
                   </div>
                   <div className="muted">{ceQuiResteModifiable(c, u)}</div>
-                  <button type="button" className="btn btn-secondary btn-sm" disabled={enCours || edition !== null}
-                    onClick={() => ouvrir({ mode: 'correction', id: c.id })}>
-                    Corriger « {c.libelle} »
-                  </button>
+                  {!retrait.offert && <div className="muted" data-testid={`retrait-refuse-${c.id}`}>{retrait.raison}</div>}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <button type="button" className="btn btn-secondary btn-sm" disabled={enCours || edition !== null}
+                      onClick={() => ouvrir({ mode: 'correction', id: c.id })}>
+                      Corriger « {c.libelle} »
+                    </button>
+                    {retrait.offert && (
+                      <button type="button" className="btn btn-danger btn-sm" disabled={enCours || edition !== null}
+                        onClick={() => { void retirer(c.id) }}>
+                        Retirer « {c.libelle} »
+                      </button>
+                    )}
+                  </div>
                 </li>
               )
             })}

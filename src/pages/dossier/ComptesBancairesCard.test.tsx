@@ -11,25 +11,30 @@ import type { CompteDuReleve } from '../../lib/importParCompte'
 // verrou (deux clics du même `act`, un seul appel), la relecture après le geste, le champ figé. Données FICTIVES.
 
 const etat = vi.hoisted(() => ({ prevue: false }))
-const appels = vi.hoisted(() => ({ lire: vi.fn(), creer: vi.fn(), corriger: vi.fn() }))
+const appels = vi.hoisted(() => ({ lire: vi.fn(), creer: vi.fn(), corriger: vi.fn(), retirer: vi.fn() }))
 
 vi.mock('../../lib/comptesBancaires', async (original) => {
   const reel = await original<typeof import('../../lib/comptesBancaires')>()
   return { ...reel, get COMPTES_BANCAIRES_PREVUS() { return etat.prevue } }
 })
 vi.mock('../../lib/ficheDesComptesBancairesLecture', () => ({
-  lireLaFiche: appels.lire, creerLeCompte: appels.creer, corrigerLeCompte: appels.corriger,
+  lireLaFiche: appels.lire, creerLeCompte: appels.creer, corrigerLeCompte: appels.corriger, retirerLeCompte: appels.retirer,
 }))
 
 import ComptesBancairesCard from './ComptesBancairesCard'
 
 const PRINCIPAL: CompteDuReleve = { id: 'cb-p', libelle: 'Compte principal', principal: true, fin_d_identifiant: null, compte: null, compte_propre_depuis: null, ouvert_le: null, clos_le: null }
 const SECOND: CompteDuReleve = { id: 'cb-2', libelle: 'Compte pro 2', principal: false, fin_d_identifiant: '4567', compte: '512100', compte_propre_depuis: '2026-01-01', ouvert_le: '2025-03-01', clos_le: null }
+// Un compte créé par erreur : ni mouvement, ni relevé, ni écriture d'ouverture.
+const ERREUR: CompteDuReleve = { id: 'cb-3', libelle: 'Compte en trop', principal: false, fin_d_identifiant: null, compte: '512200', compte_propre_depuis: '2027-01-01', ouvert_le: '2026-05-01', clos_le: null }
 
-function lue(comptes: CompteDuReleve[], dossierId = 'd1'): LectureDeLaFiche {
+function lue(comptes: CompteDuReleve[], dossierId = 'd1', exercices: Extract<LectureDeLaFiche, { etat: 'lue' }>['exercices'] = { etat: 'lus', annees: [] }): LectureDeLaFiche {
   return {
-    dossierId, etat: 'lue', comptes,
-    usages: new Map([['cb-p', { mouvements: 12, releves: 2, premiere: '2025-01-02', derniere: '2026-03-01' }], ['cb-2', { mouvements: 3, releves: 1, premiere: '2025-03-04', derniere: '2026-02-10' }]]),
+    dossierId, etat: 'lue', comptes, exercices,
+    usages: new Map([
+      ['cb-p', { mouvements: 12, releves: 2, ouvertures: 0, premiere: '2025-01-02', derniere: '2026-03-01' }],
+      ['cb-2', { mouvements: 3, releves: 1, ouvertures: 0, premiere: '2025-03-04', derniere: '2026-02-10' }],
+    ]),
   }
 }
 
@@ -42,6 +47,7 @@ beforeEach(() => {
   appels.lire.mockReset().mockResolvedValue(lue([PRINCIPAL, SECOND]))
   appels.creer.mockReset().mockResolvedValue({ ok: true })
   appels.corriger.mockReset().mockResolvedValue({ ok: true })
+  appels.retirer.mockReset().mockResolvedValue({ ok: true })
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 afterEach(() => {
@@ -152,5 +158,80 @@ describe('corriger un compte', () => {
     fireEvent.change(screen.getByLabelText(/^Nom du compte/), { target: { value: 'Compte courant' } })
     await act(async () => { fireEvent.click(bouton('Enregistrer la correction')) })
     expect(appels.corriger).not.toHaveBeenCalled()
+  })
+})
+
+describe('MCB6-Q1 : retirer un compte créé par erreur', () => {
+  it('offert au seul compte vierge ; les autres disent pourquoi ; un appel pour deux clics, nommé, puis relu', async () => {
+    appels.lire.mockResolvedValue(lue([PRINCIPAL, SECOND, ERREUR]))
+    monter()
+    const retirer = await within(carte()).findByRole('button', { name: 'Retirer « Compte en trop »' })
+    expect(within(carte()).queryByRole('button', { name: 'Retirer « Compte pro 2 »' })).toBeNull()
+    expect(within(carte()).queryByRole('button', { name: 'Retirer « Compte principal »' })).toBeNull()
+    expect(screen.getByTestId('retrait-refuse-cb-2').textContent).toBe('Le compte bancaire « Compte pro 2 » porte des mouvements ou des relevés : il ne se retire pas.')
+    expect(screen.getByTestId('retrait-refuse-cb-p').textContent).toBe('Le compte bancaire « Compte principal » porte des mouvements ou des relevés : il ne se retire pas.')
+    appels.lire.mockClear()
+    await act(async () => {
+      fireEvent.click(retirer)
+      fireEvent.click(retirer)
+    })
+    await waitFor(() => expect(appels.lire).toHaveBeenCalledTimes(1))
+    expect(appels.retirer).toHaveBeenCalledTimes(1)
+    expect(appels.retirer).toHaveBeenCalledWith('d1', 'cb-3')
+    expect(vi.mocked(window.confirm)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(window.confirm).mock.calls[0][0]).toMatch(/^Retirer le compte bancaire « Compte en trop » \? .*Son compte du plan, le 512200, redevient libre\.$/)
+    expect(within(carte()).getByText('Le compte « Compte en trop » est retiré ✓')).toBeDefined()
+  })
+
+  it('le principal vierge d’un dossier qui tient un autre compte ne se retire pas, aux mots de la base', async () => {
+    appels.lire.mockResolvedValue({ ...lue([PRINCIPAL, ERREUR]), usages: new Map() } as LectureDeLaFiche)
+    monter()
+    expect((await screen.findByTestId('retrait-refuse-cb-p')).textContent)
+      .toBe('Un dossier qui tient un compte bancaire tient son compte principal : le premier créé, qui suit le compte de banque du plan.')
+    expect(within(carte()).queryByRole('button', { name: 'Retirer « Compte principal »' })).toBeNull()
+    expect(bouton('Retirer « Compte en trop »')).toBeDefined()
+  })
+
+  it('une confirmation refusée n’écrit rien ; un refus de la base se dit, et rien n’est annoncé comme fait', async () => {
+    appels.lire.mockResolvedValue(lue([PRINCIPAL, ERREUR]))
+    vi.mocked(window.confirm).mockReturnValue(false)
+    monter()
+    const retirer = await within(carte()).findByRole('button', { name: 'Retirer « Compte en trop »' })
+    await act(async () => { fireEvent.click(retirer) })
+    expect(appels.retirer).not.toHaveBeenCalled()
+    vi.mocked(window.confirm).mockReturnValue(true)
+    appels.retirer.mockResolvedValue({ ok: false, message: 'refus de la base' })
+    await act(async () => { fireEvent.click(bouton('Retirer « Compte en trop »')) })
+    expect(within(carte()).getByText('Rien n’a changé : refus de la base')).toBeDefined()
+    expect(within(carte()).queryByText(/est retiré/)).toBeNull()
+  })
+})
+
+describe('MCB6-Q2 : le compte propre ne part pas d’un exercice validé', () => {
+  it('la saisie neuve part de l’année qui suit le dernier validé ; une année validée se refuse avant le clic', async () => {
+    appels.lire.mockResolvedValue(lue([PRINCIPAL, SECOND], 'd1', { etat: 'lus', annees: [2025, 2026] }))
+    monter()
+    fireEvent.click(await within(carte()).findByRole('button', { name: 'Ajouter un compte bancaire' }))
+    expect((screen.getByLabelText(/^Qu’il tient depuis/) as HTMLInputElement).value).toBe('2027')
+    fireEvent.change(screen.getByLabelText(/^Nom du compte/), { target: { value: 'Compte pro 3' } })
+    fireEvent.change(screen.getByLabelText('Ouvert le'), { target: { value: '2026-02-01' } })
+    expect(bouton('Créer le compte').disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText(/^Qu’il tient depuis/), { target: { value: '2026' } })
+    expect(within(carte()).getByRole('status').textContent).toMatch(/^L’exercice 2026 du dossier est validé : .*2027 au plus tôt/)
+    expect(bouton('Créer le compte').disabled).toBe(true)
+  })
+
+  it('des exercices validés illisibles retiennent la date, et le disent ; le nom d’un compte se corrige encore', async () => {
+    appels.lire.mockResolvedValue(lue([PRINCIPAL, SECOND], 'd1', { etat: 'illisibles', motif: 'lecture incomplète' }))
+    monter()
+    fireEvent.click(await within(carte()).findByRole('button', { name: 'Ajouter un compte bancaire' }))
+    fireEvent.change(screen.getByLabelText(/^Nom du compte/), { target: { value: 'Compte pro 3' } })
+    fireEvent.change(screen.getByLabelText('Ouvert le'), { target: { value: '2026-02-01' } })
+    expect(within(carte()).getByRole('status').textContent).toMatch(/^Les exercices validés du dossier n’ont pas pu être lus en entier \(lecture incomplète\)/)
+    expect(bouton('Créer le compte').disabled).toBe(true)
+    fireEvent.click(bouton('Annuler'))
+    fireEvent.click(bouton('Corriger « Compte pro 2 »'))
+    fireEvent.change(screen.getByLabelText(/^Nom du compte/), { target: { value: 'Compte pro B' } })
+    expect(bouton('Enregistrer la correction').disabled).toBe(false)
   })
 })

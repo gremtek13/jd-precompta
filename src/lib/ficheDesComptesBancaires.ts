@@ -1,4 +1,4 @@
-import { dateDite, refusDuCompteBancaire, type CompteBancaire, type CompteDUnRole, type ContexteDUnCompte, type SaisieDUnCompte } from './comptesBancaires'
+import { dateDite, formuler, refusDuCompteBancaire, REFUS_DE_LA_GARDE, REFUS_PRINCIPAL_ABSENT, type CompteBancaire, type CompteDUnRole, type ContexteDUnCompte, type SaisieDUnCompte } from './comptesBancaires'
 import type { CompteDuReleve } from './importParCompte'
 import { ROLES_COMPTABLES, type PlanComptable } from './planComptable'
 
@@ -17,25 +17,39 @@ import { ROLES_COMPTABLES, type PlanComptable } from './planComptable'
 //     encadrent les mouvements du compte ;
 //   - la fin de l'identifiant (les quatre derniers caractères de l'ACCTID d'un OFX, MCB2) se corrige à la main, ou s'efface.
 // L'application demande en plus la date d'ouverture à la création (MCB4-Q2, sur la recommandation : elle borne les mouvements
-// et dit depuis quand le relevé du compte est attendu) et ne l'efface jamais une fois donnée. Aucun compte ne se retire d'ici.
+// et dit depuis quand le relevé du compte est attendu) et ne l'efface jamais une fois donnée.
+// Deux réponses du cabinet du 11/11/2026, à la recommandation (HISTORIQUE.md, « 13/11/2026 — LA FICHE DES COMPTES BANCAIRES :
+// RETIRER UN COMPTE, ET LE COMPTE PROPRE HORS D'UN EXERCICE VALIDÉ (MCB6-Q1, MCB6-Q2) ») :
+//   - MCB6-Q1 : un compte créé par erreur se retire, offert seulement quand la base l'accepterait — ni mouvement ni relevé
+//     (sa garde), aucune écriture d'ouverture éclatée qui le cite (la clé du brouillon, MCB5g), et jamais le principal d'un
+//     dossier qui tient un autre compte (la contrainte différée) —, sur des lectures faites en entier, après une confirmation
+//     qui le nomme (`retraitDuCompte`) ;
+//   - MCB6-Q2 : la date depuis laquelle un compte tient son propre 512 ne se pose ni sur un exercice validé ni avant lui —
+//     l'ouverture par compte suppose que l'année de départ ne l'est pas, et un exercice validé est figé. Les exercices validés
+//     lus en partie retiennent ce geste, du côté fermé. La base ne le refuse pas elle-même (aucune garde des comptes ne lit
+//     `exercices_valides`) : la règle est de l'application.
 
 /** Le premier exercice où un compte autre que le principal tient son propre 512 (MCB-Q7). */
 export const PREMIERE_ANNEE_DU_COMPTE_PROPRE = 2026
 
-/** Ce que la base porte sous un compte : ses mouvements (leur nombre, la première et la dernière date) et ses relevés. */
+/** Ce que la base porte sous un compte : ses mouvements (leur nombre, la première et la dernière date), ses relevés, et les
+ *  lignes d'écriture qui éclatent l'ouverture vers lui (MCB5g : leur clé retient le compte à la suppression). */
 export interface UsageDUnCompte {
   mouvements: number
   releves: number
+  ouvertures: number
   premiere: string | null
   derniere: string | null
 }
 
-const SANS_USAGE: UsageDUnCompte = { mouvements: 0, releves: 0, premiere: null, derniere: null }
+const SANS_USAGE: UsageDUnCompte = { mouvements: 0, releves: 0, ouvertures: 0, premiere: null, derniere: null }
 
-/** L'usage de chaque compte, tiré des mouvements et des contrôles du dossier lus EN ENTIER (la lecture le garantit). */
+/** L'usage de chaque compte, tiré des mouvements, des contrôles et des lignes d'ouverture éclatée du dossier lus EN ENTIER
+ *  (la lecture le garantit). */
 export function usageDesComptes(
   lignes: readonly { compte_bancaire_id: string | null; date: string }[],
   controles: readonly { compte_bancaire_id: string | null }[],
+  ouvertures: readonly { ouverture_compte_bancaire_id: string | null }[],
 ): ReadonlyMap<string, UsageDUnCompte> {
   const usages = new Map<string, UsageDUnCompte>()
   const de = (id: string) => usages.get(id) ?? { ...SANS_USAGE }
@@ -53,6 +67,11 @@ export function usageDesComptes(
     const u = de(c.compte_bancaire_id)
     usages.set(c.compte_bancaire_id, { ...u, releves: u.releves + 1 })
   }
+  for (const o of ouvertures) {
+    if (o.ouverture_compte_bancaire_id === null) continue
+    const u = de(o.ouverture_compte_bancaire_id)
+    usages.set(o.ouverture_compte_bancaire_id, { ...u, ouvertures: u.ouvertures + 1 })
+  }
   return usages
 }
 
@@ -61,6 +80,17 @@ export function usageDe(usages: ReadonlyMap<string, UsageDUnCompte>, id: string)
 }
 
 const porte = (u: UsageDUnCompte) => u.mouvements > 0 || u.releves > 0
+
+/** Les exercices validés du dossier : lus EN ENTIER (leurs années), ou illisibles — alors la date du compte propre ne se
+ *  pose pas (MCB6-Q2, du côté fermé). Sans défaut : un appelant qui ne les a pas lus ne juge pas. */
+export type ExercicesValidesLus = { etat: 'lus'; annees: readonly number[] } | { etat: 'illisibles'; motif: string }
+
+/** La première année où un compte peut tenir son propre 512 : 2026 au plus tôt (MCB-Q7), et après le dernier exercice validé
+ *  (MCB6-Q2) ; nulle quand les exercices validés ne sont pas lus en entier. */
+export function premiereAnneeOuverte(exercices: ExercicesValidesLus): number | null {
+  if (exercices.etat === 'illisibles') return null
+  return Math.max(PREMIERE_ANNEE_DU_COMPTE_PROPRE, ...exercices.annees.map((a) => a + 1))
+}
 
 /** Les comptes des rôles du plan du dossier, dans l'ordre du catalogue — celui où la garde de la base les cherche. */
 export function comptesDesRolesDuPlan(plan: PlanComptable): CompteDUnRole[] {
@@ -91,13 +121,19 @@ export function saisieDuCompte(c: CompteDuReleve): SaisieDeLaFiche {
   }
 }
 
-/** La saisie proposée pour un compte neuf : le premier 512x00 libre, depuis 2026 ; le principal si le dossier n'en a aucun. */
-export function saisieNeuve(comptes: readonly CompteDuReleve[], comptesDesRoles: readonly CompteDUnRole[]): SaisieDeLaFiche {
+/** La saisie proposée pour un compte neuf : le premier 512x00 libre, depuis la première année ouverte (2026, ou celle qui suit
+ *  le dernier exercice validé) ; le principal si le dossier n'en a aucun. */
+export function saisieNeuve(
+  comptes: readonly CompteDuReleve[],
+  comptesDesRoles: readonly CompteDUnRole[],
+  exercices: ExercicesValidesLus,
+): SaisieDeLaFiche {
   const pris = new Set([...comptes.map((c) => c.compte), ...comptesDesRoles.map((r) => r.compte)])
   const libre = comptes.length === 0 ? '' : ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((n) => `512${n}00`).find((c) => !pris.has(c)) ?? ''
   return {
     libelle: comptes.length === 0 ? 'Compte principal' : '', compte: libre,
-    depuis: comptes.length === 0 ? '' : String(PREMIERE_ANNEE_DU_COMPTE_PROPRE), ouvertLe: '', closLe: '', finDIdentifiant: '',
+    depuis: comptes.length === 0 ? '' : String(premiereAnneeOuverte(exercices) ?? PREMIERE_ANNEE_DU_COMPTE_PROPRE),
+    ouvertLe: '', closLe: '', finDIdentifiant: '',
   }
 }
 
@@ -118,11 +154,19 @@ export const REFUS_DATE = (quoi: string) => `La date ${quoi} n’est pas une dat
 export const REFUS_ANNEE_DU_COMPTE_PROPRE =
   `Un compte bancaire tient son propre compte du plan depuis le 1er janvier ${PREMIERE_ANNEE_DU_COMPTE_PROPRE} au plus tôt : `
   + `l’exercice ${PREMIERE_ANNEE_DU_COMPTE_PROPRE - 1} se valide avec un seul compte de banque, celui du compte principal.`
+/** MCB6-Q2 : l'année du compte propre tombe sur un exercice validé, ou avant lui. */
+export const REFUS_ANNEE_VALIDEE = (validee: number, ouverte: number) =>
+  `L’exercice ${validee} du dossier est validé : un compte bancaire tient son propre compte du plan depuis le 1er janvier d’un `
+  + `exercice qui ne l’est pas, ${ouverte} au plus tôt — son ouverture par compte suppose que cette année n’est pas figée.`
+/** MCB6-Q2, du côté fermé : sans les exercices validés lus en entier, la date ne se pose pas. */
+export const REFUS_EXERCICES_ILLISIBLES = (motif: string) =>
+  `Les exercices validés du dossier n’ont pas pu être lus en entier (${motif}) : la date depuis laquelle un compte tient son `
+  + 'propre compte du plan ne se pose pas tant qu’ils ne le sont pas.'
 export const REFUS_FIN_D_IDENTIFIANT =
   'La fin de l’identifiant du compte est faite de ses quatre derniers caractères, chiffres ou lettres, tels que son relevé OFX les porte (« 4567 »).'
 
 // Le premier refus de l'application, puis la ligne et le premier refus de la base (`refusDuCompteBancaire`).
-function juger(saisie: SaisieDeLaFiche, principal: boolean, contexte: ContexteDUnCompte): JugementDeLaFiche {
+function juger(saisie: SaisieDeLaFiche, principal: boolean, contexte: ContexteDUnCompte, exercices: ExercicesValidesLus): JugementDeLaFiche {
   const avant = contexte.avant
   const ouvertLe = dateLue(saisie.ouvertLe)
   const closLe = dateLue(saisie.closLe)
@@ -144,6 +188,14 @@ function juger(saisie: SaisieDeLaFiche, principal: boolean, contexte: ContexteDU
     if (!inchangee && (!/^\d{4}$/.test(annee) || Number(annee) < PREMIERE_ANNEE_DU_COMPTE_PROPRE || Number(annee) > 2099)) {
       return { refus: REFUS_ANNEE_DU_COMPTE_PROPRE, ligne: null }
     }
+    // MCB6-Q2 : une date neuve ne se pose ni sur un exercice validé ni avant lui ; une date inchangée, déjà là, se garde.
+    if (!inchangee) {
+      if (exercices.etat === 'illisibles') return { refus: REFUS_EXERCICES_ILLISIBLES(exercices.motif), ligne: null }
+      const validees = exercices.annees.filter((a) => a >= Number(annee))
+      if (validees.length > 0) {
+        return { refus: REFUS_ANNEE_VALIDEE(Math.min(...validees), premiereAnneeOuverte(exercices) as number), ligne: null }
+      }
+    }
     depuis = inchangee && avant ? avant.compte_propre_depuis : `${annee}-01-01`
   }
   const base: SaisieDUnCompte = { libelle: saisie.libelle, principal, compte, compte_propre_depuis: depuis, ouvert_le: ouvertLe, clos_le: closLe }
@@ -157,8 +209,9 @@ export function jugerLaCreation(
   saisie: SaisieDeLaFiche,
   comptes: readonly CompteDuReleve[],
   comptesDesRoles: readonly CompteDUnRole[],
+  exercices: ExercicesValidesLus,
 ): JugementDeLaFiche {
-  return juger(saisie, comptes.length === 0, { comptesDuDossier: comptes, comptesDesRoles, avant: null })
+  return juger(saisie, comptes.length === 0, { comptesDuDossier: comptes, comptesDesRoles, avant: null }, exercices)
 }
 
 /** Le jugement d'une correction : le compte d'avant, ce que la base porte sous lui. */
@@ -168,6 +221,7 @@ export function jugerLaModification(
   comptes: readonly CompteDuReleve[],
   comptesDesRoles: readonly CompteDUnRole[],
   usage: UsageDUnCompte,
+  exercices: ExercicesValidesLus,
 ): JugementDeLaFiche {
   return juger(saisie, avant.principal, {
     comptesDuDossier: comptes, comptesDesRoles,
@@ -175,7 +229,7 @@ export function jugerLaModification(
       ...avant, porteDesMouvementsOuDesReleves: porte(usage),
       datesDesMouvements: [usage.premiere, usage.derniere].filter((d): d is string => d !== null),
     },
-  })
+  }, exercices)
 }
 
 /** Ce que la saisie change, colonne par colonne : rien, et le bouton reste éteint. */
@@ -231,4 +285,31 @@ export function confirmationDeLaModification(avant: CompteDuReleve, ligne: Ligne
   const cloture = ligne.clos_le !== null && ligne.clos_le !== avant.clos_le
     ? ` Clos le ${dateDite(ligne.clos_le)}, il ne reçoit plus de mouvement daté après, et son solde compte pour zéro à la fin de l’exercice.` : ''
   return `Corriger ${liste} du compte « ${avant.libelle} » ?${fige}${cloture}`
+}
+
+/** MCB6-Q1 : le retrait d'un compte, ou la raison pour laquelle la base le refuserait, dans l'ordre où elle juge — sa garde
+ *  (`garder_comptes_bancaires`, avant la suppression, à ses mots), la clé de l'ouverture éclatée (à la fin de l'instruction),
+ *  puis le principal présent (`garder_compte_principal_present`, à la fin de la transaction, à ses mots). `comptes` et `usage`
+ *  viennent de lectures faites EN ENTIER : la carte ne le demande que d'une fiche lue. */
+export type RetraitDUnCompte = { offert: true; confirmation: string } | { offert: false; raison: string }
+
+/** La clé de l'ouverture éclatée ne dit, à la suppression, qu'un refus technique : la fiche le dit avant, à ses mots. */
+export const RAISON_OUVERTURE_ECLATEE = (libelle: string) =>
+  `L’écriture qui éclate l’ouverture d’un exercice vers le compte « ${libelle} » le cite : il ne se retire pas tant qu’elle `
+  + 'le porte (elle se recompose dans l’onglet Écritures).'
+
+const REFUS_PORTE_DES_MOUVEMENTS = REFUS_DE_LA_GARDE.find((r) => r.cle === 'porte_des_mouvements') as (typeof REFUS_DE_LA_GARDE)[number]
+
+export function retraitDuCompte(c: CompteDuReleve, comptes: readonly CompteDuReleve[], usage: UsageDUnCompte): RetraitDUnCompte {
+  if (porte(usage)) return { offert: false, raison: formuler(REFUS_PORTE_DES_MOUVEMENTS, c.libelle).message }
+  if (usage.ouvertures > 0) return { offert: false, raison: RAISON_OUVERTURE_ECLATEE(c.libelle) }
+  if (c.principal && comptes.some((a) => a.id !== c.id)) return { offert: false, raison: formuler(REFUS_PRINCIPAL_ABSENT).message }
+  const suite = c.principal
+    ? ' Le dossier ne tiendra plus aucun compte : le premier relevé importé recréera un compte principal.'
+    : ` Son compte du plan, le ${c.compte ?? '—'}, redevient libre.`
+  return {
+    offert: true,
+    confirmation: `Retirer le compte bancaire « ${c.libelle} » ? Il ne porte ni mouvement ni relevé ; son nom, ses dates et la fin de `
+      + `son identifiant disparaissent avec lui, et ce retrait ne se défait pas.${suite}`,
+  }
 }
