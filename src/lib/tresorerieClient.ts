@@ -342,6 +342,9 @@ export function composerTresorerie(entree: {
   // Les achats et le prévisionnel du cabinet : jamais lus ici (voir l'en-tête).
   nonComptes.push({ cle: 'achats', phrase: NON_COMPTE_ACHATS, centimes: null })
   nonComptes.push({ cle: 'previsionnel-du-cabinet', phrase: NON_COMPTE_PREVISIONNEL_DU_CABINET, centimes: null })
+  // Ce que rien ne permet de voir : un paiement que l'application ignore encore. Le deviner par montant et date est interdit ;
+  // le dire, toujours, est la seule garde.
+  nonComptes.push({ cle: 'pas-encore-enregistre', phrase: NON_COMPTE_PAS_ENCORE_ENREGISTRE, centimes: null })
   // Ce qui a bougé entre le dernier relevé et aujourd'hui.
   if (depart.au < ajouterJours(aujourdHui, -1)) {
     nonComptes.push({ cle: 'depuis-le-releve', phrase: nonCompteDepuisLeReleve(depart.au), centimes: null })
@@ -390,6 +393,9 @@ export const NON_COMPTE_VENTES_FERMEES = 'Ce que tes clients te doivent : ton ac
 export const NON_COMPTE_SANS_MONTANT = 'son montant n’est pas connu ici.'
 export const NON_COMPTE_ACHATS = 'Ce que tu dois à tes fournisseurs : tes factures d’achat ne sont pas encore suivies ici.'
 export const NON_COMPTE_PREVISIONNEL_DU_CABINET = 'Le prévisionnel de ton cabinet : il ne te le montre pas encore ici.'
+export const NON_COMPTE_PAS_ENCORE_ENREGISTRE = 'Un paiement déjà reçu de ton client, ou déjà prélevé sur ton compte, mais pas '
+  + 'encore enregistré ni rapproché : il peut figurer à la fois dans ton solde et dans ce calcul, et compter deux fois. Si tu en '
+  + 'vois un, dis-le à ton cabinet.'
 
 export function phraseDuDecouvert(date: string): string {
   return `Ton compte passerait à découvert le ${enLettres(date)} : parles-en à ton cabinet.`

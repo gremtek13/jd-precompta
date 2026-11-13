@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientTresorerie from './ClientTresorerie'
 import {
-  NON_COMPTE_ACHATS, NON_COMPTE_VENTES_FERMEES, TRESORERIE_BANQUE_FERMEE, TRESORERIE_DROITS_ILLISIBLES, TRESORERIE_INTRODUCTION,
+  NON_COMPTE_ACHATS, NON_COMPTE_PAS_ENCORE_ENREGISTRE, NON_COMPTE_VENTES_FERMEES, TRESORERIE_BANQUE_FERMEE, TRESORERIE_DROITS_ILLISIBLES, TRESORERIE_INTRODUCTION,
   TRESORERIE_MUETTE, TRESORERIE_PREVISION,
 } from '../lib/tresorerieClient'
 import { formatMoney } from '../lib/format'
@@ -142,6 +142,8 @@ describe('« Ma trésorerie à 90 jours »', () => {
     // La facture en retard se dit à part, avec sa somme : jamais comptée.
     expect(nonComptes()[0]).toBe(`Une facture en retard : leur encaissement n’a plus de date sûre. (${formatMoney(300)})`)
     expect(nonComptes()).toContain(NON_COMPTE_ACHATS)
+    // Ce que rien ne permet de voir se dit en clair, à l'écran.
+    expect(nonComptes()).toContain(NON_COMPTE_PAS_ENCORE_ENREGISTRE)
     expect(faux.demandes[0]).toBe('rpc:droits_sur_le_dossier')
   })
 
