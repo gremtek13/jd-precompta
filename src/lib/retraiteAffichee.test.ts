@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
+import { cumulDesCases,
   CE_QUE_L_ESTIMATION_NE_FAIT_PAS, PHRASE_DE_LA_CAISSE, PHRASE_DE_L_URSSAF_POUR_LA_CIPAV, caisseDe, ceQueLEstimationNeFaitPas,
   definitivesDeLUrssaf, phraseDeLaCaisse, cumulDeLEntree, demandeLeCumul, estimerLaRetraiteAffichee,
   hypothesesDeLaRetraite, lignesDeLaRetraite, titreDeLaRetraite,
@@ -44,26 +44,26 @@ describe('la retraite affichée', () => {
   })
 
   it('un médecin qui n’a pas dit son cumul n’a aucune estimation, et le motif le dit', () => {
-    const r = estimerLaRetraiteAffichee(entree('medecin_secteur_1'), 'non_renseigne')
+    const r = estimerLaRetraiteAffichee(entree('medecin_secteur_1'), { tenues: false, cumulChoisi: 'non_renseigne' })
     expect(r.disponible).toBe(false)
     if (!r.disponible) expect(r.motif).toMatch(/cumule sa retraite et son activité/)
-    expect(estimerLaRetraiteAffichee(entree('medecin_secteur_1'), 'non').disponible).toBe(true)
+    expect(estimerLaRetraiteAffichee(entree('medecin_secteur_1'), { tenues: false, cumulChoisi: 'non' }).disponible).toBe(true)
   })
 
   it('le cumul retire l’invalidité-décès du médecin, et seulement lui', () => {
     const invalidite = (choix: 'oui' | 'non') => {
-      const r = estimerLaRetraiteAffichee(entree('medecin_secteur_2'), choix)
+      const r = estimerLaRetraiteAffichee(entree('medecin_secteur_2'), { tenues: false, cumulChoisi: choix })
       if (!r.disponible) throw new Error(r.motif)
       return r.estimation.invaliditeDeces
     }
     expect(invalidite('oui')).toBe(0)
     expect(invalidite('non')).toBeGreaterThan(0)
-    const infirmiere = estimerLaRetraiteAffichee(entree('auxiliaire_medical'), 'oui')
+    const infirmiere = estimerLaRetraiteAffichee(entree('auxiliaire_medical'), { tenues: false, cumulChoisi: 'oui' })
     expect(infirmiere.disponible && infirmiere.estimation.invaliditeDeces).toBe(102_200)
   })
 
   it('refuse sans barème, par le motif du volet de l’Urssaf, jamais un zéro', () => {
-    const r = estimerLaRetraiteAffichee(entree('auxiliaire_medical', { annee: 2027 }), 'non_renseigne')
+    const r = estimerLaRetraiteAffichee(entree('auxiliaire_medical', { annee: 2027 }), { tenues: false, cumulChoisi: 'non_renseigne' })
     expect(r.disponible).toBe(false)
     if (!r.disponible) expect(r.motif).toMatch(/2027/)
   })
@@ -125,7 +125,7 @@ describe('la retraite de la CIPAV affichée (RET-Q1)', () => {
 
   it('ajoute la retraite aux cotisations que l’Urssaf appelle, et se tait plutôt que de rendre le volet seul', () => {
     const urssaf = estimerCotisationsUrssaf(entree('liberal_cipav'))
-    const retraite = estimerLaRetraiteAffichee(entree('liberal_cipav'), 'non_renseigne')
+    const retraite = estimerLaRetraiteAffichee(entree('liberal_cipav'), { tenues: false, cumulChoisi: 'non_renseigne' })
     if (!urssaf.disponible || !retraite.disponible) throw new Error('estimation attendue')
     const d = definitivesDeLUrssaf(urssaf, retraite, 'liberal_cipav')
     expect(d.disponible && d.estimation.total).toBe(urssaf.estimation.total + retraite.estimation.total / 100)
@@ -138,3 +138,18 @@ describe('la retraite de la CIPAV affichée (RET-Q1)', () => {
     expect(definitivesDeLUrssaf(infirmiere, null, 'auxiliaire_medical')).toBe(infirmiere)
   })
 })
+
+// LES DEUX CASES D'UN MÉDECIN EN BASE (RET-Q2) : l'estimation affichée les reçoit telles que lues ; le cumul d'un médecin
+// seulement, jamais passé à une autre profession.
+describe('les cases d’un médecin, tenues (RET-Q2)', () => {
+  it('le cumul et la dispense de l’exercice : un médecin ; ignorés ailleurs', () => {
+    expect(cumulDesCases('medecin_secteur_1', { tenues: true, cumul: true, dispense: null })).toBe(true)
+    expect(cumulDesCases('auxiliaire_medical', { tenues: true, cumul: true, dispense: null })).toBeNull()
+    expect(cumulDesCases('medecin_secteur_2', { tenues: false, cumulChoisi: 'non' })).toBe(false)
+    const r = estimerLaRetraiteAffichee(entree('medecin_secteur_1'), { tenues: true, cumul: null, dispense: null })
+    expect(r.disponible).toBe(false)
+    expect(estimerLaRetraiteAffichee(entree('medecin_secteur_1'), { tenues: true, cumul: false, dispense: null }).disponible).toBe(true)
+    expect(estimerLaRetraiteAffichee(entree('auxiliaire_medical'), { tenues: true, cumul: null, dispense: null }).disponible).toBe(true)
+  })
+})
+

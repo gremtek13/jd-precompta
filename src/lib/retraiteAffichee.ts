@@ -2,7 +2,10 @@
 // module de calcul (`retraiteDesLiberaux.ts`) ne porte pas. Le calcul ne se refait pas ici : on lui donne la MÊME entrée
 // que celle de l'estimation de l'Urssaf, plus le seul renseignement qu'il exige en plus — le cumul emploi-retraite d'un médecin.
 //
-// LE CUMUL N'EST PAS EN BASE (RET-Q2) : l'écran le demande par un choix LOCAL, non enregistré, SANS valeur par défaut. « Non
+// LE CUMUL ET LA DISPENSE DES DÉBUTS D'UN MÉDECIN (RET-Q2). Tant que leurs cases ne sont pas en base
+// (`CASES_DU_MEDECIN_PREVUES` baissé, migration `cumul_et_dispense_du_medecin` PRÉPARÉE), l'écran demande le cumul par un
+// choix LOCAL, non enregistré, SANS valeur par défaut, et la dispense n'est pas tenue (le complémentaire compté dû, et dit).
+// Levé, l'un et l'autre viennent des paramètres de l'exercice, que la carte des paramètres offre (`CasesDeLaRetraite`). « Non
 // renseigné » est un état à part, jamais « non » : tant qu'un médecin ne l'a pas dit, le module refuse et dit pourquoi, et
 // aucun montant ne s'affiche. Les autres professions n'ont pas à le dire, et un choix resté d'un médecin ne leur est jamais
 // passé.
@@ -72,9 +75,29 @@ export function cumulDeLEntree(profession: ProfessionLiberale | null, choix: Cum
   return choix === 'oui'
 }
 
-/** La retraite estimée sur l'entrée de l'Urssaf et le cumul choisi. */
-export function estimerLaRetraiteAffichee(entree: EntreeEstimation, choix: CumulChoisi): ResultatRetraite {
-  const e: EntreeRetraite = { ...entree, cumulEmploiRetraite: cumulDeLEntree(entree.profession, choix) }
+/**
+ * Ce que l'écran sait d'un médecin (RET-Q2) : sans les cases en base, le cumul choisi localement, la dispense non tenue ; les
+ * cases en base, l'une et l'autre lues de l'exercice, nulles tant que le cabinet ne les a pas dites.
+ */
+export type CasesDeLaRetraite =
+  | { tenues: false; cumulChoisi: CumulChoisi }
+  | { tenues: true; cumul: boolean | null; dispense: boolean | null }
+
+/** Le cumul que le module reçoit, et que les hypothèses disent : nul hors d'un médecin. */
+export function cumulDesCases(profession: ProfessionLiberale | null, cases: CasesDeLaRetraite): boolean | null {
+  if (!cases.tenues) return cumulDeLEntree(profession, cases.cumulChoisi)
+  return demandeLeCumul(profession) ? cases.cumul : null
+}
+
+/** La retraite estimée sur l'entrée de l'Urssaf et ce que l'écran sait du médecin. */
+export function estimerLaRetraiteAffichee(entree: EntreeEstimation, cases: CasesDeLaRetraite): ResultatRetraite {
+  const e: EntreeRetraite = {
+    ...entree,
+    cumulEmploiRetraite: cumulDesCases(entree.profession, cases),
+    dispenseDesDebuts: cases.tenues
+      ? { tenue: true, dispense: demandeLeCumul(entree.profession) ? cases.dispense : null }
+      : { tenue: false },
+  }
   return estimerRetraite(e)
 }
 
@@ -123,6 +146,8 @@ const TEXTE_DE_L_HYPOTHESE: Readonly<Record<HypotheseRetraite, string>> = {
     'CARCDSF : les faibles revenus sont exonérés des PCV ; la caisse ne l’accorde que sur demande, et l’estimation la suppose demandée.',
   'carmf-debut-d-activite-complementaire-suppose-du':
     'CARMF : un médecin installé avant quarante ans est dispensé du complémentaire ses deux premières années ; l’application ne connaît pas l’âge, et l’estimation compte le complémentaire dû.',
+  'carmf-complementaire-dispense':
+    'CARMF : le complémentaire n’est pas compté — le cabinet a dit le médecin dispensé cet exercice (ses deux premières années d’affiliation, son activité commencée avant quarante ans).',
   'cipav-invalidite-deces-avant-68-ans-supposee':
     'CIPAV : à partir de l’année de ses 68 ans, l’affilié n’a plus d’invalidité-décès (sauf s’il choisit de cotiser) ; l’application ne connaît pas l’âge, et l’estimation la compte due.',
 }

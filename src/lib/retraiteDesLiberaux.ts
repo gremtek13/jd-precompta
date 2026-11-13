@@ -35,9 +35,10 @@
 // arrondit — à l'euro, ou au centime pour la CARCDSF —, à la demie supérieure ; jamais une somme de flottants.
 //
 // CE QUE LE MODULE NE FAIT PAS, et que l'écran dira : une profession libérale non réglementée encore à la CIPAV ; l'exonération pour incapacité d'exercice (« CNAVPL .
-// exonération incapacité ») ; le conjoint collaborateur ; l'outre-mer ; les cotisations facultatives ; la règle de la
+// exonération incapacité ») ; le conjoint collaborateur ; l'outre-mer ; les cotisations facultatives. La règle de la
 // CARMF qui dispense du complémentaire les deux premières années un médecin installé avant quarante ans (le moteur
-// l'ignore ; l'estimation le compte dû et le dit, RET-Q2). Deux gestes que la CARCDSF accorde SUR DEMANDE — la réduction du forfait complémentaire sous 85 % du
+// l'ignore) : tant que sa case n'est pas en base, l'estimation le compte dû et le dit ; la case en base (RET-Q2,
+// `dispenseDesDebuts`), elle suit ce que le cabinet a dit. Deux gestes que la CARCDSF accorde SUR DEMANDE — la réduction du forfait complémentaire sous 85 % du
 // plafond, l'exonération des PCV des faibles revenus — le moteur les suppose demandés ; l'estimation les suit et le dit
 // (`hypotheses`, RET-Q3).
 
@@ -183,6 +184,39 @@ export interface EntreeRetraite extends EntreeEstimation {
    * OBLIGATOIRE pour un médecin, sans défaut ; sans objet pour les autres (null).
    */
   cumulEmploiRetraite: boolean | null
+  /** La dispense du complémentaire de la CARMF des débuts (RET-Q2) : voir `DispenseDesDebuts`. OBLIGATOIRE, sans défaut. */
+  dispenseDesDebuts: DispenseDesDebuts
+}
+
+/**
+ * LA DISPENSE DU COMPLÉMENTAIRE DE LA CARMF DES DÉBUTS (RET-Q2). La CARMF dispense « de la totalité de la cotisation » du
+ * régime complémentaire, « pendant les deux premières années d'affiliation », le médecin dont l'activité a commencé avant
+ * quarante ans (« Déclaration en vue de l'affiliation » 2026 : « dispenses automatiques de cotisations » ; « Début d'exercice
+ * libéral » 2026 : « les cotisations des deux premières années d'affiliation ne sont pas dues », par année civile
+ * d'affiliation) ; l'affiliation est « prononcée au premier jour du trimestre civil qui suit le début de [l']activité
+ * libérale ». L'application ne sait pas l'âge : le cabinet DIT la dispense, exercice par exercice.
+ *  - `tenue: false` : la case n'est pas en base (migration `cumul_et_dispense_du_medecin`, PRÉPARÉE) — l'estimation d'hier,
+ *    le complémentaire compté dû et dit (`carmf-debut-d-activite-complementaire-suppose-du`).
+ *  - `tenue: true` : la case de l'exercice telle que le cabinet l'a dite, nulle tant qu'il ne l'a pas dite. Elle ne se lit
+ *    que dans les deux premières années civiles d'affiliation (et l'année du début, s'il précède l'affiliation) : nulle là,
+ *    l'estimation se tait en disant pourquoi ; au-delà, la règle ne peut plus jouer, et la case ne se lit pas (comme l'ACRE
+ *    au-delà de sa première année).
+ */
+export type DispenseDesDebuts = { tenue: false } | { tenue: true; dispense: boolean | null }
+
+/**
+ * La dernière année civile où la CARMF peut dispenser un médecin du complémentaire : la seconde année civile d'affiliation,
+ * l'affiliation prenant effet au premier jour du trimestre civil qui suit le début d'activité. Null pour une date illisible.
+ */
+export function derniereAnneeDeLaDispense(debutActivite: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(debutActivite)
+  if (m === null) return null
+  const annee = Number(m[1])
+  const mois = Number(m[2])
+  if (!(mois >= 1 && mois <= 12)) return null
+  // Le trimestre civil qui SUIT celui du début : un début en octobre, novembre ou décembre s'affilie au 1er janvier suivant.
+  const anneeDAffiliation = mois >= 10 ? annee + 1 : annee
+  return anneeDAffiliation + 1
 }
 
 /** Ce que l'estimation suppose et que l'écran dit. */
@@ -190,6 +224,7 @@ export type HypotheseRetraite =
   | 'carcdsf-reduction-du-forfait-supposee-demandee'
   | 'carcdsf-exoneration-des-pcv-supposee-demandee'
   | 'carmf-debut-d-activite-complementaire-suppose-du'
+  | 'carmf-complementaire-dispense'
   | 'cipav-invalidite-deces-avant-68-ans-supposee'
 
 export interface EstimationRetraite {
@@ -288,9 +323,33 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
     // Les deux premières années d'affiliation, la CARMF dispense du complémentaire le médecin installé avant quarante
     // ans (la description même de la règle du moteur). Le moteur ne l'applique jamais (sa condition « durée d'activité
     // en fin d'année < 2 ans » compare des jours à des années, mesuré le 10/11/2026), et l'application ne sait pas
-    // l'âge : la cotisation est comptée DUE, et l'estimation le dit (RET-Q2).
+    // l'âge : sans la case (RET-Q2), la cotisation est comptée DUE, et l'estimation le dit ; avec elle, ce que le
+    // cabinet a dit (`DispenseDesDebuts`).
     complementaire = aLEuro(fois(min(a, partDuPlafond(350)), taux(CARMF_COMPLEMENTAIRE)))
-    if (activite.joursAuTrenteEtUn < CARMF_DEUX_ANS) hypotheses.push('carmf-debut-d-activite-complementaire-suppose-du')
+    const d = e.dispenseDesDebuts
+    if (!d.tenue) {
+      if (activite.joursAuTrenteEtUn < CARMF_DEUX_ANS) hypotheses.push('carmf-debut-d-activite-complementaire-suppose-du')
+    } else {
+      // La case vient de la même ligne que les paramètres : tenue sans eux, l'entrée se contredit.
+      if (!e.parametres.tenus || e.parametres.debutActivite === null) {
+        return { disponible: false, motif: 'La dispense du complémentaire se lit avec le début d’activité, qui n’a pas été lu.' }
+      }
+      const derniere = derniereAnneeDeLaDispense(e.parametres.debutActivite)
+      if (derniere === null) return { disponible: false, motif: 'La date de début d’activité est illisible : la ressaisir.' }
+      if (e.annee <= derniere) {
+        if (d.dispense === null) {
+          return {
+            disponible: false,
+            motif: `Dites si la CARMF dispense le médecin du complémentaire en ${e.annee} : ses deux premières années `
+              + 'd’affiliation, quand son activité a commencé avant quarante ans.',
+          }
+        }
+        if (d.dispense) {
+          complementaire = ZERO
+          hypotheses.push('carmf-complementaire-dispense')
+        }
+      }
+    }
   } else if (caisse === 'cipav') {
     // Un barème sur le plafond annuel, arrondi à l'euro une fois (« Cipav . retraite complémentaire ») ; pas de plancher.
     const tranche1 = fois(min(a, P), taux(CIPAV_COMPLEMENTAIRE_TRANCHE_1))

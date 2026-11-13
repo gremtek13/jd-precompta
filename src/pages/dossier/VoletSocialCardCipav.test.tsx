@@ -92,7 +92,7 @@ describe('la CIPAV dans le volet social', () => {
     expect(screen.queryByText(/Contribution de 3,25 %/)).toBeNull()
 
     const u = estimerCotisationsUrssaf(ENTREE)
-    const r = estimerRetraite({ ...ENTREE, cumulEmploiRetraite: null })
+    const r = estimerRetraite({ ...ENTREE, cumulEmploiRetraite: null, dispenseDesDebuts: { tenue: false } })
     if (!u.disponible || !r.disponible) throw new Error('estimation attendue')
     expect(screen.getByText('Total hors retraite').nextElementSibling?.textContent).toMatch(/^7 055 €$/)
     expect(retraite().getByText('Retraite (CIPAV, recouvrée par l’Urssaf)')).toBeTruthy()
