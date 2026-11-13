@@ -321,6 +321,10 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'reprise-a-recomposer': 'ensemble',
   'reprise-hors-de-l-ouverture': 'ensemble',
   'reprise-non-extournee': 'ensemble',
+  // Les mêmes, vus avant la validation pour tout exercice que rien ne fige (INV6, la Vue d'ensemble).
+  'inventaire-a-declarer': 'ensemble',
+  'regularisations-a-recomposer': 'ensemble',
+  'extournes-a-reprendre': 'ensemble',
   'report-hors-classes': 'ensemble',
   'report-desequilibre': 'ensemble',
   // L'ouverture de l'exercice qui ne reprend pas la clôture du précédent (O33-Q1) : l'enchaînement des exercices.

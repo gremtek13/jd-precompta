@@ -1,5 +1,6 @@
-import { INVENTAIRE_PREVU } from './inventaire'
-import type { DeclarationDeLaValidation, InventaireDeLaValidation, OperationDeLaValidation, ProvisionDeLaValidation } from './inventaireDeLaValidation'
+import { INVENTAIRE_EXPORTE, INVENTAIRE_PREVU } from './inventaire'
+import type { DeclarationDeLaValidation, InventaireDeLaValidation, ProvisionDeLaValidation } from './inventaireDeLaValidation'
+import type { InventaireDesControles, OperationDesControles } from './inventaireDesControles'
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { supabase } from './supabase'
@@ -12,7 +13,7 @@ import { supabase } from './supabase'
 
 export type LectureDeLInventaire =
   | { dossierId: string; etat: 'sans_objet' }
-  | { dossierId: string; etat: 'lu'; inventaire: InventaireDeLaValidation & { etat: 'lu' } }
+  | { dossierId: string; etat: 'lu'; inventaire: Extract<InventaireDesControles, { etat: 'lu' }> }
   | { dossierId: string; etat: 'incomplete'; motif: string }
 
 /** L'inventaire d'un dossier, lu pour sa validation ; ne rejette jamais. Drapeau baissé, aucun appel. */
@@ -24,14 +25,15 @@ const NATURES = new Set(['cca', 'pca', 'fnp', 'fae', 'charge_a_payer', 'produit_
 const entier = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v)
 const texte = (v: unknown): v is string => typeof v === 'string'
 
-function operationLue(l: Record<string, unknown>): OperationDeLaValidation | null {
+function operationLue(l: Record<string, unknown>): OperationDesControles | null {
   if (!texte(l.id) || !entier(l.exercice) || !texte(l.nature) || !NATURES.has(l.nature) || !texte(l.compte_resultat)
     || !texte(l.compte_regularisation) || !entier(l.montant_centimes) || !entier(l.tva_centimes) || !texte(l.objet)
-    || !(l.provision_id === null || texte(l.provision_id)) || typeof l.reprise !== 'boolean') return null
+    || !(l.provision_id === null || texte(l.provision_id)) || typeof l.reprise !== 'boolean'
+    || !(l.piece_citee_id === null || texte(l.piece_citee_id))) return null
   return {
-    id: l.id, exercice: l.exercice, nature: l.nature as OperationDeLaValidation['nature'], compte_resultat: l.compte_resultat,
+    id: l.id, exercice: l.exercice, nature: l.nature as OperationDesControles['nature'], compte_resultat: l.compte_resultat,
     compte_regularisation: l.compte_regularisation, montant_centimes: l.montant_centimes, tva_centimes: l.tva_centimes, objet: l.objet,
-    provision_id: l.provision_id, reprise: l.reprise,
+    provision_id: l.provision_id, reprise: l.reprise, piece_citee_id: l.piece_citee_id,
   }
 }
 
@@ -51,7 +53,7 @@ export async function lireLInventaireDeLaValidationSelon(dossierId: string, enBa
   try {
     const [operations, declarations, provisions] = await Promise.all([
       lireTout<Record<string, unknown>>((debut, fin) => supabase.from('operations_inventaire')
-        .select('id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, tva_centimes, objet, provision_id, reprise', { count: 'exact' })
+        .select('id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, tva_centimes, objet, provision_id, reprise, piece_citee_id', { count: 'exact' })
         .eq('dossier_id', dossierId).order('exercice').order('id').range(debut, fin)),
       lireTout<Record<string, unknown>>((debut, fin) => supabase.from('inventaires_declares')
         .select('id, exercice, retire_le', { count: 'exact' })
@@ -74,7 +76,7 @@ export async function lireLInventaireDeLaValidationSelon(dossierId: string, enBa
       dossierId, etat: 'lu',
       inventaire: {
         etat: 'lu',
-        operations: ops as OperationDeLaValidation[],
+        operations: ops as OperationDesControles[],
         declarations: decs as DeclarationDeLaValidation[],
         provisions: provs as ProvisionDeLaValidation[],
       },
@@ -82,6 +84,19 @@ export async function lireLInventaireDeLaValidationSelon(dossierId: string, enBa
   } catch (e) {
     return { dossierId, etat: 'incomplete', motif: messageErreur(e, 'la lecture de l’inventaire a échoué') }
   }
+}
+
+// CE QUE LES CONTRÔLES LISENT DE L'INVENTAIRE (ligne 35, INV6 ; lib/inventaireDesControles.ts) : le bilan, la Vue d'ensemble,
+// la Clôture et la révision. La même lecture, DERRIÈRE `INVENTAIRE_EXPORTE` : baissé, aucun appel — l'inventaire est sans objet,
+// et ces écrans sont ceux d'hier. Levé, `INVENTAIRE_PREVU` l'est aussi (inventaireDeLEcranLecture.test.ts garde l'implication).
+export async function lireLInventaireDesControles(dossierId: string): Promise<LectureDeLInventaire> {
+  return lireLInventaireDeLaValidationSelon(dossierId, INVENTAIRE_EXPORTE)
+}
+
+/** Ce que les contrôles reçoivent : l'inventaire sans objet ou lu entier ; nul tant qu'il n'est pas revenu entier. */
+export function inventaireDesControlesDeLaLecture(lecture: LectureDeLInventaire | null): InventaireDesControles | null {
+  if (lecture === null || lecture.etat === 'incomplete') return null
+  return lecture.etat === 'sans_objet' ? { etat: 'sans_objet' } : lecture.inventaire
 }
 
 /** Ce que la validation reçoit (lib/prealablesValidation.ts) : l'inventaire, sans objet, ou nul tant qu'il n'est pas lu entier. */

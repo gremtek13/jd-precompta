@@ -1058,6 +1058,11 @@ describe('l’instantané d’une preuve, gardé avec la décision', () => {
     preuve('445510', 0, { declarationsTva: [declaration({ tva_declaree: 5 })] }),
     preuve('101000', 0, {}),
     preuve('108000', 100, { ecritures: [ecriture({ compte: '108000', montant: 1 })] }),
+    // INV6 : un compte que l'inventaire écrit, l'inventaire lu d'un dossier en engagement — déclaré, sans régularisation.
+    preuve('486000', 0, {
+      modele: { ...donnees({}).modele, mode: 'engagement' },
+      inventaire: { etat: 'lu', operations: [], provisions: [], declarations: [{ id: 'i1', exercice: 2025, retire_le: null }] },
+    }),
   ]
 
   it('se relit tel qu’il a été gardé, pour chaque preuve', () => {

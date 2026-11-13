@@ -19,6 +19,10 @@ import type {
   LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, SoldeReporte,
 } from './types'
 import { frontiereDeValidation } from './validationExercice'
+import {
+  attenduDeLInventaire, compteProuveParLInventaire, declarationDeLExercice, inventaireDesControles, type InventaireDesControles,
+} from './inventaireDesControles'
+import { LIBELLES_DES_NATURES } from './inventaireEcran'
 
 // LES PREUVES QUE L'APPLICATION PROPOSE POUR UN SOLDE DE BILAN (ligne 41, étape R2 ; conception du 09/10/2026,
 // HISTORIQUE.md, « LA RÉVISION DES COMPTES : LA CONCEPTION », § 3.6). Un module PUR : il ne lit rien en base, n'appelle
@@ -76,6 +80,10 @@ export interface DonneesDesPreuves {
   natures: readonly NatureImmobilisation[]
   emprunts: readonly Emprunt[]
   declarationsTva: readonly DeclarationTva[]
+  // L'INVENTAIRE DU DOSSIER (ligne 35, INV6 ; lib/inventaireDesControles.ts) : sans objet le drapeau `INVENTAIRE_EXPORTE`
+  // baissé ou en trésorerie — les preuves d'hier, au caractère près —, ou lu en entier : les comptes qu'il écrit (486, 487,
+  // 408, 418, 151, 491) se prouvent par lui. Sans défaut : la lecture de la Vue d'ensemble le porte, la Révision le lui prend.
+  inventaire: { etat: 'sans_objet' } | Extract<InventaireDesControles, { etat: 'lu' }>
 }
 
 // ── Ce qu'une preuve rend ─────────────────────────────────────────────────────────────────────────────────────────
@@ -84,7 +92,7 @@ export interface DonneesDesPreuves {
 // une valeur ajoutée au type sans l'être à la liste ferait refuser un instantané juste.
 export const TYPES_DE_PREUVE = [
   'releve', 'virements-internes', 'registre-valeurs', 'registre-amortissements', 'echeancier', 'declarations-tva',
-  'ouverture', 'decomposition-exploitant', 'aucune',
+  'ouverture', 'decomposition-exploitant', 'inventaire', 'aucune',
 ] as const
 export type TypeDePreuve = (typeof TYPES_DE_PREUVE)[number]
 
@@ -116,6 +124,8 @@ export const CLES_DE_FAITS = [
   // L'ouverture.
   'ouverture-en-attente', 'ecritures-sur-le-compte', 'maillon-rompu', 'empreinte-a-verifier', 'empreinte-alteree',
   'empreinte-intacte',
+  // L'inventaire (ligne 35, INV6).
+  'inventaire-non-declare', 'regularisations-a-recomposer',
 ] as const
 export type CleDeFait = (typeof CLES_DE_FAITS)[number]
 
@@ -232,6 +242,13 @@ export function textesDesPreuves(
         + 'personnelles des ventilations.',
       netablitPas: 'La vraisemblance des prélèvements au regard du résultat.',
     },
+    inventaire: {
+      etablit: 'Que le solde du compte au 31 décembre est ce que l’inventaire de l’exercice y écrit : les régularisations '
+        + 'constatées au 31 décembre — l’ouverture étant extournée au 1er janvier —, ou, pour un compte de provision, '
+        + 'l’évaluation en vigueur de chacune de ses provisions ; et que l’inventaire est déclaré fait.',
+      netablitPas: 'La régularisation elle-même : elle est saisie par le cabinet, et la pièce citée ne prouve ni le prorata ni '
+        + 'l’évaluation d’un risque ; une régularisation oubliée.',
+    },
     aucune: {
       etablit: 'Rien : l’application ne tient aucune preuve de ce solde.',
       netablitPas: 'Le solde lui-même : un contrat, un acte, un relevé de compte courant se cite.',
@@ -249,6 +266,7 @@ function titreDe(type: TypeDePreuve, annee: number): string {
     case 'declarations-tva': return 'Déclarations de TVA'
     case 'ouverture': return 'Ouverture de l’exercice'
     case 'decomposition-exploitant': return 'Composition du compte de l’exploitant'
+    case 'inventaire': return `Inventaire ${annee}`
     case 'aucune': return 'Aucune preuve de l’application'
   }
 }
@@ -1058,12 +1076,52 @@ function compositionDeLExploitant(compte: string, soldeCentimes: number, d: Donn
 
 // ── La preuve d'un compte ─────────────────────────────────────────────────────────────────────────────────────────
 
+// ── L'inventaire (486, 487, 408, 418, 151, 491) ──────────────────────────────────────────────────────────────────────
+
+// LE SOLDE D'UN COMPTE QUE L'INVENTAIRE ÉCRIT (ligne 35, INV6 ; conception 35, § 5.5, R3) : ce que l'inventaire de l'exercice y
+// attend (lib/inventaireDesControles.ts, `attenduDeLInventaire`), comparé au solde. Elle ne conclut pas tant que l'inventaire
+// n'est pas déclaré, ni quand une régularisation du compte n'est plus à jour : ses écritures ne disent plus ce que le cabinet a
+// saisi. Rien de ce qu'il a saisi n'entre dans le texte — ni l'objet d'une régularisation, ni celui d'une provision : la nature,
+// la date et le montant. Les pièces citées par les régularisations du compte se proposent à la citation.
+function preuveDeLInventaire(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
+  const inventaire = d.inventaire as Extract<InventaireDesControles, { etat: 'lu' }>
+  const attendu = attenduDeLInventaire(compte, d.annee, inventaire, d.ecritures)
+  const declare = declarationDeLExercice(inventaire, d.annee) !== null
+  const faits: FaitDeLaPreuve[] = []
+  if (!declare) faits.push(fait('inventaire-non-declare', `L’inventaire de ${d.annee} n’est pas déclaré.`, null, null))
+  if (attendu.aRecomposer > 0) {
+    faits.push(fait('regularisations-a-recomposer', `${pluriel(attendu.aRecomposer, 'régularisation du compte dont les écritures ne '
+      + 'sont plus à jour', 'régularisations du compte dont les écritures ne sont plus à jour')} : à recomposer dans l’onglet Inventaire.`,
+    null, attendu.aRecomposer))
+  }
+  const fin = formatDate(`${d.annee}-12-31`)
+  const detail: LigneDeDetail[] = attendu.provisions.length > 0
+    ? attendu.provisions.map((p) => ({
+      libelle: p.operationId === null ? `Provision reprise de la balance, en vigueur au ${fin}` : `Provision évaluée au ${fin}`,
+      montantCentimes: oppose(p.cibleCentimes), reference: null,
+    }))
+    : attendu.regularisations.map((o) => ({
+      libelle: `${LIBELLES_DES_NATURES[o.nature]} au ${fin}`,
+      montantCentimes: o.montant_centimes + (o.nature === 'fnp' || o.nature === 'fae' ? o.tva_centimes : 0), reference: null,
+    }))
+  const piecesCitees = [...new Set(attendu.regularisations.flatMap((o) => (o.piece_citee_id === null ? [] : [o.piece_citee_id])))]
+  const sources: SourceProposee[] = piecesCitees.map((pieceId) => ({
+    pieceId, documentId: null, raison: 'La pièce qui fonde une régularisation de l’inventaire sur ce compte.',
+  }))
+  const verdictForce: VerdictDePreuve | null = !declare || attendu.aRecomposer > 0 ? 'incomplete' : null
+  const raison = !declare ? 'l’inventaire de l’exercice n’est pas déclaré.' : 'une régularisation du compte n’est plus à jour.'
+  return conclure('inventaire', compte, d, soldeCentimes, attendu.attenduCentimes, verdictForce, raison, faits, detail, sources)
+}
+
 /** La preuve que l'application propose pour un compte de bilan, à son solde de fin d'exercice (en centimes). */
 export function preuveDuCompte(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
   // Le 512 propre d'un compte bancaire autre que le principal (MCB-Q1) se prouve par le relevé, comme celui du rôle `banque`.
   const tenuParUnCompteBancaire = d.comptesBancaires.etat === 'lus'
     && d.comptesBancaires.comptes.some((c) => !c.principal && c.compte === compte)
-  switch (tenuParUnCompteBancaire ? 'releve' : typeDePreuveDuCompte(compte, d.modele.plan)) {
+  // Un compte que l'inventaire écrit se prouve par lui, l'inventaire offert à un dossier en engagement (INV6) ; sinon, la
+  // preuve d'hier (aucune pour ces comptes).
+  const parLInventaire = inventaireDesControles(d.inventaire, d.modele.mode).etat === 'lu' && compteProuveParLInventaire(compte)
+  switch (tenuParUnCompteBancaire ? 'releve' : parLInventaire ? 'inventaire' : typeDePreuveDuCompte(compte, d.modele.plan)) {
     case 'releve': return preuveDuReleve(compte, soldeCentimes, d)
     case 'virements-internes': return preuveDesVirementsInternes(compte, soldeCentimes, d)
     case 'registre-valeurs': return preuveDuRegistreValeurs(compte, soldeCentimes, d)
@@ -1072,6 +1130,7 @@ export function preuveDuCompte(compte: string, soldeCentimes: number, d: Donnees
     case 'declarations-tva': return preuveDesDeclarations(compte, soldeCentimes, d)
     case 'ouverture': return preuveDeLOuverture(compte, soldeCentimes, d)
     case 'decomposition-exploitant': return compositionDeLExploitant(compte, soldeCentimes, d)
+    case 'inventaire': return preuveDeLInventaire(compte, soldeCentimes, d)
     case 'aucune': return conclure('aucune', compte, d, soldeCentimes, null, 'sans-preuve', null, [], [], [])
   }
 }

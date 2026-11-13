@@ -5,6 +5,7 @@ import { anneeDe, formatDate, formatMoney } from './format'
 import { etatDeLOuverture, exploitantIndividuel, ouvertureDeLExercice, type EtatDeLOuverture } from './reportDesSoldes'
 import { refusDeLOuverture, soldeDuCompteCentimes } from './revisionSoldes'
 import type { ANouveau, Categorie, EcritureBrouillon, Piece, SensEcriture, SoldeReporte } from './types'
+import { compteEcritParLInventaire, declarationDeLExercice, type InventaireDesControles } from './inventaireDesControles'
 
 // LE BILAN D'UN EXERCICE À SA CLÔTURE — ligne 33 de la feuille de route, première brique (09/10/2026).
 //
@@ -318,6 +319,12 @@ export interface EntreesDuBilan {
   modele: ModeleComptable
   /** Aujourd'hui à Paris (AAAA-MM-JJ) : un exercice qui n'est pas clos donne un bilan provisoire. */
   aujourdHui: string
+  /**
+   * L'INVENTAIRE DU DOSSIER (ligne 35, INV6 ; lib/inventaireDesControles.ts), sans valeur par défaut : sans objet le drapeau
+   * `INVENTAIRE_EXPORTE` baissé, ou en trésorerie — le point `inventaire-non-revu` d'hier, au caractère près —, ou lu EN
+   * ENTIER : le point se refonde sur sa déclaration. Lu en partie, l'appelant n'établit pas le bilan.
+   */
+  inventaire: InventaireDesControles
 }
 
 /** La part d'un compte auxiliaire dans une rubrique, ou celle des lignes sans détail par tiers (`auxiliaire` nul). */
@@ -787,20 +794,9 @@ export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
       comptes: tiersIncoherents,
     })
   }
-  const nonRevus = [...soldes.entries()]
-    .filter(([c, s]) => COMPTE_D_INVENTAIRE.test(c) && s !== 0 && !mouvementes.has(c))
-    .map(([c]) => c).sort(parNumero)
-  if (nonRevus.length > 0) {
-    points.push({
-      code: 'inventaire-non-revu', gravite: 'attention',
-      texte: `${pluriel(nonRevus.length, 'Un compte d’inventaire garde', 'Des comptes d’inventaire gardent')} à la clôture le solde `
-        + `de l’ouverture, sans mouvement dans l’exercice : ${nonRevus.join(', ')}. Stocks, charges et produits constatés `
-        + 'd’avance, factures à recevoir ou à établir, provisions et dépréciations se revoient à chaque clôture, et cette '
-        + 'écriture ne se passe pas encore dans l’application.',
-      comptes: nonRevus,
-    })
-  }
   const provisoire = d.aujourdHui <= dateCloture
+  const pointDInventaire = pointDeLInventaire(soldes, mouvementes, d, exercice, provisoire)
+  if (pointDInventaire !== null) points.push(pointDInventaire)
   if (provisoire) {
     points.push({
       code: 'exercice-en-cours', gravite: 'information',
@@ -824,6 +820,56 @@ export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
     actif: rubriquesActif, passif: rubriquesPassif, totauxActif, totauxPassif,
     resultat, ecart, renvois, points,
     soldes: [...soldes.keys()].sort(parNumero).map((compte) => ({ compte, libelle: libelleDe(compte), centimes: soldes.get(compte)! })),
+  }
+}
+
+// LE POINT `inventaire-non-revu`. Drapeau baissé ou en trésorerie, celui d'hier : un compte d'inventaire qui garde le solde
+// de son ouverture sans mouvement dans l'exercice, l'écriture ne se passant pas dans l'application. L'INVENTAIRE OFFERT
+// (INV6 ; conception 35, § 3.5 et 5.2), le mouvement ne prouve plus rien — l'extourne du 1er janvier mouvemente le 486 chaque
+// année, et le ferait taire sans que rien n'ait été revu : le point lit la DÉCLARATION de l'inventaire. Non déclaré (un
+// exercice clos), tout compte que l'inventaire écrit et qui porte un solde se dit. Déclaré — ou l'exercice pas encore clos —,
+// ces comptes-là se taisent ; ceux que l'inventaire ne range pas (stocks, dépréciations d'autres actifs, anciens numéros)
+// suivent encore la règle du mouvement.
+function pointDeLInventaire(
+  soldes: ReadonlyMap<string, number>,
+  mouvementes: ReadonlySet<string>,
+  d: Pick<EntreesDuBilan, 'inventaire' | 'anneesValidees'>,
+  exercice: number,
+  provisoire: boolean,
+): PointDuBilan | null {
+  const nonNuls = [...soldes.entries()].filter(([c, s]) => COMPTE_D_INVENTAIRE.test(c) && s !== 0).map(([c]) => c).sort(parNumero)
+  if (d.inventaire.etat === 'sans_objet') {
+    const nonRevus = nonNuls.filter((c) => !mouvementes.has(c))
+    if (nonRevus.length === 0) return null
+    return {
+      code: 'inventaire-non-revu', gravite: 'attention',
+      texte: `${pluriel(nonRevus.length, 'Un compte d’inventaire garde', 'Des comptes d’inventaire gardent')} à la clôture le solde `
+        + `de l’ouverture, sans mouvement dans l’exercice : ${nonRevus.join(', ')}. Stocks, charges et produits constatés `
+        + 'd’avance, factures à recevoir ou à établir, provisions et dépréciations se revoient à chaque clôture, et cette '
+        + 'écriture ne se passe pas encore dans l’application.',
+      comptes: nonRevus,
+    }
+  }
+  const declare = declarationDeLExercice(d.inventaire, exercice) !== null
+  const nonDeclares = declare || provisoire ? [] : nonNuls.filter(compteEcritParLInventaire)
+  const horsInventaire = nonNuls.filter((c) => !compteEcritParLInventaire(c) && !mouvementes.has(c))
+  if (nonDeclares.length === 0 && horsInventaire.length === 0) return null
+  const phrases: string[] = []
+  if (nonDeclares.length > 0) {
+    phrases.push(`L’inventaire de ${exercice} n’est pas déclaré, et ${pluriel(nonDeclares.length, 'un compte qu’il écrit porte',
+      'des comptes qu’il écrit portent')} un solde à la clôture : ${nonDeclares.join(', ')}. ${pluriel(nonDeclares.length,
+      'Il se revoit', 'Ils se revoient')} dans l’onglet Inventaire, qui le déclare fait, avec ou sans régularisation`
+      + (d.anneesValidees.includes(exercice) ? '.' : ' ; la validation l’attend.'))
+  }
+  if (horsInventaire.length > 0) {
+    phrases.push(`${pluriel(horsInventaire.length, 'Un compte d’inventaire garde', 'Des comptes d’inventaire gardent')} à la `
+      + `clôture le solde de l’ouverture, sans mouvement dans l’exercice : ${horsInventaire.join(', ')}. L’inventaire de `
+      + `l’application ne ${pluriel(horsInventaire.length, 'le range', 'les range')} pas (stocks, dépréciations d’autres actifs, `
+      + `anciens numéros) : ${pluriel(horsInventaire.length, 'il se revoit', 'ils se revoient')} à part.`)
+  }
+  return {
+    code: 'inventaire-non-revu', gravite: 'attention', texte: phrases.join(' '),
+    comptes: [...nonDeclares, ...horsInventaire].sort(parNumero),
   }
 }
 

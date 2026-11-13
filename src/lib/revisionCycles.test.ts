@@ -342,6 +342,7 @@ describe('le rangement des contrôles existants', () => {
       'ecritures-a-repartir', 'champs-bnc',
       'inventaire-mal-numerote', 'inventaire-non-declare', 'inventaire-a-recomposer', 'extourne-manquante', 'provisions-a-ventiler',
       'reprise-a-recomposer', 'reprise-hors-de-l-ouverture', 'reprise-non-extournee',
+      'inventaire-a-declarer', 'regularisations-a-recomposer', 'extournes-a-reprendre',
       'report-hors-classes', 'report-desequilibre', 'ouverture-en-ecart', 'concordance', 'exclusions-2035', 'piste-rompue', 'informations',
     ],
   }

@@ -395,7 +395,7 @@ describe('les arguments, tels que supabase-js les envoie', () => {
     expect([...signature[1].matchAll(/(p_\w+)/g)].map((m) => m[1])).toEqual(Object.keys(a))
     // Ce qui part passe les refus du module : le programme proposé tel quel, une conclusion de chaque cycle.
     for (const c of CYCLES_DE_REVISION) {
-      const x = argumentsDeConclureCycle(DOSSIER, 2025, { cycle: c, etat: 'revise', conclusion: 'R', aSuivre: null, remplaceId: null, travaux: programmePropose(c) })
+      const x = argumentsDeConclureCycle(DOSSIER, 2025, { cycle: c, etat: 'revise', conclusion: 'R', aSuivre: null, remplaceId: null, travaux: programmePropose(c, false) })
       expect(refusDeConclureCycle(x, contexte({ conclusions: [] })), c).toBeNull()
     }
   })
@@ -429,7 +429,7 @@ describe('le programme de travail proposé (§ 4.4)', () => {
         expect(t.travail.trim(), t.code).not.toBe('')
       }
     }
-    expect(programmePropose('emprunts')).toEqual(PROGRAMME_DES_CYCLES.emprunts.map((t) => ({ ...t, fait: false, note: null })))
+    expect(programmePropose('emprunts', false)).toEqual(PROGRAMME_DES_CYCLES.emprunts.map((t) => ({ ...t, fait: false, note: null })))
   })
 
   it('le cycle « ensemble » ne présume pas la mission (Q5) et ne cite aucun seuil', () => {
@@ -459,16 +459,39 @@ describe('le programme de travail proposé (§ 4.4)', () => {
   })
 
   it('part de la conclusion courante, complétée des travaux proposés depuis ; sinon du programme proposé', () => {
-    expect(programmeDeDepart('emprunts', null)).toEqual({ travaux: programmePropose('emprunts'), repris: false })
+    expect(programmeDeDepart('emprunts', null, false)).toEqual({ travaux: programmePropose('emprunts', false), repris: false })
     const courante = { travaux: [{ code: 'emprunts-tableau', travail: 'Ancien libellé', fait: true, note: 'Obtenu' }, { travail: 'Ajouté', fait: false }] }
-    const depart = programmeDeDepart('emprunts', courante)
+    const depart = programmeDeDepart('emprunts', courante, false)
     expect(depart.repris).toBe(true)
     expect(depart.travaux.slice(0, 2)).toEqual([
       { code: 'emprunts-tableau', travail: 'Ancien libellé', fait: true, note: 'Obtenu' },
       { code: null, travail: 'Ajouté', fait: false, note: null },
     ])
     expect(depart.travaux.slice(2).map((t) => t.code)).toEqual(['emprunts-capital', 'emprunts-interets'])
-    expect(programmeDeDepart('emprunts', { travaux: { illisible: true } })).toEqual({ travaux: programmePropose('emprunts'), repris: false })
+    expect(programmeDeDepart('emprunts', { travaux: { illisible: true } }, false)).toEqual({ travaux: programmePropose('emprunts', false), repris: false })
+  })
+
+  // INV6 (conception 35, § 5.5, R4) : l'inventaire offert ajoute la séparation des exercices aux dépenses et aux recettes, les
+  // provisions aux tiers — à la suite, sous des codes stables que la fonction accepte ; fermé, le programme d'hier.
+  it('l’inventaire offert ajoute ses travaux aux dépenses, aux recettes et aux tiers, et à eux seuls', () => {
+    for (const c of CYCLES_DE_REVISION) {
+      const ajoutes = programmePropose(c, true).slice(PROGRAMME_DES_CYCLES[c].length)
+      expect(programmePropose(c, true).slice(0, PROGRAMME_DES_CYCLES[c].length)).toEqual(programmePropose(c, false))
+      expect(ajoutes.map((t) => t.code)).toEqual(
+        c === 'depenses' ? ['depenses-separation-exercices'] : c === 'recettes' ? ['recettes-separation-exercices']
+          : c === 'tiers' ? ['tiers-provisions'] : [],
+      )
+      for (const t of ajoutes) {
+        expect(t.code!, t.code!).toMatch(MOTIF_CODE_DE_TRAVAIL)
+        expect(t.code!.startsWith(`${c}-`)).toBe(true)
+        expect([...t.travail].length).toBeLessThanOrEqual(LONGUEUR_MAX_TRAVAIL)
+      }
+      const x = argumentsDeConclureCycle(DOSSIER, 2025, { cycle: c, etat: 'revise', conclusion: 'R', aSuivre: null, remplaceId: null, travaux: programmePropose(c, true) })
+      expect(refusDeConclureCycle(x, contexte({ conclusions: [] })), c).toBeNull()
+    }
+    // Une conclusion d'avant l'inventaire repart d'elle, complétée du travail neuf.
+    const depart = programmeDeDepart('tiers', { travaux: programmePropose('tiers', false) }, true)
+    expect(depart.travaux.map((t) => t.code).at(-1)).toBe('tiers-provisions')
   })
 })
 

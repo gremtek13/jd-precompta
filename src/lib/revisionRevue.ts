@@ -1,4 +1,5 @@
 import { remplirModele } from './encaissementsFactures'
+import { travauxDeLInventaire } from './inventaireDesControles'
 import type { EtatDuSolde, RevisionDeLExercice } from './revision'
 import { CYCLES_DE_REVISION, type CycleRevision } from './revisionCycles'
 import { octetsJsonb } from './revisionPreuves'
@@ -158,9 +159,14 @@ export interface TravailDuProgramme {
   note: string | null
 }
 
-/** Le programme proposé d'un cycle, prêt à cocher : rien n'est fait, aucune note. */
-export function programmePropose(cycle: CycleRevision): TravailDuProgramme[] {
-  return PROGRAMME_DES_CYCLES[cycle].map((t) => ({ code: t.code, travail: t.travail, fait: false, note: null }))
+/**
+ * Le programme proposé d'un cycle, prêt à cocher : rien n'est fait, aucune note. `inventaireOffert` (ligne 35, INV6 ;
+ * lib/inventaireDesControles.ts) : l'inventaire lu d'un dossier en engagement, l'onglet offert — la séparation des exercices
+ * aux dépenses et aux recettes, les provisions aux tiers s'ajoutent, à la suite ; faux, le programme d'hier. Sans défaut.
+ */
+export function programmePropose(cycle: CycleRevision, inventaireOffert: boolean): TravailDuProgramme[] {
+  return [...PROGRAMME_DES_CYCLES[cycle], ...travauxDeLInventaire(cycle, inventaireOffert)]
+    .map((t) => ({ code: t.code, travail: t.travail, fait: false, note: null }))
 }
 
 // ── Relire un programme, sans deviner ─────────────────────────────────────────────────────────────────────────────
@@ -211,14 +217,19 @@ export function lireProgramme(travaux: unknown): LectureDuProgramme {
  * travaux proposés depuis qu'elle a été écrite (ceux dont le code n'y figure pas) ; sans conclusion courante, ou si son
  * programme ne se relit pas, le programme proposé — et `repris` le dit.
  */
-export function programmeDeDepart(cycle: CycleRevision, courante: Pick<RevisionConclusion, 'travaux'> | null): {
+export function programmeDeDepart(
+  cycle: CycleRevision, courante: Pick<RevisionConclusion, 'travaux'> | null, inventaireOffert: boolean,
+): {
   travaux: TravailDuProgramme[]
   repris: boolean
 } {
   const lu = courante === null ? null : lireProgramme(courante.travaux)
-  if (lu === null || !lu.lisible) return { travaux: programmePropose(cycle), repris: false }
+  if (lu === null || !lu.lisible) return { travaux: programmePropose(cycle, inventaireOffert), repris: false }
   const codes = new Set(lu.travaux.map((t) => t.code).filter((c) => c !== null))
-  return { travaux: [...lu.travaux, ...programmePropose(cycle).filter((t) => t.code === null || !codes.has(t.code))], repris: true }
+  return {
+    travaux: [...lu.travaux, ...programmePropose(cycle, inventaireOffert).filter((t) => t.code === null || !codes.has(t.code))],
+    repris: true,
+  }
 }
 
 // ── La chaîne des conclusions d'un cycle ──────────────────────────────────────────────────────────────────────────

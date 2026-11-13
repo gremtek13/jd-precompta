@@ -15,6 +15,8 @@ import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDec
 import { confronterLOuverture, ouvertureEnEcart } from './ouvertureConfrontee'
 import { eclatementDeLExercice, refusALaValidation } from './ouvertureEclatee'
 import { MODELES_DE_LA_VALIDATION, prealablesDeLInventaire, type InventaireDeLaValidation } from './inventaireDeLaValidation'
+import { cibleDesPrealablesDeLInventaire } from './inventaireDesControles'
+import { INVENTAIRE_EXPORTE } from './inventaire'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import {
   immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec,
@@ -775,11 +777,11 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // déclaré d'un exercice d'engagement (INV-Q9 (A)), une régularisation de l'exercice qui n'est plus à jour, une de l'exercice
   // précédent sans son extourne entière, des provisions reprises non ventilées (INV-Q11 (A)). La base ne dit que le premier ;
   // l'écran les dit tous. Sans objet le drapeau `INVENTAIRE_PREVU` baissé, et en trésorerie, où rien ne s'écrit : rien ne se
-  // dit. L'écran de l'inventaire (INV5) les écrit ; jusque-là, ils mènent aux écritures.
+  // dit. L'écran de l'inventaire (INV5) les écrit : ils y mènent quand il est offert (INV6), sinon aux écritures.
   for (const p of prealablesDeLInventaire({
     annee: d.annee, mode: d.modele.mode, aNouveaux: d.aNouveaux, ecritures: d.ecritures, inventaire: d.inventaire,
   })) {
-    bloque({ id: p.id, nb: null, cible: 'ecritures', message: p.message })
+    bloque({ id: p.id, nb: null, cible: cibleDesPrealablesDeLInventaire(INVENTAIRE_EXPORTE), message: p.message })
   }
 
   // ── L'ouverture de l'exercice suivant, que la validation écrit dans le même clic (ligne 34). ────────────────────

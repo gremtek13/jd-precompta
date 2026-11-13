@@ -52503,3 +52503,21 @@ mode où rien ne garantit le bouton, il refuse ; il ne lève jamais. Il arrête 
 le bloc à poser dans `.claude/settings.json`, ce que le resserrement retire de « allow » (l'accord à tout le serveur Supabase,
 `execute_sql`, `apply_migration`, `deploy_edge_function`), l'épreuve avec le cabinet. **Reste** : rien n'est branché, `.claude/`
 intact ; MVPD9-Q1 repose la question pour le 20 novembre ; le bouton ne s'éprouve que dans la session, avec le cabinet.
+
+### 13/11/2026 — INV6 : L'INVENTAIRE DANS LE BILAN, LA VUE D'ENSEMBLE ET LA RÉVISION (DERRIÈRE SON DRAPEAU, INACHEVÉ)
+
+Agent architecte, lot INV6 de la conception 35 (§ 5.2, 5.5, 5.7), sans migration, derrière `INVENTAIRE_EXPORTE` baissé : la
+lecture des contrôles (`lireLInventaireDesControles`, lib/inventaireLecture.ts) ne lit rien et rend l'inventaire sans objet,
+et en trésorerie il l'est toujours (`inventaireDesControles`) — bilan, Vue d'ensemble et révision sont ceux d'hier. Le module
+pur `lib/inventaireDesControles.ts` porte les règles. **Bilan** : `EntreesDuBilan.inventaire` obligatoire ; levé, le point
+`inventaire-non-revu` lit la DÉCLARATION (l'extourne mouvemente le 486 chaque année) : non déclarée sur un exercice clos, tout
+compte que l'inventaire écrit et qui porte un solde se dit ; les comptes qu'il ne range pas (stocks, 29, 59, anciens numéros)
+gardent la règle du mouvement ; lu en partie, le bilan ne s'établit pas. La confrontation de l'ouverture ne lit pas l'inventaire.
+**Vue d'ensemble** : trois points en attention, cible Inventaire (`inventaire-a-declarer`, `regularisations-a-recomposer`,
+`extournes-a-reprendre`), rangés à l'ensemble ; la lecture partielle passe par `lectureIncomplete`. **Révision** : la preuve
+`inventaire` (R3) des 486, 487, 408 (hors 4084), 418, 151, 491 — les constatations du 31/12, ou la cible en vigueur des
+provisions —, qui ne conclut pas sans déclaration ni sur une régularisation à recomposer, et propose les pièces citées (la
+lecture lit `piece_citee_id`) ; le programme (R4) ajoute la séparation des exercices et les provisions. Les préalables de
+l'inventaire mènent à l'onglet Inventaire, le drapeau levé. **Reste** : la carte de la Clôture (`carteDeLInventaire`, écrite
+en module, pas montée), les contrats du dossier permanent proposés dans l'onglet (`propositionsDuDossierPermanent`, écrite,
+pas montée), les tests du module et des trois points de la Vue d'ensemble, et INV7, INV8.

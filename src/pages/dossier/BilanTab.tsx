@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { lireTout } from '../../lib/lectureComplete'
 import { lireLesSoldesReportes } from '../../lib/soldesReportesLecture'
+import { lireLInventaireDesControles } from '../../lib/inventaireLecture'
+import { inventaireDesControles, type InventaireDesControles } from '../../lib/inventaireDesControles'
 import {
   bilanDeLExercice, CASES_DES_TOTAUX, colonneDeLExercicePrecedent, detailDuBilan, lignesDuBilan, type BilanEtabli,
   type ColonneDeLExercicePrecedent, type CompteDuDetail, type LigneDeLActif, type LigneDuPassif, type PointDuBilan,
@@ -399,7 +401,9 @@ interface Lectures {
   pieces: Pick<Piece, 'id' | 'tiers'>[]
   aNouveaux: ANouveau[]
   reportes: SoldeReporte[]
-  motifs: { quoi: string; accord: 'lues' | 'lus'; motif: string }[]
+  // L'inventaire du dossier (ligne 35, INV6), lu en entier, ou sans objet le drapeau `INVENTAIRE_EXPORTE` baissé — sans appel.
+  inventaire: { etat: 'sans_objet' } | Extract<InventaireDesControles, { etat: 'lu' }>
+  motifs: { quoi: string; accord: 'lues' | 'lus' | 'lu'; motif: string }[]
 }
 
 export default function BilanTab({ dossierId, modele, onNavigate }: {
@@ -416,7 +420,7 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
   useEffect(() => {
     let annule = false
     void (async () => {
-      const [brouillon, lectureCategories, lecturePieces, lectureANouveaux, lectureReportes] = await Promise.all([
+      const [brouillon, lectureCategories, lecturePieces, lectureANouveaux, lectureReportes, lectureInventaire] = await Promise.all([
         // Tout le brouillon, tous exercices : l'exercice s'y lit, et le détail d'un client ou d'un fournisseur se lit
         // depuis la reprise. Par tranches, sur un ordre total (lib/lectureComplete.ts).
         lireTout<EcritureBrouillon>((debut, fin) =>
@@ -437,6 +441,8 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
             .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
         ),
         lireLesSoldesReportes(dossierId),
+        // Ne rejette jamais ; le drapeau baissé, sans objet, sans un appel : le bilan d'hier.
+        lireLInventaireDesControles(dossierId),
       ])
       if (annule) return
       // Chaque lecture a son bandeau : dire laquelle manque, c'est dire où chercher.
@@ -448,9 +454,13 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
       if (lectureReportes.motif) {
         motifs.push({ quoi: 'Les soldes reportés des exercices validés', accord: 'lus', motif: lectureReportes.motif })
       }
+      if (lectureInventaire.etat === 'incomplete') {
+        motifs.push({ quoi: 'L’inventaire du dossier', accord: 'lu', motif: lectureInventaire.motif })
+      }
       setLectures({
         ecritures: brouillon.lignes, categories: lectureCategories.lignes, pieces: lecturePieces.lignes,
-        aNouveaux: lectureANouveaux.lignes, reportes: lectureReportes.lignes, motifs,
+        aNouveaux: lectureANouveaux.lignes, reportes: lectureReportes.lignes,
+        inventaire: lectureInventaire.etat === 'lu' ? lectureInventaire.inventaire : { etat: 'sans_objet' }, motifs,
       })
     })()
     return () => { annule = true }
@@ -467,6 +477,7 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
     const entrees = {
       exercice: annee, ecritures: lectures.ecritures, categories: lectures.categories, reprise: lectures.aNouveaux,
       reportes: lectures.reportes, anneesValidees, pieces: lectures.pieces, modele, aujourdHui,
+      inventaire: inventaireDesControles(lectures.inventaire, modele.mode),
     }
     const deN = bilanDeLExercice(entrees)
     if (deN.etat !== 'etabli') return { bilan: deN, precedent: null, ouvertureConfrontee: null }

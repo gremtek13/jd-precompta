@@ -1,3 +1,4 @@
+import { INVENTAIRE_DES_CONTROLES_SANS_OBJET } from './inventaireDesControles'
 import { describe, expect, it } from 'vitest'
 import {
   bilanDeLExercice, colonneDeLExercicePrecedent, detailDuBilan, lignesDuBilan, regleDuCompte, RUBRIQUES_ACTIF, RUBRIQUES_PASSIF, type BilanDeLExercice, type Destination,
@@ -76,7 +77,7 @@ function categorie(o: Partial<Categorie>): Categorie {
 function entrees(o: Partial<EntreesDuBilan>): EntreesDuBilan {
   return {
     exercice: 2026, ecritures: [], categories: [], reprise: [], reportes: [], anneesValidees: [], pieces: [],
-    modele: SOCIETE, aujourdHui: '2027-03-15', ...o,
+    modele: SOCIETE, aujourdHui: '2027-03-15', inventaire: INVENTAIRE_DES_CONTROLES_SANS_OBJET, ...o,
   }
 }
 

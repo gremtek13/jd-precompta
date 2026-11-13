@@ -9,6 +9,7 @@ import type { PlanComptable } from '../../lib/planComptable'
 import { lireLaChecklist } from '../../lib/checklistLecture'
 import { pointsDeLaChecklist, type DonneesDeLaChecklist } from '../../lib/pointsDeLaChecklist'
 import { controlesPourLaRevision, type ControleExistant } from '../../lib/controlesDeLaRevision'
+import { inventaireDesControles } from '../../lib/inventaireDesControles'
 import {
   argumentsDeJustifierSolde, revisionDeLExercice, type CompteEnRevision, type ContexteDeJustification, type DecisionComposee,
   type DonneesDeLaRevision, type EtatDuSolde, type RevisionDeLExercice,
@@ -788,6 +789,8 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     immobilisations: lecture.checklist.immobilisations, natures: lecture.checklist.natures, emprunts: lecture.checklist.emprunts,
     declarationsTva: lecture.checklist.declarationsTva, lectureIncomplete: null, categories: lecture.checklist.categories,
     decisions: lecture.decisions, preuves: lecture.preuves,
+    // L'inventaire (INV6) : celui de la Vue d'ensemble, lu en entier — lu en partie, `lectureIncomplete` l'a dit plus haut.
+    inventaire: lecture.checklist.inventaire,
   }
   const revision = revisionDeLExercice(donnees, controlesPourLaRevision(points, annee))
   // Ce qu'il faut pour dire les refus de `justifier_solde` : l'accès est celui de la session — cet onglet ne s'ouvre que
@@ -1063,6 +1066,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
             cycle={cycleAffiche}
             exercice={cycles.exercice}
             contexte={contexteDesCycles}
+            inventaireOffert={inventaireDesControles(lecture.checklist.inventaire, modele.mode).etat === 'lu'}
             utilisateur={session?.user.id ?? null}
             occupe={cycleOccupe || enCours || revueOccupee || permanentOccupe}
             erreur={erreurCycle !== null && erreurCycle.cycle === cycleAffiche.cycle ? erreurCycle : null}
