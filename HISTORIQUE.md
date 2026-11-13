@@ -52504,23 +52504,23 @@ le bloc à poser dans `.claude/settings.json`, ce que le resserrement retire de 
 `execute_sql`, `apply_migration`, `deploy_edge_function`), l'épreuve avec le cabinet. **Reste** : rien n'est branché, `.claude/`
 intact ; MVPD9-Q1 repose la question pour le 20 novembre ; le bouton ne s'éprouve que dans la session, avec le cabinet.
 
-### 13/11/2026 — INV6 : L'INVENTAIRE DANS LE BILAN, LA VUE D'ENSEMBLE ET LA RÉVISION (DERRIÈRE SON DRAPEAU, INACHEVÉ)
+### 13/11/2026 — INV6 : L'INVENTAIRE DANS LE BILAN, LA VUE D'ENSEMBLE ET LA RÉVISION (DERRIÈRE SON DRAPEAU)
 
-Agent architecte, lot INV6 de la conception 35 (§ 5.2, 5.5, 5.7), sans migration, derrière `INVENTAIRE_EXPORTE` baissé : la
-lecture des contrôles (`lireLInventaireDesControles`, lib/inventaireLecture.ts) ne lit rien et rend l'inventaire sans objet,
-et en trésorerie il l'est toujours (`inventaireDesControles`) — bilan, Vue d'ensemble et révision sont ceux d'hier. Le module
-pur `lib/inventaireDesControles.ts` porte les règles. **Bilan** : `EntreesDuBilan.inventaire` obligatoire ; levé, le point
-`inventaire-non-revu` lit la DÉCLARATION (l'extourne mouvemente le 486 chaque année) : non déclarée sur un exercice clos, tout
-compte que l'inventaire écrit et qui porte un solde se dit ; les comptes qu'il ne range pas (stocks, 29, 59, anciens numéros)
-gardent la règle du mouvement ; lu en partie, le bilan ne s'établit pas. La confrontation de l'ouverture ne lit pas l'inventaire.
-**Vue d'ensemble** : trois points en attention, cible Inventaire (`inventaire-a-declarer`, `regularisations-a-recomposer`,
-`extournes-a-reprendre`), rangés à l'ensemble ; la lecture partielle passe par `lectureIncomplete`. **Révision** : la preuve
-`inventaire` (R3) des 486, 487, 408 (hors 4084), 418, 151, 491 — les constatations du 31/12, ou la cible en vigueur des
-provisions —, qui ne conclut pas sans déclaration ni sur une régularisation à recomposer, et propose les pièces citées (la
-lecture lit `piece_citee_id`) ; le programme (R4) ajoute la séparation des exercices et les provisions. Les préalables de
-l'inventaire mènent à l'onglet Inventaire, le drapeau levé. **Reste** : la carte de la Clôture (`carteDeLInventaire`, écrite
-en module, pas montée), les contrats du dossier permanent proposés dans l'onglet (`propositionsDuDossierPermanent`, écrite,
-pas montée), les tests du module et des trois points de la Vue d'ensemble, et INV7, INV8.
+Agent architecte, lot INV6 de la conception 35 (§ 5.2, 5.5, 5.7), sans migration, derrière `INVENTAIRE_EXPORTE` baissé ; repris
+et achevé le même soir après l'arrêt du premier agent. Baissé, la lecture des contrôles (`lireLInventaireDesControles`) ne lit
+rien ; en trésorerie l'inventaire est sans objet (`inventaireDesControles`) : tout est celui d'hier. Le module pur
+`lib/inventaireDesControles.ts` porte les règles. **Bilan** : levé, `inventaire-non-revu` lit la DÉCLARATION (l'extourne
+mouvemente le 486 chaque année) ; les comptes que l'inventaire ne range pas (stocks, 4084, anciens numéros) gardent la règle du
+mouvement. **Vue d'ensemble** : trois points en attention, cible Inventaire. **Révision** : la preuve `inventaire` (R3) des 486,
+487, 408, 418, 151, 491, qui ne conclut pas sans déclaration ni sur une régularisation à recomposer ; les travaux R4 ; R7, les
+baux et contrats en vigueur qu'aucune régularisation de l'exercice ne reprend, dits dans la section « Dossier permanent » à titre
+d'INFORMATION, sans geste ni montant (INV-Q12 reste ouverte : la voie qui n'affirme et ne retient rien de plus), sa lecture
+partielle dite (`inventaireIncomplet`). **Clôture** : la carte « Inventaire » au-dessus de la validation d'un exercice
+(`etatDeLaCarteDeLInventaire`, `InventaireDeLaClotureCard`), « Chargement… » avant lecture, le motif seul sur une lecture
+partielle, aucun geste qu'« Ouvrir l'inventaire ». **Preuves** : le bilan confronté à une copie fidèle du point d'hier
+(`pointDHier`, bilan.test.ts), texte compris ; chaque écran et module touché joué dans les deux états du drapeau ; 9 mutations
+sur 9 tuées (le drapeau ignoré, un signe inversé, l'extourne comptée comme revue, un point muet…). **Reste** : un test d'écran de
+BilanTab levé, INV-Q12, puis INV7 et INV8.
 
 ### 13/11/2026 — LA CLÔTURE DE LA SESSION DU SOIR : CE QUI EST PARTI, CE QUI RESTE INACHEVÉ
 
