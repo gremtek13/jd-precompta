@@ -16,7 +16,9 @@
 -- accès client. LA SUPPRESSION : refusée par un chef qui n'est pas super-administrateur tant qu'une conservation court,
 -- puis tant qu'un paquet manque à l'empreinte de son exercice ; acceptée paquets téléchargés, conservation échue,
 -- exercice dont la conservation est close, et par le super-administrateur. Le catalogue : les fonctions, leurs droits,
--- les policies. Quatre mutations, qui doivent mordre. Sans la migration, une ligne dit qu'il attend (EN ATTENTE).
+-- les policies — hors la restrictive `deux_facteurs` de la double authentification exigée, jugée à part : sur les deux
+-- tables si celle-ci est en base, sur aucune sinon. Quatre mutations, qui doivent mordre. Sans la migration, une ligne dit
+-- qu'il attend (EN ATTENTE).
 begin;
 create temp table essai_dp (rang int, controle text, attendu text, observe text, ok boolean) on commit drop;
 create temp table mutation_dp (mutation text, attendu text, observe text, mord boolean) on commit drop;
@@ -267,11 +269,21 @@ begin
      and p.proname in ('garder_conservation_du_dossier', 'garder_dossier_conserve', 'garder_depart_du_dossier')
      and not has_function_privilege('anon', p.oid, 'execute') and not has_function_privilege('authenticated', p.oid, 'execute');
   insert into essai_dp values (11, 'les trois gardes : security definer, search_path, aucun rôle de session', '3', n::text, n = 3);
+  -- Les policies des deux tables, hors la restrictive `deux_facteurs` de la double authentification exigée (C7), qu'elles
+  -- portent dès que celle-ci est en base : la migration la pose si elle la précède, elle-même sinon (le contrôle suivant).
   select count(*) into n from pg_policies
    where schemaname = 'public' and tablename in ('paquets_d_archive_telecharges', 'conservations_des_dossiers')
+     and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')
      and roles = '{authenticated}' and cmd in ('SELECT', 'INSERT');
   insert into essai_dp values (11, 'les deux tables : quatre policies to authenticated, de lecture et de restauration', '4', n::text,
-    n = 4 and (select count(*) from pg_policies where schemaname = 'public' and tablename in ('paquets_d_archive_telecharges', 'conservations_des_dossiers')) = 4);
+    n = 4 and (select count(*) from pg_policies where schemaname = 'public' and tablename in ('paquets_d_archive_telecharges', 'conservations_des_dossiers')
+                 and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) = 4);
+  select count(*) into n from pg_policies
+   where schemaname = 'public' and tablename in ('paquets_d_archive_telecharges', 'conservations_des_dossiers')
+     and policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE' and cmd = 'ALL' and roles = '{authenticated}';
+  r := case when to_regprocedure('public.deux_facteurs_satisfaits()') is null then '0' else '2' end;
+  insert into essai_dp values (11, 'la restrictive deux_facteurs sur chacune des deux tables si la double authentification exigée est en base, sur aucune sinon',
+    r, n::text, n::text = r);
   select count(*) into n from pg_trigger t
    where not t.tgisinternal and t.tgname in ('pieces_dossier_conserve', 'ecritures_brouillon_dossier_conserve', 'memberships_dossier_conserve',
      'exercices_valides_dossier_conserve', 'dossiers_depart_du_client', 'conservations_des_dossiers_gardes');

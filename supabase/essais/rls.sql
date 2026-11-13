@@ -8377,7 +8377,9 @@ end $or$;
 -- leurs mots (DP2) ; le client ne lit ni le téléchargement ni la conservation de son dossier, que le chef lit (DP3, la
 -- mutation M-DP3 rejoue la lecture sous le chef) ; un compte rattaché à rien n'insère dans aucune des deux (DP4) ; au
 -- catalogue, les fonctions sont exécutables par `authenticated` seul, les gardes par aucun rôle de session, et les deux
--- tables n'ont que quatre policies `to authenticated`, de lecture et de restauration (DP5). Le jeu : une ligne de chaque
+-- tables n'ont que quatre policies `to authenticated`, de lecture et de restauration, hors la restrictive `deux_facteurs`
+-- de la double authentification exigée (C7), qu'elles portent dès que celle-ci est en base (DP5 ; le bloc DF la juge) ;
+-- la mutation M-DP5 pose une restrictive d'un autre nom, que DP5 doit compter. Le jeu : une ligne de chaque
 -- table dans le dossier du client, la conservation déjà LEVÉE (une conservation en cours ne cohabite pas avec son accès),
 -- dans une sous-transaction annulée. Ce que les fonctions refusent encore, et la suppression : `departDuClient.sql`.
 -- EN ATTENTE tant que la migration n'est pas en base.
@@ -8387,8 +8389,12 @@ declare
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   inconnu uuid := gen_random_uuid();
   dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
-  n bigint; etat text; message text; erreur text; construit boolean := false;
+  n bigint; etat text; message text; erreur text; construit boolean := false; obs text;
   verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+  -- DP5, les policies des deux tables hors la restrictive `deux_facteurs` : « autres / en tout », attendu « 0/4 ».
+  q_policies constant text := $q$select count(*) filter (where not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'))) || '/' || count(*)
+    from pg_policies where schemaname = 'public' and tablename in ('paquets_d_archive_telecharges', 'conservations_des_dossiers')
+     and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')$q$;
 begin
   if to_regclass('public.conservations_des_dossiers') is null then
     insert into rls_verdict values ('DP. le départ d''un client : EN ATTENTE de la migration depart_du_client',
@@ -8498,12 +8504,22 @@ begin
      and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
   verdicts := verdicts || jsonb_build_object('controle', 'DP5. les trois gardes du départ : aucun rôle de session ne les exécute (lecture du catalogue)',
     'cible', 'les trois gardes', 'observe', n || ' exécutable(s)', 'ok', n = 0);
-  select count(*) into n from pg_policies
-   where schemaname = 'public' and tablename in ('paquets_d_archive_telecharges', 'conservations_des_dossiers')
-     and not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'));
+  execute q_policies into obs;
   verdicts := verdicts || jsonb_build_object('controle', 'DP5. les deux tables : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
-    'cible', 'paquets_d_archive_telecharges, conservations_des_dossiers', 'observe', n || ' autre(s)', 'ok', n = 0
-      and (select count(*) from pg_policies where schemaname = 'public' and tablename in ('paquets_d_archive_telecharges', 'conservations_des_dossiers')) = 4);
+    'cible', 'paquets_d_archive_telecharges, conservations_des_dossiers', 'observe', obs || ' (autres / en tout, hors la restrictive deux_facteurs)',
+    'ok', obs = '0/4');
+  -- M-DP5 : une restrictive d'un autre nom, de toutes les commandes, sur la table des paquets — DP5 doit la compter.
+  obs := null;
+  begin
+    create policy dp_mutation on public.paquets_d_archive_telecharges as restrictive for all to authenticated
+      using (true) with check (true);
+    execute q_policies into obs;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then
+    if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+  end;
+  mutations := mutations || jsonb_build_object('mutation', 'M-DP5 — DP5 rejoué, une restrictive d''un autre nom sur paquets_d_archive_telecharges',
+    'attendu', 'DP5 en faute (1/5)', 'observe', coalesce(obs, 'rien vu'), 'mord', coalesce(obs = '1/5', false));
   verdicts := verdicts || jsonb_build_object('controle', 'DP. le jeu d''essai du départ s''est construit, et rien n''en est resté', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
