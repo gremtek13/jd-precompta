@@ -52466,3 +52466,21 @@ dérive 218 `2b57ccdb…`, socle 83 `d02e468d…`, inventaire 3 095 `d18a46cf…
 `categoriesDuDossier.sql` n'a pas été rejoué en production ce jour-là (27 Ko à transcrire par l'outil) : le corps en base est, à
 l'empreinte, celui que l'essai a jugé sur la réplique (34 sur 34, quinze mutations). **La réplique mère** n'existe plus (conteneur
 neuf) et ce conteneur ne porte que PostgreSQL 16 : sa remontée en 17 attend une source de binaires que l'environnement autorise.
+
+### 13/11/2026 — FEC22F : LE FEC FICTIF DE L'ÉPREUVE DU FICHIER (LIGNES 26.5 ET 26.6, PREMIÈRE PARTIE)
+
+Fait : `outils/fec/` (`node outils/fec/lancer.mjs <sortie hors du dépôt> vides|date_de_l_ecriture`) écrit le FEC fictif d'une
+année entière en deux formes, `18-champs/` (le drapeau `CHAMPS_BNC_EXPORTES` baissé) et `22-champs-<choix>/` (les quatre
+champs passés par le PARAMÈTRE de `numeroterFec`, la constante intacte), chacun nommé `123456782FEC20251231.txt` (SIREN
+fabriqué, clé de Luhn juste). Le dossier est l'année 2025 de la répétition générale (src/test/repetitionDUneAnnee.ts, sans
+aucun nom), jamais un dossier de `outils/references/` (scellés pour le contre-calcul) ; `src/test/fecFictif.ts` le compose
+par les vrais moteurs, dans l'ordre des onglets, jusqu'au rendu des banques et à la mise en forme de l'onglet Écritures. Le
+choix de FEC22-Q1 n'a pas de défaut : les deux variantes à vingt-deux champs se produisent, pour que l'import chez
+l'expert-comptable tranche FEC22-E2. Résultat : 259 lignes, 123 écritures (AN 1, AC 17, BQ 66, VE 36, OD 3).
+La règle : `fecFictif.test.ts` juge la forme (CRLF, tabulation, dates AAAAMMJJ, virgule décimale, équilibre par écriture et du
+fichier, numérotation continue par journal, à-nouveaux en tête, contrôles de `src/test/fecDgfip.ts`, listes fermées, IdClient
+un numéro de facture, aucun libellé repris d'un crédit du relevé) et prouve que la génération, le drapeau levé, rend ici le
+même fichier. Relu à la main : aucune écriture fausse ; NatOp porte deux postes pour la case AA (« Recettes », le poste des
+catégories, et « Recettes encaissées y compris les remboursements de frais », celui des ventes facturées) ; le 512 se répartit
+sur AC, BQ et VE (FEC22-E6) ; le fichier n'a pas de CRLF final et mêle l'apostrophe typographique (FEC22-E7). Reste : passer
+les fichiers dans Test Compta Demat et à l'import de l'expert-comptable (FEC22F-Q1), puis la seconde partie de FEC22f.
