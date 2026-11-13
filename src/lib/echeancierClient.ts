@@ -58,7 +58,7 @@ export interface DossierDeLEcheancier {
 
 // Ce que le module lit d'une échéance de cotisation : le montant appelé n'est lu qu'avec « Banque ».
 export type CotisationDeLEcheancier = Pick<CotisationDeclaree, 'id' | 'echeance' | 'previsionnel' | 'paiement_personnel_le'>
-  & { montant_appele?: number | null }
+  & { montant_appele?: number | null; montant_verse?: number | null }
 
 export interface Echeancier {
   echeances: EcheanceDuClient[]

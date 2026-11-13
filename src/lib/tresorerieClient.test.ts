@@ -3,7 +3,8 @@ import * as module from './tresorerieClient'
 import {
   HORIZON_EN_JOURS, NON_COMPTE_ACHATS, NON_COMPTE_PREVISIONNEL_DU_CABINET, NON_COMPTE_VENTES_FERMEES, TRESORERIE_A_90_JOURS_OFFERTE,
   composerTresorerie, departDesSoldes, dernierJourDeLHorizon, echeancesDeLEcheancier, finDeLHorizon, maTresorerieOuverte,
-  soldesDeLaBanque, type CreancesDeLaTresorerie, type Depart, type EcheancesDeLaTresorerie,
+  NON_COMPTE_PEUT_ETRE_PAYEE, reglementDeLaCotisation, soldesDeLaBanque, type CreancesDeLaTresorerie, type Depart,
+  type EcheancesDeLaTresorerie, type MouvementDuReleve,
 } from './tresorerieClient'
 import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
 import { motsDuCabinet } from './espaceVentes'
@@ -45,7 +46,9 @@ const echeance = (e: Partial<EcheanceDuClient>): EcheanceDuClient => ({
   montant: null, prevision: false, ...e,
 })
 
-const echeances = (liste: EcheanceDuClient[], partiel: string | null = null): EcheancesDeLaTresorerie => ({ etat: 'lues', echeances: liste, partiel })
+const echeances = (liste: EcheanceDuClient[], partiel: string | null = null): EcheancesDeLaTresorerie => ({ etat: 'lues', echeances: liste, cotisations: [], partiel })
+
+const RELEVE_VIDE = { lignes: [], complete: true, motif: null }
 
 describe('l’horizon', () => {
   it('va d’aujourd’hui (inclus) à aujourd’hui plus 90 jours (exclu)', () => {
@@ -58,6 +61,7 @@ describe('l’horizon', () => {
 
   it('compte une créance échue aujourd’hui et le dernier jour, pas le lendemain de l’horizon', () => {
     const t = composerTresorerie({
+      releve: RELEVE_VIDE,
       aujourdHui: AUJOURDHUI, depart: departLu(0),
       creances: ventes([
         { id: 'a', numero: 'F-A', echeance: AUJOURDHUI, ttc: 1 },
@@ -125,7 +129,7 @@ describe('le départ', () => {
 describe('la projection', () => {
   it('sans départ lu, rien ne se projette', () => {
     const sans: Depart = { etat: 'sans_solde', phrase: 'x' }
-    expect(composerTresorerie({ aujourdHui: AUJOURDHUI, depart: sans, creances: { etat: 'fermees' }, echeances: echeances([]) }))
+    expect(composerTresorerie({ releve: RELEVE_VIDE, aujourdHui: AUJOURDHUI, depart: sans, creances: { etat: 'fermees' }, echeances: echeances([]) }))
       .toEqual({ etat: 'sans_depart', depart: sans })
   })
 
@@ -140,7 +144,7 @@ describe('la projection', () => {
       [{ etat: 'fermees' }, echeances([], 'cotisations en partie'), /tes échéances : cotisations en partie/],
     ]
     for (const [creances, ech, motif] of cas) {
-      const t = composerTresorerie({ aujourdHui: AUJOURDHUI, depart: departLu(100), creances, echeances: ech })
+      const t = composerTresorerie({ releve: RELEVE_VIDE, aujourdHui: AUJOURDHUI, depart: departLu(100), creances, echeances: ech })
       expect(t.etat).toBe('muette')
       expect(t.etat === 'muette' && t.motif).toMatch(motif)
     }
@@ -148,6 +152,7 @@ describe('la projection', () => {
 
   it('jour après jour, les sorties d’abord le même jour : le point bas et le premier découvert', () => {
     const t = composerTresorerie({
+      releve: RELEVE_VIDE,
       aujourdHui: AUJOURDHUI, depart: departLu(10000),
       creances: ventes([{ id: 'f2', numero: 'F2', echeance: '2026-12-05', ttc: 150 }, { id: 'f3', numero: 'F3', echeance: '2026-11-20', ttc: 0.1 }]),
       echeances: echeances([
@@ -172,7 +177,7 @@ describe('la projection', () => {
   })
 
   it('un départ déjà négatif est un découvert aujourd’hui ; un point bas au départ porte la date du solde', () => {
-    const t = composerTresorerie({ aujourdHui: AUJOURDHUI, depart: departLu(-5, '2026-11-10'), creances: { etat: 'fermees' }, echeances: echeances([]) })
+    const t = composerTresorerie({ releve: RELEVE_VIDE, aujourdHui: AUJOURDHUI, depart: departLu(-5, '2026-11-10'), creances: { etat: 'fermees' }, echeances: echeances([]) })
     if (t.etat !== 'projetee') throw new Error(t.etat)
     expect(t.premierDecouvert).toBe(AUJOURDHUI)
     expect(t.pointBas).toEqual({ centimes: -5, date: '2026-11-10' })
@@ -182,6 +187,7 @@ describe('la projection', () => {
 
   it('ce qui n’est pas compté se dit : retard, sans échéance, sans montant, ventes fermées, achats, cabinet, depuis le relevé', () => {
     const t = composerTresorerie({
+      releve: RELEVE_VIDE,
       aujourdHui: AUJOURDHUI, depart: departLu(0, '2026-10-31'),
       creances: ventes([
         { id: 'r1', numero: 'R1', echeance: '2026-11-12', ttc: 10 },
@@ -207,7 +213,7 @@ describe('la projection', () => {
       { cle: 'previsionnel-du-cabinet', phrase: NON_COMPTE_PREVISIONNEL_DU_CABINET, centimes: null },
       { cle: 'depuis-le-releve', phrase: 'Ce qui est entré ou sorti de ton compte depuis le 31 octobre 2026, date de ton dernier relevé contrôlé.', centimes: null },
     ])
-    const fermees = composerTresorerie({ aujourdHui: AUJOURDHUI, depart: departLu(0), creances: { etat: 'fermees' }, echeances: echeances([]) })
+    const fermees = composerTresorerie({ releve: RELEVE_VIDE, aujourdHui: AUJOURDHUI, depart: departLu(0), creances: { etat: 'fermees' }, echeances: echeances([]) })
     expect(fermees.etat === 'projetee' && fermees.nonComptes.map((n) => n.phrase)).toEqual([NON_COMPTE_VENTES_FERMEES, NON_COMPTE_ACHATS, NON_COMPTE_PREVISIONNEL_DU_CABINET])
   })
 
@@ -219,9 +225,97 @@ describe('la projection', () => {
       factures: [...base.listes.factures, facture({ id: 'av', numero: 'A1', type: 'avoir', facture_origine_id: 'f1', montant_ttc: -10, date_echeance: '2026-12-01' })],
       encaissements: [{ id: 'e1', dossier_id: 'd1', facture_id: 'f1', montant: 30.5, retire_le: null, annule_id: null } as never],
     }
-    const t = composerTresorerie({ aujourdHui: AUJOURDHUI, depart: departLu(0), creances: { etat: 'lues', listes }, echeances: echeances([]) })
+    const t = composerTresorerie({ releve: RELEVE_VIDE, aujourdHui: AUJOURDHUI, depart: departLu(0), creances: { etat: 'lues', listes }, echeances: echeances([]) })
     if (t.etat !== 'projetee') throw new Error(t.etat)
     expect(t.mouvements.map((m) => [m.id, m.centimes])).toEqual([['facture-f1', 5950]])
+  })
+})
+
+// LE DOUBLE COMPTE (suite de C8, 13/11/2026) : une échéance déjà prélevée est dans le solde lu — la compter encore à sa date
+// la retirait deux fois. Ces cas échouaient avant la correction : l'échéance rapprochée entrait dans la projection.
+describe('une échéance de cotisation déjà payée, un encaissement d’après le relevé', () => {
+  const cotisation = (champs: { id: string; montant_verse?: number | null }) => ({
+    id: champs.id, echeance: '2026-12-05', previsionnel: false, paiement_personnel_le: null, montant_appele: 200,
+    montant_verse: champs.montant_verse ?? null,
+  })
+  const mouvement = (m: Partial<MouvementDuReleve>): MouvementDuReleve => ({ id: 'm', date: '2026-10-30', montant: -200, cotisation_id: null, ...m })
+  const releve = (lignes: MouvementDuReleve[]) => ({ lignes, complete: true, motif: null })
+  const echeancesDe = (cotisations: ReturnType<typeof cotisation>[]): EcheancesDeLaTresorerie => ({
+    etat: 'lues', partiel: null, cotisations,
+    echeances: cotisations.map((c) => echeance({ id: `cotisation-${c.id}`, date: c.echeance, montant: { valeur: c.montant_appele, estimation: false } })),
+  })
+
+  it('la règle, cas par cas : dans le solde, prélevée après lui, peut-être payée, à payer', () => {
+    const au = '2026-10-31'
+    expect(reglementDeLaCotisation(cotisation({ id: 'c' }), [mouvement({ cotisation_id: 'c', date: au })], au)).toEqual({ etat: 'dans_le_solde', le: au })
+    expect(reglementDeLaCotisation(cotisation({ id: 'c' }), [mouvement({ cotisation_id: 'c', date: '2026-11-03', montant: -200.01 })], au))
+      .toEqual({ etat: 'apres_le_solde', le: '2026-11-03', centimes: 20001 })
+    // Le mouvement fait foi sur le montant versé.
+    expect(reglementDeLaCotisation(cotisation({ id: 'c', montant_verse: 150 }), [mouvement({ cotisation_id: 'c' })], au).etat).toBe('dans_le_solde')
+    expect(reglementDeLaCotisation(cotisation({ id: 'c', montant_verse: 150.5 }), [mouvement({ cotisation_id: 'autre' })], au))
+      .toEqual({ etat: 'peut_etre_payee', centimes: 15050 })
+    expect(reglementDeLaCotisation(cotisation({ id: 'c' }), [mouvement({ cotisation_id: 'autre' })], au)).toEqual({ etat: 'a_payer' })
+  })
+
+  it('prélevée au jour du solde ou avant : n’entre pas ; après lui : dite avec sa somme ; versement noté : « peut-être déjà payée »', () => {
+    const t = composerTresorerie({
+      aujourdHui: AUJOURDHUI, depart: departLu(100000, '2026-10-31'), creances: { etat: 'fermees' },
+      echeances: echeancesDe([cotisation({ id: 'dans' }), cotisation({ id: 'apres' }), cotisation({ id: 'note', montant_verse: 200 }), cotisation({ id: 'due' })]),
+      releve: releve([
+        mouvement({ id: 'm1', cotisation_id: 'dans', date: '2026-10-31' }),
+        mouvement({ id: 'm2', cotisation_id: 'apres', date: '2026-11-05' }),
+      ]),
+    })
+    if (t.etat !== 'projetee') throw new Error(t.etat)
+    // Seule l'échéance que rien ne dit payée est comptée, une fois.
+    expect(t.mouvements.map((m) => [m.id, m.centimes])).toEqual([['cotisation-due', -20000]])
+    expect(t.finCentimes).toBe(80000)
+    const dites = t.nonComptes.filter((n) => n.cle.startsWith('echeance-'))
+    expect(dites).toEqual([
+      { cle: 'echeance-cotisation-apres', centimes: 20000,
+        phrase: 'Cotisations sociales : échéance (5 décembre 2026) : déjà prélevée le 5 novembre 2026, après ton dernier relevé contrôlé : ni dans ton solde, ni comptée ici.' },
+      { cle: 'echeance-cotisation-note', centimes: 20000, phrase: `Cotisations sociales : échéance (5 décembre 2026) : ${NON_COMPTE_PEUT_ETRE_PAYEE}` },
+    ])
+  })
+
+  it('un relevé lu en partie rend la projection muette', () => {
+    const t = composerTresorerie({
+      aujourdHui: AUJOURDHUI, depart: departLu(0), creances: { etat: 'fermees' }, echeances: echeancesDe([cotisation({ id: 'c' })]),
+      releve: { lignes: [], complete: false, motif: '10 sur 12' },
+    })
+    expect(t.etat === 'muette' && t.motif).toBe('ton relevé : 10 sur 12')
+  })
+
+  it('un encaissement daté après le solde (par son mouvement s’il en a un) se dit, jamais compté ; espèces et retirés à part', () => {
+    const base = ventes([{ id: 'f1', numero: 'F1', echeance: '2026-12-01', ttc: 100 }])
+    if (base.etat !== 'lues') throw new Error()
+    const enc = (e: Record<string, unknown>) => ({ id: 'e', dossier_id: 'd1', facture_id: 'f1', annule_id: null, retire_le: null, ligne_bancaire_id: null, moyen: 'virement', ...e }) as never
+    const listes = {
+      ...base.listes,
+      encaissements: [
+        // Après le solde, sans mouvement : dit.
+        enc({ id: 'e1', montant: 10, date_encaissement: '2026-11-05' }),
+        // Daté après, mais son mouvement est du 30 octobre : dans le solde.
+        enc({ id: 'e2', montant: 20, date_encaissement: '2026-11-06', ligne_bancaire_id: 'm-ancien' }),
+        // Son mouvement est du 7 novembre : dit.
+        enc({ id: 'e3', montant: 5.5, date_encaissement: '2026-10-20', ligne_bancaire_id: 'm-recent' }),
+        enc({ id: 'e4', montant: 30, date_encaissement: '2026-11-05', moyen: 'especes' }),
+        enc({ id: 'e5', montant: 40, date_encaissement: '2026-11-05', retire_le: '2026-11-06T00:00:00Z' }),
+        // Au jour du solde : dedans.
+        enc({ id: 'e6', montant: 1, date_encaissement: '2026-10-31' }),
+      ],
+    }
+    const t = composerTresorerie({
+      aujourdHui: AUJOURDHUI, depart: departLu(0, '2026-10-31'), creances: { etat: 'lues', listes }, echeances: echeances([]),
+      releve: releve([mouvement({ id: 'm-ancien', date: '2026-10-30', montant: 20 }), mouvement({ id: 'm-recent', date: '2026-11-07', montant: 5.5 })]),
+    })
+    if (t.etat !== 'projetee') throw new Error(t.etat)
+    expect(t.nonComptes.find((n) => n.cle === 'encaisse-depuis-le-releve')).toEqual({
+      cle: 'encaisse-depuis-le-releve', centimes: 1550,
+      phrase: 'Encaissé sur tes factures depuis le 31 octobre 2026, date de ton dernier relevé contrôlé : ni dans ton solde, ni compté ici.',
+    })
+    // Le reste dû compte tout le registre non retiré (espèces comprises), comme hier : 100 − 10 − 20 − 5,5 − 30 − 1.
+    expect(t.mouvements.map((m) => m.centimes)).toEqual([3350])
   })
 })
 
@@ -247,7 +341,8 @@ describe('les mots', () => {
       .map(([, v]) => v as string)
     expect(textes.length).toBeGreaterThanOrEqual(12)
     textes.push(module.nonCompteEnRetard(1), module.nonCompteEnRetard(3), module.nonCompteSansEcheance(2), module.nonCompteApres(2),
-      module.nonCompteDepuisLeReleve('2026-11-01'), module.phraseDuDecouvert('2026-12-01'))
+      module.nonCompteDepuisLeReleve('2026-11-01'), module.phraseDuDecouvert('2026-12-01'), module.nonComptePrelevee('2026-11-02'),
+      module.nonCompteEncaisseDepuisLeReleve('2026-11-01'))
     for (const t of textes) expect(motsDuCabinet(t), t).toEqual([])
   })
 
