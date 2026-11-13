@@ -58,7 +58,7 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { useAuth } from '../../context/AuthContext'
 import { messageErreur } from '../../lib/messageErreur'
 import { CATEGORIE_NON_MODIFIEE, categorieCommuneNonReglable, categorieReglableIci } from '../../lib/categoriesCommunes'
-import { CLASSES_DES_CATEGORIES_PREVUES, refusDuCompteDUneCategorie } from '../../lib/categoriesDuDossier'
+import { CLASSES_DES_CATEGORIES_COMMUNES_PREVUES, CLASSES_DES_CATEGORIES_PREVUES, refusDuCompteDUneCategorie } from '../../lib/categoriesDuDossier'
 import {
   etatsDesVentesFacturees, ligneDUneVenteFacturee, mouvementsClassesParEncaissements,
 } from '../../lib/ecrituresVentesFactureesEcran'
@@ -414,10 +414,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       setError(categorieCommuneNonReglable('compte'))
       return
     }
-    // Le compte d'une catégorie DU DOSSIER est une charge ou un produit : la base le refuse sinon (PC7-Q2, la migration
-    // `classes_des_categories`), et la carte le dit avant le clic, à ses mots, sur le compte tel qu'il part — sous
-    // `CLASSES_DES_CATEGORIES_PREVUES`, levé avec la migration. Une catégorie commune n'en est pas jugée.
-    const refusDeLaClasse = CLASSES_DES_CATEGORIES_PREVUES && categorie ? refusDuCompteDUneCategorie(categorie, valeur) : null
+    // Le compte d'une catégorie est une charge ou un produit : la base refuse sinon celui d'une catégorie DU DOSSIER (PC7-Q2,
+    // la migration `classes_des_categories`) et, après elle, celui d'une COMMUNE, que seul le super-administrateur règle d'ici
+    // (PC7Q2-Q1, `classes_des_categories_communes`). La carte le dit avant le clic, aux mots de la base, sur le compte tel
+    // qu'il part — chacun sous son drapeau, levé avec sa migration.
+    const refusDeLaClasse = categorie
+      ? refusDuCompteDUneCategorie(categorie, valeur, { duDossier: CLASSES_DES_CATEGORIES_PREVUES, communes: CLASSES_DES_CATEGORIES_COMMUNES_PREVUES })
+      : null
     if (refusDeLaClasse) {
       setError(refusDeLaClasse)
       return

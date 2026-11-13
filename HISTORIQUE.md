@@ -52290,3 +52290,22 @@ plafonnée à 50 et le disant ; les lignes du tableau disent ce qu'elles citent,
 lit (le scanner d'`ecransAvantLecture` le compterait comme un écran). Suite, le même jour : une provision ouverte et pas encore évaluée se REMPLACE
 depuis sa ligne (`enregistrer_provision`, son identifiant et la version lue, son exercice d'ouverture gardé), ce qu'elle cite proposé de nouveau ;
 évaluée ou figée, le bouton le dit avant le clic (`formulaireDeLaProvision`, `verdictDeLaProvision(…, remplace)`).
+
+### 13/11/2026 — PC7Q2-Q1 : LA CLASSE DU COMPTE D'UNE CATÉGORIE COMMUNE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+Agent architecte, sur la réponse (A) « Oui, dans un lot à part » ; rien lu en production (l'outil Supabase injoignable) : aucune des 217
+migrations de l'export n'écrit le compte d'une commune (le semis en pose neuf sans compte), et PC7-Q2 en a relu dix le 12/11, toutes en
+classe 6 ou 7. **La migration** `classes_des_categories_communes` (20261113110000, `4560a07b…`, par l'outil ; retour 20261113110100,
+`9fcb0799…`, le corps de PC7-Q2 à l'octet près, par l'outil), APRÈS PC7-Q2 : une garde de tête (le corps `dadd05a4…`, le déclencheur, un
+recompte qui arrête et dit), puis (f) — une commune dont le compte non nul ne suit pas `^[67][0-9]{2}`, à l'insertion ou quand il change,
+23514, pour tout auteur, après (a), à part de (e) sous ses mots. **Les essais** : `categoriesDuDossier` 50 à 59 (EN ATTENTE sans elle), son
+étape 45 attendant le refus ; `affectation` 15 et `ventilation` 23 (rendues au dossier), `reglerLePlanDuDossier` (C108, 37, 121) et
+`modeleDuCabinet` 37 posent leur catégorie déclencheurs coupés. **Preuves** (mère 17 copiée, amenée à 217, `edea63cd…`) : 44 sur 44, neuf
+mutations sur neuf, onze branches des gardes ; vingt essais et `rls.sql` (239/0, 139/139) identiques à l'octet sans PC7-Q2, avec, et avec
+ce lot, où leurs versions d'hier tombent ; le retour rend la signature de PC7-Q2, les deux retours celle de l'export ; banc du leurre SÛR.
+**L'écran** : « Comptes manquants » dit `refusDeLaClasseCommune` au super-administrateur sous `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES`
+(baissé) ; sept mutations sur sept ; les deux drapeaux levés en simulation, 21 658 tests, les deux fautes de la simulation elle-même (un
+délai sous charge, un fichier suivi déplacé) vertes seules. **Au jour J**, en lecture, zéro attendu : `select count(*) from
+public.categories where dossier_id is null and compte_comptable is not null and compte_comptable !~ '^[67][0-9]{2}';` **Vu en passant** :
+avant la policy, la garde de PC7 répond (b) et (c) à tout compte, l'anonyme compris (les codes communs, un oracle sur le barème d'un
+dossier nommé) ; (e) et (f) n'y disent que la règle. `caisse.sql` garde ses fautes d'avant (72g, 72h, 218j depuis MCB1, et 289b).
