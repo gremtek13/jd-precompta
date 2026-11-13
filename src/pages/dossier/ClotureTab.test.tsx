@@ -56,6 +56,19 @@ vi.mock('../../lib/affectationLecture', () => ({
   },
 }))
 afterEach(() => { affectationDuTest.leve = undefined; affectationDuTest.appels = [] })
+// L'INVENTAIRE (ligne 35, INV3 et INV6) : les drapeaux `INVENTAIRE_PREVU` et `INVENTAIRE_EXPORTE` joués par des accesseurs —
+// ceux du module tant qu'un cas ne les lève pas (l'état d'avant, éprouvé). Levés, la validation lit l'inventaire et la carte
+// « Inventaire » se monte au-dessus de la validation d'un exercice d'un dossier en engagement.
+const inventaireDuTest = vi.hoisted(() => ({ leve: undefined as undefined | boolean }))
+vi.mock('../../lib/inventaire', async (original) => {
+  const vrai = await original<typeof import('../../lib/inventaire')>()
+  return {
+    ...vrai,
+    get INVENTAIRE_PREVU() { return inventaireDuTest.leve ?? vrai.INVENTAIRE_PREVU },
+    get INVENTAIRE_EXPORTE() { return inventaireDuTest.leve ?? vrai.INVENTAIRE_EXPORTE },
+  }
+})
+afterEach(() => { inventaireDuTest.leve = undefined })
 
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
@@ -1474,6 +1487,62 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
     await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
     expect(screen.queryByText(/Approbation et affectation du résultat/)).toBeNull()
     expect(affectationDuTest.appels).toEqual([])
+  })
+
+  // LA CARTE « INVENTAIRE » (ligne 35, INV6) : derrière `INVENTAIRE_EXPORTE`. Une régularisation de 2025 saisie, sans ses
+  // écritures au brouillon et sans déclaration : la carte la compte, la dit « à recomposer », et dit l'inventaire non déclaré.
+  const CCA_2025 = {
+    id: 'o1', dossier_id: 'dossier-de-test', exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486000',
+    montant_centimes: 12000, tva_centimes: 0, objet: 'Assurance', provision_id: null, reprise: false, piece_citee_id: null,
+  }
+
+  it('l’inventaire : le drapeau baissé, aucune carte (l’état d’avant, éprouvé)', async () => {
+    poser()
+    faux.parTable.operations_inventaire = [CCA_2025]
+    monterEngagement()
+    await screen.findByText('Exercice 2025')
+    expect(screen.queryByRole('region', { name: 'Inventaire 2025' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ouvrir l’inventaire' })).toBeNull()
+  })
+
+  it('l’inventaire : le drapeau levé, la carte compte, dit l’inventaire non déclaré et mène à l’onglet', async () => {
+    inventaireDuTest.leve = true
+    poser()
+    faux.parTable.operations_inventaire = [CCA_2025]
+    const vers: string[] = []
+    render(
+      <ContexteDossier annee={2025}>
+        <ClotureTab
+          dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={ENGAGEMENT}
+          onNavigate={(t) => vers.push(t)}
+        />
+      </ContexteDossier>,
+    )
+    const carte = within(await screen.findByRole('region', { name: 'Inventaire 2025' }))
+    await waitFor(() => carte.getByText(/1 régularisation saisie ; 1 dont les écritures ne sont plus à jour/))
+    carte.getByText(/L’inventaire n’est pas déclaré : la validation l’attend/)
+    fireEvent.click(carte.getByRole('button', { name: 'Ouvrir l’inventaire' }))
+    expect(vers).toEqual(['inventaire'])
+  })
+
+  it('l’inventaire : lu en partie, la carte le dit et ne compte rien', async () => {
+    inventaireDuTest.leve = true
+    poser({ operations_inventaire: 0 })
+    faux.parTable.operations_inventaire = [CCA_2025]
+    monterEngagement()
+    const carte = within(await screen.findByRole('region', { name: 'Inventaire 2025' }))
+    await waitFor(() => carte.getByText(/Lecture incomplète — l’inventaire du dossier/))
+    expect(carte.queryByText(/saisie|déclaré fait|n’est pas déclaré/)).toBeNull()
+    expect(carte.queryByRole('button')).toBeNull()
+  })
+
+  it('l’inventaire : un dossier en trésorerie n’a pas la carte, même levé', async () => {
+    inventaireDuTest.leve = true
+    poser()
+    faux.parTable.operations_inventaire = [CCA_2025]
+    monter(2025)
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryByRole('region', { name: 'Inventaire 2025' })).toBeNull()
   })
 
   it('garde la clôture de l’exercice, qui ne dépend pas de la déclaration', async () => {

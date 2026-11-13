@@ -269,6 +269,43 @@ export function carteDeLInventaire(
   }
 }
 
+/** Ce que la carte de la Clôture montre, une fois jugé ce que l'écran a lu : rien, l'attente, le silence motivé, ou la carte. */
+export type EtatDeLaCarteDeLInventaire =
+  | { etat: 'sans_objet' }
+  | { etat: 'chargement' }
+  | { etat: 'partielle'; motif: string }
+  | { etat: 'prete'; carte: CarteDeLInventaire }
+
+/** Ce que la Clôture a lu pour la carte : la lecture de l'inventaire (nulle tant qu'elle n'est pas revenue) et le brouillon. */
+export interface EntreesDeLaCarteDeLInventaire {
+  /** `INVENTAIRE_EXPORTE` (lib/inventaire.ts), passé par l'écran : baissé, aucune carte — la Clôture d'hier. */
+  exporte: boolean
+  mode: ModeComptable
+  lecture: { etat: 'sans_objet' } | Extract<InventaireDesControles, { etat: 'lu' }> | { etat: 'incomplete'; motif: string } | null
+  /** Vrai tant que le brouillon de l'écran n'est pas revenu. */
+  brouillonEnCours: boolean
+  /** Le motif d'un brouillon lu en partie, ou nul. */
+  brouillonIncomplet: string | null
+  brouillon: readonly LigneDuBrouillon[]
+  exercice: number
+  /** L'année en cours à Paris : l'exercice est clos quand elle le dépasse. */
+  anneeCourante: number
+}
+
+/**
+ * LA CARTE DE LA CLÔTURE, JUGÉE (§ 5.7) : aucune le drapeau baissé ou en trésorerie — rien ne s'en lit ni ne s'en dit ; rien
+ * d'affirmé avant que l'inventaire ET le brouillon soient revenus ; lu en partie, l'un ou l'autre, la carte le dit et ne compte
+ * rien (le « à recomposer » se juge sur les lignes du brouillon) ; sinon la carte de l'exercice.
+ */
+export function etatDeLaCarteDeLInventaire(e: EntreesDeLaCarteDeLInventaire): EtatDeLaCarteDeLInventaire {
+  if (!e.exporte || e.mode !== 'engagement') return { etat: 'sans_objet' }
+  if (e.lecture === null || e.brouillonEnCours) return { etat: 'chargement' }
+  if (e.lecture.etat === 'incomplete') return { etat: 'partielle', motif: `l’inventaire du dossier : ${e.lecture.motif}` }
+  if (e.brouillonIncomplet !== null) return { etat: 'partielle', motif: `les écritures du dossier : ${e.brouillonIncomplet}` }
+  const carte = carteDeLInventaire(inventaireDesControles(e.lecture, e.mode), e.exercice, e.brouillon, e.exercice < e.anneeCourante)
+  return carte === null ? { etat: 'sans_objet' } : { etat: 'prete', carte }
+}
+
 // ── La révision : le programme des cycles (R4) ──────────────────────────────────────────────────────────────────────────
 
 /** Un travail que l'inventaire ajoute au programme proposé d'un cycle (§ 5.5, R4), sous un code stable. */
@@ -319,6 +356,26 @@ export interface PropositionDuDossierPermanent {
 }
 
 const LONGUEUR_MAX_OBJET = 200
+
+/** Les contrats que le dossier permanent porte encore : la version courante des baux et des contrats non retirés. */
+export function contratsDuDossierPermanent(
+  entrees: readonly { courante: { id: string; nature: string; titre: string; valable_du: string | null; valable_jusqu_au: string | null }; retiree: boolean }[],
+): ContratDuDossierPermanent[] {
+  return entrees.flatMap(({ courante: c, retiree }) => (retiree || (c.nature !== 'bail' && c.nature !== 'contrat') ? []
+    : [{ id: c.id, nature: c.nature, titre: c.titre, valable_du: c.valable_du, valable_jusqu_au: c.valable_jusqu_au }]))
+}
+
+/**
+ * L'inventaire que la section « Dossier permanent » de la révision reçoit : sans objet en trésorerie ou le drapeau baissé (la
+ * lecture ne rend alors rien) ; nul quand l'inventaire d'un dossier en engagement n'est pas revenu entier (`incomplet`, le
+ * motif de SA lecture, jamais d'une autre) — la section le dit et ne propose rien ; sinon lu.
+ */
+export function inventaireDeLaRevision(
+  inventaire: { etat: 'sans_objet' } | Extract<InventaireDesControles, { etat: 'lu' }>, incomplet: string | null, mode: ModeComptable,
+): InventaireDesControles | null {
+  if (mode !== 'engagement') return INVENTAIRE_DES_CONTROLES_SANS_OBJET
+  return incomplet !== null ? null : inventaireDesControles(inventaire, mode)
+}
 
 /**
  * LES CONTRATS QUI PROPOSENT LEUR CHARGE CONSTATÉE D'AVANCE (§ 5.5, R7) : un bail ou un contrat du dossier permanent EN VIGUEUR

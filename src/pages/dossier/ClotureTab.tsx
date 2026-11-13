@@ -78,7 +78,9 @@ import { AUCUNE_SAISIE_2035, motifDesSaisies2035, SAISIES_2035_EXPORTEES, saisie
 import type { LectureDesSaisies2035 } from '../../lib/saisies2035'
 import { lireLesSaisies2035 } from '../../lib/saisies2035Lecture'
 import { inventaireDeLaLecture, lireLInventaireDeLaValidation, motifDeLInventaire, type LectureDeLInventaire } from '../../lib/inventaireLecture'
-import { INVENTAIRE_PREVU } from '../../lib/inventaire'
+import { INVENTAIRE_EXPORTE, INVENTAIRE_PREVU } from '../../lib/inventaire'
+import { etatDeLaCarteDeLInventaire } from '../../lib/inventaireDesControles'
+import InventaireDeLaClotureCard from './InventaireDeLaClotureCard'
 import {
   annexe2035EAvecSaisie, avisAvantLeTelechargement2035E, motifDesSaisies2035E, SAISIES_2035E_EXPORTEES, saisie2035EDeLExercice,
 } from '../../lib/saisies2035E'
@@ -1138,6 +1140,16 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                 <strong>Exercice {annee}</strong>
                 <BoutonCloture cloture={cloturesConnues.has(annee)} onCloturer={() => handleCloturer(annee)} />
               </div>
+              {/* L'inventaire de l'exercice (ligne 35, INV6) : derrière `INVENTAIRE_EXPORTE` — baissé, aucune carte, la Clôture d'hier.
+                  Il se lit avec la validation (`lectureDeLInventaire`, la même lecture que les contrôles) et se juge sur le brouillon. */}
+              <InventaireDeLaClotureCard
+                exercice={annee} onNavigate={onNavigate}
+                etat={etatDeLaCarteDeLInventaire({
+                  exporte: INVENTAIRE_EXPORTE, mode: modeComptable, lecture: lectureDeLInventaire === null ? null
+                    : lectureDeLInventaire.etat === 'lu' ? lectureDeLInventaire.inventaire : lectureDeLInventaire,
+                  brouillonEnCours: loading, brouillonIncomplet: ecrituresIncompletes, brouillon: ecritures, exercice: annee, anneeCourante,
+                })}
+              />
               <ValidationExerciceCard
                 dossierId={dossierId} annee={annee} {...validationDe(annee)} plan={modele.plan} estChef={estChef} onValide={apresValidation} onNavigate={onNavigate}
                 onChoisirExercice={setAnnee}
