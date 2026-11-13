@@ -294,18 +294,46 @@ export function compteRepriseNonExtourne(
   operations: readonly Pick<OperationDeLaValidation, 'id' | 'exercice' | 'reprise'>[],
   brouillon: readonly LigneDuBrouillon[], annee: number,
 ): string | null {
+  return comptesReprisNonExtournes(aNouveaux, operations, brouillon, annee)[0]?.compte ?? null
+}
+
+/** Un compte de régularisation repris que les extournes ne soldent pas : son solde repris et ce qu'il en reste au 1er
+ *  janvier, extournes passées, en centimes signés (le débit en positif). */
+export interface CompteReprisNonExtourne {
+  compte: string
+  reprisCentimes: number
+  resteCentimes: number
+}
+
+/**
+ * TOUS les comptes en écart de la confrontation au solde repris (`compteRepriseNonExtourne` en dit le premier, comme la base),
+ * dans l'ordre des numéros : ce que l'onglet Inventaire montre avant le clic de la validation (INV3-Q2 (A)). Un compte qu'une
+ * extourne touche sans que la balance le porte y entre aussi, son solde repris à zéro.
+ */
+export function comptesReprisNonExtournes(
+  aNouveaux: readonly Pick<ANouveau, 'compte' | 'sens' | 'montant'>[],
+  operations: readonly Pick<OperationDeLaValidation, 'id' | 'exercice' | 'reprise'>[],
+  brouillon: readonly LigneDuBrouillon[], annee: number,
+): CompteReprisNonExtourne[] {
   const reprises = new Set(operations.filter((o) => o.reprise && o.exercice === annee - 1).map((o) => o.id))
+  const repris = new Map<string, number>()
   const soldes = new Map<string, number>()
-  const ajouter = (compte: string, sens: Sens, montant: number) =>
-    soldes.set(compte, (soldes.get(compte) ?? 0) + (sens === 'debit' ? 1 : -1) * centimesDe(montant))
-  for (const a of aNouveaux) ajouter(a.compte, a.sens, a.montant)
+  const signe = (sens: Sens, montant: number) => (sens === 'debit' ? 1 : -1) * centimesDe(montant)
+  const ajouter = (m: Map<string, number>, compte: string, centimes: number) => m.set(compte, (m.get(compte) ?? 0) + centimes)
+  for (const a of aNouveaux) {
+    ajouter(repris, a.compte, signe(a.sens, a.montant))
+    ajouter(soldes, a.compte, signe(a.sens, a.montant))
+  }
   for (const l of brouillon) {
-    if (l.operation_inventaire_id && reprises.has(l.operation_inventaire_id) && l.date === `${annee}-01-01`) ajouter(l.compte, l.sens, l.montant)
+    if (l.operation_inventaire_id && reprises.has(l.operation_inventaire_id) && l.date === `${annee}-01-01`) {
+      ajouter(soldes, l.compte, signe(l.sens, l.montant))
+    }
   }
   const confronte = (c: string) => RACINES_CONFRONTEES_A_LA_REPRISE.some((r) => c.startsWith(r))
     && !RACINES_HORS_DE_L_INVENTAIRE.some((r) => c.startsWith(r))
-  return [...soldes].filter(([c, s]) => confronte(c) && s !== 0).map(([c]) => c)
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[0] ?? null
+  return [...soldes].filter(([c, s]) => confronte(c) && s !== 0)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([compte, reste]) => ({ compte, reprisCentimes: repris.get(compte) ?? 0, resteCentimes: reste }))
 }
 
 // ── Ce que la validation retient, dit avant le clic ─────────────────────────────────────────────────────────────────────

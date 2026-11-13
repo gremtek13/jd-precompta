@@ -7,6 +7,7 @@ import { MOTS_DES_REFUS, type ComptesDInventaire } from '../../lib/inventaire'
 import type { LectureDeLInventaireDeLEcran } from '../../lib/inventaireDeLEcranLecture'
 import { MOTS_DES_JUSTIFICATIFS, type JustificatifsDuDossier } from '../../lib/justificatifsDeLInventaire'
 import type { LectureDesJustificatifs } from '../../lib/justificatifsDeLInventaireLecture'
+import type { LectureDeLaBalanceReprise } from '../../lib/balanceRepriseDeLInventaireLecture'
 import { euros, MOTS_DES_PROVISIONS_A_L_ECRAN, type DonneesDeLInventaire } from '../../lib/inventaireEcran'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type { InventaireDeclare, OperationInventaire, Provision } from '../../lib/types'
@@ -51,6 +52,19 @@ const faux = vi.hoisted(() => ({
   retenueDesJustificatifs: null as null | Promise<void>,
   relacherLesJustificatifs: null as null | (() => void),
   demandesDesJustificatifs: [] as string[],
+  // La lecture de la balance reprise (INV3-Q2 (A)) : sa réponse, et sa retenue.
+  balance: null as null | ((dossierId: string) => LectureDeLaBalanceReprise),
+  retenueDeLaBalance: null as null | Promise<void>,
+  relacherLaBalance: null as null | (() => void),
+  demandesDeLaBalance: [] as string[],
+}))
+
+vi.mock('../../lib/balanceRepriseDeLInventaireLecture', () => ({
+  lireLaBalanceRepriseDuDossier: (dossierId: string) => {
+    faux.demandesDeLaBalance.push(dossierId)
+    const rendre = () => faux.balance!(dossierId)
+    return faux.retenueDeLaBalance ? faux.retenueDeLaBalance.then(rendre) : Promise.resolve(rendre())
+  },
 }))
 
 vi.mock('../../lib/justificatifsDeLInventaireLecture', () => ({
@@ -205,6 +219,10 @@ beforeEach(() => {
   faux.retenueDesJustificatifs = null
   faux.relacherLesJustificatifs = null
   faux.demandesDesJustificatifs = []
+  faux.balance = (dossierId) => ({ dossierId, etat: 'lue', lignes: [] })
+  faux.retenueDeLaBalance = null
+  faux.relacherLaBalance = null
+  faux.demandesDeLaBalance = []
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
@@ -858,5 +876,170 @@ describe('remplacer une provision ouverte', () => {
     expect(texte()).toContain('Ouvrir une provision')
     expect((screen.getByLabelText(/^Objet \(il part au FEC\)$/) as HTMLInputElement).value).toBe('')
     expect(faux.rpcs).toEqual([])
+  })
+})
+
+// LA RÉGULARISATION REPRISE D'UNE BALANCE (INV3-Q2 (A)) : sur le premier exercice du dossier, celui qu'ouvre sa balance reprise au
+// 1er janvier, une section à part reprend les anciennes CCA, PCA, FNP et FAE — leur seule extourne — sous le verrou de l'onglet,
+// et dit ce que la validation retiendra. La balance lue en entier à part ; lue en partie, aucun geste.
+describe('les régularisations reprises de la balance', () => {
+  const BALANCE = [
+    { date: '2025-01-01', compte: '512100', sens: 'debit' as const, montant: 1000 },
+    { date: '2025-01-01', compte: '486200', sens: 'debit' as const, montant: 300 },
+    { date: '2025-01-01', compte: '408200', sens: 'credit' as const, montant: 120 },
+    { date: '2025-01-01', compte: '408400', sens: 'credit' as const, montant: 50 },
+  ]
+  const section = () => screen.getByRole('form', { name: 'Saisie d’une régularisation reprise' })
+  const retenus = () => sans(screen.getByRole('group', { name: 'Ce que la validation retiendra' }).textContent)
+  function remplirLaReprise(o: { nature?: string; compte?: string; resultat?: string; montant?: string; objet?: string }) {
+    const f = within(section())
+    if (o.nature) fireEvent.change(f.getByLabelText('Nature reprise'), { target: { value: o.nature } })
+    if (o.compte) fireEvent.change(f.getByLabelText('Compte de la balance qu’elle extourne'), { target: { value: o.compte } })
+    if (o.resultat) fireEvent.change(f.getByLabelText(/^Compte de (charge|produit)/), { target: { value: o.resultat } })
+    if (o.montant) fireEvent.change(f.getByLabelText(/^Montant .* repris$/), { target: { value: o.montant } })
+    if (o.objet) fireEvent.change(f.getByLabelText('Objet de la reprise (il part au FEC)'), { target: { value: o.objet } })
+  }
+  const reprise = (p: Partial<OperationInventaire> = {}) => operation({
+    id: 'r1', exercice: 2024, reprise: true, compte_resultat: '616100', compte_regularisation: '486200', montant_centimes: 30_000, objet: 'Assurance reprise', version: 3, ...p,
+  })
+
+  beforeEach(() => {
+    faux.donnees = donnees({ premierExercice: 2025, operations: [] })
+    faux.balance = (dossierId) => ({ dossierId, etat: 'lue', lignes: BALANCE })
+  })
+
+  it('ne se monte que sur le premier exercice ; avant le retour de la balance, « Chargement… » et aucun geste', async () => {
+    faux.retenueDeLaBalance = new Promise<void>((r) => { faux.relacherLaBalance = r })
+    rendre({ annee: 2025 })
+    await attendreLaLecture()
+    expect(texte()).toContain('Chargement de la balance reprise…')
+    expect(screen.queryByRole('form', { name: 'Saisie d’une régularisation reprise' })).toBeNull()
+    expect(texte()).not.toMatch(/la validation de l’exercice 2025 (n’en retient|retiendra)/)
+    await act(async () => { faux.relacherLaBalance!() })
+    expect(section()).toBeTruthy()
+    expect(faux.demandesDeLaBalance).toEqual([D])
+    cleanup()
+    rendre({ annee: 2026 })
+    await attendreLaLecture()
+    expect(screen.queryByText(/Régularisations reprises de la balance/)).toBeNull()
+  })
+
+  it('la balance lue en partie : le dit, n’offre aucun geste et ne dit pas ce que la validation retiendra ; le reste de l’onglet reste offert', async () => {
+    faux.donnees = donnees({ premierExercice: 2025, operations: [reprise()] })
+    faux.balance = (dossierId) => ({ dossierId, etat: 'incomplete', motif: 'la balance reprise : lecture incomplète' })
+    rendre({ annee: 2025 })
+    await attendreLaLecture()
+    expect(texte()).toContain('la balance reprise : lecture incomplète')
+    expect(screen.queryByRole('form', { name: 'Saisie d’une régularisation reprise' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Ce que la validation retiendra' })).toBeNull()
+    expect(screen.queryByText('Assurance reprise')).toBeNull()
+    expect(formulaire()).toBeTruthy()
+  })
+
+  it('une balance qui n’ouvre pas l’exercice au 1er janvier : le dit, sans formulaire', async () => {
+    faux.balance = (dossierId) => ({ dossierId, etat: 'lue', lignes: BALANCE.map((l) => ({ ...l, date: '2025-03-01' })) })
+    faux.donnees = donnees({ premierExercice: 2025, operations: [] })
+    rendre({ annee: 2025 })
+    await attendreLaLecture()
+    expect(texte()).toContain('La balance reprise ouvre le dossier au 01/03/2025, pas au 1er janvier 2025')
+    expect(screen.queryByRole('form', { name: 'Saisie d’une régularisation reprise' })).toBeNull()
+  })
+
+  it('dit « seule l’extourne », propose les comptes de la balance sous la racine, et ce que la validation retiendra', async () => {
+    rendre({ annee: 2025 })
+    await screen.findByRole('form', { name: 'Saisie d’une régularisation reprise' })
+    expect(texte()).toContain('seule l’extourne au 1er janvier 2025 s’écrit')
+    expect(texte()).toContain('pièce « Inventaire 2024 »')
+    const options = () => [...(within(section()).getByLabelText('Compte de la balance qu’elle extourne') as HTMLSelectElement).options].map((o) => o.value)
+    expect(options()).toEqual(['', '486200'])
+    remplirLaReprise({ nature: 'fnp' })
+    expect(options()).toEqual(['', '408200'])
+    remplirLaReprise({ nature: 'pca' })
+    expect(texte()).toContain('La balance reprise ne porte aucun compte sous le 487')
+    expect(retenus()).toContain('retiendra 2 compte(s)')
+    expect(retenus()).toMatch(/408200 : repris 120,00 € au crédit, il en reste 120,00 € au crédit au 01\/01\/2025/)
+    expect(retenus()).toMatch(/486200 : repris 300,00 € au débit/)
+    expect(retenus()).not.toContain('408400')
+  })
+
+  it('refuse avant le clic, aux mots de la base : un compte non choisi, un compte de produit pour une charge', async () => {
+    rendre({ annee: 2025 })
+    await screen.findByRole('form', { name: 'Saisie d’une régularisation reprise' })
+    remplirLaReprise({ resultat: '706000', montant: '300', objet: 'Assurance reprise' })
+    expect(texte()).toContain(MOTS_DES_REFUS.compteDeLaReprise)
+    expect(texte()).toContain(MOTS_DES_REFUS.compteDeCharge)
+    const enregistrer = within(section()).getByRole('button', { name: 'Enregistrer la reprise' }) as HTMLButtonElement
+    expect(enregistrer.disabled).toBe(true)
+    // Le premier, celui que la base dirait : le compte de résultat se juge avant celui de la balance.
+    expect(enregistrer.title).toBe(MOTS_DES_REFUS.compteDeCharge)
+    fireEvent.submit(section())
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('enregistre la seule extourne, `reprise: true`, sous une confirmation qui la nomme ; deux clics dans le même `act`, un envoi', async () => {
+    rendre({ annee: 2025 })
+    await screen.findByRole('form', { name: 'Saisie d’une régularisation reprise' })
+    remplirLaReprise({ compte: '486200', resultat: '616100', montant: '300', objet: 'Assurance reprise' })
+    expect(texte()).toContain('Seule l’extourne au 01/01/2025 s’écrit')
+    const enregistrer = within(section()).getByRole('button', { name: 'Enregistrer la reprise' }) as HTMLButtonElement
+    expect(enregistrer.disabled).toBe(false)
+    await act(async () => { enregistrer.click(); enregistrer.click() })
+    expect(faux.rpcs).toHaveLength(1)
+    const confirmation = vi.mocked(window.confirm).mock.calls[0][0] as string
+    expect(confirmation).toContain('seule l’extourne au 01/01/2025 s’écrit')
+    expect(sans(confirmation)).toContain('Débit 616100 300,00 €')
+    expect(confirmation).toContain('« Inventaire 2024 »')
+    expect(faux.rpcs[0]).toMatchObject({
+      nom: 'enregistrer_operation_inventaire',
+      args: {
+        p_dossier_id: D, p_version_lue: null,
+        p_operation: { id: null, exercice: 2024, nature: 'cca', compte_regularisation: '486200', compte_resultat: '616100', montant_centimes: 30000, reprise: true, piece_citee_id: null },
+      },
+    })
+    expect((faux.rpcs[0].args.p_ecritures as unknown[])).toHaveLength(1)
+    expect(faux.rpcs[0].args.p_ecritures).toMatchObject([{ date: '2025-01-01', journal: 'OD' }])
+    await screen.findByText('Régularisation reprise enregistrée : Assurance reprise.')
+    expect(faux.demandes).toEqual([D, D])
+    // La liste dit la reprise et sa pièce ; la saisie est remise à zéro.
+    const tr = ligne(/Assurance reprise/)
+    expect(tr.textContent).toContain('Inventaire 2024')
+    expect((within(section()).getByLabelText('Objet de la reprise (il part au FEC)') as HTMLInputElement).value).toBe('')
+  })
+
+  it('un refus de la base se dit ; rien n’est remis à zéro', async () => {
+    faux.refus = 'Une régularisation reprise appartient à l’exercice que clôt la balance reprise.'
+    rendre({ annee: 2025 })
+    await screen.findByRole('form', { name: 'Saisie d’une régularisation reprise' })
+    remplirLaReprise({ compte: '486200', resultat: '616100', montant: '300', objet: 'Assurance reprise' })
+    await act(async () => { (within(section()).getByRole('button', { name: 'Enregistrer la reprise' }) as HTMLButtonElement).click() })
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(texte()).toContain('La régularisation reprise n’a pas été enregistrée : Une régularisation reprise appartient')
+    expect((within(section()).getByLabelText('Objet de la reprise (il part au FEC)') as HTMLInputElement).value).toBe('Assurance reprise')
+  })
+
+  it('« Remplacer » retient la version lue ; « Retirer » nomme la seule extourne ; une reprise n’est jamais dans la liste ordinaire', async () => {
+    faux.donnees = donnees({ premierExercice: 2025, operations: [reprise()] })
+    rendre({ annee: 2025 })
+    await screen.findByRole('form', { name: 'Saisie d’une régularisation reprise' })
+    expect(texte()).toContain('Aucune régularisation saisie sur l’exercice 2025.')
+    act(() => { within(ligne(/Assurance reprise/)).getByRole('button', { name: 'Remplacer' }).click() })
+    expect(texte()).toContain('Remplacer la reprise « Assurance reprise »')
+    await act(async () => { (within(section()).getByRole('button', { name: 'Remplacer la reprise' }) as HTMLButtonElement).click() })
+    expect(faux.rpcs[0]).toMatchObject({ nom: 'enregistrer_operation_inventaire', args: { p_version_lue: 3, p_operation: { id: 'r1', reprise: true } } })
+    await screen.findByText('Régularisation reprise remplacée : Assurance reprise.')
+    await act(async () => { within(ligne(/Assurance reprise/)).getByRole('button', { name: 'Retirer' }).click() })
+    const confirmation = vi.mocked(window.confirm).mock.calls.at(-1)![0] as string
+    expect(confirmation).toMatch(/^Retirer la régularisation reprise « Assurance reprise ».*Son extourne au 01\/01\/2025 est retirée/)
+    expect(faux.rpcs[1]).toMatchObject({ nom: 'retirer_operation_inventaire', args: { p_id: 'r1', p_version_lue: 4 } })
+    await screen.findByText('Retiré : Assurance reprise.')
+  })
+
+  it('un exercice validé : remplacer et retirer se refusent avant le clic, aux mots de la base', async () => {
+    faux.donnees = donnees({ premierExercice: 2025, operations: [reprise()] })
+    rendre({ annee: 2025, valides: [2025] })
+    await screen.findByRole('form', { name: 'Saisie d’une régularisation reprise' })
+    const retirer = within(ligne(/Assurance reprise/)).getByRole('button', { name: 'Retirer' }) as HTMLButtonElement
+    expect(retirer.disabled).toBe(true)
+    expect(retirer.title).toBe(MOTS_DES_REFUS.exerciceFige)
   })
 })

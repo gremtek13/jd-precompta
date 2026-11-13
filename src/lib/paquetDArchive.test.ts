@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import {
-  ENTETE_DES_FICHIERS, ENTETE_DU_PDF_2035, MARQUE_NON_VERIFIEE, NOM_DE_LA_DOCUMENTATION, NOM_DU_MANIFESTE, fabriquerLePaquet, nomDuPaquet,
+  ENTETE_DES_FICHIERS, ENTETE_DU_PDF_2035, INVENTAIRE_DU_PAQUET_SANS_OBJET, MARQUE_NON_VERIFIEE, NOM_DE_LA_DOCUMENTATION, NOM_DU_MANIFESTE, fabriquerLePaquet, nomDuPaquet,
   nomsDesOriginaux, piecesCiteesParLExercice, piecesSansEmpreinte, sha256Hex, type EntreesDuPaquet, type OriginalLu, type PieceDuPaquet,
 } from './paquetDArchive'
 import { genererPisteAuditCsv } from './pisteAudit'
@@ -198,7 +198,33 @@ describe('le paquet d’archive d’un exercice validé', () => {
         { piece_id: 'p2', immobilisation_id: null }, { piece_id: null, immobilisation_id: 'i2' },
       ],
       [{ id: 'i1', piece_id: 'p1' }, { id: 'i2', piece_id: null }, { id: 'i3', piece_id: 'p9' }],
+      INVENTAIRE_DU_PAQUET_SANS_OBJET,
     )).toEqual(['p1', 'p2'])
+  })
+
+  // INV3-Q1 (A) : la règle de `pieces_scellees_par_l_inventaire` (migration `validation_de_l_inventaire`), cas par cas.
+  it('l’inventaire lu : les pièces des régularisations qu’il scelle et de la provision qu’il évalue, la reprise par l’exercice de son extourne', () => {
+    const op = (o: { exercice: number; reprise?: boolean; piece_citee_id?: string | null; provision_id?: string | null }) =>
+      ({ reprise: false, piece_citee_id: null, provision_id: null, ...o })
+    const inventaire = {
+      etat: 'lu' as const, annee: 2025,
+      operations: [
+        op({ exercice: 2025, piece_citee_id: 'r25' }),                     // constatée en 2025 : scellée par 2025
+        op({ exercice: 2024, piece_citee_id: 'r24' }),                     // constatée en 2024 : pas par 2025
+        op({ exercice: 2024, reprise: true, piece_citee_id: 'rep' }),      // reprise de 2024 : son extourne est en 2025
+        op({ exercice: 2025, reprise: true, piece_citee_id: 'rep26' }),    // reprise de 2025 : scellée par 2026
+        op({ exercice: 2025, provision_id: 'pv1' }),                       // l'évaluation 2025 d'une provision qui cite une pièce
+        op({ exercice: 2024, provision_id: 'pv2' }),                       // une évaluation 2024 : pas par 2025
+        op({ exercice: 2025, provision_id: 'pv3' }),                       // une provision qui ne cite aucune pièce
+      ],
+      provisions: [{ id: 'pv1', piece_citee_id: 'prov' }, { id: 'pv2', piece_citee_id: 'prov24' }, { id: 'pv3', piece_citee_id: null }],
+    }
+    expect(piecesCiteesParLExercice([{ piece_id: 'p1', immobilisation_id: null }, { piece_id: 'r25', immobilisation_id: null }], [], inventaire))
+      .toEqual(['p1', 'prov', 'r25', 'rep'])
+    // Sans objet (le drapeau `INVENTAIRE_PREVU` baissé) : l'ensemble d'hier, au caractère près.
+    expect(piecesCiteesParLExercice([{ piece_id: 'p1', immobilisation_id: null }], [], INVENTAIRE_DU_PAQUET_SANS_OBJET)).toEqual(['p1'])
+    // L'exercice 2026 ne prend que la reprise de 2025.
+    expect(piecesCiteesParLExercice([], [], { ...inventaire, annee: 2026 })).toEqual(['rep26'])
   })
 
   it('deux originaux de même référence se distinguent par un rang', () => {

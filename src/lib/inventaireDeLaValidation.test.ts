@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  ciblePrecedente, compteRepriseNonExtourne, compteRepriseNonVentile, extourneEntiere, INVENTAIRE_SANS_OBJET, lignesCommandees,
+  ciblePrecedente, compteRepriseNonExtourne, compteRepriseNonVentile, comptesReprisNonExtournes, extourneEntiere, INVENTAIRE_SANS_OBJET, lignesCommandees,
   MODELES_DE_LA_VALIDATION, RACINES_CONFRONTEES_A_LA_REPRISE,
   MOTS_DE_LA_DECLARATION, MOTS_DE_LA_GARDE_DES_DECLARATIONS, motsDeLaValidation, prealablesDeLInventaire, RACINES_LETTREES_PAR_REGULARISATION,
   refusDeLaDeclaration, refusDuRetrait, regularisationAJour, type ContexteDeLaDeclaration, type EntreesDeLInventaire,
@@ -321,6 +321,27 @@ describe('les régularisations reprises, à la validation du premier exercice', 
     const ailleurs = { ...repriseCca, compte_regularisation: '486100' }
     expect(compteRepriseNonExtourne(balance, [ailleurs, repriseFnp], [...ecrites(ailleurs), ...ecritesAuPlan(repriseFnp)], 2025)).toBe('486000')
     expect(compteRepriseNonExtourne(balance, [repriseCca, repriseFnp], brouillon, 2026)).toBe('408100')
+  })
+
+  it('tous les comptes en écart, pour l’écran : le premier est celui que la base dit, chacun avec son solde repris et son reste', () => {
+    const brouillon = [...ecrites(repriseCca), ...ecritesAuPlan(repriseFnp)]
+    expect(comptesReprisNonExtournes(balance, [repriseCca, repriseFnp], brouillon, 2025)).toEqual([])
+    expect(comptesReprisNonExtournes(balance, [], [], 2025)).toEqual([
+      { compte: '408100', reprisCentimes: -12000, resteCentimes: -12000 },
+      { compte: '445860', reprisCentimes: 2000, resteCentimes: 2000 },
+      { compte: '486000', reprisCentimes: 30000, resteCentimes: 30000 },
+    ])
+    const moindre = { ...repriseCca, montant_centimes: 25000 }
+    const ecart = comptesReprisNonExtournes(balance, [moindre, repriseFnp], [...ecrites(moindre), ...ecritesAuPlan(repriseFnp)], 2025)
+    expect(ecart).toEqual([{ compte: '486000', reprisCentimes: 30000, resteCentimes: 5000 }])
+    // Un compte qu'une extourne touche sans que la balance le porte : son solde repris à zéro.
+    const ailleurs = { ...repriseCca, compte_regularisation: '486100' }
+    expect(comptesReprisNonExtournes(balance, [ailleurs, repriseFnp], [...ecrites(ailleurs), ...ecritesAuPlan(repriseFnp)], 2025)).toEqual([
+      { compte: '486000', reprisCentimes: 30000, resteCentimes: 30000 }, { compte: '486100', reprisCentimes: 0, resteCentimes: -30000 },
+    ])
+    for (const [ops, lignes] of [[[], []], [[moindre, repriseFnp], ecart.length ? [...ecrites(moindre), ...ecritesAuPlan(repriseFnp)] : []]] as const) {
+      expect(compteRepriseNonExtourne(balance, ops, lignes, 2025)).toBe(comptesReprisNonExtournes(balance, ops, lignes, 2025)[0]?.compte ?? null)
+    }
   })
 
   it('les racines confrontées, lues au catalogue, sont celles de la migration, et le 4084 en est écarté des deux côtés', () => {

@@ -125,12 +125,32 @@ export function piecesSansEmpreinte(
   return pieces.filter((p) => citees.has(p.id) && sansEmpreinteDeDepot(p)).map((p) => p.id).sort()
 }
 
-// Les pièces que les écritures VALIDÉES de l'exercice citent, directement ou par leur bien : l'ensemble que
-// `empreinte_exercice_forme_2` compte (migration `empreinte_des_exercices_forme_2`). L'appelant ne passe que les lignes
-// validées de l'exercice ; les identifiants, uniques et triés.
+/**
+ * CE QUE L'INVENTAIRE D'UN EXERCICE CITE (ligne 35, INV3-Q1 (A)), pour le paquet, sans valeur par défaut : rien — le drapeau
+ * `INVENTAIRE_PREVU` baissé, les tables ne sont pas en base, l'empreinte ne scelle aucune pièce de l'inventaire —, ou les
+ * régularisations et les provisions du dossier, lues EN ENTIER, et l'exercice du paquet.
+ */
+export type InventaireDuPaquet =
+  | { etat: 'sans_objet' }
+  | {
+    etat: 'lu'
+    annee: number
+    operations: readonly { exercice: number; reprise: boolean; piece_citee_id: string | null; provision_id: string | null }[]
+    provisions: readonly { id: string; piece_citee_id: string | null }[]
+  }
+
+export const INVENTAIRE_DU_PAQUET_SANS_OBJET: InventaireDuPaquet = { etat: 'sans_objet' }
+
+// Les pièces que l'exercice validé cite : celles que ses écritures VALIDÉES citent, directement ou par leur bien, et celles
+// que son inventaire scelle (INV3-Q1 (A), `pieces_scellees_par_l_inventaire`, migration `validation_de_l_inventaire`) — la
+// pièce citée d'une régularisation qu'il scelle (celle qu'il constate, ou la reprise d'une balance dont il porte l'extourne,
+// de l'exercice précédent), et celle de la provision qu'une évaluation de l'exercice évalue (sa facture émise n'est pas une
+// pièce). L'ensemble que `empreinte_exercice_forme_2` compte. L'appelant ne passe que les lignes validées de l'exercice ; les
+// identifiants, uniques et triés.
 export function piecesCiteesParLExercice(
   lignes: readonly { piece_id: string | null; immobilisation_id: string | null }[],
   immobilisations: readonly { id: string; piece_id: string | null }[],
+  inventaire: InventaireDuPaquet,
 ): string[] {
   const pieceDuBien = new Map(immobilisations.map((i) => [i.id, i.piece_id]))
   const ids = new Set<string>()
@@ -138,6 +158,14 @@ export function piecesCiteesParLExercice(
     if (l.piece_id) ids.add(l.piece_id)
     const parLeBien = l.immobilisation_id ? pieceDuBien.get(l.immobilisation_id) : null
     if (parLeBien) ids.add(parLeBien)
+  }
+  if (inventaire.etat === 'lu') {
+    const pieceDeLaProvision = new Map(inventaire.provisions.map((p) => [p.id, p.piece_citee_id]))
+    for (const o of inventaire.operations) {
+      if ((o.reprise ? o.exercice + 1 : o.exercice) === inventaire.annee && o.piece_citee_id) ids.add(o.piece_citee_id)
+      const parLaProvision = o.provision_id && o.exercice === inventaire.annee ? pieceDeLaProvision.get(o.provision_id) : null
+      if (parLaProvision) ids.add(parLaProvision)
+    }
   }
   return [...ids].sort()
 }

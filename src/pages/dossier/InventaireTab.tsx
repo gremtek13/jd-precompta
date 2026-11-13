@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { lireLaBalanceRepriseDuDossier, type LectureDeLaBalanceReprise } from '../../lib/balanceRepriseDeLInventaireLecture'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { telechargerUnPdf } from '../../lib/apercu'
@@ -26,6 +27,7 @@ import { messageErreur } from '../../lib/messageErreur'
 import { supabase } from '../../lib/supabase'
 import type { OperationInventaire, Provision } from '../../lib/types'
 import ChoixDuJustificatif from './ChoixDuJustificatif'
+import RegularisationsReprises, { type RepriseAEnregistrer } from './RegularisationsReprises'
 
 // L'ONGLET INVENTAIRE, CÔTÉ CABINET (ligne 35, lot INV5 ; docs/conceptions/35-inventaire.md, § 5.7). En comptabilité d'ENGAGEMENT
 // seulement (DossierDetail ne le monte pas autrement), le drapeau `INVENTAIRE_EXPORTE` levé. Le cabinet y saisit, exercice par
@@ -51,6 +53,11 @@ import ChoixDuJustificatif from './ChoixDuJustificatif'
 // CHOISISSENT ici (`ChoixDuJustificatif`), dans les pièces et factures du dossier lues EN ENTIER à part
 // (lib/justificatifsDeLInventaireLecture.ts) et filtrées selon ce que la base acceptera (lib/justificatifsDeLInventaire.ts) ; une
 // saisie qui remplace propose la pièce déjà citée ; le choix part avec l'écriture, par la fonction de la base, sous le verrou.
+//
+// LA RÉGULARISATION REPRISE D'UNE BALANCE (INV3-Q2 (A)) : sur le premier exercice du dossier, celui qu'ouvre sa balance reprise, une
+// section à part (`RegularisationsReprises`, lib/regularisationRepriseEcran.ts) reprend les anciennes CCA, PCA, FNP et FAE de la
+// balance — leur seule extourne au 1er janvier — et dit ce que la validation retiendra. La balance se lit EN ENTIER à part
+// (lib/balanceRepriseDeLInventaireLecture.ts) ; ses gestes passent par le verrou de l'onglet, comme tous les autres.
 
 type Message = { genre: 'ok' | 'erreur'; texte: string }
 
@@ -84,6 +91,8 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   const [lecture, setLecture] = useState<LectureDeLInventaireDeLEcran | null>(null)
   // Les pièces et factures à citer : une lecture à part, qui ne retire que le choix d'une pièce quand elle manque.
   const [lectureDesJustificatifs, setLectureDesJustificatifs] = useState<LectureDesJustificatifs | null>(null)
+  // La balance reprise, pour les régularisations reprises : une lecture à part, qui ne retire que leur section quand elle manque.
+  const [lectureDeLaBalance, setLectureDeLaBalance] = useState<LectureDeLaBalanceReprise | null>(null)
   const [saisie, setSaisie] = useState<FormulaireDeRegularisation>(() => formulaireVide('cca', {}))
   // Le compte de régularisation tel que le cabinet l'a tapé ; nul tant qu'il n'a rien tapé : celui du plan se propose alors,
   // dérivé au rendu (jamais posé par un effet) — le plan ne se lit qu'avec la lecture.
@@ -114,6 +123,7 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
     let annule = false
     lireLInventaireDuDossier(dossierId).then((l) => { if (!annule) setLecture(l) })
     lireLesJustificatifsDuDossier(dossierId).then((l) => { if (!annule) setLectureDesJustificatifs(l) })
+    lireLaBalanceRepriseDuDossier(dossierId).then((l) => { if (!annule) setLectureDeLaBalance(l) })
     return () => { annule = true }
   }, [dossierId])
 
@@ -122,6 +132,7 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   const comptes = donnees?.comptes ?? null
   const lectureDesJustificatifsDuDossier = lectureDesJustificatifs !== null && lectureDesJustificatifs.dossierId === dossierId ? lectureDesJustificatifs : null
   const justificatifs = lectureDesJustificatifsDuDossier?.etat === 'lue' ? lectureDesJustificatifsDuDossier.justificatifs : null
+  const lectureDeLaBalanceDuDossier = lectureDeLaBalance !== null && lectureDeLaBalance.dossierId === dossierId ? lectureDeLaBalance : null
   const formulaire: FormulaireDeRegularisation = { ...saisie, compteRegularisation: compteRegul ?? compteDeRegularisationPropose(saisie.nature, comptes ?? {}) }
   const provision: FormulaireDeProvision = { ...saisieProvision, compte: compteProv ?? compteDeProvisionPropose(saisieProvision.genre, comptes ?? {}) }
 
@@ -237,6 +248,26 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
       remplace === null ? 'La régularisation n’a pas été enregistrée' : 'La régularisation n’a pas été remplacée',
       () => remettreLeFormulaire(),
     )
+  }
+
+  // La régularisation reprise d'une balance (INV3-Q2 (A)) : la section la compose et la juge, l'onglet l'écrit sous son verrou.
+  async function enregistrerLaReprise(v: RepriseAEnregistrer, remplaceReprise: OperationInventaire | null, apres: () => void) {
+    if (ecritureEnCours.current) return
+    // La confirmation nomme la seule extourne qui part, sa pièce « Inventaire N−1 » et la pièce citée.
+    if (!window.confirm(v.confirmation)) return
+    const { operation, ecritures, versionLue } = v.appel
+    await agir(
+      () => appelerEnregistrerLOperation(operation, ecritures, versionLue),
+      `${remplaceReprise === null ? 'Régularisation reprise enregistrée' : 'Régularisation reprise remplacée'} : ${String(operation.objet)}.`,
+      remplaceReprise === null ? 'La régularisation reprise n’a pas été enregistrée' : 'La régularisation reprise n’a pas été remplacée',
+      apres,
+    )
+  }
+
+  async function retirerLaReprise(o: OperationInventaire, apres: () => void) {
+    if (ecritureEnCours.current) return
+    if (!window.confirm(confirmationDuRetrait(o))) return
+    await agir(() => appelerRetirerLOperation(o.id, o.version), `Retiré : ${o.objet}.`, 'La régularisation reprise n’a pas été retirée', apres)
   }
 
   async function retirer(o: OperationInventaire) {
@@ -572,6 +603,14 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
           </div>
         )}
       </div>
+
+      {donnees.premierExercice === exercice && (
+        <RegularisationsReprises
+          exercice={exercice} ctx={ctx} donnees={donnees} balance={lectureDeLaBalanceDuDossier}
+          lectureDesJustificatifs={lectureDesJustificatifsDuDossier} justificatifs={justificatifs} enCours={enCours}
+          onEnregistrer={enregistrerLaReprise} onRetirer={retirerLaReprise}
+        />
+      )}
 
       <form
         className="card" style={{ marginBottom: 20 }} aria-label="Ouverture d’une provision"
