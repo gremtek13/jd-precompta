@@ -15,7 +15,11 @@
 --     que le centième, un exercice d'avant 2025, une seconde ligne se refusent ; ce qui ne change pas ne s'écrit pas ;
 --   - les droits : le client d'essai, qui n'a pas ce dossier, n'écrit ni ne lit rien ; l'anonyme n'exécute pas la fonction ;
 --   - le gel : l'exercice 2025 validé ne change plus ses paramètres (la fonction, une mise à jour directe), une mise à jour
---     qui ne change rien passe, le début d'activité se corrige encore (une donnée du dossier), 2026 s'écrit encore.
+--     qui ne change rien passe, le début d'activité se corrige encore (une donnée du dossier), 2026 s'écrit encore ;
+--   - la migration `cumul_et_dispense_du_medecin` (RET-Q2, préparée) en base, les deux cases d'un médecin : écrites et
+--     relues sous la forme à cinq clés, comparées aux valeurs lues, refusées en texte ou sous deux formes mêlées, laissées
+--     telles quelles par la forme à trois clés d'hier, gelées avec 2025, fermées au client (étapes 8a à 8h ; sans elle, une
+--     ligne dit qu'elles attendent).
 -- Un retrait direct des paramètres d'un exercice validé suit la même branche du gel ; il ne se joue pas ici (aucune
 -- suppression dans un essai de la production) : l'écran n'en fait aucun, une valeur s'efface par null.
 -- Tout se joue dans un dossier jetable, et tout s'annule à la fin. Sans la migration, une ligne le dit, et rien ne s'écrit.
@@ -30,6 +34,9 @@ declare
   v_obs text;
   v_code text;
   v_msg text;
+  -- Les deux cases d'un médecin (RET-Q2, migration `cumul_et_dispense_du_medecin`, préparée) : les étapes 8a à 8h.
+  cases_en_base constant boolean := exists (select 1 from pg_attribute a where a.attrelid = to_regclass('public.parametres_des_cotisations')
+    and a.attname = 'cumul_emploi_retraite' and not a.attisdropped);
 begin
   if to_regclass('public.parametres_des_cotisations') is null then
     perform set_config('essai.parametresDesCotisations', jsonb_build_array(jsonb_build_object('rang', 1,
@@ -50,7 +57,8 @@ begin
       (2, 'proprietaire', '1b. … celui des paramètres d''un exercice : sept colonnes, l''ACRE et le taux nuls, le taux en décimal exact', $q$select string_agg(a.attname || ':'
   || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull, ',' order by a.attnum)
   from pg_attribute a where a.attrelid = 'public.parametres_des_cotisations'::regclass and a.attnum > 0 and not a.attisdropped$q$,
-        'OK', 'id:uuid:true,dossier_id:uuid:true,annee:integer:true,acre:boolean:false,taux_dentiste:numeric:false,created_at:timestamp with time zone:true,updated_at:timestamp with time zone:true'),
+        'OK', 'id:uuid:true,dossier_id:uuid:true,annee:integer:true,acre:boolean:false,taux_dentiste:numeric:false,created_at:timestamp with time zone:true,updated_at:timestamp with time zone:true'
+          || case when cases_en_base then ',cumul_emploi_retraite:boolean:false,dispense_complementaire:boolean:false' else '' end),
       (3, 'proprietaire', '1c. … leurs contraintes, au texte près (les clés, le dossier en cascade, trois CHECK, deux unicités TOTALES)', $q$select count(*) || ' ' || md5(string_agg(c.conrelid::regclass::text || ' ' || c.conname || ' ' || pg_get_constraintdef(c.oid), ' ; ' order by c.conrelid::regclass::text collate "C", c.conname collate "C"))
   from pg_constraint c where c.conrelid in ('public.debuts_d_activite'::regclass, 'public.parametres_des_cotisations'::regclass)$q$,
         'OK', '9 3f6aaebe26f1e3ee69417f31ec4e4783'),
@@ -147,8 +155,29 @@ begin
   '{"debut_activite": "2025-06-15", "acre": null, "taux_dentiste": 0.35}', '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null}')$q$, 'OK', '1'),
       (36, 'chef', '7g. … et 2025 est restée telle qu''elle a été validée', $q$select (select date_debut::text from debuts_d_activite where dossier_id = 'c0715000-0000-4000-8107-000000000001')
   || ' ' || (select string_agg(annee || ':' || coalesce(acre::text, '-') || ':' || coalesce(taux_dentiste::text, '-'), ',' order by annee)
-  from parametres_des_cotisations where dossier_id = 'c0715000-0000-4000-8107-000000000001')$q$, 'OK', '2025-06-15 2025:true:-,2026:true:-')
-    ) as t(rang, profil, etape, requete, code, attendu) order by rang loop
+  from parametres_des_cotisations where dossier_id = 'c0715000-0000-4000-8107-000000000001')$q$, 'OK', '2025-06-15 2025:true:-,2026:true:-'),
+      -- LES DEUX CASES D'UN MÉDECIN (RET-Q2, migration `cumul_et_dispense_du_medecin`, préparée) : sans elle, une ligne dit
+      -- qu'elles attendent.
+      (37, 'chef', '8a. sous la forme à cinq clés, le cumul et la dispense de 2026 s''écrivent, rien d''autre ne bouge', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2026,
+  '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null}', '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true}')$q$, 'OK', '1'),
+      (38, 'chef', '8b. … relus, avec l''ACRE et le taux d''avant', $q$select (select string_agg(annee || ':' || coalesce(acre::text, '-') || ':' || coalesce(taux_dentiste::text, '-')
+  || ':' || coalesce(cumul_emploi_retraite::text, '-') || ':' || coalesce(dispense_complementaire::text, '-'), ',' order by annee)
+  from parametres_des_cotisations where dossier_id = 'c0715000-0000-4000-8107-000000000001')$q$, 'OK', '2025:true:-:-:-,2026:true:-:false:true'),
+      (39, 'chef', '8c. une case lue fausse refuse le tout (40001)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2026,
+  '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null}', '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true}')$q$, '40001', 'Les paramètres des cotisations de l''exercice 2026 ont changé%'),
+      (40, 'chef', '8d. une case en texte se refuse (22023)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2026,
+  '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true}', '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": "oui", "dispense_complementaire": true}')$q$, '22023', 'Les paramètres des cotisations partent mal formés%'),
+      (41, 'chef', '8e. les valeurs lues à trois clés et les saisies à cinq se refusent (22023)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2026,
+  '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null}', '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true}')$q$, '22023', 'Les paramètres des cotisations partent mal formés%'),
+      (42, 'chef', '8f. la forme à trois clés n''écrit pas les cases : l''ACRE de 2026 change, les cases restent', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2026,
+  '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null}', '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null}')$q$, 'OK', '1'),
+      (43, 'chef', '8f2. … relus : l''ACRE changée, les deux cases telles quelles', $q$select (select acre || ':' || cumul_emploi_retraite || ':' || dispense_complementaire
+  from parametres_des_cotisations where dossier_id = 'c0715000-0000-4000-8107-000000000001' and annee = 2026)$q$, 'OK', 'false:false:true'),
+      (44, 'chef', '8g. l''exercice 2025, validé, ne reçoit pas de case (23514)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2025,
+  '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null}', '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null}')$q$, '23514', ''),
+      (45, 'client', '8h. le client d''essai n''écrit pas les cases (42501)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2026,
+  '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true}', '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": true}')$q$, '42501', '')
+    ) as t(rang, profil, etape, requete, code, attendu) where t.rang <= 36 or cases_en_base order by rang loop
       v_obs := null;
       v_code := 'OK';
       v_msg := '';
@@ -182,6 +211,10 @@ begin
       raise;
     end if;
   end;
+  if not cases_en_base then
+    verdicts := verdicts || jsonb_build_object('rang', 37, 'etape', '8. EN ATTENTE de la migration cumul_et_dispense_du_medecin (RET-Q2) : les étapes 8a à 8h',
+      'ok', true, 'observe', 'les deux cases absentes : rien ne s''écrit');
+  end if;
   perform set_config('essai.parametresDesCotisations', verdicts::text, true);
 end
 $essai$;

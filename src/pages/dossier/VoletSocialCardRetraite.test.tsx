@@ -11,18 +11,25 @@ import { PHRASE_DE_LA_CAISSE } from '../../lib/retraiteAffichee'
 // chiffre.
 // La CIPAV offerte à l'écran sous `PROFESSIONS_CIPAV_PREVUES`, levé le 11/11/2026 : ces cas jouent l'état réel ; l'état
 // d'avant (les trois caisses, « Hors CIPAV ») se rejoue par l'accesseur, baissé, dans son propre cas.
-const drapeau = vi.hoisted(() => ({ cipav: true }))
+const drapeau = vi.hoisted(() => ({
+  cipav: true,
+  // Les deux cases d'un médecin (RET-Q2) : baissées, comme servies ; levées dans leurs propres cas, avec les paramètres
+  // lus que ces cas posent.
+  cases: false,
+  debutActivite: '2010-01-01',
+  parExercice: new Map<number, unknown>(),
+}))
 vi.mock('../../lib/voletSocialPamc', async (importer) => {
   const reel = await importer<typeof import('../../lib/voletSocialPamc')>()
   return { ...reel, get PROFESSIONS_CIPAV_PREVUES() { return drapeau.cipav } }
 })
 vi.mock('../../lib/parametresDesCotisations', async (importer) => {
   const reel = await importer<typeof import('../../lib/parametresDesCotisations')>()
-  return { ...reel, PARAMETRES_DES_COTISATIONS_EXPORTES: true }
+  return { ...reel, PARAMETRES_DES_COTISATIONS_EXPORTES: true, get CASES_DU_MEDECIN_PREVUES() { return drapeau.cases } }
 })
 vi.mock('../../lib/parametresDesCotisationsLecture', () => ({
   lireLesParametresDesCotisations: (dossierId: string) =>
-    Promise.resolve({ dossierId, etat: 'lus', debutActivite: '2010-01-01', parExercice: new Map() }),
+    Promise.resolve({ dossierId, etat: 'lus', debutActivite: drapeau.debutActivite, parExercice: drapeau.parExercice }),
 }))
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -54,7 +61,7 @@ function attendue(profession: 'auxiliaire_medical' | 'medecin_secteur_1', cumul:
   const r = estimerRetraite({
     annee: 2025, profession, remplacant: false, revenuBrutSocial: 60_000, revenuProfessionnelPositif: true, recettesBrutes: 80_000,
     honorairesConventionnes: 80_000, depassements: null, parametres: { tenus: true, debutActivite: '2010-01-01', acre: null, tauxDentiste: null },
-    cumulEmploiRetraite: cumul,
+    cumulEmploiRetraite: cumul, dispenseDesDebuts: { tenue: false },
   })
   if (!r.disponible) throw new Error(r.motif)
   return r.estimation
@@ -164,3 +171,49 @@ describe('la retraite dans le volet social', () => {
     expect(retraite().getByText(PHRASE_DE_LA_CAISSE)).toBeTruthy()
   })
 })
+
+// LES DEUX CASES D'UN MÉDECIN EN BASE (RET-Q2, `CASES_DU_MEDECIN_PREVUES` levé par l'accesseur) : le choix local du cumul
+// disparaît, l'estimation lit le cumul et la dispense de l'exercice, que la carte des paramètres offre.
+describe('la retraite d’un médecin, ses deux cases en base', () => {
+  async function avecLesCases(debutActivite: string, cases: { cumulEmploiRetraite: boolean | null; dispenseComplementaire: boolean | null }) {
+    drapeau.cases = true
+    drapeau.debutActivite = debutActivite
+    drapeau.parExercice = new Map([[2025, { acre: false, tauxDentiste: null, medecin: cases }]])
+    const rendu = await afficher()
+    saisir(/Profession/, 'medecin_secteur_1')
+    saisir(/Honoraires conventionnés/, '80000')
+    return rendu
+  }
+  const remettre = () => { drapeau.cases = false; drapeau.debutActivite = '2010-01-01'; drapeau.parExercice = new Map() }
+
+  it('plus de choix local : le cumul de l’exercice, lu, retire l’invalidité-décès', async () => {
+    try {
+      await avecLesCases('2010-01-01', { cumulEmploiRetraite: true, dispenseComplementaire: null })
+      expect(retraite().queryByLabelText(/cumule-t-il/)).toBeNull()
+      expect(screen.getByLabelText('Cumul emploi-retraite en 2025')).toBeTruthy()
+      expect(ligneDe(/^Invalidité-décès$/)).toBe(enEuros(0))
+      expect(retraite().getByText(/Cumul emploi-retraite : la CARMF n’appelle plus d’invalidité-décès/)).toBeTruthy()
+    } finally {
+      remettre()
+    }
+  })
+
+  it('les deux premières années d’affiliation, la dispense non dite tait la retraite ; dite, le complémentaire n’est pas compté', async () => {
+    try {
+      const rendu = await avecLesCases('2024-11-15', { cumulEmploiRetraite: false, dispenseComplementaire: null })
+      expect(retraite().getByText(/^Dites si la CARMF dispense le médecin du complémentaire en 2025/)).toBeTruthy()
+      expect(retraite().queryByRole('table')).toBeNull()
+      rendu.unmount()
+    } finally {
+      remettre()
+    }
+    try {
+      await avecLesCases('2024-11-15', { cumulEmploiRetraite: false, dispenseComplementaire: true })
+      expect(ligneDe(/^Régime complémentaire$/)).toBe(enEuros(0))
+      expect(retraite().getByText(/^CARMF : le complémentaire n’est pas compté/)).toBeTruthy()
+    } finally {
+      remettre()
+    }
+  })
+})
+

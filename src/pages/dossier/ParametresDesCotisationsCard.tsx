@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { formatDate } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import {
-  memesValeurs, parametresDeLEnregistrement, saisieDe, valeursLues, valeursSaisies,
+  CASES_DU_MEDECIN_PREVUES, memesValeurs, parametresDeLEnregistrement, saisieDe, valeursLues, valeursSaisies,
   type LectureDesParametres, type SaisieDesParametres, type ValeursDesParametres,
 } from '../../lib/parametresDesCotisations'
 import { supabase } from '../../lib/supabase'
@@ -15,13 +15,22 @@ import type { ProfessionLiberale } from '../../lib/types'
 // verrou relâché après la relecture ; la confirmation nomme ce qui change ; ses refus redits avant le clic.
 
 const ACRE = { oui: 'oui', non: 'non', '': 'non dite' } as const
+const OUI_NON = { oui: 'oui', non: 'non', '': 'non dit' } as const
+
+const motDuCas = (v: boolean | null | undefined) => (v == null ? 'non dit' : v ? 'oui' : 'non')
 
 function enMots(v: ValeursDesParametres, annee: number): string[] {
-  return [
+  const mots = [
     `Début d’activité : ${v.debut_activite === null ? 'non saisi' : formatDate(v.debut_activite)}`,
     `ACRE ${annee} : ${v.acre === null ? 'non dite' : v.acre ? 'oui' : 'non'}`,
     `Taux dentiste ${annee} : ${v.taux_dentiste === null ? 'non saisi' : String(v.taux_dentiste).replace('.', ',')}`,
   ]
+  // Les deux cases d'un médecin (RET-Q2) : nommées quand les valeurs les portent (la forme à cinq clés).
+  if ('cumul_emploi_retraite' in v) {
+    mots.push(`Cumul emploi-retraite ${annee} : ${motDuCas(v.cumul_emploi_retraite)}`)
+    mots.push(`Dispense du complémentaire CARMF ${annee} : ${motDuCas(v.dispense_complementaire)}`)
+  }
+  return mots
 }
 
 export default function ParametresDesCotisationsCard({ dossierId, annee, lecture, profession, exerciceValide, onRelire }: {
@@ -35,7 +44,9 @@ export default function ParametresDesCotisationsCard({ dossierId, annee, lecture
   // Relit les paramètres du dossier ; la carte l'attend avant de relâcher son verrou.
   onRelire: () => Promise<void>
 }) {
-  const lus = lecture?.etat === 'lus' ? valeursLues(lecture, annee) : null
+  // Le drapeau des cases d'un médecin (RET-Q2), passé tel que la carte le lit : la lecture, les valeurs lues et les saisies
+  // prennent la même forme (trois clés, ou cinq), que la fonction exige des deux côtés.
+  const lus = lecture?.etat === 'lus' ? valeursLues(lecture, annee, CASES_DU_MEDECIN_PREVUES) : null
   const [enCours, setEnCours] = useState(false)
   const [message, setMessage] = useState<{ cle: string; texte: string; erreur: boolean } | null>(null)
   const enregistrementEnCours = useRef(false)
@@ -95,12 +106,20 @@ function Formulaire({ annee, lus, profession, exerciceValide, enCours, message, 
   onEnregistrer: (saisies: ValeursDesParametres) => void
 }) {
   const [saisie, setSaisie] = useState<SaisieDesParametres>(() => saisieDe(lus))
-  const sortie = valeursSaisies(saisie)
+  const sortie = valeursSaisies(saisie, CASES_DU_MEDECIN_PREVUES)
   const inchange = sortie.valeurs !== null && memesValeurs(sortie.valeurs, lus)
-  const exerciceChange = sortie.valeurs !== null && (sortie.valeurs.acre !== lus.acre || sortie.valeurs.taux_dentiste !== lus.taux_dentiste)
+  const exerciceChange = sortie.valeurs !== null && (sortie.valeurs.acre !== lus.acre || sortie.valeurs.taux_dentiste !== lus.taux_dentiste
+    || (sortie.valeurs.cumul_emploi_retraite ?? null) !== (lus.cumul_emploi_retraite ?? null)
+    || (sortie.valeurs.dispense_complementaire ?? null) !== (lus.dispense_complementaire ?? null))
   const refus = sortie.refus ?? (exerciceValide && exerciceChange
-    ? `L’exercice ${annee} est validé : son ACRE et son taux dentiste ne changent plus.` : null)
+    ? (CASES_DU_MEDECIN_PREVUES
+      ? `L’exercice ${annee} est validé : son ACRE, son taux dentiste et les cases du médecin ne changent plus.`
+      : `L’exercice ${annee} est validé : son ACRE et son taux dentiste ne changent plus.`)
+    : null)
   const dentiste = profession === 'chirurgien_dentiste' || lus.taux_dentiste !== null
+  // Les deux cases d'un médecin (RET-Q2), sous leur drapeau : offertes à un médecin, ou dès qu'une est dite.
+  const medecin = CASES_DU_MEDECIN_PREVUES && (profession === 'medecin_secteur_1' || profession === 'medecin_secteur_2'
+    || (lus.cumul_emploi_retraite ?? null) !== null || (lus.dispense_complementaire ?? null) !== null)
   const changer = (champ: keyof SaisieDesParametres) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setSaisie({ ...saisie, [champ]: e.target.value })
     onChange()
@@ -132,7 +151,30 @@ function Formulaire({ annee, lus, profession, exerciceValide, enCours, message, 
               placeholder="0,35" onChange={changer('tauxDentiste')} />
           </div>
         )}
+        {medecin && (
+          <>
+            <div className="field">
+              <label htmlFor={`cumul-${annee}`}>Cumul emploi-retraite en {annee}</label>
+              <select id={`cumul-${annee}`} value={saisie.cumul} disabled={exerciceValide} onChange={changer('cumul')}>
+                {(Object.keys(OUI_NON) as (keyof typeof OUI_NON)[]).map((v) => <option key={v} value={v}>{OUI_NON[v]}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor={`dispense-${annee}`}>Dispense du complémentaire CARMF en {annee}</label>
+              <select id={`dispense-${annee}`} value={saisie.dispense} disabled={exerciceValide} onChange={changer('dispense')}>
+                {(Object.keys(OUI_NON) as (keyof typeof OUI_NON)[]).map((v) => <option key={v} value={v}>{OUI_NON[v]}</option>)}
+              </select>
+            </div>
+          </>
+        )}
       </div>
+      {medecin && (
+        <p className="muted" style={{ margin: '4px 0 8px' }}>
+          Un médecin en cumul emploi-retraite ne cotise plus à l’invalidité-décès de la CARMF. La CARMF dispense du
+          complémentaire, ses deux premières années d’affiliation, le médecin dont l’activité a commencé avant quarante
+          ans : l’application ne sait pas l’âge, dites-le.
+        </p>
+      )}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="btn btn-primary btn-sm" disabled={enCours || refus !== null || inchange}
           onClick={() => { if (sortie.valeurs !== null && refus === null && !inchange) onEnregistrer(sortie.valeurs) }}>

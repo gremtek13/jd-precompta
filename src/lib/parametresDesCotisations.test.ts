@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import {
+import { CASES_DU_MEDECIN_PREVUES, casesDuMedecinDeLExercice, valeursLues,
   PARAMETRES_DES_COTISATIONS_EXPORTES, lireDebutActivite, lireParametresDUnExercice, memesValeurs, parametresDeLEnregistrement,
   parametresDeLEstimation, saisieDe, tauxDentisteAdmis, valeursSaisies,
 } from './parametresDesCotisations'
@@ -65,17 +65,17 @@ describe('la saisie, et les refus de la base redits avant le clic', () => {
 
   it('les bornes de la date sont celles de la contrainte, et une date hors du calendrier se refuse', () => {
     expect(MIGRATION).toContain("date_debut >= date '1900-01-01' and date_debut <= date '2100-12-31'")
-    const date = (debutActivite: string) => valeursSaisies({ debutActivite, acre: '', tauxDentiste: '' })
+    const date = (debutActivite: string) => valeursSaisies({ debutActivite, acre: '', tauxDentiste: '', cumul: '', dispense: '' })
     expect(date('2025-07-01').valeurs?.debut_activite).toBe('2025-07-01')
     expect(date('').valeurs?.debut_activite).toBeNull()
     for (const d of ['2025-02-30', '1899-12-31', '2101-01-01', '01/07/2025']) expect(date(d).refus, d).toMatch(/date du calendrier/)
   })
 
   it('le taux se tape à la virgule ou au point ; l’ACRE en trois états', () => {
-    expect(valeursSaisies({ debutActivite: '', acre: 'oui', tauxDentiste: '0,35' }).valeurs).toEqual({ debut_activite: null, acre: true, taux_dentiste: 0.35 })
-    expect(valeursSaisies({ debutActivite: '', acre: 'non', tauxDentiste: '1' }).valeurs).toEqual({ debut_activite: null, acre: false, taux_dentiste: 1 })
+    expect(valeursSaisies({ debutActivite: '', acre: 'oui', tauxDentiste: '0,35', cumul: '', dispense: '' }).valeurs).toEqual({ debut_activite: null, acre: true, taux_dentiste: 0.35 })
+    expect(valeursSaisies({ debutActivite: '', acre: 'non', tauxDentiste: '1', cumul: '', dispense: '' }).valeurs).toEqual({ debut_activite: null, acre: false, taux_dentiste: 1 })
     for (const t of ['1,5', '-0,1', '0,355', '1e-1', 'abc']) {
-      expect(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: t }).refus, t).toMatch(/entre 0 et 1, au centième/)
+      expect(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: t, cumul: '', dispense: '' }).refus, t).toMatch(/entre 0 et 1, au centième/)
     }
   })
 
@@ -96,3 +96,50 @@ describe('la saisie, et les refus de la base redits avant le clic', () => {
     expect(Object.keys(p.p_saisis).sort()).toEqual(['acre', 'debut_activite', 'taux_dentiste'])
   })
 })
+
+// LES DEUX CASES D'UN MÉDECIN (RET-Q2, migration PRÉPARÉE `cumul_et_dispense_du_medecin`) : la forme à cinq clés, sous
+// `CASES_DU_MEDECIN_PREVUES` seulement, confrontée au texte de la migration.
+describe('les deux cases d’un médecin (RET-Q2)', () => {
+  const PREPAREE = readFileSync(new URL('../../supabase/preparees/20261113203000_cumul_et_dispense_du_medecin.sql', import.meta.url), 'utf8')
+  const lecture = (cases?: { cumulEmploiRetraite: boolean | null; dispenseComplementaire: boolean | null }) => ({
+    dossierId: 'd', etat: 'lus' as const, debutActivite: '2024-11-15',
+    parExercice: new Map([[2025, { acre: false, tauxDentiste: null, ...(cases ? { medecin: cases } : {}) }]]),
+  })
+
+  it('le drapeau est baissé : les valeurs d’hier, trois clés, par défaut', () => {
+    expect(CASES_DU_MEDECIN_PREVUES).toBe(false)
+    expect(Object.keys(valeursLues(lecture(), 2025)).sort()).toEqual(['acre', 'debut_activite', 'taux_dentiste'])
+    expect(Object.keys(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: '', cumul: 'oui', dispense: 'non' }).valeurs!).sort())
+      .toEqual(['acre', 'debut_activite', 'taux_dentiste'])
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: null })).toEqual({ annee: 2025, acre: null, tauxDentiste: null })
+  })
+
+  it('levé : cinq clés des deux côtés, celles que la fonction attend, dans l’ordre de son tableau', () => {
+    const cles = /v_cles_du_medecin constant text\[\] := array\[([^\]]*)\];/.exec(PREPAREE)![1].split(',').map((c) => c.trim().replace(/'/g, ''))
+    const lues = valeursLues(lecture({ cumulEmploiRetraite: true, dispenseComplementaire: null }), 2025, true)
+    expect(Object.keys(lues).sort()).toEqual(cles)
+    expect(lues).toMatchObject({ cumul_emploi_retraite: true, dispense_complementaire: null })
+    const saisies = valeursSaisies({ ...saisieDe(lues), dispense: 'oui' }, true).valeurs!
+    expect(Object.keys(saisies).sort()).toEqual(cles)
+    expect(saisies).toMatchObject({ cumul_emploi_retraite: true, dispense_complementaire: true })
+    expect(memesValeurs(saisies, lues)).toBe(false)
+    expect(memesValeurs(valeursSaisies(saisieDe(lues), true).valeurs!, lues)).toBe(true)
+  })
+
+  it('levé : une ligne lue porte ses deux cases, booléennes ou nulles ; une autre forme la rend illisible', () => {
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: null, cumul_emploi_retraite: false, dispense_complementaire: null }, true))
+      .toEqual({ annee: 2025, acre: null, tauxDentiste: null, medecin: { cumulEmploiRetraite: false, dispenseComplementaire: null } })
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: null, cumul_emploi_retraite: 'oui', dispense_complementaire: null }, true)).toBeNull()
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: null }, true)).toBeNull()
+    expect(PREPAREE).toContain('add column cumul_emploi_retraite boolean,\n  add column dispense_complementaire boolean;')
+  })
+
+  it('l’estimation reçoit les cases de l’exercice, nulles quand il n’en a pas ; rien d’une lecture partielle', () => {
+    expect(casesDuMedecinDeLExercice(lecture({ cumulEmploiRetraite: true, dispenseComplementaire: false }), 2025))
+      .toEqual({ cumulEmploiRetraite: true, dispenseComplementaire: false })
+    expect(casesDuMedecinDeLExercice(lecture(), 2026)).toEqual({ cumulEmploiRetraite: null, dispenseComplementaire: null })
+    expect(casesDuMedecinDeLExercice({ dossierId: 'd', etat: 'incomplets', motif: 'x' }, 2025)).toBeNull()
+    expect(casesDuMedecinDeLExercice(null, 2025)).toBeNull()
+  })
+})
+

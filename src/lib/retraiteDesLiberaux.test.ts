@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BAREMES_RETRAITE, CAISSE_DE_LA_PROFESSION, estimerRetraite, type EntreeRetraite } from './retraiteDesLiberaux'
+import { derniereAnneeDeLaDispense, BAREMES_RETRAITE, CAISSE_DE_LA_PROFESSION, estimerRetraite, type EntreeRetraite } from './retraiteDesLiberaux'
 import { CAS_REFERENCE_RETRAITE, MOTEUR_REFERENCE_RETRAITE, type CasReferenceRetraite } from './retraiteDesLiberauxReference'
 import { PLAFONDS_SECURITE_SOCIALE } from './voletSocialPamc'
 
@@ -16,6 +16,8 @@ const entreeDe = (c: CasReferenceRetraite): EntreeRetraite => ({
   depassements: c.entree.depassements,
   parametres: c.entree.parametres,
   cumulEmploiRetraite: CAISSE_DE_LA_PROFESSION[c.entree.profession] === 'carmf' ? c.entree.enRetraite : null,
+  // Le moteur de l'Urssaf ne connaît pas la case de la dispense (RET-Q2) : l'estimation d'hier, sans elle.
+  dispenseDesDebuts: { tenue: false },
 })
 
 const enCentimes = (euros: number) => Math.round(euros * 100)
@@ -126,6 +128,7 @@ describe('ce que l’estimation de la retraite refuse ou suppose', () => {
     depassements: 0,
     parametres: { tenus: true, debutActivite: '2015-01-01', acre: null, tauxDentiste: null },
     cumulEmploiRetraite: null,
+    dispenseDesDebuts: { tenue: false },
   }
 
   it('se tait quand le volet de l’Urssaf se tait, pour la même raison', () => {
@@ -162,3 +165,71 @@ describe('ce que l’estimation de la retraite refuse ou suppose', () => {
     expect(installe.disponible && installe.estimation.hypotheses).toEqual([])
   })
 })
+
+// LA DISPENSE DU COMPLÉMENTAIRE DE LA CARMF DES DÉBUTS (RET-Q2) : la case dite par le cabinet, lue dans les deux premières
+// années civiles d'affiliation seulement (l'affiliation au premier jour du trimestre civil qui suit le début, CARMF 2026).
+describe('la dispense du complémentaire de la CARMF des débuts (RET-Q2)', () => {
+  const medecin = (debutActivite: string, annee: number, dispenseDesDebuts: EntreeRetraite['dispenseDesDebuts']): EntreeRetraite => ({
+    annee, profession: 'medecin_secteur_1', remplacant: false, revenuBrutSocial: 60_000, revenuProfessionnelPositif: true,
+    recettesBrutes: 80_000, honorairesConventionnes: 80_000, depassements: null,
+    parametres: { tenus: true, debutActivite, acre: false, tauxDentiste: null }, cumulEmploiRetraite: false, dispenseDesDebuts,
+  })
+  const estimee = (e: EntreeRetraite) => {
+    const r = estimerRetraite(e)
+    if (!r.disponible) throw new Error(r.motif)
+    return r.estimation
+  }
+
+  it('la dernière année : la seconde année civile d’affiliation, l’affiliation au trimestre qui suit le début', () => {
+    expect(derniereAnneeDeLaDispense('2025-01-01')).toBe(2026)
+    expect(derniereAnneeDeLaDispense('2025-09-30')).toBe(2026)
+    expect(derniereAnneeDeLaDispense('2025-10-01')).toBe(2027)
+    expect(derniereAnneeDeLaDispense('2025-12-31')).toBe(2027)
+    expect(derniereAnneeDeLaDispense('2025-13-01')).toBeNull()
+    expect(derniereAnneeDeLaDispense('01/10/2025')).toBeNull()
+  })
+
+  it('non tenue : l’estimation d’hier, le complémentaire compté dû et dit les deux premières années', () => {
+    const e = estimee(medecin('2025-03-10', 2025, { tenue: false }))
+    expect(e.retraiteComplementaire).toBeGreaterThan(0)
+    expect(e.hypotheses).toContain('carmf-debut-d-activite-complementaire-suppose-du')
+  })
+
+  it('tenue, dans la fenêtre : non dite, l’estimation se tait ; dite oui, le complémentaire n’est pas compté ; non, il l’est', () => {
+    const tait = estimerRetraite(medecin('2024-11-15', 2025, { tenue: true, dispense: null }))
+    expect(tait.disponible).toBe(false)
+    if (!tait.disponible) expect(tait.motif).toMatch(/^Dites si la CARMF dispense le médecin du complémentaire en 2025/)
+    const oui = estimee(medecin('2024-11-15', 2025, { tenue: true, dispense: true }))
+    const non = estimee(medecin('2024-11-15', 2025, { tenue: true, dispense: false }))
+    expect(oui.retraiteComplementaire).toBe(0)
+    expect(oui.hypotheses).toContain('carmf-complementaire-dispense')
+    expect(non.retraiteComplementaire).toBeGreaterThan(0)
+    expect(non.hypotheses).not.toContain('carmf-complementaire-dispense')
+    expect(non.hypotheses).not.toContain('carmf-debut-d-activite-complementaire-suppose-du')
+    expect(non.total - oui.total).toBe(Math.round(non.retraiteComplementaire / 100) * 100)
+    // Le reste ne bouge pas.
+    expect(oui.retraiteDeBase).toBe(non.retraiteDeBase)
+    expect(oui.invaliditeDeces).toBe(non.invaliditeDeces)
+  })
+
+  it('tenue, hors de la fenêtre : la règle ne joue plus, la case ne se lit pas', () => {
+    // Un début au 15/11/2023 : affilié au 1er janvier 2024, la dispense ne joue plus en 2026.
+    expect(derniereAnneeDeLaDispense('2023-11-15')).toBe(2025)
+    const apres = estimee(medecin('2023-11-15', 2026, { tenue: true, dispense: null }))
+    expect(apres.retraiteComplementaire).toBeGreaterThan(0)
+    expect(apres.hypotheses).not.toContain('carmf-complementaire-dispense')
+    expect(estimee(medecin('2023-11-15', 2026, { tenue: true, dispense: true })).retraiteComplementaire)
+      .toBe(apres.retraiteComplementaire)
+  })
+
+  it('tenue sans les paramètres : l’entrée se contredit, l’estimation se tait', () => {
+    const r = estimerRetraite({ ...medecin('2024-11-15', 2025, { tenue: true, dispense: true }), parametres: { tenus: false } })
+    expect(r.disponible).toBe(false)
+  })
+
+  it('les autres caisses ne lisent pas la case', () => {
+    const infirmiere = estimerRetraite({ ...medecin('2024-11-15', 2025, { tenue: true, dispense: null }), profession: 'auxiliaire_medical', cumulEmploiRetraite: null })
+    expect(infirmiere.disponible).toBe(true)
+  })
+})
+

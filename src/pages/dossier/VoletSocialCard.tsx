@@ -12,13 +12,14 @@ import {
 } from '../../lib/regularisationDesCotisations'
 import { aujourdHuiAParis, formatMoney } from '../../lib/format'
 import {
-  PARAMETRES_DES_COTISATIONS_EXPORTES, parametresDeLEstimation, type LectureDesParametres,
+  CASES_DU_MEDECIN_PREVUES, PARAMETRES_DES_COTISATIONS_EXPORTES, casesDuMedecinDeLExercice, parametresDeLEstimation,
+  type LectureDesParametres,
 } from '../../lib/parametresDesCotisations'
 import { lireLesParametresDesCotisations } from '../../lib/parametresDesCotisationsLecture'
 import type { EntreeEstimation, ParametresEstimation } from '../../lib/voletSocialPamc'
 import {
-  ceQueLEstimationNeFaitPas, cumulDeLEntree, definitivesDeLUrssaf, demandeLeCumul, estimerLaRetraiteAffichee,
-  hypothesesDeLaRetraite, lignesDeLaRetraite, phraseDeLaCaisse, titreDeLaRetraite, type CumulChoisi,
+  ceQueLEstimationNeFaitPas, cumulDesCases, definitivesDeLUrssaf, demandeLeCumul, estimerLaRetraiteAffichee,
+  hypothesesDeLaRetraite, lignesDeLaRetraite, phraseDeLaCaisse, titreDeLaRetraite, type CasesDeLaRetraite, type CumulChoisi,
 } from '../../lib/retraiteAffichee'
 import type { ResultatRetraite } from '../../lib/retraiteDesLiberaux'
 import ParametresDesCotisationsCard from './ParametresDesCotisationsCard'
@@ -184,13 +185,19 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
       }
     : estimerCotisationsUrssaf(entree)
 
-  // LE CUMUL EMPLOI-RETRAITE D'UN MÉDECIN (RET-Q2) n'est pas en base : un choix local, non enregistré, sans valeur par défaut,
-  // qui ne vaut que pour le dossier et l'exercice où il a été fait.
+  // LE CUMUL EMPLOI-RETRAITE ET LA DISPENSE DES DÉBUTS D'UN MÉDECIN (RET-Q2). Sans leurs cases en base
+  // (`CASES_DU_MEDECIN_PREVUES` baissé), le cumul est un choix local, non enregistré, sans valeur par défaut, qui ne vaut que
+  // pour le dossier et l'exercice où il a été fait ; levé, l'un et l'autre viennent des paramètres de l'exercice, que la
+  // carte des paramètres offre, et le choix local disparaît.
   const cleDuCumul = `${dossierId}:${annee}`
   const [cumulDit, setCumulDit] = useState<{ cle: string; choix: CumulChoisi }>({ cle: '', choix: 'non_renseigne' })
   const cumul: CumulChoisi = cumulDit.cle === cleDuCumul ? cumulDit.choix : 'non_renseigne'
+  const casesLues = CASES_DU_MEDECIN_PREVUES ? casesDuMedecinDeLExercice(parametresDuDossier, annee) : null
+  const cases: CasesDeLaRetraite = !CASES_DU_MEDECIN_PREVUES
+    ? { tenues: false, cumulChoisi: cumul }
+    : { tenues: true, cumul: casesLues?.cumulEmploiRetraite ?? null, dispense: casesLues?.dispenseComplementaire ?? null }
   // La retraite, sur la MÊME entrée ; et ce que l'Urssaf appelle en tout — pour la CIPAV, la retraite comprise.
-  const retraite: ResultatRetraite | null = entree === null ? null : estimerLaRetraiteAffichee(entree, cumul)
+  const retraite: ResultatRetraite | null = entree === null ? null : estimerLaRetraiteAffichee(entree, cases)
   const definitives = definitivesDeLUrssaf(estimation, retraite, entree?.profession ?? null)
 
   // UN AUTRE EXERCICE EST UNE AUTRE LIGNE. La carte reste montée quand l'exercice change dans l'en-tête : sans ceci elle
@@ -423,7 +430,7 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
               <EstimationRetraite profession={entree?.profession ?? null} resultat={retraite} annee={annee}
                 totalUrssaf={cipav && definitives.disponible ? definitives.estimation.total : null}
                 motifSansEntree={estimation.disponible ? null : estimation.motif}
-                cumul={cumul} onCumul={(choix) => setCumulDit({ cle: cleDuCumul, choix })} />
+                cases={cases} onCumul={(choix) => setCumulDit({ cle: cleDuCumul, choix })} />
               {REGULARISATION_DES_COTISATIONS_EXPORTEE && cotisations !== null && (
                 <Regularisation resultat={estimerLaRegularisation({
                   annee, definitives, echeances: cotisations, exerciceValide, aujourdhui: aujourdHuiAParis(),
@@ -553,7 +560,7 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructur
 // LA RETRAITE DES PROFESSIONS LIBÉRALES (ligne 27.1, RET-Q5 ; lib/retraiteAffichee.ts, lib/retraiteDesLiberaux.ts) : sous les
 // cotisations de l'Urssaf, les quatre cotisations de la caisse de la profession, sur la MÊME entrée. Un refus du module
 // (exercice sans barème, médecin qui n'a pas dit son cumul…) se dit à la place des chiffres, jamais zéro.
-function EstimationRetraite({ profession, resultat, annee, totalUrssaf, motifSansEntree, cumul, onCumul }: {
+function EstimationRetraite({ profession, resultat, annee, totalUrssaf, motifSansEntree, cases, onCumul }: {
   profession: ProfessionLiberale | null
   // La retraite estimée par la carte, sur l'entrée de l'Urssaf ; nulle sans entrée.
   resultat: ResultatRetraite | null
@@ -562,7 +569,9 @@ function EstimationRetraite({ profession, resultat, annee, totalUrssaf, motifSan
   totalUrssaf: number | null
   // Pas d'entrée (paramètres pas lus) : la retraite attend pour la même raison que l'Urssaf.
   motifSansEntree: string | null
-  cumul: CumulChoisi
+  // Ce que l'écran sait du médecin (RET-Q2) : le cumul choisi ici tant que ses cases ne sont pas en base ; sinon, les cases
+  // de l'exercice, que la carte des paramètres offre, et plus de choix ici.
+  cases: CasesDeLaRetraite
   onCumul: (choix: CumulChoisi) => void
 }) {
   const droite = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } as const
@@ -570,10 +579,10 @@ function EstimationRetraite({ profession, resultat, annee, totalUrssaf, motifSan
   return (
     <section aria-label="Retraite" style={{ marginTop: 14 }}>
       <strong>{titreDeLaRetraite(profession, PROFESSIONS_CIPAV_PREVUES)}</strong>
-      {demandeLeCumul(profession) && (
+      {demandeLeCumul(profession) && !cases.tenues && (
         <div className="field" style={{ marginTop: 8, maxWidth: 360 }}>
           <label htmlFor="cumul-emploi-retraite">Le médecin cumule-t-il sa retraite et son activité ?</label>
-          <select id="cumul-emploi-retraite" value={cumul} onChange={(e) => onCumul(e.target.value as CumulChoisi)} style={{ maxWidth: '100%' }}>
+          <select id="cumul-emploi-retraite" value={cases.cumulChoisi} onChange={(e) => onCumul(e.target.value as CumulChoisi)} style={{ maxWidth: '100%' }}>
             <option value="non_renseigne">non renseigné</option>
             <option value="oui">oui</option>
             <option value="non">non</option>
@@ -597,7 +606,7 @@ function EstimationRetraite({ profession, resultat, annee, totalUrssaf, motifSan
               </tbody>
             </table>
           </div>
-          {hypothesesDeLaRetraite(resultat.estimation, cumulDeLEntree(profession, cumul)).map((h) => (
+          {hypothesesDeLaRetraite(resultat.estimation, cumulDesCases(profession, cases)).map((h) => (
             <p key={h} className="muted" style={{ margin: '6px 0 0' }}>{h}</p>
           ))}
           {totalUrssaf !== null && (

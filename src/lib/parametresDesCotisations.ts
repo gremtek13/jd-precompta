@@ -21,10 +21,26 @@ import type { ParametresEstimation } from './voletSocialPamc'
 // chirurgien-dentiste refusé.
 export const PARAMETRES_DES_COTISATIONS_EXPORTES = true
 
-/** Ce qu'une ligne des deux tables porte, une fois lue et crue. */
+// LES DEUX CASES D'UN MÉDECIN, PAR EXERCICE (ligne 27.1, RET-Q2, tranchée par le cabinet le 11/11/2026 : « Oui, avec
+// l'écran ») : le cumul emploi-retraite et la dispense du complémentaire de la CARMF des deux premières années
+// d'affiliation. La migration PRÉPARÉE `cumul_et_dispense_du_medecin` (supabase/preparees/20261113203000) pose les deux
+// colonnes et fait accepter à `enregistrer_parametres_des_cotisations` cinq clés au lieu de trois. Levé (après la
+// migration) : la lecture les nomme, l'écriture part sous cinq clés, la carte les offre pour un médecin, et l'estimation de
+// la retraite les reçoit en entrée obligatoire (lib/retraiteDesLiberaux.ts, `DispenseDesDebuts`). Baissé — aujourd'hui —,
+// la lecture et l'écriture d'hier, et le cumul reste un choix local de la carte du volet social.
+export const CASES_DU_MEDECIN_PREVUES: boolean = false
+
+/** Les deux cases d'un médecin pour un exercice, telles que lues ; nulles tant que le cabinet ne les a pas dites. */
+export interface CasesDuMedecin {
+  cumulEmploiRetraite: boolean | null
+  dispenseComplementaire: boolean | null
+}
+
+/** Ce qu'une ligne des deux tables porte, une fois lue et crue ; `medecin` seulement quand les deux cases ont été lues. */
 export interface ParametresDUnExercice {
   acre: boolean | null
   tauxDentiste: number | null
+  medecin?: CasesDuMedecin
 }
 
 export type LectureDesParametres =
@@ -47,15 +63,36 @@ export function lireDebutActivite(ligne: unknown): string | null | undefined {
   return typeof d === 'string' && FORME_DATE.test(d) ? d : undefined
 }
 
-/** Les paramètres d'un exercice d'une ligne lue, ou null si la ligne ne se croit pas. PostgREST rend un `numeric` en nombre. */
-export function lireParametresDUnExercice(ligne: unknown): (ParametresDUnExercice & { annee: number }) | null {
+/**
+ * Les paramètres d'un exercice d'une ligne lue, ou null si la ligne ne se croit pas. PostgREST rend un `numeric` en nombre.
+ * `avecLesCases` (par défaut, `CASES_DU_MEDECIN_PREVUES`) : les deux cases d'un médecin font partie de la ligne, et une case
+ * absente ou d'une autre forme la rend illisible — jamais un « non » deviné.
+ */
+export function lireParametresDUnExercice(
+  ligne: unknown, avecLesCases: boolean = CASES_DU_MEDECIN_PREVUES,
+): (ParametresDUnExercice & { annee: number }) | null {
   if (typeof ligne !== 'object' || ligne === null) return null
   const l = ligne as Record<string, unknown>
   if (typeof l.annee !== 'number' || !Number.isInteger(l.annee)) return null
   if (l.acre !== null && typeof l.acre !== 'boolean') return null
   const taux = typeof l.taux_dentiste === 'string' ? Number(l.taux_dentiste) : l.taux_dentiste
   if (taux !== null && (typeof taux !== 'number' || !tauxDentisteAdmis(taux))) return null
-  return { annee: l.annee, acre: l.acre, tauxDentiste: taux }
+  if (!avecLesCases) return { annee: l.annee, acre: l.acre, tauxDentiste: taux }
+  const cumul = l.cumul_emploi_retraite
+  const dispense = l.dispense_complementaire
+  if ((cumul !== null && typeof cumul !== 'boolean') || (dispense !== null && typeof dispense !== 'boolean')) return null
+  return { annee: l.annee, acre: l.acre, tauxDentiste: taux, medecin: { cumulEmploiRetraite: cumul, dispenseComplementaire: dispense } }
+}
+
+/**
+ * Les deux cases d'un médecin pour un exercice, telles que l'estimation de la retraite les reçoit : nulles quand la ligne
+ * de l'exercice n'existe pas encore ou ne les porte pas. Null quand les paramètres ne sont pas lus en entier, ou que les
+ * cases ne sont pas en base (`absents`).
+ */
+export function casesDuMedecinDeLExercice(lecture: LectureDesParametres | null, annee: number): CasesDuMedecin | null {
+  if (lecture === null || lecture.etat !== 'lus') return null
+  const medecin = lecture.parExercice.get(annee)?.medecin
+  return { cumulEmploiRetraite: medecin?.cumulEmploiRetraite ?? null, dispenseComplementaire: medecin?.dispenseComplementaire ?? null }
 }
 
 /**
@@ -77,30 +114,55 @@ export function parametresDeLEstimation(lecture: LectureDesParametres | null, an
 
 // ── La saisie ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Ce que le formulaire porte : la date telle que le champ la rend, l'ACRE en trois états, le taux tel que tapé. */
+/**
+ * Ce que le formulaire porte : la date telle que le champ la rend, l'ACRE en trois états, le taux tel que tapé ; et, sous
+ * `CASES_DU_MEDECIN_PREVUES`, les deux cases d'un médecin en trois états (« » : non dit).
+ */
 export interface SaisieDesParametres {
   debutActivite: string
   acre: 'oui' | 'non' | ''
   tauxDentiste: string
+  cumul: 'oui' | 'non' | ''
+  dispense: 'oui' | 'non' | ''
 }
 
-/** Les valeurs telles que la fonction les reçoit (`p_lus`, `p_saisis`) : les trois clés, ni plus ni moins. */
+/**
+ * Les valeurs telles que la fonction les reçoit (`p_lus`, `p_saisis`) : les trois clés d'hier, ou, les deux cases en base
+ * (RET-Q2), les cinq — la même forme des deux côtés, que la fonction exige.
+ */
 export interface ValeursDesParametres {
   debut_activite: string | null
   acre: boolean | null
   taux_dentiste: number | null
+  cumul_emploi_retraite?: boolean | null
+  dispense_complementaire?: boolean | null
 }
 
-export function valeursLues(lecture: Extract<LectureDesParametres, { etat: 'lus' }>, annee: number): ValeursDesParametres {
+const ouiNon = (v: boolean | null): 'oui' | 'non' | '' => (v === null ? '' : v ? 'oui' : 'non')
+const versBooleen = (v: 'oui' | 'non' | ''): boolean | null => (v === '' ? null : v === 'oui')
+
+export function valeursLues(
+  lecture: Extract<LectureDesParametres, { etat: 'lus' }>, annee: number, avecLesCases: boolean = CASES_DU_MEDECIN_PREVUES,
+): ValeursDesParametres {
   const exercice = lecture.parExercice.get(annee)
-  return { debut_activite: lecture.debutActivite, acre: exercice?.acre ?? null, taux_dentiste: exercice?.tauxDentiste ?? null }
+  const valeurs: ValeursDesParametres = {
+    debut_activite: lecture.debutActivite, acre: exercice?.acre ?? null, taux_dentiste: exercice?.tauxDentiste ?? null,
+  }
+  if (!avecLesCases) return valeurs
+  return {
+    ...valeurs,
+    cumul_emploi_retraite: exercice?.medecin?.cumulEmploiRetraite ?? null,
+    dispense_complementaire: exercice?.medecin?.dispenseComplementaire ?? null,
+  }
 }
 
 export function saisieDe(valeurs: ValeursDesParametres): SaisieDesParametres {
   return {
     debutActivite: valeurs.debut_activite ?? '',
-    acre: valeurs.acre === null ? '' : valeurs.acre ? 'oui' : 'non',
+    acre: ouiNon(valeurs.acre),
     tauxDentiste: valeurs.taux_dentiste === null ? '' : String(valeurs.taux_dentiste).replace('.', ','),
+    cumul: ouiNon(valeurs.cumul_emploi_retraite ?? null),
+    dispense: ouiNon(valeurs.dispense_complementaire ?? null),
   }
 }
 
@@ -108,7 +170,9 @@ export function saisieDe(valeurs: ValeursDesParametres): SaisieDesParametres {
  * La saisie telle qu'elle part, ou le refus que la base opposerait, redit avant le clic : une date du calendrier
  * (AAAA-MM-JJ, entre 1900 et 2100, `debuts_d_activite_date`), un taux entre 0 et 1 au centième, virgule ou point.
  */
-export function valeursSaisies(s: SaisieDesParametres): { valeurs: ValeursDesParametres; refus: null } | { valeurs: null; refus: string } {
+export function valeursSaisies(
+  s: SaisieDesParametres, avecLesCases: boolean = CASES_DU_MEDECIN_PREVUES,
+): { valeurs: ValeursDesParametres; refus: null } | { valeurs: null; refus: string } {
   let debut: string | null = null
   if (s.debutActivite.trim() !== '') {
     const d = s.debutActivite.trim()
@@ -130,12 +194,19 @@ export function valeursSaisies(s: SaisieDesParametres): { valeurs: ValeursDesPar
     }
     taux = n
   }
-  return { valeurs: { debut_activite: debut, acre: s.acre === '' ? null : s.acre === 'oui', taux_dentiste: taux }, refus: null }
+  const valeurs: ValeursDesParametres = { debut_activite: debut, acre: versBooleen(s.acre), taux_dentiste: taux }
+  if (avecLesCases) {
+    valeurs.cumul_emploi_retraite = versBooleen(s.cumul)
+    valeurs.dispense_complementaire = versBooleen(s.dispense)
+  }
+  return { valeurs, refus: null }
 }
 
 /** Les deux jeux de valeurs disent-ils la même chose ? Rien à enregistrer sinon. */
 export function memesValeurs(a: ValeursDesParametres, b: ValeursDesParametres): boolean {
   return a.debut_activite === b.debut_activite && a.acre === b.acre && a.taux_dentiste === b.taux_dentiste
+    && (a.cumul_emploi_retraite ?? null) === (b.cumul_emploi_retraite ?? null)
+    && (a.dispense_complementaire ?? null) === (b.dispense_complementaire ?? null)
 }
 
 /** Les paramètres de `enregistrer_parametres_des_cotisations` : l'exercice, les valeurs lues qu'elles remplacent, les saisies. */
