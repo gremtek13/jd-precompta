@@ -220,6 +220,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `est_chef_du_cabinet()`, `admin_du_dossier()`, `admin_du_cabinet()`, `is_super_admin()` (chacune inclut le
   super-admin). Toute table métier d'un dossier : une policy `FOR ALL to authenticated` sur
   `admin_du_dossier(dossier_id)` ; une table enfant remonte à son parent ; vérifiée par impersonation avant d'être crue.
+- **Toute table neuve qui porte une garde `security definer` porte aussi la porte `_acces_avant_les_gardes`** (une fois la
+  porte en base ; préparée, sous condition que sa fonction existe), éprouvée par l'étape 32 de `accesAvantLesGardes.sql`
+  et, pour les préparées, par `porteDevantLesGardes.test.ts` → « LA PORTE COUVRE LES GARDES DES MIGRATIONS PRÉPARÉES ».
 - **Un prédicat de policy ne doit JAMAIS pouvoir être vrai sans session** : sans `to`, une policy vise `public`, donc
   `anon` ; toute nouvelle porte `to authenticated` → « Une policy sans clause `to` s'applique à `public` ».
 - **Les policies se REJOUENT** (`rls.sql`) : quatre profils, boucle sur `pg_class`, écritures annulées par

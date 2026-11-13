@@ -324,3 +324,30 @@ revoke execute on function public.garder_depart_du_dossier() from public, anon, 
 create trigger dossiers_depart_du_client
   before delete on public.dossiers
   for each row execute function public.garder_depart_du_dossier();
+
+-- 5. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43), si elle est déjà en base.
+-- Les gardes `security definer` de cette migration : `garder_conservation_du_dossier` sur `conservations_des_dossiers`, et
+-- `garder_dossier_conserve` sur `memberships` et `exercices_valides` (sur `pieces` et `ecritures_brouillon`, la porte y est).
+-- Une garde `security definer` tire avant l'expression WITH CHECK de la policy : sans la porte, elle répondrait à un
+-- appelant que la policy refuse. Si la porte est en base, elle se pose ici, la première des déclencheurs BEFORE de la
+-- table ; sinon, la porte la posera d'elle-même en s'appliquant (elle couvre toute table de cette liste qui porte déjà sa
+-- garde). Les deux migrations se collent ainsi dans les deux ordres. L'essai : supabase/essais/accesAvantLesGardes.sql
+-- (étape 32).
+do $porte$
+declare
+  v_table text;
+begin
+  if to_regprocedure('public.acces_avant_les_gardes()') is not null then
+    foreach v_table in array array['conservations_des_dossiers', 'memberships', 'exercices_valides'] loop
+      if exists (select 1 from pg_catalog.pg_class c where c.oid = ('public.' || v_table)::regclass and not (c.relrowsecurity and not c.relforcerowsecurity))
+         or exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and not t.tgisinternal
+                     and (t.tgname collate "C") < ('_acces_avant_les_gardes' collate "C")) then
+        raise exception 'La porte d''accès ne se pose pas sur public.% : sa RLS n''est pas active (ou forcée), ou un déclencheur tirerait avant elle.', v_table;
+      end if;
+      if not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and t.tgname = '_acces_avant_les_gardes') then
+        execute format('create trigger _acces_avant_les_gardes before insert or update on public.%I for each row execute function public.acces_avant_les_gardes()', v_table);
+      end if;
+    end loop;
+  end if;
+end
+$porte$;

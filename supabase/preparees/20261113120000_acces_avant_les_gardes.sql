@@ -24,7 +24,12 @@
 --
 -- CE QU'ELLE FAIT : une porte, `public.acces_avant_les_gardes()`, `security INVOKER`, posée par un déclencheur BEFORE
 -- INSERT OR UPDATE FOR EACH ROW nommé `_acces_avant_les_gardes` sur chacune des 32 tables. Son nom commence par un trait
--- bas, qui précède toute lettre : elle tire la première, avant toutes les gardes de la table. Elle :
+-- bas, qui précède toute lettre : elle tire la première, avant toutes les gardes de la table. Sept migrations préparées
+-- posent des gardes `security definer` sur dix autres tables (INAL5 : `conservations_des_dossiers`, `memberships`,
+-- `exercices_valides` ; INV2 et INV4 : `operations_inventaire` ; LIA2 : `stocks_de_cloture` ; INV4 : `provisions` ;
+-- AFF2 : `affectations_du_resultat`, `lignes_d_affectation` ; INV3 : `inventaires_declares` ; EXD2 : `exercices`) :
+-- chacune y pose la porte si elle est déjà en base, et la porte, appliquée après l'une d'elles, couvre celles des dix qui
+-- portent déjà une telle garde (section 4) — les huit s'appliquent dans n'importe quel ordre. Elle :
 --   1. ne juge rien hors de la RLS (`row_security_active` faux : le propriétaire, toute fonction `security definer` — qui a
 --      contrôlé l'accès elle-même —, le rôle des Edge Functions, la cascade d'une clé, la restauration par le
 --      super-utilisateur) : les gardes jugent comme hier ;
@@ -41,7 +46,8 @@
 -- POURQUOI LA PREMIÈRE PLACE NE TROMPE PAS : la porte juge la ligne avant les autres déclencheurs BEFORE, qui peuvent la
 -- modifier ; la policy, elle, juge la ligne finale. Relu au catalogue : sur ces 32 tables, aucun déclencheur ne modifie une
 -- colonne que leurs policies d'insertion ou de mise à jour lisent (les modifications : `lignes_bancaires.compte_bancaire_id`,
--- `factures_emises.source_de_la_vente`, `plan_comptable_dossier.origine`) — l'essai le revérifie (étape 30). `dossiers`
+-- `factures_emises.source_de_la_vente`, `plan_comptable_dossier.origine`), ni sur les dix des migrations préparées (relu
+-- sur une réplique, le 13/11/2026, la porte avant et après elles) — l'essai le revérifie (étape 33). `dossiers`
 -- en est écartée pour cela : `set_cabinet_id_dossier` y remplit `cabinet_id`, que sa policy d'insertion lit ; et ses gardes
 -- ne disent rien à un appelant refusé (à l'insertion, aucune ne lit la base ; à la mise à jour, seul l'administrateur du
 -- dossier les atteint, et elles ne lisent que son dossier). La porte n'est pas plus large que la policy : la policy
@@ -55,7 +61,8 @@
 -- écriture directe d'un compte connecté) ; rien pour les fonctions `security definer` ni les Edge Functions.
 -- Le texte ne porte aucun mot de retrait ni de vidage : par l'outil.
 
--- La garde de tête : les 32 tables, leur RLS active et non forcée ; aucun déclencheur dont le nom tirerait avant la porte ;
+-- La garde de tête : les 32 tables, et celles des dix qui portent déjà une garde `security definer` sur l'insertion ou la
+-- mise à jour, leur RLS active et non forcée ; aucun déclencheur dont le nom tirerait avant la porte ;
 -- `pg_policy` lisible par les rôles de l'API (sinon la porte refuserait tout le monde) ; chaque composition des policies
 -- analysable ; et la raison qui écarte `dossiers`.
 do $garde$
@@ -66,6 +73,11 @@ declare
     'imports_factures', 'lettrages_manuels', 'lignes_bancaires', 'modeles_numerotation', 'operations_caisse',
     'parametres_des_cotisations', 'pieces', 'pieces_des_factures_reprises', 'plan_comptable_cabinet', 'plan_comptable_dossier',
     'reglements_groupes', 'saisies_2035', 'saisies_2035e', 'soldes_reportes', 'vehicules', 'ventilations_bancaires'];
+  -- Les dix des sept migrations préparées (INAL5, INV2, LIA2, INV4, AFF2, INV3, EXD2), jugées si elles portent déjà leur
+  -- garde.
+  c_preparees constant text[] := array['affectations_du_resultat', 'conservations_des_dossiers', 'exercices', 'exercices_valides',
+    'inventaires_declares', 'lignes_d_affectation', 'memberships', 'operations_inventaire', 'provisions', 'stocks_de_cloture'];
+  v_tables text[] := c_tables;
   v_table text;
   v_relid oid;
   v_cmd text;
@@ -78,7 +90,14 @@ begin
   if to_regprocedure('public.acces_avant_les_gardes()') is not null then
     raise exception 'acces_avant_les_gardes : la porte est déjà en base ; cette migration ne se rejoue pas.';
   end if;
-  foreach v_table in array c_tables loop
+  foreach v_table in array c_preparees loop
+    if exists (select 1 from pg_catalog.pg_trigger t join pg_catalog.pg_proc p on p.oid = t.tgfoid
+                where t.tgrelid = to_regclass('public.' || v_table) and not t.tgisinternal
+                  and t.tgtype & 3 = 3 and t.tgtype & 20 <> 0 and p.prosecdef) then
+      v_tables := v_tables || v_table;
+    end if;
+  end loop;
+  foreach v_table in array v_tables loop
     v_relid := to_regclass('public.' || v_table);
     if v_relid is null then
       raise exception 'acces_avant_les_gardes : la table public.% manque.', v_table;
@@ -187,3 +206,21 @@ create trigger _acces_avant_les_gardes before insert or update on public.saisies
 create trigger _acces_avant_les_gardes before insert or update on public.soldes_reportes for each row execute function public.acces_avant_les_gardes();
 create trigger _acces_avant_les_gardes before insert or update on public.vehicules for each row execute function public.acces_avant_les_gardes();
 create trigger _acces_avant_les_gardes before insert or update on public.ventilations_bancaires for each row execute function public.acces_avant_les_gardes();
+
+-- 4. Les dix tables des sept migrations préparées, quand elles portent déjà une garde `security definer` sur l'insertion
+--    ou la mise à jour (le même relevé que la garde de tête, qui les a jugées) ; sinon, chacune de ces migrations posera
+--    la porte elle-même.
+do $preparees$
+declare
+  v_table text;
+begin
+  foreach v_table in array array['affectations_du_resultat', 'conservations_des_dossiers', 'exercices', 'exercices_valides',
+    'inventaires_declares', 'lignes_d_affectation', 'memberships', 'operations_inventaire', 'provisions', 'stocks_de_cloture'] loop
+    if exists (select 1 from pg_catalog.pg_trigger t join pg_catalog.pg_proc p on p.oid = t.tgfoid
+                where t.tgrelid = to_regclass('public.' || v_table) and not t.tgisinternal
+                  and t.tgtype & 3 = 3 and t.tgtype & 20 <> 0 and p.prosecdef) then
+      execute format('create trigger _acces_avant_les_gardes before insert or update on public.%I for each row execute function public.acces_avant_les_gardes()', v_table);
+    end if;
+  end loop;
+end
+$preparees$;

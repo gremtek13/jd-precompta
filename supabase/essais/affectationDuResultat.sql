@@ -275,9 +275,13 @@ begin
   -- ── Les écritures directes ──
   o := pg_temp.essayer(membre, format('insert into affectations_du_resultat (dossier_id, exercice_affecte, version, organe, nombre_d_associes_declare, date_decision, comptes_approuves, reserves_statutaires_distribuables, resultat_centimes, forme_juridique, capital_centimes, soldes_lus, cree_par) select dossier_id, exercice_affecte, 9, organe, nombre_d_associes_declare, date_decision, false, true, resultat_centimes, forme_juridique, capital_centimes, soldes_lus, cree_par from affectations_du_resultat where id = %L', v2));
   -- (la garde, déclencheur AVANT la ligne, refuse avant que la RLS ne juge la ligne écrite : son refus est celui qu'on lit)
-  insert into essai_affectation values ('E33. le cabinet n''écrit pas une décision en direct (la garde, puis la RLS)',
-    '42501 Une décision d’affectation ne s’écrit que par enregistrer_affectation, retirer_affectation et joindre_document_affectation.', o,
-    o = '42501 Une décision d’affectation ne s’écrit que par enregistrer_affectation, retirer_affectation et joindre_document_affectation.');
+  -- (la porte d'accès en base, acces_avant_les_gardes, ligne 43 : la RLS juge d'abord, et la policy n'ouvre l'insertion
+  -- qu'au super-administrateur — le cabinet lit son refus, jamais celui de la garde)
+  insert into essai_affectation
+  select 'E33. le cabinet n''écrit pas une décision en direct (la garde, puis la RLS ; la RLS d''abord, la porte en base)', x.attendu, o, o = x.attendu
+    from (select case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.affectations_du_resultat'::regclass and g.tgname = '_acces_avant_les_gardes')
+                      then '42501 new row violates row-level security policy for table "affectations_du_resultat"'
+                      else '42501 Une décision d’affectation ne s’écrit que par enregistrer_affectation, retirer_affectation et joindre_document_affectation.' end as attendu) x;
   o := pg_temp.essayer(null, format('update affectations_du_resultat set organe = %L where id = %L', 'consultation_ecrite', v2));
   insert into essai_affectation values ('E33b. le propriétaire ne la modifie pas en direct (la garde)',
     '42501 Une décision d’affectation ne s’écrit que par enregistrer_affectation, retirer_affectation et joindre_document_affectation.', o,

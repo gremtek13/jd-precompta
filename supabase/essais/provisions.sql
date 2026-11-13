@@ -330,7 +330,10 @@ begin
   issue := pg_temp.tente(membre, format('insert into provisions (dossier_id, genre, compte_provision, objet, ouverte_en, cree_par) values (%L, ''risque'', ''151100'', ''direct'', 2025, %L) returning id::text', dp, membre));
   perform pg_temp.verdict('PV-E5. le membre n''insère pas de provision en direct (la garde)', issue, issue = '42501 ' || m_garde);
   issue := pg_temp.tente(client, format('insert into provisions (dossier_id, genre, compte_provision, objet, ouverte_en, cree_par) values (%L, ''risque'', ''151100'', ''direct'', 2025, %L) returning id::text', dp, client));
-  perform pg_temp.verdict('PV-E6. le client non plus (la garde, avant la RLS)', issue, issue = '42501 ' || m_garde);
+  -- La porte d'accès en base (acces_avant_les_gardes, ligne 43) : la RLS refuse le client avant la garde.
+  perform pg_temp.verdict('PV-E6. le client non plus (la garde, avant la RLS ; la RLS d''abord, la porte en base)', issue,
+    issue = case when exists (select 1 from pg_trigger g where g.tgrelid = 'public.provisions'::regclass and g.tgname = '_acces_avant_les_gardes')
+                 then '42501 new row violates row-level security policy for table "provisions"' else '42501 ' || m_garde end);
   issue := pg_temp.tente(membre, format('with t as (update provisions set objet = ''réécrit'' where id = %L returning 1) select count(*)::text from t', p2));
   perform pg_temp.verdict('PV-E7. ni ne réécrit une provision en direct', issue, issue = '42501 ' || m_garde);
   issue := pg_temp.tente(chef, format('insert into provisions (dossier_id, genre, compte_provision, objet, ouverte_en, cree_par) values (%L, ''risque'', ''151100'', ''réinsérée'', 2025, %L) returning ''réinsérée''', dp, chef));
