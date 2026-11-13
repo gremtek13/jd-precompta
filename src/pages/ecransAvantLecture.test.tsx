@@ -38,6 +38,7 @@ import DemandesAuClient from './dossier/DemandesAuClient'
 import SituationsPubliees from './dossier/SituationsPubliees'
 import ClientEcheancier from './ClientEcheancier'
 import ClientAnalyse from './ClientAnalyse'
+import ClientTresorerie from './ClientTresorerie'
 import EcheancierAccueil from './EcheancierAccueil'
 import AccueilVentesClient from './AccueilVentesClient'
 import DossierDetail from './DossierDetail'
@@ -336,6 +337,8 @@ const ECRANS: Ecran[] = [
   { nom: 'ClientEcheancier', fichier: 'pages/ClientEcheancier.tsx', rendre: () => <MemoryRouter><ClientEcheancier /></MemoryRouter> },
   // « Mon analyse » (étape B9a) : les cases relues à la base, puis les ventes, la provenance des lignes et les relevés contrôlés.
   { nom: 'ClientAnalyse', fichier: 'pages/ClientAnalyse.tsx', rendre: () => <MemoryRouter><ClientAnalyse /></MemoryRouter> },
+  // « Ma trésorerie » (étape C8) : les cases relues à la base, puis les relevés contrôlés, l'échéancier et les ventes.
+  { nom: 'ClientTresorerie', fichier: 'pages/ClientTresorerie.tsx', rendre: () => <MemoryRouter><ClientTresorerie /></MemoryRouter> },
   { nom: 'EcheancierAccueil', fichier: 'pages/EcheancierAccueil.tsx', rendre: () => (
     <MemoryRouter><div className="bento"><EcheancierAccueil dossierId="d1" /></div></MemoryRouter>
   ) },

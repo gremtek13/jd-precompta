@@ -250,7 +250,7 @@ describe('le module, la migration et les écrans disent la même chose', () => {
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
       '/mon-echeancier ClientEcheancier', '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
       '/mes-comptes ClientComptes', '/mes-documents ClientDocuments', '/mes-lettres-de-mission ClientLettresDeMission', '/mes-demandes ClientDemandes', '/mes-achats ClientAchats',
-      '/mes-notes-de-frais ClientNotesDeFrais', '/mon-analyse ClientAnalyse',
+      '/mes-notes-de-frais ClientNotesDeFrais', '/mon-analyse ClientAnalyse', '/ma-tresorerie ClientTresorerie',
     ])
     // DEPUIS L'ÉTAPE B8, « Mes notes de frais » lit la case « Notes de frais », derrière `NOTES_DE_FRAIS_PREVUES`
     // (lib/notesDeFraisVue.ts, `mesNotesDeFraisOuvertes`), sa route et son entrée ; l'écran relit ses cases à la base.
@@ -279,7 +279,7 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(ecransClient.sort()).toEqual([
       'ClientAchats.tsx', 'ClientAnalyse.tsx', 'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientDemandes.tsx', 'ClientDocuments.tsx',
       'ClientEcheancier.tsx', 'ClientHome.tsx', 'ClientInformations.tsx', 'ClientLettresDeMission.tsx', 'ClientNotesDeFrais.tsx',
-      'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
+      'ClientSimulation.tsx', 'ClientTresorerie.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
     ])
     // DEPUIS L'ÉTAPE C1, « Mon échéancier » et sa carte de l'accueil lisent la case « Banque » de la société affichée pour les
     // MONTANTS seulement (une règle d'écran, comme « Ma simulation ») : la route est ouverte à tout accès, et rien d'autre.
@@ -369,6 +369,15 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(analyse).not.toMatch(/droit_ventes|droit_banque|droit_caisse|supabase/)
     const lectureDeLAnalyse = readFileSync(resolve(process.cwd(), 'src/lib/analyseClientLecture.ts'), 'utf8')
     expect(lectureDeLAnalyse).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
+    // « Ma trésorerie » (étape C8) : aucune case à elle — la route et l'entrée sous son drapeau et la garde de « Ma banque »,
+    // et rien d'autre ; l'écran demande ce que la garde de « Mes ventes » ouvre, et sa lecture relit les cases à la base.
+    expect(app).toContain(`{maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, ${gardeBanque}) && <Route path="/ma-tresorerie" element={<ClientTresorerie />} />}`)
+    expect(layout).toContain('maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanque)')
+    const tresorerie = readFileSync(resolve(process.cwd(), 'src/pages/ClientTresorerie.tsx'), 'utf8')
+    expect(tresorerie).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes)')
+    expect(tresorerie).not.toMatch(/droit_ventes|droit_banque|droit_caisse|supabase|\.banque\b|\.caisse\b/)
+    const lectureDeLaTresorerie = readFileSync(resolve(process.cwd(), 'src/lib/tresorerieClientLecture.ts'), 'utf8')
+    expect(lectureDeLaTresorerie).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
   })
 
   it('la phrase de l’onglet dit ce qu’un accès donne — dans les deux états du drapeau de la banque', () => {

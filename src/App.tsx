@@ -28,6 +28,7 @@ import ClientAchats from './pages/ClientAchats'
 import ClientNotesDeFrais from './pages/ClientNotesDeFrais'
 import ClientEcheancier from './pages/ClientEcheancier'
 import ClientAnalyse from './pages/ClientAnalyse'
+import ClientTresorerie from './pages/ClientTresorerie'
 import { droitsSur } from './lib/droitsAcces'
 import { mesVentesOuvertes } from './lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from './lib/encaissementsFactures'
@@ -43,6 +44,7 @@ import { NOTES_DE_FRAIS_PREVUES } from './lib/notesDeFrais'
 import { mesNotesDeFraisOuvertes } from './lib/notesDeFraisVue'
 import { COUVERTURE_EXPORTEE } from './lib/couvertureReleve'
 import { monAnalyseOuverte } from './lib/analyseClient'
+import { maTresorerieOuverte, TRESORERIE_A_90_JOURS_OFFERTE } from './lib/tresorerieClient'
 import SuperAdminPage from './pages/SuperAdminPage'
 import EquipePage from './pages/EquipePage'
 import CabinetBrandingPage from './pages/CabinetBrandingPage'
@@ -197,6 +199,8 @@ function Gate() {
             {/* « Mes notes de frais » (ligne 51.5, étape B8) : avec sa migration (B7), et la case « Notes de frais » sur la société AFFICHÉE. */}
             {mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />}
             {monAnalyseOuverte(mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes), maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}
+            {/* « Ma trésorerie » (ligne 51.5, étape C8) : derrière son drapeau, quand « Ma banque » s'offre sur la société AFFICHÉE. */}
+            {maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/ma-tresorerie" element={<ClientTresorerie />} />}
             <Route path="/securite" element={<SecuriteDuCompte espace="client" />} />
             <Route path="*" element={<Navigate to="/accueil" replace />} />
           </>

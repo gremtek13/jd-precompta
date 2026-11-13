@@ -13,6 +13,7 @@ import { NOTES_DE_FRAIS_PREVUES } from './notesDeFrais'
 import { lettresDuClientPrevues } from './lettresDuClient'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from './documentsEtDemandes'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
+import { TRESORERIE_A_90_JOURS_OFFERTE } from './tresorerieClient'
 import { extraireErreurFonction } from './invokeErreur'
 
 // CE QUE L'ÉCRAN DIT APRÈS UNE CRÉATION, selon ce que la fonction a fait du compte (décision du cabinet du 10/10/2026 :
@@ -255,7 +256,7 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
         + "souvient plus, « Mot de passe oublié », sur l'écran de connexion, lui envoie un lien pour en choisir un autre.",
     ])
     // Le drapeau baissé (l'état d'avant C4a), mot pour mot ; levé, « Mes comptes » s'y ajoute (le cas qui suit le vérifie).
-    expect(ceQuePerdLeClientSelon(false, false, false, false, false)).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
+    expect(ceQuePerdLeClientSelon(false, false, false, false, false, false)).toBe("Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
       + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
       + "réponses à tes précisions), « Mes informations », « Ma simulation », « Mon échéancier » et, selon les cases de ses "
       + 'accès, « Mes ventes », « Ma banque », « Mon analyse » et « Ma caisse » —, pour chacune de ses sociétés.')
@@ -275,7 +276,7 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
     const cheminsDuCabinet = new Set([...espaceCabinet.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]))
     expect(cheminsDuCabinet.has('/securite')).toBe(true)
     const chemins = [...espaceClient.matchAll(/path="(\/[^"*]+)"/g)].map((m) => m[1]).filter((c) => !cheminsDuCabinet.has(c)).sort()
-    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/mes-achats', '/mes-comptes', '/mes-demandes', '/mes-documents',
+    expect(chemins).toEqual(['/accueil', '/ma-banque', '/ma-caisse', '/ma-simulation', '/ma-tresorerie', '/mes-achats', '/mes-comptes', '/mes-demandes', '/mes-documents',
       '/mes-informations', '/mes-lettres-de-mission', '/mes-notes-de-frais', '/mes-pieces', '/mes-ventes', '/mon-analyse', '/mon-echeancier'])
     // « Mes comptes » (étape C4b), « Mes documents » et « Mes demandes » (étape B3a) ne sont montées qu'avec leur migration : la
     // phrase les nomme dans cet état-là, et les tait avant.
@@ -286,20 +287,25 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
       '/mes-demandes': [false, true, false, false, false], '/mes-achats': [false, false, true, false, false],
       '/mes-notes-de-frais': [false, false, false, true, false], '/mes-lettres-de-mission': [false, false, false, false, true],
     }
+    // « Ma trésorerie » (étape C8) : nommée avec son drapeau, tue sans lui.
+    const avecSonDrapeau = new Set(['/ma-tresorerie'])
     for (const chemin of chemins) {
       const nom = layout.match(new RegExp(`<NavLink to="${chemin}" title="([^"]+)"`))?.[1]
       expect(nom, chemin).toBeDefined()
       const dit = nom === 'Accueil' ? "l'accueil" : `« ${nom} »`
-      expect(ceQuePerdLeClientSelon(true, true, true, true, true), chemin).toContain(dit)
+      expect(ceQuePerdLeClientSelon(true, true, true, true, true, true), chemin).toContain(dit)
       const [comptes, documents, achats, frais, lettres] = avecSaMigration[chemin] ?? [false, false, false, false, false]
-      expect(ceQuePerdLeClientSelon(comptes, documents, achats, frais, lettres), chemin).toContain(dit)
-      if (chemin in avecSaMigration) expect(ceQuePerdLeClientSelon(false, false, false, false, false), chemin).not.toContain(dit)
+      expect(ceQuePerdLeClientSelon(comptes, documents, achats, frais, lettres, avecSonDrapeau.has(chemin)), chemin).toContain(dit)
+      if (chemin in avecSaMigration || avecSonDrapeau.has(chemin)) {
+        expect(ceQuePerdLeClientSelon(false, false, false, false, false, false), chemin).not.toContain(dit)
+      }
     }
-    expect(ceQuePerdLeClientSelon(true, true, true, true, true)).toContain('« Mon échéancier », « Mes demandes » et, selon les cases de ses accès, '
-      + '« Mes ventes », « Ma banque », « Mon analyse », « Ma caisse », « Mes comptes », « Mes documents », « Mes lettres de mission », '
+    expect(ceQuePerdLeClientSelon(true, true, true, true, true, true)).toContain('« Mon échéancier », « Mes demandes » et, selon les cases de ses accès, '
+      + '« Mes ventes », « Ma banque », « Mon analyse », « Ma trésorerie », « Ma caisse », « Mes comptes », « Mes documents », « Mes lettres de mission », '
       + '« Mes achats » et « Mes notes de frais » —')
     expect(CE_QUE_PERD_LE_CLIENT).toBe(ceQuePerdLeClientSelon(
-      SITUATIONS_PUBLIEES_EXPORTEES, DOCUMENTS_ET_DEMANDES_PREVUS, ACHATS_DU_CLIENT_PREVUS, NOTES_DE_FRAIS_PREVUES, lettresDuClientPrevues()))
+      SITUATIONS_PUBLIEES_EXPORTEES, DOCUMENTS_ET_DEMANDES_PREVUS, ACHATS_DU_CLIENT_PREVUS, NOTES_DE_FRAIS_PREVUES, lettresDuClientPrevues(),
+      TRESORERIE_A_90_JOURS_OFFERTE))
   })
 
   it('le champ et le marqueur sont ceux que la fonction lit et écrit', () => {

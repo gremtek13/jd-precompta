@@ -692,7 +692,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     un nom (`lib/journalDeLEspaceClient.ts`), et la carte « ce qui a bougé » du cabinet (B9B-Q1 et Q2) ; B9c, sa section
     dans « Mon analyse », chaque évènement sous la case de son domaine relue à la base, « par ton cabinet » là seulement
     où la base garde l'origine (B9C-Q1 et Q2) → « « MON ANALYSE » : LES INDICATEURS ET LES ÉTATS DU CLIENT (B9A) »,
-    « « ESPACE CLIENT : CE QUI A BOUGÉ » », « « MON ANALYSE » : CE QUI A BOUGÉ, CÔTÉ CLIENT (B9C) ». Le 07/11/2026 : C6,
+    « « ESPACE CLIENT : CE QUI A BOUGÉ » », « « MON ANALYSE » : CE QUI A BOUGÉ, CÔTÉ CLIENT (B9C) » ; C8, « Ma trésorerie à
+    90 jours », sans migration, sous « Banque », derrière `TRESORERIE_A_90_JOURS_OFFERTE` baissé (C8-Q1) → « « MA TRÉSORERIE
+    À 90 JOURS » (C8), DERRIÈRE SON DRAPEAU ». Le 07/11/2026 : C6,
     le rapprochement proposé par l'encaissement, sans migration (la carte d'un mouvement réservé dit « proposé par le
     client le … » ; l'encaissement d'une facture d'avant la bascule enregistré avec son crédit propose en tête
     l'exemplaire de la facture, `rapprochementProposeParLEncaissement`, associé au clic du cabinet, et ce crédit sort
