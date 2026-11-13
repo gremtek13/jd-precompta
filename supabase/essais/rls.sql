@@ -168,6 +168,12 @@
 --      migration `piece_figee_dans_le_stockage`, INAL1) : la policy de suppression resserrée, lue au catalogue, et son
 --      prédicat jugé sous la session du chef, SANS suppression, sur un fichier figé et deux libres. Deux mutations. La
 --      suppression elle-même se joue sur une réplique seulement (`pieceFigeeDansLeStockage.sql`).
+--  11. Le cabinet d'un dossier ne change que par le super-administrateur (bloc RT, en fin de fichier ; migration
+--      `cabinet_d_un_dossier_par_le_super_administrateur`, préparée) : RT1 relève au catalogue toute colonne qui rattache
+--      une ligne à son périmètre d'accès — `dossier_id`, `cabinet_id`, le compte d'un accès ou d'un membre, le seau et le
+--      chemin d'un objet du stockage — et exige que la mise à jour la juge sur sa nouvelle valeur, la laisse hors de
+--      portée, ou la garde par un déclencheur nommé ; RT2 à RT4 jouent la règle profil par profil, ce que l'application
+--      fait encore, et le catalogue de la garde. Cinq mutations ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -869,6 +875,15 @@
 -- copie de la réplique égale à la production (197 migrations) : sans la migration, 145 lignes d'invariants, 0 en faute,
 -- 103 mutations sur 103, OR EN ATTENTE ; avec, 150 lignes, 0 en faute, 106 sur 106. Ce qu'il rend : HISTORIQUE.md,
 -- « 11/11/2026 — A8D2A-Q1 ».
+--
+-- 13/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (RATT-Q1 : migration
+-- `cabinet_d_un_dossier_par_le_super_administrateur`, PRÉPARÉE, pas appliquée), qui pose une garde sur `dossiers` : le
+-- cabinet d'un dossier ne change que par le super-administrateur. Le bloc RT (RT1 à RT4, M-RT1, M-RT1b, M-RT2 à
+-- M-RT4) ; EN ATTENTE sans la migration. Joué ENTIER, en une transaction, sur une copie de la réplique au niveau de l'export
+-- (217 migrations) : sans la migration, 240 lignes d'invariants, 0 en faute, 139 mutations sur 139, RT EN ATTENTE ;
+-- avec, 246 lignes, 0 en faute, 144 sur 144 ; de même avec la porte d'accès préparée (`acces_avant_les_gardes`),
+-- appliquée avant ou après elle. Banc du leurre SÛR dans les deux états. Ce qu'il rend : HISTORIQUE.md, « 13/11/2026 —
+-- LE CABINET D'UN DOSSIER NE CHANGE QUE PAR LE SUPER-ADMINISTRATEUR ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -10506,6 +10521,281 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $id$;
+
+-- ══ RT. Le cabinet d'un dossier ne change que par le super-administrateur (RATT-Q1 ; migration
+--    `cabinet_d_un_dossier_par_le_super_administrateur`, PRÉPARÉE) ════════════════════════════════════════════════════
+-- Qui écrit un dossier, la policy `dossiers_update` le juge ; qui change son cabinet, la garde de la migration : le
+-- super-administrateur seul, dans la RLS, et rien n'est jugé hors d'elle (le propriétaire, la restauration par le
+-- super-utilisateur, une fonction security definer). Et, plus large, la règle de toutes les colonnes qui rattachent une
+-- ligne à son périmètre d'accès.
+--   RT1. Le relevé du catalogue, qui part de TOUT : chaque colonne `dossier_id` et `cabinet_id` d'une table de public,
+--        le compte (`user_id`) de memberships, cabinet_admins, dossier_assignations et super_admins, le seau et le
+--        chemin d'un objet du stockage, se juge à la mise à jour sur sa NOUVELLE valeur — chaque policy permissive de
+--        mise à jour d'authenticated la relit sur la ligne proposée (son WITH CHECK, à défaut son USING) —, ou n'est
+--        pas à la portée d'authenticated (aucun droit UPDATE sur elle, aucune policy de mise à jour), ou se garde par
+--        un déclencheur nommé : `dossiers.cabinet_id`, par la garde de la migration. Une exception, avec sa raison : le
+--        compte d'une affectation (`dossier_assignations.user_id`), que la policy juge avec son dossier (le chef de son
+--        cabinet, qui l'insère pour qui il veut), et qui n'ouvre le dossier qu'à un membre de l'équipe de ce cabinet
+--        (`admin_du_dossier`). Plancher : 100 colonnes lues (105 au niveau de l'export du 13/11/2026).
+--   RT2. Changer le cabinet d'un dossier : l'anonyme, un compte rattaché à rien et le client (sans accès au dossier) ne
+--        touchent aucune ligne (la policy) ; un membre de l'équipe affecté au dossier et un chef du cabinet qui n'est
+--        pas super-administrateur se voient refuser en 42501, sous les mots de la garde ; le super-administrateur
+--        change le cabinet (contrôle POSITIF), et le propriétaire sans session aussi (hors de la RLS : la restauration,
+--        les migrations, les fonctions security definer).
+--   RT3. Ce que l'application fait encore passe : le membre affecté écrit une colonne du dossier, et la même écriture
+--        qui reprend le cabinet à sa propre valeur (une ligne entière renvoyée telle quelle).
+--   RT4. Le catalogue : la garde `security invoker` (sinon `row_security_active` jugerait son propriétaire), chemin
+--        vide, exécutable par aucun rôle de session ; son déclencheur BEFORE UPDATE FOR EACH ROW sur `dossiers`, actif,
+--        sous une clause WHEN.
+-- Cinq mutations, qui doivent mordre : M-RT1 (le relevé sans compter la garde : il nomme la colonne qu'elle garde),
+-- M-RT1b (une policy de mise à jour plantée qui ne relit rien : la colonne de sa table nommée), M-RT2 (la garde
+-- désactivée : RT2 vire au rouge), M-RT3 (RT2 jugé sur un échec sans rapport — une colonne qui n'existe pas, 42703 — :
+-- EN FAUTE, la RAISON est exigée), M-RT4 (le contrôle positif joué par le membre : refusé). Le jeu, le temps d'une
+-- sous-transaction annulée : un dossier jetable du cabinet du chef, affecté au membre, et un cabinet de destination.
+-- Avant la migration, une ligne dit que la règle attend.
+do $rt$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  inconnu uuid := gen_random_uuid();
+  jetable uuid := '1a100000-0000-4000-8000-0000000000e7';
+  destination uuid := 'cab10000-0000-4000-8000-0000000000e7';
+  refus text := 'Le cabinet d''un dossier ne change que par le super-administrateur.';
+  -- Le relevé de RT1, rejoué par M-RT1 et M-RT1b : $1 dit si la garde de la migration compte.
+  releve constant text := $q$
+    with policies_maj as (
+      select p.polrelid as relid,
+             coalesce(pg_get_expr(p.polwithcheck, p.polrelid), pg_get_expr(p.polqual, p.polrelid)) as controle
+        from pg_policy p
+       where p.polcmd in ('w', '*') and p.polpermissive
+         and (0::oid = any (p.polroles) or 'authenticated'::regrole::oid = any (p.polroles))
+    ),
+    colonnes as (
+      select c.oid as relid, c.relname::text as relname, n.nspname::text as schema_, a.attname::text as colonne
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+       where c.relkind in ('r', 'p')
+         and ((n.nspname = 'public' and a.attname in ('dossier_id', 'cabinet_id'))
+           or (n.nspname = 'public' and c.relname in ('memberships', 'cabinet_admins', 'dossier_assignations', 'super_admins')
+               and a.attname = 'user_id')
+           or (n.nspname = 'storage' and c.relname = 'objects' and a.attname in ('bucket_id', 'name')))
+    ),
+    jugees as (
+      select k.schema_ || '.' || k.relname || '.' || k.colonne as nom,
+             not has_column_privilege('authenticated', k.relid, k.colonne, 'UPDATE')
+             or not exists (select 1 from policies_maj m where m.relid = k.relid)
+             or not exists (select 1 from policies_maj m where m.relid = k.relid
+                             and not (m.controle ~ ('(^|[^.a-z_])' || k.colonne || '([^a-z_]|$)')
+                                      or m.controle ~ ('(^|[^a-z_])' || k.relname || '\.' || k.colonne || '([^a-z_]|$)')))
+             or ($1 and k.schema_ = 'public' and k.relname = 'dossiers' and k.colonne = 'cabinet_id'
+                 and exists (select 1 from pg_trigger t where t.tgrelid = k.relid and t.tgenabled = 'O'
+                              and t.tgfoid = to_regprocedure('public.garder_cabinet_d_un_dossier()')))
+             or (k.schema_ = 'public' and k.relname = 'dossier_assignations' and k.colonne = 'user_id') as jugee
+        from colonnes k
+    )
+    select count(*)::int, string_agg(nom, ', ' order by nom) filter (where not jugee) from jugees
+  $q$;
+  cabinet uuid; lues int; fautes text; n int; touchees int; motif text; message text; obs text;
+  erreur text; construit boolean := false; accepte boolean;
+  profil text; sub uuid;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.garder_cabinet_d_un_dossier()') is null then
+    insert into rls_verdict values ('RT. le cabinet d''un dossier ne change que par le super-administrateur : EN ATTENTE de la migration cabinet_d_un_dossier_par_le_super_administrateur',
+      'dossiers.cabinet_id', 'garde absente : la règle se juge dès que la migration y est', true);
+    return;
+  end if;
+
+  -- RT1 : le relevé du catalogue.
+  execute releve into lues, fautes using true;
+  verdicts := verdicts || jsonb_build_object('controle', 'RT1. toute colonne qui rattache une ligne à son périmètre se juge sur sa nouvelle valeur, hors de portée, ou par une garde nommée (lecture du catalogue ; plancher : 100)',
+    'cible', 'dossier_id, cabinet_id, user_id, seau et chemin', 'observe', lues || ' colonnes lues ; non jugées : ' || coalesce(fautes, 'aucune'),
+    'ok', lues >= 100 and fautes is null);
+  -- M-RT1 : le relevé sans compter la garde de la migration — il nomme la colonne qu'elle garde.
+  execute releve into lues, fautes using false;
+  mutations := mutations || jsonb_build_object('mutation', 'M-RT1 — RT1 rejoué sans compter la garde de la migration',
+    'attendu', 'la colonne qu''elle garde nommée, seule', 'observe', coalesce(fautes, 'aucune'), 'mord', fautes = 'public.dossiers.cabinet_id');
+  -- M-RT1b : une policy de mise à jour plantée, qui ne relit rien de la ligne proposée.
+  fautes := null;
+  begin
+    create policy rls_rt_plantee on public.packs as permissive for update to authenticated using (true) with check (true);
+    execute releve into lues, fautes using true;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+  end;
+  mutations := mutations || jsonb_build_object('mutation', 'M-RT1b — RT1 rejoué avec une policy de mise à jour plantée qui ne relit rien',
+    'attendu', 'public.packs.dossier_id nommée, seule', 'observe', coalesce(fautes, 'aucune'), 'mord', fautes = 'public.packs.dossier_id');
+
+  begin
+    -- ── Le jeu : un dossier jetable du cabinet du chef, affecté au membre, et un cabinet de destination ──
+    perform set_config('request.jwt.claims', '', true);
+    select ca.cabinet_id into cabinet from cabinet_admins ca where ca.user_id = chef;
+    insert into cabinets (id, nom) values (destination, 'RLS CABINET DE DESTINATION');
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais)
+      values (jetable, 'RLS DOSSIER RT', cabinet, 'tresorerie', '455000');
+    insert into dossier_assignations (dossier_id, user_id) values (jetable, membre);
+    construit := true;
+
+    -- RT2 : l'anonyme, un compte rattaché à rien, le client — aucune ligne touchée.
+    foreach profil in array array['anon', 'inconnu', 'client'] loop
+      touchees := null; motif := null; message := null;
+      begin
+        if profil = 'anon' then
+          set local role anon;
+          perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+        else
+          sub := case profil when 'inconnu' then inconnu else client end;
+          set local role authenticated;
+          perform set_config('request.jwt.claims', json_build_object('sub', sub, 'role', 'authenticated')::text, true);
+        end if;
+        update dossiers set cabinet_id = destination where id = jetable;
+        get diagnostics touchees = row_count;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'RT2. l''anonyme, un compte rattaché à rien et le client ne changent le cabinet d''aucun dossier (la policy : aucune ligne, ou le droit)',
+        'cible', profil, 'observe', coalesce(touchees::text, '?') || ' ligne(s), ' || coalesce(motif, '?') || ' ' || coalesce(message, '?'),
+        'ok', (touchees = 0 and motif = 'P0001' and message = 'ANNULATION_ESSAI')
+              or (touchees is null and motif = '42501' and message like 'permission denied for table dossiers%'));
+    end loop;
+
+    -- RT2 : le membre affecté, puis un chef du cabinet qui n'est pas super-administrateur (le client, entré dans
+    -- l'équipe comme chef le temps de l'essai) — refusés par la garde.
+    foreach profil in array array['membre affecté au dossier', 'chef non super-administrateur'] loop
+      accepte := false; motif := null; message := null;
+      begin
+        if profil = 'chef non super-administrateur' then
+          perform set_config('request.jwt.claims', '', true);
+          insert into cabinet_admins (user_id, cabinet_id, role, email) values (client, cabinet, 'comptable_en_chef', 'chef-essai-rt@example.test');
+          sub := client;
+        else
+          sub := membre;
+        end if;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', sub, 'role', 'authenticated')::text, true);
+        update dossiers set cabinet_id = destination where id = jetable;
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'RT2. un membre affecté au dossier et un chef qui n''est pas super-administrateur : la garde refuse (42501)',
+        'cible', profil, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+        'ok', not accepte and motif = '42501' and message = refus);
+    end loop;
+
+    -- M-RT2 : la garde désactivée — RT2 vire au rouge.
+    obs := null;
+    begin
+      alter table public.dossiers disable trigger dossiers_cabinet_par_le_super_administrateur;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      update dossiers set cabinet_id = destination where id = jetable;
+      get diagnostics touchees = row_count;
+      obs := touchees || ' ligne(s)';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-RT2 — RT2 rejoué, la garde désactivée', 'attendu', 'RT2 en faute (aucun refus, 1 ligne)',
+      'observe', coalesce(obs, '?'), 'mord', obs = '1 ligne(s)');
+
+    -- M-RT3 : RT2 jugé sur un échec sans rapport (une colonne qui n'existe pas, 42703) — doit être EN FAUTE.
+    accepte := false; motif := null; message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      execute format('update public.dossiers set cabinet_id_inexistant = %L where id = %L', destination, jetable);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-RT3 — RT2 jugé sur un échec sans rapport (42703)', 'attendu', 'EN FAUTE : la raison est exigée',
+      'observe', coalesce(motif, '?') || ' ' || coalesce(message, '?'), 'mord', not (not accepte and motif = '42501' and message = refus));
+
+    -- RT2 : le super-administrateur change le cabinet (contrôle positif), puis le propriétaire sans session.
+    foreach profil in array array['super-administrateur', 'propriétaire sans session (hors de la RLS)'] loop
+      obs := null;
+      begin
+        if profil = 'super-administrateur' then
+          set local role authenticated;
+          perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        else
+          perform set_config('request.jwt.claims', '', true);
+        end if;
+        update dossiers set cabinet_id = destination where id = jetable;
+        get diagnostics touchees = row_count;
+        obs := touchees || ' ligne(s)';
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then obs := sqlstate || ' ' || sqlerrm; end if;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'RT2. le super-administrateur change le cabinet d''un dossier (contrôle positif), et le propriétaire hors de la RLS',
+        'cible', profil, 'observe', coalesce(obs, '?'), 'ok', obs = '1 ligne(s)');
+    end loop;
+    -- M-RT4 : le contrôle positif joué par le membre — refusé.
+    obs := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      update dossiers set cabinet_id = destination where id = jetable;
+      get diagnostics touchees = row_count;
+      obs := touchees || ' ligne(s)';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-RT4 — le contrôle positif de RT2 joué par le membre affecté', 'attendu', 'refusé',
+      'observe', coalesce(obs, '?'), 'mord', obs is distinct from '1 ligne(s)');
+
+    -- RT3 : ce que l'application fait encore passe.
+    foreach profil in array array['code_naf = ''6920Z''', 'cabinet_id = cabinet_id, code_naf = ''6920Z'''] loop
+      obs := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+        execute format('update public.dossiers set %s where id = %L', profil, jetable);
+        get diagnostics touchees = row_count;
+        obs := touchees || ' ligne(s)';
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then obs := sqlstate || ' ' || sqlerrm; end if;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'RT3. le membre affecté écrit son dossier, le cabinet repris à sa propre valeur compris (ce que l''application fait)',
+        'cible', profil, 'observe', coalesce(obs, '?'), 'ok', obs = '1 ligne(s)');
+    end loop;
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlerrm); end if;
+    when others then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm);
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- RT4 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.oid = to_regprocedure('public.garder_cabinet_d_un_dossier()') and not p.prosecdef and p.proconfig = array['search_path=""']
+     and not has_function_privilege('anon', p.oid, 'execute') and not has_function_privilege('authenticated', p.oid, 'execute');
+  select count(*) into touchees from pg_trigger t
+   where t.tgrelid = 'public.dossiers'::regclass and t.tgname = 'dossiers_cabinet_par_le_super_administrateur'
+     and t.tgfoid = to_regprocedure('public.garder_cabinet_d_un_dossier()') and t.tgtype = 19 and t.tgenabled = 'O' and t.tgqual is not null;
+  verdicts := verdicts || jsonb_build_object('controle', 'RT4. la garde : security invoker, chemin vide, exécutable par aucun rôle de session ; son déclencheur BEFORE UPDATE FOR EACH ROW sur dossiers, actif, sous WHEN (lecture du catalogue)',
+    'cible', 'garder_cabinet_d_un_dossier', 'observe', n || ' garde, ' || touchees || ' déclencheur', 'ok', n = 1 and touchees = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'RT. le jeu d''essai du cabinet d''un dossier s''est construit, et rien n''en est resté', 'cible', 'le dossier jetable et le cabinet de destination',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id = jetable)
+      and not exists (select 1 from cabinets where id = destination) and not exists (select 1 from cabinet_admins where user_id = client));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $rt$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
