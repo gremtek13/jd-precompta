@@ -52373,6 +52373,27 @@ mutations sur sept (la porte sans déclencheurs rend le défaut) ; dix-huit essa
 attendaient le refus d'une garde avant la policy ou listaient les déclencheurs : verdicts identiques avant et après, `rls.sql` 239/0 et
 139/139 des deux côtés ; les deux ordres avec PC7-Q2 et PC7Q2-Q1 ; le retour rend la signature de l'export ; banc du leurre SÛR (18 et 17).
 
+### 13/11/2026 — LA PORTE D'ACCÈS RELUE EN ADVERSAIRE : L'ÉTAPE 33 DE SON ESSAI LIT TOUTES LES FORMES D'AFFECTATION
+
+Agent architecte, relecture adverse de `acces_avant_les_gardes` (préparée), sur une copie de la mère 17 amenée à l'export (217, `edea63cd…`).
+**Aucun refus à tort** : une batterie différentielle — 232 écritures (insertion, mise à jour, `on conflict`, RETURNING, plusieurs lignes)
+sous neuf profils et quatre configurations (la porte seule, aucun déclencheur, tous, tous sauf la porte), 8 352 exécutions — ne trouve ni
+refus de la porte que la RLS seule admet, ni porte plus large qu'elle, ni appelant refusé qui atteint une garde ; la branche restrictive,
+jouée avec `deux_facteurs_exiges` dans les deux ordres (aal1, aal2, retrait après le jeton), 54 sur 54 ; les cascades (`set null`, la
+suppression d'un dossier) identiques ; les dix-huit essais ajustés et `rls.sql`, mêmes verdicts avec et sans elle. **Aucun contournement** :
+hors de la RLS, seuls le propriétaire, `service_role` et le super-utilisateur ; aucune vue ni règle en public ; les 41 fonctions
+`security definer` qui écrivent dans les 32 tables, aucune ouverte à l'anonyme, contrôlent l'accès avant d'écrire. **Le coût**, sous la RLS
+seulement : l'import d'un relevé de 3 000 mouvements en une insertion par le membre, médiane 2,65 s sans la porte, 3,45 s avec (+0,3 ms par
+ligne, l'évaluation de la policy refaite) ; 6 000 : 5,5 s contre 7 à 8,5 s, au `statement_timeout` de 8 s d'`authenticated` ; hors de la
+RLS, 25 ms pour 20 000 lignes. **Le retour** rend un schéma identique ligne pour ligne (pg_dump, droits compris) ; la garde de tête et
+celle du retour refusent un second passage ; la migration se réapplique après son retour. **Corrigé** : l'étape 33 ne lisait que
+`new.col :=` en début de ligne et en minuscules ; elle lit chaque début d'instruction, sans la casse, `:=` comme `=`, et tient pour faute
+`into new`, la ligne entière remplacée, `#=` et `populate_record(new` ; l'étape 35 l'éprouve sur six corps plantés (l'ancien motif n'en
+voyait aucun ; cinq mutations mordent ; une garde plantée qui écrit `NEW.dossier_id :=` après un `then` fait virer 33 au rouge) ; 24/24,
+banc du leurre SÛR. **Reste** : six migrations préparées (INAL5, INV2, LIA2, INV4, AFF2, INV3) posent des gardes `security definer` sur
+neuf tables sans la porte, et l'étape 32 vire au rouge après elles ; celle d'INAL5 dit à l'anonyme qu'un dossier nommé est conservé, et
+jusqu'à quand.
+
 ### 13/11/2026 — INV3-Q2 À L'ÉCRAN, ET LES PIÈCES DE L'INVENTAIRE DANS LE PAQUET D'ARCHIVE (DERRIÈRE LEURS DRAPEAUX)
 
 Agent dev, ligne 35, les deux suites de l'amendement INV3 ; rien de `supabase/` touché. **L'écran** : sur le premier exercice du dossier,
