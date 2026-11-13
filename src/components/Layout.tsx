@@ -122,10 +122,10 @@ function Coque() {
   // « Mes achats » (ligne 51.5, étape B5) : de même, avec la case « Achats » sur la société affichée, comme sa route.
   const mesAchats = role === 'client'
     && mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)
-  // « Mes notes de frais » (ligne 51.5, étape B8) : de même, avec la case « Notes de frais » sur la société affichée, comme sa
-  // route.
+  // « Mes notes de frais » (ligne 51.5, étape B8) : de même, avec la case « Notes de frais » ou « Achats » (B8-Q1) sur la
+  // société affichée, comme sa route.
   const mesNotesDeFrais = role === 'client'
-    && mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId).frais)
+    && mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId))
   // « Ma trésorerie » (ligne 51.5, étape C8) : derrière son drapeau, quand « Ma banque » s'offre, comme sa route.
   const maTresorerie = role === 'client' && maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanque)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'

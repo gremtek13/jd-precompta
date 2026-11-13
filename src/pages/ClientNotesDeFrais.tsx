@@ -12,7 +12,8 @@ import {
   cumulDesKilometres, detailDesKilometres, etatDuJustificatif, formulaireDeLaNote, formulaireNeuf, gestesDeLaNote,
   justificatifsCitables, LIBELLES_DES_NATURES, LIBELLES_DES_VEHICULES, montantDesKilometres, MOTS_DE_L_ETAT, NATURES_PROPOSEES,
   notesAMontrer, parametresDeLEnregistrement, passagesDeLaNote, personneDiteAuClient, PRESENTATION_DE_MES_NOTES_DE_FRAIS,
-  refusDeLaSoumission, SANS_LA_CASE_FRAIS, saisieDuFormulaire, signalDeLaNote, signalDeLaTranche,
+  AUCUNE_NOTE_A_DECIDER, refusDeLaSoumission, SANS_LA_CASE_FRAIS, SANS_LA_SAISIE, saisieDuFormulaire, saisieOuverte,
+  signalDeLaNote, signalDeLaTranche,
   type FormulaireDeNote, type NoteDeFrais, type PieceDeLAuteur,
 } from '../lib/notesDeFraisVue'
 import { lireMesNotesDeFrais, type MesNotesDeFraisLues } from '../lib/notesDeFraisLecture'
@@ -23,9 +24,10 @@ import DecisionDeLaNoteDeFrais, { type DecisionSaisie } from '../components/Deci
 // la case « Notes de frais » sur la société AFFICHÉE : ses notes, le formulaire d'un brouillon (une dépense et son
 // justificatif, ou des kilomètres au barème de leur année, le dépassement de la première tranche signalé), soumettre et
 // retirer un brouillon ; avec « Achats » en plus, la note d'un salarié sans accès, et les décisions — approuver, refuser sous
-// un motif que l'auteur lit, déclarer le remboursement. Chaque geste par sa fonction seule, sous UN verrou `useRef` relâché
-// après la relecture ; le refus du module se dit avant le clic, sur la saisie telle qu'elle part ; celui de la base, après,
-// réécrit pour le client ; chaque confirmation nomme la note qui part.
+// un motif que l'auteur lit, déclarer le remboursement. Avec « Achats » SEUL (B8-Q1), les décisions sans la saisie : ni
+// « Nouvelle note » ni brouillon à soi (`saisieOuverte`), et l'écran le dit. Chaque geste par sa fonction seule, sous UN
+// verrou `useRef` relâché après la relecture ; le refus du module se dit avant le clic, sur la saisie telle qu'elle part ;
+// celui de la base, après, réécrit pour le client ; chaque confirmation nomme la note qui part.
 //
 // LES CASES SE LISENT DEUX FOIS (lib/notesDeFraisLecture.ts) : à la connexion pour la route, puis à la BASE avec les notes.
 // RIEN N'EST AFFIRMÉ NI OFFERT SUR UNE LECTURE ABSENTE, EN COURS OU PARTIELLE : les notes et les pièces lues en entier, sinon
@@ -157,7 +159,9 @@ export default function ClientNotesDeFrais() {
           consequence="Aucune ne s’affiche, et rien ne s’écrit d’ici : l’une d’elles, ou l’un de tes justificatifs, pourrait manquer. Recharge la page." />
       ) : (
         <>
-          {formulaire !== null && formulaire.noteId === null ? (
+          {!saisieOuverte(entiere) ? (
+            <p className="muted" style={{ marginBottom: 10 }}>{SANS_LA_SAISIE}</p>
+          ) : formulaire !== null && formulaire.noteId === null ? (
             <div className="card" aria-label="Nouvelle note de frais" style={{ marginBottom: 10 }}>
               <strong>Nouvelle note de frais</strong>
               <FormulaireDeLaNote f={formulaire} lesNotes={lesNotes} pieces={pieces} moi={moi} dossierId={dossierId}
@@ -177,11 +181,11 @@ export default function ClientNotesDeFrais() {
           {message !== null && !(message.cle === NOUVELLE ? formulaire !== null && formulaire.noteId === null : dites.some((n) => n.id === message.cle))
             && ditPour(message.cle)}
           {dites.length === 0 ? (
-            <p className="muted">Tu n’as aucune note de frais pour l’instant.</p>
+            <p className="muted">{saisieOuverte(entiere) ? 'Tu n’as aucune note de frais pour l’instant.' : AUCUNE_NOTE_A_DECIDER}</p>
           ) : (
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 10 }}>
               {dites.map((n) => {
-                const gestes = gestesDeLaNote(n, { moi, cabinet: false, frais: true, achats: entiere.achats })
+                const gestes = gestesDeLaNote(n, { moi, cabinet: false, frais: entiere.frais, achats: entiere.achats })
                 const enModification = formulaire !== null && formulaire.noteId === n.id ? formulaire : null
                 const decisionOuverte = decision !== null && decision.noteId === n.id ? decision : null
                 const justificatif = n.piece_id === null ? null : pieces.find((p) => p.id === n.piece_id) ?? null

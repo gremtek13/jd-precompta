@@ -6,7 +6,7 @@ import { REFUS_DES_NOTES, refusDeLaSaisie } from './notesDeFrais'
 import {
   confirmationDeLApprobation, confirmationDeLaSoumission, confirmationDuRefus, confirmationDuRemboursement, confirmationDuRetrait,
   cumulDesKilometres, etatDuJustificatif, formulaireDeLaNote, formulaireNeuf, gestesDeLaNote, justificatifsCitables,
-  mesNotesDeFraisOuvertes, montantDesKilometres, notesAMontrer, parametresDeLEnregistrement, passagesDeLaNote,
+  mesNotesDeFraisOuvertes, saisieOuverte, SANS_LA_SAISIE, AUCUNE_NOTE_A_DECIDER, montantDesKilometres, notesAMontrer, parametresDeLEnregistrement, passagesDeLaNote,
   personneDiteAuClient, PRESENTATION_DE_MES_NOTES_DE_FRAIS, refusDeLaSoumission, refusDuMotifDeRefus, refusDuRemboursement,
   SANS_LA_CASE_FRAIS, saisieDuFormulaire, signalDeLaNote, signalDeLaTranche, type FormulaireDeNote, type NoteDeFrais,
   type PieceDeLAuteur,
@@ -37,9 +37,14 @@ const formulaire = (f: Partial<FormulaireDeNote>): FormulaireDeNote => ({ ...for
 
 describe('« Mes notes de frais » et ses justificatifs', () => {
   it('l’écran n’existe qu’avec la migration et la case « Notes de frais »', () => {
-    expect(mesNotesDeFraisOuvertes(true, true)).toBe(true)
-    expect(mesNotesDeFraisOuvertes(false, true)).toBe(false)
-    expect(mesNotesDeFraisOuvertes(true, false)).toBe(false)
+    expect(mesNotesDeFraisOuvertes(true, { frais: true, achats: false })).toBe(true)
+    expect(mesNotesDeFraisOuvertes(false, { frais: true, achats: true })).toBe(false)
+    expect(mesNotesDeFraisOuvertes(true, { frais: false, achats: false })).toBe(false)
+    // B8-Q1 : « Achats » seul ouvre l'écran (les décisions), jamais la saisie.
+    expect(mesNotesDeFraisOuvertes(true, { frais: false, achats: true })).toBe(true)
+    expect(mesNotesDeFraisOuvertes(false, { frais: false, achats: true })).toBe(false)
+    expect(saisieOuverte({ frais: false })).toBe(false)
+    expect(saisieOuverte({ frais: true })).toBe(true)
   })
 
   it('un justificatif citable : déposé par l’auteur dans ce dossier, à valider, cité par aucune autre note (B7-Q2)', () => {
@@ -187,7 +192,7 @@ describe('les mots', () => {
     expect(confirmationDuRetrait(n, 'ticket.pdf')).toContain('« ticket.pdf »')
     expect(confirmationDuRemboursement(n, '2026-11-05', 'paie')).toContain('le 05/11/2026, avec la paie')
     const auClient = [
-      ...textes, PRESENTATION_DE_MES_NOTES_DE_FRAIS, SANS_LA_CASE_FRAIS, LIBELLE_MOTIF_REFUS_NOTE_DE_FRAIS_CLIENT,
+      ...textes, PRESENTATION_DE_MES_NOTES_DE_FRAIS, SANS_LA_CASE_FRAIS, SANS_LA_SAISIE, AUCUNE_NOTE_A_DECIDER, LIBELLE_MOTIF_REFUS_NOTE_DE_FRAIS_CLIENT,
       personneDiteAuClient(n, 'u1'), personneDiteAuClient(note({ auteur: 'u2', beneficiaire_salarie: 'Salarié fictif' }), 'u1'),
       signalDeLaTranche(2026, 'voiture', 6000, 'client')!,
       ...passagesDeLaNote(note({ etat: 'refusee', soumise_le: '2026-11-03T10:00:00Z', refusee_le: '2026-11-04T10:00:00Z', motif_refus: 'Hors activité' })),
