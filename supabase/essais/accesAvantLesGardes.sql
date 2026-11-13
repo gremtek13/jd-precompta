@@ -21,11 +21,13 @@
 -- porte une garde `security definer` sur l'insertion ou la mise à jour la porte, `dossiers` seule exceptée, pour sa raison
 -- (un déclencheur y remplit `cabinet_id`, que sa policy lit) ; aucun déclencheur qui tire après elle ne modifie une colonne
 -- que ses policies lisent ; et l'anonyme comme l'étranger reçoivent sur les 32 tables le refus de la porte, jamais celui
--- d'une garde.
+-- d'une garde. 35 : le relevé de l'étape 33, appliqué à des corps plantés, voit chaque forme d'affectation que PL/pgSQL
+-- accepte, et ne prend pas une comparaison pour une affectation.
 --
 -- Mutations de la migration qui doivent virer au rouge (jouées sur la réplique, le 13/11/2026) : la porte nommée après les
 -- gardes ; la porte `security definer` ; sans le saut hors de la RLS ; sur l'insertion seule ; absente de facture_lignes ;
--- un autre code que 42501.
+-- un autre code que 42501. Le relevé de l'étape 33 d'avant (`new.col :=` en début de ligne, en minuscules) ne voyait aucun
+-- des quatre corps plantés de l'étape 35 (relu sur la réplique, le 13/11/2026).
 
 do $essai$
 declare
@@ -43,7 +45,7 @@ declare
   facture constant text := $p$alter table factures_emises disable trigger user; insert into factures_emises (id, dossier_id, tiers_nom, statut, numero, validated_at) values ('{FV}', '{DA}', 'Essai porte', 'validee', 'ESSAI-PORTE-1', now()); alter table factures_emises enable trigger user$p$;
   mouvement constant text := $p$insert into lignes_bancaires (id, dossier_id, date, libelle, montant) values ('{L1}', '{DA}', '2026-02-01', 'ESSAI PORTE', -1)$p$;
   refus_categories constant text := 'new row violates row-level security policy for table "categories"';
-  e record; v_code text; v_obs text; v_requete text; v_table text; v_profil text; v_bons integer; v_vus integer; v_autres text;
+  e record; v_code text; v_obs text; v_requete text; v_table text; v_profil text; v_bons integer; v_vus integer; v_autres text; v_plantes text;
   verdicts jsonb := '[]'::jsonb;
 begin
   if not porte then
@@ -170,19 +172,50 @@ begin
     verdicts := verdicts || jsonb_build_object('rang', 32, 'etape', '32. toute table à garde security definer sur l''insertion ou la mise à jour porte la porte, dossiers excepté (plancher : 33)',
       'ok', v_vus >= 33 and v_autres is null, 'observe', v_vus || ' tables ; sans la porte : ' || coalesce(v_autres, 'aucune'));
     -- 33. Aucun déclencheur qui tire après la porte ne modifie une colonne que les policies d'écriture lisent ; sur
-    --     `dossiers`, la raison de l'exception : cabinet_id.
-    select string_agg(distinct c.relname || '.' || a.attname, ', ') filter (where c.relname <> 'dossiers'),
-           string_agg(distinct a.attname, ', ') filter (where c.relname = 'dossiers')
-      into v_autres, v_obs
-      from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_proc p on p.oid = t.tgfoid
-      cross join lateral regexp_matches(p.prosrc, '(?:^|\n)\s*new\.(\w+)\s*:=', 'g') as m(col)
-      join pg_attribute a on a.attrelid = c.oid and a.attname = m.col[1]
-     where c.relnamespace = 'public'::regnamespace and not t.tgisinternal and t.tgtype & 3 = 3 and t.tgtype & 20 <> 0
-       and (c.relname = 'dossiers' or exists (select 1 from pg_trigger d where d.tgrelid = c.oid and d.tgname = '_acces_avant_les_gardes'))
-       and exists (select 1 from pg_depend k join pg_policy o on o.oid = k.objid
-                    where k.classid = 'pg_policy'::regclass and k.refobjid = c.oid and k.refobjsubid = a.attnum and o.polcmd in ('a', 'w', '*'));
+    --     `dossiers`, la raison de l'exception : cabinet_id. Le relevé lit chaque corps sans tenir compte de la casse, à
+    --     chaque début d'instruction (début du corps ou de ligne, « ; », then, else, loop, begin), l'affectation en « := »
+    --     comme en « = », que PL/pgSQL accepte aussi ; une forme qu'il ne lit pas colonne par colonne — `into new`, la
+    --     ligne entière remplacée (`new :=`), `#=`, `populate_record(new` — est une faute, quelle que soit la colonne.
+    -- 35. Le même relevé, sur des corps plantés comme s'ils étaient ceux d'une garde de lignes_bancaires (dont la policy lit
+    --     dossier_id) : il voit a à d, et ni e (une comparaison) ni f (une colonne qu'aucune policy ne lit).
+    with corps as (
+      select c.oid as relid, c.relname, p.prosrc as src, null::text as plante
+        from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_proc p on p.oid = t.tgfoid
+       where c.relnamespace = 'public'::regnamespace and not t.tgisinternal and t.tgtype & 3 = 3 and t.tgtype & 20 <> 0
+         and t.tgname <> '_acces_avant_les_gardes'
+         and (c.relname = 'dossiers' or exists (select 1 from pg_trigger d where d.tgrelid = c.oid and d.tgname = '_acces_avant_les_gardes'))
+      union all
+      select 'public.lignes_bancaires'::regclass::oid, 'lignes_bancaires', x.src, x.plante
+        from (values
+          ('a. NEW en capitales, après then', $c$begin if true then NEW.dossier_id := null; end if; return new; end$c$),
+          ('b. l''affectation en « = »', $c$begin
+  new.dossier_id = null;
+  return new;
+end$c$),
+          ('c. select … into new', $c$begin select d.id into new.dossier_id from public.dossiers d where d.id = new.dossier_id; return new; end$c$),
+          ('d. la ligne entière remplacée', $c$begin new := jsonb_populate_record(new, '{}'); return new; end$c$),
+          ('e. une comparaison, pas une affectation', $c$begin if new.dossier_id = old.dossier_id then return new; end if; return new; end$c$),
+          ('f. une colonne qu''aucune policy ne lit', $c$begin new.libelle := upper(new.libelle); return new; end$c$)) as x(plante, src)),
+    fautes as (
+      select k.relname, k.plante, a.attname::text as colonne
+        from corps k
+        cross join lateral regexp_matches(k.src, '(?:^|[;\n]|\mthen\M|\melse\M|\mloop\M|\mbegin\M)\s*new\s*\.\s*"?(\w+)"?\s*:?=', 'gi') as m(col)
+        join pg_attribute a on a.attrelid = k.relid and a.attname = lower(m.col[1])
+       where exists (select 1 from pg_depend d join pg_policy o on o.oid = d.objid
+                      where d.classid = 'pg_policy'::regclass and d.refobjid = k.relid and d.refobjsubid = a.attnum and o.polcmd in ('a', 'w', '*'))
+      union all
+      select k.relname, k.plante, '(la ligne entière)'
+        from corps k
+       where k.src ~* '\minto\s+(strict\s+)?new\M|(?:^|[;\n]|\mthen\M|\melse\M|\mloop\M|\mbegin\M)\s*new\s*:?=|#=|populate_record(set)?\s*\(\s*new\M')
+    select string_agg(distinct f.relname || '.' || f.colonne, ', ') filter (where f.plante is null and f.relname <> 'dossiers'),
+           string_agg(distinct f.colonne, ', ') filter (where f.plante is null and f.relname = 'dossiers'),
+           string_agg(distinct left(f.plante, 1), '' order by left(f.plante, 1)) filter (where f.plante is not null)
+      into v_autres, v_obs, v_plantes
+      from fautes f;
     verdicts := verdicts || jsonb_build_object('rang', 33, 'etape', '33. aucun déclencheur ne modifie après la porte une colonne lue par une policy d''écriture ; dossiers : cabinet_id, la raison de l''exception',
       'ok', v_autres is null and v_obs = 'cabinet_id', 'observe', 'tables de la porte : ' || coalesce(v_autres, 'aucune') || ' ; dossiers : ' || coalesce(v_obs, 'aucune'));
+    verdicts := verdicts || jsonb_build_object('rang', 35, 'etape', '35. le relevé de l''étape 33 voit les quatre corps plantés qui modifient dossier_id (a à d), ni la comparaison (e) ni la colonne qu''aucune policy ne lit (f)',
+      'ok', v_plantes = 'abcd', 'observe', 'corps vus : ' || coalesce(v_plantes, 'aucun'));
     -- 34. L'anonyme et l'étranger, sur chacune des 32 tables : le refus de la porte, jamais celui d'une garde.
     v_bons := 0; v_vus := 0; v_autres := null;
     for v_table in select c.relname from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = '_acces_avant_les_gardes' order by 1 loop
