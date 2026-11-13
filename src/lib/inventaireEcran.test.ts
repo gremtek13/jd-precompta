@@ -9,6 +9,7 @@ import {
   regularisationsDeLExercice, texteDesCentimes, verdictDeLEvaluation, verdictDeLaProvision, verdictDeLaRegularisation,
   type ContexteDeLInventaire, type DonneesDeLInventaire, type FormulaireDeRegularisation, type LigneDuBrouillonDInventaire,
 } from './inventaireEcran'
+import { MOTS_DES_JUSTIFICATIFS, type JustificatifsDuDossier } from './justificatifsDeLInventaire'
 import type { InventaireDeclare, OperationInventaire, Provision } from './types'
 
 // L'ÉCRAN DE L'INVENTAIRE, SA LOGIQUE (ligne 35, INV5 ; lib/inventaireEcran.ts). Ce que ces cas gardent : un montant tapé lu au
@@ -87,7 +88,7 @@ describe('les choix du cabinet non tranchés : la recommandation du document', (
 
 describe('la saisie d’une régularisation, jugée telle qu’elle part', () => {
   it('permet une charge constatée d’avance et rend les arguments exacts de la fonction de la base, la paire composée par le module', () => {
-    const v = verdictDeLaRegularisation(formulaire(), ctx(), donnees(), null)
+    const v = verdictDeLaRegularisation(formulaire(), ctx(), donnees(), null, null)
     if (v.etat !== 'permis') throw new Error(v.refus.join(' / '))
     const attendue = composerRegularisation({
       nature: 'cca', compteResultat: '616000', libelleCompteResultat: null, compteRegularisation: '486100', montantCentimes: 60_000, tvaCentimes: 0,
@@ -108,7 +109,7 @@ describe('la saisie d’une régularisation, jugée telle qu’elle part', () =>
   })
 
   it('la confirmation NOMME la paire : les deux dates, les comptes, les montants et le libellé qui part au FEC', () => {
-    const v = verdictDeLaRegularisation(formulaire(), ctx(), donnees(), null)
+    const v = verdictDeLaRegularisation(formulaire(), ctx(), donnees(), null, null)
     if (v.etat !== 'permis') throw new Error('refusé')
     expect(v.confirmation).toContain('Enregistrer cette régularisation ?')
     expect(v.confirmation).toContain(`Au 31/12/2025 : Débit 486100 ${euros(60_000)} ; Crédit 616000 ${euros(60_000)}.`)
@@ -119,7 +120,7 @@ describe('la saisie d’une régularisation, jugée telle qu’elle part', () =>
 
   it('un remplacement retient la version lue, l’identifiant et la pièce citée, et le dit', () => {
     const existante = operation({ id: 'o1', version: 4, piece_citee_id: 'p1', periode_debut: '2025-07-01', periode_fin: '2026-06-30' })
-    const v = verdictDeLaRegularisation({ ...formulaireDeLOperation(existante), montant: '700,00' }, ctx(), donnees(), existante)
+    const v = verdictDeLaRegularisation({ ...formulaireDeLOperation(existante), montant: '700,00' }, ctx(), donnees(), existante, null)
     if (v.etat !== 'permis') throw new Error(v.refus.join(' / '))
     expect(v.appel.versionLue).toBe(4)
     expect(v.appel.operation).toMatchObject({ id: 'o1', piece_citee_id: 'p1', montant_centimes: 70_000, periode_debut: '2025-07-01', periode_fin: '2026-06-30' })
@@ -128,7 +129,7 @@ describe('la saisie d’une régularisation, jugée telle qu’elle part', () =>
 
   it('une facture non parvenue d’un dossier assujetti porte sa TVA d’attente ; la composition la range sous son compte', () => {
     const f = formulaire({ ...formulaireVide('fnp', COMPTES), compteResultat: '622000', montant: '1 000,00', tva: '200,00', objet: 'Honoraires de décembre' })
-    const v = verdictDeLaRegularisation(f, ctx(), donnees(), null)
+    const v = verdictDeLaRegularisation(f, ctx(), donnees(), null, null)
     if (v.etat !== 'permis') throw new Error(v.refus.join(' / '))
     expect(v.constatation.lignes).toEqual([
       { compte: '622000', sens: 'debit', centimes: 100_000 }, { compte: '445861', sens: 'debit', centimes: 20_000 }, { compte: '408110', sens: 'credit', centimes: 120_000 },
@@ -141,51 +142,51 @@ describe('la saisie d’une régularisation, jugée telle qu’elle part', () =>
     expect(natureAvecTvaDAttente('fae', true)).toBe(true)
     expect(natureAvecTvaDAttente('fnp', false)).toBe(false)
     expect(natureAvecTvaDAttente('cca', true)).toBe(false)
-    const v = verdictDeLaRegularisation(formulaire({ tva: '40,00' }), ctx(), donnees(), null)
+    const v = verdictDeLaRegularisation(formulaire({ tva: '40,00' }), ctx(), donnees(), null, null)
     expect(v.etat).toBe('permis')
     if (v.etat === 'permis') expect(v.appel.operation).toMatchObject({ tva_centimes: 0 })
   })
 
   it('refuse un dossier en trésorerie avant tout, sous les mots de la base', () => {
-    const v = verdictDeLaRegularisation(formulaire({ montant: 'x' }), ctx({ mode: 'tresorerie' }), donnees(), null)
+    const v = verdictDeLaRegularisation(formulaire({ montant: 'x' }), ctx({ mode: 'tresorerie' }), donnees(), null, null)
     expect(v).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.tresorerie] })
   })
 
   it('refuse un exercice validé, puis un exercice pas encore commencé, aux mots de la base', () => {
-    expect(verdictDeLaRegularisation(formulaire(), ctx({ anneesValidees: [2024, 2025] }), donnees(), null))
+    expect(verdictDeLaRegularisation(formulaire(), ctx({ anneesValidees: [2024, 2025] }), donnees(), null, null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.exerciceFige] })
-    expect(verdictDeLaRegularisation(formulaire(), ctx({ exercice: 2027 }), donnees(), null))
+    expect(verdictDeLaRegularisation(formulaire(), ctx({ exercice: 2027 }), donnees(), null, null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.exerciceAVenir] })
-    expect(verdictDeLaRegularisation(formulaire(), ctx({ exercice: 2023 }), donnees(), null))
+    expect(verdictDeLaRegularisation(formulaire(), ctx({ exercice: 2023 }), donnees(), null, null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.avantLOuverture] })
   })
 
   it('dit le plan qui ne porte pas le compte du rôle, avant le clic', () => {
-    const v = verdictDeLaRegularisation(formulaire(), ctx(), donnees({ comptes: {} }), null)
+    const v = verdictDeLaRegularisation(formulaire(), ctx(), donnees({ comptes: {} }), null, null)
     expect(v.etat).toBe('refuse')
     if (v.etat === 'refuse') expect(v.refus[0]).toContain('Charges constatées d’avance')
   })
 
   it('refuse un montant illisible ou nul, un compte hors de sa classe, un objet vide — dans l’ordre du module', () => {
-    const v = verdictDeLaRegularisation(formulaire({ compteResultat: '706000', compteRegularisation: '123456', montant: '12,345', objet: '  ' }), ctx(), donnees(), null)
+    const v = verdictDeLaRegularisation(formulaire({ compteResultat: '706000', compteRegularisation: '123456', montant: '12,345', objet: '  ' }), ctx(), donnees(), null, null)
     expect(v).toEqual({
       etat: 'refuse',
       refus: [MOTS_DES_REFUS.compteDeCharge, MOTS_DES_REFUS.compteDeRegularisation.cca, MOTS_DES_REFUS.montant, MOTS_DES_REFUS.objet],
     })
-    const nul = verdictDeLaRegularisation(formulaire({ montant: '0' }), ctx(), donnees(), null)
+    const nul = verdictDeLaRegularisation(formulaire({ montant: '0' }), ctx(), donnees(), null, null)
     expect(nul).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.montant] })
   })
 
   it('juge la période après l’objet : les deux dates ou aucune, le début au plus tard à la fin, une date qui existe', () => {
     for (const periode of [{ periodeDebut: '2025-07-01' }, { periodeFin: '2026-06-30' }, { periodeDebut: '2026-06-30', periodeFin: '2025-07-01' }, { periodeDebut: '2025-02-30', periodeFin: '2026-06-30' }]) {
-      expect(verdictDeLaRegularisation(formulaire(periode), ctx(), donnees(), null), JSON.stringify(periode))
+      expect(verdictDeLaRegularisation(formulaire(periode), ctx(), donnees(), null, null), JSON.stringify(periode))
         .toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.periode] })
     }
-    const ok = verdictDeLaRegularisation(formulaire({ periodeDebut: '2025-07-01', periodeFin: '2026-06-30' }), ctx(), donnees(), null)
+    const ok = verdictDeLaRegularisation(formulaire({ periodeDebut: '2025-07-01', periodeFin: '2026-06-30' }), ctx(), donnees(), null, null)
     expect(ok.etat).toBe('permis')
     if (ok.etat === 'permis') expect(ok.appel.operation).toMatchObject({ periode_debut: '2025-07-01', periode_fin: '2026-06-30' })
     // L'objet illisible vient AVANT la période dans la liste, comme dans la base.
-    const deux = verdictDeLaRegularisation(formulaire({ objet: '', periodeDebut: '2025-07-01' }), ctx(), donnees(), null)
+    const deux = verdictDeLaRegularisation(formulaire({ objet: '', periodeDebut: '2025-07-01' }), ctx(), donnees(), null, null)
     expect(deux).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.objet, MOTS_DES_REFUS.periode] })
   })
 
@@ -226,7 +227,7 @@ describe('l’ouverture d’une provision', () => {
   const saisie = (p = {}) => ({ ...formulaireDeProvisionVide('risque', COMPTES), objet: 'Litige avec un fournisseur', ...p })
 
   it('permet une provision pour risques sur l’exercice affiché, sans facture ni pièce, et nomme ce qui part', () => {
-    const v = verdictDeLaProvision(saisie(), ctx(), donnees())
+    const v = verdictDeLaProvision(saisie(), ctx(), donnees(), null)
     if (v.etat !== 'permis') throw new Error(v.refus.join(' / '))
     expect(v.provision).toEqual({
       id: null, genre: 'risque', compte_provision: '151110', objet: 'Litige avec un fournisseur', ouverte_en: 2025, facture_id: null,
@@ -237,24 +238,24 @@ describe('l’ouverture d’une provision', () => {
   })
 
   it('ne juge pas le plan des dotations et des reprises à l’ouverture : la base ne le lit qu’à l’évaluation', () => {
-    expect(verdictDeLaProvision(saisie(), ctx(), donnees({ comptes: { provisions_risques: '151110' } })).etat).toBe('permis')
+    expect(verdictDeLaProvision(saisie(), ctx(), donnees({ comptes: { provisions_risques: '151110' } }), null).etat).toBe('permis')
   })
 
   it('refuse un compte hors de sa racine, un objet vide, un dossier en trésorerie, aux mots de la base', () => {
-    expect(verdictDeLaProvision(saisie({ compte: '491100' }), ctx(), donnees())).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.compteDeProvision.risque] })
-    expect(verdictDeLaProvision(saisie({ genre: 'depreciation_creance', compte: '151110' }), ctx(), donnees()))
+    expect(verdictDeLaProvision(saisie({ compte: '491100' }), ctx(), donnees(), null)).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.compteDeProvision.risque] })
+    expect(verdictDeLaProvision(saisie({ genre: 'depreciation_creance', compte: '151110' }), ctx(), donnees(), null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.compteDeProvision.depreciation_creance] })
-    expect(verdictDeLaProvision(saisie({ objet: ' ' }), ctx(), donnees())).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.objet] })
-    expect(verdictDeLaProvision(saisie(), ctx({ mode: 'tresorerie' }), donnees())).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.tresorerie] })
+    expect(verdictDeLaProvision(saisie({ objet: ' ' }), ctx(), donnees(), null)).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.objet] })
+    expect(verdictDeLaProvision(saisie(), ctx({ mode: 'tresorerie' }), donnees(), null)).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.tresorerie] })
   })
 
   it('une part reprise s’ouvre au premier exercice du dossier seulement ; illisible, elle se refuse', () => {
-    const premier = verdictDeLaProvision(saisie({ reprise: '3 000,00' }), ctx({ exercice: 2024 }), donnees({ premierExercice: 2024 }))
+    const premier = verdictDeLaProvision(saisie({ reprise: '3 000,00' }), ctx({ exercice: 2024 }), donnees({ premierExercice: 2024 }), null)
     expect(premier.etat).toBe('permis')
     if (premier.etat === 'permis') expect(premier.provision).toMatchObject({ reprise_centimes: 300_000, ouverte_en: 2024 })
-    expect(verdictDeLaProvision(saisie({ reprise: '3 000,00' }), ctx(), donnees({ premierExercice: 2024 })))
+    expect(verdictDeLaProvision(saisie({ reprise: '3 000,00' }), ctx(), donnees({ premierExercice: 2024 }), null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_PROVISIONS_A_L_ECRAN.partRepriseHorsDuPremierExercice] })
-    expect(verdictDeLaProvision(saisie({ reprise: '3x' }), ctx({ exercice: 2024 }), donnees({ premierExercice: 2024 })))
+    expect(verdictDeLaProvision(saisie({ reprise: '3x' }), ctx({ exercice: 2024 }), donnees({ premierExercice: 2024 }), null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.ciblePrecedente] })
   })
 
@@ -408,13 +409,85 @@ describe('les écritures d’une régularisation, à jour ou à recomposer', () 
     e.lignes.map((l) => ({ date: e.date, compte: l.compte, sens: l.sens, montant: l.centimes / 100, operation_inventaire_id: 'o1' }))
 
   it('à jour quand les lignes du brouillon sont la paire commandée, à recomposer sinon', () => {
-    const v = verdictDeLaRegularisation(formulaire(), ctx(), donnees(), null)
+    const v = verdictDeLaRegularisation(formulaire(), ctx(), donnees(), null, null)
     if (v.etat !== 'permis') throw new Error('refusé')
     const lignes = [...ligne(v.constatation), ...ligne(v.extourne)]
     expect(ecrituresAJour(o, donnees({ operations: [o], lignes }))).toBe(true)
     expect(ecrituresAJour(o, donnees({ operations: [o], lignes: lignes.slice(1) }))).toBe(false)
     expect(ecrituresAJour(o, donnees({ operations: [o], lignes: [] }))).toBe(false)
     expect(ecrituresAJour(o, donnees({ operations: [o], lignes: lignes.map((l, i) => (i === 0 ? { ...l, montant: 599.99 } : l)) }))).toBe(false)
+  })
+})
+
+// LA PIÈCE CITÉE (INV5-Q1 (B)) : choisie dans l'onglet, elle part avec l'écriture ; une saisie qui remplace propose celle qui est
+// déjà citée, que le cabinet change ou retire ; son refus suit ceux de la base, dans son ordre, et la confirmation la nomme.
+describe('la pièce citée, choisie dans l’onglet', () => {
+  const J: JustificatifsDuDossier = {
+    pieces: [
+      { id: 'p1', dossier_id: 'd1', nom_fichier: 'assurance-2025.pdf', date_piece: '2025-07-01', tiers: 'Assureur fictif', montant_ttc: 1200, type_piece: 'achat', statut: 'validee' },
+      { id: 'v1', dossier_id: 'd1', nom_fichier: 'vente.pdf', date_piece: '2025-09-01', tiers: null, montant_ttc: 3000, type_piece: 'vente', statut: 'validee' },
+    ],
+    factures: [{ id: 'f1', dossier_id: 'd1', numero: 'F2025-007', statut: 'validee', type: 'facture', date_emission: '2025-10-01', tiers_nom: 'Client fictif', montant_ttc: 3000 }],
+  }
+
+  it('une saisie neuve ne cite rien ; la pièce choisie part dans l’appel et la confirmation la nomme', () => {
+    expect(formulaireVide('cca', COMPTES).pieceCitee).toBeNull()
+    const sans = verdictDeLaRegularisation(formulaire(), ctx(), donnees(), null, J)
+    if (sans.etat !== 'permis') throw new Error('refusé')
+    expect(sans.appel.operation.piece_citee_id).toBeNull()
+    expect(sans.confirmation).toContain('Aucune pièce citée.')
+    const avec = verdictDeLaRegularisation(formulaire({ pieceCitee: 'p1' }), ctx(), donnees(), null, J)
+    if (avec.etat !== 'permis') throw new Error('refusé')
+    expect(avec.appel.operation.piece_citee_id).toBe('p1')
+    expect(avec.confirmation).toContain('Pièce citée : « assurance-2025.pdf »')
+  })
+
+  it('un remplacement propose la pièce déjà citée ; changée ou retirée, c’est la nouvelle qui part', () => {
+    const existante = operation({ id: 'o1', version: 2, piece_citee_id: 'p1' })
+    expect(formulaireDeLOperation(existante).pieceCitee).toBe('p1')
+    const changee = verdictDeLaRegularisation({ ...formulaireDeLOperation(existante), pieceCitee: 'v1' }, ctx(), donnees(), existante, J)
+    if (changee.etat !== 'permis') throw new Error('refusé')
+    expect(changee.appel.operation).toMatchObject({ id: 'o1', piece_citee_id: 'v1' })
+    const retiree = verdictDeLaRegularisation({ ...formulaireDeLOperation(existante), pieceCitee: null }, ctx(), donnees(), existante, J)
+    if (retiree.etat !== 'permis') throw new Error('refusé')
+    expect(retiree.appel.operation.piece_citee_id).toBeNull()
+  })
+
+  it('les pièces pas lues : la pièce déjà citée part telle quelle, la confirmation dit « déjà citée » sans la deviner', () => {
+    const existante = operation({ id: 'o1', piece_citee_id: 'p1' })
+    const v = verdictDeLaRegularisation(formulaireDeLOperation(existante), ctx(), donnees(), existante, null)
+    if (v.etat !== 'permis') throw new Error('refusé')
+    expect(v.appel.operation.piece_citee_id).toBe('p1')
+    expect(v.confirmation).toContain('Pièce citée : celle qui était déjà citée.')
+  })
+
+  it('une pièce absente de ce qui est lu se refuse après la période, aux mots de la base', () => {
+    const v = verdictDeLaRegularisation(formulaire({ pieceCitee: 'ailleurs', periodeDebut: '2025-12-31', periodeFin: '2025-01-01' }), ctx(), donnees(), null, J)
+    expect(v).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.periode, MOTS_DES_JUSTIFICATIFS.pieceHorsDuDossier] })
+  })
+
+  it('une provision cite une pièce ou la facture d’une créance : l’une ou l’autre colonne, jamais les deux', () => {
+    const base = { ...formulaireDeProvisionVide('depreciation_creance', COMPTES), objet: 'Créance douteuse' }
+    expect(base.citation).toBeNull()
+    const parFacture = verdictDeLaProvision({ ...base, citation: { genre: 'facture', id: 'f1' } }, ctx(), donnees(), J)
+    if (parFacture.etat !== 'permis') throw new Error(parFacture.refus.join(' / '))
+    expect(parFacture.provision).toMatchObject({ facture_id: 'f1', piece_citee_id: null })
+    expect(parFacture.confirmation).toContain('Facture citée : Facture F2025-007')
+    const parPiece = verdictDeLaProvision({ ...base, citation: { genre: 'piece', id: 'v1' } }, ctx(), donnees(), J)
+    if (parPiece.etat !== 'permis') throw new Error(parPiece.refus.join(' / '))
+    expect(parPiece.provision).toMatchObject({ facture_id: null, piece_citee_id: 'v1' })
+  })
+
+  it('le refus de ce qu’elle cite vient après l’objet et avant la part reprise, dans l’ordre de la base', () => {
+    const v = verdictDeLaProvision(
+      { ...formulaireDeProvisionVide('risque', COMPTES), objet: ' ', reprise: '10,00', citation: { genre: 'facture', id: 'f1' } }, ctx(), donnees(), J,
+    )
+    expect(v).toEqual({
+      etat: 'refuse',
+      refus: [MOTS_DES_REFUS.objet, MOTS_DES_JUSTIFICATIFS.factureHorsDeLaDepreciation, MOTS_DES_PROVISIONS_A_L_ECRAN.partRepriseHorsDuPremierExercice],
+    })
+    expect(verdictDeLaProvision({ ...formulaireDeProvisionVide('depreciation_creance', COMPTES), objet: 'x', citation: { genre: 'piece', id: 'p1' } }, ctx(), donnees(), J))
+      .toEqual({ etat: 'refuse', refus: [MOTS_DES_JUSTIFICATIFS.pieceHorsDesVentes] })
   })
 })
 

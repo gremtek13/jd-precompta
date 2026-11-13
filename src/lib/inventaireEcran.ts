@@ -9,6 +9,9 @@ import {
   ciblePrecedente, refusDeLaDeclaration, refusDuRetrait as refusDuRetraitDeLaDeclarationDuModule,
   regularisationAJour, type DeclarationDeLaValidation,
 } from './inventaireDeLaValidation'
+import {
+  ligneDeLaCitation, refusDeLaCitationDUneProvision, refusDeLaPieceDUneRegularisation, type Citation, type JustificatifsDuDossier,
+} from './justificatifsDeLInventaire'
 import type { InventaireDeclare, ModeComptable, OperationInventaire, Provision, EcritureBrouillon } from './types'
 
 // L'ÉCRAN DE L'INVENTAIRE, SA LOGIQUE (ligne 35, lot INV5 ; docs/conceptions/35-inventaire.md, § 5.7). Un module PUR : l'onglet
@@ -150,6 +153,8 @@ export interface FormulaireDeRegularisation {
   periodeFin: string
   /** Le montant de la pièce pour toute sa période : l'entrée du prorata PROPOSÉ, jamais écrit en lui-même. */
   montantDeLaPiece: string
+  /** La pièce du dossier qui fonde la régularisation, choisie dans l'onglet (INV5-Q1) ; nulle : aucune. */
+  pieceCitee: string | null
 }
 
 /** Le compte de régularisation que le plan du dossier propose pour une nature qui a son rôle ; vide pour les autres. */
@@ -166,17 +171,19 @@ export function compteDeRegularisationPropose(nature: NatureAExtourner, comptes:
 export function formulaireVide(nature: NatureAExtourner, comptes: ComptesDInventaire): FormulaireDeRegularisation {
   return {
     nature, compteResultat: '', compteRegularisation: compteDeRegularisationPropose(nature, comptes), montant: '', tva: '', objet: '',
-    periodeDebut: '', periodeFin: '', montantDeLaPiece: '',
+    periodeDebut: '', periodeFin: '', montantDeLaPiece: '', pieceCitee: null,
   }
 }
 
-/** Le formulaire d'une régularisation existante, pour la REMPLACER : ce que la base porte, tel qu'une saisie le relit. */
+/** Le formulaire d'une régularisation existante, pour la REMPLACER : ce que la base porte, tel qu'une saisie le relit — la pièce
+ *  qu'elle cite comprise, PROPOSÉE de nouveau (le cabinet en choisit une autre, ou aucune). */
 export function formulaireDeLOperation(o: OperationInventaire): FormulaireDeRegularisation {
   return {
     nature: o.nature === 'provision' ? 'cca' : o.nature,
     compteResultat: o.compte_resultat, compteRegularisation: o.compte_regularisation,
     montant: texteDesCentimes(o.montant_centimes), tva: o.tva_centimes > 0 ? texteDesCentimes(o.tva_centimes) : '',
     objet: o.objet, periodeDebut: o.periode_debut ?? '', periodeFin: o.periode_fin ?? '', montantDeLaPiece: '',
+    pieceCitee: o.piece_citee_id,
   }
 }
 
@@ -217,27 +224,29 @@ function periodeDuFormulaire(f: FormulaireDeRegularisation): { debut: string | n
 const lignesDite = (e: EcritureDInventaire) => e.lignes.map((l) => `${SENS[l.sens]} ${l.compte} ${euros(l.centimes)}`).join(' ; ')
 
 /** La confirmation d'une régularisation : elle NOMME ce qui part — les deux écritures, leurs dates, leurs comptes et leurs
- *  montants, et le libellé qui ira au FEC. */
+ *  montants, le libellé qui ira au FEC, et la pièce citée (`ligneDeLaCitation`). */
 export function confirmationDeLaRegularisation(
-  constatation: EcritureDInventaire, extourne: EcritureDInventaire, remplace: OperationInventaire | null,
+  constatation: EcritureDInventaire, extourne: EcritureDInventaire, remplace: OperationInventaire | null, citation: string,
 ): string {
   return [
     remplace === null ? 'Enregistrer cette régularisation ?' : 'Remplacer cette régularisation ? Ses deux écritures sont réécrites.',
     `Au ${formatDate(constatation.date)} : ${lignesDite(constatation)}.`,
     `Au ${formatDate(extourne.date)} (extourne) : ${lignesDite(extourne)}.`,
     `Libellé, qui part au FEC : « ${constatation.libelle} ».`,
+    citation,
   ].join('\n')
 }
 
 /**
  * Le verdict d'une saisie de régularisation, TELLE QU'ELLE PART : le module de l'inventaire la juge (le mode, l'exercice, la
  * nature, le plan, les comptes, les montants, l'objet) et en compose la paire ; la période, que la base juge après l'objet, vient
- * à la suite. `remplace` : la régularisation que la saisie remplace — sa version est retenue, et sa pièce citée gardée (l'écran
- * ne la change pas, une saisie ne l'effacerait pas).
+ * à la suite, puis la pièce citée (l'étape 10 de la base), jugée sur les pièces LUES (`justificatifs`, nul : pas lues, la base
+ * jugera seule). `remplace` : la régularisation que la saisie remplace — sa version est retenue ; sa pièce citée est celle que
+ * le formulaire porte (`formulaireDeLOperation` la propose de nouveau, le cabinet la change ou la retire).
  */
 export function verdictDeLaRegularisation(
   f: FormulaireDeRegularisation, ctx: ContexteDeLInventaire, d: Pick<DonneesDeLInventaire, 'comptes' | 'premierExercice'>,
-  remplace: OperationInventaire | null,
+  remplace: OperationInventaire | null, justificatifs: JustificatifsDuDossier | null,
 ): VerdictDeLaRegularisation {
   const periode = periodeDuFormulaire(f)
   const tva = natureAvecTvaDAttente(f.nature, ctx.assujettiTva) ? centimesDeLaSaisie(f.tva, true) : 0
@@ -256,21 +265,26 @@ export function verdictDeLaRegularisation(
   })
   const refus = composition.ok ? [] : composition.refus.map((r) => r.message)
   if ('refus' in periode) refus.push(periode.refus)
-  if (!composition.ok || 'refus' in periode) return { etat: 'refuse', refus }
+  const refusDeLaPiece = refusDeLaPieceDUneRegularisation(f.pieceCitee, justificatifs)
+  if (refusDeLaPiece !== null) refus.push(refusDeLaPiece)
+  if (!composition.ok || 'refus' in periode || refusDeLaPiece !== null) return { etat: 'refuse', refus }
+  const citation: Citation | null = f.pieceCitee === null ? null : { genre: 'piece', id: f.pieceCitee }
   return {
     etat: 'permis',
     appel: {
       operation: {
         id: remplace?.id ?? null, exercice: ctx.exercice, nature: f.nature, compte_resultat: saisie.compteResultat,
         compte_regularisation: saisie.compteRegularisation, montant_centimes: saisie.montantCentimes, tva_centimes: saisie.tvaCentimes,
-        objet: saisie.objet, periode_debut: periode.debut, periode_fin: periode.fin, piece_citee_id: remplace?.piece_citee_id ?? null,
+        objet: saisie.objet, periode_debut: periode.debut, periode_fin: periode.fin, piece_citee_id: f.pieceCitee,
       },
       ecritures: [composition.constatation, composition.extourne],
       versionLue: remplace?.version ?? null,
     },
     constatation: composition.constatation,
     extourne: composition.extourne,
-    confirmation: confirmationDeLaRegularisation(composition.constatation, composition.extourne, remplace),
+    confirmation: confirmationDeLaRegularisation(
+      composition.constatation, composition.extourne, remplace, ligneDeLaCitation(citation, justificatifs),
+    ),
   }
 }
 
@@ -345,6 +359,8 @@ export interface FormulaireDeProvision {
   objet: string
   /** Sa part du solde repris de son compte (INV-Q11), au premier exercice du dossier seulement ; vide : née dans l'application. */
   reprise: string
+  /** Ce qu'elle cite, choisi dans l'onglet (INV5-Q1) : une pièce, ou la facture émise d'une créance dépréciée ; nul : rien. */
+  citation: Citation | null
 }
 
 /** Le compte que le plan du dossier propose pour un genre de provision. */
@@ -353,17 +369,18 @@ export function compteDeProvisionPropose(genre: GenreDeProvision, comptes: Compt
 }
 
 export const formulaireDeProvisionVide = (genre: GenreDeProvision, comptes: ComptesDInventaire): FormulaireDeProvision =>
-  ({ genre, compte: compteDeProvisionPropose(genre, comptes), objet: '', reprise: '' })
+  ({ genre, compte: compteDeProvisionPropose(genre, comptes), objet: '', reprise: '', citation: null })
 
 export type VerdictDeLaProvision =
   | { etat: 'permis'; provision: Record<string, unknown>; confirmation: string }
   | { etat: 'refuse'; refus: string[] }
 
 /** Le verdict de l'ouverture d'une provision, sur l'exercice affiché (`ouverte_en`) : les refus de `enregistrer_provision`, dans
- *  l'ordre du module (le mode, l'exercice, le genre, le compte, l'objet), puis ceux que la base seule dit (la part reprise). La
- *  facture ou la pièce qu'elle cite ne se choisissent pas encore d'ici : une provision s'ouvre sans. */
+ *  l'ordre du module (le mode, l'exercice, le genre, le compte, l'objet), puis ceux que la base seule dit, dans son ordre : ce
+ *  qu'elle cite (la facture ou la pièce, jugées sur ce qui est LU, `justificatifs` ; nul : pas lus), puis la part reprise. */
 export function verdictDeLaProvision(
   f: FormulaireDeProvision, ctx: ContexteDeLInventaire, d: Pick<DonneesDeLInventaire, 'comptes' | 'premierExercice'>,
+  justificatifs: JustificatifsDuDossier | null,
 ): VerdictDeLaProvision {
   const compte = f.compte.trim()
   const objet = f.objet.trim()
@@ -375,6 +392,8 @@ export function verdictDeLaProvision(
       ciblePrecedenteCentimes: 0, reajustement: CHOIX_DU_CABINET.reajustement,
     },
   ).filter((r) => !r.cle.startsWith('plan:')).map((r) => r.message)
+  const refusDeLaCitation = refusDeLaCitationDUneProvision(f.genre, f.citation, justificatifs)
+  if (refusDeLaCitation !== null) refus.push(refusDeLaCitation)
   let reprise: number | null = null
   if (f.reprise.trim() !== '') {
     reprise = centimesDeLaSaisie(f.reprise, false)
@@ -385,13 +404,15 @@ export function verdictDeLaProvision(
   return {
     etat: 'permis',
     provision: {
-      id: null, genre: f.genre, compte_provision: compte, objet, ouverte_en: ctx.exercice, facture_id: null, piece_citee_id: null,
+      id: null, genre: f.genre, compte_provision: compte, objet, ouverte_en: ctx.exercice,
+      facture_id: f.citation?.genre === 'facture' ? f.citation.id : null, piece_citee_id: f.citation?.genre === 'piece' ? f.citation.id : null,
       reprise_centimes: reprise,
     },
     confirmation: [
       'Ouvrir cette provision ?',
       `${LIBELLES_DES_GENRES[f.genre]} « ${objet} », au compte ${compte}, ouverte sur l’exercice ${ctx.exercice}`
         + `${reprise === null ? '' : `, pour ${euros(reprise)} du solde repris`}.`,
+      ligneDeLaCitation(f.citation, justificatifs),
       'Aucune écriture ne part : une provision s’écrit par son évaluation au 31 décembre.',
     ].join('\n'),
   }
