@@ -128,6 +128,12 @@ async function lireLesAchats(dossierId: string): Promise<AchatsDeLaTresorerie> {
         supabase.from('reglements_groupes').select(COLONNES_DES_PARTS, { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin)),
     ])
+    // Une liste lue en partie se dit ICI, comme toute lecture du dépôt (`lecturesSignalees.test.ts`) : les achats
+    // deviennent illisibles avec le motif de la première liste tronquée, et la projection se tait sous « tes achats : … ».
+    if (!pieces.complete || !declarations.complete || !parts.complete) {
+      const tronquee = !pieces.complete ? pieces : !declarations.complete ? declarations : parts
+      return { etat: 'illisibles', motif: tronquee.motif ?? 'lus en partie' }
+    }
     return { etat: 'lus', pieces: duDossier(pieces, dossierId), declarations: duDossier(declarations, dossierId), parts: duDossier(parts, dossierId) }
   } catch (e) {
     return { etat: 'illisibles', motif: messageErreur(e, 'tes achats n’ont pas pu être lus') }
