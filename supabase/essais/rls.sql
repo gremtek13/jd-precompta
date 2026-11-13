@@ -178,6 +178,10 @@
 --      SECU3-Q1, préparée) : aucune policy permissive de mise à jour, ni « pour tout », sur storage.objects ; personne ne
 --      réécrit ni ne déplace un pack ou un logo ; la lecture, le dépôt et le prédicat de suppression comme avant. Trois
 --      mutations ; avant la migration, une ligne « EN ATTENTE ».
+--  13. Le texte lu d'une pièce reste rattaché à son dossier quand il est réécrit (bloc TO, en fin de fichier ; migration
+--      `texte_ocr_coherent_a_la_mise_a_jour`, SECU3-Q2, préparée) : la mise à jour relit la cible comme l'insertion — une
+--      réécriture vers la pièce ou le document d'un autre dossier, ou vers un autre dossier, se refuse (42501) ; la
+--      réécriture de l'application passe. Deux mutations ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -11032,6 +11036,204 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $sm$;
+
+-- ══ TO. Le texte lu d'une pièce reste rattaché à son dossier quand il est réécrit (relecture de sécurité du 13/11/2026,
+--    SECU3-Q2 ; migration `texte_ocr_coherent_a_la_mise_a_jour`, PRÉPARÉE) ═══════════════════════════════════════════════
+-- La mise à jour relit la cible comme l'insertion : la ligne réécrite reste rattachée à une pièce, ou à un document, du
+-- dossier qu'elle annonce, et ce dossier est administré par l'appelant (le modèle : `notes_internes_cabinet`).
+--   TO1. Le catalogue : `piece_textes_ocr_update`, de mise à jour, permissive, à authenticated seul, son USING d'hier, et
+--        son WITH CHECK, le dossier administré puis la cible de l'insertion, mot pour mot ; la seule policy permissive de
+--        mise à jour de la table.
+--   TO2. Le membre de l'équipe affecté aux dossiers jetables A et B, sur le texte d'une pièce de A : vers la pièce d'un
+--        dossier C qui ne lui est pas affecté, vers un document de C, vers le dossier B en gardant la pièce de A — refusés
+--        (42501, la raison exigée : la ligne proposée, refusée par la policy) ; le chef du cabinet (super-administrateur),
+--        vers la pièce de C en gardant le dossier A — refusé aussi.
+--   TO3. Ce qui passe (contrôles POSITIFS) : le membre réécrit le texte, le rattache à une autre pièce de A, puis à un
+--        document de A ; l'upsert de l'application (lib/texteOcr.ts), le dossier compris.
+--   TO4. L'anonyme, un compte rattaché à rien et le client ne touchent aucune ligne.
+-- Deux mutations, qui doivent mordre : M-TO1 (le WITH CHECK d'hier remis : le texte part vers la pièce de C), M-TO2 (TO2
+-- jugé sur un échec sans rapport — une colonne qui n'existe pas, 42703 — : EN FAUTE, la raison est exigée). Le jeu : trois
+-- dossiers jetables du cabinet du chef, leurs pièces, leurs documents et un texte lu, dans une sous-transaction annulée.
+-- Avant la migration, une ligne dit que le bloc attend.
+do $to$
+declare
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  inconnu uuid := gen_random_uuid();
+  dossier_a uuid := '5e130000-0000-4000-8113-0000000000b1';
+  dossier_b uuid := '5e130000-0000-4000-8113-0000000000b2';
+  dossier_c uuid := '5e130000-0000-4000-8113-0000000000b3';
+  piece_a uuid := '5e130000-0000-4000-8113-000000000a01';
+  piece_a2 uuid := '5e130000-0000-4000-8113-000000000a02';
+  piece_c uuid := '5e130000-0000-4000-8113-000000000c01';
+  document_a uuid := '5e130000-0000-4000-8113-000000000d01';
+  document_c uuid := '5e130000-0000-4000-8113-000000000d03';
+  le_texte uuid := '5e130000-0000-4000-8113-000000000e01';
+  chemin_avant text := current_setting('search_path');
+  cible constant text := '(((piece_id IS NOT NULL) AND (EXISTS ( SELECT 1' || chr(10)
+    || '   FROM public.pieces p' || chr(10)
+    || '  WHERE ((p.id = piece_textes_ocr.piece_id) AND (p.dossier_id = piece_textes_ocr.dossier_id))))) OR ((document_id IS NOT NULL) AND (EXISTS ( SELECT 1' || chr(10)
+    || '   FROM public.documents_divers d' || chr(10)
+    || '  WHERE ((d.id = piece_textes_ocr.document_id) AND (d.dossier_id = piece_textes_ocr.dossier_id))))))';
+  refus constant text := 'new row violates row-level security policy for table "piece_textes_ocr"';
+  cabinet uuid; controle text; selection text; insertion text; conforme boolean; autres text; geste text; profil text; sub uuid;
+  touchees bigint; obs text; motif text; message text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  -- Le catalogue, lu sous un chemin vide (qui nomme le schéma de chaque fonction et de chaque table).
+  perform set_config('search_path', '', true);
+  select pg_get_expr(p.polwithcheck, p.polrelid), pg_get_expr(p.polqual, p.polrelid),
+         p.polcmd = 'w' and p.polpermissive and p.polroles = array['authenticated'::regrole]::oid[]
+    into controle, selection, conforme
+    from pg_policy p where p.polrelid = 'public.piece_textes_ocr'::regclass and p.polname = 'piece_textes_ocr_update';
+  select pg_get_expr(p.polwithcheck, p.polrelid) into insertion from pg_policy p
+   where p.polrelid = 'public.piece_textes_ocr'::regclass and p.polname = 'piece_textes_ocr_insert';
+  select string_agg(p.polname, ',' order by p.polname collate "C") into autres from pg_policy p
+   where p.polrelid = 'public.piece_textes_ocr'::regclass and p.polpermissive and p.polcmd in ('w', '*');
+  perform set_config('search_path', chemin_avant, true);
+  if controle = 'public.admin_du_dossier(dossier_id)' then
+    insert into rls_verdict values ('TO. le texte lu d''une pièce reste rattaché à son dossier quand il est réécrit : EN ATTENTE de la migration texte_ocr_coherent_a_la_mise_a_jour',
+      'piece_textes_ocr', 'la mise à jour ne relit que le dossier : la règle se juge dès que la migration y est', true);
+    return;
+  end if;
+  select ca.cabinet_id into cabinet from cabinet_admins ca where ca.user_id = chef and ca.role = 'comptable_en_chef'
+   order by ca.cabinet_id limit 1;
+
+  -- TO1 : le catalogue.
+  verdicts := verdicts || jsonb_build_object('controle', 'TO1. piece_textes_ocr_update : de mise à jour, permissive, à authenticated seul, son USING d''hier, son WITH CHECK (le dossier administré puis la cible de l''insertion) mot pour mot ; la seule de mise à jour (lecture du catalogue)',
+    'cible', 'piece_textes_ocr',
+    'observe', case when controle = '(public.admin_du_dossier(dossier_id) AND ' || cible || ')' then 'le contrôle posé' else 'UN AUTRE CONTRÔLE' end || ' ; ' || coalesce(autres, 'aucune'),
+    'ok', coalesce(controle = '(public.admin_du_dossier(dossier_id) AND ' || cible || ')' and autres = 'piece_textes_ocr_update'
+      and conforme and selection = 'public.admin_du_dossier(dossier_id)' and strpos(insertion, ' AND ' || cible || ')') > 0, false));
+
+  begin
+    -- ── Le jeu : trois dossiers jetables du cabinet du chef, A et B affectés au membre, C non ; leurs pièces et documents,
+    -- et le texte lu d'une pièce de A ──
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id) values
+      (dossier_a, 'ESSAI RLS TO A', cabinet), (dossier_b, 'ESSAI RLS TO B', cabinet), (dossier_c, 'ESSAI RLS TO C', cabinet);
+    insert into dossier_assignations (dossier_id, user_id) values (dossier_a, membre), (dossier_b, membre);
+    insert into pieces (id, dossier_id, storage_path, nom_fichier) values
+      (piece_a, dossier_a, dossier_a::text || '/a.pdf', 'a.pdf'), (piece_a2, dossier_a, dossier_a::text || '/a2.pdf', 'a2.pdf'),
+      (piece_c, dossier_c, dossier_c::text || '/c.pdf', 'c.pdf');
+    insert into documents_divers (id, dossier_id, storage_path, nom_fichier, categorie) values
+      (document_a, dossier_a, dossier_a::text || '/doc-a.pdf', 'doc-a.pdf', 'autre'), (document_c, dossier_c, dossier_c::text || '/doc-c.pdf', 'doc-c.pdf', 'autre');
+    insert into piece_textes_ocr (id, dossier_id, piece_id, texte) values (le_texte, dossier_a, piece_a, 'TEXTE LU D''ESSAI RLS TO');
+    construit := true;
+
+    -- TO2 : vers une cible d'un autre dossier, ou vers un autre dossier — refusés, la raison exigée.
+    foreach geste in array array[
+      'membre|piece_id = ''' || piece_c || '''',
+      'membre|piece_id = null, document_id = ''' || document_c || '''',
+      'membre|dossier_id = ''' || dossier_b || '''',
+      'chef|piece_id = ''' || piece_c || ''''] loop
+      motif := null; message := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', case split_part(geste, '|', 1) when 'chef' then chef else membre end, 'role', 'authenticated')::text, true);
+        execute format('update public.piece_textes_ocr set %s where id = %L', split_part(geste, '|', 2), le_texte);
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'TO2. un texte lu ne se rattache ni à la pièce ou au document d''un autre dossier, ni à un autre dossier : refusé (42501, la ligne proposée)',
+        'cible', case split_part(geste, '|', 1) when 'chef' then 'le chef' else 'le membre affecté' end || ' : '
+          || case when geste like '%document_id%' then 'un document du dossier C' when geste like '%dossier_id%' then 'le dossier B, la pièce de A gardée' else 'la pièce du dossier C' end,
+        'observe', coalesce(motif, '?') || ' ' || coalesce(message, '?'), 'ok', motif = '42501' and message = refus);
+    end loop;
+    -- M-TO2 : TO2 jugé sur un échec sans rapport (une colonne qui n'existe pas, 42703) — doit être EN FAUTE.
+    motif := null; message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      execute format('update public.piece_textes_ocr set piece_id_inexistante = %L where id = %L', piece_c, le_texte);
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-TO2 — TO2 jugé sur un échec sans rapport (42703)', 'attendu', 'EN FAUTE : la raison est exigée',
+      'observe', coalesce(motif, '?') || ' ' || coalesce(message, '?'), 'mord', not coalesce(motif = '42501' and message = refus, false));
+    -- M-TO1 : le WITH CHECK d'hier remis — le texte part vers la pièce du dossier C.
+    obs := null;
+    begin
+      alter policy piece_textes_ocr_update on public.piece_textes_ocr with check (public.admin_du_dossier(dossier_id));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      update public.piece_textes_ocr set piece_id = piece_c where id = le_texte;
+      get diagnostics touchees = row_count;
+      obs := touchees || ' ligne(s)';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-TO1 — le WITH CHECK d''hier remis sur la mise à jour du texte lu', 'attendu', 'le texte part vers la pièce du dossier C (1 ligne)',
+      'observe', coalesce(obs, '?'), 'mord', obs is not distinct from '1 ligne(s)');
+
+    -- TO3 : ce qui passe — chaque geste dans sa sous-transaction annulée.
+    foreach geste in array array[
+      'update public.piece_textes_ocr set texte = ''TEXTE RELU RLS TO'', updated_at = now() where id = ''' || le_texte || '''',
+      'update public.piece_textes_ocr set piece_id = ''' || piece_a2 || ''' where id = ''' || le_texte || '''',
+      'update public.piece_textes_ocr set piece_id = null, document_id = ''' || document_a || ''' where id = ''' || le_texte || '''',
+      'insert into public.piece_textes_ocr (dossier_id, piece_id, texte, updated_at) values (''' || dossier_a || ''', ''' || piece_a
+        || ''', ''TEXTE RELU RLS TO'', now()) on conflict (piece_id) do update set dossier_id = excluded.dossier_id, piece_id = excluded.piece_id, texte = excluded.texte, updated_at = excluded.updated_at'] loop
+      obs := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+        execute geste;
+        get diagnostics touchees = row_count;
+        obs := touchees || ' ligne(s)';
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then obs := sqlstate || ' ' || sqlerrm; end if;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'TO3. le membre affecté réécrit le texte, le rattache à une autre pièce ou à un document de son dossier, et l''upsert de l''application passe (contrôles positifs)',
+        'cible', case when geste like 'insert%' then 'l''upsert de l''application' when geste like '%document_id%' then 'un document du dossier A'
+                      when geste like '%set piece_id%' then 'une autre pièce du dossier A' else 'le texte réécrit' end,
+        'observe', coalesce(obs, '?'), 'ok', obs = '1 ligne(s)');
+    end loop;
+
+    -- TO4 : l'anonyme, un compte rattaché à rien, le client — aucune ligne.
+    foreach profil in array array['anon', 'inconnu', 'client'] loop
+      obs := null;
+      begin
+        if profil = 'anon' then
+          set local role anon;
+          perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+        else
+          sub := case profil when 'inconnu' then inconnu else client end;
+          set local role authenticated;
+          perform set_config('request.jwt.claims', json_build_object('sub', sub, 'role', 'authenticated')::text, true);
+        end if;
+        update public.piece_textes_ocr set texte = 'TEXTE RELU RLS TO' where id = le_texte;
+        get diagnostics touchees = row_count;
+        obs := touchees || ' ligne(s)';
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then obs := sqlstate || ' ' || sqlerrm; end if;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'TO4. l''anonyme, un compte rattaché à rien et le client ne réécrivent aucun texte lu',
+        'cible', profil, 'observe', coalesce(obs, '?'), 'ok', obs = '0 ligne(s)' or obs like '42501 permission denied for table piece_textes_ocr%');
+    end loop;
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlerrm); end if;
+    when others then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm);
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('search_path', chemin_avant, true);
+  verdicts := verdicts || jsonb_build_object('controle', 'TO. le jeu d''essai du texte lu s''est construit, et rien n''en est resté', 'cible', 'les trois dossiers jetables',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (dossier_a, dossier_b, dossier_c)));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $to$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
