@@ -2,8 +2,8 @@
 -- SEULEMENT) : une ligne marquée par dossier de leurre, écrite à la main selon les CHECK de la table, déclencheurs coupés
 -- — dix tables de dossier, et deux sans `dossier_id` qui porteront des données réelles ; sur la réplique qui porte une
 -- migration préparée, ses tables aussi (la caisse hier, les devis, les factures reprises, la numérotation qui continue,
--- la pièce d'une facture reprise, les documents du cabinet et leurs lectures, les modèles de lettre de mission),
--- chacune sous `to_regclass`.
+-- la pièce d'une facture reprise, les documents du cabinet et leurs lectures, les modèles de lettre de mission, les
+-- paquets d'archive téléchargés et les conservations), chacune sous `to_regclass`.
 \set ON_ERROR_STOP on
 begin;
 set local session_replication_role = replica;
@@ -165,5 +165,22 @@ begin
         from lc$i$;
   end if;
 end $modeles_lettre$;
+-- Le départ d'un client (migration `depart_du_client`, INAL5, sur la réplique qui la porte) : le remplisseur ne compose ni
+-- l'empreinte d'un manifeste (64 chiffres hexadécimaux) ni des comptes cohérents, ni le terme d'une conservation (le 31
+-- décembre de la dixième année, posée avant d'être levée) ; un paquet téléchargé et une conservation LEVÉE par leurre
+-- (une conservation en cours fermerait le dossier du leurre aux essais), l'empreinte de l'exercice marquée.
+do $depart$
+begin
+  if to_regclass('public.paquets_d_archive_telecharges') is not null and to_regclass('public.conservations_des_dossiers') is not null then
+    execute $i$insert into public.paquets_d_archive_telecharges (id, dossier_id, annee, empreinte_exercice, empreinte_du_manifeste,
+        nb_fichiers, nb_non_verifiees, telecharge_par)
+      select (pfx || '-0000-4000-8000-000000000b' || h || '1')::uuid, d, 2025, m || ' empreinte de l''exercice',
+             md5(m) || md5(m || ' manifeste'), 3, 0, chef from lc$i$;
+    execute $i$insert into public.conservations_des_dossiers (id, dossier_id, dernier_exercice, jusqu_au, posee_le, posee_par,
+        levee_le, levee_par)
+      select (pfx || '-0000-4000-8000-000000000c' || h || '1')::uuid, d, 2025, '2035-12-31', '2026-06-17 10:00:00+02', chef,
+             '2026-06-18 10:00:00+02', chef from lc$i$;
+  end if;
+end $depart$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;
