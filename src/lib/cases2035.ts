@@ -374,6 +374,60 @@ export function posteRattache(poste: string, nature: LigneDeclaration['nature'])
   return c && cadreCompatible(c, nature) ? POSTE_PAR_CLE.get(cle(poste)) ?? null : null
 }
 
+// UN POSTE, UNE ORTHOGRAPHE DANS LE FEC (relevé par FEC22f le 13/11/2026). Le rattachement connaît plusieurs noms pour une
+// même ligne du formulaire — « Recettes », le poste que le cabinet donne à ses catégories, et « Recettes encaissées y compris
+// les remboursements de frais », le libellé de la ligne 1 et le poste des ventes facturées (2035-A-SD 2026, cadre 2,
+// ligne 1, case AA) — et la NatOp d'un FEC à vingt-deux champs, remis à l'administration et importé par l'expert-comptable,
+// disait la même case de deux façons. Elle dit désormais le LIBELLÉ DE LA LIGNE imprimé sur le formulaire, quel que soit le
+// nom sous lequel la catégorie ou le moteur l'a rangée : chaque synonyme ci-dessous vers ce libellé.
+//
+// LA LIGNE, PAS LA CASE : une case à ligne propre a un seul libellé ; BH, BJ et BM totalisent des lignes qui ont chacune le
+// leur (lignes 17 à 22, 23 et 24, 26 à 30), et une ligne qui alimente aussi une case « dont » (BW, BZ, BU, BY) ou DB garde
+// le sien — ce sont des lignes distinctes du formulaire, pas deux façons de dire la même. Deux générosités restent : « Frais
+// divers de gestion » et « Divers » vont à la ligne 30, « Autres frais divers de gestion », le reste de BM (la destination
+// que le rattachement leur donnait déjà) ; « Frais de déplacements », le poste de la catégorie « Carburant / déplacements »,
+// n'a pas de ligne sûre (la ligne 23 pour un carburant aux frais réels, la 24 pour un voyage) et reste à part, sa question
+// posée au cabinet (FEC22F-Q2).
+//
+// CHAQUE LIBELLÉ RETENU EST DANS LA LISTE FERMÉE DE LA BASE (`POSTES_RATTACHES`, recopiée par `champs_bnc_du_fec`) : la
+// correction ne demande aucune migration. Deux libellés retenus diffèrent encore de l'imprimé, faute d'y être : la ligne 10
+// sans « (parts patronale et ouvrière) », la ligne 21 en « des rétrocessions » quand le formulaire 2026 imprime « les » —
+// les ajouter serait une migration (FEC22F-Q2). cases2035.test.ts juge la table ENTIÈRE.
+//
+// Rien de ce qui est figé ne change : une ligne validée relit ses colonnes (`natOpFigee`), et `posteRattache` — la classe
+// d'un poste dans les listes de la base, les postes proposés à une catégorie — reste ce qu'il était.
+export const LIBELLE_DE_LA_LIGNE: ReadonlyMap<string, string> = new Map([
+  ['Recettes', POSTE_VENTES_FACTUREES],
+  ['Débours', 'Débours payés pour le compte des clients'],
+  ['Rétrocessions', 'Honoraires rétrocédés'],
+  ['Salaires', 'Salaires nets et avantages en nature'],
+  ['TVA', 'Taxe sur la valeur ajoutée'],
+  ['CET', 'Contribution économique territoriale'],
+  ['Impôts et taxes', 'Autres impôts'],
+  [POSTE_CSG_DEDUCTIBLE, 'Contribution sociale généralisée déductible'],
+  ['Loyers et charges locatives', 'Loyer et charges locatives'],
+  ["Primes d'assurance", "Primes d'assurances"],
+  ['Assurance', "Primes d'assurances"],
+  // « Total A à reporter ligne 23 de l'annexe 2035 A » (2035-B-SD, cadre 7).
+  [POSTE_INDEMNITES_KM, 'Frais de véhicules'],
+  ['Frais de déplacement', 'Frais de déplacements'],
+  [POSTE_COTISATIONS, 'Charges sociales personnelles'],
+  ['Frais de réception, de représentation', 'Frais de réception, de représentation et de congrès'],
+  ['Fournitures de bureau', 'Fournitures de bureau, frais de documentation, de correspondance et de téléphone'],
+  ['Frais divers de gestion', 'Autres frais divers de gestion'],
+  ['Divers', 'Autres frais divers de gestion'],
+  [POSTE_AMORTISSEMENTS, 'Dotation aux amortissements'],
+])
+
+/**
+ * Le poste d'une ligne de cette nature tel que la NatOp du FEC l'écrit : le libellé de la ligne du formulaire
+ * (`LIBELLE_DE_LA_LIGNE`), sous l'orthographe du rattachement ; nul exactement quand `posteRattache` l'est.
+ */
+export function posteDuFormulaire(poste: string, nature: LigneDeclaration['nature']): string | null {
+  const rattache = posteRattache(poste, nature)
+  return rattache === null ? null : LIBELLE_DE_LA_LIGNE.get(rattache) ?? rattache
+}
+
 export interface CaseRemplie {
   case: Case2035
   montant: number

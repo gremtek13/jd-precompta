@@ -1,5 +1,5 @@
 import { mouvementJustifieParLeReleve, natureDuCompte, type NatureCompte } from './affectationBanque'
-import { posteRattache } from './cases2035'
+import { posteDuFormulaire } from './cases2035'
 import {
   POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE,
   POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
@@ -195,15 +195,17 @@ function posteDeLaSource(p: PosteLu): string | null {
 
 /**
  * NatOp d'une ligne : la nature de l'écriture, et — sur une ligne de charge ou de produit (classe 6 ou 7, la nature
- * qu'en donne le compte : `natureDuCompte`) — le poste que la 2035 lui connaît, sous l'orthographe du rattachement des
- * cases (`posteRattache`, lib/cases2035.ts). Un poste inconnu, ou d'une case de l'autre cadre — ceux que la 2035 dit
- * « sans case » —, laisse la nature seule : on n'écrit pas un poste que le formulaire ne range pas.
+ * qu'en donne le compte : `natureDuCompte`) — le poste que la 2035 lui connaît, sous le libellé de sa ligne du formulaire
+ * (`posteDuFormulaire`, lib/cases2035.ts) : une catégorie à « Recettes » et une vente facturée disent toutes deux la
+ * ligne 1, « Recettes encaissées y compris les remboursements de frais » (FEC22f, 13/11/2026). Un poste inconnu, ou d'une
+ * case de l'autre cadre — ceux que la 2035 dit « sans case » —, laisse la nature seule : on n'écrit pas un poste que le
+ * formulaire ne range pas.
  */
 export function natOpDeLaLigne(nature: NatureOperation, ligne: Pick<LigneACaracteriser, 'compte' | 'poste'>): string {
   const sens = natureDuCompte(ligne.compte)
   if (sens === null) return nature
   const poste = posteDeLaSource(ligne.poste)
-  const range = poste === null ? null : posteRattache(poste, sens)
+  const range = poste === null ? null : posteDuFormulaire(poste, sens)
   return range === null ? nature : `${nature}${SEPARATEUR_DU_POSTE}${range}`
 }
 

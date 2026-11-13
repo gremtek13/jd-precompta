@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { anomaliesBnc, anomaliesDgfip, colonnes, desequilibresDgfip, ENTETES_BNC_ATTENDUS, structureBncDgfip } from '../test/fecDgfip'
 import { ANNEE_DU_FEC_FICTIF, composerLeFecFictif, type FecFictif } from '../test/fecFictif'
-import { POSTES_RATTACHES } from './cases2035'
+import { caseDuPoste, posteDuFormulaire, POSTES_RATTACHES, SECONDES_CASES } from './cases2035'
 import { MODES_REGLEMENT, NATURES_OPERATION, SEPARATEUR_DU_POSTE, type ChoixChampsBnc } from './champsBncDuFec'
 
 // L'ÉPREUVE DU FICHIER (lot FEC22f, première partie) : le FEC fictif que outils/fec/ écrit, joué ici en mémoire par la même
@@ -151,6 +151,29 @@ describe.each([
       ]
     })
     expect(fautes).toEqual([])
+  })
+
+  // Relevé par la première partie de FEC22f (13/11/2026) : la case AA s'y disait « Recettes » et « Recettes encaissées y
+  // compris les remboursements de frais ». Une case qui n'a qu'une ligne ne se dit plus que d'un libellé — celui que
+  // `posteDuFormulaire` rend, la seule écriture du poste dans le fichier ; BH, BJ et BM totalisent des lignes qui ont
+  // chacune le sien, et une ligne qui alimente aussi une case « dont » garde le sien (lib/cases2035.ts).
+  it('un poste se dit d’une seule façon : une case à ligne propre, un libellé, celui de la ligne du formulaire', () => {
+    const f = lire()
+    const parCible = new Map<string, Set<string>>()
+    const fautes: string[] = []
+    for (const r of lignesDe(f.vingtDeux)) {
+      const poste = r[20].split(SEPARATEUR_DU_POSTE)[1]
+      if (poste === undefined) continue
+      const sens = r[4].startsWith('7') ? 'recette' : 'depense'
+      if (posteDuFormulaire(poste, sens) !== poste) fautes.push(`${r[2]} : « ${poste} » n’est pas le libellé de sa ligne`)
+      const code = caseDuPoste(poste)?.code ?? '?'
+      if (['BH', 'BJ', 'BM'].includes(code) || SECONDES_CASES.has(poste)) continue
+      parCible.set(code, new Set([...(parCible.get(code) ?? []), poste]))
+    }
+    for (const [code, postes] of parCible) if (postes.size > 1) fautes.push(`${code} : ${[...postes].join(' / ')}`)
+    expect(fautes).toEqual([])
+    // Le dossier porte les deux sources de la case AA : une catégorie de recettes et des ventes facturées.
+    expect(parCible.get('AA')).toEqual(new Set(['Recettes encaissées y compris les remboursements de frais']))
   })
 
   it('ses dix-huit premiers champs sont le fichier d’aujourd’hui, ligne pour ligne', () => {

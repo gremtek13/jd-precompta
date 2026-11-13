@@ -228,8 +228,8 @@ describe('le drapeau levé : une ligne par règlement, et la demande porte les c
     expect(n.lignes.map((l) => [`${l.journal}${l.numero}`, l.ecriture.compte, l.ecriture.montant, l.champsBnc?.modeRglt, l.champsBnc?.natOp])).toEqual([
       ['AC1', '445660', 11.67, 'Banque', 'Dépense'], ['AC1', '606100', 58.33, 'Banque', 'Dépense — Achats'], ['AC1', '512000', 70, 'Banque', 'Dépense'],
       ['AC2', '445660', 8.33, 'Espèces', 'Dépense'], ['AC2', '606100', 41.67, 'Espèces', 'Dépense — Achats'], ['AC2', '530000', 50, 'Espèces', 'Dépense'],
-      ['AC3', '625100', 30, 'Banque', 'Dépense — Divers'], ['AC3', '512000', 30, 'Banque', 'Dépense'],
-      ['AC4', '625100', 50, 'Compte personnel', 'Dépense — Divers'], ['AC4', '108000', 50, 'Compte personnel', 'Dépense'],
+      ['AC3', '625100', 30, 'Banque', 'Dépense — Autres frais divers de gestion'], ['AC3', '512000', 30, 'Banque', 'Dépense'],
+      ['AC4', '625100', 50, 'Compte personnel', 'Dépense — Autres frais divers de gestion'], ['AC4', '108000', 50, 'Compte personnel', 'Dépense'],
     ])
     expect(new Set(n.lignes.map((l) => l.ecriture.id)).size).toBe(n.lignes.length)
     expect(defautsDeNumerotation(n)).toEqual([])
@@ -254,8 +254,8 @@ describe('le drapeau levé : une ligne par règlement, et la demande porte les c
       ['AC', 1, '2025-03-20', 'Banque', 'Dépense', null, null],
       ['AC', 2, '2025-03-20', 'Espèces', 'Dépense', null, null], ['AC', 2, '2025-03-20', 'Espèces', 'Dépense', 'Achats', null],
       ['AC', 2, '2025-03-20', 'Espèces', 'Dépense', null, null],
-      ['AC', 3, '2025-06-01', 'Banque', 'Dépense', 'Divers', null], ['AC', 3, '2025-06-01', 'Banque', 'Dépense', null, null],
-      ['AC', 4, '2025-06-01', 'Compte personnel', 'Dépense', 'Divers', null], ['AC', 4, '2025-06-01', 'Compte personnel', 'Dépense', null, null],
+      ['AC', 3, '2025-06-01', 'Banque', 'Dépense', 'Autres frais divers de gestion', null], ['AC', 3, '2025-06-01', 'Banque', 'Dépense', null, null],
+      ['AC', 4, '2025-06-01', 'Compte personnel', 'Dépense', 'Autres frais divers de gestion', null], ['AC', 4, '2025-06-01', 'Compte personnel', 'Dépense', null, null],
     ])
     // Le jugement de la base, redit : rien à refuser.
     const lignes = aJuger(n)
