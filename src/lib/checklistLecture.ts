@@ -17,6 +17,7 @@ import { facturesSourcesDe } from './facturesSources'
 import { lireLesSoldesReportes } from './soldesReportesLecture'
 import { lireLaCaisse, type LectureDeLaCaisse } from './caisseLecture'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from './paiementParLaCaisse'
+import { lireLInventaireDesControles } from './inventaireLecture'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, FactureEmise, Immobilisation,
   LigneBancaire, LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
@@ -87,6 +88,7 @@ export async function lireLaChecklist(
     lectureReportes,
     ventesFacturees,
     lectureCaisse,
+    lectureInventaire,
   ] = await Promise.all([
     // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
     // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -177,6 +179,8 @@ export async function lireLaChecklist(
     ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
     // Ne rejette jamais non plus ; le drapeau baissé, ne touche pas au réseau (la caisse absente).
     lireLaCaisse(dossierId),
+    // L'inventaire (ligne 35, INV6) : ne rejette jamais ; le drapeau `INVENTAIRE_EXPORTE` baissé, sans objet, sans un appel.
+    lireLInventaireDesControles(dossierId),
   ])
   // Best-effort, comme dans BanqueTab : l'échec est journalisé, et rendu NUL — jamais lu ici comme « aucun écart ».
   // TOUS les contrôles, lus une fois (RELEVE-Q1) : ceux qui ne bouclent pas s'en tirent, et la suite des soldes d'un relevé à
@@ -216,7 +220,11 @@ export async function lireLaChecklist(
       lectureVehicules, lectureLettrages, lectureDeclarations, lectureFacturesEmises, lectureTransmissions,
     ].find((l) => !l.complete)?.motif
       // Les comptes bancaires illisibles (MCB4) : les mois manquants suivent la règle du dossier, les ruptures se taisent.
-      ?? (comptesBancaires.etat === 'illisible' ? `les comptes bancaires du dossier : ${comptesBancaires.motif}` : null),
+      ?? (comptesBancaires.etat === 'illisible' ? `les comptes bancaires du dossier : ${comptesBancaires.motif}` : null)
+      // L'inventaire lu en partie (INV6) : ses points se taisent, la révision n'en propose aucune preuve, et la liste le dit.
+      ?? (lectureInventaire.etat === 'incomplete' ? `l’inventaire du dossier : ${lectureInventaire.motif}` : null),
+    // L'inventaire lu en entier, ou sans objet (le drapeau baissé, ou lu en partie : le motif est dit au-dessus).
+    inventaire: lectureInventaire.etat === 'lu' ? lectureInventaire.inventaire : { etat: 'sans_objet' },
     piecesIncompletes: (() => {
       const partielle = [lectureValidees, lectureAValider].find((l) => !l.complete)
       return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'

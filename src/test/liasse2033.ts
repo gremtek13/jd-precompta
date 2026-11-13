@@ -1,3 +1,4 @@
+import { INVENTAIRE_DES_CONTROLES_SANS_OBJET } from '../lib/inventaireDesControles'
 import { bilanDeLExercice, type BilanEtabli, type EntreesDuBilan } from '../lib/bilan'
 import type { ModeleComptable } from '../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../lib/planComptable'
@@ -43,7 +44,7 @@ export function reprise(date: string, lignes: Ligne[]): ANouveau[] {
 export function bilanEtabli(o: Partial<EntreesDuBilan>): BilanEtabli {
   const b = bilanDeLExercice({
     exercice: 2026, ecritures: [], categories: [], reprise: [], reportes: [], anneesValidees: [], pieces: [],
-    modele: SOCIETE, aujourdHui: '2027-03-15', ...o,
+    modele: SOCIETE, aujourdHui: '2027-03-15', inventaire: INVENTAIRE_DES_CONTROLES_SANS_OBJET, ...o,
   })
   if (b.etat !== 'etabli') throw new Error(`bilan non établi : ${b.motif.texte}`)
   return b

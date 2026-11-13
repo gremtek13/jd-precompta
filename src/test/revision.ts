@@ -120,7 +120,7 @@ export function donnees(o: Partial<DonneesDeLaRevision>): DonneesDeLaRevision {
     annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, assujettiTva: false,
     periodiciteTva: 'trimestrielle', ecritures: [], reprise: [], reportes: [], exercicesValides: [], verificationPrecedent: null,
     lignes: [], controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, pieces: [], documents: [], immobilisations: [], natures: [], emprunts: [],
-    declarationsTva: [], lectureIncomplete: null, categories: [], decisions: [], preuves: [], ...o,
+    declarationsTva: [], lectureIncomplete: null, categories: [], decisions: [], preuves: [], inventaire: { etat: 'sans_objet' }, ...o,
   }
 }
 

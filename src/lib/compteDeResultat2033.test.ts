@@ -1,3 +1,4 @@
+import { INVENTAIRE_DES_CONTROLES_SANS_OBJET } from './inventaireDesControles'
 import { describe, expect, it } from 'vitest'
 import {
   arrondirALEuro, CASES_ALIMENTEES_2033B, compteDeResultat2033, compteDeResultatALEuro, regleDuCompteDeResultat,
@@ -85,7 +86,7 @@ describe('compteDeResultat2033 — des comptes de résultat calculés à la main
     // L'exercice 2027 attend la validation de 2026, que rien n'a validé : son ouverture est en attente.
     const bilan = bilanDeLExercice({
       exercice: 2027, ecritures: ANNEE, categories: [], reprise: [], reportes: [], anneesValidees: [], pieces: [],
-      modele: SOCIETE, aujourdHui: '2028-03-15',
+      modele: SOCIETE, aujourdHui: '2028-03-15', inventaire: INVENTAIRE_DES_CONTROLES_SANS_OBJET,
     })
     expect(bilan.etat).toBe('non-etabli')
     const cr = compteDeResultat2033({ bilan, mode: 'engagement', imposition: 'is', rattachements: PROVISIONS_EN_256 })

@@ -1,3 +1,4 @@
+import { INVENTAIRE_DES_CONTROLES_SANS_OBJET } from './inventaireDesControles'
 import { describe, expect, it } from 'vitest'
 import type { EntreesDuBilan } from './bilan'
 import type { ModeleComptable } from './engagement'
@@ -55,7 +56,7 @@ function reportes(date: string, lignes: Ligne[]): SoldeReporte[] {
 function entrees(o: Partial<EntreesDuBilan>): EntreesDuBilan {
   return {
     exercice: 2026, ecritures: [], categories: [], reprise: [], reportes: [], anneesValidees: [], pieces: [],
-    modele: SOCIETE, aujourdHui: '2027-03-15', ...o,
+    modele: SOCIETE, aujourdHui: '2027-03-15', inventaire: INVENTAIRE_DES_CONTROLES_SANS_OBJET, ...o,
   }
 }
 

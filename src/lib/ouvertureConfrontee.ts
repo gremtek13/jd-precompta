@@ -1,3 +1,4 @@
+import { INVENTAIRE_DES_CONTROLES_SANS_OBJET } from './inventaireDesControles'
 import {
   bilanDeLExercice, colonneDeLExercicePrecedent, regleDuCompte, RUBRIQUES_ACTIF, RUBRIQUES_PASSIF, type EntreesDuBilan,
   type IdRubriqueActif, type IdRubriquePassif,
@@ -93,7 +94,10 @@ const sansObjet = (exercice: number, code: CodeSansObjet, texte: string): Confro
  * L'ouverture de `d.exercice` confrontée à la clôture de l'exercice qui le précède. `lecture` dit si toutes les
  * lectures de l'écran sont revenues entières : sur une lecture partielle, rien ne se juge.
  */
-export function confronterLOuverture(d: EntreesDuBilan, lecture: 'complete' | 'partielle'): ConfrontationDeLOuverture {
+export function confronterLOuverture(entrees: Omit<EntreesDuBilan, 'inventaire'>, lecture: 'complete' | 'partielle'): ConfrontationDeLOuverture {
+  // La confrontation lit les RUBRIQUES des deux bilans, jamais leurs points : l'inventaire (INV6), qui ne change qu'un point,
+  // n'y entre pas — la Vue d'ensemble, la validation et l'onglet Bilan la font sans lui.
+  const d: EntreesDuBilan = { ...entrees, inventaire: INVENTAIRE_DES_CONTROLES_SANS_OBJET }
   const n = d.exercice
   const p = n - 1
   if (lecture === 'partielle') {

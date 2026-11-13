@@ -20,6 +20,7 @@
 import { AUCUNE_PIECE_CITEE } from '../../src/lib/facturesSources'
 import { analyserAppariements, candidatsPieces } from '../../src/lib/appariementBanque'
 import { bilanDeLExercice } from '../../src/lib/bilan'
+import { INVENTAIRE_DES_CONTROLES_SANS_OBJET } from '../../src/lib/inventaireDesControles'
 import { ecritureDeLOperation, soldesDeLaCaisse, premierJourNegatif, type EtatDeLaCaisse } from '../../src/lib/caisse'
 import { caisseRejouee, type JourDeLaCaisseDuClient } from '../../src/lib/caisseClient'
 import { cotisationsComptees } from '../../src/lib/cotisationRapprochee'
@@ -349,7 +350,7 @@ function mesurer(k: number): Map<string, number | string> {
         ventes: { ecritures: composition.ecritures, factures: a.factures, encaissements: a.encaissements, exemplaires: [], transmissions: [], piecesCitees: AUCUNE_PIECE_CITEE },
       }))
       t('balance', () => calculerBalance(brouillon, CATEGORIES, []))
-      t('bilan', () => bilanDeLExercice({ exercice: ANNEE, ecritures: brouillon, categories: CATEGORIES, reprise: [], reportes: [], anneesValidees: [], pieces: a.pieces, modele: MODELE, aujourdHui: `${ANNEE}-11-07` }))
+      t('bilan', () => bilanDeLExercice({ exercice: ANNEE, ecritures: brouillon, categories: CATEGORIES, reprise: [], reportes: [], anneesValidees: [], pieces: a.pieces, modele: MODELE, aujourdHui: `${ANNEE}-11-07`, inventaire: INVENTAIRE_DES_CONTROLES_SANS_OBJET }))
       t('lettrage', () => lettrages(brouillon, a.pieces, [], MODELE, { factures: a.factures, encaissements: a.encaissements, ecritures: composition.ecritures }))
       t('doublons probables', () => doublonsProbables(a.pieces, assujetti, piecesRegleesPourLesDoublons(paiements)))
       t('ventes facturées', () => ventesFacturees(sourcesVentes), (r) => `${r.parts.length} parts, ${r.ecartees.length} écartées`)
@@ -367,7 +368,7 @@ function mesurer(k: number): Map<string, number | string> {
         declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,
         facturesSources: ventes.sources, info: null, infoInconnue: null, anneesCloturees: [], ouverture: null, ouvertureIncomplete: null,
         aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null, ventesFacturees: lectureDuReleve, caisse: caisseLue,
-        entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null,
+        entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' },
       }, {
         assujettiTva: assujetti, periodiciteTva: 'mensuelle', statutTva: null, modele: MODELE, frontiere: null, anneesValidees: [],
         aujourdHui: `${ANNEE}-11-07`, anneeCourante: ANNEE, moisEcoules: 10, premierJourDuMois: `${ANNEE}-11-01`,

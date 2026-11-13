@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { inventaireDeLaLecture, lireLInventaireDeLaValidation, lireLInventaireDeLaValidationSelon, motifDeLInventaire } from './inventaireLecture'
+import {
+  inventaireDeLaLecture, inventaireDesControlesDeLaLecture, lireLInventaireDeLaValidation, lireLInventaireDeLaValidationSelon,
+  lireLInventaireDesControles, motifDeLInventaire,
+} from './inventaireLecture'
 
 // LA LECTURE DE L'INVENTAIRE POUR LA VALIDATION (ligne 35, INV3 ; lib/inventaireLecture.ts). Ce que ces cas gardent : drapeau
 // baissé, aucun appel — l'inventaire est sans objet ; levé, les trois tables DU DOSSIER demandé, leurs colonnes nommées, lues
@@ -47,7 +50,7 @@ vi.mock('./supabase', async () => {
 
 const operation = (id: string, dossier: string, o: Record<string, unknown> = {}) => ({
   id, dossier_id: dossier, exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486000',
-  montant_centimes: 120000, tva_centimes: 0, objet: 'Assurance 2026', provision_id: null, reprise: false, ...o,
+  montant_centimes: 120000, tva_centimes: 0, objet: 'Assurance 2026', provision_id: null, reprise: false, piece_citee_id: null, ...o,
 })
 const declaration = (id: string, dossier: string, o: Record<string, unknown> = {}) =>
   ({ id, dossier_id: dossier, exercice: 2025, retire_le: null, ...o })
@@ -76,7 +79,7 @@ describe('lireLInventaireDeLaValidation', () => {
         etat: 'lu',
         operations: [{
           id: 'o1', exercice: 2025, nature: 'cca', compte_resultat: '616000', compte_regularisation: '486000', montant_centimes: 120000,
-          tva_centimes: 0, objet: 'Assurance 2026', provision_id: null, reprise: false,
+          tva_centimes: 0, objet: 'Assurance 2026', provision_id: null, reprise: false, piece_citee_id: null,
         }],
         declarations: [{ id: 'i1', exercice: 2025, retire_le: null }, { id: 'i2', exercice: 2024, retire_le: '2025-02-01T10:00:00Z' }],
         provisions: [{ id: 'p1', compte_provision: '151100', reprise_centimes: 50000 }],
@@ -119,5 +122,22 @@ describe('lireLInventaireDeLaValidation', () => {
     const lue = await lireLInventaireDeLaValidationSelon('d1', true)
     expect(inventaireDeLaLecture(lue)).toMatchObject({ etat: 'lu' })
     expect(motifDeLInventaire(lue)).toBeNull()
+  })
+
+  // INV6 : les contrôles (bilan, Vue d'ensemble, Clôture, révision) lisent la même chose, derrière `INVENTAIRE_EXPORTE`, et la
+  // pièce citée de chaque régularisation, que la révision propose à la citation.
+  it('les contrôles : drapeau baissé, sans objet et sans appel ; la pièce citée se lit et se croit', async () => {
+    expect(await lireLInventaireDesControles('d1')).toEqual({ dossierId: 'd1', etat: 'sans_objet' })
+    expect(faux.demandes).toEqual([])
+    faux.tables.operations_inventaire = [operation('o1', 'd1', { piece_citee_id: 'p9' })]
+    const lue = await lireLInventaireDeLaValidationSelon('d1', true)
+    expect(lue).toMatchObject({ etat: 'lu', inventaire: { operations: [{ piece_citee_id: 'p9' }] } })
+    expect(faux.demandes[0].colonnes).toContain('piece_citee_id')
+    expect(inventaireDesControlesDeLaLecture(lue)).toMatchObject({ etat: 'lu', operations: [{ id: 'o1' }] })
+    expect(inventaireDesControlesDeLaLecture(null)).toBeNull()
+    expect(inventaireDesControlesDeLaLecture({ dossierId: 'd1', etat: 'incomplete', motif: 'x' })).toBeNull()
+    expect(inventaireDesControlesDeLaLecture({ dossierId: 'd1', etat: 'sans_objet' })).toEqual({ etat: 'sans_objet' })
+    faux.tables.operations_inventaire = [operation('o1', 'd1', { piece_citee_id: 7 })]
+    expect(await lireLInventaireDeLaValidationSelon('d1', true)).toMatchObject({ etat: 'incomplete' })
   })
 })

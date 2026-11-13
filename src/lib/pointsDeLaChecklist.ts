@@ -26,6 +26,9 @@ import { estFigee } from './validationExercice'
 import { MESSAGE_PIECES_SANS_EMPREINTE, sansEmpreinteDeDepot } from './empreinteDeDepot'
 import { confronterLOuverture, exerciceAConfronter, ouvertureEnEcart } from './ouvertureConfrontee'
 import { eclatementsAFaire } from './ouvertureEclatee'
+import {
+  exercicesEnMots, inventaireDesControles, pointsDeLInventaire, premierExerciceDuDossier, type InventaireDesControles,
+} from './inventaireDesControles'
 import { confronterLesAmortissementsRepris, detailDesAmortissementsSousUnAutreNumero, detailDesEcartsDeLaReprise } from './repriseDesAmortissements'
 import type { OuvertureBanque } from './planTresorerie'
 import type {
@@ -174,6 +177,10 @@ export interface DonneesDeLaChecklist {
   // reprise — qui n'est pas entière, ou rien (IMMO-Q1, lib/repriseDesAmortissements.ts). Sans valeur par défaut : lue en
   // partie, une entrée tait ses deux points — jamais « aucun écart » sur ce qu'on n'a pas lu en entier.
   entreesDeLaRepriseDesBiensIncompletes: string | null
+  // L'INVENTAIRE DU DOSSIER (ligne 35, INV6 ; lib/inventaireDesControles.ts) : sans objet le drapeau `INVENTAIRE_EXPORTE` baissé
+  // (aucun point de plus, la liste est celle d'hier) ou lu en partie — la lecture le dit alors dans `lectureIncomplete` —, ou lu
+  // EN ENTIER. En trésorerie, il est sans objet quoi qu'on lise (§ 3.6). Sans valeur par défaut.
+  inventaire: { etat: 'sans_objet' } | Extract<InventaireDesControles, { etat: 'lu' }>
 }
 
 /** Ce que l'écran sait du dossier et du moment, lu au rendu. */
@@ -568,6 +575,12 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // que son import a contrôlée), sans confrontation (l'ouverture attend la validation du précédent, que l'ordre refuse déjà)
   // ou sur concordance, le point se tait ; lue en partie, une entrée le tait aussi, et l'écran le dit : jamais « aucun écart »
   // sur ce qu'on n'a pas lu en entier.
+  // L'INVENTAIRE DE CHAQUE EXERCICE QUE RIEN NE FIGE (ligne 35, INV6) : sans objet le drapeau baissé ou en trésorerie, aucun
+  // point. Lu en partie, la lecture l'a dit (`lectureIncomplete`) et rendu sans objet : rien ne s'affirme.
+  const inventaire = pointsDeLInventaire({
+    inventaire: inventaireDesControles(d.inventaire, modele.mode), brouillon: ecritures, anneesValidees, anneeCourante,
+    premierExercice: premierExerciceDuDossier(aNouveaux, ecritures),
+  })
   const exerciceDeLOuverture = exerciceAConfronter(anneesValidees)
   const confrontation = exerciceDeLOuverture === null || entreesDeLOuvertureIncompletes !== null
     ? null
@@ -849,6 +862,32 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       detail: eclatements.length === 0 ? undefined
         : `Dans Écritures, sur ${exercicesAEclater.length > 1 ? `les exercices ${exercicesAEclater.slice(0, -1).join(', ')} et ${exercicesAEclater[exercicesAEclater.length - 1]}` : `l’exercice ${exercicesAEclater[0]}`}, `
           + 'la carte « Ouverture de la banque par compte » l’écrit, la réécrit ou la retire d’un clic.',
+    },
+    // L'INVENTAIRE (ligne 35, INV6 ; lib/inventaireDesControles.ts) : en engagement, l'onglet Inventaire offert. Trois points en
+    // ATTENTION — la validation retient déjà l'exercice qu'elle valide, sous ses mots (`inventaire-non-declare`,
+    // `inventaire-a-recomposer`, `extourne-manquante`) ; ici ils se voient avant, pour tout exercice que rien ne fige encore.
+    // L'onglet Inventaire MONTRE ce qu'ils comptent : la déclaration de l'exercice affiché, et chaque régularisation « à jour »
+    // ou « à recomposer » par le même juge ; le détail nomme les exercices à choisir. Sans objet, aucun ne compte.
+    {
+      id: 'inventaire-a-declarer', label: 'exercice(s) clos dont l’inventaire n’est pas déclaré', action: 'Déclarer l’inventaire',
+      nb: inventaire.aDeclarer.length, cible: 'inventaire', severite: 'attention',
+      detail: inventaire.aDeclarer.length === 0 ? undefined
+        : `Exercice${inventaire.aDeclarer.length > 1 ? 's' : ''} ${exercicesEnMots(inventaire.aDeclarer)} : la validation attend `
+          + 'l’inventaire déclaré, même sans aucune régularisation.',
+    },
+    {
+      id: 'regularisations-a-recomposer', label: 'régularisation(s) d’inventaire dont les écritures ne sont plus à jour',
+      action: 'Recomposer dans l’inventaire', nb: inventaire.aRecomposer.length, cible: 'inventaire', severite: 'attention',
+      detail: inventaire.aRecomposer.length === 0 ? undefined
+        : `Dans l’onglet Inventaire, sur ${inventaire.aRecomposer.length > 1 ? 'les exercices' : 'l’exercice'} `
+          + `${exercicesEnMots(inventaire.aRecomposer.map((o) => o.exercice))} : chacune s’y dit « à recomposer ».`,
+    },
+    {
+      id: 'extournes-a-reprendre', label: 'régularisation(s) d’un exercice validé sans leur extourne entière au 1er janvier suivant',
+      action: 'Voir l’inventaire', nb: inventaire.extournesAReprendre.length, cible: 'inventaire', severite: 'attention',
+      detail: inventaire.extournesAReprendre.length === 0 ? undefined
+        : `Constatées en ${exercicesEnMots(inventaire.extournesAReprendre.map((o) => o.exercice))} : l’exercice suivant ne se `
+          + 'validera pas sans elles.',
     },
     // Plus de point « déclaration de TVA en écart avec le brouillon » (retiré le 28/09/2026) : le
     // brouillon date la TVA à la PIÈCE et ne porte aucune écriture pour un bien immobilisé, donc il

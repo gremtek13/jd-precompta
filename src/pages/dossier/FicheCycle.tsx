@@ -36,6 +36,8 @@ export interface PropsFicheCycle {
   // L'exercice, pour les cycles : seul un exercice terminé se conclut, se note et se revoit (hypothèse Q11).
   exercice: ExercicePourLesCycles
   contexte: ContexteDesCycles
+  // L'inventaire offert à ce dossier (ligne 35, INV6) : son programme propose la séparation des exercices et les provisions.
+  inventaireOffert: boolean
   // L'identifiant du compte connecté : ce qu'il a écrit se dit « par toi ».
   utilisateur: string | null
   occupe: boolean
@@ -106,7 +108,7 @@ export default function FicheCycle(p: PropsFicheCycle) {
   const { onModifiee } = p
   useEffect(() => { onModifiee(modifiee) }, [modifiee, onModifiee])
 
-  const depuis = programmeDeDepart(c.cycle, courante)
+  const depuis = programmeDeDepart(c.cycle, courante, p.inventaireOffert)
   const programme = travaux ?? depuis.travaux
   const retenir = () => { if (depart === null) setDepart({ id: courante?.id ?? null }) }
   const changerTravaux = (suite: (avant: TravailDuProgramme[]) => TravailDuProgramme[]) => {

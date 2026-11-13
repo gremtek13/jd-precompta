@@ -219,7 +219,7 @@ beforeAll(() => {
     declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,
     facturesSources: ventes.sources, info: null, infoInconnue: null, anneesCloturees: [], ouverture: null, ouvertureIncomplete: null,
     aNouveaux: A_NOUVEAUX, soldesReportes: [], entreesDeLOuvertureIncompletes: null, ventesFacturees: lectureDesSources, caisse: caisseLue,
-    entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null,
+    entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' },
   }, {
     assujettiTva: ASSUJETTI, periodiciteTva: 'mensuelle', statutTva: 'exonere', modele: MODELE, frontiere: null, anneesValidees: [],
     aujourdHui: FIN, anneeCourante: ANNEE, moisEcoules: 12, premierJourDuMois: `${ANNEE}-12-01`,
