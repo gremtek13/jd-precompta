@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { blocsDo, espaces, nomsDesListes, sansCommentaires } from '../test/blocsSql'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // LA PORTE D'ACCÈS DEVANT LES GARDES (ligne 43, `acces_avant_les_gardes`), RÈGLE DES MIGRATIONS PRÉPARÉES.
@@ -19,9 +20,9 @@ import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 type Fichier = { chemin: string; texte: string }
 
-const sansCommentaires = (sql: string) => sql.replace(/--[^\n]*/g, '')
-const espaces = (s: string) => s.replace(/\s+/g, ' ').trim()
-
+// Les lecteurs du texte (commentaires, blancs, blocs `do`, listes `array[…]`) vivent dans src/test/blocsSql.ts : la règle
+// sœur, la restrictive de la double authentification sur toute table neuve (deuxFacteursDesTablesNeuves.test.ts), lit les
+// mêmes blocs de la même façon.
 const CONDITION = "to_regprocedure('public.acces_avant_les_gardes()') is not null"
 const POSE = 'create trigger _acces_avant_les_gardes before insert or update on public.%I for each row execute function public.acces_avant_les_gardes()'
 
@@ -52,10 +53,10 @@ export function tablesGardees(texte: string, sd: Map<string, boolean>): string[]
 /** Les tables qu'un fichier couvre de la porte sous condition : un bloc `do` qui teste la fonction, pose, et les nomme. */
 export function tablesCouvertesSousCondition(texte: string): Set<string> {
   const couvertes = new Set<string>()
-  for (const m of sansCommentaires(texte).matchAll(/\bdo\s+\$(\w*)\$([\s\S]*?)\$\1\$/gi)) {
-    const bloc = espaces(m[2])
+  for (const { corps } of blocsDo(sansCommentaires(texte))) {
+    const bloc = espaces(corps)
     if (!bloc.includes(CONDITION) || !bloc.includes(POSE)) continue
-    for (const t of bloc.matchAll(/array\[([^\]]*)\]/g)) for (const l of t[1].matchAll(/'(\w+)'/g)) couvertes.add(l[1])
+    for (const t of nomsDesListes(bloc)) couvertes.add(t)
   }
   return couvertes
 }
