@@ -77,8 +77,11 @@ const faux = vi.hoisted(() => ({
   exercicesRemplis: [] as number[],
   entetes: [] as unknown[],
   // Et l'annexe 2035-E portée en page 3, ou null quand elle n'est pas due.
-  annexes: [] as ({ valeurs: ReadonlyMap<string, number | null>; aSaisir: readonly string[]; entete: Record<string, unknown> } | null)[],
-  // Le drapeau `SAISIES_2035E_EXPORTEES`, que ce fichier ne lève que le temps d'un test (le mock du module le lit ici).
+  annexes: [] as ({
+    valeurs: ReadonlyMap<string, number | null>; aSaisir: readonly string[]; cadre: unknown; entete: Record<string, unknown>
+  } | null)[],
+  // Le drapeau `SAISIES_2035E_EXPORTEES`, levé le 13/11/2026 : ce fichier garde son état d'avant éprouvé (baissé par défaut)
+  // et ne le lève que le temps d'un test (le mock du module le lit ici).
   saisies2035E: false,
   // Les mises à jour envoyées, table et valeurs : l'enregistrement d'un poste manquant.
   misesAJour: [] as { table: string; valeurs: unknown }[],
@@ -203,7 +206,7 @@ vi.mock('../../lib/remplir2035', () => ({
   remplir2035: (
     valeurs: Map<string, number>,
     entete: unknown,
-    annexe: { valeurs: ReadonlyMap<string, number | null>; aSaisir: readonly string[]; entete: Record<string, unknown> } | null,
+    annexe: { valeurs: ReadonlyMap<string, number | null>; aSaisir: readonly string[]; cadre: unknown; entete: Record<string, unknown> } | null,
     annee: number,
   ) => {
     faux.exercicesRemplis.push(annee)
@@ -1272,12 +1275,14 @@ describe('ClotureTab — l’annexe 2035-E', () => {
     expect([annexe.valeurs.get('EF'), annexe.valeurs.get('EJ'), annexe.valeurs.get('EW'), annexe.valeurs.get('JU')])
       .toEqual([160_000, 120, 120, 128_000])
     expect(annexe.entete).toEqual({ nom: 'Dossier de test', siret: '12345678901234', adresse: '12 rue des Lilas\n75011 Paris', annee: 2025 })
-    // Drapeau des saisies baissé : rien à saisir, le PDF d'avant.
+    // Drapeau des saisies baissé : rien à saisir, aucun cadre, le PDF d'avant ; et rien n'est dit avant le clic.
     expect(annexe.aSaisir).toEqual([])
+    expect(annexe.cadre).toBeNull()
+    expect(screen.queryByText(/lignes? à saisir \(/)).toBeNull()
   })
 
-  it('drapeau des saisies levé : le PDF reçoit les lignes « à saisir » en `null`, et leurs codes', async () => {
-    // Aucune saisie de l'exercice : EN, EK, EM, ER, EU, EV ne sont pas dites. Le total 1 (EI) en dépend, pas EF.
+  it('drapeau des saisies levé : l’écran dit les lignes « à saisir » avant le clic, et le PDF les reçoit en `null`', async () => {
+    // Aucune saisie de l'exercice : EN, EK, EM, ER, EU, EV et le cadre (AH) ne sont pas dits. Le total 1 (EI) en dépend, pas EF.
     poser()
     faux.saisies2035E = true
     try {
@@ -1287,13 +1292,90 @@ describe('ClotureTab — l’annexe 2035-E', () => {
       faux.annexes = []
       monter(2025, false)
       await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+      expect((await screen.findByText(/^Annexe 2035-E : 7 lignes à saisir/)).textContent).toBe(
+        'Annexe 2035-E : 7 lignes à saisir (EN, EK, EM, ER, EU, EV, AH). Le PDF les porte « à saisir », comme les totaux qui '
+        + 'en dépendent : à ne pas déposer tel quel.')
       await telecharger()
       expect(faux.annexes).toHaveLength(1)
       const annexe = faux.annexes[0]!
       expect(annexe.valeurs.get('EF')).toBe(160_000)
       expect([annexe.valeurs.get('EN'), annexe.valeurs.get('EI'), annexe.valeurs.get('EW'), annexe.valeurs.get('JU')])
         .toEqual([null, null, null, null])
-      expect(annexe.aSaisir).toEqual(['EN', 'EK', 'EM', 'ER', 'EU', 'EV'])
+      expect(annexe.aSaisir).toEqual(['EN', 'EK', 'EM', 'ER', 'EU', 'EV', 'AH'])
+      expect(annexe.cadre).toEqual({ etat: 'a_dire' })
+    } finally {
+      faux.saisies2035E = false
+    }
+  })
+
+  it('drapeau levé, saisie complète et cadre coché : rien « à saisir », le cadre dit à reporter à la main, le PDF le reçoit', async () => {
+    poser()
+    faux.saisies2035E = true
+    try {
+      faux.parTable.categories = [CATEGORIE, RECETTES]
+      faux.parTable.pieces = [PIECE, recette(160_000)]
+      faux.parTable.saisies_2035e = [{
+        id: 's1', annee: 2025, loyers_deductibles: 0, plus_values: 0, variation_de_stock: 0, taxes_sur_le_chiffre_d_affaires: 0,
+        dotations_biens_mis_a_disposition: 0, moins_values: 0, mono_etablissement: true, effectif: 2,
+      }]
+      faux.annexes = []
+      monter(2025, false)
+      await screen.findByText(/^Le cadre des mono-établissements, coché, ne s’imprime pas sur le PDF/)
+      expect(screen.queryByText(/lignes? à saisir \(/)).toBeNull()
+      await telecharger()
+      const annexe = faux.annexes[0]!
+      expect(annexe.aSaisir).toEqual([])
+      expect(annexe.valeurs.get('JU')).toBe(128_000)
+      expect(annexe.cadre).toEqual({ etat: 'coche', chiffreDeReference: 160_000, du: '2025-01-01', au: '2025-12-31', effectif: 2 })
+    } finally {
+      faux.saisies2035E = false
+    }
+  })
+
+  it('drapeau levé, saisies lues en partie : le bouton est retenu et le dit, aucun PDF de zéros supposés', async () => {
+    poser({ saisies_2035e: 0 })
+    faux.saisies2035E = true
+    try {
+      faux.parTable.categories = [CATEGORIE, RECETTES]
+      faux.parTable.pieces = [PIECE, recette(160_000)]
+      faux.parTable.saisies_2035e = [{
+        id: 's1', annee: 2025, loyers_deductibles: 0, plus_values: 0, variation_de_stock: 0, taxes_sur_le_chiffre_d_affaires: 0,
+        dotations_biens_mis_a_disposition: 0, moins_values: 0, mono_etablissement: false, effectif: null,
+      }]
+      faux.annexes = []
+      monter(2025, false)
+      await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+      const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+      await waitFor(() => expect(bouton).toHaveProperty('disabled', true))
+      expect(bouton.getAttribute('title')).toMatch(/^Annexe 2035-E : les saisies de l’annexe 2035-E : .* « à saisir »\.$/)
+      await act(async () => { bouton.click() })
+      expect(faux.annexes).toEqual([])
+    } finally {
+      faux.saisies2035E = false
+    }
+  })
+
+  it('drapeau levé, saisies pas encore revenues : le bouton est retenu ; une annexe non due ne l’est pas', async () => {
+    poser()
+    faux.saisies2035E = true
+    try {
+      faux.parTable.categories = [CATEGORIE, RECETTES]
+      faux.parTable.pieces = [PIECE, recette(160_000)]
+      faux.parTable.saisies_2035e = []
+      faux.attentes.saisies_2035e = new Promise(() => {})
+      monter(2025, false)
+      await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+      const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+      expect(bouton).toHaveProperty('disabled', true)
+      expect(bouton.getAttribute('title')).toMatch(/ne sont pas encore lues/)
+      cleanup()
+      poser()
+      faux.parTable.categories = [CATEGORIE, RECETTES]
+      faux.parTable.pieces = [PIECE, recette(152_500)]
+      faux.attentes.saisies_2035e = new Promise(() => {})
+      monter(2025, false)
+      await screen.findByText('non due')
+      expect(await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })).toHaveProperty('disabled', false)
     } finally {
       faux.saisies2035E = false
     }

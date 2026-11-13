@@ -8,13 +8,17 @@ import type { Annexe2035E, Entree2035E, Saisies2035E } from './declaration2035E'
 // jamais un zéro inventé. Ni la date de cessation (MA : 48-Q6, jugée à la main) ni BW (une saisie de la 2035 elle-même).
 //
 // Deux drapeaux : `SAISIES_2035E_PREVUES` (la table en base : le plan de sauvegarde la lit), levé le 12/11/2026, et
-// `SAISIES_2035E_EXPORTEES` (l'écran de Clôture la lit et l'écrit, et l'annexe la reçoit), baissé tant que le PDF de
-// l'annexe ne sait pas dire « à saisir » (48S-Q2). Le second ne se lève qu'avec le premier.
+// `SAISIES_2035E_EXPORTEES` (l'écran de Clôture la lit et l'écrit, et l'annexe la reçoit), levé le 13/11/2026 (48S-Q2) quand
+// le PDF de l'annexe a su dire « à saisir » dans la case de chaque ligne non dite (gabarit2035E.ts). Baissé, l'annexe supposait
+// zéro et le disait : ClotureTab.test.tsx joue encore cet état, par un accesseur sur le drapeau.
 
 /** La migration `saisies_2035e` est en base (12/11/2026) : la table entre au plan de sauvegarde. */
 export const SAISIES_2035E_PREVUES: boolean = true
-/** L'écran de saisie et l'annexe qui la reçoit. Baissé : l'annexe suppose ce qu'elle supposait hier, et le dit. */
-export const SAISIES_2035E_EXPORTEES: boolean = false
+/** L'écran de saisie et l'annexe qui la reçoit, levé le 13/11/2026 : le PDF dit « à saisir », jamais un zéro inventé. */
+export const SAISIES_2035E_EXPORTEES: boolean = true
+
+/** Ce que le PDF de l'annexe imprime pour une ligne que le cabinet n'a pas encore dite (« à » est dans l'encodage WinAnsi). */
+export const MOTS_A_SAISIR_DU_PDF = 'à saisir'
 
 export const TABLES_DES_SAISIES_2035E = ['saisies_2035e'] as const
 
@@ -179,21 +183,50 @@ export function annexe2035EAvecSaisie(entree: Omit<Entree2035E, 'saisies'>, sais
   return { annexe, lignes, aSaisir, cadre }
 }
 
-/** Les lignes à saisir que le PDF PORTERAIT : les montants seuls. Le cadre des mono-établissements (AH, BK) ne s'imprime
- *  jamais (gabarit2035E.ts : le cocher affirmerait ce que personne n'a vérifié) : le nommer sur le papier ferait chercher
- *  une case que l'application ne remplit pas ; l'écran, lui, le dit. */
-export function lignesDuPdfASaisir(annexe: Annexe2035ESaisie): string[] {
-  const imprimees: readonly string[] = MONTANTS_SAISIS_2035E.map((m) => m.code)
-  return annexe.aSaisir.filter((code) => imprimees.includes(code))
+// LE PDF MARQUE CHAQUE LIGNE DE `aSaisir` (gabarit2035E.ts) : les montants (EN, EK, EM, ER, EU, EV) par « à saisir » dans leur
+// case, AH à côté de sa case à cocher (vingt points de large : les mots n'y tiennent pas) quand le cadre n'est pas dit, BK
+// dans sa case quand il est coché sans effectif. Les totaux qui en dépendent (EI, EW, EX, JU) portent aussi « à saisir » sans
+// être nommés : ils ne se saisissent pas, ils suivent. Le cadre COCHÉ ne s'imprime toujours pas (ni la croix, ni AJ, ni BK,
+// ni la période : 48-Q6 laisse les dates d'activité à la main) : la mention et l'écran le disent.
+
+/** La lecture des saisies de l'annexe retient le PDF d'une annexe due tant qu'elle n'est pas revenue entière : sans elle,
+ *  l'annexe retomberait sur des zéros supposés, sans « à saisir ». Drapeau baissé (`ouvert` faux), rien ne retient. */
+export function motifDesSaisies2035E(lecture: LectureDesSaisies2035E | null, ouvert: boolean): string | null {
+  if (!ouvert) return null
+  if (lecture === null) return 'les saisies de l’annexe 2035-E ne sont pas encore lues'
+  if (lecture.etat === 'incompletes') return `les saisies de l’annexe 2035-E : ${lecture.motif}`
+  if (lecture.etat === 'absentes') return 'les saisies de l’annexe 2035-E ne sont pas lues'
+  return null
 }
 
-/** CE QUI S'ÉCRIT EN ROUGE, EN TÊTE DE LA PAGE DE L'ANNEXE, quand des lignes restent à saisir (même place et même forme que la
- *  mention d'un millésime absent, `mentionDuPdf`) : lignes courtes, sans caractère hors de l'encodage WinAnsi des polices PDF
- *  standard. Rien quand il ne reste rien. */
-export function mentionDeLAnnexe2035E(aSaisir: readonly string[]): string[] {
-  if (aSaisir.length === 0) return []
-  return [
-    `ATTENTION - annexe 2035-E incomplète : lignes encore à saisir par le cabinet : ${aSaisir.join(', ')}.`,
-    'Ces cases restent vides, ainsi que les totaux qui en dépendent (EI, EW, EX, JU) : ne pas déposer tel quel.',
-  ]
+/** CE QUE L'ÉCRAN DIT AVANT LE TÉLÉCHARGEMENT, sous le bouton : combien de lignes le PDF portera « à saisir », et le cadre
+ *  coché qu'il n'imprime pas. Rien quand l'annexe est complète et le cadre non coché. */
+export function avisAvantLeTelechargement2035E(annexe: Annexe2035ESaisie): string[] {
+  const avis: string[] = []
+  const n = annexe.aSaisir.length
+  if (n > 0) {
+    avis.push(`Annexe 2035-E : ${n} ${n > 1 ? 'lignes' : 'ligne'} à saisir (${annexe.aSaisir.join(', ')}). Le PDF `
+      + `${n > 1 ? 'les' : 'la'} porte « à saisir », comme les totaux qui en dépendent : à ne pas déposer tel quel.`)
+  }
+  if (annexe.cadre.etat === 'coche') {
+    avis.push('Le cadre des mono-établissements, coché, ne s’imprime pas sur le PDF : AH, AJ, BK et la période sont à y reporter à la main.')
+  }
+  return avis
+}
+
+/** CE QUI S'ÉCRIT EN ROUGE, EN TÊTE DE LA PAGE DE L'ANNEXE (même place et même forme que la mention d'un millésime absent,
+ *  `mentionDuPdf`) : les lignes encore à saisir, et le cadre coché que le PDF ne remplit pas. Lignes courtes, sans caractère
+ *  hors de l'encodage WinAnsi des polices PDF standard. Rien quand il ne reste rien : le PDF d'avant, à l'octet près. */
+export function mentionDeLAnnexe2035E(aSaisir: readonly string[], cadreCoche: boolean): string[] {
+  const mention: string[] = []
+  if (aSaisir.length > 0) {
+    mention.push(
+      `ATTENTION - annexe 2035-E incomplète : lignes encore à saisir par le cabinet : ${aSaisir.join(', ')}.`,
+      'Leurs cases portent "à saisir", comme les totaux qui en dépendent : ne pas déposer tel quel.',
+    )
+  }
+  if (cadreCoche) {
+    mention.push('Cadre des mono-établissements coché par le cabinet : non imprimé, AH, AJ, BK et la période à reporter à la main.')
+  }
+  return mention
 }

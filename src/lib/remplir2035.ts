@@ -1,10 +1,11 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { ancragesDesCases, planDeRemplissage } from './gabarit2035'
-import type { EnteteDeclaration, FiletVertical, FragmentTexte, PageFormulaire } from './gabarit2035'
+import type { EnteteDeclaration, FiletVertical, FragmentTexte, Inscription, PageFormulaire } from './gabarit2035'
 import { planDeRemplissage2035E } from './gabarit2035E'
 import type { EnteteAnnexe2035E } from './gabarit2035E'
 import { mentionDeLAnnexe2035E } from './saisies2035E'
+import type { CadreMonoSaisi } from './saisies2035E'
 import { mentionDuPdf, modeleDuFormulaire } from './modeles2035'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
@@ -79,11 +80,14 @@ export interface Remplissage2035 {
 
 // L'annexe 2035-E à porter sur la page 3 : ses lignes à l'euro (`calculer2035E(...).lignes`) et son en-tête.
 export interface Annexe2035EARemplir {
-  // `null` : une ligne « à saisir » (lib/saisies2035E.ts), laissée vide sur le PDF, jamais écrite 0.
+  // `null` : une ligne « à saisir » (lib/saisies2035E.ts), qui porte « à saisir » en rouge dans sa case, jamais écrite 0.
   valeurs: ReadonlyMap<string, number | null>
   // Les codes des lignes encore à saisir, que la page 3 nomme en rouge (`mentionDeLAnnexe2035E`) ; vide, rien ne s'écrit et
   // le PDF est celui d'avant. Sans valeur par défaut : un appelant qui l'oublierait tairait ce qui manque.
   aSaisir: readonly string[]
+  // Le cadre des mono-établissements tel que la saisie le dit (AH non dit, BK manquant : « à saisir » ; coché : dit en tête,
+  // non imprimé) ; `null`, aucune saisie (drapeau baissé) : rien. Sans valeur par défaut, comme `aSaisir`.
+  cadre: CadreMonoSaisi | null
   entete: EnteteAnnexe2035E
 }
 
@@ -116,10 +120,13 @@ export async function remplir2035(
   // confondrait avec celui de la ligne 25 (gabarit2035E.ts).
   // Un modèle sans troisième page se lit comme une page vide : aucune ancre, et chaque ligne non nulle est dite.
   let codesSansAncrage2035E: string[] = []
+  // « À saisir », dessiné en rouge : distinct au premier regard d'un montant porté (bleu) comme du formulaire (noir).
+  const aSaisir: Inscription[] = []
   if (annexe2035E) {
     const page3 = doc.numPages >= PAGE_2035E ? await lirePage(doc, PAGE_2035E) : { fragments: [], filets: [] }
-    const plan = planDeRemplissage2035E(page3, PAGE_2035E, annexe2035E.valeurs, annexe2035E.entete)
+    const plan = planDeRemplissage2035E(page3, PAGE_2035E, annexe2035E.valeurs, annexe2035E.entete, annexe2035E.cadre)
     inscriptions.push(...plan.inscriptions)
+    aSaisir.push(...plan.aSaisir)
     codesSansAncrage2035E = plan.codesSansAncrage
   }
 
@@ -129,28 +136,24 @@ export async function remplir2035(
   const police = await pdf.embedFont(StandardFonts.Helvetica)
   const feuilles = pdf.getPages()
 
-  for (const i of inscriptions) {
+  const dessiner = (i: Inscription, couleur: ReturnType<typeof rgb>) => {
     const feuille = feuilles[i.page - 1]
-    if (!feuille) continue
+    if (!feuille) return
     const largeur = police.widthOfTextAtSize(i.texte, i.taille)
     const x = i.alignement === 'droite' ? i.x - largeur
       : i.alignement === 'centre' ? i.x - largeur / 2
       : i.x
-    feuille.drawText(i.texte, {
-      x,
-      y: i.y,
-      size: i.taille,
-      font: police,
-      // Bleu foncé plutôt que noir : sur une relecture papier, ce qui a été porté par l'application
-      // se distingue immédiatement de ce qui était imprimé sur le formulaire.
-      color: rgb(0, 0, 0.6),
-    })
+    feuille.drawText(i.texte, { x, y: i.y, size: i.taille, font: police, color: couleur })
   }
+  // Bleu foncé plutôt que noir : sur une relecture papier, ce qui a été porté par l'application
+  // se distingue immédiatement de ce qui était imprimé sur le formulaire.
+  for (const i of inscriptions) dessiner(i, rgb(0, 0, 0.6))
+  for (const i of aSaisir) dessiner(i, rgb(0.75, 0, 0))
 
   // Le millésime qui n'est pas le bon se dit sur le papier lui-même, en rouge, dans la marge du haut des pages remplies.
   const mention = mentionDuPdf(annee)
   if (mention.length > 0) {
-    for (const numero of new Set(inscriptions.map((i) => i.page))) {
+    for (const numero of new Set([...inscriptions, ...aSaisir].map((i) => i.page))) {
       const feuille = feuilles[numero - 1]
       if (!feuille) continue
       const haut = feuille.getHeight()
@@ -161,7 +164,7 @@ export async function remplir2035(
   }
 
   // Les lignes de l'annexe encore à saisir se disent sur SA page, sous la mention du millésime quand il y en a une.
-  const avertissementAnnexe = annexe2035E ? mentionDeLAnnexe2035E(annexe2035E.aSaisir) : []
+  const avertissementAnnexe = annexe2035E ? mentionDeLAnnexe2035E(annexe2035E.aSaisir, annexe2035E.cadre?.etat === 'coche') : []
   const pageAnnexe = feuilles[PAGE_2035E - 1]
   if (avertissementAnnexe.length > 0 && pageAnnexe) {
     const haut = pageAnnexe.getHeight()

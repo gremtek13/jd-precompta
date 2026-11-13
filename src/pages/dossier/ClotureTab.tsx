@@ -79,7 +79,9 @@ import type { LectureDesSaisies2035 } from '../../lib/saisies2035'
 import { lireLesSaisies2035 } from '../../lib/saisies2035Lecture'
 import { inventaireDeLaLecture, lireLInventaireDeLaValidation, motifDeLInventaire, type LectureDeLInventaire } from '../../lib/inventaireLecture'
 import { INVENTAIRE_PREVU } from '../../lib/inventaire'
-import { annexe2035EAvecSaisie, lignesDuPdfASaisir, SAISIES_2035E_EXPORTEES, saisie2035EDeLExercice } from '../../lib/saisies2035E'
+import {
+  annexe2035EAvecSaisie, avisAvantLeTelechargement2035E, motifDesSaisies2035E, SAISIES_2035E_EXPORTEES, saisie2035EDeLExercice,
+} from '../../lib/saisies2035E'
 import type { Annexe2035ESaisie, LectureDesSaisies2035E } from '../../lib/saisies2035E'
 import { lireLesSaisies2035E } from '../../lib/saisies2035ELecture'
 import Saisies2035ECard from './Saisies2035ECard'
@@ -867,7 +869,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     annexeSaisie: Annexe2035ESaisie | null,
   ) {
     // Sans le millésime de l'exercice, le PDF s'imprime sur le dernier livré (2035S-Q5, (B)) : la carte l'a dit avant le clic.
+    // Drapeau levé, une annexe due sans sa saisie lue en entier retomberait sur des zéros supposés : le bouton est retenu.
     if (generationEnCours.current || lectureIncomplete) return
+    if (SAISIES_2035E_EXPORTEES && annexe.obligatoire && annexeSaisie === null) return
     generationEnCours.current = true
     setError(null)
     try {
@@ -878,11 +882,12 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
         instantane ? casesDeLInstantane(instantane.formulaire) : arrondirPourFormulaire(valeurs, annee),
         declarant,
         // L'adresse est celle d'aujourd'hui, même pour un exercice validé : l'instantané ne la garde pas.
-        // Drapeau levé, une ligne « à saisir » reste vide sur le papier et la page 3 le dit ; baissé, le PDF d'avant.
+        // Drapeau levé, une ligne « à saisir » porte ces mots sur le papier et la page 3 les nomme ; baissé, le PDF d'avant.
         annexe.obligatoire
           ? {
             valeurs: annexeSaisie ? annexeSaisie.lignes : annexe.lignes,
-            aSaisir: annexeSaisie ? lignesDuPdfASaisir(annexeSaisie) : [],
+            aSaisir: annexeSaisie ? annexeSaisie.aSaisir : [],
+            cadre: annexeSaisie ? annexeSaisie.cadre : null,
             entete: { nom: declarant.nom, siret: declarant.siret, adresse: dossier?.adresse ?? null, annee },
           }
           : null,
@@ -1957,6 +1962,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           const annexeSaisie: Annexe2035ESaisie | null = SAISIES_2035E_EXPORTEES && saisieAnnexe
             ? annexe2035EAvecSaisie(entreeAnnexe, saisieAnnexe) : null
           const annexe = annexeSaisie ? annexeSaisie.annexe : calculer2035E({ ...entreeAnnexe, saisies: SAISIES_2035E_ABSENTES })
+          // Une annexe due ne se remplit pas avant que sa saisie soit lue en entier (drapeau levé) : sinon, des zéros supposés.
+          const saisiesAnnexeIncompletes = annexe.obligatoire
+            ? motifDesSaisies2035E(lectureDesSaisies2035E, SAISIES_2035E_EXPORTEES) : null
           return (
             <Fragment key={annee}>
               {validation.valide && !instantane ? (
@@ -1985,6 +1993,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                   annexeSaisie={annexeSaisie}
                   lectureAnnexe={instantane ? null : lectureIncomplete ?? saisiesIncompletes}
                   blocage={lectureIncomplete ?? saisiesIncompletes}
+                  blocageDeLAnnexe={saisiesAnnexeIncompletes}
                   cotisations={cotisations}
                   exerciceValide={anneesValidees.includes(annee)}
                   avertissement={avertissementDuFormulaire(annee)}
@@ -2047,8 +2056,8 @@ function BoutonCloture({ cloture, onCloturer }: { cloture: boolean; onCloturer: 
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
 function FormulaireAnnuel({
-  dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, annexeSaisie, lectureAnnexe, blocage, cotisations, exerciceValide,
-  avertissement, cloture, onCloturer,
+  dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, annexeSaisie, lectureAnnexe, blocage, blocageDeLAnnexe,
+  cotisations, exerciceValide, avertissement, cloture, onCloturer,
 }: {
   dossierId: string
   annee: number
@@ -2070,6 +2079,9 @@ function FormulaireAnnuel({
   // Non nul quand la lecture des pièces n'a pas pu se dire complète : le bouton est alors grisé et
   // dit pourquoi, plutôt que de produire un formulaire qu'on croirait complet.
   blocage: string | null
+  // Non nul quand l'annexe est due et que sa saisie n'est pas lue en entier (`motifDesSaisies2035E`) : le bouton seul est
+  // retenu — le volet social, qui n'en dépend pas, reste montré.
+  blocageDeLAnnexe: string | null
   // Les échéances du dossier (toutes années) et l'exercice validé ou non : la régularisation estimée du volet social (TNS-Q2),
   // que la carte ne montre que sur des lectures entières (`blocage` nul) et sous son drapeau.
   cotisations: readonly CotisationDeclaree[]
@@ -2109,8 +2121,10 @@ function FormulaireAnnuel({
           <button
             className="btn btn-primary btn-sm"
             onClick={onTelecharger}
-            disabled={blocage !== null}
-            title={blocage ? `Lecture partielle d'une des collections de la déclaration (${blocage}) — le formulaire ne peut pas dire qu'il est amputé.` : undefined}
+            disabled={blocage !== null || blocageDeLAnnexe !== null}
+            title={blocage ? `Lecture partielle d'une des collections de la déclaration (${blocage}) — le formulaire ne peut pas dire qu'il est amputé.`
+              : blocageDeLAnnexe ? `Annexe 2035-E : ${blocageDeLAnnexe} — sans elles, le PDF supposerait des zéros au lieu de dire « à saisir ».`
+              : undefined}
           >
             {genere ? '↻ Regénérer le formulaire' : '⬇ Remplir le formulaire officiel'}
           </button>
@@ -2119,6 +2133,11 @@ function FormulaireAnnuel({
       {avertissement !== null && (
         <p role="note" style={{ margin: 0, padding: '0 16px 12px', color: 'var(--color-warning)' }}>{avertissement}</p>
       )}
+      {/* CE QUE LE PDF PORTERA « À SAISIR », dit avant le clic (ligne 48) : sur une annexe due, jugée sur une lecture entière. */}
+      {lectureAnnexe === null && annexe2035E.obligatoire && annexeSaisie !== null
+        && avisAvantLeTelechargement2035E(annexeSaisie).map((avis) => (
+          <p key={avis} role="note" style={{ margin: 0, padding: '0 16px 12px', color: 'var(--color-warning)' }}>{avis}</p>
+        ))}
       {validee && (
         <div style={{ padding: '0 16px 12px' }}>
           <p className="muted" style={{ margin: 0 }}>

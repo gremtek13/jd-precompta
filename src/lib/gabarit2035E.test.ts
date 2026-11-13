@@ -82,7 +82,7 @@ describe('sur la page 3 du formulaire officiel', () => {
 
   it('remplit les montants sur la page 3, sans écrire une ligne à zéro, une valeur ajoutée négative avec son signe', async () => {
     const valeurs = new Map([['EF', 178_000], ['EG', 1_200], ['EH', 0], ['EI', 179_200], ['EX', -40_000], ['JU', 0]])
-    const { inscriptions, codesSansAncrage } = planDeRemplissage2035E(await lirePage(3), 3, valeurs, { ...ENTETE, nom: null, siret: null, adresse: null })
+    const { inscriptions, codesSansAncrage } = planDeRemplissage2035E(await lirePage(3), 3, valeurs, { ...ENTETE, nom: null, siret: null, adresse: null }, null)
     expect(codesSansAncrage).toEqual([])
     const montants = inscriptions.filter((i) => i.alignement === 'droite')
     expect(montants.map((i) => i.texte)).toEqual(['178 000', '1 200', '179 200', '-40 000'])
@@ -91,7 +91,7 @@ describe('sur la page 3 du formulaire officiel', () => {
 
   it('porte le SIRET dans sa grille de quatorze cases, le nom et l’adresse dans leurs zones', async () => {
     const page = await lirePage(3)
-    const { inscriptions } = planDeRemplissage2035E(page, 3, new Map(), ENTETE)
+    const { inscriptions } = planDeRemplissage2035E(page, 3, new Map(), ENTETE, null)
     const chiffres = inscriptions.filter((i) => i.alignement === 'centre')
     expect(chiffres.map((i) => i.texte).join('')).toBe('12345678901234')
     // Grille de 20,7 points de pas, de 276,6 à 566,3 : le premier chiffre au centre de la première case.
@@ -106,7 +106,7 @@ describe('sur la page 3 du formulaire officiel', () => {
   })
 
   it('complète l’année après le « 20 » imprimé de la ligne des renseignements', async () => {
-    const { inscriptions } = planDeRemplissage2035E(await lirePage(3), 3, new Map(), { ...ENTETE, nom: null, siret: null, adresse: null })
+    const { inscriptions } = planDeRemplissage2035E(await lirePage(3), 3, new Map(), { ...ENTETE, nom: null, siret: null, adresse: null }, null)
     expect(inscriptions).toHaveLength(1)
     expect(inscriptions[0].texte).toBe('25')
     // « 20 » est imprimé à x = 194,9, large de 9 points.
@@ -119,8 +119,9 @@ describe('sur la page 3 du formulaire officiel', () => {
     // chiffre d'affaires de référence de `cadreMonoEtablissement`) : AJ, BO, BK, KA, LA, MA et la case AH restent vides —
     // leurs ordonnées (de 125 à 212) ne reçoivent aucune inscription —, et AJ n'est pas une ligne qu'on aurait dû placer.
     const valeurs = new Map([...CODES_2035E.map((code): [string, number] => [code, 1_000]), ['AJ', 179_200]])
-    const { inscriptions, codesSansAncrage } = planDeRemplissage2035E(await lirePage(3), 3, valeurs, ENTETE)
+    const { inscriptions, aSaisir, codesSansAncrage } = planDeRemplissage2035E(await lirePage(3), 3, valeurs, ENTETE, { etat: 'non' })
     expect(inscriptions.filter((i) => i.y > 120 && i.y < 215)).toEqual([])
+    expect(aSaisir).toEqual([])
     expect(codesSansAncrage).toEqual([])
     expect(inscriptions.filter((i) => i.alignement === 'droite')).toHaveLength(CODES_2035E.length)
   })
@@ -129,8 +130,60 @@ describe('sur la page 3 du formulaire officiel', () => {
 describe('planDeRemplissage2035E sur une page sans ancre', () => {
   it('remonte les lignes sans ancre au lieu de les dessiner au jugé', () => {
     const vide: PageFormulaire = { fragments: [], filets: [] }
-    const { inscriptions, codesSansAncrage } = planDeRemplissage2035E(vide, 3, new Map([['EF', 160_000], ['JU', 128_000]]), ENTETE)
+    const { inscriptions, codesSansAncrage } = planDeRemplissage2035E(vide, 3, new Map([['EF', 160_000], ['JU', 128_000]]), ENTETE, null)
     expect(inscriptions).toEqual([])
     expect(codesSansAncrage).toEqual(['EF', 'JU'])
+  })
+
+  it('remonte aussi une ligne « à saisir » et le cadre non dit, sans rien dessiner', () => {
+    const vide: PageFormulaire = { fragments: [], filets: [] }
+    const { inscriptions, aSaisir, codesSansAncrage } = planDeRemplissage2035E(vide, 3, new Map([['EN', null]]), ENTETE, { etat: 'a_dire' })
+    expect([...inscriptions, ...aSaisir]).toEqual([])
+    expect(codesSansAncrage).toEqual(['EN', 'AH'])
+  })
+})
+
+// « À SAISIR » SUR LE FORMULAIRE (48S-Q2, 13/11/2026) : une ligne `null` porte les mots dans SA case, alignés à droite comme un
+// montant ; une ligne absente ou à zéro reste vide comme hier. Le cadre : AH non dit, juste à droite de sa case à cocher ; BK
+// manquant sous un cadre coché, dans sa case ; coché et complet, ou non coché, rien.
+describe('planDeRemplissage2035E — les lignes « à saisir »', () => {
+  const sansEntete = { ...ENTETE, nom: null, siret: null, adresse: null }
+
+  it('porte « à saisir » dans la case de chaque ligne `null`, et seulement elle', async () => {
+    const page = await lirePage(3)
+    const ancrages = ancragesDesCodes([page], new Set(CODES_2035E))
+    const valeurs = new Map<string, number | null>([['EF', 160_000], ['EN', null], ['EI', null], ['EK', 0], ['EW', null]])
+    const { inscriptions, aSaisir, codesSansAncrage } = planDeRemplissage2035E(page, 3, valeurs, sansEntete, null)
+    expect(codesSansAncrage).toEqual([])
+    expect(aSaisir.map((i) => i.texte)).toEqual(['à saisir', 'à saisir', 'à saisir'])
+    for (const [i, code] of [[0, 'EN'], [1, 'EI'], [2, 'EW']] as const) {
+      expect(aSaisir[i].alignement).toBe('droite')
+      expect(aSaisir[i].x).toBeCloseTo(ancrages.get(code)!.xDroite - 4, 5)
+      expect(aSaisir[i].y).toBe(ancrages.get(code)!.y)
+    }
+    // Ni « 0 » pour EK, ni « à saisir » parmi les montants bleus.
+    expect(inscriptions.map((i) => i.texte)).toEqual(['160 000', '25'])
+  })
+
+  it('AH non dit : « à saisir » à droite de sa case à cocher, dans la zone libre de sa ligne', async () => {
+    const { aSaisir } = planDeRemplissage2035E(await lirePage(3), 3, new Map(), sansEntete, { etat: 'a_dire' })
+    expect(aSaisir).toHaveLength(1)
+    // La case de AH va de 255,9 à 276,6 ; le filet de la case AJ est à 400,8.
+    expect(aSaisir[0]).toMatchObject({ texte: 'à saisir', alignement: 'gauche', page: 3 })
+    expect(aSaisir[0].x).toBeCloseTo(276.6 + 4, 0)
+    expect(aSaisir[0].y).toBeCloseTo(211.2, 0)
+  })
+
+  it('cadre coché sans effectif : « à saisir » dans la case BK ; coché et complet, ou non coché : rien', async () => {
+    const page = await lirePage(3)
+    const coche = { etat: 'coche' as const, chiffreDeReference: 160_000, du: '2025-01-01', au: '2025-12-31' }
+    const { aSaisir } = planDeRemplissage2035E(page, 3, new Map(), sansEntete, { ...coche, effectif: null })
+    expect(aSaisir).toHaveLength(1)
+    expect(aSaisir[0]).toMatchObject({ texte: 'à saisir', alignement: 'droite' })
+    expect(aSaisir[0].x).toBeCloseTo(566.3 - 4, 0)
+    expect(aSaisir[0].y).toBeCloseTo(165.4, 0)
+    expect(planDeRemplissage2035E(page, 3, new Map(), sansEntete, { ...coche, effectif: 2 }).aSaisir).toEqual([])
+    expect(planDeRemplissage2035E(page, 3, new Map(), sansEntete, { etat: 'non' }).aSaisir).toEqual([])
+    expect(planDeRemplissage2035E(page, 3, new Map(), sansEntete, null).aSaisir).toEqual([])
   })
 })

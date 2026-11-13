@@ -8,9 +8,10 @@ import type { Annexe2035ESaisie } from '../../lib/saisies2035E'
 // et ce que l'application ne sait pas et suppose — dit, avec son montant, plutôt que tu. Le calcul vit dans
 // lib/declaration2035E.ts ; cette carte ne fait que le montrer, et le PDF porte les mêmes lignes à l'euro.
 //
-// AUCUN GESTE ICI : l'annexe se remplit avec la liasse, par « Remplir le formulaire officiel ». Ce que le cabinet aurait à
-// saisir (la part des loyers qui se déduit, le cadre des mono-établissements) vit dans `saisies_2035e` (préparée), saisi
-// par Saisies2035ECard derrière `SAISIES_2035E_EXPORTEES` ; drapeau baissé, `saisie` est nul et la carte dit ce qu'elle suppose.
+// AUCUN GESTE ICI : l'annexe se remplit avec la liasse, par « Remplir le formulaire officiel ». Ce que le cabinet a à saisir
+// (la part des loyers qui se déduit, le cadre des mono-établissements) vit dans `saisies_2035e`, saisi par Saisies2035ECard
+// derrière `SAISIES_2035E_EXPORTEES` (levé le 13/11/2026) ; drapeau baissé, `saisie` est nul et la carte dit ce qu'elle suppose.
+// Une ligne « à saisir » ici l'est aussi sur le PDF, dans sa case (gabarit2035E.ts).
 export default function Annexe2035ECard({ annexe, saisie, lectureIncomplete }: {
   annexe: Annexe2035E
   // La saisie du cabinet pour l'exercice (lib/saisies2035E.ts, derrière `SAISIES_2035E_EXPORTEES`) : ses lignes, `null`
@@ -132,7 +133,7 @@ export default function Annexe2035ECard({ annexe, saisie, lectureIncomplete }: {
               <li>
                 {saisie.cadre.etat === 'non'
                   ? 'Cadre réservé aux mono-établissements : non coché, la déclaration 1330-CVAE est à déposer.'
-                  : `Cadre réservé aux mono-établissements : coché, AJ = ${euros(saisie.cadre.chiffreDeReference)}, BK = ${saisie.cadre.effectif === null ? 'à saisir' : saisie.cadre.effectif}, la période du ${formatDate(saisie.cadre.du)} au ${formatDate(saisie.cadre.au)} ; la 1330-CVAE n’est pas à déposer.`}
+                  : `Cadre réservé aux mono-établissements : coché, AJ = ${euros(saisie.cadre.chiffreDeReference)}, BK = ${saisie.cadre.effectif === null ? 'à saisir' : saisie.cadre.effectif}, la période du ${formatDate(saisie.cadre.du)} au ${formatDate(saisie.cadre.au)} ; la 1330-CVAE n’est pas à déposer. Le PDF ne remplit pas ce cadre : à y reporter à la main.`}
               </li>
             )}
             {(saisie === null || saisie.cadre.etat === 'a_dire') && <li>

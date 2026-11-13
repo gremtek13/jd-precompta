@@ -52384,3 +52384,16 @@ l'aurait rendue ordinaire) ; son retrait et l'état d'inventaire disent sa seule
 un troisième paramètre obligatoire, l'inventaire lu ou « sans objet », et suit `pieces_scellees_par_l_inventaire` ; `lireLePaquet` ne le lit
 que sous `INVENTAIRE_PREVU` (baissé : le paquet d'hier). Le compte d'avant le clic de l'onglet Écritures ne lit pas l'inventaire ; le
 message qui suit le téléchargement redit le nombre exact. Reste : la levée des drapeaux avec les trois migrations.
+
+### 13/11/2026 — LE PDF DE L'ANNEXE 2035-E DIT « À SAISIR » (48S-Q2), ET L'ÉCRAN DES SAISIES S'OUVRE
+
+(Agent dev, ligne 48, sur 48S-Q2 « Oui, maintenant ».) `gabarit2035E.ts` : une ligne `null` (EN, EK, EM, ER, EU, EV, et les
+totaux EI, EW, EX, JU qui en dépendent) porte « à saisir » dans SA case, aligné à droite comme un montant (145 points, les
+mots 33), une ligne absente ou nulle restant vide comme hier ; AH non dit, à droite de sa case à cocher (vingt points : les
+mots n'y tiennent pas) ; BK, cadre coché sans effectif, dans sa case ; le tout en rouge par `remplir2035`, à part du bleu des
+montants. Le cadre COCHÉ ne s'imprime toujours pas (la période reste à la main, 48-Q6) : la mention de tête et l'écran disent
+de le reporter (`mentionDeLAnnexe2035E(aSaisir, cadreCoche)`). Clôture dit avant le clic « N lignes à saisir »
+(`avisAvantLeTelechargement2035E`) et retient le PDF d'une annexe due tant que la saisie n'est pas lue en entier
+(`motifDesSaisies2035E` : sinon des zéros supposés). Éprouvé sur le vrai formulaire relu par pdf.js (les mots à la hauteur de
+chaque code, finis au bord 562,3) ; drapeau baissé, le PDF reste celui d'avant au haché près ; ClotureTab.test joue les deux
+états par l'accesseur. `SAISIES_2035E_EXPORTEES` levé. Question posée : remplir le cadre coché (48S-Q3).
