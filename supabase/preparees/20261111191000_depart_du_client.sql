@@ -38,6 +38,10 @@
 --      passe donc (aucun de ses exercices n'est plus à conserver).
 --   La ligne du dossier se lit en partage de clé par la garde des insertions, et en mise à jour par la pose : une pièce,
 --   une écriture ou un accès posés pendant la pose de la conservation se suivent, et chacun voit ce que l'autre a fait.
+--   Les deux tables portent, comme toute table de public, la policy restrictive `deux_facteurs` de la double
+--   authentification exigée (C7, second temps ; `deux_facteurs_exiges`, préparée) : posée ici si celle-ci est déjà en
+--   base ; sinon, elle la posera elle-même en s'appliquant (sa boucle part de pg_class). Les deux se collent ainsi dans
+--   les deux ordres.
 --
 -- CE QU'ELLE NE FAIT PAS. Elle ne vérifie pas le fichier téléchargé (la base ne le voit pas) ; elle n'horodate rien
 -- (INAL7) ; elle ne copie rien hors de Supabase (INAL6) ; elle ne retire aucun accès client d'elle-même ; elle ne
@@ -158,6 +162,21 @@ create policy conservations_des_dossiers_select on public.conservations_des_doss
   for select to authenticated using (public.admin_du_dossier(dossier_id));
 create policy conservations_des_dossiers_restauration on public.conservations_des_dossiers
   for insert to authenticated with check (public.is_super_admin());
+
+-- La double authentification exigée (migration `deux_facteurs_exiges`, préparée) pose sa policy restrictive sur chaque
+-- table de public : appliquée avant celle-ci, chaque table neuve la reçoit ici, à l'identique.
+do $deux_facteurs$
+declare
+  v_table text;
+begin
+  if to_regprocedure('public.deux_facteurs_satisfaits()') is not null then
+    foreach v_table in array array['paquets_d_archive_telecharges', 'conservations_des_dossiers'] loop
+      execute format('create policy deux_facteurs on public.%I as restrictive for all to authenticated '
+                     'using ((select public.deux_facteurs_satisfaits())) with check ((select public.deux_facteurs_satisfaits()))', v_table);
+    end loop;
+  end if;
+end
+$deux_facteurs$;
 
 -- Une conservation ne se réécrit pas : elle se lève, une fois ; une conservation en cours ne cohabite pas avec un accès
 -- client (l'insertion de la restauration comprise).

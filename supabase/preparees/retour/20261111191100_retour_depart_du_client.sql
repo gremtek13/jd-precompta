@@ -4,6 +4,9 @@
 -- paquet ni de conservation, et un dossier conservé reçoit de nouveau pièces, écritures, accès et validations.
 -- Avant de le coller : relever les deux tables (une sauvegarde de chaque dossier qui en porte une ligne les contient), et
 -- baisser `DEPART_DU_CLIENT_PREVU` (src/lib/departDuClient.ts) dans le même déploiement.
+-- Les policies des deux tables partent avec elles, la restrictive `deux_facteurs` comprise : que la migration l'ait posée
+-- (la double authentification exigée déjà en base) ou que `deux_facteurs_exiges`, appliquée après elle, l'ait posée en
+-- balayant les tables présentes.
 
 do $garde$
 begin
