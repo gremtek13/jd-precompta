@@ -9,7 +9,7 @@ import TraceDesDroitsDesAcces from './TraceDesDroitsDesAcces'
 const lectures = vi.hoisted(() => ({
   adresses: null as null | ((d: string) => Promise<unknown>),
 }))
-vi.mock('../../lib/traceDesDroits', () => ({ TRACE_DES_DROITS_PREVUE: true }))
+vi.mock('../../lib/traceDesDroits', () => ({ TRACE_DES_DROITS_PREVUE: true, ACCES_DANS_LA_TRACE_PREVU: false }))
 vi.mock('../../lib/adressesDesAccesRetires', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/adressesDesAccesRetires')>()), ADRESSES_DES_ACCES_RETIRES_PREVUES: true,
 }))

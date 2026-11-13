@@ -7,7 +7,7 @@ import TraceDesDroitsDesAcces from './TraceDesDroitsDesAcces'
 // pas. Le drapeau est levé depuis le 07/11/2026 : AccesTab.trace.test.tsx joue l'état réel, ce fichier garde l'état d'avant
 // éprouvé tant que son code existe.
 const lectures = vi.hoisted(() => ({ nombre: 0 }))
-vi.mock('../../lib/traceDesDroits', () => ({ TRACE_DES_DROITS_PREVUE: false }))
+vi.mock('../../lib/traceDesDroits', () => ({ TRACE_DES_DROITS_PREVUE: false, ACCES_DANS_LA_TRACE_PREVU: false }))
 vi.mock('../../lib/traceDesDroitsLecture', () => ({
   lireLaTraceDuDossier: async (dossierId: string) => { lectures.nombre += 1; return { dossierId, lignes: [], motif: null } },
 }))

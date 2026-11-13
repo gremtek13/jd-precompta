@@ -3,6 +3,7 @@ import { estLeClient, type AccesDuDossier } from './auteursVentes'
 import { definitionDe, type Domaine } from './droitsAcces'
 import type { LectureComplete } from './lectureComplete'
 import { jourEtHeureAParis } from './parametresFacturation'
+import { ACCES_DANS_LA_TRACE_PREVU } from './traceDesDroits'
 import type { TraceDesDroits } from './types'
 
 // LA TRACE DES DROITS D'UN ACCÈS, À L'ÉCRAN DU CABINET (espace client, étape P1-trace, ligne 51.5 ; la table et son
@@ -24,6 +25,14 @@ export type Geste = typeof GESTES[number]
 
 /** Les mots du droit, tels que la contrainte `trace_des_droits_droit` les admet : les sept cases de l'application. */
 const DROITS: readonly Domaine[] = ['ventes', 'banque', 'caisse', 'comptes', 'achats', 'frais', 'documents']
+
+/**
+ * Le huitième mot (P1T-Q2) : l'accès lui-même, qui arrive dans le dossier (cochée, « creation ») ou en part (décochée,
+ * « retrait »), qu'il porte ou non des cases. Connu de l'écran sous `ACCES_DANS_LA_TRACE_PREVU` seulement, et sous ces deux
+ * formes seulement : un « changement » de l'accès, ou une case qui contredirait le geste, est un mot que l'écran ne connaît pas.
+ */
+export const ACCES = 'acces'
+export type DroitDeLaTrace = Domaine | typeof ACCES
 
 // Qui a fait le geste, en trois mentions seulement.
 //  - `sans_session` : l'auteur est nul — une écriture sans compte connecté (une fonction du service sous sa clé secrète,
@@ -55,7 +64,7 @@ export interface LigneDeTrace {
   id: string
   accesId: string
   clientId: string
-  droit: Domaine
+  droit: DroitDeLaTrace
   coche: boolean
   geste: Geste
   auteurId: string | null
@@ -65,14 +74,22 @@ export interface LigneDeTrace {
 const estUnDroit = (v: string): v is Domaine => (DROITS as readonly string[]).includes(v)
 const estUnGeste = (v: string): v is Geste => (GESTES as readonly string[]).includes(v)
 
-/** La ligne telle que la base la rend, jugée ; nulle si un mot ou l'instant n'est pas de ceux que l'écran connaît. */
-export function ligneDeTrace(brute: TraceDesDroits): LigneDeTrace | null {
-  if (!estUnDroit(brute.droit) || !estUnGeste(brute.geste)) return null
+/** L'arrivée ou le départ de l'accès lui-même, sous ses deux seules formes. */
+const estLAccesLuiMeme = (brute: TraceDesDroits): boolean =>
+  brute.droit === ACCES && ((brute.geste === 'creation' && brute.coche === true) || (brute.geste === 'retrait' && brute.coche === false))
+
+/**
+ * La ligne telle que la base la rend, jugée ; nulle si un mot ou l'instant n'est pas de ceux que l'écran connaît. Le mot
+ * « acces » n'est connu que sous `accesConnus` (par défaut, `ACCES_DANS_LA_TRACE_PREVU`).
+ */
+export function ligneDeTrace(brute: TraceDesDroits, accesConnus: boolean = ACCES_DANS_LA_TRACE_PREVU): LigneDeTrace | null {
+  const droitConnu = estUnDroit(brute.droit) || (accesConnus && estLAccesLuiMeme(brute))
+  if (!droitConnu || !estUnGeste(brute.geste)) return null
   if (typeof brute.coche !== 'boolean') return null
   if (typeof brute.fait_le !== 'string' || Number.isNaN(Date.parse(brute.fait_le))) return null
   if (typeof brute.acces_id !== 'string' || brute.acces_id === '') return null
   return {
-    id: brute.id, accesId: brute.acces_id, clientId: brute.client_id, droit: brute.droit, coche: brute.coche,
+    id: brute.id, accesId: brute.acces_id, clientId: brute.client_id, droit: brute.droit as DroitDeLaTrace, coche: brute.coche,
     geste: brute.geste, auteurId: brute.auteur_id, instant: brute.fait_le,
   }
 }
@@ -88,11 +105,13 @@ export interface TraceLue {
  * motif dit ce qui manque — la lecture elle-même (`lireTout`) et/ou les lignes écartées —, et les lignes jugées restent
  * montrées : elles sont vraies, mais ce ne sont peut-être pas toutes.
  */
-export function traceDeLaLecture(lecture: Pick<LectureComplete<TraceDesDroits>, 'lignes' | 'complete' | 'motif'>): TraceLue {
+export function traceDeLaLecture(
+  lecture: Pick<LectureComplete<TraceDesDroits>, 'lignes' | 'complete' | 'motif'>, accesConnus: boolean = ACCES_DANS_LA_TRACE_PREVU,
+): TraceLue {
   const lignes: LigneDeTrace[] = []
   let ecartees = 0
   for (const brute of lecture.lignes) {
-    const ligne = ligneDeTrace(brute)
+    const ligne = ligneDeTrace(brute, accesConnus)
     if (ligne === null) ecartees += 1
     else lignes.push(ligne)
   }
@@ -139,6 +158,10 @@ export interface PhraseDeLaTrace {
  * retiré en part en la portant (la base écrit alors la case décochée : c'est l'accès qui s'en va, pas un décochage).
  */
 export function phraseDeLaTrace(ligne: Pick<LigneDeTrace, 'droit' | 'coche' | 'geste'>): PhraseDeLaTrace {
+  // L'accès lui-même (P1T-Q2) : ouvert à son arrivée, retiré à son départ, qu'il porte ou non des cases.
+  if (ligne.droit === ACCES) {
+    return { libelle: LIBELLE_DE_L_ACCES, etat: ligne.geste === 'retrait' ? 'retiré' : 'ouvert' }
+  }
   const libelle = definitionDe(ligne.droit).libelle
   switch (ligne.geste) {
     case 'creation': return { libelle, etat: 'cochée à la création de l’accès' }
@@ -217,6 +240,15 @@ export const AUCUN_CHANGEMENT_TRACE =
 export const CE_QUE_DIT_L_ADRESSE_RETENUE =
   'Un accès retiré se nomme par l’adresse qu’il portait à son départ : seul le cabinet la lit, et elle se garde avec la trace, '
   + 'aussi longtemps que le dossier.'
+
+/** Le libellé de l'accès lui-même dans la colonne des cases (P1T-Q2). */
+export const LIBELLE_DE_L_ACCES = 'L’accès à l’espace client'
+
+/** Ce que l'onglet dit de la trace, l'accès lui-même tracé (P1T-Q2, sous `ACCES_DANS_LA_TRACE_PREVU`). */
+export const CE_QUE_DIT_LA_TRACE_DES_ACCES =
+  'Chaque accès ouvert ou retiré, même sans case cochée, et chaque case cochée ou décochée sur un accès du dossier, à l’heure '
+  + 'de Paris, et qui l’a fait : le cabinet, le client lui-même, ou « sans session » quand aucun compte n’était connecté. Seul le '
+  + 'cabinet lit cette liste ; elle ne se modifie ni ne se supprime, et reste lisible après le retrait de l’accès qu’elle raconte.'
 
 export const CE_QUE_DIT_LA_TRACE =
   'Chaque case cochée ou décochée sur un accès du dossier, à l’heure de Paris, et qui l’a fait : le cabinet, le client lui-même, '
