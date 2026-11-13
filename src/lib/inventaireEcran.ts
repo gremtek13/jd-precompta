@@ -318,9 +318,11 @@ export function operationsDeLExercice(operations: readonly OperationInventaire[]
     .sort((a, b) => rang(a.nature) - rang(b.nature) || a.objet.localeCompare(b.objet, 'fr') || (a.id < b.id ? -1 : 1))
 }
 
-/** Les régularisations proprement dites (la provision a son tableau) d'un exercice. */
+/** Les régularisations proprement dites d'un exercice : ni la provision, qui a son tableau, ni la régularisation REPRISE d'une
+ *  balance (INV3-Q2 (A)), dont l'exercice est celui que la balance clôt et qui se montre dans la section de l'exercice qu'elle
+ *  ouvre (lib/regularisationRepriseEcran.ts) — la remplacer par le formulaire d'une régularisation ordinaire la ferait mentir. */
 export const regularisationsDeLExercice = (operations: readonly OperationInventaire[], exercice: number): OperationInventaire[] =>
-  operationsDeLExercice(operations, exercice).filter((o) => o.nature !== 'provision')
+  operationsDeLExercice(operations, exercice).filter((o) => o.nature !== 'provision' && !o.reprise)
 
 /** Le refus que `retirer_operation_inventaire` lèverait (le mode, le gel), l'accès passé ; nul quand elle retire. Une évaluation de
  *  provision ne se retire que si c'est la dernière de sa provision (`garder_evaluations_de_provision`). */
@@ -337,6 +339,10 @@ export function refusDuRetraitDeLOperation(
 }
 
 export function confirmationDuRetrait(o: OperationInventaire): string {
+  if (o.reprise) {
+    return `Retirer la régularisation reprise « ${o.objet} » (${LIBELLES_DES_NATURES[o.nature]}, ${euros(o.montant_centimes)}, au compte `
+      + `${o.compte_regularisation}) ? Son extourne au 01/01/${o.exercice + 1} est retirée avec elle ; la balance reprise ne change pas.`
+  }
   return o.nature === 'provision'
     ? `Retirer l’évaluation « ${o.objet} » au 31/12/${o.exercice} (cible ${euros(o.montant_centimes)}) ? Son écriture de dotation ou de reprise est retirée avec elle.`
     : `Retirer la régularisation « ${o.objet} » (${LIBELLES_DES_NATURES[o.nature]}, ${euros(o.montant_centimes)}) ? Ses deux écritures, au 31/12/${o.exercice} `

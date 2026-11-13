@@ -341,6 +341,12 @@ export function compteDeLaRepriseAdmis(nature: NatureReprise, compte: string): b
     && !sousLaRacine(compte, RACINES_HORS_DE_L_INVENTAIRE)
 }
 
+/** Les racines sous lesquelles le compte d'une régularisation reprise de cette nature se prend dans la balance (486, 487,
+ *  408, 418), lues au catalogue des rôles : l'écran de la reprise n'offre que les comptes repris qui s'y tiennent. */
+export function racinesDeLaReprise(nature: NatureReprise): readonly string[] {
+  return racinesDuRole(ROLE_DE_LA_REPRISE[nature])
+}
+
 // Les refus communs aux deux saisies, dans l'ordre de la base : le plan, le compte de résultat, le compte de régularisation,
 // les montants, l'objet.
 function refusDesComptesEtDesMontants(

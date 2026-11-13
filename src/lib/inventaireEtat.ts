@@ -91,8 +91,11 @@ export function etatDInventaire(d: DonneesDeLInventaire, exercice: number, dossi
     lignes.push({
       nature: LIBELLES_DES_NATURES[o.nature], objet: o.objet, compteDeResultat: o.compte_resultat, compteDeBilan: o.compte_regularisation,
       montantCentimes: o.montant_centimes, tvaCentimes: o.tva_centimes, periode: periodeDite(o),
-      ecritures: ECRITURES_D_UNE_REGULARISATION(exercice), calcul: calculDUneRegularisation(o),
-      justification: `Régularisation saisie par le cabinet : ${o.objet}.${o.piece_citee_id !== null ? ' Une pièce du dossier la fonde.' : ''}`,
+      // Une régularisation reprise d'une balance (INV3-Q2 (A)) : sa constatation est dans la balance, seule son extourne s'écrit.
+      ecritures: o.reprise ? `constatée dans la balance reprise ; extourne au 01/01/${exercice + 1}` : ECRITURES_D_UNE_REGULARISATION(exercice),
+      calcul: calculDUneRegularisation(o),
+      justification: `${o.reprise ? 'Régularisation reprise de la balance, saisie par le cabinet' : 'Régularisation saisie par le cabinet'} : `
+        + `${o.objet}.${o.piece_citee_id !== null ? ' Une pièce du dossier la fonde.' : ''}`,
       saisieLe: saisie(o), aJour: ecrituresAJour(o, d),
     })
   }

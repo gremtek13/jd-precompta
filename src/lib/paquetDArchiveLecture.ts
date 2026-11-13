@@ -2,7 +2,10 @@ import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from './cheminDuDossier'
-import { piecesCiteesParLExercice, type ExerciceDuPaquet, type OriginalLu, type PieceDuPaquet } from './paquetDArchive'
+import { INVENTAIRE_PREVU } from './inventaire'
+import {
+  INVENTAIRE_DU_PAQUET_SANS_OBJET, piecesCiteesParLExercice, type ExerciceDuPaquet, type InventaireDuPaquet, type OriginalLu, type PieceDuPaquet,
+} from './paquetDArchive'
 
 // LA LECTURE DU PAQUET D'ARCHIVE (ligne 44, INAL3a) : tout ce que `fabriquerLePaquet` (lib/paquetDArchive.ts, pur) reçoit,
 // hors du FEC, que l'onglet Écritures calcule. Elle ne rejette jamais : une lecture partielle, refusée ou rompue rend un
@@ -11,6 +14,11 @@ import { piecesCiteesParLExercice, type ExerciceDuPaquet, type OriginalLu, type 
 // L'ordre compte : l'empreinte de l'exercice se vérifie D'ABORD (`verifier_exercice_valide`, qui lit ses deux formes). En
 // forme 2 elle scelle les empreintes de dépôt des pièces citées : vérifiée, ces empreintes sont celles de la validation, et
 // relire chaque original contre elles prouve qu'il n'a pas changé depuis.
+//
+// LES PIÈCES DE L'INVENTAIRE (ligne 35, INV3-Q1 (A)) : la forme 2 scelle aussi celles que les régularisations d'inventaire et les
+// provisions de l'exercice citent ; la lecture les compte avec les autres (`piecesCiteesParLExercice`), régularisations et
+// provisions lues EN ENTIER. DERRIÈRE `INVENTAIRE_PREVU` : baissé, les tables ne sont pas en base, rien ne s'en lit, et le paquet
+// est celui d'hier, au fichier près.
 
 export type LectureDuPaquet =
   | { etat: 'lue'; exercice: ExerciceDuPaquet; piecesCitees: string[]; originaux: OriginalLu[] }
@@ -19,6 +27,11 @@ export type LectureDuPaquet =
 const COLONNES_EXERCICE = 'dossier_id, annee, valide_le, empreinte, empreinte_precedente, forme_empreinte, nb_ecritures, nb_lignes, declaration'
 
 export async function lireLePaquet(dossierId: string, annee: number): Promise<LectureDuPaquet> {
+  return lireLePaquetSelon(dossierId, annee, INVENTAIRE_PREVU)
+}
+
+/** La même lecture, selon que les tables de l'inventaire sont en base : les deux états du drapeau, que les tests jouent. */
+export async function lireLePaquetSelon(dossierId: string, annee: number, inventaireEnBase: boolean): Promise<LectureDuPaquet> {
   const refus = (motif: string): LectureDuPaquet => ({ etat: 'refusee', motif })
   try {
     const verification = await supabase.rpc('verifier_exercice_valide', { p_dossier_id: dossierId, p_annee: annee })
@@ -45,7 +58,23 @@ export async function lireLePaquet(dossierId: string, annee: number): Promise<Le
         .eq('dossier_id', dossierId).order('id').range(debut, fin))
     if (!immobilisations.complete) return refus(`les biens du dossier sont lus en partie (${immobilisations.motif}).`)
 
-    const piecesCitees = piecesCiteesParLExercice(lignes.lignes, immobilisations.lignes)
+    let inventaire: InventaireDuPaquet = INVENTAIRE_DU_PAQUET_SANS_OBJET
+    if (inventaireEnBase) {
+      const operations = await lireTout<{ id: string; dossier_id: string; exercice: number; reprise: boolean; piece_citee_id: string | null; provision_id: string | null }>((debut, fin) =>
+        supabase.from('operations_inventaire').select('id, dossier_id, exercice, reprise, piece_citee_id, provision_id', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin))
+      if (!operations.complete) return refus(`les régularisations d’inventaire du dossier sont lues en partie (${operations.motif}).`)
+      const provisions = await lireTout<{ id: string; dossier_id: string; piece_citee_id: string | null }>((debut, fin) =>
+        supabase.from('provisions').select('id, dossier_id, piece_citee_id', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin))
+      if (!provisions.complete) return refus(`les provisions du dossier sont lues en partie (${provisions.motif}).`)
+      if ([...operations.lignes, ...provisions.lignes].some((l) => l.dossier_id !== dossierId)) {
+        return refus('une régularisation ou une provision rendue n’est pas de ce dossier.')
+      }
+      inventaire = { etat: 'lu', annee, operations: operations.lignes, provisions: provisions.lignes }
+    }
+
+    const piecesCitees = piecesCiteesParLExercice(lignes.lignes, immobilisations.lignes, inventaire)
     const citees = new Set(piecesCitees)
     // Toutes les pièces du dossier, colonnes légères, puis filtrées : une liste d'identifiants dans l'adresse dépasserait
     // la longueur qu'un mandataire accepte pour une année de pièces. Jamais le nom du fichier.

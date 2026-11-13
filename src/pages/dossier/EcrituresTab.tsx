@@ -7,7 +7,7 @@ import OuvertureEclateeCarte from './OuvertureEclateeCarte'
 import { RENDU_DES_BANQUES_AU_FEC, rendreLesBanquesAuFec } from '../../lib/banquesAuFec'
 import { modeleDuMouvement, planDuMouvement, refusDesBanquesDesPaiements } from '../../lib/banqueDuMouvement'
 import PaquetDArchiveBouton from './PaquetDArchiveBouton'
-import { piecesCiteesParLExercice, piecesSansEmpreinte, type PisteDuPaquet } from '../../lib/paquetDArchive'
+import { INVENTAIRE_DU_PAQUET_SANS_OBJET, piecesCiteesParLExercice, piecesSansEmpreinte, type PisteDuPaquet } from '../../lib/paquetDArchive'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import {
@@ -670,9 +670,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const fecValide = exerciceValideAffiche ? numerotationValidee(ecrituresFiltrees, aNouveauxExercice, exerciceValideAffiche.valide_le, choixDesChampsBnc) : null
   // Les pièces que l'exercice validé cite sans empreinte de dépôt : le paquet d'archive les prendra marquées « non vérifiée »
   // (INAL3-Q1), et son bouton le dit avant le clic. Comptées sur les pièces validées lues ici (une pièce citée l'est
-  // toujours : `garder_piece_validee`) ; la lecture du paquet relit tout au clic.
+  // toujours : `garder_piece_validee`) ; la lecture du paquet relit tout au clic. Les pièces que l'inventaire de l'exercice scelle
+  // (INV3-Q1 (A)) n'y comptent pas : l'onglet ne lit pas l'inventaire, la lecture du paquet les compte au clic, et le message qui
+  // suit le téléchargement redit le nombre exact.
   const sansEmpreinteAuPaquet = exerciceValideAffiche
-    ? piecesSansEmpreinte(piecesValidees, piecesCiteesParLExercice(ecrituresFiltrees.filter((e) => e.statut === 'validee'), immobilisations)).length
+    ? piecesSansEmpreinte(
+      piecesValidees,
+      piecesCiteesParLExercice(ecrituresFiltrees.filter((e) => e.statut === 'validee'), immobilisations, INVENTAIRE_DU_PAQUET_SANS_OBJET),
+    ).length
     : 0
   // LE LETTRAGE des comptes de tiers (lib/lettrage.ts), calculé sur TOUT le brouillon et non sur l'exercice affiché :
   // une facture de décembre réglée en janvier porte le même code dans les deux FEC. Il ne se fige pas avec l'exercice —

@@ -52370,3 +52370,17 @@ réécrite : PC7-Q2 et PC7Q2-Q1 s'appliquent avant ou après. **Preuves** : `acc
 mutations sur sept (la porte sans déclencheurs rend le défaut) ; dix-huit essais et `rls.sql` (CA2, CC3, FE5, NC2, M-FE3) ajustés là où ils
 attendaient le refus d'une garde avant la policy ou listaient les déclencheurs : verdicts identiques avant et après, `rls.sql` 239/0 et
 139/139 des deux côtés ; les deux ordres avec PC7-Q2 et PC7Q2-Q1 ; le retour rend la signature de l'export ; banc du leurre SÛR (18 et 17).
+
+### 13/11/2026 — INV3-Q2 À L'ÉCRAN, ET LES PIÈCES DE L'INVENTAIRE DANS LE PAQUET D'ARCHIVE (DERRIÈRE LEURS DRAPEAUX)
+
+Agent dev, ligne 35, les deux suites de l'amendement INV3 ; rien de `supabase/` touché. **L'écran** : sur le premier exercice du dossier,
+l'onglet Inventaire monte une section à part (`RegularisationsReprises.tsx`, sa logique dans `lib/regularisationRepriseEcran.ts`) ; la
+balance reprise s'y lit EN ENTIER à part (`lib/balanceRepriseDeLInventaireLecture.ts`, lue en partie : aucun geste, rien de dit de la
+validation) ; seule une balance au 1er janvier de l'exercice l'ouvre. Le compte se CHOISIT parmi ceux de la balance sous la racine de la
+nature (le 4084 écarté), « seule l'extourne s'écrit » sous la pièce « Inventaire N−1 », les refus de `composerRegularisationReprise` dits
+avant le clic, et ce que la validation retiendra listé compte par compte (`comptesReprisNonExtournes`, dont `compteRepriseNonExtourne`
+rend désormais le premier) ; les gestes passent par `agir`. Une reprise sort de la liste ordinaire (la remplacer par l'autre formulaire
+l'aurait rendue ordinaire) ; son retrait et l'état d'inventaire disent sa seule extourne. **Le paquet** : `piecesCiteesParLExercice` prend
+un troisième paramètre obligatoire, l'inventaire lu ou « sans objet », et suit `pieces_scellees_par_l_inventaire` ; `lireLePaquet` ne le lit
+que sous `INVENTAIRE_PREVU` (baissé : le paquet d'hier). Le compte d'avant le clic de l'onglet Écritures ne lit pas l'inventaire ; le
+message qui suit le téléchargement redit le nombre exact. Reste : la levée des drapeaux avec les trois migrations.

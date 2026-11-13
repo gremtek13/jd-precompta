@@ -88,6 +88,14 @@ describe('l’état d’un exercice', () => {
     expect(etat.lignes[1].aJour).toBe(false)
   })
 
+  it('une régularisation reprise d’une balance (INV3-Q2 (A)) : l’état « Inventaire N−1 » dit sa seule extourne', () => {
+    const reprise = operation({ id: 'r1', exercice: 2024, reprise: true, compte_regularisation: '486200', objet: 'Assurance reprise' })
+    const ligneReprise = etatDInventaire(donnees({ operations: [reprise] }), 2024, 'Société fictive').lignes[0]
+    expect(ligneReprise.ecritures).toBe('constatée dans la balance reprise ; extourne au 01/01/2025')
+    expect(ligneReprise.justification).toBe('Régularisation reprise de la balance, saisie par le cabinet : Assurance reprise.')
+    expect(etat.lignes[0].ecritures).toBe('31/12/2025 ; extourne au 01/01/2026')
+  })
+
   it('une ligne par opération de l’exercice seulement : l’évaluation de l’an dernier n’y est pas', () => {
     expect(etat.lignes.map((l) => l.objet)).not.toContain('Autre exercice')
     expect(etat.lignes).toHaveLength(4)
