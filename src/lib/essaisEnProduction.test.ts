@@ -441,7 +441,10 @@ describe('les essais de la base, rejoués en production', () => {
     // « apres », après sa migration préparée et les deux qu'elle suppose (B1, B2) : un seul modèle « apres » porte les trois.
     // Vingt-quatre le 13/11/2026 : `accesAvantLesGardes` (ligne 43, `acces_avant_les_gardes`) entré dans la famille « apres »,
     // après sa migration préparée ; SÛR au banc, sur une copie de la réplique au niveau de l'export.
-    expect(cas.length).toBe(24)
+    // Vingt-cinq le 13/11/2026 : `gardesDeLaValidation` (ligne 28.66, `gardes_de_la_validation_allegees`, en production
+    // depuis le 12/11/2026), joué par le super-utilisateur comme son en-tête le veut — sans la règle, le banc complet
+    // rendait 2 ; SÛR au banc, sur une copie de la réplique au niveau de la production.
+    expect(cas.length).toBe(25)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
