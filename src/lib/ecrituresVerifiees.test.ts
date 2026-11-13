@@ -145,8 +145,9 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
   lireLesDroitsVentes: {
     // 2 depuis l'étape P4b : les tuiles « À encaisser » et « À déclarer » de l'accueil relisent aussi les cases ; 3 depuis
     // l'étape VF5g : « Ma banque » lit « Banque » et « Ventes », qui ouvre la lecture des encaissements de ses factures ; 4
-    // depuis l'étape B9a : « Mon analyse » relit les deux cases avant ses indicateurs.
-    nombre: 4,
+    // depuis l'étape B9a : « Mon analyse » relit les deux cases avant ses indicateurs ; 5 depuis C8 : « Ma trésorerie à 90
+    // jours » relit « Banque » et « Ventes » avant toute autre lecture.
+    nombre: 5,
     raison:
       'ce n’est pas une écriture : `droits_sur_le_dossier` LIT les cases de l’appelant (étape P1), pour « Mes ventes » ' +
       '(P4a), ses tuiles de l’accueil (P4b), « Ma banque » (VF5g) et « Mon analyse » (B9a). `lib/espaceVentes.ts` attend la requête et lit son erreur : un refus, ou une ' +
