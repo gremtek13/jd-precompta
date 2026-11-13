@@ -1,4 +1,6 @@
 import { facturesAEncaisser, motsDuSolde } from './analyseClient'
+import type { AchatDuClient } from './achatsClientVue'
+import type { PaiementDeclare } from './achatsClient'
 import { soldeAuReleve, type SoldeLu } from './banqueClient'
 import { banqueParCompte, type ComptesDuClient } from './banqueClientParCompte'
 import {
@@ -8,7 +10,7 @@ import type { ImpotDuDossier } from './echeancesFiscales'
 import { ajouterJours } from './format'
 import type { LectureComplete } from './lectureComplete'
 import type { ListesDesVentes } from './tuilesVentes'
-import type { ControleReleveBancaire, LigneBancaire } from './types'
+import type { ControleReleveBancaire, LigneBancaire, ReglementGroupe } from './types'
 
 // « MA TRÉSORERIE À 90 JOURS » (ligne 51.5, partie C, étape C8 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE
 // GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », partie C, la proposition C8 et son étape). Voir venir un
@@ -32,8 +34,13 @@ import type { ControleReleveBancaire, LigneBancaire } from './types'
 //   un barème à confirmer (`MontantDEcheance.estimation`). Le prévisionnel du CABINET (le plan de trésorerie de l'onglet
 //   Financement) ne se lit pas : il se calcule des écritures, que le client ne lit jamais ; le montrer demanderait une
 //   publication (comme les situations de C4), donc une migration — la question C8-Q2.
-// - Les achats (ce que tu dois à tes fournisseurs) attendent la table de B4 (`ACHATS_DU_CLIENT_PREVUS`, baissé) : non
-//   comptés, dits ; tresorerieClient.test.ts refuse ce drapeau levé tant qu'ils ne sont pas comptés ici.
+// - Les achats (ce que tu dois à tes fournisseurs) : comptés derrière `ACHATS_DU_CLIENT_PREVUS` (B4) et avec la case
+//   « Achats », relue à la base ; drapeau baissé ou case fermée, « non comptés », dits comme avant. Une facture d'achat À
+//   VENIR dans l'horizon sort à son échéance, pour son reste dû ; en retard, sans échéance ou échue après l'horizon, elle se
+//   dit à part avec sa somme ; une facture sans montant lu, un avoir, jamais comptés ni mis à 0. Ce qui la règle : un
+//   mouvement du relevé ou une part de règlement groupé qui la cite, ou ce que le client a DÉCLARÉ payé (B4) — le plus fort
+//   des deux, jamais leur somme, qui compterait deux fois le même paiement. Payé au jour du solde ou avant, il est dans le
+//   solde ; après, il est dit, avec sa somme (`reglementDeLAchat`).
 // - Une source lue en partie rend la projection MUETTE, avec son motif : un solde à 90 jours sans une partie de ses sorties
 //   serait trop beau, sans une partie de ses entrées trop sombre, et l'un comme l'autre se lirait comme un chiffre.
 //
@@ -141,6 +148,8 @@ export type EcheancesDeLaTresorerie =
 
 /** Ce que la trésorerie lit d'un mouvement du relevé : sa date, son montant, et l'échéance de cotisation qu'il paie. */
 export type MouvementDuReleve = Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'cotisation_id'>
+  /** La pièce qu'il règle : lue seulement quand les achats se comptent (`ACHATS_DU_CLIENT_PREVUS`, lib/tresorerieClientLecture.ts). */
+  & { piece_id?: string | null }
 export const COLONNES_DU_RELEVE = 'id, date, montant, cotisation_id'
 
 /** La lecture de l'échéancier (lib/echeancierClientLecture.ts, `LectureEcheancier`), redite ici : un module de calcul ne
@@ -162,8 +171,32 @@ export function echeancesDeLEcheancier(lecture: EcheancierLu, aujourdHui: string
   }
 }
 
+/** Ce que la trésorerie lit d'une facture d'achat : de quoi la dire, la dater et la chiffrer. */
+export type PieceDAchatLue = Pick<AchatDuClient, 'id' | 'tiers' | 'montant_ttc' | 'date_echeance' | 'identite_numero'>
+  & { identite_nature: 'facture' | 'avoir' | null }
+export const COLONNES_DES_ACHATS_DE_LA_TRESORERIE = 'id, dossier_id, tiers, montant_ttc, date_echeance, identite_numero, identite_nature'
+/** Ce qu'elle lit d'un paiement déclaré (B4) et d'une part de règlement groupé. */
+export type DeclarationDePaiement = Pick<PaiementDeclare, 'piece_id' | 'date_paiement' | 'montant' | 'retire_le'>
+export const COLONNES_DES_DECLARATIONS = 'id, dossier_id, piece_id, date_paiement, montant, retire_le'
+export type PartDeReglement = Pick<ReglementGroupe, 'ligne_bancaire_id' | 'piece_id' | 'montant'>
+export const COLONNES_DES_PARTS = 'id, dossier_id, ligne_bancaire_id, piece_id, montant'
+
+/**
+ * Les achats du client : `fermes` quand le drapeau de leur migration est baissé OU quand la case « Achats » ne l'est pas en
+ * base (non comptés, dit) ; les listes telles que la lecture les rend sinon, chacune dite entière ou non.
+ */
+export type AchatsDeLaTresorerie =
+  | { etat: 'fermes' }
+  | { etat: 'illisibles'; motif: string }
+  | {
+    etat: 'lus'
+    pieces: LectureComplete<PieceDAchatLue>
+    declarations: LectureComplete<DeclarationDePaiement>
+    parts: LectureComplete<PartDeReglement>
+  }
+
 // ── La projection ──────────────────────────────────────────────────────────────────────────────────────────────────────
-export type NatureDuMouvement = 'creance' | NatureEcheance
+export type NatureDuMouvement = 'creance' | 'achat' | NatureEcheance
 
 export interface MouvementPrevu {
   id: string
@@ -243,6 +276,96 @@ export function reglementDeLaCotisation(
   return { etat: 'a_payer' }
 }
 
+function libelleDeLAchat(piece: PieceDAchatLue): string {
+  const facture = piece.identite_numero ? `Facture ${piece.identite_numero}` : 'Une facture d’achat'
+  return `${facture}${piece.tiers ? ` de ${piece.tiers}` : ''} : ce que tu dois encore`
+}
+
+/** Ce qui règle une facture d'achat : la somme réglée, en centimes, et sa part datée après le solde lu. */
+export interface ReglementDeLAchat {
+  payeCentimes: number
+  /** La part de `payeCentimes` datée APRÈS le solde : ni dans le solde, ni à payer encore. */
+  apresLeSoldeCentimes: number
+}
+
+/**
+ * Ce qui règle une facture d'achat. Deux sources, jamais additionnées : le RELEVÉ (un mouvement dont `piece_id` la cite, ou
+ * une part de règlement groupé : le montant de la sortie, en centimes, daté du mouvement), et ce que le client a DÉCLARÉ payé
+ * (une proposition, B4 ; une déclaration retirée ne compte pas). Le même paiement peut figurer dans les deux — la déclaration
+ * puis le rapprochement du cabinet — et les additionner le compterait deux fois : on retient la plus forte, le relevé à
+ * égalité (il est vérifié). Un remboursement ne rend jamais une somme négative. Une part dont le mouvement n'est pas dans le
+ * relevé lu est datée après le solde : le moins sûr, dit.
+ */
+export function reglementDeLAchat(
+  pieceId: string, releve: readonly MouvementDuReleve[], parts: readonly PartDeReglement[],
+  declarations: readonly DeclarationDePaiement[], au: string,
+): ReglementDeLAchat {
+  const dateDuMouvement = new Map(releve.map((m) => [m.id, m.date]))
+  const parLeReleve = { total: 0, apres: 0 }
+  const sortie = (montant: number, date: string | undefined) => {
+    const centimes = -Math.round(montant * 100)
+    parLeReleve.total += centimes
+    if (date === undefined || date > au) parLeReleve.apres += centimes
+  }
+  for (const m of releve) if (m.piece_id === pieceId) sortie(m.montant, m.date)
+  for (const p of parts) if (p.piece_id === pieceId) sortie(p.montant, dateDuMouvement.get(p.ligne_bancaire_id))
+  const declare = { total: 0, apres: 0 }
+  for (const d of declarations) {
+    if (d.piece_id !== pieceId || d.retire_le !== null) continue
+    const centimes = Math.round(d.montant * 100)
+    declare.total += centimes
+    if (d.date_paiement > au) declare.apres += centimes
+  }
+  const retenu = declare.total > parLeReleve.total ? declare : parLeReleve
+  return { payeCentimes: Math.max(0, retenu.total), apresLeSoldeCentimes: Math.max(0, Math.min(retenu.apres, retenu.total)) }
+}
+
+/**
+ * Les factures d'achat lues en entier : celles à venir dans l'horizon entrent dans `prevus`, à leur échéance et pour leur
+ * reste dû ; le reste se dit dans `nonComptes`, jamais compté ni mis à 0. Écrit dans les deux listes que l'appelant tient.
+ */
+function composerLesAchats(entree: {
+  aujourdHui: string
+  fin: string
+  au: string
+  achats: Extract<AchatsDeLaTresorerie, { etat: 'lus' }>
+  releve: readonly MouvementDuReleve[]
+  prevus: Omit<MouvementPrevu, 'soldeApresCentimes'>[]
+  nonComptes: NonCompte[]
+}): void {
+  const { aujourdHui, fin, au, achats, releve, prevus, nonComptes } = entree
+  const enRetard = { nombre: 0, centimes: 0 }
+  const sansEcheance = { nombre: 0, centimes: 0 }
+  const apresLHorizon = { nombre: 0, centimes: 0 }
+  let sansMontant = 0
+  let avoirs = 0
+  let payeDepuisLeReleve = 0
+  for (const piece of achats.pieces.lignes) {
+    if (piece.identite_nature === 'avoir' || (piece.montant_ttc != null && piece.montant_ttc < 0)) { avoirs += 1; continue }
+    if (piece.montant_ttc == null || !Number.isFinite(piece.montant_ttc)) { sansMontant += 1; continue }
+    const reglement = reglementDeLAchat(piece.id, releve, achats.parts.lignes, achats.declarations.lignes, au)
+    const total = Math.round(piece.montant_ttc * 100)
+    payeDepuisLeReleve += Math.min(reglement.apresLeSoldeCentimes, total)
+    const reste = total - reglement.payeCentimes
+    if (reste <= 0) continue
+    if (piece.date_echeance == null) { sansEcheance.nombre += 1; sansEcheance.centimes += reste; continue }
+    if (piece.date_echeance < aujourdHui) { enRetard.nombre += 1; enRetard.centimes += reste; continue }
+    if (piece.date_echeance >= fin) { apresLHorizon.nombre += 1; apresLHorizon.centimes += reste; continue }
+    prevus.push({
+      id: `achat-${piece.id}`, date: piece.date_echeance, nature: 'achat', libelle: libelleDeLAchat(piece),
+      centimes: -reste, prevision: false,
+    })
+  }
+  if (enRetard.nombre > 0) nonComptes.push({ cle: 'achats-en-retard', phrase: nonCompteAchatsEnRetard(enRetard.nombre), centimes: enRetard.centimes })
+  if (sansEcheance.nombre > 0) nonComptes.push({ cle: 'achats-sans-echeance', phrase: nonCompteAchatsSansEcheance(sansEcheance.nombre), centimes: sansEcheance.centimes })
+  if (apresLHorizon.nombre > 0) nonComptes.push({ cle: 'achats-apres', phrase: nonCompteAchatsApres(apresLHorizon.nombre), centimes: apresLHorizon.centimes })
+  if (sansMontant > 0) nonComptes.push({ cle: 'achats-sans-montant', phrase: nonCompteAchatsSansMontant(sansMontant), centimes: null })
+  if (avoirs > 0) nonComptes.push({ cle: 'achats-avoirs', phrase: nonCompteAvoirsDAchat(avoirs), centimes: null })
+  if (payeDepuisLeReleve > 0) {
+    nonComptes.push({ cle: 'achats-payes-depuis-le-releve', phrase: nonCompteAchatsPayesDepuisLeReleve(au), centimes: payeDepuisLeReleve })
+  }
+}
+
 /**
  * La trésorerie des 90 jours qui suivent `aujourdHui` (jour de Paris, AAAA-MM-JJ). Sans solde lu, rien ne se projette ; une
  * source lue en partie rend la projection muette ; ce qui n'est pas compté se dit, ligne par ligne.
@@ -252,10 +375,12 @@ export function composerTresorerie(entree: {
   depart: Depart
   creances: CreancesDeLaTresorerie
   echeances: EcheancesDeLaTresorerie
+  /** Les achats du client : OBLIGATOIRE, sans défaut — `fermes` dit « non comptés », comme avant. */
+  achats: AchatsDeLaTresorerie
   /** Le relevé du dossier, EN ENTIER : il dit quelle échéance un mouvement a déjà payée, et quand. */
   releve: LectureComplete<MouvementDuReleve>
 }): Tresorerie {
-  const { aujourdHui, depart, creances, echeances, releve } = entree
+  const { aujourdHui, depart, creances, echeances, achats, releve } = entree
   if (depart.etat !== 'lu') return { etat: 'sans_depart', depart }
   const motifs = [
     creances.etat === 'illisibles' ? `tes ventes : ${creances.motif}` : null,
@@ -263,6 +388,10 @@ export function composerTresorerie(entree: {
       ? `tes ventes : ${creances.listes.facturesIncompletes ?? creances.listes.encaissementsIncomplets}` : null,
     echeances.etat === 'illisibles' ? `tes échéances : ${echeances.motif}` : null,
     echeances.etat === 'lues' && echeances.partiel != null ? `tes échéances : ${echeances.partiel}` : null,
+    achats.etat === 'illisibles' ? `tes achats : ${achats.motif}` : null,
+    ...(achats.etat === 'lus'
+      ? [achats.pieces, achats.declarations, achats.parts].map((l) => (l.complete ? null : `tes achats : ${l.motif ?? 'lus en partie'}`))
+      : []),
     releve.complete ? null : `ton relevé : ${releve.motif ?? 'lu en partie'}`,
   ].filter((m): m is string => m !== null)
   if (motifs.length > 0) {
@@ -339,8 +468,13 @@ export function composerTresorerie(entree: {
     }
   }
 
-  // Les achats et le prévisionnel du cabinet : jamais lus ici (voir l'en-tête).
-  nonComptes.push({ cle: 'achats', phrase: NON_COMPTE_ACHATS, centimes: null })
+  // Les achats : comptés quand la lecture les rend en entier (voir l'en-tête), « non comptés » sinon. Le prévisionnel du
+  // cabinet n'est jamais lu ici.
+  if (achats.etat === 'lus') {
+    composerLesAchats({ aujourdHui, fin, au: depart.au, achats, releve: releve.lignes, prevus, nonComptes })
+  } else {
+    nonComptes.push({ cle: 'achats', phrase: NON_COMPTE_ACHATS, centimes: null })
+  }
   nonComptes.push({ cle: 'previsionnel-du-cabinet', phrase: NON_COMPTE_PREVISIONNEL_DU_CABINET, centimes: null })
   // Ce que rien ne permet de voir : un paiement que l'application ignore encore. Le deviner par montant et date est interdit ;
   // le dire, toujours, est la seule garde.
@@ -351,7 +485,7 @@ export function composerTresorerie(entree: {
   }
 
   // Le même jour : les sorties d'abord (le point bas jamais flatté), puis la nature, puis l'identifiant — un ordre TOTAL.
-  const rang = (m: Omit<MouvementPrevu, 'soldeApresCentimes'>) => (m.nature === 'creance' ? 3 : RANG_DE_LA_NATURE[m.nature])
+  const rang = (m: Omit<MouvementPrevu, 'soldeApresCentimes'>) => (m.nature === 'creance' ? 4 : m.nature === 'achat' ? 3 : RANG_DE_LA_NATURE[m.nature])
   prevus.sort((a, b) => a.date.localeCompare(b.date) || Number(a.centimes >= 0) - Number(b.centimes >= 0) || rang(a) - rang(b)
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 
@@ -416,6 +550,26 @@ export function nonCompteSansEcheance(nombre: number): string {
 }
 export function nonCompteApres(nombre: number): string {
   return `${nombre === 1 ? 'Une facture échue' : `${nombre} factures échues`} après ces 90 jours.`
+}
+export function nonCompteAchatsEnRetard(nombre: number): string {
+  return `${nombre === 1 ? 'Une facture d’achat en retard' : `${nombre} factures d’achat en retard`} : tu ${nombre === 1 ? 'la dois' : 'les dois'} encore, mais la date de ${nombre === 1 ? 'son' : 'leur'} paiement n’est plus sûre.`
+}
+export function nonCompteAchatsSansEcheance(nombre: number): string {
+  return `${nombre === 1 ? 'Une facture d’achat' : `${nombre} factures d’achat`} sans date d’échéance : tu ${nombre === 1 ? 'la dois' : 'les dois'} encore.`
+}
+export function nonCompteAchatsApres(nombre: number): string {
+  return `${nombre === 1 ? 'Une facture d’achat échue' : `${nombre} factures d’achat échues`} après ces 90 jours.`
+}
+export function nonCompteAchatsSansMontant(nombre: number): string {
+  return `${nombre === 1 ? 'Une facture d’achat dont le montant n’est pas lu' : `${nombre} factures d’achat dont le montant n’est pas lu`} : ${nombre === 1 ? 'elle n’est' : 'elles ne sont'} pas comptée${nombre === 1 ? '' : 's'} ici.`
+}
+export function nonCompteAvoirsDAchat(nombre: number): string {
+  return nombre === 1
+    ? 'Un avoir d’achat : ce qu’il te rend n’est pas compté ici.'
+    : `${nombre} avoirs d’achat : ce qu’ils te rendent n’est pas compté ici.`
+}
+export function nonCompteAchatsPayesDepuisLeReleve(au: string): string {
+  return `Payé sur tes factures d’achat depuis le ${enLettres(au)}, date de ton dernier relevé contrôlé : ni dans ton solde, ni compté ici.`
 }
 export function nonCompteDepuisLeReleve(au: string): string {
   return `Ce qui est entré ou sorti de ton compte depuis le ${enLettres(au)}, date de ton dernier relevé contrôlé.`
