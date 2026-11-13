@@ -52281,4 +52281,6 @@ migrations et dans leur ordre (après la période ; après l'objet, avant la par
 `lireTout`, tri par la clé primaire) : lue en partie, l'onglet le dit et n'offre aucun choix, la saisie et les gestes restant offerts ; une saisie qui
 remplace propose la pièce déjà citée (`formulaireDeLOperation`), et la garde telle quelle quand rien n'est lu. La liste passe par `BarreRecherche`,
 plafonnée à 50 et le disant ; les lignes du tableau disent ce qu'elles citent, le fichier sous `.nom-fichier`. Le composant n'importe pas le module qui
-lit (le scanner d'`ecransAvantLecture` le compterait comme un écran). Reste : remplacer une provision ouverte (la base le permet tant qu'elle n'est pas évaluée).
+lit (le scanner d'`ecransAvantLecture` le compterait comme un écran). Suite, le même jour : une provision ouverte et pas encore évaluée se REMPLACE
+depuis sa ligne (`enregistrer_provision`, son identifiant et la version lue, son exercice d'ouverture gardé), ce qu'elle cite proposé de nouveau ;
+évaluée ou figée, le bouton le dit avant le clic (`formulaireDeLaProvision`, `verdictDeLaProvision(…, remplace)`).

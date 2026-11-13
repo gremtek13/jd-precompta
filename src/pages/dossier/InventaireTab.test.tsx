@@ -7,7 +7,7 @@ import { MOTS_DES_REFUS, type ComptesDInventaire } from '../../lib/inventaire'
 import type { LectureDeLInventaireDeLEcran } from '../../lib/inventaireDeLEcranLecture'
 import { MOTS_DES_JUSTIFICATIFS, type JustificatifsDuDossier } from '../../lib/justificatifsDeLInventaire'
 import type { LectureDesJustificatifs } from '../../lib/justificatifsDeLInventaireLecture'
-import { euros, type DonneesDeLInventaire } from '../../lib/inventaireEcran'
+import { euros, MOTS_DES_PROVISIONS_A_L_ECRAN, type DonneesDeLInventaire } from '../../lib/inventaireEcran'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type { InventaireDeclare, OperationInventaire, Provision } from '../../lib/types'
 import { ContexteDossier } from '../../test/exercicesValides'
@@ -108,11 +108,11 @@ vi.mock('../../lib/supabase', () => {
     if (nom === 'enregistrer_provision') {
       const p = args.p_provision as Record<string, unknown>
       const nouvelle: Provision = {
-        id: id(), dossier_id: D, genre: p.genre as Provision['genre'], compte_provision: p.compte_provision as string, objet: p.objet as string,
+        id: (p.id as string | null) ?? id(), dossier_id: D, genre: p.genre as Provision['genre'], compte_provision: p.compte_provision as string, objet: p.objet as string,
         facture_id: (p.facture_id as string | null) ?? null, piece_citee_id: (p.piece_citee_id as string | null) ?? null, ouverte_en: p.ouverte_en as number, reprise_centimes: (p.reprise_centimes as number | null) ?? null,
-        version: 1, cree_par: 'u', cree_le: '2026-11-12T09:00:00Z', modifie_par: null, modifie_le: null,
+        version: ((args.p_version_lue as number | null) ?? 0) + 1, cree_par: 'u', cree_le: '2026-11-12T09:00:00Z', modifie_par: null, modifie_le: null,
       }
-      faux.donnees = { ...d, provisions: [...d.provisions, nouvelle] }
+      faux.donnees = { ...d, provisions: [...d.provisions.filter((x) => x.id !== nouvelle.id), nouvelle] }
     }
     if (nom === 'retirer_provision') faux.donnees = { ...d, provisions: d.provisions.filter((p) => p.id !== args.p_id) }
     if (nom === 'enregistrer_evaluation_provision') {
@@ -806,6 +806,57 @@ describe('la pièce citée, choisie dans l’onglet', () => {
     expect(sans(formulaireDeLaProvision().textContent)).toContain(MOTS_DES_JUSTIFICATIFS.factureHorsDeLaDepreciation)
     expect(bouton('Ouvrir la provision').disabled).toBe(true)
     await act(async () => { bouton('Ouvrir la provision').click() })
+    expect(faux.rpcs).toEqual([])
+  })
+})
+
+// REMPLACER UNE PROVISION OUVERTE (INV5-Q1, suite) : pour lui donner ou changer sa pièce, sans la retirer puis la rouvrir.
+describe('remplacer une provision ouverte', () => {
+  const formulaireDeLaProvision = () => screen.getByRole('form', { name: 'Ouverture d’une provision' })
+
+  it('« Remplacer » remplit le formulaire, propose ce qu’elle cite ; le choix part avec l’identifiant et la version lue', async () => {
+    faux.donnees = donnees({ provisions: [provision({ id: 'p1', version: 3 })] })
+    rendre()
+    await attendreLaLecture()
+    act(() => { within(ligne(/Litige avec un fournisseur/)).getByRole('button', { name: 'Remplacer' }).click() })
+    expect(texte()).toContain('Remplacer la provision « Litige avec un fournisseur » (ouverte en 2025)')
+    expect((screen.getByLabelText(/^Objet \(il part au FEC\)$/) as HTMLInputElement).value).toBe('Litige avec un fournisseur')
+    act(() => { within(formulaireDeLaProvision()).getByRole('button', { name: 'Choisir une pièce' }).click() })
+    act(() => { within(formulaireDeLaProvision()).getByRole('button', { name: /honoraires-janvier\.pdf/ }).click() })
+    await act(async () => {
+      bouton('Remplacer la provision').click()
+      bouton('Remplacer la provision').click()
+    })
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Remplacer la provision « Litige avec un fournisseur » ?'))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Pièce citée : « honoraires-janvier.pdf »'))
+    expect(faux.rpcs).toHaveLength(1)
+    expect(faux.rpcs[0]).toMatchObject({
+      nom: 'enregistrer_provision',
+      args: { p_dossier_id: D, p_version_lue: 3, p_provision: { id: 'p1', ouverte_en: 2025, piece_citee_id: 'pj', facture_id: null } },
+    })
+    await screen.findByText('Provision remplacée : Litige avec un fournisseur.')
+    expect(texte()).toContain('Ouvrir une provision')
+    expect(ligne(/Litige avec un fournisseur/).querySelector('.nom-fichier')?.textContent).toBe('honoraires-janvier.pdf')
+    expect(faux.donnees!.provisions).toHaveLength(1)
+  })
+
+  it('une provision évaluée ne se remplace pas : le bouton le dit avant le clic', async () => {
+    faux.donnees = donnees({ provisions: [provision({ id: 'p1' })], operations: [operation({ id: 'e1', nature: 'provision', provision_id: 'p1', objet: 'Litige avec un fournisseur' })] })
+    rendre()
+    await attendreLaLecture()
+    const remplacer = within(ligne(/Litige avec un fournisseur/)).getByRole('button', { name: 'Remplacer' }) as HTMLButtonElement
+    expect(remplacer.disabled).toBe(true)
+    expect(remplacer.title).toBe(MOTS_DES_PROVISIONS_A_L_ECRAN.dejaEvaluee)
+  })
+
+  it('« Annuler le remplacement de la provision » remet la saisie à zéro, sans écrire', async () => {
+    faux.donnees = donnees({ provisions: [provision({ id: 'p1' })] })
+    rendre()
+    await attendreLaLecture()
+    act(() => { within(ligne(/Litige avec un fournisseur/)).getByRole('button', { name: 'Remplacer' }).click() })
+    act(() => { bouton('Annuler le remplacement de la provision').click() })
+    expect(texte()).toContain('Ouvrir une provision')
+    expect((screen.getByLabelText(/^Objet \(il part au FEC\)$/) as HTMLInputElement).value).toBe('')
     expect(faux.rpcs).toEqual([])
   })
 })
