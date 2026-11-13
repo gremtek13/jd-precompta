@@ -52268,3 +52268,17 @@ migration — C8-Q2) restent « non comptés », dits ; `tresorerieClient.test.t
 ne sont pas comptés ici. `TRESORERIE_A_90_JOURS_OFFERTE` baissé (C8-Q1) ; la phrase de l'entrée dans l'équipe nomme la page
 avec lui (`ceQuePerdLeClientSelon`, sixième paramètre). Tests : module (horizon, départ, muette, ordre, centimes, mots), écran
 (9 cas), la coque dans les deux états du drapeau, `ecransAvantLecture`.
+
+### 13/11/2026 — INV5-Q1 : LA PIÈCE CITÉE SE CHOISIT DANS L'ONGLET INVENTAIRE (DERRIÈRE SON DRAPEAU)
+
+Agent `dev`, sur la réponse (B) du cabinet à INV5-Q1 (« tout de suite »), derrière `INVENTAIRE_EXPORTE` toujours baissé, sans toucher à la base.
+La pièce qui fonde une régularisation, et la pièce ou la facture émise d'une provision, se choisissent dans les deux formulaires de l'onglet
+(`pages/dossier/ChoixDuJustificatif.tsx`) ; le choix part avec l'écriture, par `enregistrer_operation_inventaire` ou `enregistrer_provision`, sous
+le verrou existant, et la confirmation le nomme. Ce qui se propose est ce que les deux migrations acceptent (`lib/justificatifsDeLInventaire.ts`) :
+toute pièce du dossier pour une régularisation et un risque, quel que soit son statut ; pour une créance, les pièces de vente et les factures
+émises validées — l'écran plus strict que la base sur un point, l'avoir validé ne se propose pas. Le refus se dit avant le clic, aux mots des
+migrations et dans leur ordre (après la période ; après l'objet, avant la part reprise). La lecture est À PART (`lib/justificatifsDeLInventaireLecture.ts`,
+`lireTout`, tri par la clé primaire) : lue en partie, l'onglet le dit et n'offre aucun choix, la saisie et les gestes restant offerts ; une saisie qui
+remplace propose la pièce déjà citée (`formulaireDeLOperation`), et la garde telle quelle quand rien n'est lu. La liste passe par `BarreRecherche`,
+plafonnée à 50 et le disant ; les lignes du tableau disent ce qu'elles citent, le fichier sous `.nom-fichier`. Le composant n'importe pas le module qui
+lit (le scanner d'`ecransAvantLecture` le compterait comme un écran). Reste : remplacer une provision ouverte (la base le permet tant qu'elle n'est pas évaluée).

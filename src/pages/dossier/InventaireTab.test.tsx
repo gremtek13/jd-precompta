@@ -5,6 +5,8 @@ import type { ValeurAnnee } from '../../components/AnneeTabs'
 import type { ModeleComptable } from '../../lib/engagement'
 import { MOTS_DES_REFUS, type ComptesDInventaire } from '../../lib/inventaire'
 import type { LectureDeLInventaireDeLEcran } from '../../lib/inventaireDeLEcranLecture'
+import { MOTS_DES_JUSTIFICATIFS, type JustificatifsDuDossier } from '../../lib/justificatifsDeLInventaire'
+import type { LectureDesJustificatifs } from '../../lib/justificatifsDeLInventaireLecture'
 import { euros, type DonneesDeLInventaire } from '../../lib/inventaireEcran'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type { InventaireDeclare, OperationInventaire, Provision } from '../../lib/types'
@@ -44,6 +46,19 @@ const faux = vi.hoisted(() => ({
   pdfs: [] as string[],
   retenirLePdf: false,
   relacherLePdf: null as null | (() => void),
+  // La lecture des pièces et factures à citer (INV5-Q1) : sa réponse, et sa retenue.
+  justificatifs: null as null | ((dossierId: string) => LectureDesJustificatifs),
+  retenueDesJustificatifs: null as null | Promise<void>,
+  relacherLesJustificatifs: null as null | (() => void),
+  demandesDesJustificatifs: [] as string[],
+}))
+
+vi.mock('../../lib/justificatifsDeLInventaireLecture', () => ({
+  lireLesJustificatifsDuDossier: (dossierId: string) => {
+    faux.demandesDesJustificatifs.push(dossierId)
+    const rendre = () => faux.justificatifs!(dossierId)
+    return faux.retenueDesJustificatifs ? faux.retenueDesJustificatifs.then(rendre) : Promise.resolve(rendre())
+  },
 }))
 
 vi.mock('../../lib/inventaireDeLEcranLecture', () => ({
@@ -94,7 +109,7 @@ vi.mock('../../lib/supabase', () => {
       const p = args.p_provision as Record<string, unknown>
       const nouvelle: Provision = {
         id: id(), dossier_id: D, genre: p.genre as Provision['genre'], compte_provision: p.compte_provision as string, objet: p.objet as string,
-        facture_id: null, piece_citee_id: null, ouverte_en: p.ouverte_en as number, reprise_centimes: (p.reprise_centimes as number | null) ?? null,
+        facture_id: (p.facture_id as string | null) ?? null, piece_citee_id: (p.piece_citee_id as string | null) ?? null, ouverte_en: p.ouverte_en as number, reprise_centimes: (p.reprise_centimes as number | null) ?? null,
         version: 1, cree_par: 'u', cree_le: '2026-11-12T09:00:00Z', modifie_par: null, modifie_le: null,
       }
       faux.donnees = { ...d, provisions: [...d.provisions, nouvelle] }
@@ -152,6 +167,19 @@ const provision = (p: Partial<Provision> & Pick<Provision, 'id'>): Provision => 
   ouverte_en: 2025, reprise_centimes: null, version: 1, cree_par: 'u', cree_le: '2026-11-10T09:00:00Z', modifie_par: null, modifie_le: null, ...p,
 })
 
+// Les pièces et factures du dossier, FICTIVES : une dépense, une recette, une facture émise validée et un avoir.
+const JUSTIFICATIFS: JustificatifsDuDossier = {
+  pieces: [
+    { id: 'pa', dossier_id: D, nom_fichier: 'assurance-local-2025.pdf', date_piece: '2025-07-01', tiers: 'Assureur fictif', montant_ttc: 1200, type_piece: 'achat', statut: 'validee' },
+    { id: 'pj', dossier_id: D, nom_fichier: 'honoraires-janvier.pdf', date_piece: '2026-01-15', tiers: 'Conseil fictif', montant_ttc: 600, type_piece: 'achat', statut: 'a_valider' },
+    { id: 'pv', dossier_id: D, nom_fichier: 'vente-client.pdf', date_piece: '2025-09-01', tiers: null, montant_ttc: 3000, type_piece: 'vente', statut: 'validee' },
+  ],
+  factures: [
+    { id: 'f1', dossier_id: D, numero: 'F2025-007', statut: 'validee', type: 'facture', date_emission: '2025-10-01', tiers_nom: 'Client fictif', montant_ttc: 3000 },
+    { id: 'a1', dossier_id: D, numero: 'A2025-001', statut: 'validee', type: 'avoir', date_emission: '2025-11-01', tiers_nom: 'Client fictif', montant_ttc: -300 },
+  ],
+}
+
 const donnees = (p: Partial<DonneesDeLInventaire> = {}): DonneesDeLInventaire => ({
   operations: [operation({ id: 'o1' })], provisions: [], declarations: [], lignes: [], comptes: COMPTES, premierExercice: 2024, ...p,
 })
@@ -173,6 +201,10 @@ beforeEach(() => {
   faux.pdfs = []
   faux.retenirLePdf = false
   faux.relacherLePdf = null
+  faux.justificatifs = (dossierId) => ({ dossierId, etat: 'lue', justificatifs: JUSTIFICATIFS })
+  faux.retenueDesJustificatifs = null
+  faux.relacherLesJustificatifs = null
+  faux.demandesDesJustificatifs = []
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
@@ -427,7 +459,7 @@ describe('saisir une régularisation', () => {
 
 describe('remplacer et retirer une régularisation', () => {
   it('« Remplacer » remplit le formulaire de ce que la base porte et retient sa version, son identifiant et sa pièce citée', async () => {
-    faux.donnees = donnees({ operations: [operation({ id: 'o1', version: 4, piece_citee_id: 'pc1', periode_debut: '2025-07-01', periode_fin: '2026-06-30' })] })
+    faux.donnees = donnees({ operations: [operation({ id: 'o1', version: 4, piece_citee_id: 'pa', periode_debut: '2025-07-01', periode_fin: '2026-06-30' })] })
     rendre()
     await attendreLaLecture()
     await act(async () => { within(ligne(/Assurance du local/)).getByRole('button', { name: 'Remplacer' }).click() })
@@ -439,7 +471,7 @@ describe('remplacer et retirer une régularisation', () => {
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Remplacer cette régularisation ?'))
     expect(faux.rpcs[0].nom).toBe('enregistrer_operation_inventaire')
     expect(faux.rpcs[0].args.p_version_lue).toBe(4)
-    expect(faux.rpcs[0].args.p_operation).toMatchObject({ id: 'o1', piece_citee_id: 'pc1', montant_centimes: 70_000, periode_debut: '2025-07-01' })
+    expect(faux.rpcs[0].args.p_operation).toMatchObject({ id: 'o1', piece_citee_id: 'pa', montant_centimes: 70_000, periode_debut: '2025-07-01' })
     await screen.findByText('Régularisation remplacée : Assurance du local.')
     expect(texte()).toContain('Saisir une régularisation')
   })
@@ -664,5 +696,116 @@ describe('un dossier quitté ne laisse rien derrière lui', () => {
     await attendreLaLecture()
     expect(faux.demandes).toEqual(['dossier-A', 'dossier-B'])
     expect(screen.queryAllByRole('form')).toHaveLength(2)
+  })
+})
+
+// LA PIÈCE CITÉE (INV5-Q1 (B)) : la pièce d'une régularisation, la pièce ou la facture d'une provision, se choisissent dans
+// l'onglet, parmi les pièces et factures du dossier lues EN ENTIER à part ; le choix part avec l'écriture, la confirmation le nomme.
+describe('la pièce citée, choisie dans l’onglet', () => {
+  const formulaireDeLaProvision = () => screen.getByRole('form', { name: 'Ouverture d’une provision' })
+
+  it('avant le retour des pièces : « Chargement des pièces du dossier… », aucun choix ; la saisie reste offerte', async () => {
+    faux.retenueDesJustificatifs = new Promise<void>((r) => { faux.relacherLesJustificatifs = r })
+    rendre()
+    await attendreLaLecture()
+    expect(within(formulaire()).getByText('Chargement des pièces du dossier…')).toBeTruthy()
+    expect(within(formulaire()).queryByRole('button', { name: 'Choisir une pièce' })).toBeNull()
+    await act(async () => { faux.relacherLesJustificatifs!() })
+    expect(within(formulaire()).getByRole('button', { name: 'Choisir une pièce' })).toBeTruthy()
+    expect(faux.demandesDesJustificatifs).toEqual([D])
+  })
+
+  it('lues en partie : le dit, n’offre aucun choix, et une régularisation remplacée garde la pièce qu’elle cite', async () => {
+    faux.justificatifs = (dossierId) => ({ dossierId, etat: 'incomplete', motif: 'les pièces : lecture interrompue après 500 ligne(s) : délai dépassé' })
+    faux.donnees = donnees({ operations: [operation({ id: 'o1', piece_citee_id: 'pa' })] })
+    rendre()
+    await attendreLaLecture()
+    expect(sans(formulaire().textContent)).toContain('Les pièces du dossier n\'ont pas pu être lues en entier (les pièces : lecture interrompue')
+    expect(within(formulaire()).queryByRole('button', { name: /Choisir|Changer|Ne rien citer/ })).toBeNull()
+    expect(texte()).toContain('Cite une pièce du dossier.')
+    act(() => { within(ligne(/Assurance du local/)).getByRole('button', { name: 'Remplacer' }).click() })
+    remplir({ montant: '700,00' })
+    await act(async () => { boutonDuFormulaire('Remplacer').click() })
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Pièce citée : celle qui était déjà citée.'))
+    expect((faux.rpcs[0].args.p_operation as Record<string, unknown>).piece_citee_id).toBe('pa')
+  })
+
+  it('une régularisation : toutes les pièces du dossier se proposent, la recherche commune les filtre, le choix part avec l’écriture', async () => {
+    rendre()
+    await attendreLaLecture()
+    act(() => { within(formulaire()).getByRole('button', { name: 'Choisir une pièce' }).click() })
+    const liste = within(formulaire()).getByRole('list', { name: 'Choisir une pièce' })
+    // Les trois pièces, quel que soit leur sens ; aucune facture émise ; chaque nom de fichier sous `.nom-fichier`.
+    expect([...liste.querySelectorAll('.nom-fichier')].map((n) => n.textContent)).toEqual(['honoraires-janvier.pdf', 'vente-client.pdf', 'assurance-local-2025.pdf'])
+    expect(liste.textContent).not.toContain('F2025-007')
+    fireEvent.change(within(formulaire()).getByRole('searchbox'), { target: { value: 'assureur' } })
+    expect(within(formulaire()).getAllByRole('listitem')).toHaveLength(1)
+    act(() => { within(formulaire()).getByRole('button', { name: /assurance-local-2025\.pdf/ }).click() })
+    expect(within(formulaire()).queryByRole('list', { name: 'Choisir une pièce' })).toBeNull()
+    expect(formulaire().querySelector('.nom-fichier')?.textContent).toBe('assurance-local-2025.pdf')
+    remplir({ resultat: '616000', montant: '600,00', objet: 'Assurance du local, 2e semestre' })
+    await act(async () => { boutonDuFormulaire('Enregistrer').click() })
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Pièce citée : « assurance-local-2025.pdf »'))
+    expect((faux.rpcs[0].args.p_operation as Record<string, unknown>).piece_citee_id).toBe('pa')
+    await screen.findByText('Régularisation enregistrée : Assurance du local, 2e semestre.')
+    // Enregistrée, la saisie se vide ; la liste dit la pièce que la régularisation cite.
+    expect(within(formulaire()).getByRole('button', { name: 'Choisir une pièce' })).toBeTruthy()
+    expect(ligne(/2e semestre/).querySelector('.nom-fichier')?.textContent).toBe('assurance-local-2025.pdf')
+  })
+
+  it('une saisie qui remplace propose la pièce déjà citée ; « Ne rien citer » la retire de ce qui part', async () => {
+    faux.donnees = donnees({ operations: [operation({ id: 'o1', piece_citee_id: 'pa' })] })
+    rendre()
+    await attendreLaLecture()
+    act(() => { within(ligne(/Assurance du local/)).getByRole('button', { name: 'Remplacer' }).click() })
+    expect(formulaire().querySelector('.nom-fichier')?.textContent).toBe('assurance-local-2025.pdf')
+    expect(boutonDuFormulaire('Changer')).toBeTruthy()
+    act(() => { boutonDuFormulaire('Ne rien citer').click() })
+    expect(boutonDuFormulaire('Choisir une pièce')).toBeTruthy()
+    await act(async () => { boutonDuFormulaire('Remplacer').click() })
+    expect(faux.rpcs[0].args.p_operation).toMatchObject({ id: 'o1', piece_citee_id: null })
+    expect(faux.rpcs[0].args.p_version_lue).toBe(2)
+  })
+
+  it('une provision pour risques se voit proposer les pièces, jamais une facture', async () => {
+    rendre()
+    await attendreLaLecture()
+    act(() => { within(formulaireDeLaProvision()).getByRole('button', { name: 'Choisir une pièce' }).click() })
+    const liste = within(formulaireDeLaProvision()).getByRole('list', { name: 'Choisir une pièce' })
+    expect(within(liste).getAllByRole('listitem')).toHaveLength(3)
+    expect(liste.textContent).not.toContain('Facture')
+  })
+
+  it('une dépréciation de créance : la facture validée et la pièce de vente, jamais un avoir ; la facture part dans `facture_id`', async () => {
+    rendre()
+    await attendreLaLecture()
+    fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'depreciation_creance' } })
+    fireEvent.change(screen.getByLabelText(/^Objet \(il part au FEC\)$/), { target: { value: 'Créance douteuse' } })
+    act(() => { within(formulaireDeLaProvision()).getByRole('button', { name: 'Choisir une facture ou une pièce de vente' }).click() })
+    const liste = within(formulaireDeLaProvision()).getByRole('list', { name: 'Choisir une facture ou une pièce de vente' })
+    expect(within(liste).getAllByRole('listitem')).toHaveLength(2)
+    expect(liste.textContent).toContain('Facture F2025-007')
+    expect(liste.textContent).toContain('vente-client.pdf')
+    expect(liste.textContent).not.toContain('A2025-001')
+    act(() => { within(liste).getByRole('button', { name: /Facture F2025-007/ }).click() })
+    await act(async () => { bouton('Ouvrir la provision').click() })
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Facture citée : Facture F2025-007'))
+    expect(faux.rpcs[0].args.p_provision).toMatchObject({ genre: 'depreciation_creance', facture_id: 'f1', piece_citee_id: null })
+    await screen.findByText('Provision ouverte : Créance douteuse.')
+    expect(sans(ligne(/Créance douteuse/).textContent)).toContain('Cite la facture F2025-007')
+  })
+
+  it('une facture citée puis le genre ramené au risque : le refus de la base se dit avant le clic, rien ne part', async () => {
+    rendre()
+    await attendreLaLecture()
+    fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'depreciation_creance' } })
+    fireEvent.change(screen.getByLabelText(/^Objet \(il part au FEC\)$/), { target: { value: 'Créance douteuse' } })
+    act(() => { within(formulaireDeLaProvision()).getByRole('button', { name: 'Choisir une facture ou une pièce de vente' }).click() })
+    act(() => { within(formulaireDeLaProvision()).getByRole('button', { name: /Facture F2025-007/ }).click() })
+    fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'risque' } })
+    expect(sans(formulaireDeLaProvision().textContent)).toContain(MOTS_DES_JUSTIFICATIFS.factureHorsDeLaDepreciation)
+    expect(bouton('Ouvrir la provision').disabled).toBe(true)
+    await act(async () => { bouton('Ouvrir la provision').click() })
+    expect(faux.rpcs).toEqual([])
   })
 })

@@ -18,9 +18,14 @@ import {
   type FormulaireDeProvision, type FormulaireDeRegularisation,
 } from '../../lib/inventaireEcran'
 import { csvDeLEtat, etatDInventaire, nomDuFichierDeLEtat, pdfDeLEtat } from '../../lib/inventaireEtat'
+import {
+  citablesParUneProvision, optionCitee, optionsDeCitation, piecesCitablesParUneRegularisation, type Citation, type JustificatifsDuDossier,
+} from '../../lib/justificatifsDeLInventaire'
+import { lireLesJustificatifsDuDossier, type LectureDesJustificatifs } from '../../lib/justificatifsDeLInventaireLecture'
 import { messageErreur } from '../../lib/messageErreur'
 import { supabase } from '../../lib/supabase'
 import type { OperationInventaire, Provision } from '../../lib/types'
+import ChoixDuJustificatif from './ChoixDuJustificatif'
 
 // L'ONGLET INVENTAIRE, CÔTÉ CABINET (ligne 35, lot INV5 ; docs/conceptions/35-inventaire.md, § 5.7). En comptabilité d'ENGAGEMENT
 // seulement (DossierDetail ne le monte pas autrement), le drapeau `INVENTAIRE_EXPORTE` levé. Le cabinet y saisit, exercice par
@@ -41,6 +46,11 @@ import type { OperationInventaire, Provision } from '../../lib/types'
 // l'en-tête (`useAnnee`), jamais choisi à la place du cabinet ; un geste passe la fonction SQL seule, sous UN verrou `useRef` posé
 // avant l'appel et relâché dans un `finally` APRÈS la relecture ; chaque refus se dit AVANT le clic, sur la saisie telle qu'elle
 // part ; une saisie RETIENT la version qu'elle remplace ; une confirmation NOMME ce qui part.
+//
+// LA PIÈCE CITÉE (INV5-Q1 (B)) : la pièce qui fonde une régularisation, et la pièce ou la facture émise d'une provision, se
+// CHOISISSENT ici (`ChoixDuJustificatif`), dans les pièces et factures du dossier lues EN ENTIER à part
+// (lib/justificatifsDeLInventaireLecture.ts) et filtrées selon ce que la base acceptera (lib/justificatifsDeLInventaire.ts) ; une
+// saisie qui remplace propose la pièce déjà citée ; le choix part avec l'écriture, par la fonction de la base, sous le verrou.
 
 type Message = { genre: 'ok' | 'erreur'; texte: string }
 
@@ -72,6 +82,8 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   const { annee } = useAnnee()
   const { anneesValidees } = useExercicesValides()
   const [lecture, setLecture] = useState<LectureDeLInventaireDeLEcran | null>(null)
+  // Les pièces et factures à citer : une lecture à part, qui ne retire que le choix d'une pièce quand elle manque.
+  const [lectureDesJustificatifs, setLectureDesJustificatifs] = useState<LectureDesJustificatifs | null>(null)
   const [saisie, setSaisie] = useState<FormulaireDeRegularisation>(() => formulaireVide('cca', {}))
   // Le compte de régularisation tel que le cabinet l'a tapé ; nul tant qu'il n'a rien tapé : celui du plan se propose alors,
   // dérivé au rendu (jamais posé par un effet) — le plan ne se lit qu'avec la lecture.
@@ -99,12 +111,15 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   useEffect(() => {
     let annule = false
     lireLInventaireDuDossier(dossierId).then((l) => { if (!annule) setLecture(l) })
+    lireLesJustificatifsDuDossier(dossierId).then((l) => { if (!annule) setLectureDesJustificatifs(l) })
     return () => { annule = true }
   }, [dossierId])
 
   const donnees = lecture !== null && lecture.dossierId === dossierId && lecture.etat === 'lue' ? lecture.donnees : null
 
   const comptes = donnees?.comptes ?? null
+  const lectureDesJustificatifsDuDossier = lectureDesJustificatifs !== null && lectureDesJustificatifs.dossierId === dossierId ? lectureDesJustificatifs : null
+  const justificatifs = lectureDesJustificatifsDuDossier?.etat === 'lue' ? lectureDesJustificatifsDuDossier.justificatifs : null
   const formulaire: FormulaireDeRegularisation = { ...saisie, compteRegularisation: compteRegul ?? compteDeRegularisationPropose(saisie.nature, comptes ?? {}) }
   const provision: FormulaireDeProvision = { ...saisieProvision, compte: compteProv ?? compteDeProvisionPropose(saisieProvision.genre, comptes ?? {}) }
 
@@ -205,8 +220,9 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   }
 
   // Les verdicts, calculés sur la saisie TELLE QU'ELLE PART : un refus se dit avant le clic.
-  const verdict = donnees !== null && ctx !== null ? verdictDeLaRegularisation(formulaire, ctx, donnees, remplace) : null
-  const verdictDeLaProvisionSaisie = donnees !== null && ctx !== null && provision.objet.trim() !== '' ? verdictDeLaProvision(provision, ctx, donnees) : null
+  const verdict = donnees !== null && ctx !== null ? verdictDeLaRegularisation(formulaire, ctx, donnees, remplace, justificatifs) : null
+  const verdictDeLaProvisionSaisie = donnees !== null && ctx !== null && provision.objet.trim() !== ''
+    ? verdictDeLaProvision(provision, ctx, donnees, justificatifs) : null
 
   async function enregistrer() {
     if (ecritureEnCours.current || verdict === null || verdict.etat !== 'permis') return
@@ -340,6 +356,10 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   const prorata = formulaire.nature === 'cca' || formulaire.nature === 'pca' ? propositionDuProrata(formulaire, ctx) : null
   const avecTva = natureAvecTvaDAttente(formulaire.nature, assujettiTva)
   const premierExercice = donnees.premierExercice === exercice
+  // Ce qui se propose à chaque formulaire, selon ce que la base acceptera ; vide tant que les pièces ne sont pas lues.
+  const optionsDeLaRegularisation = justificatifs === null ? [] : optionsDeCitation({ pieces: piecesCitablesParUneRegularisation(justificatifs), factures: [] })
+  const optionsDeLaProvision = justificatifs === null ? [] : optionsDeCitation(citablesParUneProvision(provision.genre, justificatifs))
+  const pieceDeLaRegularisation: Citation | null = formulaire.pieceCitee === null ? null : { genre: 'piece', id: formulaire.pieceCitee }
 
   return (
     <>
@@ -455,6 +475,11 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
             <p className="error-text" role="alert">{prorata.message}</p>
           )
         )}
+        <ChoixDuJustificatif
+          id="inv-justificatif" lecture={lectureDesJustificatifsDuDossier} options={optionsDeLaRegularisation}
+          citee={pieceDeLaRegularisation} optionCitee={optionCitee(pieceDeLaRegularisation, justificatifs)} quoi="une pièce"
+          desactive={enCours} onChoisir={(c) => champ('pieceCitee', c === null ? null : c.id)}
+        />
         {verdict !== null && verdict.etat === 'refuse' && formulaire.objet.trim() !== '' && (
           <ul className="error-text" role="alert" style={{ margin: '0 0 8px', paddingLeft: 18 }}>
             {verdict.refus.map((r) => <li key={r}>{r}</li>)}
@@ -492,7 +517,10 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
                   return (
                     <tr key={o.id}>
                       <td data-libelle="Nature">{LIBELLES_DES_NATURES[o.nature]}</td>
-                      <td data-libelle="Objet">{o.objet}</td>
+                      <td data-libelle="Objet">
+                        {o.objet}
+                        <CiteeDansLaListe citation={o.piece_citee_id === null ? null : { genre: 'piece', id: o.piece_citee_id }} justificatifs={justificatifs} />
+                      </td>
                       <td data-libelle="Comptes">{o.compte_resultat} / {o.compte_regularisation}</td>
                       <td data-libelle="Montant">
                         {euros(o.montant_centimes)}
@@ -558,6 +586,12 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
             </div>
           )}
         </div>
+        <ChoixDuJustificatif
+          id="prov-justificatif" lecture={lectureDesJustificatifsDuDossier} options={optionsDeLaProvision}
+          citee={provision.citation} optionCitee={optionCitee(provision.citation, justificatifs)}
+          quoi={provision.genre === 'risque' ? 'une pièce' : 'une facture ou une pièce de vente'}
+          desactive={enCours} onChoisir={(c) => setSaisieProvision((p) => ({ ...p, citation: c }))}
+        />
         {verdictDeLaProvisionSaisie !== null && verdictDeLaProvisionSaisie.etat === 'refuse' && (
           <ul className="error-text" role="alert" style={{ margin: '0 0 8px', paddingLeft: 18 }}>
             {verdictDeLaProvisionSaisie.refus.map((r) => <li key={r}>{r}</li>)}
@@ -595,6 +629,10 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
                       <td data-libelle="Provision">
                         {LIBELLES_DES_GENRES[p.genre]} — {p.objet}
                         <span className="muted"> (ouverte en {p.ouverte_en})</span>
+                        <CiteeDansLaListe
+                          citation={p.facture_id != null ? { genre: 'facture', id: p.facture_id } : p.piece_citee_id != null ? { genre: 'piece', id: p.piece_citee_id } : null}
+                          justificatifs={justificatifs}
+                        />
                       </td>
                       <td data-libelle="Compte">{p.compte_provision}</td>
                       <td data-libelle="Évaluation">
@@ -659,5 +697,18 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
         </div>
       </div>
     </>
+  )
+}
+
+/** Ce qu'une ligne de la liste cite : le titre lu (un nom de fichier sous `.nom-fichier`), ou, les pièces pas lues, qu'elle en cite. */
+function CiteeDansLaListe({ citation, justificatifs }: { citation: Citation | null; justificatifs: JustificatifsDuDossier | null }) {
+  if (citation === null) return null
+  const o = optionCitee(citation, justificatifs)
+  return (
+    <div className="muted" style={{ fontSize: '0.85rem' }}>
+      {o === null
+        ? (citation.genre === 'facture' ? 'Cite une facture du dossier.' : 'Cite une pièce du dossier.')
+        : <>{citation.genre === 'facture' ? 'Cite la ' : 'Cite '}{o.fichier ? <span className="nom-fichier">{o.titre}</span> : o.titre.replace(/^Facture/, 'facture')}</>}
+    </div>
   )
 }
