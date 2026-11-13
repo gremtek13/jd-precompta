@@ -3,6 +3,10 @@ import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
 import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
 import { carteDeLEclatement, type LectureDuReleveDeLOuverture } from '../../lib/ouvertureEclatee'
 import { lireLOuvertureEclatee } from '../../lib/ouvertureEclateeLecture'
+import {
+  refusDuPassageEnEngagement, reprisesRetiennentLaTresoreriePrevues, type LectureDesReprisesDuModele,
+} from '../../lib/reprisesRetiennentLaTresorerie'
+import { lireLesReprisesDuModele } from '../../lib/reprisesRetiennentLaTresorerieLecture'
 import OuvertureEclateeCarte from './OuvertureEclateeCarte'
 import { RENDU_DES_BANQUES_AU_FEC, rendreLesBanquesAuFec } from '../../lib/banquesAuFec'
 import { modeleDuMouvement, planDuMouvement, refusDesBanquesDesPaiements } from '../../lib/banqueDuMouvement'
@@ -264,13 +268,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // les comptes, tout le relevé et tous les contrôles, lus avec le brouillon, gardés avec le dossier qui les a demandés ; le
   // drapeau `COMPTES_BANCAIRES_PREVUS` baissé, rien n'est lu (sans appel au réseau) et la carte ne se monte pas.
   const [lectureOuverture, setLectureOuverture] = useState<LectureDuReleveDeLOuverture | null>(null)
+  // LES FACTURES REPRISES RETIENNENT LA TRÉSORERIE (ligne 51.5, A8B-Q3 ; lib/reprisesRetiennentLaTresorerie.ts) : leur nombre,
+  // lu avec le brouillon et gardé avec le dossier qui l'a demandé ; la carte du modèle comptable dit le refus de la base avant
+  // le clic. Le drapeau baissé, rien n'est lu (sans appel au réseau) et rien ne change.
+  const [lectureReprises, setLectureReprises] = useState<LectureDesReprisesDuModele | null>(null)
 
   async function load() {
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
       lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations, lectureReportes, lectureDesVentes, lectureDeLaCaisse,
-      lectureDesChampsBnc, lectureDeLOuverture,
+      lectureDesChampsBnc, lectureDeLOuverture, lectureDesReprises,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -344,8 +352,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       lireLesChampsBnc(dossierId),
       // Ne rejette jamais ; le drapeau des comptes bancaires baissé, ne touche pas au réseau.
       lireLOuvertureEclatee(dossierId),
+      // Ne rejette jamais ; le drapeau des reprises (A8B-Q3) baissé, ne touche pas au réseau.
+      lireLesReprisesDuModele(dossierId),
     ])
     setLectureOuverture(lectureDeLOuverture)
+    setLectureReprises(lectureDesReprises)
     setLectureVentes(lectureDesVentes)
     setLectureCaisse(lectureDeLaCaisse)
     setLectureChampsBnc(lectureDesChampsBnc)
@@ -1060,8 +1071,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       ? 'Il ne se change pas sur une lecture partielle du brouillon.'
       : `Il ne se change plus : le brouillon porte ${ecritures.length} écriture${ecritures.length > 1 ? 's' : ''}, qui resteraient dans l’ancien modèle.`
 
+  // Ce qui retient le passage en engagement, avant le clic (A8B-Q3) : un dossier qui porte des factures reprises reste en
+  // trésorerie — la base le refuse à ces mots —, et une lecture qui n'est pas revenue entière ne le commande pas. Le
+  // drapeau baissé, rien.
+  const refusEngagement = refusDuPassageEnEngagement(lectureReprises, dossierId, reprisesRetiennentLaTresoreriePrevues())
+
   async function changerModele(modification: { mode_comptable?: ModeComptable; compte_notes_de_frais?: CompteNotesDeFrais }) {
     if (!modeleModifiable || generationEnCours.current || changementModeleEnCours.current) return
+    if (modification.mode_comptable === 'engagement' && modele.mode !== 'engagement' && refusEngagement) {
+      setError(refusEngagement)
+      return
+    }
     changementModeleEnCours.current = true
     setChangementModele(true)
     setError(null)
@@ -1196,13 +1216,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                   type="button"
                   className={`btn btn-sm ${modele.mode === mode ? 'btn-primary' : 'btn-outline'}`}
                   aria-pressed={modele.mode === mode}
-                  disabled={changementModele || generating}
+                  disabled={changementModele || generating || (mode === 'engagement' && modele.mode !== 'engagement' && refusEngagement !== null)}
                   onClick={() => { if (modele.mode !== mode) changerModele({ mode_comptable: mode }) }}
                 >
                   {LIBELLES_MODE[mode]}
                 </button>
               ))}
             </div>
+            {modele.mode !== 'engagement' && refusEngagement && (
+              <p className="muted" role="note" style={{ margin: '0 0 8px' }}>{refusEngagement}</p>
+            )}
             <p className="muted" style={{ margin: 0 }}>{EXPLICATIONS_MODE[modele.mode]}</p>
             {modele.mode === 'engagement' && (
               <div style={{ marginTop: 14 }}>

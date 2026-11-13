@@ -9,6 +9,7 @@ import EcrituresTab from './EcrituresTab'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from '../../lib/planComptable'
 import { refusDeLaClasse, refusDeLaClasseCommune } from '../../lib/categoriesDuDossier'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
+import { DRAPEAU_DES_REPRISES_ET_DU_MODELE, REFUS_ENGAGEMENT_DES_REPRISES } from '../../lib/reprisesRetiennentLaTresorerie'
 
 // L'ONGLET QUI PRODUIT LES DEUX FICHIERS OFFICIELS du projet — le FEC et la piste d'audit. Un défaut
 // ici ne reste pas à l'écran : il part chez un vérificateur. Ce test vise donc les trois choses
@@ -1717,6 +1718,58 @@ describe('EcrituresTab — le modèle comptable', () => {
     await act(async () => { bouton2.click() })
     expect(screen.getByText(/ne se change que tant que son brouillon d’écritures est vide/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Trésorerie (BNC, 2035)' }).getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
+// A8B-Q3 (lib/reprisesRetiennentLaTresorerie.ts, la migration préparée `reprises_retiennent_la_tresorerie`) : un dossier qui
+// porte des factures reprises d'un ancien logiciel ne passe pas en engagement. Les deux états du drapeau, joués sur l'objet
+// que le module lit à l'appel ; les factures reprises, des lignes « importee » de `factures_emises` que la lecture COMPTE.
+describe('EcrituresTab — le modèle comptable d’un dossier qui porte des factures reprises (A8B-Q3)', () => {
+  const REPRISE = { id: 'fr1', dossier_id: 'dossier-de-test', statut: 'importee', type: 'facture', numero: 'R-1' }
+  afterEach(() => { DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = false })
+
+  it('drapeau baissé : l’écran d’hier — le passage s’offre et s’enregistre, rien n’est dit', async () => {
+    poser({ factures_emises: [REPRISE] })
+    monter()
+    const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
+    expect(engagement.hasAttribute('disabled')).toBe(false)
+    expect(screen.queryByText(REFUS_ENGAGEMENT_DES_REPRISES)).toBeNull()
+    await act(async () => { engagement.click() })
+    expect(faux.misesAJour).toEqual([{ table: 'dossiers', valeurs: { mode_comptable: 'engagement' } }])
+  })
+
+  it('levé : le refus de la base se dit avant le clic, le passage ne s’offre pas, et rien ne s’écrit', async () => {
+    DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = true
+    poser({ factures_emises: [REPRISE] })
+    monter()
+    const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
+    await screen.findByText(REFUS_ENGAGEMENT_DES_REPRISES)
+    expect(engagement.hasAttribute('disabled')).toBe(true)
+    await act(async () => { engagement.click(); engagement.click() })
+    expect(faux.misesAJour).toEqual([])
+    // Le compte du dirigeant ne se juge pas ici : il reste offert en trésorerie comme hier (rien à choisir), et la
+    // trésorerie reste en place.
+    expect(screen.getByRole('button', { name: 'Trésorerie (BNC, 2035)' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('levé, sans facture reprise : le passage s’offre et s’enregistre', async () => {
+    DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = true
+    poser({ factures_emises: [{ ...REPRISE, statut: 'validee' }] })
+    monter()
+    const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
+    expect(engagement.hasAttribute('disabled')).toBe(false)
+    expect(screen.queryByText(REFUS_ENGAGEMENT_DES_REPRISES)).toBeNull()
+    await act(async () => { engagement.click() })
+    expect(faux.misesAJour).toEqual([{ table: 'dossiers', valeurs: { mode_comptable: 'engagement' } }])
+  })
+
+  it('levé, en engagement : le retour en trésorerie ne se juge pas ici', async () => {
+    DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = true
+    poser({ factures_emises: [REPRISE] })
+    monter(false, ENGAGEMENT)
+    const tresorerie = await screen.findByRole('button', { name: 'Trésorerie (BNC, 2035)' })
+    expect(tresorerie.hasAttribute('disabled')).toBe(false)
+    expect(screen.queryByText(REFUS_ENGAGEMENT_DES_REPRISES)).toBeNull()
   })
 })
 
