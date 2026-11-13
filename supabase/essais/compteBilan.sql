@@ -51,6 +51,12 @@
 -- (19c), une régie d'avances (19d). Avec elle, le compte de la caisse du plan du dossier test reçoit un débit en
 -- trésorerie (19 : son écriture, la caisse au débit), un autre compte 53 se refuse sous la phrase de la caisse (19b),
 -- et l'engagement et la régie gardent celle d'hier. Les autres contrôles, dont le 580000 et le 275000, ne changent pas.
+-- ADAPTÉ LE 13/11/2026 (ligne 43, PC4Q2-Q1 : la migration préparée `le_468_sur_le_releve`, qui sort le 468 de la branche
+-- du 48 et donne au 48 la phrase du plan de 2026). Sans elle — sa dernière ligne d'historique, pas son retour —, les
+-- contrôles 31, 32, 32b et 32c attendent la phrase d'hier, le 468 compris, et le 31a se dit EN ATTENTE. Avec elle, le 468
+-- se refuse plus : un débit s'écrit au 468600 face à la banque (31a), comme le 4670000001 du 13 ; le 486, le 481 et le
+-- 488 se refusent sous la phrase de 2026 (32 à 32c) ; et le 468 du dirigeant se dit, dans les deux états, par « Virement
+-- personnel », sa branche précédant celle du 48 (31c, la fonction appelée seule).
 create temp table essai_bilan (controle text, observe text, ok boolean) on commit drop;
 
 do $$
@@ -77,6 +83,12 @@ declare
   c1b boolean := to_regprocedure('public.retirer_operation_caisse(uuid, uuid)') is not null;
   autre_tresorerie text := 'Un virement vers un autre compte de trésorerie du professionnel (autre banque, caisse, chèques postaux, régie d''avances) s''écrit au 580000, virements internes.';
   phrase_caisse text := 'Seule la caisse du dossier, celle de son plan comptable, reçoit un mouvement de banque : un versement d''espèces, ou un retrait d''espèces pour la caisse, s''écrit sur son compte.';
+  -- Le 468 sur le relevé (ligne 43, PC4Q2-Q1) : la migration `le_468_sur_le_releve` en base, sa dernière ligne d'historique
+  -- étant la sienne et non celle de son retour.
+  le468 constant boolean := coalesce((select m.name = 'le_468_sur_le_releve' from supabase_migrations.schema_migrations m
+    where m.name in ('le_468_sur_le_releve', 'retour_le_468_sur_le_releve') order by m.version desc limit 1), false);
+  regularisation_2019 constant text := 'Un compte de régularisation (charges à payer, produits à recevoir, charges ou produits constatés d''avance) ne reçoit pas un mouvement de banque : il se passe à l''inventaire.';
+  regularisation_2026 constant text := 'Un compte de régularisation (frais d''émission des emprunts, charges ou produits constatés d''avance, répartition périodique des charges et des produits) ne reçoit pas un mouvement de banque : les frais d''émission d''un emprunt se rangent en charge, par une catégorie — l''application ne les étale pas sur sa durée —, et le reste se passe à l''inventaire.';
 begin
   select * into debit from lignes_bancaires
    where dossier_id = dossier_test and statut = 'non_rapprochee' and montant < 0 order by date, id limit 1;
@@ -352,10 +364,13 @@ begin
       ('28. le report à nouveau (110)', '110000', 'Les réserves, les écarts de réévaluation ou d''équivalence, le report à nouveau et le résultat ne reçoivent pas un mouvement de banque : ils naissent de l''affectation du résultat ou d''une écriture d''inventaire.'),
       ('29. une provision (151)', '151000', 'Une provision ne reçoit pas un mouvement de banque : elle se constate à l''inventaire.'),
       ('30. un compte d''attente (471)', '471000', 'Un compte transitoire ou d''attente ne garde pas un mouvement : un mouvement qu''on ne sait pas encore classer reste à traiter, et l''exercice ne se valide qu''une fois tout classé.'),
-      ('31. une charge à payer (468)', '468600', 'Un compte de régularisation (charges à payer, produits à recevoir, charges ou produits constatés d''avance) ne reçoit pas un mouvement de banque : il se passe à l''inventaire.'),
-      ('32. une charge constatée d''avance (486)', '486000', 'Un compte de régularisation (charges à payer, produits à recevoir, charges ou produits constatés d''avance) ne reçoit pas un mouvement de banque : il se passe à l''inventaire.'),
+      ('32. une charge constatée d''avance (486)', '486000', case when le468 then regularisation_2026 else regularisation_2019 end),
+      ('32b. des frais d''émission d''emprunt (481)', '481000', case when le468 then regularisation_2026 else regularisation_2019 end),
+      ('32c. une répartition périodique (488)', '488600', case when le468 then regularisation_2026 else regularisation_2019 end),
       ('33. un salaire en trésorerie (421)', '421000', tresorerie_charges)
     ) as cas(c1, c2, c3)
+    union all
+    select '31. une charge à payer (468), sans la migration le_468_sur_le_releve', '468600', regularisation_2019 where not le468
   loop
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
@@ -372,6 +387,40 @@ begin
     insert into essai_bilan values (nom, coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
       not accepte and code_recu = '22023' and message = attendu);
   end loop;
+
+  -- ══ 31a et 31c. Le 468 (ligne 43, PC4Q2-Q1) ═════════════════════════════════════════════════════
+  -- Avec la migration `le_468_sur_le_releve`, un débit s'écrit au 468600 face à la banque, comme au 467 ; sans elle, le 31
+  -- le refuse, et le 31a se dit EN ATTENTE.
+  if le468 then
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+    accepte := false; code_recu := null; message := null; obs := null;
+    begin
+      perform ecrire_mouvement_compte_bilan(debit.id, '468600', jsonb_build_array(
+        jsonb_build_object('compte', '468600', 'sens', 'debit', 'montant', abs(debit.montant)),
+        jsonb_build_object('compte', '512000', 'sens', 'credit', 'montant', abs(debit.montant))));
+      select l.compte_bilan || ' ' || (select string_agg(e.compte || ':' || e.sens, ',' order by e.compte)
+                                         from ecritures_brouillon e where e.ligne_bancaire_id = debit.id and e.piece_id is null)
+        into obs from lignes_bancaires l where l.id = debit.id;
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    insert into essai_bilan values ('31a. le 468 se reçoit comme le 467 (PC4Q2-Q1)',
+      coalesce(obs, coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
+      accepte and code_recu = 'P0001' and obs = '468600 468600:debit,512000:credit');
+  else
+    insert into essai_bilan values ('31a. EN ATTENTE : le 468 reçu (la migration le_468_sur_le_releve n''est pas en base)',
+      'le 31 attend le refus d''hier', true);
+  end if;
+  -- 31c. Le 468 du dirigeant, appelé seul : « Virement personnel », dans les deux états.
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+  obs := refus_compte_de_bilan('468000', 'engagement', '468000');
+  reset role;
+  insert into essai_bilan values ('31c. le 468 du dirigeant se dit par « Virement personnel »', coalesce(obs, '(nul)'),
+    obs = 'Les apports et les prélèvements du dirigeant passent par « Virement personnel », qui les écrit sur son compte (468000).');
 
   -- ══ 19 à 19d. Les comptes 53 : la caisse (ligne 26.6, étapes C1 et C1b) ═══════════════════════
   -- Sans la migration `caisse_retrait_et_versement`, tout compte 53 se refuse sous la phrase des autres comptes de
