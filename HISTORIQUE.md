@@ -52572,3 +52572,20 @@ réception », jamais son nom (`factureDiteAuClient`) ; les factures non reçues
 s'écrit ; une autre entreprise comme acheteur ne remplit rien. Le bouton s'offre aussi sur une facture que le cabinet a
 importée lui-même : la pièce ne dit pas qui l'a reçue. Preuves : quatre fichiers de test neufs, cinq complétés ; onze
 mutations (drapeau ignoré, nom montré, verrou ôté, case « Achats » oubliée, chemin non vérifié, acheteur ignoré) mordent.
+
+### 13/11/2026 — INAL5 POSE LA RESTRICTIVE DE LA DOUBLE AUTHENTIFICATION SUR SES DEUX TABLES, ET LE RELEVÉ DES TABLES NEUVES
+
+(Agent architecte, sur la relecture de sécurité du 13/11/2026 ; rien en production.) **La règle** (CLAUDE.md, « La double
+authentification ») : une table neuve de public porte la restrictive `deux_facteurs` une fois `deux_facteurs_exiges` en base,
+et une préparée la pose sous la condition que `deux_facteurs_satisfaits()` existe ; INAL5 ne la posait pas sur ses deux tables.
+**Fait** : le bloc `$deux_facteurs$` d'`achats_du_client` dans `depart_du_client` (`5b8842ae…` → `3617ca0c…` ; retour `46fcf139…`
+→ `ed4f9291…`, qui le dit : les policies partent avec les tables) ; DP5 de `rls.sql` et l'étape 11 de `departDuClient.sql`
+comptent hors la restrictive (M-DP5 neuve ; l'essai la juge à part) ; le complément du leurre garnit les deux tables.
+`deuxFacteursDesTablesNeuves.test.ts`, sœur de la porte (lecteurs communs : `src/test/blocsSql.ts`) : 106 créations de l'export
+lues, 31 tables couvertes dans 21 fichiers, chacune en faute sans son bloc ; 20 défauts plantés ; aucune autre préparée en faute.
+**Vérifié** (copie de la mère 17, 218 ; talon de GoTrue hors du dépôt) : INAL5 avant `deux_facteurs_exiges`, la boucle de
+celle-ci pose la restrictive ; après, le bloc la pose ; même signature des deux ordres, le retour rend celle d'avant ;
+`departDuClient.sql` 49/0 et 4 mutations dans les trois états (l'ancien texte : DF1 et le contrôle neuf en faute) ; `rls.sql`
+240/0/139 sur la mère, 248/0/141 sans la double authentification, 252/4/148 avec — FL6, HD7, HF7 et LM7 comptent la restrictive
+(244/4/146 sans INAL5 : le reste connu du 07/11/2026, « les essais qui comptent les policies ») ; banc du leurre SÛR, `rls` et
+`departDuClient` (une copie hors du dépôt, sans sa phrase « réplique seulement », que le banc refuse), 95 tables couvertes.
