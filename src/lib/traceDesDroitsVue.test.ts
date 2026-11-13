@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { ACCES_EN_COURS, ACCES_SANS_OBJET, type AccesDuDossier } from './auteursVentes'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
-  AUCUN_CHANGEMENT_TRACE, GESTES, INTITULE_SANS_ADRESSE, MENTIONS_DE_L_AUTEUR, auteurDuGeste, groupesDeLaTrace, ligneDeTrace,
-  nombreDeChangements, ordreDeLaTrace, phraseDeLaTrace, quandADitLaTrace, traceDeLaLecture, type LigneDeTrace,
+  ACCES, AUCUN_CHANGEMENT_TRACE, GESTES, INTITULE_SANS_ADRESSE, LIBELLE_DE_L_ACCES, MENTIONS_DE_L_AUTEUR, auteurDuGeste,
+  groupesDeLaTrace, ligneDeTrace, nombreDeChangements, ordreDeLaTrace, phraseDeLaTrace, quandADitLaTrace, traceDeLaLecture,
+  type LigneDeTrace,
 } from './traceDesDroitsVue'
-import { DOMAINES, definitionDe } from './droitsAcces'
+import { ACCES_DANS_LA_TRACE_PREVU } from './traceDesDroits'
+import { DOMAINES, definitionDe, type Domaine } from './droitsAcces'
 import type { TraceDesDroits } from './types'
 import { fichiersDuSchema } from '../test/schema'
 
@@ -38,7 +42,7 @@ describe('une ligne jugée', () => {
     for (const m of mots) {
       const l = ligneDeTrace(brute({ droit: m }))
       expect(l, m).not.toBeNull()
-      expect(phraseDeLaTrace(l!).libelle).toBe(definitionDe(l!.droit).libelle)
+      expect(phraseDeLaTrace(l!).libelle).toBe(definitionDe(l!.droit as Domaine).libelle)
     }
     // Et les libellés de l'onglet sont les mêmes mots (« Notes de frais », pas « frais »).
     expect(phraseDeLaTrace(ligne({ droit: 'frais' })).libelle).toBe('Notes de frais')
@@ -207,3 +211,43 @@ describe('la trace rangée par accès', () => {
     expect(AUCUN_CHANGEMENT_TRACE).toContain('07/11/2026')
   })
 })
+
+// L'ACCÈS LUI-MÊME DANS LA TRACE (P1T-Q2, migration préparée `arrivee_et_depart_des_acces`) : le huitième mot, connu de
+// l'écran sous `ACCES_DANS_LA_TRACE_PREVU` seulement, et sous ses deux formes seulement.
+describe('l’accès lui-même dans la trace (P1T-Q2)', () => {
+  const PREPAREE = readFileSync(join(__dirname, '../../supabase/preparees/20261113202000_arrivee_et_depart_des_acces.sql'), 'utf8')
+  const arrivee = brute({ id: 'a1', droit: 'acces', geste: 'creation', coche: true })
+  const depart = brute({ id: 'a2', droit: 'acces', geste: 'retrait', coche: false, fait_le: '2026-11-09T09:12:00Z' })
+
+  it('le drapeau est baissé tant que la migration n’est pas en base ; la valeur par défaut le suit', () => {
+    expect(ACCES_DANS_LA_TRACE_PREVU).toBe(false)
+    expect(ligneDeTrace(arrivee)).toBeNull()
+    const jugee = traceDeLaLecture({ lignes: [brute(), arrivee], complete: true, motif: null })
+    expect(jugee.lignes.map((l) => l.id)).toEqual(['t1'])
+    expect(jugee.motif).toContain('1 ligne(s) portent un droit, un geste ou une date que cet écran ne connaît pas')
+  })
+
+  it('levé : l’arrivée et le départ se lisent, ouvert et retiré, à leur libellé', () => {
+    expect(ligneDeTrace(arrivee, true)).toMatchObject({ droit: ACCES, geste: 'creation', coche: true })
+    expect(phraseDeLaTrace(ligneDeTrace(arrivee, true)!)).toEqual({ libelle: LIBELLE_DE_L_ACCES, etat: 'ouvert' })
+    expect(phraseDeLaTrace(ligneDeTrace(depart, true)!)).toEqual({ libelle: LIBELLE_DE_L_ACCES, etat: 'retiré' })
+    const jugee = traceDeLaLecture({ lignes: [brute(), arrivee, depart], complete: true, motif: null }, true)
+    // Les plus récentes d'abord ; à l'instant égal (l'arrivée et la case du 08/11), l'identifiant.
+    expect(jugee.lignes.map((l) => l.id)).toEqual(['a2', 'a1', 't1'])
+    expect(jugee.motif).toBeNull()
+  })
+
+  it('levé : un « changement » de l’accès, ou une case qui contredit le geste, reste un mot inconnu', () => {
+    expect(ligneDeTrace(brute({ droit: 'acces', geste: 'changement', coche: true }), true)).toBeNull()
+    expect(ligneDeTrace(brute({ droit: 'acces', geste: 'creation', coche: false }), true)).toBeNull()
+    expect(ligneDeTrace(brute({ droit: 'acces', geste: 'retrait', coche: true }), true)).toBeNull()
+  })
+
+  it('le mot est celui que la migration préparée admet, en plus des sept cases, et que son déclencheur écrit', () => {
+    const mots = /check \(droit in \(([^)]*)\)\)/.exec(PREPAREE)![1].split(',').map((m) => m.trim().replace(/'/g, ''))
+    expect(mots).toEqual(['ventes', 'banque', 'caisse', 'comptes', 'achats', 'frais', 'documents', ACCES])
+    expect(PREPAREE).toContain(`values (new.dossier_id, new.id, new.user_id, '${ACCES}', true, 'creation', v_auteur);`)
+    expect(PREPAREE).toContain(`values (old.dossier_id, old.id, old.user_id, '${ACCES}', false, 'retrait', v_auteur);`)
+  })
+})
+

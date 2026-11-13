@@ -40,7 +40,8 @@ declare
       || ' ' || r.adresse
       || case when r.retire_le = now() then '' else ' le ' || to_char(r.retire_le at time zone 'UTC', 'YYYY-MM-DD') end,
       ', ' order by r.dossier_id, r.acces_id, r.retire_le), 'rien')
-    || ' / retraits tracés : ' || (select count(*) from trace_des_droits t where t.dossier_id in ('{DT}', '{DU}') and t.geste = 'retrait')
+    || ' / retraits tracés : ' || (select count(*) from trace_des_droits t where t.dossier_id in ('{DT}', '{DU}') and t.geste = 'retrait'
+         and t.droit <> 'acces')
     from adresses_des_acces_retires r where r.dossier_id in ('{DT}', '{DU}')$r$;
   pose_n constant text := $p$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true);
     insert into memberships (id, user_id, dossier_id, role, email, droit_banque)
@@ -96,7 +97,12 @@ begin
       (2, 'membre', '2. … le membre affecté au dossier aussi', 'POSE_N', 'RETIRER_N', 'R', 'OK', '1 | DT N essai-adresse-n@example.test / retraits tracés : 1'),
       (3, 'proprietaire', '3. … le propriétaire, sans session, aussi', 'POSE_N', 'RETIRER_N', 'R', 'OK', '1 | DT N essai-adresse-n@example.test / retraits tracés : 1'),
       (4, 'service', '4. … le rôle des Edge Functions aussi', 'POSE_N', 'RETIRER_N', 'R', 'OK', '1 | DT N essai-adresse-n@example.test / retraits tracés : 1'),
-      (5, 'chef', '5. un accès que la trace ne nomme pas (aucune case) retiré : rien de retenu', 'POSE_N_SANS_CASE', 'RETIRER_N', 'R', 'OK', '1 | rien / retraits tracés : 0'),
+      -- Sans case : la trace ne le nommait pas, rien de retenu ; la migration `arrivee_et_depart_des_acces` (P1T-Q2,
+      -- préparée) en base, son départ le nomme (le déclencheur de l'accès tire avant celui de l'adresse), et son adresse se
+      -- retient comme celle d'un accès qui portait une case — l'effet voulu.
+      (5, 'chef', '5. un accès SANS case retiré : rien de retenu tant que la trace ne le nomme pas ; avec P1T-Q2, son départ le nomme et son adresse se retient', 'POSE_N_SANS_CASE', 'RETIRER_N', 'R', 'OK',
+        case when to_regprocedure('public.tracer_les_acces()') is null then '1 | rien / retraits tracés : 0'
+             else '1 | DT N essai-adresse-n@example.test / retraits tracés : 0' end),
       (6, 'chef', '6. un accès tracé dont l''adresse est blanche, retiré : rien de retenu, le retrait passe', 'POSE_N_SANS_ADRESSE', 'RETIRER_N', 'R', 'OK',
         '1 | rien / retraits tracés : 1'),
       (7, 'client', '7. le client ne retire pas son accès : aucune ligne, rien de retenu', null,

@@ -6,8 +6,11 @@
 --
 -- Ce qui se prouve ici, et ne se relit pas :
 --   - le retrait d'un accès qui porte des cases les écrit en « retrait », à son auteur — le chef, le membre affecté, le
---     propriétaire sans session, le rôle des Edge Functions — ; un accès sans case n'écrit rien ; le client ne retire pas
---     son accès (la policy d'hier : aucune ligne), rien de tracé ;
+--     propriétaire sans session, le rôle des Edge Functions — ; un accès sans case n'écrit aucune case ; le client ne retire
+--     pas son accès (la policy d'hier : aucune ligne), rien de tracé ;
+--   - la migration `arrivee_et_depart_des_acces` (P1T-Q2, préparée) en base, le départ de l'accès lui-même s'écrit
+--     (« acces », décochée, retrait), qu'il porte ou non des cases, à son auteur ; jamais par la suppression du dossier
+--     (étapes 12 à 16 ; sans elle, une ligne dit qu'elles attendent) ;
 --   - la suppression d'un dossier, par le propriétaire comme par le chef, emporte ses accès et leur trace sans rien écrire :
 --     le déclencheur ne trace pas un accès dont le dossier n'est plus là, la garde laisse partir la ligne avec lui ;
 --   - personne ne retire une ligne de la trace : le chef (aucune policy, aucune ligne touchée), le rôle des Edge Functions
@@ -44,7 +47,20 @@ declare
               when t.auteur_id::text = '{CLIENT}' then 'le compte d''essai' else 'un autre' end
       || case when t.fait_le = now() then '' else ' le ' || to_char(t.fait_le at time zone 'UTC', 'YYYY-MM-DD') end,
       ', ' order by t.dossier_id, t.acces_id, t.droit, t.geste, t.coche desc), 'rien')
-    from trace_des_droits t where t.dossier_id in ('{DT}', '{DU}')$r$;
+    from trace_des_droits t where t.dossier_id in ('{DT}', '{DU}') and t.droit <> 'acces'$r$;
+  -- La même, des seules lignes de l'accès lui-même (« acces », P1T-Q2, migration `arrivee_et_depart_des_acces`, préparée).
+  resume_acces constant text := $r$select coalesce(string_agg(
+      case t.dossier_id::text when '{DT}' then 'DT' when '{DU}' then 'DU' else '?' end
+      || ' ' || case t.acces_id::text when '{A}' then 'A' when '{B}' then 'B' when '{N}' then 'N' else '?' end
+      || case t.client_id::text when '{CLIENT}' then '' when '{CHEF}' then '(chef)' else '(?)' end
+      || ' ' || t.droit || ' ' || case when t.coche then 'cochée' else 'décochée' end || ' ' || t.geste || ' par '
+      || case when t.auteur_id is null then 'sans session' when t.auteur_id::text = '{CHEF}' then 'le chef'
+              when t.auteur_id::text = '{CLIENT}' then 'le compte d''essai' else 'un autre' end
+      || case when t.fait_le = now() then '' else ' le ' || to_char(t.fait_le at time zone 'UTC', 'YYYY-MM-DD') end,
+      ', ' order by t.dossier_id, t.acces_id, t.geste, t.client_id), 'rien')
+    from trace_des_droits t where t.dossier_id in ('{DT}', '{DU}') and t.droit = 'acces'$r$;
+  jeu_acces constant text := 'DT A acces cochée creation par sans session, DU B acces cochée creation par sans session';
+  acces_en_base constant boolean := to_regprocedure('public.tracer_les_acces()') is not null;
   -- L'accès du compte du chef, réinséré par le super-administrateur (la porte de la restauration : rien de tracé), « Banque »
   -- cochée — le jeu de l'étape 18.
   -- Les cases d'un accès posées avant l'étape, par le propriétaire sous la session du chef (tracées, à lui) ou sans session.
@@ -94,7 +110,7 @@ begin
     for e in select * from (values
       (1, 'chef', '1. le chef retire un accès qui porte « Banque » et « Caisse » : deux lignes en « retrait », à lui', 'CASES_DU_CHEF', 'RETIRER_A', 'R', 'OK',
         '1 | DT A banque cochée changement par le chef, DT A banque décochée retrait par le chef, DT A caisse cochée changement par le chef, DT A caisse décochée retrait par le chef'),
-      (2, 'chef', '2. un accès sans case retiré : rien de tracé', null,
+      (2, 'chef', '2. un accès sans case retiré : aucune case tracée', null,
         $q$with m as (delete from memberships where id = '{B}' returning 1) select count(*)::text from m$q$, 'R', 'OK', '1 | rien'),
       (3, 'membre', '3. le membre affecté retire un accès qui porte « Banque » : une ligne, à lui', 'UNE_LIGNE', 'RETIRER_A', 'R', 'OK',
         '1 | LIGNE, DT A banque décochée retrait par le compte d''essai'),
@@ -107,8 +123,20 @@ begin
       (8, 'chef', '8. le chef supprime le dossier : de même', 'UNE_LIGNE', 'RETIRER_DT', 'R', 'OK', '1 | rien'),
       (9, 'chef', '9. personne ne retire une ligne de la trace : le chef (aucune policy, aucune ligne touchée)', 'UNE_LIGNE', 'EFFACER', 'R', 'OK', '0 | LIGNE'),
       (10, 'service', '10. … le rôle des Edge Functions (la garde, 23514)', 'UNE_LIGNE', 'EFFACER', 'R', '23514', 'REECRITURE'),
-      (11, 'proprietaire', '11. … le propriétaire (la garde, 23514)', 'UNE_LIGNE', 'EFFACER', 'R', '23514', 'REECRITURE')
-    ) as t(rang, profil, etape, avant, requete, apres, code, attendu) order by rang loop
+      (11, 'proprietaire', '11. … le propriétaire (la garde, 23514)', 'UNE_LIGNE', 'EFFACER', 'R', '23514', 'REECRITURE'),
+      -- L'ACCÈS LUI-MÊME DANS LA TRACE (P1T-Q2) : relu par `RA`, les seules lignes « acces » ; `JEU`, les deux arrivées des
+      -- accès du jeu. Sans la migration, une ligne dit qu'elles attendent.
+      (12, 'chef', '12. le chef retire un accès SANS case : son départ tracé, à lui', null,
+        $q$with m as (delete from memberships where id = '{B}' returning 1) select count(*)::text from m$q$, 'RA', 'OK',
+        '1 | DT A acces cochée creation par sans session, DU B acces cochée creation par sans session, DU B acces décochée retrait par le chef'),
+      (13, 'membre', '13. le membre affecté retire un accès qui porte une case : le départ de l''accès, à lui, en plus de la case', 'UNE_LIGNE', 'RETIRER_A', 'RA', 'OK',
+        '1 | DT A acces cochée creation par sans session, DT A acces décochée retrait par le compte d''essai, DU B acces cochée creation par sans session'),
+      (14, 'client', '14. le client ne retire pas son accès : rien de plus', null, 'RETIRER_A', 'RA', 'OK', '0 | JEU'),
+      (15, 'service', '15. le rôle des Edge Functions retire un accès : son départ tracé, sans auteur', null, 'RETIRER_A', 'RA', 'OK',
+        '1 | DT A acces cochée creation par sans session, DT A acces décochée retrait par sans session, DU B acces cochée creation par sans session'),
+      (16, 'proprietaire', '16. la suppression d''un dossier emporte ses accès sans rien écrire : seule l''arrivée de l''accès de l''autre dossier reste', null,
+        'RETIRER_DT', 'RA', 'OK', '1 | DU B acces cochée creation par sans session')
+    ) as t(rang, profil, etape, avant, requete, apres, code, attendu) where t.rang <= 11 or acces_en_base order by rang loop
       v_obs := null;
       v_code := 'OK';
       v_msg := '';
@@ -156,9 +184,9 @@ begin
         end;
         reset role;
         perform set_config('request.jwt.claims', '', true);
-        if e.apres = 'R' then
-          execute replace(replace(replace(replace(replace(replace(replace(resume, '{DT}', dt), '{DU}', du), '{A}', acces_a), '{B}', acces_b),
-            '{N}', acces_n), '{CHEF}', chef), '{CLIENT}', client) into v_apres;
+        if e.apres in ('R', 'RA') then
+          execute replace(replace(replace(replace(replace(replace(replace(case e.apres when 'RA' then resume_acces else resume end,
+            '{DT}', dt), '{DU}', du), '{A}', acces_a), '{B}', acces_b), '{N}', acces_n), '{CHEF}', chef), '{CLIENT}', client) into v_apres;
         end if;
         raise exception 'ANNULATION_ETAPE';
       exception when others then
@@ -172,7 +200,7 @@ begin
       verdicts := verdicts || jsonb_build_object('rang', e.rang, 'etape', e.etape,
         'ok', v_code = e.code and v_msg || ' | ' || coalesce(v_apres, '-')
           = case e.attendu when 'REECRITURE' then refus_reecriture || ' | ' || ligne_lue
-                           else replace(e.attendu, 'LIGNE', ligne_lue) end,
+                           else replace(replace(e.attendu, 'LIGNE', ligne_lue), 'JEU', jeu_acces) end,
         'observe', v_code || ' ' || v_msg || ' | ' || coalesce(v_apres, '-'));
     end loop;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
@@ -181,6 +209,11 @@ begin
       raise;
     end if;
   end;
+
+  if not acces_en_base then
+    verdicts := verdicts || jsonb_build_object('rang', 12, 'etape', '12. EN ATTENTE de la migration arrivee_et_depart_des_acces (P1T-Q2) : les étapes 12 à 16',
+      'ok', true, 'observe', 'tracer_les_acces absente : le départ d''un accès ne s''écrit pas');
+  end if;
 
   -- Rien n'est resté : ni les deux dossiers, ni leurs accès, ni leur trace, ni le compte d'essai dans le cabinet.
   verdicts := verdicts || jsonb_build_object('rang', 99, 'etape', '99. rien n''est resté : ni les dossiers jetables, ni leurs accès, ni leur trace, ni le compte d''essai dans le cabinet',

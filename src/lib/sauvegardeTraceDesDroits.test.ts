@@ -115,7 +115,7 @@ describe('la trace dans les deux états du drapeau : la réinsertion et les lien
   // Le plan du jour est calculé au chargement du module : on le recharge sous l'état voulu.
   async function sauvegardeSous(drapeau: boolean) {
     vi.resetModules()
-    vi.doMock('./traceDesDroits', () => ({ TRACE_DES_DROITS_PREVUE: drapeau }))
+    vi.doMock('./traceDesDroits', () => ({ TRACE_DES_DROITS_PREVUE: drapeau, ACCES_DANS_LA_TRACE_PREVU: false }))
     return import('./sauvegarde')
   }
 

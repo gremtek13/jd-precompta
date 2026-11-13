@@ -13,3 +13,12 @@
 // que sauvegardeTraceDesDroits.test.ts joue encore par `vi.doMock` —, elle n'y est pas : la lire avant sa migration aurait
 // fait échouer toute sauvegarde.
 export const TRACE_DES_DROITS_PREVUE = true
+
+// L'ACCÈS LUI-MÊME DANS LA TRACE (P1T-Q2, tranchée par le cabinet le 07/11/2026 : « Oui, plus tard avec l'écran ») : la
+// migration PRÉPARÉE `arrivee_et_depart_des_acces` (supabase/preparees/20261113202000) fait écrire une ligne au mot
+// « acces » quand un accès arrive dans un dossier (cochée, « creation ») ou en part (décochée, « retrait »), qu'il porte ou
+// non des cases. Levé, l'écran nomme ce mot (lib/traceDesDroitsVue.ts) ; baissé — l'état d'aujourd'hui —, une ligne
+// « acces » serait un mot inconnu et rendrait la lecture partielle. Il se lève AVANT la migration (il ne change rien tant
+// que la base n'écrit pas le mot), qui se colle ensuite.
+export const ACCES_DANS_LA_TRACE_PREVU: boolean = false
+

@@ -15,6 +15,11 @@
 --   - personne n'écrit la trace en direct — ni le client, ni le membre, ni un chef qui n'est pas super-administrateur, ni
 --     le rôle des Edge Functions, ni le propriétaire, ni l'anonyme : la garde, AVANT la RLS (qui ne juge la ligne qu'après
 --     les déclencheurs d'avant), refuse sous ses mots — ; personne ne la réécrit (aucune policy ; la garde) ; le cabinet du dossier la lit, ni un membre d'ailleurs, ni le client, ni l'anonyme ;
+--   - la migration `arrivee_et_depart_des_acces` (P1T-Q2, préparée) en base, l'arrivée et le départ de l'accès lui-même
+--     (« acces ») s'écrivent, qu'il porte ou non des cases, à leur auteur — l'insertion d'un chef, du rôle des Edge Functions,
+--     un accès emporté vers un autre dossier ou un autre compte —, jamais par la restauration, une case qui change, une autre
+--     colonne ou un dossier réécrit à l'identique ; personne n'écrit le mot en direct ; le catalogue de sa fonction et de son
+--     déclencheur (étapes 41 à 52 ; sans elle, une ligne dit qu'elles attendent, et les étapes 1 à 40 ne lisent que les cases) ;
 --   - le catalogue : la table, ses contraintes, ses deux policies, ses deux fonctions et leurs déclencheurs, la trace
 --     après les deux gardes de `memberships` ; toute case `droit_…` de `memberships` tracée — nommée par le déclencheur,
 --     admise par la contrainte, lue par la fonction : une case de plus (la case « Comptes » de C4a), appliquée avant ou
@@ -59,7 +64,23 @@ declare
               when t.auteur_id::text = '{CLIENT}' then 'le compte d''essai' else 'un autre' end
       || case when t.fait_le = now() then '' else ' le ' || to_char(t.fait_le at time zone 'UTC', 'YYYY-MM-DD') end,
       ', ' order by t.dossier_id, t.acces_id, t.droit, t.geste, t.coche desc), 'rien')
-    from trace_des_droits t where t.dossier_id in ('{DT}', '{DU}')$r$;
+    from trace_des_droits t where t.dossier_id in ('{DT}', '{DU}') and t.droit <> 'acces'$r$;
+  -- La même, des seules lignes de l'accès lui-même (« acces », P1T-Q2) : l'ordre ajoute le compte, deux créations d'un même
+  -- accès (un accès emporté vers un autre compte) pouvant tomber au même instant.
+  resume_acces constant text := $r$select coalesce(string_agg(
+      case t.dossier_id::text when '{DT}' then 'DT' when '{DU}' then 'DU' else '?' end
+      || ' ' || case t.acces_id::text when '{A}' then 'A' when '{B}' then 'B' when '{N}' then 'N' else '?' end
+      || case t.client_id::text when '{CLIENT}' then '' when '{CHEF}' then '(chef)' else '(?)' end
+      || ' ' || t.droit || ' ' || case when t.coche then 'cochée' else 'décochée' end || ' ' || t.geste || ' par '
+      || case when t.auteur_id is null then 'sans session' when t.auteur_id::text = '{CHEF}' then 'le chef'
+              when t.auteur_id::text = '{CLIENT}' then 'le compte d''essai' else 'un autre' end
+      || case when t.fait_le = now() then '' else ' le ' || to_char(t.fait_le at time zone 'UTC', 'YYYY-MM-DD') end,
+      ', ' order by t.dossier_id, t.acces_id, t.geste, t.client_id), 'rien')
+    from trace_des_droits t where t.dossier_id in ('{DT}', '{DU}') and t.droit = 'acces'$r$;
+  -- Ce que les deux accès du jeu laissent, la migration `arrivee_et_depart_des_acces` (P1T-Q2) en base.
+  jeu_acces constant text := 'DT A acces cochée creation par sans session, DU B acces cochée creation par sans session';
+  -- La migration de l'accès dans la trace (P1T-Q2, préparée) : ses étapes 41 à 52, EN ATTENTE sans elle.
+  acces_en_base constant boolean := to_regprocedure('public.tracer_les_acces()') is not null;
   -- L'accès du compte du chef, réinséré par le super-administrateur (la porte de la restauration : rien de tracé), « Banque »
   -- cochée — le jeu de l'étape 18.
   pose_n constant text := $p$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true);
@@ -71,7 +92,8 @@ declare
     values ('{DT}', '{A}', '{CLIENT}', 'banque', true, 'changement') returning 'insérée'$q$;
   reecrire constant text := $q$with t as (update trace_des_droits set coche = false where dossier_id = '{DT}' returning 1)
     select count(*)::text from t$q$;
-  lire constant text := $q$select count(*)::text from trace_des_droits where dossier_id = '{DT}'$q$;
+  -- Les lignes des cases (celle de l'arrivée de l'accès du jeu, P1T-Q2, se compte à part, étapes 41 et suivantes).
+  lire constant text := $q$select count(*)::text from trace_des_droits where dossier_id = '{DT}' and droit <> 'acces'$q$;
   ligne_lue constant text := 'DT A banque cochée changement par sans session';
   refus_garde constant text := 'La trace des droits ne s''écrit que par l''écriture des droits d''un accès.';
   refus_reecriture constant text := 'La trace des droits ne se réécrit pas : une ligne ne part qu''avec son dossier.';
@@ -87,8 +109,17 @@ declare
     when 'c4a' then 'droit_ventes, droit_banque, droit_caisse, droit_comptes' else 'droit_ventes, droit_banque, droit_caisse' end;
   -- Les déclencheurs de memberships : les deux gardes, la trace, et, la migration `adresse_des_acces_retires` (P1T-E2) en
   -- base, le sien, rangé après celui de la trace.
-  declencheurs_memberships constant text := 'memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits'
+  -- Et (13/11/2026) celui du dossier du cabinet (LM1, `memberships_dossier_du_cabinet`, que la liste ignorait depuis sa mise en
+  -- base : le contrôle 39 était en faute sur toute base qui la porte), et celui de l'accès dans la trace (P1T-Q2), rangé entre
+  -- la trace des cases et l'adresse.
+  declencheurs_memberships constant text := case when to_regprocedure('public.garder_acces_au_dossier_du_cabinet()') is null then ''
+      else 'memberships_dossier_du_cabinet, ' end
+    || 'memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits'
+    || case when to_regprocedure('public.tracer_les_acces()') is null then '' else ', memberships_trace_des_droits_acces' end
     || case when to_regclass('public.adresses_des_acces_retires') is null then '' else ', memberships_trace_des_droits_adresse' end;
+  -- La contrainte du droit : les sept cases de P1-trace, et « acces » depuis P1T-Q2.
+  contrainte_du_droit constant text := 'trace_des_droits_droit CHECK ((droit = ANY (ARRAY[''ventes''::text, ''banque''::text, ''caisse''::text, ''comptes''::text, ''achats''::text, ''frais''::text, ''documents''::text'
+    || case when to_regprocedure('public.tracer_les_acces()') is null then '' else ', ''acces''::text' end || '])))';
   cases_lues constant text := case etat when 'b1' then 'droit_achats, droit_banque, droit_caisse, droit_comptes, droit_documents, droit_frais, droit_ventes'
     when 'c4a' then 'droit_banque, droit_caisse, droit_comptes, droit_ventes' else 'droit_banque, droit_caisse, droit_ventes' end;
 begin
@@ -123,7 +154,7 @@ begin
     -- propriétaire relit après (`R` : la trace des deux dossiers), le code attendu (`OK` : acceptée), ce qui est attendu :
     -- « la valeur rendue | ce qui est relu »}.
     for e in select * from (values
-      (1, 'proprietaire', '1. le jeu posé : deux accès sans droit, comme create-client-access les insère — rien de tracé', null, $q$select 'posé'$q$, 'R', 'OK', 'posé | rien'),
+      (1, 'proprietaire', '1. le jeu posé : deux accès sans droit, comme create-client-access les insère — aucune case tracée', null, $q$select 'posé'$q$, 'R', 'OK', 'posé | rien'),
       (2, 'chef', '2. le chef (super-administrateur) coche « Banque » par changer_droits_acces : une ligne, à lui, à cet instant', null,
         $q$select (changer_droits_acces('{A}', null, true, null)).droit_banque::text$q$, 'R', 'OK', 'true | DT A banque cochée changement par le chef'),
       (3, 'chef', '3. la même case cochée deux fois : une seule ligne — une case qui ne change pas n''écrit rien', null,
@@ -205,7 +236,8 @@ begin
       (36, 'proprietaire', '36. … ses contraintes : le dossier en cascade, aucune clé vers l''accès ni vers un compte', null,
         $q$select string_agg(c.conname || ' ' || pg_get_constraintdef(c.oid), ' ; ' order by c.conname) from pg_constraint c
   where c.conrelid = 'public.trace_des_droits'::regclass$q$, null, 'OK',
-        'trace_des_droits_coche CHECK ((((geste <> ''creation''::text) OR coche) AND ((geste <> ''retrait''::text) OR (NOT coche)))) ; trace_des_droits_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE ; trace_des_droits_droit CHECK ((droit = ANY (ARRAY[''ventes''::text, ''banque''::text, ''caisse''::text, ''comptes''::text, ''achats''::text, ''frais''::text, ''documents''::text]))) ; trace_des_droits_geste CHECK ((geste = ANY (ARRAY[''changement''::text, ''creation''::text, ''retrait''::text]))) ; trace_des_droits_pkey PRIMARY KEY (id) | -'),
+        'trace_des_droits_coche CHECK ((((geste <> ''creation''::text) OR coche) AND ((geste <> ''retrait''::text) OR (NOT coche)))) ; trace_des_droits_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE ; '
+        || contrainte_du_droit || ' ; trace_des_droits_geste CHECK ((geste = ANY (ARRAY[''changement''::text, ''creation''::text, ''retrait''::text]))) ; trace_des_droits_pkey PRIMARY KEY (id) | -'),
       (37, 'proprietaire', '37. … ses deux policies, à authenticated seul : la lecture du cabinet du dossier, l''insertion du super-administrateur', null,
         $q$select string_agg(p.policyname || ' ' || p.cmd || ' ' || array_to_string(p.roles, ',') || ' ' || coalesce(p.qual, '-') || ' '
   || coalesce(p.with_check, '-') || ' ' || p.permissive, ' ; ' order by p.policyname) from pg_policies p
@@ -230,8 +262,51 @@ begin
     and strpos((select pg_get_constraintdef(c.oid) from pg_constraint c where c.conrelid = 'public.trace_des_droits'::regclass and c.conname = 'trace_des_droits_droit'), '''' || substr(a.attname, 7) || '''') > 0
     and strpos((select p.prosrc from pg_proc p where p.oid = to_regprocedure('public.tracer_les_droits()')), 'new.' || a.attname) > 0)), 'aucune')
   from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attnum > 0 and not a.attisdropped and left(a.attname, 6) = 'droit_'$q$, null, 'OK',
-        cases_lues || ' | non tracée : aucune | -')
-    ) as t(rang, profil, etape, avant, requete, apres, code, attendu) order by rang loop
+        cases_lues || ' | non tracée : aucune | -'),
+      -- L'ACCÈS LUI-MÊME DANS LA TRACE (P1T-Q2, migration `arrivee_et_depart_des_acces`, préparée) : relu par `RA`, les
+      -- seules lignes « acces » ; `JEU`, les deux créations des accès du jeu. Le retrait d'un accès se joue sur une réplique
+      -- (traceDesDroitsSuppression.sql).
+      (41, 'proprietaire', '41. les deux accès du jeu, insérés sans case comme create-client-access les insère : chacun tracé à son arrivée, sans auteur', null,
+        $q$select 'posé'$q$, 'RA', 'OK', 'posé | JEU'),
+      (42, 'chef_simple', '42. un chef qui n''est pas super-administrateur ouvre un accès SANS case : son arrivée tracée, à lui', null,
+        $q$with m as (insert into memberships (id, user_id, dossier_id, role, email)
+  values ('{N}', '{CHEF}', '{DT}', 'client', 'essai-trace-n@example.test') returning 1) select count(*)::text from m$q$, 'RA', 'OK',
+        '1 | DT A acces cochée creation par sans session, DT N(chef) acces cochée creation par le compte d''essai, DU B acces cochée creation par sans session'),
+      (43, 'chef', '43. la restauration : le super-administrateur réinsère un accès — rien de tracé', null,
+        $q$with m as (insert into memberships (id, user_id, dossier_id, role, email)
+  values ('{N}', '{CHEF}', '{DT}', 'client', 'essai-trace-n@example.test') returning 1) select count(*)::text from m$q$, 'RA', 'OK', '1 | JEU'),
+      (44, 'service', '44. le rôle des Edge Functions ouvre un accès qui porte « Ventes » : son arrivée tracée, sans auteur (les cases, à part)', null,
+        $q$with m as (insert into memberships (id, user_id, dossier_id, role, email, droit_ventes)
+  values ('{N}', '{CHEF}', '{DT}', 'client', 'essai-trace-n@example.test', true) returning 1) select count(*)::text from m$q$, 'RA', 'OK',
+        '1 | DT A acces cochée creation par sans session, DT N(chef) acces cochée creation par sans session, DU B acces cochée creation par sans session'),
+      (45, 'proprietaire', '45. un accès emporté vers un autre dossier : son départ de l''un, son arrivée dans l''autre', 'POSE_N',
+        $q$with m as (update memberships set dossier_id = '{DU}' where id = '{N}' returning 1) select count(*)::text from m$q$, 'RA', 'OK',
+        '1 | DT A acces cochée creation par sans session, DT N(chef) acces décochée retrait par sans session, DU B acces cochée creation par sans session, DU N(chef) acces cochée creation par sans session'),
+      (46, 'proprietaire', '46. un accès passé à un autre compte : le départ de l''un, l''arrivée de l''autre', null,
+        $q$with m as (update memberships set user_id = '{CHEF}' where id = '{A}' returning 1) select count(*)::text from m$q$, 'RA', 'OK',
+        '1 | DT A acces cochée creation par sans session, DT A(chef) acces cochée creation par sans session, DT A acces décochée retrait par sans session, DU B acces cochée creation par sans session'),
+      (47, 'chef', '47. une case cochée sur un accès qui reste : rien de plus pour l''accès', null,
+        $q$select (changer_droits_acces('{A}', null, true, null)).droit_banque::text$q$, 'RA', 'OK', 'true | JEU'),
+      (48, 'proprietaire', '48. une autre colonne de l''accès (son adresse) : rien', null,
+        $q$with m as (update memberships set email = 'essai-trace-autre@example.test' where id = '{A}' returning 1) select count(*)::text from m$q$,
+        'RA', 'OK', '1 | JEU'),
+      (49, 'client', '49. personne n''écrit une ligne « acces » en direct (la garde, avant la RLS)', null,
+        $q$insert into trace_des_droits (dossier_id, acces_id, client_id, droit, coche, geste)
+    values ('{DT}', '{A}', '{CLIENT}', 'acces', true, 'creation') returning 'insérée'$q$, 'RA', '42501', 'GARDE_ACCES'),
+      (50, 'proprietaire', '50. le catalogue : tracer_les_acces aux droits du propriétaire, son chemin fixé, aucun rôle de l''API, son corps à son empreinte', null,
+        $q$select p.prosecdef || ' ' || coalesce(array_to_string(p.proconfig, ','), '-') || ' '
+  || has_function_privilege('anon', p.oid, 'execute') || ' ' || has_function_privilege('authenticated', p.oid, 'execute') || ' '
+  || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
+  || ' ' || md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.tracer_les_acces()')$q$, null, 'OK',
+        'true search_path=public false false false 2eaff09f051b7323a6166c0ae73e88f1 | -'),
+      (51, 'proprietaire', '51. … son déclencheur, actif, après celui des cases et avant celui de l''adresse', null,
+        $q$select pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text from pg_trigger t
+  where t.tgrelid = 'public.memberships'::regclass and t.tgname = 'memberships_trace_des_droits_acces'$q$, null, 'OK',
+        'CREATE TRIGGER memberships_trace_des_droits_acces AFTER INSERT OR DELETE OR UPDATE OF dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_acces() O | -'),
+      (52, 'proprietaire', '52. le dossier et le compte d''un accès réécrits à l''identique : il ne part ni n''arrive', null,
+        $q$with m as (update memberships set dossier_id = dossier_id, user_id = user_id where id = '{A}' returning 1) select count(*)::text from m$q$,
+        'RA', 'OK', '1 | JEU')
+    ) as t(rang, profil, etape, avant, requete, apres, code, attendu) where t.rang <= 40 or acces_en_base order by rang loop
       v_obs := null;
       v_code := 'OK';
       v_msg := '';
@@ -279,9 +354,9 @@ begin
         end;
         reset role;
         perform set_config('request.jwt.claims', '', true);
-        if e.apres = 'R' then
-          execute replace(replace(replace(replace(replace(replace(replace(resume, '{DT}', dt), '{DU}', du), '{A}', acces_a), '{B}', acces_b),
-            '{N}', acces_n), '{CHEF}', chef), '{CLIENT}', client) into v_apres;
+        if e.apres in ('R', 'RA') then
+          execute replace(replace(replace(replace(replace(replace(replace(case e.apres when 'RA' then resume_acces else resume end,
+            '{DT}', dt), '{DU}', du), '{A}', acces_a), '{B}', acces_b), '{N}', acces_n), '{CHEF}', chef), '{CLIENT}', client) into v_apres;
         end if;
         raise exception 'ANNULATION_ETAPE';
       exception when others then
@@ -295,8 +370,9 @@ begin
       verdicts := verdicts || jsonb_build_object('rang', e.rang, 'etape', e.etape,
         'ok', v_code = e.code and v_msg || ' | ' || coalesce(v_apres, '-')
           = case e.attendu when 'GARDE' then refus_garde || ' | rien'
+                           when 'GARDE_ACCES' then refus_garde || ' | ' || jeu_acces
                            when 'REECRITURE' then refus_reecriture || ' | ' || ligne_lue
-                           else replace(e.attendu, 'LIGNE', ligne_lue) end,
+                           else replace(replace(e.attendu, 'LIGNE', ligne_lue), 'JEU', jeu_acces) end,
         'observe', v_code || ' ' || v_msg || ' | ' || coalesce(v_apres, '-'));
     end loop;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
@@ -305,6 +381,11 @@ begin
       raise;
     end if;
   end;
+
+  if not acces_en_base then
+    verdicts := verdicts || jsonb_build_object('rang', 41, 'etape', '41. EN ATTENTE de la migration arrivee_et_depart_des_acces (P1T-Q2) : les étapes 41 à 52',
+      'ok', true, 'observe', 'tracer_les_acces absente : l''arrivée et le départ d''un accès ne s''écrivent pas');
+  end if;
 
   -- Rien n'est resté : ni les deux dossiers, ni leurs accès, ni leur trace, ni le compte d'essai dans le cabinet.
   verdicts := verdicts || jsonb_build_object('rang', 99, 'etape', '99. rien n''est resté : ni les dossiers jetables, ni leurs accès, ni leur trace, ni le compte d''essai dans le cabinet',

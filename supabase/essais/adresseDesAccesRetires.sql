@@ -79,12 +79,14 @@ declare
   ligne_lue constant text := 'DT A essai-adresse-a@example.test le 2026-10-01';
   refus_garde constant text := 'L''adresse d''un accès retiré ne s''écrit que par le retrait de l''accès.';
   refus_reecriture constant text := 'L''adresse d''un accès retiré ne se réécrit pas : elle ne part qu''avec son dossier.';
-  -- Les déclencheurs de memberships, une liste FERMÉE : ceux de P1-trace et de la caisse, et celui-ci, rangé après celui
-  -- de la trace — et, depuis LM1 (migration `dossier_du_cabinet`, en production le 12/11/2026), celui qui refuse tout accès
-  -- client sur le dossier du cabinet, rangé en tête (l'ordre des noms), présent avec sa fonction.
-  declencheurs constant text := case when to_regprocedure('public.garder_acces_au_dossier_du_cabinet()') is not null
-                                     then 'memberships_dossier_du_cabinet, ' else '' end
-    || 'memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits, memberships_trace_des_droits_adresse';
+  -- Les déclencheurs de memberships : ceux de P1-trace et de la caisse, et celui-ci, rangé après celui de la trace.
+  -- Et (13/11/2026) celui du dossier du cabinet (LM1, que la liste ignorait depuis sa mise en base : le contrôle 31 était en
+  -- faute sur toute base qui la porte), et celui de l'accès dans la trace (P1T-Q2, préparée), rangé avant celui-ci.
+  declencheurs constant text := case when to_regprocedure('public.garder_acces_au_dossier_du_cabinet()') is null then ''
+      else 'memberships_dossier_du_cabinet, ' end
+    || 'memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits'
+    || case when to_regprocedure('public.tracer_les_acces()') is null then '' else ', memberships_trace_des_droits_acces' end
+    || ', memberships_trace_des_droits_adresse';
 begin
   if to_regclass('public.adresses_des_acces_retires') is null then
     perform set_config('essai.adresse_des_acces_retires', jsonb_build_array(jsonb_build_object('rang', 0,
@@ -121,7 +123,9 @@ begin
       (2, 'proprietaire', '2. un accès qui porte « Banque », emporté vers un autre dossier : son adresse reste au dossier qu''il quitte, à l''instant du départ',
         'POSE_N', 'EMPORTER_N', 'R', 'OK', '1 | DT N essai-adresse-n@example.test'),
       (3, 'service', '3. … par le rôle des Edge Functions aussi', 'POSE_N', 'EMPORTER_N', 'R', 'OK', '1 | DT N essai-adresse-n@example.test'),
-      (4, 'proprietaire', '4. un accès que la trace ne nomme pas (aucune case, rien de tracé) emporté : rien de retenu', 'POSE_N_SANS_CASE', 'EMPORTER_N', 'R', 'OK', '1 | rien'),
+      -- Avec P1T-Q2 (préparée), le départ d'un accès sans case le nomme dans la trace, et son adresse se retient : l'effet voulu.
+      (4, 'proprietaire', '4. un accès SANS case emporté : rien de retenu tant que la trace ne le nomme pas ; avec P1T-Q2, son départ le nomme et son adresse se retient', 'POSE_N_SANS_CASE', 'EMPORTER_N', 'R', 'OK',
+        case when to_regprocedure('public.tracer_les_acces()') is null then '1 | rien' else '1 | DT N essai-adresse-n@example.test' end),
       (5, 'proprietaire', '5. un accès tracé sans adresse emporté : rien de retenu', 'POSE_N_SANS_ADRESSE', 'EMPORTER_N', 'R', 'OK', '1 | rien'),
       (6, 'proprietaire', '6. un accès tracé dont l''identifiant change : l''adresse reste sous l''ancien', 'TRACE_A',
         $q$with m as (update memberships set id = '{X}' where id = '{A}' returning 1) select count(*)::text from m$q$, 'R', 'OK',

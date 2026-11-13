@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { ADRESSES_DES_ACCES_RETIRES_PREVUES } from '../../lib/adressesDesAccesRetires'
 import type { AccesDuDossier } from '../../lib/auteursVentes'
-import { TRACE_DES_DROITS_PREVUE } from '../../lib/traceDesDroits'
+import { ACCES_DANS_LA_TRACE_PREVU, TRACE_DES_DROITS_PREVUE } from '../../lib/traceDesDroits'
 import {
   lireLaTraceDuDossier, lireLesAdressesDesAccesRetires, type LectureDeLaTrace, type LectureDesAdresses,
 } from '../../lib/traceDesDroitsLecture'
 import {
-  AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE, CE_QUE_DIT_L_ADRESSE_RETENUE, MENTIONS_DE_L_AUTEUR, TITRES_DE_L_AUTEUR, auteurDuGeste, groupesDeLaTrace,
+  AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE, CE_QUE_DIT_LA_TRACE_DES_ACCES, CE_QUE_DIT_L_ADRESSE_RETENUE, MENTIONS_DE_L_AUTEUR, TITRES_DE_L_AUTEUR, auteurDuGeste, groupesDeLaTrace,
   nombreDeChangements, phraseDeLaTrace, quandADitLaTrace, type AccesNomme,
 } from '../../lib/traceDesDroitsVue'
 
@@ -59,7 +59,7 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
   return (
     <div className="card" style={{ marginTop: 20 }}>
       <h3 style={{ marginTop: 0 }}>Droits changés</h3>
-      <p className="muted" style={{ marginTop: -8 }}>{CE_QUE_DIT_LA_TRACE}</p>
+      <p className="muted" style={{ marginTop: -8 }}>{ACCES_DANS_LA_TRACE_PREVU ? CE_QUE_DIT_LA_TRACE_DES_ACCES : CE_QUE_DIT_LA_TRACE}</p>
       {ADRESSES_DES_ACCES_RETIRES_PREVUES && <p className="muted">{CE_QUE_DIT_L_ADRESSE_RETENUE}</p>}
       {lue === null ? (
         <p className="muted">Chargement de la trace des droits…</p>
