@@ -52237,3 +52237,16 @@ la lecture du plan de tous les onglets (à trancher avec INV8) ; ni la pièce ci
 (une saisie qui remplace garde la pièce) ; l'état dit « saisie du cabinet » et sa date, jamais un nom. Trois choix à leur recommandation :
 INV-Q3 (A), INV-Q4 (A), INV-Q6 (A) (`CHOIX_DU_CABINET`). Tests : logique, état, lecture, écran (33 cas), navigations, `DossierDetail`, et l'onglet entré
 dans les deux gardes d'`ecransAvantLecture`.
+
+### 13/11/2026 — SIX RÉPONSES DU CABINET, LA PAGE DES ARBITRAGES DU PLUS RÉCENT AU PLUS ANCIEN, ET LA SEMAINE D'AUTONOMIE
+
+Réponses lues sur la page (628 au total) : PC7Q2-migration « Oui, par l'outil » (la base refusera une catégorie propre hors des classes
+6 et 7, `classes_des_categories`, à appliquer dès que l'outil Supabase répond — il ne répondait pas ce jour-là) ; PC7Q2-Q1 (A) « Oui,
+dans un lot à part » (la même règle pour une catégorie commune) ; INV3-Q1 (A) « Étendre l'empreinte actuelle » ; INV3-Q2 (A) « Une
+régularisation reprise » ; AFF2-Q3 (A) « Recensées par AFF3, qui les écartent » ; INV5-Q1 (B) « Tout de suite », contre la
+recommandation (la pièce citée d'une régularisation et la facture d'une créance dépréciée se choisissent dans l'onglet Inventaire).
+À la demande du cabinet, trois pages fermées (les deux pages de collage, servies, et l'ancienne page des arbitrages du 01/11), et la
+page des arbitrages classée par jour, la plus récente en haut, puis par chantier dans un jour : le jour est la date la plus récente
+que cite la source de la question, jamais avant l'ouverture de la page (19/10/2026, « ou avant ») ; le bouton « Retenir » ne vaut
+plus que pour le groupe qu'il précède (v175). Le cabinet part en congé la semaine du 16/11 et répondra aux questions pendant ce temps :
+la session avance seule, par vagues d'agents, sur ce qui n'attend aucune réponse ; aucune migration n'est appliquée sans accord.
