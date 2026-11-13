@@ -18,8 +18,8 @@ import { ROLES_COMPTABLES, type PlanComptable } from './planComptable'
 //   - la fin de l'identifiant (les quatre derniers caractères de l'ACCTID d'un OFX, MCB2) se corrige à la main, ou s'efface.
 // L'application demande en plus la date d'ouverture à la création (MCB4-Q2, sur la recommandation : elle borne les mouvements
 // et dit depuis quand le relevé du compte est attendu) et ne l'efface jamais une fois donnée.
-// Deux réponses du cabinet du 11/11/2026, à la recommandation (HISTORIQUE.md, « 13/11/2026 — LA FICHE DES COMPTES BANCAIRES :
-// RETIRER UN COMPTE, ET LE COMPTE PROPRE HORS D'UN EXERCICE VALIDÉ (MCB6-Q1, MCB6-Q2) ») :
+// Deux réponses du cabinet du 11/11/2026, à la recommandation (HISTORIQUE.md, « 13/11/2026 — MCB6-Q1 ET MCB6-Q2 : RETIRER UN
+// COMPTE, ET LE COMPTE PROPRE HORS D'UN EXERCICE VALIDÉ ») :
 //   - MCB6-Q1 : un compte créé par erreur se retire, offert seulement quand la base l'accepterait — ni mouvement ni relevé
 //     (sa garde), aucune écriture d'ouverture éclatée qui le cite (la clé du brouillon, MCB5g), et jamais le principal d'un
 //     dossier qui tient un autre compte (la contrainte différée) —, sur des lectures faites en entier, après une confirmation
@@ -27,7 +27,11 @@ import { ROLES_COMPTABLES, type PlanComptable } from './planComptable'
 //   - MCB6-Q2 : la date depuis laquelle un compte tient son propre 512 ne se pose ni sur un exercice validé ni avant lui —
 //     l'ouverture par compte suppose que l'année de départ ne l'est pas, et un exercice validé est figé. Les exercices validés
 //     lus en partie retiennent ce geste, du côté fermé. La base ne le refuse pas elle-même (aucune garde des comptes ne lit
-//     `exercices_valides`) : la règle est de l'application.
+//     `exercices_valides`, ce que ficheDesComptesBancaires.test.ts vérifie sur la dernière définition) : la règle est de
+//     l'application, et un filet en base attend la réponse du cabinet (MCB6Q2-Q1).
+// Le retrait ne passe par aucune fonction : une suppression directe sous la policy du cabinet, que jugent la garde, les clés
+// étrangères vers le compte (toutes sans cascade : les mouvements, les contrôles, l'ouverture éclatée — un scanner du test
+// en tient la liste) et la contrainte différée du principal.
 
 /** Le premier exercice où un compte autre que le principal tient son propre 512 (MCB-Q7). */
 export const PREMIERE_ANNEE_DU_COMPTE_PROPRE = 2026
