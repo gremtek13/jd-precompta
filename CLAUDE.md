@@ -98,7 +98,7 @@ et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉE
   toute migration : y ajouter son fichier et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle,
   inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock), v52 depuis le 01/11/2026, plafond de coût mensuel par cabinet ; aucun
+  - `agent-comptable` — assistant IA (Bedrock), v59 depuis le 12/11/2026, plafond de coût mensuel par cabinet ; aucun
     nom de cabinet (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant
     un dossier basculé, une garde provisoire (VF9a), que VF9c a levée — elle ne ferme plus qu'une source des ventes
     illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES OUTILS
@@ -502,7 +502,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Télédéclaration de la TVA** (ligne 28) : étape 2, la transmission par un partenaire EDI — Teledec choisi, qui veut
   voir l'application fonctionner avant d'ouvrir son API ; ASPOne.fr l'autre voie. Rien n'est écrit.
 - **Comptabilité d'engagement** (ligne 31) : le change et les frais bancaires à part, en production depuis le 12/11/2026
-  (`ecarts_de_reglement`, `ECARTS_DE_REGLEMENT_PREVUS` levé, l'assistant à redéployer ; CHG-Q1 à Q3) → « LE CHANGE ET LES FRAIS BANCAIRES
+  (`ecarts_de_reglement`, `ECARTS_DE_REGLEMENT_PREVUS` levé, l'assistant redéployé le même soir, v59 ; CHG-Q1 à Q3) → « LE CHANGE ET LES FRAIS BANCAIRES
   À PART, EN ENGAGEMENT (LIGNE 31) » ; restent les auxiliaires des
   à-nouveaux et des soldes reportés, l'affectation du résultat d'une société, la TVA des livraisons de biens, la liasse
   (2033 ou 2050), les exercices décalés — conçus le 12/11/2026 (`docs/conceptions/42-exercices-decales.md`, EXD-Q1 à
