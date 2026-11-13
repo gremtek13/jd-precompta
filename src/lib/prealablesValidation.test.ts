@@ -2095,6 +2095,13 @@ describe('prealablesDeValidation — la caisse (étape C3b)', () => {
 // haut ; levé, elle les tire des opérations
 // qu'elle reçoit, et une pièce compte à la date de ses espèces, pour l'ordre des exercices comme pour les montants payés.
 const drapeauDuPaiement = vi.hoisted(() => ({ leve: null as boolean | null }))
+// Le drapeau `INVENTAIRE_EXPORTE` (ligne 35, INV6), joué par un accesseur : celui du module tant qu'un cas ne le lève pas.
+const inventaireExporte = vi.hoisted(() => ({ leve: undefined as undefined | boolean }))
+vi.mock('./inventaire', async (original) => {
+  const vrai = await original<typeof import('./inventaire')>()
+  return { ...vrai, get INVENTAIRE_EXPORTE() { return inventaireExporte.leve ?? vrai.INVENTAIRE_EXPORTE } }
+})
+afterEach(() => { inventaireExporte.leve = undefined })
 vi.mock('./paiementParLaCaisse', async (original) => {
   const module = await original<typeof import('./paiementParLaCaisse')>()
   return {
@@ -2649,5 +2656,15 @@ describe('prealablesDeValidation — l’inventaire (INV3)', () => {
     expect(ids(donnees({ modele: ENGAGEMENT, inventaire: lu([{ id: 'i', exercice: 2025, retire_le: null }]) })))
       .not.toContain('inventaire-non-declare')
     expect(ids(donnees({ inventaire: lu([]) }))).not.toContain('inventaire-non-declare')
+  })
+
+  // INV6 : l'onglet Inventaire offert (`INVENTAIRE_EXPORTE` levé), les préalables de l'inventaire y mènent ; baissé (ci-dessus),
+  // aux écritures, comme hier. Le message reste celui de la base.
+  it('le drapeau `INVENTAIRE_EXPORTE` levé, ils mènent à l’onglet Inventaire', () => {
+    inventaireExporte.leve = true
+    expect(prealable(donnees({ modele: ENGAGEMENT, inventaire: lu([]) }), 'inventaire-non-declare')).toMatchObject({
+      bloquant: true, cible: 'inventaire',
+      message: "L'inventaire de l'exercice 2025 n'est pas déclaré : le déclarer fait, même sans régularisation, avant la validation.",
+    })
   })
 })

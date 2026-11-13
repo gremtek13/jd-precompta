@@ -1108,3 +1108,50 @@ describe('l’ouverture de la banque à éclater (MCB5g)', () => {
     expect(point(base({ controlesReleves: [k('rp', 'cp', 900, 1000)] }))?.nb).toBe(0)
   })
 })
+
+// L'INVENTAIRE DANS LA VUE D'ENSEMBLE (ligne 35, INV6) : trois points en attention, cible Inventaire, rangés à l'ensemble. Sans
+// objet (le drapeau baissé : la lecture rend `sans_objet`) ou en trésorerie, aucun ne compte et la liste montrée est celle d'hier.
+describe('les trois points de l’inventaire (INV6)', () => {
+  const ENGAGEMENT = { mode: 'engagement' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
+  const IDS = ['inventaire-a-declarer', 'regularisations-a-recomposer', 'extournes-a-reprendre']
+  const ecriture = (id: string, date: string, compte: string, sens: 'debit' | 'credit', montant: number, operation: string | null = null): EcritureBrouillon => ({
+    id, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date, compte, libelle: 'Écriture fictive', montant, sens,
+    statut: 'proposee', created_at: `${date}T10:00:00Z`, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+    cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE, operation_inventaire_id: operation,
+  })
+  // Le premier exercice du dossier : 2024, par sa première écriture.
+  const OUVERTURE = [ecriture('a1', '2024-01-02', '512000', 'debit', 1000), ecriture('a2', '2024-01-02', '101000', 'credit', 1000)]
+  // Une charge constatée d'avance de 2024, constatée au 31/12/2024 sans son extourne au 1er janvier 2025.
+  const CCA = {
+    id: 'o1', exercice: 2024, nature: 'cca' as const, compte_resultat: '616000', compte_regularisation: '486000', montant_centimes: 12000,
+    tva_centimes: 0, objet: 'Assurance fictive', provision_id: null, reprise: false, piece_citee_id: null,
+  }
+  const CONSTATEE = [ecriture('c1', '2024-12-31', '486000', 'debit', 120, 'o1'), ecriture('c2', '2024-12-31', '616000', 'credit', 120, 'o1')]
+  const A_RECOMPOSER = { ...CCA, id: 'o2', exercice: 2025, objet: 'Abonnement fictif' }
+  const inventaire = { etat: 'lu' as const, operations: [CCA, A_RECOMPOSER], declarations: [], provisions: [] }
+  const points = (d: Partial<DonneesDeLaChecklist>, c: Partial<ContexteDeLaChecklist> = {}) =>
+    pointsDeLaChecklist(donnees({ ecritures: [...OUVERTURE, ...CONSTATEE], ...d }), { ...CONTEXTE, modele: ENGAGEMENT, anneesValidees: [2024], ...c })
+  const parId = (r: ReturnType<typeof points>, id: string) => r.tousLesPointsATraiter.find((p) => p.id === id)
+
+  it('lu en engagement : chacun compte, en attention, mène à l’onglet Inventaire et nomme ses exercices', () => {
+    const r = points({ inventaire })
+    expect(parId(r, 'inventaire-a-declarer')).toMatchObject({
+      nb: 1, severite: 'attention', cible: 'inventaire',
+      detail: 'Exercice 2025 : la validation attend l’inventaire déclaré, même sans aucune régularisation.',
+    })
+    expect(parId(r, 'regularisations-a-recomposer')).toMatchObject({
+      nb: 1, severite: 'attention', cible: 'inventaire', detail: 'Dans l’onglet Inventaire, sur l’exercice 2025 : chacune s’y dit « à recomposer ».',
+    })
+    expect(parId(r, 'extournes-a-reprendre')).toMatchObject({
+      nb: 1, severite: 'attention', cible: 'inventaire', detail: 'Constatées en 2024 : l’exercice suivant ne se validera pas sans elles.',
+    })
+    expect(r.pointsATraiter.map((p) => p.id).filter((id) => IDS.includes(id))).toEqual(IDS)
+  })
+
+  it('sans objet (le drapeau baissé) ou en trésorerie : aucun ne compte, aucun ne se montre', () => {
+    for (const r of [points({ inventaire: { etat: 'sans_objet' } }), points({ inventaire }, { modele: CONTEXTE.modele })]) {
+      for (const id of IDS) expect(parId(r, id)?.nb, id).toBe(0)
+      expect(r.pointsATraiter.some((p) => IDS.includes(p.id))).toBe(false)
+    }
+  })
+})
