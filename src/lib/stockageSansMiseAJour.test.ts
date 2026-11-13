@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { FormeInconnue, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 import { policiesDuSchema, vautPour, type ReleveDesPolicies } from '../test/policiesDuSchema'
@@ -132,8 +133,8 @@ describe('la migration stockage_sans_mise_a_jour, son retour et ce qui la redit'
 
   it('la voie : la migration et son retour retirent des policies, ils se collent, et le disent', () => {
     expect(lire(MIGRATION)).toMatch(/À COLLER dans\s+(--\s+)?l'éditeur SQL/)
-    expect(lire(MIGRATION)).toMatch(/^drop policy packs_storage_all on storage\.objects;$/m)
-    expect(lire(MIGRATION)).toMatch(/^drop policy cabinet_logos_maj_chef on storage\.objects;$/m)
+    expect(lire(MIGRATION)).toMatch(/^drop policy packs_storage_all on storage\.objects;$/im)
+    expect(lire(MIGRATION)).toMatch(/^drop policy cabinet_logos_maj_chef on storage\.objects;$/im)
     expect(lire(RETOUR)).toMatch(/Il se COLLE dans l'éditeur SQL/)
     for (const chemin of [MIGRATION, RETOUR]) expect(lire(chemin), chemin).not.toMatch(/[\r\\]/)
   })
@@ -159,5 +160,97 @@ describe('la migration stockage_sans_mise_a_jour, son retour et ce qui la redit'
     expect(constante(bloc, 'packs')).toBeDefined()
     expect(constante(bloc, 'packs')).toBe(constante(garde, 'v_packs'))
     expect(constante(bloc, 'logos')).toBe(constante(garde, 'v_logos'))
+  })
+})
+
+// LA MÊME RÈGLE CÔTÉ APPLICATION : aucun appel du stockage ne réécrit, ne déplace ni n'écrase un objet — la base le
+// refuserait sous la RLS. Il part de TOUTE la source (le navigateur, hors tests, et les Edge Functions) et lit l'ARBRE de
+// chaque appel `<…>.storage.from(…).<méthode>(…)` : `update`, `move` et `copy` sont des fautes ; un `upload` dont les options
+// portent `upsert: true` écrase — une exception nommée, comptée par fichier, avec sa raison ; une option qui n'est ni
+// absente, ni un littéral objet, ni `upsert: false` ou `true` est une forme inconnue, donc une faute.
+// (depotsDansLesSeaux.test.ts juge le seau et le type de chaque dépôt ; il ne regarde pas l'écrasement.)
+const ECRASEMENTS_ADMIS: Record<string, { nombre: number; raison: string }> = {
+  'supabase/functions/superpdp-sync/index.ts': {
+    nombre: 1,
+    raison: 'le texte d\'une facture reçue, déposé dans le seau des pièces par la clé secrète, hors de la RLS : aucun seau sous la RLS n\'est écrasé',
+  },
+}
+
+function lister(dossier: string, garder: (chemin: string) => boolean): string[] {
+  return (readdirSync(`${RACINE}${dossier}`, { recursive: true }) as string[])
+    .map((n) => `${dossier}/${n}`)
+    .filter((c) => garder(c) && statSync(`${RACINE}${c}`).isFile())
+    .sort()
+}
+
+interface Releve { fichiers: number; depots: number; ecrasent: Map<string, number>; fautes: string[] }
+
+function appelsDuStockage(sources: { chemin: string; texte: string }[]): Releve {
+  const r: Releve = { fichiers: sources.length, depots: 0, ecrasent: new Map(), fautes: [] }
+  for (const { chemin, texte } of sources) {
+    if (!texte.includes('storage')) continue
+    const arbre = ts.createSourceFile(chemin, texte, ts.ScriptTarget.Latest, true, chemin.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+    const ligne = (n: ts.Node) => `${chemin}:${arbre.getLineAndCharacterOfPosition(n.getStart()).line + 1}`
+    const visiter = (n: ts.Node): void => {
+      // `<…>.storage.from(…).<méthode>(…)`
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && ts.isCallExpression(n.expression.expression)
+          && ts.isPropertyAccessExpression(n.expression.expression.expression) && n.expression.expression.expression.name.text === 'from'
+          && ts.isPropertyAccessExpression(n.expression.expression.expression.expression)
+          && n.expression.expression.expression.expression.name.text === 'storage') {
+        const methode = n.expression.name.text
+        if (['update', 'move', 'copy'].includes(methode)) r.fautes.push(`${ligne(n)} : ${methode}`)
+        if (methode === 'upload') {
+          r.depots++
+          const options = n.arguments[2]
+          if (options && !ts.isObjectLiteralExpression(options)) r.fautes.push(`${ligne(n)} : des options qu'on ne sait pas lire`)
+          for (const p of options && ts.isObjectLiteralExpression(options) ? options.properties : []) {
+            if (!ts.isPropertyAssignment(p)) {
+              if (!ts.isShorthandPropertyAssignment(p) || p.name.text === 'upsert') r.fautes.push(`${ligne(n)} : une option qu'on ne sait pas lire`)
+              continue
+            }
+            const nom = ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) ? p.name.text : null
+            if (nom === null) r.fautes.push(`${ligne(n)} : une option au nom calculé`)
+            if (nom !== 'upsert') continue
+            if (p.initializer.kind === ts.SyntaxKind.TrueKeyword) r.ecrasent.set(chemin, (r.ecrasent.get(chemin) ?? 0) + 1)
+            else if (p.initializer.kind !== ts.SyntaxKind.FalseKeyword) r.fautes.push(`${ligne(n)} : upsert qui n'est ni true ni false`)
+          }
+        }
+      }
+      ts.forEachChild(n, visiter)
+    }
+    visiter(arbre)
+  }
+  return r
+}
+
+const SOURCES = () => [
+  ...lister('src', (c) => /\.tsx?$/.test(c) && !/\.test\.tsx?$/.test(c) && !c.startsWith('src/test/')),
+  ...lister('supabase/functions', (c) => /\.tsx?$/.test(c)),
+].map((chemin) => ({ chemin, texte: lire(chemin) }))
+
+describe('aucun appel du stockage ne réécrit, ne déplace ni n’écrase un objet', () => {
+  it('ni update, ni move, ni copy ; un seul dépôt qui écrase, hors de la RLS, nommé et compté', () => {
+    const r = appelsDuStockage(SOURCES())
+    expect(r.fautes).toEqual([])
+    expect(Object.fromEntries(r.ecrasent)).toEqual(Object.fromEntries(Object.entries(ECRASEMENTS_ADMIS).map(([c, e]) => [c, e.nombre])))
+    for (const e of Object.values(ECRASEMENTS_ADMIS)) expect(e.raison.length).toBeGreaterThan(40)
+  })
+
+  it('le plancher : toute la source lue (655 fichiers le 13/11/2026), ses dépôts comptés (17)', () => {
+    const r = appelsDuStockage(SOURCES())
+    expect(r.fichiers).toBeGreaterThanOrEqual(655)
+    expect(r.depots).toBeGreaterThanOrEqual(17)
+  })
+
+  it('un défaut planté se voit : un dépôt qui écrase, une mise à jour, un déplacement, une option illisible', () => {
+    const plante = (texte: string) => appelsDuStockage([{ chemin: 'src/lib/plante.ts', texte }])
+    expect(plante(`await supabase.storage.from('packs').upload(chemin, corps, { upsert: true })`).ecrasent).toEqual(new Map([['src/lib/plante.ts', 1]]))
+    expect(plante(`await supabase.storage.from('packs').upload(chemin, corps, { 'upsert': true })`).ecrasent.size).toBe(1)
+    expect(plante(`await supabase.storage.from('packs').upload(chemin, corps, { upsert: false })`)).toMatchObject({ depots: 1, fautes: [] })
+    expect(plante(`await supabase.storage.from('packs').upload(chemin, corps)`)).toMatchObject({ depots: 1, fautes: [], ecrasent: new Map() })
+    for (const appel of [`.update(chemin, corps)`, `.move(a, b)`, `.copy(a, b)`, `.upload(chemin, corps, options)`,
+      `.upload(chemin, corps, { upsert })`, `.upload(chemin, corps, { upsert: !ecrire })`, `.upload(chemin, corps, { ...options })`]) {
+      expect(plante(`await supabase.storage.from('cabinet-logos')${appel}`).fautes, appel).toHaveLength(1)
+    }
   })
 })
